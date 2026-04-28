@@ -1574,5 +1574,119 @@ describe('AdtHttpClient', () => {
       expect((client as any).config.cookies).toEqual({ OLD: 'x' });
       expect((client as any).cookiesCleared).toBe(false);
     });
+
+    // ─── P1: cookieJar + csrfToken cleared alongside config.cookies ─────
+    // Without this, the cookieJar (populated from response Set-Cookie headers
+    // during the failed login round-trip) would override the freshly-reloaded
+    // SAP_COOKIE_FILE values on the next request — see codex review of PR #200.
+    it('clears cookieJar and csrfToken on persistent 401 (P1: jar leak fix)', async () => {
+      tmpFile = writeNetscapeCookieFile({ MYSAPSSO2: 'fresh' });
+      // First GET → 401 with a Set-Cookie that lands in the jar; retry → 401 again.
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(401, 'Unauthorized', {}, ['SAP_SESSIONID_NPL_001=stale-jar-cookie; path=/']),
+      );
+      mockFetch.mockResolvedValueOnce(mockResponse(401, 'Unauthorized'));
+
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        username: undefined,
+        password: undefined,
+        cookies: { MYSAPSSO2: 'old' },
+        cookieFile: tmpFile,
+      });
+      // Pre-set a CSRF token to verify it's cleared.
+      (client as any).csrfToken = 'STALE_CSRF';
+      await expect(client.get('/sap/bc/adt/discovery')).rejects.toThrow();
+
+      // All three in-memory copies of the dead session must be cleared.
+      expect((client as any).config.cookies).toEqual({});
+      expect((client as any).cookieJar.size).toBe(0);
+      expect((client as any).csrfToken).toBe('');
+      expect((client as any).cookiesCleared).toBe(true);
+    });
+
+    it('clears cookieJar in HTML-login fallback path (P1)', async () => {
+      tmpFile = writeNetscapeCookieFile({ MYSAPSSO2: 'fresh' });
+      const loginHtml = '<html><head><title>Logon Error Message</title></head><body>Logon ticket invalid</body></html>';
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(200, loginHtml, { 'content-type': 'text/html' }, ['SAP_SESSIONID_X=jar-stale; path=/']),
+      );
+
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        username: undefined,
+        password: undefined,
+        cookies: { MYSAPSSO2: 'old' },
+        cookieFile: tmpFile,
+      });
+      (client as any).csrfToken = 'STALE_CSRF';
+      await expect(client.get('/sap/bc/adt/discovery')).rejects.toThrow();
+
+      expect((client as any).config.cookies).toEqual({});
+      expect((client as any).cookieJar.size).toBe(0);
+      expect((client as any).csrfToken).toBe('');
+      expect((client as any).cookiesCleared).toBe(true);
+    });
+
+    // ─── P2: markCookiesStale() public hook for preflight propagation ────
+    it('markCookiesStale() in cookie-auth mode clears jar+config+csrf and arms reload', async () => {
+      tmpFile = writeNetscapeCookieFile({ MYSAPSSO2: 'fresh' });
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        username: undefined,
+        password: undefined,
+        cookies: { MYSAPSSO2: 'old' },
+        cookieFile: tmpFile,
+      });
+      (client as any).cookieJar.set('SAP_SESSIONID_X', 'jar-stale');
+      (client as any).csrfToken = 'STALE_CSRF';
+
+      client.markCookiesStale();
+
+      expect((client as any).config.cookies).toEqual({});
+      expect((client as any).cookieJar.size).toBe(0);
+      expect((client as any).csrfToken).toBe('');
+      expect((client as any).cookiesCleared).toBe(true);
+    });
+
+    it('markCookiesStale() is a no-op when not in cookie-auth mode', async () => {
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        cookies: { MYSAPSSO2: 'old' },
+      });
+      (client as any).csrfToken = 'CSRF';
+
+      client.markCookiesStale();
+
+      // Basic-auth mode: nothing changes.
+      expect((client as any).config.cookies).toEqual({ MYSAPSSO2: 'old' });
+      expect((client as any).csrfToken).toBe('CSRF');
+      expect((client as any).cookiesCleared).toBe(false);
+    });
+
+    it('after markCookiesStale + reload, request emits ONLY fresh cookies (jar does not leak)', async () => {
+      tmpFile = writeNetscapeCookieFile({ MYSAPSSO2: 'fresh-from-file' });
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok'));
+
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        username: undefined,
+        password: undefined,
+        cookies: { MYSAPSSO2: 'stale-config' },
+        cookieFile: tmpFile,
+      });
+      // Simulate a leftover jar entry that codex's bug would have re-emitted.
+      (client as any).cookieJar.set('MYSAPSSO2', 'stale-jar');
+      (client as any).csrfToken = 'T';
+
+      client.markCookiesStale();
+      await client.get('/sap/bc/adt/discovery');
+
+      const headers = (mockFetch.mock.calls[0]?.[1] as RequestInit).headers as Record<string, string>;
+      // Only the fresh value from the file — no stale-config, no stale-jar.
+      expect(headers.Cookie).toBe('MYSAPSSO2=fresh-from-file');
+      expect(headers.Cookie).not.toContain('stale-config');
+      expect(headers.Cookie).not.toContain('stale-jar');
+    });
   });
 });

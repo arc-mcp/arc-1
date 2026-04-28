@@ -114,10 +114,16 @@ Pick one primary method. Combinations that coexist safely are in the [Coexistenc
 
 | Flag | Env Var | Description |
 |---|---|---|
-| `--cookie-file` | `SAP_COOKIE_FILE` | Path to Netscape-format cookie file |
-| `--cookie-string` | `SAP_COOKIE_STRING` | Inline cookies (`k=v; k2=v2`) |
+| `--cookie-file` | `SAP_COOKIE_FILE` | Path to Netscape-format cookie file. **Hot-reloaded** on stale 401: re-extract cookies (e.g. via `arc1-cli extract-cookies`) and the next SAP call picks them up — no restart needed. |
+| `--cookie-string` | `SAP_COOKIE_STRING` | Inline cookies (`k=v; k2=v2`). **Cannot hot-reload** — the value is read once at startup. To refresh, restart the process with a new value, or switch to `SAP_COOKIE_FILE`. |
 
 Not for production. See [local-development.md → SSO cookie extractor](local-development.md#sso-only-on-prem-cookie-extractor).
+
+**Cookie hot-reload (SAP_COOKIE_FILE only).** When the SAP session expires and a request returns 401 after the standard one-shot session-reset retry, ARC-1 clears the in-memory cookie jar (including any session cookies harvested from intermediate responses) and re-reads the configured cookie file lazily on the next outgoing request. Implications:
+
+- The startup auth preflight downgrades a 401 from blocking to non-blocking when `SAP_COOKIE_FILE` is set, so the MCP server starts even if cookies are about to be re-extracted out-of-band. The first real tool call triggers the reload.
+- `SAP_COOKIE_STRING` keeps the existing blocking-401 behavior — ARC-1 cannot refresh a static env var without restart.
+- Per-user Principal Propagation clients never inherit shared cookie state; `cookieFile`/`cookieString` are stripped from per-user configs in `buildAdtConfig`.
 
 ### B3. BTP ABAP Environment (direct OAuth)
 

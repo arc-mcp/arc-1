@@ -150,6 +150,18 @@ Output format: `line:column [severity] rule: message`
 
 Uses [@abaplint/core](https://github.com/abaplint/abaplint) with sensible defaults.
 
+### extract-cookies
+
+Open a browser, log into SAP, and write a Netscape-format cookie file usable as `SAP_COOKIE_FILE`.
+
+```bash
+arc1-cli extract-cookies --url https://host:44300 --output ~/.config/arc-1/cookies.txt
+```
+
+When the running ARC-1 process is configured with `SAP_COOKIE_FILE` pointing to the same file, the next SAP call automatically reloads the fresh cookies — **no restart needed**. The reload is lazy: it fires on the next outgoing request after a persistent 401, so just re-extract and the next tool invocation picks up the new session.
+
+`SAP_COOKIE_STRING` does not support hot-reload — that env var is read once at startup. Use `SAP_COOKIE_FILE` if you want the no-restart refresh path.
+
 ### version
 
 Show ARC-1 version.

@@ -531,8 +531,7 @@ export class AdtHttpClient {
         });
 
         if (response.status === 401 && this.isCookieAuthMode()) {
-          this.config.cookies = {};
-          this.cookiesCleared = true;
+          this.clearCookiesAndMark();
           logger.warn(
             'Cookie auth: 401 persisted after retry — clearing stale cookies. ' +
               'Run `arc1-cli extract-cookies` to get fresh cookies; the next SAP call will reload them automatically.',
@@ -751,8 +750,7 @@ export class AdtHttpClient {
       looksLikeLoginPage(body)
     ) {
       if (this.isCookieAuthMode()) {
-        this.config.cookies = {};
-        this.cookiesCleared = true;
+        this.clearCookiesAndMark();
       }
       throw new AdtApiError(
         'ADT call returned HTML login page — authentication required. If using cookies, they may have expired. If using Basic auth, credentials may be invalid or not authorized for ADT (S_ADT_RES missing). If on an SSO-only system, try SAP_DISABLE_SAML=true or see docs/enterprise-auth.md. Re-run arc-1 after fixing.',
@@ -876,8 +874,7 @@ export class AdtHttpClient {
       if (!token || token === 'Required') {
         if (response.status === 401) {
           if (this.isCookieAuthMode()) {
-            this.config.cookies = {};
-            this.cookiesCleared = true;
+            this.clearCookiesAndMark();
           }
           throw new AdtApiError(
             `Authentication failed (401) using sap-client=${this.config.client ?? '100'}. Check SAP_CLIENT, SAP_USER, and SAP_PASSWORD.`,
@@ -918,6 +915,47 @@ export class AdtHttpClient {
 
   private isCookieAuthMode(): boolean {
     return !!(this.config.cookieFile || this.config.cookieString);
+  }
+
+  /**
+   * Mark stale cookies for hot-reload on the next request.
+   *
+   * Clears EVERY in-memory copy of the failed session: `config.cookies` (the
+   * static set seeded from cookieFile/cookieString at construction), `cookieJar`
+   * (cookies harvested from prior responses, including the 401/HTML-login
+   * response that just triggered this call), and `csrfToken` (bound to the
+   * dead session).
+   *
+   * Without clearing the jar, the next request's cookie-header build path
+   * (`config.cookies` + `cookieJar`) would re-emit the stale Set-Cookie values
+   * harvested from the failed response — overriding the fresh `config.cookies`
+   * we'll repopulate via `reloadCookiesFromSource()`. The jar therefore must
+   * not survive the reload boundary.
+   *
+   * Called from THREE paths: persistent 401 in `request()` retry, HTML-login
+   * fallback in `handleResponse()`, and CSRF 401 in `fetchCsrfToken()`. Also
+   * exposed publicly via `markCookiesStale()` so the startup auth preflight
+   * can propagate "the cookies you started the process with are dead" state
+   * to the long-lived runtime client.
+   */
+  private clearCookiesAndMark(): void {
+    this.config.cookies = {};
+    this.cookieJar.clear();
+    this.csrfToken = '';
+    this.cookiesCleared = true;
+  }
+
+  /**
+   * Public hook so `runStartupAuthPreflight` (which uses a throwaway client)
+   * can mark the long-lived runtime client as having stale cookies. Without
+   * this propagation, the runtime client ignores the preflight 401 and the
+   * first real tool call repeats the failure before lazy reload kicks in.
+   * Caller is expected to be in cookie-auth mode; the method is a no-op
+   * otherwise.
+   */
+  markCookiesStale(): void {
+    if (!this.isCookieAuthMode()) return;
+    this.clearCookiesAndMark();
   }
 
   /**

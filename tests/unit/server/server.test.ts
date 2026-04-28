@@ -449,4 +449,54 @@ describe('startup auth preflight', () => {
     expect(result.status).toBe('failed');
     expect(result.blocking).toBe(true);
   });
+
+  // ─── P2 (codex review): cookieString-only stays blocking on 401 ────────
+  // SAP_COOKIE_STRING is read once at startup and cannot change in the
+  // running process — the runtime client cannot recover via lazy reload, so
+  // promising "no restart needed" would be a lie. Only SAP_COOKIE_FILE gets
+  // the non-blocking downgrade.
+  it('keeps 401 blocking when only cookieString is set (no hot-reload promise)', async () => {
+    vi.spyOn(AdtHttpClient.prototype, 'get').mockRejectedValue(
+      new AdtApiError('Unauthorized', 401, '/sap/bc/adt/core/discovery', 'stale cookie'),
+    );
+
+    const result = await runStartupAuthPreflight({
+      ...DEFAULT_CONFIG,
+      ppEnabled: false,
+      url: 'http://sap.example.com:8000',
+      cookieString: 'MYSAPSSO2=abc123',
+    });
+
+    expect(result.status).toBe('failed');
+    expect(result.blocking).toBe(true);
+    expect(result.statusCode).toBe(401);
+    // Reason must NOT promise hot-reload for cookieString.
+    expect(result.reason).not.toContain('no restart needed');
+    expect(result.reason).toContain('SAP_COOKIE_STRING');
+    expect(result.reason).toContain('static');
+  });
+
+  it('downgrade applies even when both cookieFile and cookieString are set (file wins)', async () => {
+    const fixture = writeCookieFixture('.example.com\tTRUE\t/\tFALSE\t0\tSAP_SESSIONID\txyz789\n');
+    vi.spyOn(AdtHttpClient.prototype, 'get').mockRejectedValue(
+      new AdtApiError('Unauthorized', 401, '/sap/bc/adt/core/discovery', 'stale cookie'),
+    );
+
+    try {
+      const result = await runStartupAuthPreflight({
+        ...DEFAULT_CONFIG,
+        ppEnabled: false,
+        url: 'http://sap.example.com:8000',
+        cookieFile: fixture.file,
+        cookieString: 'MYSAPSSO2=also-set',
+      });
+
+      // Presence of cookieFile makes the deployment hot-reloadable.
+      expect(result.status).toBe('inconclusive');
+      expect(result.blocking).toBe(false);
+      expect(result.reason).toContain('arc1-cli extract-cookies');
+    } finally {
+      fixture.cleanup();
+    }
+  });
 });
