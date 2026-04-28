@@ -161,7 +161,7 @@ describe('CRUD Operations', () => {
       );
     });
 
-    describe('NW 7.50 lock-conflict reclassification', () => {
+    describe('lock-conflict reclassification (layered detection per ADR-0002)', () => {
       function mockHttpThatRejectsLock(status: number, body: string): AdtHttpClient {
         const post = vi.fn().mockRejectedValue(new AdtApiError('reject', status, '/url', body));
         return {
@@ -198,11 +198,128 @@ describe('CRUD Operations', () => {
         await expect(lockObject(http, unrestrictedSafetyConfig(), '/url')).rejects.toMatchObject({ statusCode: 401 });
       });
 
-      it('does NOT reclassify S/4 lock-conflict structured XML (no "Logon Error Message")', async () => {
+      it('reclassifies structured ExceptionResourceNoAccess on any release (Layer 1)', async () => {
+        // Per ADR-0002, structured `<exc:exception><type id="ExceptionResourceNoAccess"/>`
+        // is the authoritative signal — reclassify regardless of release or HTTP status.
+        // Modern S/4 releases emit this shape; we now correctly route to 409 lock-conflict.
         const xml =
           '<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework"><type id="ExceptionResourceNoAccess"/><message lang="EN">User MARIAN is currently editing ZTEST</message></exc:exception>';
         const http = mockHttpThatRejectsLock(403, xml);
-        await expect(lockObject(http, unrestrictedSafetyConfig(), '/url')).rejects.toMatchObject({ statusCode: 403 });
+        await expect(lockObject(http, unrestrictedSafetyConfig(), '/url')).rejects.toMatchObject({
+          statusCode: 409,
+          message: expect.stringContaining('locked by another session'),
+        });
+      });
+
+      it('Layer 1 still fires when abapRelease is modern (758) — structured signal wins', async () => {
+        const xml =
+          '<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework"><type id="ExceptionResourceNoAccess"/></exc:exception>';
+        const http = mockHttpThatRejectsLock(403, xml);
+        await expect(lockObject(http, unrestrictedSafetyConfig(), '/url', 'MODIFY', '758')).rejects.toMatchObject({
+          statusCode: 409,
+        });
+      });
+
+      it('Layer 2 (HTML body) DOES fire when abapRelease<751 (NW 7.50)', async () => {
+        const http = mockHttpThatRejectsLock(401, html);
+        await expect(lockObject(http, unrestrictedSafetyConfig(), '/url', 'MODIFY', '750')).rejects.toMatchObject({
+          statusCode: 409,
+          message: expect.stringContaining('may be locked'),
+        });
+      });
+
+      it('Layer 2 (HTML body) does NOT fire when abapRelease>=751 (modern release)', async () => {
+        const http = mockHttpThatRejectsLock(401, html);
+        // With abapRelease='758' the HTML fallback is dormant — original 401 must surface.
+        await expect(lockObject(http, unrestrictedSafetyConfig(), '/url', 'MODIFY', '758')).rejects.toMatchObject({
+          statusCode: 401,
+        });
+      });
+
+      it('Layer 2 fires when abapRelease is undefined (CLI / test paths — defensive default)', async () => {
+        // Preserves the original heuristic where features were not yet probed.
+        const http = mockHttpThatRejectsLock(401, html);
+        await expect(lockObject(http, unrestrictedSafetyConfig(), '/url')).rejects.toMatchObject({ statusCode: 409 });
+      });
+
+      it('Layer 2 fallback uses neutral message ("may be locked or already exist")', async () => {
+        const http = mockHttpThatRejectsLock(401, html);
+        await expect(lockObject(http, unrestrictedSafetyConfig(), '/url', 'MODIFY', '750')).rejects.toMatchObject({
+          message: expect.stringContaining('may be locked'),
+        });
+      });
+
+      it('non-HTML 401 with no marker is not reclassified', async () => {
+        const http = mockHttpThatRejectsLock(401, 'Authentication required');
+        await expect(lockObject(http, unrestrictedSafetyConfig(), '/url')).rejects.toMatchObject({ statusCode: 401 });
+      });
+    });
+
+    // The same helper applies to createObject — reclassify lock/exists conflicts that arrive
+    // on the create path (e.g., NW 7.50 ICM intercepts CX_ADT_RES_NO_ACCESS during create).
+    describe('lock-conflict reclassification on createObject path', () => {
+      const html = '<html><body>Logon Error Message — please log on again.</body></html>';
+
+      function mockHttpThatRejectsCreate(status: number, body: string): AdtHttpClient {
+        const post = vi.fn().mockRejectedValue(new AdtApiError('reject', status, '/url', body));
+        return {
+          get: vi.fn(),
+          post,
+          put: vi.fn(),
+          delete: vi.fn(),
+          fetchCsrfToken: vi.fn(),
+          withStatefulSession: vi.fn(),
+        } as unknown as AdtHttpClient;
+      }
+
+      it('reclassifies HTML body marker on 401 → 409 (Layer 2 with abapRelease<751)', async () => {
+        const http = mockHttpThatRejectsCreate(401, html);
+        await expect(
+          createObject(
+            http,
+            unrestrictedSafetyConfig(),
+            '/sap/bc/adt/ddic/ddl/sources',
+            '<xml/>',
+            'application/*',
+            undefined,
+            undefined,
+            '750',
+          ),
+        ).rejects.toMatchObject({ statusCode: 409 });
+      });
+
+      it('reclassifies structured ExceptionResourceNoAccess regardless of release', async () => {
+        const xml =
+          '<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework"><type id="ExceptionResourceNoAccess"/></exc:exception>';
+        const http = mockHttpThatRejectsCreate(403, xml);
+        await expect(
+          createObject(
+            http,
+            unrestrictedSafetyConfig(),
+            '/sap/bc/adt/ddic/ddl/sources',
+            '<xml/>',
+            'application/*',
+            undefined,
+            undefined,
+            '758',
+          ),
+        ).rejects.toMatchObject({ statusCode: 409 });
+      });
+
+      it('does NOT reclassify when abapRelease>=751 and only HTML marker is present', async () => {
+        const http = mockHttpThatRejectsCreate(401, html);
+        await expect(
+          createObject(
+            http,
+            unrestrictedSafetyConfig(),
+            '/sap/bc/adt/ddic/ddl/sources',
+            '<xml/>',
+            'application/*',
+            undefined,
+            undefined,
+            '758',
+          ),
+        ).rejects.toMatchObject({ statusCode: 401 });
       });
     });
   });

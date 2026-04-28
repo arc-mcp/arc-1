@@ -396,6 +396,16 @@ describe('AdtApiError', () => {
       expect(classification?.hint).toContain('DEVELOPER');
     });
 
+    it('classifies ExceptionResourceNoAccess as lock-conflict (PR-γ / ADR-0002)', () => {
+      // CX_ADT_RES_NO_ACCESS surfaces as ExceptionResourceNoAccess in structured XML;
+      // the classifier now treats it the same as ExceptionResourceLockedByAnotherUser.
+      const xml = `<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework">
+  <type id="ExceptionResourceNoAccess"/>
+</exc:exception>`;
+      const classification = classifySapDomainError(409, xml);
+      expect(classification?.category).toBe('lock-conflict');
+    });
+
     it('does not misclassify 403 auth error as lock conflict', () => {
       const xml = `<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework">
   <type id="ExceptionNotAuthorized"/>

@@ -10,7 +10,7 @@
  * leaked locks on error, blocking the object for other developers.
  */
 
-import { AdtApiError } from './errors.js';
+import { AdtApiError, extractExceptionType } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 /** Lock result from SAP */
@@ -26,6 +26,7 @@ export async function lockObject(
   safety: SafetyConfig,
   objectUrl: string,
   accessMode = 'MODIFY',
+  abapRelease?: string,
 ): Promise<LockResult> {
   if (accessMode === 'MODIFY') {
     checkOperation(safety, OperationType.Lock, 'LockObject');
@@ -39,33 +40,8 @@ export async function lockObject(
       Accept: 'application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result, application/*;q=0.8',
     });
   } catch (err) {
-    // NW 7.50 quirk: the LOCK endpoint returns 400 or 401 with an HTML login page when
-    // the object is already locked by another session (Eclipse, SE80). This is not an auth
-    // failure — a GET on the same object succeeds moments earlier with the same credentials.
-    // Reclassify as a clear lock-conflict error so the LLM doesn't chase auth red herrings.
-    // CX_ADT_RES_NO_ACCESS maps to 403 server-side, but with cookie auth (no Basic Auth
-    // header) ICM transforms it to 401 "no logon data". ARC-1's 401 retry handler then
-    // clears the cookie jar and retries without cookies, which returns 400. So we see
-    // 400, 401, or 403 depending on timing — all with the same HTML login page body.
-    //
-    // The "Logon Error Message" HTML body is the de-facto NW 7.50 gate — S/4 returns
-    // structured XML with <exc:exception> here (no "Logon Error Message" string), and
-    // S/4's auth-failure HTML is "Anmeldung fehlgeschlagen" (also no match). So this
-    // branch self-scopes without an explicit detectSystemCapabilities() check.
-    if (
-      err instanceof AdtApiError &&
-      (err.statusCode === 400 || err.statusCode === 401 || err.statusCode === 403) &&
-      err.responseBody?.includes('Logon Error Message')
-    ) {
-      const name = objectUrl.split('/').pop() ?? objectUrl;
-      // Throw as 409 with "locked by" in the message so classifySapDomainError routes
-      // to the 'lock-conflict' category (not the 423 'enqueue-error' / invalid-handle path).
-      throw new AdtApiError(
-        `Object ${name} is locked by another session. Close the editor (Eclipse, SE80) or release the lock in SM12, then retry.`,
-        409,
-        objectUrl,
-      );
-    }
+    const conv = convertHtmlConflictToProperError(err, objectUrl, abapRelease);
+    if (conv) throw conv;
     throw err;
   }
 
@@ -118,6 +94,7 @@ export async function createObject(
   contentType = 'application/*',
   transport?: string,
   packageName?: string,
+  abapRelease?: string,
 ): Promise<string> {
   checkOperation(safety, OperationType.Create, 'CreateObject');
 
@@ -134,6 +111,10 @@ export async function createObject(
     const resp = await http.post(url, body, contentType);
     return resp.body;
   } catch (err) {
+    // Reclassify lock/exists conflicts that arrive as HTML or via structured
+    // exception type — same precedence as the lockObject path.
+    const conv = convertHtmlConflictToProperError(err, objectUrl, abapRelease);
+    if (conv) throw conv;
     const fallback = CONTENT_TYPE_FALLBACKS[contentType];
     if (fallback && isUnsupportedMediaTypeError(err)) {
       const resp = await http.post(url, body, fallback);
@@ -233,9 +214,10 @@ export async function safeUpdateSource(
   sourceUrl: string,
   source: string,
   transport?: string,
+  abapRelease?: string,
 ): Promise<void> {
   await http.withStatefulSession(async (session) => {
-    const lock = await lockObject(session, safety, objectUrl);
+    const lock = await lockObject(session, safety, objectUrl, 'MODIFY', abapRelease);
     const effectiveTransport = transport ?? (lock.corrNr || undefined);
     try {
       await updateSource(session, safety, sourceUrl, source, lock.lockHandle, effectiveTransport);
@@ -256,9 +238,10 @@ export async function safeUpdateObject(
   body: string,
   contentType: string,
   transport?: string,
+  abapRelease?: string,
 ): Promise<void> {
   await http.withStatefulSession(async (session) => {
-    const lock = await lockObject(session, safety, objectUrl);
+    const lock = await lockObject(session, safety, objectUrl, 'MODIFY', abapRelease);
     const effectiveTransport = transport ?? (lock.corrNr || undefined);
     try {
       await updateObject(session, safety, objectUrl, body, lock.lockHandle, contentType, effectiveTransport);
@@ -273,4 +256,72 @@ function extractXmlValue(xml: string, tag: string): string {
   const regex = new RegExp(`<${tag}>([^<]*)</${tag}>`);
   const match = xml.match(regex);
   return match?.[1] ?? '';
+}
+
+/**
+ * Convert an ICM-intercepted lock/exists conflict into a clean AdtApiError(409).
+ *
+ * Two-layer detection (per ADR-0002):
+ *
+ *   Layer 1 — structured exception type (release-agnostic, robust):
+ *     <exc:exception><type id="ExceptionResourceNoAccess"/>  → reclassify regardless of status.
+ *     Same for ExceptionResourceLockedByAnotherUser.
+ *
+ *   Layer 2 — HTML body marker, scoped by SAP_BASIS release:
+ *     Some SAP releases (NW 7.50) emit an ICM HTML "Logon Error Message" page when the ADT
+ *     handler tries to throw CX_ADT_RES_NO_ACCESS through cookie auth. The "Logon Error
+ *     Message" string appears in the <title> only on systems whose ICM uses the English
+ *     error-page template — re-localizing the system would shift the marker. So the heuristic
+ *     is gated on `cachedFeatures.abapRelease < 751` (or undefined for CLI/test paths,
+ *     where the startup probe didn't populate features).
+ *     The fallback message is intentionally neutral ("may be locked or already exist") because
+ *     the ICM intercept loses the original SAP exception type — we cannot disambiguate.
+ *
+ * Returns the reclassified AdtApiError(409) (caller throws), or undefined when the original
+ * error should be rethrown unchanged.
+ */
+export function convertHtmlConflictToProperError(
+  err: unknown,
+  objectUrl: string,
+  abapRelease?: string,
+): AdtApiError | undefined {
+  if (!(err instanceof AdtApiError)) return undefined;
+  const body = err.responseBody ?? '';
+  const name = objectUrl.split('/').pop() ?? objectUrl;
+
+  // Layer 1: structured exception type
+  const typeId = extractExceptionType(body);
+  if (typeId === 'ExceptionResourceNoAccess' || typeId === 'ExceptionResourceLockedByAnotherUser') {
+    return new AdtApiError(
+      `Object ${name} is locked by another session. Close the editor (Eclipse, SE80) or release the lock in SM12, then retry.`,
+      409,
+      objectUrl,
+      body,
+    );
+  }
+
+  // Layer 2: HTML body marker, scoped by release
+  const release = parseReleaseNum(abapRelease);
+  const fallbackEligible = release === 0 || release < 751;
+  const isHtml4xx =
+    (err.statusCode === 400 || err.statusCode === 401 || err.statusCode === 403) &&
+    body.includes('<html') &&
+    body.includes('Logon Error Message');
+  if (fallbackEligible && isHtml4xx) {
+    return new AdtApiError(
+      `Operation conflicted on ${name} — object may be locked by another session or already exist. ` +
+        `Run SAPSearch to verify the object exists, then either update the existing object or wait for the lock to release (SM12).`,
+      409,
+      objectUrl,
+      body,
+    );
+  }
+
+  return undefined;
+}
+
+function parseReleaseNum(abapRelease?: string): number {
+  if (!abapRelease) return 0;
+  const num = Number.parseInt(abapRelease.replace(/\D/g, ''), 10);
+  return Number.isFinite(num) ? num : 0;
 }
