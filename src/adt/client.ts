@@ -108,6 +108,8 @@ export class AdtClient {
       language: config.language,
       insecure: config.insecure,
       cookies: config.cookies,
+      cookieFile: config.cookieFile,
+      cookieString: config.cookieString,
       btpProxy: config.btpProxy,
       sapConnectivityAuth: config.sapConnectivityAuth,
       ppProxyAuth: config.ppProxyAuth,

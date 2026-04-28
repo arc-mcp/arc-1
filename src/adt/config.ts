@@ -57,6 +57,10 @@ export interface AdtClientConfig {
   insecure: boolean;
   /** Cookie-based auth (alternative to basic auth) */
   cookies: Record<string, string>;
+  /** Path to cookie file — enables hot-reload on stale auth */
+  cookieFile?: string;
+  /** Inline cookie string — stored for config awareness (no hot-reload) */
+  cookieString?: string;
   /** Safety configuration */
   safety: SafetyConfig;
   /** Feature detection config */

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdtApiError, AdtNetworkError } from '../../../src/adt/errors.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 
@@ -1383,6 +1383,196 @@ describe('AdtHttpClient', () => {
       await Promise.all([client.get('/path1'), client.get('/path2'), client.get('/path3')]);
 
       expect(maxConcurrent).toBe(1);
+    });
+  });
+
+  // ─── Cookie hot-reload on stale 401 ─────────────────────────────────
+  //
+  // Verifies the lazy reload state machine: persistent 401 in cookie-auth
+  // mode clears the cookie jar and re-reads the configured cookieFile on
+  // the NEXT request, with no restart. See docs/plans/pr-alpha-cookie-hot-reload.md
+  // and docs/adr/0001-discovery-driven-endpoint-routing.md (architectural context).
+
+  describe('cookie hot-reload', () => {
+    let tmpFile = '';
+
+    function writeNetscapeCookieFile(cookies: Record<string, string>): string {
+      const fs = require('node:fs');
+      const os = require('node:os');
+      const path = require('node:path');
+      const file = path.join(os.tmpdir(), `arc1-test-cookies-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`);
+      const lines = ['# Netscape HTTP Cookie File'];
+      for (const [k, v] of Object.entries(cookies)) {
+        lines.push(`sap.example.com\tFALSE\t/\tFALSE\t0\t${k}\t${v}`);
+      }
+      fs.writeFileSync(file, `${lines.join('\n')}\n`);
+      return file;
+    }
+
+    afterEach(() => {
+      if (tmpFile) {
+        const fs = require('node:fs');
+        try {
+          fs.unlinkSync(tmpFile);
+        } catch {
+          // best-effort-cleanup
+        }
+        tmpFile = '';
+      }
+    });
+
+    it('clears cookies on persistent 401 in cookie-auth mode', async () => {
+      tmpFile = writeNetscapeCookieFile({ MYSAPSSO2: 'stale-value' });
+      // First GET → 401, retry GET → still 401 (persistent)
+      mockFetch.mockResolvedValueOnce(mockResponse(401, 'Unauthorized'));
+      mockFetch.mockResolvedValueOnce(mockResponse(401, 'Unauthorized'));
+
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        username: undefined,
+        password: undefined,
+        cookies: { MYSAPSSO2: 'stale-value' },
+        cookieFile: tmpFile,
+      });
+      await expect(client.get('/sap/bc/adt/programs/programs/ZTEST/source/main')).rejects.toThrow();
+
+      // After persistent 401 in cookie-auth mode: cookies cleared, flag set.
+      expect((client as any).config.cookies).toEqual({});
+      expect((client as any).cookiesCleared).toBe(true);
+    });
+
+    it('reloads cookies from file on the next request after clearing', async () => {
+      tmpFile = writeNetscapeCookieFile({ MYSAPSSO2: 'fresh-value' });
+      // Pre-set the client into cleared state.
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok'));
+
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        username: undefined,
+        password: undefined,
+        cookies: {},
+        cookieFile: tmpFile,
+      });
+      (client as any).cookiesCleared = true;
+      (client as any).csrfToken = 'T';
+
+      await client.get('/sap/bc/adt/discovery');
+
+      // Inspect the fetch call: the Cookie header must contain the reloaded value.
+      const headers = (mockFetch.mock.calls[0]?.[1] as RequestInit).headers as Record<string, string>;
+      expect(headers.Cookie).toContain('MYSAPSSO2=fresh-value');
+      // After reload, the cleared flag is reset.
+      expect((client as any).cookiesCleared).toBe(false);
+      // config.cookies has the reloaded entry.
+      expect((client as any).config.cookies).toEqual({ MYSAPSSO2: 'fresh-value' });
+    });
+
+    it('warns and skips reload when only cookieString is configured (no cookieFile)', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok'));
+
+      const warnSpy = vi.spyOn((await import('../../../src/server/logger.js')).logger, 'warn');
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        username: undefined,
+        password: undefined,
+        cookies: { MYSAPSSO2: 'stale' },
+        cookieString: 'MYSAPSSO2=stale',
+      });
+      (client as any).cookiesCleared = true;
+      (client as any).csrfToken = 'T';
+
+      await client.get('/sap/bc/adt/discovery');
+
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('SAP_COOKIE_STRING cannot be refreshed'));
+      // Cleared flag is still reset (one-shot semantics).
+      expect((client as any).cookiesCleared).toBe(false);
+      // config.cookies is unchanged (no source to reload from).
+      expect((client as any).config.cookies).toEqual({ MYSAPSSO2: 'stale' });
+      warnSpy.mockRestore();
+    });
+
+    it('warns when cookieFile reload returns empty result', async () => {
+      tmpFile = writeNetscapeCookieFile({}); // Empty cookie file (only the header comment)
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok'));
+
+      const warnSpy = vi.spyOn((await import('../../../src/server/logger.js')).logger, 'warn');
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        username: undefined,
+        password: undefined,
+        cookies: { OLD: 'x' },
+        cookieFile: tmpFile,
+      });
+      (client as any).cookiesCleared = true;
+      (client as any).csrfToken = 'T';
+
+      await client.get('/sap/bc/adt/discovery');
+
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Cookie reload returned empty result'));
+      // config.cookies should be left unchanged on empty reload.
+      expect((client as any).config.cookies).toEqual({ OLD: 'x' });
+      warnSpy.mockRestore();
+    });
+
+    it('warns when cookieFile is unreadable (path does not exist)', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok'));
+
+      const warnSpy = vi.spyOn((await import('../../../src/server/logger.js')).logger, 'warn');
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        username: undefined,
+        password: undefined,
+        cookies: { OLD: 'x' },
+        cookieFile: '/no/such/path/that/exists.txt',
+      });
+      (client as any).cookiesCleared = true;
+      (client as any).csrfToken = 'T';
+
+      await client.get('/sap/bc/adt/discovery');
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to reload cookies from source'),
+        expect.any(Object),
+      );
+      // config.cookies left unchanged.
+      expect((client as any).config.cookies).toEqual({ OLD: 'x' });
+      warnSpy.mockRestore();
+    });
+
+    it('clears cookies in HTML-login fallback when in cookie-auth mode', async () => {
+      tmpFile = writeNetscapeCookieFile({ MYSAPSSO2: 'stale' });
+      // 200 with HTML body that looks like a login page.
+      const loginHtml = '<html><head><title>Logon Error Message</title></head><body>Logon ticket invalid</body></html>';
+      mockFetch.mockResolvedValueOnce(mockResponse(200, loginHtml, { 'content-type': 'text/html' }));
+
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        username: undefined,
+        password: undefined,
+        cookies: { MYSAPSSO2: 'stale' },
+        cookieFile: tmpFile,
+      });
+      (client as any).csrfToken = 'T';
+
+      await expect(client.get('/sap/bc/adt/discovery')).rejects.toThrow();
+
+      expect((client as any).config.cookies).toEqual({});
+      expect((client as any).cookiesCleared).toBe(true);
+    });
+
+    it('does NOT clear cookies on 401 when not in cookie-auth mode (basic auth)', async () => {
+      // Persistent 401 with basic auth — should not clear anything cookie-related.
+      mockFetch.mockResolvedValueOnce(mockResponse(401, 'Unauthorized'));
+      mockFetch.mockResolvedValueOnce(mockResponse(401, 'Unauthorized'));
+
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        cookies: { OLD: 'x' },
+      });
+      await expect(client.get('/sap/bc/adt/programs/programs/ZTEST/source/main')).rejects.toThrow();
+
+      expect((client as any).config.cookies).toEqual({ OLD: 'x' });
+      expect((client as any).cookiesCleared).toBe(false);
     });
   });
 });

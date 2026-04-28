@@ -382,8 +382,14 @@ function getWriteInfrastructureHint(err: AdtApiError, tool: string, args: Record
 }
 
 /** Format error messages with LLM-friendly remediation hints */
-function formatErrorForLLM(err: unknown, message: string, tool: string, args: Record<string, unknown>): string {
-  const base = buildBaseErrorMessage(err, message, tool, args);
+function formatErrorForLLM(
+  err: unknown,
+  message: string,
+  tool: string,
+  args: Record<string, unknown>,
+  config: ServerConfig,
+): string {
+  const base = buildBaseErrorMessage(err, message, tool, args, config);
   // Handler-attached remediation hints (e.g., CDS delete blocker list) always
   // appear last so the message reads "what happened → diagnostics → how to fix".
   if (err instanceof AdtApiError && err.extraHint && !base.includes(err.extraHint)) {
@@ -392,7 +398,13 @@ function formatErrorForLLM(err: unknown, message: string, tool: string, args: Re
   return base;
 }
 
-function buildBaseErrorMessage(err: unknown, message: string, tool: string, args: Record<string, unknown>): string {
+function buildBaseErrorMessage(
+  err: unknown,
+  message: string,
+  tool: string,
+  args: Record<string, unknown>,
+  config: ServerConfig,
+): string {
   if (err instanceof AdtApiError) {
     // Append additional SAP messages (line numbers, secondary errors) if available
     const enriched = enrichWithSapDetails(err, message);
@@ -414,6 +426,14 @@ function buildBaseErrorMessage(err: unknown, message: string, tool: string, args
       return `${enriched}\n\nHint: Object "${name}" (type ${type}) was not found. Use SAPSearch with query "${name}" to verify the name exists and check the correct type.`;
     }
     if (err.isUnauthorized || err.isForbidden) {
+      if (config.cookieFile || config.cookieString) {
+        return (
+          `${enriched}\n\n` +
+          'Hint: SAP cookies have expired. Ask the user to re-extract cookies ' +
+          'with `arc1-cli extract-cookies`. The next SAP call after extraction ' +
+          'will automatically reload the fresh cookies — no restart needed.'
+        );
+      }
       return `${enriched}\n\nHint: Authorization error. Check SAP_CLIENT (default: '100'), SAP_USER, and SAP_PASSWORD. The configured SAP user may lack permissions for this object.`;
     }
     // Transport / corrNr specific hints
@@ -1222,7 +1242,7 @@ export async function handleToolCall(
         errorMessage: message,
       });
 
-      return errorResult(formatErrorForLLM(err, message, toolName, args));
+      return errorResult(formatErrorForLLM(err, message, toolName, args, config));
     }
   });
 }

@@ -201,6 +201,8 @@ export function buildAdtConfig(
     if (cookies) {
       adtConfig.cookies = cookies;
     }
+    adtConfig.cookieFile = config.cookieFile;
+    adtConfig.cookieString = config.cookieString;
   }
 
   return adtConfig;
@@ -362,8 +364,14 @@ export interface StartupAuthPreflightResult {
 
 const STARTUP_AUTH_ENDPOINT = '/sap/bc/adt/core/discovery';
 
-function buildStartupAuthFailureReason(statusCode: number): string {
+function buildStartupAuthFailureReason(statusCode: number, config: ServerConfig): string {
   if (statusCode === 401) {
+    if (config.cookieFile || config.cookieString) {
+      return (
+        'Authentication failed (401) during startup auth preflight. ' +
+        'Your SAP cookies have expired. Re-extract them with `arc1-cli extract-cookies` — no restart needed, the next SAP call will reload them automatically.'
+      );
+    }
     return (
       'Authentication failed (401) during startup auth preflight. ' +
       'Check SAP_USER/SAP_PASSWORD/SAP_CLIENT (or destination/service-key credentials), then restart ARC-1.'
@@ -419,7 +427,12 @@ export async function runStartupAuthPreflight(
     return { status: 'ok', blocking: false, endpoint, checkedAt, reason };
   } catch (err) {
     if (err instanceof AdtApiError && (err.statusCode === 401 || err.statusCode === 403)) {
-      const reason = buildStartupAuthFailureReason(err.statusCode);
+      const reason = buildStartupAuthFailureReason(err.statusCode, config);
+      const isCookieAuth = !!(config.cookieFile || config.cookieString);
+      if (isCookieAuth && err.statusCode === 401) {
+        logger.warn(`${reason} (non-blocking: runtime cookie reload will retry)`, { endpoint, statusCode: 401 });
+        return { status: 'inconclusive', blocking: false, endpoint, checkedAt, statusCode: 401, reason };
+      }
       logger.warn(reason, { endpoint, statusCode: err.statusCode });
       return {
         status: 'failed',

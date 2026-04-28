@@ -30,6 +30,7 @@
 import { Agent, Client, type Dispatcher, fetch as undiciFetch } from 'undici';
 import { logger } from '../server/logger.js';
 import type { BTPProxyConfig } from './btp.js';
+import { resolveCookies } from './cookies.js';
 import { resolveAcceptType, resolveContentType } from './discovery.js';
 import { AdtApiError, AdtNetworkError } from './errors.js';
 import type { Semaphore } from './semaphore.js';
@@ -108,6 +109,10 @@ export interface AdtHttpConfig {
   language?: string;
   insecure?: boolean;
   cookies?: Record<string, string>;
+  /** Path to cookie file — enables hot-reload on stale auth */
+  cookieFile?: string;
+  /** Inline cookie string — stored for config awareness (no hot-reload) */
+  cookieString?: string;
   sessionType?: SessionType;
   /** BTP Connectivity proxy (Cloud Connector) */
   btpProxy?: BTPProxyConfig;
@@ -166,6 +171,8 @@ export class AdtHttpClient {
   private cookieJar: Map<string, string> = new Map();
   /** Guard to prevent infinite retry loops for DB connection errors */
   private dbRetryInProgress = false;
+  /** Set after a 401 clears stale cookies — triggers file reload on the next request */
+  private cookiesCleared = false;
   constructor(config: AdtHttpConfig) {
     this.config = config;
 
@@ -311,6 +318,12 @@ export class AdtHttpClient {
     if (this.config.bearerTokenProvider) {
       const token = await this.config.bearerTokenProvider();
       headers.Authorization = `Bearer ${token}`;
+    }
+
+    // Lazy cookie reload: if cookies were cleared on a previous 401,
+    // re-read the cookie file before this request.
+    if (this.cookiesCleared && this.isCookieAuthMode()) {
+      this.reloadCookiesFromSource();
     }
 
     // Build cookie header from: config cookies + cookie jar (jar takes precedence)
@@ -516,6 +529,15 @@ export class AdtHttpClient {
           durationMs: Date.now() - httpStart,
           errorBody: '401 session retry completed',
         });
+
+        if (response.status === 401 && this.isCookieAuthMode()) {
+          this.config.cookies = {};
+          this.cookiesCleared = true;
+          logger.warn(
+            'Cookie auth: 401 persisted after retry — clearing stale cookies. ' +
+              'Run `arc1-cli extract-cookies` to get fresh cookies; the next SAP call will reload them automatically.',
+          );
+        }
         // Fall through to downstream handlers (403/406/415/normal)
       }
 
@@ -728,6 +750,10 @@ export class AdtHttpClient {
       contentType?.startsWith('text/html') &&
       looksLikeLoginPage(body)
     ) {
+      if (this.isCookieAuthMode()) {
+        this.config.cookies = {};
+        this.cookiesCleared = true;
+      }
       throw new AdtApiError(
         'ADT call returned HTML login page — authentication required. If using cookies, they may have expired. If using Basic auth, credentials may be invalid or not authorized for ADT (S_ADT_RES missing). If on an SSO-only system, try SAP_DISABLE_SAML=true or see docs/enterprise-auth.md. Re-run arc-1 after fixing.',
         401,
@@ -787,6 +813,12 @@ export class AdtHttpClient {
       headers['SAP-Connectivity-Authentication'] = this.config.sapConnectivityAuth;
     }
 
+    // Lazy cookie reload (same guard as request()) — re-read cookie file
+    // before CSRF fetch so a hot-reloaded cookie is used immediately.
+    if (this.cookiesCleared && this.isCookieAuthMode()) {
+      this.reloadCookiesFromSource();
+    }
+
     // Include existing cookies (config + jar) so session is maintained
     const cookieParts: string[] = [];
     if (this.config.cookies) {
@@ -843,6 +875,10 @@ export class AdtHttpClient {
       const token = response.headers.get('x-csrf-token');
       if (!token || token === 'Required') {
         if (response.status === 401) {
+          if (this.isCookieAuthMode()) {
+            this.config.cookies = {};
+            this.cookiesCleared = true;
+          }
           throw new AdtApiError(
             `Authentication failed (401) using sap-client=${this.config.client ?? '100'}. Check SAP_CLIENT, SAP_USER, and SAP_PASSWORD.`,
             401,
@@ -878,6 +914,35 @@ export class AdtHttpClient {
    */
   private isDbConnectionError(body: string): boolean {
     return body.toLowerCase().includes('database connection is not open');
+  }
+
+  private isCookieAuthMode(): boolean {
+    return !!(this.config.cookieFile || this.config.cookieString);
+  }
+
+  /**
+   * Re-read cookies from the original source (file or string).
+   * Called lazily on the NEXT request after a 401 cleared stale cookies.
+   */
+  private reloadCookiesFromSource(): void {
+    this.cookiesCleared = false;
+    if (!this.config.cookieFile && this.config.cookieString) {
+      logger.warn('SAP_COOKIE_STRING cannot be refreshed without restart. Use SAP_COOKIE_FILE for automatic reload.');
+      return;
+    }
+    try {
+      const fresh = resolveCookies(this.config.cookieFile, this.config.cookieString);
+      if (fresh && Object.keys(fresh).length > 0) {
+        this.config.cookies = fresh;
+        logger.info('Reloaded cookies from file', { cookieCount: Object.keys(fresh).length });
+      } else {
+        logger.warn('Cookie reload returned empty result');
+      }
+    } catch (err) {
+      logger.warn('Failed to reload cookies from source', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   /**

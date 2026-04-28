@@ -311,7 +311,7 @@ HTTP Request (adt/http.ts)
   ├─ ETag / If-None-Match conditional GET for cached source reads
   ├─ CSRF token management (auto-fetch via HEAD, refresh on 403)
   ├─ Content negotiation fallback (one-retry on 406/415 with header mutation)
-  ├─ Cookie/session management
+  ├─ Cookie/session management (hot-reload from file on stale 401)
   ├─ Stateful sessions for lock→modify→unlock sequences
   │
   ▼
@@ -512,7 +512,8 @@ Automated via [release-please](https://github.com/googleapis/release-please). No
 - Sensitive fields (password, token, cookie) are redacted in logs
 - CSRF tokens are auto-managed by `src/adt/http.ts` (fetch via HEAD, refresh on 403)
 - **Safety config is the server ceiling** — per-user scopes (JWT) can only restrict further, never expand beyond server config
-- **Per-user auth never inherits shared credentials.** `buildAdtConfig(config, btpProxy?, bearerTokenProvider?, { perUser: true })` strips `username`/`password`/`cookies`. Any new Layer B field must respect this flag. Never add auth fields directly to `createPerUserClient`'s `adtConfig` without going through `buildAdtConfig`.
+- **Per-user auth never inherits shared credentials.** `buildAdtConfig(config, btpProxy?, bearerTokenProvider?, { perUser: true })` strips `username`/`password`/`cookies`/`cookieFile`/`cookieString`. Any new Layer B field must respect this flag. Never add auth fields directly to `createPerUserClient`'s `adtConfig` without going through `buildAdtConfig`.
+- **Cookie auth hot-reload.** When `SAP_COOKIE_FILE` is set, expired cookies do not require a restart. On persistent 401 the HTTP client clears stale cookies (`cookiesCleared` flag in `src/adt/http.ts`) and re-reads the file lazily on the next request. Startup auth-preflight is non-blocking in cookie-auth mode (downgrades 401 to `inconclusive`) so deployments don't deadlock when cookies are about to be re-extracted out-of-band. `SAP_COOKIE_STRING` cannot hot-reload (logged warning).
 - **All ADT endpoints have safety guards** — every `http.get/post/put/delete` call is preceded by `checkOperation()`. No unguarded HTTP calls.
 - **Error types matter**: `AdtApiError` (SAP HTTP error), `AdtSafetyError` (blocked by config), `AdtNetworkError` (connectivity). `intent.ts` formats these with LLM-friendly hints.
 - **Stateful sessions**: Lock→modify→unlock sequences must use `http.withStatefulSession()` to share cookies/CSRF tokens across requests

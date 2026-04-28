@@ -9679,4 +9679,52 @@ ENDCLASS.`;
       expect(result.content[0]?.text).toContain('[line 5] Unknown annotation');
     });
   });
+
+  // ─── cookie-aware error hint in formatErrorForLLM ───────────────────
+  describe('cookie-aware error hint in formatErrorForLLM', () => {
+    it('emits cookie refresh hint on 401 when cookieFile is configured', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(401, 'Unauthorized'));
+      const result = await handleToolCall(
+        createClient(),
+        { ...DEFAULT_CONFIG, cookieFile: '/path/to/cookies.txt' },
+        'SAPRead',
+        { type: 'PROG', name: 'ZTEST' },
+      );
+      expect(result.isError).toBe(true);
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('SAP cookies have expired');
+      expect(text).toContain('arc1-cli extract-cookies');
+      expect(text).toContain('no restart needed');
+      expect(text).not.toContain('Check SAP_CLIENT');
+    });
+
+    it('emits cookie refresh hint on 401 when cookieString is configured', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(401, 'Unauthorized'));
+      const result = await handleToolCall(
+        createClient(),
+        { ...DEFAULT_CONFIG, cookieString: 'MYSAPSSO2=xyz' },
+        'SAPRead',
+        { type: 'PROG', name: 'ZTEST' },
+      );
+      expect(result.isError).toBe(true);
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('SAP cookies have expired');
+      expect(text).toContain('arc1-cli extract-cookies');
+    });
+
+    it('falls back to standard auth hint on 401 when no cookie auth is configured', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(401, 'Unauthorized'));
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'PROG',
+        name: 'ZTEST',
+      });
+      expect(result.isError).toBe(true);
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('Check SAP_CLIENT');
+      expect(text).not.toContain('SAP cookies have expired');
+    });
+  });
 });

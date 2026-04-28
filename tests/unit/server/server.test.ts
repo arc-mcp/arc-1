@@ -111,17 +111,17 @@ describe('MCP Server', () => {
   });
 });
 
-describe('buildAdtConfig', () => {
-  function writeCookieFixture(content: string): { file: string; cleanup: () => void } {
-    const dir = mkdtempSync(join(tmpdir(), 'arc1-server-cookies-test-'));
-    const file = join(dir, 'cookies.txt');
-    writeFileSync(file, content, 'utf-8');
-    return {
-      file,
-      cleanup: () => rmSync(dir, { recursive: true, force: true }),
-    };
-  }
+function writeCookieFixture(content: string): { file: string; cleanup: () => void } {
+  const dir = mkdtempSync(join(tmpdir(), 'arc1-server-cookies-test-'));
+  const file = join(dir, 'cookies.txt');
+  writeFileSync(file, content, 'utf-8');
+  return {
+    file,
+    cleanup: () => rmSync(dir, { recursive: true, force: true }),
+  };
+}
 
+describe('buildAdtConfig', () => {
   it('includes username/password in shared config', () => {
     const cfg = buildAdtConfig({
       ...DEFAULT_CONFIG,
@@ -211,6 +211,44 @@ describe('buildAdtConfig', () => {
     });
 
     expect(cfg.disableSaml).toBe(true);
+  });
+
+  it('passes cookieFile and cookieString through to shared ADT config', () => {
+    const fixture = writeCookieFixture('.example.com\tTRUE\t/\tFALSE\t0\tSAP_SESSIONID\txyz789\n');
+    const cfg = buildAdtConfig({
+      ...DEFAULT_CONFIG,
+      url: 'http://sap.example.com:8000',
+      cookieFile: fixture.file,
+      cookieString: 'EXTRA=v',
+    });
+    try {
+      expect(cfg.cookieFile).toBe(fixture.file);
+      expect(cfg.cookieString).toBe('EXTRA=v');
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('strips cookieFile and cookieString in per-user config', () => {
+    const fixture = writeCookieFixture('.example.com\tTRUE\t/\tFALSE\t0\tSAP_SESSIONID\txyz789\n');
+    const cfg = buildAdtConfig(
+      {
+        ...DEFAULT_CONFIG,
+        url: 'http://sap.example.com:8000',
+        cookieFile: fixture.file,
+        cookieString: 'EXTRA=v',
+      },
+      undefined,
+      undefined,
+      { perUser: true },
+    );
+    try {
+      expect(cfg.cookieFile).toBeUndefined();
+      expect(cfg.cookieString).toBeUndefined();
+      expect(cfg.cookies).toBeUndefined();
+    } finally {
+      fixture.cleanup();
+    }
   });
 });
 
@@ -348,5 +386,67 @@ describe('startup auth preflight', () => {
 
     expect(result.status).toBe('inconclusive');
     expect(result.blocking).toBe(false);
+  });
+
+  it('downgrades 401 to inconclusive (non-blocking) when in cookie-auth mode', async () => {
+    const fixture = writeCookieFixture('.example.com\tTRUE\t/\tFALSE\t0\tSAP_SESSIONID\txyz789\n');
+    vi.spyOn(AdtHttpClient.prototype, 'get').mockRejectedValue(
+      new AdtApiError('Unauthorized', 401, '/sap/bc/adt/core/discovery', 'stale cookie'),
+    );
+
+    try {
+      const result = await runStartupAuthPreflight({
+        ...DEFAULT_CONFIG,
+        ppEnabled: false,
+        url: 'http://sap.example.com:8000',
+        cookieFile: fixture.file,
+      });
+
+      expect(result.status).toBe('inconclusive');
+      expect(result.blocking).toBe(false);
+      expect(result.statusCode).toBe(401);
+      expect(result.reason).toContain('arc1-cli extract-cookies');
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('keeps 403 blocking even in cookie-auth mode', async () => {
+    const fixture = writeCookieFixture('.example.com\tTRUE\t/\tFALSE\t0\tSAP_SESSIONID\txyz789\n');
+    vi.spyOn(AdtHttpClient.prototype, 'get').mockRejectedValue(
+      new AdtApiError('Forbidden', 403, '/sap/bc/adt/core/discovery', 'forbidden'),
+    );
+
+    try {
+      const result = await runStartupAuthPreflight({
+        ...DEFAULT_CONFIG,
+        ppEnabled: false,
+        url: 'http://sap.example.com:8000',
+        cookieFile: fixture.file,
+      });
+
+      expect(result.status).toBe('failed');
+      expect(result.blocking).toBe(true);
+      expect(result.statusCode).toBe(403);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('keeps 401 blocking when not in cookie-auth mode', async () => {
+    vi.spyOn(AdtHttpClient.prototype, 'get').mockRejectedValue(
+      new AdtApiError('Unauthorized', 401, '/sap/bc/adt/core/discovery', 'wrong creds'),
+    );
+
+    const result = await runStartupAuthPreflight({
+      ...DEFAULT_CONFIG,
+      ppEnabled: false,
+      url: 'http://sap.example.com:8000',
+      username: 'TECH_USER',
+      password: 'wrong',
+    });
+
+    expect(result.status).toBe('failed');
+    expect(result.blocking).toBe(true);
   });
 });
