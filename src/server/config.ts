@@ -414,6 +414,24 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
   }
   config.xsuaaAuth = resolveBool('xsuaa-auth', 'SAP_XSUAA_AUTH', false, 'xsuaaAuth');
 
+  // OAuth DCR client_id lifetime. 30 days default (matches typical refresh-token
+  // lifetime). Hard-capped at 90 days — registrations longer than that should
+  // use the pre-registered XSUAA client instead of DCR. Floor of 60 seconds to
+  // keep the TTL meaningful (and prevent typos like "0" wiping every connect).
+  const dcrTtlRaw = getFlag('oauth-dcr-ttl-seconds') ?? process.env.ARC1_OAUTH_DCR_TTL_SECONDS;
+  if (dcrTtlRaw) {
+    const parsed = Number.parseInt(dcrTtlRaw, 10);
+    if (!Number.isNaN(parsed)) {
+      const MIN = 60;
+      const MAX = 90 * 24 * 60 * 60;
+      config.oauthDcrTtlSeconds = Math.max(MIN, Math.min(MAX, parsed));
+      sources.oauthDcrTtlSeconds =
+        getFlag('oauth-dcr-ttl-seconds') !== undefined
+          ? { flag: '--oauth-dcr-ttl-seconds' }
+          : { env: 'ARC1_OAUTH_DCR_TTL_SECONDS' };
+    }
+  }
+
   // ── BTP ABAP Environment ───────────────────────────────────────────
   config.btpServiceKey = resolveOptionalStr('btp-service-key', 'SAP_BTP_SERVICE_KEY', 'btpServiceKey');
   config.btpServiceKeyFile = resolveOptionalStr(

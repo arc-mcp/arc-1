@@ -449,9 +449,16 @@ class XsuaaProxyOAuthProvider extends ProxyOAuthServerProvider {
   };
 }
 
+export interface CreateXsuaaOAuthProviderOptions {
+  /** Lifetime of issued DCR client_ids in seconds. Falls back to the store's
+   *  built-in default (30 days) when omitted. */
+  dcrTtlSeconds?: number;
+}
+
 export function createXsuaaOAuthProvider(
   credentials: XsuaaCredentials,
   appUrl: string,
+  options: CreateXsuaaOAuthProviderOptions = {},
 ): { provider: ProxyOAuthServerProvider; clientStore: StatelessDcrClientStore } {
   // The XSUAA `clientsecret` doubles as the DCR signing secret. It's
   // stable across the lifetime of the service binding (only `cf bind-service`
@@ -461,6 +468,7 @@ export function createXsuaaOAuthProvider(
     credentials.clientid,
     credentials.clientsecret,
     credentials.clientsecret,
+    { ttlSeconds: options.dcrTtlSeconds },
   );
   const verifier = createXsuaaTokenVerifier(credentials);
 
@@ -470,6 +478,7 @@ export function createXsuaaOAuthProvider(
     xsappname: credentials.xsappname,
     authorizationUrl: `${credentials.url}/oauth/authorize`,
     appUrl,
+    dcrTtlSeconds: options.dcrTtlSeconds,
   });
 
   return { provider, clientStore };

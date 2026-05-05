@@ -465,6 +465,46 @@ describe('parseArgs', () => {
     expect(config.maxConcurrent).toBe(3);
   });
 
+  // --- oauthDcrTtlSeconds ---
+
+  it('defaults oauthDcrTtlSeconds to 30 days', () => {
+    const config = parseArgs([]);
+    expect(config.oauthDcrTtlSeconds).toBe(30 * 24 * 60 * 60);
+  });
+
+  it('parses --oauth-dcr-ttl-seconds flag', () => {
+    const config = parseArgs(['--oauth-dcr-ttl-seconds', '3600']);
+    expect(config.oauthDcrTtlSeconds).toBe(3600);
+  });
+
+  it('parses ARC1_OAUTH_DCR_TTL_SECONDS env var', () => {
+    process.env.ARC1_OAUTH_DCR_TTL_SECONDS = '7200';
+    const config = parseArgs([]);
+    expect(config.oauthDcrTtlSeconds).toBe(7200);
+  });
+
+  it('clamps oauthDcrTtlSeconds to a 60-second floor', () => {
+    const config = parseArgs(['--oauth-dcr-ttl-seconds', '5']);
+    expect(config.oauthDcrTtlSeconds).toBe(60);
+  });
+
+  it('clamps oauthDcrTtlSeconds to a 90-day ceiling', () => {
+    const ninetyOneDays = 91 * 24 * 60 * 60;
+    const config = parseArgs(['--oauth-dcr-ttl-seconds', String(ninetyOneDays)]);
+    expect(config.oauthDcrTtlSeconds).toBe(90 * 24 * 60 * 60);
+  });
+
+  it('keeps default oauthDcrTtlSeconds when value is not parseable', () => {
+    const config = parseArgs(['--oauth-dcr-ttl-seconds', 'notanumber']);
+    expect(config.oauthDcrTtlSeconds).toBe(30 * 24 * 60 * 60);
+  });
+
+  it('--oauth-dcr-ttl-seconds takes precedence over ARC1_OAUTH_DCR_TTL_SECONDS', () => {
+    process.env.ARC1_OAUTH_DCR_TTL_SECONDS = '7200';
+    const config = parseArgs(['--oauth-dcr-ttl-seconds', '3600']);
+    expect(config.oauthDcrTtlSeconds).toBe(3600);
+  });
+
   // --- API_KEY_PROFILES ---
 
   it('API_KEY_PROFILES contains all 7 expected profiles', () => {

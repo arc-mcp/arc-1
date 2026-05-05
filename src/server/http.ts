@@ -160,7 +160,9 @@ export async function startHttpServer(
     const appUrl = getAppUrl() ?? `http://${bindHost}:${port}`;
 
     // Create XSUAA provider + chained verifier
-    const { provider, clientStore } = createXsuaaOAuthProvider(xsuaaCredentials, appUrl);
+    const { provider, clientStore } = createXsuaaOAuthProvider(xsuaaCredentials, appUrl, {
+      dcrTtlSeconds: config.oauthDcrTtlSeconds,
+    });
     const xsuaaVerifier = createXsuaaTokenVerifier(xsuaaCredentials);
     const oidcVerifier = config.oidcIssuer ? await createOidcVerifier(config) : undefined;
     const chainedVerifier = createChainedTokenVerifier(config, xsuaaVerifier, oidcVerifier);

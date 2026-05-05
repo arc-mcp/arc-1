@@ -70,6 +70,14 @@ export interface ServerConfig {
   oidcClockTolerance?: number;
   xsuaaAuth: boolean;
 
+  /**
+   * Lifetime of an OAuth DCR registration (`client_id`) in seconds. Default:
+   * 30 days. Lower values bound the blast radius if the signing key leaks;
+   * higher values reduce re-auth churn. Hard-capped at 90 days — longer-lived
+   * credentials should use the pre-registered XSUAA client instead of DCR.
+   * Only consulted when XSUAA OAuth proxy mode is active. */
+  oauthDcrTtlSeconds: number;
+
   // --- BTP ABAP Environment (direct connection via service key) ---
   btpServiceKey?: string; // Inline service key JSON
   btpServiceKeyFile?: string; // Path to service key file
@@ -157,6 +165,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
   featureFlp: 'auto',
   systemType: 'auto',
   xsuaaAuth: false,
+  oauthDcrTtlSeconds: 30 * 24 * 60 * 60, // 30 days
   btpOAuthCallbackPort: 0,
   ppEnabled: false,
   ppStrict: false,
