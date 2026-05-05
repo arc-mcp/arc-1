@@ -61,13 +61,9 @@ const SIG_BYTES = 16;
  */
 const DEFAULT_TTL_SECONDS = 30 * 24 * 60 * 60;
 
-/** OAuth grant_types used when a registration omits them. */
+// Defaults applied when a registration omits these fields.
 const DEFAULT_GRANT_TYPES = ['authorization_code', 'refresh_token'] as const;
-
-/** OAuth response_types used when a registration omits them. */
 const DEFAULT_RESPONSE_TYPES = ['code'] as const;
-
-/** OAuth client authentication method used when a registration omits one. */
 const DEFAULT_TOKEN_AUTH_METHOD = 'client_secret_post';
 
 /**
