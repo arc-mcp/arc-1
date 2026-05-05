@@ -92,24 +92,15 @@ const XSUAA_DEFAULT_REDIRECT_URIS = [
  * Keys are intentionally short to keep the resulting URL-safe `client_id`
  * under a few hundred bytes — the id is sent in `/authorize` query strings
  * and `client_id` form fields, both of which can be capped by intermediaries.
- *
- * Field aliases (kept short to reduce URL bytes):
- *   v   → version
- *   iat → issued_at (seconds since epoch)
- *   ru  → redirect_uris
- *   gt  → grant_types
- *   rt  → response_types
- *   am  → token_endpoint_auth_method
- *   cn  → client_name
  */
 interface SignedPayload {
   v: number;
-  iat: number;
-  ru: string[];
-  gt?: string[];
-  rt?: string[];
-  am?: string;
-  cn?: string;
+  iat: number; // issued-at, seconds since epoch
+  ru: string[]; // redirect_uris
+  gt?: string[]; // grant_types
+  rt?: string[]; // response_types
+  am?: string; // token_endpoint_auth_method
+  cn?: string; // client_name
 }
 
 // ─── Public types ─────────────────────────────────────────────────────
