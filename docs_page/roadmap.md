@@ -2109,7 +2109,7 @@ Based on independent security review against RFC 9700 (reports/2026-04-08-001-oa
 - **F-10 (Medium):** HTML-escaped `error_description` in callback + added `Content-Security-Policy: default-src 'none'` headers
 - **F-07 (Medium):** Replaced `exec()` with `execFile()` in browser opener — eliminates shell injection surface
 - **F-05 (Medium):** Added `revokeToken` override to `XsuaaProxyOAuthProvider` — uses correct XSUAA credentials
-- **F-06 (Medium):** Added redirect URI policy, 100-client cap, and 24h TTL to DCR `InMemoryClientStore`
+- **F-06 (Medium):** Added redirect URI policy, 100-client cap, and 24h TTL to DCR client store. Superseded by stateless DCR (see SEC-09 below) — the cap was removed (no shared memory state to exhaust) and the TTL default raised to 30 days with `--oauth-dcr-ttl-seconds` configuration.
 - **F-08 (Low):** Added `requiredClaims: ['exp']` and configurable `SAP_OIDC_CLOCK_TOLERANCE` for JWT validation
 - **Config validation:** `ppStrict=true` without `ppEnabled=true` now fails at startup
 
@@ -2119,6 +2119,38 @@ Based on independent security review against RFC 9700 (reports/2026-04-08-001-oa
 - `src/server/xsuaa.ts` — revokeToken, DCR validation
 - `src/server/config.ts` — startup validation (OIDC audience, PP strict)
 - `docs/security-guide.md` — NEW consolidated security guide for operators
+
+---
+
+<a id="sec-09"></a>
+### SEC-09: Stateless OAuth DCR (Restart-Resilient `client_id`s)
+| Field | Value |
+|-------|-------|
+| **Priority** | P1 |
+| **Status** | Complete (2026-05-05, PR #212) |
+
+**Problem:** OAuth Dynamic Client Registration state was held in an in-memory `Map`. Every container restart wiped the registry, and the next request from a cached `client_id` returned `400 invalid_client`. On BTP CF Diego this triggered routinely (`cf restart`, `cf push`, `cf restage`, cell evacuation, OOM auto-recovery, lazy 24h TTL eviction). Affected users had to manually clear their MCP client's local OAuth cache.
+
+**Implemented:**
+
+- Replaced `InMemoryClientStore` with `StatelessDcrClientStore`. Each issued `client_id` is an HMAC-signed token carrying its own registration payload — `getClient()` re-derives state from the signature with no backing store.
+- HMAC key is derived (HKDF-style with a `arc1-dcr/v1` domain-separation label) from the existing XSUAA `clientsecret` so any process with the same service binding can validate any `client_id` ever issued. Multi-instance scale-out works for free.
+- Default TTL raised from 24h → 30d (matches typical OAuth refresh-token lifetime; eliminates the daily "re-authenticate" UX pain for Copilot users). Configurable via `--oauth-dcr-ttl-seconds` / `ARC1_OAUTH_DCR_TTL_SECONDS`, clamped to `[60s, 90d]`.
+- DCR lifecycle now flows through the audit pipeline: `oauth_client_registered`, `oauth_client_lookup_failed` (with `unknown_prefix` / `malformed` / `bad_signature` / `invalid_payload` / `expired` reasons), `oauth_redirect_uri_registered`. Forgery / probing is observable.
+
+**Tradeoffs:**
+
+- Per-client revocation is impossible (only TTL or full key rotation via `cf bind-service`).
+- Loose-match for redirect_uri encoding variants (BAS/Cline `?` ↔ `%3F`) is gone — affected clients re-register on encoding mismatch.
+- Service-binding rotation invalidates every outstanding DCR `client_id` at once, including in-flight refresh tokens.
+
+**Files:**
+- `src/server/stateless-client-store.ts` — NEW signed-token store
+- `src/server/xsuaa.ts` — wire-up, removed `InMemoryClientStore`
+- `src/server/audit.ts` — three new event types
+- `src/server/config.ts`, `src/server/types.ts`, `src/server/http.ts` — `oauthDcrTtlSeconds` config
+- `docs_page/xsuaa-setup.md` — Stateless DCR section, service-binding rotation procedure, audit-event reference
+- `docs_page/configuration-reference.md` — A4 XSUAA section: `--oauth-dcr-ttl-seconds`
 
 ---
 

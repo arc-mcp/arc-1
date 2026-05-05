@@ -84,6 +84,7 @@ Copy `.env.example` to `.env` for local development. All config options are defi
 | `ARC1_API_KEYS` / `--api-keys` | Multiple API keys with profiles (`key1:viewer,key2:developer`). Valid profiles: `viewer`, `viewer-data`, `viewer-sql`, `developer`, `developer-data`, `developer-sql`, `admin`. Each profile maps to a scope set AND a partial SafetyConfig intersected with the server ceiling. Single `ARC1_API_KEY` was removed in v0.7. |
 | `SAP_OIDC_ISSUER` / `--oidc-issuer` | OIDC issuer URL for JWT validation |
 | `SAP_OIDC_AUDIENCE` / `--oidc-audience` | OIDC audience for JWT validation |
+| `ARC1_OAUTH_DCR_TTL_SECONDS` / `--oauth-dcr-ttl-seconds` | Lifetime of an OAuth Dynamic Client Registration `client_id` in seconds. Default: `2592000` (30 days). Min `60`, max `7776000` (90 days). Only consulted when `SAP_XSUAA_AUTH=true`. Lower values bound the blast radius if the signing key leaks; higher reduces re-auth churn. |
 | `SAP_BTP_SERVICE_KEY` / `--btp-service-key` | BTP ABAP service key JSON (direct connection) |
 | `SAP_BTP_SERVICE_KEY_FILE` / `--btp-service-key-file` | Path to BTP ABAP service key file |
 | `SAP_BTP_OAUTH_CALLBACK_PORT` / `--btp-oauth-callback-port` | OAuth browser callback port (default: auto) |
@@ -122,6 +123,7 @@ src/
 │   ├── audit.ts                # Audit logging (tool calls, elicitation events)
 │   ├── context.ts, elicit.ts   # MCP context helpers, elicitation
 │   ├── xsuaa.ts                # XSUAA JWT validation for BTP
+│   ├── stateless-client-store.ts # OAuth DCR store (HMAC-signed client_ids, restart-resilient)
 │   └── sinks/                  # Audit sinks: stderr, file, btp-auditlog
 ├── handlers/
 │   ├── intent.ts               # 12 intent-based tool router (handleToolCall)
@@ -226,6 +228,7 @@ tests/
 | Add SAP version-quirk workaround (NW 7.50 / S/4 gating) | Prefer body-marker self-gating (e.g. `"Logon Error Message"` in `src/adt/crud.ts` `lockObject` and `src/adt/devtools.ts` `rethrowOrLockHint`) when the marker is unique to the affected release. Always inline-comment WHY the heuristic self-scopes so future readers don't hunt for a `detectSystemCapabilities()` call. |
 | Add elicitation prompt | `src/server/elicit.ts` |
 | Add XSUAA/JWT auth | `src/server/xsuaa.ts` |
+| Modify OAuth DCR client store / signed-token format | `src/server/stateless-client-store.ts` (HMAC sign/verify, payload schema, TTL); `src/server/xsuaa.ts` (`createXsuaaOAuthProvider` wires `dcrTtlSeconds`); `src/server/http.ts` (passes `config.oauthDcrTtlSeconds`); `tests/unit/server/stateless-client-store.test.ts`. Bumping `KDF_LABEL` (`arc1-dcr/v1` → `v2`) is the in-code revocation knob; `cf bind-service` rotates the upstream secret. Emits audit events `oauth_client_registered` / `oauth_client_lookup_failed` / `oauth_redirect_uri_registered`. |
 | Modify scope enforcement | `src/authz/policy.ts` (`ACTION_POLICY`), `src/handlers/intent.ts` (runtime check), `src/server/server.ts` (tool listing filter) |
 | Modify OIDC token handling | `src/server/http.ts` (validateOidcToken, ~line 274) |
 | Add/modify auth scopes | `xs-security.json`, `src/server/xsuaa.ts`, `src/server/http.ts`, `src/handlers/intent.ts` |

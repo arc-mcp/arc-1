@@ -184,6 +184,7 @@ Full reference: [oauth-jwt-setup.md](oauth-jwt-setup.md).
 | Flag | Env Var | Default | Description |
 |---|---|---|---|
 | `--xsuaa-auth` | `SAP_XSUAA_AUTH` | `false` | Enable XSUAA token validation |
+| `--oauth-dcr-ttl-seconds` | `ARC1_OAUTH_DCR_TTL_SECONDS` | `2592000` (30 d) | Lifetime of an OAuth Dynamic Client Registration `client_id`. Min 60 s, max 90 d. Lower bounds blast radius if the signing key leaks; higher reduces re-auth churn. Only consulted when `--xsuaa-auth=true`. |
 
 Full reference: [xsuaa-setup.md](xsuaa-setup.md).
 

@@ -1,5 +1,7 @@
 # OAuth Security Hardening (RFC 9700 Compliance)
 
+> **Historical record.** This plan describes the remediation that was implemented in 2026-04-08. The DCR portion (Task 6 / F-06, "redirect URI policy + 100-client cap + 24h TTL on `InMemoryClientStore`") has since been superseded by the stateless DCR design (PR #212 / SEC-09 in [docs_page/roadmap.md](../../docs_page/roadmap.md#sec-09)). The 100-client cap was removed (no shared memory state to exhaust), the TTL default raised to 30 days and made configurable, and the redirect-URI policy retained as `validateRedirectUri()` in `src/server/stateless-client-store.ts`.
+
 ## Overview
 
 This plan implements all remediation items from the OAuth Security Review Verification Report (`reports/2026-04-08-001-oauth-security-review-verification.md`). It addresses 10 confirmed security findings (3 High, 4 Medium, 3 Low) identified against RFC 9700 best practices, plus creates a consolidated security documentation guide for operators.

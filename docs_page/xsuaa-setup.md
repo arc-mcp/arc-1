@@ -166,9 +166,47 @@ Copilot Studio does not re-register via DCR after server restarts, so use **Manu
 4. Save — Copilot Studio generates a redirect URL
 5. ARC-1 automatically accepts the redirect URL (dynamic redirect URI registration for the XSUAA client)
 
-**Why Manual mode:** Dynamic Discovery uses DCR (Dynamic Client Registration) with in-memory storage. Every deploy/restart clears registrations, breaking Copilot Studio connections. Manual mode uses the permanent XSUAA service binding credentials.
+**Why Manual mode:** Manual mode pins the connection to the permanent XSUAA service-binding `clientid`, which sidesteps DCR entirely. Dynamic Discovery (DCR) also works — `client_id`s are now stateless and survive `cf restart`/`cf push`/cell evacuation (see [Stateless DCR](#stateless-dcr) below) — but Copilot Studio adds a `/register` round-trip on first connect that some configurations don't retry cleanly. Manual mode is the more predictable path.
 
 **Redirect URI:** Copilot Studio uses `https://global.consent.azure-apim.net/redirect/*` — this pattern is already in `xs-security.json`. ARC-1's dynamic redirect URI registration handles the MCP SDK's exact-match requirement automatically.
+
+## Stateless DCR
+
+ARC-1 implements RFC 7591 Dynamic Client Registration (DCR) with a **stateless** design: each issued `client_id` is an HMAC-signed token that carries its own registration payload (redirect URIs, grant types, etc.). The signing key is derived from the XSUAA `clientsecret`, so any process with the same service binding can validate any `client_id` ever issued — **no shared store or persistent state is needed**.
+
+This means:
+
+- DCR registrations survive `cf restart`, `cf push`, `cf restage`, cell evacuations, OOM auto-recovery, and multi-instance scale-out — none of these invalidate cached `client_id`s.
+- The default lifetime is **30 days** (matches typical OAuth refresh-token lifetimes). Configurable via `--oauth-dcr-ttl-seconds` / `ARC1_OAUTH_DCR_TTL_SECONDS`. Clamped to `[60s, 90d]` — for longer-lived credentials, use the pre-registered XSUAA client (Manual mode) instead.
+- Per-client revocation is intentionally not supported. Either wait for TTL expiry or rotate the signing key (see below).
+
+### Service-binding rotation
+
+The XSUAA `clientsecret` is the trust anchor for both upstream OAuth calls and the DCR signing key. Rotating the binding is the only way to force-revoke every outstanding DCR registration in one shot:
+
+```bash
+cf unbind-service arc1-mcp-server arc1-xsuaa
+cf bind-service   arc1-mcp-server arc1-xsuaa
+cf restage        arc1-mcp-server
+```
+
+After this sequence:
+
+- Every previously-issued DCR `client_id` returns `400 invalid_client`.
+- In-flight refresh tokens fail because the local DCR `client_id` lookup at `/token` no longer resolves.
+- MCP clients silently re-register on next connect via `/register`.
+
+This is the only operation that invalidates DCR state. Routine restarts (`cf restart`, `cf push` without rebind, cell moves) no longer disrupt clients.
+
+### Audit events
+
+DCR lifecycle is captured in the audit stream alongside tool calls. Three event types fire:
+
+- `oauth_client_registered` — `info`: a new `client_id` was minted; payload includes the issued id, client name, redirect-URI count, and id length (for tracking URL-budget regressions).
+- `oauth_client_lookup_failed` — `warn` (or `info` for `expired`): a `client_id` failed to resolve; `reason` is one of `unknown_prefix` / `malformed` / `bad_signature` / `invalid_payload` / `expired`. Useful for spotting forgery / probing attempts.
+- `oauth_redirect_uri_registered` — `info`: a redirect URI was added at `/authorize` time to the pre-registered XSUAA default client. Records what XSUAA's wildcard validator already accepted, so the local SDK-side change is auditable.
+
+Events flow through the existing audit sinks (stderr / file / BTP Audit Log Service) — same pipeline used for tool-call audit.
 
 ## Updating xs-security.json
 
