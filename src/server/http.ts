@@ -27,8 +27,10 @@
 
 import type { Server as McpServer } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import cors from 'cors';
 import type { Request, Response } from 'express';
 import express from 'express';
+import helmet from 'helmet';
 import { expandScopes } from '../authz/policy.js';
 import { API_KEY_PROFILES } from './config.js';
 import { logger } from './logger.js';
@@ -67,6 +69,89 @@ function matchApiKey(
 
 let joseModule: typeof import('jose') | null = null;
 let jwksClient: ReturnType<typeof import('jose').createRemoteJWKSet> | null = null;
+
+// ─── Security Middleware (helmet + opt-in CORS) ──────────────────────
+
+/**
+ * Apply security headers (helmet) and opt-in CORS to an Express app.
+ *
+ * helmet runs unconditionally — every response (including /health, /mcp,
+ * OAuth endpoints) gets HSTS, CSP, X-Frame-Options, COOP, etc. Native MCP
+ * clients ignore these; they exist to harden the server when a browser ever
+ * reaches it.
+ *
+ * COOP is `same-origin-allow-popups` regardless of CORS config because OAuth-
+ * capable MCP clients (Claude Desktop, Cursor, MCP Inspector, …) open popup
+ * windows pointed at /authorize and rely on `window.opener` to receive the
+ * redirect result. Helmet's default `same-origin` would sever that link.
+ *
+ * CORS is OFF by default (empty `allowedOrigins`). When enabled it uses
+ * `credentials: true` plus exact-origin reflection — disallowed origins are
+ * silently dropped by the browser and surfaced server-side as `cors_rejected`
+ * audit events.
+ *
+ * Exported for unit tests; also called from `startHttpServer` below.
+ */
+export function applySecurityMiddleware(app: express.Application, allowedOrigins: string[]): void {
+  const hasCorsOrigins = allowedOrigins.length > 0;
+  app.use(
+    helmet({
+      crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' as const },
+      crossOriginResourcePolicy: hasCorsOrigins ? { policy: 'cross-origin' as const } : undefined,
+      // useDefaults keeps every other helmet directive intact (frame-ancestors
+      // 'self', object-src 'none', base-uri 'self', form-action 'self',
+      // upgrade-insecure-requests, …); we only relax style-src for any inline
+      // styles that browser-facing UIs may need.
+      contentSecurityPolicy: hasCorsOrigins
+        ? {
+            useDefaults: true,
+            directives: {
+              'style-src': ["'self'", "'unsafe-inline'"],
+            },
+          }
+        : undefined,
+    }),
+  );
+
+  if (hasCorsOrigins) {
+    const allowed = new Set(allowedOrigins);
+    app.use(
+      cors({
+        origin: (origin, callback) => {
+          if (!origin) {
+            // Same-origin requests, server-to-server, curl: no Origin header.
+            // Pass through without echoing CORS headers.
+            callback(null, false);
+            return;
+          }
+          callback(null, allowed.has(origin));
+        },
+        methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'mcp-session-id'],
+        exposedHeaders: ['mcp-session-id'],
+        credentials: true,
+      }),
+    );
+    // Audit hook for blocked origins. Re-checks the origin against the
+    // allowlist and emits cors_rejected when it didn't match. Browsers drop
+    // the response either way; this gives us a server-side signal for triage.
+    app.use((req, _res, next) => {
+      const origin = req.headers.origin;
+      if (typeof origin === 'string' && origin.length > 0 && !allowed.has(origin)) {
+        logger.emitAudit({
+          timestamp: new Date().toISOString(),
+          level: 'warn',
+          event: 'cors_rejected',
+          origin,
+          method: req.method,
+          path: req.path,
+        });
+      }
+      next();
+    });
+    logger.info('CORS enabled', { origins: allowedOrigins });
+  }
+}
 
 // ─── MCP Request Handler ─────────────────────────────────────────────
 
@@ -121,6 +206,9 @@ export async function startHttpServer(
   // Trust first proxy (CF gorouter) — required for express-rate-limit
   // and correct client IP detection behind CF's reverse proxy.
   app.set('trust proxy', 1);
+
+  applySecurityMiddleware(app, config.allowedOrigins);
+
   app.use(express.json());
   app.use(express.urlencoded({ extended: false }));
   const mcpHandler = createMcpHandler(serverFactory);

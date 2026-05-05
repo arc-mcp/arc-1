@@ -485,6 +485,21 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     config.maxConcurrent = Number.isNaN(parsed) || parsed < 1 ? 1 : parsed;
   }
 
+  // ── CORS (browser-based MCP clients only) ──────────────────────────
+  // Empty allowlist (the default) disables CORS. Native MCP clients don't need
+  // this — only set when a browser UI calls /mcp directly.
+  const originsRaw = getFlag('allowed-origins') ?? process.env.ARC1_ALLOWED_ORIGINS;
+  if (originsRaw !== undefined) {
+    config.allowedOrigins = originsRaw
+      .split(',')
+      .map((o) => o.trim())
+      .filter((o) => o.length > 0);
+    sources.allowedOrigins =
+      getFlag('allowed-origins') !== undefined ? { flag: '--allowed-origins' } : { env: 'ARC1_ALLOWED_ORIGINS' };
+  } else {
+    sources.allowedOrigins = 'default';
+  }
+
   // ── Logging ────────────────────────────────────────────────────────
   config.logFile = resolveOptionalStr('log-file', 'ARC1_LOG_FILE', 'logFile');
   const logLevel = resolveStr('log-level', 'ARC1_LOG_LEVEL', 'info', 'logLevel');

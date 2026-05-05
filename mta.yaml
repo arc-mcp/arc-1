@@ -93,6 +93,11 @@ modules:
       SAP_ALLOW_TRANSPORT_WRITES: "false"
       SAP_ALLOW_GIT_WRITES: "false"
       SAP_ALLOWED_PACKAGES: "$TMP"
+      # CORS — empty (default) disables CORS entirely. Set per landscape via
+      # mtaext or `cf set-env` only when a browser UI talks to /mcp directly.
+      # Native MCP clients (Claude Desktop, Cursor, VS Code, Copilot Studio)
+      # don't need this. Comma-separated, exact match, no wildcards.
+      ARC1_ALLOWED_ORIGINS: ""
     requires:
       - name: arc1-xsuaa
       - name: arc1-destination

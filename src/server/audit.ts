@@ -159,6 +159,20 @@ export interface OAuthRedirectUriRegisteredEvent extends AuditEventBase {
   redirectUri: string;
 }
 
+/** A browser request was rejected by CORS because its `Origin` header is not in
+ *  `ARC1_ALLOWED_ORIGINS`. Emitted at most once per request — preflight rejections
+ *  also fire this. The browser itself drops the response, so this event is the
+ *  only server-side signal that something tried to call /mcp from a foreign origin. */
+export interface CorsRejectedEvent extends AuditEventBase {
+  event: 'cors_rejected';
+  /** Origin header sent by the browser. May be attacker-controlled — treat as untrusted. */
+  origin: string;
+  /** HTTP method on the rejected request (OPTIONS for preflight, POST/GET/DELETE for actual). */
+  method: string;
+  /** Request path, e.g. `/mcp`, `/register`, `/authorize`. */
+  path: string;
+}
+
 /** Discriminated union of all audit events */
 export type AuditEvent =
   | ToolCallStartEvent
@@ -174,7 +188,8 @@ export type AuditEvent =
   | ActivationPreauditEvent
   | OAuthClientRegisteredEvent
   | OAuthClientLookupFailedEvent
-  | OAuthRedirectUriRegisteredEvent;
+  | OAuthRedirectUriRegisteredEvent
+  | CorsRejectedEvent;
 
 /** Sanitize tool call arguments — remove values that might contain sensitive data */
 export function sanitizeArgs(args: Record<string, unknown>): Record<string, unknown> {

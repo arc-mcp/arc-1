@@ -37,6 +37,10 @@ applications:
       SAP_ALLOW_FREE_SQL: "true"
       SAP_ALLOW_TRANSPORT_WRITES: "true"
       SAP_ALLOW_GIT_WRITES: "false"
+      # CORS — only set if a browser UI calls /mcp directly. Native MCP clients
+      # (Claude Desktop, Cursor, VS Code Copilot, Copilot Studio) don't need this.
+      # Comma-separated, exact match, no wildcards.
+      # ARC1_ALLOWED_ORIGINS: "https://your-ui.example.com"
       # Logging
       SAP_VERBOSE: "true"
     services:
