@@ -129,6 +129,36 @@ export interface ActivationPreauditEvent extends AuditEventBase {
   outcome: 'success' | 'error';
 }
 
+/** OAuth Dynamic Client Registration: a new client_id was minted via /register. */
+export interface OAuthClientRegisteredEvent extends AuditEventBase {
+  event: 'oauth_client_registered';
+  /** Issued client_id (the full signed token). */
+  registeredClientId: string;
+  clientName?: string;
+  redirectUriCount: number;
+  /** Length of the issued client_id, for tracking URL-budget regressions. */
+  idBytes: number;
+}
+
+/** OAuth DCR: getClient was called with an unrecognised, malformed, or
+ *  forged-signature client_id. Useful for detecting probing/replay attempts. */
+export interface OAuthClientLookupFailedEvent extends AuditEventBase {
+  event: 'oauth_client_lookup_failed';
+  /** The client_id that failed lookup. May be attacker-controlled — treat as untrusted. */
+  registeredClientId: string;
+  reason: 'unknown_prefix' | 'malformed' | 'bad_signature' | 'invalid_payload' | 'expired';
+}
+
+/** OAuth DCR: a redirect_uri was dynamically appended to the pre-registered XSUAA
+ *  default client at /authorize time. XSUAA itself is the authoritative validator
+ *  via xs-security.json wildcards; this event records that ARC-1's local SDK-side
+ *  list was widened so the change is auditable. */
+export interface OAuthRedirectUriRegisteredEvent extends AuditEventBase {
+  event: 'oauth_redirect_uri_registered';
+  registeredClientId: string;
+  redirectUri: string;
+}
+
 /** Discriminated union of all audit events */
 export type AuditEvent =
   | ToolCallStartEvent
@@ -141,7 +171,10 @@ export type AuditEvent =
   | ServerStartEvent
   | ElicitationSentEvent
   | ElicitationResponseEvent
-  | ActivationPreauditEvent;
+  | ActivationPreauditEvent
+  | OAuthClientRegisteredEvent
+  | OAuthClientLookupFailedEvent
+  | OAuthRedirectUriRegisteredEvent;
 
 /** Sanitize tool call arguments — remove values that might contain sensitive data */
 export function sanitizeArgs(args: Record<string, unknown>): Record<string, unknown> {

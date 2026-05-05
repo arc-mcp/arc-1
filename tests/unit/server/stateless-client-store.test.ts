@@ -8,6 +8,8 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import type { AuditEvent } from '../../../src/server/audit.js';
+import { logger } from '../../../src/server/logger.js';
 import { StatelessDcrClientStore, validateRedirectUri } from '../../../src/server/stateless-client-store.js';
 
 const SIGNING = 'test-signing-secret';
@@ -16,6 +18,17 @@ const XSUAA_SECRET = 'xsuaa-default-secret';
 
 function makeStore(opts: { now?: () => number; ttlSeconds?: number } = {}) {
   return new StatelessDcrClientStore(XSUAA_ID, XSUAA_SECRET, SIGNING, opts);
+}
+
+/**
+ * Install a capture-sink on the global logger and return the events array.
+ * The sink writes only into its own buffer, so multiple tests can capture
+ * concurrently without polluting each other.
+ */
+function captureAuditEvents(): AuditEvent[] {
+  const events: AuditEvent[] = [];
+  logger.addSink({ write: (e: AuditEvent) => events.push(e) });
+  return events;
 }
 
 describe('StatelessDcrClientStore', () => {
@@ -180,5 +193,127 @@ describe('validateRedirectUri', () => {
     expect(() => validateRedirectUri('http://127.0.0.1:6274/oauth/callback')).not.toThrow();
     expect(() => validateRedirectUri('cursor://anysphere/cb')).not.toThrow();
     expect(() => validateRedirectUri('vscode://x/cb')).not.toThrow();
+  });
+});
+
+describe('StatelessDcrClientStore default TTL', () => {
+  it('defaults to 30 days when ttlSeconds is not provided', async () => {
+    let nowMs = 1_700_000_000_000;
+    const store = makeStore({ now: () => nowMs });
+    const registered = await store.registerClient({ redirect_uris: ['https://example.com/cb'] });
+
+    // Just under 30 days — still valid
+    nowMs += (30 * 24 * 60 * 60 - 1) * 1000;
+    expect(await store.getClient(registered.client_id)).toBeDefined();
+
+    // 1 second past 30 days — expired
+    nowMs += 2_000;
+    expect(await store.getClient(registered.client_id)).toBeUndefined();
+  });
+});
+
+describe('StatelessDcrClientStore audit events', () => {
+  it('emits oauth_client_registered on /register with id length and uri count', async () => {
+    const events = captureAuditEvents();
+    const store = makeStore();
+
+    const registered = await store.registerClient({
+      redirect_uris: ['https://example.com/cb', 'cursor://x/cb'],
+      client_name: 'audit-test',
+    });
+
+    const evt = events.find(
+      (e) => e.event === 'oauth_client_registered' && e.registeredClientId === registered.client_id,
+    );
+    expect(evt).toBeDefined();
+    expect(evt && 'redirectUriCount' in evt && evt.redirectUriCount).toBe(2);
+    expect(evt && 'clientName' in evt && evt.clientName).toBe('audit-test');
+    expect(evt && 'idBytes' in evt && evt.idBytes).toBe(registered.client_id.length);
+    expect(evt?.level).toBe('info');
+  });
+
+  it('emits oauth_client_lookup_failed with reason="bad_signature" for tampered IDs', async () => {
+    const events = captureAuditEvents();
+    const store = makeStore();
+    const registered = await store.registerClient({ redirect_uris: ['https://example.com/cb'] });
+
+    const tampered = `arc1-${registered.client_id.slice(5).replace(/^./, 'X')}`;
+    expect(await store.getClient(tampered)).toBeUndefined();
+
+    const fail = events.find((e) => e.event === 'oauth_client_lookup_failed' && e.registeredClientId === tampered);
+    expect(fail && 'reason' in fail && fail.reason).toBe('bad_signature');
+    expect(fail?.level).toBe('warn');
+  });
+
+  it('emits oauth_client_lookup_failed with reason="malformed" for missing-signature IDs', async () => {
+    const events = captureAuditEvents();
+    const store = makeStore();
+
+    expect(await store.getClient('arc1-no-dot-here')).toBeUndefined();
+
+    const fail = events.find(
+      (e) => e.event === 'oauth_client_lookup_failed' && e.registeredClientId === 'arc1-no-dot-here',
+    );
+    expect(fail && 'reason' in fail && fail.reason).toBe('malformed');
+  });
+
+  it('emits oauth_client_lookup_failed with reason="unknown_prefix" for non-arc1 IDs', async () => {
+    const events = captureAuditEvents();
+    const store = makeStore();
+
+    expect(await store.getClient('foreign-id')).toBeUndefined();
+
+    const fail = events.find((e) => e.event === 'oauth_client_lookup_failed' && e.registeredClientId === 'foreign-id');
+    expect(fail && 'reason' in fail && fail.reason).toBe('unknown_prefix');
+  });
+
+  it('emits oauth_client_lookup_failed with reason="expired" at level "info" past TTL', async () => {
+    const events = captureAuditEvents();
+    let nowMs = 1_700_000_000_000;
+    const store = makeStore({ now: () => nowMs, ttlSeconds: 60 });
+    const registered = await store.registerClient({ redirect_uris: ['https://example.com/cb'] });
+
+    nowMs += 61_000;
+    expect(await store.getClient(registered.client_id)).toBeUndefined();
+
+    const fail = events.find(
+      (e) => e.event === 'oauth_client_lookup_failed' && e.registeredClientId === registered.client_id,
+    );
+    expect(fail && 'reason' in fail && fail.reason).toBe('expired');
+    // Expiry is normal-ish (TTL eviction), not adversarial — info, not warn.
+    expect(fail?.level).toBe('info');
+  });
+
+  it('emits oauth_redirect_uri_registered when XSUAA default redirect_uris is widened', async () => {
+    const events = captureAuditEvents();
+    const store = makeStore();
+
+    store.ensureRedirectUri(XSUAA_ID, 'https://new.example.com/cb');
+
+    const evt = events.find((e) => e.event === 'oauth_redirect_uri_registered');
+    expect(evt).toBeDefined();
+    expect(evt && 'redirectUri' in evt && evt.redirectUri).toBe('https://new.example.com/cb');
+    expect(evt?.registeredClientId).toBe(XSUAA_ID);
+  });
+
+  it('does not emit oauth_redirect_uri_registered when ensureRedirectUri is a no-op (DCR client)', async () => {
+    const store = makeStore();
+    const registered = await store.registerClient({ redirect_uris: ['https://example.com/cb'] });
+
+    const events = captureAuditEvents();
+    store.ensureRedirectUri(registered.client_id, 'https://other.example.com/cb');
+
+    const evt = events.find((e) => e.event === 'oauth_redirect_uri_registered');
+    expect(evt).toBeUndefined();
+  });
+
+  it('does not emit oauth_redirect_uri_registered when the URI is already in the list', () => {
+    const store = makeStore();
+    // Pre-existing redirect — should be a no-op (no audit event).
+    const events = captureAuditEvents();
+    store.ensureRedirectUri(XSUAA_ID, 'https://claude.ai/api/mcp/auth_callback');
+
+    const evt = events.find((e) => e.event === 'oauth_redirect_uri_registered');
+    expect(evt).toBeUndefined();
   });
 });
