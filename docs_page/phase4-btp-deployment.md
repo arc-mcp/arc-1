@@ -288,7 +288,7 @@ Origins are comma-separated and must match exactly (no wildcards), because CORS 
 
 ARC-1 auto-detects BTP Cloud Foundry via the `VCAP_APPLICATION` environment variable:
 
-1. **Public URL auto-detection:** ARC-1 reads `application_uris` from `VCAP_APPLICATION` to construct the externally reachable URL (used for RFC 9728 metadata). Override with `SAP_PUBLIC_URL` if needed.
+1. **Public URL auto-detection:** ARC-1 reads `application_uris` from `VCAP_APPLICATION` to construct the externally reachable URL (used for RFC 8414/9728 OAuth metadata). Override with `ARC1_PUBLIC_URL` when ARC-1 is reached through a reverse proxy on a different hostname or under a base-path prefix — e.g. `cf set-env arc1-mcp-server ARC1_PUBLIC_URL "https://gateway.example.com/arc1"`. Without the override, OAuth metadata points at the CF route and clients bypass the proxy.
 
 2. **Destination Service (startup):** When `SAP_BTP_DESTINATION` is set, ARC-1 calls the Destination Service REST API directly at startup to read SAP credentials (user, password, URL). This works with BasicAuth destinations without a user JWT.
 

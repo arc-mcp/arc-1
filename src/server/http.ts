@@ -325,18 +325,78 @@ export async function startHttpServer(
       next();
     });
 
-    // Install MCP SDK auth router at root (OAuth endpoints + DCR)
-    // resourceServerUrl must point to /mcp so that the protected resource
-    // metadata is served at /.well-known/oauth-protected-resource/mcp
-    // (per RFC 9728). Without this, MCP clients can't discover the
-    // resource endpoint and may send JSON-RPC to the wrong path.
+    // ─── Path-prefix-aware OAuth metadata override ────────────────
+    // The MCP SDK's `mcpAuthRouter` builds endpoint URLs with
+    // `new URL("/authorize", baseUrl).href`, which strips any path component
+    // from baseUrl ("https://api/arc1" → "https://api/authorize"). When arc-1
+    // is fronted by SAP API Management with a base path like /arc1, that
+    // produces metadata pointing at the wrong URL — clients then call
+    // `https://api/authorize` directly and bypass (or 404 on) the proxy.
+    //
+    // Override: if appUrl has a non-root path, mount custom GET handlers for
+    // both well-known endpoints BEFORE the SDK router so they win the route
+    // match. The handlers emit prefix-aware absolute URLs. The actual OAuth
+    // endpoints (/authorize, /token, /register, /revoke) stay at the root of
+    // arc-1's Express app — the proxy strips its base path before forwarding,
+    // so they resolve correctly without further changes.
+    const parsedAppUrl = new URL(appUrl);
+    const basePath = parsedAppUrl.pathname.replace(/\/$/, ''); // '' for root, '/arc1' otherwise
+    const fullBase = `${parsedAppUrl.origin}${basePath}`; // 'https://api/arc1' or 'https://api'
+    const scopesSupported = ['read', 'write', 'data', 'sql', 'transports', 'git', 'admin'];
+
+    if (basePath) {
+      const customAuthMetadata = {
+        issuer: `${fullBase}/`,
+        authorization_endpoint: `${fullBase}/authorize`,
+        response_types_supported: ['code'],
+        code_challenge_methods_supported: ['S256'],
+        token_endpoint: `${fullBase}/token`,
+        token_endpoint_auth_methods_supported: ['client_secret_post', 'none'],
+        grant_types_supported: ['authorization_code', 'refresh_token'],
+        scopes_supported: scopesSupported,
+        revocation_endpoint: `${fullBase}/revoke`,
+        revocation_endpoint_auth_methods_supported: ['client_secret_post'],
+        registration_endpoint: `${fullBase}/register`,
+      };
+      const customResourceMetadata = {
+        resource: `${fullBase}/mcp`,
+        authorization_servers: [`${fullBase}/`],
+        scopes_supported: scopesSupported,
+        resource_name: 'ARC-1 SAP MCP Server',
+      };
+
+      app.get('/.well-known/oauth-authorization-server', (_req, res) => {
+        res.json(customAuthMetadata);
+      });
+      // Serve PRM at BOTH the root path (where MCP clients look by default after
+      // a strip-prefix proxy hop) and at the prefixed path the SDK would have
+      // used — defensive in case some clients don't strip.
+      app.get('/.well-known/oauth-protected-resource/mcp', (_req, res) => {
+        res.json(customResourceMetadata);
+      });
+      app.get(`/.well-known/oauth-protected-resource${basePath}/mcp`, (_req, res) => {
+        res.json(customResourceMetadata);
+      });
+
+      logger.info('OAuth metadata override active (path-prefix mode)', {
+        publicUrl: fullBase,
+        basePath,
+      });
+    }
+
+    // Install MCP SDK auth router at root (OAuth endpoints + DCR).
+    // For root-path deployments (no basePath) the SDK's metadata is correct
+    // as-is and serves both well-known endpoints. For prefix deployments the
+    // custom handlers above shadow the SDK's metadata routes; the SDK still
+    // serves /authorize, /token, /register, /revoke at root which is what we
+    // want.
     app.use(
       mcpAuthRouter({
         provider,
         issuerUrl: new URL(appUrl),
         baseUrl: new URL(appUrl),
         resourceServerUrl: new URL(`${appUrl}/mcp`),
-        scopesSupported: ['read', 'write', 'data', 'sql', 'transports', 'git', 'admin'],
+        scopesSupported,
         resourceName: 'ARC-1 SAP MCP Server',
       }),
     );

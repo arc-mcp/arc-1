@@ -526,12 +526,28 @@ export async function resolveBTPDestination(destinationName: string): Promise<{
 }
 
 /**
- * Get the app's public URL from VCAP_APPLICATION.
+ * Get the app's public URL.
  *
- * CF sets VCAP_APPLICATION with application_uris containing the app's
- * public route. Returns the first URI as an https URL.
+ * Priority:
+ *   1. ARC1_PUBLIC_URL env var — set this when the app is reached through a
+ *      reverse proxy on a different hostname (e.g. SAP Integration Suite API
+ *      Management). The value flows into every absolute URL the OAuth metadata
+ *      endpoints emit (issuer, authorize, token, register, revoke, resource).
+ *      May include a base-path component (e.g. https://api.example.com/arc1) —
+ *      the path is preserved verbatim.
+ *   2. VCAP_APPLICATION.application_uris[0] — set automatically by CF, points
+ *      to the app's CF route.
+ *   3. undefined — caller falls back to bind-host:port.
+ *
+ * The trailing slash, if present, is stripped so callers can do `${url}/path`
+ * consistently.
  */
 export function getAppUrl(): string | undefined {
+  const override = process.env.ARC1_PUBLIC_URL?.trim();
+  if (override) {
+    return override.replace(/\/$/, '');
+  }
+
   const vcapApp = process.env.VCAP_APPLICATION;
   if (!vcapApp) return undefined;
 

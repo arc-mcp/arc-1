@@ -201,6 +201,7 @@ Full reference: [xsuaa-setup.md](xsuaa-setup.md).
 | `--http-addr` | `ARC1_HTTP_ADDR` / `SAP_HTTP_ADDR` | `0.0.0.0:8080` | HTTP bind address |
 | `--port` | `ARC1_PORT` | `8080` | HTTP port (simpler alternative to `--http-addr`) |
 | `--allowed-origins` | `ARC1_ALLOWED_ORIGINS` | (empty) | Comma-separated CORS allowlist for **browser-based** MCP clients. Empty disables CORS entirely. Native clients (Claude Desktop / Cursor / VS Code Copilot / Copilot Studio) don't need this. Exact match only (no wildcards) because the response sets `credentials: true`. See [Security headers & CORS](security-guide.md#11-network-security). |
+| — | `ARC1_PUBLIC_URL` | (auto from `VCAP_APPLICATION`) | Public URL ARC-1 advertises in OAuth metadata (issuer, `authorize` / `token` / `register` / `revoke`, protected-resource metadata, and the `WWW-Authenticate: ... resource_metadata=` URL). Set this when ARC-1 is reached through a reverse proxy on a different hostname or under a base-path prefix than the bound route — without it, MCP clients receive metadata pointing at the underlying host and bypass the proxy. Path prefix supported (e.g. `https://gateway.example.com/arc1`); when present, the well-known endpoints are also served at that prefix so OAuth discovery works through the proxy. Trailing slash stripped. |
 | `--log-file` | `ARC1_LOG_FILE` | — | File sink path |
 | `--log-level` | `ARC1_LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
 | `--log-format` | `ARC1_LOG_FORMAT` | `text` | `text` / `json` |
