@@ -74,6 +74,12 @@ modules:
         - .husky/
         - .vscode/
         - .claude/
+        - mta_archives/
+        - mta-op-*/
+        - node_modules/
+        - scripts/
+        - reports/
+        - research/
     properties:
       SAP_TRANSPORT: http-streamable
       SAP_SYSTEM_TYPE: auto
