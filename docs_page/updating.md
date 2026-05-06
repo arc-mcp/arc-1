@@ -62,7 +62,7 @@ Users assigned to `ARC-1 Developer` role collection automatically gain transport
 1. Update `xs-security.json` in your repo (already done in the ARC-1 v0.7 release).
 2. Redeploy the XSUAA service: `cf update-service arc1-xsuaa -c xs-security.json`.
 3. Users keep the same role-collection assignments — no BTP admin action needed unless you want to customize role templates.
-4. Redeploy the app: `mbt build && cf deploy mta_archives/arc1-mcp_*.mtar -e mta-overrides.mtaext` (omit `-e` if not using an extension descriptor).
+4. Redeploy the app: `npm run btp:build-deploy-ext` (or `mbt build && cf deploy mta_archives/arc1-mcp_*.mtar -e mta-overrides.mtaext`). If you don't have a `mta-overrides.mtaext` yet, copy it from the tracked `mta-overrides.mtaext.example` first; the base `mta.yaml` ships with placeholder destinations that fail fast on purpose.
 5. Test with a developer user: `SAPTransport(action=check)` should succeed with a read-scoped user now; `SAPTransport(action=create)` should succeed for users in `ARC-1 Developer`.
 
 ### Debugging the new model

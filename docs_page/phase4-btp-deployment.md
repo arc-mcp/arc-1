@@ -56,62 +56,22 @@ Deploy ARC-1 on SAP BTP Cloud Foundry, connecting to an on-premise SAP system vi
 
 MTA (Multi-Target Application) deployment bundles ARC-1 with its BTP service dependencies (XSUAA, Destination, Connectivity) into a single deployable archive. Services are created automatically.
 
-### 1. Build and Deploy
+### 1. Configure your landscape via `mta-overrides.mtaext`
+
+`mta.yaml` ships with placeholder destinations (`your-basic-destination` / `your-pp-destination`) and conservative safety defaults (writes off, free SQL off, package allowlist `$TMP`). Every landscape must override at least the two destination names — deploying `mta.yaml` as-is will fail with a "destination not found" error from BTP, which is the intended fail-fast signal.
 
 ```bash
 # Clone the repo
 git clone https://github.com/marianfoo/arc-1.git
 cd arc-1
 
-# Build the MTA archive (runs npm ci + npm run build internally)
-npm run btp:build
-
-# Deploy to BTP CF (creates services + pushes the app)
-npm run btp:deploy
-
-# Or combined:
-npm run btp:build-deploy
+# One-time per landscape — copy the template (it's tracked) to a real
+# overrides file (gitignored), and fill in your destinations + flags.
+cp mta-overrides.mtaext.example mta-overrides.mtaext
+$EDITOR mta-overrides.mtaext
 ```
 
-The `mta.yaml` defines three BTP services that are created automatically:
-
-| Service | Instance Name | Plan | Purpose |
-|---------|--------------|------|---------|
-| XSUAA | `arc1-xsuaa` | `application` | MCP client OAuth authentication |
-| Destination | `arc1-destination` | `lite` | SAP system lookup |
-| Connectivity | `arc1-connectivity` | `lite` | Cloud Connector proxy |
-
-### 2. Post-Deploy Configuration
-
-When using `SAP_BTP_DESTINATION`, the URL and credentials come from the BTP Destination — no `cf set-env` for `SAP_URL` or `SAP_CLIENT` is needed. Only set them if you're not using the Destination Service:
-
-```bash
-# Only needed if NOT using SAP_BTP_DESTINATION:
-cf set-env arc1-mcp-server SAP_URL "http://a4h-abap:50000"
-cf set-env arc1-mcp-server SAP_CLIENT "001"
-cf restage arc1-mcp-server
-```
-
-The `mta.yaml` already configures these properties:
-- `SAP_TRANSPORT: http-streamable` — HTTP transport for MCP
-- `SAP_BTP_DESTINATION` / `SAP_BTP_PP_DESTINATION` — dual-destination pattern
-- `SAP_PP_ENABLED: true` — per-user principal propagation
-- `SAP_XSUAA_AUTH: true` — XSUAA OAuth for MCP clients
-- `SAP_ALLOW_WRITES: true` / `SAP_ALLOW_FREE_SQL: true` — safety defaults
-
-### 3. Customize with MTA Extension Descriptor
-
-Instead of editing `mta.yaml` directly, use the provided `mta-overrides.mtaext` to override environment-specific values. This keeps the base `mta.yaml` generic and your customizations explicit:
-
-```bash
-# Build the archive (same for all landscapes)
-npm run btp:build
-
-# Deploy with per-landscape overrides
-cf deploy mta_archives/arc1-mcp_*.mtar -e mta-overrides.mtaext
-```
-
-The `mta-overrides.mtaext` file contains all overridable properties (commented out by default). Uncomment what you need:
+A minimal `mta-overrides.mtaext` looks like:
 
 ```yaml
 _schema-version: "3.1"
@@ -123,22 +83,56 @@ modules:
     properties:
       SAP_BTP_DESTINATION: "my-sap-basic"
       SAP_BTP_PP_DESTINATION: "my-sap-pp"
+      # widen safety flags only when the landscape needs it
       SAP_ALLOW_WRITES: "true"
       SAP_ALLOWED_PACKAGES: "Z*,Y*,$TMP"
 ```
 
-Any property not specified in the `.mtaext` uses the safe default from `mta.yaml`. See the [authorization guide](authorization.md) for details on safety flags.
+The full set of overridable properties is documented in [`mta-overrides.mtaext.example`](https://github.com/marianfoo/arc-1/blob/main/mta-overrides.mtaext.example): destinations, all `SAP_ALLOW_*` safety flags, `SAP_DENY_ACTIONS`, `SAP_PP_STRICT`, `ARC1_PUBLIC_URL` (for reverse-proxy deployments), `ARC1_ALLOWED_ORIGINS` (CORS), `ARC1_TOOL_MODE`, cache warmup, and `ARC1_LOG_HTTP_DEBUG`. Any property left out of the override falls back to the `mta.yaml` value.
 
-Alternatively, edit `mta.yaml` directly to match your environment:
+See the [BTP Destination Setup Guide](btp-destination-setup.md) for creating the destinations themselves.
 
-```yaml
-properties:
-  # Change these to your BTP Destination names
-  SAP_BTP_DESTINATION: my-sap-basic       # BasicAuth destination (startup)
-  SAP_BTP_PP_DESTINATION: my-sap-pp       # PrincipalPropagation destination (per-user)
+### 2. Build and Deploy
+
+```bash
+# Build once, deploy with the extension applied:
+npm run btp:build-deploy-ext
+
+# Or in two steps:
+npm run btp:build
+cf deploy mta_archives/arc1-mcp_*.mtar -e mta-overrides.mtaext
 ```
 
-See the [BTP Destination Setup Guide](btp-destination-setup.md) for creating these destinations.
+The `mta.yaml` defines three BTP services that are created automatically:
+
+| Service | Instance Name | Plan | Purpose |
+|---------|--------------|------|---------|
+| XSUAA | `arc1-xsuaa` | `application` | MCP client OAuth authentication |
+| Destination | `arc1-destination` | `lite` | SAP system lookup |
+| Connectivity | `arc1-connectivity` | `lite` | Cloud Connector proxy |
+
+> **Multiple landscapes from one repo.** The gitignore matches any
+> `mta-*.mtaext`, so you can keep `mta-ecc-dev.mtaext`,
+> `mta-ecc-prod.mtaext`, etc. side by side and pick one per deploy with
+> `-e mta-ecc-prod.mtaext`. None of those files are committed.
+
+### 3. Post-Deploy Configuration
+
+When using `SAP_BTP_DESTINATION`, the URL and credentials come from the BTP Destination — no `cf set-env` for `SAP_URL` or `SAP_CLIENT` is needed. Only set them if you're not using the Destination Service:
+
+```bash
+# Only needed if NOT using SAP_BTP_DESTINATION:
+cf set-env arc1-mcp-server SAP_URL "http://a4h-abap:50000"
+cf set-env arc1-mcp-server SAP_CLIENT "001"
+cf restage arc1-mcp-server
+```
+
+The base `mta.yaml` already configures these properties (override any of them via `mta-overrides.mtaext`):
+- `SAP_TRANSPORT: http-streamable` — HTTP transport for MCP
+- `SAP_BTP_DESTINATION` / `SAP_BTP_PP_DESTINATION` — placeholders, MUST be overridden
+- `SAP_PP_ENABLED: "true"` — per-user principal propagation
+- `SAP_XSUAA_AUTH: "true"` — XSUAA OAuth for MCP clients
+- `SAP_ALLOW_*: "false"` and `SAP_ALLOWED_PACKAGES: "$TMP"` — safe defaults; widen only as needed
 
 ---
 

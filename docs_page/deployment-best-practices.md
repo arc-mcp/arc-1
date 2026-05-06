@@ -40,9 +40,12 @@ Each ARC-1 instance serves **multiple users** via principal propagation (on-prem
 
 ### Example: enterprise with multiple SAP systems
 
-Use one `mta.yaml` with different `.mtaext` files per landscape:
+Use one `mta.yaml` with different `.mtaext` files per landscape. The `.gitignore` matches any `mta-*.mtaext`, so per-landscape extension files (`mta-ecc-dev.mtaext`, `mta-ecc-prod.mtaext`, …) stay local — only the `mta-overrides.mtaext.example` template is tracked. Copy it once per landscape:
 
 ```bash
+cp mta-overrides.mtaext.example mta-ecc-dev.mtaext   # edit: writes enabled
+cp mta-overrides.mtaext.example mta-ecc-prod.mtaext  # edit: read-only
+
 # Build once
 mbt build
 
@@ -229,8 +232,9 @@ If you deploy ARC-1 behind a reverse proxy (nginx, Envoy, etc.) outside of Cloud
 
 | File | Purpose | Customize? |
 |------|---------|-----------|
-| `mta.yaml` | MTA build descriptor (services, safe defaults) | Rarely — use `.mtaext` for overrides |
-| `mta-overrides.mtaext` | Per-landscape MTA extension (destinations, safety flags) | Yes — uncomment and set values for your environment |
+| `mta.yaml` | MTA build descriptor — services, safe defaults, **placeholder destinations**. Tracked. | Rarely — use `.mtaext` for overrides |
+| `mta-overrides.mtaext.example` | Tracked template documenting every overridable property. | No — copy it to `mta-overrides.mtaext` (gitignored) and edit that |
+| `mta-overrides.mtaext` (or any `mta-*.mtaext`) | Per-landscape MTA extension (real destinations, safety flags). **Gitignored.** | Yes — uncomment and set values for your environment |
 | `manifest.yml` | CF deployment manifest (on-premise via Cloud Connector) | Yes — change `SAP_URL`, destination name, safety flags |
 | `manifest-btp-abap.yml` | CF deployment manifest (BTP ABAP direct) | Yes — service key is set via `cf set-env` |
 | `Dockerfile` | Multi-stage Alpine build, all env vars documented | Rarely — use env vars for config |

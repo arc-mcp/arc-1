@@ -130,7 +130,7 @@ Precedence for server config is:
 CLI flag > environment variable > .env file > built-in default
 ```
 
-Why not `.env` for BTP? `.env` is mainly the local/dev way to set the same server config. On BTP, use `mta-overrides.mtaext` (preferred — version-controlled, per-landscape overrides), `cf set-env`, `manifest.yml`, or MTA properties instead. Those values are still the **server ceiling** and affect every user of that ARC-1 instance. To change one BTP user's access, change their XSUAA role collection assignment.
+Why not `.env` for BTP? `.env` is mainly the local/dev way to set the same server config. On BTP, use `mta-overrides.mtaext` (preferred — gitignored per-landscape overrides applied at `cf deploy -e ...`; copy from the tracked `mta-overrides.mtaext.example` template), `cf set-env`, `manifest.yml`, or MTA properties instead. Those values are still the **server ceiling** and affect every user of that ARC-1 instance. To change one BTP user's access, change their XSUAA role collection assignment.
 
 Use `arc1 config show` to see the final resolved server policy and where each field came from.
 
