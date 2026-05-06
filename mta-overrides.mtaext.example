@@ -1,0 +1,116 @@
+# ──────────────────────────────────────────────────────────────────────
+# MTA Extension Descriptor — Environment-Specific Overrides (TEMPLATE)
+#
+# This is a tracked template. Copy it to a real file (which is gitignored
+# by `.gitignore`) and fill in your landscape values:
+#
+#   cp mta-overrides.mtaext.example mta-overrides.mtaext
+#   # edit mta-overrides.mtaext
+#
+# Then build + deploy with the extension applied:
+#
+#   npm run btp:build-deploy-ext
+#   # or, manually:
+#   mbt build
+#   cf deploy mta_archives/arc1-mcp_<version>.mtar -e mta-overrides.mtaext
+#
+# Any property left commented uses the `mta.yaml` value unchanged. The two
+# `SAP_BTP_*_DESTINATION` properties below are the only ones that have to
+# be set — the base `mta.yaml` ships with placeholder destination names so
+# deploying without an override fails fast at startup.
+# ──────────────────────────────────────────────────────────────────────
+
+_schema-version: "3.1"
+ID: arc1-mcp-overrides
+extends: arc1-mcp
+
+modules:
+  - name: arc1-mcp-server
+    properties:
+      # ── Destinations (REQUIRED override) ─────────────────────────────
+      # BasicAuth destination for startup (feature probing, cache warmup)
+      # SAP_BTP_DESTINATION: "my-basic-auth-destination"
+
+      # PrincipalPropagation destination for per-user requests (with JWT)
+      # SAP_BTP_PP_DESTINATION: "my-pp-destination"
+
+      # ── Principal propagation behaviour ──────────────────────────────
+      # Enable per-user principal propagation (default in mta.yaml: true)
+      # SAP_PP_ENABLED: "true"
+
+      # PP failure = hard error, no fallback to shared client
+      # SAP_PP_STRICT: "true"
+
+      # ── Safety / Authorization ───────────────────────────────────────
+      # Enable object mutations (create, update, delete)
+      # SAP_ALLOW_WRITES: "true"
+
+      # Enable named table data preview (SELECT * FROM <table>)
+      # SAP_ALLOW_DATA_PREVIEW: "true"
+
+      # Enable freestyle SQL execution
+      # SAP_ALLOW_FREE_SQL: "true"
+
+      # Enable transport mutations (release, create, add to transport).
+      # Also requires SAP_ALLOW_WRITES=true.
+      # SAP_ALLOW_TRANSPORT_WRITES: "true"
+
+      # Enable abapGit / gCTS mutations (push, pull, clone). Also requires
+      # SAP_ALLOW_WRITES=true.
+      # SAP_ALLOW_GIT_WRITES: "true"
+
+      # Restrict writes to these packages (comma-separated, supports
+      # wildcards). Default in mta.yaml: "$TMP".
+      # SAP_ALLOWED_PACKAGES: "Z*,Y*,$TMP"
+
+      # Fine-grained per-action denial. Tool-qualified globs supported,
+      # e.g. "SAPGit.*,SAPWrite.delete". See docs/authorization.md.
+      # SAP_DENY_ACTIONS: "SAPGit.*"
+
+      # ── Networking / public URL ──────────────────────────────────────
+      # Override the public URL ARC-1 advertises in OAuth metadata (issuer,
+      # authorize/token/register endpoints). Required when ARC-1 is reached
+      # through a reverse proxy on a different hostname or under a base-path
+      # prefix than the bound CF route.
+      # ARC1_PUBLIC_URL: "https://gateway.example.com/arc1"
+
+      # ── CORS ─────────────────────────────────────────────────────────
+      # Allow browser-based UIs to call /mcp directly. Not needed for
+      # native MCP clients (Claude Desktop, Cursor, VS Code, Copilot
+      # Studio). Comma-separated, exact origin match, no wildcards.
+      # ARC1_ALLOWED_ORIGINS: "https://my-app.cfapps.eu10.hana.ondemand.com"
+
+      # ── Tool surface ─────────────────────────────────────────────────
+      # Tool mode: "standard" (12 tools) or "hyperfocused" (1 universal
+      # SAP tool, ~200 tokens — useful for token-tight clients).
+      # ARC1_TOOL_MODE: "standard"
+
+      # ── Cache warmup ─────────────────────────────────────────────────
+      # Pre-warm the cache on startup via TADIR scan. Speeds up first-use
+      # latency at the cost of slower startup and a TADIR read at boot.
+      # ARC1_CACHE_WARMUP: "true"
+
+      # Filter packages for warmup, comma-separated, wildcards allowed.
+      # ARC1_CACHE_WARMUP_PACKAGES: "Z*,Y*"
+
+      # ── Diagnostics ──────────────────────────────────────────────────
+      # Attach full request/response bodies and headers to `http_request`
+      # audit events. Sensitive headers redacted, bodies truncated at
+      # 64KB. Not for production.
+      # ARC1_LOG_HTTP_DEBUG: "true"
+
+      # ── System Connection (rarely overridden) ────────────────────────
+      # Override system type detection. Default in mta.yaml is "auto"; set
+      # this only to force "btp" or "onprem".
+      # SAP_SYSTEM_TYPE: "btp"
+
+      # SAP client number (only when NOT using a destination)
+      # SAP_CLIENT: "100"
+
+      # SAP language
+      # SAP_LANGUAGE: "EN"
+
+      # Skip TLS certificate verification (default in mta.yaml: true, for
+      # on-premise self-signed-cert landscapes). Override to "false" on
+      # landscapes with proper CA-signed certificates.
+      # SAP_INSECURE: "false"

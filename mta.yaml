@@ -86,13 +86,20 @@ modules:
       SAP_LANGUAGE: EN
       SAP_INSECURE: "true"
       SAP_XSUAA_AUTH: "true"
+      # Destinations. The base values below are placeholders — every landscape
+      # MUST override them via `mta-overrides.mtaext` (see the
+      # `mta-overrides.mtaext.example` template in this repo) or via
+      # `cf set-env`. Deploying with the placeholders will fail at startup with
+      # a "destination not found" error from BTP, which is the intended signal.
+      #
       # BasicAuth destination for startup (feature probing, cache warmup)
-      SAP_BTP_DESTINATION: ex1mcpdt
+      SAP_BTP_DESTINATION: your-basic-destination
       # PrincipalPropagation destination for per-user requests (with JWT)
-      SAP_BTP_PP_DESTINATION: ex1
+      SAP_BTP_PP_DESTINATION: your-pp-destination
       SAP_PP_ENABLED: "true"
       # Authorization / safety defaults. Keep the MTA conservative; widen per
-      # environment with cf set-env only when the test or landscape needs it.
+      # landscape via `mta-overrides.mtaext` or `cf set-env` only when the
+      # target system actually needs it.
       SAP_ALLOW_WRITES: "false"
       SAP_ALLOW_DATA_PREVIEW: "false"
       SAP_ALLOW_FREE_SQL: "false"
@@ -100,9 +107,10 @@ modules:
       SAP_ALLOW_GIT_WRITES: "false"
       SAP_ALLOWED_PACKAGES: "$TMP"
       # CORS — empty (default) disables CORS entirely. Set per landscape via
-      # mtaext or `cf set-env` only when a browser UI talks to /mcp directly.
-      # Native MCP clients (Claude Desktop, Cursor, VS Code, Copilot Studio)
-      # don't need this. Comma-separated, exact match, no wildcards.
+      # `mta-overrides.mtaext` or `cf set-env` only when a browser UI talks to
+      # /mcp directly. Native MCP clients (Claude Desktop, Cursor, VS Code,
+      # Copilot Studio) don't need this. Comma-separated, exact match, no
+      # wildcards.
       ARC1_ALLOWED_ORIGINS: ""
     requires:
       - name: arc1-xsuaa
