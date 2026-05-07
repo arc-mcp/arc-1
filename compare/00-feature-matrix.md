@@ -332,7 +332,7 @@ The following items were incorrectly marked in the previous version and have sin
 **Closed gaps:**
 - ~~Diagnostics~~ → ST22 + profiler traces + **SM02 system messages** + **/IWFND/ERROR_LOG gateway errors** all under `SAPDiagnose` (PR #174, 2026-04-21)
 - ~~RAP completeness~~ → DDLX/SRVB read, DDLS/DDLX/BDEF/SRVD write, batch activation
-- ~~DDIC completeness~~ → STRU, DOMA, DTEL, TRAN read
+- ~~DDIC completeness~~ → DOMA, DTEL, TRAN read; TABL covers transparent tables AND DDIC structures (Model B, 2026-05-07 — collapsed legacy STRU into TABL to match TADIR R3TR TABL and abapGit conventions)
 - ~~Token efficiency~~ → method-level surgery, hyperfocused mode, context compression
 - ~~Workflow/productization gap~~ → first-party skills now cover RAP workflows, clean-core ATC review, dead-code detection, object-level documentation capture, plus provider contracts / draft-auth defaults / impact analysis / revision history / formatter settings / SKTD docs / SAPGit delivery context.
 - ~~Diagnostic compatibility visibility~~ → standalone ADT type-availability probe (`npm run probe`) with multi-signal classifier, fixture-driven replay tests (PR #163, 2026-04-20).

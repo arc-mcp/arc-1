@@ -458,6 +458,25 @@ describe('ADT Integration Tests', () => {
       expect(source).toContain('subrc');
     });
 
+    it('reads BAPIRET2 via unified getTabl() — falls back from /tables/ to /structures/', async () => {
+      const { source } = await client.getTabl('BAPIRET2');
+      expect(source).toBeTruthy();
+      expect(source).toContain('bapiret2');
+      expect(source).toContain('message');
+      // After the fallback resolves, the URL is cached so resolveTablObjectUrl() returns the structures URL.
+      const resolvedUrl = await client.resolveTablObjectUrl('BAPIRET2');
+      expect(resolvedUrl).toContain('/sap/bc/adt/ddic/structures/');
+    });
+
+    it('reads T000 via unified getTabl() — uses /tables/ on first try (no fallback)', async () => {
+      const { source } = await client.getTabl('T000');
+      expect(source).toBeTruthy();
+      // T000 is a transparent table with @AbapCatalog.tableCategory : #TRANSPARENT.
+      expect(source.toLowerCase()).toContain('t000');
+      const resolvedUrl = await client.resolveTablObjectUrl('T000');
+      expect(resolvedUrl).toContain('/sap/bc/adt/ddic/tables/');
+    });
+
     it('reads domain metadata (MANDT)', async (ctx) => {
       let domain: Awaited<ReturnType<typeof client.getDomain>>;
       try {

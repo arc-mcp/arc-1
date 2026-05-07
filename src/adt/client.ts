@@ -91,6 +91,9 @@ export class AdtClient {
   readonly safety: SafetyConfig;
   /** The configured SAP username (from --user / SAP_USER) */
   readonly username: string;
+  /** Per-client cache of resolved TABL URLs (transparent table at /tables/, structure at /structures/).
+   *  Populated by getTabl() so subsequent write/activate paths skip the 404 retry. */
+  private readonly tablUrlCache = new Map<string, string>();
 
   constructor(options: Partial<AdtClientConfig> = {}) {
     const config = { ...defaultAdtClientConfig(), ...options };
@@ -126,6 +129,9 @@ export class AdtClient {
     Object.defineProperty(clone, 'http', { value: this.http, writable: false, enumerable: true });
     Object.defineProperty(clone, 'safety', { value: safety, writable: false, enumerable: true });
     Object.defineProperty(clone, 'username', { value: this.username, writable: false, enumerable: true });
+    // Share the TABL URL resolution cache — it's purely about object addressing,
+    // independent of per-request safety scope.
+    Object.defineProperty(clone, 'tablUrlCache', { value: this.tablUrlCache, writable: false, enumerable: false });
     return clone;
   }
 
@@ -351,6 +357,53 @@ export class AdtClient {
   async getStructure(name: string, opts?: SourceReadOptions): Promise<SourceReadResult> {
     checkOperation(this.safety, OperationType.Read, 'GetStructure');
     return this.fetchSource(`/sap/bc/adt/ddic/structures/${encodeURIComponent(name)}/source/main`, opts);
+  }
+
+  /** Read TABL source — covers both transparent tables and DDIC structures.
+   *  TADIR groups them under R3TR TABL, distinguished only by DD02L-TABCLASS
+   *  (TRANSP/CLUSTER/POOL → /tables/, INTTAB/APPEND → /structures/).
+   *  Tries /tables/ first, falls back to /structures/ on 404. Caches the resolved
+   *  URL on the client for subsequent write/activate operations. */
+  async getTabl(name: string, opts?: SourceReadOptions): Promise<SourceReadResult> {
+    checkOperation(this.safety, OperationType.Read, 'GetTabl');
+    const upper = name.toUpperCase();
+    try {
+      const result = await this.getTable(name, opts);
+      this.tablUrlCache.set(upper, `/sap/bc/adt/ddic/tables/${encodeURIComponent(name)}`);
+      return result;
+    } catch (err) {
+      if (err instanceof AdtApiError && err.statusCode === 404) {
+        const result = await this.getStructure(name, opts);
+        this.tablUrlCache.set(upper, `/sap/bc/adt/ddic/structures/${encodeURIComponent(name)}`);
+        return result;
+      }
+      throw err;
+    }
+  }
+
+  /** Resolve the canonical ADT URL for a TABL name (transparent table or structure).
+   *  Returns the cached URL if a previous getTabl() resolved it; otherwise probes
+   *  /tables/ first and /structures/ on 404. Result is cached per client.
+   *  Used by write/activate/delete paths where the URL must match the object's
+   *  actual location (transparent vs structure). */
+  async resolveTablObjectUrl(name: string): Promise<string> {
+    const upper = name.toUpperCase();
+    const cached = this.tablUrlCache.get(upper);
+    if (cached) return cached;
+    const tableUrl = `/sap/bc/adt/ddic/tables/${encodeURIComponent(name)}`;
+    const structUrl = `/sap/bc/adt/ddic/structures/${encodeURIComponent(name)}`;
+    try {
+      await this.http.get(tableUrl);
+      this.tablUrlCache.set(upper, tableUrl);
+      return tableUrl;
+    } catch (err) {
+      if (err instanceof AdtApiError && err.statusCode === 404) {
+        await this.http.get(structUrl);
+        this.tablUrlCache.set(upper, structUrl);
+        return structUrl;
+      }
+      throw err;
+    }
   }
 
   /** Get domain metadata (type, length, value table, fixed values) */

@@ -171,7 +171,7 @@ tests/evals/
 │   └── anthropic.ts           ← /v1/messages
 └── scenarios/
     ├── index.ts               ← aggregator — SCENARIO_FILES, ALL_SCENARIOS
-    ├── read-basic.ts          ← PROG/CLAS/INTF/FUNC/CDS/STRU/DOMA/table-contents
+    ├── read-basic.ts          ← PROG/CLAS/INTF/FUNC/CDS/TABL/DOMA/table-contents
     ├── search.ts              ← SAPSearch object + source-code
     ├── context-deps.ts        ← SAPContext(action="deps") forward dependencies
     ├── context-impact.ts      ← SAPContext(action="impact") — FEAT-33 blast radius

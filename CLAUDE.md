@@ -370,8 +370,10 @@ async getProgram(name: string, opts: SourceReadOptions = {}): Promise<SourceRead
 ```typescript
 case 'PROG':
   return textResult((await client.getProgram(name)).source);
-case 'STRU':
-  return textResult((await client.getStructure(name)).source);
+case 'TABL':
+  // Unified TABL: covers transparent tables AND DDIC structures.
+  // client.getTabl() tries /tables/ first, falls back to /structures/ on 404.
+  return textResult((await client.getTabl(name)).source);
 case 'DOMA': {
   const domain = await client.getDomain(name);
   return textResult(JSON.stringify(domain, null, 2));

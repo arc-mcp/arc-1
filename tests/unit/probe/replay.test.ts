@@ -186,14 +186,19 @@ describe('probe replay — npl-750-sp02-dev-edition fixture (recorded from real 
     expect(q.coverage.collection).toBe(1);
     // Known-object coverage rose from 0.6 → 0.7 after #162 contributor added
     // seed objects for DDLS (I_LANGUAGE), DCLS (P_USER002), and INCL (LSLOGTOP).
-    // `discoveryAccuracyVsKnownObject` is unchanged: on the NPL SP 0002 fixture
-    // the new URLs aren't recorded, so those known-object probes return
-    // synthetic network errors (kind='error'), which don't count in the ratio.
-    expect(q.coverage.knownObject).toBe(0.7);
+    // After Model B (collapse-stru-into-tabl) the standalone STRU catalog entry
+    // was removed (TABL covers both transparent tables and DDIC structures via
+    // the /tables/ → /structures/ fallback), so the catalog dropped from 20 to
+    // 19 entries and STRU's previously-passing known-object probe is gone:
+    // 13/19 ≈ 0.6842 instead of 14/20 = 0.7. `discoveryAccuracyVsKnownObject`
+    // numerator/denominator both drop by 1 (STRU was discovered AND known on 7.50).
+    expect(q.coverage.knownObject).toBeCloseTo(13 / 19, 4);
     expect(q.coverage.release).toBe(1);
-    expect(q.discoveryAccuracyVsKnownObject).toBe(6 / 7);
+    expect(q.discoveryAccuracyVsKnownObject).toBeCloseTo(5 / 6, 4);
 
-    expect(q.verdictHistogram['available-high']).toBe(8);
+    // After STRU removal the `available-high` count drops by one (STRU was a
+    // success on this 7.50 fixture). The other histogram buckets are unchanged.
+    expect(q.verdictHistogram['available-high']).toBe(7);
     expect(q.verdictHistogram['available-medium']).toBe(0);
     expect(q.verdictHistogram['unavailable-high']).toBe(6);
     expect(q.verdictHistogram['unavailable-likely']).toBe(3);

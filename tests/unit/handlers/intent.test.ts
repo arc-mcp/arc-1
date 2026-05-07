@@ -574,12 +574,63 @@ describe('Intent Handler', () => {
       }
     });
 
-    it('reads a structure (STRU)', async () => {
+    it('reads a DDIC structure via TABL with /tables/→/structures/ fallback', async () => {
+      // Model B: structures and transparent tables both use type='TABL'.
+      // Internal getTabl() tries /tables/ first, falls back to /structures/ on 404.
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(404, '<?xml version="1.0"?><error/>'));
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(200, '@EndUserText.label : "Return Parameter"\ndefine type bapiret2 { ... }'),
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'TABL',
+        name: 'BAPIRET2',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('bapiret2');
+      // Verify both URLs were attempted in order.
+      expect(mockFetch.mock.calls[0]?.[0]).toContain('/sap/bc/adt/ddic/tables/BAPIRET2/source/main');
+      expect(mockFetch.mock.calls[1]?.[0]).toContain('/sap/bc/adt/ddic/structures/BAPIRET2/source/main');
+    });
+
+    it('reads a transparent table via TABL without fallback', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(200, '@AbapCatalog.tableCategory : #TRANSPARENT\ndefine table t000 { ... }'),
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'TABL',
+        name: 'T000',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('TRANSPARENT');
+      // Only /tables/ was hit — no fallback needed.
+      expect(mockFetch.mock.calls).toHaveLength(1);
+      expect(mockFetch.mock.calls[0]?.[0]).toContain('/sap/bc/adt/ddic/tables/T000/source/main');
+    });
+
+    it('rejects type=STRU at the schema layer with a hint to use TABL', async () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
         type: 'STRU',
         name: 'BAPIRET2',
       });
-      expect(result.isError).toBeUndefined();
+      expect(result.isError).toBe(true);
+      // Zod validation lists valid enum members, which now includes TABL but excludes STRU.
+      expect(result.content[0]?.text).toContain('Invalid arguments for SAPRead');
+      expect(result.content[0]?.text).toContain('TABL');
+      expect(result.content[0]?.text).not.toMatch(/'STRU'/);
+    });
+
+    it('returns error when TABL name resolves to neither tables nor structures', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(404, '<?xml version="1.0"?><error/>'));
+      mockFetch.mockResolvedValueOnce(mockResponse(404, '<?xml version="1.0"?><error/>'));
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'TABL',
+        name: 'NONEXISTENT',
+      });
+      expect(result.isError).toBe(true);
+      expect(mockFetch.mock.calls).toHaveLength(2);
     });
 
     it('reads a domain (DOMA)', async () => {
@@ -982,7 +1033,7 @@ describe('Intent Handler', () => {
       // Should list supported types from Zod enum validation
       expect(result.content[0]?.text).toContain('PROG');
       expect(result.content[0]?.text).toContain('CLAS');
-      expect(result.content[0]?.text).toContain('STRU');
+      expect(result.content[0]?.text).toContain('TABL');
       expect(result.content[0]?.text).toContain('DOMA');
       expect(result.content[0]?.text).toContain('DTEL');
       expect(result.content[0]?.text).toContain('TRAN');
@@ -3787,14 +3838,49 @@ ENDCLASS.`;
       expect(unpublishUrl).toContain('servicename=ZSB_TRAVEL_O4');
     });
 
-    it('activates DDIC types with correct object URLs in XML body', async () => {
-      // Activate STRU — the object URL should appear in the activation XML body
+    it('activates a DDIC structure via TABL with structure URL in XML body', async () => {
+      // Model B: structures use type='TABL'. The activate handler resolves the
+      // URL via client.resolveTablObjectUrl which probes /tables/ first then
+      // falls back to /structures/. For ZTEST_STRUCT (a DDIC structure):
+      //   call 0: GET /sap/bc/adt/ddic/tables/ZTEST_STRUCT  → 404 (probe)
+      //   call 1: GET /sap/bc/adt/ddic/structures/ZTEST_STRUCT → 200 (probe success)
+      //   call 2: POST .../activation               → 200 (activate)
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(404, '<?xml version="1.0"?><error/>'));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '<?xml version="1.0"?><stru/>'));
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          '<?xml version="1.0"?><iac:inactiveCTSObjects xmlns:iac="http://www.sap.com/abapxml/inactiveCtsObjects"/>',
+          { 'x-csrf-token': 'T' },
+        ),
+      );
       await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPActivate', {
-        type: 'STRU',
+        type: 'TABL',
         name: 'ZTEST_STRUCT',
       });
       const lastCallOpts = mockFetch.mock.calls[mockFetch.mock.calls.length - 1]?.[1] as RequestInit;
       expect(lastCallOpts.body).toContain('/sap/bc/adt/ddic/structures/ZTEST_STRUCT');
+    });
+
+    it('activates a transparent table via TABL with /tables/ URL (no fallback)', async () => {
+      // For a transparent table, the /tables/ probe succeeds on the first try.
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '<?xml version="1.0"?><tabl/>'));
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          '<?xml version="1.0"?><iac:inactiveCTSObjects xmlns:iac="http://www.sap.com/abapxml/inactiveCtsObjects"/>',
+          { 'x-csrf-token': 'T' },
+        ),
+      );
+      await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPActivate', {
+        type: 'TABL',
+        name: 'ZTEST_TABLE',
+      });
+      const lastCallOpts = mockFetch.mock.calls[mockFetch.mock.calls.length - 1]?.[1] as RequestInit;
+      expect(lastCallOpts.body).toContain('/sap/bc/adt/ddic/tables/ZTEST_TABLE');
+      expect(lastCallOpts.body).not.toContain('/sap/bc/adt/ddic/structures/ZTEST_TABLE');
     });
 
     it('activates DOMA with correct object URL in XML body', async () => {
@@ -5696,13 +5782,29 @@ ENDCLASS.`;
       expect(result.content[0]?.text).toContain('not available on BTP');
     });
 
-    it('allows STRU read on BTP', async () => {
+    it('allows TABL read of a DDIC structure on BTP (via /tables/→/structures/ fallback)', async () => {
+      setBtpMode();
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(404, '<?xml version="1.0"?><error/>'));
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(200, '@EndUserText.label : "Return Parameter"\ndefine type bapiret2 { ... }'),
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'TABL',
+        name: 'BAPIRET2',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('bapiret2');
+    });
+
+    it('rejects type=STRU on BTP at the schema layer', async () => {
       setBtpMode();
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
         type: 'STRU',
         name: 'BAPIRET2',
       });
-      expect(result.isError).toBeUndefined();
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('Invalid arguments for SAPRead');
     });
   });
 
@@ -7689,8 +7791,13 @@ ENDCLASS.`;
         ['SRVD/SRV', 'SRVD'],
         ['SRVB/SVB', 'SRVB'],
         ['DDLX/EX', 'DDLX'],
+        // TABL/DT (transparent table) and TABL/DS (DDIC structure) both
+        // collapse to the canonical 'TABL' short type (Model B). STRU/DS is
+        // a legacy slash-form alias that also maps to TABL. Bare 'STRU' is
+        // intentionally NOT aliased so schema validation rejects it.
         ['TABL/DT', 'TABL'],
-        ['STRU/DS', 'STRU'],
+        ['TABL/DS', 'TABL'],
+        ['STRU/DS', 'TABL'],
         ['DOMA/DD', 'DOMA'],
         ['DTEL/DE', 'DTEL'],
         ['MSAG/N', 'MSAG'],

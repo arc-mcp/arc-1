@@ -643,6 +643,12 @@ function formatCdsImpactBuckets(downstream: CdsImpactDownstream, maxNames = 4): 
 }
 
 function mainObjectType(type: string): string {
+  // First consult SLASH_TYPE_MAP so collapsed types (TABL/DS → TABL, legacy
+  // STRU/DS → TABL) resolve to ARC-1's canonical short type. Then fall back to
+  // splitting on '/' so unknown slash forms (e.g. BDEF/BO from where-used
+  // results) still produce the parent type rather than the full slash form.
+  const normalized = normalizeObjectType(type);
+  if (normalized && !normalized.includes('/')) return normalized;
   return type.split('/')[0]?.toUpperCase() ?? '';
 }
 
@@ -1257,7 +1263,6 @@ const VERSIONED_SOURCE_READ_TYPES = new Set([
   'SKTD',
   'TABL',
   'VIEW',
-  'STRU',
 ]);
 
 function inactiveTypeMatches(readType: string, inactiveType: string): boolean {
@@ -1543,20 +1548,17 @@ async function handleSAPRead(
       }
     }
     case 'TABL': {
+      // Unified TABL: covers transparent tables and DDIC structures (Model B).
+      // client.getTabl() handles the /tables/ → /structures/ fallback internally
+      // and caches the resolved URL for subsequent write/activate paths.
       const { source, cacheHit, revalidated } = await cachedGet('TABL', name, effectiveVersion, (ifNoneMatch) =>
-        client.getTable(name, { ifNoneMatch, version: effectiveVersion }),
+        client.getTabl(name, { ifNoneMatch, version: effectiveVersion }),
       );
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
     case 'VIEW': {
       const { source, cacheHit, revalidated } = await cachedGet('VIEW', name, effectiveVersion, (ifNoneMatch) =>
         client.getView(name, { ifNoneMatch, version: effectiveVersion }),
-      );
-      return cachedTextResult(source, cacheHit, revalidated, versionWarning);
-    }
-    case 'STRU': {
-      const { source, cacheHit, revalidated } = await cachedGet('STRU', name, effectiveVersion, (ifNoneMatch) =>
-        client.getStructure(name, { ifNoneMatch, version: effectiveVersion }),
       );
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
@@ -1771,7 +1773,7 @@ async function handleSAPRead(
     }
     default:
       return errorResult(
-        `Unknown SAPRead type: "${type}". Supported types: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL, VIEW, STRU, DOMA, DTEL, AUTH, FTG2, ENHO, VERSIONS, VERSION_SOURCE, TRAN, TABLE_CONTENTS, DEVC, SOBJ, SYSTEM, COMPONENTS, MESSAGES, TEXT_ELEMENTS, VARIANTS, BSP, BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS. ` +
+        `Unknown SAPRead type: "${type}". Supported types: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL, VIEW, DOMA, DTEL, AUTH, FTG2, ENHO, VERSIONS, VERSION_SOURCE, TRAN, TABLE_CONTENTS, DEVC, SOBJ, SYSTEM, COMPONENTS, MESSAGES, TEXT_ELEMENTS, VARIANTS, BSP, BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS. ` +
           'Tip: Type aliases are auto-normalized (e.g., DDLS/DF → DDLS, DCLS/DL → DCLS, CLAS/OC → CLAS, PROG/P → PROG). ' +
           'Do not pass a URI — use the "type" and "name" parameters instead.',
       );
@@ -2568,8 +2570,17 @@ const SLASH_TYPE_MAP: Record<string, string> = {
   'SRVD/SRV': 'SRVD',
   'SRVB/SVB': 'SRVB',
   'DDLX/EX': 'DDLX',
+  // DDIC TABL: ADT exposes /DT (transparent table) and /DS (DDIC structure) subtypes.
+  // Both share TADIR R3TR TABL (distinguished by DD02L-TABCLASS = TRANSP vs INTTAB).
+  // ARC-1 collapses both into the canonical short type 'TABL' (Model B — see
+  // docs/plans/completed/collapse-stru-into-tabl.md).
   'TABL/DT': 'TABL',
-  'STRU/DS': 'STRU',
+  'TABL/DS': 'TABL',
+  // Legacy slash-form alias — ADT never actually returns this, but pre-Model-B
+  // ARC-1 prompts learned it from older docs. Kept so they normalize to TABL
+  // instead of producing a schema error. Bare 'STRU' is intentionally NOT
+  // aliased — it should fail schema validation so the breaking change surfaces.
+  'STRU/DS': 'TABL',
   'DOMA/DD': 'DOMA',
   'DTEL/DE': 'DTEL',
   'MSAG/N': 'MSAG',
@@ -2680,9 +2691,10 @@ function objectBasePath(type: string): string {
     case 'SRVB':
       return '/sap/bc/adt/businessservices/bindings/';
     case 'TABL':
+      // Default URL prefix for TABL: /tables/ (transparent tables). DDIC structures
+      // live at /sap/bc/adt/ddic/structures/<name>; for those, callers must use
+      // AdtClient.resolveTablObjectUrl(name) which falls back on 404.
       return '/sap/bc/adt/ddic/tables/';
-    case 'STRU':
-      return '/sap/bc/adt/ddic/structures/';
     case 'DOMA':
       return '/sap/bc/adt/ddic/domains/';
     case 'DTEL':
@@ -2757,8 +2769,19 @@ async function handleSAPWrite(
     return errorResult('"type" and "name" are required for this action.');
   }
 
-  const objectUrl = objectUrlForType(type, name);
-  const srcUrl = sourceUrlForType(type, name);
+  // For TABL update/delete/edit_method, the existing object may live at /tables/
+  // (transparent) or /structures/ (DDIC structure). Resolve once via the client's
+  // cached URL probe. For 'create' the default /tables/ URL is correct (we only
+  // create transparent tables today; structure creation is out of scope).
+  let objectUrl: string;
+  let srcUrl: string;
+  if (type === 'TABL' && action !== 'create' && action !== 'batch_create') {
+    objectUrl = await client.resolveTablObjectUrl(name);
+    srcUrl = `${objectUrl}/source/main`;
+  } else {
+    objectUrl = objectUrlForType(type, name);
+    srcUrl = sourceUrlForType(type, name);
+  }
 
   const invalidateWrittenObject = (objType = type, objName = name): void => {
     cachingLayer?.invalidate(objType, objName, 'all');
@@ -3720,7 +3743,7 @@ function runPreWriteLint(
 }
 
 /** Types that carry source code that SAP's /checkruns endpoint can meaningfully compile.
- *  Metadata-write types (DOMA/DTEL/TABL/STRU/MSAG/DEVC/SKTD) have no /source/main artifact. */
+ *  Metadata-write types (DOMA/DTEL/TABL/MSAG/DEVC/SKTD) have no /source/main artifact. */
 const SYNTAX_CHECKABLE_TYPES = new Set([
   'PROG',
   'CLAS',
@@ -3895,11 +3918,18 @@ async function handleSAPActivate(
 
   if (args.objects && Array.isArray(args.objects)) {
     const rawObjects = args.objects as Array<Record<string, unknown>>;
-    const objects = rawObjects.map((o) => {
-      const objType = normalizeObjectType(String(o.type ?? type));
-      const objName = String(o.name ?? '');
-      return { type: objType, name: objName, url: objectUrlForType(objType, objName) };
-    });
+    // Resolve URLs sequentially. For TABL we await the URL resolver so DDIC
+    // structures (which live at /sap/bc/adt/ddic/structures/) are addressed
+    // correctly; the resolver short-circuits on its in-memory cache.
+    const objects = await Promise.all(
+      rawObjects.map(async (o) => {
+        const objType = normalizeObjectType(String(o.type ?? type));
+        const objName = String(o.name ?? '');
+        const url =
+          objType === 'TABL' ? await client.resolveTablObjectUrl(objName) : objectUrlForType(objType, objName);
+        return { type: objType, name: objName, url };
+      }),
+    );
 
     const result = await activateBatch(client.http, client.safety, objects, activateOpts);
     const names = objects.map((o) => o.name).join(', ');
@@ -3928,8 +3958,10 @@ async function handleSAPActivate(
     );
   }
 
-  // Single activation (existing behavior)
-  const objectUrl = objectUrlForType(type, name);
+  // Single activation (existing behavior). For TABL we resolve the URL because
+  // the existing object may live at /tables/ (transparent) or /structures/
+  // (DDIC structure); using the wrong one would produce a confusing 404.
+  const objectUrl = type === 'TABL' ? await client.resolveTablObjectUrl(name) : objectUrlForType(type, name);
 
   const result = await activate(client.http, client.safety, objectUrl, { ...activateOpts, name });
 

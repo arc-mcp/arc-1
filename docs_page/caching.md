@@ -76,11 +76,11 @@ Note the trailing 3-digit discriminator: `001` for active, `000` for inactive. T
 
 ### What gets the conditional GET
 
-All 16 source-bearing types that go through the cache:
+All source-bearing types that go through the cache:
 
 - ABAP source: PROG, CLAS, INTF, FUNC, INCL, FUGR
 - CDS family: DDLS, DCLS, BDEF, SRVD, DDLX
-- DDIC metadata: TABL, VIEW, STRU
+- DDIC metadata: TABL (covers transparent tables and DDIC structures), VIEW
 - Service binding: SRVB
 - Knowledge transfer: SKTD
 

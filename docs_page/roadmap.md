@@ -2220,7 +2220,9 @@ The four shipped MCP clients — Claude Desktop, Cursor, VS Code Copilot, Copilo
 |-------|-------|
 | **Status** | Complete (2026-04-01) |
 
-**Implemented:** Read support for domains (DOMA), data elements (DTEL), structures (STRU), CDS metadata extensions (DDLX), and transactions (TRAN) in SAPRead. Structured metadata output with type info, labels, value tables, search help. Write support for DDLS, DDLX, BDEF, SRVD via SAPWrite (plus DOMA/DTEL metadata writes completed under FEAT-13).
+**Implemented:** Read support for domains (DOMA), data elements (DTEL), DDIC structures (TABL — covers transparent tables AND structures, mirroring TADIR R3TR TABL and abapGit conventions), CDS metadata extensions (DDLX), and transactions (TRAN) in SAPRead. Structured metadata output with type info, labels, value tables, search help. Write support for DDLS, DDLX, BDEF, SRVD via SAPWrite (plus DOMA/DTEL metadata writes completed under FEAT-13).
+
+**STRU/TABL collapse (Model B, 2026-05-07):** The previously separate `STRU` short type was collapsed into `TABL` to match SAP file-format conventions. ARC-1 auto-resolves the URL via fallback (`/tables/{name}` → `/structures/{name}` on 404). See [docs/plans/completed/collapse-stru-into-tabl.md](https://github.com/marianfoo/arc-1/blob/main/docs/plans/completed/collapse-stru-into-tabl.md).
 
 ---
 
@@ -2358,7 +2360,7 @@ The four shipped MCP clients — Claude Desktop, Cursor, VS Code Copilot, Copilo
 | Hyperfocused Mode | Single `SAP` tool (~200 tokens) — competitive parity with VSP | Complete (2026-04-01) |
 | Method-Level Surgery | `edit_method`, `list_methods`, `get_method` — 95% token reduction | Complete (2026-04-01) |
 | Runtime Diagnostics | SAPDiagnose — short dumps (ST22), ABAP profiler traces | Complete (2026-04-01) |
-| DDIC Completeness | FEAT-04: DOMA, DTEL, STRU, DDLX, TRAN, BOR, T100, variants | Complete (2026-04-01) |
+| DDIC Completeness | FEAT-04: DOMA, DTEL, DDLX, TRAN, BOR, T100, variants (TABL covers transparent tables and DDIC structures since Model B) | Complete (2026-04-01) |
 | DDIC Domain/Data Element Write | FEAT-13: DOMA/DTEL create, update, delete, batch_create in SAPWrite | Complete (2026-04-12) |
 | RAP CRUD | DDLS/DDLX/BDEF/SRVD/SRVB write, batch activation | Complete (2026-04-14) |
 | Context Compression | SAPContext with AST-based dependency extraction (7-30x reduction) | Complete (2026-04-01) |

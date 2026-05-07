@@ -287,6 +287,95 @@ describe('AdtClient', () => {
     });
   });
 
+  describe('getTabl (unified TABL — transparent tables and structures)', () => {
+    it('returns table source from /tables/ on first try (transparent table)', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(200, '@AbapCatalog.tableCategory : #TRANSPARENT\ndefine table t000 { ... }'),
+      );
+      const client = createClient();
+      const result = await client.getTabl('T000');
+      expect(result.source).toContain('TRANSPARENT');
+      expect(mockFetch.mock.calls).toHaveLength(1);
+      expect(mockFetch.mock.calls[0]?.[0]).toContain('/sap/bc/adt/ddic/tables/T000/source/main');
+    });
+
+    it('falls back to /structures/ on 404 (DDIC structure)', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(404, '<?xml version="1.0"?><error/>'));
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(200, '@EndUserText.label : "Return Parameter"\ndefine type bapiret2 { type: char; ... }'),
+      );
+      const client = createClient();
+      const result = await client.getTabl('BAPIRET2');
+      expect(result.source).toContain('bapiret2');
+      expect(mockFetch.mock.calls).toHaveLength(2);
+      expect(mockFetch.mock.calls[0]?.[0]).toContain('/sap/bc/adt/ddic/tables/BAPIRET2/source/main');
+      expect(mockFetch.mock.calls[1]?.[0]).toContain('/sap/bc/adt/ddic/structures/BAPIRET2/source/main');
+    });
+
+    it('throws AdtApiError when both URLs return 404', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(404, '<?xml version="1.0"?><error/>'));
+      mockFetch.mockResolvedValueOnce(mockResponse(404, '<?xml version="1.0"?><error/>'));
+      const client = createClient();
+      await expect(client.getTabl('NONEXISTENT')).rejects.toBeInstanceOf(AdtApiError);
+      expect(mockFetch.mock.calls).toHaveLength(2);
+    });
+
+    it('does not fall back on non-404 errors from /tables/', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(500, '<?xml version="1.0"?><error/>'));
+      const client = createClient();
+      await expect(client.getTabl('T000')).rejects.toBeInstanceOf(AdtApiError);
+      expect(mockFetch.mock.calls).toHaveLength(1);
+    });
+  });
+
+  describe('resolveTablObjectUrl', () => {
+    it('returns /tables/ URL after a 200 GET (transparent table)', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '<?xml version="1.0"?><tabl/>'));
+      const client = createClient();
+      const url = await client.resolveTablObjectUrl('T000');
+      expect(url).toBe('/sap/bc/adt/ddic/tables/T000');
+      expect(mockFetch.mock.calls).toHaveLength(1);
+    });
+
+    it('returns /structures/ URL after /tables/ 404 (DDIC structure)', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(404, '<?xml version="1.0"?><error/>'));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '<?xml version="1.0"?><stru/>'));
+      const client = createClient();
+      const url = await client.resolveTablObjectUrl('BAPIRET2');
+      expect(url).toBe('/sap/bc/adt/ddic/structures/BAPIRET2');
+      expect(mockFetch.mock.calls).toHaveLength(2);
+    });
+
+    it('caches resolution — second call hits no HTTP', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '<?xml version="1.0"?><tabl/>'));
+      const client = createClient();
+      const url1 = await client.resolveTablObjectUrl('T000');
+      const url2 = await client.resolveTablObjectUrl('T000');
+      expect(url1).toBe(url2);
+      expect(mockFetch.mock.calls).toHaveLength(1);
+    });
+
+    it('getTabl populates the resolveTablObjectUrl cache', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(404, '<?xml version="1.0"?><error/>'));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '... structure source ...'));
+      const client = createClient();
+      await client.getTabl('BAPIRET2');
+      expect(mockFetch.mock.calls).toHaveLength(2);
+      // Subsequent resolveTablObjectUrl call should be a cache hit (no extra HTTP).
+      const url = await client.resolveTablObjectUrl('BAPIRET2');
+      expect(url).toBe('/sap/bc/adt/ddic/structures/BAPIRET2');
+      expect(mockFetch.mock.calls).toHaveLength(2);
+    });
+  });
+
   describe('getRevisions', () => {
     it('returns parsed revision list for a program', async () => {
       mockFetch.mockReset();

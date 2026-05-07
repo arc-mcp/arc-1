@@ -106,11 +106,27 @@ describe('E2E Smoke Tests', () => {
 
   // ── SAPRead: DDIC objects ───────────────────────────────────────
 
-  it('SAPRead STRU — reads BAPIRET2 structure definition', async () => {
-    const result = await callTool(client, 'SAPRead', { type: 'STRU', name: 'BAPIRET2' });
+  it('SAPRead TABL — reads BAPIRET2 DDIC structure via unified TABL type', async () => {
+    // Model B: structures and transparent tables both use type='TABL'.
+    // ARC-1 auto-resolves /sap/bc/adt/ddic/tables/ → /sap/bc/adt/ddic/structures/.
+    const result = await callTool(client, 'SAPRead', { type: 'TABL', name: 'BAPIRET2' });
     const text = expectToolSuccess(result);
     expect(text).toContain('bapiret2');
     expect(text).toContain('message');
+  });
+
+  it('SAPRead TABL — reads T000 transparent table via unified TABL type', async () => {
+    const result = await callTool(client, 'SAPRead', { type: 'TABL', name: 'T000' });
+    const text = expectToolSuccess(result);
+    expect(text.toLowerCase()).toContain('t000');
+  });
+
+  it('SAPRead — type=STRU is rejected with a schema validation error', async () => {
+    const result = await callTool(client, 'SAPRead', { type: 'STRU', name: 'BAPIRET2' });
+    // Zod rejects STRU at validation; error mentions valid types (incl. TABL).
+    expect(result.isError).toBe(true);
+    const text = (result.content[0] as { text: string }).text;
+    expect(text).toContain('Invalid arguments for SAPRead');
   });
 
   it('SAPRead DOMA — reads BUKRS domain metadata', async (ctx) => {

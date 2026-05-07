@@ -352,7 +352,7 @@ interface CdsResolvedDep {
  *
  * Unlike ABAP context (AST-based), CDS context uses regex to extract
  * dependencies from DDL source, then fetches each dependency's source
- * with a type fallback chain: DDLS → TABL → STRU.
+ * with a type fallback chain: DDLS → TABL (TABL covers both transparent tables and structures).
  *
  * @param client - ADT client for fetching dependency sources
  * @param ddlSource - CDS DDL source code of the target entity
@@ -421,7 +421,10 @@ async function resolveCdsDepthLevel(
 
 /**
  * Fetch a single CDS dependency's source with type fallback.
- * Try DDLS first (another CDS view), then TABL, then STRU.
+ * Try DDLS first (another CDS view), then TABL — TABL covers both transparent
+ * tables and DDIC structures (they share TADIR R3TR TABL, distinguished by
+ * DD02L-TABCLASS). client.getTabl() handles the /tables/→/structures/ fallback
+ * internally, so a separate STRU branch is no longer needed.
  * With caching: also caches which type succeeded to avoid future fallback attempts.
  */
 async function fetchCdsDependency(
@@ -445,19 +448,12 @@ async function fetchCdsDependency(
     const source = await cachedGet('DDLS', dep.name, (ifNoneMatch) => client.getDdls(dep.name, { ifNoneMatch }));
     return { name: dep.name, kind: dep.kind, resolvedType: 'ddls', source, success: true };
   } catch {
-    // Not a DDLS — try TABL
+    // Not a DDLS — try TABL (covers both transparent tables and structures)
   }
 
   try {
-    const source = await cachedGet('TABL', dep.name, (ifNoneMatch) => client.getTable(dep.name, { ifNoneMatch }));
+    const source = await cachedGet('TABL', dep.name, (ifNoneMatch) => client.getTabl(dep.name, { ifNoneMatch }));
     return { name: dep.name, kind: dep.kind, resolvedType: 'table', source, success: true };
-  } catch {
-    // Not a TABL — try STRU
-  }
-
-  try {
-    const source = await cachedGet('STRU', dep.name, (ifNoneMatch) => client.getStructure(dep.name, { ifNoneMatch }));
-    return { name: dep.name, kind: dep.kind, resolvedType: 'structure', source, success: true };
   } catch (err) {
     return {
       name: dep.name,

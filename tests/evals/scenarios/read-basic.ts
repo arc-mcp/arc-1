@@ -1,9 +1,10 @@
 /**
  * Read scenarios — SAPRead type selection for common ABAP object types.
  *
- * Covers: PROG, CLAS (+ method + testclasses), INTF, FUNC, DDLS, STRU, DOMA,
- * TABLE_CONTENTS. These are the single-step "read X" cases where the LLM
- * must pick the right `type` enum and supply the name.
+ * Covers: PROG, CLAS (+ method + testclasses), INTF, FUNC, DDLS, TABL (covers
+ * both transparent tables AND DDIC structures), DOMA, TABLE_CONTENTS. These are
+ * the single-step "read X" cases where the LLM must pick the right `type` enum
+ * and supply the name.
  */
 
 import type { EvalScenario } from '../types.js';
@@ -84,8 +85,7 @@ export const SCENARIOS: EvalScenario[] = [
     prompt: 'What are the fields of structure BAPIRET2?',
     category: 'read',
     tags: ['single-step', 'basic'],
-    optimal: [{ tool: 'SAPRead', requiredArgs: { type: 'STRU', name: 'BAPIRET2' } }],
-    acceptable: [{ tool: 'SAPRead', requiredArgs: { type: 'TABL', name: 'BAPIRET2' } }],
+    optimal: [{ tool: 'SAPRead', requiredArgs: { type: 'TABL', name: 'BAPIRET2' } }],
     mockResponses: {
       SAPRead:
         'define structure bapiret2 {\n  type : symsgty;\n  id : symsgid;\n  number : symsgno;\n  message : bapi_msg;\n}',

@@ -301,6 +301,16 @@ function mockCdsClient(sources: {
       if (!src) throw new Error(`DDLS ${name} not found`);
       return src;
     }),
+    // Model B: getTabl unifies transparent tables and structures (TADIR R3TR TABL).
+    // The mock checks both `tables` and `structures` lookup tables in turn.
+    getTabl: vi.fn(async (name: string) => {
+      const upper = name.toUpperCase();
+      const src = sources.tables?.[upper] ?? sources.structures?.[upper];
+      if (!src) throw new Error(`TABL ${name} not found`);
+      return src;
+    }),
+    // Kept for backward compatibility with any tests that still use the
+    // low-level methods directly.
     getTable: vi.fn(async (name: string) => {
       const src = sources.tables?.[name.toUpperCase()];
       if (!src) throw new Error(`Table ${name} not found`);

@@ -27,7 +27,7 @@ Read any SAP ABAP object.
 | `maxRows` | number | No | For TABLE_CONTENTS: max rows (default 100) |
 | `sqlFilter` | string | No | For TABLE_CONTENTS: condition expression only (no `WHERE`, no `SELECT`), e.g. `MANDT = '100'` |
 | `objectType` | string | No | For API_STATE: SAP object type (CLAS, INTF, PROG, FUGR, etc.) — auto-detected from name if omitted |
-| `version` | string | No | Source version: `active` (default), `inactive`, or `auto`. Applies to source-bearing types (PROG, CLAS, INTF, FUNC, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, FUGR, SRVB, SKTD, TABL, VIEW, STRU). See [Active vs Inactive Source](#active-vs-inactive-source) below. |
+| `version` | string | No | Source version: `active` (default), `inactive`, or `auto`. Applies to source-bearing types (PROG, CLAS, INTF, FUNC, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, FUGR, SRVB, SKTD, TABL, VIEW). See [Active vs Inactive Source](#active-vs-inactive-source) below. |
 | `force_refresh` | boolean | No | For source reads: bypass the cached source AND the inactive-list cache before reading. Use when you know the object changed outside ARC-1 in a way conditional GET can't catch. |
 
 **Supported types:**
@@ -46,9 +46,8 @@ Read any SAP ABAP object.
 | `BDEF` | Behavior definition |
 | `SRVD` | Service definition |
 | `SRVB` | Service binding (structured JSON: OData version, binding type, publish status) |
-| `TABL` | Table definition (structure) |
+| `TABL` | DDIC TABL — covers both transparent tables (T000-style) and DDIC structures (BAPIRET2-style). Returns CDS-like source. ARC-1 auto-resolves the URL: tries `/sap/bc/adt/ddic/tables/{name}` first, falls back to `/sap/bc/adt/ddic/structures/{name}` on 404. There is no separate `STRU` type — `TABL` is the canonical short type for both, mirroring TADIR `R3TR TABL` and abapGit conventions. |
 | `VIEW` | DDIC view |
-| `STRU` | Structure definition (DDIC structure source) |
 | `DOMA` | Domain metadata (structured JSON: data type, length, fixed values, value table) |
 | `DTEL` | Data element metadata (structured JSON: type, labels, search help) |
 | `AUTH` | Authorization field metadata (structured JSON: role name, check table, domain, conversion exit, org-level info) |
@@ -93,7 +92,8 @@ SAPRead(type="DCLS", name="ZI_TRAVEL_DCL")       — CDS access control source
 SAPRead(type="DDLX", name="ZC_TRAVEL")          — metadata extension with UI annotations
 SAPRead(type="SRVB", name="ZUI_TRAVEL_O4")       — service binding metadata as JSON
 SAPRead(type="FUGR", name="ZUTILS", expand_includes=true)    — function group with all includes expanded
-SAPRead(type="STRU", name="BAPIRET2")            — structure definition
+SAPRead(type="TABL", name="BAPIRET2")            — DDIC structure (auto-resolved to /structures/)
+SAPRead(type="TABL", name="T000")                — transparent table (auto-resolved to /tables/)
 SAPRead(type="DOMA", name="BUKRS")               — domain metadata with fixed values
 SAPRead(type="DTEL", name="MANDT")               — data element metadata with labels
 SAPRead(type="AUTH", name="BUKRS")               — authorization field metadata

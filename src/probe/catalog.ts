@@ -78,25 +78,22 @@ export const CATALOG: CatalogEntry[] = [
 
   // ─── DDIC (domains/data elements/tables) ────────────────────────────
   {
+    // TABL covers both transparent tables (TABCLASS=TRANSP, served via /tables/)
+    // and DDIC structures (TABCLASS=INTTAB/APPEND, served via /structures/).
+    // The probe still hits /tables/ as the primary collection endpoint; the
+    // structure URL is exercised at runtime via AdtClient.getTabl() fallback.
     type: 'TABL',
     collectionUrl: '/sap/bc/adt/ddic/tables',
     objectUrlTemplate: '/sap/bc/adt/ddic/tables/{name}/source/main',
     knownObjects: ['T000', 'USR01'],
     minRelease: 700,
-    note: 'Source endpoint may require SAP_BASIS >= 7.52 on some systems',
+    note: 'Source endpoint may require SAP_BASIS >= 7.52 on some systems. TABL covers transparent tables AND DDIC structures (the latter served at /sap/bc/adt/ddic/structures/{name}).',
   },
   {
     type: 'VIEW',
     collectionUrl: '/sap/bc/adt/ddic/views',
     objectUrlTemplate: '/sap/bc/adt/ddic/views/{name}/source/main',
     knownObjects: ['V_USR_NAME'],
-    minRelease: 700,
-  },
-  {
-    type: 'STRU',
-    collectionUrl: '/sap/bc/adt/ddic/structures',
-    objectUrlTemplate: '/sap/bc/adt/ddic/structures/{name}/source/main',
-    knownObjects: ['SYST'],
     minRelease: 700,
   },
   {
