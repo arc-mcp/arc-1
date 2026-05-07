@@ -4117,6 +4117,14 @@ async function handleSAPNavigate(client: AdtClient, args: Record<string, unknown
           `Cannot resolve function group for "${symName}". Provide the full uri parameter, or use SAPSearch("${symName}") to find the ADT URI.`,
         );
       }
+    } else if (symType === 'TABL') {
+      // DDIC TABL: where-used and other navigate paths must use the canonical
+      // object URL — `/sap/bc/adt/ddic/tables/{name}` for transparent tables,
+      // `/sap/bc/adt/ddic/structures/{name}` for DDIC structures. NW 7.50
+      // returns 500 from usageReferences for /tables/ URLs even for transparent
+      // tables, so we always resolve before building. resolveTablObjectUrl
+      // caches on the AdtClient, so this is one HTTP probe per cold name.
+      uri = await client.resolveTablObjectUrl(symName);
     } else {
       uri = objectUrlForType(symType, symName);
     }

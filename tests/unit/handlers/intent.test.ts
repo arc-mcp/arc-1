@@ -5507,6 +5507,70 @@ ENDCLASS.`;
       expect(result.content[0]?.text).toContain('Provide uri or type+name');
     });
 
+    it('routes TABL type+name through resolveTablObjectUrl (transparent → /tables/)', async () => {
+      // For a transparent table the /tables/ probe succeeds on the first try,
+      // and the where-used POST then targets /sap/bc/adt/ddic/tables/T000.
+      mockFetch.mockReset();
+      // 1) URL probe: /sap/bc/adt/ddic/tables/T000 → 200
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '<?xml version="1.0"?><tabl/>'));
+      // 2) CSRF token fetch
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      // 3) usageReferences POST
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          `<?xml version="1.0" encoding="utf-8"?>
+<usageReferences:usageReferenceResult xmlns:usageReferences="http://www.sap.com/adt/ris/usageReferences">
+  <usageReferences:referencedObjects/>
+</usageReferences:usageReferenceResult>`,
+        ),
+      );
+      await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPNavigate', {
+        action: 'references',
+        type: 'TABL',
+        name: 'T000',
+      });
+      // The where-used POST URL must reference the resolved /tables/ path.
+      const lastCall = mockFetch.mock.calls[mockFetch.mock.calls.length - 1];
+      expect(String(lastCall?.[0])).toContain(
+        `usageReferences?uri=${encodeURIComponent('/sap/bc/adt/ddic/tables/T000')}`,
+      );
+    });
+
+    it('routes TABL type+name through resolveTablObjectUrl (structure → /structures/)', async () => {
+      // For a DDIC structure on systems where /tables/ 404s, the resolver
+      // falls back to /structures/. Verifies the fix for codex P1: NW 7.50
+      // returns 500 from usageReferences for /tables/ URLs even for transparent
+      // tables, so we must always resolve via the URL probe before posting.
+      mockFetch.mockReset();
+      // 1) URL probe: /sap/bc/adt/ddic/tables/BAPIRET2 → 404
+      mockFetch.mockResolvedValueOnce(mockResponse(404, '<?xml version="1.0"?><error/>'));
+      // 2) URL probe fallback: /sap/bc/adt/ddic/structures/BAPIRET2 → 200
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '<?xml version="1.0"?><stru/>'));
+      // 3) CSRF token fetch
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      // 4) usageReferences POST
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          `<?xml version="1.0" encoding="utf-8"?>
+<usageReferences:usageReferenceResult xmlns:usageReferences="http://www.sap.com/adt/ris/usageReferences">
+  <usageReferences:referencedObjects/>
+</usageReferences:usageReferenceResult>`,
+        ),
+      );
+      await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPNavigate', {
+        action: 'references',
+        type: 'TABL',
+        name: 'BAPIRET2',
+      });
+      // The where-used POST URL must reference /structures/, not /tables/.
+      const lastCall = mockFetch.mock.calls[mockFetch.mock.calls.length - 1];
+      const lastUrl = String(lastCall?.[0]);
+      expect(lastUrl).toContain(`usageReferences?uri=${encodeURIComponent('/sap/bc/adt/ddic/structures/BAPIRET2')}`);
+      expect(lastUrl).not.toContain(encodeURIComponent('/sap/bc/adt/ddic/tables/BAPIRET2'));
+    });
+
     it('returns error when neither uri nor type+name provided for definition', async () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPNavigate', {
         action: 'definition',

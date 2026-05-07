@@ -468,13 +468,19 @@ describe('ADT Integration Tests', () => {
       expect(resolvedUrl).toContain('/sap/bc/adt/ddic/structures/');
     });
 
-    it('reads T000 via unified getTabl() — uses /tables/ on first try (no fallback)', async () => {
+    it('reads T000 via unified getTabl() — transparent table (URL release-dependent)', async () => {
+      // T000 is a transparent table (DD02L-TABCLASS=TRANSP). On modern S/4HANA
+      // releases the source is served from /sap/bc/adt/ddic/tables/T000; on
+      // some 7.5x systems only /sap/bc/adt/ddic/structures/T000 returns 200.
+      // getTabl() handles either path via its 404 fallback, so we assert the
+      // source content rather than the resolved URL prefix.
       const { source } = await client.getTabl('T000');
       expect(source).toBeTruthy();
-      // T000 is a transparent table with @AbapCatalog.tableCategory : #TRANSPARENT.
       expect(source.toLowerCase()).toContain('t000');
+      // Transparent-table marker — appears on both /tables/ and /structures/ readbacks.
+      expect(source).toMatch(/@AbapCatalog\.tableCategory\s*:\s*#TRANSPARENT/i);
       const resolvedUrl = await client.resolveTablObjectUrl('T000');
-      expect(resolvedUrl).toContain('/sap/bc/adt/ddic/tables/');
+      expect(resolvedUrl).toMatch(/\/sap\/bc\/adt\/ddic\/(tables|structures)\/T000$/);
     });
 
     it('reads domain metadata (MANDT)', async (ctx) => {
