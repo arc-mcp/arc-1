@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.2](https://github.com/marianfoo/arc-1/compare/v0.9.1...v0.9.2) (2026-05-08)
+
+
+### Bug Fixes
+
+* **ci:** re-trigger release after [#244](https://github.com/marianfoo/arc-1/issues/244) chore-merge ([6345625](https://github.com/marianfoo/arc-1/commit/6345625b5e402752062706a4ae1abc7cfa1ba5a2))
+
 ## [0.9.1](https://github.com/marianfoo/arc-1/compare/v0.9.0...v0.9.1) (2026-05-08)
 
 
