@@ -14,6 +14,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # Trivy uploads SARIF findings to the Security tab.
+      security-events: write
     strategy:
       matrix:
         include:
@@ -26,10 +28,10 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4
 
       - name: Login to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121  # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -37,7 +39,7 @@ jobs:
 
       - name: Docker metadata
         id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf  # v6
         with:
           images: ghcr.io/marianfoo/arc-1
           tags: |
@@ -45,7 +47,7 @@ jobs:
 
       - name: Build and push by digest
         id: build
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f  # v7
         with:
           context: .
           platforms: ${{ matrix.platform }}
@@ -53,6 +55,25 @@ jobs:
           outputs: type=image,"name=ghcr.io/marianfoo/arc-1",push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=${{ github.repository }}-${{ matrix.platform }}
           cache-to: type=gha,mode=max,scope=${{ github.repository }}-${{ matrix.platform }}
+
+      # Trivy: scan the freshly-built image for OS-level + JS-level CVEs.
+      # Non-gating on dev pushes — surface findings as SARIF for triage.
+      # The release workflow gates HIGH/CRITICAL (exit-code: 1).
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          image-ref: ghcr.io/marianfoo/arc-1@${{ steps.build.outputs.digest }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: HIGH,CRITICAL
+          exit-code: '0'
+
+      - name: Upload Trivy SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-${{ matrix.platform }}
 
       - name: Export digest
         run: |
@@ -84,7 +105,7 @@ jobs:
           merge-multiple: true
 
       - name: Login to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121  # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -92,7 +113,7 @@ jobs:
 
       - name: Docker metadata
         id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf  # v6
         with:
           images: ghcr.io/marianfoo/arc-1
           tags: |

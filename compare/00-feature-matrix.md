@@ -2,7 +2,7 @@
 
 A comprehensive comparison of all SAP ADT/MCP projects against ARC-1.
 
-_Last updated: 2026-05-08 — issue #218 audit landed in two PRs._
+_Last updated: 2026-05-08 — issue #218 audit + SEC-11 dependency security Tier 1._
 _Plan A (PR #223): purged five invented `SLASH_TYPE_MAP` entries `FUNC/FM`, `CLAS/LI`, `VIEW/V`, `TRAN/O`; repointed `FUGR/FF → FUNC` (was `→ FUGR`); added real `VIEW/DV → VIEW`, `TRAN/T → TRAN`, `objectBasePath('VIEW')` VIT URL, citation guard `SLASH_TYPE_EVIDENCE`, exhaustiveness guard `KNOWN_BASE_TYPES`, slash-form throw + `objectBasePath('FUNC')` group-context throw. DDIC view reads were silently broken via fallthrough to `/programs/programs/`._
 _Plan B (PR #224): `MSAG` added to `SAPREAD_TYPES_*` (was previously write-only / read-via-`MESSAGES` asymmetry); `FTG2` renamed to `FEATURE_TOGGLE` (ARC-1-invented short identifier per research/abap-types/types/ftg2.md). Both old aliases (`MESSAGES`, `FTG2`) accepted for one minor with stderr deprecation warning._
 _Both verified live against a4h S/4HANA 2023 + npl NW 7.50 SP02 — both systems return identical `<adtcore:type>` values._
@@ -75,6 +75,25 @@ _2026-04-27 carry-over from 2026-04-23 update: PR #174 (2026-04-21) landed `SAPD
 | MCP elicitation | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (10+ flows) | N/A |
 | Try-finally lock safety | ✅ | ✅ | ❌ | N/A | ✅ | ✅ (v4.5.0) | N/A | ⚠️ (abap-adt-api) | ✅ |
 | MCP scope system (OAuth) | ✅ (2D: scopes+roles+safety) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A |
+
+### 4.1 Supply-Chain Security (SEC-11, Tier 1)
+
+Where the rest of §4 covers *runtime* guardrails, this sub-table covers *build-time and distribution-time* guardrails — the controls that make the published npm package and Docker image trustworthy. Status for competitors is based on a 2026-05-08 inspection of their public `.github/`, `package.json`, and release-related workflow files; "—" means the project doesn't ship the relevant artifact (e.g. no Docker image to scan).
+
+| Control | ARC-1 | vibing-steampunk | mcp-abap-abap-adt-api | mcp-abap-adt (mario) | AWS Accelerator | fr0ster | btp-odata-mcp | dassian-adt / abap-mcpb | sapcli |
+|---|---|---|---|---|---|---|---|---|---|
+| Dependabot (or equivalent) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `npm audit` PR gate | ✅ | N/A (Go) | ❌ | ❌ | N/A (Python) | ❌ | ❌ | ❌ | N/A (Python) |
+| GitHub Dependency Review | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| CodeQL / SAST in CI | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Container image scanning | ✅ (Trivy) | — | — | — | ⚠️ (AWS-side) | — | — | — | — |
+| Workflow `permissions:` minimum | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Third-party action SHA pinning | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| npm package provenance | ✅ | N/A (Go) | ❌ | ❌ | N/A (Python) | ❌ | ❌ | ❌ | N/A (Python) |
+| `SECURITY.md` policy | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Private Vulnerability Reporting | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+
+Tier 2 (CycloneDX SBOM, Cosign image signing, OpenSSF Scorecard) and Tier 3 (Socket.dev malicious-package detection, vulnerability triage runbook) are tracked in `docs/plans/` and will move into this matrix as they land.
 
 ## 5. ABAP Read Operations
 

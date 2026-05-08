@@ -54,6 +54,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Block PRs that introduce known HIGH/CRITICAL advisories before
+      # slower steps run. Audits production AND dev deps — a compromised
+      # dev dep (test runner, linter) can poison the published artifact.
+      # Threshold = high (moderate is too noisy for transitive deps).
+      - name: Security audit (npm audit)
+        run: npm audit --audit-level=high --omit=optional
+
       - name: Lint
         run: npm run lint
 

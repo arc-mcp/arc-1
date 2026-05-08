@@ -1,0 +1,35 @@
+# PR-time dependency review — fails the PR check when a contributor
+# adds a dependency with a known HIGH/CRITICAL advisory or an
+# incompatible license. Complements Dependabot (post-fact patches) by
+# catching introductions before merge. Documented in
+# docs/plans/dependency-security-tier1-foundation.md (SEC-11).
+
+name: Dependency Review
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  dependency-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure
+          # License allowlist — derived from `npm ls --all --json` against
+          # current production deps. Excludes copyleft (GPL/AGPL/LGPL)
+          # which would contaminate the MIT-licensed npm package.
+          allow-licenses: >-
+            MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, CC0-1.0,
+            Unlicense, 0BSD, MPL-2.0, BlueOak-1.0.0, CC-BY-4.0
+          deny-licenses: >-
+            GPL-2.0, GPL-3.0, AGPL-3.0, LGPL-2.1, LGPL-3.0

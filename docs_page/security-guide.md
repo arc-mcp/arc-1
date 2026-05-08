@@ -382,3 +382,63 @@ This is the most critical compromise scenario -- the CA key can mint certificate
 2. **Generate a new CA**: Create a new key pair and import the new certificate into STRUST.
 3. **Update ARC-1**: Deploy the new CA key and certificate.
 4. **Audit all SAP activity**: Review SM20 for all users during the compromise window.
+
+---
+
+## 13. Dependency & Supply-Chain Security
+
+ARC-1 ships as an [npm package](https://www.npmjs.com/package/arc-1) and a [Docker image](https://github.com/marianfoo/arc-1/pkgs/container/arc-1) consumed by enterprise customers running on regulated landscapes (banks, government, defense, pharma). Customers will run their own image scanners (Aqua, Prisma Cloud, Microsoft Defender) against the published image and reject vulnerable artifacts. ARC-1 layers its own supply-chain controls on top of GitHub-native primitives so issues are caught upstream of those scanners.
+
+### What runs in CI
+
+| Control | Workflow | Severity gate |
+|---|---|---|
+| Dependabot — npm + GitHub Actions + Docker | `.github/dependabot.yml` | weekly + same-day security advisories |
+| `npm audit` PR gate | `.github/workflows/test.yml` (`Security audit (npm audit)` step) | fails on `high` / `critical` |
+| GitHub Dependency Review (PR diff) | `.github/workflows/dependency-review.yml` | fails on `high`; license allow/deny lists |
+| CodeQL SAST (JavaScript/TypeScript) | GitHub Default Setup | findings on Security tab; PR check fails on `High or higher` |
+| Trivy container scan — dev push | `.github/workflows/docker.yml` | non-gating; SARIF uploaded to Security tab |
+| Trivy container scan — release | `.github/workflows/release.yml` | **gating**: fails the release on `HIGH` / `CRITICAL` |
+| Workflow-level `permissions: contents: read` | all workflows | minimum `GITHUB_TOKEN` scope |
+| Third-party action SHA pinning | `googleapis/release-please-action`, `docker/*`, `aquasecurity/trivy-action` | mitigates the `tj-actions/changed-files` 2024 supply-chain compromise class |
+| npm provenance | `.github/workflows/release.yml` (`npm publish --provenance`) | every release tarball is Sigstore-attested |
+| `SECURITY.md` policy | repo root | private vulnerability reporting + severity-tiered response SLAs |
+
+GitHub-native repository toggles that should also be on (verified in Settings → Advanced Security):
+
+- Dependabot alerts + security updates + version updates + grouped security updates + malware alerts
+- Secret scanning + push protection
+- Private vulnerability reporting
+
+### Verifying the chain as an operator
+
+```bash
+# 1. npm package — verify the published tarball was built from this repo
+npm install arc-1
+npm audit signatures arc-1
+# Expected: "audited <N> packages — verified <N> packages with Sigstore"
+
+# 2. npm package — confirm no known vulnerabilities at install time
+npm audit --audit-level=high
+# Expected: "found 0 vulnerabilities"
+
+# 3. Docker image — scan locally with the same scanner CI uses
+trivy image ghcr.io/marianfoo/arc-1:<version> \
+  --severity HIGH,CRITICAL \
+  --exit-code 1
+# Expected: exit 0, "No vulnerabilities found"
+
+# 4. View the full advisory history for the project
+open https://github.com/marianfoo/arc-1/security/advisories
+```
+
+### Reporting a vulnerability
+
+See [`SECURITY.md`](https://github.com/marianfoo/arc-1/blob/main/SECURITY.md). Preferred channel is GitHub [Private Vulnerability Reporting](https://github.com/marianfoo/arc-1/security/advisories/new); fallback is email. Do **not** open a public issue or post on the SAP Community before the maintainers acknowledge the report — that bypasses coordinated disclosure and can put deployed instances at risk.
+
+### Roadmap
+
+This section corresponds to roadmap entry **SEC-11 (Tier 1: Foundation)**. Future tiers extend the chain:
+
+- **Tier 2 (Attestation)** — CycloneDX SBOM (npm + image), Cosign keyless image signing, OpenSSF Scorecard. Plan in [`docs/plans/dependency-security-tier2-attestation.md`](https://github.com/marianfoo/arc-1/blob/main/docs/plans/dependency-security-tier2-attestation.md).
+- **Tier 3 (Active Defense)** — Socket.dev PR review, vulnerability triage runbook, formal non-adoption decisions for Renovate / Snyk / SLSA L3. Plan in [`docs/plans/dependency-security-tier3-defense.md`](https://github.com/marianfoo/arc-1/blob/main/docs/plans/dependency-security-tier3-defense.md).

@@ -4,7 +4,9 @@
 
 ARC-1 connects AI assistants (Claude, GitHub Copilot, Copilot Studio, and any MCP client) to SAP systems via the [ADT REST API](https://help.sap.com/docs/abap-cloud/abap-development-tools-user-guide/about-abap-development-tools). It ships as an [npm package](https://www.npmjs.com/package/arc-1) and [Docker image](https://github.com/marianfoo/arc-1/pkgs/container/arc-1).
 
-
+[![Test](https://github.com/marianfoo/arc-1/actions/workflows/test.yml/badge.svg)](https://github.com/marianfoo/arc-1/actions/workflows/test.yml)
+[![CodeQL](https://github.com/marianfoo/arc-1/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/marianfoo/arc-1/security/code-scanning)
+[![Dependency Review](https://github.com/marianfoo/arc-1/actions/workflows/dependency-review.yml/badge.svg)](https://github.com/marianfoo/arc-1/actions/workflows/dependency-review.yml)
 
 **[Full Documentation](https://marianfoo.github.io/arc-1/)** | **[Quickstart](https://marianfoo.github.io/arc-1/quickstart/)** | **[Tool Reference](https://marianfoo.github.io/arc-1/tools/)**
 
@@ -24,6 +26,7 @@ Built for organizations that need AI-assisted SAP development with guardrails. I
 - **Writes restricted to `$TMP` when enabled** — only local/throwaway objects; writing to transportable packages requires explicit `--allowed-packages`
 - **HTTP security headers (helmet) on by default** — HSTS, CSP, X-Frame-Options, CORP, X-Content-Type-Options. COOP is deliberately not set so popup-based OAuth flows (Copilot Studio) keep working. No flag to disable.
 - **Opt-in CORS for browser MCP clients** — `ARC1_ALLOWED_ORIGINS` (comma-separated, exact match). Off by default; native MCP clients don't need it
+- **Supply-chain security** — Dependabot (npm + GitHub Actions + Docker, weekly + same-day security advisories), `npm audit --audit-level=high` PR gate, GitHub Dependency Review on every PR, CodeQL SAST, Trivy container scanning (gating on release, advisory on dev), all third-party GitHub Actions pinned to commit SHA, [`SECURITY.md`](SECURITY.md) policy with severity-tiered SLAs. Image and npm package both ship with [provenance attestations](https://docs.npmjs.com/generating-provenance-statements). See the [security guide §13](https://marianfoo.github.io/arc-1/security-guide/#13-dependency--supply-chain-security)
 
 ### Authentication
 

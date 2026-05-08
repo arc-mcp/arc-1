@@ -1,6 +1,6 @@
 # ARC-1 Roadmap
 
-**Last Updated:** 2026-04-28
+**Last Updated:** 2026-05-08
 **Project:** ARC-1 (ABAP Relay Connector) — MCP Server for SAP ABAP Systems
 **Repository:** https://github.com/marianfoo/arc-1
 
@@ -115,6 +115,7 @@ SORT RULES for this table — DO NOT BREAK when adding rows:
 
 | ID | Feature | Completed | Category |
 |----|---------|-----------|----------|
+| [SEC-11](#sec-11) | Dependency & Supply-Chain Security — Tier 1 Foundation (cleared 9 npm audit advisories; Dependabot for npm/actions/docker with grouping + ignore rules; `npm audit` PR gate; GitHub Dependency Review; Trivy container scanning gating on release + advisory on dev; third-party action SHA pinning; workflow-level `permissions: contents: read`; SECURITY.md policy) | 2026-05-08 | Security |
 | — | Audit Plan B: read/write enum symmetry (`MSAG` added to `SAPREAD_TYPES_*`) + `FTG2 → FEATURE_TOGGLE` rename. Issue #218 follow-up; both old aliases (`MESSAGES`, `FTG2`) accepted for one minor with stderr deprecation warning. Verified live on a4h S/4HANA 2023 + npl NW 7.50 SP02. | 2026-05-08 | Features |
 | — | Audit-driven purge of invented ADT slash aliases (issue #218 follow-up, Plan A — PR #223). Removes `FUNC/FM`, `CLAS/LI`, `VIEW/V`, `TRAN/O` from `SLASH_TYPE_MAP`; repoints `FUGR/FF → FUNC` (was `→ FUGR`); adds real `VIEW/DV → VIEW` and `TRAN/T → TRAN`; adds `objectBasePath('VIEW')` (DDIC view reads were silently broken via fallthrough to `/programs/programs/`); adds `KNOWN_BASE_TYPES` exhaustiveness guard + `SLASH_TYPE_EVIDENCE` citation guard so this bug class can't recur. Verified against a4h S/4HANA 2023 + npl NW 7.50. | 2026-05-08 | Compatibility |
 | [SEC-10](#sec-10) | HTTP Security Headers (helmet) + Opt-In CORS for browser MCP clients | 2026-05-05 | Security |
@@ -2200,6 +2201,57 @@ The four shipped MCP clients — Claude Desktop, Cursor, VS Code Copilot, Copilo
 **Follow-ups (not in this PR):**
 
 - Per-request rate limiting on `/mcp` (tracked separately in [docs/plans/global-rate-limiting.md](../docs/plans/global-rate-limiting.md)).
+
+---
+
+<a id="sec-11"></a>
+### SEC-11: Dependency & Supply-Chain Security — Tier 1 Foundation
+| Field | Value |
+|-------|-------|
+| **Priority** | P1 |
+| **Status** | Complete (2026-05-08) |
+
+**Problem:** Before this work, the repository had no Dependabot, no `npm audit` gate, no GitHub Dependency Review, no SAST in CI for the project itself, no container scanning, and no `SECURITY.md` policy. `npm audit` reported 9 open advisories (2 HIGH, 7 MODERATE) across `path-to-regexp`, `axios` (transitive), `hono`, `@hono/node-server`, `ip-address`, `express-rate-limit`, `fast-xml-parser`, `follow-redirects`, `postcss`. Customers running ARC-1 on regulated landscapes (banks, government, defense) run their own image scanners (Aqua, Prisma Cloud, Microsoft Defender) — vulnerable artifacts get rejected at procurement.
+
+**Implemented (across PRs #227, #229, #234, #235, this PR):**
+
+- **Dependency baseline cleared.** `npm audit fix` + `npm update` resolved all 9 advisories; lockfile rebuilt with 13 in-range packages bumped to latest. `npm audit --audit-level=high` exits 0 today. (PR [#227](https://github.com/marianfoo/arc-1/pull/227))
+- **Dependabot config.** `.github/dependabot.yml` — three ecosystems (npm, github-actions, docker), weekly Mondays 06:00 Europe/Berlin, grouping rules (`dev-dependencies`, `types`, `sap-sdk`, `mcp-sdk`, `linting`), ignore rules for `@types/node` major (must match `engines.node`) and Docker `node` major (LTS-only cadence). (PRs [#229](https://github.com/marianfoo/arc-1/pull/229) + [#235](https://github.com/marianfoo/arc-1/pull/235))
+- **`npm audit` PR gate.** New step in `.github/workflows/test.yml` runs `npm audit --audit-level=high --omit=optional` after `npm ci`, before `npm run lint`. Audits production AND dev deps — a compromised dev dep can poison the published artifact.
+- **GitHub Dependency Review.** New `.github/workflows/dependency-review.yml` runs on every PR, fails on `high`-severity introductions or denied licenses (GPL/AGPL/LGPL deny-list to protect the MIT-licensed npm package).
+- **CodeQL SAST.** GitHub Default Setup running JS/TS analysis on every push/PR; findings on the Security tab; `Check runs failure threshold: High or higher` blocks merges with HIGH security alerts.
+- **Trivy container scanning.** `.github/workflows/docker.yml` (dev push) runs Trivy non-gating (`exit-code: 0`) and uploads SARIF to the Security tab. `.github/workflows/release.yml` runs Trivy **gating** (`exit-code: 1`) so customers pulling `:vX.Y.Z` get a CVE-clean image.
+- **Workflow permissions.** Top-level `permissions: contents: read` on `test.yml`, plus per-job `security-events: write` for SARIF upload paths. Closed 5 of the 12 then-open CodeQL `actions/missing-workflow-permissions` MEDIUM alerts. (PR [#229](https://github.com/marianfoo/arc-1/pull/229))
+- **Third-party action SHA pinning.** `googleapis/release-please-action`, `docker/setup-buildx-action`, `docker/login-action`, `docker/metadata-action`, `docker/build-push-action`, `aquasecurity/trivy-action` — all pinned to commit SHAs with trailing `# vN` comments so Dependabot bumps SHA + tag together. Mitigates the [`tj-actions/changed-files` 2024 supply-chain compromise](https://blog.gitguardian.com/tj-actions-changed-files-action-was-compromised/) attack class. GitHub-owned `actions/*` and `github/*` are deliberately tag-pinned.
+- **`SECURITY.md` policy.** Vulnerability reporting (GitHub Private Vulnerability Reporting + email fallback), severity-tiered response SLAs (3 days ack / 7 days triage / 14 days critical / 30 days high / 60 days moderate), CVE handling (GHSA + CVE via GitHub's CNA), out-of-scope (SAP system bugs route to SAP, upstream-only deps route upstream), Safe Harbor for good-faith research. (PR [#229](https://github.com/marianfoo/arc-1/pull/229))
+- **Repo-level GitHub security toggles enabled.** Dependabot alerts + security updates + grouped security updates + version updates + malware alerts; secret scanning + push protection (already on by default for public repos); Private Vulnerability Reporting.
+
+**Tradeoffs:**
+
+- Audit threshold = `high` (not `moderate`). `moderate` produces too much noise from transitive deps for any team that's not monitoring full-time. Critical/HIGH gate; moderate/low surface as warnings on the Security tab.
+- Trivy non-gating on dev pushes, gating on releases. Dev iteration shouldn't be blocked by a HIGH CVE in a Node base image that we can't fix until upstream rebuilds; releases need to be CVE-clean before customers pull them.
+- Third-party SHA pinning only — `actions/*` and `github/*` stay tag-pinned. They publish from a trusted GitHub-owned org with signed releases; pinning them too generates churn without commensurate security gain.
+- CodeQL stays on Default Setup, not Advanced. Default Setup auto-manages the workflow file and bumps queries; Advanced gives more control (`security-extended,security-and-quality` query suite, path-ignore for tests/dist) but has more upkeep. Re-evaluate if the false-positive rate on Default proves untenable.
+
+**Files:**
+- `.github/dependabot.yml` — three ecosystems + grouping + ignore rules (PRs [#229](https://github.com/marianfoo/arc-1/pull/229), [#235](https://github.com/marianfoo/arc-1/pull/235))
+- `.github/workflows/test.yml` — `Security audit (npm audit)` step + top-level `permissions:`
+- `.github/workflows/dependency-review.yml` — NEW PR-time dependency review
+- `.github/workflows/docker.yml` — Trivy non-gating + SHA-pinned `docker/*` + `aquasecurity/trivy-action`
+- `.github/workflows/release.yml` — Trivy gating + SHA-pinned `googleapis/release-please-action` + `docker/*` + `aquasecurity/trivy-action`
+- `SECURITY.md` — NEW vulnerability reporting policy (PR [#229](https://github.com/marianfoo/arc-1/pull/229))
+- `package-lock.json` — 9 advisories cleared + 13 in-range bumps (PR [#227](https://github.com/marianfoo/arc-1/pull/227))
+- `biome.json` — `$schema` URL bumped to match `@biomejs/biome` 2.4.14 (PR [#227](https://github.com/marianfoo/arc-1/pull/227))
+- `docs_page/security-guide.md` — NEW §13 "Dependency & Supply-Chain Security"
+- `compare/00-feature-matrix.md` — NEW §4.1 "Supply-Chain Security" comparison
+- `README.md` — CodeQL + Test + Dependency Review badges; supply-chain security bullet
+- `CLAUDE.md` — Key Files rows for Dependabot config / audit & SAST gates / container scanning / action pinning / `SECURITY.md`
+
+**Follow-ups (not in this PR):**
+
+- Tier 2: CycloneDX SBOM (npm + image), Cosign keyless image signing, OpenSSF Scorecard. Plan in [docs/plans/dependency-security-tier2-attestation.md](../docs/plans/dependency-security-tier2-attestation.md).
+- Tier 3: Socket.dev PR review, internal vulnerability triage runbook, formal non-adoption decisions for Renovate / Snyk / SLSA L3. Plan in [docs/plans/dependency-security-tier3-defense.md](../docs/plans/dependency-security-tier3-defense.md).
+- 7 remaining HIGH CodeQL alerts (clear-text logging FPs in `src/cli.ts`, double-escaping in `src/adt/diagnostics.ts` + `src/adt/xml-parser.ts`, incomplete sanitization in `src/adt/diagnostics.ts`, missing rate-limiting on `/authorize` — the last maps to roadmap [SEC-05](#sec-05)). Triage in separate PRs.
 
 ---
 
