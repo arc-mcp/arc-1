@@ -272,6 +272,11 @@ The user doesn't have the required role collection assigned. Go to BTP Cockpit �
 ### "Invalid client_id" (Copilot Studio)
 DCR registrations are in-memory and lost on restart. Switch to **Manual** OAuth mode (see above) to avoid this.
 
+### "Token validation failed: not a valid XSUAA, OIDC, or API key token" (Copilot Studio)
+Copilot Studio caches the access token from the initial sign-in. XSUAA tokens expire after 1 hour and Copilot Studio does not always refresh them automatically — the connector keeps sending the expired token, which ARC-1 correctly rejects.
+
+Fix: re-authenticate the connection. In your bot, open **Test** → **Connections** → ⋮ next to the ARC-1 connection → **Authenticate**, or delete and re-add the connection from the connector page.
+
 ### OAuth flow hangs or returns 400
 Check that the XSUAA client ID matches. Run `cf env <app-name>` and look for the `clientid` in the XSUAA binding credentials.
 

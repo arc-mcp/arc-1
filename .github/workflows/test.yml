@@ -1,10 +1,11 @@
 name: Test
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened]
+  # Manual trigger so chore: PRs (and any other skipped PR) can be tested on demand.
+  workflow_dispatch:
 
 # Only one SAP-hitting workflow at a time — prevents parallel runs from
 # different PRs/pushes from exhausting SAP work processes.
@@ -21,8 +22,9 @@ permissions:
 
 jobs:
   # Smoke check that mta.yaml + the .mtaext.example template are valid MTA
-  # descriptors. Runs on every push/PR (no SAP secrets needed) so a broken
-  # YAML or schema regression is caught before it reaches BTP deploys.
+  # descriptors. Runs on every PR + manual dispatch (no SAP secrets needed)
+  # so a broken YAML or schema regression is caught before it reaches BTP
+  # deploys. Independent of the SAP-test gate — always runs.
   mta-validate:
     runs-on: ubuntu-latest
     steps:
@@ -36,7 +38,28 @@ jobs:
       - name: Validate mta.yaml + mta-overrides.mtaext.example
         run: npm run btp:validate
 
+  # Gates the SAP-hitting jobs below based on PR title (conventional commit
+  # prefix). Skips on `docs:` and `chore:` PRs to save SAP work processes;
+  # auto-runs for everything else (`fix:`, `feat:`, `test:`, `refactor:`,
+  # etc.). Manual dispatch always passes — chore PRs can be tested via the
+  # "Run workflow" button when needed.
+  gate:
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+       !startsWith(github.event.pull_request.title, 'docs:') &&
+       !startsWith(github.event.pull_request.title, 'docs(') &&
+       !startsWith(github.event.pull_request.title, 'chore:') &&
+       !startsWith(github.event.pull_request.title, 'chore('))
+    steps:
+      - name: Tests will run
+        run: |
+          echo "event=${{ github.event_name }}"
+          echo "pr_title=${{ github.event.pull_request.title }}"
+
   test:
+    needs: gate
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -101,11 +124,11 @@ jobs:
           retention-days: 7
         continue-on-error: true
 
-  # Run on push (main) and internal PRs; skip external fork PRs (no secrets)
+  # Run on internal PRs and manual dispatch; skip external fork PRs (no secrets)
   integration:
     runs-on: ubuntu-latest
     if: >
-      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' &&
        github.event.pull_request.head.repo.full_name == github.repository)
     needs: test
@@ -175,7 +198,7 @@ jobs:
     if: >
       always() &&
       needs.test.result == 'success' &&
-      (github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' ||
        (github.event_name == 'pull_request' &&
         github.event.pull_request.head.repo.full_name == github.repository))
     needs: [test, integration]
@@ -272,9 +295,12 @@ jobs:
           retention-days: 7
 
   reliability-summary:
-    if: always()
+    # Run on success or failure of upstream jobs, but only when the gate allowed
+    # the workflow to run in the first place — avoids a noisy "no results" summary
+    # on docs/chore PRs that skipped the test pipeline.
+    if: ${{ !cancelled() && needs.gate.result == 'success' }}
     runs-on: ubuntu-latest
-    needs: [test, integration, e2e]
+    needs: [gate, test, integration, e2e]
 
     steps:
       - uses: actions/checkout@v6
