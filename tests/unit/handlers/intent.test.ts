@@ -9787,4 +9787,88 @@ ENDCLASS.`;
       expect(text).not.toContain('ZCL_LATER: success');
     });
   });
+
+  // ─── MSAG transport-vs-task guard (PR-γ) ──────────────────────────
+  describe('SAPWrite MSAG transport-vs-task guard', () => {
+    function buildTransportListXml(transportId: string | null): string {
+      // SAP returns 200 with a workbench listing — empty when ID doesn't match a request.
+      if (!transportId) {
+        return (
+          `<?xml version="1.0" encoding="utf-8"?>` +
+          `<tm:root xmlns:tm="http://www.sap.com/cts/adt/tm"><tm:workbench/></tm:root>`
+        );
+      }
+      return (
+        `<?xml version="1.0" encoding="utf-8"?>` +
+        `<tm:root xmlns:tm="http://www.sap.com/cts/adt/tm">` +
+        `<tm:workbench><tm:request tm:number="${transportId}" tm:owner="MARIAN" tm:type="K" tm:status="D" tm:description="x"/>` +
+        `</tm:workbench></tm:root>`
+      );
+    }
+
+    it('rejects MSAG create when transport ID is not a valid request (task number)', async () => {
+      mockFetch.mockReset();
+      // First call: getTransport returns no matching request.
+      mockFetch.mockResolvedValueOnce(mockResponse(200, buildTransportListXml(null)));
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'MSAG',
+        name: 'ZARC1_MSAG_BAD',
+        package: '$TMP',
+        transport: 'TASK001',
+        description: 'test',
+      });
+      expect(result.isError).toBe(true);
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('not a valid transport request');
+      expect(text).toContain('TASK001');
+    });
+
+    it('proceeds past the guard when getTransport returns a valid request', async () => {
+      mockFetch.mockReset();
+      // getTransport returns matching request.
+      mockFetch.mockResolvedValueOnce(mockResponse(200, buildTransportListXml('REQ001')));
+      // Subsequent calls (CSRF + create + activate stubs) — succeed minimally.
+      mockFetch.mockResolvedValue(mockResponse(200, '<ok/>', { 'x-csrf-token': 'T' }));
+
+      await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'MSAG',
+        name: 'ZARC1_MSAG_OK',
+        package: '$TMP',
+        transport: 'REQ001',
+        description: 'test',
+      });
+
+      // Guard fell through — at least 2 fetches happened (transport check + follow-up).
+      expect(mockFetch.mock.calls.length).toBeGreaterThan(1);
+    });
+
+    it('caches getTransport result across MSAG entries inside batch_create', async () => {
+      mockFetch.mockReset();
+      // First call: getTransport returns a matching request.
+      mockFetch.mockResolvedValueOnce(mockResponse(200, buildTransportListXml('REQ001')));
+      // Subsequent calls — minimal stubs to keep the batch loop alive.
+      mockFetch.mockResolvedValue(mockResponse(200, '<ok/>', { 'x-csrf-token': 'T' }));
+
+      await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'batch_create',
+        package: '$TMP',
+        transport: 'REQ001',
+        objects: [
+          { type: 'MSAG', name: 'ZARC1_MSAG1', description: 'm1' },
+          { type: 'MSAG', name: 'ZARC1_MSAG2', description: 'm2' },
+          { type: 'MSAG', name: 'ZARC1_MSAG3', description: 'm3' },
+        ],
+      });
+
+      // Count transport-listing-endpoint calls. Exactly one should fire for the whole batch
+      // (cache hit on entries 2 and 3).
+      const transportCalls = mockFetch.mock.calls.filter(([url]) =>
+        String(url).includes('/sap/bc/adt/cts/transportrequests/REQ001'),
+      );
+      expect(transportCalls.length).toBe(1);
+    });
+  });
 });
