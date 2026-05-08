@@ -1,6 +1,6 @@
 # ARC-1 Roadmap
 
-**Last Updated:** 2026-05-08
+**Last Updated:** 2026-05-08 (added ARCH-01 + PR-ε architecture entries)
 **Project:** ARC-1 (ABAP Relay Connector) — MCP Server for SAP ABAP Systems
 **Repository:** https://github.com/marianfoo/arc-1
 
@@ -51,6 +51,8 @@ SORT RULES for this table — DO NOT BREAK when adding rows:
 | ID | Feature | Priority | Effort | Category |
 |-----|---------|----------|--------|----------|
 | [BUG-01](#bug-01) | SAPActivate phantom success + CLI/server alignment (NW 7.50) — PR [#179](https://github.com/marianfoo/arc-1/pull/179) open | P0 | S | Bugs |
+| [ARCH-01](#arch-01) | Discovery-driven endpoint routing — replaces hard-coded per-type URLs with ordered candidate-list against `/sap/bc/adt/discovery` (TABL already does this via `resolveTablObjectUrl`; extend to DOMA, DDLX, BDEF, SRVD, SRVB, ENHO). Plan: [docs/plans/discovery-driven-endpoint-routing.md](../docs/plans/discovery-driven-endpoint-routing.md) | P1 | M | Architecture |
+| [PR-ε](#pr-epsilon) | Remove static SAP_BASIS release gates and `isRelease750()` helper after ARCH-01 lands; consume `resolveSourceUrl` + `filterByDiscovery` at the call sites that are still hard-coded | P1 | S | Architecture |
 | [FEAT-18](#feat-18) | Function Group Bulk Fetch | P1 | S | Features |
 | [FEAT-24](#feat-24) | CompareSource (Diff) | P1 ↑ (from P2, 2026-04-23 — last piece of code-review workflow trio with FEAT-20 + FEAT-49) | S | Features |
 | [DOC-01](#doc-01) | Copilot Studio Setup Guide | P1 | S | Docs |
@@ -115,6 +117,8 @@ SORT RULES for this table — DO NOT BREAK when adding rows:
 
 | ID | Feature | Completed | Category |
 |----|---------|-----------|----------|
+| — | PR-β three-file sync (MSAG `messages` schema property exposure) + universal write guards (mixed-case object name rejection on create + batch_create). Splits PR [#196](https://github.com/marianfoo/arc-1/pull/196). Plan: `docs/plans/pr-beta-three-file-sync-and-universal-guards.md` (now in `docs/plans/completed/` after merge). PR [#201](https://github.com/marianfoo/arc-1/pull/201). | 2026-05-08 | Features |
+| — | PR-α cookie hot-reload on stale 401 (`SAP_COOKIE_FILE` re-read on persistent 401, no restart needed; non-blocking startup auth-preflight in cookie-auth mode; cookie-aware LLM error hint). Splits PR [#196](https://github.com/marianfoo/arc-1/pull/196). PR [#200](https://github.com/marianfoo/arc-1/pull/200). | 2026-05-08 | Features |
 | [SEC-11](#sec-11) | Dependency & Supply-Chain Security — Tier 1 Foundation (cleared 9 npm audit advisories; Dependabot for npm/actions/docker with grouping + ignore rules; `npm audit` PR gate; GitHub Dependency Review; Trivy container scanning gating on release + advisory on dev; third-party action SHA pinning; workflow-level `permissions: contents: read`; SECURITY.md policy) | 2026-05-08 | Security |
 | — | Audit Plan B: read/write enum symmetry (`MSAG` added to `SAPREAD_TYPES_*`) + `FTG2 → FEATURE_TOGGLE` rename. Issue #218 follow-up; both old aliases (`MESSAGES`, `FTG2`) accepted for one minor with stderr deprecation warning. Verified live on a4h S/4HANA 2023 + npl NW 7.50 SP02. | 2026-05-08 | Features |
 | — | Audit-driven purge of invented ADT slash aliases (issue #218 follow-up, Plan A — PR #223). Removes `FUNC/FM`, `CLAS/LI`, `VIEW/V`, `TRAN/O` from `SLASH_TYPE_MAP`; repoints `FUGR/FF → FUNC` (was `→ FUGR`); adds real `VIEW/DV → VIEW` and `TRAN/T → TRAN`; adds `objectBasePath('VIEW')` (DDIC view reads were silently broken via fallthrough to `/programs/programs/`); adds `KNOWN_BASE_TYPES` exhaustiveness guard + `SLASH_TYPE_EVIDENCE` citation guard so this bug class can't recur. Verified against a4h S/4HANA 2023 + npl NW 7.50. | 2026-05-08 | Compatibility |
@@ -1782,6 +1786,43 @@ For FUGR (function groups), the same pattern applies with `objecttype=FUGR/P` an
 **PR #179 fix summary:** inactive-objects detection in parse result (including owning user from `ioc:transport[@_user]`), endpoint fallback, flat-shape parser support, new `version` parameter plumbed through, `<chkrun:checkMessage>` position extraction, and a new `inactiveSyntaxDiagnostic()` primitive invoked on activation failure to append compiler errors from the inactive version.
 
 **Blast radius:** Every activation path (`SAPActivate`, RAP batch activation, E2E suites). Needs the missing E2E regression test the PR description calls out: create a class with a deliberate type error → attempt `SAPActivate` → assert failure → assert the returned message names the user and includes compiler text.
+
+---
+
+<a id="arch-01"></a>
+### ARCH-01: Discovery-driven Endpoint Routing
+
+| Field | Value |
+|-------|-------|
+| **Priority** | P1 |
+| **Effort** | M (3-5 days) |
+| **Risk** | Medium — touches discovery, intent, tools layers |
+| **Usefulness** | High — replaces brittle hard-coded URLs with self-correcting routing |
+| **Status** | **Plan ready** — [docs/plans/discovery-driven-endpoint-routing.md](../docs/plans/discovery-driven-endpoint-routing.md); decision recorded in [docs/adr/0001-discovery-driven-endpoint-routing.md](../docs/adr/0001-discovery-driven-endpoint-routing.md) |
+| **Blocks** | PR-ε (release-gate cleanup, if any release literals are reintroduced before ARCH-01 lands) |
+
+**What:** Generalize the discovery-driven URL pattern (`resolveTablObjectUrl` already does this for TABL — falls back from `/ddic/tables` to `/ddic/structures` based on what the SAP system publishes in `/sap/bc/adt/discovery`). Extend the same approach to other types where the URL varies across releases or where systems differ in which collections they expose: DOMA, DDLX, BDEF, SRVD, SRVB, ENHO. Adds one helper (`discoveryHasCollection(uri)`) plus a `RESOLVE_RULES` table mapping each type to an ordered candidate-URL list. Eliminates per-version branching in the handler hot path.
+
+**Why P1:** Foundation for replacing brittle release-version literals (`isRelease750()` and similar) anywhere they exist. Also makes the codebase self-correcting across SAP support packs — when SAP back-ports a collection, ARC-1 picks it up automatically. The pattern is already proven in `resolveTablObjectUrl`; this generalizes it.
+
+**Live evidence (captured 2026-04-28 against A4H 758 SP02 + NPL 750 SP02):** A4H discovery publishes `/ddic/{tables, structures, domains, ddlx/sources}, /bo/behaviordefinitions, /businessservices/bindings, /enhancements/{enhoxh, enhoxhb}`. NPL 750 publishes only `/ddic/{structures, dataelements, ddl/sources}, /enhancements/enhoxh, /messageclass, /businesslogicextensions/badis`. Discovery is the precise, machine-readable answer to "is this collection available."
+
+**Empirical input:** [docs/nw750-discovery-gap-analysis.md](../docs/nw750-discovery-gap-analysis.md) — endpoint-by-endpoint inventory contributed by PR [#196](https://github.com/marianfoo/arc-1/pull/196) author.
+
+---
+
+<a id="pr-epsilon"></a>
+### PR-ε: Remove Static Release Gates (consumes ARCH-01)
+
+| Field | Value |
+|-------|-------|
+| **Priority** | P1 |
+| **Effort** | S (1-2 days) |
+| **Risk** | Low — purely deletion + swap-in if release literals are reintroduced |
+| **Usefulness** | Maintenance — keeps the codebase free of `release < 751` literals once ARCH-01 lands |
+| **Status** | **Blocked on ARCH-01.** Currently a placeholder — the static release maps proposed in PR [#196](https://github.com/marianfoo/arc-1/pull/196) were not merged, so there is currently nothing to remove. If any future PR reintroduces release-version branching for endpoint routing, PR-ε replaces it with `resolveSourceUrl` / `filterByDiscovery`. |
+
+**Verification:** Each removal must be paired with a regression test against the NPL-7.50 probe fixture and a 758-class fixture, confirming the routing decision is identical to or better than what the literal would produce.
 
 ---
 
