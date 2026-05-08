@@ -1574,7 +1574,17 @@ async function handleSAPRead(
       const authField = await client.getAuthorizationField(name);
       return textResult(JSON.stringify(authField, null, 2));
     }
-    case 'FTG2': {
+    case 'FTG2':
+    case 'FEATURE_TOGGLE': {
+      // FEATURE_TOGGLE is the canonical short type. 'FTG2' is a deprecated alias —
+      // see research/abap-types/types/ftg2.md (ARC-1-invented; zero hits in TADIR,
+      // abap-file-formats, Eclipse apidoc). Removed in the next minor.
+      if (type === 'FTG2') {
+        logger.warn('SAPRead type "FTG2" is deprecated — use "FEATURE_TOGGLE" instead', {
+          type: 'FTG2',
+          replacement: 'FEATURE_TOGGLE',
+        });
+      }
       const toggle = await client.getFeatureToggle(name);
       return textResult(JSON.stringify(toggle, null, 2));
     }
@@ -1715,7 +1725,17 @@ async function handleSAPRead(
       const components = await client.getInstalledComponents();
       return textResult(JSON.stringify(components, null, 2));
     }
-    case 'MESSAGES': {
+    case 'MESSAGES':
+    case 'MSAG': {
+      // MSAG is the canonical TADIR R3TR type for message classes; 'MESSAGES' is a
+      // deprecated read alias kept for one minor release. See
+      // research/abap-types/types/msag.md.
+      if (type === 'MESSAGES') {
+        logger.warn('SAPRead type "MESSAGES" is deprecated — use "MSAG" instead', {
+          type: 'MESSAGES',
+          replacement: 'MSAG',
+        });
+      }
       try {
         const mcInfo = await client.getMessageClassInfo(name);
         return textResult(JSON.stringify(mcInfo, null, 2));
@@ -1773,7 +1793,7 @@ async function handleSAPRead(
     }
     default:
       return errorResult(
-        `Unknown SAPRead type: "${type}". Supported types: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL, VIEW, DOMA, DTEL, AUTH, FTG2, ENHO, VERSIONS, VERSION_SOURCE, TRAN, TABLE_CONTENTS, DEVC, SOBJ, SYSTEM, COMPONENTS, MESSAGES, TEXT_ELEMENTS, VARIANTS, BSP, BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS. ` +
+        `Unknown SAPRead type: "${type}". Supported types: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL, VIEW, DOMA, DTEL, MSAG, AUTH, FEATURE_TOGGLE, ENHO, VERSIONS, VERSION_SOURCE, TRAN, TABLE_CONTENTS, DEVC, SOBJ, SYSTEM, COMPONENTS, TEXT_ELEMENTS, VARIANTS, BSP, BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS. Deprecated aliases: MESSAGES (use MSAG), FTG2 (use FEATURE_TOGGLE). ` +
           'Tip: Type aliases are auto-normalized (e.g., DDLS/DF → DDLS, DCLS/DL → DCLS, CLAS/OC → CLAS, PROG/P → PROG). ' +
           'Do not pass a URI — use the "type" and "name" parameters instead.',
       );

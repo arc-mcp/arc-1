@@ -38,6 +38,11 @@ const SAPREAD_TYPES_ONPREM = [
   'SOBJ',
   'SYSTEM',
   'COMPONENTS',
+  // MSAG is the canonical TADIR R3TR type for message classes (table T100).
+  // 'MESSAGES' is kept as a deprecated alias for one minor release; both
+  // resolve to the same handler. See research/abap-types/types/msag.md and
+  // docs/plans/audit-symmetry-and-ftg2-rename.md.
+  'MSAG',
   'MESSAGES',
   'TEXT_ELEMENTS',
   'VARIANTS',
@@ -46,6 +51,9 @@ const SAPREAD_TYPES_ONPREM = [
   'API_STATE',
   'INACTIVE_OBJECTS',
   'AUTH',
+  // FTG2 is an ARC-1-private invented identifier (see research/abap-types/types/ftg2.md).
+  // FEATURE_TOGGLE is the new canonical name; FTG2 stays as deprecated alias for one minor.
+  'FEATURE_TOGGLE',
   'FTG2',
   'ENHO',
   'VERSIONS',
@@ -71,6 +79,8 @@ const SAPREAD_TYPES_BTP = [
   'DEVC',
   'SYSTEM',
   'COMPONENTS',
+  // MSAG canonical, MESSAGES deprecated alias (see research/abap-types/types/msag.md)
+  'MSAG',
   'MESSAGES',
   'BSP',
   'BSP_DEPLOY',

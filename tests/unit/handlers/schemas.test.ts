@@ -132,10 +132,56 @@ describe('SAPReadSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('accepts on-prem AUTH/FTG2/ENHO types', () => {
+  it('accepts on-prem AUTH/FEATURE_TOGGLE/ENHO types', () => {
     expect(SAPReadSchema.safeParse({ type: 'AUTH', name: 'BUKRS' }).success).toBe(true);
-    expect(SAPReadSchema.safeParse({ type: 'FTG2', name: 'ABC_TOGGLE' }).success).toBe(true);
+    expect(SAPReadSchema.safeParse({ type: 'FEATURE_TOGGLE', name: 'ABC_TOGGLE' }).success).toBe(true);
     expect(SAPReadSchema.safeParse({ type: 'ENHO', name: 'ZMY_BADI_IMPL' }).success).toBe(true);
+  });
+
+  it('still accepts deprecated FTG2 alias for one minor release', () => {
+    // Per docs/plans/audit-symmetry-and-ftg2-rename.md: FTG2 was an ARC-1-invented
+    // identifier (research/abap-types/types/ftg2.md). FEATURE_TOGGLE is the new
+    // canonical short type, FTG2 stays as a deprecated alias for one minor.
+    expect(SAPReadSchema.safeParse({ type: 'FTG2', name: 'ABC_TOGGLE' }).success).toBe(true);
+  });
+
+  it('accepts MSAG canonical message-class type and MESSAGES deprecated alias', () => {
+    // MSAG = TADIR R3TR truth (research/abap-types/types/msag.md). 'MESSAGES' was the
+    // original ARC-1 read-side alias, kept for one minor release.
+    expect(SAPReadSchema.safeParse({ type: 'MSAG', name: 'SY' }).success).toBe(true);
+    expect(SAPReadSchema.safeParse({ type: 'MESSAGES', name: 'SY' }).success).toBe(true);
+    // BTP variant should accept both as well.
+    expect(SAPReadSchemaBtp.safeParse({ type: 'MSAG', name: 'ZMSG' }).success).toBe(true);
+    expect(SAPReadSchemaBtp.safeParse({ type: 'MESSAGES', name: 'ZMSG' }).success).toBe(true);
+  });
+
+  it('write enum has MSAG (canonical) — read/write symmetry guard', () => {
+    // Anti-cargo-cult guard from docs/plans/audit-symmetry-and-ftg2-rename.md:
+    // every type that supports both verbs in ADT MUST be in both enums under the
+    // same canonical short form. The audit found MSAG missing from the read enum.
+    // This test asserts the symmetry; new types that violate it will fail loudly.
+    const SAPWRITE_TYPES_ONPREM_BACKING = [
+      'PROG',
+      'CLAS',
+      'INTF',
+      'FUNC',
+      'INCL',
+      'DDLS',
+      'DCLS',
+      'DDLX',
+      'BDEF',
+      'SRVD',
+      'SRVB',
+      'SKTD',
+      'TABL',
+      'DOMA',
+      'DTEL',
+      'MSAG',
+    ] as const;
+    for (const t of SAPWRITE_TYPES_ONPREM_BACKING) {
+      const result = SAPReadSchema.safeParse({ type: t, name: 'X' });
+      expect(result.success, `read enum missing canonical write type ${t}`).toBe(true);
+    }
   });
 
   it('accepts VERSIONS on on-prem', () => {

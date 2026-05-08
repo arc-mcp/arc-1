@@ -366,12 +366,29 @@ describe('Intent Handler', () => {
       expect(result.isError).toBeUndefined();
     });
 
-    it('reads messages (MESSAGES)', async () => {
+    it('reads message classes (MSAG)', async () => {
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'MSAG',
+        name: 'ZMSGCLASS',
+      });
+      expect(result.isError).toBeUndefined();
+    });
+
+    it('reads messages (MESSAGES deprecated alias) — same handler + deprecation warning', async () => {
+      // MSAG is the canonical TADIR R3TR type; 'MESSAGES' was the original ARC-1 name.
+      // Per research/abap-types/types/msag.md it is now a deprecated alias kept for
+      // one minor release.
+      const warnSpy = vi.spyOn(logger, 'warn');
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
         type: 'MESSAGES',
         name: 'ZMSGCLASS',
       });
       expect(result.isError).toBeUndefined();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('MESSAGES'),
+        expect.objectContaining({ replacement: 'MSAG' }),
+      );
+      warnSpy.mockRestore();
     });
 
     it('reads text elements (TEXT_ELEMENTS)', async () => {
@@ -720,7 +737,7 @@ describe('Intent Handler', () => {
       expect(parsed.orgLevelInfo).toEqual(['true']);
     });
 
-    it('reads feature toggle states (FTG2)', async () => {
+    it('reads feature toggle states (FEATURE_TOGGLE)', async () => {
       mockFetch.mockReset();
       mockFetch.mockResolvedValueOnce(
         mockResponse(
@@ -738,7 +755,7 @@ describe('Intent Handler', () => {
       );
 
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
-        type: 'FTG2',
+        type: 'FEATURE_TOGGLE',
         name: 'ABC_TOGGLE',
       });
       expect(result.isError).toBeUndefined();
@@ -746,6 +763,41 @@ describe('Intent Handler', () => {
       expect(parsed.name).toBe('ABC_TOGGLE');
       expect(parsed.clientState).toBe('on');
       expect(parsed.states).toEqual([{ client: '001', state: 'on', description: 'Dev' }]);
+    });
+
+    it('reads feature toggle states (FTG2 deprecated alias) — same result + deprecation warning', async () => {
+      // FTG2 is an ARC-1-private invented identifier (research/abap-types/types/ftg2.md).
+      // Renamed to FEATURE_TOGGLE in the audit-symmetry plan; FTG2 stays as a deprecated
+      // alias for one minor release with a stderr warning.
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          JSON.stringify({
+            STATES: {
+              NAME: 'ABC_TOGGLE',
+              CLIENT_STATE: 'on',
+              USER_STATE: 'undefined',
+              CLIENT_STATES: [{ CLIENT: '001', DESCRIPTION: 'Dev', STATE: 'on' }],
+              USER_STATES: [],
+            },
+          }),
+        ),
+      );
+      const warnSpy = vi.spyOn(logger, 'warn');
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'FTG2',
+        name: 'ABC_TOGGLE',
+      });
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0]!.text);
+      expect(parsed.name).toBe('ABC_TOGGLE');
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('FTG2'),
+        expect.objectContaining({ replacement: 'FEATURE_TOGGLE' }),
+      );
+      warnSpy.mockRestore();
     });
 
     it('reads enhancement implementation metadata (ENHO)', async () => {

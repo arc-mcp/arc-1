@@ -157,7 +157,11 @@ describe('probe replay — npl-750-sp02-dev-edition fixture (recorded from real 
       expect(result.verdict, `${type} on 7.50 should be available`).toBe('available-high');
     }
 
-    for (const type of ['BDEF', 'SRVD', 'SRVB', 'AUTH', 'FTG2']) {
+    // 'FEATURE_TOGGLE' was renamed from 'FTG2' (see research/abap-types/types/ftg2.md
+    // and docs/plans/audit-symmetry-and-ftg2-rename.md). The probe-catalog entry now
+    // uses the canonical short name; the SAPRead handler still accepts FTG2 as a
+    // deprecated alias for one minor release.
+    for (const type of ['BDEF', 'SRVD', 'SRVB', 'AUTH', 'FEATURE_TOGGLE']) {
       const entry = getCatalogEntry(type);
       if (!entry) throw new Error(`Missing catalog entry for ${type}`);
       const result = await probeType(fetcher, entry, discoveryMap, meta.abapRelease);

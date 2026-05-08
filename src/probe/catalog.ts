@@ -182,7 +182,12 @@ export const CATALOG: CatalogEntry[] = [
     note: 'Authorization field read — may require newer ICF activation',
   },
   {
-    type: 'FTG2',
+    // FEATURE_TOGGLE — was 'FTG2' before audit Plan B (research/abap-types/types/ftg2.md).
+    // FTG2 was an ARC-1-private invented identifier (zero hits in TADIR /
+    // abap-file-formats / Eclipse apidoc 3.58.1). The endpoint is real; only the
+    // short name was renamed. 'FTG2' still routes here at the SAPRead handler with a
+    // deprecation warning for one minor release.
+    type: 'FEATURE_TOGGLE',
     collectionUrl: '/sap/bc/adt/sfw/featuretoggles',
     objectUrlTemplate: '/sap/bc/adt/sfw/featuretoggles/{name}/states',
     knownObjects: [],
