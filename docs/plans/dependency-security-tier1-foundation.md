@@ -112,9 +112,9 @@ This plan is mostly YAML and Markdown; no TypeScript code is written. Test/lint/
 **Files:**
 - Create: `.github/dependabot.yml`
 
-Dependabot opens automatic PRs for outdated and vulnerable dependencies. Without it, the only signal of an upstream advisory is the GitHub security tab — easy to miss. Configure three ecosystems (npm, github-actions, docker) with weekly updates plus daily security advisories. Group dev dependencies and `@types/*` to reduce PR noise; isolate production deps and the SAP-related SDK packages so they get individual review.
+**✅ Completed out-of-band in [arc-1#229](https://github.com/marianfoo/arc-1/pull/229)** (merged 2026-05-08). The PR also bundled a related workflow-hardening fix: a top-level `permissions: contents: read` block on `.github/workflows/test.yml`, which closed 5 of the 12 then-open CodeQL `actions/missing-workflow-permissions` MEDIUM alerts. Repo-level toggles (Dependabot alerts, security updates, grouped security updates, version updates, malware alerts, private vulnerability reporting) were enabled manually in Settings → Advanced Security as documented in the PR description. Ralphex should skip this task — proceed to Task 3.
 
-- [ ] Create `.github/dependabot.yml` with `version: 2` and three `updates:` entries:
+- [x] Create `.github/dependabot.yml` with `version: 2` and three `updates:` entries:
   - **npm**: `directory: "/"`, `schedule.interval: "weekly"` (Mondays), `schedule.timezone: "Europe/Berlin"` (project author timezone), `open-pull-requests-limit: 10`, `versioning-strategy: "increase"`. Define groups:
     - `dev-dependencies` — `dependency-type: "development"`, `update-types: ["minor", "patch"]`
     - `types` — `patterns: ["@types/*"]`
@@ -123,12 +123,12 @@ Dependabot opens automatic PRs for outdated and vulnerable dependencies. Without
     - `linting` — `patterns: ["@biomejs/*", "biome"]`
   - **github-actions**: `directory: "/"`, `schedule.interval: "weekly"`, `open-pull-requests-limit: 5`, group all action updates under `actions` (use `patterns: ["*"]`).
   - **docker**: `directory: "/"`, `schedule.interval: "weekly"`, `open-pull-requests-limit: 3`. Tracks the `node:22-alpine` base image declared in `Dockerfile`.
-- [ ] Each update entry uses `commit-message.prefix: "chore(deps)"` for npm/actions/docker (matches release-please's `chore:` ignore list — Dependabot PRs do not trigger releases).
-- [ ] Each update entry uses `labels: ["dependencies"]`.
-- [ ] Add a `reviewers: ["marianfoo"]` entry per update group so PRs auto-request review.
-- [ ] Validate YAML by running `python3 -c 'import yaml,sys; yaml.safe_load(open(".github/dependabot.yml"))'` — must exit 0.
-- [ ] In repository security settings (`https://github.com/marianfoo/arc-1/settings/security_analysis`), enable: "Dependabot alerts", "Dependabot security updates", "Dependabot version updates" (the last is what reads this file). Document this manual step in the PR description so reviewers know to enable it post-merge.
-- [ ] Run `npm test` — all tests must pass.
+- [x] Each update entry uses `commit-message.prefix: "chore(deps)"` for npm/actions/docker (matches release-please's `chore:` ignore list — Dependabot PRs do not trigger releases).
+- [x] Each update entry uses `labels: ["dependencies"]`.
+- [x] Add a `reviewers: ["marianfoo"]` entry per update group so PRs auto-request review.
+- [x] Validate YAML by running `python3 -c 'import yaml,sys; yaml.safe_load(open(".github/dependabot.yml"))'` — must exit 0.
+- [x] In repository security settings (`https://github.com/marianfoo/arc-1/settings/security_analysis`), enable: "Dependabot alerts", "Dependabot security updates", "Dependabot version updates" (the last is what reads this file). Document this manual step in the PR description so reviewers know to enable it post-merge.
+- [x] Run `npm test` — all tests must pass.
 
 ### Task 3: Add npm audit Gate to Test Workflow
 
@@ -250,9 +250,9 @@ Procedure:
 **Files:**
 - Create: `SECURITY.md`
 
-A repository `SECURITY.md` is the conventional channel for private vulnerability disclosure. GitHub renders it on the repo's "Security" tab and the OpenSSF Scorecard (Tier 2) checks for it. Without it, security researchers either file a public issue (worst case — discloses a 0-day) or have no way to reach the maintainer. Include: supported versions, private reporting channel (GitHub Private Vulnerability Reporting + email fallback), response-time SLA, and CVE handling policy.
+**✅ Completed out-of-band in [arc-1#229](https://github.com/marianfoo/arc-1/pull/229)** (merged 2026-05-08). Email fallback is `marianbsp@gmail.com` (project owner). Sections delivered: Supported Versions (only `0.8.x` while pre-1.0), Reporting (Private Vulnerability Reporting + email), Response Times (3 days ack / 7 days triage / 14/30/60 day fix tiers), CVE Handling (GHSA + CVE via GitHub's CNA), Out of Scope (SAP system bugs route to SAP, upstream-only deps route upstream), Safe Harbor (good-faith research clause), and a pointer to the operator hardening guide. Private Vulnerability Reporting was enabled in repo settings as part of the same change. Ralphex should skip this task — proceed to Task 9.
 
-- [ ] Create `SECURITY.md` at repo root with these sections:
+- [x] Create `SECURITY.md` at repo root with these sections:
   - **Supported Versions**: Table of MAJOR.MINOR lines and their support status. Currently only `0.8.x` is supported (latest minor — pre-1.0 we only support the latest line). Older versions: "Please upgrade to receive security fixes."
   - **Reporting a Vulnerability**: Two channels:
     1. **Preferred**: GitHub Private Vulnerability Reporting at `https://github.com/marianfoo/arc-1/security/advisories/new`.
@@ -264,8 +264,8 @@ A repository `SECURITY.md` is the conventional channel for private vulnerability
   - **CVE Handling**: Confirmed vulnerabilities receive a GitHub Security Advisory (GHSA) and, where applicable, a CVE assigned via GitHub's CNA. Patches publish via the normal release flow (release-please → npm + ghcr.io); the advisory marks affected versions and the fixed version.
   - **Out of Scope**: Vulnerabilities in the SAP system itself (use SAP's responsible-disclosure channel — `https://www.sap.com/about/trust-center/security/incident-management.html`). Vulnerabilities in upstream dependencies that have no ARC-1-specific exposure (report upstream).
   - **Safe Harbor**: ARC-1 supports good-faith security research. Researchers acting in good faith and following this policy will not face legal action.
-- [ ] Enable GitHub Private Vulnerability Reporting in repo settings (`https://github.com/marianfoo/arc-1/settings/security_analysis`) — this is the channel referenced above. Document the manual step in the PR description.
-- [ ] Run `npm test` — all tests must pass.
+- [x] Enable GitHub Private Vulnerability Reporting in repo settings (`https://github.com/marianfoo/arc-1/settings/security_analysis`) — this is the channel referenced above. Document the manual step in the PR description.
+- [x] Run `npm test` — all tests must pass.
 
 ### Task 9: Update Documentation
 
