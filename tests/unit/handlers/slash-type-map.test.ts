@@ -24,17 +24,26 @@ import {
   normalizeObjectType,
   objectBasePath,
   SLASH_TYPE_EVIDENCE,
+  SLASH_TYPE_MAP,
 } from '../../../src/handlers/intent.js';
 
-// Internal: re-derive SLASH_TYPE_MAP keys via probe through normalizeObjectType.
-// We don't export the raw map (it's a local const) — and exporting it just for
-// the test would create a temptation to bypass the guard. Instead, we drive it
-// through the public normalizer using the SLASH_TYPE_EVIDENCE keys as the
-// expected universe of slash codes.
+// Codex review of PR #223 found that iterating only over SLASH_TYPE_EVIDENCE
+// keys was insufficient — a contributor could add a SLASH_TYPE_MAP entry
+// without a matching evidence entry and the guard wouldn't notice. The fix
+// is direct key-equality: the two maps must have exactly the same key set.
 
 const REPO_ROOT = resolve(__dirname, '..', '..', '..');
 
 describe('SLASH_TYPE_MAP citation guard (anti-cargo-cult)', () => {
+  it('SLASH_TYPE_MAP and SLASH_TYPE_EVIDENCE have identical key sets', () => {
+    // The structural invariant: every map entry must have evidence and every
+    // evidence entry must back a real map entry. Sorted-array equality fails
+    // loudly if either side gains an entry without the other.
+    const mapKeys = Object.keys(SLASH_TYPE_MAP).sort();
+    const evidenceKeys = Object.keys(SLASH_TYPE_EVIDENCE).sort();
+    expect(mapKeys).toEqual(evidenceKeys);
+  });
+
   it('every SLASH_TYPE_EVIDENCE key resolves to an existing research file on disk', () => {
     const missing: string[] = [];
     for (const [slashCode, evidencePath] of Object.entries(SLASH_TYPE_EVIDENCE)) {
@@ -46,17 +55,12 @@ describe('SLASH_TYPE_MAP citation guard (anti-cargo-cult)', () => {
     expect(missing).toEqual([]);
   });
 
-  it('every SLASH_TYPE_EVIDENCE entry corresponds to an active SLASH_TYPE_MAP entry', () => {
-    // Drive normalizeObjectType: if the slash code is in SLASH_TYPE_MAP, the
-    // result will differ from the input. Pass-through means it's not in the
-    // map, which means the citation is orphaned.
-    const orphaned: string[] = [];
-    for (const slashCode of Object.keys(SLASH_TYPE_EVIDENCE)) {
-      if (normalizeObjectType(slashCode) === slashCode) {
-        orphaned.push(slashCode);
-      }
+  it('every SLASH_TYPE_MAP entry round-trips through normalizeObjectType', () => {
+    // Sanity check that the public normalizer agrees with the raw map — guards
+    // against future refactors that add lookup logic skipping certain entries.
+    for (const [slashCode, expected] of Object.entries(SLASH_TYPE_MAP)) {
+      expect(normalizeObjectType(slashCode), `${slashCode} normalization`).toBe(expected);
     }
-    expect(orphaned).toEqual([]);
   });
 
   it('removed invented aliases are NOT in SLASH_TYPE_EVIDENCE', () => {
@@ -124,13 +128,41 @@ describe('KNOWN_BASE_TYPES exhaustiveness', () => {
     expect(objectBasePath('TRAN')).toBe('/sap/bc/adt/vit/wb/object_type/trant/object_name/');
   });
 
-  it('throws when given a known canonical type with no switch case (regression guard)', () => {
-    // The exhaustiveness guard inside objectBasePath throws if KNOWN_BASE_TYPES
-    // says a type is canonical but the switch has no case. We can't easily
-    // test the throw without modifying KNOWN_BASE_TYPES, but we can verify
-    // the guard doesn't fire today (sanity check the assertion above).
-    // Unknown raw inputs (not in KNOWN_BASE_TYPES) still legacy-fallthrough
-    // to the program path so callers like inferObjectType don't break.
+  it('falls back to /programs/programs/ for unknown non-slash types (legacy contract)', () => {
+    // inferObjectType and similar callers may pass freestyle names that don't
+    // match any canonical short type. The legacy contract is to route those
+    // to the program endpoint; we keep that to avoid breaking unrelated paths.
     expect(objectBasePath('NOT_A_REAL_TYPE')).toBe('/sap/bc/adt/programs/programs/');
+  });
+});
+
+describe('Slash-form throw guard (codex P1: removed aliases must not silently route)', () => {
+  // Codex review of PR #223 found that the four removed aliases (FUNC/FM,
+  // CLAS/LI, VIEW/V, TRAN/O) pass through normalizeObjectType unchanged, then
+  // — for tools like SAPNavigate/SAPActivate/SAPDiagnose/SAPTransport that
+  // accept `type: string` (no enum) — could still reach objectBasePath, which
+  // previously fell through to /sap/bc/adt/programs/programs/. The fix is the
+  // slash-form throw inside objectBasePath default branch. These tests are
+  // the regression guard.
+  const REMOVED_ALIASES = ['FUNC/FM', 'CLAS/LI', 'VIEW/V', 'TRAN/O'];
+
+  for (const alias of REMOVED_ALIASES) {
+    it(`objectBasePath('${alias}') throws (slash-form guard)`, () => {
+      expect(() => objectBasePath(alias)).toThrow(/refusing to build URL for slash-form type/);
+    });
+  }
+
+  it('objectBasePath throws for any unknown slash-form input (catch-all)', () => {
+    // Defensive: even invented slash codes that nobody has seen before should
+    // fail loudly rather than silently route somewhere wrong.
+    expect(() => objectBasePath('ZZZZ/ZZ')).toThrow(/refusing to build URL for slash-form type/);
+    expect(() => objectBasePath('FOO/BAR')).toThrow(/refusing to build URL for slash-form type/);
+  });
+
+  it('objectBasePath does NOT throw for canonical short types (positive control)', () => {
+    // Sanity: every canonical type stays callable and returns its real URL.
+    for (const type of KNOWN_BASE_TYPES) {
+      expect(() => objectBasePath(type)).not.toThrow();
+    }
   });
 });

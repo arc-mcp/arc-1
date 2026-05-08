@@ -10,7 +10,7 @@
 | **ICF path** | `...` → `adt` → **`functions`** → **`groups`** → `{group}` → **`fmodules`** / group `source/main`. |
 | **Typical packages** | **`SFUNC_ADT`** (function module ADT integration). |
 | **Typical classes** | **`CL_FB_ADT_RES_FUNC_SOURCE`** (FM source resource); related **`CL_FB_ADT_*`** resource helpers. |
-| **TADIR / object types** | **R3TR** **FUGR**, **FUNC**; ADT types **FUGR/FF**, **FUNC/FM**. |
+| **TADIR / object types** | **R3TR FUGR** (function group, top-level). Function modules are **LIMU FUNC** sub-objects under the parent FUGR — there is no `R3TR FUNC` and ADT does not emit `FUNC/FM`. ADT slash codes verified live (a4h S/4HANA 2023 + npl NW 7.50, 2026-05-08): **`FUGR/F`** (group container) and **`FUGR/FF`** (function module under group). See research/abap-types/types/{fugr,func}.md. |
 
 *Procedure:* [README](./README.md#sap-abap-where-server-side-code-lives-all-apis).
 

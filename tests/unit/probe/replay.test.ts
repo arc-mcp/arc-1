@@ -189,21 +189,33 @@ describe('probe replay — npl-750-sp02-dev-edition fixture (recorded from real 
     // After Model B (collapse-stru-into-tabl) the standalone STRU catalog entry
     // was removed (TABL covers both transparent tables and DDIC structures via
     // the /tables/ → /structures/ fallback), so the catalog dropped from 20 to
-    // 19 entries and STRU's previously-passing known-object probe is gone:
-    // 13/19 ≈ 0.6842 instead of 14/20 = 0.7. `discoveryAccuracyVsKnownObject`
-    // numerator/denominator both drop by 1 (STRU was discovered AND known on 7.50).
+    // 19 entries and STRU's previously-passing known-object probe is gone.
+    // After PR #223 (codex P2b fix) VIEW's catalog URL moved from the broken
+    // /sap/bc/adt/ddic/views to the working VIT URL /sap/bc/adt/vit/wb/
+    // object_type/viewdv. The new URL isn't in the ADT discovery document
+    // (VIT objects are exposed implicitly via class CL_WB_OBJECT_TYPE), so
+    // VIEW now reports as discovered=false but knownObject=true. That shifts
+    // discoveryAccuracyVsKnownObject denominator from 6 → 7 (numerator stays
+    // 5 — VIEW is still a known-object hit) → 5/7 ≈ 0.714. knownObject
+    // coverage stays 13/19 ≈ 0.684 (VIEW was already in the numerator pre-PR
+    // because the known object V_USR_NAME returned 404 → considered probe
+    // success).
     expect(q.coverage.knownObject).toBeCloseTo(13 / 19, 4);
     expect(q.coverage.release).toBe(1);
-    expect(q.discoveryAccuracyVsKnownObject).toBeCloseTo(5 / 6, 4);
+    expect(q.discoveryAccuracyVsKnownObject).toBeCloseTo(5 / 7, 4);
 
-    // After STRU removal the `available-high` count drops by one (STRU was a
-    // success on this 7.50 fixture). The other histogram buckets are unchanged.
-    expect(q.verdictHistogram['available-high']).toBe(7);
+    // After PR #223 VIEW's URL change (codex P2b), the VIT URL returns HTTP
+    // 200 for V_USR_NAME on this 7.50 fixture, where the old /ddic/views/
+    // URL returned 404. That promotes VIEW from a less-confident bucket into
+    // `available-high`, raising the count from 7 → 8.
+    expect(q.verdictHistogram['available-high']).toBe(8);
     expect(q.verdictHistogram['available-medium']).toBe(0);
     expect(q.verdictHistogram['unavailable-high']).toBe(6);
     expect(q.verdictHistogram['unavailable-likely']).toBe(3);
     expect(q.verdictHistogram['auth-blocked']).toBe(0);
-    expect(q.verdictHistogram.ambiguous).toBe(3);
+    // VIEW moved out of ambiguous (was inferred-by-discovery before, now
+    // resolves cleanly via VIT URL) → 3 → 2.
+    expect(q.verdictHistogram.ambiguous).toBe(2);
   });
 });
 

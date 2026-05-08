@@ -2560,7 +2560,11 @@ function escapeXml(s: string): string {
 // abap-file-formats schemas. Per-entry evidence in research/abap-types/types/<x>.md.
 // SLASH_TYPE_EVIDENCE below MUST stay key-equal (anti-cargo-cult guard, enforced by
 // tests/unit/handlers/slash-type-map.test.ts — see issue #218 follow-up).
-const SLASH_TYPE_MAP: Record<string, string> = {
+// Exported for tests only — the citation guard
+// (tests/unit/handlers/slash-type-map.test.ts) needs to assert key-equality
+// against SLASH_TYPE_EVIDENCE so a new entry without evidence fails CI.
+// Production callers should keep using normalizeObjectType().
+export const SLASH_TYPE_MAP: Record<string, string> = {
   'PROG/P': 'PROG', // research/abap-types/types/prog.md
   'PROG/I': 'INCL', // research/abap-types/types/incl.md
   'CLAS/OC': 'CLAS', // research/abap-types/types/clas.md
@@ -2732,6 +2736,17 @@ function normalizeTypeArgsForValidation(toolName: string, args: Record<string, u
         ...args,
         type: args.type === undefined ? undefined : normalizeObjectType(String(args.type ?? '')),
       };
+    case 'SAPTransport':
+      // Normalize `type` for SAPTransport actions that route through
+      // objectBasePath (e.g. when a future action accepts a slash-form
+      // workbench type). Codex review of PR #223 flagged this gap: without
+      // normalization, a caller passing `type: 'FUNC/FM'` would slip past the
+      // string-typed schema and hit the slash-form throw inside objectBasePath,
+      // which is correct as a last-resort fence but not as a friendly error.
+      return {
+        ...args,
+        type: args.type === undefined ? undefined : normalizeObjectType(String(args.type ?? '')),
+      };
     default:
       return args;
   }
@@ -2794,19 +2809,36 @@ export function objectBasePath(type: string): string {
     case 'SKTD':
       return '/sap/bc/adt/documentation/ktd/documents/';
     default:
-      // Exhaustiveness guard: if the caller passes a canonical short type from
-      // SAPRead/SAPWrite enums but no case handles it, fail loudly so the bug
-      // doesn't silently route to /programs/programs/. The VIEW bug hid for a
-      // release because the switch silently fell through. Unknown raw inputs
-      // (slash codes that didn't normalize) still fall through for legacy
-      // compatibility with inferObjectType callers.
+      // Exhaustiveness guard: canonical types in KNOWN_BASE_TYPES MUST have a
+      // switch case — that catches the silent-fallthrough bug class (VIEW pre-PR).
       if (KNOWN_BASE_TYPES.has(type)) {
         throw new Error(
           `objectBasePath: canonical type '${type}' is in KNOWN_BASE_TYPES but ` +
             `has no switch case. Add a case here or remove it from KNOWN_BASE_TYPES. ` +
-            `See PR #222 / docs/plans/audit-purge-invented-adt-types.md.`,
+            `See docs/plans/completed/audit-purge-invented-adt-types.md.`,
         );
       }
+      // Slash-form guard: a normalized slash code (e.g. 'FUNC/FM', 'CLAS/LI',
+      // 'VIEW/V', 'TRAN/O') must NEVER reach here. If it did, normalizeObjectType
+      // failed to map it and we'd silently route the request to the program
+      // endpoint. Tools like SAPNavigate/SAPActivate/SAPDiagnose/SAPTransport
+      // accept `type: string` (no enum), so the schema layer can't catch this
+      // for them — only this guard can. Throw with a hint pointing at the
+      // citation guard so the contributor adds the alias correctly. Codex
+      // review of PR #223 caught that the previous default-fallback could
+      // still silently route removed aliases via these non-enum tools.
+      if (type.includes('/')) {
+        throw new Error(
+          `objectBasePath: refusing to build URL for slash-form type '${type}' — ` +
+            `this normally indicates an invented or unmapped ADT slash code. Add ` +
+            `it to SLASH_TYPE_MAP + SLASH_TYPE_EVIDENCE (with a research entry) ` +
+            `if it is real, or correct the caller. See ` +
+            `docs/plans/completed/audit-purge-invented-adt-types.md and ` +
+            `tests/unit/handlers/slash-type-map.test.ts.`,
+        );
+      }
+      // Unknown raw inputs (no slash, not canonical) fall through to the
+      // program path so legacy callers like inferObjectType keep working.
       return '/sap/bc/adt/programs/programs/';
   }
 }

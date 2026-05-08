@@ -91,8 +91,14 @@ export const CATALOG: CatalogEntry[] = [
   },
   {
     type: 'VIEW',
-    collectionUrl: '/sap/bc/adt/ddic/views',
-    objectUrlTemplate: '/sap/bc/adt/ddic/views/{name}/source/main',
+    // DDIC views go through the VIT generic-object endpoint, NOT /ddic/views/.
+    // Live a4h S/4HANA 2023 + npl NW 7.50 (2026-05-08): /ddic/views/{name}
+    // returns HTTP 500 and /ddic/views/{name}/source/main returns HTTP 404.
+    // Only /sap/bc/adt/vit/wb/object_type/viewdv/object_name/{name} returns
+    // 200 (with metadata XML — VIEW does not expose a /source/main
+    // sub-resource). See research/abap-types/types/view.md and PR #223.
+    collectionUrl: '/sap/bc/adt/vit/wb/object_type/viewdv',
+    objectUrlTemplate: '/sap/bc/adt/vit/wb/object_type/viewdv/object_name/{name}',
     knownObjects: ['V_USR_NAME'],
     minRelease: 700,
   },

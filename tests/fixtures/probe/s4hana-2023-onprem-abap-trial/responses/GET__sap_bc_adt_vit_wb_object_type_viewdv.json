@@ -1,0 +1,8 @@
+{
+  "url": "/sap/bc/adt/vit/wb/object_type/viewdv",
+  "method": "GET",
+  "statusCode": 404,
+  "body": "No suitable resource found",
+  "errorMessage": "ADT API error: status 404 at /sap/bc/adt/vit/wb/object_type/viewdv: No suitable resource found",
+  "durationMs": 527
+}

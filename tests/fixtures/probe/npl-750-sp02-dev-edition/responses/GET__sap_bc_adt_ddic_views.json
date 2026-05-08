@@ -1,8 +1,0 @@
-{
-  "url": "/sap/bc/adt/ddic/views",
-  "method": "GET",
-  "statusCode": 500,
-  "body": "<?xml version=\"1.0\" encoding=\"utf-8\"?><exc:exception xmlns:exc=\"http://www.sap.com/abapxml/types/communicationframework\"><namespace id=\"com.sap.adt\"/><type id=\"uriMappingError\"/><message lang=\"EN\">No URI-Mapping defined for URI</message><localizedMessage lang=\"EN\">No URI-Mapping defined for URI</localizedMessage><properties/></exc:exception>",
-  "errorMessage": "ADT API error: status 500 at /sap/bc/adt/ddic/views: No URI-Mapping defined for URI",
-  "durationMs": 246
-}

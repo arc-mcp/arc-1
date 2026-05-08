@@ -1,0 +1,7 @@
+{
+  "url": "/sap/bc/adt/vit/wb/object_type/viewdv/object_name/V_USR_NAME",
+  "method": "GET",
+  "statusCode": 200,
+  "body": "<?xml version=\"1.0\" encoding=\"utf-8\"?><adtcore:mainObject adtcore:responsible=\"SAP\" adtcore:masterLanguage=\"DE\" adtcore:masterSystem=\"SAP\" adtcore:name=\"V_USR_NAME\" adtcore:type=\"VIEW/DV\" adtcore:changedAt=\"2012-10-22T13:22:24Z\" adtcore:version=\"active\" adtcore:changedBy=\"SAP\" adtcore:description=\"Selects the user name\" adtcore:language=\"EN\" xmlns:adtcore=\"http://www.sap.com/adt/core\"><adtcore:packageRef adtcore:uri=\"/sap/bc/adt/vit/wb/object_type/devck/object_name/SUSR\" adtcore:type=\"DEVC/K\" adtcore:name=\"SUSR\"/></adtcore:mainObject>",
+  "durationMs": 223
+}

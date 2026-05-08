@@ -506,27 +506,34 @@ describe('ADT Integration Tests', () => {
       expect(result.source).toMatch(/adtcore:name="V_USR_NAME"/);
     });
 
-    it('SAPSearch returns adtcore:type="VIEW/DV" for DDIC views (returned-type assertion)', async () => {
-      // Cross-cutting methodology guard for the "ADT silently ignores unknown
-      // objectType filters" bug class. Earlier audits passed only because they
-      // checked HTTP status, not the returned slash code. This test inspects
-      // adtcore:type on the search result. Pre-fix the test would have passed
-      // with VIEW/V too (silent ignore) — now it must be VIEW/DV.
+    // Note (codex P2 follow-up, PR #223): these tests assert the slash codes
+    // ADT *emits* in `<adtcore:type>` for known objects — not that ADT
+    // honours an `objectType` filter. `client.searchObject(name, max)`
+    // does not pass `objectType` (the parameter doesn't exist on the
+    // client), and the ADT informationsystem/search endpoint silently
+    // ignores unknown filters anyway. So these are emitted-type
+    // assertions. They still serve as regression guards for the four
+    // SLASH_TYPE_MAP fixes (VIEW/DV, TRAN/T, FUGR/FF — and implicitly
+    // confirm CLAS/LI / FUNC/FM are not what real ADT ever returns).
+    // A future PR can add object-search filtering + a deliberate
+    // bogus-objectType test once `client.searchObject` grows that
+    // parameter.
+
+    it('SAPSearch result for V_USR_NAME emits adtcore:type="VIEW/DV"', async () => {
       const results = await client.searchObject('V_USR_NAME', 5);
       const view = results.find((r) => r.objectName === 'V_USR_NAME');
       expect(view).toBeDefined();
       expect(view!.objectType).toBe('VIEW/DV');
     });
 
-    it('SAPSearch returns adtcore:type="TRAN/T" for transactions (returned-type assertion)', async () => {
-      // Same regression guard for TRAN/O → TRAN/T (PR #222 follow-up).
+    it('SAPSearch result for SE38 emits adtcore:type="TRAN/T"', async () => {
       const results = await client.searchObject('SE38', 5);
       const tcode = results.find((r) => r.objectName === 'SE38');
       expect(tcode).toBeDefined();
       expect(tcode!.objectType).toBe('TRAN/T');
     });
 
-    it('SAPSearch returns adtcore:type="FUGR/FF" for function modules (returned-type assertion)', async () => {
+    it('SAPSearch result for BAPI_USER_GETLIST emits adtcore:type="FUGR/FF"', async () => {
       // Confirms FUGR/FF is the live slash code for function modules. The map
       // entry FUGR/FF → FUNC routes correctly to client.getFunction at the
       // handler layer (covered by unit tests).

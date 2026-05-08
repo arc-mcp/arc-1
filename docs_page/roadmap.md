@@ -540,7 +540,7 @@ SAP confirmed GA of ABAP Cloud Extension for VS Code with built-in agentic AI po
 
 **Why:** Supports **token efficiency** — reduces failed create attempts where the LLM guesses the wrong type code.
 
-**Why not:** The mapping is incomplete and fragile — SAP has multiple variants (`PROG/P` vs `PROG/I`, `CLAS/OC` vs `CLAS/LI`) and defaults may differ by release. Power users who know the correct suffix can't bypass the auto-mapping, creating a false abstraction. Better error messages (extracting ADT's 400 "expected CLAS/OC" response) solve the root cause more cleanly. The mapping also encourages sloppy LLM behavior — if ARC-1 always "fixes" type codes, the LLM stops learning the correct ones, creating problems when users switch to other tools.
+**Why not:** The mapping is incomplete and fragile — SAP has multiple variants (`PROG/P` vs `PROG/I`, `CLAS/OC` vs class-include subtypes) and defaults may differ by release. (Note: `CLAS/LI` was previously listed here as an example but has been removed as invented per issue #218 audit / PR #223 — see `docs/plans/completed/audit-purge-invented-adt-types.md`.) Power users who know the correct suffix can't bypass the auto-mapping, creating a false abstraction. Better error messages (extracting ADT's 400 "expected CLAS/OC" response) solve the root cause more cleanly. The mapping also encourages sloppy LLM behavior — if ARC-1 always "fixes" type codes, the LLM stops learning the correct ones, creating problems when users switch to other tools.
 
 ---
 

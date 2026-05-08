@@ -1,8 +1,0 @@
-{
-  "url": "/sap/bc/adt/ddic/views/V_USR_NAME/source/main",
-  "method": "GET",
-  "statusCode": 404,
-  "body": "No suitable resource found",
-  "errorMessage": "ADT API error: status 404 at /sap/bc/adt/ddic/views/V_USR_NAME/source/main: No suitable resource found",
-  "durationMs": 164
-}

@@ -35,7 +35,7 @@ Relevant code:
 What is not present today:
 
 - `TRAN` is not in on-prem `SAPWrite` types.
-- `TRAN/T` is not mapped in `SLASH_TYPE_MAP`; only `TRAN/O` maps to `TRAN`.
+- `TRAN/T` is mapped in `SLASH_TYPE_MAP` (corrected in PR #223 — was `TRAN/O` pre-audit per issue #218; live a4h + npl 2026-05-08 confirm ADT emits `TRAN/T`).
 - `objectBasePath('TRAN')` points at the VIT metadata endpoint, which is not the writeable source-object endpoint.
 - `updateSource()` always writes `text/plain`; transaction source writes require `application/json`.
 - There is no transaction creation payload builder for `blue:additionalCreationProperties`.
