@@ -283,7 +283,7 @@ jobs:
 
       - name: Download test result artifacts
         if: always()
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           pattern: test-results-*
           path: downloaded-test-results
