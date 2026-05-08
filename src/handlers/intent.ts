@@ -4752,8 +4752,13 @@ async function handleSAPTransport(client: AdtClient, args: Record<string, unknow
     case 'create': {
       const description = String(args.description ?? '');
       if (!description) return errorResult('Description is required for "create" action.');
+      const targetPackage = String(args.package ?? '');
+      if (!targetPackage)
+        return errorResult(
+          'Package is required for "create" action — SAP needs DEVCLASS to determine the transport route.',
+        );
       const transportType = String(args.type ?? 'K');
-      const id = await createTransport(client.http, client.safety, description, undefined, transportType);
+      const id = await createTransport(client.http, client.safety, description, targetPackage, transportType);
       if (!id)
         return errorResult(
           'Transport creation succeeded but no transport ID was returned. Check the SAP system manually.',

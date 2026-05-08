@@ -80,12 +80,14 @@ describe('Transport Integration Tests', () => {
   // ─── getTransport ──────────────────────────────────────────────
 
   describe('getTransport', () => {
-    it('returns transport details with corrected Accept header', async () => {
+    it('returns transport details with corrected Accept header', async (ctx) => {
       // First list transports to find an existing one
       const transports = await listTransports(client.http, client.safety);
       if (transports.length === 0) {
-        // No transports available — create one to test with
-        const id = await createTransport(client.http, client.safety, 'ARC-1 integration test: getTransport');
+        // No transports available — create one to test with (needs a package)
+        const pkg = process.env.TEST_TRANSPORT_PACKAGE;
+        requireOrSkip(ctx, pkg, SkipReason.NO_TRANSPORT_PACKAGE);
+        const id = await createTransport(client.http, client.safety, 'ARC-1 integration test: getTransport', pkg);
         expect(id).toBeTruthy();
         expect(id).toMatch(/^[A-Z0-9]+K\d+$/);
 
@@ -132,21 +134,12 @@ describe('Transport Integration Tests', () => {
       }
     });
 
-    it('creates a transport with corrected namespace and media type', async (ctx) => {
+    it('creates a transport via CreateCorrectionRequest endpoint', async (ctx) => {
+      const pkg = process.env.TEST_TRANSPORT_PACKAGE;
+      requireOrSkip(ctx, pkg, SkipReason.NO_TRANSPORT_PACKAGE);
+
       const desc = `ARC-1 IT ${Date.now()}`;
-      let id: string;
-      try {
-        id = await createTransport(client.http, client.safety, desc);
-      } catch (err) {
-        // NW 7.50 SP02 rejects transport creation with 400
-        // "user action  is not supported" — a backend limitation of this
-        // release, not an ARC-1 bug. Skip rather than fail.
-        if (err instanceof Error && /user action\s+is not supported/i.test(err.message)) {
-          ctx.skip(`${SkipReason.BACKEND_UNSUPPORTED}: transport create not supported on this SAP release`);
-          return;
-        }
-        throw err;
-      }
+      const id = await createTransport(client.http, client.safety, desc, pkg);
 
       expect(id).toBeTruthy();
       // SAP transport IDs follow pattern: <SID>K<number>
@@ -158,17 +151,6 @@ describe('Transport Integration Tests', () => {
       expect(transport).not.toBeNull();
       expect(transport!.id).toBe(id);
       expect(transport!.description).toBe(desc);
-    });
-
-    it('creates a transport with target package', async (ctx) => {
-      const pkg = process.env.TEST_TRANSPORT_PACKAGE;
-      requireOrSkip(ctx, pkg, SkipReason.NO_TRANSPORT_PACKAGE);
-
-      const desc = `ARC-1 IT pkg ${Date.now()}`;
-      const id = await createTransport(client.http, client.safety, desc, pkg);
-      expect(id).toBeTruthy();
-      expect(id).toMatch(/^[A-Z0-9]+K\d+$/);
-      createdTransportIds.push(id);
     });
   });
 
@@ -233,16 +215,9 @@ describe('Transport Integration Tests', () => {
 
   describe('deleteTransport', () => {
     it('creates and deletes a transport', async (ctx) => {
-      let id: string;
-      try {
-        id = await createTransport(client.http, client.safety, `ARC-1 IT delete ${Date.now()}`);
-      } catch (err) {
-        if (err instanceof Error && /user action\s+is not supported/i.test(err.message)) {
-          ctx.skip(`${SkipReason.BACKEND_UNSUPPORTED}: transport create not supported on this SAP release`);
-          return;
-        }
-        throw err;
-      }
+      const pkg = process.env.TEST_TRANSPORT_PACKAGE;
+      requireOrSkip(ctx, pkg, SkipReason.NO_TRANSPORT_PACKAGE);
+      const id = await createTransport(client.http, client.safety, `ARC-1 IT delete ${Date.now()}`, pkg);
       expect(id).toBeTruthy();
 
       await deleteTransport(client.http, client.safety, id);
@@ -257,61 +232,22 @@ describe('Transport Integration Tests', () => {
     }, 30_000);
   });
 
-  // ─── createTransport with type ────────────────────────────────
-
-  describe('createTransport with type', () => {
-    it('creates a Customizing transport (type W)', async (ctx) => {
-      let id = '';
-      try {
-        id = await createTransport(client.http, client.safety, `ARC-1 IT type-W ${Date.now()}`, undefined, 'W');
-        expect(id).toBeTruthy();
-        const transport = await getTransport(client.http, client.safety, id);
-        expect(transport).not.toBeNull();
-        expect(transport!.type).toBe('W');
-      } catch (err) {
-        if (isUnsupportedBackend(err)) return ctx.skip('Backend does not support Customizing transports (type W)');
-        throw err;
-      } finally {
-        if (id) {
-          try {
-            await deleteTransport(client.http, client.safety, id, true);
-          } catch {
-            // best-effort-cleanup
-          }
-        }
-      }
-    }, 30_000);
-
-    it('creates a Transport of Copies (type T)', async (ctx) => {
-      let id = '';
-      try {
-        id = await createTransport(client.http, client.safety, `ARC-1 IT type-T ${Date.now()}`, undefined, 'T');
-        expect(id).toBeTruthy();
-        const transport = await getTransport(client.http, client.safety, id);
-        expect(transport).not.toBeNull();
-        expect(transport!.type).toBe('T');
-      } catch (err) {
-        if (isUnsupportedBackend(err)) return ctx.skip('Backend does not support Transport of Copies (type T)');
-        throw err;
-      } finally {
-        if (id) {
-          try {
-            await deleteTransport(client.http, client.safety, id, true);
-          } catch {
-            // best-effort-cleanup
-          }
-        }
-      }
-    }, 30_000);
-  });
+  // K/W/T transport type is no longer driven by the request body — the
+  // CreateCorrectionRequest endpoint infers the type from the target
+  // package's transport route in TADIR. The legacy `transportType`
+  // parameter is kept on the function signature for backward compatibility
+  // but ignored by the backend, so per-type integration tests would need
+  // separate Customizing/Workbench packages and are not portable.
 
   // ─── reassignTransport ────────────────────────────────────────
 
   describe('reassignTransport', () => {
     it('reassigns a transport to same user', async (ctx) => {
+      const pkg = process.env.TEST_TRANSPORT_PACKAGE;
+      requireOrSkip(ctx, pkg, SkipReason.NO_TRANSPORT_PACKAGE);
       let id = '';
       try {
-        id = await createTransport(client.http, client.safety, `ARC-1 IT reassign ${Date.now()}`);
+        id = await createTransport(client.http, client.safety, `ARC-1 IT reassign ${Date.now()}`, pkg);
         expect(id).toBeTruthy();
 
         const transport = await getTransport(client.http, client.safety, id);
@@ -341,9 +277,11 @@ describe('Transport Integration Tests', () => {
 
   describe('releaseTransportRecursive', () => {
     it('recursively releases a transport', async (ctx) => {
+      const pkg = process.env.TEST_TRANSPORT_PACKAGE;
+      requireOrSkip(ctx, pkg, SkipReason.NO_TRANSPORT_PACKAGE);
       let id = '';
       try {
-        id = await createTransport(client.http, client.safety, `ARC-1 IT recursive-release ${Date.now()}`);
+        id = await createTransport(client.http, client.safety, `ARC-1 IT recursive-release ${Date.now()}`, pkg);
         expect(id).toBeTruthy();
 
         const result = await releaseTransportRecursive(client.http, client.safety, id);

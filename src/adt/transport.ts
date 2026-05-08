@@ -76,29 +76,67 @@ export async function getTransport(
   return match ?? null;
 }
 
-/** Create a new transport request */
+/**
+ * Create a new transport request via the ADT CreateCorrectionRequest endpoint.
+ *
+ * Uses POST `/sap/bc/adt/cts/transports` (the same endpoint Eclipse ADT and
+ * marcellourbani/abap-adt-api use). The legacy POST `/cts/transportrequests`
+ * path with a `<tm:root tm:useraction="newrequest">` body is rejected by
+ * NW 7.5x with HTTP 400 "user action  is not supported" because that release's
+ * `CL_ADT_TM_RESOURCE` only accepts `useraction` on PUT operations
+ * (changeowner, release). Verified against NW 7.51 SP02.
+ *
+ * SAP infers the transport type (K/W/T) from the package's transport route
+ * configured in TADIR, so the legacy `transportType` argument is ignored
+ * by the backend and kept here only for API compatibility.
+ *
+ * @param targetPackage required — DEVCLASS the transport is created for
+ * @param objectUrl optional — ADT object URL hint for transport-route lookup;
+ *                  the object is NOT locked or attached to the transport
+ */
 export async function createTransport(
   http: AdtHttpClient,
   safety: SafetyConfig,
   description: string,
-  targetPackage?: string,
-  transportType = 'K',
+  targetPackage: string,
+  _transportType = 'K',
+  objectUrl?: string,
 ): Promise<string> {
   checkTransport(safety, '', 'CreateTransport', true);
 
-  const body = `<?xml version="1.0" encoding="UTF-8"?>
-<tm:root xmlns:tm="${CTS_NAMESPACE_TM}">
-  <tm:request tm:desc="${escapeXmlAttr(description)}" tm:type="${escapeXmlAttr(transportType)}"${targetPackage ? ` tm:target="${escapeXmlAttr(targetPackage)}"` : ''}/>
-</tm:root>`;
+  if (!targetPackage) {
+    throw new Error(
+      'createTransport: targetPackage (DEVCLASS) is required by the ADT CreateCorrectionRequest endpoint.',
+    );
+  }
 
-  const resp = await http.post('/sap/bc/adt/cts/transportrequests', body, CTS_CONTENT_TYPE_ORGANIZER, {
-    Accept: CTS_CONTENT_TYPE_ORGANIZER,
-  });
+  const refXml = objectUrl ? `<REF>${escapeXmlAttr(objectUrl)}</REF>` : '<REF/>';
+  const body = `<?xml version="1.0" encoding="UTF-8"?><asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0">
+  <asx:values>
+    <DATA>
+      <DEVCLASS>${escapeXmlAttr(targetPackage)}</DEVCLASS>
+      <REQUEST_TEXT>${escapeXmlAttr(description)}</REQUEST_TEXT>
+      ${refXml}
+      <OPERATION>I</OPERATION>
+    </DATA>
+  </asx:values>
+</asx:abap>`;
 
-  // Extract transport number from response
-  const parsed = parseXml(resp.body);
-  const requests = findDeepNodes(parsed, 'request');
-  return String(requests[0]?.['@_number'] ?? '');
+  const resp = await http.post(
+    '/sap/bc/adt/cts/transports',
+    body,
+    'application/vnd.sap.as+xml; charset=UTF-8; dataname=com.sap.adt.CreateCorrectionRequest',
+    { Accept: 'text/plain' },
+  );
+
+  // Response body is a path like "/com.sap.cts/object_record/NEDK928884" —
+  // the transport ID is the last path segment.
+  const transportId =
+    String(resp.body ?? '')
+      .trim()
+      .split('/')
+      .pop() ?? '';
+  return transportId;
 }
 
 /** Release a transport request */

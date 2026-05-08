@@ -1196,7 +1196,7 @@ export function getToolDefinitions(
             description:
               'list: show transports (defaults to current user, modifiable only). ' +
               'get: fetch transport details including tasks and objects. ' +
-              'create: create a new transport request. ' +
+              'create: create a new transport request (requires description and package). ' +
               'release: release a single transport or task. ' +
               'delete: delete a transport (use recursive=true to delete tasks first). ' +
               'reassign: change transport owner (use recursive=true for tasks too). ' +
@@ -1211,7 +1211,11 @@ export function getToolDefinitions(
           },
           description: { type: 'string', description: 'Transport description text (required for create)' },
           name: { type: 'string', description: 'Object name (for check or history actions)' },
-          package: { type: 'string', description: 'Package name (for check action)' },
+          package: {
+            type: 'string',
+            description:
+              'Package name. Required for create (DEVCLASS — SAP infers the transport route from the package) and for check.',
+          },
           user: {
             type: 'string',
             description:

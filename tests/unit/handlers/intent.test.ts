@@ -8649,35 +8649,32 @@ ENDCLASS.`;
       expect(result.content[0]?.text).toContain('DEVK900001');
     });
 
-    it('create with type W passes type through', async () => {
-      const responseXml = '<tm:request tm:number="DEVK900099"/>';
-      mockFetch.mockResolvedValue(mockResponse(200, responseXml, { 'x-csrf-token': 'T' }));
+    it('create succeeds with description and package', async () => {
+      // CreateCorrectionRequest endpoint returns a path like /com.sap.cts/object_record/<id>
+      mockFetch.mockResolvedValue(mockResponse(200, '/com.sap.cts/object_record/DEVK900099', { 'x-csrf-token': 'T' }));
       const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
         action: 'create',
-        description: 'Customizing transport',
-        type: 'W',
+        description: 'Workbench transport',
+        package: 'ZTEST',
       });
       expect(result.isError).toBeUndefined();
       expect(result.content[0]?.text).toContain('DEVK900099');
-      // Verify the W type was in the request body
+      // Verify the body uses the asx:abap envelope and embeds DEVCLASS
       const fetchBody = mockFetch.mock.calls.find(
-        (c: unknown[]) => typeof c[1]?.body === 'string' && c[1].body.includes('tm:type'),
+        (c: unknown[]) => typeof c[1]?.body === 'string' && c[1].body.includes('DEVCLASS'),
       );
-      expect(fetchBody?.[1]?.body).toContain('tm:type="W"');
+      expect(fetchBody?.[1]?.body).toContain('<DEVCLASS>ZTEST</DEVCLASS>');
+      expect(fetchBody?.[1]?.body).toContain('<OPERATION>I</OPERATION>');
     });
 
-    it('create without type defaults to K', async () => {
-      const responseXml = '<tm:request tm:number="DEVK900099"/>';
-      mockFetch.mockResolvedValue(mockResponse(200, responseXml, { 'x-csrf-token': 'T' }));
+    it('create errors when package is missing', async () => {
+      mockFetch.mockResolvedValue(mockResponse(200, '', { 'x-csrf-token': 'T' }));
       const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
         action: 'create',
         description: 'Default transport',
       });
-      expect(result.isError).toBeUndefined();
-      const fetchBody = mockFetch.mock.calls.find(
-        (c: unknown[]) => typeof c[1]?.body === 'string' && c[1].body.includes('tm:type'),
-      );
-      expect(fetchBody?.[1]?.body).toContain('tm:type="K"');
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toMatch(/package.*required/i);
     });
 
     it('list defaults to current SAP user and modifiable status', async () => {
