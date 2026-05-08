@@ -159,8 +159,8 @@ The GitHub Dependency Review Action runs on PRs and fails when a PR adds a depen
   - `actions/dependency-review-action@v4` (official GitHub action — tag pin acceptable). Inputs:
     - `fail-on-severity: high`
     - `comment-summary-in-pr: on-failure`
-    - `allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, CC0-1.0, Unlicense, 0BSD, MPL-2.0, BlueOak-1.0.0, CC-BY-4.0` (covers all current production deps; `npm ls --all --json | jq '.dependencies | .. | .license? // empty' | sort -u` produced this list during research — re-run to confirm before merge).
-    - `deny-licenses: GPL-2.0, GPL-3.0, AGPL-3.0, LGPL-2.1, LGPL-3.0` (copyleft licenses that contaminate MIT distribution).
+    - `deny-licenses: GPL-2.0, GPL-3.0, AGPL-3.0, LGPL-2.1, LGPL-3.0` (copyleft licenses that would contaminate the MIT-licensed npm package).
+    - **DO NOT also specify `allow-licenses`.** The action explicitly rejects setting both (`"You cannot specify both allow-licenses and deny-licenses"`) — discovered the hard way in PR #236. Pick one strategy. Deny-list is the right choice here: blocking copyleft is what we care about, and a positive allowlist breaks every time a new MIT-compatible license appears in the ecosystem.
 - [ ] Validate YAML with `python3 -c 'import yaml,sys; yaml.safe_load(...)'`.
 - [ ] Push the branch and verify the workflow appears on the PR's checks list.
 - [ ] Run `npm test` — all tests must pass.
