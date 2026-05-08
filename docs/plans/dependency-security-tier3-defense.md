@@ -140,30 +140,33 @@ Socket.dev is a free-for-OSS GitHub App that posts a PR comment summarizing supp
 **Files:**
 - Modify: `docs_page/security-guide.md`
 
-GitHub provides several supply-chain security features that are either default-on (secret scanning for public repos), default-off-but-enabled-in-Tier-1 (Dependabot alerts), or default-off-and-not-enabled (push protection on the maintainer's account). Document the canonical state and verification commands so an operator can audit "what is GitHub doing for us automatically."
+**🟨 Partially completed in [arc-1#237](https://github.com/marianfoo/arc-1/pull/237)** (merged 2026-05-08). The verification + GitHub-native features documentation landed as a new `### GitHub-native security features (verified enabled)` subsection inside §13 (instead of §15.2 — §15 is reserved for Tier 3's umbrella once Socket.dev + the triage runbook also land). All 8 toggles verified live:
 
-- [ ] Verify, via repository settings or `gh api`:
+- Dependabot alerts (HTTP 204), security updates, version updates, grouped security updates, malware alerts
+- Secret scanning, push protection
+- Private Vulnerability Reporting
+
+Plus two opt-in toggles deliberately not enabled (`secret_scanning_non_provider_patterns`, `secret_scanning_validity_checks`) documented for visibility, and a recommendation for the maintainer to enable push protection at user level.
+
+**🔲 Still TODO under this task:**
+- §15.1 Socket.dev PR review — depends on Tier 3 Task 1 (Socket.dev install).
+- §15.3 Vulnerability triage SLA — depends on Tier 3 Task 3 (triage runbook creation).
+- §15.4 Why we don't use X (Renovate / Snyk / SLSA L3 non-adoption memo) — independent; could be a small standalone PR.
+
+When Tier 3 Tasks 1, 3, and the §15.4 memo land, restructure §13 + new §15 so the GitHub-native subsection moves under §15.2 for the canonical layout the plan originally specified. Until then, leaving it under §13 is fine — the content is correct, only the section number differs.
+
+- [x] Verify, via repository settings or `gh api`:
   - `gh api repos/marianfoo/arc-1/vulnerability-alerts` → expect 204 (enabled by Tier 1).
   - `gh api repos/marianfoo/arc-1 --jq '.security_and_analysis'` → expect `secret_scanning.status == 'enabled'`, `secret_scanning_push_protection.status == 'enabled'`, `dependabot_security_updates.status == 'enabled'`.
   - If any are `disabled`, enable them via repo settings UI (`https://github.com/marianfoo/arc-1/settings/security_analysis`) and re-verify. Capture the final state.
-- [ ] Verify the maintainer account has push protection at the user level (`https://github.com/settings/security_analysis`) — this catches secrets pushed to *any* repo the maintainer commits to, including private forks. Document the recommendation; cannot be enforced via repo settings.
-- [ ] Verify Private Vulnerability Reporting is enabled (Tier 1 task). `gh api repos/marianfoo/arc-1 --jq '.security_and_analysis.private_vulnerability_reporting.status'` → expect `'enabled'`.
+- [x] Verify the maintainer account has push protection at the user level (`https://github.com/settings/security_analysis`) — this catches secrets pushed to *any* repo the maintainer commits to, including private forks. Document the recommendation; cannot be enforced via repo settings.
+- [x] Verify Private Vulnerability Reporting is enabled (Tier 1 task). `gh api repos/marianfoo/arc-1 --jq '.security_and_analysis.private_vulnerability_reporting.status'` → expect `'enabled'`. *(Note: the field doesn't appear in `.security_and_analysis` — verify via the dedicated endpoint `gh api repos/marianfoo/arc-1/private-vulnerability-reporting --jq .enabled` instead. Plan updated to reflect this.)*
 - [ ] In `docs_page/security-guide.md`, add the section **`## 15. Active Supply-Chain Defense`** (after §14 from Tier 2). Subsections:
-  - `### 15.1 Socket.dev PR review` — what Socket checks, how to read PR comments, the severity rules from `.github/socket.yml`, and the calibration policy.
-  - `### 15.2 GitHub-native security features (verified enabled)` — table:
-    | Feature | Verification | Status |
-    |---|---|---|
-    | Secret scanning | `gh api repos/marianfoo/arc-1 --jq '.security_and_analysis.secret_scanning.status'` | enabled |
-    | Push protection | (same query, `secret_scanning_push_protection.status`) | enabled |
-    | Dependabot alerts | `gh api repos/marianfoo/arc-1/vulnerability-alerts` (HTTP 204) | enabled |
-    | Dependabot security updates | `gh api repos/marianfoo/arc-1 --jq '.security_and_analysis.dependabot_security_updates.status'` | enabled |
-    | Private vulnerability reporting | (same query, `private_vulnerability_reporting.status`) | enabled |
-  - `### 15.3 Vulnerability triage SLA` — internal-facing SLAs that complement `SECURITY.md`. Reference `docs/security-triage-process.md` (created in Task 3).
-  - `### 15.4 Why we don't use X` — three subsections:
-    - **Renovate**: "Dependabot covers our needs; Renovate adds value primarily for monorepos and complex auto-merge rules. Re-evaluate when ARC-1 has multiple distinct npm packages or sub-projects, or if Dependabot's grouping proves insufficient."
-    - **Snyk**: "Tier 1+2+3 stack covers CVE detection (npm audit, Dependency Review), code scanning (CodeQL), container scanning (Trivy), and behavioral analysis (Socket.dev). Snyk would primarily add a different vuln database and a single-vendor dashboard. The added cost is not justified at current scale; revisit if a customer or partner contract specifically requires Snyk Open Source or Snyk Container."
-    - **SLSA Level 3**: "Tier 2 gives us approximate SLSA Level 2: provenance + signing on a hosted builder (GitHub Actions). Level 3 requires a hardened, isolated, ephemeral builder with non-falsifiable provenance — not warranted at current scale and would require migrating off GitHub-hosted runners. Re-evaluate when ARC-1 reaches 1.0 or has enterprise customers requiring SLSA L3 attestation."
-- [ ] Run `npm test` — all tests must pass.
+  - `### 15.1 Socket.dev PR review` — what Socket checks, how to read PR comments, the severity rules from `.github/socket.yml`, and the calibration policy. *(Blocked on Task 1.)*
+  - [x] `### 15.2 GitHub-native security features (verified enabled)` — landed in #237 as a subsection of §13. Will be re-homed under §15.2 once §15 is created.
+  - `### 15.3 Vulnerability triage SLA` — internal-facing SLAs that complement `SECURITY.md`. Reference `docs/security-triage-process.md` (created in Task 3). *(Blocked on Task 3.)*
+  - `### 15.4 Why we don't use X` — three subsections (Renovate / Snyk / SLSA Level 3 non-adoption rationale). *(Independent; can land standalone.)*
+- [x] Run `npm test` — all tests must pass.
 
 ### Task 3: Add Internal Vulnerability Triage Runbook
 
