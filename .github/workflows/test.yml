@@ -12,6 +12,13 @@ concurrency:
   group: sap-tests-${{ github.ref }}
   cancel-in-progress: true
 
+# Minimum required GITHUB_TOKEN permissions — closes CodeQL
+# `actions/missing-workflow-permissions` alerts. All jobs only need to read
+# the repo (artifact upload via `actions/upload-artifact@v4+` does not need
+# additional permissions; SAP secrets are passed via `env:` from `secrets.*`).
+permissions:
+  contents: read
+
 jobs:
   # Smoke check that mta.yaml + the .mtaext.example template are valid MTA
   # descriptors. Runs on every push/PR (no SAP secrets needed) so a broken

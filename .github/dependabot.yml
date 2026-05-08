@@ -1,0 +1,85 @@
+# Dependabot configuration for ARC-1.
+# Documented in docs/plans/dependency-security-tier1-foundation.md (SEC-11).
+# Three ecosystems: npm (production code), github-actions (CI), docker (base image).
+# Schedule: weekly. Security advisories are handled separately by Dependabot's
+# security-updates feature (enabled in repo Settings → Advanced Security).
+
+version: 2
+updates:
+  # ─── npm dependencies ────────────────────────────────────────────────────
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Berlin"
+    open-pull-requests-limit: 10
+    versioning-strategy: "increase"
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - "dependencies"
+    reviewers:
+      - "marianfoo"
+    groups:
+      # Bundle dev-only minor + patch updates into a single PR — low review cost.
+      dev-dependencies:
+        dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
+      # @types/* packages are noisy — group them so they don't clutter the PR list.
+      types:
+        patterns:
+          - "@types/*"
+      # SAP SDKs change together; review as a unit.
+      sap-sdk:
+        patterns:
+          - "@sap/*"
+          - "@sap-cloud-sdk/*"
+      # MCP SDK updates often touch protocol behavior — review as a unit.
+      mcp-sdk:
+        patterns:
+          - "@modelcontextprotocol/*"
+      # Biome (linter) bumps need biome.json $schema URL bump too.
+      linting:
+        patterns:
+          - "@biomejs/*"
+          - "biome"
+
+  # ─── GitHub Actions ──────────────────────────────────────────────────────
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Berlin"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - "dependencies"
+    reviewers:
+      - "marianfoo"
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+  # ─── Docker base image (node:22-alpine in Dockerfile) ────────────────────
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Berlin"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - "dependencies"
+    reviewers:
+      - "marianfoo"
