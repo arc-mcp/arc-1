@@ -1,5 +1,24 @@
 # Type Auto-Mappings for SAPWrite
 
+> **⚠ Historical document — partially superseded by issue #218 audit (PR #222) and PR #223.**
+>
+> The mapping tables below were the original design snapshot. Several entries
+> were later identified as **invented** (not emitted by any ADT version) and
+> have been corrected. **Do not learn slash codes from this document — refer to
+> `src/handlers/intent.ts` SLASH_TYPE_MAP and `research/abap-types/types/<short>.md`
+> for the verified-current source of truth.**
+>
+> Specifically:
+> - `FUNC/FM` removed (invented; ADT emits `FUGR/FF` for function modules)
+> - `CLAS/LI` removed (invented)
+> - `VIEW/V` corrected to `VIEW/DV` (live a4h + npl 2026-05-08)
+> - `TRAN/O` corrected to `TRAN/T` (live a4h + npl 2026-05-08)
+> - `FUGR/FF` repointed from `→ FUGR` to `→ FUNC` (FF is a function module, not a group)
+> - `STRU/DS → STRU` collapsed: `STRU/DS → TABL` and bare `STRU` removed (Model B, PR #219)
+>
+> See `docs/plans/completed/audit-purge-invented-adt-types.md` for the full
+> per-entry rationale + live evidence.
+
 ## Overview
 
 Add automatic mapping of friendly type codes to ADT internal type codes in the `SAPWrite` and `SAPActivate` handlers, so LLMs don't need to know SAP's internal slash-suffix type codes (e.g., `CLAS/OC`, `INTF/OI`, `PROG/P`). Currently, ARC-1 already hardcodes these mappings inside `buildCreateXml()` and `buildActivationXml()`, but if an LLM sends `type: "CLAS/OC"` (as it might after seeing search results from `SAPSearch`), the `objectBasePath()` switch falls through to the default and produces a wrong URL.

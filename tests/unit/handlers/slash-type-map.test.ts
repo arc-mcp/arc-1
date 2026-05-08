@@ -100,16 +100,32 @@ describe('KNOWN_BASE_TYPES exhaustiveness', () => {
     expect(orphans).toEqual([]);
   });
 
-  it('objectBasePath returns a valid /sap/bc/adt/ URL for every KNOWN_BASE_TYPES entry', () => {
-    // Exhaustiveness regression test: if a canonical short type is added to
-    // KNOWN_BASE_TYPES without a matching case in objectBasePath, the
-    // exhaustiveness guard inside objectBasePath throws. Verify here that
-    // every currently listed type returns a usable ADT URL.
+  it('objectBasePath returns a valid /sap/bc/adt/ URL for every KNOWN_BASE_TYPES entry except FUNC', () => {
+    // Exhaustiveness regression test. FUNC is the documented exception
+    // (function modules require parent group context — there is no single
+    // base path; objectBasePath('FUNC') intentionally throws — see codex
+    // PR #223 follow-up). Every other canonical type must return a usable
+    // ADT URL.
     for (const type of KNOWN_BASE_TYPES) {
+      if (type === 'FUNC') continue;
       const url = objectBasePath(type);
       expect(url, `${type} → ${url}`).toMatch(/^\/sap\/bc\/adt\//);
       expect(url.endsWith('/'), `${type} should end with '/'`).toBe(true);
     }
+  });
+
+  it('objectBasePath("FUNC") throws — function modules require parent group context', () => {
+    // Codex review of PR #223 follow-up: a real ADT search returning
+    // { type: "FUGR/FF", name: "BAPI_USER_GETLIST" } now canonicalises to
+    // FUNC, but objectBasePath('FUNC') used to return /functions/groups/
+    // and any caller using objectUrlForType would build
+    // /functions/groups/BAPI_USER_GETLIST — wrong, because the URL needs
+    // /groups/{group}/fmodules/{fm}. SAPRead and SAPNavigate handle FUNC
+    // through dedicated FUNC-aware code paths; SAPActivate / SAPDiagnose /
+    // SAPTransport now fail loudly here instead of mis-routing.
+    expect(() => objectBasePath('FUNC')).toThrow(
+      /function module.*cannot be resolved to a single base path|requires the parent function group/i,
+    );
   });
 
   it('VIEW routes through the VIT generic-object endpoint, not /programs/programs/', () => {
@@ -159,10 +175,13 @@ describe('Slash-form throw guard (codex P1: removed aliases must not silently ro
     expect(() => objectBasePath('FOO/BAR')).toThrow(/refusing to build URL for slash-form type/);
   });
 
-  it('objectBasePath does NOT throw for canonical short types (positive control)', () => {
-    // Sanity: every canonical type stays callable and returns its real URL.
+  it('objectBasePath does NOT throw for canonical short types (except FUNC, which is intentional)', () => {
+    // Positive control: every canonical type except FUNC stays callable.
+    // FUNC is the documented exception — see "objectBasePath('FUNC') throws"
+    // above for rationale.
     for (const type of KNOWN_BASE_TYPES) {
-      expect(() => objectBasePath(type)).not.toThrow();
+      if (type === 'FUNC') continue;
+      expect(() => objectBasePath(type), `${type} unexpectedly threw`).not.toThrow();
     }
   });
 });

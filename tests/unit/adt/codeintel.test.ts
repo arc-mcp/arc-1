@@ -123,7 +123,10 @@ describe('Code Intelligence', () => {
         count: 2,
       });
       expect(scope.entries[2]).toEqual({
-        objectType: 'FUNC/FM',
+        // FUGR/FF is what live ADT actually emits for function modules — see
+        // PR #223 (issue #218 audit). The fixture was previously FUNC/FM
+        // which is invented; updated to reflect real ADT output.
+        objectType: 'FUGR/FF',
         objectTypeDescription: 'Function Module',
         count: 1,
       });

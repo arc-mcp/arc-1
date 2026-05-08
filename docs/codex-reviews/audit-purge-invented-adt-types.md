@@ -1,5 +1,15 @@
 # Codex Review Report — PR #223 (audit-purge-invented-adt-types)
 
+> **2026-05-08 update**: incorporates two rounds of codex review feedback.
+> The "Probe catalog still uses old VIEW URL" gap noted in the original brief
+> has been **resolved** (commit `830e8dc`); fixtures re-recorded for both
+> systems. The "FUGR/FF → FUNC routes through `objectBasePath('FUNC')`"
+> latent gap noted in the second review has been **resolved** by making
+> `objectBasePath('FUNC')` throw — function modules require parent group
+> context and the SAPRead/SAPNavigate FUNC handlers have always taken a
+> dedicated path; SAPActivate / SAPDiagnose / SAPTransport now fail loudly
+> instead of building wrong URLs.
+
 This report briefs codex without conversation context. It explains **what changed**,
 **why each change is correct** (with primary evidence), **what was verified live vs.
 inferred**, and **the known gaps and follow-ups** that are out of scope.
@@ -148,10 +158,12 @@ These are intentional non-changes; codex should not flag them:
 1. **`CLAS/LI` has no replacement.** `CLAS/I` is the research-suggested real form but
    I couldn't verify it live, so the audit chose to remove `CLAS/LI` without adding
    `CLAS/I`. If a future caller hits us with `CLAS/I` we'll add it then with proof.
-2. **Probe catalog (`src/probe/catalog.ts`) keeps the old VIEW URL** (`/sap/bc/adt/
-   ddic/views`). The probe is diagnostic-only and changing it would require
-   re-recording fixtures for both test systems. The runtime fix in `objectBasePath`
-   is what matters for users. A follow-up could re-record fixtures.
+2. ~~**Probe catalog (`src/probe/catalog.ts`) keeps the old VIEW URL** (`/sap/bc/adt/
+   ddic/views`).~~ **Resolved in commit `830e8dc`** — VIEW catalog URL updated to the
+   VIT URL; fixtures re-recorded for both `s4hana-2023-onprem-abap-trial` and
+   `npl-750-sp02-dev-edition`; replay test assertions updated (VIEW promotes
+   from ambiguous → available-high on 7.50; `discoveryAccuracyVsKnownObject`
+   denominator grows by 1 because VIT URL isn't in ADT discovery).
 3. **Plan B** (`docs/plans/audit-symmetry-and-ftg2-rename.md`) is a separate PR —
    read/write enum symmetry (`MSAG` missing from read enum) and `FTG2 → FEATURE_TOGGLE`
    rename.
@@ -168,9 +180,7 @@ These are intentional non-changes; codex should not flag them:
 - **Pass-through behaviour for removed aliases** — `normalizeObjectType('FUNC/FM')`
   returns `'FUNC/FM'` (unchanged). Does that input then reliably hit a Zod schema
   rejection, or does some downstream handler accept it as freestyle?
-- **Probe catalog discrepancy** — is leaving `src/probe/catalog.ts` VIEW URL as-is
-  defensible, or should this PR re-record fixtures and update the catalog? My take
-  is "diagnostic-only, defer", but I'd like a second opinion.
+- ~~**Probe catalog discrepancy**~~ — Resolved (see above).
 - **The `SLASH_TYPE_EVIDENCE` map duplicates SLASH_TYPE_MAP keys** — is the cost
   (boilerplate, two-place updates) worth the benefit (the citation guard)? An
   alternative would be to make `SLASH_TYPE_MAP` an array of `{ slash, canonical,

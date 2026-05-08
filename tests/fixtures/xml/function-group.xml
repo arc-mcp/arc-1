@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <group xmlns:adtcore="http://www.sap.com/adt/core" adtcore:uri="/sap/bc/adt/functions/groups/ZUTILS" adtcore:type="FUGR/F" adtcore:name="ZUTILS" adtcore:version="1">
   <adtcore:link href="/sap/bc/adt/functions/groups/ZUTILS/source/main" rel="http://www.sap.com/adt/relations/source/main" type="text/plain"/>
-  <functionModule adtcore:uri="/sap/bc/adt/functions/groups/ZUTILS/fmodules/Z_GET_DATE" adtcore:type="FUNC/FM" adtcore:name="Z_GET_DATE"/>
-  <functionModule adtcore:uri="/sap/bc/adt/functions/groups/ZUTILS/fmodules/Z_FORMAT_STRING" adtcore:type="FUNC/FM" adtcore:name="Z_FORMAT_STRING"/>
+  <functionModule adtcore:uri="/sap/bc/adt/functions/groups/ZUTILS/fmodules/Z_GET_DATE" adtcore:type="FUGR/FF" adtcore:name="Z_GET_DATE"/>
+  <functionModule adtcore:uri="/sap/bc/adt/functions/groups/ZUTILS/fmodules/Z_FORMAT_STRING" adtcore:type="FUGR/FF" adtcore:name="Z_FORMAT_STRING"/>
 </group>

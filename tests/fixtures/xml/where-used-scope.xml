@@ -2,5 +2,5 @@
 <usageReferences:scopeResponse xmlns:usageReferences="http://www.sap.com/adt/ris/usageReferences">
   <usageReferences:objectType type="PROG/P" description="Program" count="3"/>
   <usageReferences:objectType type="CLAS/OC" description="Class" count="2"/>
-  <usageReferences:objectType type="FUNC/FM" description="Function Module" count="1"/>
+  <usageReferences:objectType type="FUGR/FF" description="Function Module" count="1"/>
 </usageReferences:scopeResponse>

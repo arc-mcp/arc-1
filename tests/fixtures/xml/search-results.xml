@@ -2,5 +2,5 @@
 <adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">
   <adtcore:objectReference adtcore:uri="/sap/bc/adt/programs/programs/ZTEST_HELLO" adtcore:type="PROG/P" adtcore:name="ZTEST_HELLO" adtcore:packageName="$TMP" adtcore:description="Test Hello World"/>
   <adtcore:objectReference adtcore:uri="/sap/bc/adt/oo/classes/ZCL_TEST_ORDER" adtcore:type="CLAS/OC" adtcore:name="ZCL_TEST_ORDER" adtcore:packageName="ZORDER" adtcore:description="Order Processing Class"/>
-  <adtcore:objectReference adtcore:uri="/sap/bc/adt/functions/groups/ZUTILS/fmodules/Z_GET_DATE" adtcore:type="FUNC/FM" adtcore:name="Z_GET_DATE" adtcore:packageName="$TMP" adtcore:description="Get Current Date"/>
+  <adtcore:objectReference adtcore:uri="/sap/bc/adt/functions/groups/ZUTILS/fmodules/Z_GET_DATE" adtcore:type="FUGR/FF" adtcore:name="Z_GET_DATE" adtcore:packageName="$TMP" adtcore:description="Get Current Date"/>
 </adtcore:objectReferences>

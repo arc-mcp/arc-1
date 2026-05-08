@@ -2765,7 +2765,25 @@ export function objectBasePath(type: string): string {
     case 'INTF':
       return '/sap/bc/adt/oo/interfaces/';
     case 'FUNC':
-      return '/sap/bc/adt/functions/groups/';
+      // Codex review of PR #223 follow-up: function modules cannot be
+      // addressed with a single base path — they live at
+      // /sap/bc/adt/functions/groups/{group}/fmodules/{fm} and require the
+      // parent function group. Returning the group prefix for FUNC was the
+      // pre-PR behaviour and silently mis-routed a real ADT search result
+      // `{ type: "FUGR/FF", name: "BAPI_USER_GETLIST" }` (which now
+      // canonicalises to FUNC) to /functions/groups/BAPI_USER_GETLIST. Throw
+      // so generic URL builders (SAPActivate / SAPDiagnose / SAPTransport via
+      // objectUrlForType) fail loudly. SAPRead and SAPNavigate handle FUNC
+      // through dedicated `case 'FUNC'` branches that take a `group` arg and
+      // build the correct URL via client.getFunction(group, name) — those
+      // paths do not call objectBasePath and remain unaffected.
+      throw new Error(
+        `objectBasePath: type 'FUNC' (function module) cannot be resolved to a ` +
+          `single base path — it requires the parent function group via ` +
+          `client.getFunction(group, name) or an explicit /sap/bc/adt/functions/` +
+          `groups/{group}/fmodules/{name} URI. Caller must take the FUNC-aware ` +
+          `path or pass 'uri' directly. See PR #223 codex follow-up.`,
+      );
     case 'INCL':
       return '/sap/bc/adt/programs/includes/';
     case 'FUGR':
