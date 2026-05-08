@@ -1,10 +1,9 @@
 name: Test
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened]
   # Manual trigger so chore: PRs (and any other skipped PR) can be tested on demand.
   workflow_dispatch:
 
@@ -18,13 +17,12 @@ jobs:
   # Gates the rest of the workflow based on PR title (conventional commit prefix).
   # Skips on `docs:` and `chore:` PRs to save SAP work processes; auto-runs for
   # everything else (`fix:`, `feat:`, `test:`, `refactor:`, etc.).
-  # Push to main and manual dispatch always pass — chore PRs can be tested via
-  # the "Run workflow" button when needed.
+  # Manual dispatch always passes — chore PRs can be tested via the "Run
+  # workflow" button when needed.
   gate:
     runs-on: ubuntu-latest
     if: |
       github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'push' ||
       (github.event_name == 'pull_request' &&
        !startsWith(github.event.pull_request.title, 'docs:') &&
        !startsWith(github.event.pull_request.title, 'docs(') &&
