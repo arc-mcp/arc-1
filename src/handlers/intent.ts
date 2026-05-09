@@ -2050,8 +2050,7 @@ const BDEF_CONTENT_TYPE = 'application/vnd.sap.adt.blues.v1+xml';
 const MESSAGECLASS_CONTENT_TYPE = 'application/vnd.sap.adt.mc.messageclass+xml';
 const SKTD_V2_CONTENT_TYPE = 'application/vnd.sap.adt.sktdv2+xml';
 // Function group + function module content types — verified live on a4h S/4HANA 2023
-// (issue #250). FUGR uses the v3 group envelope; FUNC uses the unversioned fmodule
-// envelope (matches @mcp-abap-adt/adt-clients v5.4.x and abap-adt-api v8.4.x).
+// (issue #250). FUGR uses the v3 group envelope; FUNC uses the unversioned fmodule envelope.
 const FUNCTION_GROUP_CONTENT_TYPE = 'application/vnd.sap.adt.functions.groups.v3+xml';
 const FUNCTION_MODULE_CONTENT_TYPE = 'application/vnd.sap.adt.functions.fmodules+xml';
 
