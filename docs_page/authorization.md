@@ -174,6 +174,7 @@ Common role collections:
 | --------------- | ---------------- |
 | `ARC-1 Viewer` | `read` |
 | `ARC-1 Data Viewer` | `read`, `data` |
+| `ARC-1 Viewer + SQL` | `read`, `data`, `sql` |
 | `ARC-1 Developer` | `read`, `write`, `transports`, `git` |
 | `ARC-1 Developer + Data` | `read`, `write`, `data`, `transports`, `git` |
 | `ARC-1 Developer + SQL` | `read`, `write`, `data`, `sql`, `transports`, `git` |
@@ -181,7 +182,7 @@ Common role collections:
 
 Want a developer who can write code but cannot transport or use Git? Create a custom role template with just `read` + `write`, then update the XSUAA service. Or leave the shipped role as-is and turn off `SAP_ALLOW_TRANSPORT_WRITES` / `SAP_ALLOW_GIT_WRITES` server-wide.
 
-To grant SQL to one BTP user, assign a role collection that includes `MCPSqlUser` (for example `ARC-1 Developer + SQL`) to that user. Do **not** change server env vars for one user. The ARC-1 instance must already have `SAP_ALLOW_FREE_SQL=true`; there is no `SAP_ALLOW_SQL` flag.
+To grant SQL to one BTP user, assign a role collection that includes `MCPSqlUser` (for example `ARC-1 Viewer + SQL` for read-only SQL or `ARC-1 Developer + SQL` for full developer access) to that user. Do **not** change server env vars for one user. The ARC-1 instance must already have `SAP_ALLOW_FREE_SQL=true`; there is no `SAP_ALLOW_SQL` flag.
 
 See [XSUAA Setup](xsuaa-setup.md) for BTP Cockpit assignment steps.
 

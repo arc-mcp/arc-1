@@ -91,6 +91,14 @@
       ]
     },
     {
+      "name": "ARC-1 Viewer + SQL",
+      "description": "Read-only SAP access with table data preview and freestyle SQL",
+      "role-template-references": [
+        "$XSAPPNAME.MCPViewer",
+        "$XSAPPNAME.MCPSqlUser"
+      ]
+    },
+    {
       "name": "ARC-1 Developer + Data",
       "description": "Developer access with table data preview",
       "role-template-references": [
