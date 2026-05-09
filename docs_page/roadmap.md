@@ -2153,7 +2153,7 @@ The following features are tracked but not planned for near-term implementation.
 
 **Implemented (2026-04-08):**
 
-Based on independent security review against RFC 9700 (reports/2026-04-08-001-oauth-security-review-verification.md):
+Based on independent security review against RFC 9700 ([2026-04-08-001-oauth-security-review-verification.md](../docs/plans/completed/2026-04-08-001-oauth-security-review-verification.md)):
 
 - **F-01 (High):** Added `state` + PKCE (S256) to BTP browser OAuth flow — prevents authorization code injection and login CSRF
 - **F-02 (High):** Bound OAuth callback server to `127.0.0.1` — prevents network-adjacent callback interception
@@ -2312,7 +2312,7 @@ The four shipped MCP clients — Claude Desktop, Cursor, VS Code Copilot, Copilo
 **Implemented:** Scope-based where-used analysis in SAPNavigate. Uses ADT endpoint `/sap/bc/adt/repository/informationsystem/usageReferences`. Supports filtering by scope (local, package, system-wide).
 
 **References:**
-- [Report 001: Feature Parity](../docs/reports/2026-03-24-001-feature-parity-implementation.md) — Item #1
+- [Report 001: Feature Parity](../docs/plans/completed/2026-03-24-001-feature-parity-implementation.md) — Item #1
 
 ---
 
@@ -2398,7 +2398,7 @@ The four shipped MCP clients — Claude Desktop, Cursor, VS Code Copilot, Copilo
 - CI/CD: lint + typecheck + tests (Node 22/24), integration + E2E reliability telemetry, Docker multi-arch, npm publish
 - Go source code removed (47K lines deleted)
 
-**Migration report:** See `reports/2026-03-26-001-typescript-migration-plan.md`
+**Migration report:** See [2026-03-26-001-typescript-migration-plan.md](../docs/plans/completed/2026-03-26-001-typescript-migration-plan.md)
 
 ---
 
@@ -2520,12 +2520,12 @@ The four shipped MCP clients — Claude Desktop, Cursor, VS Code Copilot, Copilo
 ## Key References
 
 ### Internal Reports
-- [Enterprise Copilot Studio Plan](../docs/reports/2026-03-23-001-enterprise-copilot-studio-plan.md)
-- [Feature Parity Analysis](../docs/reports/2026-03-24-001-feature-parity-implementation.md)
-- [Enterprise Bridge Gap Analysis](../docs/reports/2026-03-24-002-enterprise-bridge-gap-analysis.md)
-- [Enterprise Auth Research](../docs/reports/2026-03-25-001-enterprise-auth-research.md)
-- [Centralized Auth Architecture](../docs/reports/2026-03-25-003-centralized-mcp-auth-architecture.md)
-- [BTP Deployment Report](../docs/reports/2026-03-25-001-btp-copilot-studio-deployment.md)
+- [Enterprise Copilot Studio Plan](../docs/plans/completed/2026-03-23-001-enterprise-copilot-studio-plan.md)
+- [Feature Parity Analysis](../docs/plans/completed/2026-03-24-001-feature-parity-implementation.md)
+- [Enterprise Bridge Gap Analysis](../docs/plans/completed/2026-03-24-002-enterprise-bridge-gap-analysis.md)
+- [Enterprise Auth Research](../docs/plans/completed/2026-03-25-001-enterprise-auth-research.md)
+- [Centralized Auth Architecture](../docs/plans/completed/2026-03-25-003-centralized-mcp-auth-architecture.md)
+- [BTP Deployment Report](../docs/plans/completed/2026-03-25-001-btp-copilot-studio-deployment.md)
 
 ### External References & Implementations
 - [lemaiwo/btp-sap-odata-to-mcp-server](https://github.com/lemaiwo/btp-sap-odata-to-mcp-server) — TypeScript MCP server with XSUAA OAuth proxy, BTP Destination Service, principal propagation

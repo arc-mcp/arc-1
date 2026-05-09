@@ -4,7 +4,7 @@
 
 ## Overview
 
-This plan implements all remediation items from the OAuth Security Review Verification Report (`reports/2026-04-08-001-oauth-security-review-verification.md`). It addresses 10 confirmed security findings (3 High, 4 Medium, 3 Low) identified against RFC 9700 best practices, plus creates a consolidated security documentation guide for operators.
+This plan implements all remediation items from the OAuth Security Review Verification Report (`docs/plans/completed/2026-04-08-001-oauth-security-review-verification.md`). It addresses 10 confirmed security findings (3 High, 4 Medium, 3 Low) identified against RFC 9700 best practices, plus creates a consolidated security documentation guide for operators.
 
 The work is organized in three phases matching the report's priority tiers: Phase 0 (immediate — High severity), Phase 1 (near-term — Medium severity), Phase 2 (hardening — Low severity + documentation). Each task is self-contained and safe to execute independently.
 

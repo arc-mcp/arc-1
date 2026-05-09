@@ -9,7 +9,7 @@ This is the #1 most requested missing feature per the roadmap (P1, XS effort) an
 ### Source Documents
 
 - **Roadmap:** `docs/roadmap.md` — FEAT-01 definition (line ~266), prioritized as Phase B item #5 (line ~859)
-- **Feature Parity Report:** `reports/2026-03-24-001-feature-parity-implementation.md` — Item #1, Phase 1 implementation plan (line ~48)
+- **Feature Parity Report:** `docs/plans/completed/2026-03-24-001-feature-parity-implementation.md` — Item #1, Phase 1 implementation plan (line ~48)
 - **Current implementation:** `src/adt/codeintel.ts` — `findReferences()` (line 69-97)
 - **Handler:** `src/handlers/intent.ts` — `handleSAPNavigate` case `'references'` (line ~792)
 - **Tool definition:** `src/handlers/tools.ts` — `SAPNavigate` tool schema (line ~352)
@@ -42,7 +42,7 @@ Add the full 2-step Where-Used API to `src/adt/codeintel.ts`:
 - [x] Use `fast-xml-parser` for XML parsing (consistent with `src/adt/xml-parser.ts` patterns) instead of regex
 - [x] Add safety check using `checkOperation(safety, OperationType.Intelligence, 'FindWhereUsed')`
 
-Reference: `reports/2026-03-24-001-feature-parity-implementation.md` Phase 1 describes the 2-step API. Current simple implementation is at `src/adt/codeintel.ts:69-97`.
+Reference: `docs/plans/completed/2026-03-24-001-feature-parity-implementation.md` Phase 1 describes the 2-step API. Current simple implementation is at `src/adt/codeintel.ts:69-97`.
 
 ### Task 2: Wire up handler and tool schema
 

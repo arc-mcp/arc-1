@@ -495,4 +495,4 @@ Auth and connectivity failures are expected with free-tier instances. Assertion 
 
 ## Architecture Details
 
-For the research report covering authentication options, competitor analysis, and design decisions, see [btp-abap-environment-connectivity.md](https://github.com/marianfoo/arc-1/blob/main/docs/reports/btp-abap-environment-connectivity.md) in the repo.
+For the research report covering authentication options, competitor analysis, and design decisions, see [btp-abap-environment-connectivity.md](https://github.com/marianfoo/arc-1/blob/main/docs/plans/completed/btp-abap-environment-connectivity.md) in the repo.
