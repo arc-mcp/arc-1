@@ -42,13 +42,14 @@ The included `xs-security.json` defines 7 scopes:
 | `git`          | Push / pull / commit via abapGit / gCTS                        | `SAPGit.clone`/`pull`/`push`/`commit`                                                        |
 | `admin`        | Implies ALL other scopes at runtime                            | Everything                                                                                   |
 
-And 6 pre-defined role collections (assignable to users in BTP Cockpit):
+And 7 pre-defined role collections (assignable to users in BTP Cockpit):
 
 | Role Collection           | Scopes                                                   | Use Case                                  |
 |---------------------------|----------------------------------------------------------|-------------------------------------------|
 | ARC-1 Viewer              | `read`                                                   | Read-only SAP access                      |
 | ARC-1 Developer           | `read`, `write`, `transports`, `git`                     | Full developer (write + CTS + Git)        |
 | ARC-1 Data Viewer         | `read`, `data`                                           | Read-only + table preview                 |
+| ARC-1 Viewer + SQL        | `read`, `data`, `sql`                                    | Read-only + table preview + freestyle SQL |
 | ARC-1 Developer + Data    | `read`, `write`, `data`, `transports`, `git`             | Developer + data preview                  |
 | ARC-1 Developer + SQL     | `read`, `write`, `data`, `sql`, `transports`, `git`      | Developer + data + freestyle SQL          |
 | ARC-1 Admin               | all 7                                                    | Administrative access                     |
@@ -85,7 +86,7 @@ cf logs arc1-mcp-server --recent | grep XSUAA
 ## Step 3: Assign Role Collections
 
 1. Open **BTP Cockpit** → **Security** → **Role Collections**
-2. Find one of the shipped collections: "ARC-1 Viewer", "ARC-1 Developer", "ARC-1 Developer + Data", "ARC-1 Developer + SQL", "ARC-1 Data Viewer", or "ARC-1 Admin"
+2. Find one of the shipped collections: "ARC-1 Viewer", "ARC-1 Developer", "ARC-1 Developer + Data", "ARC-1 Developer + SQL", "ARC-1 Data Viewer", "ARC-1 Viewer + SQL", or "ARC-1 Admin"
 3. Click the role collection → **Edit** → **Users** tab
 4. Add your BTP user (email address)
 5. Save

@@ -103,13 +103,14 @@ npm run btp:build
 cf deploy mta_archives/arc1-mcp_*.mtar -e mta-overrides.mtaext
 ```
 
-The `mta.yaml` defines three BTP services that are created automatically:
+The `mta.yaml` defines four BTP services that are created automatically:
 
 | Service | Instance Name | Plan | Purpose |
 |---------|--------------|------|---------|
 | XSUAA | `arc1-xsuaa` | `application` | MCP client OAuth authentication |
 | Destination | `arc1-destination` | `lite` | SAP system lookup |
 | Connectivity | `arc1-connectivity` | `lite` | Cloud Connector proxy |
+| Application Logs | `arc1-application-logs` | `lite` | Centralized log aggregation (Kibana) |
 
 > **Multiple landscapes from one repo.** The gitignore matches any
 > `mta-*.mtaext`, so you can keep `mta-ecc-dev.mtaext`,

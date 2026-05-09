@@ -54,7 +54,10 @@ modules:
       instances: 1
       health-check-type: http
       health-check-http-endpoint: /health
-      command: node dist/index.js
+      # Node heap target sized to 87.5% of dyno memory (512M -> 448M) so V8 GCs
+      # cleanly inside the CF cgroup instead of being SIGKILL'd; bump in
+      # lockstep when memory: changes.
+      command: node --max-old-space-size=448 dist/index.js
       buildpack: nodejs_buildpack
     build-parameters:
       builder: custom
@@ -116,6 +119,7 @@ modules:
       - name: arc1-xsuaa
       - name: arc1-destination
       - name: arc1-connectivity
+      - name: arc1-application-logs
 
 resources:
   - name: arc1-xsuaa
@@ -134,4 +138,10 @@ resources:
     type: org.cloudfoundry.managed-service
     parameters:
       service: connectivity
+      service-plan: lite
+
+  - name: arc1-application-logs
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: application-logs
       service-plan: lite
