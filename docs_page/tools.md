@@ -192,7 +192,8 @@ Create or update ABAP source code. Handles lock/modify/unlock automatically.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `action` | string | Yes | `create`, `update`, `delete`, `edit_method`, `batch_create`, or `scaffold_rap_handlers` |
-| `type` | string | No | `PROG`, `CLAS`, `INTF`, `FUNC`, `INCL`, `DDLS`, `DCLS`, `DDLX`, `BDEF`, `SRVD`, `SRVB`, `TABL`, `DOMA`, `DTEL`, `MSAG` (for single object actions). Slash/case aliases are auto-normalized (e.g., `CLAS/OC` or `clas` → `CLAS`). |
+| `type` | string | No | `PROG`, `CLAS`, `INTF`, `FUNC`, `FUGR`, `INCL`, `DDLS`, `DCLS`, `DDLX`, `BDEF`, `SRVD`, `SRVB`, `TABL`, `DOMA`, `DTEL`, `MSAG` (for single object actions). Slash/case aliases are auto-normalized (e.g., `CLAS/OC` or `clas` → `CLAS`). |
+| `group` | string | No | For `FUNC`: parent function-group name. **Required for FUNC create** (the FUGR must already exist — create it first via `SAPWrite type=FUGR`). Auto-resolved via search for FUNC update/delete if omitted. Ignored for other types. |
 | `name` | string | No | Object name (for single object actions) |
 | `source` | string | No | ABAP source code (for create/update/edit_method) |
 | `method` | string | No | For `edit_method`: method name to replace (e.g., `"get_name"`) |
@@ -234,6 +235,10 @@ Create or update ABAP source code. Handles lock/modify/unlock automatically.
 **DDIC metadata writes:** `DOMA`, `DTEL`, `MSAG`, and `SRVB` use structured XML payloads and do **not** use `/source/main`. `MSAG` writes use the `/sap/bc/adt/messageclass/` endpoint and accept a `messages` array of `{number, shortText, longText?}` entries. `SRVB` create uses wildcard content type (`application/*`) and SRVB update uses vendor type (`application/vnd.sap.adt.businessservices.servicebinding.v2+xml`).
 
 **Source-based DDIC writes:** `TABL`, `DDLS`, `DCLS`, `BDEF`, and `SRVD` are source-based and write source via `/source/main`. `TABL` covers both transparent tables (`TABL/DT`) and DDIC structures (`TABL/DS`); ARC-1 auto-resolves between `/ddic/tables/` and `/ddic/structures/` for read/update.
+
+**Function group (`FUGR`) create:** POSTs `<group:abapFunctionGroup … adtcore:type="FUGR/F">` to `/sap/bc/adt/functions/groups` with content type `application/vnd.sap.adt.functions.groups.v3+xml`. Provide `package` and (for non-`$TMP`) `transport`. Delete the FUGR only after all its function modules have been deleted.
+
+**Function module (`FUNC`) create / update / delete (issue [#250](https://github.com/marianfoo/arc-1/issues/250)):** The parent FUGR must already exist — pass `group` explicitly on create (or auto-resolve via search on update/delete). Create POSTs `<fmodule:abapFunctionModule … adtcore:type="FUGR/FF">` with `<adtcore:containerRef>` to `/sap/bc/adt/functions/groups/{group}/fmodules`. The FM inherits its package from the parent FUGR — do not pass `package`. **Important caveat:** ARC-1 does NOT manage FM parameter signatures (IMPORTING/EXPORTING/CHANGING/EXCEPTIONS) — those live in separate metadata. Add parameters via SAPGUI/SE37 or Eclipse after activation. SAPGUI-style `*"…IMPORTING…"*` parameter comment blocks in source are auto-stripped before PUT (SAP rejects them with `FUNC_ADT028`) and a warning is appended to the response.
 
 **Mixed-case object names rejected on create.** SAP TADIR is uppercase on every release; mixed-case names cause silent corruption (e.g., a DDLS named `Zc_MyView` registers as `ZC_MYVIEW` in TADIR but the source body keeps mixed case, confusing every downstream tool). `SAPWrite(action="create"\|"batch_create")` rejects mixed-case names pre-flight with an actionable error. The source code *inside* the object can still use mixed case (e.g., `define view entity Zc_MyView`); only the TADIR object name needs to be uppercase.
 

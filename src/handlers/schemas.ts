@@ -235,6 +235,7 @@ export const SAPWRITE_TYPES_ONPREM = [
   'CLAS',
   'INTF',
   'FUNC',
+  'FUGR',
   'INCL',
   'DDLS',
   'DCLS',
@@ -352,6 +353,9 @@ export const SAPWriteSchema = z.object({
   description: z.string().optional(),
   package: z.string().optional(),
   transport: z.string().optional(),
+  // Required for FUNC create (the parent function-group name); optional for FUNC
+  // update/delete (auto-resolved via search). Ignored for other types.
+  group: z.string().optional(),
   dataType: z.string().optional(),
   length: z.coerce.number().optional(),
   decimals: z.coerce.number().optional(),
@@ -400,6 +404,8 @@ export const SAPWriteSchemaBtp = z.object({
   description: z.string().optional(),
   package: z.string().optional(),
   transport: z.string().optional(),
+  // Same as on-prem; FUGR/FUNC write is on-prem-only but harmless to expose here.
+  group: z.string().optional(),
   dataType: z.string().optional(),
   length: z.coerce.number().optional(),
   decimals: z.coerce.number().optional(),

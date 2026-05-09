@@ -2049,6 +2049,10 @@ const SERVICEBINDING_V2_CONTENT_TYPE = 'application/vnd.sap.adt.businessservices
 const BDEF_CONTENT_TYPE = 'application/vnd.sap.adt.blues.v1+xml';
 const MESSAGECLASS_CONTENT_TYPE = 'application/vnd.sap.adt.mc.messageclass+xml';
 const SKTD_V2_CONTENT_TYPE = 'application/vnd.sap.adt.sktdv2+xml';
+// Function group + function module content types — verified live on a4h S/4HANA 2023
+// (issue #250). FUGR uses the v3 group envelope; FUNC uses the unversioned fmodule envelope.
+const FUNCTION_GROUP_CONTENT_TYPE = 'application/vnd.sap.adt.functions.groups.v3+xml';
+const FUNCTION_MODULE_CONTENT_TYPE = 'application/vnd.sap.adt.functions.fmodules+xml';
 
 function isMetadataWriteType(type: string): boolean {
   return type === 'DOMA' || type === 'DTEL' || type === 'MSAG' || type === 'SRVB';
@@ -2056,7 +2060,15 @@ function isMetadataWriteType(type: string): boolean {
 
 /** Types that require a specific vendor content type for creation (not application/*) */
 function needsVendorContentType(type: string): boolean {
-  return type === 'DOMA' || type === 'DTEL' || type === 'BDEF' || type === 'MSAG' || type === 'SKTD';
+  return (
+    type === 'DOMA' ||
+    type === 'DTEL' ||
+    type === 'BDEF' ||
+    type === 'MSAG' ||
+    type === 'SKTD' ||
+    type === 'FUGR' ||
+    type === 'FUNC'
+  );
 }
 
 /** Content type used for create POST */
@@ -2099,6 +2111,10 @@ function vendorContentTypeForType(type: string): string {
       return MESSAGECLASS_CONTENT_TYPE;
     case 'SKTD':
       return SKTD_V2_CONTENT_TYPE;
+    case 'FUGR':
+      return FUNCTION_GROUP_CONTENT_TYPE;
+    case 'FUNC':
+      return FUNCTION_MODULE_CONTENT_TYPE;
     default:
       // Wildcard lets the SAP server resolve the correct handler.
       // Sending 'application/xml' causes 415 on DDL-based endpoints
@@ -2147,6 +2163,9 @@ function getMetadataWriteProperties(input: Record<string, unknown>): Record<stri
     category: input.category,
     version: input.version,
     odataVersion: input.odataVersion,
+    // Function-module create needs the parent function-group name for the
+    // <adtcore:containerRef> in the create payload (issue #250).
+    group: input.group,
   };
 
   return props;
@@ -2576,6 +2595,32 @@ export function buildCreateXml(
       };
       return buildMessageClassXml(params);
     }
+    case 'FUGR':
+      // Function group create envelope. POSTed to /sap/bc/adt/functions/groups
+      // with Content-Type: application/vnd.sap.adt.functions.groups.v3+xml.
+      // Verified live on a4h S/4HANA 2023 (issue #250).
+      return `<?xml version="1.0" encoding="UTF-8"?>
+<group:abapFunctionGroup xmlns:group="http://www.sap.com/adt/functions/groups" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:description="${escapeXml(description)}" adtcore:language="EN" adtcore:name="${escapeXml(name)}" adtcore:type="FUGR/F" adtcore:masterLanguage="EN">
+  <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
+</group:abapFunctionGroup>`;
+    case 'FUNC': {
+      // Function module create envelope. POSTed to
+      // /sap/bc/adt/functions/groups/{group_lc}/fmodules with
+      // Content-Type: application/vnd.sap.adt.functions.fmodules+xml.
+      // No <adtcore:packageRef> — FM inherits package from the parent FUGR.
+      // adtcore:uri must be lowercase (verified live on a4h).
+      const group = String(properties?.group ?? '').trim();
+      if (!group) {
+        throw new Error(
+          'FUNC create requires "group" property — pass it via SAPWrite args (the parent function group must already exist).',
+        );
+      }
+      const groupLc = encodeURIComponent(group.toLowerCase());
+      return `<?xml version="1.0" encoding="UTF-8"?>
+<fmodule:abapFunctionModule xmlns:fmodule="http://www.sap.com/adt/functions/fmodules" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:description="${escapeXml(description)}" adtcore:name="${escapeXml(name)}" adtcore:type="FUGR/FF">
+  <adtcore:containerRef adtcore:name="${escapeXml(group)}" adtcore:type="FUGR/F" adtcore:uri="/sap/bc/adt/functions/groups/${groupLc}"/>
+</fmodule:abapFunctionModule>`;
+    }
     default:
       // Fallback — generic objectReferences using the correct URL for the type
       return `<?xml version="1.0" encoding="UTF-8"?>
@@ -2583,6 +2628,28 @@ export function buildCreateXml(
   <adtcore:objectReference adtcore:uri="${escapeXml(objectUrlForType(type, name))}" adtcore:type="${escapeXml(type)}" adtcore:name="${escapeXml(name)}" adtcore:packageName="${escapeXml(pkg)}"/>
 </adtcore:objectReferences>`;
   }
+}
+
+/**
+ * Strip SAPGUI-style function-module parameter comment blocks from an FM source body.
+ *
+ * SAP rejects PUT-to-source/main with parameter comment blocks (verified live on a4h
+ * S/4HANA 2023 — issue #250):
+ *   HTTP 400 / com.sap.adt.sedi / ExceptionResourceScanDuringSaveFailure
+ *   "Parameter comment blocks are not allowed" (T100KEY FUNC_ADT028)
+ *
+ * The signature is metadata, not source. LLMs frequently emit the SAPGUI block out
+ * of muscle memory (every released FM ships with one). This helper strips lines whose
+ * first non-whitespace tokens are `*"` so the PUT succeeds, and reports back whether
+ * stripping occurred so the caller can append a warning to the response.
+ *
+ * Only `*"…` lines are stripped — single `*` ABAP comments and inline `"` comments
+ * are preserved. Exported for unit tests.
+ */
+export function stripFmParamCommentBlock(source: string): { source: string; wasStripped: boolean } {
+  const lines = source.split('\n');
+  const kept = lines.filter((line) => !/^\s*\*"/.test(line));
+  return { source: kept.join('\n'), wasStripped: kept.length !== lines.length };
 }
 
 /** Escape special characters for XML attribute values */
@@ -2978,11 +3045,44 @@ async function handleSAPWrite(
   // (transparent) or /structures/ (DDIC structure). Resolve once via the client's
   // cached URL probe. For 'create' the default /tables/ URL is correct (we only
   // create transparent tables today; structure creation is out of scope).
+  //
+  // For FUNC, the URL has the parent function group baked into the path:
+  //   /sap/bc/adt/functions/groups/{group_lc}/fmodules/{name_lc}
+  // `objectBasePath('FUNC')` deliberately throws (PR #223 — generic URL builders
+  // must fail loudly for FM since they can't know the parent group). Issue #250:
+  // we pre-resolve the URL here from `args.group` (required for create; auto-
+  // resolved via search for update/delete) so the action switch downstream uses
+  // the correct URL. We also mirror the resolved group back onto args so
+  // `buildCreateXml('FUNC', …, properties)` finds it.
   let objectUrl: string;
   let srcUrl: string;
   if (type === 'TABL' && action !== 'create' && action !== 'batch_create') {
     objectUrl = await client.resolveTablObjectUrl(name);
     srcUrl = `${objectUrl}/source/main`;
+  } else if (type === 'FUNC') {
+    let group = String(args.group ?? '').trim();
+    if (!group) {
+      if (action === 'create') {
+        return errorResult(
+          '"group" is required to create a FUNC. Create the parent function group first (SAPWrite type=FUGR) or pass group explicitly.',
+        );
+      }
+      // For update/delete try to auto-resolve the group via search
+      const resolved = cachingLayer
+        ? await cachingLayer.resolveFuncGroup(client, name)
+        : await client.resolveFunctionGroup(name);
+      if (!resolved) {
+        return errorResult(
+          `Cannot resolve function group for FM "${name}". Provide the "group" parameter explicitly, or use SAPSearch to find the parent group.`,
+        );
+      }
+      group = resolved;
+    }
+    const groupLc = encodeURIComponent(group.toLowerCase());
+    objectUrl = `/sap/bc/adt/functions/groups/${groupLc}/fmodules/${encodeURIComponent(name.toLowerCase())}`;
+    srcUrl = `${objectUrl}/source/main`;
+    // Pass the resolved group through to buildCreateXml via args.group
+    (args as Record<string, unknown>).group = group;
   } else {
     objectUrl = objectUrlForType(type, name);
     srcUrl = sourceUrlForType(type, name);
@@ -3065,12 +3165,28 @@ async function handleSAPWrite(
       const cdsGuardUpdate = guardCdsSyntax(type, source, cachedFeatures);
       if (cdsGuardUpdate) return cdsGuardUpdate;
 
-      // Pre-write lint validation
-      const lintWarnings = runPreWriteLint(source, type, name, config, lintOverride);
+      // FUNC-source sanitization: strip SAPGUI-style parameter comment blocks.
+      // SAP rejects PUT-to-source/main with these blocks (HTTP 400 / FUNC_ADT028
+      // "Parameter comment blocks are not allowed" — verified live a4h S/4HANA 2023,
+      // issue #250). LLMs frequently emit them out of muscle memory because every
+      // released FM has one. Strip and warn rather than fail.
+      let effectiveSource = source;
+      let fmParamStripWarning: string | undefined;
+      if (type === 'FUNC') {
+        const stripped = stripFmParamCommentBlock(source);
+        effectiveSource = stripped.source;
+        if (stripped.wasStripped) {
+          fmParamStripWarning =
+            'Stripped *"…IMPORTING/EXPORTING…*" parameter comment blocks (SAP rejects them on PUT — manage FM parameters via SAPGUI/Eclipse).';
+        }
+      }
+
+      // Pre-write lint validation (uses sanitized source for FUNC)
+      const lintWarnings = runPreWriteLint(effectiveSource, type, name, config, lintOverride);
       if (lintWarnings.blocked) return lintWarnings.result!;
 
       // Pre-write server-side syntax check (opt-in; never blocks — warnings only).
-      const checkNotes = await runPreWriteSyntaxCheck(client, type, source, objectUrl, config, checkOverride);
+      const checkNotes = await runPreWriteSyntaxCheck(client, type, effectiveSource, objectUrl, config, checkOverride);
 
       // If safeUpdateSource throws (lock conflict, network error, etc.), checkNotes
       // is intentionally discarded — pre-check warnings only matter when the write succeeded.
@@ -3079,7 +3195,7 @@ async function handleSAPWrite(
         client.safety,
         objectUrl,
         srcUrl,
-        source,
+        effectiveSource,
         transport,
         cachedFeatures?.abapRelease,
       );
@@ -3091,6 +3207,7 @@ async function handleSAPWrite(
         lintWarnings.warnings,
         checkNotes,
         cdsUpdateHint,
+        fmParamStripWarning,
       );
       return warnings ? textResult(`${msg}\n\n${warnings}`) : textResult(msg);
     }
@@ -3317,8 +3434,20 @@ async function handleSAPWrite(
 
       // Step 2: Write source code if provided
       if (source) {
+        // FUNC: strip SAPGUI parameter comment blocks (see update path for rationale).
+        let createSource = source;
+        let fmParamStripWarning: string | undefined;
+        if (type === 'FUNC') {
+          const stripped = stripFmParamCommentBlock(source);
+          createSource = stripped.source;
+          if (stripped.wasStripped) {
+            fmParamStripWarning =
+              'Stripped *"…IMPORTING/EXPORTING…*" parameter comment blocks (manage FM parameters via SAPGUI/Eclipse).';
+          }
+        }
+
         // Pre-write lint validation
-        const lintWarnings = runPreWriteLint(source, type, name, config, lintOverride);
+        const lintWarnings = runPreWriteLint(createSource, type, name, config, lintOverride);
         if (lintWarnings.blocked) {
           return textResult(
             `Created ${type} ${name} in package ${pkg}, but source was rejected by lint:\n${lintWarnings.result!.content[0].text}`,
@@ -3330,13 +3459,13 @@ async function handleSAPWrite(
           client.safety,
           objectUrl,
           srcUrl,
-          source,
+          createSource,
           effectiveTransport,
           cachedFeatures?.abapRelease,
         );
         invalidateWrittenObject(type, name);
         const msg = `Created ${type} ${name} in package ${pkg} and wrote source code.`;
-        const warnings = mergePreWriteWarnings(preflightWarnings.warnings, lintWarnings.warnings);
+        const warnings = mergePreWriteWarnings(preflightWarnings.warnings, lintWarnings.warnings, fmParamStripWarning);
         return warnings ? textResult(`${msg}\n\n${warnings}`) : textResult(msg);
       }
 
@@ -4238,12 +4367,34 @@ async function handleSAPActivate(
     // Resolve URLs sequentially. For TABL we await the URL resolver so DDIC
     // structures (which live at /sap/bc/adt/ddic/structures/) are addressed
     // correctly; the resolver short-circuits on its in-memory cache.
+    // For FUNC the URL needs the parent function-group baked into the path
+    // (issue #250); each batch entry must carry `group` or be auto-resolvable
+    // by name.
     const objects = await Promise.all(
       rawObjects.map(async (o) => {
         const objType = normalizeObjectType(String(o.type ?? type));
         const objName = String(o.name ?? '');
-        const url =
-          objType === 'TABL' ? await client.resolveTablObjectUrl(objName) : objectUrlForType(objType, objName);
+        let url: string;
+        if (objType === 'TABL') {
+          url = await client.resolveTablObjectUrl(objName);
+        } else if (objType === 'FUNC') {
+          let group = String(o.group ?? args.group ?? '').trim();
+          if (!group) {
+            const resolved = cachingLayer
+              ? await cachingLayer.resolveFuncGroup(client, objName)
+              : await client.resolveFunctionGroup(objName);
+            if (!resolved) {
+              throw new Error(
+                `Cannot resolve function group for FM "${objName}" in batch activate. Provide "group" on each FUNC entry.`,
+              );
+            }
+            group = resolved;
+          }
+          const groupLc = encodeURIComponent(group.toLowerCase());
+          url = `/sap/bc/adt/functions/groups/${groupLc}/fmodules/${encodeURIComponent(objName.toLowerCase())}`;
+        } else {
+          url = objectUrlForType(objType, objName);
+        }
         return { type: objType, name: objName, url };
       }),
     );
@@ -4278,7 +4429,28 @@ async function handleSAPActivate(
   // Single activation (existing behavior). For TABL we resolve the URL because
   // the existing object may live at /tables/ (transparent) or /structures/
   // (DDIC structure); using the wrong one would produce a confusing 404.
-  const objectUrl = type === 'TABL' ? await client.resolveTablObjectUrl(name) : objectUrlForType(type, name);
+  // For FUNC the URL needs the parent function group baked into the path
+  // (issue #250) — `objectBasePath('FUNC')` deliberately throws so generic
+  // builders fail loudly. Auto-resolve the group when omitted.
+  let objectUrl: string;
+  if (type === 'TABL') {
+    objectUrl = await client.resolveTablObjectUrl(name);
+  } else if (type === 'FUNC') {
+    let group = String(args.group ?? '').trim();
+    if (!group) {
+      const resolved = cachingLayer
+        ? await cachingLayer.resolveFuncGroup(client, name)
+        : await client.resolveFunctionGroup(name);
+      if (!resolved) {
+        return errorResult(`Cannot resolve function group for FM "${name}". Provide the "group" parameter explicitly.`);
+      }
+      group = resolved;
+    }
+    const groupLc = encodeURIComponent(group.toLowerCase());
+    objectUrl = `/sap/bc/adt/functions/groups/${groupLc}/fmodules/${encodeURIComponent(name.toLowerCase())}`;
+  } else {
+    objectUrl = objectUrlForType(type, name);
+  }
 
   const result = await activate(client.http, client.safety, objectUrl, { ...activateOpts, name });
 

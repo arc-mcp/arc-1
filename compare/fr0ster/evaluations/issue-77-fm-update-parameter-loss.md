@@ -40,3 +40,11 @@ Until the upstream investigation in fr0ster lands, ARC-1 should **not advertise 
 3. If we want full FUNC CRUD, add a `case 'FUNC'` to `objectBasePath` that accepts the group, plumb `args.group` through `handleSAPWrite`, and add an integration test that exercises create→add-parameter→update-source→reactivate→verify-parameter-still-present.
 
 **Cross-reference**: see [`795633a-fm-group-validation.md`](795633a-fm-group-validation.md) — a related FM read-side bug fr0ster hit where ADT silently resolves an FM by name regardless of the group segment in the URL.
+
+## 2026-05-09 update — ARC-1 latent gap closed (issue #250)
+
+ARC-1 issue [#250](https://github.com/marianfoo/arc-1/issues/250) reported that `SAPWrite(type='FUNC')` errored out at the URL builder. A live verification on a4h S/4HANA 2023 confirmed the ADT FM endpoints work end-to-end (FUGR + FM create, source update, activate, delete), and the gap was on the ARC-1 side — `objectBasePath('FUNC')` deliberately throws to keep generic URL builders from silently mis-routing. Closed by adding a FUNC-aware branch to `handleSAPWrite` (and to `SAPActivate` single + batch paths) that pre-resolves the URL from `args.group`, plus a `case 'FUNC'` in `buildCreateXml` returning the verified `<fmodule:abapFunctionModule>` envelope. `FUGR` was added to `SAPWRITE_TYPES_ONPREM` for the same release (FUGR is the prerequisite parent for FM creation).
+
+The parameter-loss bug class fr0ster identified is **still upstream-blocked** and intentionally out of scope for ARC-1's MVP. ARC-1's tool description warns LLMs explicitly that FM signature/parameter management (IMPORTING/EXPORTING/EXCEPTIONS) is NOT handled — operators add parameters via SAPGUI/SE37 or Eclipse after activation. SAPGUI-style `*"…IMPORTING…"*` parameter comment blocks in source are auto-stripped before PUT (SAP rejects them with `FUNC_ADT028 "Parameter comment blocks are not allowed"`) and a warning is appended to the response.
+
+When fr0ster's investigation lands a metadata-preserving update pattern, ARC-1 can add it as a follow-up (likely a `signature`/`parameters` payload field on `SAPWrite type=FUNC`).

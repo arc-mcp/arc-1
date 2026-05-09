@@ -28,6 +28,7 @@ const {
   looksLikeFieldName,
   normalizeObjectType,
   warnCdsReservedKeywords,
+  stripFmParamCommentBlock,
 } = await import('../../../src/handlers/intent.js');
 
 function createClient(): AdtClient {
@@ -2375,6 +2376,212 @@ ENDCLASS.`;
       });
       // unrestricted config has empty allowedPackages → skip resolveObjectPackage
       expect(result.content[0]?.text).not.toContain('blocked by safety');
+    });
+  });
+
+  // ─── SAPWrite FUGR / FUNC (issue #250) ───────────────────────────
+
+  describe('SAPWrite FUGR/FUNC routing', () => {
+    interface CapturedCall {
+      url: string;
+      method: string;
+      contentType?: string;
+      body?: string;
+    }
+
+    function captureFetch(
+      handler?: (call: CapturedCall) => ReturnType<typeof mockResponse> | undefined,
+    ): CapturedCall[] {
+      const calls: CapturedCall[] = [];
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL, opts: any) => {
+        const u = typeof url === 'string' ? url : url.toString();
+        const headers = opts?.headers ?? {};
+        const headerObj =
+          headers instanceof Headers ? Object.fromEntries(headers.entries()) : (headers as Record<string, string>);
+        const contentType = Object.entries(headerObj).find(([k]) => k.toLowerCase() === 'content-type')?.[1];
+        const body = typeof opts?.body === 'string' ? opts.body : undefined;
+        const call: CapturedCall = { url: u, method: opts?.method ?? 'GET', contentType, body };
+        calls.push(call);
+        const customResponse = handler?.(call);
+        if (customResponse) return Promise.resolve(customResponse);
+        // Default: blank success with CSRF token
+        if (opts?.method === 'HEAD') return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+        if (u.includes('_action=LOCK')) {
+          return Promise.resolve(
+            mockResponse(
+              200,
+              '<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><LOCK_HANDLE>L1</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL></DATA></asx:values></asx:abap>',
+              { 'x-csrf-token': 'T' },
+            ),
+          );
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+      return calls;
+    }
+
+    it('FUGR create: POSTs to /sap/bc/adt/functions/groups with v3 content type', async () => {
+      const calls = captureFetch();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'FUGR',
+        name: 'ZARC1_FG',
+        package: '$TMP',
+        description: 'fg test',
+      });
+      expect(result.isError).toBeUndefined();
+      const create = calls.find((c) => c.method === 'POST' && /\/sap\/bc\/adt\/functions\/groups(?:\?|$)/.test(c.url));
+      expect(create).toBeDefined();
+      expect(create!.contentType).toBe('application/vnd.sap.adt.functions.groups.v3+xml');
+      expect(create!.body).toContain('<group:abapFunctionGroup');
+      expect(create!.body).toContain('adtcore:type="FUGR/F"');
+      expect(create!.body).toContain('<adtcore:packageRef adtcore:name="$TMP"/>');
+    });
+
+    it('FUNC create with explicit group: POSTs to /functions/groups/{group_lc}/fmodules with fmodules content type', async () => {
+      const calls = captureFetch();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'FUNC',
+        name: 'Z_ARC1_FM',
+        group: 'ZARC1_FG',
+        description: 'fm test',
+      });
+      expect(result.isError).toBeUndefined();
+      const create = calls.find((c) => c.method === 'POST' && c.url.includes('/functions/groups/zarc1_fg/fmodules'));
+      expect(create).toBeDefined();
+      expect(create!.contentType).toBe('application/vnd.sap.adt.functions.fmodules+xml');
+      expect(create!.body).toContain('<fmodule:abapFunctionModule');
+      expect(create!.body).toContain('adtcore:type="FUGR/FF"');
+      expect(create!.body).toContain('<adtcore:containerRef adtcore:name="ZARC1_FG"');
+      expect(create!.body).not.toContain('<adtcore:packageRef');
+    });
+
+    it('FUNC create without group returns clear error and makes no HTTP call', async () => {
+      const calls = captureFetch();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'FUNC',
+        name: 'Z_FM_NO_GROUP',
+        description: 'no group',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('group');
+      expect(calls.filter((c) => c.method === 'POST').length).toBe(0);
+    });
+
+    it('FUNC update PUTs to /functions/groups/{group_lc}/fmodules/{name_lc}/source/main', async () => {
+      const calls = captureFetch();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'update',
+        type: 'FUNC',
+        name: 'Z_ARC1_FM',
+        group: 'ZARC1_FG',
+        source: 'FUNCTION z_arc1_fm.\n  WRITE / 1.\nENDFUNCTION.\n',
+      });
+      expect(result.isError).toBeUndefined();
+      const put = calls.find((c) => c.method === 'PUT');
+      expect(put).toBeDefined();
+      expect(put!.url).toContain('/sap/bc/adt/functions/groups/zarc1_fg/fmodules/z_arc1_fm/source/main');
+    });
+
+    it('FUNC update strips parameter comment block and reports warning', async () => {
+      const calls = captureFetch();
+      const sourceWithBlock = [
+        'FUNCTION z_fm.',
+        '*"---',
+        '*"  IMPORTING IV_X TYPE STRING',
+        '*"---',
+        '  WRITE / 1.',
+        'ENDFUNCTION.',
+      ].join('\n');
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'update',
+        type: 'FUNC',
+        name: 'Z_FM',
+        group: 'ZFG',
+        source: sourceWithBlock,
+      });
+      expect(result.isError).toBeUndefined();
+      const put = calls.find((c) => c.method === 'PUT');
+      expect(put).toBeDefined();
+      // The PUT body must NOT contain *" lines
+      expect(put!.body).not.toContain('*"');
+      expect(put!.body).toContain('FUNCTION z_fm');
+      // Response text must mention the strip
+      expect(result.content[0]?.text.toLowerCase()).toMatch(/parameter comment block|stripped/i);
+    });
+
+    it('FUNC update auto-resolves group via search when omitted', async () => {
+      const calls = captureFetch((call) => {
+        // Mock the search endpoint to return the FM in group ZSU
+        if (call.url.includes('quickSearch') || call.url.includes('informationsystem/search')) {
+          return mockResponse(
+            200,
+            `<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:objectReference adtcore:type="FUGR/FF" adtcore:name="Z_FM" adtcore:uri="/sap/bc/adt/functions/groups/zsu/fmodules/z_fm" adtcore:packageName="$TMP" adtcore:description="x"/></adtcore:objectReferences>`,
+            { 'x-csrf-token': 'T' },
+          );
+        }
+        return undefined;
+      });
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'update',
+        type: 'FUNC',
+        name: 'Z_FM',
+        source: 'FUNCTION z_fm.\nENDFUNCTION.\n',
+      });
+      expect(result.isError).toBeUndefined();
+      const put = calls.find((c) => c.method === 'PUT');
+      expect(put).toBeDefined();
+      expect(put!.url).toContain('/functions/groups/zsu/fmodules/z_fm/source/main');
+    });
+
+    it('FUNC delete: DELETEs to FM URL with lockHandle', async () => {
+      const calls = captureFetch();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'delete',
+        type: 'FUNC',
+        name: 'Z_FM',
+        group: 'ZFG',
+      });
+      expect(result.isError).toBeUndefined();
+      const del = calls.find((c) => c.method === 'DELETE');
+      expect(del).toBeDefined();
+      expect(del!.url).toContain('/sap/bc/adt/functions/groups/zfg/fmodules/z_fm');
+      expect(del!.url).toContain('lockHandle=');
+    });
+
+    it('FUGR delete: DELETEs to FUGR URL with lockHandle', async () => {
+      const calls = captureFetch();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'delete',
+        type: 'FUGR',
+        name: 'ZFG',
+      });
+      expect(result.isError).toBeUndefined();
+      const del = calls.find((c) => c.method === 'DELETE');
+      expect(del).toBeDefined();
+      expect(del!.url).toContain('/sap/bc/adt/functions/groups/ZFG');
+      expect(del!.url).toContain('lockHandle=');
+    });
+
+    it('FUGR create still gated by allowedPackages', async () => {
+      captureFetch();
+      const restricted = new AdtClient({
+        baseUrl: 'http://sap:8000',
+        username: 'admin',
+        password: 'secret',
+        safety: { ...unrestrictedSafetyConfig(), allowedPackages: ['ZARC1*'] },
+      });
+      const result = await handleToolCall(restricted, DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'FUGR',
+        name: 'ZFG',
+        package: '$TMP',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('blocked');
     });
   });
 
@@ -8351,6 +8558,108 @@ ENDCLASS.`;
     it('escapes apostrophes in XML attributes', () => {
       const xml = buildCreateXml('PROG', 'ZTEST', 'ZPKG', "It's a test");
       expect(xml).toContain('adtcore:description="It&apos;s a test"');
+    });
+
+    it('returns FUGR create XML with group:abapFunctionGroup envelope (issue #250)', () => {
+      const xml = buildCreateXml('FUGR', 'ZARC1_FG', '$TMP', 'Test FG');
+      expect(xml).toContain('<group:abapFunctionGroup');
+      expect(xml).toContain('xmlns:group="http://www.sap.com/adt/functions/groups"');
+      expect(xml).toContain('adtcore:type="FUGR/F"');
+      expect(xml).toContain('adtcore:name="ZARC1_FG"');
+      expect(xml).toContain('adtcore:masterLanguage="EN"');
+      expect(xml).toContain('<adtcore:packageRef adtcore:name="$TMP"/>');
+    });
+
+    it('returns FUNC create XML with fmodule:abapFunctionModule envelope and containerRef (issue #250)', () => {
+      const xml = buildCreateXml('FUNC', 'Z_ARC1_FM', '', 'Test FM', { group: 'ZARC1_FG' });
+      expect(xml).toContain('<fmodule:abapFunctionModule');
+      expect(xml).toContain('xmlns:fmodule="http://www.sap.com/adt/functions/fmodules"');
+      expect(xml).toContain('adtcore:type="FUGR/FF"');
+      expect(xml).toContain('adtcore:name="Z_ARC1_FM"');
+      // containerRef must point at the parent FUGR; URI must be lowercase
+      expect(xml).toContain(
+        '<adtcore:containerRef adtcore:name="ZARC1_FG" adtcore:type="FUGR/F" adtcore:uri="/sap/bc/adt/functions/groups/zarc1_fg"/>',
+      );
+      // FM inherits package from parent FUGR — must NOT have its own packageRef
+      expect(xml).not.toContain('packageRef');
+    });
+
+    it('throws for FUNC create without group property', () => {
+      expect(() => buildCreateXml('FUNC', 'Z_FM', '', 'desc')).toThrow(/FUNC create requires "group"/i);
+    });
+
+    it('escapes XML special chars in FUGR description', () => {
+      const xml = buildCreateXml('FUGR', 'ZTEST', '$TMP', 'Desc & <stuff>');
+      expect(xml).toContain('adtcore:description="Desc &amp; &lt;stuff&gt;"');
+    });
+
+    it('escapes XML special chars in FUNC group name and uses encodeURIComponent for URI', () => {
+      // Slash in group name (unrealistic but exercises encoding)
+      const xml = buildCreateXml('FUNC', 'Z_FM', '', 'desc', { group: 'ZA/B' });
+      // adtcore:name must be XML-escaped
+      expect(xml).toContain('adtcore:name="ZA/B"');
+      // URI path uses encodeURIComponent (lowercase first)
+      expect(xml).toContain('adtcore:uri="/sap/bc/adt/functions/groups/za%2Fb"');
+    });
+  });
+
+  // ─── stripFmParamCommentBlock (issue #250) ───────────────────────────
+
+  describe('stripFmParamCommentBlock', () => {
+    it('returns empty input unchanged', () => {
+      const result = stripFmParamCommentBlock('');
+      expect(result.source).toBe('');
+      expect(result.wasStripped).toBe(false);
+    });
+
+    it('returns clean source unchanged', () => {
+      const src = "FUNCTION z_foo.\n  WRITE / 'ok'.\nENDFUNCTION.\n";
+      const result = stripFmParamCommentBlock(src);
+      expect(result.source).toBe(src);
+      expect(result.wasStripped).toBe(false);
+    });
+
+    it('strips a full SAPGUI parameter comment block and reports wasStripped=true', () => {
+      const src = [
+        'FUNCTION z_foo.',
+        '*"----------------------------------------------------------------------',
+        '*"*"Local Interface:',
+        '*"  IMPORTING',
+        `*"     VALUE(IV_NAME) TYPE STRING DEFAULT 'World'`,
+        '*"  EXPORTING',
+        '*"     VALUE(EV_GREETING) TYPE STRING',
+        '*"----------------------------------------------------------------------',
+        '  ev_greeting = |Hello|.',
+        'ENDFUNCTION.',
+        '',
+      ].join('\n');
+      const result = stripFmParamCommentBlock(src);
+      expect(result.wasStripped).toBe(true);
+      expect(result.source).not.toContain('*"');
+      expect(result.source).toContain('FUNCTION z_foo.');
+      expect(result.source).toContain('ev_greeting = |Hello|.');
+      expect(result.source).toContain('ENDFUNCTION.');
+    });
+
+    it('preserves single-asterisk ABAP comments', () => {
+      const src = 'FUNCTION z_foo.\n* This is a real comment\n  WRITE / 1.\nENDFUNCTION.\n';
+      const result = stripFmParamCommentBlock(src);
+      expect(result.wasStripped).toBe(false);
+      expect(result.source).toContain('* This is a real comment');
+    });
+
+    it(`preserves inline " comments`, () => {
+      const src = `FUNCTION z_foo.\n  WRITE / 'foo'. " inline comment\nENDFUNCTION.\n`;
+      const result = stripFmParamCommentBlock(src);
+      expect(result.wasStripped).toBe(false);
+      expect(result.source).toContain('" inline comment');
+    });
+
+    it('strips lines with leading whitespace before *"', () => {
+      const src = 'FUNCTION z_foo.\n  *"  IMPORTING IV_X TYPE STRING\nENDFUNCTION.\n';
+      const result = stripFmParamCommentBlock(src);
+      expect(result.wasStripped).toBe(true);
+      expect(result.source).not.toContain('*"');
     });
   });
 

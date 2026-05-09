@@ -1,6 +1,6 @@
 # ARC-1 Roadmap
 
-**Last Updated:** 2026-05-08 (added ARCH-01 + PR-ε architecture entries)
+**Last Updated:** 2026-05-09 (issue #250 FUNC/FUGR write support landed)
 **Project:** ARC-1 (ABAP Relay Connector) — MCP Server for SAP ABAP Systems
 **Repository:** https://github.com/marianfoo/arc-1
 
@@ -117,6 +117,7 @@ SORT RULES for this table — DO NOT BREAK when adding rows:
 
 | ID | Feature | Completed | Category |
 |----|---------|-----------|----------|
+| — | Function-group (FUGR) and function-module (FUNC) write support — `SAPWrite create/update/delete` for both types with `group` parameter for FM (issue [#250](https://github.com/marianfoo/arc-1/issues/250)). FUGR routes through standard `objectBasePath`; FUNC bypasses with a dedicated URL pre-resolution branch in `handleSAPWrite` and `handleSAPActivate` (group from args; auto-resolved via search for update/delete). New `case 'FUGR'`/`case 'FUNC'` in `buildCreateXml`; `stripFmParamCommentBlock` helper auto-strips SAPGUI `*"…"*` parameter comment blocks (SAP rejects them with `FUNC_ADT028`). FM signature/parameters explicitly out of scope — managed via SAPGUI/SE37 or Eclipse. Verified live on a4h S/4HANA 2023 (full lifecycle); 132/132 E2E pass. Closes the "latent FUNC-update gap" flagged in 2026-04-27 competitor scan. | 2026-05-09 | Features |
 | — | CF deployment hardening (Node `--max-old-space-size=448` heap flag on mta.yaml + `application-logs` lite binding) and XSUAA `ARC-1 Viewer + SQL` role-collection parity with the `viewer-sql` API-key profile. Config-only — no source changes. | 2026-05-09 | Ops |
 | — | PR-β three-file sync (MSAG `messages` schema property exposure) + universal write guards (mixed-case object name rejection on create + batch_create). Splits PR [#196](https://github.com/marianfoo/arc-1/pull/196). Plan: `docs/plans/pr-beta-three-file-sync-and-universal-guards.md` (now in `docs/plans/completed/` after merge). PR [#201](https://github.com/marianfoo/arc-1/pull/201). | 2026-05-08 | Features |
 | — | PR-α cookie hot-reload on stale 401 (`SAP_COOKIE_FILE` re-read on persistent 401, no restart needed; non-blocking startup auth-preflight in cookie-auth mode; cookie-aware LLM error hint). Splits PR [#196](https://github.com/marianfoo/arc-1/pull/196). PR [#200](https://github.com/marianfoo/arc-1/pull/200). | 2026-05-08 | Features |

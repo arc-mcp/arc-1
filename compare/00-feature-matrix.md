@@ -2,7 +2,7 @@
 
 A comprehensive comparison of all SAP ADT/MCP projects against ARC-1.
 
-_Last updated: 2026-05-08 — issue #218 audit + SEC-11 dependency security Tier 1._
+_Last updated: 2026-05-09 — issue #250 FUNC/FUGR write support added (create/source-update/delete) — closes the "latent FUNC-update gap" noted in 2026-04-27 entry below; signature/parameter management remains out of scope (defer until upstream fr0ster #77 investigation completes)._
 _Plan A (PR #223): purged five invented `SLASH_TYPE_MAP` entries `FUNC/FM`, `CLAS/LI`, `VIEW/V`, `TRAN/O`; repointed `FUGR/FF → FUNC` (was `→ FUGR`); added real `VIEW/DV → VIEW`, `TRAN/T → TRAN`, `objectBasePath('VIEW')` VIT URL, citation guard `SLASH_TYPE_EVIDENCE`, exhaustiveness guard `KNOWN_BASE_TYPES`, slash-form throw + `objectBasePath('FUNC')` group-context throw. DDIC view reads were silently broken via fallthrough to `/programs/programs/`._
 _Plan B (PR #224): `MSAG` added to `SAPREAD_TYPES_*` (was previously write-only / read-via-`MESSAGES` asymmetry); `FTG2` renamed to `FEATURE_TOGGLE` (ARC-1-invented short identifier per research/abap-types/types/ftg2.md). Both old aliases (`MESSAGES`, `FTG2`) accepted for one minor with stderr deprecation warning._
 _Both verified live against a4h S/4HANA 2023 + npl NW 7.50 SP02 — both systems return identical `<adtcore:type>` values._
@@ -160,6 +160,8 @@ Tier 2 (CycloneDX SBOM, Cosign image signing, OpenSSF Scorecard) and Tier 3 (Soc
 | Message class write (MSAG) | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | N/A | ❌ | ✅ |
 | DCL write (DCLS) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ✅ |
 | SKTD write (Knowledge Transfer Docs) | ✅ (merged PR #134 2026-04-16; base64 Markdown in XML envelope; create requires refObjectType) | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
+| Function group write (FUGR create / delete) | ✅ (issue #250; create+delete; package via packageRef) | ✅ | ❌ | ❌ | ❌ | ✅ | N/A | ❌ | ✅ |
+| Function module write (FUNC create / source-update / delete) | ✅ (issue #250; requires `group`; FM signature/parameters managed via SAPGUI/Eclipse — out of scope; SAPGUI `*"…"*` parameter comment blocks auto-stripped on PUT) | ❌ | ❌ | ❌ | ❌ | ⚠️ (parameter loss bug — fr0ster open issue #77) | N/A | ❌ | ⚠️ (no signature mgmt) |
 
 ## 7. Code Intelligence
 

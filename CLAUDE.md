@@ -53,15 +53,7 @@ Husky runs `lint-staged` on commit, which auto-fixes lint/format via Biome on st
 
 ### Configuration (Priority: CLI > Env > .env > Defaults)
 
-```bash
-# Using environment variables
-SAP_URL=http://host:50000 SAP_USER=user SAP_PASSWORD=pass npm run dev
-
-# Using .env file (copy .env.example to .env)
-npm run dev
-```
-
-Copy `.env.example` to `.env` for local development. All config options are defined in `src/server/config.ts` (parser) and `src/server/types.ts` (ServerConfig type with defaults).
+Copy `.env.example` to `.env`. All options live in `src/server/config.ts` (parser) and `src/server/types.ts` (`ServerConfig` defaults).
 
 | Variable / Flag | Description |
 |-----------------|-------------|
@@ -80,13 +72,13 @@ Copy `.env.example` to `.env` for local development. All config options are defi
 | `SAP_ALLOW_TRANSPORT_WRITES` / `--allow-transport-writes` | Enable transport mutations (`SAPTransport.create`/`release`/`delete`). Default: `false`. **Also requires** `SAP_ALLOW_WRITES=true`. |
 | `SAP_ALLOW_GIT_WRITES` / `--allow-git-writes` | Enable git mutations (`SAPGit.clone`/`pull`/`push`). Default: `false`. **Also requires** `SAP_ALLOW_WRITES=true`. |
 | `SAP_ALLOWED_PACKAGES` / `--allowed-packages` | Restrict write operations to packages (default: `$TMP`; supports wildcards: `Z*`). `*` = any. Reads are never package-gated. |
-| `SAP_DENY_ACTIONS` / `--deny-actions` | Fine-grained per-action denial. Grammar: `Tool`, `Tool.action`, `Tool.glob*` (tool-qualified only). Inline CSV or file path. Fails fast on invalid input. See [authorization.md](docs_page/authorization.md#advanced-deny-actions). |
-| `ARC1_API_KEYS` / `--api-keys` | Multiple API keys with profiles (`key1:viewer,key2:developer`). Valid profiles: `viewer`, `viewer-data`, `viewer-sql`, `developer`, `developer-data`, `developer-sql`, `admin`. Each profile maps to a scope set AND a partial SafetyConfig intersected with the server ceiling. Single `ARC1_API_KEY` was removed in v0.7. |
+| `SAP_DENY_ACTIONS` / `--deny-actions` | Per-action denial; CSV or file. Grammar: `Tool`, `Tool.action`, `Tool.glob*`. See [authorization.md](docs_page/authorization.md#advanced-deny-actions). |
+| `ARC1_API_KEYS` / `--api-keys` | API keys + profiles (`key1:viewer,key2:developer`). Profiles: `viewer`, `viewer-data`, `viewer-sql`, `developer`, `developer-data`, `developer-sql`, `admin`. Profile safety is intersected with server ceiling. |
 | `SAP_OIDC_ISSUER` / `--oidc-issuer` | OIDC issuer URL for JWT validation |
 | `SAP_OIDC_AUDIENCE` / `--oidc-audience` | OIDC audience for JWT validation |
-| `ARC1_OAUTH_DCR_TTL_SECONDS` / `--oauth-dcr-ttl-seconds` | Lifetime of an OAuth Dynamic Client Registration `client_id` in seconds. Default: `2592000` (30 days). Min `60`, max `7776000` (90 days). Only consulted when `SAP_XSUAA_AUTH=true`. Lower values bound the blast radius if the signing key leaks; higher reduces re-auth churn. |
-| `ARC1_ALLOWED_ORIGINS` / `--allowed-origins` | Comma-separated CORS allowlist for **browser-based** MCP clients. Empty (default) = CORS disabled. Native MCP clients (Claude Desktop / Cursor / VS Code Copilot / Copilot Studio) don't need this — they use native HTTP, not the browser fetch API. Pairs with `credentials: true`, so origins are exact-match only (no wildcards). |
-| `ARC1_PUBLIC_URL` | Public URL ARC-1 advertises in OAuth metadata (issuer, authorize / token / register / revoke endpoints, protected-resource metadata, and `WWW-Authenticate` `resource_metadata` URL). Set this when ARC-1 is reached through a reverse proxy on a different hostname or under a base-path prefix than the bound CF route — without it, MCP clients receive metadata pointing at `VCAP_APPLICATION.application_uris[0]` and bypass the proxy. Optional path prefix is supported (e.g. `https://gateway.example.com/arc1`); leave the path off for a root-mounted proxy. Trailing slash is stripped. Defaults to the CF route from `VCAP_APPLICATION`, then to `http://<bind-host>:<port>`. |
+| `ARC1_OAUTH_DCR_TTL_SECONDS` / `--oauth-dcr-ttl-seconds` | OAuth DCR `client_id` lifetime, seconds. Default `2592000` (30 days), range `[60, 7776000]`. XSUAA only. |
+| `ARC1_ALLOWED_ORIGINS` / `--allowed-origins` | CORS allowlist for browser MCP clients; exact-match (no wildcards). Empty (default) = CORS off. Native MCP clients don't need this. |
+| `ARC1_PUBLIC_URL` | Public URL advertised in OAuth metadata. Set when behind a reverse proxy whose hostname/path-prefix differs from the bound CF route. Defaults to `VCAP_APPLICATION.application_uris[0]`, then bind host:port. |
 | `SAP_BTP_SERVICE_KEY` / `--btp-service-key` | BTP ABAP service key JSON (direct connection) |
 | `SAP_BTP_SERVICE_KEY_FILE` / `--btp-service-key-file` | Path to BTP ABAP service key file |
 | `SAP_BTP_OAUTH_CALLBACK_PORT` / `--btp-oauth-callback-port` | OAuth browser callback port (default: auto) |
@@ -94,7 +86,7 @@ Copy `.env.example` to `.env` for local development. All config options are defi
 | `ARC1_TOOL_MODE` / `--tool-mode` | Tool mode: `standard` (12 tools, `SAPGit` feature-gated) or `hyperfocused` (1 universal SAP tool, ~200 tokens) |
 | `SAP_ABAPLINT_CONFIG` / `--abaplint-config` | Path to custom abaplint.jsonc config file for lint rules |
 | `SAP_LINT_BEFORE_WRITE` / `--lint-before-write` | Enable pre-write lint validation (default: true) |
-| `SAP_CHECK_BEFORE_WRITE` / `--check-before-write` | Opt-in: pre-write SAP-side syntax check via ADT checkruns with inline content (default: **false**). When enabled, errors/warnings from the proposed source are **appended to the write response** (non-blocking). Off by default because it adds a round-trip per write and, during multi-file edits, surfaces dependency-related errors that self-resolve once later files land. Activation remains the definitive check. |
+| `SAP_CHECK_BEFORE_WRITE` / `--check-before-write` | Pre-write SAP-side syntax check via ADT checkruns; warnings appended to response (non-blocking). Default `false` (extra round-trip; activation is the definitive check). |
 | `ARC1_CACHE` / `--cache` | Cache mode: `auto` (default), `memory`, `sqlite`, `none` |
 | `ARC1_CACHE_FILE` / `--cache-file` | SQLite cache file path (default: `.arc1-cache.db`) |
 | `ARC1_CACHE_WARMUP` / `--cache-warmup` | Pre-warm cache on startup via TADIR scan (default: false) |
@@ -104,10 +96,10 @@ Copy `.env.example` to `.env` for local development. All config options are defi
 | `SAP_BTP_PP_DESTINATION` | BTP PP Destination name (PrincipalPropagation type) |
 | `SAP_PP_ENABLED` / `--pp-enabled` | Enable per-user principal propagation (default: false) |
 | `SAP_PP_STRICT` / `--pp-strict` | PP failure = error, no fallback to shared client (default: false) |
-| `SAP_PP_ALLOW_SHARED_COOKIES` / `--pp-allow-shared-cookies` | Opt-in escape hatch allowing `SAP_COOKIE_FILE`/`SAP_COOKIE_STRING` to coexist with `SAP_PP_ENABLED`. Cookies stay on shared client only. (default: false) |
-| `SAP_DISABLE_SAML` / `--disable-saml` | Opt-in: disable SAML redirect via `X-SAP-SAML2: disabled` + `?saml2=disabled`. Do NOT use on BTP ABAP or S/4 Public Cloud. (default: false) |
+| `SAP_PP_ALLOW_SHARED_COOKIES` / `--pp-allow-shared-cookies` | Escape hatch: allow `SAP_COOKIE_FILE`/`STRING` to coexist with `SAP_PP_ENABLED` (cookies stay on shared client only). Default `false`. |
+| `SAP_DISABLE_SAML` / `--disable-saml` | Disable SAML redirect (`X-SAP-SAML2: disabled` + `?saml2=disabled`). Do NOT use on BTP ABAP or S/4 Public Cloud. Default `false`. |
 | `ARC1_PROFILE` / `--profile` | Safety profile shortcut: `viewer`, `viewer-data`, `viewer-sql`, `developer`, `developer-data`, `developer-sql` |
-| `ARC1_LOG_HTTP_DEBUG` | Opt-in: attach full request/response bodies and headers to `http_request` audit events (default: false). Sensitive headers redacted, bodies truncated at 64KB. Not for production. |
+| `ARC1_LOG_HTTP_DEBUG` | Attach full request/response bodies+headers to `http_request` audit events. Sensitive headers redacted, bodies truncated at 64KB. Not for production. Default `false`. |
 
 ## Codebase Structure
 
@@ -191,7 +183,7 @@ tests/
 | Task | Files |
 |------|-------|
 | Add new read operation | `src/adt/client.ts`, `src/handlers/intent.ts`, `src/handlers/tools.ts` (for structured format, also `src/adt/xml-parser.ts`, `src/adt/types.ts`) |
-| Add new ADT slash alias to `SLASH_TYPE_MAP` | `src/handlers/intent.ts` (`SLASH_TYPE_MAP` + `SLASH_TYPE_EVIDENCE` + `KNOWN_BASE_TYPES` if introducing a new canonical type), `tests/unit/handlers/slash-type-map.test.ts` (citation guard asserts the two map keysets are equal AND every cited path exists). Adding a `SLASH_TYPE_MAP` entry without a matching `SLASH_TYPE_EVIDENCE` entry pointing at an existing `research/abap-types/types/<short>.md` file fails the guard. Verify the slash code against Eclipse `com.sap.adt.core.apidoc-3.58.1` AND a live `<adtcore:type>` response from a real SAP system before adding. `objectBasePath` throws for any slash-form input that reaches it (last-resort fence for non-enum-typed tools like `SAPNavigate`/`SAPActivate`/`SAPDiagnose`/`SAPTransport`). See PR #222 (audit research) and PR #223 (Plan A implementation, issue #218). |
+| Add new ADT slash alias to `SLASH_TYPE_MAP` | `src/handlers/intent.ts` (`SLASH_TYPE_MAP` + `SLASH_TYPE_EVIDENCE` + `KNOWN_BASE_TYPES` for new canonical types), `tests/unit/handlers/slash-type-map.test.ts`. Citation guard requires a matching `research/abap-types/types/<short>.md` evidence file. Verify against Eclipse apidoc + live `<adtcore:type>` first. See PR #222/#223 (issue #218). |
 | Add AUTH/FEATURE_TOGGLE/ENHO read (read-only DDIC metadata; deprecated alias `FTG2` accepted with warning) | `src/adt/client.ts`, `src/adt/xml-parser.ts`, `src/adt/types.ts`, `src/handlers/intent.ts`, `src/handlers/schemas.ts`, `src/handlers/tools.ts` |
 | Read message classes via `MSAG` (canonical short type added in audit Plan B; `MESSAGES` deprecated alias) | `src/handlers/intent.ts` (case 'MSAG'/'MESSAGES'), `src/handlers/schemas.ts`, `src/handlers/tools.ts`, `src/adt/client.ts` (`getMessageClassInfo`) |
 | Add source revision history read (VERSIONS / VERSION_SOURCE) | `src/adt/client.ts`, `src/adt/xml-parser.ts`, `src/adt/types.ts`, `src/handlers/intent.ts`, `src/handlers/schemas.ts`, `src/handlers/tools.ts` |
@@ -200,7 +192,8 @@ tests/
 | Add OData-based read (non-ADT) | `src/adt/ui5-repository.ts`, `src/handlers/intent.ts`, `src/handlers/tools.ts`, `src/handlers/schemas.ts` |
 | Add FLP operation | `src/adt/flp.ts`, `src/handlers/intent.ts`, `src/handlers/tools.ts`, `src/handlers/schemas.ts` |
 | Add package create/delete/move (DEVC) | `src/handlers/intent.ts` (`handleSAPManage`), `src/handlers/tools.ts`, `src/handlers/schemas.ts`, `src/adt/ddic-xml.ts`, `src/adt/refactoring.ts` |
-| Modify package listing (`SAPRead type=DEVC`) | `src/adt/client.ts` (`getPackageContents` — uses `informationsystem/search?packageName=...` GET, NOT `nodestructure` POST, since the latter returns descriptions misaligned with names on real systems; clamps `maxResults` to `[1, 1000]`, default 200), `src/adt/xml-parser.ts` (reuses `parseSearchResults`), `src/handlers/intent.ts` (case `'DEVC'` forwards `args.maxResults`), `src/handlers/schemas.ts` (`SAPReadSchema.maxResults`), `src/handlers/tools.ts` (SAPRead `maxResults` JSON-schema property), `tests/unit/adt/client.test.ts` (`getPackageContents (search-endpoint based)`), `tests/unit/adt/xml-parser.test.ts` (`parseSearchResults — package contents alignment`), `tests/fixtures/xml/package-contents-search.xml` (real captured response from a4h test system), `tests/integration/adt.integration.test.ts` (`getPackageContents (search-endpoint based)`). Trade-off: the search endpoint omits some legacy SEGW-generated object types (notably `IWSV` service-version entries) — for those use `SAPSearch` directly. See `docs/plans/completed/fix-devc-listing-descriptions.md`. |
+| Add FUGR/FUNC write (issue #250) | FUNC URL pre-resolution + `stripFmParamCommentBlock` in `src/handlers/intent.ts` (`handleSAPWrite`/`handleSAPActivate`); `case 'FUGR'`/`case 'FUNC'` in `buildCreateXml`; FUGR routes through normal `objectBasePath` fallback, FUNC bypasses `objectBasePath('FUNC')` (keep that throw intact). `'FUGR'` added to `SAPWRITE_TYPES_ONPREM` + `group` field on `SAPWriteSchema` (schemas.ts/tools.ts). FM signature/parameter management is out of scope (SAPGUI-style `*"…"*` blocks are auto-stripped before PUT — SAP rejects `FUNC_ADT028`). See `docs/plans/completed/add-func-fugr-create-write.md`. |
+| Modify package listing (`SAPRead type=DEVC`) | `src/adt/client.ts` (`getPackageContents` uses `informationsystem/search?packageName=...` GET, not `nodestructure` POST — the latter mis-aligns descriptions; `maxResults` clamps to `[1,1000]`, default 200), `src/adt/xml-parser.ts`, `src/handlers/intent.ts`, `src/handlers/schemas.ts`, `src/handlers/tools.ts`, `tests/{unit/adt,integration}/...`, `tests/fixtures/xml/package-contents-search.xml`. Search endpoint omits legacy SEGW-generated types (e.g. `IWSV`) — use `SAPSearch` for those. See `docs/plans/completed/fix-devc-listing-descriptions.md`. |
 | Add object transport history (reverse lookup) | `src/adt/transport.ts` (`getObjectTransports`), `src/adt/types.ts` (`ObjectTransportHistory`), `src/handlers/intent.ts` (`handleSAPTransport` case `history`), `src/handlers/schemas.ts`, `src/handlers/tools.ts` |
 | Modify SAPTransport.create endpoint or DEVCLASS default | `src/adt/transport.ts` (`createTransport` — POSTs `/sap/bc/adt/cts/transports` with `asx:abap` `CreateCorrectionRequest`; defaults DEVCLASS to `$TMP` when caller omits `targetPackage`), `src/handlers/intent.ts` (`handleSAPTransport` case `create`), `src/handlers/tools.ts` (tool description for `package`/`type`), `tests/unit/adt/transport.test.ts`, `tests/integration/transport.integration.test.ts` |
 | Add gCTS / abapGit operation | `src/adt/gcts.ts` or `src/adt/abapgit.ts`, `src/handlers/intent.ts` (`handleSAPGit`), `src/handlers/tools.ts`, `src/handlers/schemas.ts` |
@@ -211,10 +204,10 @@ tests/
 | Add DDIC domain/data element write | `src/adt/ddic-xml.ts`, `src/adt/crud.ts`, `src/handlers/intent.ts` |
 | Modify ADT service discovery / MIME types | `src/adt/discovery.ts`, `src/adt/http.ts` |
 | Improve DDIC save diagnostics + SAP-domain error hints (T100/line + lock/auth/dependency hints) | `src/adt/errors.ts` (`extractDdicDiagnostics`, `formatDdicDiagnostics`, `classifySapDomainError`), `src/handlers/intent.ts` (`enrichWithSapDetails`, `formatErrorForLLM`) |
-| Add SAP error classification (new `category` + hint) | `src/adt/errors.ts` (`extractExceptionType`, `extractLockOwner`, `classifySapDomainError`, `SapErrorClassification`), `src/handlers/intent.ts` (`formatErrorForLLM`, `classifyError`), `tests/unit/adt/errors.test.ts`. Current categories: `lock-conflict`, `enqueue-error`, `authorization`, `activation-dependency`, `transport-issue`, `object-exists`, `method-not-supported`, `icf-handler-not-bound`. Ground hints in verified SAP Notes / KBAs when possible (use `mcp__sap-notes__search` or equivalent) — don't ship speculative tcode pointers. |
+| Add SAP error classification (new `category` + hint) | `src/adt/errors.ts` (`extractExceptionType`/`extractLockOwner`/`classifySapDomainError`/`SapErrorClassification`), `src/handlers/intent.ts` (`formatErrorForLLM`/`classifyError`), `tests/unit/adt/errors.test.ts`. Existing categories live in the union type. Ground hints in verified SAP Notes/KBAs (use `mcp__sap-notes__search`) — no speculative tcode pointers. |
 | Add release-gated content-type fallback (e.g. DTEL v2→v1 on 415) | `src/adt/crud.ts` (`CONTENT_TYPE_FALLBACKS` map — narrow static allowlist, 415-only retry in both `createObject` and `updateObject`), `tests/unit/adt/crud.test.ts`. Don't turn it into a generic retry loop — each entry must be a specific, tested compatibility gap. |
-| Add / update test skip reason (integration or E2E) | `tests/helpers/skip-policy.ts` (`SkipReason` constants + `requireOrSkip`), `tests/e2e/helpers.ts` (`classifyToolErrorSkip` for MCP tool errors), `docs/integration-test-skips.md` (user-facing taxonomy — update the relevant category), `scripts/ci/summarize-skips.mjs` (regex patterns that group skips — extend when adding a new message shape). Every skip message is the public API of the taxonomy — changing wording means updating all four. |
-| Run ADT type-availability probe against a live system (diagnostic; no product behavior) | `scripts/probe-adt-types.ts` (CLI entry: `npm run probe`), `src/probe/catalog.ts` (per-type collection URL + known-object fixtures), `src/probe/runner.ts` (multi-signal classifier), `src/probe/fixtures.ts` (record/replay), `tests/unit/probe/replay.test.ts` (fixture-backed unit tests). Contribute new fixture sets via `npm run probe -- --save-fixtures tests/fixtures/probe/<name>`. See [docs/probe-adt-types.md](docs/probe-adt-types.md). |
+| Add / update test skip reason | `tests/helpers/skip-policy.ts`, `tests/e2e/helpers.ts` (`classifyToolErrorSkip`), `docs/integration-test-skips.md`, `scripts/ci/summarize-skips.mjs`. Skip messages are the taxonomy's public API — keep all four in sync. |
+| Run ADT type-availability probe against a live system | `scripts/probe-adt-types.ts` (`npm run probe`), `src/probe/{catalog,runner,fixtures}.ts`, `tests/unit/probe/replay.test.ts`. New fixture set: `npm run probe -- --save-fixtures tests/fixtures/probe/<name>`. See [docs/probe-adt-types.md](docs/probe-adt-types.md). |
 | Add CDS impact classifier / extend downstream grouping | `src/adt/cds-impact.ts`, `src/adt/codeintel.ts` (`findWhereUsed`), `tests/unit/adt/cds-impact.test.ts` |
 | Add inactive syntax-check support | `src/adt/devtools.ts` (`syntaxCheck` options.version), `src/handlers/intent.ts` (`tryPostSaveSyntaxCheck`) |
 | Add method-level surgery | `src/context/method-surgery.ts` |
@@ -230,23 +223,23 @@ tests/
 | Add runtime diagnostic | `src/adt/diagnostics.ts`, `src/handlers/intent.ts` |
 | Add audit logging | `src/server/audit.ts`, `src/server/sinks/` |
 | Add audit event type | `src/server/audit.ts` (typed `*Event` interface + `AuditEvent` union); emit via `logger.emitAudit({...})` from the call site (e.g. `confirmPreaudit` in `src/adt/devtools.ts`) |
-| Add/modify Dependabot config | `.github/dependabot.yml` (three ecosystems: npm + github-actions + docker; weekly Mondays 06:00 Europe/Berlin; grouping rules for dev-deps / @types / SAP SDK / MCP SDK / Biome; ignore rules for `@types/node` major and Docker `node` major — manually bumped on the LTS cadence) |
-| Add/modify npm audit / SAST / dep review CI gate | `.github/workflows/test.yml` (`Security audit (npm audit)` step, `--audit-level=high`); `.github/workflows/dependency-review.yml` (PR-time `actions/dependency-review-action@v4` with license allow/deny lists) |
-| Add/modify container scanning | `.github/workflows/docker.yml` (Trivy non-gating, `exit-code: 0`); `.github/workflows/release.yml` (Trivy gating, `exit-code: 1`); both upload SARIF to GitHub Security tab via `github/codeql-action/upload-sarif@v4` |
-| Pin a third-party GitHub Action | Replace `uses: <owner>/<action>@<tag>` with `uses: <owner>/<action>@<40-char-sha>  # <tag>` (trailing comment lets Dependabot bump SHA + tag together). GitHub-owned `actions/*` and `github/*` are tag-pinned by design — only third-party actions (currently `googleapis/release-please-action`, `docker/*`, `aquasecurity/trivy-action`) get SHA pinning. |
+| Add/modify Dependabot config | `.github/dependabot.yml` — npm + github-actions + docker, weekly. Grouping + ignore rules in-file. |
+| Add/modify npm audit / SAST / dep review CI gate | `.github/workflows/test.yml` (`npm audit --audit-level=high`); `.github/workflows/dependency-review.yml` (license allow/deny). |
+| Add/modify container scanning | Trivy advisory in `docker.yml`, gating in `release.yml`; SARIF uploaded via `github/codeql-action/upload-sarif@v4`. |
+| Pin a third-party GitHub Action | `uses: <owner>/<action>@<40-char-sha>  # <tag>` (trailing comment lets Dependabot bump SHA + tag together). GitHub-owned `actions/*`/`github/*` stay tag-pinned. |
 | Update vulnerability reporting policy | `SECURITY.md` (Supported Versions, Reporting channels, Response SLAs, CVE handling, Out of Scope, Safe Harbor) |
 | Add CLI sub-command (`call`, `tools`, shortcuts) | `src/cli.ts` (Commander wiring), `src/cli-args.ts` (pure arg parsing helpers + tests in `tests/unit/cli/cli-args.test.ts`) — never duplicate Zod validation; `handleToolCall` does it |
-| Add SAP version-quirk workaround (NW 7.50 / S/4 gating) | Prefer structured-exception detection (`extractExceptionType` in `src/adt/errors.ts`) when SAP emits an XML error body. Fall back to body-marker heuristics only when wrapped in a release-scoped guard — see `convertHtmlConflictToProperError` in `src/adt/crud.ts` for the canonical pattern (Layer 1 = structured exception type, Layer 2 = HTML body marker scoped to `cachedFeatures.abapRelease < 751`). Inline-comment WHY the heuristic self-scopes. The full ADR (ADR-0002) lives in [PR #199](https://github.com/marianfoo/arc-1/pull/199) and lands when that PR merges. |
+| Add SAP version-quirk workaround (NW 7.50 / S/4 gating) | Prefer `extractExceptionType` in `src/adt/errors.ts` (structured XML error). Body-marker heuristics only with a release-scoped guard — see `convertHtmlConflictToProperError` in `src/adt/crud.ts` (Layer 1 exception type → Layer 2 body marker scoped to `cachedFeatures.abapRelease < 751`). Inline-comment WHY the heuristic self-scopes. ADR-0002 in [PR #199](https://github.com/marianfoo/arc-1/pull/199). |
 | Add elicitation prompt | `src/server/elicit.ts` |
 | Add XSUAA/JWT auth | `src/server/xsuaa.ts` |
-| Modify OAuth DCR client store / signed-token format | `src/server/stateless-client-store.ts` (HMAC sign/verify, payload schema, TTL); `src/server/xsuaa.ts` (`createXsuaaOAuthProvider` wires `dcrTtlSeconds`); `src/server/http.ts` (passes `config.oauthDcrTtlSeconds`); `tests/unit/server/stateless-client-store.test.ts`. Bumping `KDF_LABEL` (`arc1-dcr/v1` → `v2`) is the in-code revocation knob; `cf bind-service` rotates the upstream secret. Emits audit events `oauth_client_registered` / `oauth_client_lookup_failed` / `oauth_redirect_uri_registered`. |
+| Modify OAuth DCR client store / signed-token format | `src/server/stateless-client-store.ts` (HMAC sign/verify, payload schema, TTL); `src/server/xsuaa.ts`, `src/server/http.ts`; `tests/unit/server/stateless-client-store.test.ts`. Bumping `KDF_LABEL` is the in-code revocation knob; `cf bind-service` rotates upstream secrets. Audit events: `oauth_client_registered` / `oauth_client_lookup_failed` / `oauth_redirect_uri_registered`. |
 | Modify scope enforcement | `src/authz/policy.ts` (`ACTION_POLICY`), `src/handlers/intent.ts` (runtime check), `src/server/server.ts` (tool listing filter) |
 | Modify OIDC token handling | `src/server/http.ts` (validateOidcToken, ~line 274) |
 | Add/modify auth scopes | `xs-security.json`, `src/server/xsuaa.ts`, `src/server/http.ts`, `src/handlers/intent.ts` |
 | Add / modify auth combination rule | `src/server/config.ts` (validateConfig at ~line 305), `src/server/types.ts` (ServerConfig), `tests/unit/server/config.test.ts`, `docs/enterprise-auth.md` (Coexistence Matrix) |
 | Add Layer B auth mechanism | `src/adt/http.ts` (applyAuthHeader at ~line 830, fetchCsrfToken at ~line 669), `src/server/server.ts` (buildAdtConfig — perUser flag), `tests/unit/adt/http.test.ts` |
 | Add safety config option | `src/adt/safety.ts`, `src/server/config.ts`, `src/server/types.ts` |
-| Add feature probe | `src/adt/features.ts` (`PROBES` array — single endpoint per feature; HTTP-status classification handled centrally by `classifyFeatureProbeStatus`: 2xx/400/405/5xx → available, 401/403/404 → unavailable with diagnostic reason. Surface the reason via `FeatureStatus.message`.) |
+| Add feature probe | `src/adt/features.ts` (`PROBES` array — one endpoint per feature; status classification by `classifyFeatureProbeStatus`: 2xx/400/405/5xx → available, 401/403/404 → unavailable; surface reason via `FeatureStatus.message`). |
 | Add feature-gated write guard | `src/handlers/intent.ts` (checkRapAvailable pattern), `src/adt/features.ts` |
 | Add E2E test | `tests/e2e/`, helpers in `tests/e2e/helpers.ts`, fixtures in `tests/e2e/fixtures.ts` |
 | Add/modify E2E fixture | `tests/e2e/fixtures.ts` (define object), `tests/fixtures/abap/` (source file), `tests/e2e/setup.ts` (sync logic) |
@@ -268,100 +261,29 @@ tests/
 
 ## Architecture: Request Flow
 
-Understanding how a request flows through the system is essential for working on any part of ARC-1:
+A tool call traverses these layers in order:
 
-```
-MCP Client (Claude Desktop, Cursor, Copilot Studio)
-  │
-  ▼
-MCP Transport (stdio or HTTP Streamable)
-  │
-  ├─ stdio: no auth, safety config is the only gate
-  │
-  ├─ HTTP: auth layer (server/http.ts)
-  │   ├─ XSUAA OAuth (xsuaa.ts) → checkLocalScope() → AuthInfo { scopes, clientId, userName }
-  │   ├─ OIDC JWT (http.ts) → jwtVerify() → AuthInfo { scopes }
-  │   └─ API key (http.ts) → exact match in ARC1_API_KEYS → AuthInfo { scopes from profile }
-  │
-  ▼
-Tool Call Handler (server/server.ts)
-  │
-  ├─ Per-user client? (PP: ppEnabled + JWT → BTP Destination → per-user SAP session)
-  │
-  ▼
-handleToolCall (handlers/intent.ts)
-  │
-  ├─ 1. Scope check: ACTION_POLICY[tool/action-or-type] vs authInfo.scopes (only when authInfo present)
-  ├─ 2. Zod validation: getToolSchema(toolName) → safeParse(args) (rejects invalid input with LLM-friendly errors)
-  ├─ 3. Route to handler: handleSAPRead(), handleSAPWrite(), etc.
-  ├─ 4. Package check: checkPackage(safety, packageName) (for all SAPWrite actions: create, update, delete, edit_method)
-  ├─ SAPRead source path with cache:
-  │   ├─ Inactive-list cache resolves draft warning / version="auto"
-  │   ├─ Source cache key: (object type, name, active|inactive)
-  │   └─ Cached source sends If-None-Match and returns cached body only after SAP 304
-  │
-  ▼
-ADT Client Method (adt/client.ts, crud.ts, devtools.ts, etc.)
-  │
-  ├─ 5. Safety check: checkOperation(safety, OperationType.Read, 'GetProgram')
-  │
-  ▼
-HTTP Request (adt/http.ts)
-  │
-  ├─ Proactive MIME negotiation via `/sap/bc/adt/discovery` map (startup-cached)
-  ├─ ETag / If-None-Match conditional GET for cached source reads
-  ├─ CSRF token management (auto-fetch via HEAD, refresh on 403)
-  ├─ Content negotiation fallback (one-retry on 406/415 with header mutation)
-  ├─ Cookie/session management (hot-reload from file on stale 401)
-  ├─ Stateful sessions for lock→modify→unlock sequences
-  │
-  ▼
-SAP ABAP System (ADT REST API)
-  └─ SAP-level authorization (S_DEVELOP, S_ADT_RES, S_TRANSPRT, etc.)
-```
+1. **Transport** (`src/server/http.ts` or stdio). Stdio has no auth; HTTP runs the auth chain.
+2. **Auth** (HTTP only): XSUAA → OIDC JWT → API key. Each yields `AuthInfo { scopes, clientId?, userName? }`.
+3. **Per-user client** (`src/server/server.ts`): if `ppEnabled` + JWT, mint a per-user SAP session via BTP Destination Service.
+4. **`handleToolCall`** (`src/handlers/intent.ts`): scope check (`ACTION_POLICY`) → Zod validation (`getToolSchema`) → handler dispatch → package check (`checkPackage` for SAPWrite). Source-read path consults inactive-list cache + ETag-revalidated source cache (key `(type, name, active|inactive)`).
+5. **ADT client** (`src/adt/{client,crud,devtools}.ts`): every endpoint guarded by `checkOperation(safety, OperationType.X, 'Y')`.
+6. **HTTP** (`src/adt/http.ts`): proactive MIME negotiation (discovery map, startup-cached); conditional GET; CSRF (HEAD/refresh on 403); 406/415 one-retry; cookie hot-reload on stale 401; stateful sessions for lock→modify→unlock.
+7. **SAP ABAP**: native auth (`S_DEVELOP`, `S_ADT_RES`, `S_TRANSPRT`).
 
-**Key invariant:** Checks are additive — scope check AND safety check AND SAP auth must all pass. If any layer blocks, the operation fails.
+**Key invariant:** scope ∧ safety ∧ SAP auth — all must pass.
 
 ## Authorization & Safety System
 
-### Safety System (`src/adt/safety.ts`)
+**Safety ceiling** (`src/adt/safety.ts`, set at startup): `allowWrites`, `allowDataPreview`, `allowFreeSQL`, `allowTransportWrites`, `allowGitWrites`, `allowedPackages`, `allowedTransports`, `denyActions`. All ADT endpoints MUST go through `checkOperation()`. `OperationType` enum is internal-only — admins drive policy via the `allow*` flags + `SAP_DENY_ACTIONS`. Mutations require `allowWrites=true`; transport/git writes additionally require their respective flag.
 
-Server-level config, set at startup via env vars / CLI flags, applies to all users as the ceiling:
-`allowWrites`, `allowDataPreview`, `allowFreeSQL`, `allowTransportWrites`, `allowGitWrites`,
-`allowedPackages`, `allowedTransports`, and `denyActions`.
+**Scopes** (`src/authz/policy.ts`): `read`, `write`, `data`, `sql`, `transports`, `git`, `admin`. `admin` ⊇ all; `write` ⊇ `read`; `sql` ⊇ `data`. `ACTION_POLICY` maps `(tool, action/type) → required scope` and is the single source of truth for runtime checks + tool-list pruning. Stdio skips scope checks (no user identity).
 
-The internal `OperationType` enum is still used by code (`Read`, `Search`, `Query`, `FreeSQL`,
-`Create`, `Update`, `Delete`, `Activate`, `Test`, `Lock`, `Intelligence`, `Workflow`,
-`Transport`), but op-code env vars were removed. Admins use the high-level `allow*` flags plus
-`SAP_DENY_ACTIONS`.
+**Auth providers** (HTTP, chained in `src/server/http.ts` + `xsuaa.ts`): XSUAA OAuth → OIDC JWT (JWKS) → API key.
 
-Mutating operations require `allowWrites=true`. Transport writes additionally require
-`allowTransportWrites=true`; Git writes additionally require `allowGitWrites=true`.
-All ADT endpoints must have `checkOperation()` guards.
+**Principal propagation**: when `ppEnabled=true`, JWT mints a per-user SAP session via BTP Destination Service; SAP-level auth applies per user, ARC-1 scopes still enforced as defense-in-depth.
 
-### Scope Enforcement (`src/authz/policy.ts`, `src/handlers/intent.ts`)
-
-`ACTION_POLICY` maps each `(tool, action/type)` to a required scope and operation type. It is the
-single source of truth for runtime scope checks and tool-list pruning. Stdio has no user auth, so
-only the server safety ceiling and SAP authorization apply.
-
-Supported user scopes: `read`, `write`, `data`, `sql`, `transports`, `git`, `admin`.
-`admin` implies all scopes; `write` implies `read`; `sql` implies `data`.
-
-### Auth Providers (Chained)
-
-In HTTP mode, `src/server/http.ts` and `src/server/xsuaa.ts` handle auth:
-1. **XSUAA** (BTP): OAuth proxy, `checkLocalScope()` extracts read/write/data/sql/admin
-2. **OIDC** (self-hosted): JWT verification via JWKS, scopes from `scope`/`scp` claim
-3. **API key**: Exact match, full access
-
-### Principal Propagation
-
-When `ppEnabled=true`, the user's JWT is used to get a per-user SAP session via BTP Destination Service. SAP sees the real user identity → SAP-level auth applies per-user. ARC-1 scopes still enforced as defense-in-depth.
-
-### Important: POST Needed for Read Operations
-
-9+ "read" endpoints use HTTP POST: code intelligence (findDefinition, findWhereUsed, getCompletion), syntax check, unit tests, ATC, quickfix proposal evaluation/apply-delta, table preview. A read-only SAP user needs `S_ADT_RES ACTVT=01 AND 02`.
+**ADT POSTs that look like reads**: 9+ "read" endpoints (findDefinition, findWhereUsed, getCompletion, syntax check, unit tests, ATC, quickfix evaluation, apply-delta, table preview) use HTTP POST. Read-only SAP users need `S_ADT_RES` with `ACTVT=01 AND 02`.
 
 ## Code Patterns
 
@@ -427,49 +349,26 @@ Every code change requires tests. See `docs/testing-skip-policy.md` for the full
 | BTP Integration | `npm run test:integration:btp` | Yes (local only, interactive) | same |
 | E2E | `npm run test:e2e` | Yes (MCP server running) | `tests/e2e/vitest.e2e.config.ts` |
 
-### E2E Fixtures
+### Fixtures + helpers
 
-- `tests/e2e/fixtures.ts` defines persistent objects (`ZARC1_TEST_REPORT`, `ZIF_ARC1_TEST`, `ZCL_ARC1_TEST`, `ZCL_ARC1_TEST_UT` in `$TMP`)
-- `tests/e2e/setup.ts` has `syncPersistentFixtures()` / `deletePersistentFixtures()`
-- `npm run test:e2e` auto-syncs fixtures before running tests
-- Transient objects use `try/finally` for cleanup
-- **Key rule:** Never silently pass when fixtures are missing — use `requireOrSkip()`, not `if (!x) return;`
-
-### Skip Policy (`tests/helpers/skip-policy.ts`)
-
-- `requireOrSkip(ctx, value, reason)` — skip if nullish, narrow type otherwise
-- `SkipReason` constants: `NO_CREDENTIALS`, `NO_FIXTURE`, `BACKEND_UNSUPPORTED`, `NO_TRANSPORT_PACKAGE`, etc.
-- **Valid:** missing credentials, fixture not on system, unsupported backend. **Invalid:** early return without skip, empty catch blocks.
-
-### Error Assertions (`tests/helpers/expected-error.ts`)
-
-- `expectSapFailureClass(err, [404, 403], [/not found/i])` — assert expected HTTP status or message
-- `classifySapError(err)` — returns `'not-found'` | `'forbidden'` | `'not-released'` | `'connectivity'` | `'unknown'`
+- E2E persistent objects: `tests/e2e/fixtures.ts`, sync via `tests/e2e/setup.ts` (auto-run by `npm run test:e2e`).
+- Transient objects: `try/finally` cleanup, tagged `// best-effort-cleanup`.
+- Skip policy: `tests/helpers/skip-policy.ts` — `requireOrSkip(ctx, value, reason)` + `SkipReason` constants. Valid skips: missing creds / fixture / unsupported backend. Never `if (!x) return;` or empty catches.
+- Error assertions: `tests/helpers/expected-error.ts` — `expectSapFailureClass(err, [statuses], [patterns])`, `classifySapError(err)`.
+- Integration: `getTestClient()`, sequential, CRUD uses `generateUniqueName()`.
+- E2E: `connectClient()`/`callTool()`/`expectToolSuccess()`, 120s timeout, sequential.
 
 ### Unit Test Mocking
 
 ```typescript
-const mockFetch = vi.fn();
-vi.mock('undici', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('undici')>();
-  return { ...actual, fetch: mockFetch };
-});
-// In beforeEach: vi.resetAllMocks(); mockFetch.mockResolvedValue(mockResponse(200, 'source', { 'x-csrf-token': 'T' }));
 import { mockResponse } from '../../helpers/mock-fetch.js';
+const mockFetch = vi.fn();
+vi.mock('undici', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('undici')>()),
+  fetch: mockFetch,
+}));
+// beforeEach: vi.resetAllMocks(); mockFetch.mockResolvedValue(mockResponse(200, 'source', { 'x-csrf-token': 'T' }));
 ```
-
-### try/catch Rules
-
-- **DO:** Assert success shape in try, expected error class in catch (`expectSapFailureClass`), tag cleanup with `// best-effort-cleanup`
-- **DON'T:** Empty catch blocks, catch-and-continue without assertion, try/catch hiding precondition failures (use `requireOrSkip`)
-
-### Integration / E2E Notes
-
-- Integration: `TEST_SAP_*` env vars, `getTestClient()` factory, sequential execution, CRUD uses `generateUniqueName()`
-- E2E: MCP SDK client, `connectClient()`/`callTool()`/`expectToolSuccess()` helpers, 120s timeout, sequential
-- E2E RAP lifecycle: `tests/e2e/rap-write.e2e.test.ts` — TABL/DDLS/DCLS/BDEF/SRVD/SRVB create+activate+publish+delete (skips gracefully when `rap.available=false`)
-- BTP: local only (not CI), needs `TEST_BTP_SERVICE_KEY_FILE`, interactive browser login
-- CI telemetry: `scripts/ci/` aggregates JSON reports into GitHub step summaries. Coverage is informational only.
 
 ## Code Style & Module Conventions
 
@@ -497,29 +396,28 @@ import { mockResponse } from '../../helpers/mock-fetch.js';
 
 ## Releasing
 
-Automated via [release-please](https://github.com/googleapis/release-please). No manual version bumps or changelog edits.
+Automated via [release-please](https://github.com/googleapis/release-please) — no manual version bumps or changelog edits.
 
-- **Commit conventions:** `feat:` -> minor, `fix:` -> patch, `feat!:` / `BREAKING CHANGE:` -> major. `chore:`/`docs:`/`ci:` -> no release.
-- **Process:** Merge PRs to `main` -> release-please creates Release PR -> merge it -> npm publish + Docker push + GitHub Release
-- **Version in two places:** `package.json` (auto-bumped) + `src/server/server.ts` `VERSION` constant (via `x-release-please-version` marker)
-- **npm trusted publishing:** OIDC-based, no `NPM_TOKEN` secret. Requires `id-token: write` permission.
-- **Key files:** `.github/workflows/release.yml`, `release-please-config.json`, `.release-please-manifest.json`
+- **Commits:** `feat:` → minor, `fix:` → patch, `feat!:` / `BREAKING CHANGE:` → major. `chore:`/`docs:`/`ci:` → no release.
+- **Process:** merge PR to `main` → release-please opens Release PR → merge → npm publish + Docker push + GitHub Release.
+- **Version in two places:** `package.json` (auto) + `src/server/server.ts` `VERSION` (via `x-release-please-version` marker).
+- **npm trusted publishing:** OIDC, no `NPM_TOKEN`. Requires `id-token: write`.
+- **Files:** `.github/workflows/release.yml`, `release-please-config.json`, `.release-please-manifest.json`.
 
 ## Security & Architectural Invariants
 
-- **stdout is sacred**: All logging goes to stderr. stdout is exclusively for MCP JSON-RPC protocol messages. Any `console.log` breaks the protocol.
-- Never commit `.env`, `cookies.txt`, or `.arc1.json` (all in `.gitignore`)
-- **`mta.yaml` is committed; `mta-overrides.mtaext` is gitignored** — The base `mta.yaml` is tracked and ships with placeholder destinations (`your-basic-destination` / `your-pp-destination`) plus safe defaults (writes off, free SQL off, `$TMP` only). Per-landscape values live in `mta-overrides.mtaext` (gitignored — copy from `mta-overrides.mtaext.example`) or any `mta-*.mtaext` file. Deploy with `cf deploy ... -e mta-overrides.mtaext` (or `npm run btp:build-deploy-ext`). The `mta-overrides.mtaext.example` template is tracked so deployers always have a reference.
-- Sensitive fields (password, token, cookie) are redacted in logs
-- CSRF tokens are auto-managed by `src/adt/http.ts` (fetch via HEAD, refresh on 403)
-- **Safety config is the server ceiling** — per-user scopes (JWT) can only restrict further, never expand beyond server config
-- **Per-user auth never inherits shared credentials.** `buildAdtConfig(config, btpProxy?, bearerTokenProvider?, { perUser: true })` strips `username`/`password`/`cookies`/`cookieFile`/`cookieString`. Any new Layer B field must respect this flag. Never add auth fields directly to `createPerUserClient`'s `adtConfig` without going through `buildAdtConfig`.
-- **Cookie auth hot-reload.** When `SAP_COOKIE_FILE` is set, expired cookies do not require a restart. On persistent 401 the HTTP client clears stale cookies (`cookiesCleared` flag in `src/adt/http.ts`) and re-reads the file lazily on the next request. Startup auth-preflight is non-blocking in cookie-auth mode (downgrades 401 to `inconclusive`) so deployments don't deadlock when cookies are about to be re-extracted out-of-band. `SAP_COOKIE_STRING` cannot hot-reload (logged warning).
-- **All ADT endpoints have safety guards** — every `http.get/post/put/delete` call is preceded by `checkOperation()`. No unguarded HTTP calls.
-- **Error types matter**: `AdtApiError` (SAP HTTP error), `AdtSafetyError` (blocked by config), `AdtNetworkError` (connectivity). `intent.ts` formats these with LLM-friendly hints.
-- **Stateful sessions**: Lock→modify→unlock sequences must use `http.withStatefulSession()` to share cookies/CSRF tokens across requests
-- **Tool schema three-file sync.** Every tool property must exist in all three files: `tools.ts` (JSON Schema for LLMs), `schemas.ts` (Zod validation), `intent.ts` (handler logic). A property that exists in handler+Zod but is missing from `tools.ts` is invisible to LLMs — they cannot discover or use it. When adding a new property, update all three files. Batch object schemas (e.g., `batch_create` items) are defined separately from the top-level schema — check both.
+- **stdout is sacred** — logging goes to stderr; stdout carries MCP JSON-RPC only. `console.log` breaks the protocol.
+- Never commit `.env`, `cookies.txt`, `.arc1.json`. Sensitive fields (password/token/cookie) are redacted in logs.
+- **MTA layout** — `mta.yaml` committed (placeholder destinations, safe defaults); `mta-overrides.mtaext` gitignored (copy from `.example`). Deploy: `cf deploy ... -e mta-overrides.mtaext` or `npm run btp:build-deploy-ext`.
+- **Safety config is the server ceiling** — per-user scopes can only restrict further.
+- **Per-user auth never inherits shared credentials** — `buildAdtConfig(..., { perUser: true })` strips `username`/`password`/`cookies`/`cookieFile`/`cookieString`. Any new Layer B field must respect this flag; never bypass via `createPerUserClient`'s `adtConfig`.
+- **Cookie auth hot-reload** — `SAP_COOKIE_FILE` is re-read lazily on persistent 401 (`cookiesCleared` flag in `src/adt/http.ts`); startup auth-preflight is non-blocking in cookie mode. `SAP_COOKIE_STRING` cannot hot-reload (logged warning).
+- **All ADT endpoints have safety guards** — every `http.{get,post,put,delete}` call preceded by `checkOperation()`. No unguarded HTTP calls.
+- **Error types**: `AdtApiError` (SAP HTTP), `AdtSafetyError` (blocked by config), `AdtNetworkError` (connectivity). `intent.ts` formats them with LLM-friendly hints.
+- **Stateful sessions**: lock→modify→unlock uses `http.withStatefulSession()` to share cookies/CSRF.
+- **CSRF auto-managed** by `src/adt/http.ts` (HEAD fetch, refresh on 403).
+- **Tool schema three-file sync** — every property must exist in `tools.ts` (JSON Schema for LLMs), `schemas.ts` (Zod), and `intent.ts` (handler). A property missing from `tools.ts` is invisible to LLMs. Batch schemas (`batch_create` items) live separately from the top-level schema — update both.
 
 ## History
 
-This project was migrated from Go to TypeScript on 2026-03-26.
+Migrated from Go to TypeScript on 2026-03-26.

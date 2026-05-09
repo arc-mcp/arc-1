@@ -539,12 +539,28 @@ describe('Tool Definitions', () => {
       expect(typeEnum).not.toContain('PROG');
       expect(typeEnum).not.toContain('INCL');
       expect(typeEnum).not.toContain('FUNC');
+      expect(typeEnum).not.toContain('FUGR');
       expect(typeEnum).toContain('CLAS');
       expect(typeEnum).toContain('INTF');
       expect(typeEnum).toContain('TABL');
       expect(typeEnum).toContain('SRVB');
       expect(typeEnum).toContain('DOMA');
       expect(typeEnum).toContain('DTEL');
+    });
+
+    it('exposes FUGR + FUNC in on-premise SAPWrite type enum (issue #250)', () => {
+      const tools = getToolDefinitions(onpremConfig);
+      const sapWrite = tools.find((t) => t.name === 'SAPWrite')!;
+      const schema = sapWrite.inputSchema as Record<string, any>;
+      const typeEnum: string[] = schema.properties.type.enum;
+
+      expect(typeEnum).toContain('FUGR');
+      expect(typeEnum).toContain('FUNC');
+      expect(schema.properties.group).toBeDefined();
+      expect(sapWrite.description).toMatch(/FUGR/);
+      expect(sapWrite.description).toMatch(/FUNC/);
+      // The caveat about parameter management must be in the description so LLMs warn users.
+      expect(sapWrite.description.toLowerCase()).toMatch(/parameter|signature/);
     });
 
     it('removes PROG and FUNC from SAPContext on BTP', () => {

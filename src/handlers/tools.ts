@@ -122,6 +122,7 @@ const SAPWRITE_TYPES_ONPREM = [
   'CLAS',
   'INTF',
   'FUNC',
+  'FUGR',
   'INCL',
   'DDLS',
   'DCLS',
@@ -151,7 +152,7 @@ const SAPWRITE_TYPES_BTP = [
 ];
 
 const SAPWRITE_DESC_ONPREM =
-  'Create or update ABAP source code and DDIC metadata. Handles lock/modify/unlock automatically. Supports PROG, CLAS, INTF, FUNC, INCL, DDLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL, DOMA, DTEL, MSAG. ' +
+  'Create or update ABAP source code and DDIC metadata. Handles lock/modify/unlock automatically. Supports PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL, DOMA, DTEL, MSAG. ' +
   'Type codes are auto-normalized and case-insensitive (e.g., "CLAS/OC" → "CLAS"). ' +
   'TABL uses source-based writes via /source/main (define table syntax), similar to DDLS/BDEF/SRVD. ' +
   'DOMA/DTEL use metadata XML writes (not /source/main): provide DDIC fields like dataType, length, fixedValues, typeKind, labels, searchHelp. ' +
@@ -159,6 +160,8 @@ const SAPWRITE_DESC_ONPREM =
   'SRVB (service bindings) use metadata XML writes: provide serviceDefinition (SRVD name), odataVersion ("V2"/"V4"), optional category (0=UI, 1=Web API). ' +
   'bindingType accepts human-readable values like "ODataV4-UI" which are auto-normalized. ' +
   'SKTD (Knowledge Transfer Documents, Markdown docs attached to an ABAP object): create requires refObjectType (parent ADT type+subtype, e.g., "DDLS/DF"). A KTD inherits the name of the object it documents — so "name" MUST equal the parent object name (one KTD per object; refObjectName defaults to name and cannot differ). Update takes Markdown in "source"; delete uses the ADT deletion framework (two-step check/delete). Follow creates/updates with SAPActivate(type="SKTD", name="..."). ' +
+  'FUGR (function groups): create with package; serves as the parent container for FUNC. Delete the FUGR after deleting all its FMs. ' +
+  'FUNC (function modules): require "group" parameter — the parent FUGR must exist (create it first via SAPWrite type=FUGR). FM parameter signatures (IMPORTING/EXPORTING/EXCEPTIONS) are NOT managed by this tool — add them via SAPGUI/SE37 or Eclipse after activation. SAPGUI-style *"...IMPORTING..."* parameter comment blocks in source are stripped before PUT (SAP rejects them) and a warning is appended to the response. ' +
   'For edit_method: surgically replace a single method body in a CLAS without sending the full class source. ' +
   'Provide just the new method implementation code in "source" — 95% fewer tokens than full-class updates. ' +
   'For batch_create: create and activate multiple objects in a single call — ideal for RAP stacks (TABL → DDLS → DCLS → BDEF → SRVD). Pass "objects" array with dependency order. ' +
@@ -548,7 +551,7 @@ export function getToolDefinitions(
             enum: btp ? SAPWRITE_TYPES_BTP : SAPWRITE_TYPES_ONPREM,
             description: btp
               ? 'Object type (for create/update/delete/edit_method). Supported: CLAS, INTF, DDLS, DDLX, BDEF, SRVD, TABL, DOMA, DTEL.'
-              : 'Object type (for create/update/delete/edit_method). Supported: PROG, CLAS, INTF, FUNC, INCL, DDLS, DDLX, BDEF, SRVD, TABL, DOMA, DTEL.',
+              : 'Object type (for create/update/delete/edit_method). Supported: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DDLX, BDEF, SRVD, TABL, DOMA, DTEL.',
           },
           name: { type: 'string', description: 'Object name (for create/update/delete/edit_method)' },
           source: { type: 'string', description: 'ABAP source code (for create/update/edit_method)' },
@@ -584,6 +587,11 @@ export function getToolDefinitions(
             type: 'string',
             description:
               'Transport request number. Required for non-$TMP packages. Use SAPTransport(action="list") to find or SAPTransport(action="create") to create one.',
+          },
+          group: {
+            type: 'string',
+            description:
+              'For FUNC: parent function-group name. Required for FUNC create (the FUGR must already exist — create it first via SAPWrite type=FUGR). Auto-resolved via search for FUNC update/delete if omitted.',
           },
           dataType: { type: 'string', description: 'DOMA/DTEL: ABAP data type (e.g., CHAR, NUMC, DEC)' },
           length: { type: 'number', description: 'DOMA/DTEL: data type length' },

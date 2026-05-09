@@ -366,6 +366,28 @@ describe('SAPWriteSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('accepts FUGR create input (issue #250)', () => {
+    const result = SAPWriteSchema.safeParse({ action: 'create', type: 'FUGR', name: 'ZARC1_FG', package: '$TMP' });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts FUNC create input with group (issue #250)', () => {
+    const result = SAPWriteSchema.safeParse({
+      action: 'create',
+      type: 'FUNC',
+      name: 'Z_ARC1_FM',
+      group: 'ZARC1_FG',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts FUNC create input WITHOUT group at schema level (runtime check enforces it)', () => {
+    // Schema makes group optional; the runtime handler returns errorResult for create without group.
+    // This test pins that behavior so a schema-side enforcement attempt would surface here.
+    const result = SAPWriteSchema.safeParse({ action: 'create', type: 'FUNC', name: 'Z_FM' });
+    expect(result.success).toBe(true);
+  });
+
   it('accepts DOMA/DTEL write fields', () => {
     const doma = SAPWriteSchema.safeParse({
       action: 'create',
