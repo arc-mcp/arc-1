@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.3](https://github.com/marianfoo/arc-1/compare/v0.9.2...v0.9.3) (2026-05-09)
+
+
+### Bug Fixes
+
+* add FUGR + FUNC create/update/delete ([#251](https://github.com/marianfoo/arc-1/issues/251)) ([f5ed2b8](https://github.com/marianfoo/arc-1/commit/f5ed2b881992c1aa63462d68fe1b0bb66e4f9c44))
+* **btp:** harden CF deploy + add Viewer+SQL XSUAA role-collection ([#246](https://github.com/marianfoo/arc-1/issues/246)) ([a3bfb5e](https://github.com/marianfoo/arc-1/commit/a3bfb5e5df9ef7c149f204b2f99d5768a4883a91))
+
 ## [0.9.2](https://github.com/marianfoo/arc-1/compare/v0.9.1...v0.9.2) (2026-05-08)
 
 
