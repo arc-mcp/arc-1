@@ -73,6 +73,12 @@ export interface RapHandlerSectionApplyResults {
 
 export interface RapHandlerScaffoldPlan {
   sections: RapHandlerSourceSections;
+  skeletons: {
+    createdDefinitions: string[];
+    createdImplementations: string[];
+    changed: Record<RapHandlerSectionName, boolean>;
+    changedSections: RapHandlerSectionName[];
+  };
   signatures: RapHandlerSectionApplyResults;
   implementationStubs: RapHandlerSectionApplyResults;
   unresolved: RapHandlerRequirement[];
@@ -112,6 +118,14 @@ interface ClassImplementationRange {
   name: string;
   start: number;
   end: number;
+}
+
+export interface RapHandlerSkeletonResult {
+  sections: RapHandlerSourceSections;
+  createdDefinitions: string[];
+  createdImplementations: string[];
+  changed: Record<RapHandlerSectionName, boolean>;
+  changedSections: RapHandlerSectionName[];
 }
 
 // AI-maintenance guide:
@@ -932,6 +946,94 @@ function changedSectionsFrom(changed: Record<RapHandlerSectionName, boolean>): R
   return (Object.keys(changed) as RapHandlerSectionName[]).filter((section) => changed[section]);
 }
 
+function uniqueRequirementsByTargetClass(requirements: RapHandlerRequirement[]): RapHandlerRequirement[] {
+  const seen = new Set<string>();
+  const out: RapHandlerRequirement[] = [];
+  for (const requirement of requirements) {
+    const key = requirement.targetHandlerClass.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(requirement);
+  }
+  return out;
+}
+
+function hasClassDefinition(sections: RapHandlerSourceSections, targetHandlerClass: string): boolean {
+  const target = targetHandlerClass.toLowerCase();
+  return [sections.main, sections.definitions, sections.implementations]
+    .filter(Boolean)
+    .some((source) => parseClassDefinitionRanges(source ?? '').some((range) => range.name.toLowerCase() === target));
+}
+
+function hasClassImplementation(sections: RapHandlerSourceSections, targetHandlerClass: string): boolean {
+  const target = targetHandlerClass.toLowerCase();
+  return [sections.main, sections.definitions, sections.implementations]
+    .filter(Boolean)
+    .some((source) =>
+      parseClassImplementationRanges(source ?? '').some((range) => range.name.toLowerCase() === target),
+    );
+}
+
+function appendBlocksToSection(source: string | undefined, blocks: string[]): string | undefined {
+  if (blocks.length === 0) return source;
+  const blockText = blocks.join('\n\n');
+  if (!source || source.trim().length === 0) return `${blockText}\n`;
+  const separator = source.endsWith('\n') ? (source.endsWith('\n\n') ? '' : '\n') : '\n\n';
+  return `${source}${separator}${blockText}\n`;
+}
+
+function handlerDefinitionSkeleton(targetHandlerClass: string): string {
+  return `CLASS ${targetHandlerClass} DEFINITION INHERITING FROM cl_abap_behavior_handler.
+  PRIVATE SECTION.
+ENDCLASS.`;
+}
+
+function handlerImplementationSkeleton(targetHandlerClass: string): string {
+  return `CLASS ${targetHandlerClass} IMPLEMENTATION.
+ENDCLASS.`;
+}
+
+export function ensureRapHandlerSkeletons(
+  sections: RapHandlerSourceSections,
+  requirements: RapHandlerRequirement[],
+): RapHandlerSkeletonResult {
+  const targetRequirements = uniqueRequirementsByTargetClass(requirements);
+  const definitionBlocks: string[] = [];
+  const implementationBlocks: string[] = [];
+  const createdDefinitions: string[] = [];
+  const createdImplementations: string[] = [];
+
+  for (const requirement of targetRequirements) {
+    const targetHandlerClass = requirement.targetHandlerClass;
+    if (!hasClassDefinition(sections, targetHandlerClass)) {
+      definitionBlocks.push(handlerDefinitionSkeleton(targetHandlerClass));
+      createdDefinitions.push(targetHandlerClass);
+    }
+    if (!hasClassImplementation(sections, targetHandlerClass)) {
+      implementationBlocks.push(handlerImplementationSkeleton(targetHandlerClass));
+      createdImplementations.push(targetHandlerClass);
+    }
+  }
+
+  const changed = {
+    main: false,
+    definitions: createdDefinitions.length > 0,
+    implementations: createdImplementations.length > 0,
+  };
+
+  return {
+    sections: {
+      main: sections.main,
+      definitions: appendBlocksToSection(sections.definitions, definitionBlocks),
+      implementations: appendBlocksToSection(sections.implementations, implementationBlocks),
+    },
+    createdDefinitions,
+    createdImplementations,
+    changed,
+    changedSections: changedSectionsFrom(changed),
+  };
+}
+
 /**
  * Build the source used to resolve semantic method names while creating stubs.
  *
@@ -1012,7 +1114,8 @@ export function applyRapHandlerScaffold(
   missingSignatures: RapHandlerRequirement[],
   missingImplementationStubs: RapHandlerRequirement[],
 ): RapHandlerScaffoldPlan {
-  const signaturePlan = applySignaturesAcrossSections(sections, missingSignatures);
+  const skeletonPlan = ensureRapHandlerSkeletons(sections, [...missingSignatures, ...missingImplementationStubs]);
+  const signaturePlan = applySignaturesAcrossSections(skeletonPlan.sections, missingSignatures);
 
   // A METHOD stub is only useful after its declaration exists. If the target
   // `lhc_*` class was not found anywhere, suppress the stub for that unresolved
@@ -1022,34 +1125,39 @@ export function applyRapHandlerScaffold(
   const stubRequirements = missingImplementationStubs.filter(
     (req) => !unresolvedDeclarationKeys.has(rapHandlerRequirementKey(req)),
   );
-  const definitionLookupSource = buildDefinitionLookupSource(sections, signaturePlan);
+  const definitionLookupSource = buildDefinitionLookupSource(skeletonPlan.sections, signaturePlan);
 
   const stubMain = applyRapHandlerImplementationStubs(signaturePlan.updatedSections.main, stubRequirements, {
     createImplementationBlocks: true,
     definitionSource: definitionLookupSource,
   });
-  const stubDefinitions = sections.definitions
+  const stubDefinitions = skeletonPlan.sections.definitions
     ? applyRapHandlerImplementationStubs(
-        signaturePlan.updatedSections.definitions ?? sections.definitions,
+        signaturePlan.updatedSections.definitions ?? skeletonPlan.sections.definitions,
         stubRequirements,
         {
           definitionSource: definitionLookupSource,
         },
       )
     : undefined;
-  const stubImplementations = sections.implementations
+  const stubImplementations = skeletonPlan.sections.implementations
     ? applyRapHandlerImplementationStubs(
-        signaturePlan.updatedSections.implementations ?? sections.implementations,
+        signaturePlan.updatedSections.implementations ?? skeletonPlan.sections.implementations,
         stubRequirements,
         { createImplementationBlocks: true, definitionSource: definitionLookupSource },
       )
     : undefined;
 
   const changed = {
-    main: signaturePlan.signatures.main.changed || stubMain.changed,
-    definitions: (signaturePlan.signatures.definitions?.changed ?? false) || (stubDefinitions?.changed ?? false),
+    main: skeletonPlan.changed.main || signaturePlan.signatures.main.changed || stubMain.changed,
+    definitions:
+      skeletonPlan.changed.definitions ||
+      (signaturePlan.signatures.definitions?.changed ?? false) ||
+      (stubDefinitions?.changed ?? false),
     implementations:
-      (signaturePlan.signatures.implementations?.changed ?? false) || (stubImplementations?.changed ?? false),
+      skeletonPlan.changed.implementations ||
+      (signaturePlan.signatures.implementations?.changed ?? false) ||
+      (stubImplementations?.changed ?? false),
   };
   const changedSections = changedSectionsFrom(changed);
 
@@ -1058,6 +1166,12 @@ export function applyRapHandlerScaffold(
       main: stubMain.updatedSource,
       definitions: stubDefinitions?.updatedSource ?? signaturePlan.updatedSections.definitions,
       implementations: stubImplementations?.updatedSource ?? signaturePlan.updatedSections.implementations,
+    },
+    skeletons: {
+      createdDefinitions: skeletonPlan.createdDefinitions,
+      createdImplementations: skeletonPlan.createdImplementations,
+      changed: skeletonPlan.changed,
+      changedSections: skeletonPlan.changedSections,
     },
     signatures: signaturePlan.signatures,
     implementationStubs: {

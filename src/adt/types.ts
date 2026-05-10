@@ -242,6 +242,20 @@ export interface UnitTestResult {
   duration?: number;
 }
 
+/** Source unit affected by a quick fix proposal/application. */
+export interface FixAffectedObject {
+  /** ADT source URI for this affected unit. May include #start/#end range fragments. */
+  uri: string;
+  /** Optional ADT object type metadata from the proposal payload. */
+  type?: string;
+  /** Optional ADT object name metadata from the proposal payload. */
+  name?: string;
+  /** Optional human-readable description from the proposal payload. */
+  description?: string;
+  /** Current source content for this affected unit. Needed when applying multi-object quick fixes. */
+  content?: string;
+}
+
 /** Quick fix proposal from /sap/bc/adt/quickfixes/evaluation */
 export interface FixProposal {
   /** Proposal endpoint URI (used for apply step) */
@@ -252,8 +266,10 @@ export interface FixProposal {
   name: string;
   /** Human-readable description (may contain HTML entities) */
   description: string;
-  /** Opaque SAP quickfix state blob, pass through unchanged */
+  /** Opaque SAP quickfix state blob, pass through unchanged. May be an empty string or omitted by SAP. */
   userContent: string;
+  /** Additional source units that ADT needs to evaluate/apply this proposal. */
+  affectedObjects?: FixAffectedObject[];
 }
 
 /** Text delta returned when applying a quick fix proposal */

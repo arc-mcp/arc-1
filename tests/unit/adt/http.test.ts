@@ -350,6 +350,25 @@ describe('AdtHttpClient', () => {
       await expect(client.get('/sap/bc/adt/programs/programs/ZNOTFOUND/source/main')).rejects.toThrow(AdtApiError);
     });
 
+    it('logs expected 404s at debug level when requested', async () => {
+      const { logger } = await import('../../../src/server/logger.js');
+      const emitSpy = vi.spyOn(logger, 'emitAudit').mockImplementation(() => undefined);
+      mockFetch.mockResolvedValueOnce(mockResponse(404, 'Optional include not found'));
+
+      const client = new AdtHttpClient(getDefaultConfig());
+      await expect(
+        client.get('/sap/bc/adt/oo/classes/ZCL_EXAMPLE/includes/testclasses', undefined, {
+          suppressNotFoundLog: true,
+        }),
+      ).rejects.toThrow(AdtApiError);
+
+      const failedRequest = emitSpy.mock.calls
+        .map((call) => call[0])
+        .find((event) => event.event === 'http_request' && event.statusCode === 404);
+      expect(failedRequest?.level).toBe('debug');
+      emitSpy.mockRestore();
+    });
+
     it('throws AdtApiError on 500', async () => {
       mockFetch.mockResolvedValueOnce(mockResponse(500, 'Internal Server Error'));
 

@@ -150,10 +150,12 @@ const SAPWRITE_TYPES_BTP = [
   'DTEL',
   'MSAG',
 ];
+const SAPWRITE_CLAS_INCLUDES = ['definitions', 'implementations', 'macros', 'testclasses'];
 
 const SAPWRITE_DESC_ONPREM =
   'Create or update ABAP source code and DDIC metadata. Handles lock/modify/unlock automatically. Supports PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL, DOMA, DTEL, MSAG. ' +
   'Type codes are auto-normalized and case-insensitive (e.g., "CLAS/OC" → "CLAS"). ' +
+  'For CLAS update, pass include="definitions"|"implementations"|"macros"|"testclasses" to update that local include natively; omit include to update source/main. ' +
   'TABL uses source-based writes via /source/main (define table syntax), similar to DDLS/BDEF/SRVD. ' +
   'DOMA/DTEL use metadata XML writes (not /source/main): provide DDIC fields like dataType, length, fixedValues, typeKind, labels, searchHelp. ' +
   'MSAG (message classes) use metadata XML writes: provide "messages" array with {number, shortText} entries. Create empty then update, or provide messages at creation. ' +
@@ -165,11 +167,12 @@ const SAPWRITE_DESC_ONPREM =
   'For edit_method: surgically replace a single method body in a CLAS without sending the full class source. ' +
   'Provide just the new method implementation code in "source" — 95% fewer tokens than full-class updates. ' +
   'For batch_create: create and activate multiple objects in a single call — ideal for RAP stacks (TABL → DDLS → DCLS → BDEF → SRVD). Pass "objects" array with dependency order. ' +
-  'For scaffold_rap_handlers: derive missing RAP behavior handler signatures from an interface BDEF and optionally inject declarations plus empty implementation stubs into an existing behavior pool class.';
+  'For scaffold_rap_handlers: derive missing RAP behavior handler signatures from an interface BDEF and optionally create missing lhc_* skeletons plus inject declarations and empty implementation stubs into an existing behavior pool class.';
 
 const SAPWRITE_DESC_BTP =
   'Create or update ABAP source code and DDIC metadata (BTP ABAP Environment). Handles lock/modify/unlock automatically. Supports CLAS, INTF, DDLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL, DOMA, DTEL, MSAG. ' +
   'Type codes are auto-normalized and case-insensitive (e.g., "CLAS/OC" → "CLAS"). ' +
+  'For CLAS update, pass include="definitions"|"implementations"|"macros"|"testclasses" to update that local include natively; omit include to update source/main. ' +
   'TABL supports custom table source writes via /source/main (define table syntax). ' +
   'DOMA/DTEL use metadata XML writes (not /source/main): provide DDIC fields like dataType, length, fixedValues, typeKind, labels, searchHelp. ' +
   'MSAG (message classes) use metadata XML writes: provide "messages" array with {number, shortText} entries. ' +
@@ -179,7 +182,7 @@ const SAPWRITE_DESC_BTP =
   'Must use ABAP Cloud language version (no classic statements). Only Z*/Y* namespace allowed on BTP. ' +
   'For edit_method: surgically replace a single method body in a CLAS without sending the full class source. ' +
   'For batch_create: create and activate multiple objects in a single call — ideal for RAP stacks (TABL → DDLS → DCLS → BDEF → SRVD). ' +
-  'For scaffold_rap_handlers: derive missing RAP behavior handler signatures from an interface BDEF and optionally inject declarations plus empty implementation stubs into an existing behavior pool class.';
+  'For scaffold_rap_handlers: derive missing RAP behavior handler signatures from an interface BDEF and optionally create missing lhc_* skeletons plus inject declarations and empty implementation stubs into an existing behavior pool class.';
 
 // ─── SAPContext Types ───────────────────────────────────────────────
 
@@ -555,6 +558,12 @@ export function getToolDefinitions(
           },
           name: { type: 'string', description: 'Object name (for create/update/delete/edit_method)' },
           source: { type: 'string', description: 'ABAP source code (for create/update/edit_method)' },
+          include: {
+            type: 'string',
+            enum: SAPWRITE_CLAS_INCLUDES,
+            description:
+              'For update type=CLAS only: write a class-local include instead of source/main. Valid values: definitions (CCDEF), implementations (CCIMP), macros, testclasses. Omit include to update source/main. Include writes create an inactive draft; read with SAPRead version="inactive" before activation.',
+          },
           method: {
             type: 'string',
             description: 'For edit_method action: method name to replace (e.g., "get_name", "zif_order~process")',
@@ -935,8 +944,8 @@ export function getToolDefinitions(
         '- "syntax": Syntax check an ABAP object. Requires name + type. Optional: version ("active" or "inactive", defaults to active). Optional: source — when supplied, SAP compiles the given content as if it lived at the object\'s URI (pre-write dry-run, nothing is written). Omit source to check what is stored.\n' +
         '- "unittest": Run ABAP unit tests. Requires name + type.\n' +
         '- "atc": Run ATC code quality checks. Requires name + type. Optional: variant.\n' +
-        '- "quickfix": Get SAP quick fix proposals for a specific source position. Requires name + type + source + line. Optional: column.\n' +
-        '- "apply_quickfix": Apply one quick fix proposal and return text deltas (does not write source). Requires name + type + source + line + proposalUri + proposalUserContent. Optional: column.\n' +
+        '- "quickfix": Get SAP quick fix proposals for a specific source position. Requires name + type + source + line. Optional: column, sourceUri for exact ADT include/source targets.\n' +
+        '- "apply_quickfix": Apply one quick fix proposal and return text deltas (does not write source). Requires name + type + source + line + proposalUri + proposalUserContent. Optional: column, sourceUri, proposalAffectedObjects. proposalUserContent may be an empty string; pass it through exactly from quickfix.\n' +
         '- "dumps": List or read ABAP short dumps (ST22). Without id: lists recent dumps (filter by user, maxResults). With id: returns focused chapter sections by default; set includeFullText=true to include the full formatted dump blob. Optional sections=[kap0,kap3,...] to request specific chapter IDs.\n' +
         '- "traces": List or analyze ABAP profiler traces. Without id: lists trace files. With id + analysis: returns trace analysis (hitlist = hot spots, statements = call tree, dbAccesses = database access statistics).\n\n' +
         '- "system_messages": List SM02 system messages via ADT feed (filter by user, maxResults, from, to).\n' +
@@ -966,6 +975,11 @@ export function getToolDefinitions(
             type: 'string',
             description: 'Current source code (required for quickfix/apply_quickfix).',
           },
+          sourceUri: {
+            type: 'string',
+            description:
+              'Exact ADT source URI for quickfix/apply_quickfix. Defaults to the type/name main source; use this for class includes such as /includes/definitions.',
+          },
           line: {
             type: 'number',
             description: 'Source line number for quickfix evaluation (required for quickfix/apply_quickfix).',
@@ -986,7 +1000,24 @@ export function getToolDefinitions(
           },
           proposalUserContent: {
             type: 'string',
-            description: 'Opaque userContent from quickfix action (required for apply_quickfix).',
+            description:
+              'Opaque userContent from quickfix action (required for apply_quickfix). May be an empty string; pass through exactly.',
+          },
+          proposalAffectedObjects: {
+            type: 'array',
+            description:
+              'Optional affectedObjects array from quickfix action. Include content for each affected source unit when applying multi-object quickfixes.',
+            items: {
+              type: 'object',
+              required: ['uri'],
+              properties: {
+                uri: { type: 'string', description: 'Affected ADT source URI, optionally with #start/#end range.' },
+                type: { type: 'string', description: 'Optional ADT object type metadata.' },
+                name: { type: 'string', description: 'Optional ADT object name metadata.' },
+                description: { type: 'string', description: 'Optional affected object description.' },
+                content: { type: 'string', description: 'Current source content for this affected unit.' },
+              },
+            },
           },
           variant: { type: 'string', description: 'ATC check variant (for atc action)' },
           id: {

@@ -2,7 +2,7 @@
 
 A comprehensive comparison of all SAP ADT/MCP projects against ARC-1.
 
-_Last updated: 2026-05-09 — issue #250 FUNC/FUGR write support added (create/source-update/delete) — closes the "latent FUNC-update gap" noted in 2026-04-27 entry below; signature/parameter management remains out of scope (defer until upstream fr0ster #77 investigation completes)._
+_Last updated: 2026-05-10 — PR-A adds native `SAPWrite update type=CLAS include=...` writes for class-local sections plus `scaffold_rap_handlers` auto-skeleton creation for RAP behavior pools; issue #250 FUNC/FUGR write support remains current (signature/parameter management out of scope)._
 _Plan A (PR #223): purged five invented `SLASH_TYPE_MAP` entries `FUNC/FM`, `CLAS/LI`, `VIEW/V`, `TRAN/O`; repointed `FUGR/FF → FUNC` (was `→ FUGR`); added real `VIEW/DV → VIEW`, `TRAN/T → TRAN`, `objectBasePath('VIEW')` VIT URL, citation guard `SLASH_TYPE_EVIDENCE`, exhaustiveness guard `KNOWN_BASE_TYPES`, slash-form throw + `objectBasePath('FUNC')` group-context throw. DDIC view reads were silently broken via fallthrough to `/programs/programs/`._
 _Plan B (PR #224): `MSAG` added to `SAPREAD_TYPES_*` (was previously write-only / read-via-`MESSAGES` asymmetry); `FTG2` renamed to `FEATURE_TOGGLE` (ARC-1-invented short identifier per research/abap-types/types/ftg2.md). Both old aliases (`MESSAGES`, `FTG2`) accepted for one minor with stderr deprecation warning._
 _Both verified live against a4h S/4HANA 2023 + npl NW 7.50 SP02 — both systems return identical `<adtcore:type>` values._
@@ -150,7 +150,7 @@ Tier 2 (CycloneDX SBOM, Cosign image signing, OpenSSF Scorecard) and Tier 3 (Soc
 | Data element write (DTEL) | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | N/A | ❌ | ✅ |
 | Multi-object batch creation | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
 | Deterministic RAP preflight (TABL/BDEF/DDLX/DDLS static checks) | ⚠️ (in-flight PR [#173](https://github.com/marianfoo/arc-1/pull/173) — `preflightBeforeWrite` toggle) | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
-| RAP behavior-pool handler scaffolding | ⚠️ (in-flight PR [#173](https://github.com/marianfoo/arc-1/pull/173) — `SAPWrite action=scaffold_rap_handlers` with dry-run and autoApply) | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
+| RAP behavior-pool handler scaffolding | ✅ (`SAPWrite action=scaffold_rap_handlers` dry-run/autoApply, native CLAS include writes, auto-creates missing `lhc_*` CCDEF/CCIMP skeletons) | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
 | AFF schema validation (pre-create) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
 | Type auto-mappings (CLAS→CLAS/OC) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ✅ | ✅ (ADTObjectType) |
 | Create test class | ❌ | ✅ | ❌ | ❌ | ✅ | ✅ | N/A | ✅ (abap_create_test_include) | ✅ (class write test_classes) |

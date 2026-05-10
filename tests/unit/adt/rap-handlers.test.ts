@@ -3,6 +3,7 @@ import {
   applyRapHandlerImplementationStubs,
   applyRapHandlerScaffold,
   applyRapHandlerSignatures,
+  ensureRapHandlerSkeletons,
   extractRapHandlerRequirements,
   findMissingRapHandlerImplementationStubs,
   findMissingRapHandlerRequirements,
@@ -247,6 +248,86 @@ ENDCLASS.`;
   });
 });
 
+describe('ensureRapHandlerSkeletons', () => {
+  it('creates missing definition and implementation skeletons in empty includes', () => {
+    const requirements = extractRapHandlerRequirements(BDEF_SOURCE).filter(
+      (req) => req.targetHandlerClass === 'lhc_travel',
+    );
+    const result = ensureRapHandlerSkeletons(
+      {
+        main: '',
+        definitions: '*"* local definitions placeholder',
+        implementations: '*"* local implementations placeholder',
+      },
+      requirements,
+    );
+
+    expect(result.createdDefinitions).toEqual(['lhc_travel']);
+    expect(result.createdImplementations).toEqual(['lhc_travel']);
+    expect(result.changedSections).toEqual(['definitions', 'implementations']);
+    expect(result.sections.definitions).toContain('*"* local definitions placeholder');
+    expect(result.sections.definitions).toContain(
+      'CLASS lhc_travel DEFINITION INHERITING FROM cl_abap_behavior_handler.',
+    );
+    expect(result.sections.definitions).toContain('PRIVATE SECTION.');
+    expect(result.sections.implementations).toContain('*"* local implementations placeholder');
+    expect(result.sections.implementations).toContain('CLASS lhc_travel IMPLEMENTATION.');
+  });
+
+  it('creates only the missing implementation when the handler definition already exists', () => {
+    const requirements = extractRapHandlerRequirements(BDEF_SOURCE).filter(
+      (req) => req.targetHandlerClass === 'lhc_travel',
+    );
+    const definitions = `CLASS lhc_travel DEFINITION INHERITING FROM cl_abap_behavior_handler.
+  PRIVATE SECTION.
+ENDCLASS.`;
+
+    const result = ensureRapHandlerSkeletons({ main: '', definitions, implementations: '' }, requirements);
+
+    expect(result.createdDefinitions).toEqual([]);
+    expect(result.createdImplementations).toEqual(['lhc_travel']);
+    expect(result.sections.definitions).toBe(definitions);
+    expect(result.sections.implementations).toContain('CLASS lhc_travel IMPLEMENTATION.');
+  });
+
+  it('creates only the missing definition when the handler implementation already exists', () => {
+    const requirements = extractRapHandlerRequirements(BDEF_SOURCE).filter(
+      (req) => req.targetHandlerClass === 'lhc_travel',
+    );
+    const implementations = `CLASS lhc_travel IMPLEMENTATION.
+ENDCLASS.`;
+
+    const result = ensureRapHandlerSkeletons({ main: '', definitions: '', implementations }, requirements);
+
+    expect(result.createdDefinitions).toEqual(['lhc_travel']);
+    expect(result.createdImplementations).toEqual([]);
+    expect(result.sections.definitions).toContain(
+      'CLASS lhc_travel DEFINITION INHERITING FROM cl_abap_behavior_handler.',
+    );
+    expect(result.sections.implementations).toBe(implementations);
+  });
+
+  it('creates one skeleton pair per BDEF alias without duplicates', () => {
+    const requirements = extractRapHandlerRequirements(BDEF_SOURCE);
+    const result = ensureRapHandlerSkeletons({ main: '', definitions: '', implementations: '' }, requirements);
+
+    expect(result.createdDefinitions).toEqual(['lhc_travel', 'lhc_segment']);
+    expect(result.createdImplementations).toEqual(['lhc_travel', 'lhc_segment']);
+    expect(result.sections.definitions?.match(/CLASS lhc_travel DEFINITION/g)).toHaveLength(1);
+    expect(result.sections.definitions?.match(/CLASS lhc_segment DEFINITION/g)).toHaveLength(1);
+  });
+
+  it('is idempotent when rerun on its own generated sections', () => {
+    const requirements = extractRapHandlerRequirements(BDEF_SOURCE);
+    const first = ensureRapHandlerSkeletons({ main: '', definitions: '', implementations: '' }, requirements);
+    const second = ensureRapHandlerSkeletons(first.sections, requirements);
+
+    expect(second.createdDefinitions).toEqual([]);
+    expect(second.createdImplementations).toEqual([]);
+    expect(second.sections).toEqual(first.sections);
+  });
+});
+
 describe('applyRapHandlerSignatures', () => {
   it('injects missing signatures into existing handler class private sections', () => {
     const classSource = `CLASS lhc_travel DEFINITION INHERITING FROM cl_abap_behavior_handler.
@@ -417,6 +498,39 @@ ENDCLASS.`;
 });
 
 describe('applyRapHandlerScaffold', () => {
+  it('creates missing handler skeletons before inserting signatures and stubs', () => {
+    const bdef = `define behavior for zi_travel alias travel
+authorization master ( instance )
+{
+  action SubmitForApproval result [1] $self;
+}`;
+    const requirements = extractRapHandlerRequirements(bdef);
+    const missing = findMissingRapHandlerRequirements(requirements, '');
+    const missingStubs = findMissingRapHandlerImplementationStubs(requirements, '');
+
+    const plan = applyRapHandlerScaffold(
+      { main: '', definitions: '*"* definitions placeholder', implementations: '*"* implementations placeholder' },
+      missing,
+      missingStubs,
+    );
+
+    expect(plan.skeletons.createdDefinitions).toEqual(['lhc_travel']);
+    expect(plan.skeletons.createdImplementations).toEqual(['lhc_travel']);
+    expect(plan.changed.definitions).toBe(true);
+    expect(plan.changed.implementations).toBe(true);
+    expect(plan.insertedSignatureCount).toBe(2);
+    expect(plan.insertedImplementationStubCount).toBe(2);
+    expect(plan.sections.definitions).toContain(
+      'CLASS lhc_travel DEFINITION INHERITING FROM cl_abap_behavior_handler.',
+    );
+    expect(plan.sections.definitions).toContain('METHODS submitforapproval FOR MODIFY');
+    expect(plan.sections.definitions).toContain('METHODS get_instance_authorizations FOR INSTANCE AUTHORIZATION');
+    expect(plan.sections.implementations).toContain('CLASS lhc_travel IMPLEMENTATION.');
+    expect(plan.sections.implementations).toContain('METHOD submitforapproval.');
+    expect(plan.sections.implementations).toContain('METHOD get_instance_authorizations.');
+    expect(plan.unresolved).toEqual([]);
+  });
+
   it('plans signatures and stubs across behavior-pool includes without ADT I/O', () => {
     const bdef = `define behavior for zi_travel alias travel
 {

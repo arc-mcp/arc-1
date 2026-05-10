@@ -90,6 +90,7 @@ const SAPREAD_TYPES_BTP = [
 
 const SAPREAD_CLAS_INCLUDES = ['main', 'testclasses', 'definitions', 'implementations', 'macros'] as const;
 const SAPREAD_DDLS_INCLUDES = ['elements'] as const;
+export const SAPWRITE_CLAS_INCLUDES = ['definitions', 'implementations', 'macros', 'testclasses'] as const;
 
 function validateSapReadInput(
   input: { type: string; include?: string; versionUri?: string; sqlFilter?: string },
@@ -276,6 +277,29 @@ const messageClassMessageSchema = z.object({
   shortText: z.string(),
 });
 
+function validateSapWriteInput(
+  input: { action: string; type?: string; include?: string },
+  ctx: { addIssue: (issue: { code: 'custom'; path: string[]; message: string }) => void },
+): void {
+  if (!input.include) return;
+
+  if (input.action !== 'update') {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['include'],
+      message: 'SAPWrite include is only supported for action="update".',
+    });
+  }
+
+  if (input.type !== 'CLAS') {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['include'],
+      message: 'SAPWrite include is only supported for type="CLAS".',
+    });
+  }
+}
+
 const batchObjectSchemaOnprem = z.object({
   type: z.enum(SAPWRITE_TYPES_ONPREM),
   name: z.string(),
@@ -344,106 +368,112 @@ const batchObjectSchemaBtp = z.object({
   version: z.string().optional(),
 });
 
-export const SAPWriteSchema = z.object({
-  action: z.enum(['create', 'update', 'delete', 'edit_method', 'batch_create', 'scaffold_rap_handlers']),
-  type: z.enum(SAPWRITE_TYPES_ONPREM).optional(),
-  name: z.string().optional(),
-  source: z.string().optional(),
-  method: z.string().optional(),
-  description: z.string().optional(),
-  package: z.string().optional(),
-  transport: z.string().optional(),
-  // Required for FUNC create (the parent function-group name); optional for FUNC
-  // update/delete (auto-resolved via search). Ignored for other types.
-  group: z.string().optional(),
-  dataType: z.string().optional(),
-  length: z.coerce.number().optional(),
-  decimals: z.coerce.number().optional(),
-  outputLength: z.coerce.number().optional(),
-  conversionExit: z.string().optional(),
-  signExists: z.coerce.boolean().optional(),
-  lowercase: z.coerce.boolean().optional(),
-  fixedValues: z.array(ddicFixedValueSchema).optional(),
-  valueTable: z.string().optional(),
-  typeKind: z.enum(['domain', 'predefinedAbapType']).optional(),
-  typeName: z.string().optional(),
-  domainName: z.string().optional(),
-  shortLabel: z.string().optional(),
-  mediumLabel: z.string().optional(),
-  longLabel: z.string().optional(),
-  headingLabel: z.string().optional(),
-  searchHelp: z.string().optional(),
-  searchHelpParameter: z.string().optional(),
-  setGetParameter: z.string().optional(),
-  defaultComponentName: z.string().optional(),
-  changeDocument: z.coerce.boolean().optional(),
-  messages: z.array(messageClassMessageSchema).optional(),
-  serviceDefinition: z.string().optional(),
-  bindingType: z.string().optional(),
-  odataVersion: z.enum(['V2', 'V4']).optional(),
-  category: z.enum(['0', '1']).optional(),
-  version: z.string().optional(),
-  lintBeforeWrite: z.coerce.boolean().optional(),
-  preflightBeforeWrite: z.coerce.boolean().optional(),
-  checkBeforeWrite: z.coerce.boolean().optional(),
-  refObjectType: z.string().optional(),
-  refObjectName: z.string().optional(),
-  refObjectDescription: z.string().optional(),
-  bdefName: z.string().optional(),
-  autoApply: z.coerce.boolean().optional(),
-  targetAlias: z.string().optional(),
-  objects: z.array(batchObjectSchemaOnprem).optional(),
-});
+export const SAPWriteSchema = z
+  .object({
+    action: z.enum(['create', 'update', 'delete', 'edit_method', 'batch_create', 'scaffold_rap_handlers']),
+    type: z.enum(SAPWRITE_TYPES_ONPREM).optional(),
+    name: z.string().optional(),
+    source: z.string().optional(),
+    include: z.enum(SAPWRITE_CLAS_INCLUDES).optional(),
+    method: z.string().optional(),
+    description: z.string().optional(),
+    package: z.string().optional(),
+    transport: z.string().optional(),
+    // Required for FUNC create (the parent function-group name); optional for FUNC
+    // update/delete (auto-resolved via search). Ignored for other types.
+    group: z.string().optional(),
+    dataType: z.string().optional(),
+    length: z.coerce.number().optional(),
+    decimals: z.coerce.number().optional(),
+    outputLength: z.coerce.number().optional(),
+    conversionExit: z.string().optional(),
+    signExists: z.coerce.boolean().optional(),
+    lowercase: z.coerce.boolean().optional(),
+    fixedValues: z.array(ddicFixedValueSchema).optional(),
+    valueTable: z.string().optional(),
+    typeKind: z.enum(['domain', 'predefinedAbapType']).optional(),
+    typeName: z.string().optional(),
+    domainName: z.string().optional(),
+    shortLabel: z.string().optional(),
+    mediumLabel: z.string().optional(),
+    longLabel: z.string().optional(),
+    headingLabel: z.string().optional(),
+    searchHelp: z.string().optional(),
+    searchHelpParameter: z.string().optional(),
+    setGetParameter: z.string().optional(),
+    defaultComponentName: z.string().optional(),
+    changeDocument: z.coerce.boolean().optional(),
+    messages: z.array(messageClassMessageSchema).optional(),
+    serviceDefinition: z.string().optional(),
+    bindingType: z.string().optional(),
+    odataVersion: z.enum(['V2', 'V4']).optional(),
+    category: z.enum(['0', '1']).optional(),
+    version: z.string().optional(),
+    lintBeforeWrite: z.coerce.boolean().optional(),
+    preflightBeforeWrite: z.coerce.boolean().optional(),
+    checkBeforeWrite: z.coerce.boolean().optional(),
+    refObjectType: z.string().optional(),
+    refObjectName: z.string().optional(),
+    refObjectDescription: z.string().optional(),
+    bdefName: z.string().optional(),
+    autoApply: z.coerce.boolean().optional(),
+    targetAlias: z.string().optional(),
+    objects: z.array(batchObjectSchemaOnprem).optional(),
+  })
+  .superRefine((input, ctx) => validateSapWriteInput(input, ctx));
 
-export const SAPWriteSchemaBtp = z.object({
-  action: z.enum(['create', 'update', 'delete', 'edit_method', 'batch_create', 'scaffold_rap_handlers']),
-  type: z.enum(SAPWRITE_TYPES_BTP).optional(),
-  name: z.string().optional(),
-  source: z.string().optional(),
-  method: z.string().optional(),
-  description: z.string().optional(),
-  package: z.string().optional(),
-  transport: z.string().optional(),
-  // Same as on-prem; FUGR/FUNC write is on-prem-only but harmless to expose here.
-  group: z.string().optional(),
-  dataType: z.string().optional(),
-  length: z.coerce.number().optional(),
-  decimals: z.coerce.number().optional(),
-  outputLength: z.coerce.number().optional(),
-  conversionExit: z.string().optional(),
-  signExists: z.coerce.boolean().optional(),
-  lowercase: z.coerce.boolean().optional(),
-  fixedValues: z.array(ddicFixedValueSchema).optional(),
-  valueTable: z.string().optional(),
-  typeKind: z.enum(['domain', 'predefinedAbapType']).optional(),
-  typeName: z.string().optional(),
-  domainName: z.string().optional(),
-  shortLabel: z.string().optional(),
-  mediumLabel: z.string().optional(),
-  longLabel: z.string().optional(),
-  headingLabel: z.string().optional(),
-  searchHelp: z.string().optional(),
-  searchHelpParameter: z.string().optional(),
-  setGetParameter: z.string().optional(),
-  defaultComponentName: z.string().optional(),
-  changeDocument: z.coerce.boolean().optional(),
-  messages: z.array(messageClassMessageSchema).optional(),
-  serviceDefinition: z.string().optional(),
-  bindingType: z.string().optional(),
-  odataVersion: z.enum(['V2', 'V4']).optional(),
-  category: z.enum(['0', '1']).optional(),
-  version: z.string().optional(),
-  lintBeforeWrite: z.coerce.boolean().optional(),
-  preflightBeforeWrite: z.coerce.boolean().optional(),
-  checkBeforeWrite: z.coerce.boolean().optional(),
-  refObjectType: z.string().optional(),
-  refObjectName: z.string().optional(),
-  refObjectDescription: z.string().optional(),
-  bdefName: z.string().optional(),
-  autoApply: z.coerce.boolean().optional(),
-  targetAlias: z.string().optional(),
-  objects: z.array(batchObjectSchemaBtp).optional(),
-});
+export const SAPWriteSchemaBtp = z
+  .object({
+    action: z.enum(['create', 'update', 'delete', 'edit_method', 'batch_create', 'scaffold_rap_handlers']),
+    type: z.enum(SAPWRITE_TYPES_BTP).optional(),
+    name: z.string().optional(),
+    source: z.string().optional(),
+    include: z.enum(SAPWRITE_CLAS_INCLUDES).optional(),
+    method: z.string().optional(),
+    description: z.string().optional(),
+    package: z.string().optional(),
+    transport: z.string().optional(),
+    // Same as on-prem; FUGR/FUNC write is on-prem-only but harmless to expose here.
+    group: z.string().optional(),
+    dataType: z.string().optional(),
+    length: z.coerce.number().optional(),
+    decimals: z.coerce.number().optional(),
+    outputLength: z.coerce.number().optional(),
+    conversionExit: z.string().optional(),
+    signExists: z.coerce.boolean().optional(),
+    lowercase: z.coerce.boolean().optional(),
+    fixedValues: z.array(ddicFixedValueSchema).optional(),
+    valueTable: z.string().optional(),
+    typeKind: z.enum(['domain', 'predefinedAbapType']).optional(),
+    typeName: z.string().optional(),
+    domainName: z.string().optional(),
+    shortLabel: z.string().optional(),
+    mediumLabel: z.string().optional(),
+    longLabel: z.string().optional(),
+    headingLabel: z.string().optional(),
+    searchHelp: z.string().optional(),
+    searchHelpParameter: z.string().optional(),
+    setGetParameter: z.string().optional(),
+    defaultComponentName: z.string().optional(),
+    changeDocument: z.coerce.boolean().optional(),
+    messages: z.array(messageClassMessageSchema).optional(),
+    serviceDefinition: z.string().optional(),
+    bindingType: z.string().optional(),
+    odataVersion: z.enum(['V2', 'V4']).optional(),
+    category: z.enum(['0', '1']).optional(),
+    version: z.string().optional(),
+    lintBeforeWrite: z.coerce.boolean().optional(),
+    preflightBeforeWrite: z.coerce.boolean().optional(),
+    checkBeforeWrite: z.coerce.boolean().optional(),
+    refObjectType: z.string().optional(),
+    refObjectName: z.string().optional(),
+    refObjectDescription: z.string().optional(),
+    bdefName: z.string().optional(),
+    autoApply: z.coerce.boolean().optional(),
+    targetAlias: z.string().optional(),
+    objects: z.array(batchObjectSchemaBtp).optional(),
+  })
+  .superRefine((input, ctx) => validateSapWriteInput(input, ctx));
 
 // ─── SAPActivate ────────────────────────────────────────────────────
 
@@ -490,6 +520,14 @@ export const SAPLintSchema = z.object({
 
 // ─── SAPDiagnose ────────────────────────────────────────────────────
 
+const QuickfixAffectedObjectSchema = z.object({
+  uri: z.string(),
+  type: z.string().optional(),
+  name: z.string().optional(),
+  description: z.string().optional(),
+  content: z.string().optional(),
+});
+
 export const SAPDiagnoseSchema = z.object({
   action: z.enum([
     'syntax',
@@ -505,11 +543,13 @@ export const SAPDiagnoseSchema = z.object({
   name: z.string().optional(),
   type: z.string().optional(),
   source: z.string().optional(),
+  sourceUri: z.string().optional(),
   line: z.coerce.number().optional(),
   column: z.coerce.number().optional(),
   version: z.enum(['active', 'inactive']).optional(),
   proposalUri: z.string().optional(),
   proposalUserContent: z.string().optional(),
+  proposalAffectedObjects: z.array(QuickfixAffectedObjectSchema).optional(),
   variant: z.string().optional(),
   id: z.string().optional(),
   detailUrl: z.string().optional(),

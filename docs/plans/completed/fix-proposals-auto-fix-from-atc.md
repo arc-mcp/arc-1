@@ -81,6 +81,12 @@ The implementation adds two new actions to `SAPDiagnose`: `quickfix` (get propos
 
 **Discovery:** The endpoint exists in ADT discovery as `Quickfixes` workspace with `application/vnd.sap.adt.quickfixes.evaluation+xml;version=1.0.0` accept type. Additionally, an `Autoquickfix` endpoint exists at `/sap/bc/adt/atc/autoqf/worklist` for batch ATC fixes.
 
+### 2026-05-10 apply_quickfix hardening note
+
+Follow-up research against Eclipse ADT 3.58 showed that the original abap-adt-api-compatible request shape is sufficient for evaluation, but generic proposal application should follow Eclipse's quickfix XML model more closely. `apply_quickfix` now posts `application/xml`, preserves empty `userContent`, can pass through `affectedObjects` source units from evaluation, accepts an exact `sourceUri` override for include-level fixes, and parses the native `<proposalResult><deltas><unit>...` response shape. The request keeps only the root `quickfixes:proposalRequest` namespaced; `input`, `content`, `affectedObjects`, `unit`, and `userContent` remain unqualified because `quickfixes.xsd` declares `elementFormDefault="unqualified"`.
+
+The RAP `create_class_implementation` proposal remains a separate higher-level feature candidate: Eclipse's behavior-definition UI handler opens a wizard and transforms the proposal request before apply, so generic `apply_quickfix` should not claim to fully replace "Generate Behavior Implementation" yet.
+
 ## Development Approach
 
 Tasks are ordered foundation-first: types → core functions → handler wiring → schema/tool definitions → tests → documentation → skills. Each task includes its own tests and validation step.

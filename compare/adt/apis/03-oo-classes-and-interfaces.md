@@ -47,15 +47,17 @@
 
 ---
 
-## B. `GET /sap/bc/adt/oo/classes/{name}/includes/{definitions|implementations|macros|testclasses}`
+## B. `GET|PUT /sap/bc/adt/oo/classes/{name}/includes/{definitions|implementations|macros|testclasses}`
 
 ### Contract
 
 - One include per request (comma-separated **client API** splits into multiple HTTP calls in `getClass`).
+- Include writes use the normal ADT source update pattern: lock the parent class object URL (`/sap/bc/adt/oo/classes/{name}`), then `PUT` the include URL with the returned `lockHandle` and optional `corrNr`. Do not lock the include URL separately; class includes inherit the parent class lock.
 
 ### ARC-1
 
 - Same `GetClass` safety name.
+- `SAPWrite(action="update", type="CLAS", include=...)` routes to these include URLs for `definitions`, `implementations`, `macros`, and `testclasses`. Omitting `include` keeps the existing `/source/main` update route.
 
 ### Alternatives
 

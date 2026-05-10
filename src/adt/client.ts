@@ -219,7 +219,9 @@ export class AdtClient {
 
     const fetchInclude = async (include: string): Promise<string | null> => {
       try {
-        const resp = await this.http.get(`/sap/bc/adt/oo/classes/${encodedName}/includes/${include}`);
+        const resp = await this.http.get(`/sap/bc/adt/oo/classes/${encodedName}/includes/${include}`, undefined, {
+          suppressNotFoundLog: true,
+        });
         return resp.body;
       } catch (err) {
         if (isNotFoundError(err)) return null;

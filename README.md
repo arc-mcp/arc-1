@@ -79,7 +79,7 @@ The 12 tools are designed from real LLM interaction feedback:
 |------|-------------|
 | **SAPRead** | Read ABAP source, table data, CDS views, metadata extensions (DDLX), service bindings (SRVB), message classes (`MSAG`), BOR objects, deployed UI5/Fiori apps (BSP, BSP_DEPLOY), plus on-prem metadata reads for authorization fields (`AUTH`), feature toggles (`FEATURE_TOGGLE`), and enhancement implementations (`ENHO`). Structured format for classes returns metadata + decomposed includes as JSON. (Deprecated aliases `MESSAGES`/`FTG2` accepted for one minor.) |
 | **SAPSearch** | Object search + full-text source code search across the system |
-| **SAPWrite** | Create/update/delete ABAP source and DDIC metadata with automatic lock/unlock (PROG, CLAS, INTF, FUNC, INCL, DDLS, DDLX, BDEF, SRVD, DOMA, DTEL). Batch creation for multi-object workflows (e.g., RAP stack or domain+data element in one call) |
+| **SAPWrite** | Create/update/delete ABAP source and DDIC metadata with automatic lock/unlock (PROG, CLAS, INTF, FUNC, INCL, DDLS, DDLX, BDEF, SRVD, DOMA, DTEL). Class updates can target local includes (`definitions`, `implementations`, `macros`, `testclasses`), and RAP behavior-pool scaffolding can auto-create `lhc_*` skeletons before injecting signatures/stubs. Batch creation for multi-object workflows (e.g., RAP stack or domain+data element in one call) |
 | **SAPActivate** | Activate ABAP objects — single or batch (essential for RAP stacks), with guarded retry for the S/4HANA ED064 batch quirk. Publish/unpublish OData service bindings (SRVB) |
 | **SAPNavigate** | Go-to-definition, find references, code completion |
 | **SAPQuery** | Execute ABAP SQL with table-not-found suggestions |
@@ -87,7 +87,7 @@ The 12 tools are designed from real LLM interaction feedback:
 | **SAPGit** | Git-based ABAP workflows across gCTS and abapGit (list/clone/pull/push/commit/branch/unlink) with backend auto-selection and safety gating (`--allow-git-writes`) |
 | **SAPContext** | Compressed dependency context (`action="deps"`), reverse dependency lookup (`action="usages"`), and CDS upstream/downstream impact analysis (`action="impact"` for DDLS) |
 | **SAPLint** | Local ABAP lint (system/release-aware presets, auto-fix, pre-write validation) + ADT PrettyPrint (server-side formatting) |
-| **SAPDiagnose** | Syntax check, ABAP Unit tests, ATC code quality, short dumps, profiler traces |
+| **SAPDiagnose** | Syntax check, ABAP Unit tests, ATC code quality, generic ADT quickfix proposals/application deltas, short dumps, profiler traces |
 | **SAPManage** | Feature probing — detect what the system supports before acting |
 
 Tool definitions automatically adapt to the target system (BTP vs on-premise), removing unavailable types and adjusting descriptions so the LLM never attempts unsupported operations.

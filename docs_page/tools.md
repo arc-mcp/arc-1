@@ -196,9 +196,10 @@ Create or update ABAP source code. Handles lock/modify/unlock automatically.
 | `group` | string | No | For `FUNC`: parent function-group name. **Required for FUNC create** (the FUGR must already exist — create it first via `SAPWrite type=FUGR`). Auto-resolved via search for FUNC update/delete if omitted. Ignored for other types. |
 | `name` | string | No | Object name (for single object actions) |
 | `source` | string | No | ABAP source code (for create/update/edit_method) |
+| `include` | string | No | For `update type="CLAS"` only: write a class-local include (`definitions`, `implementations`, `macros`, or `testclasses`) instead of `/source/main`. Omit this parameter for main class source updates. Include writes create an inactive draft; verify with `SAPRead(version="inactive")` until activation. |
 | `method` | string | No | For `edit_method`: method name to replace (e.g., `"get_name"`) |
 | `bdefName` | string | No | For `scaffold_rap_handlers`: interface BDEF name used to derive required handler signatures |
-| `autoApply` | boolean | No | For `scaffold_rap_handlers`: when `true`, inject missing signatures plus empty method stubs into the behavior pool and write back |
+| `autoApply` | boolean | No | For `scaffold_rap_handlers`: when `true`, create missing `lhc_*` skeletons, inject missing signatures plus empty method stubs into the behavior pool, and write back |
 | `targetAlias` | string | No | For `scaffold_rap_handlers`: optional RAP entity alias filter (scaffold only one alias/handler class) |
 | `description` | string | No | Object description for `create` (defaults to name if omitted, max 60 chars) |
 | `package` | string | No | Package for new objects (default `$TMP`) |
@@ -283,9 +284,10 @@ If any object fails, processing stops and the response reports which objects suc
 
 **RAP handler scaffolding:**
 
-`scaffold_rap_handlers` derives required behavior-pool `METHODS ... FOR ...` signatures from an interface BDEF, computes missing signatures, and can optionally inject declarations plus empty `METHOD ... ENDMETHOD` stubs into the behavior pool class:
+`scaffold_rap_handlers` derives required behavior-pool `METHODS ... FOR ...` signatures from an interface BDEF, computes missing signatures, and can optionally create missing local handler skeletons plus inject declarations and empty `METHOD ... ENDMETHOD` stubs into the behavior pool class:
 
 - Scans class sections from `source/main`, `includes/definitions`, and `includes/implementations`
+- In `autoApply=true`, creates missing `CLASS lhc_<alias> DEFINITION INHERITING FROM cl_abap_behavior_handler` shells in `includes/definitions` and matching implementation shells in `includes/implementations`
 - Supports dry-run listing (`autoApply=false`, default) and write-back mode (`autoApply=true`)
 - Helps recover from generic behavior-pool save errors by generating exact signatures for actions/determinations/validations/authorization handlers
 
@@ -313,6 +315,10 @@ SAPWrite(action="create", type="DTEL", name="ZSTATUS", package="$TMP",
 
 SAPWrite(action="create", type="SRVB", name="ZSB_TRAVEL_O4", package="$TMP",
   serviceDefinition="ZSD_TRAVEL", category="0")
+
+SAPWrite(action="update", type="CLAS", name="ZBP_I_TRAVELREQ",
+  include="implementations",
+  source="CLASS lhc_travel IMPLEMENTATION.\nENDCLASS.")
 
 SAPWrite(action="scaffold_rap_handlers", type="CLAS", name="ZBP_I_TRAVELREQ",
   bdefName="ZI_TRAVELREQ", autoApply=true)

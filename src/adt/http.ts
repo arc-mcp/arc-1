@@ -35,6 +35,15 @@ import { resolveAcceptType, resolveContentType } from './discovery.js';
 import { AdtApiError, AdtNetworkError } from './errors.js';
 import type { Semaphore } from './semaphore.js';
 
+export interface AdtRequestOptions {
+  /**
+   * Some ADT subresources are optional and legitimately return 404, for example
+   * class local includes such as testclasses on classes without ABAP Unit code.
+   * Callers that handle those 404s can opt into debug-level audit logging.
+   */
+  suppressNotFoundLog?: boolean;
+}
+
 /**
  * Opt-in wire-level debug logging.
  *
@@ -191,8 +200,8 @@ export class AdtHttpClient {
   }
 
   /** GET request */
-  async get(path: string, headers?: Record<string, string>): Promise<AdtResponse> {
-    return this.request('GET', path, undefined, undefined, headers);
+  async get(path: string, headers?: Record<string, string>, options?: AdtRequestOptions): Promise<AdtResponse> {
+    return this.request('GET', path, undefined, undefined, headers, options);
   }
 
   /** HEAD request — lightweight probe, no response body */
@@ -248,11 +257,12 @@ export class AdtHttpClient {
     body?: string,
     contentType?: string,
     extraHeaders?: Record<string, string>,
+    options?: AdtRequestOptions,
   ): Promise<AdtResponse> {
     if (this.config.semaphore) {
-      return this.config.semaphore.run(() => this.requestInner(method, path, body, contentType, extraHeaders));
+      return this.config.semaphore.run(() => this.requestInner(method, path, body, contentType, extraHeaders, options));
     }
-    return this.requestInner(method, path, body, contentType, extraHeaders);
+    return this.requestInner(method, path, body, contentType, extraHeaders, options);
   }
 
   /** Inner request method — CSRF, retries, content negotiation */
@@ -262,6 +272,7 @@ export class AdtHttpClient {
     body?: string,
     contentType?: string,
     extraHeaders?: Record<string, string>,
+    options?: AdtRequestOptions,
   ): Promise<AdtResponse> {
     // Auto-fetch CSRF token for modifying requests
     if (isModifyingMethod(method) && !this.csrfToken) {
@@ -691,9 +702,10 @@ export class AdtHttpClient {
       // Log failed HTTP requests
       const durationMs = Date.now() - httpStart;
       if (err instanceof AdtApiError) {
+        const level = options?.suppressNotFoundLog && err.statusCode === 404 ? 'debug' : 'warn';
         logger.emitAudit({
           timestamp: new Date().toISOString(),
-          level: 'warn',
+          level,
           event: 'http_request',
           method,
           path,

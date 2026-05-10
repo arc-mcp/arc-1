@@ -150,6 +150,7 @@ import {
 import type {
   ClassHierarchy,
   DumpDetail,
+  FixAffectedObject,
   InactiveObject,
   ObjectTransportHistory,
   ResolvedFeatures,
@@ -3003,9 +3004,18 @@ function sourceUrlForType(type: string, name: string): string {
   return `${objectUrlForType(type, name)}/source/main`;
 }
 
+type ClassWriteInclude = 'definitions' | 'implementations' | 'macros' | 'testclasses';
+const CLASS_WRITE_INCLUDES: readonly ClassWriteInclude[] = ['definitions', 'implementations', 'macros', 'testclasses'];
+
 /** Get a CLAS include URL (definitions/implementations/macros/testclasses) */
-function classIncludeUrl(name: string, include: 'definitions' | 'implementations' | 'macros' | 'testclasses'): string {
+function classIncludeUrl(name: string, include: ClassWriteInclude): string {
   return `/sap/bc/adt/oo/classes/${encodeURIComponent(name)}/includes/${include}`;
+}
+
+function normalizeClassWriteInclude(include: unknown): ClassWriteInclude | undefined {
+  if (typeof include !== 'string') return undefined;
+  const normalized = include.toLowerCase() as ClassWriteInclude;
+  return CLASS_WRITE_INCLUDES.includes(normalized) ? normalized : undefined;
 }
 
 // ─── SAPWrite Handler ────────────────────────────────────────────────
@@ -3020,6 +3030,8 @@ async function handleSAPWrite(
   const type = normalizeObjectType(String(args.type ?? ''));
   const name = String(args.name ?? '');
   const source = String(args.source ?? '');
+  const hasSource = typeof args.source === 'string';
+  const include = normalizeClassWriteInclude(args.include);
   const transport = args.transport as string | undefined;
   const lintOverride = args.lintBeforeWrite as boolean | undefined;
   const preflightOverride = args.preflightBeforeWrite as boolean | undefined;
@@ -3108,6 +3120,37 @@ async function handleSAPWrite(
   switch (action) {
     case 'update': {
       const existingPackage = await enforcePackageForExistingObject();
+
+      // Keep CLAS local include writes ahead of the generic /source/main fallthrough.
+      // If CLAS ever gains separate metadata-update handling, this branch must still
+      // win whenever callers pass include=definitions|implementations|macros|testclasses.
+      if (args.include !== undefined) {
+        if (!include) {
+          return errorResult(
+            `Invalid CLAS include "${String(args.include)}". Valid values: ${CLASS_WRITE_INCLUDES.join(', ')}.`,
+          );
+        }
+        if (type !== 'CLAS') {
+          return errorResult('SAPWrite include is only supported for action="update" with type="CLAS".');
+        }
+        if (!hasSource) {
+          return errorResult('"source" is required when updating a CLAS include.');
+        }
+
+        await safeUpdateSource(
+          client.http,
+          client.safety,
+          objectUrl,
+          classIncludeUrl(name, include),
+          source,
+          transport,
+          cachedFeatures?.abapRelease,
+        );
+        invalidateWrittenObject(type, name);
+        return textResult(
+          `Successfully updated ${type} ${name} include ${include}. Active version remains unchanged until activation; read with SAPRead(version="inactive") to verify the draft.`,
+        );
+      }
 
       if (type === 'SKTD') {
         // KTD update requires the full <sktd:docu> XML envelope with the Markdown
@@ -3650,6 +3693,7 @@ async function handleSAPWrite(
               applied: false,
               hint: unresolvedHint,
               applyResult: {
+                skeletons: scaffoldPlan.skeletons,
                 main: scaffoldPlan.signatures.main,
                 definitions: scaffoldPlan.signatures.definitions,
                 implementations: scaffoldPlan.signatures.implementations,
@@ -3731,6 +3775,7 @@ async function handleSAPWrite(
 
       const msg =
         `Scaffolded ${scaffoldPlan.insertedSignatureCount} RAP handler signature(s) and ${scaffoldPlan.insertedImplementationStubCount} implementation stub(s) in ${type} ${name} from BDEF ${bdefName}. ` +
+        `Auto-created ${scaffoldPlan.skeletons.createdDefinitions.length + scaffoldPlan.skeletons.createdImplementations.length} handler skeleton section(s). ` +
         `Updated section(s): ${scaffoldPlan.changedSections.join(', ')}.`;
       const warnings = mergePreWriteWarnings(
         lintWarningsMain?.warnings,
@@ -3742,6 +3787,7 @@ async function handleSAPWrite(
           ...summary,
           applied: true,
           applyResult: {
+            skeletons: scaffoldPlan.skeletons,
             main: scaffoldPlan.signatures.main,
             definitions: scaffoldPlan.signatures.definitions,
             implementations: scaffoldPlan.signatures.implementations,
@@ -4832,6 +4878,7 @@ async function handleSAPDiagnose(client: AdtClient, args: Record<string, unknown
     }
     case 'quickfix': {
       const source = args.source as string | undefined;
+      const sourceUri = args.sourceUri as string | undefined;
       if (!name || !type) return errorResult('"name" and "type" are required for "quickfix" action.');
       if (!source) return errorResult('"source" is required for "quickfix" action.');
       if (args.line == null) return errorResult('"line" is required for "quickfix" action.');
@@ -4844,7 +4891,7 @@ async function handleSAPDiagnose(client: AdtClient, args: Record<string, unknown
       const proposals = await getFixProposals(
         client.http,
         client.safety,
-        sourceUrlForType(type, name),
+        sourceUri ?? sourceUrlForType(type, name),
         source,
         line,
         column,
@@ -4853,13 +4900,16 @@ async function handleSAPDiagnose(client: AdtClient, args: Record<string, unknown
     }
     case 'apply_quickfix': {
       const source = args.source as string | undefined;
+      const sourceUri = args.sourceUri as string | undefined;
       const proposalUri = args.proposalUri as string | undefined;
       const proposalUserContent = args.proposalUserContent as string | undefined;
+      const proposalAffectedObjects = args.proposalAffectedObjects as FixAffectedObject[] | undefined;
       if (!name || !type) return errorResult('"name" and "type" are required for "apply_quickfix" action.');
       if (!source) return errorResult('"source" is required for "apply_quickfix" action.');
       if (args.line == null) return errorResult('"line" is required for "apply_quickfix" action.');
       if (!proposalUri) return errorResult('"proposalUri" is required for "apply_quickfix" action.');
-      if (!proposalUserContent) return errorResult('"proposalUserContent" is required for "apply_quickfix" action.');
+      if (proposalUserContent === undefined)
+        return errorResult('"proposalUserContent" is required for "apply_quickfix" action.');
 
       const line = Number(args.line);
       const column = Number(args.column ?? 0);
@@ -4875,8 +4925,9 @@ async function handleSAPDiagnose(client: AdtClient, args: Record<string, unknown
           name: '',
           description: '',
           userContent: proposalUserContent,
+          ...(proposalAffectedObjects ? { affectedObjects: proposalAffectedObjects } : {}),
         },
-        sourceUrlForType(type, name),
+        sourceUri ?? sourceUrlForType(type, name),
         source,
         line,
         column,

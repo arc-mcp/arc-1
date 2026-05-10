@@ -470,6 +470,56 @@ describe('SAPWriteSchema', () => {
     }
   });
 
+  it('accepts CLAS include update fields', () => {
+    const result = SAPWriteSchema.safeParse({
+      action: 'update',
+      type: 'CLAS',
+      name: 'ZBP_I_TRAVELREQ',
+      include: 'definitions',
+      source: 'CLASS lhc_travel DEFINITION.\nENDCLASS.',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.include).toBe('definitions');
+    }
+  });
+
+  it('rejects SAPWrite include outside CLAS update', () => {
+    const nonUpdate = SAPWriteSchema.safeParse({
+      action: 'create',
+      type: 'CLAS',
+      name: 'ZCL_TEST',
+      include: 'definitions',
+    });
+    expect(nonUpdate.success).toBe(false);
+    if (!nonUpdate.success) {
+      expect(nonUpdate.error.issues[0]?.message).toContain('action="update"');
+    }
+
+    const nonClass = SAPWriteSchema.safeParse({
+      action: 'update',
+      type: 'PROG',
+      name: 'ZPROG',
+      include: 'definitions',
+      source: 'REPORT zprog.',
+    });
+    expect(nonClass.success).toBe(false);
+    if (!nonClass.success) {
+      expect(nonClass.error.issues[0]?.message).toContain('type="CLAS"');
+    }
+  });
+
+  it('rejects invalid SAPWrite CLAS include values', () => {
+    const result = SAPWriteSchema.safeParse({
+      action: 'update',
+      type: 'CLAS',
+      name: 'ZCL_TEST',
+      include: 'main',
+      source: 'CLASS zcl_test DEFINITION. ENDCLASS.',
+    });
+    expect(result.success).toBe(false);
+  });
+
   it('accepts TABL for source-based writes', () => {
     const result = SAPWriteSchema.safeParse({
       action: 'create',
@@ -560,6 +610,17 @@ describe('SAPWriteSchemaBtp', () => {
     ).toBe(true);
     expect(SAPWriteSchemaBtp.safeParse({ action: 'create', type: 'DOMA', name: 'ZDOMAIN' }).success).toBe(true);
     expect(SAPWriteSchemaBtp.safeParse({ action: 'create', type: 'DTEL', name: 'ZDELEM' }).success).toBe(true);
+  });
+
+  it('accepts CLAS include update on BTP schema', () => {
+    const result = SAPWriteSchemaBtp.safeParse({
+      action: 'update',
+      type: 'CLAS',
+      name: 'ZCL_TEST',
+      include: 'implementations',
+      source: 'CLASS zcl_test IMPLEMENTATION.\nENDCLASS.',
+    });
+    expect(result.success).toBe(true);
   });
 });
 
@@ -744,11 +805,40 @@ describe('SAPDiagnoseSchema', () => {
       name: 'ZCL_TEST',
       type: 'CLAS',
       source: 'CLASS zcl_test DEFINITION. ENDCLASS.',
+      sourceUri: '/sap/bc/adt/oo/classes/ZCL_TEST/includes/definitions',
       line: 12,
       proposalUri: '/sap/bc/adt/quickfixes/1',
       proposalUserContent: 'opaque-state',
     });
     expect(result.success).toBe(true);
+  });
+
+  it('accepts apply_quickfix with empty userContent and affected objects', () => {
+    const result = SAPDiagnoseSchema.safeParse({
+      action: 'apply_quickfix',
+      name: 'ZCL_TEST',
+      type: 'CLAS',
+      source: 'CLASS zcl_test DEFINITION. ENDCLASS.',
+      sourceUri: '/sap/bc/adt/oo/classes/ZCL_TEST/includes/definitions',
+      line: 12,
+      proposalUri: '/sap/bc/adt/quickfixes/1',
+      proposalUserContent: '',
+      proposalAffectedObjects: [
+        {
+          uri: '/sap/bc/adt/oo/classes/ZCL_HELPER/source/main',
+          type: 'CLAS/OC',
+          name: 'ZCL_HELPER',
+          description: 'Helper class',
+          content: 'CLASS zcl_helper DEFINITION. ENDCLASS.',
+        },
+      ],
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.proposalUserContent).toBe('');
+      expect(result.data.sourceUri).toBe('/sap/bc/adt/oo/classes/ZCL_TEST/includes/definitions');
+      expect(result.data.proposalAffectedObjects?.[0]?.uri).toBe('/sap/bc/adt/oo/classes/ZCL_HELPER/source/main');
+    }
   });
 });
 

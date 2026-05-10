@@ -331,10 +331,13 @@ describe('Tool Definitions', () => {
     expect(actionEnum).toContain('system_messages');
     expect(actionEnum).toContain('gateway_errors');
     expect(schema.properties.source).toBeDefined();
+    expect(schema.properties.sourceUri).toBeDefined();
     expect(schema.properties.line).toBeDefined();
     expect(schema.properties.column).toBeDefined();
     expect(schema.properties.proposalUri).toBeDefined();
     expect(schema.properties.proposalUserContent).toBeDefined();
+    expect(schema.properties.proposalAffectedObjects).toBeDefined();
+    expect(schema.properties.proposalAffectedObjects.items.required).toContain('uri');
     expect(schema.properties.sections).toBeDefined();
     expect(schema.properties.includeFullText).toBeDefined();
     expect(schema.properties.detailUrl).toBeDefined();
@@ -697,6 +700,19 @@ describe('Tool Definitions', () => {
       const schema = getSAPWriteSchema(true);
       expect(schema.properties.messages).toBeDefined();
       expect(schema.properties.messages.type).toBe('array');
+    });
+
+    it('exposes the CLAS include update property at top-level SAPWrite', () => {
+      for (const btp of [false, true]) {
+        const schema = getSAPWriteSchema(btp);
+        const include = schema.properties.include;
+        expect(include).toBeDefined();
+        expect(include.type).toBe('string');
+        expect(include.enum).toEqual(['definitions', 'implementations', 'macros', 'testclasses']);
+        expect(include.description).toContain('update type=CLAS');
+        expect(include.description).toContain('source/main');
+        expect(include.description).toContain('version="inactive"');
+      }
     });
   });
 });
