@@ -151,7 +151,7 @@ function appendQueryParam(path: string, key: string, value: string): string {
   const [baseAndQuery, fragment] = path.split('#', 2);
   const [base, query = ''] = (baseAndQuery ?? path).split('?', 2);
   const params = new URLSearchParams(query);
-  if (!params.has(key)) params.set(key, value);
+  params.set(key, value);
   const queryString = params.toString();
   return `${base}${queryString ? `?${queryString}` : ''}${fragment ? `#${fragment}` : ''}`;
 }

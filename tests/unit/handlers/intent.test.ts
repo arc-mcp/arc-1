@@ -52,6 +52,13 @@ function freestylePostCalls(): Array<[unknown, Record<string, unknown>]> {
   ) as Array<[unknown, Record<string, unknown>]>;
 }
 
+function fetchedPathWithVersion(urls: string[], pathname: string, version: 'active' | 'inactive'): boolean {
+  return urls.some((rawUrl) => {
+    const url = new URL(rawUrl);
+    return url.pathname === pathname && url.searchParams.get('version') === version;
+  });
+}
+
 describe('Intent Handler', () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -2019,19 +2026,13 @@ ENDCLASS.`;
       ]);
 
       const urls = mockFetch.mock.calls.map((call) => String(call[0]));
-      expect(urls.some((url) => url.includes('/sap/bc/adt/oo/classes/ZBP_DM_PROJECT/source/main?version=active'))).toBe(
+      expect(fetchedPathWithVersion(urls, '/sap/bc/adt/oo/classes/ZBP_DM_PROJECT/source/main', 'active')).toBe(true);
+      expect(fetchedPathWithVersion(urls, '/sap/bc/adt/oo/classes/ZBP_DM_PROJECT/source/main', 'inactive')).toBe(true);
+      expect(fetchedPathWithVersion(urls, '/sap/bc/adt/oo/classes/ZBP_DM_PROJECT/includes/definitions', 'active')).toBe(
         true,
       );
       expect(
-        urls.some((url) => url.includes('/sap/bc/adt/oo/classes/ZBP_DM_PROJECT/source/main?version=inactive')),
-      ).toBe(true);
-      expect(
-        urls.some((url) => url.includes('/sap/bc/adt/oo/classes/ZBP_DM_PROJECT/includes/definitions?version=active')),
-      ).toBe(true);
-      expect(
-        urls.some((url) =>
-          url.includes('/sap/bc/adt/oo/classes/ZBP_DM_PROJECT/includes/implementations?version=inactive'),
-        ),
+        fetchedPathWithVersion(urls, '/sap/bc/adt/oo/classes/ZBP_DM_PROJECT/includes/implementations', 'inactive'),
       ).toBe(true);
 
       const macros = payload.sections.find((section: { section: string }) => section.section === 'macros');
@@ -2053,12 +2054,8 @@ ENDCLASS.`;
       const payload = JSON.parse(result.content[0]?.text);
       expect(payload.sections.map((section: { section: string }) => section.section)).toEqual(['main']);
       const urls = mockFetch.mock.calls.map((call) => String(call[0]));
-      expect(urls.some((url) => url.includes('/sap/bc/adt/programs/programs/ZDEMO/source/main?version=active'))).toBe(
-        true,
-      );
-      expect(urls.some((url) => url.includes('/sap/bc/adt/programs/programs/ZDEMO/source/main?version=inactive'))).toBe(
-        true,
-      );
+      expect(fetchedPathWithVersion(urls, '/sap/bc/adt/programs/programs/ZDEMO/source/main', 'active')).toBe(true);
+      expect(fetchedPathWithVersion(urls, '/sap/bc/adt/programs/programs/ZDEMO/source/main', 'inactive')).toBe(true);
     });
 
     it('returns a focused error when name or type is missing', async () => {

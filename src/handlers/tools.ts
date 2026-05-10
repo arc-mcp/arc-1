@@ -937,7 +937,7 @@ export function getToolDefinitions(
         '- "atc": Run ATC code quality checks. Requires name + type. Optional: variant.\n' +
         '- "quickfix": Get SAP quick fix proposals for a specific source position. Requires name + type + source + line. Optional: column.\n' +
         '- "apply_quickfix": Apply one quick fix proposal and return text deltas (does not write source). Requires name + type + source + line + proposalUri + proposalUserContent. Optional: column.\n' +
-        '- "object_state": Compare active and inactive source versions. Requires name + type. For CLAS, also compares main, definitions, implementations, macros, and testclasses includes. Returns ETags, byte lengths, hashes, and divergence flags.\n' +
+        '- "object_state": Compare active and inactive source versions. Requires name + type. For CLAS, also compares main, definitions, implementations, macros, and testclasses includes (up to 10 parallel reads per class; sequence calls when sweeping many classes). Returns ETags, byte lengths, hashes, and divergence flags.\n' +
         '- "dumps": List or read ABAP short dumps (ST22). Without id: lists recent dumps (filter by user, maxResults). With id: returns focused chapter sections by default; set includeFullText=true to include the full formatted dump blob. Optional sections=[kap0,kap3,...] to request specific chapter IDs.\n' +
         '- "traces": List or analyze ABAP profiler traces. Without id: lists trace files. With id + analysis: returns trace analysis (hitlist = hot spots, statements = call tree, dbAccesses = database access statistics).\n\n' +
         '- "system_messages": List SM02 system messages via ADT feed (filter by user, maxResults, from, to).\n' +

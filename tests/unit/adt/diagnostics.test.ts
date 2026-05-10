@@ -131,6 +131,26 @@ describe('Runtime Diagnostics', () => {
       expect(result.sections[0]?.active.sha256).not.toBe(result.sections[0]?.inactive.sha256);
     });
 
+    it('overwrites an existing version query parameter for each requested source version', async () => {
+      const http = mockHttpSequence([{ body: 'active source' }, { body: 'inactive source' }]);
+
+      await getObjectState(http, unrestrictedSafetyConfig(), {
+        type: 'PROG',
+        name: 'ZDEMO',
+        sections: [{ section: 'main', uri: '/sap/bc/adt/programs/programs/ZDEMO/source/main?version=active&foo=bar' }],
+      });
+
+      expect(http.get).toHaveBeenCalledWith('/sap/bc/adt/programs/programs/ZDEMO/source/main?version=active&foo=bar', {
+        Accept: 'text/plain, */*;q=0.8',
+      });
+      expect(http.get).toHaveBeenCalledWith(
+        '/sap/bc/adt/programs/programs/ZDEMO/source/main?version=inactive&foo=bar',
+        {
+          Accept: 'text/plain, */*;q=0.8',
+        },
+      );
+    });
+
     it('reports optional missing include endpoints as unavailable', async () => {
       const notFound = new AdtApiError('Not found', 404, '/sap/bc/adt/oo/classes/ZBP_DEMO/includes/macros');
       const http = mockHttpSequence([notFound, notFound]);
