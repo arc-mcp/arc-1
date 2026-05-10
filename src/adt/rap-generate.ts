@@ -37,6 +37,7 @@ import { activateBatch } from './devtools.js';
 import { AdtApiError, AdtSafetyError } from './errors.js';
 import {
   applyRapHandlerScaffold,
+  detectLegacyHandlerInDefinitions,
   extractRapHandlerRequirements,
   findMissingRapHandlerImplementationStubs,
   findMissingRapHandlerRequirements,
@@ -215,6 +216,33 @@ export async function generateBehaviorImplementation(
   const implementationsSource = structured.implementations ?? '';
   const bdefRead = await client.getBdef(bdefName);
   const bdefSource = bdefRead.source;
+
+  // Guard: legacy broken layout detection.
+  //
+  // arc-1 versions <= 0.9.4 wrote `CLASS lhc_<alias> DEFINITION INHERITING FROM
+  // cl_abap_behavior_handler. ... ENDCLASS.` to the wrong include (CCDEF instead of CCIMP).
+  // Activating such a class fails with `Local classes of "CL_ABAP_BEHAVIOR_HANDLER" can only
+  // be derived in the "Local Definitions/Implementations" of a global BEHAVIOR class`.
+  // Detect this state up-front and refuse to mutate further — direct the caller to a clean
+  // recovery path (delete + recreate). Auto-migrating CCDEF→CCIMP is intentionally out of
+  // scope: the source-rewriting risk is non-trivial and the delete+recreate flow is
+  // documented and reliable.
+  const legacyHandlersInCcdef = detectLegacyHandlerInDefinitions(definitionsSource);
+  if (legacyHandlersInCcdef.length > 0 && !dryRun) {
+    const handlerList = legacyHandlersInCcdef.join(', ');
+    const lowerClass = cleanClassName.toLowerCase();
+    const lowerBdef = bdefName.toLowerCase();
+    throw new AdtSafetyError(
+      `generate_behavior_implementation: class ${cleanClassName} has a legacy handler-class layout ` +
+        `(${handlerList} declared in CCDEF). This was scaffolded by an earlier version of arc-1 that ` +
+        `wrote handler classes to the wrong include. Per ABAP keyword doc ABENABP_HANDLER_CLASS_GLOSRY ` +
+        `and SAP demo class BP_DEMO_RAP_STRICT, the entire handler class belongs in the CCIMP include ` +
+        `(/source/implementations). Recover via:\n` +
+        `  1. SAPManage(action="delete", type="CLAS", name="${cleanClassName}", transport="<your_transport>")\n` +
+        `  2. SAPWrite(action="create", type="CLAS", name="${cleanClassName}", source="CLASS ${lowerClass} DEFINITION\\n  PUBLIC ABSTRACT FINAL\\n  FOR BEHAVIOR OF ${lowerBdef}.\\nENDCLASS.\\n\\nCLASS ${lowerClass} IMPLEMENTATION.\\nENDCLASS.", description="Behavior pool", package="<your_package>", transport="<your_transport>")\n` +
+        `  3. Re-run generate_behavior_implementation against the freshly-created class.`,
+    );
+  }
 
   const mainBdefMatch = FOR_BEHAVIOR_OF_RE.exec(mainSource);
   const bdefClassMatch = MANAGED_IMPL_RE.exec(bdefSource);

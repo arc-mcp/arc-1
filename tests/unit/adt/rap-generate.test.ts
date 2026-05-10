@@ -346,16 +346,22 @@ define behavior for ZR_DM_TASK alias Task
     // earlier manual include writes (Codex review on PR #260). The default
     // contract is "generate + activate" — when activate=true, activation runs
     // even if scaffold has nothing to write.
+    //
+    // Per ABAP doc ABENABP_HANDLER_CLASS_GLOSRY and SAP demo BP_DEMO_RAP_STRICT,
+    // the canonical layout is: CCDEF holds only the SAP placeholder; CCIMP holds
+    // both DEFINITION and IMPLEMENTATION blocks of the handler class.
     const state = defaultState({ activationMode: 'success' });
-    state.structuredResponse.definitions = `CLASS lhc_project DEFINITION INHERITING FROM cl_abap_behavior_handler.
+    state.structuredResponse.definitions = PLACEHOLDER_DEFINITIONS;
+    state.structuredResponse.implementations = `CLASS lhc_project DEFINITION INHERITING FROM cl_abap_behavior_handler.
   PRIVATE SECTION.
     METHODS approve_project FOR MODIFY
       IMPORTING keys FOR ACTION Project~approve_project RESULT result.
 
     METHODS get_instance_authorizations FOR INSTANCE AUTHORIZATION
       IMPORTING keys REQUEST requested_authorizations FOR Project RESULT result.
-ENDCLASS.`;
-    state.structuredResponse.implementations = `CLASS lhc_project IMPLEMENTATION.
+ENDCLASS.
+
+CLASS lhc_project IMPLEMENTATION.
   METHOD approve_project.
   ENDMETHOD.
   METHOD get_instance_authorizations.
@@ -372,15 +378,17 @@ ENDCLASS.`;
 
   it('skips writes AND skips activation when activate=false and scaffold reports no changes', async () => {
     const state = defaultState();
-    state.structuredResponse.definitions = `CLASS lhc_project DEFINITION INHERITING FROM cl_abap_behavior_handler.
+    state.structuredResponse.definitions = PLACEHOLDER_DEFINITIONS;
+    state.structuredResponse.implementations = `CLASS lhc_project DEFINITION INHERITING FROM cl_abap_behavior_handler.
   PRIVATE SECTION.
     METHODS approve_project FOR MODIFY
       IMPORTING keys FOR ACTION Project~approve_project RESULT result.
 
     METHODS get_instance_authorizations FOR INSTANCE AUTHORIZATION
       IMPORTING keys REQUEST requested_authorizations FOR Project RESULT result.
-ENDCLASS.`;
-    state.structuredResponse.implementations = `CLASS lhc_project IMPLEMENTATION.
+ENDCLASS.
+
+CLASS lhc_project IMPLEMENTATION.
   METHOD approve_project.
   ENDMETHOD.
   METHOD get_instance_authorizations.
@@ -393,6 +401,59 @@ ENDCLASS.`;
     expect(result.scaffoldChanged).toBe(false);
     expect(state.writes.length).toBe(0);
     expect(result.activation).toBeUndefined();
+  });
+
+  it('writes scaffold to CCIMP only when scaffolding from empty placeholders', async () => {
+    // Verifies the ensureRapHandlerSkeletons fix end-to-end at the orchestrator level:
+    // writes must hit /source/implementations and never /source/definitions.
+    const state = defaultState({ activationMode: 'success' });
+    // Default state already has placeholder CCDEF + CCIMP.
+    const { client } = makeClient(state);
+
+    const result = await generateBehaviorImplementation(client, 'ZBP_DM_PROJECT');
+
+    expect(result.scaffoldChanged).toBe(true);
+    expect(result.activation?.success).toBe(true);
+
+    const writePaths = state.writes.map((w) => w.uri);
+    expect(writePaths.some((p) => p.includes('/includes/implementations'))).toBe(true);
+    // Critical: NO write to /includes/definitions (CCDEF must stay at the SAP placeholder).
+    expect(writePaths.some((p) => p.includes('/includes/definitions'))).toBe(false);
+  });
+
+  it('throws AdtSafetyError when CCDEF holds a legacy handler class (broken layout)', async () => {
+    // arc-1 versions <= 0.9.4 wrote the lhc_<alias> DEFINITION to CCDEF, which SAP rejects
+    // on activation with `Local classes of "CL_ABAP_BEHAVIOR_HANDLER" can only be derived
+    // in the "Local Definitions/Implementations" of a global BEHAVIOR class`. The orchestrator
+    // detects that state up-front and throws with a precise recovery (delete + recreate) so
+    // the user is not stuck in an unrecoverable activation loop.
+    const state = defaultState({ activationMode: 'success' });
+    state.structuredResponse.definitions = `CLASS lhc_project DEFINITION INHERITING FROM cl_abap_behavior_handler.
+  PRIVATE SECTION.
+ENDCLASS.`;
+    const { client } = makeClient(state);
+
+    await expect(generateBehaviorImplementation(client, 'ZBP_DM_PROJECT')).rejects.toThrowError(
+      /legacy handler-class layout/i,
+    );
+    // No writes — the guard runs before the lock+write phase.
+    expect(state.writes.length).toBe(0);
+  });
+
+  it('legacy-broken-state guard does not fire in dryRun mode (preview path)', async () => {
+    // dryRun is the audit/preview path — it should report what's wrong via validation
+    // diagnostics without throwing, so callers can show users what they need to fix.
+    const state = defaultState();
+    state.structuredResponse.definitions = `CLASS lhc_project DEFINITION INHERITING FROM cl_abap_behavior_handler.
+  PRIVATE SECTION.
+ENDCLASS.`;
+    const { client } = makeClient(state);
+
+    const result = await generateBehaviorImplementation(client, 'ZBP_DM_PROJECT', { dryRun: true });
+
+    expect(result.dryRun).toBe(true);
+    // No writes — dryRun never mutates.
+    expect(state.writes.length).toBe(0);
   });
 });
 
