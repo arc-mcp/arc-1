@@ -59,6 +59,23 @@ describe('SAPReadSchema', () => {
     expect(result.success).toBe(false);
   });
 
+  it('accepts FUNC with includeSignature flag (issue #252)', () => {
+    const result = SAPReadSchema.safeParse({
+      type: 'FUNC',
+      name: 'BAPI_USER_GETLIST',
+      group: 'SU_USER',
+      includeSignature: true,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.includeSignature).toBe(true);
+  });
+
+  it('accepts FUNC without includeSignature (backward compat — issue #252)', () => {
+    const result = SAPReadSchema.safeParse({ type: 'FUNC', name: 'X', group: 'Y' });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.includeSignature).toBeUndefined();
+  });
+
   it('coerces numeric maxRows from string', () => {
     const result = SAPReadSchema.safeParse({ type: 'TABLE_CONTENTS', maxRows: '50' });
     expect(result.success).toBe(true);
@@ -408,6 +425,46 @@ describe('SAPWriteSchema', () => {
     // This test pins that behavior so a schema-side enforcement attempt would surface here.
     const result = SAPWriteSchema.safeParse({ action: 'create', type: 'FUNC', name: 'Z_FM' });
     expect(result.success).toBe(true);
+  });
+
+  it('accepts FUNC create input with structured parameters (issue #252)', () => {
+    const result = SAPWriteSchema.safeParse({
+      action: 'create',
+      type: 'FUNC',
+      name: 'Z_ARC1_FM_PARAMS',
+      group: 'ZARC1_FG',
+      parameters: [
+        { kind: 'importing', name: 'IV_INPUT', type: 'STRING', byValue: true, optional: true, default: "'X'" },
+        { kind: 'exporting', name: 'EV_OUTPUT', type: 'STRING', byValue: true },
+        { kind: 'changing', name: 'CV_FLAG', type: 'I' },
+        { kind: 'tables', name: 'IT_LINES', type: 'TYPE STANDARD TABLE' },
+        { kind: 'exceptions', name: 'BAD_INPUT' },
+        { kind: 'raising', name: 'CX_ROOT' },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects FUNC parameters with invalid kind (issue #252)', () => {
+    const result = SAPWriteSchema.safeParse({
+      action: 'create',
+      type: 'FUNC',
+      name: 'Z_FM',
+      group: 'Z_FG',
+      parameters: [{ kind: 'returning', name: 'RV_X', type: 'STRING' }],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects FUNC parameters missing required name (issue #252)', () => {
+    const result = SAPWriteSchema.safeParse({
+      action: 'create',
+      type: 'FUNC',
+      name: 'Z_FM',
+      group: 'Z_FG',
+      parameters: [{ kind: 'importing', type: 'STRING' }],
+    });
+    expect(result.success).toBe(false);
   });
 
   it('accepts DOMA/DTEL write fields', () => {

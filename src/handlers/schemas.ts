@@ -183,6 +183,8 @@ export const SAPReadSchema = z
     sqlFilter: z.string().optional(),
     objectType: z.string().optional(),
     versionUri: z.string().optional(),
+    /** For type=FUNC: when true, response is JSON {source, signature: {importing, exporting, ...}}. */
+    includeSignature: z.coerce.boolean().optional(),
   })
   .superRefine((input, ctx) => validateSapReadInput(input, ctx));
 
@@ -202,6 +204,8 @@ export const SAPReadSchemaBtp = z
     sqlFilter: z.string().optional(),
     objectType: z.string().optional(),
     versionUri: z.string().optional(),
+    /** For type=FUNC: when true, response is JSON {source, signature: {importing, exporting, ...}}. */
+    includeSignature: z.coerce.boolean().optional(),
   })
   .superRefine((input, ctx) => validateSapReadInput(input, ctx));
 
@@ -352,6 +356,22 @@ function validateSapWriteInput(
   }
 }
 
+// FM signature parameter (issue #252). One entry per IMPORTING/EXPORTING/CHANGING/
+// TABLES/EXCEPTIONS/RAISING line in the FUNCTION signature region. ARC-1 builds
+// the ABAP source from this array; SAP's own signature lives inline in /source/main.
+const fmParameterSchema = z.object({
+  kind: z.enum(['importing', 'exporting', 'changing', 'tables', 'exceptions', 'raising']),
+  name: z.string(),
+  /** ABAP type expression. Required for IMPORTING/EXPORTING/CHANGING/TABLES; ignored for EXCEPTIONS/RAISING. */
+  type: z.string().optional(),
+  /** Emit `VALUE(name)` wrapper. Default false (pass-by-reference). */
+  byValue: z.coerce.boolean().optional(),
+  /** Raw ABAP literal — IMPORTING/CHANGING only. Emitted verbatim. */
+  default: z.string().optional(),
+  /** Emit `OPTIONAL` keyword. */
+  optional: z.coerce.boolean().optional(),
+});
+
 const batchObjectSchemaOnprem = z.object({
   type: z.enum(SAPWRITE_TYPES_ONPREM),
   name: z.string(),
@@ -386,6 +406,8 @@ const batchObjectSchemaOnprem = z.object({
   odataVersion: z.enum(['V2', 'V4']).optional(),
   category: z.enum(['0', '1']).optional(),
   version: z.string().optional(),
+  /** FUNC structured signature parameters (issue #252). */
+  parameters: z.array(fmParameterSchema).optional(),
 });
 
 const batchObjectSchemaBtp = z.object({
@@ -422,6 +444,8 @@ const batchObjectSchemaBtp = z.object({
   odataVersion: z.enum(['V2', 'V4']).optional(),
   category: z.enum(['0', '1']).optional(),
   version: z.string().optional(),
+  /** FUNC structured signature parameters (issue #252). */
+  parameters: z.array(fmParameterSchema).optional(),
 });
 
 export const SAPWriteSchema = z
@@ -474,6 +498,11 @@ export const SAPWriteSchema = z
     bdefName: z.string().optional(),
     autoApply: z.coerce.boolean().optional(),
     targetAlias: z.string().optional(),
+    /** FUNC structured signature parameters (issue #252). When provided, ARC-1 builds the
+     * IMPORTING/EXPORTING/CHANGING/TABLES/EXCEPTIONS/RAISING clause from the array and
+     * splices it into the FM source body. Backward-compatible: when omitted, the existing
+     * source-only path runs unchanged. */
+    parameters: z.array(fmParameterSchema).optional(),
     objects: z.array(batchObjectSchemaOnprem).optional(),
   })
   .superRefine((input, ctx) => validateSapWriteInput(input, ctx));
@@ -527,6 +556,9 @@ export const SAPWriteSchemaBtp = z
     bdefName: z.string().optional(),
     autoApply: z.coerce.boolean().optional(),
     targetAlias: z.string().optional(),
+    /** FUNC structured signature parameters — same shape as on-prem. Harmless on BTP since FUNC write
+     * is on-prem-only. */
+    parameters: z.array(fmParameterSchema).optional(),
     objects: z.array(batchObjectSchemaBtp).optional(),
   })
   .superRefine((input, ctx) => validateSapWriteInput(input, ctx));

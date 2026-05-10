@@ -163,7 +163,7 @@ const SAPWRITE_DESC_ONPREM =
   'bindingType accepts human-readable values like "ODataV4-UI" which are auto-normalized. ' +
   'SKTD (Knowledge Transfer Documents, Markdown docs attached to an ABAP object): create requires refObjectType (parent ADT type+subtype, e.g., "DDLS/DF"). A KTD inherits the name of the object it documents — so "name" MUST equal the parent object name (one KTD per object; refObjectName defaults to name and cannot differ). Update takes Markdown in "source"; delete uses the ADT deletion framework (two-step check/delete). Follow creates/updates with SAPActivate(type="SKTD", name="..."). ' +
   'FUGR (function groups): create with package; serves as the parent container for FUNC. Delete the FUGR after deleting all its FMs. ' +
-  'FUNC (function modules): require "group" parameter — the parent FUGR must exist (create it first via SAPWrite type=FUGR). FM parameter signatures (IMPORTING/EXPORTING/EXCEPTIONS) are NOT managed by this tool — add them via SAPGUI/SE37 or Eclipse after activation. SAPGUI-style *"...IMPORTING..."* parameter comment blocks in source are stripped before PUT (SAP rejects them) and a warning is appended to the response. ' +
+  'FUNC (function modules): require "group" parameter — the parent FUGR must exist (create it first via SAPWrite type=FUGR). Pass structured `parameters` array to manage FM signatures (IMPORTING/EXPORTING/CHANGING/TABLES/EXCEPTIONS/RAISING). Example: parameters=[{kind:"importing",name:"IV_X",type:"STRING",byValue:true},{kind:"exporting",name:"EV_Y",type:"STRING",byValue:true},{kind:"raising",name:"CX_ROOT"}]. Use SAPRead(type=FUNC, includeSignature=true) to read parameters back as structured JSON. SAPGUI-style *"...IMPORTING..."* parameter comment blocks in source are stripped before PUT as defense-in-depth (SAP rejects them with FUNC_ADT028); a warning is appended in that case. ' +
   'For edit_method: surgically replace a single method body in a CLAS without sending the full class source. ' +
   'Provide just the new method implementation code in "source" — 95% fewer tokens than full-class updates. ' +
   'For batch_create: create and activate multiple objects in a single call — ideal for RAP stacks (TABL → DDLS → DCLS → BDEF → SRVD). Pass "objects" array with dependency order. ' +
@@ -516,6 +516,11 @@ export function getToolDefinitions(
             description:
               'Source version to read. "active" (default) returns the last activated version. "inactive" returns the user\'s unactivated draft or active if no draft exists. "auto" returns the draft if one exists, else active.',
           },
+          includeSignature: {
+            type: 'boolean',
+            description:
+              'For FUNC type only. When true, response is JSON: {source, signature: {importing[], exporting[], changing[], tables[], exceptions[], raising[]}} — each parameter parsed into {kind, name, type, byValue?, default?, optional?}. Default false (returns plain source body). Use this to introspect FM parameter signatures programmatically without re-parsing ABAP.',
+          },
           force_refresh: {
             type: 'boolean',
             description:
@@ -669,6 +674,38 @@ export function getToolDefinitions(
                 shortText: { type: 'string', description: 'Message short text (use & for placeholders: "&1", "&2")' },
               },
               required: ['number', 'shortText'],
+            },
+          },
+          parameters: {
+            type: 'array',
+            description:
+              'FUNC: structured signature parameters. ARC-1 builds the IMPORTING/EXPORTING/CHANGING/TABLES/EXCEPTIONS/RAISING clause from this array and splices it into the FM source body. Example: [{kind: "importing", name: "IV_INPUT", type: "STRING", byValue: true, optional: true, default: "\'X\'"}, {kind: "exporting", name: "EV_OUTPUT", type: "STRING", byValue: true}, {kind: "raising", name: "CX_ROOT"}]. When omitted, the user-supplied source is PUT verbatim (backward compatible).',
+            items: {
+              type: 'object',
+              properties: {
+                kind: {
+                  type: 'string',
+                  enum: ['importing', 'exporting', 'changing', 'tables', 'exceptions', 'raising'],
+                  description: 'Parameter kind. EXCEPTIONS/RAISING use only `name`; the others require `type`.',
+                },
+                name: { type: 'string', description: 'Parameter / exception name (uppercased on emit).' },
+                type: {
+                  type: 'string',
+                  description:
+                    'ABAP type expression. Required for IMPORTING/EXPORTING/CHANGING/TABLES; ignored for EXCEPTIONS/RAISING. Examples: "STRING", "I", "BAPIRET2", "TYPE STANDARD TABLE OF X", "LIKE DOKHL-OBJECT". For TABLES, include the leading TYPE/LIKE keyword.',
+                },
+                byValue: {
+                  type: 'boolean',
+                  description: 'Emit `VALUE(name)` wrapper. Default false (pass-by-reference).',
+                },
+                default: {
+                  type: 'string',
+                  description:
+                    'Raw ABAP literal — IMPORTING/CHANGING only. Emitted verbatim. Example: "\'X\'", "0", "SPACE".',
+                },
+                optional: { type: 'boolean', description: 'Emit `OPTIONAL` keyword.' },
+              },
+              required: ['kind', 'name'],
             },
           },
           serviceDefinition: { type: 'string', description: 'SRVB: service definition name (SRVD) to bind to' },

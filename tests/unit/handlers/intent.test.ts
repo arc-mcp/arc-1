@@ -3065,6 +3065,206 @@ ENDCLASS.`;
       expect(del!.url).toContain('lockHandle=');
     });
 
+    // ─── Issue #252: structured FM parameters ───────────────────────────
+
+    it('FUNC create with structured parameters: PUT body contains generated IMPORTING/EXPORTING clause', async () => {
+      const calls = captureFetch();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'FUNC',
+        name: 'Z_FM',
+        group: 'ZFG',
+        description: 'param test',
+        parameters: [
+          { kind: 'importing', name: 'IV_INPUT', type: 'STRING', byValue: true },
+          { kind: 'exporting', name: 'EV_OUTPUT', type: 'STRING', byValue: true },
+        ],
+        source: '  ev_output = iv_input.\n',
+      });
+      expect(result.isError).toBeUndefined();
+      const put = calls.find((c) => c.method === 'PUT' && c.url.includes('/source/main'));
+      expect(put).toBeDefined();
+      expect(put!.body).toContain('IMPORTING');
+      expect(put!.body).toContain('VALUE(IV_INPUT) TYPE STRING');
+      expect(put!.body).toContain('EXPORTING');
+      expect(put!.body).toContain('VALUE(EV_OUTPUT) TYPE STRING');
+      expect(put!.body).toContain('ev_output = iv_input');
+    });
+
+    it('FUNC update with structured parameters: splices into source preserving body', async () => {
+      const calls = captureFetch();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'update',
+        type: 'FUNC',
+        name: 'Z_FM',
+        group: 'ZFG',
+        parameters: [
+          { kind: 'importing', name: 'IV_INPUT', type: 'STRING', byValue: true },
+          { kind: 'changing', name: 'CV_FLAG', type: 'I' },
+        ],
+        source: 'FUNCTION z_fm.\n  cv_flag = cv_flag + 1.\nENDFUNCTION.\n',
+      });
+      expect(result.isError).toBeUndefined();
+      const put = calls.find((c) => c.method === 'PUT' && c.url.includes('/source/main'));
+      expect(put).toBeDefined();
+      expect(put!.body).toContain('IMPORTING');
+      expect(put!.body).toContain('VALUE(IV_INPUT) TYPE STRING');
+      expect(put!.body).toContain('CHANGING');
+      expect(put!.body).toContain('CV_FLAG TYPE I');
+      expect(put!.body).toContain('cv_flag = cv_flag + 1.');
+    });
+
+    it('FUNC create with structured parameters and SAPGUI *" block: strips block AND emits structured clause', async () => {
+      const calls = captureFetch();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'FUNC',
+        name: 'Z_FM',
+        group: 'ZFG',
+        description: 'mixed',
+        parameters: [{ kind: 'importing', name: 'IV_INPUT', type: 'STRING', byValue: true }],
+        source: 'FUNCTION z_fm.\n*"  IMPORTING IV_OLD TYPE STRING\n  WRITE / 1.\nENDFUNCTION.\n',
+      });
+      expect(result.isError).toBeUndefined();
+      const put = calls.find((c) => c.method === 'PUT' && c.url.includes('/source/main'));
+      expect(put).toBeDefined();
+      expect(put!.body).not.toContain('*"');
+      expect(put!.body).toContain('VALUE(IV_INPUT) TYPE STRING');
+    });
+
+    it('FUNC create with structured parameters but no source: synthesizes minimal stub', async () => {
+      const calls = captureFetch();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'FUNC',
+        name: 'Z_FM',
+        group: 'ZFG',
+        description: 'no source',
+        parameters: [{ kind: 'importing', name: 'IV_X', type: 'STRING', byValue: true }],
+      });
+      expect(result.isError).toBeUndefined();
+      const put = calls.find((c) => c.method === 'PUT' && c.url.includes('/source/main'));
+      expect(put).toBeDefined();
+      expect(put!.body).toMatch(/FUNCTION Z_FM[\s\n]+IMPORTING/);
+      expect(put!.body).toContain('VALUE(IV_X) TYPE STRING');
+      expect(put!.body).toContain('ENDFUNCTION.');
+    });
+
+    it('FUNC create without parameters or source: only POSTs creation, no source PUT', async () => {
+      const calls = captureFetch();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'FUNC',
+        name: 'Z_FM',
+        group: 'ZFG',
+        description: 'shell only',
+      });
+      expect(result.isError).toBeUndefined();
+      const put = calls.find((c) => c.method === 'PUT' && c.url.includes('/source/main'));
+      expect(put).toBeUndefined();
+    });
+
+    it('FUNC create with malformed parameters returns Zod error (no HTTP call)', async () => {
+      const calls = captureFetch();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'FUNC',
+        name: 'Z_FM',
+        group: 'ZFG',
+        // Invalid kind value
+        parameters: [{ kind: 'returning', name: 'RV_X', type: 'STRING' }],
+      });
+      expect(result.isError).toBe(true);
+      expect(calls.filter((c) => c.method === 'POST').length).toBe(0);
+    });
+
+    it('SAPRead FUNC with includeSignature=true returns JSON with structured signature', async () => {
+      const fmSource =
+        'function z_fm\n  importing\n    value(iv_x) type string default `hi`\n  exporting\n    value(ev_y) type string.\n  ev_y = iv_x.\nendfunction.\n';
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL) => {
+        const u = typeof url === 'string' ? url : url.toString();
+        if (u.includes('/source/main')) {
+          return Promise.resolve(mockResponse(200, fmSource, { 'x-csrf-token': 'T' }));
+        }
+        if (u.includes('quickSearch') || u.includes('informationsystem/search')) {
+          return Promise.resolve(mockResponse(200, '<adtcore:objectReferences/>', { 'x-csrf-token': 'T' }));
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'FUNC',
+        name: 'Z_FM',
+        group: 'ZFG',
+        includeSignature: true,
+      });
+      expect(result.isError).toBeUndefined();
+      const payload = JSON.parse(result.content[0]?.text ?? '{}') as {
+        source: string;
+        signature: { importing: { name: string }[]; exporting: { name: string }[] };
+      };
+      expect(payload.source).toContain('iv_x');
+      expect(payload.signature.importing[0]?.name).toBe('IV_X');
+      expect(payload.signature.exporting[0]?.name).toBe('EV_Y');
+    });
+
+    it('SAPRead FUNC without includeSignature returns plain source (backward compat)', async () => {
+      const fmSource = 'function z_fm\n  importing\n    value(iv_x) type string.\n  ev_y = iv_x.\nendfunction.\n';
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL) => {
+        const u = typeof url === 'string' ? url : url.toString();
+        if (u.includes('/source/main')) {
+          return Promise.resolve(mockResponse(200, fmSource, { 'x-csrf-token': 'T' }));
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'FUNC',
+        name: 'Z_FM',
+        group: 'ZFG',
+      });
+      expect(result.isError).toBeUndefined();
+      // Result must be raw source, not JSON.
+      expect(result.content[0]?.text).toContain('function z_fm');
+      // It must NOT be parseable as JSON describing a signature.
+      let isJsonShape = false;
+      try {
+        const parsed = JSON.parse(result.content[0]?.text ?? '');
+        isJsonShape = parsed && typeof parsed === 'object' && 'signature' in parsed;
+      } catch {
+        // Not JSON — that's the expected path.
+      }
+      expect(isJsonShape).toBe(false);
+    });
+
+    it('SAPRead FUNC with includeSignature on FM with no parameters returns empty arrays', async () => {
+      const fmSource = 'FUNCTION Z_EMPTY.\n  WRITE / 1.\nENDFUNCTION.\n';
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL) => {
+        const u = typeof url === 'string' ? url : url.toString();
+        if (u.includes('/source/main')) {
+          return Promise.resolve(mockResponse(200, fmSource, { 'x-csrf-token': 'T' }));
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'FUNC',
+        name: 'Z_EMPTY',
+        group: 'ZFG',
+        includeSignature: true,
+      });
+      expect(result.isError).toBeUndefined();
+      const payload = JSON.parse(result.content[0]?.text ?? '{}') as {
+        signature: Record<string, unknown[]>;
+      };
+      expect(payload.signature.importing).toEqual([]);
+      expect(payload.signature.exporting).toEqual([]);
+      expect(payload.signature.changing).toEqual([]);
+      expect(payload.signature.tables).toEqual([]);
+      expect(payload.signature.exceptions).toEqual([]);
+      expect(payload.signature.raising).toEqual([]);
+    });
+
     it('FUGR create still gated by allowedPackages', async () => {
       captureFetch();
       const restricted = new AdtClient({

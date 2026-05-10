@@ -113,6 +113,7 @@ import {
   listGroups,
   listTiles,
 } from '../adt/flp.js';
+import { type FmParameter, type FmParameterKind, parseFmSignature, spliceFmSignature } from '../adt/fm-signature.js';
 import {
   type GctsCloneParams,
   cloneRepo as gctsCloneRepo,
@@ -1463,6 +1464,25 @@ async function handleSAPRead(
       const { source, cacheHit, revalidated } = await cachedGet('FUNC', name, effectiveVersion, (ifNoneMatch) =>
         client.getFunction(group, name, { ifNoneMatch, version: effectiveVersion }),
       );
+      // Issue #252: when caller asks for includeSignature, return JSON with the
+      // source body and the parsed structured signature.
+      if (args.includeSignature === true) {
+        const parsed = parseFmSignature(source);
+        const grouped: Record<FmParameterKind, FmParameter[]> = {
+          importing: [],
+          exporting: [],
+          changing: [],
+          tables: [],
+          exceptions: [],
+          raising: [],
+        };
+        for (const p of parsed.params) grouped[p.kind].push(p);
+        const payload = {
+          source,
+          signature: grouped,
+        };
+        return textResult(JSON.stringify(payload, null, 2));
+      }
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
     case 'FUGR': {
@@ -3417,14 +3437,45 @@ async function handleSAPWrite(
       // "Parameter comment blocks are not allowed" — verified live a4h S/4HANA 2023,
       // issue #250). LLMs frequently emit them out of muscle memory because every
       // released FM has one. Strip and warn rather than fail.
+      //
+      // Issue #252: when `parameters` is supplied as a structured array, splice
+      // it into the FM source as ABAP-source-based signature syntax. If `source`
+      // is omitted entirely, fetch the existing source first to preserve the
+      // body. The structured clause replaces any existing signature region.
       let effectiveSource = source;
       let fmParamStripWarning: string | undefined;
+      let fmParamMergeWarning: string | undefined;
       if (type === 'FUNC') {
-        const stripped = stripFmParamCommentBlock(source);
+        const parameters = args.parameters as FmParameter[] | undefined;
+        if (parameters !== undefined) {
+          // If caller passed parameters but no source, fetch the current source so
+          // the body is preserved (the parameters array re-emits only the signature).
+          let baseSource = source;
+          if (!baseSource || baseSource.trim() === '') {
+            const groupName = String(args.group ?? '');
+            const fetched = await client.getFunction(groupName, name).catch(() => null);
+            baseSource = fetched?.source ?? `FUNCTION ${name}.\nENDFUNCTION.\n`;
+          } else if (!/^\s*FUNCTION\s+/i.test(baseSource)) {
+            // Body-only source: wrap in FUNCTION/ENDFUNCTION so the splicer has
+            // something to work with. Common shape from LLMs: just the body.
+            baseSource = `FUNCTION ${name}.\n${baseSource}\nENDFUNCTION.\n`;
+          }
+          try {
+            effectiveSource = spliceFmSignature(baseSource, name, parameters);
+          } catch {
+            // No FUNCTION token in the supplied source — fall back to user's source.
+            effectiveSource = baseSource;
+            fmParamMergeWarning =
+              'Could not splice structured parameters: source did not start with FUNCTION keyword. Used the supplied source verbatim.';
+          }
+        }
+        // Defense-in-depth: strip *" comment blocks even after splicing — the
+        // user's body may contain them (e.g. pasted from SAPGUI).
+        const stripped = stripFmParamCommentBlock(effectiveSource);
         effectiveSource = stripped.source;
         if (stripped.wasStripped) {
           fmParamStripWarning =
-            'Stripped *"…IMPORTING/EXPORTING…*" parameter comment blocks (SAP rejects them on PUT — manage FM parameters via SAPGUI/Eclipse).';
+            'Stripped *"…IMPORTING/EXPORTING…*" parameter comment blocks (SAP rejects them on PUT — pass `parameters` as a structured array instead).';
         }
       }
 
@@ -3455,6 +3506,7 @@ async function handleSAPWrite(
         checkNotes,
         cdsUpdateHint,
         fmParamStripWarning,
+        fmParamMergeWarning,
       );
       return warnings ? textResult(`${msg}\n\n${warnings}`) : textResult(msg);
     }
@@ -3679,17 +3731,43 @@ async function handleSAPWrite(
         return textResult(`Created ${type} ${name} in package ${pkg}.\n${result}${followUpHint}`);
       }
 
-      // Step 2: Write source code if provided
-      if (source) {
-        // FUNC: strip SAPGUI parameter comment blocks (see update path for rationale).
-        let createSource = source;
+      // Step 2: Write source code if provided.
+      // Issue #252: FUNC create accepts a structured `parameters` array; if
+      // provided we must follow up with a source PUT even when `source` is
+      // omitted (the array alone synthesizes a minimal FUNCTION/ENDFUNCTION
+      // body containing the signature clause).
+      const funcParameters = type === 'FUNC' ? (args.parameters as FmParameter[] | undefined) : undefined;
+      const shouldWriteSource = !!source || (funcParameters !== undefined && funcParameters.length > 0);
+      if (shouldWriteSource) {
+        // FUNC: build/splice the signature, then strip SAPGUI parameter comment
+        // blocks as defense-in-depth (see update path for rationale).
+        let createSource = source ?? '';
         let fmParamStripWarning: string | undefined;
+        let fmParamMergeWarning: string | undefined;
         if (type === 'FUNC') {
-          const stripped = stripFmParamCommentBlock(source);
+          if (funcParameters !== undefined) {
+            let baseSource: string;
+            if (!createSource || createSource.trim() === '') {
+              baseSource = `FUNCTION ${name}.\nENDFUNCTION.\n`;
+            } else if (!/^\s*FUNCTION\s+/i.test(createSource)) {
+              // Body-only source — wrap so the splicer has a signature region.
+              baseSource = `FUNCTION ${name}.\n${createSource}\nENDFUNCTION.\n`;
+            } else {
+              baseSource = createSource;
+            }
+            try {
+              createSource = spliceFmSignature(baseSource, name, funcParameters);
+            } catch {
+              createSource = baseSource;
+              fmParamMergeWarning =
+                'Could not splice structured parameters: source did not start with FUNCTION keyword. Used the supplied source verbatim.';
+            }
+          }
+          const stripped = stripFmParamCommentBlock(createSource);
           createSource = stripped.source;
           if (stripped.wasStripped) {
             fmParamStripWarning =
-              'Stripped *"…IMPORTING/EXPORTING…*" parameter comment blocks (manage FM parameters via SAPGUI/Eclipse).';
+              'Stripped *"…IMPORTING/EXPORTING…*" parameter comment blocks (pass `parameters` as a structured array instead).';
           }
         }
 
@@ -3712,7 +3790,12 @@ async function handleSAPWrite(
         );
         invalidateWrittenObject(type, name);
         const msg = `Created ${type} ${name} in package ${pkg} and wrote source code.`;
-        const warnings = mergePreWriteWarnings(preflightWarnings.warnings, lintWarnings.warnings, fmParamStripWarning);
+        const warnings = mergePreWriteWarnings(
+          preflightWarnings.warnings,
+          lintWarnings.warnings,
+          fmParamStripWarning,
+          fmParamMergeWarning,
+        );
         return warnings ? textResult(`${msg}\n\n${warnings}`) : textResult(msg);
       }
 
@@ -4441,13 +4524,22 @@ function runPreWriteLint(
     return { blocked: false };
   }
 
-  // abaplint supports ABAP source (PROG/CLAS/INTF/FUNC/INCL) and CDS views (DDLS) via
+  // abaplint supports ABAP source (PROG/CLAS/INTF/INCL) and CDS views (DDLS) via
   // its CDS parser. DDLS lint catches syntax errors (cds_parser_error) like missing commas,
   // wrong keywords, and invalid DDL constructs. BDEF/SRVD/SRVB/DDLX are silently ignored
   // by abaplint (no parser for those types — garbage passes without errors). TABL (define
   // table syntax) is not supported by the CDS parser and produces false cds_parser_error.
   // For unsupported types, SAP server-side compilation handles validation.
-  const LINTABLE_TYPES = new Set(['PROG', 'CLAS', 'INTF', 'FUNC', 'INCL', 'DDLS']);
+  //
+  // FUNC is intentionally excluded: abaplint's FM-source parser does not understand
+  // source-based signatures (`FUNCTION X\n  IMPORTING …\n.`) and emits a structural
+  // parser_error that blocks the write. Issue #252 made this visible — once we
+  // started emitting real signatures from structured `parameters`, every FUNC PUT
+  // hit the lint gate. Pre-#252 lint coverage was effectively trivial (only
+  // signature-less FUNCTION/ENDFUNCTION stubs passed). Validation falls back to
+  // SAP's server-side syntax check (opt-in via `SAP_CHECK_BEFORE_WRITE`) and the
+  // activate step.
+  const LINTABLE_TYPES = new Set(['PROG', 'CLAS', 'INTF', 'INCL', 'DDLS']);
   if (!LINTABLE_TYPES.has(type)) {
     return { blocked: false };
   }

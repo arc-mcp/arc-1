@@ -212,6 +212,35 @@ describe('Tool Definitions', () => {
     expect(sapRead.description).toContain('version parameter');
   });
 
+  it('SAPRead schema exposes includeSignature flag for FUNC (issue #252)', () => {
+    const tools = getToolDefinitions(DEFAULT_CONFIG);
+    const sapRead = tools.find((t) => t.name === 'SAPRead')!;
+    const schema = sapRead.inputSchema as Record<string, any>;
+    expect(schema.properties.includeSignature).toBeDefined();
+    expect(schema.properties.includeSignature.type).toBe('boolean');
+    expect(schema.properties.includeSignature.description).toContain('FUNC');
+    expect(schema.properties.includeSignature.description).toMatch(/signature|importing/i);
+  });
+
+  it('SAPWrite schema exposes structured parameters array for FUNC (issue #252)', () => {
+    const tools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true });
+    const sapWrite = tools.find((t) => t.name === 'SAPWrite')!;
+    const schema = sapWrite.inputSchema as Record<string, any>;
+    expect(schema.properties.parameters).toBeDefined();
+    expect(schema.properties.parameters.type).toBe('array');
+    const item = schema.properties.parameters.items;
+    expect(item.properties.kind.enum).toEqual([
+      'importing',
+      'exporting',
+      'changing',
+      'tables',
+      'exceptions',
+      'raising',
+    ]);
+    expect(item.required).toContain('kind');
+    expect(item.required).toContain('name');
+  });
+
   it('SAPLint exposes lint + formatter actions (atc/syntax moved to SAPDiagnose)', () => {
     const tools = getToolDefinitions(DEFAULT_CONFIG);
     const sapLint = tools.find((t) => t.name === 'SAPLint')!;

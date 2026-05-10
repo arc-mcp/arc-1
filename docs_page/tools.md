@@ -29,6 +29,7 @@ Read any SAP ABAP object.
 | `objectType` | string | No | For API_STATE: SAP object type (CLAS, INTF, PROG, FUGR, etc.) — auto-detected from name if omitted |
 | `version` | string | No | Source version: `active` (default), `inactive`, or `auto`. Applies to source-bearing types (PROG, CLAS, INTF, FUNC, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, FUGR, SRVB, SKTD, TABL, VIEW). See [Active vs Inactive Source](#active-vs-inactive-source) below. |
 | `force_refresh` | boolean | No | For source reads: bypass the cached source AND the inactive-list cache before reading. Use when you know the object changed outside ARC-1 in a way conditional GET can't catch. |
+| `includeSignature` | boolean | No | For `FUNC` only. When `true`, response is JSON `{source, signature: {importing[], exporting[], changing[], tables[], exceptions[], raising[]}}` — each parameter parsed into `{kind, name, type, byValue?, default?, optional?}`. Default `false` (returns plain source body). Use this to introspect FM signatures programmatically. See [SAPWrite for FUNC](#sapwrite-for-func-create--update-with-structured-parameters) for the round-trip. |
 
 **Supported types:**
 
@@ -245,7 +246,60 @@ Create or update ABAP source code. Handles lock/modify/unlock automatically.
 
 **Function group (`FUGR`) create:** POSTs `<group:abapFunctionGroup … adtcore:type="FUGR/F">` to `/sap/bc/adt/functions/groups` with content type `application/vnd.sap.adt.functions.groups.v3+xml`. Provide `package` and (for non-`$TMP`) `transport`. Delete the FUGR only after all its function modules have been deleted.
 
-**Function module (`FUNC`) create / update / delete (issue [#250](https://github.com/marianfoo/arc-1/issues/250)):** The parent FUGR must already exist — pass `group` explicitly on create (or auto-resolve via search on update/delete). Create POSTs `<fmodule:abapFunctionModule … adtcore:type="FUGR/FF">` with `<adtcore:containerRef>` to `/sap/bc/adt/functions/groups/{group}/fmodules`. The FM inherits its package from the parent FUGR — do not pass `package`. **Important caveat:** ARC-1 does NOT manage FM parameter signatures (IMPORTING/EXPORTING/CHANGING/EXCEPTIONS) — those live in separate metadata. Add parameters via SAPGUI/SE37 or Eclipse after activation. SAPGUI-style `*"…IMPORTING…"*` parameter comment blocks in source are auto-stripped before PUT (SAP rejects them with `FUNC_ADT028`) and a warning is appended to the response.
+**Function module (`FUNC`) create / update / delete (issue [#250](https://github.com/marianfoo/arc-1/issues/250)):** The parent FUGR must already exist — pass `group` explicitly on create (or auto-resolve via search on update/delete). Create POSTs `<fmodule:abapFunctionModule … adtcore:type="FUGR/FF">` with `<adtcore:containerRef>` to `/sap/bc/adt/functions/groups/{group}/fmodules`. The FM inherits its package from the parent FUGR — do not pass `package`. SAPGUI-style `*"…IMPORTING…"*` parameter comment blocks in source are auto-stripped before PUT as defense-in-depth (SAP rejects them with `FUNC_ADT028`) and a warning is appended in that case.
+
+#### SAPWrite for FUNC: create / update with structured parameters
+
+Issue [#252](https://github.com/marianfoo/arc-1/issues/252) added structured FM parameter management. Pass a `parameters` array to declare the function module's signature; ARC-1 builds the ABAP-source-based `IMPORTING / EXPORTING / CHANGING / TABLES / EXCEPTIONS / RAISING` clause and splices it into the source body before PUT. SAP ADT exposes parameters ONLY through `/source/main` (verified live on a4h S/4HANA 2023 + NPL 7.50 SP02) — there is no separate metadata endpoint.
+
+Each parameter:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `kind` | string | One of `importing`, `exporting`, `changing`, `tables`, `exceptions`, `raising`. |
+| `name` | string | Parameter / exception name. Always uppercased on emit. |
+| `type` | string | ABAP type expression (`STRING`, `I`, `BAPIRET2`, `TYPE STANDARD TABLE OF X`, `LIKE DOKHL-OBJECT`, …). Required for IMPORTING/EXPORTING/CHANGING/TABLES; ignored for EXCEPTIONS/RAISING. For TABLES, include the leading `TYPE` or `LIKE` keyword. |
+| `byValue` | boolean | Emit `VALUE(name)` wrapper. Default `false` (pass-by-reference). |
+| `default` | string | Raw ABAP literal — IMPORTING/CHANGING only. Emitted verbatim (no escaping). Examples: `'X'`, `0`, `space`. |
+| `optional` | boolean | Emit `OPTIONAL` keyword. |
+
+Example — create an FM with a typed signature:
+
+```jsonc
+SAPWrite({
+  action: "create",
+  type: "FUNC",
+  name: "Z_GREET",
+  group: "ZARC1_FG",
+  description: "Greet a user",
+  parameters: [
+    { kind: "importing", name: "IV_NAME",  type: "STRING", byValue: true, default: "'World'" },
+    { kind: "exporting", name: "EV_GREET", type: "STRING", byValue: true },
+    { kind: "raising",   name: "CX_ROOT" }
+  ],
+  source: "  ev_greet = |Hello { iv_name }|.\n"
+})
+```
+
+The `source` value is the FM body only — ARC-1 wraps it in `FUNCTION Z_GREET …. ENDFUNCTION.` and emits the signature clause from `parameters`. Or pass full `FUNCTION/ENDFUNCTION` source and the splicer will replace just the signature region. Or omit `source` entirely to create an empty-body FM with only the signature.
+
+Round-trip: `SAPRead({type: "FUNC", name: "Z_GREET", group: "ZARC1_FG", includeSignature: true})` returns:
+
+```jsonc
+{
+  "source": "FUNCTION z_greet\n  IMPORTING\n    VALUE(iv_name) TYPE string DEFAULT 'World'\n  EXPORTING\n    VALUE(ev_greet) TYPE string\n  RAISING\n    cx_root.\n  ev_greet = |Hello { iv_name }|.\nENDFUNCTION.",
+  "signature": {
+    "importing": [ { "kind": "importing", "name": "IV_NAME", "type": "string", "byValue": true, "default": "'World'" } ],
+    "exporting": [ { "kind": "exporting", "name": "EV_GREET", "type": "string", "byValue": true } ],
+    "changing":  [],
+    "tables":    [],
+    "exceptions": [],
+    "raising":   [ { "kind": "raising", "name": "CX_ROOT" } ]
+  }
+}
+```
+
+Backward-compat: when `parameters` is omitted, the existing source-only PUT path runs unchanged. When `includeSignature` is omitted on read, the response is plain text source.
 
 **Mixed-case object names rejected on create.** SAP TADIR is uppercase on every release; mixed-case names cause silent corruption (e.g., a DDLS named `Zc_MyView` registers as `ZC_MYVIEW` in TADIR but the source body keeps mixed case, confusing every downstream tool). `SAPWrite(action="create"\|"batch_create")` rejects mixed-case names pre-flight with an actionable error. The source code *inside* the object can still use mixed case (e.g., `define view entity Zc_MyView`); only the TADIR object name needs to be uppercase.
 

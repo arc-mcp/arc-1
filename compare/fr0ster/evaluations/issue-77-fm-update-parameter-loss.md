@@ -48,3 +48,19 @@ ARC-1 issue [#250](https://github.com/marianfoo/arc-1/issues/250) reported that 
 The parameter-loss bug class fr0ster identified is **still upstream-blocked** and intentionally out of scope for ARC-1's MVP. ARC-1's tool description warns LLMs explicitly that FM signature/parameter management (IMPORTING/EXPORTING/EXCEPTIONS) is NOT handled — operators add parameters via SAPGUI/SE37 or Eclipse after activation. SAPGUI-style `*"…IMPORTING…"*` parameter comment blocks in source are auto-stripped before PUT (SAP rejects them with `FUNC_ADT028 "Parameter comment blocks are not allowed"`) and a warning is appended to the response.
 
 When fr0ster's investigation lands a metadata-preserving update pattern, ARC-1 can add it as a follow-up (likely a `signature`/`parameters` payload field on `SAPWrite type=FUNC`).
+
+## 2026-05-10 update — fr0ster #77 parameter-loss class CLOSED for ARC-1 (issue #252)
+
+User-asked follow-up to ARC-1 issue #250: ghostxwheel asked "no parameters can be added via mcp — can direct parameter addition be added later? Maybe via SAPWrite update?" Live curl probing of a4h S/4HANA 2023 + NPL 7.50 SP02 settled the question that fr0ster's diagnostic probe (commit `3a3fa65`) was investigating: **FM parameters do NOT live in a separate metadata document. They live INLINE in `/source/main` as ABAP source-based signature syntax** (`IMPORTING VALUE(name) TYPE type [DEFAULT x] [OPTIONAL]`). Every standard FM (BAPI_USER_GETLIST, POPUP_TO_CONFIRM, STFC_CONNECTION, RFC_PING, ...) ships its parameters this way. PUTting an `<fmodule:parameter>` element to the root metadata endpoint silently no-ops (verified — XML element is accepted with HTTP 200, but a fresh GET shows no change). PUTting `*"IMPORTING"*` SAPGUI-comment-block syntax is rejected with HTTP 400 / `FUNC_ADT028 "Parameter comment blocks are not allowed"`.
+
+The original "parameter loss" symptom fr0ster observed had a different cause than they suspected: `UpdateFunctionModule` lost parameters because the LLM-supplied source body omitted the IMPORTING/EXPORTING block (read returned just the source body, LLM rewrote it without preserving the signature lines, the PUT stripped them). The fix is structural, not metadata-endpoint based.
+
+ARC-1 [PR #253](https://github.com/marianfoo/arc-1/pull/253) (issue [#252](https://github.com/marianfoo/arc-1/issues/252)) ships:
+
+- `src/adt/fm-signature.ts` — pure-function `buildFmSignatureClause` / `parseFmSignature` / `spliceFmSignature` (~25 unit tests, including round-trip property test against real BAPI_USER_GETLIST + POPUP_TO_CONFIRM source bodies).
+- `SAPWrite(type='FUNC', parameters=[{kind, name, type, byValue?, default?, optional?}, …])` — array-to-source generator. Splices the signature into the user's body before PUT. Backward-compat: omitting `parameters` runs the existing source-only path unchanged.
+- `SAPRead(type='FUNC', includeSignature=true)` — parses the source and returns `{source, signature: {importing[], exporting[], changing[], tables[], exceptions[], raising[]}}` so an LLM can introspect a signature without re-parsing ABAP.
+- Cross-release portability: verified live on a4h S/4HANA 2023 (write+read full lifecycle) + NPL 7.50 SP02 (read-only, six standard FMs). Both systems use the source-based form with no `*"` blocks.
+- ARC-1's tool description for SAPWrite drops the "FM parameter signatures NOT managed" warning. The strip-and-warn for `*"` blocks remains as defense-in-depth.
+
+Side fix: removed `FUNC` from `runPreWriteLint`'s `LINTABLE_TYPES`. abaplint's FM-source parser doesn't understand source-based signatures and emits a structural `parser_error` that would block every signature-bearing PUT. Pre-#252 lint coverage for FUNC was effectively trivial (only signature-less stubs passed). Validation falls back to SAP's server-side syntax check (opt-in via `SAP_CHECK_BEFORE_WRITE`) and the activate step.
