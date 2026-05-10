@@ -716,6 +716,27 @@ describe('Tool Definitions', () => {
       return sapWrite.inputSchema as Record<string, any>;
     }
 
+    it('exposes generate_behavior_implementation in the SAPWrite action enum (on-prem)', () => {
+      const schema = getSAPWriteSchema(false);
+      const action = schema.properties.action;
+      expect(action.enum).toContain('generate_behavior_implementation');
+      expect(action.description.toLowerCase()).toContain('generate_behavior_implementation');
+    });
+
+    it('exposes activate and dryRun parameters for generate_behavior_implementation (on-prem)', () => {
+      const schema = getSAPWriteSchema(false);
+      expect(schema.properties.activate).toBeDefined();
+      expect(schema.properties.activate.type).toBe('boolean');
+      expect(schema.properties.dryRun).toBeDefined();
+      expect(schema.properties.dryRun.type).toBe('boolean');
+    });
+
+    it('the SAPWrite tool description mentions generate_behavior_implementation (on-prem)', () => {
+      const tools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true, systemType: 'onprem' });
+      const sapWrite = tools.find((t) => t.name === 'SAPWrite');
+      expect(sapWrite?.description.toLowerCase()).toContain('generate_behavior_implementation');
+    });
+
     it('exposes the messages property at top-level SAPWrite (on-prem)', () => {
       const schema = getSAPWriteSchema(false);
       const messages = schema.properties.messages;

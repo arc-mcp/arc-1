@@ -648,6 +648,24 @@ export interface DataElementInfo {
 
 // ─── Class Metadata Types ───────────────────────────────────────────
 
+/**
+ * Reference from a behavior pool class to its root CDS entity (BDEF anchor).
+ *
+ * Present in `<class:abapClass>` XML as a `<class:rootEntityRef>` child element
+ * when the class is a RAP behavior pool (`category === 'behaviorPool'`). The
+ * `name` is the BDEF/DDLS root name (e.g. `ZR_DM_PROJECT`); the `type` is the
+ * ADT object-type code (typically `STOB/DO`); `uri` is the absolute ADT path
+ * to the root entity source.
+ *
+ * This is the primary auto-discovery anchor for `generate_behavior_implementation`
+ * — see `src/adt/rap-generate.ts`.
+ */
+export interface ClassRootEntityRef {
+  name: string;
+  type: string;
+  uri: string;
+}
+
 /** Class metadata from /sap/bc/adt/oo/classes/{name} (object endpoint, no /source/main) */
 export interface ClassMetadata {
   name: string;
@@ -657,6 +675,11 @@ export interface ClassMetadata {
   category: string;
   fixPointArithmetic: boolean;
   package: string;
+  /**
+   * Root entity reference for behavior pool classes (when category === 'behaviorPool').
+   * Used to auto-discover the bound BDEF for one-shot RAP behavior implementation generation.
+   */
+  rootEntityRef?: ClassRootEntityRef;
 }
 
 /** Structured class response with metadata + decomposed includes (AFF-style) */

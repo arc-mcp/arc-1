@@ -450,7 +450,15 @@ const batchObjectSchemaBtp = z.object({
 
 export const SAPWriteSchema = z
   .object({
-    action: z.enum(['create', 'update', 'delete', 'edit_method', 'batch_create', 'scaffold_rap_handlers']),
+    action: z.enum([
+      'create',
+      'update',
+      'delete',
+      'edit_method',
+      'batch_create',
+      'scaffold_rap_handlers',
+      'generate_behavior_implementation',
+    ]),
     type: z.enum(SAPWRITE_TYPES_ONPREM).optional(),
     name: z.string().optional(),
     source: z.string().optional(),
@@ -498,6 +506,8 @@ export const SAPWriteSchema = z
     bdefName: z.string().optional(),
     autoApply: z.coerce.boolean().optional(),
     targetAlias: z.string().optional(),
+    activate: z.coerce.boolean().optional(),
+    dryRun: z.coerce.boolean().optional(),
     /** FUNC structured signature parameters (issue #252). When provided, ARC-1 builds the
      * IMPORTING/EXPORTING/CHANGING/TABLES/EXCEPTIONS/RAISING clause from the array and
      * splices it into the FM source body. Backward-compatible: when omitted, the existing
@@ -509,7 +519,15 @@ export const SAPWriteSchema = z
 
 export const SAPWriteSchemaBtp = z
   .object({
-    action: z.enum(['create', 'update', 'delete', 'edit_method', 'batch_create', 'scaffold_rap_handlers']),
+    action: z.enum([
+      'create',
+      'update',
+      'delete',
+      'edit_method',
+      'batch_create',
+      'scaffold_rap_handlers',
+      'generate_behavior_implementation',
+    ]),
     type: z.enum(SAPWRITE_TYPES_BTP).optional(),
     name: z.string().optional(),
     source: z.string().optional(),
@@ -556,6 +574,8 @@ export const SAPWriteSchemaBtp = z
     bdefName: z.string().optional(),
     autoApply: z.coerce.boolean().optional(),
     targetAlias: z.string().optional(),
+    activate: z.coerce.boolean().optional(),
+    dryRun: z.coerce.boolean().optional(),
     /** FUNC structured signature parameters — same shape as on-prem. Harmless on BTP since FUNC write
      * is on-prem-only. */
     parameters: z.array(fmParameterSchema).optional(),

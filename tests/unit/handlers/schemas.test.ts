@@ -654,6 +654,47 @@ describe('SAPWriteSchema', () => {
     }
   });
 
+  it('accepts generate_behavior_implementation action with new fields', () => {
+    const result = SAPWriteSchema.safeParse({
+      action: 'generate_behavior_implementation',
+      type: 'CLAS',
+      name: 'ZBP_DM_PROJECT',
+      bdefName: 'ZR_DM_PROJECT',
+      targetAlias: 'Project',
+      activate: false,
+      dryRun: true,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.activate).toBe(false);
+      expect(result.data.dryRun).toBe(true);
+      expect(result.data.action).toBe('generate_behavior_implementation');
+    }
+  });
+
+  it('accepts generate_behavior_implementation with only the required name (auto-discovery + activate-by-default)', () => {
+    const result = SAPWriteSchema.safeParse({
+      action: 'generate_behavior_implementation',
+      type: 'CLAS',
+      name: 'ZBP_DM_PROJECT',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      // Defaults: activate / dryRun / bdefName are optional → undefined here
+      expect(result.data.activate).toBeUndefined();
+      expect(result.data.dryRun).toBeUndefined();
+    }
+  });
+
+  it('rejects unknown SAPWrite action values', () => {
+    const result = SAPWriteSchema.safeParse({
+      action: 'totally_invented_action',
+      type: 'CLAS',
+      name: 'ZCL_NOT_A_REAL_ACTION',
+    });
+    expect(result.success).toBe(false);
+  });
+
   it('validates objects array structure', () => {
     // Valid: objects with type and name
     expect(

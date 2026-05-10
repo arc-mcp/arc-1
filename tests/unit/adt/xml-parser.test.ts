@@ -949,6 +949,51 @@ describe('XML Parser', () => {
       expect(parseClassMetadata(xml).category).toBe('99');
     });
 
+    it('parses rootEntityRef from a behavior pool class fixture (live A4H capture)', () => {
+      // Captured from a4h.marianzeis.de via:
+      //   curl -H 'Accept: application/vnd.sap.adt.oo.classes.v4+xml' \
+      //        /sap/bc/adt/oo/classes/zbp_dm_project
+      // ZBP_DM_PROJECT is a RAP behavior pool for the BDEF ZR_DM_PROJECT.
+      const xml = loadFixture('class-metadata-behaviorpool.xml');
+      const result = parseClassMetadata(xml);
+
+      expect(result.name).toBe('ZBP_DM_PROJECT');
+      expect(result.category).toBe('behaviorPool');
+      expect(result.rootEntityRef).toBeDefined();
+      expect(result.rootEntityRef?.name).toBe('ZR_DM_PROJECT');
+      expect(result.rootEntityRef?.type).toBe('STOB/DO');
+      expect(result.rootEntityRef?.uri).toContain('/sap/bc/adt/ddic/ddl/sources/zr_dm_project');
+    });
+
+    it('omits rootEntityRef when XML lacks the element (regular class)', () => {
+      const xml = `<?xml version="1.0"?>
+<class:abapClass adtcore:name="ZCL_REGULAR" adtcore:description="Plain class" adtcore:language="EN"
+    class:fixPointArithmetic="true"
+    xmlns:class="http://www.sap.com/adt/oo/classes" xmlns:adtcore="http://www.sap.com/adt/core">
+  <adtcore:packageRef adtcore:name="$TMP"/>
+</class:abapClass>`;
+      const result = parseClassMetadata(xml);
+      expect(result.rootEntityRef).toBeUndefined();
+    });
+
+    it('parses inline rootEntityRef when @_name is present (synthetic minimal)', () => {
+      const xml = `<?xml version="1.0"?>
+<class:abapClass adtcore:name="ZBP_MIN" adtcore:description="Min BP" adtcore:language="EN"
+    class:category="behaviorPool" class:fixPointArithmetic="true"
+    xmlns:class="http://www.sap.com/adt/oo/classes" xmlns:adtcore="http://www.sap.com/adt/core">
+  <adtcore:packageRef adtcore:name="$TMP"/>
+  <class:rootEntityRef adtcore:uri="/sap/bc/adt/ddic/ddl/sources/zr_min/source/main#name=zr_min"
+                       adtcore:type="STOB/DO" adtcore:name="ZR_MIN"/>
+</class:abapClass>`;
+      const result = parseClassMetadata(xml);
+      expect(result.category).toBe('behaviorPool');
+      expect(result.rootEntityRef).toEqual({
+        name: 'ZR_MIN',
+        type: 'STOB/DO',
+        uri: '/sap/bc/adt/ddic/ddl/sources/zr_min/source/main#name=zr_min',
+      });
+    });
+
     it('handles empty/minimal XML gracefully', () => {
       const xml = `<?xml version="1.0"?>
 <class:abapClass xmlns:class="http://www.sap.com/adt/oo/classes" xmlns:adtcore="http://www.sap.com/adt/core"/>`;

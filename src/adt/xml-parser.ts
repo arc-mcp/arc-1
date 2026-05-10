@@ -998,6 +998,20 @@ export function parseClassMetadata(xml: string): ClassMetadata {
 
   const rawCategory = String(cls['@_category'] ?? '');
 
+  // <class:rootEntityRef> is present on behavior pool classes (category=behaviorPool).
+  // It binds the class back to its root CDS entity (the BDEF/DDLS name); used by
+  // SAPWrite(action="generate_behavior_implementation") to auto-discover the BDEF
+  // without a second metadata round-trip. Absent on regular classes.
+  const rootEntityRefRaw = cls.rootEntityRef as Record<string, unknown> | undefined;
+  const rootEntityRefName = String(rootEntityRefRaw?.['@_name'] ?? '');
+  const rootEntityRef = rootEntityRefName
+    ? {
+        name: rootEntityRefName,
+        type: String(rootEntityRefRaw?.['@_type'] ?? ''),
+        uri: String(rootEntityRefRaw?.['@_uri'] ?? ''),
+      }
+    : undefined;
+
   return {
     name: String(cls['@_name'] ?? ''),
     description: String(cls['@_description'] ?? ''),
@@ -1006,6 +1020,7 @@ export function parseClassMetadata(xml: string): ClassMetadata {
     category: CLASS_CATEGORY_MAP[rawCategory] ?? rawCategory,
     fixPointArithmetic: String(cls['@_fixPointArithmetic'] ?? 'false') === 'true',
     package: String(pkgRef['@_name'] ?? ''),
+    ...(rootEntityRef ? { rootEntityRef } : {}),
   };
 }
 

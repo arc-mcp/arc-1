@@ -8755,6 +8755,81 @@ ENDCLASS.`;
     });
   });
 
+  describe('SAPWrite generate_behavior_implementation (PR-C)', () => {
+    it('rejects type != CLAS with a clear error message', async () => {
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'generate_behavior_implementation',
+        type: 'PROG',
+        name: 'ZHELLO',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('only supported for type=CLAS');
+    });
+
+    it('rejects when name is missing', async () => {
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'generate_behavior_implementation',
+        type: 'CLAS',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('name');
+    });
+
+    it('Zod schema accepts the new action + boolean fields and forwards them to the orchestrator', async () => {
+      // A regular (non-behavior-pool) class metadata XML lets the orchestrator
+      // run through Zod validation and the handler dispatch and then surface a
+      // domain-level discovery error. Reaching that error proves the schema
+      // accepted the new action and its boolean fields.
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL) => {
+        const urlStr = String(url);
+        if (urlStr.endsWith('/sap/bc/adt/oo/classes/ZCL_REGULAR')) {
+          return Promise.resolve(
+            mockResponse(
+              200,
+              `<?xml version="1.0"?>
+<class:abapClass xmlns:class="http://www.sap.com/adt/oo/classes" xmlns:adtcore="http://www.sap.com/adt/core"
+  adtcore:name="ZCL_REGULAR" adtcore:description="Plain class" adtcore:language="EN"
+  class:fixPointArithmetic="true">
+  <adtcore:packageRef adtcore:name="$TMP"/>
+</class:abapClass>`,
+              { 'x-csrf-token': 'T' },
+            ),
+          );
+        }
+        return Promise.resolve(mockResponse(200, '<ok/>', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'generate_behavior_implementation',
+        type: 'CLAS',
+        name: 'ZCL_REGULAR',
+        activate: false,
+        dryRun: true,
+      });
+      expect(result.isError).toBe(true);
+      // The class isn't a behavior pool → the orchestrator throws a precise
+      // domain error rather than a generic Zod schema rejection. Either error
+      // path proves the action+args reached the handler.
+      expect(result.content[0]?.text).toMatch(/not a RAP behavior pool|cannot auto-discover BDEF/);
+    });
+
+    it('appears in the SAPWrite unknown-action hint', async () => {
+      // Indirect: when an unrelated request is misrouted through SAPWrite with
+      // an invalid action, the error message must list every valid action so
+      // LLMs can self-correct. generate_behavior_implementation is now valid.
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'invented_action_xyz',
+        type: 'CLAS',
+        name: 'ZCL_TEST',
+      });
+      expect(result.isError).toBe(true);
+      // Zod validation rejects before reaching the unknown-action branch in
+      // the handler — assert on the Zod-formatted enum description instead.
+      expect(result.content[0]?.text.toLowerCase()).toContain('generate_behavior_implementation');
+    });
+  });
+
   describe('hyperfocused mode (SAP tool)', () => {
     it('routes SAP(read) to SAPRead', async () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAP', {

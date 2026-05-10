@@ -57,6 +57,14 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   // plain create/update. The featureGate tag also keeps this action aligned
   // with the SAPTransport/SAPGit/FLP pattern for future enforcement.
   'SAPWrite.scaffold_rap_handlers': { scope: 'write', opType: OperationType.Update, featureGate: 'rap' },
+  // generate_behavior_implementation is the higher-level RAP one-shot wrapper
+  // around scaffold_rap_handlers — same scope, same opType, same RAP feature
+  // gate. Explicit entry so admins can target it with SAP_DENY_ACTIONS.
+  'SAPWrite.generate_behavior_implementation': {
+    scope: 'write',
+    opType: OperationType.Update,
+    featureGate: 'rap',
+  },
 
   // ── SAPActivate ──────────────────────────────────────────────────
   SAPActivate: { scope: 'write', opType: OperationType.Activate },

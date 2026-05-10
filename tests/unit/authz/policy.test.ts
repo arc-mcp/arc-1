@@ -136,6 +136,15 @@ describe('ACTION_POLICY matrix', () => {
     expect(policy?.opType).toBe(OperationType.Update);
     expect(policy?.featureGate).toBe('rap');
   });
+
+  it('SAPWrite.generate_behavior_implementation has explicit entry with rap feature gate (PR-C)', () => {
+    // Mirror of the scaffold_rap_handlers contract — the same admin
+    // SAP_DENY_ACTIONS surface and RAP feature-availability gate apply.
+    const policy = getActionPolicy('SAPWrite', 'generate_behavior_implementation');
+    expect(policy?.scope).toBe('write');
+    expect(policy?.opType).toBe(OperationType.Update);
+    expect(policy?.featureGate).toBe('rap');
+  });
 });
 
 describe('getActionPolicy', () => {

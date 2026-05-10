@@ -167,7 +167,8 @@ const SAPWRITE_DESC_ONPREM =
   'For edit_method: surgically replace a single method body in a CLAS without sending the full class source. ' +
   'Provide just the new method implementation code in "source" — 95% fewer tokens than full-class updates. ' +
   'For batch_create: create and activate multiple objects in a single call — ideal for RAP stacks (TABL → DDLS → DCLS → BDEF → SRVD). Pass "objects" array with dependency order. ' +
-  'For scaffold_rap_handlers: derive missing RAP behavior handler signatures from an interface BDEF and optionally create missing lhc_* skeletons plus inject declarations and empty implementation stubs into an existing behavior pool class.';
+  'For scaffold_rap_handlers: derive missing RAP behavior handler signatures from an interface BDEF and optionally create missing lhc_* skeletons plus inject declarations and empty implementation stubs into an existing behavior pool class. ' +
+  'For generate_behavior_implementation: one-shot RAP behavior pool — auto-discover the bound BDEF via class metadata (rootEntityRef), scaffold every required handler (creating lhc_<alias> skeletons when missing), write under one lock, and (by default) activate. Reliable equivalent of Eclipse ADT\'s "Generate Behavior Implementation" Cmd+1 quickfix without the broken /sap/bc/adt/quickfixes/proposals/.../create_class_implementation server endpoint.';
 
 const SAPWRITE_DESC_BTP =
   'Create or update ABAP source code and DDIC metadata (BTP ABAP Environment). Handles lock/modify/unlock automatically. Supports CLAS, INTF, DDLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL, DOMA, DTEL, MSAG. ' +
@@ -182,7 +183,8 @@ const SAPWRITE_DESC_BTP =
   'Must use ABAP Cloud language version (no classic statements). Only Z*/Y* namespace allowed on BTP. ' +
   'For edit_method: surgically replace a single method body in a CLAS without sending the full class source. ' +
   'For batch_create: create and activate multiple objects in a single call — ideal for RAP stacks (TABL → DDLS → DCLS → BDEF → SRVD). ' +
-  'For scaffold_rap_handlers: derive missing RAP behavior handler signatures from an interface BDEF and optionally create missing lhc_* skeletons plus inject declarations and empty implementation stubs into an existing behavior pool class.';
+  'For scaffold_rap_handlers: derive missing RAP behavior handler signatures from an interface BDEF and optionally create missing lhc_* skeletons plus inject declarations and empty implementation stubs into an existing behavior pool class. ' +
+  'For generate_behavior_implementation: one-shot RAP behavior pool — auto-discover the bound BDEF via class metadata (rootEntityRef), scaffold every required handler (creating lhc_<alias> skeletons when missing), write under one lock, and (by default) activate.';
 
 // ─── SAPContext Types ───────────────────────────────────────────────
 
@@ -570,9 +572,17 @@ export function getToolDefinitions(
         properties: {
           action: {
             type: 'string',
-            enum: ['create', 'update', 'delete', 'edit_method', 'batch_create', 'scaffold_rap_handlers'],
+            enum: [
+              'create',
+              'update',
+              'delete',
+              'edit_method',
+              'batch_create',
+              'scaffold_rap_handlers',
+              'generate_behavior_implementation',
+            ],
             description:
-              'Write action. edit_method: surgically replace a single method body (requires type=CLAS, method, and source params). batch_create: create and activate multiple objects in sequence (requires objects array). scaffold_rap_handlers: derive missing behavior-pool handler signatures from interface BDEF declarations and optionally inject declarations plus empty implementation stubs.',
+              'Write action. edit_method: surgically replace a single method body (requires type=CLAS, method, and source params). batch_create: create and activate multiple objects in sequence (requires objects array). scaffold_rap_handlers: derive missing behavior-pool handler signatures from interface BDEF declarations and optionally inject declarations plus empty implementation stubs. generate_behavior_implementation: one-shot RAP behavior pool — auto-discover the bound BDEF via class rootEntityRef, scaffold every required handler (creating lhc_<alias> skeletons when missing), write under one lock, and optionally activate. The reliable equivalent of Eclipse ADT\'s "Generate Behavior Implementation" Cmd+1 quickfix.',
           },
           type: {
             type: 'string',
@@ -596,17 +606,27 @@ export function getToolDefinitions(
           bdefName: {
             type: 'string',
             description:
-              'For scaffold_rap_handlers action: interface BDEF name used to derive required handler signatures (e.g., ZI_TRAVELREQ). The BDEF is parsed to find every action/determination/validation/authorization that must exist in the behavior pool.',
+              "For scaffold_rap_handlers action: interface BDEF name used to derive required handler signatures (e.g., ZI_TRAVELREQ). The BDEF is parsed to find every action/determination/validation/authorization that must exist in the behavior pool. For generate_behavior_implementation: optional override; default discovery reads the class metadata's rootEntityRef to locate the BDEF automatically.",
           },
           autoApply: {
             type: 'boolean',
             description:
-              'For scaffold_rap_handlers: when true, missing METHODS signatures are inserted into matching lhc_* class definitions, empty METHOD stubs are inserted into matching implementation blocks where possible, and the class source is written back under a single lock. When false (default), returns a JSON report of required vs. missing signatures without modifying the class — use this first to preview, then re-run with autoApply=true to commit.',
+              'For scaffold_rap_handlers: when true, missing METHODS signatures are inserted into matching lhc_* class definitions, empty METHOD stubs are inserted into matching implementation blocks where possible, and the class source is written back under a single lock. When false (default), returns a JSON report of required vs. missing signatures without modifying the class — use this first to preview, then re-run with autoApply=true to commit. (Not used by generate_behavior_implementation, which always applies; use dryRun=true there to preview.)',
           },
           targetAlias: {
             type: 'string',
             description:
-              'For scaffold_rap_handlers: optional RAP entity alias filter (e.g., Travel, Segment) to scaffold only one handler class. When omitted, all entities declared in the BDEF are scaffolded. Case-insensitive.',
+              'For scaffold_rap_handlers and generate_behavior_implementation: optional RAP entity alias filter (e.g., Travel, Segment) to scaffold only one handler class. When omitted, all entities declared in the BDEF are scaffolded. Case-insensitive.',
+          },
+          activate: {
+            type: 'boolean',
+            description:
+              'For generate_behavior_implementation: when true (default), runs SAPActivate on the class after writing. When false, only the source is written. Activation failures matching the well-known "Local classes of CL_ABAP_BEHAVIOR_HANDLER…" stale-active coupling do not throw — they return activation.success=false with a guided recovery hint so the source remains usable.',
+          },
+          dryRun: {
+            type: 'boolean',
+            description:
+              'For generate_behavior_implementation: when true, runs discovery + cross-validation + scaffold planning and returns the report without writing or activating. Use this to preview what would change.',
           },
           description: {
             type: 'string',

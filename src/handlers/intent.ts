@@ -129,6 +129,7 @@ import {
   pullRepo as gctsPullRepo,
   switchBranch as gctsSwitchBranch,
 } from '../adt/gcts.js';
+import { generateBehaviorImplementation } from '../adt/rap-generate.js';
 import {
   applyRapHandlerScaffold,
   extractRapHandlerRequirements,
@@ -4084,6 +4085,41 @@ async function handleSAPWrite(
       );
       return warnings ? textResult(`${msg}\n\n${warnings}\n\n${details}`) : textResult(`${msg}\n\n${details}`);
     }
+    case 'generate_behavior_implementation': {
+      // PR-C: high-level RAP one-shot — auto-discover BDEF via class metadata's
+      // rootEntityRef, scaffold every required handler (creating lhc_<alias>
+      // skeletons when missing), write under one lock, and (by default) activate.
+      // Reliable equivalent of Eclipse ADT's "Generate Behavior Implementation"
+      // Cmd+1 quickfix; avoids the broken /sap/bc/adt/quickfixes/proposals/
+      // create_class_implementation server endpoint (HTTP 500 on a4h, verified
+      // live during PR-C research). See docs/plans/add-generate-behavior-implementation.md.
+      if (type !== 'CLAS') {
+        return errorResult('generate_behavior_implementation is only supported for type=CLAS behavior pool classes.');
+      }
+      if (!name) {
+        return errorResult('"name" is required for generate_behavior_implementation.');
+      }
+      const dryRun = args.dryRun === true || String(args.dryRun ?? '') === 'true';
+      const activate = args.activate === undefined ? true : args.activate === true || String(args.activate) === 'true';
+      const explicitBdef = (args.bdefName as string | undefined)?.trim() || undefined;
+      const targetAlias = (args.targetAlias as string | undefined)?.trim() || undefined;
+
+      // Package gate only when we'll actually mutate. dryRun=true is read-only;
+      // bypassing the gate matches the scaffold_rap_handlers preview pattern.
+      if (!dryRun) {
+        await enforcePackageForExistingObject();
+      }
+
+      const result = await generateBehaviorImplementation(client, name, {
+        bdefName: explicitBdef,
+        targetAlias,
+        activate,
+        dryRun,
+        transport,
+      });
+      invalidateWrittenObject();
+      return textResult(JSON.stringify(result, null, 2));
+    }
     case 'delete': {
       await enforcePackageForExistingObject();
 
@@ -4418,7 +4454,7 @@ async function handleSAPWrite(
     }
     default:
       return errorResult(
-        `Unknown SAPWrite action: ${action}. Supported: create, update, delete, edit_method, batch_create, scaffold_rap_handlers`,
+        `Unknown SAPWrite action: ${action}. Supported: create, update, delete, edit_method, batch_create, scaffold_rap_handlers, generate_behavior_implementation`,
       );
   }
 }
