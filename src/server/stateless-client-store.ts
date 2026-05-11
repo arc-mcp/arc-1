@@ -161,6 +161,21 @@ export class StatelessDcrClientStore implements OAuthRegisteredClientsStore {
     if (!signingSecret) {
       throw new Error('StatelessDcrClientStore requires a non-empty signingSecret');
     }
+    // Defense-in-depth: warn (don't throw) on weak signing secrets. NIST
+    // SP 800-131A r2 sets 112 bits / 14 bytes as the HMAC floor; 128 bits /
+    // 16 bytes is the conservative consensus across production OAuth servers
+    // (Keycloak documents 14 chars, Okta requires 32 for client_secret_jwt,
+    // Hydra accepts 6 silently). ARC-1's legacy default (XSUAA `clientsecret`,
+    // typically 40+ chars) clears the bar; the realistic trigger here is a
+    // test/dev secret. Use byte length, not char length, so multi-byte UTF-8
+    // is measured correctly.
+    const secretBytes = Buffer.byteLength(signingSecret, 'utf8');
+    if (secretBytes < 16) {
+      logger.warn(
+        'StatelessDcrClientStore signing secret is shorter than 16 bytes (128 bits) — below the recommended minimum. Use `openssl rand -base64 48` for a secure value.',
+        { bytes: secretBytes },
+      );
+    }
     // Derive a dedicated HMAC key so the raw service-binding secret is never
     // used directly to sign client_ids. The KDF_LABEL doubles as a domain
     // separator (see comment on the constant).
@@ -238,11 +253,18 @@ export class StatelessDcrClientStore implements OAuthRegisteredClientsStore {
       idBytes: clientId.length,
     });
 
+    // RFC 7591 §3.2.1: `client_secret_expires_at` is REQUIRED when a
+    // `client_secret` is issued. Value is the absolute expiry time in
+    // seconds since epoch, OR exactly 0 if the secret never expires —
+    // exactly the semantic ARC1_OAUTH_DCR_TTL_SECONDS=0 introduces.
+    const clientSecretExpiresAt = this.ttlSeconds > 0 ? issuedAt + this.ttlSeconds : 0;
+
     return {
       ...client,
       client_id: clientId,
       client_secret: clientSecret,
       client_id_issued_at: issuedAt,
+      client_secret_expires_at: clientSecretExpiresAt,
     };
   }
 

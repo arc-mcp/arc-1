@@ -849,6 +849,51 @@ describe('validateConfig', () => {
     }
   });
 
+  it('warns to stderr (without throwing) when dcrSigningSecret is set with xsuaaAuth=false', () => {
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      expect(() =>
+        validateConfig({
+          ...DEFAULT_CONFIG,
+          dcrSigningSecret: 'some-stable-secret',
+          xsuaaAuth: false,
+        }),
+      ).not.toThrow();
+      expect(stderrSpy).toHaveBeenCalledWith(
+        expect.stringContaining('ARC1_DCR_SIGNING_SECRET is set but SAP_XSUAA_AUTH=false'),
+      );
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('does not warn about dcrSigningSecret when xsuaaAuth=true', () => {
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      validateConfig({
+        ...DEFAULT_CONFIG,
+        dcrSigningSecret: 'some-stable-secret',
+        xsuaaAuth: true,
+      });
+      expect(stderrSpy).not.toHaveBeenCalledWith(expect.stringContaining('ARC1_DCR_SIGNING_SECRET'));
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('does not warn when dcrSigningSecret is unset', () => {
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      validateConfig({
+        ...DEFAULT_CONFIG,
+        xsuaaAuth: false,
+      });
+      expect(stderrSpy).not.toHaveBeenCalledWith(expect.stringContaining('ARC1_DCR_SIGNING_SECRET'));
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
   it('parseArgs fails with oidcIssuer but no oidcAudience', () => {
     process.env.SAP_OIDC_ISSUER = 'https://example.com';
     expect(() => parseArgs([])).toThrow('SAP_OIDC_AUDIENCE is required');

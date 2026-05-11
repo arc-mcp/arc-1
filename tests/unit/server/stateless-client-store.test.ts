@@ -7,7 +7,7 @@
  * client_secret is deterministic from the client_id.
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { AuditEvent } from '../../../src/server/audit.js';
 import { logger } from '../../../src/server/logger.js';
 import { StatelessDcrClientStore, validateRedirectUri } from '../../../src/server/stateless-client-store.js';
@@ -38,6 +38,52 @@ describe('StatelessDcrClientStore', () => {
     expect(client?.client_id).toBe(XSUAA_ID);
     expect(client?.client_secret).toBe(XSUAA_SECRET);
     expect(client?.redirect_uris).toContain('https://claude.ai/api/mcp/auth_callback');
+  });
+
+  it('warns when signingSecret is shorter than 16 bytes', () => {
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    try {
+      new StatelessDcrClientStore(XSUAA_ID, XSUAA_SECRET, 'short'); // 5 bytes
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('shorter than 16 bytes'),
+        expect.objectContaining({ bytes: 5 }),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('does not warn when signingSecret is exactly 16 bytes or longer', () => {
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    try {
+      new StatelessDcrClientStore(XSUAA_ID, XSUAA_SECRET, 'a'.repeat(16));
+      expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('shorter than 16 bytes'), expect.anything());
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('measures byte length, not char length, for multi-byte UTF-8 secrets', () => {
+    // 'ü' is 2 bytes in UTF-8. 'üüüü' (4 chars) = 8 bytes → warn.
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    try {
+      new StatelessDcrClientStore(XSUAA_ID, XSUAA_SECRET, 'üüüü');
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('shorter than 16 bytes'),
+        expect.objectContaining({ bytes: 8 }),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+
+    // 'üüüüüüüü' (8 chars × 2 bytes) = 16 bytes → no warn.
+    const warnSpy2 = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    try {
+      new StatelessDcrClientStore(XSUAA_ID, XSUAA_SECRET, 'üüüüüüüü');
+      expect(warnSpy2).not.toHaveBeenCalledWith(expect.stringContaining('shorter than 16 bytes'), expect.anything());
+    } finally {
+      warnSpy2.mockRestore();
+    }
   });
 
   it('round-trips a registered client through register → getClient', async () => {
@@ -228,6 +274,38 @@ describe('StatelessDcrClientStore default TTL', () => {
 
     nowMs += 365 * 24 * 60 * 60 * 1000;
     expect(await store.getClient(registered.client_id)).toBeDefined();
+  });
+});
+
+describe('StatelessDcrClientStore client_secret_expires_at (RFC 7591 §3.2.1)', () => {
+  it('emits client_secret_expires_at = iat + ttlSeconds when TTL is positive', async () => {
+    const nowMs = 1_700_000_000_000;
+    const store = makeStore({ now: () => nowMs, ttlSeconds: 3600 });
+    const registered = await store.registerClient({ redirect_uris: ['https://example.com/cb'] });
+
+    expect(registered.client_secret_expires_at).toBe(1_700_000_000 + 3600);
+  });
+
+  it('emits client_secret_expires_at = 0 when ttlSeconds=0 (RFC 7591: "will not expire")', async () => {
+    const store = makeStore({ now: () => 1_700_000_000_000, ttlSeconds: 0 });
+    const registered = await store.registerClient({ redirect_uris: ['https://example.com/cb'] });
+
+    expect(registered.client_secret_expires_at).toBe(0);
+  });
+
+  it('emits client_secret_expires_at = 0 when ttlSeconds is negative', async () => {
+    const store = makeStore({ now: () => 1_700_000_000_000, ttlSeconds: -1 });
+    const registered = await store.registerClient({ redirect_uris: ['https://example.com/cb'] });
+
+    expect(registered.client_secret_expires_at).toBe(0);
+  });
+
+  it('emits client_secret_expires_at with the default 30-day TTL when ttlSeconds is unset', async () => {
+    const nowMs = 1_700_000_000_000;
+    const store = makeStore({ now: () => nowMs });
+    const registered = await store.registerClient({ redirect_uris: ['https://example.com/cb'] });
+
+    expect(registered.client_secret_expires_at).toBe(1_700_000_000 + 30 * 24 * 60 * 60);
   });
 });
 

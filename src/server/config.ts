@@ -589,4 +589,10 @@ export function validateConfig(config: ServerConfig): void {
       '[warn] SAP_DISABLE_SAML=true on a BTP system usually breaks login — BTP ABAP and S/4HANA Public Cloud require SAML. Continuing because you explicitly set this, but check docs/enterprise-auth.md if login starts failing.',
     );
   }
+
+  if (config.dcrSigningSecret && !config.xsuaaAuth) {
+    console.error(
+      '[warn] ARC1_DCR_SIGNING_SECRET is set but SAP_XSUAA_AUTH=false — the secret is unused. Unset it to reduce attack surface, or enable XSUAA OAuth proxy mode (SAP_XSUAA_AUTH=true).',
+    );
+  }
 }

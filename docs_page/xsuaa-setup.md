@@ -193,12 +193,16 @@ cf set-env arc1-mcp-server ARC1_DCR_SIGNING_SECRET "$SECRET"
 cf restage arc1-mcp-server
 ```
 
+ARC-1 emits a `[warn]` to stderr if `ARC1_DCR_SIGNING_SECRET` is set without `SAP_XSUAA_AUTH=true` — the secret is only consumed by the XSUAA OAuth proxy path, so this surfaces a misconfiguration where the secret would otherwise be unused.
+
 Properties:
 - `cf set-env` env vars survive `cf deploy` (CF doesn't reset them, and MTA only touches env vars declared in `mta.yaml` properties)
 - Re-setting the value (`cf set-env` with a new secret + `cf restage`) is the explicit revocation knob — invalidates every `client_id` issued under the old secret
 - Falls back to the XSUAA `clientsecret` when unset, preserving the legacy behavior
+- Empty or whitespace-only values are treated as unset (with a `[warn]`), so a misconfigured env var won't crash startup
+- A signing secret shorter than 16 bytes (128 bits) triggers a soft warning at startup; use `openssl rand -base64 48` for the recommended ≥32 bytes
 
-ARC-1 logs a startup warning when running on the legacy fallback.
+ARC-1 logs the active signing source as `dcrSigningSource: 'env' | 'xsuaa'` in the startup INFO line for observability — `'env'` means the dedicated `ARC1_DCR_SIGNING_SECRET` is in use, `'xsuaa'` means the legacy `clientsecret` fallback.
 
 ### Service-binding rotation
 

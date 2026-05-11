@@ -476,8 +476,28 @@ export function createXsuaaOAuthProvider(
   // dedicated secret via `dcrSigningSecret` (typically `ARC1_DCR_SIGNING_SECRET`
   // set with `cf set-env`, which survives `cf deploy`). Re-setting it
   // doubles as the explicit revocation knob.
-  const dcrSigningSecret = options.dcrSigningSecret ?? credentials.clientsecret;
-  const dcrSigningSource: 'env' | 'xsuaa' = options.dcrSigningSecret ? 'env' : 'xsuaa';
+  //
+  // Empty / whitespace-only input falls back to the XSUAA `clientsecret`
+  // (legacy mode) with a warning instead of crashing — `??` only falls back
+  // on null/undefined, so an empty env var would otherwise reach the store
+  // constructor's non-empty guard and kill startup. Compute the
+  // dcrSigningSource label from the effective secret, not the raw input, so
+  // it accurately reflects what's actually in use.
+  const trimmedDcrSecret = options.dcrSigningSecret?.trim();
+  let dcrSigningSecret: string;
+  let dcrSigningSource: 'env' | 'xsuaa';
+  if (trimmedDcrSecret) {
+    dcrSigningSecret = trimmedDcrSecret;
+    dcrSigningSource = 'env';
+  } else {
+    if (options.dcrSigningSecret !== undefined) {
+      logger.warn(
+        'ARC1_DCR_SIGNING_SECRET was set but is empty or whitespace-only — falling back to XSUAA clientsecret. Set a real secret with `openssl rand -base64 48` or unset the env var.',
+      );
+    }
+    dcrSigningSecret = credentials.clientsecret;
+    dcrSigningSource = 'xsuaa';
+  }
 
   const clientStore = new StatelessDcrClientStore(credentials.clientid, credentials.clientsecret, dcrSigningSecret, {
     ttlSeconds: options.dcrTtlSeconds,
