@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   applyRapHandlerImplementationStubs,
@@ -10,6 +13,8 @@ import {
   parseClassDefinitionMethods,
 } from '../../../src/adt/rap-handlers.js';
 import { spliceMethod } from '../../../src/context/method-surgery.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const BDEF_SOURCE = `managed implementation in class ZBP_I_TRAVELREQ unique;
 define behavior for ZI_TRAVELREQ alias Travel
@@ -249,7 +254,11 @@ ENDCLASS.`;
 });
 
 describe('ensureRapHandlerSkeletons', () => {
-  it('creates missing definition and implementation skeletons in empty includes', () => {
+  // Canonical layout per ABAP keyword doc ABENABP_HANDLER_CLASS_GLOSRY and SAP demo class
+  // BP_DEMO_RAP_STRICT (package SABAPDEMOS): CCDEF holds only the SAP-generated placeholder
+  // comment; CCIMP holds the full DEFINITION + IMPLEMENTATION pair. The fixtures
+  // tests/fixtures/abap/bp-demo-rap-strict-{ccdef,ccimp}.abap capture this verbatim.
+  it('writes both DEFINITION and IMPLEMENTATION skeleton blocks to CCIMP only', () => {
     const requirements = extractRapHandlerRequirements(BDEF_SOURCE).filter(
       (req) => req.targetHandlerClass === 'lhc_travel',
     );
@@ -264,33 +273,45 @@ describe('ensureRapHandlerSkeletons', () => {
 
     expect(result.createdDefinitions).toEqual(['lhc_travel']);
     expect(result.createdImplementations).toEqual(['lhc_travel']);
-    expect(result.changedSections).toEqual(['definitions', 'implementations']);
-    expect(result.sections.definitions).toContain('*"* local definitions placeholder');
-    expect(result.sections.definitions).toContain(
+    expect(result.changedSections).toEqual(['implementations']);
+    // CCDEF is never modified by this function — it stays at the SAP placeholder verbatim.
+    expect(result.sections.definitions).toBe('*"* local definitions placeholder');
+    // Both blocks land in CCIMP, in DEFINITION-then-IMPLEMENTATION order so the
+    // implementation always sees its declaration above it.
+    expect(result.sections.implementations).toContain('*"* local implementations placeholder');
+    expect(result.sections.implementations).toContain(
       'CLASS lhc_travel DEFINITION INHERITING FROM cl_abap_behavior_handler.',
     );
-    expect(result.sections.definitions).toContain('PRIVATE SECTION.');
-    expect(result.sections.implementations).toContain('*"* local implementations placeholder');
+    expect(result.sections.implementations).toContain('PRIVATE SECTION.');
     expect(result.sections.implementations).toContain('CLASS lhc_travel IMPLEMENTATION.');
+    const defIdx = result.sections.implementations!.indexOf('CLASS lhc_travel DEFINITION');
+    const implIdx = result.sections.implementations!.indexOf('CLASS lhc_travel IMPLEMENTATION');
+    expect(defIdx).toBeGreaterThan(-1);
+    expect(implIdx).toBeGreaterThan(defIdx);
   });
 
-  it('creates only the missing implementation when the handler definition already exists', () => {
+  it('creates only the missing implementation when CCIMP already has the DEFINITION', () => {
     const requirements = extractRapHandlerRequirements(BDEF_SOURCE).filter(
       (req) => req.targetHandlerClass === 'lhc_travel',
     );
-    const definitions = `CLASS lhc_travel DEFINITION INHERITING FROM cl_abap_behavior_handler.
+    // CCIMP already contains the DEFINITION (not CCDEF — that's the legacy broken layout
+    // detected by detectLegacyHandlerInDefinitions).
+    const implementations = `CLASS lhc_travel DEFINITION INHERITING FROM cl_abap_behavior_handler.
   PRIVATE SECTION.
 ENDCLASS.`;
 
-    const result = ensureRapHandlerSkeletons({ main: '', definitions, implementations: '' }, requirements);
+    const result = ensureRapHandlerSkeletons({ main: '', definitions: '', implementations }, requirements);
 
     expect(result.createdDefinitions).toEqual([]);
     expect(result.createdImplementations).toEqual(['lhc_travel']);
-    expect(result.sections.definitions).toBe(definitions);
+    expect(result.sections.definitions).toBe('');
+    expect(result.sections.implementations).toContain(
+      'CLASS lhc_travel DEFINITION INHERITING FROM cl_abap_behavior_handler.',
+    );
     expect(result.sections.implementations).toContain('CLASS lhc_travel IMPLEMENTATION.');
   });
 
-  it('creates only the missing definition when the handler implementation already exists', () => {
+  it('creates the missing DEFINITION in CCIMP when only the IMPLEMENTATION exists there', () => {
     const requirements = extractRapHandlerRequirements(BDEF_SOURCE).filter(
       (req) => req.targetHandlerClass === 'lhc_travel',
     );
@@ -301,20 +322,27 @@ ENDCLASS.`;
 
     expect(result.createdDefinitions).toEqual(['lhc_travel']);
     expect(result.createdImplementations).toEqual([]);
-    expect(result.sections.definitions).toContain(
+    // CCDEF stays empty — no skeleton ever lands there.
+    expect(result.sections.definitions).toBe('');
+    expect(result.sections.implementations).toContain(
       'CLASS lhc_travel DEFINITION INHERITING FROM cl_abap_behavior_handler.',
     );
-    expect(result.sections.implementations).toBe(implementations);
+    expect(result.sections.implementations).toContain('CLASS lhc_travel IMPLEMENTATION.');
   });
 
-  it('creates one skeleton pair per BDEF alias without duplicates', () => {
+  it('creates one skeleton pair per BDEF alias without duplicates, all in CCIMP', () => {
     const requirements = extractRapHandlerRequirements(BDEF_SOURCE);
     const result = ensureRapHandlerSkeletons({ main: '', definitions: '', implementations: '' }, requirements);
 
     expect(result.createdDefinitions).toEqual(['lhc_travel', 'lhc_segment']);
     expect(result.createdImplementations).toEqual(['lhc_travel', 'lhc_segment']);
-    expect(result.sections.definitions?.match(/CLASS lhc_travel DEFINITION/g)).toHaveLength(1);
-    expect(result.sections.definitions?.match(/CLASS lhc_segment DEFINITION/g)).toHaveLength(1);
+    // CCDEF stays empty.
+    expect(result.sections.definitions).toBe('');
+    // Both classes' DEFINITION + IMPLEMENTATION blocks land in CCIMP, exactly once each.
+    expect(result.sections.implementations?.match(/CLASS lhc_travel DEFINITION/g)).toHaveLength(1);
+    expect(result.sections.implementations?.match(/CLASS lhc_segment DEFINITION/g)).toHaveLength(1);
+    expect(result.sections.implementations?.match(/CLASS lhc_travel IMPLEMENTATION/g)).toHaveLength(1);
+    expect(result.sections.implementations?.match(/CLASS lhc_segment IMPLEMENTATION/g)).toHaveLength(1);
   });
 
   it('is idempotent when rerun on its own generated sections', () => {
@@ -325,6 +353,42 @@ ENDCLASS.`;
     expect(second.createdDefinitions).toEqual([]);
     expect(second.createdImplementations).toEqual([]);
     expect(second.sections).toEqual(first.sections);
+  });
+
+  // Regression test: assert against the exact layout captured live from SAP demo class
+  // BP_DEMO_RAP_STRICT. If this fails, the contract has drifted from SAP-canonical and the
+  // result will fail to activate with `Local classes of CL_ABAP_BEHAVIOR_HANDLER…`.
+  it('emits CCIMP shape matching SAP demo class BP_DEMO_RAP_STRICT', () => {
+    const ccdefFixture = readFileSync(join(__dirname, '../../fixtures/abap/bp-demo-rap-strict-ccdef.abap'), 'utf8');
+    const ccimpFixture = readFileSync(join(__dirname, '../../fixtures/abap/bp-demo-rap-strict-ccimp.abap'), 'utf8');
+    // BDEF mirroring BP_DEMO_RAP_STRICT: one entity, global authorization only.
+    const bdef = `unmanaged implementation in class zbp_demo_rap_strict unique;
+strict ( 2 );
+
+define behavior for demo_rap_strict alias DemoRapStrict
+  authorization master ( global )
+{
+  read;
+}`;
+    const requirements = extractRapHandlerRequirements(bdef);
+    const result = ensureRapHandlerSkeletons(
+      { main: '', definitions: ccdefFixture, implementations: '' },
+      requirements,
+    );
+
+    // CCDEF must remain byte-identical to the SAP-generated placeholder.
+    expect(result.sections.definitions).toBe(ccdefFixture);
+    // CCIMP must contain a DEFINITION block followed by an IMPLEMENTATION block, mirroring
+    // the BP_DEMO_RAP_STRICT shape (the alias name differs because the BDEF uses a different
+    // entity, but the structural pattern is identical).
+    const out = result.sections.implementations ?? '';
+    expect(out).toMatch(/CLASS lhc_demorapstrict DEFINITION INHERITING FROM cl_abap_behavior_handler\./i);
+    expect(out).toMatch(/CLASS lhc_demorapstrict IMPLEMENTATION\./i);
+    // Same structural assertion against the live-captured fixture: DEFINITION precedes
+    // IMPLEMENTATION (forward-reference rule).
+    expect(ccimpFixture.indexOf('CLASS lhc_DEMO_RAP_STRICT DEFINITION')).toBeLessThan(
+      ccimpFixture.indexOf('CLASS lhc_DEMO_RAP_STRICT IMPLEMENTATION'),
+    );
   });
 });
 
@@ -498,7 +562,11 @@ ENDCLASS.`;
 });
 
 describe('applyRapHandlerScaffold', () => {
-  it('creates missing handler skeletons before inserting signatures and stubs', () => {
+  // End-to-end: scaffold from empty placeholders → CCDEF stays at the SAP-generated comment;
+  // CCIMP gets the full handler class (DEFINITION block with method declarations, IMPLEMENTATION
+  // block with empty METHOD stubs). This is what `generate_behavior_implementation` produces
+  // for a fresh class. The shape mirrors SAP demo class BP_DEMO_RAP_STRICT.
+  it('creates missing handler skeletons in CCIMP and inserts signatures + stubs there', () => {
     const bdef = `define behavior for zi_travel alias travel
 authorization master ( instance )
 {
@@ -516,15 +584,18 @@ authorization master ( instance )
 
     expect(plan.skeletons.createdDefinitions).toEqual(['lhc_travel']);
     expect(plan.skeletons.createdImplementations).toEqual(['lhc_travel']);
-    expect(plan.changed.definitions).toBe(true);
+    // CCDEF stays at the placeholder — never modified by the scaffold pipeline.
+    expect(plan.changed.definitions).toBe(false);
     expect(plan.changed.implementations).toBe(true);
     expect(plan.insertedSignatureCount).toBe(2);
     expect(plan.insertedImplementationStubCount).toBe(2);
-    expect(plan.sections.definitions).toContain(
+    expect(plan.sections.definitions).toBe('*"* definitions placeholder');
+    // CCIMP holds the full handler class: DEFINITION block first, then IMPLEMENTATION block.
+    expect(plan.sections.implementations).toContain(
       'CLASS lhc_travel DEFINITION INHERITING FROM cl_abap_behavior_handler.',
     );
-    expect(plan.sections.definitions).toContain('METHODS submitforapproval FOR MODIFY');
-    expect(plan.sections.definitions).toContain('METHODS get_instance_authorizations FOR INSTANCE AUTHORIZATION');
+    expect(plan.sections.implementations).toContain('METHODS submitforapproval FOR MODIFY');
+    expect(plan.sections.implementations).toContain('METHODS get_instance_authorizations FOR INSTANCE AUTHORIZATION');
     expect(plan.sections.implementations).toContain('CLASS lhc_travel IMPLEMENTATION.');
     expect(plan.sections.implementations).toContain('METHOD submitforapproval.');
     expect(plan.sections.implementations).toContain('METHOD get_instance_authorizations.');

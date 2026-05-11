@@ -119,6 +119,9 @@ The `mta.yaml` defines four BTP services that are created automatically:
 
 ### 3. Post-Deploy Configuration
 
+!!! note "Where do values come from on BTP CF?"
+    CF builds the app's environment from three sources: `manifest.yml` / `mta.yaml` `properties:` blocks, runtime overrides via `cf set-env`, and `VCAP_SERVICES` (injected from bound services like XSUAA and the Destination Service). There is **no `.env` file in the droplet** — values not present in those three places fall back to ARC-1's built-in defaults. Use `cf env <app>` to print the final resolved environment as the container sees it. Full per-mode breakdown: [Configuration Precedence](configuration-precedence.md).
+
 When using `SAP_BTP_DESTINATION`, the URL and credentials come from the BTP Destination — no `cf set-env` for `SAP_URL` or `SAP_CLIENT` is needed. Only set them if you're not using the Destination Service:
 
 ```bash

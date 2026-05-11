@@ -8878,6 +8878,9 @@ ENDCLASS.`;
       expect(parsed.applyResult.skeletons.createdDefinitions).toEqual(['lhc_travel']);
       expect(parsed.applyResult.skeletons.createdImplementations).toEqual(['lhc_travel']);
       expect(parsed.applyResult.unresolved).toEqual([]);
+      // Per ABAP doc ABENABP_HANDLER_CLASS_GLOSRY and SAP demo BP_DEMO_RAP_STRICT, both the
+      // DEFINITION and IMPLEMENTATION blocks belong in CCIMP. CCDEF must stay at the SAP
+      // placeholder, so the scaffold pipeline must NOT PUT to /includes/definitions.
       const definitionPut = calls.find(
         (call) =>
           call.method === 'PUT' && call.url.includes('/sap/bc/adt/oo/classes/ZBP_I_TRAVELREQ/includes/definitions'),
@@ -8886,8 +8889,11 @@ ENDCLASS.`;
         (call) =>
           call.method === 'PUT' && call.url.includes('/sap/bc/adt/oo/classes/ZBP_I_TRAVELREQ/includes/implementations'),
       );
-      expect(definitionPut?.body).toContain('CLASS lhc_travel DEFINITION INHERITING FROM cl_abap_behavior_handler.');
-      expect(definitionPut?.body).toContain('METHODS submitforapproval FOR MODIFY');
+      expect(definitionPut).toBeUndefined();
+      expect(implementationPut?.body).toContain(
+        'CLASS lhc_travel DEFINITION INHERITING FROM cl_abap_behavior_handler.',
+      );
+      expect(implementationPut?.body).toContain('METHODS submitforapproval FOR MODIFY');
       expect(implementationPut?.body).toContain('CLASS lhc_travel IMPLEMENTATION.');
       expect(implementationPut?.body).toContain('METHOD submitforapproval.');
     });

@@ -1367,6 +1367,41 @@ describe('ADT Integration Tests', () => {
       ).toBe(true);
     });
 
+    // Regression baseline: SAP demo class BP_DEMO_RAP_STRICT (package SABAPDEMOS) is the
+    // canonical-layout reference for handler-class includes — empty CCDEF, full
+    // DEFINITION+IMPLEMENTATION pair in CCIMP. Captured live on a4h S/4HANA 2023 (ABAP 7.58)
+    // as fixtures in tests/fixtures/abap/bp-demo-rap-strict-{ccdef,ccimp}.abap. If this test
+    // fails, either the fixture has drifted from the live system or the demo class is not
+    // available on the test target.
+    it('SAP demo BP_DEMO_RAP_STRICT shows canonical CCDEF-empty + CCIMP-full layout', async (ctx) => {
+      let structured: Awaited<ReturnType<AdtClient['getClassStructured']>>;
+      try {
+        structured = await client.getClassStructured('BP_DEMO_RAP_STRICT');
+      } catch (err) {
+        expectSapFailureClass(err, [403, 404], [/not found/i, /forbidden/i]);
+        requireOrSkip(
+          ctx,
+          undefined,
+          `${SkipReason.NO_FIXTURE} (BP_DEMO_RAP_STRICT) — SAP RAP demo class not on this system`,
+        );
+      }
+
+      // CCDEF: only the SAP-generated placeholder comment, no class declarations.
+      const ccdef = structured!.definitions ?? '';
+      expect(ccdef.length).toBeGreaterThan(0);
+      expect(ccdef).not.toMatch(/CLASS\s+lhc_/i);
+      expect(ccdef).not.toMatch(/cl_abap_behavior_handler/i);
+      // CCIMP: the full handler class — DEFINITION block followed by IMPLEMENTATION block.
+      const ccimp = structured!.implementations ?? '';
+      expect(ccimp).toMatch(/CLASS\s+lhc_demo_rap_strict\s+DEFINITION\s+INHERITING\s+FROM\s+cl_abap_behavior_handler/i);
+      expect(ccimp).toMatch(/CLASS\s+lhc_demo_rap_strict\s+IMPLEMENTATION/i);
+      // ABAP forward-reference rule: DEFINITION must come before IMPLEMENTATION in CCIMP.
+      const defIdx = ccimp.search(/CLASS\s+lhc_demo_rap_strict\s+DEFINITION/i);
+      const implIdx = ccimp.search(/CLASS\s+lhc_demo_rap_strict\s+IMPLEMENTATION/i);
+      expect(defIdx).toBeGreaterThanOrEqual(0);
+      expect(implIdx).toBeGreaterThan(defIdx);
+    });
+
     it('can re-insert a deliberately removed signature in the live implementation include', async (ctx) => {
       const { bdefSource, classStructured } = await readRapFixture(ctx);
       const requirements = extractRapHandlerRequirements(bdefSource);

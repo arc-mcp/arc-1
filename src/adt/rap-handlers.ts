@@ -120,9 +120,27 @@ interface ClassImplementationRange {
   end: number;
 }
 
+/**
+ * Result of `ensureRapHandlerSkeletons`.
+ *
+ * IMPORTANT: `createdDefinitions` and `createdImplementations` enumerate the
+ * **kinds of skeleton blocks created** (one entry per `lhc_<alias>` class that
+ * needed a DEFINITION block / an IMPLEMENTATION block). They are NOT include
+ * locations — both block kinds always land in the CCIMP include
+ * (`/source/implementations`), with CCDEF (`/source/definitions`) left at its
+ * SAP-generated placeholder. This matches SAP demo class `BP_DEMO_RAP_STRICT`
+ * (package `SABAPDEMOS`) and the contract documented in ABAP keyword doc
+ * `ABENABP_HANDLER_CLASS_GLOSRY`: *"A local class in a CCIMP include of an
+ * ABAP behavior pool …"*.
+ *
+ * `changed.implementations` is `true` whenever either array is non-empty;
+ * `changed.definitions` is always `false`; `changed.main` is always `false`.
+ */
 export interface RapHandlerSkeletonResult {
   sections: RapHandlerSourceSections;
+  /** Class names whose `CLASS lhc_<alias> DEFINITION` block was newly emitted (now in CCIMP). */
   createdDefinitions: string[];
+  /** Class names whose `CLASS lhc_<alias> IMPLEMENTATION` block was newly emitted (in CCIMP). */
   createdImplementations: string[];
   changed: Record<RapHandlerSectionName, boolean>;
   changedSections: RapHandlerSectionName[];
@@ -993,39 +1011,62 @@ function handlerImplementationSkeleton(targetHandlerClass: string): string {
 ENDCLASS.`;
 }
 
+/**
+ * Append `lhc_<alias>` skeletons to the CCIMP include only.
+ *
+ * Both the DEFINITION and the IMPLEMENTATION block of every missing handler
+ * class go into `sections.implementations`. CCDEF (`sections.definitions`) is
+ * **never modified**. This matches:
+ *   - ABAP keyword doc `ABENABP_HANDLER_CLASS_GLOSRY`: handler classes live
+ *     in the CCIMP include.
+ *   - ABAP keyword doc `ABENABP_CL_ABAP_BEH_HANDLER`: "A handler class can be
+ *     defined in the CCIMP include of an ABAP behavior pool. It consists of
+ *     method declarations and implementations."
+ *   - SAP demo class `BP_DEMO_RAP_STRICT` (package `SABAPDEMOS`): empty CCDEF,
+ *     full DEFINITION+IMPLEMENTATION pair in CCIMP. Captured live as fixtures
+ *     in `tests/fixtures/abap/bp-demo-rap-strict-{ccdef,ccimp}.abap`.
+ *   - The activator's error message itself: *"Local classes of
+ *     CL_ABAP_BEHAVIOR_HANDLER can only be derived in the 'Local
+ *     Definitions/Implementations' of a global BEHAVIOR class"* — the quoted
+ *     phrase is the literal name of the CCIMP tab in Eclipse ADT.
+ *
+ * Per-class block order in CCIMP is DEFINITION first, then IMPLEMENTATION, so
+ * the IMPLEMENTATION block always sees its DEFINITION above it (ABAP forward-
+ * reference rule).
+ */
 export function ensureRapHandlerSkeletons(
   sections: RapHandlerSourceSections,
   requirements: RapHandlerRequirement[],
 ): RapHandlerSkeletonResult {
   const targetRequirements = uniqueRequirementsByTargetClass(requirements);
-  const definitionBlocks: string[] = [];
-  const implementationBlocks: string[] = [];
+  const combinedBlocks: string[] = [];
   const createdDefinitions: string[] = [];
   const createdImplementations: string[] = [];
 
   for (const requirement of targetRequirements) {
     const targetHandlerClass = requirement.targetHandlerClass;
     if (!hasClassDefinition(sections, targetHandlerClass)) {
-      definitionBlocks.push(handlerDefinitionSkeleton(targetHandlerClass));
+      combinedBlocks.push(handlerDefinitionSkeleton(targetHandlerClass));
       createdDefinitions.push(targetHandlerClass);
     }
     if (!hasClassImplementation(sections, targetHandlerClass)) {
-      implementationBlocks.push(handlerImplementationSkeleton(targetHandlerClass));
+      combinedBlocks.push(handlerImplementationSkeleton(targetHandlerClass));
       createdImplementations.push(targetHandlerClass);
     }
   }
 
+  const anyCreated = createdDefinitions.length > 0 || createdImplementations.length > 0;
   const changed = {
     main: false,
-    definitions: createdDefinitions.length > 0,
-    implementations: createdImplementations.length > 0,
+    definitions: false,
+    implementations: anyCreated,
   };
 
   return {
     sections: {
       main: sections.main,
-      definitions: appendBlocksToSection(sections.definitions, definitionBlocks),
-      implementations: appendBlocksToSection(sections.implementations, implementationBlocks),
+      definitions: sections.definitions,
+      implementations: appendBlocksToSection(sections.implementations, combinedBlocks),
     },
     createdDefinitions,
     createdImplementations,
