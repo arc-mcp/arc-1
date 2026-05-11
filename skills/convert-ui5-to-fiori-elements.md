@@ -43,6 +43,89 @@ This skill depends on:
 > `#LineItemHighlight`, `#HeaderInfo`, `#ActionInLineItem`). The showcase is the
 > ground-truth catalog every annotation in this skill maps back to.
 
+---
+
+## Using `mcp__sap-docs__search` for annotation discovery (read this first)
+
+This skill names a handful of canonical annotation patterns inline. **Treat them as
+starting points, not the whole catalog.** Anything not explicitly covered — alternate
+visual representations, dynamic feature control, charts, value helps, semantic keys,
+multi-level OP routing, draft-specific UI behavior, or 7.58-specific syntax issues —
+**look up in `mcp__sap-docs__search` before guessing**. The MCP indexes the
+authoritative SAP-maintained references, has up-to-date showcase tags, and includes
+release-specific documentation (758 news, cloud differences, etc.) that this skill text
+can't keep current with on its own.
+
+### Canonical libraries to know
+
+| Library ID | What's in it |
+|---|---|
+| `/abap-fiori-showcase` | **SAP-samples/abap-platform-fiori-feature-showcase** — the on-prem RAP + FE V4 catalog. Every pattern is tagged with a Search Term like `#HeaderInfo`, `#LineItemHighlight`, `#OPHeaderAction`, `#OPTable`, `#DataFieldForAction`, `#SemanticKey`. The 7.58-accurate baseline for this skill. |
+| `/cap-fiori-showcase` | **SAP-samples/fiori-elements-feature-showcase** — CAP/CDS V4 counterpart. Same conceptual patterns from the CAP side; useful when the ABAP showcase tag doesn't include the variant you need, especially for FE manifest layout (`layouts_ChildEntities*.cds`, `#Subpages`, `#InboundNav`). |
+| `/abap-docs-standard` | Official ABAP keyword docs (on-prem). Definitive for syntax (`FOR BEHAVIOR OF`, virtual elements, projection BDEF rules), release-specific capabilities (`ABENNEWS-758-RESTFUL` for what's available on 7.58), and the deep theory behind any RAP construct. |
+| `/abap-docs-cloud` | Same as above for cloud/BTP. Useful when something looks cloud-only — verify before pulling into on-prem 7.58. |
+| `/sap-help` (online) | SAP Help full content. Best for SAPUI5 manifest configuration, FE template runtime details, *Configuring Internal Navigation*. Requires `includeOnline=true`. |
+| `/abap-cheat-sheets` | Practical RAP / ABAP snippets with current syntax variants. |
+
+### Search recipe — apply for every annotation question
+
+1. **Identify what the user sees**: "status as a colored chip", "click row → child detail page", "filter with fixed values".
+2. **Search the showcase by hashtag** — most patterns are tagged literally in markdown:
+   ```
+   mcp__sap-docs__search(query="#TagName")           // exact tag lookup
+   mcp__sap-docs__search(query="<visual description>")  // semantic fallback
+   ```
+3. **Fetch the full pattern** of the most relevant hit:
+   ```
+   mcp__sap-docs__fetch(id="/abap-fiori-showcase/<section>#<tag>")
+   ```
+4. **Adapt to the user's entities** — the showcase uses `/DMO/FSA_R_RootTP` etc.; substitute the user's projection names.
+5. **If the on-prem pattern is rejected on the target release**, search again on a different axis:
+   - `/abap-docs-standard/ABENCDS_PROJ_VIEW_VIRTUAL_ELEMENT` (+ example `ABENCDS_PROJ_VIEW_VIRTEL_ABEXA`) for virtual elements with ABAP-class calculation
+   - `/abap-docs-standard/ABENNEWS-<release>-RESTFUL` for release-bound capabilities (e.g. `ABENNEWS-758-RESTFUL`)
+   - `/cap-fiori-showcase` for an alternate CAP phrasing of the same concept
+   - DDLX `annotate view` as a fallback when entity-level annotations are rejected on the DDLS projection (Run 7 evidence: 7.58 routes `@UI.facet`, `@UI.selectionFields`, and header `FOR_ACTION` through DDLX)
+
+### Starter tag pointers (non-exhaustive — search for more)
+
+Search-Term references that resolve to a concrete annotation pattern in the showcase. Each is the *entry point*; fetch the full content to get the canonical syntax for your release.
+
+| Need | Starting search terms / docs |
+|---|---|
+| Colored status / criticality on a list row | `#LineItemHighlight`, `criticality: 'CriticalityCode'`, `@UI.Criticality` |
+| Criticality with calculation logic (not a real column) | `/abap-docs-standard/ABENCDS_PROJ_VIEW_VIRTUAL_ELEMENT`; example `ABENCDS_PROJ_VIEW_VIRTEL_ABEXA`. Also `@ObjectModel.virtualElementCalculatedBy: 'ABAP:<class>'` |
+| Header data point / status indicator | `#HeaderFacet`, `#KeyValue`, `#DataPointProgress`, `@UI.dataPoint` |
+| Object Page table for a child entity | `#OPTable`, `@UI.lineItem` on the child projection, `@UI.facet` with `type: #LINEITEM_REFERENCE`, `targetElement: '_AssocName'` |
+| Drill from one OP to another OP (e.g. Project → Task → TimeEntry) | `#OPTable` (entry); `cap-fiori-showcase/app/listreport-objectpage/layouts_ChildEntities1.cds` etc. (sub-page layout); SAPUI5 *"Configuring Internal Navigation"* (sap-help) for the manifest routing shape |
+| In-page navigation between facets | `#InboundNav`, `targetSections`, `navigation` property on `@UI.facet` |
+| Action button — OP header | `#OPHeaderAction`, `type: #FOR_ACTION`, `DataFieldForAction` |
+| Action button — LR table toolbar | `#ActionInLineItem`, `#WithAction` |
+| Sorting + filter bar | `#SelectionFields`, `#PresentationVariant`, `@UI.selectionFields` |
+| Search across fields | `#Search`, `@Search.searchable`, `@Search.defaultSearchElement` |
+| Semantic key (highlighted/bold in tables) | `#SemanticKey`, `@ObjectModel.semanticKey` |
+| Value help / fixed value list | `#ValueHelp`, `@Consumption.valueHelpDefault`, `@ObjectModel.text.element` |
+| Dynamic CRUD (hide/show edit/delete by row state) | `#DynamicCRUD`, `@UI.updateHidden`, `@UI.deleteHidden`, BDEF `features: instance` |
+| Draft + UI specifics | `#DraftHandling`, `@UI.lineItem` editable qualifier, action keyword `( precheck )` |
+| Side effects / re-read on action | `#SideEffects`, `@Common.SideEffects` |
+| BDEF action signature variants (precheck, factory, copy) | `/abap-docs-standard/ABENBDL_ACTION`, `#OPCopyAction`, `action ( precheck ) <name>` |
+| 7.58 capability boundaries | `/abap-docs-standard/ABENNEWS-758-RESTFUL` + `ABENNEWS-758-CDS_BDL` |
+
+### Anti-patterns
+
+- **Don't take this skill's example code as gospel.** It's a teaching example written at a
+  point in time. The showcase is the ground truth.
+- **Don't paste a showcase example from a different release without verifying.** A
+  `#DataFieldForAction` example branching off the BTP-Cloud branch may use cloud-only
+  keywords; the on-prem `main` branch is the safe baseline for 7.58.
+- **Don't hand-code FE routing/manifest entries without consulting the SAPUI5 internal
+  navigation docs.** The shape varies by template + release and is easier to derive from
+  `sap-help` than to reverse-engineer from a runtime failure.
+- **Don't accept the first failed-activation symptom as the final answer.** Run 7 hit four
+  different blockers in four different layers for one polish item; in every case a follow-up
+  search via `mcp__sap-docs__search` would have surfaced an alternative *before* the
+  rollback. The cost of one extra search is 5 seconds; the cost of an unnecessary rollback
+  is 10+ minutes.
+
 ## Why this is its own skill
 
 Fiori Elements isn't a code transformation — it's a **deletion + relocation**. Most of the
@@ -310,25 +393,37 @@ Classify each inventory item as one of:
 - **EXTENSION** — genuinely custom behavior FE templates can't express; needs a controller
   extension on the FE app side.
 
-### 2a. Annotation map (typical for the Project/Task/TimeEntry domain)
+### 2a. Annotation map — starting points (verify each pattern via sap-docs)
 
-| Legacy feature | Annotation in `<root_projection>` (CDS) |
+The table below is a **quick reference**, not a definitive catalog. Apply the search
+recipe from the "Using `mcp__sap-docs__search`" section above to confirm the current
+canonical syntax for your release, especially for anything tagged ⚠ below.
+
+| Legacy feature | Starting annotation + showcase tag |
 |---|---|
-| Header title = `Title` | `@UI.HeaderInfo.title.value: 'Title'` |
-| Header description = `ProjectId` | `@UI.HeaderInfo.description.value: 'ProjectId'` |
-| Header type label "Project" | `@UI.HeaderInfo.typeName: 'Project'`, `typeNamePlural: 'Projects'` |
-| List columns (master): ProjectId, Title, Status, StartDate, EndDate | `@UI.LineItem: [{ value: 'ProjectId', position: 10 }, { value: 'Title', position: 20 }, { value: 'Status', position: 30, criticality: 'StatusCriticality' }, { value: 'StartDate', position: 40 }, { value: 'EndDate', position: 50 }]` |
-| Status code → text + color | `@Common.Text: { value: 'StatusText', element: 'StatusText' }` + `@UI.TextArrangement: #TEXT_FIRST`, plus a **virtual field** `StatusCriticality` on the projection that returns the FE numeric criticality (0=Neutral, 1=Negative, 2=Critical, 3=Positive) |
-| Sort default StartDate desc | `@UI.PresentationVariant.SortOrder: [{ Property: 'StartDate', Descending: true }]` |
-| Search by ProjectId + Title | `@Search.searchable: true` at view level + `@Search.defaultSearchElement: true` on ProjectId and Title; `@UI.SelectionFields: ['ProjectId', 'Title', 'Status']` for the filter bar |
-| Audit-field display | `@UI.Identification`: Erdat, Ernam, Aedat, Aenam grouped as `@UI.FieldGroup.Audit` with `@UI.Facet` referencing the group |
-| Approve button (header) | **The action does NOT auto-render from the BDEF.** Add an entry in `@UI.identification` on the root projection: `{ type: #FOR_ACTION, dataAction: 'approve_project', label: 'Approve' }` (showcase #OPHeaderAction). For a list-report toolbar button instead, add the same shape to `@UI.lineItem` (showcase #ActionInLineItem). Both annotations require the projection BDEF to already expose `use action approve_project;` from `migrate-segw-to-rap` Step 6. |
-| Project count footer | FE's list-report shows the count natively; no annotation needed |
-| Tasks tab in OP | `@UI.Facet` of type `#LINEITEM_REFERENCE` targeting `_Tasks` association |
-| Tasks columns | `@UI.LineItem` on `<child_projection_task>` (similar shape to the root LineItem) |
-| Priority field with color | `@Common.Text` + virtual `PriorityCriticality` field, same pattern as Status |
-| TimeEntries tab in OP (nested) | `@UI.Facet` referencing `_Tasks._TimeEntries`. **Note**: FE V4 supports nested LineItem facets via the `_Tasks._TimeEntries` path — verify on your release |
-| TimeEntries columns | `@UI.LineItem` on `<child_projection_timeentry>` |
+| Header title = `Title` | `@UI.HeaderInfo.title.value: 'Title'` — `#HeaderInfo` |
+| Header description = `ProjectId` | `@UI.HeaderInfo.description.value: 'ProjectId'` — `#HeaderInfo` |
+| Header type label | `@UI.HeaderInfo.typeName: 'Project'`, `typeNamePlural: 'Projects'` — `#HeaderInfo` |
+| List columns (master) | `@UI.lineItem: [{ position: N, importance: #HIGH }]` per field — `#LineItemHighlight` for the variant with criticality |
+| ⚠ Status code → text + color | **Multiple valid patterns; choose by release/draft constraints.** Search `#LineItemHighlight` for the criticality-via-real-column path. For a calculated criticality without a persistent column, see `/abap-docs-standard/ABENCDS_PROJ_VIEW_VIRTUAL_ELEMENT` + `@ObjectModel.virtualElementCalculatedBy: 'ABAP:<class>'`. On 7.58 + draft, both have known constraints (Run 7 §1 details). Search before adopting. |
+| Sort default | `@UI.presentationVariant.sortOrder: [{ by: '<field>', direction: #DESC }]` — `#PresentationVariant` |
+| Search across fields | `@Search.searchable: true` at view level + `@Search.defaultSearchElement: true` per field — `#Search` |
+| Filter bar | `@UI.selectionFields: [...]` — `#SelectionFields` |
+| Audit fields display | `@UI.fieldGroup` + `@UI.facet` of `#FIELDGROUP_REFERENCE` — `#HeaderFieldGroup` |
+| Approve button (header) | `@UI.identification: [{ type: #FOR_ACTION, dataAction: 'approve_project', label: 'Approve', criticality: 3, criticalityRepresentation: #WITH_ICON }]` — `#OPHeaderAction`. **The action does NOT auto-render from the BDEF.** Projection BDEF must already expose `use action approve_project;`. |
+| LR toolbar action | Same shape on `@UI.lineItem` — `#ActionInLineItem`, `#WithAction` |
+| OP table for child entity | `@UI.facet: [{ type: #LINEITEM_REFERENCE, targetElement: '_AssocName', label: '...' }]` on the parent + `@UI.lineItem` on the child projection — `#OPTable` |
+| ⚠ Multi-level navigation (Project → Task → TimeEntry) | Two valid shapes — **research before picking**. (a) **Nested LineItem facet** referencing `_Tasks._TimeEntries` from the root projection (release-dependent FE support). (b) **Separate Task OP route** — annotate `ZC_DM_TASK` with `@UI.headerInfo` + its own `_TimeEntries` facet, then add a Task routing target to the FE app's manifest. Search `#OPTable`, `#Subpages`, `#InboundNav` (cap-fiori-showcase); plus SAPUI5 *"Configuring Internal Navigation"* (sap-help) for manifest routing shape. |
+| Semantic key bolding | `@ObjectModel.semanticKey: ['ProjectId']` — `#SemanticKey` |
+| Dynamic CRUD (hide buttons by row state) | `@UI.updateHidden` + `@UI.deleteHidden` bound to a field — `#DynamicCRUD` |
+
+> **DDLS-vs-DDLX scope on 7.58.** Several entity-level annotations
+> (`@UI.facet`, `@UI.selectionFields`, header `FOR_ACTION` via `@UI.identification`) were
+> rejected on the projection DDLS in Run 7 but succeeded when moved to a DDLX
+> *metadata extension* (`annotate view <ZC_*> with @UI.facet: [...]` etc.). If a DDLS
+> entity-level annotation errors with "wrong scope" / "unknown", route it through DDLX.
+> Confirm with the relevant `#Tag` in `/abap-fiori-showcase` — the showcase patterns are
+> already split between DDLS and DDLX where the on-prem release requires it.
 
 ### 2b. Extension map (typical)
 
