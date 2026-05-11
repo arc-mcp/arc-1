@@ -445,6 +445,7 @@ ARC-1 enforces these Layer B constraints at startup:
 2. `SAP_BTP_SERVICE_KEY` with `SAP_COOKIE_FILE` / `SAP_COOKIE_STRING` fails fast.
 3. `SAP_BTP_SERVICE_KEY` with `SAP_PP_ENABLED=true` fails fast.
 4. `SAP_DISABLE_SAML=true` with `SAP_SYSTEM_TYPE=btp` emits a warning (startup continues).
+5. `ARC1_DCR_SIGNING_SECRET` set without `SAP_XSUAA_AUTH=true` emits a warning (startup continues, secret is unused — only consumed by the XSUAA OAuth proxy path).
 
 MCP client auth (API Key, OIDC, XSUAA) is independent and can be combined with any SAP auth method.
 

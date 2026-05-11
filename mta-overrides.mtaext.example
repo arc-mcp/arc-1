@@ -74,6 +74,30 @@ modules:
       # prefix than the bound CF route.
       # ARC1_PUBLIC_URL: "https://gateway.example.com/arc1"
 
+      # ── OAuth Dynamic Client Registration (DCR) ──────────────────────
+      # Lifetime of an OAuth DCR `client_id` in seconds. Default: 30 days
+      # (matches typical OAuth refresh-token lifetimes). Positive values
+      # clamped to [60s, 90d]. Set to "0" to disable expiration entirely —
+      # recommended when your MCP clients (Copilot CLI, Cursor) don't
+      # auto-re-register on `invalid_client` and a finite TTL would just
+      # produce periodic outages without security gain.
+      # ARC1_OAUTH_DCR_TTL_SECONDS: "0"
+
+      # NOTE: ARC1_DCR_SIGNING_SECRET is intentionally NOT listed here.
+      # The dedicated signing secret decouples DCR `client_id`s from the
+      # XSUAA `clientsecret` so cached client_ids survive `cf deploy` — but
+      # only if the secret itself survives `cf deploy`. Set it via:
+      #
+      #   cf set-env arc1-mcp-server ARC1_DCR_SIGNING_SECRET "$(openssl rand -base64 48)"
+      #   cf restage arc1-mcp-server
+      #
+      # Env vars set with `cf set-env` survive `cf deploy`. MTA properties
+      # under `modules[*].properties` are rewritten on every deploy, which
+      # would rotate the signing secret on each deploy and invalidate every
+      # cached client_id — defeating the whole purpose of having one.
+      # See docs_page/xsuaa-setup.md "Stable DCR signing key" for the full
+      # rationale.
+
       # ── CORS ─────────────────────────────────────────────────────────
       # Allow browser-based UIs to call /mcp directly. Not needed for
       # native MCP clients (Claude Desktop, Cursor, VS Code, Copilot

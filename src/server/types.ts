@@ -73,12 +73,25 @@ export interface ServerConfig {
   xsuaaAuth: boolean;
 
   /**
-   * Lifetime of an OAuth DCR registration (`client_id`) in seconds. Default:
-   * 30 days. Lower values bound the blast radius if the signing key leaks;
-   * higher values reduce re-auth churn. Hard-capped at 90 days — longer-lived
-   * credentials should use the pre-registered XSUAA client instead of DCR.
-   * Only consulted when XSUAA OAuth proxy mode is active. */
+   * Lifetime of an OAuth DCR registration (`client_id`) in seconds.
+   * Default: 30 days. Positive values are clamped to `[60s, 90d]`. Set to
+   * `0` (or any non-positive value) to disable expiration — recommended
+   * when MCP clients don't auto-re-register on `invalid_client` (e.g.
+   * Copilot CLI, Cursor) and a finite TTL would just produce periodic
+   * outages. Only consulted when XSUAA OAuth proxy mode is active. */
   oauthDcrTtlSeconds: number;
+
+  /**
+   * Optional dedicated secret for HMAC-signing DCR `client_id`s. When set,
+   * decouples the DCR signing key from the XSUAA `clientsecret`, so MTA
+   * `cf deploy` (which recreates the service binding and rotates the
+   * `clientsecret`) does NOT invalidate cached `client_id`s. The secret
+   * survives across deploys as a CF env var (`cf set-env`) — only an
+   * explicit re-set or `cf unset-env` rotates it. Recommended length:
+   * ≥32 bytes of entropy (e.g. `openssl rand -base64 48`). Falls back to
+   * the XSUAA `clientsecret` when omitted. Only consulted when XSUAA
+   * OAuth proxy mode is active. */
+  dcrSigningSecret?: string;
 
   // --- BTP ABAP Environment (direct connection via service key) ---
   btpServiceKey?: string; // Inline service key JSON
@@ -174,7 +187,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
   featureFlp: 'auto',
   systemType: 'auto',
   xsuaaAuth: false,
-  oauthDcrTtlSeconds: 30 * 24 * 60 * 60, // 30 days
+  oauthDcrTtlSeconds: 30 * 24 * 60 * 60, // 30 days; set to 0 to disable expiration
   btpOAuthCallbackPort: 0,
   ppEnabled: false,
   ppStrict: false,

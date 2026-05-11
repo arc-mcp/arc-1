@@ -415,23 +415,36 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
   }
   config.xsuaaAuth = resolveBool('xsuaa-auth', 'SAP_XSUAA_AUTH', false, 'xsuaaAuth');
 
-  // OAuth DCR client_id lifetime. 30 days default (matches typical refresh-token
-  // lifetime). Hard-capped at 90 days — registrations longer than that should
-  // use the pre-registered XSUAA client instead of DCR. Floor of 60 seconds to
-  // keep the TTL meaningful (and prevent typos like "0" wiping every connect).
+  // OAuth DCR client_id lifetime. Default: 30 days (matches typical
+  // refresh-token lifetimes). Positive values are clamped to [60s, 90d] so
+  // a typo can't wipe every active connection. Setting `0` (or any
+  // non-positive value) disables expiration explicitly — recommended when
+  // MCP clients don't auto-re-register on `invalid_client` (Copilot CLI,
+  // Cursor); revocation in that mode goes through full key rotation
+  // (ARC1_DCR_SIGNING_SECRET re-set, or KDF_LABEL bump).
   const dcrTtlRaw = getFlag('oauth-dcr-ttl-seconds') ?? process.env.ARC1_OAUTH_DCR_TTL_SECONDS;
-  if (dcrTtlRaw) {
+  if (dcrTtlRaw !== undefined) {
     const parsed = Number.parseInt(dcrTtlRaw, 10);
     if (!Number.isNaN(parsed)) {
-      const MIN = 60;
-      const MAX = 90 * 24 * 60 * 60;
-      config.oauthDcrTtlSeconds = Math.max(MIN, Math.min(MAX, parsed));
+      if (parsed <= 0) {
+        config.oauthDcrTtlSeconds = 0;
+      } else {
+        const MIN = 60;
+        const MAX = 90 * 24 * 60 * 60;
+        config.oauthDcrTtlSeconds = Math.max(MIN, Math.min(MAX, parsed));
+      }
       sources.oauthDcrTtlSeconds =
         getFlag('oauth-dcr-ttl-seconds') !== undefined
           ? { flag: '--oauth-dcr-ttl-seconds' }
           : { env: 'ARC1_OAUTH_DCR_TTL_SECONDS' };
     }
   }
+
+  // Optional dedicated secret for HMAC-signing DCR client_ids. Decouples the
+  // signing key from the XSUAA `clientsecret` so MTA `cf deploy` (which
+  // recreates the service binding) doesn't invalidate cached client_ids.
+  // When omitted, the store falls back to the XSUAA `clientsecret`.
+  config.dcrSigningSecret = resolveOptionalStr('dcr-signing-secret', 'ARC1_DCR_SIGNING_SECRET', 'dcrSigningSecret');
 
   // ── BTP ABAP Environment ───────────────────────────────────────────
   config.btpServiceKey = resolveOptionalStr('btp-service-key', 'SAP_BTP_SERVICE_KEY', 'btpServiceKey');
@@ -574,6 +587,12 @@ export function validateConfig(config: ServerConfig): void {
   if (config.disableSaml2 && config.systemType === 'btp') {
     console.error(
       '[warn] SAP_DISABLE_SAML=true on a BTP system usually breaks login — BTP ABAP and S/4HANA Public Cloud require SAML. Continuing because you explicitly set this, but check docs/enterprise-auth.md if login starts failing.',
+    );
+  }
+
+  if (config.dcrSigningSecret && !config.xsuaaAuth) {
+    console.error(
+      '[warn] ARC1_DCR_SIGNING_SECRET is set but SAP_XSUAA_AUTH=false — the secret is unused. Unset it to reduce attack surface, or enable XSUAA OAuth proxy mode (SAP_XSUAA_AUTH=true).',
     );
   }
 }

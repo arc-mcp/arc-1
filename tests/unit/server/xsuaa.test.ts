@@ -217,15 +217,112 @@ describe('expandScopes (scope expansion integration)', () => {
 
 // ─── createXsuaaOAuthProvider ────────────────────────────────────────
 
-describe('createXsuaaOAuthProvider', () => {
-  // Note: We can't fully test the provider without a live XSUAA instance.
-  // The XsuaaService constructor requires real credentials to set up JWKS.
-  // Instead we test the factory indirectly via the client store and verifier.
+// Stub credentials shape — enough for createXsuaaOAuthProvider to construct.
+// JWKS / network calls are lazy and only happen on first token verification,
+// so factory-level construction works fine in unit tests.
+const STUB_XSUAA_CREDS = {
+  clientid: 'sb-stub!t1',
+  clientsecret: 'stub-xsuaa-clientsecret-40-chars-long-AAAA',
+  url: 'https://stub.authentication.eu10.hana.ondemand.com',
+  xsappname: 'arc1',
+  uaadomain: 'authentication.eu10.hana.ondemand.com',
+  verificationkey: '-----BEGIN PUBLIC KEY-----\nstub\n-----END PUBLIC KEY-----',
+};
 
+describe('createXsuaaOAuthProvider', () => {
   it('createXsuaaTokenVerifier returns a function', async () => {
-    // We can at least verify the module exports are correct
     const { createXsuaaTokenVerifier } = await import('../../../src/server/xsuaa.js');
     expect(typeof createXsuaaTokenVerifier).toBe('function');
+  });
+
+  it('defaults to dcrSigningSource: xsuaa when dcrSigningSecret is omitted', async () => {
+    const { createXsuaaOAuthProvider } = await import('../../../src/server/xsuaa.js');
+    const { logger } = await import('../../../src/server/logger.js');
+    const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+    try {
+      const result = createXsuaaOAuthProvider(STUB_XSUAA_CREDS, 'https://arc1.example.com');
+      expect(result.clientStore).toBeDefined();
+      expect(infoSpy).toHaveBeenCalledWith(
+        'XSUAA OAuth provider created (stateless DCR)',
+        expect.objectContaining({ dcrSigningSource: 'xsuaa' }),
+      );
+    } finally {
+      infoSpy.mockRestore();
+    }
+  });
+
+  it('uses dcrSigningSource: env when a valid dcrSigningSecret is provided', async () => {
+    const { createXsuaaOAuthProvider } = await import('../../../src/server/xsuaa.js');
+    const { logger } = await import('../../../src/server/logger.js');
+    const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+    try {
+      createXsuaaOAuthProvider(STUB_XSUAA_CREDS, 'https://arc1.example.com', {
+        dcrSigningSecret: 'a-real-32-byte-secret-string-OK!',
+      });
+      expect(infoSpy).toHaveBeenCalledWith(
+        'XSUAA OAuth provider created (stateless DCR)',
+        expect.objectContaining({ dcrSigningSource: 'env' }),
+      );
+      expect(infoSpy).toHaveBeenCalledWith(
+        expect.stringContaining('DCR signing key uses dedicated ARC1_DCR_SIGNING_SECRET'),
+      );
+    } finally {
+      infoSpy.mockRestore();
+    }
+  });
+
+  it('falls back to xsuaa source when dcrSigningSecret is empty string (with warn)', async () => {
+    const { createXsuaaOAuthProvider } = await import('../../../src/server/xsuaa.js');
+    const { logger } = await import('../../../src/server/logger.js');
+    const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    try {
+      const result = createXsuaaOAuthProvider(STUB_XSUAA_CREDS, 'https://arc1.example.com', {
+        dcrSigningSecret: '',
+      });
+      expect(result.clientStore).toBeDefined();
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('ARC1_DCR_SIGNING_SECRET was set but is empty'));
+      expect(infoSpy).toHaveBeenCalledWith(
+        'XSUAA OAuth provider created (stateless DCR)',
+        expect.objectContaining({ dcrSigningSource: 'xsuaa' }),
+      );
+    } finally {
+      infoSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('falls back to xsuaa source when dcrSigningSecret is whitespace-only (with warn)', async () => {
+    const { createXsuaaOAuthProvider } = await import('../../../src/server/xsuaa.js');
+    const { logger } = await import('../../../src/server/logger.js');
+    const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    try {
+      const result = createXsuaaOAuthProvider(STUB_XSUAA_CREDS, 'https://arc1.example.com', {
+        dcrSigningSecret: '   \t  ',
+      });
+      expect(result.clientStore).toBeDefined();
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('ARC1_DCR_SIGNING_SECRET was set but is empty'));
+      expect(infoSpy).toHaveBeenCalledWith(
+        'XSUAA OAuth provider created (stateless DCR)',
+        expect.objectContaining({ dcrSigningSource: 'xsuaa' }),
+      );
+    } finally {
+      infoSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('emits the TTL-disabled INFO line when dcrTtlSeconds <= 0', async () => {
+    const { createXsuaaOAuthProvider } = await import('../../../src/server/xsuaa.js');
+    const { logger } = await import('../../../src/server/logger.js');
+    const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+    try {
+      createXsuaaOAuthProvider(STUB_XSUAA_CREDS, 'https://arc1.example.com', { dcrTtlSeconds: 0 });
+      expect(infoSpy).toHaveBeenCalledWith(expect.stringContaining('DCR client_id TTL is disabled'));
+    } finally {
+      infoSpy.mockRestore();
+    }
   });
 });
 

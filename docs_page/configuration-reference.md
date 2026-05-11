@@ -154,7 +154,8 @@ Full reference: [oauth-jwt-setup.md](oauth-jwt-setup.md).
 | Flag | Env var | Default | Effect |
 |---|---|---|---|
 | `--xsuaa-auth` | `SAP_XSUAA_AUTH` | `false` | When `true`, ARC-1 reads XSUAA credentials from `VCAP_SERVICES`, validates incoming JWTs against XSUAA's keys, and exposes RFC 9449 OAuth metadata + Dynamic Client Registration endpoints. Required for BTP CF deployments. |
-| `--oauth-dcr-ttl-seconds` | `ARC1_OAUTH_DCR_TTL_SECONDS` | `2592000` (30d) | Lifetime of a dynamically-registered OAuth `client_id` (Anthropic-style stateless DCR). Lower it to bound blast radius if the signing key leaks; raise it to reduce re-auth churn for long-lived agents. Clamped to `[60, 7776000]` (1 min – 90 d). Only consulted when XSUAA auth is on. |
+| `--oauth-dcr-ttl-seconds` | `ARC1_OAUTH_DCR_TTL_SECONDS` | `2592000` (30 d) | Lifetime of a dynamically-registered OAuth `client_id` (Anthropic-style stateless DCR). Positive values are clamped to `[60 s, 90 d]`. Set to `0` (or any non-positive value) to disable expiration entirely — recommended when MCP clients in use don't auto-re-register on `invalid_client` (Copilot CLI, Cursor) and a finite TTL would just produce periodic outages without security gain. Only consulted when XSUAA auth is on. |
+| `--dcr-signing-secret` | `ARC1_DCR_SIGNING_SECRET` | unset (falls back to XSUAA `clientsecret`) | Dedicated secret for HMAC-signing DCR `client_id`s. Set this (typically via `cf set-env`) to keep cached `client_id`s valid across `cf deploy` operations that recreate the XSUAA binding. Re-setting the value invalidates every outstanding registration (explicit revocation). Recommended: `openssl rand -base64 48` (≥32 bytes). ARC-1 emits a soft `[warn]` at startup if the trimmed value is shorter than 16 bytes, if it's empty/whitespace-only (falls back to legacy mode instead of crashing), or if set without `--xsuaa-auth=true` (orphan secret, unused). |
 
 Full reference: [xsuaa-setup.md](xsuaa-setup.md).
 

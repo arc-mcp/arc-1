@@ -507,7 +507,7 @@ describe('parseArgs', () => {
     expect(config.oauthDcrTtlSeconds).toBe(7200);
   });
 
-  it('clamps oauthDcrTtlSeconds to a 60-second floor', () => {
+  it('clamps positive oauthDcrTtlSeconds to a 60-second floor', () => {
     const config = parseArgs(['--oauth-dcr-ttl-seconds', '5']);
     expect(config.oauthDcrTtlSeconds).toBe(60);
   });
@@ -516,6 +516,16 @@ describe('parseArgs', () => {
     const ninetyOneDays = 91 * 24 * 60 * 60;
     const config = parseArgs(['--oauth-dcr-ttl-seconds', String(ninetyOneDays)]);
     expect(config.oauthDcrTtlSeconds).toBe(90 * 24 * 60 * 60);
+  });
+
+  it('explicit 0 disables TTL (bypasses 60-second floor)', () => {
+    const config = parseArgs(['--oauth-dcr-ttl-seconds', '0']);
+    expect(config.oauthDcrTtlSeconds).toBe(0);
+  });
+
+  it('negative values are normalized to 0 (TTL disabled)', () => {
+    const config = parseArgs(['--oauth-dcr-ttl-seconds', '-1']);
+    expect(config.oauthDcrTtlSeconds).toBe(0);
   });
 
   it('keeps default oauthDcrTtlSeconds when value is not parseable', () => {
@@ -527,6 +537,30 @@ describe('parseArgs', () => {
     process.env.ARC1_OAUTH_DCR_TTL_SECONDS = '7200';
     const config = parseArgs(['--oauth-dcr-ttl-seconds', '3600']);
     expect(config.oauthDcrTtlSeconds).toBe(3600);
+  });
+
+  // --- dcrSigningSecret ---
+
+  it('dcrSigningSecret is undefined by default (falls back to XSUAA clientsecret in xsuaa.ts)', () => {
+    const config = parseArgs([]);
+    expect(config.dcrSigningSecret).toBeUndefined();
+  });
+
+  it('parses --dcr-signing-secret flag', () => {
+    const config = parseArgs(['--dcr-signing-secret', 'super-stable-hmac-key']);
+    expect(config.dcrSigningSecret).toBe('super-stable-hmac-key');
+  });
+
+  it('parses ARC1_DCR_SIGNING_SECRET env var', () => {
+    process.env.ARC1_DCR_SIGNING_SECRET = 'env-derived-hmac-key';
+    const config = parseArgs([]);
+    expect(config.dcrSigningSecret).toBe('env-derived-hmac-key');
+  });
+
+  it('--dcr-signing-secret takes precedence over ARC1_DCR_SIGNING_SECRET', () => {
+    process.env.ARC1_DCR_SIGNING_SECRET = 'env-value';
+    const config = parseArgs(['--dcr-signing-secret', 'flag-value']);
+    expect(config.dcrSigningSecret).toBe('flag-value');
   });
 
   // --- API_KEY_PROFILES ---
@@ -810,6 +844,51 @@ describe('validateConfig', () => {
       expect(stderrSpy).toHaveBeenCalledWith(
         expect.stringContaining('SAP_DISABLE_SAML=true on a BTP system usually breaks login'),
       );
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('warns to stderr (without throwing) when dcrSigningSecret is set with xsuaaAuth=false', () => {
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      expect(() =>
+        validateConfig({
+          ...DEFAULT_CONFIG,
+          dcrSigningSecret: 'some-stable-secret',
+          xsuaaAuth: false,
+        }),
+      ).not.toThrow();
+      expect(stderrSpy).toHaveBeenCalledWith(
+        expect.stringContaining('ARC1_DCR_SIGNING_SECRET is set but SAP_XSUAA_AUTH=false'),
+      );
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('does not warn about dcrSigningSecret when xsuaaAuth=true', () => {
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      validateConfig({
+        ...DEFAULT_CONFIG,
+        dcrSigningSecret: 'some-stable-secret',
+        xsuaaAuth: true,
+      });
+      expect(stderrSpy).not.toHaveBeenCalledWith(expect.stringContaining('ARC1_DCR_SIGNING_SECRET'));
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('does not warn when dcrSigningSecret is unset', () => {
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      validateConfig({
+        ...DEFAULT_CONFIG,
+        xsuaaAuth: false,
+      });
+      expect(stderrSpy).not.toHaveBeenCalledWith(expect.stringContaining('ARC1_DCR_SIGNING_SECRET'));
     } finally {
       stderrSpy.mockRestore();
     }

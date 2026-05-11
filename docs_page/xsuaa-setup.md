@@ -178,8 +178,31 @@ ARC-1 implements RFC 7591 Dynamic Client Registration (DCR) with a **stateless**
 This means:
 
 - DCR registrations survive `cf restart`, `cf push`, `cf restage`, cell evacuations, OOM auto-recovery, and multi-instance scale-out — none of these invalidate cached `client_id`s.
-- The default lifetime is **30 days** (matches typical OAuth refresh-token lifetimes). Configurable via `--oauth-dcr-ttl-seconds` / `ARC1_OAUTH_DCR_TTL_SECONDS`. Clamped to `[60s, 90d]` — for longer-lived credentials, use the pre-registered XSUAA client (Manual mode) instead.
-- Per-client revocation is intentionally not supported. Either wait for TTL expiry or rotate the signing key (see below).
+- The default lifetime is **30 days** (matches typical OAuth refresh-token lifetimes). Configurable via `--oauth-dcr-ttl-seconds` / `ARC1_OAUTH_DCR_TTL_SECONDS` (positive values clamped to `[60s, 90d]`). Set to `0` (or any non-positive value) to disable expiration entirely — recommended when MCP clients in use don't auto-re-register on `invalid_client` (Copilot CLI, Cursor) and a finite TTL would just produce periodic outages without security gain.
+- Per-client revocation is intentionally not supported. Forced revocation goes through full key rotation (see below) — either rotate the DCR signing key, rebind the XSUAA service, or bump `KDF_LABEL` in `stateless-client-store.ts` (`arc1-dcr/v1` → `v2`).
+
+### Stable DCR signing key (recommended)
+
+By default, the DCR signing key derives from the XSUAA `clientsecret`. This is convenient (no secret to manage) but has a subtle side effect: **`cf deploy` of an MTA recreates the XSUAA service binding, which rotates the `clientsecret` and therefore invalidates every cached `client_id`**. Users see `invalid_client` after every redeploy and must re-register their MCP client.
+
+To decouple the two and survive redeploys, set a dedicated signing secret:
+
+```bash
+SECRET=$(openssl rand -base64 48)
+cf set-env arc1-mcp-server ARC1_DCR_SIGNING_SECRET "$SECRET"
+cf restage arc1-mcp-server
+```
+
+ARC-1 emits a `[warn]` to stderr if `ARC1_DCR_SIGNING_SECRET` is set without `SAP_XSUAA_AUTH=true` — the secret is only consumed by the XSUAA OAuth proxy path, so this surfaces a misconfiguration where the secret would otherwise be unused.
+
+Properties:
+- `cf set-env` env vars survive `cf deploy` (CF doesn't reset them, and MTA only touches env vars declared in `mta.yaml` properties)
+- Re-setting the value (`cf set-env` with a new secret + `cf restage`) is the explicit revocation knob — invalidates every `client_id` issued under the old secret
+- Falls back to the XSUAA `clientsecret` when unset, preserving the legacy behavior
+- Empty or whitespace-only values are treated as unset (with a `[warn]`), so a misconfigured env var won't crash startup
+- A signing secret shorter than 16 bytes (128 bits) triggers a soft warning at startup; use `openssl rand -base64 48` for the recommended ≥32 bytes
+
+ARC-1 logs the active signing source as `dcrSigningSource: 'env' | 'xsuaa'` in the startup INFO line for observability — `'env'` means the dedicated `ARC1_DCR_SIGNING_SECRET` is in use, `'xsuaa'` means the legacy `clientsecret` fallback.
 
 ### Service-binding rotation
 
