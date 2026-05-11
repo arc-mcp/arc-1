@@ -46,17 +46,28 @@ Defaults to HTTP Streamable on `:8080`. Connect MCP clients to `http://localhost
 
 For stdio mode inside Docker (Claude Desktop wraps the `docker run` in the MCP config), add `-e SAP_TRANSPORT=stdio` and use `docker run -i --rm` instead of `-d`.
 
-### git clone (contributing to ARC-1)
+### git clone (contributing or running from source)
 
 ```bash
 git clone https://github.com/marianfoo/arc-1.git
 cd arc-1
 npm ci
-npm run build
-npm start          # or: npm run dev  (tsx, auto-reload)
+cp .env.example .env       # then edit for your SAP system
+
+# Pick one:
+npm run dev                # stdio, tsx auto-reload (development loop)
+npm run dev:http           # builds + runs HTTP streamable on 0.0.0.0:8080
+npm run build && npm start # production-style: compile to dist/, run from there
 ```
 
-Config via `.env` (see below) or env vars / flags.
+| Script | What it does | When to use it |
+|---|---|---|
+| `npm run dev` | `tsx src/index.ts` — runs from source over stdio. No build step; restarts on file change. | Iterating on stdio-mode code; pairing with `node` debugger. |
+| `npm run dev:http` | `npm run build && tsx src/index.ts --transport http-streamable` | Iterating on HTTP-mode code; testing OAuth/XSUAA flows; pointing remote MCP clients at your laptop. |
+| `npm run build` | `tsc` + copies AFF schemas to `dist/`. | Producing the `dist/index.js` you ship in Docker or invoke as `node dist/index.js`. |
+| `npm start` | `node dist/index.js` (assumes you ran `npm run build` first). | Production-equivalent local run; useful when you want to test the same artifact CI publishes. |
+
+All four read `.env` from the repo root (their CWD). CLI flags and shell env vars override `.env` — see [Where do my config values come from?](#where-do-my-config-values-come-from) below.
 
 ---
 
@@ -77,6 +88,19 @@ SAP_LANGUAGE=EN
 **The `.env` file loads automatically for `npm run dev`, `npm start`, and the `arc1` CLI.** For `npx` and Docker, pass values as env vars or flags instead.
 
 Full grouped template with every option: see [`.env.example`](https://github.com/marianfoo/arc-1/blob/main/.env.example). The file is grouped into Layer B (ARC-1 → SAP) and Layer A (MCP Client → ARC-1) blocks with fail-fast rules documented inline.
+
+### Where do my config values come from?
+
+ARC-1 resolves every config field from four sources, in order: **CLI flag > `process.env` > `.env` file (in CWD) > built-in default**. The `.env` file is loaded by dotenv from the running process's CWD and **never overrides values already in `process.env`** — it only fills in missing keys.
+
+What `process.env` contains depends on how you launched ARC-1:
+
+- **`npm run dev` / `npm start` from a shell** — your shell exports + the repo's `.env`. Shell wins over `.env`.
+- **`npx arc-1` from an MCP client (stdio)** — the `env` block in your `mcp.json` / `claude_desktop_config.json` becomes the subprocess's environment. There's no `.env` involved.
+- **Remote HTTP — MCP client connects via `"url"`** — only the server's startup environment matters. Putting `env:` in mcp.json next to a `url:` does **nothing**.
+- **Docker / BTP CF** — `-e` flags, `--env-file`, `cf set-env`, manifest properties, and `VCAP_SERVICES`. No `.env` inside containers.
+
+Full per-mode table + debugging tips: [Configuration Precedence](configuration-precedence.md).
 
 ---
 
@@ -169,6 +193,66 @@ npx arc-1@latest --url https://host:44300 --user dev --password secret \
 ### Gemini CLI / Goose / OpenCode / other stdio clients
 
 Same pattern: spawn `npx -y arc-1@latest` with the same `env` block. All stdio clients are interchangeable.
+
+### Pointing an MCP client at a locally-built instance
+
+When you're iterating on ARC-1 itself (or just want to skip the npx download), point the client at your local clone instead.
+
+**Stdio against compiled `dist/`** — closest to what the published package does. Run `npm run build` first.
+
+```json
+{
+  "mcpServers": {
+    "sap-local": {
+      "command": "node",
+      "args": ["/absolute/path/to/arc-1/dist/index.js"],
+      "env": {
+        "SAP_URL": "https://your-sap-host:44300",
+        "SAP_USER": "dev",
+        "SAP_PASSWORD": "secret",
+        "SAP_CLIENT": "100"
+      }
+    }
+  }
+}
+```
+
+`.env` is **not** read here unless you set `"cwd": "/absolute/path/to/arc-1"` in the same block — dotenv looks at the subprocess CWD. Either set `cwd`, or pass everything via `env`.
+
+**Stdio against `tsx` (no build step)** — handy while iterating on source.
+
+```json
+{
+  "mcpServers": {
+    "sap-local": {
+      "command": "npx",
+      "args": ["tsx", "/absolute/path/to/arc-1/src/index.ts"],
+      "env": { "SAP_URL": "…", "SAP_USER": "…", "SAP_PASSWORD": "…", "SAP_CLIENT": "100" }
+    }
+  }
+}
+```
+
+**HTTP against a long-running `npm run dev:http`** — useful for testing OAuth/XSUAA or sharing one instance across multiple clients. Start the server in a terminal:
+
+```bash
+cd /path/to/arc-1
+npm run dev:http -- --http-addr 127.0.0.1:3000     # reads .env from repo root
+```
+
+Then point any MCP client at the URL:
+
+```json
+{
+  "servers": {
+    "sap-local": { "url": "http://localhost:3000/mcp" }
+  }
+}
+```
+
+> For local HTTP loops, bind to `127.0.0.1` (not `0.0.0.0`) so other machines on your network can't hit the instance. If you bind `0.0.0.0`, add an API key — see [api-key-setup.md](api-key-setup.md).
+
+In HTTP mode, the `env` block in mcp.json **does nothing** — the server already has its own environment from when you launched `npm run dev:http`. Change config by editing `.env` (or shell-exporting) and restarting the server. Full mode-by-mode breakdown: [Configuration Precedence](configuration-precedence.md).
 
 ---
 
@@ -290,5 +374,6 @@ Full CLI reference → [cli-guide.md](cli-guide.md).
 
 - **Deploy for a team** → [deployment.md](deployment.md)
 - **All flags** → [configuration-reference.md](configuration-reference.md)
+- **Where config values come from** → [configuration-precedence.md](configuration-precedence.md)
 - **Auth internals and combinations** → [enterprise-auth.md](enterprise-auth.md)
 - **Update ARC-1** → [updating.md](updating.md)

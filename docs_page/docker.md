@@ -246,6 +246,9 @@ All ARC-1 env vars, CLI flags, and safety recipes live in [configuration-referen
 
 ### Env vars and env files
 
+!!! note "Where do values come from in Docker?"
+    The image does **not** read a `.env` file at startup — `dotenv` would look in the container's CWD, which is empty by design. Pass values explicitly with `-e KEY=VAL` or `--env-file path/to/file.env`. CLI flags appended after the image name (e.g. `… arc1 --allow-writes`) still override env. Full per-mode breakdown: [Configuration Precedence](configuration-precedence.md).
+
 Use `-e` for short examples and `--env-file` when the list gets long:
 
 ```bash

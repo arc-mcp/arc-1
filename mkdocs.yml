@@ -36,37 +36,38 @@ theme:
 
 nav:
   - Home: index.md
-  - Getting Started:
-      - Quickstart: quickstart.md
-      - Local Development: local-development.md
-      - CLI Guide: cli-guide.md
-      - SAP Trial Setup: sap-trial-setup.md
+  - Quickstart: quickstart.md
   - Deployment:
       - Overview: deployment.md
       - Docker: docker.md
       - BTP Cloud Foundry: phase4-btp-deployment.md
       - BTP ABAP Environment: btp-abap-environment.md
       - Best Practices: deployment-best-practices.md
-  - Authentication:
+  - Auth & Permissions:
       - Overview: enterprise-auth.md
       - Authorization & Roles: authorization.md
       - API Key: api-key-setup.md
       - OAuth / JWT: oauth-jwt-setup.md
-      - Principal Propagation: principal-propagation-setup.md
       - XSUAA Setup: xsuaa-setup.md
+      - Principal Propagation: principal-propagation-setup.md
       - BTP Destination Setup: btp-destination-setup.md
-      - Auth Test Process: auth-test-process.md
   - Using ARC-1:
       - Tools Reference: tools.md
       - MCP Usage Guide: mcp-usage.md
       - Skills: skills.md
   - Reference:
-      - Architecture: architecture.md
       - Configuration: configuration-reference.md
-      - Caching: caching.md
+      - Configuration Precedence: configuration-precedence.md
       - Security: security-guide.md
-      - Updating: updating.md
+      - Caching: caching.md
       - Log Analysis: log-analysis.md
+      - Updating: updating.md
+  - Development:
+      - Local Development: local-development.md
+      - Architecture: architecture.md
+      - CLI Guide: cli-guide.md
+      - SAP Trial Setup: sap-trial-setup.md
+      - Auth Test Process: auth-test-process.md
       - Roadmap: roadmap.md
 
 markdown_extensions:
