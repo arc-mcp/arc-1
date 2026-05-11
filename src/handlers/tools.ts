@@ -439,6 +439,14 @@ function buildSAPSearchTool(btp: boolean, textSearchAvailable?: boolean): ToolDe
     description:
       'For source_code search: filter by object type (e.g., PROG, CLAS, FUNC). For tadir_lookup: single type filter; use objectTypes for multiple.',
   };
+  properties.source = {
+    type: 'string',
+    enum: ['adt', 'db', 'both'],
+    description:
+      'For tadir_lookup only: data source for the lookup. "adt" (default) uses the ADT info-system endpoint — workbench-resolvable objects only. ' +
+      '"db" issues SQL against table TADIR — also surfaces orphan/ghost rows from aborted create-delete cycles (requires sql scope and SAP_ALLOW_FREE_SQL=true). ' +
+      '"both" runs both paths and adds a "splitBrain" array listing names where the two sources disagree, plus a "warnings" array explaining each divergence (requires sql scope).',
+  };
 
   if (!hideSourceCode) {
     properties.packageName = { type: 'string', description: 'For source_code search: filter by package name' };
@@ -628,6 +636,11 @@ export function getToolDefinitions(
             type: 'boolean',
             description:
               'For generate_behavior_implementation: when true (default), runs SAPActivate on the class after writing. When false, only the source is written. Activation failures matching the well-known "Local classes of CL_ABAP_BEHAVIOR_HANDLER…" stale-active coupling do not throw — they return activation.success=false with a guided recovery hint so the source remains usable.',
+          },
+          activateAtEnd: {
+            type: 'boolean',
+            description:
+              'For action="batch_create" only. Default false: per-object inline activation (each object is created → source written → activated, in order). When true: ARC-1 writes inactive drafts for every object then issues a single terminal activateBatch — SAP\'s activator sees the whole graph and resolves cross-references between siblings (e.g. composition-linked DDLS where the parent references a not-yet-active child). Use this for interdependent RAP stacks (TABL → DDLS → DCLS → BDEF → SRVD). Has no effect on other actions. Partial-failure semantics: a write-phase failure still breaks the loop; the terminal activateBatch only runs over the already-written subset.',
           },
           dryRun: {
             type: 'boolean',

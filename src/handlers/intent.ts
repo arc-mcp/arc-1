@@ -151,6 +151,8 @@ import {
   releaseTransportRecursive,
 } from '../adt/transport.js';
 import type {
+  AdtObjectLookupResult,
+  AdtSearchResult,
   ClassHierarchy,
   DumpDetail,
   FixAffectedObject,
@@ -1065,8 +1067,11 @@ export async function handleToolCall(
   // Unified scope enforcement via ACTION_POLICY — routes through action/type-aware lookup.
   // For SAPRead, the policy key is Tool.{type}; for other action-bearing tools, Tool.{action};
   // for tools without an action/type enum (SAPSearch, SAPQuery), the tool-level default applies.
+  // For SAPSearch.tadir_lookup with source='db'|'both', synthesize a sub-action key so the
+  // sql-scoped policy entry kicks in (otherwise viewer-only profiles could piggyback on the
+  // ADT info-system route to issue freestyle SQL).
   // Runs BEFORE Zod validation so scope errors don't leak schema details to unauthorized callers.
-  const actionOrType =
+  let actionOrType: string | undefined =
     toolName === 'SAPRead'
       ? typeof args.type === 'string'
         ? args.type
@@ -1074,6 +1079,17 @@ export async function handleToolCall(
       : typeof args.action === 'string'
         ? args.action
         : undefined;
+  if (
+    toolName === 'SAPSearch' &&
+    typeof args.searchType === 'string' &&
+    args.searchType === 'tadir_lookup' &&
+    typeof args.source === 'string'
+  ) {
+    const src = args.source.toLowerCase();
+    if (src === 'db' || src === 'both') {
+      actionOrType = `tadir_lookup_${src}`;
+    }
+  }
   const policy = getActionPolicy(toolName, actionOrType);
 
   if (authInfo && policy) {
@@ -1856,19 +1872,108 @@ async function handleSAPSearch(client: AdtClient, args: Record<string, unknown>)
       return errorResult('SAPSearch(searchType="tadir_lookup") requires names[] or query with at least one name.');
     }
     const objectTypes = extractLookupObjectTypes(args.objectType, args.objectTypes);
-    const lookups = await client.lookupObjects(names, { maxResults, objectTypes });
-    const missing = lookups.filter((l) => !l.found).map((l) => l.name);
-    const matchCount = lookups.reduce((count, lookup) => count + lookup.matches.length, 0);
+    const rawSource = typeof args.source === 'string' ? args.source.toLowerCase() : 'adt';
+    const source: 'adt' | 'db' | 'both' =
+      rawSource === 'db' || rawSource === 'both' ? (rawSource as 'db' | 'both') : 'adt';
+
+    // Stamp each match with provenance so a merged 'both' result is unambiguous and
+    // viewer tooling can colour-code ghost rows. The DB path already stamps `_origin:'db'`
+    // (see `lookupObjectsViaDb`); we stamp ADT matches here.
+    const tagOrigin = (lookups: AdtObjectLookupResult[], origin: 'adt' | 'db'): AdtObjectLookupResult[] =>
+      lookups.map((l) => ({
+        ...l,
+        matches: l.matches.map((m) => ({ ...m, _origin: m._origin ?? origin })),
+      }));
+
+    let finalLookups: AdtObjectLookupResult[];
     const wildcardNames = names.filter((name) => name.includes('*'));
-    const warnings =
-      wildcardNames.length > 0
-        ? [
-            `tadir_lookup performs exact-name lookup; wildcard characters are treated literally for: ${wildcardNames.join(', ')}`,
-          ]
-        : undefined;
-    return textResult(
-      JSON.stringify({ count: matchCount, lookups, missing, ...(warnings ? { warnings } : {}) }, null, 2),
-    );
+    const warnings: string[] = [];
+    let splitBrain: string[] = [];
+
+    if (source === 'adt') {
+      finalLookups = tagOrigin(await client.lookupObjects(names, { maxResults, objectTypes }), 'adt');
+    } else if (source === 'db') {
+      // The 'db' path bypasses ADT info-system entirely; `lookupObjectsViaDb` already
+      // tags matches with `_origin:'db'`. Safety/scope gating runs at handleToolCall
+      // and in client.runQuery (FreeSQL operation), so unauthorized callers never reach here.
+      finalLookups = await client.lookupObjectsViaDb(names, { maxResults, objectTypes });
+    } else {
+      // 'both' — parallel ADT + DB, merge per name with dedupe.
+      const [adtLookups, dbLookups] = await Promise.all([
+        client.lookupObjects(names, { maxResults, objectTypes }).then((r) => tagOrigin(r, 'adt')),
+        client.lookupObjectsViaDb(names, { maxResults, objectTypes }),
+      ]);
+
+      const dbByName = new Map(dbLookups.map((l) => [l.name.toUpperCase(), l]));
+      const adtByName = new Map(adtLookups.map((l) => [l.name.toUpperCase(), l]));
+
+      finalLookups = names.map((rawName) => {
+        const upper = rawName.toUpperCase();
+        const adt = adtByName.get(upper);
+        const db = dbByName.get(upper);
+        const adtMatches = adt?.matches ?? [];
+        const dbMatches = db?.matches ?? [];
+
+        // Dedupe by (baseObjectType, objectName) — TADIR stores bare types ('DDLS')
+        // while ADT info-system returns slash-form ('DDLS/DF'). Stripping the suffix
+        // keeps the same logical object from appearing twice in the merged matches.
+        // Preserve the more-specific slash form when both originate from ADT+DB.
+        const seen = new Map<string, AdtSearchResult>();
+        const baseKey = (m: AdtSearchResult): string =>
+          `${(m.objectType.split('/')[0] || m.objectType).toUpperCase()} ${m.objectName.toUpperCase()}`;
+        for (const m of adtMatches) seen.set(baseKey(m), m);
+        for (const m of dbMatches) {
+          const k = baseKey(m);
+          if (!seen.has(k)) seen.set(k, m);
+        }
+        const mergedMatches = [...seen.values()];
+
+        // Split-brain detection: an object is divergent if exactly one source has matches.
+        // (Zero matches on both sides = consistent absence; matches on both = consistent presence.)
+        if (adtMatches.length > 0 !== dbMatches.length > 0) {
+          splitBrain.push(rawName);
+        }
+
+        return { name: rawName, found: mergedMatches.length > 0, matches: mergedMatches };
+      });
+
+      // Compose human-friendly warnings per split-brain name. Keep them grounded in
+      // the most common cause (TADIR ghost from aborted create/delete) so LLM clients
+      // can suggest the right cleanup path without inventing a new pointer.
+      for (const name of splitBrain) {
+        const adt = adtByName.get(name.toUpperCase());
+        const db = dbByName.get(name.toUpperCase());
+        const adtHas = (adt?.matches.length ?? 0) > 0;
+        const dbHas = (db?.matches.length ?? 0) > 0;
+        if (dbHas && !adtHas) {
+          warnings.push(
+            `${name} exists in TADIR (DB) but ADT cannot resolve it — likely a TADIR ghost from an aborted create/delete cycle. Consider RS_DD_TADIR_CLEANUP or manual SE03 cleanup.`,
+          );
+        } else if (adtHas && !dbHas) {
+          warnings.push(
+            `${name} resolves via ADT but is not present in the TADIR row scan — likely a release-time mismatch or a type filter excluding the row. Re-run with broader objectTypes or no filter to confirm.`,
+          );
+        }
+      }
+    }
+
+    // Dedupe split-brain names (defensive; merge loop should already avoid duplicates).
+    splitBrain = [...new Set(splitBrain)];
+
+    if (wildcardNames.length > 0) {
+      warnings.push(
+        `tadir_lookup performs exact-name lookup; wildcard characters are treated literally for: ${wildcardNames.join(', ')}`,
+      );
+    }
+
+    const missing = finalLookups.filter((l) => !l.found).map((l) => l.name);
+    const matchCount = finalLookups.reduce((count, lookup) => count + lookup.matches.length, 0);
+
+    const payload: Record<string, unknown> = { count: matchCount, lookups: finalLookups, missing };
+    if (splitBrain.length > 0) payload.splitBrain = splitBrain;
+    if (warnings.length > 0) payload.warnings = warnings;
+
+    return textResult(JSON.stringify(payload, null, 2));
   }
 
   if (searchType === 'source_code') {
@@ -4256,6 +4361,12 @@ async function handleSAPWrite(
         return errorResult('"objects" array is required and must be non-empty for batch_create action.');
       }
 
+      // Opt-in deferred-activation: writes every object as an inactive draft first,
+      // then issues a single terminal activateBatch over the written subset. Use case:
+      // composition-linked DDLS / interdependent RAP graphs where per-object inline
+      // activate() can't resolve cross-references to not-yet-active siblings.
+      const activateAtEnd = args.activateAtEnd === true || String(args.activateAtEnd) === 'true';
+
       const defaultPackage = normalizePackageOverride(args.package, '$TMP');
 
       const batchPlan = objects.map((obj) => {
@@ -4330,6 +4441,9 @@ async function handleSAPWrite(
       // guard fires for every MSAG entry, but a batch typically shares one transport — cache
       // the lookup result to avoid one HTTP roundtrip per object.
       const transportLookupCache = new Map<string, Awaited<ReturnType<typeof getTransport>>>();
+      // Accumulated objects whose create + source-write phase succeeded — used by the
+      // terminal activateBatch when activateAtEnd=true. Order matches the input order.
+      const writtenObjects: BatchActivationObject[] = [];
 
       for (const plan of batchPlan) {
         const { obj, type: objType, name: objName, packageName: objPackage } = plan;
@@ -4478,21 +4592,53 @@ async function handleSAPWrite(
             );
           }
 
-          // Step 3: Activate the object
-          const activationResult = await activate(client.http, client.safety, objUrl);
-          if (!activationResult.success) {
-            results.push({
-              type: objType,
-              name: objName,
-              packageName: objPackage,
-              status: 'failed',
-              error: `activation failed: ${activationResult.messages.join('; ')}`,
-            });
-            break;
+          // Resolve the activation URL up front so both the inline path and the
+          // deferred terminal-activate path use the same URL. FUNC needs the parent
+          // function-group baked into the path (issue #250); objectUrlForType throws
+          // for FUNC so we mirror the FUNC-aware resolver from handleSAPActivate. For
+          // TABL we keep objUrl (already resolved to /tables/) — DDIC-structure FMs
+          // aren't a real concept and the create path doesn't expose one.
+          let activationUrl = objUrl;
+          if (objType === 'FUNC') {
+            let group = String(obj.group ?? args.group ?? '').trim();
+            if (!group) {
+              const resolved = cachingLayer
+                ? await cachingLayer.resolveFuncGroup(client, objName)
+                : await client.resolveFunctionGroup(objName);
+              if (!resolved) {
+                throw new Error(
+                  `Cannot resolve function group for FM "${objName}" in batch_create activation step. Provide "group" on the FUNC entry.`,
+                );
+              }
+              group = resolved;
+            }
+            const groupLc = encodeURIComponent(group.toLowerCase());
+            activationUrl = `/sap/bc/adt/functions/groups/${groupLc}/fmodules/${encodeURIComponent(objName.toLowerCase())}`;
           }
 
-          invalidateWrittenObject(objType, objName);
-          results.push({ type: objType, name: objName, packageName: objPackage, status: 'success' });
+          if (activateAtEnd) {
+            // Step 3 deferred: track this object for the terminal activateBatch call.
+            // Cache invalidation also moves to AFTER the terminal activate succeeds —
+            // invalidating now would let the next read see a draft we couldn't activate.
+            writtenObjects.push({ type: objType, name: objName, url: activationUrl });
+            results.push({ type: objType, name: objName, packageName: objPackage, status: 'success' });
+          } else {
+            // Step 3: Activate the object (inline, default behavior).
+            const activationResult = await activate(client.http, client.safety, activationUrl);
+            if (!activationResult.success) {
+              results.push({
+                type: objType,
+                name: objName,
+                packageName: objPackage,
+                status: 'failed',
+                error: `activation failed: ${activationResult.messages.join('; ')}`,
+              });
+              break;
+            }
+
+            invalidateWrittenObject(objType, objName);
+            results.push({ type: objType, name: objName, packageName: objPackage, status: 'success' });
+          }
         } catch (err) {
           results.push({
             type: objType,
@@ -4518,6 +4664,49 @@ async function handleSAPWrite(
         });
       }
 
+      // ── Terminal activateBatch (activateAtEnd=true) ─────────────────────
+      // After every write-phase succeeded (or broke off early), issue ONE batch
+      // activate over the already-written subset. This is the killer feature
+      // for composition-linked DDLS and RAP behavior stacks — SAP's activator
+      // sees the whole graph in a single POST and resolves cross-references
+      // internally, so parent → child siblings activate cleanly.
+      let terminalActivationFailure: string | undefined;
+      if (activateAtEnd && writtenObjects.length > 0) {
+        const activationOutcome = await activateBatch(client.http, client.safety, writtenObjects);
+        if (activationOutcome.success) {
+          // Defensive: per-object status was already 'success' from the write phase.
+          // Cache invalidation moves here so a failed terminal activate doesn't strand
+          // a stale 'active' cache entry. Invalidate inactive-lists once for the user.
+          for (const o of writtenObjects) {
+            cachingLayer?.invalidate(o.type, o.name, 'all');
+          }
+          cachingLayer?.inactiveLists.invalidate(client.username);
+        } else {
+          // Flip every written-but-not-yet-activated entry to 'failed', preserving the
+          // "create + source-write succeeded" context. Reuse the existing per-object
+          // diagnostic mapper so callers see the activation messages keyed by object name.
+          const batchStatuses = buildBatchActivationStatuses(writtenObjects, activationOutcome);
+          const statusDetails = formatBatchActivationStatuses(batchStatuses);
+          terminalActivationFailure = statusDetails;
+          const statusByName = new Map(batchStatuses.map((s) => [`${s.type} ${s.name}`, s]));
+          for (const result of results) {
+            if (result.status !== 'success') continue;
+            const key = `${result.type} ${result.name}`;
+            const matched = statusByName.get(key);
+            if (!matched) continue;
+            // Some entries may still report status 'active' if the activator returned
+            // success: false but had no per-object error details — keep them as 'success'.
+            if (matched.status === 'active') continue;
+            result.status = 'failed';
+            const detail = matched.messages.length > 0 ? ` — ${matched.messages.join('; ')}` : '';
+            // Preserve the "create + source-write succeeded" context so the user sees that
+            // the failure was specifically the activation step, not the write step.
+            result.error = `${writtenObjects.length}/${writtenObjects.length} written, batch activation failed${detail}`;
+          }
+        }
+      }
+      // ────────────────────────────────────────────────────────────────────
+
       const summary = results
         .map((r) =>
           r.status === 'success'
@@ -4529,6 +4718,8 @@ async function handleSAPWrite(
       const hasFailure = results.some((r) => r.status === 'failed');
       const warningSuffix =
         batchWarnings.length > 0 ? `\n\nRAP preflight warnings:\n- ${batchWarnings.join('\n- ')}` : '';
+      const activateAtEndSuffix =
+        terminalActivationFailure !== undefined ? `\n\nBatch activation diagnostics:${terminalActivationFailure}` : '';
       const packageNames = [...new Set(batchPlan.map((item) => item.packageName))];
       const packageSummary =
         packageNames.length === 1
@@ -4536,6 +4727,7 @@ async function handleSAPWrite(
           : packageNames.length <= 3
             ? `across packages [${packageNames.join(', ')}]`
             : `across ${packageNames.length} packages`;
+      const activateAtEndPrefix = activateAtEnd ? '; activated as a single batch' : '';
 
       if (hasFailure) {
         const cleanupHint =
@@ -4543,10 +4735,12 @@ async function handleSAPWrite(
             ? ` Note: ${successCount} already-created object(s) remain on the SAP system and may need manual cleanup.`
             : '';
         return errorResult(
-          `Batch created ${successCount}/${objects.length} objects ${packageSummary}: ${summary}${cleanupHint}${warningSuffix}`,
+          `Batch created ${successCount}/${objects.length} objects ${packageSummary}${activateAtEndPrefix}: ${summary}${cleanupHint}${warningSuffix}${activateAtEndSuffix}`,
         );
       }
-      return textResult(`Batch created ${successCount} objects ${packageSummary}: ${summary}${warningSuffix}`);
+      return textResult(
+        `Batch created ${successCount} objects ${packageSummary}${activateAtEndPrefix}: ${summary}${warningSuffix}${activateAtEndSuffix}`,
+      );
     }
     default:
       return errorResult(

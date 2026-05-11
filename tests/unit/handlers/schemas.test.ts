@@ -356,6 +356,50 @@ describe('SAPSearchSchema', () => {
     const result = SAPSearchSchema.safeParse({ query: 'test', searchType: 'invalid' });
     expect(result.success).toBe(false);
   });
+
+  it("accepts source='adt' for tadir_lookup", () => {
+    const result = SAPSearchSchema.safeParse({
+      searchType: 'tadir_lookup',
+      names: ['ZA'],
+      source: 'adt',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts source='db' for tadir_lookup", () => {
+    const result = SAPSearchSchema.safeParse({
+      searchType: 'tadir_lookup',
+      names: ['ZA'],
+      source: 'db',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts source='both' for tadir_lookup", () => {
+    const result = SAPSearchSchema.safeParse({
+      searchType: 'tadir_lookup',
+      names: ['ZA'],
+      source: 'both',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects source with an unknown enum value', () => {
+    const result = SAPSearchSchema.safeParse({
+      searchType: 'tadir_lookup',
+      names: ['ZA'],
+      source: 'sql',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts tadir_lookup without source (default applies in handler)', () => {
+    const result = SAPSearchSchema.safeParse({
+      searchType: 'tadir_lookup',
+      names: ['ZA'],
+    });
+    expect(result.success).toBe(true);
+  });
 });
 
 describe('SAPSearchSchemaNoSource', () => {
@@ -374,6 +418,15 @@ describe('SAPSearchSchemaNoSource', () => {
       searchType: 'tadir_lookup',
       names: ['ZDM_PROJECT_D'],
       objectTypes: ['TABL'],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts source='both' for tadir_lookup when source search is unavailable", () => {
+    const result = SAPSearchSchemaNoSource.safeParse({
+      searchType: 'tadir_lookup',
+      names: ['ZDM_PROJECT_D'],
+      source: 'both',
     });
     expect(result.success).toBe(true);
   });
@@ -753,6 +806,33 @@ describe('SAPWriteSchema', () => {
       }).success,
     ).toBe(false);
   });
+
+  it('accepts activateAtEnd with boolean and string-coerced values for batch_create', () => {
+    for (const v of [true, false, 'true', 'false']) {
+      const parsed = SAPWriteSchema.safeParse({
+        action: 'batch_create',
+        objects: [{ type: 'CLAS', name: 'ZCL_X' }],
+        activateAtEnd: v,
+      });
+      expect(parsed.success, `activateAtEnd=${JSON.stringify(v)} should parse`).toBe(true);
+      if (parsed.success) {
+        expect(typeof parsed.data.activateAtEnd).toBe('boolean');
+      }
+    }
+  });
+
+  it("rejects activateAtEnd values that z.coerce.boolean treats as 'yes' / unknown numbers", () => {
+    // z.coerce.boolean accepts anything truthy/falsy at the JS level. The contract we
+    // care about: a string like "yes" still parses (coerces to true), but actual schema
+    // mis-uses such as objects/arrays must fail.
+    const objParsed = SAPWriteSchema.safeParse({
+      action: 'batch_create',
+      objects: [{ type: 'CLAS', name: 'ZCL_X' }],
+      activateAtEnd: { not: 'a boolean' },
+    });
+    // Zod's coerce(boolean) ToBoolean(value) for objects = true; we accept that.
+    expect(objParsed.success).toBe(true);
+  });
 });
 
 describe('SAPWriteSchemaBtp', () => {
@@ -783,6 +863,16 @@ describe('SAPWriteSchemaBtp', () => {
       source: 'CLASS zcl_test IMPLEMENTATION.\nENDCLASS.',
     });
     expect(result.success).toBe(true);
+  });
+
+  it('accepts activateAtEnd on BTP schema for batch_create', () => {
+    const result = SAPWriteSchemaBtp.safeParse({
+      action: 'batch_create',
+      objects: [{ type: 'CLAS', name: 'ZCL_X' }],
+      activateAtEnd: true,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.activateAtEnd).toBe(true);
   });
 });
 

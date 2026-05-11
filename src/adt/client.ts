@@ -86,6 +86,71 @@ function appendQueryParam(path: string, key: string, value: string): string {
   return `${base}${queryString ? `?${queryString}` : ''}${fragment ? `#${fragment}` : ''}`;
 }
 
+/**
+ * Build a navigation hint URL for a TADIR row.
+ *
+ * Internal mirror of the handler-side `objectBasePath()` table — kept local to
+ * `client.ts` to avoid circular dependencies (`intent.ts` imports `AdtClient`).
+ * Returns `''` for types that cannot be addressed via a single base URL
+ * (FUNC requires a parent group; SEGW legacy types have no ADT handler);
+ * callers must treat the empty string as "no direct navigation".
+ *
+ * Only used by `lookupObjectsViaDb()` for synthesizing the `uri` field on
+ * SQL-sourced TADIR matches so the result is still consumable by SAPRead /
+ * SAPNavigate where applicable. TADIR stores bare types (e.g. `DDLS`, not
+ * `DDLS/DF`); no slash-form normalization is required.
+ */
+function tadirObjectUrl(tadirType: string, name: string): string {
+  const t = tadirType.toUpperCase();
+  switch (t) {
+    case 'PROG':
+      return `/sap/bc/adt/programs/programs/${encodeURIComponent(name)}`;
+    case 'CLAS':
+      return `/sap/bc/adt/oo/classes/${encodeURIComponent(name)}`;
+    case 'INTF':
+      return `/sap/bc/adt/oo/interfaces/${encodeURIComponent(name)}`;
+    case 'INCL':
+      return `/sap/bc/adt/programs/includes/${encodeURIComponent(name)}`;
+    case 'FUGR':
+      return `/sap/bc/adt/functions/groups/${encodeURIComponent(name)}`;
+    case 'DDLS':
+      return `/sap/bc/adt/ddic/ddl/sources/${encodeURIComponent(name)}`;
+    case 'DCLS':
+      return `/sap/bc/adt/acm/dcl/sources/${encodeURIComponent(name)}`;
+    case 'BDEF':
+      return `/sap/bc/adt/bo/behaviordefinitions/${encodeURIComponent(name)}`;
+    case 'SRVD':
+      return `/sap/bc/adt/ddic/srvd/sources/${encodeURIComponent(name)}`;
+    case 'DDLX':
+      return `/sap/bc/adt/ddic/ddlx/sources/${encodeURIComponent(name)}`;
+    case 'SRVB':
+      return `/sap/bc/adt/businessservices/bindings/${encodeURIComponent(name)}`;
+    case 'TABL':
+      // Default to /tables/ — for DDIC structures, callers must reach for
+      // AdtClient.resolveTablObjectUrl(name) which does the 404 fallback.
+      return `/sap/bc/adt/ddic/tables/${encodeURIComponent(name)}`;
+    case 'DOMA':
+      return `/sap/bc/adt/ddic/domains/${encodeURIComponent(name)}`;
+    case 'DTEL':
+      return `/sap/bc/adt/ddic/dataelements/${encodeURIComponent(name)}`;
+    case 'MSAG':
+      return `/sap/bc/adt/messageclass/${encodeURIComponent(name)}`;
+    case 'DEVC':
+      return `/sap/bc/adt/packages/${encodeURIComponent(name)}`;
+    case 'TRAN':
+      return `/sap/bc/adt/vit/wb/object_type/trant/object_name/${encodeURIComponent(name)}`;
+    case 'VIEW':
+      return `/sap/bc/adt/vit/wb/object_type/viewdv/object_name/${encodeURIComponent(name)}`;
+    case 'SKTD':
+      return `/sap/bc/adt/documentation/ktd/documents/${encodeURIComponent(name.toLowerCase())}`;
+    default:
+      // FUNC needs a parent group (not addressable by a single base URL); legacy
+      // SEGW types (IWSV, IWMO, IWPR, IWBEP) have no ADT handler. Return an
+      // empty URI so callers know not to navigate; the row still surfaces.
+      return '';
+  }
+}
+
 export class AdtClient {
   readonly http: AdtHttpClient;
   readonly safety: SafetyConfig;
@@ -641,6 +706,91 @@ export class AdtClient {
     }
 
     return results;
+  }
+
+  /**
+   * SQL-backed alternative to `lookupObjects` — issues a single `SELECT … FROM tadir`
+   * query so the result can include TADIR rows the ADT info-system endpoint
+   * deliberately filters out (orphan / "ghost" entries from aborted create/delete
+   * cycles whose source row no longer resolves to a workbench resource).
+   *
+   * **When to use** — for `SAPSearch(searchType='tadir_lookup', source='db' | 'both')`
+   * when the caller specifically needs to detect ghosts. The default
+   * `source='adt'` path stays on `lookupObjects` and is the right choice for the
+   * vast majority of viewer-scope workflows.
+   *
+   * **Scope requirement** — this path issues freestyle SQL, so callers must have
+   * `sql` scope and the server must run with `SAP_ALLOW_FREE_SQL=true`. The
+   * underlying `runQuery` enforces both via `checkOperation(safety, FreeSQL)`.
+   *
+   * The returned shape matches `lookupObjects` exactly so handler code can merge
+   * the two result sets. Each match is stamped with `_origin: 'db'` for
+   * split-brain reporting in `source='both'` mode.
+   */
+  async lookupObjectsViaDb(
+    names: string[],
+    options: { maxResults?: number; objectTypes?: string[] } = {},
+  ): Promise<AdtObjectLookupResult[]> {
+    const cleanedNames = [
+      ...new Set(
+        names
+          .map((n) => n.trim())
+          .filter(Boolean)
+          .map((n) => n.toUpperCase()),
+      ),
+    ];
+
+    if (cleanedNames.length === 0) {
+      throw new Error('lookupObjectsViaDb: at least one non-empty name is required.');
+    }
+
+    const objectTypes = [
+      ...new Set(
+        (options.objectTypes ?? [])
+          .map((t) => t.trim())
+          .filter(Boolean)
+          .map((t) => t.toUpperCase()),
+      ),
+    ];
+    const limit = Math.max(1, Math.min(options.maxResults ?? 1000, 1000));
+
+    const quoteSqlLiteral = (v: string): string => `'${v.replace(/'/g, "''")}'`;
+    const namesClause = cleanedNames.map(quoteSqlLiteral).join(', ');
+    let sql = `SELECT pgmid, object, obj_name, devclass FROM tadir WHERE obj_name IN (${namesClause})`;
+    if (objectTypes.length > 0) {
+      const typesClause = objectTypes.map(quoteSqlLiteral).join(', ');
+      sql += ` AND object IN (${typesClause})`;
+    }
+
+    const queryResult = await this.runQuery(sql, limit);
+
+    // Group rows by OBJ_NAME so multiple matches per name collapse into one
+    // lookup entry. SQL returns row-oriented data after `parseTableContents`
+    // pivots — keys are the column names (uppercased by SAP).
+    const byName = new Map<string, AdtSearchResult[]>();
+    for (const row of queryResult.rows) {
+      const objName = String(row.OBJ_NAME ?? '').toUpperCase();
+      if (!objName) continue;
+      const objectType = String(row.OBJECT ?? '');
+      const packageName = String(row.DEVCLASS ?? '');
+      const match: AdtSearchResult = {
+        objectType,
+        objectName: objName,
+        description: '',
+        packageName,
+        uri: tadirObjectUrl(objectType, objName),
+        _origin: 'db',
+      };
+      const existing = byName.get(objName);
+      if (existing) existing.push(match);
+      else byName.set(objName, [match]);
+    }
+
+    // Preserve the caller's input order — the cleaned, deduped, uppercased list.
+    return cleanedNames.map((name) => {
+      const matches = byName.get(name) ?? [];
+      return { name, found: matches.length > 0, matches };
+    });
   }
 
   /** Search within ABAP source code (full-text search) */

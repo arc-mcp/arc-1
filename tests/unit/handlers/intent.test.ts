@@ -1517,6 +1517,180 @@ describe('Intent Handler', () => {
       expect(payload.count).toBe(1);
     });
 
+    // ─── source: 'adt' | 'db' | 'both' ──────────────────────────────
+
+    describe('tadir_lookup with source parameter', () => {
+      /** Build a freestyle SQL response over the four TADIR columns. */
+      function tadirSqlResponse(
+        rows: Array<{ pgmid: string; object: string; obj_name: string; devclass: string }>,
+      ): string {
+        const datasetCol = (data: string[]) =>
+          data.length > 0 ? `<DATASET>${data.map((d) => `<DATA>${d}</DATA>`).join('')}</DATASET>` : '<DATASET/>';
+        return `<?xml version="1.0" encoding="utf-8"?>
+<asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0">
+  <asx:values>
+    <COLUMNS>
+      <COLUMN><METADATA name="PGMID" type="CHAR" description="" length="4" keyAttribute="false"/>${datasetCol(rows.map((r) => r.pgmid))}</COLUMN>
+      <COLUMN><METADATA name="OBJECT" type="CHAR" description="" length="4" keyAttribute="false"/>${datasetCol(rows.map((r) => r.object))}</COLUMN>
+      <COLUMN><METADATA name="OBJ_NAME" type="CHAR" description="" length="40" keyAttribute="false"/>${datasetCol(rows.map((r) => r.obj_name))}</COLUMN>
+      <COLUMN><METADATA name="DEVCLASS" type="CHAR" description="" length="30" keyAttribute="false"/>${datasetCol(rows.map((r) => r.devclass))}</COLUMN>
+    </COLUMNS>
+  </asx:values>
+</asx:abap>`;
+      }
+
+      it("source='adt' default calls only the ADT info-system endpoint", async () => {
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValueOnce(
+          mockResponse(
+            200,
+            `<objectReferences><objectReference uri="/sap/bc/adt/ddic/ddl/sources/za" type="DDLS/DF" name="ZA" packageName="ZPKG" description="d"/></objectReferences>`,
+          ),
+        );
+
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPSearch', {
+          searchType: 'tadir_lookup',
+          names: ['ZA'],
+        });
+
+        expect(result.isError).toBeUndefined();
+        // No POST to /sap/bc/adt/datapreview/freestyle should have happened.
+        const freestyleCalls = mockFetch.mock.calls.filter((c) => String(c[0]).includes('/datapreview/freestyle'));
+        expect(freestyleCalls).toHaveLength(0);
+        const payload = JSON.parse(result.content[0]?.text ?? '{}');
+        expect(payload.lookups[0].matches[0]._origin).toBe('adt');
+      });
+
+      it("source='db' calls only the freestyle SQL endpoint and tags matches as db", async () => {
+        mockFetch.mockReset();
+        // CSRF HEAD then SQL POST
+        mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+        mockFetch.mockResolvedValueOnce(
+          mockResponse(200, tadirSqlResponse([{ pgmid: 'R3TR', object: 'DDLS', obj_name: 'ZA', devclass: 'ZPKG' }])),
+        );
+
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPSearch', {
+          searchType: 'tadir_lookup',
+          names: ['ZA'],
+          source: 'db',
+        });
+
+        expect(result.isError).toBeUndefined();
+        // No ADT info-system GET should have happened.
+        const infoCalls = mockFetch.mock.calls.filter((c) =>
+          String(c[0]).includes('/repository/informationsystem/search'),
+        );
+        expect(infoCalls).toHaveLength(0);
+        const payload = JSON.parse(result.content[0]?.text ?? '{}');
+        expect(payload.count).toBe(1);
+        expect(payload.lookups[0].matches[0]._origin).toBe('db');
+        expect(payload.lookups[0].matches[0].objectType).toBe('DDLS');
+      });
+
+      it("source='both' runs both endpoints and merges results without splitBrain when consistent", async () => {
+        mockFetch.mockReset();
+        // Order isn't guaranteed because the handler uses Promise.all; mock both calls regardless of order.
+        mockFetch.mockImplementation((url: any) => {
+          const u = String(url);
+          if (u.includes('/repository/informationsystem/search')) {
+            return Promise.resolve(
+              mockResponse(
+                200,
+                `<objectReferences><objectReference uri="/sap/bc/adt/ddic/ddl/sources/za" type="DDLS/DF" name="ZA" packageName="ZPKG" description="d"/></objectReferences>`,
+              ),
+            );
+          }
+          if (u.includes('/datapreview/freestyle')) {
+            return Promise.resolve(
+              mockResponse(
+                200,
+                tadirSqlResponse([{ pgmid: 'R3TR', object: 'DDLS', obj_name: 'ZA', devclass: 'ZPKG' }]),
+              ),
+            );
+          }
+          // CSRF HEAD pre-flight
+          return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+        });
+
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPSearch', {
+          searchType: 'tadir_lookup',
+          names: ['ZA'],
+          source: 'both',
+        });
+
+        expect(result.isError).toBeUndefined();
+        const payload = JSON.parse(result.content[0]?.text ?? '{}');
+        // ADT + DB dedupe by base type (DDLS): one merged match.
+        expect(payload.lookups[0].matches).toHaveLength(1);
+        // No splitBrain or warnings when both sources agree.
+        expect(payload.splitBrain).toBeUndefined();
+        // Warnings array may still be absent (no wildcards, no divergence).
+        expect(payload.warnings).toBeUndefined();
+      });
+
+      it("source='both' surfaces splitBrain + warning when DB has a ghost ADT can't resolve", async () => {
+        mockFetch.mockReset();
+        mockFetch.mockImplementation((url: any) => {
+          const u = String(url);
+          if (u.includes('/repository/informationsystem/search')) {
+            // ADT cannot resolve the ghost
+            return Promise.resolve(mockResponse(200, '<objectReferences/>'));
+          }
+          if (u.includes('/datapreview/freestyle')) {
+            // DB sees the orphan TADIR row
+            return Promise.resolve(
+              mockResponse(
+                200,
+                tadirSqlResponse([{ pgmid: 'R3TR', object: 'DDLS', obj_name: 'ZGHOST', devclass: 'ZPKG' }]),
+              ),
+            );
+          }
+          return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+        });
+
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPSearch', {
+          searchType: 'tadir_lookup',
+          names: ['ZGHOST'],
+          source: 'both',
+        });
+
+        expect(result.isError).toBeUndefined();
+        const payload = JSON.parse(result.content[0]?.text ?? '{}');
+        expect(payload.lookups[0].found).toBe(true);
+        expect(payload.lookups[0].matches[0]._origin).toBe('db');
+        expect(payload.splitBrain).toEqual(['ZGHOST']);
+        expect(payload.warnings).toBeDefined();
+        expect(payload.warnings[0]).toContain('ZGHOST');
+        expect(payload.warnings[0]).toMatch(/TADIR ghost|aborted create\/delete/);
+      });
+
+      it("source='both' reports no splitBrain when both sources return zero matches", async () => {
+        mockFetch.mockReset();
+        mockFetch.mockImplementation((url: any) => {
+          const u = String(url);
+          if (u.includes('/repository/informationsystem/search')) {
+            return Promise.resolve(mockResponse(200, '<objectReferences/>'));
+          }
+          if (u.includes('/datapreview/freestyle')) {
+            return Promise.resolve(mockResponse(200, tadirSqlResponse([])));
+          }
+          return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+        });
+
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPSearch', {
+          searchType: 'tadir_lookup',
+          names: ['ZNOPE'],
+          source: 'both',
+        });
+
+        expect(result.isError).toBeUndefined();
+        const payload = JSON.parse(result.content[0]?.text ?? '{}');
+        expect(payload.missing).toEqual(['ZNOPE']);
+        expect(payload.splitBrain).toBeUndefined();
+        expect(payload.warnings).toBeUndefined();
+      });
+    });
+
     // ─── Transliteration ──────────────────────────────────────────────
 
     describe('transliterateQuery', () => {
@@ -3805,6 +3979,44 @@ lv = CONV string( 1 ).`,
         sqlAuth,
       );
       // Should reach the handler, not blocked by scope
+      expect(result.content[0]?.text).not.toContain('Insufficient scope');
+    });
+
+    it("blocks SAPSearch tadir_lookup source='db' with viewer (read-only) scope", async () => {
+      const result = await handleToolCall(
+        createClient(),
+        DEFAULT_CONFIG,
+        'SAPSearch',
+        { searchType: 'tadir_lookup', names: ['ZA'], source: 'db' },
+        readAuth,
+      );
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain("Insufficient scope: 'sql'");
+    });
+
+    it("blocks SAPSearch tadir_lookup source='both' with viewer (read-only) scope", async () => {
+      const result = await handleToolCall(
+        createClient(),
+        DEFAULT_CONFIG,
+        'SAPSearch',
+        { searchType: 'tadir_lookup', names: ['ZA'], source: 'both' },
+        readAuth,
+      );
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain("Insufficient scope: 'sql'");
+    });
+
+    it("allows SAPSearch tadir_lookup default (source='adt' / unset) with read scope", async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '<objectReferences/>'));
+      const result = await handleToolCall(
+        createClient(),
+        DEFAULT_CONFIG,
+        'SAPSearch',
+        { searchType: 'tadir_lookup', names: ['ZA'] },
+        readAuth,
+      );
+      // Should reach the handler — not blocked by scope.
       expect(result.content[0]?.text).not.toContain('Insufficient scope');
     });
 
@@ -9556,6 +9768,209 @@ ENDCLASS.`;
       const text = result.content[0]?.text ?? '';
       expect(text).toContain('2 objects');
       expect(result.isError).toBeUndefined();
+    });
+
+    // ── activateAtEnd: deferred terminal batch-activation ─────────────
+
+    describe('activateAtEnd', () => {
+      /**
+       * Helper to count how many times a path was POSTed (activation calls live at
+       * `/sap/bc/adt/activation`). We collect URLs because the mock fetch signature is
+       * `(url, init)` and the `mockResolvedValue` path doesn't preserve a typed body.
+       */
+      function countActivationPosts(): { single: number; batch: number; batchBody?: string } {
+        const calls = mockFetch.mock.calls;
+        let single = 0;
+        let batch = 0;
+        let batchBody: string | undefined;
+        for (const c of calls) {
+          const url = String(c[0] ?? '');
+          const init = (c[1] as RequestInit | undefined) ?? {};
+          if (init.method !== 'POST') continue;
+          if (!url.includes('/sap/bc/adt/activation?')) continue;
+          // batch vs single: heuristic on body — batch bodies contain multiple <adtcore:objectReference>
+          const body = typeof init.body === 'string' ? init.body : '';
+          const refCount = (body.match(/<adtcore:objectReference\b/g) ?? []).length;
+          if (refCount > 1) {
+            batch++;
+            batchBody = body;
+          } else {
+            single++;
+          }
+        }
+        return { single, batch, batchBody };
+      }
+
+      it('default activateAtEnd=false still issues per-object inline activations', async () => {
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValue(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
+
+        const config = { ...DEFAULT_CONFIG, lintBeforeWrite: false };
+        await handleToolCall(createClient(), config, 'SAPWrite', {
+          action: 'batch_create',
+          package: '$TMP',
+          objects: [
+            { type: 'PROG', name: 'ZAAE1', source: 'REPORT zaae1.' },
+            { type: 'PROG', name: 'ZAAE2', source: 'REPORT zaae2.' },
+          ],
+        });
+
+        const counts = countActivationPosts();
+        expect(counts.single).toBeGreaterThanOrEqual(2);
+        expect(counts.batch).toBe(0);
+      });
+
+      it('activateAtEnd=true skips per-object activate and issues ONE terminal batch-activate POST', async () => {
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValue(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
+
+        const config = { ...DEFAULT_CONFIG, lintBeforeWrite: false };
+        const result = await handleToolCall(createClient(), config, 'SAPWrite', {
+          action: 'batch_create',
+          package: '$TMP',
+          activateAtEnd: true,
+          objects: [
+            { type: 'PROG', name: 'ZBAE1', source: 'REPORT zbae1.' },
+            { type: 'PROG', name: 'ZBAE2', source: 'REPORT zbae2.' },
+            { type: 'PROG', name: 'ZBAE3', source: 'REPORT zbae3.' },
+          ],
+        });
+
+        const counts = countActivationPosts();
+        expect(counts.single).toBe(0);
+        expect(counts.batch).toBe(1);
+        // Body must contain all three objectReferences
+        expect(counts.batchBody).toContain('ZBAE1');
+        expect(counts.batchBody).toContain('ZBAE2');
+        expect(counts.batchBody).toContain('ZBAE3');
+        const text = result.content[0]?.text ?? '';
+        expect(text).toContain('activated as a single batch');
+        expect(result.isError).toBeUndefined();
+      });
+
+      it('activateAtEnd=true breaks loop on write failure and only batch-activates the already-written subset', async () => {
+        mockFetch.mockReset();
+        // Fail ANY request for object ZBAE_FAIL. ZBAE_OK's full create+lock+source PUT+unlock
+        // cycle stays on 200, and the eventual batch-activate of ZBAE_OK alone also stays on 200.
+        mockFetch.mockImplementation((url: any) => {
+          const u = String(url);
+          if (u.includes('ZBAE_FAIL')) {
+            return Promise.resolve(mockResponse(500, 'Internal Server Error', { 'x-csrf-token': 'T' }));
+          }
+          return Promise.resolve(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
+        });
+
+        const config = { ...DEFAULT_CONFIG, lintBeforeWrite: false };
+        const result = await handleToolCall(createClient(), config, 'SAPWrite', {
+          action: 'batch_create',
+          package: '$TMP',
+          activateAtEnd: true,
+          objects: [
+            { type: 'PROG', name: 'ZBAE_OK', source: 'REPORT zbae_ok.' },
+            { type: 'PROG', name: 'ZBAE_FAIL', source: 'REPORT zbae_fail.' },
+            { type: 'PROG', name: 'ZBAE_SKIP', source: 'REPORT zbae_skip.' },
+          ],
+        });
+
+        // Loop broke on second object; ZBAE_SKIP is never attempted.
+        const text = result.content[0]?.text ?? '';
+        expect(text).toContain('ZBAE_SKIP');
+        expect(text).toContain('skipped');
+        // The terminal batch-activate (if it fired) ran only over the already-written subset.
+        const counts = countActivationPosts();
+        if (counts.batch > 0) {
+          expect(counts.batch).toBe(1);
+          expect(counts.batchBody).not.toContain('ZBAE_SKIP');
+          expect(counts.batchBody).not.toContain('ZBAE_FAIL');
+          expect(counts.batchBody).toContain('ZBAE_OK');
+        }
+      });
+
+      it("activateAtEnd=true flips all written entries to 'failed' when the terminal batch-activate fails", async () => {
+        mockFetch.mockReset();
+        // Activation failure XML — parseActivationOutcome looks for <msg> with severity=error.
+        // Shape verified against tests/unit/adt/rap-generate.test.ts (live a4h shape, 2026-05-10).
+        const failedActivationResponse = `<?xml version="1.0" encoding="UTF-8"?>
+<chkl:messages xmlns:chkl="http://www.sap.com/abapxml/checklist">
+  <msg objDescr="ZBAE_PARENT" type="E" severity="error" shortText='data source "ZBAE_CHILD" does not exist or is not active' uri="/sap/bc/adt/programs/programs/ZBAE_PARENT/source/main#start=1,1"/>
+</chkl:messages>`;
+        let activationCallSeen = false;
+        mockFetch.mockImplementation((url: any, init: any) => {
+          const u = String(url);
+          const isPost = init?.method === 'POST';
+          const body = typeof init?.body === 'string' ? init.body : '';
+          if (isPost && u.includes('/sap/bc/adt/activation?') && body.includes('<adtcore:objectReference')) {
+            activationCallSeen = true;
+            return Promise.resolve(mockResponse(200, failedActivationResponse, { 'x-csrf-token': 'T' }));
+          }
+          return Promise.resolve(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
+        });
+
+        const config = { ...DEFAULT_CONFIG, lintBeforeWrite: false };
+        const result = await handleToolCall(createClient(), config, 'SAPWrite', {
+          action: 'batch_create',
+          package: '$TMP',
+          activateAtEnd: true,
+          objects: [
+            { type: 'PROG', name: 'ZBAE_PARENT', source: 'REPORT zbae_parent.' },
+            { type: 'PROG', name: 'ZBAE_CHILD', source: 'REPORT zbae_child.' },
+          ],
+        });
+
+        expect(activationCallSeen).toBe(true);
+        expect(result.isError).toBe(true);
+        const text = result.content[0]?.text ?? '';
+        // The "create + source-write succeeded" context must be preserved.
+        expect(text).toContain('written, batch activation failed');
+      });
+
+      it('activateAtEnd=true caches are invalidated only after the terminal activate succeeds', async () => {
+        // We don't have a clean cache-spy; instead assert the activation call ordering:
+        // every create+source PUT must precede the single terminal activation call.
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValue(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
+
+        const config = { ...DEFAULT_CONFIG, lintBeforeWrite: false };
+        await handleToolCall(createClient(), config, 'SAPWrite', {
+          action: 'batch_create',
+          package: '$TMP',
+          activateAtEnd: true,
+          objects: [
+            { type: 'PROG', name: 'ZBAE_ORD1', source: 'REPORT zbae_ord1.' },
+            { type: 'PROG', name: 'ZBAE_ORD2', source: 'REPORT zbae_ord2.' },
+          ],
+        });
+
+        // Find activation call index (the batch POST).
+        const calls = mockFetch.mock.calls;
+        const activationIdx = calls.findIndex((c) => {
+          const url = String(c[0] ?? '');
+          const init = c[1] as RequestInit | undefined;
+          const body = typeof init?.body === 'string' ? init.body : '';
+          return (
+            url.includes('/sap/bc/adt/activation?') &&
+            init?.method === 'POST' &&
+            body.includes('<adtcore:objectReference') &&
+            body.includes('ZBAE_ORD1') &&
+            body.includes('ZBAE_ORD2')
+          );
+        });
+        expect(activationIdx).toBeGreaterThan(0);
+
+        // Every create POST must come BEFORE the activation call.
+        for (let i = 0; i < calls.length; i++) {
+          const url = String(calls[i]?.[0] ?? '');
+          const init = calls[i]?.[1] as RequestInit | undefined;
+          if (
+            init?.method === 'POST' &&
+            url.includes('/sap/bc/adt/programs/programs') &&
+            !url.includes('?lockHandle=')
+          ) {
+            // Create / write POSTs occur on the programs endpoint; allow them only before the activation.
+            expect(i).toBeLessThan(activationIdx);
+          }
+        }
+      });
     });
   });
 

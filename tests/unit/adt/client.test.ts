@@ -852,6 +852,118 @@ describe('AdtClient', () => {
     });
   });
 
+  describe('lookupObjectsViaDb', () => {
+    /** Build an asx:abap-shaped freestyle SQL response for given TADIR rows. */
+    function tadirSqlResponse(
+      rows: Array<{ pgmid: string; object: string; obj_name: string; devclass: string }>,
+    ): string {
+      const datasetCol = (data: string[]) =>
+        data.length > 0 ? `<DATASET>${data.map((d) => `<DATA>${d}</DATA>`).join('')}</DATASET>` : '<DATASET/>';
+      return `<?xml version="1.0" encoding="utf-8"?>
+<asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0">
+  <asx:values>
+    <COLUMNS>
+      <COLUMN>
+        <METADATA name="PGMID" type="CHAR" description="Program ID" length="4" keyAttribute="false"/>
+        ${datasetCol(rows.map((r) => r.pgmid))}
+      </COLUMN>
+      <COLUMN>
+        <METADATA name="OBJECT" type="CHAR" description="Object Type" length="4" keyAttribute="false"/>
+        ${datasetCol(rows.map((r) => r.object))}
+      </COLUMN>
+      <COLUMN>
+        <METADATA name="OBJ_NAME" type="CHAR" description="Object Name" length="40" keyAttribute="false"/>
+        ${datasetCol(rows.map((r) => r.obj_name))}
+      </COLUMN>
+      <COLUMN>
+        <METADATA name="DEVCLASS" type="CHAR" description="Package" length="30" keyAttribute="false"/>
+        ${datasetCol(rows.map((r) => r.devclass))}
+      </COLUMN>
+    </COLUMNS>
+  </asx:values>
+</asx:abap>`;
+    }
+
+    function mockTadirPost(rows: Array<{ pgmid: string; object: string; obj_name: string; devclass: string }>): void {
+      mockFetch.mockReset();
+      // First call: CSRF token fetch (HEAD request)
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'TOKEN_DB' }));
+      // Second call: SQL POST returns the TADIR rows
+      mockFetch.mockResolvedValueOnce(mockResponse(200, tadirSqlResponse(rows)));
+    }
+
+    it('returns three matches all tagged _origin=db when three names are present', async () => {
+      mockTadirPost([
+        { pgmid: 'R3TR', object: 'DDLS', obj_name: 'ZA', devclass: 'ZPKG' },
+        { pgmid: 'R3TR', object: 'DDLS', obj_name: 'ZB', devclass: 'ZPKG' },
+        { pgmid: 'R3TR', object: 'DDLS', obj_name: 'ZC', devclass: 'ZPKG' },
+      ]);
+      const client = createClient();
+      const result = await client.lookupObjectsViaDb(['ZA', 'ZB', 'ZC']);
+
+      expect(result).toHaveLength(3);
+      for (const r of result) {
+        expect(r.found).toBe(true);
+        expect(r.matches).toHaveLength(1);
+        expect(r.matches[0]?._origin).toBe('db');
+        expect(r.matches[0]?.objectType).toBe('DDLS');
+        expect(r.matches[0]?.packageName).toBe('ZPKG');
+        expect(r.matches[0]?.uri).toBe(`/sap/bc/adt/ddic/ddl/sources/${r.name}`);
+      }
+    });
+
+    it('adds AND object IN (...) when objectTypes filter is supplied', async () => {
+      mockTadirPost([{ pgmid: 'R3TR', object: 'DDLS', obj_name: 'ZA', devclass: 'ZPKG' }]);
+      const client = createClient();
+      await client.lookupObjectsViaDb(['ZA'], { objectTypes: ['DDLS'] });
+
+      // mock.calls[0] is CSRF HEAD; mock.calls[1] is the POST with SQL body
+      const postCall = mockFetch.mock.calls[1];
+      expect(postCall).toBeDefined();
+      const body = String((postCall?.[1] as RequestInit)?.body ?? '');
+      expect(body).toContain('FROM tadir');
+      expect(body).toContain("WHERE obj_name IN ('ZA')");
+      expect(body).toContain("AND object IN ('DDLS')");
+    });
+
+    it('marks names not in the SQL result set as found=false in input order', async () => {
+      mockTadirPost([{ pgmid: 'R3TR', object: 'DDLS', obj_name: 'ZB', devclass: 'ZPKG' }]);
+      const client = createClient();
+      const result = await client.lookupObjectsViaDb(['ZA', 'ZB', 'ZC']);
+
+      expect(result.map((r) => r.name)).toEqual(['ZA', 'ZB', 'ZC']);
+      expect(result[0]?.found).toBe(false);
+      expect(result[0]?.matches).toEqual([]);
+      expect(result[1]?.found).toBe(true);
+      expect(result[2]?.found).toBe(false);
+    });
+
+    it('throws when called with an empty names array', async () => {
+      const client = createClient();
+      await expect(client.lookupObjectsViaDb([])).rejects.toThrow(/at least one non-empty name/);
+    });
+
+    it('propagates SQL errors from runQuery (400 from ADT)', async () => {
+      mockFetch.mockReset();
+      // CSRF HEAD then 400 from POST
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'TOKEN_DB' }));
+      mockFetch.mockResolvedValueOnce(mockResponse(400, 'SQL parser error: invalid identifier'));
+      const client = createClient();
+      await expect(client.lookupObjectsViaDb(['ZA'])).rejects.toThrow(AdtApiError);
+    });
+
+    it('uppercases input names before quoting them into the SQL IN-list', async () => {
+      mockTadirPost([{ pgmid: 'R3TR', object: 'DDLS', obj_name: 'ZFOO', devclass: 'ZPKG' }]);
+      const client = createClient();
+      const result = await client.lookupObjectsViaDb(['zfoo']);
+
+      const postCall = mockFetch.mock.calls[1];
+      const body = String((postCall?.[1] as RequestInit)?.body ?? '');
+      expect(body).toContain("WHERE obj_name IN ('ZFOO')");
+      expect(result[0]?.name).toBe('ZFOO');
+    });
+  });
+
   describe('withSafety', () => {
     it('returns a new client with the given safety config', () => {
       const client = createClient();

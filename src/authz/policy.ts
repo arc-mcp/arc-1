@@ -39,6 +39,14 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
 
   // ── SAPSearch ────────────────────────────────────────────────────
   SAPSearch: { scope: 'read', opType: OperationType.Search },
+  // tadir_lookup `source='db'` and `source='both'` issue freestyle SQL against TADIR
+  // (the only way to surface ghost rows the ADT info-system filters out). Both
+  // escalate to the `sql` scope + FreeSQL opType so viewer-only profiles cannot
+  // piggyback on the ADT info-system route to perform a SQL query. The default
+  // `source='adt'` stays on the tool-level entry above (`read` scope).
+  // Synthesized at runtime by handleSAPSearch as `SAPSearch.tadir_lookup_<source>`.
+  'SAPSearch.tadir_lookup_db': { scope: 'sql', opType: OperationType.FreeSQL },
+  'SAPSearch.tadir_lookup_both': { scope: 'sql', opType: OperationType.FreeSQL },
 
   // ── SAPQuery (freestyle SQL) ─────────────────────────────────────
   SAPQuery: { scope: 'sql', opType: OperationType.FreeSQL },

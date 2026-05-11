@@ -13,6 +13,14 @@ export interface AdtSearchResult {
   description: string;
   packageName: string;
   uri: string;
+  /**
+   * Optional provenance marker for results merged across lookup sources.
+   * `'adt'` = match came from the ADT repository quick-search (workbench-resolvable);
+   * `'db'`  = match came from a direct SQL `SELECT … FROM tadir` lookup (sees ghosts).
+   * Only set when callers explicitly request divergence reporting (e.g.
+   * `SAPSearch(searchType='tadir_lookup', source='both')`).
+   */
+  _origin?: 'adt' | 'db';
 }
 
 /** Exact object-directory lookup grouped by requested object name */

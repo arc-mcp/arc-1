@@ -220,6 +220,14 @@ export const SAPSearchSchema = z
     objectTypes: z.array(z.string()).optional(),
     packageName: z.string().optional(),
     names: z.array(z.string()).optional(),
+    source: z
+      .enum(['adt', 'db', 'both'])
+      .optional()
+      .describe(
+        'tadir_lookup data source: "adt" (default) uses the ADT info-system endpoint (workbench-visible only); ' +
+          '"db" issues SQL against TADIR (also sees orphan "ghost" rows; requires sql scope and SAP_ALLOW_FREE_SQL=true); ' +
+          '"both" runs both and reports divergence via a splitBrain array (requires sql scope).',
+      ),
   })
   .superRefine((input, ctx) => {
     const searchType = input.searchType ?? 'object';
@@ -252,6 +260,14 @@ export const SAPSearchSchemaNoSource = z
     objectType: z.string().optional(),
     objectTypes: z.array(z.string()).optional(),
     names: z.array(z.string()).optional(),
+    source: z
+      .enum(['adt', 'db', 'both'])
+      .optional()
+      .describe(
+        'tadir_lookup data source: "adt" (default) uses the ADT info-system endpoint (workbench-visible only); ' +
+          '"db" issues SQL against TADIR (also sees orphan "ghost" rows; requires sql scope and SAP_ALLOW_FREE_SQL=true); ' +
+          '"both" runs both and reports divergence via a splitBrain array (requires sql scope).',
+      ),
   })
   .superRefine((input, ctx) => {
     const searchType = input.searchType ?? 'object';
@@ -511,6 +527,15 @@ export const SAPWriteSchema = z
     autoApply: z.coerce.boolean().optional(),
     targetAlias: z.string().optional(),
     activate: z.coerce.boolean().optional(),
+    /** Applies only to action='batch_create'. Default `false` keeps the existing per-object inline
+     * activation (each object is created → source written → activated, in sequence). When `true`,
+     * ARC-1 writes inactive drafts for every object then issues a single terminal `activateBatch`
+     * once the whole batch has been written. Use this for interdependent objects where parent →
+     * child cross-references would fail per-object activation (e.g. composition-linked DDLS,
+     * RAP behavior stacks where a BDEF references a not-yet-active SRVD). Has no effect on other
+     * actions. Partial-failure semantics are unchanged: a write-phase failure still breaks the
+     * loop and only the already-written subset is batch-activated. */
+    activateAtEnd: z.coerce.boolean().optional(),
     dryRun: z.coerce.boolean().optional(),
     /** FUNC structured signature parameters (issue #252). When provided, ARC-1 builds the
      * IMPORTING/EXPORTING/CHANGING/TABLES/EXCEPTIONS/RAISING clause from the array and
@@ -579,6 +604,10 @@ export const SAPWriteSchemaBtp = z
     autoApply: z.coerce.boolean().optional(),
     targetAlias: z.string().optional(),
     activate: z.coerce.boolean().optional(),
+    /** Applies only to action='batch_create'. Default `false` keeps per-object inline activation;
+     * `true` defers to a single terminal `activateBatch` so SAP resolves cross-references in one
+     * pass. See SAPWriteSchema (on-prem) for the full contract. */
+    activateAtEnd: z.coerce.boolean().optional(),
     dryRun: z.coerce.boolean().optional(),
     /** FUNC structured signature parameters — same shape as on-prem. Harmless on BTP since FUNC write
      * is on-prem-only. */

@@ -166,9 +166,10 @@ Search for ABAP objects by name pattern, exact object-directory names, or ABAP s
 | `names` | array | No | For `tadir_lookup`: exact object names to resolve across packages |
 | `objectTypes` | array | No | For `tadir_lookup`: optional ADT/TADIR type filters such as `TABL`, `DDLS`, `BDEF`, `SRVB`, `CLAS/OC` |
 | `objectType` | string | No | For `source_code`: filter by object type. For `tadir_lookup`: single type filter |
+| `source` | string | No | For `tadir_lookup` only: `adt` (default), `db`, or `both`. `db`/`both` require the `sql` scope and `SAP_ALLOW_FREE_SQL=true`. See [TADIR lookup `source` modes](#tadir-lookup-source-modes) below. |
 | `packageName` | string | No | For `source_code` search: filter by package |
 
-**Returns:** Object type, name, package, and description for each match. `tadir_lookup` groups exact matches by requested name and includes a `missing` list. Source code search also returns line numbers and code snippets.
+**Returns:** Object type, name, package, and description for each match. `tadir_lookup` groups exact matches by requested name and includes a `missing` list. Source code search also returns line numbers and code snippets. When `source='both'` reveals divergence between the ADT and DB views, the response adds a `splitBrain: [name, ...]` array and a `warnings: [...]` array explaining each diverging name.
 
 **Examples:**
 ```
@@ -176,6 +177,7 @@ SAPSearch(query="ZCL_ORDER*")
 SAPSearch(query="Z*INVOICE*", maxResults=20)
 SAPSearch(searchType="tadir_lookup", names=["ZDM_PROJECT_D","ZR_DM_PROJECT"], objectTypes=["TABL","BDEF"])
 SAPSearch(searchType="tadir_lookup", query="ZDM_PROJECT_D ZUI_DM_PROJECTS_O4")
+SAPSearch(searchType="tadir_lookup", names=["ZR_OLD_VIEW"], source="both")   // detect TADIR ghosts after a failed delete
 SAPSearch(query="SY-SUBRC", searchType="source_code")
 SAPSearch(query="SELECT * FROM mara", searchType="source_code", objectType="CLAS", packageName="ZDEV")
 ```
@@ -184,7 +186,17 @@ SAPSearch(query="SELECT * FROM mara", searchType="source_code", objectType="CLAS
 
 **Field names:** If searching for a field/column name (e.g., MATNR, BUKRS), use SAPQuery against DD03L instead — SAPSearch only searches object names.
 
-**TADIR lookup:** Use `searchType="tadir_lookup"` for reset/create preflights that need to know whether objects exist anywhere, regardless of package. It uses ADT repository quick search instead of freestyle SQL against TADIR, so it avoids long `IN (...)` parser limits and works in read/search-only configurations.
+**TADIR lookup:** Use `searchType="tadir_lookup"` for reset/create preflights that need to know whether objects exist anywhere, regardless of package. The default `source='adt'` uses ADT repository quick search, which avoids long `IN (...)` parser limits and works in read/search-only configurations. The endpoint deliberately filters out TADIR rows that don't resolve to a live workbench resource, so orphan/ghost entries (left behind by aborted create/delete cycles) are invisible to the default path — see the source modes section below.
+
+### TADIR lookup source modes
+
+| `source` | Underlying call | Scope required | When to use |
+|----------|-----------------|----------------|-------------|
+| `adt` (default) | `GET /sap/bc/adt/repository/informationsystem/search?operation=quickSearch&query=...` (one per name) | `read` | Default; workbench-resolvable objects only. Skips TADIR ghost rows by design. |
+| `db` | `POST /sap/bc/adt/datapreview/freestyle` with `SELECT pgmid, object, obj_name, devclass FROM tadir WHERE obj_name IN (…)` | `sql` (server-side: `SAP_ALLOW_FREE_SQL=true`) | One round-trip for any number of names — much faster for large lists, and surfaces orphan TADIR rows the ADT route hides. |
+| `both` | Parallel `adt` + `db` calls; merge by `(base type, name)` with dedupe | `sql` | Explicit split-brain detection. Returns `splitBrain: [name, ...]` and a `warnings` array when the two sources disagree (e.g. a TADIR ghost from an aborted create/delete). |
+
+Every match in the result set is stamped with an `_origin: 'adt' | 'db'` field so callers can colour-code or filter rows by provenance. The `'db'` path also covers legacy SEGW types (`IWSV`/`IWMO`/`IWPR`) that the ADT info-system does not return; the URL is left empty for types that aren't addressable via a single ADT base URL (e.g. function modules, which need the parent group).
 
 **Source code search availability:** Not available on all SAP systems. Requires SICF service activation. If unavailable, falls back with an error suggesting SAPQuery as an alternative.
 
@@ -241,6 +253,7 @@ Create or update ABAP source code. Handles lock/modify/unlock automatically.
 | `category` | string | No | SRVB: binding category (`0` = UI, `1` = Web API; default `0`) |
 | `version` | string | No | SRVB: service version for binding metadata (default `0001`) |
 | `objects` | array | No | For `batch_create`: ordered list of objects (see below) |
+| `activateAtEnd` | boolean | No | For `batch_create` only. Default `false` (per-object inline activation). When `true`, ARC-1 writes inactive drafts for every object then issues one terminal batch-activate — SAP's activator resolves cross-references between siblings in a single pass. Use this for interdependent objects (composition-linked DDLS, RAP behavior stacks where parent references not-yet-active child). Partial-failure semantics are unchanged: a write-phase failure still breaks the loop and only the already-written subset is batch-activated. |
 
 **DDIC metadata writes:** `DOMA`, `DTEL`, `MSAG`, and `SRVB` use structured XML payloads and do **not** use `/source/main`. `MSAG` writes use the `/sap/bc/adt/messageclass/` endpoint and accept a `messages` array of `{number, shortText, longText?}` entries. `SRVB` create uses wildcard content type (`application/*`) and SRVB update uses vendor type (`application/vnd.sap.adt.businessservices.servicebinding.v2+xml`).
 
@@ -343,6 +356,8 @@ This helps pinpoint the exact failing field/annotation instead of retrying blind
 `batch_create` creates and activates multiple objects in sequence via a single tool call. Objects are processed in array order — put dependencies first (e.g., domain before data element, TABL before DDLS, DCLS after DDLS, BDEF after CDS views). Each object in the array has: `type` (string, required), `name` (string, required), `source` (string, optional), `description` (string, optional), optional `package` and `transport` overrides, plus optional DOMA/DTEL metadata fields. Item-level `package` and `transport` override the top-level values for that object.
 
 If any object fails, processing stops and the response reports which objects succeeded and which failed. AFF metadata validation runs automatically for supported types (CLAS, INTF, PROG, DDLS, BDEF, SRVD, SRVB) — invalid metadata is rejected before hitting SAP.
+
+**Deferred activation for interdependent objects (`activateAtEnd: true`):** By default, each object is created → source written → activated, in order. This works for linear dependency chains but fails when siblings cross-reference each other (e.g. composition-linked DDLS where the parent's `composition [0..*] of ZR_CHILD` references a not-yet-active child, or a RAP behavior stack where the BDEF refers to a draft SRVD). Set `activateAtEnd: true` to defer activation: ARC-1 writes inactive drafts for every object then issues one terminal `activateBatch` call. SAP's activator sees the whole graph at once and resolves cross-references internally. Partial-failure semantics are unchanged — a write-phase failure still breaks the loop, and the terminal batch-activate runs only over the already-written subset.
 
 **RAP handler scaffolding:**
 

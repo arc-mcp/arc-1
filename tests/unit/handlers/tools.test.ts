@@ -419,6 +419,26 @@ describe('Tool Definitions', () => {
       expect(sapSearch.description).not.toContain('source_code');
       expect(sapSearch.description).not.toContain('Source code search');
     });
+
+    it('SAPSearch (onprem) exposes the source enum with adt/db/both for tadir_lookup', () => {
+      const tools = getToolDefinitions(DEFAULT_CONFIG, true);
+      const sapSearch = tools.find((t) => t.name === 'SAPSearch')!;
+      const schema = sapSearch.inputSchema as Record<string, any>;
+      expect(schema.properties.source).toBeDefined();
+      expect(schema.properties.source.enum).toEqual(['adt', 'db', 'both']);
+      expect(typeof schema.properties.source.description).toBe('string');
+      expect(schema.properties.source.description.length).toBeGreaterThan(0);
+      // Description must call out the sql-scope requirement so LLMs don't try 'db' on read-only profiles.
+      expect(schema.properties.source.description).toMatch(/sql/i);
+    });
+
+    it('SAPSearch (btp) exposes the source enum with adt/db/both for tadir_lookup', () => {
+      const tools = getToolDefinitions({ ...DEFAULT_CONFIG, systemType: 'btp' }, true);
+      const sapSearch = tools.find((t) => t.name === 'SAPSearch')!;
+      const schema = sapSearch.inputSchema as Record<string, any>;
+      expect(schema.properties.source).toBeDefined();
+      expect(schema.properties.source.enum).toEqual(['adt', 'db', 'both']);
+    });
   });
 
   // ─── Schema Validation (Issue #47: OpenAI compatibility) ─────────
@@ -729,6 +749,25 @@ describe('Tool Definitions', () => {
       expect(schema.properties.activate.type).toBe('boolean');
       expect(schema.properties.dryRun).toBeDefined();
       expect(schema.properties.dryRun.type).toBe('boolean');
+    });
+
+    it('exposes activateAtEnd parameter for batch_create on the on-prem SAPWrite schema', () => {
+      const schema = getSAPWriteSchema(false);
+      expect(schema.properties.activateAtEnd).toBeDefined();
+      expect(schema.properties.activateAtEnd.type).toBe('boolean');
+      const desc = String(schema.properties.activateAtEnd.description ?? '');
+      expect(desc.length).toBeGreaterThan(0);
+      // Description must call out batch_create + the composition-stack use case so LLMs
+      // pick the right flag instead of repurposing the generate_behavior_implementation `activate`.
+      expect(desc.toLowerCase()).toContain('batch_create');
+      expect(desc.toLowerCase()).toMatch(/composition|cross-reference|interdependent|rap/);
+    });
+
+    it('exposes activateAtEnd parameter for batch_create on the BTP SAPWrite schema', () => {
+      const schema = getSAPWriteSchema(true);
+      expect(schema.properties.activateAtEnd).toBeDefined();
+      expect(schema.properties.activateAtEnd.type).toBe('boolean');
+      expect(String(schema.properties.activateAtEnd.description ?? '').length).toBeGreaterThan(0);
     });
 
     it('the SAPWrite tool description mentions generate_behavior_implementation (on-prem)', () => {

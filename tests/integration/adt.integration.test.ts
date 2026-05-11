@@ -1617,4 +1617,298 @@ describe('ADT Integration Tests', () => {
       await expect(client.getSrvb('ZZZNOTEXIST_SRVB_999')).rejects.toThrow();
     });
   });
+
+  // ─── SAPSearch tadir_lookup source variants ─────────────────────────
+  //
+  // Coverage for the SAPSearch tadir_lookup split-brain fix.
+  // - source='adt' (default) preserves today's ADT info-system behavior.
+  // - source='db' issues SQL against TADIR — also surfaces orphan/ghost rows.
+  // - source='both' merges results and emits a `splitBrain` array.
+  //
+  // The post-delete test asserts only on response shape, not on the presence of a ghost
+  // (whether SAP leaves a ghost behind after delete is release-/auth-dependent).
+
+  describe('SAPSearch tadir_lookup source variants', () => {
+    it('source=adt|db|both all find a freshly-created Z DDLS in $TMP (no splitBrain)', async (ctx) => {
+      requireOrSkip(ctx, process.env.TEST_SAP_URL, SkipReason.NO_CREDENTIALS);
+      const { generateUniqueName } = await import('./crud-harness.js');
+      const { handleToolCall } = await import('../../src/handlers/intent.js');
+      const ddlsName = generateUniqueName('ZRES_TADIR_');
+      const config = {
+        arc1Port: 8080,
+        arc1HttpAddr: '0.0.0.0:8080',
+        toolMode: 'standard',
+      } as unknown as Parameters<typeof handleToolCall>[1];
+
+      let created = false;
+      try {
+        // 1. Create a simple Z DDLS view in $TMP
+        const createResult = await handleToolCall(client, config, 'SAPWrite', {
+          action: 'create',
+          type: 'DDLS',
+          name: ddlsName,
+          package: '$TMP',
+          description: 'tadir_lookup source variants smoke test (transient)',
+          source:
+            `@AccessControl.authorizationCheck: #NOT_REQUIRED\n` +
+            `define view entity ${ddlsName} as select from t000 { key mandt as Client }`,
+          lintBeforeWrite: false,
+        });
+        expect(createResult.isError).toBeUndefined();
+        created = true;
+
+        // 2. Activate the view so ADT can resolve it (info-system filters drafts).
+        const activateResult = await handleToolCall(client, config, 'SAPActivate', {
+          objects: [{ type: 'DDLS', name: ddlsName }],
+        });
+        expect(activateResult.isError).toBeUndefined();
+
+        // 3. Lookup via adt — should find the activated view.
+        const adtLookup = await handleToolCall(client, config, 'SAPSearch', {
+          searchType: 'tadir_lookup',
+          names: [ddlsName],
+          source: 'adt',
+        });
+        expect(adtLookup.isError).toBeUndefined();
+        const adtPayload = JSON.parse(adtLookup.content[0]?.text ?? '{}');
+        expect(adtPayload.lookups[0]?.found).toBe(true);
+
+        // 4. Lookup via db — should find the TADIR row.
+        const dbLookup = await handleToolCall(client, config, 'SAPSearch', {
+          searchType: 'tadir_lookup',
+          names: [ddlsName],
+          source: 'db',
+        });
+        expect(dbLookup.isError).toBeUndefined();
+        const dbPayload = JSON.parse(dbLookup.content[0]?.text ?? '{}');
+        expect(dbPayload.lookups[0]?.found).toBe(true);
+        expect(dbPayload.lookups[0]?.matches[0]?._origin).toBe('db');
+
+        // 5. Lookup via both — both sources agree; no splitBrain reported.
+        const bothLookup = await handleToolCall(client, config, 'SAPSearch', {
+          searchType: 'tadir_lookup',
+          names: [ddlsName],
+          source: 'both',
+        });
+        expect(bothLookup.isError).toBeUndefined();
+        const bothPayload = JSON.parse(bothLookup.content[0]?.text ?? '{}');
+        expect(bothPayload.lookups[0]?.found).toBe(true);
+        expect(bothPayload.splitBrain).toBeUndefined();
+      } finally {
+        // best-effort-cleanup
+        if (created) {
+          try {
+            await handleToolCall(client, config, 'SAPWrite', {
+              action: 'delete',
+              type: 'DDLS',
+              name: ddlsName,
+            });
+          } catch {
+            // best-effort-cleanup; $TMP DDLS will time out eventually
+          }
+        }
+      }
+    });
+
+    it('source variants stay shape-consistent after delete (ghost or clean)', async (ctx) => {
+      requireOrSkip(ctx, process.env.TEST_SAP_URL, SkipReason.NO_CREDENTIALS);
+      const { generateUniqueName } = await import('./crud-harness.js');
+      const { handleToolCall } = await import('../../src/handlers/intent.js');
+      const ddlsName = generateUniqueName('ZRES_TGHOST_');
+      const config = {
+        arc1Port: 8080,
+        arc1HttpAddr: '0.0.0.0:8080',
+        toolMode: 'standard',
+      } as unknown as Parameters<typeof handleToolCall>[1];
+
+      // Create + delete cycle, then probe all three sources. Either outcome is a passing test:
+      //  (a) ADT and DB both report `found:false` → clean delete, no splitBrain.
+      //  (b) DB reports `found:true`, ADT reports `found:false` → TADIR ghost; splitBrain=[name].
+      // The contract under test is response shape + consistency, not the presence of a ghost.
+      const createResult = await handleToolCall(client, config, 'SAPWrite', {
+        action: 'create',
+        type: 'DDLS',
+        name: ddlsName,
+        package: '$TMP',
+        description: 'tadir_lookup ghost-probe transient',
+        source:
+          `@AccessControl.authorizationCheck: #NOT_REQUIRED\n` +
+          `define view entity ${ddlsName} as select from t000 { key mandt as Client }`,
+        lintBeforeWrite: false,
+      });
+      expect(createResult.isError).toBeUndefined();
+      // Delete without activating — SAP's draft cleanup is the most likely ghost-producer path.
+      const deleteResult = await handleToolCall(client, config, 'SAPWrite', {
+        action: 'delete',
+        type: 'DDLS',
+        name: ddlsName,
+      });
+      // The delete may still report an error if the draft is in a tricky state — but the
+      // post-condition we care about is the lookup shape.
+      void deleteResult;
+
+      const bothLookup = await handleToolCall(client, config, 'SAPSearch', {
+        searchType: 'tadir_lookup',
+        names: [ddlsName],
+        source: 'both',
+      });
+      expect(bothLookup.isError).toBeUndefined();
+      const payload = JSON.parse(bothLookup.content[0]?.text ?? '{}');
+
+      // Shape invariants — same regardless of ghost-vs-clean outcome:
+      expect(Array.isArray(payload.lookups)).toBe(true);
+      expect(payload.lookups[0]?.name).toBe(ddlsName);
+      // Either splitBrain reports the ghost OR both sources agree (no splitBrain field).
+      if (payload.splitBrain) {
+        expect(payload.splitBrain).toEqual([ddlsName]);
+        expect(Array.isArray(payload.warnings)).toBe(true);
+        expect(payload.warnings[0]).toContain(ddlsName);
+      } else {
+        expect(payload.lookups[0]?.found).toBe(false);
+      }
+    });
+  });
+
+  // ─── SAPWrite batch_create activateAtEnd ────────────────────────────
+  //
+  // Coverage for the deferred-activation fix on composition-linked DDLS:
+  // - With default activateAtEnd=false, per-object inline activate fails on the parent
+  //   because the child sibling is still inactive.
+  // - With activateAtEnd=true, ARC-1 writes inactive drafts for both objects then issues
+  //   one terminal activateBatch — SAP resolves the cross-reference internally.
+
+  describe('SAPWrite batch_create activateAtEnd', () => {
+    it('default (activateAtEnd=false) fails on composition-linked DDLS — documents the failure mode', async (ctx) => {
+      requireOrSkip(ctx, process.env.TEST_SAP_URL, SkipReason.NO_CREDENTIALS);
+      const { generateUniqueName } = await import('./crud-harness.js');
+      const { handleToolCall } = await import('../../src/handlers/intent.js');
+      const parentName = generateUniqueName('ZRES_BCPAR_');
+      const childName = generateUniqueName('ZRES_BCCHD_');
+      const config = {
+        arc1Port: 8080,
+        arc1HttpAddr: '0.0.0.0:8080',
+        toolMode: 'standard',
+      } as unknown as Parameters<typeof handleToolCall>[1];
+
+      try {
+        const result = await handleToolCall(client, config, 'SAPWrite', {
+          action: 'batch_create',
+          package: '$TMP',
+          lintBeforeWrite: false,
+          objects: [
+            {
+              type: 'DDLS',
+              name: parentName,
+              description: 'composition parent (transient)',
+              source:
+                `@AccessControl.authorizationCheck: #NOT_REQUIRED\n` +
+                `define root view entity ${parentName} as select from t000 ` +
+                `composition [0..*] of ${childName} as _Child ` +
+                `{ key mandt as Client, _Child }`,
+            },
+            {
+              type: 'DDLS',
+              name: childName,
+              description: 'composition child (transient)',
+              source:
+                `@AccessControl.authorizationCheck: #NOT_REQUIRED\n` +
+                `define view entity ${childName} ` +
+                `as select from t000 association to parent ${parentName} as _Parent ` +
+                `on $projection.Client = _Parent.Client ` +
+                `{ key mandt as Client, _Parent }`,
+            },
+          ],
+        });
+        // Per-object inline activate fails on the parent — well-known message family.
+        expect(result.isError).toBe(true);
+        const text = result.content[0]?.text ?? '';
+        // Either the parent's activation hit the unresolved sibling, or the SAP backend
+        // refused the composition outright. Both confirm the failure mode this PR fixes.
+        expect(text).toMatch(/does not exist or is not active|activation failed|Composition target/i);
+      } finally {
+        for (const name of [parentName, childName]) {
+          try {
+            await handleToolCall(client, config, 'SAPWrite', {
+              action: 'delete',
+              type: 'DDLS',
+              name,
+            });
+          } catch {
+            // best-effort-cleanup
+          }
+        }
+      }
+    });
+
+    it('activateAtEnd=true activates a composition-linked DDLS pair in a single terminal batch', async (ctx) => {
+      requireOrSkip(ctx, process.env.TEST_SAP_URL, SkipReason.NO_CREDENTIALS);
+      const { generateUniqueName } = await import('./crud-harness.js');
+      const { handleToolCall } = await import('../../src/handlers/intent.js');
+      const parentName = generateUniqueName('ZRES_AAPAR_');
+      const childName = generateUniqueName('ZRES_AACHD_');
+      const config = {
+        arc1Port: 8080,
+        arc1HttpAddr: '0.0.0.0:8080',
+        toolMode: 'standard',
+      } as unknown as Parameters<typeof handleToolCall>[1];
+
+      try {
+        const result = await handleToolCall(client, config, 'SAPWrite', {
+          action: 'batch_create',
+          package: '$TMP',
+          activateAtEnd: true,
+          lintBeforeWrite: false,
+          objects: [
+            {
+              type: 'DDLS',
+              name: parentName,
+              description: 'composition parent (transient)',
+              source:
+                `@AccessControl.authorizationCheck: #NOT_REQUIRED\n` +
+                `define root view entity ${parentName} as select from t000 ` +
+                `composition [0..*] of ${childName} as _Child ` +
+                `{ key mandt as Client, _Child }`,
+            },
+            {
+              type: 'DDLS',
+              name: childName,
+              description: 'composition child (transient)',
+              source:
+                `@AccessControl.authorizationCheck: #NOT_REQUIRED\n` +
+                `define view entity ${childName} ` +
+                `as select from t000 association to parent ${parentName} as _Parent ` +
+                `on $projection.Client = _Parent.Client ` +
+                `{ key mandt as Client, _Parent }`,
+            },
+          ],
+        });
+        expect(result.isError).toBeUndefined();
+        const text = result.content[0]?.text ?? '';
+        expect(text).toContain('activated as a single batch');
+        expect(text).toContain(parentName);
+        expect(text).toContain(childName);
+
+        // Confirm both are active by reading them back.
+        for (const name of [parentName, childName]) {
+          const read = await handleToolCall(client, config, 'SAPRead', {
+            type: 'DDLS',
+            name,
+          });
+          expect(read.isError).toBeUndefined();
+        }
+      } finally {
+        for (const name of [parentName, childName]) {
+          try {
+            await handleToolCall(client, config, 'SAPWrite', {
+              action: 'delete',
+              type: 'DDLS',
+              name,
+            });
+          } catch {
+            // best-effort-cleanup
+          }
+        }
+      }
+    });
+  });
 });

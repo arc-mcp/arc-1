@@ -145,6 +145,27 @@ describe('ACTION_POLICY matrix', () => {
     expect(policy?.opType).toBe(OperationType.Update);
     expect(policy?.featureGate).toBe('rap');
   });
+
+  it('SAPSearch.tadir_lookup_db requires sql scope (FreeSQL opType)', () => {
+    // The DB-mode TADIR lookup issues freestyle SQL — viewer-only profiles must
+    // not be able to escalate by piggybacking on the ADT info-system route.
+    const policy = getActionPolicy('SAPSearch', 'tadir_lookup_db');
+    expect(policy?.scope).toBe('sql');
+    expect(policy?.opType).toBe(OperationType.FreeSQL);
+  });
+
+  it('SAPSearch.tadir_lookup_both requires sql scope (FreeSQL opType)', () => {
+    // 'both' fans out an ADT call AND a SQL call, so the SQL gate still applies.
+    const policy = getActionPolicy('SAPSearch', 'tadir_lookup_both');
+    expect(policy?.scope).toBe('sql');
+    expect(policy?.opType).toBe(OperationType.FreeSQL);
+  });
+
+  it('SAPSearch tool-level default stays on read scope (preserves viewer default)', () => {
+    // Calling tadir_lookup without source (or with source='adt') must NOT
+    // escalate — viewer-only profiles continue to work.
+    expect(getActionPolicy('SAPSearch')?.scope).toBe('read');
+  });
 });
 
 describe('getActionPolicy', () => {
