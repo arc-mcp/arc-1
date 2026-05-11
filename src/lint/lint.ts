@@ -16,6 +16,7 @@
 
 import { Config, Edits, MemoryFile, Registry, Version } from '@abaplint/core';
 import { buildPreWriteConfig, type LintConfigOptions } from './config-builder.js';
+import { inspectTablSource } from './pre-write-hints.js';
 
 /** Lint result from @abaplint/core */
 export interface LintResult {
@@ -151,6 +152,12 @@ export function validateBeforeWrite(
 
   const errors = issues.filter((i) => i.severity === 'error');
   const warnings = issues.filter((i) => i.severity === 'warning');
+
+  // ARC-1-native pre-write semantic hints (filename-gated; advisory only).
+  // See `src/lint/pre-write-hints.ts` for the per-type inspection functions.
+  if (filename.endsWith('.tabl.astabl')) {
+    warnings.push(...inspectTablSource(source));
+  }
 
   return {
     pass: errors.length === 0,

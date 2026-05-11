@@ -169,6 +169,7 @@ src/
 └── lint/
     ├── lint.ts                 # ABAP lint wrapper (@abaplint/core)
     ├── config-builder.ts       # System-aware config builder (cloud/onprem)
+    ├── pre-write-hints.ts      # ARC-1-native pre-write semantic hints (TABL %admin draft include, ...)
     └── presets/                # cloud.ts (strict), onprem.ts (relaxed)
 
 scripts/ci/                     # collect-test-reliability, assert-required-test-execution, coverage-summary
@@ -225,6 +226,7 @@ tests/
 | Add safety check | `src/adt/safety.ts` |
 | Add/modify PrettyPrint action | `src/adt/devtools.ts`, `src/handlers/intent.ts` (handleSAPLint), `src/handlers/tools.ts`, `src/handlers/schemas.ts` |
 | Add lint rule config | `src/lint/lint.ts`, `src/lint/config-builder.ts`, `src/lint/presets/` |
+| Add an ARC-1-native pre-write semantic hint for a new object type | `src/lint/pre-write-hints.ts` (add `inspect<Type>Source` pure function returning `LintResult[]` with `severity:'warning'`), `src/lint/lint.ts` (wire into `validateBeforeWrite()` filename-gated by extension), `tests/unit/lint/pre-write-hints.test.ts` (positive/negative/edge tests, comments stripped, mixed case), `tests/unit/lint/lint.test.ts` (integration via `validateBeforeWrite`) |
 | Add dependency pattern | `src/context/deps.ts` |
 | Add CDS dependency pattern | `src/context/cds-deps.ts` |
 | Add contract extraction for new type | `src/context/contract.ts` |

@@ -1,6 +1,6 @@
 # ARC-1 Roadmap
 
-**Last Updated:** 2026-05-11 (SAPSearch tadir_lookup `source` modes for TADIR ghost detection + SAPWrite batch_create `activateAtEnd` for composition-linked DDLS / interdependent RAP graphs; earlier same day: RAP handler skeleton CCIMP-only fix)
+**Last Updated:** 2026-05-11 (ARC-1-native pre-write hint `arc1-tabl-draft-admin-include` — non-blocking warning when a TABL source uses bare `include sych_bdl_draft_admin_inc` instead of the SAP-canonical `"%admin"` named-include prefix; closes Run 6 micro-improvement #5 from the SEGW→RAP migration skill iteration log; earlier same day: SAPSearch tadir_lookup `source` modes for TADIR ghost detection + SAPWrite batch_create `activateAtEnd` for composition-linked DDLS / interdependent RAP graphs; earlier same day: RAP handler skeleton CCIMP-only fix)
 **Project:** ARC-1 (ABAP Relay Connector) — MCP Server for SAP ABAP Systems
 **Repository:** https://github.com/marianfoo/arc-1
 

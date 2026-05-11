@@ -215,4 +215,70 @@ define view ZI_TEST as select from ztable {
       expect(result.errors.some((e) => e.rule === 'cds_parser_error')).toBe(true);
     });
   });
+
+  describe('validateBeforeWrite — ARC-1 pre-write hints (TABL draft admin include)', () => {
+    it('appends arc1-tabl-draft-admin-include warning for bare include in TABL source', () => {
+      const source = `@EndUserText.label : 'Draft'
+@AbapCatalog.enhancement.category : #NOT_EXTENSIBLE
+@AbapCatalog.tableCategory : #TRANSPARENT
+@AbapCatalog.deliveryClass : #A
+@AbapCatalog.dataMaintenance : #ALLOWED
+define table zdraft_t {
+  key client : abap.clnt not null;
+  key id : abap.char(10) not null;
+  include sych_bdl_draft_admin_inc;
+}`;
+      const result = validateBeforeWrite(source, 'zdraft_t.tabl.astabl');
+      // Hints are advisory — write still passes as long as abaplint has no errors
+      expect(result.pass).toBe(true);
+      const hints = result.warnings.filter((w) => w.rule === 'arc1-tabl-draft-admin-include');
+      expect(hints).toHaveLength(1);
+      expect(hints[0].severity).toBe('warning');
+      expect(hints[0].message).toContain('"%admin"');
+    });
+
+    it('does NOT emit hint for canonical %admin form in TABL', () => {
+      const source = `@EndUserText.label : 'Draft'
+@AbapCatalog.enhancement.category : #NOT_EXTENSIBLE
+@AbapCatalog.tableCategory : #TRANSPARENT
+@AbapCatalog.deliveryClass : #A
+@AbapCatalog.dataMaintenance : #ALLOWED
+define table zdraft_t {
+  key client : abap.clnt not null;
+  key id : abap.char(10) not null;
+  "%admin" : include sych_bdl_draft_admin_inc;
+}`;
+      const result = validateBeforeWrite(source, 'zdraft_t.tabl.astabl');
+      const hints = result.warnings.filter((w) => w.rule === 'arc1-tabl-draft-admin-include');
+      expect(hints).toHaveLength(0);
+    });
+
+    it('does NOT emit hint for TABL with no draft admin include', () => {
+      const source = `@EndUserText.label : 'Test'
+@AbapCatalog.enhancement.category : #NOT_EXTENSIBLE
+@AbapCatalog.tableCategory : #TRANSPARENT
+@AbapCatalog.deliveryClass : #A
+@AbapCatalog.dataMaintenance : #ALLOWED
+define table z_simple {
+  key client : abap.clnt not null;
+  key id : abap.char(10) not null;
+  data : abap.char(255);
+}`;
+      const result = validateBeforeWrite(source, 'z_simple.tabl.astabl');
+      const hints = result.warnings.filter((w) => w.rule === 'arc1-tabl-draft-admin-include');
+      expect(hints).toHaveLength(0);
+    });
+
+    it('does NOT emit TABL hint when filename is non-TABL even if source contains the include text', () => {
+      // ABAP source containing the literal include text in a comment.
+      // Filename gating must prevent the TABL hint from firing on PROG/CLAS/etc.
+      const source = `REPORT z_test.
+
+* This program documents how to add include sych_bdl_draft_admin_inc; to a draft table.
+WRITE: 'Hello'.`;
+      const result = validateBeforeWrite(source, 'z_test.prog.abap');
+      const hints = result.warnings.filter((w) => w.rule === 'arc1-tabl-draft-admin-include');
+      expect(hints).toHaveLength(0);
+    });
+  });
 });

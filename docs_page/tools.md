@@ -344,6 +344,12 @@ This helps pinpoint the exact failing field/annotation instead of retrying blind
 - **Reserved keyword warnings:** CDS field names like `position`, `value`, `type`, `data` etc. may be CDS reserved keywords that cause silent DDL save failures. ARC-1 detects these and includes an advisory warning (non-blocking) suggesting renamed alternatives.
 - **Empty DDLS source:** When reading a DDLS that exists but has no stored source, ARC-1 returns an explicit warning instead of silent empty content.
 
+**ARC-1-native pre-write semantic hints (TABL):**
+
+ARC-1 layers a small set of release-aware, RAP-convention hints on top of the abaplint pass. They emit `severity:'warning'` only — the write is not blocked. The first hint surfaces a known draft-table anti-pattern; future hints follow the same pattern in `src/lint/pre-write-hints.ts`.
+
+- **`arc1-tabl-draft-admin-include`:** A TABL source contains `include sych_bdl_draft_admin_inc` without the SAP-canonical named-include prefix `"%admin" : include sych_bdl_draft_admin_inc;`. The bare include activates at TABL level on most releases but is non-canonical per ABAP keyword doc [ABENBDL_DRAFT_TABLE](https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENBDL_DRAFT_TABLE.html) and breaks BDEF binding for some draft scenarios. SAP standard draft tables (e.g. `BOTD_TAB_ROOT_D`) all use the named form. Hint surfaces in the response `warnings` array with `rule: 'arc1-tabl-draft-admin-include'`.
+
 **RAP deterministic preflight validation:**
 
 - Runs before `create`/`update`/`batch_create` for RAP-prone source types (`TABL`, `BDEF`, `DDLX`, `DDLS`).
