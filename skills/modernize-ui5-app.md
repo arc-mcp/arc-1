@@ -247,6 +247,27 @@ project ends up on v1 or v2 — there's no downside.
 empty". If you find it: you have Trap 5. If you don't, you're probably looking at Trap 1
 (missing `layout`) or Trap 2 (height cascade).
 
+**Why the validators DON'T catch this** (verified empirically against `@ui5/linter@1.19.0`
+and `@ui5/manifest@1.86.0`, the same versions wrapped by the UI5 MCP):
+
+| Tool | Catches Trap 5? | Why |
+|---|---|---|
+| `run_ui5_linter` (`@ui5/linter`) | **No** | The `no-removed-manifest-property` rule exists but only checks `resources/js`, `rootView/async`, `routing/config/async`. Does NOT check routing targets for `viewName`/`viewPath`/`viewLevel`. The linter source reads `target.name ?? target.viewName` — it gracefully accepts either, without warning. |
+| `run_manifest_validation` (`@ui5/manifest` schema + Ajv) | **No** | The schema marks `viewName`/`viewPath`/`viewLevel` as `"deprecated": true` with a description pointing to the v2 replacement, but Ajv with the MCP's `strict: false` config ignores the `deprecated` flag. The schema also has both `legacyTargetAddition` AND `actualTargetAdditionStandard` as alternatives side-by-side (no `_version`-conditional `if/then` branch), so a manifest with `viewName` validates as `isValid: true`. |
+| `npm run ts-typecheck` | **No** | Manifest is JSON — TypeScript doesn't see it. |
+| `eslint webapp` | **No** | ESLint doesn't model UI5 manifest semantics. |
+| Browser runtime | **Indirectly** | The `"page stack is empty but should have been initialized"` console warning is the ONLY automated signal, and it only fires at runtime, not at lint time. |
+
+**Implication for the skill:** the Phase 7 acceptance gates (linter / manifest validation /
+ts-typecheck) WILL all report green for a v2 manifest with the deprecated routing keys. The
+ONLY honest gate for this trap is the **Phase 8d browser-render verification** — that's why
+Phase 8d is mandatory, not optional. Don't believe a "clean lint + clean validation" report
+means the routing config is correct.
+
+If you have the cycles to file an upstream issue, this is a clear gap in `@ui5/linter`'s
+`no-removed-manifest-property` rule — adding `routing.targets[].viewName/viewPath/viewLevel`
+to the checked-property list would close it.
+
 ---
 
 ## Self-help: when the skill doesn't have the answer
@@ -1534,6 +1555,12 @@ i18n keys are reused from legacy.
 
 Run all four gates in this order. **All four must pass** before declaring the conversion done.
 
+> **Important — what these gates don't catch:** clean reports here do NOT mean the app
+> renders. In particular, Trap 5 (manifest v2 + deprecated routing keys / missing
+> `type: "View"`) passes ALL of the gates below but produces a blank page at runtime.
+> The Phase 8d browser-render check is the only honest acceptance gate. See the table
+> in Trap 5 for the empirical tool-coverage breakdown.
+
 ### 7a. ESLint auto-fix (FIRST — before manual review)
 
 ```text
@@ -1700,7 +1727,7 @@ What's next:
 | Symptom | Cause | Fix |
 |---|---|---|
 | **Page renders blank; console clean; DOM populated but every element has height: 0** | UI5 ComponentSupport stripped `data-sap-ui-component` attribute, so any CSS height selector tied to that attribute fails to match (Trap 2) | Add `style="height: 100%"` inline directly on the component `<div>` in `index.html`. CSS selectors won't work. |
-| **Page blank, columns empty, console warning "page stack is empty but should have been initialized"** | Manifest `_version` is 2.0.0+ (UI5 1.136+) and routing targets miss explicit `"type": "View"` and/or still use deprecated `viewName`/`viewPath`/`viewLevel` keys (Trap 5) | Add `"type": "View"` to `routing.config` AND each target; rename `viewName` → `name`, `viewPath` → `path`, `viewLevel` → `level`. Always-safe to do, even on v1.x manifests. |
+| **Page blank, columns empty, console warning "page stack is empty but should have been initialized"** | Manifest `_version` is 2.0.0+ (UI5 1.136+) and routing targets miss explicit `"type": "View"` and/or still use deprecated `viewName`/`viewPath`/`viewLevel` keys (Trap 5). NEITHER `@ui5/linter` NOR `run_manifest_validation` flags this — both report clean. | Add `"type": "View"` to `routing.config` AND each target; rename `viewName` → `name`, `viewPath` → `path`, `viewLevel` → `level`. Verify via browser-render (Phase 8d), not via lint/validation gates. |
 | **Only one FCL column visible; routing places content in mid/end column but it's hidden** | Matched route is missing the `layout` property (Trap 1) | Add `"layout": "TwoColumnsMidExpanded"` (or appropriate value) to **every** route, including the home/main route. The router only updates FCL layout from the matched route's `layout` value. |
 | **TypeScript forces casts like `(event.getParameters() as {listItem: ListItem}).listItem`** | Generic `Event` from `sap/ui/base/Event` was imported instead of the specific `<Control>$<Event>Event` (Trap 3) | Replace with the specific event type, e.g. `import { List$SelectionChangeEvent } from "sap/m/List"`. Use `get_api_reference` if uncertain. |
 | `create_ui5_app` returns no error but `<target>/webapp/Component.ts` is a `.js` file | UI5 MCP fell back to a JS template | Re-call with `typescript: true` explicit; verify `frameworkVersion` is supported (must be >= 1.96) |
