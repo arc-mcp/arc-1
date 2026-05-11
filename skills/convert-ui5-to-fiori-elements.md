@@ -747,7 +747,22 @@ Bash: cd <workspace> && npx --yes @sap/generator-fiori --no-deploy
 Walk through the prompts (or pass `--skip-install` with explicit args). This is the same
 generator the MCP server wraps — slower because it's interactive, but always works.
 
-Capture the gap in `RUN-NOTES.md` so the next iteration can fix the prompt for the MCP path.
+### 5e. Known Fiori MCP rough edges (track upstream)
+
+The Fiori MCP server is **experimental**. Two known issues to recognize and work around:
+
+- **`fetch-service-metadata` returns an MCP framework error instead of a structured response**
+  when the `@sap-ux/store` has no entry for the target system. Workaround: `curl $metadata`
+  yourself to a local file (e.g. `<fe_app>/metadata.xml`), then point `execute_functionality`
+  at the file. Tracked upstream:
+  [SAP/open-ux-tools#4652](https://github.com/SAP/open-ux-tools/issues/4652) — when this
+  closes, the curl workaround can be dropped.
+- **`fetch-service-metadata` requires Connection Manager configuration** for stored
+  system entries; direct URL passthrough to `execute_functionality` bypasses this. Skill's
+  Phase 0e already documents the direct-URL path.
+
+Capture any **new** rough edges in `RUN-NOTES.md` so the next iteration can either work
+around them or file follow-up upstream issues.
 
 ---
 

@@ -440,11 +440,14 @@ SAPWrite(action="delete", type="<type>", name="<name>", transport="<transport>")
 reuse `<transport>` — it's fine.)
 
 **Plus a TADIR cross-check** (Run 1 found a stub draft table sitting in a different transport
-that the package scan missed). Preferred path uses the dedicated TADIR lookup action — no
-SQL required, no IN-list parser quirks:
+that the package scan missed; Run 6 found that ADT 404s can coexist with TADIR ghost rows —
+the "split-brain" failure mode). On ARC-1 ≥ 0.9.5 (PR #270), the canonical reset truth
+comes from `source="both"` mode, which queries ADT and DB TADIR in one call and emits a
+`splitBrain` warning array for any divergent names:
 
 ```text
 SAPSearch(searchType="tadir_lookup",
+          source="both",
           names=["ZDM_PROJECT_D","ZDM_TASK_D","ZDM_TIMEENTRY_D",
                  "ZR_DM_PROJECT","ZR_DM_TASK","ZR_DM_TIMEENTRY",
                  "ZC_DM_PROJECT","ZC_DM_TASK","ZC_DM_TIMEENTRY",
@@ -452,20 +455,27 @@ SAPSearch(searchType="tadir_lookup",
                  "ZBP_DM_PROJECT","ZUI_DM_PROJECTS","ZUI_DM_PROJECTS_O4"])
 ```
 
-For a broader sweep (anything in the target package), `SAPQuery` is fine — ARC-1 ≥ 0.10.0
-auto-chunks simple long `IN (...)` literal lists (PR #254), and `devclass = '<package>'`
-filtering has always worked:
+Read the response in this order:
+
+1. **`results`** — names found via ADT discovery (the "is the object actually live"
+   question). Empty = the package is clean from ADT's perspective.
+2. **`splitBrain`** — names where ADT and DB disagree (the "ghost" cases). For each, the
+   array entry tells you which source saw it. The pragmatic interpretation: if a name is
+   in DB-only (TADIR row, no ADT object), it's a ghost — treat as already absent for the
+   purposes of `SAPWrite create`. If it's in ADT-only (rare), there's a stale ADT cache —
+   `SAPSearch` again after a few seconds.
+
+`source="both"` requires `sql` scope (the DB leg uses the free-SQL path). If your profile
+doesn't have it, fall back to `source="adt"` (default) for the live check + `SAPQuery` for
+a broader package sweep:
 
 ```text
 SAPQuery(action="sql", sql="SELECT obj_name, object, devclass, korrnum FROM tadir
   WHERE devclass = '<target_package>' AND obj_name LIKE 'Z%'")
 ```
 
-If TADIR shows objects in `<target_package>` that the package read missed (description
-misalignment is a known ARC-1 cosmetic bug), they're orphans — delete each by its
-`object` type and `obj_name`. If any planned name (`ZDM_*_D`, `ZR_DM_*`, `ZC_DM_*`,
-`ZBP_DM_PROJECT`, `ZUI_DM_PROJECTS*`) appears in a *different* package, it's a leftover
-stub — delete via its actual transport before proceeding.
+If a planned name appears in a *different* package, it's a leftover stub — delete via its
+actual transport before proceeding.
 
 ### 6b. Build order — strict, no improvisation
 
@@ -561,20 +571,26 @@ dats_tims_to_tstmp(
 ) as LastChangedStamp
 ```
 
-> **Activation order for composition CDS — anti-pattern callout.** Do **not** use
-> `batch_create` for the three composition-linked CDS roots (parent → child → grandchild).
-> `batch_create` activates each object inline in array order, so the parent
-> `composition [0..*] of ZR_DM_TASK as _Tasks` activates **before** `ZR_DM_TASK` exists,
-> hitting *"data source `ZR_DM_TASK` does not exist"* (Run 6 reproducer). Two safe paths:
+> **Activation order for composition CDS.** The default `batch_create` activates each
+> object inline in array order, so the parent `composition [0..*] of ZR_DM_TASK as _Tasks`
+> activates **before** `ZR_DM_TASK` exists, hitting *"data source `ZR_DM_TASK` does not
+> exist"* (Run 6 reproducer). Three safe paths, pick whichever fits the run:
 >
-> 1. **Per-file `SAPWrite(action="create")`** for each root, then a **single
+> 1. **`batch_create` with `activateAtEnd: true`** (ARC-1 ≥ 0.9.5, PR #270). Writes
+>    inactive drafts for every object, then issues one terminal `activateBatch` so SAP's
+>    activator resolves the cross-references in a single pass. This is the recommended
+>    pattern when ARC-1 supports it — single tool call, no recovery dance:
+>    ```text
+>    SAPWrite(action="batch_create", activateAtEnd: true, objects=[...])
+>    ```
+> 2. **Per-file `SAPWrite(action="create")`** for each root, then a **single
 >    `SAPActivate(action="activate", objects=[...])` batch** at the end (after every DDL
->    source has landed). This is the recommended pattern for composition graphs.
-> 2. Equivalent: `SAPWrite create` parent → `SAPActivate` child first → activate parent
->    last, manually walking the tree bottom-up.
+>    source has landed). Works on every ARC-1 release.
+> 3. Manual bottom-up: `SAPWrite create` parent → `SAPActivate` child first → activate
+>    parent last. More tool calls; rarely needed.
 >
-> The same anti-pattern applies to **Step 3 projections** (composition chain mirrored).
-> Activate the projection trio together at the end, not inline.
+> The same fix applies to **Step 3 projections** (composition chain mirrored). Activate the
+> projection trio together at the end, not inline.
 
 #### Step 3 — CDS projections (`ZC_DM_*`) — DO NOT SKIP
 
@@ -1097,7 +1113,7 @@ SAPTransport(action="create", description="ARC-1 RAP migration outputs (resettab
 | Phase 6 Step 2/3 — CDS rejects `@Semantics.systemDateTime.localInstanceLastChangedAt` or `@Semantics.businessDate.*` as "unknown annotation" | These annotations were added in 7.59+; on 7.58 they don't exist | Use `@Semantics.systemDateTime.createdAt` / `@Semantics.systemDateTime.lastChangedAt` (without `localInstance`). For business dates: just use `@Semantics.businessDate.from/to` if available, else omit. |
 | Phase 6 Step 3 — CDS rejects "inappropriate provider contract on `ZC_DM_<child>`" | `provider contract transactional_interface` was put on a child projection | Remove the contract from `ZC_DM_TASK` / `ZC_DM_TIMEENTRY`. The contract goes only on the *root* projection (`ZC_DM_PROJECT`). Children declare bare `as projection on …` and use `redirected to parent` for upward navigation. |
 | Phase 6 Step 5 — BDEF activation rejects with `"key field PROJECTID expected at position 2, found PROJECT_ID"` (or similar field-name mismatch on a draft table) | Draft table was written with snake_case field names (`project_id`, `start_date`) instead of the BO-alias-normalized names (`projectid`, `startdate`) | Rewrite the draft TABL with field names matching the BO aliases: drop underscores. Active table can keep snake_case (BDEF mapping bridges); draft table cannot. Use `update + activate` via SAPWrite — Run 2 confirmed this works. |
-| Phase 6a — `SAPQuery` returns HTTP 400 on a long `WHERE obj_name IN ('a','b','c',…)` filter | ARC-1 ≥ 0.10.0 auto-chunks simple long `IN (…)` literal lists (PR #254). Older builds and complex filters (`NOT IN`, multi-SELECT, subqueries) still hit 400. | Prefer `SAPSearch(searchType="tadir_lookup", names=[...], objectTypes=[...])` for cross-package existence checks (PR #256) — no SQL needed. As fallback, filter by `devclass = '<package>'`. |
+| Phase 6a — `SAPQuery` returns HTTP 400 on a long `WHERE obj_name IN ('a','b','c',…)` filter | ARC-1 ≥ 0.10.0 auto-chunks simple long `IN (…)` literal lists (PR #254). Older builds and complex filters (`NOT IN`, multi-SELECT, subqueries) still hit 400. | Prefer `SAPSearch(searchType="tadir_lookup", source="both", names=[...])` for cross-package existence checks (PR #256 + PR #270) — no SQL needed; the `splitBrain` warning array surfaces ADT/DB divergence in one call. As broader-sweep fallback, `SAPQuery` with `devclass = '<package>'`. |
 
 ---
 
