@@ -1390,6 +1390,57 @@ describe('Intent Handler', () => {
       expect(result.content[0]?.text).toContain('TABLE_CONTENTS is blocked by safety configuration or missing data');
       expect(result.content[0]?.text).toContain('SAP_ALLOW_DATA_PREVIEW=true');
     });
+
+    it('passes offset as searchStart query param to ADT', async () => {
+      const tableXml = `<?xml version="1.0" encoding="utf-8"?>
+<dataPreview:tableData xmlns:dataPreview="http://www.sap.com/adt/dataPreview">
+  <dataPreview:totalRows>1</dataPreview:totalRows>
+  <dataPreview:columns>
+    <dataPreview:metadata dataPreview:name="MANDT" dataPreview:type="C"/>
+    <dataPreview:dataSet><dataPreview:data>100</dataPreview:data></dataPreview:dataSet>
+  </dataPreview:columns>
+</dataPreview:tableData>`;
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, tableXml));
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'TABLE_CONTENTS',
+        name: 'T000',
+        maxRows: 10,
+        offset: 101,
+      });
+
+      expect(result.isError).toBeUndefined();
+      const postCalls = mockFetch.mock.calls.filter((c: unknown[]) => (c[1] as { method?: string })?.method === 'POST');
+      const url = String(postCalls[0]![0]);
+      expect(url).toContain('searchStart=101');
+      expect(url).toContain('rowNumber=10');
+    });
+
+    it('does not add searchStart when offset is not provided', async () => {
+      const tableXml = `<?xml version="1.0" encoding="utf-8"?>
+<dataPreview:tableData xmlns:dataPreview="http://www.sap.com/adt/dataPreview">
+  <dataPreview:totalRows>1</dataPreview:totalRows>
+  <dataPreview:columns>
+    <dataPreview:metadata dataPreview:name="MANDT" dataPreview:type="C"/>
+    <dataPreview:dataSet><dataPreview:data>100</dataPreview:data></dataPreview:dataSet>
+  </dataPreview:columns>
+</dataPreview:tableData>`;
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, tableXml));
+
+      await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'TABLE_CONTENTS',
+        name: 'T000',
+        maxRows: 10,
+      });
+
+      const postCalls = mockFetch.mock.calls.filter((c: unknown[]) => (c[1] as { method?: string })?.method === 'POST');
+      const url = String(postCalls[0]![0]);
+      expect(url).not.toContain('searchStart');
+    });
   });
 
   // ─── SAPSearch ─────────────────────────────────────────────────────
