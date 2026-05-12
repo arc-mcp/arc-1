@@ -225,6 +225,7 @@ With both flags at their defaults, ARC-1 stays inside the FAQ envelope for endor
 | [phase4-btp-deployment.md](phase4-btp-deployment.md) | BTP Cloud Foundry deployment details |
 | [sap-trial-setup.md](sap-trial-setup.md) | SAP BTP trial setup |
 | [roadmap.md](roadmap.md) | Planned features |
+| [blog-series.md](blog-series.md) | Long-form blog series — AI for ABAP development, ARC-1 design, BTP / Copilot Studio / Joule walkthroughs |
 
 ## License
 

@@ -8,7 +8,9 @@ ARC-1 connects AI assistants (Claude, GitHub Copilot, Copilot Studio, and any MC
 [![CodeQL](https://github.com/marianfoo/arc-1/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/marianfoo/arc-1/security/code-scanning)
 [![Dependency Review](https://github.com/marianfoo/arc-1/actions/workflows/dependency-review.yml/badge.svg)](https://github.com/marianfoo/arc-1/actions/workflows/dependency-review.yml)
 
-**[Full Documentation](https://marianfoo.github.io/arc-1/)** | **[Quickstart](https://marianfoo.github.io/arc-1/quickstart/)** | **[Tool Reference](https://marianfoo.github.io/arc-1/tools/)**
+**[Full Documentation](https://marianfoo.github.io/arc-1/)** | **[Quickstart](https://marianfoo.github.io/arc-1/quickstart/)** | **[Tool Reference](https://marianfoo.github.io/arc-1/tools/)** | **[Blog Series](https://blog.zeis.de/tags/ai-abap-development-series/)**
+
+> 📖 **New: AI ABAP Development blog series** — long-form posts on AI for ABAP, ARC-1 design, and real-world BTP / Copilot Studio / Joule walkthroughs. **[Read the series →](https://blog.zeis.de/tags/ai-abap-development-series/)**
 
 ## Why ARC-1?
 
@@ -141,6 +143,20 @@ npx arc-1@latest --url https://your-sap-host:44300 --user YOUR_USER
 - **Full local dev setup (Docker, cookie extractor, client configs)?** → [Local Development](https://marianfoo.github.io/arc-1/local-development/)
 - **Deploying for a team / BTP?** → [Deployment](https://marianfoo.github.io/arc-1/deployment/)
 
+## Blog Series — AI ABAP Development
+
+A long-form series on [blog.zeis.de](https://blog.zeis.de/tags/ai-abap-development-series/) covering AI for ABAP development, ARC-1's design, and real-world walkthroughs:
+
+1. [How I Use AI for Development and Why Context Matters](https://blog.zeis.de/posts/2026-04-20-how-i-use-ai/)
+2. [ABAP and Agentic AI: The Hidden Problem in Real Projects](https://blog.zeis.de/posts/2026-04-22-ai-abap-development/)
+3. [Introducing ARC-1: A Secure ADT MCP Server for Enterprise SAP Development](https://blog.zeis.de/posts/2026-04-27-arc-1/)
+4. [ARC-1 on SAP BTP: Secure ABAP Agentic Development Beyond the Laptop](https://blog.zeis.de/posts/2026-04-29-arc-1-btp/)
+5. [ARC-1 with Copilot Studio: SAP System Context Beyond Developers](https://blog.zeis.de/posts/2026-05-05-arc-1-copilot-studio/)
+6. [ARC-1 with Joule Studio: Bringing Real ABAP System Context into Joule](https://blog.zeis.de/posts/2026-05-08-arc-1-joule-studio-clean-core/)
+7. [From SEGW and Legacy UI5 to RAP with ARC-1](https://blog.zeis.de/posts/2026-05-11-segw-to-rap/)
+
+Full list and new posts → **[blog.zeis.de/tags/ai-abap-development-series](https://blog.zeis.de/tags/ai-abap-development-series/)**.
+
 ## Documentation
 
 Full documentation is available at **[marianfoo.github.io/arc-1](https://marianfoo.github.io/arc-1/)**.
@@ -156,6 +172,7 @@ Full documentation is available at **[marianfoo.github.io/arc-1](https://marianf
 | [Tool Reference](https://marianfoo.github.io/arc-1/tools/) | Complete reference for all 12 tools |
 | [Architecture](https://marianfoo.github.io/arc-1/architecture/) | System architecture with diagrams |
 | [AI Usage Patterns](https://marianfoo.github.io/arc-1/mcp-usage/) | Agent workflow patterns and best practices |
+| [Blog Series](https://marianfoo.github.io/arc-1/blog-series/) | Long-form posts on AI for ABAP development, ARC-1 internals, and real-world walkthroughs |
 
 ## Development
 

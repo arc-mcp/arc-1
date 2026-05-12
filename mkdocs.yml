@@ -55,6 +55,7 @@ nav:
       - Tools Reference: tools.md
       - MCP Usage Guide: mcp-usage.md
       - Skills: skills.md
+      - Blog Series: blog-series.md
   - Reference:
       - Configuration: configuration-reference.md
       - Configuration Precedence: configuration-precedence.md
