@@ -196,6 +196,194 @@ Validation commands also run:
 - `npm run lint`: passed.
 - `npm run test:assert-execution`: passed for unit/integration/e2e thresholds.
 
+## GitHub Actions Runtime Deep Dive
+
+Reference run: <https://github.com/marianfoo/arc-1/actions/runs/25674270461?pr=262>  
+Workflow title: `feat(skills): add SEGW→RAP migration + UI5 modernization + Fiori Elements skills`  
+Run date: 2026-05-11.  
+Status: success.
+
+The GitHub UI reports total duration `33m 7s`, but that includes pending/queue time. The run was created at `13:49:14Z`; the first visible jobs started at `14:00:18Z`, so about `11m 04s` was GitHub scheduling/pending time rather than ARC-1 test execution. The actual visible execution path was about `22m`.
+
+Job/step timing from the run metadata:
+
+| Segment | Runtime | Notes |
+|---|---:|---|
+| `test (22)` matrix job | 1m15s | Unit/lint/typecheck/coverage on Node 22. Runs in parallel with Node 24. |
+| `test (24)` matrix job | 1m12s | Node 24 is slightly faster in this run. |
+| `integration` job | 6m39s | `Run integration tests` step was 6m27s. |
+| `e2e` job | 13m12s | `Run E2E tests` step was 12m47s. |
+| `reliability-summary` | 17s | Artifact download + summary only. |
+
+The critical path after the matrix tests is dominated by live SAP jobs: integration then E2E. The workflow intentionally runs them sequentially, so any runtime reduction has to come from test selection, less repeated SAP work, cleanup, or carefully isolated read-only parallelism.
+
+### CI Integration Runtime
+
+Artifact used: `test-results-integration/integration.json` from run `25674270461`.
+
+Totals:
+
+- Tests: 236 total, 195 passed, 41 skipped.
+- File wall-time sum: 362.5s.
+- Assertion duration sum: 359.2s.
+- GitHub step time: 387s, so runner/Vitest overhead was about 24.5s.
+
+Top integration files:
+
+| File | Runtime | Share of file time | Main cause |
+|---|---:|---:|---|
+| `tests/integration/cache.integration.test.ts` | 134.2s | 37.0% | Repeated live `runWarmup()` scans. |
+| `tests/integration/adt.integration.test.ts` | 92.7s | 25.6% | Broad live ADT write/read coverage. |
+| `tests/integration/transport.integration.test.ts` | 73.0s | 20.1% | Recursive release and transport list/get calls. |
+| `tests/integration/crud.lifecycle.integration.test.ts` | 26.8s | 7.4% | Expected live CRUD lifecycle cost. |
+| `tests/integration/context.integration.test.ts` | 16.9s | 4.7% | Live context/dependency calls. |
+
+Slowest integration tests:
+
+| Runtime | Test |
+|---:|---|
+| 46.5s | `transport.integration.test.ts` > `releaseTransportRecursive` > `recursively releases a transport` |
+| 45.9s | `cache.integration.test.ts` > `warmup` > `second warmup run skips unchanged objects (delta by hash)` |
+| 25.4s | `cache.integration.test.ts` > `warmup` > `TADIR query returns custom CLAS/INTF objects (Z prefix)` |
+| 23.8s | `cache.integration.test.ts` > `warmup` > `warmup indexes objects into cache` |
+| 22.7s | `cache.integration.test.ts` > `warmup` > `warmup sets isWarmupAvailable flag` |
+| 14.1s | `adt.integration.test.ts` > `edit_method against class includes` |
+| 11.8s | `adt.integration.test.ts` > `SAPWrite batch_create activateAtEnd=true` |
+| 10.9s | `transport.integration.test.ts` > `getTransport returns transport details` |
+| 10.4s | `transport.integration.test.ts` > `listTransports lists transports for current user` |
+
+Integration runtime conclusions:
+
+- `cache.integration.test.ts` is the biggest controllable integration cost. It runs multiple full warmups against `$TMP`, and `$TMP` grows as old test residue accumulates. Runtime will drift upward unless warmup scope is bounded.
+- The delta-warmup behavior does not need a live scan in every PR. It is mostly cache/hash logic and should move to unit tests with a small mocked object set.
+- The transport recursive-release test is expensive and mutates global CTS state. It should not be on the default PR path unless transport release code changed.
+- `listTransports` and `getTransport` are slower than they should be because they operate against a polluted transport organizer. Cleaning old `ARC-1` transport residue is a runtime improvement, not just a hygiene fix.
+
+### CI E2E Runtime
+
+Artifacts used: `test-results-e2e/e2e.json`, `e2e-junit/junit-results.xml`, and `e2e-logs/mcp-server.log` from run `25674270461`.
+
+Totals:
+
+- Tests: 137 total, 134 passed, 3 skipped.
+- File wall-time sum from Vitest JSON: 718.8s.
+- JUnit suite time: 738.1s.
+- GitHub `Run E2E tests` step: 767s.
+- The extra ~48s is mostly fixture sync plus npm/Vitest startup and report overhead. The server log shows fixture reconciliation starting at `14:09:08Z` and the first test-like feature probe after managed fixture checks at about `14:09:32Z`, so fixture sync alone cost roughly 24s in this run.
+
+Top E2E files:
+
+| File | Runtime | Share of file time | Main cause |
+|---|---:|---:|---|
+| `tests/e2e/rap-write.e2e.test.ts` | 208.7s | 29.0% | Repeated create/activate/read/delete RAP stacks. |
+| `tests/e2e/navigate.e2e.test.ts` | 158.5s | 22.0% | Broad standard where-used queries. |
+| `tests/e2e/saptransport.e2e.test.ts` | 83.9s | 11.7% | Recursive release and full transport list. |
+| `tests/e2e/ddic-write.e2e.test.ts` | 47.0s | 6.5% | Live DDIC create/delete lifecycle. |
+| `tests/e2e/diagnostics.e2e.test.ts` | 44.4s | 6.2% | ATC and dump-detail calls. |
+| `tests/e2e/func-write.e2e.test.ts` | 29.7s | 4.1% | FUGR/FUNC create/update/delete. |
+| `tests/e2e/smoke.e2e.test.ts` | 28.6s | 4.0% | Broad smoke coverage. |
+| `tests/e2e/sktd-write.e2e.test.ts` | 24.7s | 3.4% | SKTD + DDLS lifecycle. |
+
+Slowest E2E tests:
+
+| Runtime | Test |
+|---:|---|
+| 52.9s | `navigate.e2e.test.ts` > references to `BAPIRET2` |
+| 52.0s | `rap-write.e2e.test.ts` > create SRVB, activate, publish, unpublish, delete |
+| 46.6s | `saptransport.e2e.test.ts` > `release_recursive releases transport` |
+| 37.3s | `rap-write.e2e.test.ts` > create DDLS CDS view entity + BDEF |
+| 36.0s | `navigate.e2e.test.ts` > `BAPIRET2` references filtered by `CLAS/OC` |
+| 30.6s | `navigate.e2e.test.ts` > references to `T000` |
+| 26.1s | `rap-write.e2e.test.ts` > DCLS lifecycle |
+| 25.8s | `rap-write.e2e.test.ts` > create SRVD service definition |
+| 25.6s | `saptransport.e2e.test.ts` > `SAPTransport list` |
+| 24.6s | `rap-write.e2e.test.ts` > `batch_create` for table entity + CDS view + DCL |
+| 23.5s | `sktd-write.e2e.test.ts` > SKTD full CRUD lifecycle |
+| 22.5s | `func-params.e2e.test.ts` > FUNC structured-parameter lifecycle |
+
+Server-log tool timing confirms the same hotspots:
+
+| Tool/status | Calls | Total runtime | Average | Max |
+|---|---:|---:|---:|---:|
+| `SAPWrite:success` | 93 | 250.8s | 2.70s | 10.8s |
+| `SAPNavigate:success` | 10 | 156.2s | 15.62s | 52.8s |
+| `SAPRead:success` | 69 | 96.9s | 1.40s | 4.7s |
+| `SAPTransport:success` | 14 | 83.3s | 5.95s | 45.6s |
+| `SAPActivate:success` | 30 | 61.7s | 2.06s | 3.1s |
+| `SAPDiagnose:success` | 13 | 35.9s | 2.76s | 14.9s |
+| `SAPManage:success` | 8 | 23.1s | 2.88s | 6.9s |
+
+E2E runtime conclusions:
+
+- The largest class of E2E time is not test-runner overhead; it is real SAP mutation cost. `SAPWrite` plus `SAPActivate` account for about 312s of server-recorded time.
+- `navigate.e2e.test.ts` repeatedly asks the SAP where-used index for very broad standard objects. `BAPIRET2` is queried twice and costs ~89s combined. `T000` adds another ~31s.
+- `SAPManage probe` is called multiple times even though the server already runs startup feature probing. The E2E tests that only need cached availability should use `SAPManage features` instead.
+- `SAPTransport list` is now a performance problem because old test transports have accumulated. Cleanup will reduce both runtime and nondeterminism.
+
+### Runtime Improvement Options From This Run
+
+Highest-confidence, low-risk changes:
+
+1. Replace repeated E2E `SAPManage probe` calls with `SAPManage features` where the test only needs feature availability.
+   - Affects `tests/e2e/rap-write.e2e.test.ts` and `tests/e2e/cds-impact.e2e.test.ts`.
+   - Keep one explicit `SAPManage probe` smoke in `tests/e2e/smoke.e2e.test.ts`.
+   - Expected saving from this run: roughly 12-14s.
+2. Split the recursive transport release tests out of the default PR path.
+   - Affects one integration test and one E2E test.
+   - Expected saving: ~46s integration and ~47s E2E.
+   - Keep them in `test:integration:transport` / `test:e2e:transport` or a nightly/manual profile.
+3. Stop testing broad `BAPIRET2` where-used twice.
+   - Keep one broad `BAPIRET2` or `T000` where-used test as a live smoke.
+   - Move objectType-filter behavior to unit tests and/or reuse the unfiltered result inside the file.
+   - Expected saving if only one broad standard where-used remains: 60-90s E2E.
+4. Replace full transport-list assumptions with test-owned transport assertions.
+   - Create a transport, get it directly, then delete it.
+   - Avoid using `listTransports()` as a prerequisite for `getTransport`.
+   - Clean old `ARC-1` transports so the remaining list smoke is cheap.
+   - Expected saving after cleanup: 15-35s across integration/E2E.
+
+Medium-risk but high-value changes:
+
+1. Rework `tests/integration/cache.integration.test.ts` around one shared live warmup.
+   - Today it runs multiple live scans: broad TADIR enumeration, index warmup, flag warmup, second-delta warmup, and usage warmups.
+   - Use one `beforeAll` warmup result for the warmup describe block, then assert `totalObjects`, `fetched`, `sourceCount`, `nodeCount`, `isWarmupAvailable`, and usages from that shared cache.
+   - Move "second warmup skips unchanged objects" to a unit test with a mocked client and fixed sources.
+   - Add `runWarmup` options for tests: `maxObjects`, `objectTypes`, and possibly `packageFilter` defaults that avoid broad `$TMP`.
+   - Expected saving: 80-110s integration.
+2. Consolidate RAP write E2E coverage.
+   - `rap-write.e2e.test.ts` creates similar table/view stacks several times.
+   - Keep one full SRVB publish/unpublish lifecycle in a slow profile.
+   - For default PR E2E, keep smaller write smokes: one TABL, one DDLS+BDEF or `batch_create activateAtEnd`, one service definition/binding smoke.
+   - Use `batch_create` with `activateAtEnd=true` where cross-object dependencies allow it, so the test pays one create sequence and one activation batch instead of repeated create/activate/read cycles.
+   - Drop read-back assertions for intermediate dependencies when the final object already proves the stack activated.
+   - Expected saving: 60-120s E2E depending on how much full-stack coverage moves to slow profile.
+3. Make fixture sync faster and stricter.
+   - This run paid ~24s before Vitest tests started.
+   - After fixing activation handling, add a fast mode that checks managed fixtures by one batched lookup/active-state query and only reads full source when fixture files changed or a hash marker differs.
+   - Expected saving: 10-20s E2E on steady-state CI runs.
+
+Parallelization guidance from this run:
+
+- Do not enable `fileParallelism` for the current all-in-one integration/E2E configs. The slowest tests mutate shared SAP state, own locks, or touch CTS.
+- Parallelize by profile, not by arbitrary file concurrency:
+  - `e2e:read`: smoke reads, revisions, SAPGit read/safety, cache, limited diagnostics, limited navigation.
+  - `e2e:write`: DDIC/FUNC/SKTD/RAP write lifecycles, still sequential.
+  - `e2e:transport`: transport-only, sequential and preferably opt-in.
+  - `integration:core`: non-warmup, non-recursive-transport live integration.
+  - `integration:slow`: warmup and CTS release behavior.
+- If read-only profiles are parallelized, run each shard with its own MCP server and explicit `ARC1_MAX_CONCURRENT`. Start with two shards and `ARC1_MAX_CONCURRENT=5` each, then compare server logs for timeout, 5xx, reset, and enqueue categories before increasing.
+- The server default `ARC1_MAX_CONCURRENT=10` is already enough for current serial E2E. Raising it will not reduce serial test time; it only matters after there are concurrent client calls.
+
+Expected PR-path target after the low/medium-risk changes:
+
+| Area | Current run | Realistic PR-path target | How |
+|---|---:|---:|---|
+| Integration test step | 6m27s | 3m00s-4m00s | Shared/bounded warmup, move recursive release slow. |
+| E2E test step | 12m47s | 7m00s-9m00s | Reduce broad navigation, move recursive release/full SRVB slow, use cached features. |
+| Critical path after unit matrix | ~20m | ~11m-14m | Same sequencing, less SAP work. |
+
+The fastest safe improvement is not parallelism yet. It is first reducing repeated broad live SAP work, especially cache warmup, broad where-used, recursive CTS release, and full RAP stack creation.
+
 ## Findings
 
 ### P0 - Fixture Sync Can Report Success After Activation Failure
@@ -929,10 +1117,16 @@ Order these by risk reduction:
 3. Convert pseudo-skips into real `ctx.skip()` calls with reasons.
 4. Repair skip reason telemetry.
 5. Clean up or declare `ZARC1_E2E_DUMP`.
-6. Split slow integration/E2E profiles and add a read-only server concurrency smoke before attempting broader parallelism.
-7. Add focused unit coverage for `src/server/http.ts`, `src/server/server.ts`, `src/adt/btp.ts`, `src/server/xsuaa.ts`, and `src/extract-sap-cookies.ts`.
-8. Fix macOS portability in E2E local scripts.
-9. Align CI comments/triggers/concurrency with actual behavior.
+6. Reduce default PR runtime before adding parallelism:
+   - share/bound integration cache warmup and move delta warmup to unit tests,
+   - move recursive transport release to a slow/manual profile,
+   - reduce broad E2E where-used queries,
+   - use `SAPManage features` instead of repeated E2E `SAPManage probe`,
+   - consolidate RAP write E2E coverage.
+7. Split slow integration/E2E profiles and add a read-only server concurrency smoke before attempting broader parallelism.
+8. Add focused unit coverage for `src/server/http.ts`, `src/server/server.ts`, `src/adt/btp.ts`, `src/server/xsuaa.ts`, and `src/extract-sap-cookies.ts`.
+9. Fix macOS portability in E2E local scripts.
+10. Align CI comments/triggers/concurrency with actual behavior.
 
 ## Research Completeness
 
@@ -945,6 +1139,7 @@ At this point the requested audit areas have been covered against the S4 test sy
 - E2E current-run create/delete behavior was reconciled from the server log.
 - CI workflow gating/concurrency and local E2E scripts were inspected.
 - A deeper remediation design was added for each finding, including acceptance criteria, cleanup gates, skip telemetry design, and server concurrency guidance around `ARC1_MAX_CONCURRENT`.
+- GitHub Actions run `25674270461` was inspected through run metadata and downloaded artifacts. The report now includes CI job timing, integration/E2E per-file and per-test runtime breakdowns, server-log tool timing, and runtime reduction estimates.
 
 Known remaining blind spots are intentional external-scope items, not unresearched gaps in the S4 audit:
 
