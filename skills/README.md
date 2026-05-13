@@ -4,6 +4,8 @@ Best-practice agent skills for common SAP development workflows with ARC-1.
 
 Each skill is a directory containing a `SKILL.md` file with YAML frontmatter — the format used by [Anthropic Agent Skills](https://code.claude.com/docs/en/skills) and consumed by the [`vercel-labs/skills`](https://github.com/vercel-labs/skills) CLI. Agents discover them by `description` and load them on demand.
 
+> **Looking for the SAP CAP + Clean Core toolkit?** See [`../docs/sap-cap-toolkit.md`](../docs/sap-cap-toolkit.md) for a consolidated overview of the 13-skill toolkit contributed in PRs #278–#281 — visual map, full skill catalog, architectural strategies (JIT lookups, defense-in-depth, three-layer architecture, decision tree, target deployment matrix, cost model), dependency setup, 7 worked usage examples, FAQs, and PR roadmap.
+
 ## Install via the `skills` CLI (recommended)
 
 The fastest way is `npx skills` — it auto-detects the agents installed in your project (Claude Code, Cursor, GitHub Copilot, OpenCode, Gemini CLI, Codex, …) and installs into the right paths.
