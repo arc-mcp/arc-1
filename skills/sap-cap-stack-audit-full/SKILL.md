@@ -49,6 +49,57 @@ Single optional argument:
 
 Examples: (no arg) → full · `ui5` · `cap` · `quick` · `manager-ui` · `srv/handlers`.
 
+## Step 0: Ask the deployment target
+
+**Before any other audit step**, the orchestrator MUST identify the deployment target. Findings, recommendations and manifest checks differ substantially between targets; running the audit without knowing the target produces inapplicable advice.
+
+### 0a — Try to auto-detect from project state
+
+```bash
+# BTP CF signature
+test -f mta.yaml && echo "Detected: BTP Cloud Foundry (mta.yaml present)"
+
+# BTP Kyma signature
+ls k8s/*.yaml 2>/dev/null | head -1 && echo "Detected: BTP Kyma or On-Prem Kyma (k8s/ manifests present)"
+
+# Discriminator within Kyma flavors
+grep -lE "kyma-project\.io/v1beta1|gateway\.kyma-project\.io" k8s/*.yaml 2>/dev/null | head -1 && \
+  echo "  → APIRule CRD used: likely BTP Kyma or Gardener/Rancher with Kyma module"
+grep -lE "ingress\.kubernetes\.io|networking\.k8s\.io" k8s/*.yaml 2>/dev/null | head -1 && \
+  echo "  → vanilla Ingress used: likely on-prem k3d / OpenShift / vanilla Kubernetes"
+
+# CDS profile clues (.cdsrc.json or package.json)
+grep -oE '"(production|production-pg|k8s|k8s-hana|k8s-onprem|onprem)"' .cdsrc*.json package.json 2>/dev/null | sort -u
+
+# Auth indicator
+test -f xs-security.json && echo "  → XSUAA (BTP CF or On-Prem CF)"
+ls k8s/onprem/keycloak-realm.json k8s/keycloak/*.json 2>/dev/null && echo "  → Keycloak (On-Prem Kyma)"
+```
+
+### 0b — Ask the user when ambiguous
+
+If auto-detection is inconclusive or yields multiple candidates, ask the user explicitly:
+
+> **Which deployment target are we auditing?**
+>
+> 1. **BTP Cloud Foundry** — XSUAA + HANA HDI + html5-apps-repo + mta.yaml
+> 2. **BTP Kyma** — XSUAA/IAS via OIDC + PostgreSQL in-cluster or HANA Cloud + APIRule CRD + Kyma BTP Operator
+> 3. **On-Premise Kyma** — Customer IdP (Keycloak) + HANA on-prem or PostgreSQL on-prem + cluster flavor (k3d / Rancher / Gardener / OpenShift) + `*.svc.cluster.local` remotes
+> 4. **On-Premise CF** — legacy continuity only — XSUAA on-prem + S/4 Flex Workflow + SMTP + filesystem DMS
+
+Do **not** guess. The audit's per-target Phase 3 dispatches differ; getting this wrong wastes the agent budget.
+
+### 0c — Persist the target for downstream phases
+
+Record the chosen target as `$TARGET` (one of `btp-cf`, `btp-kyma`, `onprem-kyma`, `onprem-cf`). Every subsequent phase consults `$TARGET`:
+
+| Phase | What changes with target |
+|---|---|
+| Phase 2 static checks | UI5 linter / manifest validation always; on Kyma also check APIRule / NetworkPolicy / HPA / PDB |
+| Phase 3 specialized agents | BTP CF → BTP best-practices + deployment-readiness against mta.yaml; Kyma → Kyma readiness + APIRule audit + Bitnami PG verification; On-prem → Keycloak realm coherence + sizing tier match |
+| Phase 4 CAP-specific | Profile discovery filters to relevant profiles (drop CF-only profiles if target is Kyma, etc.) |
+| Phase 5 best-practice cross-check | Different DO/DON'T sets cited (e.g. Free Plan CF-only warning is irrelevant on a Kyma audit if customer is pay-tier) |
+
 ## Step 1: Pre-flight
 
 Always runs, ~30 s.
@@ -72,9 +123,13 @@ echo "Detected $APPS Fiori app(s)"
 # CDS compile sanity (entry-point auto-discovery)
 SRV=$(grep -lE "^service\s+\w+" srv/*.cds | head -1)
 test -n "$SRV" && npx cds compile srv app --service "$(grep -oE '^service\s+\w+' "$SRV" | head -1 | awk '{print $2}')" --to edmx > /tmp/audit-svc.edmx 2>&1 && echo "CDS OK" || echo "CDS FAIL"
+
+# Clean Core Level A pre-flight (always; this is a deployment gate, not optional)
+test -f srv/integration/s4*Policy* || \
+  echo "WARN: no S/4 compatibility catalog found — Clean Core Level A audit will run discovery-mode only (see Step 3 dispatch of sap-cap-clean-core-enforce)"
 ```
 
-Output of Phase 1: branch SHA, dirty files, project signature (CAP yes/no, Fiori apps count, CDS compile status, primary service name).
+Output of Phase 1: branch SHA, dirty files, project signature (CAP yes/no, Fiori apps count, CDS compile status, primary service name), **deployment target** chosen in Step 0, Clean Core catalog presence flag.
 
 If CDS compile fails, **stop the audit** and emit a single-finding report — no point auditing on top of a broken model.
 

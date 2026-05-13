@@ -250,7 +250,290 @@ Add `npm run typecheck:strict`. Promote folders one at a time, lock them in CI w
 
 ---
 
-## Category 3 — BTP / Kyma Deployment Lessons
+## Category 3 — BTP / Kyma / On-Premise Deployment Lessons
+
+CAP + Fiori Elements V4 projects deploy across **four canonical target environments**, each with distinct constraints around authentication, persistence, UI delivery, remote service binding, and operational tooling. Patterns 3.A.* are target-specific; patterns 3.1-3.10 are cross-cutting (apply regardless of target).
+
+> **Always ask the deployment target first.** The auditor / orchestrator / generator skill **MUST** ask the user (or detect from project state) which of the four targets is in scope before generating manifests, recommending CDS profiles, or producing deployment artifacts. The wrong target produces unsalvageable advice (e.g. `html5-apps-repo` binding on Kyma → 401; `cds run` on a project expecting `cds watch` → blank UIs).
+
+### 3.0 — Deployment target decision matrix
+
+| Target | When to choose | CDS profile | Auth | DB | UI delivery | Remote services |
+|---|---|---|---|---|---|---|
+| **BTP Cloud Foundry** | Customer is fully BTP-managed, has CF entitlements, accepts BTP-managed services (Free or pay) | `production` (HANA HDI) or `production-pg` (PostgreSQL, deprecated 2026-Q4) | XSUAA | HANA HDI or BTP PostgreSQL service | `@sap/html5-app-repo` (Free plan OK) + approuter | BTP Destination service + Cloud Connector |
+| **BTP Kyma** | Customer wants Kubernetes operational model, BTP-hosted but more flexible than CF, uses pay-tier or in-cluster services | `k8s` | OIDC (XSUAA or IAS via OAuth2) | PostgreSQL in-cluster (Bitnami Helm) or HANA Cloud | UI ZIPs embedded in approuter Docker image | `S4_BASE_URL` + Destination via Kyma BTP Operator |
+| **On-Premise Kyma** | Customer-managed cluster (k3d local, Rancher, Gardener, OpenShift), uses customer IdP (Keycloak), needs full data sovereignty | `k8s-onprem` (Keycloak + HANA/PG) or `k8s-hana` (Kyma + HANA on-prem) | OIDC via customer IdP (Keycloak, Active Directory) | HANA on-prem or PostgreSQL on-prem | UI ZIPs embedded; ingress via NGINX or cluster-native | `*.svc.cluster.local` for in-cluster S/4 proxies + Cloud Connector for SaaS bridges |
+| **On-Premise CF** | Customer runs CF on-prem (rare; SAP Cloud Foundry On-Premise is EOL) — only if existing investment | `onprem` | XSUAA on-prem | HANA on-prem | html5-apps-repo on-prem | S/4 Flex Workflow + SMTP + filesystem DMS |
+
+The default recommendation for a new project is **BTP Kyma** (cloud-native, pay-as-you-go, broadest customer reach). **BTP CF** when the customer mandate is "managed services only, no Kubernetes operations". **On-Premise Kyma** when the customer mandates data sovereignty or has existing Kubernetes infrastructure. **On-Premise CF** only for legacy continuity.
+
+### 3.A — BTP Cloud Foundry patterns
+
+#### 3.A.1 — Use `mta.yaml` for atomic deployment
+
+**Symptom.** Half-deployed state when a component fails: db deployer succeeded, srv failed, html5-apps-repo not yet wired.
+
+**Root cause.** Manual `cf push` per component doesn't atomically roll back on failure.
+
+**Remedy.** Wrap everything in `mta.yaml`: db deployer, srv module, approuter, destinations, XSUAA service binding. Use `mbt build` + `cf deploy <archive>.mtar`. Failures roll back the whole MTA.
+
+#### 3.A.2 — XSUAA scope wiring via `xs-security.json`
+
+**Symptom.** Role assignments work in dev but production users get 403 on actions that worked in test.
+
+**Root cause.** `xs-security.json` declares scopes; CAP handlers must `@(restrict: [{grant: '...', to: '<scope-or-role>'}])` to enforce. Mismatch between xs-security and `services-auth.cds` is silent.
+
+**Remedy.** Treat `xs-security.json` as the single source of truth for scope names. Match every `services-auth.cds` `to:` clause to a declared scope. Add a CI gate (see [`../sap-cap-ci-gates-pattern/SKILL.md#pattern-4--convention--matrix-drift-detection`](../sap-cap-ci-gates-pattern/SKILL.md) Pattern 4) that catches drift.
+
+#### 3.A.3 — Destination service for S/4HANA Tier-2 proxies
+
+**Symptom.** S/4 proxy calls fail with 401 in production despite working in dev with `.cdsrc-private.json`.
+
+**Root cause.** Dev profile uses inline credentials; production must use a Destination configured in BTP cockpit + bound to the srv module via destination service.
+
+**Remedy.** Define one BTP Destination per S/4 system. Bind the destination service to srv. Use principal propagation (SAML / JWT bearer) when end-user identity must reach S/4; use system user (BasicAuthentication or OAuth2ClientCredentials) for batch / job calls.
+
+#### 3.A.4 — html5-apps-repo for UI delivery (Free plan acceptable)
+
+**Symptom.** Approuter image is 600 MB because it ships every UI app embedded.
+
+**Root cause.** On CF, you can use the managed UI repo instead of embedding.
+
+**Remedy.** Use `@sap/html5-app-repo` Free or pay-tier. Build UI bundles via `ui5 build`, upload via `npm run upload-html5-apps`. Approuter routes `/<app-id>/*` to the repo. Free plan has limits (5 apps, 50 MB total) — verify against your project size before committing.
+
+#### 3.A.5 — Cloud Foundry health checks
+
+**Symptom.** App restarts often even when running fine.
+
+**Root cause.** Default CF health check is HTTP `/`. Many CAP services return 404 on `/` (no homepage).
+
+**Remedy.** In `manifest.yml`: `health-check-type: http`, `health-check-http-endpoint: /health/Live`. Pair with the `/health/Ready` endpoint for the proper liveness/readiness split (cross-cutting pattern 3.7).
+
+### 3.B — BTP Kyma patterns
+
+#### 3.B.1 — APIRule (CRD) for ingress, not Ingress YAML
+
+**Symptom.** Direct Ingress YAML works in dev but doesn't integrate with BTP IAM / Kyma identity.
+
+**Root cause.** Kyma's networking pipeline uses `APIRule` (custom CRD) that wires JWT validation, CORS, rate limiting natively.
+
+**Remedy.** For each public service, declare an `APIRule`:
+```yaml
+apiVersion: gateway.kyma-project.io/v1beta1
+kind: APIRule
+metadata:
+  name: srv
+spec:
+  host: srv.${KYMA_APP_URL}
+  service:
+    name: srv
+    port: 4004
+  gateway: kyma-system/kyma-gateway
+  rules:
+    - path: /.*
+      methods: [GET, POST, PUT, PATCH, DELETE]
+      accessStrategies:
+        - handler: jwt
+          config:
+            jwks_urls:
+              - https://${XSUAA_HOST}/token_keys
+            trusted_issuers:
+              - https://${XSUAA_HOST}
+```
+For approuter, add `noAuth` accessStrategy on the OAuth2 callback paths.
+
+#### 3.B.2 — Service Manager bindings via secrets (not env)
+
+**Symptom.** Refactoring credentials breaks the running pod because env vars don't reload.
+
+**Root cause.** Kyma's BTP Service Operator creates `Secret` resources on `ServiceBinding` apply; pod mounts them as volume + env.
+
+**Remedy.** Use `ServiceInstance` + `ServiceBinding` CRDs. Don't hardcode credentials in `Deployment.env`; reference the Secret by name. Pod restart picks up rotated credentials automatically (with proper `restartPolicy`).
+
+#### 3.B.3 — CronJob CRD for scheduled jobs, not BTP Job Scheduler
+
+**Symptom.** BTP Job Scheduler binding fails (or costs extra) on Kyma.
+
+**Root cause.** BTP Job Scheduler is a CF-friendly service; Kyma-native is `CronJob` CRD.
+
+**Remedy.** Declare every scheduled job as a Kyma `CronJob` pointing at a job-runner endpoint:
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: <job-name>
+spec:
+  schedule: "0 */6 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: trigger
+              image: curlimages/curl:8.5.0
+              command: ["sh", "-c", "curl -fsS -X POST -H 'X-Job-Token: $(JOB_TOKEN)' http://srv:4004/api/jobs/<job-name>"]
+              env: [{name: JOB_TOKEN, valueFrom: {secretKeyRef: {name: job-token, key: token}}}]
+          restartPolicy: OnFailure
+```
+The srv module exposes job endpoints (token-protected). Cron triggers via HTTP.
+
+#### 3.B.4 — Bitnami PostgreSQL Helm chart for in-cluster persistence
+
+**Symptom.** BTP PostgreSQL Free plan refuses Kyma binding (CF-only).
+
+**Root cause.** Free-tier BTP services don't route into Kyma.
+
+**Remedy.** Install Bitnami PostgreSQL via Helm: `helm install pg bitnami/postgresql -n <ns> -f values-pg.yaml`. PVC-backed, single-instance OK for non-critical workloads; for production use Patroni Helm chart for HA. Connection details via Secret.
+
+#### 3.B.5 — `KYMA_APP_URL` + `KYMA_KUBECONFIG` GitHub Actions secrets for multi-region
+
+**Symptom.** Deploying to a second region requires forking the CI pipeline.
+
+**Root cause.** Hardcoded hostnames in workflow YAML and Kubernetes manifests.
+
+**Remedy.** Parameterize via 2 GitHub Actions secrets: `KYMA_APP_URL` (cluster-specific subdomain) + `KYMA_KUBECONFIG`. Use `envsubst` in the deployment workflow:
+```yaml
+- run: kubectl apply -f <(envsubst < k8s/deployment-srv.yaml)
+```
+Region switch = rotate the two secrets + update DNS CNAME. Zero code change.
+
+#### 3.B.6 — HorizontalPodAutoscaler + PodDisruptionBudget for production
+
+**Symptom.** Pod evictions during cluster upgrades cause unavailability spikes.
+
+**Root cause.** Default `Deployment` has no HPA / PDB; cluster upgrades evict pods in parallel.
+
+**Remedy.** Pair every production `Deployment` with:
+- `HorizontalPodAutoscaler` (min: 2, max: N, targetCPU: 70%) for capacity.
+- `PodDisruptionBudget` (minAvailable: 1) so cluster upgrades drain pods serially.
+- `NetworkPolicy` to restrict in-cluster traffic (default-deny + explicit allow).
+
+#### 3.B.7 — Approuter session stickiness via nginx cookie affinity
+
+**Symptom.** FE V4 batch requests fail intermittently with CSRF token mismatch (403 / 419).
+
+**Root cause.** Kyma's default load balancer round-robins across approuter pods; CSRF tokens are pod-local.
+
+**Remedy.** Cookie-based affinity on the Kyma `APIRule`:
+```yaml
+metadata:
+  annotations:
+    nginx.ingress.kubernetes.io/affinity: "cookie"
+    nginx.ingress.kubernetes.io/session-cookie-name: "route"
+    nginx.ingress.kubernetes.io/session-cookie-max-age: "172800"
+```
+Never disable CSRF (`csrfProtection: false`) — UI5 + FE V4 depend on it. This is the same as cross-cutting Pattern 3.3 but worth re-stating in the Kyma section.
+
+### 3.C — On-Premise Kyma patterns
+
+#### 3.C.1 — Cluster flavor matters: k3d / Rancher / Gardener / OpenShift
+
+**Symptom.** Manifests that work on BTP Kyma fail on the customer's on-prem cluster.
+
+**Root cause.** Kyma CRDs (APIRule, ServiceInstance) may not be present; cluster may use Istio differently; storage class names differ.
+
+**Remedy.** Detect the flavor upfront:
+- **k3d** (local dev): no APIRule CRD; use plain `Ingress` + nginx-ingress controller.
+- **Rancher**: usually has Istio; APIRule may need install of Kyma networking module.
+- **Gardener** (SAP-managed customer): Kyma module typically installed; treat like BTP Kyma.
+- **OpenShift**: Routes instead of Ingress; SCC (Security Context Constraints) may block non-root containers.
+
+Provide two manifest sets: a "Kyma-native" (APIRule + ServiceInstance) and a "Kubernetes-vanilla" (Ingress + Secret).
+
+#### 3.C.2 — Customer IdP via Keycloak realm
+
+**Symptom.** BTP IAM (XSUAA / IAS) doesn't reach the customer's on-prem network.
+
+**Root cause.** On-prem deployment cannot consume BTP-managed auth services.
+
+**Remedy.** Provide a Keycloak realm definition (`keycloak-realm.json`) with:
+- Roles matching the CAP `services-auth.cds` scopes (Viewer, Admin, etc.).
+- Groups mapping to roles.
+- OAuth2 client for the approuter with redirect URI = `https://<app-host>/login/callback`.
+- Optional: federate with customer's Active Directory / LDAP / SAML2 IdP.
+
+In CAP, use `OIDCAuthStrategy` (the project's custom strategy that validates JWTs from a configurable issuer):
+```yaml
+# k8s-onprem profile
+cds.requires.auth:
+  kind: jwt-auth
+  issuer: https://keycloak.${CUSTOMER_DOMAIN}/realms/<realm>
+  jwks_uri: https://keycloak.${CUSTOMER_DOMAIN}/realms/<realm>/protocol/openid-connect/certs
+```
+
+#### 3.C.3 — `secrets.env` + `envsubst` pattern for per-customer config
+
+**Symptom.** Each customer needs different DB endpoint / IdP URL / S/4 hostname; copy-paste manifests are error-prone.
+
+**Root cause.** Kubernetes ConfigMaps / Secrets don't templatize across deployments.
+
+**Remedy.** Per-customer `secrets.env` file (one source of truth), checked into customer-specific repo only. Installer script does:
+```bash
+set -a
+source secrets.env
+set +a
+envsubst < k8s/onprem/configmap.yaml | kubectl apply -f -
+envsubst < k8s/onprem/deployment-srv.yaml | kubectl apply -f -
+```
+`secrets.env` contains: `DB_HOST`, `DB_USER`, `S4_BASE_URL`, `KEYCLOAK_REALM_URL`, `CUSTOMER_DOMAIN`, etc.
+
+#### 3.C.4 — Sizing wizard: customer hardware tier (xs / s / m / l)
+
+**Symptom.** Customer with 2 GB cluster RAM crashes the pod on first request.
+
+**Root cause.** Default resource requests/limits sized for cloud (4-8 GB pod RAM); on-prem dev clusters may have far less.
+
+**Remedy.** Document four sizing tiers in the deployment manifests with `kustomize` or Helm overlay:
+| Tier | Pod RAM request | Pod CPU request | Replicas | Use case |
+|---|---|---|---|---|
+| **xs** | 512 Mi | 250 m | 1 | dev / proof-of-concept, ≤10 concurrent users |
+| **s** | 1 Gi | 500 m | 2 | small customer, ≤50 concurrent users |
+| **m** | 2 Gi | 1000 m | 3 | medium customer, ≤200 concurrent users |
+| **l** | 4 Gi | 2000 m | 4+ HPA | large customer, ≤1000 concurrent users |
+
+For dev clusters (`xs` tier) optionally enable `LOW_MEM_MODE=true` env var that disables expensive features (less aggressive caching, smaller worker pools). **Document as DEV-ONLY** — customers in production must use the appropriate tier from the wizard.
+
+#### 3.C.5 — Pre-flight check before install
+
+**Symptom.** Installer halfway in fails because Docker / RAM / DNS / kubectl version is insufficient.
+
+**Root cause.** Cluster pre-conditions not verified upfront.
+
+**Remedy.** First step of the installer script does a comprehensive pre-flight:
+```bash
+# Pre-flight
+check_docker_running || die "Docker not running"
+check_docker_ram_gb 4 || die "Need ≥4 GB Docker RAM"
+check_kubectl_version "1.28" || die "Need kubectl ≥1.28"
+check_dns_resolve "$KEYCLOAK_HOST" || die "Cannot resolve Keycloak host"
+check_curl_works "$S4_BASE_URL" || warn "S/4 hostname unreachable (Cloud Connector down?)"
+check_storage_class_exists "$STORAGE_CLASS" || die "Storage class missing"
+```
+Exit cleanly with actionable error before consuming time / state.
+
+#### 3.C.6 — In-cluster service URLs (`*.svc.cluster.local`)
+
+**Symptom.** S/4 proxy host hardcoded as a public hostname doesn't reach in-cluster S/4 proxy.
+
+**Root cause.** On-prem clusters may run their own S/4 OData proxy as a sidecar service.
+
+**Remedy.** Configure `S4_BASE_URL` (or equivalent) to use Kubernetes service DNS: `http://s4-proxy.s4-namespace.svc.cluster.local:8080`. The CAP runtime resolves it cluster-internally without exiting to public DNS. Faster, more secure, no Cloud Connector needed for in-cluster paths.
+
+### 3.D — On-Premise CF patterns
+
+#### 3.D.1 — On-prem CF is EOL — only for legacy continuity
+
+**Symptom.** Customer mandates CF on-prem because that's what they invested in 2018.
+
+**Root cause.** SAP Cloud Foundry On-Premise reached end-of-maintenance; community equivalents (CF Open Source) lack the SAP integration shims.
+
+**Remedy.** Surface this as a strategic finding to the customer. If continuity is non-negotiable, the `onprem` profile bundles:
+- XSUAA on-prem (legacy installation).
+- HANA on-prem.
+- S/4 Flex Workflow (instead of BPA).
+- SMTP relay (instead of BTP notifications).
+- Filesystem DMS (instead of cloud-based document storage).
+Document each shim's substitution explicitly in the project README so the customer is aware of the divergence from the BTP feature set.
 
 ### 3.1 — `cds run` does NOT mount UI5 apps
 
@@ -366,6 +649,28 @@ Map `livenessProbe` → `/health/Live`, `readinessProbe` → `/health/Ready`.
 **Remedy.** Two distinct delivery paths:
 - Local dev → `cds watch` + `cds-plugin-ui5` serves apps from `app/<app>/webapp/`.
 - Production → approuter serves apps from `dist/` (post-`ui5 build`) bundled into the Docker image.
+
+### 3.11 — Clean Core Level A as **deployment gate**, not just an audit
+
+**Symptom.** Production deployment succeeds; weeks later a consumed S/4HANA Communication Scenario is deprecated; the next quarterly upgrade window breaks the app silently.
+
+**Root cause.** Clean Core compliance was audited once at design time and not re-verified pre-deployment. The audit's findings live in a markdown report that nobody reads on the day of deploy.
+
+**Remedy.** Make Clean Core Level A verification a **CI gate that blocks deployment**, not a passive report. Three authoritative sources MUST be consulted:
+
+1. **The ABAP API Release State repository** (`SAP/abap-atc-cr-cv-s4hc`): https://github.com/SAP/abap-atc-cr-cv-s4hc/blob/main/README.md. This repo's `*.json` files are the **source of truth** for whether an ABAP object (CDS view, BAPI, RFC FM) is released — and for which edition (Public Cloud / Private Cloud / On-Premise). Pin a `git submodule` or scheduled-clone snapshot of this repo into the project; re-pull weekly via cron.
+
+2. **The SAP API Hub** (https://api.sap.com/): authoritative for **OData service availability per edition** (Communication Scenarios, packages, lifecycle states). Cross-check every `cds.connect.to(<remote-service>)` against the API Hub; record the edition matrix in the project's compatibility catalog.
+
+3. **The project's compatibility catalog** (e.g. `srv/integration/s4CompatibilityPolicy.js`): the project's *declared* edition × service matrix with `availability[]` and `probeObject` fields. The CI gate verifies this catalog matches sources 1 + 2; any drift is a HARD FAIL (cannot ship).
+
+Use [`../sap-cap-clean-core-enforce/SKILL.md`](../sap-cap-clean-core-enforce/SKILL.md) to discover consumption, build the matrix, detect drift. Use [`../sap-cap-ci-gates-pattern/SKILL.md#pattern-3--released-state--api-availability-drift-detection`](../sap-cap-ci-gates-pattern/SKILL.md) Pattern 3 to enforce the gate on every PR.
+
+Compliance contract:
+- **Level A** (Released APIs only): every consumed Tier-2 S/4 service is in the released catalog for ALL deployment-target editions. Zero RFC/BAPI/SQL-direct usage. Zero modifications to standard tables. Zero user-exits.
+- **Drift detected** ⇒ CI fails. Choices: (a) remove the consumption, (b) replace with the released equivalent, (c) accept and document a Level B/C/D exception (rare, needs sign-off).
+
+This is the **single most important** deployment gate for CAP + S/4 projects. A non-released service that lands in production becomes a multi-quarter migration debt the next time SAP revises the API surface.
 
 ---
 
