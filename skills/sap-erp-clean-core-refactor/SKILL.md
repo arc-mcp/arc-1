@@ -37,7 +37,10 @@ This skill does NOT ship a pre-built KB. It ships:
 | Output destination | `docs/refactor/<yyyy-mm-dd>-clean-core-plan.md` | Committed; serves as the decision record |
 | Target Clean Core level | `A` | Most restrictive; works for all cloud targets |
 | Side-by-side target | Asked once at session start | Reuses Step 0 of [`../sap-cap-stack-audit-full/SKILL.md`](../sap-cap-stack-audit-full/SKILL.md) deployment-target decision tree |
-| Level B handling | `keep_at_level_b` by default (compliant; documented) | B is already Clean-Core compliant. Pushing to A is opt-in via `--aggressive` or `--push-to-a` because escalation adds cost and may be wrong choice (most B objects use SAP-recommended patterns) |
+| Level B handling | `keep_at_level_b` by default (compliant; documented) | B is already Clean-Core compliant. Pushing to A is opt-in via `--aggressive` / `--push-to-a` / `--target-level=A` because escalation adds cost and may be wrong choice (most B objects use SAP-recommended patterns) |
+| Level C target | A (via released-API rewrite) when equivalent exists, else B (via BAdI substitution), else side-by-side (ERP becomes A) | Cost-minimizing default. Override with `--target-level=B` to settle for B even when A is cheaper |
+| Level D target | B (via BAdI / enhancement-point rewrite) when feasible, else side-by-side (ERP becomes A) | Cost-minimizing default. D objects usually have business logic that genuinely needs an extension surface; BAdI-rewrite is the SAP-recommended path. Override with `--target-level=A` to prefer side-by-side over BAdI |
+| Mixed-findings objects | Object level = MAX of finding levels (e.g. one D finding + one B finding → object treated as D) | The refactor decision is per-object, not per-finding, but the plan reports residual findings post-refactor |
 
 ## Input
 
@@ -51,8 +54,10 @@ Single argument with format `<package-or-object> [mode] [flags]`:
 | `--target=` | `btp-cf` · `btp-kyma` · `onprem-kyma` · `onprem-cf` (drives side-by-side target choice) |
 | `--force-refresh` | Bypass the local cache; re-query the source even if cached < 30 days |
 | `--budget=N` | Override the default per-finding Apify lookup budget (default 5 pages) |
-| `--aggressive` | For every Level B finding, also research Level A escalation paths (rewrite via Customizing OR side-by-side extraction). Emits **multi-option proposals** instead of default `keep_at_level_b`. Adds ~30-50% to plan generation cost |
+| `--aggressive` | Synonym for `--target-level=A`. For every Level B finding, also research Level A escalation paths (rewrite via Customizing OR side-by-side extraction). Emits **multi-option proposals** instead of default `keep_at_level_b`. Adds ~30-50% to plan generation cost |
 | `--push-to-a=A,B,C` | Selective B→A escalation: only the listed object names get the expanded analysis. Cheaper than `--aggressive`, requires you know which objects upfront |
+| `--target-level=A` | **Ambitious mode** — always prefer Level A outcomes. Forces side-by-side extraction over BAdI-rewrite for Level D when both feasible; forces released-API replacement over BAdI-substitution for Level C even when BAdI is cheaper. Activates Level B escalation analysis (same as `--aggressive`) |
+| `--target-level=B` | **Minimal-compliance mode** — settle for B everywhere. For Level C, pick the cheapest path that reaches B (instead of A via released API) when that saves effort. For Level D, BAdI-rewrite only (never side-by-side just for "purity"). Useful when customer's appetite is "good enough compliance with minimum disruption" |
 
 Examples:
 - `ZFI plan --target=btp-kyma` — typical first call (default: Level B kept as B)
@@ -193,6 +198,62 @@ Persist as `.cache/sap-clean-core/<topic-hash>/<source-id>-<yyyy-mm-dd>.md`. The
 
 If the per-finding lookup budget runs out without a definitive answer, mark the finding as **research-required** in the plan. Do **not** guess. The plan's "Research backlog" section flags these for human investigation.
 
+### 4d-bis — Decision tree (per-object)
+
+For each Z/Y object with a starting Clean Core Level (A / B / C / D / Unused), apply this decision tree to determine the **decision** and the **target level**. The default behaviour is cost-minimizing per object; `--target-level` and `--aggressive` / `--push-to-a` flags shift the preference.
+
+```
+Object starting level = A?
+  YES → decision = no_action (target = A)
+        STOP
+
+Object starting level = Unused?
+  YES → decision = remove_unused (target = N/A)
+        STOP
+
+Object starting level = D (Modification)?
+  YES → Released-API equivalent fully replaces the modification?
+          YES → decision = rewrite_in_place via released API (target = A)
+          NO  → BAdI / enhancement-point eligible substitute exists?
+                  YES (default behaviour)        → decision = rewrite_in_place via BAdI (target = B)
+                  YES + --target-level=A flag    → continue to side-by-side check
+                  NO                             → continue to side-by-side check
+                Side-by-side extraction feasible (CAP + BTP target available)?
+                  YES → decision = extract_to_side_by_side (target = A, ERP-side; logic lives on BTP)
+                  NO  → decision = accept_as_d_documented (requires explicit sign-off + ATC exemption)
+        STOP
+
+Object starting level = C (Warning — non-released-api or direct-db-access)?
+  YES → Released-API / released-CDS equivalent exists?
+          YES (default behaviour)        → decision = rewrite_in_place via released API (target = A)
+          YES + --target-level=B flag    → BAdI substitution path cheaper? if yes, decision = rewrite_in_place via BAdI (target = B)
+          NO                             → continue
+        Is the residual logic data-access-only (no business logic)?
+          YES → decision = keep_at_level_b with documentation (target = B)
+          NO  → Side-by-side extraction feasible?
+                  YES → decision = extract_to_side_by_side (target = A, ERP-side)
+                  NO  → decision = keep_at_level_b with documentation (target = B)
+        STOP
+
+Object starting level = B (Eligible)?
+  YES → --aggressive or --push-to-a covers this object or --target-level=A?
+          YES → emit multi-option proposal (Step 4e/4f)
+                  default_decision: keep_at_level_b (target = B)
+                  option 1: rewrite_in_place via Customizing (target = A)
+                  option 2: extract_to_side_by_side (target = A, ERP-side)
+          NO  → decision = keep_at_level_b with documentation (target = B)
+        STOP
+```
+
+**Key invariants**:
+- A → only stays A (no_action).
+- B → stays B (default) OR goes to A (only via opt-in escalation).
+- C → goes to A (default) OR to B (only via `--target-level=B`) OR side-by-side (A, ERP-side) when no equivalent.
+- D → goes to B (default via BAdI) OR to A via side-by-side (when BAdI not feasible OR `--target-level=A` is on) OR accept_as_d (last resort with explicit sign-off).
+- Unused → removed (no level applies).
+
+**Side-by-side outcome — clarification**: when an object is extracted to BTP, the **ERP-side artefact disappears**. The ERP no longer contains the custom code, so by absence the ERP is at Level A for that domain. The logic continues to live on BTP as a CAP extension (not classified by ABAP Clean Core levels — BTP-side compliance is governed by the deployment-target gate, see [`../sap-cap-clean-core-enforce/SKILL.md`](../sap-cap-clean-core-enforce/SKILL.md)).
+
 ### 4e — Level B → Level A escalation (aggressive mode)
 
 By default, an object classified Level B by `sap-clean-core-atc` is decided `keep_at_level_b` — it is already Clean-Core compliant; pushing to A is effort with diminishing returns, and the chosen pattern (BAdI, Key User Extensibility, custom CDS on released base, …) is usually the SAP-recommended one for the use case.
@@ -286,8 +347,23 @@ Output to `docs/refactor/<yyyy-mm-dd>-clean-core-plan.md`:
 - Level A: <N> | Level B: <N> | Level C: <N> | Level D: <N>
 
 ## Refactor plan per object
-[Per-object decision: rewrite_in_place / extract_to_side_by_side / keep_at_level_b / remove_unused
- with effort estimate + risk + source citations]
+
+Per-object table with explicit starting-level → target-level transitions:
+
+| Object | Start Level | Target Level | Decision | Replacement / Pattern | Effort | Risk | KB evidence |
+|---|---|---|---|---|---|---|---|
+| ZCL_INVOICE_HANDLER | D | A | rewrite_in_place | API_SUPPLIERINVOICE_PROCESS_SRV (released) | M (6h) | low | .cache/.../api-supplierinvoice-2026-05-13.md |
+| ZCL_VENDOR_RISK_SCORE | C | A (ERP-side) | extract_to_side_by_side | CAP service on BTP Kyma + Event Mesh subscribe to BusinessPartnerChanged | L (24h) | medium | .cache/.../cap-event-mesh-2026-05-13.md |
+| ZTABLE_TAX_RATES_LOCAL | D | B | rewrite_in_place via BAdI | BADI_TAX_RATE_DETERMINATION (eligible) | M (8h) | medium | .cache/.../tax-badi-2026-05-13.md |
+| ZRFI_REPORT_OLD | (Unused) | — | remove_unused | (none) | S (1h) | low | sap-unused-code report |
+| ZDDLS_VENDOR_VIEW | B | B | keep_at_level_b | (annotation hygiene fix only) | S (2h) | low | (no escalation requested) |
+| (… rest of objects …) | | | | | | | |
+
+**Column meanings**:
+- **Start Level**: classification by `sap-clean-core-atc` before refactor (A/B/C/D/Unused).
+- **Target Level**: classification expected after refactor lands. For `extract_to_side_by_side`, the target is "A (ERP-side)" because the ERP no longer contains the artefact; the logic lives on BTP under separate compliance rules.
+- **Decision**: one of `no_action` / `rewrite_in_place` / `rewrite_in_place via BAdI` / `extract_to_side_by_side` / `keep_at_level_b` / `remove_unused` / `accept_as_d_documented` / `research_required`.
+- **Replacement / Pattern**: the concrete substitute (released API, BAdI name, BTP CAP pattern, …).
 
 ## Level B escalation proposals (only if --aggressive or --push-to-a was used)
 [For each Level B object in the escalation set, multi-option proposal showing:
