@@ -100,6 +100,16 @@ Both skills produce the same RAP artifact stack. The difference is how they get 
 | [migrate-custom-code](migrate-custom-code/SKILL.md) | Runs ATC readiness checks, groups findings by priority, and generates replacement code | Preparing custom code for S/4HANA migration or ABAP Cloud readiness |
 | [sap-object-documenter](sap-object-documenter/SKILL.md) | Batch-documents many custom objects at once — purpose, style (Classic/Modern/Mixed), dependencies — as Markdown | Onboarding packages, handoffs, seeding a repo wiki (vs. explain-abap-code which is single-object interactive) |
 
+### SAP ERP — Clean Core Return + Side-by-Side Refactor (Preview)
+
+Plans and executes the refactor of custom ABAP / ERP / S/4HANA code back to Clean Core compliance — discovery via ARC-1, classification via `sap-clean-core-atc`, **just-in-time documentation lookup** against authoritative SAP sources (no pre-crawled KB), and hand-off to `modernize-abap-to-btp-cap` for side-by-side extension scaffolds.
+
+| Skill | What it does | When to use |
+|---|---|---|
+| [sap-erp-clean-core-refactor](sap-erp-clean-core-refactor/SKILL.md) | Inventories Z/Y custom code via ARC-1, classifies Clean Core Level A/B/C/D, consults authoritative SAP sources just-in-time (git-clone of `abap-atc-cr-cv-s4hc` + curated `SAP-samples` + `cloud-sdk`; Apify on-demand for `api.sap.com` / `help.sap.com` / `developers.sap.com` / `cap.cloud.sap` / community / blogs), and emits a per-object refactor plan with rewrite-in-place / extract-to-side-by-side / keep-at-B decisions. Apify lookups bounded per finding (~5 pages); user pays for own Apify account; results cached locally for 30 days | Planning a Clean Core compliance program; pre / post-S/4HANA migration cleanup; quarterly governance review |
+
+The skill ships **two files**: [`SKILL.md`](sap-erp-clean-core-refactor/SKILL.md) (the protocol) + [`SOURCES.md`](sap-erp-clean-core-refactor/SOURCES.md) (the curated catalog of 23 authoritative SAP sources organized in 4 tiers — Tier 1 git-cloneable, Tier 2 JIT Apify, Tier 3 manual-consultation auth-gated, Tier 4 MCP-server-backed). **No centralized KB is shipped**; documentation lookups happen on-demand within a bounded per-finding budget, charged to the user's own Apify account at ~€0.005-0.02 per lookup (typical refactor: €0.50-€5 total).
+
 ### Clean Core & Custom Code Retirement
 
 | Skill | What it does | When to use |
