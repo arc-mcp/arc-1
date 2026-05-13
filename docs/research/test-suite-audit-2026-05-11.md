@@ -1110,23 +1110,50 @@ The integration and E2E per-file reviews are embedded in the Test Runs section b
 
 ## Recommended Work Items
 
-Order these by risk reduction:
+Recommended execution order: fix measurement first, then correctness, then runtime. Do not start by raising `ARC1_MAX_CONCURRENT` or enabling broad Vitest file parallelism. The current suite still has false-green paths and cleanup leaks; making those paths faster would increase SAP-system pressure without improving trust in the result.
 
-1. Fix E2E fixture activation handling and the invalid DDLS fixture.
-2. Stop transport leakage in integration/E2E; add a live cleanup audit.
-3. Convert pseudo-skips into real `ctx.skip()` calls with reasons.
-4. Repair skip reason telemetry.
-5. Clean up or declare `ZARC1_E2E_DUMP`.
-6. Reduce default PR runtime before adding parallelism:
-   - share/bound integration cache warmup and move delta warmup to unit tests,
-   - move recursive transport release to a slow/manual profile,
-   - reduce broad E2E where-used queries,
-   - use `SAPManage features` instead of repeated E2E `SAPManage probe`,
-   - consolidate RAP write E2E coverage.
-7. Split slow integration/E2E profiles and add a read-only server concurrency smoke before attempting broader parallelism.
-8. Add focused unit coverage for `src/server/http.ts`, `src/server/server.ts`, `src/adt/btp.ts`, `src/server/xsuaa.ts`, and `src/extract-sap-cookies.ts`.
-9. Fix macOS portability in E2E local scripts.
-10. Align CI comments/triggers/concurrency with actual behavior.
+### Quick Wins
+
+These are low-risk PRs that improve observability or local usability without changing the live SAP test contract.
+
+| Order | Item | Evaluation | Expected impact | Verification |
+|---:|---|---|---|---|
+| 1 | Rename reliability summary `Top Skip Reasons` to `Top Skipped Tests`. | The current script reports skipped test titles, not structured reasons. The label is misleading but the change is tiny. | Removes a known telemetry ambiguity immediately. | `npm test -- tests/unit/scripts/collect-test-reliability.test.ts` |
+| 2 | Fix macOS portability in `scripts/e2e-start-local.sh` and `scripts/e2e-stop-local.sh`. | `fuser -k`, `grep -oP`, and JSON-only error matching do not match common local developer environments or the default text logger. | Makes local E2E reruns easier and makes server-error summaries trustworthy. | Run start/stop scripts locally; unit-test any parsing extracted into JS. |
+| 3 | Align CI comments/triggers and gate behavior. | The workflow comments and behavior disagree in places, and docs/chore PRs currently skip unit/lint/typecheck through the `gate` dependency. | Avoids silent loss of cheap CI signal on non-SAP changes. | Open a docs-only test PR or inspect `gate` output in `workflow_dispatch`. |
+
+### Correctness Blockers
+
+These should be fixed before runtime optimization because they determine whether green integration/E2E runs are meaningful.
+
+| Order | Item | Evaluation | Expected impact | Verification |
+|---:|---|---|---|---|
+| 4 | Fix E2E fixture activation handling and the invalid DDLS fixture. | This is the highest-risk finding: fixture activation can warn and continue, so tests can pass against stale or inactive fixtures. | Converts false-green fixture setup into a hard failure and restores trust in E2E preconditions. | `npm run test:e2e`; add active-state assertion after fixture sync. |
+| 5 | Stop transport leakage in E2E and integration transport tests. | Created CTS objects are currently documented or logged, not reliably cleaned. This pollutes the shared S4 system and can affect later runs. | Reduces live-system residue and makes repeated transport runs safer. | Run focused transport tests twice; confirm no new unreleased `ZARC1_*` leftovers through CTS/TADIR checks. |
+| 6 | Convert pseudo-skips to real `ctx.skip(reason)` calls. | Bare `return` and `[SKIP]` logs are counted as passes, hiding unsupported or missing-precondition paths. | Makes skip counts honest and keeps reliability summaries useful. | `npm run test:e2e`; JSON reporter shows skipped tests instead of passed pseudo-skips. |
+| 7 | Clean up or explicitly declare `ZARC1_E2E_DUMP`. | The dump fixture behavior needs a clear ownership model: either clean it or document it as intentionally persistent. | Removes ambiguity between expected diagnostic residue and cleanup failure. | E2E diagnostics run plus live object search. |
+
+### Runtime Reduction
+
+Do this after correctness blockers. These changes should target the measured hotspots from GitHub Actions run `25674270461`, not broad parallelism first.
+
+| Order | Item | Evaluation | Expected impact | Verification |
+|---:|---|---|---|---|
+| 8 | Bound or share integration cache warmup. | Repeated warmup is useful coverage but expensive when repeated across live SAP tests. | Shortens integration setup without reducing endpoint coverage. | Compare integration job wall time and per-file timing before/after. |
+| 9 | Move recursive transport release coverage to a slow/manual profile. | Recursive release is one of the clearest live-SAP runtime hotspots and is not needed on every PR path. | Reduces default integration/E2E wall time while preserving coverage in an explicit profile. | Default PR run excludes recursive release; slow profile still executes it. |
+| 10 | Reduce broad E2E where-used queries such as repeated `BAPIRET2` checks. | Broad where-used is high latency and repeated coverage has diminishing value. | Cuts E2E runtime with low behavioral risk. | Keep one representative where-used E2E; move variants to unit/integration fixtures if needed. |
+| 11 | Use `SAPManage features` instead of repeated E2E `SAPManage probe` calls where possible. | Repeated probe calls spend live runtime rediscovering capabilities that can be obtained once. | Reduces repeated setup/tool overhead. | E2E server log shows fewer probe calls with equivalent assertions. |
+| 12 | Consolidate RAP write E2E coverage. | RAP write coverage is valuable, but overlapping full-path tests make the PR path slower than necessary. | Keeps one full lifecycle path while moving edge cases to narrower tests. | E2E behavior matrix still covers create/update/activate/error paths. |
+
+### Parallelism And Coverage
+
+Treat this as the final phase. Parallelism is useful only after the suite has reliable setup, cleanup, and skip accounting.
+
+| Order | Item | Evaluation | Expected impact | Verification |
+|---:|---|---|---|---|
+| 13 | Split slow integration/E2E profiles before enabling broad parallelism. | Some tests share live SAP objects and transports, so file-level parallelism needs isolated profiles and fixture ownership first. | Lets PRs run the stable default path while preserving heavier coverage on demand. | Separate default and slow commands; both publish reliability artifacts. |
+| 14 | Add a read-only server concurrency smoke before increasing parallel test execution. | The server default `ARC1_MAX_CONCURRENT=10` is capacity, not proof that SAP-facing tests are independent. | Provides evidence that the server and S4 test system tolerate concurrent read traffic. | Concurrent read-only smoke passes without 429/5xx/session bleed. |
+| 15 | Add focused unit coverage for `src/server/http.ts`, `src/server/server.ts`, `src/adt/btp.ts`, `src/server/xsuaa.ts`, and `src/extract-sap-cookies.ts`. | These areas are high-value coverage gaps because they guard auth, transport, BTP connectivity, and credential extraction. | Improves coverage where regressions are expensive and hard to diagnose through live tests. | Coverage report shows targeted line/branch gains for those files. |
 
 ## Research Completeness
 
