@@ -1,10 +1,15 @@
+---
+name: modernize-abap-to-btp-cap
+description: End-to-end migration orchestrator from classic ABAP Z* packages to a BTP-native CAP application (CAP Node.js + Fiori Elements V4 + Cloud Foundry). Chains together specialized modernize-abap-* sub-skills (clean-core-gap, schema, service, fiori, auth-mapping, mta). Use when asked to "port this Z package to BTP CAP", "modernize this ABAP code to CAP", "generate a CAP scaffold from this Z package", or "migrate this custom code to BTP greenfield".
+---
+
 # Modernize ABAP to BTP CAP
 
 End-to-end migration orchestrator from classic ABAP custom code (Z* packages) to a BTP-native CAP application — Fiori Elements V4 frontend, Node.js backend, Cloud Foundry deployment artifacts.
 
 This skill chains together specialized `modernize-abap-*` skills (Clean Core gap analysis → CDS schema → CAP service → Fiori Elements → auth mapping → MTA deployment) to produce a complete target CAP project. Combines ARC-1 (source / dependency / lint via ADT) with `mcp-sap-docs` (Clean Core release state via [`SAP/abap-atc-cr-cv-s4hc`](https://github.com/SAP/abap-atc-cr-cv-s4hc)).
 
-Different from [migrate-custom-code](migrate-custom-code.md): that skill fixes ATC findings inside an ABAP system; this one **leaves the ABAP system untouched** and produces a side-by-side BTP CAP target project that consumes released S/4HANA APIs instead.
+Different from [migrate-custom-code](../migrate-custom-code/SKILL.md): that skill fixes ATC findings inside an ABAP system; this one **leaves the ABAP system untouched** and produces a side-by-side BTP CAP target project that consumes released S/4HANA APIs instead.
 
 ## v1 Guardrails (fast path)
 
@@ -108,7 +113,7 @@ The skeleton mirrors a `cds init` output; the orchestrator owns it. Generate `pa
 
 ## Step 2: Run modernize-abap-clean-core-gap (sub-skill)
 
-Hand off to [modernize-abap-clean-core-gap](modernize-abap-clean-core-gap.md) with the same package + target directory.
+Hand off to [modernize-abap-clean-core-gap](../modernize-abap-clean-core-gap/SKILL.md) with the same package + target directory.
 
 **Expected output**: `<target>/.target-cap-staging/docs/clean-core-gap.md` containing:
 
@@ -117,11 +122,11 @@ Hand off to [modernize-abap-clean-core-gap](modernize-abap-clean-core-gap.md) wi
 - Replacement suggestions for Level B/C/D references
 - Risk assessment: per-object migration effort estimate
 
-**Gate**: if more than 30% of objects are Level C/D, the skill warns the user that a "lift-and-shift" approach may be infeasible and recommends [migrate-custom-code](migrate-custom-code.md) first to fix ATC findings before retrying modernization.
+**Gate**: if more than 30% of objects are Level C/D, the skill warns the user that a "lift-and-shift" approach may be infeasible and recommends [migrate-custom-code](../migrate-custom-code/SKILL.md) first to fix ATC findings before retrying modernization.
 
 ## Step 3: Run modernize-abap-cap-schema (sub-skill)
 
-Hand off to [modernize-abap-cap-schema](modernize-abap-cap-schema.md) with the same package + target directory.
+Hand off to [modernize-abap-cap-schema](../modernize-abap-cap-schema/SKILL.md) with the same package + target directory.
 
 **Expected output**: `<target>/.target-cap-staging/db/schema.cds` containing:
 
@@ -143,7 +148,7 @@ Must succeed. If errors → log + stop + show user the offending entities.
 
 ## Step 4: Run modernize-abap-cap-service (sub-skill)
 
-Hand off to [modernize-abap-cap-service](modernize-abap-cap-service.md) with the same package + target directory.
+Hand off to [modernize-abap-cap-service](../modernize-abap-cap-service/SKILL.md) with the same package + target directory.
 
 **Expected output**: 
 - `<target>/.target-cap-staging/srv/service.cds` with entity projections + action signatures derived from Z* function modules + reports
@@ -160,7 +165,7 @@ npx cds compile <target>/.target-cap-staging/srv --to edmx
 
 Skip if `--skip fiori` was provided.
 
-Hand off to [modernize-abap-fiori-elements](modernize-abap-fiori-elements.md).
+Hand off to [modernize-abap-fiori-elements](../modernize-abap-fiori-elements/SKILL.md).
 
 **Expected output**: `<target>/.target-cap-staging/app/<entity>/` for each main entity, containing:
 
@@ -173,7 +178,7 @@ Hand off to [modernize-abap-fiori-elements](modernize-abap-fiori-elements.md).
 
 Skip if `--skip auth` was provided.
 
-Hand off to [modernize-abap-auth-mapping](modernize-abap-auth-mapping.md).
+Hand off to [modernize-abap-auth-mapping](../modernize-abap-auth-mapping/SKILL.md).
 
 **Expected output**:
 - `<target>/.target-cap-staging/xs-security.json` with scopes derived from `AUTHORITY-CHECK` statements
@@ -184,7 +189,7 @@ Hand off to [modernize-abap-auth-mapping](modernize-abap-auth-mapping.md).
 
 Skip if `--skip mta` was provided.
 
-Hand off to [modernize-abap-btp-mta](modernize-abap-btp-mta.md).
+Hand off to [modernize-abap-btp-mta](../modernize-abap-btp-mta/SKILL.md).
 
 **Expected output**:
 - `<target>/.target-cap-staging/mta.yaml` — MTA descriptor with srv + db-deployer + approuter modules
@@ -303,7 +308,7 @@ npx cds compile srv --service all --to edmx
 | Target directory not empty | Risk of overwriting unrelated content | Ask user to confirm or pick a fresh directory |
 | CDS compile fails after schema generation | Type mapping edge case (e.g., unusual `CURR` with non-standard `Semantics`) | Log offending entity, show source, allow user to edit + retry |
 | `cf push` step missing CF CLI | User runs without CF CLI installed | Surface clearly + link to CF CLI install docs; this skill stops at scaffold |
-| Clean Core gap > 30% C/D | Package too coupled to internal/deprecated APIs | Recommend [migrate-custom-code](migrate-custom-code.md) first to address findings, then retry |
+| Clean Core gap > 30% C/D | Package too coupled to internal/deprecated APIs | Recommend [migrate-custom-code](../migrate-custom-code/SKILL.md) first to address findings, then retry |
 | `npm install` fails offline | No network for CAP deps | Skill output is generated; user runs `npm install` separately |
 | Source package contains > 200 objects | Too large for single-run handoff | Suggest splitting into sub-packages; skill processes top-level only |
 | sub-skill output missing expected files | Sub-skill failed silently | Re-run failed sub-skill standalone with verbose flag to diagnose |
@@ -316,10 +321,10 @@ npx cds compile srv --service all --to edmx
 - **No XSUAA service creation** — user creates `xsuaa` service instance via `cf create-service` or BTP cockpit
 - **No automatic handler logic generation** — handlers are stubs with `// TODO`; user implements business logic
 - **No regression test execution** — generates test scaffold via `generate-cds-unit-test` (separate skill); execution is user's responsibility
-- **No migration of ABAP CDS Views to released SAP CDS Views** — the [modernize-abap-clean-core-gap](modernize-abap-clean-core-gap.md) report suggests replacements; manual mapping required
+- **No migration of ABAP CDS Views to released SAP CDS Views** — the [modernize-abap-clean-core-gap](../modernize-abap-clean-core-gap/SKILL.md) report suggests replacements; manual mapping required
 - **No transport-coordinated migration** — this is greenfield CAP, no ABAP transport involvement
 - **No big-bang cutover plan** — assume coexistence (source ABAP + target CAP) for a transition period
-- **No source-system ATC fix application** — that's [migrate-custom-code](migrate-custom-code.md)
+- **No source-system ATC fix application** — that's [migrate-custom-code](../migrate-custom-code/SKILL.md)
 
 ## When to Use This Skill
 
@@ -331,9 +336,9 @@ npx cds compile srv --service all --to edmx
 
 ## When NOT to Use This Skill
 
-- **The package must stay in S/4 as ABAP Cloud** — use [generate-rap-service-researched](generate-rap-service-researched.md) instead (RAP on ABAP Cloud)
-- **Single object refactor** — use [migrate-custom-code](migrate-custom-code.md) (ATC-driven fix)
-- **Unused code retirement** — run [sap-unused-code](sap-unused-code.md) first to scope what's actually live
+- **The package must stay in S/4 as ABAP Cloud** — use [generate-rap-service-researched](../generate-rap-service-researched/SKILL.md) instead (RAP on ABAP Cloud)
+- **Single object refactor** — use [migrate-custom-code](../migrate-custom-code/SKILL.md) (ATC-driven fix)
+- **Unused code retirement** — run [sap-unused-code](../sap-unused-code/SKILL.md) first to scope what's actually live
 - **The package has > 30% Level C/D objects** — too risky; iterate on source-side fixes first
 - **You need Kyma deployment** — v1 targets CF only; track Kyma support in v2
 
@@ -341,9 +346,9 @@ npx cds compile srv --service all --to edmx
 
 After successful run, the user typically runs:
 
-- [generate-cds-unit-test](generate-cds-unit-test.md) → for the new CAP CDS entities
-- [generate-abap-unit-test](generate-abap-unit-test.md) → for any remaining source ABAP objects kept in coexistence
-- [analyze-chat-session](analyze-chat-session.md) → review the modernization run, capture learnings
+- [generate-cds-unit-test](../generate-cds-unit-test/SKILL.md) → for the new CAP CDS entities
+- [generate-abap-unit-test](../generate-abap-unit-test/SKILL.md) → for any remaining source ABAP objects kept in coexistence
+- [analyze-chat-session](../analyze-chat-session/SKILL.md) → review the modernization run, capture learnings
 - Manual `cds watch` + Fiori UI review
 - Manual `mbt build` + `cf deploy <mtar>`
 

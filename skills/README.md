@@ -108,15 +108,15 @@ End-to-end greenfield migration from classic ABAP custom code (Z* packages) to B
 
 | Skill | What it does | When to use |
 |---|---|---|
-| [modernize-abap-to-btp-cap](modernize-abap-to-btp-cap.md) | End-to-end migration orchestrator: Z package → BTP CAP scaffold (CDS + service + Fiori + xs-security + mta.yaml + ADRs) | Planning ECC / on-prem S/4 → BTP CAP greenfield migration |
-| [modernize-abap-cap-schema](modernize-abap-cap-schema.md) | Z-tables (SE11) → CAP CDS entities with DDIC→CDS type mapping, FK→association inference, `cuid`/`managed` aspect auto-application | Data-model migration step; standalone for reverse-engineering Z tables to CDS |
-| [modernize-abap-cap-service](modernize-abap-cap-service.md) | Z function modules / reports / classes → CAP service definitions + TypeScript handler stubs with TODO markers + ABAP source excerpts | Service-layer migration step; produces compile-clean scaffold ready for business-logic translation |
+| [modernize-abap-to-btp-cap](modernize-abap-to-btp-cap/SKILL.md) | End-to-end migration orchestrator: Z package → BTP CAP scaffold (CDS + service + Fiori + xs-security + mta.yaml + ADRs) | Planning ECC / on-prem S/4 → BTP CAP greenfield migration |
+| [modernize-abap-cap-schema](modernize-abap-cap-schema/SKILL.md) | Z-tables (SE11) → CAP CDS entities with DDIC→CDS type mapping, FK→association inference, `cuid`/`managed` aspect auto-application | Data-model migration step; standalone for reverse-engineering Z tables to CDS |
+| [modernize-abap-cap-service](modernize-abap-cap-service/SKILL.md) | Z function modules / reports / classes → CAP service definitions + TypeScript handler stubs with TODO markers + ABAP source excerpts | Service-layer migration step; produces compile-clean scaffold ready for business-logic translation |
 
 #### Modernization vs Cloud-Readiness skills
 
 - [sap-clean-core-atc](sap-clean-core-atc.md) classifies whether code **can stay in ABAP and move to S/4HANA Cloud / ABAP Cloud**. Source system stays SAP.
 - [migrate-custom-code](migrate-custom-code.md) **fixes ATC findings in place** to make ABAP cloud-ready. Source system stays SAP.
-- [modernize-abap-to-btp-cap](modernize-abap-to-btp-cap.md) **rebuilds the application as BTP CAP** — leaves source ABAP untouched, produces a parallel BTP-native stack. Use when the target architecture is a CAP application, not just cloud-ready ABAP.
+- [modernize-abap-to-btp-cap](modernize-abap-to-btp-cap/SKILL.md) **rebuilds the application as BTP CAP** — leaves source ABAP untouched, produces a parallel BTP-native stack. Use when the target architecture is a CAP application, not just cloud-ready ABAP.
 
 #### Typical BTP modernization workflow
 

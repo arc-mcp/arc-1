@@ -1,8 +1,13 @@
+---
+name: modernize-abap-cap-schema
+description: Generate a CAP CDS data model (db/schema.cds) from a Z* package's ABAP database tables (TABL). Applies DDIC→CDS type mapping (24 types), infers Associations/Compositions from foreign-key references, auto-applies cuid/managed aspects when applicable. Use when asked to "convert this Z table to CDS entity", "generate CAP schema from ABAP TABL", "reverse-engineer Z tables to CDS", or as sub-skill of modernize-abap-to-btp-cap.
+---
+
 # Modernize ABAP CAP Schema
 
 Generate a CAP CDS data model (`db/schema.cds`) from a Z* package's database tables (`TABL`) and structures. Maps DDIC types to CDS types, infers associations from foreign-key references, applies `cuid` / `managed` aspects automatically, and emits a single namespace-scoped schema ready for `cds compile`.
 
-Sub-skill of [modernize-abap-to-btp-cap](modernize-abap-to-btp-cap.md) but also usable standalone when only data-model migration is needed (e.g., reverse-engineer a Z table inventory into CAP CDS for a fresh project).
+Sub-skill of [modernize-abap-to-btp-cap](../modernize-abap-to-btp-cap/SKILL.md) but also usable standalone when only data-model migration is needed (e.g., reverse-engineer a Z table inventory into CAP CDS for a fresh project).
 
 This is greenfield CDS *for CAP runtime* (`@sap/cds`) — NOT ABAP CDS DDL. The two share syntax fragments but have different semantics, type systems, and tooling.
 
@@ -337,13 +342,13 @@ npx cds compile <target>/db/schema.cds --to sql
 - **No table data migration** — generates schema only, NOT INSERT scripts
 - **No HANA-specific syntax** — generates portable CAP CDS, not HDI artifacts (CAP `cds build` does that)
 - **No append-structure deep recursion** — handles direct appends, not nested appends-of-appends
-- **No CDS view migration** — that's [modernize-abap-clean-core-gap](modernize-abap-clean-core-gap.md) territory (Z CDS views → released SAP views OR keep as Z)
+- **No CDS view migration** — that's [modernize-abap-clean-core-gap](../modernize-abap-clean-core-gap/SKILL.md) territory (Z CDS views → released SAP views OR keep as Z)
 - **No semantic merge** — if two tables represent the same business entity (rare), no auto-merge; manual modeling needed
 - **No table-function (`TF`) handling** — function-based tables are skipped with warning
 
 ## When to Use This Skill
 
-- As Step 3 of [modernize-abap-to-btp-cap](modernize-abap-to-btp-cap.md)
+- As Step 3 of [modernize-abap-to-btp-cap](../modernize-abap-to-btp-cap/SKILL.md)
 - Standalone: greenfield CAP project that needs to mirror existing Z table inventory
 - Standalone: refactor an existing CAP schema after schema drift (regenerate baseline, compare with current)
 - During architecture spike: get a quick CDS skeleton from a Z package for evaluation
@@ -358,8 +363,8 @@ npx cds compile <target>/db/schema.cds --to sql
 
 After this skill produces the schema:
 
-- [modernize-abap-cap-service](modernize-abap-cap-service.md) — generate service definitions on top of these entities
-- [generate-cds-unit-test](generate-cds-unit-test.md) — generate unit tests for the entities with calculations
+- [modernize-abap-cap-service](../modernize-abap-cap-service/SKILL.md) — generate service definitions on top of these entities
+- [generate-cds-unit-test](../generate-cds-unit-test/SKILL.md) — generate unit tests for the entities with calculations
 - Manual: review REVIEW items, refine type mappings, decide on association policies (Association vs Composition)
 
 ## References

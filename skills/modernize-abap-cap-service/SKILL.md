@@ -1,8 +1,13 @@
+---
+name: modernize-abap-cap-service
+description: Generate CAP service definitions (srv/*.cds) and TypeScript handler stubs (srv/handlers/*.ts) from a Z* package's reports (PROG), function modules (FUNC), and classes (CLAS). Maps ABAP signatures to OData V4 action signatures, classifies bound vs unbound actions, embeds ABAP source excerpts as TODO context. Use when asked to "convert this FM to CAP action", "generate CAP service from ABAP", "scaffold CAP handlers from Z program", or as sub-skill of modernize-abap-to-btp-cap.
+---
+
 # Modernize ABAP CAP Service
 
 Generate CAP service definitions (`srv/*.cds`) and TypeScript handler stubs (`srv/handlers/*.ts`) from a Z* package's reports (`PROG`), function modules (`FUNC`), and behavior-relevant classes (`CLAS`). Maps ABAP procedural / object-oriented logic to CAP intent: entities exposed as projections, action signatures derived from FM parameters, handler scaffolds with TODO markers for business logic.
 
-Sub-skill of [modernize-abap-to-btp-cap](modernize-abap-to-btp-cap.md). Assumes the schema sub-skill [modernize-abap-cap-schema](modernize-abap-cap-schema.md) has produced `db/schema.cds` (entities + associations exist) before this skill runs.
+Sub-skill of [modernize-abap-to-btp-cap](../modernize-abap-to-btp-cap/SKILL.md). Assumes the schema sub-skill [modernize-abap-cap-schema](../modernize-abap-cap-schema/SKILL.md) has produced `db/schema.cds` (entities + associations exist) before this skill runs.
 
 This skill produces a **scaffold + plan**, not production-ready business logic. Handler bodies are stubs with `// TODO: implement` comments and parameter passing wired up; the user is expected to translate ABAP business logic in a second pass.
 
@@ -21,7 +26,7 @@ This skill produces a **scaffold + plan**, not production-ready business logic. 
 |---|---|---|
 | Service file | `<target>/srv/service.cds` | Single-service per package |
 | Service name | derived: `<NamespaceCamelCase>Service` (e.g., `ZSALES_PKG` → `SalesService`) | Drops Z prefix, CamelCase |
-| Service namespace | matches schema namespace | Coherent with [modernize-abap-cap-schema](modernize-abap-cap-schema.md) |
+| Service namespace | matches schema namespace | Coherent with [modernize-abap-cap-schema](../modernize-abap-cap-schema/SKILL.md) |
 | Entity exposure | All entities from schema projected READ-only | Safe default; user adds CRUD where needed |
 | Action mapping | FM → unbound action (with first ENTITY param → bound action) | OData V4 convention |
 | Handler runtime | Node.js TypeScript | CAP-native |
@@ -30,7 +35,7 @@ This skill produces a **scaffold + plan**, not production-ready business logic. 
 | Error handling | `rejectSafe` pattern | Don't leak `err.message` to client |
 | Audit | `@audit-log` annotation on write actions | BTP-native |
 | Validation | `@assert.range` / `@assert.format` mirrored from DDIC | Inherit DDIC-level checks |
-| Authorization | placeholder `@(restrict: [{ to: 'authenticated-user' }])` | Refined later by [modernize-abap-auth-mapping](modernize-abap-auth-mapping.md) |
+| Authorization | placeholder `@(restrict: [{ to: 'authenticated-user' }])` | Refined later by [modernize-abap-auth-mapping](../modernize-abap-auth-mapping/SKILL.md) |
 
 ## Input
 
@@ -54,7 +59,7 @@ Optionally:
 test -f <target>/db/schema.cds
 ```
 
-If missing, stop and recommend running [modernize-abap-cap-schema](modernize-abap-cap-schema.md) first.
+If missing, stop and recommend running [modernize-abap-cap-schema](../modernize-abap-cap-schema/SKILL.md) first.
 
 ### 1b. Parse entity list from schema
 
@@ -87,7 +92,7 @@ SAPRead(type="FUGR", name="<group_name>")
 | `PROG` (module pool) | UI flow + business logic | Multiple actions decomposed from flow logic + Fiori-mapped UI |
 | `CLAS` with `STATIC` factory methods | Business logic | Handler import + method-by-method to action |
 | `CLAS` instance with state | Stateful logic | Refactor: extract pure functions into handler |
-| `CLAS` with `ENH_*` prefix | Enhancement | Skip (Clean Core violation; flag in [modernize-abap-clean-core-gap](modernize-abap-clean-core-gap.md)) |
+| `CLAS` with `ENH_*` prefix | Enhancement | Skip (Clean Core violation; flag in [modernize-abap-clean-core-gap](../modernize-abap-clean-core-gap/SKILL.md)) |
 
 ### 2c. Read source for analysis
 
@@ -134,7 +139,7 @@ action getCustomerOrders(
 
 #### Type mapping for parameters
 
-Same DDIC → CDS type table as [modernize-abap-cap-schema](modernize-abap-cap-schema.md) Step 3. Additionally:
+Same DDIC → CDS type table as [modernize-abap-cap-schema](../modernize-abap-cap-schema/SKILL.md) Step 3. Additionally:
 
 | ABAP FM parameter type | CAP action target |
 |---|---|
@@ -448,15 +453,15 @@ npm test
 - **No business logic translation** — handlers are stubs with TODO comments + ABAP excerpts for context
 - **No SELECT → CDS-QL auto-conversion** — suggests CDS-QL in comments; manual translation needed
 - **No PERFORM → handler function auto-conversion** — flagged in comments
-- **No screen flow / module pool decomposition** — UI lives in Fiori Elements ([modernize-abap-fiori-elements](modernize-abap-fiori-elements.md))
+- **No screen flow / module pool decomposition** — UI lives in Fiori Elements ([modernize-abap-fiori-elements](../modernize-abap-fiori-elements/SKILL.md))
 - **No CALL SCREEN handling** — UI flow doesn't map to CAP backend
 - **No FM tables-parameter migration** — flagged as deprecated pattern; user redesigns to entities/actions
 - **No ABAP exception class hierarchy mapping** — single error pattern via `req.reject` / `Error`
-- **No replacement of deprecated APIs** — that's [modernize-abap-clean-core-gap](modernize-abap-clean-core-gap.md)
+- **No replacement of deprecated APIs** — that's [modernize-abap-clean-core-gap](../modernize-abap-clean-core-gap/SKILL.md)
 
 ## When to Use This Skill
 
-- As Step 4 of [modernize-abap-to-btp-cap](modernize-abap-to-btp-cap.md), after schema generation
+- As Step 4 of [modernize-abap-to-btp-cap](../modernize-abap-to-btp-cap/SKILL.md), after schema generation
 - Standalone: extend an existing CAP service with new actions derived from Z FMs
 - Onboarding: get a quick map of "what ABAP entry-points exist in this package" without running the orchestrator
 
@@ -464,15 +469,15 @@ npm test
 
 - ABAP package uses CFW (Control Framework) heavily → UI logic doesn't port; redesign UI in Fiori Elements first
 - ABAP code uses dynamic call (`PERFORM ... IN PROGRAM`, `CALL FUNCTION DESTINATION DYNAMIC`) → handler scaffolds will not capture indirect dispatch; manual analysis required
-- Source contains BSP applications → use [convert-ui5-to-fiori-elements](convert-ui5-to-fiori-elements.md) or equivalent UI skill
+- Source contains BSP applications → use [convert-ui5-to-fiori-elements](../convert-ui5-to-fiori-elements/SKILL.md) or equivalent UI skill
 
 ## Follow-up
 
 After this skill produces the service scaffold:
 
-- [modernize-abap-fiori-elements](modernize-abap-fiori-elements.md) — generate Fiori Elements V4 UI for the new service
-- [modernize-abap-auth-mapping](modernize-abap-auth-mapping.md) — refine `@restrict` annotations from AUTHORITY-CHECK in source
-- [generate-cds-unit-test](generate-cds-unit-test.md) — generate tests for service projections with CASE/computed fields
+- [modernize-abap-fiori-elements](../modernize-abap-fiori-elements/SKILL.md) — generate Fiori Elements V4 UI for the new service
+- [modernize-abap-auth-mapping](../modernize-abap-auth-mapping/SKILL.md) — refine `@restrict` annotations from AUTHORITY-CHECK in source
+- [generate-cds-unit-test](../generate-cds-unit-test/SKILL.md) — generate tests for service projections with CASE/computed fields
 - Manual: implement handler TODOs by translating ABAP business logic
 
 ## References
