@@ -31,6 +31,11 @@ import { logger } from './logger.js';
  *
  * `endpoint` is used only for the audit event label and for diagnostic logs;
  * the path-based mount in Express is done by the caller.
+ *
+ * Operators disable Layer 1 by setting `ARC1_AUTH_RATE_LIMIT=0`, which makes
+ * `http.ts` skip the `app.use(…)` mount entirely — there is intentionally no
+ * "noop middleware" path here. Keeping the dataflow `rateLimit({…}) → app.use`
+ * direct lets CodeQL's `js/missing-rate-limiting` query close cleanly.
  */
 export function createAuthRateLimiter(endpoint: string, perMinute: number): RequestHandler {
   return rateLimit({
@@ -57,10 +62,4 @@ export function createAuthRateLimiter(endpoint: string, perMinute: number): Requ
       });
     },
   });
-}
-
-/** No-op middleware used when the operator sets `ARC1_AUTH_RATE_LIMIT=0`. Calling
- *  this rather than skipping the mount keeps the Express middleware chain consistent. */
-export function createNoopRateLimiter(): RequestHandler {
-  return (_req, _res, next) => next();
 }

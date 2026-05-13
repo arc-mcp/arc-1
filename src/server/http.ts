@@ -220,17 +220,19 @@ export async function startHttpServer(
   // batched tool-call traffic isn't choked while pre-bearer-auth probing is still gated.
   // Per-endpoint differentiation lives here, not in env, so the operator surface stays tiny.
   // See docs_page/rate-limiting.md (Layer 1) and ADR-0004.
-  const { createAuthRateLimiter, createNoopRateLimiter } = await import('./auth-rate-limit.js');
-  function buildLimiter(endpoint: string): import('express').RequestHandler {
-    if (config.authRateLimit === 0) return createNoopRateLimiter();
-    const perMinute = endpoint === '/mcp' ? Math.max(config.authRateLimit * 30, 600) : config.authRateLimit;
-    return createAuthRateLimiter(endpoint, perMinute);
-  }
+  //
+  // Implementation note: the limiter is mounted DIRECTLY via createAuthRateLimiter →
+  // express-rate-limit. The disabled path skips the mount entirely rather than going
+  // through a noop indirection — this keeps the dataflow `rateLimit({...}) → app.use`
+  // direct and makes CodeQL's `js/missing-rate-limiting` query close cleanly.
+  const { createAuthRateLimiter } = await import('./auth-rate-limit.js');
+  const rateLimitEnabled = config.authRateLimit > 0;
+  const mcpRatePerMinute = rateLimitEnabled ? Math.max(config.authRateLimit * 30, 600) : 0;
   logger.info('Auth rate limiting', {
     perMinute: config.authRateLimit,
-    mcpPerMinute: config.authRateLimit === 0 ? 0 : Math.max(config.authRateLimit * 30, 600),
-    endpoints: ['/register', '/authorize', '/token', '/revoke', '/mcp'],
-    disabled: config.authRateLimit === 0,
+    mcpPerMinute: mcpRatePerMinute,
+    endpoints: rateLimitEnabled ? ['/register', '/authorize', '/token', '/revoke', '/mcp'] : [],
+    disabled: !rateLimitEnabled,
   });
 
   app.use(express.json());
@@ -293,10 +295,18 @@ export async function startHttpServer(
     // crypto / DB work. Discovery endpoints (/.well-known/*) are intentionally NOT
     // rate-limited — they're cheap, cacheable, and legitimate clients hit them on
     // every reconnect. See docs_page/rate-limiting.md.
-    app.use('/register', buildLimiter('/register'));
-    app.use('/authorize', buildLimiter('/authorize'));
-    app.use('/token', buildLimiter('/token'));
-    app.use('/revoke', buildLimiter('/revoke'));
+    //
+    // Each app.use receives a fresh express-rate-limit instance directly (no wrapper)
+    // so CodeQL's `js/missing-rate-limiting` query can trace the dataflow on every
+    // mount site without indirection. When the operator opts out via
+    // ARC1_AUTH_RATE_LIMIT=0, we skip the mounts entirely rather than installing a
+    // noop — keeping the express middleware chain free of dead-weight passthroughs.
+    if (rateLimitEnabled) {
+      app.use('/register', createAuthRateLimiter('/register', config.authRateLimit));
+      app.use('/authorize', createAuthRateLimiter('/authorize', config.authRateLimit));
+      app.use('/token', createAuthRateLimiter('/token', config.authRateLimit));
+      app.use('/revoke', createAuthRateLimiter('/revoke', config.authRateLimit));
+    }
 
     // ─── OAuth authorize normalization + Copilot Studio MCP workaround ──
     // Copilot Studio sends MCP JSON-RPC requests to /authorize instead of
@@ -432,8 +442,12 @@ export async function startHttpServer(
     );
 
     // Layer 1: rate-limit /mcp BEFORE bearer auth so anonymous probing is gated.
-    // /mcp gets a higher cap to absorb legitimate batched tool-call traffic — see buildLimiter.
-    app.use('/mcp', buildLimiter('/mcp'));
+    // /mcp gets a higher cap to absorb legitimate batched tool-call traffic — see
+    // mcpRatePerMinute above. Skipped entirely when the operator opts out so the
+    // dataflow CodeQL traces is `rateLimit({...}) → app.use('/mcp', …)` with no branches.
+    if (rateLimitEnabled) {
+      app.use('/mcp', createAuthRateLimiter('/mcp', mcpRatePerMinute));
+    }
     // Protected MCP endpoint with chained token verification
     app.all('/mcp', bearerAuth, mcpHandler);
 
@@ -450,7 +464,9 @@ export async function startHttpServer(
     // Layer 1 on /mcp also applies outside XSUAA mode — API-key / OIDC / no-auth
     // deployments get the same anonymous-probing protection. OAuth endpoints don't
     // exist in non-XSUAA mode so only /mcp needs mounting here.
-    app.use('/mcp', buildLimiter('/mcp'));
+    if (rateLimitEnabled) {
+      app.use('/mcp', createAuthRateLimiter('/mcp', mcpRatePerMinute));
+    }
 
     if (config.apiKeys || config.oidcIssuer) {
       // Use requireBearerAuth so that authInfo is populated on the MCP request context.

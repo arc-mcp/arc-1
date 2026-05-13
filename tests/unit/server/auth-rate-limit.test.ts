@@ -1,7 +1,7 @@
 import express from 'express';
 import { describe, expect, it } from 'vitest';
 import type { AuditEvent } from '../../../src/server/audit.js';
-import { createAuthRateLimiter, createNoopRateLimiter } from '../../../src/server/auth-rate-limit.js';
+import { createAuthRateLimiter } from '../../../src/server/auth-rate-limit.js';
 import { logger } from '../../../src/server/logger.js';
 
 /**
@@ -136,19 +136,5 @@ describe('createAuthRateLimiter (Layer 1)', () => {
   });
 });
 
-describe('createNoopRateLimiter', () => {
-  it('always calls next() — never returns 429', async () => {
-    const app = appWithLimiter(createNoopRateLimiter());
-    const { codes } = await fireRequests(app, 100);
-    expect(codes.every((c) => c === 200)).toBe(true);
-  });
-
-  it('does NOT emit auth_rate_limited events', async () => {
-    const events = captureAuditEvents();
-    const before = events.filter((e) => e.event === 'auth_rate_limited').length;
-    const app = appWithLimiter(createNoopRateLimiter());
-    await fireRequests(app, 10, '10.88.88.88');
-    const after = events.filter((e) => e.event === 'auth_rate_limited').length;
-    expect(after).toBe(before);
-  });
-});
+// Note: when ARC1_AUTH_RATE_LIMIT=0 the limiter is NOT mounted at all (see http.ts).
+// There is no noop-middleware helper any more — keeps CodeQL's dataflow direct.
