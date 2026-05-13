@@ -72,7 +72,7 @@ grep -lE "ingress\.kubernetes\.io|networking\.k8s\.io" k8s/*.yaml 2>/dev/null | 
 grep -oE '"(production|production-pg|k8s|k8s-hana|k8s-onprem|onprem)"' .cdsrc*.json package.json 2>/dev/null | sort -u
 
 # Auth indicator
-test -f xs-security.json && echo "  → XSUAA (BTP CF or On-Prem CF)"
+test -f xs-security.json && echo "  → XSUAA (BTP CF)"
 ls k8s/onprem/keycloak-realm.json k8s/keycloak/*.json 2>/dev/null && echo "  → Keycloak (On-Prem Kyma)"
 ```
 
@@ -85,13 +85,14 @@ If auto-detection is inconclusive or yields multiple candidates, ask the user ex
 > 1. **BTP Cloud Foundry** *(default)* — XSUAA + HANA HDI + html5-apps-repo + mta.yaml. Best for: managed-services-only customers; lowest operational ceremony.
 > 2. **BTP Kyma** — XSUAA/IAS via OIDC + PostgreSQL in-cluster or HANA Cloud + APIRule CRD + Kyma BTP Operator. Best for: customers who want Kubernetes operational model; container-native eventing.
 > 3. **On-Premise Kyma** — Customer IdP (Keycloak) + HANA on-prem or PostgreSQL on-prem + cluster flavor (k3d / Rancher / Gardener / OpenShift) + `*.svc.cluster.local` remotes. Best for: data sovereignty mandates; existing Kubernetes investment.
-> 4. **On-Premise CF** — legacy continuity only — XSUAA on-prem + S/4 Flex Workflow + SMTP + filesystem DMS. EOL; only if existing investment dictates.
+
+**Not supported**: On-Premise Cloud Foundry (SAP Cloud Foundry On-Premise reached end of maintenance — the orchestrator refuses to plan deployment-readiness against an EOL runtime). If auto-detection identifies an on-prem CF environment, emit a strategic finding recommending migration to BTP CF (managed) or BTP Kyma, and stop.
 
 Do **not** guess. The audit's per-target Phase 3 dispatches differ; getting this wrong wastes the agent budget. When the user defers ("I don't know yet"), default to **BTP Cloud Foundry** and emit a finding recommending the customer confirm the target before deployment-readiness sign-off.
 
 ### 0c — Persist the target for downstream phases
 
-Record the chosen target as `$TARGET` (one of `btp-cf`, `btp-kyma`, `onprem-kyma`, `onprem-cf`). Every subsequent phase consults `$TARGET`:
+Record the chosen target as `$TARGET` (one of `btp-cf`, `btp-kyma`, `onprem-kyma`). Every subsequent phase consults `$TARGET`:
 
 | Phase | What changes with target |
 |---|---|

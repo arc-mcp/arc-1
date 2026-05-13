@@ -263,9 +263,10 @@ CAP + Fiori Elements V4 projects deploy across **four canonical target environme
 | **BTP Cloud Foundry** | Customer is fully BTP-managed, has CF entitlements, accepts BTP-managed services (Free or pay) | `production` (HANA HDI) or `production-pg` (PostgreSQL, deprecated 2026-Q4) | XSUAA | HANA HDI or BTP PostgreSQL service | `@sap/html5-app-repo` (Free plan OK) + approuter | BTP Destination service + Cloud Connector |
 | **BTP Kyma** | Customer wants Kubernetes operational model, BTP-hosted but more flexible than CF, uses pay-tier or in-cluster services | `k8s` | OIDC (XSUAA or IAS via OAuth2) | PostgreSQL in-cluster (Bitnami Helm) or HANA Cloud | UI ZIPs embedded in approuter Docker image | `S4_BASE_URL` + Destination via Kyma BTP Operator |
 | **On-Premise Kyma** | Customer-managed cluster (k3d local, Rancher, Gardener, OpenShift), uses customer IdP (Keycloak), needs full data sovereignty | `k8s-onprem` (Keycloak + HANA/PG) or `k8s-hana` (Kyma + HANA on-prem) | OIDC via customer IdP (Keycloak, Active Directory) | HANA on-prem or PostgreSQL on-prem | UI ZIPs embedded; ingress via NGINX or cluster-native | `*.svc.cluster.local` for in-cluster S/4 proxies + Cloud Connector for SaaS bridges |
-| **On-Premise CF** | Customer runs CF on-prem (rare; SAP Cloud Foundry On-Premise is EOL) — only if existing investment | `onprem` | XSUAA on-prem | HANA on-prem | html5-apps-repo on-prem | S/4 Flex Workflow + SMTP + filesystem DMS |
 
-The default recommendation for a new project is **BTP Cloud Foundry** — it is the most widely-adopted SAP-managed runtime, has the broadest service ecosystem (Free + paid tiers for `xsuaa`, `html5-apps-repo`, `destination`, `connectivity`, `event-mesh`, `audit-log`, `job-scheduling`, …), the most mature operational tooling (`mta.yaml` + `mbt build` + `cf deploy`), and the lowest operational ceremony for teams without dedicated Kubernetes expertise. Choose **BTP Kyma** when the customer wants the Kubernetes operational model (pay-tier services, more runtime flexibility, container-native eventing, CronJob CRDs). Choose **On-Premise Kyma** when the customer mandates data sovereignty or has existing Kubernetes infrastructure. Choose **On-Premise CF** only for legacy continuity.
+> **Not supported**: On-Premise Cloud Foundry. SAP Cloud Foundry On-Premise reached end of maintenance; the skill does not propose deployment plans against an EOL runtime. Customers with existing CF on-prem investment should be advised to migrate to **BTP CF** (managed) or **BTP Kyma**, not to extend the EOL footprint.
+
+The default recommendation for a new project is **BTP Cloud Foundry** — it is the most widely-adopted SAP-managed runtime, has the broadest service ecosystem (Free + paid tiers for `xsuaa`, `html5-apps-repo`, `destination`, `connectivity`, `event-mesh`, `audit-log`, `job-scheduling`, …), the most mature operational tooling (`mta.yaml` + `mbt build` + `cf deploy`), and the lowest operational ceremony for teams without dedicated Kubernetes expertise. Choose **BTP Kyma** when the customer wants the Kubernetes operational model (pay-tier services, more runtime flexibility, container-native eventing, CronJob CRDs). Choose **On-Premise Kyma** when the customer mandates data sovereignty or has existing Kubernetes infrastructure.
 
 ### 3.A — BTP Cloud Foundry patterns
 
@@ -518,22 +519,6 @@ Exit cleanly with actionable error before consuming time / state.
 **Root cause.** On-prem clusters may run their own S/4 OData proxy as a sidecar service.
 
 **Remedy.** Configure `S4_BASE_URL` (or equivalent) to use Kubernetes service DNS: `http://s4-proxy.s4-namespace.svc.cluster.local:8080`. The CAP runtime resolves it cluster-internally without exiting to public DNS. Faster, more secure, no Cloud Connector needed for in-cluster paths.
-
-### 3.D — On-Premise CF patterns
-
-#### 3.D.1 — On-prem CF is EOL — only for legacy continuity
-
-**Symptom.** Customer mandates CF on-prem because that's what they invested in 2018.
-
-**Root cause.** SAP Cloud Foundry On-Premise reached end-of-maintenance; community equivalents (CF Open Source) lack the SAP integration shims.
-
-**Remedy.** Surface this as a strategic finding to the customer. If continuity is non-negotiable, the `onprem` profile bundles:
-- XSUAA on-prem (legacy installation).
-- HANA on-prem.
-- S/4 Flex Workflow (instead of BPA).
-- SMTP relay (instead of BTP notifications).
-- Filesystem DMS (instead of cloud-based document storage).
-Document each shim's substitution explicitly in the project README so the customer is aware of the divergence from the BTP feature set.
 
 ### 3.1 — `cds run` does NOT mount UI5 apps
 
