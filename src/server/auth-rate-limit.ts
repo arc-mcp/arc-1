@@ -19,15 +19,33 @@
  *   headers (`RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`).
  */
 
-import type { RequestHandler } from 'express';
+import type { Request, RequestHandler, Response } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import { logger } from './logger.js';
+
+/**
+ * Optional knobs for `createAuthRateLimiter`.
+ *
+ * `skip` is the only one currently — used to layer two limiters on the same
+ * route (`/authorize`) where one skips JSON-RPC bodies and the other only
+ * applies to JSON-RPC bodies. See http.ts for the Copilot Studio rationale.
+ * Passing a `skip` function is preferred over building an outer conditional
+ * dispatcher: CodeQL's `js/missing-rate-limiting` query only recognises
+ * `app.use(path, rateLimit({...}))` patterns where the second argument is
+ * directly a `rateLimit({...})` result. Going through an inline arrow
+ * function with branch-based delegation re-opens the alert.
+ */
+export interface AuthRateLimiterOptions {
+  skip?: (req: Request, res: Response) => boolean;
+}
 
 /**
  * Build a per-IP rate limiter for one endpoint. The returned middleware:
  * - allows `perMinute` requests per minute per IP (60_000 ms window),
  * - returns HTTP 429 with `Retry-After` and RFC 9331 `RateLimit-*` headers on hit,
- * - emits a typed `auth_rate_limited` audit event on every denial.
+ * - emits a typed `auth_rate_limited` audit event on every denial,
+ * - honors an optional `skip` predicate so the same Express route can stack
+ *   two limiters (one for OAuth bodies, one for Copilot Studio MCP JSON-RPC).
  *
  * `endpoint` is used only for the audit event label and for diagnostic logs;
  * the path-based mount in Express is done by the caller.
@@ -37,7 +55,11 @@ import { logger } from './logger.js';
  * "noop middleware" path here. Keeping the dataflow `rateLimit({…}) → app.use`
  * direct lets CodeQL's `js/missing-rate-limiting` query close cleanly.
  */
-export function createAuthRateLimiter(endpoint: string, perMinute: number): RequestHandler {
+export function createAuthRateLimiter(
+  endpoint: string,
+  perMinute: number,
+  opts: AuthRateLimiterOptions = {},
+): RequestHandler {
   return rateLimit({
     windowMs: 60_000,
     max: perMinute,
@@ -46,6 +68,7 @@ export function createAuthRateLimiter(endpoint: string, perMinute: number): Requ
     // Explicit keyGenerator: rely on Express's req.ip after `trust proxy 1` (set in http.ts).
     // Operators running behind multiple proxy hops must increase the trust-proxy count there.
     keyGenerator: (req) => req.ip ?? 'unknown',
+    skip: opts.skip,
     handler: (req, res, _next, options) => {
       const ip = req.ip ?? 'unknown';
       logger.emitAudit({
@@ -62,4 +85,22 @@ export function createAuthRateLimiter(endpoint: string, perMinute: number): Requ
       });
     },
   });
+}
+
+/**
+ * Detect Copilot Studio MCP JSON-RPC requests sent to `/authorize`.
+ *
+ * Copilot Studio POSTs JSON-RPC tool calls to `/authorize` (a known quirk of
+ * that MCP client). On `/authorize`, this predicate is used in two limiter
+ * mounts: the OAuth-cap limiter `skip`s when this is true; the MCP-cap
+ * limiter `skip`s when this is false. The pair gives JSON-RPC traffic the
+ * higher `/mcp` cap while real OAuth flows stay on the OAuth cap.
+ *
+ * Exported so http.ts AND its tests use the exact same predicate — drift here
+ * would silently allow one path to skip rate limiting.
+ */
+export function isCopilotJsonRpc(req: Request): boolean {
+  if (req.method !== 'POST') return false;
+  const body = req.body as { jsonrpc?: unknown } | undefined;
+  return body !== undefined && body !== null && body.jsonrpc !== undefined;
 }

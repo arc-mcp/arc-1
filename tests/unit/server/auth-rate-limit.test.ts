@@ -1,7 +1,7 @@
 import express from 'express';
 import { describe, expect, it } from 'vitest';
 import type { AuditEvent } from '../../../src/server/audit.js';
-import { createAuthRateLimiter } from '../../../src/server/auth-rate-limit.js';
+import { createAuthRateLimiter, isCopilotJsonRpc } from '../../../src/server/auth-rate-limit.js';
 import { logger } from '../../../src/server/logger.js';
 
 /**
@@ -148,23 +148,21 @@ describe('createAuthRateLimiter (Layer 1)', () => {
  * cap (20/min/IP default) would throttle Copilot's normal MCP tool-call traffic.
  * This test asserts the dispatcher routes the two correctly.
  */
-describe('/authorize JSON-RPC dispatch (Copilot Studio MCP fix)', () => {
-  /** Build the same dispatcher pattern used by src/server/http.ts. */
+describe('/authorize JSON-RPC dispatch (Copilot Studio MCP fix via skip())', () => {
+  /** Mirrors the stacked-skip pattern used by src/server/http.ts. Both `app.use`
+   *  calls pass a direct `rateLimit({...})` middleware so CodeQL's
+   *  `js/missing-rate-limiting` query can trace the dataflow on every mount.
+   *  The two limiters share the route; their `skip` predicates make exactly
+   *  one of them count any given request. */
   function buildApp(oauthCap: number, mcpCap: number) {
     const app = express();
     app.set('trust proxy', 1);
     app.use(express.json());
-    const oauthAuthorize = createAuthRateLimiter('/authorize', oauthCap);
-    const mcpRateLimit = createAuthRateLimiter('/mcp', mcpCap);
-    app.use('/authorize', (req, res, next) => {
-      const body = req.body as { jsonrpc?: unknown } | undefined;
-      if (req.method === 'POST' && body && body.jsonrpc !== undefined) {
-        return mcpRateLimit(req, res, next);
-      }
-      return oauthAuthorize(req, res, next);
-    });
-    // Same /mcp limiter instance — shared bucket
-    app.use('/mcp', mcpRateLimit);
+    // OAuth-cap limiter: skips Copilot Studio MCP JSON-RPC traffic.
+    app.use('/authorize', createAuthRateLimiter('/authorize', oauthCap, { skip: isCopilotJsonRpc }));
+    // MCP-cap limiter: only counts Copilot Studio JSON-RPC requests.
+    app.use('/authorize', createAuthRateLimiter('/mcp', mcpCap, { skip: (req) => !isCopilotJsonRpc(req) }));
+    app.use('/mcp', createAuthRateLimiter('/mcp', mcpCap));
     app.all('/authorize', (_req, res) => res.json({ ok: 'authorize' }));
     app.all('/mcp', (_req, res) => res.json({ ok: 'mcp' }));
     return app;
@@ -246,20 +244,55 @@ describe('/authorize JSON-RPC dispatch (Copilot Studio MCP fix)', () => {
     expect(results.slice(2)).toEqual([429, 429]);
   });
 
-  it('JSON-RPC /authorize and /mcp share one bucket so clients cannot double-spend by alternating', async () => {
-    // /mcp cap=4. Mix 3 calls on /authorize JSON-RPC + 3 calls on /mcp. If they shared
-    // bucket correctly: first 4 pass, last 2 hit 429. If buckets were independent,
-    // all 6 would pass.
-    const app = buildApp(2, 4);
+  it('JSON-RPC /authorize and /mcp use independent stores (separate caps each)', async () => {
+    // Trade-off documented in src/server/http.ts: each `rateLimit({...})` call gets
+    // its own MemoryStore unless we explicitly inject a shared one. With separate
+    // stores, a client alternating Copilot Studio routes effectively gets ~2× the
+    // configured cap — acceptable at default config (max(20×30, 600) × 2 = 1200/min/IP)
+    // and not worth the complexity of a custom shared store.
+    //
+    // mcpCap=3. Fire 3 JSON-RPC POSTs each to /authorize and /mcp → all 6 pass.
+    const app = buildApp(2, 3);
     const results: { path: string; status: number }[] = [];
-    const sequence = ['/authorize', '/mcp', '/authorize', '/mcp', '/authorize', '/mcp'];
+    const sequence = ['/authorize', '/authorize', '/authorize', '/mcp', '/mcp', '/mcp'];
     for (const path of sequence) {
       const r = await fireJsonPost(app, path, { jsonrpc: '2.0', id: 1, method: 'tools/list' });
       results.push({ path, status: r.status });
     }
-    const passes = results.filter((r) => r.status === 200).length;
-    const denials = results.filter((r) => r.status === 429).length;
-    expect(passes).toBe(4); // exactly the shared cap
-    expect(denials).toBe(2);
+    expect(results.every((r) => r.status === 200)).toBe(true);
+    // But each individual route still enforces its own cap.
+    const next = await fireJsonPost(app, '/authorize', { jsonrpc: '2.0', id: 4, method: 'tools/list' });
+    expect(next.status).toBe(429);
+  });
+});
+
+describe('isCopilotJsonRpc', () => {
+  function fakeReq(method: string, body: unknown): import('express').Request {
+    return { method, body } as unknown as import('express').Request;
+  }
+
+  it('true for POST with jsonrpc field', () => {
+    expect(isCopilotJsonRpc(fakeReq('POST', { jsonrpc: '2.0', method: 'tools/list' }))).toBe(true);
+  });
+
+  it('false for GET (any body)', () => {
+    expect(isCopilotJsonRpc(fakeReq('GET', { jsonrpc: '2.0' }))).toBe(false);
+  });
+
+  it('false for POST without jsonrpc field (real OAuth flow)', () => {
+    expect(isCopilotJsonRpc(fakeReq('POST', { client_id: 'foo', response_type: 'code' }))).toBe(false);
+  });
+
+  it('false for POST with no body', () => {
+    expect(isCopilotJsonRpc(fakeReq('POST', undefined))).toBe(false);
+    expect(isCopilotJsonRpc(fakeReq('POST', null))).toBe(false);
+  });
+
+  it('accepts any value for jsonrpc — including null or empty string', () => {
+    // The MCP spec says jsonrpc MUST be the string "2.0", but we treat any
+    // presence of the field as a Copilot Studio fingerprint. We let bearer auth
+    // + the MCP handler do the actual JSON-RPC validation downstream.
+    expect(isCopilotJsonRpc(fakeReq('POST', { jsonrpc: null }))).toBe(true);
+    expect(isCopilotJsonRpc(fakeReq('POST', { jsonrpc: '' }))).toBe(true);
   });
 });
