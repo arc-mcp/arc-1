@@ -1,7 +1,7 @@
 # Test Suite Audit
 
 Date: 2026-05-11
-Workspace: `/Users/marianzeis/.codex/worktrees/7d78/arc-1`
+Repository: `marianfoo/arc-1`
 Baseline commit: `85112917` (`chore(main): release 0.9.5 (#266)`)
 Target SAP system used: A4H/S4 test system via local infrastructure credentials.
 
@@ -1146,6 +1146,21 @@ Known remaining blind spots are intentional external-scope items, not unresearch
 - BTP ABAP tests were not run because this audit used the S4 test system and no BTP service key was configured in this run.
 - The transport reverse-lookup test for a transportable class still lacks a real configured class object in `Z_LLM_TEST_PACKAGE`; the package currently exposes only PROG entries in the live checks.
 - No automated cleanup of older historical SAP residue was performed. Only a best-effort cleanup attempt was made for artifacts created by the focused follow-up run, and that attempt proved the locked-ghost failure mode.
+- Supply-chain and security workflows such as Dependabot, Dependency Review, CodeQL, Docker image scanning, Trivy, and release-image gates were not part of this test-suite runtime/reliability audit.
+
+## Follow-Up Tracking
+
+No matching open GitHub tracking issues were found during PR review. File or link issues for these items before treating the audit as closed:
+
+| Priority | Follow-up | Source finding |
+|---|---|---|
+| P0 | Harden E2E fixture activation and fix the invalid CDS fixture. | Fixture Sync Activation Contract |
+| P0 | Stop CTS transport leakage and add a cleanup audit. | CTS Transport And Transportable Package Cleanup |
+| P1 | Convert pseudo-skips to real `ctx.skip()` calls and add a guard against bare skip returns. | Pseudo-Skip Discipline |
+| P1 | Repair skip telemetry, starting with the `Top Skipped Tests` label and then structured skip artifacts. | Skip Telemetry Semantics |
+| P1 | Reduce PR-path live SAP runtime for cache warmup, broad `BAPIRET2` where-used calls, recursive release coverage, and RAP write coverage. | GitHub Actions Runtime Deep Dive |
+| P1 | Fix macOS/local E2E script portability and make stop-script error detection match the active log format. | E2E Script Portability And Log Signal |
+| P2 | Align CI gating and concurrency so unit/lint/typecheck still run on docs/chore PRs while SAP-hitting jobs stay serialized. | CI Gating And SAP Serialization |
 
 ## Raw Suite Summary
 
