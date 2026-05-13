@@ -102,6 +102,42 @@ Both skills produce the same RAP artifact stack. The difference is how they get 
 | [sap-clean-core-atc](sap-clean-core-atc.md) | Audits a package of custom code and buckets every Z/Y object into Clean Core Levels A–D using mcp-sap-docs + ATC | Planning an ECC→S/4HANA Cloud or BTP move; quarterly custom-code health check |
 | [sap-unused-code](sap-unused-code.md) | Finds Z/Y objects never called at runtime using SCMON or SUSG, then cross-references static where-used | Scoping a custom-code retirement project; pre-migration dead-code cleanup (requires `SAP_ALLOW_FREE_SQL=true` + `S_TABU_NAM` on `SCMON_*`/`SUSG_*`) |
 
+### BTP CAP Modernization (Preview)
+
+End-to-end greenfield migration from classic ABAP custom code (Z* packages) to BTP-native CAP applications. Side-by-side approach — leaves the source ABAP system untouched and produces a complete target CAP project (CDS schema, services, Fiori Elements V4 app, CF deployment artifacts) for review and manual activation.
+
+| Skill | What it does | When to use |
+|---|---|---|
+| [modernize-abap-to-btp-cap](modernize-abap-to-btp-cap.md) | End-to-end migration orchestrator: Z package → BTP CAP scaffold (CDS + service + Fiori + xs-security + mta.yaml + ADRs) | Planning ECC / on-prem S/4 → BTP CAP greenfield migration |
+| [modernize-abap-cap-schema](modernize-abap-cap-schema.md) | Z-tables (SE11) → CAP CDS entities with DDIC→CDS type mapping, FK→association inference, `cuid`/`managed` aspect auto-application | Data-model migration step; standalone for reverse-engineering Z tables to CDS |
+| [modernize-abap-cap-service](modernize-abap-cap-service.md) | Z function modules / reports / classes → CAP service definitions + TypeScript handler stubs with TODO markers + ABAP source excerpts | Service-layer migration step; produces compile-clean scaffold ready for business-logic translation |
+
+#### Modernization vs Cloud-Readiness skills
+
+- [sap-clean-core-atc](sap-clean-core-atc.md) classifies whether code **can stay in ABAP and move to S/4HANA Cloud / ABAP Cloud**. Source system stays SAP.
+- [migrate-custom-code](migrate-custom-code.md) **fixes ATC findings in place** to make ABAP cloud-ready. Source system stays SAP.
+- [modernize-abap-to-btp-cap](modernize-abap-to-btp-cap.md) **rebuilds the application as BTP CAP** — leaves source ABAP untouched, produces a parallel BTP-native stack. Use when the target architecture is a CAP application, not just cloud-ready ABAP.
+
+#### Typical BTP modernization workflow
+
+```
+1. bootstrap-system-context           →  Capture source SID, release, features
+2. sap-unused-code                    →  Scope: skip dead code from migration
+3. sap-clean-core-atc                 →  Risk assessment per Z object
+4. modernize-abap-to-btp-cap          →  Generate target CAP scaffold (orchestrator)
+   ├── modernize-abap-clean-core-gap  →  (sub-skill, planned) per-edition availability
+   ├── modernize-abap-cap-schema      →  db/schema.cds
+   ├── modernize-abap-cap-service     →  srv/*.cds + handlers stubs
+   ├── modernize-abap-fiori-elements  →  (sub-skill, planned) app/<name>/
+   ├── modernize-abap-auth-mapping    →  (sub-skill, planned) xs-security.json
+   └── modernize-abap-btp-mta         →  (sub-skill, planned) mta.yaml + Dockerfile
+5. Manual: implement handler TODOs    →  Translate ABAP business logic
+6. generate-cds-unit-test             →  Test the new CAP entities
+7. mbt build + cf deploy              →  Ship to BTP CF
+```
+
+> **Status**: Preview / Work-in-Progress. Orchestrator + schema + service skills available now. Remaining sub-skills (`clean-core-gap`, `fiori-elements`, `auth-mapping`, `btp-mta`) tracked in [#TBD upstream issue]. Feedback welcome on the [PR thread].
+
 ### System Context & Local Workflow
 
 | Skill | What it does | When to use |
