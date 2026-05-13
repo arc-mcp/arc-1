@@ -1,15 +1,15 @@
 ---
 name: sap-cap-clean-core-enforce
-description: Discovery-driven Clean Core Level A enforcement audit for SAP CAP + S/4HANA projects. Scans `cds.connect.to()` runtime calls + `@cds.external` services, identifies SAP-released probe objects, builds an availability matrix (Public Cloud × Private Cloud × On-Premise) via `mcp-sap-docs`, detects catalog drift versus the project's declared compatibility policy, and suggests SAP-released replacements for non-released references. Use when asked to "verify Clean Core Level A compliance", "audit S/4 API usage", "check which S/4 services we consume are released", "are we Clean Core compliant on BTP", or "build a Clean Core compliance matrix".
+description: Discovery-driven Clean Core Level A enforcement gate for SAP CAP + S/4HANA projects. Scans `cds.connect.to()` runtime calls + `@cds.external` services, identifies SAP-released probe objects, builds an availability matrix (Public Cloud × Private Cloud × On-Premise) by consulting two authoritative sources (the SAP API release-state repository `SAP/abap-atc-cr-cv-s4hc` + the SAP API Hub at api.sap.com), detects catalog drift versus the project's declared compatibility policy, and supports an `--enforce` mode that fails CI on HIGH findings to block deployment of non-released consumption. Use when asked to "verify Clean Core Level A compliance", "audit S/4 API usage", "check which S/4 services we consume are released", "enforce Clean Core in CI", "build a Clean Core compliance matrix", or "block deployment if non-released API is consumed".
 ---
 
 # SAP CAP Clean Core Level A Enforcement
 
-Discovery-driven Clean Core Level A compliance audit for SAP CAP + S/4HANA projects. This skill **scans your CAP codebase for S/4 API consumption**, **verifies each service against the SAP API release-state repository** ([`SAP/abap-atc-cr-cv-s4hc`](https://github.com/SAP/abap-atc-cr-cv-s4hc)) on all three editions (Public Cloud, Private Cloud / RISE, On-Premise), and produces a **compliance matrix** that can be checked into the repo as compliance evidence.
+Discovery-driven Clean Core Level A enforcement for SAP CAP + S/4HANA projects. This skill **scans your CAP codebase for S/4 API consumption**, **verifies each service against two authoritative sources** — the SAP API release-state repository ([`SAP/abap-atc-cr-cv-s4hc`](https://github.com/SAP/abap-atc-cr-cv-s4hc/blob/main/README.md)) and the [SAP API Hub](https://api.sap.com/) — on all three editions (Public Cloud, Private Cloud / RISE, On-Premise), and produces a **compliance matrix** that can be checked into the repo as compliance evidence. With `--enforce`, the matrix becomes a **CI-blocking deployment gate**.
 
-Unlike [sap-clean-core-atc](../sap-clean-core-atc/SKILL.md) which classifies **ABAP custom code on the SAP side** into Levels A-D, this skill classifies **the BTP CAP application's outbound S/4 API consumption** — useful when the CAP app is the consumer and the question is "are all S/4 APIs we call actually released?".
+Unlike [sap-clean-core-atc](../sap-clean-core-atc/SKILL.md) which classifies **ABAP custom code on the SAP side** into Levels A-D, this skill classifies **the BTP CAP application's outbound S/4 API consumption** — useful when the CAP app is the consumer and the question is "are all S/4 APIs we call actually released, on all editions we deploy to?".
 
-Read-only audit, idempotent, ~5 minute run, zero side-effects on either the source SAP system or the target CAP project (unless `--apply` mode is selected).
+Default mode is **`report`** (read-only audit, idempotent, ~5 minute run). Opt into **`--apply`** for safe additive catalog corrections, or **`--enforce`** for CI-gating semantics (non-zero exit on HIGH findings).
 
 ## Smart Defaults (apply silently, do NOT ask)
 
@@ -159,6 +159,12 @@ The skill continues without crashing — untraceable services are flagged but no
 
 ## Step 4: Matrix MCP-Verified (3 editions × N services)
 
+The matrix verification consults **three authoritative sources** in priority order. Each cell of the matrix `(service × edition)` is filled from the first source that returns a definitive answer:
+
+1. **`SAP/abap-atc-cr-cv-s4hc`** — the [ABAP API Release State repository](https://github.com/SAP/abap-atc-cr-cv-s4hc/blob/main/README.md). JSON files per object class; updated by SAP product teams. **Authoritative for**: whether an ABAP object (CDS view, BAPI, RFC FM, table) is released-for-cloud-development and at what Clean Core Level. Queried via `mcp-sap-docs:sap_get_object_details` which wraps the repo.
+2. **`api.sap.com`** — the [SAP API Hub](https://api.sap.com/). **Authoritative for**: OData service lifecycle (released / sandbox / deprecated), Communication Scenario membership, version history, deprecation timeline. Queried via `mcp-sap-docs:sap_search_objects` and `WebFetch` against the API Hub HTML pages, OR scraped offline via Apify Website Content Crawler into a refreshable cache.
+3. **Project's own compatibility catalog** (e.g. `srv/integration/s4CompatibilityPolicy.js`). **Authoritative only for**: the project's *declared* availability claim — which the audit verifies against sources 1 + 2.
+
 For each `(service, probe_object)` identified, issue **3 parallel MCP queries** — one per edition:
 
 ```
@@ -169,6 +175,8 @@ mcp-sap-docs:sap_get_object_details(
   target_clean_core_level="A"
 )
 ```
+
+Cross-check the abap-atc result against the API Hub for the matching Communication Scenario. When the two sources disagree, the API Hub wins for OData service questions; the abap-atc repo wins for raw ABAP object questions. Record the resolution rationale in the report.
 
 ### Per-cell evaluation
 
@@ -312,6 +320,62 @@ When user explicitly opts in:
 
 Re-run Steps 4-6 against the updated catalog to confirm zero drift remains.
 
+## Step 9: Enforcement mode (`--enforce` flag)
+
+The skill defaults to `report` mode. With `--enforce`, it acts as a **CI-blocking deployment gate**: it exits with a non-zero status code on any HIGH finding, and the calling workflow refuses to deploy.
+
+### Contract
+
+| Mode | Exit on HIGH | Exit on MEDIUM | Exit on LOW | Use case |
+|---|---|---|---|---|
+| `report` (default) | 0 | 0 | 0 | Audit run; review the markdown report |
+| `--apply` | 0 | 0 | 0 | Audit run + apply safe additive fixes |
+| `--enforce` | **1** | 0 (warning) | 0 (info) | CI gate — pre-deployment block |
+| `--enforce --strict` | **1** | **1** | 0 | Tightest gate — block on any finding above LOW |
+
+HIGH severity criteria (the gate-blocking class):
+- A consumed S/4 service is **NOT released** for the deployment target's edition (per source 1 + 2 of Step 4).
+- A consumed service is **deprecated** with a known sunset date inside the customer's release window.
+- The catalog declares availability that MCP-verification refutes (**OVER_DECLARED** drift).
+- Direct DB-table or RFC/BAPI consumption detected against a non-released artifact.
+
+### CI integration patterns
+
+Pair this skill with `sap-cap-ci-gates-pattern` Pattern 3 (API-availability drift) for the GitHub Actions / GitLab CI / Jenkins YAML wiring. The gate runs **per-PR** (fast feedback) AND **per-deploy** (final safety net before `cf deploy` / `kubectl apply`).
+
+GitHub Actions example:
+```yaml
+- name: Clean Core Level A enforcement
+  run: |
+    npx skills run sap-cap-clean-core-enforce -- \
+      --enforce \
+      --target ${{ inputs.deployment_target }} \
+      --abap-atc-source ./.cache/abap-atc-cr-cv-s4hc \
+      --report-path docs/audit/${{ github.run_id }}-clean-core.md
+  # CI fails here if any HIGH finding remains
+```
+
+### Sources refresh discipline
+
+The two upstream sources (`abap-atc-cr-cv-s4hc` repo + `api.sap.com`) are **mutable**. They evolve as SAP releases new objects, deprecates old ones, or revises Communication Scenarios.
+
+| Source | Refresh cadence | How |
+|---|---|---|
+| `abap-atc-cr-cv-s4hc` | weekly | Cron job: `git -C .cache/abap-atc-cr-cv-s4hc pull --ff-only` |
+| `api.sap.com` snapshots | weekly (or per-PR if cheap) | Apify Website Content Crawler against the API Hub package pages — store output as JSON cache. Re-run when "stale" (>7 days) |
+
+A weekly cron in CI surfaces drift caused by SAP-side changes, not by the project's own commits. File these as "upstream drift" findings with a 90-day window to remediate (per SAP's typical deprecation timeline).
+
+### Side-by-side extension fallback
+
+When `--enforce` blocks the build on a non-released service that the project genuinely needs:
+
+1. Surface the finding as a **side-by-side extension candidate** — the consumption should move out of the CAP service into a separate extension service on BTP (or out of ABAP into BTP entirely).
+2. Cross-link to the broader Clean Core return path documented in [`../sap-cap-fiori-battle-tested-patterns/SKILL.md#311--clean-core-level-a-as-deployment-gate-not-just-an-audit`](../sap-cap-fiori-battle-tested-patterns/SKILL.md).
+3. Optionally invoke a custom-code refactor skill (e.g. a future `sap-erp-clean-core-refactor`) to plan the migration.
+
+The gate is **not** about preventing all custom logic — it's about preventing **non-released custom logic from coupling to the deployment pipeline**. Custom logic that legitimately needs to live on BTP belongs in a side-by-side extension, not in the CAP service itself.
+
 ## BTP vs On-Premise Differences
 
 | Aspect | BTP target (Public Cloud) | Private Cloud / RISE | On-Premise |
@@ -379,8 +443,20 @@ Related skills:
 
 ## References
 
-- [SAP API Release State repository](https://github.com/SAP/abap-atc-cr-cv-s4hc) — authoritative source for object classifications
-- [Clean Core principles](https://help.sap.com/docs/btp/sap-business-technology-platform/clean-core)
-- [SAP API Business Hub](https://api.sap.com)
+**Primary authoritative sources** (Step 4 verification consults both):
+
+- [SAP API Release State repository (`SAP/abap-atc-cr-cv-s4hc`)](https://github.com/SAP/abap-atc-cr-cv-s4hc/blob/main/README.md) — JSON-encoded ABAP object classifications by edition; pin / submodule into the project and refresh weekly.
+- [SAP API Hub (`api.sap.com`)](https://api.sap.com/) — OData service lifecycle, Communication Scenario membership, deprecation timeline. Scrape via Apify Website Content Crawler or query via `mcp-sap-docs:sap_search_objects` for offline matrix construction.
+
+**Methodology references**:
+
+- [Clean Core principles (BTP docs)](https://help.sap.com/docs/btp/sap-business-technology-platform/clean-core)
 - [CAP `cds.connect.to` documentation](https://cap.cloud.sap/docs/node.js/cds-connect)
 - [SAP Communication Management (S/4HANA Cloud)](https://help.sap.com/docs/SAP_S4HANA_CLOUD/0f69f8fb28ac4bf48d2b57b9637e81fa/community-management.html)
+- [SAP Clean Core extensibility guide (developers.sap.com)](https://developers.sap.com/topics/clean-core.html)
+- [SAP Custom Code Migration Guide for S/4HANA](https://help.sap.com/docs/SAP_S4HANA_ON-PREMISE/c160bf4ba0fc415da4d34d29c1547d27/d4f8e6cb9c4d4fd99b6a96b3e64dd8e2.html)
+
+**Related skills (companion gates)**:
+
+- [`../sap-cap-ci-gates-pattern/SKILL.md`](../sap-cap-ci-gates-pattern/SKILL.md) Pattern 3 — wire the `--enforce` mode into a per-PR + per-deploy CI gate.
+- [`../sap-cap-fiori-battle-tested-patterns/SKILL.md#311--clean-core-level-a-as-deployment-gate-not-just-an-audit`](../sap-cap-fiori-battle-tested-patterns/SKILL.md) — broader context on Clean Core as a deployment gate.
