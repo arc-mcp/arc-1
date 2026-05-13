@@ -100,6 +100,17 @@ Both skills produce the same RAP artifact stack. The difference is how they get 
 | [migrate-custom-code](migrate-custom-code/SKILL.md) | Runs ATC readiness checks, groups findings by priority, and generates replacement code | Preparing custom code for S/4HANA migration or ABAP Cloud readiness |
 | [sap-object-documenter](sap-object-documenter/SKILL.md) | Batch-documents many custom objects at once — purpose, style (Classic/Modern/Mixed), dependencies — as Markdown | Onboarding packages, handoffs, seeding a repo wiki (vs. explain-abap-code which is single-object interactive) |
 
+### SAP CAP Enterprise Audit (Preview)
+
+End-to-end audit and compliance verification for SAP CAP applications deployed on BTP (Cloud Foundry or Kyma) consuming S/4HANA Tier-2 services. Read-only skills that produce committable markdown reports.
+
+| Skill | What it does | When to use |
+|---|---|---|
+| [sap-cap-clean-core-enforce](sap-cap-clean-core-enforce/SKILL.md) | Discovery-driven Clean Core Level A audit. Scans `cds.connect.to()` runtime + `@cds.external` services, probes SAP API release-state repository via mcp-sap-docs, builds availability matrix (Public × Private × On-Premise), detects catalog drift, suggests SAP-released replacements | Pre-deployment audit / quarterly compliance check for CAP+S/4 stacks |
+| [sap-cap-customizing-honor](sap-cap-customizing-honor/SKILL.md) | Bidirectional CSV↔code customizing audit: forward orphans (seeded but unused) + inverse orphans (code-read but unseeded) + hardcoded business-decision sweep + master-data FK ValueList enforcement | Verifying that admin Setup UI parameters are wired to code consumers; pre-release coverage check |
+
+> **Status**: Preview / Work-in-progress. Wave 1 (Clean Core + Customizing) available now. Additional skills (Security RBAC matrix, Lifecycle matrix audit, Fiori app audit, Text polish, Stack audit orchestrator, CI gates pattern) tracked in follow-up PRs.
+
 ### Clean Core & Custom Code Retirement
 
 | Skill | What it does | When to use |
