@@ -20,6 +20,7 @@ import type { AdtClientConfig } from './config.js';
 import { defaultAdtClientConfig } from './config.js';
 import { AdtApiError, AdtSafetyError, isNotFoundError } from './errors.js';
 import { AdtHttpClient, type AdtHttpConfig } from './http.js';
+import { AdtPackageHierarchyResolver, type PackageHierarchyResolver } from './package-hierarchy.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import { Semaphore } from './semaphore.js';
 import type {
@@ -59,6 +60,7 @@ import {
   parseSearchResults,
   parseServiceBinding,
   parseSourceSearchResults,
+  parseSubpackageNodestructure,
   parseSystemInfo,
   parseTableContents,
   parseTransactionMetadata,
@@ -165,6 +167,10 @@ export class AdtClient {
    *  actual `adtcore:type` (TABL/DT vs TABL/DS). Separate from `tablUrlCache`
    *  so the two contracts don't contaminate each other. See issue #285. */
   private readonly tablWriteUrlCache = new Map<string, string>();
+  /** Lazily-instantiated DEVCLASS hierarchy resolver — only built when a subtree
+   *  allowedPackages rule is hit. Shared across `withSafety()` clones because the
+   *  hierarchy is a property of the SAP system, not of the current safety scope. */
+  private packageHierarchyResolverHolder: { resolver: PackageHierarchyResolver | null } = { resolver: null };
 
   constructor(options: Partial<AdtClientConfig> = {}) {
     const config = { ...defaultAdtClientConfig(), ...options };
@@ -208,7 +214,38 @@ export class AdtClient {
     // Share the TABL URL resolution cache — it's purely about object addressing,
     // independent of per-request safety scope.
     Object.defineProperty(clone, 'tablUrlCache', { value: this.tablUrlCache, writable: false, enumerable: false });
+    // Share the package-hierarchy resolver holder so cached subtrees survive
+    // per-request safety derivation. Wrapping in a holder lets the clone see
+    // lazy instantiations performed on the original (or another clone).
+    Object.defineProperty(clone, 'packageHierarchyResolverHolder', {
+      value: this.packageHierarchyResolverHolder,
+      writable: false,
+      enumerable: false,
+    });
     return clone;
+  }
+
+  /**
+   * Lazily build (and return) the DEVCLASS hierarchy resolver. The resolver
+   * powers `ZFOO/**` subtree rules in `allowedPackages`; reads/writes that
+   * don't trigger a subtree rule never instantiate it (zero cost).
+   *
+   * Shared across `withSafety()` clones — the hierarchy is per-SAP-system, not
+   * per-safety-scope. Cache invalidation is exposed via `invalidatePackageHierarchy()`.
+   */
+  getPackageHierarchyResolver(): PackageHierarchyResolver {
+    if (!this.packageHierarchyResolverHolder.resolver) {
+      this.packageHierarchyResolverHolder.resolver = new AdtPackageHierarchyResolver((root) =>
+        this.getSubpackages(root),
+      );
+    }
+    return this.packageHierarchyResolverHolder.resolver;
+  }
+
+  /** Invalidate the resolver cache. Called after admin actions that change the
+   *  hierarchy (create_package / change_package / delete_package). */
+  invalidatePackageHierarchy(root?: string): void {
+    this.packageHierarchyResolverHolder.resolver?.invalidate(root);
   }
 
   // ─── Source Code Read Operations ──────────────────────────────────
@@ -953,6 +990,68 @@ export class AdtClient {
       description: ref.description,
       uri: ref.uri,
     }));
+  }
+
+  /**
+   * Direct sub-packages of `packageName` — names only, uppercased, deduplicated.
+   *
+   * Uses ADT's `POST /sap/bc/adt/repository/nodestructure` with
+   * `parent_type=DEVC/K`, which is the canonical primitive for "direct
+   * children of package X" — returning exactly the set of DEVCLASS rows
+   * whose `TDEVC.PARENTCL = packageName`. Verified live against S/4HANA
+   * 2023 to match `SELECT devclass FROM tdevc WHERE parentcl = ?` for
+   * a range of roots, including namespace packages (`/AIF/MAIN`) and
+   * deep subtrees (5 levels under `SABP_TOOLS`).
+   *
+   * NOTE: the previous implementation used
+   * `informationsystem/search?packageName=X&objectType=DEVC/K`, which
+   * silently ignores `packageName` and returns ~1000 unrelated packages.
+   * That bug caused `allowedPackages` `X/**` rules to silently over-grant
+   * writes to unrelated packages. See
+   * `docs/research/package-subtree-endpoints.md` for the comparative analysis.
+   *
+   * Backs the `allowedPackages` subtree-rule (`ZFOO/**`) safety gate, so any
+   * failure (network, 4xx/5xx, parse) is surfaced as an exception, NEVER as
+   * an empty list. An empty list always means "SAP returned no children" —
+   * `nodestructure` responds with HTTP 200 and an empty (or absent) body
+   * for an unknown `parent_name`.
+   *
+   * `maxResults` is preserved for API compatibility and applied as a
+   * defense-in-depth post-filter on the parsed result. `nodestructure`
+   * itself does not honour a maxResults parameter on the SAP side and
+   * returns the full child set in one round-trip.
+   */
+  async getSubpackages(packageName: string, maxResults = 1000): Promise<string[]> {
+    checkOperation(this.safety, OperationType.Read, 'GetSubpackages');
+    const limit = Math.max(1, Math.min(maxResults, 1000));
+    const enc = encodeURIComponent(packageName);
+    const url =
+      `/sap/bc/adt/repository/nodestructure` +
+      `?parent_type=${encodeURIComponent('DEVC/K')}&parent_name=${enc}&parent_tech_name=${enc}` +
+      `&withShortDescriptions=true`;
+    // ADT requires the asx:abap envelope with a TV_NODEKEY even though
+    // `parent_name` carries the actual selector. Missing the body returns HTTP 406.
+    const body =
+      `<?xml version="1.0" encoding="UTF-8"?>` +
+      `<asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0">` +
+      `<asx:values><DATA><TV_NODEKEY>000000</TV_NODEKEY></DATA></asx:values>` +
+      `</asx:abap>`;
+    const resp = await this.http.post(url, body, 'application/vnd.sap.as+xml; charset=UTF-8; dataname=null', {
+      Accept: 'application/vnd.sap.as+xml',
+    });
+    const names = parseSubpackageNodestructure(resp.body);
+    const upperSelf = packageName.toUpperCase();
+    // parseSubpackageNodestructure already filters to DEVC/K, drops empty names,
+    // uppercases, and dedupes. Here we additionally exclude the queried package
+    // itself (defensive — `nodestructure` does not normally include it under
+    // its own subtree) and apply the maxResults cap.
+    const out: string[] = [];
+    for (const name of names) {
+      if (name === upperSelf) continue;
+      out.push(name);
+      if (out.length >= limit) break;
+    }
+    return out;
   }
 
   // ─── Table Data Operations ─────────────────────────────────────────

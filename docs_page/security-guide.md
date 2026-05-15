@@ -122,7 +122,7 @@ Two ARC-1 capabilities sit outside the endorsed-development-tooling scope and re
 | `SAP_ALLOW_WRITES`                 | `false` unless writes are needed | Blocks every mutation — object writes, activation, transport writes, git writes. |
 | `SAP_ALLOW_FREE_SQL`               | `false` on sensitive systems | Blocks arbitrary SQL queries against the database via `SAPQuery`.                               |
 | `SAP_ALLOW_DATA_PREVIEW`           | `false` unless table preview is required | Blocks named table content preview.                                              |
-| `SAP_ALLOWED_PACKAGES`             | `$TMP` or `Z*,Y*,$TMP` | Restricts writes to custom-code packages. Reads are never package-gated.                           |
+| `SAP_ALLOWED_PACKAGES`             | `$TMP` or `Z*,Y*,$TMP` | Restricts writes to custom-code packages. Prefix wildcards (`Z*`), exact matches, and DEVCLASS subtree rules (`ZFOO/**` — `ZFOO` plus every transitive sub-package) are all supported; subtree resolution is fail-closed on SAP errors. Reads are never package-gated. |
 | `SAP_ALLOW_TRANSPORT_WRITES`       | `false` unless CTS needed | Opt-in for transport mutations (`SAPTransport.create`/`release`/`delete`).                           |
 | `SAP_ALLOW_GIT_WRITES`             | `false` unless Git needed | Opt-in for abapGit/gCTS mutations (`clone`/`pull`/`push`/`commit`).                                 |
 | `SAP_DENY_ACTIONS`                 | Use for fine-grained blocks | E.g. `SAPWrite.delete,SAPManage.flp_*` — overrides scope + flag checks.                              |

@@ -166,6 +166,49 @@ export function parsePackageContents(
 }
 
 /**
+ * Parse direct sub-packages from an ADT `repository/nodestructure` response
+ * for `parent_type=DEVC/K`.
+ *
+ * SAP returns one `<SEU_ADT_REPOSITORY_OBJ_NODE>` per node under
+ * `<TREE_CONTENT>`. The response also includes:
+ *   - `<OBJECT_TYPE>DEVC/KI</OBJECT_TYPE>` rows for package-interface nodes,
+ *     which are NOT subpackages — these must be filtered out.
+ *   - Placeholder rows with `<OBJECT_NAME/>` (empty) representing the queried
+ *     package itself or expandable categories — also filtered out.
+ *
+ * Returns uppercased, deduplicated DEVCLASS names in document order. An
+ * empty body (HTTP 200 with no payload — SAP's response for an unknown
+ * `parent_name`) returns `[]`. Truly malformed XML propagates as a parse
+ * exception from `fast-xml-parser`, which the caller surfaces as
+ * `AdtApiError`. We never silently return `[]` for a malformed envelope —
+ * the resolver relies on this to fail closed.
+ */
+export function parseSubpackageNodestructure(xml: string): string[] {
+  // Empty body = "no children" (e.g. unknown parent on SAP returns 200 with empty payload).
+  if (!xml || xml.trim().length === 0) return [];
+  const parsed = parseXml(xml);
+  let nodes = getDeepArray(parsed, ['abap', 'values', 'DATA', 'TREE_CONTENT', 'SEU_ADT_REPOSITORY_OBJ_NODE']);
+  if (nodes.length === 0) {
+    nodes = findDeepNodes(parsed, 'SEU_ADT_REPOSITORY_OBJ_NODE');
+  }
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const node of nodes) {
+    const type = String(node.OBJECT_TYPE ?? '');
+    // DEVC/K only — drop DEVC/KI (package interfaces) and any unexpected types.
+    if (type !== 'DEVC/K') continue;
+    const name = String(node.OBJECT_NAME ?? '')
+      .trim()
+      .toUpperCase();
+    if (!name) continue;
+    if (seen.has(name)) continue;
+    seen.add(name);
+    out.push(name);
+  }
+  return out;
+}
+
+/**
  * Parse table contents (datapreview response).
  *
  * SAP ADT returns two possible formats for data preview:

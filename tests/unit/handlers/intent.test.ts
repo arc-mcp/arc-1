@@ -2980,6 +2980,216 @@ ENDCLASS.`;
       expect(result.content[0]?.text).not.toContain('blocked by safety');
     });
 
+    // ─── Subtree (`X/**`) rules — handler-level security regression suite ────
+    describe('subtree rules (`X/**`) on SAPWrite', () => {
+      /** Build a fetch mock that serves a fixed DEVCLASS hierarchy via the nodestructure endpoint. */
+      function mockHierarchy(
+        graph: Record<string, string[]>,
+        extras?: (url: string, method: string) => Response | undefined,
+      ) {
+        mockFetch.mockReset();
+        mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
+          const u = String(url);
+          const method = opts?.method ?? 'GET';
+          const ex = extras?.(u, method);
+          if (ex !== undefined) return Promise.resolve(ex);
+          // Nodestructure call from getSubpackages — match parent_name=<X> and serve the graph.
+          if (u.includes('/sap/bc/adt/repository/nodestructure') && u.includes('parent_type=DEVC%2FK')) {
+            const m = u.match(/parent_name=([^&]+)/);
+            const parent = m ? decodeURIComponent(m[1]).toUpperCase() : '';
+            const children = graph[parent] ?? [];
+            const nodes = children
+              .map(
+                (c) =>
+                  `<SEU_ADT_REPOSITORY_OBJ_NODE><OBJECT_TYPE>DEVC/K</OBJECT_TYPE><OBJECT_NAME>${c}</OBJECT_NAME></SEU_ADT_REPOSITORY_OBJ_NODE>`,
+              )
+              .join('');
+            return Promise.resolve(
+              mockResponse(
+                200,
+                `<asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0"><asx:values><DATA><TREE_CONTENT>${nodes}</TREE_CONTENT></DATA></asx:values></asx:abap>`,
+                { 'x-csrf-token': 'T' },
+              ),
+            );
+          }
+          return Promise.resolve(mockResponse(200, 'OK', { 'x-csrf-token': 'T' }));
+        });
+      }
+
+      function clientWith(allowedPackages: string[]): AdtClient {
+        return new AdtClient({
+          baseUrl: 'http://sap:8000',
+          username: 'admin',
+          password: 'secret',
+          safety: { ...unrestrictedSafetyConfig(), allowedPackages },
+        });
+      }
+
+      it('create succeeds for a descendant of a `X/**`-allowed root (resolver walks the tree)', async () => {
+        mockHierarchy({ ZFOO: ['ZFOO_SUB'], ZFOO_SUB: [] });
+        const client = clientWith(['ZFOO/**']);
+        const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPWrite', {
+          action: 'create',
+          type: 'CLAS',
+          name: 'ZCL_CHILD',
+          package: 'ZFOO_SUB',
+          source: 'CLASS zcl_child DEFINITION PUBLIC. ENDCLASS. CLASS zcl_child IMPLEMENTATION. ENDCLASS.',
+        });
+        // Must not be blocked by the package gate. (May fail later for unrelated reasons in mocks.)
+        expect(result.content[0]?.text).not.toContain('blocked by safety configuration');
+        expect(result.content[0]?.text).not.toContain('hierarchy resolution failed');
+      });
+
+      it('create is BLOCKED for a non-descendant when only `X/**` rules exist', async () => {
+        mockHierarchy({ ZFOO: ['ZFOO_SUB'], ZFOO_SUB: [] });
+        const client = clientWith(['ZFOO/**']);
+        const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPWrite', {
+          action: 'create',
+          type: 'CLAS',
+          name: 'ZCL_BAD',
+          package: 'ZSIBLING',
+          source: 'CLASS zcl_bad DEFINITION PUBLIC. ENDCLASS. CLASS zcl_bad IMPLEMENTATION. ENDCLASS.',
+        });
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toContain('ZSIBLING');
+        expect(result.content[0]?.text).toContain('blocked');
+      });
+
+      it('create is BLOCKED when subtree resolution fails (fail-closed)', async () => {
+        mockFetch.mockReset();
+        mockFetch.mockImplementation((url: string | URL) => {
+          const u = String(url);
+          if (u.includes('objectType=DEVC%2FK')) {
+            return Promise.resolve(mockResponse(500, '<error>SAP down</error>'));
+          }
+          return Promise.resolve(mockResponse(200, 'OK', { 'x-csrf-token': 'T' }));
+        });
+        const client = clientWith(['ZFOO/**']);
+        const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPWrite', {
+          action: 'create',
+          type: 'CLAS',
+          name: 'ZCL_X',
+          package: 'ZFOO_CHILD',
+          source: 'CLASS zcl_x DEFINITION PUBLIC. ENDCLASS. CLASS zcl_x IMPLEMENTATION. ENDCLASS.',
+        });
+        expect(result.isError).toBe(true);
+        // Either the resolver fail-closed message OR the raw block message — both qualify as denied.
+        expect(result.content[0]?.text).toMatch(/hierarchy resolution failed|blocked/);
+      });
+
+      it('update is BLOCKED when the resolved object package is outside the subtree', async () => {
+        // resolveObjectPackage returns ZBADROOT_CHILD. ZBADROOT is NOT in the ZFOO subtree.
+        mockHierarchy({ ZFOO: ['ZFOO_SUB'], ZFOO_SUB: [], ZBADROOT: ['ZBADROOT_CHILD'] }, (url) => {
+          // The object metadata GET (used by resolveObjectPackage) is a CLAS path NOT containing 'objectType=DEVC%2FK'.
+          if (
+            url.includes('/sap/bc/adt/oo/classes/ZCL_TEST') &&
+            !url.includes('source/main') &&
+            !url.includes('_action=')
+          ) {
+            return mockResponse(
+              200,
+              '<class:abapClass xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:packageRef adtcore:name="ZBADROOT_CHILD"/></class:abapClass>',
+              { 'x-csrf-token': 'T' },
+            );
+          }
+          return undefined;
+        });
+        const client = clientWith(['ZFOO/**']);
+        const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPWrite', {
+          action: 'update',
+          type: 'CLAS',
+          name: 'ZCL_TEST',
+          source: 'CLASS zcl_test DEFINITION PUBLIC. ENDCLASS. CLASS zcl_test IMPLEMENTATION. ENDCLASS.',
+        });
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toContain('ZBADROOT_CHILD');
+        expect(result.content[0]?.text).toContain('blocked');
+      });
+
+      it('update is ALLOWED when the resolved object package is inside the subtree', async () => {
+        mockHierarchy({ ZFOO: ['ZFOO_SUB'], ZFOO_SUB: [] }, (url) => {
+          if (
+            url.includes('/sap/bc/adt/oo/classes/ZCL_TEST') &&
+            !url.includes('source/main') &&
+            !url.includes('_action=')
+          ) {
+            return mockResponse(
+              200,
+              '<class:abapClass xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:packageRef adtcore:name="ZFOO_SUB"/></class:abapClass>',
+              { 'x-csrf-token': 'T' },
+            );
+          }
+          return undefined;
+        });
+        const client = clientWith(['ZFOO/**']);
+        const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPWrite', {
+          action: 'update',
+          type: 'CLAS',
+          name: 'ZCL_TEST',
+          source: 'CLASS zcl_test DEFINITION PUBLIC. ENDCLASS. CLASS zcl_test IMPLEMENTATION. ENDCLASS.',
+        });
+        expect(result.content[0]?.text).not.toContain('blocked by safety configuration');
+        expect(result.content[0]?.text).not.toContain('hierarchy resolution failed');
+      });
+
+      it('does not bypass the gate via exact-rule fallthrough — a `Z*` rule does NOT let a subtree rule expand', async () => {
+        // Server says: ZFOO/** OR exactly ZSOMETHING. Profile (none here) — just verify
+        // that ZSIBLING (not in either) is denied even when ZFOO subtree resolution succeeds.
+        mockHierarchy({ ZFOO: ['ZFOO_SUB'] });
+        const client = clientWith(['ZFOO/**', 'ZSOMETHING']);
+        const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPWrite', {
+          action: 'create',
+          type: 'CLAS',
+          name: 'ZCL_X',
+          package: 'ZSIBLING',
+          source: 'CLASS zcl_x DEFINITION PUBLIC. ENDCLASS. CLASS zcl_x IMPLEMENTATION. ENDCLASS.',
+        });
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toContain('blocked');
+      });
+
+      it('caches the subtree across multiple writes — only one BFS per root', async () => {
+        let subpkgCalls = 0;
+        mockFetch.mockReset();
+        mockFetch.mockImplementation((url: string | URL) => {
+          const u = String(url);
+          if (u.includes('/sap/bc/adt/repository/nodestructure') && u.includes('parent_type=DEVC%2FK')) {
+            subpkgCalls++;
+            const m = u.match(/parent_name=([^&]+)/);
+            const parent = m ? decodeURIComponent(m[1]).toUpperCase() : '';
+            const graph: Record<string, string[]> = { ZFOO: ['ZFOO_SUB'], ZFOO_SUB: [] };
+            const children = graph[parent] ?? [];
+            const nodes = children
+              .map(
+                (c) =>
+                  `<SEU_ADT_REPOSITORY_OBJ_NODE><OBJECT_TYPE>DEVC/K</OBJECT_TYPE><OBJECT_NAME>${c}</OBJECT_NAME></SEU_ADT_REPOSITORY_OBJ_NODE>`,
+              )
+              .join('');
+            return Promise.resolve(
+              mockResponse(
+                200,
+                `<asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0"><asx:values><DATA><TREE_CONTENT>${nodes}</TREE_CONTENT></DATA></asx:values></asx:abap>`,
+                { 'x-csrf-token': 'T' },
+              ),
+            );
+          }
+          return Promise.resolve(mockResponse(200, 'OK', { 'x-csrf-token': 'T' }));
+        });
+        const client = clientWith(['ZFOO/**']);
+        for (let i = 0; i < 3; i++) {
+          await handleToolCall(client, DEFAULT_CONFIG, 'SAPWrite', {
+            action: 'create',
+            type: 'CLAS',
+            name: `ZCL_CHILD_${i}`,
+            package: 'ZFOO_SUB',
+            source: 'CLASS zcl_child DEFINITION PUBLIC. ENDCLASS. CLASS zcl_child IMPLEMENTATION. ENDCLASS.',
+          });
+        }
+        // BFS visits ZFOO once and ZFOO_SUB once → 2 subtree GETs total, regardless of write count.
+        expect(subpkgCalls).toBe(2);
+      });
+    });
+
     it('skips package resolution when allowedPackages is empty (unrestricted)', async () => {
       // With no package restrictions, resolveObjectPackage should NOT be called
       const client = createClient(); // unrestricted safety

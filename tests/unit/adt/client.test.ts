@@ -881,6 +881,201 @@ describe('AdtClient', () => {
     });
   });
 
+  describe('getSubpackages (direct DEVCLASS children — repository/nodestructure)', () => {
+    // Live fixture captured from S/4HANA 2023 (a4h.marianzeis.de):
+    //   POST /sap/bc/adt/repository/nodestructure?parent_type=DEVC/K&parent_name=SABP_UNIT
+    // The 5 returned DEVC/K children match `SELECT devclass FROM tdevc WHERE parentcl='SABP_UNIT'`.
+    const SABP_UNIT_FIXTURE = readFileSync(
+      new URL('../../fixtures/xml/nodestructure-sabp_unit-devc.xml', import.meta.url),
+      'utf8',
+    );
+    const EMPTY_FIXTURE = readFileSync(new URL('../../fixtures/xml/nodestructure-empty.xml', import.meta.url), 'utf8');
+
+    // The first mock call is the CSRF preflight; the nodestructure POST is later.
+    // Find it by URL substring so this is robust to preflight ordering.
+    const findNodestructureCall = (): [string, RequestInit] => {
+      for (const call of mockFetch.mock.calls) {
+        const url = String(call?.[0] ?? '');
+        if (url.includes('/sap/bc/adt/repository/nodestructure')) {
+          return [url, (call?.[1] as RequestInit) ?? {}];
+        }
+      }
+      throw new Error('No nodestructure call recorded — preflight only');
+    };
+
+    it('POSTs to repository/nodestructure with the expected query params', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, SABP_UNIT_FIXTURE, { 'x-csrf-token': 'T' }));
+      const client = createClient();
+      await client.getSubpackages('SABP_UNIT');
+      const [url, init] = findNodestructureCall();
+      expect(url).toContain('/sap/bc/adt/repository/nodestructure');
+      expect(url).toContain('parent_type=DEVC%2FK');
+      expect(url).toContain('parent_name=SABP_UNIT');
+      expect(url).toContain('parent_tech_name=SABP_UNIT');
+      expect(url).toContain('withShortDescriptions=true');
+      expect(init?.method).toBe('POST');
+    });
+
+    it('sends the asx:abap envelope body with TV_NODEKEY (required by SAP — missing body returns HTTP 406)', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, SABP_UNIT_FIXTURE, { 'x-csrf-token': 'T' }));
+      const client = createClient();
+      await client.getSubpackages('SABP_UNIT');
+      const [, init] = findNodestructureCall();
+      const body = String(init?.body ?? '');
+      expect(body).toContain('<asx:abap');
+      expect(body).toContain('<TV_NODEKEY>000000</TV_NODEKEY>');
+    });
+
+    it('sends Accept: application/vnd.sap.as+xml', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, SABP_UNIT_FIXTURE, { 'x-csrf-token': 'T' }));
+      const client = createClient();
+      await client.getSubpackages('SABP_UNIT');
+      const [, init] = findNodestructureCall();
+      const headers = init.headers as Record<string, string> | undefined;
+      const accept = headers?.Accept ?? headers?.accept;
+      expect(accept).toContain('application/vnd.sap.as+xml');
+    });
+
+    it('returns the exact 5 known children of SABP_UNIT from the live fixture', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, SABP_UNIT_FIXTURE, { 'x-csrf-token': 'T' }));
+      const client = createClient();
+      const subs = await client.getSubpackages('SABP_UNIT');
+      expect([...subs].sort()).toEqual([
+        'SABP_UNIT_CORE',
+        'SABP_UNIT_EXECUTION_API',
+        'SABP_UNIT_GUI',
+        'SABP_UNIT_SCRATCH',
+        'SABP_UNIT_SHARED',
+      ]);
+    });
+
+    it('returns [] for an empty body (SAP responds 200 with no payload for unknown parents)', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, EMPTY_FIXTURE, { 'x-csrf-token': 'T' }));
+      const client = createClient();
+      const subs = await client.getSubpackages('ZNO_SUCH_PKG');
+      expect(subs).toEqual([]);
+    });
+
+    it('filters out DEVC/KI (package interface) rows', async () => {
+      const MIXED = `<?xml version="1.0" encoding="utf-8"?>
+<asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0"><asx:values><DATA><TREE_CONTENT>
+<SEU_ADT_REPOSITORY_OBJ_NODE><OBJECT_TYPE>DEVC/KI</OBJECT_TYPE><OBJECT_NAME>ZFOO_IF</OBJECT_NAME></SEU_ADT_REPOSITORY_OBJ_NODE>
+<SEU_ADT_REPOSITORY_OBJ_NODE><OBJECT_TYPE>DEVC/K</OBJECT_TYPE><OBJECT_NAME>ZFOO_A</OBJECT_NAME></SEU_ADT_REPOSITORY_OBJ_NODE>
+</TREE_CONTENT></DATA></asx:values></asx:abap>`;
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, MIXED, { 'x-csrf-token': 'T' }));
+      const client = createClient();
+      const subs = await client.getSubpackages('ZFOO');
+      expect(subs).toEqual(['ZFOO_A']);
+    });
+
+    it('filters out rows with empty OBJECT_NAME (SAP placeholders for the queried package itself)', async () => {
+      const WITH_EMPTY = `<?xml version="1.0" encoding="utf-8"?>
+<asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0"><asx:values><DATA><TREE_CONTENT>
+<SEU_ADT_REPOSITORY_OBJ_NODE><OBJECT_TYPE>DEVC/K</OBJECT_TYPE><OBJECT_NAME/></SEU_ADT_REPOSITORY_OBJ_NODE>
+<SEU_ADT_REPOSITORY_OBJ_NODE><OBJECT_TYPE>DEVC/K</OBJECT_TYPE><OBJECT_NAME>ZFOO_A</OBJECT_NAME></SEU_ADT_REPOSITORY_OBJ_NODE>
+</TREE_CONTENT></DATA></asx:values></asx:abap>`;
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, WITH_EMPTY, { 'x-csrf-token': 'T' }));
+      const client = createClient();
+      const subs = await client.getSubpackages('ZFOO');
+      expect(subs).toEqual(['ZFOO_A']);
+    });
+
+    it('never returns the queried package itself (defensive self-exclusion)', async () => {
+      const SELF = `<?xml version="1.0" encoding="utf-8"?>
+<asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0"><asx:values><DATA><TREE_CONTENT>
+<SEU_ADT_REPOSITORY_OBJ_NODE><OBJECT_TYPE>DEVC/K</OBJECT_TYPE><OBJECT_NAME>ZFOO</OBJECT_NAME></SEU_ADT_REPOSITORY_OBJ_NODE>
+<SEU_ADT_REPOSITORY_OBJ_NODE><OBJECT_TYPE>DEVC/K</OBJECT_TYPE><OBJECT_NAME>ZFOO_A</OBJECT_NAME></SEU_ADT_REPOSITORY_OBJ_NODE>
+</TREE_CONTENT></DATA></asx:values></asx:abap>`;
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, SELF, { 'x-csrf-token': 'T' }));
+      const client = createClient();
+      const subs = await client.getSubpackages('ZFOO');
+      expect(subs).toEqual(['ZFOO_A']);
+    });
+
+    it('URL-encodes namespace package names (slashes become %2F)', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, EMPTY_FIXTURE, { 'x-csrf-token': 'T' }));
+      const client = createClient();
+      await client.getSubpackages('/COMPANY/THING');
+      const [url] = findNodestructureCall();
+      expect(url).toContain('parent_name=%2FCOMPANY%2FTHING');
+      expect(url).toContain('parent_tech_name=%2FCOMPANY%2FTHING');
+    });
+
+    it('propagates SAP errors as AdtApiError (does NOT silently return [])', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(500, '<error/>'));
+      const client = createClient();
+      await expect(client.getSubpackages('ZFOO')).rejects.toThrow(AdtApiError);
+    });
+  });
+
+  describe('package hierarchy resolver (lazy + shared)', () => {
+    it('getPackageHierarchyResolver instantiates lazily and returns the same instance on repeat calls', () => {
+      const client = createClient();
+      const r1 = client.getPackageHierarchyResolver();
+      const r2 = client.getPackageHierarchyResolver();
+      expect(r1).toBe(r2);
+    });
+
+    it('withSafety() clones share the same resolver instance (hierarchy is per-system, not per-scope)', () => {
+      const original = createClient();
+      const cloned = original.withSafety({
+        ...unrestrictedSafetyConfig(),
+        allowWrites: false,
+      });
+      expect(cloned.getPackageHierarchyResolver()).toBe(original.getPackageHierarchyResolver());
+    });
+
+    it('resolver is wired to client.getSubpackages — descends real subtree from the nodestructure endpoint', async () => {
+      // Mock the BFS via nodestructure: ZROOT -> [ZA], ZA -> [].
+      // All mocked responses carry x-csrf-token so the POST's CSRF preflight succeeds.
+      const CSRF = { 'x-csrf-token': 'T' };
+      mockFetch.mockReset();
+      mockFetch.mockImplementation(async (url: unknown) => {
+        const s = String(url);
+        if (s.includes('/sap/bc/adt/repository/nodestructure') && s.includes('parent_name=ZROOT')) {
+          return mockResponse(
+            200,
+            `<asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0"><asx:values><DATA><TREE_CONTENT>
+<SEU_ADT_REPOSITORY_OBJ_NODE><OBJECT_TYPE>DEVC/K</OBJECT_TYPE><OBJECT_NAME>ZA</OBJECT_NAME></SEU_ADT_REPOSITORY_OBJ_NODE>
+</TREE_CONTENT></DATA></asx:values></asx:abap>`,
+            CSRF,
+          );
+        }
+        if (s.includes('/sap/bc/adt/repository/nodestructure') && s.includes('parent_name=ZA')) {
+          return mockResponse(200, '', CSRF);
+        }
+        // CSRF preflight target — return empty body + token so the POST proceeds.
+        return mockResponse(200, '', CSRF);
+      });
+      const client = createClient();
+      const resolver = client.getPackageHierarchyResolver();
+      expect(await resolver.isDescendantOrSelf('ZROOT', 'ZA')).toBe(true);
+      expect(await resolver.isDescendantOrSelf('ZROOT', 'ZNOTHERE')).toBe(false);
+    });
+
+    it('invalidatePackageHierarchy() drops cached subtrees', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      const client = createClient();
+      const resolver = client.getPackageHierarchyResolver();
+      await resolver.isDescendantOrSelf('ZROOT', 'ZA');
+      const before = mockFetch.mock.calls.length;
+      client.invalidatePackageHierarchy();
+      await resolver.isDescendantOrSelf('ZROOT', 'ZA');
+      expect(mockFetch.mock.calls.length).toBe(before + 1);
+    });
+  });
+
   describe('lookupObjects', () => {
     const LOOKUP_RESPONSE = `<?xml version="1.0" encoding="utf-8"?>
 <adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">

@@ -6,6 +6,7 @@
 
 import { AdtApiError, AdtSafetyError, classifyGctsError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
+import type { PackageHierarchyResolver } from './package-hierarchy.js';
 import { checkGit, checkOperation, checkPackage, OperationType, type SafetyConfig } from './safety.js';
 import type {
   GctsBranch,
@@ -159,6 +160,7 @@ export async function cloneRepo(
   http: AdtHttpClient,
   safety: SafetyConfig,
   params: GctsCloneParams,
+  resolver?: PackageHierarchyResolver | null,
 ): Promise<GctsCloneResult> {
   checkOperation(safety, OperationType.Create, 'GctsCloneRepo');
   checkGit(safety, 'clone');
@@ -170,7 +172,7 @@ export async function cloneRepo(
       `GctsCloneRepo requires an explicit 'package' when allowedPackages is configured (allowed: ${JSON.stringify(safety.allowedPackages)})`,
     );
   }
-  if (params.package) checkPackage(safety, params.package);
+  if (params.package) await checkPackage(safety, params.package, resolver);
 
   const path = `${GCTS_BASE}/repository`;
   const payload = withRepoCredentials(
@@ -267,10 +269,11 @@ export async function createBranch(
   safety: SafetyConfig,
   repoId: string,
   params: GctsCreateBranchParams,
+  resolver?: PackageHierarchyResolver | null,
 ): Promise<Record<string, unknown>> {
   checkOperation(safety, OperationType.Update, 'GctsCreateBranch');
   checkGit(safety, 'create_branch');
-  if (params.package) checkPackage(safety, params.package);
+  if (params.package) await checkPackage(safety, params.package, resolver);
 
   const path = `${GCTS_BASE}/repository/${encodeURIComponent(repoId)}/branches`;
   const body = JSON.stringify({

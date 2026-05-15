@@ -23,6 +23,7 @@ import {
   parseSearchResults,
   parseServiceBinding,
   parseSourceSearchResults,
+  parseSubpackageNodestructure,
   parseSyntaxConfigurations,
   parseSystemInfo,
   parseTableContents,
@@ -453,6 +454,72 @@ describe('XML Parser', () => {
 </asx:abap>`;
       const contents = parsePackageContents(xml);
       expect(contents).toEqual([]);
+    });
+  });
+
+  // ─── parseSubpackageNodestructure ─────────────────────────────────
+  //
+  // Parses the response of `POST /sap/bc/adt/repository/nodestructure`
+  // for `parent_type=DEVC/K` and returns only the direct DEVC/K children
+  // (DEVC/KI package interfaces and placeholder rows excluded). Backs
+  // the `allowedPackages` subtree-rule (`ZFOO/**`) safety gate, so the
+  // contract is strict: only DEVC/K with non-empty OBJECT_NAME, dedup,
+  // uppercase, empty body returns [].
+  describe('parseSubpackageNodestructure', () => {
+    it('parses the live SABP_UNIT fixture into the exact 5 known children', () => {
+      // Live fixture captured from S/4HANA 2023 (a4h.marianzeis.de)
+      const xml = loadFixture('nodestructure-sabp_unit-devc.xml');
+      const names = parseSubpackageNodestructure(xml);
+      expect([...names].sort()).toEqual([
+        'SABP_UNIT_CORE',
+        'SABP_UNIT_EXECUTION_API',
+        'SABP_UNIT_GUI',
+        'SABP_UNIT_SCRATCH',
+        'SABP_UNIT_SHARED',
+      ]);
+    });
+
+    it('returns [] for an empty body (HTTP 200 with no payload — SAP response for unknown parents)', () => {
+      expect(parseSubpackageNodestructure('')).toEqual([]);
+      expect(parseSubpackageNodestructure('   \n  ')).toEqual([]);
+    });
+
+    it('returns [] when TREE_CONTENT is empty', () => {
+      const xml = `<?xml version="1.0" encoding="utf-8"?>
+<asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0">
+  <asx:values><DATA><TREE_CONTENT/></DATA></asx:values>
+</asx:abap>`;
+      expect(parseSubpackageNodestructure(xml)).toEqual([]);
+    });
+
+    it('filters out DEVC/KI (package interface) rows', () => {
+      const xml = `<?xml version="1.0" encoding="utf-8"?>
+<asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0"><asx:values><DATA><TREE_CONTENT>
+<SEU_ADT_REPOSITORY_OBJ_NODE><OBJECT_TYPE>DEVC/KI</OBJECT_TYPE><OBJECT_NAME>ZFOO_IF</OBJECT_NAME></SEU_ADT_REPOSITORY_OBJ_NODE>
+<SEU_ADT_REPOSITORY_OBJ_NODE><OBJECT_TYPE>DEVC/K</OBJECT_TYPE><OBJECT_NAME>ZFOO_A</OBJECT_NAME></SEU_ADT_REPOSITORY_OBJ_NODE>
+<SEU_ADT_REPOSITORY_OBJ_NODE><OBJECT_TYPE>CLAS/OC</OBJECT_TYPE><OBJECT_NAME>ZCL_LEAK</OBJECT_NAME></SEU_ADT_REPOSITORY_OBJ_NODE>
+</TREE_CONTENT></DATA></asx:values></asx:abap>`;
+      expect(parseSubpackageNodestructure(xml)).toEqual(['ZFOO_A']);
+    });
+
+    it('filters out rows with empty OBJECT_NAME (SAP placeholders / category rows)', () => {
+      const xml = `<?xml version="1.0" encoding="utf-8"?>
+<asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0"><asx:values><DATA><TREE_CONTENT>
+<SEU_ADT_REPOSITORY_OBJ_NODE><OBJECT_TYPE>DEVC/K</OBJECT_TYPE><OBJECT_NAME/></SEU_ADT_REPOSITORY_OBJ_NODE>
+<SEU_ADT_REPOSITORY_OBJ_NODE><OBJECT_TYPE>DEVC/K</OBJECT_TYPE><OBJECT_NAME>   </OBJECT_NAME></SEU_ADT_REPOSITORY_OBJ_NODE>
+<SEU_ADT_REPOSITORY_OBJ_NODE><OBJECT_TYPE>DEVC/K</OBJECT_TYPE><OBJECT_NAME>ZFOO_A</OBJECT_NAME></SEU_ADT_REPOSITORY_OBJ_NODE>
+</TREE_CONTENT></DATA></asx:values></asx:abap>`;
+      expect(parseSubpackageNodestructure(xml)).toEqual(['ZFOO_A']);
+    });
+
+    it('uppercases names and deduplicates', () => {
+      const xml = `<?xml version="1.0" encoding="utf-8"?>
+<asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0"><asx:values><DATA><TREE_CONTENT>
+<SEU_ADT_REPOSITORY_OBJ_NODE><OBJECT_TYPE>DEVC/K</OBJECT_TYPE><OBJECT_NAME>zfoo_a</OBJECT_NAME></SEU_ADT_REPOSITORY_OBJ_NODE>
+<SEU_ADT_REPOSITORY_OBJ_NODE><OBJECT_TYPE>DEVC/K</OBJECT_TYPE><OBJECT_NAME>ZFOO_A</OBJECT_NAME></SEU_ADT_REPOSITORY_OBJ_NODE>
+<SEU_ADT_REPOSITORY_OBJ_NODE><OBJECT_TYPE>DEVC/K</OBJECT_TYPE><OBJECT_NAME>ZFOO_B</OBJECT_NAME></SEU_ADT_REPOSITORY_OBJ_NODE>
+</TREE_CONTENT></DATA></asx:values></asx:abap>`;
+      expect(parseSubpackageNodestructure(xml)).toEqual(['ZFOO_A', 'ZFOO_B']);
     });
   });
 

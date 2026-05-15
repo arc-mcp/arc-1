@@ -6,6 +6,7 @@
 
 import { AdtApiError, classifyAbapgitError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
+import type { PackageHierarchyResolver } from './package-hierarchy.js';
 import { checkGit, checkOperation, checkPackage, OperationType, type SafetyConfig } from './safety.js';
 import type {
   AbapGitBranch,
@@ -291,10 +292,11 @@ export async function createRepo(
     user?: string;
     password?: string;
   },
+  resolver?: PackageHierarchyResolver | null,
 ): Promise<AbapGitRepo[]> {
   checkOperation(safety, OperationType.Create, 'AbapGitCreateRepo');
   checkGit(safety, 'clone');
-  checkPackage(safety, params.package);
+  await checkPackage(safety, params.package, resolver);
 
   const path = `${ABAPGIT_BASE}/repos`;
   const body = buildRepoPayloadXml(params);

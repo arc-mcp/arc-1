@@ -21,6 +21,10 @@
  */
 
 import { AdtSafetyError } from './errors.js';
+import type { PackageHierarchyResolver } from './package-hierarchy.js';
+
+/** Suffix that marks an `allowedPackages` entry as "this package + DEVCLASS subtree". */
+export const SUBTREE_SUFFIX = '/**';
 
 /**
  * Operation type codes (internal classification).
@@ -138,36 +142,130 @@ function explainOperationBlock(config: SafetyConfig, op: OperationTypeCode): str
   return 'reason: unknown';
 }
 
-/** Check if operations on a given package are allowed (write-only check). */
-export function isPackageAllowed(config: SafetyConfig, pkg: string): boolean {
-  if (listDeniesAll(config.allowedPackages)) return false;
-  if (config.allowedPackages.length === 0) return true;
+/**
+ * Static (synchronous) outcome of evaluating `allowedPackages` against `pkg`.
+ *   - 'allowed': the package matches an exact / prefix-wildcard / subtree-root rule.
+ *   - 'denied': no rule matches and no subtree rule could possibly match.
+ *   - 'needs-hierarchy': at least one `X/**` rule exists where `pkg !== X`; the
+ *     decision requires DEVCLASS hierarchy resolution. The caller MUST resolve
+ *     via `checkPackage(..., resolver)` (async) — falling back to
+ *     `isPackageAllowed`'s boolean form will treat it as DENIED (fail-closed).
+ */
+export type PackageAllowDecision = 'allowed' | 'denied' | 'needs-hierarchy';
+
+/**
+ * Evaluate the static portion of `allowedPackages`.
+ *
+ * Subtree (`X/**`) rules can only be statically resolved when the package
+ * equals the subtree root. Any other case requires hierarchy resolution and
+ * is reported as 'needs-hierarchy'.
+ */
+export function decidePackageAllowed(config: SafetyConfig, pkg: string): PackageAllowDecision {
+  if (listDeniesAll(config.allowedPackages)) return 'denied';
+  if (config.allowedPackages.length === 0) return 'allowed';
 
   const upperPkg = pkg.toUpperCase();
+  let hasSubtreeRule = false;
 
   for (const allowed of config.allowedPackages) {
     const upperAllowed = allowed.toUpperCase();
 
-    // Exact match
-    if (upperAllowed === upperPkg) return true;
+    if (upperAllowed === upperPkg) return 'allowed';
 
-    // Wildcard match: "Z*" matches "ZTEST", "ZRAY", etc.
+    if (upperAllowed.endsWith(SUBTREE_SUFFIX)) {
+      const root = upperAllowed.slice(0, -SUBTREE_SUFFIX.length);
+      // Empty root (`/**` alone, or `**` missed the leading slash) is a misconfig — ignore.
+      if (root.length === 0) continue;
+      if (root === upperPkg) return 'allowed';
+      hasSubtreeRule = true;
+      continue;
+    }
+
+    // Prefix wildcard: "Z*" matches "ZTEST", "ZRAY", etc.
     if (upperAllowed.endsWith('*')) {
       const prefix = upperAllowed.slice(0, -1);
-      if (upperPkg.startsWith(prefix)) return true;
+      if (upperPkg.startsWith(prefix)) return 'allowed';
     }
   }
 
-  return false;
+  return hasSubtreeRule ? 'needs-hierarchy' : 'denied';
 }
 
-/** Check package and throw AdtSafetyError if blocked. */
-export function checkPackage(config: SafetyConfig, pkg: string): void {
-  if (!isPackageAllowed(config, pkg)) {
+/**
+ * Synchronous, fail-closed view of `allowedPackages`. Subtree rules that need
+ * hierarchy resolution return `false` here — callers wanting the precise answer
+ * must use `checkPackage(..., resolver)` (async).
+ *
+ * Kept exported because non-write code paths (effective-policy logging,
+ * CLI display) rely on a quick synchronous check.
+ */
+export function isPackageAllowed(config: SafetyConfig, pkg: string): boolean {
+  return decidePackageAllowed(config, pkg) === 'allowed';
+}
+
+/** Extract the subtree roots from `allowedPackages` (uppercased, empty roots dropped). */
+function extractSubtreeRoots(config: SafetyConfig): string[] {
+  const roots: string[] = [];
+  for (const allowed of config.allowedPackages) {
+    const upper = allowed.toUpperCase();
+    if (!upper.endsWith(SUBTREE_SUFFIX)) continue;
+    const root = upper.slice(0, -SUBTREE_SUFFIX.length);
+    if (root.length === 0) continue;
+    roots.push(root);
+  }
+  return roots;
+}
+
+/**
+ * Check package and throw AdtSafetyError if blocked.
+ *
+ * If `allowedPackages` contains subtree (`X/**`) rules, a `resolver` is
+ * required to evaluate them. Any resolver failure is treated as DENY
+ * (fail-closed); the original failure is included in the thrown message.
+ *
+ * Reads are never package-gated; this function is only called on write paths.
+ */
+export async function checkPackage(
+  config: SafetyConfig,
+  pkg: string,
+  resolver?: PackageHierarchyResolver | null,
+): Promise<void> {
+  const decision = decidePackageAllowed(config, pkg);
+  if (decision === 'allowed') return;
+  if (decision === 'denied') {
     throw new AdtSafetyError(
       `Operations on package '${pkg}' are blocked by safety configuration (allowed: ${displayAllowList(config.allowedPackages)})`,
     );
   }
+
+  // 'needs-hierarchy' — every subtree rule must be tried.
+  if (!resolver) {
+    throw new AdtSafetyError(
+      `Operations on package '${pkg}' need DEVCLASS hierarchy resolution for a subtree allowedPackages rule, ` +
+        `but no resolver was passed to checkPackage (allowed: ${displayAllowList(config.allowedPackages)}). ` +
+        `This is an internal wiring bug — please file an issue.`,
+    );
+  }
+  const roots = extractSubtreeRoots(config);
+  const errors: string[] = [];
+  for (const root of roots) {
+    try {
+      if (await resolver.isDescendantOrSelf(root, pkg)) return;
+    } catch (err) {
+      // Capture and keep trying other roots — one root's failure must not bias
+      // decisions on unrelated roots. If ALL roots fail, the package is denied
+      // and the captured errors are surfaced.
+      errors.push(`${root}${SUBTREE_SUFFIX}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  if (errors.length > 0) {
+    throw new AdtSafetyError(
+      `Operations on package '${pkg}' blocked: DEVCLASS hierarchy resolution failed (${errors.join('; ')})`,
+    );
+  }
+  throw new AdtSafetyError(
+    `Operations on package '${pkg}' are blocked by safety configuration (allowed: ${displayAllowList(config.allowedPackages)})`,
+  );
 }
 
 /** Check if a transport is in the whitelist. */
@@ -302,13 +400,49 @@ export function deriveUserSafetyFromProfile(
     // Profile narrows server: keep profile entries that are covered by server.
     // "Covered by" means: there exists a server entry equal to the profile entry, or a
     // server wildcard that matches it.
+    //
+    // Subtree patterns ("ZFOO/**") need special handling — we cannot resolve the
+    // DEVCLASS hierarchy at config-load time without a live SAP session, so the
+    // static "covers" decision is intentionally conservative:
+    //   - server "ZFOO/**" covers profile "ZFOO"          (root is statically known)
+    //   - server "ZFOO/**" covers profile "ZFOO/**"       (identical — handled by s===p)
+    //   - server "ZFOO/**" covers profile "ZSUB"          → NO (descendant cannot be
+    //                                                      statically proven)
+    //   - server "Z*"      covers profile "ZFOO/**"       → NO (server prefix may not
+    //                                                      reach non-Z descendants of ZFOO;
+    //                                                      profile's intended scope would
+    //                                                      leak past the server ceiling)
+    //   - server "*"       covers anything (already true via s.endsWith('*') logic below)
+    //
+    // The runtime check (checkPackage) re-validates against the resolved hierarchy
+    // for any entry that survives intersection, so this layer is purely structural.
     const covers = (serverPat: string, profilePat: string): boolean => {
       const s = serverPat.toUpperCase();
       const p = profilePat.toUpperCase();
       if (s === p) return true;
+      // Server unrestricted wildcard '*' covers everything.
+      if (s === '*') return true;
+      // Profile subtree narrows to an unknown-at-config-time set. Only covered by
+      // identical server subtree (handled above) or '*' (handled above) — never by a
+      // server prefix wildcard, because the subtree may contain names that don't
+      // share the prefix.
+      if (p.endsWith(SUBTREE_SUFFIX)) return false;
+      // Server subtree: only the literal root is statically proven covered.
+      if (s.endsWith(SUBTREE_SUFFIX)) {
+        const serverRoot = s.slice(0, -SUBTREE_SUFFIX.length);
+        return p === serverRoot;
+      }
+      // Server prefix wildcard.
       if (s.endsWith('*')) {
-        const prefix = s.slice(0, -1);
-        if (p.startsWith(prefix)) return true;
+        const serverPrefix = s.slice(0, -1);
+        if (p.endsWith('*')) {
+          // Profile prefix is narrower than server prefix iff profile's literal prefix
+          // starts with the server's. E.g. server "Z*" covers profile "ZF*".
+          const profilePrefix = p.slice(0, -1);
+          return profilePrefix.startsWith(serverPrefix);
+        }
+        // Profile is exact: "ZF" is covered by "Z*".
+        return p.startsWith(serverPrefix);
       }
       return false;
     };

@@ -370,6 +370,72 @@ describe('ADT Integration Tests', () => {
     });
   });
 
+  // ─── getSubpackages (repository/nodestructure) ────────────────────
+  //
+  // Direct-child enumeration of a DEVCLASS. Backs `allowedPackages`
+  // subtree rules (`ZFOO/**`). The PREVIOUS implementation used
+  // `informationsystem/search?packageName=X&objectType=DEVC/K`, which
+  // live S/4HANA 2023 silently ignores the `packageName` filter on —
+  // returning ~1000 unrelated packages instead of children. The fix
+  // uses `POST /sap/bc/adt/repository/nodestructure`, which matches
+  // `SELECT devclass FROM tdevc WHERE parentcl = ?` exactly. These
+  // tests are the missing safety net that would have caught the bug.
+  describe('getSubpackages (repository/nodestructure)', () => {
+    it('returns the exact 5 known DEVC/K children of SABP_UNIT', async () => {
+      // SABP_UNIT is the ABAP unit-test framework root package — present
+      // on every SAP_BASIS 7.5+ system the project supports, with five
+      // stable direct children. If your test landscape has additions,
+      // the assertion uses `arrayContaining` so it tolerates a superset.
+      const subs = await client.getSubpackages('SABP_UNIT');
+      expect(subs).toEqual(
+        expect.arrayContaining([
+          'SABP_UNIT_CORE',
+          'SABP_UNIT_EXECUTION_API',
+          'SABP_UNIT_GUI',
+          'SABP_UNIT_SCRATCH',
+          'SABP_UNIT_SHARED',
+        ]),
+      );
+      // Every entry must be uppercase and not contain the parent itself.
+      expect(subs.every((n) => n === n.toUpperCase())).toBe(true);
+      expect(subs).not.toContain('SABP_UNIT');
+    });
+
+    it('returns a non-empty array for SABP_UNIT_CORE (one level deeper)', async () => {
+      // Proves BFS continuation: SABP_UNIT_CORE has its own children.
+      // We don't pin the exact set — newer SAP_BASIS releases may add
+      // more — but the array must be non-empty and uppercased.
+      const subs = await client.getSubpackages('SABP_UNIT_CORE');
+      expect(subs.length).toBeGreaterThan(0);
+      expect(subs.every((n) => n === n.toUpperCase() && n.length > 0)).toBe(true);
+      expect(new Set(subs).size).toBe(subs.length); // no duplicates
+    });
+
+    it('returns [] for a non-existent parent (not an error — SAP responds 200 with empty body)', async () => {
+      // Regression guard: the broken endpoint used to return ~1000
+      // unrelated packages for ANY query. nodestructure correctly
+      // returns an empty response when the parent does not exist.
+      const subs = await client.getSubpackages('ZNO_SUCH_PKG_99X');
+      expect(subs).toEqual([]);
+    });
+
+    it('handles namespace packages with proper URL encoding', async () => {
+      // `/AIF/MAIN` is a SAP-shipped namespace package with ~50 children
+      // on S/4HANA 2023. Verifies that the `%2FAIF%2FMAIN` URL encoding
+      // survives the round-trip and the response parses correctly.
+      const subs = await client.getSubpackages('/AIF/MAIN');
+      // The namespace package may not exist on every test system
+      // (e.g. AIF is not always installed on NW 7.5 trials).
+      if (subs.length === 0) {
+        // Accept empty as a valid skip signal — the bug we're guarding
+        // against would have returned ~1000 unrelated packages here.
+        return;
+      }
+      // Every child name should also be namespace-prefixed.
+      expect(subs.every((n) => n.startsWith('/AIF/'))).toBe(true);
+    });
+  });
+
   // ─── Read Operations ────────────────────────────────────────────
 
   describe('read operations', () => {
