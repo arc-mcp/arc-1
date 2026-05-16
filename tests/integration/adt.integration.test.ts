@@ -419,18 +419,19 @@ describe('ADT Integration Tests', () => {
       expect(subs).toEqual([]);
     });
 
-    it('handles namespace packages with proper URL encoding', async () => {
+    it('handles namespace packages with proper URL encoding', async (ctx) => {
       // `/AIF/MAIN` is a SAP-shipped namespace package with ~50 children
       // on S/4HANA 2023. Verifies that the `%2FAIF%2FMAIN` URL encoding
       // survives the round-trip and the response parses correctly.
       const subs = await client.getSubpackages('/AIF/MAIN');
       // The namespace package may not exist on every test system
-      // (e.g. AIF is not always installed on NW 7.5 trials).
-      if (subs.length === 0) {
-        // Accept empty as a valid skip signal — the bug we're guarding
-        // against would have returned ~1000 unrelated packages here.
-        return;
-      }
+      // (e.g. AIF is not always installed on NW 7.5 trials). Use a visible
+      // skip rather than a silent pass so missing coverage is auditable.
+      requireOrSkip(
+        ctx,
+        subs.length > 0 ? subs : null,
+        `${SkipReason.NO_FIXTURE} (/AIF/MAIN) — namespace package not on this system`,
+      );
       // Every child name should also be namespace-prefixed.
       expect(subs.every((n) => n.startsWith('/AIF/'))).toBe(true);
     });
