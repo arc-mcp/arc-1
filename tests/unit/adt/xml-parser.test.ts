@@ -332,7 +332,7 @@ describe('XML Parser', () => {
   // ─── parseSyntaxConfigurations ─────────────────────────────────────
 
   describe('parseSyntaxConfigurations', () => {
-    // Verbatim response captured live from a 7.57 system (see PR description).
+    // Mirrors a live 7.57 syntax-configurations response.
     const liveResponse = `<?xml version="1.0" encoding="utf-8"?>
 <abapsource:syntaxConfigurations xmlns:abapsource="http://www.sap.com/adt/abapsource">
   <abapsource:syntaxConfiguration>

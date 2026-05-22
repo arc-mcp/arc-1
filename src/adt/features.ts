@@ -160,11 +160,8 @@ export async function probeFeatures(
   }
 
   const resolved = result as unknown as ResolvedFeatures;
-  // Primary: SAP_BASIS release from the installed components feed.
-  // Fallback: when that feed is empty (no SAP_BASIS entry — observed on systems
-  // whose technical user lacks visibility into installed components), read the
-  // release from the ADT syntax-configurations endpoint instead. See
-  // detectReleaseFromSyntaxConfigurations for details.
+  // Prefer SAP_BASIS from installed components. If that feed does not expose a
+  // release, fall back to the ADT syntax configuration metadata.
   const abapRelease = systemDetection.abapRelease ?? (await detectReleaseFromSyntaxConfigurations(client));
   if (abapRelease) {
     resolved.abapRelease = abapRelease;
@@ -249,18 +246,11 @@ async function detectSystemFromComponents(client: AdtHttpClient): Promise<System
 }
 
 /**
- * Fallback release detection via the ADT syntax-configurations endpoint.
+ * Fallback release detection via ADT syntax configurations.
  *
- * Used only when `/sap/bc/adt/system/components` yields no SAP_BASIS entry —
- * observed on systems where that feed returns parseable-but-empty XML (a thin
- * or restricted technical-user view of installed components). Without this
- * fallback, `abapRelease` stays undefined and the lint config silently
- * defaults to v702, flagging every modern construct as parser_error/downport.
- *
- * The Standard ABAP entry (`version="X"`) of `/sap/bc/adt/abapsource/syntax/
- * configurations` carries the SAP_BASIS release verbatim in its `etag`
- * attribute (e.g. `etag="757"` on ABAP 7.57). The endpoint is advertised by
- * ADT discovery and needs no auth beyond basic ADT read access.
+ * Used when `/sap/bc/adt/system/components` does not expose a SAP_BASIS
+ * release. The Standard ABAP language entry (`version="X"`) carries the parser
+ * release in its link `etag` attribute, e.g. `etag="757"`.
  */
 async function detectReleaseFromSyntaxConfigurations(client: AdtHttpClient): Promise<string | undefined> {
   try {

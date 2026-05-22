@@ -272,10 +272,8 @@ export function parseInstalledComponents(
  *     ...
  *   </abapsource:syntaxConfigurations>
  *
- * The Standard ABAP entry (version="X") carries the SAP_BASIS release verbatim
- * in its link `etag` attribute (e.g. "757" on ABAP 7.57). Used by feature
- * detection as a fallback when /sap/bc/adt/system/components returns an empty
- * feed.
+ * Feature detection uses the Standard ABAP entry (version="X") as a fallback
+ * release signal when installed components do not expose SAP_BASIS.
  */
 export function parseSyntaxConfigurations(xml: string): Array<{ version: string; description: string; etag: string }> {
   const parsed = parseXml(xml);
