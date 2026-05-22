@@ -461,6 +461,78 @@ describe('Feature Detection', () => {
       expect(result.discoveryMap?.size).toBe(0);
     });
 
+    // ─── abapRelease fallback via /sap/bc/adt/abapsource/syntax/configurations ──
+
+    const syntaxConfigurationsXml = `<?xml version="1.0" encoding="utf-8"?>
+<abapsource:syntaxConfigurations xmlns:abapsource="http://www.sap.com/adt/abapsource">
+  <abapsource:syntaxConfiguration>
+    <abapsource:language>
+      <abapsource:version>X</abapsource:version>
+      <abapsource:description>Standard ABAP</abapsource:description>
+      <atom:link href="/sap/bc/adt/abapsource/parsers/rnd/grammar" rel="http://www.sap.com/adt/relations/abapsource/parser" type="text/plain" title="Standard ABAP" etag="757" xmlns:atom="http://www.w3.org/2005/Atom"/>
+    </abapsource:language>
+  </abapsource:syntaxConfiguration>
+</abapsource:syntaxConfigurations>`;
+
+    const emptyComponentsFeed = `<?xml version="1.0" encoding="utf-8"?>
+<atom:feed xmlns:atom="http://www.w3.org/2005/Atom">
+  <atom:title>Installed Components</atom:title>
+</atom:feed>`;
+
+    function mockProbeClientWithSyntaxConfigs(options: {
+      componentsBody: string;
+      syntaxConfigsBody?: string;
+    }): AdtHttpClient {
+      return {
+        get: vi.fn().mockImplementation((url: string) => {
+          if (url === '/sap/bc/adt/discovery') {
+            return Promise.resolve({ statusCode: 200, body: discoveryXml });
+          }
+          if (url === '/sap/bc/adt/system/components') {
+            return Promise.resolve({ statusCode: 200, body: options.componentsBody });
+          }
+          if (url === '/sap/bc/adt/abapsource/syntax/configurations') {
+            return Promise.resolve({
+              statusCode: 200,
+              body: options.syntaxConfigsBody ?? syntaxConfigurationsXml,
+            });
+          }
+          return Promise.resolve({ statusCode: 200, body: '' });
+        }),
+      } as unknown as AdtHttpClient;
+    }
+
+    it('falls back to syntax-configurations endpoint when components feed has no SAP_BASIS', async () => {
+      const client = mockProbeClientWithSyntaxConfigs({ componentsBody: emptyComponentsFeed });
+      const result = await probeFeatures(client, defaultConfig);
+
+      expect(result.abapRelease).toBe('757');
+      expect((client as any).get).toHaveBeenCalledWith('/sap/bc/adt/abapsource/syntax/configurations', {
+        Accept: 'application/vnd.sap.adt.syntaxconfigurations+xml',
+      });
+    });
+
+    it('skips syntax-configurations probe when components feed already yields a release', async () => {
+      const client = mockProbeClientWithSyntaxConfigs({ componentsBody: componentsXml });
+      const result = await probeFeatures(client, defaultConfig);
+
+      expect(result.abapRelease).toBe('758'); // From componentsXml (SAP_BASIS 758)
+      const calls = (client as any).get.mock.calls.map((args: unknown[]) => args[0]);
+      expect(calls).not.toContain('/sap/bc/adt/abapsource/syntax/configurations');
+    });
+
+    it('leaves abapRelease undefined when both components and syntax-configurations are empty', async () => {
+      const emptySyntaxConfigs = `<?xml version="1.0" encoding="utf-8"?>
+<abapsource:syntaxConfigurations xmlns:abapsource="http://www.sap.com/adt/abapsource"/>`;
+      const client = mockProbeClientWithSyntaxConfigs({
+        componentsBody: emptyComponentsFeed,
+        syntaxConfigsBody: emptySyntaxConfigs,
+      });
+      const result = await probeFeatures(client, defaultConfig);
+
+      expect(result.abapRelease).toBeUndefined();
+    });
+
     function makeComponentsXml(entries: Array<{ id: string; title: string }>): string {
       const items = entries
         .map(

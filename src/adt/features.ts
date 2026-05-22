@@ -23,7 +23,7 @@ import { fetchDiscoveryDocument } from './discovery.js';
 import { AdtApiError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import type { AuthProbeResult, FeatureStatus, ResolvedFeatures, SystemType } from './types.js';
-import { parseInstalledComponents } from './xml-parser.js';
+import { parseInstalledComponents, parseSyntaxConfigurations } from './xml-parser.js';
 
 /** Probe definition: which URL to check for each feature */
 interface FeatureProbe {
@@ -160,8 +160,14 @@ export async function probeFeatures(
   }
 
   const resolved = result as unknown as ResolvedFeatures;
-  if (systemDetection.abapRelease) {
-    resolved.abapRelease = systemDetection.abapRelease;
+  // Primary: SAP_BASIS release from the installed components feed.
+  // Fallback: when that feed is empty (no SAP_BASIS entry — observed on systems
+  // whose technical user lacks visibility into installed components), read the
+  // release from the ADT syntax-configurations endpoint instead. See
+  // detectReleaseFromSyntaxConfigurations for details.
+  const abapRelease = systemDetection.abapRelease ?? (await detectReleaseFromSyntaxConfigurations(client));
+  if (abapRelease) {
+    resolved.abapRelease = abapRelease;
   }
   // Apply system type: manual override takes precedence over auto-detection
   if (systemTypeOverride && systemTypeOverride !== 'auto') {
@@ -239,6 +245,33 @@ async function detectSystemFromComponents(client: AdtHttpClient): Promise<System
     };
   } catch {
     return {};
+  }
+}
+
+/**
+ * Fallback release detection via the ADT syntax-configurations endpoint.
+ *
+ * Used only when `/sap/bc/adt/system/components` yields no SAP_BASIS entry —
+ * observed on systems where that feed returns parseable-but-empty XML (a thin
+ * or restricted technical-user view of installed components). Without this
+ * fallback, `abapRelease` stays undefined and the lint config silently
+ * defaults to v702, flagging every modern construct as parser_error/downport.
+ *
+ * The Standard ABAP entry (`version="X"`) of `/sap/bc/adt/abapsource/syntax/
+ * configurations` carries the SAP_BASIS release verbatim in its `etag`
+ * attribute (e.g. `etag="757"` on ABAP 7.57). The endpoint is advertised by
+ * ADT discovery and needs no auth beyond basic ADT read access.
+ */
+async function detectReleaseFromSyntaxConfigurations(client: AdtHttpClient): Promise<string | undefined> {
+  try {
+    const resp = await client.get('/sap/bc/adt/abapsource/syntax/configurations', {
+      Accept: 'application/vnd.sap.adt.syntaxconfigurations+xml',
+    });
+    if (resp.statusCode >= 400) return undefined;
+    const configs = parseSyntaxConfigurations(resp.body);
+    return configs.find((c) => c.version === 'X')?.etag || undefined;
+  } catch {
+    return undefined;
   }
 }
 

@@ -259,6 +259,41 @@ export function parseInstalledComponents(
 }
 
 /**
+ * Parse ABAP syntax-configurations response (/sap/bc/adt/abapsource/syntax/configurations).
+ *
+ *   <abapsource:syntaxConfigurations>
+ *     <abapsource:syntaxConfiguration>
+ *       <abapsource:language>
+ *         <abapsource:version>X</abapsource:version>
+ *         <abapsource:description>Standard ABAP</abapsource:description>
+ *         <atom:link etag="757" .../>
+ *       </abapsource:language>
+ *     </abapsource:syntaxConfiguration>
+ *     ...
+ *   </abapsource:syntaxConfigurations>
+ *
+ * The Standard ABAP entry (version="X") carries the SAP_BASIS release verbatim
+ * in its link `etag` attribute (e.g. "757" on ABAP 7.57). Used by feature
+ * detection as a fallback when /sap/bc/adt/system/components returns an empty
+ * feed.
+ */
+export function parseSyntaxConfigurations(xml: string): Array<{ version: string; description: string; etag: string }> {
+  const parsed = parseXml(xml);
+  const configs = getNestedArray(parsed, 'syntaxConfigurations', 'syntaxConfiguration');
+  return configs.map((cfg: Record<string, unknown>) => {
+    const language = (cfg.language ?? {}) as Record<string, unknown>;
+    const linkRaw = language.link;
+    // `link` is forced to array by the parser config; take the first element.
+    const link = (Array.isArray(linkRaw) ? linkRaw[0] : (linkRaw ?? {})) as Record<string, unknown>;
+    return {
+      version: String(language.version ?? ''),
+      description: String(language.description ?? ''),
+      etag: String(link['@_etag'] ?? ''),
+    };
+  });
+}
+
+/**
  * Parse function group structure.
  *
  * <group name="ZGROUP" type="FUGR/F">
