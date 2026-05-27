@@ -1127,6 +1127,35 @@ These are low-risk PRs that improve observability or local usability without cha
 | 2 | Fix macOS portability in `scripts/e2e-start-local.sh` and `scripts/e2e-stop-local.sh`. | `fuser -k`, `grep -oP`, and JSON-only error matching do not match common local developer environments or the default text logger. | Makes local E2E reruns easier and makes server-error summaries trustworthy. | Run start/stop scripts locally; unit-test any parsing extracted into JS. |
 | 3 | Align CI comments/triggers and gate behavior. | The workflow comments and behavior disagree in places, and docs/chore PRs currently skip unit/lint/typecheck through the `gate` dependency. | Avoids silent loss of cheap CI signal on non-SAP changes. | Open a docs-only test PR or inspect `gate` output in `workflow_dispatch`. |
 
+### Quick Wins Implementation Update (2026-05-27)
+
+All three quick wins above were implemented in this PR after rebasing onto `origin/main` `7532503d`:
+
+- Reliability summary wording now says `Top Skipped Tests`. The script still counts skipped test titles, not structured skip reasons; structured skip artifacts remain a later improvement.
+- Local E2E scripts now avoid GNU-only `grep -P`, prefer `lsof` before Linux `fuser` for port cleanup, and use `scripts/e2e-local-utils.mjs` for health JSON parsing and log error summarization.
+- The GitHub Actions `test` job no longer depends on the SAP title gate, so npm audit, lint, typecheck, package smoke, unit tests, and coverage run on all PRs. The `gate` job now controls only SAP-heavy `integration` and `e2e` jobs. SAP-heavy jobs use repository-wide concurrency group `${{ github.repository }}-sap-live-a4h` with `cancel-in-progress: false`.
+
+Local validation after implementation:
+
+- `npm test -- tests/unit/scripts/collect-test-reliability.test.ts tests/unit/scripts/e2e-local-utils.test.ts tests/unit/workflows/test-workflow.test.ts`: 20 tests passed.
+- `bash -n scripts/e2e-start-local.sh && bash -n scripts/e2e-stop-local.sh`: passed.
+- `node scripts/e2e-local-utils.mjs` smoke checks: health parsing and text/JSON error summary worked.
+- `npm test`: 91 files / 3004 tests passed after refreshing dependencies with `npm ci`. Local `npm ci` emitted engine warnings because the local runtime was Node `22.18.0` while current dependencies request newer Node 22 patch levels; CI Node `22` and `24` both passed.
+- `npm run typecheck`, `npm run lint`, `npm run test:npx-smoke`, and `npm run btp:validate`: passed.
+
+GitHub Actions validation:
+
+- Run `26534513455` (`ci: implement test audit quick wins`) passed: `gate`, `mta-validate`, `test (22)`, `test (24)`, `integration`, `e2e`, and `reliability-summary` all succeeded.
+- The title gate worked as intended after the PR title changed from `chore:` to `ci:`: `gate` passed, both Node matrix `test` jobs ran and passed, then `integration` and `e2e` ran.
+- `integration` passed in `6m58s` with `199 passed / 41 skipped / 240 total`.
+- `e2e` passed in `14m59s` with `134 passed / 3 skipped / 137 total`.
+- The E2E local start script printed parsed health metadata (`Version: 0.9.6`, `Started: 2026-05-27T19:51:25.499Z`), proving the Node health parser replaced the prior `grep -P` path correctly.
+- The E2E stop script reported `/tmp/arc1-e2e-logs/mcp-server.log (737 lines)` and `31 error(s)` with the last five text-format `ERROR:` log entries, proving the default text logger is now detected. The listed errors came from expected negative-path E2E assertions and did not fail the job.
+
+New observation from the validation run:
+
+- The E2E job passed but consumed the full `15` minute job budget (`14m59s`). Runtime reduction remains urgent before adding more E2E coverage or relying on this lane under normal CI variability.
+
 ### Correctness Blockers
 
 These should be fixed before runtime optimization because they determine whether green integration/E2E runs are meaningful.
@@ -1194,15 +1223,23 @@ Known remaining blind spots are intentional external-scope items, not unresearch
 
 No matching open GitHub tracking issues were found during PR review. File or link issues for these items before treating the audit as closed:
 
+Implemented quick wins in PR `#274`:
+
+| Priority | Implemented item | Source finding |
+|---|---|---|
+| P1 | Renamed reliability summary wording from `Top Skip Reasons` to `Top Skipped Tests`. | Skip Telemetry Semantics |
+| P1 | Reworked local E2E start/stop portability and made stop-script error detection handle the default text logger. | E2E Script Portability And Log Signal |
+| P2 | Split cheap CI checks from the SAP title gate and moved SAP serialization to repository-wide integration/E2E job concurrency. | CI Gating And SAP Serialization |
+
+Remaining follow-ups:
+
 | Priority | Follow-up | Source finding |
 |---|---|---|
 | P0 | Harden E2E fixture activation and fix the invalid CDS fixture. | Fixture Sync Activation Contract |
 | P0 | Stop CTS transport leakage and add a cleanup audit. | CTS Transport And Transportable Package Cleanup |
 | P1 | Convert pseudo-skips to real `ctx.skip()` calls and add a guard against bare skip returns. | Pseudo-Skip Discipline |
-| P1 | Repair skip telemetry, starting with the `Top Skipped Tests` label and then structured skip artifacts. | Skip Telemetry Semantics |
+| P1 | Add structured skip artifacts and reason extraction now that the misleading heading has been corrected. | Skip Telemetry Semantics |
 | P1 | Reduce PR-path live SAP runtime for cache warmup, broad `BAPIRET2` where-used calls, recursive release coverage, and RAP write coverage. | GitHub Actions Runtime Deep Dive |
-| P1 | Fix macOS/local E2E script portability and make stop-script error detection match the active log format. | E2E Script Portability And Log Signal |
-| P2 | Align CI gating and concurrency so unit/lint/typecheck still run on docs/chore PRs while SAP-hitting jobs stay serialized. | CI Gating And SAP Serialization |
 
 ## Raw Suite Summary
 

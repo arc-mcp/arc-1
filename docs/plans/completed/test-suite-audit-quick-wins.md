@@ -1,5 +1,7 @@
 # Test Suite Audit Quick Wins
 
+**Status:** Completed in PR `#274`; local validation and GitHub Actions run `26534513455` passed after the quick-win implementation.
+
 ## Overview
 
 This plan implements the low-risk "Quick Wins" from `docs/research/test-suite-audit-2026-05-11.md`. The changes improve test telemetry wording, make local E2E helper scripts portable across Linux and macOS, and make the GitHub Actions test workflow run cheap unit/lint/typecheck checks even when SAP-heavy jobs are skipped for `docs:` or `chore:` PRs.
@@ -66,10 +68,10 @@ Implement the smallest behavior changes first, then workflow restructuring, then
 
 The summary currently says "Top Skip Reasons" but counts skipped test titles from Vitest JSON output. Rename the table so readers do not confuse titles with structured skip reasons.
 
-- [ ] Change the generated markdown heading from `### Top Skip Reasons` to `### Top Skipped Tests`.
-- [ ] Keep the existing counting behavior unchanged; do not introduce structured reason extraction in this quick win.
-- [ ] Update unit assertions in `tests/unit/scripts/collect-test-reliability.test.ts`.
-- [ ] Run `npm test -- tests/unit/scripts/collect-test-reliability.test.ts`.
+- [x] Change the generated markdown heading from `### Top Skip Reasons` to `### Top Skipped Tests`.
+- [x] Keep the existing counting behavior unchanged; do not introduce structured reason extraction in this quick win.
+- [x] Update unit assertions in `tests/unit/scripts/collect-test-reliability.test.ts`.
+- [x] Run `npm test -- tests/unit/scripts/collect-test-reliability.test.ts`.
 
 ### Task 2: Add portable E2E local helper and update scripts
 
@@ -81,14 +83,14 @@ The summary currently says "Top Skip Reasons" but counts skipped test titles fro
 
 The local E2E scripts should work on macOS and Linux without GNU-only grep features and should detect errors in both JSON and default text log formats.
 
-- [ ] Add `scripts/e2e-local-utils.mjs` with exported helpers for reading a field from health JSON and summarizing error log lines.
-- [ ] The health parser must return `unknown` for missing or malformed JSON fields.
-- [ ] The log helper must count JSON error entries containing `"level":"error"` and text logger entries containing `] ERROR:`.
-- [ ] Update `scripts/e2e-start-local.sh` to prefer `lsof -tiTCP:${MCP_PORT} -sTCP:LISTEN` for port cleanup, then fall back to `fuser -k`.
-- [ ] Update `scripts/e2e-start-local.sh` to parse `version` and `startedAt` through the Node helper instead of `grep -oP`.
-- [ ] Update `scripts/e2e-stop-local.sh` to print log line count and last error lines through the Node helper.
-- [ ] Add unit tests covering health field extraction, malformed health JSON, JSON error logs, text error logs, and last-five error truncation.
-- [ ] Run `npm test -- tests/unit/scripts/e2e-local-utils.test.ts`.
+- [x] Add `scripts/e2e-local-utils.mjs` with exported helpers for reading a field from health JSON and summarizing error log lines.
+- [x] The health parser must return `unknown` for missing or malformed JSON fields.
+- [x] The log helper must count JSON error entries containing `"level":"error"` and text logger entries containing `] ERROR:`.
+- [x] Update `scripts/e2e-start-local.sh` to prefer `lsof -tiTCP:${MCP_PORT} -sTCP:LISTEN` for port cleanup, then fall back to `fuser -k`.
+- [x] Update `scripts/e2e-start-local.sh` to parse `version` and `startedAt` through the Node helper instead of `grep -oP`.
+- [x] Update `scripts/e2e-stop-local.sh` to print log line count and last error lines through the Node helper.
+- [x] Add unit tests covering health field extraction, malformed health JSON, JSON error logs, text error logs, and last-five error truncation.
+- [x] Run `npm test -- tests/unit/scripts/e2e-local-utils.test.ts`.
 
 ### Task 3: Keep cheap CI checks outside the SAP gate
 
@@ -98,14 +100,14 @@ The local E2E scripts should work on macOS and Linux without GNU-only grep featu
 
 The `gate` job should guard only SAP-heavy jobs. Unit tests, lint, typecheck, npm audit, and package smoke checks should run on all PRs and manual dispatches, including `docs:` and `chore:` PRs.
 
-- [ ] Remove `needs: gate` from the `test` job so cheap checks always run.
-- [ ] Keep the `gate` job title-based skip behavior for SAP-heavy jobs.
-- [ ] Add `needs: [test, gate]` and `needs.gate.result == 'success'` checks to `integration` so SAP integration runs only when the gate passes and the unit/lint job succeeds.
-- [ ] Add `gate` to the `e2e` dependencies and require `needs.gate.result == 'success'` in the E2E job condition.
-- [ ] Move repository-wide SAP serialization from top-level workflow concurrency to `integration` and `e2e` jobs with group `${{ github.repository }}-sap-live-a4h` and `cancel-in-progress: false`.
-- [ ] Update stale comments, especially the E2E "push main" comment.
-- [ ] Add static workflow tests that assert `test` does not depend on `gate`, SAP jobs do depend on `gate`, SAP jobs use repository-wide concurrency, and the E2E comment no longer claims push-to-main behavior.
-- [ ] Run `npm test -- tests/unit/workflows/test-workflow.test.ts`.
+- [x] Remove `needs: gate` from the `test` job so cheap checks always run.
+- [x] Keep the `gate` job title-based skip behavior for SAP-heavy jobs.
+- [x] Add `needs: [test, gate]` and `needs.gate.result == 'success'` checks to `integration` so SAP integration runs only when the gate passes and the unit/lint job succeeds.
+- [x] Add `gate` to the `e2e` dependencies and require `needs.gate.result == 'success'` in the E2E job condition.
+- [x] Move repository-wide SAP serialization from top-level workflow concurrency to `integration` and `e2e` jobs with group `${{ github.repository }}-sap-live-a4h` and `cancel-in-progress: false`.
+- [x] Update stale comments, especially the E2E "push main" comment.
+- [x] Add static workflow tests that assert `test` does not depend on `gate`, SAP jobs do depend on `gate`, SAP jobs use repository-wide concurrency, and the E2E comment no longer claims push-to-main behavior.
+- [x] Run `npm test -- tests/unit/workflows/test-workflow.test.ts`.
 
 ### Task 4: Document implemented quick wins
 
@@ -115,10 +117,10 @@ The `gate` job should guard only SAP-heavy jobs. Unit tests, lint, typecheck, np
 
 After implementation and local verification, the audit report should say what was implemented so future test-hardening work can start from the remaining blockers.
 
-- [ ] Add an implementation update section to the audit report for the quick wins.
-- [ ] Mark the quick-win rows as implemented or superseded by the new section without hiding the remaining P0/P1/P2 follow-ups.
-- [ ] Record validation commands and GitHub workflow observations once they are available.
-- [ ] Mark this plan's completed task checkboxes and move it to `docs/plans/completed/`.
+- [x] Add an implementation update section to the audit report for the quick wins.
+- [x] Mark the quick-win rows as implemented or superseded by the new section without hiding the remaining P0/P1/P2 follow-ups.
+- [x] Record validation commands and GitHub workflow observations once they are available.
+- [x] Mark this plan's completed task checkboxes and move it to `docs/plans/completed/`.
 
 ### Task 5: Final verification and PR readiness
 
@@ -127,13 +129,13 @@ After implementation and local verification, the audit report should say what wa
 
 Verify the implementation locally and then through GitHub Actions before marking the PR ready for review.
 
-- [ ] Run focused quick-win tests: `npm test -- tests/unit/scripts/collect-test-reliability.test.ts tests/unit/scripts/e2e-local-utils.test.ts tests/unit/workflows/test-workflow.test.ts`.
-- [ ] Run full unit suite: `npm test`.
-- [ ] Run typecheck: `npm run typecheck`.
-- [ ] Run lint: `npm run lint`.
-- [ ] Run package smoke: `npm run test:npx-smoke`.
-- [ ] Run MTA validation: `npm run btp:validate`.
-- [ ] Update the PR title to a non-`docs:`/`chore:` prefix before the final push so the workflow gate runs the SAP jobs.
-- [ ] Push the branch and monitor GitHub workflow checks.
-- [ ] If workflow checks fail, inspect logs, fix, push again, and repeat until checks pass or a real external blocker is documented.
-- [ ] Mark the draft PR ready for review after successful checks.
+- [x] Run focused quick-win tests: `npm test -- tests/unit/scripts/collect-test-reliability.test.ts tests/unit/scripts/e2e-local-utils.test.ts tests/unit/workflows/test-workflow.test.ts`.
+- [x] Run full unit suite: `npm test`.
+- [x] Run typecheck: `npm run typecheck`.
+- [x] Run lint: `npm run lint`.
+- [x] Run package smoke: `npm run test:npx-smoke`.
+- [x] Run MTA validation: `npm run btp:validate`.
+- [x] Update the PR title to a non-`docs:`/`chore:` prefix before the final push so the workflow gate runs the SAP jobs.
+- [x] Push the branch and monitor GitHub workflow checks.
+- [x] If workflow checks fail, inspect logs, fix, push again, and repeat until checks pass or a real external blocker is documented.
+- [x] Mark the draft PR ready for review after successful checks.
