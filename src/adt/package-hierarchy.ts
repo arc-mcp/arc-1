@@ -4,8 +4,9 @@
  * Pattern semantics:
  *   - `ZFOO/**` means "package `ZFOO` and every transitive sub-package whose
  *     DEVCLASS chain leads back to `ZFOO`".
- *   - SAP stores the relationship in TDEVC.PARENTCL. ADT exposes direct children
- *     via the `informationsystem/search?packageName=...&objectType=DEVC/K` endpoint.
+ *   - SAP stores the relationship in `TDEVC.PARENTCL`. ADT exposes direct
+ *     children via `POST /sap/bc/adt/repository/nodestructure`
+ *     (`AdtClient.getSubpackages`).
  *
  * Security invariants:
  *   - Resolution failure (network, permission, missing root) is fail-closed:
@@ -17,9 +18,10 @@
  *     failure for the full TTL.
  *
  * Cache lifetime:
- *   - Default 10 minutes. Override via `ARC1_PACKAGE_TREE_TTL_MS`. The cache
- *     can be invalidated manually via `invalidate(root?)` after admin actions
- *     that change the hierarchy (create_package / change_package / delete_package).
+ *   - Default 10 minutes (see `DEFAULT_TTL_MS`); overridable per-instance via
+ *     `AdtPackageHierarchyResolverOptions.ttlMs`. The cache can be invalidated
+ *     manually via `invalidate(root?)` after admin actions that change the
+ *     hierarchy (create_package / change_package / delete_package).
  */
 
 import { AdtSafetyError } from './errors.js';
