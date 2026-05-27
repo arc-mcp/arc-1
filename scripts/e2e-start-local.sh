@@ -33,8 +33,16 @@ if [ -f "$PID_FILE" ]; then
   rm -f "$PID_FILE"
 fi
 
-# Kill anything still on the port (belt-and-suspenders)
-if command -v fuser &> /dev/null; then
+# Kill anything still on the port (belt-and-suspenders). Prefer lsof because
+# it works on macOS and Linux; fuser's "<port>/tcp" form is Linux-specific.
+if command -v lsof > /dev/null 2>&1; then
+  LISTENER_PIDS=$(lsof -tiTCP:"${MCP_PORT}" -sTCP:LISTEN 2>/dev/null || true)
+  if [ -n "${LISTENER_PIDS}" ]; then
+    echo "-- Stopping process(es) listening on port ${MCP_PORT}: ${LISTENER_PIDS//$'\n'/ }"
+    kill ${LISTENER_PIDS} 2>/dev/null || true
+    sleep 1
+  fi
+elif command -v fuser > /dev/null 2>&1; then
   fuser -k "${MCP_PORT}/tcp" 2>/dev/null || true
   sleep 1
 fi
@@ -80,8 +88,8 @@ echo "-- Waiting for MCP server to become ready..."
 for i in $(seq 1 30); do
   if curl -sf "http://localhost:${MCP_PORT}/health" > /dev/null 2>&1; then
     HEALTH_JSON=$(curl -sf "http://localhost:${MCP_PORT}/health" 2>/dev/null || echo "{}")
-    HEALTH_VERSION=$(echo "${HEALTH_JSON}" | grep -oP '"version":\s*"\K[^"]+' || echo "unknown")
-    HEALTH_STARTED=$(echo "${HEALTH_JSON}" | grep -oP '"startedAt":\s*"\K[^"]+' || echo "unknown")
+    HEALTH_VERSION=$(printf '%s' "${HEALTH_JSON}" | node scripts/e2e-local-utils.mjs health-field version)
+    HEALTH_STARTED=$(printf '%s' "${HEALTH_JSON}" | node scripts/e2e-local-utils.mjs health-field startedAt)
     echo ""
     echo "======================================================================"
     echo "  MCP server ready on port ${MCP_PORT}"

@@ -38,16 +38,7 @@ echo ""
 
 # Show error summary if any
 if [ -f "${LOG_FILE}" ]; then
-  LINE_COUNT=$(wc -l < "${LOG_FILE}" | tr -d ' ')
-  echo "-- Log: ${LOG_FILE} (${LINE_COUNT} lines)"
-
-  ERROR_COUNT=$(grep -c '"level":"error"' "${LOG_FILE}" 2>/dev/null || true)
-  ERROR_COUNT=${ERROR_COUNT:-0}
-  if [ "${ERROR_COUNT}" -gt 0 ]; then
-    echo "!! Found ${ERROR_COUNT} error(s) in server log. Last 5:"
-    grep '"level":"error"' "${LOG_FILE}" | tail -5
-    echo ""
-  fi
+  node scripts/e2e-local-utils.mjs error-summary "${LOG_FILE}"
 else
   echo "-- No server log found"
 fi

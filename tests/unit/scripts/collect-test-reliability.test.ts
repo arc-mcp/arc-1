@@ -79,7 +79,7 @@ describe('collect-test-reliability', () => {
         },
       ];
       const summary = generateSummary(suiteData);
-      expect(summary).toContain('### Top Skip Reasons');
+      expect(summary).toContain('### Top Skipped Tests');
       expect(summary).toContain('| SAP system not configured | 3 |');
       expect(summary).toContain('| requires BTP environment | 2 |');
     });

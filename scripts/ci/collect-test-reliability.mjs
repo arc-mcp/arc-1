@@ -85,7 +85,7 @@ export function generateSummary(suiteData) {
     }
     const sorted = [...reasonCounts.entries()].sort((a, b) => b[1] - a[1]);
 
-    lines.push('', '### Top Skip Reasons', '');
+    lines.push('', '### Top Skipped Tests', '');
     lines.push('| Reason | Count |');
     lines.push('|--------|-------|');
     for (const [reason, count] of sorted.slice(0, 20)) {

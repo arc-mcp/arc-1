@@ -7,12 +7,6 @@ on:
   # Manual trigger so chore: PRs (and any other skipped PR) can be tested on demand.
   workflow_dispatch:
 
-# Only one SAP-hitting workflow at a time — prevents parallel runs from
-# different PRs/pushes from exhausting SAP work processes.
-concurrency:
-  group: sap-tests-${{ github.ref }}
-  cancel-in-progress: true
-
 # Minimum required GITHUB_TOKEN permissions — closes CodeQL
 # `actions/missing-workflow-permissions` alerts. All jobs only need to read
 # the repo (artifact upload via `actions/upload-artifact@v4+` does not need
@@ -38,11 +32,11 @@ jobs:
       - name: Validate mta.yaml + mta-overrides.mtaext.example
         run: npm run btp:validate
 
-  # Gates the SAP-hitting jobs below based on PR title (conventional commit
-  # prefix). Skips on `docs:` and `chore:` PRs to save SAP work processes;
-  # auto-runs for everything else (`fix:`, `feat:`, `test:`, `refactor:`,
-  # etc.). Manual dispatch always passes — chore PRs can be tested via the
-  # "Run workflow" button when needed.
+  # Gates only the SAP-hitting jobs below based on PR title (conventional
+  # commit prefix). Cheap checks in the `test` job always run. SAP jobs skip on
+  # `docs:` and `chore:` PRs to save SAP work processes; auto-run for everything
+  # else (`fix:`, `feat:`, `test:`, `refactor:`, etc.). Manual dispatch always
+  # passes — chore PRs can be tested via the "Run workflow" button when needed.
   gate:
     runs-on: ubuntu-latest
     if: |
@@ -59,7 +53,6 @@ jobs:
           echo "pr_title=${{ github.event.pull_request.title }}"
 
   test:
-    needs: gate
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -127,11 +120,16 @@ jobs:
   # Run on internal PRs and manual dispatch; skip external fork PRs (no secrets)
   integration:
     runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.repository }}-sap-live-a4h
+      cancel-in-progress: false
     if: >
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' &&
-       github.event.pull_request.head.repo.full_name == github.repository)
-    needs: test
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       needs.gate.result == 'success' &&
+       needs.test.result == 'success')
+    needs: [test, gate]
 
     steps:
       - uses: actions/checkout@v6
@@ -190,18 +188,22 @@ jobs:
         run: node scripts/ci/collect-test-reliability.mjs --results-dir test-results
         continue-on-error: true
 
-  # Run on push (main) and internal PRs; skip external fork PRs (no secrets)
+  # Run on internal PRs and manual dispatch; skip external fork PRs (no secrets)
   # Runs AFTER integration to avoid both jobs hitting SAP simultaneously.
   # Uses always() so e2e still runs even if integration fails (SAP flakes).
   e2e:
     runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.repository }}-sap-live-a4h
+      cancel-in-progress: false
     if: >
       always() &&
+      needs.gate.result == 'success' &&
       needs.test.result == 'success' &&
       (github.event_name == 'workflow_dispatch' ||
        (github.event_name == 'pull_request' &&
         github.event.pull_request.head.repo.full_name == github.repository))
-    needs: [test, integration]
+    needs: [test, gate, integration]
     timeout-minutes: 15
 
     steps:
