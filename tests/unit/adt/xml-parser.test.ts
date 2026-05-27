@@ -23,6 +23,7 @@ import {
   parseSearchResults,
   parseServiceBinding,
   parseSourceSearchResults,
+  parseSyntaxConfigurations,
   parseSystemInfo,
   parseTableContents,
   parseTransactionMetadata,
@@ -325,6 +326,77 @@ describe('XML Parser', () => {
       const components = parseInstalledComponents(xml);
       expect(components[0]?.name).toBe('CUSTOM');
       expect(components[0]?.release).toBe('100');
+    });
+  });
+
+  // ─── parseSyntaxConfigurations ─────────────────────────────────────
+
+  describe('parseSyntaxConfigurations', () => {
+    // Mirrors a live 7.57 syntax-configurations response.
+    const liveResponse = `<?xml version="1.0" encoding="utf-8"?>
+<abapsource:syntaxConfigurations xmlns:abapsource="http://www.sap.com/adt/abapsource">
+  <abapsource:syntaxConfiguration>
+    <abapsource:language>
+      <abapsource:version>2</abapsource:version>
+      <abapsource:description>ABAP for Key Users</abapsource:description>
+      <atom:link href="/sap/bc/adt/abapsource/parsers/rnd/grammar/2" rel="http://www.sap.com/adt/relations/abapsource/parser" type="text/plain" title="ABAP for Key Users" etag="7572" xmlns:atom="http://www.w3.org/2005/Atom"/>
+    </abapsource:language>
+    <abapsource:objectUsage abapsource:restricted="true"/>
+  </abapsource:syntaxConfiguration>
+  <abapsource:syntaxConfiguration>
+    <abapsource:language>
+      <abapsource:version>5</abapsource:version>
+      <abapsource:description>ABAP for Cloud Development</abapsource:description>
+      <atom:link href="/sap/bc/adt/abapsource/parsers/rnd/grammar/5" rel="http://www.sap.com/adt/relations/abapsource/parser" type="text/plain" title="ABAP for Cloud Development" etag="7575" xmlns:atom="http://www.w3.org/2005/Atom"/>
+    </abapsource:language>
+  </abapsource:syntaxConfiguration>
+  <abapsource:syntaxConfiguration>
+    <abapsource:language>
+      <abapsource:version>X</abapsource:version>
+      <abapsource:description>Standard ABAP</abapsource:description>
+      <atom:link href="/sap/bc/adt/abapsource/parsers/rnd/grammar" rel="http://www.sap.com/adt/relations/abapsource/parser" type="text/plain" title="Standard ABAP" etag="757" xmlns:atom="http://www.w3.org/2005/Atom"/>
+    </abapsource:language>
+  </abapsource:syntaxConfiguration>
+</abapsource:syntaxConfigurations>`;
+
+    it('parses each syntax configuration entry with version, description, etag', () => {
+      const configs = parseSyntaxConfigurations(liveResponse);
+      expect(configs).toHaveLength(3);
+
+      const standard = configs.find((c) => c.version === 'X');
+      expect(standard).toEqual({
+        version: 'X',
+        description: 'Standard ABAP',
+        etag: '757',
+      });
+
+      const keyUsers = configs.find((c) => c.version === '2');
+      expect(keyUsers?.description).toBe('ABAP for Key Users');
+      expect(keyUsers?.etag).toBe('7572');
+
+      const cloud = configs.find((c) => c.version === '5');
+      expect(cloud?.description).toBe('ABAP for Cloud Development');
+      expect(cloud?.etag).toBe('7575');
+    });
+
+    it('returns empty array when the feed has no syntaxConfiguration entries', () => {
+      const xml = `<?xml version="1.0" encoding="utf-8"?>
+<abapsource:syntaxConfigurations xmlns:abapsource="http://www.sap.com/adt/abapsource"/>`;
+      expect(parseSyntaxConfigurations(xml)).toEqual([]);
+    });
+
+    it('tolerates entries with missing description', () => {
+      const xml = `<?xml version="1.0" encoding="utf-8"?>
+<abapsource:syntaxConfigurations xmlns:abapsource="http://www.sap.com/adt/abapsource">
+  <abapsource:syntaxConfiguration>
+    <abapsource:language>
+      <abapsource:version>4</abapsource:version>
+      <atom:link etag="7574" xmlns:atom="http://www.w3.org/2005/Atom"/>
+    </abapsource:language>
+  </abapsource:syntaxConfiguration>
+</abapsource:syntaxConfigurations>`;
+      const configs = parseSyntaxConfigurations(xml);
+      expect(configs).toEqual([{ version: '4', description: '', etag: '7574' }]);
     });
   });
 

@@ -5068,14 +5068,20 @@ ENDCLASS.`;
 
     it('activates a DDIC structure via TABL with structure URL in XML body', async () => {
       // Model B: structures use type='TABL'. The activate handler resolves the
-      // URL via client.resolveTablObjectUrl which probes /tables/ first then
-      // falls back to /structures/. For ZTEST_STRUCT (a DDIC structure):
-      //   call 0: GET /sap/bc/adt/ddic/tables/ZTEST_STRUCT  → 404 (probe)
-      //   call 1: GET /sap/bc/adt/ddic/structures/ZTEST_STRUCT → 200 (probe success)
-      //   call 2: POST .../activation               → 200 (activate)
+      // URL via client.resolveTablObjectUrlForWrite which asks SAP for the
+      // actual subtype (TABL/DS) and returns /structures/. See issue #285.
+      //   call 0: GET search?...&query=ZTEST_STRUCT  → returns TABL/DS
+      //   call 1: POST .../activation                → 200 (activate)
       mockFetch.mockReset();
-      mockFetch.mockResolvedValueOnce(mockResponse(404, '<?xml version="1.0"?><error/>'));
-      mockFetch.mockResolvedValueOnce(mockResponse(200, '<?xml version="1.0"?><stru/>'));
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          `<?xml version="1.0" encoding="utf-8"?>
+<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">
+  <adtcore:objectReference adtcore:uri="/sap/bc/adt/ddic/structures/ZTEST_STRUCT" adtcore:type="TABL/DS" adtcore:name="ZTEST_STRUCT"/>
+</adtcore:objectReferences>`,
+        ),
+      );
       mockFetch.mockResolvedValueOnce(
         mockResponse(
           200,
@@ -5092,9 +5098,18 @@ ENDCLASS.`;
     });
 
     it('activates a transparent table via TABL with /tables/ URL (no fallback)', async () => {
-      // For a transparent table, the /tables/ probe succeeds on the first try.
+      // For a transparent table, the write-path resolver asks SAP via search
+      // and gets back TABL/DT → routes to /tables/ deterministically.
       mockFetch.mockReset();
-      mockFetch.mockResolvedValueOnce(mockResponse(200, '<?xml version="1.0"?><tabl/>'));
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          `<?xml version="1.0" encoding="utf-8"?>
+<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">
+  <adtcore:objectReference adtcore:uri="/sap/bc/adt/ddic/tables/ZTEST_TABLE" adtcore:type="TABL/DT" adtcore:name="ZTEST_TABLE"/>
+</adtcore:objectReferences>`,
+        ),
+      );
       mockFetch.mockResolvedValueOnce(
         mockResponse(
           200,
@@ -8185,6 +8200,159 @@ ENDCLASS.`;
         true,
       );
       expect(calls.some((c) => c.method === 'POST' && c.url.includes('_action=UNLOCK'))).toBe(true);
+    });
+
+    it('refuses TABL create when /sap/bc/adt/ddic/tables/ is missing from discovery (issue #285)', async () => {
+      // Simulate NW 7.50: discovery feed only advertises /ddic/structures, not /ddic/tables.
+      // Pre-fix this 404'd at the POST collection with a confusing error; post-fix we refuse
+      // upfront with the SE11 hint.
+      setCachedFeatures({
+        abapRelease: '750',
+        systemType: 'onprem',
+        discoveryMap: new Map<string, string[]>([['/sap/bc/adt/ddic/structures', ['application/*']]]),
+      } as ResolvedFeatures);
+      try {
+        mockFetch.mockReset();
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+          action: 'create',
+          type: 'TABL',
+          name: 'ZTABL_750',
+          package: '$TMP',
+          source: "@EndUserText.label : 'NW 7.50 test'\ndefine table ztabl_750 { key client : abap.clnt; }",
+        });
+        expect(result.isError).toBe(true);
+        const message = result.content[0]?.text ?? '';
+        expect(message).toContain('Transparent table writes via ADT REST are not available');
+        expect(message).toContain('NW 7.50/7.51');
+        expect(message).toContain('SE11');
+        expect(message).toContain('TABCLASS');
+        // The handler must refuse BEFORE making any HTTP call to /tables/.
+        expect(mockFetch.mock.calls).toHaveLength(0);
+      } finally {
+        resetCachedFeatures();
+      }
+    });
+
+    it('refuses TABL update when search reports TABL/DT and /tables/ is missing (issue #285)', async () => {
+      // Update path goes through resolveTablObjectUrlForWrite. On NW 7.50 the resolver
+      // throws AdtSafetyError before any PUT can fire.
+      setCachedFeatures({
+        abapRelease: '750',
+        systemType: 'onprem',
+        discoveryMap: new Map<string, string[]>([['/sap/bc/adt/ddic/structures', ['application/*']]]),
+      } as ResolvedFeatures);
+      try {
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValueOnce(
+          mockResponse(
+            200,
+            `<?xml version="1.0" encoding="utf-8"?>
+<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">
+  <adtcore:objectReference adtcore:uri="/sap/bc/adt/vit/wb/object_type/tabldt/object_name/SCARR" adtcore:type="TABL/DT" adtcore:name="SCARR"/>
+</adtcore:objectReferences>`,
+          ),
+        );
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+          action: 'update',
+          type: 'TABL',
+          name: 'SCARR',
+          source: "@EndUserText.label : 'Hijack'\ndefine table scarr { key mandt : abap.clnt; }",
+        });
+        expect(result.isError).toBe(true);
+        const message = result.content[0]?.text ?? '';
+        expect(message).toContain('Transparent table writes via ADT REST are not available');
+        expect(message).toContain('SCARR');
+        // Only the search HTTP call should have fired — no PUT, no lock, no /structures/ contact.
+        const callUrls = mockFetch.mock.calls.map((c: unknown[]) => String(c[0]));
+        expect(callUrls.some((u) => u.includes('/source/main'))).toBe(false);
+        expect(callUrls.some((u) => u.includes('_action=LOCK'))).toBe(false);
+        expect(callUrls.some((u) => u.includes('/sap/bc/adt/ddic/structures/SCARR'))).toBe(false);
+      } finally {
+        resetCachedFeatures();
+      }
+    });
+
+    it('allows TABL update for TABL/DS structures on 7.50 (structures endpoint is available)', async () => {
+      // Structures live at /ddic/structures/ on all releases — writes must still succeed.
+      setCachedFeatures({
+        abapRelease: '750',
+        systemType: 'onprem',
+        discoveryMap: new Map<string, string[]>([['/sap/bc/adt/ddic/structures', ['application/*']]]),
+      } as ResolvedFeatures);
+      try {
+        mockFetch.mockReset();
+        const calls: Array<{ method: string; url: string }> = [];
+        mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
+          const method = opts?.method ?? 'GET';
+          const urlStr = String(url);
+          calls.push({ method, url: urlStr });
+          if (method === 'GET' && urlStr.includes('/informationsystem/search?')) {
+            return Promise.resolve(
+              mockResponse(
+                200,
+                `<?xml version="1.0" encoding="utf-8"?>
+<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">
+  <adtcore:objectReference adtcore:uri="/sap/bc/adt/ddic/structures/ZSTRU_750" adtcore:type="TABL/DS" adtcore:name="ZSTRU_750"/>
+</adtcore:objectReferences>`,
+              ),
+            );
+          }
+          if (method === 'POST' && urlStr.includes('_action=LOCK')) {
+            return Promise.resolve(
+              mockResponse(200, '<asx:values><LOCK_HANDLE>LH7</LOCK_HANDLE><CORRNR></CORRNR></asx:values>', {
+                'x-csrf-token': 'T',
+              }),
+            );
+          }
+          return Promise.resolve(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
+        });
+
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+          action: 'update',
+          type: 'TABL',
+          name: 'ZSTRU_750',
+          source: "@EndUserText.label : '7.50 struct'\ndefine type zstru_750 { mandt : abap.clnt; }",
+        });
+        expect(result.isError).toBeUndefined();
+        expect(
+          calls.some((c) => c.method === 'PUT' && c.url.includes('/sap/bc/adt/ddic/structures/ZSTRU_750/source/main')),
+        ).toBe(true);
+        // Must not have hit /tables/ — search returned TABL/DS, so the resolver picked /structures/.
+        expect(calls.some((c) => c.url.includes('/sap/bc/adt/ddic/tables/ZSTRU_750'))).toBe(false);
+      } finally {
+        resetCachedFeatures();
+      }
+    });
+
+    it('refuses TABL in batch_create when /tables/ is missing — other entries continue (issue #285)', async () => {
+      setCachedFeatures({
+        abapRelease: '750',
+        systemType: 'onprem',
+        discoveryMap: new Map<string, string[]>([['/sap/bc/adt/ddic/structures', ['application/*']]]),
+      } as ResolvedFeatures);
+      try {
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValue(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
+        const config = { ...DEFAULT_CONFIG, lintBeforeWrite: false };
+        const result = await handleToolCall(createClient(), config, 'SAPWrite', {
+          action: 'batch_create',
+          package: '$TMP',
+          objects: [
+            { type: 'DOMA', name: 'ZD_OK_750', dataType: 'CHAR', length: 1 },
+            {
+              type: 'TABL',
+              name: 'ZTABL_750_BATCH',
+              source: "@EndUserText.label : 'batch'\ndefine table ztabl_750_batch { key client : abap.clnt; }",
+            },
+          ],
+        });
+        const message = result.content[0]?.text ?? '';
+        // TABL entry must be marked failed with the SE11 hint
+        expect(message).toContain('ZTABL_750_BATCH');
+        expect(message).toContain('Transparent table writes via ADT REST are not available');
+      } finally {
+        resetCachedFeatures();
+      }
     });
 
     it('batch_create supports TABL source processing', async () => {

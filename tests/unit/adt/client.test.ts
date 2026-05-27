@@ -376,6 +376,99 @@ describe('AdtClient', () => {
     });
   });
 
+  describe('resolveTablObjectUrlForWrite (issue #285)', () => {
+    const searchResponse = (uri: string, type: string, name: string) =>
+      mockResponse(
+        200,
+        `<?xml version="1.0" encoding="utf-8"?>
+<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">
+  <adtcore:objectReference adtcore:uri="${uri}" adtcore:type="${type}" adtcore:name="${name}"/>
+</adtcore:objectReferences>`,
+      );
+
+    it('returns /tables/ URL when search reports TABL/DT and tables endpoint is available', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(searchResponse('/sap/bc/adt/ddic/tables/T000', 'TABL/DT', 'T000'));
+      const client = createClient();
+      const url = await client.resolveTablObjectUrlForWrite('T000', { tablesEndpointAvailable: true });
+      expect(url).toBe('/sap/bc/adt/ddic/tables/T000');
+    });
+
+    it('refuses TABL/DT writes when /sap/bc/adt/ddic/tables/ is unavailable (NW 7.50)', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(
+        searchResponse('/sap/bc/adt/vit/wb/object_type/tabldt/object_name/T000', 'TABL/DT', 'T000'),
+      );
+      const client = createClient();
+      await expect(client.resolveTablObjectUrlForWrite('T000', { tablesEndpointAvailable: false })).rejects.toThrow(
+        /Transparent table writes via ADT REST are not available/,
+      );
+    });
+
+    it('returns /structures/ URL when search reports TABL/DS regardless of tables availability', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(searchResponse('/sap/bc/adt/ddic/structures/BAPIRET2', 'TABL/DS', 'BAPIRET2'));
+      const client = createClient();
+      const url = await client.resolveTablObjectUrlForWrite('BAPIRET2', { tablesEndpointAvailable: false });
+      expect(url).toBe('/sap/bc/adt/ddic/structures/BAPIRET2');
+    });
+
+    it('caches the resolved write URL — second call hits no HTTP', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(searchResponse('/sap/bc/adt/ddic/tables/T000', 'TABL/DT', 'T000'));
+      const client = createClient();
+      const url1 = await client.resolveTablObjectUrlForWrite('T000', { tablesEndpointAvailable: true });
+      const url2 = await client.resolveTablObjectUrlForWrite('T000', { tablesEndpointAvailable: true });
+      expect(url1).toBe(url2);
+      expect(mockFetch.mock.calls).toHaveLength(1);
+    });
+
+    it('SE11 hint mentions NW 7.50/7.51 + the table editor landing in 7.52', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(
+        searchResponse('/sap/bc/adt/vit/wb/object_type/tabldt/object_name/SCARR', 'TABL/DT', 'SCARR'),
+      );
+      const client = createClient();
+      try {
+        await client.resolveTablObjectUrlForWrite('SCARR', { tablesEndpointAvailable: false });
+        throw new Error('expected refusal');
+      } catch (err) {
+        expect(err).toBeInstanceOf(Error);
+        const message = (err as Error).message;
+        expect(message).toContain('NW 7.50/7.51');
+        expect(message).toContain('NW 7.52');
+        expect(message).toContain('SE11');
+        expect(message).toContain('SCARR');
+        expect(message).toContain('TABCLASS');
+      }
+    });
+
+    it('falls through to the read-path resolver when search returns no match', async () => {
+      mockFetch.mockReset();
+      // search returns empty
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          '<?xml version="1.0" encoding="utf-8"?><adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core"/>',
+        ),
+      );
+      // read-path resolver probe (succeeds with /tables/)
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '<?xml version="1.0"?><tabl/>'));
+      const client = createClient();
+      const url = await client.resolveTablObjectUrlForWrite('ZNEW_TABLE', { tablesEndpointAvailable: true });
+      expect(url).toBe('/sap/bc/adt/ddic/tables/ZNEW_TABLE');
+    });
+
+    it('treats search failure as fall-through (search auth missing should not block writes)', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockRejectedValueOnce(new Error('network'));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '<?xml version="1.0"?><tabl/>'));
+      const client = createClient();
+      const url = await client.resolveTablObjectUrlForWrite('ZNEW_TABLE', { tablesEndpointAvailable: true });
+      expect(url).toBe('/sap/bc/adt/ddic/tables/ZNEW_TABLE');
+    });
+  });
+
   describe('getRevisions', () => {
     it('returns parsed revision list for a program', async () => {
       mockFetch.mockReset();

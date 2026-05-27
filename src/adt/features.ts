@@ -23,7 +23,7 @@ import { fetchDiscoveryDocument } from './discovery.js';
 import { AdtApiError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import type { AuthProbeResult, FeatureStatus, ResolvedFeatures, SystemType } from './types.js';
-import { parseInstalledComponents } from './xml-parser.js';
+import { parseInstalledComponents, parseSyntaxConfigurations } from './xml-parser.js';
 
 /** Probe definition: which URL to check for each feature */
 interface FeatureProbe {
@@ -160,8 +160,11 @@ export async function probeFeatures(
   }
 
   const resolved = result as unknown as ResolvedFeatures;
-  if (systemDetection.abapRelease) {
-    resolved.abapRelease = systemDetection.abapRelease;
+  // Prefer SAP_BASIS from installed components. If that feed does not expose a
+  // release, fall back to the ADT syntax configuration metadata.
+  const abapRelease = systemDetection.abapRelease ?? (await detectReleaseFromSyntaxConfigurations(client));
+  if (abapRelease) {
+    resolved.abapRelease = abapRelease;
   }
   // Apply system type: manual override takes precedence over auto-detection
   if (systemTypeOverride && systemTypeOverride !== 'auto') {
@@ -239,6 +242,26 @@ async function detectSystemFromComponents(client: AdtHttpClient): Promise<System
     };
   } catch {
     return {};
+  }
+}
+
+/**
+ * Fallback release detection via ADT syntax configurations.
+ *
+ * Used when `/sap/bc/adt/system/components` does not expose a SAP_BASIS
+ * release. The Standard ABAP language entry (`version="X"`) carries the parser
+ * release in its link `etag` attribute, e.g. `etag="757"`.
+ */
+async function detectReleaseFromSyntaxConfigurations(client: AdtHttpClient): Promise<string | undefined> {
+  try {
+    const resp = await client.get('/sap/bc/adt/abapsource/syntax/configurations', {
+      Accept: 'application/vnd.sap.adt.syntaxconfigurations+xml',
+    });
+    if (resp.statusCode >= 400) return undefined;
+    const configs = parseSyntaxConfigurations(resp.body);
+    return configs.find((c) => c.version === 'X')?.etag || undefined;
+  } catch {
+    return undefined;
   }
 }
 

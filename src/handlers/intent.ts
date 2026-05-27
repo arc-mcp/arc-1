@@ -1318,6 +1318,30 @@ function isBtpSystem(): boolean {
   return cachedFeatures?.systemType === 'btp';
 }
 
+/** Return whether the SAP ADT discovery feed advertises the /sap/bc/adt/ddic/tables
+ *  collection (the transparent-table editor endpoint). Absent on NW 7.50/7.51 —
+ *  SAP added it in NW 7.52 along with the new database-table editor. When the
+ *  discovery cache is empty (e.g. probe never ran, tests that bypass SAPManage),
+ *  returns `undefined` so callers can decide whether to default-allow.
+ *  See issue #285. */
+function isTablesEndpointAvailable(): boolean | undefined {
+  const map = cachedFeatures?.discoveryMap ?? cachedDiscovery;
+  if (!map || map.size === 0) return undefined;
+  return map.has('/sap/bc/adt/ddic/tables');
+}
+
+/** Stable hint surfaced when ARC-1 refuses a TABL/DT write because the connected
+ *  system does not expose /sap/bc/adt/ddic/tables/. Shared between the
+ *  resolver-driven update/delete/activate paths and the discovery-gated create
+ *  paths so the LLM always sees the same recovery instructions. */
+const TABL_DT_WRITE_UNAVAILABLE_HINT =
+  'Transparent table writes via ADT REST are not available on this system ' +
+  '(/sap/bc/adt/ddic/tables/ is not exposed — NW 7.50/7.51 ship the DDIC ' +
+  'structures endpoint only; the table editor was added in NW 7.52). ' +
+  'Use SE11 in SAPGUI, or connect ARC-1 to an SAP_BASIS ≥ 7.52 system. ' +
+  'Writing the source via /sap/bc/adt/ddic/structures/ would silently flip ' +
+  'DD02L-TABCLASS to INTTAB and corrupt the table.';
+
 /** BTP-specific error messages for unavailable operations */
 const BTP_HINTS: Record<string, string> = {
   PROG: 'Executable programs (reports) are not available on BTP ABAP Environment. Use CLAS with IF_OO_ADT_CLASSRUN for console applications.',
@@ -3477,7 +3501,21 @@ async function handleSAPWrite(
   let objectUrl: string;
   let srcUrl: string;
   if (type === 'TABL' && action !== 'create' && action !== 'batch_create') {
-    objectUrl = await client.resolveTablObjectUrl(name);
+    // Write/activate/delete: ask SAP for the actual subtype (TABL/DT vs TABL/DS)
+    // and refuse transparent-table writes on systems that don't expose
+    // /sap/bc/adt/ddic/tables/. Read-path resolveTablObjectUrl() would silently
+    // route TABL/DT to /structures/ on NW 7.50, where a PUT would corrupt
+    // DD02L-TABCLASS to INTTAB. See issue #285.
+    try {
+      objectUrl = await client.resolveTablObjectUrlForWrite(name, {
+        tablesEndpointAvailable: isTablesEndpointAvailable(),
+      });
+    } catch (resolveErr) {
+      if (resolveErr instanceof AdtSafetyError) {
+        return errorResult(resolveErr.message);
+      }
+      throw resolveErr;
+    }
     srcUrl = `${objectUrl}/source/main`;
   } else if (type === 'FUNC') {
     let group = String(args.group ?? '').trim();
@@ -3504,6 +3542,15 @@ async function handleSAPWrite(
     // Pass the resolved group through to buildCreateXml via args.group
     (args as Record<string, unknown>).group = group;
   } else {
+    // TABL create/batch_create only supports transparent tables (TABL/DT). On
+    // systems that don't expose /sap/bc/adt/ddic/tables/ (NW 7.50/7.51 — table
+    // editor added in NW 7.52) the POST would 404 with a confusing message, so
+    // refuse upfront with the SE11 hint. See issue #285.
+    if (type === 'TABL' && (action === 'create' || action === 'batch_create')) {
+      if (isTablesEndpointAvailable() === false) {
+        return errorResult(TABL_DT_WRITE_UNAVAILABLE_HINT);
+      }
+    }
     objectUrl = objectUrlForType(type, name);
     srcUrl = sourceUrlForType(type, name);
   }
@@ -4582,6 +4629,18 @@ async function handleSAPWrite(
           }
 
           // Step 1: Create the object
+          // TABL batch_create only supports transparent tables; refuse upfront
+          // on systems lacking /sap/bc/adt/ddic/tables/ (issue #285).
+          if (objType === 'TABL' && isTablesEndpointAvailable() === false) {
+            results.push({
+              type: objType,
+              name: objName,
+              packageName: objPackage,
+              status: 'failed',
+              error: TABL_DT_WRITE_UNAVAILABLE_HINT,
+            });
+            break;
+          }
           const objUrl = objectUrlForType(objType, objName);
           const createUrl = objUrl.replace(/\/[^/]+$/, '');
           const objMetadataProps = getMetadataWriteProperties(obj);
@@ -5138,7 +5197,12 @@ async function handleSAPActivate(
         const objName = String(o.name ?? '');
         let url: string;
         if (objType === 'TABL') {
-          url = await client.resolveTablObjectUrl(objName);
+          // Use the write-path resolver: refuses TABL/DT activation on systems
+          // that don't expose /sap/bc/adt/ddic/tables/ (NW 7.50/7.51), where
+          // activate would hit the wrong endpoint. See issue #285.
+          url = await client.resolveTablObjectUrlForWrite(objName, {
+            tablesEndpointAvailable: isTablesEndpointAvailable(),
+          });
         } else if (objType === 'FUNC') {
           let group = String(o.group ?? args.group ?? '').trim();
           if (!group) {
@@ -5188,15 +5252,25 @@ async function handleSAPActivate(
     );
   }
 
-  // Single activation (existing behavior). For TABL we resolve the URL because
-  // the existing object may live at /tables/ (transparent) or /structures/
-  // (DDIC structure); using the wrong one would produce a confusing 404.
+  // Single activation (existing behavior). For TABL we use the write-path
+  // resolver so transparent-table activations on NW 7.50/7.51 are refused
+  // with the SE11 hint instead of silently activating against /structures/
+  // (which would not even be the right object). See issue #285.
   // For FUNC the URL needs the parent function group baked into the path
   // (issue #250) — `objectBasePath('FUNC')` deliberately throws so generic
   // builders fail loudly. Auto-resolve the group when omitted.
   let objectUrl: string;
   if (type === 'TABL') {
-    objectUrl = await client.resolveTablObjectUrl(name);
+    try {
+      objectUrl = await client.resolveTablObjectUrlForWrite(name, {
+        tablesEndpointAvailable: isTablesEndpointAvailable(),
+      });
+    } catch (resolveErr) {
+      if (resolveErr instanceof AdtSafetyError) {
+        return errorResult(resolveErr.message);
+      }
+      throw resolveErr;
+    }
   } else if (type === 'FUNC') {
     let group = String(args.group ?? '').trim();
     if (!group) {

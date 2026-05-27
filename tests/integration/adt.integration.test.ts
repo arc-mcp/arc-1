@@ -568,6 +568,41 @@ describe('ADT Integration Tests', () => {
       expect(resolvedUrl).toMatch(/\/sap\/bc\/adt\/ddic\/(tables|structures)\/T000$/);
     });
 
+    it('resolveTablObjectUrlForWrite returns /tables/ for TABL/DT when /tables/ endpoint is available (issue #285)', async () => {
+      // The write-path resolver MUST decide endpoint by adtcore:type (TABL/DT vs
+      // TABL/DS), not by 404 probing. On a4h S/4HANA 2023 the /ddic/tables/
+      // endpoint exists, so transparent-table writes go to /tables/. On NPL 7.50
+      // /ddic/tables/ is absent — the resolver throws AdtSafetyError (covered by
+      // the next test).
+      const url = await client.resolveTablObjectUrlForWrite('T000', { tablesEndpointAvailable: true });
+      // T000 is a transparent table on every release.
+      expect(url).toBe('/sap/bc/adt/ddic/tables/T000');
+    });
+
+    it('resolveTablObjectUrlForWrite refuses TABL/DT writes when /tables/ is unavailable (issue #285)', async () => {
+      // Simulates the NW 7.50 case explicitly by passing tablesEndpointAvailable=false.
+      // Live evidence: on NPL 7.50 the ADT discovery feed lists /ddic/structures but
+      // NOT /ddic/tables. Pre-fix the resolver fell back to /structures/ silently;
+      // post-fix it refuses with the SE11 hint.
+      let captured: Error | undefined;
+      try {
+        await client.resolveTablObjectUrlForWrite('T000', { tablesEndpointAvailable: false });
+      } catch (err) {
+        captured = err as Error;
+      }
+      expect(captured).toBeDefined();
+      expect(captured?.message).toContain('Transparent table writes via ADT REST are not available');
+      expect(captured?.message).toContain('SE11');
+      expect(captured?.message).toContain('NW 7.52');
+    });
+
+    it('resolveTablObjectUrlForWrite returns /structures/ for TABL/DS regardless of tables availability', async () => {
+      // BAPIRET2 is a TABL/DS structure on every release. Even if /tables/ is unavailable,
+      // structure writes route to /structures/ — that's their canonical endpoint.
+      const url = await client.resolveTablObjectUrlForWrite('BAPIRET2', { tablesEndpointAvailable: false });
+      expect(url).toBe('/sap/bc/adt/ddic/structures/BAPIRET2');
+    });
+
     it('reads DDIC view metadata via the VIT URL (V_USR_NAME)', async (ctx) => {
       // Regression test for the "VIEW silently broken" bug fixed in PR #222
       // follow-up. Pre-fix: getView used /sap/bc/adt/ddic/views/{name}/source/main

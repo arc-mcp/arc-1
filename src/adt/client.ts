@@ -18,7 +18,7 @@
 
 import type { AdtClientConfig } from './config.js';
 import { defaultAdtClientConfig } from './config.js';
-import { AdtApiError, isNotFoundError } from './errors.js';
+import { AdtApiError, AdtSafetyError, isNotFoundError } from './errors.js';
 import { AdtHttpClient, type AdtHttpConfig } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import { Semaphore } from './semaphore.js';
@@ -156,9 +156,15 @@ export class AdtClient {
   readonly safety: SafetyConfig;
   /** The configured SAP username (from --user / SAP_USER) */
   readonly username: string;
-  /** Per-client cache of resolved TABL URLs (transparent table at /tables/, structure at /structures/).
-   *  Populated by getTabl() so subsequent write/activate paths skip the 404 retry. */
+  /** Per-client cache of resolved TABL URLs for **reads** (transparent table at
+   *  /tables/, structure at /structures/). Populated by getTabl() via the
+   *  /tables/→/structures/ 404 fallback. */
   private readonly tablUrlCache = new Map<string, string>();
+  /** Per-client cache of resolved TABL URLs for **writes / activates / deletes**.
+   *  Populated by `resolveTablObjectUrlForWrite()` after asking SAP for the
+   *  actual `adtcore:type` (TABL/DT vs TABL/DS). Separate from `tablUrlCache`
+   *  so the two contracts don't contaminate each other. See issue #285. */
+  private readonly tablWriteUrlCache = new Map<string, string>();
 
   constructor(options: Partial<AdtClientConfig> = {}) {
     const config = { ...defaultAdtClientConfig(), ...options };
@@ -467,11 +473,15 @@ export class AdtClient {
     }
   }
 
-  /** Resolve the canonical ADT URL for a TABL name (transparent table or structure).
-   *  Returns the cached URL if a previous getTabl() resolved it; otherwise probes
-   *  /tables/ first and /structures/ on 404. Result is cached per client.
-   *  Used by write/activate/delete paths where the URL must match the object's
-   *  actual location (transparent vs structure). */
+  /** Resolve the canonical ADT URL for a TABL name (transparent table or structure)
+   *  for the **read** path. Probes /tables/ first and falls back to /structures/ on
+   *  404. The source body is identical either way, so the fallback is safe for reads.
+   *  Result is cached per client.
+   *
+   *  Do NOT use this for writes/activates — on NW 7.50 the /tables/ endpoint is
+   *  absent entirely, so transparent tables (TABL/DT) fall through to /structures/
+   *  and a PUT there silently sets DD02L-TABCLASS=INTTAB (corruption). Use
+   *  `resolveTablObjectUrlForWrite()` instead. See issue #285. */
   async resolveTablObjectUrl(name: string): Promise<string> {
     const upper = name.toUpperCase();
     const cached = this.tablUrlCache.get(upper);
@@ -490,6 +500,95 @@ export class AdtClient {
       }
       throw err;
     }
+  }
+
+  /** Resolve the canonical ADT URL for a TABL name on the **write/activate/delete**
+   *  path. Unlike `resolveTablObjectUrl()`, this never falls back blindly to
+   *  /structures/ — it asks SAP what the object actually is (via repository search)
+   *  and refuses transparent-table writes on systems where /sap/bc/adt/ddic/tables/
+   *  is absent (NW 7.50 ships /ddic/structures/ only; the table editor was added
+   *  in NW 7.52). Returning /structures/ for a TABL/DT object would let a PUT
+   *  silently flip DD02L-TABCLASS to INTTAB on the inactive draft (issue #285).
+   *
+   *  Resolution order:
+   *    1. Search returns `TABL/DT` → require /tables/ availability, return /tables/<n>
+   *       or throw AdtSafetyError with SE11 hint.
+   *    2. Search returns `TABL/DS` → return /structures/<n> (always allowed).
+   *    3. Search returns nothing (or a different type) → fall through to the
+   *       read-path resolver. The caller is creating something new or the object
+   *       was just renamed; subsequent ADT calls will surface the real error.
+   *
+   *  Caches separately from the read resolver so the two contracts don't
+   *  contaminate each other. */
+  async resolveTablObjectUrlForWrite(
+    name: string,
+    options: { tablesEndpointAvailable?: boolean } = {},
+  ): Promise<string> {
+    const upper = name.toUpperCase();
+    const cached = this.tablWriteUrlCache.get(upper);
+    if (cached) {
+      // Defense-in-depth: a cached /tables/ URL must still respect the current
+      // discovery state. The cache stores resolutions, but the availability of
+      // /sap/bc/adt/ddic/tables/ is a per-system property — if it ever resolves
+      // to "missing", the cached entry must not silently bypass the guard.
+      if (cached.startsWith('/sap/bc/adt/ddic/tables/') && options.tablesEndpointAvailable === false) {
+        throw new AdtSafetyError(
+          `Transparent table writes via ADT REST are not available on this system ` +
+            `(/sap/bc/adt/ddic/tables/ is not exposed — NW 7.50/7.51 ship the DDIC ` +
+            `structures endpoint only; the table editor was added in NW 7.52). ` +
+            `Use SE11 in SAPGUI to modify transparent table "${name}", or connect ` +
+            `ARC-1 to an SAP_BASIS ≥ 7.52 system. Writing to /sap/bc/adt/ddic/structures/ ` +
+            `would silently flip DD02L-TABCLASS to INTTAB and corrupt the table.`,
+        );
+      }
+      return cached;
+    }
+
+    let actualType: string | undefined;
+    try {
+      const results = await this.searchObject(name, 5);
+      // NPL 7.50 appends a localized suffix to adtcore:name ("T000 (Database Table)",
+      // "BAPIRET2 (Structure)"), so strip parenthesized text before matching. A4H
+      // and modern releases return just the bare name; both forms must work.
+      const match = results.find((r) => {
+        const bare = String(r.objectName ?? '')
+          .replace(/\s*\(.*$/, '')
+          .toUpperCase();
+        return bare === upper;
+      });
+      actualType = match?.objectType;
+    } catch {
+      // Search failure should not block writes — fall through to the read-path
+      // resolver. If the user lacks search authorization the write will still
+      // surface its own error downstream.
+    }
+
+    const tableUrl = `/sap/bc/adt/ddic/tables/${encodeURIComponent(name)}`;
+    const structUrl = `/sap/bc/adt/ddic/structures/${encodeURIComponent(name)}`;
+
+    if (actualType === 'TABL/DT') {
+      if (options.tablesEndpointAvailable === false) {
+        throw new AdtSafetyError(
+          `Transparent table writes via ADT REST are not available on this system ` +
+            `(/sap/bc/adt/ddic/tables/ is not exposed — NW 7.50/7.51 ship the DDIC ` +
+            `structures endpoint only; the table editor was added in NW 7.52). ` +
+            `Use SE11 in SAPGUI to modify transparent table "${name}", or connect ` +
+            `ARC-1 to an SAP_BASIS ≥ 7.52 system. Writing to /sap/bc/adt/ddic/structures/ ` +
+            `would silently flip DD02L-TABCLASS to INTTAB and corrupt the table.`,
+        );
+      }
+      this.tablWriteUrlCache.set(upper, tableUrl);
+      return tableUrl;
+    }
+    if (actualType === 'TABL/DS') {
+      this.tablWriteUrlCache.set(upper, structUrl);
+      return structUrl;
+    }
+
+    // Unknown / not-yet-existing object — fall back to the read-path resolver.
+    // For create paths the caller has already checked tablesEndpointAvailable
+    // separately (no existing object to search for).
+    return this.resolveTablObjectUrl(name);
   }
 
   /** Get domain metadata (type, length, value table, fixed values) */
