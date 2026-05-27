@@ -36,7 +36,7 @@ describe('E2E CDS Context Tests', () => {
     client = await connectClient();
     cdsName = await findAvailableDdls(client);
     if (!cdsName) {
-      console.log('    [SKIP] No DDLS found on system — CDS tests will be skipped');
+      console.log('    [setup] No DDLS found on system; CDS tests will skip through requireOrSkip');
     }
   }, 60000);
 

@@ -200,17 +200,6 @@ export function expectToolError(result: ToolResult, ...expectedSubstrings: strin
 }
 
 /**
- * Skip test with a clear message if a feature is not available.
- */
-export function skipIf(condition: boolean, reason: string): void {
-  if (condition) {
-    console.log(`    [SKIP] ${reason}`);
-    // vitest doesn't have skip inside a test, but we can return early
-    // The caller should check this return value
-  }
-}
-
-/**
  * Classify a `ToolResult` error message as a known SAP release gap / backend
  * limitation that should skip the test cleanly rather than fail.
  *

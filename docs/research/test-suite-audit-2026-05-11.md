@@ -455,6 +455,10 @@ Recommended fix:
 - Delete `skipIf()` or rewrite it to require a Vitest context.
 - Add a static test that rejects `[SKIP]` logs paired with bare `return` in test files.
 
+Implementation status:
+
+- A follow-up PR after `#274` converts the SKTD and activation-failure pseudo-skips to real Vitest skips, removes the obsolete `skipIf()` helper, and adds a static unit guard that rejects future `[SKIP]` pseudo-skip markers in integration/E2E/helper test code.
+
 ### P1 - Skip Reason Telemetry Is Misleading
 
 `scripts/ci/collect-test-reliability.mjs:44-47` uses `test.title` as the skip reason. Vitest JSON does not include the actual `ctx.skip()` message, and the JUnit report also emitted blank skip messages in this run.
@@ -1234,6 +1238,7 @@ Implemented quick wins in PR `#274`:
 |---|---|---|
 | P1 | Renamed reliability summary wording from `Top Skip Reasons` to `Top Skipped Tests`. | Skip Telemetry Semantics |
 | P1 | Reworked local E2E start/stop portability and made stop-script error detection handle the default text logger. | E2E Script Portability And Log Signal |
+| P1 | Converted SKTD and activation-failure pseudo-skips to real `ctx.skip()`/`requireOrSkip()` paths and added a static guard against `[SKIP]` pseudo-skip markers. | Pseudo-Skip Discipline |
 | P1 | Stabilized the cache warmup delta integration test by moving the strict second-run assertion from shared `$TMP` to stable `$DEMO_SOI_DRAFT`. | GitHub Actions Runtime Deep Dive |
 | P2 | Split cheap CI checks from the SAP title gate and moved SAP serialization to repository-wide integration/E2E job concurrency. | CI Gating And SAP Serialization |
 
@@ -1243,7 +1248,6 @@ Remaining follow-ups:
 |---|---|---|
 | P0 | Harden E2E fixture activation and fix the invalid CDS fixture. | Fixture Sync Activation Contract |
 | P0 | Stop CTS transport leakage and add a cleanup audit. | CTS Transport And Transportable Package Cleanup |
-| P1 | Convert pseudo-skips to real `ctx.skip()` calls and add a guard against bare skip returns. | Pseudo-Skip Discipline |
 | P1 | Add structured skip artifacts and reason extraction now that the misleading heading has been corrected. | Skip Telemetry Semantics |
 | P1 | Further reduce PR-path live SAP runtime for remaining cache warmup scans, broad `BAPIRET2` where-used calls, recursive release coverage, and RAP write coverage. | GitHub Actions Runtime Deep Dive |
 

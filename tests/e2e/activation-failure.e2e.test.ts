@@ -41,7 +41,7 @@ describe('E2E SAPActivate failure path (PR #179 regression)', () => {
     }
   });
 
-  it('reports activation failure with a clear error message for a deliberately broken PROG', async () => {
+  it('reports activation failure with a clear error message for a deliberately broken PROG', async (ctx) => {
     const brokenSource = readFileSync(join(FIXTURES_DIR, 'zarc1_e2e_act_broken.abap'), 'utf-8');
     // Unique name per run to avoid collisions on parallel CI executions.
     const suffix = Date.now().toString(36).slice(-6);
@@ -67,7 +67,7 @@ describe('E2E SAPActivate failure path (PR #179 regression)', () => {
         //     "is not locked (invalid lock handle)"). Distinct from the bug under test.
         //   - Server safety gates (read-only, package allowlist) blocking writes.
         if (/read-only|not allowed|package|forbidden/i.test(text) || /invalid lock handle|is not locked/i.test(text)) {
-          console.log(`    [SKIP] create blocked by precondition: ${text.slice(0, 200)}`);
+          ctx.skip(`Create blocked by activation-failure precondition: ${text.slice(0, 200)}`);
           return;
         }
         throw new Error(`Unexpected create failure: ${text.slice(0, 300)}`);
@@ -86,7 +86,7 @@ describe('E2E SAPActivate failure path (PR #179 regression)', () => {
       if (updateResult.isError) {
         const text = updateResult.content?.[0]?.text ?? '';
         if (/invalid lock handle|is not locked/i.test(text)) {
-          console.log(`    [SKIP] update blocked by NW 7.50 lock-handle quirk: ${text.slice(0, 200)}`);
+          ctx.skip(`Update blocked by NW 7.50 lock-handle quirk: ${text.slice(0, 200)}`);
           return;
         }
         console.log(`    update warning (continuing): ${text.slice(0, 200)}`);

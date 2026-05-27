@@ -13,6 +13,7 @@
 
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { requireOrSkip, SkipReason } from '../helpers/skip-policy.js';
 import { callTool, connectClient, expectToolError, expectToolSuccess, expectToolSuccessOrSkip } from './helpers.js';
 
 function uniqueName(prefix: string): string {
@@ -41,9 +42,6 @@ describe('E2E SKTD (Knowledge Transfer Document) tests', () => {
       probeText.includes('Invalid arguments') ||
       probeText.includes('expected one of');
     sktdSupported = !isTypeRejected;
-    if (!sktdSupported) {
-      console.log('    [SKIP] Server does not support SKTD type — skipping SKTD E2E tests');
-    }
   });
 
   afterAll(async () => {
@@ -54,8 +52,8 @@ describe('E2E SKTD (Knowledge Transfer Document) tests', () => {
     }
   });
 
-  it('SAPRead SKTD returns decoded Markdown for existing KTD (ZC_FBCLUBTP)', async () => {
-    if (!sktdSupported) return;
+  it('SAPRead SKTD returns decoded Markdown for existing KTD (ZC_FBCLUBTP)', async (ctx) => {
+    requireOrSkip(ctx, sktdSupported ? true : undefined, SkipReason.BACKEND_UNSUPPORTED);
     const result = await callTool(client, 'SAPRead', {
       type: 'SKTD',
       name: 'ZC_FBCLUBTP',
@@ -72,8 +70,8 @@ describe('E2E SKTD (Knowledge Transfer Document) tests', () => {
     expect(/[a-zA-Z]/.test(text)).toBe(true);
   });
 
-  it('SAPRead SKTD returns soft message for non-existent KTD', async () => {
-    if (!sktdSupported) return;
+  it('SAPRead SKTD returns soft message for non-existent KTD', async (ctx) => {
+    requireOrSkip(ctx, sktdSupported ? true : undefined, SkipReason.BACKEND_UNSUPPORTED);
     const result = await callTool(client, 'SAPRead', {
       type: 'SKTD',
       name: 'ZARC1_NONEXISTENT_KTD_XXXX',
@@ -83,8 +81,8 @@ describe('E2E SKTD (Knowledge Transfer Document) tests', () => {
     expect(text).toContain('No Knowledge Transfer Document');
   });
 
-  it('SAPWrite create SKTD rejects missing refObjectType', async () => {
-    if (!sktdSupported) return;
+  it('SAPWrite create SKTD rejects missing refObjectType', async (ctx) => {
+    requireOrSkip(ctx, sktdSupported ? true : undefined, SkipReason.BACKEND_UNSUPPORTED);
     const result = await callTool(client, 'SAPWrite', {
       action: 'create',
       type: 'SKTD',
@@ -95,7 +93,7 @@ describe('E2E SKTD (Knowledge Transfer Document) tests', () => {
   });
 
   it('SKTD full CRUD lifecycle: create DDLS → create KTD → update with Markdown → read → activate → delete', async (ctx) => {
-    if (!sktdSupported) return;
+    requireOrSkip(ctx, sktdSupported ? true : undefined, SkipReason.BACKEND_UNSUPPORTED);
     // Use a unique name to avoid collisions across test runs
     const objectName = uniqueName('ZARC1SKTD');
 
