@@ -244,6 +244,32 @@ describe('/authorize JSON-RPC dispatch (Copilot Studio MCP fix via skip())', () 
     expect(results.slice(2)).toEqual([429, 429]);
   });
 
+  it('regression (bug_006): POST /authorize with falsy jsonrpc still uses the OAuth cap', async () => {
+    // Ultrareview bug_006: a presence-only predicate let a request with
+    // `{"jsonrpc": ""}` (or null / 0 / false) skip the OAuth limiter — even though
+    // the routing handler's truthiness check would route it as a normal OAuth
+    // request anyway. That produced a 30× bypass on /authorize. Now both
+    // predicates use truthiness, so falsy jsonrpc → OAuth cap applies.
+    const variants: { falsy: unknown; ip: string }[] = [
+      { falsy: '', ip: '10.6.6.1' },
+      { falsy: null, ip: '10.6.6.2' },
+      { falsy: 0, ip: '10.6.6.3' },
+      { falsy: false, ip: '10.6.6.4' },
+    ];
+    const app = buildApp(2, 10);
+    for (const { falsy, ip } of variants) {
+      const results: number[] = [];
+      for (let i = 0; i < 4; i++) {
+        const r = await fireJsonPost(app, '/authorize', { jsonrpc: falsy, client_id: 'foo' }, ip);
+        results.push(r.status);
+      }
+      // Per-IP OAuth bucket of 2; the 3rd and 4th requests from the same IP
+      // must hit 429 — proving the OAuth limiter is applied to falsy-jsonrpc traffic.
+      expect(results.slice(0, 2)).toEqual([200, 200]);
+      expect(results.slice(2)).toEqual([429, 429]);
+    }
+  });
+
   it('JSON-RPC /authorize and /mcp use independent stores (separate caps each)', async () => {
     // Trade-off documented in src/server/http.ts: each `rateLimit({...})` call gets
     // its own MemoryStore unless we explicitly inject a shared one. With separate
@@ -288,11 +314,18 @@ describe('isCopilotJsonRpc', () => {
     expect(isCopilotJsonRpc(fakeReq('POST', null))).toBe(false);
   });
 
-  it('accepts any value for jsonrpc — including null or empty string', () => {
-    // The MCP spec says jsonrpc MUST be the string "2.0", but we treat any
-    // presence of the field as a Copilot Studio fingerprint. We let bearer auth
-    // + the MCP handler do the actual JSON-RPC validation downstream.
-    expect(isCopilotJsonRpc(fakeReq('POST', { jsonrpc: null }))).toBe(true);
-    expect(isCopilotJsonRpc(fakeReq('POST', { jsonrpc: '' }))).toBe(true);
+  it('REJECTS falsy jsonrpc values — matches the routing handler in http.ts', () => {
+    // Regression: ultrareview bug_006 found that a presence-only check let a
+    // request like `{"jsonrpc": ""}` skip the OAuth rate limiter while the
+    // routing handler (`if (req.body?.jsonrpc)`) treated the same request as
+    // a normal OAuth flow — yielding a 30× rate-limit bypass on /authorize.
+    // The predicate now requires truthiness, mirroring the handler exactly.
+    expect(isCopilotJsonRpc(fakeReq('POST', { jsonrpc: null }))).toBe(false);
+    expect(isCopilotJsonRpc(fakeReq('POST', { jsonrpc: '' }))).toBe(false);
+    expect(isCopilotJsonRpc(fakeReq('POST', { jsonrpc: 0 }))).toBe(false);
+    expect(isCopilotJsonRpc(fakeReq('POST', { jsonrpc: false }))).toBe(false);
+    // Any non-falsy value (the actual MCP spec value "2.0", or any string/number) → true.
+    expect(isCopilotJsonRpc(fakeReq('POST', { jsonrpc: '2.0' }))).toBe(true);
+    expect(isCopilotJsonRpc(fakeReq('POST', { jsonrpc: 'anything' }))).toBe(true);
   });
 });

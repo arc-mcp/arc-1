@@ -96,11 +96,22 @@ export function createAuthRateLimiter(
  * limiter `skip`s when this is false. The pair gives JSON-RPC traffic the
  * higher `/mcp` cap while real OAuth flows stay on the OAuth cap.
  *
- * Exported so http.ts AND its tests use the exact same predicate — drift here
- * would silently allow one path to skip rate limiting.
+ * Critically, this predicate MUST agree with the routing handler in `http.ts`
+ * that actually dispatches the request to either the OAuth flow or the MCP
+ * handler. The handler uses `req.body?.jsonrpc` — a truthiness check that
+ * rejects falsy values (`''`, `0`, `null`). We mirror that exactly:
+ * presence + truthiness. Earlier code used a presence-only check, which let
+ * a request like `{"jsonrpc": ""}` skip the OAuth limiter (presence true =
+ * "Copilot traffic, use MCP cap") AND get routed as a normal OAuth request
+ * (truthiness false = "not Copilot, run OAuth"), producing a 30× rate-limit
+ * bypass on `/authorize`. The predicate and the routing handler are now
+ * defined identically and `http.ts` reuses this function in both places.
+ *
+ * Exported so http.ts AND its tests use the exact same predicate — drift
+ * here would silently re-introduce the bypass.
  */
 export function isCopilotJsonRpc(req: Request): boolean {
   if (req.method !== 'POST') return false;
   const body = req.body as { jsonrpc?: unknown } | undefined;
-  return body !== undefined && body !== null && body.jsonrpc !== undefined;
+  return body != null && Boolean(body.jsonrpc);
 }

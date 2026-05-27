@@ -336,8 +336,11 @@ export async function startHttpServer(
     // For normal OAuth requests, merge query params into body as fallback
     // (some clients send POST /authorize with params in query string).
     app.use('/authorize', (req, res, next) => {
-      // Detect MCP JSON-RPC on /authorize (Copilot Studio quirk)
-      if (req.method === 'POST' && req.body?.jsonrpc) {
+      // Detect MCP JSON-RPC on /authorize (Copilot Studio quirk). Reuses the
+      // exact same predicate as the rate-limit skip()s above — the two MUST
+      // agree, otherwise a request that one path treats as Copilot and the
+      // other treats as OAuth slips through the wrong rate-limit bucket.
+      if (isCopilotJsonRpc(req)) {
         logger.info('MCP JSON-RPC on /authorize, routing to MCP handler', {
           rpcMethod: req.body.method,
           id: req.body.id,

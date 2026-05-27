@@ -14,7 +14,7 @@ Three layers gate this traffic, each addressing a distinct threat:
 |---|---|---|---|
 | **Protects against** | OAuth brute-force / `/mcp` probing | One developer monopolizing slots | SAP work-process exhaustion |
 | **Keyed on** | Source IP | Authenticated user (`userName`/`clientId`) | (global) |
-| **Mechanism** | `express-rate-limit` token bucket | `rate-limiter-flexible` token bucket | FIFO `Semaphore` |
+| **Mechanism** | `express-rate-limit` fixed-window counter | `rate-limiter-flexible` token bucket | FIFO `Semaphore` |
 | **On hit** | HTTP `429` + `Retry-After` | MCP tool error with `retryAfter` | Queue wait (no rejection) |
 | **Audit event** | `auth_rate_limited` | `mcp_rate_limited` | `http_request` status 429/503 |
 | **Env var** | `ARC1_AUTH_RATE_LIMIT` | `ARC1_RATE_LIMIT` | `ARC1_MAX_CONCURRENT` |
@@ -155,7 +155,7 @@ ARC1_RATE_LIMIT=120        # 2/sec/user sustained
 | `http_request` status `429` | 3 | SAP or BTP gateway throttled us; we retried once after honoring `Retry-After`. | If frequent → lower `ARC1_MAX_CONCURRENT`. You're running too hot. |
 | `http_request` status `503` | 3 | SAP overloaded (ICM / work-process exhaustion); we retried. | Same as 429 — lower the concurrency cap. Cross-check with SAP transaction `SM50`. |
 
-Event payloads include `requestId` so you can correlate a rate-limit denial with the full tool-call lifecycle in your audit log.
+**`requestId` correlation note.** Layer 2 (`mcp_rate_limited`) and Layer 3 (`http_request`) events include a `requestId` field so you can join them against the full tool-call lifecycle (`tool_call_start` / `tool_call_end`) in your audit log. Layer 1 (`auth_rate_limited`) fires at the Express middleware layer **before** any MCP request context exists, so it does NOT carry a `requestId` — correlate Layer 1 events by `ip` + timestamp instead.
 
 ## 6. Troubleshooting decision tree
 
