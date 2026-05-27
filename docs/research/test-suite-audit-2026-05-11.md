@@ -198,9 +198,9 @@ Validation commands also run:
 
 ## GitHub Actions Runtime Deep Dive
 
-Reference run: <https://github.com/marianfoo/arc-1/actions/runs/25674270461?pr=262>  
-Workflow title: `feat(skills): add SEGW→RAP migration + UI5 modernization + Fiori Elements skills`  
-Run date: 2026-05-11.  
+Reference run: <https://github.com/marianfoo/arc-1/actions/runs/25674270461?pr=262><br>
+Workflow title: `feat(skills): add SEGW→RAP migration + UI5 modernization + Fiori Elements skills`<br>
+Run date: 2026-05-11.<br>
 Status: success.
 
 The GitHub UI reports total duration `33m 7s`, but that includes pending/queue time. The run was created at `13:49:14Z`; the first visible jobs started at `14:00:18Z`, so about `11m 04s` was GitHub scheduling/pending time rather than ARC-1 test execution. The actual visible execution path was about `22m`.
