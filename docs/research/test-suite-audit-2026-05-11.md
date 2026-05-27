@@ -373,6 +373,7 @@ Parallelization guidance from this run:
   - `integration:slow`: warmup and CTS release behavior.
 - If read-only profiles are parallelized, run each shard with its own MCP server and explicit `ARC1_MAX_CONCURRENT`. Start with two shards and `ARC1_MAX_CONCURRENT=5` each, then compare server logs for timeout, 5xx, reset, and enqueue categories before increasing.
 - The server default `ARC1_MAX_CONCURRENT=10` is already enough for current serial E2E. Raising it will not reduce serial test time; it only matters after there are concurrent client calls.
+- On current `main`, HTTP mode also has Layer 1 ingress rate limiting (`ARC1_AUTH_RATE_LIMIT`, default `20`, with `/mcp` derived as `max(value * 30, 600)` requests/minute/IP) and optional Layer 2 per-user tool-call limiting (`ARC1_RATE_LIMIT`, default `0`, disabled). Record these settings in any parallelism experiment so a `429` or MCP rate-limit response is not misdiagnosed as SAP backend capacity.
 
 Expected PR-path target after the low/medium-risk changes:
 
@@ -744,10 +745,13 @@ Current configuration:
 - `vitest.integration.config.ts` sets `fileParallelism: false` and `sequence.concurrent: false`.
 - `tests/e2e/vitest.e2e.config.ts` also serializes files and tests because all E2E tests share one MCP server.
 - ARC-1 itself has a request-level concurrency limit: `ARC1_MAX_CONCURRENT` / `--max-concurrent`, default `10`, passed into `AdtClient` and enforced by `src/adt/semaphore.ts` around SAP HTTP requests.
+- HTTP mode also has Layer 1 ingress rate limiting through `ARC1_AUTH_RATE_LIMIT`, default `20` per minute/IP for auth endpoints. `/mcp` receives a derived limit of `max(value * 30, 600)` requests/minute/IP, so the default `/mcp` cap is `600` per minute/IP.
+- Layer 2 per-user MCP tool-call limiting is controlled by `ARC1_RATE_LIMIT`; default `0` means disabled.
 
 Important distinction:
 
 - Increasing `ARC1_MAX_CONCURRENT` lets one server issue more simultaneous SAP HTTP requests.
+- Raising or disabling `ARC1_AUTH_RATE_LIMIT` / `ARC1_RATE_LIMIT` changes request admission. It does not increase SAP HTTP concurrency once a tool call is admitted.
 - Enabling Vitest file parallelism makes independent test files run at the same time, with overlapping object creation, locks, CSRF/session use, cleanup, and CTS mutations.
 - These are not interchangeable. The server may handle more request concurrency while the SAP test data model still cannot tolerate parallel writes.
 
@@ -762,6 +766,7 @@ Server-capacity guidance:
 
 - For local experiments, start with `ARC1_MAX_CONCURRENT=10` because that is the default already tested.
 - Try `ARC1_MAX_CONCURRENT=15` or `20` only for read-only shards, while watching SAP "Service cannot be reached", 5xx, timeout, and enqueue errors.
+- Keep `ARC1_AUTH_RATE_LIMIT` and `ARC1_RATE_LIMIT` explicit in load-smoke logs. If an experiment sees `429` responses or MCP rate-limit errors, adjust or disable the relevant rate-limit layer for the experiment before treating the result as an SAP capacity failure.
 - Do not raise server concurrency for write/transport suites until cleanup gates are in place. More concurrency can amplify leaked locks and partial creates.
 - Add a dedicated server load smoke before broad parallelism: for example, run 20 concurrent `SAPRead SYSTEM` or safe `SAPSearch` calls through one HTTP server and assert no transport/session breakage.
 
@@ -1152,7 +1157,7 @@ Treat this as the final phase. Parallelism is useful only after the suite has re
 | Order | Item | Evaluation | Expected impact | Verification |
 |---:|---|---|---|---|
 | 13 | Split slow integration/E2E profiles before enabling broad parallelism. | Some tests share live SAP objects and transports, so file-level parallelism needs isolated profiles and fixture ownership first. | Lets PRs run the stable default path while preserving heavier coverage on demand. | Separate default and slow commands; both publish reliability artifacts. |
-| 14 | Add a read-only server concurrency smoke before increasing parallel test execution. | The server default `ARC1_MAX_CONCURRENT=10` is capacity, not proof that SAP-facing tests are independent. | Provides evidence that the server and S4 test system tolerate concurrent read traffic. | Concurrent read-only smoke passes without 429/5xx/session bleed. |
+| 14 | Add a read-only server concurrency smoke before increasing parallel test execution. | The server default `ARC1_MAX_CONCURRENT=10` is capacity, not proof that SAP-facing tests are independent; current main also has HTTP/MCP rate-limit layers that must be recorded during load tests. | Provides evidence that the server and S4 test system tolerate concurrent read traffic. | Concurrent read-only smoke passes without 429/5xx/session bleed, with `ARC1_MAX_CONCURRENT`, `ARC1_AUTH_RATE_LIMIT`, and `ARC1_RATE_LIMIT` logged. |
 | 15 | Add focused unit coverage for `src/server/http.ts`, `src/server/server.ts`, `src/adt/btp.ts`, `src/server/xsuaa.ts`, and `src/extract-sap-cookies.ts`. | These areas are high-value coverage gaps because they guard auth, transport, BTP connectivity, and credential extraction. | Improves coverage where regressions are expensive and hard to diagnose through live tests. | Coverage report shows targeted line/branch gains for those files. |
 
 ## Research Completeness
@@ -1167,6 +1172,16 @@ At this point the requested audit areas have been covered against the S4 test sy
 - CI workflow gating/concurrency and local E2E scripts were inspected.
 - A deeper remediation design was added for each finding, including acceptance criteria, cleanup gates, skip telemetry design, and server concurrency guidance around `ARC1_MAX_CONCURRENT`.
 - GitHub Actions run `25674270461` was inspected through run metadata and downloaded artifacts. The report now includes CI job timing, integration/E2E per-file and per-test runtime breakdowns, server-log tool timing, and runtime reduction estimates.
+
+### Post-Rebase Review (2026-05-27)
+
+The branch was rebased cleanly onto `origin/main` `7532503d` (`v0.9.6`). The PR diff remains docs-only. The audited test, fixture, CI, and local E2E script files were rechecked against current `main`; none of the core skip, cleanup, fixture activation, or CI-gating findings were fixed by the mainline changes.
+
+Relevant current-main changes:
+
+- `19942984` (`feat: layered rate limiting`) changes the server-capacity surface by adding Layer 1 `ARC1_AUTH_RATE_LIMIT` and Layer 2 `ARC1_RATE_LIMIT`, while keeping `ARC1_MAX_CONCURRENT` as the SAP HTTP concurrency ceiling. The runtime/parallelism recommendations were updated to require logging these rate-limit settings during concurrency experiments.
+- `039d8007` (`fix: route TABL/DS create to /ddic/structures`) and `b0981400` (`fix: refuse TABL/DT writes on NW 7.50/7.51 with SE11 hint`) do not resolve the invalid CDS fixture annotation, the E2E activation warning contract, pseudo-skips, or CTS cleanup leakage.
+- Dependency/action bump commits do not change the audited `test.yml` gate behavior: `docs:`/`chore:` PRs still bypass the `test` job through `needs: gate`, so unit/lint/typecheck remain skipped on those title-gated PRs.
 
 Known remaining blind spots are intentional external-scope items, not unresearched gaps in the S4 audit:
 
