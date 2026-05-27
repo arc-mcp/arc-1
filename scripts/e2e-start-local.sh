@@ -76,7 +76,7 @@ SAP_ALLOW_DATA_PREVIEW=true \
 SAP_ALLOW_FREE_SQL=true \
 SAP_ALLOW_TRANSPORT_WRITES=true \
 SAP_ALLOW_GIT_WRITES=false \
-SAP_ALLOWED_PACKAGES='$TMP,$TMP/**' \
+SAP_ALLOWED_PACKAGES='$TMP,$ARC1T_*' \
 ARC1_CACHE=memory \
 nohup node dist/index.js >> "${LOG_FILE}" 2>&1 &
 echo $! > "$PID_FILE"
