@@ -3,7 +3,7 @@
 @AbapCatalog.tableCategory : #TRANSPARENT
 @AbapCatalog.deliveryClass : #A
 @AbapCatalog.dataMaintenance : #RESTRICTED
-define table ztabl_arc1_i33 {
+define table ZTABL_ARC1_I33 {
   key client      : abap.clnt not null;
   key id          : abap.numc(8) not null;
   description     : abap.char(80);

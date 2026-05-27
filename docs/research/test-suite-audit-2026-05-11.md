@@ -410,6 +410,15 @@ Recommended fix:
 - Make `activateObject()` throw unless the error is classified as a known backend gap.
 - Add a post-sync assertion that all non-skipped persistent fixtures are active/readable.
 
+Implementation status (2026-05-28 follow-up PR):
+
+- `tests/fixtures/abap/zi_arc1_i33_root.ddls.abap` now uses only view-entity-compatible annotations.
+- `tests/e2e/setup.ts` now treats `SAPActivate` errors as hard fixture-sync failures unless the existing fixture-error classifier recognizes the error.
+- Fixture sync now checks `SAPRead(type="INACTIVE_OBJECTS")` after reconciliation and fails if any managed non-skipped fixture remains inactive.
+- Fixture sync now verifies created/recreated fixtures are actively readable. Exact post-recreate source equality is intentionally not required because SAP canonicalizes some DDIC source text such as TABL definitions.
+- `.github/workflows/test.yml` now gives the E2E job 20 minutes. CI run `26543612479` completed all E2E tests in 852.71s but hit the previous 15-minute job timeout during artifact upload and teardown, so the old limit was too tight for the current serial SAP-backed suite.
+- `tests/unit/e2e/setup.test.ts` covers activation-error failure, inactive-fixture detection, and the unchanged-fixture success path without requiring SAP credentials.
+
 ### P0 - Transport Tests Leave Live SAP Transports
 
 The current run created real transport requests that remain in draft state:
@@ -1232,10 +1241,11 @@ Known remaining blind spots are intentional external-scope items, not unresearch
 
 No matching open GitHub tracking issues were found during PR review. File or link issues for these items before treating the audit as closed:
 
-Implemented quick wins in PR `#274`:
+Implemented follow-ups:
 
 | Priority | Implemented item | Source finding |
 |---|---|---|
+| P0 | Hardened E2E fixture activation and fixed the invalid CDS fixture annotation set. | Fixture Sync Activation Contract |
 | P1 | Renamed reliability summary wording from `Top Skip Reasons` to `Top Skipped Tests`. | Skip Telemetry Semantics |
 | P1 | Reworked local E2E start/stop portability and made stop-script error detection handle the default text logger. | E2E Script Portability And Log Signal |
 | P1 | Converted SKTD and activation-failure pseudo-skips to real `ctx.skip()`/`requireOrSkip()` paths and added a static guard against `[SKIP]` pseudo-skip markers. | Pseudo-Skip Discipline |
@@ -1246,7 +1256,6 @@ Remaining follow-ups:
 
 | Priority | Follow-up | Source finding |
 |---|---|---|
-| P0 | Harden E2E fixture activation and fix the invalid CDS fixture. | Fixture Sync Activation Contract |
 | P0 | Stop CTS transport leakage and add a cleanup audit. | CTS Transport And Transportable Package Cleanup |
 | P1 | Add structured skip artifacts and reason extraction now that the misleading heading has been corrected. | Skip Telemetry Semantics |
 | P1 | Further reduce PR-path live SAP runtime for remaining cache warmup scans, broad `BAPIRET2` where-used calls, recursive release coverage, and RAP write coverage. | GitHub Actions Runtime Deep Dive |

@@ -16,6 +16,14 @@ import { callTool, type ToolResult } from './helpers.js';
 
 type PersistentObject = (typeof PERSISTENT_OBJECTS)[number];
 
+interface InactiveFixture {
+  type: string;
+  name: string;
+  uri?: string;
+  transport?: string;
+  deleted?: boolean;
+}
+
 export interface FixtureSyncSummary {
   created: string[];
   recreated: string[];
@@ -75,6 +83,7 @@ export async function syncPersistentFixtures(client: Client): Promise<FixtureSyn
     deleted: [],
     skipped: [],
   };
+  const verifiedActiveSources = new Set<string>();
 
   for (const obj of PERSISTENT_OBJECTS) {
     const label = `${obj.type} ${obj.name}`;
@@ -116,6 +125,7 @@ export async function syncPersistentFixtures(client: Client): Promise<FixtureSyn
       }
       console.log(`    [setup] ${label}: up-to-date`);
       summary.unchanged.push(label);
+      verifiedActiveSources.add(label);
       continue;
     }
 
@@ -137,6 +147,8 @@ export async function syncPersistentFixtures(client: Client): Promise<FixtureSyn
       summary.skipped.push({ label, reason });
     }
   }
+
+  await assertSyncedFixturesActive(client, summary, verifiedActiveSources);
 
   console.log(
     `    [setup] Fixture sync summary: created=${summary.created.length}, recreated=${summary.recreated.length}, unchanged=${summary.unchanged.length}, deleted=${summary.deleted.length}, skipped=${summary.skipped.length}`,
@@ -185,10 +197,7 @@ async function createObjectFromFixture(client: Client, obj: PersistentObject): P
 
 async function activateObject(client: Client, type: string, name: string): Promise<void> {
   const activateResult = await callTool(client, 'SAPActivate', { type, name });
-  if (activateResult.isError) {
-    // SAPActivate may surface warnings as error text in some backends.
-    console.warn(`    [setup] ${name} activation warning: ${toolText(activateResult).slice(0, 300)}`);
-  }
+  assertToolSuccess(activateResult, `activate ${type} ${name}`);
 }
 
 // Types SAPWrite(action="delete") accepts. SAP-generated siblings like STOB (structure
@@ -283,6 +292,86 @@ async function readObjectSource(client: Client, type: string, name: string): Pro
   return toolText(result);
 }
 
+async function assertSyncedFixturesActive(
+  client: Client,
+  summary: FixtureSyncSummary,
+  verifiedActiveSources: ReadonlySet<string>,
+): Promise<void> {
+  const skippedLabels = new Set(summary.skipped.map((skip) => skip.label));
+  const checkedFixtures = PERSISTENT_OBJECTS.filter((obj) => !skippedLabels.has(`${obj.type} ${obj.name}`));
+  if (checkedFixtures.length === 0) return;
+
+  const inactiveFixtures = await findInactiveFixtures(client, checkedFixtures);
+  if (inactiveFixtures.length > 0) {
+    const details = inactiveFixtures
+      .map((obj) => {
+        const suffix = [obj.transport ? `transport=${obj.transport}` : null, obj.deleted ? 'deleted=true' : null]
+          .filter(Boolean)
+          .join(', ');
+        return `${obj.type} ${obj.name}${suffix ? ` (${suffix})` : ''}`;
+      })
+      .join(', ');
+    throw new Error(`Persistent fixture activation incomplete; inactive fixtures remain: ${details}`);
+  }
+
+  for (const obj of checkedFixtures) {
+    const label = `${obj.type} ${obj.name}`;
+    if (verifiedActiveSources.has(label)) continue;
+    await readObjectSource(client, obj.type, obj.name);
+  }
+}
+
+async function findInactiveFixtures(client: Client, fixtures: readonly PersistentObject[]): Promise<InactiveFixture[]> {
+  const result = await callTool(client, 'SAPRead', { type: 'INACTIVE_OBJECTS' });
+  assertToolSuccess(result, 'read INACTIVE_OBJECTS');
+  const parsed = parseInactiveObjectsPayload(toolText(result));
+  return parsed.filter((inactive) =>
+    fixtures.some(
+      (fixture) =>
+        inactive.name.toUpperCase() === fixture.name.toUpperCase() && inactiveTypeMatches(fixture.type, inactive.type),
+    ),
+  );
+}
+
+function parseInactiveObjectsPayload(text: string): InactiveFixture[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stripCachedPrefix(text));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`read INACTIVE_OBJECTS failed: invalid JSON response: ${message}`);
+  }
+
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error('read INACTIVE_OBJECTS failed: expected JSON object response');
+  }
+
+  const objects = (parsed as { objects?: unknown }).objects;
+  if (!Array.isArray(objects)) {
+    throw new Error('read INACTIVE_OBJECTS failed: expected objects array');
+  }
+
+  const inactive: InactiveFixture[] = [];
+  for (const entry of objects) {
+    if (!entry || typeof entry !== 'object') continue;
+    const name = getString(entry, 'name');
+    const type = getString(entry, 'type');
+    if (!name || !type) continue;
+    inactive.push({
+      name,
+      type,
+      uri: getString(entry, 'uri') ?? undefined,
+      transport: getString(entry, 'transport') ?? undefined,
+      deleted: getBoolean(entry, 'deleted') ?? undefined,
+    });
+  }
+  return inactive;
+}
+
+function inactiveTypeMatches(expectedType: string, inactiveType: string): boolean {
+  return (inactiveType.split('/')[0] ?? inactiveType).toUpperCase() === expectedType.toUpperCase();
+}
+
 function assertToolSuccess(result: ToolResult, action: string): void {
   if (result.isError) {
     throw new Error(`${action} failed: ${toolText(result)}`);
@@ -307,6 +396,11 @@ function normalizeSource(source: string): string {
 function getString(input: object, key: string): string | null {
   const value = (input as Record<string, unknown>)[key];
   return typeof value === 'string' ? value : null;
+}
+
+function getBoolean(input: object, key: string): boolean | null {
+  const value = (input as Record<string, unknown>)[key];
+  return typeof value === 'boolean' ? value : null;
 }
 
 /**
