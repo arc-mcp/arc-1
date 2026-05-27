@@ -158,8 +158,14 @@ export interface ServerConfig {
   authRateLimit: number;
   /** Per-user cap on MCP tool calls in requests per minute. Key = authInfo.userName
    *  ?? clientId ?? '__anon__'. Stdio (no user identity) is exempt. Returns an MCP
-   *  tool error with `retryAfter` (not HTTP 429). Set `0` to disable Layer 2. Default: 60.
-   *  See docs_page/rate-limiting.md (Layer 2). */
+   *  tool error with `retryAfter` (not HTTP 429). Set `>0` to enable Layer 2.
+   *  **Default: `0` (disabled).** Layer 2 is the only layer that can fail
+   *  user-visible work (the others return queue-waits or HTTP 429 to a
+   *  consenting client), so it ships off by default and operators with
+   *  multi-user deployments opt in. Layers 1 and 3 stay on by default —
+   *  Layer 1 closes a CodeQL HIGH alert, Layer 3 is the per-PP-user
+   *  semaphore bug fix that started this whole feature. See
+   *  docs_page/rate-limiting.md and ADR-0004. */
   rateLimit: number;
 
   // --- Browser-based MCP clients (CORS) ---
@@ -217,7 +223,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
   cacheWarmupPackages: '',
   maxConcurrent: 10,
   authRateLimit: 20,
-  rateLimit: 60,
+  rateLimit: 0, // Layer 2 disabled by default — operators opt in (see ADR-0004)
   allowedOrigins: [],
   logLevel: 'info',
   logFormat: 'text',

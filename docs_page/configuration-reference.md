@@ -238,7 +238,7 @@ Two operator-facing knobs cover all three rate-limiting layers ARC-1 ships (the 
 | Flag | Env var | Default | Effect |
 |---|---|---|---|
 | `--auth-rate-limit` | `ARC1_AUTH_RATE_LIMIT` | `20` | **Layer 1.** Per-IP cap on OAuth endpoints (`/register`, `/authorize`, `/token`, `/revoke`) in requests per minute. `/mcp` gets `max(value × 30, 600)/min/IP` to absorb legitimate MCP batch traffic. On hit: HTTP `429` + `Retry-After` + RFC 9331 `RateLimit-*` headers + `auth_rate_limited` audit event. Set `0` to disable Layer 1 (use only behind a rate-limiting reverse proxy). |
-| `--rate-limit` | `ARC1_RATE_LIMIT` | `60` | **Layer 2.** Per-user cap on MCP tool calls in requests per minute. User key = `authInfo.userName ?? clientId ?? '__anon__'`. Stdio mode (no user identity) is exempt. On hit: MCP tool error `{error:'rate_limited',retryAfter,message}` + `mcp_rate_limited` audit event — **not** HTTP 429 (preserves the agent loop's retry semantics). Set `0` to disable Layer 2. |
+| `--rate-limit` | `ARC1_RATE_LIMIT` | `0` (disabled) | **Layer 2.** Per-user cap on MCP tool calls in requests per minute. Default is **off** — Layer 2 ships disabled and operators with multi-user deployments opt in by setting a positive value (typical: `60` = 1 req/sec sustained per user). User key walks `userName → email → sub → preferred_username → clientId → '__anon__'` (`resolveRateLimitUserKey()`). Stdio mode (no user identity) is exempt. On hit: MCP tool error `{error:'rate_limited',retryAfter,message}` + `mcp_rate_limited` audit event — **not** HTTP 429 (preserves the agent loop's retry semantics). |
 
 ---
 

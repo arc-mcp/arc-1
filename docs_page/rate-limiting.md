@@ -30,7 +30,7 @@ Three layers gate this traffic, each addressing a distinct threat:
    ┌──────────────────────────────────────────────────────────┐
    │ Layer 2 — Per-user MCP quota (token bucket)              │
    │   Applied inside handleToolCall                          │
-   │   ARC1_RATE_LIMIT (default 60/min/user)                  │
+   │   ARC1_RATE_LIMIT (default 0 — Layer 2 OFF; opt in)      │
    └──────────────────────────────────────────────────────────┘
                               │
    ┌──────────────────────────────────────────────────────────┐
@@ -45,7 +45,9 @@ Three layers gate this traffic, each addressing a distinct threat:
 
 ## 2. The three env vars in plain English
 
-These are all the knobs you have. Set values via env vars, CLI flags, or `.env`. The default is conservative — most operators never need to tune these.
+These are all the knobs you have. Set values via env vars, CLI flags, or `.env`.
+
+**Defaults are deliberately asymmetric.** Layer 1 and Layer 3 are ON by default — Layer 1 because it closes a CodeQL HIGH alert and protects the OAuth surface from brute-force without affecting normal traffic, Layer 3 because it's the bug fix that started this whole feature (per-PP-user semaphore multiplication). **Layer 2 is OFF by default** because it's the only layer that can fail user-visible work (MCP tool errors), and single-user deployments don't need it. Operators with multi-user setups opt in by setting `ARC1_RATE_LIMIT>0`. See [ADR-0004](../docs/adr/0004-layered-rate-limiting.md).
 
 ### `ARC1_AUTH_RATE_LIMIT` — Layer 1 (default `20`)
 
@@ -60,9 +62,11 @@ These are all the knobs you have. Set values via env vars, CLI flags, or `.env`.
 - Set to `0` only if an upstream reverse proxy already rate-limits this surface.
 - Per-endpoint differentiation lives in code (not env) so the operator surface stays one knob. If the per-endpoint logic needs adjustment, it's a code change in [src/server/http.ts](https://github.com/marianfoo/arc-1/blob/main/src/server/http.ts).
 
-### `ARC1_RATE_LIMIT` — Layer 2 (default `60`)
+### `ARC1_RATE_LIMIT` — Layer 2 (default `0` — DISABLED)
 
-**What it caps.** MCP tool calls per minute, per authenticated user. Stdio mode (no `authInfo`) is exempt entirely — there's no user identity to key on, and stdio is single-user-by-design.
+**Layer 2 ships off by default.** It is the only layer that can fail user-visible work (the others either queue or return HTTP 429 to a consenting client). Single-user stdio deployments don't need it; multi-user PP / OIDC deployments turn it on explicitly with `ARC1_RATE_LIMIT=60` (or whatever quota suits the team — see the sizing presets below). See [ADR-0004](../docs/adr/0004-layered-rate-limiting.md) for the rationale.
+
+**What it caps when enabled.** MCP tool calls per minute, per authenticated user. Stdio mode (no `authInfo`) is exempt entirely — there's no user identity to key on, and stdio is single-user-by-design.
 
 **User-key derivation** walks identity claims most-specific-first so users sharing an OAuth `azp` (app id) never collapse into one bucket:
 
@@ -119,21 +123,22 @@ Total ARC-1 fleet uses ≤ 24 dialog WPs out of 40, leaving 16 (40%) for everyon
 
 Copy-paste these into `.env` or your deployment env block.
 
-### Small team (≤5 developers, dev sandbox)
+### Small team (≤5 developers, dev sandbox) — or single-user
 
-Defaults are fine. No action required.
+Defaults are fine. No action required. Layer 2 stays off — one user can't have a noisy neighbor problem with themselves, and Layer 3 already caps SAP load.
 ```bash
 # (no rate-limit env vars set — defaults apply)
-# ARC1_AUTH_RATE_LIMIT=20
-# ARC1_RATE_LIMIT=60
-# ARC1_MAX_CONCURRENT=10
+# ARC1_AUTH_RATE_LIMIT=20       Layer 1 ON (OAuth + /mcp per-IP)
+# ARC1_RATE_LIMIT=0             Layer 2 OFF (per-user fairness — opt in below)
+# ARC1_MAX_CONCURRENT=10        Layer 3 ON (server-wide SAP semaphore)
 ```
 
 ### Medium team (5–20 developers, shared sandbox)
 
+The noisy-neighbor problem becomes real here — turn Layer 2 on explicitly. `60/min/user` = 1 req/sec sustained per user, which fits a typical LLM agent workload.
 ```bash
 ARC1_MAX_CONCURRENT=15
-ARC1_RATE_LIMIT=90
+ARC1_RATE_LIMIT=60              # ← enable Layer 2 here
 # Layer 1 default is fine — OAuth surface doesn't scale with developer count
 ```
 
@@ -201,7 +206,7 @@ For deployments with >5 developers, walk through this once at deploy time:
 
 1. Find `rdisp/wp_no_dia` via SAP transaction `RZ11`.
 2. Compute `ARC1_MAX_CONCURRENT = floor(0.6 × wp_no_dia / N_instances)`. Set it explicitly in your deployment env — don't rely on the default.
-3. Decide the per-user cap. The default `ARC1_RATE_LIMIT=60` (1/sec sustained) is fine for most cases.
+3. **Turn Layer 2 on** with `ARC1_RATE_LIMIT=60` (1 req/sec sustained per user). Layer 2 is off by default — you have to enable it for multi-user deployments. Pick a higher value if your developers run heavy batch tool calls; pick a lower value if you've seen one user starve the others.
 4. Decide on Layer 1. Default `20/min/IP` is fine unless you have a security scanner or load-tester whose IP would hit the cap.
 5. Watch `auth_rate_limited`, `mcp_rate_limited`, and `http_request` (statusCode 429/503) for the first week. Tune up if false positives; tune down if SAP overload.
 6. If you're on BTP ABAP environment, also watch for `http_request` with `statusCode: 429` and `source: header` — that's the BTP API Management gateway throttling you, signalling Layer 3 is too loose.

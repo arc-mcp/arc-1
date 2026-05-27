@@ -491,10 +491,12 @@ describe('parseArgs', () => {
 
   // --- Rate limiting (Layer 1 + Layer 2) ---
 
-  it('defaults authRateLimit to 20 and rateLimit to 60', () => {
+  it('defaults authRateLimit to 20 (Layer 1 on) and rateLimit to 0 (Layer 2 off)', () => {
+    // ADR-0004: Layer 2 ships disabled by default — operators with multi-user
+    // deployments opt in via ARC1_RATE_LIMIT>0. Layer 1 stays on at 20/min/IP.
     const config = parseArgs([]);
     expect(config.authRateLimit).toBe(20);
-    expect(config.rateLimit).toBe(60);
+    expect(config.rateLimit).toBe(0);
   });
 
   it('parses --auth-rate-limit flag', () => {
@@ -537,10 +539,10 @@ describe('parseArgs', () => {
     expect(config.authRateLimit).toBe(20);
   });
 
-  it('invalid ARC1_RATE_LIMIT falls back to default 60', () => {
+  it('invalid ARC1_RATE_LIMIT falls back to default 0 (Layer 2 disabled)', () => {
     process.env.ARC1_RATE_LIMIT = '-5';
     const config = parseArgs([]);
-    expect(config.rateLimit).toBe(60);
+    expect(config.rateLimit).toBe(0);
   });
 
   it('--auth-rate-limit takes precedence over ARC1_AUTH_RATE_LIMIT', () => {

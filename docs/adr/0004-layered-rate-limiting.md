@@ -32,7 +32,7 @@ Ship three layers, per-instance, in-memory only. Two operator-facing env vars to
 ### Layer 2 — Per-user MCP quota (fairness)
 
 - `rate-limiter-flexible` (memory backend), keyed on `authInfo.userName ?? clientId ?? '__anon__'`, applied at the top of `handleToolCall` in [src/handlers/intent.ts](../../src/handlers/intent.ts).
-- One operator knob: `ARC1_RATE_LIMIT` (default `60/min/user`). `0` returns a no-op stub.
+- One operator knob: `ARC1_RATE_LIMIT`. **Default: `0` (Layer 2 disabled).** Operators with multi-user deployments opt in by setting a positive value (typical: `60/min/user`). See *Defaults are asymmetric* below for the rationale; the layer ships off because it's the only one that can fail user-visible work, and single-user deployments don't need it.
 - On hit: MCP **tool error** with structured `{ error: 'rate_limited', retryAfter, message }` (NOT HTTP 429). The LLM client surfaces this as a tool failure and the agent loop backs off via its own retry policy — returning HTTP 429 at the MCP-transport layer would kill the whole MCP session rather than this one tool call.
 - Stdio mode (no `authInfo`) is exempt — no user identity to key on, and stdio is single-user by design.
 - Cost weighting per tool is deferred to v2. Every consume call counts as one point.
@@ -43,6 +43,18 @@ Ship three layers, per-instance, in-memory only. Two operator-facing env vars to
 - No new env var — `ARC1_MAX_CONCURRENT` (existing, default `10`) keeps its name; only its scope tightens.
 - Honor `Retry-After` on both `429` and `503` via a new pure helper `parseRetryAfter` in [src/adt/http.ts](../../src/adt/http.ts). Clamped to `[0, 60_000]` ms so a misbehaving gateway can't stall us indefinitely and a too-small/past value can't degenerate into a hot retry loop. The audit event records `source: header` vs `source: fallback`.
 - Single retry per request, guarded by per-request booleans (`retried429` alongside `dbRetried` / `authRetried`).
+
+### Defaults are asymmetric — Layer 1 + Layer 3 ON, Layer 2 OFF
+
+The three layers ship with deliberately different defaults:
+
+| Layer | Default | Rationale |
+|---|---|---|
+| 1 (HTTP edge) | `20/min/IP`, ON | Closes CodeQL HIGH alert `js/missing-rate-limiting`. The cap is generous (`20/min` on OAuth, `600/min` on `/mcp`) — well above any legitimate single-user traffic. Disabling would reopen the SAST finding and remove cheap OAuth-surface protection. |
+| 2 (Per-user MCP quota) | `0` (disabled) | **This is the only layer that can fail user-visible work** — an MCP tool error mid-task surfaces as a tool failure to the LLM agent. Single-user deployments (stdio, solo HTTP) don't need it. Multi-user deployments opt in by setting `ARC1_RATE_LIMIT>0` (typical: `60`). Pre-1.0 we prioritize avoiding adoption friction over preemptive fairness enforcement. |
+| 3 (SAP semaphore) | `10`, ON | The bug fix that started this work — per-PP-user `Semaphore` multiplied effective concurrency by `N_users`. Excess requests **queue**, they don't fail. A "too tight" default just means slightly higher latency under load. |
+
+This is the canonical "secure by default + iterate" playbook applied per-layer: the protective layers (1, 3) stay on with conservative numbers; the layer that can break legitimate work (2) ships off and operators turn it on when they actually have a noisy-neighbor problem to solve. Industry trend (Cloudflare, Tyk, MS 2026 secure-by-default) is to ship caps **on** and tune up from telemetry — for Layers 1 and 3 we follow that; for Layer 2 the failure mode (silent tool-call failure inside an agent loop) is bad enough that "log nothing until you opt in" is the better starting point.
 
 ## Consequences
 

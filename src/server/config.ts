@@ -522,7 +522,9 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
   if (rateLimitRaw !== undefined) {
     const parsed = Number.parseInt(rateLimitRaw, 10);
     if (Number.isNaN(parsed) || parsed < 0 || String(parsed) !== rateLimitRaw.trim()) {
-      logger.warn(`Invalid ARC1_RATE_LIMIT='${rateLimitRaw}' — expected positive integer or 0. Using default 60.`);
+      logger.warn(
+        `Invalid ARC1_RATE_LIMIT='${rateLimitRaw}' — expected positive integer or 0. Using default 0 (Layer 2 disabled).`,
+      );
     } else {
       config.rateLimit = parsed;
       sources.rateLimit = getFlag('rate-limit') !== undefined ? { flag: '--rate-limit' } : { env: 'ARC1_RATE_LIMIT' };
