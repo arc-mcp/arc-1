@@ -131,11 +131,6 @@ const SAPWRITE_TYPES_ONPREM = [
   'SRVD',
   'SRVB',
   'TABL',
-  // Explicit TABL subtypes for SAPWrite create — TABL/DT picks the transparent-
-  // table endpoint (/sap/bc/adt/ddic/tables), TABL/DS picks the DDIC structure
-  // endpoint (/sap/bc/adt/ddic/structures). Bare TABL defaults to TABL/DT.
-  // Use TABL/DS for namespaced or long structure names — the transparent-table
-  // endpoint enforces a 16-char limit and would otherwise fail with AD102.
   'TABL/DT',
   'TABL/DS',
   'DOMA',
@@ -166,7 +161,7 @@ const SAPWRITE_DESC_ONPREM =
   'Type codes are auto-normalized and case-insensitive (e.g., "CLAS/OC" → "CLAS"). ' +
   'For CLAS update, pass include="definitions"|"implementations"|"macros"|"testclasses" to update that local include natively; omit include to update source/main. ' +
   'TABL uses source-based writes via /source/main (define table syntax), similar to DDLS/BDEF/SRVD. ' +
-  'TABL CREATE: bare "TABL" and "TABL/DT" both create a transparent table at /sap/bc/adt/ddic/tables (max 16 chars in the table name); "TABL/DS" creates a DDIC structure at /sap/bc/adt/ddic/structures (accepts longer names including namespaced forms like /LEOWM/SD_MON_S_WHO). On NW 7.50/7.51 the /tables endpoint is absent, so transparent-table creates are refused with an SE11 hint; structure creates (TABL/DS) work on every ADT release. Update/delete/activate ignore the subtype hint and discover the actual subtype via SAP search. ' +
+  'TABL create: bare "TABL" or "TABL/DT" → transparent table (16-char name limit); "TABL/DS" → DDIC structure (30-char limit, accepts namespaces like /LEOWM/X). Update/delete/activate discover subtype via SAP search, so the slash form is optional there. ' +
   'DOMA/DTEL use metadata XML writes (not /source/main): provide DDIC fields like dataType, length, fixedValues, typeKind, labels, searchHelp. ' +
   'MSAG (message classes) use metadata XML writes: provide "messages" array with {number, shortText} entries. Create empty then update, or provide messages at creation. ' +
   'SRVB (service bindings) use metadata XML writes: provide serviceDefinition (SRVD name), odataVersion ("V2"/"V4"), optional category (0=UI, 1=Web API). ' +

@@ -415,9 +415,6 @@ function buildBaseErrorMessage(
   if (err instanceof AdtApiError) {
     // Append additional SAP messages (line numbers, secondary errors) if available
     const enriched = enrichWithSapDetails(err, message);
-    // Canonicalize TABL slash forms (TABL/DT, TABL/DS) back to bare 'TABL' so
-    // DDIC hint Sets — which only contain canonical types — match correctly.
-    // See Codex review issue 3 (follow-up to issue #285).
     const argType = canonicalTablType(String(args.type ?? '').toUpperCase());
     const classification = classifySapDomainError(err.statusCode, err.responseBody, err.path);
 
@@ -498,9 +495,6 @@ function buildBaseErrorMessage(
   }
 
   if (err instanceof AdtSafetyError) {
-    // Canonicalize TABL slash forms (TABL/DT, TABL/DS) back to bare 'TABL' so
-    // DDIC hint Sets — which only contain canonical types — match correctly.
-    // See Codex review issue 3 (follow-up to issue #285).
     const argType = canonicalTablType(String(args.type ?? '').toUpperCase());
     if (tool === 'SAPRead' && argType === 'TABLE_CONTENTS') {
       return (
@@ -936,8 +930,6 @@ async function inactiveSyntaxDiagnostic(client: AdtClient, type: string, name: s
 }
 
 async function tryPostSaveSyntaxCheck(client: AdtClient, type: string, name: string): Promise<string> {
-  // Canonicalize TABL/DT and TABL/DS to bare 'TABL' so the Set membership check
-  // matches the SAPWrite-side slash forms. See Codex review issue 3.
   if (!DDIC_POST_SAVE_CHECK_TYPES.has(canonicalTablType(type.toUpperCase()))) return '';
   return inactiveSyntaxDiagnostic(client, type, name);
 }
@@ -2863,41 +2855,24 @@ export function buildCreateXml(
   <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
 </dcl:dclSource>`;
     case 'TABL':
-    // Bare 'TABL' is the legacy alias and defaults to a transparent-table create
-    // (TABL/DT) for backward compatibility with callers from before the
-    // create-routing fix. For an explicit structure create, callers pass
-    // 'TABL/DS' (handled in the next case).
     case 'TABL/DT':
-      // Transparent-table create — `<blue:blueSource>` envelope, source is then
-      // written via /source/main. Routes to /sap/bc/adt/ddic/tables/.
+    case 'TABL/DS': {
+      // Bare TABL is the legacy alias for TABL/DT (transparent table). The same
+      // <blue:blueSource> envelope works for both subtypes — only adtcore:type
+      // and the POST URL differ. See docs/plans/completed/fix-tabl-ds-create-routing.md.
+      const adtType = type === 'TABL/DS' ? 'TABL/DS' : 'TABL/DT';
       return `<?xml version="1.0" encoding="UTF-8"?>
 <blue:blueSource xmlns:blue="http://www.sap.com/wbobj/blue"
                  xmlns:adtcore="http://www.sap.com/adt/core"
                  adtcore:description="${escapeXml(description)}"
                  adtcore:name="${escapeXml(name)}"
-                 adtcore:type="TABL/DT"
+                 adtcore:type="${adtType}"
                  adtcore:masterLanguage="EN"
                  adtcore:masterSystem="H00"
                  adtcore:responsible="DEVELOPER">
   <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
 </blue:blueSource>`;
-    case 'TABL/DS':
-      // DDIC structure create — same `<blue:blueSource>` envelope as TABL/DT,
-      // only `adtcore:type` differs (TABL/DS instead of TABL/DT). Routes to
-      // /sap/bc/adt/ddic/structures/. Live evidence on a4h S/4HANA 2023
-      // (2026-05-27) confirms a POST with this body returns 201 Created. See
-      // follow-up to issue #285.
-      return `<?xml version="1.0" encoding="UTF-8"?>
-<blue:blueSource xmlns:blue="http://www.sap.com/wbobj/blue"
-                 xmlns:adtcore="http://www.sap.com/adt/core"
-                 adtcore:description="${escapeXml(description)}"
-                 adtcore:name="${escapeXml(name)}"
-                 adtcore:type="TABL/DS"
-                 adtcore:masterLanguage="EN"
-                 adtcore:masterSystem="H00"
-                 adtcore:responsible="DEVELOPER">
-  <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
-</blue:blueSource>`;
+    }
     case 'BDEF':
       // BDEF uses SAP's "blue" framework — blue:blueSource with http://www.sap.com/wbobj/blue namespace.
       // Confirmed by vibing-steampunk (Go) and fr0ster (TypeScript) reference implementations.
@@ -3214,40 +3189,21 @@ export function normalizeObjectType(type: string): string {
   return SLASH_TYPE_MAP[normalized] ?? normalized;
 }
 
-/** TABL subtypes that SAPWrite preserves end-to-end so the create path can route by
- *  subtype (TABL/DT → /sap/bc/adt/ddic/tables, TABL/DS → /sap/bc/adt/ddic/structures).
- *  See follow-up to issue #285: the global SLASH_TYPE_MAP collapses these to bare
- *  'TABL' for SAPRead / SAPNavigate (where the read-path resolver falls back across
- *  endpoints), but writes need to honour the user's subtype intent because:
- *    1. The two endpoints accept different name-length limits — namespaced names
- *       like /LEOWM/SD_MON_S_WHO (19 chars) are valid structures but exceed the
- *       16-char transparent-table limit and would fail with T100 AD102.
- *    2. SAP infers the object kind from `adtcore:type` in the create envelope:
- *       posting `TABL/DT` to /structures/ silently flips DD02L-TABCLASS to INTTAB
- *       (the corruption bug fixed for update/delete/activate in PR #286).
- *  Bare 'TABL' is intentionally NOT in this set — it continues to mean TABL/DT,
- *  preserving backward compatibility with callers from before this fix. */
+/** TABL subtypes that SAPWrite preserves (instead of collapsing to bare 'TABL' via
+ *  SLASH_TYPE_MAP) so the create path can route TABL/DT → /ddic/tables and
+ *  TABL/DS → /ddic/structures. See docs/plans/completed/fix-tabl-ds-create-routing.md. */
 const TABL_WRITE_SUBTYPES = new Set(['TABL/DT', 'TABL/DS']);
 
-/** Legacy aliases that SAPWrite remaps to their canonical TABL subtype form
- *  *before* the SLASH_TYPE_MAP collapse runs. Required so the create path
- *  routes correctly for callers using older type names.
- *
- *  Codex review pointed out that without this remap, `SAPWrite create
- *  type='STRU/DS'` would fall through to `SLASH_TYPE_MAP['STRU/DS'] = 'TABL'`
- *  and silently route the structure create to /sap/bc/adt/ddic/tables with
- *  `adtcore:type="TABL/DT"` — re-introducing the exact bug this fix targets,
- *  just via an alias path. Other tools (SAPRead/Navigate) keep the global
- *  STRU/DS → TABL collapse via SLASH_TYPE_MAP because their read-path
- *  resolver doesn't care about the subtype. */
+/** Legacy slash-form aliases SAPWrite remaps to a canonical subtype before
+ *  SLASH_TYPE_MAP runs — otherwise STRU/DS would collapse to bare 'TABL' and
+ *  route the structure create to /ddic/tables. */
 const SAPWRITE_TABL_ALIAS: Record<string, string> = {
   'STRU/DS': 'TABL/DS',
 };
 
-/** SAPWrite-aware variant of `normalizeObjectType` that preserves explicit TABL
- *  subtypes and remaps the legacy `STRU/DS` alias to `TABL/DS`. Used by
- *  `normalizeTypeArgsForValidation` for SAPWrite only — every other tool keeps
- *  the collapsing behaviour. */
+/** SAPWrite-only normalizer: preserves TABL/DT and TABL/DS and remaps STRU/DS
+ *  to TABL/DS. Every other tool keeps the global collapsing behaviour of
+ *  `normalizeObjectType`. */
 function normalizeWriteObjectType(type: string): string {
   const normalized = String(type).trim().toUpperCase();
   if (!normalized) return '';
@@ -3257,12 +3213,10 @@ function normalizeWriteObjectType(type: string): string {
   return SLASH_TYPE_MAP[normalized] ?? normalized;
 }
 
-/** Collapse explicit TABL subtypes (TABL/DT, TABL/DS) back to bare 'TABL' for
- *  downstream subsystems that operate on canonical types rather than the
- *  routing subtype — DDIC save / post-save hints, RAP preflight, CDS
- *  dependency hints, cache invalidation. Slash forms stay alive at the URL
- *  routing + XML envelope sites; everything else sees the canonical 'TABL'.
- *  Defensive against Codex review issue 3. */
+/** Collapse TABL/DT and TABL/DS back to bare 'TABL' for downstream Set-membership
+ *  checks (DDIC hints, RAP preflight, CDS dependency hints, cache invalidation)
+ *  that only know about canonical types. The slash form survives at URL routing
+ *  + XML envelope sites. */
 function canonicalTablType(type: string): string {
   return type === 'TABL/DT' || type === 'TABL/DS' ? 'TABL' : type;
 }
@@ -3277,10 +3231,7 @@ function normalizeTypeArgsForValidation(toolName: string, args: Record<string, u
         objectType: args.objectType === undefined ? undefined : normalizeObjectType(String(args.objectType ?? '')),
       };
     case 'SAPWrite':
-      // SAPWrite uses the subtype-preserving normalizer so the create path can
-      // distinguish TABL/DT (transparent table → /sap/bc/adt/ddic/tables) from
-      // TABL/DS (DDIC structure → /sap/bc/adt/ddic/structures). Other slash
-      // forms still collapse as usual via SLASH_TYPE_MAP. See follow-up to #285.
+      // SAPWrite preserves TABL/DT and TABL/DS so the create path can route by subtype.
       return {
         ...args,
         type: args.type === undefined ? undefined : normalizeWriteObjectType(String(args.type ?? '')),
@@ -3397,22 +3348,12 @@ export function objectBasePath(type: string): string {
     case 'SRVB':
       return '/sap/bc/adt/businessservices/bindings/';
     case 'TABL':
-      // Default URL prefix for TABL: /tables/ (transparent tables). DDIC structures
-      // live at /sap/bc/adt/ddic/structures/<name>; for those, callers must use
-      // AdtClient.resolveTablObjectUrl(name) which falls back on 404. For SAPWrite
-      // create the explicit subtype forms 'TABL/DT' and 'TABL/DS' below are
-      // preferred — they preserve the user's intent end-to-end.
-      return '/sap/bc/adt/ddic/tables/';
     case 'TABL/DT':
-      // Explicit transparent-table form; equivalent to bare 'TABL'. Preserved by
-      // SAPWrite's `normalizeWriteObjectType()` so create paths can route on it.
+      // Bare TABL defaults to transparent table. For reads, callers should use
+      // AdtClient.resolveTablObjectUrl(name) which falls back to /structures/ on 404.
       return '/sap/bc/adt/ddic/tables/';
     case 'TABL/DS':
-      // Explicit DDIC structure form — the only routing that hits the structure
-      // collection. Critical for SAPWrite create: structures support longer names
-      // (e.g. namespaced /LEOWM/SD_MON_S_WHO) than transparent tables, and posting
-      // a structure-shaped body to /tables/ fails with T100 AD102. See the
-      // follow-up to issue #285.
+      // DDIC structures only route through this collection; see follow-up to #285.
       return '/sap/bc/adt/ddic/structures/';
     case 'DOMA':
       return '/sap/bc/adt/ddic/domains/';
@@ -3557,9 +3498,6 @@ async function handleSAPWrite(
   cachingLayer?: CachingLayer,
 ): Promise<ToolResult> {
   const action = String(args.action ?? '');
-  // Use the SAPWrite-aware normalizer so TABL/DT and TABL/DS slash forms survive
-  // (the global normalizer collapses them via SLASH_TYPE_MAP, which is correct
-  // for read paths but breaks create routing — see follow-up to issue #285).
   const type = normalizeWriteObjectType(String(args.type ?? ''));
   const name = String(args.name ?? '');
   const source = String(args.source ?? '');
@@ -3609,19 +3547,8 @@ async function handleSAPWrite(
     action !== 'create' &&
     action !== 'batch_create'
   ) {
-    // Write/activate/delete for any TABL form (bare, /DT, /DS): ask SAP for the
-    // actual subtype via search and refuse transparent-table writes on systems
-    // that don't expose /sap/bc/adt/ddic/tables/. The resolver returns the
-    // correct URL for either subtype, and refuses TABL/DT with the SE11 hint on
-    // NW 7.50/7.51. Even when the caller passed an explicit slash form we still
-    // route through the resolver so:
-    //   1. The PR #286 safety contract (no silent corruption) applies uniformly.
-    //   2. A caller saying TABL/DT on 7.50 gets the same loud refusal as bare
-    //      TABL — otherwise the explicit form would silently 404 against the
-    //      missing endpoint.
-    //   3. Bonus: if the caller's hint disagrees with what SAP says the object
-    //      is, the resolver routes to the actual endpoint (no surprise PUTs).
-    // See issue #285 and the follow-up TABL/DS create-routing fix.
+    // All TABL forms route through the search-first resolver on update/delete/activate
+    // so the PR #286 SE11-hint refusal applies even when callers pass an explicit slash form.
     try {
       objectUrl = await client.resolveTablObjectUrlForWrite(name, {
         tablesEndpointAvailable: isTablesEndpointAvailable(),
@@ -3658,16 +3585,9 @@ async function handleSAPWrite(
     // Pass the resolved group through to buildCreateXml via args.group
     (args as Record<string, unknown>).group = group;
   } else {
-    // Transparent-table create/batch_create requires /sap/bc/adt/ddic/tables/.
-    // On systems that don't expose it (NW 7.50/7.51 — the database-table editor
-    // was added in NW 7.52) the POST would 404 with a confusing message, so
-    // refuse upfront with the SE11 hint. See issue #285.
-    //
-    // Bare 'TABL' and explicit 'TABL/DT' both target the transparent-table
-    // collection and therefore both go through the gate. 'TABL/DS' (structure)
-    // deliberately skips the gate because /sap/bc/adt/ddic/structures/ exists
-    // on every ADT release including NW 7.50 — structure creates work
-    // everywhere. See follow-up to #285.
+    // Discovery gate: refuse transparent-table creates upfront on systems that
+    // don't expose /ddic/tables/ (NW 7.50/7.51). TABL/DS skips this — /structures/
+    // is always available. See issue #285.
     if ((type === 'TABL' || type === 'TABL/DT') && (action === 'create' || action === 'batch_create')) {
       if (isTablesEndpointAvailable() === false) {
         return errorResult(TABL_DT_WRITE_UNAVAILABLE_HINT);
@@ -3678,10 +3598,7 @@ async function handleSAPWrite(
   }
 
   const invalidateWrittenObject = (objType = type, objName = name): void => {
-    // The source cache keys reads with the canonical 'TABL' type (set by
-    // SAPRead's normalization), so invalidating with 'TABL/DT' or 'TABL/DS'
-    // would leave stale entries. Canonicalize before the invalidation call.
-    // Codex review issue 3 (follow-up to issue #285).
+    // Source cache is keyed by canonical type (SAPRead collapses TABL/DT, TABL/DS).
     cachingLayer?.invalidate(canonicalTablType(objType), objName, 'all');
     cachingLayer?.inactiveLists.invalidate(client.username);
   };
@@ -4028,10 +3945,6 @@ async function handleSAPWrite(
       // 'application/*' — the wildcard lets the SAP server resolve the correct
       // handler (matching how ADT Eclipse and abap-adt-api send requests).
       const contentType = createContentTypeForType(type);
-      // BDEF + all TABL forms (bare, TABL/DT, TABL/DS) require packageName as a
-      // query parameter on the create POST. Extending the check to the slash
-      // forms is harmless on /structures/ (verified inert on a4h S/4 2023) and
-      // future-proofs against a release that enforces it.
       const needsPackageParam = type === 'BDEF' || type === 'TABL' || type === 'TABL/DT' || type === 'TABL/DS';
       let result: string;
       try {
@@ -4595,9 +4508,6 @@ async function handleSAPWrite(
       const defaultPackage = normalizePackageOverride(args.package, '$TMP');
 
       const batchPlan = objects.map((obj) => {
-        // Use the SAPWrite-aware normalizer so TABL/DT and TABL/DS subtypes
-        // survive per-entry (matches the single-create path). Bare TABL still
-        // defaults to TABL/DT, other slash forms still collapse. Follow-up #285.
         const objType = normalizeWriteObjectType(String(obj.type ?? ''));
         const objName = String(obj.name ?? '');
         const objPackage = normalizePackageOverride(obj.package, defaultPackage);
@@ -4765,12 +4675,8 @@ async function handleSAPWrite(
             }
           }
 
-          // Step 1: Create the object
-          // Transparent-table batch_create requires /sap/bc/adt/ddic/tables/;
-          // refuse upfront on systems lacking it (NW 7.50/7.51) — see issue #285.
-          // 'TABL/DS' entries (structures) deliberately skip the gate because
-          // /sap/bc/adt/ddic/structures/ exists on every ADT release including
-          // NW 7.50 — structure creates work everywhere. Follow-up to #285.
+          // Step 1: Create the object (per-entry transparent-table discovery gate;
+          // mirrors the single-create site above. TABL/DS skips it — /structures/ always exists.)
           if ((objType === 'TABL' || objType === 'TABL/DT') && isTablesEndpointAvailable() === false) {
             results.push({
               type: objType,
@@ -4786,9 +4692,6 @@ async function handleSAPWrite(
           const objMetadataProps = getMetadataWriteProperties(obj);
           const body = buildCreateXml(objType, objName, objPackage, objDescription, objMetadataProps);
           const contentType = createContentTypeForType(objType);
-          // See single-create site above — extend the BDEF+TABL packageName
-          // query-param rule to the explicit TABL slash forms so batch entries
-          // behave identically to the single-create path.
           const needsPackageParam =
             objType === 'BDEF' || objType === 'TABL' || objType === 'TABL/DT' || objType === 'TABL/DS';
           try {
@@ -5038,9 +4941,7 @@ function runRapPreflightValidation(
   }
 
   const systemType = features?.systemType ?? (configSystemType !== 'auto' ? configSystemType : undefined);
-  // Canonicalize TABL slash forms — validateRapSource's switch only has a 'TABL'
-  // case (rap-preflight.ts:55); passing 'TABL/DT' or 'TABL/DS' would silently
-  // no-op. Codex review issue 3 (follow-up to issue #285).
+  // Canonicalize so validateRapSource's 'TABL' case matches TABL/DT and TABL/DS.
   const result = validateRapSource(canonicalTablType(type), source, {
     systemType,
     abapRelease: features?.abapRelease,
