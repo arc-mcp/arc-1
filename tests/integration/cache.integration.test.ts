@@ -44,7 +44,7 @@ const TEST_CLASS = 'ZCL_ARC1_TEST';
 /** Known Z class with dependencies — used for dep graph tests. S/4-only BOBF demo. */
 const TEST_CLASS_WITH_DEPS = 'ZCL_DEMO_D_CALC_AMOUNT';
 /** Package that contains the test classes with deps */
-const _TEST_PACKAGE = '$DEMO_SOI_DRAFT';
+const TEST_PACKAGE_WITH_DEPS = '$DEMO_SOI_DRAFT';
 
 function readTestClass(client: AdtClient) {
   return (ifNoneMatch?: string) => client.getClass(TEST_CLASS, undefined, { ifNoneMatch });
@@ -447,14 +447,22 @@ describe('Cache Integration Tests', () => {
       expect(cl.isWarmupAvailable).toBe(true);
     }, 60000);
 
-    it('second warmup run skips unchanged objects (delta by hash)', async () => {
+    it('second warmup run skips unchanged objects (delta by hash)', async (ctx) => {
+      requireDepGraphFixture(ctx);
       const cl = new CachingLayer(new MemoryCache());
 
-      const run1 = await runWarmup(client, cl, '$TMP');
-      expect(run1.fetched).toBeGreaterThanOrEqual(0);
+      const run1 = await runWarmup(client, cl, TEST_PACKAGE_WITH_DEPS);
+      if (run1.totalObjects === 0) {
+        requireOrSkip(ctx, undefined, `No objects in ${TEST_PACKAGE_WITH_DEPS} — system has nothing stable to index`);
+      }
+      expect(run1.fetched).toBeGreaterThan(0);
+      expect(run1.failed).toBe(0);
 
-      // Second run: same objects, same source — all skipped
-      const run2 = await runWarmup(client, cl, '$TMP');
+      // Second run uses the stable demo package rather than $TMP, which can
+      // change underneath CI when other live-SAP tests create transient objects.
+      const run2 = await runWarmup(client, cl, TEST_PACKAGE_WITH_DEPS);
+      expect(run2.totalObjects).toBe(run1.totalObjects);
+      expect(run2.failed).toBe(0);
       expect(run2.skipped).toBe(run1.fetched + run1.skipped); // all previously fetched are now skipped
       expect(run2.fetched).toBe(0); // nothing new to fetch
     }, 120000);
@@ -463,7 +471,7 @@ describe('Cache Integration Tests', () => {
       requireDepGraphFixture(ctx);
       const cl = new CachingLayer(new MemoryCache());
       // Use package that contains classes with known inter-dependencies
-      await runWarmup(client, cl, '$DEMO_SOI_DRAFT');
+      await runWarmup(client, cl, TEST_PACKAGE_WITH_DEPS);
 
       cl.setWarmupDone(true);
 
@@ -477,7 +485,7 @@ describe('Cache Integration Tests', () => {
     it('SAPContext usages action returns result after warmup', async (ctx) => {
       requireDepGraphFixture(ctx);
       const cl = new CachingLayer(new MemoryCache());
-      await runWarmup(client, cl, '$DEMO_SOI_DRAFT');
+      await runWarmup(client, cl, TEST_PACKAGE_WITH_DEPS);
 
       const r = await handleToolCall(
         client,

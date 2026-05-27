@@ -1156,6 +1156,11 @@ New observation from the validation run:
 
 - The E2E job passed but consumed the full `15` minute job budget (`14m59s`). Runtime reduction remains urgent before adding more E2E coverage or relying on this lane under normal CI variability.
 
+Additional PR-readiness finding:
+
+- A later final-check run (`26536051732`) exposed a brittle live-SAP assumption in `tests/integration/cache.integration.test.ts`: the "second warmup run skips unchanged objects" test used `$TMP`, and `$TMP` changed from `204` to `205` objects between the two warmup passes. The second pass correctly fetched the new object, but the test expected `0` fetched objects and failed.
+- This PR now moves that delta-by-hash assertion to the stable S/4 demo package `$DEMO_SOI_DRAFT`, which is already the package used by the cache reverse-dependency tests. That preserves the hash-skip contract while avoiding transient `$TMP` churn and reduces this specific check from a roughly `205` object scan to the `9` object demo package on the S4 test system.
+
 ### Correctness Blockers
 
 These should be fixed before runtime optimization because they determine whether green integration/E2E runs are meaningful.
@@ -1229,6 +1234,7 @@ Implemented quick wins in PR `#274`:
 |---|---|---|
 | P1 | Renamed reliability summary wording from `Top Skip Reasons` to `Top Skipped Tests`. | Skip Telemetry Semantics |
 | P1 | Reworked local E2E start/stop portability and made stop-script error detection handle the default text logger. | E2E Script Portability And Log Signal |
+| P1 | Stabilized the cache warmup delta integration test by moving the strict second-run assertion from shared `$TMP` to stable `$DEMO_SOI_DRAFT`. | GitHub Actions Runtime Deep Dive |
 | P2 | Split cheap CI checks from the SAP title gate and moved SAP serialization to repository-wide integration/E2E job concurrency. | CI Gating And SAP Serialization |
 
 Remaining follow-ups:
@@ -1239,7 +1245,7 @@ Remaining follow-ups:
 | P0 | Stop CTS transport leakage and add a cleanup audit. | CTS Transport And Transportable Package Cleanup |
 | P1 | Convert pseudo-skips to real `ctx.skip()` calls and add a guard against bare skip returns. | Pseudo-Skip Discipline |
 | P1 | Add structured skip artifacts and reason extraction now that the misleading heading has been corrected. | Skip Telemetry Semantics |
-| P1 | Reduce PR-path live SAP runtime for cache warmup, broad `BAPIRET2` where-used calls, recursive release coverage, and RAP write coverage. | GitHub Actions Runtime Deep Dive |
+| P1 | Further reduce PR-path live SAP runtime for remaining cache warmup scans, broad `BAPIRET2` where-used calls, recursive release coverage, and RAP write coverage. | GitHub Actions Runtime Deep Dive |
 
 ## Raw Suite Summary
 

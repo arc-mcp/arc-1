@@ -1,6 +1,6 @@
 # Test Suite Audit Quick Wins
 
-**Status:** Completed in PR `#274`; local validation and GitHub Actions run `26534513455` passed after the quick-win implementation.
+**Status:** Completed in PR `#274`; local validation and GitHub Actions run `26534513455` passed after the quick-win implementation. A later PR-readiness run exposed a `$TMP` cache warmup flake, so the final implementation also moves that strict delta assertion to stable `$DEMO_SOI_DRAFT`.
 
 ## Overview
 
