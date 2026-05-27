@@ -55,7 +55,7 @@ Live evidence: search with `objectType=TABL/DT` returns tables only; `objectType
 | `src/handlers/intent.ts` `normalizeWriteObjectType` | SAPWrite-aware normalizer that preserves `TABL/DT` and `TABL/DS` end-to-end so the create path can route on subtype (follow-up to #285) | ✅ |
 | `src/handlers/intent.ts` `objectBasePath` | `TABL` and `TABL/DT` → `/ddic/tables/`; `TABL/DS` → `/ddic/structures/` (follow-up to #285) | ✅ |
 | `src/handlers/intent.ts` `buildCreateXml` | `TABL` and `TABL/DT` emit `adtcore:type="TABL/DT"`; `TABL/DS` emits `adtcore:type="TABL/DS"`; same `<blue:blueSource>` envelope for both (follow-up to #285) | ✅ |
-| `src/handlers/schemas.ts` enums | `TABL`, `TABL/DT`, `TABL/DS` for SAPWrite (slash forms used only by create routing — reads still collapse to bare `TABL`) | ✅ |
+| `src/handlers/schemas.ts` enums | `TABL`, `TABL/DT`, `TABL/DS` for SAPWrite (slash forms preserved end-to-end for all SAPWrite actions; create branches URL + XML on subtype, update/delete/activate/edit_method/scaffold_rap_handlers all route through `resolveTablObjectUrlForWrite()` so the PR #286 search-first safety contract applies uniformly. Reads still collapse to bare `TABL` via SLASH_TYPE_MAP.) | ✅ |
 | `src/probe/catalog.ts` | `TABL` with note about /structures/ duality | ✅ |
 
 ## TABL/DS create-path routing (follow-up to issue #285) — verified 2026-05-27

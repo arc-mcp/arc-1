@@ -8658,6 +8658,219 @@ ENDCLASS.`;
         resetCachedFeatures();
       }
     });
+
+    // ────────────────────────────────────────────────────────────────────────
+    // Codex review follow-ups (addressed before merging the TABL/DS fix):
+    //   Issue 1: explicit TABL/DT and TABL/DS on update/delete must go through
+    //            resolveTablObjectUrlForWrite (PR #286 search-first resolver)
+    //            so the NW 7.50 SE11-hint refusal still fires.
+    //   Issue 2: legacy STRU/DS alias must remap to TABL/DS on SAPWrite create
+    //            (not collapse to bare TABL via SLASH_TYPE_MAP).
+    //   Issue 3: canonical-type Sets (DDIC hints, RAP preflight, cache) must
+    //            see bare 'TABL' even when the routing layer used a slash form.
+    // ────────────────────────────────────────────────────────────────────────
+
+    it('SAPWrite update type="TABL/DS" routes through resolveTablObjectUrlForWrite (Codex issue 1)', async () => {
+      // Search must be called (the resolver's first action) and the resolved
+      // /structures/ URL must be used for the PUT — proving the PR #286
+      // search-first contract applies to explicit slash forms too.
+      mockFetch.mockReset();
+      const calls: Array<{ method: string; url: string }> = [];
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
+        const method = opts?.method ?? 'GET';
+        const urlStr = String(url);
+        calls.push({ method, url: urlStr });
+        if (method === 'GET' && urlStr.includes('/informationsystem/search?')) {
+          return Promise.resolve(
+            mockResponse(
+              200,
+              `<?xml version="1.0" encoding="utf-8"?>
+<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">
+  <adtcore:objectReference adtcore:uri="/sap/bc/adt/ddic/structures/BAPIRET2" adtcore:type="TABL/DS" adtcore:name="BAPIRET2"/>
+</adtcore:objectReferences>`,
+            ),
+          );
+        }
+        if (method === 'POST' && urlStr.includes('_action=LOCK')) {
+          return Promise.resolve(
+            mockResponse(200, '<asx:values><LOCK_HANDLE>LH_DS_UPD</LOCK_HANDLE><CORRNR></CORRNR></asx:values>', {
+              'x-csrf-token': 'T',
+            }),
+          );
+        }
+        return Promise.resolve(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'update',
+        type: 'TABL/DS',
+        name: 'BAPIRET2',
+        source: "@EndUserText.label : 'x'\ndefine structure bapiret2 { mandt : mandt; }",
+      });
+
+      expect(result.isError).toBeUndefined();
+      // Search must have been called (signature of the search-first resolver)
+      expect(calls.some((c) => c.url.includes('/informationsystem/search?'))).toBe(true);
+      // PUT must land at /structures/ (resolver returned the canonical URL)
+      expect(
+        calls.some((c) => c.method === 'PUT' && c.url.includes('/sap/bc/adt/ddic/structures/BAPIRET2/source/main')),
+      ).toBe(true);
+    });
+
+    it('SAPWrite update type="TABL/DT" on NW 7.50 refuses via the search-first resolver (Codex issue 1)', async () => {
+      // The explicit TABL/DT slash form must hit the same SE11-hint refusal as
+      // bare TABL when /sap/bc/adt/ddic/tables/ is missing from discovery.
+      setCachedFeatures({
+        abapRelease: '750',
+        systemType: 'onprem',
+        discoveryMap: new Map<string, string[]>([['/sap/bc/adt/ddic/structures', ['application/*']]]),
+      } as ResolvedFeatures);
+      try {
+        mockFetch.mockReset();
+        // First call: search returns TABL/DT — resolver decides this is a
+        // transparent table and the discovery map says /tables/ is unavailable
+        // → throws AdtSafetyError before any PUT.
+        mockFetch.mockResolvedValueOnce(
+          mockResponse(
+            200,
+            `<?xml version="1.0" encoding="utf-8"?>
+<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">
+  <adtcore:objectReference adtcore:uri="/sap/bc/adt/vit/wb/object_type/tabldt/object_name/SCARR" adtcore:type="TABL/DT" adtcore:name="SCARR"/>
+</adtcore:objectReferences>`,
+          ),
+        );
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+          action: 'update',
+          type: 'TABL/DT',
+          name: 'SCARR',
+          source: "@EndUserText.label : 'hijack'\ndefine table scarr { key mandt : mandt; }",
+        });
+        expect(result.isError).toBe(true);
+        const message = result.content[0]?.text ?? '';
+        expect(message).toContain('Transparent table writes via ADT REST are not available');
+        expect(message).toContain('SCARR');
+        // No PUT / LOCK should have fired — refusal happens during URL resolution.
+        const urls = mockFetch.mock.calls.map((c: unknown[]) => String(c[0]));
+        expect(urls.some((u) => u.includes('/source/main'))).toBe(false);
+        expect(urls.some((u) => u.includes('_action=LOCK'))).toBe(false);
+      } finally {
+        resetCachedFeatures();
+      }
+    });
+
+    it('SAPWrite create type="STRU/DS" remaps to TABL/DS and routes to /structures/ (Codex issue 2)', async () => {
+      // Legacy STRU/DS alias must reach the structures endpoint via the SAPWrite
+      // normalizer's alias remap, NOT collapse to bare TABL through SLASH_TYPE_MAP.
+      mockFetch.mockReset();
+      const calls: Array<{ method: string; url: string; body?: string }> = [];
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string; body?: string }) => {
+        const method = opts?.method ?? 'GET';
+        const urlStr = String(url);
+        calls.push({ method, url: urlStr, body: opts?.body });
+        if (method === 'POST' && urlStr.includes('_action=LOCK')) {
+          return Promise.resolve(
+            mockResponse(200, '<asx:values><LOCK_HANDLE>LH_STRU_DS</LOCK_HANDLE><CORRNR></CORRNR></asx:values>', {
+              'x-csrf-token': 'T',
+            }),
+          );
+        }
+        return Promise.resolve(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'STRU/DS',
+        name: 'ZSTR_FROM_STRU_DS',
+        package: '$TMP',
+        source: 'define structure zstr_from_stru_ds { mandt : mandt; }',
+      });
+
+      expect(result.isError).toBeUndefined();
+      const createCall = calls.find(
+        (c) => c.method === 'POST' && !c.url.includes('_action=') && c.url.includes('/sap/bc/adt/ddic/structures'),
+      );
+      expect(createCall).toBeDefined();
+      expect(createCall?.body).toContain('adtcore:type="TABL/DS"');
+      // Must NOT route to /tables/ — that's the bug the alias remap prevents.
+      expect(calls.some((c) => c.url.includes('/sap/bc/adt/ddic/tables/ZSTR_FROM_STRU_DS'))).toBe(false);
+    });
+
+    it('SAPRead with type="TABL/DS" still collapses to bare TABL on the read path (regression guard)', async () => {
+      // The SAPWrite-aware normalizer must NOT leak into SAPRead — the read
+      // path still uses the global SLASH_TYPE_MAP collapse so getTabl()'s 404
+      // fallback handles either endpoint.
+      mockFetch.mockReset();
+      // getTabl() probes /tables/ first, falls back to /structures/ on 404.
+      mockFetch.mockResolvedValueOnce(mockResponse(404, '<?xml version="1.0"?><error/>'));
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(200, "@EndUserText.label : 'BAPIRET2'\ndefine structure bapiret2 { mandt : mandt; }"),
+      );
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'TABL/DS',
+        name: 'BAPIRET2',
+      });
+      expect(result.isError).toBeUndefined();
+      const urls = mockFetch.mock.calls.map((c: unknown[]) => String(c[0]));
+      // The 404 fallback chain proves we went through the read-path resolver,
+      // not the SAPWrite-aware one (which would skip the probe).
+      expect(urls.some((u) => u.includes('/sap/bc/adt/ddic/tables/BAPIRET2'))).toBe(true);
+      expect(urls.some((u) => u.includes('/sap/bc/adt/ddic/structures/BAPIRET2'))).toBe(true);
+    });
+
+    it('SAPWrite batch_create with mixed TABL/DT + TABL/DS on a complete discovery map routes each to its own endpoint', async () => {
+      // Full discovery map (both /tables and /structures advertised), so both
+      // entries succeed. Asserts TABL/DT lands at /tables/, TABL/DS at /structures/,
+      // and there's no cross-routing.
+      setCachedFeatures({
+        abapRelease: '758',
+        systemType: 'onprem',
+        discoveryMap: new Map<string, string[]>([
+          ['/sap/bc/adt/ddic/tables', ['application/*']],
+          ['/sap/bc/adt/ddic/structures', ['application/*']],
+        ]),
+      } as ResolvedFeatures);
+      try {
+        mockFetch.mockReset();
+        const calls: Array<{ method: string; url: string }> = [];
+        mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
+          const method = opts?.method ?? 'GET';
+          const urlStr = String(url);
+          calls.push({ method, url: urlStr });
+          if (method === 'POST' && urlStr.includes('_action=LOCK')) {
+            return Promise.resolve(
+              mockResponse(200, '<asx:values><LOCK_HANDLE>LH_BOTH</LOCK_HANDLE><CORRNR></CORRNR></asx:values>', {
+                'x-csrf-token': 'T',
+              }),
+            );
+          }
+          return Promise.resolve(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
+        });
+
+        const config = { ...DEFAULT_CONFIG, lintBeforeWrite: false };
+        const result = await handleToolCall(createClient(), config, 'SAPWrite', {
+          action: 'batch_create',
+          package: '$TMP',
+          objects: [
+            { type: 'TABL/DT', name: 'ZTBL_BOTH', source: 'define table ztbl_both { key client : abap.clnt; }' },
+            { type: 'TABL/DS', name: 'ZSTR_BOTH', source: 'define structure zstr_both { mandt : mandt; }' },
+          ],
+        });
+
+        expect(result.isError).toBeUndefined();
+        const text = result.content[0]?.text ?? '';
+        expect(text).toContain('ZTBL_BOTH');
+        expect(text).toContain('ZSTR_BOTH');
+        // Per-entry routing isolation: TABL/DT only touches /tables/ZTBL_BOTH,
+        // TABL/DS only touches /structures/ZSTR_BOTH.
+        expect(calls.some((c) => c.url.includes('/sap/bc/adt/ddic/tables/ZTBL_BOTH'))).toBe(true);
+        expect(calls.some((c) => c.url.includes('/sap/bc/adt/ddic/structures/ZSTR_BOTH'))).toBe(true);
+        expect(calls.some((c) => c.url.includes('/sap/bc/adt/ddic/structures/ZTBL_BOTH'))).toBe(false);
+        expect(calls.some((c) => c.url.includes('/sap/bc/adt/ddic/tables/ZSTR_BOTH'))).toBe(false);
+      } finally {
+        resetCachedFeatures();
+      }
+    });
   });
 
   describe('SAPWrite DCLS source-based writes', () => {

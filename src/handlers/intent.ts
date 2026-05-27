@@ -415,7 +415,10 @@ function buildBaseErrorMessage(
   if (err instanceof AdtApiError) {
     // Append additional SAP messages (line numbers, secondary errors) if available
     const enriched = enrichWithSapDetails(err, message);
-    const argType = String(args.type ?? '').toUpperCase();
+    // Canonicalize TABL slash forms (TABL/DT, TABL/DS) back to bare 'TABL' so
+    // DDIC hint Sets — which only contain canonical types — match correctly.
+    // See Codex review issue 3 (follow-up to issue #285).
+    const argType = canonicalTablType(String(args.type ?? '').toUpperCase());
     const classification = classifySapDomainError(err.statusCode, err.responseBody, err.path);
 
     if (classification) {
@@ -495,7 +498,10 @@ function buildBaseErrorMessage(
   }
 
   if (err instanceof AdtSafetyError) {
-    const argType = String(args.type ?? '').toUpperCase();
+    // Canonicalize TABL slash forms (TABL/DT, TABL/DS) back to bare 'TABL' so
+    // DDIC hint Sets — which only contain canonical types — match correctly.
+    // See Codex review issue 3 (follow-up to issue #285).
+    const argType = canonicalTablType(String(args.type ?? '').toUpperCase());
     if (tool === 'SAPRead' && argType === 'TABLE_CONTENTS') {
       return (
         `${message}\n\nHint: TABLE_CONTENTS is blocked by safety configuration or missing data scope. ` +
@@ -930,7 +936,9 @@ async function inactiveSyntaxDiagnostic(client: AdtClient, type: string, name: s
 }
 
 async function tryPostSaveSyntaxCheck(client: AdtClient, type: string, name: string): Promise<string> {
-  if (!DDIC_POST_SAVE_CHECK_TYPES.has(type.toUpperCase())) return '';
+  // Canonicalize TABL/DT and TABL/DS to bare 'TABL' so the Set membership check
+  // matches the SAPWrite-side slash forms. See Codex review issue 3.
+  if (!DDIC_POST_SAVE_CHECK_TYPES.has(canonicalTablType(type.toUpperCase()))) return '';
   return inactiveSyntaxDiagnostic(client, type, name);
 }
 
@@ -3221,14 +3229,42 @@ export function normalizeObjectType(type: string): string {
  *  preserving backward compatibility with callers from before this fix. */
 const TABL_WRITE_SUBTYPES = new Set(['TABL/DT', 'TABL/DS']);
 
+/** Legacy aliases that SAPWrite remaps to their canonical TABL subtype form
+ *  *before* the SLASH_TYPE_MAP collapse runs. Required so the create path
+ *  routes correctly for callers using older type names.
+ *
+ *  Codex review pointed out that without this remap, `SAPWrite create
+ *  type='STRU/DS'` would fall through to `SLASH_TYPE_MAP['STRU/DS'] = 'TABL'`
+ *  and silently route the structure create to /sap/bc/adt/ddic/tables with
+ *  `adtcore:type="TABL/DT"` — re-introducing the exact bug this fix targets,
+ *  just via an alias path. Other tools (SAPRead/Navigate) keep the global
+ *  STRU/DS → TABL collapse via SLASH_TYPE_MAP because their read-path
+ *  resolver doesn't care about the subtype. */
+const SAPWRITE_TABL_ALIAS: Record<string, string> = {
+  'STRU/DS': 'TABL/DS',
+};
+
 /** SAPWrite-aware variant of `normalizeObjectType` that preserves explicit TABL
- *  subtypes. Used by `normalizeTypeArgsForValidation` for SAPWrite only — every
- *  other tool keeps the collapsing behaviour. */
+ *  subtypes and remaps the legacy `STRU/DS` alias to `TABL/DS`. Used by
+ *  `normalizeTypeArgsForValidation` for SAPWrite only — every other tool keeps
+ *  the collapsing behaviour. */
 function normalizeWriteObjectType(type: string): string {
   const normalized = String(type).trim().toUpperCase();
   if (!normalized) return '';
+  const aliased = SAPWRITE_TABL_ALIAS[normalized];
+  if (aliased) return aliased;
   if (TABL_WRITE_SUBTYPES.has(normalized)) return normalized;
   return SLASH_TYPE_MAP[normalized] ?? normalized;
+}
+
+/** Collapse explicit TABL subtypes (TABL/DT, TABL/DS) back to bare 'TABL' for
+ *  downstream subsystems that operate on canonical types rather than the
+ *  routing subtype — DDIC save / post-save hints, RAP preflight, CDS
+ *  dependency hints, cache invalidation. Slash forms stay alive at the URL
+ *  routing + XML envelope sites; everything else sees the canonical 'TABL'.
+ *  Defensive against Codex review issue 3. */
+function canonicalTablType(type: string): string {
+  return type === 'TABL/DT' || type === 'TABL/DS' ? 'TABL' : type;
 }
 
 /** Normalize type fields before schema validation so slash/case aliases are accepted. */
@@ -3568,12 +3604,24 @@ async function handleSAPWrite(
   // `buildCreateXml('FUNC', …, properties)` finds it.
   let objectUrl: string;
   let srcUrl: string;
-  if (type === 'TABL' && action !== 'create' && action !== 'batch_create') {
-    // Write/activate/delete: ask SAP for the actual subtype (TABL/DT vs TABL/DS)
-    // and refuse transparent-table writes on systems that don't expose
-    // /sap/bc/adt/ddic/tables/. Read-path resolveTablObjectUrl() would silently
-    // route TABL/DT to /structures/ on NW 7.50, where a PUT would corrupt
-    // DD02L-TABCLASS to INTTAB. See issue #285.
+  if (
+    (type === 'TABL' || type === 'TABL/DT' || type === 'TABL/DS') &&
+    action !== 'create' &&
+    action !== 'batch_create'
+  ) {
+    // Write/activate/delete for any TABL form (bare, /DT, /DS): ask SAP for the
+    // actual subtype via search and refuse transparent-table writes on systems
+    // that don't expose /sap/bc/adt/ddic/tables/. The resolver returns the
+    // correct URL for either subtype, and refuses TABL/DT with the SE11 hint on
+    // NW 7.50/7.51. Even when the caller passed an explicit slash form we still
+    // route through the resolver so:
+    //   1. The PR #286 safety contract (no silent corruption) applies uniformly.
+    //   2. A caller saying TABL/DT on 7.50 gets the same loud refusal as bare
+    //      TABL — otherwise the explicit form would silently 404 against the
+    //      missing endpoint.
+    //   3. Bonus: if the caller's hint disagrees with what SAP says the object
+    //      is, the resolver routes to the actual endpoint (no surprise PUTs).
+    // See issue #285 and the follow-up TABL/DS create-routing fix.
     try {
       objectUrl = await client.resolveTablObjectUrlForWrite(name, {
         tablesEndpointAvailable: isTablesEndpointAvailable(),
@@ -3630,7 +3678,11 @@ async function handleSAPWrite(
   }
 
   const invalidateWrittenObject = (objType = type, objName = name): void => {
-    cachingLayer?.invalidate(objType, objName, 'all');
+    // The source cache keys reads with the canonical 'TABL' type (set by
+    // SAPRead's normalization), so invalidating with 'TABL/DT' or 'TABL/DS'
+    // would leave stale entries. Canonicalize before the invalidation call.
+    // Codex review issue 3 (follow-up to issue #285).
+    cachingLayer?.invalidate(canonicalTablType(objType), objName, 'all');
     cachingLayer?.inactiveLists.invalidate(client.username);
   };
 
@@ -4509,7 +4561,11 @@ async function handleSAPWrite(
           }
         });
       } catch (err) {
-        if (err instanceof AdtApiError && CDS_DEPENDENCY_SENSITIVE_TYPES.has(type) && isDeleteDependencyError(err)) {
+        if (
+          err instanceof AdtApiError &&
+          CDS_DEPENDENCY_SENSITIVE_TYPES.has(canonicalTablType(type)) &&
+          isDeleteDependencyError(err)
+        ) {
           const hint = await buildCdsDeleteDependencyHint(client, type, name, objectUrl);
           if (hint) {
             // Attach via extraHint so the LLM-facing formatter renders it after
@@ -4982,7 +5038,10 @@ function runRapPreflightValidation(
   }
 
   const systemType = features?.systemType ?? (configSystemType !== 'auto' ? configSystemType : undefined);
-  const result = validateRapSource(type, source, {
+  // Canonicalize TABL slash forms — validateRapSource's switch only has a 'TABL'
+  // case (rap-preflight.ts:55); passing 'TABL/DT' or 'TABL/DS' would silently
+  // no-op. Codex review issue 3 (follow-up to issue #285).
+  const result = validateRapSource(canonicalTablType(type), source, {
     systemType,
     abapRelease: features?.abapRelease,
   });
