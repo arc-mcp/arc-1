@@ -248,13 +248,18 @@ export async function checkPackage(
   }
   const roots = extractSubtreeRoots(config);
   const errors: string[] = [];
+  let matched = false;
+  // Evaluate every subtree root before deciding. Fail-closed invariant:
+  // ANY resolver error denies, even if a later root returns true. The docstring
+  // promises this; collecting then deciding (rather than short-circuiting on
+  // first match) ensures errors from earlier roots are not masked by a later
+  // success.
   for (const root of roots) {
     try {
-      if (await resolver.isDescendantOrSelf(root, pkg)) return;
+      if (await resolver.isDescendantOrSelf(root, pkg)) {
+        matched = true;
+      }
     } catch (err) {
-      // Capture and keep trying other roots — one root's failure must not bias
-      // decisions on unrelated roots. If ALL roots fail, the package is denied
-      // and the captured errors are surfaced.
       errors.push(`${root}${SUBTREE_SUFFIX}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
@@ -263,6 +268,7 @@ export async function checkPackage(
       `Operations on package '${pkg}' blocked: DEVCLASS hierarchy resolution failed (${errors.join('; ')})`,
     );
   }
+  if (matched) return;
   throw new AdtSafetyError(
     `Operations on package '${pkg}' are blocked by safety configuration (allowed: ${displayAllowList(config.allowedPackages)})`,
   );

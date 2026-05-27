@@ -276,7 +276,10 @@ describe('Safety System', () => {
         await expect(checkPackage(cfg, 'ZFOO_SUB', resolver)).rejects.toThrow(/SAP unreachable/);
       });
 
-      it('one failing root must not block resolution against another root', async () => {
+      it('any resolver error denies, even if another root would have matched (strict fail-closed)', async () => {
+        // SECURITY INVARIANT: a transient/partial resolver failure must not be
+        // masked by another rule that happens to match. The docstring says
+        // "Any resolver failure is treated as DENY"; this test pins that.
         const cfg = config({ allowedPackages: ['ZBROKEN/**', 'ZGOOD/**'] });
         const calls: string[] = [];
         const resolver: PackageHierarchyResolver = {
@@ -287,7 +290,9 @@ describe('Safety System', () => {
           },
           invalidate() {},
         };
-        await expect(checkPackage(cfg, 'ZGOOD_SUB', resolver)).resolves.toBeUndefined();
+        await expect(checkPackage(cfg, 'ZGOOD_SUB', resolver)).rejects.toThrow(/hierarchy resolution failed/);
+        await expect(checkPackage(cfg, 'ZGOOD_SUB', resolver)).rejects.toThrow(/broken root/);
+        // All roots must still be evaluated so error context is complete.
         expect(calls).toContain('ZBROKEN');
         expect(calls).toContain('ZGOOD');
       });

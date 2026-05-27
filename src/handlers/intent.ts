@@ -3605,10 +3605,18 @@ async function handleSAPWrite(
 
   // Helper: enforce allowedPackages for existing objects (update/delete/edit_method/scaffold_rap_handlers).
   // Only fetches metadata when package restrictions are configured — no extra HTTP call otherwise.
+  // Fail-closed: if the package cannot be determined from ADT metadata, refuse the write
+  // rather than silently passing through the allowlist gate.
   async function enforcePackageForExistingObject(): Promise<string | undefined> {
     if (client.safety.allowedPackages.length === 0) return undefined;
     const pkg = await client.resolveObjectPackage(objectUrl);
-    if (pkg) await checkPackage(client.safety, pkg, client.getPackageHierarchyResolver());
+    if (!pkg) {
+      throw new AdtSafetyError(
+        `Operations on ${type} '${name}' blocked: ARC-1 could not determine the object's package ` +
+          `from ADT metadata (no adtcore:packageRef in response). Fail-closed because allowedPackages is restricted.`,
+      );
+    }
+    await checkPackage(client.safety, pkg, client.getPackageHierarchyResolver());
     return pkg;
   }
 
@@ -6771,12 +6779,18 @@ async function handleSAPManage(
 
       checkOperation(client.safety, OperationType.Create, 'CreatePackage');
 
-      // Package allowlist is enforced on the parent package, not the new package name.
-      // This enables creating children in allowed parents like $TMP. With subtree
-      // (`X/**`) rules, the new child will automatically be inside its parent's
-      // subtree, so subsequent writes flow through naturally.
+      // Package allowlist gate:
+      // - When `superPackage` is set, gate the parent. This enables creating
+      //   children in allowed parents like $TMP. With subtree (`X/**`) rules,
+      //   the new child will automatically be inside its parent's subtree.
+      // - When `superPackage` is omitted, the new package is created at the
+      //   root and IS the gateable name itself — otherwise an admin's
+      //   allowedPackages restriction would be bypassed by simply omitting
+      //   the parent. Gate the new name in that case.
       if (superPackage) {
         await checkPackage(client.safety, superPackage, client.getPackageHierarchyResolver());
+      } else {
+        await checkPackage(client.safety, name, client.getPackageHierarchyResolver());
       }
 
       let effectiveTransport = transport || undefined;
@@ -6847,6 +6861,9 @@ async function handleSAPManage(
       if (!name) return errorResult('"name" is required for delete_package action.');
 
       checkOperation(client.safety, OperationType.Delete, 'DeletePackage');
+      // Gate by allowedPackages: deletion targets the package itself, so the
+      // package name must be in the allowed set (or in an allowed subtree).
+      await checkPackage(client.safety, name, client.getPackageHierarchyResolver());
 
       const packageUrl = `/sap/bc/adt/packages/${encodeURIComponent(name)}`;
       await client.http.withStatefulSession(async (session) => {

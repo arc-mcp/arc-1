@@ -2980,6 +2980,35 @@ ENDCLASS.`;
       expect(result.content[0]?.text).not.toContain('blocked by safety');
     });
 
+    it('rejects update when object metadata has no adtcore:packageRef (fail-closed)', async () => {
+      // If ADT returns object metadata without a parseable packageRef,
+      // ARC-1 cannot evaluate allowedPackages. Fail-closed: refuse the write
+      // rather than silently bypassing the gate.
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(
+        mockResponse(
+          200,
+          '<class:abapClass xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="ZCL_NO_PKG_REF"></class:abapClass>',
+          { 'x-csrf-token': 'T' },
+        ),
+      );
+      const restrictedClient = new AdtClient({
+        baseUrl: 'http://sap:8000',
+        username: 'admin',
+        password: 'secret',
+        safety: { ...unrestrictedSafetyConfig(), allowedPackages: ['$TMP'] },
+      });
+      const result = await handleToolCall(restrictedClient, DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'update',
+        type: 'CLAS',
+        name: 'ZCL_NO_PKG_REF',
+        source: 'CLASS zcl_no_pkg_ref DEFINITION PUBLIC. ENDCLASS. CLASS zcl_no_pkg_ref IMPLEMENTATION. ENDCLASS.',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('could not determine the object');
+      expect(result.content[0]?.text).toContain('Fail-closed');
+    });
+
     // ─── Subtree (`X/**`) rules — handler-level security regression suite ────
     describe('subtree rules (`X/**`) on SAPWrite', () => {
       /** Build a fetch mock that serves a fixed DEVCLASS hierarchy via the nodestructure endpoint. */
@@ -5724,6 +5753,52 @@ ENDCLASS.`;
 
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toContain('blocked by safety');
+    });
+
+    // ─── Allowlist gating on SAPManage package mutations ──────────
+    // Defense-in-depth: SAP-side S_DEVELOP also gates these, but ARC-1's
+    // safety ceiling MUST evaluate `SAP_ALLOWED_PACKAGES` before issuing
+    // any DELETE/POST to /sap/bc/adt/packages — otherwise an admin who
+    // restricted writes to `ZFOO/**` would be silently overridden by an
+    // operator with broader SAP authorization.
+
+    it('delete_package is blocked when target is outside allowedPackages', async () => {
+      // Restricted to $TMP only — deleting ZUNRELATED must be denied
+      // regardless of allowWrites and SAP-side authorization.
+      const restrictedClient = new AdtClient({
+        baseUrl: 'http://sap:8000',
+        username: 'admin',
+        password: 'secret',
+        safety: { ...unrestrictedSafetyConfig(), allowedPackages: ['$TMP'] },
+      });
+
+      const result = await handleToolCall(restrictedClient, DEFAULT_CONFIG, 'SAPManage', {
+        action: 'delete_package',
+        name: 'ZUNRELATED',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain("Operations on package 'ZUNRELATED' are blocked");
+    });
+
+    it('create_package without superPackage gates the new name against allowedPackages', async () => {
+      // When `superPackage` is omitted the new package IS the gated root.
+      // Restricted to $TMP only — creating ZEVIL at the root must be denied.
+      const restrictedClient = new AdtClient({
+        baseUrl: 'http://sap:8000',
+        username: 'admin',
+        password: 'secret',
+        safety: { ...unrestrictedSafetyConfig(), allowedPackages: ['$TMP'] },
+      });
+
+      const result = await handleToolCall(restrictedClient, DEFAULT_CONFIG, 'SAPManage', {
+        action: 'create_package',
+        name: 'ZEVIL',
+        description: 'should never be created',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain("Operations on package 'ZEVIL' are blocked");
     });
 
     it('change_package calls refactoring preview then execute endpoints', async () => {
