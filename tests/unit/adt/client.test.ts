@@ -1594,6 +1594,43 @@ describe('AdtClient', () => {
       const pkg = await client.resolveObjectPackage('/sap/bc/adt/programs/programs/ZTEST');
       expect(pkg).toBe('ZPACKAGE');
     });
+
+    it('falls back to adtcore:containerRef@packageName for FUNC (no own packageRef)', async () => {
+      // Live shape captured from a4h: FUNC metadata exposes the package only
+      // via the containerRef's denormalised packageName attribute. Pre-existing
+      // regex would miss it → P2 fail-closed fires for every FUNC update.
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(
+        mockResponse(
+          200,
+          '<fmodule:abapFunctionModule xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="SCMS_STRING_TO_XSTRING">' +
+            '<adtcore:containerRef adtcore:uri="/sap/bc/adt/functions/groups/scms_conv" adtcore:type="FUGR/F" adtcore:name="SCMS_CONV" adtcore:packageName="SCMS"/>' +
+            '</fmodule:abapFunctionModule>',
+        ),
+      );
+      const client = createClient();
+      const pkg = await client.resolveObjectPackage(
+        '/sap/bc/adt/functions/groups/scms_conv/fmodules/scms_string_to_xstring',
+      );
+      expect(pkg).toBe('SCMS');
+    });
+
+    it('prefers packageRef over containerRef when both are present', async () => {
+      // Defensive: if SAP ever returns both, packageRef is the authoritative source.
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(
+        mockResponse(
+          200,
+          '<obj xmlns:adtcore="http://www.sap.com/adt/core">' +
+            '<adtcore:packageRef adtcore:name="REAL_PACKAGE"/>' +
+            '<adtcore:containerRef adtcore:packageName="WRONG_PACKAGE"/>' +
+            '</obj>',
+        ),
+      );
+      const client = createClient();
+      const pkg = await client.resolveObjectPackage('/sap/bc/adt/anything');
+      expect(pkg).toBe('REAL_PACKAGE');
+    });
   });
 
   describe('getInactiveObjects', () => {

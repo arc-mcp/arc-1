@@ -64,6 +64,7 @@ SAP_ALLOW_FREE_SQL=true \
 SAP_ALLOW_DATA_PREVIEW=true \
 SAP_ALLOW_TRANSPORT_WRITES=true \
 SAP_ALLOW_GIT_WRITES=false \
+SAP_ALLOWED_PACKAGES='$TMP,$TMP/**' \
 ARC1_CACHE=memory \
 nohup node dist/index.js >> /tmp/arc1-e2e.log 2>&1 3>&- 4>&- 5>&- 6>&- 7>&- 8>&- 9>&- &
 echo $! > /tmp/arc1-e2e.pid

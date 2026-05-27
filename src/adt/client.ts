@@ -1170,11 +1170,21 @@ export class AdtClient {
    * Resolve the ABAP package of an existing object by fetching its metadata.
    * Returns the package name (e.g., "$TMP", "ZPACKAGE") or empty string if not found.
    * Used by SAPWrite to enforce allowedPackages on update/delete/edit_method.
+   *
+   * Top-level objects (CLAS, INTF, PROG, TABL, DDLS, ...) expose
+   * `<adtcore:packageRef adtcore:name="…"/>` directly. Contained objects
+   * (notably FUNC, which lives inside a FUGR) instead expose the package via
+   * `<adtcore:containerRef … adtcore:packageName="…"/>` since their own
+   * `packageRef` would just point at the parent — the `containerRef` already
+   * surfaces the package as a denormalised attribute. Both shapes resolve
+   * to the same package; we accept either.
    */
   async resolveObjectPackage(objectUrl: string): Promise<string> {
     checkOperation(this.safety, OperationType.Read, 'ResolveObjectPackage');
     const resp = await this.http.get(objectUrl);
-    const match = resp.body.match(/adtcore:packageRef[^>]*adtcore:name="([^"]*)"/);
-    return match?.[1] ?? '';
+    const packageRefMatch = resp.body.match(/adtcore:packageRef[^>]*adtcore:name="([^"]*)"/);
+    if (packageRefMatch?.[1]) return packageRefMatch[1];
+    const containerRefMatch = resp.body.match(/adtcore:containerRef[^>]*adtcore:packageName="([^"]*)"/);
+    return containerRefMatch?.[1] ?? '';
   }
 }
