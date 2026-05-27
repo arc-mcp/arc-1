@@ -51,9 +51,30 @@ Live evidence: search with `objectType=TABL/DT` returns tables only; `objectType
 | `src/handlers/intent.ts` `objectBasePath` | default `/ddic/tables/` (with comment about /structures/ fallback) | ✅ |
 | `src/adt/client.ts` `getTabl` / `resolveTablObjectUrl` | **read path**: tries `/tables/` then falls back to `/structures/` on 404 | ✅ |
 | `src/adt/client.ts` `resolveTablObjectUrlForWrite` (issue #285) | **write/activate/delete path**: search-first, refuses TABL/DT writes when discovery lacks `/ddic/tables` | ✅ |
-| `src/handlers/intent.ts` SAPWrite create/batch_create | refuses TABL upfront when discovery lacks `/ddic/tables` (issue #285) | ✅ |
-| `src/handlers/schemas.ts` enums | `TABL` only (no `STRU`) | ✅ |
+| `src/handlers/intent.ts` SAPWrite create/batch_create | refuses bare `TABL` + `TABL/DT` upfront when discovery lacks `/ddic/tables` (issue #285); allows `TABL/DS` because `/ddic/structures` exists on every release (follow-up to #285) | ✅ |
+| `src/handlers/intent.ts` `normalizeWriteObjectType` | SAPWrite-aware normalizer that preserves `TABL/DT` and `TABL/DS` end-to-end so the create path can route on subtype (follow-up to #285) | ✅ |
+| `src/handlers/intent.ts` `objectBasePath` | `TABL` and `TABL/DT` → `/ddic/tables/`; `TABL/DS` → `/ddic/structures/` (follow-up to #285) | ✅ |
+| `src/handlers/intent.ts` `buildCreateXml` | `TABL` and `TABL/DT` emit `adtcore:type="TABL/DT"`; `TABL/DS` emits `adtcore:type="TABL/DS"`; same `<blue:blueSource>` envelope for both (follow-up to #285) | ✅ |
+| `src/handlers/schemas.ts` enums | `TABL`, `TABL/DT`, `TABL/DS` for SAPWrite (slash forms used only by create routing — reads still collapse to bare `TABL`) | ✅ |
 | `src/probe/catalog.ts` | `TABL` with note about /structures/ duality | ✅ |
+
+## TABL/DS create-path routing (follow-up to issue #285) — verified 2026-05-27
+
+**Reporter**: Michael, via German email/screenshots forwarded to Marian (2026-05-27). Symptom: `SAPWrite(action="create", type="TABL/DS", name="/LEOWM/SD_MON_S_WHO")` on a4h S/4HANA 2023 returned HTTP 422 with T100 message AD102 *"Select a shorter name for /LEOWM/SD_MON_S_WHO"* — the call routed to `/sap/bc/adt/ddic/tables` (16-char limit) instead of `/sap/bc/adt/ddic/structures` (30-char limit).
+
+**Bug shape**: PR #286 (issue #285) fixed update/delete/activate via the search-first resolver but left the create path silently routing all TABL subtypes to `/sap/bc/adt/ddic/tables` with `adtcore:type="TABL/DT"` hardcoded in the envelope. Three locations conspired: `normalizeObjectType('TABL/DS')` collapsed to bare `'TABL'` via `SLASH_TYPE_MAP` before schema validation, `objectBasePath('TABL')` hardcoded `/ddic/tables/`, and `buildCreateXml('TABL')` hardcoded `adtcore:type="TABL/DT"`.
+
+**Live evidence on a4h S/4HANA 2023** (verified 2026-05-27):
+
+| Probe | Result |
+|---|---|
+| Discovery: `/ddic/structures` collection | Accept `application/vnd.sap.adt.structures.v2+xml`, category term `tablds` |
+| Discovery: `/ddic/tables` collection | Accept `application/vnd.sap.adt.tables.v2+xml`, category term `tabldt` |
+| GET `/ddic/structures/BAPIRET2` envelope | `<blue:blueSource adtcore:type="TABL/DS" xmlns:blue="http://www.sap.com/wbobj/blue">` — same envelope as `/tables/`, only the `adtcore:type` attribute differs |
+| POST `/ddic/structures` with `adtcore:type="TABL/DS"` (27-char Z-name) | **201 Created** (cleanup OK) |
+| POST `/ddic/tables` with `/LEOWM/SD_MON_S_WHO` + `adtcore:type="TABL/DT"` | **422** T100 AD102 "Select a shorter name" — Michael's exact reproduction |
+
+**Fix shape**: preserve `TABL/DT` and `TABL/DS` end-to-end on SAPWrite (`normalizeWriteObjectType`); branch `objectBasePath` and `buildCreateXml` on subtype; scope PR #286's discovery-gated refusal to bare `TABL` + explicit `TABL/DT` (TABL/DS skips the gate because `/ddic/structures` exists on every release, including NW 7.50). The fix unlocks structure creation on NW 7.50 as a bonus.
 
 ## Cross-repo pattern reference (researched 2026-05-15)
 | Source | Pattern | Notes |

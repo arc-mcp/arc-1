@@ -318,6 +318,14 @@ export const SAPWRITE_TYPES_ONPREM = [
   'SRVB',
   'SKTD',
   'TABL',
+  // Explicit TABL subtypes: TABL/DT = transparent table (default for bare TABL),
+  // TABL/DS = DDIC structure. Required on the SAPWrite create/batch_create paths
+  // because the URL (/sap/bc/adt/ddic/tables vs /structures) and the
+  // adtcore:type in the create envelope differ by subtype, and SAP rejects long
+  // / namespaced names on /tables but accepts them on /structures. See follow-up
+  // to issue #285. Bare 'TABL' continues to mean TABL/DT for backward compat.
+  'TABL/DT',
+  'TABL/DS',
   'DOMA',
   'DTEL',
   'MSAG',
@@ -333,6 +341,10 @@ export const SAPWRITE_TYPES_BTP = [
   'SRVB',
   'SKTD',
   'TABL',
+  // See SAPWRITE_TYPES_ONPREM comment — same TABL/DT vs TABL/DS subtype
+  // distinction applies whenever DDIC table/structure objects are creatable.
+  'TABL/DT',
+  'TABL/DS',
   'DOMA',
   'DTEL',
   'MSAG',

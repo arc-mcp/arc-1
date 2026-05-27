@@ -8395,6 +8395,271 @@ ENDCLASS.`;
     });
   });
 
+  // ──────────────────────────────────────────────────────────────────────────
+  // TABL subtype routing on create (follow-up to issue #285)
+  // Bug shape: SAPWrite(action='create', type='TABL/DS') always routed to
+  // /sap/bc/adt/ddic/tables with adtcore:type="TABL/DT" because:
+  //   1. normalizeObjectType('TABL/DS') collapsed to bare 'TABL' before validation
+  //   2. objectBasePath('TABL') hardcoded /sap/bc/adt/ddic/tables/
+  //   3. buildCreateXml('TABL') hardcoded adtcore:type="TABL/DT"
+  // The fix preserves the slash form for SAPWrite, branches URL + envelope on
+  // subtype, and scopes PR #286's discovery-gated refusal to bare TABL + TABL/DT.
+  // ──────────────────────────────────────────────────────────────────────────
+  describe('SAPWrite TABL/DS create routing (follow-up to issue #285)', () => {
+    it('SAPWrite create type="TABL/DS" routes POST to /sap/bc/adt/ddic/structures and emits adtcore:type="TABL/DS"', async () => {
+      mockFetch.mockReset();
+      const calls: Array<{ method: string; url: string; body?: string }> = [];
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string; body?: string }) => {
+        const method = opts?.method ?? 'GET';
+        const urlStr = String(url);
+        calls.push({ method, url: urlStr, body: opts?.body });
+        if (method === 'POST' && urlStr.includes('_action=LOCK')) {
+          return Promise.resolve(
+            mockResponse(200, '<asx:values><LOCK_HANDLE>LHDS</LOCK_HANDLE><CORRNR></CORRNR></asx:values>', {
+              'x-csrf-token': 'T',
+            }),
+          );
+        }
+        return Promise.resolve(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'TABL/DS',
+        name: 'ZSTR_NEW',
+        package: '$TMP',
+        source: "@EndUserText.label : 'x'\ndefine structure zstr_new { mandt : abap.clnt; }",
+      });
+
+      expect(result.isError).toBeUndefined();
+
+      // Must POST to /structures, not /tables
+      const createCall = calls.find(
+        (c) => c.method === 'POST' && !c.url.includes('_action=') && c.url.includes('/sap/bc/adt/ddic/structures'),
+      );
+      expect(createCall).toBeDefined();
+      expect(createCall?.body).toContain('adtcore:type="TABL/DS"');
+
+      // Source PUT must also land on /structures
+      const sourcePut = calls.find(
+        (c) => c.method === 'PUT' && c.url.includes('/sap/bc/adt/ddic/structures/ZSTR_NEW/source/main'),
+      );
+      expect(sourcePut).toBeDefined();
+
+      // Must NOT have touched /tables for this object
+      expect(calls.some((c) => c.url.includes('/sap/bc/adt/ddic/tables/ZSTR_NEW'))).toBe(false);
+    });
+
+    it('SAPWrite create type="TABL/DT" routes POST to /sap/bc/adt/ddic/tables and emits adtcore:type="TABL/DT"', async () => {
+      mockFetch.mockReset();
+      const calls: Array<{ method: string; url: string; body?: string }> = [];
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string; body?: string }) => {
+        const method = opts?.method ?? 'GET';
+        const urlStr = String(url);
+        calls.push({ method, url: urlStr, body: opts?.body });
+        if (method === 'POST' && urlStr.includes('_action=LOCK')) {
+          return Promise.resolve(
+            mockResponse(200, '<asx:values><LOCK_HANDLE>LHDT</LOCK_HANDLE><CORRNR></CORRNR></asx:values>', {
+              'x-csrf-token': 'T',
+            }),
+          );
+        }
+        return Promise.resolve(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'TABL/DT',
+        name: 'ZTBL_NEW',
+        package: '$TMP',
+        source: "@EndUserText.label : 'x'\ndefine table ztbl_new { key client : abap.clnt; key id : abap.numc(8); }",
+      });
+
+      expect(result.isError).toBeUndefined();
+      const createCall = calls.find(
+        (c) => c.method === 'POST' && !c.url.includes('_action=') && c.url.includes('/sap/bc/adt/ddic/tables'),
+      );
+      expect(createCall).toBeDefined();
+      expect(createCall?.body).toContain('adtcore:type="TABL/DT"');
+    });
+
+    it('SAPWrite create with bare type="TABL" defaults to TABL/DT (backward compatibility)', async () => {
+      mockFetch.mockReset();
+      const calls: Array<{ method: string; url: string; body?: string }> = [];
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string; body?: string }) => {
+        const method = opts?.method ?? 'GET';
+        const urlStr = String(url);
+        calls.push({ method, url: urlStr, body: opts?.body });
+        if (method === 'POST' && urlStr.includes('_action=LOCK')) {
+          return Promise.resolve(
+            mockResponse(200, '<asx:values><LOCK_HANDLE>LHBARE</LOCK_HANDLE><CORRNR></CORRNR></asx:values>', {
+              'x-csrf-token': 'T',
+            }),
+          );
+        }
+        return Promise.resolve(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'TABL',
+        name: 'ZTBL_LEGACY',
+        package: '$TMP',
+        source: "@EndUserText.label : 'x'\ndefine table ztbl_legacy { key client : abap.clnt; key id : abap.numc(8); }",
+      });
+
+      expect(result.isError).toBeUndefined();
+      const createCall = calls.find(
+        (c) => c.method === 'POST' && !c.url.includes('_action=') && c.url.includes('/sap/bc/adt/ddic/tables'),
+      );
+      expect(createCall).toBeDefined();
+      expect(createCall?.body).toContain('adtcore:type="TABL/DT"');
+      // Must NOT route to /structures for bare TABL — backward-compat alias for TABL/DT
+      expect(calls.some((c) => c.url.includes('/sap/bc/adt/ddic/structures/ZTBL_LEGACY'))).toBe(false);
+    });
+
+    it('PR #286 discovery gate allows TABL/DS create when discovery lacks /sap/bc/adt/ddic/tables (NW 7.50)', async () => {
+      // The gate refuses bare TABL + TABL/DT when /tables/ is missing (PR #286 fix
+      // for issue #285). TABL/DS must skip the gate because /structures/ exists on
+      // every ADT release. This unlocks structure CRUD on NW 7.50 as a bonus.
+      setCachedFeatures({
+        abapRelease: '750',
+        systemType: 'onprem',
+        discoveryMap: new Map<string, string[]>([['/sap/bc/adt/ddic/structures', ['application/*']]]),
+      } as ResolvedFeatures);
+      try {
+        mockFetch.mockReset();
+        const calls: Array<{ method: string; url: string; body?: string }> = [];
+        mockFetch.mockImplementation((url: string | URL, opts?: { method?: string; body?: string }) => {
+          const method = opts?.method ?? 'GET';
+          const urlStr = String(url);
+          calls.push({ method, url: urlStr, body: opts?.body });
+          if (method === 'POST' && urlStr.includes('_action=LOCK')) {
+            return Promise.resolve(
+              mockResponse(200, '<asx:values><LOCK_HANDLE>LH750</LOCK_HANDLE><CORRNR></CORRNR></asx:values>', {
+                'x-csrf-token': 'T',
+              }),
+            );
+          }
+          return Promise.resolve(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
+        });
+
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+          action: 'create',
+          type: 'TABL/DS',
+          name: 'ZSTR_NW750_OK',
+          package: '$TMP',
+          source: 'define structure zstr_nw750_ok { mandt : abap.clnt; }',
+        });
+
+        expect(result.isError).toBeUndefined();
+        // POST landed on /structures, NOT /tables
+        expect(
+          calls.some(
+            (c) => c.method === 'POST' && !c.url.includes('_action=') && c.url.includes('/sap/bc/adt/ddic/structures'),
+          ),
+        ).toBe(true);
+        expect(calls.some((c) => c.url.includes('/sap/bc/adt/ddic/tables'))).toBe(false);
+      } finally {
+        resetCachedFeatures();
+      }
+    });
+
+    it('PR #286 discovery gate still refuses bare TABL create when /tables/ is missing', async () => {
+      // Regression guard: PR #286's refusal must continue to fire for bare TABL.
+      setCachedFeatures({
+        abapRelease: '750',
+        systemType: 'onprem',
+        discoveryMap: new Map<string, string[]>([['/sap/bc/adt/ddic/structures', ['application/*']]]),
+      } as ResolvedFeatures);
+      try {
+        mockFetch.mockReset();
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+          action: 'create',
+          type: 'TABL',
+          name: 'ZTBL_NW750_FAIL',
+          package: '$TMP',
+          source: 'define table ztbl_nw750_fail { key client : abap.clnt; }',
+        });
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text ?? '').toContain('Transparent table writes via ADT REST are not available');
+      } finally {
+        resetCachedFeatures();
+      }
+    });
+
+    it('PR #286 discovery gate also refuses explicit TABL/DT create when /tables/ is missing', async () => {
+      // Explicit transparent-table form must hit the same refusal as bare TABL.
+      setCachedFeatures({
+        abapRelease: '750',
+        systemType: 'onprem',
+        discoveryMap: new Map<string, string[]>([['/sap/bc/adt/ddic/structures', ['application/*']]]),
+      } as ResolvedFeatures);
+      try {
+        mockFetch.mockReset();
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+          action: 'create',
+          type: 'TABL/DT',
+          name: 'ZTBL_DT_NW750_FAIL',
+          package: '$TMP',
+          source: 'define table ztbl_dt_nw750_fail { key client : abap.clnt; }',
+        });
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text ?? '').toContain('Transparent table writes via ADT REST are not available');
+      } finally {
+        resetCachedFeatures();
+      }
+    });
+
+    it('SAPWrite batch_create: TABL/DS succeeds while TABL/DT is refused on NW 7.50 (mixed batch)', async () => {
+      setCachedFeatures({
+        abapRelease: '750',
+        systemType: 'onprem',
+        discoveryMap: new Map<string, string[]>([['/sap/bc/adt/ddic/structures', ['application/*']]]),
+      } as ResolvedFeatures);
+      try {
+        mockFetch.mockReset();
+        mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
+          const method = opts?.method ?? 'GET';
+          const urlStr = String(url);
+          if (method === 'POST' && urlStr.includes('_action=LOCK')) {
+            return Promise.resolve(
+              mockResponse(200, '<asx:values><LOCK_HANDLE>LHB</LOCK_HANDLE><CORRNR></CORRNR></asx:values>', {
+                'x-csrf-token': 'T',
+              }),
+            );
+          }
+          return Promise.resolve(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
+        });
+
+        const config = { ...DEFAULT_CONFIG, lintBeforeWrite: false };
+        const result = await handleToolCall(createClient(), config, 'SAPWrite', {
+          action: 'batch_create',
+          package: '$TMP',
+          objects: [
+            {
+              type: 'TABL/DS',
+              name: 'ZSTR_MIX_BATCH',
+              source: 'define structure zstr_mix_batch { mandt : abap.clnt; }',
+            },
+            {
+              type: 'TABL/DT',
+              name: 'ZTBL_MIX_BATCH',
+              source: 'define table ztbl_mix_batch { key client : abap.clnt; }',
+            },
+          ],
+        });
+        const message = result.content[0]?.text ?? '';
+        // TABL/DS entry succeeds; TABL/DT entry fails with the SE11 hint
+        expect(message).toContain('ZSTR_MIX_BATCH');
+        expect(message).toContain('ZTBL_MIX_BATCH');
+        expect(message).toContain('Transparent table writes via ADT REST are not available');
+      } finally {
+        resetCachedFeatures();
+      }
+    });
+  });
+
   describe('SAPWrite DCLS source-based writes', () => {
     it('creates DCLS using collection POST + source PUT', async () => {
       mockFetch.mockReset();

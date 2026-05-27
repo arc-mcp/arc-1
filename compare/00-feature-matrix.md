@@ -165,7 +165,7 @@ Tier 2 (CycloneDX SBOM, Cosign image signing, OpenSSF Scorecard) and Tier 3 (Soc
 | AFF schema validation (pre-create) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
 | Type auto-mappings (CLAS→CLAS/OC) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ✅ | ✅ (ADTObjectType) |
 | Create test class | ❌ | ✅ | ❌ | ❌ | ✅ | ✅ | N/A | ✅ (abap_create_test_include) | ✅ (class write test_classes) |
-| Table write (TABL) | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | N/A | ✅ | ✅ |
+| Table write (TABL) | ✅ (TABL/DT transparent tables + TABL/DS structures via explicit `type='TABL/DT'`/`'TABL/DS'`; bare TABL defaults to TABL/DT for backward compat; TABL/DT writes on NW 7.50/7.51 refused with SE11 hint per #285; TABL/DS works on every release including 7.50 — verified live on a4h S/4HANA 2023, follow-up to #285) | ✅ | ✅ | ❌ | ❌ | ✅ | N/A | ✅ | ✅ |
 | Package create (DEVC) | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | N/A | ✅ | ✅ |
 | Service binding create (SRVB) | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | N/A | ❌ | ✅ |
 | Message class write (MSAG) | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | N/A | ❌ | ✅ |

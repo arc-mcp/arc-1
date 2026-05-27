@@ -603,6 +603,80 @@ describe('ADT Integration Tests', () => {
       expect(url).toBe('/sap/bc/adt/ddic/structures/BAPIRET2');
     });
 
+    // ────────────────────────────────────────────────────────────────────────
+    // TABL/DS create routing (follow-up to issue #285 — Michael's report).
+    // Bug pre-fix: SAPWrite(action='create', type='TABL/DS') silently routed to
+    // /sap/bc/adt/ddic/tables with adtcore:type="TABL/DT". For namespaced /
+    // long names it failed with T100 AD102 "Select a shorter name"; for short
+    // names it created a transparent table instead of the requested structure.
+    // Post-fix: routing branches on the explicit slash form.
+    // ────────────────────────────────────────────────────────────────────────
+    it('SAPWrite TABL/DS create routes POST to /sap/bc/adt/ddic/structures and accepts long names', async () => {
+      const { createObject, deleteObject, lockObject, unlockObject } = await import('../../src/adt/crud.js');
+      const { buildCreateXml } = await import('../../src/handlers/intent.js');
+      const { unrestrictedSafetyConfig } = await import('../../src/adt/safety.js');
+      const { generateUniqueName } = await import('./crud-harness.js');
+      const safety = unrestrictedSafetyConfig();
+
+      // 27-char Z-name — would exceed the 16-char transparent-table limit
+      // (T100 AD102) on the /tables endpoint but is valid for structures.
+      const structName = generateUniqueName('ZSTR_ARC1_LONG');
+      const structUrl = `/sap/bc/adt/ddic/structures/${encodeURIComponent(structName)}`;
+
+      try {
+        // Step 1: POST to /sap/bc/adt/ddic/structures with adtcore:type="TABL/DS"
+        // — this is the routing the fix unlocks. Pre-fix this would have routed
+        // to /sap/bc/adt/ddic/tables and failed with T100 AD102 ("name too long")
+        // because the 27-char name exceeds the transparent-table 16-char limit.
+        const createXml = buildCreateXml('TABL/DS', structName, '$TMP', 'ARC1 follow-up #285 test');
+        await createObject(
+          client.http,
+          safety,
+          '/sap/bc/adt/ddic/structures',
+          createXml,
+          'application/*',
+          undefined,
+          '$TMP',
+        );
+
+        // Step 2: Verify the empty shell lives at /structures/, NOT /tables/.
+        // Source-write is not part of this test (it has its own DDIC-syntax
+        // failure modes); the bug being fixed is the CREATE routing decision.
+        const readback = await client.http.get(structUrl);
+        expect(readback.statusCode).toBe(200);
+        expect(readback.body).toContain('TABL/DS');
+
+        // Confirm the object does NOT also live at /tables/ (it really is a
+        // structure, not a transparent table).
+        try {
+          await client.http.get(`/sap/bc/adt/ddic/tables/${encodeURIComponent(structName)}`);
+          expect.fail(`Unexpected: /tables/${structName} returned 200 — should be 404`);
+        } catch (err) {
+          if (err && typeof err === 'object' && 'statusCode' in err) {
+            expect((err as { statusCode: number }).statusCode).toBe(404);
+          } else {
+            throw err;
+          }
+        }
+      } finally {
+        // Cleanup: lock + delete + unlock the structure
+        await client.http
+          .withStatefulSession(async (session) => {
+            const lock = await lockObject(session, safety, structUrl, 'MODIFY');
+            try {
+              await deleteObject(session, safety, structUrl, lock.lockHandle);
+            } finally {
+              await unlockObject(session, structUrl, lock.lockHandle).catch(() => {
+                // best-effort-cleanup
+              });
+            }
+          })
+          .catch(() => {
+            // best-effort-cleanup
+          });
+      }
+    });
+
     it('reads DDIC view metadata via the VIT URL (V_USR_NAME)', async (ctx) => {
       // Regression test for the "VIEW silently broken" bug fixed in PR #222
       // follow-up. Pre-fix: getView used /sap/bc/adt/ddic/views/{name}/source/main

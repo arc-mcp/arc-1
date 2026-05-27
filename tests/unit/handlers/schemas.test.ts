@@ -212,11 +212,21 @@ describe('SAPReadSchema', () => {
     // This test asserts the symmetry; new types that violate it will fail loudly.
     // Source of truth: SAPWRITE_TYPES_ONPREM/_BTP exported from schemas.ts so the
     // guard can never drift from the runtime enum (codex review on PR #224).
+    //
+    // Exception: the TABL/DT and TABL/DS slash forms are SAPWrite-only subtype
+    // refinements used by the create path to route between /sap/bc/adt/ddic/tables
+    // and /sap/bc/adt/ddic/structures. For reads they collapse to bare TABL via
+    // `normalizeObjectType()` / SLASH_TYPE_MAP — they are not first-class read
+    // types. Bare 'TABL' is already in the read enum, so symmetry holds at the
+    // canonical level. See follow-up to issue #285.
+    const TABL_WRITE_ONLY_SUBTYPES = new Set(['TABL/DT', 'TABL/DS']);
     for (const t of SAPWRITE_TYPES_ONPREM) {
+      if (TABL_WRITE_ONLY_SUBTYPES.has(t)) continue;
       const result = SAPReadSchema.safeParse({ type: t, name: 'X' });
       expect(result.success, `on-prem read enum missing canonical write type ${t}`).toBe(true);
     }
     for (const t of SAPWRITE_TYPES_BTP) {
+      if (TABL_WRITE_ONLY_SUBTYPES.has(t)) continue;
       const result = SAPReadSchemaBtp.safeParse({ type: t, name: 'X' });
       expect(result.success, `BTP read enum missing canonical write type ${t}`).toBe(true);
     }
@@ -832,6 +842,52 @@ describe('SAPWriteSchema', () => {
     });
     // Zod's coerce(boolean) ToBoolean(value) for objects = true; we accept that.
     expect(objParsed.success).toBe(true);
+  });
+
+  // ─── TABL subtype acceptance (follow-up to issue #285) ────────────────────
+  it('accepts SAPWrite create with explicit type="TABL/DT" (transparent table)', () => {
+    const result = SAPWriteSchema.safeParse({
+      action: 'create',
+      type: 'TABL/DT',
+      name: 'ZTBL_NEW',
+      package: '$TMP',
+      source: "@EndUserText.label : 'x'\ndefine table ztbl_new { key client : abap.clnt; }",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts SAPWrite create with explicit type="TABL/DS" (DDIC structure)', () => {
+    const result = SAPWriteSchema.safeParse({
+      action: 'create',
+      type: 'TABL/DS',
+      name: 'ZSTR_NEW',
+      package: '$TMP',
+      source: "@EndUserText.label : 'x'\ndefine structure zstr_new { mandt : abap.clnt; }",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('still accepts SAPWrite create with bare type="TABL" (backward-compat alias for TABL/DT)', () => {
+    const result = SAPWriteSchema.safeParse({
+      action: 'create',
+      type: 'TABL',
+      name: 'ZTBL_LEGACY',
+      package: '$TMP',
+      source: "@EndUserText.label : 'x'\ndefine table ztbl_legacy { key client : abap.clnt; }",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts SAPWrite batch_create entries with TABL/DS', () => {
+    const result = SAPWriteSchema.safeParse({
+      action: 'batch_create',
+      package: '$TMP',
+      objects: [
+        { type: 'TABL/DS', name: 'ZSTR_BATCH', source: 'define structure zstr_batch { mandt : abap.clnt; }' },
+        { type: 'DOMA', name: 'ZD_BATCH', dataType: 'CHAR', length: 1 },
+      ],
+    });
+    expect(result.success).toBe(true);
   });
 });
 
