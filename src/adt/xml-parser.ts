@@ -20,16 +20,20 @@ import type {
   AdtSearchResult,
   ApiReleaseContract,
   ApiReleaseStateInfo,
+  AttributeStructure,
   AuthorizationFieldInfo,
   BspAppInfo,
   BspFileNode,
   ClassMetadata,
+  ClassStructure,
   DataElementInfo,
   DomainInfo,
   EnhancementImplementationInfo,
   FeatureToggleInfo,
   InactiveObject,
+  LineRange,
   MessageClassInfo,
+  MethodStructure,
   RevisionInfo,
   RevisionListResult,
   SourceSearchResult,
@@ -1248,4 +1252,217 @@ export function parseRevisionFeed(xml: string): RevisionListResult {
   } catch {
     return empty;
   }
+}
+
+// ─── parseClassStructure (issue #303) ─────────────────────────────────────
+
+/**
+ * Parse a `#start=L,C;end=L,C` fragment from an `<atom:link>` href into a `LineRange`.
+ *
+ * Returns `null` if the fragment doesn't match — callers treat `null` as "this
+ * element doesn't carry a range" (e.g. the `CLAS/OCX` text-elements ref has no
+ * `#start=…` in its `definitionIdentifier` href, just a deep-link URL).
+ */
+function parseLineRange(href: string): LineRange | null {
+  const m = href.match(/#start=(\d+),(\d+);end=(\d+),(\d+)/);
+  if (!m) return null;
+  return { sr: +m[1], sc: +m[2], er: +m[3], ec: +m[4] };
+}
+
+/**
+ * Parse `/sap/bc/adt/oo/classes/{name}/objectstructure` XML into a `ClassStructure`.
+ *
+ * Wire shape varies across SAP releases:
+ *
+ * **Kernel 7.58+ (S/4HANA 2023):** every method is ONE `<objectStructureElement>`
+ * with `adtcore:type="CLAS/OM"`, carrying both `definitionBlock` and
+ * `implementationBlock` atom:link children.
+ *
+ * **Kernel 7.50 (NW 7.50 SP02 / NPL):** methods are SPLIT into two elements with
+ * the same `adtcore:name` — `CLAS/OO` (carries `definitionBlock` + identifiers)
+ * and `CLAS/OM` (carries `implementationBlock` + identifiers). This parser groups
+ * by name and merges, so callers see one `MethodStructure` per method on either
+ * release. ABSTRACT methods have a `CLAS/OO` entry only (no `implementationBlock`).
+ *
+ * Live evidence: fixtures `tests/fixtures/xml/objectstructure-clas-a4h-758.xml`
+ * (single-element shape) and `objectstructure-clas-npl-750.xml` (split shape).
+ *
+ * Implementation note: this parser is regex-driven, not XMLParser-driven. The
+ * `objectstructure` response is large (~40KB for `CL_ABAP_TYPEDESCR`) and the
+ * existing `removeNSPrefix: true` parser config would strip the `adtcore:type`
+ * attribute we need for the OO/OM merge. The element shape is regular enough
+ * that scoped regexes are cheaper and more readable than reconfiguring the
+ * shared parser.
+ */
+export function parseClassStructure(xml: string, className?: string): ClassStructure {
+  if (!xml.trim()) {
+    throw new AdtApiError('parseClassStructure: empty XML response', 0, '');
+  }
+
+  // Top-level class name (preferred from xml attribute; fall back to caller-provided).
+  const rootMatch = xml.match(/<abapsource:objectStructureElement\b[^>]*\badtcore:name="([^"]+)"/);
+  const resolvedClassName = rootMatch?.[1] ?? className ?? '';
+
+  // The XML is a single root `<abapsource:objectStructureElement>` (the class itself,
+  // type CLAS/OC) that WRAPS the per-method/attribute children of the same element
+  // name. A naive non-greedy regex eats the first child's close tag as the root's
+  // close tag, so we strip the outer wrapper before scanning for children.
+  //
+  // Inner-content extraction: find the first `>` of the root (end of root open tag)
+  // and the last `</abapsource:objectStructureElement>` (the root close tag).
+  const rootOpenEnd = xml.indexOf('>', xml.indexOf('<abapsource:objectStructureElement'));
+  const rootCloseStart = xml.lastIndexOf('</abapsource:objectStructureElement>');
+  const inner = rootOpenEnd >= 0 && rootCloseStart > rootOpenEnd ? xml.slice(rootOpenEnd + 1, rootCloseStart) : xml;
+
+  // Class-level blocks live in the root element's OWN atom:link children, which
+  // precede the first nested <objectStructureElement>. Scope the search to that
+  // prefix so a method's definitionBlock can never be mistaken for the class
+  // block, regardless of how SAP orders elements across releases.
+  const firstChildIdx = inner.indexOf('<abapsource:objectStructureElement');
+  const classScope = firstChildIdx >= 0 ? inner.slice(0, firstChildIdx) : inner;
+  const classDefMatch = classScope.match(
+    /rel="http:\/\/www\.sap\.com\/adt\/relations\/source\/definitionBlock"[^>]*href="([^"]+)"/,
+  );
+  const classImplMatch = classScope.match(
+    /rel="http:\/\/www\.sap\.com\/adt\/relations\/source\/implementationBlock"[^>]*href="([^"]+)"/,
+  );
+  if (!classDefMatch) {
+    throw new AdtApiError(
+      'parseClassStructure: response missing class-level definitionBlock atom:link',
+      0,
+      xml.slice(0, 256),
+    );
+  }
+  const classDef = parseLineRange(classDefMatch[1]);
+  if (!classDef) {
+    throw new AdtApiError(
+      `parseClassStructure: class definitionBlock href has no #start fragment: ${classDefMatch[1]}`,
+      0,
+      '',
+    );
+  }
+  const classImpl = classImplMatch ? (parseLineRange(classImplMatch[1]) ?? undefined) : undefined;
+
+  // Children themselves do NOT nest objectStructureElement — they only contain
+  // <atom:link/> self-closing elements. So a non-greedy match on the children
+  // is safe inside `inner`.
+  const elemRe =
+    /<abapsource:objectStructureElement\s+([^>]*adtcore:type="CLAS\/[A-Z]+"[^>]*)>([\s\S]*?)<\/abapsource:objectStructureElement>/g;
+
+  // 7.50 split shape: per-name accumulators.
+  type PartialMethod = {
+    name: string;
+    visibility?: 'public' | 'protected' | 'private';
+    level?: 'instance' | 'static';
+    abstract: boolean;
+    constructor: boolean;
+    definition?: LineRange;
+    implementation?: LineRange;
+    definitionIdentifier?: LineRange;
+    implementationIdentifier?: LineRange;
+  };
+  const methodsByName = new Map<string, PartialMethod>();
+  const attributes: AttributeStructure[] = [];
+
+  for (const match of inner.matchAll(elemRe)) {
+    const attrs = match[1];
+    const elemInner = match[2];
+    const type = attrs.match(/adtcore:type="(CLAS\/[A-Z]+)"/)?.[1];
+    if (!type) continue;
+    const name = attrs.match(/adtcore:name="([^"]*)"/)?.[1] ?? '';
+    if (!name) continue;
+
+    const visibility = attrs.match(/visibility="([^"]+)"/)?.[1] as 'public' | 'protected' | 'private' | undefined;
+    const level = attrs.match(/level="([^"]+)"/)?.[1] as 'instance' | 'static' | undefined;
+    const isAbstract = /\babstract="true"/.test(attrs);
+    const isConstructor = /\bconstructor="true"/.test(attrs);
+    const isConstant = /\bconstant="true"/.test(attrs);
+    const isReadOnly = /\breadOnly="true"/.test(attrs);
+
+    const defBlock = elemInner.match(/rel="[^"]*\/definitionBlock"[^>]*href="([^"]+)"/)?.[1];
+    const implBlock = elemInner.match(/rel="[^"]*\/implementationBlock"[^>]*href="([^"]+)"/)?.[1];
+    const defIdent = elemInner.match(/rel="[^"]*\/definitionIdentifier"[^>]*href="([^"]+)"/)?.[1];
+    const implIdent = elemInner.match(/rel="[^"]*\/implementationIdentifier"[^>]*href="([^"]+)"/)?.[1];
+
+    // Methods: CLAS/OM (7.58+ unified or 7.50 impl-side), CLAS/OO (7.50 def-side).
+    if (type === 'CLAS/OM' || type === 'CLAS/OO') {
+      const upper = name.toUpperCase();
+      let entry = methodsByName.get(upper);
+      if (!entry) {
+        entry = { name: upper, abstract: false, constructor: false };
+        methodsByName.set(upper, entry);
+      }
+      // visibility/level/abstract/constructor: prefer the CLAS/OO (def-side) values
+      // when both are present (the def side carries the canonical metadata). On
+      // 7.58+ the single CLAS/OM element carries everything.
+      if (visibility && (!entry.visibility || type === 'CLAS/OO')) entry.visibility = visibility;
+      if (level && (!entry.level || type === 'CLAS/OO')) entry.level = level;
+      if (isAbstract) entry.abstract = true;
+      if (isConstructor) entry.constructor = true;
+      if (defBlock) {
+        const r = parseLineRange(defBlock);
+        if (r) entry.definition = r;
+      }
+      if (implBlock) {
+        const r = parseLineRange(implBlock);
+        if (r) entry.implementation = r;
+      }
+      if (defIdent) {
+        const r = parseLineRange(defIdent);
+        if (r) entry.definitionIdentifier = r;
+      }
+      if (implIdent) {
+        const r = parseLineRange(implIdent);
+        if (r) entry.implementationIdentifier = r;
+      }
+      continue;
+    }
+
+    // Attributes: CLAS/OA.
+    if (type === 'CLAS/OA' && defBlock) {
+      const def = parseLineRange(defBlock);
+      if (!def) continue;
+      attributes.push({
+        name: name.toUpperCase(),
+        visibility: visibility ?? 'public',
+        level: level ?? 'instance',
+        constant: isConstant,
+        readOnly: isReadOnly,
+        definition: def,
+      });
+    }
+
+    // Other CLAS/O* types (CLAS/OE events, CLAS/OT types, CLAS/OF friends,
+    // CLAS/OK constants/literals, CLAS/OCX text-elements) are intentionally
+    // dropped — class-section surgery (issue #303) only targets methods.
+    // Attribute-management is a future follow-up; events/types deeper still.
+  }
+
+  // Build the final methods array: skip entries that have no definition range
+  // (defensive — every real method emitted by SAP carries at least a CLAS/OO
+  // with definitionBlock, but parser robustness matters when the wire format
+  // drifts).
+  const methods: MethodStructure[] = [];
+  for (const m of methodsByName.values()) {
+    if (!m.definition) continue;
+    methods.push({
+      name: m.name,
+      visibility: m.visibility ?? 'public',
+      level: m.level ?? 'instance',
+      abstract: m.abstract,
+      constructor: m.constructor,
+      definition: m.definition,
+      ...(m.implementation ? { implementation: m.implementation } : {}),
+      ...(m.definitionIdentifier ? { definitionIdentifier: m.definitionIdentifier } : {}),
+      ...(m.implementationIdentifier ? { implementationIdentifier: m.implementationIdentifier } : {}),
+    });
+  }
+
+  return {
+    className: resolvedClassName,
+    classDefinitionBlock: classDef,
+    ...(classImpl ? { classImplementationBlock: classImpl } : {}),
+    methods,
+    attributes,
+  };
 }

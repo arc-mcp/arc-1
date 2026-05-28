@@ -882,3 +882,83 @@ export interface RevisionListResult {
   };
   revisions: RevisionInfo[];
 }
+
+// ─── Class Structure Types (objectstructure endpoint, issue #303) ─────────
+
+/**
+ * Line range from the ADT `objectstructure` atom-link `#start=L,C;end=L,C` fragment.
+ *
+ * `sr`/`er` are 1-indexed rows. `sc`/`ec` are 0-indexed columns. The `er` row is
+ * INCLUSIVE (the end token lives on that line). The `ec` column is the column
+ * AFTER the end token (i.e. half-open: [sc, ec) — `ec` matches a typical
+ * editor's "go to end of selection" position).
+ *
+ * Wire example: `<atom:link href="…#start=12,0;end=22,8">` →
+ * `{ sr: 12, sc: 0, er: 22, ec: 8 }` — the block spans lines 12-22 inclusive,
+ * with the final ENDCLASS token ending at column 8 of line 22.
+ */
+export interface LineRange {
+  sr: number;
+  sc: number;
+  er: number;
+  ec: number;
+}
+
+/**
+ * One method's structural metadata, parsed from `<abapsource:objectStructureElement>`
+ * elements in the `objectstructure` response.
+ *
+ * Cross-release: on S/4HANA 2023 (kernel 7.58+) one `CLAS/OM` element carries both
+ * `definition` and `implementation` ranges. On NW 7.50, the entry is SPLIT — one
+ * `CLAS/OO` element carries `definition` (+ identifiers), one `CLAS/OM` element
+ * carries `implementation` (+ identifiers). `parseClassStructure` merges by name
+ * so callers see a single `MethodStructure` per method on either release.
+ *
+ * `implementation` is `undefined` for ABSTRACT methods (no METHOD body exists).
+ */
+export interface MethodStructure {
+  name: string;
+  visibility: 'public' | 'protected' | 'private';
+  level: 'instance' | 'static';
+  abstract: boolean;
+  constructor: boolean;
+  /** Full METHODS clause range in `/source/main` (the declaration line(s) in DEFINITION). */
+  definition: LineRange;
+  /** Full METHOD…ENDMETHOD range in `/source/main` (body in IMPLEMENTATION). Absent for ABSTRACT. */
+  implementation?: LineRange;
+  /** Position of the method name token within the DEFINITION (useful for code-intel features). */
+  definitionIdentifier?: LineRange;
+  /** Position of the method name token within the IMPLEMENTATION header (`METHOD <name>.`). */
+  implementationIdentifier?: LineRange;
+}
+
+/** Attribute / constant / type declaration in the class DEFINITION. Carries only a definition range. */
+export interface AttributeStructure {
+  name: string;
+  visibility: 'public' | 'protected' | 'private';
+  level: 'instance' | 'static';
+  constant: boolean;
+  readOnly: boolean;
+  definition: LineRange;
+}
+
+/**
+ * Parsed `/sap/bc/adt/oo/classes/{name}/objectstructure` response — the line-range map
+ * arc-1 uses for surgical edits to a global class without re-sending the full source.
+ *
+ * `classDefinitionBlock` covers `CLASS … DEFINITION … ENDCLASS.` in `/source/main`.
+ * `classImplementationBlock` covers `CLASS … IMPLEMENTATION … ENDCLASS.` — absent
+ * only for purely-abstract classes with no IMPLEMENTATION half (unusual).
+ *
+ * `methods` and `attributes` are extracted from the nested elements; ignored types
+ * (`CLAS/OE` events, `CLAS/OT` types, `CLAS/OF` friends, `CLAS/OK` constants/literals,
+ * `CLAS/OCX` text-elements) are dropped — class-section surgery in this release only
+ * targets methods and attributes. Attribute-level surgery is a follow-up.
+ */
+export interface ClassStructure {
+  className: string;
+  classDefinitionBlock: LineRange;
+  classImplementationBlock?: LineRange;
+  methods: MethodStructure[];
+  attributes: AttributeStructure[];
+}

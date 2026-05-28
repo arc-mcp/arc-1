@@ -31,6 +31,7 @@ import type {
   BspAppInfo,
   BspFileNode,
   ClassMetadata,
+  ClassStructure,
   DataElementInfo,
   DomainInfo,
   EnhancementImplementationInfo,
@@ -48,6 +49,7 @@ import {
   parseBspAppList,
   parseBspFolderListing,
   parseClassMetadata,
+  parseClassStructure,
   parseDataElementMetadata,
   parseDomainMetadata,
   parseEnhancementImplementation,
@@ -358,6 +360,32 @@ export class AdtClient {
       implementations,
       macros,
     };
+  }
+
+  /**
+   * Get the class structure map (line ranges for DEFINITION / IMPLEMENTATION
+   * blocks, per-method/attribute ranges) from `/sap/bc/adt/oo/classes/{name}/objectstructure`.
+   *
+   * The endpoint is read-only — the response carries `#start=L,C;end=L,C`
+   * coordinates that `class-section surgery` actions (`edit_class_definition`,
+   * `add_method`, `edit_method_signature`, `delete_method`) use to splice into
+   * `/source/main` without re-sending the full class. Issue #303.
+   *
+   * Cross-release: works on both NW 7.50 SP02 (split CLAS/OO + CLAS/OM elements
+   * merged by name) and S/4HANA 2023 kernel 7.58+ (single CLAS/OM per method).
+   * MIME negotiation is delegated to the discovery cache in http.ts — v1+xml on
+   * 7.50, v2+xml on 7.58+.
+   */
+  async getClassStructure(name: string, version: 'active' | 'inactive' = 'active'): Promise<ClassStructure> {
+    checkOperation(this.safety, OperationType.Read, 'GetClassStructure');
+    // version=inactive returns the draft's structure (verified live on a4h: a class
+    // with an unactivated draft reports the draft's method set + line ranges under
+    // ?version=inactive, the active set under ?version=active). Threading the same
+    // version here as the /source/main read keeps the spliced line ranges aligned
+    // with the bytes being edited — critical for chained surgery on a draft.
+    const suffix = version === 'inactive' ? '?version=inactive' : '';
+    const resp = await this.http.get(`/sap/bc/adt/oo/classes/${encodeURIComponent(name)}/objectstructure${suffix}`);
+    return parseClassStructure(resp.body, name.toUpperCase());
   }
 
   /** Get interface source code */

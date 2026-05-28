@@ -32,6 +32,15 @@ import {
   isSiblingNameMatch,
   type SiblingExtensionCandidate,
 } from '../adt/cds-impact.js';
+import {
+  diffMethodSets,
+  extractMethodNameFromClause,
+  findSectionAnchor,
+  insertMethodPair,
+  removeMethodPair,
+  spliceClassDefinition,
+  spliceMethodSignature,
+} from '../adt/class-structure.js';
 import type { AdtClient, SourceReadResult } from '../adt/client.js';
 import {
   findDefinition,
@@ -154,6 +163,7 @@ import type {
   AdtObjectLookupResult,
   AdtSearchResult,
   ClassHierarchy,
+  ClassStructure,
   DumpDetail,
   FixAffectedObject,
   InactiveObject,
@@ -3503,6 +3513,10 @@ async function handleSAPWrite(
   const source = String(args.source ?? '');
   const hasSource = typeof args.source === 'string';
   const include = normalizeClassWriteInclude(args.include);
+  // Whether a non-empty include was actually requested. Some MCP clients serialize
+  // an omitted optional string as "" — treat empty/whitespace as "not provided" so
+  // those clients aren't rejected with a bogus "Invalid CLAS include" on the MAIN path.
+  const includeProvided = typeof args.include === 'string' && args.include.trim() !== '';
   const transport = args.transport as string | undefined;
   const lintOverride = args.lintBeforeWrite as boolean | undefined;
   const preflightOverride = args.preflightBeforeWrite as boolean | undefined;
@@ -3618,6 +3632,32 @@ async function handleSAPWrite(
     }
     await checkPackage(client.safety, pkg, client.getPackageHierarchyResolver());
     return pkg;
+  }
+
+  // Helper for class-section surgery (issue #303): fetch the class structure AND
+  // /source/main at the SAME effective version, so the spliced line ranges line
+  // up with the bytes being edited. resolveVersionAndDraftInfo picks 'inactive'
+  // when an unactivated draft exists. We pass that version to BOTH getClassStructure
+  // (the /objectstructure?version= read) and the source read, AND to the cache opts
+  // (so inactive bytes aren't cached under the 'active' key). Without this, a chained
+  // surgery call on a draft would splice active-version line ranges into inactive
+  // source and silently corrupt the draft.
+  async function fetchClassStructureAndMain(
+    clsName: string,
+  ): Promise<{ structure: ClassStructure; main: string; effectiveVersion: SourceVersion }> {
+    const { effectiveVersion } = await resolveVersionAndDraftInfo(client, cachingLayer, 'CLAS', clsName, 'auto');
+    const structure = await client.getClassStructure(clsName, effectiveVersion);
+    const main = cachingLayer
+      ? (
+          await cachingLayer.getSource(
+            'CLAS',
+            clsName,
+            (ifNoneMatch) => client.getClass(clsName, undefined, { ifNoneMatch, version: effectiveVersion }),
+            { version: effectiveVersion },
+          )
+        ).source
+      : (await client.getClass(clsName, undefined, { version: effectiveVersion })).source;
+    return { structure, main, effectiveVersion };
   }
 
   switch (action) {
@@ -4196,6 +4236,290 @@ async function handleSAPWrite(
       const extras = [lintWarnings.warnings, checkNotes].filter(Boolean).join('\n\n');
       return extras ? textResult(`${msg}\n\n${extras}`) : textResult(msg);
     }
+
+    // ─── Class-section surgery actions (issue #303) ─────────────────────
+    //
+    // Four actions share a common shape: fetch objectstructure → optional
+    // diff/refuse → splice into /source/main (or /includes/<inc> when
+    // include= is set) → PUT under lock → no auto-activate.
+    //
+    // Pre-write lint runs on the SPLICED FULL source (not the partial input
+    // fragment) because a raw DEFINITION block alone fails abaplint with
+    // "Expected CLASSIMPLEMENTATION" — verified live on a4h. Lint is skipped
+    // for include= writes (same precedent as `update include=` path).
+    case 'edit_class_definition': {
+      if (type !== 'CLAS') return errorResult('edit_class_definition is only supported for type=CLAS.');
+      if (!hasSource)
+        return errorResult('"source" (new CLASS DEFINITION block) is required for edit_class_definition.');
+      if (includeProvided && !include) {
+        return errorResult(
+          `Invalid CLAS include "${String(args.include)}". Valid values: ${CLASS_WRITE_INCLUDES.join(', ')}.`,
+        );
+      }
+      await enforcePackageForExistingObject();
+
+      const writeUrl = include ? classIncludeUrl(name, include) : srcUrl;
+      let spliced: string;
+      if (include) {
+        // include= path: whole-replace the local include (CCDEF/CCIMP/macros/
+        // testclasses). The structure-based diff/refuse doesn't apply — the
+        // /objectstructure endpoint reports the GLOBAL class, not the local
+        // include's split DEFINITION/IMPLEMENTATION halves. SAP activation is the
+        // validator here (same precedent as `update include=`). No structure or
+        // source fetch is needed: the caller's `source` IS the new include body.
+        spliced = source.endsWith('\n') ? source : `${source}\n`;
+      } else {
+        // MAIN path: fetch structure + source at the same effective version so
+        // the spliced line ranges align with the bytes being edited.
+        const { structure, main } = await fetchClassStructureAndMain(name);
+
+        // Refuse-policy: compute the method-set diff against the NEW DEFINITION.
+        const diff = diffMethodSets(structure, source);
+        const missingImpls: string[] = [];
+        const orphanImpls: string[] = [];
+        for (const add of diff.added) {
+          // Exempt declarations that never have a METHOD…ENDMETHOD body.
+          if (add.isAbstract || add.isEvent || add.isInterface || add.isAlias) continue;
+          // Does IMPLEMENTATION already have a METHOD <name> header? Match the
+          // method name followed by a word-boundary so AMDP / event-handler /
+          // multi-line headers (`METHOD x BY DATABASE PROCEDURE…`, `METHOD x FOR
+          // EVENT…`, `METHOD x\n  IMPORTING…`) are recognized — NOT only the bare
+          // `METHOD x.` form. \b after the name prevents matching a longer name
+          // with the same prefix (METHOD x_helper for added X).
+          const re = new RegExp(`^\\s*METHOD\\s+${add.name}\\b`, 'im');
+          if (!re.test(main)) missingImpls.push(add.name);
+        }
+        for (const rem of diff.removed) {
+          if (rem.implementation) {
+            // Was concrete, still has impl range — caller didn't remove the body.
+            orphanImpls.push(rem.name);
+          }
+        }
+        if (missingImpls.length > 0 || orphanImpls.length > 0) {
+          const parts: string[] = [];
+          if (missingImpls.length > 0) {
+            parts.push(
+              `Cannot apply edit_class_definition: the new DEFINITION declares method(s) ${missingImpls.join(', ')} but the existing IMPLEMENTATION block has no matching METHOD…ENDMETHOD body. Either include a METHOD <name>. ENDMETHOD. block per added method in your new source, or use SAPWrite(action="add_method", name="${name}", method="<METHODS clause>") to insert each one atomically.`,
+            );
+          }
+          if (orphanImpls.length > 0) {
+            parts.push(
+              `Cannot apply edit_class_definition: the new DEFINITION removes method(s) ${orphanImpls.join(', ')} but the existing IMPLEMENTATION block still has METHOD…ENDMETHOD bodies for them (orphan implementation). Either remove those METHOD blocks in your edit, or use SAPWrite(action="delete_method", name="${name}", method="<name>") to drop each one atomically.`,
+            );
+          }
+          return errorResult(parts.join('\n\n'));
+        }
+        spliced = spliceClassDefinition(main, structure, source);
+      }
+
+      // Pre-write lint on the spliced full source (MAIN path only — include=
+      // fragments can't be lint-parsed standalone).
+      if (!include) {
+        const lintWarnings = runPreWriteLint(spliced, type, name, config, lintOverride);
+        if (lintWarnings.blocked) return lintWarnings.result!;
+      }
+
+      await safeUpdateSource(
+        client.http,
+        client.safety,
+        objectUrl,
+        writeUrl,
+        spliced,
+        transport,
+        cachedFeatures?.abapRelease,
+      );
+      invalidateWrittenObject(type, name);
+      const whereLabel = include ? ` (include: ${include})` : '';
+      return textResult(
+        `Successfully updated DEFINITION of ${type} ${name}${whereLabel}. Active version unchanged until activation; read with SAPRead(version="inactive") to verify, then SAPActivate.`,
+      );
+    }
+
+    case 'edit_method_signature': {
+      if (type !== 'CLAS') return errorResult('edit_method_signature is only supported for type=CLAS.');
+      const methodSpecifier = String(args.method ?? '').trim();
+      if (!methodSpecifier) {
+        return errorResult('"method" (the method NAME to re-sign) is required for edit_method_signature.');
+      }
+      if (!hasSource) {
+        return errorResult('"source" (the new METHODS clause) is required for edit_method_signature.');
+      }
+      // MAIN-only action: include= is rejected at the schema layer (this action is
+      // not in SAPWRITE_INCLUDE_AWARE_ACTIONS). Defensive guard for direct CLI calls
+      // that bypass Zod.
+      if (includeProvided) {
+        return errorResult(
+          'edit_method_signature targets the global class DEFINITION (/source/main). For local-class (CCDEF) signatures, use edit_class_definition with include=definitions.',
+        );
+      }
+      await enforcePackageForExistingObject();
+
+      const { structure, main } = await fetchClassStructureAndMain(name);
+      const upperName = methodSpecifier.toUpperCase();
+      const method = structure.methods.find((m) => m.name === upperName);
+      if (!method) {
+        const available = structure.methods.map((m) => m.name).join(', ');
+        const hint = methodSpecifier.includes('~')
+          ? ' Interface-qualified names (e.g. "zif_x~m") are not addressable here — objectstructure lists the implementing method under its bare name; for interface/local-handler bodies use edit_method.'
+          : '';
+        return errorResult(
+          `Method "${methodSpecifier}" not found in CLAS ${name}. Available methods: ${available || '(none)'}.${hint}`,
+        );
+      }
+
+      const spliced = spliceMethodSignature(main, method, source);
+      // No pre-write lint: edit_method_signature changes ONLY the declaration; the
+      // method body still references the old signature until the caller follows up
+      // with edit_method. Linting the spliced full source here would flag legitimate
+      // in-progress renames (e.g. "param `name` not declared"). SAP activation is the
+      // authoritative check — same rationale as the include= lint skip on edit_method.
+      await safeUpdateSource(
+        client.http,
+        client.safety,
+        objectUrl,
+        srcUrl,
+        spliced,
+        transport,
+        cachedFeatures?.abapRelease,
+      );
+      invalidateWrittenObject(type, name);
+      return textResult(
+        `Successfully updated signature of method "${method.name}" in ${type} ${name}. Active version unchanged until activation; if the body still references the old signature, follow up with edit_method, then SAPActivate.`,
+      );
+    }
+
+    case 'add_method': {
+      if (type !== 'CLAS') return errorResult('add_method is only supported for type=CLAS.');
+      const clause = String(args.method ?? '');
+      if (!clause.trim()) {
+        return errorResult(
+          '"method" (the full METHODS clause, e.g. "METHODS greet IMPORTING who TYPE string.") is required for add_method.',
+        );
+      }
+      const methodName = extractMethodNameFromClause(clause);
+      if (!methodName) {
+        return errorResult(
+          'Could not extract method name from the METHODS clause. Provide a clause starting with "METHODS <name>" or "CLASS-METHODS <name>".',
+        );
+      }
+      // Interface-qualified names (lhc_x~y, zif_x~m) can't be added to a global
+      // class's DEFINITION/IMPLEMENTATION — `~` is interface-method scope and would
+      // produce invalid ABAP in the METHOD stub. Reject with a clear pointer.
+      if (methodName.includes('~')) {
+        return errorResult(
+          `add_method cannot add the interface-qualified method "${methodName}" to a global class. Implement the interface via "INTERFACES <name>." in the DEFINITION (use edit_class_definition), then provide the body with edit_method.`,
+        );
+      }
+      const visibility = (args.visibility as 'public' | 'protected' | 'private' | undefined) ?? 'public';
+      const isAbstract = args.abstract === true;
+      // MAIN-only action: include= is rejected at the schema layer (not in
+      // SAPWRITE_INCLUDE_AWARE_ACTIONS). Defensive guard for direct CLI calls.
+      if (includeProvided) {
+        return errorResult(
+          'add_method targets the global class DEFINITION (/source/main). For local-class (CCDEF) method additions, use edit_class_definition with include=definitions.',
+        );
+      }
+      await enforcePackageForExistingObject();
+
+      const { structure, main } = await fetchClassStructureAndMain(name);
+      // Refuse if method already exists (would silently duplicate).
+      if (structure.methods.some((m) => m.name === methodName)) {
+        return errorResult(
+          `Method "${methodName}" already exists in CLAS ${name}. Use SAPWrite(action="edit_method_signature", method="${methodName}", source="<new METHODS clause>") to change its signature.`,
+        );
+      }
+
+      // A concrete (non-abstract) method needs an IMPLEMENTATION block to receive
+      // its METHOD…ENDMETHOD stub. A purely-abstract class has no IMPLEMENTATION
+      // half, so inserting a concrete declaration there would leave it unimplemented.
+      if (!isAbstract && !structure.classImplementationBlock) {
+        return errorResult(
+          `CLAS ${name} has no IMPLEMENTATION block (purely abstract class). Pass abstract=true to add an abstract method, or add the IMPLEMENTATION half first via edit_class_definition.`,
+        );
+      }
+
+      // Refuse with hint if the target visibility section header is missing.
+      const anchor = findSectionAnchor(main, structure, visibility);
+      if (!anchor) {
+        return errorResult(
+          `No ${visibility.toUpperCase()} SECTION exists in CLAS ${name}. Use SAPWrite(action="edit_class_definition") to add the section header first, then re-run add_method.`,
+        );
+      }
+
+      const spliced = insertMethodPair(main, structure, {
+        decl: clause,
+        visibility,
+        methodName,
+        isAbstract,
+      });
+
+      const lintWarnings = runPreWriteLint(spliced, type, name, config, lintOverride);
+      if (lintWarnings.blocked) return lintWarnings.result!;
+
+      await safeUpdateSource(
+        client.http,
+        client.safety,
+        objectUrl,
+        srcUrl,
+        spliced,
+        transport,
+        cachedFeatures?.abapRelease,
+      );
+      invalidateWrittenObject(type, name);
+      const stubNote = isAbstract ? ' (abstract — no IMPL stub inserted)' : '';
+      return textResult(
+        `Successfully added method "${methodName}" (${visibility}) to ${type} ${name}${stubNote}. Active version unchanged until activation; SAPActivate next.`,
+      );
+    }
+
+    case 'delete_method': {
+      if (type !== 'CLAS') return errorResult('delete_method is only supported for type=CLAS.');
+      const methodSpecifier = String(args.method ?? '').trim();
+      if (!methodSpecifier) {
+        return errorResult('"method" (the method NAME to delete) is required for delete_method.');
+      }
+      // MAIN-only action: include= is rejected at the schema layer (not in
+      // SAPWRITE_INCLUDE_AWARE_ACTIONS). Defensive guard for direct CLI calls.
+      if (includeProvided) {
+        return errorResult(
+          'delete_method targets the global class DEFINITION (/source/main). For local-class (CCDEF/CCIMP) method removal, use edit_class_definition with include=...',
+        );
+      }
+      await enforcePackageForExistingObject();
+
+      const { structure, main } = await fetchClassStructureAndMain(name);
+      const upperName = methodSpecifier.toUpperCase();
+      const method = structure.methods.find((m) => m.name === upperName);
+      if (!method) {
+        const available = structure.methods.map((m) => m.name).join(', ');
+        const hint = methodSpecifier.includes('~')
+          ? ' Interface-qualified names (e.g. "zif_x~m") are not addressable here; objectstructure lists methods under their bare names.'
+          : '';
+        return errorResult(
+          `Method "${methodSpecifier}" not found in CLAS ${name}. Available methods: ${available || '(none)'}.${hint}`,
+        );
+      }
+
+      const spliced = removeMethodPair(main, method);
+      const lintWarnings = runPreWriteLint(spliced, type, name, config, lintOverride);
+      if (lintWarnings.blocked) return lintWarnings.result!;
+
+      await safeUpdateSource(
+        client.http,
+        client.safety,
+        objectUrl,
+        srcUrl,
+        spliced,
+        transport,
+        cachedFeatures?.abapRelease,
+      );
+      invalidateWrittenObject(type, name);
+      const where = method.implementation ? ' (DEFINITION + IMPLEMENTATION)' : ' (DEFINITION only — was ABSTRACT)';
+      return textResult(
+        `Successfully deleted method "${method.name}" from ${type} ${name}${where}. Active version unchanged until activation; SAPActivate next.`,
+      );
+    }
+
     case 'scaffold_rap_handlers': {
       // What this action does:
       //   Given a behavior-pool class (ZBP_*) and its interface BDEF, inspect

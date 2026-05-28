@@ -13060,4 +13060,525 @@ ENDCLASS.`;
       expect(transportCalls.length).toBe(1);
     });
   });
+
+  // ─── Class-section surgery actions (issue #303) ─────────────────────────
+  describe('SAPWrite class-section surgery (issue #303)', () => {
+    /**
+     * Build a mock for class-section surgery flow:
+     *   GET /sap/bc/adt/oo/classes/{className} (package check)
+     *   GET /sap/bc/adt/oo/classes/{className}/objectstructure
+     *   GET /sap/bc/adt/activation/inactiveobjects (draft list)
+     *   GET /sap/bc/adt/oo/classes/{className}/source/main (active or inactive)
+     *   POST _action=LOCK
+     *   PUT /source/main
+     *   POST _action=UNLOCK
+     */
+    function mockClassSurgeryFlow(opts: {
+      className: string;
+      mainSource: string;
+      structureXml: string;
+      packageName?: string;
+    }): Array<{ method: string; url: string; body?: string }> {
+      const calls: Array<{ method: string; url: string; body?: string }> = [];
+      mockFetch.mockReset();
+      mockFetch.mockImplementation(
+        (url: string | URL, fetchOpts?: { method?: string; body?: string | Buffer | null }) => {
+          const method = fetchOpts?.method ?? 'GET';
+          const urlStr = String(url);
+          calls.push({ method, url: urlStr, body: typeof fetchOpts?.body === 'string' ? fetchOpts.body : undefined });
+          if (method === 'GET' && urlStr.includes('/sap/bc/adt/activation/inactiveobjects')) {
+            return Promise.resolve(
+              mockResponse(
+                200,
+                '<?xml version="1.0" encoding="utf-8"?><ioc:inactiveObjects xmlns:ioc="http://www.sap.com/adt/inactiveObjects"/>',
+                { 'x-csrf-token': 'T' },
+              ),
+            );
+          }
+          if (method === 'GET' && urlStr.endsWith(`/sap/bc/adt/oo/classes/${opts.className}`)) {
+            const pkg = opts.packageName ?? '$TMP';
+            return Promise.resolve(
+              mockResponse(
+                200,
+                `<class:abapClass xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:packageRef adtcore:name="${pkg}"/></class:abapClass>`,
+                { 'x-csrf-token': 'T' },
+              ),
+            );
+          }
+          if (method === 'GET' && urlStr.includes(`/sap/bc/adt/oo/classes/${opts.className}/objectstructure`)) {
+            return Promise.resolve(mockResponse(200, opts.structureXml, { 'x-csrf-token': 'T' }));
+          }
+          if (method === 'GET' && urlStr.includes(`/sap/bc/adt/oo/classes/${opts.className}/source/main`)) {
+            return Promise.resolve(mockResponse(200, opts.mainSource, { 'x-csrf-token': 'T' }));
+          }
+          if (method === 'GET' && urlStr.includes('/sap/bc/adt/discovery')) {
+            return Promise.resolve(
+              mockResponse(200, '<service xmlns="http://www.w3.org/2007/app"/>', { 'x-csrf-token': 'T' }),
+            );
+          }
+          if (method === 'POST' && urlStr.includes('_action=LOCK')) {
+            return Promise.resolve(
+              mockResponse(
+                200,
+                '<asx:abap><asx:values><DATA><LOCK_HANDLE>LH1</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL></DATA></asx:values></asx:abap>',
+                { 'x-csrf-token': 'T' },
+              ),
+            );
+          }
+          if (method === 'POST' && urlStr.includes('_action=UNLOCK')) {
+            return Promise.resolve(mockResponse(200, '<ok/>', { 'x-csrf-token': 'T' }));
+          }
+          if (method === 'PUT') {
+            return Promise.resolve(mockResponse(200, '<ok/>', { 'x-csrf-token': 'T' }));
+          }
+          return Promise.resolve(
+            mockResponse(
+              404,
+              `<exc:exception xmlns:exc="x"><type id="ExceptionResourceNotFound"/><message>not found</message></exc:exception>`,
+            ),
+          );
+        },
+      );
+      return calls;
+    }
+
+    // Probe class source: 2 public methods (HELLO, GOODBYE), 1 private DATA member.
+    const PROBE_MAIN = `CLASS zcl_probe DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    METHODS hello
+      IMPORTING name TYPE string
+      RETURNING VALUE(result) TYPE string.
+    METHODS goodbye
+      RETURNING VALUE(result) TYPE string.
+  PRIVATE SECTION.
+    DATA mv_counter TYPE i.
+ENDCLASS.
+
+CLASS zcl_probe IMPLEMENTATION.
+
+  METHOD hello.
+    result = |Hello, { name }!|.
+  ENDMETHOD.
+
+  METHOD goodbye.
+    result = 'Goodbye!'.
+  ENDMETHOD.
+
+ENDCLASS.
+`;
+
+    // Matches PROBE_MAIN line ranges (1-indexed, end-inclusive). Class def 1-10,
+    // impl 12-22. HELLO def 3-5, impl 14-16. GOODBYE def 6-7, impl 18-20.
+    const PROBE_STRUCTURE = `<abapsource:objectStructureElement xmlns:adtcore="http://www.sap.com/adt/core" xmlns:abapsource="http://www.sap.com/adt/abapsource" xmlns:atom="http://www.w3.org/2005/Atom" adtcore:name="ZCL_PROBE" visibility="public" final="true" adtcore:type="CLAS/OC">
+  <atom:link rel="http://www.sap.com/adt/relations/source/definitionBlock" href="./../zcl_probe/source/main#start=1,0;end=10,8"/>
+  <atom:link rel="http://www.sap.com/adt/relations/source/implementationBlock" href="./../zcl_probe/source/main#start=12,0;end=22,8"/>
+  <abapsource:objectStructureElement adtcore:type="CLAS/OM" adtcore:name="HELLO" level="instance" visibility="public">
+    <atom:link rel="http://www.sap.com/adt/relations/source/definitionBlock" href="./../zcl_probe/source/main#start=3,4;end=5,41"/>
+    <atom:link rel="http://www.sap.com/adt/relations/source/implementationBlock" href="./../zcl_probe/source/main#start=14,2;end=16,11"/>
+  </abapsource:objectStructureElement>
+  <abapsource:objectStructureElement adtcore:type="CLAS/OM" adtcore:name="GOODBYE" level="instance" visibility="public">
+    <atom:link rel="http://www.sap.com/adt/relations/source/definitionBlock" href="./../zcl_probe/source/main#start=6,4;end=7,41"/>
+    <atom:link rel="http://www.sap.com/adt/relations/source/implementationBlock" href="./../zcl_probe/source/main#start=18,2;end=20,11"/>
+  </abapsource:objectStructureElement>
+</abapsource:objectStructureElement>`;
+
+    // ── edit_class_definition ────────────────────────────────────────
+
+    it('edit_class_definition happy path: no method-set change (drop FINAL)', async () => {
+      const calls = mockClassSurgeryFlow({
+        className: 'ZCL_PROBE',
+        mainSource: PROBE_MAIN,
+        structureXml: PROBE_STRUCTURE,
+      });
+      const newDef = `CLASS zcl_probe DEFINITION PUBLIC CREATE PUBLIC.
+  PUBLIC SECTION.
+    METHODS hello
+      IMPORTING name TYPE string
+      RETURNING VALUE(result) TYPE string.
+    METHODS goodbye
+      RETURNING VALUE(result) TYPE string.
+  PRIVATE SECTION.
+    DATA mv_counter TYPE i.
+ENDCLASS.`;
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'edit_class_definition',
+        type: 'CLAS',
+        name: 'ZCL_PROBE',
+        source: newDef,
+      });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toMatch(/Successfully updated DEFINITION/);
+      // PUT must have happened.
+      expect(calls.some((c) => c.method === 'PUT' && c.url.includes('/source/main'))).toBe(true);
+    });
+
+    it('edit_class_definition refuse-policy: added concrete method without IMPL stub', async () => {
+      const calls = mockClassSurgeryFlow({
+        className: 'ZCL_PROBE',
+        mainSource: PROBE_MAIN,
+        structureXml: PROBE_STRUCTURE,
+      });
+      const newDef = `CLASS zcl_probe DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    METHODS hello.
+    METHODS goodbye.
+    METHODS greet IMPORTING who TYPE string.
+  PRIVATE SECTION.
+ENDCLASS.`;
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'edit_class_definition',
+        type: 'CLAS',
+        name: 'ZCL_PROBE',
+        source: newDef,
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toMatch(/GREET/);
+      expect(result.content[0]?.text).toMatch(/add_method|METHOD…ENDMETHOD/);
+      // No PUT should have happened.
+      expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+    });
+
+    it('edit_class_definition refuse-policy: ABSTRACT method is exempt from symmetry check', async () => {
+      const calls = mockClassSurgeryFlow({
+        className: 'ZCL_PROBE',
+        mainSource: PROBE_MAIN,
+        structureXml: PROBE_STRUCTURE,
+      });
+      const newDef = `CLASS zcl_probe DEFINITION PUBLIC ABSTRACT CREATE PUBLIC.
+  PUBLIC SECTION.
+    METHODS hello
+      IMPORTING name TYPE string
+      RETURNING VALUE(result) TYPE string.
+    METHODS goodbye
+      RETURNING VALUE(result) TYPE string.
+    METHODS to_impl ABSTRACT RETURNING VALUE(r) TYPE string.
+  PRIVATE SECTION.
+    DATA mv_counter TYPE i.
+ENDCLASS.`;
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'edit_class_definition',
+        type: 'CLAS',
+        name: 'ZCL_PROBE',
+        source: newDef,
+      });
+      expect(result.isError).toBeUndefined();
+      expect(calls.some((c) => c.method === 'PUT')).toBe(true);
+    });
+
+    it('edit_class_definition refuse-policy: orphan IMPLEMENTATION block on removal', async () => {
+      const calls = mockClassSurgeryFlow({
+        className: 'ZCL_PROBE',
+        mainSource: PROBE_MAIN,
+        structureXml: PROBE_STRUCTURE,
+      });
+      // New DEFINITION removes GOODBYE but the existing IMPL still has the body.
+      const newDef = `CLASS zcl_probe DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    METHODS hello
+      IMPORTING name TYPE string
+      RETURNING VALUE(result) TYPE string.
+  PRIVATE SECTION.
+    DATA mv_counter TYPE i.
+ENDCLASS.`;
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'edit_class_definition',
+        type: 'CLAS',
+        name: 'ZCL_PROBE',
+        source: newDef,
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toMatch(/GOODBYE/);
+      expect(result.content[0]?.text).toMatch(/orphan implementation|delete_method/);
+      expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+    });
+
+    it('edit_class_definition rejects non-CLAS type', async () => {
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'edit_class_definition',
+        type: 'PROG',
+        name: 'ZTEST',
+        source: 'REPORT zhello.',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('CLAS');
+    });
+
+    it('edit_class_definition rejects missing source', async () => {
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'edit_class_definition',
+        type: 'CLAS',
+        name: 'ZCL_PROBE',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toMatch(/source.*required|required.*source/i);
+    });
+
+    // ── edit_method_signature ────────────────────────────────────────
+
+    it('edit_method_signature happy path replaces one method declaration range', async () => {
+      const calls = mockClassSurgeryFlow({
+        className: 'ZCL_PROBE',
+        mainSource: PROBE_MAIN,
+        structureXml: PROBE_STRUCTURE,
+      });
+      const newSig = `    METHODS hello
+      IMPORTING name TYPE string
+                greeting TYPE string DEFAULT 'Hi'
+      RETURNING VALUE(result) TYPE string.`;
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'edit_method_signature',
+        type: 'CLAS',
+        name: 'ZCL_PROBE',
+        method: 'hello',
+        source: newSig,
+      });
+      expect(result.isError).toBeUndefined();
+      const putCall = calls.find((c) => c.method === 'PUT');
+      expect(putCall?.body ?? '').toContain("greeting TYPE string DEFAULT 'Hi'");
+    });
+
+    it('edit_method_signature returns helpful error for unknown method', async () => {
+      mockClassSurgeryFlow({ className: 'ZCL_PROBE', mainSource: PROBE_MAIN, structureXml: PROBE_STRUCTURE });
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'edit_method_signature',
+        type: 'CLAS',
+        name: 'ZCL_PROBE',
+        method: 'nonexistent',
+        source: '    METHODS foo.',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toMatch(/Available methods.*HELLO|HELLO.*GOODBYE/);
+    });
+
+    it('edit_method_signature rejects missing method', async () => {
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'edit_method_signature',
+        type: 'CLAS',
+        name: 'ZCL_PROBE',
+        source: 'METHODS foo.',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toMatch(/method.*required|NAME.*required/i);
+    });
+
+    // ── add_method ───────────────────────────────────────────────────
+
+    it('add_method happy path inserts METHODS + METHOD/ENDMETHOD stub atomically', async () => {
+      const calls = mockClassSurgeryFlow({
+        className: 'ZCL_PROBE',
+        mainSource: PROBE_MAIN,
+        structureXml: PROBE_STRUCTURE,
+      });
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'add_method',
+        type: 'CLAS',
+        name: 'ZCL_PROBE',
+        method: '    METHODS greet IMPORTING who TYPE string RETURNING VALUE(r) TYPE string.',
+        visibility: 'public',
+      });
+      expect(result.isError).toBeUndefined();
+      const putCall = calls.find((c) => c.method === 'PUT');
+      expect(putCall?.body ?? '').toContain('METHODS greet');
+      expect(putCall?.body ?? '').toContain('METHOD greet.');
+      expect(putCall?.body ?? '').toContain('ENDMETHOD.');
+    });
+
+    it('add_method with abstract=true inserts no IMPL stub', async () => {
+      const calls = mockClassSurgeryFlow({
+        className: 'ZCL_PROBE',
+        mainSource: PROBE_MAIN,
+        structureXml: PROBE_STRUCTURE,
+      });
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'add_method',
+        type: 'CLAS',
+        name: 'ZCL_PROBE',
+        method: '    METHODS to_impl ABSTRACT.',
+        abstract: true,
+      });
+      expect(result.isError).toBeUndefined();
+      const putCall = calls.find((c) => c.method === 'PUT');
+      expect(putCall?.body ?? '').toContain('METHODS to_impl ABSTRACT.');
+      // No new METHOD to_impl. ENDMETHOD. stub should have been added.
+      const stubCount = (putCall?.body ?? '').match(/METHOD\s+to_impl\s*\./gi)?.length ?? 0;
+      expect(stubCount).toBe(0);
+    });
+
+    it('add_method refuses when target visibility section header is missing', async () => {
+      mockClassSurgeryFlow({ className: 'ZCL_PROBE', mainSource: PROBE_MAIN, structureXml: PROBE_STRUCTURE });
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'add_method',
+        type: 'CLAS',
+        name: 'ZCL_PROBE',
+        method: '    METHODS helper.',
+        visibility: 'protected',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toMatch(/PROTECTED SECTION/);
+      expect(result.content[0]?.text).toMatch(/edit_class_definition/);
+    });
+
+    it('add_method refuses when method name already exists', async () => {
+      mockClassSurgeryFlow({ className: 'ZCL_PROBE', mainSource: PROBE_MAIN, structureXml: PROBE_STRUCTURE });
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'add_method',
+        type: 'CLAS',
+        name: 'ZCL_PROBE',
+        method: '    METHODS hello.',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toMatch(/HELLO/);
+      expect(result.content[0]?.text).toMatch(/edit_method_signature|already exists/);
+    });
+
+    it('add_method rejects when method clause has no parseable name', async () => {
+      mockClassSurgeryFlow({ className: 'ZCL_PROBE', mainSource: PROBE_MAIN, structureXml: PROBE_STRUCTURE });
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'add_method',
+        type: 'CLAS',
+        name: 'ZCL_PROBE',
+        method: 'this is not abap',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toMatch(/extract method name|METHODS/);
+    });
+
+    // ── delete_method ────────────────────────────────────────────────
+
+    it('delete_method removes both DEFINITION and IMPLEMENTATION ranges', async () => {
+      const calls = mockClassSurgeryFlow({
+        className: 'ZCL_PROBE',
+        mainSource: PROBE_MAIN,
+        structureXml: PROBE_STRUCTURE,
+      });
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'delete_method',
+        type: 'CLAS',
+        name: 'ZCL_PROBE',
+        method: 'hello',
+      });
+      expect(result.isError).toBeUndefined();
+      const putCall = calls.find((c) => c.method === 'PUT');
+      expect(putCall?.body ?? '').not.toMatch(/METHODS\s+hello/i);
+      expect(putCall?.body ?? '').not.toMatch(/^\s*METHOD\s+hello\s*\.\s*$/im);
+      // Other method still present.
+      expect(putCall?.body ?? '').toContain('METHODS goodbye');
+    });
+
+    it('delete_method returns helpful error for unknown method', async () => {
+      mockClassSurgeryFlow({ className: 'ZCL_PROBE', mainSource: PROBE_MAIN, structureXml: PROBE_STRUCTURE });
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'delete_method',
+        type: 'CLAS',
+        name: 'ZCL_PROBE',
+        method: 'nonexistent',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toMatch(/Available methods/);
+    });
+
+    it('delete_method rejects non-CLAS type', async () => {
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'delete_method',
+        type: 'PROG',
+        name: 'ZTEST',
+        method: 'foo',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('CLAS');
+    });
+
+    // ── Code-review regression cases ──────────────────────────────────
+
+    it('edit_class_definition refuse-policy does NOT false-flag an AMDP method whose IMPL header has extra qualifiers', async () => {
+      // PROBE_MAIN's HELLO/GOODBYE bodies are plain. We add an AMDP-style impl for a
+      // method GET_DATA so the regex `^\s*METHOD\s+GET_DATA\b` must match the
+      // "METHOD get_data BY DATABASE PROCEDURE..." header (not require a bare period).
+      const amdpMain = PROBE_MAIN.replace(
+        '  METHOD goodbye.',
+        '  METHOD get_data BY DATABASE PROCEDURE FOR HDB LANGUAGE SQLSCRIPT.\n  ENDMETHOD.\n\n  METHOD goodbye.',
+      );
+      // Structure reports HELLO + GOODBYE (GET_DATA not yet in active structure — it's
+      // the method the new DEFINITION declares; its body already exists in IMPL).
+      const calls = mockClassSurgeryFlow({
+        className: 'ZCL_PROBE',
+        mainSource: amdpMain,
+        structureXml: PROBE_STRUCTURE,
+      });
+      const newDef = `CLASS zcl_probe DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    METHODS hello
+      IMPORTING name TYPE string
+      RETURNING VALUE(result) TYPE string.
+    METHODS goodbye
+      RETURNING VALUE(result) TYPE string.
+    METHODS get_data RETURNING VALUE(r) TYPE string.
+  PRIVATE SECTION.
+    DATA mv_counter TYPE i.
+ENDCLASS.`;
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'edit_class_definition',
+        type: 'CLAS',
+        name: 'ZCL_PROBE',
+        source: newDef,
+        lintBeforeWrite: false,
+      });
+      // The AMDP body exists → refuse-policy must NOT flag GET_DATA as missing impl.
+      expect(result.isError).toBeUndefined();
+      expect(calls.some((c) => c.method === 'PUT')).toBe(true);
+    });
+
+    it('add_method rejects an interface-qualified method name (would emit invalid ABAP)', async () => {
+      mockClassSurgeryFlow({ className: 'ZCL_PROBE', mainSource: PROBE_MAIN, structureXml: PROBE_STRUCTURE });
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'add_method',
+        type: 'CLAS',
+        name: 'ZCL_PROBE',
+        method: 'METHODS lhc_handler~run.',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toMatch(/interface-qualified|INTERFACES/);
+    });
+
+    it('add_method (concrete) refuses on a purely-abstract class with no IMPLEMENTATION block', async () => {
+      // Structure has a class definitionBlock but NO implementationBlock.
+      const abstractStruct = `<abapsource:objectStructureElement xmlns:adtcore="http://www.sap.com/adt/core" xmlns:abapsource="http://www.sap.com/adt/abapsource" xmlns:atom="http://www.w3.org/2005/Atom" adtcore:name="ZCL_ABS" visibility="public" abstract="true" adtcore:type="CLAS/OC">
+  <atom:link rel="http://www.sap.com/adt/relations/source/definitionBlock" href="./../zcl_abs/source/main#start=1,0;end=4,8"/>
+</abapsource:objectStructureElement>`;
+      const abstractMain = `CLASS zcl_abs DEFINITION PUBLIC ABSTRACT CREATE PUBLIC.
+  PUBLIC SECTION.
+    METHODS do_it ABSTRACT.
+ENDCLASS.`.replace(/\n/g, '\r\n');
+      mockClassSurgeryFlow({ className: 'ZCL_ABS', mainSource: abstractMain, structureXml: abstractStruct });
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'add_method',
+        type: 'CLAS',
+        name: 'ZCL_ABS',
+        method: '    METHODS concrete RETURNING VALUE(r) TYPE string.',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toMatch(/no IMPLEMENTATION block|abstract=true/);
+    });
+
+    it('edit_method_signature does NOT run pre-write lint (allows in-progress param renames)', async () => {
+      // Renaming an importing param leaves the body referencing the old name. If lint
+      // ran on the spliced source it would block. It must not.
+      const calls = mockClassSurgeryFlow({
+        className: 'ZCL_PROBE',
+        mainSource: PROBE_MAIN,
+        structureXml: PROBE_STRUCTURE,
+      });
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'edit_method_signature',
+        type: 'CLAS',
+        name: 'ZCL_PROBE',
+        method: 'hello',
+        // rename `name` → `who`; body still uses `name`
+        source: '    METHODS hello IMPORTING who TYPE string RETURNING VALUE(result) TYPE string.',
+        // deliberately DO NOT pass lintBeforeWrite:false — proving the action skips lint itself
+      });
+      expect(result.isError).toBeUndefined();
+      expect(calls.some((c) => c.method === 'PUT')).toBe(true);
+    });
+  });
 });

@@ -287,6 +287,49 @@ describe('AdtClient', () => {
     });
   });
 
+  describe('getClassStructure (issue #303)', () => {
+    it('parses a4h (kernel 7.58) objectstructure response into ranges', async () => {
+      const xml = loadFixture('objectstructure-clas-a4h-758.xml');
+      mockFetch.mockResolvedValueOnce(mockResponse(200, xml));
+      const client = createClient();
+      const s = await client.getClassStructure('ZCL_ARC1_PROBE303');
+      expect(s.className).toBe('ZCL_ARC1_PROBE303');
+      expect(s.classDefinitionBlock).toEqual({ sr: 1, sc: 0, er: 10, ec: 8 });
+      expect(s.classImplementationBlock).toEqual({ sr: 12, sc: 0, er: 22, ec: 8 });
+      expect(s.methods.map((m) => m.name).sort()).toEqual(['GOODBYE', 'HELLO']);
+    });
+
+    it('merges the 7.50 split CLAS/OO + CLAS/OM shape by name', async () => {
+      const xml = loadFixture('objectstructure-clas-npl-750.xml');
+      mockFetch.mockResolvedValueOnce(mockResponse(200, xml));
+      const client = createClient();
+      const s = await client.getClassStructure('CL_ABAP_TYPEDESCR');
+      expect(s.methods.length).toBeGreaterThan(10);
+      const abs = s.methods.find((m) => m.abstract);
+      expect(abs?.implementation).toBeUndefined();
+    });
+
+    it('GETs /sap/bc/adt/oo/classes/{name}/objectstructure', async () => {
+      const xml = loadFixture('objectstructure-clas-a4h-758.xml');
+      mockFetch.mockResolvedValueOnce(mockResponse(200, xml));
+      const client = createClient();
+      await client.getClassStructure('ZCL_ARC1_PROBE303');
+      const url = mockFetch.mock.calls[0]?.[0] as string;
+      expect(url).toContain('/sap/bc/adt/oo/classes/ZCL_ARC1_PROBE303/objectstructure');
+    });
+
+    it('propagates AdtApiError when SAP returns 404', async () => {
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          404,
+          '<?xml version="1.0"?><exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework"><namespace id="com.sap.adt"/><type id="ExceptionResourceNotFound"/><message lang="EN">CLASS ZCL_MISSING does not exist</message></exc:exception>',
+        ),
+      );
+      const client = createClient();
+      await expect(client.getClassStructure('ZCL_MISSING')).rejects.toThrow(AdtApiError);
+    });
+  });
+
   describe('getTabl (unified TABL — transparent tables and structures)', () => {
     it('returns table source from /tables/ on first try (transparent table)', async () => {
       mockFetch.mockReset();

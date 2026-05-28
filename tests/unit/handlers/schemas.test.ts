@@ -626,7 +626,7 @@ describe('SAPWriteSchema', () => {
     }
   });
 
-  it('rejects SAPWrite include outside CLAS update/edit_method', () => {
+  it('rejects SAPWrite include outside CLAS update/edit_method/class-section-surgery actions', () => {
     const nonUpdate = SAPWriteSchema.safeParse({
       action: 'create',
       type: 'CLAS',
@@ -635,9 +635,10 @@ describe('SAPWriteSchema', () => {
     });
     expect(nonUpdate.success).toBe(false);
     if (!nonUpdate.success) {
-      // PR-D: include= is now valid for both update and edit_method actions.
-      // The schema must still reject create/delete/batch_create/scaffold_rap_handlers.
-      expect(nonUpdate.error.issues[0]?.message).toMatch(/action="update".*edit_method|update or action="edit_method"/);
+      // PR-D + issue #303: include= is valid for update, edit_method, and the
+      // four class-section surgery actions. The schema must still reject
+      // create/delete/batch_create/scaffold_rap_handlers.
+      expect(nonUpdate.error.issues[0]?.message).toMatch(/edit_class_definition|edit_method/);
     }
 
     const nonClass = SAPWriteSchema.safeParse({
@@ -693,6 +694,157 @@ describe('SAPWriteSchema', () => {
       source: 'CLASS zcl_test DEFINITION. ENDCLASS.',
     });
     expect(result.success).toBe(false);
+  });
+
+  // ── Class-section surgery actions (issue #303) ─────────────────────────
+
+  it('accepts edit_class_definition with CLAS + source', () => {
+    const r = SAPWriteSchema.safeParse({
+      action: 'edit_class_definition',
+      type: 'CLAS',
+      name: 'ZCL_TEST',
+      source: 'CLASS zcl_test DEFINITION PUBLIC FINAL CREATE PUBLIC.\nPUBLIC SECTION.\nENDCLASS.',
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('accepts edit_class_definition with include=definitions (CCDEF target)', () => {
+    const r = SAPWriteSchema.safeParse({
+      action: 'edit_class_definition',
+      type: 'CLAS',
+      name: 'ZBP_X',
+      include: 'definitions',
+      source: 'CLASS lhc_x DEFINITION.\nENDCLASS.',
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('accepts add_method with method clause + visibility + abstract', () => {
+    const r = SAPWriteSchema.safeParse({
+      action: 'add_method',
+      type: 'CLAS',
+      name: 'ZCL_TEST',
+      method: 'METHODS greet IMPORTING who TYPE string.',
+      visibility: 'protected',
+      abstract: false,
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.visibility).toBe('protected');
+      expect(r.data.abstract).toBe(false);
+    }
+  });
+
+  it('add_method accepts abstract=true (no IMPL stub will be inserted)', () => {
+    const r = SAPWriteSchema.safeParse({
+      action: 'add_method',
+      type: 'CLAS',
+      name: 'ZCL_TEST',
+      method: 'METHODS to_impl ABSTRACT.',
+      abstract: true,
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('accepts edit_method_signature with method name + new clause source', () => {
+    const r = SAPWriteSchema.safeParse({
+      action: 'edit_method_signature',
+      type: 'CLAS',
+      name: 'ZCL_TEST',
+      method: 'greet',
+      source:
+        "METHODS greet IMPORTING who TYPE string greeting TYPE string DEFAULT 'Hi' RETURNING VALUE(r) TYPE string.",
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('accepts delete_method with method name', () => {
+    const r = SAPWriteSchema.safeParse({
+      action: 'delete_method',
+      type: 'CLAS',
+      name: 'ZCL_TEST',
+      method: 'greet',
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('rejects invalid visibility on add_method', () => {
+    const r = SAPWriteSchema.safeParse({
+      action: 'add_method',
+      type: 'CLAS',
+      name: 'ZCL_TEST',
+      method: 'METHODS foo.',
+      visibility: 'package' as 'public',
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it('rejects include= for add_method / edit_method_signature / delete_method (MAIN-only actions)', () => {
+    for (const action of ['add_method', 'edit_method_signature', 'delete_method'] as const) {
+      const r = SAPWriteSchema.safeParse({
+        action,
+        type: 'CLAS',
+        name: 'ZCL_TEST',
+        method: 'foo',
+        source: 'METHODS foo.',
+        include: 'implementations',
+      });
+      expect(r.success, `${action} should reject include=`).toBe(false);
+      if (!r.success) {
+        expect(r.error.issues[0]?.message).toMatch(
+          /global class \/source\/main only|update, edit_method, edit_class_definition/,
+        );
+      }
+    }
+  });
+
+  it('treats empty-string include as "not provided" (no false "Invalid include" rejection)', () => {
+    // Some MCP clients serialize an omitted optional string as "". edit_class_definition
+    // (MAIN path) must accept include="" as if include were omitted.
+    const r = SAPWriteSchema.safeParse({
+      action: 'edit_class_definition',
+      type: 'CLAS',
+      name: 'ZCL_TEST',
+      source: 'CLASS zcl_test DEFINITION PUBLIC. PUBLIC SECTION. ENDCLASS.',
+      include: '',
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('add_method abstract coerces string "false" to false (not true)', () => {
+    // Regression: z.coerce.boolean() maps any non-empty string (incl. "false") to true.
+    const r = SAPWriteSchema.safeParse({
+      action: 'add_method',
+      type: 'CLAS',
+      name: 'ZCL_TEST',
+      method: 'METHODS foo.',
+      abstract: 'false',
+    });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.abstract).toBe(false);
+  });
+
+  it('add_method abstract coerces string "true" to true', () => {
+    const r = SAPWriteSchema.safeParse({
+      action: 'add_method',
+      type: 'CLAS',
+      name: 'ZCL_TEST',
+      method: 'METHODS foo ABSTRACT.',
+      abstract: 'true',
+    });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.abstract).toBe(true);
+  });
+
+  it('add_method abstract preserves undefined when omitted', () => {
+    const r = SAPWriteSchema.safeParse({
+      action: 'add_method',
+      type: 'CLAS',
+      name: 'ZCL_TEST',
+      method: 'METHODS foo.',
+    });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.abstract).toBeUndefined();
   });
 
   it('accepts TABL for source-based writes', () => {

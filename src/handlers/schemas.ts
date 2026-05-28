@@ -349,26 +349,55 @@ const ddicFixedValueSchema = z.object({
   description: z.string().optional(),
 });
 
+/**
+ * Boolean field that accepts real booleans AND string-serialized booleans from
+ * MCP clients, but — unlike `z.coerce.boolean()` — correctly maps the strings
+ * "false"/"0"/"no"/"" to `false` (z.coerce.boolean() treats any non-empty string,
+ * including "false", as `true`). Undefined-preserving so `.optional()` works.
+ * Used for `abstract` (issue #303), where a wrong value silently flips whether an
+ * IMPLEMENTATION stub is written.
+ */
+const looseOptionalBoolean = z
+  .preprocess((v) => {
+    if (typeof v === 'string') {
+      const s = v.trim().toLowerCase();
+      if (s === 'true' || s === '1' || s === 'yes') return true;
+      if (s === 'false' || s === '0' || s === 'no' || s === '') return false;
+    }
+    return v;
+  }, z.boolean())
+  .optional();
+
 const messageClassMessageSchema = z.object({
   number: z.string(),
   shortText: z.string(),
 });
 
+/**
+ * Actions that may target a CLAS local include (CCDEF/CCIMP/macros/testclasses).
+ *
+ * `update` + `edit_method` operate on a single include body/method. `edit_class_definition`
+ * accepts include= to whole-replace a local include. The other three class-section
+ * surgery actions (`add_method`, `edit_method_signature`, `delete_method`, issue #303)
+ * are MAIN-only — they rely on the global-class `/objectstructure` line ranges, which
+ * don't apply to a split CCDEF/CCIMP local class — so include= is rejected for them.
+ */
+const SAPWRITE_INCLUDE_AWARE_ACTIONS = new Set(['update', 'edit_method', 'edit_class_definition']);
+
 function validateSapWriteInput(
   input: { action: string; type?: string; include?: string },
   ctx: { addIssue: (issue: { code: 'custom'; path: string[]; message: string }) => void },
 ): void {
-  if (!input.include) return;
+  // Treat empty/whitespace include as "not provided" — some MCP clients serialize
+  // an omitted optional string as "" and shouldn't trip the include validation.
+  if (!input.include || input.include.trim() === '') return;
 
-  // `edit_method` joins `update` as a valid action for include= so callers can
-  // surgically edit a method inside a class-local include (CCDEF/CCIMP/macros/
-  // testclasses). The handler in intent.ts also auto-detects the right include
-  // from `lhc_*~method` style specifiers, but explicit override remains valid.
-  if (input.action !== 'update' && input.action !== 'edit_method') {
+  if (!SAPWRITE_INCLUDE_AWARE_ACTIONS.has(input.action)) {
     ctx.addIssue({
       code: 'custom',
       path: ['include'],
-      message: 'SAPWrite include is only supported for action="update" or action="edit_method".',
+      message:
+        'SAPWrite include is only supported for action in {update, edit_method, edit_class_definition}. add_method/edit_method_signature/delete_method operate on the global class /source/main only.',
     });
   }
 
@@ -480,6 +509,10 @@ export const SAPWriteSchema = z
       'update',
       'delete',
       'edit_method',
+      'edit_class_definition',
+      'add_method',
+      'edit_method_signature',
+      'delete_method',
       'batch_create',
       'scaffold_rap_handlers',
       'generate_behavior_implementation',
@@ -487,8 +520,15 @@ export const SAPWriteSchema = z
     type: z.enum(SAPWRITE_TYPES_ONPREM).optional(),
     name: z.string().optional(),
     source: z.string().optional(),
-    include: z.enum(SAPWRITE_CLAS_INCLUDES).optional(),
+    include: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+      z.enum(SAPWRITE_CLAS_INCLUDES).optional(),
+    ),
     method: z.string().optional(),
+    /** Visibility section target for action="add_method". Default 'public'. (Issue #303) */
+    visibility: z.enum(['public', 'protected', 'private']).optional(),
+    /** For action="add_method": when true, no METHOD/ENDMETHOD stub is inserted into IMPLEMENTATION. (Issue #303) */
+    abstract: looseOptionalBoolean,
     description: z.string().optional(),
     package: z.string().optional(),
     transport: z.string().optional(),
@@ -558,6 +598,10 @@ export const SAPWriteSchemaBtp = z
       'update',
       'delete',
       'edit_method',
+      'edit_class_definition',
+      'add_method',
+      'edit_method_signature',
+      'delete_method',
       'batch_create',
       'scaffold_rap_handlers',
       'generate_behavior_implementation',
@@ -565,8 +609,15 @@ export const SAPWriteSchemaBtp = z
     type: z.enum(SAPWRITE_TYPES_BTP).optional(),
     name: z.string().optional(),
     source: z.string().optional(),
-    include: z.enum(SAPWRITE_CLAS_INCLUDES).optional(),
+    include: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+      z.enum(SAPWRITE_CLAS_INCLUDES).optional(),
+    ),
     method: z.string().optional(),
+    /** Visibility section target for action="add_method". Default 'public'. (Issue #303) */
+    visibility: z.enum(['public', 'protected', 'private']).optional(),
+    /** For action="add_method": when true, no METHOD/ENDMETHOD stub is inserted into IMPLEMENTATION. (Issue #303) */
+    abstract: looseOptionalBoolean,
     description: z.string().optional(),
     package: z.string().optional(),
     transport: z.string().optional(),

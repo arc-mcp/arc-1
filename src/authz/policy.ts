@@ -57,6 +57,14 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   'SAPWrite.update': { scope: 'write', opType: OperationType.Update },
   'SAPWrite.delete': { scope: 'write', opType: OperationType.Delete },
   'SAPWrite.edit_method': { scope: 'write', opType: OperationType.Update },
+  // Class-section surgery actions (issue #303) — all run on type=CLAS and write
+  // back to /source/main (or /includes/<inc> when include= is provided). Same
+  // scope + opType as plain update; admins can target each individually via
+  // SAP_DENY_ACTIONS (e.g. "SAPWrite.delete_method") to harden specific paths.
+  'SAPWrite.edit_class_definition': { scope: 'write', opType: OperationType.Update },
+  'SAPWrite.add_method': { scope: 'write', opType: OperationType.Update },
+  'SAPWrite.edit_method_signature': { scope: 'write', opType: OperationType.Update },
+  'SAPWrite.delete_method': { scope: 'write', opType: OperationType.Update },
   'SAPWrite.batch_create': { scope: 'write', opType: OperationType.Create },
   // scaffold_rap_handlers updates an existing behavior-pool CLAS (writes method
   // declarations into one or more includes). It is a RAP-feature-specific

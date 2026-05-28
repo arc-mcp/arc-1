@@ -241,6 +241,36 @@ describe('Tool Definitions', () => {
     expect(item.required).toContain('name');
   });
 
+  it('SAPWrite schema exposes class-section surgery actions (issue #303)', () => {
+    const tools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true });
+    const sapWrite = tools.find((t) => t.name === 'SAPWrite')!;
+    const schema = sapWrite.inputSchema as Record<string, any>;
+    const actionEnum: string[] = schema.properties.action.enum;
+    expect(actionEnum).toContain('edit_class_definition');
+    expect(actionEnum).toContain('add_method');
+    expect(actionEnum).toContain('edit_method_signature');
+    expect(actionEnum).toContain('delete_method');
+  });
+
+  it('SAPWrite schema exposes visibility + abstract for add_method (issue #303)', () => {
+    const tools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true });
+    const sapWrite = tools.find((t) => t.name === 'SAPWrite')!;
+    const schema = sapWrite.inputSchema as Record<string, any>;
+    expect(schema.properties.visibility).toBeDefined();
+    expect(schema.properties.visibility.enum).toEqual(['public', 'protected', 'private']);
+    expect(schema.properties.abstract).toBeDefined();
+    expect(schema.properties.abstract.type).toBe('boolean');
+  });
+
+  it('SAPWrite action description mentions class-section surgery (issue #303)', () => {
+    const tools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true });
+    const sapWrite = tools.find((t) => t.name === 'SAPWrite')!;
+    const schema = sapWrite.inputSchema as Record<string, any>;
+    const desc: string = schema.properties.action.description;
+    expect(desc).toMatch(/edit_class_definition/);
+    expect(desc).toMatch(/add_method/);
+  });
+
   it('SAPLint exposes lint + formatter actions (atc/syntax moved to SAPDiagnose)', () => {
     const tools = getToolDefinitions(DEFAULT_CONFIG);
     const sapLint = tools.find((t) => t.name === 'SAPLint')!;
@@ -818,8 +848,9 @@ describe('Tool Definitions', () => {
         expect(include).toBeDefined();
         expect(include.type).toBe('string');
         expect(include.enum).toEqual(['definitions', 'implementations', 'macros', 'testclasses']);
-        // PR-D: include= now valid for both update and edit_method actions on CLAS
-        expect(include.description).toMatch(/action=update.*edit_method.*CLAS|update or action=edit_method.*CLAS/);
+        // PR-D + issue #303: include= valid for update, edit_method, and the
+        // four class-section surgery actions on CLAS.
+        expect(include.description).toMatch(/edit_class_definition|edit_method/);
         expect(include.description).toContain('source/main');
         expect(include.description).toContain('version="inactive"');
         // Auto-detection guidance is part of the contract

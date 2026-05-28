@@ -210,13 +210,15 @@ Create or update ABAP source code. Handles lock/modify/unlock automatically.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `action` | string | Yes | `create`, `update`, `delete`, `edit_method`, `batch_create`, `scaffold_rap_handlers`, or `generate_behavior_implementation` |
+| `action` | string | Yes | `create`, `update`, `delete`, `edit_method`, `edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `batch_create`, `scaffold_rap_handlers`, or `generate_behavior_implementation`. The four `edit_class_definition`/`add_method`/`edit_method_signature`/`delete_method` actions are class-section surgery (issue #303) — token-efficient edits to a global class without re-sending `/source/main`. See [Class-section surgery](#class-section-surgery) below. |
 | `type` | string | No | `PROG`, `CLAS`, `INTF`, `FUNC`, `FUGR`, `INCL`, `DDLS`, `DCLS`, `DDLX`, `BDEF`, `SRVD`, `SRVB`, `TABL`, `DOMA`, `DTEL`, `MSAG` (for single object actions). Slash/case aliases are auto-normalized (e.g., `CLAS/OC` or `clas` → `CLAS`). |
 | `group` | string | No | For `FUNC`: parent function-group name. **Required for FUNC create** (the FUGR must already exist — create it first via `SAPWrite type=FUGR`). Auto-resolved via search for FUNC update/delete if omitted. Ignored for other types. |
 | `name` | string | No | Object name (for single object actions) |
-| `source` | string | No | ABAP source code (for create/update/edit_method) |
-| `include` | string | No | For `update type="CLAS"` only: write a class-local include (`definitions`, `implementations`, `macros`, or `testclasses`) instead of `/source/main`. Omit this parameter for main class source updates. Include writes create an inactive draft; verify with `SAPRead(version="inactive")` until activation. |
-| `method` | string | No | For `edit_method`: method name to replace (e.g., `"get_name"`) |
+| `source` | string | No | ABAP source code. For `create`/`update`: full source body. For `edit_method`: new method body. For `edit_class_definition` (issue #303): ONLY the new `CLASS … DEFINITION … ENDCLASS.` block (~10–80 lines instead of full class). For `edit_method_signature` (issue #303): ONLY the new METHODS clause for one method (~1–5 lines). Not used by `add_method`/`delete_method` — pass the method clause/name via `method` instead. |
+| `include` | string | No | For CLAS write actions `update`, `edit_method`, and `edit_class_definition`: write a class-local include (`definitions`, `implementations`, `macros`, or `testclasses`) instead of `/source/main`. Omit this parameter for main class source updates. `add_method`/`edit_method_signature`/`delete_method` operate on the global class `/source/main` only and reject `include=`. Include writes create an inactive draft; verify with `SAPRead(version="inactive")` until activation. NOTE: `edit_class_definition` with `include=` skips the symmetry refuse-policy (cross-include validation is not performed; rely on `SAPActivate` to catch breaks). |
+| `method` | string | No | For `edit_method`/`edit_method_signature`/`delete_method`: method NAME (e.g., `"get_name"`, `"zif_order~process"`, `"lhc_project~approve_project"`). For `add_method`: the full METHODS CLAUSE as ABAP source (e.g., `"METHODS greet IMPORTING who TYPE string RETURNING VALUE(r) TYPE string."`). |
+| `visibility` | string | No | For `add_method`: target visibility section — `public` (default), `protected`, or `private`. The section header must already exist in the DEFINITION block; if not, ARC-1 refuses with a hint to use `edit_class_definition` first. |
+| `abstract` | boolean | No | For `add_method`: when `true`, only the METHODS clause is inserted into DEFINITION — no `METHOD/ENDMETHOD` stub is added to IMPLEMENTATION. Default `false`. |
 | `bdefName` | string | No | For `scaffold_rap_handlers`: interface BDEF name used to derive required handler signatures. For `generate_behavior_implementation`: optional override; default discovery reads the class metadata's `<class:rootEntityRef>` to locate the BDEF automatically. |
 | `autoApply` | boolean | No | For `scaffold_rap_handlers`: when `true`, create missing `lhc_*` skeletons, inject missing signatures plus empty method stubs into the behavior pool, and write back. Not used by `generate_behavior_implementation` (which always applies; use `dryRun=true` there to preview). |
 | `targetAlias` | string | No | For `scaffold_rap_handlers` and `generate_behavior_implementation`: optional RAP entity alias filter (scaffold only one alias/handler class) |
@@ -432,6 +434,81 @@ SAPWrite(action="generate_behavior_implementation", type="CLAS", name="ZBP_DM_PR
   - If the pre-flight check fails (older system, permissions), ARC-1 proceeds and lets SAP handle the error.
 
 **Note:** Not available by default (read-only mode). Enable with `SAP_ALLOW_WRITES=true` / `--allow-writes=true`. Write access is restricted to package `$TMP` by default; to write to other packages, set `SAP_ALLOWED_PACKAGES='$TMP,Z*'` (quote in shell so `$TMP` isn't expanded).
+
+### Class-section surgery
+
+[Issue #303](https://github.com/marianfoo/arc-1/issues/303). Four token-efficient `SAPWrite` actions for editing a global ABAP class without re-sending the full `/source/main` body. All require `type=CLAS` and use SAP's existing `/sap/bc/adt/oo/classes/{name}/objectstructure` endpoint to locate the precise line ranges to splice — no client-side ABAP parsing of the existing source is needed.
+
+Backing pattern (same for all four actions): GET `/objectstructure` → fetch active or inactive-draft `/source/main` → splice → PUT under lock → no auto-activate. Caller runs `SAPActivate` next.
+
+#### `action="edit_class_definition"` — replace the DEFINITION block whole
+
+Send only the new `CLASS … DEFINITION … ENDCLASS.` block (typical ~10–80 lines for a 20-method class). ARC-1 fetches the existing `/source/main`, splices the new DEFINITION over the existing one, and PUTs back. The IMPLEMENTATION block is preserved verbatim.
+
+**Refuse-policy.** Before PUT, ARC-1 diffs the new DEFINITION against the current class structure. If the diff would produce a non-activatable draft, the call is refused with a structured error pointing at the right tool:
+
+- Added concrete method without a matching `METHOD …. ENDMETHOD.` block in IMPLEMENTATION → "use `add_method`".
+- Removed method that still has an orphan METHOD/ENDMETHOD block in IMPLEMENTATION → "use `delete_method`".
+
+Exempted from the symmetry check (no IMPL needed): `ABSTRACT METHODS`, `EVENTS`, `INTERFACES`, `ALIASES`. For `include=` writes (CCDEF), the refuse-policy is skipped — cross-include validation is not performed; rely on `SAPActivate` to catch breaks.
+
+```jsonc
+// Drop FINAL from a class without touching any method
+{
+  "action": "edit_class_definition",
+  "type": "CLAS",
+  "name": "ZCL_ORDER",
+  "source": "CLASS zcl_order DEFINITION PUBLIC CREATE PUBLIC.\n  PUBLIC SECTION.\n    METHODS process RETURNING VALUE(r) TYPE abap_bool.\n  PRIVATE SECTION.\n    DATA mv_id TYPE string.\nENDCLASS."
+}
+```
+
+#### `action="add_method"` — atomic DEFINITION + IMPLEMENTATION insert
+
+Insert a METHODS clause AND an empty `METHOD <name>. ENDMETHOD.` stub in one PUT. Default target is `visibility=public`. The target section header must already exist; if missing, ARC-1 refuses with a hint to use `edit_class_definition` to add the section first.
+
+```jsonc
+{
+  "action": "add_method",
+  "type": "CLAS",
+  "name": "ZCL_ORDER",
+  "method": "METHODS greet IMPORTING who TYPE string RETURNING VALUE(r) TYPE string.",
+  "visibility": "public"
+}
+// → inserts METHODS greet ... in PUBLIC SECTION + empty METHOD greet. ENDMETHOD. in IMPLEMENTATION
+```
+
+Pass `abstract: true` to skip the IMPLEMENTATION stub (for `METHODS x ABSTRACT.` in an abstract class).
+
+#### `action="edit_method_signature"` — replace one METHODS clause
+
+One range replacement on a method's declaration. The IMPLEMENTATION block is untouched — any body incompatibility surfaces at `SAPActivate`, same as today's `edit_method` contract.
+
+```jsonc
+{
+  "action": "edit_method_signature",
+  "type": "CLAS",
+  "name": "ZCL_ORDER",
+  "method": "process",
+  "source": "    METHODS process IMPORTING force TYPE abap_bool DEFAULT abap_false RETURNING VALUE(r) TYPE abap_bool."
+}
+```
+
+#### `action="delete_method"` — atomic DEFINITION + IMPLEMENTATION remove
+
+Drops both the METHODS clause and the METHOD…ENDMETHOD body in one PUT. ABSTRACT methods (no IMPL) have only the DEFINITION line removed.
+
+```jsonc
+{
+  "action": "delete_method",
+  "type": "CLAS",
+  "name": "ZCL_ORDER",
+  "method": "deprecated_helper"
+}
+```
+
+#### Cross-release notes
+
+Verified live on a4h (S/4HANA 2023, kernel 7.58) end-to-end. The underlying `/objectstructure` endpoint also works on NW 7.50 SP02 (reads verified); on that release methods are split across `CLAS/OO` (def) + `CLAS/OM` (impl) elements and merged by name in the parser. Writes on the un-patched NW 7.50 dev edition can trip [SAP Note 2727890](https://launchpad.support.sap.com/#/notes/2727890) "ADT: fix unstable adt lock handle" — a system-level bug affecting every ADT write, not specific to this feature; ARC-1 detects the 423 status and emits a hint.
 
 ---
 

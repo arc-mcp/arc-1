@@ -595,32 +595,55 @@ export function getToolDefinitions(
               'update',
               'delete',
               'edit_method',
+              'edit_class_definition',
+              'add_method',
+              'edit_method_signature',
+              'delete_method',
               'batch_create',
               'scaffold_rap_handlers',
               'generate_behavior_implementation',
             ],
             description:
-              'Write action. edit_method: surgically replace a single method body (requires type=CLAS, method, and source params). batch_create: create and activate multiple objects in sequence (requires objects array). scaffold_rap_handlers: derive missing behavior-pool handler signatures from interface BDEF declarations and optionally inject declarations plus empty implementation stubs. generate_behavior_implementation: one-shot RAP behavior pool — auto-discover the bound BDEF via class rootEntityRef, scaffold every required handler (creating lhc_<alias> skeletons when missing), write under one lock, and optionally activate. The reliable equivalent of Eclipse ADT\'s "Generate Behavior Implementation" Cmd+1 quickfix.',
+              'Write action. edit_method: surgically replace a single method body (requires type=CLAS, method, and source params). Class-section surgery actions (issue #303, type=CLAS only) target a global class without re-sending /source/main: edit_class_definition replaces the DEFINITION block (caller passes the new block via source; ARC-1 refuses if the diff would leave the class non-activatable — e.g. added concrete method without IMPL stub — and suggests add_method/delete_method instead); add_method atomically inserts a METHODS clause AND empty METHOD/ENDMETHOD stub (caller passes the METHODS clause via method, optional visibility=public|protected|private, optional abstract=true to skip the stub); edit_method_signature replaces one method\'s METHODS clause via the source param (no IMPL changes); delete_method removes both the DEFINITION clause and METHOD/ENDMETHOD body atomically. edit_class_definition also accepts include= to whole-replace a class-local include (CCDEF/CCIMP/macros/testclasses); add_method/edit_method_signature/delete_method operate on the global class /source/main only. batch_create: create and activate multiple objects in sequence (requires objects array). scaffold_rap_handlers: derive missing behavior-pool handler signatures from interface BDEF declarations and optionally inject declarations plus empty implementation stubs. generate_behavior_implementation: one-shot RAP behavior pool — auto-discover the bound BDEF via class rootEntityRef, scaffold every required handler (creating lhc_<alias> skeletons when missing), write under one lock, and optionally activate. The reliable equivalent of Eclipse ADT\'s "Generate Behavior Implementation" Cmd+1 quickfix.',
           },
           type: {
             type: 'string',
             enum: btp ? SAPWRITE_TYPES_BTP : SAPWRITE_TYPES_ONPREM,
             description: btp
-              ? 'Object type (for create/update/delete/edit_method). Supported: CLAS, INTF, DDLS, DDLX, BDEF, SRVD, TABL, DOMA, DTEL.'
-              : 'Object type (for create/update/delete/edit_method). Supported: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DDLX, BDEF, SRVD, TABL, DOMA, DTEL.',
+              ? 'Object type (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method). Supported: CLAS, INTF, DDLS, DDLX, BDEF, SRVD, TABL, DOMA, DTEL. Class-section surgery actions require type=CLAS.'
+              : 'Object type (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method). Supported: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DDLX, BDEF, SRVD, TABL, DOMA, DTEL. Class-section surgery actions require type=CLAS.',
           },
-          name: { type: 'string', description: 'Object name (for create/update/delete/edit_method)' },
-          source: { type: 'string', description: 'ABAP source code (for create/update/edit_method)' },
+          name: {
+            type: 'string',
+            description:
+              'Object name (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method).',
+          },
+          source: {
+            type: 'string',
+            description:
+              'ABAP source code. For create/update/edit_method: the full source body. For edit_class_definition: ONLY the new CLASS … DEFINITION … ENDCLASS. block (~10–80 lines for a typical class — no IMPLEMENTATION block needed). For edit_method_signature: ONLY the new METHODS clause for one method (~1–5 lines). For add_method/delete_method: not used — pass the new method clause via `method` instead, or the method name to delete.',
+          },
           include: {
             type: 'string',
             enum: SAPWRITE_CLAS_INCLUDES,
             description:
-              'For action=update or action=edit_method on a CLAS: target a class-local include instead of source/main. Valid values: definitions (CCDEF), implementations (CCIMP), macros, testclasses. Omit include to operate on source/main. For edit_method, ARC-1 also auto-detects the include from the method specifier (lhc_*/lcl_* → implementations, ltc_* → testclasses); explicit include= overrides auto-detection. Include writes create an inactive draft; read with SAPRead version="inactive" before activation.',
+              'For CLAS write actions (update, edit_method, edit_class_definition, add_method, edit_method_signature, delete_method): target a class-local include instead of /source/main. Valid values: definitions (CCDEF), implementations (CCIMP), macros, testclasses. Omit include to operate on source/main. For edit_method, ARC-1 also auto-detects the include from the method specifier (lhc_*/lcl_* → implementations, ltc_* → testclasses); explicit include= overrides auto-detection. Include writes create an inactive draft; read with SAPRead version="inactive" before activation. NOTE: edit_class_definition with include= skips the symmetry refuse-policy — cross-include validation is not performed; rely on SAPActivate to catch breaks.',
           },
           method: {
             type: 'string',
             description:
-              'For edit_method action: method name to replace. Examples: "get_name" (regular method), "zif_order~process" (global interface implementation, routes to source/main), "lhc_project~approve_project" (local handler in a RAP behavior pool, auto-routes to /includes/implementations). When two local classes in the same CCIMP share a bare method name, the qualified <localclass>~<method> form is required to disambiguate.',
+              'For edit_method/edit_method_signature: method NAME (e.g., "get_name", "zif_order~process", "lhc_project~approve_project"). For add_method: the full METHODS clause as ABAP source (e.g. "METHODS greet IMPORTING who TYPE string RETURNING VALUE(r) TYPE string."). For delete_method: the method name. edit_method auto-detects CCIMP from local-class prefix (lhc_*/lcl_* → implementations, ltc_* → testclasses); same auto-detection applies to the class-section surgery actions. When two local classes in the same CCIMP share a bare method name, the qualified <localclass>~<method> form is required to disambiguate.',
+          },
+          visibility: {
+            type: 'string',
+            enum: ['public', 'protected', 'private'],
+            description:
+              'For action=add_method: target visibility section. Default "public". The target section header must already exist in the DEFINITION block — if not, ARC-1 refuses with a hint to use edit_class_definition first.',
+          },
+          abstract: {
+            type: 'boolean',
+            description:
+              'For action=add_method: when true, only the METHODS clause is inserted into DEFINITION; no METHOD/ENDMETHOD stub is added to IMPLEMENTATION. Default false (concrete method — DEFINITION + IMPL stub written atomically).',
           },
           bdefName: {
             type: 'string',
