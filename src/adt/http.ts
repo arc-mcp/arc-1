@@ -344,18 +344,11 @@ export class AdtHttpClient {
       this.reloadCookiesFromSource();
     }
 
-    // Build cookie header from: config cookies + cookie jar (jar takes precedence)
-    const cookieParts: string[] = [];
-    if (this.config.cookies) {
-      for (const [k, v] of Object.entries(this.config.cookies)) {
-        cookieParts.push(`${k}=${v}`);
-      }
-    }
-    for (const [k, v] of this.cookieJar) {
-      cookieParts.push(`${k}=${v}`);
-    }
-    if (cookieParts.length > 0) {
-      headers.Cookie = cookieParts.join('; ');
+    // Build cookie header from config cookies + cookie jar, with the jar winning
+    // on a name collision (see composeCookieHeader — issue #293).
+    const cookieHeader = this.composeCookieHeader();
+    if (cookieHeader) {
+      headers.Cookie = cookieHeader;
     }
 
     // BTP Connectivity proxy: Proxy-Authorization is handled in doProxyRequest().
@@ -566,18 +559,10 @@ export class AdtHttpClient {
           headers['X-CSRF-Token'] = this.csrfToken;
         }
 
-        // Rebuild cookie header from config cookies + fresh jar
-        const freshCookieParts: string[] = [];
-        if (this.config.cookies) {
-          for (const [k, v] of Object.entries(this.config.cookies)) {
-            freshCookieParts.push(`${k}=${v}`);
-          }
-        }
-        for (const [k, v] of this.cookieJar) {
-          freshCookieParts.push(`${k}=${v}`);
-        }
-        if (freshCookieParts.length > 0) {
-          headers.Cookie = freshCookieParts.join('; ');
+        // Rebuild cookie header from config cookies + fresh jar (jar wins).
+        const refreshedCookieHeader = this.composeCookieHeader();
+        if (refreshedCookieHeader) {
+          headers.Cookie = refreshedCookieHeader;
         } else {
           delete headers.Cookie;
         }
@@ -611,13 +596,12 @@ export class AdtHttpClient {
       if (response.status === 403 && isModifyingMethod(method)) {
         await this.fetchCsrfToken();
         headers['X-CSRF-Token'] = this.csrfToken;
-        // Update cookie header after CSRF fetch may have set new cookies
-        const updatedCookieParts: string[] = [];
-        for (const [k, v] of this.cookieJar) {
-          updatedCookieParts.push(`${k}=${v}`);
-        }
-        if (updatedCookieParts.length > 0) {
-          headers.Cookie = updatedCookieParts.join('; ');
+        // Update cookie header after CSRF fetch may have set new cookies. Use the
+        // merged builder (jar wins) so auth cookies in config.cookies (e.g.
+        // MYSAPSSO2) are preserved while the refreshed session id from the jar wins.
+        const csrfRefreshedCookieHeader = this.composeCookieHeader();
+        if (csrfRefreshedCookieHeader) {
+          headers.Cookie = csrfRefreshedCookieHeader;
         }
         const retryResponse = await this.doFetch(url, method, headers, body);
         const retryBody = await retryResponse.text();
@@ -885,18 +869,10 @@ export class AdtHttpClient {
       this.reloadCookiesFromSource();
     }
 
-    // Include existing cookies (config + jar) so session is maintained
-    const cookieParts: string[] = [];
-    if (this.config.cookies) {
-      for (const [k, v] of Object.entries(this.config.cookies)) {
-        cookieParts.push(`${k}=${v}`);
-      }
-    }
-    for (const [k, v] of this.cookieJar) {
-      cookieParts.push(`${k}=${v}`);
-    }
-    if (cookieParts.length > 0) {
-      headers.Cookie = cookieParts.join('; ');
+    // Include existing cookies (config + jar, jar wins) so the session is maintained.
+    const cookieHeader = this.composeCookieHeader();
+    if (cookieHeader) {
+      headers.Cookie = cookieHeader;
     }
 
     try {
@@ -1058,6 +1034,37 @@ export class AdtHttpClient {
   private resetSession(): void {
     this.cookieJar.clear();
     this.csrfToken = '';
+  }
+
+  /**
+   * Build the `Cookie` request header by merging the static `config.cookies`
+   * (seeded from SAP_COOKIE_FILE / SAP_COOKIE_STRING) with the live `cookieJar`
+   * (server-assigned via Set-Cookie). On a name collision the jar wins, because
+   * its value is the current server-assigned one.
+   *
+   * This matters most for the ephemeral stateful-session id
+   * `SAP_SESSIONID_<SID>_<CLNT>`: a cookie file extracted from a browser carries
+   * a stale copy, and a stateful LOCK opens a fresh session that re-sets it. The
+   * pre-fix builders concatenated both (`config` then `jar`), emitting two
+   * same-named cookies; SAP's ICM honors the first (stale) one, so the follow-up
+   * PUT bound to the wrong session and the enqueue lock was invisible —
+   * surfacing as `423 ... is not locked (invalid lock handle)`. See issue #293.
+   *
+   * Auth cookies that the server never re-sets (e.g. `MYSAPSSO2`) live only in
+   * `config.cookies` and survive untouched. Returns undefined when empty.
+   */
+  private composeCookieHeader(): string | undefined {
+    const merged = new Map<string, string>();
+    if (this.config.cookies) {
+      for (const [name, value] of Object.entries(this.config.cookies)) {
+        merged.set(name, value);
+      }
+    }
+    for (const [name, value] of this.cookieJar) {
+      merged.set(name, value);
+    }
+    if (merged.size === 0) return undefined;
+    return Array.from(merged, ([name, value]) => `${name}=${value}`).join('; ');
   }
 
   private storeCookies(response: Response): void {
