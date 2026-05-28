@@ -63,6 +63,7 @@ Only one E2E run can happen at a time (single SAP system). A server-side `flock`
 | `E2E_LOCK_TIMEOUT` | Seconds to wait for lock | `300` |
 | `E2E_LOG_DIR` | Local directory for collected logs | `/tmp/arc1-e2e-logs` |
 | `TEST_TRANSPORT_PACKAGE` | Transportable package for corrNr propagation tests (e.g., `Z_LLM_TEST_PACKAGE`) | *(skip if unset)* |
+| `TEST_TRANSPORT_RELEASE_TESTS` | Run permanent transport release tests (`true` only when released test requests are acceptable) | *(skip if unset)* |
 
 ## Test Object Inventory
 
@@ -75,7 +76,7 @@ Persistent objects on SAP (created once, expected to stay):
 | CLAS | `ZCL_ARC1_TEST_UT` | `$TMP` | Unit tests (ABAP Unit) |
 | INTF | `ZIF_ARC1_TEST` | `$TMP` | Read, context dependency |
 
-Transport tests (`saptransport.e2e.test.ts`) create transient transport requests and programs during test execution. The transportable-package write test requires `TEST_TRANSPORT_PACKAGE` and is skipped when unset.
+Transport tests (`saptransport.e2e.test.ts`) create transient transport requests and programs during test execution and delete modifiable requests before the suite exits. Release tests are skipped unless `TEST_TRANSPORT_RELEASE_TESTS=true` because released transport requests are permanent on the shared SAP test system. The transportable-package write test requires `TEST_TRANSPORT_PACKAGE` and is skipped when unset.
 
 `npm run test:e2e` now runs `npm run test:e2e:fixtures` first. This sync step ensures managed test objects exist in `$TMP`, and if fixture source drift is detected, it deletes and recreates those objects before the suite runs.
 

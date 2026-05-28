@@ -450,6 +450,14 @@ Recommended fix:
 - Add a post-run transport residue check that fails when new draft `ARC-1 E2E` / `ARC-1 IT` requests remain.
 - For transportable-package write tests, cleanup must delete the generated object while it is still addressable and with the correct transport. If cleanup fails, the test should fail instead of logging only.
 
+Implementation status (2026-05-28 follow-up PR):
+
+- `tests/e2e/saptransport.e2e.test.ts` now deletes the transport created by the create/get suite and deletes the transportable-package write request after deleting the generated program.
+- `tests/integration/transport.integration.test.ts` now tracks created transport IDs across the suite and deletes remaining modifiable requests in `afterAll`.
+- E2E and integration transport suites now snapshot existing ARC-1 draft transports at startup and fail when the current run leaves new draft transport residue.
+- Integration transport object cleanup now fails the suite when generated objects cannot be deleted, instead of logging only.
+- Permanent release tests are gated by `TEST_TRANSPORT_RELEASE_TESTS=true` in E2E and integration because released requests cannot be deleted from the shared SAP test system.
+
 ### P1 - Real Pseudo-Skips Still Exist
 
 These branches can make tests pass without executing assertions:

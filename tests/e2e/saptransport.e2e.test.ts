@@ -16,18 +16,53 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { requireOrSkip, SkipReason } from '../helpers/skip-policy.js';
 import { callTool, connectClient, expectToolError, expectToolSuccess, expectToolSuccessOrSkip } from './helpers.js';
 
+const transportReleaseTestsEnabled = process.env.TEST_TRANSPORT_RELEASE_TESTS === 'true';
+
+interface TransportListEntry {
+  id?: string;
+  description?: string;
+  status?: string;
+}
+
+function isArc1TestTransport(transport: TransportListEntry): boolean {
+  return /^ARC-1 (E2E|IT|integration test)\b/.test(transport.description ?? '');
+}
+
 describe('E2E SAPTransport Tests', () => {
   let client: Client;
+  let initialArc1DraftTransportIds = new Set<string>();
+
+  async function listArc1DraftTransportIds(): Promise<Set<string>> {
+    const result = await callTool(client, 'SAPTransport', { action: 'list', status: 'D' });
+    const transports = JSON.parse(expectToolSuccess(result)) as TransportListEntry[];
+    return new Set(
+      transports
+        .filter(isArc1TestTransport)
+        .map((transport) => transport.id)
+        .filter(Boolean) as string[],
+    );
+  }
+
+  async function expectNoNewArc1DraftTransportResidue(): Promise<void> {
+    const current = await listArc1DraftTransportIds();
+    const leaked = [...current].filter((id) => !initialArc1DraftTransportIds.has(id));
+    expect(leaked, 'New ARC-1 draft transports left by E2E run').toEqual([]);
+  }
 
   beforeAll(async () => {
     client = await connectClient();
+    initialArc1DraftTransportIds = await listArc1DraftTransportIds();
   });
 
   afterAll(async () => {
     try {
-      await client?.close();
-    } catch {
-      // Ignore close errors
+      if (client) await expectNoNewArc1DraftTransportResidue();
+    } finally {
+      try {
+        await client?.close();
+      } catch {
+        // Ignore close errors
+      }
     }
   });
 
@@ -36,6 +71,17 @@ describe('E2E SAPTransport Tests', () => {
   describe('SAPTransport create + get', () => {
     let createdTransportId: string | undefined;
     let transportsEnabled = true;
+
+    afterAll(async () => {
+      if (!createdTransportId) return;
+      const result = await callTool(client, 'SAPTransport', {
+        action: 'delete',
+        id: createdTransportId,
+        recursive: true,
+      });
+      expectToolSuccess(result);
+      createdTransportId = undefined;
+    });
 
     it('creates a transport and returns a valid transport ID', async (ctx) => {
       const desc = `ARC-1 E2E test ${Date.now()}`;
@@ -135,26 +181,35 @@ describe('E2E SAPTransport Tests', () => {
     let transportsEnabled = true;
 
     it('delete action removes a transport', async (ctx) => {
-      // Create transport first
-      const createResult = await callTool(client, 'SAPTransport', {
-        action: 'create',
-        description: `ARC-1 E2E delete test ${Date.now()}`,
-      });
-      if (createResult.isError && createResult.content?.[0]?.text?.includes('allowTransportWrites=false')) {
-        transportsEnabled = false;
-        return ctx.skip('Transport writes not enabled on MCP server');
-      }
-      const createText = expectToolSuccess(createResult);
-      const match = createText.match(/([A-Z0-9]+K\d+)/);
-      expect(match).toBeTruthy();
-      const id = match![1];
+      let id = '';
+      try {
+        // Create transport first
+        const createResult = await callTool(client, 'SAPTransport', {
+          action: 'create',
+          description: `ARC-1 E2E delete test ${Date.now()}`,
+        });
+        if (createResult.isError && createResult.content?.[0]?.text?.includes('allowTransportWrites=false')) {
+          transportsEnabled = false;
+          return ctx.skip('Transport writes not enabled on MCP server');
+        }
+        const createText = expectToolSuccess(createResult);
+        const match = createText.match(/([A-Z0-9]+K\d+)/);
+        expect(match).toBeTruthy();
+        id = match![1];
 
-      const deleteResult = await callTool(client, 'SAPTransport', {
-        action: 'delete',
-        id,
-      });
-      const text = expectToolSuccess(deleteResult);
-      expect(text).toContain(`Deleted transport request: ${id}`);
+        const deleteResult = await callTool(client, 'SAPTransport', {
+          action: 'delete',
+          id,
+        });
+        const text = expectToolSuccess(deleteResult);
+        expect(text).toContain(`Deleted transport request: ${id}`);
+        id = '';
+      } finally {
+        if (id) {
+          const deleteResult = await callTool(client, 'SAPTransport', { action: 'delete', id, recursive: true });
+          expectToolSuccess(deleteResult);
+        }
+      }
     });
 
     it('create with type W creates Customizing transport', async (ctx) => {
@@ -173,11 +228,8 @@ describe('E2E SAPTransport Tests', () => {
         id = match![1];
       } finally {
         if (id) {
-          try {
-            await callTool(client, 'SAPTransport', { action: 'delete', id });
-          } catch {
-            // best-effort-cleanup
-          }
+          const deleteResult = await callTool(client, 'SAPTransport', { action: 'delete', id, recursive: true });
+          expectToolSuccess(deleteResult);
         }
       }
     });
@@ -211,36 +263,44 @@ describe('E2E SAPTransport Tests', () => {
         expect(reassignText).toContain('Reassigned transport');
       } finally {
         if (id) {
-          try {
-            await callTool(client, 'SAPTransport', { action: 'delete', id });
-          } catch {
-            // best-effort-cleanup
-          }
+          const deleteResult = await callTool(client, 'SAPTransport', { action: 'delete', id, recursive: true });
+          expectToolSuccess(deleteResult);
         }
       }
     });
 
     it('release_recursive releases transport', async (ctx) => {
       if (!transportsEnabled) return ctx.skip('Transport writes not enabled on MCP server');
+      requireOrSkip(ctx, transportReleaseTestsEnabled ? true : undefined, SkipReason.TRANSPORT_RELEASE_DISABLED);
 
-      const createResult = await callTool(client, 'SAPTransport', {
-        action: 'create',
-        description: `ARC-1 E2E recursive-release ${Date.now()}`,
-      });
-      const createText = expectToolSuccessOrSkip(ctx, createResult);
-      const match = createText.match(/([A-Z0-9]+K\d+)/);
-      expect(match).toBeTruthy();
-      const id = match![1];
+      let id = '';
+      let released = false;
+      try {
+        const createResult = await callTool(client, 'SAPTransport', {
+          action: 'create',
+          description: `ARC-1 E2E recursive-release ${Date.now()}`,
+        });
+        const createText = expectToolSuccessOrSkip(ctx, createResult);
+        const match = createText.match(/([A-Z0-9]+K\d+)/);
+        expect(match).toBeTruthy();
+        id = match![1];
 
-      const result = await callTool(client, 'SAPTransport', {
-        action: 'release_recursive',
-        id,
-      });
-      const text = expectToolSuccess(result);
-      expect(text).toContain(id);
+        const result = await callTool(client, 'SAPTransport', {
+          action: 'release_recursive',
+          id,
+        });
+        const text = expectToolSuccess(result);
+        expect(text).toContain(id);
+        released = true;
+      } finally {
+        if (id && !released) {
+          const deleteResult = await callTool(client, 'SAPTransport', { action: 'delete', id, recursive: true });
+          expectToolSuccess(deleteResult);
+        }
+      }
     });
 
-    it('unknown action error lists all 7 actions', async () => {
+    it('returns a schema error for unknown action', async () => {
       const result = await callTool(client, 'SAPTransport', {
         action: 'nonexistent',
       });
@@ -256,29 +316,33 @@ describe('E2E SAPTransport Tests', () => {
       requireOrSkip(ctx, pkg, SkipReason.NO_TRANSPORT_PACKAGE);
 
       const testName = `ZARC1_E2E_TR_${Date.now().toString(36).toUpperCase().slice(-6)}`;
-
-      // Step 1: Create a transport for the create operation
-      const createTransportResult = await callTool(client, 'SAPTransport', {
-        action: 'create',
-        description: `ARC-1 E2E transportable write ${Date.now()}`,
-      });
-      const transportText = expectToolSuccess(createTransportResult);
-      const transportMatch = transportText.match(/([A-Z0-9]+K\d+)/);
-      expect(transportMatch, 'Should get a transport ID').toBeTruthy();
-      const transportId = transportMatch![1];
-
-      // Step 2: Create a program in the transportable package
-      const createResult = await callTool(client, 'SAPWrite', {
-        action: 'create',
-        type: 'PROG',
-        name: testName,
-        source: `REPORT ${testName.toLowerCase()}.\nWRITE: / 'original'.`,
-        package: pkg,
-        transport: transportId,
-      });
-      expectToolSuccess(createResult);
+      let transportId = '';
+      let programCreated = false;
+      const cleanupErrors: string[] = [];
 
       try {
+        // Step 1: Create a transport for the create operation
+        const createTransportResult = await callTool(client, 'SAPTransport', {
+          action: 'create',
+          description: `ARC-1 E2E transportable write ${Date.now()}`,
+        });
+        const transportText = expectToolSuccess(createTransportResult);
+        const transportMatch = transportText.match(/([A-Z0-9]+K\d+)/);
+        transportId = transportMatch?.[1] ?? '';
+        expect(transportMatch, 'Should get a transport ID').toBeTruthy();
+
+        // Step 2: Create a program in the transportable package
+        const createResult = await callTool(client, 'SAPWrite', {
+          action: 'create',
+          type: 'PROG',
+          name: testName,
+          source: `REPORT ${testName.toLowerCase()}.\nWRITE: / 'original'.`,
+          package: pkg,
+          transport: transportId,
+        });
+        expectToolSuccess(createResult);
+        programCreated = true;
+
         // Step 3: Update WITHOUT explicit transport — should auto-use lock corrNr
         const updateResult = await callTool(client, 'SAPWrite', {
           action: 'update',
@@ -296,18 +360,32 @@ describe('E2E SAPTransport Tests', () => {
         const readText = expectToolSuccess(readResult);
         expect(readText).toContain('auto-corrNr propagated');
       } finally {
-        // Best-effort cleanup — delete the test program
-        try {
-          await callTool(client, 'SAPWrite', {
+        if (programCreated) {
+          const deleteProgramResult = await callTool(client, 'SAPWrite', {
             action: 'delete',
             type: 'PROG',
             name: testName,
             transport: transportId,
           });
-        } catch {
-          // best-effort-cleanup
-          console.error(`Failed to clean up test program ${testName}`);
+          if (deleteProgramResult.isError) {
+            cleanupErrors.push(deleteProgramResult.content?.[0]?.text ?? `Failed to delete ${testName}`);
+          }
         }
+
+        if (transportId) {
+          const deleteTransportResult = await callTool(client, 'SAPTransport', {
+            action: 'delete',
+            id: transportId,
+            recursive: true,
+          });
+          if (deleteTransportResult.isError) {
+            cleanupErrors.push(deleteTransportResult.content?.[0]?.text ?? `Failed to delete transport ${transportId}`);
+          }
+        }
+      }
+
+      if (cleanupErrors.length > 0) {
+        expect(cleanupErrors, 'Transportable E2E cleanup failed').toEqual([]);
       }
     });
   });

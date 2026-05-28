@@ -13,6 +13,8 @@ export const SkipReason = {
   NO_DDLS: 'No DDLS object found on system',
   NO_DUMPS: 'No short dumps found on system',
   NO_TRANSPORT_PACKAGE: 'TEST_TRANSPORT_PACKAGE not configured (transportable package required)',
+  TRANSPORT_RELEASE_DISABLED:
+    'TEST_TRANSPORT_RELEASE_TESTS not enabled (transport release is permanent on the shared SAP test system)',
   BACKEND_UNSUPPORTED: 'Backend feature not supported on this SAP system',
 } as const;
 
