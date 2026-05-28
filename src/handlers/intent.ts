@@ -3491,6 +3491,13 @@ function stripIncludeHeader(source: string): string {
 
 // ─── SAPWrite Handler ────────────────────────────────────────────────
 
+/**
+ * Single-object actions whose top-level `name` is an SAP object name and must be
+ * uppercase (TADIR convention). `batch_create` is excluded — its names live in
+ * the `objects[]` items and are validated per item in the batch_create branch.
+ */
+const NAME_CASE_GUARD_ACTIONS = new Set(['create', 'update', 'edit_method', 'delete']);
+
 async function handleSAPWrite(
   client: AdtClient,
   args: Record<string, unknown>,
@@ -3514,12 +3521,16 @@ async function handleSAPWrite(
   }
 
   // SAP TADIR stores object names uppercase. Mixed-case names cause silent corruption
-  // (e.g. DDLS created as "Zc_MyView" registers as "ZC_MYVIEW" in TADIR but the source body
-  // still contains "Zc_MyView", confusing every downstream tool). Reject pre-flight on create —
-  // applies on every SAP release; this is universal SAP convention, not a 7.50 quirk.
+  // on create (e.g. DDLS "Zc_MyView" registers as "ZC_MYVIEW" in TADIR but the source body
+  // still contains "Zc_MyView", confusing every downstream tool) and broken URL lookups on
+  // mutate/delete — the lock is held against the canonical uppercase name while the request
+  // URL carries the mixed-case one, which surfaces on ECC as 423 "... is not locked" (issue
+  // #293, original report used name "Z_HELLO_world"). Reject pre-flight for every name-bearing
+  // single-object action — universal SAP convention, not a 7.50 quirk. (batch_create validates
+  // each item separately below.)
   // Note: source code INSIDE the object can use mixed case (e.g. for DDLS: name="ZC_MYVIEW"
   // but `define view entity Zc_MyView` is fine inside the source body).
-  if (action === 'create' && name && name !== name.toUpperCase()) {
+  if (NAME_CASE_GUARD_ACTIONS.has(action) && name && name !== name.toUpperCase()) {
     return errorResult(
       `Object name "${name}" contains lowercase characters. SAP object names must be uppercase (e.g. "${name.toUpperCase()}").\n\n` +
         `Note: the object NAME in TADIR must be uppercase, but the source code inside the object can use mixed case ` +

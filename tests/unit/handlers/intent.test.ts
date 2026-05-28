@@ -12975,6 +12975,55 @@ ENDCLASS.`;
       // Second object should NOT have been attempted (batch breaks on first failure).
       expect(text).not.toContain('ZCL_LATER: success');
     });
+
+    // Issue #293: mixed-case names must be rejected on mutate/delete too, not just
+    // create — the lock is held against the canonical uppercase name while the
+    // request URL carries the mixed-case one (surfaces on ECC as 423 "not locked").
+    it('rejects update with lowercase characters in object name', async () => {
+      mockFetch.mockReset();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'update',
+        type: 'PROG',
+        name: 'Z_Hello_World',
+        source: 'REPORT z_hello_world.',
+      });
+      expect(result.isError).toBe(true);
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('uppercase');
+      expect(text).toContain('Z_HELLO_WORLD');
+      // Guard fires before any lock/HTTP traffic.
+      expect(mockFetch).toHaveBeenCalledTimes(0);
+    });
+
+    it('rejects edit_method with lowercase characters in object (class) name', async () => {
+      mockFetch.mockReset();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'edit_method',
+        type: 'CLAS',
+        name: 'Zcl_Mixed',
+        method: 'do_something',
+        source: 'METHOD do_something.\nENDMETHOD.',
+      });
+      expect(result.isError).toBe(true);
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('uppercase');
+      expect(text).toContain('ZCL_MIXED');
+      expect(mockFetch).toHaveBeenCalledTimes(0);
+    });
+
+    it('rejects delete with lowercase characters in object name', async () => {
+      mockFetch.mockReset();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'delete',
+        type: 'PROG',
+        name: 'Z_Hello_World',
+      });
+      expect(result.isError).toBe(true);
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('uppercase');
+      expect(text).toContain('Z_HELLO_WORLD');
+      expect(mockFetch).toHaveBeenCalledTimes(0);
+    });
   });
 
   // ─── MSAG transport-vs-task guard (PR-γ) ──────────────────────────
