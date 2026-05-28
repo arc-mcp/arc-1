@@ -1,9 +1,117 @@
 # Issue #293 — ECC: status 423 "invalid lock handle" on every write
 
-> **Status**: Open (reported 2026-05-21 by @abappdpatel)
+> **Status**: Open (reported 2026-05-21 by @abappdpatel; reproduced 2026-05-28 by @acmebcn)
 > **GitHub**: https://github.com/marianfoo/arc-1/issues/293
-> **ARC-1 components**: `src/adt/crud.ts`, `src/adt/errors.ts`, `src/handlers/intent.ts`
-> **Classification**: SAP backend bug (not an ARC-1 defect) — `category: enqueue-error`
+> **ARC-1 components**: `src/adt/http.ts` (cookie header build — **primary suspect**),
+> `src/adt/crud.ts`, `src/adt/errors.ts`, `src/handlers/intent.ts`
+> **Classification**: was "SAP backend bug"; **revised to a likely client-side
+> duplicate-cookie bug** for the cookie-auth case (see "UPDATE 2026-05-28").
+
+---
+
+## ⚠️ UPDATE 2026-05-28 — new evidence flips the primary root cause
+
+@acmebcn (David R.) reproduced the issue with details that **rule out** the original
+SAP-Note theory for his case:
+
+- **SAP Note 2727890 is already implemented** — and it still fails.
+- `SAP_BASIS` is **7.40 SP 33**.
+- Program name is **all-caps** (`ZSD_SALES_ORDER_REPORT`) → rules out the mixed-case theory.
+- He is using **cookie auth** (`SAP_COOKIE_FILE`, via `arc1-cli extract-cookies`).
+- Clean error (URL name == resource name, confirming the implicit-include phrasing):
+
+```
+[tool_call_end] status":"error","errorClass":"AdtApiError:enqueue-error",
+"errorMessage":"ADT API error: status 423 at
+/sap/bc/adt/programs/programs/ZSD_SALES_ORDER_REPORT/source/main?lockHandle=C9E0EA2DF24CA628A1934C9519D25A9A5D42D1F2:
+Resource INCLUDE ZSD_SALES_ORDER_REPORT is not locked (invalid lock handle: C9E0EA2DF24CA628A1934C9519D25A9A5D42D1F2)"
+```
+
+### New primary hypothesis: duplicate `SAP_SESSIONID` cookie breaks the stateful LOCK→PUT session
+
+`src/adt/http.ts` builds the `Cookie` request header by concatenating **both**
+`config.cookies` (static, loaded from the cookie file) **and** the live `cookieJar`
+(server-assigned), with **no dedupe by name**. Four spots do this:
+
+| Location | What it sends |
+|---|---|
+| `requestInner` cookie build — `src/adt/http.ts:340-352` | config + jar (no dedupe) |
+| 401 session retry — `src/adt/http.ts:513-527` | config + jar (no dedupe) |
+| `fetchCsrfToken` HEAD — `src/adt/http.ts:832-844` | config + jar (no dedupe) |
+| 403 CSRF refresh — `src/adt/http.ts:558-565` | **jar only** (already correct!) |
+
+The class comment at `src/adt/http.ts:170` and the inline comment at `:340` both claim
+**"jar takes precedence"**, but the code never enforces it — on a name collision it emits
+*both* cookies.
+
+**Why this produces a 423 on cookie auth specifically:**
+
+1. `arc1-cli extract-cookies` captures *all* host cookies via CDP `Storage.getCookies`,
+   including the HttpOnly **`SAP_SESSIONID_<SID>_<CLNT>`** (ephemeral stateful-session id)
+   alongside the `MYSAPSSO2` SSO ticket (the actual auth credential).
+   See `src/extract-sap-cookies.ts` (`fetchCookiesViaCdp`) → `src/adt/cookies.ts`
+   (`parseCookieFileContent`) → `config.cookies`.
+2. `withStatefulSession` (`src/adt/http.ts:239`) opens a stateful session for LOCK→PUT→UNLOCK.
+   The `LOCK` response's `Set-Cookie` writes a **fresh** `SAP_SESSIONID...` into the jar
+   (`storeCookies`, `:1007`).
+3. The follow-up `PUT /source/main` then sends:
+   `SAP_SESSIONID_XXX=<stale-from-file>; … ; SAP_SESSIONID_XXX=<fresh-from-LOCK>`
+   — two cookies, same name, **stale one first**.
+4. SAP's ICM honors the first occurrence → binds the PUT to a **different session** than the
+   one holding the enqueue lock from `LOCK` → "Resource … is not locked (invalid lock handle)".
+
+**Why it matches every observable:**
+- **Cookie auth only** — basic-auth users have `config.cookies === undefined`, so no collision
+  (consistent with @abappdpatel possibly being on a different path, and with S/4HANA "working").
+- **All write operations fail** — every mutation goes through the stateful LOCK→PUT sequence.
+- **SAP Note 2727890 doesn't help** — it's not the backend unstable-handle bug at all.
+- **@abappdpatel's name mismatch** (`Z_HELLO_world` URL vs `ZPPD3_HELLO3` resource) is also
+  consistent with the PUT landing in a *stale* session that had previously locked a different
+  object — though that example may just be two conflated pastes.
+
+> Confidence: **high** for the cookie-auth case, but **not yet live-confirmed** (no ECC box
+> here). The fix is low-risk and matches the code's own documented intent, so it's worth
+> shipping + asking David to validate.
+
+### The fix (client-side, in ARC-1)
+
+Dedupe the `Cookie` header by name with the **jar winning** over `config.cookies` (live,
+server-assigned value supersedes the static file value). Centralize into one helper and use
+it in all four spots:
+
+```ts
+// src/adt/http.ts
+private buildCookieHeader(): string | undefined {
+  const merged = new Map<string, string>();
+  if (this.config.cookies) {
+    for (const [k, v] of Object.entries(this.config.cookies)) merged.set(k, v);
+  }
+  for (const [k, v] of this.cookieJar) merged.set(k, v); // jar wins on name collision
+  if (merged.size === 0) return undefined;
+  return [...merged].map(([k, v]) => `${k}=${v}`).join('; ');
+}
+```
+
+Replace the four inline builders (`:340-352`, `:513-527`, `:558-565`, `:832-844`) with this.
+`MYSAPSSO2` (auth) is never re-set by the server, so it survives untouched; only the
+ephemeral `SAP_SESSIONID...` collision is resolved in favor of the live value.
+
+Tests: extend `tests/unit/adt/http.test.ts` — assert that when `config.cookies` and the jar
+both define `SAP_SESSIONID_X`, the emitted `Cookie` header contains it **once** with the jar's
+value. Add a stateful LOCK→PUT mock-fetch test asserting the PUT carries the LOCK-response
+session cookie (not the file's).
+
+### Cheap interim workaround for the reporter (no code change)
+
+Strip the ephemeral session cookie from the cookie file and keep only the auth ticket — e.g.
+delete the `SAP_SESSIONID_*` line(s) from the Netscape file, leaving `MYSAPSSO2` (and
+`sap-usercontext`). Then the jar's fresh session cookie is the only one sent. If that makes
+writes succeed, it confirms the duplicate-cookie diagnosis. (Basic auth via
+`SAP_USER`/`SAP_PASSWORD`, if available on that ECC system, sidesteps it entirely.)
+
+---
+
+## Original analysis (2026-05-21) — still valid for the *non-cookie-auth* / un-patched case
 
 ## Reported symptom
 
@@ -113,23 +221,34 @@ This is a recurring, cross-client SAP issue, already catalogued in `compare/`:
 
 Cross-referenced upstream issues: VSP #78/#88/#91/#92, abap-adt-api #30/#36, fr0ster #57/#58.
 
-## Possible cause (ranked)
+## Possible cause (ranked — revised 2026-05-28)
 
-1. **(Primary, ~95%) Un-patched ADT framework — SAP Note 2727890 not applied.** Matches
-   every observable: ECC-only, all writes, first PUT after LOCK, SM12 empty, INCLUDE phrasing.
-2. **(Secondary) Mixed-case object name on `update`.** The example URL is `Z_HELLO_world`
-   (mixed case). SAP TADIR stores names uppercase; mixed-case can cause a secondary lookup
-   mismatch on older systems. ARC-1 rejects mixed-case on `create`
-   (`src/handlers/intent.ts:3436`) **but not on `update`** — so a mixed-case update URL is
-   passed through verbatim. This would not *cause* the unstable-handle bug, but it is one
-   more variable to remove when verifying after the note.
-3. **(Unlikely here) Session/cookie bleed across the LOCK→PUT pair.** ARC-1 uses
-   `withStatefulSession()` to keep cookies+CSRF on one session, so this is covered. Only
-   worth re-checking if the note is confirmed applied and 423 still fires.
+1. **(NEW PRIMARY for cookie auth) Duplicate `SAP_SESSIONID` cookie de-syncs the stateful
+   LOCK→PUT session.** `src/adt/http.ts` sends `config.cookies` + jar without dedupe; the
+   stale `SAP_SESSIONID` from the cookie file collides with the fresh one from the `LOCK`
+   response, so the PUT binds to the wrong session and the enqueue lock is invisible. See the
+   2026-05-28 update at the top. Matches David's repro exactly (note applied, all-caps, cookie
+   auth, all writes). **Fixable in ARC-1.**
+2. **(Still valid where auth is NOT cookie-based) Un-patched ADT framework — SAP Note
+   2727890.** Genuine backend unstable-handle bug on un-patched SAP_BASIS 7.40–7.54. This
+   remains the right answer for basic-auth ECC users who have *not* applied the note. Does
+   NOT explain David's case (note already applied).
+3. **(Secondary) Mixed-case object name on `update`.** ARC-1 rejects mixed-case on `create`
+   (`src/handlers/intent.ts:3436`) but not `update`/`edit_method`/`delete`. Ruled out for
+   David (all-caps), but still worth hardening.
+4. **(Re-opened) Session/cookie bleed across LOCK→PUT.** Previously dismissed because
+   `withStatefulSession()` shares the jar — but it does NOT dedupe against `config.cookies`,
+   which is exactly cause #1. The earlier "covered" assessment was wrong for cookie auth.
 
 ## Possible solution
 
-### Primary — apply the SAP Note (SAP side, the real fix)
+### NEW PRIMARY — fix the duplicate-cookie bug in ARC-1 (see the 2026-05-28 update)
+
+Dedupe the `Cookie` header by name with the live jar winning over `config.cookies`. Code
+sketch + test plan + interim workaround are in the "UPDATE 2026-05-28" section at the top.
+This is the fix to ship for David's confirmed case.
+
+### Still valid — apply the SAP Note (SAP side) for un-patched, non-cookie-auth ECC
 
 Ask the customer's Basis team to:
 1. Confirm `SAP_BASIS` release + SP (SAP GUI: **System → Status → Component information**).
@@ -137,8 +256,9 @@ Ask the customer's Basis team to:
    framework) — or pull a Support Package that already contains it.
 3. Re-test the same write through ARC-1.
 
-There is **no safe pure-client workaround**: re-locking hits the same enqueue path, and
-skipping the SAP enqueue would corrupt the development server. The note is the canonical fix.
+For a *genuine* backend unstable-handle bug there is no safe pure-client workaround. But note
+that case #1 above is a *client* bug masquerading as the backend one — confirm which you're
+hitting before sending a customer to their Basis team.
 
 ### Secondary — ARC-1 hardening (optional, low effort, does NOT fix the bug)
 

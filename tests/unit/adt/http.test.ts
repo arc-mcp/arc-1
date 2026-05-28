@@ -338,6 +338,59 @@ describe('AdtHttpClient', () => {
       // Should not throw
       await client.get('/path');
     });
+
+    it('jar wins over a stale config cookie of the same name — no duplicate SAP_SESSIONID (issue #293)', async () => {
+      // The cookie file seeded a (now stale) session id + the SSO ticket; the
+      // first response re-sets the session id with a fresh value.
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok', {}, ['SAP_SESSIONID_A4H_100=FRESH; Path=/; HttpOnly']));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok2'));
+
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        cookies: { SAP_SESSIONID_A4H_100: 'STALE', MYSAPSSO2: 'TICKET' },
+      });
+      await client.get('/first');
+      await client.get('/second');
+
+      const cookie = fetchHeaders(1).Cookie ?? '';
+      const sessionMatches = cookie.match(/SAP_SESSIONID_A4H_100=/g) ?? [];
+      expect(sessionMatches).toHaveLength(1);
+      expect(cookie).toContain('SAP_SESSIONID_A4H_100=FRESH');
+      expect(cookie).not.toContain('SAP_SESSIONID_A4H_100=STALE');
+      // Auth cookie (only in config, never re-set by the server) is preserved.
+      expect(cookie).toContain('MYSAPSSO2=TICKET');
+    });
+
+    it('stateful LOCK→PUT carries the LOCK-issued session id, not the stale file copy (issue #293)', async () => {
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        username: undefined,
+        password: undefined,
+        cookieFile: '/tmp/arc1-test-cookies.txt',
+        cookies: { SAP_SESSIONID_A4H_100: 'STALE', MYSAPSSO2: 'TICKET' },
+      });
+      // Pretend CSRF is already known so the LOCK POST doesn't trigger a HEAD fetch
+      // (keeps the mock call indices aligned: 0 = LOCK, 1 = PUT).
+      (client as unknown as { csrfToken: string }).csrfToken = 'T';
+
+      // LOCK (POST) → server opens a stateful session and re-sets the session id.
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(200, '<LOCK_HANDLE>LH1</LOCK_HANDLE>', {}, ['SAP_SESSIONID_A4H_100=FRESH; Path=/']),
+      );
+      // PUT (source) succeeds.
+      mockFetch.mockResolvedValueOnce(mockResponse(200, ''));
+
+      await client.withStatefulSession(async (session) => {
+        await session.post('/sap/bc/adt/programs/programs/ZX?_action=LOCK&accessMode=MODIFY');
+        await session.put('/sap/bc/adt/programs/programs/ZX/source/main?lockHandle=LH1', 'REPORT zx.', 'text/plain');
+      });
+
+      const putCookie = fetchHeaders(1).Cookie ?? '';
+      expect(putCookie.match(/SAP_SESSIONID_A4H_100=/g) ?? []).toHaveLength(1);
+      expect(putCookie).toContain('SAP_SESSIONID_A4H_100=FRESH');
+      expect(putCookie).not.toContain('STALE');
+      expect(putCookie).toContain('MYSAPSSO2=TICKET');
+    });
   });
 
   // ─── Error Handling ────────────────────────────────────────────────
