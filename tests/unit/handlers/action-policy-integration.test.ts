@@ -375,6 +375,32 @@ describe('ACTION_POLICY runtime integration — type-level pruning in tool listi
     const typeEnum = (sapRead!.inputSchema as Record<string, any>).properties.type.enum as string[];
     expect(typeEnum).toContain('TABLE_CONTENTS');
   });
+
+  it('SAPRead TABLE_QUERY type is pruned when user lacks data scope', () => {
+    const tools = getToolDefinitions({
+      ...DEFAULT_CONFIG,
+      allowWrites: true,
+      allowDataPreview: true,
+    });
+    const filtered = filterToolsByAuthScope(tools, ['read']);
+    const sapRead = filtered.find((t) => t.name === 'SAPRead');
+    expect(sapRead).toBeDefined();
+    const typeEnum = (sapRead!.inputSchema as Record<string, any>).properties.type.enum as string[];
+    expect(typeEnum).not.toContain('TABLE_QUERY');
+  });
+
+  it('SAPRead TABLE_QUERY stays when user has data scope', () => {
+    const tools = getToolDefinitions({
+      ...DEFAULT_CONFIG,
+      allowWrites: true,
+      allowDataPreview: true,
+    });
+    const filtered = filterToolsByAuthScope(tools, ['read', 'data']);
+    const sapRead = filtered.find((t) => t.name === 'SAPRead');
+    expect(sapRead).toBeDefined();
+    const typeEnum = (sapRead!.inputSchema as Record<string, any>).properties.type.enum as string[];
+    expect(typeEnum).toContain('TABLE_QUERY');
+  });
 });
 
 describe('ACTION_POLICY runtime integration — admin-implies-all', () => {

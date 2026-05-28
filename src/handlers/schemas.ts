@@ -34,6 +34,7 @@ const SAPREAD_TYPES_ONPREM = [
   'DTEL',
   'TRAN',
   'TABLE_CONTENTS',
+  'TABLE_QUERY',
   'DEVC',
   'SOBJ',
   'SYSTEM',
@@ -76,6 +77,7 @@ const SAPREAD_TYPES_BTP = [
   'DOMA',
   'DTEL',
   'TABLE_CONTENTS',
+  'TABLE_QUERY',
   'DEVC',
   'SYSTEM',
   'COMPONENTS',
@@ -137,6 +139,12 @@ function validateSapReadInput(
     }
   }
 
+  if (input.type === 'TABLE_QUERY') {
+    if (!('name' in input) || !input.name) {
+      ctx.addIssue({ code: 'custom', path: ['name'], message: 'TABLE_QUERY requires a table or CDS view name.' });
+    }
+  }
+
   if (input.type === 'TABLE_CONTENTS' && input.sqlFilter) {
     const sqlFilter = input.sqlFilter.trim();
     if (/^select\b/i.test(sqlFilter)) {
@@ -166,6 +174,12 @@ function validateSapReadInput(
   }
 }
 
+const TableQueryWhereItemSchema = z.object({
+  field: z.string(),
+  op: z.string(),
+  value: z.string().optional(),
+});
+
 export const SAPReadSchema = z
   .object({
     type: z.enum(SAPREAD_TYPES_ONPREM),
@@ -186,6 +200,10 @@ export const SAPReadSchema = z
     versionUri: z.string().optional(),
     /** For type=FUNC: when true, response is JSON {source, signature: {importing, exporting, ...}}. */
     includeSignature: z.coerce.boolean().optional(),
+    /** For TABLE_QUERY: columns to select (default: all). */
+    columns: z.array(z.string()).optional(),
+    /** For TABLE_QUERY: structured WHERE conditions ANDed together. */
+    where: z.array(TableQueryWhereItemSchema).optional(),
   })
   .superRefine((input, ctx) => validateSapReadInput(input, ctx));
 
@@ -208,6 +226,10 @@ export const SAPReadSchemaBtp = z
     versionUri: z.string().optional(),
     /** For type=FUNC: when true, response is JSON {source, signature: {importing, exporting, ...}}. */
     includeSignature: z.coerce.boolean().optional(),
+    /** For TABLE_QUERY: columns to select (default: all). */
+    columns: z.array(z.string()).optional(),
+    /** For TABLE_QUERY: structured WHERE conditions ANDed together. */
+    where: z.array(TableQueryWhereItemSchema).optional(),
   })
   .superRefine((input, ctx) => validateSapReadInput(input, ctx));
 

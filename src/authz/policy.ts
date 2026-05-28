@@ -36,6 +36,9 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   SAPRead: { scope: 'read', opType: OperationType.Read },
   // Per-type overrides
   'SAPRead.TABLE_CONTENTS': { scope: 'data', opType: OperationType.Query },
+  // TABLE_QUERY builds the SELECT server-side (no user SQL injection) — same gate as TABLE_CONTENTS.
+  // Uses the freestyle endpoint internally to support multi-column WHERE and CDS views.
+  'SAPRead.TABLE_QUERY': { scope: 'data', opType: OperationType.Query },
 
   // ── SAPSearch ────────────────────────────────────────────────────
   SAPSearch: { scope: 'read', opType: OperationType.Search },

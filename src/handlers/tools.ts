@@ -55,6 +55,7 @@ const SAPREAD_TYPES_ONPREM = [
   'DTEL',
   'TRAN',
   'TABLE_CONTENTS',
+  'TABLE_QUERY',
   'DEVC',
   'SOBJ',
   'SYSTEM',
@@ -95,6 +96,7 @@ const SAPREAD_TYPES_BTP = [
   'DOMA',
   'DTEL',
   'TABLE_CONTENTS',
+  'TABLE_QUERY',
   'DEVC',
   'SYSTEM',
   'COMPONENTS',
@@ -108,12 +110,12 @@ const SAPREAD_TYPES_BTP = [
 ];
 
 const SAPREAD_DESC_ONPREM =
-  'Read SAP ABAP objects. Types: PROG, CLAS, INTF, FUNC, FUGR (use expand_includes=true to get all include sources), INCL, DDLS, DDLX (CDS metadata extensions — UI annotations), BDEF, SRVD, SRVB (service bindings — returns structured binding info: OData version, publish status, service definition ref), SKTD (Knowledge Transfer Documents — Markdown documentation attached to ABAP objects like CDS views, BDEFs, classes), TABL (DDIC TABL — covers transparent tables like T000 AND DDIC structures like BAPIRET2; returns CDS-like source. ARC-1 auto-resolves the URL: tries /sap/bc/adt/ddic/tables/ first, falls back to /sap/bc/adt/ddic/structures/. Note: there is no separate STRU type — TABL is the canonical short type for both, mirroring TADIR R3TR TABL and abapGit conventions), VIEW, DOMA (DDIC domains — returns type info, value table, fixed values), DTEL (data elements — returns domain, labels, search help), TRAN (transaction codes — returns description, program, package), TABLE_CONTENTS, DEVC, SOBJ (BOR business objects — returns method catalog or full implementation), SYSTEM, COMPONENTS, MSAG (message classes — returns class metadata + messages array), TEXT_ELEMENTS, VARIANTS. For CLAS: omit include to get the full class source (definition + implementation combined). The include param is optional — use it only to read class-local sections: definitions (local types), implementations (local helper classes), macros, testclasses (ABAP Unit). For CLAS with method param: use method="*" to list all methods with signatures and visibility, or method="method_name" to read a single method implementation (95% fewer tokens than full source). For SOBJ: returns BOR method catalog; use method param to read a specific method implementation. BSP (deployed UI5/Fiori apps — list apps, browse files, read content; use name to browse app structure, include for subfolder or file), BSP_DEPLOY (query deployed UI5 apps via ABAP Repository OData Service — returns name, package, description). API_STATE (API release state — checks if an object is released for ABAP Cloud / S/4HANA Clean Core; returns contract states C0-C4, successor info; use objectType param for non-class objects). INACTIVE_OBJECTS (list all objects pending activation — no name param needed; use before SAPActivate batch_activate to see what needs activating). AUTH (Authorization Fields — returns check table, domain, conversion exit, org-level flags; on-prem only). FEATURE_TOGGLE (Feature Toggles — returns current toggle state per system from SAP switch framework; on-prem only). ENHO (Enhancement Implementations / BAdI — returns technology type, referenced enhancement object, and BAdI implementations with implementing classes; on-prem only). VERSIONS (list revision history of an object — returns JSON with object metadata and revisions [{id, author, timestamp, versionTitle?, transport?, uri}]; pass optional include for CLAS or group for FUNC; on-prem only and may return 404 for some DDIC types on non-S/4 backends). VERSION_SOURCE (fetch source at a specific revision URI from VERSIONS response; returns raw source text; on-prem only). ' +
+  'Read SAP ABAP objects. Types: PROG, CLAS, INTF, FUNC, FUGR (use expand_includes=true to get all include sources), INCL, DDLS, DDLX (CDS metadata extensions — UI annotations), BDEF, SRVD, SRVB (service bindings — returns structured binding info: OData version, publish status, service definition ref), SKTD (Knowledge Transfer Documents — Markdown documentation attached to ABAP objects like CDS views, BDEFs, classes), TABL (DDIC TABL — covers transparent tables like T000 AND DDIC structures like BAPIRET2; returns CDS-like source. ARC-1 auto-resolves the URL: tries /sap/bc/adt/ddic/tables/ first, falls back to /sap/bc/adt/ddic/structures/. Note: there is no separate STRU type — TABL is the canonical short type for both, mirroring TADIR R3TR TABL and abapGit conventions), VIEW, DOMA (DDIC domains — returns type info, value table, fixed values), DTEL (data elements — returns domain, labels, search help), TRAN (transaction codes — returns description, program, package), TABLE_CONTENTS (simple row preview — no filter or single-column filter; use TABLE_QUERY for multi-column WHERE), TABLE_QUERY (structured multi-column query on DDIC tables and CDS views via the freestyle endpoint — supports AND conditions, column selection; gated by allowDataPreview; use instead of TABLE_CONTENTS when filtering on multiple fields), DEVC, SOBJ (BOR business objects — returns method catalog or full implementation), SYSTEM, COMPONENTS, MSAG (message classes — returns class metadata + messages array), TEXT_ELEMENTS, VARIANTS. For CLAS: omit include to get the full class source (definition + implementation combined). The include param is optional — use it only to read class-local sections: definitions (local types), implementations (local helper classes), macros, testclasses (ABAP Unit). For CLAS with method param: use method="*" to list all methods with signatures and visibility, or method="method_name" to read a single method implementation (95% fewer tokens than full source). For SOBJ: returns BOR method catalog; use method param to read a specific method implementation. BSP (deployed UI5/Fiori apps — list apps, browse files, read content; use name to browse app structure, include for subfolder or file), BSP_DEPLOY (query deployed UI5 apps via ABAP Repository OData Service — returns name, package, description). API_STATE (API release state — checks if an object is released for ABAP Cloud / S/4HANA Clean Core; returns contract states C0-C4, successor info; use objectType param for non-class objects). INACTIVE_OBJECTS (list all objects pending activation — no name param needed; use before SAPActivate batch_activate to see what needs activating). AUTH (Authorization Fields — returns check table, domain, conversion exit, org-level flags; on-prem only). FEATURE_TOGGLE (Feature Toggles — returns current toggle state per system from SAP switch framework; on-prem only). ENHO (Enhancement Implementations / BAdI — returns technology type, referenced enhancement object, and BAdI implementations with implementing classes; on-prem only). VERSIONS (list revision history of an object — returns JSON with object metadata and revisions [{id, author, timestamp, versionTitle?, transport?, uri}]; pass optional include for CLAS or group for FUNC; on-prem only and may return 404 for some DDIC types on non-S/4 backends). VERSION_SOURCE (fetch source at a specific revision URI from VERSIONS response; returns raw source text; on-prem only). ' +
   'Optional grep parameter: pass a case-insensitive regex to return only matching source lines (+context, with line numbers) instead of the full object — token-efficient search across source-bearing types; for CLAS, matches are annotated with the owning class/method. ' +
   'Optional version parameter (default "active"): set to "inactive" to read the user\'s unactivated draft, or "auto" for the developer view. Active reads include a note when an inactive draft exists.';
 
 const SAPREAD_DESC_BTP =
-  'Read SAP ABAP objects (BTP ABAP Environment). Types: CLAS, INTF, FUNC (released/custom only), FUGR (released/custom only), DDLS (CDS views — primary data model on BTP), DDLX (CDS metadata extensions — UI annotations for Fiori Elements), BDEF (RAP behavior definitions), SRVD (service definitions), SRVB (service bindings — returns structured binding info: OData version, publish status, service definition ref), SKTD (Knowledge Transfer Documents — Markdown documentation attached to ABAP objects like CDS views, BDEFs, classes), TABL (DDIC TABL — covers both custom transparent tables AND DDIC structures; returns CDS-like source. ARC-1 auto-resolves /tables/ vs /structures/ via fallback. Note: there is no separate STRU type — TABL is the canonical short type for both), DOMA (DDIC domains — type info, value table, fixed values), DTEL (data elements — domain, labels, search help), TABLE_CONTENTS (custom tables and released CDS only — SAP standard tables are blocked), DEVC, SYSTEM, COMPONENTS, MSAG (custom message classes only). For CLAS: omit include to get the full class source. The include param reads class-local sections: definitions, implementations, macros, testclasses. For CLAS with method param: use method="*" to list all methods with signatures and visibility, or method="method_name" to read a single method (95% fewer tokens). Note: PROG, INCL, VIEW, TRAN, TEXT_ELEMENTS, VARIANTS are not available on BTP — use CLAS with IF_OO_ADT_CLASSRUN for console applications, and DDLS for data models instead of classic views. VERSIONS and VERSION_SOURCE are currently on-prem only in ARC-1 and are intentionally not exposed on BTP yet. BSP (deployed UI5/Fiori apps — list apps, browse files, read content; use name to browse app structure, include for subfolder or file), BSP_DEPLOY (query deployed UI5 apps via ABAP Repository OData Service — returns name, package, description). API_STATE (API release state — checks if an object is released for ABAP Cloud / Clean Core; returns contract states C0-C4, successor info; essential for cloud development; use objectType param for non-class objects). INACTIVE_OBJECTS (list all objects pending activation — no name param needed; use before SAPActivate batch_activate to see what needs activating). ' +
+  'Read SAP ABAP objects (BTP ABAP Environment). Types: CLAS, INTF, FUNC (released/custom only), FUGR (released/custom only), DDLS (CDS views — primary data model on BTP), DDLX (CDS metadata extensions — UI annotations for Fiori Elements), BDEF (RAP behavior definitions), SRVD (service definitions), SRVB (service bindings — returns structured binding info: OData version, publish status, service definition ref), SKTD (Knowledge Transfer Documents — Markdown documentation attached to ABAP objects like CDS views, BDEFs, classes), TABL (DDIC TABL — covers both custom transparent tables AND DDIC structures; returns CDS-like source. ARC-1 auto-resolves /tables/ vs /structures/ via fallback. Note: there is no separate STRU type — TABL is the canonical short type for both), DOMA (DDIC domains — type info, value table, fixed values), DTEL (data elements — domain, labels, search help), TABLE_CONTENTS (custom tables and released CDS only — SAP standard tables are blocked; no filter or single-column filter only), TABLE_QUERY (structured multi-column query on custom tables or released CDS views; use when filtering on multiple fields), DEVC, SYSTEM, COMPONENTS, MSAG (custom message classes only). For CLAS: omit include to get the full class source. The include param reads class-local sections: definitions, implementations, macros, testclasses. For CLAS with method param: use method="*" to list all methods with signatures and visibility, or method="method_name" to read a single method (95% fewer tokens). Note: PROG, INCL, VIEW, TRAN, TEXT_ELEMENTS, VARIANTS are not available on BTP — use CLAS with IF_OO_ADT_CLASSRUN for console applications, and DDLS for data models instead of classic views. VERSIONS and VERSION_SOURCE are currently on-prem only in ARC-1 and are intentionally not exposed on BTP yet. BSP (deployed UI5/Fiori apps — list apps, browse files, read content; use name to browse app structure, include for subfolder or file), BSP_DEPLOY (query deployed UI5 apps via ABAP Repository OData Service — returns name, package, description). API_STATE (API release state — checks if an object is released for ABAP Cloud / Clean Core; returns contract states C0-C4, successor info; essential for cloud development; use objectType param for non-class objects). INACTIVE_OBJECTS (list all objects pending activation — no name param needed; use before SAPActivate batch_activate to see what needs activating). ' +
   'Optional grep parameter: pass a case-insensitive regex to return only matching source lines (+context, with line numbers) instead of the full object — token-efficient search across source-bearing types; for CLAS, matches are annotated with the owning class/method. ' +
   'Optional version parameter (default "active"): set to "inactive" to read the user\'s unactivated draft, or "auto" for the developer view. Active reads include a note when an inactive draft exists.';
 
@@ -493,8 +495,8 @@ export function getToolDefinitions(
             type: 'string',
             enum: btp ? SAPREAD_TYPES_BTP : SAPREAD_TYPES_ONPREM,
             description: btp
-              ? 'Object type to read (BTP): CLAS, INTF, FUNC, FUGR, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL (transparent tables and DDIC structures), DOMA, DTEL, MSAG, TABLE_CONTENTS, DEVC, SYSTEM, COMPONENTS, BSP, BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS. Deprecated alias: MESSAGES (use MSAG).'
-              : 'Object type to read (on-prem): PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL (transparent tables and DDIC structures), VIEW, DOMA, DTEL, MSAG, TRAN, TABLE_CONTENTS, DEVC, SOBJ, SYSTEM, COMPONENTS, TEXT_ELEMENTS, VARIANTS, BSP, BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS, AUTH, FEATURE_TOGGLE, ENHO, VERSIONS, VERSION_SOURCE. Deprecated aliases: MESSAGES (use MSAG), FTG2 (use FEATURE_TOGGLE).',
+              ? 'Object type to read (BTP): CLAS, INTF, FUNC, FUGR, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL (transparent tables and DDIC structures), DOMA, DTEL, MSAG, TABLE_CONTENTS, TABLE_QUERY, DEVC, SYSTEM, COMPONENTS, BSP, BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS. Deprecated alias: MESSAGES (use MSAG).'
+              : 'Object type to read (on-prem): PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL (transparent tables and DDIC structures), VIEW, DOMA, DTEL, MSAG, TRAN, TABLE_CONTENTS, TABLE_QUERY, DEVC, SOBJ, SYSTEM, COMPONENTS, TEXT_ELEMENTS, VARIANTS, BSP, BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS, AUTH, FEATURE_TOGGLE, ENHO, VERSIONS, VERSION_SOURCE. Deprecated aliases: MESSAGES (use MSAG), FTG2 (use FEATURE_TOGGLE).',
           },
           name: { type: 'string', description: 'Object name (e.g., ZTEST_PROGRAM, ZCL_ORDER, MARA)' },
           include: {
@@ -557,7 +559,10 @@ export function getToolDefinitions(
             description:
               'For source reads: bypass cached source and inactive-list state before reading. Use when you know the object changed outside ARC-1.',
           },
-          maxRows: { type: 'number', description: 'For TABLE_CONTENTS: max rows to return (default 100)' },
+          maxRows: {
+            type: 'number',
+            description: 'For TABLE_CONTENTS and TABLE_QUERY: max rows to return (default 100)',
+          },
           maxResults: {
             type: 'number',
             description:
@@ -577,6 +582,29 @@ export function getToolDefinitions(
             type: 'string',
             description:
               'For VERSION_SOURCE: URI of a specific revision from SAPRead(type="VERSIONS") response (.revisions[].uri). Must start with /sap/bc/adt/.',
+          },
+          columns: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'For TABLE_QUERY: columns to SELECT (default: all). Example: ["MATNR","BWART","BUDAT","MENGE"].',
+          },
+          where: {
+            type: 'array',
+            description:
+              'For TABLE_QUERY: structured WHERE conditions, ANDed together. Each item: {field, op, value?}. ' +
+              'Allowed ops: =, !=, <>, <, <=, >, >=, LIKE, NOT LIKE, IN, NOT IN, IS NULL, IS NOT NULL. ' +
+              "For IN/NOT IN: value must be a comma-separated list of single-quoted literals, e.g. \"'261','262'\". Subqueries are not allowed. " +
+              'Example: [{"field":"MATNR","op":"=","value":"300006888"},{"field":"BUDAT_MKPF","op":">=","value":"20250101"}].',
+            items: {
+              type: 'object',
+              properties: {
+                field: { type: 'string', description: 'SAP field name (uppercase)' },
+                op: { type: 'string', description: 'Comparison operator' },
+                value: { type: 'string', description: 'Value to compare (omit for IS NULL / IS NOT NULL)' },
+              },
+              required: ['field', 'op'],
+            },
           },
         },
         required: ['type'],
@@ -1553,6 +1581,170 @@ export function getToolDefinitions(
           limit: {
             type: 'number',
             description: 'Optional limit for history queries.',
+          },
+        },
+        required: ['action'],
+      },
+    });
+  }
+
+  // SAPDebug — runtime ABAP debugging via ADT debugger endpoints.
+  // Registered only when allowDebug is enabled. Read-only actions stay available
+  // even without allowWrites; mutating actions (set_breakpoints, delete_breakpoint,
+  // attach, step, set_variable_value) require allowWrites + allowDebug.
+  if (config.allowDebug) {
+    const sapDebugReadActions = ['listener_status', 'stack', 'variables', 'child_variables'] as const;
+    const sapDebugWriteActions = [
+      'listen',
+      'delete_listener',
+      'set_breakpoints',
+      'delete_breakpoint',
+      'attach',
+      'step',
+      'set_variable_value',
+    ] as const;
+    const sapDebugActions = config.allowWrites
+      ? [...sapDebugReadActions, ...sapDebugWriteActions]
+      : [...sapDebugReadActions];
+    tools.push({
+      name: 'SAPDebug',
+      description:
+        'Runtime ABAP debugging via ADT debugger endpoints. Long-poll listener attach, ' +
+        'external breakpoints, stack/variable inspection, stepping, set variable value. ' +
+        'Single-session-per-user constraint applies (conflicts with SAPGUI debug).',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          action: {
+            type: 'string',
+            enum: sapDebugActions,
+            description:
+              'Debug action. Read: listener_status, stack, variables, child_variables. ' +
+              'Write (requires SAP_ALLOW_WRITES=true and SAP_ALLOW_DEBUG=true): listen, delete_listener, ' +
+              'set_breakpoints, delete_breakpoint, attach, step, set_variable_value.',
+          },
+          debuggingMode: {
+            type: 'string',
+            enum: ['user', 'terminal'],
+            description: 'Debug session mode. Default: user.',
+          },
+          terminalId: {
+            type: 'string',
+            description: 'Stable terminal/IDE identifier (UUID). Required for listen/attach/breakpoints.',
+          },
+          ideId: {
+            type: 'string',
+            description: 'Stable IDE identifier (UUID). Required for listen/attach/breakpoints.',
+          },
+          clientId: {
+            type: 'string',
+            description: 'Client-supplied breakpoint ID. Required for set_breakpoints.',
+          },
+          requestUser: {
+            type: 'string',
+            description: 'Optional user whose session to attach to (defaults to logged-in user).',
+          },
+          checkConflict: {
+            type: 'boolean',
+            description: 'Whether to check for existing listener conflict on listen. Default true.',
+          },
+          isNotifiedOnConflict: {
+            type: 'boolean',
+            description: 'Whether to be notified on conflict for listen. Default true.',
+          },
+          timeoutMs: {
+            type: 'number',
+            description:
+              'Max wait time in ms for listen. Default ~100h (matches Eclipse ADT). SAP sends keepalive chunks to keep the connection alive; the call returns as soon as a breakpoint fires. Override only if you want a hard deadline.',
+          },
+          debuggeeId: {
+            type: 'string',
+            description: 'Debuggee session id returned by listen. Required for attach.',
+          },
+          dynproDebugging: {
+            type: 'boolean',
+            description: 'Whether to debug dynpros. Default true.',
+          },
+          scope: {
+            type: 'string',
+            enum: ['external', 'debugger'],
+            description: 'Breakpoint scope. Default external.',
+          },
+          systemDebugging: {
+            type: 'boolean',
+            description: 'Enable system debugging on breakpoints. Default false.',
+          },
+          deactivated: {
+            type: 'boolean',
+            description: 'Create breakpoints in deactivated state. Default false.',
+          },
+          syncScopeUri: {
+            type: 'string',
+            description: 'Optional partial sync scope object URI for breakpoints.',
+          },
+          breakpoints: {
+            type: 'array',
+            description:
+              'Breakpoints to set. Each entry is either a string (object URI) or an object with kind, clientId, uri, optional condition.',
+            items: {
+              oneOf: [
+                { type: 'string' },
+                {
+                  type: 'object',
+                  properties: {
+                    kind: { type: 'string' },
+                    clientId: { type: 'string' },
+                    uri: { type: 'string' },
+                    line: { type: 'number' },
+                    condition: { type: 'string' },
+                  },
+                  required: ['uri'],
+                },
+              ],
+            },
+          },
+          breakpointId: {
+            type: 'string',
+            description: 'Breakpoint id to delete (returned from set_breakpoints).',
+          },
+          step: {
+            type: 'string',
+            enum: [
+              'stepInto',
+              'stepOver',
+              'stepReturn',
+              'stepContinue',
+              'stepRunToLine',
+              'stepJumpToLine',
+              'terminateDebuggee',
+            ],
+            description: 'Step type for action=step.',
+          },
+          stepUri: {
+            type: 'string',
+            description: 'Optional URI for stepRunToLine / stepJumpToLine.',
+          },
+          ids: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Variable IDs to read for action=variables.',
+          },
+          parents: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Parent variable IDs for action=child_variables. Default ["@ROOT","@DATAAGING"].',
+          },
+          variableName: {
+            type: 'string',
+            description: 'Variable name for set_variable_value.',
+          },
+          value: {
+            type: 'string',
+            description: 'New value for set_variable_value.',
+          },
+          semanticURIs: {
+            type: 'boolean',
+            description: 'Use semantic URIs for stack. Default true.',
           },
         },
         required: ['action'],

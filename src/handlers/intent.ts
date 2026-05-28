@@ -1877,6 +1877,15 @@ async function handleSAPRead(
       const data = await client.getTableContents(name, maxRows, args.sqlFilter as string | undefined);
       return textResult(JSON.stringify(data, null, 2));
     }
+    case 'TABLE_QUERY': {
+      const maxRows = Number(args.maxRows ?? 100);
+      const columns = Array.isArray(args.columns) ? (args.columns as string[]) : undefined;
+      const where = Array.isArray(args.where)
+        ? (args.where as Array<{ field: string; op: string; value?: string }>)
+        : undefined;
+      const data = await client.runTableQuery(name, { columns, where, maxRows });
+      return textResult(JSON.stringify(data, null, 2));
+    }
     case 'SOBJ': {
       const method = String(args.method ?? '');
       // Sanitize inputs to prevent SQL injection — BOR names are alphanumeric + underscore only
