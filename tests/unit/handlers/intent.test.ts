@@ -97,6 +97,187 @@ describe('Intent Handler', () => {
       expect(result.isError).toBeUndefined();
     });
 
+    describe('grep', () => {
+      const PROG_SRC =
+        'REPORT zfoo.\nDATA lv TYPE i.\nlv = 1.\nlv = 2.\nlv = 3.\nSELECT * FROM mara INTO TABLE @lt.\nWRITE lv.';
+
+      it('PROG grep returns only matching lines + context, not the whole source', async () => {
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValue(mockResponse(200, PROG_SRC, { 'x-csrf-token': 't' }));
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+          type: 'PROG',
+          name: 'ZFOO',
+          grep: 'SELECT',
+        });
+        expect(result.isError).toBeUndefined();
+        expect(result.content[0]?.text).toContain('match(es) for /SELECT/i');
+        expect(result.content[0]?.text).toContain('SELECT * FROM mara');
+        // line 1 (REPORT) is outside the ±3 context window of the match on line 6
+        expect(result.content[0]?.text).not.toContain('REPORT zfoo');
+      });
+
+      it('grep with no match returns a friendly message', async () => {
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValue(mockResponse(200, PROG_SRC, { 'x-csrf-token': 't' }));
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+          type: 'PROG',
+          name: 'ZFOO',
+          grep: 'ZZZ_NO_SUCH_TOKEN',
+        });
+        expect(result.isError).toBeUndefined();
+        expect(result.content[0]?.text).toContain('No matches found');
+      });
+
+      it('grep with an unusable pattern (no literal match either) returns an error', async () => {
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValue(mockResponse(200, PROG_SRC, { 'x-csrf-token': 't' }));
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+          type: 'PROG',
+          name: 'ZFOO',
+          grep: 'nope(',
+        });
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toContain('Invalid regex pattern');
+      });
+
+      it('grep works on a non-CLAS source type (BDEF)', async () => {
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValue(
+          mockResponse(200, 'define behavior for ZI_Foo\n{\n  create;\n  update;\n  delete;\n}', {
+            'x-csrf-token': 't',
+          }),
+        );
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+          type: 'BDEF',
+          name: 'ZI_FOO',
+          grep: 'create',
+        });
+        expect(result.isError).toBeUndefined();
+        expect(result.content[0]?.text).toContain('match(es)');
+        expect(result.content[0]?.text).toContain('create');
+      });
+
+      it('CLAS grep annotates matches with the owning class/method', async () => {
+        const clasSrc = [
+          'CLASS zcl_test DEFINITION PUBLIC.',
+          '  PUBLIC SECTION.',
+          '    METHODS read.',
+          'ENDCLASS.',
+          'CLASS zcl_test IMPLEMENTATION.',
+          '  METHOD read.',
+          '    SELECT * FROM mara INTO TABLE @lt.',
+          '  ENDMETHOD.',
+          'ENDCLASS.',
+        ].join('\n');
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValue(mockResponse(200, clasSrc, { 'x-csrf-token': 't' }));
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+          type: 'CLAS',
+          name: 'ZCL_TEST',
+          grep: 'SELECT',
+        });
+        expect(result.isError).toBeUndefined();
+        expect(result.content[0]?.text).toContain('section=main');
+        expect(result.content[0]?.text).toContain('SELECT * FROM mara');
+        // method annotation: a [class=>method] label is present
+        expect(result.content[0]?.text).toMatch(/=>\s*read/i);
+      });
+
+      it('CLAS grep + method returns a combine error', async () => {
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+          type: 'CLAS',
+          name: 'ZCL_TEST',
+          grep: 'x',
+          method: 'read',
+        });
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toContain('Do not combine grep with method');
+      });
+
+      it('CLAS grep + include searches the raw section', async () => {
+        const testSrc = [
+          'CLASS ltcl_test DEFINITION FOR TESTING.',
+          '  PRIVATE SECTION.',
+          '    METHODS first_test FOR TESTING.',
+          'ENDCLASS.',
+          'CLASS ltcl_test IMPLEMENTATION.',
+          '  METHOD first_test.',
+          '    cl_abap_unit_assert=>assert_true( abap_true ).',
+          '  ENDMETHOD.',
+          'ENDCLASS.',
+        ].join('\n');
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValue(mockResponse(200, testSrc, { 'x-csrf-token': 't' }));
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+          type: 'CLAS',
+          name: 'ZCL_TEST',
+          grep: 'assert_true',
+          include: 'testclasses',
+        });
+        expect(result.isError).toBeUndefined();
+        expect(result.content[0]?.text).toContain('section=testclasses');
+        expect(result.content[0]?.text).toContain('assert_true');
+        // raw include endpoint was used (no '=== inc ===' wrapper path)
+        const inclCall = mockFetch.mock.calls.find((c: any[]) => String(c[0]).includes('/includes/testclasses'));
+        expect(inclCall).toBeDefined();
+      });
+
+      it('CLAS grep + include="main" reads /source/main, never /includes/main', async () => {
+        const clasSrc = [
+          'CLASS zcl_test IMPLEMENTATION.',
+          '  METHOD m.',
+          '    SELECT * FROM mara INTO TABLE @lt.',
+          '  ENDMETHOD.',
+          'ENDCLASS.',
+        ].join('\n');
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValue(mockResponse(200, clasSrc, { 'x-csrf-token': 't' }));
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+          type: 'CLAS',
+          name: 'ZCL_TEST',
+          grep: 'SELECT',
+          include: 'main',
+        });
+        expect(result.isError).toBeUndefined();
+        expect(result.content[0]?.text).toContain('section=main');
+        expect(result.content[0]?.text).toContain('SELECT * FROM mara');
+        const urls = mockFetch.mock.calls.map((c: any[]) => String(c[0]));
+        // 'main' must resolve to /source/main, not the non-existent /includes/main endpoint
+        expect(urls.some((u) => u.includes('/includes/main'))).toBe(false);
+        expect(urls.some((u) => u.includes('/source/main'))).toBe(true);
+      });
+
+      it('CLAS grep + a missing include returns a friendly message, not a raw 404', async () => {
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValue(mockResponse(404, 'Not Found', { 'x-csrf-token': 't' }));
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+          type: 'CLAS',
+          name: 'ZCL_TEST',
+          grep: 'x',
+          include: 'testclasses',
+        });
+        expect(result.isError).toBeUndefined();
+        expect(result.content[0]?.text).toContain('not available');
+      });
+
+      it('grep works on a DDIC source type (TABL)', async () => {
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValue(
+          mockResponse(200, 'define structure zfoo {\n  field1 : abap.int4;\n  matnr : matnr;\n}', {
+            'x-csrf-token': 't',
+          }),
+        );
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+          type: 'TABL',
+          name: 'ZFOO',
+          grep: 'matnr',
+        });
+        expect(result.isError).toBeUndefined();
+        expect(result.content[0]?.text).toContain('match(es)');
+        expect(result.content[0]?.text).toContain('matnr');
+      });
+    });
+
     it('reads active version with draft warning when inactive list contains the object', async () => {
       mockFetch.mockReset();
       mockFetch

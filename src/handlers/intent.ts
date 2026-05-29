@@ -176,6 +176,7 @@ import { validateAffHeader } from '../aff/validator.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
 import { extractCdsDependencies, extractCdsElements } from '../context/cds-deps.js';
 import { compressCdsContext, compressContext } from '../context/compressor.js';
+import { grepSource } from '../context/grep.js';
 import { extractMethod, formatMethodListing, listMethods, spliceMethod } from '../context/method-surgery.js';
 import {
   buildLintConfig,
@@ -1492,6 +1493,12 @@ async function handleSAPRead(
     return textResult(`${note}${indicator}${source}`);
   };
 
+  /** When args.grep is set, return only matching source lines (+context) instead of full source. */
+  const grepText = (source: string): ToolResult => {
+    const g = grepSource(source, String(args.grep));
+    return g.invalidPattern ? errorResult(g.output) : textResult(g.output);
+  };
+
   // Structured format is only supported for CLAS type
   if (args.format === 'structured' && type !== 'CLAS') {
     return errorResult('The "structured" format is only supported for CLAS type. Other types return text format.');
@@ -1502,9 +1509,50 @@ async function handleSAPRead(
       const { source, cacheHit, revalidated } = await cachedGet('PROG', name, effectiveVersion, (ifNoneMatch) =>
         client.getProgram(name, { ifNoneMatch, version: effectiveVersion }),
       );
+      if (args.grep) return grepText(source);
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
     case 'CLAS': {
+      // grep: return only matching source lines (+context), annotated with the owning class/method.
+      if (args.grep) {
+        if (args.method) {
+          return errorResult(
+            'Do not combine grep with method. Use grep to find code, then method="<name>" to read the full method.',
+          );
+        }
+        const rawSection = args.include as string | undefined;
+        // 'main' (and the default) live at /source/main, not /includes/main — read via the
+        // cached main path; only real sub-includes go through the raw getClassInclude endpoint.
+        const section = rawSection && rawSection.toLowerCase() !== 'main' ? rawSection : undefined;
+        let clasSource: string;
+        if (section) {
+          try {
+            clasSource = (await client.getClassInclude(name, section, { version: effectiveVersion })).source;
+          } catch (err) {
+            if (isNotFoundError(err)) {
+              return textResult(
+                `Include "${section}" is not available for class ${name}. Run grep without include= to search the full class source.`,
+              );
+            }
+            throw err;
+          }
+        } else {
+          clasSource = (
+            await cachedGet('CLAS', name, effectiveVersion, (ifNoneMatch) =>
+              client.getClass(name, undefined, { ifNoneMatch, version: effectiveVersion }),
+            )
+          ).source;
+        }
+        const abaplintVer = cachedFeatures?.abapRelease
+          ? mapSapReleaseToAbaplintVersion(cachedFeatures.abapRelease)
+          : undefined;
+        // MethodInfo is a structural superset of grepSource's MethodRange — pass through directly.
+        const listing = listMethods(clasSource, name, abaplintVer);
+        const g = grepSource(clasSource, String(args.grep), listing.success ? { methods: listing.methods } : undefined);
+        return g.invalidPattern
+          ? errorResult(g.output)
+          : textResult(`[${name} section=${rawSection ?? 'main'}]\n${g.output}`);
+      }
       // Structured format: return JSON with metadata + decomposed source
       if (args.format === 'structured') {
         const structured = await client.getClassStructured(name);
@@ -1545,6 +1593,7 @@ async function handleSAPRead(
       const { source, cacheHit, revalidated } = await cachedGet('INTF', name, effectiveVersion, (ifNoneMatch) =>
         client.getInterface(name, { ifNoneMatch, version: effectiveVersion }),
       );
+      if (args.grep) return grepText(source);
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
     case 'FUNC': {
@@ -1583,6 +1632,7 @@ async function handleSAPRead(
         };
         return textResult(JSON.stringify(payload, null, 2));
       }
+      if (args.grep) return grepText(source);
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
     case 'FUGR': {
@@ -1611,6 +1661,7 @@ async function handleSAPRead(
       const { source, cacheHit, revalidated } = await cachedGet('INCL', name, effectiveVersion, (ifNoneMatch) =>
         client.getInclude(name, { ifNoneMatch, version: effectiveVersion }),
       );
+      if (args.grep) return grepText(source);
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
     case 'DDLS': {
@@ -1631,24 +1682,28 @@ async function handleSAPRead(
         // Elements extraction is derived from source — no cache indicator
         return cachedTextResult(extractCdsElements(ddlSource, name), false, false, versionWarning);
       }
+      if (args.grep) return grepText(ddlSource);
       return cachedTextResult(ddlSource, cacheHit, revalidated, versionWarning);
     }
     case 'DCLS': {
       const { source, cacheHit, revalidated } = await cachedGet('DCLS', name, effectiveVersion, (ifNoneMatch) =>
         client.getDcl(name, { ifNoneMatch, version: effectiveVersion }),
       );
+      if (args.grep) return grepText(source);
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
     case 'BDEF': {
       const { source, cacheHit, revalidated } = await cachedGet('BDEF', name, effectiveVersion, (ifNoneMatch) =>
         client.getBdef(name, { ifNoneMatch, version: effectiveVersion }),
       );
+      if (args.grep) return grepText(source);
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
     case 'SRVD': {
       const { source, cacheHit, revalidated } = await cachedGet('SRVD', name, effectiveVersion, (ifNoneMatch) =>
         client.getSrvd(name, { ifNoneMatch, version: effectiveVersion }),
       );
+      if (args.grep) return grepText(source);
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
     case 'DDLX': {
@@ -1656,6 +1711,7 @@ async function handleSAPRead(
         const { source, cacheHit, revalidated } = await cachedGet('DDLX', name, effectiveVersion, (ifNoneMatch) =>
           client.getDdlx(name, { ifNoneMatch, version: effectiveVersion }),
         );
+        if (args.grep) return grepText(source);
         return cachedTextResult(source, cacheHit, revalidated, versionWarning);
       } catch (err) {
         if (isNotFoundError(err)) {
@@ -1697,12 +1753,14 @@ async function handleSAPRead(
       const { source, cacheHit, revalidated } = await cachedGet('TABL', name, effectiveVersion, (ifNoneMatch) =>
         client.getTabl(name, { ifNoneMatch, version: effectiveVersion }),
       );
+      if (args.grep) return grepText(source);
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
     case 'VIEW': {
       const { source, cacheHit, revalidated } = await cachedGet('VIEW', name, effectiveVersion, (ifNoneMatch) =>
         client.getView(name, { ifNoneMatch, version: effectiveVersion }),
       );
+      if (args.grep) return grepText(source);
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
     case 'DOMA': {

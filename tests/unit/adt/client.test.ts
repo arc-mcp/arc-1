@@ -123,6 +123,17 @@ describe('AdtClient', () => {
       expect(urlUsed).toContain('/includes/definitions?version=inactive');
     });
 
+    it('getClassInclude GETs the raw /includes/<inc> source with no === wrapper', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, 'CLASS ltcl_test IMPLEMENTATION.\nENDCLASS.'));
+      const client = createClient();
+      const result = await client.getClassInclude('ZCL_TEST', 'testclasses');
+      expect(result.source).toBe('CLASS ltcl_test IMPLEMENTATION.\nENDCLASS.');
+      expect(result.source).not.toContain('==='); // raw, unlike getClass(name, include)
+      const url = mockFetch.mock.calls[0]?.[0] as string;
+      expect(url).toContain('/sap/bc/adt/oo/classes/ZCL_TEST/includes/testclasses');
+    });
+
     it('getClass with multiple comma-separated includes', async () => {
       const client = createClient();
       const result = await client.getClass('ZCL_TEST', 'definitions,implementations');
