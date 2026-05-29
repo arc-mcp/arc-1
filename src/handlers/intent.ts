@@ -3650,23 +3650,13 @@ async function handleSAPWrite(
   // `buildCreateXml('FUNC', …, properties)` finds it.
   let objectUrl: string;
   let srcUrl: string;
-  if (
-    (type === 'TABL' || type === 'TABL/DT' || type === 'TABL/DS') &&
-    action !== 'create' &&
-    action !== 'batch_create'
-  ) {
-    // All TABL forms route through the search-first resolver on update/delete/activate
-    // so the PR #286 SE11-hint refusal applies even when callers pass an explicit slash form.
-    try {
-      objectUrl = await client.resolveTablObjectUrlForWrite(name, {
-        tablesEndpointAvailable: isTablesEndpointAvailable(),
-      });
-    } catch (resolveErr) {
-      if (resolveErr instanceof AdtSafetyError) {
-        return errorResult(resolveErr.message);
-      }
-      throw resolveErr;
-    }
+  if (type === 'TABL' && action === 'create' && /extend\s+type\b/i.test(source)) {
+    // CDS structure extension (extend type …) — must POST to /structures/, not /tables/.
+    // /tables/ rejects names longer than 16 chars and would set TABCLASS=INTTAB.
+    objectUrl = `/sap/bc/adt/ddic/structures/${encodeURIComponent(name)}`;
+    srcUrl = `${objectUrl}/source/main`;
+  } else if (type === 'TABL' && action !== 'create' && action !== 'batch_create') {
+    objectUrl = await client.resolveTablObjectUrl(name);
     srcUrl = `${objectUrl}/source/main`;
   } else if (type === 'FUNC') {
     let group = String(args.group ?? '').trim();
