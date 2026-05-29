@@ -10,7 +10,7 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import type { BTPConfig, BTPProxyConfig } from '../adt/btp.js';
+import type { BTPConfig, BTPProxyConfig, PerUserAuthTokens } from '../adt/btp.js';
 import { AdtClient } from '../adt/client.js';
 import type { AdtClientConfig } from '../adt/config.js';
 import { resolveCookies } from '../adt/cookies.js';
@@ -275,20 +275,47 @@ async function createPerUserClient(
     displayUsername = undefined;
   }
 
+  applyPerUserAuthTokens(adtConfig, authTokens, displayUsername, destName);
+
+  return new AdtClient(adtConfig);
+}
+
+/**
+ * Map per-user auth tokens from the BTP Destination Service onto an AdtClientConfig.
+ * Mutates and returns `adtConfig`. Exported for unit testing.
+ *
+ * Precedence (most-specific first):
+ *  1. ppProxyAuth         — Option 1: jwt-bearer exchanged token → Proxy-Authorization (Cloud Connector)
+ *  2. sapConnectivityAuth — Option 2: SAML assertion → SAP-Connectivity-Authentication (Cloud Connector)
+ *  3. bearerToken         — OAuth2UserTokenExchange / OAuth2SAMLBearerAssertion: a user-context Bearer
+ *                           token minted at the target's XSUAA → `Authorization: Bearer` (cloud-to-cloud,
+ *                           e.g. a BTP ABAP Environment over the Internet — no Cloud Connector / proxy).
+ *
+ * Throws when none is present (PP could not produce a usable per-user credential).
+ *
+ * In every success branch the SAP password is cleared and `username` is set to a display-only
+ * value — it is never used for auth or access control; the real SAP identity rides in the
+ * chosen token/assertion.
+ */
+export function applyPerUserAuthTokens(
+  adtConfig: Partial<AdtClientConfig>,
+  authTokens: PerUserAuthTokens,
+  displayUsername: string | undefined,
+  destName: string,
+): Partial<AdtClientConfig> {
   if (authTokens.ppProxyAuth) {
-    // Option 1: exchanged token replaces Proxy-Authorization
     adtConfig.ppProxyAuth = authTokens.ppProxyAuth;
-    adtConfig.username = displayUsername;
-    adtConfig.password = undefined;
   } else if (authTokens.sapConnectivityAuth) {
-    // Option 2: SAML assertion from Destination Service
     adtConfig.sapConnectivityAuth = authTokens.sapConnectivityAuth;
-    adtConfig.username = displayUsername;
-    adtConfig.password = undefined;
   } else if (authTokens.bearerToken) {
-    // TODO: Bearer token auth for OAuth2SAMLBearerAssertion destinations
-    // This would replace basic auth with Bearer token
-    logger.warn('Bearer token auth from destination not yet implemented — falling back to basic auth');
+    // createPerUserClient runs per request and the Cloud SDK caches the exchanged token per
+    // user (TTL-bounded), so a provider returning the already-resolved token is fresh for the
+    // request's lifetime.
+    const bearer = authTokens.bearerToken;
+    adtConfig.bearerTokenProvider = async () => bearer;
+    logger.debug('PP: using destination-exchanged Bearer token (OAuth2UserTokenExchange)', {
+      destination: destName,
+    });
   } else {
     // No per-user auth token received.
     throw new Error(
@@ -297,8 +324,9 @@ async function createPerUserClient(
         'Check Cloud Connector status, destination configuration, and user JWT validity.',
     );
   }
-
-  return new AdtClient(adtConfig);
+  adtConfig.username = displayUsername;
+  adtConfig.password = undefined;
+  return adtConfig;
 }
 
 /**

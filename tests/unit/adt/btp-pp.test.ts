@@ -113,6 +113,55 @@ describe('lookupDestinationWithUserToken', () => {
     expect(result.authTokens.sapConnectivityAuth).toBeUndefined();
   });
 
+  it('returns Bearer token for OAuth2UserTokenExchange (SDK lowercases type to "bearer", #301)', async () => {
+    // Verified live against a BTP ABAP Environment: the Destination Service returns the auth
+    // token entry with type "bearer" (lowercase), not "Bearer". A capital-B-only check dropped it.
+    mockGetDestination.mockResolvedValueOnce({
+      name: 'ABAP_FREE_PP',
+      url: 'https://abc.abap.us10.hana.ondemand.com',
+      authentication: 'OAuth2UserTokenExchange',
+      proxyType: 'Internet',
+      username: '',
+      password: '',
+      authTokens: [
+        {
+          type: 'bearer',
+          value: 'abap-user-context-token',
+          error: null,
+          http_header: { key: 'Authorization', value: 'Bearer abap-user-context-token' },
+        },
+      ],
+    });
+
+    const result = await lookupDestinationWithUserToken(TEST_BTP_CONFIG, 'ABAP_FREE_PP', 'user-jwt');
+
+    expect(result.authTokens.bearerToken).toBe('abap-user-context-token');
+    expect(result.authTokens.sapConnectivityAuth).toBeUndefined();
+  });
+
+  it('falls back to the Authorization http_header when a bearer entry has no top-level value', async () => {
+    mockGetDestination.mockResolvedValueOnce({
+      name: 'ABAP_FREE_PP',
+      url: 'https://abc.abap.us10.hana.ondemand.com',
+      authentication: 'OAuth2UserTokenExchange',
+      proxyType: 'Internet',
+      username: '',
+      password: '',
+      authTokens: [
+        {
+          type: 'bearer',
+          value: '', // empty top-level value — only the header carries the token
+          error: null,
+          http_header: { key: 'Authorization', value: 'Bearer header-only-token' },
+        },
+      ],
+    });
+
+    const result = await lookupDestinationWithUserToken(TEST_BTP_CONFIG, 'ABAP_FREE_PP', 'user-jwt');
+
+    expect(result.authTokens.bearerToken).toBe('header-only-token');
+  });
+
   it('throws on auth token error from Destination Service', async () => {
     mockGetDestination.mockResolvedValueOnce({
       name: 'SAP_TRIAL',

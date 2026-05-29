@@ -4,6 +4,8 @@ ARC-1 supports direct connections to SAP BTP ABAP Environment (Steampunk) using 
 
 This is the same authentication flow used by Eclipse ADT when connecting to BTP ABAP systems — a browser opens for login, and tokens are cached for subsequent use.
 
+> **Deploying ARC-1 *on* BTP (Cloud Foundry), not on a laptop?** The service-key browser flow below is **local / stdio only** — it cannot complete on a headless server: the OAuth callback binds to the *container's* `localhost`, so the post-login redirect never returns (symptom: `Could not open browser…` then a 120 s timeout — [#301](https://github.com/marianfoo/arc-1/issues/301)). For a BTP-deployed ARC-1 talking to a BTP ABAP Environment, use a per-user `OAuth2UserTokenExchange` destination instead — see [Headless BTP Deployment](#headless-btp-deployment-per-user-token-exchange).
+
 > **Do not set `SAP_DISABLE_SAML=true` with BTP ABAP.** The SAML/SAML2 disable opt-in (SEC-09) is intended for on-prem SAP systems and breaks BTP ABAP / S/4HANA Public Cloud authentication. See [enterprise-auth.md](enterprise-auth.md) for details.
 
 ## Prerequisites
@@ -241,6 +243,58 @@ When the access token expires (~12 hours), ARC-1 automatically refreshes it usin
 ### Browser Doesn't Open?
 
 If the browser fails to open automatically (e.g., on a headless server), ARC-1 logs the authorization URL. Copy it and open it manually in any browser.
+
+## Headless BTP Deployment (Per-User Token Exchange)
+
+When ARC-1 runs **on** SAP BTP Cloud Foundry (not on a developer laptop), the service-key browser flow above cannot work — there is no browser, and the OAuth callback server binds to the *container's* `localhost`, so the post-login redirect never reaches it (this is [#301](https://github.com/marianfoo/arc-1/issues/301): `Could not open browser…` then a 120 s timeout). Instead, connect through the **BTP Destination Service** with a per-user `OAuth2UserTokenExchange` destination: it propagates each MCP user's identity to the ABAP Environment, runs fully headless, and needs **no Cloud Connector** (the ABAP Environment is Internet-facing).
+
+Put ARC-1's XSUAA and the ABAP Environment in the **same subaccount** — the user-token exchange is then trusted implicitly (no Communication Arrangement / technical user needed).
+
+### 1. Create the destination (cloud-to-cloud, per-user)
+
+From the ABAP instance's **service key** (`uaa` section), declaratively via the destination service instance (`cf create-service destination lite arc1-dest -c dest.json`):
+
+```json
+{ "init_data": { "instance": {
+  "existing_destinations_policy": "update",
+  "destinations": [{
+    "Name": "ABAP_PP",
+    "Type": "HTTP",
+    "URL": "https://<guid>.abap.<region>.hana.ondemand.com",
+    "ProxyType": "Internet",
+    "Authentication": "OAuth2UserTokenExchange",
+    "tokenServiceURL": "https://<subdomain>.authentication.<region>.hana.ondemand.com/oauth/token",
+    "clientId": "<service-key uaa.clientid>",
+    "clientSecret": "<service-key uaa.clientsecret>"
+  }]
+}}}
+```
+
+> Use the **literal** `clientId`/`clientSecret` from the ABAP service key. If they resolve to the *consuming* app's XSUAA instead of the ABAP instance, the exchange fails with `invalid_client – Bad credentials`.
+
+### 2. Configure ARC-1
+
+```yaml
+env:
+  SAP_SYSTEM_TYPE: btp
+  SAP_TRANSPORT: http-streamable
+  SAP_XSUAA_AUTH: "true"      # MCP clients authenticate via XSUAA OAuth
+  SAP_PP_ENABLED: "true"      # per-user principal propagation
+  SAP_BTP_DESTINATION: ABAP_PP
+services:
+  - <xsuaa instance>          # application plan, with role collections
+  - <destination instance>
+  # No connectivity service — cloud-to-cloud, no Cloud Connector.
+```
+
+Per request, ARC-1 validates the MCP user's XSUAA JWT → asks the Destination Service to exchange it for an ABAP-context Bearer token → sends `Authorization: Bearer <token>` on every ADT call, as the logged-in user.
+
+### Gotchas (learned the hard way)
+
+- **The MCP user needs ARC-1 scopes.** Assign a role collection (e.g. `ARC-1 Developer`/`ARC-1 Admin`) to the user, or XSUAA rejects login with `invalid_scope: This user is not allowed any of the requested scopes`.
+- **Assign it to the right IdP origin.** The same email can exist under several IdPs (e.g. *business users* vs *Default identity provider*) with *different* role collections. Assign the ARC-1 role collection to the origin the login token actually comes from — verify which identity logged in (`btp list security/user --of-idp <origin>`), don't assume.
+- **MCP Inspector caches OAuth tokens in browser localStorage.** Restarting `npx` does not clear it; after changing scopes use a **fresh incognito window** (or clear site data for `localhost:6274`) so it runs a clean OAuth.
+- **Verified live** against a BTP ABAP free-tier instance (2026): `SAPRead CLAS CL_ABAP_RANDOM` → `200`, running as the logged-in user, fully headless.
 
 ## Configuration Reference
 
