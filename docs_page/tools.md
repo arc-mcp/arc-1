@@ -206,6 +206,11 @@ Every match in the result set is stamped with an `_origin: 'adt' | 'db'` field s
 
 Create or update ABAP source code. Handles lock/modify/unlock automatically.
 
+> **NetWeaver < 7.51:** ADT writes over HTTP require a stateful session that older releases
+> don't honor, so writes fail with `423 invalid lock handle` until the `abapfs_extensions`
+> enhancement is installed on the SAP system. This is *not* SAP Note 2727890 (a separate
+> narrow bug). See [SAP trial setup → Writes fail with 423](sap-trial-setup.md) (423 troubleshooting section). S/4HANA (≥ 7.51) is unaffected.
+
 **Parameters:**
 
 | Parameter | Type | Required | Description |

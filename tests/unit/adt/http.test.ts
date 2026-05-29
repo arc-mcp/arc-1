@@ -924,6 +924,28 @@ describe('AdtHttpClient', () => {
       expect(fetchHeaders(0)['X-sap-adt-sessiontype']).toBe('stateful');
     });
 
+    // Regression guard for the vibing-steampunk #98 bug class: a class-include write
+    // (CCDEF/CCIMP/testclasses) must carry the stateful-session header so SAP's ICM
+    // routes the PUT to the same session that holds the ENQUEUE lock. ARC-1 sets the
+    // header at the session-client level (request()), so EVERY in-session request —
+    // including include PUTs — gets it; this test pins that for the include URL shape.
+    it('class-include PUT inside a stateful session carries X-sap-adt-sessiontype', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(200, ''));
+
+      const client = new AdtHttpClient(getDefaultConfig());
+      (client as unknown as { csrfToken: string }).csrfToken = 'T'; // skip CSRF fetch round-trip
+
+      await client.withStatefulSession(async (session) => {
+        await session.put(
+          '/sap/bc/adt/oo/classes/ZCL_X/includes/implementations?lockHandle=ABC',
+          'CLASS lcl IMPLEMENTATION. ENDCLASS.',
+          'text/plain',
+        );
+      });
+
+      expect(fetchHeaders(0)['X-sap-adt-sessiontype']).toBe('stateful');
+    });
+
     it('explicit extra headers win over discovery for Accept and Content-Type', async () => {
       mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'T' }));
       mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok'));

@@ -15,6 +15,7 @@ import { AdtClient } from '../adt/client.js';
 import type { AdtClientConfig } from '../adt/config.js';
 import { resolveCookies } from '../adt/cookies.js';
 import { AdtApiError } from '../adt/errors.js';
+import { shouldWarnPreStatefulRelease } from '../adt/release.js';
 import { deriveUserSafety, deriveUserSafetyFromProfile } from '../adt/safety.js';
 import { Semaphore } from '../adt/semaphore.js';
 import { getActionPolicy, hasRequiredScope } from '../authz/policy.js';
@@ -354,6 +355,19 @@ export function runStartupProbe(
         }
       }
       setCachedFeatures(features);
+      // Proactive warning: on SAP_BASIS < 7.51 the ADT REST handler does not honor the
+      // stateful-session header over HTTP, so object writes fail with 423 "invalid lock
+      // handle" until the abapfs_extensions enhancement is installed. Warn at startup —
+      // before the first cryptic 423 — but only when writes are enabled (issue #293).
+      if (shouldWarnPreStatefulRelease(config.allowWrites, features.abapRelease)) {
+        logger.warn(
+          `SAP_BASIS ${features.abapRelease} is below 7.51 and does not natively honor stateful ADT ` +
+            'HTTP sessions — object writes will fail with 423 "invalid lock handle" UNLESS the ' +
+            'abapfs_extensions enhancement is installed on the SAP system ' +
+            '(https://github.com/marcellourbani/abapfs_extensions). If writes already work, this is ' +
+            'installed and you can ignore this. See docs/sap-trial-setup.md (423 troubleshooting).',
+        );
+      }
       setCachedDiscovery(features.discoveryMap ?? new Map());
     } catch {
       setCachedDiscovery(new Map());

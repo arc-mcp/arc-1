@@ -416,7 +416,11 @@ function buildBaseErrorMessage(
     // Append additional SAP messages (line numbers, secondary errors) if available
     const enriched = enrichWithSapDetails(err, message);
     const argType = canonicalTablType(String(args.type ?? '').toUpperCase());
-    const classification = classifySapDomainError(err.statusCode, err.responseBody, err.path);
+    // Pass the detected SAP_BASIS release so the 423 lock-handle hint can specialize
+    // (< 7.51 → point at abapfs_extensions; see issue #293). cachedFeatures is set by the
+    // startup probe; config.abapRelease is the manual SAP_ABAP_RELEASE override fallback.
+    const abapRelease = cachedFeatures?.abapRelease ?? config.abapRelease;
+    const classification = classifySapDomainError(err.statusCode, err.responseBody, err.path, abapRelease);
 
     if (classification) {
       const transactionLine = classification.transaction ? `\nSAP Transaction: ${classification.transaction}` : '';
