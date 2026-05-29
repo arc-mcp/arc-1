@@ -245,4 +245,57 @@ ENDCLASS.`;
     expect(text).toMatch(/METHODS\s+hello/i);
     expect(text).toMatch(/METHODS\s+goodbye/i);
   });
+
+  it('change_method_visibility: moves a method between sections, preserving the body', async (ctx) => {
+    if (!seeded) {
+      ctx.skip();
+      return;
+    }
+    // The seeded `hello` is public and has a real body (`result = |Hello, { name }!|.`).
+    // Move it to PRIVATE — the body must survive (this is the safe alternative to
+    // delete_method + add_method, which would wipe it).
+    const result = await handleToolCall(client, cfg, 'SAPWrite', {
+      action: 'change_method_visibility',
+      type: 'CLAS',
+      name: className,
+      method: 'hello',
+      visibility: 'private',
+    });
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0]?.text).toMatch(/moved method.*HELLO/i);
+    expect(result.content[0]?.text).toMatch(/IMPLEMENTATION preserved/i);
+
+    const activate = await handleToolCall(client, cfg, 'SAPActivate', {
+      objects: [{ type: 'CLAS', name: className }],
+    });
+    expect(activate.isError).toBeUndefined();
+
+    // Read back: hello declaration now under PRIVATE SECTION, and the body survives.
+    const read = await handleToolCall(client, cfg, 'SAPRead', { type: 'CLAS', name: className });
+    expect(read.isError).toBeUndefined();
+    const text = read.content[0]?.text ?? '';
+    const privIdx = text.search(/PRIVATE SECTION/i);
+    const helloDeclIdx = text.search(/METHODS\s+hello/i);
+    expect(privIdx).toBeGreaterThan(-1);
+    expect(helloDeclIdx).toBeGreaterThan(privIdx);
+    // Body preserved — the whole point of change_method_visibility.
+    expect(text).toContain('result = |Hello, { name }!|.');
+  });
+
+  it('change_method_visibility: idempotent no-op when already in the target section', async (ctx) => {
+    if (!seeded) {
+      ctx.skip();
+      return;
+    }
+    // goodbye is still public; asking for public must be a no-op (no write).
+    const result = await handleToolCall(client, cfg, 'SAPWrite', {
+      action: 'change_method_visibility',
+      type: 'CLAS',
+      name: className,
+      method: 'goodbye',
+      visibility: 'public',
+    });
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0]?.text).toMatch(/already in the PUBLIC SECTION/i);
+  });
 });

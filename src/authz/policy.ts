@@ -65,6 +65,7 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   'SAPWrite.add_method': { scope: 'write', opType: OperationType.Update },
   'SAPWrite.edit_method_signature': { scope: 'write', opType: OperationType.Update },
   'SAPWrite.delete_method': { scope: 'write', opType: OperationType.Update },
+  'SAPWrite.change_method_visibility': { scope: 'write', opType: OperationType.Update },
   'SAPWrite.batch_create': { scope: 'write', opType: OperationType.Create },
   // scaffold_rap_handlers updates an existing behavior-pool CLAS (writes method
   // declarations into one or more includes). It is a RAP-feature-specific

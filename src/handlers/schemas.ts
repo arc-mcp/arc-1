@@ -513,6 +513,7 @@ export const SAPWriteSchema = z
       'add_method',
       'edit_method_signature',
       'delete_method',
+      'change_method_visibility',
       'batch_create',
       'scaffold_rap_handlers',
       'generate_behavior_implementation',
@@ -525,7 +526,11 @@ export const SAPWriteSchema = z
       z.enum(SAPWRITE_CLAS_INCLUDES).optional(),
     ),
     method: z.string().optional(),
-    /** Visibility section target for action="add_method". Default 'public'. (Issue #303) */
+    /**
+     * Visibility section. For action="add_method": the section to insert into (default 'public').
+     * For action="change_method_visibility": the TARGET section to move the method to (required).
+     * (Issue #303)
+     */
     visibility: z.enum(['public', 'protected', 'private']).optional(),
     /** For action="add_method": when true, no METHOD/ENDMETHOD stub is inserted into IMPLEMENTATION. (Issue #303) */
     abstract: looseOptionalBoolean,
@@ -602,6 +607,7 @@ export const SAPWriteSchemaBtp = z
       'add_method',
       'edit_method_signature',
       'delete_method',
+      'change_method_visibility',
       'batch_create',
       'scaffold_rap_handlers',
       'generate_behavior_implementation',
@@ -614,7 +620,11 @@ export const SAPWriteSchemaBtp = z
       z.enum(SAPWRITE_CLAS_INCLUDES).optional(),
     ),
     method: z.string().optional(),
-    /** Visibility section target for action="add_method". Default 'public'. (Issue #303) */
+    /**
+     * Visibility section. For action="add_method": the section to insert into (default 'public').
+     * For action="change_method_visibility": the TARGET section to move the method to (required).
+     * (Issue #303)
+     */
     visibility: z.enum(['public', 'protected', 'private']).optional(),
     /** For action="add_method": when true, no METHOD/ENDMETHOD stub is inserted into IMPLEMENTATION. (Issue #303) */
     abstract: looseOptionalBoolean,

@@ -250,6 +250,7 @@ describe('Tool Definitions', () => {
     expect(actionEnum).toContain('add_method');
     expect(actionEnum).toContain('edit_method_signature');
     expect(actionEnum).toContain('delete_method');
+    expect(actionEnum).toContain('change_method_visibility');
   });
 
   it('SAPWrite schema exposes visibility + abstract for add_method (issue #303)', () => {
@@ -269,6 +270,18 @@ describe('Tool Definitions', () => {
     const desc: string = schema.properties.action.description;
     expect(desc).toMatch(/edit_class_definition/);
     expect(desc).toMatch(/add_method/);
+  });
+
+  it('SAPWrite action description steers visibility changes to change_method_visibility, not delete+recreate (issue #303 follow-up)', () => {
+    const tools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true });
+    const sapWrite = tools.find((t) => t.name === 'SAPWrite')!;
+    const schema = sapWrite.inputSchema as Record<string, any>;
+    const desc: string = schema.properties.action.description;
+    // The new action is documented...
+    expect(desc).toMatch(/change_method_visibility/);
+    // ...and delete_method carries a destructive warning steering toward it.
+    expect(desc).toMatch(/destructive/i);
+    expect(desc).toMatch(/preserved|preserves/i);
   });
 
   it('SAPLint exposes lint + formatter actions (atc/syntax moved to SAPDiagnose)', () => {

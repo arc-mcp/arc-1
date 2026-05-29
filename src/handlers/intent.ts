@@ -37,6 +37,7 @@ import {
   extractMethodNameFromClause,
   findSectionAnchor,
   insertMethodPair,
+  moveMethodDefinition,
   removeMethodPair,
   spliceClassDefinition,
   spliceMethodSignature,
@@ -4517,6 +4518,79 @@ async function handleSAPWrite(
       const where = method.implementation ? ' (DEFINITION + IMPLEMENTATION)' : ' (DEFINITION only — was ABSTRACT)';
       return textResult(
         `Successfully deleted method "${method.name}" from ${type} ${name}${where}. Active version unchanged until activation; SAPActivate next.`,
+      );
+    }
+
+    case 'change_method_visibility': {
+      // Body-preserving visibility move (issue #303 follow-up). Moves the METHODS
+      // clause from its current section to the target section; the IMPLEMENTATION
+      // block is never touched, so the method body survives. This is the safe
+      // alternative to delete_method + add_method (which discards the body).
+      if (type !== 'CLAS') return errorResult('change_method_visibility is only supported for type=CLAS.');
+      const methodSpecifier = String(args.method ?? '').trim();
+      if (!methodSpecifier) {
+        return errorResult('"method" (the method NAME to move) is required for change_method_visibility.');
+      }
+      const target = args.visibility as 'public' | 'protected' | 'private' | undefined;
+      if (!target) {
+        return errorResult(
+          '"visibility" (target section: public, protected, or private) is required for change_method_visibility.',
+        );
+      }
+      // MAIN-only action: include= is rejected at the schema layer (not in
+      // SAPWRITE_INCLUDE_AWARE_ACTIONS). Defensive guard for direct CLI calls.
+      if (includeProvided) {
+        return errorResult(
+          'change_method_visibility targets the global class DEFINITION (/source/main). For local-class (CCDEF) methods, use edit_class_definition with include=definitions.',
+        );
+      }
+      await enforcePackageForExistingObject();
+
+      const { structure, main } = await fetchClassStructureAndMain(name);
+      const upperName = methodSpecifier.toUpperCase();
+      const method = structure.methods.find((m) => m.name === upperName);
+      if (!method) {
+        const available = structure.methods.map((m) => m.name).join(', ');
+        const hint = methodSpecifier.includes('~')
+          ? ' Interface-qualified names (e.g. "zif_x~m") are not addressable here; objectstructure lists methods under their bare names.'
+          : '';
+        return errorResult(
+          `Method "${methodSpecifier}" not found in CLAS ${name}. Available methods: ${available || '(none)'}.${hint}`,
+        );
+      }
+
+      // Idempotent: already in the requested section → no write.
+      if (method.visibility === target) {
+        return textResult(
+          `Method "${method.name}" is already in the ${target.toUpperCase()} SECTION of ${type} ${name}. No change made.`,
+        );
+      }
+
+      // The target section header must already exist (same constraint as add_method).
+      const anchor = findSectionAnchor(main, structure, target);
+      if (!anchor) {
+        return errorResult(
+          `No ${target.toUpperCase()} SECTION exists in CLAS ${name}. Use SAPWrite(action="edit_class_definition") to add the section header first, then re-run change_method_visibility.`,
+        );
+      }
+
+      // DEFINITION-only move — IMPLEMENTATION (the method body) is preserved verbatim.
+      const spliced = moveMethodDefinition(main, method, anchor.afterLine);
+      const lintWarnings = runPreWriteLint(spliced, type, name, config, lintOverride);
+      if (lintWarnings.blocked) return lintWarnings.result!;
+
+      await safeUpdateSource(
+        client.http,
+        client.safety,
+        objectUrl,
+        srcUrl,
+        spliced,
+        transport,
+        cachedFeatures?.abapRelease,
+      );
+      invalidateWrittenObject(type, name);
+      return textResult(
+        `Successfully moved method "${method.name}" from ${method.visibility.toUpperCase()} to ${target.toUpperCase()} SECTION of ${type} ${name} (IMPLEMENTATION preserved). Active version unchanged until activation; SAPActivate next.`,
       );
     }
 

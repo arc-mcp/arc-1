@@ -779,6 +779,38 @@ describe('SAPWriteSchema', () => {
     expect(r.success).toBe(false);
   });
 
+  it('accepts change_method_visibility with method name + target visibility', () => {
+    const r = SAPWriteSchema.safeParse({
+      action: 'change_method_visibility',
+      type: 'CLAS',
+      name: 'ZCL_TEST',
+      method: 'greet',
+      visibility: 'private',
+    });
+    expect(r.success).toBe(true);
+    expect(
+      SAPWriteSchemaBtp.safeParse({
+        action: 'change_method_visibility',
+        type: 'CLAS',
+        name: 'ZCL_TEST',
+        method: 'greet',
+        visibility: 'protected',
+      }).success,
+    ).toBe(true);
+  });
+
+  it('rejects include= for change_method_visibility (MAIN-only action)', () => {
+    const r = SAPWriteSchema.safeParse({
+      action: 'change_method_visibility',
+      type: 'CLAS',
+      name: 'ZCL_TEST',
+      method: 'greet',
+      visibility: 'private',
+      include: 'implementations',
+    });
+    expect(r.success).toBe(false);
+  });
+
   it('rejects include= for add_method / edit_method_signature / delete_method (MAIN-only actions)', () => {
     for (const action of ['add_method', 'edit_method_signature', 'delete_method'] as const) {
       const r = SAPWriteSchema.safeParse({

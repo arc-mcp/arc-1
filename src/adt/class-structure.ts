@@ -183,6 +183,57 @@ export function removeMethodPair(source: string, method: MethodStructure): strin
   return next;
 }
 
+// ─── moveMethodDefinition: DEFINITION-only section move ────────────────
+
+/**
+ * Move a method's METHODS clause from its current visibility section to a new
+ * location in the DEFINITION block, leaving the IMPLEMENTATION block UNTOUCHED.
+ *
+ * This is the body-preserving primitive behind `change_method_visibility`
+ * (issue #303 follow-up). Contrast with `delete_method` + `add_method`, which
+ * discards the method body and recreates an empty stub.
+ *
+ * Single-pass line walk over the ORIGINAL source: the method's `definition`
+ * lines are captured, every other line is re-emitted in order, and the captured
+ * clause is re-inserted immediately AFTER `targetAfterLine`. Because both the
+ * skip-range and the anchor are expressed in original 1-indexed line numbers,
+ * the walk is correct whether the target section sits above or below the
+ * method's current position — no index-shift arithmetic between a remove and an
+ * insert.
+ *
+ * `targetAfterLine` (1-indexed) is the line to insert AFTER — typically from
+ * `findSectionAnchor(source, structure, targetVisibility)`. It MUST lie outside
+ * the moved method's `definition` range; the caller guarantees this by only
+ * moving between DIFFERENT sections (a method's clause and the target-section
+ * anchor never overlap). A `targetAfterLine` inside the range is a caller bug
+ * and throws.
+ *
+ * IMPLEMENTATION is never read or written here — the METHOD…ENDMETHOD body is
+ * preserved verbatim. The clause keeps its original indentation.
+ */
+export function moveMethodDefinition(source: string, method: MethodStructure, targetAfterLine: number): string {
+  if (!method.definition) {
+    throw new Error(`moveMethodDefinition: method ${method.name} has no definition range`);
+  }
+  const { sr, er } = method.definition;
+  if (targetAfterLine >= sr && targetAfterLine <= er) {
+    throw new RangeError(
+      `moveMethodDefinition: targetAfterLine ${targetAfterLine} is inside the moved method's definition range [${sr}, ${er}]`,
+    );
+  }
+  const eol = detectEol(source);
+  const lines = splitLines(source);
+  const clause = lines.slice(sr - 1, er);
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const lineNo = i + 1;
+    if (lineNo >= sr && lineNo <= er) continue; // drop the moved clause from its old spot
+    out.push(lines[i]!);
+    if (lineNo === targetAfterLine) out.push(...clause); // re-insert after the anchor
+  }
+  return joinLines(out, eol);
+}
+
 // ─── findSectionAnchor ────────────────────────────────────────────────
 
 /**

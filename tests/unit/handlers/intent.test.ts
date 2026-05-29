@@ -13580,5 +13580,138 @@ ENDCLASS.`.replace(/\n/g, '\r\n');
       expect(result.isError).toBeUndefined();
       expect(calls.some((c) => c.method === 'PUT')).toBe(true);
     });
+
+    // ── change_method_visibility (issue #303 follow-up) ───────────────
+
+    it('change_method_visibility moves a method public→private and preserves the body', async () => {
+      const calls = mockClassSurgeryFlow({
+        className: 'ZCL_PROBE',
+        mainSource: PROBE_MAIN,
+        structureXml: PROBE_STRUCTURE,
+      });
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'change_method_visibility',
+        type: 'CLAS',
+        name: 'ZCL_PROBE',
+        method: 'hello',
+        visibility: 'private',
+      });
+      expect(result.isError).toBeUndefined();
+      const putCall = calls.find((c) => c.method === 'PUT');
+      const body = putCall?.body ?? '';
+      // METHODS hello now sits after PRIVATE SECTION.
+      const privIdx = body.indexOf('PRIVATE SECTION');
+      const helloDeclIdx = body.indexOf('METHODS hello');
+      expect(helloDeclIdx).toBeGreaterThan(privIdx);
+      // IMPLEMENTATION body preserved verbatim — this is the whole point.
+      expect(body).toContain('result = |Hello, { name }!|.');
+      // success message advertises body preservation.
+      expect(result.content[0]?.text).toMatch(/IMPLEMENTATION preserved/i);
+    });
+
+    it('change_method_visibility leaves the IMPLEMENTATION block untouched (METHOD hello survives)', async () => {
+      const calls = mockClassSurgeryFlow({
+        className: 'ZCL_PROBE',
+        mainSource: PROBE_MAIN,
+        structureXml: PROBE_STRUCTURE,
+      });
+      await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'change_method_visibility',
+        type: 'CLAS',
+        name: 'ZCL_PROBE',
+        method: 'hello',
+        visibility: 'private',
+      });
+      const body = calls.find((c) => c.method === 'PUT')?.body ?? '';
+      expect(body).toMatch(/METHOD hello\./i);
+      expect(body).toMatch(/ENDMETHOD\./i);
+    });
+
+    it('change_method_visibility is an idempotent no-op when already in the target section', async () => {
+      const calls = mockClassSurgeryFlow({
+        className: 'ZCL_PROBE',
+        mainSource: PROBE_MAIN,
+        structureXml: PROBE_STRUCTURE,
+      });
+      // hello is already public.
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'change_method_visibility',
+        type: 'CLAS',
+        name: 'ZCL_PROBE',
+        method: 'hello',
+        visibility: 'public',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toMatch(/already in the PUBLIC SECTION/i);
+      // No write should have happened.
+      expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+    });
+
+    it('change_method_visibility refuses when the target section header is missing', async () => {
+      // Probe class has no PROTECTED SECTION → moving to protected refuses with hint.
+      const calls = mockClassSurgeryFlow({
+        className: 'ZCL_PROBE',
+        mainSource: PROBE_MAIN,
+        structureXml: PROBE_STRUCTURE,
+      });
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'change_method_visibility',
+        type: 'CLAS',
+        name: 'ZCL_PROBE',
+        method: 'hello',
+        visibility: 'protected',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toMatch(/PROTECTED SECTION/);
+      expect(result.content[0]?.text).toMatch(/edit_class_definition/);
+      expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+    });
+
+    it('change_method_visibility returns helpful error for unknown method', async () => {
+      mockClassSurgeryFlow({ className: 'ZCL_PROBE', mainSource: PROBE_MAIN, structureXml: PROBE_STRUCTURE });
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'change_method_visibility',
+        type: 'CLAS',
+        name: 'ZCL_PROBE',
+        method: 'nonexistent',
+        visibility: 'private',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toMatch(/Available methods/);
+    });
+
+    it('change_method_visibility rejects non-CLAS type', async () => {
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'change_method_visibility',
+        type: 'PROG',
+        name: 'ZTEST',
+        method: 'foo',
+        visibility: 'private',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('CLAS');
+    });
+
+    it('change_method_visibility rejects missing method', async () => {
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'change_method_visibility',
+        type: 'CLAS',
+        name: 'ZCL_PROBE',
+        visibility: 'private',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toMatch(/method.*required|NAME.*required/i);
+    });
+
+    it('change_method_visibility rejects missing visibility', async () => {
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'change_method_visibility',
+        type: 'CLAS',
+        name: 'ZCL_PROBE',
+        method: 'hello',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toMatch(/visibility.*required/i);
+    });
   });
 });

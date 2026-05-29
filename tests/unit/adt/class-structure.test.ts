@@ -13,6 +13,7 @@ import {
   findSectionAnchor,
   insertBeforeLine,
   insertMethodPair,
+  moveMethodDefinition,
   parseDefinitionBlockDeclarations,
   removeMethodPair,
   spliceClassDefinition,
@@ -401,5 +402,85 @@ describe('extractMethodNameFromClause', () => {
 
   it('returns null on non-METHODS first non-comment line', () => {
     expect(extractMethodNameFromClause('* a comment\nDATA foo TYPE i.')).toBeNull();
+  });
+});
+
+describe('moveMethodDefinition (DEFINITION-only section move — body preserved)', () => {
+  // PROBE_SOURCE line map: hello def 3-5, goodbye def 6-7, PRIVATE SECTION header 8.
+  it('moves HELLO public→private (clause appears under PRIVATE SECTION, gone from PUBLIC)', () => {
+    // PRIVATE SECTION has no methods → anchor is the section-header line (8).
+    const out = moveMethodDefinition(PROBE_SOURCE, PROBE_STRUCTURE.methods[0]!, 8);
+    const lines = out.split('\r\n');
+    const privIdx = lines.findIndex((l) => /PRIVATE SECTION\./.test(l));
+    const helloIdx = lines.findIndex((l) => /METHODS hello/.test(l));
+    // hello now sits AFTER the PRIVATE SECTION header.
+    expect(helloIdx).toBeGreaterThan(privIdx);
+    // PUBLIC SECTION should no longer be immediately followed by METHODS hello;
+    // goodbye should still be the public method.
+    expect(out).toContain('METHODS goodbye');
+  });
+
+  it('leaves the IMPLEMENTATION block byte-identical (body preserved)', () => {
+    const out = moveMethodDefinition(PROBE_SOURCE, PROBE_STRUCTURE.methods[0]!, 8);
+    // The METHOD hello body must survive verbatim.
+    expect(out).toContain('result = |Hello, { name }!|.');
+    expect(out).toContain("result = 'Goodbye!'.");
+    // IMPLEMENTATION block boundaries intact.
+    expect(out).toContain('CLASS zcl_arc1_probe IMPLEMENTATION.');
+  });
+
+  it('preserves CRLF and original clause indentation', () => {
+    const out = moveMethodDefinition(PROBE_SOURCE, PROBE_STRUCTURE.methods[0]!, 8);
+    expect(out.includes('\r\n')).toBe(true);
+    // The moved clause keeps its 4-space indent.
+    expect(out).toMatch(/\r\n {4}METHODS hello\r\n/);
+  });
+
+  it('moves a method when the target section is BELOW its current position', () => {
+    // goodbye (public, def 6-7) → private (header line 8, below it).
+    const out = moveMethodDefinition(PROBE_SOURCE, PROBE_STRUCTURE.methods[1]!, 8);
+    const lines = out.split('\r\n');
+    const privIdx = lines.findIndex((l) => /PRIVATE SECTION\./.test(l));
+    const goodbyeIdx = lines.findIndex((l) => /METHODS goodbye/.test(l));
+    expect(goodbyeIdx).toBeGreaterThan(privIdx);
+  });
+
+  it('moves a method when the target section is ABOVE its current position', () => {
+    // Inline fixture: a private method moving up to PUBLIC.
+    const src = `CLASS x DEFINITION PUBLIC.
+  PUBLIC SECTION.
+  PRIVATE SECTION.
+    METHODS helper.
+ENDCLASS.
+CLASS x IMPLEMENTATION.
+  METHOD helper.
+    DATA(keep) = 1.
+  ENDMETHOD.
+ENDCLASS.`.replace(/\n/g, '\r\n');
+    const helper: MethodStructure = {
+      name: 'HELPER',
+      visibility: 'private',
+      level: 'instance',
+      abstract: false,
+      constructor: false,
+      definition: { sr: 4, sc: 4, er: 4, ec: 16 },
+      implementation: { sr: 7, sc: 2, er: 9, ec: 11 },
+    };
+    // PUBLIC SECTION header is line 2 (above the method at line 4).
+    const out = moveMethodDefinition(src, helper, 2);
+    const lines = out.split('\r\n');
+    const pubIdx = lines.findIndex((l) => /PUBLIC SECTION\./.test(l));
+    const privIdx = lines.findIndex((l) => /PRIVATE SECTION\./.test(l));
+    const helperIdx = lines.findIndex((l) => /METHODS helper/.test(l));
+    // helper now between PUBLIC and PRIVATE.
+    expect(helperIdx).toBeGreaterThan(pubIdx);
+    expect(helperIdx).toBeLessThan(privIdx);
+    // body preserved.
+    expect(out).toContain('DATA(keep) = 1.');
+  });
+
+  it('throws if targetAfterLine falls inside the moved method range', () => {
+    // hello def is 3-5; anchor 4 is inside → caller bug.
+    expect(() => moveMethodDefinition(PROBE_SOURCE, PROBE_STRUCTURE.methods[0]!, 4)).toThrow(RangeError);
   });
 });
