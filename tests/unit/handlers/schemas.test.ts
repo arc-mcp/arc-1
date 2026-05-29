@@ -182,6 +182,19 @@ describe('SAPReadSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('accepts an optional grep string on both on-prem and BTP read schemas', () => {
+    const onprem = SAPReadSchema.safeParse({ type: 'CLAS', name: 'ZCL_X', grep: 'select.*from' });
+    expect(onprem.success).toBe(true);
+    if (onprem.success) expect(onprem.data.grep).toBe('select.*from');
+    const btp = SAPReadSchemaBtp.safeParse({ type: 'CLAS', name: 'ZCL_X', grep: 'RETURNING' });
+    expect(btp.success).toBe(true);
+  });
+
+  it('rejects a non-string grep', () => {
+    expect(SAPReadSchema.safeParse({ type: 'CLAS', name: 'ZCL_X', grep: 123 }).success).toBe(false);
+    expect(SAPReadSchemaBtp.safeParse({ type: 'CLAS', name: 'ZCL_X', grep: ['a'] }).success).toBe(false);
+  });
+
   it('accepts on-prem AUTH/FEATURE_TOGGLE/ENHO types', () => {
     expect(SAPReadSchema.safeParse({ type: 'AUTH', name: 'BUKRS' }).success).toBe(true);
     expect(SAPReadSchema.safeParse({ type: 'FEATURE_TOGGLE', name: 'ABC_TOGGLE' }).success).toBe(true);

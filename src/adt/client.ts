@@ -319,6 +319,18 @@ export class AdtClient {
     return { source: parts.join('\n\n'), notModified: false, statusCode: 200 };
   }
 
+  /**
+   * Get the RAW source of a single class include (no `=== inc ===` wrapper that
+   * `getClass(name, include)` adds), so line numbers stay accurate for grep.
+   */
+  async getClassInclude(name: string, include: string, opts?: SourceReadOptions): Promise<SourceReadResult> {
+    checkOperation(this.safety, OperationType.Read, 'GetClassInclude');
+    return this.fetchSource(
+      `/sap/bc/adt/oo/classes/${encodeURIComponent(name)}/includes/${encodeURIComponent(include)}`,
+      opts,
+    );
+  }
+
   /** Get class metadata (description, language, category, etc.) from the object endpoint */
   async getClassMetadata(name: string): Promise<ClassMetadata> {
     checkOperation(this.safety, OperationType.Read, 'GetClassMetadata');

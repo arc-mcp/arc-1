@@ -15,6 +15,15 @@ describe('Tool Definitions', () => {
     expect(names).toContain('SAPSearch');
   });
 
+  it('exposes the SAPRead grep parameter on both on-prem and BTP tool schemas', () => {
+    for (const config of [DEFAULT_CONFIG, { ...DEFAULT_CONFIG, systemType: 'btp' as const }]) {
+      const sapRead = getToolDefinitions(config).find((t) => t.name === 'SAPRead');
+      const props = (sapRead!.inputSchema as Record<string, any>).properties;
+      expect(props.grep).toBeDefined();
+      expect(props.grep.type).toBe('string');
+    }
+  });
+
   it('registers all implemented tools', () => {
     const tools = getToolDefinitions({
       ...DEFAULT_CONFIG,
