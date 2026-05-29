@@ -2061,7 +2061,7 @@ async function handleSAPSearch(client: AdtClient, args: Record<string, unknown>)
         // Preserve the more-specific slash form when both originate from ADT+DB.
         const seen = new Map<string, AdtSearchResult>();
         const baseKey = (m: AdtSearchResult): string =>
-          `${(m.objectType.split('/')[0] || m.objectType).toUpperCase()} ${m.objectName.toUpperCase()}`;
+          `${(m.objectType.split('/')[0] || m.objectType).toUpperCase()}\x00${m.objectName.toUpperCase()}`;
         for (const m of adtMatches) seen.set(baseKey(m), m);
         for (const m of dbMatches) {
           const k = baseKey(m);
@@ -5322,10 +5322,10 @@ async function handleSAPWrite(
           const batchStatuses = buildBatchActivationStatuses(writtenObjects, activationOutcome);
           const statusDetails = formatBatchActivationStatuses(batchStatuses);
           terminalActivationFailure = statusDetails;
-          const statusByName = new Map(batchStatuses.map((s) => [`${s.type} ${s.name}`, s]));
+          const statusByName = new Map(batchStatuses.map((s) => [`${s.type}\x00${s.name}`, s]));
           for (const result of results) {
             if (result.status !== 'success') continue;
-            const key = `${result.type} ${result.name}`;
+            const key = `${result.type}\x00${result.name}`;
             const matched = statusByName.get(key);
             if (!matched) continue;
             // Some entries may still report status 'active' if the activator returned
