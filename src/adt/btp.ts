@@ -392,9 +392,13 @@ export async function lookupDestinationWithUserToken(
         });
       }
 
-      // Bearer token (used for OAuth2SAMLBearerAssertion destinations)
-      if (token.type === 'Bearer') {
-        tokens.bearerToken = token.value;
+      // Bearer token (OAuth2UserTokenExchange / OAuth2SAMLBearerAssertion). The SAP Cloud SDK
+      // lowercases the type ("bearer") for OAuth2UserTokenExchange and exposes the token via
+      // `value` and/or an `Authorization` http_header. Match case-insensitively and fall back to
+      // the header value (stripping the "Bearer " prefix). Verified live against a BTP ABAP
+      // Environment (#301): a capital-B-only check silently dropped the token (hasBearer:false).
+      if (token.type?.toLowerCase() === 'bearer') {
+        tokens.bearerToken = token.value || token.http_header?.value?.replace(/^Bearer\s+/i, '');
       }
     }
   } else {

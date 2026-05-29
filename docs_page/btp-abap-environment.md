@@ -1,8 +1,9 @@
 # BTP ABAP Environment Setup
 
-ARC-1 supports direct connections to SAP BTP ABAP Environment (Steampunk) using OAuth 2.0 Authorization Code flow via a BTP service key.
+ARC-1 connects to a SAP BTP ABAP Environment (Steampunk) in two ways:
 
-This is the same authentication flow used by Eclipse ADT when connecting to BTP ABAP systems — a browser opens for login, and tokens are cached for subsequent use.
+- **Recommended — deploy ARC-1 on BTP Cloud Foundry and connect through a per-user destination** (`OAuth2UserTokenExchange`). This is how ARC-1 is meant to be consumed: a centrally managed, BTP-native service that acts in SAP as each MCP user's own identity (see [deployment-best-practices.md](deployment-best-practices.md)). It runs fully headless and needs no Cloud Connector. See [Recommended: BTP deployment with a per-user destination](#recommended-btp-deployment-with-a-per-user-destination).
+- **Local development — a BTP service key with browser login** (the same OAuth 2.0 Authorization Code flow Eclipse ADT uses; a browser opens and tokens are cached). Fine on a laptop with `stdio` transport, but it **cannot run headless** — the OAuth callback binds to `localhost`, so it is not suitable for a deployed or shared server. This mode is covered first, below.
 
 > **Do not set `SAP_DISABLE_SAML=true` with BTP ABAP.** The SAML/SAML2 disable opt-in (SEC-09) is intended for on-prem SAP systems and breaks BTP ABAP / S/4HANA Public Cloud authentication. See [enterprise-auth.md](enterprise-auth.md) for details.
 
@@ -241,6 +242,77 @@ When the access token expires (~12 hours), ARC-1 automatically refreshes it usin
 ### Browser Doesn't Open?
 
 If the browser fails to open automatically (e.g., on a headless server), ARC-1 logs the authorization URL. Copy it and open it manually in any browser.
+
+## Recommended: BTP deployment with a per-user destination
+
+ARC-1 is designed to run as a **centrally managed service on SAP BTP Cloud Foundry** — not on individual laptops — and to act in SAP as **each MCP user's own identity**. For a BTP ABAP Environment, the recommended setup follows directly from that: deploy ARC-1 on Cloud Foundry and connect through a **per-user destination** using `OAuth2UserTokenExchange`. It runs fully headless (no browser), propagates the logged-in user to the ABAP system so SAP's own authorizations apply per user, and needs **no Cloud Connector** — the ABAP Environment is Internet-facing, so this is a direct cloud-to-cloud call.
+
+`OAuth2UserTokenExchange` is the SAP-recommended authentication when the target runs in the **same subaccount under a different XSUAA instance** ([SAP Help](https://help.sap.com/docs/connectivity/sap-btp-connectivity-cf/oauth-user-token-exchange-authentication)) — exactly the relationship between ARC-1's XSUAA and the ABAP Environment. Keeping both in the same subaccount means the user-token exchange is trusted implicitly: no Communication Arrangement and no technical user are required.
+
+### 1. Bind the BTP services
+
+ARC-1 needs an XSUAA instance (for MCP-client login) and a Destination service instance. No Connectivity service is needed, because there is no Cloud Connector.
+
+```bash
+cf create-service xsuaa application arc1-xsuaa -c xs-security.json
+cf create-service destination lite arc1-destination
+```
+
+### 2. Create the per-user destination
+
+Take the OAuth client credentials from the ABAP instance's **service key** (`uaa` section; append `/oauth/token` to `uaa.url` for the token endpoint). Create the destination in the BTP cockpit (**Connectivity → Destinations**) or declaratively when provisioning the destination service instance (`cf create-service destination lite arc1-destination -c dest.json`):
+
+```json
+{ "init_data": { "instance": {
+  "existing_destinations_policy": "update",
+  "destinations": [{
+    "Name": "ABAP_PP",
+    "Type": "HTTP",
+    "URL": "https://<guid>.abap.<region>.hana.ondemand.com",
+    "ProxyType": "Internet",
+    "Authentication": "OAuth2UserTokenExchange",
+    "tokenServiceURL": "https://<subdomain>.authentication.<region>.hana.ondemand.com/oauth/token",
+    "clientId": "<service-key uaa.clientid>",
+    "clientSecret": "<service-key uaa.clientsecret>"
+  }]
+}}}
+```
+
+| Property | Value |
+|---|---|
+| **Type** | `HTTP` |
+| **URL** | service key `url` (the ABAP system) |
+| **Proxy Type** | `Internet` (no Cloud Connector) |
+| **Authentication** | `OAuth2UserTokenExchange` |
+| **Token Service URL** | `<uaa.url>/oauth/token` |
+| **Client ID / Secret** | service key `uaa.clientid` / `uaa.clientsecret` (the ABAP instance's own OAuth client) |
+
+### 3. Configure ARC-1
+
+```yaml
+env:
+  SAP_SYSTEM_TYPE: btp
+  SAP_TRANSPORT: http-streamable
+  SAP_XSUAA_AUTH: "true"      # MCP clients authenticate via XSUAA OAuth
+  SAP_PP_ENABLED: "true"      # per-user principal propagation
+  SAP_BTP_DESTINATION: ABAP_PP
+services:
+  - arc1-xsuaa
+  - arc1-destination
+```
+
+Per request, ARC-1 validates the MCP user's XSUAA JWT, has the Destination service exchange it for an ABAP-context Bearer token, and sends `Authorization: Bearer <token>` on every ADT call. SAP therefore sees the actual end user, and SAP-side authorizations (`S_DEVELOP`, package checks) apply per user.
+
+### 4. Grant users access
+
+Assign each MCP user a role collection that grants the ARC-1 scopes they need (e.g. `ARC-1 Developer`) in the subaccount under **Security → Role Collections / Users** — XSUAA only issues a token for scopes the user actually holds. The user must also have developer authorization in the ABAP Environment itself (the `SAP_BR_DEVELOPER` business role; see [Required: Run the Booster and Assign Developer Role](#required-run-the-booster-and-assign-developer-role)).
+
+### References (SAP documentation)
+
+- [OAuth2 User Token Exchange Authentication](https://help.sap.com/docs/connectivity/sap-btp-connectivity-cf/oauth-user-token-exchange-authentication) — when to use it (same subaccount, different XSUAA) and how the exchange works.
+- [Destination Authentication Methods](https://help.sap.com/docs/btp/btp-admin-guide/destination-authentication-methods) — `OAuth2UserTokenExchange` alongside the other destination auth types.
+- [SAP Cloud SDK — Destinations](https://sap.github.io/cloud-sdk/docs/js/features/connectivity/destinations) — how the destination and token exchange are resolved at runtime (ARC-1 uses this SDK).
+- [ARC-1 BTP Destination Setup](btp-destination-setup.md) and [Principal Propagation Setup](principal-propagation-setup.md) — ARC-1's destination / principal-propagation configuration in depth (including the on-premise Cloud Connector variant).
 
 ## Configuration Reference
 
