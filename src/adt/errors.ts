@@ -15,6 +15,8 @@
  * in AdtApiError.fromResponse().
  */
 
+import { parseReleaseNumber, STATEFUL_SESSION_MIN_RELEASE } from './release.js';
+
 /** Base error for all ADT-related errors */
 export class AdtError extends Error {
   constructor(message: string) {
@@ -345,6 +347,7 @@ export function classifySapDomainError(
   statusCode: number,
   responseBody?: string,
   path?: string,
+  abapRelease?: string,
 ): SapErrorClassification | undefined {
   const bodyRaw = responseBody ?? '';
   const bodyLower = bodyRaw.toLowerCase();
@@ -382,14 +385,43 @@ export function classifySapDomainError(
   }
 
   if (typeId === 'ExceptionResourceInvalidLockHandle' || statusCode === 423) {
+    // The 423 "invalid lock handle" on ADT writes has a release-specific root cause:
+    // on SAP_BASIS < 7.51 the ADT REST handler (CL_REST_HTTP_HANDLER) does not honor
+    // the `X-sap-adt-sessiontype: stateful` header, so the LOCK is released before the
+    // PUT and the handle is rejected. The fix is the abapfs_extensions enhancement
+    // (back-ports the 7.51 CONFIGURE_SESSION_STATE behavior). SAP Note 2727890 is a
+    // SEPARATE, narrow bug (lock handles containing '+') — not this issue. See #293.
+    const releaseNum = parseReleaseNumber(abapRelease);
+    const abapfsFix =
+      'install the abapfs_extensions enhancement on the SAP system ' +
+      '(https://github.com/marcellourbani/abapfs_extensions) via abapGit — it back-ports the ' +
+      '7.51 stateful-session handling to CL_REST_HTTP_HANDLER. SAP Note 2727890 is a separate, ' +
+      "narrow bug (lock handles containing '+') and is NOT this issue.";
+
+    let hint: string;
+    if (releaseNum !== undefined && releaseNum < STATEFUL_SESSION_MIN_RELEASE) {
+      hint =
+        `Your SAP_BASIS (${abapRelease}) does not honor stateful ADT HTTP sessions, so the lock ` +
+        `is released before the write completes. To fix: ${abapfsFix}`;
+    } else if (releaseNum !== undefined) {
+      // 7.51+ honors stateful sessions natively — a 423 here is more likely a transient
+      // expiry or a genuine concurrent lock, not the pre-7.51 backend gap.
+      hint =
+        'Lock handle is invalid or expired. Retry first — transient expiry is the common case. ' +
+        'If it persists, check SM12 for stale lock entries and ensure no other editor (Eclipse, ' +
+        'SE80) holds the object.';
+    } else {
+      // Release unknown (detection unavailable): give the actionable < 7.51 guidance too,
+      // so the hint is useful even when we could not detect the backend release.
+      hint =
+        'Lock handle is invalid or expired. Retry first — transient expiry is the common case. ' +
+        `If 423 persists on the first PUT after a successful LOCK and your SAP_BASIS is below 7.51, ${abapfsFix}`;
+    }
+
     return {
       category: 'enqueue-error',
-      hint:
-        'Lock handle is invalid or expired. First, retry — transient expiry is the common case. ' +
-        'If 423 persists on the first PUT after a successful LOCK, see SAP Note 2727890 ' +
-        '"ADT: fix unstable adt lock handle" (component BC-DWB-AIE) — a known ABAP Development ' +
-        'Tools bug where the lock handle is not stable under certain conditions. Apply the note ' +
-        'or a support package that includes it.',
+      hint,
+      transaction: releaseNum !== undefined && releaseNum >= STATEFUL_SESSION_MIN_RELEASE ? 'SM12' : undefined,
       details: typeId ? { exceptionType: typeId } : undefined,
     };
   }

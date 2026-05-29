@@ -415,15 +415,35 @@ describe('AdtApiError', () => {
       expect(classification?.category).toBe('authorization');
     });
 
-    it('classifies enqueue errors for 423', () => {
+    it('classifies enqueue errors for 423 (release unknown → combined guidance)', () => {
       const classification = classifySapDomainError(423, 'Lock handle invalid');
       expect(classification?.category).toBe('enqueue-error');
       // First-line advice: retry (transient expiry is the common case).
-      expect(classification?.hint).toContain('retry');
-      // Cites the specific SAP Note verified via the SAP Knowledge Base
-      // search — the concrete grounded reference for persistent 423s.
+      expect(classification?.hint).toContain('Retry first');
+      // Release unknown → still point at the real fix for < 7.51 systems
+      // (abapfs_extensions) so the hint is actionable even without detection.
+      expect(classification?.hint).toContain('abapfs_extensions');
+      // SAP Note 2727890 is kept only as a "separate, narrow bug" mention — NOT the fix.
       expect(classification?.hint).toContain('2727890');
-      expect(classification?.hint).toContain('BC-DWB-AIE');
+    });
+
+    it('423 on SAP_BASIS < 7.51 leads with the abapfs_extensions fix', () => {
+      for (const release of ['700', '740', '750']) {
+        const classification = classifySapDomainError(423, 'x', undefined, release);
+        expect(classification?.category).toBe('enqueue-error');
+        expect(classification?.hint).toContain('abapfs_extensions');
+        expect(classification?.hint).toContain(release);
+      }
+    });
+
+    it('423 on SAP_BASIS >= 7.51 does NOT mention abapfs_extensions (transient/real-lock)', () => {
+      for (const release of ['751', '758']) {
+        const classification = classifySapDomainError(423, 'x', undefined, release);
+        expect(classification?.category).toBe('enqueue-error');
+        expect(classification?.hint).not.toContain('abapfs_extensions');
+        expect(classification?.hint).toContain('Retry first');
+        expect(classification?.transaction).toBe('SM12');
+      }
     });
 
     it('classifies 404 "No suitable resource found" as ICF handler not bound', () => {

@@ -6354,7 +6354,8 @@ ENDCLASS.`;
       expect(result.content[0]?.text).toContain('E19K900001');
     });
 
-    it('423 lock handle error returns enqueue hint', async () => {
+    it('423 lock handle error returns enqueue hint (release unknown → combined guidance)', async () => {
+      resetCachedFeatures(); // no detected release → unknown-release branch
       mockFetch.mockReset();
       mockFetch.mockRejectedValueOnce(
         new AdtApiError(
@@ -6367,11 +6368,52 @@ ENDCLASS.`;
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', { type: 'PROG', name: 'ZPROG' });
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toContain('Lock handle is invalid or expired');
-      // Hint cites SAP Note 2727890 (component BC-DWB-AIE) — verified via the
-      // SAP Knowledge Base as the concrete known-fix for ADT lock-handle
-      // instability. Replaces the previous generic SM12 transaction pointer.
+      // Release unknown → still point at the real fix for < 7.51 (abapfs_extensions);
+      // SAP Note 2727890 is kept only as a "separate, narrow bug" mention (issue #293).
+      expect(result.content[0]?.text).toContain('abapfs_extensions');
       expect(result.content[0]?.text).toContain('2727890');
-      expect(result.content[0]?.text).toContain('BC-DWB-AIE');
+    });
+
+    it('423 on detected SAP_BASIS < 7.51 leads with the abapfs_extensions fix', async () => {
+      setCachedFeatures({ abapRelease: '750', systemType: 'onprem' } as ResolvedFeatures);
+      try {
+        mockFetch.mockReset();
+        mockFetch.mockRejectedValueOnce(
+          new AdtApiError(
+            'Locked',
+            423,
+            '/sap/bc/adt/programs/programs/ZPROG/source/main',
+            '<exc:exception><type id="ExceptionResourceInvalidLockHandle"/></exc:exception>',
+          ),
+        );
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', { type: 'PROG', name: 'ZPROG' });
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toContain('abapfs_extensions');
+        expect(result.content[0]?.text).toContain('750');
+      } finally {
+        resetCachedFeatures();
+      }
+    });
+
+    it('423 on detected SAP_BASIS >= 7.51 does NOT mention abapfs_extensions', async () => {
+      setCachedFeatures({ abapRelease: '758', systemType: 'onprem' } as ResolvedFeatures);
+      try {
+        mockFetch.mockReset();
+        mockFetch.mockRejectedValueOnce(
+          new AdtApiError(
+            'Locked',
+            423,
+            '/sap/bc/adt/programs/programs/ZPROG/source/main',
+            '<exc:exception><type id="ExceptionResourceInvalidLockHandle"/></exc:exception>',
+          ),
+        );
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', { type: 'PROG', name: 'ZPROG' });
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).not.toContain('abapfs_extensions');
+        expect(result.content[0]?.text).toContain('Retry first');
+      } finally {
+        resetCachedFeatures();
+      }
     });
 
     it('403 authorization XML returns SU53/PFCG hint', async () => {

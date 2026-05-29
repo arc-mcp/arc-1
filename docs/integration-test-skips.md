@@ -80,7 +80,7 @@ Not fixable from ARC-1 client code. The error classifier (`classifySapDomainErro
 
 ARC-1 originally posted DTEL create/update with `Content-Type: application/vnd.sap.adt.dataelements.v2+xml; charset=utf-8`. Older SAP_BASIS releases (pre-7.52) only accept the v1 MIME type `…dataelements.v1+xml` — same XML body, different MIME version suffix.
 
-**Fixed** in `src/adt/crud.ts` via a static `CONTENT_TYPE_FALLBACKS` map: on HTTP 415 for the v2 MIME type, `createObject` and `updateObject` transparently retry once with the v1 MIME type. DTEL create now works across releases. Follow-up DTEL updates (lock → PUT) may still hit the lock-handle 423 issue on systems missing SAP Note 2727890 — see below.
+**Fixed** in `src/adt/crud.ts` via a static `CONTENT_TYPE_FALLBACKS` map: on HTTP 415 for the v2 MIME type, `createObject` and `updateObject` transparently retry once with the v1 MIME type. DTEL create now works across releases. Follow-up DTEL updates (lock → PUT) may still hit the lock-handle 423 issue on NW < 7.51 systems without the `abapfs_extensions` enhancement — see below.
 
 ## Category 3 — Backend quirk (trial systems, unstable services)
 
@@ -88,13 +88,15 @@ ARC-1 originally posted DTEL create/update with `Content-Type: application/vnd.s
 
 | Skip message fragment | Affected tests | Typical on | Should NOT skip on |
 |---|---|---|---|
-| `BACKEND_UNSUPPORTED: lock-handle session correlation differs on this release` | `crud.lifecycle.integration.test.ts` full PROG lifecycle, DTEL CRUD update step, RAP write + SKTD + MSAG on E2E | Systems missing SAP Note 2727890 (ADT lock-handle bug) | Systems with the note / a later SP applied |
+| `BACKEND_UNSUPPORTED: lock-handle session correlation differs on this release` | `crud.lifecycle.integration.test.ts` full PROG lifecycle, DTEL CRUD update step, RAP write + SKTD + MSAG on E2E | NW < 7.51 without the `abapfs_extensions` enhancement | NW ≥ 7.51, or any release with `abapfs_extensions` installed |
 
 ### Root cause: persistent lock-handle 423 after successful LOCK
 
-Known ABAP Development Tools bug — [SAP Note 2727890 "ADT: fix unstable adt lock handle"](https://me.sap.com/notes/2727890/E), component `BC-DWB-AIE`, released 2018-12-11. Apply the note (or a support package that includes it) on the target system.
+On **SAP_BASIS < 7.51** the ADT REST handler `CL_REST_HTTP_HANDLER` does not honor the `X-sap-adt-sessiontype: stateful` header over HTTP (the 7.51+ mechanism `CONFIGURE_SESSION_STATE` in `CL_ADT_WB_RES_APP` does not exist). The session reverts to stateless, the ENQUEUE lock is released, and the PUT after a successful LOCK fails with `423 invalid lock handle`. Validated live on NPL 7.50 (423 before, 200 after the fix); a4h (kernel 7.58) works natively.
 
-Not fixable from ARC-1 client code; the error hint (`category: enqueue-error`) now cites the note directly so operators can jump to the SAP Knowledge Base entry.
+**Fix:** install the [`abapfs_extensions`](https://github.com/marcellourbani/abapfs_extensions) enhancement on the SAP system (abapGit import, or a manual implicit enhancement on `CL_REST_HTTP_HANDLER`). Once installed, these skips no longer fire — the NPL test instance now passes these writes. See [docs_page/sap-trial-setup.md](../docs_page/sap-trial-setup.md) (423 troubleshooting) for both install paths.
+
+> **SAP Note 2727890** ("ADT: fix unstable adt lock handle", `BC-DWB-AIE`) is a *separate, narrow* bug for lock handles containing `+` characters — it is **not** this issue and does not fix it (confirmed: reporters with the note applied on 7.40 still fail). The error hint (`category: enqueue-error`) is release-aware: on a detected < 7.51 system it points at `abapfs_extensions`.
 | `BACKEND_UNSUPPORTED: PageChipInstances service unstable on this release` | `adt.integration.test.ts` FLP lists tiles | NW 7.50, some older S/4 | Recent S/4 |
 | `BACKEND_UNSUPPORTED: scope denied` (transport test) | `transport.integration.test.ts` type-W/R (customizing, repair) | Systems where user lacks `S_TRANSPRT` for non-K types | Full-privilege users |
 

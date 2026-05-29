@@ -302,6 +302,67 @@ docker exec a4h /usr/sap/hostctrl/exe/sapcontrol -nr 00 -function Start
 > **Note:** `RestartInstance` did not work reliably; use explicit `Stop` then
 > `Start`.
 
+### Writes fail with 423 "invalid lock handle" (NW < 7.51)
+
+**Symptom:** reads work, but every `SAPWrite` / `edit_method` / delete / activate-after-edit
+fails with:
+
+```
+status 423 ... Resource ... is not locked (invalid lock handle: ...)
+type id="ExceptionResourceInvalidLockHandle"
+```
+
+The LOCK appears to succeed (it returns a handle), but the very next PUT is rejected.
+SM12 shows no lock, because the lock was released the instant the PUT failed.
+
+**Root cause:** ADT writes require a *stateful* HTTP session so the ENQUEUE lock from
+LOCK survives until the PUT. ARC-1 sends the `X-sap-adt-sessiontype: stateful` header
+correctly — but on **SAP_BASIS < 7.51** the ADT REST handler `CL_REST_HTTP_HANDLER`
+silently ignores it (the mechanism that honors it, `CONFIGURE_SESSION_STATE` in
+`CL_ADT_WB_RES_APP`, only exists from 7.51). So the session reverts to stateless and the
+lock handle is invalid on the PUT. Eclipse is unaffected because it talks ADT over RFC,
+which is stateful by default. S/4HANA (≥ 7.51) works natively.
+
+> **SAP Note 2727890 is NOT the fix.** It addresses a separate, narrow bug (lock handles
+> containing `+` characters). Systems with the note applied on 7.40/7.50 still fail here.
+
+**Fix — install the `abapfs_extensions` enhancement** on the SAP system. It back-ports the
+7.51 stateful-session handling to `CL_REST_HTTP_HANDLER`. It's a single implicit
+enhancement, needs no ICM restart, and is a safe no-op on ≥ 7.51.
+
+**Option A — abapGit (preferred, if abapGit is installed):**
+Import [`marcellourbani/abapfs_extensions`](https://github.com/marcellourbani/abapfs_extensions)
+into the dev system (online clone, or offline ZIP upload via `ZABAPGIT_STANDALONE`), then
+activate the imported objects.
+
+**Option B — manual (no abapGit, e.g. the NPL trial), via SE24:**
+1. `SE24` → class `CL_REST_HTTP_HANDLER` → Display.
+2. Double-click method `IF_HTTP_EXTENSION~HANDLE_REQUEST`.
+3. Click **Enhance** (the spanner), then **Edit → Enhancement Operations → Show Implicit
+   Enhancement Options** so the method-begin marker appears.
+4. Position the cursor on the marker at the **start of the method body** (right after
+   `METHOD ...`), then **Create** an enhancement implementation named
+   `ZABAPFILESYSTEM_SESSION`.
+5. Paste this into the `ENHANCEMENT ... ENDENHANCEMENT` block:
+
+   ```abap
+   "Stateful mode support (compatible with implementation in 7.51)
+   "required for write support over HTTP (ADT clients)
+   DATA: __abapfs_stateful TYPE string.
+   __abapfs_stateful = server->request->get_header_field( 'X-sap-adt-sessiontype' ).
+   IF __abapfs_stateful = 'stateful'.
+     gv_stateful = abap_true.
+   ELSEIF __abapfs_stateful = 'stateless'.
+     gv_stateful = abap_false.
+   ENDIF.
+   ```
+6. Assign to package `$TMP` (or a transportable package) and **activate** (Ctrl+F3).
+
+After activation, retry the write — the next ADT request picks up the enhanced handler.
+
+> ARC-1 also detects this at startup: when writes are enabled on a < 7.51 system it logs a
+> warning pointing here, and the `423` error hint names `abapfs_extensions` directly.
+
 ### User Access
 
 The trial system ships with these pre-configured users:

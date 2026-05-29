@@ -136,6 +136,7 @@ src/
 │   ├── http.ts                 # HTTP transport (undici/fetch, CSRF, cookies, sessions)
 │   ├── discovery.ts            # ADT discovery (endpoint MIME map fetch + resolve)
 │   ├── errors.ts               # Typed errors (AdtApiError, AdtSafetyError, AdtNetworkError)
+│   ├── release.ts              # SAP_BASIS release parsing (release-aware hints/warnings, #293)
 │   ├── safety.ts               # Safety system (positive opt-ins, package gates, deny actions)
 │   ├── features.ts             # Feature detection (auto/on/off)
 │   ├── config.ts, types.ts     # ADT client config + response types
@@ -217,6 +218,7 @@ tests/
 | Modify ADT service discovery / MIME types | `src/adt/discovery.ts`, `src/adt/http.ts` |
 | Improve DDIC save diagnostics + SAP-domain error hints (T100/line + lock/auth/dependency hints) | `src/adt/errors.ts` (`extractDdicDiagnostics`, `formatDdicDiagnostics`, `classifySapDomainError`), `src/handlers/intent.ts` (`enrichWithSapDetails`, `formatErrorForLLM`) |
 | Add SAP error classification (new `category` + hint) | `src/adt/errors.ts` (`extractExceptionType`/`extractLockOwner`/`classifySapDomainError`/`SapErrorClassification`), `src/handlers/intent.ts` (`formatErrorForLLM`/`classifyError`), `tests/unit/adt/errors.test.ts`. Existing categories live in the union type. Ground hints in verified SAP Notes/KBAs (use `mcp__sap-notes__search`) — no speculative tcode pointers. |
+| Make an error hint release-aware (e.g. 423 lock-handle on NW <7.51 → abapfs_extensions, #293) | `src/adt/release.ts` (`parseReleaseNumber`/`shouldWarnPreStatefulRelease`), `src/adt/errors.ts` (`classifySapDomainError` `abapRelease` param), `src/handlers/intent.ts` (`buildBaseErrorMessage` passes `cachedFeatures?.abapRelease ?? config.abapRelease`), `src/server/server.ts` (`runStartupProbe` startup warn), `tests/unit/adt/{release,errors}.test.ts`, `tests/unit/handlers/intent.test.ts`. Root cause: <7.51 ignores `X-sap-adt-sessiontype: stateful`; fix is the abapfs_extensions backend enhancement. |
 | Add release-gated content-type fallback (e.g. DTEL v2→v1 on 415) | `src/adt/crud.ts` (`CONTENT_TYPE_FALLBACKS` map — narrow static allowlist, 415-only retry in both `createObject` and `updateObject`), `tests/unit/adt/crud.test.ts`. Don't turn it into a generic retry loop — each entry must be a specific, tested compatibility gap. |
 | Add / update test skip reason | `tests/helpers/skip-policy.ts`, `tests/e2e/helpers.ts` (`classifyToolErrorSkip`), `docs/integration-test-skips.md`, `scripts/ci/summarize-skips.mjs`. Skip messages are the taxonomy's public API — keep all four in sync. |
 | Run ADT type-availability probe against a live system | `scripts/probe-adt-types.ts` (`npm run probe`), `src/probe/{catalog,runner,fixtures}.ts`, `tests/unit/probe/replay.test.ts`. New fixture set: `npm run probe -- --save-fixtures tests/fixtures/probe/<name>`. See [docs/probe-adt-types.md](docs/probe-adt-types.md). |
