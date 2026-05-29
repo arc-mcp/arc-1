@@ -475,6 +475,17 @@ function buildBaseErrorMessage(
         );
       }
     }
+    if (tool === 'SAPRead' && argType === 'TABLE_QUERY' && err.statusCode === 400) {
+      const combined = `${err.message}\n${err.responseBody ?? ''}`;
+      if (/is invalid here|due to grammar/i.test(combined)) {
+        return (
+          `${enriched}\n\nHint: TABLE_QUERY uses the ADT freestyle SQL endpoint which does not support ` +
+          'CDS views on NW 7.50/7.51 ("TABLE is invalid here"). ' +
+          'TABLE_QUERY works on transparent DDIC tables (MSEG, MARA, T000, etc.). ' +
+          'To query a CDS view, use SAPQuery with allowFreeSQL=true, or read the underlying base tables directly.'
+        );
+      }
+    }
     const behaviorPoolHint = getBehaviorPoolSaveFailureHint(err, args);
     if (behaviorPoolHint) {
       return `${enriched}\n\nHint: ${behaviorPoolHint}`;
