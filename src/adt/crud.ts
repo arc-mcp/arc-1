@@ -10,7 +10,7 @@
  * leaked locks on error, blocking the object for other developers.
  */
 
-import { AdtApiError, extractExceptionType } from './errors.js';
+import { AdtApiError, extractExceptionType, isNotFoundError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 /** Lock result from SAP */
@@ -224,6 +224,90 @@ export async function safeUpdateSource(
     } finally {
       await unlockObject(session, objectUrl, lock.lockHandle);
     }
+  });
+}
+
+/**
+ * Initialise (create) an empty class-local include (CCDEF/CCIMP/CCMAC/CCAU).
+ *
+ * On a freshly-created class the optional includes — notably `testclasses`
+ * (CCAU) — do not exist yet: `GET …/includes/testclasses` → 404, and a content
+ * PUT fails with `HTTP 500 "…CCAU does not have any inactive version"`. SAP's
+ * ADT contract is that the include must be created first.
+ *
+ * Live-verified mechanism (a4h S/4HANA 2023): inside a locked stateful session,
+ * an empty `POST …/includes/{include}?lockHandle=<LH>` (no body, no content-type)
+ * returns 201 and creates the include (SAP generates an empty skeleton). A bare
+ * POST without the lock handle returns 423 ("Resource CLASS_INCLUDE … is not
+ * locked"), so this MUST run with a valid lock on the parent class.
+ *
+ * Caller contract: invoke inside `withStatefulSession`, holding the parent
+ * class lock; pass that `lockHandle`.
+ */
+export async function initClassInclude(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  includeUrl: string,
+  lockHandle: string,
+): Promise<void> {
+  // Creating the include is a mutation — gated by allowWrites like every other
+  // write (package gating already happened in the handler before this point).
+  checkOperation(safety, OperationType.Create, 'InitClassInclude');
+  const url = `${includeUrl}?lockHandle=${encodeURIComponent(lockHandle)}`;
+  await http.post(url, '', undefined);
+}
+
+/**
+ * High-level: update a class-local include, auto-initialising it first if it
+ * doesn't exist yet. lock → GET-probe include → (POST-create if 404) → PUT → unlock,
+ * all in one stateful session sharing a single lock.
+ *
+ * Why probe-first instead of catch-the-500: the missing-include PUT failure is a
+ * release/language-dependent 500 ("does not have any inactive version"), whereas
+ * a `GET` 404 is deterministic and release-agnostic. Probing before the write
+ * also avoids relying on an untested "POST-init + retry-PUT after a failed PUT in
+ * the same locked session" path. The extra GET is cheap — include writes are
+ * deliberate edits, not a hot path — and when the include already exists (the
+ * common case, including the auto-existing CCDEF/CCIMP/CCMAC) the probe returns
+ * 200 and init is skipped, so behaviour for those includes is unchanged.
+ *
+ * Returns `{ initialized }` so the handler can tell the caller whether the
+ * include was created as part of this write.
+ */
+export async function safeUpdateClassInclude(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  classObjectUrl: string,
+  includeUrl: string,
+  source: string,
+  transport?: string,
+  abapRelease?: string,
+): Promise<{ initialized: boolean }> {
+  return await http.withStatefulSession(async (session) => {
+    const lock = await lockObject(session, safety, classObjectUrl, 'MODIFY', abapRelease);
+    const effectiveTransport = transport ?? (lock.corrNr || undefined);
+    let initialized = false;
+    try {
+      // Probe whether the include exists. 404 → not initialised yet.
+      let exists = true;
+      try {
+        await session.get(includeUrl, undefined, { suppressNotFoundLog: true });
+      } catch (err) {
+        if (isNotFoundError(err)) {
+          exists = false;
+        } else {
+          throw err;
+        }
+      }
+      if (!exists) {
+        await initClassInclude(session, safety, includeUrl, lock.lockHandle);
+        initialized = true;
+      }
+      await updateSource(session, safety, includeUrl, source, lock.lockHandle, effectiveTransport);
+    } finally {
+      await unlockObject(session, classObjectUrl, lock.lockHandle);
+    }
+    return { initialized };
   });
 }
 

@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   createObject,
   deleteObject,
+  initClassInclude,
   lockObject,
+  safeUpdateClassInclude,
   safeUpdateObject,
   safeUpdateSource,
   unlockObject,
@@ -12,6 +14,37 @@ import {
 import { AdtApiError, AdtSafetyError } from '../../../src/adt/errors.js';
 import type { AdtHttpClient } from '../../../src/adt/http.js';
 import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
+
+const LOCK_BODY =
+  '<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><LOCK_HANDLE>SESS_HANDLE</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL></DATA></asx:values></asx:abap>';
+
+/**
+ * Mock AdtHttpClient whose stateful session exposes individually controllable
+ * get/post/put spies, so include auto-init tests can make the include GET-probe
+ * return 200 (exists) or throw 404 (missing) and assert the call sequence.
+ */
+function mockHttpWithSession(opts: { includeGetStatus: number }): {
+  http: AdtHttpClient;
+  session: { get: ReturnType<typeof vi.fn>; post: ReturnType<typeof vi.fn>; put: ReturnType<typeof vi.fn> };
+} {
+  const session = {
+    get: vi.fn().mockImplementation(async (path: string) => {
+      if (opts.includeGetStatus === 200) return { statusCode: 200, headers: {}, body: 'existing include source' };
+      throw new AdtApiError(`probe ${opts.includeGetStatus}`, opts.includeGetStatus, path, '');
+    }),
+    post: vi.fn().mockImplementation(async (path: string) => {
+      if (path.includes('_action=LOCK')) return { statusCode: 200, headers: {}, body: LOCK_BODY };
+      if (path.includes('_action=UNLOCK')) return { statusCode: 200, headers: {}, body: '' };
+      return { statusCode: 201, headers: {}, body: '' }; // include-init POST
+    }),
+    put: vi.fn().mockResolvedValue({ statusCode: 200, headers: {}, body: '' }),
+    delete: vi.fn().mockResolvedValue({ statusCode: 200, headers: {}, body: '' }),
+  };
+  const http = {
+    withStatefulSession: vi.fn().mockImplementation(async (fn: (s: unknown) => Promise<unknown>) => fn(session)),
+  } as unknown as AdtHttpClient;
+  return { http, session };
+}
 
 function mockHttp(body = ''): AdtHttpClient {
   return {
@@ -837,6 +870,86 @@ describe('CRUD Operations', () => {
       expect(postMock).toHaveBeenCalledTimes(2); // lock + unlock
       const unlockUrl = postMock.mock.calls[1]?.[0] as string;
       expect(unlockUrl).toContain('_action=UNLOCK');
+    });
+  });
+
+  // ─── safeUpdateClassInclude / initClassInclude (issue #303 follow-up) ──
+  describe('safeUpdateClassInclude — auto-init missing class includes', () => {
+    const CLASS_URL = '/sap/bc/adt/oo/classes/ZCL_X';
+    const INCLUDE_URL = '/sap/bc/adt/oo/classes/ZCL_X/includes/testclasses';
+
+    it('include exists (GET 200): PUTs content, does NOT POST-init', async () => {
+      const { http, session } = mockHttpWithSession({ includeGetStatus: 200 });
+      const result = await safeUpdateClassInclude(
+        http,
+        unrestrictedSafetyConfig(),
+        CLASS_URL,
+        INCLUDE_URL,
+        'CLASS ltc DEFINITION FOR TESTING. ENDCLASS. CLASS ltc IMPLEMENTATION. ENDCLASS.',
+      );
+      expect(result.initialized).toBe(false);
+      // Exactly one PUT (the content), to the include URL.
+      expect(session.put).toHaveBeenCalledTimes(1);
+      expect(String(session.put.mock.calls[0]?.[0])).toContain('/includes/testclasses');
+      // No init POST — only LOCK + UNLOCK on session.post.
+      const initPosts = session.post.mock.calls.filter(
+        (c) => !String(c[0]).includes('_action=LOCK') && !String(c[0]).includes('_action=UNLOCK'),
+      );
+      expect(initPosts).toHaveLength(0);
+    });
+
+    it('include missing (GET 404): POST-inits the include, then PUTs, initialized=true', async () => {
+      const { http, session } = mockHttpWithSession({ includeGetStatus: 404 });
+      const result = await safeUpdateClassInclude(
+        http,
+        unrestrictedSafetyConfig(),
+        CLASS_URL,
+        INCLUDE_URL,
+        'CLASS ltc DEFINITION FOR TESTING. ENDCLASS. CLASS ltc IMPLEMENTATION. ENDCLASS.',
+      );
+      expect(result.initialized).toBe(true);
+      // An init POST hit the include URL with a lockHandle, before the PUT.
+      const initPost = session.post.mock.calls.find((c) => String(c[0]).includes('/includes/testclasses?lockHandle='));
+      expect(initPost).toBeDefined();
+      expect(session.put).toHaveBeenCalledTimes(1);
+    });
+
+    it('GET-probe returns a non-404 error: propagates, no POST-init, no PUT', async () => {
+      const { http, session } = mockHttpWithSession({ includeGetStatus: 500 });
+      await expect(
+        safeUpdateClassInclude(http, unrestrictedSafetyConfig(), CLASS_URL, INCLUDE_URL, 'x'),
+      ).rejects.toThrow(AdtApiError);
+      const initPost = session.post.mock.calls.find((c) => String(c[0]).includes('/includes/testclasses?lockHandle='));
+      expect(initPost).toBeUndefined();
+      expect(session.put).not.toHaveBeenCalled();
+    });
+
+    it('always unlocks (UNLOCK fires even when the content PUT throws)', async () => {
+      const { http, session } = mockHttpWithSession({ includeGetStatus: 200 });
+      session.put.mockRejectedValueOnce(new AdtApiError('save failed', 500, INCLUDE_URL, ''));
+      await expect(
+        safeUpdateClassInclude(http, unrestrictedSafetyConfig(), CLASS_URL, INCLUDE_URL, 'x'),
+      ).rejects.toThrow(AdtApiError);
+      const unlock = session.post.mock.calls.find((c) => String(c[0]).includes('_action=UNLOCK'));
+      expect(unlock).toBeDefined();
+    });
+
+    it('initClassInclude POSTs an empty body to the include URL with the lock handle', async () => {
+      const post = vi.fn().mockResolvedValue({ statusCode: 201, headers: {}, body: '' });
+      const http = { post } as unknown as AdtHttpClient;
+      await initClassInclude(http, unrestrictedSafetyConfig(), INCLUDE_URL, 'LH99');
+      expect(post).toHaveBeenCalledTimes(1);
+      const [url, body] = post.mock.calls[0]!;
+      expect(String(url)).toBe(`${INCLUDE_URL}?lockHandle=LH99`);
+      expect(body).toBe('');
+    });
+
+    it('initClassInclude is gated by allowWrites (Create operation)', async () => {
+      const post = vi.fn();
+      const http = { post } as unknown as AdtHttpClient;
+      const readOnly = { ...unrestrictedSafetyConfig(), allowWrites: false };
+      await expect(initClassInclude(http, readOnly, INCLUDE_URL, 'LH99')).rejects.toThrow(AdtSafetyError);
+      expect(post).not.toHaveBeenCalled();
     });
   });
 });

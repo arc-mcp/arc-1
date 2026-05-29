@@ -2087,4 +2087,116 @@ describe('ADT Integration Tests', () => {
       }
     });
   });
+
+  // ─── CLAS testclasses include auto-init (issue #303 follow-up) ──────────
+  //
+  // On a freshly-created class the testclasses (CCAU) include does not exist;
+  // a content PUT alone fails with HTTP 500 "…CCAU does not have any inactive
+  // version". `update include=testclasses` now auto-creates the include (empty
+  // POST under the class lock) before the PUT. Verified live on a4h 2026-05-29.
+  describe('CLAS testclasses include auto-init', () => {
+    it('initialises a missing testclasses include on first write, then activates', async (ctx) => {
+      requireOrSkip(ctx, process.env.TEST_SAP_URL, SkipReason.NO_CREDENTIALS);
+      const { generateUniqueName } = await import('./crud-harness.js');
+      const { handleToolCall } = await import('../../src/handlers/intent.js');
+      const className = generateUniqueName('ZARC1_TCI');
+      const config = {
+        arc1Port: 8080,
+        arc1HttpAddr: '0.0.0.0:8080',
+        toolMode: 'standard',
+      } as unknown as Parameters<typeof handleToolCall>[1];
+
+      let created = false;
+      try {
+        // 1. Create empty CLAS in $TMP.
+        const createResult = await handleToolCall(client, config, 'SAPWrite', {
+          action: 'create',
+          type: 'CLAS',
+          name: className,
+          description: 'testclasses auto-init smoke (transient)',
+          package: '$TMP',
+        });
+        expect(createResult.isError).toBeUndefined();
+        created = true;
+
+        // 2. The testclasses include should not exist yet on a fresh class.
+        const beforeRead = await handleToolCall(client, config, 'SAPRead', {
+          type: 'CLAS',
+          name: className,
+          include: 'testclasses',
+          version: 'inactive',
+        });
+        // Either an error (404) or an empty/placeholder body — but NOT a real test class.
+        const beforeText = beforeRead.content[0]?.text ?? '';
+        expect(beforeText).not.toMatch(/ltc_demo/i);
+
+        // 3. Write a real local test class via update include=testclasses.
+        //    This must auto-initialise the CCAU include before the PUT.
+        const tcSource =
+          'CLASS ltc_demo DEFINITION FOR TESTING DURATION SHORT RISK LEVEL HARMLESS.\n' +
+          '  PRIVATE SECTION.\n' +
+          '    METHODS first_test FOR TESTING.\n' +
+          'ENDCLASS.\n' +
+          'CLASS ltc_demo IMPLEMENTATION.\n' +
+          '  METHOD first_test.\n' +
+          '    cl_abap_unit_assert=>assert_equals( act = 1 exp = 1 ).\n' +
+          '  ENDMETHOD.\n' +
+          'ENDCLASS.';
+        let writeResult: Awaited<ReturnType<typeof handleToolCall>>;
+        try {
+          writeResult = await handleToolCall(client, config, 'SAPWrite', {
+            action: 'update',
+            type: 'CLAS',
+            name: className,
+            include: 'testclasses',
+            source: tcSource,
+            lintBeforeWrite: false,
+          });
+        } catch (err) {
+          // NW 7.50 trips the SAP Note 2727890 lock-handle 423 on every ADT write —
+          // classify it rather than hard-fail (same baseline as the rest of include=).
+          expectSapFailureClass(err, [423], [/invalid lock handle/i, /not locked/i]);
+          requireOrSkip(
+            ctx,
+            undefined,
+            `${SkipReason.BACKEND_UNSUPPORTED} (NW 7.50 lock-handle bug, SAP Note 2727890)`,
+          );
+          return;
+        }
+        if (writeResult.isError) {
+          // Surface a classified 423 as a skip on un-patched 7.50; otherwise it's a real failure.
+          expectSapFailureClass(
+            new Error(writeResult.content[0]?.text ?? ''),
+            [423],
+            [/invalid lock handle/i, /not locked/i, /does not have any inactive version/i],
+          );
+          requireOrSkip(ctx, undefined, `${SkipReason.BACKEND_UNSUPPORTED} (include init unsupported on this backend)`);
+          return;
+        }
+        expect(writeResult.content[0]?.text).toMatch(/initialised the testclasses include first/i);
+
+        // 4. Activate and read back — the test class source must be present.
+        const activateResult = await handleToolCall(client, config, 'SAPActivate', {
+          objects: [{ type: 'CLAS', name: className }],
+        });
+        expect(activateResult.isError).toBeUndefined();
+
+        const afterRead = await handleToolCall(client, config, 'SAPRead', {
+          type: 'CLAS',
+          name: className,
+          include: 'testclasses',
+        });
+        expect(afterRead.isError).toBeUndefined();
+        expect(afterRead.content[0]?.text ?? '').toMatch(/ltc_demo/i);
+      } finally {
+        if (created) {
+          try {
+            await handleToolCall(client, config, 'SAPWrite', { action: 'delete', type: 'CLAS', name: className });
+          } catch {
+            // best-effort-cleanup
+          }
+        }
+      }
+    });
+  });
 });

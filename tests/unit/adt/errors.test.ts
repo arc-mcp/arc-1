@@ -459,6 +459,24 @@ describe('AdtApiError', () => {
       expect(classification?.transaction).toBe('SICF');
     });
 
+    it('classifies the CCAU "does not have any inactive version" 500 as include-not-initialized', () => {
+      const xml =
+        '<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework"><type id="ExceptionResourceSaveFailure"/><message lang="EN">ZCL_X==============CCAU does not have any inactive version</message></exc:exception>';
+      const classification = classifySapDomainError(500, xml);
+      expect(classification?.category).toBe('include-not-initialized');
+      expect(classification?.hint).toMatch(/testclasses|auto-creates/i);
+      // Must NOT be mis-classified as activation-dependency (that branch also matches /inactive/).
+      expect(classification?.category).not.toBe('activation-dependency');
+    });
+
+    it('does NOT classify an unrelated 500 as include-not-initialized', () => {
+      const classification = classifySapDomainError(
+        500,
+        '<exc:exception><type id="ExceptionInternalError"/><message>Internal server error</message></exc:exception>',
+      );
+      expect(classification?.category).not.toBe('include-not-initialized');
+    });
+
     it('does NOT treat generic 404 "does not exist" as ICF handler not bound', () => {
       // "does not exist" is the normal missing-object path and gets no domain
       // classification — the default "not found" message already tells the LLM

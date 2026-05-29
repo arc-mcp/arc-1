@@ -42,7 +42,8 @@ export interface SapErrorClassification {
     | 'transport-issue'
     | 'object-exists'
     | 'method-not-supported'
-    | 'icf-handler-not-bound';
+    | 'icf-handler-not-bound'
+    | 'include-not-initialized';
   hint: string;
   transaction?: string;
   details?: Record<string, string>;
@@ -352,6 +353,21 @@ export function classifySapDomainError(
   const bodyRaw = responseBody ?? '';
   const bodyLower = bodyRaw.toLowerCase();
   const typeId = extractExceptionType(bodyRaw);
+
+  // Un-initialised class-local include (issue #303 follow-up). A content PUT to a
+  // class include that doesn't exist yet (notably testclasses/CCAU on a fresh class)
+  // fails with HTTP 500 ExceptionResourceSaveFailure + "…CCAU does not have any
+  // inactive version". Checked BEFORE the activation-dependency branch below, which
+  // also matches /inactive/. ARC-1's update include= path now auto-creates the
+  // include before writing, so this hint covers only paths that bypass auto-init
+  // (e.g. a direct source PUT to an un-initialised include).
+  if (/does not have any inactive version/i.test(bodyRaw)) {
+    return {
+      category: 'include-not-initialized',
+      hint: 'This class-local include is not initialised yet (a fresh class has no testclasses/CCAU include until first write). Write to it via SAPWrite(action="update", type="CLAS", include="testclasses", source=…) — ARC-1 auto-creates the include before writing.',
+      details: typeId ? { exceptionType: typeId } : undefined,
+    };
+  }
 
   const lockPattern =
     /\blocked by\b|\bbeing edited by\b|\bcurrently editing\b|\bresource is locked\b|\balready locked\b/i.test(bodyRaw);

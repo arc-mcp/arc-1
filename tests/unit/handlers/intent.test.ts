@@ -3470,6 +3470,86 @@ ENDCLASS.`;
       expect(result.content[0]?.text).toContain('source');
       expect(mockFetch).not.toHaveBeenCalled();
     });
+
+    // ── Auto-init of a missing class-local include (issue #303 follow-up) ──
+
+    /** Mock the include= write flow; the include GET-probe returns `includeGetStatus`. */
+    function mockIncludeWriteFlow(opts: {
+      className: string;
+      include: string;
+      includeGetStatus: number;
+    }): Array<{ method: string; url: string; body?: string }> {
+      const calls: Array<{ method: string; url: string; body?: string }> = [];
+      mockFetch.mockReset();
+      mockFetch.mockImplementation(
+        (url: string | URL, fetchOpts?: { method?: string; body?: string | Buffer | null }) => {
+          const method = fetchOpts?.method ?? 'GET';
+          const urlStr = String(url);
+          calls.push({ method, url: urlStr, body: typeof fetchOpts?.body === 'string' ? fetchOpts.body : undefined });
+          if (method === 'POST' && urlStr.includes('_action=LOCK')) {
+            return Promise.resolve(
+              mockResponse(
+                200,
+                '<asx:abap><asx:values><DATA><LOCK_HANDLE>LH1</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL></DATA></asx:values></asx:abap>',
+                { 'x-csrf-token': 'T' },
+              ),
+            );
+          }
+          // The include GET-probe (no _action, GET to the include URL).
+          if (method === 'GET' && urlStr.includes(`/includes/${opts.include}`)) {
+            if (opts.includeGetStatus === 200) {
+              return Promise.resolve(mockResponse(200, 'existing include', { 'x-csrf-token': 'T' }));
+            }
+            return Promise.resolve(
+              mockResponse(
+                opts.includeGetStatus,
+                '<exc:exception><type id="ExceptionResourceNotFound"/><message>not found</message></exc:exception>',
+                { 'x-csrf-token': 'T' },
+              ),
+            );
+          }
+          return Promise.resolve(mockResponse(200, '<ok/>', { 'x-csrf-token': 'T' }));
+        },
+      );
+      return calls;
+    }
+
+    it('auto-initialises a missing testclasses include before writing (POST then PUT)', async () => {
+      const calls = mockIncludeWriteFlow({ className: 'ZCL_TC', include: 'testclasses', includeGetStatus: 404 });
+      const source = 'CLASS ltc DEFINITION FOR TESTING. ENDCLASS.\nCLASS ltc IMPLEMENTATION. ENDCLASS.';
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'update',
+        type: 'CLAS',
+        name: 'ZCL_TC',
+        include: 'testclasses',
+        source,
+        lintBeforeWrite: false,
+      });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toMatch(/initialised the testclasses include first/i);
+      // An init POST hit the include URL with a lockHandle (not a LOCK/UNLOCK action).
+      const initPost = calls.find((c) => c.method === 'POST' && c.url.includes('/includes/testclasses?lockHandle='));
+      expect(initPost).toBeDefined();
+      // The content PUT also targets the include URL.
+      const put = calls.find((c) => c.method === 'PUT' && c.url.includes('/includes/testclasses'));
+      expect(put?.body).toBe(source);
+    });
+
+    it('does NOT init when the include already exists (GET 200) — no init POST, normal message', async () => {
+      const calls = mockIncludeWriteFlow({ className: 'ZCL_TC', include: 'testclasses', includeGetStatus: 200 });
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'update',
+        type: 'CLAS',
+        name: 'ZCL_TC',
+        include: 'testclasses',
+        source: 'CLASS ltc DEFINITION FOR TESTING. ENDCLASS. CLASS ltc IMPLEMENTATION. ENDCLASS.',
+        lintBeforeWrite: false,
+      });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).not.toMatch(/initialised the/i);
+      const initPost = calls.find((c) => c.method === 'POST' && c.url.includes('/includes/testclasses?lockHandle='));
+      expect(initPost).toBeUndefined();
+    });
   });
 
   // ─── SAPWrite FUGR / FUNC (issue #250) ───────────────────────────

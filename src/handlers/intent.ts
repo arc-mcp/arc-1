@@ -57,6 +57,7 @@ import {
   createObject,
   deleteObject,
   lockObject,
+  safeUpdateClassInclude,
   safeUpdateObject,
   safeUpdateSource,
   unlockObject,
@@ -3754,7 +3755,11 @@ async function handleSAPWrite(
           return errorResult('"source" is required when updating a CLAS include.');
         }
 
-        await safeUpdateSource(
+        // Auto-initialise the include if it doesn't exist yet. On a fresh class
+        // the testclasses (CCAU) include is absent — a content PUT alone fails
+        // with HTTP 500 "…CCAU does not have any inactive version". safeUpdateClassInclude
+        // probes the include and POST-creates it (under the same lock) before the PUT.
+        const { initialized } = await safeUpdateClassInclude(
           client.http,
           client.safety,
           objectUrl,
@@ -3764,8 +3769,9 @@ async function handleSAPWrite(
           cachedFeatures?.abapRelease,
         );
         invalidateWrittenObject(type, name);
+        const initNote = initialized ? ` (initialised the ${include} include first)` : '';
         return textResult(
-          `Successfully updated ${type} ${name} include ${include}. Active version remains unchanged until activation; read with SAPRead(version="inactive") to verify the draft.`,
+          `Successfully updated ${type} ${name} include ${include}${initNote}. Active version remains unchanged until activation; read with SAPRead(version="inactive") to verify the draft.`,
         );
       }
 
