@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.9.7](https://github.com/marianfoo/arc-1/compare/v0.9.6...v0.9.7) (2026-05-30)
+
+
+### Features
+
+* auto-initialise class-local includes on write (testclasses/CCAU) ([#314](https://github.com/marianfoo/arc-1/issues/314)) ([2a7bdc0](https://github.com/marianfoo/arc-1/commit/2a7bdc0708b68790aae9848744c3aa3510dfcf95))
+* class-section surgery for CLAS ([#307](https://github.com/marianfoo/arc-1/issues/307)) ([7d17ea2](https://github.com/marianfoo/arc-1/commit/7d17ea229d8315634762b131ffa6ab2b25d3f50b))
+* **read:** add TABLE_QUERY type for multi-column structured queries ([#309](https://github.com/marianfoo/arc-1/issues/309)) ([7eb01f4](https://github.com/marianfoo/arc-1/commit/7eb01f4e89509fa3be638a57bed872c2fa7b6234))
+* **read:** SAPRead grep — regex search within object source ([#316](https://github.com/marianfoo/arc-1/issues/316)) ([0d338e2](https://github.com/marianfoo/arc-1/commit/0d338e2f194ead93d1e391be869dd93dbb2b2f51))
+* **safety:** allowedPackages X/** subtree rule + nodestructure-backed resolver ([#284](https://github.com/marianfoo/arc-1/issues/284)) ([2d34909](https://github.com/marianfoo/arc-1/commit/2d349095bddcf64f94053845ba1c354685514434))
+
+
+### Bug Fixes
+
+* **btp:** per-user OAuth2UserTokenExchange Bearer token for headless BTP → ABAP ([#315](https://github.com/marianfoo/arc-1/issues/315)) ([d5bb9ca](https://github.com/marianfoo/arc-1/commit/d5bb9cab29433586ada48790ffcb96e5e99d57f1))
+* **http:** dedupe Cookie header so live session id wins over stale file copy ([#293](https://github.com/marianfoo/arc-1/issues/293), part 1) ([#310](https://github.com/marianfoo/arc-1/issues/310)) ([fdb478e](https://github.com/marianfoo/arc-1/commit/fdb478e078be22cab37a71ac3000394fdd76064c))
+* **intent:** replace 3 raw NUL bytes in source with \x00 escapes ([#317](https://github.com/marianfoo/arc-1/issues/317)) ([d125142](https://github.com/marianfoo/arc-1/commit/d1251421a0d4b3777961a7e558bb5aa3750b1450))
+* release-aware 423 lock-handle guidance ([#312](https://github.com/marianfoo/arc-1/issues/312)) ([9c7e021](https://github.com/marianfoo/arc-1/commit/9c7e0212feffb28514fdfb4a6d2c64945c2d4f98))
+* **write:** reject mixed-case object names on update/edit_method/delete ([#311](https://github.com/marianfoo/arc-1/issues/311)) ([2cff142](https://github.com/marianfoo/arc-1/commit/2cff14262ddab84701dd821fc86d73b38510e3d1))
+
+
+### Tests
+
+* clean up transport test requests ([#308](https://github.com/marianfoo/arc-1/issues/308)) ([5d643d2](https://github.com/marianfoo/arc-1/commit/5d643d2b732085544bba6a4c1a503bfa1f61c8ce))
+* convert pseudo skips to real skips ([#304](https://github.com/marianfoo/arc-1/issues/304)) ([73437e8](https://github.com/marianfoo/arc-1/commit/73437e8f341c078a209c6c86d4862b2e389a36d8))
+* **e2e:** fix ZI_ARC1_I33_PROJ fixture activation on S/4HANA 2023 ([#318](https://github.com/marianfoo/arc-1/issues/318)) ([9d8ac15](https://github.com/marianfoo/arc-1/commit/9d8ac15a2799b341f57896c9e3e89d6e0b690758))
+* harden e2e fixture activation ([#306](https://github.com/marianfoo/arc-1/issues/306)) ([ab5eaa7](https://github.com/marianfoo/arc-1/commit/ab5eaa762c5333d198d27346ffd5dfed573a46d2))
+
 ## [0.9.6](https://github.com/marianfoo/arc-1/compare/v0.9.5...v0.9.6) (2026-05-27)
 
 
