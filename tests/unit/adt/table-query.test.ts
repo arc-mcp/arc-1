@@ -141,11 +141,25 @@ describe('buildTableQuerySql', () => {
   // ─── Error cases ───────────────────────────────────────────────────
 
   it('throws on empty table name', () => {
-    expect(() => buildTableQuerySql('')).toThrow('TABLE_QUERY: table name must not be empty');
+    expect(() => buildTableQuerySql('')).toThrow('table name "" is invalid');
   });
 
   it('throws on table name that sanitises to empty', () => {
-    expect(() => buildTableQuerySql('!!!')).toThrow('TABLE_QUERY: table name must not be empty');
+    expect(() => buildTableQuerySql('!!!')).toThrow('table name "!!!" is invalid');
+  });
+
+  it('throws on a column that sanitises to empty (fail closed, no "SELECT , X")', () => {
+    expect(() => buildTableQuerySql('T000', ['', 'MTEXT'])).toThrow('column name "" is invalid');
+    expect(() => buildTableQuerySql('T000', ['!!!', 'MTEXT'])).toThrow('column name "!!!" is invalid');
+  });
+
+  it('throws on a where-field that sanitises to empty (fail closed, no "WHERE  =")', () => {
+    expect(() => buildTableQuerySql('T000', undefined, [{ field: '', op: '=', value: '100' }])).toThrow(
+      'field name "" is invalid',
+    );
+    expect(() => buildTableQuerySql('T000', undefined, [{ field: '@@@', op: '=', value: '1' }])).toThrow(
+      'field name "@@@" is invalid',
+    );
   });
 
   it('throws on disallowed operator', () => {
@@ -171,5 +185,45 @@ describe('buildTableQuerySql', () => {
       ],
     );
     expect(sql).toBe("SELECT MATNR, BWART, BUDAT_MKPF, MENGE FROM MSEG WHERE MATNR = '300006888' AND BWART = '262'");
+  });
+
+  // ─── Security invariant ───────────────────────────────────────────
+  // Whatever the caller throws at the injectable positions, the emitted SQL must remain a
+  // single, single-table SELECT: no statement break, no comment, no UNION/JOIN, no subquery.
+  // This is what justifies gating TABLE_QUERY by allowDataPreview instead of allowFreeSQL.
+  //
+  // Hostile *values* are SAFE precisely because they are escaped into quoted literals — but the
+  // literal text still contains ';', '--', 'DROP TABLE' etc. So we inspect the SQL *skeleton*
+  // (literals removed): if the skeleton is clean, nothing dangerous can execute.
+
+  it('keeps a clean single-statement SELECT skeleton for hostile input (literals stripped)', () => {
+    const stripLiterals = (sql: string) => sql.replace(/'(?:[^']|'')*'/g, "''");
+    const hostileValues = [
+      "x' OR '1'='1",
+      "'; DROP TABLE T000; --",
+      'x UNION SELECT bcode FROM usr02',
+      'x) UNION SELECT * FROM usr02 --',
+      '/* */ ; SELECT',
+    ];
+    for (const v of hostileValues) {
+      for (const op of ['=', 'LIKE', 'IN'] as const) {
+        const sql = buildTableQuerySql(
+          // identifiers also fed hostile tokens (spaces/`;`/`*` are stripped by sanitisation)
+          'T000); DROP TABLE T000 --',
+          ['MANDT UNION SELECT', 'MTEXT'],
+          [{ field: 'MANDT OR 1', op, value: v }],
+        );
+        expect(sql.startsWith('SELECT ')).toBe(true);
+        const skeleton = stripLiterals(sql);
+        // The hostile value must live ONLY inside a literal — gone from the skeleton.
+        expect(skeleton.includes(';')).toBe(false);
+        expect(skeleton.includes('--')).toBe(false);
+        expect(skeleton.includes('/*')).toBe(false);
+        expect(/\bUNION\s+SELECT\b/i.test(skeleton)).toBe(false);
+        expect(/\bJOIN\b/i.test(skeleton)).toBe(false);
+        expect(/\bDROP\s+TABLE\b/i.test(skeleton)).toBe(false);
+        expect(/\(\s*SELECT\b/i.test(skeleton)).toBe(false);
+      }
+    }
   });
 });

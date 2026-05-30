@@ -1361,6 +1361,44 @@ describe('AdtClient', () => {
     });
   });
 
+  describe('runTableQuery (TABLE_QUERY)', () => {
+    it('is blocked by the data-preview gate even when free SQL is allowed', async () => {
+      // The security contract: TABLE_QUERY requires allowDataPreview specifically — holding the
+      // higher allowFreeSQL permission must NOT grant it (it routes through OperationType.Query).
+      const client = createClient({
+        safety: { ...unrestrictedSafetyConfig(), allowDataPreview: false, allowFreeSQL: true },
+      });
+      await expect(client.runTableQuery('MARA', { where: [{ field: 'MATNR', op: '=', value: 'X' }] })).rejects.toThrow(
+        AdtSafetyError,
+      );
+    });
+
+    it('posts the built SELECT to the freestyle endpoint and clamps an oversized row limit', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, loadFixture('table-contents.xml'), { 'x-csrf-token': 'T' }));
+      const client = createClient();
+      const result = await client.runTableQuery('MARA', {
+        columns: ['MATNR'],
+        where: [{ field: 'MATNR', op: '=', value: 'X' }],
+        maxRows: 999_999,
+      });
+      const postCall = mockFetch.mock.calls.find((c) => String(c[0]).includes('/datapreview/freestyle'));
+      expect(postCall).toBeDefined();
+      expect(String(postCall?.[0])).toContain('rowNumber=10000'); // clamped from 999999
+      expect(String((postCall?.[1] as RequestInit)?.body)).toBe("SELECT MATNR FROM MARA WHERE MATNR = 'X'");
+      expect(result.columns.length).toBeGreaterThan(0);
+    });
+
+    it('falls back to the default row limit when maxRows is NaN (no rowNumber=NaN)', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, loadFixture('table-contents.xml'), { 'x-csrf-token': 'T' }));
+      const client = createClient();
+      await client.runTableQuery('T000', { maxRows: Number.NaN });
+      const postCall = mockFetch.mock.calls.find((c) => String(c[0]).includes('/datapreview/freestyle'));
+      expect(String(postCall?.[0])).toContain('rowNumber=100');
+    });
+  });
+
   describe('class metadata and structured read', () => {
     const classMetadataXml = `<?xml version="1.0" encoding="utf-8"?>
 <class:abapClass class:final="true" class:visibility="public" class:category="00" class:sharedMemoryEnabled="false" class:fixPointArithmetic="true"
