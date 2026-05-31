@@ -1,0 +1,41 @@
+{
+  "transport": "A4HK905691",
+  "package": "Z_LLM_TEST_PACKAGE",
+  "generatedAt": "2026-05-31T07:09:10.973Z",
+  "baselineStrategy": "ARC-1 stored first snapshot",
+  "afterSource": "S/4 DEV active version after ARC-1 update",
+  "objects": [
+    {
+      "pgmid": "R3TR",
+      "type": "PROG",
+      "name": "ZARC1_RV_TFVA5L_A",
+      "path": "objects/PROG/ZARC1_RV_TFVA5L_A/zarc1_rv_tfva5l_a.prog.abap",
+      "beforeSource": "first active snapshot created by this proof run",
+      "afterSource": "active version after second ARC-1 update"
+    },
+    {
+      "pgmid": "R3TR",
+      "type": "PROG",
+      "name": "ZARC1_RV_TFVA5L_B",
+      "path": "objects/PROG/ZARC1_RV_TFVA5L_B/zarc1_rv_tfva5l_b.prog.abap",
+      "beforeSource": "first active snapshot created by this proof run",
+      "afterSource": "active version after second ARC-1 update"
+    }
+  ],
+  "transportObjects": [
+    {
+      "task": "A4HK905692",
+      "pgmid": "R3TR",
+      "type": "PROG",
+      "name": "ZARC1_RV_TFVA5L_A",
+      "locked": true
+    },
+    {
+      "task": "A4HK905692",
+      "pgmid": "R3TR",
+      "type": "PROG",
+      "name": "ZARC1_RV_TFVA5L_B",
+      "locked": true
+    }
+  ]
+}
