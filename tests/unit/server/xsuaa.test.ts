@@ -243,7 +243,7 @@ describe('createXsuaaOAuthProvider', () => {
       const result = createXsuaaOAuthProvider(STUB_XSUAA_CREDS, 'https://arc1.example.com');
       expect(result.clientStore).toBeDefined();
       expect(infoSpy).toHaveBeenCalledWith(
-        'XSUAA OAuth provider created (stateless DCR)',
+        'XSUAA OAuth provider created (stateless DCR + callback proxy)',
         expect.objectContaining({ dcrSigningSource: 'xsuaa' }),
       );
     } finally {
@@ -260,7 +260,7 @@ describe('createXsuaaOAuthProvider', () => {
         dcrSigningSecret: 'a-real-32-byte-secret-string-OK!',
       });
       expect(infoSpy).toHaveBeenCalledWith(
-        'XSUAA OAuth provider created (stateless DCR)',
+        'XSUAA OAuth provider created (stateless DCR + callback proxy)',
         expect.objectContaining({ dcrSigningSource: 'env' }),
       );
       expect(infoSpy).toHaveBeenCalledWith(
@@ -283,7 +283,7 @@ describe('createXsuaaOAuthProvider', () => {
       expect(result.clientStore).toBeDefined();
       expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('ARC1_DCR_SIGNING_SECRET was set but is empty'));
       expect(infoSpy).toHaveBeenCalledWith(
-        'XSUAA OAuth provider created (stateless DCR)',
+        'XSUAA OAuth provider created (stateless DCR + callback proxy)',
         expect.objectContaining({ dcrSigningSource: 'xsuaa' }),
       );
     } finally {
@@ -304,7 +304,7 @@ describe('createXsuaaOAuthProvider', () => {
       expect(result.clientStore).toBeDefined();
       expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('ARC1_DCR_SIGNING_SECRET was set but is empty'));
       expect(infoSpy).toHaveBeenCalledWith(
-        'XSUAA OAuth provider created (stateless DCR)',
+        'XSUAA OAuth provider created (stateless DCR + callback proxy)',
         expect.objectContaining({ dcrSigningSource: 'xsuaa' }),
       );
     } finally {

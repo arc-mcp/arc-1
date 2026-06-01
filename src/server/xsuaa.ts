@@ -34,6 +34,7 @@ import { XsuaaService } from '@sap/xssec';
 import { expandScopes } from '../authz/policy.js';
 import { API_KEY_PROFILES } from './config.js';
 import { logger } from './logger.js';
+import { OAuthStateCodec } from './oauth-state.js';
 import { StatelessDcrClientStore } from './stateless-client-store.js';
 
 // ─── Types ───────────────────────────────────────────────────────────
@@ -235,11 +236,19 @@ class XsuaaProxyOAuthProvider extends ProxyOAuthServerProvider {
   private xsuaaAuthUrl: string;
   private xsuaaXsappname: string;
   private _localClientStore: StatelessDcrClientStore;
+  /** ARC-1's own callback URL, sent to XSUAA as the redirect_uri so ARC-1
+   *  sits in the return path and can re-encode the client's `state`
+   *  correctly (issue #214 — XSUAA emits literal `+`). */
+  private callbackUrl: string;
+  /** Signs/verifies the opaque, URL-safe state token sent to XSUAA. */
+  private stateCodec: OAuthStateCodec;
 
   constructor(
     credentials: XsuaaCredentials,
     verifier: (token: string) => Promise<AuthInfo>,
     localClientStore: StatelessDcrClientStore,
+    callbackUrl: string,
+    stateCodec: OAuthStateCodec,
   ) {
     const authUrl = `${credentials.url}/oauth/authorize`;
     const tokenUrl = `${credentials.url}/oauth/token`;
@@ -260,6 +269,8 @@ class XsuaaProxyOAuthProvider extends ProxyOAuthServerProvider {
     this.xsuaaAuthUrl = authUrl;
     this.xsuaaXsappname = credentials.xsappname;
     this._localClientStore = localClientStore;
+    this.callbackUrl = callbackUrl;
+    this.stateCodec = stateCodec;
     this.skipLocalPkceValidation = true;
   }
 
@@ -287,21 +298,33 @@ class XsuaaProxyOAuthProvider extends ProxyOAuthServerProvider {
     },
     res: { redirect(url: string): void },
   ): Promise<void> {
-    // XSUAA only allows http://localhost for redirect URIs, never http://127.0.0.1.
-    // Some MCP clients (e.g., MCP Inspector) use 127.0.0.1, so rewrite to localhost
-    // before forwarding to XSUAA. The token exchange must use the same rewritten URI.
-    const xsuaaRedirectUri = params.redirectUri.replace('://127.0.0.1:', '://localhost:');
+    // ── Callback proxy (issue #214) ──────────────────────────────────
+    // Instead of sending XSUAA the client's redirect_uri and the client's
+    // raw `state`, we send XSUAA ARC-1's OWN /oauth/callback and an opaque,
+    // URL-safe state token that carries the client's real redirect_uri +
+    // state. XSUAA then redirects back to ARC-1 (not the client), and the
+    // /oauth/callback route re-emits the client's ORIGINAL state with proper
+    // `%2B` encoding. This sidesteps XSUAA's bug of echoing a literal `+`
+    // for any state containing `+` (standard base64 states hit this ~50% of
+    // the time; VS Code surfaces it as "State does not match").
+    //
+    // The token is base64url (no `+`/`/`), so XSUAA has nothing to mangle on
+    // the round trip and Express's `+`→space decode is a no-op on it.
+    const arc1State = this.stateCodec.encode({
+      clientState: params.state,
+      clientRedirectUri: params.redirectUri,
+    });
 
     const targetUrl = new URL(this.xsuaaAuthUrl);
     const searchParams = new URLSearchParams({
       client_id: this.xsuaaClientId, // Use XSUAA client, not local DCR client
       response_type: 'code',
-      redirect_uri: xsuaaRedirectUri,
-      code_challenge: params.codeChallenge,
+      redirect_uri: this.callbackUrl, // ARC-1's callback, not the client's
+      code_challenge: params.codeChallenge, // client's PKCE challenge, forwarded as-is
       code_challenge_method: 'S256',
+      state: arc1State,
     });
 
-    if (params.state) searchParams.set('state', params.state);
     if (params.scopes?.length) {
       // Qualify short scope names (read, write, admin) with XSUAA xsappname prefix.
       // XSUAA rejects unqualified scopes like "admin" — it needs "arc1-mcp!t498139.admin".
@@ -317,9 +340,10 @@ class XsuaaProxyOAuthProvider extends ProxyOAuthServerProvider {
 
     targetUrl.search = searchParams.toString();
 
-    logger.debug('XSUAA authorize redirect', {
+    logger.debug('XSUAA authorize redirect (callback proxy)', {
       xsuaaClient: this.xsuaaClientId,
-      redirectUri: params.redirectUri,
+      clientRedirectUri: params.redirectUri,
+      callbackUrl: this.callbackUrl,
     });
 
     res.redirect(targetUrl.toString());
@@ -333,11 +357,10 @@ class XsuaaProxyOAuthProvider extends ProxyOAuthServerProvider {
     _client: OAuthClientInformationFull,
     authorizationCode: string,
     codeVerifier?: string,
-    redirectUri?: string,
+    _redirectUri?: string,
   ) {
     logger.debug('XSUAA token exchange: authorization_code', {
       hasCodeVerifier: !!codeVerifier,
-      redirectUri,
     });
     const params = new URLSearchParams({
       grant_type: 'authorization_code',
@@ -346,8 +369,12 @@ class XsuaaProxyOAuthProvider extends ProxyOAuthServerProvider {
       client_secret: this.xsuaaClientSecret,
     });
     if (codeVerifier) params.set('code_verifier', codeVerifier);
-    // Must match the rewritten redirect_uri sent during authorize
-    if (redirectUri) params.set('redirect_uri', redirectUri.replace('://127.0.0.1:', '://localhost:'));
+    // OAuth requires the token-exchange redirect_uri to match the one sent at
+    // authorize time. Since the callback proxy sent XSUAA ARC-1's own
+    // /oauth/callback (not the client's redirect_uri), the exchange must use
+    // the same value. The client's redirect_uri (_redirectUri) is irrelevant
+    // to XSUAA here — XSUAA only ever saw ARC-1's callback.
+    params.set('redirect_uri', this.callbackUrl);
 
     const response = await fetch(this.xsuaaTokenUrl, {
       method: 'POST',
@@ -462,13 +489,21 @@ export interface CreateXsuaaOAuthProviderOptions {
    * behavior).
    */
   dcrSigningSecret?: string;
+  /**
+   * ARC-1's own OAuth callback URL (e.g. `https://app.../oauth/callback`),
+   * sent to XSUAA as the redirect_uri so ARC-1 sits in the return path and
+   * can fix XSUAA's `+`-in-state encoding bug (issue #214). Must be
+   * absolute and match an xs-security.json `redirect-uris` pattern. When
+   * omitted, falls back to `${appUrl}/oauth/callback`.
+   */
+  callbackUrl?: string;
 }
 
 export function createXsuaaOAuthProvider(
   credentials: XsuaaCredentials,
   appUrl: string,
   options: CreateXsuaaOAuthProviderOptions = {},
-): { provider: ProxyOAuthServerProvider; clientStore: StatelessDcrClientStore } {
+): { provider: ProxyOAuthServerProvider; clientStore: StatelessDcrClientStore; stateCodec: OAuthStateCodec } {
   // The signing secret defaults to the XSUAA `clientsecret`, which is the
   // trust anchor for "this server can mint client_ids". The downside: MTA
   // `cf deploy` recreates the service binding and rotates the clientsecret
@@ -504,12 +539,22 @@ export function createXsuaaOAuthProvider(
   });
   const verifier = createXsuaaTokenVerifier(credentials);
 
-  const provider = new XsuaaProxyOAuthProvider(credentials, verifier, clientStore);
+  // The state codec reuses the same resolved signing secret as DCR (distinct
+  // KDF label inside OAuthStateCodec keeps the two key spaces separate), so it
+  // inherits the same "survives cf deploy" property when ARC1_DCR_SIGNING_SECRET
+  // is set. State tokens are short-lived (single OAuth flow), so the codec uses
+  // its own built-in TTL rather than the DCR TTL.
+  const stateCodec = new OAuthStateCodec(dcrSigningSecret);
 
-  logger.info('XSUAA OAuth provider created (stateless DCR)', {
+  const callbackUrl = options.callbackUrl ?? `${appUrl.replace(/\/$/, '')}/oauth/callback`;
+
+  const provider = new XsuaaProxyOAuthProvider(credentials, verifier, clientStore, callbackUrl, stateCodec);
+
+  logger.info('XSUAA OAuth provider created (stateless DCR + callback proxy)', {
     xsappname: credentials.xsappname,
     authorizationUrl: `${credentials.url}/oauth/authorize`,
     appUrl,
+    callbackUrl,
     dcrTtlSeconds: options.dcrTtlSeconds,
     dcrSigningSource,
   });
@@ -524,5 +569,5 @@ export function createXsuaaOAuthProvider(
     );
   }
 
-  return { provider, clientStore };
+  return { provider, clientStore, stateCodec };
 }

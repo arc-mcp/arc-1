@@ -34,9 +34,78 @@ import helmet from 'helmet';
 import { expandScopes } from '../authz/policy.js';
 import { API_KEY_PROFILES } from './config.js';
 import { logger } from './logger.js';
+import type { OAuthStateCodec } from './oauth-state.js';
 import { VERSION } from './server.js';
 import type { ServerConfig } from './types.js';
 import type { XsuaaCredentials } from './xsuaa.js';
+
+// ─── OAuth Callback Proxy Handler (issue #214) ───────────────────────
+
+/**
+ * Express handler for ARC-1's `/oauth/callback`, the second half of the
+ * XSUAA callback proxy that fixes the `+`-in-state bug (issue #214).
+ *
+ * XSUAA redirects here (not to the client) with an opaque base64url `state`
+ * token that ARC-1's `authorize()` minted. We verify + decode it to recover
+ * the client's ORIGINAL `redirect_uri` and `state`, then 302 to the client
+ * re-emitting the state via `URL.searchParams` — whose serializer encodes a
+ * literal `+` as `%2B`, exactly the encoding the client's parser expects.
+ *
+ * Exported for unit tests; mounted in `startHttpServer`.
+ */
+export function createOAuthCallbackHandler(stateCodec: OAuthStateCodec) {
+  return (req: Request, res: Response): void => {
+    const stateToken = typeof req.query.state === 'string' ? req.query.state : '';
+    const decoded = stateCodec.decode(stateToken);
+    if (decoded.kind !== 'ok') {
+      logger.warn('OAuth callback: invalid state token', { reason: decoded.reason });
+      // We cannot safely redirect anywhere — the client redirect_uri lives
+      // inside the (unverified) token. Return a terminal error page.
+      res
+        .status(400)
+        .type('html')
+        .send(
+          '<!doctype html><html><body style="font-family:sans-serif;padding:2rem">' +
+            '<h1>Authentication failed</h1>' +
+            '<p>The OAuth state token was invalid or expired. Please retry the sign-in from your MCP client.</p>' +
+            '</body></html>',
+        );
+      return;
+    }
+
+    let target: URL;
+    try {
+      target = new URL(decoded.clientRedirectUri);
+    } catch {
+      logger.warn('OAuth callback: stored redirect_uri is not a valid URL');
+      res.status(400).type('html').send('<!doctype html><html><body>Invalid redirect target.</body></html>');
+      return;
+    }
+
+    // Forward either the error or the authorization code to the client,
+    // re-attaching the client's ORIGINAL state. URLSearchParams serialization
+    // encodes `+` as `%2B`, which is exactly what fixes the round-trip.
+    const error = typeof req.query.error === 'string' ? req.query.error : undefined;
+    if (error) {
+      target.searchParams.set('error', error);
+      const errDesc = req.query.error_description;
+      if (typeof errDesc === 'string') target.searchParams.set('error_description', errDesc);
+    } else {
+      const code = typeof req.query.code === 'string' ? req.query.code : '';
+      target.searchParams.set('code', code);
+    }
+    if (decoded.clientState !== undefined) {
+      target.searchParams.set('state', decoded.clientState);
+    }
+
+    logger.debug('OAuth callback: redirecting to client', {
+      clientRedirectUriHost: target.host,
+      hasError: !!error,
+      hasState: decoded.clientState !== undefined,
+    });
+    res.redirect(302, target.toString());
+  };
+}
 
 // ─── API Key Matching Helper ─────────────────────────────────────────
 
@@ -273,10 +342,24 @@ export async function startHttpServer(
     // Determine app URL for OAuth metadata
     const appUrl = getAppUrl() ?? `http://${bindHost}:${port}`;
 
+    // Compute the prefix-aware public base once, up front — it's needed both
+    // for the callback URL (below) and the metadata override (further down).
+    // When ARC-1 is fronted by SAP API Management with a base path (e.g.
+    // /arc1), endpoints must be advertised at that prefix even though the
+    // Express routes live at the root (the proxy strips the prefix).
+    const oauthParsedAppUrl = new URL(appUrl);
+    const oauthBasePath = oauthParsedAppUrl.pathname.replace(/\/$/, ''); // '' for root, '/arc1' otherwise
+    const oauthFullBase = `${oauthParsedAppUrl.origin}${oauthBasePath}`;
+    // ARC-1's own OAuth callback (issue #214 callback proxy). Public, prefix-aware
+    // URL sent to XSUAA as redirect_uri; the Express route is mounted at the root
+    // `/oauth/callback` below since the proxy strips the prefix before forwarding.
+    const oauthCallbackUrl = `${oauthFullBase}/oauth/callback`;
+
     // Create XSUAA provider + chained verifier
-    const { provider, clientStore } = createXsuaaOAuthProvider(xsuaaCredentials, appUrl, {
+    const { provider, clientStore, stateCodec } = createXsuaaOAuthProvider(xsuaaCredentials, appUrl, {
       dcrTtlSeconds: config.oauthDcrTtlSeconds,
       dcrSigningSecret: config.dcrSigningSecret,
+      callbackUrl: oauthCallbackUrl,
     });
     const xsuaaVerifier = createXsuaaTokenVerifier(xsuaaCredentials);
     const oidcVerifier = config.oidcIssuer ? await createOidcVerifier(config) : undefined;
@@ -325,6 +408,9 @@ export async function startHttpServer(
       app.use('/authorize', createAuthRateLimiter('/mcp', mcpRatePerMinute, { skip: (req) => !isCopilotJsonRpc(req) }));
       app.use('/token', createAuthRateLimiter('/token', config.authRateLimit));
       app.use('/revoke', createAuthRateLimiter('/revoke', config.authRateLimit));
+      // /oauth/callback is unauthenticated and does an HMAC verify per hit —
+      // rate-limit it like the other OAuth endpoints to gate token-probing.
+      app.use('/oauth/callback', createAuthRateLimiter('/oauth/callback', config.authRateLimit));
     }
 
     // ─── OAuth authorize normalization + Copilot Studio MCP workaround ──
@@ -387,6 +473,27 @@ export async function startHttpServer(
       next();
     });
 
+    // ─── OAuth callback proxy (issue #214) ─────────────────────────
+    // XSUAA echoes a literal `+` (not `%2B`) in the `state` it appends to the
+    // redirect URL. base64 `state` values (e.g. VS Code's
+    // `randomBytes(16).toString('base64')`) contain `+` ~50% of the time; the
+    // receiving client parses the callback query with form-urlencoded
+    // semantics (`+`→space), so the round-tripped `state` no longer matches
+    // and login fails with "State does not match".
+    //
+    // ARC-1 cannot change what XSUAA emits, so the provider's authorize()
+    // sends XSUAA ARC-1's own /oauth/callback + an opaque base64url state
+    // token (immune to the `+` bug). XSUAA redirects HERE; we decode the token
+    // to recover the client's ORIGINAL redirect_uri + state, then redirect to
+    // the client re-emitting the state via URLSearchParams, which encodes `+`
+    // as `%2B` so the client parses it back correctly.
+    //
+    // Mounted at the root path; the public (prefix-aware) form was sent to
+    // XSUAA as oauthCallbackUrl. A strip-prefix proxy maps the public path
+    // back to this root route. Handler is extracted (exported) so the
+    // state-round-trip contract is unit-testable without a live XSUAA.
+    app.get('/oauth/callback', createOAuthCallbackHandler(stateCodec));
+
     // ─── Path-prefix-aware OAuth metadata override ────────────────
     // The MCP SDK's `mcpAuthRouter` builds endpoint URLs with
     // `new URL("/authorize", baseUrl).href`, which strips any path component
@@ -401,9 +508,9 @@ export async function startHttpServer(
     // endpoints (/authorize, /token, /register, /revoke) stay at the root of
     // arc-1's Express app — the proxy strips its base path before forwarding,
     // so they resolve correctly without further changes.
-    const parsedAppUrl = new URL(appUrl);
-    const basePath = parsedAppUrl.pathname.replace(/\/$/, ''); // '' for root, '/arc1' otherwise
-    const fullBase = `${parsedAppUrl.origin}${basePath}`; // 'https://api/arc1' or 'https://api'
+    // Reuse the prefix-aware base computed once near the top of this block.
+    const basePath = oauthBasePath;
+    const fullBase = oauthFullBase;
     const scopesSupported = ['read', 'write', 'data', 'sql', 'transports', 'git', 'admin'];
 
     if (basePath) {
