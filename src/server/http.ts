@@ -55,6 +55,21 @@ function escapeHtml(value: string): string {
 }
 
 /**
+ * Is this a loopback HTTP redirect URI (`http://localhost|127.0.0.1|[::1]`)?
+ * Such callbacks are ephemeral local listeners that native MCP clients (GitHub
+ * Copilot, MCP Inspector) tear down on failure — so on an OAuth error we render
+ * a self-hosted page for them rather than 302-ing to a dead port. Hosted HTTPS
+ * callbacks (claude.ai, Copilot Studio) and custom-scheme app callbacks
+ * (`vscode:`, `cursor:`) are live and expect the spec error redirect, so they
+ * keep getting it.
+ */
+function isLoopbackHttpRedirect(url: URL): boolean {
+  if (url.protocol !== 'http:') return false;
+  const host = url.hostname.toLowerCase();
+  return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]';
+}
+
+/**
  * Render a self-hosted OAuth error page for `/oauth/callback`. Surfaces the
  * IdP's error to the human (loopback MCP clients usually can't — they close
  * their listener on failure) with an actionable hint for the most common case,
@@ -124,28 +139,37 @@ export function createOAuthCallbackHandler(stateCodec: OAuthStateCodec) {
       return;
     }
 
-    // On error there is no auth code. Native/loopback MCP clients (GitHub
-    // Copilot, MCP Inspector, …) typically close their callback listener the
-    // instant the flow fails, so a 302 to the client's redirect_uri lands on a
-    // dead port — the user gets a blank ERR_CONNECTION_REFUSED with no clue why.
-    // Render a self-hosted page that surfaces the real reason (e.g. invalid_scope
-    // → missing role collection) instead, with a best-effort link back for the
-    // rare client whose listener is still alive.
+    // On error there is no auth code. Forward the error to the client per the
+    // OAuth spec — EXCEPT for loopback HTTP callbacks. Native MCP clients
+    // (GitHub Copilot, MCP Inspector, …) tear down their ephemeral localhost
+    // listener the instant the flow fails, so a 302 there lands on a dead port
+    // and the user sees a blank ERR_CONNECTION_REFUSED with no clue why. For
+    // those we render a self-hosted page that surfaces the real reason (e.g.
+    // invalid_scope → missing role collection), with a best-effort link back.
+    // Hosted HTTPS callbacks (claude.ai, Copilot Studio) and custom-scheme app
+    // callbacks (vscode:, cursor:) are live and expect the redirect, so they
+    // keep getting it.
     const error = typeof req.query.error === 'string' ? req.query.error : undefined;
     if (error) {
       const errorDescription = typeof req.query.error_description === 'string' ? req.query.error_description : '';
       if (decoded.clientState !== undefined) target.searchParams.set('state', decoded.clientState);
       target.searchParams.set('error', error);
       if (errorDescription) target.searchParams.set('error_description', errorDescription);
+      const loopback = isLoopbackHttpRedirect(target);
       logger.warn('OAuth callback: identity provider returned an error', {
         error,
         errorDescriptionPreview: errorDescription.slice(0, 200),
         clientRedirectUriHost: target.host,
+        loopback,
       });
-      res
-        .status(400)
-        .type('html')
-        .send(renderOAuthErrorPage(error, errorDescription, target.toString()));
+      if (loopback) {
+        res
+          .status(400)
+          .type('html')
+          .send(renderOAuthErrorPage(error, errorDescription, target.toString()));
+      } else {
+        res.redirect(302, target.toString());
+      }
       return;
     }
 

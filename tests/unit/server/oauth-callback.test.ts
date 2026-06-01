@@ -66,6 +66,25 @@ describe('createOAuthCallbackHandler — issue #214 round-trip', () => {
     expect(res.text).toContain('error=access_denied');
   });
 
+  it('redirects the error (not a terminal page) for a hosted HTTPS callback', async () => {
+    const codec = new OAuthStateCodec(SECRET);
+    const token = codec.encode({
+      clientState: 'st+ate==',
+      clientRedirectUri: 'https://claude.ai/api/mcp/auth_callback',
+    });
+    const res = await request(buildApp(codec))
+      .get('/oauth/callback')
+      .query({ error: 'invalid_scope', error_description: 'no scopes', state: token });
+    // A hosted callback is alive and expects the spec-compliant error redirect.
+    expect(res.status).toBe(302);
+    const u = new URL(res.headers.location as string);
+    expect(u.origin + u.pathname).toBe('https://claude.ai/api/mcp/auth_callback');
+    expect(u.searchParams.get('error')).toBe('invalid_scope');
+    expect(u.searchParams.get('error_description')).toBe('no scopes');
+    expect(u.searchParams.get('state')).toBe('st+ate==');
+    expect(u.searchParams.get('code')).toBeNull();
+  });
+
   it('adds an actionable role-collection hint for invalid_scope', async () => {
     const codec = new OAuthStateCodec(SECRET);
     const token = codec.encode({ clientRedirectUri: 'http://127.0.0.1:5/cb' });
