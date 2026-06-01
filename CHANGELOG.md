@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.8](https://github.com/marianfoo/arc-1/compare/v0.9.7...v0.9.8) (2026-06-01)
+
+
+### Bug Fixes
+
+* callback proxy for XSUAA OAuth state — fixes "State does not match" from VS Code ([#325](https://github.com/marianfoo/arc-1/issues/325)) ([c41ed97](https://github.com/marianfoo/arc-1/commit/c41ed97fcec5fb6f0182507b1973d1fa0c896325))
+
 ## [0.9.7](https://github.com/marianfoo/arc-1/compare/v0.9.6...v0.9.7) (2026-05-30)
 
 
