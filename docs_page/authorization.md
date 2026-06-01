@@ -362,6 +362,21 @@ Also read startup logs for:
 - `config contradiction: ...` - flags that cannot take effect, such as transport writes without writes
 - `auth: MCP=[...] SAP=[...]` - active auth methods
 
+### MCP sign-in ends on a blank page / "this site can't be reached" / "Missing required parameters … code, state, nonce"
+
+These client-side symptoms almost always share one server-side cause: XSUAA authenticated the user but rejected the authorization with **`invalid_scope`** ("this user is not allowed any of the requested scopes"), so no `code` was issued. The MCP client's loopback callback then receives no `code` — and its listener may already be closed, which is why the browser shows `ERR_CONNECTION_REFUSED`.
+
+Confirm the real error in the server log — it lands on ARC-1's callback, not the client:
+
+```bash
+cf logs arc1-mcp-server --recent | grep '/oauth/callback?error='
+# GET /oauth/callback?error=invalid_scope&error_description=[...] is invalid. This user is not allowed any of the requested scopes
+```
+
+Since v0.9.8 ARC-1 renders this reason on its `/oauth/callback` error page (instead of bouncing to the dead loopback), so the browser shows the cause directly.
+
+`invalid_scope` means the signed-in identity holds **no ARC-1 role collection** — usually because the role was assigned under a **different IdP origin** than the one the login uses. Fix it with the next two entries.
+
 ### "I changed the user's role but the new scopes don't appear"
 
 XSUAA caches the user's authorities in their browser session. When you change role-collection assignments in BTP Cockpit, **existing JWTs keep the old scopes until they expire** (typically 1 hour) AND the user's SSO session at XSUAA / IAS still references the old authorities.
@@ -382,6 +397,18 @@ After that, the new JWT will be issued from a fresh session and carry only the u
 BTP can hold multiple identities for the same email - one per IdP origin (`sap.default`, the IAS tenant, custom IdPs). Role assignments are per-identity. The MCP client logs in via one specific IdP, so check that you're updating the role for the **same identity** that the OAuth flow uses.
 
 In BTP Cockpit → Users you can see all identities for a given email and their `Identity-Provider` column. Update the role on the identity whose IdP matches the OAuth login.
+
+From the CLI, assign under the right origin — `--of-idp` is the critical part. On subaccounts with a custom SAP Cloud Identity (IAS) tenant, the application login uses **that** origin (often `sap.custom`), **not** `sap.default`:
+
+```bash
+# list the IdP origins (the IAS "business users" trust is the usual app-login IdP)
+btp list security/trust --subaccount <subaccount-id>
+
+# assign under the origin the OAuth flow actually uses
+btp assign security/role-collection "ARC-1 Admin" --subaccount <subaccount-id> --to-user <email> --of-idp sap.custom
+```
+
+Assigning under only `sap.default` while logging in via the IAS tenant is the single most common cause of `invalid_scope`.
 
 ---
 

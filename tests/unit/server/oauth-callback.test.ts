@@ -49,19 +49,44 @@ describe('createOAuthCallbackHandler — issue #214 round-trip', () => {
     expect(stateSegment).toContain('%2B');
   });
 
-  it('forwards OAuth errors to the client with the original state', async () => {
+  it('renders a self-hosted error page (no 302 to a possibly-dead loopback) on OAuth error', async () => {
     const codec = new OAuthStateCodec(SECRET);
     const token = codec.encode({ clientState: 'st+ate==', clientRedirectUri: 'http://127.0.0.1:5/cb' });
     const res = await request(buildApp(codec))
       .get('/oauth/callback')
       .query({ error: 'access_denied', error_description: 'user cancelled', state: token });
-    expect(res.status).toBe(302);
-    const loc = res.headers.location as string;
-    const u = new URL(loc);
-    expect(u.searchParams.get('error')).toBe('access_denied');
-    expect(u.searchParams.get('error_description')).toBe('user cancelled');
-    expect(u.searchParams.get('state')).toBe('st+ate==');
-    expect(u.searchParams.get('code')).toBeNull();
+    // The flow failed -> surface the reason to the human instead of redirecting
+    // to the client's loopback (whose listener is usually already gone).
+    expect(res.status).toBe(400);
+    expect(res.headers.location).toBeUndefined();
+    expect(res.text).toContain('access_denied');
+    expect(res.text).toContain('user cancelled');
+    // Best-effort link back to the client, carrying the error + original state.
+    expect(res.text).toContain('http://127.0.0.1:5/cb');
+    expect(res.text).toContain('error=access_denied');
+  });
+
+  it('adds an actionable role-collection hint for invalid_scope', async () => {
+    const codec = new OAuthStateCodec(SECRET);
+    const token = codec.encode({ clientRedirectUri: 'http://127.0.0.1:5/cb' });
+    const res = await request(buildApp(codec)).get('/oauth/callback').query({
+      error: 'invalid_scope',
+      error_description: 'is invalid. not allowed any of the requested scopes',
+      state: token,
+    });
+    expect(res.status).toBe(400);
+    expect(res.text).toContain('role collection');
+  });
+
+  it('HTML-escapes a malicious error_description (no XSS)', async () => {
+    const codec = new OAuthStateCodec(SECRET);
+    const token = codec.encode({ clientRedirectUri: 'http://127.0.0.1:5/cb' });
+    const res = await request(buildApp(codec))
+      .get('/oauth/callback')
+      .query({ error: 'invalid_request', error_description: '<script>alert(1)</script>', state: token });
+    expect(res.status).toBe(400);
+    expect(res.text).not.toContain('<script>alert(1)</script>');
+    expect(res.text).toContain('&lt;script&gt;');
   });
 
   it('round-trips a state with no "+" unchanged', async () => {

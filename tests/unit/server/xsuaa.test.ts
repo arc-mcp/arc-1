@@ -6,7 +6,40 @@
 import { InvalidTokenError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import { describe, expect, it, vi } from 'vitest';
-import { createChainedTokenVerifier } from '../../../src/server/xsuaa.js';
+import { createChainedTokenVerifier, qualifyXsuaaScopes, RESERVED_OAUTH_SCOPES } from '../../../src/server/xsuaa.js';
+
+describe('qualifyXsuaaScopes', () => {
+  const APP = 'arc1-mcp!t498139';
+
+  it('prefixes bare MCP scopes with the xsappname', () => {
+    expect(qualifyXsuaaScopes(['read', 'write', 'admin'], APP)).toEqual([
+      `${APP}.read`,
+      `${APP}.write`,
+      `${APP}.admin`,
+    ]);
+  });
+
+  it('does NOT prefix reserved OIDC scopes (openid/profile/email/offline_access)', () => {
+    expect(qualifyXsuaaScopes(['openid', 'read', 'profile', 'email', 'offline_access'], APP)).toEqual([
+      'openid',
+      `${APP}.read`,
+      'profile',
+      'email',
+      'offline_access',
+    ]);
+    for (const reserved of RESERVED_OAUTH_SCOPES) {
+      expect(qualifyXsuaaScopes([reserved], APP)).toEqual([reserved]);
+    }
+  });
+
+  it('leaves already-qualified scopes (containing a dot) untouched', () => {
+    expect(qualifyXsuaaScopes(['uaa.user', `${APP}.read`], APP)).toEqual(['uaa.user', `${APP}.read`]);
+  });
+
+  it('drops empty entries (Copilot Studio sends scope="" -> [""])', () => {
+    expect(qualifyXsuaaScopes(['', 'read', ''], APP)).toEqual([`${APP}.read`]);
+  });
+});
 
 // ─── createChainedTokenVerifier ──────────────────────────────────────
 

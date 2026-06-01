@@ -139,6 +139,26 @@ function matchApiKeyFromConfig(
 // ─── Chained Token Verifier ──────────────────────────────────────────
 
 /**
+ * OIDC/UAA scopes that must NOT be prefixed with the app's xsappname. They are
+ * reserved/global in XSUAA, so qualifying them (e.g. `openid` →
+ * `arc1-mcp!t498139.openid`) produces an invalid scope that XSUAA rejects.
+ */
+export const RESERVED_OAUTH_SCOPES = new Set(['openid', 'profile', 'email', 'offline_access']);
+
+/**
+ * Qualify short MCP scope names (`read`, `write`, `admin`, …) with the XSUAA
+ * xsappname prefix XSUAA requires (it rejects a bare `admin`). Scopes that are
+ * already qualified (contain a `.`, e.g. `uaa.user`) or are reserved OIDC scopes
+ * ({@link RESERVED_OAUTH_SCOPES}) pass through untouched. Empty entries (Copilot
+ * Studio sends `scope=""` → `[""]`) are dropped.
+ */
+export function qualifyXsuaaScopes(scopes: string[], xsappname: string): string[] {
+  return scopes
+    .filter((s) => s.length > 0)
+    .map((s) => (s.includes('.') || RESERVED_OAUTH_SCOPES.has(s) ? s : `${xsappname}.${s}`));
+}
+
+/**
  * Create a token verifier that chains multiple auth methods.
  *
  * Tries in order:
@@ -329,12 +349,9 @@ class XsuaaProxyOAuthProvider extends ProxyOAuthServerProvider {
     });
 
     if (params.scopes?.length) {
-      // Qualify short scope names (read, write, admin) with XSUAA xsappname prefix.
-      // XSUAA rejects unqualified scopes like "admin" — it needs "arc1-mcp!t498139.admin".
-      // Filter out empty strings (Copilot Studio sends scope="" which splits to [""]).
-      const qualifiedScopes = params.scopes
-        .filter((s) => s.length > 0)
-        .map((s) => (s.includes('.') ? s : `${this.xsuaaXsappname}.${s}`));
+      // Qualify short MCP scopes (read, write, admin) with the xsappname prefix
+      // XSUAA requires, while leaving reserved OIDC scopes (openid, …) alone.
+      const qualifiedScopes = qualifyXsuaaScopes(params.scopes, this.xsuaaXsappname);
       if (qualifiedScopes.length > 0) {
         searchParams.set('scope', qualifiedScopes.join(' '));
       }
