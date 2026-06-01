@@ -117,6 +117,7 @@ SORT RULES for this table — DO NOT BREAK when adding rows:
 
 | ID | Feature | Completed | Category |
 |----|---------|-----------|----------|
+| [SEC-12](#sec-12) | XSUAA OAuth `state` Callback Proxy — fixes VS Code "State does not match" (XSUAA echoes literal `+`; signed base64url state token + `/oauth/callback` re-encodes). Removable only when XSUAA emits `%2B` (not vscode#314715). (PR #325) | 2026-06-01 | Security |
 | — | SAPSearch `tadir_lookup` `source` modes (`adt`/`db`/`both`) for TADIR ghost detection + SAPWrite `batch_create` `activateAtEnd` for interdependent / composition-linked objects. Both are opt-in fixes from the SEGW→RAP migration skill Run 6. Default behaviors unchanged: `source='adt'` keeps the existing ADT info-system path on read scope; `activateAtEnd=false` keeps per-object inline activation. The `db` and `both` sources issue `SELECT pgmid, object, obj_name, devclass FROM tadir WHERE obj_name IN (...)` via the existing freestyle-SQL path, surfacing orphan TADIR rows hidden by the ADT info-system; `both` adds a `splitBrain[]` array + per-name warnings explaining divergence (e.g. ghost from aborted create/delete cycle). `activateAtEnd=true` defers activation until the entire batch has been written, then issues one `activateBatch` — SAP's activator resolves cross-references between siblings in one pass (verified live: composition-linked DDLS pair activates cleanly via `activateAtEnd=true` vs the per-object path failing with `"data source ZR_CHILD does not exist or is not active"`). Plan: `docs/plans/completed/add-batch-defer-activate-and-tadir-db-source.md`. | 2026-05-11 | Features |
 | — | RAP handler skeleton CCIMP-only fix — `ensureRapHandlerSkeletons` was writing the `CLASS lhc_<alias> DEFINITION INHERITING FROM cl_abap_behavior_handler` block to CCDEF (`/source/definitions`), which the SAP activator rejects with `Local classes of "CL_ABAP_BEHAVIOR_HANDLER" can only be derived in the "Local Definitions/Implementations" of a global BEHAVIOR class`. Fix routes both DEFINITION + IMPLEMENTATION blocks into CCIMP per ABAP keyword doc `ABENABP_HANDLER_CLASS_GLOSRY` and SAP demo class `BP_DEMO_RAP_STRICT` (live-captured fixtures + integration regression test against the demo class). End-to-end verified on a4h S/4HANA 2023 (ABAP 7.58). **Breaking change** — pre-1.0; classes previously scaffolded by arc-1 carry the wrong CCDEF/CCIMP split and must be deleted + recreated to pick up the canonical layout. Plan: `docs/plans/completed/fix-rap-handler-skeleton-include.md`. | 2026-05-11 | Fixes |
 | — | PR-C `SAPWrite action=generate_behavior_implementation` — one-shot RAP behavior pool orchestrator. Auto-discovers the bound BDEF via class metadata's `<class:rootEntityRef>`, cross-validates `FOR BEHAVIOR OF` ↔ `managed implementation in class` agreement, scaffolds every required handler (creating missing `lhc_<alias>` skeletons), writes CCDEF + CCIMP under one stateful lock, and (by default) activates. Reliable equivalent of Eclipse ADT's "Generate Behavior Implementation" Cmd+1 quickfix without depending on the broken `/sap/bc/adt/quickfixes/proposals/.../create_class_implementation` server endpoint (HTTP 500 on a4h regardless of payload, verified live). Activation rejections matching the well-known stale-active CCDEF/CCIMP coupling return a guided recovery hint instead of throwing. Plan: `docs/plans/completed/add-generate-behavior-implementation.md`. | 2026-05-10 | Features |
@@ -2299,6 +2300,38 @@ The four shipped MCP clients — Claude Desktop, Cursor, VS Code Copilot, Copilo
 - Tier 2: CycloneDX SBOM (npm + image), Cosign keyless image signing, OpenSSF Scorecard. Plan in [docs/plans/dependency-security-tier2-attestation.md](../docs/plans/dependency-security-tier2-attestation.md).
 - Tier 3: Socket.dev PR review, internal vulnerability triage runbook, formal non-adoption decisions for Renovate / Snyk / SLSA L3. Plan in [docs/plans/dependency-security-tier3-defense.md](../docs/plans/dependency-security-tier3-defense.md).
 - 7 remaining HIGH CodeQL alerts (clear-text logging FPs in `src/cli.ts`, double-escaping in `src/adt/diagnostics.ts` + `src/adt/xml-parser.ts`, incomplete sanitization in `src/adt/diagnostics.ts`, missing rate-limiting on `/authorize` — the last maps to roadmap [SEC-05](#sec-05)). Triage in separate PRs.
+
+---
+
+<a id="sec-12"></a>
+### SEC-12: XSUAA OAuth `state` Callback Proxy (fixes VS Code "State does not match")
+| Field | Value |
+|-------|-------|
+| **Priority** | P1 |
+| **Status** | Complete (2026-06-01, PR #325) |
+
+**Problem:** OAuth login intermittently failed with **"State does not match"** when connecting from VS Code (issue [#214](https://github.com/marianfoo/arc-1/issues/214)). XSUAA echoes a **literal `+`** (not `%2B`) in the `state` it appends to the authorization redirect. Standard base64 `state` values — e.g. VS Code's `randomBytes(16).toString('base64')` — contain `+` ~50% of the time. The receiving client parses the callback query with `application/x-www-form-urlencoded` semantics (`+`→space), so the round-tripped `state` no longer matched and login failed about half the time.
+
+Verified empirically against live XSUAA with an [8-scenario spectrum reproducer](https://github.com/marianfoo/arc-1/issues/214#issuecomment-4387683481): `+` is the ONLY character XSUAA mangles (`/`, `=`, alphanumerics survive), and it mangles even when ARC-1 forwards a correctly `%2B`-encoded state — so an ingress-only fix is impossible. ARC-1 was not in the return path (XSUAA redirected directly to the client).
+
+**Implemented:**
+
+- `OAuthStateCodec` (NEW `src/server/oauth-state.ts`) — stateless, HMAC-signed, **base64url** state token (no `+`/`/`, immune to the bug) carrying the client's original `redirect_uri` + `state` + 10-min expiry. Mirrors the stateless DCR design ([SEC-09](#sec-09)): same resolved signing secret, distinct KDF label, survives `cf restart` / scale-out with no in-memory map.
+- `XsuaaProxyOAuthProvider.authorize()` sends XSUAA ARC-1's own `/oauth/callback` + the signed token instead of the client's `redirect_uri` + raw `state`.
+- New `/oauth/callback` route decodes the token and 302-redirects to the client, re-emitting the original `state` via `URL.searchParams` (encodes `+` as `%2B`). Invalid / expired / forged tokens → `400` (no open redirect — the redirect target lives inside the verified token). Rate-limited like the other OAuth endpoints.
+- `exchangeAuthorizationCode()` sends the same `/oauth/callback` so the token-exchange `redirect_uri` matches authorize.
+
+Transparent to every client shape (native loopback, browser redirect, browser popup); each now gets its exact original `state` back. No `xs-security.json` change needed — the callback matches the existing `https://*.hana.ondemand.com/**` / `http://localhost:*/**` wildcards.
+
+**Removal condition (when this workaround can be deleted):** ONLY when **XSUAA stops emitting a literal `+`** (emits `%2B`) for `state`. That is the actual root-cause defect; no public SAP Note tracks it as of 2026-06. Re-run the issue #214 spectrum reproducer against the target tenant to check.
+
+The VS Code client-side issue — [microsoft/vscode#314715](https://github.com/microsoft/vscode/issues/314715), asking VS Code to use base64url `state` — would fix the **VS Code symptom only**. Other MCP clients (Cursor, claude.ai, Copilot Studio, …) still send base64 `state` containing `+`, so the callback proxy must stay until the XSUAA-side fix lands. **Do not remove this module just because vscode#314715 closes.**
+
+**Files:**
+- `src/server/oauth-state.ts` — NEW signed state codec (removal condition documented at the top)
+- `src/server/xsuaa.ts` — `authorize()` + `exchangeAuthorizationCode()` route through `/oauth/callback`
+- `src/server/http.ts` — NEW `/oauth/callback` route (exported `createOAuthCallbackHandler`)
+- `tests/unit/server/oauth-state.test.ts`, `tests/unit/server/oauth-callback.test.ts` — codec + round-trip proof
 
 ---
 

@@ -31,6 +31,24 @@
  * moves, and horizontal scale-out. The signing key is derived (HKDF-style)
  * from the same secret the DCR store uses, with a distinct domain-separation
  * label so the two key spaces never overlap.
+ *
+ * ── Upstream tracking / when this whole module can be deleted ──────────
+ * This is a WORKAROUND for an XSUAA bug. It can be removed ONLY when XSUAA
+ * stops emitting a literal `+` (emits `%2B`) for `state` on the authorize
+ * redirect. Tracking:
+ *   - arc-1 issue:      https://github.com/marianfoo/arc-1/issues/214
+ *   - XSUAA root cause: no public SAP Note as of 2026-06; the `+`→literal
+ *                       echo is the actual defect and the only thing whose
+ *                       fix makes this module removable.
+ *   - VS Code (client): https://github.com/microsoft/vscode/issues/314715
+ *                       asks VS Code to use base64url `state`. If accepted it
+ *                       fixes the VS Code SYMPTOM only — other MCP clients
+ *                       (Cursor, claude.ai, Copilot Studio, …) still send
+ *                       base64 `state` containing `+`, so the callback proxy
+ *                       stays until the XSUAA-side fix lands. Do NOT delete
+ *                       this module just because vscode#314715 closes.
+ * To verify whether the XSUAA bug is gone, re-run the issue #214 spectrum
+ * reproducer (see the issue thread) against the target XSUAA tenant.
  */
 
 import crypto from 'node:crypto';

@@ -310,6 +310,9 @@ class XsuaaProxyOAuthProvider extends ProxyOAuthServerProvider {
     //
     // The token is base64url (no `+`/`/`), so XSUAA has nothing to mangle on
     // the round trip and Express's `+`→space decode is a no-op on it.
+    //
+    // WORKAROUND removal condition + upstream tracking (XSUAA root cause,
+    // arc-1#214, vscode#314715) are documented at the top of oauth-state.ts.
     const arc1State = this.stateCodec.encode({
       clientState: params.state,
       clientRedirectUri: params.redirectUri,

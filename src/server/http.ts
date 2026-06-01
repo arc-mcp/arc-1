@@ -51,6 +51,9 @@ import type { XsuaaCredentials } from './xsuaa.js';
  * re-emitting the state via `URL.searchParams` — whose serializer encodes a
  * literal `+` as `%2B`, exactly the encoding the client's parser expects.
  *
+ * Removal condition + upstream tracking (XSUAA root cause, arc-1#214,
+ * vscode#314715) are documented at the top of `oauth-state.ts`.
+ *
  * Exported for unit tests; mounted in `startHttpServer`.
  */
 export function createOAuthCallbackHandler(stateCodec: OAuthStateCodec) {
