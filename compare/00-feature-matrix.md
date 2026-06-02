@@ -2,24 +2,7 @@
 
 A comprehensive comparison of all SAP ADT/MCP projects against ARC-1.
 
-_Last updated: 2026-05-29 — Class-local include auto-init (issue #303 follow-up). `SAPWrite(action="update", type="CLAS", include="testclasses", source=…)` now transparently initialises a missing include before writing: a fresh class has no `testclasses` (CCAU) include (`GET` → 404) and a content PUT alone fails with `HTTP 500 "…CCAU does not have any inactive version"`. ARC-1 GET-probes the include inside the write's stateful lock and, when absent, issues an empty `POST …/includes/{inc}?lockHandle=` (→ 201, live-verified on a4h) before the content PUT — no separate init step for the LLM. The new `include-not-initialized` error category surfaces an actionable hint for any path that bypasses auto-init. Live-verified end-to-end on a4h S/4HANA 2023._
-_Earlier 2026-05-29 — SAPRead `grep` lands (issue #313): a case-insensitive regex over an object's source that returns only matching lines (+context, with line numbers) instead of the full object — the server-side "search → locate → read" primitive for source-bearing types, method-annotated for classes, with a literal fallback for unescaped patterns. Complements #307 class-section surgery. Earlier same day: `change_method_visibility` lands (issue #303 follow-up, from PR-author feedback). A fifth class-section surgery action that moves a method between PUBLIC/PROTECTED/PRIVATE sections by relocating only the METHODS clause — the IMPLEMENTATION body is preserved verbatim. This is the body-preserving, token-efficient alternative to the LLM's tempting-but-destructive `delete_method` + `add_method` pattern (which recreates an empty stub and loses the implementation); `delete_method`'s tool description now carries an explicit destructive warning steering callers here. Idempotent no-op when already in the target section; refuses if the target section header is missing (hint: `edit_class_definition`). Verified live on a4h S/4HANA 2023 end-to-end (move public→private, body survives, activates)._
-_Earlier 2026-05-27 — Class-section surgery (issue #303) ships. Four new `SAPWrite` actions — `edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method` — let an LLM make token-efficient edits to a global ABAP class without re-sending `/source/main` (typically 1-80 lines instead of 500-4000). All four are backed by SAP's existing `/sap/bc/adt/oo/classes/{name}/objectstructure` endpoint — no client-side ABAP parsing needed for the common path. `edit_class_definition` runs a client-side diff against the current class structure and refuses with a structured error pointing at `add_method`/`delete_method` if the proposed change would produce a non-activatable draft (added concrete method without matching IMPL stub, or orphan METHOD/ENDMETHOD body). ABSTRACT methods, EVENTS, INTERFACES, ALIASES are exempt from the symmetry check. `add_method` and `delete_method` touch both DEFINITION and IMPLEMENTATION atomically in one PUT. `edit_method_signature` is a one-range replacement on the METHODS clause (IMPL untouched — same contract as today's `edit_method`). Cross-release parity: a4h S/4HANA 2023 (kernel 7.58) emits a single `CLAS/OM` element per method, NW 7.50 SP02 splits into `CLAS/OO` (def-side) + `CLAS/OM` (impl-side) — the parser merges by name. Verified live on a4h end-to-end (5/5 integration tests PASS); NPL 7.50 reads verified, writes blocked by the pre-existing SAP Note 2727890 lock-handle bug on the un-patched dev image (not specific to this feature). No client in this matrix has comparable token-efficient class-section surgery beyond plain method-body splicing._
-_Earlier 2026-05-12: **Layered rate limiting (SEC-05) lands.** Three independent layers, per-instance, in-memory, two operator env vars total. **Layer 1** — `express-rate-limit` on `/register`, `/authorize`, `/token`, `/revoke`, `/mcp`; one knob `ARC1_AUTH_RATE_LIMIT` (default 20/min/IP); HTTP 429 + Retry-After + RFC 9331 `RateLimit-*` headers; closes CodeQL alert #12 (`js/missing-rate-limiting`). **Layer 2** — `rate-limiter-flexible` per-user token bucket at the top of `handleToolCall`, keyed on `userName ?? clientId ?? __anon__`; one knob `ARC1_RATE_LIMIT` (default 60/min/user); returns an MCP tool error with `retryAfter` (not HTTP 429) so the agent loop backs off cleanly; stdio mode exempt. **Layer 3** — the existing `Semaphore` promoted to one server-wide instance threaded through every `AdtClient`, fixing the per-PP-user bug where 100 users gave 100 × `maxConcurrent` concurrent SAP requests. `ARC1_MAX_CONCURRENT` (default 10) is now a true server-wide cap. New `parseRetryAfter` helper honors RFC 7231 `Retry-After` on both 429 and 503 (clamped to 60 s, single retry, audit records `source: header|fallback`). New audit events: `auth_rate_limited`, `mcp_rate_limited`. Operator guide at `docs_page/rate-limiting.md`. Design rationale: ADR-0004. Pre-1.0 simplifications: no `_BURST` vars (libraries handle internally), per-endpoint OAuth ceilings are constants in code (not env), no monitor mode for Layer 2 (defaults conservative; set =0 to disable), no Redis (multi-instance attackers cost N × limit — acceptable for stateless-deploy property)._
-_Earlier 2026-05-11: Two opt-in fixes from the SEGW→RAP migration skill Run 6 land together. (1) `SAPSearch(searchType="tadir_lookup", source="adt"|"db"|"both")` — the default ADT info-system endpoint filters out TADIR rows that don't resolve to a live workbench resource, hiding "ghost" entries left behind by aborted create/delete cycles. The new `db` source issues `SELECT pgmid, object, obj_name, devclass FROM tadir WHERE obj_name IN (...)` via the existing freestyle-SQL path (requires `sql` scope + `SAP_ALLOW_FREE_SQL=true`); `both` runs both and emits a `splitBrain` array + per-name warnings explaining divergence. Default `'adt'` preserves today's read-scoped behavior. Each match now carries an `_origin: 'adt' | 'db'` provenance marker. (2) `SAPWrite(action="batch_create", activateAtEnd: true)` — per-object inline activation can't resolve cross-references between siblings (e.g. composition-linked DDLS where the parent's `composition [0..*] of ZR_CHILD` fails because the child is still inactive). The new flag defers activation: ARC-1 writes inactive drafts for every object then issues one terminal `activateBatch` so SAP's activator sees the whole graph in a single pass. Default `false` preserves the existing per-object inline-activate semantics. Live-verified on a4h (S/4HANA 2023, ABAP 7.58)._
-_Earlier 2026-05-11: RAP handler skeleton CCIMP-only fix lands. `ensureRapHandlerSkeletons` (used by `scaffold_rap_handlers` autoApply + `generate_behavior_implementation`) was writing the `CLASS lhc_<alias> DEFINITION INHERITING FROM cl_abap_behavior_handler. … ENDCLASS.` block to CCDEF (`/source/definitions`), which SAP rejects on activation with `Local classes of "CL_ABAP_BEHAVIOR_HANDLER" can only be derived in the "Local Definitions/Implementations" of a global BEHAVIOR class`. Fix routes both DEFINITION + IMPLEMENTATION blocks to CCIMP per ABAP doc `ABENABP_HANDLER_CLASS_GLOSRY` and SAP demo `BP_DEMO_RAP_STRICT` (live-captured fixtures: `tests/fixtures/abap/bp-demo-rap-strict-{ccdef,ccimp}.abap`; new integration test asserts the canonical pattern against the live demo class on a4h). End-to-end live verification on a4h S/4HANA 2023 (ABAP 7.58). Breaking change — pre-1.0; classes previously scaffolded by arc-1 should be deleted + recreated to pick up the canonical layout._
-_Earlier 2026-05-10: PR-D (#261) extends `SAPWrite(action="edit_method")` to local handler classes inside CCDEF/CCIMP. Callers can pass `lhc_project~approve_project` and ARC-1 auto-routes the read+write to `/sap/bc/adt/oo/classes/{name}/includes/implementations` (using PR #257's include= path); explicit `include=` overrides auto-detection. Auto-detection prefixes: `lhc_*`/`lcl_*` → implementations, `ltc_*` → testclasses. Global-interface methods (`zif_X~method`) continue to splice through `/source/main`. Draft-aware: reads inactive include when the class has an unactivated draft so post-`update include=`/`scaffold_rap_handlers` edits see the user's pending changes. Verified live on a4h (S/4HANA 2023) end-to-end. Pairs with PR-C (#260) for the full RAP behavior-pool lifecycle: PR-C generates the skeleton + stubs, PR-D surgically edits individual handler bodies._
-_Earlier 2026-05-10: PR-C (#260) adds `SAPWrite(action="generate_behavior_implementation")` — one-shot RAP behavior pool orchestrator: auto-discovers the bound BDEF via class metadata's `<class:rootEntityRef>`, cross-validates `FOR BEHAVIOR OF` ↔ `managed implementation in class` agreement, scaffolds every required handler (creating missing `lhc_<alias>` skeletons), writes CCDEF + CCIMP under one stateful lock, and (by default) activates. Reliable equivalent of Eclipse ADT's "Generate Behavior Implementation" Cmd+1 quickfix without depending on the broken `/sap/bc/adt/quickfixes/proposals/.../create_class_implementation` server endpoint (HTTP 500 on a4h regardless of payload, verified live during PR-C research)._
-_Earlier 2026-05-10: issue #252 closes FM signature/parameter management. Live probing on a4h S/4HANA 2023 + NPL 7.50 SP02 settled the long-standing "fr0ster #77 parameter loss" question: parameters live INLINE in `/source/main` as ABAP source-based syntax, not in a separate metadata document. ARC-1 now ships a structured `parameters` array on `SAPWrite(type='FUNC')` plus an `includeSignature` flag on `SAPRead(type='FUNC')` for round-trip introspection. No client in this matrix has structured FM parameter management; ARC-1 is the first._
-_Earlier 2026-05-10: Sprint 3 diagnostics cleanup (#254) adds `SAPDiagnose(action="object_state")` for compact active/inactive source-divergence comparison, automatic chunking for simple long `SAPQuery` literal `IN (...)` lists, and confirms `SAPRead(type="DEVC")` already uses the search endpoint. Same day: PR-A (#257) native `SAPWrite update type=CLAS include=...` + `scaffold_rap_handlers`; PR-B (#253) hardens `SAPDiagnose apply_quickfix` payloads; PR-E (#256) cross-package `SAPSearch` TADIR + `batch_create` per-object package overrides; PR-F (#255) ED064 batch-activation retry + ABAP release lint override._
-_Previously: 2026-05-09 — issue #250 FUNC/FUGR write support added (create/source-update/delete) — closes the "latent FUNC-update gap" noted in 2026-04-27 entry below._
-_Plan A (PR #223): purged five invented `SLASH_TYPE_MAP` entries `FUNC/FM`, `CLAS/LI`, `VIEW/V`, `TRAN/O`; repointed `FUGR/FF → FUNC` (was `→ FUGR`); added real `VIEW/DV → VIEW`, `TRAN/T → TRAN`, `objectBasePath('VIEW')` VIT URL, citation guard `SLASH_TYPE_EVIDENCE`, exhaustiveness guard `KNOWN_BASE_TYPES`, slash-form throw + `objectBasePath('FUNC')` group-context throw. DDIC view reads were silently broken via fallthrough to `/programs/programs/`._
-_Plan B (PR #224): `MSAG` added to `SAPREAD_TYPES_*` (was previously write-only / read-via-`MESSAGES` asymmetry); `FTG2` renamed to `FEATURE_TOGGLE` (ARC-1-invented short identifier per research/abap-types/types/ftg2.md). Both old aliases (`MESSAGES`, `FTG2`) accepted for one minor with stderr deprecation warning._
-_Both verified live against a4h S/4HANA 2023 + npl NW 7.50 SP02 — both systems return identical `<adtcore:type>` values._
-
-_Previously: 2026-04-28. Since 2026-04-23: PR #186 (in flight) adds **ETag-backed source cache revalidation**, **active/inactive SAPRead source versions** with `version='active|inactive|auto'`, rich `<ioc:object>` inactive-object parsing, and per-username inactive-list session cache — verified live on a4h (S/4HANA 2023) AND NPL (NW 7.50 SP02). Competitor scan (2026-04-27): **fr0ster v6.5.0/v6.5.1** (2026-04-24) hardening FM read against group-mismatch silent success (`<adtcore:containerRef adtcore:type='FUGR/F'/>` metadata validation, commit `795633a`) plus pluggable ReadOnly-vs-HighLevel dedup strategy (`1246cc2`), and **open issue #77** (2026-04-25) reporting `UpdateFunctionModule` loses parameters — see [`fr0ster/evaluations/issue-77-fm-update-parameter-loss.md`](fr0ster/evaluations/issue-77-fm-update-parameter-loss.md). ARC-1 has a **latent FUNC-update gap** — `objectBasePath('FUNC')` returns the group path instead of the `fmodules` endpoint, and `safeUpdateSource()` doesn't accept `group` — plus the same parameter-loss bug class would apply once URL is fixed. Recommend either removing `'FUNC'` from `SAPWRITE_TYPES_ONPREM` until upstream fix lands or implementing properly with metadata preservation. Same FM read-side issue in `getFunction(group, name)` — see [`fr0ster/evaluations/795633a-fm-group-validation.md`](fr0ster/evaluations/795633a-fm-group-validation.md) for hardening sketch. **abap-adt-api v8.1.0–v8.3.0** (2026-04-21 to 2026-04-26) added ENHO splicing/include expansion (`d8c4390`) — useful gap for "what enhancements affect this PROG/INCL/FUGR" reverse lookup, candidate for new `SAPRead(type='ENHO', target=...)` variant — plus structured DOMA/DTEL readers (ARC-1 already has these) and a textelements API (ARC-1 has read-only). **VSP issue #124** (2026-04-24) raises **SAP API Policy v.4.2026** as a strategic risk for every ADT-based MCP tool — productive-use of `/sap/bc/adt/*` may be off-limits unless SAP re-classifies the surface; tracked as project narrative, not code, in [`vibing-steampunk/evaluations/issue-124-sap-api-policy-v42026.md`](vibing-steampunk/evaluations/issue-124-sap-api-policy-v42026.md). Wins for ARC-1 confirmed by competitors hitting bugs we don't have: VSP issue #109 (DOMA/DTEL create), VSP issue #116 (INCL write), fr0ster issue #68 (PROG CRUD). Retains: FEAT-22 SAPGit; DOC-04 RAP/common-use-case skill refresh; SEC-09 Auth Safety; FEAT-20 VERSIONS/VERSION_SOURCE; FEAT-10 PrettyPrint; FEAT-49 object→transport reverse lookup; FEAT-33 CDS impact; FEAT-43 AUTH/FEATURE_TOGGLE/ENHO (renamed in audit Plan B); PR #134 SKTD; COMPAT-01/02/03 all fixed._
-
-_2026-04-27 carry-over from 2026-04-23 update: PR #174 (2026-04-21) landed `SAPDiagnose` hardening with `system_messages` (SM02) + `gateway_errors` (/IWFND/ERROR_LOG); PR #163 (2026-04-20) added ADT type-availability probe (FEAT-50); PR #169 (2026-04-20) added DTEL v2→v1 Content-Type fallback + SICF-aware error classification; PR #177 (2026-04-22) extended `SAPContext(action="impact")` with sibling DDLS/DDLX consistency check; PR #176 (2026-04-23) landed CDS CRUD dependency guidance; PR #171 hardened data preview diagnostics; three new first-party workflow skills merged. Open PR review: PR [#179](https://github.com/marianfoo/arc-1/pull/179) fixes SAPActivate phantom success on NW 7.50 (BUG-01 P0). PR [#173](https://github.com/marianfoo/arc-1/pull/173) RAP on-prem preflight in flight._
+_Last updated: 2026-06-02. **New column — "SAP ABAP MCP"**: SAP's official `SAPSE.adt-vscode` bundled ABAP MCP server (headless Eclipse/Equinox + Anthropic MCP Java SDK 1.0.1; localhost Streamable-HTTP on port 2236, static bearer token; 14 built-in tools + dynamic backend "IDE Actions"; ABAP-Cloud / RAP-generation scope; disabled-by-default, part of Joule for Developers; GA Q2 2026, v1.0.0). Detailed teardown: [J4D/02-sap-abap-mcp-server-vscode.md](J4D/02-sap-abap-mcp-server-vscode.md). Earlier dated changelog prose has been trimmed for readability — see git history and per-project docs for the full change log._
 
 ## Legend
 - ✅ = Supported
@@ -31,259 +14,259 @@ _2026-04-27 carry-over from 2026-04-23 update: PR #174 (2026-04-21) landed `SAPD
 
 ## 1. Core Architecture
 
-| Feature | ARC-1 | vibing-steampunk | mcp-abap-abap-adt-api | mcp-abap-adt (mario) | AWS Accelerator | fr0ster | btp-odata-mcp | dassian-adt / abap-mcpb | sapcli |
-|---------|-------|-----------------|----------------------|---------------------|-----------------|---------|---------------|------------------------|--------|
-| Language | TypeScript | Go 1.24 | TypeScript | TypeScript | Python 3.12 | TypeScript | TypeScript | JavaScript (compiled TS) | Python 3.10+ |
-| Tool count | 12 intent-based | 1-99 (3 modes) | ~15 | 13 | 15 | 316 (4 tiers) | 3 (hierarchical) | 53 | 28+ CLI commands (not MCP) |
-| ADT client | Custom (undici/fetch) | Custom (Go) | abap-adt-api | Custom (axios) | Custom (aiohttp) | Custom (axios) | SAP Cloud SDK | abap-adt-api | Custom (requests) |
-| npm package | ✅ `arc-1` | ❌ (binary) | ❌ | ❌ | ❌ | ✅ `@mcp-abap-adt/core` | ❌ | ❌ (MCPB) | N/A (Python, git install) |
-| Docker image | ✅ ghcr.io | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Stars | — | 295 | 125 | 103 | 35 | 43 | 120 | 37 | 79 |
-| Active development | ✅ | ✅ Stable (v2.38.1; commits quiet since 2026-04-15, issues active #105–#124) | ❌ Dormant (Feb 2025) | ❌ Dormant | ⚠️ Stale (Mar 2026) | ✅ Very (v6.5.1, 6 releases in 9 days; open issue #77 FM-update parameter loss) | ⚠️ Dormant (Jan 2026) | ✅ Stable (53 tools, no commits since Apr 14) | ✅ Very (since 2018) |
-| Release count | — | 32+ | — | — | — | 95+ (5 months) | — | rolling | rolling "latest" |
-| NPM monthly downloads | — | N/A | — | — | — | 3,625 | — | N/A | N/A |
+| Feature | ARC-1 | vibing-steampunk | mcp-abap-abap-adt-api | mcp-abap-adt (mario) | AWS Accelerator | fr0ster | btp-odata-mcp | dassian-adt / abap-mcpb | sapcli | SAP ABAP MCP |
+|---------|-------|-----------------|----------------------|---------------------|-----------------|---------|---------------|------------------------|--------|---|
+| Language | TypeScript | Go 1.24 | TypeScript | TypeScript | Python 3.12 | TypeScript | TypeScript | JavaScript (compiled TS) | Python 3.10+ | Java (Eclipse/Equinox) + TS |
+| Tool count | 12 intent-based | 1-99 (3 modes) | ~15 | 13 | 15 | 316 (4 tiers) | 3 (hierarchical) | 53 | 28+ CLI commands (not MCP) | 14 built-in + dynamic |
+| ADT client | Custom (undici/fetch) | Custom (Go) | abap-adt-api | Custom (axios) | Custom (aiohttp) | Custom (axios) | SAP Cloud SDK | abap-adt-api | Custom (requests) | Eclipse ADT (embedded, 2.9M LOC) |
+| npm package | ✅ `arc-1` | ❌ (binary) | ❌ | ❌ | ❌ | ✅ `@mcp-abap-adt/core` | ❌ | ❌ (MCPB) | N/A (Python, git install) | ❌ (VSIX) |
+| Docker image | ✅ ghcr.io | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Stars | — | 295 | 125 | 103 | 35 | 43 | 120 | 37 | 79 | N/A (closed source) |
+| Active development | ✅ | ✅ Stable (v2.38.1; commits quiet since 2026-04-15, issues active #105–#124) | ❌ Dormant (Feb 2025) | ❌ Dormant | ⚠️ Stale (Mar 2026) | ✅ Very (v6.5.1, 6 releases in 9 days; open issue #77 FM-update parameter loss) | ⚠️ Dormant (Jan 2026) | ✅ Stable (53 tools, no commits since Apr 14) | ✅ Very (since 2018) | ✅ SAP official (v1.0.0, GA Q2 2026) |
+| Release count | — | 32+ | — | — | — | 95+ (5 months) | — | rolling | rolling "latest" | N/A (VS Code extension) |
+| NPM monthly downloads | — | N/A | — | — | — | 3,625 | — | N/A | N/A | N/A |
 
 ## 2. MCP Transport
 
-| Transport | ARC-1 | vibing-steampunk | mcp-abap-abap-adt-api | mcp-abap-adt (mario) | AWS Accelerator | fr0ster | btp-odata-mcp | dassian-adt / abap-mcpb | sapcli |
-|-----------|-------|-----------------|----------------------|---------------------|-----------------|---------|---------------|------------------------|--------|
-| stdio | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | N/A (CLI) |
-| HTTP Streamable | ✅ | ✅ (v2.38.0) | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | N/A |
-| SSE | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ⚠️ | ❌ | N/A |
-| TLS/HTTPS | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ (v4.6.0) | ❌ | ❌ | N/A |
+| Transport | ARC-1 | vibing-steampunk | mcp-abap-abap-adt-api | mcp-abap-adt (mario) | AWS Accelerator | fr0ster | btp-odata-mcp | dassian-adt / abap-mcpb | sapcli | SAP ABAP MCP |
+|-----------|-------|-----------------|----------------------|---------------------|-----------------|---------|---------------|------------------------|--------|---|
+| stdio | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | N/A (CLI) | ❌ |
+| HTTP Streamable | ✅ | ✅ (v2.38.0) | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | N/A | ✅ (localhost:2236/mcp) |
+| SSE | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ⚠️ | ❌ | N/A | ❌ |
+| TLS/HTTPS | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ (v4.6.0) | ❌ | ❌ | N/A | ❌ (localhost only, bearer token) |
 
 ## 3. Authentication
 
-| Auth Method | ARC-1 | vibing-steampunk | mcp-abap-abap-adt-api | mcp-abap-adt (mario) | AWS Accelerator | fr0ster | btp-odata-mcp | dassian-adt / abap-mcpb | sapcli |
-|-------------|-------|-----------------|----------------------|---------------------|-----------------|---------|---------------|------------------------|--------|
-| Basic Auth | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
-| Cookie-based | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ✅ (requests.Session) |
-| API Key (MCP) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A |
-| OIDC/JWT (MCP) | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ |
-| XSUAA OAuth | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ (Apr 2026) | ❌ |
-| BTP Service Key | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
-| Principal Propagation | ✅ | ❌ | ❌ | ❌ | ✅ (X.509) | ✅ | ✅ | ❌ | ❌ |
-| MCP OAuth 2.0 per-user | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (Apr 2026) | ❌ |
-| SAML | ❌ | ✅ (v2.39.0+, PR #97) | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| X.509 Certificates | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Device Flow (OIDC) | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
-| Browser login page | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ |
-| Auth providers total | 4 | 2 | 1 | 1 | 5+ | 9 | 2 | 4 | 1 (Basic) |
+| Auth Method | ARC-1 | vibing-steampunk | mcp-abap-abap-adt-api | mcp-abap-adt (mario) | AWS Accelerator | fr0ster | btp-odata-mcp | dassian-adt / abap-mcpb | sapcli | SAP ABAP MCP |
+|-------------|-------|-----------------|----------------------|---------------------|-----------------|---------|---------------|------------------------|--------|---|
+| Basic Auth | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ |
+| Cookie-based | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ✅ (requests.Session) | ✅ (Eclipse session) |
+| API Key (MCP) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ✅ (static bearer token, localhost) |
+| OIDC/JWT (MCP) | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| XSUAA OAuth | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ (Apr 2026) | ❌ | ✅ (BTP ABAP via Eclipse auth) |
+| BTP Service Key | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ✅ (ABAP Cloud project) |
+| Principal Propagation | ✅ | ❌ | ❌ | ❌ | ✅ (X.509) | ✅ | ✅ | ❌ | ❌ | ❌ |
+| MCP OAuth 2.0 per-user | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (Apr 2026) | ❌ | ❌ |
+| SAML | ❌ | ✅ (v2.39.0+, PR #97) | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ (reentrance ticket) |
+| X.509 Certificates | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ⚠️ (Eclipse-supported) |
+| Device Flow (OIDC) | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Browser login page | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ | ✅ (reentrance ticket) |
+| Auth providers total | 4 | 2 | 1 | 1 | 5+ | 9 | 2 | 4 | 1 (Basic) | Eclipse stack (Basic/SSO/X.509/BTP) |
 
 ## 4. Safety & Security
 
-| Safety Feature | ARC-1 | vibing-steampunk | mcp-abap-abap-adt-api | mcp-abap-adt (mario) | AWS Accelerator | fr0ster | btp-odata-mcp | dassian-adt / abap-mcpb | sapcli |
-|----------------|-------|-----------------|----------------------|---------------------|-----------------|---------|---------------|------------------------|--------|
-| Read-only mode | ✅ | ✅ | ❌ | N/A (read-only) | ❌ | ⚠️ exposition tiers | ❌ | ❌ | ❌ |
-| Op allowlist/blocklist | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Package restrictions | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Block free SQL | ✅ | ✅ | ❌ | ❌ | N/A | ❌ | ❌ | ❌ | ❌ |
-| Transport gating | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Dry-run mode | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Audit logging | ✅ | ❌ | ❌ | ❌ | ✅ (CloudWatch) | ❌ | ❌ | ❌ | ❌ |
-| Input sanitization | ✅ (Zod) | ✅ | ❌ | ⚠️ | ✅ (defusedxml) | ✅ (Zod) | ✅ (Zod) | ⚠️ | ⚠️ (argparse) |
-| MCP elicitation | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (10+ flows) | N/A |
-| Try-finally lock safety | ✅ | ✅ | ❌ | N/A | ✅ | ✅ (v4.5.0) | N/A | ⚠️ (abap-adt-api) | ✅ |
-| MCP scope system (OAuth) | ✅ (2D: scopes+roles+safety) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A |
-| Layered rate limiting | ✅ (3 layers: per-IP edge + per-user MCP quota + server-wide SAP semaphore) | ❌ | ❌ | ❌ | ⚠️ (API Gateway-side only) | ❌ | ❌ | ❌ | N/A |
-| `Retry-After` honoring (429/503) | ✅ (RFC 7231, clamped 60 s, audit records source) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Safety Feature | ARC-1 | vibing-steampunk | mcp-abap-abap-adt-api | mcp-abap-adt (mario) | AWS Accelerator | fr0ster | btp-odata-mcp | dassian-adt / abap-mcpb | sapcli | SAP ABAP MCP |
+|----------------|-------|-----------------|----------------------|---------------------|-----------------|---------|---------------|------------------------|--------|---|
+| Read-only mode | ✅ | ✅ | ❌ | N/A (read-only) | ❌ | ⚠️ exposition tiers | ❌ | ❌ | ❌ | ❌ |
+| Op allowlist/blocklist | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Package restrictions | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Block free SQL | ✅ | ✅ | ❌ | ❌ | N/A | ❌ | ❌ | ❌ | ❌ | N/A (no free SQL) |
+| Transport gating | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ⚠️ (human-in-the-loop selection) |
+| Dry-run mode | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Audit logging | ✅ | ❌ | ❌ | ❌ | ✅ (CloudWatch) | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Input sanitization | ✅ (Zod) | ✅ | ❌ | ⚠️ | ✅ (defusedxml) | ✅ (Zod) | ✅ (Zod) | ⚠️ | ⚠️ (argparse) | ⚠️ (Eclipse client) |
+| MCP elicitation | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (10+ flows) | N/A | ❌ |
+| Try-finally lock safety | ✅ | ✅ | ❌ | N/A | ✅ | ✅ (v4.5.0) | N/A | ⚠️ (abap-adt-api) | ✅ | ✅ (Eclipse ADT) |
+| MCP scope system (OAuth) | ✅ (2D: scopes+roles+safety) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ |
+| Layered rate limiting | ✅ (3 layers: per-IP edge + per-user MCP quota + server-wide SAP semaphore) | ❌ | ❌ | ❌ | ⚠️ (API Gateway-side only) | ❌ | ❌ | ❌ | N/A | ❌ |
+| `Retry-After` honoring (429/503) | ✅ (RFC 7231, clamped 60 s, audit records source) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
 ### 4.1 Supply-Chain Security (SEC-11, Tier 1)
 
 Where the rest of §4 covers *runtime* guardrails, this sub-table covers *build-time and distribution-time* guardrails — the controls that make the published npm package and Docker image trustworthy. Status for competitors is based on a 2026-05-08 inspection of their public `.github/`, `package.json`, and release-related workflow files; "—" means the project doesn't ship the relevant artifact (e.g. no Docker image to scan).
 
-| Control | ARC-1 | vibing-steampunk | mcp-abap-abap-adt-api | mcp-abap-adt (mario) | AWS Accelerator | fr0ster | btp-odata-mcp | dassian-adt / abap-mcpb | sapcli |
-|---|---|---|---|---|---|---|---|---|---|
-| Dependabot (or equivalent) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `npm audit` PR gate | ✅ | N/A (Go) | ❌ | ❌ | N/A (Python) | ❌ | ❌ | ❌ | N/A (Python) |
-| GitHub Dependency Review | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| CodeQL / SAST in CI | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Container image scanning | ✅ (Trivy) | — | — | — | ⚠️ (AWS-side) | — | — | — | — |
-| Workflow `permissions:` minimum | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Third-party action SHA pinning | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| npm package provenance | ✅ | N/A (Go) | ❌ | ❌ | N/A (Python) | ❌ | ❌ | ❌ | N/A (Python) |
-| `SECURITY.md` policy | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Private Vulnerability Reporting | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Control | ARC-1 | vibing-steampunk | mcp-abap-abap-adt-api | mcp-abap-adt (mario) | AWS Accelerator | fr0ster | btp-odata-mcp | dassian-adt / abap-mcpb | sapcli | SAP ABAP MCP |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Dependabot (or equivalent) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A (closed src) |
+| `npm audit` PR gate | ✅ | N/A (Go) | ❌ | ❌ | N/A (Python) | ❌ | ❌ | ❌ | N/A (Python) | N/A (closed src) |
+| GitHub Dependency Review | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A (closed src) |
+| CodeQL / SAST in CI | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A (closed src) |
+| Container image scanning | ✅ (Trivy) | — | — | — | ⚠️ (AWS-side) | — | — | — | — | N/A (closed src) |
+| Workflow `permissions:` minimum | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A (closed src) |
+| Third-party action SHA pinning | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A (closed src) |
+| npm package provenance | ✅ | N/A (Go) | ❌ | ❌ | N/A (Python) | ❌ | ❌ | ❌ | N/A (Python) | N/A (closed src) |
+| `SECURITY.md` policy | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A (closed src) |
+| Private Vulnerability Reporting | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ⚠️ (SAP PSRT) |
 
 Tier 2 (CycloneDX SBOM, Cosign image signing, OpenSSF Scorecard) and Tier 3 (Socket.dev malicious-package detection, vulnerability triage runbook) are tracked in `docs/plans/` and will move into this matrix as they land.
 
 ## 5. ABAP Read Operations
 
-| Read Feature | ARC-1 | vibing-steampunk | mcp-abap-abap-adt-api | mcp-abap-adt (mario) | AWS Accelerator | fr0ster | btp-odata-mcp | dassian-adt / abap-mcpb | sapcli |
-|-------------|-------|-----------------|----------------------|---------------------|-----------------|---------|---------------|------------------------|--------|
-| Programs (PROG) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | N/A | ✅ | ✅ |
-| Classes (CLAS) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | N/A | ✅ | ✅ (incl. locals, test) |
-| Interfaces (INTF) | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | N/A | ✅ | ✅ |
-| Function modules (FUNC) | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | N/A | ✅ | ✅ (auto-group) |
-| Function groups (FUGR) | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | N/A | ✅ (bulk) | ✅ |
-| Includes (INCL) | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | N/A | ✅ | ✅ |
-| CDS views (DDLS) | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | N/A | ✅ | ✅ |
-| Behavior defs (BDEF) | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | N/A | ✅ | ✅ |
-| Service defs (SRVD) | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | N/A | ✅ | ✅ |
-| Service bindings (SRVB) | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | N/A | ❌ | ✅ |
-| Tables (DDIC) | ✅ | ✅ | ✅ | ✅ | ⚠️ | ✅ | N/A | ✅ | ✅ |
-| Table contents | ✅ | ✅ | ✅ | ⚠️ Z-service | ❌ | ✅ | N/A | ✅ | ✅ (freestyle SQL) |
-| Packages (DEVC) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | N/A | ✅ | ✅ |
-| Metadata ext (DDLX) | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | N/A | ❌ | ❌ |
-| Structures | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | N/A | ❌ | ✅ |
-| Domains | ✅ | ❌ | ✅ | ⚠️ | ❌ | ✅ | N/A | ❌ | ⚠️ (PR #149 in progress) |
-| Data elements | ✅ | ❌ | ✅ | ⚠️ | ❌ | ✅ | N/A | ❌ | ✅ |
-| Enhancements (BAdI/ENHO) | ✅ (`GET /sap/bc/adt/enhancements/enhoxhb/{name}`) | ❌ | ❌ | ❌ | ❌ | ✅ (on-prem only; `GET /sap/bc/adt/programs/programs/{name}/source/main/enhancements/elements` + `GET /sap/bc/adt/enhancements/enhsxsb/{spot}`) | N/A | ❌ | ✅ (BAdI/enhancement impl) |
-| Authorization fields (AUTH) | ✅ (`GET /sap/bc/adt/aps/iam/auth/{name}`) | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ✅ (`GET /sap/bc/adt/aps/iam/auth/{name}`) |
-| Feature toggles (`FEATURE_TOGGLE`; deprecated alias `FTG2`) | ✅ (states only, `GET /sap/bc/adt/sfw/featuretoggles/{name}/states`; renamed from `FTG2` in audit Plan B) | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ✅ (states + toggle/check/validate) |
-| Source version history | ✅ (`VERSIONS` list + `VERSION_SOURCE` fetch via `GET {sourceUrl}/versions` Atom feed) | ✅ (3 tools: list/compare/get) | ✅ (`revisions()` + `getObjectSource(url, {version})`) | ❌ | ❌ | ❌ | N/A | ✅ (`abap_get_revisions` list-only) | ❌ |
-| Transactions | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | N/A | ❌ | ❌ |
-| Free SQL | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | N/A | ✅ | ✅ |
-| Exact object-directory lookup | ✅ (`SAPSearch searchType=tadir_lookup`; ADT quick search, grouped by requested name) | ❌ | ✅ (quickSearch primitive) | ✅ (search) | ❌ | ✅ | N/A | ✅ | ✅ |
-| System info / components | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | N/A | ❌ | ✅ |
-| BOR business objects | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
-| Messages (T100, `MSAG`; deprecated alias `MESSAGES`) | ✅ (read+write; canonical short type `MSAG` from audit Plan B) | ✅ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
-| Text elements | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
-| Variants | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
-| Structured class decomposition (metadata + includes) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ✅ (locals_def/imp/test/macros) |
-| Grep/regex search within source (SAPRead `grep`) | ✅ (matches +context, line numbers; method-annotated for CLAS; literal fallback) | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
-| GetProgFullCode (include traversal) | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (on-prem only; `GET /sap/bc/adt/repository/nodestructure?objecttype=PROG/P&objectname={name}` + recursive INCL fetch) | N/A | ❌ | ❌ |
-| SKTD (Knowledge Transfer Documents) | ✅ (merged PR #134 2026-04-16; `GET/PUT/POST /sap/bc/adt/documentation/ktd/documents/`) | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
+| Read Feature | ARC-1 | vibing-steampunk | mcp-abap-abap-adt-api | mcp-abap-adt (mario) | AWS Accelerator | fr0ster | btp-odata-mcp | dassian-adt / abap-mcpb | sapcli | SAP ABAP MCP |
+|-------------|-------|-----------------|----------------------|---------------------|-----------------|---------|---------------|------------------------|--------|---|
+| Programs (PROG) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | N/A | ✅ | ✅ | ❌ (reads via LSP/editor, not MCP tools) |
+| Classes (CLAS) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | N/A | ✅ | ✅ (incl. locals, test) | ❌ |
+| Interfaces (INTF) | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | N/A | ✅ | ✅ | ❌ |
+| Function modules (FUNC) | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | N/A | ✅ | ✅ (auto-group) | ❌ (classic, out of scope) |
+| Function groups (FUGR) | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | N/A | ✅ (bulk) | ✅ | ❌ |
+| Includes (INCL) | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | N/A | ✅ | ✅ | ❌ |
+| CDS views (DDLS) | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | N/A | ✅ | ✅ | ⚠️ (LSP-side) |
+| Behavior defs (BDEF) | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | N/A | ✅ | ✅ | ⚠️ (LSP-side) |
+| Service defs (SRVD) | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | N/A | ✅ | ✅ | ⚠️ (LSP-side) |
+| Service bindings (SRVB) | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | N/A | ❌ | ✅ | ⚠️ (LSP-side) |
+| Tables (DDIC) | ✅ | ✅ | ✅ | ✅ | ⚠️ | ✅ | N/A | ✅ | ✅ | ❌ |
+| Table contents | ✅ | ✅ | ✅ | ⚠️ Z-service | ❌ | ✅ | N/A | ✅ | ✅ (freestyle SQL) | ❌ |
+| Packages (DEVC) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | N/A | ✅ | ✅ | ⚠️ (list_destinations + LSP) |
+| Metadata ext (DDLX) | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | N/A | ❌ | ❌ | ⚠️ (LSP-side) |
+| Structures | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | N/A | ❌ | ✅ | ❌ |
+| Domains | ✅ | ❌ | ✅ | ⚠️ | ❌ | ✅ | N/A | ❌ | ⚠️ (PR #149 in progress) | ❌ |
+| Data elements | ✅ | ❌ | ✅ | ⚠️ | ❌ | ✅ | N/A | ❌ | ✅ | ❌ |
+| Enhancements (BAdI/ENHO) | ✅ (`GET /sap/bc/adt/enhancements/enhoxhb/{name}`) | ❌ | ❌ | ❌ | ❌ | ✅ (on-prem only; `GET /sap/bc/adt/programs/programs/{name}/source/main/enhancements/elements` + `GET /sap/bc/adt/enhancements/enhsxsb/{spot}`) | N/A | ❌ | ✅ (BAdI/enhancement impl) | ❌ |
+| Authorization fields (AUTH) | ✅ (`GET /sap/bc/adt/aps/iam/auth/{name}`) | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ✅ (`GET /sap/bc/adt/aps/iam/auth/{name}`) | ❌ |
+| Feature toggles (`FEATURE_TOGGLE`; deprecated alias `FTG2`) | ✅ (states only, `GET /sap/bc/adt/sfw/featuretoggles/{name}/states`; renamed from `FTG2` in audit Plan B) | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ✅ (states + toggle/check/validate) | ❌ |
+| Source version history | ✅ (`VERSIONS` list + `VERSION_SOURCE` fetch via `GET {sourceUrl}/versions` Atom feed) | ✅ (3 tools: list/compare/get) | ✅ (`revisions()` + `getObjectSource(url, {version})`) | ❌ | ❌ | ❌ | N/A | ✅ (`abap_get_revisions` list-only) | ❌ | ❌ |
+| Transactions | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | N/A | ❌ | ❌ | ❌ (classic) |
+| Free SQL | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | N/A | ✅ | ✅ | ❌ |
+| Exact object-directory lookup | ✅ (`SAPSearch searchType=tadir_lookup`; ADT quick search, grouped by requested name) | ❌ | ✅ (quickSearch primitive) | ✅ (search) | ❌ | ✅ | N/A | ✅ | ✅ | ⚠️ (LSP-side) |
+| System info / components | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | N/A | ❌ | ✅ | ✅ (abap_list_destinations) |
+| BOR business objects | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ | ❌ |
+| Messages (T100, `MSAG`; deprecated alias `MESSAGES`) | ✅ (read+write; canonical short type `MSAG` from audit Plan B) | ✅ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ | ❌ |
+| Text elements | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ | ❌ |
+| Variants | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ | ❌ |
+| Structured class decomposition (metadata + includes) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ✅ (locals_def/imp/test/macros) | ⚠️ (LSP-side) |
+| Grep/regex search within source (SAPRead `grep`) | ✅ (matches +context, line numbers; method-annotated for CLAS; literal fallback) | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ | ❌ |
+| GetProgFullCode (include traversal) | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (on-prem only; `GET /sap/bc/adt/repository/nodestructure?objecttype=PROG/P&objectname={name}` + recursive INCL fetch) | N/A | ❌ | ❌ | ❌ |
+| SKTD (Knowledge Transfer Documents) | ✅ (merged PR #134 2026-04-16; `GET/PUT/POST /sap/bc/adt/documentation/ktd/documents/`) | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ | ❌ |
 
 ## 6. Write / CRUD Operations
 
-| Write Feature | ARC-1 | vibing-steampunk | mcp-abap-abap-adt-api | mcp-abap-adt (mario) | AWS Accelerator | fr0ster | btp-odata-mcp | dassian-adt / abap-mcpb | sapcli |
-|--------------|-------|-----------------|----------------------|---------------------|-----------------|---------|---------------|------------------------|--------|
-| Create objects | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | N/A | ✅ | ✅ |
-| Update source | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | N/A | ✅ | ✅ |
-| Delete objects | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | N/A | ✅ | ❌ |
-| Dependency-aware DDLS CRUD guidance (update/activate/delete hints) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
-| Activate | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | N/A | ✅ | ✅ |
-| Batch activate | ✅ | ✅ | ✅ | ❌ | ✅ (with dep resolution) | ✅ | N/A | ✅ (v2.0, Apr 2026) | ✅ (mass activation) |
-| Lock/unlock | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | N/A | ✅ | ✅ |
-| EditSource (surgical) | ✅ (edit_method, local handlers May 2026; class-section surgery May 2026 — edit_class_definition/add_method/edit_method_signature/delete_method) | ✅ | ❌ | ❌ | ❌ | ❌ | N/A | ✅ (edit_method, Apr 2026) | ❌ |
-| CloneObject | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
-| Execute ABAP | ❌ | ✅ | ❌ | ❌ | ❌ | ✅ | N/A | ✅ | ✅ (abap run) |
-| RAP CRUD (BDEF, SRVD, DDLX, SRVB) | ✅ (DDLS, DDLX, DCLS, BDEF, SRVD, SRVB write) | ⚠️ (some) | ❌ | ❌ | ✅ (BDEF, SRVD, SRVB) | ✅ (all incl. DDLX) | N/A | ⚠️ (BDEF create, SRVB publish) | ⚠️ (DDLS, DCL, BDEF write; SRVB publish) |
-| Domain write (DOMA) | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | N/A | ❌ | ✅ (PR #149 merged) |
-| Data element write (DTEL) | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | N/A | ❌ | ✅ |
-| Multi-object batch creation | ✅ (item-level package/transport overrides) | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
-| Deterministic RAP preflight (TABL/BDEF/DDLX/DDLS static checks) | ⚠️ (in-flight PR [#173](https://github.com/marianfoo/arc-1/pull/173) — `preflightBeforeWrite` toggle) | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
-| RAP behavior-pool handler scaffolding | ✅ (`SAPWrite action=scaffold_rap_handlers` dry-run/autoApply, native CLAS include writes, auto-creates missing `lhc_*` skeletons in CCIMP only — both DEFINITION + IMPLEMENTATION blocks per SAP-canonical layout, verified against demo `BP_DEMO_RAP_STRICT`) | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
-| Generate Behavior Implementation (RAP one-shot) | ✅ (`SAPWrite action=generate_behavior_implementation` — auto-discover BDEF via rootEntityRef, scaffold all handlers in CCIMP, write under one lock, optionally activate; reliable equivalent of Eclipse ADT's Cmd+1 "Generate Behavior Implementation" quickfix without the broken server endpoint) | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
-| AFF schema validation (pre-create) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
-| Type auto-mappings (CLAS→CLAS/OC) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ✅ | ✅ (ADTObjectType) |
-| Create test class | ❌ | ✅ | ❌ | ❌ | ✅ | ✅ | N/A | ✅ (abap_create_test_include) | ✅ (class write test_classes) |
-| Table write (TABL) | ✅ (TABL/DT + TABL/DS subtype routing; #285 follow-up) | ✅ | ✅ | ❌ | ❌ | ✅ | N/A | ✅ | ✅ |
-| Package create (DEVC) | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | N/A | ✅ | ✅ |
-| Service binding create (SRVB) | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | N/A | ❌ | ✅ |
-| Message class write (MSAG) | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | N/A | ❌ | ✅ |
-| DCL write (DCLS) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ✅ |
-| SKTD write (Knowledge Transfer Docs) | ✅ (merged PR #134 2026-04-16; base64 Markdown in XML envelope; create requires refObjectType) | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
-| Function group write (FUGR create / delete) | ✅ (issue #250; create+delete; package via packageRef) | ✅ | ❌ | ❌ | ❌ | ✅ | N/A | ❌ | ✅ |
-| Function module write (FUNC create / source-update / delete) | ✅ (issue #250; requires `group`; SAPGUI `*"…"*` parameter comment blocks auto-stripped on PUT) | ❌ | ❌ | ❌ | ❌ | ⚠️ (parameter loss bug — fr0ster open issue #77) | N/A | ❌ | ⚠️ (no signature mgmt) |
-| Function module signature management (structured `parameters` array — IMPORTING/EXPORTING/CHANGING/TABLES/EXCEPTIONS/RAISING) | ✅ (issue #252; `SAPWrite(type='FUNC', parameters=[…])` builds the source-based signature clause; `SAPRead(type='FUNC', includeSignature=true)` returns parsed JSON — verified live on a4h S/4HANA 2023 + NPL 7.50 SP02; closes fr0ster #77 parameter-loss class) | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
+| Write Feature | ARC-1 | vibing-steampunk | mcp-abap-abap-adt-api | mcp-abap-adt (mario) | AWS Accelerator | fr0ster | btp-odata-mcp | dassian-adt / abap-mcpb | sapcli | SAP ABAP MCP |
+|--------------|-------|-----------------|----------------------|---------------------|-----------------|---------|---------------|------------------------|--------|---|
+| Create objects | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | N/A | ✅ | ✅ | ✅ (abap_creation ×4) |
+| Update source | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | N/A | ✅ | ✅ | ⚠️ (via editor/LSP, not MCP) |
+| Delete objects | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | N/A | ✅ | ❌ | ❌ |
+| Dependency-aware DDLS CRUD guidance (update/activate/delete hints) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ | ❌ |
+| Activate | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | N/A | ✅ | ✅ | ✅ (abap_activate_objects) |
+| Batch activate | ✅ | ✅ | ✅ | ❌ | ✅ (with dep resolution) | ✅ | N/A | ✅ (v2.0, Apr 2026) | ✅ (mass activation) | ✅ (abap_activate_objects) |
+| Lock/unlock | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | N/A | ✅ | ✅ | ✅ (Eclipse ADT) |
+| EditSource (surgical) | ✅ (edit_method, local handlers May 2026; class-section surgery May 2026 — edit_class_definition/add_method/edit_method_signature/delete_method) | ✅ | ❌ | ❌ | ❌ | ❌ | N/A | ✅ (edit_method, Apr 2026) | ❌ | ❌ (editor-side) |
+| CloneObject | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ | ❌ |
+| Execute ABAP | ❌ | ✅ | ❌ | ❌ | ❌ | ✅ | N/A | ✅ | ✅ (abap run) | ❌ |
+| RAP CRUD (BDEF, SRVD, DDLX, SRVB) | ✅ (DDLS, DDLX, DCLS, BDEF, SRVD, SRVB write) | ⚠️ (some) | ❌ | ❌ | ✅ (BDEF, SRVD, SRVB) | ✅ (all incl. DDLX) | N/A | ⚠️ (BDEF create, SRVB publish) | ⚠️ (DDLS, DCL, BDEF write; SRVB publish) | ✅ (primary scope — generators + business_services) |
+| Domain write (DOMA) | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | N/A | ❌ | ✅ (PR #149 merged) | ❌ (classic DDIC, out of scope) |
+| Data element write (DTEL) | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | N/A | ❌ | ✅ | ❌ |
+| Multi-object batch creation | ✅ (item-level package/transport overrides) | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ | ⚠️ |
+| Deterministic RAP preflight (TABL/BDEF/DDLX/DDLS static checks) | ⚠️ (in-flight PR [#173](https://github.com/marianfoo/arc-1/pull/173) — `preflightBeforeWrite` toggle) | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ | ❌ |
+| RAP behavior-pool handler scaffolding | ✅ (`SAPWrite action=scaffold_rap_handlers` dry-run/autoApply, native CLAS include writes, auto-creates missing `lhc_*` skeletons in CCIMP only — both DEFINITION + IMPLEMENTATION blocks per SAP-canonical layout, verified against demo `BP_DEMO_RAP_STRICT`) | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ | ✅ (abap_generators) |
+| Generate Behavior Implementation (RAP one-shot) | ✅ (`SAPWrite action=generate_behavior_implementation` — auto-discover BDEF via rootEntityRef, scaffold all handlers in CCIMP, write under one lock, optionally activate; reliable equivalent of Eclipse ADT's Cmd+1 "Generate Behavior Implementation" quickfix without the broken server endpoint) | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ | ✅ (abap_generators — native Joule skill) |
+| AFF schema validation (pre-create) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ | ⚠️ (AFF used internally) |
+| Type auto-mappings (CLAS→CLAS/OC) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ✅ | ✅ (ADTObjectType) | ✅ (Eclipse ADT) |
+| Create test class | ❌ | ✅ | ❌ | ❌ | ✅ | ✅ | N/A | ✅ (abap_create_test_include) | ✅ (class write test_classes) | ⚠️ (creation/generators) |
+| Table write (TABL) | ✅ (TABL/DT + TABL/DS subtype routing; #285 follow-up) | ✅ | ✅ | ❌ | ❌ | ✅ | N/A | ✅ | ✅ | ❌ (classic, out of scope) |
+| Package create (DEVC) | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | N/A | ✅ | ✅ | ✅ (abap_creation) |
+| Service binding create (SRVB) | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | N/A | ❌ | ✅ | ✅ (abap_business_services) |
+| Message class write (MSAG) | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | N/A | ❌ | ✅ | ❌ |
+| DCL write (DCLS) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ✅ | ⚠️ |
+| SKTD write (Knowledge Transfer Docs) | ✅ (merged PR #134 2026-04-16; base64 Markdown in XML envelope; create requires refObjectType) | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ | ❌ |
+| Function group write (FUGR create / delete) | ✅ (issue #250; create+delete; package via packageRef) | ✅ | ❌ | ❌ | ❌ | ✅ | N/A | ❌ | ✅ | ❌ (classic, out of scope) |
+| Function module write (FUNC create / source-update / delete) | ✅ (issue #250; requires `group`; SAPGUI `*"…"*` parameter comment blocks auto-stripped on PUT) | ❌ | ❌ | ❌ | ❌ | ⚠️ (parameter loss bug — fr0ster open issue #77) | N/A | ❌ | ⚠️ (no signature mgmt) | ❌ |
+| Function module signature management (structured `parameters` array — IMPORTING/EXPORTING/CHANGING/TABLES/EXCEPTIONS/RAISING) | ✅ (issue #252; `SAPWrite(type='FUNC', parameters=[…])` builds the source-based signature clause; `SAPRead(type='FUNC', includeSignature=true)` returns parsed JSON — verified live on a4h S/4HANA 2023 + NPL 7.50 SP02; closes fr0ster #77 parameter-loss class) | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ | ❌ |
 
 ## 7. Code Intelligence
 
-| Feature | ARC-1 | vibing-steampunk | mcp-abap-abap-adt-api | mcp-abap-adt (mario) | AWS Accelerator | fr0ster | btp-odata-mcp | dassian-adt / abap-mcpb | sapcli |
-|---------|-------|-----------------|----------------------|---------------------|-----------------|---------|---------------|------------------------|--------|
-| Find definition | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | N/A | ✅ (Apr 2026) | ❌ |
-| Find references | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | N/A | ✅ | ✅ (where-used with scope) |
-| Code completion | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
-| Context compression | ✅ (SAPContext, 7-30x) | ✅ (auto, 7-30x) | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
-| Method-level surgery | ✅ (95% reduction) | ✅ (95% reduction) | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
-| ABAP AST / parser | ⚠️ (abaplint for lint) | ✅ (native Go port) | ❌ | ❌ | ❌ | ✅ | N/A | ❌ | ❌ |
-| Semantic analysis | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | N/A | ❌ | ❌ |
-| Call graph analysis | ❌ | ✅ (5 tools) | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
-| Type hierarchy | ✅ (via SQL) | ✅ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
-| CDS dependencies | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
-| CDS impact analysis (upstream+downstream) | ✅ (`SAPContext action=impact`, RAP-aware buckets) | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
-| CDS sibling DDLS/DDLX consistency | ✅ (PR #177 2026-04-22 — detects asymmetric metadata-extension coverage across sibling variants in same package) | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
+| Feature | ARC-1 | vibing-steampunk | mcp-abap-abap-adt-api | mcp-abap-adt (mario) | AWS Accelerator | fr0ster | btp-odata-mcp | dassian-adt / abap-mcpb | sapcli | SAP ABAP MCP |
+|---------|-------|-----------------|----------------------|---------------------|-----------------|---------|---------------|------------------------|--------|---|
+| Find definition | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | N/A | ✅ (Apr 2026) | ❌ | ❌ (LSP-side, not MCP) |
+| Find references | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | N/A | ✅ | ✅ (where-used with scope) | ❌ (LSP-side) |
+| Code completion | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ | ❌ (LSP-side) |
+| Context compression | ✅ (SAPContext, 7-30x) | ✅ (auto, 7-30x) | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ | ❌ |
+| Method-level surgery | ✅ (95% reduction) | ✅ (95% reduction) | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ | ❌ |
+| ABAP AST / parser | ⚠️ (abaplint for lint) | ✅ (native Go port) | ❌ | ❌ | ❌ | ✅ | N/A | ❌ | ❌ | ✅ (Eclipse ADT, IDE-side) |
+| Semantic analysis | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | N/A | ❌ | ❌ | ⚠️ (Eclipse, IDE-side) |
+| Call graph analysis | ❌ | ✅ (5 tools) | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ | ❌ |
+| Type hierarchy | ✅ (via SQL) | ✅ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ | ⚠️ (LSP-side) |
+| CDS dependencies | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ | ⚠️ (LSP-side) |
+| CDS impact analysis (upstream+downstream) | ✅ (`SAPContext action=impact`, RAP-aware buckets) | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ | ❌ |
+| CDS sibling DDLS/DDLX consistency | ✅ (PR #177 2026-04-22 — detects asymmetric metadata-extension coverage across sibling variants in same package) | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ | ❌ |
 
 ## 8. Code Quality
 
-| Feature | ARC-1 | vibing-steampunk | mcp-abap-abap-adt-api | mcp-abap-adt (mario) | AWS Accelerator | fr0ster | btp-odata-mcp | dassian-adt / abap-mcpb | sapcli |
-|---------|-------|-----------------|----------------------|---------------------|-----------------|---------|---------------|------------------------|--------|
-| Syntax check | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | N/A | ✅ | ✅ |
-| ATC checks | ✅ | ✅ | ✅ | ❌ | ✅ (with summary) | ❌ | N/A | ✅ (severity grouping) | ✅ (checkstyle/codeclimate) |
-| abaplint (local offline) | ✅ | ✅ (native Go port, 8 rules) | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
-| Unit tests | ✅ | ✅ | ✅ | ❌ | ✅ (with coverage) | ✅ | N/A | ✅ (Apr 2026) | ✅ (with coverage + JUnit4/sonar) |
-| CDS unit tests | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | N/A | ❌ | ❌ |
-| API release state (clean core) | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
-| Fix proposals | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | N/A | ✅ (Apr 2026) | ❌ |
-| PrettyPrint | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | N/A | ✅ (Apr 2026) | ❌ |
-| Migration analysis | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | N/A | ❌ | ❌ |
+| Feature | ARC-1 | vibing-steampunk | mcp-abap-abap-adt-api | mcp-abap-adt (mario) | AWS Accelerator | fr0ster | btp-odata-mcp | dassian-adt / abap-mcpb | sapcli | SAP ABAP MCP |
+|---------|-------|-----------------|----------------------|---------------------|-----------------|---------|---------------|------------------------|--------|---|
+| Syntax check | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | N/A | ✅ | ✅ | ✅ (on activate; LSP diagnostics) |
+| ATC checks | ✅ | ✅ | ✅ | ❌ | ✅ (with summary) | ❌ | N/A | ✅ (severity grouping) | ✅ (checkstyle/codeclimate) | ⚠️ (Joule/IDE; not a built-in MCP tool) |
+| abaplint (local offline) | ✅ | ✅ (native Go port, 8 rules) | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ | ❌ (uses native ATC) |
+| Unit tests | ✅ | ✅ | ✅ | ❌ | ✅ (with coverage) | ✅ | N/A | ✅ (Apr 2026) | ✅ (with coverage + JUnit4/sonar) | ✅ (abap_run_unit_tests) |
+| CDS unit tests | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | N/A | ❌ | ❌ | ⚠️ (via run_unit_tests) |
+| API release state (clean core) | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ | ⚠️ (Eclipse, IDE-side) |
+| Fix proposals | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | N/A | ✅ (Apr 2026) | ❌ | ⚠️ (Joule AI) |
+| PrettyPrint | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | N/A | ✅ (Apr 2026) | ❌ | ⚠️ (IDE-side) |
+| Migration analysis | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | N/A | ❌ | ❌ | ⚠️ (Joule CCM, separate) |
 
 ## 9. Transport / CTS
 
-| Feature | ARC-1 | vibing-steampunk | mcp-abap-abap-adt-api | mcp-abap-adt (mario) | AWS Accelerator | fr0ster | btp-odata-mcp | dassian-adt / abap-mcpb | sapcli |
-|---------|-------|-----------------|----------------------|---------------------|-----------------|---------|---------------|------------------------|--------|
-| List transports | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | N/A | ✅ | ✅ (-r/-rr/-rrr detail) |
-| Create transport | ✅ (K/W/T) | ✅ | ✅ | ❌ | ❌ | ✅ | N/A | ✅ | ✅ (5 types: K/W/T/S/R) |
-| Release transport | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | N/A | ✅ | ✅ (recursive) |
-| Recursive release | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ✅ (recursive) |
-| Delete transport | ✅ (recursive) | ❌ | ❌ | ��� | ❌ | ❌ | N/A | ❌ | ✅ |
-| Transport contents | ⚠️ (forward lookup: `SAPTransport get`) | ❌ | ✅ | ❌ | ❌ | ❌ | N/A | ✅ | ✅ (-rrr objects) |
-| Object → transport reverse lookup | ✅ (history action) | ❌ | ⚠️ (URI resolve only) | ❌ | ❌ | ❌ | N/A | ⚠️ (URI resolve only) | ❌ |
-| Transport assign | ✅ (reassign owner) | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ✅ | ✅ (reassign owner) |
-| Transport gating | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
-| Inactive objects list | ✅ (rich user/deleted/transport metadata + flat fallback) | ✅ | ��� | ❌ | ❌ | ✅ | N/A | ❌ | ✅ |
+| Feature | ARC-1 | vibing-steampunk | mcp-abap-abap-adt-api | mcp-abap-adt (mario) | AWS Accelerator | fr0ster | btp-odata-mcp | dassian-adt / abap-mcpb | sapcli | SAP ABAP MCP |
+|---------|-------|-----------------|----------------------|---------------------|-----------------|---------|---------------|------------------------|--------|---|
+| List transports | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | N/A | ✅ | ✅ (-r/-rr/-rrr detail) | ✅ (abap_transport-get) |
+| Create transport | ✅ (K/W/T) | ✅ | ✅ | ❌ | ❌ | ✅ | N/A | ✅ | ✅ (5 types: K/W/T/S/R) | ✅ (abap_transport-create) |
+| Release transport | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | N/A | ✅ | ✅ (recursive) | ❌ (IDE human-in-the-loop) |
+| Recursive release | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ✅ (recursive) | ❌ |
+| Delete transport | ✅ (recursive) | ❌ | ❌ | ��� | ❌ | ❌ | N/A | ❌ | ✅ | ❌ |
+| Transport contents | ⚠️ (forward lookup: `SAPTransport get`) | ❌ | ✅ | ❌ | ❌ | ❌ | N/A | ✅ | ✅ (-rrr objects) | ⚠️ (abap_transport-get) |
+| Object → transport reverse lookup | ✅ (history action) | ❌ | ⚠️ (URI resolve only) | ❌ | ❌ | ❌ | N/A | ⚠️ (URI resolve only) | ❌ | ❌ |
+| Transport assign | ✅ (reassign owner) | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ✅ | ✅ (reassign owner) | ❌ |
+| Transport gating | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ | ⚠️ (human-in-the-loop selection) |
+| Inactive objects list | ✅ (rich user/deleted/transport metadata + flat fallback) | ✅ | ��� | ❌ | ❌ | ✅ | N/A | ❌ | ✅ | ⚠️ (IDE-side) |
 
 ## 10. Diagnostics & Runtime
 
-| Feature | ARC-1 | vibing-steampunk | mcp-abap-abap-adt-api | mcp-abap-adt (mario) | AWS Accelerator | fr0ster | btp-odata-mcp | dassian-adt / abap-mcpb | sapcli |
-|---------|-------|-----------------|----------------------|---------------------|-----------------|---------|---------------|------------------------|--------|
-| Short dumps (ST22) | ✅ (focused sections by default + `includeFullText` opt-in, PR #174) | ✅ | ✅ | ❌ | ❌ | ✅ | N/A | ✅ | ❌ |
-| ABAP profiler traces | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | N/A | ✅ (8 tools: list/params/config/hit-list/statements/db-access/delete×2) | ❌ |
-| System messages (SM02) | ✅ (`SAPDiagnose action=system_messages`, ADT feed, PR #174 2026-04-21) | ❌ | ❌ | ❌ | ❌ | ✅ (v5.0.0) | N/A | ❌ | ❌ |
-| Gateway error log (IWFND) | ✅ (`SAPDiagnose action=gateway_errors`, on-prem, list + detailUrl/id detail modes, PR #174 2026-04-21) | ❌ | ❌ | ❌ | ❌ | ✅ (v5.0.0, on-prem) | N/A | ❌ | ❌ |
-| ADT feed reader (unified) | ✅ (dumps + traces + system_messages + gateway_errors; all under `SAPDiagnose`) | ❌ | ❌ | ❌ | ❌ | ✅ (v5.0.0, 5 types) | N/A | ❌ | ❌ |
-| SQL traces | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
-| ABAP debugger | ❌ | ✅ (8 tools) | ✅ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
-| AMDP/HANA debugger | ❌ | ✅ (7 tools) | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
-| Execute with profiling | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | N/A | ❌ | ❌ |
+| Feature | ARC-1 | vibing-steampunk | mcp-abap-abap-adt-api | mcp-abap-adt (mario) | AWS Accelerator | fr0ster | btp-odata-mcp | dassian-adt / abap-mcpb | sapcli | SAP ABAP MCP |
+|---------|-------|-----------------|----------------------|---------------------|-----------------|---------|---------------|------------------------|--------|---|
+| Short dumps (ST22) | ✅ (focused sections by default + `includeFullText` opt-in, PR #174) | ✅ | ✅ | ❌ | ❌ | ✅ | N/A | ✅ | ❌ | ❌ |
+| ABAP profiler traces | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | N/A | ✅ (8 tools: list/params/config/hit-list/statements/db-access/delete×2) | ❌ | ❌ |
+| System messages (SM02) | ✅ (`SAPDiagnose action=system_messages`, ADT feed, PR #174 2026-04-21) | ❌ | ❌ | ❌ | ❌ | ✅ (v5.0.0) | N/A | ❌ | ❌ | ❌ |
+| Gateway error log (IWFND) | ✅ (`SAPDiagnose action=gateway_errors`, on-prem, list + detailUrl/id detail modes, PR #174 2026-04-21) | ❌ | ❌ | ❌ | ❌ | ✅ (v5.0.0, on-prem) | N/A | ❌ | ❌ | ❌ |
+| ADT feed reader (unified) | ✅ (dumps + traces + system_messages + gateway_errors; all under `SAPDiagnose`) | ❌ | ❌ | ❌ | ❌ | ✅ (v5.0.0, 5 types) | N/A | ❌ | ❌ | ❌ |
+| SQL traces | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ | ❌ |
+| ABAP debugger | ❌ | ✅ (8 tools) | ✅ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ | ⚠️ (Eclipse debugger, IDE-side, not MCP) |
+| AMDP/HANA debugger | ❌ | ✅ (7 tools) | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ | ⚠️ (Eclipse, IDE-side) |
+| Execute with profiling | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | N/A | ❌ | ❌ | ❌ |
 
 ## 11. Advanced Features
 
-| Feature | ARC-1 | vibing-steampunk | mcp-abap-abap-adt-api | mcp-abap-adt (mario) | AWS Accelerator | fr0ster | btp-odata-mcp | dassian-adt / abap-mcpb | sapcli |
-|---------|-------|-----------------|----------------------|---------------------|-----------------|---------|---------------|------------------------|--------|
-| Feature auto-detection | ✅ (8 probes + ADT discovery/MIME + standalone type-availability probe with multi-signal classifier, PR #163) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (ADT discovery/MIME) |
-| Caching (SQLite) | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| ETag source revalidation | ✅ (`If-None-Match`, active/inactive cache keys) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| UI5/Fiori BSP | ❌ | ⚠️ (3 read-only; 4 write tools disabled — ADT filestore returns 405) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (OData upload/download) |
-| abapGit/gCTS | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | N/A | ✅ | ✅ (full gCTS + checkout/checkin) |
-| BTP Destination Service | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
-| Cloud Connector proxy | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
-| Multi-system support | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ (SAP UI Landscape XML, Apr 2026) | ✅ (kubeconfig contexts) |
-| OData bridge | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ (BSP, FLP via OData) |
-| Lua scripting engine | ❌ | ✅ (50+ bindings) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| WASM-to-ABAP compiler | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| MCP client configurator | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (11 clients) | ❌ | ❌ | ❌ |
-| CLI mode (non-MCP) | ⚠️ (generic `call`/`tools` entry points + 6 ergonomic shortcuts; 9 of 12 MCP tools lack shortcuts or expose fewer knobs than the Zod schema — tracked as [FEAT-60](../docs_page/roadmap.md#feat-60-cliserver-alignment-shortcut-parity-with-mcp-tool-schemas) + PR [#179](https://github.com/marianfoo/arc-1/pull/179)) | ✅ (28 commands) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (28+ commands, primary mode) |
-| Health endpoint | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ (v4.3.0) | ❌ | ✅ | ❌ |
-| RFC connectivity | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (sap-rfc-lite) | ❌ | ❌ | ✅ (PyRFC, optional) |
-| MCPB one-click install | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
-| Lock registry / recovery | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
-| Batch HTTP operations | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (multipart/mixed) | ❌ | ❌ | ❌ |
-| RAG-optimized tool descriptions | ⚠️ (intent-based tool blurbs; compact 12-tool surface) | ❌ | ❌ | ❌ | ❌ | ✅ (v4.4.0; v6.2.0 extended to per-object-type context for 13 types — PR #66) | ❌ | ❌ | ❌ |
-| Embeddable server (library mode) | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (v6.4.0 adds per-instance `systemType` for multi-tenant) | ❌ | ❌ | ❌ |
-| Error intelligence (hints) | ✅ (SAP-domain classification: lock-conflict/enqueue/auth/activation/object-exists/transport/method-not-supported/icf-handler-not-bound — last category added 2026-04-20 for SICF misconfiguration on DTEL create) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (extensive) | ✅ (typed error hierarchy) |
+| Feature | ARC-1 | vibing-steampunk | mcp-abap-abap-adt-api | mcp-abap-adt (mario) | AWS Accelerator | fr0ster | btp-odata-mcp | dassian-adt / abap-mcpb | sapcli | SAP ABAP MCP |
+|---------|-------|-----------------|----------------------|---------------------|-----------------|---------|---------------|------------------------|--------|---|
+| Feature auto-detection | ✅ (8 probes + ADT discovery/MIME + standalone type-availability probe with multi-signal classifier, PR #163) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (ADT discovery/MIME) | ✅ (Eclipse ADT discovery) |
+| Caching (SQLite) | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| ETag source revalidation | ✅ (`If-None-Match`, active/inactive cache keys) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ⚠️ (Eclipse client) |
+| UI5/Fiori BSP | ❌ | ⚠️ (3 read-only; 4 write tools disabled — ADT filestore returns 405) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (OData upload/download) | ❌ |
+| abapGit/gCTS | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | N/A | ✅ | ✅ (full gCTS + checkout/checkin) | ⚠️ (local sync via AFF planned, not abapGit) |
+| BTP Destination Service | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ (local destinations file) |
+| Cloud Connector proxy | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| Multi-system support | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ (SAP UI Landscape XML, Apr 2026) | ✅ (kubeconfig contexts) | ✅ (abap_list_destinations) |
+| OData bridge | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ (BSP, FLP via OData) | ❌ |
+| Lua scripting engine | ❌ | ✅ (50+ bindings) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| WASM-to-ABAP compiler | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| MCP client configurator | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (11 clients) | ❌ | ❌ | ❌ | N/A (IDE-embedded) |
+| CLI mode (non-MCP) | ⚠️ (generic `call`/`tools` entry points + 6 ergonomic shortcuts; 9 of 12 MCP tools lack shortcuts or expose fewer knobs than the Zod schema — tracked as [FEAT-60](../docs_page/roadmap.md#feat-60-cliserver-alignment-shortcut-parity-with-mcp-tool-schemas) + PR [#179](https://github.com/marianfoo/arc-1/pull/179)) | ✅ (28 commands) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (28+ commands, primary mode) | ❌ (VS Code only) |
+| Health endpoint | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ (v4.3.0) | ❌ | ✅ | ❌ | ❌ |
+| RFC connectivity | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (sap-rfc-lite) | ❌ | ❌ | ✅ (PyRFC, optional) | ✅ (bundles JCo) |
+| MCPB one-click install | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ (VSIX marketplace) |
+| Lock registry / recovery | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ⚠️ (Eclipse locks) |
+| Batch HTTP operations | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (multipart/mixed) | ❌ | ❌ | ❌ | ❌ |
+| RAG-optimized tool descriptions | ⚠️ (intent-based tool blurbs; compact 12-tool surface) | ❌ | ❌ | ❌ | ❌ | ✅ (v4.4.0; v6.2.0 extended to per-object-type context for 13 types — PR #66) | ❌ | ❌ | ❌ | ✅ (heavily agent-engineered: USE WHEN/WORKFLOW/CRITICAL) |
+| Embeddable server (library mode) | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (v6.4.0 adds per-instance `systemType` for multi-tenant) | ❌ | ❌ | ❌ | ❌ (VS Code-embedded only) |
+| Error intelligence (hints) | ✅ (SAP-domain classification: lock-conflict/enqueue/auth/activation/object-exists/transport/method-not-supported/icf-handler-not-bound — last category added 2026-04-20 for SICF misconfiguration on DTEL create) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (extensive) | ✅ (typed error hierarchy) | ⚠️ (Eclipse + Joule explanations) |
 
 ## 12. Token Efficiency
 
-| Feature | ARC-1 | vibing-steampunk | fr0ster | sapcli |
-|---------|-------|-----------------|---------|--------|
-| Schema token cost | ~200 (hyperfocused) / ~moderate (12 tools) | ~200 (hyperfocused) / ~14K (focused) / ~40K (expert) | ~high (303 tools) | N/A (CLI) |
-| Context compression | ✅ SAPContext (7-30x) | ✅ Auto-append (7-30x) | ❌ | N/A |
-| Method-level surgery | ✅ (95% source reduction) | ✅ (95% source reduction) | ❌ | N/A |
-| Hyperfocused mode (1 tool) | ✅ (~200 tokens) | ✅ (~200 tokens) | ❌ | N/A |
-| Compact/intent mode | ✅ (12 intent tools) | N/A | ✅ (22 compact tools) | N/A |
+| Feature | ARC-1 | vibing-steampunk | fr0ster | sapcli | SAP ABAP MCP |
+|---------|-------|-----------------|---------|--------|---|
+| Schema token cost | ~200 (hyperfocused) / ~moderate (12 tools) | ~200 (hyperfocused) / ~14K (focused) / ~40K (expert) | ~high (303 tools) | N/A (CLI) | ~moderate (14 tools, verbose descriptions) |
+| Context compression | ✅ SAPContext (7-30x) | ✅ Auto-append (7-30x) | ❌ | N/A | ❌ |
+| Method-level surgery | ✅ (95% source reduction) | ✅ (95% source reduction) | ❌ | N/A | ❌ |
+| Hyperfocused mode (1 tool) | ✅ (~200 tokens) | ✅ (~200 tokens) | ❌ | N/A | ❌ |
+| Compact/intent mode | ✅ (12 intent tools) | N/A | ✅ (22 compact tools) | N/A | ❌ |
 
 ## 13. Testing & Quality
 
-| Metric | ARC-1 | vibing-steampunk | mcp-abap-abap-adt-api | mcp-abap-adt (mario) | AWS Accelerator | fr0ster | btp-odata-mcp | dassian-adt / abap-mcpb | sapcli |
-|--------|-------|-----------------|----------------------|---------------------|-----------------|---------|---------------|------------------------|--------|
-| Unit tests | 1315 | 222 | 0 | 0 | 0 | Yes (Jest) | 0 | 163 | ~90 files (unittest) |
-| Integration tests | ✅ (on-prem CI + BTP scheduled smoke) | ✅ | ❌ | 13 (live SAP) | ❌ | ✅ | ❌ | ⚠️ scaffold | ✅ (shell scripts) |
-| CI/CD | ✅ (release-please + reliability telemetry) | ✅ (GoReleaser) | ❌ | ❌ | ❌ | ⚠️ (Husky + lint-staged) | ❌ | ❌ | ✅ (GitHub Actions + codecov) |
-| Input validation | Zod v4 | Custom | Untyped | Untyped | Pydantic | Zod v4 | Zod | Manual | argparse |
-| Linter | Biome | — | — | — | — | Biome | — | — | pylint + flake8 + mypy |
+| Metric | ARC-1 | vibing-steampunk | mcp-abap-abap-adt-api | mcp-abap-adt (mario) | AWS Accelerator | fr0ster | btp-odata-mcp | dassian-adt / abap-mcpb | sapcli | SAP ABAP MCP |
+|--------|-------|-----------------|----------------------|---------------------|-----------------|---------|---------------|------------------------|--------|---|
+| Unit tests | 1315 | 222 | 0 | 0 | 0 | Yes (Jest) | 0 | 163 | ~90 files (unittest) | N/A (closed source) |
+| Integration tests | ✅ (on-prem CI + BTP scheduled smoke) | ✅ | ❌ | 13 (live SAP) | ❌ | ✅ | ❌ | ⚠️ scaffold | ✅ (shell scripts) | N/A |
+| CI/CD | ✅ (release-please + reliability telemetry) | ✅ (GoReleaser) | ❌ | ❌ | ❌ | ⚠️ (Husky + lint-staged) | ❌ | ❌ | ✅ (GitHub Actions + codecov) | N/A (SAP internal) |
+| Input validation | Zod v4 | Custom | Untyped | Untyped | Pydantic | Zod v4 | Zod | Manual | argparse | Eclipse/Java |
+| Linter | Biome | — | — | — | — | Biome | — | — | pylint + flake8 + mypy | N/A |
 
 ---
 
@@ -366,7 +349,7 @@ The following items were incorrectly marked in the previous version and have sin
 1. **vibing-steampunk** (295 stars) — Community favorite but quiet since 2026-04-15 (latest release v2.38.1, 2026-04-07). Has Streamable HTTP (v2.38.0), SAML SSO (PR #97). Massive early-Apr sprint: i18n, gCTS, API release state, version history, code coverage, health analysis, rename preview, dead code analysis, package safety hardening, RecoverFailedCreate primitive. Defaults to hyperfocused mode (1 tool). Open issues: OAuth2 BTP request (#99), recurring lock handle bugs (fix in 22517d4), CSRF HEAD 403 on S/4HANA public cloud (#104), SAProuter support (#103).
 2. **fr0ster** (v6.4.1, 100+ releases, 43 stars) — Closest enterprise competitor and the only active one this week (4 releases in 4 days, Apr 17-21). ~320 tools, 9 auth providers, TLS, RFC, embeddable. v6.2.0 shipped per-object-type tool descriptions (13 types) — same direction ARC-1 took with intent-based tools, but via per-type enrichment instead of collapsing to 12 intents. v6.4.0 added per-instance `systemType` to `EmbeddableMcpServer` (multi-tenant capability ARC-1 lacks — worth tracking for enterprise customers running one gateway per portfolio of SAP systems). v6.0.0 BREAKING: simplified dump API + fixed UpdateInterface on BTP (corrNr bug — not applicable to ARC-1 due to centralized safeUpdateSource). ARC-1 has already aligned on V4 SRVB publish endpoint support (PR #130, 2026-04-15) and closed the last unique diagnostics gap by adding SM02 + IWFND to `SAPDiagnose` (PR #174, 2026-04-21).
 3. **dassian-adt** (37 stars, 53 tools) — Stabilized after explosive April sprint (0 → 37 stars, 25 → 53 tools in 2 weeks). OAuth/XSUAA/multi-system/per-user auth all added. Deep analysis (2026-04-16): 9 transport tools, 8 trace tools, abap_create_test_include confirmed. No new commits since Apr 14 — stable but stalled. Lacks: safety system, BTP Destination/PP, caching, linting.
-4. **SAP Joule / Official ABAP MCP Server** — SAP announced Q2 2026 GA for ABAP Cloud Extension for VS Code with built-in agentic AI. Initial scope: RAP UI service development. Will reshape landscape — community servers become complementary.
+4. **SAP ABAP MCP Server** (official, `SAPSE.adt-vscode` v1.0.0 — now a tracked matrix column) — SAP's own ABAP MCP server now ships inside the ABAP Development Tools for VS Code extension (GA Q2 2026). It runs in a bundled headless Eclipse/Equinox app (full ADT toolset + JCo for RFC) and exposes **14 built-in tools** (`abap_creation-*` ×4, `abap_generators-*` ×3, `abap_business_services-*` ×2, `abap_activate_objects`, `abap_run_unit_tests`, `abap_transport-{get,create}`, `abap_list_destinations`) **plus dynamic per-destination "IDE Actions"** — over Streamable-HTTP on `localhost:2236` with a static bearer token. Tool descriptions are heavily agent-prompt-engineered (USE WHEN / TYPICAL WORKFLOW / CRITICAL ordering; transport selection forced human-in-the-loop). **Strengths vs ARC-1:** RAP/clean-core *generation* (Generate-Behavior-Implementation as a first-class tool), native ATC/Joule AI, bundled RFC, and the embedded 16-year Eclipse ADT client. **Gaps vs ARC-1:** owns the *local, single-developer, in-IDE* slot only — no centralized multi-user deployment, no scopes/package-gates/audit, no Principal Propagation, no generic source *reads* exposed as MCP tools (reads happen via the LSP/editor), no SQL/diagnostics, no classic ABAP (Dynpro/FUGR/FUNC out of scope), VS Code only, disabled-by-default + part of commercial Joule for Developers. The "backend IDE-Actions → MCP tools" mechanism is the most interesting idea to watch. Full teardown: [J4D/02-sap-abap-mcp-server-vscode.md](J4D/02-sap-abap-mcp-server-vscode.md).
 5. **btp-odata-mcp** (120 stars) — Different category (OData not ADT). Dormant since Jan 2026. High stars but no recent development.
 
 ### Key Gaps to Close

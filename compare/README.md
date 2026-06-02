@@ -20,7 +20,7 @@ This folder contains detailed analysis documents for each SAP ADT / MCP project 
 | 8 | [Dassian ADT Gap Analysis](08-dassian-adt-feature-gap.md) | Feature gap deep-dive — extensively updated 2026-04-14 | — | Updated 2026-04-14 |
 | 9 | [jfilak/sapcli](09-sapcli.md) (79★) | Python CLI for ADT (CI/CD automation, oldest OSS ADT client) | Python | Very Active |
 | 10 | [SAP Joule for Developers (J4D)](J4D/01-joule-for-developers.md) | SAP's native AI copilot for ABAP — **Q2 2026 GA announced** for VS Code extension | — | Updated 2026-04-14 |
-| 11 | [SAP ABAP MCP Server & ADT for VS Code](J4D/02-sap-abap-mcp-server-vscode.md) | SAP's official ABAP MCP server — GA target Q2 2026, RAP UI service scope | — | Updated 2026-04-14 |
+| 11 | [SAP ABAP MCP Server & ADT for VS Code](J4D/02-sap-abap-mcp-server-vscode.md) | SAP's official ABAP MCP server (`SAPSE.adt-vscode` v1.0.0) — now a tracked **"SAP ABAP MCP" column** in the [feature matrix](00-feature-matrix.md); 14 built-in tools, localhost Streamable-HTTP, RAP-generation scope | — | **Shipping** (GA Q2 2026), updated 2026-06-02 |
 | 12 | [ABAP File Formats (AFF) Opportunity](J4D/03-abap-file-formats-opportunity.md) | How SAP's open-source file format spec could enhance ARC-1 — 7 opportunities analyzed | — | Updated 2026-04-04 |
 
 ## How to Update

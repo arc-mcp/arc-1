@@ -2,9 +2,11 @@
 
 > **Products**: ABAP Cloud Extension for VS Code + ABAP MCP Server + ABAP Language Server
 > **Vendor**: SAP SE
-> **Status**: Pre-GA — announced TechEd 2025, **GA confirmed Q2 2026** (2026 roadmap blog published Apr 2026)
+> **Status**: **Shipping** — `SAPSE.adt-vscode` **v1.0.0** now bundles the ABAP MCP server (GA Q2 2026). Disabled-by-default + "experimental"; part of commercial Joule for Developers.
 > **Impact**: High — this is SAP's official entry into the MCP/agentic ABAP development space
-> **Last updated**: 2026-04-14
+> **Last updated**: 2026-06-02
+
+> **Update 2026-06-02 (verified teardown):** The ABAP MCP server is real and now examined on a live install. It runs inside a bundled **headless Eclipse/Equinox app** (`adt-ls/`, SAP Machine JRE 21, full ADT toolset + JCo for RFC), transport is **Streamable HTTP at `http://localhost:2236/mcp`** using the **Anthropic MCP Java SDK 1.0.1**, secured by a localhost-only **static bearer token** + DNS-rebinding filter (no scopes/package-gates/audit). It exposes **14 built-in tools** (`abap_list_destinations`, `abap_activate_objects`, `abap_run_unit_tests`, `abap_creation-*` ×4, `abap_business_services-*` ×2, `abap_generators-*` ×3, `abap_transport-{get,create}`) **plus dynamic per-destination tools** sourced from backend "IDE Actions" (`com.sap.adt.ideactions`). Tool descriptions are heavily agent-prompt-engineered. Now tracked as the **"SAP ABAP MCP" column** in [00-feature-matrix.md](../00-feature-matrix.md). The pre-GA inference below remains as the original strategic analysis.
 
 ---
 
