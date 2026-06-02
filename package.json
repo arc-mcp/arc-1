@@ -11,7 +11,7 @@
   },
   "type": "module",
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.22.1"
   },
   "bin": {
     "arc-1": "./bin/arc1.js",

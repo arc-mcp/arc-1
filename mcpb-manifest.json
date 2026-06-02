@@ -99,7 +99,7 @@
       "linux"
     ],
     "runtimes": {
-      "node": ">=22.0.0"
+      "node": ">=22.22.1"
     }
   },
   "user_config": {
