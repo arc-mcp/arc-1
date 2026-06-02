@@ -134,6 +134,27 @@ describe('createAuthRateLimiter (Layer 1)', () => {
     const ipB = await fireRequests(app, 2, '10.0.0.2');
     expect(ipB.codes).toEqual([200, 200]);
   });
+
+  it('groups IPv6 addresses by /56 subnet — prevents per-/128 bypass (v8 ipKeyGenerator)', async () => {
+    // express-rate-limit v8 masks IPv6 to a /56 subnet so a client cannot dodge the cap by
+    // rotating addresses within its prefix. Both addresses below sit in the same /56
+    // (2001:db8:abcd:1200::/56) but differ in the lower bits, so they MUST share one bucket.
+    // Under the previous raw-`req.ip` keyGenerator these were independent buckets (the bug
+    // that re-opened the IPv6 rate-limit bypass express-rate-limit v8.0.0 had fixed).
+    const app = appWithLimiter(createAuthRateLimiter('/test', 2));
+    const first = await fireRequests(app, 2, '2001:db8:abcd:1200::1');
+    expect(first.codes).toEqual([200, 200]); // fills the shared /56 bucket
+    const sameSubnet = await fireRequests(app, 1, '2001:db8:abcd:12ff::9');
+    expect(sameSubnet.codes).toEqual([429]); // same /56 → over cap
+  });
+
+  it('keeps IPv6 addresses in different /56 blocks on independent buckets', async () => {
+    const app = appWithLimiter(createAuthRateLimiter('/test', 2));
+    const blockA = await fireRequests(app, 2, '2001:db8:abcd:1200::1'); // /56 == ...:1200
+    expect(blockA.codes).toEqual([200, 200]);
+    const blockB = await fireRequests(app, 1, '2001:db8:abcd:1300::1'); // /56 == ...:1300 (different)
+    expect(blockB.codes).toEqual([200]); // independent bucket
+  });
 });
 
 // Note: when ARC1_AUTH_RATE_LIMIT=0 the limiter is NOT mounted at all (see http.ts).

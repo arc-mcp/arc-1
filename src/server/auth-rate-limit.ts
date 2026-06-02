@@ -9,6 +9,8 @@
  * Design choices:
  * - Per-IP, in-memory only — multi-instance attackers cost `limit × instances`. We
  *   accept that trade-off to preserve the stateless-deployment property from PR #212.
+ *   IPv6 clients are keyed by /56 subnet (via express-rate-limit v8's `ipKeyGenerator`)
+ *   so they can't bypass the cap by rotating addresses within their prefix.
  * - The operator-facing knob is a single per-minute baseline (`ARC1_AUTH_RATE_LIMIT`,
  *   default 20). Per-endpoint differentiation is done at the mount site in http.ts:
  *   OAuth endpoints all use the baseline; `/mcp` gets a higher cap to absorb
@@ -20,7 +22,7 @@
  */
 
 import type { Request, RequestHandler, Response } from 'express';
-import { rateLimit } from 'express-rate-limit';
+import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
 import { logger } from './logger.js';
 
 /**
@@ -67,7 +69,12 @@ export function createAuthRateLimiter(
     legacyHeaders: false,
     // Explicit keyGenerator: rely on Express's req.ip after `trust proxy 1` (set in http.ts).
     // Operators running behind multiple proxy hops must increase the trust-proxy count there.
-    keyGenerator: (req) => req.ip ?? 'unknown',
+    // `ipKeyGenerator` (express-rate-limit v8) masks IPv6 addresses to a /56 subnet so a client
+    // cannot bypass the per-IP cap by rotating addresses within its prefix; IPv4 is returned
+    // unchanged, so IPv4 keying is identical to before. Using the helper (vs raw `req.ip`) is
+    // also required by v8's `keyGeneratorIpFallback` validation: a raw-`req.ip` keyGenerator
+    // logs ERR_ERL_KEY_GEN_IPV6 and re-opens the IPv6 bypass that v8.0.0 explicitly fixed.
+    keyGenerator: (req) => (req.ip ? ipKeyGenerator(req.ip) : 'unknown'),
     skip: opts.skip,
     handler: (req, res, _next, options) => {
       const ip = req.ip ?? 'unknown';
