@@ -138,3 +138,19 @@ modules:
       # on-premise self-signed-cert landscapes). Override to "false" on
       # landscapes with proper CA-signed certificates.
       # SAP_INSECURE: "false"
+
+    # ── Per-space naming override (host / xsappname) ─────────────────
+    # Base mta.yaml derives the route host and the XSUAA `xsappname` from the
+    # CF space via `${space}`, which must resolve to a valid host AND xsappname
+    # (lowercase letters, digits, hyphens — no spaces or underscores). If your
+    # space name violates that, or you want explicit names, pin them:
+    #   • add a `parameters:` block to the arc1-mcp-server module above (a
+    #     sibling of `properties:`):
+    #       parameters:
+    #         host: arc1-mcp-prod
+    #   • and append this resource block (a sibling of `modules:`):
+    #       resources:
+    #         - name: arc1-xsuaa
+    #           parameters:
+    #             config:
+    #               xsappname: arc1-mcp-prod

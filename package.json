@@ -73,15 +73,7 @@
     "btp:deploy": "node -e \"const v=require('./package.json').version;require('child_process').execSync('cf deploy mta_archives/arc1-mcp_'+v+'.mtar',{stdio:'inherit'})\"",
     "btp:deploy-ext": "node -e \"const v=require('./package.json').version;require('child_process').execSync('cf deploy mta_archives/arc1-mcp_'+v+'.mtar -e mta-overrides.mtaext',{stdio:'inherit'})\"",
     "btp:build-deploy": "npm run btp:build && npm run btp:deploy",
-    "btp:build-deploy-ext": "npm run btp:build && npm run btp:deploy-ext",
-    "btp:deploy-ext-sia": "node -e \"const v=require('./package.json').version;require('child_process').execSync('cf deploy mta_archives/arc1-mcp_'+v+'.mtar -e mta-overrides-sia.mtaext',{stdio:'inherit'})\"",
-    "btp:deploy-ext-sip": "node -e \"const v=require('./package.json').version;require('child_process').execSync('cf deploy mta_archives/arc1-mcp_'+v+'.mtar -e mta-overrides-sip.mtaext',{stdio:'inherit'})\"",
-    "btp:build-deploy-ext-sia": "npm run btp:build && npm run btp:deploy-ext-sia",
-    "btp:build-deploy-ext-sip": "npm run btp:build && npm run btp:deploy-ext-sip",
-    "btp:deploy-ext-ex1": "node -e \"const v=require('./package.json').version;require('child_process').execSync('cf deploy mta_archives/arc1-mcp_'+v+'.mtar -e mta-overrides-ex1.mtaext',{stdio:'inherit'})\"",
-    "btp:build-deploy-ext-ex1": "npm run btp:build && npm run btp:deploy-ext-ex1",
-    "btp:deploy-ext-c2x": "node -e \"const v=require('./package.json').version;require('child_process').execSync('cf deploy mta_archives/arc1-mcp_'+v+'.mtar -e mta-overrides-c2x.mtaext',{stdio:'inherit'})\"",
-    "btp:build-deploy-ext-c2x": "npm run btp:build && npm run btp:deploy-ext-c2x"
+    "btp:build-deploy-ext": "npm run btp:build && npm run btp:deploy-ext"
   },
   "dependencies": {
     "@abaplint/core": "^2.119.24",

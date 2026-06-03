@@ -389,7 +389,7 @@ Add to your Claude Desktop `claude_desktop_config.json` or Claude Code settings:
 {
   "mcpServers": {
     "arc1-sap": {
-      "url": "https://arc1-mcp-server.cfapps.us10-001.hana.ondemand.com/mcp",
+      "url": "https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com/mcp",
       "transport": "streamable-http"
     }
   }
@@ -406,7 +406,7 @@ In Cursor settings, add MCP server:
 {
   "mcpServers": {
     "arc1-sap": {
-      "url": "https://arc1-mcp-server.cfapps.us10-001.hana.ondemand.com/mcp"
+      "url": "https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com/mcp"
     }
   }
 }
@@ -422,7 +422,7 @@ If using an MCP extension that supports HTTP Streamable transport:
 {
   "mcp.servers": {
     "arc1-sap": {
-      "url": "https://arc1-mcp-server.cfapps.us10-001.hana.ondemand.com/mcp"
+      "url": "https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com/mcp"
     }
   }
 }
@@ -443,7 +443,7 @@ Copilot Studio uses a custom connector with Entra ID OAuth (not XSUAA). For PP w
 
 ```bash
 # Start MCP Inspector pointing to your server
-npx @modelcontextprotocol/inspector https://arc1-mcp-server.cfapps.us10-001.hana.ondemand.com/mcp
+npx @modelcontextprotocol/inspector https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com/mcp
 ```
 
 Inspector supports OAuth discovery. It will open a browser for XSUAA login.
