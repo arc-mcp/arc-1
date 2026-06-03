@@ -248,6 +248,24 @@ describe('AdtClient', () => {
         const u01 = blocks.find((b) => b.name === 'lzdemou01');
         expect(u01?.source).toContain('[Could not read include "lzdemou01"]');
       });
+
+      it('caps blocks and sets truncated=true on a huge include graph', async () => {
+        // Main source lists 100 distinct includes; each include is empty. The walk must
+        // stop at the MAX_BLOCKS cap (80) rather than fetch all 100, and flag truncated.
+        const manyIncludes = Array.from({ length: 100 }, (_, i) => `INCLUDE linc${String(i).padStart(3, '0')}.`).join(
+          '\n',
+        );
+        mockFetch.mockImplementation((url: string) => {
+          if (url.includes('/functions/groups/') && url.includes('/source/main')) {
+            return Promise.resolve(mockResponse(200, manyIncludes));
+          }
+          return Promise.resolve(mockResponse(200, ''));
+        });
+        const client = createClient();
+        const { blocks, truncated } = await client.getFunctionGroupExpanded('ZBIG');
+        expect(truncated).toBe(true);
+        expect(blocks.length).toBe(80); // main + 79 includes = MAX_BLOCKS
+      });
     });
 
     it('getDdls returns CDS source code', async () => {
