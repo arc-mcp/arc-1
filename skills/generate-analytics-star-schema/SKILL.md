@@ -22,7 +22,7 @@ This skill replicates SAP Joule's "CDS Analytical Model Generation" capability (
 | Package | `$TMP` | Fast prototyping; ask before a transportable package |
 | Activation | `batch_create` + `activateAtEnd: true` | Cross-references resolve in one terminal pass |
 | Authorization | `#NOT_REQUIRED` (cube/dimension) | Standard for analytical interface views |
-| Naming | `ZI_<X>_CUBE`, `ZI_<X>_DIM`, `ZI_<X>_TXT` | Clear star-schema roles |
+| Naming | `ZI_<X>_Cube`, `ZI_<X>_Dim`, `ZI_<X>_Txt` | Clear star-schema roles (match the casing the templates use) |
 
 ## Input
 
@@ -123,7 +123,7 @@ define view entity ZI_Sales_Cube
 
       @Aggregation.default: #SUM
       @EndUserText.label: 'Number of Records'
-      1            as RecordCount,
+      abap.int8'1' as RecordCount,
 
       _Region
 }
@@ -154,13 +154,13 @@ define view entity ZI_Region_Dim
 ### Text view template
 
 ```abap
+@AccessControl.authorizationCheck: #NOT_REQUIRED
 @EndUserText.label: 'Region - Text'
 @ObjectModel.dataCategory: #TEXT
 @ObjectModel.representativeKey: 'RegionId'
 define view entity ZI_Region_Txt
   as select from zregion_t
 {
-      @ObjectModel.foreignKey.association: '_Region'
   key region_id as RegionId,
 
       @Semantics.language: true
@@ -170,6 +170,8 @@ define view entity ZI_Region_Txt
       regiontext  as RegionName
 }
 ```
+
+(The text view stands alone — it declares no association, so it carries no `@ObjectModel.foreignKey.association`. The link is one-directional: the **dimension** associates to this text view via `_Text` + `@ObjectModel.text.association`, not the other way round.)
 
 **Composition rules** (enforce before writing):
 - Cube has ≥1 measure (`@Aggregation.default`).

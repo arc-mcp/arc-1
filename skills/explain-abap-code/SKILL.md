@@ -206,7 +206,7 @@ For CDS views:
 
 ### Behavior Definition (if the object is a BDEF)
 Structure the explanation around the RAP behavior graph you read in Step 1f:
-- **Implementation kind**: managed / unmanaged / projection / abstract — and what that implies (framework-provided CRUD vs custom handlers vs reuse layer). Note `strict(2)` and `with draft` if present.
+- **Implementation kind**: managed / unmanaged / projection / abstract / interface — and what that implies (framework-provided CRUD vs custom handlers vs reuse/typing layer). Note `strict(2)` and `with draft` if present.
 - **Business purpose**: derived from the bound CDS root entity + the BDEF header comments.
 - **Per-entity model**: for each `define behavior for <CDS> alias <alias>` — persistent table, `lock master`/`lock dependent`, `authorization master`/`authorization dependent`, `etag`.
 - **Operations (the CRUD graph)**: `create` / `update` / `delete`, create-by-association (`association _X { create; }`), and whether draft actions (`Edit`, `Activate`, `Discard`, `Resume`, `Prepare`) are present.

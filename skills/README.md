@@ -72,7 +72,7 @@ These skills assume you have:
 
 #### generate-analytics-star-schema → generate-cds-analytical-query
 
-These two chain. The star-schema skill builds the **model** (cube + dimensions + texts); the analytical-query skill projects the consumable **query** on top of the cube. Run star-schema first when no cube exists yet, then the query skill. Both are live-verified end-to-end on S/4HANA 2023 (SAP_BASIS 7.58) — see the skills' own notes. The model layer requires the analytics annotations (7.5x); the query layer requires `provider contract analytical_query` (SAP_BASIS 7.57+).
+These two chain. The star-schema skill builds the **model** (cube + dimensions + texts); the analytical-query skill projects the consumable **query** on top of the cube. Run star-schema first when no cube exists yet, then the query skill. The model layer requires the analytics annotations (7.5x); the query layer requires `provider contract analytical_query` (SAP_BASIS 7.57+).
 
 #### generate-rap-service vs generate-rap-service-researched
 

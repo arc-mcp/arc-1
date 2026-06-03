@@ -11,7 +11,7 @@ This skill replicates SAP Joule's "CDS Analytical Query Generation" capability b
 
 ## Prerequisites — read this first
 
-- **Requires SAP_BASIS 7.57+ (S/4HANA 2022+).** The `provider contract analytical_query` form is unavailable on 7.56 and earlier. Verify with `SAPManage(action="probe")` (checks `rap.available`) — if RAP/CDS isn't available, stop and tell the user.
+- **Requires SAP_BASIS 7.57+ (S/4HANA 2022+).** The `provider contract analytical_query` form is unavailable on 7.56 and earlier. Note that `SAPManage(action="probe")` `rap.available` is **necessary but not sufficient** — RAP shipped in 7.54, so a `true` does not confirm the 7.57 floor. To gate reliably, check the release directly, e.g. `SAPQuery(sql="SELECT release FROM cvers WHERE component = 'SAP_BASIS'")` and require `>= 757`; otherwise be ready for the provider-contract syntax error to surface at activation (Step 5) and stop there.
 - **You need an existing cube.** This skill projects ON a cube. If no cube exists yet, run the `generate-analytics-star-schema` skill first to build the cube + dimensions, then come back here.
 
 ## Smart Defaults (apply silently, do NOT ask)
@@ -26,7 +26,7 @@ This skill replicates SAP Joule's "CDS Analytical Query Generation" capability b
 
 ## Input
 
-The user provides a cube name (e.g., `ZI_SALES_CUBE`) or a business description ("revenue by region and month"). Only the **cube** is strictly required; if the user gives a description, find the cube via Step 1.
+The user provides a cube name (e.g., `ZI_Sales_Cube`) or a business description ("revenue by region and month"). Only the **cube** is strictly required; if the user gives a description, find the cube via Step 1.
 
 Optionally:
 - **Query name** (default: derive from the cube, e.g. `ZC_SalesQuery`; **must be ≤ 28 characters** — the analytical engine prepends `2C` to the runtime name)
@@ -150,7 +150,7 @@ where CalendarYear = $parameters.p_year
 ```
 
 **Composition rules** (enforce before writing):
-- Element names must match the cube's element names exactly (you read them in Step 1c).
+- Every element you **project directly** from the cube must use the cube's exact element name (you read them in Step 1c). Calculated and restricted measures (Template B) are the exception — they introduce new aliases (`... as SalesAmount2025`) that need not exist in the cube.
 - Every amount measure needs a `@Semantics.amount.currencyCode: '<field>'` and that currency field must also be projected.
 - Every quantity measure needs `@Semantics.quantity.unitOfMeasure: '<field>'` and that unit field must be projected.
 - Query name ≤ 28 chars.
