@@ -31,19 +31,23 @@ Optionally, the user may specify:
 
 ## Step 1: Run ATC Readiness Check
 
+> **ATC gotchas (verified live on S/4HANA 2023):**
+> - **ATC skips `$TMP` / local objects.** A check run against a `$TMP` object resolves to an empty object set and returns **zero findings** — this is not "clean code", it's "not checked". Run ATC against objects in a **transportable package**. If the user points you at `$TMP` code, say so and ask them to assign it to a transportable package first.
+> - **The check variant must exist on the system.** `ABAP_CLOUD_READINESS` is the standard name on SAP BTP ABAP / S/4HANA Cloud, but on-premise systems often ship `S4HANA_READINESS_<release>` (e.g. `S4HANA_READINESS_2023`) or `SAP_CLOUD_PLATFORM_DEFAULT` instead. If the named variant is absent, fall back to the system default (omit `variant`).
+
 ### 1a. Run ATC on the target object
 
 ```
 SAPDiagnose(action="atc", type="<type>", name="<object_name>", variant="<variant>")
 ```
 
-If no variant was specified, run with the system default first:
+If no variant was specified, run with the system default first (omitting `variant` uses the system's configured default check variant):
 
 ```
 SAPDiagnose(action="atc", type="<type>", name="<object_name>")
 ```
 
-Then suggest a readiness variant if available (e.g., `S4HANA_READINESS`, `ABAP_CLOUD_READINESS`).
+Then suggest a readiness variant if available (e.g., `S4HANA_READINESS_2023`, `ABAP_CLOUD_READINESS`). If a run returns zero findings on code you expect to be flagged, first confirm the object is **not** in `$TMP` (see the gotcha above).
 
 ### 1b. For package-level checks — find all objects first
 
@@ -149,7 +153,9 @@ If proposals are returned:
 SAPDiagnose(action="apply_quickfix", type="<type>", name="<object_name>", source="<current_source>", line=<finding_line>, column=0, proposalUri="<proposal_uri>", proposalUserContent="<proposal_user_content>")
 ```
 
-- Apply the returned deltas and persist via `SAPWrite`
+- `apply_quickfix` returns ranged **text deltas — it does not persist**. Apply the returned deltas to the source yourself, then write the result via `SAPWrite(action="update")`. When applying multiple fixes to the same object, re-resolve each finding's line after each write (earlier edits shift later line numbers), or fix top-to-bottom.
+
+> **Quickfix availability is system-dependent.** SAP only offers quickfix proposals where the system has the corresponding check/cloudification content installed. On a bare ABAP trial or a system without the Clean-Core remediation content, `getFixProposals` returns `[]` and ATC findings carry `hasQuickfix=false` — that's expected, not a bug. In that case skip straight to LLM-generated fixes (the options below). Prefer SAP quickfixes only when they actually come back.
 
 ### Fix Options
 
