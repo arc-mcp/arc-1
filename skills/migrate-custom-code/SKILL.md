@@ -157,6 +157,10 @@ SAPDiagnose(action="apply_quickfix", type="<type>", name="<object_name>", source
 
 > **Quickfix availability is system-dependent.** SAP only offers quickfix proposals where the system has the corresponding check/cloudification content installed. On a bare ABAP trial or a system without the Clean-Core remediation content, `getFixProposals` returns `[]` and ATC findings carry `hasQuickfix=false` — that's expected, not a bug. In that case skip straight to LLM-generated fixes (the options below). Prefer SAP quickfixes only when they actually come back.
 
+> **Match the proposal to the finding — don't blindly apply `proposals[0]`.** `quickfix` returns *every* proposal applicable at that source position, which often includes generic **refactorings** unrelated to the finding (verified live on S/4HANA 2023: a position returned "Rename", "Convert to attribute", "Convert to importing parameter", "Extract local variable", …). Pick the proposal whose `name`/`description` actually addresses the finding; ignore the rest.
+
+> **Refactoring-style proposals can't be auto-applied here.** Proposals whose `uri` contains `/providers/refactoring/` (rename / convert-to-X / extract / introduce) are interactive refactorings that ride the separate `/sap/bc/adt/refactorings` multi-step flow — `apply_quickfix` returns **HTTP 500** for them (verified live). They are not finding fixes; skip them for automated apply and fall back to an LLM-generated fix. Only proposals from non-refactoring providers apply cleanly through `apply_quickfix`.
+
 ### Fix Options
 
 Present 4 options per finding:
