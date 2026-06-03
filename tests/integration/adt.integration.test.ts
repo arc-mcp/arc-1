@@ -2231,4 +2231,26 @@ describe('ADT Integration Tests', () => {
       expect(Array.isArray(result.findings)).toBe(true);
     });
   });
+
+  // ─── getFunctionGroup (objectstructure-based, non-expand FUGR read) ───
+  describe('getFunctionGroup (objectstructure-based)', () => {
+    // Regression guard: the old implementation hit /functions/groups/<name> (metadata only,
+    // no function list) and parsed a shape ADT never emits, so it always returned
+    // {name:"", functions:[]}. It now reads /objectstructure and parses the FUGR/FF
+    // (function) + FUGR/I (include) elements. Targets abapGit's parallel FUGR; skip if absent.
+    it('returns the group name + non-empty function-module list', async (ctx) => {
+      let fg: Awaited<ReturnType<typeof client.getFunctionGroup>> | undefined;
+      try {
+        fg = await client.getFunctionGroup('ZABAPGIT_PARALLEL');
+      } catch {
+        fg = undefined;
+      }
+      requireOrSkip(ctx, fg, `${SkipReason.NO_FIXTURE}: function group ZABAPGIT_PARALLEL not present`);
+
+      expect(fg.name).toBe('ZABAPGIT_PARALLEL');
+      expect(fg.functions.length).toBeGreaterThan(0);
+      expect(fg.functions).toContain('Z_ABAPGIT_SERIALIZE_PARALLEL');
+      expect(fg.includes.length).toBeGreaterThan(0);
+    });
+  });
 });

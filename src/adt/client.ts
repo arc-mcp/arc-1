@@ -534,10 +534,14 @@ export class AdtClient {
     return null;
   }
 
-  /** Get function group structure (list of function modules) */
-  async getFunctionGroup(name: string): Promise<{ name: string; functions: string[] }> {
+  /** Get function group structure (list of function modules + includes) */
+  async getFunctionGroup(name: string): Promise<{ name: string; functions: string[]; includes: string[] }> {
     checkOperation(this.safety, OperationType.Read, 'GetFunctionGroup');
-    const resp = await this.http.get(`/sap/bc/adt/functions/groups/${encodeURIComponent(name)}`);
+    // The function-module list lives in the objectstructure resource, NOT the plain
+    // /functions/groups/<name> resource (which returns only metadata + atom links).
+    const resp = await this.http.get(`/sap/bc/adt/functions/groups/${encodeURIComponent(name)}/objectstructure`, {
+      Accept: 'application/vnd.sap.adt.objectstructure.v2+xml',
+    });
     return parseFunctionGroup(resp.body);
   }
 
