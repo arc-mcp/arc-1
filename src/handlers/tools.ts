@@ -352,7 +352,7 @@ const SAPMANAGE_ACTIONS_WRITE = [
   'flp_delete_catalog',
 ];
 
-const SAPTRANSPORT_ACTIONS_READ = ['list', 'get', 'check', 'history'];
+const SAPTRANSPORT_ACTIONS_READ = ['list', 'get', 'check', 'history', 'layers'];
 const SAPTRANSPORT_ACTIONS_WRITE = ['create', 'release', 'delete', 'reassign', 'release_recursive'];
 
 const SAPGIT_ACTIONS_READ = [
@@ -1449,13 +1449,14 @@ export function getToolDefinitions(
             description:
               'list: show transports (defaults to current user, modifiable only). ' +
               'get: fetch transport details including tasks and objects. ' +
-              'create: create a new transport request (description required; package optional, defaults to $TMP — pass an explicit package to influence the transport route/type). ' +
+              'create: create a new transport request (description required). To target another system, pass target=<system | system.client | /group/> (the Transportziel / TR_TARGET, e.g. "/TRG/" or "C11"; the group and system.client forms require extended transport control to be active). Otherwise omit target and pass an optional package to let SAP infer the route (defaults to $TMP). The response reports the resolved transport target; an empty target means a LOCAL request (cannot be transported onward). ' +
               'release: release a single transport or task. ' +
               'delete: delete a transport (use recursive=true to delete tasks first). ' +
               'reassign: change transport owner (use recursive=true for tasks too). ' +
               'release_recursive: release all unreleased tasks first, then the transport itself. ' +
               'check: check if a transport is needed for a package/object (requires type, name, package). ' +
-              'history: list transports referencing an object (reverse lookup; requires type, name; works without SAP_ALLOW_TRANSPORT_WRITES).',
+              'history: list transports referencing an object (reverse lookup; requires type, name; works without SAP_ALLOW_TRANSPORT_WRITES). ' +
+              "layers: list the transport layers this system offers (name + description + resolved target where any) — the valid values for create's transportLayer. Use this to discover a real value instead of guessing; works without SAP_ALLOW_TRANSPORT_WRITES.",
           },
           id: {
             type: 'string',
@@ -1468,6 +1469,16 @@ export function getToolDefinitions(
             type: 'string',
             description:
               "Package name. For create: optional — defaults to $TMP, pass an explicit package to influence the transport route (SAP infers K/W/T from the package's TADIR route). For check: required.",
+          },
+          target: {
+            type: 'string',
+            description:
+              'Explicit transport target (Transportziel / TR_TARGET) for create — what the user means by "create a transport with target X". Forms: a system ("C11"), system.client ("C11.021"), or target group ("/TRG/"). The group and system.client forms require extended transport control (CTC) to be active. Created via the tm:root/newrequest endpoint (the only ADT path that sets the target directly). SAP validates it — an unknown target is rejected. Pass the exact value the user gives; do not invent one.',
+          },
+          transportLayer: {
+            type: 'string',
+            description:
+              'Transport layer for create (optional, advanced). Sent as the ?transportLayer= query param to override which consolidation route — and therefore which target — SAP resolves. OMIT IT by default: SAP resolves the target from the package automatically, which is correct for almost all cases. Never invent a value — if you need a specific layer, obtain it from action="layers" or from the user. Only effective when that layer has a classic STMS consolidation route; otherwise the request is local regardless.',
           },
           user: {
             type: 'string',

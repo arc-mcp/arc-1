@@ -152,10 +152,12 @@ import { changePackage } from '../adt/refactoring.js';
 import { checkOperation, checkPackage, isOperationAllowed, OperationType } from '../adt/safety.js';
 import {
   createTransport,
+  createTransportWithTarget,
   deleteTransport,
   getObjectTransports,
   getTransport,
   getTransportInfo,
+  listTransportLayers,
   listTransports,
   reassignTransport,
   releaseTransport,
@@ -6708,13 +6710,95 @@ async function handleSAPTransport(client: AdtClient, args: Record<string, unknow
     case 'create': {
       const description = String(args.description ?? '');
       if (!description) return errorResult('Description is required for "create" action.');
-      const targetPackage = args.package ? String(args.package) : undefined;
-      const id = await createTransport(client.http, client.safety, description, targetPackage);
+      // Distinguish "target omitted" from "target present but empty": an explicit but
+      // blank target is a caller mistake, not a request to use the package/layer path.
+      const targetProvided = args.target !== undefined && args.target !== null;
+      const explicitTarget = targetProvided ? String(args.target).trim() : undefined;
+      if (targetProvided && !explicitTarget) {
+        return errorResult(
+          '"target" was provided but is empty. Pass a transport target — a system (C11), ' +
+            'system.client (C11.021), or target group (/GROUP/) — or omit target to let SAP resolve it from the package.',
+        );
+      }
+
+      let id: string;
+      if (explicitTarget) {
+        // Explicit transport target (Transportziel / TR_TARGET): a system (C11),
+        // system.client (C11.021), or target group (/TRG/). Routed via the tm:root/
+        // newrequest endpoint — the only ADT path that sets the target directly. The
+        // group and system.client forms require extended transport control (CTC).
+        try {
+          id = await createTransportWithTarget(
+            client.http,
+            client.safety,
+            description,
+            explicitTarget,
+            client.username,
+          );
+        } catch (err) {
+          // SAP validates the target server-side: a4h (7.58) returns 400 "Target 'X'
+          // does not exist"; other releases may use 404. Convert either into actionable guidance.
+          if (
+            err instanceof AdtApiError &&
+            (err.statusCode === 400 || err.statusCode === 404) &&
+            /does not exist/i.test(err.message)
+          ) {
+            return errorResult(
+              `Transport target "${explicitTarget}" does not exist on this system. Valid targets are a ` +
+                'system (e.g. C11), system.client (C11.021), or a target group (/GROUP/) — the group and ' +
+                'system.client forms require extended transport control (CTC) to be active. Check STMS for ' +
+                'the targets this system actually offers (a system with no transport routes has none).',
+            );
+          }
+          throw err;
+        }
+      } else {
+        const targetPackage = args.package ? String(args.package) : undefined;
+        const transportLayer = args.transportLayer ? String(args.transportLayer) : undefined;
+        id = await createTransport(client.http, client.safety, description, targetPackage, undefined, transportLayer);
+      }
+
       if (!id)
         return errorResult(
           'Transport creation succeeded but no transport ID was returned. Check the SAP system manually.',
         );
-      return textResult(`Created transport request: ${id}`);
+
+      // Read the new request back (best-effort) to report its actual transport target.
+      // An empty target means the request is local ("Local Change Requests") — the #1
+      // source of "why does it always create a local transport?" confusion — so we
+      // surface it explicitly instead of just echoing the ID.
+      const created = await getTransport(client.http, client.safety, id).catch(() => null);
+      const target = created?.target?.trim() ?? '';
+      const targetDesc = created?.targetDesc?.trim() ?? '';
+
+      if (!created) return textResult(`Created transport request: ${id}`);
+      if (target) {
+        return textResult(
+          `Created transport request: ${id}\nTransport target: ${target}${targetDesc ? ` (${targetDesc})` : ''}`,
+        );
+      }
+      return textResult(
+        `Created transport request: ${id}\n` +
+          `Transport target: <none>${targetDesc ? ` — "${targetDesc}"` : ''}. This is a LOCAL request — it cannot be transported onward.\n\n` +
+          'To create a request that targets another system, either:\n' +
+          '  • set an explicit target — pass target=<system | system.client | /group/> (e.g. target="/TRG/" or "C11"); ' +
+          'the group and system.client forms require extended transport control (CTC) to be active; or\n' +
+          '  • let SAP resolve it from the package transport layer + STMS consolidation route (pass transportLayer=<layer> to override the layer).\n' +
+          'Both require the SAP system to actually have transport routes/targets configured (a Basis task). ' +
+          'On a standalone system with no routes, every request is local — expected, and no ADT/Eclipse/SE10 client can change it.',
+      );
+    }
+    case 'layers': {
+      // Discovery: list valid values for create's `transportLayer`. Lets a client pick a
+      // real layer instead of guessing. Read-only (no allowTransportWrites required).
+      const layers = await listTransportLayers(client.http, client.safety);
+      const routed = layers.filter((l) => l.target);
+      const summary = layers.length
+        ? routed.length
+          ? `${layers.length} transport layer(s); ${routed.length} carry a target. Pass one as transportLayer= on create.`
+          : `${layers.length} transport layer(s), but none expose a consolidation target — created requests will be local on this system.`
+        : 'No transport layers are defined on this system — every request will be local.';
+      return textResult(JSON.stringify({ transportLayers: layers, summary }, null, 2));
     }
     case 'release': {
       const id = String(args.id ?? '');

@@ -12361,6 +12361,99 @@ ENDCLASS.`;
       expect(fetchBody?.[1]?.body).toContain('<DEVCLASS>$TMP</DEVCLASS>');
     });
 
+    it('create with explicit target uses the tm:root/newrequest endpoint and reports the target', async () => {
+      const tmRoot = `<?xml version="1.0" encoding="utf-8"?><tm:root tm:useraction="newrequest" xmlns:tm="http://www.sap.com/cts/adt/tm"><tm:request tm:number="A4HK900100" tm:owner="admin" tm:desc="d" tm:status="D" tm:type="K" tm:target="/TRG/" tm:target_desc="Group TRG"><tm:task/></tm:request></tm:root>`;
+      mockFetch.mockResolvedValue(mockResponse(200, tmRoot, { 'x-csrf-token': 'T' }));
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'create',
+        description: 'Targeted transport',
+        target: '/TRG/',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('A4HK900100');
+      expect(result.content[0]?.text).toContain('/TRG/');
+      // The request must go to /cts/transportrequests with a tm:target attribute.
+      const call = mockFetch.mock.calls.find(
+        (c: unknown[]) => typeof c[1]?.body === 'string' && c[1].body.includes('tm:useraction'),
+      );
+      expect(String(call?.[0])).toContain('/sap/bc/adt/cts/transportrequests');
+      expect(call?.[1]?.body).toContain('tm:target="/TRG/"');
+    });
+
+    it('create with an unknown target (400) returns the friendly "does not exist" guidance', async () => {
+      mockFetch.mockImplementation((_url: string, opts: { method?: string; body?: string } = {}) => {
+        if (typeof opts.body === 'string' && opts.body.includes('tm:useraction')) {
+          return Promise.resolve(
+            mockResponse(400, "<msg>Target '/ZZNOPE/' does not exist</msg>", { 'x-csrf-token': 'T' }),
+          );
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'create',
+        description: 'Bad target',
+        target: '/ZZNOPE/',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('does not exist on this system');
+      expect(result.content[0]?.text).toContain('extended transport control');
+    });
+
+    it('create with an unknown target (404) is also converted to the friendly guidance', async () => {
+      mockFetch.mockImplementation((_url: string, opts: { method?: string; body?: string } = {}) => {
+        if (typeof opts.body === 'string' && opts.body.includes('tm:useraction')) {
+          return Promise.resolve(mockResponse(404, 'Target does not exist', { 'x-csrf-token': 'T' }));
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'create',
+        description: 'Bad target',
+        target: 'NOPE',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('does not exist on this system');
+    });
+
+    it('create with an empty target is rejected as a caller mistake (no SAP call)', async () => {
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'create',
+        description: 'Blank target',
+        target: '   ',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('"target" was provided but is empty');
+      // It must NOT fall through to creating a transport.
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('create with transportLayer sends the ?transportLayer= query param', async () => {
+      mockFetch.mockResolvedValue(mockResponse(200, '/com.sap.cts/object_record/DEVK900099', { 'x-csrf-token': 'T' }));
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'create',
+        description: 'Layer override',
+        package: 'ZTEST',
+        transportLayer: 'ZDEV',
+      });
+      expect(result.isError).toBeUndefined();
+      const call = mockFetch.mock.calls.find(
+        (c: unknown[]) => typeof c[0] === 'string' && c[0].includes('/cts/transports?'),
+      );
+      expect(String(call?.[0])).toContain('transportLayer=ZDEV');
+    });
+
+    it('layers action lists the system transport layers', async () => {
+      const layersXml = `<?xml version="1.0" encoding="utf-8"?><nameditem:namedItemList xmlns:nameditem="http://www.sap.com/adt/nameditem"><nameditem:totalItemCount>2</nameditem:totalItemCount><nameditem:namedItem><nameditem:name>SAP</nameditem:name><nameditem:description>SAP layer</nameditem:description><nameditem:data/></nameditem:namedItem><nameditem:namedItem><nameditem:name>ZDEV</nameditem:name><nameditem:description>gCTS</nameditem:description><nameditem:data>DEV</nameditem:data></nameditem:namedItem></nameditem:namedItemList>`;
+      mockFetch.mockResolvedValue(mockResponse(200, layersXml, { 'x-csrf-token': 'T' }));
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'layers',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('transportLayers');
+      expect(result.content[0]?.text).toContain('ZDEV');
+      expect(String(mockFetch.mock.calls[0]?.[0])).toContain('/packages/valuehelps/transportlayers');
+    });
+
     it('list defaults to current SAP user and modifiable status', async () => {
       const xml = `<tm:root xmlns:tm="http://www.sap.com/cts/transports">
         <tm:request tm:number="DEVK900001" tm:owner="admin" tm:desc="Test" tm:status="D" tm:type="K"/>

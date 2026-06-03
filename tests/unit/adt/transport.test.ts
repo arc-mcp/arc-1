@@ -9,10 +9,12 @@ import {
   CTS_CONTENT_TYPE_ORGANIZER,
   CTS_NAMESPACE_TM,
   createTransport,
+  createTransportWithTarget,
   deleteTransport,
   getObjectTransports,
   getTransport,
   getTransportInfo,
+  listTransportLayers,
   listTransports,
   reassignTransport,
   releaseTransport,
@@ -188,6 +190,26 @@ describe('Transport Management', () => {
       const transport = await getTransport(http, enabledSafety, 'NONEXISTENT');
       expect(transport).toBeNull();
     });
+
+    it('parses an empty target as "Local Change Requests" (no transport route)', async () => {
+      const xml = `<tm:root xmlns:tm="http://www.sap.com/cts/transports">
+        <tm:request tm:number="A4HK900100" tm:owner="DEVELOPER" tm:desc="My transport" tm:status="D" tm:type="K" tm:target="" tm:target_desc="Local Change Requests"/>
+      </tm:root>`;
+      const http = mockHttp(xml);
+      const transport = await getTransport(http, enabledSafety, 'A4HK900100');
+      expect(transport?.target).toBe('');
+      expect(transport?.targetDesc).toBe('Local Change Requests');
+    });
+
+    it('parses a real transport target and description', async () => {
+      const xml = `<tm:root xmlns:tm="http://www.sap.com/cts/transports">
+        <tm:request tm:number="DEVK900200" tm:owner="DEVELOPER" tm:desc="Routed transport" tm:status="D" tm:type="K" tm:target="QAS" tm:target_desc="System QAS"/>
+      </tm:root>`;
+      const http = mockHttp(xml);
+      const transport = await getTransport(http, enabledSafety, 'DEVK900200');
+      expect(transport?.target).toBe('QAS');
+      expect(transport?.targetDesc).toBe('System QAS');
+    });
   });
 
   // ─── createTransport ───────────────────────────────────────────────
@@ -265,6 +287,134 @@ describe('Transport Management', () => {
       const http = mockHttp('');
       const id = await createTransport(http, enabledSafety, 'Test');
       expect(id).toBe('');
+    });
+
+    it('posts to bare /cts/transports URL when no transportLayer given', async () => {
+      const http = mockHttp('/com.sap.cts/object_record/DEV123');
+      await createTransport(http, enabledSafety, 'desc', 'ZPACKAGE');
+      const url = (http.post as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as string;
+      expect(url).toBe('/sap/bc/adt/cts/transports');
+    });
+
+    it('appends ?transportLayer= query param when transportLayer is provided', async () => {
+      const http = mockHttp('/com.sap.cts/object_record/DEV123');
+      await createTransport(http, enabledSafety, 'desc', 'ZPACKAGE', undefined, 'ZDEV');
+      const url = (http.post as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as string;
+      expect(url).toBe('/sap/bc/adt/cts/transports?transportLayer=ZDEV');
+    });
+
+    it('URL-encodes the transportLayer value', async () => {
+      const http = mockHttp('/com.sap.cts/object_record/DEV123');
+      await createTransport(http, enabledSafety, 'desc', 'ZPACKAGE', undefined, '/ABC/ DEV');
+      const url = (http.post as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as string;
+      expect(url).toBe('/sap/bc/adt/cts/transports?transportLayer=%2FABC%2F%20DEV');
+    });
+
+    it('ignores a whitespace-only transportLayer (no query param)', async () => {
+      const http = mockHttp('/com.sap.cts/object_record/DEV123');
+      await createTransport(http, enabledSafety, 'desc', 'ZPACKAGE', undefined, '   ');
+      const url = (http.post as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as string;
+      expect(url).toBe('/sap/bc/adt/cts/transports');
+    });
+  });
+
+  // ─── createTransportWithTarget ─────────────────────────────────────
+
+  describe('createTransportWithTarget', () => {
+    // Verbatim response shape captured live from a4h (S/4HANA 2023).
+    const okXml = `<?xml version="1.0" encoding="utf-8"?><tm:root tm:useraction="newrequest" xmlns:tm="http://www.sap.com/cts/adt/tm"><tm:request tm:number="A4HK905900" tm:desc="d" tm:type="K" tm:target="/TRG/" tm:target_desc="Group TRG"><tm:task/></tm:request></tm:root>`;
+
+    it('is blocked when transports not enabled', async () => {
+      const http = mockHttp();
+      const safety = { ...unrestrictedSafetyConfig(), allowTransportWrites: false };
+      await expect(createTransportWithTarget(http, safety, 'Test', '/TRG/')).rejects.toThrow(AdtSafetyError);
+    });
+
+    it('POSTs the tm:root/newrequest body with tm:target to /cts/transportrequests', async () => {
+      const http = mockHttp(okXml);
+      await createTransportWithTarget(http, enabledSafety, 'My req', '/TRG/', 'MARIAN');
+      const [url, body, contentType] = (http.post as ReturnType<typeof vi.fn>).mock.calls[0] ?? [];
+      expect(url).toBe('/sap/bc/adt/cts/transportrequests');
+      expect(contentType).toBe('text/plain');
+      expect(body).toContain('tm:useraction="newrequest"');
+      expect(body).toContain('tm:target="/TRG/"');
+      expect(body).toContain('tm:type="K"');
+      expect(body).toContain('tm:desc="My req"');
+      expect(body).toContain('tm:owner="MARIAN"');
+    });
+
+    it('omits tm:owner when no owner is given', async () => {
+      const http = mockHttp(okXml);
+      await createTransportWithTarget(http, enabledSafety, 'd', 'C11');
+      const body = (http.post as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as string;
+      expect(body).toContain('<tm:task/>');
+      expect(body).not.toContain('tm:owner');
+    });
+
+    it('escapes special characters in description and target', async () => {
+      const http = mockHttp(okXml);
+      await createTransportWithTarget(http, enabledSafety, 'A "B" & <C>', '/A&B/');
+      const body = (http.post as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as string;
+      expect(body).toContain('&quot;');
+      expect(body).toContain('&amp;');
+      expect(body).toContain('&lt;');
+    });
+
+    it('extracts the new request number from the tm:root response', async () => {
+      const http = mockHttp(okXml);
+      const id = await createTransportWithTarget(http, enabledSafety, 'd', '/TRG/');
+      expect(id).toBe('A4HK905900');
+    });
+  });
+
+  // ─── listTransportLayers ───────────────────────────────────────────
+
+  describe('listTransportLayers', () => {
+    // Verbatim shape captured live from a4h (S/4HANA 2023).
+    const layersXml = `<?xml version="1.0" encoding="utf-8"?><nameditem:namedItemList xmlns:nameditem="http://www.sap.com/adt/nameditem"><nameditem:totalItemCount>3</nameditem:totalItemCount><nameditem:namedItem><nameditem:name/><nameditem:description>Transport Layer for Local Developments (No Transport)</nameditem:description><nameditem:data/></nameditem:namedItem><nameditem:namedItem><nameditem:name>SAP</nameditem:name><nameditem:description>Transport Layer for SAP Standard Objects</nameditem:description><nameditem:data/></nameditem:namedItem><nameditem:namedItem><nameditem:name>ZDEV</nameditem:name><nameditem:description>gCTS generated&lt;p&gt;Target: &lt;b&gt;DEV&lt;/b&gt;&lt;/p&gt;</nameditem:description><nameditem:data>DEV</nameditem:data></nameditem:namedItem></nameditem:namedItemList>`;
+
+    it('GETs the transportlayers value-help endpoint', async () => {
+      const http = mockHttp(layersXml);
+      await listTransportLayers(http, enabledSafety);
+      const url = (http.get as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as string;
+      expect(url).toBe('/sap/bc/adt/packages/valuehelps/transportlayers');
+    });
+
+    it('parses name, description and resolved target', async () => {
+      const http = mockHttp(layersXml);
+      const layers = await listTransportLayers(http, enabledSafety);
+      expect(layers).toHaveLength(3);
+      // Empty-name entry = the local/no-transport layer; no target key.
+      expect(layers[0]).toEqual({ name: '', description: 'Transport Layer for Local Developments (No Transport)' });
+      expect(layers[1]).toEqual({ name: 'SAP', description: 'Transport Layer for SAP Standard Objects' });
+      expect(layers[2].name).toBe('ZDEV');
+      expect(layers[2].target).toBe('DEV');
+      // Embedded HTML in the description is stripped.
+      expect(layers[2].description).toBe('gCTS generated Target: DEV');
+    });
+
+    it('returns an empty array when no layers are defined', async () => {
+      const http = mockHttp(
+        '<?xml version="1.0"?><nameditem:namedItemList xmlns:nameditem="http://www.sap.com/adt/nameditem"><nameditem:totalItemCount>0</nameditem:totalItemCount></nameditem:namedItemList>',
+      );
+      const layers = await listTransportLayers(http, enabledSafety);
+      expect(layers).toEqual([]);
+    });
+
+    it('decodes standard XML entities (&apos; / &amp;) in description and target', async () => {
+      // name is an identifier passed back verbatim; description/data go through clean().
+      const xml = `<?xml version="1.0" encoding="utf-8"?><nameditem:namedItemList xmlns:nameditem="http://www.sap.com/adt/nameditem"><nameditem:totalItemCount>1</nameditem:totalItemCount><nameditem:namedItem><nameditem:name>ZDEV</nameditem:name><nameditem:description>Smith &amp; O&apos;Hara&apos;s layer</nameditem:description><nameditem:data>O&apos;HARA</nameditem:data></nameditem:namedItem></nameditem:namedItemList>`;
+      const http = mockHttp(xml);
+      const layers = await listTransportLayers(http, enabledSafety);
+      expect(layers[0].name).toBe('ZDEV');
+      expect(layers[0].description).toBe("Smith & O'Hara's layer");
+      expect(layers[0].target).toBe("O'HARA");
+    });
+
+    it('is allowed read-only (does not require allowTransportWrites)', async () => {
+      const http = mockHttp(layersXml);
+      const readOnly = { ...unrestrictedSafetyConfig(), allowTransportWrites: false };
+      await expect(listTransportLayers(http, readOnly)).resolves.toHaveLength(3);
     });
   });
 
