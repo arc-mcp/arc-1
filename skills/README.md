@@ -67,6 +67,12 @@ These skills assume you have:
 | [generate-rap-logic](generate-rap-logic/SKILL.md) | Implements determination and validation methods in an existing RAP behavior pool using structured class reads, version-aware edits, and quickfix-aware validation | After creating a RAP service — fills in the empty method stubs with ABAP Cloud logic |
 | [generate-cds-unit-test](generate-cds-unit-test/SKILL.md) | Generates ABAP Unit tests for CDS entities using the CDS Test Double Framework | When a CDS view has calculations, CASE expressions, WHERE filters, JOINs, or aggregations worth testing |
 | [generate-abap-unit-test](generate-abap-unit-test/SKILL.md) | Generates ABAP Unit tests for classes with dependency analysis and test doubles | When a class has non-trivial business logic and uses dependency injection |
+| [generate-analytics-star-schema](generate-analytics-star-schema/SKILL.md) | Generates a CDS analytical model — cube + dimension + text views — on top of a RAP business object or DDIC table, written in one `batch_create` + `activateAtEnd` pass | Building embedded-analytics foundations; making a transactional model analytical (SAP Joule "CDS Analytical Model Generation" parity) |
+| [generate-cds-analytical-query](generate-cds-analytical-query/SKILL.md) | Generates an analytical query (transient `provider contract analytical_query` projection view) on top of an existing analytical cube | Exposing a cube as a consumable KPI query for SAP Analytics Cloud / Analysis for Office / embedded analytics (SAP Joule "CDS Analytical Query Generation" parity) |
+
+#### generate-analytics-star-schema → generate-cds-analytical-query
+
+These two chain. The star-schema skill builds the **model** (cube + dimensions + texts); the analytical-query skill projects the consumable **query** on top of the cube. Run star-schema first when no cube exists yet, then the query skill. The model layer requires the analytics annotations (7.5x); the query layer requires `provider contract analytical_query` (SAP_BASIS 7.57+).
 
 #### generate-rap-service vs generate-rap-service-researched
 
@@ -96,7 +102,7 @@ Both skills produce the same RAP artifact stack. The difference is how they get 
 
 | Skill | What it does | When to use |
 |---|---|---|
-| [explain-abap-code](explain-abap-code/SKILL.md) | Reads an ABAP object, fetches all dependencies via SAPContext, and produces a structured explanation | Onboarding to unfamiliar code, investigating bugs, documenting undocumented objects |
+| [explain-abap-code](explain-abap-code/SKILL.md) | Reads an ABAP object, fetches all dependencies via SAPContext, and produces a structured explanation — including behavior definitions (BDEF: parses `implementation in class`, reads the behavior pool CCIMP handlers, runs SAPContext impact on the bound CDS root) | Onboarding to unfamiliar code, investigating bugs, documenting undocumented objects, understanding a RAP behavior (SAP Joule "AI Explain for Behavior Definitions" parity) |
 | [migrate-custom-code](migrate-custom-code/SKILL.md) | Runs ATC readiness checks, groups findings by priority, and generates replacement code | Preparing custom code for S/4HANA migration or ABAP Cloud readiness |
 | [sap-object-documenter](sap-object-documenter/SKILL.md) | Batch-documents many custom objects at once — purpose, style (Classic/Modern/Mixed), dependencies — as Markdown | Onboarding packages, handoffs, seeding a repo wiki (vs. explain-abap-code which is single-object interactive) |
 
@@ -157,6 +163,15 @@ Skills are designed to chain together. A typical RAP development flow:
 5. generate-cds-unit-test           →  Generate tests for the CDS views
 6. optional: attach SKTD docs / inspect revisions / inspect transport history
 7. analyze-chat-session             →  Review what worked, file improvements
+```
+
+For embedded-analytics modeling (cube → query):
+
+```
+1. bootstrap-system-context        →  Confirm SAP_BASIS 7.57+ (analytical_query support)
+2. generate-analytics-star-schema  →  Build the cube + dimensions + texts (batch_create + activateAtEnd)
+3. generate-cds-analytical-query   →  Project the consumable KPI query on the cube
+4. explain-abap-code               →  (optional) Document the model for handoff
 ```
 
 For codebase onboarding or pre-migration work:
