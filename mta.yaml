@@ -52,6 +52,12 @@ modules:
       memory: 512M
       disk-quota: 1024M
       instances: 1
+      # Per-space route host. `${space}` is resolved by the deploy service at
+      # deploy time, so the SAME mtar deployed into different spaces of one
+      # subaccount gets a unique route each time (arc1-mcp-<space>.cfapps...).
+      # NOTE: the resolved value must be a DNS-valid host (lowercase, no
+      # underscores). Override explicitly if a space name violates that.
+      host: arc1-mcp-${space}
       health-check-type: http
       health-check-http-endpoint: /health
       # Node heap target sized to 87.5% of dyno memory (512M -> 448M) so V8 GCs
@@ -126,7 +132,51 @@ resources:
     type: com.sap.xs.uaa
     parameters:
       service-plan: application
+      # `path` supplies scopes + role-templates + oauth2-configuration; the
+      # inline `config` below overrides/augments it (config wins on merge).
       path: xs-security.json
+      config:
+        # xsappname must be unique per SUBACCOUNT — derive it from the space so
+        # the same mtar can be deployed into multiple spaces side by side.
+        xsappname: arc1-mcp-${space}
+        # Role-collection names are also subaccount-scoped. They live here (not
+        # in xs-security.json) because `${space}` is only resolved in descriptor
+        # values, not inside the path-referenced JSON. Defining the array here
+        # replaces the file's role-collections wholesale; scopes + role-templates
+        # stay in xs-security.json ($XSAPPNAME already namespaces the templates).
+        role-collections:
+          - name: "ARC-1 Viewer (${space})"
+            description: "Read-only SAP access via ARC-1 MCP"
+            role-template-references:
+              - "$XSAPPNAME.MCPViewer"
+          - name: "ARC-1 Developer (${space})"
+            description: "Read, write, transport, and git access via ARC-1 MCP"
+            role-template-references:
+              - "$XSAPPNAME.MCPDeveloper"
+          - name: "ARC-1 Data Viewer (${space})"
+            description: "Read-only SAP access with table data preview"
+            role-template-references:
+              - "$XSAPPNAME.MCPViewer"
+              - "$XSAPPNAME.MCPDataViewer"
+          - name: "ARC-1 Viewer + SQL (${space})"
+            description: "Read-only SAP access with table data preview and freestyle SQL"
+            role-template-references:
+              - "$XSAPPNAME.MCPViewer"
+              - "$XSAPPNAME.MCPSqlUser"
+          - name: "ARC-1 Developer + Data (${space})"
+            description: "Developer access with table data preview"
+            role-template-references:
+              - "$XSAPPNAME.MCPDeveloper"
+              - "$XSAPPNAME.MCPDataViewer"
+          - name: "ARC-1 Developer + SQL (${space})"
+            description: "Developer access with freestyle SQL queries"
+            role-template-references:
+              - "$XSAPPNAME.MCPDeveloper"
+              - "$XSAPPNAME.MCPSqlUser"
+          - name: "ARC-1 Admin (${space})"
+            description: "Full ARC-1 administrative access (admin implies all scopes)"
+            role-template-references:
+              - "$XSAPPNAME.MCPAdmin"
 
   - name: arc1-destination
     type: org.cloudfoundry.managed-service
