@@ -193,6 +193,63 @@ describe('AdtClient', () => {
       expect(typeof result.source).toBe('string');
     });
 
+    describe('getFunctionGroupExpanded (recursive include walk)', () => {
+      // Mock the FUGR include graph: main → UXX → U01 (FUNCTION body lives in U01).
+      // A one-level walk would stop at UXX and miss the function module source.
+      const sourceFor = (url: string): string => {
+        if (url.includes('/functions/groups/') && url.includes('/source/main')) {
+          return 'FUNCTION-POOL zdemo.\nINCLUDE lzdemotop.\nINCLUDE lzdemouxx.\n* INCLUDE lzdemof00.  " commented — must be skipped';
+        }
+        if (url.includes('/includes/lzdemotop/')) return '* global data';
+        if (url.includes('/includes/lzdemouxx/')) return 'INCLUDE lzdemou01.';
+        if (url.includes('/includes/lzdemou01/')) return 'FUNCTION zdemo_fm.\n  WRITE / 1.\nENDFUNCTION.';
+        return '';
+      };
+
+      it('recurses into nested includes and captures the FUNCTION body', async () => {
+        mockFetch.mockImplementation((url: string) => Promise.resolve(mockResponse(200, sourceFor(url))));
+        const client = createClient();
+        const { blocks, truncated } = await client.getFunctionGroupExpanded('ZDEMO');
+
+        const names = blocks.map((b) => b.name);
+        expect(names[0]).toBe('FUGR ZDEMO (main)');
+        // UXX is referenced by main; U01 is referenced only by UXX → only reachable via recursion.
+        expect(names).toContain('lzdemouxx');
+        expect(names).toContain('lzdemou01');
+        const u01 = blocks.find((b) => b.name === 'lzdemou01');
+        expect(u01?.source).toContain('FUNCTION zdemo_fm');
+        // Commented INCLUDE line must be skipped.
+        expect(names).not.toContain('lzdemof00');
+        expect(truncated).toBe(false);
+      });
+
+      it('dedups repeated includes (cycle guard) — no duplicate blocks, no infinite loop', async () => {
+        // U01 INCLUDEs UXX back (cycle); UXX already seen → must not loop or duplicate.
+        mockFetch.mockImplementation((url: string) => {
+          let body = sourceFor(url);
+          if (url.includes('/includes/lzdemou01/')) body = 'FUNCTION zdemo_fm.\nENDFUNCTION.\nINCLUDE lzdemouxx.';
+          return Promise.resolve(mockResponse(200, body));
+        });
+        const client = createClient();
+        const { blocks } = await client.getFunctionGroupExpanded('ZDEMO');
+        const uxxCount = blocks.filter((b) => b.name === 'lzdemouxx').length;
+        expect(uxxCount).toBe(1);
+      });
+
+      it('inserts a placeholder when an include fails to read', async () => {
+        mockFetch.mockImplementation((url: string) => {
+          if (url.includes('/includes/lzdemou01/')) {
+            return Promise.reject(new AdtApiError('Not found', 404, '/includes/lzdemou01'));
+          }
+          return Promise.resolve(mockResponse(200, sourceFor(url)));
+        });
+        const client = createClient();
+        const { blocks } = await client.getFunctionGroupExpanded('ZDEMO');
+        const u01 = blocks.find((b) => b.name === 'lzdemou01');
+        expect(u01?.source).toContain('[Could not read include "lzdemou01"]');
+      });
+    });
+
     it('getDdls returns CDS source code', async () => {
       const client = createClient();
       const result = await client.getDdls('ZTRAVEL');

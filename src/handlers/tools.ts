@@ -534,7 +534,7 @@ export function getToolDefinitions(
                 expand_includes: {
                   type: 'boolean',
                   description:
-                    'For FUGR type only. When true, expands all INCLUDE statements and returns the full source of each include inline.',
+                    'For FUGR type only. When true, recursively expands the function group include tree — the main source plus all nested INCLUDEs (the FUNCTION...ENDFUNCTION bodies live in nested LZ<grp>U01/U02 includes, so a flat one-level walk misses them). Each block is prefixed with a "=== name ===" marker; depth/count-capped. Dynpros and GUI status are not included (ADT does not expose them over REST).',
                 },
               }),
           format: {

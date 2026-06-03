@@ -108,6 +108,18 @@ The root CDS name appears in `define behavior for <root_cds> alias <alias>`.
 
 These reads may fail if an artifact doesn't exist (e.g. a pure abstract BDEF) — skip gracefully.
 
+### 1g. For function groups (FUGR) — read the full code tree
+
+A function group's logic is spread across nested includes: the main program references the `TOP` (global data) and `UXX` (function-module dispatcher) includes, and the actual `FUNCTION … ENDFUNCTION` bodies live in further-nested `LZ<grp>U01/U02…` includes pulled in from `UXX` (PBO/PAI subroutines in `…O…/…I…` includes). Read the whole tree in one call with `expand_includes`:
+
+```
+SAPRead(type="FUGR", name="<group>", expand_includes=true)
+```
+
+This returns the main source plus every nested include (recursively, depth/count-capped), each prefixed with a `=== <name> ===` marker — so you get all the function module bodies and flow logic in one read. Without `expand_includes`, you only get the function-module list.
+
+> **Screen flow is not available.** Dynpros (screens) and GUI status (CUA) are **not exposed by ADT over REST** — they are SAPGUI-only (SE51/SE41), and the endpoints return 404. So for a FUGR you can explain the **business purpose, function-module responsibilities, and flow logic** from the code, but **not** the screen layout / PBO-PAI screen sequence beyond what the PBO/PAI module *code* reveals. State this limitation if the user asks about the screen flow specifically.
+
 ## Step 2: Get Dependency Context
 
 ```
