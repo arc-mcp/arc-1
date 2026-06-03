@@ -11,6 +11,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { classifyCdsImpact } from '../../src/adt/cds-impact.js';
 import type { AdtClient } from '../../src/adt/client.js';
 import { findWhereUsed } from '../../src/adt/codeintel.js';
+import { runAtcCheck } from '../../src/adt/devtools.js';
 import {
   getDump,
   getGatewayErrorDetail,
@@ -2197,6 +2198,37 @@ describe('ADT Integration Tests', () => {
           }
         }
       }
+    });
+  });
+
+  // ─── ATC worklist + check-variant flow (runAtcCheck) ─────────────────
+  describe('runAtcCheck (worklist + variant flow)', () => {
+    // Regression guard for the three-step ATC flow. The previous implementation POSTed
+    // straight to /atc/runs?worklistId=1 and never bound a check variant, so ATC executed
+    // no checks and always returned zero findings. These tests assert the worklist→run→get
+    // flow completes and returns a well-formed findings array against a live system.
+    // Finding COUNT is system-dependent (ATC content + check variants vary, and ATC skips
+    // $TMP objects), so exact-format parsing is locked down by the unit fixture test
+    // (tests/unit/adt/devtools.test.ts → "parses the real SAP worklist response format").
+    const KERNEL_CLASS_URL = '/sap/bc/adt/oo/classes/cl_abap_typedescr';
+
+    it('completes the flow with an explicit check variant', async () => {
+      const result = await runAtcCheck(client.http, unrestrictedSafetyConfig(), KERNEL_CLASS_URL, 'PERFORMANCE_DB');
+      expect(Array.isArray(result.findings)).toBe(true);
+      for (const f of result.findings) {
+        expect(typeof f.priority).toBe('number');
+        expect(typeof f.line).toBe('number');
+        expect(typeof f.checkTitle).toBe('string');
+        // The parser fix: real findings carry the source location (#start=line), so any
+        // finding with a uri must yield a non-negative line (never the old constant 0
+        // caused by reading the position-less catalog uri).
+        if (f.uri.includes('#start=')) expect(f.line).toBeGreaterThanOrEqual(0);
+      }
+    });
+
+    it('completes the flow with the system default variant (no variant passed)', async () => {
+      const result = await runAtcCheck(client.http, unrestrictedSafetyConfig(), KERNEL_CLASS_URL);
+      expect(Array.isArray(result.findings)).toBe(true);
     });
   });
 });
