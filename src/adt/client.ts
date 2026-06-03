@@ -317,12 +317,22 @@ export class AdtClient {
    */
   withSafety(safety: SafetyConfig): AdtClient {
     const clone = Object.create(AdtClient.prototype) as AdtClient;
+    // INVARIANT: Object.create() bypasses the constructor, so EVERY instance field
+    // must be re-attached below by hand. Adding a field to AdtClient without adding
+    // it here leaves it `undefined` on the clone — see issue #333, where a missing
+    // `tablWriteUrlCache` crashed TABL writes/activates on authenticated HTTP paths.
     Object.defineProperty(clone, 'http', { value: this.http, writable: false, enumerable: true });
     Object.defineProperty(clone, 'safety', { value: safety, writable: false, enumerable: true });
     Object.defineProperty(clone, 'username', { value: this.username, writable: false, enumerable: true });
-    // Share the TABL URL resolution cache — it's purely about object addressing,
-    // independent of per-request safety scope.
+    // Share the TABL URL resolution caches (read-path + write-path) — they're purely
+    // about object addressing (TABL/DT vs TABL/DS), independent of per-request safety
+    // scope, so resolutions cached on the original (or a sibling clone) stay visible.
     Object.defineProperty(clone, 'tablUrlCache', { value: this.tablUrlCache, writable: false, enumerable: false });
+    Object.defineProperty(clone, 'tablWriteUrlCache', {
+      value: this.tablWriteUrlCache,
+      writable: false,
+      enumerable: false,
+    });
     // Share the package-hierarchy resolver holder so cached subtrees survive
     // per-request safety derivation. Wrapping in a holder lets the clone see
     // lazy instantiations performed on the original (or another clone).

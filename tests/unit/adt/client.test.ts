@@ -1344,6 +1344,65 @@ describe('AdtClient', () => {
       const derived = client.withSafety(unrestrictedSafetyConfig());
       expect(derived).toBeInstanceOf(AdtClient);
     });
+
+    // Regression: issue #333 — withSafety() must re-attach EVERY AdtClient instance
+    // field, because Object.create() bypasses the constructor. A missing
+    // `tablWriteUrlCache` left it `undefined` on the clone, crashing TABL
+    // writes/activates with "Cannot read properties of undefined (reading 'get')"
+    // on every authenticated HTTP path (XSUAA/OIDC scopes or API-key profile).
+    type CacheView = { tablWriteUrlCache?: Map<string, string>; tablUrlCache?: Map<string, string> };
+    const searchResponse = (uri: string, type: string, name: string) =>
+      mockResponse(
+        200,
+        `<?xml version="1.0" encoding="utf-8"?>
+<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">
+  <adtcore:objectReference adtcore:uri="${uri}" adtcore:type="${type}" adtcore:name="${name}"/>
+</adtcore:objectReferences>`,
+      );
+
+    it('shares the same tablWriteUrlCache Map instance with the clone (issue #333)', () => {
+      const client = createClient();
+      const derived = client.withSafety(unrestrictedSafetyConfig());
+      const original = (client as unknown as CacheView).tablWriteUrlCache;
+      const clone = (derived as unknown as CacheView).tablWriteUrlCache;
+      expect(clone).toBeInstanceOf(Map);
+      expect(clone).toBe(original);
+    });
+
+    it('shares the same tablUrlCache Map instance with the clone', () => {
+      const client = createClient();
+      const derived = client.withSafety(unrestrictedSafetyConfig());
+      const original = (client as unknown as CacheView).tablUrlCache;
+      const clone = (derived as unknown as CacheView).tablUrlCache;
+      expect(clone).toBeInstanceOf(Map);
+      expect(clone).toBe(original);
+    });
+
+    it('resolveTablObjectUrlForWrite() does not crash on a clone (issue #333 regression)', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(searchResponse('/sap/bc/adt/ddic/structures/BAPIRET2', 'TABL/DS', 'BAPIRET2'));
+      const client = createClient();
+      const derived = client.withSafety(unrestrictedSafetyConfig());
+      // Before the fix this threw TypeError: Cannot read properties of undefined (reading 'get').
+      const url = await derived.resolveTablObjectUrlForWrite('BAPIRET2', { tablesEndpointAvailable: false });
+      expect(url).toBe('/sap/bc/adt/ddic/structures/BAPIRET2');
+    });
+
+    it('clone shares cached write-URL resolutions with the original (shared Map, not a copy)', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(searchResponse('/sap/bc/adt/ddic/tables/T000', 'TABL/DT', 'T000'));
+      const client = createClient();
+      // Clone created BEFORE the original populates the cache: only a SHARED Map
+      // (not a copy taken at clone time) lets the clone see the later resolution.
+      const derived = client.withSafety(unrestrictedSafetyConfig());
+      const url1 = await client.resolveTablObjectUrlForWrite('T000', { tablesEndpointAvailable: true });
+      expect(url1).toBe('/sap/bc/adt/ddic/tables/T000');
+      expect(mockFetch.mock.calls).toHaveLength(1);
+      // Clone resolves the same name from the shared cache — no second HTTP call.
+      const url2 = await derived.resolveTablObjectUrlForWrite('T000', { tablesEndpointAvailable: true });
+      expect(url2).toBe('/sap/bc/adt/ddic/tables/T000');
+      expect(mockFetch.mock.calls).toHaveLength(1);
+    });
   });
 
   describe('safety checks', () => {
