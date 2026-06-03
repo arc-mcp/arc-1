@@ -1617,43 +1617,81 @@ describe('DevTools', () => {
       expect(result.findings).toEqual([]);
     });
 
-    it('sends create request and fetches worklist', async () => {
-      const createResp = '<atc:run xmlns:atc="http://www.sap.com/adt/atc" id="123" worklistId="123"/>';
+    it('runs the three-step worklist flow: create worklist → run → fetch findings', async () => {
+      // The worklist-create POST returns the worklist id as a plain-text body; the run POST
+      // executes the checks into it; the GET reads the populated worklist.
       const resultResp = '<worklist/>';
       const http = {
-        ...mockHttp(createResp),
+        ...mockHttp('WL789'),
         get: vi.fn().mockResolvedValue({ statusCode: 200, headers: {}, body: resultResp }),
       } as unknown as AdtHttpClient;
 
       await runAtcCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_TEST');
 
-      // Should POST to create run, then GET worklist
+      // 1) create a worklist (no variant → no checkVariant param)
       expect(http.post).toHaveBeenCalledWith(
-        expect.stringContaining('/sap/bc/adt/atc/runs'),
+        '/sap/bc/adt/atc/worklists',
+        '',
+        'application/xml',
+        expect.objectContaining({ Accept: 'text/plain' }),
+      );
+      // 2) run the checks into the returned worklist id
+      expect(http.post).toHaveBeenCalledWith(
+        expect.stringContaining('/sap/bc/adt/atc/runs?worklistId=WL789'),
         expect.stringContaining('objectReference'),
         'application/xml',
         expect.objectContaining({ Accept: 'application/xml' }),
       );
+      // 3) fetch the worklist that was actually created (not the hardcoded id=1)
       expect(http.get).toHaveBeenCalledWith(
-        '/sap/bc/adt/atc/worklists/123',
+        '/sap/bc/adt/atc/worklists/WL789',
         expect.objectContaining({ Accept: expect.stringContaining('atc.worklist') }),
       );
     });
 
-    it('prefers worklistId over id attribute', async () => {
-      const createResp = '<atc:run id="run123" worklistId="wl456"/>';
-      const resultResp = '<worklist/>';
+    it('binds the worklist to the named check variant when one is given', async () => {
       const http = {
-        ...mockHttp(createResp),
-        get: vi.fn().mockResolvedValue({ statusCode: 200, headers: {}, body: resultResp }),
+        ...mockHttp('WL42'),
+        get: vi.fn().mockResolvedValue({ statusCode: 200, headers: {}, body: '<worklist/>' }),
       } as unknown as AdtHttpClient;
 
-      await runAtcCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_TEST');
+      await runAtcCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_TEST', 'S4HANA_READINESS_2023');
 
-      expect(http.get).toHaveBeenCalledWith(
-        '/sap/bc/adt/atc/worklists/wl456',
-        expect.objectContaining({ Accept: expect.stringContaining('atc.worklist') }),
+      expect(http.post).toHaveBeenCalledWith(
+        '/sap/bc/adt/atc/worklists?checkVariant=S4HANA_READINESS_2023',
+        '',
+        'application/xml',
+        expect.objectContaining({ Accept: 'text/plain' }),
       );
+    });
+
+    it('throws a clear error when worklist creation returns no id', async () => {
+      const http = {
+        ...mockHttp('   '),
+        get: vi.fn().mockResolvedValue({ statusCode: 200, headers: {}, body: '<worklist/>' }),
+      } as unknown as AdtHttpClient;
+
+      await expect(runAtcCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_TEST')).rejects.toThrow(
+        /worklist creation returned no worklist id/i,
+      );
+    });
+
+    it('parses the real SAP worklist response format (captured fixture)', async () => {
+      const { readFileSync } = await import('node:fs');
+      const fixture = readFileSync(new URL('../../fixtures/xml/atc-worklist-findings.xml', import.meta.url), 'utf-8');
+      const http = {
+        ...mockHttp('1E814DFAAE5E1FE197E6112F5FDC38A2'),
+        get: vi.fn().mockResolvedValue({ statusCode: 200, headers: {}, body: fixture }),
+      } as unknown as AdtHttpClient;
+
+      const result = await runAtcCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/programs/programs/Z_TEST');
+      expect(result.findings).toHaveLength(1);
+      expect(result.findings[0]?.priority).toBe(2);
+      expect(result.findings[0]?.checkTitle).toBe('Search DB Operations');
+      expect(result.findings[0]?.messageTitle).toContain('DB Operation INSERT');
+      expect(result.findings[0]?.line).toBe(86);
+      expect(result.findings[0]?.quickfixInfo).toContain('atc:');
+      expect(result.findings[0]?.hasQuickfix).toBe(false);
     });
 
     it('extracts URI and line from #start= fragment', async () => {
