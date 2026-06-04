@@ -1649,21 +1649,20 @@ async function handleSAPRead(
     case 'FUGR': {
       const expand = Boolean(args.expand_includes);
       if (expand) {
-        const { source } = await client.getFunctionGroupSource(name, { version: effectiveVersion });
-        // Match INCLUDE statements but skip ABAP comment lines (starting with *)
-        const includePattern = /^[^*\n]*\bINCLUDE\s+(\S+)\s*\./gim;
-        const parts: string[] = [`=== FUGR ${name} (main) ===\n${source}`];
-        let m: RegExpExecArray | null;
-        while ((m = includePattern.exec(source)) !== null) {
-          const inclName = m[1]!;
-          try {
-            const { source: inclSource } = await client.getInclude(inclName, { version: effectiveVersion });
-            parts.push(`\n=== ${inclName} ===\n${inclSource}`);
-          } catch {
-            parts.push(`\n=== ${inclName} ===\n[Could not read include "${inclName}"]`);
-          }
+        // Recursive expansion: the function module bodies (FUNCTION…ENDFUNCTION) and
+        // PBO/PAI modules live in nested includes (LZ<grp>U01, …O…, …I…) pulled in from
+        // the UXX include — a one-level walk misses them. getFunctionGroupExpanded BFS-es
+        // the include graph (depth/count-capped, cycle-guarded). Dynpros + GUI status are
+        // not included: ADT doesn't expose them over REST (SAPGUI-only).
+        const { blocks, truncated } = await client.getFunctionGroupExpanded(name, { version: effectiveVersion });
+        const parts = blocks.map((b) => `=== ${b.name} ===\n${b.source}`);
+        if (truncated) {
+          parts.push(
+            '=== [truncated] ===\nInclude cap reached; some nested includes were not expanded. ' +
+              'Read remaining includes individually with SAPRead(type="INCL", name="...").',
+          );
         }
-        return textResult(parts.join('\n'));
+        return textResult(parts.join('\n\n'));
       }
       const fg = await client.getFunctionGroup(name);
       return textResult(JSON.stringify(fg, null, 2));

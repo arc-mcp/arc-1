@@ -557,6 +557,77 @@ export class AdtClient {
     return this.fetchSource(`/sap/bc/adt/programs/includes/${encodeURIComponent(name)}/source/main`, opts);
   }
 
+  /**
+   * Expand a function group into its full source tree: the main include plus every
+   * nested INCLUDE, fetched **recursively**.
+   *
+   * The main FUGR source only references the TOP + UXX includes directly; the actual
+   * `FUNCTION … ENDFUNCTION` bodies live in nested `LZ<group>U01/U02…` includes pulled
+   * in from UXX, and PBO/PAI screen modules in `…O…/…I…` includes. A one-level expansion
+   * (the old SAPRead `expand_includes` behaviour) therefore misses the real code — this
+   * BFS follows the include graph to capture it.
+   *
+   * Bounded for safety: a `seen` set (cycle + dedup guard), a depth cap, and a total-block
+   * cap so a pathological include graph can't blow up the response. Comment-only INCLUDE
+   * lines (leading `*`) are skipped. Each block that fails to read carries a placeholder.
+   * `truncated` is true if the block cap was hit.
+   *
+   * Note: dynpros (screens) and GUI status (CUA) are NOT included — ADT does not expose
+   * those over REST (they are SAPGUI/SE51/SE41-only; the endpoints return 404). This
+   * captures the function group's ABAP code/flow logic, not its screen flow.
+   */
+  async getFunctionGroupExpanded(
+    name: string,
+    opts?: SourceReadOptions,
+  ): Promise<{ blocks: Array<{ name: string; source: string }>; truncated: boolean }> {
+    checkOperation(this.safety, OperationType.Read, 'GetFunctionGroupExpanded');
+    const MAX_BLOCKS = 80;
+    const MAX_DEPTH = 5;
+    const seen = new Set<string>();
+    const blocks: Array<{ name: string; source: string }> = [];
+    let truncated = false;
+
+    const { source: mainSource } = await this.getFunctionGroupSource(name, opts);
+    blocks.push({ name: `FUGR ${name} (main)`, source: mainSource });
+
+    // Match INCLUDE statements but skip ABAP comment lines (leading `*` after optional
+    // whitespace). Non-greedy name capture stops at the trailing `.`.
+    const findIncludes = (src: string): string[] => {
+      const re = /^[^*\n]*\bINCLUDE\s+(\S+?)\s*\./gim;
+      const out: string[] = [];
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(src)) !== null) out.push(m[1]!);
+      return out;
+    };
+
+    let frontier: Array<{ src: string; depth: number }> = [{ src: mainSource, depth: 0 }];
+    while (frontier.length > 0 && !truncated) {
+      const next: Array<{ src: string; depth: number }> = [];
+      for (const { src, depth } of frontier) {
+        if (depth >= MAX_DEPTH) continue;
+        for (const incRaw of findIncludes(src)) {
+          const key = incRaw.toLowerCase();
+          if (seen.has(key)) continue;
+          if (blocks.length >= MAX_BLOCKS) {
+            truncated = true;
+            break;
+          }
+          seen.add(key);
+          try {
+            const { source: incSource } = await this.getInclude(incRaw, opts);
+            blocks.push({ name: incRaw, source: incSource });
+            next.push({ src: incSource, depth: depth + 1 });
+          } catch {
+            blocks.push({ name: incRaw, source: `[Could not read include "${incRaw}"]` });
+          }
+        }
+        if (truncated) break;
+      }
+      frontier = next;
+    }
+    return { blocks, truncated };
+  }
+
   /** Get CDS view source code (DDLS) */
   async getDdls(name: string, opts?: SourceReadOptions): Promise<SourceReadResult> {
     checkOperation(this.safety, OperationType.Read, 'GetDDLS');

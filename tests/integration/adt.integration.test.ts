@@ -2253,4 +2253,29 @@ describe('ADT Integration Tests', () => {
       expect(fg.includes.length).toBeGreaterThan(0);
     });
   });
+
+  // ─── FUGR recursive include expansion (getFunctionGroupExpanded) ──────
+  describe('getFunctionGroupExpanded (recursive FUGR include walk)', () => {
+    // A one-level include walk stops at the TOP/UXX includes and misses the
+    // FUNCTION…ENDFUNCTION bodies, which live in nested LZ<grp>U01/U02 includes
+    // pulled in from UXX. This asserts the recursion reaches them on a live system.
+    // Target abapGit's parallel-processing FUGR (present on most dev systems);
+    // skip cleanly if absent.
+    it('expands a real function group past one level into its nested includes', async (ctx) => {
+      let result: Awaited<ReturnType<typeof client.getFunctionGroupExpanded>> | undefined;
+      try {
+        result = await client.getFunctionGroupExpanded('ZABAPGIT_PARALLEL');
+      } catch {
+        result = undefined;
+      }
+      requireOrSkip(ctx, result, `${SkipReason.NO_FIXTURE}: function group ZABAPGIT_PARALLEL not present`);
+
+      expect(result.blocks.length).toBeGreaterThan(1);
+      expect(result.blocks[0]?.name).toContain('FUGR ZABAPGIT_PARALLEL');
+      // Recursion evidence: a nested function-module include (…U01/U02), reachable
+      // only by following INCLUDE from the UXX include — not from the main source.
+      const names = result.blocks.map((b) => b.name.toLowerCase());
+      expect(names.some((n) => /u\d\d$/.test(n))).toBe(true);
+    });
+  });
 });
