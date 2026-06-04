@@ -61,7 +61,7 @@ Copy `.env.example` to `.env`. All options live in `src/server/config.ts` (parse
 | `SAP_USER` / `--user` | SAP username |
 | `SAP_PASSWORD` / `--password` | SAP password |
 | `SAP_CLIENT` / `--client` | SAP client number (default: 100) |
-| `SAP_LANGUAGE` / `--language` | SAP language (default: EN) |
+| `SAP_LANGUAGE` / `--language` | SAP language (default: EN). Sent as the `sap-language` request param **and** used as the master/original language in object-creation XML (`adtcore:masterLanguage`), so DDIC texts of newly created DTEL/DOMA are filed under this language (issue #343). |
 | `SAP_INSECURE` / `--insecure` | Skip TLS verification (default: false) |
 | `SAP_TRANSPORT` / `--transport` | MCP transport: `stdio` (default) or `http-streamable` |
 | `ARC1_PORT` / `--port` | HTTP server port (default: `8080`). Simpler alternative to `ARC1_HTTP_ADDR` when only the port needs to change |
@@ -217,6 +217,7 @@ tests/
 | Add new tool type | `src/handlers/tools.ts`, `src/handlers/schemas.ts`, `src/handlers/intent.ts` |
 | Add/modify tool input schema | `src/handlers/schemas.ts`, `src/handlers/tools.ts` |
 | Add DDIC domain/data element write | `src/adt/ddic-xml.ts`, `src/adt/crud.ts`, `src/handlers/intent.ts` |
+| Set created-object master/original language from `SAP_LANGUAGE` (issue #343) | `src/adt/ddic-xml.ts` (`normalizeAdtLanguage` + `language?` on DOMA/DTEL/SRVB `*CreateParams`), `src/handlers/intent.ts` (`buildCreateXml(..., language)` + inline SKTD body; the 3 call sites pass `config.language`). Genuinely fixes DTEL/DOMA on the S/4 **v2** handler (per-object master `DD04L-DTELMASTER`/`DD01L-DOMMASTER` + text language `DD04T`/`DD01T-DDLANGUAGE`); cosmetic for source objects (master is `TADIR` from the `sap-language` URL param); NW 7.50 **v1** ignores the body. Default `EN` preserved. Live-verified on a4h 7.58 (HANA round-trip). See `docs/research/issue-343-masterlanguage-on-create.md`. |
 | Modify ADT service discovery / MIME types | `src/adt/discovery.ts`, `src/adt/http.ts` |
 | Improve DDIC save diagnostics + SAP-domain error hints (T100/line + lock/auth/dependency hints) | `src/adt/errors.ts` (`extractDdicDiagnostics`, `formatDdicDiagnostics`, `classifySapDomainError`), `src/handlers/intent.ts` (`enrichWithSapDetails`, `formatErrorForLLM`) |
 | Add SAP error classification (new `category` + hint) | `src/adt/errors.ts` (`extractExceptionType`/`extractLockOwner`/`classifySapDomainError`/`SapErrorClassification`), `src/handlers/intent.ts` (`formatErrorForLLM`/`classifyError`), `tests/unit/adt/errors.test.ts`. Existing categories live in the union type. Ground hints in verified SAP Notes/KBAs (use `mcp__sap-notes__search`) — no speculative tcode pointers. |

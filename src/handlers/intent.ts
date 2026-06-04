@@ -74,6 +74,7 @@ import {
   type DomainCreateParams,
   decodeKtdText,
   type MessageClassCreateParams,
+  normalizeAdtLanguage,
   type PackageCreateParams,
   rewriteKtdText,
   type ServiceBindingCreateParams,
@@ -2873,7 +2874,13 @@ export function buildCreateXml(
   pkg: string,
   description: string,
   properties?: Record<string, unknown>,
+  language?: string,
 ): string {
+  // Master/original language for the created object. Derived from the configured
+  // SAP_LANGUAGE (passed by callers as config.language) so the create-XML body
+  // matches the sap-language URL param ARC-1 already sends. Defaults to "EN" when
+  // unset, preserving legacy output. See issue #343.
+  const masterLanguage = normalizeAdtLanguage(language);
   switch (type) {
     case 'PROG':
       return `<?xml version="1.0" encoding="UTF-8"?>
@@ -2882,7 +2889,7 @@ export function buildCreateXml(
                      adtcore:description="${escapeXml(description)}"
                      adtcore:name="${escapeXml(name)}"
                      adtcore:type="PROG/P"
-                     adtcore:masterLanguage="EN"
+                     adtcore:masterLanguage="${masterLanguage}"
                      adtcore:masterSystem="H00"
                      adtcore:responsible="DEVELOPER">
   <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
@@ -2894,7 +2901,7 @@ export function buildCreateXml(
                  adtcore:description="${escapeXml(description)}"
                  adtcore:name="${escapeXml(name)}"
                  adtcore:type="CLAS/OC"
-                 adtcore:masterLanguage="EN"
+                 adtcore:masterLanguage="${masterLanguage}"
                  adtcore:masterSystem="H00"
                  adtcore:responsible="DEVELOPER">
   <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
@@ -2906,7 +2913,7 @@ export function buildCreateXml(
                     adtcore:description="${escapeXml(description)}"
                     adtcore:name="${escapeXml(name)}"
                     adtcore:type="INTF/OI"
-                    adtcore:masterLanguage="EN"
+                    adtcore:masterLanguage="${masterLanguage}"
                     adtcore:masterSystem="H00"
                     adtcore:responsible="DEVELOPER">
   <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
@@ -2918,7 +2925,7 @@ export function buildCreateXml(
                      adtcore:description="${escapeXml(description)}"
                      adtcore:name="${escapeXml(name)}"
                      adtcore:type="PROG/I"
-                     adtcore:masterLanguage="EN"
+                     adtcore:masterLanguage="${masterLanguage}"
                      adtcore:masterSystem="H00"
                      adtcore:responsible="DEVELOPER">
   <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
@@ -2930,7 +2937,7 @@ export function buildCreateXml(
                adtcore:description="${escapeXml(description)}"
                adtcore:name="${escapeXml(name)}"
                adtcore:type="DDLS/DF"
-               adtcore:masterLanguage="EN"
+               adtcore:masterLanguage="${masterLanguage}"
                adtcore:masterSystem="H00"
                  adtcore:responsible="DEVELOPER">
   <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
@@ -2942,7 +2949,7 @@ export function buildCreateXml(
                adtcore:description="${escapeXml(description)}"
                adtcore:name="${escapeXml(name)}"
                adtcore:type="DCLS/DL"
-               adtcore:masterLanguage="EN"
+               adtcore:masterLanguage="${masterLanguage}"
                adtcore:masterSystem="H00"
                adtcore:responsible="DEVELOPER">
   <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
@@ -2960,7 +2967,7 @@ export function buildCreateXml(
                  adtcore:description="${escapeXml(description)}"
                  adtcore:name="${escapeXml(name)}"
                  adtcore:type="${adtType}"
-                 adtcore:masterLanguage="EN"
+                 adtcore:masterLanguage="${masterLanguage}"
                  adtcore:masterSystem="H00"
                  adtcore:responsible="DEVELOPER">
   <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
@@ -2975,7 +2982,7 @@ export function buildCreateXml(
                  adtcore:description="${escapeXml(description)}"
                  adtcore:name="${escapeXml(name)}"
                  adtcore:type="BDEF/BDO"
-                 adtcore:masterLanguage="EN"
+                 adtcore:masterLanguage="${masterLanguage}"
                  adtcore:masterSystem="H00"
                  adtcore:responsible="DEVELOPER">
   <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
@@ -2987,7 +2994,7 @@ export function buildCreateXml(
                  adtcore:description="${escapeXml(description)}"
                  adtcore:name="${escapeXml(name)}"
                  adtcore:type="SRVD/SRV"
-                 adtcore:masterLanguage="EN"
+                 adtcore:masterLanguage="${masterLanguage}"
                  adtcore:masterSystem="H00"
                  adtcore:responsible="DEVELOPER"
                  srvd:srvdSourceType="S">
@@ -3010,6 +3017,7 @@ export function buildCreateXml(
         category,
         version: properties?.version ? String(properties.version) : undefined,
         odataVersion: properties?.odataVersion ? String(properties.odataVersion) : undefined,
+        language: masterLanguage,
       };
       return buildServiceBindingXml(params);
     }
@@ -3020,7 +3028,7 @@ export function buildCreateXml(
                  adtcore:description="${escapeXml(description)}"
                  adtcore:name="${escapeXml(name)}"
                  adtcore:type="DDLX/EX"
-                 adtcore:masterLanguage="EN"
+                 adtcore:masterLanguage="${masterLanguage}"
                  adtcore:masterSystem="H00"
                      adtcore:responsible="DEVELOPER">
   <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
@@ -3048,6 +3056,7 @@ export function buildCreateXml(
         lowercase: toBoolean(properties?.lowercase),
         fixedValues,
         valueTable: properties?.valueTable ? String(properties.valueTable) : undefined,
+        language: masterLanguage,
       };
       return buildDomainXml(params);
     }
@@ -3074,6 +3083,7 @@ export function buildCreateXml(
         setGetParameter: properties?.setGetParameter ? String(properties.setGetParameter) : undefined,
         defaultComponentName: properties?.defaultComponentName ? String(properties.defaultComponentName) : undefined,
         changeDocument: toBoolean(properties?.changeDocument),
+        language: masterLanguage,
       };
       return buildDataElementXml(params);
     }
@@ -3098,7 +3108,7 @@ export function buildCreateXml(
       // with Content-Type: application/vnd.sap.adt.functions.groups.v3+xml.
       // Verified live on a4h S/4HANA 2023 (issue #250).
       return `<?xml version="1.0" encoding="UTF-8"?>
-<group:abapFunctionGroup xmlns:group="http://www.sap.com/adt/functions/groups" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:description="${escapeXml(description)}" adtcore:language="EN" adtcore:name="${escapeXml(name)}" adtcore:type="FUGR/F" adtcore:masterLanguage="EN">
+<group:abapFunctionGroup xmlns:group="http://www.sap.com/adt/functions/groups" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:description="${escapeXml(description)}" adtcore:language="${masterLanguage}" adtcore:name="${escapeXml(name)}" adtcore:type="FUGR/F" adtcore:masterLanguage="${masterLanguage}">
   <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
 </group:abapFunctionGroup>`;
     case 'FUNC': {
@@ -3824,7 +3834,7 @@ async function handleSAPWrite(
         const mergedProps = await mergeMetadataWriteProperties(client, type, name, metadataProps);
         const description = String(args.description ?? mergedProps._description ?? name);
         const pkg = String(args.package ?? existingPackage ?? mergedProps._package ?? '$TMP');
-        const body = buildCreateXml(type, name, pkg, description, mergedProps);
+        const body = buildCreateXml(type, name, pkg, description, mergedProps, config.language);
         await safeUpdateObject(
           client.http,
           client.safety,
@@ -4035,8 +4045,9 @@ async function handleSAPWrite(
         const refParentType = refType.split('/')[0] ?? '';
         const refUri = `${objectBasePath(refParentType)}${encodeURIComponent(refName.toLowerCase())}`;
 
+        const ktdLang = normalizeAdtLanguage(config.language);
         const ktdBody = `<?xml version="1.0" encoding="UTF-8"?>
-<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:language="EN" adtcore:name="${escapeXml(name)}" adtcore:type="SKTD/TYP" adtcore:masterLanguage="EN">
+<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:language="${ktdLang}" adtcore:name="${escapeXml(name)}" adtcore:type="SKTD/TYP" adtcore:masterLanguage="${ktdLang}">
   <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
   <sktd:refObject adtcore:description="${escapeXml(refDescription)}" adtcore:name="${escapeXml(refName)}" adtcore:type="${escapeXml(refType)}" adtcore:uri="${escapeXml(refUri)}"/>
 </sktd:docu>`;
@@ -4084,7 +4095,7 @@ async function handleSAPWrite(
       // SAP ADT requires the root element to match the object type —
       // a generic objectReferences body returns 400 "System expected the element ...".
       const metadataProperties = getMetadataWriteProperties(args);
-      const body = buildCreateXml(type, name, pkg, description, metadataProperties);
+      const body = buildCreateXml(type, name, pkg, description, metadataProperties, config.language);
 
       // Step 1: Create the object (metadata only)
       const createUrl = objectUrl.replace(/\/[^/]+$/, ''); // parent collection URL
@@ -5199,7 +5210,7 @@ async function handleSAPWrite(
           const objUrl = objectUrlForType(objType, objName);
           const createUrl = objUrl.replace(/\/[^/]+$/, '');
           const objMetadataProps = getMetadataWriteProperties(obj);
-          const body = buildCreateXml(objType, objName, objPackage, objDescription, objMetadataProps);
+          const body = buildCreateXml(objType, objName, objPackage, objDescription, objMetadataProps, config.language);
           const contentType = createContentTypeForType(objType);
           const needsPackageParam =
             objType === 'BDEF' || objType === 'TABL' || objType === 'TABL/DT' || objType === 'TABL/DS';
