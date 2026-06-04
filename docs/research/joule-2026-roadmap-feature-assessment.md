@@ -15,7 +15,7 @@
 | 2 | Semi-automated Clean-Core ATC Fixes | `SAPDiagnose(quickfix/apply_quickfix)` already wraps `/sap/bc/adt/quickfixes/evaluation` (verified live a4h 2026-04-14); skills `sap-clean-core-atc` + `migrate-custom-code` exist | Polish existing skills; add ATC-finding → quickfix correlation helper | **XS** (already shipped) |
 | 3 | CDS Analytical Model Generation (basic — cube + existing dims from RAP BO) | DDLS create works; no cube scaffold | New skill `generate-analytics-star-schema` (already proposed in J4D compare matrix) | **S** (skill only) |
 | 4 | CDS Analytical Model Generation (extended — cube + new dims from RAP BO **or** DDIC tables) | Same as #3; TABL read works | Same skill, broader templates | **S** (skill only) |
-| 5 | Extensibility Assistant (custom field, BAdI, value help) | ENHO read works; no append-structure scaffold or BAdI impl-class stub generator | New skill `extensibility-assistant` + small ARC-1 code: APPEND structure subtype on `TABL`, BAdI impl-class scaffold | **M** (skill + code) |
+| 5 | Extensibility Assistant (custom field, BAdI, value help) | Append **read** works today (`SAPRead type=TABL`); append/BAdI **create** is an opaque protocol ([spike](./tabl-append-create-spike-a4h.md)) | Read half: 0 code. Create half: **blocked** — needs an Eclipse wire-trace, not the `appendStructureXml` plan in §5a | **Read: done · Create: blocked** |
 | 6 | RAP Model-Driven Joule Integration | SRVB read works; OData V4 publish works | Cannot replicate — this is Joule runtime exposing RAP BOs to *Joule's agentic engine*. Different problem domain. | **N/A** (out of scope) |
 | 7 | AI Explain for Function Groups | FUGR source read works; `expand_includes` already follows explicit `INCLUDE` statements; **no FUNC sub-module walk, no dynpro read, no GUI status read** | Extend existing `explain-abap-code` skill **+** small ARC-1 code: widen FUGR `expand_includes` to cover FUNC sub-modules, plus new dynpro and GUI status readers | **M** (skill + small code) |
 | 8 | AI Explain for Behavior Definitions | BDEF source + bound CLAS read works | Extend existing `explain-abap-code` skill; no ARC-1 code needed | **XS** (skill only) |
@@ -150,7 +150,8 @@ A Joule chat surface *inside the S/4HANA Cloud UI* (Key User Extensibility apps)
 | Read enhancement implementation | ✅ | SAPRead type=ENHO; `parseEnhancementImplementation()` in `src/adt/xml-parser.ts:639` |
 | Read TABL metadata | ✅ | SAPRead type=TABL |
 | Create custom CDS view | ✅ | SAPWrite type=DDLS |
-| Append-structure (TABL subtype) scaffold | ❌ | No append-specific schema; current AFF TABL schema covers base tables/structures, not appends |
+| Append-structure (TABL subtype) **read** | ✅ | `SAPRead type=TABL` returns `extend type … with …` source today (zero code) |
+| Append-structure (TABL subtype) **create** | ⛔ opaque | Source-based `TABL/DS`; shell-then-PUT create collides (`ResourceAlreadyExists`), 1-step source create rejected (415/400). [Spike](./tabl-append-create-spike-a4h.md) |
 | BAdI implementation class stub | ❌ | No `SAPWrite action=scaffold_badi_impl` |
 | Business-context / Custom-Object UI discovery (Key User Extensibility framework REST endpoints) | ❌ | None of the Key User Extensibility OData services are wrapped |
 
@@ -513,6 +514,9 @@ The largest in-scope code change set. Two independent additions, then a skill th
 
 #### 5a. TABL APPEND structure subtype
 
+> **⛔ SUPERSEDED by live spike (2026-06-04) — see [tabl-append-create-spike-a4h.md](./tabl-append-create-spike-a4h.md).**
+> The plan below assumes appends are classic `R3TR APPS` objects created by mirroring `dtelXml`/`domaXml` (~2 dev-days). **That model is wrong on S/4HANA 2023 (SAP_BASIS 758):** an append is a *source-based* `TABL/DS` object (`extend type <base> with <append> { … }`, `<blue:blueSource>`), and its **create is an opaque protocol**. ARC-1's shell-then-PUT create fails (`ExceptionResourceAlreadyExists` / HTTP 400 — the shell pre-creates a *regular* structure whose name collides with the append), and 1-step source-body creates are rejected (HTTP 415/400 across content-types). **Append _read_ already works today with zero code** (`SAPRead type=TABL`) — that is the achievable half of Feature 5. Do **not** build the create plan below without first capturing an Eclipse "Create Append Structure" wire trace. The original plan is retained below for historical context only.
+
 Today's `SAPWrite(type=TABL)` handles base transparent tables and structures via `src/adt/ddic-xml.ts`. APPEND structures (TYPE `R3TR APPS`) need their own subtype because:
 - They reference a *parent* table via `<r3tr:appendOf>` in the XML envelope
 - Their activation reorders the parent table's field list
@@ -534,6 +538,8 @@ Today's `SAPWrite(type=TABL)` handles base transparent tables and structures via
 | [`tests/integration/adt.integration.test.ts`](../../tests/integration/adt.integration.test.ts) | CRUD lifecycle on a Z-prefixed append against a standard table (use `MARA` or a Z-test table; skip if not available). | Existing TABL CRUD test. |
 
 **Estimated diff:** ~250 lines TS (schema + builder + handler wiring) + ~150 lines tests. Effort: **~2 dev-days**.
+
+> **⚠️ Estimate invalidated by the 2026-06-04 spike.** The above assumes a `dtelXml`-style XML builder. The real append create is opaque (see callout at the top of 5a) — effort is **blocked** pending an Eclipse wire-trace capture, not ~2 dev-days. The *read* side is **0 days** (already works).
 
 #### 5b. BAdI implementation scaffold
 
