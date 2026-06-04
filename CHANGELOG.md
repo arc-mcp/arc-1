@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.9.9](https://github.com/marianfoo/arc-1/compare/v0.9.8...v0.9.9) (2026-06-04)
+
+
+### Features
+
+* **fugr:** recursive include expansion for SAPRead(type=FUGR) — captures function module code ([#341](https://github.com/marianfoo/arc-1/issues/341)) ([2f99335](https://github.com/marianfoo/arc-1/commit/2f99335774e2e2321c5e673ee94f2a8f295e956e))
+* **transport:** set explicit transport target (TR_TARGET) on SAPTransport.create ([#339](https://github.com/marianfoo/arc-1/issues/339)) ([95d6a9c](https://github.com/marianfoo/arc-1/commit/95d6a9cc823143e7b3018d1477e2b068e63a5a2f))
+
+
+### Bug Fixes
+
+* **atc:** bind check variant via worklist so SAPDiagnose(atc) returns findings ([#336](https://github.com/marianfoo/arc-1/issues/336)) ([5386465](https://github.com/marianfoo/arc-1/commit/53864653c077233b4acdbb1061983f6417b8e5c7))
+* **deps:** bump express-rate-limit to 8.5.2 and key IPv6 by /56 subnet ([#330](https://github.com/marianfoo/arc-1/issues/330)) ([1bb5e31](https://github.com/marianfoo/arc-1/commit/1bb5e318c930c1585aab33815bfa9671b8318e16))
+* **fugr:** non-expand SAPRead(FUGR) returns the real function-module list (objectstructure) ([#342](https://github.com/marianfoo/arc-1/issues/342)) ([93b6c22](https://github.com/marianfoo/arc-1/commit/93b6c22f6739761f205d1d31d9c2cf29143a0c86))
+* surface XSUAA OAuth errors on /oauth/callback + don't prefix reserved scopes ([#327](https://github.com/marianfoo/arc-1/issues/327)) ([f7418ed](https://github.com/marianfoo/arc-1/commit/f7418ed9a9f6be5e743d2ccb84ea8e4af4770b0c))
+* **write:** derive created-object master language from SAP_LANGUAGE ([#344](https://github.com/marianfoo/arc-1/issues/344)) ([18672fd](https://github.com/marianfoo/arc-1/commit/18672fdffa5c76ba64f6af43493151fb2add27c8))
+
 ## [0.9.8](https://github.com/marianfoo/arc-1/compare/v0.9.7...v0.9.8) (2026-06-01)
 
 
