@@ -11403,9 +11403,93 @@ ENDCLASS.`;
     });
   });
 
+  // ─── SAPWrite create master language wiring (issue #343) ────────────
+
+  describe('SAPWrite create — master language wiring (issue #343)', () => {
+    function dtelCreatePostBody(): string | undefined {
+      const call = mockFetch.mock.calls.find(
+        (c: any[]) => String(c[0]).includes('/sap/bc/adt/ddic/dataelements') && c[1]?.method === 'POST',
+      );
+      return call?.[1]?.body as string | undefined;
+    }
+
+    it('threads config.language into the DTEL create POST body', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(201, '<blue:wbobj/>', { 'x-csrf-token': 't' }));
+      const result = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, language: 'DE' }, 'SAPWrite', {
+        action: 'create',
+        type: 'DTEL',
+        name: 'ZARC1_LANG_UNIT',
+        description: 'Sprachtest',
+        package: '$TMP',
+        typeKind: 'predefinedAbapType',
+        dataType: 'CHAR',
+        length: 10,
+      });
+      expect(result.isError).toBeFalsy();
+      const body = dtelCreatePostBody();
+      expect(body).toBeDefined();
+      expect(body).toContain('adtcore:masterLanguage="DE"');
+    });
+
+    it('defaults the DTEL create POST body to EN when SAP_LANGUAGE is unset', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(201, '<blue:wbobj/>', { 'x-csrf-token': 't' }));
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'DTEL',
+        name: 'ZARC1_LANG_UNIT',
+        description: 'Lang test',
+        package: '$TMP',
+        typeKind: 'predefinedAbapType',
+        dataType: 'CHAR',
+        length: 10,
+      });
+      expect(result.isError).toBeFalsy();
+      expect(dtelCreatePostBody()).toContain('adtcore:masterLanguage="EN"');
+    });
+  });
+
   // ─── buildCreateXml ─────────────────────────────────────────────────
 
   describe('buildCreateXml', () => {
+    // issue #343: master language must follow the configured SAP_LANGUAGE (6th arg),
+    // defaulting to EN when unset. Source objects ignore it server-side (cosmetic), but
+    // the body must still match the sap-language URL param for DTEL/DOMA correctness.
+    describe('master language (issue #343)', () => {
+      it('threads the configured language into masterLanguage for source objects', () => {
+        const xml = buildCreateXml('PROG', 'ZHELLO', 'ZPACKAGE', 'Hello', undefined, 'DE');
+        expect(xml).toContain('adtcore:masterLanguage="DE"');
+      });
+
+      it('threads the configured language into FUGR language + masterLanguage', () => {
+        const xml = buildCreateXml('FUGR', 'ZFG', '$TMP', 'FG', undefined, 'DE');
+        expect(xml).toContain('adtcore:language="DE"');
+        expect(xml).toContain('adtcore:masterLanguage="DE"');
+      });
+
+      it('threads the configured language into DOMA create XML', () => {
+        const xml = buildCreateXml('DOMA', 'ZDOM', '$TMP', 'Dom', { dataType: 'CHAR', length: 1 }, 'DE');
+        expect(xml).toContain('adtcore:masterLanguage="DE"');
+      });
+
+      it('threads the configured language into DTEL create XML', () => {
+        const xml = buildCreateXml('DTEL', 'ZEL', '$TMP', 'El', { dataType: 'CHAR', length: 10 }, 'DE');
+        expect(xml).toContain('adtcore:masterLanguage="DE"');
+      });
+
+      it('defaults masterLanguage to EN when no language arg is passed', () => {
+        expect(buildCreateXml('PROG', 'ZHELLO', 'ZPACKAGE', 'Hello')).toContain('adtcore:masterLanguage="EN"');
+        expect(buildCreateXml('DTEL', 'ZEL', '$TMP', 'El', { dataType: 'CHAR', length: 10 })).toContain(
+          'adtcore:masterLanguage="EN"',
+        );
+      });
+
+      it('normalizes a lower-case language to upper case', () => {
+        expect(buildCreateXml('CLAS', 'ZCL', '$TMP', 'C', undefined, 'de')).toContain('adtcore:masterLanguage="DE"');
+      });
+    });
+
     it('returns correct XML for PROG', () => {
       const xml = buildCreateXml('PROG', 'ZHELLO', 'ZPACKAGE', 'Hello Program');
       expect(xml).toContain('<program:abapProgram');

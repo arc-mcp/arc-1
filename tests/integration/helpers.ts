@@ -56,15 +56,20 @@ export function hasBtpCredentials(): boolean {
 /** Skip reason message */
 export const SKIP_REASON = 'No SAP credentials configured (set TEST_SAP_URL or SAP_URL in .env)';
 
-/** Create an ADT client configured for integration tests */
-export function getTestClient(): AdtClient {
+/**
+ * Create an ADT client configured for integration tests.
+ *
+ * @param languageOverride - optional SAP language to use instead of the env
+ *   default (e.g. 'DE' for the issue #343 master-language round-trip test).
+ */
+export function getTestClient(languageOverride?: string): AdtClient {
   requireSapCredentials();
 
   const url = process.env.TEST_SAP_URL || process.env.SAP_URL || '';
   const username = process.env.TEST_SAP_USER || process.env.SAP_USER || '';
   const password = process.env.TEST_SAP_PASSWORD || process.env.SAP_PASSWORD || '';
   const client = process.env.TEST_SAP_CLIENT || process.env.SAP_CLIENT || '100';
-  const language = process.env.TEST_SAP_LANGUAGE || process.env.SAP_LANGUAGE || 'EN';
+  const language = languageOverride || process.env.TEST_SAP_LANGUAGE || process.env.SAP_LANGUAGE || 'EN';
   const insecure = (process.env.TEST_SAP_INSECURE || process.env.SAP_INSECURE) === 'true';
   const disableSaml = (process.env.TEST_SAP_DISABLE_SAML || process.env.SAP_DISABLE_SAML) === 'true';
 

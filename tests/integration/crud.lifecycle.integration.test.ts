@@ -242,6 +242,97 @@ describe('CRUD lifecycle', () => {
     }
   }, 60_000);
 
+  // issue #343: a DTEL created with a German session must carry German as its
+  // master language (not hard-coded EN), so its labels are filed under DE. The
+  // DTEL ADT metadata echoes DD04L-DTELMASTER (= the create-body masterLanguage),
+  // so this is a valid discriminator (it was "EN" before the fix). On NW 7.50 the
+  // v1 handler ignores the body language — skipped via ddicSkipReason there.
+  it('DTEL create with SAP_LANGUAGE=DE persists masterLanguage=DE (issue #343)', async (ctx) => {
+    const deClient = getTestClient('DE');
+    const name = generateUniqueName('ZARC1_LDE');
+    const url = `/sap/bc/adt/ddic/dataelements/${name}`;
+    try {
+      const xml = buildCreateXml(
+        'DTEL',
+        name,
+        '$TMP',
+        'Sprachtest',
+        { typeKind: 'predefinedAbapType', dataType: 'CHAR', length: 10, shortLabel: 'Kurz', mediumLabel: 'Mittel' },
+        'DE',
+      );
+      expect(xml).toContain('adtcore:masterLanguage="DE"');
+      const createResp = await createObject(
+        deClient.http,
+        deClient.safety,
+        '/sap/bc/adt/ddic/dataelements',
+        xml,
+        DATAELEMENT_V2_CONTENT_TYPE,
+      );
+      registry.register(url, 'DTEL', name);
+      // The create response echoes the persisted DTELMASTER.
+      expect(createResp).toContain('adtcore:masterLanguage="DE"');
+      // Re-read the persisted metadata to confirm (not just the create echo).
+      // Note: Accept must not carry a charset param (SAP returns 406 otherwise).
+      const meta = await deClient.http.get(url, { Accept: 'application/vnd.sap.adt.dataelements.v2+xml' });
+      expect(meta.body).toContain('adtcore:masterLanguage="DE"');
+    } catch (err) {
+      const skip = ddicSkipReason(err);
+      if (skip) {
+        requireOrSkip(ctx, undefined, skip);
+      }
+      throw err;
+    } finally {
+      if (registry.getAll().some((entry) => entry.name === name)) {
+        try {
+          await deleteWithLock(url);
+          registry.remove(name);
+        } catch {
+          // best-effort-cleanup
+        }
+      }
+    }
+  }, 60_000);
+
+  // issue #343: DOMA smoke check. The DOMA ADT GET echoes TADIR-MASTERLANG (the
+  // sap-language URL param, already DE), NOT the body, so ADT cannot discriminate
+  // the DOMMASTER/DD01T text-language fix here — that is covered by the unit test
+  // (POST body carries masterLanguage="DE") plus the manual HANA verification in
+  // docs/research/issue-343-masterlanguage-on-create.md. This only asserts that a
+  // DE-language DOMA create still succeeds (non-regression).
+  it('DOMA create with SAP_LANGUAGE=DE succeeds (issue #343 non-regression)', async (ctx) => {
+    const deClient = getTestClient('DE');
+    const name = generateUniqueName('ZARC1_LDO');
+    const url = `/sap/bc/adt/ddic/domains/${name}`;
+    try {
+      const xml = buildCreateXml('DOMA', name, '$TMP', 'Sprachtest', { dataType: 'CHAR', length: 10 }, 'DE');
+      expect(xml).toContain('adtcore:masterLanguage="DE"');
+      const createResp = await createObject(
+        deClient.http,
+        deClient.safety,
+        '/sap/bc/adt/ddic/domains',
+        xml,
+        DOMAIN_V2_CONTENT_TYPE,
+      );
+      registry.register(url, 'DOMA', name);
+      expect(typeof createResp).toBe('string');
+    } catch (err) {
+      const skip = ddicSkipReason(err);
+      if (skip) {
+        requireOrSkip(ctx, undefined, skip);
+      }
+      throw err;
+    } finally {
+      if (registry.getAll().some((entry) => entry.name === name)) {
+        try {
+          await deleteWithLock(url);
+          registry.remove(name);
+        } catch {
+          // best-effort-cleanup
+        }
+      }
+    }
+  }, 60_000);
+
   it('DTEL CRUD lifecycle', async (ctx) => {
     const dataElementName = generateUniqueName('ZARC1_TDEL');
     const dataElementUrl = `/sap/bc/adt/ddic/dataelements/${dataElementName}`;
