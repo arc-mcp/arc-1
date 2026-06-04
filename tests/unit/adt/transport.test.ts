@@ -16,9 +16,11 @@ import {
   getTransportInfo,
   listTransportLayers,
   listTransports,
+  listTransportTargets,
   reassignTransport,
   releaseTransport,
   releaseTransportRecursive,
+  supportsExplicitTransportTarget,
 } from '../../../src/adt/transport.js';
 
 const fixturesDir = join(import.meta.dirname, '../../fixtures/xml');
@@ -415,6 +417,48 @@ describe('Transport Management', () => {
       const http = mockHttp(layersXml);
       const readOnly = { ...unrestrictedSafetyConfig(), allowTransportWrites: false };
       await expect(listTransportLayers(http, readOnly)).resolves.toHaveLength(3);
+    });
+  });
+
+  // ─── listTransportTargets ──────────────────────────────────────────
+
+  describe('listTransportTargets', () => {
+    // Verbatim shape captured live from a4h's official target value help.
+    const targetsXml = `<?xml version="1.0" encoding="utf-8"?><nameditem:namedItemList xmlns:nameditem="http://www.sap.com/adt/nameditem"><nameditem:totalItemCount>2</nameditem:totalItemCount><nameditem:namedItem><nameditem:name>DEV</nameditem:name><nameditem:description>gCTS generated</nameditem:description><nameditem:data/></nameditem:namedItem><nameditem:namedItem><nameditem:name/><nameditem:description>blank ignored</nameditem:description><nameditem:data/></nameditem:namedItem></nameditem:namedItemList>`;
+
+    it('GETs the official target value-help endpoint', async () => {
+      const http = mockHttp(targetsXml);
+      await listTransportTargets(http, enabledSafety);
+      const url = (http.get as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as string;
+      expect(url).toBe('/sap/bc/adt/cts/transportrequests/valuehelp/target?maxItemCount=200');
+    });
+
+    it('parses target name + description and drops blank-name entries', async () => {
+      const http = mockHttp(targetsXml);
+      const targets = await listTransportTargets(http, enabledSafety);
+      expect(targets).toEqual([{ name: 'DEV', description: 'gCTS generated' }]);
+    });
+  });
+
+  // ─── supportsExplicitTransportTarget (discovery gate) ──────────────
+
+  describe('supportsExplicitTransportTarget', () => {
+    const fakeHttp = (hasData: boolean, accept?: string) =>
+      ({ hasDiscoveryData: () => hasData, discoveryAcceptFor: () => accept }) as unknown as AdtHttpClient;
+
+    it('returns undefined when discovery has not been loaded', () => {
+      expect(supportsExplicitTransportTarget(fakeHttp(false))).toBeUndefined();
+    });
+
+    it('returns true when cts/transportrequests advertises the transportorganizer accept type', () => {
+      expect(supportsExplicitTransportTarget(fakeHttp(true, 'application/vnd.sap.adt.transportorganizer.v1+xml'))).toBe(
+        true,
+      );
+    });
+
+    it('returns false when discovery is loaded but the capability is absent (NW 7.50)', () => {
+      expect(supportsExplicitTransportTarget(fakeHttp(true, undefined))).toBe(false);
+      expect(supportsExplicitTransportTarget(fakeHttp(true, 'application/vnd.sap.as+xml'))).toBe(false);
     });
   });
 

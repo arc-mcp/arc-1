@@ -809,6 +809,7 @@ export const SAPTransportSchema = z.object({
     'check',
     'history',
     'layers',
+    'targets',
   ]),
   id: z.string().optional(),
   description: z.string().optional(),

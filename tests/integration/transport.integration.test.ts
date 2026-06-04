@@ -29,6 +29,7 @@ import {
   getTransport,
   listTransportLayers,
   listTransports,
+  listTransportTargets,
   reassignTransport,
   releaseTransportRecursive,
 } from '../../src/adt/transport.js';
@@ -274,6 +275,31 @@ describe('Transport Integration Tests', () => {
         expect(typeof layer.name).toBe('string');
         expect(typeof layer.description).toBe('string');
         if (layer.target !== undefined) expect(typeof layer.target).toBe('string');
+      }
+    });
+  });
+
+  // ─── listTransportTargets (official target value-help) ─────────
+
+  describe('listTransportTargets', () => {
+    it('lists the valid transport targets via the official value help', async (ctx) => {
+      // The value-help endpoint exists only on releases whose ADT stack supports explicit
+      // targets; NW 7.50/7.51 return 404. Skip cleanly there rather than fail.
+      let targets: Awaited<ReturnType<typeof listTransportTargets>>;
+      try {
+        targets = await listTransportTargets(client.http, client.safety);
+      } catch (err) {
+        if (err instanceof AdtApiError && err.isNotFound) {
+          requireOrSkip(ctx, undefined, SkipReason.BACKEND_UNSUPPORTED);
+          return;
+        }
+        throw err;
+      }
+      expect(Array.isArray(targets)).toBe(true);
+      for (const t of targets) {
+        expect(typeof t.name).toBe('string');
+        expect(t.name.length).toBeGreaterThan(0);
+        expect(typeof t.description).toBe('string');
       }
     });
   });

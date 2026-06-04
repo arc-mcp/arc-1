@@ -352,7 +352,7 @@ const SAPMANAGE_ACTIONS_WRITE = [
   'flp_delete_catalog',
 ];
 
-const SAPTRANSPORT_ACTIONS_READ = ['list', 'get', 'check', 'history', 'layers'];
+const SAPTRANSPORT_ACTIONS_READ = ['list', 'get', 'check', 'history', 'layers', 'targets'];
 const SAPTRANSPORT_ACTIONS_WRITE = ['create', 'release', 'delete', 'reassign', 'release_recursive'];
 
 const SAPGIT_ACTIONS_READ = [
@@ -1456,7 +1456,8 @@ export function getToolDefinitions(
               'release_recursive: release all unreleased tasks first, then the transport itself. ' +
               'check: check if a transport is needed for a package/object (requires type, name, package). ' +
               'history: list transports referencing an object (reverse lookup; requires type, name; works without SAP_ALLOW_TRANSPORT_WRITES). ' +
-              "layers: list the transport layers this system offers (name + description + resolved target where any) — the valid values for create's transportLayer. Use this to discover a real value instead of guessing; works without SAP_ALLOW_TRANSPORT_WRITES. Uses the package value-help endpoint (NW 7.52+); older releases report it's unavailable.",
+              "layers: list the transport layers this system offers (name + description + resolved target where any) — the valid values for create's transportLayer. Use this to discover a real value instead of guessing; works without SAP_ALLOW_TRANSPORT_WRITES. Uses the package value-help endpoint (NW 7.52+); older releases report it's unavailable. " +
+              "targets: list the valid transport targets (Transportziel / TR_TARGET) this system offers — the valid values for create's target. Use this to discover a real target (e.g. before create with target=). Uses the official ADT target value-help; available only on releases whose ADT stack supports explicit targets (NW 7.50/7.51 report it's unavailable). Read-only.",
           },
           id: {
             type: 'string',

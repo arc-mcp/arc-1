@@ -8,7 +8,7 @@
 import { AdtApiError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, checkTransport, OperationType, type SafetyConfig } from './safety.js';
-import type { TransportLayer, TransportObject, TransportRequest, TransportTask } from './types.js';
+import type { TransportLayer, TransportObject, TransportRequest, TransportTarget, TransportTask } from './types.js';
 import { escapeXmlAttr, findDeepNodes, parseXml } from './xml-parser.js';
 
 // ─── CTS Media Types & Namespaces ──────────────────────────────────
@@ -225,15 +225,22 @@ export async function listTransportLayers(http: AdtHttpClient, safety: SafetyCon
   return parseTransportLayers(resp.body);
 }
 
-/** Parse a `nameditem:namedItemList` value-help response into transport layers. */
-function parseTransportLayers(xml: string): TransportLayer[] {
+/** A parsed `nameditem:namedItem`: identifier (`name`), human text (`description`), optional structured `data`. */
+interface NamedItem {
+  name: string;
+  description: string;
+  data: string;
+}
+
+/** Parse a `nameditem:namedItemList` value-help response (shared by transport layers + targets). */
+function parseNamedItems(xml: string): NamedItem[] {
   const parsed = parseXml(xml);
   // The parser wraps some leaf elements (e.g. `data`) in single-element arrays; unwrap.
   const str = (v: unknown): string => {
     const x = Array.isArray(v) ? v[0] : v;
     return typeof x === 'string' ? x : typeof x === 'number' ? String(x) : '';
   };
-  // Some layers carry entity-encoded markup (e.g. "&lt;p&gt;Target: &lt;b&gt;DEV&lt;/b&gt;&lt;/p&gt;").
+  // Some items carry entity-encoded markup (e.g. "&lt;p&gt;Target: &lt;b&gt;DEV&lt;/b&gt;&lt;/p&gt;").
   // The shared parser leaves entities encoded — decode, strip tags, collapse whitespace.
   const clean = (v: unknown): string =>
     str(v)
@@ -249,13 +256,57 @@ function parseTransportLayers(xml: string): TransportLayer[] {
 
   return findDeepNodes(parsed, 'namedItem').map((item) => {
     const rec = item as Record<string, unknown>;
-    const target = clean(rec.data);
-    return {
-      name: str(rec.name).trim(),
-      description: clean(rec.description),
-      ...(target ? { target } : {}),
-    };
+    // `name` is an identifier passed back verbatim (only trim); `description`/`data` get cleaned.
+    return { name: str(rec.name).trim(), description: clean(rec.description), data: clean(rec.data) };
   });
+}
+
+/** Parse a `nameditem:namedItemList` value-help response into transport layers. */
+function parseTransportLayers(xml: string): TransportLayer[] {
+  return parseNamedItems(xml).map((item) => ({
+    name: item.name,
+    description: item.description,
+    ...(item.data ? { target: item.data } : {}),
+  }));
+}
+
+/**
+ * List the valid transport targets (Transportziel / TR_TARGET) this system offers — the
+ * valid values for `createTransportWithTarget`'s `target`.
+ *
+ * GETs the official ADT transport-target value help
+ * (`/sap/bc/adt/cts/transportrequests/valuehelp/target`), a `nameditem:namedItemList`
+ * advertised in ADT discovery only on releases whose TM stack supports targets (the same
+ * gate as `supportsExplicitTransportTarget`). NW 7.50/7.51 do not expose it (HTTP 404).
+ * Read-only; does not require `allowTransportWrites`. Verified live on a4h (returns `DEV`).
+ */
+export async function listTransportTargets(http: AdtHttpClient, safety: SafetyConfig): Promise<TransportTarget[]> {
+  checkOperation(safety, OperationType.Read, 'ListTransportTargets');
+
+  const resp = await http.get('/sap/bc/adt/cts/transportrequests/valuehelp/target?maxItemCount=200', {
+    Accept: 'application/vnd.sap.adt.nameditems.v1+xml',
+  });
+
+  return parseNamedItems(resp.body)
+    .filter((item) => item.name)
+    .map((item) => ({ name: item.name, description: item.description }));
+}
+
+/**
+ * Whether this system's ADT stack supports setting an explicit transport target at creation.
+ *
+ * SAP's own Eclipse client gates this on ADT *discovery capability*, not a release number:
+ * the `/sap/bc/adt/cts/transportrequests` collection advertises the
+ * `application/vnd.sap.adt.transportorganizer.v1+xml` Accept media type only on releases
+ * whose TM resource implements `useraction="newrequest"`. On NW 7.50/7.51 that Accept type is
+ * absent (verified live: a4h 7.58 advertises it, npl 7.50 does not).
+ *
+ * @returns `true`/`false` per discovery, or `undefined` when discovery has not been loaded
+ *          (caller should then attempt and rely on the runtime error as the fallback signal).
+ */
+export function supportsExplicitTransportTarget(http: AdtHttpClient): boolean | undefined {
+  if (!http.hasDiscoveryData()) return undefined;
+  return (http.discoveryAcceptFor('/sap/bc/adt/cts/transportrequests') ?? '').includes('transportorganizer');
 }
 
 /** Release a transport request */

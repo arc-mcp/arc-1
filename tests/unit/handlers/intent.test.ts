@@ -12450,6 +12450,79 @@ ENDCLASS.`;
       expect(mockFetch).not.toHaveBeenCalled();
     });
 
+    it('discovery-gate: target create fails fast (no POST) when discovery lacks the TM capability (NW 7.50)', async () => {
+      const client = createTransportClient();
+      // Discovery loaded, but cts/transportrequests does NOT advertise the transportorganizer accept type.
+      client.http.setDiscoveryMap(new Map([['/sap/bc/adt/oo/classes', ['application/xml']]]));
+      const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'create',
+        description: 'Targeted on unsupported release',
+        target: '/TRG/',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('does not support setting an explicit transport target');
+      expect(result.content[0]?.text).toContain('SE09/SE10');
+      // Gated before any HTTP call.
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('discovery-gate: target create proceeds when discovery advertises the TM capability', async () => {
+      const client = createTransportClient();
+      client.http.setDiscoveryMap(
+        new Map([['/sap/bc/adt/cts/transportrequests', ['application/vnd.sap.adt.transportorganizer.v1+xml']]]),
+      );
+      const tmRoot = `<?xml version="1.0" encoding="utf-8"?><tm:root tm:useraction="newrequest" xmlns:tm="http://www.sap.com/cts/adt/tm"><tm:request tm:number="A4HK900200" tm:owner="admin" tm:desc="d" tm:status="D" tm:type="K" tm:target="DEV" tm:target_desc="gCTS"><tm:task/></tm:request></tm:root>`;
+      mockFetch.mockResolvedValue(mockResponse(200, tmRoot, { 'x-csrf-token': 'T' }));
+      const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'create',
+        description: 'Targeted on supported release',
+        target: 'DEV',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('A4HK900200');
+      expect(result.content[0]?.text).toContain('DEV');
+    });
+
+    it('targets action lists the system transport targets', async () => {
+      const targetsXml = `<?xml version="1.0" encoding="utf-8"?><nameditem:namedItemList xmlns:nameditem="http://www.sap.com/adt/nameditem"><nameditem:totalItemCount>1</nameditem:totalItemCount><nameditem:namedItem><nameditem:name>DEV</nameditem:name><nameditem:description>gCTS generated</nameditem:description><nameditem:data/></nameditem:namedItem></nameditem:namedItemList>`;
+      mockFetch.mockResolvedValue(mockResponse(200, targetsXml, { 'x-csrf-token': 'T' }));
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'targets',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('transportTargets');
+      expect(result.content[0]?.text).toContain('DEV');
+      expect(String(mockFetch.mock.calls[0]?.[0])).toContain('/cts/transportrequests/valuehelp/target');
+    });
+
+    it('targets action on NW 7.50/7.51 (value-help 404) reports discovery unavailable', async () => {
+      mockFetch.mockImplementation((url: string) => {
+        if (String(url).includes('/valuehelp/target')) {
+          return Promise.resolve(mockResponse(404, 'No suitable resource found', { 'x-csrf-token': 'T' }));
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'targets',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('not available on this SAP release');
+    });
+
+    it('targets action is discovery-gated (NW 7.50 returns HTTP 200 empty, not 404)', async () => {
+      // Live on npl 7.50 the value help returns 200 with an empty list — so the gate, not the
+      // HTTP status, must decide. Discovery loaded without the TM capability => unavailable.
+      const client = createTransportClient();
+      client.http.setDiscoveryMap(new Map([['/sap/bc/adt/oo/classes', ['application/xml']]]));
+      const emptyList = `<?xml version="1.0" encoding="utf-8"?><nameditem:namedItemList xmlns:nameditem="http://www.sap.com/adt/nameditem"><nameditem:totalItemCount>0</nameditem:totalItemCount></nameditem:namedItemList>`;
+      mockFetch.mockResolvedValue(mockResponse(200, emptyList, { 'x-csrf-token': 'T' }));
+      const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPTransport', { action: 'targets' });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('not available on this SAP release');
+      // Gated before hitting the value help.
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
     it('create with transportLayer sends the ?transportLayer= query param', async () => {
       mockFetch.mockResolvedValue(mockResponse(200, '/com.sap.cts/object_record/DEVK900099', { 'x-csrf-token': 'T' }));
       const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {

@@ -86,7 +86,7 @@ describe('Tool Definitions', () => {
     const tools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true, allowTransportWrites: false });
     const sapTransport = tools.find((t) => t.name === 'SAPTransport')!;
     const actionEnum = (sapTransport.inputSchema as Record<string, any>).properties.action.enum as string[];
-    expect(actionEnum).toEqual(['list', 'get', 'check', 'history', 'layers']);
+    expect(actionEnum).toEqual(['list', 'get', 'check', 'history', 'layers', 'targets']);
   });
 
   it('SAPTransport includes write actions only when both write gates are enabled', () => {

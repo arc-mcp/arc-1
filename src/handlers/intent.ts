@@ -159,9 +159,11 @@ import {
   getTransportInfo,
   listTransportLayers,
   listTransports,
+  listTransportTargets,
   reassignTransport,
   releaseTransport,
   releaseTransportRecursive,
+  supportsExplicitTransportTarget,
 } from '../adt/transport.js';
 import type {
   AdtObjectLookupResult,
@@ -6721,8 +6723,24 @@ async function handleSAPTransport(client: AdtClient, args: Record<string, unknow
         );
       }
 
+      // Shared guidance when this release's ADT stack can't set an explicit target.
+      const targetUnsupportedMsg =
+        "This system's ADT stack does not support setting an explicit transport target — the tm:root/newrequest " +
+        'action is not implemented (an ADT-framework limitation on SAP_BASIS 7.50, verified on SP02 and SP32, ' +
+        'independent of STMS/CTC config). It works on newer ABAP Platform / S/4HANA releases. Workaround here: ' +
+        'create the request without "target", then set the Transportziel manually in SE09/SE10 (SAP GUI), which ' +
+        'works when CTC and the target group are configured.';
+
       let id: string;
       if (explicitTarget) {
+        // Discovery-gate first — the same capability SAP's own Eclipse client checks: the TM
+        // resource that sets an explicit target is advertised in ADT discovery only on releases
+        // that implement it (the transportorganizer Accept type on cts/transportrequests). When
+        // discovery is loaded and the capability is absent (NW 7.50/7.51), fail fast with guidance
+        // rather than POST a request the backend rejects with "user action is not supported".
+        if (supportsExplicitTransportTarget(client.http) === false) {
+          return errorResult(targetUnsupportedMsg);
+        }
         // Explicit transport target (Transportziel / TR_TARGET): a system (C11),
         // system.client (C11.021), or target group (/TRG/). Routed via the tm:root/
         // newrequest endpoint — the only ADT path that sets the target directly. The
@@ -6743,22 +6761,14 @@ async function handleSAPTransport(client: AdtClient, args: Record<string, unknow
               return errorResult(
                 `Transport target "${explicitTarget}" does not exist on this system. Valid targets are a ` +
                   'system (e.g. C11), system.client (C11.021), or a target group (/GROUP/) — the group and ' +
-                  'system.client forms require extended transport control (CTC) to be active. Check STMS for ' +
-                  'the targets this system actually offers (a system with no transport routes has none).',
+                  'system.client forms require extended transport control (CTC) to be active. Use ' +
+                  'SAPTransport(action="targets") to list the targets this system actually offers.',
               );
             }
-            // NW 7.50/7.51 reject the tm:root/newrequest endpoint that sets an explicit
-            // target: CL_ADT_TM_RESOURCE ignores tm:useraction pre-7.52 and returns
-            // "user action is not supported". Turn that cryptic error into release guidance.
+            // Fallback for when discovery was not loaded: NW 7.50/7.51 reject tm:root/newrequest
+            // with "user action is not supported" (the gate above pre-empts this when discovery is known).
             if (/user action/i.test(err.message) && /not supported/i.test(err.message)) {
-              return errorResult(
-                `This system's ADT stack does not support setting an explicit transport target — it rejected the ` +
-                  `request with "user action is not supported" before evaluating the target or layer. This is an ` +
-                  `ADT-framework limitation on SAP_BASIS 7.50 (independent of STMS/CTC config — verified on 7.50 SP02 ` +
-                  `and SP32); the tm:root/newrequest action is implemented on newer ABAP Platform / S/4HANA releases. ` +
-                  `Workaround on this system: create the request without "target", then set the Transportziel manually ` +
-                  `in SE09/SE10 (SAP GUI), which works when CTC and the target group are configured.`,
-              );
+              return errorResult(targetUnsupportedMsg);
             }
           }
           throw err;
@@ -6825,6 +6835,36 @@ async function handleSAPTransport(client: AdtClient, args: Record<string, unknow
           : `${layers.length} transport layer(s), but none expose a consolidation target — created requests will be local on this system.`
         : 'No transport layers are defined on this system — every request will be local.';
       return textResult(JSON.stringify({ transportLayers: layers, summary }, null, 2));
+    }
+    case 'targets': {
+      // Discovery: list valid values for create's `target` (Transportziel / TR_TARGET) via the
+      // official ADT target value help. Read-only (no allowTransportWrites required).
+      // Gate on the same capability as create's target path: NW 7.50 returns an empty list
+      // (HTTP 200) from the value help rather than 404, so the discovery accept type — not the
+      // HTTP status — is the reliable "is target discovery meaningful here?" signal.
+      if (supportsExplicitTransportTarget(client.http) === false) {
+        return errorResult(
+          "Transport-target discovery is not available on this SAP release — its ADT stack doesn't support " +
+            'explicit transport targets (verified on NW 7.50). Set the target in SE09/SE10 instead.',
+        );
+      }
+      let targets: Awaited<ReturnType<typeof listTransportTargets>>;
+      try {
+        targets = await listTransportTargets(client.http, client.safety);
+      } catch (err) {
+        // Fallback when discovery wasn't loaded: some releases 404 the value help.
+        if (err instanceof AdtApiError && err.isNotFound) {
+          return errorResult(
+            'Transport-target discovery is not available on this SAP release — the value help ' +
+              '(/sap/bc/adt/cts/transportrequests/valuehelp/target) returned 404. Set the target in SE09/SE10 instead.',
+          );
+        }
+        throw err;
+      }
+      const summary = targets.length
+        ? `${targets.length} valid transport target(s). Pass one as target= on create.`
+        : 'No transport targets are configured on this system (so created requests are local).';
+      return textResult(JSON.stringify({ transportTargets: targets, summary }, null, 2));
     }
     case 'release': {
       const id = String(args.id ?? '');

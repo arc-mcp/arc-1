@@ -130,6 +130,7 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   'SAPTransport.check': { scope: 'read', opType: OperationType.Read, featureGate: 'transport' },
   'SAPTransport.history': { scope: 'read', opType: OperationType.Read, featureGate: 'transport' },
   'SAPTransport.layers': { scope: 'read', opType: OperationType.Read, featureGate: 'transport' },
+  'SAPTransport.targets': { scope: 'read', opType: OperationType.Read, featureGate: 'transport' },
   'SAPTransport.create': { scope: 'transports', opType: OperationType.Transport, featureGate: 'transport' },
   'SAPTransport.release': { scope: 'transports', opType: OperationType.Transport, featureGate: 'transport' },
   'SAPTransport.release_recursive': { scope: 'transports', opType: OperationType.Transport, featureGate: 'transport' },
