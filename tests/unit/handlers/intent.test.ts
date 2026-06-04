@@ -12415,6 +12415,28 @@ ENDCLASS.`;
       expect(result.content[0]?.text).toContain('does not exist on this system');
     });
 
+    it('create with target on NW 7.50/7.51 ("user action is not supported") gives release guidance', async () => {
+      // NW 7.50–7.51 reject the tm:root/newrequest endpoint (CL_ADT_TM_RESOURCE ignores
+      // tm:useraction). Verified live on npl 7.50 SP02 per src/adt/transport.ts. The raw
+      // 400 must be converted to actionable release guidance, not surfaced cryptically.
+      mockFetch.mockImplementation((_url: string, opts: { method?: string; body?: string } = {}) => {
+        if (typeof opts.body === 'string' && opts.body.includes('tm:useraction')) {
+          return Promise.resolve(mockResponse(400, 'user action  is not supported', { 'x-csrf-token': 'T' }));
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'create',
+        description: 'Targeted on old release',
+        target: '/TRG/',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('does not support setting an explicit transport target');
+      expect(result.content[0]?.text).toContain('7.52');
+      // It must NOT mislabel this as "target does not exist".
+      expect(result.content[0]?.text).not.toContain('does not exist on this system');
+    });
+
     it('create with an empty target is rejected as a caller mistake (no SAP call)', async () => {
       const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
         action: 'create',

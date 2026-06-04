@@ -6736,19 +6736,28 @@ async function handleSAPTransport(client: AdtClient, args: Record<string, unknow
             client.username,
           );
         } catch (err) {
-          // SAP validates the target server-side: a4h (7.58) returns 400 "Target 'X'
-          // does not exist"; other releases may use 404. Convert either into actionable guidance.
-          if (
-            err instanceof AdtApiError &&
-            (err.statusCode === 400 || err.statusCode === 404) &&
-            /does not exist/i.test(err.message)
-          ) {
-            return errorResult(
-              `Transport target "${explicitTarget}" does not exist on this system. Valid targets are a ` +
-                'system (e.g. C11), system.client (C11.021), or a target group (/GROUP/) — the group and ' +
-                'system.client forms require extended transport control (CTC) to be active. Check STMS for ' +
-                'the targets this system actually offers (a system with no transport routes has none).',
-            );
+          if (err instanceof AdtApiError && (err.statusCode === 400 || err.statusCode === 404)) {
+            // SAP validates the target server-side: a4h (7.58) returns 400 "Target 'X'
+            // does not exist"; other releases may use 404.
+            if (/does not exist/i.test(err.message)) {
+              return errorResult(
+                `Transport target "${explicitTarget}" does not exist on this system. Valid targets are a ` +
+                  'system (e.g. C11), system.client (C11.021), or a target group (/GROUP/) — the group and ' +
+                  'system.client forms require extended transport control (CTC) to be active. Check STMS for ' +
+                  'the targets this system actually offers (a system with no transport routes has none).',
+              );
+            }
+            // NW 7.50/7.51 reject the tm:root/newrequest endpoint that sets an explicit
+            // target: CL_ADT_TM_RESOURCE ignores tm:useraction pre-7.52 and returns
+            // "user action is not supported". Turn that cryptic error into release guidance.
+            if (/user action/i.test(err.message) && /not supported/i.test(err.message)) {
+              return errorResult(
+                `This SAP release does not support setting an explicit transport target via ADT ` +
+                  `(it rejected the request: "user action is not supported"). Creating a request with a target ` +
+                  `this way needs NW 7.52+ / S/4HANA; NW 7.50–7.51 ignore it. On older releases, create the request ` +
+                  `without "target" (omit it) and set the target in SE09/SE10, or have Basis route the package.`,
+              );
+            }
           }
           throw err;
         }
