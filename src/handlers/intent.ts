@@ -6800,7 +6800,22 @@ async function handleSAPTransport(client: AdtClient, args: Record<string, unknow
     case 'layers': {
       // Discovery: list valid values for create's `transportLayer`. Lets a client pick a
       // real layer instead of guessing. Read-only (no allowTransportWrites required).
-      const layers = await listTransportLayers(client.http, client.safety);
+      let layers: Awaited<ReturnType<typeof listTransportLayers>>;
+      try {
+        layers = await listTransportLayers(client.http, client.safety);
+      } catch (err) {
+        // The package transport-layer value help is 7.52+; NW 7.50/7.51 return 404
+        // "No suitable resource found" (verified live on npl 7.50). Surface that clearly
+        // instead of a raw 404, so the caller knows discovery is unavailable on this release.
+        if (err instanceof AdtApiError && err.isNotFound) {
+          return errorResult(
+            'Transport-layer discovery is not available on this SAP release — the value help ' +
+              '(/sap/bc/adt/packages/valuehelps/transportlayers) returned 404 (typically NW < 7.52). ' +
+              'Create requests without transportLayer; the route/target is governed by the package + STMS on these releases.',
+          );
+        }
+        throw err;
+      }
       const routed = layers.filter((l) => l.target);
       const summary = layers.length
         ? routed.length

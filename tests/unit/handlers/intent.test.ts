@@ -12476,6 +12476,22 @@ ENDCLASS.`;
       expect(String(mockFetch.mock.calls[0]?.[0])).toContain('/packages/valuehelps/transportlayers');
     });
 
+    it('layers action on NW 7.50/7.51 (value-help 404) reports discovery unavailable', async () => {
+      // The transport-layer value help is 7.52+; NW 7.50 returns 404 "No suitable resource
+      // found" (verified live on npl 7.50). Surface that, not a raw 404.
+      mockFetch.mockImplementation((url: string) => {
+        if (String(url).includes('/packages/valuehelps/transportlayers')) {
+          return Promise.resolve(mockResponse(404, 'No suitable resource found', { 'x-csrf-token': 'T' }));
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'layers',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('not available on this SAP release');
+    });
+
     it('list defaults to current SAP user and modifiable status', async () => {
       const xml = `<tm:root xmlns:tm="http://www.sap.com/cts/transports">
         <tm:request tm:number="DEVK900001" tm:owner="admin" tm:desc="Test" tm:status="D" tm:type="K"/>
