@@ -23,10 +23,13 @@ import { AdtApiError } from '../../src/adt/errors.js';
 import { unrestrictedSafetyConfig } from '../../src/adt/safety.js';
 import {
   createTransport,
+  createTransportWithTarget,
   deleteTransport,
   getObjectTransports,
   getTransport,
+  listTransportLayers,
   listTransports,
+  listTransportTargets,
   reassignTransport,
   releaseTransportRecursive,
 } from '../../src/adt/transport.js';
@@ -210,6 +213,94 @@ describe('Transport Integration Tests', () => {
       const id = trackTransport(await createTransport(client.http, client.safety, desc, pkg));
       expect(id).toBeTruthy();
       expect(id).toMatch(/^[A-Z0-9]+K\d+$/);
+    });
+
+    it('accepts a transportLayer override and reports the resolved target', async () => {
+      // The transportLayer query param is accepted by the CreateCorrectionRequest
+      // endpoint regardless of whether the system has matching transport routes.
+      // The resolved target is read back via getTransport — on a route-less system it
+      // is empty ("Local Change Requests"); on a routed system it carries the target.
+      const desc = `ARC-1 IT layer ${Date.now()}`;
+      const id = trackTransport(await createTransport(client.http, client.safety, desc, undefined, undefined, 'SAP'));
+      expect(id).toMatch(/^[A-Z0-9]+K\d+$/);
+
+      const transport = await getTransport(client.http, client.safety, id);
+      expect(transport).not.toBeNull();
+      // The parser now surfaces target/targetDesc on every request (may be empty strings).
+      expect(typeof transport!.target).toBe('string');
+      expect(typeof transport!.targetDesc).toBe('string');
+    });
+  });
+
+  // ─── createTransportWithTarget (explicit Transportziel / TR_TARGET) ───
+
+  describe('createTransportWithTarget', () => {
+    it('rejects an unknown transport target with a clear server error', async () => {
+      // SAP validates the target server-side; a target that doesn't exist on this system
+      // (no STMS routes / no such group) must be rejected, not silently created as local.
+      const desc = `ARC-1 IT bad-target ${Date.now()}`;
+      try {
+        const id = await createTransportWithTarget(client.http, client.safety, desc, '/ZZNOPE/', 'MARIAN');
+        // If the system unexpectedly accepts it, track for cleanup and fail.
+        trackTransport(id);
+        throw new Error(`Expected an unknown target to be rejected, but request ${id} was created.`);
+      } catch (err) {
+        expectSapFailureClass(err, [400, 404], [/does not exist/i, /target/i]);
+      }
+    });
+
+    it('creates a request with the configured target when one is provided', async (ctx) => {
+      // Needs a system with a real transport target (extended transport control). Provide
+      // a known-good target via TEST_TRANSPORT_TARGET (e.g. "/TRG/" or "C11") to exercise it.
+      const target = process.env.TEST_TRANSPORT_TARGET;
+      requireOrSkip(ctx, target, SkipReason.NO_TRANSPORT_PACKAGE);
+
+      const desc = `ARC-1 IT target ${Date.now()}`;
+      const id = trackTransport(await createTransportWithTarget(client.http, client.safety, desc, target as string));
+      expect(id).toMatch(/^[A-Z0-9]+K\d+$/);
+
+      const transport = await getTransport(client.http, client.safety, id);
+      expect(transport?.target).toBe(target);
+    });
+  });
+
+  // ─── listTransportLayers (discovery) ───────────────────────────
+
+  describe('listTransportLayers', () => {
+    it('lists the transport layers available on the system', async () => {
+      const layers = await listTransportLayers(client.http, client.safety);
+      expect(Array.isArray(layers)).toBe(true);
+      // Shape contract: every entry has string name + description; target optional.
+      for (const layer of layers) {
+        expect(typeof layer.name).toBe('string');
+        expect(typeof layer.description).toBe('string');
+        if (layer.target !== undefined) expect(typeof layer.target).toBe('string');
+      }
+    });
+  });
+
+  // ─── listTransportTargets (official target value-help) ─────────
+
+  describe('listTransportTargets', () => {
+    it('lists the valid transport targets via the official value help', async (ctx) => {
+      // The value-help endpoint exists only on releases whose ADT stack supports explicit
+      // targets; NW 7.50/7.51 return 404. Skip cleanly there rather than fail.
+      let targets: Awaited<ReturnType<typeof listTransportTargets>>;
+      try {
+        targets = await listTransportTargets(client.http, client.safety);
+      } catch (err) {
+        if (err instanceof AdtApiError && err.isNotFound) {
+          requireOrSkip(ctx, undefined, SkipReason.BACKEND_UNSUPPORTED);
+          return;
+        }
+        throw err;
+      }
+      expect(Array.isArray(targets)).toBe(true);
+      for (const t of targets) {
+        expect(typeof t.name).toBe('string');
+        expect(t.name.length).toBeGreaterThan(0);
+        expect(typeof t.description).toBe('string');
+      }
     });
   });
 

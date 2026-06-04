@@ -320,7 +320,29 @@ export interface TransportRequest {
   owner: string;
   status: string;
   type: string;
+  /** Transport target/consolidation system. Empty when the request has no route (→ "Local Change Requests"). */
+  target?: string;
+  /** Human-readable target description (e.g. "Local Change Requests" when target is empty). */
+  targetDesc?: string;
   tasks: TransportTask[];
+}
+
+/** A valid transport target (Transportziel / TR_TARGET) — a value for SAPTransport.create's `target`. */
+export interface TransportTarget {
+  /** Target name — the value passed as `target` (a system, system.client, or group). */
+  name: string;
+  /** Human-readable target description. */
+  description: string;
+}
+
+/** A transport layer available on the system — a valid value for SAPTransport.create's `transportLayer`. */
+export interface TransportLayer {
+  /** Layer name — the value passed as `transportLayer`. Empty string = the local/no-transport layer. */
+  name: string;
+  /** Human-readable layer description. */
+  description: string;
+  /** Consolidation target (system) this layer routes to, when the value help exposes one. */
+  target?: string;
 }
 
 export interface TransportObject {

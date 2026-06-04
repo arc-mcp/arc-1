@@ -199,6 +199,16 @@ export class AdtHttpClient {
     this.discoveryMap = map;
   }
 
+  /** True once ADT discovery has been loaded — lets callers distinguish "capability absent" from "unknown". */
+  hasDiscoveryData(): boolean {
+    return this.discoveryMap.size > 0;
+  }
+
+  /** The Accept media type ADT discovery advertises for a collection path, or undefined. Used for capability gating. */
+  discoveryAcceptFor(path: string): string | undefined {
+    return resolveAcceptType(this.discoveryMap, path);
+  }
+
   /** Read-only access to the SAP-bound concurrency Semaphore (Layer 3).
    *  Returns the shared server-wide instance when `AdtClientConfig.adtSemaphore` was provided,
    *  the private fallback when only `maxConcurrent` was set, or `undefined` when neither was. */

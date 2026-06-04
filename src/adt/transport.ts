@@ -8,7 +8,7 @@
 import { AdtApiError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, checkTransport, OperationType, type SafetyConfig } from './safety.js';
-import type { TransportObject, TransportRequest, TransportTask } from './types.js';
+import type { TransportLayer, TransportObject, TransportRequest, TransportTarget, TransportTask } from './types.js';
 import { escapeXmlAttr, findDeepNodes, parseXml } from './xml-parser.js';
 
 // ─── CTS Media Types & Namespaces ──────────────────────────────────
@@ -94,8 +94,20 @@ export async function getTransport(
  * request. Pass an explicit package to influence the transport route; SAP infers
  * K/W/T from the package's TADIR route, not from the request body.
  *
+ * `transportLayer` is optional. The endpoint does NOT accept a target in the body —
+ * the only way to influence the target on this `CreateCorrectionRequest` schema is
+ * the `?transportLayer=<layer>` query parameter (the same mechanism Eclipse ADT and
+ * `marcellourbani/abap-adt-api` use). The resulting target is still resolved by SAP
+ * from that layer's STMS consolidation route: a layer with no route — or a system
+ * with no transport routes configured at all (e.g. a standalone dev system) — yields
+ * an empty target ("Local Change Requests"), regardless of the value passed. Verified
+ * live on a4h (S/4HANA 2023): the param is accepted but a route-less system always
+ * resolves to an empty target. So this is a hint, not a guarantee; the request's real
+ * target should be read back from the created request (see `handleSAPTransport`).
+ *
  * @param targetPackage optional — DEVCLASS used by SAP for transport-route lookup; defaults to `$TMP`
  * @param objectUrl optional — ADT object URL hint for transport-route lookup; the object is NOT locked or attached to the transport
+ * @param transportLayer optional — transport layer used to resolve the consolidation target; sent as the `?transportLayer=` query param
  */
 export async function createTransport(
   http: AdtHttpClient,
@@ -103,6 +115,7 @@ export async function createTransport(
   description: string,
   targetPackage?: string,
   objectUrl?: string,
+  transportLayer?: string,
 ): Promise<string> {
   checkTransport(safety, '', 'CreateTransport', true);
 
@@ -119,8 +132,13 @@ export async function createTransport(
   </asx:values>
 </asx:abap>`;
 
+  const layer = transportLayer?.trim();
+  const url = layer
+    ? `/sap/bc/adt/cts/transports?transportLayer=${encodeURIComponent(layer)}`
+    : '/sap/bc/adt/cts/transports';
+
   const resp = await http.post(
-    '/sap/bc/adt/cts/transports',
+    url,
     body,
     'application/vnd.sap.as+xml; charset=UTF-8; dataname=com.sap.adt.CreateCorrectionRequest',
     { Accept: 'text/plain' },
@@ -134,6 +152,161 @@ export async function createTransport(
       .split('/')
       .pop() ?? ''
   );
+}
+
+/**
+ * Create a transport request with an explicit transport target (Transportziel /
+ * `TR_TARGET` / SAP GUI field `KO013-TARSYSTEM`) — a target system (`C11`),
+ * system.client (`C11.021`), or target group (`/TRG/`).
+ *
+ * Unlike `createTransport` (the `CreateCorrectionRequest` endpoint, which can only let
+ * SAP infer a target from the package route and silently ignores any target field),
+ * this uses the `tm:root`/`newrequest` endpoint (`POST /sap/bc/adt/cts/transportrequests`)
+ * — the only ADT path that sets `TR_TARGET` directly.
+ *
+ * The group and `<sys>.<cli>` target forms require extended transport control (CTC) to
+ * be active. SAP validates the target server-side: an unknown target yields HTTP 400
+ * "Target 'X' does not exist". Verified live on a4h (S/4HANA 2023, kernel 7.58):
+ * `tm:target="LOCAL"` → 201 with the target set; unknown targets → 400. NOTE: this
+ * endpoint was rejected on NW 7.50 (npl) — older releases may not support it.
+ *
+ * @param target  the transport target (`TR_TARGET`); e.g. `C11`, `C11.021`, `/TRG/`, `LOCAL`
+ * @param owner   task owner; defaults to the connected user when omitted
+ */
+export async function createTransportWithTarget(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  description: string,
+  target: string,
+  owner?: string,
+): Promise<string> {
+  checkTransport(safety, '', 'CreateTransport', true);
+
+  const ownerAttr = owner ? ` tm:owner="${escapeXmlAttr(owner)}"` : '';
+  const body = `<?xml version="1.0" encoding="UTF-8"?>
+<tm:root xmlns:tm="${CTS_NAMESPACE_TM}" tm:useraction="newrequest">
+  <tm:request tm:desc="${escapeXmlAttr(description)}" tm:type="K" tm:target="${escapeXmlAttr(target)}" tm:cts_project="">
+    <tm:task${ownerAttr}/>
+  </tm:request>
+</tm:root>`;
+
+  const resp = await http.post('/sap/bc/adt/cts/transportrequests', body, 'text/plain', {
+    Accept: CTS_CONTENT_TYPE_ORGANIZER,
+  });
+
+  // Response: <tm:root><tm:request tm:number="A4HK…"> — extract the new request id.
+  const reqNode = findDeepNodes(parseXml(resp.body), 'request')[0];
+  return String(reqNode?.['@_number'] ?? '');
+}
+
+/**
+ * List the transport layers available on the system — the valid values for
+ * `createTransport`'s `transportLayer` parameter.
+ *
+ * GETs the package editor's transport-layer value help
+ * (`/sap/bc/adt/packages/valuehelps/transportlayers`), which returns a
+ * `nameditem:namedItemList`. Each entry has a `name` (the layer; empty = the
+ * local/no-transport layer), a `description`, and sometimes a `data` element
+ * carrying the resolved consolidation target (e.g. `DEV`).
+ *
+ * This is the discovery primitive that lets a client pick a real `transportLayer`
+ * value instead of guessing one. A layer appearing here does NOT guarantee the
+ * created request gets a target — that still depends on the layer having a classic
+ * STMS consolidation route (gCTS-only layers, for instance, do not populate a
+ * classic workbench target). Read-only; does not require `allowTransportWrites`.
+ */
+export async function listTransportLayers(http: AdtHttpClient, safety: SafetyConfig): Promise<TransportLayer[]> {
+  checkOperation(safety, OperationType.Read, 'ListTransportLayers');
+
+  const resp = await http.get('/sap/bc/adt/packages/valuehelps/transportlayers', {
+    Accept: 'application/vnd.sap.adt.nameditems.v1+xml',
+  });
+
+  return parseTransportLayers(resp.body);
+}
+
+/** A parsed `nameditem:namedItem`: identifier (`name`), human text (`description`), optional structured `data`. */
+interface NamedItem {
+  name: string;
+  description: string;
+  data: string;
+}
+
+/** Parse a `nameditem:namedItemList` value-help response (shared by transport layers + targets). */
+function parseNamedItems(xml: string): NamedItem[] {
+  const parsed = parseXml(xml);
+  // The parser wraps some leaf elements (e.g. `data`) in single-element arrays; unwrap.
+  const str = (v: unknown): string => {
+    const x = Array.isArray(v) ? v[0] : v;
+    return typeof x === 'string' ? x : typeof x === 'number' ? String(x) : '';
+  };
+  // Some items carry entity-encoded markup (e.g. "&lt;p&gt;Target: &lt;b&gt;DEV&lt;/b&gt;&lt;/p&gt;").
+  // The shared parser leaves entities encoded — decode, strip tags, collapse whitespace.
+  const clean = (v: unknown): string =>
+    str(v)
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'")
+      .replace(/&#39;/g, "'")
+      .replace(/&amp;/g, '&') // decode &amp; last so encoded entities aren't double-decoded
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  return findDeepNodes(parsed, 'namedItem').map((item) => {
+    const rec = item as Record<string, unknown>;
+    // `name` is an identifier passed back verbatim (only trim); `description`/`data` get cleaned.
+    return { name: str(rec.name).trim(), description: clean(rec.description), data: clean(rec.data) };
+  });
+}
+
+/** Parse a `nameditem:namedItemList` value-help response into transport layers. */
+function parseTransportLayers(xml: string): TransportLayer[] {
+  return parseNamedItems(xml).map((item) => ({
+    name: item.name,
+    description: item.description,
+    ...(item.data ? { target: item.data } : {}),
+  }));
+}
+
+/**
+ * List the valid transport targets (Transportziel / TR_TARGET) this system offers — the
+ * valid values for `createTransportWithTarget`'s `target`.
+ *
+ * GETs the official ADT transport-target value help
+ * (`/sap/bc/adt/cts/transportrequests/valuehelp/target`), a `nameditem:namedItemList`
+ * advertised in ADT discovery only on releases whose TM stack supports targets (the same
+ * gate as `supportsExplicitTransportTarget`). NW 7.50/7.51 do not expose it (HTTP 404).
+ * Read-only; does not require `allowTransportWrites`. Verified live on a4h (returns `DEV`).
+ */
+export async function listTransportTargets(http: AdtHttpClient, safety: SafetyConfig): Promise<TransportTarget[]> {
+  checkOperation(safety, OperationType.Read, 'ListTransportTargets');
+
+  const resp = await http.get('/sap/bc/adt/cts/transportrequests/valuehelp/target?maxItemCount=200', {
+    Accept: 'application/vnd.sap.adt.nameditems.v1+xml',
+  });
+
+  return parseNamedItems(resp.body)
+    .filter((item) => item.name)
+    .map((item) => ({ name: item.name, description: item.description }));
+}
+
+/**
+ * Whether this system's ADT stack supports setting an explicit transport target at creation.
+ *
+ * SAP's own Eclipse client gates this on ADT *discovery capability*, not a release number:
+ * the `/sap/bc/adt/cts/transportrequests` collection advertises the
+ * `application/vnd.sap.adt.transportorganizer.v1+xml` Accept media type only on releases
+ * whose TM resource implements `useraction="newrequest"`. On NW 7.50/7.51 that Accept type is
+ * absent (verified live: a4h 7.58 advertises it, npl 7.50 does not).
+ *
+ * @returns `true`/`false` per discovery, or `undefined` when discovery has not been loaded
+ *          (caller should then attempt and rely on the runtime error as the fallback signal).
+ */
+export function supportsExplicitTransportTarget(http: AdtHttpClient): boolean | undefined {
+  if (!http.hasDiscoveryData()) return undefined;
+  return (http.discoveryAcceptFor('/sap/bc/adt/cts/transportrequests') ?? '').includes('transportorganizer');
 }
 
 /** Release a transport request */
@@ -474,6 +647,8 @@ function parseTransportList(xml: string): TransportRequest[] {
       owner: String(req['@_owner'] ?? ''),
       status: String(req['@_status'] ?? ''),
       type: String(req['@_type'] ?? ''),
+      target: String(req['@_target'] ?? ''),
+      targetDesc: String(req['@_target_desc'] ?? ''),
       tasks,
     };
   });
