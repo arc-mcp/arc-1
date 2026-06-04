@@ -141,6 +141,7 @@ A quick sanity-check for "is my run healthy?":
 |---|---|---|
 | **NW 7.50 trial** (e.g. `npl.marianzeis.de`) | ~120 / 207 tests | Cat 1 (S/4 demo), Cat 2 (release gap), Cat 3 (trial quirks) |
 | **S/4HANA 2023** (e.g. `a4h.marianzeis.de`) | ~40 / 207 tests | Cat 5 (no transport package), Cat 6 (abapGit/gCTS not installed), some Cat 4 |
+| **ABAP Platform 2025** (SAP_BASIS 816, e.g. `a4h-2025.marianzeis.de`) | ≈ S/4HANA 2023 profile (reads), + see note | Reads + release detection fully validated (full RAP/CDS surface, `adt.integration` 97/114). Cat 6 (abapGit ADT bridge **not installed** on the 2025 trial → SAPGit tests skip). **Note:** the as-migrated 2025 container is *not* perf-tuned like 2023 — concurrent write+activate (DDLS/TABL) intermittently hits ABAP `STACK_TRACE_ERROR` short-dumps + 30 s timeouts. The same tests pass on the tuned 2023 box; tune `rdisp/wp_no_dia` + ICM threads (see `INFRASTRUCTURE.md`) before using 2025 as a write/activate CI target. |
 | **BTP ABAP (cloud)** | ~80 / 207 tests | Cat 1 (no /DMO), Cat 2 (DDIC changes on cloud), Cat 5 (policy) |
 
 Large deviations from these counts on a given system are the signal. If an S/4HANA box suddenly skips 120+ tests, something broke in fixture sync or auth — the matrix helps identify which category lit up.
@@ -181,6 +182,7 @@ Several SAPRead types return a human-readable placeholder (not an MCP error) whe
 |---|---|---|
 | **NW 7.50 trial** | ~50 / 122 tests | Cat 2 (release gap), Cat 3 (lock-handle 423), E2E-α (fixture sync partial), Cat 1 (/DMO missing) |
 | **S/4HANA 2023** | 3 / 122 tests | Cat 5 (no transport package / `--allow-git-writes`) |
+| **ABAP Platform 2025** (SAP_BASIS 816) | ≈ S/4HANA 2023 profile | Cat 5 + abapGit ADT bridge absent on the trial (SAPGit tests skip) |
 | **BTP ABAP** | ~30 / 122 tests | Cat 5 (policy), some of Cat 1 |
 
 Anything over ~5 skips on S/4HANA is a regression signal — most likely a broken fixture sync or an unintended breaking change to a SAPRead handler output.

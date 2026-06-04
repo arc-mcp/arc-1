@@ -209,7 +209,11 @@ async function run(): Promise<void> {
     safety: unrestrictedSafetyConfig(),
   });
 
-  const [discoveryMap, sysinfo] = await Promise.all([fetchDiscoveryDocument(client.http), detectSystem(client)]);
+  // fetchDiscoveryDocument returns { map, nhiPresent }; the probe only needs the discovery map.
+  // (Reading `.map` here is what keeps `discoveryMap.has/.size/.keys` valid below — see tsconfig.scripts.json
+  // which now typechecks this file so the shape can't drift again.)
+  const [discovery, sysinfo] = await Promise.all([fetchDiscoveryDocument(client.http), detectSystem(client)]);
+  const discoveryMap = discovery.map;
 
   const entries = args.types ? CATALOG.filter((e) => args.types?.includes(e.type)) : CATALOG;
   if (args.types && entries.length === 0) {

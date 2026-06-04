@@ -207,9 +207,13 @@ describe('Feature Detection', () => {
       expect(mapSapReleaseToAbaplintVersion('758')).toBe(Version.v758);
     });
 
-    it('maps releases >= 758 to v758', () => {
+    it('maps releases >= 758 to v758 (incl. the 8xx ABAP Platform scheme)', () => {
       expect(mapSapReleaseToAbaplintVersion('759')).toBe(Version.v758);
       expect(mapSapReleaseToAbaplintVersion('800')).toBe(Version.v758);
+      // 816 is the real SAP_BASIS for ABAP Platform 2025 (on-prem S/4HANA 2025).
+      // abaplint's ceiling is v758, the correct on-prem lint baseline — NOT Cloud,
+      // which would false-positive on classic on-prem ABAP.
+      expect(mapSapReleaseToAbaplintVersion('816')).toBe(Version.v758);
     });
 
     it('returns Cloud for non-numeric or empty input', () => {

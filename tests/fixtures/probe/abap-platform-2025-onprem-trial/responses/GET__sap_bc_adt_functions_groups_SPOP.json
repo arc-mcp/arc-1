@@ -1,0 +1,8 @@
+{
+  "url": "/sap/bc/adt/functions/groups/SPOP",
+  "method": "GET",
+  "statusCode": 404,
+  "body": "<?xml version=\"1.0\" encoding=\"utf-8\"?><exc:exception xmlns:exc=\"http://www.sap.com/abapxml/types/communicationframework\"><namespace id=\"com.sap.adt\"/><type id=\"ExceptionResourceNotFound\"/><message lang=\"EN\">I::000</message><localizedMessage lang=\"EN\">I::000</localizedMessage><properties><entry key=\"T100KEY-ID\"/><entry key=\"T100KEY-NO\">000</entry></properties></exc:exception>",
+  "errorMessage": "ADT API error: status 404 at /sap/bc/adt/functions/groups/SPOP: I::000",
+  "durationMs": 103
+}

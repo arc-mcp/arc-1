@@ -1,0 +1,8 @@
+{
+  "url": "/sap/bc/adt/sfw/featuretoggles",
+  "method": "GET",
+  "statusCode": 400,
+  "body": "<?xml version=\"1.0\" encoding=\"utf-8\"?><exc:exception xmlns:exc=\"http://www.sap.com/abapxml/types/communicationframework\"><namespace id=\"com.sap.adt\"/><type id=\"uriMappingError\"/><message lang=\"EN\">URI-Mapping cannot be performed due to invalid URI: /sap/bc/adt/sfw/featuretoggles</message><localizedMessage lang=\"EN\">URI-Mapping cannot be performed due to invalid URI: /sap/bc/adt/sfw/featuretoggles</localizedMessage><properties><entry key=\"T100KEY-ID\">SADT_TOOLS_CORE</entry><entry key=\"T100KEY-NO\">004</entry><entry key=\"T100KEY-V1\">/sap/bc/adt/sfw/featuretoggles</entry></properties></exc:exception>",
+  "errorMessage": "ADT API error: status 400 at /sap/bc/adt/sfw/featuretoggles: URI-Mapping cannot be performed due to invalid URI: /sap/bc/adt/sfw/featuretoggles",
+  "durationMs": 80
+}

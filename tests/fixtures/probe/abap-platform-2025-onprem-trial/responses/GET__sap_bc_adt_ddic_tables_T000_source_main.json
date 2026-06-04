@@ -1,0 +1,7 @@
+{
+  "url": "/sap/bc/adt/ddic/tables/T000/source/main",
+  "method": "GET",
+  "statusCode": 200,
+  "body": "@EndUserText.label : 'Clients'\n@AbapCatalog.enhancement.category : #NOT_EXTENSIBLE\n@AbapCatalog.tableCategory : #TRANSPARENT\n@AbapCatalog.deliveryClass : #C\n@AbapCatalog.dataMaintenance : #ALLOWED\ndefine table t000 {\n\n  key mandt  : mandt not null;\n  mtext      : mtext_d not null;\n  ort01      : ort01 not null;\n  @AbapCatalog.foreignKey.keyType : #KEY\n  @AbapCatalog.foreignKey.screenCheck : true\n  mwaer      : mwaer not null\n    with foreign key [1..*,1] tcurc\n      where mandt = t000.mandt\n        and waers = t000.mwaer;\n  adrnr      : char10 not null;\n  cccategory : cccategory not null;\n  cccoractiv : cccoractiv not null;\n  ccnocliind : ccnocliind not null;\n  cccopylock : cccopylock not null;\n  ccnocascad : ccnocascad not null;\n  ccsoftlock : ccsoftlock not null;\n  ccorigcont : ccorigcont not null;\n  ccimaildis : ccimaildis not null;\n  cctemplock : cctemplock not null;\n  changeuser : as4user not null;\n  changedate : as4date not null;\n  @AbapCatalog.foreignKey.label : 'Logical system'\n  @AbapCatalog.foreignKey.keyType : #KEY\n  @AbapCatalog.foreignKey.screenCheck : true\n  logsys     : logsys not null\n    with foreign key [1,0..1] tbdls\n      where logsys = t000.logsys;\n\n}",
+  "durationMs": 166
+}

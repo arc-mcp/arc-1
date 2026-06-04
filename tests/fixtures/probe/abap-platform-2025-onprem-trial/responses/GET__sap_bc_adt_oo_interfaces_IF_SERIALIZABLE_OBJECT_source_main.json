@@ -1,0 +1,7 @@
+{
+  "url": "/sap/bc/adt/oo/interfaces/IF_SERIALIZABLE_OBJECT/source/main",
+  "method": "GET",
+  "statusCode": 200,
+  "body": "*\"* components of interface IF_SERIALIZABLE_OBJECT\r\ninterface IF_SERIALIZABLE_OBJECT\r\n  public .\r\n\r\nendinterface.",
+  "durationMs": 99
+}

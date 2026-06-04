@@ -51,8 +51,9 @@ For every type listed in `01-inventory.md`, complete the following steps. The ou
 
 ### Step 2: ADT slash subtype enumeration
 
-- Run a *probe* against both test systems (a4h S/4HANA 2023 and the 7.50 system if
-  reachable) and record what the ADT discovery / search / where-used APIs actually return:
+- Run a *probe* against the test systems (a4h S/4HANA 2023 = SAP_BASIS 758, the ABAP Platform
+  2025 system = SAP_BASIS 816, and the 7.50 system if reachable) and record what the ADT
+  discovery / search / where-used APIs actually return:
   - `/sap/bc/adt/repository/typestructure` (returns `<adtcore:objectType>` slash codes)
   - `/sap/bc/adt/repository/informationsystem/search?operation=quickSearch&query=…&objectType=<X>`
   - `/sap/bc/adt/repository/nodepath?uri=…`
@@ -61,7 +62,7 @@ For every type listed in `01-inventory.md`, complete the following steps. The ou
   `WBObjectType` maps these.
 - Record every slash subtype seen, plus the URL prefix(es) ADT uses (e.g. `TABL/DT`
   → `/sap/bc/adt/ddic/tables/`; `TABL/DS` → `/sap/bc/adt/ddic/structures/`).
-- Note any release-conditional behavior (NW 7.50 vs S/4 vs BTP).
+- Note any release-conditional behavior (NW 7.50 vs S/4 2023 vs ABAP Platform 2025 [816] vs BTP).
 
 ### Step 3: SAP backend code & docs
 
@@ -87,6 +88,11 @@ For every type listed in `01-inventory.md`, complete the following steps. The ou
 - a4h (S/4HANA 2023): primary test system, S/4 + ABAP-Cloud development model enabled.
   Most modern types should resolve here. Use `arc1-cli call SAPRead --type <X> --name <known
   object>` plus direct `curl` against the ADT URL.
+- a4h-2025 (ABAP Platform 2025 / S/4HANA 2025, SAP_BASIS 816): current-generation on-prem
+  system. Forward-compat gate — the full RAP/CDS type surface resolves here exactly as on 2023
+  (verified: probe fixture `tests/fixtures/probe/abap-platform-2025-onprem-trial`, 0 unavailable).
+  Note the 816 renumbering (SAP jumped 75x→8xx) and that the abapGit ADT bridge is not installed
+  on the trial.
 - 7.50 (NW 7.50 trial / NPL): legacy gate — confirms which subtypes existed before the
   abap-file-formats era and whether ARC-1's URL routing works there. If credentials are
   stale, mark "could not verify directly" and rely on ADT discovery cached fixtures under

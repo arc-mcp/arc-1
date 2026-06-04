@@ -89,7 +89,7 @@ tests/fixtures/probe/<system-name>/
     ...
 ```
 
-`meta.json` captures the full installed-components list under `products[]` (e.g. `SAP_BASIS 758`, `S4FND 108`, `SAP_CLOUD ...`). This matters: SAP_BASIS alone does not distinguish plain NetWeaver 7.58 from S/4HANA 2023 on 7.58, but `S4FND 108` does. Name your fixture directory after the product line **and** edition (`s4hana-2023-onprem-abap-trial`, `nw-752-sp18-prod`, `btp-abap-2604`) rather than just the BASIS level — trial / developer-edition systems often behave differently from production-licensed ones at the same SP, so that distinction belongs in the directory name.
+`meta.json` captures the full installed-components list under `products[]` (e.g. `SAP_BASIS 758`, `S4FND 108`, `SAP_CLOUD ...`). This matters: SAP_BASIS alone does not distinguish plain NetWeaver 7.58 from S/4HANA 2023 on 7.58, but `S4FND 108` does. Name your fixture directory after the product line **and** edition (`s4hana-2023-onprem-abap-trial`, `abap-platform-2025-onprem-trial`, `nw-752-sp18-prod`, `btp-abap-2604`) rather than just the BASIS level — trial / developer-edition systems often behave differently from production-licensed ones at the same SP, so that distinction belongs in the directory name.
 
 These fixtures are read back by [`tests/unit/probe/replay.test.ts`](../tests/unit/probe/replay.test.ts) via `createReplayFetcher(dir)`. No SAP connection needed; the unit tests guarantee the classifier keeps making the right decisions on the recorded bytes forever.
 

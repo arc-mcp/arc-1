@@ -1,0 +1,8 @@
+{
+  "url": "/sap/bc/adt/oo/interfaces",
+  "method": "GET",
+  "statusCode": 400,
+  "body": "<?xml version=\"1.0\" encoding=\"utf-8\"?><exc:exception xmlns:exc=\"http://www.sap.com/abapxml/types/communicationframework\"><namespace id=\"com.sap.adt\"/><type id=\"ExceptionParameterNotFound\"/><message lang=\"EN\">Parameter interfacename could not be found.</message><localizedMessage lang=\"EN\">Parameter interfacename could not be found.</localizedMessage><properties><entry key=\"T100KEY-ID\">SADT_RESOURCE</entry><entry key=\"T100KEY-NO\">017</entry><entry key=\"T100KEY-V1\">interfacename</entry></properties></exc:exception>",
+  "errorMessage": "ADT API error: status 400 at /sap/bc/adt/oo/interfaces: Parameter interfacename could not be found.",
+  "durationMs": 70
+}

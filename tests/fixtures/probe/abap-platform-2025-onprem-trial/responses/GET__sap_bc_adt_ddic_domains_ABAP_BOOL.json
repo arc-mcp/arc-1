@@ -1,0 +1,8 @@
+{
+  "url": "/sap/bc/adt/ddic/domains/ABAP_BOOL",
+  "method": "GET",
+  "statusCode": 404,
+  "body": "<?xml version=\"1.0\" encoding=\"utf-8\"?><exc:exception xmlns:exc=\"http://www.sap.com/abapxml/types/communicationframework\"><namespace id=\"com.sap.adt\"/><type id=\"ExceptionResourceNotFound\"/><message lang=\"EN\">Error while importing object ABAP_BOOL from the database</message><localizedMessage lang=\"EN\">Error while importing object ABAP_BOOL from the database</localizedMessage><properties><entry key=\"T100KEY-ID\">SWB_TOOL</entry><entry key=\"T100KEY-NO\">025</entry><entry key=\"T100KEY-V1\">ABAP_BOOL</entry></properties></exc:exception>",
+  "errorMessage": "ADT API error: status 404 at /sap/bc/adt/ddic/domains/ABAP_BOOL: Error while importing object ABAP_BOOL from the database",
+  "durationMs": 119
+}

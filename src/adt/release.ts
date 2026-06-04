@@ -5,7 +5,11 @@
  * such as `errors.ts` without risking an import cycle through `features.ts`.
  *
  * SAP_BASIS release strings reported by `/sap/bc/adt/system/components` are
- * dotless three-digit codes: "700", "740", "750", "757", "758". Releases below
+ * dotless three-digit codes: "700", "740", "750", "757", "758", "816". Note the
+ * 8xx jump: SAP renumbered from the 7.5x line (758 = S/4HANA 2023) straight to
+ * 8.16 (816 = ABAP Platform 2025 / S/4HANA 2025) because quarterly S/4HANA Cloud
+ * Public Edition consumed releases 759–815. Plain numeric comparison still orders
+ * them correctly (816 > 758), so no special-casing is needed. Releases below
  * 751 lack native honoring of the `X-sap-adt-sessiontype: stateful` header over
  * HTTP (the 7.51+ `CONFIGURE_SESSION_STATE` of `CL_ADT_WB_RES_APP` does not
  * exist), so ADT writes fail with `423 invalid lock handle` unless the

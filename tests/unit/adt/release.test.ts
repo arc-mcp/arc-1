@@ -15,6 +15,14 @@ describe('parseReleaseNumber', () => {
     expect(parseReleaseNumber('758')).toBe(758);
   });
 
+  it('parses the 8xx ABAP Platform scheme (816 = ABAP Platform 2025) and orders it above 758', () => {
+    // SAP renumbered from 75x (758 = S/4HANA 2023) straight to 8.16 (S/4HANA 2025);
+    // 759–815 were consumed by quarterly S/4HANA Cloud Public Edition. Plain numeric
+    // comparison keeps the ordering correct — no special-casing needed.
+    expect(parseReleaseNumber('816')).toBe(816);
+    expect(parseReleaseNumber('816')!).toBeGreaterThan(parseReleaseNumber('758')!);
+  });
+
   it('strips non-digits (dotted / whitespace forms)', () => {
     expect(parseReleaseNumber('7.50')).toBe(750);
     expect(parseReleaseNumber(' 750 ')).toBe(750);
@@ -41,6 +49,8 @@ describe('isPreStatefulRelease', () => {
   it('is false at/above 7.51', () => {
     expect(isPreStatefulRelease('751')).toBe(false);
     expect(isPreStatefulRelease('758')).toBe(false);
+    // ABAP Platform 2025 (816) is post-stateful — the 423 lock-handle workaround must not apply.
+    expect(isPreStatefulRelease('816')).toBe(false);
   });
 
   it('is false when the release is unknown', () => {
@@ -58,6 +68,8 @@ describe('shouldWarnPreStatefulRelease', () => {
   it('does not warn at/above 7.51', () => {
     expect(shouldWarnPreStatefulRelease(true, '758')).toBe(false);
     expect(shouldWarnPreStatefulRelease(true, '751')).toBe(false);
+    // ABAP Platform 2025 (816): writes enabled but post-stateful → no pre-7.51 warning.
+    expect(shouldWarnPreStatefulRelease(true, '816')).toBe(false);
   });
 
   it('does not warn when writes are disabled', () => {

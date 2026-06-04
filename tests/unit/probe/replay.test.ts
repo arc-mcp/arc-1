@@ -21,6 +21,7 @@ const SYNTHETIC_752 = 'tests/fixtures/probe/synthetic-752';
 const S4HANA_2023 = 'tests/fixtures/probe/s4hana-2023-onprem-abap-trial';
 const NPL_750 = 'tests/fixtures/probe/npl-750-sp02-dev-edition';
 const ECC_EHP8_750_SP31 = 'tests/fixtures/probe/ecc-ehp8-nw750-sp31-onprem-prod';
+const ABAP_PLATFORM_2025 = 'tests/fixtures/probe/abap-platform-2025-onprem-trial';
 
 describe('probe replay — synthetic 7.52 fixture', () => {
   it('classifies each recorded type correctly', async () => {
@@ -109,6 +110,61 @@ describe('probe replay — s4hana-2023-onprem-abap-trial fixture (recorded from 
 
   it('reports zero unavailable or ambiguous types on the recorded 7.58 run', async () => {
     const { fetcher, meta } = createReplayFetcher(S4HANA_2023);
+    const discoveryMap = discoveryMapFromMeta(meta);
+
+    const results = [];
+    for (const entry of CATALOG) {
+      results.push(await probeType(fetcher, entry, discoveryMap, meta.abapRelease));
+    }
+    const q = computeQuality(results);
+
+    expect(q.verdictHistogram['unavailable-high']).toBe(0);
+    expect(q.verdictHistogram['unavailable-likely']).toBe(0);
+    expect(q.verdictHistogram.ambiguous).toBe(0);
+    // Every type in the catalog is either available or auth-blocked on this system.
+    const verdictSum =
+      q.verdictHistogram['available-high'] +
+      q.verdictHistogram['available-medium'] +
+      q.verdictHistogram['auth-blocked'];
+    expect(verdictSum).toBe(CATALOG.length);
+  });
+});
+
+describe('probe replay — abap-platform-2025-onprem-trial fixture (recorded from A4H, ABAP Platform Trial 2025)', () => {
+  it('captures ABAP Platform 2025 product markers (SAP_BASIS renumbered 75x → 816)', async () => {
+    const { meta } = createReplayFetcher(ABAP_PLATFORM_2025);
+    // ABAP Platform 2025 reports SAP_BASIS "816" — SAP jumped from the 7.5x line
+    // (758 = S/4HANA 2023) straight to 8.16 (the quarterly S/4HANA Cloud Public Edition
+    // consumed releases 759–815). Guards against release-detection drift on the 8xx scheme.
+    expect(meta.abapRelease).toBe('816');
+    expect(meta.systemType).toBe('onprem');
+    const basis = meta.products?.find((p) => p.name.toUpperCase() === 'SAP_BASIS');
+    expect(basis?.release).toBe('816');
+    // S4FND 109 is the canonical marker for S/4HANA 2025 — proves this is the 2025 stack,
+    // not a plain NetWeaver system reporting an 8xx basis.
+    const s4fnd = meta.products?.find((p) => p.name.toUpperCase() === 'S4FND');
+    expect(s4fnd?.release).toBe('109');
+  });
+
+  it('reports all RAP types as available on the modern on-prem 816 system', async () => {
+    const { fetcher, meta } = createReplayFetcher(ABAP_PLATFORM_2025);
+    const discoveryMap = discoveryMapFromMeta(meta);
+
+    expect(meta.abapRelease).toBe('816');
+
+    // The full RAP/CDS surface must come back available on 816 — same expectation as the
+    // 7.58 S/4 system. This is the forward-compatibility guard: the 8xx renumbering must
+    // not regress release-floor classification (e.g. BDEF minRelease 754; 816 >= 754).
+    for (const type of ['DDLS', 'BDEF', 'SRVD', 'SRVB', 'DCLS', 'DDLX']) {
+      const entry = getCatalogEntry(type);
+      if (!entry) throw new Error(`Missing catalog entry for ${type}`);
+      const result = await probeType(fetcher, entry, discoveryMap, meta.abapRelease);
+      expect(result.verdict, `${type} on 816 should be available`).toMatch(/^available-/);
+    }
+  });
+
+  it('reports zero unavailable or ambiguous types on the recorded 816 run', async () => {
+    const { fetcher, meta } = createReplayFetcher(ABAP_PLATFORM_2025);
     const discoveryMap = discoveryMapFromMeta(meta);
 
     const results = [];

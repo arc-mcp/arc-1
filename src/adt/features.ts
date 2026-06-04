@@ -185,7 +185,7 @@ export async function probeFeatures(
  * previous versions plus new features. We map to the closest matching
  * version, falling back to Cloud (the superset) for unknown releases.
  *
- * SAP_BASIS release examples: "700", "702", "740", "750", "757", "758"
+ * SAP_BASIS release examples: "700", "702", "740", "750", "757", "758", "816"
  * BTP ABAP Environment reports release like "sap_btp" or similar.
  */
 export function mapSapReleaseToAbaplintVersion(release: string): Version {
@@ -194,6 +194,10 @@ export function mapSapReleaseToAbaplintVersion(release: string): Version {
 
   if (Number.isNaN(num)) return Version.Cloud;
 
+  // `>= 758` intentionally also catches the 8xx scheme (816 = ABAP Platform 2025 / S/4HANA 2025;
+  // SAP renumbered from 75x). abaplint's ceiling is v758, which is the correct *on-prem* lint
+  // baseline — do NOT map on-prem 8xx to Version.Cloud: Cloud enforces ABAP-Cloud restrictions and
+  // would false-positive on classic on-prem ABAP. Lint is advisory; activation is the definitive check.
   if (num >= 758) return Version.v758;
   if (num >= 757) return Version.v757;
   if (num >= 756) return Version.v756;

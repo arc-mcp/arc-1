@@ -1,0 +1,7 @@
+{
+  "url": "/sap/bc/adt/ddic/ddl/sources/I_LANGUAGE/source/main",
+  "method": "GET",
+  "statusCode": 200,
+  "body": "@AbapCatalog.sqlViewName: 'ILanguage'\r\n@EndUserText.label: 'Language'\r\n@Analytics : {dataCategory: #DIMENSION, dataExtraction.enabled : true}\r\n@AccessControl.authorizationCheck: #NOT_REQUIRED\r\n@VDM.viewType: #BASIC \r\n@ObjectModel.representativeKey: 'Language'\r\n@Search.searchable: true\r\n\r\ndefine view I_Language as select from t002\r\n association [0..*] to I_LanguageText as _Text \r\n on $projection.Language = _Text.LanguageCode\r\n{\r\n @ObjectModel.text.association: '_Text'\r\n key spras as Language,\r\n _Text,\r\n \r\n @Search.defaultSearchElement: true\r\n laiso as LanguageISOCode\r\n \r\n}                      \r\n  \r\n  \r\n  \r\n  \r\n  \r\n  \r\n  \r\n ",
+  "durationMs": 107
+}
