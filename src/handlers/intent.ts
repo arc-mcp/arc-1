@@ -6752,10 +6752,12 @@ async function handleSAPTransport(client: AdtClient, args: Record<string, unknow
             // "user action is not supported". Turn that cryptic error into release guidance.
             if (/user action/i.test(err.message) && /not supported/i.test(err.message)) {
               return errorResult(
-                `This SAP release does not support setting an explicit transport target via ADT ` +
-                  `(it rejected the request: "user action is not supported"). Creating a request with a target ` +
-                  `this way needs NW 7.52+ / S/4HANA; NW 7.50–7.51 ignore it. On older releases, create the request ` +
-                  `without "target" (omit it) and set the target in SE09/SE10, or have Basis route the package.`,
+                `This system's ADT stack does not support setting an explicit transport target — it rejected the ` +
+                  `request with "user action is not supported" before evaluating the target or layer. This is an ` +
+                  `ADT-framework limitation on SAP_BASIS 7.50 (independent of STMS/CTC config — verified on 7.50 SP02 ` +
+                  `and SP32); the tm:root/newrequest action is implemented on newer ABAP Platform / S/4HANA releases. ` +
+                  `Workaround on this system: create the request without "target", then set the Transportziel manually ` +
+                  `in SE09/SE10 (SAP GUI), which works when CTC and the target group are configured.`,
               );
             }
           }

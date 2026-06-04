@@ -1473,7 +1473,7 @@ export function getToolDefinitions(
           target: {
             type: 'string',
             description:
-              'Explicit transport target (Transportziel / TR_TARGET) for create — what the user means by "create a transport with target X". Forms: a system ("C11"), system.client ("C11.021"), or target group ("/TRG/"). The group and system.client forms require extended transport control (CTC) to be active. Created via the tm:root/newrequest endpoint (the only ADT path that sets the target directly) — this needs NW 7.52+ / S/4HANA; NW 7.50–7.51 reject it ("user action is not supported"). SAP validates the target — an unknown target is rejected. Pass the exact value the user gives; do not invent one.',
+              'Explicit transport target (Transportziel / TR_TARGET) for create — what the user means by "create a transport with target X". Forms: a system ("C11"), system.client ("C11.021"), or target group ("/TRG/"). The group and system.client forms require extended transport control (CTC) to be active. Created via the tm:root/newrequest endpoint (the only ADT path that sets the target directly) — this needs a newer ABAP Platform / S/4HANA; SAP_BASIS 7.50 rejects it with "user action is not supported" (an ADT-stack limitation, so set the target in SE09/SE10 there instead). SAP validates the target — an unknown target is rejected. Pass the exact value the user gives; do not invent one.',
           },
           transportLayer: {
             type: 'string',

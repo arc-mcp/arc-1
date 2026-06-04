@@ -12432,7 +12432,8 @@ ENDCLASS.`;
       });
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toContain('does not support setting an explicit transport target');
-      expect(result.content[0]?.text).toContain('7.52');
+      expect(result.content[0]?.text).toContain('7.50');
+      expect(result.content[0]?.text).toContain('SE09/SE10');
       // It must NOT mislabel this as "target does not exist".
       expect(result.content[0]?.text).not.toContain('does not exist on this system');
     });
