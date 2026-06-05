@@ -7,10 +7,16 @@
  * client_secret is deterministic from the client_id.
  */
 
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import type { AuditEvent } from '../../../src/server/audit.js';
 import { logger } from '../../../src/server/logger.js';
-import { StatelessDcrClientStore, validateRedirectUri } from '../../../src/server/stateless-client-store.js';
+import {
+  matchesXsuaaRedirectPattern,
+  StatelessDcrClientStore,
+  validateRedirectUri,
+  XSUAA_REDIRECT_URI_PATTERNS,
+} from '../../../src/server/stateless-client-store.js';
 
 const SIGNING = 'test-signing-secret';
 const XSUAA_ID = 'sb-arc1!t599384';
@@ -203,13 +209,21 @@ describe('StatelessDcrClientStore', () => {
     expect(registered.client_id.length).toBeLessThan(800);
   });
 
-  it('mutates redirect_uris on the XSUAA default client via ensureRedirectUri', () => {
+  it('mutates redirect_uris on the XSUAA default client via ensureRedirectUri (allowlisted URI)', () => {
     const store = makeStore();
-    store.ensureRedirectUri(XSUAA_ID, 'https://new-mcp-client.example.com/cb');
+    // Matches the `https://*.hana.ondemand.com/**` allowlist pattern.
+    store.ensureRedirectUri(XSUAA_ID, 'https://abc.hana.ondemand.com/login/callback');
     // Re-fetch and confirm the new URI is on the list.
     return store.getClient(XSUAA_ID).then((c) => {
-      expect(c?.redirect_uris).toContain('https://new-mcp-client.example.com/cb');
+      expect(c?.redirect_uris).toContain('https://abc.hana.ondemand.com/login/callback');
     });
+  });
+
+  it('does NOT register a non-allowlisted redirect_uri on the XSUAA default client', async () => {
+    const store = makeStore();
+    store.ensureRedirectUri(XSUAA_ID, 'https://attacker.example/cb');
+    const c = await store.getClient(XSUAA_ID);
+    expect(c?.redirect_uris).not.toContain('https://attacker.example/cb');
   });
 
   it('is a no-op for ensureRedirectUri on DCR clients (stateless)', async () => {
@@ -218,6 +232,103 @@ describe('StatelessDcrClientStore', () => {
     store.ensureRedirectUri(registered.client_id, 'https://other.example.com/cb');
     const fetched = await store.getClient(registered.client_id);
     expect(fetched?.redirect_uris).toEqual(['https://example.com/cb']);
+  });
+});
+
+describe('matchesXsuaaRedirectPattern (redirect-uri allowlist for the shared XSUAA client)', () => {
+  it('accepts URIs covered by the allowlist patterns', () => {
+    const allowed = [
+      'http://localhost:6274/oauth/callback', // http://localhost:*/**
+      'http://localhost:3000/oauth/callback',
+      'https://abc.hana.ondemand.com/login/callback', // https://*.hana.ondemand.com/**
+      'https://dev-xyz.applicationstudio.cloud.sap/cb', // https://*.applicationstudio.cloud.sap/**
+      'https://claude.ai/api/mcp/auth_callback', // exact
+      'https://callback.mistral.ai/v1/integrations_auth/oauth2_callback', // exact
+      'cursor://anysphere.cursor-retrieval/oauth/callback', // cursor://anysphere.cursor-retrieval/**
+      'cursor://anysphere.cursor-mcp/cb',
+      'vscode://vscode.microsoft-authentication/callback',
+      'https://global.consent.azure-apim.net/redirect/contoso', // Copilot Studio (Manual mode)
+    ];
+    for (const uri of allowed) {
+      expect(matchesXsuaaRedirectPattern(uri), uri).toBe(true);
+    }
+  });
+
+  it('rejects attacker-controlled and out-of-allowlist URIs', () => {
+    const rejected = [
+      'https://attacker.example/cb',
+      'https://claude.ai.attacker.com/api/mcp/auth_callback', // suffix-graft on an exact host
+      'https://attacker.com/claude.ai/api/mcp/auth_callback', // path can't impersonate host
+      'https://hana.ondemand.com.attacker.com/cb', // subdomain-suffix trick must NOT match *.hana.ondemand.com
+      'http://evil.com/cb', // non-loopback http not in allowlist
+      'https://global.consent.azure-apim.net.evil.com/redirect/x', // host-suffix graft
+      'javascript:alert(1)',
+    ];
+    for (const uri of rejected) {
+      expect(matchesXsuaaRedirectPattern(uri), uri).toBe(false);
+    }
+  });
+
+  it("a host-label '*' does not cross a path separator (so it cannot reach a foreign host)", () => {
+    // `https://*.hana.ondemand.com/**`: the `*` is one host label, bounded by the
+    // literal `.hana.ondemand.com/`. A URL whose authority is a different domain
+    // cannot satisfy it regardless of path.
+    expect(matchesXsuaaRedirectPattern('https://x.hana.ondemand.com.evil.com/cb')).toBe(false);
+    expect(matchesXsuaaRedirectPattern('https://a.b.hana.ondemand.com/cb')).toBe(true); // extra SAP subdomain is fine
+  });
+
+  it('rejects URL userinfo smuggling — the string matches the glob but parses to a foreign host', () => {
+    // SECURITY regression: `http://localhost:*/**` → `^http://localhost:[^/]*/.*$`,
+    // and `[^/]*` (the port-position wildcard) greedily swallows `x@evil.com`, so the
+    // raw string matches — yet `new URL("http://localhost:x@evil.com/cb").host` is
+    // `evil.com`. Matching must reject the userinfo so the OAuth code can't be steered
+    // to an attacker host. (Found by security review of PR #355.)
+    expect(new URL('http://localhost:x@evil.com/cb').host).toBe('evil.com'); // documents the parse
+    expect(matchesXsuaaRedirectPattern('http://localhost:x@evil.com/cb')).toBe(false);
+    expect(matchesXsuaaRedirectPattern('http://localhost:@evil.com/x')).toBe(false);
+    expect(matchesXsuaaRedirectPattern('http://localhost:1234@evil.com/cb')).toBe(false);
+    // userinfo on an otherwise-exact host is rejected too
+    expect(matchesXsuaaRedirectPattern('https://user:pass@claude.ai/api/mcp/auth_callback')).toBe(false);
+    // a credential-free loopback redirect (the legitimate use of the localhost pattern) still passes
+    expect(matchesXsuaaRedirectPattern('http://localhost:6274/oauth/callback')).toBe(true);
+  });
+
+  it('rejects values that are not parseable URLs', () => {
+    expect(matchesXsuaaRedirectPattern('not a url')).toBe(false);
+    expect(matchesXsuaaRedirectPattern('http://')).toBe(false);
+  });
+});
+
+describe('StatelessDcrClientStore.checkRedirectUri', () => {
+  it("default client → 'ok' for an allowlisted URI, 'unregistered' otherwise (stateless, ignores in-memory list)", async () => {
+    const store = makeStore();
+    expect(await store.checkRedirectUri(XSUAA_ID, 'https://claude.ai/api/mcp/auth_callback')).toBe('ok');
+    expect(await store.checkRedirectUri(XSUAA_ID, 'https://global.consent.azure-apim.net/redirect/x')).toBe('ok');
+    expect(await store.checkRedirectUri(XSUAA_ID, 'https://attacker.example/cb')).toBe('unregistered');
+  });
+
+  it("DCR client → 'ok' only for a redirect_uri baked into its signed client_id", async () => {
+    const store = makeStore();
+    const reg = await store.registerClient({ redirect_uris: ['https://app.example.com/cb'] });
+    expect(await store.checkRedirectUri(reg.client_id, 'https://app.example.com/cb')).toBe('ok');
+    expect(await store.checkRedirectUri(reg.client_id, 'https://attacker.example/cb')).toBe('unregistered');
+  });
+
+  it("returns 'unknown_client' for an unrecognised/forged client_id", async () => {
+    const store = makeStore();
+    expect(await store.checkRedirectUri('arc1-bogus.AAAAAAAAAAAAAAAAAAAAAA', 'https://app.example.com/cb')).toBe(
+      'unknown_client',
+    );
+  });
+});
+
+describe('XSUAA_REDIRECT_URI_PATTERNS stays in sync with xs-security.json (drift guard)', () => {
+  it('matches oauth2-configuration.redirect-uris exactly', () => {
+    // The runtime allowlist is a vendored mirror (xs-security.json is not shipped
+    // with the app — see .cfignore / npm files / Dockerfile). This test fails if
+    // the two diverge, forcing the code copy to be updated alongside the config.
+    const xs = JSON.parse(readFileSync(new URL('../../../xs-security.json', import.meta.url), 'utf8'));
+    expect([...XSUAA_REDIRECT_URI_PATTERNS]).toEqual(xs['oauth2-configuration']['redirect-uris']);
   });
 });
 
@@ -385,12 +496,30 @@ describe('StatelessDcrClientStore audit events', () => {
     const events = captureAuditEvents();
     const store = makeStore();
 
-    store.ensureRedirectUri(XSUAA_ID, 'https://new.example.com/cb');
+    // Matches `https://global.consent.azure-apim.net/redirect/**` (Copilot Studio).
+    store.ensureRedirectUri(XSUAA_ID, 'https://global.consent.azure-apim.net/redirect/contoso');
 
     const evt = events.find((e) => e.event === 'oauth_redirect_uri_registered');
     expect(evt).toBeDefined();
-    expect(evt && 'redirectUri' in evt && evt.redirectUri).toBe('https://new.example.com/cb');
+    expect(evt && 'redirectUri' in evt && evt.redirectUri).toBe(
+      'https://global.consent.azure-apim.net/redirect/contoso',
+    );
     expect(evt?.registeredClientId).toBe(XSUAA_ID);
+  });
+
+  it('emits oauth_redirect_uri_rejected (warn) when a non-allowlisted URI is refused', async () => {
+    const events = captureAuditEvents();
+    const store = makeStore();
+
+    store.ensureRedirectUri(XSUAA_ID, 'https://attacker.example/cb');
+
+    const evt = events.find((e) => e.event === 'oauth_redirect_uri_rejected');
+    expect(evt).toBeDefined();
+    expect(evt && 'redirectUri' in evt && evt.redirectUri).toBe('https://attacker.example/cb');
+    expect(evt?.registeredClientId).toBe(XSUAA_ID);
+    expect(evt?.level).toBe('warn');
+    // And no "registered" event fired.
+    expect(events.find((e) => e.event === 'oauth_redirect_uri_registered')).toBeUndefined();
   });
 
   it('does not emit oauth_redirect_uri_registered when ensureRedirectUri is a no-op (DCR client)', async () => {

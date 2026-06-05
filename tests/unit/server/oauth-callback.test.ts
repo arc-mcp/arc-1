@@ -250,4 +250,68 @@ describe('createOAuthCallbackHandler — client-binding validation (auth-code in
     expect(res.status).toBe(400);
     expect(res.headers.location).toBeUndefined();
   });
+
+  // ── Shared pre-registered XSUAA default client (Manual-mode clients) ──
+  // The default client's redirect target is validated against the static
+  // allowlist (xs-security.json mirror), not the mutable in-memory list — so an
+  // attacker who steers a victim's code to their own URI via the SHARED client
+  // is blocked statelessly, while a legit allowlisted URI (e.g. Copilot Studio)
+  // still works. The store's default client_id is its first constructor arg.
+  const DEFAULT_CLIENT_ID = 'xsuaa-client';
+
+  it('forwards the code for the default client when redirect_uri is allowlisted', async () => {
+    const codec = new OAuthStateCodec(SECRET);
+    const store = buildStore();
+    const token = codec.encode({
+      clientState: 'abc',
+      clientRedirectUri: 'https://global.consent.azure-apim.net/redirect/contoso',
+      clientId: DEFAULT_CLIENT_ID,
+    });
+    const res = await request(buildAppWithStore(codec, store))
+      .get('/oauth/callback')
+      .query({ code: 'CODE1', state: token });
+    expect(res.status).toBe(302);
+    expect((res.headers.location as string).startsWith('https://global.consent.azure-apim.net/redirect/contoso')).toBe(
+      true,
+    );
+    expect(new URL(res.headers.location as string).searchParams.get('code')).toBe('CODE1');
+  });
+
+  it('returns 400 (code NOT leaked) for the default client when redirect_uri is not allowlisted', async () => {
+    const codec = new OAuthStateCodec(SECRET);
+    const store = buildStore();
+    // This is the residual the fix closes: an attacker redirect_uri on the shared
+    // default client must not receive the victim's code, even though ensureRedirectUri
+    // would once have auto-trusted it.
+    const token = codec.encode({
+      clientState: 'abc',
+      clientRedirectUri: 'https://attacker.example/cb',
+      clientId: DEFAULT_CLIENT_ID,
+    });
+    const res = await request(buildAppWithStore(codec, store))
+      .get('/oauth/callback')
+      .query({ code: 'STOLEN', state: token });
+    expect(res.status).toBe(400);
+    expect(res.headers.location).toBeUndefined();
+    expect(res.text).not.toContain('STOLEN');
+  });
+
+  it('returns 400 (code NOT leaked) for a userinfo-smuggled localhost redirect on the default client', async () => {
+    // SECURITY regression (PR #355 review): `http://localhost:x@evil.com/cb` matches the
+    // `http://localhost:*/**` glob as a STRING, but parses to host `evil.com`. The callback
+    // must refuse it so the victim's code is never 302'd to the attacker's host.
+    const codec = new OAuthStateCodec(SECRET);
+    const store = buildStore();
+    const token = codec.encode({
+      clientState: 'abc',
+      clientRedirectUri: 'http://localhost:x@evil.com/cb',
+      clientId: DEFAULT_CLIENT_ID,
+    });
+    const res = await request(buildAppWithStore(codec, store))
+      .get('/oauth/callback')
+      .query({ code: 'STOLEN', state: token });
+    expect(res.status).toBe(400);
+    expect(res.headers.location).toBeUndefined();
+    expect(res.text).not.toContain('STOLEN');
+  });
 });

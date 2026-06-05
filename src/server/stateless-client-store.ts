@@ -90,6 +90,95 @@ const XSUAA_DEFAULT_REDIRECT_URIS = [
   'vscode://vscode.microsoft-authentication/callback', // VS Code
 ] as const;
 
+/**
+ * Redirect-URI allowlist for the pre-registered XSUAA default client — a vendored
+ * mirror of `oauth2-configuration.redirect-uris` in `xs-security.json`.
+ *
+ * ── Why ARC-1 must enforce this (not just XSUAA) ──
+ * The issue-#214 callback proxy (see `oauth-state.ts`) sends XSUAA ARC-1's OWN
+ * `/oauth/callback` as the redirect_uri and carries the client's real
+ * redirect_uri inside the signed state. XSUAA therefore no longer validates the
+ * client's redirect_uri — ARC-1 does. Without an allowlist, `ensureRedirectUri`
+ * would auto-trust ANY redirect_uri supplied at `/authorize` for the shared
+ * default client, letting an attacker steer a victim's authorization code to
+ * their own URI (security audit 2026-06, follow-up to PR #352).
+ *
+ * ── Why vendored, not read from xs-security.json ──
+ * `xs-security.json` is consumed by XSUAA at service-creation time and is NOT
+ * shipped with the running app (excluded by `.cfignore`, the npm `files`
+ * allowlist, and the Dockerfile), and the service binding does not expose the
+ * patterns — so ARC-1 cannot read them at runtime. To prevent drift,
+ * `tests/unit/server/stateless-client-store.test.ts` asserts this list stays
+ * equal to `xs-security.json`. Keep the two in sync when adding a client.
+ *
+ * Glob semantics (xs-security.json): `*` matches within a single host/path
+ * segment (never `/`), `**` matches across segments.
+ */
+export const XSUAA_REDIRECT_URI_PATTERNS = [
+  'http://localhost:*/**',
+  'https://*.hana.ondemand.com/**',
+  'https://*.applicationstudio.cloud.sap/**',
+  'https://claude.ai/api/mcp/auth_callback',
+  'https://callback.mistral.ai/v1/integrations_auth/oauth2_callback',
+  'cursor://anysphere.cursor-retrieval/**',
+  'cursor://anysphere.cursor-mcp/**',
+  'vscode://vscode.microsoft-authentication/**',
+  'https://global.consent.azure-apim.net/redirect/**',
+] as const;
+
+/** Translate one xs-security.json redirect-uri glob into an anchored,
+ *  case-insensitive RegExp. `**` → `.*` (crosses `/`); `*` → `[^/]*` (within a
+ *  segment); every other character is matched literally. The trailing `/` and
+ *  anchoring mean a host-label `*` (e.g. `*.hana.ondemand.com`) cannot be widened
+ *  to a different registrable domain. */
+function redirectPatternToRegExp(pattern: string): RegExp {
+  // Split on the wildcard tokens, keeping them (the capturing group keeps the
+  // delimiters in the result array). `**` is tried before `*`, so it tokenizes
+  // as a single token.
+  const body = pattern
+    .split(/(\*\*|\*)/)
+    .map((segment) => {
+      if (segment === '**') return '.*'; // crosses path separators
+      if (segment === '*') return '[^/]*'; // within a single segment (never `/`)
+      return segment.replace(/[.+?^${}()|[\]\\]/g, '\\$&'); // escape literal regex metachars
+    })
+    .join('');
+  return new RegExp(`^${body}$`, 'i');
+}
+
+const XSUAA_REDIRECT_URI_REGEXPS = XSUAA_REDIRECT_URI_PATTERNS.map(redirectPatternToRegExp);
+
+/**
+ * Is `uri` an allowed redirect target for the pre-registered XSUAA default
+ * client? True iff it matches an `XSUAA_REDIRECT_URI_PATTERNS` entry. Stateless,
+ * so it gives the same answer on every instance — used both to gate dynamic
+ * registration (`ensureRedirectUri`) and to validate the redirect target at
+ * `/oauth/callback` (`checkRedirectUri`).
+ *
+ * SECURITY — parse before matching: the value matched here is later re-parsed
+ * with `new URL()` and used as the 302 target that carries the OAuth `code`, so
+ * the glob decision MUST agree with how the URL actually parses. The patterns
+ * are string globs; a `*` sitting in the PORT position (the localhost pattern)
+ * would otherwise let a URL-userinfo segment ride inside the same-segment
+ * wildcard — `http://localhost:x@evil.com/cb` matches the `localhost:[^slash]`
+ * port glob yet `new URL(...).host === 'evil.com'`, steering a victim's code to an
+ * attacker host. So we reject anything that doesn't parse, and reject any
+ * userinfo (`user[:pass]@`) — that `@` is the only construct that can relocate
+ * the authority past a same-segment wildcard, and no legitimate OAuth
+ * redirect_uri carries credentials. After this guard, a glob match implies the
+ * parsed host is the literal host in the pattern.
+ */
+export function matchesXsuaaRedirectPattern(uri: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(uri);
+  } catch {
+    return false;
+  }
+  if (parsed.username !== '' || parsed.password !== '') return false;
+  return XSUAA_REDIRECT_URI_REGEXPS.some((re) => re.test(uri));
+}
+
 // ─── Payload Schema ───────────────────────────────────────────────────
 
 /**
@@ -273,10 +362,16 @@ export class StatelessDcrClientStore implements OAuthRegisteredClientsStore {
   /**
    * Called by the MCP SDK before redirect_uri validation on `/authorize`.
    *
-   * For the pre-registered XSUAA client we mutate the in-memory list (XSUAA
-   * itself is the authoritative validator via `xs-security.json` wildcards,
-   * so the SDK's local list is decorative). The mutation is replayed on
-   * every `/authorize`, so it doesn't need to persist.
+   * For the pre-registered XSUAA client we mutate the in-memory list so the
+   * SDK's exact-match check passes. The mutation is replayed on every
+   * `/authorize`, so it doesn't need to persist. SECURITY: we register a
+   * candidate URI ONLY if it matches `XSUAA_REDIRECT_URI_PATTERNS` (the vendored
+   * mirror of xs-security.json). The issue-#214 callback proxy removed XSUAA
+   * from the client-redirect path, so an un-gated add here would let an attacker
+   * register an arbitrary redirect_uri and have the SDK accept it — the entry
+   * point for authorization-code interception (security audit 2026-06). A
+   * non-matching URI is dropped (audited); the SDK's exact-match check then
+   * rejects the `/authorize` request before any state is minted.
    *
    * For DCR (`arc1-…`) clients we are stateless by design: there's nothing
    * to mutate. The previous in-memory store implemented a percent-encoding
@@ -291,6 +386,18 @@ export class StatelessDcrClientStore implements OAuthRegisteredClientsStore {
     if (clientId !== this.xsuaaClient.client_id) return;
     if (this.xsuaaClient.redirect_uris.includes(uri)) return;
 
+    if (!matchesXsuaaRedirectPattern(uri)) {
+      logger.warn('Dynamic redirect_uri rejected for XSUAA default client (not in allowlist)', { clientId, uri });
+      logger.emitAudit({
+        timestamp: new Date().toISOString(),
+        level: 'warn',
+        event: 'oauth_redirect_uri_rejected',
+        registeredClientId: clientId,
+        redirectUri: uri,
+      });
+      return;
+    }
+
     this.xsuaaClient.redirect_uris.push(uri);
     logger.debug('Dynamic redirect_uri registered for XSUAA client', { clientId, uri });
     logger.emitAudit({
@@ -300,6 +407,29 @@ export class StatelessDcrClientStore implements OAuthRegisteredClientsStore {
       registeredClientId: clientId,
       redirectUri: uri,
     });
+  }
+
+  /**
+   * Validate that `uri` is an allowed redirect target for `clientId` at the
+   * `/oauth/callback` proxy — the control that stops authorization-code
+   * interception (security audit 2026-06, follow-up to PR #352).
+   *
+   *  - Default (pre-registered XSUAA) client → must match the redirect-uri
+   *    allowlist (`matchesXsuaaRedirectPattern`). Deliberately consults the
+   *    static allowlist, NOT the mutable in-memory list, so the verdict is
+   *    stateless and identical on every instance — a code is never forwarded to
+   *    an unlisted URI even if `/authorize` ran on a different instance.
+   *  - DCR (`arc1-…`) client → must be one of the redirect_uris baked immutably
+   *    into the signed client_id (re-derived by `getClient`). Returns
+   *    `unknown_client` when the id is unrecognised / expired / forged.
+   */
+  async checkRedirectUri(clientId: string, uri: string): Promise<'ok' | 'unknown_client' | 'unregistered'> {
+    if (clientId === this.xsuaaClient.client_id) {
+      return matchesXsuaaRedirectPattern(uri) ? 'ok' : 'unregistered';
+    }
+    const info = await this.getClient(clientId);
+    if (!info) return 'unknown_client';
+    return info.redirect_uris.includes(uri) ? 'ok' : 'unregistered';
   }
 
   // ── Internals: encode / decode / sign / verify ──

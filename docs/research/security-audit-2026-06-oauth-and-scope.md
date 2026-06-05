@@ -116,17 +116,62 @@ HMAC-signed `client_id` and re-derived deterministically by `getClient` (no shar
 the check rejects redirect-substitution on any instance. This covers the documented primary
 clients (Claude Desktop, Cursor, VS Code, Copilot CLI).
 
-### Residual — pre-registered XSUAA default client (follow-up)
+### Residual — pre-registered XSUAA default client — CLOSED (follow-up)
+
+> Originally shipped as a documented residual; **closed** in the follow-up change described
+> below.
 
 The shared XSUAA default client (`StatelessDcrClientStore.xsuaaClient`, used by "Manual" OAuth
-configs) accepts dynamically-added redirect URIs via `ensureRedirectUri()` at `/authorize`
+configs) accepted dynamically-added redirect URIs via `ensureRedirectUri()` at `/authorize`
 time. Because that in-memory list is the same object `getClient` returns, on a single instance
-an attacker-supplied `redirect_uri` is auto-registered during `/authorize` and would satisfy
-the callback `includes()` check — so the fix does **not** fully close the vector for the
-default client. It is regression-free (all manifests are `instances: 1`; `ensureRedirectUri`
-is a no-op for DCR clients). **Recommended follow-up:** enforce an allowlist (e.g. the
-`xs-security.json` redirect patterns) for the shared client instead of trusting arbitrary
-auto-registered URIs, or move clients off the shared client onto DCR.
+an attacker-supplied `redirect_uri` was auto-registered during `/authorize` and would satisfy
+the callback `includes()` check — so the original fix did not fully close the vector for the
+default client.
+
+**Fix (follow-up):** ARC-1 now enforces the redirect-uri allowlist that XSUAA used to enforce
+before the issue-#214 callback proxy removed XSUAA from the client-redirect path.
+
+- `src/server/stateless-client-store.ts` — `XSUAA_REDIRECT_URI_PATTERNS` vendors the
+  `xs-security.json` `oauth2-configuration.redirect-uris` patterns (xs-security.json is **not**
+  shipped at runtime — excluded by `.cfignore` / npm `files` / Dockerfile — so the patterns are
+  vendored and a unit test drift-guards them). `matchesXsuaaRedirectPattern()` does anchored,
+  case-insensitive glob matching (`*` = within a segment, `**` = across segments). It first
+  `new URL()`-parses the candidate and **rejects any userinfo** (`user[:pass]@`) — without that,
+  the port-position `*` in `http://localhost:*/**` would let `http://localhost:x@evil.com/cb`
+  match as a string while parsing to host `evil.com`, re-opening code interception (caught in the
+  PR review; see "Hardening" below).
+- `ensureRedirectUri()` now registers a dynamic redirect_uri for the shared client **only if it
+  matches the allowlist** (otherwise dropped + `oauth_redirect_uri_rejected` audit event). A
+  non-matching URI then fails the SDK's exact-match at `/authorize`, before any state is minted.
+- `checkRedirectUri(clientId, uri)` centralizes the callback decision: the default client is
+  validated against the **static allowlist** (stateless — correct on any instance, not the
+  mutable in-memory list); DCR clients against their signed `redirect_uris`. `http.ts`'s
+  `/oauth/callback` calls it (replacing the inline `getClient().includes()` from PR #352).
+
+Legitimate Manual-mode clients (e.g. Copilot Studio via
+`https://global.consent.azure-apim.net/redirect/**`) are preserved because their pattern is in
+the allowlist; an attacker-controlled `redirect_uri` is not, so it is refused at both
+`/authorize` and the callback.
+
+#### Hardening — URL userinfo smuggling in the matcher (PR review)
+
+A security review of the follow-up found that matching the glob against the **raw string** was
+unsafe: the value is later `new URL()`-parsed and used as the 302 target, and the port-position
+`*` in `http://localhost:*/**` (regex `^http://localhost:[^slash]*/…`) let `[^/]*` swallow a URL
+userinfo segment. `http://localhost:x@evil.com/cb` matched the glob as a string, yet
+`new URL(...).host === 'evil.com'` — so a victim's authorization `code` would be 302'd to the
+attacker. (The host-label wildcards like `*.hana.ondemand.com` are *not* affected: the literal
+domain must abut the authority-terminating `/`, so `@`-smuggling can't relocate their host. Only
+the localhost pattern, where the `*` is in the port slot, was bypassable.)
+
+**Fix:** `matchesXsuaaRedirectPattern()` now `new URL()`-parses the candidate, rejects anything
+that doesn't parse, and rejects any URI carrying userinfo (`username`/`password`) before the glob
+match. The `@` is the only construct that can move the authority past a same-segment wildcard, and
+no legitimate OAuth `redirect_uri` carries credentials — so after the guard, a glob match implies
+the parsed host equals the literal host in the pattern. Empirically verified (the old matcher
+returned `true` for `http://localhost:x@evil.com/cb`; the new one returns `false`) with no change
+for any legitimate client URI. Regression tests cover the userinfo variants at both the matcher
+and `/oauth/callback` layers.
 
 ### Tests
 

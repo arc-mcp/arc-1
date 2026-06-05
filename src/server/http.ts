@@ -118,7 +118,10 @@ function renderOAuthErrorPage(error: string, errorDescription: string, clientRet
  * still belong to the client that will exchange the code. For stateless DCR
  * clients (`arc1-…`) the registered redirect_uris are baked immutably into the
  * signed `client_id`, so this check deterministically rejects an attacker who
- * substitutes their own redirect_uri on a victim's `client_id`.
+ * substitutes their own redirect_uri on a victim's `client_id`. For the shared
+ * pre-registered XSUAA default client the redirect_uri is checked against the
+ * static allowlist (mirrors xs-security.json) instead — `clientStore` makes
+ * both decisions via `checkRedirectUri`.
  *
  * Exported for unit tests; mounted in `startHttpServer`. When `clientStore` is
  * omitted (legacy unit tests of the issue-#214 round-trip) the binding check is
@@ -145,23 +148,25 @@ export function createOAuthCallbackHandler(stateCodec: OAuthStateCodec, clientSt
     }
 
     // ── Client-binding validation (authorization-code interception defense) ──
-    // Verify the recovered redirect_uri is registered for the client_id that
-    // minted this state. Runs for BOTH the success and error branches below so
-    // neither a code nor an error response can be steered to an unregistered
-    // URI. Fails CLOSED on any lookup error (a terminal error page, never a
-    // redirect to an unverified target).
+    // Verify the recovered redirect_uri is an allowed target for the client_id
+    // that minted this state, BEFORE the success or error branches below — so
+    // neither a code nor an error response is ever steered to an unverified URI.
+    // The store decides per client type: a DCR client (`arc1-…`) is checked
+    // against the redirect_uris baked into its signed id; the shared XSUAA
+    // default client is checked against the static allowlist (mirrors
+    // xs-security.json), statelessly. Fails CLOSED on any lookup error.
     if (clientStore && decoded.clientId) {
-      let clientRedirectUris: string[] | undefined;
+      let verdict: 'ok' | 'unknown_client' | 'unregistered';
       try {
-        const clientInfo = await clientStore.getClient(decoded.clientId);
-        clientRedirectUris = clientInfo?.redirect_uris;
+        verdict = await clientStore.checkRedirectUri(decoded.clientId, decoded.clientRedirectUri);
       } catch (err) {
-        logger.warn('OAuth callback: client lookup threw — failing closed', {
+        logger.warn('OAuth callback: redirect_uri check threw — failing closed', {
           clientId: decoded.clientId,
           error: err instanceof Error ? err.message : String(err),
         });
+        verdict = 'unknown_client';
       }
-      if (!clientRedirectUris) {
+      if (verdict === 'unknown_client') {
         logger.warn('OAuth callback: state references unknown client_id', { clientId: decoded.clientId });
         res
           .status(400)
@@ -174,8 +179,8 @@ export function createOAuthCallbackHandler(stateCodec: OAuthStateCodec, clientSt
           );
         return;
       }
-      if (!clientRedirectUris.includes(decoded.clientRedirectUri)) {
-        logger.warn('OAuth callback: redirect_uri not registered for client', {
+      if (verdict === 'unregistered') {
+        logger.warn('OAuth callback: redirect_uri not allowed for client', {
           clientId: decoded.clientId,
           redirectUri: decoded.clientRedirectUri,
         });

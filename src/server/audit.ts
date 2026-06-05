@@ -150,12 +150,27 @@ export interface OAuthClientLookupFailedEvent extends AuditEventBase {
 }
 
 /** OAuth DCR: a redirect_uri was dynamically appended to the pre-registered XSUAA
- *  default client at /authorize time. XSUAA itself is the authoritative validator
- *  via xs-security.json wildcards; this event records that ARC-1's local SDK-side
- *  list was widened so the change is auditable. */
+ *  default client at /authorize time. The URI passed ARC-1's redirect-uri
+ *  allowlist (mirrors xs-security.json — what XSUAA itself would have validated;
+ *  in the issue-#214 callback-proxy flow XSUAA no longer sees the client's
+ *  redirect_uri, so ARC-1 is the validator). This records the widening so the
+ *  change is auditable. */
 export interface OAuthRedirectUriRegisteredEvent extends AuditEventBase {
   event: 'oauth_redirect_uri_registered';
   registeredClientId: string;
+  redirectUri: string;
+}
+
+/** OAuth DCR: a dynamic redirect_uri was REJECTED for the pre-registered XSUAA
+ *  default client because it matched no entry in ARC-1's redirect-uri allowlist
+ *  (mirrors xs-security.json). Because the issue-#214 callback proxy removed
+ *  XSUAA from the client-redirect path, this allowlist is the control that
+ *  prevents authorization-code interception via an attacker-supplied
+ *  redirect_uri; a hit here is a blocked attempt and worth alerting on. */
+export interface OAuthRedirectUriRejectedEvent extends AuditEventBase {
+  event: 'oauth_redirect_uri_rejected';
+  registeredClientId: string;
+  /** The rejected redirect_uri. May be attacker-controlled — treat as untrusted. */
   redirectUri: string;
 }
 
@@ -217,6 +232,7 @@ export type AuditEvent =
   | OAuthClientRegisteredEvent
   | OAuthClientLookupFailedEvent
   | OAuthRedirectUriRegisteredEvent
+  | OAuthRedirectUriRejectedEvent
   | CorsRejectedEvent
   | AuthRateLimitedEvent
   | McpRateLimitedEvent;
