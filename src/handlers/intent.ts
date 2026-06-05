@@ -153,6 +153,7 @@ import {
 import { formatRapPreflightFindings, validateRapSource } from '../adt/rap-preflight.js';
 import { changePackage } from '../adt/refactoring.js';
 import { checkOperation, checkPackage, isOperationAllowed, OperationType } from '../adt/safety.js';
+import { getServerDrivenObject, isServerDrivenObjectType, supportsServerDrivenObject } from '../adt/server-driven.js';
 import {
   createTransport,
   createTransportWithTarget,
@@ -1485,6 +1486,22 @@ async function handleSAPRead(
   // BTP: return helpful error for unavailable types
   if (isBtpSystem() && BTP_HINTS[type]) {
     return errorResult(BTP_HINTS[type]);
+  }
+
+  // Server-driven objects (ABAP Platform 2025 / SAP_BASIS 8.16+): DESD, EVTB, DTSC, COTA, …
+  // share one AFF generic-object contract (blue:blueSource metadata + AFF JSON source), read
+  // via the discovery-gated generic engine instead of the per-type switch below. They bypass
+  // the version/draft/cache machinery (no /source/main text; JSON output).
+  if (isServerDrivenObjectType(type)) {
+    if (!name) return errorResult(`"name" is required for SAPRead type=${type}.`);
+    if (supportsServerDrivenObject(client.http, type) === false) {
+      return errorResult(
+        `SAPRead type=${type} (server-driven object) requires SAP_BASIS 8.16+ (ABAP Platform 2025 / S/4HANA 2025). ` +
+          'This system does not expose this object type.',
+      );
+    }
+    const sdo = await getServerDrivenObject(client.http, client.safety, type, name);
+    return textResult(JSON.stringify(sdo, null, 2));
   }
 
   if (args.force_refresh === true && cachingLayer && VERSIONED_SOURCE_READ_TYPES.has(type)) {

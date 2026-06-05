@@ -1,0 +1,21 @@
+{
+  "formatVersion": "1",
+  "header": {
+    "description": "Event Binding for Business Partner change",
+    "originalLanguage": "en"
+  },
+  "producerNamespace": "sap.s4.beh",
+  "producerLegacy": true,
+  "producer": "BusinessPartner",
+  "producerVersion": "0001",
+  "boName": "BusinessPartner",
+  "boOperation": "Changed",
+  "producerType": "sap.s4.beh.businesspartner.v1.BusinessPartner.Changed.v*",
+  "events": [
+    {
+      "eventVersion": "0001",
+      "entityName": "I_BUSINESSPARTNERTP_2",
+      "entityEventName": "CHANGED"
+    }
+  ]
+}

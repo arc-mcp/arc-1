@@ -5420,6 +5420,55 @@ ENDCLASS.`;
     });
   });
 
+  // ─── SAPRead server-driven objects (816) ──────────────────────────
+
+  describe('SAPRead server-driven objects (816)', () => {
+    const DESD_META = readFileSync(new URL('../../fixtures/sdo/sdo-desd-metadata.xml', import.meta.url), 'utf-8');
+    const DESD_SRC = readFileSync(new URL('../../fixtures/sdo/sdo-desd-source.json', import.meta.url), 'utf-8');
+
+    it('reads a DESD as JSON metadata + AFF JSON source', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL) => {
+        const u = String(url);
+        if (u.includes('/ddic/desd/') && u.includes('/source/main'))
+          return Promise.resolve(mockResponse(200, DESD_SRC));
+        if (u.includes('/ddic/desd/')) return Promise.resolve(mockResponse(200, DESD_META));
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 't' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'DESD',
+        name: 'DEMO_CDS_LOGICL_EXTERNL_SCHEMA',
+      });
+      expect(result.isError).toBeUndefined();
+      const payload = JSON.parse(result.content[0]?.text);
+      expect(payload.type).toBe('DESD/TYP');
+      expect(payload.package).toBe('SABAP_DEMOS_ABAP_CDS_CLOUD');
+      expect(payload.source.formatVersion).toBe('1');
+      expect(payload.source.header.description).toContain('Demo CDS');
+    });
+
+    it('requires name', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, '', { 'x-csrf-token': 't' }));
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', { type: 'EVTB' });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('"name"');
+    });
+
+    it('returns a "needs 8.16+" error when discovery shows the type absent (758)', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, '', { 'x-csrf-token': 't' }));
+      const client = createClient();
+      vi.spyOn(client.http, 'hasDiscoveryData').mockReturnValue(true);
+      vi.spyOn(client.http, 'discoveryAcceptFor').mockReturnValue(undefined);
+      const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPRead', { type: 'DESD', name: 'X' });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('SAP_BASIS 8.16+');
+      expect(mockFetch.mock.calls.some((c) => String(c[0]).includes('/ddic/desd/'))).toBe(false);
+    });
+  });
+
   // ─── SAPRead DDLS include="elements" ──────────────────────────────
 
   describe('SAPRead DDLS include="elements"', () => {

@@ -16,7 +16,7 @@ Read any SAP ABAP object.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `type` | string | Yes | Object type (see below; includes `AUTH`, `FEATURE_TOGGLE`, `ENHO`, `VERSIONS`, `VERSION_SOURCE` on on-prem systems) |
+| `type` | string | Yes | Object type (see below; includes `AUTH`, `FEATURE_TOGGLE`, `ENHO`, `VERSIONS`, `VERSION_SOURCE` on on-prem systems, and the server-driven objects `DESD`/`EVTB`/`EVTO`/`DTSC`/`CSNM`/`COTA` where the system advertises them — ABAP Platform 2025 / 8.16+, plus `EVTB` on S/4HANA 2023) |
 | `name` | string | No | Object name (e.g., `ZTEST_PROGRAM`, `ZCL_ORDER`, `MARA`) |
 | `format` | string | No | Output format: `"text"` (default) or `"structured"` (CLAS only, see below) |
 | `include` | string | No | For CLAS: `main`, `testclasses`, `definitions`, `implementations`, `macros`. For DDLS: `elements` (extract CDS view elements). |
@@ -57,6 +57,12 @@ Read any SAP ABAP object.
 | `ENHO` | Enhancement implementation metadata (structured JSON: BAdI technology, referenced object, implementation classes) |
 | `VERSIONS` | Revision history for an ABAP object. Returns JSON: `{ object: { name, type }, revisions: [{ id, author, timestamp, transport?, uri }] }`. Optional `include` for CLAS and `group` for FUNC. On-prem only. |
 | `VERSION_SOURCE` | Source code at a specific revision. Pass `versionUri` from a VERSIONS response. Returns raw source text. On-prem only. |
+| `DESD` | CDS Logical External Schema — **server-driven object** (generic AFF read). Returns JSON: parsed `blue:blueSource` metadata (name, type, description, package, language, version, …) + the AFF JSON source. SAP_BASIS 8.16+ (ABAP Platform 2025), discovery-gated. |
+| `EVTB` | RAP Event Binding — server-driven object. JSON metadata + AFF JSON source (`boName`, `boOperation`, `events[]`). Available on S/4HANA 2023 (758) **and** 8.16+. |
+| `EVTO` | RAP Event Object — server-driven object. 8.16+. |
+| `DTSC` | CDS Static Cache (table-entity buffer) — server-driven object. 8.16+. |
+| `CSNM` | Core Schema Notation Model (CSN) — server-driven object. 8.16+. |
+| `COTA` | Communication Target — server-driven object. 8.16+. |
 | `TRAN` | Transaction metadata (structured JSON: code, description, program) |
 | `SOBJ` | BOR business object (list methods, or read specific method with `method` param) |
 | `BSP` | BSP/UI5 filestore (list apps, browse structure, read files via `name`+`include` path) |

@@ -77,6 +77,13 @@ const SAPREAD_TYPES_ONPREM = [
   'ENHO',
   'VERSIONS',
   'VERSION_SOURCE',
+  // Server-driven objects (ABAP Platform 2025 / SAP_BASIS 8.16+) — discovery-gated AFF read.
+  'DESD',
+  'DTSC',
+  'CSNM',
+  'EVTB',
+  'EVTO',
+  'COTA',
 ];
 
 /** SAPRead types available on BTP ABAP Environment (no PROG, INCL, VIEW, TEXT_ELEMENTS, VARIANTS) */
@@ -107,6 +114,13 @@ const SAPREAD_TYPES_BTP = [
   'BSP_DEPLOY',
   'API_STATE',
   'INACTIVE_OBJECTS',
+  // Server-driven objects (8.16+ / ABAP Cloud) — discovery-gated AFF read.
+  'DESD',
+  'DTSC',
+  'CSNM',
+  'EVTB',
+  'EVTO',
+  'COTA',
 ];
 
 const SAPREAD_DESC_ONPREM =
@@ -495,8 +509,8 @@ export function getToolDefinitions(
             type: 'string',
             enum: btp ? SAPREAD_TYPES_BTP : SAPREAD_TYPES_ONPREM,
             description: btp
-              ? 'Object type to read (BTP): CLAS, INTF, FUNC, FUGR, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL (transparent tables and DDIC structures), DOMA, DTEL, MSAG, TABLE_CONTENTS, TABLE_QUERY, DEVC, SYSTEM, COMPONENTS, BSP, BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS. Deprecated alias: MESSAGES (use MSAG).'
-              : 'Object type to read (on-prem): PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL (transparent tables and DDIC structures), VIEW, DOMA, DTEL, MSAG, TRAN, TABLE_CONTENTS, TABLE_QUERY, DEVC, SOBJ, SYSTEM, COMPONENTS, TEXT_ELEMENTS, VARIANTS, BSP, BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS, AUTH, FEATURE_TOGGLE, ENHO, VERSIONS, VERSION_SOURCE. Deprecated aliases: MESSAGES (use MSAG), FTG2 (use FEATURE_TOGGLE).',
+              ? 'Object type to read (BTP): CLAS, INTF, FUNC, FUGR, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL (transparent tables and DDIC structures), DOMA, DTEL, MSAG, TABLE_CONTENTS, TABLE_QUERY, DEVC, SYSTEM, COMPONENTS, BSP, BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS. Server-driven objects (8.16+ / ABAP Cloud, discovery-gated, return JSON metadata + AFF JSON source): DESD (CDS Logical External Schema), EVTB (RAP Event Binding), EVTO (RAP Event Object), DTSC (CDS Static Cache), CSNM (Core Schema Notation Model), COTA (Communication Target). Deprecated alias: MESSAGES (use MSAG).'
+              : 'Object type to read (on-prem): PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL (transparent tables and DDIC structures), VIEW, DOMA, DTEL, MSAG, TRAN, TABLE_CONTENTS, TABLE_QUERY, DEVC, SOBJ, SYSTEM, COMPONENTS, TEXT_ELEMENTS, VARIANTS, BSP, BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS, AUTH, FEATURE_TOGGLE, ENHO, VERSIONS, VERSION_SOURCE. Server-driven objects (ABAP Platform 2025 / SAP_BASIS 8.16+, discovery-gated, return JSON metadata + AFF JSON source): DESD (CDS Logical External Schema), EVTB (RAP Event Binding), EVTO (RAP Event Object), DTSC (CDS Static Cache), CSNM (Core Schema Notation Model), COTA (Communication Target). Deprecated aliases: MESSAGES (use MSAG), FTG2 (use FEATURE_TOGGLE).',
           },
           name: { type: 'string', description: 'Object name (e.g., ZTEST_PROGRAM, ZCL_ORDER, MARA)' },
           include: {

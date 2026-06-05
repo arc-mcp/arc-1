@@ -212,6 +212,15 @@ describe('Tool Definitions', () => {
     expect(sqlFilterDescription).toContain('no SELECT');
   });
 
+  it('SAPRead exposes server-driven object types (816)', () => {
+    const tools = getToolDefinitions(DEFAULT_CONFIG);
+    const sapRead = tools.find((t) => t.name === 'SAPRead')!;
+    const schema = sapRead.inputSchema as Record<string, any>;
+    const typeEnum: string[] = schema.properties.type.enum;
+    for (const t of ['DESD', 'EVTB', 'EVTO', 'DTSC', 'CSNM', 'COTA']) expect(typeEnum).toContain(t);
+    expect(schema.properties.type.description).toContain('Server-driven objects');
+  });
+
   it('SAPRead schema includes source version controls', () => {
     const tools = getToolDefinitions(DEFAULT_CONFIG);
     const sapRead = tools.find((t) => t.name === 'SAPRead')!;

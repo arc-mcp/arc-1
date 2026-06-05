@@ -36,6 +36,7 @@ import {
   findMissingRapHandlerRequirements,
 } from '../../src/adt/rap-handlers.js';
 import { unrestrictedSafetyConfig } from '../../src/adt/safety.js';
+import { getServerDrivenObject, supportsServerDrivenObject } from '../../src/adt/server-driven.js';
 import { expectSapFailureClass } from '../helpers/expected-error.js';
 import { requireOrSkip, SkipReason } from '../helpers/skip-policy.js';
 import { getTestClient, requireSapCredentials } from './helpers.js';
@@ -2279,6 +2280,65 @@ describe('ADT Integration Tests', () => {
       }
       expect(caught).toBeDefined();
       expectSapFailureClass(caught, [400], [/does not exist/i]);
+    });
+  });
+
+  // ─── Server-driven objects — generic 816 AFF read (DESD / EVTB) ───────
+  describe('getServerDrivenObject (816 SDO read)', () => {
+    // The per-type discovery gate is release-adaptive (NOT hardcoded to 8.16): DESD/DTSC/CSNM/
+    // COTA need ABAP Platform 2025 (8.16+), while EVTB (RAP Event Binding) also ships on
+    // S/4HANA 2023 (758). Verified live: 816 reads DESD + EVTB (blue:blueSource metadata + AFF
+    // JSON source); on 758 EVTB reads and DESD skips. Each test gates on its own type.
+    async function gateOrSkip(ctx: import('vitest').TaskContext, code: string): Promise<void> {
+      const disco = await fetchDiscoveryDocument(client.http);
+      client.http.setDiscoveryMap(disco.map);
+      requireOrSkip(
+        ctx,
+        // `|| undefined` so a definite "unavailable" (false) skips — requireOrSkip only skips on null/undefined.
+        supportsServerDrivenObject(client.http, code) || undefined,
+        `${SkipReason.BACKEND_UNSUPPORTED}: server-driven objects need SAP_BASIS 8.16+ (ABAP Platform 2025)`,
+      );
+    }
+
+    it('reads a DESD (CDS Logical External Schema): blue:blueSource metadata + AFF JSON source', async (ctx) => {
+      await gateOrSkip(ctx, 'DESD');
+      const r = await getServerDrivenObject(
+        client.http,
+        unrestrictedSafetyConfig(),
+        'DESD',
+        'DEMO_CDS_LOGICL_EXTERNL_SCHEMA',
+      );
+      expect(r.name).toBe('DEMO_CDS_LOGICL_EXTERNL_SCHEMA');
+      expect(r.type).toBe('DESD/TYP');
+      expect(typeof r.package).toBe('string');
+      expect(r.source).toBeTypeOf('object');
+      expect((r.source as Record<string, unknown>).header).toBeDefined();
+    });
+
+    it('reads an EVTB (RAP Event Binding) with a populated events array', async (ctx) => {
+      await gateOrSkip(ctx, 'EVTB');
+      const r = await getServerDrivenObject(
+        client.http,
+        unrestrictedSafetyConfig(),
+        'EVTB',
+        'S_BUSINESSPARTNER_CHANGE',
+      );
+      expect(r.type).toBe('EVTB/EVB');
+      const src = r.source as Record<string, unknown>;
+      expect(src.boName).toBeTruthy();
+      expect(Array.isArray(src.events)).toBe(true);
+    });
+
+    it('surfaces a 404 for a nonexistent server-driven object', async (ctx) => {
+      await gateOrSkip(ctx, 'DESD');
+      let caught: unknown;
+      try {
+        await getServerDrivenObject(client.http, unrestrictedSafetyConfig(), 'DESD', 'ZZZ_NO_SUCH_SDO');
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeDefined();
+      expectSapFailureClass(caught, [404], [/not exist|not found|reading the object|importing object/i]);
     });
   });
 

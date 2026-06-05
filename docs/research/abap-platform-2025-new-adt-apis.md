@@ -147,6 +147,8 @@ Sources: SAP/abap-file-formats (per-type `…-v1.json`); ADT-for-Eclipse 3.52 RN
 
 ### 4.3 How we'd implement Class A in ARC-1 (one generic path)
 
+> ✅ **IMPLEMENTED (read path)** as the discovery-gated generic SDO reader in `src/adt/server-driven.ts`, exposed via `SAPRead type=DESD|EVTB|EVTO|DTSC|CSNM|COTA`. The spike (below) is confirmed: metadata = `<blue:blueSource>` XML, source = AFF JSON; verified live on a4h-2025 (816) round-tripping **DESD** `DEMO_CDS_LOGICL_EXTERNL_SCHEMA` and **EVTB** `S_BUSINESSPARTNER_CHANGE`. The gate is per-type (EVTB also ships on 758). Write (lock → PUT JSON → activate, `$schema`-validated) remains the follow-up. Plan: `docs/plans/completed/add-server-driven-object-read.md`.
+
 ARC-1 today reads/writes AFF objects (DDLS, BDEF, SRVD, SRVB, …) through **per-type** code in `src/handlers/intent.ts` (`objectBasePath`, `buildCreateXml`) + `src/adt/client.ts`. Class A is large and homogeneous, so the per-type approach scales poorly. The 816 framework hands us a better path:
 
 **Recommended: a generic "server-driven object" (SDO) read/write path.**
@@ -194,7 +196,7 @@ SAP's **Joule for Developers** (licensed, SAP Note 3571857): predictive completi
 
 **Priorities (highest first):**
 1. ✅ **CDS test-case scaffolding** (`aunit/dbtestdoubles/cds/testcases`) — **implemented** as `SAPDiagnose action=cds_testcases` (read-only, discovery-gated 8.16+). Was the best first follow-up; verified live (816 → 200, 758 → skip). Real response shape: `<cdstestcases:root>`/`<testCase>` with `semanticType` ∈ {NONE, CALCULATION, CAST, JOIN, …} + optional `calculatedField`. The AI siblings (`testdata`/`testmethod`, POST, Joule-licensed) remain out of scope.
-2. **Generic server-driven object (SDO) read path** — spike a single round-trip on a real seeded object (DTSC or Communication Target), then add a discovery-gated generic reader covering ~15 new types at once. Read before write.
+2. ✅ **Generic server-driven object (SDO) read path** — **implemented** (read) as `SAPRead type=DESD|EVTB|EVTO|DTSC|CSNM|COTA` via the discovery-gated generic engine `src/adt/server-driven.ts`. The spike succeeded: the trial *does* ship readable instances (TADIR-discovered — DESD `DEMO_CDS_LOGICL_EXTERNL_SCHEMA`, EVTB `S_BUSINESSPARTNER_CHANGE`, + UIAD/SFPF/SUSI/…). Metadata = `<blue:blueSource>` XML, source = AFF JSON. Write path (lock → PUT JSON → activate, `$schema`-validated) is the remaining follow-up.
 3. **EVTO/EVTB (RAP business events)** — if/when ARC-1 deepens RAP support, these slot into the SDO path and complement BDEF/SRVD/SRVB.
 4. **ATC exemptions** — only alongside broader ATC-workflow features.
 

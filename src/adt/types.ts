@@ -283,6 +283,32 @@ export interface CdsTestCasesResult {
   testCases: CdsTestCase[];
 }
 
+/**
+ * Metadata of a "server-driven object" (AFF generic object) — the ABAP Platform 2025
+ * (SAP_BASIS 8.16+) contract shared by DESD, EVTB, DTSC, COTA, … Parsed from the
+ * `<blue:blueSource>` document (GET …/{name}, Accept application/vnd.sap.adt.blues.v1+xml).
+ */
+export interface ServerDrivenObjectMetadata {
+  name: string;
+  /** adtcore:type, e.g. "DESD/TYP", "EVTB/EVB". */
+  type: string;
+  description?: string;
+  package?: string;
+  masterLanguage?: string;
+  abapLanguageVersion?: string;
+  responsible?: string;
+  version?: string;
+  changedBy?: string;
+  changedAt?: string;
+  createdBy?: string;
+  createdAt?: string;
+}
+
+/** Result of getServerDrivenObject — metadata plus the AFF JSON source (parsed when JSON). */
+export interface ServerDrivenObjectResult extends ServerDrivenObjectMetadata {
+  source: unknown;
+}
+
 /** Source unit affected by a quick fix proposal/application. */
 export interface FixAffectedObject {
   /** ADT source URI for this affected unit. May include #start/#end range fragments. */

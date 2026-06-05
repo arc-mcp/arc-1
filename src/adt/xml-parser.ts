@@ -36,6 +36,7 @@ import type {
   MethodStructure,
   RevisionInfo,
   RevisionListResult,
+  ServerDrivenObjectMetadata,
   SourceSearchResult,
   TransactionInfo,
 } from './types.js';
@@ -1114,6 +1115,38 @@ export function parseClassMetadata(xml: string): ClassMetadata {
     package: String(pkgRef['@_name'] ?? ''),
     ...(rootEntityRef ? { rootEntityRef } : {}),
   };
+}
+
+/**
+ * Parse the `<blue:blueSource>` metadata of a server-driven (AFF generic) object — the
+ * ABAP Platform 2025 (8.16+) contract shared by DESD, EVTB, DTSC, COTA, … (GET …/{name},
+ * Accept application/vnd.sap.adt.blues.v1+xml). `removeNSPrefix` strips blue:/adtcore:, so the
+ * root element <blue:blueSource> is keyed `blueSource`. Optional fields are omitted when empty.
+ */
+export function parseBlueSource(xml: string): ServerDrivenObjectMetadata {
+  const root = (parseXml(xml).blueSource ?? {}) as Record<string, unknown>;
+  const pkgRef = (root.packageRef ?? {}) as Record<string, unknown>;
+  const str = (k: string): string => {
+    const v = root[k];
+    return v == null ? '' : String(v);
+  };
+  const meta: ServerDrivenObjectMetadata = { name: str('@_name'), type: str('@_type') };
+  const opt = (key: keyof ServerDrivenObjectMetadata, attr: string): void => {
+    const v = str(attr);
+    if (v) (meta as unknown as Record<string, unknown>)[key] = v;
+  };
+  opt('description', '@_description');
+  opt('masterLanguage', '@_masterLanguage');
+  opt('abapLanguageVersion', '@_abapLanguageVersion');
+  opt('responsible', '@_responsible');
+  opt('version', '@_version');
+  opt('changedBy', '@_changedBy');
+  opt('changedAt', '@_changedAt');
+  opt('createdBy', '@_createdBy');
+  opt('createdAt', '@_createdAt');
+  const pkg = pkgRef['@_name'] == null ? '' : String(pkgRef['@_name']);
+  if (pkg) meta.package = pkg;
+  return meta;
 }
 
 /** Safely traverse a deep path and return an array at the end */

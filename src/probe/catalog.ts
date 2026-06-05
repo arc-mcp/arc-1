@@ -202,6 +202,12 @@ export const CATALOG: CatalogEntry[] = [
     minRelease: 702,
     note: 'Enhancement implementations — no universally-shipped ENHO',
   },
+  // NOTE: the 816 server-driven object types (DESD/EVTB/DTSC/CSNM/EVTO/COTA) are deliberately
+  // NOT in this probe catalog. The catalog's recorded-fixture replay asserts "zero
+  // unavailable/ambiguous" per system, which 816-only types break (unavailable on 7.5x/758;
+  // ambiguous on 816 for the four with no universally-shipped instance). Availability is
+  // instead handled at runtime by discovery-gating (src/adt/server-driven.ts) + the live
+  // integration test — same call as cds_testcases.
 ];
 
 /** Get a catalog entry by type code (case-insensitive). */

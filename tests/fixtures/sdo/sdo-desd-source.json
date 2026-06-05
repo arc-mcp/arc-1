@@ -1,0 +1,8 @@
+{
+  "formatVersion": "1",
+  "header": {
+    "description": "Demo CDS Logical External Schema",
+    "originalLanguage": "en",
+    "abapLanguageVersion": "cloudDevelopment"
+  }
+}

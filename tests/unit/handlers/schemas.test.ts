@@ -29,6 +29,12 @@ describe('SAPReadSchema', () => {
     if (result.success) expect(result.data.version).toBe('active');
   });
 
+  it('accepts server-driven object types (DESD/EVTB/COTA — 816)', () => {
+    expect(SAPReadSchema.safeParse({ type: 'DESD', name: 'DEMO_CDS_LOGICL_EXTERNL_SCHEMA' }).success).toBe(true);
+    expect(SAPReadSchema.safeParse({ type: 'EVTB', name: 'S_BUSINESSPARTNER_CHANGE' }).success).toBe(true);
+    expect(SAPReadSchema.safeParse({ type: 'COTA', name: 'X' }).success).toBe(true);
+  });
+
   it('accepts all optional fields', () => {
     const result = SAPReadSchema.safeParse({
       type: 'CLAS',

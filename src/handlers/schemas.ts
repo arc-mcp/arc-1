@@ -59,6 +59,14 @@ const SAPREAD_TYPES_ONPREM = [
   'ENHO',
   'VERSIONS',
   'VERSION_SOURCE',
+  // Server-driven objects (ABAP Platform 2025 / SAP_BASIS 8.16+) — generic AFF read path,
+  // discovery-gated (src/adt/server-driven.ts). Read returns JSON metadata + AFF JSON source.
+  'DESD',
+  'DTSC',
+  'CSNM',
+  'EVTB',
+  'EVTO',
+  'COTA',
 ] as const;
 
 const SAPREAD_TYPES_BTP = [
@@ -88,6 +96,13 @@ const SAPREAD_TYPES_BTP = [
   'BSP_DEPLOY',
   'API_STATE',
   'INACTIVE_OBJECTS',
+  // Server-driven objects (8.16+ / ABAP Cloud) — generic AFF read path, discovery-gated.
+  'DESD',
+  'DTSC',
+  'CSNM',
+  'EVTB',
+  'EVTO',
+  'COTA',
 ] as const;
 
 const SAPREAD_CLAS_INCLUDES = ['main', 'testclasses', 'definitions', 'implementations', 'macros'] as const;
