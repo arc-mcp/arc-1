@@ -170,6 +170,12 @@ jobs:
           format: sarif
           output: trivy-results.sarif
           severity: HIGH,CRITICAL
+          # With format=sarif, trivy-action builds the report (and evaluates exit-code)
+          # across ALL severities unless this is set — so `severity: HIGH,CRITICAL` is
+          # ignored for gating and exit-code:1 fires on MEDIUM/LOW too. That's what blocked
+          # the 0.9.10 Docker publish (new MEDIUM hono advisories), even though the image has
+          # zero HIGH/CRITICAL. limit-severities-for-sarif makes the gate honor the filter.
+          limit-severities-for-sarif: true
           exit-code: '1'
 
       - name: Upload Trivy SARIF
