@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.11](https://github.com/marianfoo/arc-1/compare/v0.9.10...v0.9.11) (2026-06-05)
+
+
+### Bug Fixes
+
+* **lint:** don't block writes on parse errors beyond abaplint's grammar (8xx / SAP_BASIS 816) ([#350](https://github.com/marianfoo/arc-1/issues/350)) ([79b5687](https://github.com/marianfoo/arc-1/commit/79b5687ec1b9023f4d01dc45b11b29a59131c2ea))
+* **probe:** repair broken probe CLI and validate ABAP Platform 2025 (SAP_BASIS 816) ([#347](https://github.com/marianfoo/arc-1/issues/347)) ([6c307ec](https://github.com/marianfoo/arc-1/commit/6c307ecd577a16f853ed344368a1416dd20d754e))
+
 ## [0.9.10](https://github.com/marianfoo/arc-1/compare/v0.9.9...v0.9.10) (2026-06-05)
 
 
