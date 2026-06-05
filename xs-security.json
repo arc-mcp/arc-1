@@ -71,55 +71,6 @@
       ]
     }
   ],
-  "role-collections": [
-    {
-      "name": "ARC-1 Viewer",
-      "description": "Read-only SAP access via ARC-1 MCP",
-      "role-template-references": ["$XSAPPNAME.MCPViewer"]
-    },
-    {
-      "name": "ARC-1 Developer",
-      "description": "Read, write, transport, and git access via ARC-1 MCP",
-      "role-template-references": ["$XSAPPNAME.MCPDeveloper"]
-    },
-    {
-      "name": "ARC-1 Data Viewer",
-      "description": "Read-only SAP access with table data preview",
-      "role-template-references": [
-        "$XSAPPNAME.MCPViewer",
-        "$XSAPPNAME.MCPDataViewer"
-      ]
-    },
-    {
-      "name": "ARC-1 Viewer + SQL",
-      "description": "Read-only SAP access with table data preview and freestyle SQL",
-      "role-template-references": [
-        "$XSAPPNAME.MCPViewer",
-        "$XSAPPNAME.MCPSqlUser"
-      ]
-    },
-    {
-      "name": "ARC-1 Developer + Data",
-      "description": "Developer access with table data preview",
-      "role-template-references": [
-        "$XSAPPNAME.MCPDeveloper",
-        "$XSAPPNAME.MCPDataViewer"
-      ]
-    },
-    {
-      "name": "ARC-1 Developer + SQL",
-      "description": "Developer access with freestyle SQL queries",
-      "role-template-references": [
-        "$XSAPPNAME.MCPDeveloper",
-        "$XSAPPNAME.MCPSqlUser"
-      ]
-    },
-    {
-      "name": "ARC-1 Admin",
-      "description": "Full ARC-1 administrative access (admin implies all scopes)",
-      "role-template-references": ["$XSAPPNAME.MCPAdmin"]
-    }
-  ],
   "oauth2-configuration": {
     "redirect-uris": [
       "http://localhost:*/**",

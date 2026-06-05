@@ -339,20 +339,32 @@ export function parseSyntaxConfigurations(xml: string): Array<{ version: string;
 }
 
 /**
- * Parse function group structure.
+ * Parse a function group's structure from the ADT **objectstructure** response
+ * (`/sap/bc/adt/functions/groups/<name>/objectstructure`).
  *
- * <group name="ZGROUP" type="FUGR/F">
- *   <functionModule name="ZFUNC" type="FUNC/FM"/>
- * </group>
+ * The plain `/functions/groups/<name>` resource returns only group metadata +
+ * atom links — NO function-module list — which is why the old parser (reading a
+ * `<group>`/`functionModule` shape that ADT never emits) always returned empty.
+ * The objectstructure response is a tree of `<objectStructureElement>` nodes, each
+ * tagged with `adtcore:type`: the root is `FUGR/F` (the group), `FUGR/FF` children
+ * are function modules, `FUGR/I` children are includes, `FUGR/PX` is the main
+ * program. Verified live on a4h (see tests/fixtures/xml/function-group.xml).
  */
-export function parseFunctionGroup(xml: string): { name: string; functions: string[] } {
+export function parseFunctionGroup(xml: string): { name: string; functions: string[]; includes: string[] } {
   const parsed = parseXml(xml);
-  const group = (parsed.group ?? {}) as Record<string, unknown>;
-  const fmods = Array.isArray(group.functionModule) ? group.functionModule : [];
-  return {
-    name: String(group['@_name'] ?? ''),
-    functions: fmods.map((fm: Record<string, unknown>) => String(fm['@_name'] ?? '')),
-  };
+  // parseXml wraps elements in arrays, so the root <objectStructureElement> arrives as
+  // a one-element array; its children are nested under the same (array) key.
+  const root = toRecordArray(parsed.objectStructureElement)[0] ?? {};
+  const functions: string[] = [];
+  const includes: string[] = [];
+  for (const child of toRecordArray(root.objectStructureElement)) {
+    const type = String(child['@_type'] ?? '');
+    const childName = String(child['@_name'] ?? '');
+    if (!childName) continue;
+    if (type === 'FUGR/FF') functions.push(childName);
+    else if (type === 'FUGR/I') includes.push(childName);
+  }
+  return { name: String(root['@_name'] ?? ''), functions, includes };
 }
 
 /**

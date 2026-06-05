@@ -42,7 +42,7 @@ The included `xs-security.json` defines 7 scopes:
 | `git`          | Push / pull / commit via abapGit / gCTS                        | `SAPGit.clone`/`pull`/`push`/`commit`                                                        |
 | `admin`        | Implies ALL other scopes at runtime                            | Everything                                                                                   |
 
-And 7 pre-defined role collections (assignable to users in BTP Cockpit):
+And 7 pre-defined role collections (defined in `mta.yaml`, assignable to users in BTP Cockpit):
 
 | Role Collection           | Scopes                                                   | Use Case                                  |
 |---------------------------|----------------------------------------------------------|-------------------------------------------|
@@ -53,6 +53,18 @@ And 7 pre-defined role collections (assignable to users in BTP Cockpit):
 | ARC-1 Developer + Data    | `read`, `write`, `data`, `transports`, `git`             | Developer + data preview                  |
 | ARC-1 Developer + SQL     | `read`, `write`, `data`, `sql`, `transports`, `git`      | Developer + data + freestyle SQL          |
 | ARC-1 Admin               | all 7                                                    | Administrative access                     |
+
+> **Multi-space deployments.** `mta.yaml` derives the route host, the XSUAA
+> `xsappname`, and these role-collection names from the deploy-time `${space}`
+> placeholder, so the same mtar can be deployed into several spaces of one
+> subaccount side by side. The collections therefore appear in the cockpit with
+> the space appended — e.g. `ARC-1 Viewer (dev)` in space `dev`. Assign users to
+> the collection for *your* space (Step 3).
+>
+> **Migrating an existing instance** onto per-space naming changes its route host
+> and `xsappname`: update the MCP client URL, re-assign users to the new
+> `ARC-1 … (<space>)` collections, and set `ARC1_DCR_SIGNING_SECRET` before the
+> redeploy so cached OAuth `client_id`s survive the `xsappname` change.
 
 **Want a restricted developer** (can write code but cannot transport or push to Git)? Define your own role template in `xs-security.json` with just `[read, write]` scopes, redeploy, and assign it — or use `SAP_DENY_ACTIONS` on the server.
 
@@ -78,15 +90,15 @@ Verify XSUAA is active in the logs:
 ```bash
 cf logs arc1-mcp-server --recent | grep XSUAA
 # Should show:
-# INFO: XSUAA credentials loaded {"xsappname":"arc1-mcp!t..."}
-# INFO: XSUAA OAuth proxy enabled {"xsappname":"arc1-mcp!t..."}
+# INFO: XSUAA credentials loaded {"xsappname":"arc1-mcp-<space>!t..."}
+# INFO: XSUAA OAuth proxy enabled {"xsappname":"arc1-mcp-<space>!t..."}
 # INFO: ARC-1 HTTP server started {"auth":"XSUAA OAuth proxy"}
 ```
 
 ## Step 3: Assign Role Collections
 
 1. Open **BTP Cockpit** → **Security** → **Role Collections**
-2. Find one of the shipped collections: "ARC-1 Viewer", "ARC-1 Developer", "ARC-1 Developer + Data", "ARC-1 Developer + SQL", "ARC-1 Data Viewer", "ARC-1 Viewer + SQL", or "ARC-1 Admin"
+2. Find the shipped collection for your space — the names carry the space suffix, e.g. "ARC-1 Viewer (<space>)", "ARC-1 Developer (<space>)", … "ARC-1 Admin (<space>)" (see the multi-space note above)
 3. Click the role collection → **Edit** → **Users** tab
 4. Add your BTP user (email address)
 5. Save
@@ -94,15 +106,15 @@ cf logs arc1-mcp-server --recent | grep XSUAA
 ## Step 4: Verify OAuth Discovery
 
 ```bash
-curl -s https://arc1-mcp-server.cfapps.us10-001.hana.ondemand.com/.well-known/oauth-authorization-server | jq .
+curl -s https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com/.well-known/oauth-authorization-server | jq .
 ```
 
 Expected response:
 ```json
 {
-  "issuer": "https://arc1-mcp-server.cfapps.us10-001.hana.ondemand.com/",
-  "authorization_endpoint": "https://arc1-mcp-server.cfapps.us10-001.hana.ondemand.com/authorize",
-  "token_endpoint": "https://arc1-mcp-server.cfapps.us10-001.hana.ondemand.com/token",
+  "issuer": "https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com/",
+  "authorization_endpoint": "https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com/authorize",
+  "token_endpoint": "https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com/token",
   "scopes_supported": ["read", "write", "data", "sql", "transports", "git", "admin"],
   "response_types_supported": ["code"],
   "code_challenge_methods_supported": ["S256"],
@@ -120,7 +132,7 @@ Add to `claude_desktop_config.json`:
 {
   "mcpServers": {
     "arc1-sap": {
-      "url": "https://arc1-mcp-server.cfapps.us10-001.hana.ondemand.com/mcp"
+      "url": "https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com/mcp"
     }
   }
 }
@@ -135,7 +147,7 @@ In Cursor settings → MCP Servers, add:
 ```json
 {
   "arc1-sap": {
-    "url": "https://arc1-mcp-server.cfapps.us10-001.hana.ondemand.com/mcp"
+    "url": "https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com/mcp"
   }
 }
 ```
@@ -144,7 +156,7 @@ In Cursor settings → MCP Servers, add:
 
 Connect to:
 ```
-https://arc1-mcp-server.cfapps.us10-001.hana.ondemand.com/mcp
+https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com/mcp
 ```
 
 The inspector will perform OAuth discovery and redirect to XSUAA login.
@@ -158,7 +170,7 @@ Copilot Studio does not re-register via DCR after server restarts, so use **Manu
 1. In Copilot Studio, add an MCP server connection
 2. Select **Manual** OAuth type
 3. Fill in:
-   - **Client ID:** XSUAA `clientid` from `cf env <app-name>` (e.g. `sb-arc1-mcp!t627062`)
+   - **Client ID:** XSUAA `clientid` from `cf env <app-name>` (e.g. `sb-arc1-mcp-<space>!t627062`)
    - **Client secret:** XSUAA `clientsecret` from `cf env <app-name>`
    - **Authorization URL:** `https://<app-route>/authorize`
    - **Token URL template:** `https://<app-route>/token`

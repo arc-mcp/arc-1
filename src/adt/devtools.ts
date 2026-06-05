@@ -556,9 +556,28 @@ export async function runAtcCheck(
 ): Promise<{ findings: AtcFinding[] }> {
   checkOperation(safety, OperationType.Read, 'RunATCCheck');
 
-  // Create ATC run
-  const createBody = `<?xml version="1.0" encoding="UTF-8"?>
-<atc:run xmlns:atc="http://www.sap.com/adt/atc"${variant ? ` maximumVerdicts="100"` : ''}>
+  // ATC is a three-step flow. The checks that actually run are selected by the *check
+  // variant bound to a worklist* — not by the run request. The previous implementation
+  // skipped worklist creation and POSTed straight to `/runs?worklistId=1`, so ATC executed
+  // no checks and always returned zero findings (and the `variant` argument was silently
+  // ignored — it only toggled `maximumVerdicts`). Verified live on A4H (S/4HANA 2023):
+  // a variant-bound worklist yields findings; the bare `worklistId=1` path does not.
+
+  // Step 1 — create a worklist bound to the check variant. Omitting `checkVariant` uses the
+  // system's configured default check variant (live-verified to produce findings). The
+  // response body is the plain-text worklist id.
+  const worklistPath = variant
+    ? `/sap/bc/adt/atc/worklists?checkVariant=${encodeURIComponent(variant)}`
+    : '/sap/bc/adt/atc/worklists';
+  const worklistResp = await http.post(worklistPath, '', 'application/xml', { Accept: 'text/plain' });
+  const worklistId = worklistResp.body.trim();
+  if (!worklistId) {
+    throw new AdtApiError('ATC worklist creation returned no worklist id; cannot run ATC checks.', 500, worklistPath);
+  }
+
+  // Step 2 — run the selected checks for the object set into that worklist.
+  const runBody = `<?xml version="1.0" encoding="UTF-8"?>
+<atc:run xmlns:atc="http://www.sap.com/adt/atc" maximumVerdicts="100">
   <objectSets xmlns:adtcore="http://www.sap.com/adt/core">
     <objectSet kind="inclusive">
       <adtcore:objectReferences>
@@ -567,22 +586,12 @@ export async function runAtcCheck(
     </objectSet>
   </objectSets>
 </atc:run>`;
-
-  const createResp = await http.post('/sap/bc/adt/atc/runs?worklistId=1', createBody, 'application/xml', {
+  await http.post(`/sap/bc/adt/atc/runs?worklistId=${encodeURIComponent(worklistId)}`, runBody, 'application/xml', {
     Accept: 'application/xml',
   });
 
-  // Parse worklist ID from response via proper XML parsing
-  const createParsed = parseXml(createResp.body);
-  const runs = findDeepNodes(createParsed, 'run');
-  const runNode = runs[0];
-  const worklistId = runNode
-    ? String(
-        (runNode as Record<string, unknown>)['@_worklistId'] ?? (runNode as Record<string, unknown>)['@_id'] ?? '1',
-      )
-    : '1';
-
-  const resultResp = await http.get(`/sap/bc/adt/atc/worklists/${worklistId}`, {
+  // Step 3 — read the populated worklist with its findings.
+  const resultResp = await http.get(`/sap/bc/adt/atc/worklists/${encodeURIComponent(worklistId)}`, {
     Accept: 'application/atc.worklist.v1+xml',
   });
 
@@ -1104,7 +1113,12 @@ function parseAtcFindings(xml: string): AtcFinding[] {
   const nodes = findDeepNodes(parsed, 'finding');
 
   return nodes.map((f) => {
-    const rawUri = String(f['@_uri'] ?? f['@_location'] ?? '');
+    // Real ATC findings carry TWO uri-ish attributes: `adtcore:uri` (a findings-catalog
+    // URI with no source position) and `atcfinding:location` (the source URI with the
+    // `#start=line,col` fragment). Prefer `location` so the source line is extracted and
+    // the returned uri points at the actual code position. Hand-written fixtures that only
+    // set `uri="...#start=..."` still work via the fallback.
+    const rawUri = String(f['@_location'] ?? f['@_uri'] ?? '');
     let line = 0;
     const startIdx = rawUri.indexOf('#start=');
     if (startIdx !== -1) {

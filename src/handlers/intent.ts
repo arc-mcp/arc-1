@@ -74,6 +74,7 @@ import {
   type DomainCreateParams,
   decodeKtdText,
   type MessageClassCreateParams,
+  normalizeAdtLanguage,
   type PackageCreateParams,
   rewriteKtdText,
   type ServiceBindingCreateParams,
@@ -152,14 +153,18 @@ import { changePackage } from '../adt/refactoring.js';
 import { checkOperation, checkPackage, isOperationAllowed, OperationType } from '../adt/safety.js';
 import {
   createTransport,
+  createTransportWithTarget,
   deleteTransport,
   getObjectTransports,
   getTransport,
   getTransportInfo,
+  listTransportLayers,
   listTransports,
+  listTransportTargets,
   reassignTransport,
   releaseTransport,
   releaseTransportRecursive,
+  supportsExplicitTransportTarget,
 } from '../adt/transport.js';
 import type {
   AdtObjectLookupResult,
@@ -1649,21 +1654,20 @@ async function handleSAPRead(
     case 'FUGR': {
       const expand = Boolean(args.expand_includes);
       if (expand) {
-        const { source } = await client.getFunctionGroupSource(name, { version: effectiveVersion });
-        // Match INCLUDE statements but skip ABAP comment lines (starting with *)
-        const includePattern = /^[^*\n]*\bINCLUDE\s+(\S+)\s*\./gim;
-        const parts: string[] = [`=== FUGR ${name} (main) ===\n${source}`];
-        let m: RegExpExecArray | null;
-        while ((m = includePattern.exec(source)) !== null) {
-          const inclName = m[1]!;
-          try {
-            const { source: inclSource } = await client.getInclude(inclName, { version: effectiveVersion });
-            parts.push(`\n=== ${inclName} ===\n${inclSource}`);
-          } catch {
-            parts.push(`\n=== ${inclName} ===\n[Could not read include "${inclName}"]`);
-          }
+        // Recursive expansion: the function module bodies (FUNCTION…ENDFUNCTION) and
+        // PBO/PAI modules live in nested includes (LZ<grp>U01, …O…, …I…) pulled in from
+        // the UXX include — a one-level walk misses them. getFunctionGroupExpanded BFS-es
+        // the include graph (depth/count-capped, cycle-guarded). Dynpros + GUI status are
+        // not included: ADT doesn't expose them over REST (SAPGUI-only).
+        const { blocks, truncated } = await client.getFunctionGroupExpanded(name, { version: effectiveVersion });
+        const parts = blocks.map((b) => `=== ${b.name} ===\n${b.source}`);
+        if (truncated) {
+          parts.push(
+            '=== [truncated] ===\nInclude cap reached; some nested includes were not expanded. ' +
+              'Read remaining includes individually with SAPRead(type="INCL", name="...").',
+          );
         }
-        return textResult(parts.join('\n'));
+        return textResult(parts.join('\n\n'));
       }
       const fg = await client.getFunctionGroup(name);
       return textResult(JSON.stringify(fg, null, 2));
@@ -2873,7 +2877,13 @@ export function buildCreateXml(
   pkg: string,
   description: string,
   properties?: Record<string, unknown>,
+  language?: string,
 ): string {
+  // Master/original language for the created object. Derived from the configured
+  // SAP_LANGUAGE (passed by callers as config.language) so the create-XML body
+  // matches the sap-language URL param ARC-1 already sends. Defaults to "EN" when
+  // unset, preserving legacy output. See issue #343.
+  const masterLanguage = normalizeAdtLanguage(language);
   switch (type) {
     case 'PROG':
       return `<?xml version="1.0" encoding="UTF-8"?>
@@ -2882,7 +2892,7 @@ export function buildCreateXml(
                      adtcore:description="${escapeXml(description)}"
                      adtcore:name="${escapeXml(name)}"
                      adtcore:type="PROG/P"
-                     adtcore:masterLanguage="EN"
+                     adtcore:masterLanguage="${masterLanguage}"
                      adtcore:masterSystem="H00"
                      adtcore:responsible="DEVELOPER">
   <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
@@ -2894,7 +2904,7 @@ export function buildCreateXml(
                  adtcore:description="${escapeXml(description)}"
                  adtcore:name="${escapeXml(name)}"
                  adtcore:type="CLAS/OC"
-                 adtcore:masterLanguage="EN"
+                 adtcore:masterLanguage="${masterLanguage}"
                  adtcore:masterSystem="H00"
                  adtcore:responsible="DEVELOPER">
   <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
@@ -2906,7 +2916,7 @@ export function buildCreateXml(
                     adtcore:description="${escapeXml(description)}"
                     adtcore:name="${escapeXml(name)}"
                     adtcore:type="INTF/OI"
-                    adtcore:masterLanguage="EN"
+                    adtcore:masterLanguage="${masterLanguage}"
                     adtcore:masterSystem="H00"
                     adtcore:responsible="DEVELOPER">
   <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
@@ -2918,7 +2928,7 @@ export function buildCreateXml(
                      adtcore:description="${escapeXml(description)}"
                      adtcore:name="${escapeXml(name)}"
                      adtcore:type="PROG/I"
-                     adtcore:masterLanguage="EN"
+                     adtcore:masterLanguage="${masterLanguage}"
                      adtcore:masterSystem="H00"
                      adtcore:responsible="DEVELOPER">
   <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
@@ -2930,7 +2940,7 @@ export function buildCreateXml(
                adtcore:description="${escapeXml(description)}"
                adtcore:name="${escapeXml(name)}"
                adtcore:type="DDLS/DF"
-               adtcore:masterLanguage="EN"
+               adtcore:masterLanguage="${masterLanguage}"
                adtcore:masterSystem="H00"
                  adtcore:responsible="DEVELOPER">
   <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
@@ -2942,7 +2952,7 @@ export function buildCreateXml(
                adtcore:description="${escapeXml(description)}"
                adtcore:name="${escapeXml(name)}"
                adtcore:type="DCLS/DL"
-               adtcore:masterLanguage="EN"
+               adtcore:masterLanguage="${masterLanguage}"
                adtcore:masterSystem="H00"
                adtcore:responsible="DEVELOPER">
   <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
@@ -2960,7 +2970,7 @@ export function buildCreateXml(
                  adtcore:description="${escapeXml(description)}"
                  adtcore:name="${escapeXml(name)}"
                  adtcore:type="${adtType}"
-                 adtcore:masterLanguage="EN"
+                 adtcore:masterLanguage="${masterLanguage}"
                  adtcore:masterSystem="H00"
                  adtcore:responsible="DEVELOPER">
   <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
@@ -2975,7 +2985,7 @@ export function buildCreateXml(
                  adtcore:description="${escapeXml(description)}"
                  adtcore:name="${escapeXml(name)}"
                  adtcore:type="BDEF/BDO"
-                 adtcore:masterLanguage="EN"
+                 adtcore:masterLanguage="${masterLanguage}"
                  adtcore:masterSystem="H00"
                  adtcore:responsible="DEVELOPER">
   <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
@@ -2987,7 +2997,7 @@ export function buildCreateXml(
                  adtcore:description="${escapeXml(description)}"
                  adtcore:name="${escapeXml(name)}"
                  adtcore:type="SRVD/SRV"
-                 adtcore:masterLanguage="EN"
+                 adtcore:masterLanguage="${masterLanguage}"
                  adtcore:masterSystem="H00"
                  adtcore:responsible="DEVELOPER"
                  srvd:srvdSourceType="S">
@@ -3010,6 +3020,7 @@ export function buildCreateXml(
         category,
         version: properties?.version ? String(properties.version) : undefined,
         odataVersion: properties?.odataVersion ? String(properties.odataVersion) : undefined,
+        language: masterLanguage,
       };
       return buildServiceBindingXml(params);
     }
@@ -3020,7 +3031,7 @@ export function buildCreateXml(
                  adtcore:description="${escapeXml(description)}"
                  adtcore:name="${escapeXml(name)}"
                  adtcore:type="DDLX/EX"
-                 adtcore:masterLanguage="EN"
+                 adtcore:masterLanguage="${masterLanguage}"
                  adtcore:masterSystem="H00"
                      adtcore:responsible="DEVELOPER">
   <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
@@ -3048,6 +3059,7 @@ export function buildCreateXml(
         lowercase: toBoolean(properties?.lowercase),
         fixedValues,
         valueTable: properties?.valueTable ? String(properties.valueTable) : undefined,
+        language: masterLanguage,
       };
       return buildDomainXml(params);
     }
@@ -3074,6 +3086,7 @@ export function buildCreateXml(
         setGetParameter: properties?.setGetParameter ? String(properties.setGetParameter) : undefined,
         defaultComponentName: properties?.defaultComponentName ? String(properties.defaultComponentName) : undefined,
         changeDocument: toBoolean(properties?.changeDocument),
+        language: masterLanguage,
       };
       return buildDataElementXml(params);
     }
@@ -3098,7 +3111,7 @@ export function buildCreateXml(
       // with Content-Type: application/vnd.sap.adt.functions.groups.v3+xml.
       // Verified live on a4h S/4HANA 2023 (issue #250).
       return `<?xml version="1.0" encoding="UTF-8"?>
-<group:abapFunctionGroup xmlns:group="http://www.sap.com/adt/functions/groups" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:description="${escapeXml(description)}" adtcore:language="EN" adtcore:name="${escapeXml(name)}" adtcore:type="FUGR/F" adtcore:masterLanguage="EN">
+<group:abapFunctionGroup xmlns:group="http://www.sap.com/adt/functions/groups" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:description="${escapeXml(description)}" adtcore:language="${masterLanguage}" adtcore:name="${escapeXml(name)}" adtcore:type="FUGR/F" adtcore:masterLanguage="${masterLanguage}">
   <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
 </group:abapFunctionGroup>`;
     case 'FUNC': {
@@ -3824,7 +3837,7 @@ async function handleSAPWrite(
         const mergedProps = await mergeMetadataWriteProperties(client, type, name, metadataProps);
         const description = String(args.description ?? mergedProps._description ?? name);
         const pkg = String(args.package ?? existingPackage ?? mergedProps._package ?? '$TMP');
-        const body = buildCreateXml(type, name, pkg, description, mergedProps);
+        const body = buildCreateXml(type, name, pkg, description, mergedProps, config.language);
         await safeUpdateObject(
           client.http,
           client.safety,
@@ -4035,8 +4048,9 @@ async function handleSAPWrite(
         const refParentType = refType.split('/')[0] ?? '';
         const refUri = `${objectBasePath(refParentType)}${encodeURIComponent(refName.toLowerCase())}`;
 
+        const ktdLang = normalizeAdtLanguage(config.language);
         const ktdBody = `<?xml version="1.0" encoding="UTF-8"?>
-<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:language="EN" adtcore:name="${escapeXml(name)}" adtcore:type="SKTD/TYP" adtcore:masterLanguage="EN">
+<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:language="${ktdLang}" adtcore:name="${escapeXml(name)}" adtcore:type="SKTD/TYP" adtcore:masterLanguage="${ktdLang}">
   <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
   <sktd:refObject adtcore:description="${escapeXml(refDescription)}" adtcore:name="${escapeXml(refName)}" adtcore:type="${escapeXml(refType)}" adtcore:uri="${escapeXml(refUri)}"/>
 </sktd:docu>`;
@@ -4084,7 +4098,7 @@ async function handleSAPWrite(
       // SAP ADT requires the root element to match the object type —
       // a generic objectReferences body returns 400 "System expected the element ...".
       const metadataProperties = getMetadataWriteProperties(args);
-      const body = buildCreateXml(type, name, pkg, description, metadataProperties);
+      const body = buildCreateXml(type, name, pkg, description, metadataProperties, config.language);
 
       // Step 1: Create the object (metadata only)
       const createUrl = objectUrl.replace(/\/[^/]+$/, ''); // parent collection URL
@@ -5199,7 +5213,7 @@ async function handleSAPWrite(
           const objUrl = objectUrlForType(objType, objName);
           const createUrl = objUrl.replace(/\/[^/]+$/, '');
           const objMetadataProps = getMetadataWriteProperties(obj);
-          const body = buildCreateXml(objType, objName, objPackage, objDescription, objMetadataProps);
+          const body = buildCreateXml(objType, objName, objPackage, objDescription, objMetadataProps, config.language);
           const contentType = createContentTypeForType(objType);
           const needsPackageParam =
             objType === 'BDEF' || objType === 'TABL' || objType === 'TABL/DT' || objType === 'TABL/DS';
@@ -6708,13 +6722,159 @@ async function handleSAPTransport(client: AdtClient, args: Record<string, unknow
     case 'create': {
       const description = String(args.description ?? '');
       if (!description) return errorResult('Description is required for "create" action.');
-      const targetPackage = args.package ? String(args.package) : undefined;
-      const id = await createTransport(client.http, client.safety, description, targetPackage);
+      // Distinguish "target omitted" from "target present but empty": an explicit but
+      // blank target is a caller mistake, not a request to use the package/layer path.
+      const targetProvided = args.target !== undefined && args.target !== null;
+      const explicitTarget = targetProvided ? String(args.target).trim() : undefined;
+      if (targetProvided && !explicitTarget) {
+        return errorResult(
+          '"target" was provided but is empty. Pass a transport target — a system (C11), ' +
+            'system.client (C11.021), or target group (/GROUP/) — or omit target to let SAP resolve it from the package.',
+        );
+      }
+
+      // Shared guidance when this release's ADT stack can't set an explicit target.
+      const targetUnsupportedMsg =
+        "This system's ADT stack does not support setting an explicit transport target — the tm:root/newrequest " +
+        'action is not implemented (an ADT-framework limitation on SAP_BASIS 7.50, verified on SP02 and SP32, ' +
+        'independent of STMS/CTC config). It works on newer ABAP Platform / S/4HANA releases. Workaround here: ' +
+        'create the request without "target", then set the Transportziel manually in SE09/SE10 (SAP GUI), which ' +
+        'works when CTC and the target group are configured.';
+
+      let id: string;
+      if (explicitTarget) {
+        // Discovery-gate first — the same capability SAP's own Eclipse client checks: the TM
+        // resource that sets an explicit target is advertised in ADT discovery only on releases
+        // that implement it (the transportorganizer Accept type on cts/transportrequests). When
+        // discovery is loaded and the capability is absent (NW 7.50/7.51), fail fast with guidance
+        // rather than POST a request the backend rejects with "user action is not supported".
+        if (supportsExplicitTransportTarget(client.http) === false) {
+          return errorResult(targetUnsupportedMsg);
+        }
+        // Explicit transport target (Transportziel / TR_TARGET): a system (C11),
+        // system.client (C11.021), or target group (/TRG/). Routed via the tm:root/
+        // newrequest endpoint — the only ADT path that sets the target directly. The
+        // group and system.client forms require extended transport control (CTC).
+        try {
+          id = await createTransportWithTarget(
+            client.http,
+            client.safety,
+            description,
+            explicitTarget,
+            client.username,
+          );
+        } catch (err) {
+          if (err instanceof AdtApiError && (err.statusCode === 400 || err.statusCode === 404)) {
+            // SAP validates the target server-side: a4h (7.58) returns 400 "Target 'X'
+            // does not exist"; other releases may use 404.
+            if (/does not exist/i.test(err.message)) {
+              return errorResult(
+                `Transport target "${explicitTarget}" does not exist on this system. Valid targets are a ` +
+                  'system (e.g. C11), system.client (C11.021), or a target group (/GROUP/) — the group and ' +
+                  'system.client forms require extended transport control (CTC) to be active. Use ' +
+                  'SAPTransport(action="targets") to list the targets this system actually offers.',
+              );
+            }
+            // Fallback for when discovery was not loaded: NW 7.50/7.51 reject tm:root/newrequest
+            // with "user action is not supported" (the gate above pre-empts this when discovery is known).
+            if (/user action/i.test(err.message) && /not supported/i.test(err.message)) {
+              return errorResult(targetUnsupportedMsg);
+            }
+          }
+          throw err;
+        }
+      } else {
+        const targetPackage = args.package ? String(args.package) : undefined;
+        const transportLayer = args.transportLayer ? String(args.transportLayer) : undefined;
+        id = await createTransport(client.http, client.safety, description, targetPackage, undefined, transportLayer);
+      }
+
       if (!id)
         return errorResult(
           'Transport creation succeeded but no transport ID was returned. Check the SAP system manually.',
         );
-      return textResult(`Created transport request: ${id}`);
+
+      // Read the new request back (best-effort) to report its actual transport target.
+      // An empty target means the request is local ("Local Change Requests") — the #1
+      // source of "why does it always create a local transport?" confusion — so we
+      // surface it explicitly instead of just echoing the ID.
+      const created = await getTransport(client.http, client.safety, id).catch(() => null);
+      const target = created?.target?.trim() ?? '';
+      const targetDesc = created?.targetDesc?.trim() ?? '';
+
+      if (!created) return textResult(`Created transport request: ${id}`);
+      if (target) {
+        return textResult(
+          `Created transport request: ${id}\nTransport target: ${target}${targetDesc ? ` (${targetDesc})` : ''}`,
+        );
+      }
+      return textResult(
+        `Created transport request: ${id}\n` +
+          `Transport target: <none>${targetDesc ? ` — "${targetDesc}"` : ''}. This is a LOCAL request — it cannot be transported onward.\n\n` +
+          'To create a request that targets another system, either:\n' +
+          '  • set an explicit target — pass target=<system | system.client | /group/> (e.g. target="/TRG/" or "C11"); ' +
+          'the group and system.client forms require extended transport control (CTC) to be active; or\n' +
+          '  • let SAP resolve it from the package transport layer + STMS consolidation route (pass transportLayer=<layer> to override the layer).\n' +
+          'Both require the SAP system to actually have transport routes/targets configured (a Basis task). ' +
+          'On a standalone system with no routes, every request is local — expected, and no ADT/Eclipse/SE10 client can change it.',
+      );
+    }
+    case 'layers': {
+      // Discovery: list valid values for create's `transportLayer`. Lets a client pick a
+      // real layer instead of guessing. Read-only (no allowTransportWrites required).
+      let layers: Awaited<ReturnType<typeof listTransportLayers>>;
+      try {
+        layers = await listTransportLayers(client.http, client.safety);
+      } catch (err) {
+        // The package transport-layer value help is 7.52+; NW 7.50/7.51 return 404
+        // "No suitable resource found" (verified live on npl 7.50). Surface that clearly
+        // instead of a raw 404, so the caller knows discovery is unavailable on this release.
+        if (err instanceof AdtApiError && err.isNotFound) {
+          return errorResult(
+            'Transport-layer discovery is not available on this SAP release — the value help ' +
+              '(/sap/bc/adt/packages/valuehelps/transportlayers) returned 404 (typically NW < 7.52). ' +
+              'Create requests without transportLayer; the route/target is governed by the package + STMS on these releases.',
+          );
+        }
+        throw err;
+      }
+      const routed = layers.filter((l) => l.target);
+      const summary = layers.length
+        ? routed.length
+          ? `${layers.length} transport layer(s); ${routed.length} carry a target. Pass one as transportLayer= on create.`
+          : `${layers.length} transport layer(s), but none expose a consolidation target — created requests will be local on this system.`
+        : 'No transport layers are defined on this system — every request will be local.';
+      return textResult(JSON.stringify({ transportLayers: layers, summary }, null, 2));
+    }
+    case 'targets': {
+      // Discovery: list valid values for create's `target` (Transportziel / TR_TARGET) via the
+      // official ADT target value help. Read-only (no allowTransportWrites required).
+      // Gate on the same capability as create's target path: NW 7.50 returns an empty list
+      // (HTTP 200) from the value help rather than 404, so the discovery accept type — not the
+      // HTTP status — is the reliable "is target discovery meaningful here?" signal.
+      if (supportsExplicitTransportTarget(client.http) === false) {
+        return errorResult(
+          "Transport-target discovery is not available on this SAP release — its ADT stack doesn't support " +
+            'explicit transport targets (verified on NW 7.50). Set the target in SE09/SE10 instead.',
+        );
+      }
+      let targets: Awaited<ReturnType<typeof listTransportTargets>>;
+      try {
+        targets = await listTransportTargets(client.http, client.safety);
+      } catch (err) {
+        // Fallback when discovery wasn't loaded: some releases 404 the value help.
+        if (err instanceof AdtApiError && err.isNotFound) {
+          return errorResult(
+            'Transport-target discovery is not available on this SAP release — the value help ' +
+              '(/sap/bc/adt/cts/transportrequests/valuehelp/target) returned 404. Set the target in SE09/SE10 instead.',
+          );
+        }
+        throw err;
+      }
+      const summary = targets.length
+        ? `${targets.length} valid transport target(s). Pass one as target= on create.`
+        : 'No transport targets are configured on this system (so created requests are local).';
+      return textResult(JSON.stringify({ transportTargets: targets, summary }, null, 2));
     }
     case 'release': {
       const id = String(args.id ?? '');

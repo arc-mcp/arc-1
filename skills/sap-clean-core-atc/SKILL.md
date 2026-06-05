@@ -79,7 +79,9 @@ SAPContext returns a dependency list. Keep only dependencies whose names do NOT 
 SAPDiagnose(action="atc", type="<type>", name="<object_name>", variant="ABAP_CLOUD_READINESS")
 ```
 
-If `ABAP_CLOUD_READINESS` doesn't exist on the system, use the system default and note this in the report. ATC findings complement the API classification — a released API can still be used incorrectly.
+If `ABAP_CLOUD_READINESS` doesn't exist on the system, use the system default (omit `variant` — that runs the system's configured default check variant) and note this in the report. On-premise systems often ship `S4HANA_READINESS_<release>` (e.g. `S4HANA_READINESS_2023`) or `SAP_CLOUD_PLATFORM_DEFAULT` instead of `ABAP_CLOUD_READINESS`. ATC findings complement the API classification — a released API can still be used incorrectly.
+
+> **ATC skips `$TMP` / local objects (verified live on S/4HANA 2023).** A check run against a `$TMP` object resolves to an empty object set and returns **zero findings** — that's "not checked", not "clean". Package-wide classification only works on **transportable** packages. If a package is local/`$TMP`, note in the report that ATC results are unavailable and fall back to the mcp-sap-docs API classification alone. A finding count of 0 on code you expect to be flagged is almost always the `$TMP` trap, not clean code.
 
 ## Step 3: Classify Each SAP Reference via mcp-sap-docs
 

@@ -1368,6 +1368,31 @@ describe('SAPTransportSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('accepts create with package and transportLayer', () => {
+    const result = SAPTransportSchema.safeParse({
+      action: 'create',
+      description: 'Test transport',
+      package: 'ZFOO',
+      transportLayer: 'ZDEV',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts create with an explicit target (Transportziel)', () => {
+    const result = SAPTransportSchema.safeParse({ action: 'create', description: 'Test transport', target: '/TRG/' });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts layers discovery action', () => {
+    const result = SAPTransportSchema.safeParse({ action: 'layers' });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts targets discovery action', () => {
+    const result = SAPTransportSchema.safeParse({ action: 'targets' });
+    expect(result.success).toBe(true);
+  });
+
   it('rejects invalid action', () => {
     const result = SAPTransportSchema.safeParse({ action: 'invalid' });
     expect(result.success).toBe(false);

@@ -11,6 +11,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { classifyCdsImpact } from '../../src/adt/cds-impact.js';
 import type { AdtClient } from '../../src/adt/client.js';
 import { findWhereUsed } from '../../src/adt/codeintel.js';
+import { runAtcCheck } from '../../src/adt/devtools.js';
 import {
   getDump,
   getGatewayErrorDetail,
@@ -2197,6 +2198,84 @@ describe('ADT Integration Tests', () => {
           }
         }
       }
+    });
+  });
+
+  // ─── ATC worklist + check-variant flow (runAtcCheck) ─────────────────
+  describe('runAtcCheck (worklist + variant flow)', () => {
+    // Regression guard for the three-step ATC flow. The previous implementation POSTed
+    // straight to /atc/runs?worklistId=1 and never bound a check variant, so ATC executed
+    // no checks and always returned zero findings. These tests assert the worklist→run→get
+    // flow completes and returns a well-formed findings array against a live system.
+    // Finding COUNT is system-dependent (ATC content + check variants vary, and ATC skips
+    // $TMP objects), so exact-format parsing is locked down by the unit fixture test
+    // (tests/unit/adt/devtools.test.ts → "parses the real SAP worklist response format").
+    const KERNEL_CLASS_URL = '/sap/bc/adt/oo/classes/cl_abap_typedescr';
+
+    it('completes the flow with an explicit check variant', async () => {
+      const result = await runAtcCheck(client.http, unrestrictedSafetyConfig(), KERNEL_CLASS_URL, 'PERFORMANCE_DB');
+      expect(Array.isArray(result.findings)).toBe(true);
+      for (const f of result.findings) {
+        expect(typeof f.priority).toBe('number');
+        expect(typeof f.line).toBe('number');
+        expect(typeof f.checkTitle).toBe('string');
+        // The parser fix: real findings carry the source location (#start=line), so any
+        // finding with a uri must yield a non-negative line (never the old constant 0
+        // caused by reading the position-less catalog uri).
+        if (f.uri.includes('#start=')) expect(f.line).toBeGreaterThanOrEqual(0);
+      }
+    });
+
+    it('completes the flow with the system default variant (no variant passed)', async () => {
+      const result = await runAtcCheck(client.http, unrestrictedSafetyConfig(), KERNEL_CLASS_URL);
+      expect(Array.isArray(result.findings)).toBe(true);
+    });
+  });
+
+  // ─── getFunctionGroup (objectstructure-based, non-expand FUGR read) ───
+  describe('getFunctionGroup (objectstructure-based)', () => {
+    // Regression guard: the old implementation hit /functions/groups/<name> (metadata only,
+    // no function list) and parsed a shape ADT never emits, so it always returned
+    // {name:"", functions:[]}. It now reads /objectstructure and parses the FUGR/FF
+    // (function) + FUGR/I (include) elements. Targets abapGit's parallel FUGR; skip if absent.
+    it('returns the group name + non-empty function-module list', async (ctx) => {
+      let fg: Awaited<ReturnType<typeof client.getFunctionGroup>> | undefined;
+      try {
+        fg = await client.getFunctionGroup('ZABAPGIT_PARALLEL');
+      } catch {
+        fg = undefined;
+      }
+      requireOrSkip(ctx, fg, `${SkipReason.NO_FIXTURE}: function group ZABAPGIT_PARALLEL not present`);
+
+      expect(fg.name).toBe('ZABAPGIT_PARALLEL');
+      expect(fg.functions.length).toBeGreaterThan(0);
+      expect(fg.functions).toContain('Z_ABAPGIT_SERIALIZE_PARALLEL');
+      expect(fg.includes.length).toBeGreaterThan(0);
+    });
+  });
+
+  // ─── FUGR recursive include expansion (getFunctionGroupExpanded) ──────
+  describe('getFunctionGroupExpanded (recursive FUGR include walk)', () => {
+    // A one-level include walk stops at the TOP/UXX includes and misses the
+    // FUNCTION…ENDFUNCTION bodies, which live in nested LZ<grp>U01/U02 includes
+    // pulled in from UXX. This asserts the recursion reaches them on a live system.
+    // Target abapGit's parallel-processing FUGR (present on most dev systems);
+    // skip cleanly if absent.
+    it('expands a real function group past one level into its nested includes', async (ctx) => {
+      let result: Awaited<ReturnType<typeof client.getFunctionGroupExpanded>> | undefined;
+      try {
+        result = await client.getFunctionGroupExpanded('ZABAPGIT_PARALLEL');
+      } catch {
+        result = undefined;
+      }
+      requireOrSkip(ctx, result, `${SkipReason.NO_FIXTURE}: function group ZABAPGIT_PARALLEL not present`);
+
+      expect(result.blocks.length).toBeGreaterThan(1);
+      expect(result.blocks[0]?.name).toContain('FUGR ZABAPGIT_PARALLEL');
+      // Recursion evidence: a nested function-module include (…U01/U02), reachable
+      // only by following INCLUDE from the UXX include — not from the main source.
+      const names = result.blocks.map((b) => b.name.toLowerCase());
+      expect(names.some((n) => /u\d\d$/.test(n))).toBe(true);
     });
   });
 });

@@ -1,6 +1,6 @@
 ---
 name: explain-abap-code
-description: Explain ABAP objects with full dependency context (via SAPContext) and optional ATC code quality analysis — replicates SAP Joule's "Explain Code" capability. Use when asked to "explain this ABAP", "what does ZCL_X do", "walk me through this class/CDS view", or "review this object's quality".
+description: Explain ABAP objects with full dependency context (via SAPContext) and optional ATC code quality analysis — replicates SAP Joule's "Explain Code" capability, including behavior definitions (BDEF — CRUD graph, determinations/validations, bound handler class). Use when asked to "explain this ABAP", "what does ZCL_X do", "walk me through this class/CDS view/behavior definition", or "review this object's quality".
 ---
 
 # Explain ABAP Code
@@ -17,6 +17,7 @@ This skill replicates SAP Joule's "Explain Code" capability by combining ARC-1 (
 | Depth | Overview | Start high-level, user can ask for detail |
 | ATC | No | Only run if user asks about code quality |
 | Dependencies | Fetch via SAPContext | Always get the dependency graph |
+| BDEF handler class | Discover from `implementation in class` clause | The behavior logic lives in the bound pool class |
 
 ## Input
 
@@ -72,6 +73,53 @@ Depending on type, also read associated objects:
 
 These may fail if the related artifact doesn't exist — that's fine, skip them.
 
+### 1f. For behavior definitions (BDEF) — walk the RAP graph
+
+A behavior definition is only meaningful together with its bound CDS root entity and its behavior pool (handler) class. When the object is a BDEF, do this instead of (or in addition to) the steps above:
+
+**Read the BDEF source:**
+
+```
+SAPRead(type="BDEF", name="<bdef_name>")
+```
+
+**Identify the implementation type + bound pool class** by reading the BDEF source:
+- First non-comment token: `managed` / `unmanaged` / `projection` / `abstract` / `interface` — this is the implementation kind
+- `strict ( 2 )` → latest RAP syntax checks; `with draft` / `with collaborative draft` → draft-enabled
+- The clause `... implementation in class <ZBP_NAME> unique;` names the **behavior pool class**. Extract `<ZBP_NAME>` with a regex like `implementation\s+in\s+class\s+(\S+)`. (A `projection;` BDEF may have no pool class — it reuses the base behavior via `use ...`.)
+
+**Read the behavior pool class** (the handler logic lives in its local includes — usually CCIMP):
+
+```
+SAPRead(type="CLAS", name="<ZBP_NAME>", include="implementations")
+```
+
+If that returns empty, also try `include="definitions"` (CCDEF) and the main include. The local handler classes are named `lhc_<alias>` and each `FOR DETERMINE` / `FOR VALIDATE` / `FOR MODIFY` method implements the corresponding BDEF declaration.
+
+**Read the bound CDS root entity** to understand the data model the behavior governs:
+
+```
+SAPRead(type="DDLS", name="<root_cds>", include="elements")
+```
+
+The root CDS name appears in `define behavior for <root_cds> alias <alias>`.
+
+**For a projection BDEF**, also read the underlying base BDEF (the one it projects) to see which operations are reused (`use create; use update; use action ...`).
+
+These reads may fail if an artifact doesn't exist (e.g. a pure abstract BDEF) — skip gracefully.
+
+### 1g. For function groups (FUGR) — read the full code tree
+
+A function group's logic is spread across nested includes: the main program references the `TOP` (global data) and `UXX` (function-module dispatcher) includes, and the actual `FUNCTION … ENDFUNCTION` bodies live in further-nested `LZ<grp>U01/U02…` includes pulled in from `UXX` (PBO/PAI subroutines in `…O…/…I…` includes). Read the whole tree in one call with `expand_includes`:
+
+```
+SAPRead(type="FUGR", name="<group>", expand_includes=true)
+```
+
+This returns the main source plus every nested include (recursively, depth/count-capped), each prefixed with a `=== <name> ===` marker — so you get all the function module bodies and flow logic in one read. Without `expand_includes`, you only get the function-module list.
+
+> **Screen flow is not available.** Dynpros (screens) and GUI status (CUA) are **not exposed by ADT over REST** — they are SAPGUI-only (SE51/SE41), and the endpoints return 404. So for a FUGR you can explain the **business purpose, function-module responsibilities, and flow logic** from the code, but **not** the screen layout / PBO-PAI screen sequence beyond what the PBO/PAI module *code* reveals. State this limitation if the user asks about the screen flow specifically.
+
 ## Step 2: Get Dependency Context
 
 ```
@@ -90,6 +138,14 @@ SAPContext(type="<type>", name="<object_name>", depth=2)
 ```
 
 If SAPContext fails (e.g., unsupported type), fall back to manual reads of key dependencies identified in the source code.
+
+**Supported types:** `SAPContext` accepts `CLAS`, `INTF`, `PROG`, `FUNC`, `DDLS` (on-prem) / `CLAS`, `INTF`, `DDLS` (BTP). It does **not** accept `BDEF`. So when explaining a BDEF, run dependency/impact analysis on the **bound CDS root entity** instead:
+
+```
+SAPContext(action="impact", name="<root_cds>")
+```
+
+`action="impact"` (DDLS only) returns the downstream blast radius — projection views, consumption views, and services that build on the behavior. This is the "dependencies / who consumes this" answer for a behavior definition. For the handler class internals, run `SAPContext(type="CLAS", name="<ZBP_NAME>")`.
 
 ## Step 3: (Optional) Run ATC Check
 
@@ -160,6 +216,19 @@ For CDS views:
 - Data transformations and calculations
 - Error handling approach
 
+### Behavior Definition (if the object is a BDEF)
+Structure the explanation around the RAP behavior graph you read in Step 1f:
+- **Implementation kind**: managed / unmanaged / projection / abstract / interface — and what that implies (framework-provided CRUD vs custom handlers vs reuse/typing layer). Note `strict(2)` and `with draft` if present.
+- **Business purpose**: derived from the bound CDS root entity + the BDEF header comments.
+- **Per-entity model**: for each `define behavior for <CDS> alias <alias>` — persistent table, `lock master`/`lock dependent`, `authorization master`/`authorization dependent`, `etag`.
+- **Operations (the CRUD graph)**: `create` / `update` / `delete`, create-by-association (`association _X { create; }`), and whether draft actions (`Edit`, `Activate`, `Discard`, `Resume`, `Prepare`) are present.
+- **Determinations**: `determination <name> on save|on modify` — what each derives, read from the matching `FOR DETERMINE` method in the pool class.
+- **Validations**: `validation <name> on save` — what each enforces, from the `FOR VALIDATE` method.
+- **Actions / functions**: `action <name>` (+ `static`/`factory`/`parameter`/`result`), from the `FOR MODIFY` / `FOR READ` methods.
+- **Side effects**: `side effects { ... }` declarations (what UI refresh / recompute they trigger).
+- **Field controls**: `field ( readonly | mandatory | numbering : managed )`, `mapping for <table>`.
+- For a **projection** BDEF: which base operations/actions are reused via `use ...`.
+
 ### Dependencies
 From SAPContext results:
 - Direct dependencies with their roles (data source, helper, framework)
@@ -187,6 +256,7 @@ Offer the user next steps:
 - "Want me to analyze the ATC findings and suggest fixes?" (→ migrate-custom-code skill)
 - "Want me to generate unit tests for this class?" (→ generate-abap-unit-test skill)
 - "Want me to show the full dependency graph?" (→ SAPContext with depth=2)
+- For a BDEF: "Want me to implement a missing determination/validation/action body?" (→ generate-rap-logic skill) or "Want me to scaffold the behavior pool handlers?" (→ `SAPWrite(action="scaffold_rap_handlers")`)
 
 ## Error Handling
 
@@ -200,6 +270,8 @@ Offer the user next steps:
 | ATC variant not found | Specified variant doesn't exist on system | Run default ATC, list available variants |
 | Method listing empty | Object is not a class or has no methods | Skip method listing, explain from source only |
 | Source is empty | Object exists but has no source (e.g., generated proxy) | Inform user, try reading related objects instead |
+| `SAPContext` rejects BDEF type | BDEF isn't a supported SAPContext type | Run `SAPContext(action="impact", name="<root_cds>")` on the bound CDS root instead |
+| BDEF pool class not found | `projection;` BDEF (no own pool) or class name parsed wrong | Skip the class read; explain from the projection's `use` clauses + base BDEF |
 
 ## Notes
 

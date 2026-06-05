@@ -24,6 +24,8 @@ export interface DomainCreateParams {
   lowercase?: boolean;
   fixedValues?: DomainFixedValue[];
   valueTable?: string;
+  /** ADT master/original language (2-char, e.g. "DE"). Defaults to "EN" when unset. */
+  language?: string;
 }
 
 export interface DataElementCreateParams {
@@ -45,6 +47,8 @@ export interface DataElementCreateParams {
   setGetParameter?: string;
   defaultComponentName?: string;
   changeDocument?: boolean;
+  /** ADT master/original language (2-char, e.g. "DE"). Defaults to "EN" when unset. */
+  language?: string;
 }
 
 export interface PackageCreateParams {
@@ -65,6 +69,8 @@ export interface ServiceBindingCreateParams {
   category?: '0' | '1';
   version?: string;
   odataVersion?: string;
+  /** ADT master/original language (2-char, e.g. "DE"). Defaults to "EN" when unset. */
+  language?: string;
 }
 
 /**
@@ -110,6 +116,21 @@ const DTEL_MAX_LABEL_LENGTHS = {
   heading: 55,
 } as const;
 
+/**
+ * Normalize an ADT master/original language to the 2-char upper-case form ADT
+ * expects (e.g. "de" → "DE"). Defaults to "EN" when unset or blank, preserving
+ * the legacy hard-coded behavior for callers that pass no language.
+ *
+ * The created object's master language must match the developer's logon language
+ * (SAP doc ABENORIGINAL_LANGU_GUIDL; SAP Note 727896). ARC-1 already sends that
+ * as the `sap-language` URL param; this keeps the create-XML body consistent so
+ * DDIC texts (DD04T/DD01T) are filed under the correct language. See issue #343
+ * and docs/research/issue-343-masterlanguage-on-create.md.
+ */
+export function normalizeAdtLanguage(language?: string): string {
+  return (language ?? '').trim().toUpperCase() || 'EN';
+}
+
 function escapeXml(s: string): string {
   return s
     .replace(/&/g, '&amp;')
@@ -144,6 +165,7 @@ function boolToXml(value: boolean | undefined): string {
 }
 
 export function buildDomainXml(params: DomainCreateParams): string {
+  const masterLanguage = normalizeAdtLanguage(params.language);
   const fixedValues = params.fixedValues ?? [];
   const valueTable = params.valueTable?.trim();
   const fixValuesXml =
@@ -168,7 +190,7 @@ export function buildDomainXml(params: DomainCreateParams): string {
              adtcore:description="${escapeXml(params.description)}"
              adtcore:name="${escapeXml(params.name)}"
              adtcore:type="DOMA/DD"
-             adtcore:masterLanguage="EN"
+             adtcore:masterLanguage="${masterLanguage}"
              adtcore:masterSystem="H00"
              adtcore:responsible="DEVELOPER">
   <adtcore:packageRef adtcore:name="${escapeXml(params.package)}"/>
@@ -230,6 +252,7 @@ export function buildMessageClassXml(params: MessageClassCreateParams): string {
 }
 
 export function buildDataElementXml(params: DataElementCreateParams): string {
+  const masterLanguage = normalizeAdtLanguage(params.language);
   const typeKind = params.typeKind ?? (params.dataType ? 'predefinedAbapType' : 'domain');
   const shortLabel = params.shortLabel ?? '';
   const mediumLabel = params.mediumLabel ?? '';
@@ -243,7 +266,7 @@ export function buildDataElementXml(params: DataElementCreateParams): string {
             adtcore:description="${escapeXml(params.description)}"
             adtcore:name="${escapeXml(params.name)}"
             adtcore:type="DTEL/DE"
-            adtcore:masterLanguage="EN"
+            adtcore:masterLanguage="${masterLanguage}"
             adtcore:masterSystem="H00"
             adtcore:responsible="DEVELOPER">
   <adtcore:packageRef adtcore:name="${escapeXml(params.package)}"/>
@@ -313,6 +336,7 @@ export function buildServiceBindingXml(params: ServiceBindingCreateParams): stri
   // Explicit odataVersion from params takes precedence, then parsed from bindingType
   const odataVersion = params.odataVersion?.trim().toUpperCase() || normalized.odataVersion;
   const serviceVersion = params.version?.trim() || '0001';
+  const masterLanguage = normalizeAdtLanguage(params.language);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <srvb:serviceBinding xmlns:srvb="http://www.sap.com/adt/ddic/ServiceBindings"
@@ -320,8 +344,8 @@ export function buildServiceBindingXml(params: ServiceBindingCreateParams): stri
                      adtcore:description="${escapeXml(params.description)}"
                      adtcore:name="${escapeXml(params.name)}"
                      adtcore:type="SRVB/SVB"
-                     adtcore:language="EN"
-                     adtcore:masterLanguage="EN"
+                     adtcore:language="${masterLanguage}"
+                     adtcore:masterLanguage="${masterLanguage}"
                      adtcore:responsible="DEVELOPER">
   <adtcore:packageRef adtcore:name="${escapeXml(params.package)}"/>
   <srvb:services srvb:name="${escapeXml(params.name)}">

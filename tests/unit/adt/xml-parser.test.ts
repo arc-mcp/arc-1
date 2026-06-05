@@ -404,37 +404,46 @@ describe('XML Parser', () => {
   // ─── parseFunctionGroup ────────────────────────────────────────────
 
   describe('parseFunctionGroup', () => {
-    it('parses function group with modules from fixture', () => {
+    // The real ADT shape is the objectstructure tree: a root <objectStructureElement>
+    // (type FUGR/F) with child elements typed FUGR/FF (function modules), FUGR/I
+    // (includes), FUGR/PX (main program). See tests/fixtures/xml/function-group.xml
+    // (captured live from a4h: ZABAPGIT_PARALLEL — 2 functions, 2 includes).
+    it('parses function group with modules + includes from the real objectstructure fixture', () => {
       const xml = loadFixture('function-group.xml');
       const result = parseFunctionGroup(xml);
-      expect(result.name).toBeTruthy();
-      expect(result.functions.length).toBeGreaterThan(0);
+      expect(result.name).toBe('ZABAPGIT_PARALLEL');
+      expect(result.functions).toEqual(['Z_ABAPGIT_SERIALIZE_PACKAGE', 'Z_ABAPGIT_SERIALIZE_PARALLEL']);
+      expect(result.includes).toContain('LZABAPGIT_PARALLELTOP');
+      expect(result.includes).toContain('LZABAPGIT_PARALLELUXX');
     });
 
-    it('handles empty function group', () => {
-      const xml = '<group name="ZEMPTY"/>';
+    it('handles a group with no function modules', () => {
+      const xml = '<objectStructureElement name="ZEMPTY" type="FUGR/F"/>';
       const result = parseFunctionGroup(xml);
       expect(result.name).toBe('ZEMPTY');
       expect(result.functions).toEqual([]);
+      expect(result.includes).toEqual([]);
     });
 
-    it('handles single function module', () => {
-      const xml = `<group name="ZGROUP">
-        <functionModule name="Z_SINGLE_FUNC"/>
-      </group>`;
+    it('handles a single function module', () => {
+      const xml = `<objectStructureElement name="ZGROUP" type="FUGR/F">
+        <objectStructureElement name="Z_SINGLE_FUNC" type="FUGR/FF"/>
+      </objectStructureElement>`;
       const result = parseFunctionGroup(xml);
       expect(result.name).toBe('ZGROUP');
       expect(result.functions).toEqual(['Z_SINGLE_FUNC']);
     });
 
-    it('handles multiple function modules', () => {
-      const xml = `<group name="ZGROUP">
-        <functionModule name="Z_FUNC1"/>
-        <functionModule name="Z_FUNC2"/>
-        <functionModule name="Z_FUNC3"/>
-      </group>`;
+    it('separates function modules (FUGR/FF) from includes (FUGR/I) and ignores the main program (FUGR/PX)', () => {
+      const xml = `<objectStructureElement name="ZGROUP" type="FUGR/F">
+        <objectStructureElement name="Z_FUNC1" type="FUGR/FF"/>
+        <objectStructureElement name="Z_FUNC2" type="FUGR/FF"/>
+        <objectStructureElement name="LZGROUPTOP" type="FUGR/I"/>
+        <objectStructureElement name="SAPLZGROUP" type="FUGR/PX"/>
+      </objectStructureElement>`;
       const result = parseFunctionGroup(xml);
-      expect(result.functions).toHaveLength(3);
+      expect(result.functions).toEqual(['Z_FUNC1', 'Z_FUNC2']);
+      expect(result.includes).toEqual(['LZGROUPTOP']);
     });
   });
 

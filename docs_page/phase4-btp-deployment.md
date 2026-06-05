@@ -247,8 +247,8 @@ docker push ghcr.io/your-org/arc1:latest
 # Push the app (first time)
 cf push
 
-# The app URL will be:
-# https://arc1-mcp-server.cfapps.us10-001.hana.ondemand.com
+# The app URL will be (route host = arc1-mcp-<space>, unique per CF space):
+# https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com
 ```
 
 ### 7. Set Credentials via Environment (not in manifest)
@@ -273,15 +273,15 @@ cf restart arc1-mcp-server
 
 ```bash
 # Health check
-curl https://arc1-mcp-server.cfapps.us10-001.hana.ondemand.com/health
+curl https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com/health
 # → {"status":"ok"}
 
 # Check Protected Resource Metadata (OAuth discovery)
-curl https://arc1-mcp-server.cfapps.us10-001.hana.ondemand.com/.well-known/oauth-protected-resource/mcp
-# → {"resource":"https://arc1-mcp-server.cfapps.../mcp","scopes_supported":["read","write","data","sql","admin"],...}
+curl https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com/.well-known/oauth-protected-resource/mcp
+# → {"resource":"https://arc1-mcp-<space>.cfapps.../mcp","scopes_supported":["read","write","data","sql","admin"],...}
 
 # Check Authorization Server Metadata
-curl https://arc1-mcp-server.cfapps.us10-001.hana.ondemand.com/.well-known/oauth-authorization-server
+curl https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com/.well-known/oauth-authorization-server
 # → {"authorization_endpoint":"...","token_endpoint":"...","registration_endpoint":"...",...}
 
 # Test with Bearer token
@@ -289,7 +289,7 @@ TOKEN=$(az account get-access-token --scope "api://{client-id}/access_as_user" -
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' \
-  https://arc1-mcp-server.cfapps.us10-001.hana.ondemand.com/mcp
+  https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com/mcp
 ```
 
 ## Security headers and CORS on BTP

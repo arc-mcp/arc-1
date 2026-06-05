@@ -11403,9 +11403,93 @@ ENDCLASS.`;
     });
   });
 
+  // ─── SAPWrite create master language wiring (issue #343) ────────────
+
+  describe('SAPWrite create — master language wiring (issue #343)', () => {
+    function dtelCreatePostBody(): string | undefined {
+      const call = mockFetch.mock.calls.find(
+        (c: any[]) => String(c[0]).includes('/sap/bc/adt/ddic/dataelements') && c[1]?.method === 'POST',
+      );
+      return call?.[1]?.body as string | undefined;
+    }
+
+    it('threads config.language into the DTEL create POST body', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(201, '<blue:wbobj/>', { 'x-csrf-token': 't' }));
+      const result = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, language: 'DE' }, 'SAPWrite', {
+        action: 'create',
+        type: 'DTEL',
+        name: 'ZARC1_LANG_UNIT',
+        description: 'Sprachtest',
+        package: '$TMP',
+        typeKind: 'predefinedAbapType',
+        dataType: 'CHAR',
+        length: 10,
+      });
+      expect(result.isError).toBeFalsy();
+      const body = dtelCreatePostBody();
+      expect(body).toBeDefined();
+      expect(body).toContain('adtcore:masterLanguage="DE"');
+    });
+
+    it('defaults the DTEL create POST body to EN when SAP_LANGUAGE is unset', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(201, '<blue:wbobj/>', { 'x-csrf-token': 't' }));
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'DTEL',
+        name: 'ZARC1_LANG_UNIT',
+        description: 'Lang test',
+        package: '$TMP',
+        typeKind: 'predefinedAbapType',
+        dataType: 'CHAR',
+        length: 10,
+      });
+      expect(result.isError).toBeFalsy();
+      expect(dtelCreatePostBody()).toContain('adtcore:masterLanguage="EN"');
+    });
+  });
+
   // ─── buildCreateXml ─────────────────────────────────────────────────
 
   describe('buildCreateXml', () => {
+    // issue #343: master language must follow the configured SAP_LANGUAGE (6th arg),
+    // defaulting to EN when unset. Source objects ignore it server-side (cosmetic), but
+    // the body must still match the sap-language URL param for DTEL/DOMA correctness.
+    describe('master language (issue #343)', () => {
+      it('threads the configured language into masterLanguage for source objects', () => {
+        const xml = buildCreateXml('PROG', 'ZHELLO', 'ZPACKAGE', 'Hello', undefined, 'DE');
+        expect(xml).toContain('adtcore:masterLanguage="DE"');
+      });
+
+      it('threads the configured language into FUGR language + masterLanguage', () => {
+        const xml = buildCreateXml('FUGR', 'ZFG', '$TMP', 'FG', undefined, 'DE');
+        expect(xml).toContain('adtcore:language="DE"');
+        expect(xml).toContain('adtcore:masterLanguage="DE"');
+      });
+
+      it('threads the configured language into DOMA create XML', () => {
+        const xml = buildCreateXml('DOMA', 'ZDOM', '$TMP', 'Dom', { dataType: 'CHAR', length: 1 }, 'DE');
+        expect(xml).toContain('adtcore:masterLanguage="DE"');
+      });
+
+      it('threads the configured language into DTEL create XML', () => {
+        const xml = buildCreateXml('DTEL', 'ZEL', '$TMP', 'El', { dataType: 'CHAR', length: 10 }, 'DE');
+        expect(xml).toContain('adtcore:masterLanguage="DE"');
+      });
+
+      it('defaults masterLanguage to EN when no language arg is passed', () => {
+        expect(buildCreateXml('PROG', 'ZHELLO', 'ZPACKAGE', 'Hello')).toContain('adtcore:masterLanguage="EN"');
+        expect(buildCreateXml('DTEL', 'ZEL', '$TMP', 'El', { dataType: 'CHAR', length: 10 })).toContain(
+          'adtcore:masterLanguage="EN"',
+        );
+      });
+
+      it('normalizes a lower-case language to upper case', () => {
+        expect(buildCreateXml('CLAS', 'ZCL', '$TMP', 'C', undefined, 'de')).toContain('adtcore:masterLanguage="DE"');
+      });
+    });
+
     it('returns correct XML for PROG', () => {
       const xml = buildCreateXml('PROG', 'ZHELLO', 'ZPACKAGE', 'Hello Program');
       expect(xml).toContain('<program:abapProgram');
@@ -12359,6 +12443,211 @@ ENDCLASS.`;
         (c: unknown[]) => typeof c[1]?.body === 'string' && c[1].body.includes('DEVCLASS'),
       );
       expect(fetchBody?.[1]?.body).toContain('<DEVCLASS>$TMP</DEVCLASS>');
+    });
+
+    it('create with explicit target uses the tm:root/newrequest endpoint and reports the target', async () => {
+      const tmRoot = `<?xml version="1.0" encoding="utf-8"?><tm:root tm:useraction="newrequest" xmlns:tm="http://www.sap.com/cts/adt/tm"><tm:request tm:number="A4HK900100" tm:owner="admin" tm:desc="d" tm:status="D" tm:type="K" tm:target="/TRG/" tm:target_desc="Group TRG"><tm:task/></tm:request></tm:root>`;
+      mockFetch.mockResolvedValue(mockResponse(200, tmRoot, { 'x-csrf-token': 'T' }));
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'create',
+        description: 'Targeted transport',
+        target: '/TRG/',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('A4HK900100');
+      expect(result.content[0]?.text).toContain('/TRG/');
+      // The request must go to /cts/transportrequests with a tm:target attribute.
+      const call = mockFetch.mock.calls.find(
+        (c: unknown[]) => typeof c[1]?.body === 'string' && c[1].body.includes('tm:useraction'),
+      );
+      expect(String(call?.[0])).toContain('/sap/bc/adt/cts/transportrequests');
+      expect(call?.[1]?.body).toContain('tm:target="/TRG/"');
+    });
+
+    it('create with an unknown target (400) returns the friendly "does not exist" guidance', async () => {
+      mockFetch.mockImplementation((_url: string, opts: { method?: string; body?: string } = {}) => {
+        if (typeof opts.body === 'string' && opts.body.includes('tm:useraction')) {
+          return Promise.resolve(
+            mockResponse(400, "<msg>Target '/ZZNOPE/' does not exist</msg>", { 'x-csrf-token': 'T' }),
+          );
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'create',
+        description: 'Bad target',
+        target: '/ZZNOPE/',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('does not exist on this system');
+      expect(result.content[0]?.text).toContain('extended transport control');
+    });
+
+    it('create with an unknown target (404) is also converted to the friendly guidance', async () => {
+      mockFetch.mockImplementation((_url: string, opts: { method?: string; body?: string } = {}) => {
+        if (typeof opts.body === 'string' && opts.body.includes('tm:useraction')) {
+          return Promise.resolve(mockResponse(404, 'Target does not exist', { 'x-csrf-token': 'T' }));
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'create',
+        description: 'Bad target',
+        target: 'NOPE',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('does not exist on this system');
+    });
+
+    it('create with target on NW 7.50/7.51 ("user action is not supported") gives release guidance', async () => {
+      // NW 7.50–7.51 reject the tm:root/newrequest endpoint (CL_ADT_TM_RESOURCE ignores
+      // tm:useraction). Verified live on npl 7.50 SP02 per src/adt/transport.ts. The raw
+      // 400 must be converted to actionable release guidance, not surfaced cryptically.
+      mockFetch.mockImplementation((_url: string, opts: { method?: string; body?: string } = {}) => {
+        if (typeof opts.body === 'string' && opts.body.includes('tm:useraction')) {
+          return Promise.resolve(mockResponse(400, 'user action  is not supported', { 'x-csrf-token': 'T' }));
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'create',
+        description: 'Targeted on old release',
+        target: '/TRG/',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('does not support setting an explicit transport target');
+      expect(result.content[0]?.text).toContain('7.50');
+      expect(result.content[0]?.text).toContain('SE09/SE10');
+      // It must NOT mislabel this as "target does not exist".
+      expect(result.content[0]?.text).not.toContain('does not exist on this system');
+    });
+
+    it('create with an empty target is rejected as a caller mistake (no SAP call)', async () => {
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'create',
+        description: 'Blank target',
+        target: '   ',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('"target" was provided but is empty');
+      // It must NOT fall through to creating a transport.
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('discovery-gate: target create fails fast (no POST) when discovery lacks the TM capability (NW 7.50)', async () => {
+      const client = createTransportClient();
+      // Discovery loaded, but cts/transportrequests does NOT advertise the transportorganizer accept type.
+      client.http.setDiscoveryMap(new Map([['/sap/bc/adt/oo/classes', ['application/xml']]]));
+      const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'create',
+        description: 'Targeted on unsupported release',
+        target: '/TRG/',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('does not support setting an explicit transport target');
+      expect(result.content[0]?.text).toContain('SE09/SE10');
+      // Gated before any HTTP call.
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('discovery-gate: target create proceeds when discovery advertises the TM capability', async () => {
+      const client = createTransportClient();
+      client.http.setDiscoveryMap(
+        new Map([['/sap/bc/adt/cts/transportrequests', ['application/vnd.sap.adt.transportorganizer.v1+xml']]]),
+      );
+      const tmRoot = `<?xml version="1.0" encoding="utf-8"?><tm:root tm:useraction="newrequest" xmlns:tm="http://www.sap.com/cts/adt/tm"><tm:request tm:number="A4HK900200" tm:owner="admin" tm:desc="d" tm:status="D" tm:type="K" tm:target="DEV" tm:target_desc="gCTS"><tm:task/></tm:request></tm:root>`;
+      mockFetch.mockResolvedValue(mockResponse(200, tmRoot, { 'x-csrf-token': 'T' }));
+      const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'create',
+        description: 'Targeted on supported release',
+        target: 'DEV',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('A4HK900200');
+      expect(result.content[0]?.text).toContain('DEV');
+    });
+
+    it('targets action lists the system transport targets', async () => {
+      const targetsXml = `<?xml version="1.0" encoding="utf-8"?><nameditem:namedItemList xmlns:nameditem="http://www.sap.com/adt/nameditem"><nameditem:totalItemCount>1</nameditem:totalItemCount><nameditem:namedItem><nameditem:name>DEV</nameditem:name><nameditem:description>gCTS generated</nameditem:description><nameditem:data/></nameditem:namedItem></nameditem:namedItemList>`;
+      mockFetch.mockResolvedValue(mockResponse(200, targetsXml, { 'x-csrf-token': 'T' }));
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'targets',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('transportTargets');
+      expect(result.content[0]?.text).toContain('DEV');
+      expect(String(mockFetch.mock.calls[0]?.[0])).toContain('/cts/transportrequests/valuehelp/target');
+    });
+
+    it('targets action on NW 7.50/7.51 (value-help 404) reports discovery unavailable', async () => {
+      mockFetch.mockImplementation((url: string) => {
+        if (String(url).includes('/valuehelp/target')) {
+          return Promise.resolve(mockResponse(404, 'No suitable resource found', { 'x-csrf-token': 'T' }));
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'targets',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('not available on this SAP release');
+    });
+
+    it('targets action is discovery-gated (NW 7.50 returns HTTP 200 empty, not 404)', async () => {
+      // Live on npl 7.50 the value help returns 200 with an empty list — so the gate, not the
+      // HTTP status, must decide. Discovery loaded without the TM capability => unavailable.
+      const client = createTransportClient();
+      client.http.setDiscoveryMap(new Map([['/sap/bc/adt/oo/classes', ['application/xml']]]));
+      const emptyList = `<?xml version="1.0" encoding="utf-8"?><nameditem:namedItemList xmlns:nameditem="http://www.sap.com/adt/nameditem"><nameditem:totalItemCount>0</nameditem:totalItemCount></nameditem:namedItemList>`;
+      mockFetch.mockResolvedValue(mockResponse(200, emptyList, { 'x-csrf-token': 'T' }));
+      const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPTransport', { action: 'targets' });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('not available on this SAP release');
+      // Gated before hitting the value help.
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('create with transportLayer sends the ?transportLayer= query param', async () => {
+      mockFetch.mockResolvedValue(mockResponse(200, '/com.sap.cts/object_record/DEVK900099', { 'x-csrf-token': 'T' }));
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'create',
+        description: 'Layer override',
+        package: 'ZTEST',
+        transportLayer: 'ZDEV',
+      });
+      expect(result.isError).toBeUndefined();
+      const call = mockFetch.mock.calls.find(
+        (c: unknown[]) => typeof c[0] === 'string' && c[0].includes('/cts/transports?'),
+      );
+      expect(String(call?.[0])).toContain('transportLayer=ZDEV');
+    });
+
+    it('layers action lists the system transport layers', async () => {
+      const layersXml = `<?xml version="1.0" encoding="utf-8"?><nameditem:namedItemList xmlns:nameditem="http://www.sap.com/adt/nameditem"><nameditem:totalItemCount>2</nameditem:totalItemCount><nameditem:namedItem><nameditem:name>SAP</nameditem:name><nameditem:description>SAP layer</nameditem:description><nameditem:data/></nameditem:namedItem><nameditem:namedItem><nameditem:name>ZDEV</nameditem:name><nameditem:description>gCTS</nameditem:description><nameditem:data>DEV</nameditem:data></nameditem:namedItem></nameditem:namedItemList>`;
+      mockFetch.mockResolvedValue(mockResponse(200, layersXml, { 'x-csrf-token': 'T' }));
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'layers',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('transportLayers');
+      expect(result.content[0]?.text).toContain('ZDEV');
+      expect(String(mockFetch.mock.calls[0]?.[0])).toContain('/packages/valuehelps/transportlayers');
+    });
+
+    it('layers action on NW 7.50/7.51 (value-help 404) reports discovery unavailable', async () => {
+      // The transport-layer value help is 7.52+; NW 7.50 returns 404 "No suitable resource
+      // found" (verified live on npl 7.50). Surface that, not a raw 404.
+      mockFetch.mockImplementation((url: string) => {
+        if (String(url).includes('/packages/valuehelps/transportlayers')) {
+          return Promise.resolve(mockResponse(404, 'No suitable resource found', { 'x-csrf-token': 'T' }));
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'layers',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('not available on this SAP release');
     });
 
     it('list defaults to current SAP user and modifiable status', async () => {

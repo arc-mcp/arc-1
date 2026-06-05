@@ -169,7 +169,7 @@ Starts a new instance with the new image, waits for health checks, then stops th
 ```bash
 cf app arc1-mcp-server
 cf logs arc1-mcp-server --recent | grep "auth:"
-curl -s https://arc1-mcp-server.cfapps.us10.hana.ondemand.com/mcp
+curl -s https://arc1-mcp-<space>.cfapps.us10.hana.ondemand.com/mcp
 ```
 
 ### Rollback

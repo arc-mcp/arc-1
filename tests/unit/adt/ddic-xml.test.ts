@@ -11,6 +11,87 @@ import {
 } from '../../../src/adt/ddic-xml.js';
 
 describe('ddic-xml builders', () => {
+  // issue #343: created object master language must follow the configured SAP_LANGUAGE,
+  // not a hard-coded EN. Genuinely affects DTEL/DOMA text language on the S/4 v2 handler.
+  describe('master language (issue #343)', () => {
+    it('buildDomainXml emits the configured language as masterLanguage', () => {
+      const xml = buildDomainXml({
+        name: 'ZD',
+        description: 'd',
+        package: '$TMP',
+        dataType: 'CHAR',
+        length: 1,
+        language: 'DE',
+      });
+      expect(xml).toContain('adtcore:masterLanguage="DE"');
+    });
+
+    it('buildDomainXml defaults to EN when no language given', () => {
+      const xml = buildDomainXml({ name: 'ZD', description: 'd', package: '$TMP', dataType: 'CHAR', length: 1 });
+      expect(xml).toContain('adtcore:masterLanguage="EN"');
+    });
+
+    it('buildDataElementXml emits the configured language as masterLanguage', () => {
+      const xml = buildDataElementXml({
+        name: 'ZE',
+        description: 'd',
+        package: '$TMP',
+        typeKind: 'predefinedAbapType',
+        dataType: 'CHAR',
+        length: 10,
+        language: 'DE',
+      });
+      expect(xml).toContain('adtcore:masterLanguage="DE"');
+    });
+
+    it('buildDataElementXml defaults to EN when no language given', () => {
+      const xml = buildDataElementXml({ name: 'ZE', description: 'd', package: '$TMP' });
+      expect(xml).toContain('adtcore:masterLanguage="EN"');
+    });
+
+    it('buildServiceBindingXml emits the configured language for both language and masterLanguage', () => {
+      const xml = buildServiceBindingXml({
+        name: 'ZSB',
+        description: 'd',
+        package: '$TMP',
+        serviceDefinition: 'ZSD',
+        bindingType: 'ODATA V4 - UI',
+        language: 'DE',
+      });
+      expect(xml).toContain('adtcore:language="DE"');
+      expect(xml).toContain('adtcore:masterLanguage="DE"');
+    });
+
+    it('buildServiceBindingXml defaults to EN when no language given', () => {
+      const xml = buildServiceBindingXml({
+        name: 'ZSB',
+        description: 'd',
+        package: '$TMP',
+        serviceDefinition: 'ZSD',
+        bindingType: 'ODATA V4 - UI',
+      });
+      expect(xml).toContain('adtcore:language="EN"');
+      expect(xml).toContain('adtcore:masterLanguage="EN"');
+    });
+
+    it('normalizes a lower-case 2-char language to upper case', () => {
+      const xml = buildDataElementXml({ name: 'ZE', description: 'd', package: '$TMP', language: 'de' });
+      expect(xml).toContain('adtcore:masterLanguage="DE"');
+    });
+
+    it('treats a blank language as the EN default', () => {
+      const xml = buildDomainXml({
+        name: 'ZD',
+        description: 'd',
+        package: '$TMP',
+        dataType: 'CHAR',
+        length: 1,
+        language: '   ',
+      });
+      expect(xml).toContain('adtcore:masterLanguage="EN"');
+    });
+  });
+
   describe('buildDomainXml', () => {
     it('builds basic domain XML', () => {
       const xml = buildDomainXml({
