@@ -135,7 +135,11 @@ before the issue-#214 callback proxy removed XSUAA from the client-redirect path
   `xs-security.json` `oauth2-configuration.redirect-uris` patterns (xs-security.json is **not**
   shipped at runtime — excluded by `.cfignore` / npm `files` / Dockerfile — so the patterns are
   vendored and a unit test drift-guards them). `matchesXsuaaRedirectPattern()` does anchored,
-  case-insensitive glob matching (`*` = within a segment, `**` = across segments).
+  case-insensitive glob matching (`*` = within a segment, `**` = across segments). It first
+  `new URL()`-parses the candidate and **rejects any userinfo** (`user[:pass]@`) — without that,
+  the port-position `*` in `http://localhost:*/**` would let `http://localhost:x@evil.com/cb`
+  match as a string while parsing to host `evil.com`, re-opening code interception (caught in the
+  PR review; see "Hardening" below).
 - `ensureRedirectUri()` now registers a dynamic redirect_uri for the shared client **only if it
   matches the allowlist** (otherwise dropped + `oauth_redirect_uri_rejected` audit event). A
   non-matching URI then fails the SDK's exact-match at `/authorize`, before any state is minted.
@@ -148,6 +152,26 @@ Legitimate Manual-mode clients (e.g. Copilot Studio via
 `https://global.consent.azure-apim.net/redirect/**`) are preserved because their pattern is in
 the allowlist; an attacker-controlled `redirect_uri` is not, so it is refused at both
 `/authorize` and the callback.
+
+#### Hardening — URL userinfo smuggling in the matcher (PR review)
+
+A security review of the follow-up found that matching the glob against the **raw string** was
+unsafe: the value is later `new URL()`-parsed and used as the 302 target, and the port-position
+`*` in `http://localhost:*/**` (regex `^http://localhost:[^slash]*/…`) let `[^/]*` swallow a URL
+userinfo segment. `http://localhost:x@evil.com/cb` matched the glob as a string, yet
+`new URL(...).host === 'evil.com'` — so a victim's authorization `code` would be 302'd to the
+attacker. (The host-label wildcards like `*.hana.ondemand.com` are *not* affected: the literal
+domain must abut the authority-terminating `/`, so `@`-smuggling can't relocate their host. Only
+the localhost pattern, where the `*` is in the port slot, was bypassable.)
+
+**Fix:** `matchesXsuaaRedirectPattern()` now `new URL()`-parses the candidate, rejects anything
+that doesn't parse, and rejects any URI carrying userinfo (`username`/`password`) before the glob
+match. The `@` is the only construct that can move the authority past a same-segment wildcard, and
+no legitimate OAuth `redirect_uri` carries credentials — so after the guard, a glob match implies
+the parsed host equals the literal host in the pattern. Empirically verified (the old matcher
+returned `true` for `http://localhost:x@evil.com/cb`; the new one returns `false`) with no change
+for any legitimate client URI. Regression tests cover the userinfo variants at both the matcher
+and `/oauth/callback` layers.
 
 ### Tests
 

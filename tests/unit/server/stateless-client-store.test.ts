@@ -276,6 +276,27 @@ describe('matchesXsuaaRedirectPattern (redirect-uri allowlist for the shared XSU
     expect(matchesXsuaaRedirectPattern('https://x.hana.ondemand.com.evil.com/cb')).toBe(false);
     expect(matchesXsuaaRedirectPattern('https://a.b.hana.ondemand.com/cb')).toBe(true); // extra SAP subdomain is fine
   });
+
+  it('rejects URL userinfo smuggling — the string matches the glob but parses to a foreign host', () => {
+    // SECURITY regression: `http://localhost:*/**` → `^http://localhost:[^/]*/.*$`,
+    // and `[^/]*` (the port-position wildcard) greedily swallows `x@evil.com`, so the
+    // raw string matches — yet `new URL("http://localhost:x@evil.com/cb").host` is
+    // `evil.com`. Matching must reject the userinfo so the OAuth code can't be steered
+    // to an attacker host. (Found by security review of PR #355.)
+    expect(new URL('http://localhost:x@evil.com/cb').host).toBe('evil.com'); // documents the parse
+    expect(matchesXsuaaRedirectPattern('http://localhost:x@evil.com/cb')).toBe(false);
+    expect(matchesXsuaaRedirectPattern('http://localhost:@evil.com/x')).toBe(false);
+    expect(matchesXsuaaRedirectPattern('http://localhost:1234@evil.com/cb')).toBe(false);
+    // userinfo on an otherwise-exact host is rejected too
+    expect(matchesXsuaaRedirectPattern('https://user:pass@claude.ai/api/mcp/auth_callback')).toBe(false);
+    // a credential-free loopback redirect (the legitimate use of the localhost pattern) still passes
+    expect(matchesXsuaaRedirectPattern('http://localhost:6274/oauth/callback')).toBe(true);
+  });
+
+  it('rejects values that are not parseable URLs', () => {
+    expect(matchesXsuaaRedirectPattern('not a url')).toBe(false);
+    expect(matchesXsuaaRedirectPattern('http://')).toBe(false);
+  });
 });
 
 describe('StatelessDcrClientStore.checkRedirectUri', () => {
