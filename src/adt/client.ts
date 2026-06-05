@@ -1433,9 +1433,12 @@ export class AdtClient {
    * surfaces the package as a denormalised attribute. Both shapes resolve
    * to the same package; we accept either.
    */
-  async resolveObjectPackage(objectUrl: string): Promise<string> {
+  async resolveObjectPackage(objectUrl: string, accept?: string): Promise<string> {
     checkOperation(this.safety, OperationType.Read, 'ResolveObjectPackage');
-    const resp = await this.http.get(objectUrl);
+    // Server-driven objects (8.16+) only render their <blue:blueSource> metadata (with the
+    // adtcore:packageRef) under the blues.vN+xml Accept — callers pass it so the allowedPackages
+    // ceiling can resolve the real package. Other callers rely on discovery-driven negotiation.
+    const resp = await this.http.get(objectUrl, accept ? { Accept: accept } : undefined);
     const packageRefMatch = resp.body.match(/adtcore:packageRef[^>]*adtcore:name="([^"]*)"/);
     if (packageRefMatch?.[1]) return packageRefMatch[1];
     const containerRefMatch = resp.body.match(/adtcore:containerRef[^>]*adtcore:packageName="([^"]*)"/);

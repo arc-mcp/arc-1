@@ -2362,6 +2362,152 @@ describe('ADT Integration Tests', () => {
     });
   });
 
+  // ─── Server-driven object WRITE lifecycle (816) — full handler dispatch on live 816 ───
+  describe('SAPWrite server-driven object lifecycle (816 SDO)', () => {
+    // Exercises the real handler path (handleToolCall → handleSAPWrite → SDO engine → live HTTP):
+    // create (+ AFF JSON source) → activate → read-back → delete → verify gone. DESD is the
+    // verified type (creates standalone, no dependencies). Gated on the 8.16 discovery signature;
+    // skips cleanly on 758/7.5x. Live-verified on a4h-2025 (816).
+    async function gateOrSkip(ctx: import('vitest').TaskContext, code: string): Promise<void> {
+      const disco = await fetchDiscoveryDocument(client.http);
+      client.http.setDiscoveryMap(disco.map);
+      requireOrSkip(
+        ctx,
+        supportsServerDrivenObject(client.http, code) || undefined,
+        `${SkipReason.BACKEND_UNSUPPORTED}: server-driven object write needs SAP_BASIS 8.16+ (ABAP Platform 2025)`,
+      );
+    }
+
+    it('create → activate → read → delete a DESD via handleToolCall', async (ctx) => {
+      await gateOrSkip(ctx, 'DESD');
+      const { handleToolCall } = await import('../../src/handlers/intent.js');
+      const { generateUniqueName } = await import('./crud-harness.js');
+      const config = {
+        arc1Port: 8080,
+        arc1HttpAddr: '0.0.0.0:8080',
+        toolMode: 'standard',
+        language: 'EN',
+      } as unknown as Parameters<typeof handleToolCall>[1];
+
+      const name = generateUniqueName('ZARC1_SDOW');
+      const sourceJson = JSON.stringify({
+        formatVersion: '1',
+        header: {
+          description: 'ARC-1 SDO write smoke (transient)',
+          originalLanguage: 'en',
+          abapLanguageVersion: 'cloudDevelopment',
+        },
+      });
+
+      let created = false;
+      try {
+        // CREATE (metadata + AFF JSON source in one call)
+        const createResult = await handleToolCall(client, config, 'SAPWrite', {
+          action: 'create',
+          type: 'DESD',
+          name,
+          package: '$TMP',
+          description: 'ARC-1 SDO write smoke (transient)',
+          source: sourceJson,
+        });
+        expect(createResult.isError).toBeFalsy();
+        expect(createResult.content[0]?.text).toContain('Created DESD');
+        created = true;
+
+        // ACTIVATE (generic activation endpoint handles SDO)
+        const activateResult = await handleToolCall(client, config, 'SAPActivate', {
+          action: 'activate',
+          type: 'DESD',
+          name,
+        });
+        expect(activateResult.isError).toBeFalsy();
+        expect(activateResult.content[0]?.text).toContain('activated DESD');
+
+        // READ BACK — metadata + AFF JSON source persisted
+        const readResult = await handleToolCall(client, config, 'SAPRead', { type: 'DESD', name });
+        expect(readResult.isError).toBeFalsy();
+        const parsed = JSON.parse(readResult.content[0]?.text ?? '{}') as {
+          type?: string;
+          package?: string;
+          source?: { formatVersion?: string };
+        };
+        expect(parsed.type).toBe('DESD/TYP');
+        expect(parsed.package).toBe('$TMP');
+        expect(parsed.source?.formatVersion).toBe('1');
+
+        // DELETE
+        const deleteResult = await handleToolCall(client, config, 'SAPWrite', {
+          action: 'delete',
+          type: 'DESD',
+          name,
+        });
+        expect(deleteResult.isError).toBeFalsy();
+        expect(deleteResult.content[0]?.text).toContain('Deleted DESD');
+        created = false;
+
+        // VERIFY GONE (404 surfaces as a tool error)
+        const goneResult = await handleToolCall(client, config, 'SAPRead', { type: 'DESD', name });
+        expect(goneResult.isError).toBe(true);
+      } finally {
+        if (created) {
+          // best-effort-cleanup — object may already be gone
+          await handleToolCall(client, config, 'SAPWrite', { action: 'delete', type: 'DESD', name }).catch(() => {
+            // best-effort-cleanup
+          });
+        }
+      }
+    });
+
+    it('create → read → delete an EVTB (cross-release: EVTB ships on 758 + 816)', async (ctx) => {
+      // EVTB (RAP Event Binding) is the one registered SDO type whose discovery gate is true on
+      // S/4HANA 2023 (758) as well as 8.16 — so its write path must work on both. (We skip activation
+      // here: an empty event binding legitimately fails to activate with "No Event defined", which is
+      // SAP correctly rejecting incomplete content — see docs/research §3.1.) Live-verified on a4h
+      // (758) and a4h-2025 (816).
+      await gateOrSkip(ctx, 'EVTB');
+      const { handleToolCall } = await import('../../src/handlers/intent.js');
+      const { generateUniqueName } = await import('./crud-harness.js');
+      const config = {
+        arc1Port: 8080,
+        arc1HttpAddr: '0.0.0.0:8080',
+        toolMode: 'standard',
+        language: 'EN',
+      } as unknown as Parameters<typeof handleToolCall>[1];
+
+      const name = generateUniqueName('ZARC1_SDOW_EVTB');
+      let created = false;
+      try {
+        const createResult = await handleToolCall(client, config, 'SAPWrite', {
+          action: 'create',
+          type: 'EVTB',
+          name,
+          package: '$TMP',
+          description: 'ARC-1 EVTB cross-release smoke (transient)',
+        });
+        expect(createResult.isError).toBeFalsy();
+        expect(createResult.content[0]?.text).toContain('Created EVTB');
+        created = true;
+
+        const readResult = await handleToolCall(client, config, 'SAPRead', { type: 'EVTB', name });
+        expect(readResult.isError).toBeFalsy();
+        const parsed = JSON.parse(readResult.content[0]?.text ?? '{}') as { type?: string };
+        expect(parsed.type).toBe('EVTB/EVB');
+
+        const deleteResult = await handleToolCall(client, config, 'SAPWrite', { action: 'delete', type: 'EVTB', name });
+        expect(deleteResult.isError).toBeFalsy();
+        expect(deleteResult.content[0]?.text).toContain('Deleted EVTB');
+        created = false;
+      } finally {
+        if (created) {
+          // best-effort-cleanup — object may already be gone
+          await handleToolCall(client, config, 'SAPWrite', { action: 'delete', type: 'EVTB', name }).catch(() => {
+            // best-effort-cleanup
+          });
+        }
+      }
+    });
+  });
+
   // ─── getFunctionGroup (objectstructure-based, non-expand FUGR read) ───
   describe('getFunctionGroup (objectstructure-based)', () => {
     // Regression guard: the old implementation hit /functions/groups/<name> (metadata only,

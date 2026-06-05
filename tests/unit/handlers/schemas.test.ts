@@ -35,6 +35,17 @@ describe('SAPReadSchema', () => {
     expect(SAPReadSchema.safeParse({ type: 'COTA', name: 'X' }).success).toBe(true);
   });
 
+  it('SAPWrite accepts server-driven object types (create/update/delete — 816)', () => {
+    for (const t of ['DESD', 'DTSC', 'CSNM', 'EVTB', 'EVTO', 'COTA']) {
+      expect(SAPWRITE_TYPES_ONPREM).toContain(t);
+      expect(SAPWRITE_TYPES_BTP).toContain(t);
+      expect(SAPWriteSchema.safeParse({ action: 'create', type: t, name: 'ZARC1_SDO', package: '$TMP' }).success).toBe(
+        true,
+      );
+      expect(SAPWriteSchema.safeParse({ action: 'delete', type: t, name: 'ZARC1_SDO' }).success).toBe(true);
+    }
+  });
+
   it('accepts all optional fields', () => {
     const result = SAPReadSchema.safeParse({
       type: 'CLAS',

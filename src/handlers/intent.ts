@@ -153,7 +153,16 @@ import {
 import { formatRapPreflightFindings, validateRapSource } from '../adt/rap-preflight.js';
 import { changePackage } from '../adt/refactoring.js';
 import { checkOperation, checkPackage, isOperationAllowed, OperationType } from '../adt/safety.js';
-import { getServerDrivenObject, isServerDrivenObjectType, supportsServerDrivenObject } from '../adt/server-driven.js';
+import {
+  createServerDrivenObject,
+  deleteServerDrivenObject,
+  getServerDrivenObject,
+  isServerDrivenObjectType,
+  serverDrivenBlueContentType,
+  serverDrivenObjectUrl,
+  supportsServerDrivenObject,
+  updateServerDrivenObjectSource,
+} from '../adt/server-driven.js';
 import {
   createTransport,
   createTransportWithTarget,
@@ -3651,9 +3660,10 @@ async function enforceAllowedPackageForObjectUrl(
   client: AdtClient,
   objectUrl: string,
   label: string,
+  accept?: string,
 ): Promise<string | undefined> {
   if (client.safety.allowedPackages.length === 0) return undefined;
-  const pkg = await client.resolveObjectPackage(objectUrl);
+  const pkg = await client.resolveObjectPackage(objectUrl, accept);
   if (!pkg) {
     throw new AdtSafetyError(
       `${label} blocked: ARC-1 could not determine the object's package from ADT metadata ` +
@@ -3662,6 +3672,107 @@ async function enforceAllowedPackageForObjectUrl(
   }
   await checkPackage(client.safety, pkg, client.getPackageHierarchyResolver());
   return pkg;
+}
+
+/**
+ * SAPWrite for server-driven objects (8.16+): create / update-source / delete via the generic AFF
+ * blue:blueSource + JSON-source engine. Discovery-gated (clean 8.16 error otherwise), allowWrites-gated
+ * (through the engine's checkOperation), and allowedPackages-gated against the REAL package
+ * (create gates the caller-supplied package like every create; update/delete resolve the object's true
+ * package under the blues Accept). The `source` param carries the AFF JSON — parse-validated before the
+ * PUT; ABAP-specific pre-write steps (lint, RAP preflight, CDS guard) do not apply. Create leaves the
+ * object inactive — callers follow with SAPActivate (never auto-activated).
+ */
+async function handleServerDrivenObjectWrite(
+  client: AdtClient,
+  action: string,
+  type: string,
+  name: string,
+  args: Record<string, unknown>,
+  cachingLayer?: CachingLayer,
+): Promise<ToolResult> {
+  // Discovery gate — mirror handleSAPRead's server-driven branch.
+  if (supportsServerDrivenObject(client.http, type) === false) {
+    return errorResult(
+      `SAPWrite type=${type} (server-driven object) requires SAP_BASIS 8.16+ (ABAP Platform 2025 / S/4HANA 2025). ` +
+        'This system does not expose this object type.',
+    );
+  }
+
+  const transport = args.transport as string | undefined;
+  const objUrl = serverDrivenObjectUrl(type, name);
+  const blueAccept = serverDrivenBlueContentType(type);
+
+  const invalidate = (): void => {
+    cachingLayer?.invalidate(type, name, 'all');
+    cachingLayer?.inactiveLists.invalidate(client.username);
+  };
+
+  // SDO source is AFF JSON (not ABAP) — validate it parses before any PUT.
+  const validateSource = (): { ok: true; json: string } | { ok: false; result: ToolResult } => {
+    const src = String(args.source ?? '');
+    try {
+      JSON.parse(src);
+    } catch {
+      return {
+        ok: false,
+        result: errorResult(
+          `SAPWrite ${action} for ${type} ${name}: "source" must be valid AFF JSON ` +
+            '(e.g. {"formatVersion":"1","header":{"description":"…","originalLanguage":"en"}}).',
+        ),
+      };
+    }
+    return { ok: true, json: src };
+  };
+
+  const hasSourceArg = typeof args.source === 'string' && args.source.trim() !== '';
+
+  switch (action) {
+    case 'create': {
+      const pkg = String(args.package ?? '$TMP');
+      await checkPackage(client.safety, pkg, client.getPackageHierarchyResolver());
+      const description = String(args.description ?? name);
+      await createServerDrivenObject(client.http, client.safety, type, name, {
+        package: pkg,
+        description,
+        transport,
+      });
+      let wroteSource = false;
+      if (hasSourceArg) {
+        const v = validateSource();
+        if (!v.ok) return v.result;
+        await updateServerDrivenObjectSource(client.http, client.safety, type, name, v.json, { transport });
+        wroteSource = true;
+      }
+      invalidate();
+      return textResult(
+        `Created ${type} ${name} in package ${pkg}${wroteSource ? ' and wrote AFF JSON source' : ''}.\n` +
+          `Next step: SAPActivate(type="${type}", name="${name}").`,
+      );
+    }
+    case 'update': {
+      if (!hasSourceArg) {
+        return errorResult(`SAPWrite update for ${type} ${name} requires "source" (the AFF JSON body).`);
+      }
+      const v = validateSource();
+      if (!v.ok) return v.result;
+      await enforceAllowedPackageForObjectUrl(client, objUrl, `Operations on ${type} '${name}'`, blueAccept);
+      await updateServerDrivenObjectSource(client.http, client.safety, type, name, v.json, { transport });
+      invalidate();
+      return textResult(`Updated source of ${type} ${name}.\nNext step: SAPActivate(type="${type}", name="${name}").`);
+    }
+    case 'delete': {
+      await enforceAllowedPackageForObjectUrl(client, objUrl, `Operations on ${type} '${name}'`, blueAccept);
+      await deleteServerDrivenObject(client.http, client.safety, type, name, { transport });
+      invalidate();
+      return textResult(`Deleted ${type} ${name}.`);
+    }
+    default:
+      return errorResult(
+        `Action "${action}" is not supported for server-driven object type ${type}. ` +
+          'Supported: create, update, delete (source is AFF JSON) — then SAPActivate to activate.',
+      );
+  }
 }
 
 async function handleSAPWrite(
@@ -3706,6 +3817,15 @@ async function handleSAPWrite(
         `Note: the object NAME in TADIR must be uppercase, but the source code inside the object can use mixed case ` +
         `(e.g. for DDLS: name="${name.toUpperCase()}" but source can contain "define view entity ${name}").`,
     );
+  }
+
+  // Server-driven objects (ABAP Platform 2025 / SAP_BASIS 8.16+): DESD, EVTB, DTSC, CSNM, EVTO, COTA
+  // share one AFF generic-object write contract (POST blue:blueSource metadata → PUT AFF JSON source
+  // → activate). They route through the dedicated engine instead of the per-type switch below —
+  // objectBasePath(<sdo>) throws, so this MUST come before the objectUrl computation. Mirrors the
+  // server-driven branch in handleSAPRead.
+  if (isServerDrivenObjectType(type)) {
+    return handleServerDrivenObjectWrite(client, action, type, name, args, cachingLayer);
   }
 
   // For TABL update/delete/edit_method, the existing object may live at /tables/
@@ -5913,6 +6033,11 @@ async function handleSAPActivate(
     }
     const groupLc = encodeURIComponent(group.toLowerCase());
     objectUrl = `/sap/bc/adt/functions/groups/${groupLc}/fmodules/${encodeURIComponent(name.toLowerCase())}`;
+  } else if (isServerDrivenObjectType(type)) {
+    // Server-driven objects (8.16+): objectBasePath(<sdo>) throws, so route via the registry href.
+    // Single-object activation only — SDO is not added to the batch resolver above (batch is
+    // RAP-stack-oriented). The generic activate() endpoint handles SDO (verified: activate(DESD) → ok).
+    objectUrl = serverDrivenObjectUrl(type, name);
   } else {
     objectUrl = objectUrlForType(type, name);
   }
@@ -5921,7 +6046,13 @@ async function handleSAPActivate(
   // activating — activation is a write-class state change (inactive draft → active
   // runtime version) and must honor the same package boundary as create/update/delete.
   // Fail-closed; no-op when allowedPackages is unrestricted. (security audit 2026-06)
-  await enforceAllowedPackageForObjectUrl(client, objectUrl, `Activation of ${type} '${name}'`);
+  // SDO metadata only renders its packageRef under the blues Accept — thread it for SDO types.
+  await enforceAllowedPackageForObjectUrl(
+    client,
+    objectUrl,
+    `Activation of ${type} '${name}'`,
+    isServerDrivenObjectType(type) ? serverDrivenBlueContentType(type) : undefined,
+  );
 
   const result = await activate(client.http, client.safety, objectUrl, { ...activateOpts, name });
 

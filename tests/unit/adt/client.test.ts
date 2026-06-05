@@ -1857,6 +1857,38 @@ describe('AdtClient', () => {
       const pkg = await client.resolveObjectPackage('/sap/bc/adt/anything');
       expect(pkg).toBe('REAL_PACKAGE');
     });
+
+    it('forwards an explicit Accept (server-driven blues metadata) and parses its packageRef', async () => {
+      // Server-driven objects (8.16+) only render <blue:blueSource> (with the packageRef) under the
+      // blues.vN+xml Accept — resolveObjectPackage threads it so the allowedPackages ceiling resolves
+      // the real package of an SDO on update/delete/activate.
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(
+        mockResponse(
+          200,
+          '<blue:blueSource xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="ZSDO" adtcore:type="DESD/TYP">' +
+            '<adtcore:packageRef adtcore:name="ZSDO_PKG"/></blue:blueSource>',
+        ),
+      );
+      const client = createClient();
+      const accept = 'application/vnd.sap.adt.blues.v1+xml';
+      const pkg = await client.resolveObjectPackage('/sap/bc/adt/ddic/desd/ZSDO', accept);
+      expect(pkg).toBe('ZSDO_PKG');
+      expect(fetchHeaders(0).Accept).toBe(accept);
+    });
+
+    it('does not force the blues Accept when no accept is supplied', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(
+        mockResponse(
+          200,
+          '<obj xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:packageRef adtcore:name="P"/></obj>',
+        ),
+      );
+      const client = createClient();
+      await client.resolveObjectPackage('/sap/bc/adt/oo/classes/ZCL_X');
+      expect(fetchHeaders(0).Accept ?? '').not.toContain('blues');
+    });
   });
 
   describe('getInactiveObjects', () => {

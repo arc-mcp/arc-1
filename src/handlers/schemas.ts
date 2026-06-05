@@ -363,6 +363,13 @@ export const SAPWRITE_TYPES_ONPREM = [
   'DOMA',
   'DTEL',
   'MSAG',
+  // Server-driven objects (8.16+) — write via the generic blue:blueSource + AFF JSON engine.
+  'DESD',
+  'DTSC',
+  'CSNM',
+  'EVTB',
+  'EVTO',
+  'COTA',
 ] as const;
 export const SAPWRITE_TYPES_BTP = [
   'CLAS',
@@ -380,6 +387,13 @@ export const SAPWRITE_TYPES_BTP = [
   'DOMA',
   'DTEL',
   'MSAG',
+  // Server-driven objects (8.16+ / ABAP Cloud) — write via the generic blue:blueSource + AFF JSON engine.
+  'DESD',
+  'DTSC',
+  'CSNM',
+  'EVTB',
+  'EVTO',
+  'COTA',
 ] as const;
 
 const ddicFixedValueSchema = z.object({

@@ -225,7 +225,7 @@ Create or update ABAP source code. Handles lock/modify/unlock automatically.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `action` | string | Yes | `create`, `update`, `delete`, `edit_method`, `edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`, `batch_create`, `scaffold_rap_handlers`, or `generate_behavior_implementation`. The class-section surgery actions (`edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`) are token-efficient edits to a global class without re-sending `/source/main`. See [Class-section surgery](#class-section-surgery) below. |
-| `type` | string | No | `PROG`, `CLAS`, `INTF`, `FUNC`, `FUGR`, `INCL`, `DDLS`, `DCLS`, `DDLX`, `BDEF`, `SRVD`, `SRVB`, `SKTD`, `TABL`, `TABL/DT`, `TABL/DS`, `DOMA`, `DTEL`, `MSAG` (for single object actions; availability is adapted for BTP vs. on-prem). Slash/case aliases are auto-normalized (e.g., `CLAS/OC` or `clas` → `CLAS`). |
+| `type` | string | No | `PROG`, `CLAS`, `INTF`, `FUNC`, `FUGR`, `INCL`, `DDLS`, `DCLS`, `DDLX`, `BDEF`, `SRVD`, `SRVB`, `SKTD`, `TABL`, `TABL/DT`, `TABL/DS`, `DOMA`, `DTEL`, `MSAG` (for single object actions; availability is adapted for BTP vs. on-prem), plus the server-driven objects `DESD`/`EVTB`/`DTSC`/`CSNM`/`EVTO`/`COTA` on 8.16+ (see [Server-driven object writes](#server-driven-object-writes)). Slash/case aliases are auto-normalized (e.g., `CLAS/OC` or `clas` → `CLAS`). |
 | `group` | string | No | For `FUNC`: parent function-group name. **Required for FUNC create** (the FUGR must already exist — create it first via `SAPWrite type=FUGR`). Auto-resolved via search for FUNC update/delete if omitted. Ignored for other types. |
 | `name` | string | No | Object name (for single object actions) |
 | `source` | string | No | ABAP source code. For `create`/`update`: full source body. For `edit_method`: new method body. For `edit_class_definition`: ONLY the new `CLASS … DEFINITION … ENDCLASS.` block (~10–80 lines instead of full class). For `edit_method_signature`: ONLY the new METHODS clause for one method (~1–5 lines). Not used by `add_method`/`delete_method`/`change_method_visibility` — pass the method clause/name and target visibility via `method`/`visibility` instead. |
@@ -274,6 +274,26 @@ Create or update ABAP source code. Handles lock/modify/unlock automatically.
 **DDIC metadata writes:** `DOMA`, `DTEL`, `MSAG`, and `SRVB` use structured XML payloads and do **not** use `/source/main`. `MSAG` writes use the `/sap/bc/adt/messageclass/` endpoint and accept a `messages` array of `{number, shortText, longText?}` entries. `SRVB` create uses wildcard content type (`application/*`) and SRVB update uses vendor type (`application/vnd.sap.adt.businessservices.servicebinding.v2+xml`).
 
 **Source-based DDIC writes:** `TABL`, `DDLS`, `DCLS`, `BDEF`, `SRVD`, and `SKTD` are source-based and write source via `/source/main`. `TABL` covers both transparent tables (`TABL/DT`) and DDIC structures (`TABL/DS`); ARC-1 auto-resolves between `/ddic/tables/` and `/ddic/structures/` for read/update. `SKTD` writes Markdown knowledge-transfer documentation attached to one ABAP object; create requires `refObjectType` and uses `name` as the documented object name.
+
+#### Server-driven object writes
+
+`DESD`, `EVTB`, `DTSC`, `CSNM`, `EVTO`, and `COTA` are **server-driven objects** (ABAP Platform 2025 / SAP_BASIS 8.16+) — ~46 repository types that share one AFF generic-object contract. `SAPWrite` supports `create`, `update`, and `delete` for them; `SAPActivate` activates them:
+
+- **`create`** posts a minimal `<blue:blueSource>` metadata body to the type's collection (e.g. `/sap/bc/adt/ddic/desd`), then — if `source` is supplied — writes it. The object is left **inactive**; follow with `SAPActivate(type=..., name=...)`.
+- **`source` is AFF JSON**, not ABAP — e.g. `{"formatVersion":"1","header":{"description":"…","originalLanguage":"en","abapLanguageVersion":"cloudDevelopment"}}`. It is parse-validated (clean error on malformed JSON) and written to `…/source/main` as `application/json`. ABAP-specific pre-write steps (lint, RAP preflight, CDS guard) do not apply.
+- **`update`** requires `source` (the new AFF JSON); **`delete`** uses the standard lock → delete flow. Both honor the `allowedPackages` ceiling against the object's real package.
+- **Availability is discovery-gated and per-type.** On systems that don't expose a type, write returns a clean `requires SAP_BASIS 8.16+` error. Most types need 8.16+, but `EVTB` (RAP Event Binding) also ships on S/4HANA 2023 (758) — its write path is live-verified there too (create/read/delete). NetWeaver 7.50 exposes none of them.
+
+| Type | Object | Notes |
+|------|--------|-------|
+| `DESD` | CDS Logical External Schema | Creates standalone — the reference round-trip type. |
+| `EVTB` | RAP Event Binding | Also on 758. |
+| `EVTO` | RAP Event Object | Create uses the blues **v2** content-type (the others use v1). |
+| `DTSC` | CDS Static Cache (table-entity buffer) | |
+| `CSNM` | Core Schema Notation Model (CSN) | |
+| `COTA` | Communication Target | |
+
+Other actions (`edit_method`, surgery, `batch_create`, RAP scaffolding) are not supported for server-driven types and return a clear error.
 
 **Function group (`FUGR`) create:** POSTs `<group:abapFunctionGroup … adtcore:type="FUGR/F">` to `/sap/bc/adt/functions/groups` with content type `application/vnd.sap.adt.functions.groups.v3+xml`. Provide `package` and (for non-`$TMP`) `transport`. Delete the FUGR only after all its function modules have been deleted.
 

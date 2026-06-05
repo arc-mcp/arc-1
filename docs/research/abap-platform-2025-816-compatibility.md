@@ -15,7 +15,7 @@ This doc is written so a future session can pick up **any single item** and impl
 |---|-------|---------|--------|--------|
 | **2.2** | **Writes on the 2025 container** | ✅ **done (2026-06-05)** | Tuning applied (`wp_no_dia=40`, `PHYS_MEMSIZE=8192`, ICM threads). 816 CRUD lifecycle now **7/7** (was flaky write+activate). ⚠️ needs an ephemeral-port reservation after each container restart — see §2.2. | — |
 | **1.3** | **CDS table entity create/read** | ⚠️ routing/lint OK; live write validation blocked by 2.2 | After 2.2, add a focused table-entity lifecycle test on 816. | S |
-| **3.1** | **Server-driven-object read/write** | 🔬 spike | Seed one real 816 server-driven object, then prove read→write→activate before generic support. | M |
+| **3.1** | **Server-driven-object read/write** | ✅ **done** (read #356; write 2026-06-05) | Generic discovery-gated engine `src/adt/server-driven.ts`: read (`SAPRead`) + write (`SAPWrite create/update/delete` + `SAPActivate`) for DESD/EVTB/DTSC/CSNM/EVTO/COTA. Live-verified create on all 6 (816); DESD full round-trip. See §3.1 below. | M |
 | **1.2** | **abaplint v758 false-positive-blocks 816 syntax** | ✅ **implemented** | No action now. Keep `ABAPLINT_MAX_RELEASE` and release mapping coupled when abaplint gains newer grammar. | — |
 | 1.1 | Existing parsers on 816 (objectstructure etc.) | ✅ pass | None (optional: capture a 816 objectstructure fixture) | XS |
 | 2.1 | `rap-preflight` on 816 | ✅ correct | None (document) | — |
@@ -135,7 +135,19 @@ Live probe:
 
 ## Tier 3 — the new-API follow-up (after #347)
 
-### 3.1 — One real server-driven-object round-trip 🔬 SPIKE
+### 3.1 — Server-driven-object read + write ✅ DONE
+
+> **Shipped.** Read landed in **#356** (`SAPRead type=DESD|EVTB|EVTO|DTSC|CSNM|COTA`). Write landed
+> **2026-06-05**: `SAPWrite action=create|update|delete` + `SAPActivate` for the same 6 types, via the
+> same generic engine `src/adt/server-driven.ts`. The write contract was probed live on a4h-2025 (816)
+> first: **all 6 types create** with a `<blue:blueSource>` POST (per-type `createType` — NOT uniformly
+> `/TYP`; EVTB uses `EVTB/EVB`) and the type's blues content-type (**NOT uniformly v1 — EVTO needs
+> `blues.v2+xml`**, the others v1). Source is AFF JSON (`application/json` PUT to `…/source/main`);
+> create leaves the object inactive (→ `SAPActivate`). DESD round-tripped end-to-end
+> (create→source→activate→read→delete). **Cross-release verified live** (per-type/release-adaptive gate,
+> like the read path): on a4h (758) **EVTB write works** (create→read→delete; gate true for EVTB,
+> false for the 816-only types → clean "requires 8.16+" error); on npl (7.50) all 6 gate cleanly with
+> no crash. The original spike notes below are retained for context.
 
 The new-APIs doc established that ~30 new 816 objects (DTSC, DESD, CSNM, EVTO, SPRV, UIAD/UIPG/UIST, Communication Targets, …) share one AFF mechanism: `…/{name}` + `…/{name}/source/main` with `application/vnd.sap.adt.blues.v1+xml`, and a live `…/$schema` (`application/vnd.sap.adt.serverdriven.schema.v1+json; framework=objectTypes.v1`). Read-by-name **routing** is confirmed (404-for-nonexistent), and `$schema` returns the abap-file-formats JSON schema — but **no real instance was round-tripped** (the trial ships none).
 

@@ -155,6 +155,13 @@ const SAPWRITE_TYPES_ONPREM = [
   'DOMA',
   'DTEL',
   'MSAG',
+  // Server-driven objects (8.16+) — write via the generic blue:blueSource + AFF JSON engine.
+  'DESD',
+  'DTSC',
+  'CSNM',
+  'EVTB',
+  'EVTO',
+  'COTA',
 ];
 const SAPWRITE_TYPES_BTP = [
   'CLAS',
@@ -172,6 +179,13 @@ const SAPWRITE_TYPES_BTP = [
   'DOMA',
   'DTEL',
   'MSAG',
+  // Server-driven objects (8.16+ / ABAP Cloud) — write via the generic blue:blueSource + AFF JSON engine.
+  'DESD',
+  'DTSC',
+  'CSNM',
+  'EVTB',
+  'EVTO',
+  'COTA',
 ];
 const SAPWRITE_CLAS_INCLUDES = ['definitions', 'implementations', 'macros', 'testclasses'];
 
@@ -195,7 +209,8 @@ const SAPWRITE_DESC_ONPREM =
   'Global-interface methods like "zif_order~create" continue to use /source/main. ' +
   'For batch_create: create and activate multiple objects in a single call — ideal for RAP stacks (TABL → DDLS → DCLS → BDEF → SRVD). Pass "objects" array with dependency order. ' +
   'For scaffold_rap_handlers: derive missing RAP behavior handler signatures from an interface BDEF and optionally create missing lhc_* skeletons plus inject declarations and empty implementation stubs into an existing behavior pool class. ' +
-  'For generate_behavior_implementation: one-shot RAP behavior pool — auto-discover the bound BDEF via class metadata (rootEntityRef), scaffold every required handler (creating lhc_<alias> skeletons when missing), write under one lock, and (by default) activate. Reliable equivalent of Eclipse ADT\'s "Generate Behavior Implementation" Cmd+1 quickfix without the broken /sap/bc/adt/quickfixes/proposals/.../create_class_implementation server endpoint.';
+  'For generate_behavior_implementation: one-shot RAP behavior pool — auto-discover the bound BDEF via class metadata (rootEntityRef), scaffold every required handler (creating lhc_<alias> skeletons when missing), write under one lock, and (by default) activate. Reliable equivalent of Eclipse ADT\'s "Generate Behavior Implementation" Cmd+1 quickfix without the broken /sap/bc/adt/quickfixes/proposals/.../create_class_implementation server endpoint. ' +
+  'Server-driven objects (ABAP Platform 2025 / SAP_BASIS 8.16+, discovery-gated): DESD (CDS Logical External Schema), DTSC (CDS Static Cache), CSNM (CSN Model), EVTB (RAP Event Binding), EVTO (RAP Event Object), COTA (Communication Target). For these, create/update/delete operate on the generic AFF blue:blueSource object — pass the AFF JSON in "source" (e.g. {"formatVersion":"1","header":{...}}); create leaves the object inactive, so follow with SAPActivate. On pre-8.16 systems these types return a clean "requires SAP_BASIS 8.16+" error.';
 
 const SAPWRITE_DESC_BTP =
   'Create or update ABAP source code and DDIC metadata (BTP ABAP Environment). Handles lock/modify/unlock automatically. Supports CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. ' +
@@ -213,7 +228,8 @@ const SAPWRITE_DESC_BTP =
   'Auto-detection prefixes: lhc_*/lcl_* → implementations, ltc_* → testclasses. Override with include= for explicit control. ' +
   'For batch_create: create and activate multiple objects in a single call — ideal for RAP stacks (TABL → DDLS → DCLS → BDEF → SRVD). ' +
   'For scaffold_rap_handlers: derive missing RAP behavior handler signatures from an interface BDEF and optionally create missing lhc_* skeletons plus inject declarations and empty implementation stubs into an existing behavior pool class. ' +
-  'For generate_behavior_implementation: one-shot RAP behavior pool — auto-discover the bound BDEF via class metadata (rootEntityRef), scaffold every required handler (creating lhc_<alias> skeletons when missing), write under one lock, and (by default) activate.';
+  'For generate_behavior_implementation: one-shot RAP behavior pool — auto-discover the bound BDEF via class metadata (rootEntityRef), scaffold every required handler (creating lhc_<alias> skeletons when missing), write under one lock, and (by default) activate. ' +
+  'Server-driven objects (8.16+ / ABAP Cloud, discovery-gated): DESD, DTSC, CSNM, EVTB, EVTO, COTA — create/update/delete operate on the generic AFF blue:blueSource object (pass AFF JSON in "source"); create leaves the object inactive, so follow with SAPActivate. Pre-8.16 systems return a clean "requires SAP_BASIS 8.16+" error.';
 
 // ─── SAPContext Types ───────────────────────────────────────────────
 
@@ -665,8 +681,8 @@ export function getToolDefinitions(
             type: 'string',
             enum: btp ? SAPWRITE_TYPES_BTP : SAPWRITE_TYPES_ONPREM,
             description: btp
-              ? 'Object type (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on BTP: CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require type=CLAS.'
-              : 'Object type (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on-prem: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require type=CLAS.',
+              ? 'Object type (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on BTP: CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require type=CLAS. Server-driven objects (8.16+, discovery-gated): DESD, DTSC, CSNM, EVTB, EVTO, COTA — create/update/delete with AFF JSON in "source", then SAPActivate.'
+              : 'Object type (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on-prem: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require type=CLAS. Server-driven objects (8.16+, discovery-gated): DESD, DTSC, CSNM, EVTB, EVTO, COTA — create/update/delete with AFF JSON in "source", then SAPActivate.',
           },
           name: {
             type: 'string',

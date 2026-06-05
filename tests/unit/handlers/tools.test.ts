@@ -221,6 +221,15 @@ describe('Tool Definitions', () => {
     expect(schema.properties.type.description).toContain('Server-driven objects');
   });
 
+  it('SAPWrite exposes server-driven object types (write — 816)', () => {
+    const tools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true });
+    const sapWrite = tools.find((t) => t.name === 'SAPWrite')!;
+    const schema = sapWrite.inputSchema as Record<string, any>;
+    const typeEnum: string[] = schema.properties.type.enum;
+    for (const t of ['DESD', 'EVTB', 'EVTO', 'DTSC', 'CSNM', 'COTA']) expect(typeEnum).toContain(t);
+    expect(schema.properties.type.description).toContain('Server-driven objects');
+  });
+
   it('SAPRead schema includes source version controls', () => {
     const tools = getToolDefinitions(DEFAULT_CONFIG);
     const sapRead = tools.find((t) => t.name === 'SAPRead')!;

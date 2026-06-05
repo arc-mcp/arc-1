@@ -3104,6 +3104,113 @@ ENDCLASS.`;
     });
   });
 
+  // ─── SAPWrite: server-driven objects (8.16+) ───────────────────
+
+  describe('SAPWrite server-driven objects (816)', () => {
+    type FetchCall = [string, { method?: string; body?: string }];
+    const callMatching = (method: string, pathname: string): FetchCall | undefined =>
+      (mockFetch.mock.calls as FetchCall[]).find(([u, o]) => o?.method === method && new URL(u).pathname === pathname);
+
+    it('create POSTs the blue:blueSource body to the collection and steers to SAPActivate', async () => {
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'DESD',
+        name: 'ZARC1_SDO',
+        package: '$TMP',
+      });
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0]?.text).toContain('Created DESD ZARC1_SDO in package $TMP');
+      expect(result.content[0]?.text).toContain('Next step: SAPActivate(type="DESD", name="ZARC1_SDO")');
+      const post = callMatching('POST', '/sap/bc/adt/ddic/desd');
+      expect(post).toBeDefined();
+      expect(post?.[1].body).toContain('blue:blueSource');
+      expect(post?.[1].body).toContain('adtcore:type="DESD/TYP"');
+    });
+
+    it('create with source also PUTs the AFF JSON to /source/main', async () => {
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'DESD',
+        name: 'ZARC1_SDO',
+        package: '$TMP',
+        source: '{"formatVersion":"1","header":{"description":"x","originalLanguage":"en"}}',
+      });
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0]?.text).toContain('wrote AFF JSON source');
+      expect(callMatching('PUT', '/sap/bc/adt/ddic/desd/ZARC1_SDO/source/main')).toBeDefined();
+    });
+
+    it('update without source returns an actionable error', async () => {
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'update',
+        type: 'DESD',
+        name: 'ZARC1_SDO',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('requires "source"');
+    });
+
+    it('rejects malformed AFF JSON source before any HTTP write', async () => {
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'update',
+        type: 'DESD',
+        name: 'ZARC1_SDO',
+        source: 'not json',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('valid AFF JSON');
+      expect(callMatching('PUT', '/sap/bc/adt/ddic/desd/ZARC1_SDO/source/main')).toBeUndefined();
+    });
+
+    it('delete locks then issues a DELETE on the SDO URL', async () => {
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'delete',
+        type: 'CSNM',
+        name: 'ZARC1_CSN',
+      });
+      expect(result.content[0]?.text).toContain('Deleted CSNM ZARC1_CSN');
+      expect(callMatching('DELETE', '/sap/bc/adt/csn/csnm/ZARC1_CSN')).toBeDefined();
+    });
+
+    it('rejects an unsupported action for a server-driven type', async () => {
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'edit_method',
+        type: 'DESD',
+        name: 'ZARC1_SDO',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('not supported for server-driven object type DESD');
+    });
+
+    it('returns the 8.16 gate error when discovery shows the collection is absent', async () => {
+      const client = createClient();
+      (client.http as unknown as { hasDiscoveryData(): boolean }).hasDiscoveryData = () => true;
+      (client.http as unknown as { discoveryAcceptFor(p: string): string | undefined }).discoveryAcceptFor = () =>
+        undefined;
+      const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'DESD',
+        name: 'ZARC1_SDO',
+        package: '$TMP',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('8.16+');
+      expect(callMatching('POST', '/sap/bc/adt/ddic/desd')).toBeUndefined();
+    });
+
+    it('SAPActivate routes a server-driven type through the registry URL', async () => {
+      await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPActivate', {
+        action: 'activate',
+        type: 'DESD',
+        name: 'ZARC1_SDO',
+      });
+      // Routing worked iff the activation request referenced the SDO URL (no objectBasePath throw).
+      const activation = callMatching('POST', '/sap/bc/adt/activation');
+      expect(activation).toBeDefined();
+      expect(activation?.[1].body).toContain('/sap/bc/adt/ddic/desd/ZARC1_SDO');
+    });
+  });
+
   // ─── SAPWrite Package Enforcement ──────────────────────────────
 
   describe('SAPWrite package enforcement', () => {
