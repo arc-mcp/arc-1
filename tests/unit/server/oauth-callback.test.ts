@@ -295,4 +295,23 @@ describe('createOAuthCallbackHandler — client-binding validation (auth-code in
     expect(res.headers.location).toBeUndefined();
     expect(res.text).not.toContain('STOLEN');
   });
+
+  it('returns 400 (code NOT leaked) for a userinfo-smuggled localhost redirect on the default client', async () => {
+    // SECURITY regression (PR #355 review): `http://localhost:x@evil.com/cb` matches the
+    // `http://localhost:*/**` glob as a STRING, but parses to host `evil.com`. The callback
+    // must refuse it so the victim's code is never 302'd to the attacker's host.
+    const codec = new OAuthStateCodec(SECRET);
+    const store = buildStore();
+    const token = codec.encode({
+      clientState: 'abc',
+      clientRedirectUri: 'http://localhost:x@evil.com/cb',
+      clientId: DEFAULT_CLIENT_ID,
+    });
+    const res = await request(buildAppWithStore(codec, store))
+      .get('/oauth/callback')
+      .query({ code: 'STOLEN', state: token });
+    expect(res.status).toBe(400);
+    expect(res.headers.location).toBeUndefined();
+    expect(res.text).not.toContain('STOLEN');
+  });
 });

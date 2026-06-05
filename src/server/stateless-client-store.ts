@@ -154,8 +154,28 @@ const XSUAA_REDIRECT_URI_REGEXPS = XSUAA_REDIRECT_URI_PATTERNS.map(redirectPatte
  * so it gives the same answer on every instance — used both to gate dynamic
  * registration (`ensureRedirectUri`) and to validate the redirect target at
  * `/oauth/callback` (`checkRedirectUri`).
+ *
+ * SECURITY — parse before matching: the value matched here is later re-parsed
+ * with `new URL()` and used as the 302 target that carries the OAuth `code`, so
+ * the glob decision MUST agree with how the URL actually parses. The patterns
+ * are string globs; a `*` sitting in the PORT position (the localhost pattern)
+ * would otherwise let a URL-userinfo segment ride inside the same-segment
+ * wildcard — `http://localhost:x@evil.com/cb` matches the `localhost:[^slash]`
+ * port glob yet `new URL(...).host === 'evil.com'`, steering a victim's code to an
+ * attacker host. So we reject anything that doesn't parse, and reject any
+ * userinfo (`user[:pass]@`) — that `@` is the only construct that can relocate
+ * the authority past a same-segment wildcard, and no legitimate OAuth
+ * redirect_uri carries credentials. After this guard, a glob match implies the
+ * parsed host is the literal host in the pattern.
  */
 export function matchesXsuaaRedirectPattern(uri: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(uri);
+  } catch {
+    return false;
+  }
+  if (parsed.username !== '' || parsed.password !== '') return false;
   return XSUAA_REDIRECT_URI_REGEXPS.some((re) => re.test(uri));
 }
 
