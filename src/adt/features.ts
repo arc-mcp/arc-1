@@ -22,6 +22,7 @@ import type { FeatureConfig, FeatureMode } from './config.js';
 import { fetchDiscoveryDocument } from './discovery.js';
 import { AdtApiError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
+import { parseReleaseNumber } from './release.js';
 import type { AuthProbeResult, FeatureStatus, ResolvedFeatures, SystemType } from './types.js';
 import { parseInstalledComponents, parseSyntaxConfigurations } from './xml-parser.js';
 
@@ -209,6 +210,29 @@ export function mapSapReleaseToAbaplintVersion(release: string): Version {
   if (num >= 740) return Version.v740sp02;
   if (num >= 702) return Version.v702;
   return Version.v700;
+}
+
+/**
+ * Highest SAP_BASIS release whose ABAP/CDS grammar `@abaplint/core` actually parses.
+ * Must stay in sync with the `>= 758` ceiling branch in `mapSapReleaseToAbaplintVersion`:
+ * when abaplint ships a newer grammar (e.g. a v759/816 release), bump both together.
+ */
+export const ABAPLINT_MAX_RELEASE = 758;
+
+/**
+ * True when the detected SAP_BASIS release is newer than abaplint's parser grammar
+ * (e.g. ABAP Platform 2025 = 816). On such releases abaplint emits false-positive
+ * `parser_error` / `cds_parser_error` on legitimate new syntax (CDS `define table entity`,
+ * `READ TABLE ... WHERE`, RAP keywords, ...), because its grammar predates the release —
+ * abaplint's `Cloud` target does not help either. Callers (pre-write lint) use this to
+ * stop treating parse failures as blocking on such systems.
+ *
+ * Returns false when the release is unknown / non-numeric (e.g. BTP "sap_btp") — never
+ * demote on missing data.
+ */
+export function isBeyondAbaplintCeiling(release?: string): boolean {
+  const num = parseReleaseNumber(release);
+  return num !== undefined && num > ABAPLINT_MAX_RELEASE;
 }
 
 /** Result of component-based system detection */

@@ -240,6 +240,7 @@ tests/
 | Add safety check | `src/adt/safety.ts` |
 | Add/modify PrettyPrint action | `src/adt/devtools.ts`, `src/handlers/intent.ts` (handleSAPLint), `src/handlers/tools.ts`, `src/handlers/schemas.ts` |
 | Add lint rule config | `src/lint/lint.ts`, `src/lint/config-builder.ts`, `src/lint/presets/` |
+| Adjust pre-write lint on releases beyond abaplint's grammar (8xx, e.g. SAP_BASIS 816 / ABAP Platform 2025) | `src/adt/features.ts` (`ABAPLINT_MAX_RELEASE`=758 + `isBeyondAbaplintCeiling`), `src/lint/config-builder.ts` (`buildPreWriteConfig` `parserSeverity`). abaplint v758 (its ceiling) can't parse new 816 syntax (CDS `define table entity`, `READ TABLE … WHERE`, RAP keywords) → would false-positive-block writes, so `parser_error`/`cds_parser_error` are **demoted to non-blocking warnings when `release > 758`** (activation is the definitive check); still block on ≤758. Bump `ABAPLINT_MAX_RELEASE` + the `mapSapReleaseToAbaplintVersion` ceiling together when abaplint adds a newer grammar. Tests: `tests/unit/{adt/features,lint/lint}.test.ts`. |
 | Add an ARC-1-native pre-write semantic hint for a new object type | `src/lint/pre-write-hints.ts` (add `inspect<Type>Source` → `LintResult[]` with `severity:'warning'`), `src/lint/lint.ts` (wire into `validateBeforeWrite()`, filename-gated by extension), `tests/unit/lint/{pre-write-hints,lint}.test.ts` |
 | Add dependency pattern | `src/context/deps.ts` |
 | Add CDS dependency pattern | `src/context/cds-deps.ts` |
