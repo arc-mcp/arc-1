@@ -13,7 +13,7 @@ This doc is written so a future session can pick up **any single item** and impl
 
 | # | Topic | Verdict | Action | Effort |
 |---|-------|---------|--------|--------|
-| **2.2** | **Writes on the 2025 container** | ⚠️ **ops prerequisite** | **Apply the 2023 performance tuning to `a4h-2025`, restart, then re-run the CRUD/write slice.** Highest priority before more 816 write tests. | S (ops) |
+| **2.2** | **Writes on the 2025 container** | ✅ **done (2026-06-05)** | Tuning applied (`wp_no_dia=40`, `PHYS_MEMSIZE=8192`, ICM threads). 816 CRUD lifecycle now **7/7** (was flaky write+activate). ⚠️ needs an ephemeral-port reservation after each container restart — see §2.2. | — |
 | **1.3** | **CDS table entity create/read** | ⚠️ routing/lint OK; live write validation blocked by 2.2 | After 2.2, add a focused table-entity lifecycle test on 816. | S |
 | **3.1** | **Server-driven-object read/write** | 🔬 spike | Seed one real 816 server-driven object, then prove read→write→activate before generic support. | M |
 | **1.2** | **abaplint v758 false-positive-blocks 816 syntax** | ✅ **implemented** | No action now. Keep `ABAPLINT_MAX_RELEASE` and release mapping coupled when abaplint gains newer grammar. | — |
@@ -102,11 +102,24 @@ Before PR #350, a 816 system could wrongly block **`SAPWrite` of a CDS table ent
 
 `isOnPrem75x` (`src/adt/rap-preflight.ts:433`) is `systemType==='onprem' && release in [750,759]`. For 816 it returns **false**, so the five 7.5x-only rules are **skipped** — which is correct, because they encode NW-7.50 quirks (`abap.uname`/`utclong`/`boolean` forbidden in TABL, projection `use etag` unsupported, on-prem DDLX annotation-scope limits) that **don't exist on 816**. The universal rules (currency/unit consistency, BDEF auth-master, duplicate-etag, DDLX duplicate-UI, DDLS client-field) still apply. **No action.** (If SAP ever adds *new* 8xx-specific RAP restrictions, they'd need new rules — none known today.)
 
-### 2.2 — Writes on the 2025 container ⚠️ OPS PREREQUISITE
+### 2.2 — Writes on the 2025 container ✅ DONE (with an ephemeral-port caveat)
 
-The `adt.integration` run on 816 passed **97/114** (all reads) but write+activate hit ABAP `STACK_TRACE_ERROR` short-dumps + 30 s timeouts on DDLS/TABL — proven environmental (the same tests pass on the tuned 2023 box). Root cause: the 2025 container was migrated "as-is" **without** the 2023 box's perf-tuning.
+The `adt.integration` run on 816 originally passed **97/114** (all reads) but write+activate hit ABAP `STACK_TRACE_ERROR` short-dumps + 30 s timeouts on DDLS/TABL — proven environmental (the same tests pass on the tuned 2023 box). Root cause: the 2025 container was migrated "as-is" **without** the 2023 box's perf-tuning — it shipped with only **`rdisp/wp_no_dia=7`** and **`PHYS_MEMSIZE=2048`** (→ `em/initial_size_MB=1434`).
 
-**Plan (ops, not arc-1 code):** apply the 2023 instance-profile tuning to `a4h-2025` — `rdisp/wp_no_dia=40`, `icm/max_threads`/`min_threads`, `icm/keep_alive_timeout`, `PHYS_MEMSIZE`/`em/initial_size_MB` (see the A4H-2023 section of `INFRASTRUCTURE.md`), restart, then re-run `npm run test:integration:crud` against 816. This unblocks **all** write-path validation (1.3, 2.1 integration, 3.1).
+**Applied (2026-06-05)** to the `a4h-2025` instance profile `/sapmnt/A4H/profile/A4H_D00_vhcala4hci` (backed up first), matching the 2023 box:
+- `rdisp/wp_no_dia = 40` (was 7) — the main fix; 40 DIA work processes now.
+- `PHYS_MEMSIZE = 8192` (was 2048; the profile had a duplicate line with 2048 winning) → `em/initial_size_MB = 5734`.
+- `icm/max_threads = 200`, `icm/min_threads = 30`, `icm/keep_alive_timeout = 15`, `abap/heap_area_total = 4000000000`, `rdisp/max_wprun_time = 300`, `http/security_session_timeout = 120`, `rdisp/plugin_auto_logout = 120`.
+
+**Result:** `npm run test:integration:crud` against 816 → **7/7 pass** (full create→read→update→activate→delete + DOMA/DTEL CRUD), 85 s, no STACK_TRACE/timeouts. Write+activate is stable. Unblocks 1.3, the 2.1 integration, and the SDO write path (3.1).
+
+> **⚠️ Ephemeral-port race (gotcha discovered during tuning — read before restarting a4h-2025).** After the restart the ICM came up **HTTP: 0** — it could not bind its listen port **50000** (`NiBuf2Listen … NIESERV_USED`), even though `ss -ltn` showed 50000 free. Cause: the Linux ephemeral range (`32768–60999`) **includes 50000**, and with 40 work processes now opening HANA connections (port 30215) at startup, one grabbed **50000 as its outbound source port** before the ICM bound it — a race the old 7-WP config rarely hit. The container lacks `CAP_NET_ADMIN`, so reserve the SAP ports from the host:
+> ```bash
+> PID=$(docker inspect -f '{{.State.Pid}}' a4h-2025)
+> nsenter -t "$PID" -n sysctl -w net.ipv4.ip_local_reserved_ports=50000-50001,8101
+> docker exec a4h-2025 su - a4hadm -c "sapcontrol -nr 00 -function RestartInstance"   # ICM re-binds 50000
+> ```
+> **This reservation is NOT persistent** — `docker stop/start` recreates the netns and loses it. Re-apply it after every container restart (the ICM may already have come up HTTP:0; `RestartInstance` after reserving fixes it), **or** permanently fix it by recreating the container with `--sysctl net.ipv4.ip_local_reserved_ports=50000-50001,8101`. Verify: `curl http://a4h-2025.marianzeis.de:50100/sap/bc/adt/discovery` → expect `401`.
 
 ### 2.3 — gCTS / abapGit on 816 ✅ gCTS works; abapGit absent on trial
 
