@@ -84,6 +84,7 @@ import {
   activate,
   activateBatch,
   applyFixProposal,
+  getCdsTestCases,
   getFixProposals,
   getPrettyPrinterSettings,
   type PrettyPrinterSettings,
@@ -92,6 +93,7 @@ import {
   runAtcCheck,
   runUnitTests,
   setPrettyPrinterSettings,
+  supportsCdsTestCases,
   syntaxCheck,
   unpublishServiceBinding,
 } from '../adt/devtools.js';
@@ -6233,6 +6235,32 @@ async function handleSAPDiagnose(client: AdtClient, args: Record<string, unknown
       const variant = args.variant as string | undefined;
       const result = await runAtcCheck(client.http, client.safety, objectUrl, variant);
       return textResult(JSON.stringify(result, null, 2));
+    }
+    case 'cds_testcases': {
+      // SAP-suggested ABAP Unit test cases for a CDS entity (CDS Test Double Framework).
+      // The CDS name goes straight into the ?ddlsourceName= query param — no object URL.
+      if (!name) {
+        return errorResult('"name" (the CDS entity / DDLS source name) is required for "cds_testcases".');
+      }
+      // Discovery-gate: the endpoint exists only on SAP_BASIS 8.16+ (ABAP Platform 2025).
+      // `false` = discovery loaded and the collection is absent (7.5x / 758) → clear message.
+      // `undefined` = discovery not loaded → attempt and let a 404/400 surface normally.
+      if (supportsCdsTestCases(client.http) === false) {
+        return errorResult(
+          'CDS test-case scaffolding requires SAP_BASIS 8.16+ (ABAP Platform 2025 / S/4HANA 2025). ' +
+            'This system does not expose /sap/bc/adt/aunit/dbtestdoubles/cds/testcases.',
+        );
+      }
+      const result = await getCdsTestCases(client.http, client.safety, name);
+      const payload = {
+        ...result,
+        hint:
+          `Scaffold an ABAP Unit test class for ${result.cds}: ` +
+          `cl_cds_test_environment=>create( i_for_entity = '${result.cds}' ) in class_setup, ` +
+          'then implement one FOR TESTING method per case (insert_test_data for the doubled sources, ' +
+          'assert with cl_abap_unit_assert). AI testdata/testmethod generation is not exposed.',
+      };
+      return textResult(JSON.stringify(payload, null, 2));
     }
     case 'object_state': {
       if (!name || !type) return errorResult('"name" and "type" are required for "object_state" action.');

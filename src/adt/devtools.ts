@@ -13,6 +13,8 @@ import { AdtApiError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import type {
+  CdsTestCase,
+  CdsTestCasesResult,
   FixAffectedObject,
   FixDelta,
   FixProposal,
@@ -598,6 +600,44 @@ export async function runAtcCheck(
   return { findings: parseAtcFindings(resultResp.body) };
 }
 
+/**
+ * Get SAP-suggested ABAP Unit test cases for a CDS entity (CDS Test Double Framework).
+ *
+ * Wraps `GET /sap/bc/adt/aunit/dbtestdoubles/cds/testcases?ddlsourceName=<CDS>`, new on
+ * SAP_BASIS 8.16 (ABAP Platform 2025 / S/4HANA 2025). SAP analyzes the active CDS view and
+ * returns one suggested test case per testable semantic (the whole view, each calculated
+ * field, each CAST/CASE), each with a method name + description + semanticType. Read-only —
+ * the AI-backed testdata/testmethod generation siblings (POST, Joule-licensed) are not exposed.
+ *
+ * Returns HTTP 400 "CDS view <name> does not exist" for an unknown/inactive entity (surfaced
+ * as AdtApiError). Gate availability with supportsCdsTestCases() before calling on unknown
+ * systems — the endpoint 404s on releases below 8.16 (verified: 758 → 404, 816 → 200).
+ */
+export async function getCdsTestCases(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  ddlsourceName: string,
+): Promise<CdsTestCasesResult> {
+  checkOperation(safety, OperationType.Read, 'GetCdsTestCases');
+
+  const path = `/sap/bc/adt/aunit/dbtestdoubles/cds/testcases?ddlsourceName=${encodeURIComponent(ddlsourceName)}`;
+  const resp = await http.get(path, {
+    Accept: 'application/vnd.sap.adt.aunit.dbtestdoubles.cds.testcases.v1+xml',
+  });
+  return parseCdsTestCases(resp.body);
+}
+
+/**
+ * Capability gate for getCdsTestCases — true iff ADT discovery advertises the
+ * `aunit/dbtestdoubles/cds/testcases` collection (present on 8.16+, absent on 7.5x / 758).
+ * Returns undefined when discovery has not been loaded (caller should attempt and let a 404
+ * surface). Mirrors supportsExplicitTransportTarget() in transport.ts.
+ */
+export function supportsCdsTestCases(http: AdtHttpClient): boolean | undefined {
+  if (!http.hasDiscoveryData()) return undefined;
+  return http.discoveryAcceptFor('/sap/bc/adt/aunit/dbtestdoubles/cds/testcases') !== undefined;
+}
+
 /** Get SAP quick fix proposals for a given source position */
 export async function getFixProposals(
   http: AdtHttpClient,
@@ -1144,4 +1184,46 @@ function parseAtcFindings(xml: string): AtcFinding[] {
       hasQuickfix: manual || automatic || pseudo,
     };
   });
+}
+
+/** Read the text content of a CDS test-case child element (string leaf or {#text} node). */
+function cdsNodeText(v: unknown): string {
+  if (v == null) return '';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'object' && !Array.isArray(v)) {
+    return String((v as Record<string, unknown>)['#text'] ?? '');
+  }
+  return String(v);
+}
+
+/**
+ * Parse the `cds/testcases` response into structured suggestions.
+ *
+ * Live shape (namespace prefixes stripped by parseXml's removeNSPrefix):
+ *   <root><cds>I_CURRENCY</cds><testCases>
+ *     <testCase><title/><testMethod/><description/><semanticType/><calculatedField/></testCase>…
+ *   </testCases></root>
+ * The <cds> element is a string leaf, so it is read off the root node directly
+ * (findDeepNodes skips string leaves); the testCase list is collected recursively.
+ */
+function parseCdsTestCases(xml: string): CdsTestCasesResult {
+  const parsed = parseXml(xml);
+  const root = (parsed.root ?? parsed) as Record<string, unknown>;
+  const cds = cdsNodeText(root.cds).trim();
+
+  const testCases: CdsTestCase[] = findDeepNodes(parsed, 'testCase').map((node) => {
+    const tc: CdsTestCase = {
+      title: cdsNodeText(node.title).trim(),
+      testMethod: cdsNodeText(node.testMethod).trim(),
+      description: cdsNodeText(node.description).trim(),
+      semanticType: cdsNodeText(node.semanticType).trim(),
+    };
+    const calculatedField = cdsNodeText(node.calculatedField).trim();
+    if (calculatedField) tc.calculatedField = calculatedField;
+    const conditionScenario = cdsNodeText(node.conditionScenario).trim();
+    if (conditionScenario) tc.conditionScenario = conditionScenario;
+    return tc;
+  });
+
+  return { cds, testCaseCount: testCases.length, testCases };
 }

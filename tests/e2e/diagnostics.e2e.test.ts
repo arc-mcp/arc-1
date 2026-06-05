@@ -432,6 +432,42 @@ describe('E2E Diagnostics Tests', () => {
     });
   });
 
+  // ── CDS Test Double Framework test cases (SAP_BASIS 8.16+) ───────
+
+  describe('SAPDiagnose cds_testcases', () => {
+    it('returns CDS test-case suggestions for a standard view (skips if pre-8.16)', async (ctx) => {
+      const result = await callTool(client, 'SAPDiagnose', {
+        action: 'cds_testcases',
+        name: 'I_CURRENCY',
+      });
+
+      // New on ABAP Platform 2025 (8.16). On 7.5x / S/4HANA 2023 the handler returns a
+      // discovery-gated "needs SAP_BASIS 8.16+" error — skip cleanly there.
+      if (result.isError) {
+        return ctx.skip(
+          `CDS test cases unavailable on this system: ${result.content?.[0]?.text?.slice(0, 200) ?? 'unknown error'}`,
+        );
+      }
+
+      const payload = JSON.parse(expectToolSuccess(result)) as {
+        cds: string;
+        testCaseCount: number;
+        testCases: Array<{ testMethod: string; semanticType: string }>;
+        hint: string;
+      };
+      expect(payload.cds).toBe('I_CURRENCY');
+      expect(payload.testCaseCount).toBeGreaterThan(0);
+      expect(payload.testCases.length).toBe(payload.testCaseCount);
+      expect(typeof payload.testCases[0]?.testMethod).toBe('string');
+      expect(payload.hint).toContain('cl_cds_test_environment');
+    });
+
+    it('returns a focused error when name is missing', async () => {
+      const result = await callTool(client, 'SAPDiagnose', { action: 'cds_testcases' });
+      expectToolError(result, 'name');
+    });
+  });
+
   // ── Error Handling ──────────────────────────────────────────────
 
   describe('SAPDiagnose error handling', () => {

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdtApiError } from '../../../src/adt/errors.js';
@@ -2548,6 +2549,92 @@ ENDCLASS.`;
 
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toContain('"name" and "type" are required for "object_state" action.');
+    });
+  });
+
+  // ─── SAPDiagnose cds_testcases ────────────────────────────────────
+
+  describe('SAPDiagnose cds_testcases', () => {
+    const I_CURRENCY_FIXTURE = readFileSync(
+      new URL('../../fixtures/xml/cds-testcases-i_currency.xml', import.meta.url),
+      'utf-8',
+    );
+
+    it('returns parsed CDS test cases + a scaffolding hint', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL) => {
+        if (String(url).includes('/aunit/dbtestdoubles/cds/testcases')) {
+          return Promise.resolve(mockResponse(200, I_CURRENCY_FIXTURE));
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 't' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPDiagnose', {
+        action: 'cds_testcases',
+        name: 'I_CURRENCY',
+      });
+
+      expect(result.isError).toBeUndefined();
+      const payload = JSON.parse(result.content[0]?.text);
+      expect(payload.cds).toBe('I_CURRENCY');
+      expect(payload.testCaseCount).toBe(8);
+      expect(payload.testCases[0].testMethod).toBe('calculate_altcurrkey');
+      expect(payload.hint).toContain('cl_cds_test_environment');
+
+      // The CDS name is sent as the ?ddlsourceName= query param (not an object URL).
+      const urls = mockFetch.mock.calls.map((c) => String(c[0]));
+      expect(urls.some((u) => u.includes('/aunit/dbtestdoubles/cds/testcases?ddlsourceName=I_CURRENCY'))).toBe(true);
+    });
+
+    it('requires name (and makes no SAP call)', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, '', { 'x-csrf-token': 't' }));
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPDiagnose', {
+        action: 'cds_testcases',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('"name"');
+      expect(mockFetch.mock.calls.some((c) => String(c[0]).includes('dbtestdoubles'))).toBe(false);
+    });
+
+    it('returns a clear "needs 8.16+" error when discovery shows the endpoint absent (758)', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, '', { 'x-csrf-token': 't' }));
+
+      const client = createClient();
+      vi.spyOn(client.http, 'hasDiscoveryData').mockReturnValue(true);
+      vi.spyOn(client.http, 'discoveryAcceptFor').mockReturnValue(undefined);
+
+      const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPDiagnose', {
+        action: 'cds_testcases',
+        name: 'I_CURRENCY',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('SAP_BASIS 8.16+');
+      expect(mockFetch.mock.calls.some((c) => String(c[0]).includes('dbtestdoubles'))).toBe(false);
+    });
+
+    it('surfaces the SAP 400 for a nonexistent CDS entity', async () => {
+      const missingBody =
+        '<?xml version="1.0" encoding="utf-8"?><exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework"><namespace id="com.sap.adt.testdoubles.cds"/><type id=""/><message lang="EN">CDS view ZZZ does not exist</message><localizedMessage lang="EN">CDS view ZZZ does not exist</localizedMessage></exc:exception>';
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL) => {
+        if (String(url).includes('/aunit/dbtestdoubles/cds/testcases')) {
+          return Promise.resolve(mockResponse(400, missingBody));
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 't' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPDiagnose', {
+        action: 'cds_testcases',
+        name: 'ZZZ',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toMatch(/does not exist/i);
     });
   });
 

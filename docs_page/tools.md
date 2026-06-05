@@ -1000,14 +1000,14 @@ SAPLint(action="lint", source="...", rules={"line_length": {"severity": "Error",
 
 ## SAPDiagnose
 
-Server-side code analysis: syntax check, ABAP unit tests, ATC checks, active/inactive object state, short dumps (ST22), and ABAP profiler traces.
+Server-side code analysis: syntax check, ABAP unit tests, ATC checks, CDS test-case scaffolding, active/inactive object state, short dumps (ST22), and ABAP profiler traces.
 
 **Parameters:**
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `action` | string | Yes | `syntax`, `unittest`, `atc`, `object_state`, `quickfix`, `apply_quickfix`, `dumps`, or `traces` |
-| `name` | string | No | Object name (required for syntax/unittest/atc/object_state/quickfix/apply_quickfix) |
+| `action` | string | Yes | `syntax`, `unittest`, `atc`, `cds_testcases`, `object_state`, `quickfix`, `apply_quickfix`, `dumps`, or `traces` |
+| `name` | string | No | Object name (required for syntax/unittest/atc/object_state/quickfix/apply_quickfix; the CDS entity / DDLS source name for `cds_testcases`) |
 | `type` | string | No | Object type: `PROG`, `CLAS`, `INTF`, `FUNC` (required for syntax/unittest/atc/object_state/quickfix/apply_quickfix) |
 | `source` | string | No | Current source code (required for `quickfix` and `apply_quickfix`) |
 | `line` | number | No | Source line number (required for `quickfix` and `apply_quickfix`) |
@@ -1025,6 +1025,7 @@ Server-side code analysis: syntax check, ABAP unit tests, ATC checks, active/ina
 - **`syntax`** — Run SAP syntax check on an object. Returns errors/warnings with line, column, and message. **Important:** Syntax check runs against the *active* (on-system) source, not proposed new source. After writing/updating an object, activate it first, then run syntax check.
 - **`unittest`** — Run ABAP unit tests. Returns results per test class/method with status, alert messages, and execution time.
 - **`atc`** — Run ATC (ABAP Test Cockpit) checks. Returns findings with priority, check title, message, URI, line number, plus quickfix metadata (`quickfixInfo`, `hasQuickfix`). Optional `variant` parameter for custom check variants.
+- **`cds_testcases`** — Get SAP-suggested ABAP Unit test cases for a CDS entity (CDS Test Double Framework). Requires `name` (the CDS entity / DDLS source name; no `type`). Returns one suggestion per testable semantic — the whole view (`semanticType: "NONE"`), each calculated field (`"CALCULATION"` + `calculatedField`), and `"CAST"`/`"JOIN"`/`"CASE"` expressions — each with a suggested `testMethod` name + `description`, plus a `hint` for scaffolding a `cl_cds_test_environment` test class. **Read-only.** Available on **SAP_BASIS 8.16+ (ABAP Platform 2025 / S/4HANA 2025)** only — discovery-gated, so older releases return a clear "needs 8.16+" message. The AI-backed test-data / test-method *generation* (Joule for Developers) is intentionally **not** exposed.
 - **`object_state`** — Compare active and inactive source versions for one object. For `CLAS`, ARC-1 checks main, definitions, implementations, macros, and testclasses includes (up to 10 parallel reads per class; sequence calls when sweeping many classes). Returns ETags, byte lengths, SHA-256 hashes, and divergence flags without returning full source. Useful for diagnosing activation failures where active and inactive class includes disagree.
 - **`quickfix`** — Get SAP quickfix proposals for a specific source position (`name`, `type`, `source`, `line`, optional `column`). Returns proposal entries with `uri`, `type`, `name`, `description`, `userContent`.
 - **`apply_quickfix`** — Apply one proposal (`proposalUri` + `proposalUserContent`) and return text deltas (range + replacement content). This does not write source; use `SAPWrite` to persist.
@@ -1036,6 +1037,7 @@ Server-side code analysis: syntax check, ABAP unit tests, ATC checks, active/ina
 SAPDiagnose(action="syntax", type="CLAS", name="ZCL_ORDER")
 SAPDiagnose(action="unittest", type="CLAS", name="ZCL_ORDER")
 SAPDiagnose(action="atc", type="PROG", name="ZTEST_REPORT", variant="DEFAULT")
+SAPDiagnose(action="cds_testcases", name="I_CURRENCY")              — SAP-suggested unit-test cases for a CDS view (8.16+)
 SAPDiagnose(action="object_state", type="CLAS", name="ZBP_DM_PROJECT")
 SAPDiagnose(action="quickfix", type="CLAS", name="ZCL_ORDER", source="<current_source>", line=42, column=1)
 SAPDiagnose(action="apply_quickfix", type="CLAS", name="ZCL_ORDER", source="<current_source>", line=42, column=1, proposalUri="/sap/bc/adt/quickfixes/...", proposalUserContent="<opaque_state>")

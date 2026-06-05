@@ -114,6 +114,7 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   'SAPDiagnose.syntax': { scope: 'read', opType: OperationType.Read },
   'SAPDiagnose.unittest': { scope: 'read', opType: OperationType.Test },
   'SAPDiagnose.atc': { scope: 'read', opType: OperationType.Read },
+  'SAPDiagnose.cds_testcases': { scope: 'read', opType: OperationType.Read },
   'SAPDiagnose.dumps': { scope: 'read', opType: OperationType.Read },
   'SAPDiagnose.traces': { scope: 'read', opType: OperationType.Read },
   'SAPDiagnose.system_messages': { scope: 'read', opType: OperationType.Read },

@@ -1229,6 +1229,11 @@ describe('SAPDiagnoseSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('accepts cds_testcases with a CDS name', () => {
+    const result = SAPDiagnoseSchema.safeParse({ action: 'cds_testcases', name: 'I_CURRENCY' });
+    expect(result.success).toBe(true);
+  });
+
   it('accepts dumps with optional filters', () => {
     const result = SAPDiagnoseSchema.safeParse({
       action: 'dumps',

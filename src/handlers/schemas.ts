@@ -764,6 +764,7 @@ export const SAPDiagnoseSchema = z.object({
     'syntax',
     'unittest',
     'atc',
+    'cds_testcases',
     'dumps',
     'traces',
     'system_messages',

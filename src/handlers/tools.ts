@@ -1117,6 +1117,7 @@ export function getToolDefinitions(
         '- "syntax": Syntax check an ABAP object. Requires name + type. Optional: version ("active" or "inactive", defaults to active). Optional: source — when supplied, SAP compiles the given content as if it lived at the object\'s URI (pre-write dry-run, nothing is written). Omit source to check what is stored.\n' +
         '- "unittest": Run ABAP unit tests. Requires name + type.\n' +
         '- "atc": Run ATC code quality checks. Requires name + type. Optional: variant.\n' +
+        '- "cds_testcases": Get SAP-suggested ABAP Unit test cases for a CDS entity (CDS Test Double Framework). Requires name (the CDS entity / DDLS source name; no type needed). Returns one test-method suggestion per testable semantic (whole view, calculated fields, CAST/JOIN/CASE) to scaffold a cl_cds_test_environment unit test. Read-only; SAP_BASIS 8.16+ (ABAP Platform 2025 / S/4HANA 2025) only.\n' +
         '- "object_state": Compare active and inactive source versions. Requires name + type. For CLAS, also compares main, definitions, implementations, macros, and testclasses includes (up to 10 parallel reads per class; sequence calls when sweeping many classes). Returns ETags, byte lengths, hashes, and divergence flags.\n' +
         '- "quickfix": Get SAP quick fix proposals for a specific source position. Requires name + type + source + line. Optional: column, sourceUri for exact ADT include/source targets.\n' +
         '- "apply_quickfix": Apply one quick fix proposal and return text deltas (does not write source). Requires name + type + source + line + proposalUri + proposalUserContent. Optional: column, sourceUri, proposalAffectedObjects. proposalUserContent may be an empty string; pass it through exactly from quickfix.\n' +
@@ -1134,6 +1135,7 @@ export function getToolDefinitions(
               'syntax',
               'unittest',
               'atc',
+              'cds_testcases',
               'dumps',
               'traces',
               'system_messages',
@@ -1144,7 +1146,11 @@ export function getToolDefinitions(
             ],
             description: 'Diagnostic action',
           },
-          name: { type: 'string', description: 'Object name (for syntax/unittest/atc/object_state)' },
+          name: {
+            type: 'string',
+            description:
+              'Object name (for syntax/unittest/atc/object_state); the CDS entity / DDLS source name for cds_testcases',
+          },
           type: {
             type: 'string',
             description: 'Object type (PROG, CLAS, etc.) (for syntax/unittest/atc/object_state)',

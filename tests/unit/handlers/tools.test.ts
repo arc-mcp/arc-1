@@ -405,6 +405,7 @@ describe('Tool Definitions', () => {
     expect(actionEnum).toContain('syntax');
     expect(actionEnum).toContain('unittest');
     expect(actionEnum).toContain('atc');
+    expect(actionEnum).toContain('cds_testcases');
     expect(actionEnum).toContain('quickfix');
     expect(actionEnum).toContain('apply_quickfix');
     expect(actionEnum).toContain('object_state');

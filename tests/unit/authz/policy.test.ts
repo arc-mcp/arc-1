@@ -108,6 +108,13 @@ describe('ACTION_POLICY matrix', () => {
     expect(hasRequiredScope(['read'], policy!.scope)).toBe(true);
   });
 
+  it('SAPDiagnose.cds_testcases requires only read scope', () => {
+    const policy = getActionPolicy('SAPDiagnose', 'cds_testcases');
+    expect(policy?.scope).toBe('read');
+    expect(policy?.opType).toBe(OperationType.Read);
+    expect(hasRequiredScope(['read'], policy!.scope)).toBe(true);
+  });
+
   it('hyperfocused mixed delegators are read-scoped; concrete sub-actions enforce mutations', () => {
     expect(getActionPolicy('SAP', 'transport')?.scope).toBe('read');
     expect(getActionPolicy('SAP', 'git')?.scope).toBe('read');

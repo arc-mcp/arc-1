@@ -25,6 +25,8 @@ This doc is written so a future session can pick up **any single item** and impl
 
 **Recommendation:** **1.2 is the only behavior bug** and is worth doing before relying on arc-1 for writes on any 8xx system. It is independent of #347 and can ship as its own small PR. Everything else is either already-correct (document) or a follow-up spike.
 
+> **Update (2026-06-05):** 1.2 shipped in #350 (release 0.9.11). The first *new-API* 816 capability also landed — `SAPDiagnose action=cds_testcases` (CDS Test Double Framework test-case suggestions, read-only, discovery-gated 8.16+). See the companion new-APIs doc §5.1 and `docs/plans/completed/add-cds-test-cases-scaffolding.md`.
+
 ---
 
 ## Tier 1 — does arc-1 work on 816 today?

@@ -166,16 +166,19 @@ ARC-1 today reads/writes AFF objects (DDLS, BDEF, SRVD, SRVB, …) through **per
 These are **operations, not objects** — none should be modeled as a repository type. Usefulness varies:
 
 ### 5.1 CDS Test-Double Framework — `aunit/dbtestdoubles/cds/testcases` ⭐ (most useful to ARC-1)
+
+> ✅ **IMPLEMENTED** as `SAPDiagnose action=cds_testcases` (read-only, discovery-gated to SAP_BASIS 8.16+). Live-verified end-to-end on a4h-2025 (816) → 200 and a4h (758) → clean skip. Plan: `docs/plans/completed/add-cds-test-cases-scaffolding.md`.
+
 The one Class-B endpoint that is directly, immediately useful. Live-verified working:
 ```
 GET /sap/bc/adt/aunit/dbtestdoubles/cds/testcases?ddlsourceName=I_LANGUAGE
 Accept: application/vnd.sap.adt.aunit.dbtestdoubles.cds.testcases.v1+xml
 → 200:
   <cdstestcases:root><cdstestcases:cds>I_LANGUAGE</cdstestcases:cds>
-    <cdstestcases:testCases><cdstestcase>
+    <cdstestcases:testCases><testCase>
       <title>Test I_LANGUAGE.</title><testMethod>test_cds_view</testMethod>
       <description>Test CDS View as a whole.</description><semanticType>NONE</semanticType>
-    </cdstestcase></cdstestcases:testCases></cdstestcases:root>
+    </testCase></cdstestcases:testCases></cdstestcases:root>
 ```
 It scaffolds CDS unit-test cases (test method + semantics) for any CDS view. **ARC-1 value: HIGH** — a natural `SAPDiagnose action=cds_testcases` (or `SAPLint`/test helper) that returns a ready test skeleton for a CDS entity. Sibling `…/testdata` and `…/testmethod` (POST) build out the data/method bodies. Implementation: thin `client.getCdsTestCases(ddls)` + a read-scoped action; gated on the endpoint's discovery presence (816+).
 
@@ -190,7 +193,7 @@ SAP's **Joule for Developers** (licensed, SAP Note 3571857): predictive completi
 ## 6. Recommendations for ARC-1
 
 **Priorities (highest first):**
-1. **CDS test-case scaffolding** (`aunit/dbtestdoubles/cds/testcases`) — small, self-contained, immediately useful, read-scoped. Best first follow-up.
+1. ✅ **CDS test-case scaffolding** (`aunit/dbtestdoubles/cds/testcases`) — **implemented** as `SAPDiagnose action=cds_testcases` (read-only, discovery-gated 8.16+). Was the best first follow-up; verified live (816 → 200, 758 → skip). Real response shape: `<cdstestcases:root>`/`<testCase>` with `semanticType` ∈ {NONE, CALCULATION, CAST, JOIN, …} + optional `calculatedField`. The AI siblings (`testdata`/`testmethod`, POST, Joule-licensed) remain out of scope.
 2. **Generic server-driven object (SDO) read path** — spike a single round-trip on a real seeded object (DTSC or Communication Target), then add a discovery-gated generic reader covering ~15 new types at once. Read before write.
 3. **EVTO/EVTB (RAP business events)** — if/when ARC-1 deepens RAP support, these slot into the SDO path and complement BDEF/SRVD/SRVB.
 4. **ATC exemptions** — only alongside broader ATC-workflow features.

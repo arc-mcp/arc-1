@@ -3,6 +3,7 @@ import {
   activate,
   activateBatch,
   applyFixProposal,
+  getCdsTestCases,
   getFixProposals,
   getPrettyPrinterSettings,
   parseActivationOutcome,
@@ -12,6 +13,7 @@ import {
   runAtcCheck,
   runUnitTests,
   setPrettyPrinterSettings,
+  supportsCdsTestCases,
   syntaxCheck,
   unpublishServiceBinding,
 } from '../../../src/adt/devtools.js';
@@ -1786,6 +1788,101 @@ describe('DevTools', () => {
 
       const result = await runAtcCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/programs/programs/ZTEST');
       expect(result.findings[0]?.hasQuickfix).toBe(false);
+    });
+  });
+
+  // ─── getCdsTestCases (CDS Test Double Framework, SAP_BASIS 8.16+) ────
+
+  describe('getCdsTestCases', () => {
+    it('parses the rich I_CURRENCY fixture (CALCULATION + CAST, calculatedField)', async () => {
+      const { readFileSync } = await import('node:fs');
+      const fixture = readFileSync(
+        new URL('../../fixtures/xml/cds-testcases-i_currency.xml', import.meta.url),
+        'utf-8',
+      );
+      const result = await getCdsTestCases(mockHttp(fixture), unrestrictedSafetyConfig(), 'I_CURRENCY');
+
+      expect(result.cds).toBe('I_CURRENCY');
+      expect(result.testCaseCount).toBe(8);
+      expect(result.testCases).toHaveLength(8);
+      expect(result.testCases[0]).toMatchObject({
+        title: 'Calculate ALTERNATIVECURRENCYKEY field',
+        testMethod: 'calculate_altcurrkey',
+        semanticType: 'CALCULATION',
+        calculatedField: 'ALTERNATIVECURRENCYKEY',
+      });
+      expect(result.testCases[0]?.description).toContain('ALTERNATIVECURRENCYKEY');
+      // The live response mixes semantic types — CALCULATION (×3), CAST (×2), JOIN (×3).
+      const semanticTypes = new Set(result.testCases.map((tc) => tc.semanticType));
+      expect(semanticTypes).toEqual(new Set(['CALCULATION', 'CAST', 'JOIN']));
+    });
+
+    it('parses the minimal I_LANGUAGE fixture (single NONE case, no calculatedField)', async () => {
+      const { readFileSync } = await import('node:fs');
+      const fixture = readFileSync(
+        new URL('../../fixtures/xml/cds-testcases-i_language.xml', import.meta.url),
+        'utf-8',
+      );
+      const result = await getCdsTestCases(mockHttp(fixture), unrestrictedSafetyConfig(), 'I_LANGUAGE');
+
+      expect(result.cds).toBe('I_LANGUAGE');
+      expect(result.testCaseCount).toBe(1);
+      expect(result.testCases[0]).toEqual({
+        title: 'Test I_LANGUAGE.',
+        testMethod: 'test_cds_view',
+        description: 'Test CDS View as a whole.',
+        semanticType: 'NONE',
+      });
+      expect(result.testCases[0]?.calculatedField).toBeUndefined();
+    });
+
+    it('GETs the dbtestdoubles endpoint with ddlsourceName + the v1+xml Accept (and url-encodes the name)', async () => {
+      const empty =
+        '<cdstestcases:root xmlns:cdstestcases="http://www.sap.com/adt/dbtestdoubles/cds/testcases"><cdstestcases:cds>X</cdstestcases:cds><cdstestcases:testCases/></cdstestcases:root>';
+      const http = mockHttp(empty);
+      await getCdsTestCases(http, unrestrictedSafetyConfig(), '/DMO/I_FLIGHT');
+      expect(http.get).toHaveBeenCalledWith(
+        '/sap/bc/adt/aunit/dbtestdoubles/cds/testcases?ddlsourceName=%2FDMO%2FI_FLIGHT',
+        expect.objectContaining({
+          Accept: 'application/vnd.sap.adt.aunit.dbtestdoubles.cds.testcases.v1+xml',
+        }),
+      );
+    });
+
+    it('returns an empty list for a view with no testCases', async () => {
+      const empty =
+        '<cdstestcases:root xmlns:cdstestcases="http://www.sap.com/adt/dbtestdoubles/cds/testcases"><cdstestcases:cds>I_EMPTY</cdstestcases:cds><cdstestcases:testCases/></cdstestcases:root>';
+      const result = await getCdsTestCases(mockHttp(empty), unrestrictedSafetyConfig(), 'I_EMPTY');
+      expect(result).toEqual({ cds: 'I_EMPTY', testCaseCount: 0, testCases: [] });
+    });
+  });
+
+  describe('supportsCdsTestCases', () => {
+    it('returns undefined when ADT discovery has not been loaded', () => {
+      const http = {
+        hasDiscoveryData: () => false,
+        discoveryAcceptFor: () => undefined,
+      } as unknown as AdtHttpClient;
+      expect(supportsCdsTestCases(http)).toBeUndefined();
+    });
+
+    it('returns true when discovery advertises the testcases collection (816)', () => {
+      const http = {
+        hasDiscoveryData: () => true,
+        discoveryAcceptFor: (p: string) =>
+          p === '/sap/bc/adt/aunit/dbtestdoubles/cds/testcases'
+            ? 'application/vnd.sap.adt.aunit.dbtestdoubles.cds.testcases.v1+xml'
+            : undefined,
+      } as unknown as AdtHttpClient;
+      expect(supportsCdsTestCases(http)).toBe(true);
+    });
+
+    it('returns false when discovery lacks the testcases collection (758)', () => {
+      const http = {
+        hasDiscoveryData: () => true,
+        discoveryAcceptFor: () => undefined,
+      } as unknown as AdtHttpClient;
+      expect(supportsCdsTestCases(http)).toBe(false);
     });
   });
 });

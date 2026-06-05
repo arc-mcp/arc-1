@@ -257,6 +257,32 @@ export interface UnitTestResult {
   duration?: number;
 }
 
+/**
+ * One SAP-suggested ABAP Unit test case for a CDS entity (CDS Test Double Framework).
+ * From `GET /sap/bc/adt/aunit/dbtestdoubles/cds/testcases?ddlsourceName=<CDS>` (SAP_BASIS 8.16+).
+ */
+export interface CdsTestCase {
+  /** Human-readable title (e.g. "Calculate ALTERNATIVECURRENCYKEY field"). */
+  title: string;
+  /** Suggested ABAP test-method name (e.g. "calculate_altcurrkey", "test_cds_view"). */
+  testMethod: string;
+  /** What the test covers, in prose. */
+  description: string;
+  /** Test-case classification: NONE (whole view), CALCULATION, CAST, … (server-defined). */
+  semanticType: string;
+  /** The calculated/CAST field the case targets, when applicable. */
+  calculatedField?: string;
+  /** The condition scenario the case targets (CASE/WHERE semantics), when applicable. */
+  conditionScenario?: string;
+}
+
+/** Result of getCdsTestCases — the CDS entity plus its suggested test cases. */
+export interface CdsTestCasesResult {
+  cds: string;
+  testCaseCount: number;
+  testCases: CdsTestCase[];
+}
+
 /** Source unit affected by a quick fix proposal/application. */
 export interface FixAffectedObject {
   /** ADT source URI for this affected unit. May include #start/#end range fragments. */

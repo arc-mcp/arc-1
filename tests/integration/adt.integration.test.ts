@@ -11,7 +11,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { classifyCdsImpact } from '../../src/adt/cds-impact.js';
 import type { AdtClient } from '../../src/adt/client.js';
 import { findWhereUsed } from '../../src/adt/codeintel.js';
-import { runAtcCheck } from '../../src/adt/devtools.js';
+import { getCdsTestCases, runAtcCheck, supportsCdsTestCases } from '../../src/adt/devtools.js';
 import {
   getDump,
   getGatewayErrorDetail,
@@ -2229,6 +2229,56 @@ describe('ADT Integration Tests', () => {
     it('completes the flow with the system default variant (no variant passed)', async () => {
       const result = await runAtcCheck(client.http, unrestrictedSafetyConfig(), KERNEL_CLASS_URL);
       expect(Array.isArray(result.findings)).toBe(true);
+    });
+  });
+
+  // ─── CDS Test Double Framework test-case suggestions (SAP_BASIS 8.16+) ─
+  describe('getCdsTestCases (CDS test double suggestions)', () => {
+    // New on ABAP Platform 2025 (SAP_BASIS 8.16). The endpoint 404s on 7.5x / S/4HANA 2023
+    // (758), so we load discovery and gate on the advertised collection — older systems skip
+    // cleanly. Verified live: a4h-2025 (816) → 200, a4h (758) → 404. I_CURRENCY is a standard
+    // CDS view shipped on S/4 systems and exercises calculated-field (CALCULATION) semantics.
+    it('returns suggested test cases for a standard CDS view (8.16+; skips on older releases)', async (ctx) => {
+      const disco = await fetchDiscoveryDocument(client.http);
+      client.http.setDiscoveryMap(disco.map);
+      requireOrSkip(
+        ctx,
+        // `|| undefined` so a definite "unavailable" (false) skips — requireOrSkip only skips on null/undefined.
+        supportsCdsTestCases(client.http) || undefined,
+        `${SkipReason.BACKEND_UNSUPPORTED}: aunit/dbtestdoubles/cds/testcases needs SAP_BASIS 8.16+ (ABAP Platform 2025)`,
+      );
+
+      const result = await getCdsTestCases(client.http, unrestrictedSafetyConfig(), 'I_CURRENCY');
+      expect(result.cds).toBe('I_CURRENCY');
+      expect(result.testCaseCount).toBeGreaterThan(0);
+      expect(result.testCases.length).toBe(result.testCaseCount);
+      for (const tc of result.testCases) {
+        expect(typeof tc.title).toBe('string');
+        expect(tc.testMethod.length).toBeGreaterThan(0);
+        expect(tc.semanticType.length).toBeGreaterThan(0);
+      }
+      // I_CURRENCY has calculated fields → at least one CALCULATION case naming a calculatedField.
+      expect(result.testCases.some((tc) => tc.semanticType === 'CALCULATION' && !!tc.calculatedField)).toBe(true);
+    });
+
+    it('surfaces a 400 for a nonexistent CDS entity (8.16+; skips on older releases)', async (ctx) => {
+      const disco = await fetchDiscoveryDocument(client.http);
+      client.http.setDiscoveryMap(disco.map);
+      requireOrSkip(
+        ctx,
+        // `|| undefined` so a definite "unavailable" (false) skips — requireOrSkip only skips on null/undefined.
+        supportsCdsTestCases(client.http) || undefined,
+        `${SkipReason.BACKEND_UNSUPPORTED}: aunit/dbtestdoubles/cds/testcases needs SAP_BASIS 8.16+`,
+      );
+
+      let caught: unknown;
+      try {
+        await getCdsTestCases(client.http, unrestrictedSafetyConfig(), 'ZZZ_NO_SUCH_CDS_VIEW');
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeDefined();
+      expectSapFailureClass(caught, [400], [/does not exist/i]);
     });
   });
 

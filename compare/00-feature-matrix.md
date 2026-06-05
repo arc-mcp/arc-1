@@ -2,7 +2,7 @@
 
 A comprehensive comparison of all SAP ADT/MCP projects against ARC-1.
 
-_Last updated: 2026-06-02. **New column — "SAP ABAP MCP"**: SAP's official `SAPSE.adt-vscode` bundled ABAP MCP server (headless Eclipse/Equinox + Anthropic MCP Java SDK 1.0.1; localhost Streamable-HTTP on port 2236, static bearer token; 14 built-in tools + dynamic backend "IDE Actions"; ABAP-Cloud / RAP-generation scope; disabled-by-default, part of Joule for Developers; GA Q2 2026, v1.0.0). Detailed teardown: [J4D/02-sap-abap-mcp-server-vscode.md](J4D/02-sap-abap-mcp-server-vscode.md). Earlier dated changelog prose has been trimmed for readability — see git history and per-project docs for the full change log._
+_Last updated: 2026-06-05. **New column — "SAP ABAP MCP"**: SAP's official `SAPSE.adt-vscode` bundled ABAP MCP server (headless Eclipse/Equinox + Anthropic MCP Java SDK 1.0.1; localhost Streamable-HTTP on port 2236, static bearer token; 14 built-in tools + dynamic backend "IDE Actions"; ABAP-Cloud / RAP-generation scope; disabled-by-default, part of Joule for Developers; GA Q2 2026, v1.0.0). Detailed teardown: [J4D/02-sap-abap-mcp-server-vscode.md](J4D/02-sap-abap-mcp-server-vscode.md). Earlier dated changelog prose has been trimmed for readability — see git history and per-project docs for the full change log._
 
 ## Legend
 - ✅ = Supported
@@ -187,7 +187,7 @@ Tier 2 (CycloneDX SBOM, Cosign image signing, OpenSSF Scorecard) and Tier 3 (Soc
 | ATC checks | ✅ | ✅ | ✅ | ❌ | ✅ (with summary) | ❌ | N/A | ✅ (severity grouping) | ✅ (checkstyle/codeclimate) | ⚠️ (Joule/IDE; not a built-in MCP tool) |
 | abaplint (local offline) | ✅ | ✅ (native Go port, 8 rules) | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ | ❌ (uses native ATC) |
 | Unit tests | ✅ | ✅ | ✅ | ❌ | ✅ (with coverage) | ✅ | N/A | ✅ (Apr 2026) | ✅ (with coverage + JUnit4/sonar) | ✅ (abap_run_unit_tests) |
-| CDS unit tests | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | N/A | ❌ | ❌ | ⚠️ (via run_unit_tests) |
+| CDS unit tests | ⚠️ (PR 2026-06-05 — `SAPDiagnose cds_testcases`: SAP-suggested test-case scaffolding for a CDS entity via CDS Test Double Framework; read-only, 8.16+; does not create the test class) | ❌ | ❌ | ❌ | ❌ | ✅ | N/A | ❌ | ❌ | ⚠️ (via run_unit_tests) |
 | API release state (clean core) | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ | ⚠️ (Eclipse, IDE-side) |
 | Fix proposals | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | N/A | ✅ (Apr 2026) | ❌ | ⚠️ (Joule AI) |
 | PrettyPrint | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | N/A | ✅ (Apr 2026) | ❌ | ⚠️ (IDE-side) |
