@@ -1213,6 +1213,7 @@ Current PR-readiness finding (2026-06-05):
 - `tests/integration/transport.integration.test.ts` timed out in suite hooks after the Vitest default `10s` hook budget while listing/checking CTS state. The suite intentionally probes and cleans live transport requests, so hook timeout must be aligned with live-SAP latency.
 - `tests/integration/adt.integration.test.ts` timed out the explicit ATC check-variant flow at the integration default `30s` test budget. ATC worklist/run/result retrieval is a live backend operation with variable latency and should use an explicit slow-test timeout.
 - This PR now sets `hookTimeout: 60000` in `vitest.integration.config.ts` and gives both live ATC flow tests explicit `90000` timeouts. A focused local S/4 run of `transport.integration.test.ts` plus the `runAtcCheck` tests passed after the change.
+- GitHub Actions run `27007816547` then passed on the updated head: `integration` completed in `6m23s`, `e2e` completed in `13m56s`, and `reliability-summary` completed successfully. This confirms the timeout changes fixed the PR-readiness failures without masking assertions.
 
 ### Correctness Blockers
 
