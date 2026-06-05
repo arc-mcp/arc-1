@@ -7,12 +7,12 @@ Target SAP system used: A4H/S4 test system via local infrastructure credentials.
 
 ## Executive Summary
 
-The suite is much healthier than the earlier April reliability audit, but there are still material gaps:
+The suite is much healthier than the earlier April reliability audit, but the original 2026-05-11 audit found material gaps. Several of those gaps have since been implemented in follow-up PRs; see **Follow-Up Tracking** near the end for current status.
 
 - The main unit, integration, and E2E suites all pass against the live S4 system.
 - Current totals: 2,881 unit tests, 236 integration tests, and 137 E2E tests.
 - Unit skips are gone. E2E skip rate is low at 2.2%. Integration skip rate is 17.4%, but 33 of 41 integration skips are BTP tests in an S4-only run.
-- There are still real pseudo-skip bugs in E2E tests: several tests print `[SKIP]` or return early while Vitest records them as passed.
+- The original audit found pseudo-skip bugs in E2E tests: several tests printed `[SKIP]` or returned early while Vitest recorded them as passed. Follow-ups now reject `[SKIP]`, obsolete `skipIf`, reasonless `ctx.skip()`, and permanent integration/E2E `it.skip()` patterns with a static unit guard.
 - Cleanup is not good enough for a long-lived shared SAP system. The current run left at least one open E2E transport and one integration transport, and the live system already has many older `ZARC1*` leftovers.
 - E2E fixture setup can recreate invalid CDS fixtures, log activation failures as warnings, and still report `skipped=0`. This is the highest-risk harness issue found.
 - Runtime hotspots are concentrated and actionable: integration cache warmup, recursive transport release, E2E RAP write lifecycle, E2E where-used navigation, and E2E transport release.
@@ -87,8 +87,8 @@ By file:
 | `tests/integration/crud.lifecycle.integration.test.ts` | 5 | 0 | 20.9s | Good CRUD lifecycle signal. |
 | `tests/integration/context.integration.test.ts` | 19 | 0 | 13.4s | Good coverage for context/probe features. |
 | `tests/integration/fugr-func-params.integration.test.ts` | 2 | 0 | 6.0s | Passes, but internal skip calls lack reasons. |
-| `tests/integration/fugr-func.integration.test.ts` | 3 | 0 | 5.9s | Passes, but internal skip calls lack reasons. |
-| `tests/integration/abapgit.integration.test.ts` | 5 | 2 | 1.7s | Two hard-coded `it.skip()` tests remain. |
+| `tests/integration/fugr-func.integration.test.ts` | 3 | 0 | 5.9s | Passed in the original run; internal skip calls lacked reasons, fixed in the 2026-06-05 follow-up. |
+| `tests/integration/abapgit.integration.test.ts` | 5 | 2 | 1.7s | Original run had two hard-coded `it.skip()` tests; fixed in the 2026-06-05 follow-up as env-gated runtime skips. |
 | `tests/integration/audit-logging.integration.test.ts` | 7 | 0 | 1.0s | Good. |
 | `tests/integration/gcts.integration.test.ts` | 6 | 0 | 1.0s | Good. |
 | `tests/integration/elicitation.integration.test.ts` | 21 | 0 | 0.0s | Unit-like integration coverage; good. |
@@ -99,7 +99,7 @@ Skip interpretation:
 
 - 33/41 skips are BTP-only tests because BTP service key configuration was not provided for this S4 run.
 - 8/203 non-BTP integration tests skipped (3.9%).
-- `tests/integration/abapgit.integration.test.ts:95` and `:100` are permanent hard skips for stage/pull.
+- `tests/integration/abapgit.integration.test.ts:95` and `:100` were permanent hard skips for stage/pull in the original run; fixed in the 2026-06-05 follow-up.
 - Four transport tests skipped because optional `TEST_TRANSPORT_PACKAGE` / `TEST_TRANSPORT_OBJECT_NAME` inputs were not configured.
 - Two ADT skips were backend/fixture dependent.
 
@@ -464,7 +464,7 @@ These branches can make tests pass without executing assertions:
 
 - `tests/e2e/sktd-write.e2e.test.ts:57-58`, `:75-76`, `:86-87`, `:97-98`: `if (!sktdSupported) return;`.
 - `tests/e2e/activation-failure.e2e.test.ts:69-71` and `:88-90`: logs `[SKIP]` and returns, but the test is recorded as passed.
-- `tests/e2e/helpers.ts:205-210`: exported `skipIf()` is unused and its comment says Vitest cannot skip inside a test, which is now outdated.
+- `tests/e2e/helpers.ts:205-210`: exported `skipIf()` was unused and its comment said Vitest cannot skip inside a test, which was outdated. This helper was removed in a later follow-up.
 
 Recommended fix:
 
@@ -505,6 +505,13 @@ Recommended fix:
 - Add `ZARC1_E2E_DUMP` to persistent fixture management or delete it after the diagnostic test.
 - Convert abapGit hard skips into opt-in tests gated by `TEST_ABAPGIT_REMOTE_TESTS=true` plus a STRUST/preflight check.
 - Always provide a reason to `ctx.skip()`.
+
+Implementation status (2026-06-05 follow-up PR):
+
+- `tests/integration/abapgit.integration.test.ts` no longer uses permanent `it.skip()` for stage/pull. Those tests now run only when `TEST_ABAPGIT_REMOTE_TESTS=true`; `pullRepo` also requires `TEST_ABAPGIT_PULL_REPO_KEY` so the test no longer uses a fake hard-coded key.
+- `tests/integration/fugr-func.integration.test.ts`, `tests/integration/fugr-func-params.integration.test.ts`, and class-section-surgery integration/E2E setup paths now pass explicit backend/fixture reasons to `ctx.skip(reason)`.
+- `tests/unit/helpers/skip-discipline.test.ts` now rejects `[SKIP]`, obsolete `skipIf`, reasonless `ctx.skip()`, and test-level `it.skip()` inside integration/E2E/helper test code.
+- Remaining items in this subsection: diagnostics dump ownership/execution is still open.
 
 ### P1 - E2E Local Scripts Are Not Portable On macOS
 
@@ -613,7 +620,7 @@ Current behavior:
 
 - Some tests return early after a feature probe without calling `ctx.skip()`.
 - Some tests print `[SKIP]` and return. Vitest records these as passed tests, not skipped tests.
-- `tests/e2e/helpers.ts` still contains `skipIf()` with an outdated comment saying Vitest cannot skip inside a test.
+- In the original audit, `tests/e2e/helpers.ts` still contained `skipIf()` with an outdated comment saying Vitest cannot skip inside a test. This helper was removed in a later follow-up.
 
 Root cause:
 
@@ -691,16 +698,27 @@ Recommended correction:
 - Add a preflight that distinguishes missing STRUST/SSL/network configuration from product failures.
 - If no maintained fixture can be provided, remove the permanent tests and track the gap in docs rather than reporting a hard skip forever.
 
+Implementation status (2026-06-05 follow-up PR):
+
+- Stage/pull are now runtime tests gated by `TEST_ABAPGIT_REMOTE_TESTS=true`.
+- `pullRepo` additionally requires `TEST_ABAPGIT_PULL_REPO_KEY`, so the test exercises an explicit linked repository instead of a fake key.
+- Missing remote trust setup is now an explicit skip reason in Vitest output rather than a permanent disabled test.
+
 FUGR/FUNC skip reasons:
 
-- The FUGR integration tests use `ctx.skip()` in backend-gap branches without useful reason text.
+- In the original audit, the FUGR integration tests used `ctx.skip()` in backend-gap branches without useful reason text.
 - This should be a small cleanup: pass the classified backend error or a specific release-gap reason into each skip.
+
+Implementation status (2026-06-05 follow-up PR):
+
+- Backend-gap branches now pass the classified lock/session-correlation reason to `ctx.skip(reason)`.
 
 Acceptance criteria:
 
 - Test names describe exactly what is asserted.
 - Long-lived fixtures are either in fixture management or explicitly cleaned.
 - No permanent `it.skip()` remains without an owner, opt-in path, and reason.
+- No reasonless `ctx.skip()` remains in integration/E2E/helper test code.
 
 ### 6. E2E Script Portability And Log Signal
 
@@ -919,12 +937,19 @@ Pseudo-skips:
 
 - `tests/e2e/sktd-write.e2e.test.ts:58`, `:76`, `:87`, `:98`
 - `tests/e2e/activation-failure.e2e.test.ts:70-71`, `:89-90`
-- `tests/e2e/helpers.ts:205-210` contains an unused/outdated `skipIf()` helper that encourages pseudo-skip behavior.
+- `tests/e2e/helpers.ts:205-210` originally contained an unused/outdated `skipIf()` helper that encouraged pseudo-skip behavior. This helper was removed in a later follow-up.
 
 Skip calls without useful reason text:
 
 - `tests/integration/fugr-func.integration.test.ts`: multiple `ctx.skip()` calls in known backend-gap branches.
 - `tests/integration/fugr-func-params.integration.test.ts`: multiple `ctx.skip()` calls in lock/backend-gap branches.
+
+Current-main follow-up scan (2026-06-05 PR):
+
+- No `it.skip(` remains in `tests/e2e`, `tests/integration`, or `tests/helpers`.
+- No bare `ctx.skip()` remains in those directories; every runtime skip passes reason text.
+- No `[SKIP]` pseudo-skip marker or obsolete `skipIf` helper remains in those directories.
+- The unit guard in `tests/unit/helpers/skip-discipline.test.ts` enforces these checks.
 
 Broad catches that should stay under observation:
 
@@ -940,9 +965,9 @@ Broad catches that should stay under observation:
 | `tests/integration/transport.integration.test.ts` | Valuable for CTS compatibility but actively creates transport requests. `createTransport` intentionally does not auto-release; recursive release is slow. With `TEST_TRANSPORT_PACKAGE=Z_LLM_TEST_PACKAGE`, the auto-corrNr tests pass but leave ghost `ZARC1_TR_*` TADIR rows and undeletable locked CTS tasks. Needs cleanup policy before any more frequent CI use. |
 | `tests/integration/crud.lifecycle.integration.test.ts` | Good registry-based lifecycle coverage. Cleanup helper is better than most live tests, though it still uses best-effort retries. |
 | `tests/integration/context.integration.test.ts` | Good context/compression coverage. Discovery fallbacks are reasonable. No current skip issue found. |
-| `tests/integration/fugr-func.integration.test.ts` | Good live FUGR/FUNC coverage. Replace bare `ctx.skip()` with reasoned skips. |
-| `tests/integration/fugr-func-params.integration.test.ts` | Good structured parameter lifecycle coverage. Replace bare `ctx.skip()` with reasoned skips. |
-| `tests/integration/abapgit.integration.test.ts` | The two hard skips are stale. Convert to opt-in with remote/STRUST preflight, or remove if no longer actionable. |
+| `tests/integration/fugr-func.integration.test.ts` | Good live FUGR/FUNC coverage. 2026-06-05 follow-up replaced bare backend-gap skips with reasoned skips. |
+| `tests/integration/fugr-func-params.integration.test.ts` | Good structured parameter lifecycle coverage. 2026-06-05 follow-up replaced lock/backend-gap skips with reasoned skips. |
+| `tests/integration/abapgit.integration.test.ts` | The two hard skips were stale. 2026-06-05 follow-up converted them to opt-in runtime skips gated by `TEST_ABAPGIT_REMOTE_TESTS=true`; `pullRepo` also requires `TEST_ABAPGIT_PULL_REPO_KEY`. |
 | `tests/integration/gcts.integration.test.ts` | Good read-only gCTS coverage. Some systems may return empty payloads; assertions still validate shape. |
 | `tests/integration/audit-logging.integration.test.ts` | Good integration signal for audit events. No major issue found. |
 | `tests/integration/elicitation.integration.test.ts` | Mostly unit-like but valuable because it covers elicitation flow/audit behavior. No skip/cleanup issue found. |
@@ -960,8 +985,8 @@ Broad catches that should stay under observation:
 | `tests/e2e/diagnostics.e2e.test.ts` | Broad diagnostic smoke coverage. The "triggers a fresh dump" name is inaccurate because it cannot execute the program and can validate any existing dump. `ZARC1_E2E_DUMP` should be managed or deleted. |
 | `tests/e2e/func-write.e2e.test.ts` | Current-run cleanup looked good. Uses best-effort helper, but no live residue with current-run names. |
 | `tests/e2e/func-params.e2e.test.ts` | Current-run cleanup looked good. Useful issue-specific lifecycle test. |
-| `tests/e2e/sktd-write.e2e.test.ts` | Current-run cleanup looked good. Pseudo-skips remain if SKTD is not supported. |
-| `tests/e2e/activation-failure.e2e.test.ts` | Valuable regression. Current-run object was deleted. Pseudo-skips and "leaving stale objects is acceptable in CI" comment should be fixed. Old `ZARC1_E2E_ACTBROKE_*` rows prove this has leaked before. |
+| `tests/e2e/sktd-write.e2e.test.ts` | Current-run cleanup looked good. Pseudo-skips from the original audit were later converted to real Vitest skips. |
+| `tests/e2e/activation-failure.e2e.test.ts` | Valuable regression. Current-run object was deleted. Pseudo-skips from the original audit were later converted to real Vitest skips; old `ZARC1_E2E_ACTBROKE_*` rows prove this test has leaked before and cleanup should stay under observation. |
 | `tests/e2e/smoke.e2e.test.ts` | Good broad smoke. Some backend-specific skips are real. Current-run generated write-policy object was deleted. |
 | `tests/e2e/cache.e2e.test.ts` | Good E2E cache behavior and cheap enough. No major issue. |
 | `tests/e2e/cds-context.e2e.test.ts` | Uses system demo DDLS discovery; reasonable. The beforeAll `[SKIP]` log is harmless because individual tests use `requireOrSkip()`. |
@@ -972,7 +997,7 @@ Broad catches that should stay under observation:
 | `tests/e2e/setup.ts` | Must be hardened. Activation errors should not be warnings unless classified. |
 | `tests/e2e/sync-fixtures.ts` | Does not print `summary.skipped`, so skipped fixtures can be hidden in CLI output. |
 | `tests/e2e/global-setup.ts` | Useful zombie preflight. Contains Unicode console art only; no behavioral issue. |
-| `tests/e2e/helpers.ts` | `skipIf()` is outdated; `expectToolSuccessOrSkip()` and `skipOnBatchCreateFailure()` are useful. |
+| `tests/e2e/helpers.ts` | Historical note: `skipIf()` was outdated and has since been removed. `expectToolSuccessOrSkip()` and `skipOnBatchCreateFailure()` are useful. |
 
 ## Runtime Improvement Plan
 
@@ -1182,6 +1207,14 @@ Additional PR-readiness finding:
 - A later final-check run (`26536051732`) exposed a brittle live-SAP assumption in `tests/integration/cache.integration.test.ts`: the "second warmup run skips unchanged objects" test used `$TMP`, and `$TMP` changed from `204` to `205` objects between the two warmup passes. The second pass correctly fetched the new object, but the test expected `0` fetched objects and failed.
 - This PR now moves that delta-by-hash assertion to the stable S/4 demo package `$DEMO_SOI_DRAFT`, which is already the package used by the cache reverse-dependency tests. That preserves the hash-skip contract while avoiding transient `$TMP` churn and reduces this specific check from a roughly `205` object scan to the `9` object demo package on the S4 test system.
 
+Current PR-readiness finding (2026-06-05):
+
+- PR `#353` CI run `27005945968` first had a zero-step `integration` cancellation caused by the shared SAP concurrency lane; rerunning only that job exposed two real timeout sensitivities rather than assertion failures.
+- `tests/integration/transport.integration.test.ts` timed out in suite hooks after the Vitest default `10s` hook budget while listing/checking CTS state. The suite intentionally probes and cleans live transport requests, so hook timeout must be aligned with live-SAP latency.
+- `tests/integration/adt.integration.test.ts` timed out the explicit ATC check-variant flow at the integration default `30s` test budget. ATC worklist/run/result retrieval is a live backend operation with variable latency and should use an explicit slow-test timeout.
+- This PR now sets `hookTimeout: 60000` in `vitest.integration.config.ts` and gives both live ATC flow tests explicit `90000` timeouts. A focused local S/4 run of `transport.integration.test.ts` plus the `runAtcCheck` tests passed after the change.
+- GitHub Actions run `27007816547` then passed on the updated head: `integration` completed in `6m23s`, `e2e` completed in `13m56s`, and `reliability-summary` completed successfully. This confirms the timeout changes fixed the PR-readiness failures without masking assertions.
+
 ### Correctness Blockers
 
 These should be fixed before runtime optimization because they determine whether green integration/E2E runs are meaningful.
@@ -1192,6 +1225,12 @@ These should be fixed before runtime optimization because they determine whether
 | 5 | Stop transport leakage in E2E and integration transport tests. | Created CTS objects are currently documented or logged, not reliably cleaned. This pollutes the shared S4 system and can affect later runs. | Reduces live-system residue and makes repeated transport runs safer. | Run focused transport tests twice; confirm no new unreleased `ZARC1_*` leftovers through CTS/TADIR checks. |
 | 6 | Convert pseudo-skips to real `ctx.skip(reason)` calls. | Bare `return` and `[SKIP]` logs are counted as passes, hiding unsupported or missing-precondition paths. | Makes skip counts honest and keeps reliability summaries useful. | `npm run test:e2e`; JSON reporter shows skipped tests instead of passed pseudo-skips. |
 | 7 | Clean up or explicitly declare `ZARC1_E2E_DUMP`. | The dump fixture behavior needs a clear ownership model: either clean it or document it as intentionally persistent. | Removes ambiguity between expected diagnostic residue and cleanup failure. | E2E diagnostics run plus live object search. |
+
+Correctness implementation update (2026-06-05):
+
+- Item 6 is now covered more broadly than the original SKTD/activation-failure fix: the static guard rejects pseudo-skip markers, obsolete `skipIf`, reasonless `ctx.skip()`, and test-level `it.skip()` in integration/E2E/helper code.
+- The abapGit hard skips are now explicit opt-in tests, not permanent disabled tests.
+- Item 7 remains open.
 
 ### Runtime Reduction
 
@@ -1257,7 +1296,9 @@ Implemented follow-ups:
 | P1 | Renamed reliability summary wording from `Top Skip Reasons` to `Top Skipped Tests`. | Skip Telemetry Semantics |
 | P1 | Reworked local E2E start/stop portability and made stop-script error detection handle the default text logger. | E2E Script Portability And Log Signal |
 | P1 | Converted SKTD and activation-failure pseudo-skips to real `ctx.skip()`/`requireOrSkip()` paths and added a static guard against `[SKIP]` pseudo-skip markers. | Pseudo-Skip Discipline |
+| P1 | Converted abapGit stage/pull hard skips to opt-in runtime skips, added explicit reasons to remaining backend-gap skip branches, and extended the static guard to reject reasonless `ctx.skip()` and test-level `it.skip()`. | Pseudo-Skip Discipline / Some Tests Are Weak Or Outdated |
 | P1 | Stabilized the cache warmup delta integration test by moving the strict second-run assertion from shared `$TMP` to stable `$DEMO_SOI_DRAFT`. | GitHub Actions Runtime Deep Dive |
+| P1 | Raised live integration hook timeout and added explicit slow-test timeouts for ATC worklist flows after PR CI exposed timeout-only failures. | GitHub Actions Runtime Deep Dive / PR-readiness validation |
 | P2 | Split cheap CI checks from the SAP title gate and moved SAP serialization to repository-wide integration/E2E job concurrency. | CI Gating And SAP Serialization |
 
 Remaining follow-ups:

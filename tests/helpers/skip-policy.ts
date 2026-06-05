@@ -27,7 +27,7 @@ export const SkipReason = {
 export function requireOrSkip<T>(ctx: TaskContext, value: T | null | undefined, reason: string): asserts value is T {
   if (value === null || value === undefined) {
     ctx.skip(reason);
-    // ctx.skip() throws internally in Vitest, so the line below is normally unreachable.
+    // ctx.skip(reason) throws internally in Vitest, so the line below is normally unreachable.
     // Defensive throw in case this helper is used outside Vitest's runtime.
     throw new Error(`Test skipped: ${reason}`);
   }

@@ -1,6 +1,6 @@
 # ABAP Platform 2025 (SAP_BASIS 816) — arc-1 Compatibility Research & Implementation Backlog
 
-**Status:** research complete; one actionable bug + several follow-ups. Nothing here is implemented yet.
+**Status:** research complete; the 8xx abaplint false-positive blocker is implemented on `main` (PR #350, released in 0.9.11). Remaining work is 2025 write-path validation, table-entity coverage, and one server-driven-object spike.
 **Date:** 2026-06-05.
 **How verified:** live tests against `a4h-2025.marianzeis.de:50100` (SAP_BASIS **816**) and `a4h.marianzeis.de:50000` (SAP_BASIS **758**), plus tsx harnesses running arc-1's actual parsers/linter, plus SAP-sourced research (`SAP/abap-file-formats`, ABAP `ABENNEWS-816-*` docs, ABAP Platform 2025 What's New).
 **Companion docs:** [`abap-platform-2025-new-adt-apis.md`](./abap-platform-2025-new-adt-apis.md) (the 124 new ADT endpoints), PR #347 (816 added as a validated probe target).
@@ -9,21 +9,21 @@ This doc is written so a future session can pick up **any single item** and impl
 
 ---
 
-## TL;DR — what to do before/after merging #347
+## TL;DR — what to do next after release 0.9.11
 
 | # | Topic | Verdict | Action | Effort |
 |---|-------|---------|--------|--------|
-| **1.2** | **abaplint v758 false-positive-blocks 816 syntax** | ❌ **real bug** | **Demote `parser_error`/`cds_parser_error` to non-blocking when release > abaplint ceiling.** Highest priority. | S–M |
+| **2.2** | **Writes on the 2025 container** | ⚠️ **ops prerequisite** | **Apply the 2023 performance tuning to `a4h-2025`, restart, then re-run the CRUD/write slice.** Highest priority before more 816 write tests. | S (ops) |
+| **1.3** | **CDS table entity create/read** | ⚠️ routing/lint OK; live write validation blocked by 2.2 | After 2.2, add a focused table-entity lifecycle test on 816. | S |
+| **3.1** | **Server-driven-object read/write** | 🔬 spike | Seed one real 816 server-driven object, then prove read→write→activate before generic support. | M |
+| **1.2** | **abaplint v758 false-positive-blocks 816 syntax** | ✅ **implemented** | No action now. Keep `ABAPLINT_MAX_RELEASE` and release mapping coupled when abaplint gains newer grammar. | — |
 | 1.1 | Existing parsers on 816 (objectstructure etc.) | ✅ pass | None (optional: capture a 816 objectstructure fixture) | XS |
-| 1.3 | CDS table entity create/read | ⚠️ routing OK, blocked by 1.2 | Fix 1.2; then add a focused test | S (after 1.2) |
 | 2.1 | `rap-preflight` on 816 | ✅ correct | None (document) | — |
-| 2.2 | Writes on the 2025 container | ⚠️ ops | Perf-tune the container, then re-run CRUD slice | S (ops) |
 | 2.3 | gCTS / abapGit on 816 | ✅ gCTS works; abapGit absent on trial | None (document) | — |
-| 3.1 | Server-driven-object read/write | 🔬 spike | One real round-trip before building the generic path | M |
 | 3.2 | abap-file-formats `release_state` | ℹ️ not a repo field | Source release state from ADT runtime instead | — |
 | 4.x | SAP_ABA parse / discovery parse / 2025 auth | ✅ safe | None (TLS 1.2+ hygiene only) | — |
 
-**Recommendation:** **1.2 is the only behavior bug** and is worth doing before relying on arc-1 for writes on any 8xx system. It is independent of #347 and can ship as its own small PR. Everything else is either already-correct (document) or a follow-up spike.
+**Recommendation:** do not spend the next PR on lint. That bug is already fixed on current `main`. The next useful order is: **(1) tune the 2025 container for write+activate stability, (2) add the 816 CDS table-entity lifecycle validation, (3) spike one real server-driven-object round-trip**, then decide whether generic SDO support is worth implementing.
 
 > **Update (2026-06-05):** 1.2 shipped in #350 (release 0.9.11). The first *new-API* 816 capability also landed — `SAPDiagnose action=cds_testcases` (CDS Test Double Framework test-case suggestions, read-only, discovery-gated 8.16+). See the companion new-APIs doc §5.1 and `docs/plans/completed/add-cds-test-cases-scaffolding.md`.
 
@@ -49,11 +49,11 @@ This doc is written so a future session can pick up **any single item** and impl
 
 **Verdict:** no parser regression on 816. **Optional polish:** capture a 816 `objectstructure` fixture (`tests/fixtures/xml/objectstructure-clas-a4h-816.xml`) alongside the existing `{a4h-758,npl-750}` ones so `parseClassStructure` has explicit 816 coverage. Low value; do only if touching that area.
 
-### 1.2 — abaplint v758 false-positive-blocks 816 syntax ❌ THE BUG (do this)
+### 1.2 — abaplint v758 false-positive-blocks 816 syntax ✅ IMPLEMENTED
 
 **Why it matters:** arc-1's pre-write lint pins abaplint to `v758` for any 8xx release (`mapSapReleaseToAbaplintVersion('816') → v758` — correct, since abaplint has no v759/816). But abaplint's *parser grammar* is therefore behind the release, so **legitimate new 816 syntax fails to parse**, and `parser_error`/`cds_parser_error` are treated as **blocking** write errors.
 
-**Live evidence** — `validateBeforeWrite(src, file, {abapRelease:'816', systemType:'onprem'})`:
+**Original live evidence before the fix** — `validateBeforeWrite(src, file, {abapRelease:'816', systemType:'onprem'})`:
 ```
 CDS table entity  `define table entity ZTE {...}`      → pass=false  [cds_parser_error: CDS Parser error]   ❌
 READ TABLE itab ... WHERE table_line > 2  (816)        → pass=false  [parser_error: Statement does not exist in ABAPv758, "READ"]  ❌
@@ -62,43 +62,37 @@ plain class / factorial() (controls)                   → pass=true   ✓
 ```
 And critically, **abaplint `Cloud` fails too** (tested `systemType:'btp'` → same `cds_parser_error`/`parser_error`). So **mapping 8xx→Cloud does NOT help** — abaplint has no grammar for these constructs in any version.
 
-**How it blocks the write** (confirmed mechanism): `runPreWriteLint` (`src/handlers/intent.ts:5514`) →
+**Old blocking mechanism** (confirmed mechanism before PR #350): `runPreWriteLint` (`src/handlers/intent.ts`) →
 - `LINTABLE_TYPES = {PROG, CLAS, INTF, INCL, DDLS}` (line **5542**)
 - calls `validateBeforeWrite(..., {abapRelease: cachedFeatures?.abapRelease ?? config.abapRelease, ...})` (line **5552**)
 - `if (!result.pass)` → returns `{ blocked: true, result: errorResult('Pre-write lint check failed…') }` (lines **5557–5566**)
 - the SAPWrite caller returns that error → **the PUT never happens**.
 
-So on a 816 system, **`SAPWrite` of a CDS table entity, or any CLAS/PROG/INTF/INCL using new 816 ABAP statements, is wrongly blocked** (unless the user sets `--lint-before-write=false` or per-call `lintBeforeWrite:false` — the current workaround). This is the same failure class as the FUNC exclusion already documented at intent.ts:5534.
+Before PR #350, a 816 system could wrongly block **`SAPWrite` of a CDS table entity, or any CLAS/PROG/INTF/INCL using new 816 ABAP statements** unless the caller disabled pre-write lint. That is now fixed on `main`.
 
 **The new-816 syntax surface that trips this** (from `ABENNEWS-816-*`, on-prem docs — non-exhaustive): CDS `DEFINE TABLE ENTITY` / `DEFINE EXTERNAL ENTITY` / aspects / entity buffers / writable view entities / `EXPOSE METHOD`; RAP BDL `default function`, `auxiliary class`, `with friends`, non-root `authorization master`, `for side effects`, treeview `instance hierarchy`/`reorder action`; ABAP `READ TABLE … WHERE`, dynamic `SELECT`/`WITH`/`OPEN CURSOR`, `OPTIONS` clause, spatial `ST_*` functions, new numeric built-ins (`factorial`/`binomial`/`ERF`/`GAMMA`), `TABLE KEY … COMPONENTS`, EML `FORWARDING PRIVILEGED`. abaplint v758 knows none of these.
 
-#### Implementation plan (1.2)
+#### Implementation status (PR #350)
 
-**Goal:** when the detected release is beyond abaplint's ceiling, `parser_error`/`cds_parser_error` must NOT block the write (abaplint can't be trusted to parse the source). Keep them as advisory warnings; keep real semantic lint rules working on supported releases unchanged.
-
-- **Add a ceiling constant + helper.** In `src/adt/features.ts` (next to `mapSapReleaseToAbaplintVersion`) export `ABAPLINT_MAX_RELEASE = 758` and `isBeyondAbaplintCeiling(release?: string): boolean` (`parseReleaseNumber(release) > ABAPLINT_MAX_RELEASE`). Note `mapSapReleaseToAbaplintVersion` can't be the gate — it already collapses 816→v758, losing the distinction; you must compare the *raw* release.
-- **Demote parser errors in `runPreWriteLint`** (`src/handlers/intent.ts:5555–5566`, the surgical spot): after `validateBeforeWrite`, if `isBeyondAbaplintCeiling(configOptions.abapRelease)`, move any `parser_error`/`cds_parser_error` entries from `result.errors` into the non-blocking warning path; only set `blocked:true` if non-parser errors remain. Add a one-line note in the returned warning string: *"lint downgraded: abaplint vMAX is behind SAP_BASIS <release>; relying on activation for syntax validation."*
-  - *Alternative (more central):* do it in `src/lint/config-builder.ts` `buildPreWriteConfig` — when `isBeyondAbaplintCeiling`, set `parser_error`/`cds_parser_error` severity to `Info`/`Warning`. Cleaner globally, but also affects `SAPLint action=lint`; decide whether that's desirable (probably yes — same reasoning). The `runPreWriteLint` spot is the minimal-blast-radius choice.
-- **Keep `SAP_CHECK_BEFORE_WRITE` + activation as the real validator** on 8xx (already the design for FUNC and unsupported types).
-- **Tests** (`tests/unit/handlers/intent.test.ts` + `tests/unit/lint/lint.test.ts`):
-  - On `abapRelease:'816'`: `define table entity …` and `READ TABLE … WHERE` → `runPreWriteLint` returns `blocked:false` (with a warning).
-  - On `abapRelease:'758'`: a genuine syntax error still returns `blocked:true` (no regression — the demotion must be release-gated, not blanket).
-  - `isBeyondAbaplintCeiling('816')===true`, `('758')===false`, `('759')===true`, `(undefined)===false`.
-- **Docs:** update CLAUDE.md's lint-pipeline row + `docs/tools.md` lint section to note the 8xx behavior; mention the `--lint-before-write=false` interim workaround.
-- **Effort:** small–medium. Self-contained; no SAP needed for the unit tests (the harness in this doc is reproducible offline).
+- `src/adt/features.ts` exports `ABAPLINT_MAX_RELEASE = 758` plus `isBeyondAbaplintCeiling(release)`.
+- `src/lint/config-builder.ts` demotes `parser_error` and `cds_parser_error` to `Warning` in both `buildPreWriteConfig()` and `buildLintConfig()` when the raw SAP_BASIS release is beyond abaplint's grammar ceiling.
+- `tests/unit/adt/features.test.ts` locks the ceiling behavior: `816`, `800`, and `759` are beyond the ceiling; `758` and below are not.
+- `tests/unit/lint/lint.test.ts` proves the intended behavior: on `816`, a CDS table entity and `READ TABLE ... WHERE` no longer block pre-write lint; on `758`, the same parser failures still block.
+- `CLAUDE.md` now documents the 8xx lint behavior and the coupling between `ABAPLINT_MAX_RELEASE` and `mapSapReleaseToAbaplintVersion()`.
 
 **Re-bump path:** when `@abaplint/core` ships a v759/816 grammar, raise `ABAPLINT_MAX_RELEASE` and the `mapSapReleaseToAbaplintVersion` branch together; the demotion then self-disables for releases abaplint can parse.
 
-### 1.3 — CDS table entity (`DEFINE TABLE ENTITY`) end-to-end ⚠️ blocked by 1.2
+### 1.3 — CDS table entity (`DEFINE TABLE ENTITY`) end-to-end ⚠️ blocked by 2025 write tuning
 
 **Why it matters:** the flagship 2025 dev object. It's a **DDLS source** (which arc-1 already read/writes via `/ddic/ddl/sources`) created with `DEFINE TABLE ENTITY`, plus a separate **DTSC** buffer sidecar object (see the new-APIs doc).
 
 **Findings:**
 - **Create routing is correct:** the `intent.ts` guard `/\bdefine\s+table\s+(entity|function)\b/i` + `releaseNum < 757` (intent.ts:2814–2828) **allows** 816 (816 > 757). No routing change needed.
-- **But write is blocked by 1.2:** `define table entity` → `cds_parser_error` → blocked. So **fixing 1.2 is the prerequisite** to writing table entities through arc-1.
+- **Pre-write lint no longer blocks 816 table entities:** PR #350 demotes the expected `cds_parser_error` false positive to a warning when SAP_BASIS is beyond abaplint's ceiling.
+- **Live create/update/activate validation is still pending:** the 2025 container write path hit DDLS/TABL short dumps and 30 s timeouts before the container received the 2023 performance tuning.
 - The DTSC buffer is a separate server-driven object (see 3.1) — not required to create the entity itself.
 
-**Plan:** after 1.2 lands, add an integration test that creates a CDS table entity in `$TMP` on the 816 system and activates it (needs the tuned container — see 2.2). Until then, table-entity writes work only with `lintBeforeWrite:false`.
+**Plan:** after 2.2 tuning, add an integration test that creates a CDS table entity in `$TMP` on the 816 system and activates it. The test should keep pre-write lint enabled so it proves both the new 8xx lint demotion and the live SAP write/activation path.
 
 ---
 
@@ -150,7 +144,7 @@ Important correction for future work: **`SAP/abap-file-formats` does NOT publish
 
 ## Appendix — reproduce the live tests
 
-- **Lint false-positive harness** (offline, no SAP): `validateBeforeWrite('define table entity ZTE { key id : abap.int4; }', 'zte.ddls.asddls', {abapRelease:'816', systemType:'onprem'})` → `pass:false, errors:[cds_parser_error]`. Same with `systemType:'btp'` (Cloud) → still fails. Controls (`define view entity …`, plain class) → `pass:true`.
+- **Lint false-positive harness** (offline, no SAP): `validateBeforeWrite('define table entity ZTE { key id : abap.int4; }', 'zte.ddls.asddls', {abapRelease:'816', systemType:'onprem'})` now returns `pass:true` with `cds_parser_error` as a warning. `READ TABLE ... WHERE` on 816 likewise returns `pass:true` with `parser_error` as a warning. The same parser failures still block on `abapRelease:'758'`.
 - **Parser parity** (needs 816+758 creds from `.env.infrastructure` `SAP_A4H_2025_*`): `GET /oo/classes/CL_ABAP_TYPEDESCR/objectstructure` (`Accept: application/vnd.sap.adt.objectstructure.v2+xml`) on both → identical `CLAS/OM`-unified shape → `parseClassStructure` succeeds on both.
 - **gCTS/abapGit:** `GET /sap/bc/cts_abapvcs/system` (816→200), `GET /sap/bc/adt/abapgit/repos` (816→404, 758→400).
 

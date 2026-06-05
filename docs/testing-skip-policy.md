@@ -45,7 +45,7 @@ E2E tests may require test objects (ZARC1_TEST_REPORT, ZCL_ARC1_TEST, etc.) that
 
 ```typescript
 it('finds references to ZIF_ARC1_TEST', async (ctx) => {
-  if (!hasCustomObjects) return ctx.skip();
+  if (!hasCustomObjects) return ctx.skip('Required custom E2E objects were not deployed');
   // ...test logic...
 });
 ```
@@ -143,8 +143,12 @@ The shared helper at `tests/helpers/skip-policy.ts` exports these standard const
 | Constant | Value | When to use |
 |----------|-------|-------------|
 | `NO_CREDENTIALS` | SAP credentials not configured | Per-test runtime prerequisite (not suite-level gating) |
+| `NO_FIXTURE` | Required test fixture not found on SAP system | Persistent or transient test object is unavailable |
 | `NO_DDLS` | No DDLS object found on system | CDS/DDLS tests when no view is available |
 | `NO_DUMPS` | No short dumps found on system | Diagnostics tests on clean systems |
+| `NO_TRANSPORT_PACKAGE` | TEST_TRANSPORT_PACKAGE not configured (transportable package required) | Optional transport-package tests |
+| `TRANSPORT_RELEASE_DISABLED` | TEST_TRANSPORT_RELEASE_TESTS not enabled (transport release is permanent on the shared SAP test system) | Permanent transport release paths |
+| `BACKEND_UNSUPPORTED` | Backend feature not supported on this SAP system | Release, product, or optional component lacks the tested endpoint |
 
 Use these constants for consistency. Add new constants to the helper when a new skip category emerges.
 
@@ -160,13 +164,13 @@ Use these constants for consistency. Add new constants to the helper when a new 
 The canonical example of correct skip usage is `tests/e2e/navigate.e2e.test.ts`. It demonstrates:
 
 - A `hasCustomObjects` flag set in `beforeAll` via a lightweight probe
-- Individual tests calling `ctx.skip()` when the flag is false
+- Individual tests calling `ctx.skip(reason)` when the flag is false
 - Tests that run when objects are present make real assertions (not just "defined" checks)
 
 ```typescript
 // From tests/e2e/navigate.e2e.test.ts
 it('finds references to ZIF_ARC1_TEST', async (ctx) => {
-  if (!hasCustomObjects) return ctx.skip();
+  if (!hasCustomObjects) return ctx.skip('Required custom E2E objects were not deployed');
   const result = await callTool(client, 'SAPNavigate', { ... });
   const text = expectToolSuccess(result);
   const refs = JSON.parse(text);

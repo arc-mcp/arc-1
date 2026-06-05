@@ -38,4 +38,12 @@ describe('integration and e2e skip discipline', () => {
   it('does not reintroduce the obsolete skipIf helper', () => {
     expect(matchingFiles(/\bskipIf\b/)).toEqual([]);
   });
+
+  it('always passes explicit reason text to ctx.skip', () => {
+    expect(matchingFiles(/\bctx\.skip\(\s*\)/)).toEqual([]);
+  });
+
+  it('does not use permanent test-level it.skip declarations', () => {
+    expect(matchingFiles(/\bit\.skip\s*\(/)).toEqual([]);
+  });
 });

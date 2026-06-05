@@ -52,7 +52,8 @@ async function seed(client: Client, ctx: import('vitest').TaskContext, className
     package: '$TMP',
   });
   if (create.isError) {
-    ctx.skip();
+    const detail = create.content[0]?.text ?? 'no error detail returned';
+    ctx.skip(`Cannot seed transient class ${className}: ${detail.slice(0, 200)}`);
     return false;
   }
   const write = await callTool(client, 'SAPWrite', {
