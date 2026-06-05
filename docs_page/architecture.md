@@ -121,6 +121,7 @@ sequenceDiagram
         Server->>Server: Create per-user ADT client from BTP Destination
     end
 
+    Server->>Server: Normalize args (strip null/empty GPT-pollution, drop inapplicable include)
     Server->>Policy: Check required scope and SAP_DENY_ACTIONS
     Policy-->>Server: allow or deny
     Server->>Server: Zod input validation

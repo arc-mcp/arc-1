@@ -177,6 +177,8 @@ const SAPWRITE_CLAS_INCLUDES = ['definitions', 'implementations', 'macros', 'tes
 const SAPWRITE_DESC_ONPREM =
   'Create or update ABAP source code and DDIC metadata. Handles lock/modify/unlock automatically. Supports PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL, DOMA, DTEL, MSAG. ' +
   'Type codes are auto-normalized and case-insensitive (e.g., "CLAS/OC" → "CLAS"). ' +
+  'For delete, only type and name are required (plus optional transport); other fields are ignored. ' +
+  'Optional fields may be omitted entirely — do not send empty strings or null to "skip" a field; irrelevant ones are ignored. ' +
   'For CLAS update, pass include="definitions"|"implementations"|"macros"|"testclasses" to update that local include natively; omit include to update source/main. ' +
   'TABL uses source-based writes via /source/main (define table syntax), similar to DDLS/BDEF/SRVD. ' +
   'TABL create: bare "TABL" or "TABL/DT" → transparent table (16-char name limit); "TABL/DS" → DDIC structure (30-char limit, accepts namespaces like /LEOWM/X). Update/delete/activate discover subtype via SAP search, so the slash form is optional there. ' +
@@ -199,6 +201,8 @@ const SAPWRITE_DESC_ONPREM =
 const SAPWRITE_DESC_BTP =
   'Create or update ABAP source code and DDIC metadata (BTP ABAP Environment). Handles lock/modify/unlock automatically. Supports CLAS, INTF, DDLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL, DOMA, DTEL, MSAG. ' +
   'Type codes are auto-normalized and case-insensitive (e.g., "CLAS/OC" → "CLAS"). ' +
+  'For delete, only type and name are required (plus optional transport); other fields are ignored. ' +
+  'Optional fields may be omitted entirely — do not send empty strings or null to "skip" a field; irrelevant ones are ignored. ' +
   'For CLAS update, pass include="definitions"|"implementations"|"macros"|"testclasses" to update that local include natively; omit include to update source/main. ' +
   'TABL supports custom table source writes via /source/main (define table syntax). ' +
   'DOMA/DTEL use metadata XML writes (not /source/main): provide DDIC fields like dataType, length, fixedValues, typeKind, labels, searchHelp. ' +
@@ -681,7 +685,7 @@ export function getToolDefinitions(
             type: 'string',
             enum: SAPWRITE_CLAS_INCLUDES,
             description:
-              'For CLAS write actions (update, edit_method, edit_class_definition, add_method, edit_method_signature, delete_method): target a class-local include instead of /source/main. Valid values: definitions (CCDEF), implementations (CCIMP), macros, testclasses. Omit include to operate on source/main. For edit_method, ARC-1 also auto-detects the include from the method specifier (lhc_*/lcl_* → implementations, ltc_* → testclasses); explicit include= overrides auto-detection. Include writes create an inactive draft; read with SAPRead version="inactive" before activation. NOTE: edit_class_definition with include= skips the symmetry refuse-policy — cross-include validation is not performed; rely on SAPActivate to catch breaks.',
+              'CLAS-only. For the CLAS write actions update, edit_method, and edit_class_definition: target a class-local include instead of /source/main. Valid values: definitions (CCDEF), implementations (CCIMP), macros, testclasses. Omit include to operate on source/main. It is ignored (silently dropped) for non-CLAS object types and for actions other than those three (add_method/edit_method_signature/delete_method/change_method_visibility operate on the global class /source/main only). For edit_method, ARC-1 also auto-detects the include from the method specifier (lhc_*/lcl_* → implementations, ltc_* → testclasses); explicit include= overrides auto-detection. Include writes create an inactive draft; read with SAPRead version="inactive" before activation. NOTE: edit_class_definition with include= skips the symmetry refuse-policy — cross-include validation is not performed; rely on SAPActivate to catch breaks.',
           },
           method: {
             type: 'string',

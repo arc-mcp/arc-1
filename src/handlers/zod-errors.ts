@@ -13,7 +13,8 @@
  *     - "type": expected one of: PROG, CLAS, INTF, ..., got "PROGG"
  *     - "maxRows": expected number, got string
  *
- *   Hint: Check the tool schema for valid parameter types and values.
+ *   Hint: Fix the fields listed above, then retry — do NOT resend the same arguments unchanged.
+ *   Tip: omit optional fields you do not need (do not send empty strings or null for them).
  */
 // biome-ignore lint/suspicious/noExplicitAny: accepts any Zod error shape
 export function formatZodError(error: { issues: ReadonlyArray<any> }, toolName: string): string {
@@ -43,6 +44,7 @@ export function formatZodError(error: { issues: ReadonlyArray<any> }, toolName: 
     `Invalid arguments for ${toolName}:`,
     ...issues.map((i) => `  - ${i}`),
     '',
-    'Hint: Check the tool schema for valid parameter types and values.',
+    'Hint: Fix the fields listed above, then retry — do NOT resend the same arguments unchanged.',
+    'Tip: omit optional fields you do not need (do not send empty strings or null for them).',
   ].join('\n');
 }

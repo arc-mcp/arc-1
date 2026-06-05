@@ -72,13 +72,16 @@ describe('formatZodError', () => {
     }
   });
 
-  it('includes hint line', () => {
+  it('includes a non-retry hint line (issue #360)', () => {
     const schema = z.object({ x: z.string() });
     const result = schema.safeParse({});
     expect(result.success).toBe(false);
     if (!result.success) {
       const msg = formatZodError(result.error, 'SAPRead');
-      expect(msg).toContain('Hint: Check the tool schema');
+      // Tells the LLM client to fix the listed fields and NOT resend the same args unchanged,
+      // and to omit (not blank/null) optional fields it does not need.
+      expect(msg).toContain('do NOT resend the same arguments unchanged');
+      expect(msg).toContain('omit optional fields');
     }
   });
 });

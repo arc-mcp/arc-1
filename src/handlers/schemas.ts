@@ -12,6 +12,32 @@
 
 import { z } from 'zod';
 
+/**
+ * Optional boolean that accepts real JSON booleans AND string-serialized booleans from
+ * MCP/LLM clients, but — unlike `z.coerce.boolean()` — correctly maps "false"/"0"/"no"/""
+ * to `false` (`z.coerce.boolean()` runs `Boolean()`, so the string "false" becomes `true`,
+ * silently inverting intent — live-proven DDIC corruption, issue #360). This is the standard
+ * for EVERY optional boolean field in this file. Do NOT use `z.coerce.boolean()` (inverts
+ * stringified false) or `z.stringbool()` (rejects real JSON booleans, which compliant clients
+ * like Claude send). Defined at the top because the SAPRead/SAPSearch schemas below reference it.
+ */
+const looseOptionalBoolean = z
+  .preprocess((v) => {
+    if (typeof v === 'string') {
+      const s = v.trim().toLowerCase();
+      if (s === 'true' || s === '1' || s === 'yes' || s === 'on') return true;
+      if (s === 'false' || s === '0' || s === 'no' || s === 'off' || s === '') return false;
+    }
+    // Numeric 0/1 (some clients send numeric booleans). Other numbers fall through to
+    // z.boolean() and are rejected — unlike z.coerce.boolean() which would map them to true.
+    if (typeof v === 'number') {
+      if (v === 0) return false;
+      if (v === 1) return true;
+    }
+    return v;
+  }, z.boolean())
+  .optional();
+
 // ─── SAPRead ────────────────────────────────────────────────────────
 
 const SAPREAD_TYPES_ONPREM = [
@@ -203,10 +229,10 @@ export const SAPReadSchema = z
     group: z.string().optional(),
     method: z.string().optional(),
     grep: z.string().optional(),
-    expand_includes: z.coerce.boolean().optional(),
+    expand_includes: looseOptionalBoolean,
     format: z.enum(['text', 'structured']).optional(),
     version: z.enum(['active', 'inactive', 'auto']).optional().default('active'),
-    force_refresh: z.coerce.boolean().optional(),
+    force_refresh: looseOptionalBoolean,
     maxRows: z.coerce.number().optional(),
     /** For type=DEVC: max number of objects to list. Default 200, clamped to [1, 1000]. */
     maxResults: z.coerce.number().int().min(1).max(1000).optional(),
@@ -214,7 +240,7 @@ export const SAPReadSchema = z
     objectType: z.string().optional(),
     versionUri: z.string().optional(),
     /** For type=FUNC: when true, response is JSON {source, signature: {importing, exporting, ...}}. */
-    includeSignature: z.coerce.boolean().optional(),
+    includeSignature: looseOptionalBoolean,
     /** For TABLE_QUERY: columns to select (default: all). */
     columns: z.array(z.string()).optional(),
     /** For TABLE_QUERY: structured WHERE conditions ANDed together. */
@@ -232,7 +258,7 @@ export const SAPReadSchemaBtp = z
     grep: z.string().optional(),
     format: z.enum(['text', 'structured']).optional(),
     version: z.enum(['active', 'inactive', 'auto']).optional().default('active'),
-    force_refresh: z.coerce.boolean().optional(),
+    force_refresh: looseOptionalBoolean,
     maxRows: z.coerce.number().optional(),
     /** For type=DEVC: max number of objects to list. Default 200, clamped to [1, 1000]. */
     maxResults: z.coerce.number().int().min(1).max(1000).optional(),
@@ -240,7 +266,7 @@ export const SAPReadSchemaBtp = z
     objectType: z.string().optional(),
     versionUri: z.string().optional(),
     /** For type=FUNC: when true, response is JSON {source, signature: {importing, exporting, ...}}. */
-    includeSignature: z.coerce.boolean().optional(),
+    includeSignature: looseOptionalBoolean,
     /** For TABLE_QUERY: columns to select (default: all). */
     columns: z.array(z.string()).optional(),
     /** For TABLE_QUERY: structured WHERE conditions ANDed together. */
@@ -388,25 +414,6 @@ const ddicFixedValueSchema = z.object({
   description: z.string().optional(),
 });
 
-/**
- * Boolean field that accepts real booleans AND string-serialized booleans from
- * MCP clients, but — unlike `z.coerce.boolean()` — correctly maps the strings
- * "false"/"0"/"no"/"" to `false` (z.coerce.boolean() treats any non-empty string,
- * including "false", as `true`). Undefined-preserving so `.optional()` works.
- * Used for `abstract` (issue #303), where a wrong value silently flips whether an
- * IMPLEMENTATION stub is written.
- */
-const looseOptionalBoolean = z
-  .preprocess((v) => {
-    if (typeof v === 'string') {
-      const s = v.trim().toLowerCase();
-      if (s === 'true' || s === '1' || s === 'yes') return true;
-      if (s === 'false' || s === '0' || s === 'no' || s === '') return false;
-    }
-    return v;
-  }, z.boolean())
-  .optional();
-
 const messageClassMessageSchema = z.object({
   number: z.string(),
   shortText: z.string(),
@@ -458,11 +465,11 @@ const fmParameterSchema = z.object({
   /** ABAP type expression. Required for IMPORTING/EXPORTING/CHANGING/TABLES; ignored for EXCEPTIONS/RAISING. */
   type: z.string().optional(),
   /** Emit `VALUE(name)` wrapper. Default false (pass-by-reference). */
-  byValue: z.coerce.boolean().optional(),
+  byValue: looseOptionalBoolean,
   /** Raw ABAP literal — IMPORTING/CHANGING only. Emitted verbatim. */
   default: z.string().optional(),
   /** Emit `OPTIONAL` keyword. */
-  optional: z.coerce.boolean().optional(),
+  optional: looseOptionalBoolean,
 });
 
 const batchObjectSchemaOnprem = z.object({
@@ -477,8 +484,8 @@ const batchObjectSchemaOnprem = z.object({
   decimals: z.coerce.number().optional(),
   outputLength: z.coerce.number().optional(),
   conversionExit: z.string().optional(),
-  signExists: z.coerce.boolean().optional(),
-  lowercase: z.coerce.boolean().optional(),
+  signExists: looseOptionalBoolean,
+  lowercase: looseOptionalBoolean,
   fixedValues: z.array(ddicFixedValueSchema).optional(),
   valueTable: z.string().optional(),
   typeKind: z.enum(['domain', 'predefinedAbapType']).optional(),
@@ -492,7 +499,7 @@ const batchObjectSchemaOnprem = z.object({
   searchHelpParameter: z.string().optional(),
   setGetParameter: z.string().optional(),
   defaultComponentName: z.string().optional(),
-  changeDocument: z.coerce.boolean().optional(),
+  changeDocument: looseOptionalBoolean,
   messages: z.array(messageClassMessageSchema).optional(),
   serviceDefinition: z.string().optional(),
   bindingType: z.string().optional(),
@@ -515,8 +522,8 @@ const batchObjectSchemaBtp = z.object({
   decimals: z.coerce.number().optional(),
   outputLength: z.coerce.number().optional(),
   conversionExit: z.string().optional(),
-  signExists: z.coerce.boolean().optional(),
-  lowercase: z.coerce.boolean().optional(),
+  signExists: looseOptionalBoolean,
+  lowercase: looseOptionalBoolean,
   fixedValues: z.array(ddicFixedValueSchema).optional(),
   valueTable: z.string().optional(),
   typeKind: z.enum(['domain', 'predefinedAbapType']).optional(),
@@ -530,7 +537,7 @@ const batchObjectSchemaBtp = z.object({
   searchHelpParameter: z.string().optional(),
   setGetParameter: z.string().optional(),
   defaultComponentName: z.string().optional(),
-  changeDocument: z.coerce.boolean().optional(),
+  changeDocument: looseOptionalBoolean,
   messages: z.array(messageClassMessageSchema).optional(),
   serviceDefinition: z.string().optional(),
   bindingType: z.string().optional(),
@@ -584,8 +591,8 @@ export const SAPWriteSchema = z
     decimals: z.coerce.number().optional(),
     outputLength: z.coerce.number().optional(),
     conversionExit: z.string().optional(),
-    signExists: z.coerce.boolean().optional(),
-    lowercase: z.coerce.boolean().optional(),
+    signExists: looseOptionalBoolean,
+    lowercase: looseOptionalBoolean,
     fixedValues: z.array(ddicFixedValueSchema).optional(),
     valueTable: z.string().optional(),
     typeKind: z.enum(['domain', 'predefinedAbapType']).optional(),
@@ -599,23 +606,23 @@ export const SAPWriteSchema = z
     searchHelpParameter: z.string().optional(),
     setGetParameter: z.string().optional(),
     defaultComponentName: z.string().optional(),
-    changeDocument: z.coerce.boolean().optional(),
+    changeDocument: looseOptionalBoolean,
     messages: z.array(messageClassMessageSchema).optional(),
     serviceDefinition: z.string().optional(),
     bindingType: z.string().optional(),
     odataVersion: z.enum(['V2', 'V4']).optional(),
     category: z.enum(['0', '1']).optional(),
     version: z.string().optional(),
-    lintBeforeWrite: z.coerce.boolean().optional(),
-    preflightBeforeWrite: z.coerce.boolean().optional(),
-    checkBeforeWrite: z.coerce.boolean().optional(),
+    lintBeforeWrite: looseOptionalBoolean,
+    preflightBeforeWrite: looseOptionalBoolean,
+    checkBeforeWrite: looseOptionalBoolean,
     refObjectType: z.string().optional(),
     refObjectName: z.string().optional(),
     refObjectDescription: z.string().optional(),
     bdefName: z.string().optional(),
-    autoApply: z.coerce.boolean().optional(),
+    autoApply: looseOptionalBoolean,
     targetAlias: z.string().optional(),
-    activate: z.coerce.boolean().optional(),
+    activate: looseOptionalBoolean,
     /** Applies only to action='batch_create'. Default `false` keeps the existing per-object inline
      * activation (each object is created → source written → activated, in sequence). When `true`,
      * ARC-1 writes inactive drafts for every object then issues a single terminal `activateBatch`
@@ -624,8 +631,8 @@ export const SAPWriteSchema = z
      * RAP behavior stacks where a BDEF references a not-yet-active SRVD). Has no effect on other
      * actions. Partial-failure semantics are unchanged: a write-phase failure still breaks the
      * loop and only the already-written subset is batch-activated. */
-    activateAtEnd: z.coerce.boolean().optional(),
-    dryRun: z.coerce.boolean().optional(),
+    activateAtEnd: looseOptionalBoolean,
+    dryRun: looseOptionalBoolean,
     /** FUNC structured signature parameters (issue #252). When provided, ARC-1 builds the
      * IMPORTING/EXPORTING/CHANGING/TABLES/EXCEPTIONS/RAISING clause from the array and
      * splices it into the FM source body. Backward-compatible: when omitted, the existing
@@ -677,8 +684,8 @@ export const SAPWriteSchemaBtp = z
     decimals: z.coerce.number().optional(),
     outputLength: z.coerce.number().optional(),
     conversionExit: z.string().optional(),
-    signExists: z.coerce.boolean().optional(),
-    lowercase: z.coerce.boolean().optional(),
+    signExists: looseOptionalBoolean,
+    lowercase: looseOptionalBoolean,
     fixedValues: z.array(ddicFixedValueSchema).optional(),
     valueTable: z.string().optional(),
     typeKind: z.enum(['domain', 'predefinedAbapType']).optional(),
@@ -692,28 +699,28 @@ export const SAPWriteSchemaBtp = z
     searchHelpParameter: z.string().optional(),
     setGetParameter: z.string().optional(),
     defaultComponentName: z.string().optional(),
-    changeDocument: z.coerce.boolean().optional(),
+    changeDocument: looseOptionalBoolean,
     messages: z.array(messageClassMessageSchema).optional(),
     serviceDefinition: z.string().optional(),
     bindingType: z.string().optional(),
     odataVersion: z.enum(['V2', 'V4']).optional(),
     category: z.enum(['0', '1']).optional(),
     version: z.string().optional(),
-    lintBeforeWrite: z.coerce.boolean().optional(),
-    preflightBeforeWrite: z.coerce.boolean().optional(),
-    checkBeforeWrite: z.coerce.boolean().optional(),
+    lintBeforeWrite: looseOptionalBoolean,
+    preflightBeforeWrite: looseOptionalBoolean,
+    checkBeforeWrite: looseOptionalBoolean,
     refObjectType: z.string().optional(),
     refObjectName: z.string().optional(),
     refObjectDescription: z.string().optional(),
     bdefName: z.string().optional(),
-    autoApply: z.coerce.boolean().optional(),
+    autoApply: looseOptionalBoolean,
     targetAlias: z.string().optional(),
-    activate: z.coerce.boolean().optional(),
+    activate: looseOptionalBoolean,
     /** Applies only to action='batch_create'. Default `false` keeps per-object inline activation;
      * `true` defers to a single terminal `activateBatch` so SAP resolves cross-references in one
      * pass. See SAPWriteSchema (on-prem) for the full contract. */
-    activateAtEnd: z.coerce.boolean().optional(),
-    dryRun: z.coerce.boolean().optional(),
+    activateAtEnd: looseOptionalBoolean,
+    dryRun: looseOptionalBoolean,
     /** FUNC structured signature parameters — same shape as on-prem. Harmless on BTP since FUNC write
      * is on-prem-only. */
     parameters: z.array(fmParameterSchema).optional(),
@@ -729,7 +736,7 @@ export const SAPActivateSchema = z.object({
   type: z.string().optional(),
   version: z.string().optional(),
   service_type: z.enum(['odatav2', 'odatav4']).optional(),
-  preaudit: z.coerce.boolean().optional(),
+  preaudit: looseOptionalBoolean,
   objects: z
     .array(
       z.object({
@@ -759,7 +766,7 @@ export const SAPLintSchema = z.object({
   action: z.enum(['lint', 'lint_and_fix', 'list_rules', 'format', 'get_formatter_settings', 'set_formatter_settings']),
   source: z.string().optional(),
   name: z.string().optional(),
-  indentation: z.coerce.boolean().optional(),
+  indentation: looseOptionalBoolean,
   style: z.enum(['keywordUpper', 'keywordLower', 'keywordAuto', 'none']).optional(),
   rules: z.record(z.string(), z.any()).optional(),
 });
@@ -807,7 +814,7 @@ export const SAPDiagnoseSchema = z.object({
   to: z.string().optional(),
   maxResults: z.coerce.number().optional(),
   sections: z.array(z.string()).optional(),
-  includeFullText: z.coerce.boolean().optional(),
+  includeFullText: looseOptionalBoolean,
   analysis: z.enum(['hitlist', 'statements', 'dbAccesses']).optional(),
 });
 

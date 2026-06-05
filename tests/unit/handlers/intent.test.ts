@@ -30,6 +30,8 @@ const {
   normalizeObjectType,
   warnCdsReservedKeywords,
   stripFmParamCommentBlock,
+  stripLlmEmptyValues,
+  normalizeTypeArgsForValidation,
 } = await import('../../../src/handlers/intent.js');
 
 function createClient(): AdtClient {
@@ -14699,5 +14701,124 @@ ENDCLASS.`.replace(/\n/g, '\r\n');
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toMatch(/visibility.*required/i);
     });
+  });
+});
+
+// ─── Issue #360: GPT/OpenAI schema-pollution normalization ──────────────────
+describe('stripLlmEmptyValues (issue #360 GPT/OpenAI pollution)', () => {
+  it('strips null-valued keys (strict-mode optional emulation emits null)', () => {
+    const out = stripLlmEmptyValues({
+      action: 'create',
+      type: 'DTEL',
+      name: 'Z',
+      serviceDefinition: null,
+      group: null,
+    });
+    expect(out).toEqual({ action: 'create', type: 'DTEL', name: 'Z' });
+  });
+
+  it('strips empty / whitespace-only strings', () => {
+    const out = stripLlmEmptyValues({ action: 'update', type: 'DTEL', name: 'Z', odataVersion: '', source: '   ' });
+    expect(out).toEqual({ action: 'update', type: 'DTEL', name: 'Z' });
+  });
+
+  it('PRESERVES real boolean false (must not be treated as empty)', () => {
+    const out = stripLlmEmptyValues({ signExists: false, lowercase: false });
+    expect(out).toEqual({ signExists: false, lowercase: false });
+  });
+
+  it('PRESERVES numeric 0 (must not be treated as empty)', () => {
+    const out = stripLlmEmptyValues({ length: 0, decimals: 0 });
+    expect(out).toEqual({ length: 0, decimals: 0 });
+  });
+
+  it('keeps an empty STRING for meaningful-empty fields (target, proposalUserContent) but still strips null', () => {
+    const keptEmpty = stripLlmEmptyValues({ action: 'create', target: '   ', proposalUserContent: '' });
+    expect(keptEmpty).toEqual({ action: 'create', target: '   ', proposalUserContent: '' });
+    const nullStillStripped = stripLlmEmptyValues({ action: 'create', target: null });
+    expect(nullStillStripped).toEqual({ action: 'create' });
+  });
+
+  it('sanitizes each objects[] item (null/empty dropped per item)', () => {
+    const out = stripLlmEmptyValues({
+      action: 'batch_create',
+      objects: [{ type: 'DTEL', name: 'Z1', serviceDefinition: null, source: '' }],
+    });
+    expect(out.objects).toEqual([{ type: 'DTEL', name: 'Z1' }]);
+  });
+
+  it('does NOT recurse into leaf data arrays (fixedValues keeps its inner empty strings)', () => {
+    const out = stripLlmEmptyValues({
+      action: 'create',
+      type: 'DOMA',
+      name: 'Z',
+      fixedValues: [{ low: '', high: '', description: '' }],
+    });
+    expect(out.fixedValues).toEqual([{ low: '', high: '', description: '' }]);
+  });
+
+  it('returns a new object and does not mutate the input', () => {
+    const input = { a: null, b: 'keep' };
+    const out = stripLlmEmptyValues(input);
+    expect(out).toEqual({ b: 'keep' });
+    expect(input).toEqual({ a: null, b: 'keep' });
+  });
+});
+
+describe('normalizeTypeArgsForValidation include-drop + strip wiring (issue #360)', () => {
+  it('drops an inapplicable include on a non-CLAS SAPWrite update', () => {
+    const out = normalizeTypeArgsForValidation('SAPWrite', {
+      action: 'update',
+      type: 'DDLS',
+      name: 'ZC_V',
+      source: 'x',
+      include: 'definitions',
+    });
+    expect('include' in out).toBe(false);
+    expect(out.type).toBe('DDLS');
+  });
+
+  it('keeps include on a valid CLAS include-write action (update)', () => {
+    const out = normalizeTypeArgsForValidation('SAPWrite', {
+      action: 'update',
+      type: 'CLAS',
+      name: 'ZCL_X',
+      source: 'x',
+      include: 'definitions',
+    });
+    expect(out.include).toBe('definitions');
+  });
+
+  it('drops include on delete and on batch_create (never include-aware)', () => {
+    const del = normalizeTypeArgsForValidation('SAPWrite', {
+      action: 'delete',
+      type: 'CLAS',
+      name: 'ZCL_X',
+      include: 'definitions',
+    });
+    expect('include' in del).toBe(false);
+    const batch = normalizeTypeArgsForValidation('SAPWrite', {
+      action: 'batch_create',
+      include: 'definitions',
+      objects: [{ type: 'DTEL', name: 'Z' }],
+    });
+    expect('include' in batch).toBe(false);
+  });
+
+  it('drops include on a MAIN-only CLAS surgery action (add_method)', () => {
+    const out = normalizeTypeArgsForValidation('SAPWrite', {
+      action: 'add_method',
+      type: 'CLAS',
+      name: 'ZCL_X',
+      method: 'METHODS foo.',
+      include: 'implementations',
+    });
+    expect('include' in out).toBe(false);
+  });
+
+  it('strips null/empty pollution for every tool (not just SAPWrite)', () => {
+    const read = normalizeTypeArgsForValidation('SAPRead', { type: 'CLAS', name: 'X', format: '', version: null });
+    expect('format' in read).toBe(false);
+    expect('version' in read).toBe(false);
   });
 });

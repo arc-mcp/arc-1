@@ -1034,17 +1034,25 @@ describe('SAPWriteSchema', () => {
     }
   });
 
-  it("rejects activateAtEnd values that z.coerce.boolean treats as 'yes' / unknown numbers", () => {
-    // z.coerce.boolean accepts anything truthy/falsy at the JS level. The contract we
-    // care about: a string like "yes" still parses (coerces to true), but actual schema
-    // mis-uses such as objects/arrays must fail.
+  it('activateAtEnd accepts boolish strings but rejects non-coercible values (issue #360)', () => {
+    // looseOptionalBoolean (replacing z.coerce.boolean) accepts real booleans + boolish
+    // strings ("yes"/"true"/"false"/"0"), but — unlike z.coerce.boolean, which silently
+    // mapped any object to `true` — rejects clearly-invalid values like objects.
+    const yes = SAPWriteSchema.safeParse({
+      action: 'batch_create',
+      objects: [{ type: 'CLAS', name: 'ZCL_X' }],
+      activateAtEnd: 'yes',
+    });
+    expect(yes.success).toBe(true);
+    if (yes.success) expect(yes.data.activateAtEnd).toBe(true);
+
     const objParsed = SAPWriteSchema.safeParse({
       action: 'batch_create',
       objects: [{ type: 'CLAS', name: 'ZCL_X' }],
       activateAtEnd: { not: 'a boolean' },
     });
-    // Zod's coerce(boolean) ToBoolean(value) for objects = true; we accept that.
-    expect(objParsed.success).toBe(true);
+    // An object is not a valid boolean — must be rejected, not silently coerced to true.
+    expect(objParsed.success).toBe(false);
   });
 
   // ─── TABL subtype acceptance (follow-up to issue #285) ────────────────────
@@ -1698,5 +1706,53 @@ describe('getToolSchema', () => {
     for (const tool of tools) {
       expect(getToolSchema(tool, false)).toBeDefined();
     }
+  });
+});
+
+// ─── Issue #360: optional booleans must not invert stringified "false" ───────
+describe('looseOptionalBoolean coercion (issue #360 — replaces z.coerce.boolean)', () => {
+  const mk = (extra: Record<string, unknown>) =>
+    SAPWriteSchema.safeParse({ action: 'create', type: 'DOMA', name: 'ZDOM', package: '$TMP', ...extra });
+
+  it('maps stringified "false" to false (the DDIC-corruption regression)', () => {
+    const r = mk({ signExists: 'false', lowercase: 'false' });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.signExists).toBe(false);
+      expect(r.data.lowercase).toBe(false);
+    }
+  });
+
+  it('maps "0" / "no" / "off" to false', () => {
+    for (const v of ['0', 'no', 'NO', 'off']) {
+      const r = mk({ signExists: v });
+      expect(r.success).toBe(true);
+      if (r.success) expect(r.data.signExists).toBe(false);
+    }
+  });
+
+  it('still accepts real JSON booleans (compliant clients send these)', () => {
+    const t = mk({ signExists: true, lowercase: false });
+    expect(t.success).toBe(true);
+    if (t.success) {
+      expect(t.data.signExists).toBe(true);
+      expect(t.data.lowercase).toBe(false);
+    }
+  });
+
+  it('maps "true"/"1"/"yes"/"on" to true', () => {
+    for (const v of ['true', '1', 'yes', 'on']) {
+      const r = mk({ signExists: v });
+      expect(r.success).toBe(true);
+      if (r.success) expect(r.data.signExists).toBe(true);
+    }
+  });
+
+  it('accepts numeric 0/1 as booleans but rejects nonsense', () => {
+    const zero = mk({ signExists: 0 });
+    expect(zero.success).toBe(true);
+    if (zero.success) expect(zero.data.signExists).toBe(false);
+    const garbage = mk({ signExists: { not: 'a bool' } });
+    expect(garbage.success).toBe(false);
   });
 });

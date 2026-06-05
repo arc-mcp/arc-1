@@ -3358,22 +3358,91 @@ function canonicalTablType(type: string): string {
   return type === 'TABL/DT' || type === 'TABL/DS' ? 'TABL' : type;
 }
 
-/** Normalize type fields before schema validation so slash/case aliases are accepted. */
-function normalizeTypeArgsForValidation(toolName: string, args: Record<string, unknown>): Record<string, unknown> {
+/**
+ * Fields whose handler INTENTIONALLY treats an explicit empty string as a meaningful
+ * signal distinct from "omitted", so the pre-validation strip must keep an empty-STRING
+ * value (a `null` is still stripped — the handlers treat null as omitted):
+ *  - `target` — SAPTransport create rejects a "provided but empty" target as a caller
+ *    mistake (vs omitted → local); see `targetProvided` in handleSAPTransport.
+ *  - `proposalUserContent` — SAPDiagnose apply_quickfix forwards an empty
+ *    `<userContent></userContent>` verbatim.
+ * Keep this set minimal: it only needs entries where a handler distinguishes ""-present
+ * from absent. Empty strings on enums/numbers/everything-else are safe to strip.
+ */
+const EMPTY_STRING_MEANINGFUL_FIELDS = new Set(['target', 'proposalUserContent']);
+
+/**
+ * Strip GPT/OpenAI "overpopulation" pollution before Zod validation:
+ *  - `null` values — OpenAI Structured Outputs / `strict` mode (the default for the
+ *    Responses API) emulates an optional field as a `["type","null"]` union and emits
+ *    `null` for every unused optional. `z.X().optional()` rejects `null`, so a strict
+ *    caller otherwise cannot make a clean call (every unused optional becomes null →
+ *    rejected). `null` is ALWAYS stripped (handlers treat null as omitted).
+ *  - empty / whitespace-only strings — many callers serialize an omitted optional as
+ *    `""`. On optional enums that hard-rejects; on optional numbers `z.coerce.number("")`
+ *    silently becomes `0`. Stripped, EXCEPT for the EMPTY_STRING_MEANINGFUL_FIELDS above.
+ *
+ * Preserves real `false` and `0` — ONLY `null` and empty/whitespace strings are removed.
+ * Shallow at the top level, plus one level into each `objects[]` item (SAPWrite
+ * `batch_create` / SAPActivate batch). Deliberately does NOT recurse into leaf data
+ * arrays (`messages`/`fixedValues`/`parameters`/`where`) — those carry user data where
+ * an empty string or null may be meaningful. See issue #360.
+ */
+export function stripLlmEmptyValues(args: Record<string, unknown>): Record<string, unknown> {
+  const isStrippable = (key: string, v: unknown): boolean =>
+    v === null || (typeof v === 'string' && v.trim() === '' && !EMPTY_STRING_MEANINGFUL_FIELDS.has(key));
+  const cleanShallow = (obj: Record<string, unknown>): Record<string, unknown> => {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(obj)) {
+      if (!isStrippable(k, v)) out[k] = v;
+    }
+    return out;
+  };
+  const cleaned = cleanShallow(args);
+  if (Array.isArray(cleaned.objects)) {
+    cleaned.objects = cleaned.objects.map((o) =>
+      o && typeof o === 'object' && !Array.isArray(o) ? cleanShallow(o as Record<string, unknown>) : o,
+    );
+  }
+  return cleaned;
+}
+
+/** Normalize type fields before schema validation so slash/case aliases are accepted.
+ *  Also strips GPT/OpenAI pollution (null + empty strings) via stripLlmEmptyValues so the
+ *  same normalization runs for every tool — standard, hyperfocused, and the CLI all route
+ *  through handleToolCall, which calls this once before scope derivation + Zod (issue #360).
+ *  Exported for unit tests (the include-drop + strip behavior). */
+export function normalizeTypeArgsForValidation(
+  toolName: string,
+  args: Record<string, unknown>,
+): Record<string, unknown> {
+  const cleaned = stripLlmEmptyValues(args);
   switch (toolName) {
     case 'SAPRead':
       return {
-        ...args,
-        type: normalizeObjectType(String(args.type ?? '')),
-        objectType: args.objectType === undefined ? undefined : normalizeObjectType(String(args.objectType ?? '')),
+        ...cleaned,
+        type: normalizeObjectType(String(cleaned.type ?? '')),
+        objectType:
+          cleaned.objectType === undefined ? undefined : normalizeObjectType(String(cleaned.objectType ?? '')),
       };
-    case 'SAPWrite':
+    case 'SAPWrite': {
       // SAPWrite preserves TABL/DT and TABL/DS so the create path can route by subtype.
+      const normType = cleaned.type === undefined ? undefined : normalizeWriteObjectType(String(cleaned.type ?? ''));
+      // Drop an inapplicable `include`: it is only meaningful for a CLAS local-include
+      // write (update/edit_method/edit_class_definition). GPT/OpenAI callers frequently
+      // attach include="definitions" to unrelated writes (DDLS/PROG/DTEL/delete/batch_create),
+      // which validateSapWriteInput would otherwise hard-reject even though the requested
+      // intent is valid. A garbage include VALUE on a real CLAS include path is still
+      // rejected by the z.enum check downstream (issue #360).
+      const action = String(cleaned.action ?? '');
+      const includeApplies =
+        normType === 'CLAS' && (action === 'update' || action === 'edit_method' || action === 'edit_class_definition');
+      if (!includeApplies) delete cleaned.include;
       return {
-        ...args,
-        type: args.type === undefined ? undefined : normalizeWriteObjectType(String(args.type ?? '')),
-        objects: Array.isArray(args.objects)
-          ? args.objects.map((obj) =>
+        ...cleaned,
+        type: normType,
+        objects: Array.isArray(cleaned.objects)
+          ? cleaned.objects.map((obj) =>
               typeof obj === 'object' && obj !== null
                 ? {
                     ...obj,
@@ -3381,14 +3450,15 @@ function normalizeTypeArgsForValidation(toolName: string, args: Record<string, u
                   }
                 : obj,
             )
-          : args.objects,
+          : cleaned.objects,
       };
+    }
     case 'SAPActivate':
       return {
-        ...args,
-        type: args.type === undefined ? undefined : normalizeObjectType(String(args.type ?? '')),
-        objects: Array.isArray(args.objects)
-          ? args.objects.map((obj) =>
+        ...cleaned,
+        type: cleaned.type === undefined ? undefined : normalizeObjectType(String(cleaned.type ?? '')),
+        objects: Array.isArray(cleaned.objects)
+          ? cleaned.objects.map((obj) =>
               typeof obj === 'object' && obj !== null
                 ? {
                     ...obj,
@@ -3396,29 +3466,30 @@ function normalizeTypeArgsForValidation(toolName: string, args: Record<string, u
                   }
                 : obj,
             )
-          : args.objects,
+          : cleaned.objects,
       };
     case 'SAPSearch':
       return {
-        ...args,
-        objectType: args.objectType === undefined ? undefined : normalizeObjectType(String(args.objectType ?? '')),
+        ...cleaned,
+        objectType:
+          cleaned.objectType === undefined ? undefined : normalizeObjectType(String(cleaned.objectType ?? '')),
       };
     case 'SAPNavigate':
       // Only normalize `type` (for URL building). `objectType` is passed to SAP's
       // where-used scope API in slash format (e.g., CLAS/OC) — normalizing it would break the filter.
       return {
-        ...args,
-        type: args.type === undefined ? undefined : normalizeObjectType(String(args.type ?? '')),
+        ...cleaned,
+        type: cleaned.type === undefined ? undefined : normalizeObjectType(String(cleaned.type ?? '')),
       };
     case 'SAPDiagnose':
       return {
-        ...args,
-        type: args.type === undefined ? undefined : normalizeObjectType(String(args.type ?? '')),
+        ...cleaned,
+        type: cleaned.type === undefined ? undefined : normalizeObjectType(String(cleaned.type ?? '')),
       };
     case 'SAPContext':
       return {
-        ...args,
-        type: args.type === undefined ? undefined : normalizeObjectType(String(args.type ?? '')),
+        ...cleaned,
+        type: cleaned.type === undefined ? undefined : normalizeObjectType(String(cleaned.type ?? '')),
       };
     case 'SAPTransport':
       // Normalize `type` for SAPTransport actions that route through
@@ -3428,11 +3499,11 @@ function normalizeTypeArgsForValidation(toolName: string, args: Record<string, u
       // string-typed schema and hit the slash-form throw inside objectBasePath,
       // which is correct as a last-resort fence but not as a friendly error.
       return {
-        ...args,
-        type: args.type === undefined ? undefined : normalizeObjectType(String(args.type ?? '')),
+        ...cleaned,
+        type: cleaned.type === undefined ? undefined : normalizeObjectType(String(cleaned.type ?? '')),
       };
     default:
-      return args;
+      return cleaned;
   }
 }
 
