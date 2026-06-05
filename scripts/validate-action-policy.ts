@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 import { ACTION_POLICY, allPolicyKeys } from '../src/authz/policy.js';
+import { OperationType, type OperationTypeCode } from '../src/adt/safety.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SCHEMAS_PATH = resolve(__dirname, '..', 'src', 'handlers', 'schemas.ts');
@@ -106,6 +107,34 @@ function main(): number {
           `Dead entry in ACTION_POLICY: ${key} — action '${action}' not in ${tool}'s schema enum (${allActions.join(', ')})`,
         );
       }
+    }
+  }
+
+  // ── Pass 3: opType↔scope consistency. The existence check above is satisfied by a
+  // too-low tool-level fallback (e.g. a state-changing action added to a read-default
+  // tool with no specific entry). This pass asserts that a mutating opType maps to a
+  // write-family scope, a Query opType to data+, and a FreeSQL opType to sql+ — turning
+  // a future under-scoped action into a CI error rather than a silent privilege gap.
+  // (security audit 2026-06)
+  const MUTATING_OPTYPES = new Set<OperationTypeCode>([
+    OperationType.Create,
+    OperationType.Update,
+    OperationType.Delete,
+    OperationType.Activate,
+    OperationType.Workflow,
+    OperationType.Transport,
+  ]);
+  const WRITE_FAMILY_SCOPES = new Set(['write', 'transports', 'git', 'admin']);
+  for (const key of allPolicyKeys()) {
+    const { opType, scope } = ACTION_POLICY[key];
+    if (MUTATING_OPTYPES.has(opType) && !WRITE_FAMILY_SCOPES.has(scope)) {
+      errors.push(
+        `Scope too low for ${key}: opType '${opType}' is mutating but scope is '${scope}' (expected one of write/transports/git/admin)`,
+      );
+    } else if (opType === OperationType.Query && !['data', 'sql', 'admin'].includes(scope)) {
+      errors.push(`Scope too low for ${key}: opType '${opType}' (Query) requires data/sql/admin but scope is '${scope}'`);
+    } else if (opType === OperationType.FreeSQL && !['sql', 'admin'].includes(scope)) {
+      errors.push(`Scope too low for ${key}: opType '${opType}' (FreeSQL) requires sql/admin but scope is '${scope}'`);
     }
   }
 

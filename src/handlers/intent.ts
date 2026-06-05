@@ -3635,6 +3635,35 @@ function stripIncludeHeader(source: string): string {
  */
 const NAME_CASE_GUARD_ACTIONS = new Set(['create', 'update', 'edit_method', 'delete']);
 
+/**
+ * Enforce the `allowedPackages` ceiling for an EXISTING object addressed by its
+ * ADT object URL. Resolves the object's REAL package from ADT metadata and gates
+ * it via `checkPackage`. Fail-closed: if the package can't be determined, refuse
+ * the operation rather than passing the gate. No-op (and no HTTP round-trip) when
+ * no package restrictions are configured.
+ *
+ * Shared by every mutating operation that targets an existing object —
+ * update/delete/surgery (via `enforcePackageForExistingObject`), activation, and
+ * change_package — so they all honor the same package boundary against the
+ * object's true package, never a caller-supplied package string.
+ */
+async function enforceAllowedPackageForObjectUrl(
+  client: AdtClient,
+  objectUrl: string,
+  label: string,
+): Promise<string | undefined> {
+  if (client.safety.allowedPackages.length === 0) return undefined;
+  const pkg = await client.resolveObjectPackage(objectUrl);
+  if (!pkg) {
+    throw new AdtSafetyError(
+      `${label} blocked: ARC-1 could not determine the object's package from ADT metadata ` +
+        `(no adtcore:packageRef/containerRef). Fail-closed because allowedPackages is restricted.`,
+    );
+  }
+  await checkPackage(client.safety, pkg, client.getPackageHierarchyResolver());
+  return pkg;
+}
+
 async function handleSAPWrite(
   client: AdtClient,
   args: Record<string, unknown>,
@@ -3760,16 +3789,7 @@ async function handleSAPWrite(
   // Fail-closed: if the package cannot be determined from ADT metadata, refuse the write
   // rather than silently passing through the allowlist gate.
   async function enforcePackageForExistingObject(): Promise<string | undefined> {
-    if (client.safety.allowedPackages.length === 0) return undefined;
-    const pkg = await client.resolveObjectPackage(objectUrl);
-    if (!pkg) {
-      throw new AdtSafetyError(
-        `Operations on ${type} '${name}' blocked: ARC-1 could not determine the object's package ` +
-          `from ADT metadata (no adtcore:packageRef in response). Fail-closed because allowedPackages is restricted.`,
-      );
-    }
-    await checkPackage(client.safety, pkg, client.getPackageHierarchyResolver());
-    return pkg;
+    return enforceAllowedPackageForObjectUrl(client, objectUrl, `Operations on ${type} '${name}'`);
   }
 
   // Helper for class-section surgery (issue #303): fetch the class structure AND
@@ -5827,6 +5847,13 @@ async function handleSAPActivate(
       }),
     );
 
+    // Enforce the allowedPackages ceiling against each object's REAL package before
+    // activating ANY of them — one out-of-allowlist object aborts the whole batch
+    // (no partial activation). Fail-closed; no-op when unrestricted. (security audit 2026-06)
+    for (const o of objects) {
+      await enforceAllowedPackageForObjectUrl(client, o.url, `Activation of ${o.type} '${o.name}'`);
+    }
+
     const result = await activateBatch(client.http, client.safety, objects, activateOpts);
     const names = objects.map((o) => o.name).join(', ');
     const batchStatuses = buildBatchActivationStatuses(objects, result);
@@ -5889,6 +5916,12 @@ async function handleSAPActivate(
   } else {
     objectUrl = objectUrlForType(type, name);
   }
+
+  // Enforce the allowedPackages ceiling against the object's REAL package before
+  // activating — activation is a write-class state change (inactive draft → active
+  // runtime version) and must honor the same package boundary as create/update/delete.
+  // Fail-closed; no-op when allowedPackages is unrestricted. (security audit 2026-06)
+  await enforceAllowedPackageForObjectUrl(client, objectUrl, `Activation of ${type} '${name}'`);
 
   const result = await activate(client.http, client.safety, objectUrl, { ...activateOpts, name });
 
@@ -7634,6 +7667,13 @@ async function handleSAPManage(
         }
         objectUri = uriMatch[1];
       }
+
+      // SECURITY: gate the object's REAL package (resolved from objectUri via ADT
+      // metadata), not the caller-supplied `oldPackage` — authorization must never
+      // trust an attacker-controlled source-package string. This is the authoritative
+      // source gate; the `checkPackage(oldPackage)` above is defense-in-depth only.
+      // Fail-closed; no-op when allowedPackages is unrestricted. (security audit 2026-06)
+      await enforceAllowedPackageForObjectUrl(client, objectUri, `change_package of ${objectName}`);
 
       // Transport pre-flight for non-local target packages
       let effectiveTransport = transport || undefined;

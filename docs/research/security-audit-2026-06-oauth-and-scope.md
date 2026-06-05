@@ -212,3 +212,41 @@ change. Track separately if the narrowing use case is needed.
 - `npm run typecheck` — clean
 - `npm test` — 3396 passed (incl. new scope + OAuth-binding tests)
 - `npm run lint` — clean
+
+---
+
+## Follow-up audit — package-ceiling enforcement on mutations (2026-06)
+
+A deeper white-box pass over the safety/package layer (use-case-driven) found that the `allowedPackages`
+ceiling — enforced on create/update/delete/surgery via the object's **real** package
+(`enforcePackageForExistingObject` → `resolveObjectPackage` + `checkPackage`, fail-closed) — was **not**
+enforced on two other mutating operations:
+
+1. **`SAPActivate` (single + batch)** — `handleSAPActivate` built the object URL from `type`+`name` and
+   activated it gated only by `checkOperation(Activate)` (which requires `allowWrites=true` but never
+   consults `allowedPackages`). A write-scoped user confined to e.g. `$TMP` could activate a pre-existing
+   inactive draft of an object in a restricted package — a write-class state change outside their boundary.
+   **MEDIUM**; dominant impact in shared-service-account / no-Principal-Propagation deployments where
+   `allowedPackages` is the sole package boundary (under PP, SAP's native `S_DEVELOP` is an independent
+   backstop). **Fixed.**
+
+2. **`SAPManage(action="change_package")`** — gated the caller-supplied `oldPackage`/`newPackage` strings but
+   never the object's **real** package, so a caller could lie about `oldPackage` to move an object out of a
+   restricted package. Real ARC-1-side asymmetry (gating attacker-controlled strings instead of the object's
+   true package) regardless of SAP's `oldPackage` handling. **Fixed.**
+
+**Fix:** a shared module-level `enforceAllowedPackageForObjectUrl(client, objectUrl, label)` helper
+(resolve→`checkPackage`, fail-closed, no-op when `allowedPackages` is empty). Wired into `handleSAPActivate`
+(single + every batch object, aborting the whole batch if any object is out of bounds) and `change_package`
+(gates the package resolved from `objectUri`, not the caller's `oldPackage`); `enforcePackageForExistingObject`
+now delegates to it. **Not** wired into `publish_srvb`/`unpublish_srvb`: the SRVB ADT URL returns JSON (not
+`adtcore:packageRef` XML), so a fail-closed gate there would wrongly block all legit publishes — tracked as a
+follow-up needing SRVB-specific package resolution.
+
+Also hardened `scripts/validate-action-policy.ts` (+ a mirrored test in `tests/unit/authz/policy.test.ts`)
+with an opType↔scope consistency pass: a mutating opType must require a write-family scope, `Query`→`data`+,
+`FreeSQL`→`sql`+. This turns a future state-changing action that silently inherits a `read`-default tool
+scope into a CI failure. Current matrix (109 entries) passes.
+
+See `docs/plans/completed/enforce-package-ceiling-on-mutations.md`. Verified: `npm run typecheck` clean,
+`npm run validate:policy` passes, `npm test` 3417 passed, `npm run lint` clean.
