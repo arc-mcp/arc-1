@@ -247,6 +247,15 @@ describe('Feature Detection', () => {
       expect(isBeyondAbaplintCeiling('')).toBe(false);
       expect(isBeyondAbaplintCeiling('sap_btp')).toBe(false);
     });
+
+    it('stays in sync with the mapSapReleaseToAbaplintVersion ceiling (coupling guard)', () => {
+      // ABAPLINT_MAX_RELEASE is the point above which the abaplint version stops increasing.
+      // If someone adds a newer grammar (e.g. >= 759 → v759) without bumping ABAPLINT_MAX_RELEASE,
+      // this fails — forcing both to move together.
+      const ceilingVersion = mapSapReleaseToAbaplintVersion(String(ABAPLINT_MAX_RELEASE));
+      expect(mapSapReleaseToAbaplintVersion(String(ABAPLINT_MAX_RELEASE + 1))).toBe(ceilingVersion);
+      expect(mapSapReleaseToAbaplintVersion('816')).toBe(ceilingVersion);
+    });
   });
 
   // ─── System Type Detection ──────────────────────────────────────────

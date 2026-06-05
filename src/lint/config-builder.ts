@@ -61,6 +61,17 @@ export function buildLintConfig(options: LintConfigOptions = {}): Config {
   const preset = options.systemType === 'btp' ? 'cloud' : 'onprem';
   applyPreset(raw, preset);
 
+  // On releases newer than abaplint's grammar (e.g. SAP_BASIS 816), abaplint cannot parse
+  // legitimate new syntax and reports false-positive parse errors. Demote them to warnings so
+  // standalone lint doesn't mislabel valid new-syntax source as broken (matches buildPreWriteConfig).
+  // Applied before user config/overrides so an explicit user severity still wins.
+  if (isBeyondAbaplintCeiling(options.abapRelease)) {
+    applyRuleOverrides(raw, {
+      parser_error: { severity: 'Warning' },
+      cds_parser_error: { severity: 'Warning' },
+    });
+  }
+
   // Apply user config file (if provided)
   if (options.configFile) {
     applyConfigFile(raw, options.configFile);

@@ -1,5 +1,6 @@
 import { Config, Version } from '@abaplint/core';
 import { describe, expect, it } from 'vitest';
+import { buildLintConfig } from '../../../src/lint/config-builder.js';
 import { detectFilename, lintAbapSource, validateBeforeWrite } from '../../../src/lint/lint.js';
 
 describe('ABAP Lint', () => {
@@ -272,6 +273,18 @@ ENDCLASS.`;
       });
       expect(result.pass).toBe(false);
       expect(result.errors.some((e) => e.rule === 'parser_error')).toBe(true);
+    });
+
+    it('standalone lint (buildLintConfig) demotes parser_error to warning on 816', () => {
+      const cfg = buildLintConfig({ abapRelease: '816', systemType: 'onprem' });
+      const parserIssue = lintAbapSource(readTableWhere, 'zcl_t.clas.abap', cfg).find((x) => x.rule === 'parser_error');
+      expect(parserIssue?.severity).toBe('warning');
+    });
+
+    it('standalone lint keeps parser_error as error on a supported release (758)', () => {
+      const cfg = buildLintConfig({ abapRelease: '758', systemType: 'onprem' });
+      const parserIssue = lintAbapSource(readTableWhere, 'zcl_t.clas.abap', cfg).find((x) => x.rule === 'parser_error');
+      expect(parserIssue?.severity).toBe('error');
     });
   });
 
