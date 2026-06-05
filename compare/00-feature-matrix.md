@@ -187,7 +187,7 @@ Tier 2 (CycloneDX SBOM, Cosign image signing, OpenSSF Scorecard) and Tier 3 (Soc
 | ATC checks | ✅ | ✅ | ✅ | ❌ | ✅ (with summary) | ❌ | N/A | ✅ (severity grouping) | ✅ (checkstyle/codeclimate) | ⚠️ (Joule/IDE; not a built-in MCP tool) |
 | abaplint (local offline) | ✅ | ✅ (native Go port, 8 rules) | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ | ❌ (uses native ATC) |
 | Unit tests | ✅ | ✅ | ✅ | ❌ | ✅ (with coverage) | ✅ | N/A | ✅ (Apr 2026) | ✅ (with coverage + JUnit4/sonar) | ✅ (abap_run_unit_tests) |
-| CDS unit tests | ⚠️ (PR 2026-06-05 — `SAPDiagnose cds_testcases`: SAP-suggested test-case scaffolding for a CDS entity via CDS Test Double Framework; read-only, 8.16+; does not create the test class) | ❌ | ❌ | ❌ | ❌ | ✅ | N/A | ❌ | ❌ | ⚠️ (via run_unit_tests) |
+| CDS unit tests | ✅ (`generate-cds-unit-test` skill closes the loop: discover testable semantics → generate test class → `SAPWrite`/`SAPActivate` → run via `SAPDiagnose(unittest)`. On SAP_BASIS 8.16+ the discovery step uses SAP-native `SAPDiagnose(cds_testcases)` — CDS Test Double Framework, PR #351; older releases fall back to DDL semantic analysis) | ❌ | ❌ | ❌ | ❌ | ✅ | N/A | ❌ | ❌ | ⚠️ (via run_unit_tests) |
 | API release state (clean core) | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ | ⚠️ (Eclipse, IDE-side) |
 | Fix proposals | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | N/A | ✅ (Apr 2026) | ❌ | ⚠️ (Joule AI) |
 | PrettyPrint | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | N/A | ✅ (Apr 2026) | ❌ | ⚠️ (IDE-side) |
