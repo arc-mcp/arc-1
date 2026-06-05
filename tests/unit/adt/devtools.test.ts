@@ -1815,6 +1815,13 @@ describe('DevTools', () => {
       // The live response mixes semantic types — CALCULATION (×3), CAST (×2), JOIN (×3).
       const semanticTypes = new Set(result.testCases.map((tc) => tc.semanticType));
       expect(semanticTypes).toEqual(new Set(['CALCULATION', 'CAST', 'JOIN']));
+      // JOIN cases carry an optional conditionScenario (POSITIVE/NEGATIVE) — regression guard
+      // for that defensively-parsed field (confirmed live on a4h-2025 / SAP_BASIS 816).
+      const joinScenarios = result.testCases
+        .filter((tc) => tc.semanticType === 'JOIN')
+        .map((tc) => tc.conditionScenario);
+      expect(joinScenarios).toContain('POSITIVE');
+      expect(joinScenarios).toContain('NEGATIVE');
     });
 
     it('parses the minimal I_LANGUAGE fixture (single NONE case, no calculatedField)', async () => {
