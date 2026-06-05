@@ -76,7 +76,15 @@ These may fail if no DDLX/BDEF exists — that's fine, skip them. Only needed if
 
 ## Step 2: Analyze CDS Semantics and Propose Test Cases
 
-Analyze the CDS DDL source you read in Step 1 and identify all testable semantics. Group them by category:
+**Preferred (SAP_BASIS 8.16+ — ABAP Platform 2025 / S/4HANA 2025): ask SAP directly.** SAP analyzes the entity for you and returns the authoritative list of testable semantics — the same CDS Test Double Framework engine behind SAP Joule's CDS unit-test generation:
+
+```
+SAPDiagnose(action="cds_testcases", name="<entity_name>")
+```
+
+Each suggestion carries a ready `testMethod` name, a `semanticType` (`NONE` = whole view, `CALCULATION`, `CAST`, `JOIN`, `CASE`, …), a `description`, and — for calculated/cast cases — the `calculatedField`. **Use this as your proposed test-case list** for the "Output to User" block below: it is SAP's own analysis, so prefer it over hand-parsing the DDL. Map each `semanticType` onto the category table and each `testMethod` onto a `FOR TESTING` method in Step 4. If the tool returns a "requires SAP_BASIS 8.16+" message (older releases / NW 7.5x don't expose the endpoint), or you want to cross-check coverage, use the manual analysis below.
+
+**Fallback / cross-check — analyze the DDL yourself.** Analyze the CDS DDL source you read in Step 1 and identify all testable semantics. Group them by category:
 
 ### Semantic Categories to Look For
 

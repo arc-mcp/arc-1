@@ -90,6 +90,7 @@ Both skills produce the same RAP artifact stack. The difference is how they get 
 ### Recent ARC-1 Features These Skills Use
 
 - `SAPContext(action="impact")` for RAP/CDS reuse and "what breaks if I change this?" analysis
+- `SAPDiagnose(action="cds_testcases")` for SAP-native CDS test-case discovery (CDS Test Double Framework) — powers `generate-cds-unit-test` Step 2 on SAP_BASIS 8.16+ (ABAP Platform 2025), returning per-semantic `testMethod`/`semanticType`/`calculatedField` suggestions; falls back to manual DDL semantic analysis on older releases (ARC-1 PR #351)
 - `SAPRead(type="VERSIONS")` and `SAPRead(type="VERSION_SOURCE")` for pattern mining and safer edits of existing RAP stacks
 - `SAPSearch(searchType="tadir_lookup", source="both")` for one-shot existence checks against both released and inactive variants, with a `splitBrain` warning when an object exists only in one source — used by `migrate-segw-to-rap` Phase 6a (ARC-1 v0.9.5+ / PR #270)
 - `SAPWrite(action="batch_create", activateAtEnd: true)` for atomic CDS-composition activation — replaces per-file + manual terminal activation in `migrate-segw-to-rap` Step 2 (ARC-1 v0.9.5+ / PR #270)

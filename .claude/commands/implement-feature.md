@@ -40,7 +40,6 @@ Based on the feature description, identify and read all relevant source files. U
 | Add DDIC domain/data element write | `src/adt/ddic-xml.ts`, `src/adt/crud.ts`, `src/handlers/intent.ts`, `src/handlers/schemas.ts`, `src/handlers/tools.ts` |
 | Add context feature | `src/context/compressor.ts`, `src/context/deps.ts` |
 | Add CDS impact analysis context | `src/adt/cds-impact.ts`, `src/adt/codeintel.ts` (`findWhereUsed`), `src/handlers/intent.ts` (`SAPContext action="impact"`), `tests/unit/adt/cds-impact.test.ts` |
-| Scaffold CDS unit tests for a CDS entity | Call `SAPDiagnose(action="cds_testcases", name="<CDS>")` — returns SAP-suggested per-semantic test methods (whole view / calculated fields / CAST / JOIN) for the CDS view; use them as the starting point for a `cl_cds_test_environment`-based test class. Read-only; SAP_BASIS 8.16+ (ABAP Platform 2025) only. |
 | Add diagnostic | `src/adt/diagnostics.ts`, `src/handlers/intent.ts` |
 
 ### 1c. Read existing tests for the affected area
