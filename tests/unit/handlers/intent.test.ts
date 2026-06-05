@@ -5486,6 +5486,92 @@ ENDCLASS.`;
       expect(result.content[0]?.text).toContain('ZSD_TRAVEL');
     });
 
+    // ─── allowedPackages ceiling on activation (security audit 2026-06) ───
+    // Activation is a write-class state change (inactive draft → active runtime
+    // version) and must honor allowedPackages against the object's REAL package,
+    // exactly like create/update/delete. Without this, a write-scoped user confined
+    // to e.g. $TMP could activate a pre-existing draft in a restricted package.
+    function restrictedTmpClient(): AdtClient {
+      return new AdtClient({
+        baseUrl: 'http://sap:8000',
+        username: 'admin',
+        password: 'secret',
+        safety: { ...unrestrictedSafetyConfig(), allowedPackages: ['$TMP'] },
+      });
+    }
+
+    it('blocks single activation of an object in a non-allowed package', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(
+        mockResponse(
+          200,
+          '<class:abapClass xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:packageRef adtcore:name="ZRESTRICTED"/></class:abapClass>',
+          { 'x-csrf-token': 'T' },
+        ),
+      );
+      const result = await handleToolCall(restrictedTmpClient(), DEFAULT_CONFIG, 'SAPActivate', {
+        type: 'CLAS',
+        name: 'ZCL_VICTIM',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('ZRESTRICTED');
+      expect(result.content[0]?.text).toContain('blocked');
+      // The activation endpoint must never be reached — the only call is the
+      // package-resolution GET.
+      expect(mockFetch.mock.calls.some((c) => String(c[0]).includes('/activation'))).toBe(false);
+    });
+
+    it('allows single activation when the object is in an allowed package', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(
+        mockResponse(
+          200,
+          '<class:abapClass xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:packageRef adtcore:name="$TMP"/></class:abapClass>',
+          { 'x-csrf-token': 'T' },
+        ),
+      );
+      const result = await handleToolCall(restrictedTmpClient(), DEFAULT_CONFIG, 'SAPActivate', {
+        type: 'CLAS',
+        name: 'ZCL_OK',
+      });
+      expect(result.content[0]?.text).not.toContain('blocked');
+      expect(result.content[0]?.text).toContain('Successfully activated');
+    });
+
+    it('blocks batch activation when any object is in a non-allowed package (no partial activation)', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(
+        mockResponse(
+          200,
+          '<class:abapClass xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:packageRef adtcore:name="ZRESTRICTED"/></class:abapClass>',
+          { 'x-csrf-token': 'T' },
+        ),
+      );
+      const result = await handleToolCall(restrictedTmpClient(), DEFAULT_CONFIG, 'SAPActivate', {
+        objects: [
+          { type: 'CLAS', name: 'ZCL_A' },
+          { type: 'CLAS', name: 'ZCL_B' },
+        ],
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('blocked');
+      expect(mockFetch.mock.calls.some((c) => String(c[0]).includes('/activation'))).toBe(false);
+    });
+
+    it('makes no package-resolution call when allowedPackages is unrestricted', async () => {
+      // Default client = unrestricted allowedPackages → the gate is a no-op and
+      // must not add an HTTP round-trip resolving the object's package.
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPActivate', {
+        type: 'PROG',
+        name: 'ZTEST',
+      });
+      expect(result.content[0]?.text).toContain('Successfully activated PROG ZTEST');
+      const resolvedObjectMetadata = mockFetch.mock.calls.some(
+        (c) => String(c[0]).includes('/programs/programs/ztest') && (c[1]?.method ?? 'GET') === 'GET',
+      );
+      expect(resolvedObjectMetadata).toBe(false);
+    });
+
     it('batch activation uses type from individual objects', async () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPActivate', {
         objects: [
@@ -6238,6 +6324,81 @@ ENDCLASS.`;
       expect(previewCall).toBeDefined();
       const executeCall = calls.find((c) => c.method === 'POST' && c.url.includes('step=execute'));
       expect(executeCall).toBeDefined();
+    });
+
+    it("change_package is blocked by the object's REAL package, not the caller-supplied oldPackage", async () => {
+      // The caller lies: oldPackage="ZALLOWED" (in the allowlist) while the object
+      // actually lives in ZSECRET. Authorization must gate the package resolved from
+      // objectUri, never the attacker-controlled oldPackage string. (security audit 2026-06)
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(
+        mockResponse(
+          200,
+          '<class:abapClass xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:packageRef adtcore:name="ZSECRET"/></class:abapClass>',
+          { 'x-csrf-token': 'T' },
+        ),
+      );
+      const restrictedClient = new AdtClient({
+        baseUrl: 'http://sap:8000',
+        username: 'admin',
+        password: 'secret',
+        safety: { ...unrestrictedSafetyConfig(), allowedPackages: ['ZALLOWED'] },
+      });
+      const result = await handleToolCall(restrictedClient, DEFAULT_CONFIG, 'SAPManage', {
+        action: 'change_package',
+        objectName: 'ZVICTIM',
+        objectType: 'CLAS/OC',
+        oldPackage: 'ZALLOWED',
+        newPackage: 'ZALLOWED',
+        objectUri: '/sap/bc/adt/oo/classes/zvictim',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('ZSECRET');
+      expect(result.content[0]?.text).toContain('blocked');
+      // The refactoring (move) endpoint must never be reached.
+      expect(mockFetch.mock.calls.some((c) => String(c[0]).includes('/refactorings'))).toBe(false);
+    });
+
+    it("change_package proceeds when the object's real package is in the allowlist", async () => {
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
+        const u = String(url);
+        if (u.includes('/oo/classes/zok') && (opts?.method ?? 'GET') === 'GET') {
+          return Promise.resolve(
+            mockResponse(
+              200,
+              '<class:abapClass xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:packageRef adtcore:name="$TMP"/></class:abapClass>',
+              { 'x-csrf-token': 'T' },
+            ),
+          );
+        }
+        if (u.includes('step=preview')) {
+          return Promise.resolve(
+            mockResponse(
+              200,
+              '<generic:genericRefactoring xmlns:generic="http://www.sap.com/adt/refactoring/genericrefactoring"><generic:transport/></generic:genericRefactoring>',
+              { 'x-csrf-token': 'T' },
+            ),
+          );
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+      const restrictedClient = new AdtClient({
+        baseUrl: 'http://sap:8000',
+        username: 'admin',
+        password: 'secret',
+        safety: { ...unrestrictedSafetyConfig(), allowedPackages: ['$TMP'] },
+      });
+      const result = await handleToolCall(restrictedClient, DEFAULT_CONFIG, 'SAPManage', {
+        action: 'change_package',
+        objectName: 'ZOK',
+        objectType: 'CLAS/OC',
+        oldPackage: '$TMP',
+        newPackage: '$TMP',
+        objectUri: '/sap/bc/adt/oo/classes/zok',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('Moved ZOK');
     });
 
     it('change_package returns error when objectName is missing', async () => {

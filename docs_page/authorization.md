@@ -49,6 +49,7 @@ With no safety flags set, ARC-1 starts in the safest useful mode:
 Important details:
 
 - Reads are not package-gated by ARC-1. Use SAP authorization for read-level restrictions.
+- The `SAP_ALLOWED_PACKAGES` ceiling applies to **every** mutating operation against the object's **real** package (resolved from ADT metadata, fail-closed): create/update/delete/method-surgery, **activation** (`SAPActivate`, single and batch), and **`change_package`** (gated by the move's real source package, never the caller-supplied `oldPackage`). Activating a draft, or moving an object, in a package outside the allowlist is refused even when `SAP_ALLOW_WRITES=true`. (Service-binding publish/unpublish is the one exception not yet package-gated — tracked as a follow-up.)
 - Transport and Git **read** actions are available when the backend feature exists. Transport/Git **write** actions need extra opt-ins.
 - `SAP_ALLOW_WRITES=false` blocks every mutation, including activation, transport writes, and Git writes.
 

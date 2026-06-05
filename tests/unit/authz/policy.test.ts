@@ -273,3 +273,46 @@ describe('allPolicyKeys', () => {
     expect(allPolicyKeys().length).toBeGreaterThan(70);
   });
 });
+
+describe('opType ↔ scope consistency invariant', () => {
+  // Mirrors the Pass-3 assertion in scripts/validate-action-policy.ts: a mutating
+  // opType must require a write-family scope; a Query opType must require data+; a
+  // FreeSQL opType must require sql+. This locks the invariant so a future entry
+  // (or a state-changing action that silently inherits a read-default tool scope)
+  // can't under-scope a privileged operation. (security audit 2026-06)
+  const MUTATING = new Set([
+    OperationType.Create,
+    OperationType.Update,
+    OperationType.Delete,
+    OperationType.Activate,
+    OperationType.Workflow,
+    OperationType.Transport,
+  ]);
+  const WRITE_FAMILY = new Set(['write', 'transports', 'git', 'admin']);
+
+  it('every mutating opType maps to a write-family scope', () => {
+    for (const key of allPolicyKeys()) {
+      const { opType, scope } = ACTION_POLICY[key];
+      if (MUTATING.has(opType)) {
+        expect(
+          WRITE_FAMILY.has(scope),
+          `${key} (opType=${opType}) must be write/transports/git/admin, got '${scope}'`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it('every Query opType requires data+ and every FreeSQL opType requires sql+', () => {
+    for (const key of allPolicyKeys()) {
+      const { opType, scope } = ACTION_POLICY[key];
+      if (opType === OperationType.Query) {
+        expect(['data', 'sql', 'admin'].includes(scope), `${key} (Query) must be data/sql/admin, got '${scope}'`).toBe(
+          true,
+        );
+      }
+      if (opType === OperationType.FreeSQL) {
+        expect(['sql', 'admin'].includes(scope), `${key} (FreeSQL) must be sql/admin, got '${scope}'`).toBe(true);
+      }
+    }
+  });
+});
