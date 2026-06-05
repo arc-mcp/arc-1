@@ -1146,22 +1146,31 @@ export async function handleToolCall(
   // For SAPSearch.tadir_lookup with source='db'|'both', synthesize a sub-action key so the
   // sql-scoped policy entry kicks in (otherwise viewer-only profiles could piggyback on the
   // ADT info-system route to issue freestyle SQL).
+  //
+  // SECURITY (privilege-escalation hardening): the scope key is derived from the SAME
+  // normalized value the handler ultimately dispatches on. `normalizeTypeArgsForValidation`
+  // upper-cases + slash-collapses `type` and coerces non-string inputs via String(), so a
+  // caller cannot evade the per-type scope gate by sending a value that misses the policy key
+  // here yet is canonicalized into a privileged type just before Zod runs. Two such bypasses
+  // existed when this lookup read the RAW `args`: an array (`type: ["TABLE_CONTENTS"]` —
+  // typeof "object" → undefined key → base `read`) and a lowercase string
+  // (`type: "table_contents"` — no `SAPRead.table_contents` key → base `read`), both of which
+  // were then normalized into the data-scoped `TABLE_CONTENTS` for the handler. Normalizing
+  // first closes the array, case, and slash-form variants in one place (and keeps the
+  // SAP_DENY_ACTIONS match below consistent with the canonical form). The normalized object is
+  // reused for Zod validation below so canonicalization happens exactly once.
   // Runs BEFORE Zod validation so scope errors don't leak schema details to unauthorized callers.
+  const normalizedArgs = normalizeTypeArgsForValidation(toolName, args);
+  const rawScopeKey = toolName === 'SAPRead' ? normalizedArgs.type : normalizedArgs.action;
   let actionOrType: string | undefined =
-    toolName === 'SAPRead'
-      ? typeof args.type === 'string'
-        ? args.type
-        : undefined
-      : typeof args.action === 'string'
-        ? args.action
-        : undefined;
+    rawScopeKey === undefined || rawScopeKey === null || rawScopeKey === '' ? undefined : String(rawScopeKey);
   if (
     toolName === 'SAPSearch' &&
-    typeof args.searchType === 'string' &&
-    args.searchType === 'tadir_lookup' &&
-    typeof args.source === 'string'
+    typeof normalizedArgs.searchType === 'string' &&
+    normalizedArgs.searchType === 'tadir_lookup' &&
+    typeof normalizedArgs.source === 'string'
   ) {
-    const src = args.source.toLowerCase();
+    const src = normalizedArgs.source.toLowerCase();
     if (src === 'db' || src === 'both') {
       actionOrType = `tadir_lookup_${src}`;
     }
@@ -1212,7 +1221,10 @@ export async function handleToolCall(
   const isBtp = config.systemType === 'btp';
   const schema = getToolSchema(toolName, isBtp);
   if (schema) {
-    args = normalizeTypeArgsForValidation(toolName, args);
+    // Reuse the normalized args computed for the scope-key derivation above —
+    // re-normalizing would be redundant (the transform is idempotent) and risks
+    // the two paths drifting.
+    args = normalizedArgs;
     const parsed = schema.safeParse(args);
     if (!parsed.success) {
       const validationError = formatZodError(parsed.error, toolName);

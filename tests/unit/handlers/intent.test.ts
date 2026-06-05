@@ -4337,6 +4337,54 @@ lv = CONV string( 1 ).`,
       expect(result.isError).toBeUndefined();
     });
 
+    // ── Privilege-escalation regression (security audit 2026-06) ──
+    // The scope key must be derived from the SAME normalized value the handler
+    // dispatches on. Before the fix, the lookup read the RAW `type`, so a value
+    // that missed the `SAPRead.TABLE_CONTENTS` policy key here — but was then
+    // canonicalized into the data-scoped `TABLE_CONTENTS` for the handler —
+    // slipped past the gate with only `read` scope. Two such forms existed:
+    it('blocks SAPRead TABLE_CONTENTS passed as an ARRAY with read-only scope', async () => {
+      const result = await handleToolCall(
+        createClient(),
+        DEFAULT_CONFIG,
+        'SAPRead',
+        // typeof ["TABLE_CONTENTS"] === "object" → used to yield an undefined
+        // policy key → base `read`; String() coercion now maps it to the
+        // data-scoped TABLE_CONTENTS policy.
+        { type: ['TABLE_CONTENTS'], name: 'T000' },
+        readAuth,
+      );
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain("Insufficient scope: 'data'");
+    });
+
+    it('blocks SAPRead TABLE_CONTENTS passed as a LOWERCASE string with read-only scope', async () => {
+      const result = await handleToolCall(
+        createClient(),
+        DEFAULT_CONFIG,
+        'SAPRead',
+        // "table_contents" matched no policy key (keys are upper-case) → base
+        // `read`; normalizing first upper-cases it before the lookup.
+        { type: 'table_contents', name: 'T000' },
+        readAuth,
+      );
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain("Insufficient scope: 'data'");
+    });
+
+    it('allows SAPRead TABLE_CONTENTS in array form with data scope (normalization keeps the legit path)', async () => {
+      const result = await handleToolCall(
+        createClient(),
+        DEFAULT_CONFIG,
+        'SAPRead',
+        { type: ['TABLE_CONTENTS'], name: 'T000' },
+        dataAuth,
+      );
+      // Scope check passes (data ≥ data); it may still fail downstream for
+      // non-scope reasons, but must NOT be a scope rejection.
+      expect(result.content[0]?.text ?? '').not.toContain('Insufficient scope');
+    });
+
     it('blocks SAPWrite with read-only scope', async () => {
       const result = await handleToolCall(
         createClient(),

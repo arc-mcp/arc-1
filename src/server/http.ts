@@ -36,6 +36,7 @@ import { API_KEY_PROFILES } from './config.js';
 import { logger } from './logger.js';
 import type { OAuthStateCodec } from './oauth-state.js';
 import { VERSION } from './server.js';
+import type { StatelessDcrClientStore } from './stateless-client-store.js';
 import type { ServerConfig } from './types.js';
 import type { XsuaaCredentials } from './xsuaa.js';
 
@@ -108,10 +109,23 @@ function renderOAuthErrorPage(error: string, errorDescription: string, clientRet
  * Removal condition + upstream tracking (XSUAA root cause, arc-1#214,
  * vscode#314715) are documented at the top of `oauth-state.ts`.
  *
- * Exported for unit tests; mounted in `startHttpServer`.
+ * SECURITY (authorization-code interception, security audit 2026-06): the
+ * signed state carries the originating DCR `client_id` (`decoded.clientId`).
+ * Before forwarding the auth code (or an error) to `decoded.clientRedirectUri`,
+ * we verify that redirect_uri is actually registered for that client. The
+ * signature alone is insufficient: all DCR clients share one XSUAA app, so a
+ * forged-state attack is blocked by the HMAC, but the redirect target must
+ * still belong to the client that will exchange the code. For stateless DCR
+ * clients (`arc1-…`) the registered redirect_uris are baked immutably into the
+ * signed `client_id`, so this check deterministically rejects an attacker who
+ * substitutes their own redirect_uri on a victim's `client_id`.
+ *
+ * Exported for unit tests; mounted in `startHttpServer`. When `clientStore` is
+ * omitted (legacy unit tests of the issue-#214 round-trip) the binding check is
+ * skipped; production always passes it.
  */
-export function createOAuthCallbackHandler(stateCodec: OAuthStateCodec) {
-  return (req: Request, res: Response): void => {
+export function createOAuthCallbackHandler(stateCodec: OAuthStateCodec, clientStore?: StatelessDcrClientStore) {
+  return async (req: Request, res: Response): Promise<void> => {
     const stateToken = typeof req.query.state === 'string' ? req.query.state : '';
     const decoded = stateCodec.decode(stateToken);
     if (decoded.kind !== 'ok') {
@@ -128,6 +142,54 @@ export function createOAuthCallbackHandler(stateCodec: OAuthStateCodec) {
             '</body></html>',
         );
       return;
+    }
+
+    // ── Client-binding validation (authorization-code interception defense) ──
+    // Verify the recovered redirect_uri is registered for the client_id that
+    // minted this state. Runs for BOTH the success and error branches below so
+    // neither a code nor an error response can be steered to an unregistered
+    // URI. Fails CLOSED on any lookup error (a terminal error page, never a
+    // redirect to an unverified target).
+    if (clientStore && decoded.clientId) {
+      let clientRedirectUris: string[] | undefined;
+      try {
+        const clientInfo = await clientStore.getClient(decoded.clientId);
+        clientRedirectUris = clientInfo?.redirect_uris;
+      } catch (err) {
+        logger.warn('OAuth callback: client lookup threw — failing closed', {
+          clientId: decoded.clientId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      if (!clientRedirectUris) {
+        logger.warn('OAuth callback: state references unknown client_id', { clientId: decoded.clientId });
+        res
+          .status(400)
+          .type('html')
+          .send(
+            '<!doctype html><html><body style="font-family:sans-serif;padding:2rem">' +
+              '<h1>Authentication failed</h1>' +
+              '<p>The OAuth client referenced in the state token is no longer valid. Please retry the sign-in.</p>' +
+              '</body></html>',
+          );
+        return;
+      }
+      if (!clientRedirectUris.includes(decoded.clientRedirectUri)) {
+        logger.warn('OAuth callback: redirect_uri not registered for client', {
+          clientId: decoded.clientId,
+          redirectUri: decoded.clientRedirectUri,
+        });
+        res
+          .status(400)
+          .type('html')
+          .send(
+            '<!doctype html><html><body style="font-family:sans-serif;padding:2rem">' +
+              '<h1>Authentication failed</h1>' +
+              '<p>The redirect URI in the state token is not registered for this client. Please retry the sign-in.</p>' +
+              '</body></html>',
+          );
+        return;
+      }
     }
 
     let target: URL;
@@ -575,7 +637,7 @@ export async function startHttpServer(
     // XSUAA as oauthCallbackUrl. A strip-prefix proxy maps the public path
     // back to this root route. Handler is extracted (exported) so the
     // state-round-trip contract is unit-testable without a live XSUAA.
-    app.get('/oauth/callback', createOAuthCallbackHandler(stateCodec));
+    app.get('/oauth/callback', createOAuthCallbackHandler(stateCodec, clientStore));
 
     // ─── Path-prefix-aware OAuth metadata override ────────────────
     // The MCP SDK's `mcpAuthRouter` builds endpoint URLs with

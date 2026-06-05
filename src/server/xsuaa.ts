@@ -336,6 +336,7 @@ class XsuaaProxyOAuthProvider extends ProxyOAuthServerProvider {
     const arc1State = this.stateCodec.encode({
       clientState: params.state,
       clientRedirectUri: params.redirectUri,
+      clientId: _client.client_id,
     });
 
     const targetUrl = new URL(this.xsuaaAuthUrl);

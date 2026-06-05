@@ -77,12 +77,18 @@ interface StatePayload {
   /** The OAuth client's ORIGINAL `redirect_uri` — where ARC-1 sends the
    *  user after XSUAA returns to ARC-1's callback. */
   r: string;
+  /** The DCR `client_id` that initiated the flow. Bound into the signed
+   *  payload so the callback can verify the recovered `redirect_uri` is
+   *  actually registered for THIS client — closing the authorization-code
+   *  interception vector where an attacker substitutes their own
+   *  `redirect_uri` on a victim's signed state (security audit 2026-06). */
+  cid: string;
   /** Expiry, epoch seconds. */
   exp: number;
 }
 
 export type DecodeResult =
-  | { kind: 'ok'; clientState?: string; clientRedirectUri: string }
+  | { kind: 'ok'; clientState?: string; clientRedirectUri: string; clientId: string }
   | { kind: 'error'; reason: 'malformed' | 'bad_signature' | 'invalid_payload' | 'expired' };
 
 /**
@@ -108,11 +114,12 @@ export class OAuthStateCodec {
    *
    * @param input.now Injectable clock (epoch ms) for deterministic tests.
    */
-  encode(input: { clientState?: string; clientRedirectUri: string; now?: number }): string {
+  encode(input: { clientState?: string; clientRedirectUri: string; clientId: string; now?: number }): string {
     const nowSec = Math.floor((input.now ?? Date.now()) / 1000);
     const payload: StatePayload = {
       v: 1,
       r: input.clientRedirectUri,
+      cid: input.clientId,
       exp: nowSec + this.ttlSeconds,
     };
     if (input.clientState !== undefined) {
@@ -151,7 +158,7 @@ export class OAuthStateCodec {
       return { kind: 'error', reason: 'expired' };
     }
 
-    return { kind: 'ok', clientState: payload.s, clientRedirectUri: payload.r };
+    return { kind: 'ok', clientState: payload.s, clientRedirectUri: payload.r, clientId: payload.cid };
   }
 
   private sign(payloadB64: string): string {
@@ -179,9 +186,10 @@ function parsePayload(payloadB64: string): StatePayload | undefined {
     const obj = JSON.parse(json) as Record<string, unknown>;
     if (obj.v !== 1) return undefined;
     if (typeof obj.r !== 'string' || obj.r.length === 0) return undefined;
+    if (typeof obj.cid !== 'string' || obj.cid.length === 0) return undefined;
     if (typeof obj.exp !== 'number' || !Number.isFinite(obj.exp)) return undefined;
     if (obj.s !== undefined && typeof obj.s !== 'string') return undefined;
-    return { v: 1, s: obj.s as string | undefined, r: obj.r, exp: obj.exp };
+    return { v: 1, s: obj.s as string | undefined, r: obj.r, cid: obj.cid, exp: obj.exp };
   } catch {
     return undefined;
   }
