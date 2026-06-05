@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.10](https://github.com/marianfoo/arc-1/compare/v0.9.9...v0.9.10) (2026-06-05)
+
+
+### Bug Fixes
+
+* **adt/client:** copy tablWriteUrlCache in withSafety() clone ([#335](https://github.com/marianfoo/arc-1/issues/335)) ([dbcd8a1](https://github.com/marianfoo/arc-1/commit/dbcd8a1d287a86f91ca66379888c7630d8df286d))
+
 ## [0.9.9](https://github.com/marianfoo/arc-1/compare/v0.9.8...v0.9.9) (2026-06-04)
 
 
