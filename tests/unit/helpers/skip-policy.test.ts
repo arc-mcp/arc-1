@@ -1,6 +1,12 @@
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { TaskContext } from 'vitest';
-import { describe, expect, it, vi } from 'vitest';
-import { requireOrSkip } from '../../helpers/skip-policy.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { requireOrSkip, skipTest } from '../../helpers/skip-policy.js';
+
+const originalSkipReasonsFile = process.env.ARC1_SKIP_REASONS_FILE;
+let tempDir: string | undefined;
 
 /** Create a mock TaskContext with a spy on skip that throws (like real Vitest). */
 function mockCtx(): TaskContext {
@@ -11,7 +17,30 @@ function mockCtx(): TaskContext {
   } as unknown as TaskContext;
 }
 
+function mockCtxWithTask(file: string): TaskContext {
+  return {
+    ...mockCtx(),
+    task: {
+      name: 'skips for a known backend gap',
+      fullName: `${file} > live suite > skips for a known backend gap`,
+      file: { filepath: file },
+    },
+  } as unknown as TaskContext;
+}
+
 describe('skip-policy', () => {
+  afterEach(() => {
+    if (tempDir) {
+      rmSync(tempDir, { recursive: true, force: true });
+      tempDir = undefined;
+    }
+    if (originalSkipReasonsFile === undefined) {
+      delete process.env.ARC1_SKIP_REASONS_FILE;
+    } else {
+      process.env.ARC1_SKIP_REASONS_FILE = originalSkipReasonsFile;
+    }
+  });
+
   describe('requireOrSkip', () => {
     it('does not skip when value is a non-empty string', () => {
       const ctx = mockCtx();
@@ -64,6 +93,29 @@ describe('skip-policy', () => {
       const ctx = mockCtx();
       expect(() => requireOrSkip(ctx, null, '')).toThrow();
       expect(ctx.skip).toHaveBeenCalledWith('');
+    });
+  });
+
+  describe('skipTest telemetry', () => {
+    it('writes structured skip telemetry when Vitest task metadata is present', () => {
+      tempDir = mkdtempSync(join(tmpdir(), 'arc1-skip-policy-'));
+      const telemetryFile = join(tempDir, 'skips.ndjson');
+      process.env.ARC1_SKIP_REASONS_FILE = telemetryFile;
+
+      const ctx = mockCtxWithTask('/repo/tests/e2e/smoke.e2e.test.ts');
+      expect(() => skipTest(ctx, 'Backend feature not supported on this SAP system')).toThrow();
+
+      const records = readFileSync(telemetryFile, 'utf8')
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line));
+      expect(records).toHaveLength(1);
+      expect(records[0]).toMatchObject({
+        suite: 'e2e',
+        reason: 'Backend feature not supported on this SAP system',
+        test: 'skips for a known backend gap',
+        file: '/repo/tests/e2e/smoke.e2e.test.ts',
+      });
     });
   });
 });

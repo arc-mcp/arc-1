@@ -6,17 +6,20 @@
  * - SAPWrite update in a transportable package without explicit transport (Issue #56)
  *
  * Transport tests require the MCP server to be running with --allow-transport-writes.
- * Transportable-package write tests additionally require TEST_TRANSPORT_PACKAGE env var.
+ * Transportable-package write tests additionally require TEST_TRANSPORT_PACKAGE and
+ * TEST_TRANSPORT_PACKAGE_WRITE_TESTS=true because cleanup can leave locked CTS tasks
+ * on shared SAP systems.
  *
  * Run: npm run test:e2e -- tests/e2e/saptransport.e2e.test.ts
  */
 
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { requireOrSkip, SkipReason } from '../helpers/skip-policy.js';
+import { requireOrSkip, SkipReason, skipTest } from '../helpers/skip-policy.js';
 import { callTool, connectClient, expectToolError, expectToolSuccess, expectToolSuccessOrSkip } from './helpers.js';
 
 const transportReleaseTestsEnabled = process.env.TEST_TRANSPORT_RELEASE_TESTS === 'true';
+const transportPackageWriteTestsEnabled = process.env.TEST_TRANSPORT_PACKAGE_WRITE_TESTS === 'true';
 
 interface TransportListEntry {
   id?: string;
@@ -31,6 +34,7 @@ function isArc1TestTransport(transport: TransportListEntry): boolean {
 describe('E2E SAPTransport Tests', () => {
   let client: Client;
   let initialArc1DraftTransportIds = new Set<string>();
+  const createdTransportablePrograms = new Set<string>();
 
   async function listArc1DraftTransportIds(): Promise<Set<string>> {
     const result = await callTool(client, 'SAPTransport', { action: 'list', status: 'D' });
@@ -49,20 +53,60 @@ describe('E2E SAPTransport Tests', () => {
     expect(leaked, 'New ARC-1 draft transports left by E2E run').toEqual([]);
   }
 
+  function trackTransportableProgram(name: string): void {
+    createdTransportablePrograms.add(name);
+  }
+
+  async function deleteTrackedTransportableProgram(name: string): Promise<void> {
+    const result = await callTool(client, 'SAPWrite', {
+      action: 'delete',
+      type: 'PROG',
+      name,
+    });
+    const text = result.content?.[0]?.text ?? '';
+    if (result.isError && !/not found|does not exist|unknown/i.test(text)) {
+      throw new Error(text || `Failed to delete ${name}`);
+    }
+    createdTransportablePrograms.delete(name);
+  }
+
+  async function cleanupTrackedTransportablePrograms(): Promise<string[]> {
+    const failures: string[] = [];
+    for (const name of [...createdTransportablePrograms].reverse()) {
+      try {
+        await deleteTrackedTransportableProgram(name);
+      } catch (err) {
+        failures.push(`${name}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    return failures;
+  }
+
   beforeAll(async () => {
     client = await connectClient();
     initialArc1DraftTransportIds = await listArc1DraftTransportIds();
   });
 
   afterAll(async () => {
+    const failures: string[] = [];
     try {
-      if (client) await expectNoNewArc1DraftTransportResidue();
+      if (client) {
+        failures.push(...(await cleanupTrackedTransportablePrograms()));
+        try {
+          await expectNoNewArc1DraftTransportResidue();
+        } catch (err) {
+          failures.push(err instanceof Error ? err.message : String(err));
+        }
+      }
     } finally {
       try {
         await client?.close();
       } catch {
         // Ignore close errors
       }
+    }
+    if (failures.length > 0) {
+      throw new Error(`E2E transport cleanup failed: ${JSON.stringify(failures)}`);
     }
   });
 
@@ -93,7 +137,7 @@ describe('E2E SAPTransport Tests', () => {
       // Skip gracefully when transport writes aren't enabled on the MCP server
       if (result.isError && result.content?.[0]?.text?.includes('allowTransportWrites=false')) {
         transportsEnabled = false;
-        return ctx.skip('Transport writes not enabled on MCP server (--allow-transport-writes)');
+        return skipTest(ctx, 'Transport writes not enabled on MCP server (--allow-transport-writes)');
       }
 
       const text = expectToolSuccess(result);
@@ -106,7 +150,7 @@ describe('E2E SAPTransport Tests', () => {
     });
 
     it('retrieves the created transport with correct details', async (ctx) => {
-      if (!transportsEnabled) return ctx.skip('Transport writes not enabled on MCP server');
+      if (!transportsEnabled) return skipTest(ctx, 'Transport writes not enabled on MCP server');
       requireOrSkip(ctx, createdTransportId, 'No transport was created in previous test');
 
       const result = await callTool(client, 'SAPTransport', {
@@ -124,7 +168,7 @@ describe('E2E SAPTransport Tests', () => {
     });
 
     it('returns not-found message for non-existent transport', async (ctx) => {
-      if (!transportsEnabled) return ctx.skip('Transport writes not enabled on MCP server');
+      if (!transportsEnabled) return skipTest(ctx, 'Transport writes not enabled on MCP server');
       const result = await callTool(client, 'SAPTransport', {
         action: 'get',
         id: 'ZZZK999999',
@@ -137,7 +181,7 @@ describe('E2E SAPTransport Tests', () => {
     });
 
     it('lists transports without errors', async (ctx) => {
-      if (!transportsEnabled) return ctx.skip('Transport writes not enabled on MCP server');
+      if (!transportsEnabled) return skipTest(ctx, 'Transport writes not enabled on MCP server');
       const result = await callTool(client, 'SAPTransport', {
         action: 'list',
       });
@@ -190,7 +234,7 @@ describe('E2E SAPTransport Tests', () => {
         });
         if (createResult.isError && createResult.content?.[0]?.text?.includes('allowTransportWrites=false')) {
           transportsEnabled = false;
-          return ctx.skip('Transport writes not enabled on MCP server');
+          return skipTest(ctx, 'Transport writes not enabled on MCP server');
         }
         const createText = expectToolSuccess(createResult);
         const match = createText.match(/([A-Z0-9]+K\d+)/);
@@ -213,7 +257,7 @@ describe('E2E SAPTransport Tests', () => {
     });
 
     it('create with type W creates Customizing transport', async (ctx) => {
-      if (!transportsEnabled) return ctx.skip('Transport writes not enabled on MCP server');
+      if (!transportsEnabled) return skipTest(ctx, 'Transport writes not enabled on MCP server');
 
       let id = '';
       try {
@@ -235,7 +279,7 @@ describe('E2E SAPTransport Tests', () => {
     });
 
     it('reassign action changes transport owner', async (ctx) => {
-      if (!transportsEnabled) return ctx.skip('Transport writes not enabled on MCP server');
+      if (!transportsEnabled) return skipTest(ctx, 'Transport writes not enabled on MCP server');
 
       let id = '';
       try {
@@ -270,7 +314,7 @@ describe('E2E SAPTransport Tests', () => {
     });
 
     it('release_recursive releases transport', async (ctx) => {
-      if (!transportsEnabled) return ctx.skip('Transport writes not enabled on MCP server');
+      if (!transportsEnabled) return skipTest(ctx, 'Transport writes not enabled on MCP server');
       requireOrSkip(ctx, transportReleaseTestsEnabled ? true : undefined, SkipReason.TRANSPORT_RELEASE_DISABLED);
 
       let id = '';
@@ -312,6 +356,11 @@ describe('E2E SAPTransport Tests', () => {
 
   describe('SAPWrite in transportable package (auto-corrNr)', () => {
     it('updates a program without explicit transport via lock corrNr propagation', async (ctx) => {
+      requireOrSkip(
+        ctx,
+        transportPackageWriteTestsEnabled ? true : undefined,
+        SkipReason.TRANSPORT_PACKAGE_WRITES_DISABLED,
+      );
       const pkg = process.env.TEST_TRANSPORT_PACKAGE;
       requireOrSkip(ctx, pkg, SkipReason.NO_TRANSPORT_PACKAGE);
 
@@ -342,6 +391,7 @@ describe('E2E SAPTransport Tests', () => {
         });
         expectToolSuccess(createResult);
         programCreated = true;
+        trackTransportableProgram(testName);
 
         // Step 3: Update WITHOUT explicit transport — should auto-use lock corrNr
         const updateResult = await callTool(client, 'SAPWrite', {
@@ -361,14 +411,10 @@ describe('E2E SAPTransport Tests', () => {
         expect(readText).toContain('auto-corrNr propagated');
       } finally {
         if (programCreated) {
-          const deleteProgramResult = await callTool(client, 'SAPWrite', {
-            action: 'delete',
-            type: 'PROG',
-            name: testName,
-            transport: transportId,
-          });
-          if (deleteProgramResult.isError) {
-            cleanupErrors.push(deleteProgramResult.content?.[0]?.text ?? `Failed to delete ${testName}`);
+          try {
+            await deleteTrackedTransportableProgram(testName);
+          } catch (err) {
+            cleanupErrors.push(err instanceof Error ? err.message : String(err));
           }
         }
 
@@ -404,7 +450,7 @@ describe('E2E SAPTransport Tests', () => {
       if (result.isError) {
         const text = result.content?.[0]?.text ?? '';
         if (text.includes('Unknown tool')) {
-          return ctx.skip('SAPTransport tool not available on MCP server');
+          return skipTest(ctx, 'SAPTransport tool not available on MCP server');
         }
         if (text.toLowerCase().includes('not found')) {
           requireOrSkip(
@@ -426,7 +472,7 @@ describe('E2E SAPTransport Tests', () => {
     it('returns an error when type or name is missing', async (ctx) => {
       const result = await callTool(client, 'SAPTransport', { action: 'history' });
       if (result.isError && (result.content?.[0]?.text ?? '').includes('Unknown tool')) {
-        return ctx.skip('SAPTransport tool not available on MCP server');
+        return skipTest(ctx, 'SAPTransport tool not available on MCP server');
       }
       expectToolError(result);
       const text = result.content?.[0]?.text ?? '';

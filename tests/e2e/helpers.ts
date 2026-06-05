@@ -12,6 +12,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { expect } from 'vitest';
+import { skipTest } from '../helpers/skip-policy.js';
 
 /** MCP tool call result shape */
 export interface ToolResult {
@@ -309,14 +310,15 @@ export function skipOnBatchCreateFailure(ctx: import('vitest').TaskContext, text
   if (!/✗/i.test(text)) return false;
   const match = text.match(/✗\s*—\s*([^\n]{0,160})/);
   const hint = match?.[1] ?? '';
-  ctx.skip(
+  skipTest(
+    ctx,
     `Backend feature not supported on this SAP system: batch_create aggregated inner-object failure (${hint.slice(0, 100)}…)`,
   );
   return true;
 }
 
 /**
- * Expect success, OR skip via `ctx.skip(reason)` if the error matches a known release
+ * Expect success, OR skip via `skipTest(ctx, reason)` if the error matches a known release
  * gap / backend quirk. Returns the text content on success.
  *
  * Usage:
@@ -326,8 +328,8 @@ export function skipOnBatchCreateFailure(ctx: import('vitest').TaskContext, text
 export function expectToolSuccessOrSkip(ctx: import('vitest').TaskContext, result: ToolResult): string {
   const skip = classifyToolErrorSkip(result);
   if (skip !== null) {
-    ctx.skip(skip);
-    // Unreachable — ctx.skip(reason) throws. Return empty to satisfy the type.
+    skipTest(ctx, skip);
+    // Unreachable — skipTest(ctx, reason) throws. Return empty to satisfy the type.
     return '';
   }
   return expectToolSuccess(result);

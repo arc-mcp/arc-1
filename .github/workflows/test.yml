@@ -179,7 +179,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: test-results-integration
-          path: test-results/integration.json
+          path: |
+            test-results/integration.json
+            test-results/integration-skips.ndjson
           retention-days: 7
           if-no-files-found: warn
 
@@ -267,7 +269,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: test-results-e2e
-          path: test-results/e2e.json
+          path: |
+            test-results/e2e.json
+            test-results/e2e-skips.ndjson
           retention-days: 7
           if-no-files-found: warn
 
@@ -331,6 +335,8 @@ jobs:
           find downloaded-test-results -name unit.json -print -quit | xargs -I{} cp {} test-results/unit.json || true
           find downloaded-test-results -name integration.json -print -quit | xargs -I{} cp {} test-results/integration.json || true
           find downloaded-test-results -name e2e.json -print -quit | xargs -I{} cp {} test-results/e2e.json || true
+          find downloaded-test-results -name integration-skips.ndjson -print -quit | xargs -I{} cp {} test-results/integration-skips.ndjson || true
+          find downloaded-test-results -name e2e-skips.ndjson -print -quit | xargs -I{} cp {} test-results/e2e-skips.ndjson || true
 
       - name: Collect reliability summary
         if: always()

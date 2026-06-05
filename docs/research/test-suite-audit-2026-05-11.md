@@ -1230,7 +1230,10 @@ Correctness implementation update (2026-06-05):
 
 - Item 6 is now covered more broadly than the original SKTD/activation-failure fix: the static guard rejects pseudo-skip markers, obsolete `skipIf`, reasonless `ctx.skip()`, and test-level `it.skip()` in integration/E2E/helper code.
 - The abapGit hard skips are now explicit opt-in tests, not permanent disabled tests.
-- Item 7 remains open.
+- Follow-up PR work on 2026-06-05 closes the remaining Item 7 ambiguity by adding `ZARC1_E2E_DUMP` to the managed persistent E2E fixture registry and removing ad hoc create/update ownership from `diagnostics.e2e.test.ts`.
+- The same follow-up moves runtime skip calls through `skipTest(ctx, reason)` so live integration/E2E skips emit `integration-skips.ndjson` / `e2e-skips.ndjson`, restoring the CI summary heading to actual `Top Skip Reasons`.
+- Transport cleanup is also tightened: integration transportable objects now use a parent-suite transport-aware registry before transport deletion, and E2E transportable PROG cleanup is retried by suite teardown before the draft-transport residue audit runs.
+- A package-enabled live recheck proved the transportable-package write tests still can leave locked CTS task entries after the ADT object endpoint reports the generated PROG as 404. The default suite now requires `TEST_TRANSPORT_PACKAGE_WRITE_TESTS=true` in addition to `TEST_TRANSPORT_PACKAGE` before running those manual/destructive write paths.
 
 ### Runtime Reduction
 
@@ -1300,13 +1303,14 @@ Implemented follow-ups:
 | P1 | Stabilized the cache warmup delta integration test by moving the strict second-run assertion from shared `$TMP` to stable `$DEMO_SOI_DRAFT`. | GitHub Actions Runtime Deep Dive |
 | P1 | Raised live integration hook timeout and added explicit slow-test timeouts for ATC worklist flows after PR CI exposed timeout-only failures. | GitHub Actions Runtime Deep Dive / PR-readiness validation |
 | P2 | Split cheap CI checks from the SAP title gate and moved SAP serialization to repository-wide integration/E2E job concurrency. | CI Gating And SAP Serialization |
+| P1 | Added structured skip artifacts, routed integration/E2E runtime skips through `skipTest()`, and updated reliability summaries to count real skip reasons when telemetry is present. | Skip Telemetry Semantics |
+| P1 | Declared `ZARC1_E2E_DUMP` as a managed persistent E2E fixture and removed diagnostics-test ad hoc writes to that object. | Diagnostics Fixture Ownership |
+| P1 | Added parent-suite transportable object cleanup/audit coverage before CTS transport residue checks in integration and E2E transport paths. | CTS Transport And Transportable Package Cleanup |
 
 Remaining follow-ups:
 
 | Priority | Follow-up | Source finding |
 |---|---|---|
-| P0 | Stop CTS transport leakage and add a cleanup audit. | CTS Transport And Transportable Package Cleanup |
-| P1 | Add structured skip artifacts and reason extraction now that the misleading heading has been corrected. | Skip Telemetry Semantics |
 | P1 | Further reduce PR-path live SAP runtime for remaining cache warmup scans, broad `BAPIRET2` where-used calls, recursive release coverage, and RAP write coverage. | GitHub Actions Runtime Deep Dive |
 
 ## Raw Suite Summary

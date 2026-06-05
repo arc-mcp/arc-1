@@ -10,15 +10,16 @@
  *
  * Transportable-package tests additionally require:
  *   - TEST_TRANSPORT_PACKAGE env var (e.g., Z_LLM_TEST_PACKAGE)
+ *   - TEST_TRANSPORT_PACKAGE_WRITE_TESTS=true for write paths (manual/destructive)
  *
  * Run: npm run test:integration -- tests/integration/transport.integration.test.ts
  * Run with transportable package:
- *   TEST_TRANSPORT_PACKAGE=Z_LLM_TEST_PACKAGE npm run test:integration -- tests/integration/transport.integration.test.ts
+ *   TEST_TRANSPORT_PACKAGE=Z_LLM_TEST_PACKAGE TEST_TRANSPORT_PACKAGE_WRITE_TESTS=true npm run test:integration -- tests/integration/transport.integration.test.ts
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AdtClient } from '../../src/adt/client.js';
-import { createObject, safeUpdateSource } from '../../src/adt/crud.js';
+import { createObject, deleteObject, lockObject, safeUpdateSource } from '../../src/adt/crud.js';
 import { AdtApiError } from '../../src/adt/errors.js';
 import { unrestrictedSafetyConfig } from '../../src/adt/safety.js';
 import {
@@ -34,11 +35,12 @@ import {
   releaseTransportRecursive,
 } from '../../src/adt/transport.js';
 import { expectSapFailureClass } from '../helpers/expected-error.js';
-import { requireOrSkip, SkipReason } from '../helpers/skip-policy.js';
-import { buildCreateXml, CrudRegistry, cleanupAll, generateUniqueName } from './crud-harness.js';
+import { requireOrSkip, SkipReason, skipTest } from '../helpers/skip-policy.js';
+import { buildCreateXml, generateUniqueName } from './crud-harness.js';
 import { requireSapCredentials } from './helpers.js';
 
 const transportReleaseTestsEnabled = process.env.TEST_TRANSPORT_RELEASE_TESTS === 'true';
+const transportPackageWriteTestsEnabled = process.env.TEST_TRANSPORT_PACKAGE_WRITE_TESTS === 'true';
 
 function isArc1TestTransport(description: string): boolean {
   return /^ARC-1 (IT|integration test)\b/.test(description);
@@ -81,11 +83,21 @@ function isUnsupportedBackend(err: unknown): boolean {
 describe('Transport Integration Tests', () => {
   let client: AdtClient;
   const createdTransportIds = new Set<string>();
+  const createdTransportableObjects: Array<{
+    objectUrl: string;
+    objectType: string;
+    name: string;
+    transportId: string;
+  }> = [];
   let initialArc1DraftTransportIds = new Set<string>();
 
   function trackTransport(id: string): string {
     createdTransportIds.add(id);
     return id;
+  }
+
+  function trackTransportableObject(objectUrl: string, objectType: string, name: string, transportId: string): void {
+    createdTransportableObjects.push({ objectUrl, objectType, name, transportId });
   }
 
   async function listArc1DraftTransportIds(): Promise<Set<string>> {
@@ -115,6 +127,50 @@ describe('Transport Integration Tests', () => {
     }
   }
 
+  async function deleteTrackedTransportableObject(entry: {
+    objectUrl: string;
+    objectType: string;
+    name: string;
+    transportId: string;
+  }): Promise<void> {
+    let deletedOrMissing = false;
+    try {
+      await client.http.withStatefulSession(async (session) => {
+        const lock = await lockObject(session, client.safety, entry.objectUrl);
+        await deleteObject(session, client.safety, entry.objectUrl, lock.lockHandle, lock.corrNr || entry.transportId);
+      });
+      deletedOrMissing = true;
+    } catch (err) {
+      if (err instanceof AdtApiError && err.isNotFound) {
+        deletedOrMissing = true;
+        return;
+      }
+      throw err;
+    } finally {
+      if (deletedOrMissing) {
+        const index = createdTransportableObjects.findIndex((object) => object.name === entry.name);
+        if (index >= 0) createdTransportableObjects.splice(index, 1);
+      }
+    }
+  }
+
+  async function cleanupTrackedTransportableObjects(): Promise<Array<{ id: string; error: string }>> {
+    const failures: Array<{ id: string; error: string }> = [];
+    for (const entry of [...createdTransportableObjects].reverse()) {
+      try {
+        await deleteTrackedTransportableObject(entry);
+      } catch (err) {
+        failures.push({
+          id: `${entry.objectType} ${entry.name}`,
+          error: `transportable object cleanup failed with ${entry.transportId}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        });
+      }
+    }
+    return failures;
+  }
+
   beforeAll(async () => {
     requireSapCredentials();
     client = getTransportEnabledClient();
@@ -125,6 +181,9 @@ describe('Transport Integration Tests', () => {
     if (!client) return;
 
     const failures: Array<{ id: string; error: string }> = [];
+
+    failures.push(...(await cleanupTrackedTransportableObjects()));
+
     for (const id of [...createdTransportIds].reverse()) {
       try {
         await deleteTrackedTransport(id);
@@ -412,7 +471,8 @@ describe('Transport Integration Tests', () => {
         // params, but S/4HANA needs the body — incompatible without
         // release-aware fallback. Tracked separately from PR #228.
         if (isUnsupportedBackend(err))
-          return ctx.skip(
+          return skipTest(
+            ctx,
             'NW 7.5x ADT_TM gap: reassign requires URL-query params on that release; needs release-aware fallback',
           );
         throw err;
@@ -455,7 +515,8 @@ describe('Transport Integration Tests', () => {
         // PUT variant — all rejected). Genuine NW 7.5x release-on-empty
         // limitation. Tracked separately from PR #228.
         if (isUnsupportedBackend(err))
-          return ctx.skip(
+          return skipTest(
+            ctx,
             'NW 7.5x ADT_TM gap: release endpoint rejects /newreleasejobs path segment; no client-side workaround',
           );
         throw err;
@@ -470,18 +531,12 @@ describe('Transport Integration Tests', () => {
   // ─── Transportable Package Write with corrNr Propagation ──────
 
   describe('transportable package write with auto-corrNr', () => {
-    const registry = new CrudRegistry();
-
-    afterAll(async () => {
-      if (!client) return;
-      const report = await cleanupAll(client.http, client.safety, registry);
-      if (report.failed.length > 0) {
-        console.error('Transport test cleanup failures:', report.failed);
-        throw new Error(`Transport object cleanup failed: ${JSON.stringify(report.failed)}`);
-      }
-    });
-
     it('update succeeds without explicit transport via lock corrNr propagation', async (ctx) => {
+      requireOrSkip(
+        ctx,
+        transportPackageWriteTestsEnabled ? true : undefined,
+        SkipReason.TRANSPORT_PACKAGE_WRITES_DISABLED,
+      );
       const pkg = process.env.TEST_TRANSPORT_PACKAGE;
       requireOrSkip(ctx, pkg, SkipReason.NO_TRANSPORT_PACKAGE);
 
@@ -505,7 +560,7 @@ describe('Transport Integration Tests', () => {
         'application/xml',
         transportId,
       );
-      registry.register(objectUrl, 'PROG', testName);
+      trackTransportableObject(objectUrl, 'PROG', testName, transportId);
 
       // Update WITHOUT explicit transport — should auto-use lock corrNr
       const newSource = `REPORT ${testName.toLowerCase()}.\nWRITE: / 'corrNr auto-propagated'.`;
@@ -517,6 +572,11 @@ describe('Transport Integration Tests', () => {
     }, 60_000);
 
     it('explicit transport overrides lock corrNr', async (ctx) => {
+      requireOrSkip(
+        ctx,
+        transportPackageWriteTestsEnabled ? true : undefined,
+        SkipReason.TRANSPORT_PACKAGE_WRITES_DISABLED,
+      );
       const pkg = process.env.TEST_TRANSPORT_PACKAGE;
       requireOrSkip(ctx, pkg, SkipReason.NO_TRANSPORT_PACKAGE);
 
@@ -539,7 +599,7 @@ describe('Transport Integration Tests', () => {
         'application/xml',
         transportId,
       );
-      registry.register(objectUrl, 'PROG', testName);
+      trackTransportableObject(objectUrl, 'PROG', testName, transportId);
 
       // Update WITH explicit transport — should use that, not lock corrNr
       const newSource = `REPORT ${testName.toLowerCase()}.\nWRITE: / 'explicit transport used'.`;

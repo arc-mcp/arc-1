@@ -14,6 +14,7 @@
 
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { skipTest } from '../helpers/skip-policy.js';
 import { callTool, connectClient, expectToolError, expectToolSuccess, expectToolSuccessOrSkip } from './helpers.js';
 
 /** Check if a custom object exists on the SAP system via SAPSearch */
@@ -58,7 +59,7 @@ describe('E2E SAPNavigate — Where-Used Analysis', () => {
 
   describe('Custom Z objects (known references)', () => {
     it('finds references to ZIF_ARC1_TEST — implemented by ZCL_ARC1_TEST', async (ctx) => {
-      if (!hasCustomObjects) return ctx.skip(CUSTOM_OBJECT_SKIP_REASON);
+      if (!hasCustomObjects) return skipTest(ctx, CUSTOM_OBJECT_SKIP_REASON);
       const result = await callTool(client, 'SAPNavigate', {
         action: 'references',
         type: 'INTF',
@@ -66,7 +67,8 @@ describe('E2E SAPNavigate — Where-Used Analysis', () => {
       });
       const text = expectToolSuccess(result);
       if (/^No references found\./i.test(text)) {
-        ctx.skip(
+        skipTest(
+          ctx,
           'Where-used index empty on this system (likely freshly-activated fixture, or SAP_BASIS level without usageReferences indexing)',
         );
         return;
@@ -80,7 +82,7 @@ describe('E2E SAPNavigate — Where-Used Analysis', () => {
     });
 
     it('finds references to ZCL_ARC1_TEST using type+name', async (ctx) => {
-      if (!hasCustomObjects) return ctx.skip(CUSTOM_OBJECT_SKIP_REASON);
+      if (!hasCustomObjects) return skipTest(ctx, CUSTOM_OBJECT_SKIP_REASON);
       const result = await callTool(client, 'SAPNavigate', {
         action: 'references',
         type: 'CLAS',
@@ -88,7 +90,7 @@ describe('E2E SAPNavigate — Where-Used Analysis', () => {
       });
       const text = expectToolSuccess(result);
       if (/^No references found\./i.test(text)) {
-        ctx.skip('Where-used index empty for ZCL_ARC1_TEST on this system');
+        skipTest(ctx, 'Where-used index empty for ZCL_ARC1_TEST on this system');
         return;
       }
       const refs = JSON.parse(text);
@@ -101,7 +103,7 @@ describe('E2E SAPNavigate — Where-Used Analysis', () => {
     });
 
     it('returns enriched fields (line, snippet, package) from scope-based API', async (ctx) => {
-      if (!hasCustomObjects) return ctx.skip(CUSTOM_OBJECT_SKIP_REASON);
+      if (!hasCustomObjects) return skipTest(ctx, CUSTOM_OBJECT_SKIP_REASON);
       const result = await callTool(client, 'SAPNavigate', {
         action: 'references',
         type: 'INTF',
@@ -109,7 +111,7 @@ describe('E2E SAPNavigate — Where-Used Analysis', () => {
       });
       const text = expectToolSuccess(result);
       if (/^No references found\./i.test(text)) {
-        ctx.skip('Where-used index empty for ZIF_ARC1_TEST on this system');
+        skipTest(ctx, 'Where-used index empty for ZIF_ARC1_TEST on this system');
         return;
       }
       const refs = JSON.parse(text);
@@ -129,7 +131,7 @@ describe('E2E SAPNavigate — Where-Used Analysis', () => {
     });
 
     it('finds definition of interface reference in class source', async (ctx) => {
-      if (!hasCustomObjects) return ctx.skip(CUSTOM_OBJECT_SKIP_REASON);
+      if (!hasCustomObjects) return skipTest(ctx, CUSTOM_OBJECT_SKIP_REASON);
       // ZCL_ARC1_TEST line 3: "INTERFACES zif_arc1_test."
       const result = await callTool(client, 'SAPNavigate', {
         action: 'definition',
@@ -146,7 +148,7 @@ describe('E2E SAPNavigate — Where-Used Analysis', () => {
         const errText = result.content?.[0]?.text ?? '';
         // Some SAP trial backends return 400 (I::000) for navigation/target on custom class offsets.
         if (/status 400/i.test(errText) && /navigation\/target/i.test(errText)) {
-          return ctx.skip('ADT definition API returned HTTP 400 for custom class source offset on this backend');
+          return skipTest(ctx, 'ADT definition API returned HTTP 400 for custom class source offset on this backend');
         }
       }
       const text = expectToolSuccess(result);

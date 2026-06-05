@@ -1,6 +1,7 @@
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import type { TaskContext } from 'vitest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { skipTest } from '../helpers/skip-policy.js';
 import { callTool, connectClient, expectToolError, expectToolSuccess, expectToolSuccessOrSkip } from './helpers.js';
 
 /**
@@ -19,23 +20,28 @@ function parseVersionsOrSkip(
 ): { object: { name: string }; revisions: Array<{ uri?: string }> } {
   // 1. Plain-text sentinels — the handler returns these before reaching SAP.
   if (/^No version/i.test(text) || /Version source endpoint unavailable/i.test(text)) {
-    ctx.skip(
+    skipTest(
+      ctx,
       `Required test fixture not found on SAP system (${fixtureName} revisions) — object has no version history or endpoint unavailable`,
     );
-    // Unreachable — ctx.skip(reason) throws. Return empty object only to satisfy the type.
+    // Unreachable — skipTest(ctx, reason) throws. Return empty object only to satisfy the type.
     return { object: { name: fixtureName }, revisions: [] };
   }
   let parsed: { object?: { name?: string }; revisions?: unknown };
   try {
     parsed = JSON.parse(text);
   } catch {
-    ctx.skip(
+    skipTest(
+      ctx,
       `Required test fixture not found on SAP system (${fixtureName} revisions) — VERSIONS returned non-JSON: ${text.slice(0, 80)}`,
     );
     return { object: { name: fixtureName }, revisions: [] };
   }
   if (!parsed || !Array.isArray(parsed.revisions) || parsed.revisions.length === 0) {
-    ctx.skip(`Required test fixture not found on SAP system (${fixtureName}) — no revisions recorded for this object`);
+    skipTest(
+      ctx,
+      `Required test fixture not found on SAP system (${fixtureName}) — no revisions recorded for this object`,
+    );
     return { object: { name: fixtureName }, revisions: [] };
   }
   return parsed as { object: { name: string }; revisions: Array<{ uri?: string }> };

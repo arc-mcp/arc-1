@@ -1,6 +1,6 @@
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { requireOrSkip, SkipReason } from '../helpers/skip-policy.js';
+import { requireOrSkip, SkipReason, skipTest } from '../helpers/skip-policy.js';
 import { callTool, connectClient, expectToolError, expectToolSuccess, type ToolResult } from './helpers.js';
 
 describe.sequential('E2E SAPGit tests', () => {
@@ -111,7 +111,8 @@ describe.sequential('E2E SAPGit tests', () => {
       expectToolError(result, 'allowGitWrites=false');
       return;
     }
-    ctx.skip(
+    skipTest(
+      ctx,
       'Server appears to run with --allow-git-writes=true; write safety gate is not expected in this environment',
     );
   }, 120_000);

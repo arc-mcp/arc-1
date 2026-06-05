@@ -11,6 +11,7 @@
 
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { skipTest } from '../helpers/skip-policy.js';
 import { callTool, connectClient, expectToolSuccess, expectToolSuccessOrSkip } from './helpers.js';
 
 function uniqueName(prefix: string): string {
@@ -53,7 +54,7 @@ async function seed(client: Client, ctx: import('vitest').TaskContext, className
   });
   if (create.isError) {
     const detail = create.content[0]?.text ?? 'no error detail returned';
-    ctx.skip(`Cannot seed transient class ${className}: ${detail.slice(0, 200)}`);
+    skipTest(ctx, `Cannot seed transient class ${className}: ${detail.slice(0, 200)}`);
     return false;
   }
   const write = await callTool(client, 'SAPWrite', {

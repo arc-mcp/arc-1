@@ -90,7 +90,7 @@ E2E_MCP_URL=http://$E2E_SERVER:3000/mcp npm run test:e2e:fixtures
 E2E_MCP_URL=http://$E2E_SERVER:3000/mcp npm run test:e2e:fixtures:clean
 ```
 
-**Skip behavior:** Navigate tests still have runtime `ctx.skip(reason)` guards as a fallback if custom objects are unavailable (for example, if fixture sync is bypassed). DDLS-dependent tests use `requireOrSkip()` from `tests/helpers/skip-policy.ts`. All skips appear as SKIPPED (not PASSED) in test reports.
+**Skip behavior:** Navigate tests still have runtime `skipTest(ctx, reason)` guards as a fallback if custom objects are unavailable (for example, if fixture sync is bypassed). DDLS-dependent tests use `requireOrSkip()` from `tests/helpers/skip-policy.ts`. All skips appear as SKIPPED (not PASSED) in test reports.
 
 ## Adding New Tests
 

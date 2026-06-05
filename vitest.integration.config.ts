@@ -2,6 +2,7 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
+    globalSetup: ['tests/helpers/skip-telemetry-setup.ts'],
     include: ['tests/integration/**/*.test.ts'],
     // SAP can be slow — allow 30s per test
     testTimeout: 30000,

@@ -9,6 +9,7 @@
 
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { skipTest } from '../helpers/skip-policy.js';
 import {
   callTool,
   classifyToolErrorSkip,
@@ -157,13 +158,14 @@ describe('E2E Smoke Tests', () => {
     } catch {
       // Some releases return a plain-text placeholder when transaction metadata
       // isn't available for standard transactions — skip rather than fail.
-      ctx.skip(
+      skipTest(
+        ctx,
         `Backend feature not supported on this SAP system: TRAN metadata read returned non-JSON (${text.slice(0, 80)})`,
       );
       return;
     }
     if (!tran.program || tran.program === '') {
-      ctx.skip('Backend feature not supported on this SAP system: TRAN metadata empty on this release');
+      skipTest(ctx, 'Backend feature not supported on this SAP system: TRAN metadata empty on this release');
       return;
     }
     expect(tran.code).toBe('SE38');
@@ -199,7 +201,8 @@ describe('E2E Smoke Tests', () => {
       // SAPQuery depends on /datapreview/freestyle, which is absent on some older releases.
       // The handler wraps the 404 into a "Table not found" message.
       if (/Table .* not found/i.test(text) || classifyToolErrorSkip(result) !== null) {
-        ctx.skip(
+        skipTest(
+          ctx,
           'Backend feature not supported on this SAP system: SAPQuery relies on /datapreview/freestyle, absent on this release',
         );
         return;
@@ -294,7 +297,7 @@ describe('E2E Smoke Tests', () => {
       // Known backend quirk on NW 7.50 trial — create+PUT hits 423 on the PUT step.
       const skipReason = classifyToolErrorSkip(result);
       if (skipReason !== null) {
-        ctx.skip(skipReason);
+        skipTest(ctx, skipReason);
         return;
       }
       throw new Error(`Unexpected SAPWrite create failure in write-policy smoke test: ${text}`);

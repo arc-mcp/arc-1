@@ -38,7 +38,7 @@ import {
 import { unrestrictedSafetyConfig } from '../../src/adt/safety.js';
 import { getServerDrivenObject, supportsServerDrivenObject } from '../../src/adt/server-driven.js';
 import { expectSapFailureClass } from '../helpers/expected-error.js';
-import { requireOrSkip, SkipReason } from '../helpers/skip-policy.js';
+import { requireOrSkip, SkipReason, skipTest } from '../helpers/skip-policy.js';
 import { getTestClient, requireSapCredentials } from './helpers.js';
 
 describe('ADT Integration Tests', () => {
@@ -1270,7 +1270,7 @@ describe('ADT Integration Tests', () => {
       it('gets dump detail if dumps exist', async (ctx) => {
         const dumps = await listDumps(client.http, unrestrictedSafetyConfig(), { maxResults: 1 });
         if (dumps.length === 0) {
-          ctx.skip(SkipReason.NO_DUMPS);
+          skipTest(ctx, SkipReason.NO_DUMPS);
           return;
         }
         const detail = await getDump(client.http, unrestrictedSafetyConfig(), dumps[0]!.id);
@@ -1340,7 +1340,7 @@ describe('ADT Integration Tests', () => {
         }
 
         if (!errors || errors.length === 0 || !errors[0]?.detailUrl) {
-          ctx.skip(`${SkipReason.NO_FIXTURE}: no gateway error detail URL available`);
+          skipTest(ctx, `${SkipReason.NO_FIXTURE}: no gateway error detail URL available`);
           return;
         }
 

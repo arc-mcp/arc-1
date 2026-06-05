@@ -8,10 +8,15 @@
  * Always exits 0 — reliability reporting must never block builds.
  */
 
-import { readFileSync, appendFileSync } from 'node:fs';
+import { appendFileSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const SUITES = ['unit', 'integration', 'e2e'];
+const SKIP_ARTIFACTS = {
+  unit: 'unit-skips.ndjson',
+  integration: 'integration-skips.ndjson',
+  e2e: 'e2e-skips.ndjson',
+};
 
 function parseArgs(argv) {
   const args = argv.slice(2);
@@ -52,6 +57,49 @@ export function parseSuiteResults(data) {
   return { counts, skipReasons };
 }
 
+export function parseSkipTelemetry(raw) {
+  const records = [];
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (typeof parsed.reason === 'string' && parsed.reason.length > 0) {
+        records.push(parsed);
+      }
+    } catch {
+      // Ignore malformed telemetry lines; reliability reporting is best-effort.
+    }
+  }
+  return records;
+}
+
+function loadSkipTelemetry(resultsDir, suite) {
+  const filename = SKIP_ARTIFACTS[suite];
+  if (!filename) return [];
+  try {
+    return parseSkipTelemetry(readFileSync(join(resultsDir, filename), 'utf-8'));
+  } catch {
+    return [];
+  }
+}
+
+function skipReasonsForSuite(jsonFallbackReasons, telemetryRecords) {
+  const telemetryReasons = telemetryRecords.map((record) => record.reason).filter(Boolean);
+  if (telemetryReasons.length >= jsonFallbackReasons.length) {
+    return jsonFallbackReasons.length > 0 ? telemetryReasons.slice(0, jsonFallbackReasons.length) : telemetryReasons;
+  }
+
+  const fallbackRemainder = jsonFallbackReasons
+    .slice(telemetryReasons.length)
+    .map((reason) => `Skipped test: ${reason}`);
+  return [...telemetryReasons, ...fallbackRemainder];
+}
+
+function escapeMarkdownCell(value) {
+  return String(value).replaceAll('\\', '\\\\').replaceAll('|', '\\|').replaceAll('\n', ' ');
+}
+
 export function generateSummary(suiteData) {
   const rows = [];
   const allSkipReasons = [];
@@ -85,11 +133,11 @@ export function generateSummary(suiteData) {
     }
     const sorted = [...reasonCounts.entries()].sort((a, b) => b[1] - a[1]);
 
-    lines.push('', '### Top Skipped Tests', '');
+    lines.push('', '### Top Skip Reasons', '');
     lines.push('| Reason | Count |');
     lines.push('|--------|-------|');
     for (const [reason, count] of sorted.slice(0, 20)) {
-      lines.push(`| ${reason} | ${count} |`);
+      lines.push(`| ${escapeMarkdownCell(reason)} | ${count} |`);
     }
   }
 
@@ -117,7 +165,12 @@ function main() {
     }
 
     const { counts, skipReasons } = parseSuiteResults(data);
-    suiteData.push({ name: suite, counts, skipReasons });
+    const skipTelemetry = loadSkipTelemetry(resultsDir, suite);
+    suiteData.push({
+      name: suite,
+      counts,
+      skipReasons: skipReasonsForSuite(skipReasons, skipTelemetry),
+    });
   }
 
   const summary = generateSummary(suiteData);

@@ -35,7 +35,7 @@ Older SAP versions or BTP ABAP may lack specific ADT endpoints.
 
 ```typescript
 it('reads profiler traces', async (ctx) => {
-  if (!profilerAvailable) return ctx.skip('Backend does not support profiler traces');
+  if (!profilerAvailable) return skipTest(ctx, 'Backend does not support profiler traces');
 });
 ```
 
@@ -45,7 +45,7 @@ E2E tests may require test objects (ZARC1_TEST_REPORT, ZCL_ARC1_TEST, etc.) that
 
 ```typescript
 it('finds references to ZIF_ARC1_TEST', async (ctx) => {
-  if (!hasCustomObjects) return ctx.skip('Required custom E2E objects were not deployed');
+  if (!hasCustomObjects) return skipTest(ctx, 'Required custom E2E objects were not deployed');
   // ...test logic...
 });
 ```
@@ -56,7 +56,7 @@ Some diagnostics tests check for short dumps or traces that may not exist on a c
 
 ```typescript
 it('lists short dump details', async (ctx) => {
-  if (dumps.length === 0) return ctx.skip('No dumps on system — nothing to verify');
+  if (dumps.length === 0) return skipTest(ctx, 'No dumps on system — nothing to verify');
   // ...test logic...
 });
 ```
@@ -117,13 +117,15 @@ it('extracts CDS entity name', async (ctx) => {
 });
 ```
 
-### For runtime decisions: ctx.skip
+### For runtime decisions: skipTest
 
-Use `ctx.skip('reason')` directly when the skip decision depends on runtime state that is not a simple null check.
+Use `skipTest(ctx, 'reason')` when the skip decision depends on runtime state that is not a simple null check. This records structured skip telemetry before delegating to Vitest's `ctx.skip`.
 
 ```typescript
+import { skipTest } from '../../helpers/skip-policy.js';
+
 it('verifies dump details', async (ctx) => {
-  if (dumps.length === 0) return ctx.skip('No dumps on system — nothing to verify');
+  if (dumps.length === 0) return skipTest(ctx, 'No dumps on system — nothing to verify');
   const detail = await client.getShortDumpDetail(dumps[0].id);
   expect(detail).toBeDefined();
 });
@@ -147,6 +149,7 @@ The shared helper at `tests/helpers/skip-policy.ts` exports these standard const
 | `NO_DDLS` | No DDLS object found on system | CDS/DDLS tests when no view is available |
 | `NO_DUMPS` | No short dumps found on system | Diagnostics tests on clean systems |
 | `NO_TRANSPORT_PACKAGE` | TEST_TRANSPORT_PACKAGE not configured (transportable package required) | Optional transport-package tests |
+| `TRANSPORT_PACKAGE_WRITES_DISABLED` | TEST_TRANSPORT_PACKAGE_WRITE_TESTS not enabled (transportable package writes can leave locked CTS tasks on shared SAP systems) | Manual transportable-package write tests |
 | `TRANSPORT_RELEASE_DISABLED` | TEST_TRANSPORT_RELEASE_TESTS not enabled (transport release is permanent on the shared SAP test system) | Permanent transport release paths |
 | `BACKEND_UNSUPPORTED` | Backend feature not supported on this SAP system | Release, product, or optional component lacks the tested endpoint |
 
@@ -157,20 +160,20 @@ Use these constants for consistency. Add new constants to the helper when a new 
 - Internal PRs and pushes to `main` run all test suites: unit, integration, and E2E.
 - External fork PRs skip integration and E2E jobs because repository secrets are not available to forks.
 - Tests that skip at runtime (missing fixtures, unsupported features) appear as SKIPPED in reports, not PASSED.
-- All skips are visible in CI output and telemetry, making it easy to detect when a system is missing expected prerequisites.
+- Runtime skips are recorded in `test-results/integration-skips.ndjson` and `test-results/e2e-skips.ndjson` so CI can summarize actual skip reasons, not just skipped test titles.
 
 ## Reference Patterns
 
 The canonical example of correct skip usage is `tests/e2e/navigate.e2e.test.ts`. It demonstrates:
 
 - A `hasCustomObjects` flag set in `beforeAll` via a lightweight probe
-- Individual tests calling `ctx.skip(reason)` when the flag is false
+- Individual tests calling `skipTest(ctx, reason)` when the flag is false
 - Tests that run when objects are present make real assertions (not just "defined" checks)
 
 ```typescript
 // From tests/e2e/navigate.e2e.test.ts
 it('finds references to ZIF_ARC1_TEST', async (ctx) => {
-  if (!hasCustomObjects) return ctx.skip('Required custom E2E objects were not deployed');
+  if (!hasCustomObjects) return skipTest(ctx, 'Required custom E2E objects were not deployed');
   const result = await callTool(client, 'SAPNavigate', { ... });
   const text = expectToolSuccess(result);
   const refs = JSON.parse(text);

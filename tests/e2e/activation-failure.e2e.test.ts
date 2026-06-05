@@ -21,6 +21,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { skipTest } from '../helpers/skip-policy.js';
 import { callTool, connectClient, expectToolError, expectToolSuccess } from './helpers.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -67,7 +68,7 @@ describe('E2E SAPActivate failure path (PR #179 regression)', () => {
         //     "is not locked (invalid lock handle)"). Distinct from the bug under test.
         //   - Server safety gates (read-only, package allowlist) blocking writes.
         if (/read-only|not allowed|package|forbidden/i.test(text) || /invalid lock handle|is not locked/i.test(text)) {
-          ctx.skip(`Create blocked by activation-failure precondition: ${text.slice(0, 200)}`);
+          skipTest(ctx, `Create blocked by activation-failure precondition: ${text.slice(0, 200)}`);
           return;
         }
         throw new Error(`Unexpected create failure: ${text.slice(0, 300)}`);
@@ -86,7 +87,7 @@ describe('E2E SAPActivate failure path (PR #179 regression)', () => {
       if (updateResult.isError) {
         const text = updateResult.content?.[0]?.text ?? '';
         if (/invalid lock handle|is not locked/i.test(text)) {
-          ctx.skip(`Update blocked by NW 7.50 lock-handle quirk: ${text.slice(0, 200)}`);
+          skipTest(ctx, `Update blocked by NW 7.50 lock-handle quirk: ${text.slice(0, 200)}`);
           return;
         }
         console.log(`    update warning (continuing): ${text.slice(0, 200)}`);

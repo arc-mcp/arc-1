@@ -4,19 +4,16 @@
  * Tests the full MCP stack for short dump analysis (ST22) and
  * ABAP profiler trace listing.
  *
- * Dump trigger strategy:
- *   We create and activate a small program that deliberately causes
- *   a MESSAGE_TYPE_X runtime error, then execute it via SAPQuery
- *   (which runs an ABAP SQL statement that fails). After triggering,
- *   we verify the dump appears in the listing and can be read back
- *   with full detail.
- *
- *   If triggering fails (e.g., the SAP user lacks execute permissions),
- *   we fall back to reading any existing dumps on the system.
+ * Dump fixture strategy:
+ *   ZARC1_E2E_DUMP is a managed persistent fixture. This suite verifies that
+ *   the fixture exists, then reads a matching historical dump when one is
+ *   present. MCP cannot execute ABAP reports, so the test falls back to any
+ *   available dump when no fixture-specific dump exists.
  */
 
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { skipTest } from '../helpers/skip-policy.js';
 import { callTool, connectClient, expectToolError, expectToolSuccess } from './helpers.js';
 
 describe('E2E Diagnostics Tests', () => {
@@ -70,7 +67,7 @@ describe('E2E Diagnostics Tests', () => {
       });
       const allDumps = JSON.parse(expectToolSuccess(allResult));
       if (allDumps.length === 0) {
-        ctx.skip('No dumps on system — cannot test user filter');
+        skipTest(ctx, 'No dumps on system — cannot test user filter');
         return;
       }
 
@@ -99,7 +96,7 @@ describe('E2E Diagnostics Tests', () => {
       });
       const dumps = JSON.parse(expectToolSuccess(listResult));
       if (dumps.length === 0) {
-        ctx.skip('No dumps on system — cannot test detail read');
+        skipTest(ctx, 'No dumps on system — cannot test detail read');
         return;
       }
 
@@ -140,78 +137,18 @@ describe('E2E Diagnostics Tests', () => {
       }
     });
 
-    it('triggers a fresh dump and reads it back', async (ctx) => {
-      // Strategy: create a report that causes a COMPUTE_INT_ZERODIVIDE dump,
-      // activate it, then check if it (or a previous run) produced dumps.
-      // If write steps all fail, skip rather than silently passing.
-
+    it('uses the managed dump fixture and reads dump detail', async (ctx) => {
       const dumpProgName = 'ZARC1_E2E_DUMP';
-      const dumpSource = [
-        `REPORT ${dumpProgName.toLowerCase()}.`,
-        '* Deliberate dump for ARC-1 E2E testing.',
-        '* DO NOT RUN MANUALLY — causes MESSAGE_TYPE_X dump.',
-        'DATA: lv_zero TYPE i VALUE 0.',
-        'DATA: lv_result TYPE i.',
-        'lv_result = 1 / lv_zero.',
-      ].join('\n');
 
-      let createOk = false;
-      let activateOk = false;
-
-      // Create the program
-      try {
-        const createResult = await callTool(client, 'SAPWrite', {
-          action: 'create',
-          type: 'PROG',
-          name: dumpProgName,
-          source: dumpSource,
-          package: '$TMP',
-        });
-        if (!createResult.isError) {
-          createOk = true;
-          console.log(`    Created ${dumpProgName}`);
-        }
-      } catch {
-        // best-effort-cleanup: create may fail if object already exists
-        console.log(`    ${dumpProgName} already exists or create failed — continuing`);
+      const fixtureReadResult = await callTool(client, 'SAPRead', { type: 'PROG', name: dumpProgName });
+      if (fixtureReadResult.isError) {
+        return skipTest(
+          ctx,
+          `Required test fixture not found on SAP system (${dumpProgName}) — run npm run test:e2e:fixtures first`,
+        );
       }
-
-      // Update source (in case it already existed with different code)
-      try {
-        const updateResult = await callTool(client, 'SAPWrite', {
-          action: 'update',
-          type: 'PROG',
-          name: dumpProgName,
-          source: dumpSource,
-        });
-        if (!updateResult.isError) {
-          createOk = true; // update success counts as having the program ready
-        }
-      } catch {
-        // best-effort-cleanup: update may fail if locked or missing permissions
-      }
-
-      // Activate
-      try {
-        const activateResult = await callTool(client, 'SAPActivate', {
-          name: dumpProgName,
-          type: 'PROG',
-        });
-        if (activateResult.isError) {
-          console.log(`    Activation warning: ${activateResult.content[0]?.text?.slice(0, 200)}`);
-        } else {
-          activateOk = true;
-          console.log(`    Activated ${dumpProgName}`);
-        }
-      } catch {
-        // best-effort-cleanup: activation may fail due to permissions
-        console.log(`    Activation failed — continuing`);
-      }
-
-      // Signal check: if all write steps failed, skip
-      if (!createOk && !activateOk) {
-        return ctx.skip('Could not create or activate dump-trigger program — write steps all failed');
-      }
+      const fixtureSource = expectToolSuccess(fixtureReadResult);
+      expect(fixtureSource).toContain('ARC-1 E2E diagnostics dump fixture');
 
       // Check for dumps from our test program
       const listResult = await callTool(client, 'SAPDiagnose', {
@@ -248,9 +185,10 @@ describe('E2E Diagnostics Tests', () => {
         const detail = JSON.parse(expectToolSuccess(detailResult));
         expect(Object.keys(detail.sections ?? {}).length).toBeGreaterThan(0);
       } else {
-        // Write steps succeeded but no dumps on system — program exists but
-        // wasn't executed (we can't execute programs via MCP).
-        return ctx.skip('Dump-trigger program ready but no dumps — cannot execute programs via MCP');
+        return skipTest(
+          ctx,
+          'Managed dump fixture exists but no dumps are available — MCP cannot execute ABAP reports',
+        );
       }
     });
   });
@@ -286,7 +224,7 @@ describe('E2E Diagnostics Tests', () => {
       if (result.isError) {
         const err = result.content?.[0]?.text ?? '';
         if (/not found|unsupported|not available|404/i.test(err)) {
-          return ctx.skip(`System messages endpoint unavailable on this system: ${err.slice(0, 200)}`);
+          return skipTest(ctx, `System messages endpoint unavailable on this system: ${err.slice(0, 200)}`);
         }
       }
 
@@ -303,7 +241,7 @@ describe('E2E Diagnostics Tests', () => {
       if (result.isError) {
         const err = result.content?.[0]?.text ?? '';
         if (/not available on BTP|not found|unsupported|404/i.test(err)) {
-          return ctx.skip(`Gateway error log unavailable on this system: ${err.slice(0, 200)}`);
+          return skipTest(ctx, `Gateway error log unavailable on this system: ${err.slice(0, 200)}`);
         }
       }
 
@@ -321,7 +259,8 @@ describe('E2E Diagnostics Tests', () => {
         name: 'ZCL_ARC1_TEST',
       });
       if (readResult.isError) {
-        return ctx.skip(
+        return skipTest(
+          ctx,
           `Fixture class ZCL_ARC1_TEST not readable: ${readResult.content?.[0]?.text ?? 'unknown error'}`,
         );
       }
@@ -339,7 +278,7 @@ describe('E2E Diagnostics Tests', () => {
       if (result.isError) {
         const err = result.content?.[0]?.text ?? '';
         if (/quickfix|404|406|not found|not acceptable/i.test(err)) {
-          return ctx.skip(`Quickfix endpoint unavailable on this system: ${err.slice(0, 200)}`);
+          return skipTest(ctx, `Quickfix endpoint unavailable on this system: ${err.slice(0, 200)}`);
         }
       }
 
@@ -365,7 +304,8 @@ describe('E2E Diagnostics Tests', () => {
         name: 'ZARC1_TEST_REPORT',
       });
       if (readResult.isError) {
-        return ctx.skip(
+        return skipTest(
+          ctx,
           `Fixture program ZARC1_TEST_REPORT not readable: ${readResult.content?.[0]?.text ?? 'unknown error'}`,
         );
       }
@@ -383,7 +323,7 @@ describe('E2E Diagnostics Tests', () => {
       if (result.isError) {
         const err = result.content?.[0]?.text ?? '';
         if (/quickfix|404|406|not found|not acceptable/i.test(err)) {
-          return ctx.skip(`Quickfix endpoint unavailable on this system: ${err.slice(0, 200)}`);
+          return skipTest(ctx, `Quickfix endpoint unavailable on this system: ${err.slice(0, 200)}`);
         }
       }
 
@@ -416,14 +356,14 @@ describe('E2E Diagnostics Tests', () => {
       });
 
       if (result.isError) {
-        return ctx.skip(`ATC not available on this system: ${result.content?.[0]?.text ?? 'unknown error'}`);
+        return skipTest(ctx, `ATC not available on this system: ${result.content?.[0]?.text ?? 'unknown error'}`);
       }
 
       const text = expectToolSuccess(result);
       const parsed = JSON.parse(text) as { findings?: Array<Record<string, unknown>> };
       const findings = Array.isArray(parsed.findings) ? parsed.findings : [];
       if (findings.length === 0) {
-        return ctx.skip('ATC returned no findings for ZARC1_TEST_REPORT — cannot verify quickfix metadata fields');
+        return skipTest(ctx, 'ATC returned no findings for ZARC1_TEST_REPORT — cannot verify quickfix metadata fields');
       }
 
       for (const finding of findings) {
@@ -444,7 +384,8 @@ describe('E2E Diagnostics Tests', () => {
       // New on ABAP Platform 2025 (8.16). On 7.5x / S/4HANA 2023 the handler returns a
       // discovery-gated "needs SAP_BASIS 8.16+" error — skip cleanly there.
       if (result.isError) {
-        return ctx.skip(
+        return skipTest(
+          ctx,
           `CDS test cases unavailable on this system: ${result.content?.[0]?.text?.slice(0, 200) ?? 'unknown error'}`,
         );
       }

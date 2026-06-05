@@ -1,6 +1,6 @@
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { requireOrSkip, SkipReason } from '../helpers/skip-policy.js';
+import { requireOrSkip, SkipReason, skipTest } from '../helpers/skip-policy.js';
 import { callTool, connectClient, expectToolError, expectToolSuccess, expectToolSuccessOrSkip } from './helpers.js';
 
 /**
@@ -54,7 +54,8 @@ describe('E2E CDS impact analysis', () => {
     // release), skip rather than fail on empty AST parse.
     const upstreamTables = impact.upstream.tables.map((item: { name: string }) => item.name);
     if (upstreamTables.length === 0) {
-      ctx.skip(
+      skipTest(
+        ctx,
         'Fixture ZI_ARC1_I33_ROOT has no upstream tables in its source — fixture sync likely produced a stub on this release',
       );
       return;
@@ -84,7 +85,8 @@ describe('E2E CDS impact analysis', () => {
 
     const upstreamViews = impact.upstream.views.map((item: { name: string }) => item.name);
     if (upstreamViews.length === 0) {
-      ctx.skip(
+      skipTest(
+        ctx,
         'Fixture ZI_ARC1_I33_PROJ has no upstream views in its source — fixture sync likely produced a stub on this release',
       );
       return;

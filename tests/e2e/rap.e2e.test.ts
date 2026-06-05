@@ -10,6 +10,7 @@
 
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { skipTest } from '../helpers/skip-policy.js';
 import { callTool, connectClient, expectToolError, expectToolSuccess, expectToolSuccessOrSkip } from './helpers.js';
 
 function parsePossiblyCachedJson(text: string): any {
@@ -44,7 +45,8 @@ describe('E2E RAP Completeness Tests', () => {
       // placeholder when the DDLX doesn't exist — which is the state on any
       // system that didn't ship the /DMO/ Flight Reference scenario.
       if (/No metadata extension \(DDLX\) found/i.test(text)) {
-        ctx.skip(
+        skipTest(
+          ctx,
           'Required test fixture not found on SAP system (/DMO/C_AGENCYTP DDLX) — S/4 Flight Reference Scenario',
         );
         return;
@@ -61,7 +63,8 @@ describe('E2E RAP Completeness Tests', () => {
       });
       const text = expectToolSuccessOrSkip(ctx, result);
       if (/No metadata extension \(DDLX\) found/i.test(text)) {
-        ctx.skip(
+        skipTest(
+          ctx,
           'Required test fixture not found on SAP system (/DMO/C_TRAVEL_A_D DDLX) — S/4 Flight Reference Scenario',
         );
         return;

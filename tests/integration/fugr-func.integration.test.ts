@@ -16,7 +16,7 @@ import { createObject, safeUpdateSource } from '../../src/adt/crud.js';
 import { activate } from '../../src/adt/devtools.js';
 import { AdtApiError } from '../../src/adt/errors.js';
 import { expectSapFailureClass } from '../helpers/expected-error.js';
-import { SkipReason } from '../helpers/skip-policy.js';
+import { SkipReason, skipTest } from '../helpers/skip-policy.js';
 import { CrudRegistry, cleanupAll, generateUniqueName } from './crud-harness.js';
 import { getTestClient, requireSapCredentials } from './helpers.js';
 
@@ -88,7 +88,7 @@ describe('FUGR + FUNC lifecycle', () => {
       } catch (err) {
         const skip = fmSkipReason(err);
         if (skip) {
-          ctx.skip(skip);
+          skipTest(ctx, skip);
           return;
         }
         throw err;
@@ -107,7 +107,7 @@ describe('FUGR + FUNC lifecycle', () => {
       } catch (err) {
         const skip = fmSkipReason(err);
         if (skip) {
-          ctx.skip(skip);
+          skipTest(ctx, skip);
           return;
         }
         throw err;
@@ -125,7 +125,7 @@ describe('FUGR + FUNC lifecycle', () => {
       } catch (err) {
         const skip = fmSkipReason(err);
         if (skip) {
-          ctx.skip(skip);
+          skipTest(ctx, skip);
           return;
         }
         throw err;
@@ -162,7 +162,7 @@ describe('FUGR + FUNC lifecycle', () => {
     } catch (err) {
       const skip = fmSkipReason(err);
       if (skip) {
-        ctx.skip(skip);
+        skipTest(ctx, skip);
         return;
       }
       // SAP returns HTTP 500 + ExceptionResourceCreationFailure: "Function group X does not exist"
@@ -189,7 +189,7 @@ describe('FUGR + FUNC lifecycle', () => {
     } catch (err) {
       const skip = fmSkipReason(err);
       if (skip) {
-        ctx.skip(skip);
+        skipTest(ctx, skip);
         return;
       }
       throw err;
@@ -207,7 +207,7 @@ describe('FUGR + FUNC lifecycle', () => {
     } catch (err) {
       const skip = fmSkipReason(err);
       if (skip) {
-        ctx.skip(skip);
+        skipTest(ctx, skip);
         return;
       }
       throw err;
@@ -234,7 +234,7 @@ describe('FUGR + FUNC lifecycle', () => {
     } catch (err) {
       const skip = fmSkipReason(err);
       if (skip) {
-        ctx.skip(skip);
+        skipTest(ctx, skip);
         return;
       }
       // FUNC_ADT028 = "Parameter comment blocks are not allowed"

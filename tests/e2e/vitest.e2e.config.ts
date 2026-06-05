@@ -2,7 +2,7 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    globalSetup: ['tests/e2e/global-setup.ts'],
+    globalSetup: ['tests/helpers/skip-telemetry-setup.ts', 'tests/e2e/global-setup.ts'],
     include: ['tests/e2e/**/*.e2e.test.ts'],
     // SAP can be slow — allow 120s per test (BAPIRET2 where-used, DDLX reads, dump triggers)
     testTimeout: 120_000,

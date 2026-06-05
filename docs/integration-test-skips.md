@@ -10,13 +10,13 @@ Runtime summaries per category are available via:
 
 Both use [scripts/ci/summarize-skips.mjs](../scripts/ci/summarize-skips.mjs) with the same taxonomy.
 
-> **Note on counts:** the summary tool parses per-test `↓` lines, which vitest emits for tests skipped via `ctx.skip()` / `requireOrSkip()`. **File- or describe-level skips** — like the whole BTP ABAP suite skipping when `TEST_BTP_SERVICE_KEY_FILE` isn't set, or the gCTS suite when the backend doesn't have gCTS — are rolled up in the `Test Files … skipped` summary line instead. The summary tool reads both and reports the delta; see the "Note:" line at the end of its output if your run shows more total skipped tests than per-test `↓` lines.
+> **Note on counts:** the summary tool parses per-test `↓` lines, which vitest emits for tests skipped via `skipTest()` / `requireOrSkip()` (both delegate to `ctx.skip()`). **File- or describe-level skips** — like the whole BTP ABAP suite skipping when `TEST_BTP_SERVICE_KEY_FILE` isn't set, or the gCTS suite when the backend doesn't have gCTS — are rolled up in the `Test Files … skipped` summary line instead. The summary tool reads both and reports the delta; see the "Note:" line at the end of its output if your run shows more total skipped tests than per-test `↓` lines.
 
 ## How to read this
 
 - **Typical on** — systems where this skip is routine; seeing it is healthy, not a bug.
 - **Should NOT skip on** — if this skip fires on a listed system, that's a regression signal; investigate.
-- **Skip message pattern** — what you grep for in test output. All skips emit `ctx.skip("<message>")` which vitest prints as `↓ <test> [<message>]`.
+- **Skip message pattern** — what you grep for in test output. All runtime skips go through `skipTest(ctx, "<message>")` or `requireOrSkip()`, then Vitest prints them as `↓ <test> [<message>]`.
 
 ## Skip reason constants
 
@@ -29,6 +29,7 @@ The base codes live in [tests/helpers/skip-policy.ts](../tests/helpers/skip-poli
 | `NO_DDLS` | Walks the catalog looking for *any* readable DDLS, finds none |
 | `NO_DUMPS` | ST22 shows no short dumps on this system |
 | `NO_TRANSPORT_PACKAGE` | `TEST_TRANSPORT_PACKAGE` env var not set |
+| `TRANSPORT_PACKAGE_WRITES_DISABLED` | `TEST_TRANSPORT_PACKAGE_WRITE_TESTS=true` not set |
 | `BACKEND_UNSUPPORTED` | Feature genuinely not available on this SAP release |
 
 Tests typically suffix these with a specific clause explaining *which* fixture or feature, e.g. `NO_FIXTURE (/DMO/CL_FLIGHT_LEGACY) — S/4 demo content`.
@@ -119,7 +120,8 @@ On **SAP_BASIS < 7.51** the ADT REST handler `CL_REST_HTTP_HANDLER` does not hon
 | Skip message fragment | Affected tests | Typical cause |
 |---|---|---|
 | `SAP credentials not configured` | Every integration test | `TEST_SAP_URL` / `TEST_SAP_USER` / `TEST_SAP_PASSWORD` not set |
-| `TEST_TRANSPORT_PACKAGE not configured` | transport-scoped CRUD (~3 tests) | Opt-in: set `TEST_TRANSPORT_PACKAGE=Z_LLM_TEST_PACKAGE` to enable |
+| `TEST_TRANSPORT_PACKAGE not configured` | transport-scoped CRUD (~3 tests) | Opt-in: set `TEST_TRANSPORT_PACKAGE=Z_LLM_TEST_PACKAGE`; write paths additionally require `TEST_TRANSPORT_PACKAGE_WRITE_TESTS=true` |
+| `TEST_TRANSPORT_PACKAGE_WRITE_TESTS not enabled` | transportable-package write cleanup can leave locked CTS tasks | Expected on shared SAP systems unless running a manual destructive cleanup experiment |
 | `NO_FIXTURE (RSHOWTIM)` | search by pattern (1 test) | RSHOWTIM report not on this system |
 
 **When to investigate:** Credentials skipping everything is the expected state on a machine without SAP access. Everything else is a deliberate opt-in.
