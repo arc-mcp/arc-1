@@ -2224,12 +2224,12 @@ describe('ADT Integration Tests', () => {
         // caused by reading the position-less catalog uri).
         if (f.uri.includes('#start=')) expect(f.line).toBeGreaterThanOrEqual(0);
       }
-    });
+    }, 90000);
 
     it('completes the flow with the system default variant (no variant passed)', async () => {
       const result = await runAtcCheck(client.http, unrestrictedSafetyConfig(), KERNEL_CLASS_URL);
       expect(Array.isArray(result.findings)).toBe(true);
-    });
+    }, 90000);
   });
 
   // ─── getFunctionGroup (objectstructure-based, non-expand FUGR read) ───

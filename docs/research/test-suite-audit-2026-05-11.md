@@ -1207,6 +1207,13 @@ Additional PR-readiness finding:
 - A later final-check run (`26536051732`) exposed a brittle live-SAP assumption in `tests/integration/cache.integration.test.ts`: the "second warmup run skips unchanged objects" test used `$TMP`, and `$TMP` changed from `204` to `205` objects between the two warmup passes. The second pass correctly fetched the new object, but the test expected `0` fetched objects and failed.
 - This PR now moves that delta-by-hash assertion to the stable S/4 demo package `$DEMO_SOI_DRAFT`, which is already the package used by the cache reverse-dependency tests. That preserves the hash-skip contract while avoiding transient `$TMP` churn and reduces this specific check from a roughly `205` object scan to the `9` object demo package on the S4 test system.
 
+Current PR-readiness finding (2026-06-05):
+
+- PR `#353` CI run `27005945968` first had a zero-step `integration` cancellation caused by the shared SAP concurrency lane; rerunning only that job exposed two real timeout sensitivities rather than assertion failures.
+- `tests/integration/transport.integration.test.ts` timed out in suite hooks after the Vitest default `10s` hook budget while listing/checking CTS state. The suite intentionally probes and cleans live transport requests, so hook timeout must be aligned with live-SAP latency.
+- `tests/integration/adt.integration.test.ts` timed out the explicit ATC check-variant flow at the integration default `30s` test budget. ATC worklist/run/result retrieval is a live backend operation with variable latency and should use an explicit slow-test timeout.
+- This PR now sets `hookTimeout: 60000` in `vitest.integration.config.ts` and gives both live ATC flow tests explicit `90000` timeouts. A focused local S/4 run of `transport.integration.test.ts` plus the `runAtcCheck` tests passed after the change.
+
 ### Correctness Blockers
 
 These should be fixed before runtime optimization because they determine whether green integration/E2E runs are meaningful.
@@ -1290,6 +1297,7 @@ Implemented follow-ups:
 | P1 | Converted SKTD and activation-failure pseudo-skips to real `ctx.skip()`/`requireOrSkip()` paths and added a static guard against `[SKIP]` pseudo-skip markers. | Pseudo-Skip Discipline |
 | P1 | Converted abapGit stage/pull hard skips to opt-in runtime skips, added explicit reasons to remaining backend-gap skip branches, and extended the static guard to reject reasonless `ctx.skip()` and test-level `it.skip()`. | Pseudo-Skip Discipline / Some Tests Are Weak Or Outdated |
 | P1 | Stabilized the cache warmup delta integration test by moving the strict second-run assertion from shared `$TMP` to stable `$DEMO_SOI_DRAFT`. | GitHub Actions Runtime Deep Dive |
+| P1 | Raised live integration hook timeout and added explicit slow-test timeouts for ATC worklist flows after PR CI exposed timeout-only failures. | GitHub Actions Runtime Deep Dive / PR-readiness validation |
 | P2 | Split cheap CI checks from the SAP title gate and moved SAP serialization to repository-wide integration/E2E job concurrency. | CI Gating And SAP Serialization |
 
 Remaining follow-ups:
