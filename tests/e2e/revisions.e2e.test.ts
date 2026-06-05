@@ -22,7 +22,7 @@ function parseVersionsOrSkip(
     ctx.skip(
       `Required test fixture not found on SAP system (${fixtureName} revisions) — object has no version history or endpoint unavailable`,
     );
-    // Unreachable — ctx.skip() throws. Return empty object only to satisfy the type.
+    // Unreachable — ctx.skip(reason) throws. Return empty object only to satisfy the type.
     return { object: { name: fixtureName }, revisions: [] };
   }
   let parsed: { object?: { name?: string }; revisions?: unknown };

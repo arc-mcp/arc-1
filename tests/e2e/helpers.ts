@@ -316,7 +316,7 @@ export function skipOnBatchCreateFailure(ctx: import('vitest').TaskContext, text
 }
 
 /**
- * Expect success, OR skip via `ctx.skip()` if the error matches a known release
+ * Expect success, OR skip via `ctx.skip(reason)` if the error matches a known release
  * gap / backend quirk. Returns the text content on success.
  *
  * Usage:
@@ -327,7 +327,7 @@ export function expectToolSuccessOrSkip(ctx: import('vitest').TaskContext, resul
   const skip = classifyToolErrorSkip(result);
   if (skip !== null) {
     ctx.skip(skip);
-    // Unreachable — ctx.skip() throws. Return empty to satisfy the type.
+    // Unreachable — ctx.skip(reason) throws. Return empty to satisfy the type.
     return '';
   }
   return expectToolSuccess(result);

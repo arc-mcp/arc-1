@@ -16,6 +16,11 @@ import { expectSapFailureClass } from '../helpers/expected-error.js';
 import { requireOrSkip, SkipReason } from '../helpers/skip-policy.js';
 import { getTestClient, requireSapCredentials } from './helpers.js';
 
+const ABAPGIT_REMOTE_TESTS_DISABLED =
+  'TEST_ABAPGIT_REMOTE_TESTS not enabled (abapGit stage/pull requires remote reachability and STRUST trust chain)';
+const abapGitRemoteTestsEnabled = process.env.TEST_ABAPGIT_REMOTE_TESTS === 'true';
+const abapGitPullRepoKey = process.env.TEST_ABAPGIT_PULL_REPO_KEY;
+
 describe('abapGit ADT bridge integration', () => {
   let client: AdtClient;
   let abapGitAvailable: boolean | undefined;
@@ -92,12 +97,28 @@ describe('abapGit ADT bridge integration', () => {
     ]);
   });
 
-  it.skip('stageRepo requires remote reachability and proper STRUST certificates', async () => {
+  it('stageRepo can stage a linked repo when remote trust is explicitly enabled', async (ctx) => {
+    requireOrSkip(ctx, abapGitAvailable ? true : undefined, SkipReason.BACKEND_UNSUPPORTED);
+    if (!abapGitRemoteTestsEnabled) {
+      ctx.skip(ABAPGIT_REMOTE_TESTS_DISABLED);
+      return;
+    }
     const repos = await listRepos(client.http, client.safety);
-    if (repos[0]) await stageRepo(client.http, client.safety, repos[0]);
+    requireOrSkip(ctx, repos[0], `${SkipReason.NO_FIXTURE}: linked abapGit repo required for stageRepo`);
+    await stageRepo(client.http, client.safety, repos[0]);
   });
 
-  it.skip('pullRepo may hang without remote trust chain in STRUST', async () => {
-    await pullRepo(client.http, client.safety, '000000000001');
+  it('pullRepo can pull a configured repo when remote trust is explicitly enabled', async (ctx) => {
+    requireOrSkip(ctx, abapGitAvailable ? true : undefined, SkipReason.BACKEND_UNSUPPORTED);
+    if (!abapGitRemoteTestsEnabled) {
+      ctx.skip(ABAPGIT_REMOTE_TESTS_DISABLED);
+      return;
+    }
+    requireOrSkip(
+      ctx,
+      abapGitPullRepoKey,
+      'TEST_ABAPGIT_PULL_REPO_KEY not configured (pullRepo needs an explicit linked repository key)',
+    );
+    await pullRepo(client.http, client.safety, abapGitPullRepoKey);
   });
 });

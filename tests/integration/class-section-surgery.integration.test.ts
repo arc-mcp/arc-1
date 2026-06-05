@@ -13,10 +13,11 @@
  * Note 2727890 — pre-existing, not specific to this feature).
  */
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, type TaskContext } from 'vitest';
 import { handleToolCall } from '../../src/handlers/intent.js';
 import { DEFAULT_CONFIG } from '../../src/server/types.js';
 import { expectSapFailureClass } from '../helpers/expected-error.js';
+import { SkipReason } from '../helpers/skip-policy.js';
 import { generateUniqueName } from './crud-harness.js';
 import { getTestClient, requireSapCredentials } from './helpers.js';
 
@@ -26,6 +27,7 @@ describe('class-section surgery — live (issue #303)', () => {
   let client: ReturnType<typeof getTestClient>;
   const className = generateUniqueName('ZCL_ARC1_CSURG');
   let seeded = false;
+  let seedSkipReason: string | undefined;
 
   beforeAll(async () => {
     requireSapCredentials();
@@ -92,6 +94,7 @@ ENDCLASS.`;
       // the suite reports the cause rather than just timing out.
       try {
         expectSapFailureClass(err, [423], [/invalid lock handle/i]);
+        seedSkipReason = `${SkipReason.BACKEND_UNSUPPORTED}: cannot seed ${className} because this backend returned the known invalid lock-handle 423 during class create/update/activate setup`;
       } catch {
         // Different failure — surface it as test setup error.
         throw err;
@@ -112,11 +115,14 @@ ENDCLASS.`;
     }
   });
 
+  function requireSeeded(ctx: TaskContext): boolean {
+    if (seeded) return true;
+    ctx.skip(seedSkipReason ?? `${SkipReason.NO_FIXTURE}: transient class ${className} was not seeded`);
+    return false;
+  }
+
   it('edit_class_definition: drop FINAL (no method-set change)', async (ctx) => {
-    if (!seeded) {
-      ctx.skip();
-      return;
-    }
+    if (!requireSeeded(ctx)) return;
     const newDef = `CLASS ${className.toLowerCase()} DEFINITION PUBLIC CREATE PUBLIC.
   PUBLIC SECTION.
     METHODS hello
@@ -142,10 +148,7 @@ ENDCLASS.`;
   });
 
   it('edit_class_definition: refuses added method without IMPL stub', async (ctx) => {
-    if (!seeded) {
-      ctx.skip();
-      return;
-    }
+    if (!requireSeeded(ctx)) return;
     const badDef = `CLASS ${className.toLowerCase()} DEFINITION PUBLIC CREATE PUBLIC.
   PUBLIC SECTION.
     METHODS hello
@@ -170,10 +173,7 @@ ENDCLASS.`;
   });
 
   it('add_method: inserts METHOD + stub atomically and activates', async (ctx) => {
-    if (!seeded) {
-      ctx.skip();
-      return;
-    }
+    if (!requireSeeded(ctx)) return;
     const result = await handleToolCall(client, cfg, 'SAPWrite', {
       action: 'add_method',
       type: 'CLAS',
@@ -191,10 +191,7 @@ ENDCLASS.`;
   });
 
   it('edit_method_signature: appends DEFAULT param and re-activates', async (ctx) => {
-    if (!seeded) {
-      ctx.skip();
-      return;
-    }
+    if (!requireSeeded(ctx)) return;
     const newSig = `    METHODS greet
       IMPORTING who TYPE string
                 greeting TYPE string DEFAULT 'Hi'
@@ -215,10 +212,7 @@ ENDCLASS.`;
   });
 
   it('delete_method: removes DEFINITION + IMPLEMENTATION ranges atomically', async (ctx) => {
-    if (!seeded) {
-      ctx.skip();
-      return;
-    }
+    if (!requireSeeded(ctx)) return;
     const result = await handleToolCall(client, cfg, 'SAPWrite', {
       action: 'delete_method',
       type: 'CLAS',
@@ -247,10 +241,7 @@ ENDCLASS.`;
   });
 
   it('change_method_visibility: moves a method between sections, preserving the body', async (ctx) => {
-    if (!seeded) {
-      ctx.skip();
-      return;
-    }
+    if (!requireSeeded(ctx)) return;
     // The seeded `hello` is public and has a real body (`result = |Hello, { name }!|.`).
     // Move it to PRIVATE — the body must survive (this is the safe alternative to
     // delete_method + add_method, which would wipe it).
@@ -283,10 +274,7 @@ ENDCLASS.`;
   });
 
   it('change_method_visibility: idempotent no-op when already in the target section', async (ctx) => {
-    if (!seeded) {
-      ctx.skip();
-      return;
-    }
+    if (!requireSeeded(ctx)) return;
     // goodbye is still public; asking for public must be a no-op (no write).
     const result = await handleToolCall(client, cfg, 'SAPWrite', {
       action: 'change_method_visibility',

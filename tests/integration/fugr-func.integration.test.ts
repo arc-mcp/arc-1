@@ -88,7 +88,7 @@ describe('FUGR + FUNC lifecycle', () => {
       } catch (err) {
         const skip = fmSkipReason(err);
         if (skip) {
-          ctx.skip();
+          ctx.skip(skip);
           return;
         }
         throw err;
@@ -107,7 +107,7 @@ describe('FUGR + FUNC lifecycle', () => {
       } catch (err) {
         const skip = fmSkipReason(err);
         if (skip) {
-          ctx.skip();
+          ctx.skip(skip);
           return;
         }
         throw err;
@@ -125,7 +125,7 @@ describe('FUGR + FUNC lifecycle', () => {
       } catch (err) {
         const skip = fmSkipReason(err);
         if (skip) {
-          ctx.skip();
+          ctx.skip(skip);
           return;
         }
         throw err;
@@ -162,7 +162,7 @@ describe('FUGR + FUNC lifecycle', () => {
     } catch (err) {
       const skip = fmSkipReason(err);
       if (skip) {
-        ctx.skip();
+        ctx.skip(skip);
         return;
       }
       // SAP returns HTTP 500 + ExceptionResourceCreationFailure: "Function group X does not exist"
@@ -189,7 +189,7 @@ describe('FUGR + FUNC lifecycle', () => {
     } catch (err) {
       const skip = fmSkipReason(err);
       if (skip) {
-        ctx.skip();
+        ctx.skip(skip);
         return;
       }
       throw err;
@@ -207,7 +207,7 @@ describe('FUGR + FUNC lifecycle', () => {
     } catch (err) {
       const skip = fmSkipReason(err);
       if (skip) {
-        ctx.skip();
+        ctx.skip(skip);
         return;
       }
       throw err;
@@ -234,7 +234,7 @@ describe('FUGR + FUNC lifecycle', () => {
     } catch (err) {
       const skip = fmSkipReason(err);
       if (skip) {
-        ctx.skip();
+        ctx.skip(skip);
         return;
       }
       // FUNC_ADT028 = "Parameter comment blocks are not allowed"
