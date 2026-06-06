@@ -190,6 +190,12 @@ Several SAPRead types return a human-readable placeholder (not an MCP error) whe
 
 Anything over ~5 non-transient skips on S/4HANA is a regression signal — most likely a broken fixture sync or an unintended breaking change to a SAPRead handler output. Transient Cat 3 lock/unlock skips should be tracked separately; they indicate SAP ADT routing instability, not missing fixture coverage.
 
+### Manual slow workflow monitoring
+
+`.github/workflows/sap-slow-tests.yml` runs the slow live SAP profiles on demand through the GitHub Actions **SAP Slow Tests** workflow. It uses the same A4H 2025 `TEST_SAP_*` target as the default Test workflow and keeps recursive transport release disabled unless the operator explicitly sets `enable_transport_release_tests=true`.
+
+Use the manual slow workflow to sample expensive coverage that is intentionally outside the PR path: cache warmup, broad where-used scans, RAP full-stack writes, and recursive transport release guards. Compare its skip summary with the default workflow summary. If Cat 3 ADT lock/unlock routing skips climb persistently across both workflows, investigate SAP-side ADT routing/session stability before changing ARC-1 test assertions.
+
 ## Adding a new skip
 
 When a test needs a new skip condition, keep it categorizable:
