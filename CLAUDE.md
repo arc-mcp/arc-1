@@ -40,8 +40,10 @@ npm run format                  # Format (biome format --write)
 npm run dev                     # Dev mode (stdio)
 npm run dev:http                # Dev mode (HTTP Streamable)
 npm run test:integration        # Integration tests (needs SAP credentials)
+npm run test:integration:slow   # Slow integration profile (explicit/manual)
 npm run test:integration:crud   # CRUD lifecycle tests (needs SAP credentials)
 npm run test:e2e                # E2E tests (syncs fixtures first, needs running MCP server)
+npm run test:e2e:slow           # Slow E2E profile (syncs fixtures first, explicit/manual)
 # BTP tests (local only — needs service key + browser login):
 TEST_BTP_SERVICE_KEY_FILE=~/.config/arc-1/btp-abap-service-key.json npm run test:integration:btp
 TEST_BTP_SERVICE_KEY_FILE=~/.config/arc-1/btp-abap-service-key.json npm run test:integration:btp:smoke
@@ -377,10 +379,12 @@ Every code change requires tests. See `docs/testing-skip-policy.md` for the full
 |-------|---------|--------------|--------|
 | Unit | `npm test` | No | `vitest.config.ts` |
 | Integration | `npm run test:integration` | Yes (`TEST_SAP_URL`) | `vitest.integration.config.ts` |
+| Slow Integration | `npm run test:integration:slow` | Yes (`TEST_SAP_URL`) | `vitest.integration.slow.config.ts` |
 | CRUD Lifecycle | `npm run test:integration:crud` | Yes (`TEST_SAP_URL`) | same |
 | BTP Smoke | `npm run test:integration:btp:smoke` | Yes (`TEST_BTP_SERVICE_KEY_FILE`) | same |
 | BTP Integration | `npm run test:integration:btp` | Yes (local only, interactive) | same |
 | E2E | `npm run test:e2e` | Yes (MCP server running) | `tests/e2e/vitest.e2e.config.ts` |
+| Slow E2E | `npm run test:e2e:slow` | Yes (MCP server running) | `tests/e2e/vitest.e2e.slow.config.ts` |
 
 ### Fixtures + helpers
 

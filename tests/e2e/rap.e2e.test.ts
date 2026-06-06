@@ -14,7 +14,7 @@ import { skipTest } from '../helpers/skip-policy.js';
 import { callTool, connectClient, expectToolError, expectToolSuccess, expectToolSuccessOrSkip } from './helpers.js';
 
 function parsePossiblyCachedJson(text: string): any {
-  return JSON.parse(text.replace(/^\[cached\]\n/, ''));
+  return JSON.parse(text.replace(/^\[cached(?::revalidated)?\]\n/, ''));
 }
 
 describe('E2E RAP Completeness Tests', () => {

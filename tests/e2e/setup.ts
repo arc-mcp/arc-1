@@ -88,7 +88,7 @@ export async function syncPersistentFixtures(client: Client): Promise<FixtureSyn
   for (const obj of PERSISTENT_OBJECTS) {
     const label = `${obj.type} ${obj.name}`;
     const expectedType = obj.type.toUpperCase();
-    const desiredSource = normalizeSource(readFixture(obj.fixture));
+    const desiredSource = normalizeSource(readFixture(obj.fixture), obj.type);
     const existingTypes = await findExistingObjectTypes(client, obj.name);
     const hasExpectedType = existingTypes.includes(expectedType);
 
@@ -111,7 +111,7 @@ export async function syncPersistentFixtures(client: Client): Promise<FixtureSyn
     let needsRecreate = !hasExpectedType;
     if (hasExpectedType) {
       const liveSource = await readObjectSource(client, obj.type, obj.name);
-      if (normalizeSource(liveSource) !== desiredSource) {
+      if (normalizeSource(liveSource, obj.type) !== desiredSource) {
         needsRecreate = true;
         console.log(`    [setup] ${label}: fixture drift detected -> delete + recreate`);
       }
@@ -386,11 +386,22 @@ function toolText(result: ToolResult): string {
 }
 
 function stripCachedPrefix(text: string): string {
-  return text.replace(/^\[cached\]\n/, '');
+  return text.replace(/^\[cached(?::revalidated)?\]\n/, '');
 }
 
-function normalizeSource(source: string): string {
-  return stripCachedPrefix(source).replace(/\r\n/g, '\n').trimEnd();
+function normalizeSource(source: string, type?: string): string {
+  const normalized = stripCachedPrefix(source).replace(/\r\n/g, '\n').trimEnd();
+
+  if (type?.toUpperCase() !== 'TABL') {
+    return normalized;
+  }
+
+  return normalized
+    .replace(/^define table\s+([^\s{]+)\s*\{/gim, (_match, name: string) => `define table ${name.toUpperCase()} {`)
+    .split('\n')
+    .map((line) => line.trimEnd().replace(/\s+:/g, ' :'))
+    .filter((line) => line.trim().length > 0)
+    .join('\n');
 }
 
 function getString(input: object, key: string): string | null {

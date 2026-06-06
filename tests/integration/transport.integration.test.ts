@@ -13,6 +13,8 @@
  *   - TEST_TRANSPORT_PACKAGE_WRITE_TESTS=true for write paths (manual/destructive)
  *
  * Run: npm run test:integration -- tests/integration/transport.integration.test.ts
+ * Slow recursive release coverage:
+ *   TEST_TRANSPORT_RELEASE_TESTS=true npm run test:integration:slow -- tests/integration/transport-release.slow.integration.test.ts
  * Run with transportable package:
  *   TEST_TRANSPORT_PACKAGE=Z_LLM_TEST_PACKAGE TEST_TRANSPORT_PACKAGE_WRITE_TESTS=true npm run test:integration -- tests/integration/transport.integration.test.ts
  */
@@ -32,14 +34,12 @@ import {
   listTransports,
   listTransportTargets,
   reassignTransport,
-  releaseTransportRecursive,
 } from '../../src/adt/transport.js';
 import { expectSapFailureClass } from '../helpers/expected-error.js';
 import { requireOrSkip, SkipReason, skipTest } from '../helpers/skip-policy.js';
 import { buildCreateXml, generateUniqueName } from './crud-harness.js';
 import { requireSapCredentials } from './helpers.js';
 
-const transportReleaseTestsEnabled = process.env.TEST_TRANSPORT_RELEASE_TESTS === 'true';
 const transportPackageWriteTestsEnabled = process.env.TEST_TRANSPORT_PACKAGE_WRITE_TESTS === 'true';
 
 function isArc1TestTransport(description: string): boolean {
@@ -482,50 +482,6 @@ describe('Transport Integration Tests', () => {
         }
       }
     }, 30_000);
-  });
-
-  // ─── releaseTransportRecursive ────────────────────────────────
-
-  describe('releaseTransportRecursive', () => {
-    it('recursively releases a transport', async (ctx) => {
-      requireOrSkip(ctx, transportReleaseTestsEnabled ? true : undefined, SkipReason.TRANSPORT_RELEASE_DISABLED);
-
-      let id = '';
-      let released = false;
-      try {
-        id = trackTransport(
-          await createTransport(client.http, client.safety, `ARC-1 IT recursive-release ${Date.now()}`),
-        );
-        expect(id).toBeTruthy();
-
-        const result = await releaseTransportRecursive(client.http, client.safety, id);
-        expect(result.released).toContain(id);
-        released = true;
-        createdTransportIds.delete(id);
-
-        const transport = await getTransport(client.http, client.safety, id);
-        if (transport) {
-          expect(transport.status).toBe('R');
-        }
-      } catch (err) {
-        // NW 7.5x ADT_TM gap: POST /{id}/newreleasejobs is rejected with
-        // 400 "user action newreleasejobs is not supported" — the framework
-        // treats the path segment as a useraction attribute. No client-side
-        // workaround verified (probed: useraction in body, query param,
-        // PUT variant — all rejected). Genuine NW 7.5x release-on-empty
-        // limitation. Tracked separately from PR #228.
-        if (isUnsupportedBackend(err))
-          return skipTest(
-            ctx,
-            'NW 7.5x ADT_TM gap: release endpoint rejects /newreleasejobs path segment; no client-side workaround',
-          );
-        throw err;
-      } finally {
-        if (id && !released) {
-          await deleteTrackedTransport(id);
-        }
-      }
-    }, 60_000);
   });
 
   // ─── Transportable Package Write with corrNr Propagation ──────

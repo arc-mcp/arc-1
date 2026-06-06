@@ -21,9 +21,9 @@ describe('E2E CDS impact analysis', () => {
 
   beforeAll(async () => {
     client = await connectClient();
-    const probeResult = await callTool(client, 'SAPManage', { action: 'probe' });
-    const probeText = expectToolSuccess(probeResult);
-    const features = JSON.parse(probeText);
+    const featuresResult = await callTool(client, 'SAPManage', { action: 'features' });
+    const featuresText = expectToolSuccess(featuresResult);
+    const features = JSON.parse(featuresText);
     rapAvailable = features.rap?.available === true ? true : undefined;
   }, 90000);
 

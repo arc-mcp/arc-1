@@ -17,7 +17,7 @@ function uniqueName(prefix: string): string {
 }
 
 function parsePossiblyCachedJson(text: string): any {
-  return JSON.parse(text.replace(/^\[cached\]\n/, ''));
+  return JSON.parse(text.replace(/^\[cached(?::revalidated)?\]\n/, ''));
 }
 
 describe('E2E DDIC metadata write tests', () => {

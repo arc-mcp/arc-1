@@ -1,5 +1,45 @@
+import { InvalidTokenError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
 import { describe, expect, it } from 'vitest';
-import { extractOidcScopes } from '../../../src/server/http.js';
+import { createStandardVerifier, extractOidcScopes } from '../../../src/server/http.js';
+import { DEFAULT_CONFIG } from '../../../src/server/types.js';
+
+describe('createStandardVerifier', () => {
+  it('accepts a viewer API key and returns read-only auth info', async () => {
+    const verifier = createStandardVerifier({
+      ...DEFAULT_CONFIG,
+      apiKeys: [{ key: 'viewer-secret', profile: 'viewer' }],
+    });
+
+    const before = Math.floor(Date.now() / 1000);
+    const auth = await verifier('viewer-secret');
+
+    expect(auth.token).toBe('viewer-secret');
+    expect(auth.clientId).toBe('api-key:viewer');
+    expect(auth.scopes).toEqual(['read']);
+    expect(auth.expiresAt).toBeGreaterThanOrEqual(before + 365 * 24 * 60 * 60 - 1);
+  });
+
+  it('accepts an admin API key and returns expanded admin scopes', async () => {
+    const verifier = createStandardVerifier({
+      ...DEFAULT_CONFIG,
+      apiKeys: [{ key: 'admin-secret', profile: 'admin' }],
+    });
+
+    const auth = await verifier('admin-secret');
+
+    expect(auth.clientId).toBe('api-key:admin');
+    expect(auth.scopes).toEqual(['admin', 'data', 'git', 'read', 'sql', 'transports', 'write']);
+  });
+
+  it('rejects an unknown bearer token when OIDC is not configured', async () => {
+    const verifier = createStandardVerifier({
+      ...DEFAULT_CONFIG,
+      apiKeys: [{ key: 'known-secret', profile: 'viewer' }],
+    });
+
+    await expect(verifier('unknown-secret')).rejects.toBeInstanceOf(InvalidTokenError);
+  });
+});
 
 describe('extractOidcScopes', () => {
   it('extracts scopes from space-separated string claim (standard OIDC)', () => {

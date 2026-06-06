@@ -300,8 +300,28 @@ describe('ADT Integration Tests', () => {
   // the test skips cleanly. See `demo/setup/` in the related demo workspace
   // for how to create it.
   describe('getPackageContents (search-endpoint based)', () => {
+    async function getPackageContentsFixtureOrSkip(
+      ctx: import('vitest').TaskContext,
+      packageName: string,
+      maxResults?: number,
+    ) {
+      try {
+        return await client.getPackageContents(packageName, maxResults);
+      } catch (err) {
+        if (err instanceof AdtApiError && err.statusCode === 400 && /Package is invalid/i.test(err.message)) {
+          requireOrSkip(
+            ctx,
+            undefined,
+            `${SkipReason.NO_FIXTURE} (${packageName}) — demo package not on this SAP system; see SEGW->RAP demo setup`,
+          );
+          return [];
+        }
+        throw err;
+      }
+    }
+
     it('returns objects with descriptions correctly aligned to names', async (ctx) => {
-      const contents = await client.getPackageContents('ZDEMO_MIG');
+      const contents = await getPackageContentsFixtureOrSkip(ctx, 'ZDEMO_MIG');
       const proj = contents.find((c) => c.name === 'ZDM_PROJECT');
       requireOrSkip(
         ctx,
@@ -315,7 +335,7 @@ describe('ADT Integration Tests', () => {
     });
 
     it('aligns sub-package description with the sub-package name (the original bug)', async (ctx) => {
-      const contents = await client.getPackageContents('ZDEMO_MIG');
+      const contents = await getPackageContentsFixtureOrSkip(ctx, 'ZDEMO_MIG');
       const sub = contents.find((c) => c.name === 'ZDEMO_MIG_RAP');
       requireOrSkip(ctx, sub, `${SkipReason.NO_FIXTURE} (ZDEMO_MIG_RAP sub-package) — demo workspace not fully set up`);
       expect(sub.type).toBe('DEVC/K');
@@ -325,7 +345,7 @@ describe('ADT Integration Tests', () => {
     });
 
     it('aligns SEGW-generated CLAS descriptions with their own names', async (ctx) => {
-      const contents = await client.getPackageContents('ZDEMO_MIG');
+      const contents = await getPackageContentsFixtureOrSkip(ctx, 'ZDEMO_MIG');
       const dpc = contents.find((c) => c.name === 'ZCL_ZDEMO_MIG_PROJECTS_DPC');
       requireOrSkip(
         ctx,
@@ -341,7 +361,7 @@ describe('ADT Integration Tests', () => {
     it('returns an empty array for an existing but empty package', async (ctx) => {
       // ZDEMO_MIG_RAP is the migration target package — empty until skill output lands.
       // Skip if it isn't there (separate fixture from ZDEMO_MIG itself).
-      const contents = await client.getPackageContents('ZDEMO_MIG_RAP');
+      const contents = await getPackageContentsFixtureOrSkip(ctx, 'ZDEMO_MIG_RAP');
       // The package itself may show up as a parent reference, plus there might be 0 contained objects.
       // Either way, the response must be a typed array with zero or one entries — never an exception.
       expect(Array.isArray(contents)).toBe(true);
@@ -362,7 +382,7 @@ describe('ADT Integration Tests', () => {
     it('honors maxResults parameter', async (ctx) => {
       // ZDEMO_MIG has roughly 17 objects via the search endpoint.
       // Asking for 3 must cap at 3.
-      const contents = await client.getPackageContents('ZDEMO_MIG', 3);
+      const contents = await getPackageContentsFixtureOrSkip(ctx, 'ZDEMO_MIG', 3);
       requireOrSkip(
         ctx,
         contents.length > 0 ? contents : null,

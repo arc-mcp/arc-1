@@ -4,7 +4,7 @@
  * The e2e server runs with ARC1_CACHE=memory (no SQLite needed in CI).
  * These tests verify:
  *  - SAPManage cache_stats returns valid structure
- *  - Repeated SAPRead calls for the same object use conditional GET revalidation
+ *  - Repeated SAPRead calls for an ETag-capable fixture use conditional GET revalidation
  *  - SAPContext(deps) second call returns [cached] output
  *  - Warmup is off by default (warmupAvailable: false)
  */
@@ -62,11 +62,11 @@ describe('E2E Cache Tests', () => {
   // ── SAPRead cache hit ─────────────────────────────────────────
 
   it('SAPRead — second call for same object is served from cache', async () => {
-    const args = { type: 'CLAS', name: 'CL_ABAP_CHAR_UTILITIES' };
+    const args = { type: 'PROG', name: 'ZARC1_TEST_REPORT' };
 
-    // First call — fetches from SAP
+    // First call — force-refreshes any cache state left by earlier E2E files.
     const t0 = Date.now();
-    const r1 = await callTool(client, 'SAPRead', args);
+    const r1 = await callTool(client, 'SAPRead', { ...args, force_refresh: true });
     const firstMs = Date.now() - t0;
     const text1 = expectToolSuccess(r1);
     const normalizedText1 = stripCachedMarker(text1);

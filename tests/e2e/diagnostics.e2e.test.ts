@@ -16,6 +16,10 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { skipTest } from '../helpers/skip-policy.js';
 import { callTool, connectClient, expectToolError, expectToolSuccess } from './helpers.js';
 
+function stripCachedMarker(text: string): string {
+  return text.replace(/^\[cached(?::revalidated)?\]\n/, '');
+}
+
 describe('E2E Diagnostics Tests', () => {
   let client: Client;
 
@@ -264,7 +268,7 @@ describe('E2E Diagnostics Tests', () => {
           `Fixture class ZCL_ARC1_TEST not readable: ${readResult.content?.[0]?.text ?? 'unknown error'}`,
         );
       }
-      const source = expectToolSuccess(readResult);
+      const source = stripCachedMarker(expectToolSuccess(readResult));
 
       const result = await callTool(client, 'SAPDiagnose', {
         action: 'quickfix',
@@ -309,7 +313,7 @@ describe('E2E Diagnostics Tests', () => {
           `Fixture program ZARC1_TEST_REPORT not readable: ${readResult.content?.[0]?.text ?? 'unknown error'}`,
         );
       }
-      const source = expectToolSuccess(readResult);
+      const source = stripCachedMarker(expectToolSuccess(readResult));
 
       const result = await callTool(client, 'SAPDiagnose', {
         action: 'quickfix',

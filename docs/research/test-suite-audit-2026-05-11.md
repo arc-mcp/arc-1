@@ -1247,6 +1247,16 @@ Do this after correctness blockers. These changes should target the measured hot
 | 11 | Use `SAPManage features` instead of repeated E2E `SAPManage probe` calls where possible. | Repeated probe calls spend live runtime rediscovering capabilities that can be obtained once. | Reduces repeated setup/tool overhead. | E2E server log shows fewer probe calls with equivalent assertions. |
 | 12 | Consolidate RAP write E2E coverage. | RAP write coverage is valuable, but overlapping full-path tests make the PR path slower than necessary. | Keeps one full lifecycle path while moving edge cases to narrower tests. | E2E behavior matrix still covers create/update/activate/error paths. |
 
+Runtime implementation update (2026-06-06):
+
+- Items 8-13 are implemented by `docs/plans/completed/test-runtime-profiles-and-coverage.md`.
+- Default `npm run test:integration` now excludes `*.slow.integration.test.ts`; slow cache warmup and recursive transport release coverage moved to `npm run test:integration:slow`.
+- Default `npm run test:e2e` now excludes `*.slow.e2e.test.ts`; broad `BAPIRET2`/`T000` where-used, full RAP stack, SRVB publish/unpublish, batch-create, and recursive transport release coverage moved to `npm run test:e2e:slow`.
+- `SAPManage features` replaced repeated E2E `SAPManage probe` setup in RAP/CDS/smoke paths where cached startup feature state is enough.
+- A4H 2025 validation showed the new default integration profile at `188.06s` and the default E2E profile at `183.22s`. Slow integration ran in `25.97s`; slow E2E ran in `188.08s`.
+- Fixture/setup hygiene improved during validation: E2E parsing strips `[cached:revalidated]` where source/JSON is parsed, and managed TABL fixture comparison tolerates SAP pretty-printer normalization so steady-state fixture sync no longer recreates unchanged objects.
+- GitHub Actions PR `#364` run `27056833245` passed with the new default profiles: `integration` in `8m01s`, `e2e` in `8m55s`, and `reliability-summary` in `17s`.
+
 ### Parallelism And Coverage
 
 Treat this as the final phase. Parallelism is useful only after the suite has reliable setup, cleanup, and skip accounting.
@@ -1256,6 +1266,12 @@ Treat this as the final phase. Parallelism is useful only after the suite has re
 | 13 | Split slow integration/E2E profiles before enabling broad parallelism. | Some tests share live SAP objects and transports, so file-level parallelism needs isolated profiles and fixture ownership first. | Lets PRs run the stable default path while preserving heavier coverage on demand. | Separate default and slow commands; both publish reliability artifacts. |
 | 14 | Add a read-only server concurrency smoke before increasing parallel test execution. | The server default `ARC1_MAX_CONCURRENT=10` is capacity, not proof that SAP-facing tests are independent; current main also has HTTP/MCP rate-limit layers that must be recorded during load tests. | Provides evidence that the server and S4 test system tolerate concurrent read traffic. | Concurrent read-only smoke passes without 429/5xx/session bleed, with `ARC1_MAX_CONCURRENT`, `ARC1_AUTH_RATE_LIMIT`, and `ARC1_RATE_LIMIT` logged. |
 | 15 | Add focused unit coverage for `src/server/http.ts`, `src/server/server.ts`, `src/adt/btp.ts`, `src/server/xsuaa.ts`, and `src/extract-sap-cookies.ts`. | These areas are high-value coverage gaps because they guard auth, transport, BTP connectivity, and credential extraction. | Improves coverage where regressions are expensive and hard to diagnose through live tests. | Coverage report shows targeted line/branch gains for those files. |
+
+Parallelism/coverage implementation update (2026-06-06):
+
+- Item 14 is implemented as `tests/e2e/concurrency-read.e2e.test.ts`. It runs three bounded read-only MCP calls concurrently and records the relevant server/rate-limit environment knobs.
+- Item 15 is partially implemented with focused coverage for `src/server/http.ts`, `src/adt/btp.ts`, and `src/extract-sap-cookies.ts`. `src/server/server.ts` and any remaining `src/server/xsuaa.ts` branch gaps remain lower-priority follow-up coverage targets.
+- The latest local coverage run after these changes reports statements `82.57%`, branches `73.38%`, functions `88.48%`, and lines `83.79%`.
 
 ## Research Completeness
 
@@ -1306,12 +1322,17 @@ Implemented follow-ups:
 | P1 | Added structured skip artifacts, routed integration/E2E runtime skips through `skipTest()`, and updated reliability summaries to count real skip reasons when telemetry is present. | Skip Telemetry Semantics |
 | P1 | Declared `ZARC1_E2E_DUMP` as a managed persistent E2E fixture and removed diagnostics-test ad hoc writes to that object. | Diagnostics Fixture Ownership |
 | P1 | Added parent-suite transportable object cleanup/audit coverage before CTS transport residue checks in integration and E2E transport paths. | CTS Transport And Transportable Package Cleanup |
+| P1 | Split slow integration/E2E profiles, moved cache warmup/release/broad where-used/full RAP-stack coverage out of the default PR path, and replaced repeated E2E feature probes with cached `SAPManage features`. | GitHub Actions Runtime Deep Dive |
+| P1 | Added a bounded read-only E2E concurrency smoke that records `ARC1_MAX_CONCURRENT`, `ARC1_AUTH_RATE_LIMIT`, and `ARC1_RATE_LIMIT`. | Parallelization Guidance |
+| P1 | Added focused unit coverage for HTTP API-key verifier behavior, BTP startup helpers, and cookie extraction helpers. | Coverage Gaps |
 
 Remaining follow-ups:
 
 | Priority | Follow-up | Source finding |
 |---|---|---|
-| P1 | Further reduce PR-path live SAP runtime for remaining cache warmup scans, broad `BAPIRET2` where-used calls, recursive release coverage, and RAP write coverage. | GitHub Actions Runtime Deep Dive |
+| P1 | Measure the new default profile in GitHub Actions and decide whether slow profiles should become manual `workflow_dispatch` jobs, scheduled/nightly jobs, or stay local-only. | GitHub Actions Runtime Deep Dive |
+| P1 | Prepare GitHub Actions to run against the 2025 A4H system instead of the 2023 system, including secret migration, endpoint stability checks, and runtime comparison. | 2025 System Migration |
+| P2 | Continue focused unit coverage for remaining `src/server/server.ts` and branch-heavy XSUAA/server startup paths. | Coverage Gaps |
 
 ## Raw Suite Summary
 

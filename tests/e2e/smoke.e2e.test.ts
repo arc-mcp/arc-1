@@ -267,12 +267,12 @@ describe('E2E Smoke Tests', () => {
 
   // ── SAPManage ──────────────────────────────────────────────────
 
-  it('SAPManage probe — detects system features', async () => {
-    const result = await callTool(client, 'SAPManage', { action: 'probe' });
+  it('SAPManage features — returns cached system features', async () => {
+    const result = await callTool(client, 'SAPManage', { action: 'features' });
     const text = expectToolSuccess(result);
     const features = JSON.parse(text);
-    // Should have feature entries with expected shape
     expect(typeof features).toBe('object');
+    expect(features).toHaveProperty('rap');
   });
 
   // ── Error handling ─────────────────────────────────────────────

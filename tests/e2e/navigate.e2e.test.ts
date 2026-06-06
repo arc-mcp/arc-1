@@ -3,13 +3,14 @@
  *
  * Tests the scope-based Where-Used API against real SAP objects:
  * - Custom Z objects (ZIF_ARC1_TEST, ZCL_ARC1_TEST) with known relationships (skipped if not present)
- * - Standard SAP objects (CL_ABAP_CHAR_UTILITIES, BAPIRET2, BUKRS) with many references
- * - Multiple object types: CLAS, INTF, DOMA, DTEL, TABL (covers transparent tables and DDIC structures)
+ * - Standard SAP objects (CL_ABAP_CHAR_UTILITIES, BUKRS) with representative references
+ * - Multiple object types: CLAS, INTF, DOMA, DTEL
  * - objectType filtering
  * - Error handling for missing/invalid parameters
  *
  * Uses standard SAP objects for the core tests (no setup needed).
  * Custom Z object tests are skipped when the objects don't exist on the system.
+ * Broad BAPIRET2/T000 DDIC scans live in navigate.slow.e2e.test.ts.
  */
 
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -182,20 +183,6 @@ describe('E2E SAPNavigate — Where-Used Analysis', () => {
   // ── Standard SAP objects: DDIC ────────────────────────────────────
 
   describe('DDIC objects', () => {
-    it('finds references to BAPIRET2 structure (via unified TABL type)', async () => {
-      // Model B: DDIC structures use type='TABL' (no separate STRU).
-      // ARC-1 resolves /sap/bc/adt/ddic/structures/BAPIRET2 internally.
-      const result = await callTool(client, 'SAPNavigate', {
-        action: 'references',
-        type: 'TABL',
-        name: 'BAPIRET2',
-      });
-      const text = expectToolSuccess(result);
-      const refs = JSON.parse(text);
-      expect(refs.length).toBeGreaterThan(0);
-      console.log(`    BAPIRET2 has ${refs.length} references`);
-    });
-
     it('finds references to BUKRS domain', async (ctx) => {
       const result = await callTool(client, 'SAPNavigate', {
         action: 'references',
@@ -218,24 +205,6 @@ describe('E2E SAPNavigate — Where-Used Analysis', () => {
       const refs = JSON.parse(text);
       expect(refs.length).toBeGreaterThan(0);
       console.log(`    BUKRS data element has ${refs.length} references`);
-    });
-
-    it('finds references to T000 table', async (ctx) => {
-      // Was 'T001' (company codes) — fails on a4h S/4HANA 2023 trial because the
-      // table is not shipped there, so resolveTablObjectUrl() falls through to
-      // /sap/bc/adt/ddic/structures/T001 → 404 and the test errors instead of
-      // skipping. Switched to T000 (clients table) which is universal on every
-      // SAP system from R/3 onwards. Same point: many references because every
-      // mandt-bearing program uses it.
-      const result = await callTool(client, 'SAPNavigate', {
-        action: 'references',
-        type: 'TABL',
-        name: 'T000',
-      });
-      const text = expectToolSuccessOrSkip(ctx, result);
-      const refs = JSON.parse(text);
-      expect(refs.length).toBeGreaterThan(0);
-      console.log(`    T000 table has ${refs.length} references`);
     });
   });
 
@@ -260,27 +229,6 @@ describe('E2E SAPNavigate — Where-Used Analysis', () => {
       } else {
         expect(refs.note).toContain('objectType filter');
         expect(Array.isArray(refs.results)).toBe(true);
-        console.log(`    Fallback: ${refs.results.length} unfiltered references (legacy API)`);
-      }
-    });
-
-    it('filters references by objectType CLAS/OC', async () => {
-      // BAPIRET2 is a DDIC structure; under Model B both structures and
-      // transparent tables use type='TABL'.
-      const result = await callTool(client, 'SAPNavigate', {
-        action: 'references',
-        type: 'TABL',
-        name: 'BAPIRET2',
-        objectType: 'CLAS/OC',
-      });
-      const text = expectToolSuccess(result);
-      const refs = JSON.parse(text);
-      if (Array.isArray(refs)) {
-        expect(refs.length).toBeGreaterThan(0);
-        const clasCount = refs.filter((r: { type: string }) => r.type === 'CLAS/OC').length;
-        console.log(`    ${refs.length} references (${clasCount} CLAS/OC) — scope-based API`);
-      } else {
-        expect(refs.note).toContain('objectType filter');
         console.log(`    Fallback: ${refs.results.length} unfiltered references (legacy API)`);
       }
     });

@@ -2,7 +2,7 @@
  * E2E Tests for SAPTransport tool and transportable SAPWrite operations.
  *
  * Validates the full MCP JSON-RPC path for:
- * - SAPTransport create + get (Issues #9, #26, #70)
+ * - SAPTransport create + get + delete/reassign/type/history (Issues #9, #26, #70)
  * - SAPWrite update in a transportable package without explicit transport (Issue #56)
  *
  * Transport tests require the MCP server to be running with --allow-transport-writes.
@@ -11,6 +11,7 @@
  * on shared SAP systems.
  *
  * Run: npm run test:e2e -- tests/e2e/saptransport.e2e.test.ts
+ * Recursive release coverage: npm run test:e2e:slow -- tests/e2e/saptransport.slow.e2e.test.ts
  */
 
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -18,7 +19,6 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { requireOrSkip, SkipReason, skipTest } from '../helpers/skip-policy.js';
 import { callTool, connectClient, expectToolError, expectToolSuccess, expectToolSuccessOrSkip } from './helpers.js';
 
-const transportReleaseTestsEnabled = process.env.TEST_TRANSPORT_RELEASE_TESTS === 'true';
 const transportPackageWriteTestsEnabled = process.env.TEST_TRANSPORT_PACKAGE_WRITE_TESTS === 'true';
 
 interface TransportListEntry {
@@ -219,7 +219,7 @@ describe('E2E SAPTransport Tests', () => {
     });
   });
 
-  // ── New transport actions (delete, reassign, release_recursive, type) ──
+  // ── New transport actions (delete, reassign, type) ──
 
   describe('SAPTransport new actions', () => {
     let transportsEnabled = true;
@@ -307,37 +307,6 @@ describe('E2E SAPTransport Tests', () => {
         expect(reassignText).toContain('Reassigned transport');
       } finally {
         if (id) {
-          const deleteResult = await callTool(client, 'SAPTransport', { action: 'delete', id, recursive: true });
-          expectToolSuccess(deleteResult);
-        }
-      }
-    });
-
-    it('release_recursive releases transport', async (ctx) => {
-      if (!transportsEnabled) return skipTest(ctx, 'Transport writes not enabled on MCP server');
-      requireOrSkip(ctx, transportReleaseTestsEnabled ? true : undefined, SkipReason.TRANSPORT_RELEASE_DISABLED);
-
-      let id = '';
-      let released = false;
-      try {
-        const createResult = await callTool(client, 'SAPTransport', {
-          action: 'create',
-          description: `ARC-1 E2E recursive-release ${Date.now()}`,
-        });
-        const createText = expectToolSuccessOrSkip(ctx, createResult);
-        const match = createText.match(/([A-Z0-9]+K\d+)/);
-        expect(match).toBeTruthy();
-        id = match![1];
-
-        const result = await callTool(client, 'SAPTransport', {
-          action: 'release_recursive',
-          id,
-        });
-        const text = expectToolSuccess(result);
-        expect(text).toContain(id);
-        released = true;
-      } finally {
-        if (id && !released) {
           const deleteResult = await callTool(client, 'SAPTransport', { action: 'delete', id, recursive: true });
           expectToolSuccess(deleteResult);
         }
