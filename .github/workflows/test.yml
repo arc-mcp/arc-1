@@ -14,6 +14,9 @@ on:
 permissions:
   contents: read
 
+env:
+  SAP_CI_TARGET_LABEL: A4H 2025
+
 jobs:
   # Smoke check that mta.yaml + the .mtaext.example template are valid MTA
   # descriptors. Runs on every PR + manual dispatch (no SAP secrets needed)
@@ -147,22 +150,37 @@ jobs:
         id: sap_auth
         shell: bash
         env:
+          SAP_CI_TARGET_LABEL: ${{ env.SAP_CI_TARGET_LABEL }}
           TEST_SAP_URL: ${{ secrets.TEST_SAP_URL }}
           TEST_SAP_USER: ${{ secrets.TEST_SAP_USER }}
           TEST_SAP_PASSWORD: ${{ secrets.TEST_SAP_PASSWORD }}
           TEST_SAP_CLIENT: ${{ secrets.TEST_SAP_CLIENT }}
+          TEST_SAP_INSECURE: ${{ secrets.TEST_SAP_INSECURE }}
         run: |
+          missing=()
+          for name in TEST_SAP_URL TEST_SAP_USER TEST_SAP_PASSWORD TEST_SAP_CLIENT; do
+            if [ -z "${!name:-}" ]; then
+              missing+=("${name}")
+            fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error title=Integration preflight failed::Missing required ${SAP_CI_TARGET_LABEL} secret(s): ${missing[*]}"
+            exit 1
+          fi
+
           base_url="${TEST_SAP_URL%/}"
           probe_url="${base_url}/sap/bc/adt/core/discovery?sap-client=${TEST_SAP_CLIENT}"
-          status="$(curl --silent --show-error --location --output /tmp/adt-discovery-integration.xml --write-out "%{http_code}" \
-            -u "${TEST_SAP_USER}:${TEST_SAP_PASSWORD}" "${probe_url}" || true)"
+          curl_args=(--silent --show-error --location --output /tmp/adt-discovery-integration.xml --write-out "%{http_code}")
+          case "${TEST_SAP_INSECURE,,}" in
+            true|1|yes) curl_args+=(--insecure) ;;
+          esac
+          status="$(curl "${curl_args[@]}" -u "${TEST_SAP_USER}:${TEST_SAP_PASSWORD}" "${probe_url}" || true)"
           echo "status=${status}"
-          if [ "${status}" = "401" ]; then
-            echo "auth_ok=false" >> "$GITHUB_OUTPUT"
-            echo "::warning title=Integration skipped::SAP auth preflight returned HTTP 401 (logon failed). Skipping integration tests for this run."
-          else
-            echo "auth_ok=true" >> "$GITHUB_OUTPUT"
+          if [ "${status}" != "200" ]; then
+            echo "::error title=Integration preflight failed::${SAP_CI_TARGET_LABEL} authenticated ADT discovery returned HTTP ${status}; integration tests require a reachable target and valid TEST_SAP_* secrets."
+            exit 1
           fi
+          echo "auth_ok=true" >> "$GITHUB_OUTPUT"
 
       - name: Run integration tests
         if: steps.sap_auth.outputs.auth_ok == 'true'
@@ -224,22 +242,37 @@ jobs:
         id: sap_auth
         shell: bash
         env:
-          SAP_URL: ${{ secrets.SAP_URL }}
-          SAP_USER: ${{ secrets.SAP_USER }}
-          SAP_PASSWORD: ${{ secrets.SAP_PASSWORD }}
-          SAP_CLIENT: '001'
+          SAP_CI_TARGET_LABEL: ${{ env.SAP_CI_TARGET_LABEL }}
+          TEST_SAP_URL: ${{ secrets.TEST_SAP_URL }}
+          TEST_SAP_USER: ${{ secrets.TEST_SAP_USER }}
+          TEST_SAP_PASSWORD: ${{ secrets.TEST_SAP_PASSWORD }}
+          TEST_SAP_CLIENT: ${{ secrets.TEST_SAP_CLIENT }}
+          TEST_SAP_INSECURE: ${{ secrets.TEST_SAP_INSECURE }}
         run: |
-          base_url="${SAP_URL%/}"
-          probe_url="${base_url}/sap/bc/adt/core/discovery?sap-client=${SAP_CLIENT}"
-          status="$(curl --silent --show-error --location --output /tmp/adt-discovery-e2e.xml --write-out "%{http_code}" \
-            -u "${SAP_USER}:${SAP_PASSWORD}" "${probe_url}" || true)"
-          echo "status=${status}"
-          if [ "${status}" = "401" ]; then
-            echo "auth_ok=false" >> "$GITHUB_OUTPUT"
-            echo "::warning title=E2E skipped::SAP auth preflight returned HTTP 401 (logon failed). Skipping E2E tests for this run."
-          else
-            echo "auth_ok=true" >> "$GITHUB_OUTPUT"
+          missing=()
+          for name in TEST_SAP_URL TEST_SAP_USER TEST_SAP_PASSWORD TEST_SAP_CLIENT; do
+            if [ -z "${!name:-}" ]; then
+              missing+=("${name}")
+            fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error title=E2E preflight failed::Missing required ${SAP_CI_TARGET_LABEL} secret(s): ${missing[*]}"
+            exit 1
           fi
+
+          base_url="${TEST_SAP_URL%/}"
+          probe_url="${base_url}/sap/bc/adt/core/discovery?sap-client=${TEST_SAP_CLIENT}"
+          curl_args=(--silent --show-error --location --output /tmp/adt-discovery-e2e.xml --write-out "%{http_code}")
+          case "${TEST_SAP_INSECURE,,}" in
+            true|1|yes) curl_args+=(--insecure) ;;
+          esac
+          status="$(curl "${curl_args[@]}" -u "${TEST_SAP_USER}:${TEST_SAP_PASSWORD}" "${probe_url}" || true)"
+          echo "status=${status}"
+          if [ "${status}" != "200" ]; then
+            echo "::error title=E2E preflight failed::${SAP_CI_TARGET_LABEL} authenticated ADT discovery returned HTTP ${status}; E2E tests require a reachable target and valid TEST_SAP_* secrets."
+            exit 1
+          fi
+          echo "auth_ok=true" >> "$GITHUB_OUTPUT"
 
       - name: Build
         if: steps.sap_auth.outputs.auth_ok == 'true'
@@ -249,20 +282,22 @@ jobs:
         if: steps.sap_auth.outputs.auth_ok == 'true'
         run: npm run test:e2e:start
         env:
-          SAP_URL: ${{ secrets.SAP_URL }}
-          SAP_USER: ${{ secrets.SAP_USER }}
-          SAP_PASSWORD: ${{ secrets.SAP_PASSWORD }}
-          SAP_CLIENT: '001'
+          SAP_URL: ${{ secrets.TEST_SAP_URL }}
+          SAP_USER: ${{ secrets.TEST_SAP_USER }}
+          SAP_PASSWORD: ${{ secrets.TEST_SAP_PASSWORD }}
+          SAP_CLIENT: ${{ secrets.TEST_SAP_CLIENT }}
+          SAP_INSECURE: ${{ secrets.TEST_SAP_INSECURE }}
 
       - name: Run E2E tests
         if: steps.sap_auth.outputs.auth_ok == 'true'
         run: npm run test:e2e
         env:
           E2E_MCP_URL: http://localhost:3000/mcp
-          SAP_URL: ${{ secrets.SAP_URL }}
-          SAP_USER: ${{ secrets.SAP_USER }}
-          SAP_PASSWORD: ${{ secrets.SAP_PASSWORD }}
-          SAP_CLIENT: '001'
+          SAP_URL: ${{ secrets.TEST_SAP_URL }}
+          SAP_USER: ${{ secrets.TEST_SAP_USER }}
+          SAP_PASSWORD: ${{ secrets.TEST_SAP_PASSWORD }}
+          SAP_CLIENT: ${{ secrets.TEST_SAP_CLIENT }}
+          SAP_INSECURE: ${{ secrets.TEST_SAP_INSECURE }}
 
       - name: Upload E2E JSON test results
         if: always()
