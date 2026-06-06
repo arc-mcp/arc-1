@@ -22,7 +22,7 @@ import { fileURLToPath } from 'node:url';
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { skipTest } from '../helpers/skip-policy.js';
-import { callTool, connectClient, expectToolError, expectToolSuccess } from './helpers.js';
+import { callTool, classifyToolErrorSkip, connectClient, expectToolError, expectToolSuccess } from './helpers.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = join(__dirname, '..', 'fixtures', 'abap');
@@ -62,6 +62,11 @@ describe('E2E SAPActivate failure path (PR #179 regression)', () => {
 
       if (createResult.isError) {
         const text = createResult.content?.[0]?.text ?? '';
+        const skip = classifyToolErrorSkip(createResult);
+        if (skip !== null) {
+          skipTest(ctx, skip);
+          return;
+        }
         // Known precondition gaps that legitimately skip this test:
         //   - NW 7.50 PROG/INCLUDE split: the lock-handle for the PROG resource is rejected
         //     when the source PUT targets the auto-generated INCLUDE wrapper (status 423,
@@ -86,6 +91,11 @@ describe('E2E SAPActivate failure path (PR #179 regression)', () => {
       });
       if (updateResult.isError) {
         const text = updateResult.content?.[0]?.text ?? '';
+        const skip = classifyToolErrorSkip(updateResult);
+        if (skip !== null) {
+          skipTest(ctx, skip);
+          return;
+        }
         if (/invalid lock handle|is not locked/i.test(text)) {
           skipTest(ctx, `Update blocked by NW 7.50 lock-handle quirk: ${text.slice(0, 200)}`);
           return;

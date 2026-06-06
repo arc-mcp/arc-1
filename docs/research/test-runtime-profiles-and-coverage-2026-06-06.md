@@ -242,6 +242,7 @@ The 2025 system was prepared for GitHub Actions in PR [#365](https://github.com/
 - PR `#365`, Test workflow run `27058553382`, passed with `integration` in 3m50s and `e2e` in 6m26s.
 - Downloaded GitHub artifacts from run `27058553382` reported unit `3,468 passed / 0 skipped`, integration `208 passed / 54 skipped`, and E2E `137 passed / 4 skipped`; required-execution thresholds passed.
 - A later docs push exposed one more reliability issue in Test workflow run `27058886073`: E2E failed on four SAP ADT write-session routing errors, all HTTP 400 `Service cannot be reached` on `_action=LOCK` or `_action=UNLOCK` routes. The existing skip classifier only covered DDIC table unlocks, so this PR generalized that classifier and made default live mutation assertions use the skip-aware helper where appropriate.
+- Test workflow run `27059320564` on commit `4c061709` showed the generalized classifier working (`18` ADT lock/unlock routing skips), and identified one remaining activation-regression custom precondition branch that needed to delegate to the shared classifier.
 - Post-fix local A4H 2025 validation passed: `npm run typecheck`, `npm run lint`, targeted helper unit test (`7` tests), full unit (`3,473` tests), and `npm run test:e2e:full` (`137 passed / 4 skipped`, fixture sync unchanged).
 
 Runtime implication:

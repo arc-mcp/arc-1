@@ -203,6 +203,8 @@ Implemented follow-up in this PR:
 - Updated default-profile E2E live mutation assertions that previously bypassed `expectToolSuccessOrSkip()` in RAP, DDIC, FUGR/FUNC, SKTD, and class-section write tests.
 - Documented the new skip taxonomy row in `docs/integration-test-skips.md`.
 
+A second CI run on commit `4c061709` (`27059320564`) confirmed the generalized classifier was active: E2E recorded 18 lock/unlock routing skips instead of failing those mutation tests. It still exposed one remaining custom precondition branch in `tests/e2e/activation-failure.e2e.test.ts`; that branch manually threw on a deliberately broken PROG create when the create hit `/sap/bc/adt/programs/programs/...?_action=UNLOCK&lockHandle=...` with HTTP 400 `Service cannot be reached`. The test now delegates create/update precondition failures to `classifyToolErrorSkip()` before applying its activation-specific assertions.
+
 Post-fix local validation on A4H 2025:
 
 | Check | Result |
