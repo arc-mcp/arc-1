@@ -67,11 +67,12 @@ See **[docs/caching.md](docs/caching.md)** for full documentation.
 
 ### Testing
 
-- **1,367+ unit tests** (`53` unit test files, mocked HTTP)
-- **~160 integration tests** against live SAP systems, with explicit skip reasons when credentials or fixtures are missing
-- **~70 E2E tests** that execute real MCP tool calls against a running ARC-1 server and live SAP system
+- **3,474 unit tests** (`104` unit test files, mocked HTTP)
+- **262-test default integration profile** against live SAP systems, with explicit skip reasons when credentials or fixtures are missing
+- **141-test default E2E profile** that executes real MCP tool calls against a running ARC-1 server and live SAP system
+- **Manual slow SAP profiles** keep expensive cache warmup, broad where-used, RAP full-stack, and recursive CTS release coverage out of the PR path (`test:integration:slow`, `test:e2e:slow`, GitHub **SAP Slow Tests** workflow)
 - **CRUD lifecycle and BTP smoke lanes** included (`test:integration:crud`, `test:integration:btp:smoke`)
-- **CI matrix** on Node `22` and `24`; integration + E2E run on `push` to `main` and internal PRs
+- **CI matrix** on Node `22` and `24`; live SAP integration + E2E run on internal PRs and manual dispatch, with SAP jobs gated off for docs/chore PRs and external forks
 - **Reliability telemetry + coverage** published as informational CI signals (non-blocking)
 
 ### Tools Refined for Real-World Usage
@@ -80,18 +81,18 @@ The 12 tools are designed from real LLM interaction feedback:
 
 | Tool | What it does |
 |------|-------------|
-| **SAPRead** | Read ABAP source, table data, CDS views, metadata extensions (DDLX), service bindings (SRVB), message classes (`MSAG`), BOR objects, deployed UI5/Fiori apps (BSP, BSP_DEPLOY), plus on-prem metadata reads for authorization fields (`AUTH`), feature toggles (`FEATURE_TOGGLE`), and enhancement implementations (`ENHO`). Structured format for classes returns metadata + decomposed includes as JSON. Optional `grep` regex returns only matching source lines (+context, method-annotated for classes) for token-efficient search. (Deprecated aliases `MESSAGES`/`FTG2` accepted for one minor.) |
+| **SAPRead** | Read ABAP source, table data, CDS views, access controls (`DCLS`), metadata extensions (`DDLX`), service bindings (`SRVB`), knowledge-transfer docs (`SKTD`), message classes (`MSAG`), revision history (`VERSIONS`/`VERSION_SOURCE`), inactive object state, BOR objects, deployed UI5/Fiori apps (BSP, BSP_DEPLOY), and ABAP Platform 2025 server-driven objects (`DESD`, `EVTB`, `EVTO`, `DTSC`, `CSNM`, `COTA`). On-prem metadata reads include authorization fields (`AUTH`), feature toggles (`FEATURE_TOGGLE`), and enhancement implementations (`ENHO`). Structured format for classes returns metadata + decomposed includes as JSON. Optional `grep` regex returns only matching source lines (+context, method-annotated for classes) for token-efficient search. (Deprecated aliases `MESSAGES`/`FTG2` accepted for one minor.) |
 | **SAPSearch** | Object search + full-text source code search across the system |
-| **SAPWrite** | Create/update/delete ABAP source and DDIC metadata with automatic lock/unlock (PROG, CLAS, INTF, FUNC, INCL, DDLS, DDLX, BDEF, SRVD, DOMA, DTEL). Class updates can target local includes (`definitions`, `implementations`, `macros`, `testclasses`); class-section surgery (`edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`) lets an LLM edit a global class signature without re-sending `/source/main`; RAP behavior-pool scaffolding can auto-create `lhc_*` skeletons before injecting signatures/stubs. Batch creation for multi-object workflows (e.g., RAP stack or domain+data element in one call) |
+| **SAPWrite** | Create/update/delete ABAP source and DDIC metadata with automatic lock/unlock (PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL, DOMA, DTEL, MSAG; availability adapts for BTP). Class updates can target local includes (`definitions`, `implementations`, `macros`, `testclasses`); class-section surgery (`edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`) lets an LLM edit a global class signature without re-sending `/source/main`; RAP behavior-pool scaffolding can auto-create `lhc_*` skeletons before injecting signatures/stubs. Batch creation supports terminal activation for interdependent multi-object workflows (e.g., RAP stack or domain+data element in one call) |
 | **SAPActivate** | Activate ABAP objects — single or batch (essential for RAP stacks), with guarded retry for the S/4HANA ED064 batch quirk. Publish/unpublish OData service bindings (SRVB) |
 | **SAPNavigate** | Go-to-definition, find references, code completion |
-| **SAPQuery** | Execute ABAP SQL with table-not-found suggestions |
-| **SAPTransport** | CTS transport management (list/create/release/delete/reassign), transport requirement checks, and reverse lookup history (`action="history"`) |
+| **SAPQuery** | Execute ABAP SQL with table-not-found suggestions and automatic chunking for simple long literal `IN (...)` lists |
+| **SAPTransport** | CTS transport management (list/get/create/release/delete/reassign/release-recursive), transport layer/target lookup, package transport requirement checks, and reverse lookup history (`action="history"`) |
 | **SAPGit** | Git-based ABAP workflows across gCTS and abapGit (list/clone/pull/push/commit/branch/unlink) with backend auto-selection and safety gating (`--allow-git-writes`) |
 | **SAPContext** | Compressed dependency context (`action="deps"`), reverse dependency lookup (`action="usages"`), and CDS upstream/downstream impact analysis (`action="impact"` for DDLS) |
 | **SAPLint** | Local ABAP lint (system/release-aware presets, auto-fix, pre-write validation) + ADT PrettyPrint (server-side formatting) |
-| **SAPDiagnose** | Syntax check, ABAP Unit tests, ATC code quality, generic ADT quickfix proposals/application deltas, short dumps, profiler traces |
-| **SAPManage** | Feature probing — detect what the system supports before acting |
+| **SAPDiagnose** | Syntax check, ABAP Unit tests, ATC code quality, CDS test-case suggestions, active/inactive object-state comparison, generic ADT quickfix proposals/application deltas, gateway/system message diagnostics, short dumps, and profiler traces |
+| **SAPManage** | Feature probing, cache statistics, package lifecycle/change-package operations, and FLP catalog/group/tile helpers |
 
 Tool definitions automatically adapt to the target system (BTP vs on-premise), removing unavailable types and adjusting descriptions so the LLM never attempts unsupported operations.
 

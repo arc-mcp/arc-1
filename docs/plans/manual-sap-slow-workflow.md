@@ -135,7 +135,7 @@ After local validation passes, create the PR and run normal GitHub CI plus the n
 
 - [x] Run local validation commands: `npm run typecheck`, `npm run lint`, `npm test`, workflow YAML parse, `bash -n scripts/rate-limit-smoke.sh`, and `git diff --check`.
 - [x] Commit, push, and create a ready PR with a conventional `ci:` title and a description covering goal, content, and validation.
-- [ ] Wait for the normal PR `Test` workflow checks and the new `SAP Slow Tests` pull-request definition check to pass.
+- [x] Wait for the normal PR `Test` workflow checks and the new `SAP Slow Tests` pull-request definition check to pass. Latest checked PR head `033ba0fe`: `Test` run `27061737354` passed, `SAP Slow Tests` run `27061737358` passed the definition check and skipped live slow profiles on pull request as intended, Dependency Review run `27061737351` passed, and CodeQL run `27061736790` passed.
 - [x] Confirm the runtime research document explains that the first live manual slow dispatch is post-merge because new `workflow_dispatch` workflows must exist on the default branch.
 - [ ] After merge, dispatch the new `SAP Slow Tests` workflow with slow integration and slow E2E enabled, recursive release disabled.
 - [ ] After that post-merge dispatch, update the runtime research document with the slow workflow URL, run id, runtime, pass/fail/skip counts, and any A4H 2025 lock/unlock observations.

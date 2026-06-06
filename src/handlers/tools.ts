@@ -148,6 +148,7 @@ const SAPWRITE_TYPES_ONPREM = [
   'BDEF',
   'SRVD',
   'SRVB',
+  'SKTD',
   'TABL',
   'TABL/DT',
   'TABL/DS',
@@ -175,7 +176,7 @@ const SAPWRITE_TYPES_BTP = [
 const SAPWRITE_CLAS_INCLUDES = ['definitions', 'implementations', 'macros', 'testclasses'];
 
 const SAPWRITE_DESC_ONPREM =
-  'Create or update ABAP source code and DDIC metadata. Handles lock/modify/unlock automatically. Supports PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL, DOMA, DTEL, MSAG. ' +
+  'Create or update ABAP source code and DDIC metadata. Handles lock/modify/unlock automatically. Supports PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL, DOMA, DTEL, MSAG. ' +
   'Type codes are auto-normalized and case-insensitive (e.g., "CLAS/OC" → "CLAS"). ' +
   'For CLAS update, pass include="definitions"|"implementations"|"macros"|"testclasses" to update that local include natively; omit include to update source/main. ' +
   'TABL uses source-based writes via /source/main (define table syntax), similar to DDLS/BDEF/SRVD. ' +
@@ -197,7 +198,7 @@ const SAPWRITE_DESC_ONPREM =
   'For generate_behavior_implementation: one-shot RAP behavior pool — auto-discover the bound BDEF via class metadata (rootEntityRef), scaffold every required handler (creating lhc_<alias> skeletons when missing), write under one lock, and (by default) activate. Reliable equivalent of Eclipse ADT\'s "Generate Behavior Implementation" Cmd+1 quickfix without the broken /sap/bc/adt/quickfixes/proposals/.../create_class_implementation server endpoint.';
 
 const SAPWRITE_DESC_BTP =
-  'Create or update ABAP source code and DDIC metadata (BTP ABAP Environment). Handles lock/modify/unlock automatically. Supports CLAS, INTF, DDLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL, DOMA, DTEL, MSAG. ' +
+  'Create or update ABAP source code and DDIC metadata (BTP ABAP Environment). Handles lock/modify/unlock automatically. Supports CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL, DOMA, DTEL, MSAG. ' +
   'Type codes are auto-normalized and case-insensitive (e.g., "CLAS/OC" → "CLAS"). ' +
   'For CLAS update, pass include="definitions"|"implementations"|"macros"|"testclasses" to update that local include natively; omit include to update source/main. ' +
   'TABL supports custom table source writes via /source/main (define table syntax). ' +
@@ -664,24 +665,24 @@ export function getToolDefinitions(
             type: 'string',
             enum: btp ? SAPWRITE_TYPES_BTP : SAPWRITE_TYPES_ONPREM,
             description: btp
-              ? 'Object type (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method). Supported: CLAS, INTF, DDLS, DDLX, BDEF, SRVD, TABL, DOMA, DTEL. Class-section surgery actions require type=CLAS.'
-              : 'Object type (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method). Supported: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DDLX, BDEF, SRVD, TABL, DOMA, DTEL. Class-section surgery actions require type=CLAS.',
+              ? 'Object type (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on BTP: CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL, DOMA, DTEL, MSAG. Class-section surgery actions require type=CLAS.'
+              : 'Object type (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on-prem: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require type=CLAS.',
           },
           name: {
             type: 'string',
             description:
-              'Object name (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method).',
+              'Object name (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility).',
           },
           source: {
             type: 'string',
             description:
-              'ABAP source code. For create/update/edit_method: the full source body. For edit_class_definition: ONLY the new CLASS … DEFINITION … ENDCLASS. block (~10–80 lines for a typical class — no IMPLEMENTATION block needed). For edit_method_signature: ONLY the new METHODS clause for one method (~1–5 lines). For add_method/delete_method: not used — pass the new method clause via `method` instead, or the method name to delete.',
+              'ABAP source code. For create/update: the full source body. For edit_method: the new method body. For edit_class_definition: ONLY the new CLASS … DEFINITION … ENDCLASS. block (~10–80 lines for a typical class — no IMPLEMENTATION block needed). For edit_method_signature: ONLY the new METHODS clause for one method (~1–5 lines). For add_method/delete_method/change_method_visibility: not used — pass the new method clause, method name, or target section via `method`/`visibility` instead.',
           },
           include: {
             type: 'string',
             enum: SAPWRITE_CLAS_INCLUDES,
             description:
-              'For CLAS write actions (update, edit_method, edit_class_definition, add_method, edit_method_signature, delete_method): target a class-local include instead of /source/main. Valid values: definitions (CCDEF), implementations (CCIMP), macros, testclasses. Omit include to operate on source/main. For edit_method, ARC-1 also auto-detects the include from the method specifier (lhc_*/lcl_* → implementations, ltc_* → testclasses); explicit include= overrides auto-detection. Include writes create an inactive draft; read with SAPRead version="inactive" before activation. NOTE: edit_class_definition with include= skips the symmetry refuse-policy — cross-include validation is not performed; rely on SAPActivate to catch breaks.',
+              'For CLAS write actions update, edit_method, and edit_class_definition: target a class-local include instead of /source/main. Valid values: definitions (CCDEF), implementations (CCIMP), macros, testclasses. Omit include to operate on source/main. add_method/edit_method_signature/delete_method/change_method_visibility operate on the global class /source/main only and reject include=. For edit_method, ARC-1 also auto-detects the include from the method specifier (lhc_*/lcl_* → implementations, ltc_* → testclasses); explicit include= overrides auto-detection. Include writes create an inactive draft; read with SAPRead version="inactive" before activation. NOTE: edit_class_definition with include= skips the symmetry refuse-policy — cross-include validation is not performed; rely on SAPActivate to catch breaks.',
           },
           method: {
             type: 'string',

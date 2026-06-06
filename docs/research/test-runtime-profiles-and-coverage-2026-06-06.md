@@ -2,7 +2,7 @@
 
 Date: 2026-06-06
 
-Branch baseline: `origin/main` at `94551af0`
+Branch baseline: original runtime-profile work started from `origin/main` at `94551af0`; the manual slow workflow follow-up in PR [#366](https://github.com/marianfoo/arc-1/pull/366) is based on `origin/main` at `d22392d3` after PR [#365](https://github.com/marianfoo/arc-1/pull/365).
 
 Scope: follow-up to `docs/research/test-suite-audit-2026-05-11.md` items 8-15. This checkpoint covers the remaining PR-path runtime reductions, slow-profile split, feature-probe cleanup, read-only concurrency smoke, and focused unit coverage for HTTP/server/BTP/cookie extraction surfaces.
 
@@ -279,14 +279,14 @@ Workflow design:
 
 GitHub constraint: `workflow_dispatch` only receives events when the workflow file is on the default branch. Because `.github/workflows/sap-slow-tests.yml` is new in this PR, the first live manual slow run is a post-merge step. The PR validates the workflow through the pull-request definition check plus local YAML parsing; after merge, dispatch **SAP Slow Tests** from `main` or from a selected branch.
 
-PR validation evidence from implementation commit `562a564a`:
+PR validation evidence checked on head `033ba0fe` before the docs refresh commit:
 
 | Workflow | Run | Result |
 |---|---|---:|
-| `SAP Slow Tests` | `27061442556` | `workflow definition check` passed in 2s; `slow live SAP profiles` skipped on pull request as intended. |
-| `Test` | `27061442536` | passed; integration 4m19s, E2E 6m14s, reliability summary 17s. |
-| `Dependency Review` | `27061442552` | passed in 5s. |
-| `CodeQL` | `27061441786` | passed; actions analysis 37s, JavaScript/TypeScript analysis 1m05s. |
+| `SAP Slow Tests` | `27061737358` | `workflow definition check` passed; `slow live SAP profiles` skipped on pull request as intended. |
+| `Test` | `27061737354` | passed; integration 3m10s, E2E 4m50s, reliability summary 27s. |
+| `Dependency Review` | `27061737351` | passed. |
+| `CodeQL` | `27061736790` | passed; actions analysis 45s, JavaScript/TypeScript analysis 1m04s. |
 
 Baseline evidence will be filled after the first manual run:
 
