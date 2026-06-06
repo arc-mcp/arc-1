@@ -240,5 +240,5 @@ Do not treat every `SAP_URL`/`SAP_USER`/`SAP_PASSWORD` string in docs or scripts
 
 ## Remaining Follow-Ups
 
-- Run the new manual **SAP Slow Tests** workflow once after `.github/workflows/sap-slow-tests.yml` is merged to `main`, then document the slow-profile GitHub baseline in `docs/research/test-runtime-profiles-and-coverage-2026-06-06.md`.
-- After that slow workflow pass, remove the old repository `SAP_*` secrets from GitHub unless another external operational process is still using them.
+- Completed: the first manual **SAP Slow Tests** workflow run after `.github/workflows/sap-slow-tests.yml` reached `main` passed as run [`27068686650`](https://github.com/marianfoo/arc-1/actions/runs/27068686650). Slow integration, slow E2E, MCP server shutdown, reliability summary, and required-execution threshold checks all passed. The baseline is documented in `docs/research/test-runtime-profiles-and-coverage-2026-06-06.md`.
+- Remaining external cleanup: remove the old repository `SAP_*` secrets from GitHub unless another external operational process is still using them. This is GitHub repository state, not a code change; current workflow files use `TEST_SAP_*` for live SAP CI and map to runtime `SAP_*` names only inside E2E server/test steps.

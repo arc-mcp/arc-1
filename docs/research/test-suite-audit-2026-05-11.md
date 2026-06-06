@@ -1270,8 +1270,8 @@ Treat this as the final phase. Parallelism is useful only after the suite has re
 Parallelism/coverage implementation update (2026-06-06):
 
 - Item 14 is implemented as `tests/e2e/concurrency-read.e2e.test.ts`. It runs three bounded read-only MCP calls concurrently and records the relevant server/rate-limit environment knobs.
-- Item 15 is partially implemented with focused coverage for `src/server/http.ts`, `src/adt/btp.ts`, and `src/extract-sap-cookies.ts`. `src/server/server.ts` and any remaining `src/server/xsuaa.ts` branch gaps remain lower-priority follow-up coverage targets.
-- The latest local coverage run after these changes reports statements `82.57%`, branches `73.38%`, functions `88.48%`, and lines `83.79%`.
+- Item 15 is implemented with focused coverage for `src/server/http.ts`, `src/adt/btp.ts`, `src/extract-sap-cookies.ts`, `src/server/server.ts`, and `src/server/xsuaa.ts`.
+- The latest local coverage run after these changes reports statements `83.17%`, branches `73.80%`, functions `88.97%`, and lines `84.41%`.
 
 ## Research Completeness
 
@@ -1325,14 +1325,12 @@ Implemented follow-ups:
 | P1 | Split slow integration/E2E profiles, moved cache warmup/release/broad where-used/full RAP-stack coverage out of the default PR path, and replaced repeated E2E feature probes with cached `SAPManage features`. | GitHub Actions Runtime Deep Dive |
 | P1 | Added a bounded read-only E2E concurrency smoke that records `ARC1_MAX_CONCURRENT`, `ARC1_AUTH_RATE_LIMIT`, and `ARC1_RATE_LIMIT`. | Parallelization Guidance |
 | P1 | Added focused unit coverage for HTTP API-key verifier behavior, BTP startup helpers, and cookie extraction helpers. | Coverage Gaps |
+| P1 | Added the manual `SAP Slow Tests` workflow and validated the first post-merge `workflow_dispatch` run on A4H 2025: slow integration, slow E2E, reliability summary, and required-execution thresholds all passed. | GitHub Actions Runtime Deep Dive |
+| P2 | Continued focused unit coverage for `src/server/server.ts` and XSUAA startup/OAuth-provider paths; the new server handler test also fixed a real `tools/list` deny-action advertisement bug. | Coverage Gaps |
 
 Remaining follow-ups:
 
-| Priority | Follow-up | Source finding |
-|---|---|---|
-| P1 | Measure the new default profile in GitHub Actions and decide whether slow profiles should become manual `workflow_dispatch` jobs, scheduled/nightly jobs, or stay local-only. | GitHub Actions Runtime Deep Dive |
-| P1 | Prepare GitHub Actions to run against the 2025 A4H system instead of the 2023 system, including secret migration, endpoint stability checks, and runtime comparison. | 2025 System Migration |
-| P2 | Continue focused unit coverage for remaining `src/server/server.ts` and branch-heavy XSUAA/server startup paths. | Coverage Gaps |
+No remaining follow-ups from this test-suite audit are open in this document. The old GitHub repository `SAP_*` secrets still exist as external repository state after the `TEST_SAP_*` migration; delete them only after confirming no out-of-band process still depends on those secret names.
 
 ## Raw Suite Summary
 

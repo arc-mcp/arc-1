@@ -249,7 +249,7 @@ export function createChainedTokenVerifier(
  * Solution: Override authorize() to swap the client_id and use a custom fetch() for
  * the token exchange to inject the XSUAA credentials.
  */
-class XsuaaProxyOAuthProvider extends ProxyOAuthServerProvider {
+export class XsuaaProxyOAuthProvider extends ProxyOAuthServerProvider {
   private xsuaaClientId: string;
   private xsuaaClientSecret: string;
   private xsuaaTokenUrl: string;

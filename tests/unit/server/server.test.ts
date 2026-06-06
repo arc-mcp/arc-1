@@ -1,6 +1,9 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
+import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AdtApiError } from '../../../src/adt/errors.js';
 import { AdtHttpClient } from '../../../src/adt/http.js';
@@ -16,6 +19,18 @@ import {
   VERSION,
 } from '../../../src/server/server.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
+
+type RequestHandler = (
+  request: Record<string, unknown>,
+  extra: { authInfo?: AuthInfo },
+) => Promise<Record<string, any>>;
+
+function requestHandler(server: Server, method: string): RequestHandler {
+  const handlers = (server as unknown as { _requestHandlers: Map<string, RequestHandler> })._requestHandlers;
+  const handler = handlers.get(method);
+  if (!handler) throw new Error(`No request handler registered for ${method}`);
+  return handler;
+}
 
 describe('MCP Server', () => {
   it('creates a server instance with correct name and version', () => {
@@ -110,6 +125,105 @@ describe('MCP Server', () => {
     expect(actionEnum).toEqual(['query']);
   });
 });
+
+describe('createServer request handlers', () => {
+  it('filters listed tools by auth scopes and denyActions', async () => {
+    const server = createServer({
+      ...DEFAULT_CONFIG,
+      allowDataPreview: true,
+      allowWrites: true,
+      allowTransportWrites: true,
+      denyActions: ['SAPRead.TABLE_CONTENTS', 'SAPManage'],
+    });
+    const handler = requestHandler(server, ListToolsRequestSchema.shape.method.value);
+
+    const result = await handler({ method: 'tools/list', params: {} }, { authInfo: readAuth() });
+    const tools = result.tools as Array<Record<string, any>>;
+
+    expect(tools.map((tool) => tool.name)).toContain('SAPRead');
+    expect(tools.map((tool) => tool.name)).not.toContain('SAPManage');
+    const sapRead = tools.find((tool) => tool.name === 'SAPRead');
+    expect(sapRead?.inputSchema.properties.type.enum).not.toContain('TABLE_CONTENTS');
+  });
+
+  it('blocks tool calls before SAP access when startup auth preflight failed', async () => {
+    const server = createServer(
+      DEFAULT_CONFIG,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      Promise.resolve({
+        status: 'failed',
+        blocking: true,
+        endpoint: '/sap/bc/adt/core/discovery',
+        checkedAt: '2026-06-06T00:00:00.000Z',
+        statusCode: 403,
+        reason: 'Access forbidden (403) during startup auth preflight.',
+      }),
+    );
+    const handler = requestHandler(server, CallToolRequestSchema.shape.method.value);
+
+    const result = await handler({ method: 'tools/call', params: { name: 'SAPRead', arguments: {} } }, {});
+
+    expect(result.isError).toBe(true);
+    expect(result.content?.[0]?.text).toContain('Startup authentication preflight failed');
+    expect(result.content?.[0]?.text).toContain('HTTP 403');
+  });
+
+  it('rejects API-key calls in strict principal-propagation mode', async () => {
+    const server = createServer({
+      ...DEFAULT_CONFIG,
+      ppEnabled: true,
+      ppStrict: true,
+    });
+    const handler = requestHandler(server, CallToolRequestSchema.shape.method.value);
+
+    const result = await handler(
+      { method: 'tools/call', params: { name: 'SAPRead', arguments: {} } },
+      {
+        authInfo: {
+          token: 'plain-api-key',
+          clientId: 'api-key:admin',
+          scopes: ['admin'],
+          extra: {},
+        },
+      },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content?.[0]?.text).toContain('Principal propagation requires a JWT token');
+  });
+
+  it('marks default-client cookies stale once after non-blocking cookie preflight 401', async () => {
+    const markSpy = vi.spyOn(AdtHttpClient.prototype, 'markCookiesStale').mockImplementation(() => undefined);
+    const startupAuth = Promise.resolve({
+      status: 'inconclusive' as const,
+      blocking: false,
+      endpoint: '/sap/bc/adt/core/discovery',
+      checkedAt: '2026-06-06T00:00:00.000Z',
+      statusCode: 401,
+      reason: 'stale cookie file',
+    });
+    const server = createServer(DEFAULT_CONFIG, undefined, undefined, undefined, undefined, undefined, startupAuth);
+    const handler = requestHandler(server, CallToolRequestSchema.shape.method.value);
+
+    await handler({ method: 'tools/call', params: { name: 'UnknownTool', arguments: {} } }, {});
+    await handler({ method: 'tools/call', params: { name: 'UnknownTool', arguments: {} } }, {});
+
+    expect(markSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+function readAuth(): AuthInfo {
+  return {
+    token: 'read-token',
+    clientId: 'oidc-client',
+    scopes: ['read', 'data'],
+    extra: {},
+  };
+}
 
 function writeCookieFixture(content: string): { file: string; cleanup: () => void } {
   const dir = mkdtempSync(join(tmpdir(), 'arc1-server-cookies-test-'));
