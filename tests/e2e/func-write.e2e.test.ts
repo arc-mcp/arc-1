@@ -105,7 +105,7 @@ describe('E2E FUGR + FUNC write lifecycle', () => {
           group: fugrName,
           source: newSource,
         });
-        expectToolSuccess(updateResult);
+        expectToolSuccessOrSkip(ctx, updateResult);
 
         // Step 5: Activate
         const activateResult = await callTool(client, 'SAPActivate', {
@@ -201,7 +201,7 @@ describe('E2E FUGR + FUNC write lifecycle', () => {
           group: fugrName,
           source: sourceWithParamBlock,
         });
-        const updateText = expectToolSuccess(updateResult);
+        const updateText = expectToolSuccessOrSkip(ctx, updateResult);
         // Handler must strip the param-block and append a warning
         expect(updateText.toLowerCase()).toMatch(/parameter comment block|stripped/i);
       } finally {

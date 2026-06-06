@@ -57,7 +57,7 @@ describe('E2E RAP write lifecycle tests', () => {
         action: 'delete_package',
         name: packageName,
       });
-      expectToolSuccess(deleteResult);
+      expectToolSuccessOrSkip(ctx, deleteResult);
     } finally {
       await bestEffortDeletePackage(client, packageName);
     }
@@ -170,7 +170,7 @@ describe('E2E RAP write lifecycle tests', () => {
         name: tableName,
         source: updateSource,
       });
-      expectToolSuccess(updateResult);
+      expectToolSuccessOrSkip(ctx, updateResult);
 
       const readUpdatedResult = await callTool(client, 'SAPRead', {
         type: 'TABL',
@@ -242,7 +242,7 @@ describe('E2E RAP write lifecycle tests', () => {
         type: 'MSAG',
         name: msagName,
       });
-      const deleteText = expectToolSuccess(deleteResult);
+      const deleteText = expectToolSuccessOrSkip(ctx, deleteResult);
       expect(deleteText).toContain(`Deleted MSAG ${msagName}`);
     } finally {
       await bestEffortDelete(client, 'MSAG', msagName);

@@ -180,6 +180,39 @@ Runtime comparison against the previous default-profile GitHub run from PR `#364
 
 Treat the runtime comparison as a concrete run-to-run measurement, not a permanent SLA. The important outcome for this PR is that the default SAP CI path now targets the tuned A4H 2025 system, fails fast on broken target configuration, and still executes the expected integration and E2E counts.
 
+### CI Rerun Finding: ADT Lock/Unlock Routing Flake
+
+A later documentation-only push on commit `633875eb` triggered Test workflow run `27058886073`. Static checks and integration passed (`integration` in 3m42s), but E2E failed in 4m12s with `131 passed / 4 failed / 6 skipped`.
+
+The four E2E failures were all the same SAP backend class, not a workflow-secret or preflight failure:
+
+| Test surface | Failing ADT route |
+|---|---|
+| RAP package create/delete | `/sap/bc/adt/packages/...?_action=LOCK&accessMode=MODIFY` |
+| MSAG update | `/sap/bc/adt/messageclass/...?_action=LOCK&accessMode=MODIFY` |
+| PROG update lifecycle | `/sap/bc/adt/programs/programs/...?_action=UNLOCK&lockHandle=...` |
+| SKTD parent DDLS create | `/sap/bc/adt/ddic/ddl/sources/...?_action=UNLOCK&lockHandle=...` |
+
+All returned HTTP 400 `Service cannot be reached` from SAP ADT write/session infrastructure. ARC-1 already had a skip classifier for this instability, but it only matched DDIC table unlocks. The broader run showed the same backend routing failure can happen on package, message-class, program, and DDLS lock/unlock routes.
+
+Implemented follow-up in this PR:
+
+- Generalized `tests/e2e/helpers.ts` skip classification to match only ADT `_action=LOCK` or `_action=UNLOCK` errors that contain `Service cannot be reached`.
+- Kept the classifier narrow: authorization failures, syntax failures, object-not-found failures, and non-session `Service cannot be reached` errors still fail normally.
+- Added unit coverage in `tests/unit/helpers/e2e-skip-classification.test.ts` for package LOCK, message-class LOCK, PROG UNLOCK, DDLS UNLOCK, the existing DDIC table UNLOCK case, and negative cases.
+- Updated default-profile E2E live mutation assertions that previously bypassed `expectToolSuccessOrSkip()` in RAP, DDIC, FUGR/FUNC, SKTD, and class-section write tests.
+- Documented the new skip taxonomy row in `docs/integration-test-skips.md`.
+
+Post-fix local validation on A4H 2025:
+
+| Check | Result |
+|---|---:|
+| `npm run typecheck` | passed |
+| `npm run lint` | passed; 454 files checked |
+| `npx vitest run tests/unit/helpers/e2e-skip-classification.test.ts` | passed; 7 tests |
+| `npm test` | passed; 104 files / 3,473 tests |
+| `npm run test:e2e:full` on A4H 2025 | passed; fixture sync `created=0, recreated=0, unchanged=8, deleted=0, skipped=0`; 20 files / 137 passed / 4 skipped; Vitest 219.13s |
+
 ## Remaining Follow-Ups
 
 - Decide whether `test:integration:slow` and `test:e2e:slow` should become manual `workflow_dispatch` jobs or a scheduled/nightly workflow after the 2025 default profile is stable in GitHub.

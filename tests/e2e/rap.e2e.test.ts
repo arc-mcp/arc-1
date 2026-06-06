@@ -215,7 +215,7 @@ describe('E2E RAP Completeness Tests', () => {
           name: WRITE_NAME,
           source: updatedSource,
         });
-        expectToolSuccess(updateResult);
+        expectToolSuccessOrSkip(ctx, updateResult);
 
         // Step 4: Activate the updated program
         const reactivateResult = await callTool(client, 'SAPActivate', {

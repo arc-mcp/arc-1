@@ -146,7 +146,7 @@ describe('E2E DDIC metadata write tests', () => {
           { low: 'I', description: 'Inactive' },
         ],
       });
-      expectToolSuccess(updateResult);
+      expectToolSuccessOrSkip(ctx, updateResult);
 
       const readResult = await callTool(client, 'SAPRead', { type: 'DOMA', name: domainName });
       const domain = parsePossiblyCachedJson(expectToolSuccess(readResult));
@@ -185,8 +185,10 @@ describe('E2E DDIC metadata write tests', () => {
     });
     expectToolSuccessOrSkip(ctx, dtelCreate);
 
-    await callTool(client, 'SAPWrite', { action: 'delete', type: 'DTEL', name: dtelName });
-    await callTool(client, 'SAPWrite', { action: 'delete', type: 'DOMA', name: domainName });
+    const deleteDtel = await callTool(client, 'SAPWrite', { action: 'delete', type: 'DTEL', name: dtelName });
+    expectToolSuccessOrSkip(ctx, deleteDtel);
+    const deleteDomain = await callTool(client, 'SAPWrite', { action: 'delete', type: 'DOMA', name: domainName });
+    expectToolSuccessOrSkip(ctx, deleteDomain);
 
     const readDtel = await callTool(client, 'SAPRead', { type: 'DTEL', name: dtelName });
     expectToolError(readDtel, dtelName);

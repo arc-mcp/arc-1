@@ -138,7 +138,7 @@ define view entity ${objectName}
         refObjectName: objectName,
         refObjectDescription: 'E2E SKTD test view',
       });
-      const createText = expectToolSuccess(createKtd);
+      const createText = expectToolSuccessOrSkip(ctx, createKtd);
       expect(createText).toContain(`Created SKTD ${objectName}`);
 
       // Step 4: Activate the KTD
@@ -156,7 +156,7 @@ define view entity ${objectName}
         name: objectName,
         source: markdown,
       });
-      expectToolSuccess(updateKtd);
+      expectToolSuccessOrSkip(ctx, updateKtd);
 
       // Step 6: Activate again after update
       await callTool(client, 'SAPActivate', {
@@ -185,7 +185,7 @@ define view entity ${objectName}
         type: 'SKTD',
         name: objectName,
       });
-      expectToolSuccess(deleteKtd);
+      expectToolSuccessOrSkip(ctx, deleteKtd);
 
       // Step 9: Verify KTD is gone
       const readDeleted = await callTool(client, 'SAPRead', {

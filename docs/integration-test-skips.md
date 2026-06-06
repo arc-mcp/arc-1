@@ -90,6 +90,7 @@ ARC-1 originally posted DTEL create/update with `Content-Type: application/vnd.s
 | Skip message fragment | Affected tests | Typical on | Should NOT skip on |
 |---|---|---|---|
 | `BACKEND_UNSUPPORTED: lock-handle session correlation differs on this release` | `crud.lifecycle.integration.test.ts` full PROG lifecycle, DTEL CRUD update step, RAP write + SKTD + MSAG on E2E | NW < 7.51 without the `abapfs_extensions` enhancement | NW ≥ 7.51, or any release with `abapfs_extensions` installed |
+| `Backend instability on this SAP system: ADT lock/unlock endpoint intermittently unreachable during write session handling` | Default E2E live write lifecycles that call ADT `_action=LOCK` or `_action=UNLOCK` for package, DDIC, PROG, MSAG, FUGR/FUNC, SKTD, or class-section mutations | Shared/trial SAP systems when ADT session routing temporarily returns HTTP 400 `Service cannot be reached` | Any system where this appears persistently across repeated runs; investigate SICF/ADT routing and stale locks |
 
 ### Root cause: persistent lock-handle 423 after successful LOCK
 
@@ -184,10 +185,10 @@ Several SAPRead types return a human-readable placeholder (not an MCP error) whe
 |---|---|---|
 | **NW 7.50 trial** | ~50 / 122 tests | Cat 2 (release gap), Cat 3 (lock-handle 423), E2E-α (fixture sync partial), Cat 1 (/DMO missing) |
 | **S/4HANA 2023** | 3 / 122 tests | Cat 5 (no transport package / `--allow-git-writes`) |
-| **ABAP Platform 2025** (SAP_BASIS 816) | 4 / 141 default-profile tests | Cat 5 + abapGit ADT bridge absent on the trial (SAPGit tests skip). Local 2026-06-06 default-profile baseline: 137 passed / 4 skipped. |
+| **ABAP Platform 2025** (SAP_BASIS 816) | 4 / 141 default-profile tests | Cat 5 + abapGit ADT bridge absent on the trial (SAPGit tests skip). Local 2026-06-06 default-profile baseline: 137 passed / 4 skipped. A small number of additional Cat 3 lock/unlock skips can occur if the shared ADT write-session route temporarily returns HTTP 400 `Service cannot be reached`; repeated occurrences should be investigated. |
 | **BTP ABAP** | ~30 / 122 tests | Cat 5 (policy), some of Cat 1 |
 
-Anything over ~5 skips on S/4HANA is a regression signal — most likely a broken fixture sync or an unintended breaking change to a SAPRead handler output.
+Anything over ~5 non-transient skips on S/4HANA is a regression signal — most likely a broken fixture sync or an unintended breaking change to a SAPRead handler output. Transient Cat 3 lock/unlock skips should be tracked separately; they indicate SAP ADT routing instability, not missing fixture coverage.
 
 ## Adding a new skip
 
