@@ -205,6 +205,8 @@ Implemented follow-up in this PR:
 
 A second CI run on commit `4c061709` (`27059320564`) confirmed the generalized classifier was active: E2E recorded 18 lock/unlock routing skips instead of failing those mutation tests. It still exposed one remaining custom precondition branch in `tests/e2e/activation-failure.e2e.test.ts`; that branch manually threw on a deliberately broken PROG create when the create hit `/sap/bc/adt/programs/programs/...?_action=UNLOCK&lockHandle=...` with HTTP 400 `Service cannot be reached`. The test now delegates create/update precondition failures to `classifyToolErrorSkip()` before applying its activation-specific assertions.
 
+Final PR validation on commit `a652aafd` passed in Test workflow run `27059551872`: unit on Node 22 and 24 each reported `3,473 passed / 0 skipped`, integration reported `208 passed / 54 skipped`, and E2E reported `119 passed / 22 skipped / 0 failed`. The higher E2E skip count was not a missing-fixture regression; `18` of the skips used the new ADT lock/unlock routing-instability reason while A4H returned HTTP 400 `Service cannot be reached` across live write-session endpoints.
+
 Post-fix local validation on A4H 2025:
 
 | Check | Result |

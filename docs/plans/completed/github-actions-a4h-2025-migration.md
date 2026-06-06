@@ -1,6 +1,6 @@
 # GitHub Actions A4H 2025 Migration
 
-Status: completed in PR [#365](https://github.com/marianfoo/arc-1/pull/365). The implementation workflow run [27058553382](https://github.com/marianfoo/arc-1/actions/runs/27058553382) passed with GitHub artifact counts of unit `3,468/0 skipped`, integration `208/54 skipped`, and E2E `137/4 skipped`. A later CI rerun exposed a live SAP ADT lock/unlock routing flake; the PR now includes the skip-classifier hardening and local A4H 2025 validation for that follow-up.
+Status: completed in PR [#365](https://github.com/marianfoo/arc-1/pull/365). The implementation workflow run [27058553382](https://github.com/marianfoo/arc-1/actions/runs/27058553382) passed with GitHub artifact counts of unit `3,468/0 skipped`, integration `208/54 skipped`, and E2E `137/4 skipped`. Later CI reruns exposed a live SAP ADT lock/unlock routing flake; the PR now includes the skip-classifier hardening and final green Test workflow run [27059551872](https://github.com/marianfoo/arc-1/actions/runs/27059551872), with Node 22/24 unit `3,473/0 skipped`, integration `208/54 skipped`, and E2E `119/22 skipped / 0 failed`.
 
 ## Overview
 

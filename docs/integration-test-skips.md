@@ -185,7 +185,7 @@ Several SAPRead types return a human-readable placeholder (not an MCP error) whe
 |---|---|---|
 | **NW 7.50 trial** | ~50 / 122 tests | Cat 2 (release gap), Cat 3 (lock-handle 423), E2E-α (fixture sync partial), Cat 1 (/DMO missing) |
 | **S/4HANA 2023** | 3 / 122 tests | Cat 5 (no transport package / `--allow-git-writes`) |
-| **ABAP Platform 2025** (SAP_BASIS 816) | 4 / 141 default-profile tests | Cat 5 + abapGit ADT bridge absent on the trial (SAPGit tests skip). Local 2026-06-06 default-profile baseline: 137 passed / 4 skipped. A small number of additional Cat 3 lock/unlock skips can occur if the shared ADT write-session route temporarily returns HTTP 400 `Service cannot be reached`; repeated occurrences should be investigated. |
+| **ABAP Platform 2025** (SAP_BASIS 816) | 4 / 141 default-profile tests when stable | Cat 5 + abapGit ADT bridge absent on the trial (SAPGit tests skip). Local 2026-06-06 default-profile baseline: 137 passed / 4 skipped. A shared ADT write-session routing window can add Cat 3 lock/unlock skips when A4H returns HTTP 400 `Service cannot be reached`; final PR #365 CI validation saw 119 passed / 22 skipped, including 18 such transient routing skips. |
 | **BTP ABAP** | ~30 / 122 tests | Cat 5 (policy), some of Cat 1 |
 
 Anything over ~5 non-transient skips on S/4HANA is a regression signal — most likely a broken fixture sync or an unintended breaking change to a SAPRead handler output. Transient Cat 3 lock/unlock skips should be tracked separately; they indicate SAP ADT routing instability, not missing fixture coverage.
