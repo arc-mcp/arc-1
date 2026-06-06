@@ -5,8 +5,14 @@
 
 import { InvalidTokenError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { logger } from '../../../src/server/logger.js';
 import { createChainedTokenVerifier, qualifyXsuaaScopes, RESERVED_OAUTH_SCOPES } from '../../../src/server/xsuaa.js';
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 
 describe('qualifyXsuaaScopes', () => {
   const APP = 'arc1-mcp!t498139';
@@ -262,6 +268,44 @@ const STUB_XSUAA_CREDS = {
   verificationkey: '-----BEGIN PUBLIC KEY-----\nstub\n-----END PUBLIC KEY-----',
 };
 
+function mockFetchResponse({
+  ok,
+  status,
+  json,
+  text = '',
+}: {
+  ok: boolean;
+  status: number;
+  json?: unknown;
+  text?: string;
+}): Response {
+  return {
+    ok,
+    status,
+    json: vi.fn().mockResolvedValue(json),
+    text: vi.fn().mockResolvedValue(text),
+  } as unknown as Response;
+}
+
+async function createTestProxyProvider({
+  callbackUrl = 'https://arc1.example.com/oauth/callback',
+  stateToken = 'arc1-state-token',
+}: {
+  callbackUrl?: string;
+  stateToken?: string;
+} = {}) {
+  const { XsuaaProxyOAuthProvider } = await import('../../../src/server/xsuaa.js');
+  const stateCodec = { encode: vi.fn().mockReturnValue(stateToken) };
+  const provider = new XsuaaProxyOAuthProvider(
+    STUB_XSUAA_CREDS,
+    vi.fn(),
+    { getClient: vi.fn() } as any,
+    callbackUrl,
+    stateCodec as any,
+  );
+  return { provider: provider as any, stateCodec };
+}
+
 describe('createXsuaaOAuthProvider', () => {
   it('createXsuaaTokenVerifier returns a function', async () => {
     const { createXsuaaTokenVerifier } = await import('../../../src/server/xsuaa.js');
@@ -356,6 +400,154 @@ describe('createXsuaaOAuthProvider', () => {
     } finally {
       infoSpy.mockRestore();
     }
+  });
+
+  it('authorize redirects to XSUAA with the bound client id, callback URI, qualified scopes, and opaque state', async () => {
+    const { provider, stateCodec } = await createTestProxyProvider({
+      callbackUrl: 'https://arc1.example.com/base/oauth/callback',
+    });
+    const redirect = vi.fn();
+
+    await (provider as any).authorize(
+      { client_id: 'local-client-id', redirect_uris: ['https://client.example.com/callback'] },
+      {
+        state: 'client+state/with/slash',
+        scopes: ['openid', 'read', 'uaa.user', ''],
+        codeChallenge: 'challenge-123',
+        redirectUri: 'https://client.example.com/callback',
+        resource: new URL('https://arc1.example.com/mcp'),
+      },
+      { redirect },
+    );
+
+    const url = new URL(redirect.mock.calls[0]?.[0]);
+    expect(`${url.origin}${url.pathname}`).toBe(`${STUB_XSUAA_CREDS.url}/oauth/authorize`);
+    expect(url.searchParams.get('client_id')).toBe(STUB_XSUAA_CREDS.clientid);
+    expect(url.searchParams.get('redirect_uri')).toBe('https://arc1.example.com/base/oauth/callback');
+    expect(url.searchParams.get('code_challenge')).toBe('challenge-123');
+    expect(url.searchParams.get('scope')).toBe('openid arc1.read uaa.user');
+    expect(url.searchParams.get('resource')).toBe('https://arc1.example.com/mcp');
+    expect(url.searchParams.get('state')).toBe('arc1-state-token');
+    expect(stateCodec.encode).toHaveBeenCalledWith({
+      clientState: 'client+state/with/slash',
+      clientRedirectUri: 'https://client.example.com/callback',
+      clientId: 'local-client-id',
+    });
+  });
+
+  it('exchanges authorization codes with XSUAA credentials and ARC-1 callback URI', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockFetchResponse({
+        ok: true,
+        status: 200,
+        json: {
+          access_token: 'access-token',
+          expires_in: 3600,
+          refresh_token: 'refresh-token',
+          scope: 'openid arc1.read',
+        },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const { provider } = await createTestProxyProvider();
+
+    const token = await (provider as any).exchangeAuthorizationCode(
+      { client_id: 'local-client-id' },
+      'auth-code',
+      'verifier',
+      'https://client.example.com/callback',
+    );
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = new URLSearchParams(init.body as string);
+    expect(url).toBe(`${STUB_XSUAA_CREDS.url}/oauth/token`);
+    expect(init.method).toBe('POST');
+    expect(body.get('grant_type')).toBe('authorization_code');
+    expect(body.get('code')).toBe('auth-code');
+    expect(body.get('code_verifier')).toBe('verifier');
+    expect(body.get('client_id')).toBe(STUB_XSUAA_CREDS.clientid);
+    expect(body.get('client_secret')).toBe(STUB_XSUAA_CREDS.clientsecret);
+    expect(body.get('redirect_uri')).toBe('https://arc1.example.com/oauth/callback');
+    expect(token).toMatchObject({
+      access_token: 'access-token',
+      token_type: 'bearer',
+      expires_in: 3600,
+      refresh_token: 'refresh-token',
+      scope: 'openid arc1.read',
+    });
+  });
+
+  it('throws a concise error when XSUAA authorization-code exchange fails', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockFetchResponse({ ok: false, status: 502, text: 'bad gateway' }));
+    vi.stubGlobal('fetch', fetchMock);
+    const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+    const { provider } = await createTestProxyProvider();
+
+    await expect(
+      (provider as any).exchangeAuthorizationCode({ client_id: 'local-client-id' }, 'auth-code'),
+    ).rejects.toThrow('XSUAA token exchange failed: 502');
+    expect(errorSpy).toHaveBeenCalledWith('XSUAA token exchange failed', expect.objectContaining({ status: 502 }));
+  });
+
+  it('exchanges refresh tokens with XSUAA credentials', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockFetchResponse({
+        ok: true,
+        status: 200,
+        json: {
+          access_token: 'fresh-access',
+          token_type: 'bearer',
+          refresh_token: 'fresh-refresh',
+        },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const { provider } = await createTestProxyProvider();
+
+    const token = await (provider as any).exchangeRefreshToken({ client_id: 'local-client-id' }, 'old-refresh');
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = new URLSearchParams(init.body as string);
+    expect(body.get('grant_type')).toBe('refresh_token');
+    expect(body.get('refresh_token')).toBe('old-refresh');
+    expect(body.get('client_id')).toBe(STUB_XSUAA_CREDS.clientid);
+    expect(token).toMatchObject({ access_token: 'fresh-access', refresh_token: 'fresh-refresh' });
+  });
+
+  it('warns but does not throw when revocation returns a non-2xx response', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockFetchResponse({ ok: false, status: 400, text: 'bad token' }));
+    vi.stubGlobal('fetch', fetchMock);
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const { provider } = await createTestProxyProvider();
+
+    await (provider as any).revokeToken(
+      { client_id: 'local-client-id' },
+      { token: 'tok', token_type_hint: 'access_token' },
+    );
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = new URLSearchParams(init.body as string);
+    expect(url).toBe(`${STUB_XSUAA_CREDS.url}/oauth/revoke`);
+    expect(init.headers).toMatchObject({
+      Authorization: `Basic ${Buffer.from(`${STUB_XSUAA_CREDS.clientid}:${STUB_XSUAA_CREDS.clientsecret}`).toString('base64')}`,
+    });
+    expect(body.get('token')).toBe('tok');
+    expect(body.get('token_type_hint')).toBe('access_token');
+    expect(warnSpy).toHaveBeenCalledWith('XSUAA token revocation failed', expect.objectContaining({ status: 400 }));
+  });
+
+  it('logs revocation network errors without throwing', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')));
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const { provider } = await createTestProxyProvider();
+
+    await expect(
+      (provider as any).revokeToken({ client_id: 'local-client-id' }, { token: 'tok' }),
+    ).resolves.toBeUndefined();
+    expect(warnSpy).toHaveBeenCalledWith(
+      'XSUAA token revocation error',
+      expect.objectContaining({ error: 'network down' }),
+    );
   });
 });
 

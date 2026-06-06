@@ -580,7 +580,7 @@ export function createServer(
 
     // When authenticated, only show tools the user has scopes for
     if (extra.authInfo) {
-      tools = filterToolsByAuthScope(tools, extra.authInfo.scopes);
+      tools = filterToolsByAuthScope(tools, extra.authInfo.scopes, config.denyActions);
     }
 
     return { tools };

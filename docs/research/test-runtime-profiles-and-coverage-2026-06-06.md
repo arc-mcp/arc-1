@@ -40,7 +40,7 @@ Local no-SAP validation:
 - `npm run typecheck`: passed.
 - `npm run lint`: passed.
 - `npm test`: 104 files / 3,468 tests passed.
-- `npm run test:coverage`: 104 files / 3,468 tests passed; statements 82.57%, branches 73.38%, functions 88.48%, lines 83.79%.
+- `npm run test:coverage`: 104 files / 3,484 tests passed; statements 83.17%, branches 73.80%, functions 88.97%, lines 84.41%.
 - `npm run build`: passed.
 
 GitHub Actions validation:
@@ -255,9 +255,9 @@ Runtime implication:
 | integration | 8m01s | 3m50s | The default integration profile now benefits from the tuned 2025 target and stricter preflight. |
 | e2e | 8m55s | 6m26s | The default E2E profile remains sequential but is materially faster on the 2025 target. |
 
-## Follow-Up In Progress: Manual Slow SAP Workflow
+## Follow-Up Completed: Manual Slow SAP Workflow
 
-This follow-up PR adds `.github/workflows/sap-slow-tests.yml` as the operator-run path for the slow SAP profiles. The workflow has a cheap pull-request definition check so the new workflow file is validated in CI, but the live slow SAP job runs only through `workflow_dispatch`, not `push`, `pull_request`, or a schedule.
+PR [#366](https://github.com/marianfoo/arc-1/pull/366) added `.github/workflows/sap-slow-tests.yml` as the operator-run path for the slow SAP profiles. The workflow has a cheap pull-request definition check so the workflow file is validated in CI, but the live slow SAP job runs only through `workflow_dispatch`, not `push`, `pull_request`, or a schedule.
 
 Manual dispatch settings:
 
@@ -277,7 +277,7 @@ Workflow design:
 - Uploads `integration-slow.json`, `e2e-slow.json`, skip telemetry, E2E logs, and slow JUnit XML.
 - Normalizes slow JSON to `integration.json` and `e2e.json` only for the existing reliability and required-execution summary scripts.
 
-GitHub constraint: `workflow_dispatch` only receives events when the workflow file is on the default branch. Because `.github/workflows/sap-slow-tests.yml` is new in this PR, the first live manual slow run is a post-merge step. The PR validates the workflow through the pull-request definition check plus local YAML parsing; after merge, dispatch **SAP Slow Tests** from `main` or from a selected branch.
+GitHub constraint: `workflow_dispatch` only receives events when the workflow file is on the default branch. Because `.github/workflows/sap-slow-tests.yml` was new in PR #366, the first live manual slow run had to be a post-merge step.
 
 PR validation evidence checked on head `033ba0fe` before the docs refresh commit:
 
@@ -288,14 +288,37 @@ PR validation evidence checked on head `033ba0fe` before the docs refresh commit
 | `Dependency Review` | `27061737351` | passed. |
 | `CodeQL` | `27061736790` | passed; actions analysis 45s, JavaScript/TypeScript analysis 1m04s. |
 
-Baseline evidence will be filled after the first manual run:
+First manual baseline after PR #366 merged:
 
 | Evidence | Result |
 |---|---:|
-| Workflow run | pending after merge |
-| Slow integration | pending |
-| Slow E2E | pending |
-| Reliability summary | pending |
-| A4H 2025 lock/unlock routing skips | pending |
+| Workflow run | [`27068686650`](https://github.com/marianfoo/arc-1/actions/runs/27068686650), `workflow_dispatch` on `main` at `cee8ac1c` |
+| Slow live SAP profiles job | passed in 5m08s |
+| Slow integration step | passed in 51s; JSON artifact reports 7 total, 6 passed, 1 skipped |
+| Slow E2E step | passed in 3m45s; JSON artifact reports 9 total, 8 passed, 1 skipped |
+| Slow reliability summary | passed |
+| Required slow execution thresholds | passed |
+| A4H 2025 lock/unlock routing skips | none in skip telemetry |
+| Intentional recursive CTS release skips | 1 integration skip and 1 E2E skip because `TEST_TRANSPORT_RELEASE_TESTS` was not enabled |
 
 The lock/unlock count matters because PR #365 proved the tuned 2025 system can still have shared-system ADT write-session routing windows. Occasional skip-aware lock/unlock routing instability is documented as Cat 3. A persistent increase in these skips on both default and manual slow runs should be treated as SAP-side routing/ICF/session instability, not as a reason to parallelize or weaken the test assertions.
+
+The first manual run was dispatched before docs-only PR #361 was merged, so its `headSha` is `cee8ac1c`. PR #361 did not change the slow workflow or test code, and the run still proves the new manual workflow path can authenticate against A4H 2025, run both slow suites sequentially, stop the MCP server, upload artifacts, summarize reliability, and enforce slow-suite thresholds.
+
+## Follow-Up Completed: Remaining Server/XSUAA Coverage
+
+This PR closes the remaining coverage follow-up from the test-suite audit for `src/server/server.ts` and branch-heavy XSUAA/server startup paths.
+
+Implemented coverage:
+
+- `tests/unit/server/server.test.ts` now exercises the real `createServer()` `tools/list` and `tools/call` handlers without opening a transport. It covers auth-scoped tool listing with `denyActions`, blocking startup auth preflight behavior, strict principal-propagation rejection for API-key calls, and one-time stale-cookie propagation after a non-blocking cookie-file preflight 401.
+- That handler-level coverage exposed a real bug: `tools/list` passed user scopes to `filterToolsByAuthScope()` but did not pass `config.denyActions`, so deny-listed tools/actions could still be advertised even though runtime calls would reject them. `src/server/server.ts` now passes `config.denyActions` into the list-path filter.
+- `tests/unit/server/xsuaa.test.ts` now exercises XSUAA provider branches for authorize redirect rewriting, opaque callback-proxy state handoff, authorization-code exchange, refresh-token exchange, revocation non-2xx warnings, and revocation network-error logging.
+
+Focused local coverage command:
+
+```bash
+npx vitest run tests/unit/server/server.test.ts tests/unit/server/xsuaa.test.ts --coverage --coverage.include=src/server/server.ts --coverage.include=src/server/xsuaa.ts
+```
+
+Result on this branch: 68 focused tests passed. Combined `server.ts`/`xsuaa.ts` focused coverage improved from statements 38.25%, branches 37.16%, functions 47.82%, lines 38.59% to statements 53.01%, branches 49.26%, functions 60.86%, lines 53.28%.
