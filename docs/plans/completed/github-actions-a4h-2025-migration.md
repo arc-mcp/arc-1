@@ -1,5 +1,7 @@
 # GitHub Actions A4H 2025 Migration
 
+Status: completed in PR [#365](https://github.com/marianfoo/arc-1/pull/365). The implementation workflow run [27058553382](https://github.com/marianfoo/arc-1/actions/runs/27058553382) passed with GitHub artifact counts of unit `3,468/0 skipped`, integration `208/54 skipped`, and E2E `137/4 skipped`.
+
 ## Overview
 
 This plan moves ARC-1's live SAP CI path from the older A4H 2023 target to the tuned A4H 2025 target. The code change should make `.github/workflows/test.yml` use one canonical live-test secret set, `TEST_SAP_*`, for both integration and E2E jobs, so future target rotations do not require keeping `TEST_SAP_*` and `SAP_*` in sync.
@@ -59,12 +61,12 @@ First update the workflow wiring and preflight behavior, then update docs. Rotat
 
 This task makes `TEST_SAP_*` the single GitHub Actions live SAP target for integration and E2E. It also makes preflight a real assertion that the target is configured and authenticated.
 
-- [ ] Add a non-secret target label such as `SAP_CI_TARGET_LABEL: A4H 2025` at workflow or job scope.
-- [ ] In the integration preflight, include `TEST_SAP_INSECURE`, check that `TEST_SAP_URL`, `TEST_SAP_USER`, `TEST_SAP_PASSWORD`, and `TEST_SAP_CLIENT` are present, and fail with a GitHub `::error` if any are missing.
-- [ ] In the integration preflight, call authenticated ADT core discovery and fail unless HTTP status is `200`; keep the status visible and do not print credentials.
-- [ ] Apply the same preflight contract to E2E, using the `TEST_SAP_*` secret names instead of the current `SAP_*` names.
-- [ ] Map `TEST_SAP_*` secrets to `SAP_*` environment variables only for the E2E start/test steps, because the local server and E2E tests expect `SAP_URL`, `SAP_USER`, `SAP_PASSWORD`, `SAP_CLIENT`, and optionally `SAP_INSECURE`.
-- [ ] Run `npm run typecheck` and `npm run lint`.
+- [x] Add a non-secret target label such as `SAP_CI_TARGET_LABEL: A4H 2025` at workflow or job scope.
+- [x] In the integration preflight, include `TEST_SAP_INSECURE`, check that `TEST_SAP_URL`, `TEST_SAP_USER`, `TEST_SAP_PASSWORD`, and `TEST_SAP_CLIENT` are present, and fail with a GitHub `::error` if any are missing.
+- [x] In the integration preflight, call authenticated ADT core discovery and fail unless HTTP status is `200`; keep the status visible and do not print credentials.
+- [x] Apply the same preflight contract to E2E, using the `TEST_SAP_*` secret names instead of the current `SAP_*` names.
+- [x] Map `TEST_SAP_*` secrets to `SAP_*` environment variables only for the E2E start/test steps, because the local server and E2E tests expect `SAP_URL`, `SAP_USER`, `SAP_PASSWORD`, `SAP_CLIENT`, and optionally `SAP_INSECURE`.
+- [x] Run `npm run typecheck` and `npm run lint`.
 
 ### Task 2: Update research and skip-profile documentation
 
@@ -75,11 +77,11 @@ This task makes `TEST_SAP_*` the single GitHub Actions live SAP target for integ
 
 This task records the migration research while work is in progress and removes stale guidance that would discourage using the tuned 2025 system as a write/activate CI target.
 
-- [ ] Add a new research checkpoint with current branch baseline, workflow findings, GitHub secret names checked, official GitHub Actions secret-handling references, live 2025 preflight evidence, and implementation decisions.
-- [ ] Update the prior runtime research's open follow-up section to say this PR is implementing the 2025 GitHub migration.
-- [ ] Update the 2025 rows in `docs/integration-test-skips.md` to reflect the tuned 2025 system and the measured default profile skip counts from the prior PR.
-- [ ] Ensure no credentials, tokens, or local absolute secret values are copied into docs.
-- [ ] Run `npm run lint`.
+- [x] Add a new research checkpoint with current branch baseline, workflow findings, GitHub secret names checked, official GitHub Actions secret-handling references, live 2025 preflight evidence, and implementation decisions.
+- [x] Update the prior runtime research's open follow-up section to say this PR is implementing the 2025 GitHub migration.
+- [x] Update the 2025 rows in `docs/integration-test-skips.md` to reflect the tuned 2025 system and the measured default profile skip counts from the prior PR.
+- [x] Ensure no credentials, tokens, or local absolute secret values are copied into docs.
+- [x] Run `npm run lint`.
 
 ### Task 3: Rotate repository live-test secrets to A4H 2025
 
@@ -89,11 +91,11 @@ This task records the migration research while work is in progress and removes s
 
 This task points GitHub's canonical `TEST_SAP_*` secret set at the tuned A4H 2025 system. It intentionally does not change the committed repository except through docs that record the fact of rotation.
 
-- [ ] List current repository secret names with `gh secret list -R marianfoo/arc-1` and confirm `TEST_SAP_URL`, `TEST_SAP_USER`, `TEST_SAP_PASSWORD`, `TEST_SAP_CLIENT`, and `TEST_SAP_INSECURE` exist or can be created.
-- [ ] Parse `.env.infrastructure` without shell evaluation so special characters in the password are not interpreted.
-- [ ] Set `TEST_SAP_URL`, `TEST_SAP_USER`, `TEST_SAP_PASSWORD`, `TEST_SAP_CLIENT`, and `TEST_SAP_INSECURE` to the A4H 2025 values with `gh secret set -R marianfoo/arc-1`.
-- [ ] Re-list secret names and timestamps only; do not print secret values.
-- [ ] Run an authenticated local ADT core discovery probe against A4H 2025 and record only target label, client, HTTP status, and response size.
+- [x] List current repository secret names with `gh secret list -R marianfoo/arc-1` and confirm `TEST_SAP_URL`, `TEST_SAP_USER`, `TEST_SAP_PASSWORD`, `TEST_SAP_CLIENT`, and `TEST_SAP_INSECURE` exist or can be created.
+- [x] Parse `.env.infrastructure` without shell evaluation so special characters in the password are not interpreted.
+- [x] Set `TEST_SAP_URL`, `TEST_SAP_USER`, `TEST_SAP_PASSWORD`, `TEST_SAP_CLIENT`, and `TEST_SAP_INSECURE` to the A4H 2025 values with `gh secret set -R marianfoo/arc-1`.
+- [x] Re-list secret names and timestamps only; do not print secret values.
+- [x] Run an authenticated local ADT core discovery probe against A4H 2025 and record only target label, client, HTTP status, and response size.
 
 ### Task 4: Local live validation on A4H 2025
 
@@ -102,12 +104,12 @@ This task points GitHub's canonical `TEST_SAP_*` secret set at the tuned A4H 202
 
 This task validates that the workflow target is usable before opening the PR. The commands should use A4H 2025 variables parsed from `.env.infrastructure`.
 
-- [ ] Run `npm run typecheck`.
-- [ ] Run `npm run lint`.
-- [ ] Run `npm test`.
-- [ ] Run `npm run build`.
-- [ ] Run `npm run test:integration` with `TEST_SAP_*` env populated from A4H 2025.
-- [ ] Start the local MCP server with A4H 2025 `SAP_*` env and run `npm run test:e2e`; always stop the server afterward.
+- [x] Run `npm run typecheck`.
+- [x] Run `npm run lint`.
+- [x] Run `npm test`.
+- [x] Run `npm run build`.
+- [x] Run `npm run test:integration` with `TEST_SAP_*` env populated from A4H 2025.
+- [x] Start the local MCP server with A4H 2025 `SAP_*` env and run `npm run test:e2e`; always stop the server afterward.
 
 ### Task 5: Publish PR and verify GitHub CI
 
@@ -116,12 +118,12 @@ This task validates that the workflow target is usable before opening the PR. Th
 
 This task creates a review-ready PR and verifies that GitHub Actions actually runs against the updated target.
 
-- [ ] Inspect `git status -sb` and the diff; stage only `.github/workflows/test.yml`, docs touched by this plan, and the plan file.
-- [ ] Commit with a conventional `test:` message.
-- [ ] Push branch `codex/github-ci-a4h-2025`.
-- [ ] Create a PR with a `test:` title so the SAP gate runs.
-- [ ] Watch the Test workflow. Confirm `test`, `integration`, `e2e`, and `reliability-summary` are green.
-- [ ] If GitHub CI fails, inspect logs, fix the root cause, rerun checks, and repeat until green.
+- [x] Inspect `git status -sb` and the diff; stage only `.github/workflows/test.yml`, docs touched by this plan, and the plan file.
+- [x] Commit with a conventional `test:` message.
+- [x] Push branch `codex/github-ci-a4h-2025`.
+- [x] Create a PR with a `test:` title so the SAP gate runs.
+- [x] Watch the Test workflow. Confirm `test`, `integration`, `e2e`, and `reliability-summary` are green.
+- [x] If GitHub CI fails, inspect logs, fix the root cause, rerun checks, and repeat until green.
 
 ### Task 6: Final documentation and review
 
@@ -132,8 +134,8 @@ This task creates a review-ready PR and verifies that GitHub Actions actually ru
 
 This task closes the loop after GitHub CI has run. The docs should include concrete evidence so future test-suite work knows what changed and what remains.
 
-- [ ] Add the PR number, GitHub Actions run id, job results, runtimes, and skip counts where artifacts expose them.
-- [ ] Record whether workflow preflight behaved as intended and whether A4H 2025 was the effective target.
-- [ ] List remaining follow-ups, especially whether slow profiles should be added to manual or scheduled CI.
-- [ ] Move this plan to `docs/plans/completed/`.
-- [ ] Review the implementation architecture: one canonical live SAP secret set, no new concurrency, no hidden test skips, no secrets in docs/logs.
+- [x] Add the PR number, GitHub Actions run id, job results, runtimes, and skip counts where artifacts expose them.
+- [x] Record whether workflow preflight behaved as intended and whether A4H 2025 was the effective target.
+- [x] List remaining follow-ups, especially whether slow profiles should be added to manual or scheduled CI.
+- [x] Move this plan to `docs/plans/completed/`.
+- [x] Review the implementation architecture: one canonical live SAP secret set, no new concurrency, no hidden test skips, no secrets in docs/logs.

@@ -126,10 +126,59 @@ Local validation completed:
 | `node scripts/ci/collect-test-reliability.mjs --results-dir test-results` | passed; no failures reported |
 | `npm run test:assert-execution -- --results-dir test-results --mode warn` | passed thresholds for unit, integration, and E2E |
 
-Pending GitHub validation:
+GitHub Actions validation completed on implementation commit `39c388f6`:
 
-- Open the PR and verify GitHub Actions `test`, `integration`, `e2e`, and `reliability-summary` are green.
-- Update this document with PR number, run id, job runtimes, and artifact skip counts after the workflow completes.
+| Evidence | Result |
+|---|---:|
+| PR | [#365](https://github.com/marianfoo/arc-1/pull/365) |
+| Workflow | [Test run 27058553382](https://github.com/marianfoo/arc-1/actions/runs/27058553382) |
+| Event | `pull_request` |
+| Head branch | `codex/github-ci-a4h-2025` |
+| Head SHA | `39c388f6e9c1b488f228e0a9366d140116a6b5f5` |
+| Result | success |
+
+GitHub job results:
+
+| Job | Result | Runtime |
+|---|---:|---:|
+| `gate` | passed | 3s |
+| `mta-validate` | passed | 7s |
+| `test (22)` | passed | 1m32s |
+| `test (24)` | passed | 1m23s |
+| `integration` | passed | 3m50s |
+| `e2e` | passed | 6m26s |
+| `reliability-summary` | passed | 13s |
+| `dependency-review` | passed | 4s |
+| `Analyze (actions)` | passed | 41s |
+| `Analyze (javascript-typescript)` | passed | 1m11s |
+| `CodeQL` | passed | 2s |
+
+GitHub artifact reliability counts from run `27058553382`:
+
+| Suite | Total | Passed | Failed | Skipped | Skip % |
+|---|---:|---:|---:|---:|---:|
+| unit | 3,468 | 3,468 | 0 | 0 | 0.0% |
+| integration | 262 | 208 | 0 | 54 | 20.6% |
+| e2e | 141 | 137 | 0 | 4 | 2.8% |
+
+Required execution thresholds also passed from the downloaded GitHub artifacts:
+
+| Suite | Executed | Required | Result |
+|---|---:|---:|---:|
+| unit | 3,468 | 1,000 | passed |
+| integration | 208 | 10 | passed |
+| e2e | 137 | 5 | passed |
+
+The integration and E2E `SAP auth preflight` steps both completed successfully. Because the workflow now fails those steps when required `TEST_SAP_*` secrets are missing or authenticated ADT core discovery is not HTTP 200, the green SAP jobs prove the GitHub runner was able to authenticate to the configured A4H 2025 target before executing tests.
+
+Runtime comparison against the previous default-profile GitHub run from PR `#364`:
+
+| Suite | PR #364 GitHub runtime | PR #365 GitHub runtime | Change |
+|---|---:|---:|---:|
+| integration | 8m01s | 3m50s | -4m11s |
+| e2e | 8m55s | 6m26s | -2m29s |
+
+Treat the runtime comparison as a concrete run-to-run measurement, not a permanent SLA. The important outcome for this PR is that the default SAP CI path now targets the tuned A4H 2025 system, fails fast on broken target configuration, and still executes the expected integration and E2E counts.
 
 ## Remaining Follow-Ups
 

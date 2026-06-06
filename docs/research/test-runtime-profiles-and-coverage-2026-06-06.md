@@ -231,12 +231,22 @@ GitHub:
 - PR default CI should run `test`, `integration`, `e2e`, and `reliability-summary` using the faster default profiles.
 - If CI fails because of real assertions, fix. If CI exposes SAP transient/time-budget failures, adjust timeouts or profile membership only with evidence.
 
-## Follow-Up In Progress: GitHub A4H 2025 Migration
+## Follow-Up Completed: GitHub A4H 2025 Migration
 
-Preparing the 2025 system for GitHub Actions is being implemented as the next PR on branch `codex/github-ci-a4h-2025`:
+The 2025 system was prepared for GitHub Actions in PR [#365](https://github.com/marianfoo/arc-1/pull/365) on branch `codex/github-ci-a4h-2025`.
 
 - `.github/workflows/test.yml` now uses `TEST_SAP_*` as the one live SAP target for both integration and E2E; E2E maps those values to the `SAP_*` runtime env expected by the local MCP server.
 - Live SAP preflight now fails fast unless the required secrets are present and authenticated ADT core discovery returns HTTP 200. This prevents a green live SAP job caused by an auth skip.
 - Local A4H 2025 preflight on 2026-06-06 returned HTTP 401 unauthenticated and HTTP 200 authenticated against `/sap/bc/adt/core/discovery?sap-client=001`.
-- GitHub `TEST_SAP_*` secrets are being rotated to A4H 2025 values; values are external state and are not documented here.
-- Remaining decision after the 2025 default profile is green in GitHub: whether slow profiles should become manual `workflow_dispatch` jobs or a scheduled/nightly workflow.
+- GitHub `TEST_SAP_*` secrets were rotated to A4H 2025 values on 2026-06-06. Secret values are external state and are not documented here.
+- PR `#365`, Test workflow run `27058553382`, passed with `integration` in 3m50s and `e2e` in 6m26s.
+- Downloaded GitHub artifacts from run `27058553382` reported unit `3,468 passed / 0 skipped`, integration `208 passed / 54 skipped`, and E2E `137 passed / 4 skipped`; required-execution thresholds passed.
+
+Runtime implication:
+
+| Suite | PR #364 measured GitHub runtime | PR #365 measured GitHub runtime | Result |
+|---|---:|---:|---|
+| integration | 8m01s | 3m50s | The default integration profile now benefits from the tuned 2025 target and stricter preflight. |
+| e2e | 8m55s | 6m26s | The default E2E profile remains sequential but is materially faster on the 2025 target. |
+
+Remaining decision after the 2025 default profile is stable in GitHub: whether `test:integration:slow` and `test:e2e:slow` should become manual `workflow_dispatch` jobs or a scheduled/nightly workflow.
