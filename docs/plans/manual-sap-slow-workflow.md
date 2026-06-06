@@ -131,10 +131,10 @@ Update the migration research with the current `gh secret list` result and the p
 - Modify: `docs/research/test-runtime-profiles-and-coverage-2026-06-06.md`
 - Move: `docs/plans/manual-sap-slow-workflow.md` to `docs/plans/completed/manual-sap-slow-workflow.md`
 
-After local validation passes, create the PR, run normal GitHub CI, manually dispatch the new slow workflow from the PR branch, fix workflow issues until both are green, and update docs with the actual evidence.
+After local validation passes, create the PR and run normal GitHub CI plus the new workflow's pull-request definition check. Do not claim the live slow job was dispatched from the PR branch: GitHub requires a new `workflow_dispatch` workflow file to exist on the default branch before it can receive manual dispatch events. Document the PR evidence now and leave the live slow baseline as the post-merge follow-up.
 
 - [x] Run local validation commands: `npm run typecheck`, `npm run lint`, `npm test`, workflow YAML parse, `bash -n scripts/rate-limit-smoke.sh`, and `git diff --check`.
-- [ ] Commit, push, and create a ready PR with a conventional `ci:` title and a description covering goal, content, and validation.
+- [x] Commit, push, and create a ready PR with a conventional `ci:` title and a description covering goal, content, and validation.
 - [ ] Wait for the normal PR `Test` workflow checks and the new `SAP Slow Tests` pull-request definition check to pass.
 - [x] Confirm the runtime research document explains that the first live manual slow dispatch is post-merge because new `workflow_dispatch` workflows must exist on the default branch.
 - [ ] After merge, dispatch the new `SAP Slow Tests` workflow with slow integration and slow E2E enabled, recursive release disabled.

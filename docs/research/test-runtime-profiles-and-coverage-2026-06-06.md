@@ -279,6 +279,15 @@ Workflow design:
 
 GitHub constraint: `workflow_dispatch` only receives events when the workflow file is on the default branch. Because `.github/workflows/sap-slow-tests.yml` is new in this PR, the first live manual slow run is a post-merge step. The PR validates the workflow through the pull-request definition check plus local YAML parsing; after merge, dispatch **SAP Slow Tests** from `main` or from a selected branch.
 
+PR validation evidence from implementation commit `562a564a`:
+
+| Workflow | Run | Result |
+|---|---|---:|
+| `SAP Slow Tests` | `27061442556` | `workflow definition check` passed in 2s; `slow live SAP profiles` skipped on pull request as intended. |
+| `Test` | `27061442536` | passed; integration 4m19s, E2E 6m14s, reliability summary 17s. |
+| `Dependency Review` | `27061442552` | passed in 5s. |
+| `CodeQL` | `27061441786` | passed; actions analysis 37s, JavaScript/TypeScript analysis 1m05s. |
+
 Baseline evidence will be filled after the first manual run:
 
 | Evidence | Result |
