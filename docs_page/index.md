@@ -169,8 +169,9 @@ Full reference: **[tools.md](tools.md)**
 
 ## Testing & CI
 
-- **1,300+ unit tests** run locally without SAP access (`npm test`)
-- **Integration + E2E lanes** run on `main` pushes and internal PRs in GitHub Actions
+- **3,474 unit tests** run locally without SAP access (`npm test`)
+- **Default integration + E2E lanes** run against the A4H 2025 SAP target on internal PRs and manual dispatch in GitHub Actions
+- **Manual slow SAP profiles** cover expensive cache warmup, broad where-used, RAP full-stack, and recursive CTS release checks (`test:integration:slow`, `test:e2e:slow`, GitHub **SAP Slow Tests** workflow)
 - **BTP tests** are local-only (`npm run test:integration:btp`, `npm run test:integration:btp:smoke`)
 - **Reliability telemetry + coverage** are collected as informational CI signals
 

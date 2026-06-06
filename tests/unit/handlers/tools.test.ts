@@ -259,6 +259,32 @@ describe('Tool Definitions', () => {
     expect(item.required).toContain('name');
   });
 
+  it('SAPWrite type and include descriptions track the supported schema surface', () => {
+    const onPremTools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true });
+    const onPremSchema = onPremTools.find((t) => t.name === 'SAPWrite')!.inputSchema as Record<string, any>;
+    const onPremDescription = onPremTools.find((t) => t.name === 'SAPWrite')!.description;
+    const onPremTypeEnum: string[] = onPremSchema.properties.type.enum;
+    const onPremTypeDescription: string = onPremSchema.properties.type.description;
+
+    for (const type of ['DCLS', 'SRVB', 'SKTD', 'TABL/DT', 'TABL/DS', 'MSAG']) {
+      expect(onPremTypeEnum).toContain(type);
+      expect(onPremTypeDescription).toContain(type);
+    }
+    expect(onPremDescription).toContain('DCLS');
+    expect(onPremTypeDescription).toContain('change_method_visibility');
+    expect(onPremSchema.properties.include.description).toContain('reject include=');
+    expect(onPremSchema.properties.source.description).toContain('change_method_visibility');
+
+    const btpTools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true, systemType: 'btp' });
+    const btpDescription = btpTools.find((t) => t.name === 'SAPWrite')!.description;
+    const btpSchema = btpTools.find((t) => t.name === 'SAPWrite')!.inputSchema as Record<string, any>;
+    const btpTypeDescription: string = btpSchema.properties.type.description;
+    for (const type of ['DCLS', 'SRVB', 'SKTD', 'MSAG']) {
+      expect(btpTypeDescription).toContain(type);
+    }
+    expect(btpDescription).toContain('DCLS');
+  });
+
   it('SAPWrite schema exposes class-section surgery actions (issue #303)', () => {
     const tools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true });
     const sapWrite = tools.find((t) => t.name === 'SAPWrite')!;

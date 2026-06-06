@@ -41,13 +41,32 @@ now_ms() {
 ensure_env() {
   if [ ! -f "$ENV_FILE" ]; then
     cat > "$ENV_FILE" <<'EOF'
-SAP_URL=http://a4h.marianzeis.de:50000
-SAP_USER=MARIAN
-SAP_PASSWORD=6j9GylaIHh5yaMXosSAjjRHqD
+# Fill these before running this smoke harness.
+SAP_URL=
+SAP_USER=
+SAP_PASSWORD=
 SAP_CLIENT=001
 SAP_LANGUAGE=EN
 EOF
-    echo "[setup] wrote $ENV_FILE"
+    echo "[setup] wrote template $ENV_FILE"
+    echo "[setup] fill SAP_URL, SAP_USER, and SAP_PASSWORD before running scenarios."
+  fi
+}
+
+validate_env() {
+  local missing=()
+  local name value
+  for name in SAP_URL SAP_USER SAP_PASSWORD; do
+    value="${!name:-}"
+    if [ -z "$value" ]; then
+      missing+=("$name")
+    fi
+  done
+
+  if [ "${#missing[@]}" -gt 0 ]; then
+    echo "[setup] missing required SAP value(s) in $ENV_FILE: ${missing[*]}"
+    echo "[setup] edit $ENV_FILE or export the values before running this smoke harness."
+    return 1
   fi
 }
 
@@ -79,6 +98,7 @@ start_server() {
   rm -f "$LOG"
   # shellcheck source=/dev/null
   set -a; . "$ENV_FILE"; set +a
+  validate_env || return
   ARC1_AUTH_RATE_LIMIT="$auth" \
   ARC1_RATE_LIMIT="$rl" \
   ARC1_MAX_CONCURRENT="$maxc" \

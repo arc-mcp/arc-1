@@ -2,7 +2,7 @@
 
 Date: 2026-06-06
 
-Branch baseline: `origin/main` at `94551af0`
+Branch baseline: original runtime-profile work started from `origin/main` at `94551af0`; the manual slow workflow follow-up in PR [#366](https://github.com/marianfoo/arc-1/pull/366) is based on `origin/main` at `d22392d3` after PR [#365](https://github.com/marianfoo/arc-1/pull/365).
 
 Scope: follow-up to `docs/research/test-suite-audit-2026-05-11.md` items 8-15. This checkpoint covers the remaining PR-path runtime reductions, slow-profile split, feature-probe cleanup, read-only concurrency smoke, and focused unit coverage for HTTP/server/BTP/cookie extraction surfaces.
 
@@ -136,11 +136,12 @@ NPL is useful for compatibility checks and skip behavior, but not for proving th
 
 | File | Current role | Finding |
 |------|--------------|---------|
-| `package.json` | Defines `test:integration`, `test:e2e`, and E2E lifecycle scripts. | No slow profile scripts exist yet. |
-| `vitest.integration.config.ts` | Includes `tests/integration/**/*.test.ts`, sequential. | Needs to exclude `*.slow.integration.test.ts` from default and keep sequential execution. |
-| `tests/e2e/vitest.e2e.config.ts` | Includes `tests/e2e/**/*.e2e.test.ts`, sequential, JSON/JUnit reporters. | Needs to exclude `*.slow.e2e.test.ts` from default and keep sequential execution. |
-| `.github/workflows/test.yml` | Runs default integration then default E2E with repository-wide SAP concurrency. | Default workflow can remain on default profiles; manual slow profiles can be documented or added separately after measuring local behavior. |
-| `scripts/ci/collect-test-reliability.mjs` | Aggregates `unit`, `integration`, `e2e` JSON plus skip telemetry. | No immediate change required unless workflow starts uploading slow JSON files in this PR. |
+| `package.json` | Defines default and slow integration/E2E scripts. | Slow scripts now exist: `test:integration:slow` and `test:e2e:slow`. |
+| `vitest.integration.config.ts` | Includes default integration tests, sequential. | Default profile excludes `*.slow.integration.test.ts`; slow profile uses `vitest.integration.slow.config.ts`. |
+| `tests/e2e/vitest.e2e.config.ts` | Includes default E2E tests, sequential, JSON/JUnit reporters. | Default profile excludes `*.slow.e2e.test.ts`; slow profile uses `tests/e2e/vitest.e2e.slow.config.ts`. |
+| `.github/workflows/test.yml` | Runs default integration then default E2E with repository-wide SAP concurrency. | Default workflow stays on default profiles. |
+| `.github/workflows/sap-slow-tests.yml` | Manual slow live SAP job plus PR definition check. | New follow-up workflow dispatches slow integration and/or slow E2E against A4H 2025 with the same SAP concurrency group. |
+| `scripts/ci/collect-test-reliability.mjs` | Aggregates `unit`, `integration`, `e2e` JSON plus skip telemetry. | Slow workflow normalizes slow JSON to `integration.json`/`e2e.json` before running the existing summary. |
 
 ### Integration Hotspots
 
@@ -176,7 +177,7 @@ NPL is useful for compatibility checks and skip behavior, but not for proving th
 3. Keep slow profiles sequential too. The goal is test selection, not concurrent mutation.
 4. Use `SAPManage features` in E2E tests that only need cached capability information. Keep live probe as startup/server behavior, not repeated test setup.
 5. Add one small read-only concurrency smoke. It should run read-only calls only and log `ARC1_MAX_CONCURRENT`, `ARC1_AUTH_RATE_LIMIT`, and `ARC1_RATE_LIMIT` so future capacity experiments have context.
-6. Keep GitHub default workflow on default profiles first. Add slow-profile scripts in this PR; consider workflow-dispatch slow jobs only after local 2025/2023 validation shows stable timings.
+6. Keep GitHub default workflow on default profiles and run slow profiles through a manual `workflow_dispatch` workflow. Do not schedule or auto-run the slow profiles until the operator decides the cadence.
 7. Do not include infrastructure secrets in docs, tests, workflow logs, or PR text.
 
 ## Planned Implementation Units
@@ -229,6 +230,7 @@ Live SAP:
 GitHub:
 
 - PR default CI should run `test`, `integration`, `e2e`, and `reliability-summary` using the faster default profiles.
+- Manual slow CI should run the `SAP Slow Tests` workflow on demand with slow integration and slow E2E selected; recursive transport release remains disabled unless explicitly requested.
 - If CI fails because of real assertions, fix. If CI exposes SAP transient/time-budget failures, adjust timeouts or profile membership only with evidence.
 
 ## Follow-Up Completed: GitHub A4H 2025 Migration
@@ -253,4 +255,47 @@ Runtime implication:
 | integration | 8m01s | 3m50s | The default integration profile now benefits from the tuned 2025 target and stricter preflight. |
 | e2e | 8m55s | 6m26s | The default E2E profile remains sequential but is materially faster on the 2025 target. |
 
-Remaining decision after the 2025 default profile is stable in GitHub: whether `test:integration:slow` and `test:e2e:slow` should become manual `workflow_dispatch` jobs or a scheduled/nightly workflow.
+## Follow-Up In Progress: Manual Slow SAP Workflow
+
+This follow-up PR adds `.github/workflows/sap-slow-tests.yml` as the operator-run path for the slow SAP profiles. The workflow has a cheap pull-request definition check so the new workflow file is validated in CI, but the live slow SAP job runs only through `workflow_dispatch`, not `push`, `pull_request`, or a schedule.
+
+Manual dispatch settings:
+
+| Input | Default | Meaning |
+|---|---:|---|
+| `run_integration_slow` | `true` | Runs `npm run test:integration:slow` against A4H 2025. |
+| `run_e2e_slow` | `true` | Builds ARC-1, starts the local MCP server, and runs `npm run test:e2e:slow` against A4H 2025. |
+| `enable_transport_release_tests` | `false` | Passes `TEST_TRANSPORT_RELEASE_TESTS=true`; leave off unless intentionally validating recursive CTS release on the shared SAP system. |
+
+Workflow design:
+
+- Uses the same canonical `TEST_SAP_*` secrets as the default Test workflow.
+- Uses the same authenticated ADT core discovery preflight and `SAP_CI_TARGET_LABEL: A4H 2025`.
+- Uses the same `${{ github.repository }}-sap-live-a4h` concurrency group, so default and slow SAP jobs cannot hit A4H at the same time.
+- Runs a pull-request definition check only when the workflow file changes; that check does not access SAP secrets or run slow tests.
+- Keeps slow integration and slow E2E sequential inside one job.
+- Uploads `integration-slow.json`, `e2e-slow.json`, skip telemetry, E2E logs, and slow JUnit XML.
+- Normalizes slow JSON to `integration.json` and `e2e.json` only for the existing reliability and required-execution summary scripts.
+
+GitHub constraint: `workflow_dispatch` only receives events when the workflow file is on the default branch. Because `.github/workflows/sap-slow-tests.yml` is new in this PR, the first live manual slow run is a post-merge step. The PR validates the workflow through the pull-request definition check plus local YAML parsing; after merge, dispatch **SAP Slow Tests** from `main` or from a selected branch.
+
+PR validation evidence checked on head `033ba0fe` before the docs refresh commit:
+
+| Workflow | Run | Result |
+|---|---|---:|
+| `SAP Slow Tests` | `27061737358` | `workflow definition check` passed; `slow live SAP profiles` skipped on pull request as intended. |
+| `Test` | `27061737354` | passed; integration 3m10s, E2E 4m50s, reliability summary 27s. |
+| `Dependency Review` | `27061737351` | passed. |
+| `CodeQL` | `27061736790` | passed; actions analysis 45s, JavaScript/TypeScript analysis 1m04s. |
+
+Baseline evidence will be filled after the first manual run:
+
+| Evidence | Result |
+|---|---:|
+| Workflow run | pending after merge |
+| Slow integration | pending |
+| Slow E2E | pending |
+| Reliability summary | pending |
+| A4H 2025 lock/unlock routing skips | pending |
+
+The lock/unlock count matters because PR #365 proved the tuned 2025 system can still have shared-system ADT write-session routing windows. Occasional skip-aware lock/unlock routing instability is documented as Cat 3. A persistent increase in these skips on both default and manual slow runs should be treated as SAP-side routing/ICF/session instability, not as a reason to parallelize or weaken the test assertions.

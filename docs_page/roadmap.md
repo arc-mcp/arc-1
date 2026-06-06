@@ -2471,7 +2471,7 @@ The VS Code client-side issue — [microsoft/vscode#314715](https://github.com/m
 | Object Caching | SQLite + memory cache with on-demand + pre-warmer support (#31) |
 | LLM Search UX | Auto-transliteration, field-name hints, cache indicators |
 | HTTP Client | Native fetch + undici (replaced axios) (#35) |
-| Test Coverage | 1,300+ unit + ~150 integration + ~60 E2E + 28 BTP integration + 5 BTP smoke tests (vitest); coverage telemetry is informational |
+| Test Coverage | 3,474 unit + 262-test default integration profile + 141-test default E2E profile; BTP smoke/integration and slow SAP profiles are explicit/manual; coverage telemetry is informational |
 | Documentation | Architecture, auth guides, Docker guide, setup phases, security guide, RAP/common-use-case workflow skills |
 
 ---
@@ -2486,7 +2486,7 @@ The VS Code client-side issue — [microsoft/vscode#314715](https://github.com/m
 | Auth Phase 2: OAuth/OIDC | Entra ID JWT validation via `jose` library | Complete |
 | Auth Phase 4: BTP CF | Docker on CF with Destination Service + Cloud Connector | Complete |
 | TypeScript Migration | Full Go -> TypeScript port, Go code removed | Complete (2026-03-26) |
-| CI/CD Pipeline | GitHub Actions: lint, typecheck, tests (Node 22/24), integration + E2E on main/internal PRs, Docker, npm publish | Complete |
+| CI/CD Pipeline | GitHub Actions: lint, typecheck, unit tests (Node 22/24), default integration + E2E on internal PRs/manual dispatch, manual slow SAP workflow, Docker, npm publish | Complete |
 | Copilot Studio E2E | OAuth + MCP + BTP Destination + Cloud Connector -> SAP data | Complete |
 | XSUAA OAuth Proxy | SEC-07: MCP SDK auth + @sap/xssec, Express 5, 3 auth modes coexist | Complete (2026-03-27) |
 | Scope Enforcement | SEC-06: Per-tool scope checks, ListTools filtering, 12 tests | Complete (2026-03-27) |

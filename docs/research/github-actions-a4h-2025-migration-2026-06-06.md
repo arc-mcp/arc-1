@@ -217,7 +217,28 @@ Post-fix local validation on A4H 2025:
 | `npm test` | passed; 104 files / 3,473 tests |
 | `npm run test:e2e:full` on A4H 2025 | passed; fixture sync `created=0, recreated=0, unchanged=8, deleted=0, skipped=0`; 20 files / 137 passed / 4 skipped; Vitest 219.13s |
 
+## Post-Merge Secret Audit
+
+Rechecked on 2026-06-06 after PR #365 merged:
+
+- Current workflow files do not reference `secrets.SAP_*`; GitHub live SAP workflows use `secrets.TEST_SAP_*`.
+- `.github/workflows/test.yml` maps `TEST_SAP_*` to runtime `SAP_*` only inside E2E server/test steps because ARC-1 application configuration still uses those environment variable names.
+- `.github/workflows/sap-slow-tests.yml` follows the same pattern for the new manual slow workflow.
+- Repository secret names `SAP_URL`, `SAP_USER`, `SAP_PASSWORD`, and `SAP_CLIENT` still exist. Values were not read or printed.
+- Repository secret names `TEST_SAP_URL`, `TEST_SAP_USER`, `TEST_SAP_PASSWORD`, `TEST_SAP_CLIENT`, and `TEST_SAP_INSECURE` still exist and are the canonical A4H 2025 CI target.
+- While auditing test-support scripts, `scripts/rate-limit-smoke.sh` still generated a local `/tmp/arc1-smoke.env` with concrete SAP defaults. This PR replaces that with an empty operator template and runtime validation. No credential values are reproduced here.
+
+Cleanup recommendation:
+
+| Secret family | Recommendation |
+|---|---|
+| `TEST_SAP_*` | Keep. This is the canonical GitHub Actions live SAP target. |
+| old GitHub `SAP_*` secrets | Delete after the default Test workflow and the new manual SAP Slow Tests workflow both pass using `TEST_SAP_*`. |
+| local `SAP_*` environment variables | Keep. These are ARC-1 runtime configuration names used by local scripts, E2E server startup, Docker/npm usage, and documentation examples. |
+
+Do not treat every `SAP_URL`/`SAP_USER`/`SAP_PASSWORD` string in docs or scripts as a stale GitHub secret reference. The cleanup target is specifically the old repository secret names, not the product's runtime configuration interface.
+
 ## Remaining Follow-Ups
 
-- Decide whether `test:integration:slow` and `test:e2e:slow` should become manual `workflow_dispatch` jobs or a scheduled/nightly workflow after the 2025 default profile is stable in GitHub.
-- Consider removing or repurposing old `SAP_*` repository secrets after confirming no other workflows or operational scripts depend on them.
+- Run the new manual **SAP Slow Tests** workflow once after `.github/workflows/sap-slow-tests.yml` is merged to `main`, then document the slow-profile GitHub baseline in `docs/research/test-runtime-profiles-and-coverage-2026-06-06.md`.
+- After that slow workflow pass, remove the old repository `SAP_*` secrets from GitHub unless another external operational process is still using them.
