@@ -7,7 +7,7 @@ Quality-first implementation workflow for ARC-1 features. Guides you through res
 The user provides a feature description — either a reference to a gap analysis item (e.g., from `compare/08-dassian-adt-feature-gap.md`), a GitHub issue, or a free-form description.
 
 SAP auth guidance:
-- When touching auth (Layer A or Layer B), read `docs/enterprise-auth.md#coexistence-matrix` first. The `validateConfig` fail-fast rules in `src/server/config.ts` are the authoritative source — extend them if adding a new combination.
+- When touching auth (Layer A or Layer B), read `docs_page/enterprise-auth.md#coexistence-matrix` first. The `validateConfig` fail-fast rules in `src/server/config.ts` are the authoritative source — extend them if adding a new combination.
 
 Ask the user for:
 - **Feature description** (required) — what to implement
@@ -45,7 +45,7 @@ Based on the feature description, identify and read all relevant source files. U
 ### 1c. Read existing tests for the affected area
 
 Find and read the corresponding test files in `tests/unit/` that mirror the source structure. Understand:
-- What mocking patterns are used (axios mock, spy patterns)
+- What mocking patterns are used (undici/fetch mock, spy patterns)
 - What fixtures exist in `tests/fixtures/xml/` or `tests/fixtures/abap/`
 - How similar features are tested
 
@@ -72,7 +72,7 @@ Enter plan mode to draft the implementation strategy. The plan should include:
 1. **What changes** — list each file and what will be modified/added
 2. **Test strategy** — what unit tests, integration tests, and (if applicable) e2e tests to write
 3. **Safety & security** — any new safety checks, input validation, or security considerations
-4. **Documentation impact** — which docs need updating (README, docs/, tool descriptions)
+4. **Documentation impact** — which docs need updating (README, docs_page/, tool descriptions)
 5. **Commit strategy** — how to split into logical commits (prefer small, focused commits)
 
 ### 2b. Align with the user
@@ -98,10 +98,17 @@ Write unit tests BEFORE the implementation. This ensures:
 **Unit test conventions for this project:**
 - Test files mirror source structure: `src/adt/foo.ts` → `tests/unit/adt/foo.test.ts`
 - Use vitest: `describe`, `it`, `expect`, `vi.fn()`, `vi.mock()`
-- Mock axios at module level for HTTP tests:
+- Mock the HTTP layer (undici's `fetch`) at module level — the project uses undici, not axios:
   ```typescript
-  vi.mock('axios', () => ({ default: { create: vi.fn(() => mockInstance) } }));
+  import { mockResponse } from '../../helpers/mock-fetch.js';
+  const mockFetch = vi.fn();
+  vi.mock('undici', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('undici')>()),
+    fetch: mockFetch,
+  }));
+  // in beforeEach: vi.resetAllMocks(); mockFetch.mockResolvedValue(mockResponse(200, 'source', { 'x-csrf-token': 'T' }));
   ```
+  See `tests/unit/adt/client.test.ts` for a real example and the "Unit Test Mocking" section in `CLAUDE.md`.
 - Use XML fixtures from `tests/fixtures/xml/` for ADT response parsing
 - Test both success paths AND error paths
 - Test edge cases: empty inputs, malformed data, boundary conditions
@@ -178,11 +185,11 @@ If the feature changes tool behavior, update the tool description in `src/handle
 
 ### 5b. Update end-user documentation
 
-Check and update as needed:
-- `docs/tools.md` — tool reference
-- `docs/mcp-usage.md` — agent workflow patterns
+Check and update as needed (user-facing docs live in `docs_page/`, the mkdocs `docs_dir`):
+- `docs_page/tools.md` — tool reference
+- `docs_page/mcp-usage.md` — agent workflow patterns
 - `README.md` — if feature is user-facing
-- `docs/cli-guide.md` — if CLI flags changed
+- `docs_page/cli-guide.md` — if CLI flags changed
 
 ### 5c. Update CLAUDE.md (if applicable)
 
@@ -236,7 +243,7 @@ Before marking the feature as complete, verify:
 - [ ] **Type safe** — `npm run typecheck` zero errors
 - [ ] **Security reviewed** — safety checks in place, no new OWASP risks
 - [ ] **Error handling** — errors are typed, messages are LLM-friendly
-- [ ] **Documentation updated** — tool descriptions, docs/, CLAUDE.md as needed
+- [ ] **Documentation updated** — tool descriptions, docs_page/, CLAUDE.md as needed
 - [ ] **No scope creep** — only what was requested, nothing extra
 - [ ] **Conventional commit** — proper `feat:`/`fix:`/`chore:` prefix
 - [ ] **Integration tests** — added if feature touches SAP system interaction
