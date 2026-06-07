@@ -209,6 +209,11 @@ jobs:
         run: npm run test:reliability-report -- --results-dir test-results
         continue-on-error: true
 
+      - name: Slow runtime summary
+        if: always()
+        run: npm run test:runtime-report -- --results-dir test-results --junit-dir /tmp/arc1-e2e-logs
+        continue-on-error: true
+
       - name: Assert slow execution thresholds
         if: always()
         shell: bash

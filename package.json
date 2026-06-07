@@ -69,6 +69,7 @@
     "test:e2e:full": "npm run build && npm run test:e2e:start && npm run test:e2e; EXIT=$?; npm run test:e2e:stop; exit $EXIT",
     "test:e2e:skip-summary": "vitest run --config tests/e2e/vitest.e2e.config.ts --reporter=verbose 2>&1 | node scripts/ci/summarize-skips.mjs",
     "test:reliability-report": "node scripts/ci/collect-test-reliability.mjs",
+    "test:runtime-report": "node scripts/ci/test-runtime-summary.mjs",
     "test:assert-execution": "node scripts/ci/assert-required-test-execution.mjs",
     "btp:validate": "npx mbt validate && npx mbt validate -e mta-overrides.mtaext.example",
     "btp:build": "npx mbt build",

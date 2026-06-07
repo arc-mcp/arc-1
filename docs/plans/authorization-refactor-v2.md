@@ -609,7 +609,7 @@ The exact list comes from the Task 0 inventory. The guaranteed set:
 - Modify: `docs/research/sap-backend-roles.md` (if references old flags — check via Task 0 inventory)
 - Modify: `docs/publishing-guide.md` (if hits from Task 0 inventory)
 - Modify: `docs/plans/ralphex-data-preview-probe-scope-hardening.md` (in-progress plan — if hits)
-- Modify: `docs/plans/oauth-security-hardening.md` (in-progress plan — if hits)
+- Modify: `docs/plans/completed/oauth-security-hardening.md` (historical plan — if hits)
 - Modify: `docs/implementation-plan-sapcontext-sapmanage.md` (if hits)
 - Modify: `README.md`
 - Modify: `CLAUDE.md`

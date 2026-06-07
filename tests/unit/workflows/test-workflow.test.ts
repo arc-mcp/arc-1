@@ -21,17 +21,25 @@ describe('test workflow gate behavior', () => {
     expect(testJob).toContain('npm test');
   });
 
-  it('keeps SAP-heavy jobs behind the gate and unit job', () => {
+  it('keeps SAP-heavy jobs behind the gate, unit job, and stale-head guard', () => {
+    const sapRunGuardJob = jobBlock('sap-run-guard');
     const integrationJob = jobBlock('integration');
     const e2eJob = jobBlock('e2e');
 
-    expect(integrationJob).toContain('needs: [test, gate]');
+    expect(sapRunGuardJob).toContain('needs: [test, gate]');
+    expect(sapRunGuardJob).toContain("needs.gate.result == 'success'");
+    expect(sapRunGuardJob).toContain("needs.test.result == 'success'");
+    expect(sapRunGuardJob).toContain('gh api "repos/$' + '{REPOSITORY}/pulls/$' + '{PR_NUMBER}"');
+
+    expect(integrationJob).toContain('needs: [test, gate, sap-run-guard]');
     expect(integrationJob).toContain("needs.gate.result == 'success'");
     expect(integrationJob).toContain("needs.test.result == 'success'");
+    expect(integrationJob).toContain("needs.sap-run-guard.outputs.current == 'true'");
 
-    expect(e2eJob).toContain('needs: [test, gate, integration]');
+    expect(e2eJob).toContain('needs: [test, gate, sap-run-guard, integration]');
     expect(e2eJob).toContain("needs.gate.result == 'success'");
     expect(e2eJob).toContain("needs.test.result == 'success'");
+    expect(e2eJob).toContain("needs.sap-run-guard.outputs.current == 'true'");
   });
 
   it('serializes only SAP-heavy jobs repository-wide without cancellation', () => {
