@@ -1,20 +1,21 @@
 # BTP Destination Setup Guide
 
-How to configure SAP BTP Destinations for ARC-1, covering both **Basic Authentication** (shared service account) and **Principal Propagation** (per-user SAP identity).
+How to configure SAP BTP Destinations for ARC-1, covering **Basic Authentication** (shared service account), **Principal Propagation** (on-premise per-user SAP identity), and **OAuth2UserTokenExchange** (BTP ABAP Environment per-user SAP identity).
 
 ---
 
 ## Authentication Modes Overview
 
-ARC-1 supports three ways to authenticate to SAP:
+ARC-1 supports these destination-related ways to authenticate to SAP:
 
 | Mode | Who acts in SAP | Config | Use Case |
 |------|----------------|--------|----------|
 | **Hardcoded credentials** | Single user (SAP_USER/SAP_PASSWORD) | Env vars only, no BTP | Local dev, direct connection |
 | **BTP Destination (Basic)** | Single service account | BTP Destination Service | Cloud deployment, shared user |
-| **BTP Destination (PP)** | Each MCP user as their own SAP user | BTP Destination + Cloud Connector PP | Enterprise, per-user audit trail |
+| **BTP Destination (PP, on-premise)** | Each MCP user as their own SAP user | BTP Destination + Connectivity + Cloud Connector PP | Enterprise, per-user audit trail for on-premise SAP |
+| **BTP Destination (`OAuth2UserTokenExchange`)** | Each MCP user as their own BTP ABAP user | BTP Destination, `ProxyType=Internet` | BTP ABAP Environment, no Cloud Connector |
 
-All three modes can coexist with any MCP client authentication (API key, OIDC, XSUAA).
+All modes can coexist with any MCP client authentication (API key, OIDC, XSUAA), but per-user destinations need a real JWT. XSUAA is the BTP-native path.
 
 ---
 
@@ -96,7 +97,7 @@ services:
 
 ---
 
-## Mode 3: BTP Destination with Principal Propagation
+## Mode 3: BTP Destination with Principal Propagation (On-Premise)
 
 Each authenticated MCP user gets their **own SAP identity**. SAP enforces `S_DEVELOP` authorization per user and the audit log shows who did what.
 
@@ -372,14 +373,47 @@ This fallback is documented in the code at `src/adt/btp.ts` with detailed commen
 
 ---
 
-## Using Principal Propagation from MCP Clients
+## Mode 4: BTP Destination with OAuth2UserTokenExchange (BTP ABAP Environment)
+
+Use this when ARC-1 runs on BTP Cloud Foundry and connects to a BTP ABAP Environment. The ABAP Environment is Internet-facing, so no Connectivity service or Cloud Connector is needed.
+
+### Destination properties
+
+Create an HTTP destination in BTP Cockpit or through the Destination service:
+
+| Property | Value |
+|----------|-------|
+| **Name** | `ABAP_PP` (or any name) |
+| **Type** | HTTP |
+| **URL** | ABAP Environment URL from the service key |
+| **Proxy Type** | Internet |
+| **Authentication** | `OAuth2UserTokenExchange` |
+| **Token Service URL** | `<service-key uaa.url>/oauth/token` |
+| **Client ID / Secret** | `uaa.clientid` / `uaa.clientsecret` from the ABAP service key |
+
+### ARC-1 configuration
+
+```bash
+cf set-env arc1-mcp-server SAP_SYSTEM_TYPE btp
+cf set-env arc1-mcp-server SAP_BTP_DESTINATION ABAP_PP
+cf set-env arc1-mcp-server SAP_PP_ENABLED true
+cf set-env arc1-mcp-server SAP_PP_STRICT true
+cf set-env arc1-mcp-server SAP_XSUAA_AUTH true
+cf restage arc1-mcp-server
+```
+
+At request time, ARC-1 validates the MCP user's XSUAA JWT, asks the Destination service to resolve `ABAP_PP` with that JWT, extracts the returned ABAP bearer token, and sends it to ADT as `Authorization: Bearer <token>`. SAP sees the end user. Do not set `SAP_BTP_SERVICE_KEY` on the ARC-1 CF app; the service key belongs in the destination configuration only.
+
+---
+
+## Using Per-User Destinations from MCP Clients
 
 ### Prerequisites
 
 - ARC-1 deployed on BTP CF with `SAP_XSUAA_AUTH=true` and `SAP_PP_ENABLED=true`
 - XSUAA service instance with `xs-security.json` (see [XSUAA Setup](xsuaa-setup.md))
-- BTP Destination set to `PrincipalPropagation`
-- Cloud Connector and SAP configured for PP (Steps 2-3 above)
+- For on-premise SAP: BTP Destination set to `PrincipalPropagation`, plus Cloud Connector and SAP configured for PP (Steps 2-3 above)
+- For BTP ABAP Environment: BTP Destination set to `OAuth2UserTokenExchange` (Mode 4)
 
 ### Claude Desktop / Claude Code
 
@@ -430,14 +464,9 @@ If using an MCP extension that supports HTTP Streamable transport:
 
 ### Copilot Studio (Power Platform)
 
-Copilot Studio uses a custom connector with Entra ID OAuth (not XSUAA). For PP with Copilot Studio:
+Prefer XSUAA Manual OAuth for BTP-hosted ARC-1, as described in [XSUAA Setup](xsuaa-setup.md). In that setup the user may authenticate through SAP Cloud Identity Services, SAP ID service, or a corporate IdP federated into the BTP subaccount; ARC-1 still receives and validates an XSUAA token.
 
-1. Use the Entra ID OIDC authentication (see [OAuth / JWT Setup](oauth-jwt-setup.md))
-2. Ensure the Entra ID token's `preferred_username` or `email` claim maps to a SAP user
-3. ARC-1 will pass the Entra ID JWT to the Destination Service as `X-User-Token`
-4. The Destination Service generates the SAML assertion from the Entra ID token
-
-**Note:** For this to work, the BTP trust configuration must trust the Entra ID tenant. In BTP Cockpit → Security → Trust Configuration, add Entra ID as a trusted IdP.
+Generic external OIDC, such as Entra ID (`SAP_OIDC_ISSUER`), is supported for MCP authentication, but it does not automatically make the token valid for BTP Destination principal propagation. If you choose external OIDC directly, test the Destination/Connectivity exchange end to end and ensure the BTP trust configuration accepts that issuer. In many productive setups, ARC-1 can validate the external JWT for Layer A while the Destination service still rejects it for Layer B propagation.
 
 ### MCP Inspector (Testing)
 
@@ -450,7 +479,7 @@ Inspector supports OAuth discovery. It will open a browser for XSUAA login.
 
 ---
 
-## Verifying Principal Propagation
+## Verifying Per-User SAP Identity
 
 ### Check ARC-1 logs
 
@@ -465,16 +494,24 @@ INFO: BTP destination resolved (per-user) {"name":"SAP_TRIAL","auth":"PrincipalP
 DEBUG: Per-user ADT client created {"user":"john.doe@company.com"}
 ```
 
-### Check SAP audit log (SM20)
+For BTP ABAP `OAuth2UserTokenExchange`, the important ARC-1 signal is that the per-user destination returns a Bearer token and ARC-1 uses it for ADT:
 
-In SAP, run transaction **SM20** (Security Audit Log):
+```
+DEBUG: PP: using destination-exchanged Bearer token (OAuth2UserTokenExchange) {"destination":"ABAP_PP"}
+```
+
+### Check SAP audit log
+
+On on-premise SAP systems, run transaction **SM20** (Security Audit Log):
 - Filter by the time of your MCP request
 - You should see the **individual SAP user** (e.g., `JDOE`) — not the technical service account
 - The action should match what the MCP tool did (e.g., read program source)
 
+For BTP ABAP Environment, verify the corresponding ABAP security/audit traces or request logs show the end user from the exchanged token.
+
 ### Check SAP user determination (SM30 / VUSREXTID)
 
-If PP isn't mapping to the correct SAP user:
+For on-premise PP, if the Cloud Connector certificate mapping is not resolving to the correct SAP user:
 1. Check the CERTRULE table via SM30, view `VUSREXTID`
 2. Verify the certificate subject (CN) matches what the Cloud Connector sends
 3. Use transaction `SU01` to verify the target SAP user exists
@@ -504,8 +541,8 @@ ARC-1 uses two URL path prefixes. Add both as resources with **Path and all sub-
 | `auth token error: User token validation failed` | BTP doesn't trust the IdP that issued the JWT | Add IdP to BTP Trust Configuration |
 | `SAP returns 403 on ADT call` | SAP user exists but lacks `S_DEVELOP` authorization | Grant via `PFCG` role assignment |
 | `CERTRULE mapping not found` | Cloud Connector sends cert but SAP can't map CN to user | Check `SM30` view `VUSREXTID` |
-| PP falls back to shared client | Destination auth type is still `BasicAuthentication` | Change to `PrincipalPropagation` in BTP Cockpit |
-| `SAP_PP_ENABLED is true but btpConfig is null` | `VCAP_SERVICES` not available | Ensure Destination + Connectivity services are bound |
+| On-prem PP falls back to shared client | Destination auth type is still `BasicAuthentication` | Change to `PrincipalPropagation` in BTP Cockpit |
+| `SAP_PP_ENABLED is true but btpConfig is null` | `VCAP_SERVICES` not available | Ensure the Destination service is bound. Connectivity service is required only for on-premise Cloud Connector PP. |
 | PP requests hit wrong SAP system | `CloudConnectorLocationId` mismatch between startup and PP destination | Set correct `CloudConnectorLocationId` on each destination in BTP Cockpit |
 | `jwt-bearer exchange: failed` with 401 | Connectivity Service doesn't trust the user's JWT issuer | Ensure IdP trust is configured in BTP subaccount |
 | `Destination Service returned no authTokens` (warn) | Known Destination Service behavior for PP destinations | ARC-1 handles this automatically via jwt-bearer fallback — no action needed |
@@ -516,9 +553,9 @@ ARC-1 uses two URL path prefixes. Add both as resources with **Path and all sub-
 
 | Env Var / Flag | Description | Default |
 |----------------|-------------|---------|
-| `SAP_BTP_DESTINATION` | BTP Destination name (BasicAuth, startup) | *(none)* |
-| `SAP_BTP_PP_DESTINATION` | BTP Destination name (PP, per-user) | Falls back to `SAP_BTP_DESTINATION` |
-| `SAP_PP_ENABLED` / `--pp-enabled` | Enable principal propagation | `false` |
+| `SAP_BTP_DESTINATION` | BTP Destination name. For BasicAuth, this is the shared startup destination. For BTP ABAP `OAuth2UserTokenExchange`, this is usually the per-user destination used with `SAP_PP_ENABLED=true`. | *(none)* |
+| `SAP_BTP_PP_DESTINATION` | Optional per-user destination name. Use for on-prem PP when the shared startup destination and PP destination differ. For BTP ABAP `OAuth2UserTokenExchange`, `SAP_BTP_DESTINATION` alone is usually the per-user destination. | Falls back to `SAP_BTP_DESTINATION` |
+| `SAP_PP_ENABLED` / `--pp-enabled` | Enable ARC-1's per-user destination path: Cloud Connector PP for on-premise SAP, or `OAuth2UserTokenExchange` for BTP ABAP Environment. | `false` |
 | `SAP_XSUAA_AUTH` / `--xsuaa-auth` | Enable XSUAA OAuth proxy | `false` |
 | `SAP_URL` / `--url` | Direct SAP URL (overridden by destination) | *(none)* |
 | `SAP_USER` / `--user` | Direct SAP user (overridden by destination/PP) | *(none)* |

@@ -21,7 +21,7 @@ Built for organizations that need AI-assisted SAP development with guardrails. I
 - **Safe by default** — read-only, no free SQL, no table preview, no transport writes, no Git writes. Enable each capability with explicit `SAP_ALLOW_*` flags
 - **Action deny list** — block specific tool actions with `SAP_DENY_ACTIONS` (for example `SAPWrite.delete`), without exposing low-level operation codes to admins
 - **Package restrictions** — limit AI write operations (create, update, delete) to specific packages with wildcards (`--allowed-packages "Z*,$TMP"`). Read operations are not restricted by package — use SAP's native authorization for read-level access control
-- **Data access control (off by default)** — `SAPRead(type=TABLE_CONTENTS)` and `SAPQuery` are gated behind explicit env vars (`SAP_ALLOW_DATA_PREVIEW=true`, `SAP_ALLOW_FREE_SQL=true`). These two capabilities sit outside the [SAP API Policy FAQ](#adt-api-status-and-strategy) "endorsed development tooling" scope (which excludes business-data reads and SQL against backend systems), so they are intentionally separated from the policy-aligned default surface and must be turned on deliberately
+- **Data access control (off by default)** — `SAPRead(type=TABLE_CONTENTS)` and `SAPQuery` are gated behind explicit env vars (`SAP_ALLOW_DATA_PREVIEW=true`, `SAP_ALLOW_FREE_SQL=true`). These capabilities can expose application data or run ad-hoc SQL, so they are intentionally separated from the default development-tooling surface. They can be enabled for governed use cases, but should be reviewed against the current [SAP API Policy](https://help.sap.com/doc/sap-api-policy/latest/en-US/API_Policy_latest.pdf), your SAP agreement, and internal data-governance rules
 - **Transport safety** — transport reads are available for review, while transport mutations require both `--allow-writes` and `--allow-transport-writes`. Update/delete operations auto-use the lock correction number when no explicit transport is provided
 - **Git workflow safety** — Git operations are disabled by default. Enable explicitly with `--allow-git-writes` / `SAP_ALLOW_GIT_WRITES=true`
 - **API-key profiles** — multi-key HTTP deployments can assign `viewer`, `viewer-data`, `viewer-sql`, `developer`, `developer-data`, `developer-sql`, or `admin` per key
@@ -35,9 +35,9 @@ Built for organizations that need AI-assisted SAP development with guardrails. I
 
 - **API key** — simple Bearer token for internal deployments
 - **OIDC / JWT** — Entra ID, Keycloak, or any OpenID Connect provider
-- **OAuth 2.0** — browser-based login for BTP ABAP Environment
+- **OAuth 2.0** — local browser-based login for BTP ABAP Environment service-key development
 - **XSUAA** — SAP BTP native auth with automatic token proxy for MCP clients
-- **Principal Propagation** — per-user identity forwarded through Cloud Connector (every SAP action runs as the actual user, not a technical account)
+- **Per-user SAP identity** — BTP Destination Service forwards the MCP user to SAP: Cloud Connector principal propagation for on-premise SAP, or `OAuth2UserTokenExchange` for BTP ABAP Environment
 
 ### BTP Cloud Foundry Deployment
 
@@ -45,7 +45,7 @@ Deploy ARC-1 as a Cloud Foundry app on SAP BTP with full platform integration:
 
 - **Destination Service** — connect to SAP systems via managed destinations
 - **Cloud Connector** — reach on-premise systems through the connectivity proxy
-- **Principal Propagation** — user identity forwarded end-to-end via X.509 certificates
+- **Per-user destinations** — user identity forwarded end-to-end via X.509 certificates for on-premise SAP, or exchanged for an ABAP bearer token for BTP ABAP Environment
 - **XSUAA OAuth proxy** — MCP clients authenticate via standard OAuth, ARC-1 handles the BTP token exchange
 - **Audit logging** — structured events to stderr, file, or BTP Audit Log Service
 
@@ -108,32 +108,24 @@ ARC-1 probes the SAP system at startup and adapts its behavior:
 
 ## ADT API Status and Strategy
 
-SAP published a new [SAP API Policy](https://help.sap.com/doc/sap-api-policy/latest/en-US/API_Policy_latest.pdf) in April 2026, accompanied by an [SAP API Policy FAQ](https://www.sap.com/documents/2026/04/e2a0665e-4c7f-0010-bca6-c68f7e60039b.html). The FAQ section *"How does the policy apply to ADT-based access and developer tooling?"* explicitly endorses ADT-based developer tooling:
+SAP's current [SAP API Policy](https://help.sap.com/doc/sap-api-policy/latest/en-US/API_Policy_latest.pdf) is v.4.2026a. It allows published/documented APIs for the purposes described in SAP documentation, while restricting unsupported internal APIs, misuse, unmanaged autonomous AI call patterns, and large-scale extraction outside endorsed paths. ARC-1 is designed as a governed development-tooling proxy around ADT behavior, not as a bulk data-extraction product.
 
-> ADT APIs are SAP internal APIs and may be used for development purposes through endorsed channels only. Endorsed channels include SAP-published Eclipse ABAP Development Tools (the primary supported client), abapGit (an endorsed tool for ABAP development), SAP-provided developer tools that leverage ADT APIs, CI/CD pipelines using SAP-published tooling, and **custom developer utilities built on the documented Eclipse Java SDK for internal development automation such as code checks, build processes, and transport management**.
+For typical internal developer workflows, ARC-1 should be treated as generally usable when it stays close to documented/discoverable ADT behavior, runs with real user identity, respects SAP authorization, and keeps audit and rate controls in place. Customers should still review their exact landscape, SAP agreement, and AI governance rules, especially when the MCP client can plan or execute sequences of tool calls.
 
-ARC-1 is designed to stay within the ADT development-tooling scope described in SAP's API Policy FAQ v1.1. It uses documented ADT / Eclipse SDK capabilities for internal development-related use cases and does not expose ADT Data Preview, SQL execution, table reads, or business-data extraction.
+Concretely, ARC-1 is positioned as a custom developer utility for internal development automation: code checks, build/activate, transport management, AI-assisted ABAP authoring, and Git workflows.
 
-When ARC-1 is used with AI assistants or MCP clients, customers should apply additional governance for AI-driven or automated access patterns, including real user identity, authorization checks, audit logging, rate limits, conservative tool exposure, and customer-side review against SAP documentation and agreements.
-
-Concretely, ARC-1 is positioned as a custom developer utility for internal development automation: code checks, build/activate, transport management, AI-assisted ABAP authoring, and Git workflows. The default tool surface — read source/metadata, search, navigate, lint, write/activate ABAP objects, manage transports, drive Git — matches the "development tooling framework" scope the policy describes.
-
-The same FAQ also lists what ADT APIs are **not** intended for:
-
-> Specifically, ADT APIs are not intended for **programmatic reading of application tables or export of business data, SQL execution against SAP backend systems, business data integration or runtime orchestration, agentic AI workflows operating on business data, or substitution for business APIs**.
-
-Two ARC-1 capabilities fall outside that "development tooling" scope. Both are **off by default** and require explicit opt-in env vars, so the operator makes a deliberate decision before they are reachable:
+Two ARC-1 capabilities can expose business data or execute ad-hoc SQL. Both are **off by default** and require explicit opt-in env vars, so the operator makes a deliberate decision before they are reachable:
 
 | Capability | Env var | Default | Policy note |
 | ---------- | ------- | ------- | ----------- |
-| Named table content preview (`SAPRead(type=TABLE_CONTENTS)`) | `SAP_ALLOW_DATA_PREVIEW=true` | `false` (off) | Reading application tables / exporting business data is explicitly excluded by the FAQ. Keep this off for the policy-aligned development use case. Enable only for development scenarios that genuinely require reading specific custom-table content, against your SAP contract and your data-protection rules. |
-| Freestyle ABAP SQL (`SAPQuery`) | `SAP_ALLOW_FREE_SQL=true` | `false` (off) | SQL execution against SAP backend systems is explicitly excluded by the FAQ. Keep this off for the policy-aligned development use case. Enable only for ad-hoc development queries, against your SAP contract and your data-protection rules. |
+| Named table content preview (`SAPRead(type=TABLE_CONTENTS)`) | `SAP_ALLOW_DATA_PREVIEW=true` | `false` (off) | Can expose application-table data; keep off unless the use case is approved. |
+| Freestyle ABAP SQL (`SAPQuery`) | `SAP_ALLOW_FREE_SQL=true` | `false` (off) | Executes ad-hoc ABAP SQL; keep off unless the use case is approved. |
 
-With both flags at their defaults, ARC-1 stays inside the FAQ envelope for "endorsed development tooling". Turning either flag on is a customer decision that must be made against the SAP API Policy, the customer's SAP agreement, and the customer's internal data-protection rules — not a flag to flip casually on a productive system.
+With both flags at their defaults, ARC-1's data/sql rows are unreachable. Turning either flag on is a valid operational choice for approved scenarios, but it should be deliberate: check the current SAP API Policy, the customer's SAP agreement, SAP authorizations, and internal data-protection rules before enabling it on a productive system.
 
 Beyond the policy, the public signals for ADT remain consistent: SAP publishes an [ADT SDK](https://tools.hana.ondemand.com/#abap), a guide for [creating and consuming RESTful APIs in ADT](https://www.sap.com/documents/2013/04/12289ce1-527c-0010-82c7-eda71af511fa.html), and has described the ABAP language server direction as an ["ADT SDK 2.0"](https://community.sap.com/t5/technology-blog-posts-by-sap/abap-development-tools-for-vs-code-everything-you-need-to-know/bc-p/14263439/highlight/true#M186133).
 
-ARC-1's strategy is to stay close to documented and discoverable ADT behavior, probe system capabilities before exposing tools, keep conservative security defaults (writes off, data preview off, free SQL off, package allowlist `$TMP`), and continuously review SAP's guidance as it evolves. This README is not a compliance decision for any specific customer landscape — review the policy and your agreements before productive use.
+ARC-1's strategy is to stay close to documented and discoverable ADT behavior, probe system capabilities before exposing tools, keep conservative security defaults (writes off, data preview off, free SQL off, package allowlist `$TMP`), and continuously review SAP's guidance as it evolves. This README is not a compliance decision for any specific customer landscape, but the default posture is intended to support normal governed development use rather than block it.
 
 ## Quick Start
 

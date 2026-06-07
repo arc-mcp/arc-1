@@ -10,7 +10,8 @@ ARC-1 connects to a SAP BTP ABAP Environment (Steampunk) in two ways:
 ## Prerequisites
 
 - A SAP BTP ABAP Environment service instance (see [Provisioning a BTP ABAP Free Tier Instance](#provisioning-a-btp-abap-free-tier-instance) if you don't have one)
-- A service key for the instance (created in BTP Cockpit)
+- For local service-key OAuth: a service key for the instance (created in BTP Cockpit)
+- For deployed CF usage: XSUAA and Destination service instances, plus a BTP Destination configured with `OAuth2UserTokenExchange`
 - ARC-1 installed (`npm install -g arc-1` or via Docker)
 
 ## Provisioning a BTP ABAP Free Tier Instance
@@ -135,7 +136,7 @@ The service key looks like this:
 
 ## Step 2: Configure ARC-1
 
-### Option A: Service Key File (Recommended)
+### Option A: Service Key File (recommended for local development)
 
 Save the service key to a file and point ARC-1 to it:
 
@@ -147,13 +148,15 @@ cp ~/Downloads/service-key.json ~/.config/arc-1/btp-service-key.json
 SAP_BTP_SERVICE_KEY_FILE=~/.config/arc-1/btp-service-key.json arc1
 ```
 
-### Option B: Inline Service Key (for Docker / CI)
+### Option B: Inline Service Key (short-lived local env only)
 
 Pass the entire service key JSON as an environment variable:
 
 ```bash
 SAP_BTP_SERVICE_KEY='{"uaa":{"url":"...","clientid":"...","clientsecret":"..."},"url":"..."}' arc1
 ```
+
+Do not use this as the normal CF production path. The direct service-key mode opens a browser and binds the callback to local loopback, so it is not suitable for a shared or headless server. For deployed BTP CF, create the destination shown in [Recommended: BTP deployment with a per-user destination](#recommended-btp-deployment-with-a-per-user-destination).
 
 ### Option C: CLI Flags
 
@@ -220,6 +223,8 @@ In your `.vscode/mcp.json`:
 
 ### Docker
 
+The direct service-key Docker example is only useful for a local interactive run where the OAuth callback can be reached from the browser. For a deployed/shared Docker container, use the per-user destination pattern instead.
+
 ```bash
 docker run -p 8080:8080 \
   -e SAP_BTP_SERVICE_KEY='{"uaa":{"url":"...","clientid":"...","clientsecret":"..."},"url":"..."}' \
@@ -232,7 +237,7 @@ docker run -p 8080:8080 \
 1. Start your MCP client (Claude Desktop, VS Code, etc.)
 2. Make any tool call (e.g., ask Claude to "search for ABAP classes")
 3. **A browser window opens automatically** to the SAP BTP login page
-4. Authenticate in the browser (SAP IdP, IAS, Azure AD, etc.)
+4. Authenticate in the browser (SAP ID service, SAP Cloud Identity Services / IAS, Microsoft Entra ID, etc.)
 5. After successful login, the browser shows "Authentication Successful"
 6. Return to your MCP client — the tool call completes
 7. Subsequent calls reuse the cached token (no browser needed)
@@ -241,13 +246,13 @@ When the access token expires (~12 hours), ARC-1 automatically refreshes it usin
 
 ### Browser Doesn't Open?
 
-If the browser fails to open automatically (e.g., on a headless server), ARC-1 logs the authorization URL. Copy it and open it manually in any browser.
+If the browser fails to open automatically, ARC-1 logs the authorization URL. Manual copy/paste only works when the browser can reach the callback listener on the same local machine or container mapping. On remote/headless servers this usually fails because the callback is bound to loopback; use the per-user BTP Destination pattern instead.
 
 ## Recommended: BTP deployment with a per-user destination
 
 ARC-1 is designed to run as a **centrally managed service on SAP BTP Cloud Foundry** — not on individual laptops — and to act in SAP as **each MCP user's own identity**. For a BTP ABAP Environment, the recommended setup follows directly from that: deploy ARC-1 on Cloud Foundry and connect through a **per-user destination** using `OAuth2UserTokenExchange`. It runs fully headless (no browser), propagates the logged-in user to the ABAP system so SAP's own authorizations apply per user, and needs **no Cloud Connector** — the ABAP Environment is Internet-facing, so this is a direct cloud-to-cloud call.
 
-`OAuth2UserTokenExchange` is the SAP-recommended authentication when the target runs in the **same subaccount under a different XSUAA instance** ([SAP Help](https://help.sap.com/docs/connectivity/sap-btp-connectivity-cf/oauth-user-token-exchange-authentication)) — exactly the relationship between ARC-1's XSUAA and the ABAP Environment. Keeping both in the same subaccount means the user-token exchange is trusted implicitly: no Communication Arrangement and no technical user are required.
+SAP documents `OAuth2UserTokenExchange` for applications that need to call another application while passing the logged-in user's context through the Destination service ([SAP Help](https://help.sap.com/docs/connectivity/sap-btp-connectivity-cf/oauth-user-token-exchange-authentication)). That matches ARC-1 on Cloud Foundry calling the ABAP Environment: ARC-1 validates the MCP user's XSUAA token, the Destination service exchanges it for an ABAP-context token, and no technical SAP user is needed for ADT calls.
 
 ### 1. Bind the BTP services
 
@@ -309,12 +314,14 @@ Assign each MCP user a role collection that grants the ARC-1 scopes they need (e
 
 ### References (SAP documentation)
 
-- [OAuth2 User Token Exchange Authentication](https://help.sap.com/docs/connectivity/sap-btp-connectivity-cf/oauth-user-token-exchange-authentication) — when to use it (same subaccount, different XSUAA) and how the exchange works.
+- [OAuth2 User Token Exchange Authentication](https://help.sap.com/docs/connectivity/sap-btp-connectivity-cf/oauth-user-token-exchange-authentication) — how Destination service exchanges the logged-in user's token for a target-application token.
 - [Destination Authentication Methods](https://help.sap.com/docs/btp/btp-admin-guide/destination-authentication-methods) — `OAuth2UserTokenExchange` alongside the other destination auth types.
 - [SAP Cloud SDK — Destinations](https://sap.github.io/cloud-sdk/docs/js/features/connectivity/destinations) — how the destination and token exchange are resolved at runtime (ARC-1 uses this SDK).
 - [ARC-1 BTP Destination Setup](btp-destination-setup.md) and [Principal Propagation Setup](principal-propagation-setup.md) — ARC-1's destination / principal-propagation configuration in depth (including the on-premise Cloud Connector variant).
 
 ## Configuration Reference
+
+### Local service-key OAuth
 
 | Variable / Flag | Description |
 |---|---|
@@ -323,15 +330,25 @@ Assign each MCP user a role collection that grants the ARC-1 scopes they need (e
 | `SAP_BTP_OAUTH_CALLBACK_PORT` / `--btp-oauth-callback-port` | Port for OAuth browser callback (default: auto-assigned) |
 | `SAP_SYSTEM_TYPE` / `--system-type` | System type: `auto` (default), `btp`, or `onprem` |
 
+### Deployed BTP CF destination
+
+| Variable / Flag | Description |
+|---|---|
+| `SAP_BTP_DESTINATION` | Destination name with `Authentication=OAuth2UserTokenExchange` |
+| `SAP_PP_ENABLED=true` / `--pp-enabled` | Enables ARC-1's per-user destination path |
+| `SAP_PP_STRICT=true` / `--pp-strict` | Recommended; reject calls that cannot resolve a per-user destination |
+| `SAP_XSUAA_AUTH=true` / `--xsuaa-auth` | MCP clients authenticate through XSUAA OAuth |
+| `SAP_SYSTEM_TYPE=btp` / `--system-type btp` | Expose the BTP-adapted tool definitions from startup |
+
 ### Recommended: Set SAP_SYSTEM_TYPE=btp
 
 When connecting to BTP ABAP, set `SAP_SYSTEM_TYPE=btp` for the best experience. This adapts tool definitions immediately at startup:
 
-- **SAPRead**: Removes PROG, INCL, VIEW, TEXT_ELEMENTS, VARIANTS (not available on BTP)
-- **SAPWrite**: Only CLAS, INTF (ABAP Cloud syntax, Z/Y namespace)
+- **SAPRead**: Removes classic-only types such as PROG, INCL, VIEW, TRAN, TEXT_ELEMENTS, VARIANTS, SOBJ, AUTH, FEATURE_TOGGLE/FTG2, ENHO, and version history actions
+- **SAPWrite**: Supports CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL/TABL/DT/TABL/DS, DOMA, DTEL, MSAG (ABAP Cloud syntax, custom namespaces)
 - **SAPQuery**: Warns about blocked SAP standard tables, suggests CDS views instead
 - **SAPTransport**: Explains gCTS behavior (release = Git push, not TMS export)
-- **SAPContext**: Only CLAS, INTF (includes released SAP APIs)
+- **SAPContext**: Supports CLAS, INTF, and DDLS (including CDS impact analysis for DDLS)
 
 Without this flag, ARC-1 auto-detects the system type on the first `SAPManage probe`, which works but means the first tool listing may show on-premise types.
 
@@ -364,10 +381,10 @@ BTP ABAP Environment has some limitations compared to on-premise:
 | ABAP Language | Restricted ABAP ("ABAP for Cloud Development") |
 | Released APIs only | Only C1-released objects accessible |
 | No SAP GUI | Only ADT (Eclipse/API) available |
-| No direct DB table preview | Data preview may be restricted |
+| Table preview is restricted and off by default | `SAP_ALLOW_DATA_PREVIEW=true` is required, and the ABAP backend may still restrict standard tables |
 | Package restrictions | Custom development in `Z*` or customer namespace only |
 | Transport system | Uses gCTS or software components instead of classic transports |
-| SAPQuery | `RunQuery` (free SQL) likely blocked; CDS views work |
+| SAPQuery | `SAP_ALLOW_FREE_SQL=true` is required; custom tables and released CDS views are the practical targets, while many SAP standard tables are blocked |
 
 ## Cross-Platform Support
 
@@ -376,7 +393,7 @@ The browser login works on all platforms:
 - **Linux**: Opens with `xdg-open` command
 - **Windows**: Opens with `start` command
 
-If the system cannot open a browser (e.g., headless server or WSL without browser integration), the authorization URL is logged to stderr for manual copy-paste.
+If the system cannot open a browser, the authorization URL is logged to stderr for manual copy-paste. The browser still has to reach the local callback listener, so this is practical on a laptop or WSL setup with local browser integration, but not for most remote/headless servers.
 
 ## Testing the Connection
 
@@ -429,25 +446,25 @@ When `SAP_SYSTEM_TYPE=btp` is set (or auto-detected), tool definitions and behav
 
 | Tool | BTP Behavior |
 |---|---|
-| `SAPRead` | Types CLAS, INTF, DDLS, BDEF, SRVD, TABL, TABLE_CONTENTS, DEVC, SYSTEM, COMPONENTS, MSAG (deprecated alias: MESSAGES). PROG, INCL, VIEW, TEXT_ELEMENTS, VARIANTS, SOBJ are removed — returns helpful error if the LLM tries them. |
+| `SAPRead` | Types CLAS, INTF, FUNC/FUGR where released/custom, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL, DOMA, DTEL, TABLE_CONTENTS, TABLE_QUERY, DEVC, SYSTEM, COMPONENTS, MSAG (deprecated alias: MESSAGES), BSP/BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS. PROG, INCL, VIEW, TRAN, TEXT_ELEMENTS, VARIANTS, SOBJ, AUTH, FEATURE_TOGGLE/FTG2, ENHO, VERSIONS, VERSION_SOURCE are removed — returns helpful error if the LLM tries them. |
 | `SAPSearch` | Works — returns released SAP objects and custom Z/Y objects. Classic programs and includes not searchable. |
-| `SAPWrite` | Only CLAS, INTF. Must use ABAP Cloud language version. Z/Y namespace only. |
+| `SAPWrite` | Supports CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL/TABL/DT/TABL/DS, DOMA, DTEL, MSAG. Must use ABAP Cloud language version and custom namespaces. |
 | `SAPActivate` | Works — no changes. |
 | `SAPQuery` | Only custom Z/Y tables and released CDS entities (I_LANGUAGE, I_COUNTRY, etc.). SAP standard tables (DD02L, TADIR, MARA, etc.) are blocked. Returns helpful error with CDS view suggestions. |
 | `SAPTransport` | Works, but release triggers gCTS Git push (not TMS export). Description explains this. |
 | `SAPLint` | Works — runs client-side (abaplint). |
 | `SAPDiagnose` | Works — ATC with ABAP_CLOUD_DEVELOPMENT_DEFAULT variant. |
-| `SAPContext` | Only CLAS, INTF. Includes released SAP APIs (they're the dev surface on BTP). |
+| `SAPContext` | Supports CLAS, INTF, and DDLS. Use `action="impact"` for CDS blast-radius analysis. |
 | `SAPNavigate` | Works — scope limited to released and custom objects. |
 | `SAPManage` | Returns `systemType: "btp"` in probe results. |
 
 ## Automated Testing
 
-ARC-1 has two tiers of BTP ABAP integration tests: a CI-capable smoke suite and a local-only extended suite.
+ARC-1 has two tiers of BTP ABAP integration tests. With the current direct service-key test harness, both are local in practice because first authentication uses the browser Authorization Code flow. Tests skip when credentials are absent.
 
-### Smoke Tests (CI-Capable)
+### Smoke Tests
 
-Smoke tests are deterministic, non-interactive tests that verify core BTP connectivity and API contracts. They can run in CI with a service key secret — no browser login required.
+Smoke tests verify core BTP connectivity and API contracts without mutating repository objects. They still use the same service-key OAuth provider as local ARC-1, so the first run may open a browser unless a token is already valid in the running process.
 
 **What they test:**
 - Connectivity: establishes a connection and retrieves a CSRF token
@@ -461,11 +478,9 @@ Smoke tests are deterministic, non-interactive tests that verify core BTP connec
 # With service key file
 TEST_BTP_SERVICE_KEY_FILE=~/.config/arc-1/btp-abap-service-key.json npm run test:integration:btp:smoke
 
-# With inline service key (for CI)
+# With inline service key
 TEST_BTP_SERVICE_KEY='{"uaa":{...},...}' npm run test:integration:btp:smoke
 ```
-
-**CI secret:** Set `TEST_BTP_SERVICE_KEY` as a GitHub Actions secret containing the full service key JSON.
 
 **When the instance is down:** Tests skip gracefully when no credentials are configured. When credentials are present but the instance is stopped, tests fail with connectivity errors — this is expected for free-tier instances that stop nightly.
 

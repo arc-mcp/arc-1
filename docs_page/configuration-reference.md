@@ -90,8 +90,8 @@ Cookie auth is not for production. See [local-development.md → SSO cookie extr
 
 | Flag | Env var | Default | Effect |
 |---|---|---|---|
-| `--btp-service-key-file` | `SAP_BTP_SERVICE_KEY_FILE` | — | Path to a BTP ABAP service key JSON. ARC-1 reads `url` and `uaa` from it and performs an OAuth 2.0 Authorization Code flow on first use (browser opens). |
-| `--btp-service-key` | `SAP_BTP_SERVICE_KEY` | — | Same as above but inline JSON. Useful when the key can't live on disk (e.g. CF deploys via `cf set-env`). |
+| `--btp-service-key-file` | `SAP_BTP_SERVICE_KEY_FILE` | — | Path to a BTP ABAP service key JSON. ARC-1 reads `url` and `uaa` from it and performs an OAuth 2.0 Authorization Code flow on first use (browser opens). This is for local/interactive service-key OAuth, not a headless CF production path. |
+| `--btp-service-key` | `SAP_BTP_SERVICE_KEY` | — | Same as above but inline JSON. Avoid for deployed/shared servers; for BTP CF + BTP ABAP, create a BTP Destination with `OAuth2UserTokenExchange` instead. |
 | `--btp-oauth-callback-port` | `SAP_BTP_OAUTH_CALLBACK_PORT` | `0` (auto) | Local TCP port the OAuth callback listener binds to. `0` picks any free port. Pin it when you need a fixed redirect URI registered in BTP. |
 
 Full reference: [btp-abap-environment.md](btp-abap-environment.md).
@@ -100,8 +100,8 @@ Full reference: [btp-abap-environment.md](btp-abap-environment.md).
 
 | Env var | Effect |
 |---|---|
-| `SAP_BTP_DESTINATION` | Name of the BTP Destination ARC-1 reads to obtain SAP URL + credentials. Used for the shared technical client and as a fallback for per-user PP. Bypasses `SAP_URL` / `SAP_USER` / `SAP_PASSWORD` — those are ignored when a destination is set. |
-| `SAP_BTP_PP_DESTINATION` | Destination of type `PrincipalPropagation`. When set, per-user PP requests use this; when unset, ARC-1 falls back to `SAP_BTP_DESTINATION`. Set this when shared and PP traffic must route via different destinations (different Cloud Connector subaccount mapping, different authorization model, etc.). |
+| `SAP_BTP_DESTINATION` | Name of the BTP Destination ARC-1 reads to obtain SAP URL + auth details. For BasicAuth destinations this creates the shared technical client. For BTP ABAP `OAuth2UserTokenExchange` destinations, this can also be the per-user destination used when `SAP_PP_ENABLED=true`. Bypasses `SAP_URL` / `SAP_USER` / `SAP_PASSWORD` — those are ignored when a destination is set. |
+| `SAP_BTP_PP_DESTINATION` | Optional separate per-user destination name. Use this for on-premise `PrincipalPropagation` when shared startup traffic and per-user traffic must route via different destinations. If unset, ARC-1 falls back to `SAP_BTP_DESTINATION`. |
 
 Full reference: [btp-destination-setup.md](btp-destination-setup.md).
 
@@ -109,7 +109,7 @@ Full reference: [btp-destination-setup.md](btp-destination-setup.md).
 
 | Flag | Env var | Default | Effect |
 |---|---|---|---|
-| `--pp-enabled` | `SAP_PP_ENABLED` | `false` | Enables per-user identity to SAP: incoming JWT `email`/`user_name` is used to mint a per-user SAP session via BTP Destination Service. Without PP, every SAP call uses the shared technical user. |
+| `--pp-enabled` | `SAP_PP_ENABLED` | `false` | Enables ARC-1's per-user destination path. For on-premise SAP this resolves a `PrincipalPropagation` destination through Connectivity Service and Cloud Connector. For BTP ABAP Environment this resolves an `OAuth2UserTokenExchange` destination and uses the returned ABAP bearer token. Without it, every SAP call uses the shared technical client. |
 | `--pp-strict` | `SAP_PP_STRICT` | `false` | When PP fails (token mapping missing, destination unavailable), `false` falls back to the shared technical client. `true` returns an error to the MCP caller — no shared-client fallback. Production should use `true`. |
 | `--pp-allow-shared-cookies` | `SAP_PP_ALLOW_SHARED_COOKIES` | `false` | Escape hatch. Without it, setting `SAP_COOKIE_FILE`/`SAP_COOKIE_STRING` together with `SAP_PP_ENABLED=true` fails at startup (cookies belong to one user, PP wants per-user). With `true`, cookies stay on the shared client only and PP traffic runs cookie-free. |
 
@@ -153,7 +153,7 @@ Full reference: [oauth-jwt-setup.md](oauth-jwt-setup.md).
 
 | Flag | Env var | Default | Effect |
 |---|---|---|---|
-| `--xsuaa-auth` | `SAP_XSUAA_AUTH` | `false` | When `true`, ARC-1 reads XSUAA credentials from `VCAP_SERVICES`, validates incoming JWTs against XSUAA's keys, and exposes RFC 9449 OAuth metadata + Dynamic Client Registration endpoints. Required for BTP CF deployments. |
+| `--xsuaa-auth` | `SAP_XSUAA_AUTH` | `false` | When `true`, ARC-1 reads XSUAA credentials from `VCAP_SERVICES`, validates incoming JWTs against XSUAA's keys, and exposes OAuth metadata (RFC 8414), Protected Resource Metadata (RFC 9728), and Dynamic Client Registration endpoints. Required for BTP CF deployments. |
 | `--oauth-dcr-ttl-seconds` | `ARC1_OAUTH_DCR_TTL_SECONDS` | `2592000` (30 d) | Lifetime of a dynamically-registered OAuth `client_id` (Anthropic-style stateless DCR). Positive values are clamped to `[60 s, 90 d]`. Set to `0` (or any non-positive value) to disable expiration entirely — recommended when MCP clients in use don't auto-re-register on `invalid_client` (Copilot CLI, Cursor) and a finite TTL would just produce periodic outages without security gain. Only consulted when XSUAA auth is on. |
 | `--dcr-signing-secret` | `ARC1_DCR_SIGNING_SECRET` | unset (falls back to XSUAA `clientsecret`) | Dedicated secret for HMAC-signing DCR `client_id`s. Set this (typically via `cf set-env`) to keep cached `client_id`s valid across `cf deploy` operations that recreate the XSUAA binding. Re-setting the value invalidates every outstanding registration (explicit revocation). Recommended: `openssl rand -base64 48` (≥32 bytes). ARC-1 emits a soft `[warn]` at startup if the trimmed value is shorter than 16 bytes, if it's empty/whitespace-only (falls back to legacy mode instead of crashing), or if set without `--xsuaa-auth=true` (orphan secret, unused). |
 
@@ -165,8 +165,8 @@ Full reference: [xsuaa-setup.md](xsuaa-setup.md).
 
 ARC-1 starts **fully restrictive**. Every capability below is a positive opt-in. Per-user scopes (from JWT or API-key profile) can only restrict further — they never expand beyond what these flags allow. This is the server ceiling.
 
-!!! warning "Two flags sit outside the SAP API Policy FAQ envelope"
-    The April 2026 [SAP API Policy FAQ](https://www.sap.com/documents/2026/04/e2a0665e-4c7f-0010-bca6-c68f7e60039b.html) endorses ADT-based developer tooling, but excludes "programmatic reading of application tables or export of business data" and "SQL execution against SAP backend systems". `SAP_ALLOW_DATA_PREVIEW` and `SAP_ALLOW_FREE_SQL` map directly onto these excluded capabilities — that's why they're off by default and gated behind explicit env vars. Keep them off on systems where you want to stay aligned with the FAQ. See [authorization.md](authorization.md#sap-api-policy-data-preview-and-free-sql-are-gated-for-a-reason).
+!!! warning "Data preview and free SQL need explicit governance"
+    SAP's current [SAP API Policy](https://help.sap.com/doc/sap-api-policy/latest/en-US/API_Policy_latest.pdf) allows documented API use for documented purposes, but adds controls around unsupported internal APIs, unmanaged autonomous AI call patterns, and large-scale extraction. `SAP_ALLOW_DATA_PREVIEW` and `SAP_ALLOW_FREE_SQL` expose higher-risk data paths, so they stay off by default and require explicit server opt-in for approved use cases. See [authorization.md](authorization.md#sap-api-policy-data-preview-and-free-sql-are-gated-for-a-reason).
 
 ### Capability flags
 

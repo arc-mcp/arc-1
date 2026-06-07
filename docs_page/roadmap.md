@@ -196,7 +196,7 @@ SORT RULES for this table — DO NOT BREAK when adding rows:
 | [STRAT-01](#strat-01) | TypeScript Migration (Go -> TS) | 2026-03-26 | Infrastructure |
 | [FEAT-35](#feat-35) | Class Hierarchy (SAPNavigate) | 2026-04-09 | Features |
 | — | API Key Auth | — | Security |
-| — | OAuth/OIDC (Entra ID) | — | Security |
+| — | OAuth/OIDC (generic external IdP) | — | Security |
 | — | BTP CF Deployment | — | Infrastructure |
 | [OPS-01](#ops-01) | Structured JSON Logging | — | Ops |
 | [OPS-04](#ops-04) | CI/CD Pipeline | — | Ops |
@@ -2131,7 +2131,7 @@ The following features are tracked but not planned for near-term implementation.
 - HTTP server refactored from `node:http` to Express 5 (required by MCP SDK auth)
 - RFC 8414 discovery at `/.well-known/oauth-authorization-server`
 - In-memory client store for dynamic client registration (RFC 7591)
-- Chained token verifier: XSUAA -> Entra ID OIDC -> API key (all coexist)
+- Chained token verifier: XSUAA -> generic OIDC -> API key (all coexist)
 - `xs-security.json` with read/write/admin scopes and 3 role collections
 - XSUAA service instance created and bound on BTP CF
 - Configuration: `SAP_XSUAA_AUTH=true` enables the proxy
@@ -2436,30 +2436,32 @@ The VS Code client-side issue — [microsoft/vscode#314715](https://github.com/m
 
 ---
 
-## Current State (v0.5.0 — TypeScript)
+<!-- x-release-please-start-version -->
+## Current State (v0.9.11 — TypeScript)
+<!-- x-release-please-end -->
 
 | Area | Status |
 |------|--------|
 | TypeScript Migration | Complete — Go code removed, pure TypeScript |
 | Core MCP Server | 12 intent-based tools + hyperfocused mode (1 tool), HTTP Streamable + stdio |
 | Safety System | Positive opt-in gates (`allowWrites`, SQL/data/transport/Git), package filter (default: `$TMP`), deny-actions |
-| Input Validation | Zod v4 runtime validation for all MCP tool inputs (v0.5.0) |
+| Input Validation | Zod v4 runtime validation for all MCP tool inputs |
 | Phase 1: API Key Auth | `ARC1_API_KEYS` Bearer tokens with profiles |
-| Phase 2: OAuth/OIDC (Entra ID) | JWT validation via `jose` library, tested with Copilot Studio |
-| Phase 4: BTP CF Deployment | Docker on CF with Destination Service + Cloud Connector |
+| OAuth/OIDC (external IdP) | Generic JWT validation via `jose` library, tested with Copilot Studio / Entra ID patterns |
+| BTP CF Deployment | MTA/Node.js and Docker-on-CF paths with Destination Service; on-premise systems use Cloud Connector |
 | BTP Destination Service | Auto-resolves SAP credentials from BTP Destination at startup |
-| BTP Connectivity Proxy | Routes through Cloud Connector with JWT Proxy-Authorization |
-| BTP ABAP Environment | OAuth 2.0 browser login, direct connectivity |
+| BTP Connectivity Proxy | Routes on-premise calls through Cloud Connector with Connectivity proxy headers |
+| BTP ABAP Environment | Local service-key browser OAuth plus deployed per-user destination using `OAuth2UserTokenExchange` |
 | ABAP Linter | `@abaplint/core` with system-aware cloud/on-prem presets + pre-write validation |
 | Docker Image | Multi-platform (amd64/arm64), GHCR `ghcr.io/marianfoo/arc-1` |
 | CI/CD | GitHub Actions: lint + typecheck + unit tests (Node 22/24), integration + E2E on `main`/internal PRs, reliability summary job |
 | XSUAA OAuth Proxy | MCP SDK ProxyOAuthServerProvider + @sap/xssec JWT validation |
-| Authorization Model | Two-dimensional: scopes (read/write/admin) x roles (viewer/developer) x safety config |
+| Authorization Model | Layered model: server safety ceiling + user scopes/API-key profiles + SAP authorization |
 | Audit Logging | User identity in tool call logs, BTP Audit Log sink, file sink |
 | MCP Elicitation | Interactive parameter collection for destructive ops |
 | Dynamic Client Registration | /register endpoint for MCP clients (RFC 7591) |
-| Principal Propagation | Per-user ADT client via BTP Destination Service + Cloud Connector |
-| OAuth Security | RFC 9700 compliance: state+PKCE, loopback binding, audience validation (v0.5.0) |
+| Per-user SAP identity | Per-user ADT client via BTP Destination Service: Cloud Connector PP for on-premise SAP, `OAuth2UserTokenExchange` for BTP ABAP |
+| OAuth Security | RFC 9700 compliance: state+PKCE, loopback binding, audience validation, stateless DCR and XSUAA callback-state proxy |
 | Hyperfocused Mode | Single `SAP` tool (~200 tokens) — competitive parity with VSP |
 | Method-Level Surgery | `edit_method` in SAPWrite, `list_methods`/`get_method` in SAPContext (95% token reduction) |
 | Runtime Diagnostics | SAPDiagnose — short dumps (ST22), ABAP profiler traces |
@@ -2483,8 +2485,8 @@ The VS Code client-side issue — [microsoft/vscode#314715](https://github.com/m
 | Go v1.x-v2.32 | ADT client, 40+ tools, CRUD, debugging, WebSocket, Lua scripting | Complete (Go) |
 | Enterprise Rename | vsp -> ARC-1, intent-based tool architecture (now 12 tools) | Complete |
 | Auth Phase 1: API Key | `ARC1_API_KEYS` Bearer tokens with profiles | Complete |
-| Auth Phase 2: OAuth/OIDC | Entra ID JWT validation via `jose` library | Complete |
-| Auth Phase 4: BTP CF | Docker on CF with Destination Service + Cloud Connector | Complete |
+| OAuth/OIDC | Generic JWT validation via `jose` library | Complete |
+| BTP CF | MTA/Node.js and Docker on CF with Destination Service; Cloud Connector for on-premise targets | Complete |
 | TypeScript Migration | Full Go -> TypeScript port, Go code removed | Complete (2026-03-26) |
 | CI/CD Pipeline | GitHub Actions: lint, typecheck, unit tests (Node 22/24), default integration + E2E on internal PRs/manual dispatch, manual slow SAP workflow, Docker, npm publish | Complete |
 | Copilot Studio E2E | OAuth + MCP + BTP Destination + Cloud Connector -> SAP data | Complete |
@@ -2492,7 +2494,7 @@ The VS Code client-side issue — [microsoft/vscode#314715](https://github.com/m
 | Scope Enforcement | SEC-06: Per-tool scope checks, ListTools filtering, 12 tests | Complete (2026-03-27) |
 | Audit Logging | SEC-04: Multi-sink audit (stderr, file, BTP Audit Log Service) | Complete (2026-04-01) |
 | Dynamic Client Registration | RFC 7591 /register endpoint for MCP clients | Complete (2026-03-27) |
-| Principal Propagation | SEC-01+SEC-02: Per-user ADT client via BTP Dest Service + Cloud Connector | Code complete (2026-03-27) |
+| Principal Propagation | SEC-01+SEC-02: Per-user ADT client via BTP Destination Service + Cloud Connector for on-premise SAP | Code complete (2026-03-27) |
 | Hyperfocused Mode | Single `SAP` tool (~200 tokens) — competitive parity with VSP | Complete (2026-04-01) |
 | Method-Level Surgery | `edit_method`, `list_methods`, `get_method` — 95% token reduction; PR-D (2026-05-10) extends `edit_method` to local handler classes inside CCDEF/CCIMP (`lhc_*`/`lcl_*`/`ltc_*` auto-routing + `<localclass>~<method>` qualified specifiers); class-section surgery (2026-05-27, issue #303) adds `edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method` — token-efficient edits to a global class's DEFINITION block without re-sending `/source/main`, backed by SAP's `objectstructure` endpoint, with client-side refuse-policy that points at `add_method`/`delete_method` when a diff would produce a non-activatable draft; `change_method_visibility` (2026-05-29, PR-author feedback) moves a method between sections while preserving the body | Complete (2026-04-01); PR-D 2026-05-10; class-section surgery 2026-05-27; change_method_visibility 2026-05-29 |
 | Runtime Diagnostics | SAPDiagnose — short dumps (ST22), ABAP profiler traces | Complete (2026-04-01) |
@@ -2501,7 +2503,7 @@ The VS Code client-side issue — [microsoft/vscode#314715](https://github.com/m
 | RAP CRUD | DDLS/DDLX/BDEF/SRVD/SRVB write, batch activation | Complete (2026-04-14) |
 | Context Compression | SAPContext with AST-based dependency extraction (7-30x reduction) | Complete (2026-04-01) |
 | MCP Elicitation | Interactive confirmations for destructive operations | Complete (2026-04-01) |
-| BTP ABAP Environment | OAuth 2.0 browser login, direct BTP connectivity | Complete (2026-04-01) |
+| BTP ABAP Environment | Local OAuth 2.0 browser login plus deployed per-user destination path | Complete (2026-04-01; destination guidance updated 2026-06) |
 | Where-Used Analysis | FEAT-01: Scope-based where-used in SAPNavigate | Complete (2026-04-04, PR #38) |
 | Enhanced Abaplint | System-aware cloud/on-prem presets, pre-write validation, auto-fix | Complete (2026-04-04, PR #37) |
 | Object Caching | SQLite + memory cache with on-demand + pre-warmer support | Complete (2026-04-04, PR #31) |
@@ -2531,9 +2533,9 @@ The VS Code client-side issue — [microsoft/vscode#314715](https://github.com/m
 
 **ARC-1 differentiators (no other project has all of these):**
 1. **Intent-based routing** — 12 tools vs 25-287, simplest LLM decision surface
-2. **Principal propagation** — per-user SAP authentication via BTP Destination Service + Cloud Connector
+2. **Per-user SAP identity** — BTP Destination Service with Cloud Connector PP for on-premise and `OAuth2UserTokenExchange` for BTP ABAP
 3. **Two-dimensional authorization** — scopes (read/write/admin) x roles x safety config, with per-tool filtering
-4. **Three auth modes coexist** — XSUAA OAuth + Entra ID OIDC + API key on the same endpoint
+4. **Three auth modes coexist** — XSUAA OAuth + generic OIDC + API key on the same endpoint
 5. **Comprehensive safety system** — read-only, package filter, operation filter, transport guard, dry-run — additive to scopes
 6. **Multi-sink audit logging** — stderr + file + BTP Audit Log Service
 7. **Context compression + method-level surgery** — AST-based 7-30x + 95% method-level reduction
@@ -2563,7 +2565,7 @@ The VS Code client-side issue — [microsoft/vscode#314715](https://github.com/m
 
 ### External References & Implementations
 - [lemaiwo/btp-sap-odata-to-mcp-server](https://github.com/lemaiwo/btp-sap-odata-to-mcp-server) — TypeScript MCP server with XSUAA OAuth proxy, BTP Destination Service, principal propagation
-- [MCP Specification — Authorization](https://modelcontextprotocol.io/specification/2025-03-26/basic/authorization)
+- [MCP Specification — Authorization](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization)
 - [RFC 9728 — OAuth Protected Resource Metadata](https://datatracker.ietf.org/doc/html/rfc9728)
 - [OWASP Secure MCP Server Development Guide](https://genai.owasp.org/resource/a-practical-guide-for-secure-mcp-server-development/)
 - [SAP Help: Principal Propagation](https://help.sap.com/docs/connectivity/sap-btp-connectivity-cf/configuring-principal-propagation)

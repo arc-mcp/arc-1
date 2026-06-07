@@ -96,24 +96,18 @@ For full setup instructions, see [API Key Setup](api-key-setup.md).
 
 All safety flags are **positive opt-ins** (default: `false` / restrictive). Enable only what you need.
 
-### SAP API Policy alignment
+### SAP API Policy and data-access gates
 
-The April 2026 [SAP API Policy](https://help.sap.com/doc/sap-api-policy/latest/en-US/API_Policy_latest.pdf) is accompanied by an [SAP API Policy FAQ](https://www.sap.com/documents/2026/04/e2a0665e-4c7f-0010-bca6-c68f7e60039b.html). The FAQ section *"How does the policy apply to ADT-based access and developer tooling?"* explicitly endorses ADT-based developer tooling — including "**custom developer utilities built on the documented Eclipse Java SDK for internal development automation such as code checks, build processes, and transport management**". ARC-1 used for internal development is aligned with that endorsement.
+SAP's current [SAP API Policy](https://help.sap.com/doc/sap-api-policy/latest/en-US/API_Policy_latest.pdf) is v.4.2026a. It allows published/documented APIs for their documented purposes, while restricting unsupported internal APIs, misuse, unmanaged autonomous AI call patterns, and large-scale extraction outside endorsed paths. ARC-1 is designed as a governed development-tooling proxy around ADT behavior, not as a bulk data-extraction product. Operators should still validate their productive setup against SAP documentation, their SAP agreement, and internal governance.
 
-ARC-1 is designed to stay within the ADT development-tooling scope described in SAP's API Policy FAQ v1.1. It uses documented ADT / Eclipse SDK capabilities for internal development-related use cases and does not expose ADT Data Preview, SQL execution, table reads, or business-data extraction.
-
-When ARC-1 is used with AI assistants or MCP clients, customers should apply additional governance for AI-driven or automated access patterns, including real user identity, authorization checks, audit logging, rate limits, conservative tool exposure, and customer-side review against SAP documentation and agreements.
-
-The same FAQ also lists what ADT APIs are **not** intended for: "**programmatic reading of application tables or export of business data, SQL execution against SAP backend systems, business data integration or runtime orchestration, agentic AI workflows operating on business data, or substitution for business APIs**".
-
-Two ARC-1 capabilities sit outside the endorsed-development-tooling scope and require explicit env vars before they are reachable:
+Two ARC-1 capabilities can expose business data or execute ad-hoc SQL and require explicit env vars before they are reachable:
 
 | Capability | Env var | Default | Policy note |
 | ---------- | ------- | ------- | ----------- |
-| Named table content preview (`SAPRead(type=TABLE_CONTENTS)`) | `SAP_ALLOW_DATA_PREVIEW=true` | `false` (off) | Reading application tables / exporting business data is excluded by the FAQ. Keep off for the policy-aligned development use case. |
-| Freestyle ABAP SQL (`SAPQuery`) | `SAP_ALLOW_FREE_SQL=true` | `false` (off) | SQL execution against SAP backend systems is excluded by the FAQ. Keep off for the policy-aligned development use case. |
+| Named table content preview (`SAPRead(type=TABLE_CONTENTS)`) | `SAP_ALLOW_DATA_PREVIEW=true` | `false` (off) | Can expose application-table data; keep off unless the use case is approved. |
+| Freestyle ABAP SQL (`SAPQuery`) | `SAP_ALLOW_FREE_SQL=true` | `false` (off) | Executes ad-hoc ABAP SQL; keep off unless the use case is approved. |
 
-**Recommendation for productive systems:** keep both flags at their defaults. ARC-1 still covers the full developer-tooling surface — read source/metadata, search, navigate, lint, write/activate ABAP objects, manage transports, drive Git workflows. Turning either flag on is a customer decision against the SAP API Policy, the customer's SAP agreement, and the customer's internal data-protection rules.
+**Recommendation for productive systems:** keep both flags at their defaults unless there is an approved use case. ARC-1 still covers the core developer-tooling surface — read source/metadata, search, navigate, lint, write/activate ABAP objects, manage transports, drive Git workflows. Turning either flag on can be appropriate, but should be a deliberate operator decision against the current SAP API Policy, the customer's SAP agreement, SAP authorizations, and internal data-protection rules.
 
 ### Recommended production defaults
 
@@ -200,11 +194,11 @@ Scopes are assigned to BTP users via role templates and role collections in the 
 
 ### Principal Propagation
 
-When `SAP_PP_ENABLED=true`, each MCP user's JWT identity flows through to SAP via Cloud Connector or mTLS. SAP sees the real user identity for authorization checks and audit logging. Use `SAP_PP_STRICT=true` in production to reject requests without user identity.
+When `SAP_PP_ENABLED=true`, each MCP user's JWT identity flows through to SAP via BTP Destination Service. For on-premise systems this routes through Connectivity Service + Cloud Connector principal propagation; for BTP ABAP Environment it uses a cloud-to-cloud destination such as `OAuth2UserTokenExchange`. SAP sees the real user identity for authorization checks and audit logging. Use `SAP_PP_STRICT=true` in production to reject requests without user identity.
 
 ### Destination Service
 
-BTP Destination Service centralizes SAP connection details and credentials. ARC-1 resolves the destination at runtime. Use `SAP_BTP_DESTINATION` for shared-user destinations and `SAP_BTP_PP_DESTINATION` for principal propagation destinations.
+BTP Destination Service centralizes SAP connection details and credentials. ARC-1 resolves the destination at runtime. Use `SAP_BTP_DESTINATION` for shared-user destinations or the BTP ABAP `OAuth2UserTokenExchange` per-user destination. Use `SAP_BTP_PP_DESTINATION` when an on-premise shared startup destination and PrincipalPropagation destination must be separate.
 
 If Cloud Connector uses path-level allowlists, include non-ADT OData routes needed by ARC-1 features, especially:
 - `/sap/opu/odata/UI2/PAGE_BUILDER_CUST` for FLP launchpad management (`SAPManage` FLP actions)
@@ -213,7 +207,7 @@ If Cloud Connector uses path-level allowlists, include non-ADT OData routes need
 For detailed setup instructions:
 
 - [XSUAA Setup](xsuaa-setup.md) -- role templates, role collections, xs-security.json
-- [Principal Propagation Setup](principal-propagation-setup.md) -- Cloud Connector, CERTRULE, mTLS
+- [Principal Propagation Setup](principal-propagation-setup.md) -- Cloud Connector, CERTRULE, per-user destinations
 - [BTP Destination Setup](btp-destination-setup.md) -- Destination Service configuration
 - [Authorization & Roles: BTP XSUAA role templates](authorization.md#btp-xsuaa-role-templates) -- role-to-scope mapping
 
@@ -277,10 +271,9 @@ The following files and values must never be committed to version control:
 | `.env` files | Listed in `.gitignore`. Use environment variables or mounted files in production. |
 | SAP passwords (`SAP_PASSWORD`) | Inject via environment variable, secrets manager, or `cf set-env`. |
 | API keys (`ARC1_API_KEYS`) | Store in a secrets manager (Vault, AWS Secrets Manager, Azure Key Vault). |
-| BTP service keys (`SAP_BTP_SERVICE_KEY`) | Use `SAP_BTP_SERVICE_KEY_FILE` pointing to a mounted secret, not inline JSON. |
+| BTP service keys (`SAP_BTP_SERVICE_KEY`) | Use only for local BTP ABAP service-key OAuth or for creating BTP destinations. Prefer mounted files over inline JSON when local automation needs it. |
 | Cookie files (`cookies.txt`) | Listed in `.gitignore`. Ephemeral by nature. |
-| PP CA private key (`SAP_PP_CA_KEY`) | Store in HSM or secrets manager. This is the root of trust for principal propagation. |
-| Client certificate keys (`SAP_CLIENT_KEY`) | Mount as a file with restricted permissions (0600). |
+| XSUAA/Destination service credentials (`VCAP_SERVICES`) | Inject through BTP service bindings or a secrets manager; never commit copied service credentials. |
 
 In containerized deployments, prefer mounted secrets (Kubernetes Secrets, CF user-provided services) over environment variables, as environment variables may appear in process listings or crash dumps.
 
@@ -362,7 +355,7 @@ curl -sI -X OPTIONS \
 
 - Use HTTPS for the SAP connection (`SAP_URL=https://...`) whenever possible.
 - Avoid `--insecure` / `SAP_INSECURE=true` in production. If SAP uses an internal CA, configure it at the OS/Node.js level (`NODE_EXTRA_CA_CERTS` environment variable).
-- BTP deployments route through Cloud Connector, which handles TLS termination to the on-premise SAP system.
+- BTP on-premise deployments route through Cloud Connector; BTP ABAP Environment deployments use HTTPS directly to the ABAP Environment endpoint through the Destination service.
 
 ---
 
@@ -378,7 +371,7 @@ curl -sI -X OPTIONS \
 ### BTP Service Key Compromise
 
 1. **Regenerate in BTP Cockpit**: Delete the compromised service key and create a new one.
-2. **Update ARC-1 config**: Deploy the new service key file and restart.
+2. **Update dependent config**: If the key is used locally, replace the service-key file and restart. If it was used to create an `OAuth2UserTokenExchange` destination, update that destination's client ID/secret.
 3. **Review BTP audit logs**: Check for unauthorized access via the compromised credentials.
 
 ### JWT / OIDC Token Compromise
@@ -388,13 +381,13 @@ curl -sI -X OPTIONS \
 3. **Check ARC-1 audit logs**: Correlate the user's identity across `tool_call_start` events.
 4. **If PP was active**: The attacker may have acted as the user in SAP. Check SAP security audit log (SM20) for the user's actions.
 
-### PP CA Key Compromise
+### Cloud Connector PP Trust Compromise
 
-This is the most critical compromise scenario -- the CA key can mint certificates for any SAP user.
+This is the most critical on-premise PP compromise scenario -- a compromised Cloud Connector principal-propagation trust chain can assert SAP users.
 
 1. **Revoke the CA immediately**: Remove the CA certificate from SAP STRUST.
 2. **Generate a new CA**: Create a new key pair and import the new certificate into STRUST.
-3. **Update ARC-1**: Deploy the new CA key and certificate.
+3. **Update Cloud Connector**: Rotate the Cloud Connector PP certificates and verify subject-pattern rules.
 4. **Audit all SAP activity**: Review SM20 for all users during the compromise window.
 
 ---

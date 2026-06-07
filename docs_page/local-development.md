@@ -333,7 +333,7 @@ INFO: auth: MCP=[none] SAP=cookie (shared)
 - SAP sees whichever user you logged in as, not "the MCP caller" — fine for solo dev, wrong for a shared service.
 - No refresh token — you get whatever session the browser has.
 
-For per-user SAP identity with a deployed ARC-1, the right answer is **Principal Propagation on BTP CF** — see [deployment.md → BTP Cloud Foundry](deployment.md#btp-cloud-foundry-with-principal-propagation).
+For per-user SAP identity with a deployed ARC-1, use a **per-user BTP Destination**: Cloud Connector Principal Propagation for on-premise SAP, or `OAuth2UserTokenExchange` for BTP ABAP Environment. See [deployment.md](deployment.md).
 
 ---
 

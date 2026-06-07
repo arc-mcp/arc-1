@@ -383,8 +383,9 @@ These services are cross-cutting rather than tied to one tool.
 | Local developer | `stdio` | Basic credentials, cookies, or BTP ABAP service key | One developer using a local MCP client. |
 | Shared HTTP server | `http-streamable` | Shared Basic/cookie/destination credentials | Team sandbox or controlled internal service. |
 | Enterprise HTTP | `http-streamable` | OIDC/XSUAA for MCP auth plus shared SAP auth | Centralized ARC-1 with per-user ARC-1 scopes. |
-| Enterprise with SAP identity | `http-streamable` | OIDC/XSUAA plus BTP Destination principal propagation | SAP sees the real end user; strongest audit story. |
-| BTP ABAP direct | either | Service-key OAuth with browser login/token refresh | Connecting directly to SAP BTP ABAP Environment. |
+| Enterprise with SAP identity | `http-streamable` | XSUAA/OIDC plus per-user BTP Destination path | SAP sees the real end user; strongest audit story. |
+| BTP ABAP local | `stdio` | Service-key OAuth with browser login/token refresh | One developer connecting directly to SAP BTP ABAP Environment. |
+| BTP ABAP on CF | `http-streamable` | XSUAA plus Destination `OAuth2UserTokenExchange` | Centrally managed, headless BTP ABAP access with per-user SAP identity. |
 
 BTP Cloud Foundry with Destination Service and Cloud Connector looks like this:
 
@@ -399,6 +400,10 @@ flowchart LR
 
 With principal propagation, ARC-1 performs the destination lookup with the user's
 JWT so the Connectivity stack can propagate the user's identity to SAP.
+
+For BTP ABAP Environment on Cloud Foundry, the same per-user destination path uses
+`OAuth2UserTokenExchange` instead of Cloud Connector. The Destination service
+returns an ABAP-context bearer token, and ARC-1 sends that token to ADT.
 
 ## Where to change code
 

@@ -638,7 +638,7 @@ describe('Tool Definitions', () => {
       expect(typeEnum).toContain('MESSAGES');
     });
 
-    it('includes DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, TABL, DOMA, DTEL in SAPWrite types on both BTP and on-prem', () => {
+    it('includes DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL, DOMA, DTEL in SAPWrite types on both BTP and on-prem', () => {
       for (const config of [btpConfig, onpremConfig]) {
         const tools = getToolDefinitions(config);
         const sapWrite = tools.find((t) => t.name === 'SAPWrite')!;
@@ -651,6 +651,7 @@ describe('Tool Definitions', () => {
         expect(typeEnum).toContain('BDEF');
         expect(typeEnum).toContain('SRVD');
         expect(typeEnum).toContain('SRVB');
+        expect(typeEnum).toContain('SKTD');
         expect(typeEnum).toContain('TABL');
         expect(typeEnum).toContain('DOMA');
         expect(typeEnum).toContain('DTEL');
