@@ -25,7 +25,7 @@ Neither change touches `src/`. There are no new code paths, no new env vars, no 
 - `mta.yaml` start command reads `node --max-old-space-size=448 dist/index.js` with a one-line comment explaining why (V8 + cgroup mismatch). Heap target sits at 87.5% of dyno RAM, leaving ~64MB headroom for native (better-sqlite3, undici buffers) and stack.
 - `mta.yaml` declares a fourth resource `arc1-application-logs` (service `application-logs`, plan `lite`) and the `arc1-mcp-server` module `requires:` it.
 - `xs-security.json` has a 7th role-collection `ARC-1 Viewer + SQL` referencing `$XSAPPNAME.MCPViewer` + `$XSAPPNAME.MCPSqlUser`.
-- The documentation tables in `docs_page/xsuaa-setup.md`, `docs_page/authorization.md`, and `docs_page/phase4-btp-deployment.md` reflect both changes (new collection row, new service row).
+- The documentation tables in `docs_page/xsuaa-setup.md`, `docs_page/authorization.md`, and `docs_page/btp-cloud-foundry-deployment.md` reflect both changes (new collection row, new service row).
 - A single-line completed entry in `docs_page/roadmap.md` records the change.
 
 ### Key Files
@@ -36,7 +36,7 @@ Neither change touches `src/`. There are no new code paths, no new env vars, no 
 | `xs-security.json` | XSUAA role-templates + role-collections (the file that becomes the BTP service config) |
 | `docs_page/xsuaa-setup.md` | User-facing XSUAA setup guide — role-collection table + Step 3 listing |
 | `docs_page/authorization.md` | Three-layer authorization model — BTP role-collection table |
-| `docs_page/phase4-btp-deployment.md` | BTP CF deployment guide — services table |
+| `docs_page/btp-cloud-foundry-deployment.md` | BTP CF deployment guide — services table |
 | `docs_page/roadmap.md` | Roadmap completed log |
 | `mta-overrides.mtaext.example` | Tracked template for landscape-specific overrides — DO NOT add the heap flag here (it belongs on the base) |
 
@@ -46,7 +46,7 @@ Neither change touches `src/`. There are no new code paths, no new env vars, no 
 2. **Set on the base, not the override.** The heap flag is a property of the runtime environment (CF dyno), not the landscape — every deployment of `mta.yaml` benefits, no `mta-overrides.mtaext` change required.
 3. **No memory bump.** Stay at `memory: 512M`. Bumping to 1G doubles BTP CF RAM cost — defer until a single OOM (`cf events` exit code 137) is observed.
 4. **Compose, don't add new templates.** The `viewer-sql` role-collection bundles existing `MCPViewer` + `MCPSqlUser` templates. Adding a new template (e.g. `MCPViewerSql`) would expand the XSUAA scope surface for no functional gain.
-5. **Doc symmetry.** Three docs reference the role-collection list (`xsuaa-setup.md`, `authorization.md`, `phase4-btp-deployment.md`); all three must be updated in lock-step to avoid drift.
+5. **Doc symmetry.** Three docs reference the role-collection list (`xsuaa-setup.md`, `authorization.md`, `btp-cloud-foundry-deployment.md`); all three must be updated in lock-step to avoid drift.
 6. **Heap value rationale must live in the file.** A bare `--max-old-space-size=448` is unintuitive. Add an inline `# rationale: ...` comment directly above the `command:` so a future operator understands the constraint when they see a 1G dyno bump request.
 
 ## Development Approach
@@ -154,14 +154,14 @@ Mirror the new role-collection in the three-layer authorization model doc (BTP X
 - [ ] At line 184, expand the example: change `"(for example `ARC-1 Developer + SQL`)"` to `"(for example `ARC-1 Viewer + SQL` for read-only SQL or `ARC-1 Developer + SQL` for full developer access)"`. Use exact wording above.
 - [ ] No tests.
 
-### Task 6: Update phase4-btp-deployment.md services table for application-logs
+### Task 6: Update btp-cloud-foundry-deployment.md services table for application-logs
 
 **Files:**
-- Modify: `docs_page/phase4-btp-deployment.md`
+- Modify: `docs_page/btp-cloud-foundry-deployment.md`
 
 The MTA-method services table at lines 106–112 currently lists 3 services. Add the application-logs binding so operators see the full set.
 
-- [ ] Read `docs_page/phase4-btp-deployment.md` lines 95–115 for context.
+- [ ] Read `docs_page/btp-cloud-foundry-deployment.md` lines 95–115 for context.
 - [ ] At line 106, change `The mta.yaml defines three BTP services that are created automatically:` to `The mta.yaml defines four BTP services that are created automatically:`.
 - [ ] In the services table at lines 108–112, append a new row after the Connectivity row:
   ```
@@ -190,5 +190,5 @@ Single completed-row entry in the roadmap. Per the SORT RULES comment in `roadma
   - `node -e "require('js-yaml').load(require('fs').readFileSync('mta.yaml','utf8'))"` — must exit 0 (or python3 fallback)
   - `node -e "JSON.parse(require('fs').readFileSync('xs-security.json','utf8'))"` — must exit 0
   - `npm test` — sanity, must pass (no test changes expected)
-- [ ] Verify by `git diff` that ONLY these files changed: `mta.yaml`, `xs-security.json`, `docs_page/xsuaa-setup.md`, `docs_page/authorization.md`, `docs_page/phase4-btp-deployment.md`, `docs_page/roadmap.md`. No file under `src/`, `tests/`, or `package.json` should be modified.
+- [ ] Verify by `git diff` that ONLY these files changed: `mta.yaml`, `xs-security.json`, `docs_page/xsuaa-setup.md`, `docs_page/authorization.md`, `docs_page/btp-cloud-foundry-deployment.md`, `docs_page/roadmap.md`. No file under `src/`, `tests/`, or `package.json` should be modified.
 - [ ] Move this plan: `mkdir -p docs/plans/completed && git mv docs/plans/cf-deployment-hardening-and-viewer-sql-role.md docs/plans/completed/cf-deployment-hardening-and-viewer-sql-role.md`.

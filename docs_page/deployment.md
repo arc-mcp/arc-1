@@ -136,7 +136,7 @@ INFO: auth: MCP=[xsuaa] SAP=pp (per-user)
 ```
 
 **Full references:**
-- [phase4-btp-deployment.md](phase4-btp-deployment.md) — MTA + Docker push, `manifest.yml`, service bindings, step-by-step
+- [btp-cloud-foundry-deployment.md](btp-cloud-foundry-deployment.md) — MTA + Docker push, `manifest.yml`, service bindings, step-by-step
 - [principal-propagation-setup.md](principal-propagation-setup.md) — Cloud Connector config, destination types, certificate chain
 - [btp-destination-setup.md](btp-destination-setup.md) — destination configuration details
 - [xsuaa-setup.md](xsuaa-setup.md) — `xs-security.json`, scopes, role collections

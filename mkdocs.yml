@@ -40,7 +40,7 @@ nav:
   - Deployment:
       - Overview: deployment.md
       - Docker: docker.md
-      - BTP Cloud Foundry: phase4-btp-deployment.md
+      - BTP Cloud Foundry: btp-cloud-foundry-deployment.md
       - BTP ABAP Environment: btp-abap-environment.md
       - Best Practices: deployment-best-practices.md
   - Auth & Permissions:
@@ -89,6 +89,9 @@ markdown_extensions:
 
 plugins:
   - search
+  - redirects:
+      redirect_maps:
+        phase4-btp-deployment.md: btp-cloud-foundry-deployment.md
 
 extra_javascript:
   - javascripts/posthog.js

@@ -255,7 +255,7 @@ npm test
 ```bash
 # Build Docker image
 docker build -t arc1 .
-# Push to CF (see phase4-btp-deployment.md)
+# Push to CF (see btp-cloud-foundry-deployment.md)
 cf push
 ```
 

@@ -20,7 +20,7 @@ MCP-native clients use RFC 8414 OAuth discovery to find authorization endpoints 
 
 - SAP BTP Cloud Foundry account with XSUAA entitlement
 - CF CLI installed and logged in
-- ARC-1 deployed on BTP CF (see [BTP Cloud Foundry deployment](phase4-btp-deployment.md))
+- ARC-1 deployed on BTP CF (see [BTP Cloud Foundry deployment](btp-cloud-foundry-deployment.md))
 
 ## Step 1: Create XSUAA Service Instance
 

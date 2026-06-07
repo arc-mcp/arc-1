@@ -244,7 +244,7 @@ If you deploy ARC-1 behind a reverse proxy (nginx, Envoy, etc.) outside of Cloud
 
 ## Deploying Without Docker
 
-If the Docker image doesn't fit your needs (custom certs, patching, compliance), deploy as a Node.js app using CF's `nodejs_buildpack`. See [BTP CF Deployment](phase4-btp-deployment.md#deploying-without-docker-nodejs-buildpack) for the full guide.
+If the Docker image doesn't fit your needs (custom certs, patching, compliance), deploy as a Node.js app using CF's `nodejs_buildpack`. See [BTP CF Deployment](btp-cloud-foundry-deployment.md#deploying-without-docker-nodejs-buildpack) for the full guide.
 
 Quick summary:
 1. `git clone` + `npm ci` + `npm run build`
@@ -264,7 +264,7 @@ See [BTP ABAP Environment guide](btp-abap-environment.md) for:
 - Configuring deployed ARC-1 with `OAuth2UserTokenExchange`
 - System type detection and tool adaptation
 
-See [BTP CF Deployment](phase4-btp-deployment.md) for:
+See [BTP CF Deployment](btp-cloud-foundry-deployment.md) for:
 - Cloud Foundry deployment with Docker
 - Destination Service and Cloud Connector setup
 - Principal Propagation configuration

@@ -25,7 +25,7 @@ ARC-1 now has full BTP ABAP support across three areas:
 | System type override (env/CLI) | ✅ Done | `config.ts`, `types.ts` |
 | Tool description adaptation | ✅ Done | `tools.ts` |
 | Handler behavior adaptation | ✅ Done | `intent.ts` |
-| BTP deployment docs | ✅ Done | `deployment-best-practices.md`, `phase4-btp-deployment.md`, `btp-abap-environment.md` |
+| BTP deployment docs | ✅ Done | `deployment-best-practices.md`, `btp-cloud-foundry-deployment.md`, `btp-abap-environment.md` |
 | Manifest templates | ✅ Done | `manifest.yml`, `manifest-btp-abap.yml` |
 | Unit tests (detection + tools + handlers + config) | ✅ Done | 37 new tests |
 | JWT Bearer Exchange (deployed multi-user → BTP) | ⏭️ Deferred | See [Section 10](#10-deferred-jwt-bearer-exchange) |
@@ -55,7 +55,7 @@ ARC-1 now has full BTP ABAP support across three areas:
 
 **Deployment docs + config:**
 - `docs/deployment-best-practices.md` — One-instance-per-system architecture, key files reference
-- `docs/phase4-btp-deployment.md` — Added nodejs_buildpack deployment, BTP ABAP reference
+- `docs_page/btp-cloud-foundry-deployment.md` — Added nodejs_buildpack deployment, BTP ABAP reference
 - `docs/btp-abap-environment.md` — System type config, tool adaptation table, Docker config
 - `manifest.yml` — Fixed service names, added PP/XSUAA/system type config
 - `manifest-btp-abap.yml` — New: CF manifest for BTP ABAP direct connection
@@ -428,7 +428,7 @@ SAP_BTP_SERVICE_KEY_FILE=/path/to/service-key.json SAP_SYSTEM_TYPE=btp arc1
 
 For deployment to BTP Cloud Foundry, see:
 - [deployment-best-practices.md](../../docs_page/deployment-best-practices.md) — Architecture, config, key files
-- [phase4-btp-deployment.md](../../docs_page/phase4-btp-deployment.md) — Step-by-step CF deployment (Docker + nodejs_buildpack)
+- [btp-cloud-foundry-deployment.md](../../docs_page/btp-cloud-foundry-deployment.md) — Step-by-step CF deployment (Docker + nodejs_buildpack)
 - `manifest-btp-abap.yml` — CF manifest template for BTP ABAP
 
 ---

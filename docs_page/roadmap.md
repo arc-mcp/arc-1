@@ -2244,7 +2244,7 @@ The four shipped MCP clients — Claude Desktop, Cursor, VS Code Copilot, Copilo
 - `tests/unit/server/http-security-headers.test.ts` — NEW 14-test supertest suite
 - `docs_page/security-guide.md` — §11 extended with HTTP security headers + CORS subsections, `cors_rejected` added to §9 audit table
 - `docs_page/configuration-reference.md` — `--allowed-origins` row in Transport & logging
-- `docs_page/phase4-btp-deployment.md` — NEW "Security headers and CORS on BTP" section after Verify Deployment
+- `docs_page/btp-cloud-foundry-deployment.md` — NEW "Security headers and CORS on BTP" section after Verify Deployment
 - `docs_page/xsuaa-setup.md` — "Browser-based DCR clients" sub-section in Stateless DCR
 - `README.md`, `CLAUDE.md`, `.env.example`, `manifest.yml`, `manifest-btp-abap.yml`, `mta.yaml` — admin-facing references
 
