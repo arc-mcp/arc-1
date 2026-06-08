@@ -94,7 +94,7 @@
     "fast-xml-parser": "^5.8.0",
     "helmet": "^8.2.0",
     "jose": "^6.2.2",
-    "rate-limiter-flexible": "^11.1.0",
+    "rate-limiter-flexible": "^11.1.1",
     "undici": "^8.3.0",
     "zod": "^4.3.6"
   },
