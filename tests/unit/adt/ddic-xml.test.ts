@@ -360,6 +360,7 @@ describe('ddic-xml builders', () => {
         transportLayer: 'HOME',
       });
 
+      expect(xml).toContain('<pak:attributes pak:packageType="development" pak:recordChanges="true"/>');
       expect(xml).toContain('<pak:softwareComponent pak:name="HOME"/>');
       expect(xml).toContain('<pak:transportLayer pak:name="HOME"/>');
     });
@@ -371,7 +372,7 @@ describe('ddic-xml builders', () => {
         packageType: 'structure',
       });
 
-      expect(xml).toContain('<pak:attributes pak:packageType="structure"/>');
+      expect(xml).toContain('<pak:attributes pak:packageType="structure" pak:recordChanges="false"/>');
     });
 
     it('uses defaults for packageType and superPackage', () => {
@@ -380,8 +381,53 @@ describe('ddic-xml builders', () => {
         description: 'Defaults',
       });
 
-      expect(xml).toContain('<pak:attributes pak:packageType="development"/>');
+      expect(xml).toContain('<pak:attributes pak:packageType="development" pak:recordChanges="false"/>');
       expect(xml).toContain('<pak:superPackage adtcore:name=""/>');
+    });
+
+    it('keeps recordChanges=false only for the literal LOCAL software component', () => {
+      const local = buildPackageXml({
+        name: 'ZPKG_LOCAL',
+        description: 'Local package',
+        softwareComponent: 'LOCAL',
+      });
+      const zlocal = buildPackageXml({
+        name: 'ZPKG_ZLOCAL',
+        description: 'ZLOCAL package',
+        softwareComponent: 'ZLOCAL',
+      });
+
+      expect(local).toContain('pak:recordChanges="false"');
+      expect(zlocal).toContain('pak:recordChanges="true"');
+    });
+
+    it('sets recordChanges=true when a transport layer is provided', () => {
+      const xml = buildPackageXml({
+        name: 'ZPKG_LAYER',
+        description: 'Layered package',
+        softwareComponent: 'LOCAL',
+        transportLayer: 'ZDEV',
+      });
+
+      expect(xml).toContain('pak:recordChanges="true"');
+    });
+
+    it('honors explicit recordChanges overrides', () => {
+      const forcedOff = buildPackageXml({
+        name: 'ZPKG_OFF',
+        description: 'No recording',
+        softwareComponent: 'HOME',
+        recordChanges: false,
+      });
+      const forcedOn = buildPackageXml({
+        name: 'ZPKG_ON',
+        description: 'Force recording',
+        softwareComponent: 'LOCAL',
+        recordChanges: true,
+      });
+
+      expect(forcedOff).toContain('pak:recordChanges="false"');
+      expect(forcedOn).toContain('pak:recordChanges="true"');
     });
 
     it('escapes XML special characters', () => {
@@ -393,47 +439,6 @@ describe('ddic-xml builders', () => {
 
       expect(xml).toContain('Package &quot;A&amp;B&quot; &lt;test&gt; &apos;quote&apos;');
       expect(xml).toContain('<pak:superPackage adtcore:name="ZPARENT&amp;A"/>');
-    });
-
-    it('sets recordChanges=true for transportable (non-LOCAL) packages', () => {
-      const xml = buildPackageXml({
-        name: 'ZPKG_TR',
-        description: 'Transport package',
-        softwareComponent: 'HOME',
-        transportLayer: 'SAP',
-      });
-
-      expect(xml).toContain('pak:recordChanges="true"');
-    });
-
-    it('omits recordChanges for LOCAL/$TMP packages', () => {
-      const local = buildPackageXml({
-        name: 'ZPKG_LOCAL',
-        description: 'Local package',
-        superPackage: '$TMP',
-      });
-
-      // softwareComponent defaults to LOCAL -> recording stays off (attribute omitted)
-      expect(local).not.toContain('pak:recordChanges');
-      expect(local).toContain('<pak:attributes pak:packageType="development"/>');
-    });
-
-    it('honors an explicit recordChanges override', () => {
-      const forcedOff = buildPackageXml({
-        name: 'ZPKG_OFF',
-        description: 'No recording',
-        softwareComponent: 'HOME',
-        recordChanges: false,
-      });
-      expect(forcedOff).not.toContain('pak:recordChanges');
-
-      const forcedOn = buildPackageXml({
-        name: 'ZPKG_ON',
-        description: 'Force recording',
-        softwareComponent: 'LOCAL',
-        recordChanges: true,
-      });
-      expect(forcedOn).toContain('pak:recordChanges="true"');
     });
   });
 

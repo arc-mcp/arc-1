@@ -59,10 +59,9 @@ export interface PackageCreateParams {
   transportLayer?: string;
   packageType?: 'development' | 'structure' | 'main';
   /**
-   * Whether the package records changes (ADT `record_changes` -> backend KORRFLAG).
-   * When omitted, defaults to `true` for transportable packages (a non-LOCAL software
-   * component) and `false` for LOCAL/$TMP packages. SAP_BASIS 816+ rejects a transportable
-   * package created with recording off ("Change recording must be activated for package ...").
+   * Whether the package records object changes in transport requests
+   * (`pak:recordChanges`, backend KORRFLAG). When omitted, ARC-1 infers it
+   * from transportability metadata and keeps literal LOCAL packages off.
    */
   recordChanges?: boolean;
 }
@@ -310,14 +309,11 @@ export function buildDataElementXml(params: DataElementCreateParams): string {
 export function buildPackageXml(params: PackageCreateParams): string {
   const packageType = params.packageType ?? 'development';
   const superPackage = params.superPackage ?? '';
-  const softwareComponent = params.softwareComponent ?? 'LOCAL';
-  const transportLayer = params.transportLayer ?? '';
-  // Transportable packages (a non-LOCAL software component) must record changes on
-  // SAP_BASIS 816+, otherwise the backend rejects creation with HTTP 400
-  // "Change recording must be activated for package <NAME>". LOCAL/$TMP keeps it off.
-  const isTransportable = softwareComponent.trim() !== '' && softwareComponent.trim().toUpperCase() !== 'LOCAL';
-  const recordChanges = params.recordChanges ?? isTransportable;
-  const recordChangesAttr = recordChanges ? ' pak:recordChanges="true"' : '';
+  const softwareComponent = params.softwareComponent?.trim() || 'LOCAL';
+  const transportLayer = params.transportLayer?.trim() ?? '';
+  const normalizedSoftwareComponent = softwareComponent.toUpperCase();
+  const isLocalSoftwareComponent = normalizedSoftwareComponent === 'LOCAL';
+  const recordChanges = params.recordChanges ?? (!isLocalSoftwareComponent || transportLayer !== '');
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <pak:package xmlns:pak="http://www.sap.com/adt/packages"
@@ -328,7 +324,7 @@ export function buildPackageXml(params: PackageCreateParams): string {
              adtcore:version="active"
              adtcore:responsible="DEVELOPER">
   <adtcore:packageRef adtcore:name="${escapeXml(params.name)}"/>
-  <pak:attributes pak:packageType="${escapeXml(packageType)}"${recordChangesAttr}/>
+  <pak:attributes pak:packageType="${escapeXml(packageType)}" pak:recordChanges="${boolToXml(recordChanges)}"/>
   <pak:superPackage adtcore:name="${escapeXml(superPackage)}"/>
   <pak:applicationComponent/>
   <pak:transport>
