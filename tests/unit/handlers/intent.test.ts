@@ -6662,7 +6662,7 @@ ENDCLASS.`;
 
       expect(result.isError).toBeUndefined();
       const createCall = calls.find((c) => c.method === 'POST' && c.url.includes('/sap/bc/adt/packages'));
-      expect(createCall?.body).toContain('<pak:attributes pak:packageType="structure"/>');
+      expect(createCall?.body).toContain('<pak:attributes pak:packageType="structure" pak:recordChanges="true"/>');
       expect(createCall?.body).toContain('<pak:superPackage adtcore:name="Z_PARENT"/>');
       expect(createCall?.body).toContain('<pak:softwareComponent pak:name="HOME"/>');
       expect(createCall?.body).toContain('<pak:transportLayer pak:name="HOME"/>');

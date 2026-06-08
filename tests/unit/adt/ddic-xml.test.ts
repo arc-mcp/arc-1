@@ -394,6 +394,47 @@ describe('ddic-xml builders', () => {
       expect(xml).toContain('Package &quot;A&amp;B&quot; &lt;test&gt; &apos;quote&apos;');
       expect(xml).toContain('<pak:superPackage adtcore:name="ZPARENT&amp;A"/>');
     });
+
+    it('sets recordChanges=true for transportable (non-LOCAL) packages', () => {
+      const xml = buildPackageXml({
+        name: 'ZPKG_TR',
+        description: 'Transport package',
+        softwareComponent: 'HOME',
+        transportLayer: 'SAP',
+      });
+
+      expect(xml).toContain('pak:recordChanges="true"');
+    });
+
+    it('omits recordChanges for LOCAL/$TMP packages', () => {
+      const local = buildPackageXml({
+        name: 'ZPKG_LOCAL',
+        description: 'Local package',
+        superPackage: '$TMP',
+      });
+
+      // softwareComponent defaults to LOCAL -> recording stays off (attribute omitted)
+      expect(local).not.toContain('pak:recordChanges');
+      expect(local).toContain('<pak:attributes pak:packageType="development"/>');
+    });
+
+    it('honors an explicit recordChanges override', () => {
+      const forcedOff = buildPackageXml({
+        name: 'ZPKG_OFF',
+        description: 'No recording',
+        softwareComponent: 'HOME',
+        recordChanges: false,
+      });
+      expect(forcedOff).not.toContain('pak:recordChanges');
+
+      const forcedOn = buildPackageXml({
+        name: 'ZPKG_ON',
+        description: 'Force recording',
+        softwareComponent: 'LOCAL',
+        recordChanges: true,
+      });
+      expect(forcedOn).toContain('pak:recordChanges="true"');
+    });
   });
 
   describe('normalizeSrvbBindingType', () => {
