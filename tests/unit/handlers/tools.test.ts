@@ -245,7 +245,8 @@ describe('Tool Definitions', () => {
     const sapWrite = tools.find((t) => t.name === 'SAPWrite')!;
     const schema = sapWrite.inputSchema as Record<string, any>;
     expect(schema.properties.parameters).toBeDefined();
-    expect(schema.properties.parameters.type).toBe('array');
+    // Optional fields are nullable for GPT/OpenAI strict mode (#360) → type is ['array','null'].
+    expect(schema.properties.parameters.type).toContain('array');
     const item = schema.properties.parameters.items;
     expect(item.properties.kind.enum).toEqual([
       'importing',
@@ -278,7 +279,8 @@ describe('Tool Definitions', () => {
     expect(schema.properties.visibility).toBeDefined();
     expect(schema.properties.visibility.enum).toEqual(['public', 'protected', 'private']);
     expect(schema.properties.abstract).toBeDefined();
-    expect(schema.properties.abstract.type).toBe('boolean');
+    // Optional fields are nullable for GPT/OpenAI strict mode (#360) → type is ['boolean','null'].
+    expect(schema.properties.abstract.type).toContain('boolean');
   });
 
   it('SAPWrite action description mentions class-section surgery (issue #303)', () => {
@@ -299,6 +301,33 @@ describe('Tool Definitions', () => {
       expect(sapWrite.description).toMatch(/do NOT send `include` unless type=CLAS/i);
       expect(sapWrite.description).toMatch(/delete needs only \{action, type, name\}/i);
     }
+  });
+
+  it('SAPWrite optional fields are nullable for GPT/OpenAI strict mode; required stay non-nullable (issue #360)', () => {
+    const tools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true });
+    const sapWrite = tools.find((t) => t.name === 'SAPWrite')!;
+    const schema = sapWrite.inputSchema as Record<string, any>;
+    const props = schema.properties;
+
+    // Required field stays a plain (non-nullable) string.
+    expect(props.action.type).toBe('string');
+
+    // Optional plain/number/boolean fields become a union with null.
+    expect(props.dataType.type).toEqual(['string', 'null']);
+    expect(props.length.type).toEqual(['number', 'null']);
+    expect(props.signExists.type).toEqual(['boolean', 'null']);
+
+    // Optional ENUM: null added to `type` ONLY, never to `enum` (OpenAI's documented form).
+    expect(props.odataVersion.type).toEqual(['string', 'null']);
+    expect(props.odataVersion.enum).toEqual(['V2', 'V4']);
+    expect(props.odataVersion.enum).not.toContain(null);
+
+    // Nested batch objects[] items keep their own required keys (type, name) non-nullable,
+    // but optional per-item fields are nullable.
+    const itemProps = props.objects.items.properties;
+    expect(itemProps.type.type).toBe('string');
+    expect(itemProps.name.type).toBe('string');
+    expect(itemProps.source.type).toEqual(['string', 'null']);
   });
 
   it('SAPWrite include field gives strong negative guidance (CLAS-only, do NOT send) — not "silently dropped" (issue #360)', () => {
@@ -831,15 +860,15 @@ describe('Tool Definitions', () => {
     it('exposes activate and dryRun parameters for generate_behavior_implementation (on-prem)', () => {
       const schema = getSAPWriteSchema(false);
       expect(schema.properties.activate).toBeDefined();
-      expect(schema.properties.activate.type).toBe('boolean');
+      expect(schema.properties.activate.type).toContain('boolean');
       expect(schema.properties.dryRun).toBeDefined();
-      expect(schema.properties.dryRun.type).toBe('boolean');
+      expect(schema.properties.dryRun.type).toContain('boolean');
     });
 
     it('exposes activateAtEnd parameter for batch_create on the on-prem SAPWrite schema', () => {
       const schema = getSAPWriteSchema(false);
       expect(schema.properties.activateAtEnd).toBeDefined();
-      expect(schema.properties.activateAtEnd.type).toBe('boolean');
+      expect(schema.properties.activateAtEnd.type).toContain('boolean');
       const desc = String(schema.properties.activateAtEnd.description ?? '');
       expect(desc.length).toBeGreaterThan(0);
       // Description must call out batch_create + the composition-stack use case so LLMs
@@ -851,7 +880,7 @@ describe('Tool Definitions', () => {
     it('exposes activateAtEnd parameter for batch_create on the BTP SAPWrite schema', () => {
       const schema = getSAPWriteSchema(true);
       expect(schema.properties.activateAtEnd).toBeDefined();
-      expect(schema.properties.activateAtEnd.type).toBe('boolean');
+      expect(schema.properties.activateAtEnd.type).toContain('boolean');
       expect(String(schema.properties.activateAtEnd.description ?? '').length).toBeGreaterThan(0);
     });
 
@@ -865,7 +894,7 @@ describe('Tool Definitions', () => {
       const schema = getSAPWriteSchema(false);
       const messages = schema.properties.messages;
       expect(messages).toBeDefined();
-      expect(messages.type).toBe('array');
+      expect(messages.type).toContain('array');
       expect(messages.items.required).toEqual(['number', 'shortText']);
       expect(messages.items.properties.number).toBeDefined();
       expect(messages.items.properties.shortText).toBeDefined();
@@ -874,10 +903,10 @@ describe('Tool Definitions', () => {
     it('exposes the messages property inside batch_create items (on-prem)', () => {
       const schema = getSAPWriteSchema(false);
       const batchObjects = schema.properties.objects;
-      expect(batchObjects?.type).toBe('array');
+      expect(batchObjects?.type).toContain('array');
       const item = batchObjects.items;
       expect(item.properties.messages).toBeDefined();
-      expect(item.properties.messages.type).toBe('array');
+      expect(item.properties.messages.type).toContain('array');
       expect(item.properties.messages.items.required).toEqual(['number', 'shortText']);
     });
 
@@ -885,15 +914,15 @@ describe('Tool Definitions', () => {
       const schema = getSAPWriteSchema(false);
       const item = schema.properties.objects.items;
       expect(item.properties.package).toBeDefined();
-      expect(item.properties.package.type).toBe('string');
+      expect(item.properties.package.type).toContain('string');
       expect(item.properties.transport).toBeDefined();
-      expect(item.properties.transport.type).toBe('string');
+      expect(item.properties.transport.type).toContain('string');
     });
 
     it('exposes the messages property at top-level SAPWrite (BTP)', () => {
       const schema = getSAPWriteSchema(true);
       expect(schema.properties.messages).toBeDefined();
-      expect(schema.properties.messages.type).toBe('array');
+      expect(schema.properties.messages.type).toContain('array');
     });
 
     it('exposes the CLAS include update property at top-level SAPWrite', () => {
@@ -901,7 +930,7 @@ describe('Tool Definitions', () => {
         const schema = getSAPWriteSchema(btp);
         const include = schema.properties.include;
         expect(include).toBeDefined();
-        expect(include.type).toBe('string');
+        expect(include.type).toContain('string');
         expect(include.enum).toEqual(['definitions', 'implementations', 'macros', 'testclasses']);
         // PR-D + issue #303: include= valid for update, edit_method, and the
         // four class-section surgery actions on CLAS.

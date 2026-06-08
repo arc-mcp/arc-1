@@ -501,6 +501,55 @@ function buildSAPSearchTool(btp: boolean, textSearchAvailable?: boolean): ToolDe
   };
 }
 
+// ─── GPT/OpenAI strict-mode nullable helper (issue #360) ────────────
+
+/** Add `null` to a property's `type` (string → ["string","null"]). Per OpenAI's Structured
+ *  Outputs guide, null goes in `type` ONLY — never added to `enum`. */
+function makeNullableType(def: Record<string, unknown>): Record<string, unknown> {
+  const d = { ...def };
+  const t = d.type;
+  if (typeof t === 'string') {
+    if (t !== 'null') d.type = [t, 'null'];
+  } else if (Array.isArray(t) && !t.includes('null')) {
+    d.type = [...t, 'null'];
+  }
+  return d;
+}
+
+/**
+ * Recursively make every NON-required property of a JSON-schema object nullable.
+ *
+ * GPT/OpenAI strict mode (the default for the Responses API) marks every property required;
+ * a non-nullable optional field then leaves the model no way to signal "unused" — for an enum
+ * it is FORCED to emit one of the values (the hallucinated typeKind=domain / odataVersion=V4
+ * seen on unrelated writes, issue #360). The OpenAI-documented fix is a union with null
+ * (`"type": ["string","null"]`) so the model can emit null = "not used"; ARC-1's runtime
+ * `stripLlmEmptyValues` then drops the nulls before Zod. Each object node's OWN `required`
+ * array decides what stays non-nullable, so it is correct at every nesting level (top level
+ * keeps `action`; batch `objects[]` items keep `type`/`name`; leaf arrays keep their keys).
+ * Pure — returns a copy, does not mutate the input.
+ */
+function makeOptionalPropertiesNullable(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(makeOptionalPropertiesNullable);
+  if (!node || typeof node !== 'object') return node;
+  const obj = node as Record<string, unknown>;
+  const result: Record<string, unknown> = { ...obj };
+  if (obj.type === 'object' && obj.properties && typeof obj.properties === 'object') {
+    const required = new Set(Array.isArray(obj.required) ? (obj.required as string[]) : []);
+    const newProps: Record<string, unknown> = {};
+    for (const [key, def] of Object.entries(obj.properties as Record<string, unknown>)) {
+      let processed = makeOptionalPropertiesNullable(def);
+      if (!required.has(key) && processed && typeof processed === 'object' && !Array.isArray(processed)) {
+        processed = makeNullableType(processed as Record<string, unknown>);
+      }
+      newProps[key] = processed;
+    }
+    result.properties = newProps;
+  }
+  if (obj.items !== undefined) result.items = makeOptionalPropertiesNullable(obj.items);
+  return result;
+}
+
 // ─── Main Tool Definitions ──────────────────────────────────────────
 
 export function getToolDefinitions(
@@ -654,7 +703,9 @@ export function getToolDefinitions(
     tools.push({
       name: 'SAPWrite',
       description: sapWriteDesc,
-      inputSchema: {
+      // Make optional fields nullable so GPT/OpenAI strict-mode callers can emit null for
+      // unused fields instead of fabricating values; the runtime strip removes the nulls (#360).
+      inputSchema: makeOptionalPropertiesNullable({
         type: 'object',
         properties: {
           action: {
@@ -984,7 +1035,7 @@ export function getToolDefinitions(
           },
         },
         required: ['action'],
-      },
+      }) as Record<string, unknown>,
     });
 
     tools.push({
