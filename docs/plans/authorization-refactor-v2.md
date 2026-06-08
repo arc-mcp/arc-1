@@ -603,13 +603,13 @@ The exact list comes from the Task 0 inventory. The guaranteed set:
 - Modify: `docs_page/tools.md`
 - Modify: `docs_page/roadmap.md`
 - Modify: `docs_page/architecture.md`
-- Modify: `docs_page/phase4-btp-deployment.md`
+- Modify: `docs_page/btp-cloud-foundry-deployment.md`
 - Modify: `docs_page/updating.md` (add migration section)
 - Modify: `docs/research/authorization-concept.md` (add postscript)
 - Modify: `docs/research/sap-backend-roles.md` (if references old flags — check via Task 0 inventory)
 - Modify: `docs/publishing-guide.md` (if hits from Task 0 inventory)
 - Modify: `docs/plans/ralphex-data-preview-probe-scope-hardening.md` (in-progress plan — if hits)
-- Modify: `docs/plans/oauth-security-hardening.md` (in-progress plan — if hits)
+- Modify: `docs/plans/completed/oauth-security-hardening.md` (historical plan — if hits)
 - Modify: `docs/implementation-plan-sapcontext-sapmanage.md` (if hits)
 - Modify: `README.md`
 - Modify: `CLAUDE.md`

@@ -9,7 +9,7 @@
 #   cf set-env arc1-mcp-server ARC1_API_KEYS "<api-key>:viewer"
 #
 # See docs/deployment-best-practices.md for architecture guidance.
-# See docs/phase4-btp-deployment.md for step-by-step BTP deployment.
+# See docs_page/btp-cloud-foundry-deployment.md for step-by-step BTP deployment.
 
 # ──────────────────────────────────────────────────────────────────────
 # Example: On-Premise SAP via Cloud Connector + Principal Propagation

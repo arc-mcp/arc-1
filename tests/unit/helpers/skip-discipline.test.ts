@@ -23,10 +23,11 @@ function listTsFiles(dir: string): string[] {
   return files;
 }
 
-function matchingFiles(pattern: RegExp): string[] {
+function matchingFiles(pattern: RegExp, excludedFiles: string[] = []): string[] {
   return SCAN_DIRS.flatMap(listTsFiles)
-    .filter((file) => pattern.test(readFileSync(file, 'utf8')))
     .map((file) => relative(REPO_ROOT, file))
+    .filter((file) => !excludedFiles.includes(file))
+    .filter((file) => pattern.test(readFileSync(join(REPO_ROOT, file), 'utf8')))
     .sort();
 }
 
@@ -40,7 +41,11 @@ describe('integration and e2e skip discipline', () => {
   });
 
   it('always passes explicit reason text to ctx.skip', () => {
-    expect(matchingFiles(/\bctx\.skip\(\s*\)/)).toEqual([]);
+    expect(matchingFiles(/\bctx\.skip\(\s*\)/, ['tests/helpers/skip-policy.ts'])).toEqual([]);
+  });
+
+  it('routes runtime skips through telemetry helpers', () => {
+    expect(matchingFiles(/\bctx\.skip\(/, ['tests/helpers/skip-policy.ts'])).toEqual([]);
   });
 
   it('does not use permanent test-level it.skip declarations', () => {

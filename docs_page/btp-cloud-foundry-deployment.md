@@ -1,4 +1,4 @@
-# Phase 4: BTP Cloud Foundry Deployment
+# BTP Cloud Foundry Deployment
 
 Deploy ARC-1 on SAP BTP Cloud Foundry, connecting to an on-premise SAP system via Cloud Connector and Destination Service. Two deployment methods are supported: **MTA** (recommended) and **Docker**.
 
@@ -8,7 +8,7 @@ Deploy ARC-1 on SAP BTP Cloud Foundry, connecting to an on-premise SAP system vi
 - SAP system is on-premise, accessible via Cloud Connector
 - Want a cloud-hosted MCP server without managing infrastructure
 - Need per-user SAP identity via principal propagation (XSUAA + Cloud Connector)
-- Combining with Phase 2 (OAuth/OIDC) for enterprise authentication
+- Need SAP BTP-native OAuth for MCP clients through XSUAA
 
 ## Architecture
 
@@ -16,14 +16,15 @@ Deploy ARC-1 on SAP BTP Cloud Foundry, connecting to an on-premise SAP system vi
 ┌──────────────────┐                    ┌─────────────────────────────────────────────────┐
 │  MCP Client      │     OAuth 2.0      │  SAP BTP Cloud Foundry                          │
 │  (Copilot Studio │ ──────────────────►│                                                 │
-│   / IDE / CLI)   │   Bearer JWT       │  ┌─────────────────────────────────────────┐    │
-└──────────────────┘                    │  │  ARC-1 (Docker Container)               │    │
+│   / IDE / CLI)   │   XSUAA JWT        │  ┌─────────────────────────────────────────┐    │
+└──────────────────┘                    │  │  ARC-1 (Docker/Node.js app)             │    │
         │                               │  │                                         │    │
-        │                               │  │  OIDC Validator ──► Entra ID JWKS       │    │
+        │                               │  │  XSUAA verifier + OAuth metadata        │    │
         │  ┌────────────────────┐       │  │  MCP Server (HTTP Streamable)           │    │
-        └─►│  Entra ID          │       │  │  ADT Client ─── via Connectivity ──►────│──┐ │
-           │  (Token Issuer)    │       │  │                    Proxy                 │  │ │
-           └────────────────────┘       │  └─────────────────────────────────────────┘  │ │
+        └─►│  XSUAA / BTP Trust │       │  │  ADT Client ─── via Connectivity ──►────│──┐ │
+           │  (SAP IAS/SAP ID   │       │  │                    Proxy                 │  │ │
+           │   or federated IdP)│       │  └─────────────────────────────────────────┘  │ │
+           └────────────────────┘       │                                               │ │
                                         │                                               │ │
                                         │  ┌──────────────┐  ┌──────────────────────┐  │ │
                                         │  │ Destination   │  │ Connectivity Service │  │ │
@@ -251,23 +252,19 @@ cf push
 # https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com
 ```
 
-### 7. Set Credentials via Environment (not in manifest)
+### 7. Configure authentication and optional fallback keys
 
 **Never put secrets in manifest.yml.** Set them via `cf set-env`:
 
 ```bash
-# API key for simple auth
+# Optional API key for break-glass/admin testing
 cf set-env arc1-mcp-server ARC1_API_KEYS "your-secure-api-key:admin"
-
-# OR OAuth/OIDC validation (Phase 2) — recommended
-cf set-env arc1-mcp-server SAP_OIDC_ISSUER "https://login.microsoftonline.com/{tenant-id}/v2.0"
-cf set-env arc1-mcp-server SAP_OIDC_AUDIENCE "{client-id}"
 
 # Restart to apply
 cf restart arc1-mcp-server
 ```
 
-> **Note on audience:** When using Entra ID with `requestedAccessTokenVersion: 2`, the audience is the raw Application (client) ID GUID, not the `api://` URI.
+For normal BTP-native deployments, `SAP_XSUAA_AUTH=true` in the manifest/MTA properties is the MCP authentication path. XSUAA uses the subaccount trust setup, which may show SAP Cloud Identity Services, SAP ID service, or a federated corporate IdP depending on your BTP trust configuration. Generic OIDC (`SAP_OIDC_ISSUER` / `SAP_OIDC_AUDIENCE`) is still supported for non-BTP identity-provider setups, but it is not required for XSUAA deployments.
 
 ### 8. Verify Deployment
 
@@ -284,11 +281,11 @@ curl https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com/.well-known/oaut
 curl https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com/.well-known/oauth-authorization-server
 # → {"authorization_endpoint":"...","token_endpoint":"...","registration_endpoint":"...",...}
 
-# Test with Bearer token
-TOKEN=$(az account get-access-token --scope "api://{client-id}/access_as_user" --query accessToken -o tsv)
+# Test with Bearer token from your MCP client's XSUAA login flow,
+# or use the optional ARC1_API_KEYS fallback if you configured one.
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' \
   https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com/mcp
 ```
 
@@ -359,18 +356,16 @@ cf restart arc1-mcp-server
 
 > **Note:** When the Docker image ENTRYPOINT changes, CF may cache the old start command. Use `-c "/usr/local/bin/arc1"` to explicitly set the start command.
 
-## Combining with OAuth (Recommended)
+## Client OAuth on BTP
 
-For production, combine BTP deployment with Phase 2 (OAuth/OIDC):
+For production BTP deployments, use XSUAA OAuth:
 
 ```bash
-# Set OIDC validation on the CF app
-cf set-env arc1-mcp-server SAP_OIDC_ISSUER "https://login.microsoftonline.com/{tenant-id}/v2.0"
-cf set-env arc1-mcp-server SAP_OIDC_AUDIENCE "{client-id}"
+cf set-env arc1-mcp-server SAP_XSUAA_AUTH true
 cf restart arc1-mcp-server
 ```
 
-Then configure your MCP client (Copilot Studio, VS Code) to use OAuth authentication as described in [OAuth / JWT Setup](oauth-jwt-setup.md).
+Then configure your MCP client to use the OAuth metadata exposed by ARC-1, as described in [XSUAA Setup](xsuaa-setup.md). If your subaccount trust is federated to Microsoft Entra ID, users may see a Microsoft login page; ARC-1 still validates XSUAA-issued tokens.
 
 ## Troubleshooting
 
@@ -486,9 +481,10 @@ For connecting to a BTP ABAP Environment (instead of on-premise), see the separa
 
 Key differences from on-premise deployment:
 - No Cloud Connector or Connectivity Service needed
-- Auth is via service key + JWT Bearer Exchange (not PP)
+- Auth is via a BTP Destination with `Authentication=OAuth2UserTokenExchange`
+- `SAP_PP_ENABLED=true` is still used in ARC-1 to select the per-user destination path; the destination returns an ABAP bearer token instead of Cloud Connector PP headers
 - Set `SAP_SYSTEM_TYPE=btp` for adapted tool descriptions
-- Set `SAP_BTP_SERVICE_KEY` as an env var (via `cf set-env` — never in manifest)
+- Do not set `SAP_BTP_SERVICE_KEY` on the CF app. Use the ABAP service key only to create/update the destination's OAuth client settings.
 
 ## SAP Documentation References
 

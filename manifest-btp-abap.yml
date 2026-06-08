@@ -1,16 +1,20 @@
 ---
 # Cloud Foundry deployment manifest for ARC-1 connecting to BTP ABAP Environment.
 #
-# This is for direct BTP ABAP connectivity (no Cloud Connector needed).
-# The server connects via OAuth 2.0 JWT Bearer Exchange.
+# This is for BTP ABAP connectivity through a per-user BTP Destination
+# with Authentication=OAuth2UserTokenExchange. No Cloud Connector or
+# Connectivity service is needed.
 #
 # Prerequisites:
 #   1. BTP ABAP Environment instance provisioned
-#   2. Service key created: cf create-service-key <instance> <key-name>
-#   3. XSUAA service instance: cf create-service xsuaa application arc1-xsuaa -c xs-security.json
+#   2. Service key created only to populate the destination OAuth settings
+#   3. Destination service instance: cf create-service destination lite arc1-destination
+#   4. XSUAA service instance: cf create-service xsuaa application arc1-xsuaa -c xs-security.json
 #
-# Set the service key (contains secret — NEVER put in manifest):
-#   cf set-env arc1-btp-abap SAP_BTP_SERVICE_KEY "$(cf service-key <instance> <key-name> --output json | jq -c '.credentials')"
+# Create a destination named ABAP_PP with:
+#   Type=HTTP, ProxyType=Internet, Authentication=OAuth2UserTokenExchange,
+#   URL=<service-key url>, tokenServiceURL=<service-key uaa.url>/oauth/token,
+#   clientId=<service-key uaa.clientid>, clientSecret=<service-key uaa.clientsecret>
 #
 # See docs/btp-abap-environment.md for full setup guide.
 # See docs/deployment-best-practices.md for architecture guidance.
@@ -31,6 +35,10 @@ applications:
       SAP_TRANSPORT: "http-streamable"
       # XSUAA auth for MCP-native clients
       SAP_XSUAA_AUTH: "true"
+      # Per-user BTP Destination for BTP ABAP Environment
+      SAP_BTP_DESTINATION: "ABAP_PP"
+      SAP_PP_ENABLED: "true"
+      SAP_PP_STRICT: "true"
       # Authorization / safety defaults (adjust per use case)
       SAP_ALLOW_WRITES: "true"
       SAP_ALLOW_DATA_PREVIEW: "false"
@@ -45,4 +53,5 @@ applications:
       SAP_VERBOSE: "true"
     services:
       - arc1-xsuaa
+      - arc1-destination
       # - arc1-auditlog    # Uncomment for BTP Audit Log

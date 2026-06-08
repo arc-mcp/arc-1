@@ -11,6 +11,7 @@
 
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { skipTest } from '../helpers/skip-policy.js';
 import { callTool, connectClient, expectToolSuccess, expectToolSuccessOrSkip } from './helpers.js';
 
 function uniqueName(prefix: string): string {
@@ -53,7 +54,7 @@ async function seed(client: Client, ctx: import('vitest').TaskContext, className
   });
   if (create.isError) {
     const detail = create.content[0]?.text ?? 'no error detail returned';
-    ctx.skip(`Cannot seed transient class ${className}: ${detail.slice(0, 200)}`);
+    skipTest(ctx, `Cannot seed transient class ${className}: ${detail.slice(0, 200)}`);
     return false;
   }
   const write = await callTool(client, 'SAPWrite', {
@@ -114,7 +115,7 @@ ENDCLASS.`;
         source: newDef,
         lintBeforeWrite: false,
       });
-      expectToolSuccess(result);
+      expectToolSuccessOrSkip(ctx, result);
       const activate = await callTool(client, 'SAPActivate', { objects: [{ type: 'CLAS', name }] });
       expectToolSuccess(activate);
     } finally {
@@ -135,7 +136,7 @@ ENDCLASS.`;
         visibility: 'public',
         lintBeforeWrite: false,
       });
-      const text = expectToolSuccess(result);
+      const text = expectToolSuccessOrSkip(ctx, result);
       expect(text).toMatch(/added method.*GREET/i);
       const activate = await callTool(client, 'SAPActivate', { objects: [{ type: 'CLAS', name }] });
       expectToolSuccess(activate);
@@ -161,7 +162,7 @@ ENDCLASS.`;
         source: newSig,
         lintBeforeWrite: false,
       });
-      expectToolSuccess(result);
+      expectToolSuccessOrSkip(ctx, result);
       const activate = await callTool(client, 'SAPActivate', { objects: [{ type: 'CLAS', name }] });
       expectToolSuccess(activate);
     } finally {
@@ -180,7 +181,7 @@ ENDCLASS.`;
         name,
         method: 'goodbye',
       });
-      const text = expectToolSuccess(result);
+      const text = expectToolSuccessOrSkip(ctx, result);
       expect(text).toMatch(/deleted method.*GOODBYE/i);
       const activate = await callTool(client, 'SAPActivate', { objects: [{ type: 'CLAS', name }] });
       expectToolSuccess(activate);

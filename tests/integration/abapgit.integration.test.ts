@@ -13,7 +13,7 @@ import { defaultFeatureConfig } from '../../src/adt/config.js';
 import { probeFeatures } from '../../src/adt/features.js';
 import { unrestrictedSafetyConfig } from '../../src/adt/safety.js';
 import { expectSapFailureClass } from '../helpers/expected-error.js';
-import { requireOrSkip, SkipReason } from '../helpers/skip-policy.js';
+import { requireOrSkip, SkipReason, skipTest } from '../helpers/skip-policy.js';
 import { getTestClient, requireSapCredentials } from './helpers.js';
 
 const ABAPGIT_REMOTE_TESTS_DISABLED =
@@ -100,7 +100,7 @@ describe('abapGit ADT bridge integration', () => {
   it('stageRepo can stage a linked repo when remote trust is explicitly enabled', async (ctx) => {
     requireOrSkip(ctx, abapGitAvailable ? true : undefined, SkipReason.BACKEND_UNSUPPORTED);
     if (!abapGitRemoteTestsEnabled) {
-      ctx.skip(ABAPGIT_REMOTE_TESTS_DISABLED);
+      skipTest(ctx, ABAPGIT_REMOTE_TESTS_DISABLED);
       return;
     }
     const repos = await listRepos(client.http, client.safety);
@@ -111,7 +111,7 @@ describe('abapGit ADT bridge integration', () => {
   it('pullRepo can pull a configured repo when remote trust is explicitly enabled', async (ctx) => {
     requireOrSkip(ctx, abapGitAvailable ? true : undefined, SkipReason.BACKEND_UNSUPPORTED);
     if (!abapGitRemoteTestsEnabled) {
-      ctx.skip(ABAPGIT_REMOTE_TESTS_DISABLED);
+      skipTest(ctx, ABAPGIT_REMOTE_TESTS_DISABLED);
       return;
     }
     requireOrSkip(

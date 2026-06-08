@@ -803,7 +803,7 @@ export async function startHttpServer(
  * Returns AuthInfo so the MCP SDK populates extra.authInfo on the request,
  * enabling scope enforcement, per-request safety, and principal propagation.
  */
-function createStandardVerifier(
+export function createStandardVerifier(
   config: ServerConfig,
 ): (token: string) => Promise<import('@modelcontextprotocol/sdk/server/auth/types.js').AuthInfo> {
   return async (token: string) => {

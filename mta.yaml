@@ -31,7 +31,7 @@ description: ARC-1 — MCP Server for SAP ABAP Systems
 #   cf set-env arc1-mcp-server SAP_CLIENT "001"
 #   cf restage arc1-mcp-server
 #
-# See docs/phase4-btp-deployment.md for full setup guide.
+# See docs_page/btp-cloud-foundry-deployment.md for full setup guide.
 # ──────────────────────────────────────────────────────────────────────
 
 parameters:

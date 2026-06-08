@@ -8,13 +8,12 @@
  * - Source cache miss/revalidation/invalidation (MemoryCache and SqliteCache)
  * - Dependency graph caching (second SAPContext call returns [cached])
  * - Cache stats reporting via SAPManage
- * - Warmup: TADIR enumeration produces objects on this system
- * - Warmup: indexed objects are available in cache
+ * - Warmup: one bounded smoke proves a stable package can mark the cache warm
  * - Usages (reverse deps): correct error message when warmup not run
- * - Usages: returns results after warmup
  * - SQLite cache persistence across instances
  *
  * Run: npm run test:integration
+ * Slow warmup coverage: npm run test:integration:slow
  */
 
 import * as fs from 'node:fs';
@@ -409,98 +408,16 @@ describe('Cache Integration Tests', () => {
   // ─── Warmup ───────────────────────────────────────────────────────
 
   describe('warmup', () => {
-    it('TADIR query returns custom CLAS/INTF objects (Z prefix)', async (ctx) => {
-      // Verify enumeration works directly
-      const cl = new CachingLayer(new MemoryCache());
-      const result = await runWarmup(client, cl, 'Z*,Y*,$DEMO_SOI_DRAFT,$TMP');
-      // A fresh SAP system may have zero custom objects — that's a valid state,
-      // not a product bug. Skip rather than pretend warmup is broken.
-      if (result.totalObjects === 0) {
-        requireOrSkip(
-          ctx,
-          undefined,
-          'No custom CLAS/INTF found — system has no Z*/Y* or $DEMO_SOI_DRAFT/$TMP objects',
-        );
-      }
-      expect(result.totalObjects).toBeGreaterThan(0);
-    }, 60000);
-
-    it('warmup indexes objects into cache (nodes + sources)', async (ctx) => {
-      const cl = new CachingLayer(new MemoryCache());
-      const result = await runWarmup(client, cl, '$DEMO_SOI_DRAFT,$TMP');
-
-      if (result.totalObjects === 0) {
-        requireOrSkip(ctx, undefined, 'No objects in $DEMO_SOI_DRAFT/$TMP — system has nothing to index');
-      }
-      const stats = cl.stats();
-      // Objects should be indexed
-      expect(result.fetched).toBeGreaterThan(0);
-      expect(stats.sourceCount).toBeGreaterThan(0);
-      expect(stats.nodeCount).toBeGreaterThan(0);
-    }, 60000);
-
-    it('warmup sets isWarmupAvailable flag', async () => {
-      const cl = new CachingLayer(new MemoryCache());
-      expect(cl.isWarmupAvailable).toBe(false);
-
-      await runWarmup(client, cl, '$TMP');
-      expect(cl.isWarmupAvailable).toBe(true);
-    }, 60000);
-
-    it('second warmup run skips unchanged objects (delta by hash)', async (ctx) => {
+    it('marks cache warm after one bounded stable-package warmup', async (ctx) => {
       requireDepGraphFixture(ctx);
       const cl = new CachingLayer(new MemoryCache());
 
-      const run1 = await runWarmup(client, cl, TEST_PACKAGE_WITH_DEPS);
-      if (run1.totalObjects === 0) {
+      const result = await runWarmup(client, cl, TEST_PACKAGE_WITH_DEPS);
+      if (result.totalObjects === 0) {
         requireOrSkip(ctx, undefined, `No objects in ${TEST_PACKAGE_WITH_DEPS} — system has nothing stable to index`);
       }
-      expect(run1.fetched).toBeGreaterThan(0);
-      expect(run1.failed).toBe(0);
-
-      // Second run uses the stable demo package rather than $TMP, which can
-      // change underneath CI when other live-SAP tests create transient objects.
-      const run2 = await runWarmup(client, cl, TEST_PACKAGE_WITH_DEPS);
-      expect(run2.totalObjects).toBe(run1.totalObjects);
-      expect(run2.failed).toBe(0);
-      expect(run2.skipped).toBe(run1.fetched + run1.skipped); // all previously fetched are now skipped
-      expect(run2.fetched).toBe(0); // nothing new to fetch
-    }, 120000);
-
-    it('usages returns reverse deps after warmup', async (ctx) => {
-      requireDepGraphFixture(ctx);
-      const cl = new CachingLayer(new MemoryCache());
-      // Use package that contains classes with known inter-dependencies
-      await runWarmup(client, cl, TEST_PACKAGE_WITH_DEPS);
-
-      cl.setWarmupDone(true);
-
-      // After indexing the demo package, getUsages should return edges or empty array (not null)
-      // since warmup is done, we get [] for objects with no callers, never null
-      const usages = cl.getUsages(TEST_CLASS_WITH_DEPS);
-      expect(usages).not.toBeNull();
-      expect(Array.isArray(usages)).toBe(true);
-    }, 120000);
-
-    it('SAPContext usages action returns result after warmup', async (ctx) => {
-      requireDepGraphFixture(ctx);
-      const cl = new CachingLayer(new MemoryCache());
-      await runWarmup(client, cl, TEST_PACKAGE_WITH_DEPS);
-
-      const r = await handleToolCall(
-        client,
-        DEFAULT_CONFIG,
-        'SAPContext',
-        { action: 'usages', name: TEST_CLASS_WITH_DEPS, type: 'CLAS' },
-        undefined,
-        undefined,
-        cl,
-      );
-      const text = r.content[0]?.text ?? '';
-      // Should be a real usages response, not the "warmup not available" error
-      expect(text.toLowerCase()).not.toMatch(/warmup.*not.*available|cache.*not.*available/);
-      // Should mention the object
-      expect(text).toContain(TEST_CLASS_WITH_DEPS.toUpperCase());
+      expect(cl.isWarmupAvailable).toBe(true);
+      expect(result.failed).toBe(0);
     }, 120000);
   });
 

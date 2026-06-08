@@ -1,20 +1,20 @@
 # OAuth / JWT Setup
 
-Authenticate MCP clients using OAuth 2.1 with an external Identity Provider (EntraID, Cognito, Okta, Keycloak). ARC-1 validates JWT Bearer tokens and extracts user identity.
+Authenticate MCP clients using OAuth 2.1 with an external identity provider (Microsoft Entra ID, Cognito, Okta, Keycloak). ARC-1 validates JWT bearer tokens and extracts user identity.
 
 ## When to Use
 
 - Enterprise environments with existing IdP
 - When you need to know which user is making requests
 - Audit trail requirements
-- When combined with Phase 3 for per-user SAP auth
+- When combined with per-user SAP auth through BTP Destination principal propagation
 
 ## Architecture
 
 ```
                                  ┌─────────────────────┐
                                  │  Identity Provider   │
-                                 │  (EntraID / Cognito) │
+                                 │  (Entra ID / Cognito)│
                                  └──────┬──────────────┘
                                         │ OIDC tokens
 ┌──────────────────┐     JWT Bearer     │     ┌──────────────────┐     Basic Auth      ┌────────────┐
@@ -272,7 +272,7 @@ TOKEN=$(az account get-access-token --scope "api://{client-id}/access_as_user" -
 # Test against arc1
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' \
   https://your-arc1-server.example.com/mcp
 ```
 
@@ -295,14 +295,14 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 - JWKS keys are cached for 1 hour (auto-refresh)
 - Tokens must have correct issuer AND audience (`SAP_OIDC_AUDIENCE` is mandatory)
 - ARC-1 never sees user passwords (IdP handles login)
-- SAP still uses a shared service account (for per-user SAP auth, add Phase 3)
+- SAP still uses a shared service account unless you also configure BTP Destination principal propagation / per-user destination exchange
 - If your environment has clock drift between the IdP and ARC-1 server, set `SAP_OIDC_CLOCK_TOLERANCE` (in seconds) to allow a grace period on token `exp`/`nbf` checks
 
 ## References
 
-- [MCP Specification - Authorization](https://modelcontextprotocol.io/specification/2025-03-26/basic/authorization) — OAuth 2.1 auth for MCP servers
+- [MCP Specification - Authorization](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization) — OAuth 2.1 auth for MCP servers, including Protected Resource Metadata
 - [RFC 9728 - OAuth Protected Resource Metadata](https://datatracker.ietf.org/doc/html/rfc9728) — Auto-discovery of authorization servers
-- [Microsoft Entra ID - App Registrations](https://learn.microsoft.com/en-us/entra/identity-platform/quickstart-register-app) — Azure AD app setup
+- [Microsoft Entra ID - App Registrations](https://learn.microsoft.com/en-us/entra/identity-platform/quickstart-register-app) — Microsoft Entra app setup
 - [AWS Cognito User Pools](https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools.html) — AWS IdP setup
 - [Keycloak - Creating a Realm](https://www.keycloak.org/docs/latest/server_admin/#configuring-realms) — Open-source IdP setup
 

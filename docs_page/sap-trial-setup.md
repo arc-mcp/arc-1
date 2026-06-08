@@ -767,53 +767,60 @@ npm run test:integration
 The workflow is defined in `.github/workflows/test.yml`:
 
 ```
-push / pull_request / workflow_dispatch
+pull_request / workflow_dispatch
       │
-      ├── unit (ubuntu-latest)
-      │     ├── npm test                          ← all unit tests
-      │     └── npm run build                    ← verify TypeScript builds
+      ├── mta-validate (Node 22)
+      │     └── npm run btp:validate
       │
-      └── integration (ubuntu-latest) [needs: unit]
-            ├── condition: PR, push to main, or manual dispatch
-            ├── environment: sap-trial          ← uses GitHub environment secrets
-            └── npm run test:integration
+      ├── test (Node 22 + 24)
+      │     ├── npm run lint
+      │     ├── npm run typecheck
+      │     ├── npm test
+      │     └── npm run test:coverage            ← informational
+      │
+      ├── integration (Node 22, internal PR/manual dispatch)
+      │     ├── authenticated ADT preflight using TEST_SAP_* secrets
+      │     └── npm run test:integration
+      │
+      ├── e2e (Node 22, after integration)
+      │     ├── authenticated ADT preflight using TEST_SAP_* secrets
+      │     └── npm run test:e2e through a local ARC-1 server
+      │
+      └── reliability-summary
+            └── npm run test:assert-execution
 ```
 
-The integration job only runs when:
-- A pull request is opened/updated
-- A push lands on `main`
-- The workflow is manually dispatched with `run_integration: true`
+The live SAP jobs only run when:
+- An internal pull request is opened/updated and the PR title is not gated off as `docs:` or `chore:`
+- The workflow is manually dispatched
+
+External fork PRs skip live SAP jobs because GitHub does not pass repository secrets to them.
 
 ### GitHub Secrets Setup
 
-Integration tests read credentials from GitHub environment secrets in the
-`sap-trial` environment.
+Integration and E2E tests read credentials from repository secrets named `TEST_SAP_*`.
 
-**Create the environment:**
-
-```bash
-gh api --method PUT repos/<owner>/<repo>/environments/sap-trial
-```
-
-**Set the four secrets:**
+**Set the required secrets:**
 
 ```bash
-gh secret set SAP_URL      --env sap-trial --repo <owner>/<repo> --body "https://<your-subdomain>"
-gh secret set SAP_USER     --env sap-trial --repo <owner>/<repo> --body "DEVELOPER"
-gh secret set SAP_PASSWORD --env sap-trial --repo <owner>/<repo> --body "ABAPtr2023#00"
-gh secret set SAP_CLIENT   --env sap-trial --repo <owner>/<repo> --body "001"
+gh secret set TEST_SAP_URL      --repo <owner>/<repo> --body "https://<your-sap-host>"
+gh secret set TEST_SAP_USER     --repo <owner>/<repo> --body "<sap-user>"
+gh secret set TEST_SAP_PASSWORD --repo <owner>/<repo> --body "<sap-password>"
+gh secret set TEST_SAP_CLIENT   --repo <owner>/<repo> --body "001"
 ```
+
+Set `TEST_SAP_INSECURE=true` as a repository secret only when the trial system uses a self-signed certificate.
 
 **Verify:**
 
 ```bash
-gh secret list --env sap-trial --repo <owner>/<repo>
+gh secret list --repo <owner>/<repo>
 ```
 
-**Trigger a manual run with integration tests:**
+**Trigger a manual run:**
 
 ```bash
-gh workflow run test.yml --repo <owner>/<repo> --field run_integration=true
+gh workflow run test.yml --repo <owner>/<repo>
 ```
 
 ### CI-Specific Considerations

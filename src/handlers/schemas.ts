@@ -975,6 +975,7 @@ export const SAPManageSchema = z.object({
   superPackage: z.string().optional(),
   softwareComponent: z.string().optional(),
   transportLayer: z.string().optional(),
+  recordChanges: z.boolean().optional(),
   packageType: z.enum(['development', 'structure', 'main']).optional(),
   transport: z.string().optional(),
   objectUri: z.string().optional(),

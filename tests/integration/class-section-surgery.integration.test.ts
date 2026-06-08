@@ -17,7 +17,7 @@ import { afterAll, beforeAll, describe, expect, it, type TaskContext } from 'vit
 import { handleToolCall } from '../../src/handlers/intent.js';
 import { DEFAULT_CONFIG } from '../../src/server/types.js';
 import { expectSapFailureClass } from '../helpers/expected-error.js';
-import { SkipReason } from '../helpers/skip-policy.js';
+import { SkipReason, skipTest } from '../helpers/skip-policy.js';
 import { generateUniqueName } from './crud-harness.js';
 import { getTestClient, requireSapCredentials } from './helpers.js';
 
@@ -117,7 +117,7 @@ ENDCLASS.`;
 
   function requireSeeded(ctx: TaskContext): boolean {
     if (seeded) return true;
-    ctx.skip(seedSkipReason ?? `${SkipReason.NO_FIXTURE}: transient class ${className} was not seeded`);
+    skipTest(ctx, seedSkipReason ?? `${SkipReason.NO_FIXTURE}: transient class ${className} was not seeded`);
     return false;
   }
 

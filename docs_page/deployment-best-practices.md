@@ -17,7 +17,7 @@ ARC-1 follows the **one instance per SAP backend** pattern. Each ARC-1 deploymen
 
 ### Multi-user within each instance
 
-Each ARC-1 instance serves **multiple users** via principal propagation (on-premise) or JWT Bearer Exchange (BTP). The MCP client authenticates the user, and ARC-1 maps that to a SAP user identity.
+Each ARC-1 instance serves **multiple users** via principal propagation (on-premise) or a per-user BTP Destination token exchange (BTP ABAP). The MCP client authenticates the user, and ARC-1 maps that to a SAP user identity.
 
 ```
                     ┌─────────────────┐
@@ -28,7 +28,7 @@ Each ARC-1 instance serves **multiple users** via principal propagation (on-prem
                        ▼          ▼
 ┌─────────────────────┐ ┌──────────────────────┐
 │ arc1-ecc-dev        │ │ arc1-btp-dev         │
-│ on-premise, PP      │ │ BTP ABAP, JWT Bearer │
+│ on-premise, PP      │ │ BTP ABAP, OAuth2 UTE │
 │ allowWrites=true    │ │ allowWrites=true     │
 │ 50 developers       │ │ 50 developers        │
 └──────┬──────────────┘ └──────┬───────────────┘
@@ -68,7 +68,7 @@ CF Apps:
 │ arc1-s4-dev                      │  S/4 Dev, read+write, PP
 │ allowWrites=true                 │
 ├──────────────────────────────────┤
-│ arc1-btp-dev                     │  BTP ABAP, read+write, JWT Bearer
+│ arc1-btp-dev                     │  BTP ABAP, read+write, OAuth2UserTokenExchange
 │ SAP_SYSTEM_TYPE=btp              │
 │ allowWrites=true                 │
 └──────────────────────────────────┘
@@ -120,22 +120,22 @@ SAP_SYSTEM_TYPE=btp    # or: onprem, auto (default)
 ```
 
 When `SAP_SYSTEM_TYPE=btp` is set, tool definitions are adapted at server startup:
-- SAPRead removes PROG, INCL, VIEW, TEXT_ELEMENTS, VARIANTS from the type enum
-- SAPWrite removes PROG, INCL, FUNC from the type enum
+- SAPRead removes PROG, INCL, VIEW, TRAN, TEXT_ELEMENTS, VARIANTS, SOBJ, AUTH, FEATURE_TOGGLE/FTG2, ENHO, VERSIONS, and VERSION_SOURCE from the type enum
+- SAPWrite removes PROG, INCL, FUNC, and FUGR from the type enum
 - SAPQuery description warns about blocked SAP standard tables
 - SAPTransport description explains gCTS behavior
-- SAPContext removes PROG, FUNC from the type enum
+- SAPContext removes PROG and FUNC from the type enum
 
 ### What changes on BTP
 
 | Tool | What changes |
 |------|-------------|
-| **SAPRead** | Removes PROG, INCL, VIEW, TEXT_ELEMENTS, VARIANTS, SOBJ. Returns helpful error if LLM tries them anyway. |
-| **SAPWrite** | Only CLAS, INTF. Must use ABAP Cloud syntax, Z/Y namespace. |
+| **SAPRead** | Keeps cloud-facing types: CLAS, INTF, FUNC/FUGR where released/custom, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL, DOMA, DTEL, TABLE_CONTENTS, TABLE_QUERY, DEVC, SYSTEM, COMPONENTS, MSAG, BSP/BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS. Removes classic-only types and returns a helpful error if the LLM tries them anyway. |
+| **SAPWrite** | Supports CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL/TABL/DT/TABL/DS, DOMA, DTEL, MSAG. Must use ABAP Cloud syntax and custom namespaces. |
 | **SAPQuery** | Warns that SAP standard tables (DD02L, TADIR, etc.) are blocked. Suggests CDS views. |
 | **SAPSearch** | Notes that only released and custom objects are returned. |
 | **SAPTransport** | Explains gCTS: release = Git push, not TMS export. |
-| **SAPContext** | Only CLAS, INTF. Includes released SAP objects (they're the dev API surface on BTP). |
+| **SAPContext** | Supports CLAS, INTF, and DDLS. CDS impact analysis is available for DDLS. |
 | **SAPManage** | Returns `systemType` in probe results. |
 | **SAPActivate** | No change. |
 | **SAPNavigate** | Notes released object scope. |
@@ -158,7 +158,7 @@ When `SAP_SYSTEM_TYPE=btp` is set, tool definitions are adapted at server startu
 | Target | Auth | Config |
 |--------|------|--------|
 | On-premise SAP (via Cloud Connector) | Principal Propagation | `SAP_BTP_DESTINATION`, `SAP_PP_ENABLED=true` |
-| BTP ABAP Environment | Direct OAuth (service key) | `SAP_BTP_SERVICE_KEY_FILE` |
+| BTP ABAP Environment | Destination `OAuth2UserTokenExchange` | `SAP_BTP_DESTINATION`, `SAP_PP_ENABLED=true`, `SAP_SYSTEM_TYPE=btp` |
 
 ### Configuration examples
 
@@ -236,7 +236,7 @@ If you deploy ARC-1 behind a reverse proxy (nginx, Envoy, etc.) outside of Cloud
 | `mta-overrides.mtaext.example` | Tracked template documenting every overridable property. | No — copy it to `mta-overrides.mtaext` (gitignored) and edit that |
 | `mta-overrides.mtaext` (or any `mta-*.mtaext`) | Per-landscape MTA extension (real destinations, safety flags). **Gitignored.** | Yes — uncomment and set values for your environment |
 | `manifest.yml` | CF deployment manifest (on-premise via Cloud Connector) | Yes — change `SAP_URL`, destination name, safety flags |
-| `manifest-btp-abap.yml` | CF deployment manifest (BTP ABAP direct) | Yes — service key is set via `cf set-env` |
+| `manifest-btp-abap.yml` | CF deployment manifest (BTP ABAP via per-user destination) | Yes — set the destination name and safety flags; do not mount the ABAP service key into ARC-1 |
 | `Dockerfile` | Multi-stage Alpine build, all env vars documented | Rarely — use env vars for config |
 | `.env.example` | Template for local `.env` file | Yes — copy to `.env` and fill in |
 | `xs-security.json` | XSUAA scopes, roles, redirect URIs | Yes — add redirect URIs for your MCP clients |
@@ -244,7 +244,7 @@ If you deploy ARC-1 behind a reverse proxy (nginx, Envoy, etc.) outside of Cloud
 
 ## Deploying Without Docker
 
-If the Docker image doesn't fit your needs (custom certs, patching, compliance), deploy as a Node.js app using CF's `nodejs_buildpack`. See [Phase 4: BTP Deployment](phase4-btp-deployment.md#deploying-without-docker-nodejs-buildpack) for the full guide.
+If the Docker image doesn't fit your needs (custom certs, patching, compliance), deploy as a Node.js app using CF's `nodejs_buildpack`. See [BTP CF Deployment](btp-cloud-foundry-deployment.md#deploying-without-docker-nodejs-buildpack) for the full guide.
 
 Quick summary:
 1. `git clone` + `npm ci` + `npm run build`
@@ -259,12 +259,12 @@ Quick summary:
 See [BTP ABAP Environment guide](btp-abap-environment.md) for:
 - Provisioning the BTP ABAP instance
 - Running the "Prepare an Account for ABAP Development" booster
-- Creating the service key
-- Configuring ARC-1 with the service key
-- OAuth browser login flow
+- Creating a service key for local OAuth or destination credentials
+- Configuring ARC-1 locally with service-key browser OAuth
+- Configuring deployed ARC-1 with `OAuth2UserTokenExchange`
 - System type detection and tool adaptation
 
-See [Phase 4: BTP Deployment](phase4-btp-deployment.md) for:
+See [BTP CF Deployment](btp-cloud-foundry-deployment.md) for:
 - Cloud Foundry deployment with Docker
 - Destination Service and Cloud Connector setup
 - Principal Propagation configuration

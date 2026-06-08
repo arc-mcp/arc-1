@@ -14,13 +14,13 @@ MCP-native clients use RFC 8414 OAuth discovery to find authorization endpoints 
 5. Client exchanges code for token via ARC-1's `/token` endpoint
 6. Client sends Bearer token with MCP requests
 
-**Coexistence:** XSUAA OAuth coexists with API key and Entra ID OIDC auth. All three methods work on the same `/mcp` endpoint via a chained token verifier.
+**Coexistence:** XSUAA OAuth coexists with API key and generic OIDC auth (for example Entra ID, Okta, or Keycloak). All configured methods work on the same `/mcp` endpoint via a chained token verifier.
 
 ## Prerequisites
 
 - SAP BTP Cloud Foundry account with XSUAA entitlement
 - CF CLI installed and logged in
-- ARC-1 deployed on BTP CF (see [BTP Cloud Foundry deployment](phase4-btp-deployment.md))
+- ARC-1 deployed on BTP CF (see [BTP Cloud Foundry deployment](btp-cloud-foundry-deployment.md))
 
 ## Step 1: Create XSUAA Service Instance
 
@@ -275,12 +275,12 @@ XSUAA credentials are automatically loaded from `VCAP_SERVICES` when the service
 When XSUAA auth is enabled, the chained token verifier tries three methods in order:
 
 1. **XSUAA JWT** — validated by `@sap/xssec` against XSUAA JWKS (offline, cached)
-2. **Entra ID JWT** — validated by `jose` against OIDC issuer JWKS (if `SAP_OIDC_ISSUER` is set)
+2. **Generic OIDC JWT** — validated by `jose` against OIDC issuer JWKS (if `SAP_OIDC_ISSUER` is set)
 3. **API Key** — simple string match against `ARC1_API_KEYS` entries
 
 The first successful validation wins. This means:
 - MCP-native clients (Claude Desktop, Cursor, MCP Inspector) use XSUAA OAuth via auto-discovery
-- Copilot Studio uses XSUAA OAuth via Manual mode (or Entra ID OIDC if configured separately)
+- Copilot Studio uses XSUAA OAuth via Manual mode (or generic OIDC, such as Entra ID, if configured separately)
 - API key auth continues to work for testing and Joule Studio
 
 ## Troubleshooting

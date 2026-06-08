@@ -20,7 +20,7 @@ import type { AdtClient } from '../../src/adt/client.js';
 import { AdtApiError } from '../../src/adt/errors.js';
 import { handleToolCall, type ToolResult } from '../../src/handlers/intent.js';
 import type { ServerConfig } from '../../src/server/types.js';
-import { SkipReason } from '../helpers/skip-policy.js';
+import { SkipReason, skipTest } from '../helpers/skip-policy.js';
 import { CrudRegistry, cleanupAll, generateUniqueName } from './crud-harness.js';
 import { getTestClient, requireSapCredentials } from './helpers.js';
 
@@ -82,7 +82,7 @@ describe('FUNC parameter lifecycle (issue #252)', () => {
       if (fugrResult.isError) {
         const msg = toolResultText(fugrResult);
         if (/lock|423/i.test(msg)) {
-          ctx.skip(`${FM_LOCK_SKIP_REASON}: ${msg.slice(0, 200)}`);
+          skipTest(ctx, `${FM_LOCK_SKIP_REASON}: ${msg.slice(0, 200)}`);
           return;
         }
         throw new Error(`FUGR create failed: ${msg}`);
@@ -108,7 +108,7 @@ describe('FUNC parameter lifecycle (issue #252)', () => {
       } catch (err) {
         const skip = fmSkipReason(err);
         if (skip) {
-          ctx.skip(skip);
+          skipTest(ctx, skip);
           return;
         }
         throw err;
@@ -116,7 +116,7 @@ describe('FUNC parameter lifecycle (issue #252)', () => {
       if (fmCreateResult.isError) {
         const msg = toolResultText(fmCreateResult);
         if (/lock|423/i.test(msg)) {
-          ctx.skip(`${FM_LOCK_SKIP_REASON}: ${msg.slice(0, 200)}`);
+          skipTest(ctx, `${FM_LOCK_SKIP_REASON}: ${msg.slice(0, 200)}`);
           return;
         }
         throw new Error(`FM create failed: ${msg}`);
@@ -132,7 +132,7 @@ describe('FUNC parameter lifecycle (issue #252)', () => {
       if (activateResult.isError) {
         const msg = toolResultText(activateResult);
         if (/lock|423/i.test(msg)) {
-          ctx.skip(`${FM_LOCK_SKIP_REASON}: ${msg.slice(0, 200)}`);
+          skipTest(ctx, `${FM_LOCK_SKIP_REASON}: ${msg.slice(0, 200)}`);
           return;
         }
         throw new Error(`Activate failed: ${msg}`);
@@ -174,7 +174,7 @@ describe('FUNC parameter lifecycle (issue #252)', () => {
       } catch (err) {
         const skip = fmSkipReason(err);
         if (skip) {
-          ctx.skip(skip);
+          skipTest(ctx, skip);
           return;
         }
         throw err;
@@ -182,7 +182,7 @@ describe('FUNC parameter lifecycle (issue #252)', () => {
       if (updateResult.isError) {
         const msg = toolResultText(updateResult);
         if (/lock|423/i.test(msg)) {
-          ctx.skip(`${FM_LOCK_SKIP_REASON}: ${msg.slice(0, 200)}`);
+          skipTest(ctx, `${FM_LOCK_SKIP_REASON}: ${msg.slice(0, 200)}`);
           return;
         }
         throw new Error(`FM update failed: ${msg}`);
@@ -197,7 +197,7 @@ describe('FUNC parameter lifecycle (issue #252)', () => {
       if (activate2.isError) {
         const msg = toolResultText(activate2);
         if (/lock|423/i.test(msg)) {
-          ctx.skip(`${FM_LOCK_SKIP_REASON}: ${msg.slice(0, 200)}`);
+          skipTest(ctx, `${FM_LOCK_SKIP_REASON}: ${msg.slice(0, 200)}`);
           return;
         }
         throw new Error(`Activate (after update) failed: ${msg}`);

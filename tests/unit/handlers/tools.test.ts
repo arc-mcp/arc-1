@@ -260,6 +260,35 @@ describe('Tool Definitions', () => {
     expect(item.required).toContain('name');
   });
 
+  it('SAPWrite type and include descriptions track the supported schema surface', () => {
+    const onPremTools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true });
+    const onPremSchema = onPremTools.find((t) => t.name === 'SAPWrite')!.inputSchema as Record<string, any>;
+    const onPremDescription = onPremTools.find((t) => t.name === 'SAPWrite')!.description;
+    const onPremTypeEnum: string[] = onPremSchema.properties.type.enum;
+    const onPremTypeDescription: string = onPremSchema.properties.type.description;
+
+    for (const type of ['DCLS', 'SRVB', 'SKTD', 'TABL/DT', 'TABL/DS', 'MSAG']) {
+      expect(onPremTypeEnum).toContain(type);
+      expect(onPremTypeDescription).toContain(type);
+    }
+    expect(onPremDescription).toContain('DCLS');
+    expect(onPremTypeDescription).toContain('change_method_visibility');
+    // include is CLAS-ONLY and is dropped (not rejected) for the surgery actions, which
+    // operate on /source/main — see the normalizer drop in intent.ts (issue #360).
+    expect(onPremSchema.properties.include.description).toContain('CLAS-ONLY');
+    expect(onPremSchema.properties.include.description).toContain('change_method_visibility');
+    expect(onPremSchema.properties.source.description).toContain('change_method_visibility');
+
+    const btpTools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true, systemType: 'btp' });
+    const btpDescription = btpTools.find((t) => t.name === 'SAPWrite')!.description;
+    const btpSchema = btpTools.find((t) => t.name === 'SAPWrite')!.inputSchema as Record<string, any>;
+    const btpTypeDescription: string = btpSchema.properties.type.description;
+    for (const type of ['DCLS', 'SRVB', 'SKTD', 'MSAG']) {
+      expect(btpTypeDescription).toContain(type);
+    }
+    expect(btpDescription).toContain('DCLS');
+  });
+
   it('SAPWrite schema exposes class-section surgery actions (issue #303)', () => {
     const tools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true });
     const sapWrite = tools.find((t) => t.name === 'SAPWrite')!;
@@ -664,7 +693,7 @@ describe('Tool Definitions', () => {
       expect(typeEnum).toContain('MESSAGES');
     });
 
-    it('includes DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, TABL, DOMA, DTEL in SAPWrite types on both BTP and on-prem', () => {
+    it('includes DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL, DOMA, DTEL in SAPWrite types on both BTP and on-prem', () => {
       for (const config of [btpConfig, onpremConfig]) {
         const tools = getToolDefinitions(config);
         const sapWrite = tools.find((t) => t.name === 'SAPWrite')!;
@@ -677,6 +706,7 @@ describe('Tool Definitions', () => {
         expect(typeEnum).toContain('BDEF');
         expect(typeEnum).toContain('SRVD');
         expect(typeEnum).toContain('SRVB');
+        expect(typeEnum).toContain('SKTD');
         expect(typeEnum).toContain('TABL');
         expect(typeEnum).toContain('DOMA');
         expect(typeEnum).toContain('DTEL');

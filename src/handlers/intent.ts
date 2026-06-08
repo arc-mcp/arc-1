@@ -7589,6 +7589,7 @@ async function handleSAPManage(
       const superPackage = String(args.superPackage ?? '').trim();
       const softwareComponent = String(args.softwareComponent ?? '').trim();
       const transportLayer = String(args.transportLayer ?? '').trim();
+      const recordChanges = typeof args.recordChanges === 'boolean' ? args.recordChanges : undefined;
       const transport = String(args.transport ?? '').trim();
 
       if (!name) return errorResult('"name" is required for create_package action.');
@@ -7653,6 +7654,7 @@ async function handleSAPManage(
         superPackage: superPackage || undefined,
         softwareComponent: softwareComponent || undefined,
         transportLayer: transportLayer || undefined,
+        recordChanges,
         packageType,
       });
 

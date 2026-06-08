@@ -32,8 +32,9 @@ After starting, check the server's first INFO log line: `auth: MCP=[...] SAP=[..
 | **Team server** (role-based access) | API Keys (multi) | Basic Auth | [API Key Setup](api-key-setup.md) |
 | **Enterprise** (per-user identity) | OIDC / JWT | Basic Auth (shared user) | [OAuth / JWT Setup](oauth-jwt-setup.md) |
 | **Enterprise + SAP audit trail** | OIDC / JWT | Principal Propagation | [OAuth / JWT](oauth-jwt-setup.md) + [PP Setup](principal-propagation-setup.md) |
-| **BTP Cloud Foundry** | XSUAA OAuth | Destination Service | [XSUAA Setup](xsuaa-setup.md) + [Destination Setup](btp-destination-setup.md) |
-| **BTP ABAP Environment** (direct) | None (local) or XSUAA | OAuth (service key) | [BTP ABAP Setup](btp-abap-environment.md) |
+| **BTP Cloud Foundry + on-prem SAP** | XSUAA OAuth | Destination Service / Cloud Connector | [XSUAA Setup](xsuaa-setup.md) + [Destination Setup](btp-destination-setup.md) |
+| **BTP Cloud Foundry + BTP ABAP Environment** | XSUAA OAuth | Destination `OAuth2UserTokenExchange` | [BTP ABAP Setup](btp-abap-environment.md) |
+| **BTP ABAP Environment** (local) | None (stdio) | Service-key browser OAuth | [BTP ABAP Setup](btp-abap-environment.md) |
 
 ### What to Consider
 
@@ -46,13 +47,13 @@ After starting, check the server's first INFO log line: `auth: MCP=[...] SAP=[..
 **Do you need per-user SAP identity?**
 
 - **No** (most setups): ARC-1 connects to SAP with a single shared user. Simpler to set up, but all operations appear as one SAP user in logs.
-- **Yes** (audit, compliance): Use [Principal Propagation](principal-propagation-setup.md). Each MCP user maps to their SAP user. Full audit trail, per-user SAP authorization. Requires BTP + Cloud Connector setup.
+- **Yes** (audit, compliance): Use a per-user BTP Destination path. For on-premise SAP, that means [Principal Propagation](principal-propagation-setup.md) through Connectivity Service + Cloud Connector. For BTP ABAP Environment, use `OAuth2UserTokenExchange` as described in [BTP ABAP Setup](btp-abap-environment.md). Each MCP user maps to their SAP user.
 
 **Where does ARC-1 run?**
 
 - **Locally** (npx, npm): MCP client connects via stdio. No network auth needed.
 - **Remote server / Docker**: MCP client connects via HTTP. Needs MCP Client Auth (API Key or OIDC).
-- **SAP BTP Cloud Foundry**: XSUAA handles both MCP client auth and SAP connectivity.
+- **SAP BTP Cloud Foundry**: XSUAA handles MCP client auth. Destination Service and, for on-premise systems, Connectivity Service / Cloud Connector handle SAP connectivity.
 
 ---
 
@@ -132,42 +133,42 @@ Reuse session cookies from a browser session. Useful for one-off sessions.
 arc1 --url http://sap:50000 --cookie-file cookies.txt
 ```
 
-### OAuth2 / Service Key (BTP ABAP Environment)
+### OAuth2 / Service Key (BTP ABAP Environment, local interactive)
 
-For SAP BTP ABAP Environment systems, ARC-1 uses a service key for OAuth2 authentication. Handles token lifecycle (refresh, retry) automatically. Requires an interactive browser login on first use.
+For local SAP BTP ABAP Environment development, ARC-1 can use a service key for OAuth2 authentication. Handles token lifecycle (refresh, retry) automatically. Requires an interactive browser login on first use and binds the callback to local loopback, so this is not the deployed/shared-server path.
 
 **Upsides:** Secure OAuth flow. Automatic token refresh. Works with BTP ABAP systems.
 **Downsides:** Requires service key from BTP Cockpit. Interactive login on first use.
-**When to use:** Connecting to BTP ABAP Environment (Steampunk) systems.
+**When to use:** One local developer connecting to a BTP ABAP Environment (Steampunk) system via stdio.
 **Prerequisites:** BTP ABAP instance with service key. See [BTP ABAP Setup](btp-abap-environment.md).
 
 ```bash
 arc1 --btp-service-key-file /path/to/service-key.json
 ```
 
-### Principal Propagation (Per-User SAP Identity)
+### Principal Propagation / Per-User Destination (Per-User SAP Identity)
 
-The most complete authentication model. Each MCP user's identity flows through to SAP via BTP Destination Service and Cloud Connector, so every request runs as the real SAP user — not a shared technical account.
+The most complete authentication model. Each MCP user's identity flows through to SAP via BTP Destination Service, so every request runs as the real SAP user — not a shared technical account. For on-premise SAP, the destination path uses Connectivity Service + Cloud Connector principal propagation. For BTP ABAP Environment, the destination path uses `OAuth2UserTokenExchange` and sends an ABAP-context bearer token.
 
 **Upsides:** Full per-user audit trail. SAP-level authorization per user. Zero stored SAP credentials. No shared accounts.
-**Downsides:** Most complex setup (BTP + Cloud Connector + CERTRULE). Requires OIDC or XSUAA on the client side.
+**Downsides:** Most complex setup. On-premise requires BTP + Cloud Connector + CERTRULE. BTP ABAP requires a correctly configured OAuth user-token-exchange destination. Requires JWT/XSUAA on the client side.
 **When to use:** Enterprise deployments requiring audit compliance, per-user SAP authorization, or regulatory requirements.
-**Prerequisites:** BTP Cloud Foundry, Destination + Connectivity services, Cloud Connector, SAP certificate mapping.
+**Prerequisites:** BTP Cloud Foundry and Destination Service. Add Connectivity Service, Cloud Connector, and SAP certificate mapping for on-premise systems.
 
 **Setup:** [Principal Propagation Setup](principal-propagation-setup.md)
 
 ```
-MCP Client ──OIDC/XSUAA──► ARC-1 ──X-User-Token──► BTP Destination ──► Cloud Connector ──► SAP
+MCP Client ──XSUAA/OIDC JWT──► ARC-1 ──user token──► BTP Destination ──► SAP
 ```
 
 ### BTP Destination Service
 
-For BTP deployments connecting to on-premise SAP systems via Cloud Connector. The Destination Service handles connection details, credentials, and optionally Principal Propagation.
+For BTP deployments connecting to SAP systems through centrally managed destinations. The Destination Service handles connection details, credentials, and optionally per-user token exchange / principal propagation.
 
-**Upsides:** Centralized connection management. Cloud Connector integration. Supports PP.
-**Downsides:** BTP-only. Requires Destination and Connectivity service instances.
-**When to use:** BTP Cloud Foundry apps connecting to on-premise SAP via Cloud Connector.
-**Prerequisites:** BTP Destination Service instance, Cloud Connector configured.
+**Upsides:** Centralized connection management. Supports Cloud Connector on-premise routing and BTP ABAP `OAuth2UserTokenExchange`.
+**Downsides:** BTP-only. On-premise routing also requires Connectivity Service and Cloud Connector.
+**When to use:** BTP Cloud Foundry apps connecting to on-premise SAP via Cloud Connector or to BTP ABAP Environment via `ProxyType=Internet`.
+**Prerequisites:** BTP Destination Service instance. Add Cloud Connector only for on-premise targets.
 
 **Setup:** [BTP Destination Setup](btp-destination-setup.md)
 
@@ -205,7 +206,7 @@ Per-user scopes control what each person can do in ARC-1, but all requests use t
 OIDC or XSUAA (MCP auth) → Principal Propagation (per-user SAP identity)
 ```
 
-Gold standard. Per-user scopes in ARC-1 + per-user SAP authorization + full audit trail. Requires BTP + Cloud Connector setup.
+Gold standard. Per-user scopes in ARC-1 + per-user SAP authorization + full audit trail. On-premise targets require BTP + Cloud Connector setup; BTP ABAP targets use a cloud-to-cloud `OAuth2UserTokenExchange` destination.
 
 ### BTP Cloud Foundry (Production)
 
@@ -215,6 +216,14 @@ XSUAA (MCP auth) → BTP Destination Service → Cloud Connector → On-premise 
 
 Full BTP stack. Role collections in BTP Cockpit. PP optional but recommended for audit compliance.
 
+### BTP Cloud Foundry + BTP ABAP Environment
+
+```
+XSUAA (MCP auth) → BTP Destination Service (OAuth2UserTokenExchange) → BTP ABAP Environment
+```
+
+Headless BTP-native setup. No Cloud Connector. The destination exchanges the user's XSUAA token for an ABAP bearer token, so SAP-side authorizations apply per user.
+
 ---
 
 ## Setup Guides
@@ -222,11 +231,11 @@ Full BTP stack. Role collections in BTP Cockpit. PP optional but recommended for
 | Guide | What it covers |
 |-------|---------------|
 | [API Key Setup](api-key-setup.md) | Shared token auth for MCP clients |
-| [OAuth / JWT Setup](oauth-jwt-setup.md) | Per-user OIDC auth (EntraID, Okta, Keycloak) |
+| [OAuth / JWT Setup](oauth-jwt-setup.md) | Per-user OIDC auth (Microsoft Entra ID, Okta, Keycloak) |
 | [XSUAA Setup](xsuaa-setup.md) | SAP BTP OAuth with role collections |
 | [Principal Propagation Setup](principal-propagation-setup.md) | Per-user SAP identity via Cloud Connector |
 | [BTP Destination Setup](btp-destination-setup.md) | BTP connectivity to on-premise SAP |
-| [BTP ABAP Environment](btp-abap-environment.md) | Direct connection to BTP ABAP (Steampunk) |
+| [BTP ABAP Environment](btp-abap-environment.md) | Local service-key OAuth and deployed per-user destination setup for BTP ABAP |
 | [Auth Test Process](auth-test-process.md) | Verification checklists for each auth method |
 | [Authorization & Roles](authorization.md) | Scopes, roles, safety config |
 
@@ -281,9 +290,9 @@ arc1 --url https://sap-host:443 --cookie-string "MYSAPSSO2=abc123; SAP_SESSIONID
 
 ---
 
-## 3. BTP ABAP Environment (Service Key + Browser OAuth)
+## 3. BTP ABAP Environment (Local Service Key + Browser OAuth)
 
-For SAP BTP ABAP Environment systems. ARC-1 uses a service key for OAuth2 Authorization Code flow with interactive browser login.
+For local SAP BTP ABAP Environment development. ARC-1 uses a service key for OAuth2 Authorization Code flow with interactive browser login. For deployed BTP CF servers, use the per-user destination setup in [BTP ABAP Environment](btp-abap-environment.md#recommended-btp-deployment-with-a-per-user-destination).
 
 ### From a Service Key File
 
@@ -311,7 +320,7 @@ The service key JSON is downloaded from SAP BTP Cockpit and looks like:
 }
 ```
 
-**Token lifecycle:** ARC-1 opens a browser for initial OAuth login, then caches and refreshes tokens automatically.
+**Token lifecycle:** ARC-1 opens a browser for initial OAuth login, then caches and refreshes tokens automatically in memory.
 
 **References:**
 - [SAP BTP: Create Service Keys](https://help.sap.com/docs/btp/sap-business-technology-platform/creating-service-keys)
@@ -321,17 +330,17 @@ The service key JSON is downloaded from SAP BTP Cockpit and looks like:
 
 ## 4. BTP Destination Service
 
-For BTP Cloud Foundry deployments connecting to on-premise SAP systems via Cloud Connector.
+For BTP Cloud Foundry deployments connecting to on-premise SAP systems via Cloud Connector, or to BTP ABAP Environment via `OAuth2UserTokenExchange`.
 
 ```bash
 export SAP_BTP_DESTINATION=SAP_TRIAL
 ```
 
-The Destination Service handles connection details, credentials, and optionally Principal Propagation. See [BTP Destination Setup](btp-destination-setup.md).
+The Destination Service handles connection details, credentials, Cloud Connector Principal Propagation, and BTP ABAP `OAuth2UserTokenExchange` destinations. See [BTP Destination Setup](btp-destination-setup.md).
 
 ---
 
-## 5. Principal Propagation (BTP Destination + Cloud Connector)
+## 5. Per-User Destination (BTP Destination)
 
 Per-user SAP identity for JWT-authenticated users via BTP Destination Service.
 
@@ -341,13 +350,13 @@ export SAP_BTP_PP_DESTINATION=SAP_TRIAL_PP
 export SAP_PP_ENABLED=true
 ```
 
-**How it works:** ARC-1 passes the user's JWT as `X-User-Token` to BTP Destination Service, which resolves the per-user destination. Cloud Connector propagates the user identity via client certificate. SAP maps the certificate to a SAP user via CERTRULE / VUSREXTID.
+**How it works:** ARC-1 passes the user's JWT to BTP Destination Service, which resolves the per-user destination. For on-premise SAP, Cloud Connector propagates the user identity via client certificate and SAP maps that certificate to a SAP user via CERTRULE / VUSREXTID. For BTP ABAP Environment, the destination exchanges the user token for an ABAP bearer token.
 
 **Fallback behavior:**
 - `SAP_PP_STRICT=false` (default): falls back to shared destination on PP failure
 - `SAP_PP_STRICT=true`: returns error on PP failure, no fallback
 
-See [Principal Propagation Setup](principal-propagation-setup.md) for complete setup.
+See [Principal Propagation Setup](principal-propagation-setup.md) for the on-premise Cloud Connector setup, or [BTP ABAP Environment](btp-abap-environment.md#recommended-btp-deployment-with-a-per-user-destination) for the cloud-to-cloud `OAuth2UserTokenExchange` setup.
 
 ---
 
@@ -412,9 +421,9 @@ S_ADT_RES authorization, SSO-only system needing `SAP_DISABLE_SAML=true`).
 | `--btp-service-key` | `SAP_BTP_SERVICE_KEY` | Inline BTP service key JSON |
 | `--btp-service-key-file` | `SAP_BTP_SERVICE_KEY_FILE` | Path to BTP service key file |
 | `--btp-oauth-callback-port` | `SAP_BTP_OAUTH_CALLBACK_PORT` | OAuth callback port (0=auto) |
-| — | `SAP_BTP_DESTINATION` | BTP Destination name (shared) |
+| — | `SAP_BTP_DESTINATION` | BTP Destination name (shared, or BTP ABAP per-user destination) |
 | — | `SAP_BTP_PP_DESTINATION` | BTP PP Destination name (per-user) |
-| `--pp-enabled` | `SAP_PP_ENABLED` | Enable principal propagation |
+| `--pp-enabled` | `SAP_PP_ENABLED` | Enable ARC-1's per-user destination path |
 | `--pp-strict` | `SAP_PP_STRICT` | Fail on PP errors (no fallback) |
 | `--pp-allow-shared-cookies` | `SAP_PP_ALLOW_SHARED_COOKIES` | Allow PP + cookie auth only for shared client (advanced escape hatch) |
 | `--disable-saml` | `SAP_DISABLE_SAML` | Disable SAML redirect via `X-SAP-SAML2` + `saml2=disabled` (advanced) |
@@ -429,13 +438,14 @@ S_ADT_RES authorization, SSO-only system needing `SAP_DISABLE_SAML=true`).
 | Basic only | ✅ | Standard on-prem |
 | Cookie only | ✅ | On-prem SSO developer loop |
 | Basic + Cookie | ✅ | ARC-1 sends both headers — SAP picks |
-| Bearer (BTP ABAP) only | ✅ | BTP ABAP Environment direct OAuth |
+| Direct service-key bearer (BTP ABAP) only | ✅ | Local BTP ABAP Environment browser OAuth |
 | Destination only | ✅ | BTP Cloud Foundry, shared user |
 | Destination + PP (per-user) | ✅ | Enterprise standard on BTP CF |
 | PP + Cookie | ❌ fail-fast | Cookies would leak into per-user requests |
 | PP + Cookie + SAP_PP_ALLOW_SHARED_COOKIES=true | ⚠️ allowed with warning | Cookies stay on shared client only |
 | Bearer + Cookie | ❌ fail-fast | Two Layer B methods in conflict |
-| Bearer + PP | ❌ fail-fast | BTP ABAP is single-tenant; PP not supported |
+| Direct service-key bearer + PP | ❌ fail-fast | `SAP_BTP_SERVICE_KEY` is local interactive OAuth and cannot be combined with `SAP_PP_ENABLED=true` |
+| Destination-exchanged bearer + PP | ✅ | BTP ABAP deployed path: `SAP_BTP_DESTINATION` + `SAP_PP_ENABLED=true` + destination `OAuth2UserTokenExchange` |
 
 ### SAP Auth Coexistence Rules
 
@@ -479,8 +489,8 @@ These flags from older documentation do **not** exist in the current ARC-1 codeb
 - Check with: `az account get-access-token --scope "api://{client-id}/access_as_user" --query accessToken -o tsv | jwt decode -` (or paste into jwt.ms)
 
 **"JWT issuer mismatch"**
-- EntraID v2.0 issuer format: `https://login.microsoftonline.com/{tenant-id}/v2.0`
-- EntraID v1.0 issuer format: `https://sts.windows.net/{tenant-id}/`
+- Microsoft Entra ID v2.0 issuer format: `https://login.microsoftonline.com/{tenant-id}/v2.0`
+- Microsoft Entra ID v1.0 issuer format: `https://sts.windows.net/{tenant-id}/`
 - Set `requestedAccessTokenVersion: 2` in the app manifest to get v2.0 tokens
 
 ### Power Platform / Copilot Studio OAuth errors

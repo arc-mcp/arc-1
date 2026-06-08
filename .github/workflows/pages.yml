@@ -31,8 +31,8 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: Install MkDocs Material
-        run: pip install "mkdocs-material>=9.5,<10"
+      - name: Install MkDocs
+        run: pip install "mkdocs-material>=9.5,<10" "mkdocs-redirects>=1.2,<2"
 
       - name: Build docs
         run: mkdocs build

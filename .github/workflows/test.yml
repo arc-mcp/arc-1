@@ -13,6 +13,10 @@ on:
 # additional permissions; SAP secrets are passed via `env:` from `secrets.*`).
 permissions:
   contents: read
+  pull-requests: read
+
+env:
+  SAP_CI_TARGET_LABEL: A4H 2025
 
 jobs:
   # Smoke check that mta.yaml + the .mtaext.example template are valid MTA
@@ -117,6 +121,52 @@ jobs:
           retention-days: 7
         continue-on-error: true
 
+  # Cheap guard that runs before any SAP-serialized job. Stale PR runs should
+  # finish their unit/security checks, but they must not wait for or consume the
+  # repository-wide live SAP concurrency slot after a newer PR head exists.
+  sap-run-guard:
+    runs-on: ubuntu-latest
+    needs: [test, gate]
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       needs.gate.result == 'success' &&
+       needs.test.result == 'success')
+    outputs:
+      current: ${{ steps.current.outputs.current }}
+      reason: ${{ steps.current.outputs.reason }}
+    steps:
+      - name: Check PR head freshness
+        id: current
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "${EVENT_NAME}" != "pull_request" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+            echo "reason=workflow_dispatch" >> "$GITHUB_OUTPUT"
+            echo "Manual workflow dispatch: SAP jobs are allowed."
+            exit 0
+          fi
+
+          latest_head_sha="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
+          echo "event_head_sha=${EVENT_HEAD_SHA}"
+          echo "latest_head_sha=${latest_head_sha}"
+          if [ "${latest_head_sha}" = "${EVENT_HEAD_SHA}" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+            echo "reason=current" >> "$GITHUB_OUTPUT"
+            echo "This PR run is current: SAP jobs are allowed."
+          else
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            echo "reason=stale:${EVENT_HEAD_SHA}->${latest_head_sha}" >> "$GITHUB_OUTPUT"
+            echo "This PR run is stale: SAP jobs will be skipped before entering live SAP concurrency."
+          fi
+
   # Run on internal PRs and manual dispatch; skip external fork PRs (no secrets)
   integration:
     runs-on: ubuntu-latest
@@ -128,8 +178,9 @@ jobs:
       (github.event_name == 'pull_request' &&
        github.event.pull_request.head.repo.full_name == github.repository &&
        needs.gate.result == 'success' &&
-       needs.test.result == 'success')
-    needs: [test, gate]
+       needs.test.result == 'success' &&
+       needs.sap-run-guard.outputs.current == 'true')
+    needs: [test, gate, sap-run-guard]
 
     steps:
       - uses: actions/checkout@v6
@@ -147,22 +198,37 @@ jobs:
         id: sap_auth
         shell: bash
         env:
+          SAP_CI_TARGET_LABEL: ${{ env.SAP_CI_TARGET_LABEL }}
           TEST_SAP_URL: ${{ secrets.TEST_SAP_URL }}
           TEST_SAP_USER: ${{ secrets.TEST_SAP_USER }}
           TEST_SAP_PASSWORD: ${{ secrets.TEST_SAP_PASSWORD }}
           TEST_SAP_CLIENT: ${{ secrets.TEST_SAP_CLIENT }}
+          TEST_SAP_INSECURE: ${{ secrets.TEST_SAP_INSECURE }}
         run: |
+          missing=()
+          for name in TEST_SAP_URL TEST_SAP_USER TEST_SAP_PASSWORD TEST_SAP_CLIENT; do
+            if [ -z "${!name:-}" ]; then
+              missing+=("${name}")
+            fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error title=Integration preflight failed::Missing required ${SAP_CI_TARGET_LABEL} secret(s): ${missing[*]}"
+            exit 1
+          fi
+
           base_url="${TEST_SAP_URL%/}"
           probe_url="${base_url}/sap/bc/adt/core/discovery?sap-client=${TEST_SAP_CLIENT}"
-          status="$(curl --silent --show-error --location --output /tmp/adt-discovery-integration.xml --write-out "%{http_code}" \
-            -u "${TEST_SAP_USER}:${TEST_SAP_PASSWORD}" "${probe_url}" || true)"
+          curl_args=(--silent --show-error --location --output /tmp/adt-discovery-integration.xml --write-out "%{http_code}")
+          case "${TEST_SAP_INSECURE,,}" in
+            true|1|yes) curl_args+=(--insecure) ;;
+          esac
+          status="$(curl "${curl_args[@]}" -u "${TEST_SAP_USER}:${TEST_SAP_PASSWORD}" "${probe_url}" || true)"
           echo "status=${status}"
-          if [ "${status}" = "401" ]; then
-            echo "auth_ok=false" >> "$GITHUB_OUTPUT"
-            echo "::warning title=Integration skipped::SAP auth preflight returned HTTP 401 (logon failed). Skipping integration tests for this run."
-          else
-            echo "auth_ok=true" >> "$GITHUB_OUTPUT"
+          if [ "${status}" != "200" ]; then
+            echo "::error title=Integration preflight failed::${SAP_CI_TARGET_LABEL} authenticated ADT discovery returned HTTP ${status}; integration tests require a reachable target and valid TEST_SAP_* secrets."
+            exit 1
           fi
+          echo "auth_ok=true" >> "$GITHUB_OUTPUT"
 
       - name: Run integration tests
         if: steps.sap_auth.outputs.auth_ok == 'true'
@@ -179,7 +245,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: test-results-integration
-          path: test-results/integration.json
+          path: |
+            test-results/integration.json
+            test-results/integration-skips.ndjson
           retention-days: 7
           if-no-files-found: warn
 
@@ -200,10 +268,11 @@ jobs:
       always() &&
       needs.gate.result == 'success' &&
       needs.test.result == 'success' &&
+      needs.sap-run-guard.outputs.current == 'true' &&
       (github.event_name == 'workflow_dispatch' ||
        (github.event_name == 'pull_request' &&
         github.event.pull_request.head.repo.full_name == github.repository))
-    needs: [test, gate, integration]
+    needs: [test, gate, sap-run-guard, integration]
     timeout-minutes: 20
 
     steps:
@@ -222,22 +291,37 @@ jobs:
         id: sap_auth
         shell: bash
         env:
-          SAP_URL: ${{ secrets.SAP_URL }}
-          SAP_USER: ${{ secrets.SAP_USER }}
-          SAP_PASSWORD: ${{ secrets.SAP_PASSWORD }}
-          SAP_CLIENT: '001'
+          SAP_CI_TARGET_LABEL: ${{ env.SAP_CI_TARGET_LABEL }}
+          TEST_SAP_URL: ${{ secrets.TEST_SAP_URL }}
+          TEST_SAP_USER: ${{ secrets.TEST_SAP_USER }}
+          TEST_SAP_PASSWORD: ${{ secrets.TEST_SAP_PASSWORD }}
+          TEST_SAP_CLIENT: ${{ secrets.TEST_SAP_CLIENT }}
+          TEST_SAP_INSECURE: ${{ secrets.TEST_SAP_INSECURE }}
         run: |
-          base_url="${SAP_URL%/}"
-          probe_url="${base_url}/sap/bc/adt/core/discovery?sap-client=${SAP_CLIENT}"
-          status="$(curl --silent --show-error --location --output /tmp/adt-discovery-e2e.xml --write-out "%{http_code}" \
-            -u "${SAP_USER}:${SAP_PASSWORD}" "${probe_url}" || true)"
-          echo "status=${status}"
-          if [ "${status}" = "401" ]; then
-            echo "auth_ok=false" >> "$GITHUB_OUTPUT"
-            echo "::warning title=E2E skipped::SAP auth preflight returned HTTP 401 (logon failed). Skipping E2E tests for this run."
-          else
-            echo "auth_ok=true" >> "$GITHUB_OUTPUT"
+          missing=()
+          for name in TEST_SAP_URL TEST_SAP_USER TEST_SAP_PASSWORD TEST_SAP_CLIENT; do
+            if [ -z "${!name:-}" ]; then
+              missing+=("${name}")
+            fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error title=E2E preflight failed::Missing required ${SAP_CI_TARGET_LABEL} secret(s): ${missing[*]}"
+            exit 1
           fi
+
+          base_url="${TEST_SAP_URL%/}"
+          probe_url="${base_url}/sap/bc/adt/core/discovery?sap-client=${TEST_SAP_CLIENT}"
+          curl_args=(--silent --show-error --location --output /tmp/adt-discovery-e2e.xml --write-out "%{http_code}")
+          case "${TEST_SAP_INSECURE,,}" in
+            true|1|yes) curl_args+=(--insecure) ;;
+          esac
+          status="$(curl "${curl_args[@]}" -u "${TEST_SAP_USER}:${TEST_SAP_PASSWORD}" "${probe_url}" || true)"
+          echo "status=${status}"
+          if [ "${status}" != "200" ]; then
+            echo "::error title=E2E preflight failed::${SAP_CI_TARGET_LABEL} authenticated ADT discovery returned HTTP ${status}; E2E tests require a reachable target and valid TEST_SAP_* secrets."
+            exit 1
+          fi
+          echo "auth_ok=true" >> "$GITHUB_OUTPUT"
 
       - name: Build
         if: steps.sap_auth.outputs.auth_ok == 'true'
@@ -247,27 +331,31 @@ jobs:
         if: steps.sap_auth.outputs.auth_ok == 'true'
         run: npm run test:e2e:start
         env:
-          SAP_URL: ${{ secrets.SAP_URL }}
-          SAP_USER: ${{ secrets.SAP_USER }}
-          SAP_PASSWORD: ${{ secrets.SAP_PASSWORD }}
-          SAP_CLIENT: '001'
+          SAP_URL: ${{ secrets.TEST_SAP_URL }}
+          SAP_USER: ${{ secrets.TEST_SAP_USER }}
+          SAP_PASSWORD: ${{ secrets.TEST_SAP_PASSWORD }}
+          SAP_CLIENT: ${{ secrets.TEST_SAP_CLIENT }}
+          SAP_INSECURE: ${{ secrets.TEST_SAP_INSECURE }}
 
       - name: Run E2E tests
         if: steps.sap_auth.outputs.auth_ok == 'true'
         run: npm run test:e2e
         env:
           E2E_MCP_URL: http://localhost:3000/mcp
-          SAP_URL: ${{ secrets.SAP_URL }}
-          SAP_USER: ${{ secrets.SAP_USER }}
-          SAP_PASSWORD: ${{ secrets.SAP_PASSWORD }}
-          SAP_CLIENT: '001'
+          SAP_URL: ${{ secrets.TEST_SAP_URL }}
+          SAP_USER: ${{ secrets.TEST_SAP_USER }}
+          SAP_PASSWORD: ${{ secrets.TEST_SAP_PASSWORD }}
+          SAP_CLIENT: ${{ secrets.TEST_SAP_CLIENT }}
+          SAP_INSECURE: ${{ secrets.TEST_SAP_INSECURE }}
 
       - name: Upload E2E JSON test results
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: test-results-e2e
-          path: test-results/e2e.json
+          path: |
+            test-results/e2e.json
+            test-results/e2e-skips.ndjson
           retention-days: 7
           if-no-files-found: warn
 
@@ -300,9 +388,9 @@ jobs:
     # Run on success or failure of upstream jobs, but only when the gate allowed
     # the workflow to run in the first place — avoids a noisy "no results" summary
     # on docs/chore PRs that skipped the test pipeline.
-    if: ${{ !cancelled() && needs.gate.result == 'success' }}
+    if: ${{ always() && !cancelled() && needs.gate.result == 'success' }}
     runs-on: ubuntu-latest
-    needs: [gate, test, integration, e2e]
+    needs: [gate, test, sap-run-guard, integration, e2e]
 
     steps:
       - uses: actions/checkout@v6
@@ -324,6 +412,15 @@ jobs:
           path: downloaded-test-results
           merge-multiple: true
 
+      - name: Download E2E JUnit artifacts
+        if: always()
+        uses: actions/download-artifact@v8
+        with:
+          pattern: e2e-junit
+          path: downloaded-junit
+          merge-multiple: true
+        continue-on-error: true
+
       - name: Normalize test result files
         if: always()
         run: |
@@ -331,10 +428,17 @@ jobs:
           find downloaded-test-results -name unit.json -print -quit | xargs -I{} cp {} test-results/unit.json || true
           find downloaded-test-results -name integration.json -print -quit | xargs -I{} cp {} test-results/integration.json || true
           find downloaded-test-results -name e2e.json -print -quit | xargs -I{} cp {} test-results/e2e.json || true
+          find downloaded-test-results -name integration-skips.ndjson -print -quit | xargs -I{} cp {} test-results/integration-skips.ndjson || true
+          find downloaded-test-results -name e2e-skips.ndjson -print -quit | xargs -I{} cp {} test-results/e2e-skips.ndjson || true
 
       - name: Collect reliability summary
         if: always()
         run: npm run test:reliability-report -- --results-dir test-results
+        continue-on-error: true
+
+      - name: Collect runtime summary
+        if: always()
+        run: npm run test:runtime-report -- --results-dir test-results --junit-dir downloaded-junit
         continue-on-error: true
 
       - name: Assert required execution (warn mode)

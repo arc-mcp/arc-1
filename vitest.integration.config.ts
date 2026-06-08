@@ -1,8 +1,10 @@
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
+    globalSetup: ['tests/helpers/skip-telemetry-setup.ts'],
     include: ['tests/integration/**/*.test.ts'],
+    exclude: [...configDefaults.exclude, 'tests/integration/**/*.slow.integration.test.ts'],
     // SAP can be slow — allow 30s per test
     testTimeout: 30000,
     // Live SAP suite hooks can list CTS state or seed objects; keep this above

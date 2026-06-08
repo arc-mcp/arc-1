@@ -31,13 +31,13 @@ docker run -e SAP_URL=https://host:44300 -e SAP_USER=dev -e SAP_PASSWORD=secret 
 
 ### BTP ABAP Environment
 
-For SAP BTP ABAP (Steampunk) systems, use a service key instead of username/password:
+For local SAP BTP ABAP (Steampunk) development, use a service key instead of username/password:
 
 ```bash
 SAP_BTP_SERVICE_KEY_FILE=/path/to/service-key.json arc1
 ```
 
-A browser opens for login (OAuth 2.0 Authorization Code flow). See **[btp-abap-environment.md](btp-abap-environment.md)** for full setup.
+A browser opens for login (OAuth 2.0 Authorization Code flow). For deployed BTP Cloud Foundry servers, use a BTP Destination with `OAuth2UserTokenExchange` instead; it is headless and preserves per-user SAP identity. See **[btp-abap-environment.md](btp-abap-environment.md)** for both paths.
 
 ## Connect Your Client
 
@@ -169,8 +169,9 @@ Full reference: **[tools.md](tools.md)**
 
 ## Testing & CI
 
-- **1,300+ unit tests** run locally without SAP access (`npm test`)
-- **Integration + E2E lanes** run on `main` pushes and internal PRs in GitHub Actions
+- **3,474 unit tests** run locally without SAP access (`npm test`)
+- **Default integration + E2E lanes** run against the A4H 2025 SAP target on internal PRs and manual dispatch in GitHub Actions
+- **Manual slow SAP profiles** cover expensive cache warmup, broad where-used, RAP full-stack, and recursive CTS release checks (`test:integration:slow`, `test:e2e:slow`, GitHub **SAP Slow Tests** workflow)
 - **BTP tests** are local-only (`npm run test:integration:btp`, `npm run test:integration:btp:smoke`)
 - **Reliability telemetry + coverage** are collected as informational CI signals
 
@@ -187,22 +188,18 @@ Every capability is a separate positive opt-in flag:
 
 The three-layer model (server flag + user scope + SAP authorization) is described in [authorization.md](authorization.md). Full flag reference: [configuration-reference.md](configuration-reference.md).
 
-## SAP API Policy alignment
+## SAP API Policy and data access
 
-The April 2026 [SAP API Policy](https://help.sap.com/doc/sap-api-policy/latest/en-US/API_Policy_latest.pdf) is accompanied by an [SAP API Policy FAQ](https://www.sap.com/documents/2026/04/e2a0665e-4c7f-0010-bca6-c68f7e60039b.html). The FAQ explicitly endorses ADT-based developer tooling — including "**custom developer utilities built on the documented Eclipse Java SDK for internal development automation such as code checks, build processes, and transport management**". ARC-1 used for internal development matches that scope.
+SAP's current [SAP API Policy](https://help.sap.com/doc/sap-api-policy/latest/en-US/API_Policy_latest.pdf) is v.4.2026a. It allows published/documented APIs for their documented purposes, while restricting unsupported internal APIs, misuse, unmanaged autonomous AI call patterns, and large-scale extraction outside endorsed paths. ARC-1 is designed as a governed development-tooling proxy around ADT behavior, not as a bulk data-extraction product. For normal internal developer workflows, the project is intended to be generally usable with real user identity, SAP authorization, audit logging, rate controls, and customer-side governance.
 
-ARC-1 is designed to stay within the ADT development-tooling scope described in SAP's API Policy FAQ v1.1. It uses documented ADT / Eclipse SDK capabilities for internal development-related use cases and does not expose ADT Data Preview, SQL execution, table reads, or business-data extraction.
-
-When ARC-1 is used with AI assistants or MCP clients, customers should apply additional governance for AI-driven or automated access patterns, including real user identity, authorization checks, audit logging, rate limits, conservative tool exposure, and customer-side review against SAP documentation and agreements.
-
-The same FAQ excludes "**programmatic reading of application tables or export of business data, SQL execution against SAP backend systems, business data integration or runtime orchestration, agentic AI workflows operating on business data, or substitution for business APIs**". Two ARC-1 capabilities fall outside the endorsed development tooling scope and are **off by default** behind explicit opt-in env vars:
+ARC-1's defaults are intentionally conservative: no writes, no named table preview, no freestyle SQL, no transport mutations, no Git mutations. Two capabilities are especially sensitive and are **off by default** behind explicit opt-in env vars:
 
 | Capability | Env var to enable | Default | Why it is gated |
 | ---------- | ----------------- | ------- | --------------- |
-| Named table content preview (`SAPRead(type=TABLE_CONTENTS)`) | `SAP_ALLOW_DATA_PREVIEW=true` | `false` (off) | Application-table reads / business-data export are excluded by the FAQ. |
-| Freestyle ABAP SQL (`SAPQuery`) | `SAP_ALLOW_FREE_SQL=true` | `false` (off) | SQL against SAP backend systems is excluded by the FAQ. |
+| Named table content preview (`SAPRead(type=TABLE_CONTENTS)`) | `SAP_ALLOW_DATA_PREVIEW=true` | `false` (off) | Can expose application-table data; keep off unless the use case is approved. |
+| Freestyle ABAP SQL (`SAPQuery`) | `SAP_ALLOW_FREE_SQL=true` | `false` (off) | Executes ad-hoc ABAP SQL; keep off unless the use case is approved. |
 
-With both flags at their defaults, ARC-1 stays inside the FAQ envelope for endorsed development tooling. Turning either flag on is a customer decision against the policy, the SAP agreement, and your data-protection rules — not the recommended productive default.
+For production, combine conservative tool exposure with real user identity, SAP-side authorization, audit logging, rate limits, and review against the current SAP policy.
 
 ## Documentation
 
@@ -222,8 +219,8 @@ With both flags at their defaults, ARC-1 stays inside the FAQ envelope for endor
 | [security-guide.md](security-guide.md) | Security hardening checklist for production |
 | [cli-guide.md](cli-guide.md) | CLI commands and configuration |
 | [docker.md](docker.md) | Full Docker reference |
-| [btp-abap-environment.md](btp-abap-environment.md) | BTP ABAP Environment — direct connection via service key + OAuth |
-| [phase4-btp-deployment.md](phase4-btp-deployment.md) | BTP Cloud Foundry deployment details |
+| [btp-abap-environment.md](btp-abap-environment.md) | BTP ABAP Environment — local service-key OAuth and deployed per-user destination setup |
+| [btp-cloud-foundry-deployment.md](btp-cloud-foundry-deployment.md) | BTP Cloud Foundry deployment details |
 | [sap-trial-setup.md](sap-trial-setup.md) | SAP BTP trial setup |
 | [roadmap.md](roadmap.md) | Planned features |
 | [blog-series.md](blog-series.md) | Long-form blog series — AI for ABAP development, ARC-1 design, BTP / Copilot Studio / Joule walkthroughs |

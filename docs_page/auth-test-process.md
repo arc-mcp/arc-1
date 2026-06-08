@@ -1,6 +1,6 @@
 # Authentication Test Process
 
-Step-by-step verification for each authentication phase. Run these tests after deploying arc1 to confirm each phase works as intended.
+Step-by-step verification for each authentication method. Run these tests after deploying arc1 to confirm the configured methods work as intended.
 
 ## Prerequisites
 
@@ -19,7 +19,7 @@ npm test
 ### Unit Tests
 
 ```bash
-# Run Phase 1 related tests
+# Run auth-related unit tests
 npm test
 ```
 
@@ -119,7 +119,7 @@ npm test
 
 ### Manual Integration Test
 
-**Prerequisites:** You need an OIDC Identity Provider (EntraID, Keycloak, Cognito).
+**Prerequisites:** You need an OIDC identity provider (Microsoft Entra ID, Keycloak, Cognito).
 
 **1. Start arc1 with OIDC:**
 
@@ -204,7 +204,7 @@ npm test
 ### Manual Integration Test
 
 **Prerequisites:**
-- Phase 2 (OIDC or XSUAA) configured and working
+- OIDC or XSUAA configured and working
 - ARC-1 deployed on BTP CF with Destination + Connectivity services
 - Cloud Connector connected and configured for principal propagation
 - SAP system configured with CERTRULE / VUSREXTID (see [Principal Propagation Setup](principal-propagation-setup.md))
@@ -238,7 +238,7 @@ cf logs arc1-mcp-server --recent | grep -E "Principal propagation|per-user|BTP d
 
 ---
 
-## Phase 4: BTP / Cloud Foundry
+## BTP / Cloud Foundry
 
 ### Unit Tests
 
@@ -255,7 +255,7 @@ npm test
 ```bash
 # Build Docker image
 docker build -t arc1 .
-# Push to CF (see phase4-btp-deployment.md)
+# Push to CF (see btp-cloud-foundry-deployment.md)
 cf push
 ```
 

@@ -3,7 +3,7 @@
 **Date:** 2026-03-25
 **Report ID:** 001
 **Subject:** Deploy vsp MCP server to SAP BTP CF and connect Microsoft Copilot Studio
-**Related Documents:** `docs/phase4-btp-deployment.md`, `docs/sap-trial-setup.md`
+**Related Documents:** `docs_page/btp-cloud-foundry-deployment.md`, `docs/sap-trial-setup.md`
 
 ---
 

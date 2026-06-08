@@ -82,4 +82,4 @@ For BTP CF deploys, `cf env <app>` shows you the final environment as the contai
 - [Configuration Reference](configuration-reference.md) — every env var, grouped by purpose, with effects.
 - [Local Development](local-development.md) — `.env`, `npm run dev:http`, MCP client configs for local clones.
 - [Docker Guide](docker.md) — `-e`, `--env-file`, and CA cert mounts.
-- [BTP Cloud Foundry Deployment](phase4-btp-deployment.md) — `mta.yaml` properties, `cf set-env`, `VCAP_SERVICES`.
+- [BTP Cloud Foundry Deployment](btp-cloud-foundry-deployment.md) — `mta.yaml` properties, `cf set-env`, `VCAP_SERVICES`.

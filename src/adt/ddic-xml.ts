@@ -58,6 +58,12 @@ export interface PackageCreateParams {
   softwareComponent?: string;
   transportLayer?: string;
   packageType?: 'development' | 'structure' | 'main';
+  /**
+   * Whether the package records object changes in transport requests
+   * (`pak:recordChanges`, backend KORRFLAG). When omitted, ARC-1 infers it
+   * from transportability metadata and keeps literal LOCAL packages off.
+   */
+  recordChanges?: boolean;
 }
 
 export interface ServiceBindingCreateParams {
@@ -303,8 +309,11 @@ export function buildDataElementXml(params: DataElementCreateParams): string {
 export function buildPackageXml(params: PackageCreateParams): string {
   const packageType = params.packageType ?? 'development';
   const superPackage = params.superPackage ?? '';
-  const softwareComponent = params.softwareComponent ?? 'LOCAL';
-  const transportLayer = params.transportLayer ?? '';
+  const softwareComponent = params.softwareComponent?.trim() || 'LOCAL';
+  const transportLayer = params.transportLayer?.trim() ?? '';
+  const normalizedSoftwareComponent = softwareComponent.toUpperCase();
+  const isLocalSoftwareComponent = normalizedSoftwareComponent === 'LOCAL';
+  const recordChanges = params.recordChanges ?? (!isLocalSoftwareComponent || transportLayer !== '');
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <pak:package xmlns:pak="http://www.sap.com/adt/packages"
@@ -315,7 +324,7 @@ export function buildPackageXml(params: PackageCreateParams): string {
              adtcore:version="active"
              adtcore:responsible="DEVELOPER">
   <adtcore:packageRef adtcore:name="${escapeXml(params.name)}"/>
-  <pak:attributes pak:packageType="${escapeXml(packageType)}"/>
+  <pak:attributes pak:packageType="${escapeXml(packageType)}" pak:recordChanges="${boolToXml(recordChanges)}"/>
   <pak:superPackage adtcore:name="${escapeXml(superPackage)}"/>
   <pak:applicationComponent/>
   <pak:transport>

@@ -1,8 +1,12 @@
-import { readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { generateSummary, parseSuiteResults } from '../../../scripts/ci/collect-test-reliability.mjs';
+import {
+  generateSummary,
+  parseSkipTelemetry,
+  parseSuiteResults,
+} from '../../../scripts/ci/collect-test-reliability.mjs';
 
 const FIXTURES_DIR = join(import.meta.dirname, '../../fixtures/test-results');
 
@@ -55,6 +59,24 @@ describe('collect-test-reliability', () => {
     });
   });
 
+  describe('parseSkipTelemetry', () => {
+    it('parses structured skip reasons and ignores malformed lines', () => {
+      const records = parseSkipTelemetry(
+        [
+          JSON.stringify({ suite: 'e2e', reason: 'Backend feature not supported on this SAP system' }),
+          'not json',
+          JSON.stringify({ suite: 'e2e', reason: '' }),
+          JSON.stringify({ suite: 'integration', reason: 'TEST_TRANSPORT_PACKAGE not configured' }),
+        ].join('\n'),
+      );
+
+      expect(records.map((record) => record.reason)).toEqual([
+        'Backend feature not supported on this SAP system',
+        'TEST_TRANSPORT_PACKAGE not configured',
+      ]);
+    });
+  });
+
   describe('generateSummary', () => {
     it('generates valid Markdown table format', () => {
       const suiteData = [{ name: 'unit', counts: { total: 100, passed: 100, failed: 0, skipped: 0 }, skipReasons: [] }];
@@ -79,7 +101,7 @@ describe('collect-test-reliability', () => {
         },
       ];
       const summary = generateSummary(suiteData);
-      expect(summary).toContain('### Top Skipped Tests');
+      expect(summary).toContain('### Top Skip Reasons');
       expect(summary).toContain('| SAP system not configured | 3 |');
       expect(summary).toContain('| requires BTP environment | 2 |');
     });
@@ -92,6 +114,7 @@ describe('collect-test-reliability', () => {
 
   describe('GITHUB_STEP_SUMMARY integration', () => {
     let tempFile: string | undefined;
+    let tempDir: string | undefined;
 
     afterEach(() => {
       if (tempFile) {
@@ -101,6 +124,10 @@ describe('collect-test-reliability', () => {
           /* ignore */
         }
         tempFile = undefined;
+      }
+      if (tempDir) {
+        rmSync(tempDir, { recursive: true, force: true });
+        tempDir = undefined;
       }
     });
 
@@ -121,6 +148,38 @@ describe('collect-test-reliability', () => {
       const content = readFileSync(tempFile, 'utf-8');
       expect(content).toContain('## Test Reliability Summary');
       expect(content).toContain('| unit |');
+    });
+
+    it('uses suite skip telemetry when present', async () => {
+      tempDir = mkdtempSync(join(tmpdir(), 'arc1-reliability-'));
+      tempFile = join(tmpdir(), `test-step-summary-${Date.now()}.md`);
+      writeFileSync(tempFile, '');
+      writeFileSync(join(tempDir, 'integration.json'), readFileSync(join(FIXTURES_DIR, 'integration-mixed.json')));
+      writeFileSync(
+        join(tempDir, 'integration-skips.ndjson'),
+        [
+          JSON.stringify({ suite: 'integration', reason: 'SAP credentials not configured' }),
+          JSON.stringify({ suite: 'integration', reason: 'SAP credentials not configured' }),
+          JSON.stringify({ suite: 'integration', reason: 'Backend feature not supported on this SAP system' }),
+          JSON.stringify({ suite: 'integration', reason: 'TEST_TRANSPORT_PACKAGE not configured' }),
+          JSON.stringify({ suite: 'integration', reason: 'TEST_TRANSPORT_PACKAGE not configured' }),
+        ].join('\n'),
+      );
+
+      const { execFileSync } = await import('node:child_process');
+      execFileSync(
+        'node',
+        [join(import.meta.dirname, '../../../scripts/ci/collect-test-reliability.mjs'), '--results-dir', tempDir],
+        {
+          env: { ...process.env, GITHUB_STEP_SUMMARY: tempFile },
+          encoding: 'utf-8',
+        },
+      );
+
+      const content = readFileSync(tempFile, 'utf-8');
+      expect(content).toContain('| SAP credentials not configured | 2 |');
+      expect(content).toContain('| TEST_TRANSPORT_PACKAGE not configured | 2 |');
+      expect(content).not.toContain('| requires BTP environment |');
     });
   });
 });

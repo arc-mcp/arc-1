@@ -35,6 +35,12 @@ export const PERSISTENT_OBJECTS = [
     searchQuery: 'ZARC1_TEST_REPORT',
   },
   {
+    name: 'ZARC1_E2E_DUMP',
+    type: 'PROG',
+    fixture: 'zarc1_e2e_dump.abap',
+    searchQuery: 'ZARC1_E2E_DUMP',
+  },
+  {
     name: 'ZIF_ARC1_TEST',
     type: 'INTF',
     fixture: 'zif_arc1_test.intf.abap',

@@ -17,6 +17,21 @@
           "glob": false
         },
         {
+          "type": "generic",
+          "path": "docs_page/deployment.md",
+          "glob": false
+        },
+        {
+          "type": "generic",
+          "path": "docs_page/roadmap.md",
+          "glob": false
+        },
+        {
+          "type": "generic",
+          "path": "docs_page/updating.md",
+          "glob": false
+        },
+        {
           "type": "json",
           "path": "server.json",
           "jsonpath": "$.version"

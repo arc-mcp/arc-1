@@ -1,0 +1,231 @@
+name: SAP Slow Tests
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/sap-slow-tests.yml'
+  workflow_dispatch:
+    inputs:
+      run_integration_slow:
+        description: Run the slow integration profile
+        type: boolean
+        required: true
+        default: true
+      run_e2e_slow:
+        description: Run the slow E2E profile
+        type: boolean
+        required: true
+        default: true
+      enable_transport_release_tests:
+        description: Enable recursive transport release tests
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  SAP_CI_TARGET_LABEL: A4H 2025
+
+jobs:
+  definition-check:
+    name: workflow definition check
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Slow profiles are manual-only
+        run: |
+          echo "This PR check validates that the SAP Slow Tests workflow is loadable."
+          echo "The live slow SAP profiles run only through workflow_dispatch after the workflow file is on the default branch."
+
+  sap-slow:
+    name: slow live SAP profiles
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    concurrency:
+      group: ${{ github.repository }}-sap-live-a4h
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Validate workflow inputs
+        shell: bash
+        run: |
+          if [ "${{ inputs.run_integration_slow }}" != "true" ] && [ "${{ inputs.run_e2e_slow }}" != "true" ]; then
+            echo "::error title=No slow suite selected::Enable at least one of run_integration_slow or run_e2e_slow."
+            exit 1
+          fi
+          echo "run_integration_slow=${{ inputs.run_integration_slow }}"
+          echo "run_e2e_slow=${{ inputs.run_e2e_slow }}"
+          echo "enable_transport_release_tests=${{ inputs.enable_transport_release_tests }}"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: SAP auth preflight
+        id: sap_auth
+        shell: bash
+        env:
+          SAP_CI_TARGET_LABEL: ${{ env.SAP_CI_TARGET_LABEL }}
+          TEST_SAP_URL: ${{ secrets.TEST_SAP_URL }}
+          TEST_SAP_USER: ${{ secrets.TEST_SAP_USER }}
+          TEST_SAP_PASSWORD: ${{ secrets.TEST_SAP_PASSWORD }}
+          TEST_SAP_CLIENT: ${{ secrets.TEST_SAP_CLIENT }}
+          TEST_SAP_INSECURE: ${{ secrets.TEST_SAP_INSECURE }}
+        run: |
+          missing=()
+          for name in TEST_SAP_URL TEST_SAP_USER TEST_SAP_PASSWORD TEST_SAP_CLIENT; do
+            if [ -z "${!name:-}" ]; then
+              missing+=("${name}")
+            fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error title=Slow SAP preflight failed::Missing required ${SAP_CI_TARGET_LABEL} secret(s): ${missing[*]}"
+            exit 1
+          fi
+
+          base_url="${TEST_SAP_URL%/}"
+          probe_url="${base_url}/sap/bc/adt/core/discovery?sap-client=${TEST_SAP_CLIENT}"
+          curl_args=(--silent --show-error --location --output /tmp/adt-discovery-slow.xml --write-out "%{http_code}")
+          case "${TEST_SAP_INSECURE,,}" in
+            true|1|yes) curl_args+=(--insecure) ;;
+          esac
+          status="$(curl "${curl_args[@]}" -u "${TEST_SAP_USER}:${TEST_SAP_PASSWORD}" "${probe_url}" || true)"
+          echo "status=${status}"
+          if [ "${status}" != "200" ]; then
+            echo "::error title=Slow SAP preflight failed::${SAP_CI_TARGET_LABEL} authenticated ADT discovery returned HTTP ${status}; slow SAP tests require a reachable target and valid TEST_SAP_* secrets."
+            exit 1
+          fi
+          echo "auth_ok=true" >> "$GITHUB_OUTPUT"
+
+      - name: Run slow integration tests
+        if: ${{ inputs.run_integration_slow && steps.sap_auth.outputs.auth_ok == 'true' }}
+        run: npm run test:integration:slow
+        env:
+          TEST_SAP_URL: ${{ secrets.TEST_SAP_URL }}
+          TEST_SAP_USER: ${{ secrets.TEST_SAP_USER }}
+          TEST_SAP_PASSWORD: ${{ secrets.TEST_SAP_PASSWORD }}
+          TEST_SAP_CLIENT: ${{ secrets.TEST_SAP_CLIENT }}
+          TEST_SAP_INSECURE: ${{ secrets.TEST_SAP_INSECURE }}
+          TEST_TRANSPORT_RELEASE_TESTS: ${{ inputs.enable_transport_release_tests }}
+
+      - name: Upload slow integration results
+        if: ${{ always() && inputs.run_integration_slow }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-integration-slow
+          path: |
+            test-results/integration-slow.json
+            test-results/integration-skips.ndjson
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Build
+        id: build
+        if: ${{ always() && inputs.run_e2e_slow && steps.sap_auth.outputs.auth_ok == 'true' }}
+        run: npm run build
+
+      - name: Start MCP server
+        id: start_mcp
+        if: ${{ always() && inputs.run_e2e_slow && steps.sap_auth.outputs.auth_ok == 'true' && steps.build.outcome == 'success' }}
+        run: npm run test:e2e:start
+        env:
+          SAP_URL: ${{ secrets.TEST_SAP_URL }}
+          SAP_USER: ${{ secrets.TEST_SAP_USER }}
+          SAP_PASSWORD: ${{ secrets.TEST_SAP_PASSWORD }}
+          SAP_CLIENT: ${{ secrets.TEST_SAP_CLIENT }}
+          SAP_INSECURE: ${{ secrets.TEST_SAP_INSECURE }}
+
+      - name: Run slow E2E tests
+        if: ${{ always() && inputs.run_e2e_slow && steps.sap_auth.outputs.auth_ok == 'true' && steps.start_mcp.outcome == 'success' }}
+        run: npm run test:e2e:slow
+        env:
+          E2E_MCP_URL: http://localhost:3000/mcp
+          SAP_URL: ${{ secrets.TEST_SAP_URL }}
+          SAP_USER: ${{ secrets.TEST_SAP_USER }}
+          SAP_PASSWORD: ${{ secrets.TEST_SAP_PASSWORD }}
+          SAP_CLIENT: ${{ secrets.TEST_SAP_CLIENT }}
+          SAP_INSECURE: ${{ secrets.TEST_SAP_INSECURE }}
+          TEST_TRANSPORT_RELEASE_TESTS: ${{ inputs.enable_transport_release_tests }}
+
+      - name: Stop MCP server
+        if: ${{ always() && inputs.run_e2e_slow }}
+        run: npm run test:e2e:stop
+
+      - name: Upload slow E2E results
+        if: ${{ always() && inputs.run_e2e_slow }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-e2e-slow
+          path: |
+            test-results/e2e-slow.json
+            test-results/e2e-skips.ndjson
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Upload slow E2E logs
+        if: ${{ always() && inputs.run_e2e_slow }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-slow-logs
+          path: /tmp/arc1-e2e-logs/
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Upload slow E2E JUnit results
+        if: ${{ always() && inputs.run_e2e_slow }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-slow-junit
+          path: /tmp/arc1-e2e-logs/junit-results-slow.xml
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Normalize slow result files
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p test-results
+          if [ "${{ inputs.run_integration_slow }}" = "true" ] && [ -f test-results/integration-slow.json ]; then
+            cp test-results/integration-slow.json test-results/integration.json
+          fi
+          if [ "${{ inputs.run_e2e_slow }}" = "true" ] && [ -f test-results/e2e-slow.json ]; then
+            cp test-results/e2e-slow.json test-results/e2e.json
+          fi
+
+      - name: Slow reliability summary
+        if: always()
+        run: npm run test:reliability-report -- --results-dir test-results
+        continue-on-error: true
+
+      - name: Slow runtime summary
+        if: always()
+        run: npm run test:runtime-report -- --results-dir test-results --junit-dir /tmp/arc1-e2e-logs
+        continue-on-error: true
+
+      - name: Assert slow execution thresholds
+        if: always()
+        shell: bash
+        run: |
+          integration_min=0
+          e2e_min=0
+          if [ "${{ inputs.run_integration_slow }}" = "true" ]; then
+            integration_min=1
+          fi
+          if [ "${{ inputs.run_e2e_slow }}" = "true" ]; then
+            e2e_min=1
+          fi
+          config=$(printf '{"unit":{"minExecuted":0},"integration":{"minExecuted":%d},"e2e":{"minExecuted":%d}}' "${integration_min}" "${e2e_min}")
+          npm run test:assert-execution -- --results-dir test-results --mode warn --config "${config}"
+        continue-on-error: true

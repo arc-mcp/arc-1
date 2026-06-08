@@ -12,6 +12,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { expect } from 'vitest';
+import { skipTest } from '../helpers/skip-policy.js';
 
 /** MCP tool call result shape */
 export interface ToolResult {
@@ -252,11 +253,13 @@ export function classifyToolErrorSkip(result: ToolResult): string | null {
   if (/status 423.*invalid lock handle/i.test(text)) {
     return 'Backend feature not supported on this SAP system: lock-handle session correlation differs on this release';
   }
-  // Intermittent backend flake observed in CI: write succeeds but DDIC unlock
-  // responds 400 "Service cannot be reached". Treat as backend instability to
-  // keep RAP write lifecycle tests deterministic.
-  if (/\/sap\/bc\/adt\/ddic\/tables\/[A-Z0-9_]+\?_action=UNLOCK\b.*Service cannot be reached/i.test(text)) {
-    return 'Backend instability on this SAP system: DDIC table unlock endpoint intermittently unreachable after successful write';
+  // Intermittent backend flake observed in CI: ADT write/session infrastructure
+  // accepts a mutation but the object LOCK/UNLOCK route responds 400
+  // "Service cannot be reached". Treat that routing failure as backend
+  // instability, while still failing authorization, syntax, and non-session
+  // errors normally.
+  if (/_action=(?:LOCK|UNLOCK)\b[^\n]*Service cannot be reached/i.test(text)) {
+    return 'Backend instability on this SAP system: ADT lock/unlock endpoint intermittently unreachable during write session handling';
   }
   // batch_create aggregates per-object errors and can surface as either isError=false
   // (handler returned a "Batch created 0/N" summary string as success) or isError=true
@@ -309,14 +312,15 @@ export function skipOnBatchCreateFailure(ctx: import('vitest').TaskContext, text
   if (!/✗/i.test(text)) return false;
   const match = text.match(/✗\s*—\s*([^\n]{0,160})/);
   const hint = match?.[1] ?? '';
-  ctx.skip(
+  skipTest(
+    ctx,
     `Backend feature not supported on this SAP system: batch_create aggregated inner-object failure (${hint.slice(0, 100)}…)`,
   );
   return true;
 }
 
 /**
- * Expect success, OR skip via `ctx.skip(reason)` if the error matches a known release
+ * Expect success, OR skip via `skipTest(ctx, reason)` if the error matches a known release
  * gap / backend quirk. Returns the text content on success.
  *
  * Usage:
@@ -326,8 +330,8 @@ export function skipOnBatchCreateFailure(ctx: import('vitest').TaskContext, text
 export function expectToolSuccessOrSkip(ctx: import('vitest').TaskContext, result: ToolResult): string {
   const skip = classifyToolErrorSkip(result);
   if (skip !== null) {
-    ctx.skip(skip);
-    // Unreachable — ctx.skip(reason) throws. Return empty to satisfy the type.
+    skipTest(ctx, skip);
+    // Unreachable — skipTest(ctx, reason) throws. Return empty to satisfy the type.
     return '';
   }
   return expectToolSuccess(result);

@@ -10,13 +10,13 @@ Runtime summaries per category are available via:
 
 Both use [scripts/ci/summarize-skips.mjs](../scripts/ci/summarize-skips.mjs) with the same taxonomy.
 
-> **Note on counts:** the summary tool parses per-test `↓` lines, which vitest emits for tests skipped via `ctx.skip()` / `requireOrSkip()`. **File- or describe-level skips** — like the whole BTP ABAP suite skipping when `TEST_BTP_SERVICE_KEY_FILE` isn't set, or the gCTS suite when the backend doesn't have gCTS — are rolled up in the `Test Files … skipped` summary line instead. The summary tool reads both and reports the delta; see the "Note:" line at the end of its output if your run shows more total skipped tests than per-test `↓` lines.
+> **Note on counts:** the summary tool parses per-test `↓` lines, which vitest emits for tests skipped via `skipTest()` / `requireOrSkip()` (both delegate to `ctx.skip()`). **File- or describe-level skips** — like the whole BTP ABAP suite skipping when `TEST_BTP_SERVICE_KEY_FILE` isn't set, or the gCTS suite when the backend doesn't have gCTS — are rolled up in the `Test Files … skipped` summary line instead. The summary tool reads both and reports the delta; see the "Note:" line at the end of its output if your run shows more total skipped tests than per-test `↓` lines.
 
 ## How to read this
 
 - **Typical on** — systems where this skip is routine; seeing it is healthy, not a bug.
 - **Should NOT skip on** — if this skip fires on a listed system, that's a regression signal; investigate.
-- **Skip message pattern** — what you grep for in test output. All skips emit `ctx.skip("<message>")` which vitest prints as `↓ <test> [<message>]`.
+- **Skip message pattern** — what you grep for in test output. All runtime skips go through `skipTest(ctx, "<message>")` or `requireOrSkip()`, then Vitest prints them as `↓ <test> [<message>]`.
 
 ## Skip reason constants
 
@@ -29,6 +29,7 @@ The base codes live in [tests/helpers/skip-policy.ts](../tests/helpers/skip-poli
 | `NO_DDLS` | Walks the catalog looking for *any* readable DDLS, finds none |
 | `NO_DUMPS` | ST22 shows no short dumps on this system |
 | `NO_TRANSPORT_PACKAGE` | `TEST_TRANSPORT_PACKAGE` env var not set |
+| `TRANSPORT_PACKAGE_WRITES_DISABLED` | `TEST_TRANSPORT_PACKAGE_WRITE_TESTS=true` not set |
 | `BACKEND_UNSUPPORTED` | Feature genuinely not available on this SAP release |
 
 Tests typically suffix these with a specific clause explaining *which* fixture or feature, e.g. `NO_FIXTURE (/DMO/CL_FLIGHT_LEGACY) — S/4 demo content`.
@@ -89,6 +90,7 @@ ARC-1 originally posted DTEL create/update with `Content-Type: application/vnd.s
 | Skip message fragment | Affected tests | Typical on | Should NOT skip on |
 |---|---|---|---|
 | `BACKEND_UNSUPPORTED: lock-handle session correlation differs on this release` | `crud.lifecycle.integration.test.ts` full PROG lifecycle, DTEL CRUD update step, RAP write + SKTD + MSAG on E2E | NW < 7.51 without the `abapfs_extensions` enhancement | NW ≥ 7.51, or any release with `abapfs_extensions` installed |
+| `Backend instability on this SAP system: ADT lock/unlock endpoint intermittently unreachable during write session handling` | Default E2E live write lifecycles that call ADT `_action=LOCK` or `_action=UNLOCK` for package, DDIC, PROG, MSAG, FUGR/FUNC, SKTD, or class-section mutations | Shared/trial SAP systems when ADT session routing temporarily returns HTTP 400 `Service cannot be reached` | Any system where this appears persistently across repeated runs; investigate SICF/ADT routing and stale locks |
 
 ### Root cause: persistent lock-handle 423 after successful LOCK
 
@@ -119,7 +121,8 @@ On **SAP_BASIS < 7.51** the ADT REST handler `CL_REST_HTTP_HANDLER` does not hon
 | Skip message fragment | Affected tests | Typical cause |
 |---|---|---|
 | `SAP credentials not configured` | Every integration test | `TEST_SAP_URL` / `TEST_SAP_USER` / `TEST_SAP_PASSWORD` not set |
-| `TEST_TRANSPORT_PACKAGE not configured` | transport-scoped CRUD (~3 tests) | Opt-in: set `TEST_TRANSPORT_PACKAGE=Z_LLM_TEST_PACKAGE` to enable |
+| `TEST_TRANSPORT_PACKAGE not configured` | transport-scoped CRUD (~3 tests) | Opt-in: set `TEST_TRANSPORT_PACKAGE=Z_LLM_TEST_PACKAGE`; write paths additionally require `TEST_TRANSPORT_PACKAGE_WRITE_TESTS=true` |
+| `TEST_TRANSPORT_PACKAGE_WRITE_TESTS not enabled` | transportable-package write cleanup can leave locked CTS tasks | Expected on shared SAP systems unless running a manual destructive cleanup experiment |
 | `NO_FIXTURE (RSHOWTIM)` | search by pattern (1 test) | RSHOWTIM report not on this system |
 
 **When to investigate:** Credentials skipping everything is the expected state on a machine without SAP access. Everything else is a deliberate opt-in.
@@ -141,7 +144,7 @@ A quick sanity-check for "is my run healthy?":
 |---|---|---|
 | **NW 7.50 trial** (e.g. `npl.marianzeis.de`) | ~120 / 207 tests | Cat 1 (S/4 demo), Cat 2 (release gap), Cat 3 (trial quirks) |
 | **S/4HANA 2023** (e.g. `a4h.marianzeis.de`) | ~40 / 207 tests | Cat 5 (no transport package), Cat 6 (abapGit/gCTS not installed), some Cat 4 |
-| **ABAP Platform 2025** (SAP_BASIS 816, e.g. `a4h-2025.marianzeis.de`) | ≈ S/4HANA 2023 profile (reads), + see note | Reads + release detection fully validated (full RAP/CDS surface, `adt.integration` 97/114). Cat 6 (abapGit ADT bridge **not installed** on the 2025 trial → SAPGit tests skip). **Note:** the as-migrated 2025 container is *not* perf-tuned like 2023 — concurrent write+activate (DDLS/TABL) intermittently hits ABAP `STACK_TRACE_ERROR` short-dumps + 30 s timeouts. The same tests pass on the tuned 2023 box; tune `rdisp/wp_no_dia` + ICM threads (see `INFRASTRUCTURE.md`) before using 2025 as a write/activate CI target. |
+| **ABAP Platform 2025** (SAP_BASIS 816, e.g. `a4h-2025.marianzeis.de`) | ~54 / 262 default-profile tests | Reads, release detection, write+activate, and CRUD lifecycle are validated on the tuned 2025 trial. Cat 6 dominates where optional backends are absent: the abapGit ADT bridge is **not installed** on the 2025 trial, so SAPGit tests skip. Local 2026-06-06 default-profile baseline: 208 passed / 54 skipped. |
 | **BTP ABAP (cloud)** | ~80 / 207 tests | Cat 1 (no /DMO), Cat 2 (DDIC changes on cloud), Cat 5 (policy) |
 
 Large deviations from these counts on a given system are the signal. If an S/4HANA box suddenly skips 120+ tests, something broke in fixture sync or auth — the matrix helps identify which category lit up.
@@ -182,10 +185,16 @@ Several SAPRead types return a human-readable placeholder (not an MCP error) whe
 |---|---|---|
 | **NW 7.50 trial** | ~50 / 122 tests | Cat 2 (release gap), Cat 3 (lock-handle 423), E2E-α (fixture sync partial), Cat 1 (/DMO missing) |
 | **S/4HANA 2023** | 3 / 122 tests | Cat 5 (no transport package / `--allow-git-writes`) |
-| **ABAP Platform 2025** (SAP_BASIS 816) | ≈ S/4HANA 2023 profile | Cat 5 + abapGit ADT bridge absent on the trial (SAPGit tests skip) |
+| **ABAP Platform 2025** (SAP_BASIS 816) | 4 / 141 default-profile tests when stable | Cat 5 + abapGit ADT bridge absent on the trial (SAPGit tests skip). Local 2026-06-06 default-profile baseline: 137 passed / 4 skipped. A shared ADT write-session routing window can add Cat 3 lock/unlock skips when A4H returns HTTP 400 `Service cannot be reached`; final PR #365 CI validation saw 119 passed / 22 skipped, including 18 such transient routing skips. |
 | **BTP ABAP** | ~30 / 122 tests | Cat 5 (policy), some of Cat 1 |
 
-Anything over ~5 skips on S/4HANA is a regression signal — most likely a broken fixture sync or an unintended breaking change to a SAPRead handler output.
+Anything over ~5 non-transient skips on S/4HANA is a regression signal — most likely a broken fixture sync or an unintended breaking change to a SAPRead handler output. Transient Cat 3 lock/unlock skips should be tracked separately; they indicate SAP ADT routing instability, not missing fixture coverage.
+
+### Manual slow workflow monitoring
+
+`.github/workflows/sap-slow-tests.yml` runs the slow live SAP profiles on demand through the GitHub Actions **SAP Slow Tests** workflow. It uses the same A4H 2025 `TEST_SAP_*` target as the default Test workflow and keeps recursive transport release disabled unless the operator explicitly sets `enable_transport_release_tests=true`.
+
+Use the manual slow workflow to sample expensive coverage that is intentionally outside the PR path: cache warmup, broad where-used scans, RAP full-stack writes, and recursive transport release guards. Compare its skip summary with the default workflow summary. If Cat 3 ADT lock/unlock routing skips climb persistently across both workflows, investigate SAP-side ADT routing/session stability before changing ARC-1 test assertions.
 
 ## Adding a new skip
 

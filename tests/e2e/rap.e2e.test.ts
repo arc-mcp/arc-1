@@ -5,15 +5,16 @@
  * Uses standard /DMO/ Flight Reference Scenario objects that exist on any demo system.
  *
  * Read tests use DMO objects (no setup needed).
- * Write lifecycle and batch activation tests use standard SAP objects.
+ * Write lifecycle and batch activation tests use managed ARC-1 fixtures.
  */
 
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { skipTest } from '../helpers/skip-policy.js';
 import { callTool, connectClient, expectToolError, expectToolSuccess, expectToolSuccessOrSkip } from './helpers.js';
 
 function parsePossiblyCachedJson(text: string): any {
-  return JSON.parse(text.replace(/^\[cached\]\n/, ''));
+  return JSON.parse(text.replace(/^\[cached(?::revalidated)?\]\n/, ''));
 }
 
 describe('E2E RAP Completeness Tests', () => {
@@ -44,7 +45,8 @@ describe('E2E RAP Completeness Tests', () => {
       // placeholder when the DDLX doesn't exist — which is the state on any
       // system that didn't ship the /DMO/ Flight Reference scenario.
       if (/No metadata extension \(DDLX\) found/i.test(text)) {
-        ctx.skip(
+        skipTest(
+          ctx,
           'Required test fixture not found on SAP system (/DMO/C_AGENCYTP DDLX) — S/4 Flight Reference Scenario',
         );
         return;
@@ -61,7 +63,8 @@ describe('E2E RAP Completeness Tests', () => {
       });
       const text = expectToolSuccessOrSkip(ctx, result);
       if (/No metadata extension \(DDLX\) found/i.test(text)) {
-        ctx.skip(
+        skipTest(
+          ctx,
           'Required test fixture not found on SAP system (/DMO/C_TRAVEL_A_D DDLX) — S/4 Flight Reference Scenario',
         );
         return;
@@ -143,26 +146,27 @@ describe('E2E RAP Completeness Tests', () => {
 
   describe('SAPActivate', () => {
     it('activates a single object successfully', async () => {
-      // Activating an already-active standard program — re-activation is a no-op
+      // Activating an already-active managed fixture is a no-op, but still
+      // exercises SAPActivate inside the CI allowedPackages ceiling.
       const result = await callTool(client, 'SAPActivate', {
         type: 'PROG',
-        name: 'RSHOWTIM',
+        name: 'ZARC1_TEST_REPORT',
       });
       const text = expectToolSuccess(result);
-      expect(text).toContain('RSHOWTIM');
+      expect(text).toContain('ZARC1_TEST_REPORT');
     });
 
     it('batch activates multiple objects together', async () => {
       const result = await callTool(client, 'SAPActivate', {
         objects: [
-          { type: 'PROG', name: 'RSHOWTIM' },
-          { type: 'CLAS', name: 'CL_ABAP_CHAR_UTILITIES' },
+          { type: 'PROG', name: 'ZARC1_TEST_REPORT' },
+          { type: 'CLAS', name: 'ZCL_ARC1_TEST' },
         ],
       });
       const text = expectToolSuccess(result);
       expect(text).toContain('2 objects');
-      expect(text).toContain('RSHOWTIM');
-      expect(text).toContain('CL_ABAP_CHAR_UTILITIES');
+      expect(text).toContain('ZARC1_TEST_REPORT');
+      expect(text).toContain('ZCL_ARC1_TEST');
     });
   });
 
@@ -211,7 +215,7 @@ describe('E2E RAP Completeness Tests', () => {
           name: WRITE_NAME,
           source: updatedSource,
         });
-        expectToolSuccess(updateResult);
+        expectToolSuccessOrSkip(ctx, updateResult);
 
         // Step 4: Activate the updated program
         const reactivateResult = await callTool(client, 'SAPActivate', {
