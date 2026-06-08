@@ -218,6 +218,18 @@ const SAPWRITE_DESC_BTP =
   'For scaffold_rap_handlers: derive missing RAP behavior handler signatures from an interface BDEF and optionally create missing lhc_* skeletons plus inject declarations and empty implementation stubs into an existing behavior pool class. ' +
   'For generate_behavior_implementation: one-shot RAP behavior pool — auto-discover the bound BDEF via class metadata (rootEntityRef), scaffold every required handler (creating lhc_<alias> skeletons when missing), write under one lock, and (by default) activate.';
 
+// Prepended to both SAPWrite descriptions. The schema lists every optional field for every
+// object type/action, but each call uses only a small subset — GPT/OpenAI callers tend to
+// fill the rest with empty/null/placeholder values. This steers the model to a minimal first
+// payload (issue #360 follow-up; the server also strips the noise at runtime as a backstop).
+const SAPWRITE_MINIMAL_PAYLOAD_GUIDE =
+  'MINIMAL PAYLOAD — send ONLY the fields your action+type needs; do NOT add unrelated optional fields. ' +
+  'Sending empty strings, null, or placeholder values for fields that do not apply to your object type ' +
+  '(e.g. typeKind/odataVersion/length/signExists on a CDS or class write) just adds noise — omit them entirely. ' +
+  'Typical field sets: a source object (CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, TABL — plus PROG, INCL, FUNC on-prem) needs only {action, type, name, source}; ' +
+  "delete needs only {action, type, name}; DOMA/DTEL/MSAG/SRVB need {action, type, name} plus that type's own DDIC fields; FUNC also needs group. " +
+  'Do NOT send `include` unless type=CLAS, and do NOT send DDIC/metadata fields (dataType, length, decimals, signExists, lowercase, typeKind, domainName, odataVersion, category, version, labels, …) on a source-object or delete call. ';
+
 // ─── SAPContext Types ───────────────────────────────────────────────
 
 const SAPCONTEXT_TYPES_ONPREM = ['CLAS', 'INTF', 'PROG', 'FUNC', 'DDLS'];
@@ -633,7 +645,7 @@ export function getToolDefinitions(
 
   // Write tools — only registered when writes are enabled
   if (config.allowWrites) {
-    let sapWriteDesc = btp ? SAPWRITE_DESC_BTP : SAPWRITE_DESC_ONPREM;
+    let sapWriteDesc = SAPWRITE_MINIMAL_PAYLOAD_GUIDE + (btp ? SAPWRITE_DESC_BTP : SAPWRITE_DESC_ONPREM);
     // Append package restriction info so the LLM knows its boundaries
     if (config.allowedPackages.length > 0) {
       const pkgList = config.allowedPackages.join(', ');
@@ -685,7 +697,7 @@ export function getToolDefinitions(
             type: 'string',
             enum: SAPWRITE_CLAS_INCLUDES,
             description:
-              'CLAS-only. For the CLAS write actions update, edit_method, and edit_class_definition: target a class-local include instead of /source/main. Valid values: definitions (CCDEF), implementations (CCIMP), macros, testclasses. Omit include to operate on source/main. It is ignored (silently dropped) for non-CLAS object types and for actions other than those three (add_method/edit_method_signature/delete_method/change_method_visibility operate on the global class /source/main only). For edit_method, ARC-1 also auto-detects the include from the method specifier (lhc_*/lcl_* → implementations, ltc_* → testclasses); explicit include= overrides auto-detection. Include writes create an inactive draft; read with SAPRead version="inactive" before activation. NOTE: edit_class_definition with include= skips the symmetry refuse-policy — cross-include validation is not performed; rely on SAPActivate to catch breaks.',
+              'CLAS-ONLY. Do NOT send this field unless type=CLAS AND action is one of update / edit_method / edit_class_definition. OMIT it entirely for every other object type (PROG, INTF, INCL, FUNC, FUGR, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, TABL, DOMA, DTEL, MSAG) and for delete / batch_create / add_method / edit_method_signature / delete_method / change_method_visibility (those operate on the global class /source/main). When it does apply: target a class-local include instead of /source/main — definitions (CCDEF), implementations (CCIMP), macros, testclasses; omit it to operate on source/main. For edit_method, ARC-1 auto-detects the include from the method specifier (lhc_*/lcl_* → implementations, ltc_* → testclasses), so you usually need not pass it. Include writes create an inactive draft; read with SAPRead version="inactive" before activation. NOTE: edit_class_definition with include= skips the symmetry refuse-policy — cross-include validation is not performed; rely on SAPActivate to catch breaks.',
           },
           method: {
             type: 'string',

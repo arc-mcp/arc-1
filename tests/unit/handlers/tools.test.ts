@@ -290,6 +290,29 @@ describe('Tool Definitions', () => {
     expect(desc).toMatch(/add_method/);
   });
 
+  it('SAPWrite leads with a MINIMAL PAYLOAD guide to discourage GPT/OpenAI over-population (issue #360)', () => {
+    for (const btp of [false, true]) {
+      const tools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true, systemType: btp ? 'btp' : 'onprem' });
+      const sapWrite = tools.find((t) => t.name === 'SAPWrite')!;
+      expect(sapWrite.description).toMatch(/MINIMAL PAYLOAD/);
+      // Steers away from the two most-polluted patterns from the live report.
+      expect(sapWrite.description).toMatch(/do NOT send `include` unless type=CLAS/i);
+      expect(sapWrite.description).toMatch(/delete needs only \{action, type, name\}/i);
+    }
+  });
+
+  it('SAPWrite include field gives strong negative guidance (CLAS-only, do NOT send) — not "silently dropped" (issue #360)', () => {
+    const tools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true });
+    const sapWrite = tools.find((t) => t.name === 'SAPWrite')!;
+    const schema = sapWrite.inputSchema as Record<string, any>;
+    const includeDesc: string = schema.properties.include.description;
+    expect(includeDesc).toMatch(/CLAS-ONLY/);
+    expect(includeDesc).toMatch(/Do NOT send/i);
+    expect(includeDesc).toMatch(/OMIT it entirely/i);
+    // The old "ignored (silently dropped)" wording invited callers to send it anyway.
+    expect(includeDesc).not.toMatch(/silently dropped/i);
+  });
+
   it('SAPWrite action description steers visibility changes to change_method_visibility, not delete+recreate (issue #303 follow-up)', () => {
     const tools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true });
     const sapWrite = tools.find((t) => t.name === 'SAPWrite')!;
