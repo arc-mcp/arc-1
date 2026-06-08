@@ -6662,10 +6662,54 @@ ENDCLASS.`;
 
       expect(result.isError).toBeUndefined();
       const createCall = calls.find((c) => c.method === 'POST' && c.url.includes('/sap/bc/adt/packages'));
-      expect(createCall?.body).toContain('<pak:attributes pak:packageType="structure"/>');
+      expect(createCall?.body).toContain('<pak:attributes pak:packageType="structure" pak:recordChanges="true"/>');
       expect(createCall?.body).toContain('<pak:superPackage adtcore:name="Z_PARENT"/>');
       expect(createCall?.body).toContain('<pak:softwareComponent pak:name="HOME"/>');
       expect(createCall?.body).toContain('<pak:transportLayer pak:name="HOME"/>');
+    });
+
+    it('create_package honors explicit recordChanges=false in XML payload', async () => {
+      const calls: Array<{ method: string; url: string; body?: string }> = [];
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string; body?: string }) => {
+        calls.push({ method: opts?.method ?? 'GET', url: String(url), body: opts?.body });
+        return Promise.resolve(mockResponse(200, '<xml>created</xml>', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
+        action: 'create_package',
+        name: 'ZPKG_NO_RECORD',
+        description: 'No recording',
+        softwareComponent: 'HOME',
+        recordChanges: false,
+        transport: 'A4HK900701',
+      });
+
+      expect(result.isError).toBeUndefined();
+      const createCall = calls.find((c) => c.method === 'POST' && c.url.includes('/sap/bc/adt/packages'));
+      expect(createCall?.body).toContain('<pak:attributes pak:packageType="development" pak:recordChanges="false"/>');
+      expect(createCall?.body).toContain('<pak:softwareComponent pak:name="HOME"/>');
+    });
+
+    it('create_package defaults recordChanges=true for non-LOCAL software components', async () => {
+      const calls: Array<{ method: string; url: string; body?: string }> = [];
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string; body?: string }) => {
+        calls.push({ method: opts?.method ?? 'GET', url: String(url), body: opts?.body });
+        return Promise.resolve(mockResponse(200, '<xml>created</xml>', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
+        action: 'create_package',
+        name: 'ZPKG_ZLOCAL',
+        description: 'ZLOCAL package',
+        softwareComponent: 'ZLOCAL',
+      });
+
+      expect(result.isError).toBeUndefined();
+      const createCall = calls.find((c) => c.method === 'POST' && c.url.includes('/sap/bc/adt/packages'));
+      expect(createCall?.body).toContain('<pak:attributes pak:packageType="development" pak:recordChanges="true"/>');
+      expect(createCall?.body).toContain('<pak:softwareComponent pak:name="ZLOCAL"/>');
     });
 
     it('flp_list_catalogs returns catalog list', async () => {

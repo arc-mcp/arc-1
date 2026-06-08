@@ -1379,6 +1379,11 @@ export function getToolDefinitions(
           type: 'string',
           description: 'Transport layer for create_package (optional; required by some transportable landscapes).',
         },
+        recordChanges: {
+          type: 'boolean',
+          description:
+            'Whether the created package records object changes in transport requests. Defaults to true for non-LOCAL software components or when a transport layer is set; false for literal LOCAL packages.',
+        },
         packageType: {
           type: 'string',
           enum: ['development', 'structure', 'main'],
