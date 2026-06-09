@@ -281,11 +281,13 @@ Take the OAuth client credentials from the ABAP instance's **service key** (`uaa
 | Property | Value |
 |---|---|
 | **Type** | `HTTP` |
-| **URL** | service key `url` (the ABAP system) |
+| **URL** | the ABAP **API** host — the `url` field from the service key, e.g. `https://<guid>.abap.<region>.hana.ondemand.com` (the same host Eclipse ADT uses) |
 | **Proxy Type** | `Internet` (no Cloud Connector) |
 | **Authentication** | `OAuth2UserTokenExchange` |
 | **Token Service URL** | `<uaa.url>/oauth/token` |
 | **Client ID / Secret** | service key `uaa.clientid` / `uaa.clientsecret` (the ABAP instance's own OAuth client) |
+
+> **Use the `.abap.` API host, not `.abap-web.`.** The ABAP Environment exposes two hosts: `….abap.<region>.hana.ondemand.com` (the ADT/API endpoint, accepts token auth — this is the service key's `url`) and `….abap-web.<region>.hana.ondemand.com` (the Fiori/web UI, browser/SAML login). ADT (`/sap/bc/adt/…`) only works against the `.abap.` host; pointing the destination at `.abap-web.` returns an HTML SAML login page, which surfaces as a `401` in ARC-1's logs.
 
 ### 3. Configure ARC-1
 
