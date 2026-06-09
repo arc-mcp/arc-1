@@ -11948,7 +11948,7 @@ ENDCLASS.`;
 
   // ─── create wiring: person responsible (adtcore:responsible) ─────────
 
-  describe('create — person responsible wiring (adtcore:responsible)', () => {
+  describe('create/update/batch — person responsible wiring (adtcore:responsible)', () => {
     function dtelCreatePostBody(): string | undefined {
       const call = mockFetch.mock.calls.find(
         (c: any[]) => String(c[0]).includes('/sap/bc/adt/ddic/dataelements') && c[1]?.method === 'POST',
@@ -12002,6 +12002,56 @@ ENDCLASS.`;
       });
       expect(result.isError).toBeUndefined();
       expect(packageCreatePostBody()).toContain('adtcore:responsible="DEVELOPER"');
+    });
+
+    // The metadata-UPDATE call site is full-XML-replace via buildCreateXml, so it
+    // threads config.username too (not just the create paths). ADT keeps the
+    // create-time owner on update, but the body must still name a real user — the
+    // legacy "DEVELOPER" would otherwise re-trip [?/049] on a no-DEVELOPER system.
+    it('threads config.username into the DTEL update PUT body', async () => {
+      const lockBody =
+        '<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><LOCK_HANDLE>H1</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL></DATA></asx:values></asx:abap>';
+      mockFetch.mockReset();
+      let putBody: string | undefined;
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string; body?: string }) => {
+        const method = opts?.method ?? 'GET';
+        if (method === 'POST' && String(url).includes('_action=LOCK')) {
+          return Promise.resolve(mockResponse(200, lockBody, { 'x-csrf-token': 'T' }));
+        }
+        if (method === 'PUT') putBody = String(opts?.body ?? '');
+        return Promise.resolve(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, username: 'SRAHEMI' }, 'SAPWrite', {
+        action: 'update',
+        type: 'DTEL',
+        name: 'ZSTATUS',
+        package: '$TMP',
+        typeKind: 'domain',
+        typeName: 'ZSTATUS',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(putBody).toContain('adtcore:responsible="SRAHEMI"');
+    });
+
+    it('threads config.username into the batch_create create POST body', async () => {
+      mockFetch.mockReset();
+      const posts: Array<{ url: string; body: string }> = [];
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string; body?: string }) => {
+        if (opts?.method === 'POST') posts.push({ url: String(url), body: String(opts?.body ?? '') });
+        return Promise.resolve(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, username: 'SRAHEMI' }, 'SAPWrite', {
+        action: 'batch_create',
+        package: '$TMP',
+        objects: [{ type: 'DTEL', name: 'ZSTATUS', typeKind: 'predefinedAbapType', dataType: 'CHAR', length: 10 }],
+      });
+
+      expect(result.isError).toBeUndefined();
+      const dtelPost = posts.find((p) => p.url.includes('/sap/bc/adt/ddic/dataelements'));
+      expect(dtelPost?.body).toContain('adtcore:responsible="SRAHEMI"');
     });
   });
 

@@ -149,7 +149,10 @@ export function normalizeAdtLanguage(language?: string): string {
  * Normalize the ADT "person responsible" to the form SAP expects: trimmed and
  * upper-case (on-prem `USR02-BNAME` is upper-case). Defaults to "DEVELOPER"
  * only as a last-resort fallback when no user is configured, preserving the
- * legacy hard-coded value for callers that pass nothing.
+ * legacy hard-coded value for callers that pass nothing. In practice
+ * `config.username` is empty only under cookie-file or OAuth service-key auth
+ * (basic auth and principal propagation both supply a real user), so the
+ * "DEVELOPER" fallback realistically applies only in those two modes.
  *
  * `adtcore:responsible` must name a user that exists on the target system. The
  * historical hard-coded literal "DEVELOPER" only exists on SAP's own demo
