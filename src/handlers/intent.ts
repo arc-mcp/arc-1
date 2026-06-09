@@ -75,6 +75,7 @@ import {
   decodeKtdText,
   type MessageClassCreateParams,
   normalizeAdtLanguage,
+  normalizeAdtResponsible,
   type PackageCreateParams,
   rewriteKtdText,
   type ServiceBindingCreateParams,
@@ -2918,12 +2919,19 @@ export function buildCreateXml(
   description: string,
   properties?: Record<string, unknown>,
   language?: string,
+  responsible?: string,
 ): string {
   // Master/original language for the created object. Derived from the configured
   // SAP_LANGUAGE (passed by callers as config.language) so the create-XML body
   // matches the sap-language URL param ARC-1 already sends. Defaults to "EN" when
   // unset, preserving legacy output. See issue #343.
   const masterLanguage = normalizeAdtLanguage(language);
+  // Person responsible for the created object. Derived from the configured logon
+  // user (passed by callers as config.username). The legacy hard-coded "DEVELOPER"
+  // only exists on SAP demo systems, so on a real system it fails with
+  // 400 [?/049] "Enter a valid user, not DEVELOPER, as the person responsible".
+  // Defaults to "DEVELOPER" only when no user is configured. Same threading as #343.
+  const responsibleUser = normalizeAdtResponsible(responsible);
   switch (type) {
     case 'PROG':
       return `<?xml version="1.0" encoding="UTF-8"?>
@@ -2934,7 +2942,7 @@ export function buildCreateXml(
                      adtcore:type="PROG/P"
                      adtcore:masterLanguage="${masterLanguage}"
                      adtcore:masterSystem="H00"
-                     adtcore:responsible="DEVELOPER">
+                     adtcore:responsible="${escapeXml(responsibleUser)}">
   <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
 </program:abapProgram>`;
     case 'CLAS':
@@ -2946,7 +2954,7 @@ export function buildCreateXml(
                  adtcore:type="CLAS/OC"
                  adtcore:masterLanguage="${masterLanguage}"
                  adtcore:masterSystem="H00"
-                 adtcore:responsible="DEVELOPER">
+                 adtcore:responsible="${escapeXml(responsibleUser)}">
   <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
 </class:abapClass>`;
     case 'INTF':
@@ -2958,7 +2966,7 @@ export function buildCreateXml(
                     adtcore:type="INTF/OI"
                     adtcore:masterLanguage="${masterLanguage}"
                     adtcore:masterSystem="H00"
-                    adtcore:responsible="DEVELOPER">
+                    adtcore:responsible="${escapeXml(responsibleUser)}">
   <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
 </intf:abapInterface>`;
     case 'INCL':
@@ -2970,7 +2978,7 @@ export function buildCreateXml(
                      adtcore:type="PROG/I"
                      adtcore:masterLanguage="${masterLanguage}"
                      adtcore:masterSystem="H00"
-                     adtcore:responsible="DEVELOPER">
+                     adtcore:responsible="${escapeXml(responsibleUser)}">
   <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
 </include:abapInclude>`;
     case 'DDLS':
@@ -2982,7 +2990,7 @@ export function buildCreateXml(
                adtcore:type="DDLS/DF"
                adtcore:masterLanguage="${masterLanguage}"
                adtcore:masterSystem="H00"
-                 adtcore:responsible="DEVELOPER">
+                 adtcore:responsible="${escapeXml(responsibleUser)}">
   <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
 </ddl:ddlSource>`;
     case 'DCLS':
@@ -2994,7 +3002,7 @@ export function buildCreateXml(
                adtcore:type="DCLS/DL"
                adtcore:masterLanguage="${masterLanguage}"
                adtcore:masterSystem="H00"
-               adtcore:responsible="DEVELOPER">
+               adtcore:responsible="${escapeXml(responsibleUser)}">
   <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
 </dcl:dclSource>`;
     case 'TABL':
@@ -3012,7 +3020,7 @@ export function buildCreateXml(
                  adtcore:type="${adtType}"
                  adtcore:masterLanguage="${masterLanguage}"
                  adtcore:masterSystem="H00"
-                 adtcore:responsible="DEVELOPER">
+                 adtcore:responsible="${escapeXml(responsibleUser)}">
   <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
 </blue:blueSource>`;
     }
@@ -3027,7 +3035,7 @@ export function buildCreateXml(
                  adtcore:type="BDEF/BDO"
                  adtcore:masterLanguage="${masterLanguage}"
                  adtcore:masterSystem="H00"
-                 adtcore:responsible="DEVELOPER">
+                 adtcore:responsible="${escapeXml(responsibleUser)}">
   <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
 </blue:blueSource>`;
     case 'SRVD':
@@ -3039,7 +3047,7 @@ export function buildCreateXml(
                  adtcore:type="SRVD/SRV"
                  adtcore:masterLanguage="${masterLanguage}"
                  adtcore:masterSystem="H00"
-                 adtcore:responsible="DEVELOPER"
+                 adtcore:responsible="${escapeXml(responsibleUser)}"
                  srvd:srvdSourceType="S">
   <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
 </srvd:srvdSource>`;
@@ -3061,6 +3069,7 @@ export function buildCreateXml(
         version: properties?.version ? String(properties.version) : undefined,
         odataVersion: properties?.odataVersion ? String(properties.odataVersion) : undefined,
         language: masterLanguage,
+        responsible: responsibleUser,
       };
       return buildServiceBindingXml(params);
     }
@@ -3073,7 +3082,7 @@ export function buildCreateXml(
                  adtcore:type="DDLX/EX"
                  adtcore:masterLanguage="${masterLanguage}"
                  adtcore:masterSystem="H00"
-                     adtcore:responsible="DEVELOPER">
+                     adtcore:responsible="${escapeXml(responsibleUser)}">
   <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
 </ddlx:ddlxSource>`;
     case 'DOMA': {
@@ -3100,6 +3109,7 @@ export function buildCreateXml(
         fixedValues,
         valueTable: properties?.valueTable ? String(properties.valueTable) : undefined,
         language: masterLanguage,
+        responsible: responsibleUser,
       };
       return buildDomainXml(params);
     }
@@ -3127,6 +3137,7 @@ export function buildCreateXml(
         defaultComponentName: properties?.defaultComponentName ? String(properties.defaultComponentName) : undefined,
         changeDocument: toBoolean(properties?.changeDocument),
         language: masterLanguage,
+        responsible: responsibleUser,
       };
       return buildDataElementXml(params);
     }
@@ -4079,7 +4090,7 @@ async function handleSAPWrite(
         const mergedProps = await mergeMetadataWriteProperties(client, type, name, metadataProps);
         const description = String(args.description ?? mergedProps._description ?? name);
         const pkg = String(args.package ?? existingPackage ?? mergedProps._package ?? '$TMP');
-        const body = buildCreateXml(type, name, pkg, description, mergedProps, config.language);
+        const body = buildCreateXml(type, name, pkg, description, mergedProps, config.language, config.username);
         await safeUpdateObject(
           client.http,
           client.safety,
@@ -4340,7 +4351,7 @@ async function handleSAPWrite(
       // SAP ADT requires the root element to match the object type —
       // a generic objectReferences body returns 400 "System expected the element ...".
       const metadataProperties = getMetadataWriteProperties(args);
-      const body = buildCreateXml(type, name, pkg, description, metadataProperties, config.language);
+      const body = buildCreateXml(type, name, pkg, description, metadataProperties, config.language, config.username);
 
       // Step 1: Create the object (metadata only)
       const createUrl = objectUrl.replace(/\/[^/]+$/, ''); // parent collection URL
@@ -5455,7 +5466,15 @@ async function handleSAPWrite(
           const objUrl = objectUrlForType(objType, objName);
           const createUrl = objUrl.replace(/\/[^/]+$/, '');
           const objMetadataProps = getMetadataWriteProperties(obj);
-          const body = buildCreateXml(objType, objName, objPackage, objDescription, objMetadataProps, config.language);
+          const body = buildCreateXml(
+            objType,
+            objName,
+            objPackage,
+            objDescription,
+            objMetadataProps,
+            config.language,
+            config.username,
+          );
           const contentType = createContentTypeForType(objType);
           const needsPackageParam =
             objType === 'BDEF' || objType === 'TABL' || objType === 'TABL/DT' || objType === 'TABL/DS';
@@ -7787,6 +7806,7 @@ async function handleSAPManage(
         transportLayer: transportLayer || undefined,
         recordChanges,
         packageType,
+        responsible: config.username,
       });
 
       await createObject(

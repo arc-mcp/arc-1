@@ -6,6 +6,7 @@ import {
   buildPackageXml,
   buildServiceBindingXml,
   decodeKtdText,
+  normalizeAdtResponsible,
   normalizeSrvbBindingType,
   rewriteKtdText,
 } from '../../../src/adt/ddic-xml.js';
@@ -89,6 +90,79 @@ describe('ddic-xml builders', () => {
         language: '   ',
       });
       expect(xml).toContain('adtcore:masterLanguage="EN"');
+    });
+  });
+
+  // Sibling of issue #343, for adtcore:responsible: the created object's "person
+  // responsible" must name a real user on the target system. The legacy hard-coded
+  // "DEVELOPER" only exists on SAP demo systems — on a real system the create fails
+  // with HTTP 400 [?/049] "Enter a valid user, not DEVELOPER, as the person
+  // responsible". ARC-1 threads the connection's logon user (config.username) instead.
+  describe('person responsible (adtcore:responsible)', () => {
+    it('buildPackageXml emits the configured responsible', () => {
+      const xml = buildPackageXml({ name: 'ZTEST', description: 'd', responsible: 'SRAHEMI' });
+      expect(xml).toContain('adtcore:responsible="SRAHEMI"');
+    });
+
+    it('buildPackageXml defaults responsible to DEVELOPER when unset', () => {
+      const xml = buildPackageXml({ name: 'ZTEST', description: 'd' });
+      expect(xml).toContain('adtcore:responsible="DEVELOPER"');
+    });
+
+    it('buildDomainXml emits the configured responsible', () => {
+      const xml = buildDomainXml({
+        name: 'ZD',
+        description: 'd',
+        package: '$TMP',
+        dataType: 'CHAR',
+        length: 1,
+        responsible: 'SRAHEMI',
+      });
+      expect(xml).toContain('adtcore:responsible="SRAHEMI"');
+    });
+
+    it('buildDataElementXml emits the configured responsible', () => {
+      const xml = buildDataElementXml({ name: 'ZE', description: 'd', package: '$TMP', responsible: 'SRAHEMI' });
+      expect(xml).toContain('adtcore:responsible="SRAHEMI"');
+    });
+
+    it('buildServiceBindingXml emits the configured responsible', () => {
+      const xml = buildServiceBindingXml({
+        name: 'ZSB',
+        description: 'd',
+        package: '$TMP',
+        serviceDefinition: 'ZSD',
+        responsible: 'SRAHEMI',
+      });
+      expect(xml).toContain('adtcore:responsible="SRAHEMI"');
+    });
+
+    it('defaults responsible to DEVELOPER across DDIC builders when unset', () => {
+      expect(buildDomainXml({ name: 'ZD', description: 'd', package: '$TMP', dataType: 'CHAR', length: 1 })).toContain(
+        'adtcore:responsible="DEVELOPER"',
+      );
+      expect(buildDataElementXml({ name: 'ZE', description: 'd', package: '$TMP' })).toContain(
+        'adtcore:responsible="DEVELOPER"',
+      );
+      expect(
+        buildServiceBindingXml({ name: 'ZSB', description: 'd', package: '$TMP', serviceDefinition: 'ZSD' }),
+      ).toContain('adtcore:responsible="DEVELOPER"');
+    });
+
+    it('upper-cases a lower-case responsible', () => {
+      const xml = buildPackageXml({ name: 'ZTEST', description: 'd', responsible: 'srahemi' });
+      expect(xml).toContain('adtcore:responsible="SRAHEMI"');
+    });
+
+    it('treats a blank responsible as the DEVELOPER default', () => {
+      const xml = buildPackageXml({ name: 'ZTEST', description: 'd', responsible: '   ' });
+      expect(xml).toContain('adtcore:responsible="DEVELOPER"');
+    });
+
+    it('normalizeAdtResponsible trims + upper-cases and defaults to DEVELOPER', () => {
+      expect(normalizeAdtResponsible('  srahemi ')).toBe('SRAHEMI');
+      expect(normalizeAdtResponsible()).toBe('DEVELOPER');
+      expect(normalizeAdtResponsible('   ')).toBe('DEVELOPER');
     });
   });
 

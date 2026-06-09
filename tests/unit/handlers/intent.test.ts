@@ -11948,6 +11948,115 @@ ENDCLASS.`;
     });
   });
 
+  // ─── create wiring: person responsible (adtcore:responsible) ─────────
+
+  describe('create/update/batch — person responsible wiring (adtcore:responsible)', () => {
+    function dtelCreatePostBody(): string | undefined {
+      const call = mockFetch.mock.calls.find(
+        (c: any[]) => String(c[0]).includes('/sap/bc/adt/ddic/dataelements') && c[1]?.method === 'POST',
+      );
+      return call?.[1]?.body as string | undefined;
+    }
+
+    function packageCreatePostBody(): string | undefined {
+      const call = mockFetch.mock.calls.find(
+        (c: any[]) => String(c[0]).includes('/sap/bc/adt/packages') && c[1]?.method === 'POST',
+      );
+      return call?.[1]?.body as string | undefined;
+    }
+
+    it('threads config.username into the create_package POST body', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, '<xml>created</xml>', { 'x-csrf-token': 'T' }));
+      const result = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, username: 'SRAHEMI' }, 'SAPManage', {
+        action: 'create_package',
+        name: 'ZARC1_RESP',
+        description: 'Responsible wiring test',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(packageCreatePostBody()).toContain('adtcore:responsible="SRAHEMI"');
+    });
+
+    it('threads config.username into the DTEL create POST body', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(201, '<blue:wbobj/>', { 'x-csrf-token': 't' }));
+      const result = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, username: 'SRAHEMI' }, 'SAPWrite', {
+        action: 'create',
+        type: 'DTEL',
+        name: 'ZARC1_RESP_UNIT',
+        description: 'Responsible test',
+        package: '$TMP',
+        typeKind: 'predefinedAbapType',
+        dataType: 'CHAR',
+        length: 10,
+      });
+      expect(result.isError).toBeFalsy();
+      expect(dtelCreatePostBody()).toContain('adtcore:responsible="SRAHEMI"');
+    });
+
+    it('falls back to DEVELOPER in the create_package POST body when username is unset', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, '<xml>created</xml>', { 'x-csrf-token': 'T' }));
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
+        action: 'create_package',
+        name: 'ZARC1_RESP_DEF',
+        description: 'Responsible default test',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(packageCreatePostBody()).toContain('adtcore:responsible="DEVELOPER"');
+    });
+
+    // The metadata-UPDATE call site is full-XML-replace via buildCreateXml, so it
+    // threads config.username too (not just the create paths). ADT keeps the
+    // create-time owner on update, but the body must still name a real user — the
+    // legacy "DEVELOPER" would otherwise re-trip [?/049] on a no-DEVELOPER system.
+    it('threads config.username into the DTEL update PUT body', async () => {
+      const lockBody =
+        '<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><LOCK_HANDLE>H1</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL></DATA></asx:values></asx:abap>';
+      mockFetch.mockReset();
+      let putBody: string | undefined;
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string; body?: string }) => {
+        const method = opts?.method ?? 'GET';
+        if (method === 'POST' && String(url).includes('_action=LOCK')) {
+          return Promise.resolve(mockResponse(200, lockBody, { 'x-csrf-token': 'T' }));
+        }
+        if (method === 'PUT') putBody = String(opts?.body ?? '');
+        return Promise.resolve(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, username: 'SRAHEMI' }, 'SAPWrite', {
+        action: 'update',
+        type: 'DTEL',
+        name: 'ZSTATUS',
+        package: '$TMP',
+        typeKind: 'domain',
+        typeName: 'ZSTATUS',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(putBody).toContain('adtcore:responsible="SRAHEMI"');
+    });
+
+    it('threads config.username into the batch_create create POST body', async () => {
+      mockFetch.mockReset();
+      const posts: Array<{ url: string; body: string }> = [];
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string; body?: string }) => {
+        if (opts?.method === 'POST') posts.push({ url: String(url), body: String(opts?.body ?? '') });
+        return Promise.resolve(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, username: 'SRAHEMI' }, 'SAPWrite', {
+        action: 'batch_create',
+        package: '$TMP',
+        objects: [{ type: 'DTEL', name: 'ZSTATUS', typeKind: 'predefinedAbapType', dataType: 'CHAR', length: 10 }],
+      });
+
+      expect(result.isError).toBeUndefined();
+      const dtelPost = posts.find((p) => p.url.includes('/sap/bc/adt/ddic/dataelements'));
+      expect(dtelPost?.body).toContain('adtcore:responsible="SRAHEMI"');
+    });
+  });
+
   // ─── buildCreateXml ─────────────────────────────────────────────────
 
   describe('buildCreateXml', () => {
@@ -11985,6 +12094,40 @@ ENDCLASS.`;
 
       it('normalizes a lower-case language to upper case', () => {
         expect(buildCreateXml('CLAS', 'ZCL', '$TMP', 'C', undefined, 'de')).toContain('adtcore:masterLanguage="DE"');
+      });
+    });
+
+    // Sibling of #343, for adtcore:responsible (7th arg = config.username). The legacy
+    // hard-coded "DEVELOPER" fails on real systems with 400 [?/049]; thread the logon user.
+    describe('person responsible (adtcore:responsible)', () => {
+      it('threads the configured responsible into source objects (7th arg)', () => {
+        const xml = buildCreateXml('PROG', 'ZHELLO', 'ZPACKAGE', 'Hello', undefined, 'EN', 'SRAHEMI');
+        expect(xml).toContain('adtcore:responsible="SRAHEMI"');
+      });
+
+      it('threads the configured responsible into DOMA/DTEL/SRVB create XML', () => {
+        expect(
+          buildCreateXml('DOMA', 'ZDOM', '$TMP', 'Dom', { dataType: 'CHAR', length: 1 }, 'EN', 'SRAHEMI'),
+        ).toContain('adtcore:responsible="SRAHEMI"');
+        expect(
+          buildCreateXml('DTEL', 'ZEL', '$TMP', 'El', { dataType: 'CHAR', length: 10 }, 'EN', 'SRAHEMI'),
+        ).toContain('adtcore:responsible="SRAHEMI"');
+        expect(buildCreateXml('SRVB', 'ZSB', '$TMP', 'SB', { serviceDefinition: 'ZSD' }, 'EN', 'SRAHEMI')).toContain(
+          'adtcore:responsible="SRAHEMI"',
+        );
+      });
+
+      it('defaults responsible to DEVELOPER when no responsible arg is passed', () => {
+        expect(buildCreateXml('PROG', 'ZHELLO', 'ZPACKAGE', 'Hello')).toContain('adtcore:responsible="DEVELOPER"');
+        expect(buildCreateXml('CLAS', 'ZCL', '$TMP', 'C', undefined, 'EN')).toContain(
+          'adtcore:responsible="DEVELOPER"',
+        );
+      });
+
+      it('normalizes a lower-case responsible to upper case', () => {
+        expect(buildCreateXml('CLAS', 'ZCL', '$TMP', 'C', undefined, 'EN', 'srahemi')).toContain(
+          'adtcore:responsible="SRAHEMI"',
+        );
       });
     });
 

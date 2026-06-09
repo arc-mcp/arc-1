@@ -26,6 +26,8 @@ export interface DomainCreateParams {
   valueTable?: string;
   /** ADT master/original language (2-char, e.g. "DE"). Defaults to "EN" when unset. */
   language?: string;
+  /** ADT "person responsible" (logon user). Defaults to "DEVELOPER" when unset. */
+  responsible?: string;
 }
 
 export interface DataElementCreateParams {
@@ -49,6 +51,8 @@ export interface DataElementCreateParams {
   changeDocument?: boolean;
   /** ADT master/original language (2-char, e.g. "DE"). Defaults to "EN" when unset. */
   language?: string;
+  /** ADT "person responsible" (logon user). Defaults to "DEVELOPER" when unset. */
+  responsible?: string;
 }
 
 export interface PackageCreateParams {
@@ -64,6 +68,8 @@ export interface PackageCreateParams {
    * from transportability metadata and keeps literal LOCAL packages off.
    */
   recordChanges?: boolean;
+  /** ADT "person responsible" (logon user). Defaults to "DEVELOPER" when unset. */
+  responsible?: string;
 }
 
 export interface ServiceBindingCreateParams {
@@ -77,6 +83,8 @@ export interface ServiceBindingCreateParams {
   odataVersion?: string;
   /** ADT master/original language (2-char, e.g. "DE"). Defaults to "EN" when unset. */
   language?: string;
+  /** ADT "person responsible" (logon user). Defaults to "DEVELOPER" when unset. */
+  responsible?: string;
 }
 
 /**
@@ -137,6 +145,26 @@ export function normalizeAdtLanguage(language?: string): string {
   return (language ?? '').trim().toUpperCase() || 'EN';
 }
 
+/**
+ * Normalize the ADT "person responsible" to the form SAP expects: trimmed and
+ * upper-case (on-prem `USR02-BNAME` is upper-case). Defaults to "DEVELOPER"
+ * only as a last-resort fallback when no user is configured, preserving the
+ * legacy hard-coded value for callers that pass nothing. In practice
+ * `config.username` is empty only under cookie-file or OAuth service-key auth
+ * (basic auth and principal propagation both supply a real user), so the
+ * "DEVELOPER" fallback realistically applies only in those two modes.
+ *
+ * `adtcore:responsible` must name a user that exists on the target system. The
+ * historical hard-coded literal "DEVELOPER" only exists on SAP's own demo
+ * systems; on a real system the create fails with
+ * `HTTP 400 [?/049] "Enter a valid user, not DEVELOPER, as the person responsible"`.
+ * Threading the connection's logon user (ARC-1 passes it as `config.username`)
+ * fixes that. Mirrors the `normalizeAdtLanguage` / issue #343 master-language pattern.
+ */
+export function normalizeAdtResponsible(responsible?: string): string {
+  return (responsible ?? '').trim().toUpperCase() || 'DEVELOPER';
+}
+
 function escapeXml(s: string): string {
   return s
     .replace(/&/g, '&amp;')
@@ -172,6 +200,7 @@ function boolToXml(value: boolean | undefined): string {
 
 export function buildDomainXml(params: DomainCreateParams): string {
   const masterLanguage = normalizeAdtLanguage(params.language);
+  const responsible = normalizeAdtResponsible(params.responsible);
   const fixedValues = params.fixedValues ?? [];
   const valueTable = params.valueTable?.trim();
   const fixValuesXml =
@@ -198,7 +227,7 @@ export function buildDomainXml(params: DomainCreateParams): string {
              adtcore:type="DOMA/DD"
              adtcore:masterLanguage="${masterLanguage}"
              adtcore:masterSystem="H00"
-             adtcore:responsible="DEVELOPER">
+             adtcore:responsible="${escapeXml(responsible)}">
   <adtcore:packageRef adtcore:name="${escapeXml(params.package)}"/>
   <doma:content>
     <doma:typeInformation>
@@ -259,6 +288,7 @@ export function buildMessageClassXml(params: MessageClassCreateParams): string {
 
 export function buildDataElementXml(params: DataElementCreateParams): string {
   const masterLanguage = normalizeAdtLanguage(params.language);
+  const responsible = normalizeAdtResponsible(params.responsible);
   const typeKind = params.typeKind ?? (params.dataType ? 'predefinedAbapType' : 'domain');
   const shortLabel = params.shortLabel ?? '';
   const mediumLabel = params.mediumLabel ?? '';
@@ -274,7 +304,7 @@ export function buildDataElementXml(params: DataElementCreateParams): string {
             adtcore:type="DTEL/DE"
             adtcore:masterLanguage="${masterLanguage}"
             adtcore:masterSystem="H00"
-            adtcore:responsible="DEVELOPER">
+            adtcore:responsible="${escapeXml(responsible)}">
   <adtcore:packageRef adtcore:name="${escapeXml(params.package)}"/>
   <dtel:dataElement xmlns:dtel="http://www.sap.com/adt/dictionary/dataelements">
     <dtel:typeKind>${escapeXml(typeKind)}</dtel:typeKind>
@@ -314,6 +344,7 @@ export function buildPackageXml(params: PackageCreateParams): string {
   const normalizedSoftwareComponent = softwareComponent.toUpperCase();
   const isLocalSoftwareComponent = normalizedSoftwareComponent === 'LOCAL';
   const recordChanges = params.recordChanges ?? (!isLocalSoftwareComponent || transportLayer !== '');
+  const responsible = normalizeAdtResponsible(params.responsible);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <pak:package xmlns:pak="http://www.sap.com/adt/packages"
@@ -322,7 +353,7 @@ export function buildPackageXml(params: PackageCreateParams): string {
              adtcore:name="${escapeXml(params.name)}"
              adtcore:type="DEVC/K"
              adtcore:version="active"
-             adtcore:responsible="DEVELOPER">
+             adtcore:responsible="${escapeXml(responsible)}">
   <adtcore:packageRef adtcore:name="${escapeXml(params.name)}"/>
   <pak:attributes pak:packageType="${escapeXml(packageType)}" pak:recordChanges="${boolToXml(recordChanges)}"/>
   <pak:superPackage adtcore:name="${escapeXml(superPackage)}"/>
@@ -346,6 +377,7 @@ export function buildServiceBindingXml(params: ServiceBindingCreateParams): stri
   const odataVersion = params.odataVersion?.trim().toUpperCase() || normalized.odataVersion;
   const serviceVersion = params.version?.trim() || '0001';
   const masterLanguage = normalizeAdtLanguage(params.language);
+  const responsible = normalizeAdtResponsible(params.responsible);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <srvb:serviceBinding xmlns:srvb="http://www.sap.com/adt/ddic/ServiceBindings"
@@ -355,7 +387,7 @@ export function buildServiceBindingXml(params: ServiceBindingCreateParams): stri
                      adtcore:type="SRVB/SVB"
                      adtcore:language="${masterLanguage}"
                      adtcore:masterLanguage="${masterLanguage}"
-                     adtcore:responsible="DEVELOPER">
+                     adtcore:responsible="${escapeXml(responsible)}">
   <adtcore:packageRef adtcore:name="${escapeXml(params.package)}"/>
   <srvb:services srvb:name="${escapeXml(params.name)}">
     <srvb:content srvb:version="${escapeXml(serviceVersion)}">
