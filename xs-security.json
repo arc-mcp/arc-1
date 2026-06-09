@@ -85,6 +85,6 @@
     ],
     "grant-types": ["authorization_code", "refresh_token"],
     "token-validity": 3600,
-    "refresh-token-validity": 43200
+    "refresh-token-validity": 2592000
   }
 }
