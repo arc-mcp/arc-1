@@ -1,15 +1,15 @@
 ---
-# Cloud Foundry manifest — ARC-1 multi-system (DS7 + VS7) instance.
+# Cloud Foundry manifest — ARC-1 multi-system instance.
 #
-# Replaces the two separate arc1-ds7 / arc1-vs7 deployments with a single app
-# that routes tool calls to the right system via the `system` parameter.
+# A single ARC-1 deployment that routes tool calls to N SAP systems via the
+# `system` parameter. Each system gets its own safety profile ceiling.
 #
-# Primary system (SAP_BTP_DESTINATION) = DS7 (developer profile, writes enabled)
-# Secondary system via ARC1_SYSTEMS    = VS7 (viewer-data profile, read-only)
+# Primary system (SAP_BTP_DESTINATION)  = routes when `system` is omitted
+# Secondary systems via ARC1_SYSTEMS    = routed when `system=<alias>` is passed
 #
 # ARC1_SYSTEMS format: alias:dest_basic:dest_pp[:profile],...
-#   - dest_basic = BasicAuthentication destination (used at startup to build the shared client)
-#   - dest_pp    = PrincipalPropagation destination  (used at request time for PP)
+#   - dest_basic = BasicAuthentication destination (shared client built at startup)
+#   - dest_pp    = PrincipalPropagation destination  (per-user, built at request time)
 #   - profile    = safety ceiling for that system (viewer|viewer-data|developer|admin|...)
 #
 # To deploy:
@@ -17,7 +17,7 @@
 #   cf push -f manifest-multi.yml
 #
 # To set secrets (do NOT commit these):
-#   cf set-env arc1-multi ARC1_API_KEYS "<key>:admin"
+#   cf set-env <app-name> ARC1_API_KEYS "<key>:admin"
 #
 applications:
   - name: arc1-multi
@@ -33,17 +33,17 @@ applications:
       SAP_TRANSPORT: "http-streamable"
       SAP_SYSTEM_TYPE: "auto"
       SAP_LANGUAGE: "EN"
-      SAP_INSECURE: "true"
+      SAP_INSECURE: "false"
       SAP_XSUAA_AUTH: "true"
 
-      # ── Primary system: DS7 ───────────────────────────────────────────
+      # ── Primary system ────────────────────────────────────────────────
       # Omitting `system` in a tool call routes here.
-      SAP_BTP_DESTINATION: "MCP_arc1_DS7_service"
-      SAP_BTP_PP_DESTINATION: "MCP_arc1_DS7"
+      SAP_BTP_DESTINATION: "MY_PRIMARY_BTP_DEST_SERVICE"
+      SAP_BTP_PP_DESTINATION: "MY_PRIMARY_BTP_PP_DEST"
       SAP_PP_ENABLED: "true"
       SAP_PP_STRICT: "true"
 
-      # Safety ceiling for the primary system (DS7)
+      # Safety ceiling for the primary system
       SAP_ALLOW_WRITES: "true"
       SAP_ALLOW_DATA_PREVIEW: "true"
       SAP_ALLOW_FREE_SQL: "false"
@@ -52,15 +52,12 @@ applications:
 
       # ── Secondary systems ─────────────────────────────────────────────
       # Format: alias:dest_basic:dest_pp[:profile]
-      # VS7 is read-only (viewer-data) — its profile acts as an extra ceiling
-      # on top of the server-wide safety config above.
-      ARC1_SYSTEMS: "vs7:MCP_arc1_VS7_service:MCP_arc1_VS7:viewer-data"
-
-      # Logging
-      SAP_VERBOSE: "true"
+      # Add one entry per additional system, comma-separated.
+      # Example: a read-only secondary system with viewer-data profile.
+      ARC1_SYSTEMS: "system1:MY_BTP_DEST_SERVICE:MY_BTP_PP_DEST:developer,system2:MY_BTP_DEST2_SERVICE:MY_BTP_PP_DEST2:viewer-data"
 
     services:
-      - arc1-xsuaa
-      - arc1-destination
-      - arc1-connectivity
-      - arc1-application-logs
+      - my-xsuaa
+      - my-destination
+      - my-connectivity
+      - my-application-logs
