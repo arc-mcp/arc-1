@@ -12,7 +12,7 @@ vi.mock('undici', async (importOriginal) => {
   return { ...actual, fetch: mockFetch };
 });
 
-const { AdtClient } = await import('../../../src/adt/client.js');
+const { AdtClient, clampSearchResults } = await import('../../../src/adt/client.js');
 
 const fixturesDir = join(import.meta.dirname, '../../fixtures/xml');
 const loadFixture = (name: string) => readFileSync(join(fixturesDir, name), 'utf-8');
@@ -1530,6 +1530,49 @@ describe('AdtClient', () => {
       await client.runTableQuery('T000', { maxRows: Number.NaN });
       const postCall = mockFetch.mock.calls.find((c) => String(c[0]).includes('/datapreview/freestyle'));
       expect(String(postCall?.[0])).toContain('rowNumber=100');
+    });
+  });
+
+  describe('result-limit clamping (unbounded count DoS guard)', () => {
+    it('clampSearchResults bounds to [1, 1000] and falls back on invalid input', () => {
+      expect(clampSearchResults(50, 100)).toBe(50);
+      expect(clampSearchResults(5000, 100)).toBe(1000); // capped
+      expect(clampSearchResults(12.9, 100)).toBe(12); // floored
+      expect(clampSearchResults(0, 100)).toBe(100); // <1 -> fallback
+      expect(clampSearchResults(-1, 50)).toBe(50);
+      expect(clampSearchResults(Number.NaN, 100)).toBe(100);
+      expect(clampSearchResults(undefined, 50)).toBe(50);
+    });
+
+    it('searchObject clamps an oversized maxResults in the query string', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, '<empty/>'));
+      const client = createClient();
+      await client.searchObject('Z*', 999_999);
+      expect(String(mockFetch.mock.calls[0]?.[0] ?? '')).toContain('maxResults=1000');
+    });
+
+    it('searchSource clamps an oversized maxResults in the query string', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, '<empty/>'));
+      const client = createClient();
+      await client.searchSource('foo', 999_999);
+      expect(String(mockFetch.mock.calls[0]?.[0] ?? '')).toContain('maxResults=1000');
+    });
+
+    it('getTableContents (TABLE_CONTENTS) clamps rowNumber to <= 10000 and NaN to the default', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, loadFixture('table-contents.xml'), { 'x-csrf-token': 'T' }));
+      const client = createClient();
+      await client.getTableContents('MARA', 999_999);
+      const big = mockFetch.mock.calls.find((c) => String(c[0]).includes('/datapreview/ddic'));
+      expect(String(big?.[0])).toContain('rowNumber=10000');
+
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, loadFixture('table-contents.xml'), { 'x-csrf-token': 'T' }));
+      await client.getTableContents('MARA', Number.NaN);
+      const nan = mockFetch.mock.calls.find((c) => String(c[0]).includes('/datapreview/ddic'));
+      expect(String(nan?.[0])).toContain('rowNumber=100');
     });
   });
 

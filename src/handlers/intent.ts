@@ -7322,7 +7322,10 @@ async function handleSAPContext(
   const rawType = String(args.type ?? '');
   const type = normalizeObjectType(rawType || (action === 'impact' ? 'DDLS' : ''));
   const name = String(args.name ?? '');
-  const maxDeps = Number(args.maxDeps ?? 20);
+  // Bound dependency fan-out: a huge maxDeps would fan out unbounded SAP fetches per level
+  // (depth is already capped at 3). Clamp to [1, 100]; non-finite/<1 falls back to the default 20.
+  const rawMaxDeps = Number(args.maxDeps ?? 20);
+  const maxDeps = Number.isFinite(rawMaxDeps) && rawMaxDeps >= 1 ? Math.min(Math.floor(rawMaxDeps), 100) : 20;
   const depth = Math.min(Math.max(Number(args.depth ?? 1), 1), 3);
 
   // ─── Reverse dep lookup (pre-warmer only) ─────────────────────────
