@@ -235,6 +235,59 @@ After this sequence:
 
 This is the only operation that invalidates DCR state. Routine restarts (`cf restart`, `cf push` without rebind, cell moves) no longer disrupt clients.
 
+### Recovering a stuck client (`invalid_client`)
+
+When a cached `client_id` stops validating — after a redeploy that rotated the signing key (above), after the DCR TTL expires, or after a forced key rotation — the MCP client fails on connect with `invalid_client` / `Invalid client_id` / "invalid Client ID". Fixing it has two halves: **stop it happening** (server side, above) and **clear the stale registration the client already cached** (client side, here).
+
+**Most clients self-heal.** Claude Desktop, VS Code's MCP client, and MCP Inspector detect `invalid_client` and silently re-register via `/register` on the next connect — no action needed. **Some clients cache the `client_id` and do *not* re-register automatically** — notably **Eclipse GitHub Copilot** and **Cursor** — and need a one-time manual reset.
+
+#### Eclipse GitHub Copilot
+
+Eclipse's Copilot language server caches each server's DCR registration in a small SQLite database, keyed by the MCP server **URL** (so renaming the server in your config does *not* clear it). It does not re-register on `invalid_client`, so it stays stuck until you clear the cache.
+
+1. **Quit Eclipse completely first** — it writes its in-memory state back on exit, so editing the file while it runs won't stick.
+2. **Locate the cache:**
+
+   | OS | Path |
+   |----|------|
+   | macOS / Linux | `~/.config/github-copilot/copilot-eclipse.db` |
+   | Windows | `%LOCALAPPDATA%\github-copilot\copilot-eclipse.db` (i.e. `C:\Users\<you>\AppData\Local\github-copilot\copilot-eclipse.db`) |
+
+3. **Clear the cached registration** — either approach works:
+
+   - **Surgical** (keeps your other MCP servers signed in) — needs the `sqlite3` CLI (preinstalled on macOS and most Linux; on Windows install it or use [DB Browser for SQLite](https://sqlitebrowser.org/)):
+
+     ```bash
+     # clear every cached MCP/DCR registration:
+     sqlite3 ~/.config/github-copilot/copilot-eclipse.db \
+       "DELETE FROM state WHERE key LIKE 'dynamicAuthProvider:%';"
+
+     # …or only your server (use a substring of its host):
+     sqlite3 ~/.config/github-copilot/copilot-eclipse.db \
+       "DELETE FROM state WHERE key LIKE 'dynamicAuthProvider:%your-app.cfapps%';"
+     ```
+
+   - **Simplest** (no tools) — delete the whole file; Eclipse recreates it on next launch. You stay signed into Copilot itself (that lives in a separate `auth.db`); you just re-authorize the MCP server:
+
+     ```bash
+     # macOS / Linux
+     rm ~/.config/github-copilot/copilot-eclipse.db
+     ```
+     ```powershell
+     # Windows (PowerShell)
+     Remove-Item "$env:LOCALAPPDATA\github-copilot\copilot-eclipse.db"
+     ```
+
+4. **Reopen Eclipse** → it re-runs `/register`, mints a fresh `client_id`, and prompts you to authorize again.
+
+> A healthy ARC-1 `client_id` looks like `arc1-eyJ2Ijox…` (~280+ chars — a base64 payload plus a `.signature`). A short `arc1-<8 hex>` id predates the stateless store and is always rejected; clear it the same way.
+
+#### Cursor
+
+Cursor also caches the registration and may not re-register on `invalid_client`. The reliable reset is to **remove the MCP server entry, restart Cursor, then re-add it** (it re-runs DCR for the fresh entry).
+
+> **Prevention beats cure:** set `ARC1_DCR_SIGNING_SECRET` and `ARC1_OAUTH_DCR_TTL_SECONDS=0` ([above](#stable-dcr-signing-key-recommended)). With a stable signing key and no expiry, cached `client_id`s stay valid across redeploys, so these manual resets become a one-time event instead of a recurring chore after every deploy.
+
 ### Browser-based DCR clients (rare)
 
 The four MCP clients in the section above (Claude Desktop, Cursor, MCP Inspector, Copilot Studio) all run as native processes — they call `/register` and `/authorize` over native HTTP, not the browser `fetch` API, and never trigger CORS. If a browser-based MCP client (custom playground, embedded widget) calls these OAuth endpoints from a different origin, you must add that origin to `ARC1_ALLOWED_ORIGINS`. See [Security headers & CORS](security-guide.md#cors-for-browser-based-mcp-clients-opt-in) for the full configuration.
