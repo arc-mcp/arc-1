@@ -235,7 +235,7 @@ After this sequence:
 
 This is the only operation that invalidates DCR state. Routine restarts (`cf restart`, `cf push` without rebind, cell moves) no longer disrupt clients.
 
-### Recovering a stuck client (`invalid_client` / `invalid_token`)
+### Recovering a stuck client
 
 After a client has been connected for a while it can fail with one of two errors. They look alike but invalidate **different things, so they have different fixes**:
 
