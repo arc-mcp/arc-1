@@ -202,6 +202,25 @@ cf rollback arc1-mcp-server
   ```
 - **Scaled > 1 instance (`cf scale -i 2`):** rolling update handles each instance sequentially.
 
+### Keeping MCP clients signed in across updates
+
+Updating the image is invisible to connected MCP clients **as long as the OAuth DCR signing key doesn't change** — they keep their cached `client_id` and reconnect on their own. How you deploy decides that:
+
+- **`cf push` with a new image tag (recommended):** reuses the existing XSUAA binding, so the `clientsecret` — and the DCR signing key derived from it — is unchanged. Cached `client_id`s stay valid; clients reconnect with no re-auth.
+- **MTA `cf deploy`, or `cf unbind`/`cf bind` of XSUAA:** recreates the binding and **rotates the `clientsecret`**, which by default rotates the DCR signing key and invalidates every cached `client_id`. Clients then hit `invalid_client` — most re-register automatically, but Eclipse Copilot and Cursor need a one-time manual reset (see [Recovering a stuck client](xsuaa-setup.md#recovering-a-stuck-client-invalid_client)).
+
+**To make even MTA redeploys seamless, set a stable DCR signing key once** (via `cf set-env`, which survives deploys):
+
+```bash
+cf set-env arc1-mcp-server ARC1_DCR_SIGNING_SECRET "$(openssl rand -base64 48)"
+cf set-env arc1-mcp-server ARC1_OAUTH_DCR_TTL_SECONDS 0
+cf restage arc1-mcp-server
+```
+
+After this the signing key no longer tracks the rotating `clientsecret`, so no deploy invalidates client registrations. See [Stable DCR signing key](xsuaa-setup.md#stable-dcr-signing-key-recommended).
+
+Other restart side effects are benign: in-flight requests during the instance swap are retried by the client (a `--strategy rolling` push avoids even that), and the on-disk SQLite source cache is preserved and ETag-revalidated — no cold-cache penalty.
+
 ---
 
 ## git clone (development)

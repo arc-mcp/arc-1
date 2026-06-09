@@ -237,56 +237,51 @@ This is the only operation that invalidates DCR state. Routine restarts (`cf res
 
 ### Recovering a stuck client (`invalid_client`)
 
-When a cached `client_id` stops validating — after a redeploy that rotated the signing key (above), after the DCR TTL expires, or after a forced key rotation — the MCP client fails on connect with `invalid_client` / `Invalid client_id` / "invalid Client ID". Fixing it has two halves: **stop it happening** (server side, above) and **clear the stale registration the client already cached** (client side, here).
+**Why this happens.** An MCP client registers once via DCR and then *caches* the `client_id` it received. That `client_id` is an HMAC token signed by ARC-1's signing key, so it stops validating — and the client fails to connect with `invalid_client` / `Invalid client_id` / "invalid Client ID" — whenever that signing key changes underneath it. The usual cause is an **MTA `cf deploy` that rotated the XSUAA `clientsecret`** (the default signing key is derived from it), or the **DCR TTL expiring**. A plain `cf push` does not cause this.
 
-**Most clients self-heal.** Claude Desktop, VS Code's MCP client, and MCP Inspector detect `invalid_client` and silently re-register via `/register` on the next connect — no action needed. **Some clients cache the `client_id` and do *not* re-register automatically** — notably **Eclipse GitHub Copilot** and **Cursor** — and need a one-time manual reset.
+**The real fix is to prevent it — do this first.** Set [`ARC1_DCR_SIGNING_SECRET`](#stable-dcr-signing-key-recommended) plus `ARC1_OAUTH_DCR_TTL_SECONDS=0` on the server. With a stable signing key and no expiry, cached `client_id`s keep working across deploys and the problem disappears for every client. Everything below is only for a client that is *already* stuck.
+
+**Most clients recover on their own** — Claude Desktop, VS Code's MCP client, and MCP Inspector detect `invalid_client` and silently re-register on the next connect, nothing to do. A couple cache the `client_id` and don't re-register automatically — **Eclipse GitHub Copilot** and **Cursor**.
 
 #### Eclipse GitHub Copilot
 
-Eclipse's Copilot language server caches each server's DCR registration in a small SQLite database, keyed by the MCP server **URL** (so renaming the server in your config does *not* clear it). It does not re-register on `invalid_client`, so it stays stuck until you clear the cache.
+Eclipse Copilot has no built-in "restart MCP server" or "re-authenticate" action yet ([copilot-for-eclipse#237](https://github.com/microsoft/copilot-for-eclipse/issues/237)), and it won't re-register a stale `client_id` by itself. In order, **easiest first**:
 
-1. **Quit Eclipse completely first** — it writes its in-memory state back on exit, so editing the file while it runs won't stick.
-2. **Locate the cache:**
+1. **Restart Eclipse.** Usually enough — on a cold start the Copilot agent re-runs registration and prompts you to sign in again. Nothing is deleted and nothing is lost. Try this before anything else.
 
-   | OS | Path |
+2. **If a restart doesn't clear it, reset the cached login.** Eclipse Copilot stores its MCP sign-in state in one file, `copilot-eclipse.db`:
+
+   | OS | File |
    |----|------|
    | macOS / Linux | `~/.config/github-copilot/copilot-eclipse.db` |
-   | Windows | `%LOCALAPPDATA%\github-copilot\copilot-eclipse.db` (i.e. `C:\Users\<you>\AppData\Local\github-copilot\copilot-eclipse.db`) |
+   | Windows | `%LOCALAPPDATA%\github-copilot\copilot-eclipse.db` |
 
-3. **Clear the cached registration** — either approach works:
+   **Quit Eclipse first** (it rewrites the file on exit), delete that one file, then reopen Eclipse — it recreates the file and prompts you to sign in again. Deleting it sounds drastic but is low-impact:
 
-   - **Surgical** (keeps your other MCP servers signed in) — needs the `sqlite3` CLI (preinstalled on macOS and most Linux; on Windows install it or use [DB Browser for SQLite](https://sqlitebrowser.org/)):
+   - ✅ The only cost: you re-authorize your MCP server(s) once (a browser sign-in each).
+   - ❌ It does **not** sign you out of GitHub Copilot itself — that lives in a separate `auth.db`.
+   - ❌ It does **not** touch your code, workspaces, Eclipse preferences, or your configured MCP server list — only cached MCP auth tokens.
 
-     ```bash
-     # clear every cached MCP/DCR registration:
-     sqlite3 ~/.config/github-copilot/copilot-eclipse.db \
-       "DELETE FROM state WHERE key LIKE 'dynamicAuthProvider:%';"
+   ```bash
+   # macOS / Linux
+   rm ~/.config/github-copilot/copilot-eclipse.db
+   ```
+   ```powershell
+   # Windows (PowerShell)
+   Remove-Item "$env:LOCALAPPDATA\github-copilot\copilot-eclipse.db"
+   ```
 
-     # …or only your server (use a substring of its host):
-     sqlite3 ~/.config/github-copilot/copilot-eclipse.db \
-       "DELETE FROM state WHERE key LIKE 'dynamicAuthProvider:%your-app.cfapps%';"
-     ```
+   > Want to keep your *other* MCP servers signed in? If you have the `sqlite3` CLI, delete only ARC-1's rows instead of the whole file (the cache is keyed by server URL):
+   > ```bash
+   > sqlite3 ~/.config/github-copilot/copilot-eclipse.db \
+   >   "DELETE FROM state WHERE key LIKE 'dynamicAuthProvider:%your-app.cfapps%';"
+   > ```
 
-   - **Simplest** (no tools) — delete the whole file; Eclipse recreates it on next launch. You stay signed into Copilot itself (that lives in a separate `auth.db`); you just re-authorize the MCP server:
-
-     ```bash
-     # macOS / Linux
-     rm ~/.config/github-copilot/copilot-eclipse.db
-     ```
-     ```powershell
-     # Windows (PowerShell)
-     Remove-Item "$env:LOCALAPPDATA\github-copilot\copilot-eclipse.db"
-     ```
-
-4. **Reopen Eclipse** → it re-runs `/register`, mints a fresh `client_id`, and prompts you to authorize again.
-
-> A healthy ARC-1 `client_id` looks like `arc1-eyJ2Ijox…` (~280+ chars — a base64 payload plus a `.signature`). A short `arc1-<8 hex>` id predates the stateless store and is always rejected; clear it the same way.
+> Sanity check: a healthy ARC-1 `client_id` looks like `arc1-eyJ2Ijox…` (~280+ chars). A short `arc1-<8 hex>` id predates the stateless store and is always rejected — clear it the same way.
 
 #### Cursor
 
-Cursor also caches the registration and may not re-register on `invalid_client`. The reliable reset is to **remove the MCP server entry, restart Cursor, then re-add it** (it re-runs DCR for the fresh entry).
-
-> **Prevention beats cure:** set `ARC1_DCR_SIGNING_SECRET` and `ARC1_OAUTH_DCR_TTL_SECONDS=0` ([above](#stable-dcr-signing-key-recommended)). With a stable signing key and no expiry, cached `client_id`s stay valid across redeploys, so these manual resets become a one-time event instead of a recurring chore after every deploy.
+Cursor also caches the registration and may not re-register on `invalid_client`. Reset it by **removing the MCP server entry, restarting Cursor, then re-adding it**. With the stable signing key set (above), you only ever do this once.
 
 ### Browser-based DCR clients (rare)
 
