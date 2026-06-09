@@ -1,0 +1,66 @@
+---
+# Cloud Foundry manifest — ARC-1 multi-system (DS7 + VS7) instance.
+#
+# Replaces the two separate arc1-ds7 / arc1-vs7 deployments with a single app
+# that routes tool calls to the right system via the `system` parameter.
+#
+# Primary system (SAP_BTP_DESTINATION) = DS7 (developer profile, writes enabled)
+# Secondary system via ARC1_SYSTEMS    = VS7 (viewer-data profile, read-only)
+#
+# ARC1_SYSTEMS format: alias:dest_basic:dest_pp[:profile],...
+#   - dest_basic = BasicAuthentication destination (used at startup to build the shared client)
+#   - dest_pp    = PrincipalPropagation destination  (used at request time for PP)
+#   - profile    = safety ceiling for that system (viewer|viewer-data|developer|admin|...)
+#
+# To deploy:
+#   npm run build
+#   cf push -f manifest-multi.yml
+#
+# To set secrets (do NOT commit these):
+#   cf set-env arc1-multi ARC1_API_KEYS "<key>:admin"
+#
+applications:
+  - name: arc1-multi
+    buildpacks:
+      - nodejs_buildpack
+    instances: 1
+    memory: 256M
+    disk_quota: 512M
+    health-check-type: http
+    health-check-http-endpoint: /health
+    command: node --max-old-space-size=224 dist/index.js
+    env:
+      SAP_TRANSPORT: "http-streamable"
+      SAP_SYSTEM_TYPE: "auto"
+      SAP_LANGUAGE: "EN"
+      SAP_INSECURE: "true"
+      SAP_XSUAA_AUTH: "true"
+
+      # ── Primary system: DS7 ───────────────────────────────────────────
+      # Omitting `system` in a tool call routes here.
+      SAP_BTP_DESTINATION: "MCP_arc1_DS7_service"
+      SAP_BTP_PP_DESTINATION: "MCP_arc1_DS7"
+      SAP_PP_ENABLED: "true"
+      SAP_PP_STRICT: "true"
+
+      # Safety ceiling for the primary system (DS7)
+      SAP_ALLOW_WRITES: "true"
+      SAP_ALLOW_DATA_PREVIEW: "true"
+      SAP_ALLOW_FREE_SQL: "false"
+      SAP_ALLOW_TRANSPORT_WRITES: "false"
+      SAP_ALLOW_GIT_WRITES: "false"
+
+      # ── Secondary systems ─────────────────────────────────────────────
+      # Format: alias:dest_basic:dest_pp[:profile]
+      # VS7 is read-only (viewer-data) — its profile acts as an extra ceiling
+      # on top of the server-wide safety config above.
+      ARC1_SYSTEMS: "vs7:MCP_arc1_VS7_service:MCP_arc1_VS7:viewer-data"
+
+      # Logging
+      SAP_VERBOSE: "true"
+
+    services:
+      - arc1-xsuaa
+      - arc1-destination
+      - arc1-connectivity
+      - arc1-application-logs
