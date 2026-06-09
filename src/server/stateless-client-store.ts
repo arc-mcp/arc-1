@@ -162,11 +162,12 @@ const XSUAA_REDIRECT_URI_REGEXPS = XSUAA_REDIRECT_URI_PATTERNS.map(redirectPatte
  * would otherwise let a URL-userinfo segment ride inside the same-segment
  * wildcard — `http://localhost:x@evil.com/cb` matches the `localhost:[^slash]`
  * port glob yet `new URL(...).host === 'evil.com'`, steering a victim's code to an
- * attacker host. So we reject anything that doesn't parse, and reject any
- * userinfo (`user[:pass]@`) — that `@` is the only construct that can relocate
- * the authority past a same-segment wildcard, and no legitimate OAuth
- * redirect_uri carries credentials. After this guard, a glob match implies the
- * parsed host is the literal host in the pattern.
+ * attacker host. So we reject anything that doesn't parse, reject any userinfo
+ * (`user[:pass]@`, which no legitimate redirect_uri carries), and — for http/https —
+ * match the glob against a subject rebuilt from the PARSED components rather than the
+ * raw string, so `\`, `#` and `?` (authority terminators the WHATWG parser folds) cannot
+ * relocate the host past a same-segment wildcard. After these guards, a glob match
+ * implies the parsed host is the literal host in the pattern.
  */
 export function matchesXsuaaRedirectPattern(uri: string): boolean {
   let parsed: URL;
@@ -176,7 +177,17 @@ export function matchesXsuaaRedirectPattern(uri: string): boolean {
     return false;
   }
   if (parsed.username !== '' || parsed.password !== '') return false;
-  return XSUAA_REDIRECT_URI_REGEXPS.some((re) => re.test(uri));
+  // SECURITY: match the glob against a subject rebuilt from the PARSED components, not the
+  // raw string. For http/https, `\`, `#` and `?` are authority terminators the parser folds,
+  // so a raw value like `https://evil.com\@x.hana.ondemand.com/cb` matches a `*.hana.ondemand.com`
+  // glob yet parses to host `evil.com` — and `evil.com` is the host the `code`-bearing 302 reaches.
+  // Rebuilding `${protocol}//${host}${pathname}${search}` makes the regex see that same host.
+  // Custom schemes (cursor:, vscode:) carry no authority component, so match their raw value.
+  const subject =
+    parsed.protocol === 'http:' || parsed.protocol === 'https:'
+      ? `${parsed.protocol}//${parsed.host}${parsed.pathname}${parsed.search}`
+      : uri;
+  return XSUAA_REDIRECT_URI_REGEXPS.some((re) => re.test(subject));
 }
 
 // ─── Payload Schema ───────────────────────────────────────────────────

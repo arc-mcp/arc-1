@@ -293,6 +293,26 @@ describe('matchesXsuaaRedirectPattern (redirect-uri allowlist for the shared XSU
     expect(matchesXsuaaRedirectPattern('http://localhost:6274/oauth/callback')).toBe(true);
   });
 
+  it('rejects host/string divergence via backslash, fragment, or query (string matches glob, parses to a foreign host)', () => {
+    // SECURITY regression: the glob is matched against a subject rebuilt from the PARSED URL, not
+    // the raw string. `\`, `#` and `?` are authority terminators the WHATWG parser folds, so each
+    // raw string below matches `https://*.hana.ondemand.com/**` yet `new URL(...).host` is
+    // `evil.com` — the host the `code`-bearing 302 would actually reach. (Deep security review, R8.)
+    const divergent = [
+      'https://evil.com\\@x.hana.ondemand.com/cb',
+      'https://evil.com#@x.hana.ondemand.com/cb',
+      'https://evil.com?@x.hana.ondemand.com/cb',
+      'https://evil.com\\.hana.ondemand.com/cb',
+    ];
+    for (const uri of divergent) {
+      expect(new URL(uri).host, uri).toBe('evil.com'); // documents the parse
+      expect(matchesXsuaaRedirectPattern(uri), uri).toBe(false);
+    }
+    // legitimate SAP hosts and custom-scheme app callbacks still pass
+    expect(matchesXsuaaRedirectPattern('https://app.hana.ondemand.com/oauth/callback')).toBe(true);
+    expect(matchesXsuaaRedirectPattern('cursor://anysphere.cursor-mcp/cb')).toBe(true);
+  });
+
   it('rejects values that are not parseable URLs', () => {
     expect(matchesXsuaaRedirectPattern('not a url')).toBe(false);
     expect(matchesXsuaaRedirectPattern('http://')).toBe(false);
