@@ -176,7 +176,7 @@ For any deployment visible to a network, before you open the gate:
 - [ ] `SAP_ALLOW_GIT_WRITES=false` unless you need gCTS/abapGit writes (reads are always allowed when the backends are available)
 - [ ] If using cookies: `SAP_PP_ENABLED=true` and cookies both set? → refuses unless `SAP_PP_ALLOW_SHARED_COOKIES=true` escape hatch is explicit
 - [ ] Audit log sink configured (file or BTP Audit Log Service)
-- [ ] Image pinned to an exact version (for example `:0.9.11`), not `:latest` <!-- x-release-please-version -->
+- [ ] Image pinned to an exact version (for example `:0.9.12`), not `:latest` <!-- x-release-please-version -->
 - [ ] Update procedure rehearsed → [updating.md](updating.md)
 
 Full production hardening guide: [security-guide.md](security-guide.md).

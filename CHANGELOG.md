@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.9.12](https://github.com/marianfoo/arc-1/compare/v0.9.11...v0.9.12) (2026-06-09)
+
+
+### Features
+
+* **diagnose:** SAPDiagnose action=cds_testcases — CDS test-case scaffolding ([#351](https://github.com/marianfoo/arc-1/issues/351)) ([b54ccd0](https://github.com/marianfoo/arc-1/commit/b54ccd03414828576f26a7d6c5dd052c5362475b))
+* **read:** generic server-driven object read — SAPRead DESD/EVTB/DTSC/CSNM/EVTO/COTA ([#356](https://github.com/marianfoo/arc-1/issues/356)) ([ce3dacc](https://github.com/marianfoo/arc-1/commit/ce3dacc238b1aeb22854e573352e0f97995aba94))
+* **write:** server-driven object write — SAPWrite create/update/delete + SAPActivate (DESD/EVTB/DTSC/CSNM/EVTO/COTA) ([#362](https://github.com/marianfoo/arc-1/issues/362)) ([0c7f0a6](https://github.com/marianfoo/arc-1/commit/0c7f0a60780a73ca601b1a0c39508fe4acf20cc3))
+* **xsuaa:** raise default refresh-token-validity to 30 days ([#383](https://github.com/marianfoo/arc-1/issues/383)) ([8e0ee71](https://github.com/marianfoo/arc-1/commit/8e0ee7192618e9449069b9f430796dece52347cf))
+
+
+### Bug Fixes
+
+* **handlers:** harden tool-arg validation against GPT/OpenAI schema pollution ([#363](https://github.com/marianfoo/arc-1/issues/363))  ([138d89c](https://github.com/marianfoo/arc-1/commit/138d89cbf395f1f5147850513629151afef041e6))
+* **security:** close scope-router privilege escalation and bind OAuth state to client_id ([#352](https://github.com/marianfoo/arc-1/issues/352)) ([ba0a21b](https://github.com/marianfoo/arc-1/commit/ba0a21ba932b35ebcff5cbb73bbbbec07e856b30))
+* **security:** enforce allowedPackages ceiling on activation and change_package ([#357](https://github.com/marianfoo/arc-1/issues/357)) ([2a1135e](https://github.com/marianfoo/arc-1/commit/2a1135e942d5836db39dbb976ae9286ea983d7dd))
+* **security:** XSUAA redirect-uri allowlist for the shared default client ([#358](https://github.com/marianfoo/arc-1/issues/358)) ([d204eb8](https://github.com/marianfoo/arc-1/commit/d204eb826f54ca7f17aa0467f116bb931d728e80))
+* **write:** emit pak:recordChanges so transportable package creation works on SAP_BASIS 816 ([#375](https://github.com/marianfoo/arc-1/issues/375)) ([00e4197](https://github.com/marianfoo/arc-1/commit/00e41973212c52d4746003c97b9a981dec08146d))
+* **write:** thread logon user into adtcore:responsible ([#380](https://github.com/marianfoo/arc-1/issues/380)) ([3f8dc12](https://github.com/marianfoo/arc-1/commit/3f8dc126105532b71d26a0970b9ec0040b949ece))
+
+
+### Tests
+
+* close slow baseline and server coverage gaps ([#367](https://github.com/marianfoo/arc-1/issues/367)) ([3968296](https://github.com/marianfoo/arc-1/commit/3968296c283721c31a750af9b4ea9fd6232ba637))
+* migrate SAP CI to A4H 2025 ([#365](https://github.com/marianfoo/arc-1/issues/365)) ([d22392d](https://github.com/marianfoo/arc-1/commit/d22392d303a28e872798c7b87c7ca6a9eb83b06f))
+* split slow SAP test profiles ([#364](https://github.com/marianfoo/arc-1/issues/364)) ([c63346d](https://github.com/marianfoo/arc-1/commit/c63346d8c8403e3b0bc7f231adaf62f4a7a65933))
+* tighten integration skip hygiene ([#353](https://github.com/marianfoo/arc-1/issues/353)) ([bdca845](https://github.com/marianfoo/arc-1/commit/bdca845d4ba43fb9d95341b79272a3c1005106d9))
+* tighten live cleanup and skip telemetry ([#359](https://github.com/marianfoo/arc-1/issues/359)) ([94551af](https://github.com/marianfoo/arc-1/commit/94551af0fa5164ea4c88edffaa73bd33bd90c38b))
+
 ## [0.9.11](https://github.com/marianfoo/arc-1/compare/v0.9.10...v0.9.11) (2026-06-05)
 
 
