@@ -4,7 +4,7 @@
  * Bridge endpoints live under /sap/bc/adt/abapgit/* and use XML payloads.
  */
 
-import { AdtApiError, classifyAbapgitError } from './errors.js';
+import { AdtApiError, AdtSafetyError, classifyAbapgitError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import type { PackageHierarchyResolver } from './package-hierarchy.js';
 import { checkGit, checkOperation, checkPackage, OperationType, type SafetyConfig } from './safety.js';
@@ -308,6 +308,32 @@ export async function createRepo(
   );
 
   return parseAbapGitRepos(resp.body);
+}
+
+/**
+ * Enforce the package allowlist against a repository's server-bound package (R9).
+ *
+ * `clone` chooses (and gates) the target package up-front, but `pull`/`push` operate on an
+ * existing repo whose binding ARC-1 did not choose — abapGit deserializes the remote content
+ * into that bound package regardless of any caller-supplied `package` value (which it ignores
+ * for an existing repo). Re-validate the real binding here. Fail-closed when an allowlist is
+ * configured and the package can't be resolved; no-op when unrestricted.
+ */
+export async function enforceRepoPackageAllowed(
+  safety: SafetyConfig,
+  repoPackage: string | undefined,
+  resolver: PackageHierarchyResolver | null | undefined,
+  label = 'AbapGitRepo',
+): Promise<void> {
+  if (safety.allowedPackages.length === 0) return;
+  if (!repoPackage) {
+    throw new AdtSafetyError(
+      `${label}: cannot resolve the repository's package to check it against allowedPackages (${JSON.stringify(
+        safety.allowedPackages,
+      )}); refusing.`,
+    );
+  }
+  await checkPackage(safety, repoPackage, resolver);
 }
 
 export async function pullRepo(

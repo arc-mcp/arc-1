@@ -5,6 +5,7 @@ import {
   checkRepo,
   createBranch,
   createRepo,
+  enforceRepoPackageAllowed,
   getExternalInfo,
   listRepos,
   parseAbapGitExternalInfo,
@@ -103,6 +104,35 @@ describe('abapGit client helpers', () => {
     await expect(
       createRepo(http, safety, { package: 'ZBLOCKED', url: 'https://github.com/example/repo.git' }),
     ).rejects.toThrow(AdtSafetyError);
+  });
+
+  describe('enforceRepoPackageAllowed (R9 — pull/push gate the repo binding)', () => {
+    it('is a no-op when no allowlist is configured', async () => {
+      await expect(enforceRepoPackageAllowed(gitSafety, '$TUTORIALS', null, 'pull')).resolves.toBeUndefined();
+    });
+
+    it('allows a repo whose bound package is within the allowlist', async () => {
+      const safety = { ...gitSafety, allowedPackages: ['$TUTORIALS'] };
+      await expect(enforceRepoPackageAllowed(safety, '$TUTORIALS', null, 'pull')).resolves.toBeUndefined();
+    });
+
+    it('refuses a repo whose bound package is outside the allowlist', async () => {
+      // $TUTORIALS is the binding of repos-v2 repo[0]; a pull would deserialize remote content into it.
+      const safety = { ...gitSafety, allowedPackages: ['$TMP'] };
+      await expect(enforceRepoPackageAllowed(safety, '$TUTORIALS', null, 'SAPGit(action="pull")')).rejects.toThrow(
+        AdtSafetyError,
+      );
+    });
+
+    it('fails closed when the allowlist is set but the bound package cannot be resolved', async () => {
+      const safety = { ...gitSafety, allowedPackages: ['$TMP'] };
+      await expect(enforceRepoPackageAllowed(safety, undefined, null, 'SAPGit(action="pull")')).rejects.toThrow(
+        AdtSafetyError,
+      );
+      await expect(enforceRepoPackageAllowed(safety, '', null, 'SAPGit(action="pull")')).rejects.toThrow(
+        AdtSafetyError,
+      );
+    });
   });
 
   it('createRepo sends Username + base64 Password headers and remote credentials in XML body', async () => {

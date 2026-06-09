@@ -16,6 +16,7 @@ import {
   checkRepo as abapGitCheckRepo,
   createBranch as abapGitCreateBranch,
   createRepo as abapGitCreateRepo,
+  enforceRepoPackageAllowed as abapGitEnforceRepoPackage,
   getExternalInfo as abapGitGetExternalInfo,
   listRepos as abapGitListRepos,
   pullRepo as abapGitPullRepo,
@@ -6938,6 +6939,16 @@ async function handleSAPGit(
       if (backend === 'gcts') {
         result = await gctsPullRepo(client.http, client.safety, repoId, String(args.commit ?? '').trim() || undefined);
       } else {
+        // R9: a pull deserializes remote content into the repo's server-bound package, which is
+        // NOT the caller-supplied `package` (abapGit ignores that for an existing repo). Gate the
+        // real binding against the allowlist before writing.
+        const repo = await loadAbapGitRepo(client, repoId);
+        await abapGitEnforceRepoPackage(
+          client.safety,
+          repo.package,
+          client.getPackageHierarchyResolver(),
+          'SAPGit(action="pull")',
+        );
         result = await abapGitPullRepo(client.http, client.safety, repoId, {
           ...(packageName ? { package: packageName } : {}),
           ...(url ? { url } : {}),
@@ -6951,6 +6962,14 @@ async function handleSAPGit(
     case 'push': {
       if (!repoId) return errorResult('SAPGit(action="push") requires repoId.');
       const repo = await loadAbapGitRepo(client, repoId);
+      // R9: push exports the repo's bound-package source to a remote git; gate that package
+      // against the allowlist (the read-side mirror of the pull gate above).
+      await abapGitEnforceRepoPackage(
+        client.safety,
+        repo.package,
+        client.getPackageHierarchyResolver(),
+        'SAPGit(action="push")',
+      );
       const staging =
         Array.isArray(args.objects) && args.objects.length > 0
           ? { repoKey: repo.key, branchName: repo.branchName, objects: args.objects as Array<Record<string, unknown>> }
