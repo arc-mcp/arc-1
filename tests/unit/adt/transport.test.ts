@@ -20,6 +20,7 @@ import {
   reassignTransport,
   releaseTransport,
   releaseTransportRecursive,
+  removeObjectFromTransport,
   supportsExplicitTransportTarget,
 } from '../../../src/adt/transport.js';
 
@@ -629,6 +630,57 @@ describe('Transport Management', () => {
       expect(deleteCalls).toHaveLength(2);
       expect(deleteCalls[0]?.[0]).toBe('/sap/bc/adt/cts/transportrequests/DEVK900001T1');
       expect(deleteCalls[1]?.[0]).toBe('/sap/bc/adt/cts/transportrequests/DEVK900001');
+    });
+  });
+
+  // ─── removeObjectFromTransport ─────────────────────────────────────
+
+  describe('removeObjectFromTransport', () => {
+    // A non-locked object on purpose: removal must work regardless of lock status.
+    const xml = `<tm:root xmlns:tm="http://www.sap.com/cts/transports">
+      <tm:request tm:number="DEVK900001" tm:owner="DEV" tm:desc="Test" tm:status="D" tm:type="K">
+        <tm:task tm:number="DEVK900001T1" tm:owner="DEV1" tm:desc="Task 1" tm:status="D">
+          <tm:abap_object tm:pgmid="R3TR" tm:type="DEVC" tm:name="ZFOO" tm:obj_desc="Package" tm:lock_status="" tm:position="000002"/>
+        </tm:task>
+      </tm:request>
+    </tm:root>`;
+
+    it('is blocked when transports not enabled', async () => {
+      const http = mockHttp(xml);
+      const safety = { ...unrestrictedSafetyConfig(), allowTransportWrites: false };
+      await expect(removeObjectFromTransport(http, safety, 'DEVK900001', 'R3TR', 'DEVC', 'ZFOO')).rejects.toThrow(
+        AdtSafetyError,
+      );
+    });
+
+    it('removes the matching object via a removeobject PUT to its task and keeps the request', async () => {
+      const http = mockHttp(xml);
+      const res = await removeObjectFromTransport(http, enabledSafety, 'DEVK900001', 'R3TR', 'DEVC', 'ZFOO');
+      expect(res.taskId).toBe('DEVK900001T1');
+
+      const putCalls = (http.put as ReturnType<typeof vi.fn>).mock.calls;
+      expect(putCalls).toHaveLength(1);
+      expect(putCalls[0]?.[0]).toBe('/sap/bc/adt/cts/transportrequests/DEVK900001T1');
+      const body = putCalls[0]?.[1] as string;
+      expect(body).toContain('tm:useraction="removeobject"');
+      expect(body).toContain('tm:name="ZFOO"');
+      expect(body).toContain('tm:position="000002"'); // real position from the GET, not a guessed default
+
+      // The request itself is NOT deleted.
+      expect((http.delete as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(0);
+    });
+
+    it('matches the full key (pgmid+type+name) case-insensitively', async () => {
+      const http = mockHttp(xml);
+      const res = await removeObjectFromTransport(http, enabledSafety, 'DEVK900001', 'r3tr', 'devc', 'zfoo');
+      expect(res.object.name).toBe('ZFOO');
+    });
+
+    it('throws when the object is not in the transport', async () => {
+      const http = mockHttp(xml);
+      await expect(
+        removeObjectFromTransport(http, enabledSafety, 'DEVK900001', 'R3TR', 'CLAS', 'ZBAR'),
+      ).rejects.toThrow(/not in transport/);
     });
   });
 

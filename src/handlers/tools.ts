@@ -235,7 +235,7 @@ const SAPTRANSPORT_DESC_ONPREM =
   'Manage CTS transport requests (SE09/SE10 equivalent). ' +
   'Actions: list (defaults to current user, modifiable transports — both Workbench and Customizing), ' +
   'get (details with tasks and objects), create (K=Workbench, W=Customizing, T=Transport of Copies), ' +
-  'release, delete, reassign (change owner), release_recursive (release tasks first, then parent), ' +
+  'release, delete, remove_object (remove an object, keep the request), reassign (change owner), release_recursive (release tasks first, then parent), ' +
   'check (check if a package requires a transport — provide type, name, package), ' +
   'history (find transports referencing an object — provide type, name; read-only, works without SAP_ALLOW_TRANSPORT_WRITES). ' +
   'Transport IDs look like A4HK900123. Status: D=modifiable, R=released.';
@@ -244,7 +244,7 @@ const SAPTRANSPORT_DESC_BTP =
   'Manage transport requests (BTP ABAP Environment, SE09/SE10 equivalent). ' +
   'Actions: list (defaults to current user, modifiable transports — both Workbench and Customizing), ' +
   'get (details with tasks and objects), create (K=Workbench, W=Customizing, T=Transport of Copies), ' +
-  'release, delete, reassign (change owner), release_recursive (release tasks first, then parent), ' +
+  'release, delete, remove_object (remove an object, keep the request), reassign (change owner), release_recursive (release tasks first, then parent), ' +
   'check (check if a package requires a transport — provide type, name, package), ' +
   'history (find transports referencing an object — provide type, name; read-only, works without SAP_ALLOW_TRANSPORT_WRITES). ' +
   'On BTP, transport release triggers a gCTS push to the software component Git repository. ' +
@@ -308,7 +308,7 @@ const SAPMANAGE_ACTIONS_WRITE = [
 ];
 
 const SAPTRANSPORT_ACTIONS_READ = ['list', 'get', 'check', 'history', 'layers', 'targets'];
-const SAPTRANSPORT_ACTIONS_WRITE = ['create', 'release', 'delete', 'reassign', 'release_recursive'];
+const SAPTRANSPORT_ACTIONS_WRITE = ['create', 'release', 'delete', 'remove_object', 'reassign', 'release_recursive'];
 
 const SAPGIT_ACTIONS_READ = [
   'list_repos',
@@ -1470,6 +1470,7 @@ export function getToolDefinitions(
               'create: create a new transport request (description required). To target another system, pass target=<system | system.client | /group/> (the Transportziel / TR_TARGET, e.g. "/TRG/" or "C11"; the group and system.client forms require extended transport control to be active). Otherwise omit target and pass an optional package to let SAP infer the route (defaults to $TMP). The response reports the resolved transport target; an empty target means a LOCAL request (cannot be transported onward). ' +
               'release: release a single transport or task. ' +
               'delete: delete a transport (use recursive=true to delete tasks first; removeLockedObjects=true to strip locked objects that otherwise block deletion with "...contains locked objects"). ' +
+              'remove_object: remove one object from a request, keeping the request — needs the full key pgmid+type+name. ' +
               'reassign: change transport owner (use recursive=true for tasks too). ' +
               'release_recursive: release all unreleased tasks first, then the transport itself. ' +
               'check: check if a transport is needed for a package/object (requires type, name, package). ' +
@@ -1480,10 +1481,10 @@ export function getToolDefinitions(
           id: {
             type: 'string',
             description:
-              'Transport request ID, e.g. A4HK900123 (required for get/release/delete/reassign/release_recursive)',
+              'Transport request ID, e.g. A4HK900123 (required for get/release/delete/reassign/release_recursive/remove_object)',
           },
           description: { type: 'string', description: 'Transport description text (required for create)' },
-          name: { type: 'string', description: 'Object name (for check or history actions)' },
+          name: { type: 'string', description: 'Object name (for check, history, or remove_object actions)' },
           package: {
             type: 'string',
             description:
@@ -1511,7 +1512,12 @@ export function getToolDefinitions(
           type: {
             type: 'string',
             description:
-              "Object type for check/history actions (PROG, CLAS, DDLS, etc.). Not used by create — the SAP backend infers transport type (K/W/T) from the package's TADIR route on the CreateCorrectionRequest endpoint.",
+              "Object type for check/history/remove_object actions (PROG, CLAS, DDLS, etc.). Not used by create — the SAP backend infers transport type (K/W/T) from the package's TADIR route on the CreateCorrectionRequest endpoint.",
+          },
+          pgmid: {
+            type: 'string',
+            description:
+              'Program ID for remove_object: "R3TR" (whole object) or "LIMU" (sub-object). Required — object type alone does not determine pgmid.',
           },
           owner: { type: 'string', description: 'New owner SAP username (required for reassign)' },
           recursive: {

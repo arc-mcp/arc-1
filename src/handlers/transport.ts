@@ -18,6 +18,7 @@ import {
   reassignTransport,
   releaseTransport,
   releaseTransportRecursive,
+  removeObjectFromTransport,
   supportsExplicitTransportTarget,
 } from '../adt/transport.js';
 import type { ObjectTransportHistory } from '../adt/types.js';
@@ -230,6 +231,31 @@ export async function handleSAPTransport(client: AdtClient, args: Record<string,
         .join(', ');
       return textResult(`Deleted transport request: ${id}${extras ? ` (${extras})` : ''}`);
     }
+    case 'remove_object': {
+      const id = String(args.id ?? '').trim();
+      const pgmid = String(args.pgmid ?? '').trim();
+      const objType = String(args.type ?? '').trim();
+      const objName = String(args.name ?? '').trim();
+      if (!id) return errorResult('"id" (transport request) is required for remove_object action.');
+      if (!pgmid || !objType || !objName) {
+        return errorResult(
+          '"pgmid", "type", and "name" are all required for remove_object — the full CTS object key ' +
+            '(e.g. pgmid="R3TR", type="DEVC", name="ZFOO"). The object type alone does not determine pgmid ' +
+            '(e.g. COMM is valid under both R3OB and LIMU), so all three are needed.',
+        );
+      }
+      const { taskId, object } = await removeObjectFromTransport(
+        client.http,
+        client.safety,
+        id,
+        pgmid,
+        objType,
+        objName,
+      );
+      return textResult(
+        `Removed ${object.pgmid} ${object.type} ${object.name} from task ${taskId} (transport ${id} kept).`,
+      );
+    }
     case 'reassign': {
       const id = String(args.id ?? '');
       if (!id) return errorResult('Transport ID is required for "reassign" action.');
@@ -323,7 +349,7 @@ export async function handleSAPTransport(client: AdtClient, args: Record<string,
     }
     default:
       return errorResult(
-        `Unknown SAPTransport action: ${action}. Supported: list, get, create, release, delete, reassign, release_recursive, check, history`,
+        `Unknown SAPTransport action: ${action}. Supported: list, get, create, release, delete, remove_object, reassign, release_recursive, check, history`,
       );
   }
 }

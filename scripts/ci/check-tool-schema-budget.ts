@@ -105,7 +105,9 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     textSearchAvailable: true,
     resolvedFeatures: { ...ALL_FEATURES_AVAILABLE, systemType: 'btp' },
     budget: {
-      schemaTokenEstimate: 17_500,
+      // Bumped +200 for the SAPTransport `remove_object` action (its pgmid/type/name key +
+      // action description). Keeps ~110 tokens of headroom, matching the other scenarios.
+      schemaTokenEstimate: 17_700,
       descriptionTokenEstimate: 13_200,
       descriptionCount: 265,
     },
