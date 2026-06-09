@@ -606,6 +606,30 @@ describe('Transport Management', () => {
       expect(putCalls[0]?.[1]).toContain('tm:name="ZGHOST"');
       expect(putCalls[0]?.[1]).not.toContain('ZCL_OK');
     });
+
+    it('removeLockedObjects + recursive strips the lock, then deletes the task, then the request', async () => {
+      const xml = `<tm:root xmlns:tm="http://www.sap.com/cts/transports">
+        <tm:request tm:number="DEVK900001" tm:owner="DEV" tm:desc="Test" tm:status="D" tm:type="K">
+          <tm:task tm:number="DEVK900001T1" tm:owner="DEV1" tm:desc="Task 1" tm:status="D">
+            <tm:abap_object tm:pgmid="R3TR" tm:type="DEVC" tm:name="ZGHOST" tm:lock_status="X" tm:position="000001"/>
+          </tm:task>
+        </tm:request>
+      </tm:root>`;
+      const http = mockHttp(xml);
+      await deleteTransport(http, enabledSafety, 'DEVK900001', true, true);
+
+      // The locked object must be stripped (PUT removeobject) BEFORE the task is deleted,
+      // otherwise ADT refuses to delete the task ("...contains locked objects").
+      const putCalls = (http.put as ReturnType<typeof vi.fn>).mock.calls;
+      expect(putCalls).toHaveLength(1);
+      expect(putCalls[0]?.[0]).toBe('/sap/bc/adt/cts/transportrequests/DEVK900001T1');
+      expect(putCalls[0]?.[1]).toContain('tm:useraction="removeobject"');
+
+      const deleteCalls = (http.delete as ReturnType<typeof vi.fn>).mock.calls;
+      expect(deleteCalls).toHaveLength(2);
+      expect(deleteCalls[0]?.[0]).toBe('/sap/bc/adt/cts/transportrequests/DEVK900001T1');
+      expect(deleteCalls[1]?.[0]).toBe('/sap/bc/adt/cts/transportrequests/DEVK900001');
+    });
   });
 
   // ─── reassignTransport ────────────────────────────────────────────

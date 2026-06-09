@@ -1429,6 +1429,22 @@ describe('SAPTransportSchema', () => {
     const result = SAPTransportSchema.safeParse({ action: 'history' });
     expect(result.success).toBe(true);
   });
+
+  it('coerces stringified booleans for delete flags (GPT/OpenAI client robustness)', () => {
+    const result = SAPTransportSchema.safeParse({
+      action: 'delete',
+      id: 'DEVK900001',
+      recursive: 'false',
+      removeLockedObjects: 'true',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      // Stringified booleans coerce (looseOptionalBoolean) instead of erroring — a real GPT
+      // pollution case; plain z.boolean() would reject "true"/"false" here.
+      expect(result.data.recursive).toBe(false);
+      expect(result.data.removeLockedObjects).toBe(true);
+    }
+  });
 });
 
 describe('SAPGitSchema', () => {
