@@ -1493,7 +1493,7 @@ export function getToolDefinitions(
               'get: fetch transport details including tasks and objects. ' +
               'create: create a new transport request (description required). To target another system, pass target=<system | system.client | /group/> (the Transportziel / TR_TARGET, e.g. "/TRG/" or "C11"; the group and system.client forms require extended transport control to be active). Otherwise omit target and pass an optional package to let SAP infer the route (defaults to $TMP). The response reports the resolved transport target; an empty target means a LOCAL request (cannot be transported onward). ' +
               'release: release a single transport or task. ' +
-              'delete: delete a transport (use recursive=true to delete tasks first). ' +
+              'delete: delete a transport (use recursive=true to delete tasks first; removeLockedObjects=true to strip locked objects that otherwise block deletion with "...contains locked objects"). ' +
               'reassign: change transport owner (use recursive=true for tasks too). ' +
               'release_recursive: release all unreleased tasks first, then the transport itself. ' +
               'check: check if a transport is needed for a package/object (requires type, name, package). ' +
@@ -1541,6 +1541,11 @@ export function getToolDefinitions(
           recursive: {
             type: 'boolean',
             description: 'Apply recursively to child tasks (for delete/reassign). release_recursive always recurses.',
+          },
+          removeLockedObjects: {
+            type: 'boolean',
+            description:
+              'For delete only. Strip locked objects from each task before deleting, so a request that still holds a locked object (e.g. a deleted object\'s lingering record → HTTP 400 "...contains locked objects") can be removed.',
           },
         },
         required: ['action'],

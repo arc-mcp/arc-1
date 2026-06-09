@@ -353,20 +353,61 @@ export async function releaseTransportRecursive(
   return { released };
 }
 
-/** Delete a transport request */
+/**
+ * Remove a single object from a transport task.
+ *
+ * SAP ADT exposes this as the `removeobject` action on the task URI (atom rel
+ * `http://www.sap.com/cts/relations/removeobject`, "Remove Locked Object"). It MUST be a
+ * PUT — a POST with the same body is accepted (HTTP 200) but silently no-ops. Mirrors the
+ * `changeowner` PUT in `reassignSingle`. Verified live on S/4HANA (SAP_BASIS 8.16): clears
+ * the lock so a request holding a deleted object's lingering record (lock_status="X") can
+ * then be deleted.
+ */
+async function removeTransportObject(http: AdtHttpClient, taskId: string, obj: TransportObject): Promise<void> {
+  const body = `<?xml version="1.0" encoding="ASCII"?>
+<tm:root xmlns:tm="${CTS_NAMESPACE_TM}"
+ tm:number="${escapeXmlAttr(taskId)}"
+ tm:useraction="removeobject">
+  <tm:request>
+    <tm:abap_object tm:pgmid="${escapeXmlAttr(obj.pgmid)}" tm:type="${escapeXmlAttr(obj.type)}" tm:name="${escapeXmlAttr(obj.name)}" tm:position="${escapeXmlAttr(obj.position)}" tm:obj_desc="${escapeXmlAttr(obj.description)}"/>
+  </tm:request>
+</tm:root>`;
+
+  await http.put(`/sap/bc/adt/cts/transportrequests/${encodeURIComponent(taskId)}`, body, CTS_CONTENT_TYPE_ORGANIZER, {
+    Accept: CTS_CONTENT_TYPE_ORGANIZER,
+  });
+}
+
+/**
+ * Delete a transport request.
+ *
+ * @param recursive            delete child tasks first, then the parent request.
+ * @param removeLockedObjects  strip locked objects from each task before deleting. ADT refuses to
+ *   delete a request/task that still holds locked objects (HTTP 400 "...contains locked objects") —
+ *   e.g. when a deleted object's record lingers in the task. With this flag ARC-1 removes those
+ *   objects first (the ADT "Remove Locked Object" operation) so the request can be discarded.
+ */
 export async function deleteTransport(
   http: AdtHttpClient,
   safety: SafetyConfig,
   transportId: string,
   recursive = false,
+  removeLockedObjects = false,
 ): Promise<void> {
   checkTransport(safety, transportId, 'DeleteTransport', true);
 
-  if (recursive) {
+  if (recursive || removeLockedObjects) {
     const transport = await getTransport(http, safety, transportId);
     if (transport) {
       for (const task of transport.tasks) {
-        if (task.status !== 'R') {
+        if (task.status === 'R') continue;
+        if (removeLockedObjects) {
+          for (const obj of task.objects.filter((o) => o.locked)) {
+            checkTransport(safety, task.id, 'RemoveTransportObject', true);
+            await removeTransportObject(http, task.id, obj);
+          }
+        }
+        if (recursive) {
           checkTransport(safety, task.id, 'DeleteTransport', true);
           await http.delete(`/sap/bc/adt/cts/transportrequests/${encodeURIComponent(task.id)}`);
         }

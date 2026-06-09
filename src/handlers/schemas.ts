@@ -852,6 +852,7 @@ export const SAPTransportSchema = z.object({
   type: z.string().optional(),
   owner: z.string().optional(),
   recursive: z.boolean().optional(),
+  removeLockedObjects: z.boolean().optional(),
 });
 
 // ─── SAPGit ─────────────────────────────────────────────────────────

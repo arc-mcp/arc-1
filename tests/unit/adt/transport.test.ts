@@ -551,6 +551,61 @@ describe('Transport Management', () => {
       expect(deleteCalls[0]?.[0]).toContain('DEVK900001T2');
       expect(deleteCalls[1]?.[0]).toContain('DEVK900001');
     });
+
+    it('does not fetch or PUT when removeLockedObjects is false (backward compatible)', async () => {
+      const http = mockHttp();
+      await deleteTransport(http, enabledSafety, 'DEVK900001');
+      expect((http.get as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(0);
+      expect((http.put as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(0);
+    });
+
+    it('removeLockedObjects strips locked objects via a removeobject PUT, then deletes the request', async () => {
+      const xml = `<tm:root xmlns:tm="http://www.sap.com/cts/transports">
+        <tm:request tm:number="DEVK900001" tm:owner="DEV" tm:desc="Test" tm:status="D" tm:type="K">
+          <tm:task tm:number="DEVK900001T1" tm:owner="DEV1" tm:desc="Task 1" tm:status="D">
+            <tm:abap_object tm:pgmid="R3TR" tm:type="DEVC" tm:name="ZGHOST" tm:wbtype="DEVC/K" tm:obj_desc="Package" tm:lock_status="X" tm:position="000001"/>
+          </tm:task>
+        </tm:request>
+      </tm:root>`;
+      const http = mockHttp(xml);
+      await deleteTransport(http, enabledSafety, 'DEVK900001', false, true);
+
+      const putCalls = (http.put as ReturnType<typeof vi.fn>).mock.calls;
+      expect(putCalls).toHaveLength(1);
+      // PUT (not POST) to the TASK URI — POST silently no-ops on the SAP side.
+      expect(putCalls[0]?.[0]).toBe('/sap/bc/adt/cts/transportrequests/DEVK900001T1');
+      const body = putCalls[0]?.[1] as string;
+      expect(body).toContain('tm:useraction="removeobject"');
+      expect(body).toContain('tm:number="DEVK900001T1"');
+      expect(body).toContain('tm:pgmid="R3TR"');
+      expect(body).toContain('tm:type="DEVC"');
+      expect(body).toContain('tm:name="ZGHOST"');
+      expect(body).toContain('tm:position="000001"');
+      expect(putCalls[0]?.[2]).toBe(CTS_CONTENT_TYPE_ORGANIZER);
+
+      const deleteCalls = (http.delete as ReturnType<typeof vi.fn>).mock.calls;
+      // recursive=false → only the request itself is deleted, after the lock is cleared.
+      expect(deleteCalls).toHaveLength(1);
+      expect(deleteCalls[0]?.[0]).toBe('/sap/bc/adt/cts/transportrequests/DEVK900001');
+    });
+
+    it('removeLockedObjects only touches locked objects, not unlocked ones', async () => {
+      const xml = `<tm:root xmlns:tm="http://www.sap.com/cts/transports">
+        <tm:request tm:number="DEVK900001" tm:owner="DEV" tm:desc="Test" tm:status="D" tm:type="K">
+          <tm:task tm:number="DEVK900001T1" tm:owner="DEV1" tm:desc="Task 1" tm:status="D">
+            <tm:abap_object tm:pgmid="R3TR" tm:type="DEVC" tm:name="ZGHOST" tm:lock_status="X" tm:position="000001"/>
+            <tm:abap_object tm:pgmid="R3TR" tm:type="CLAS" tm:name="ZCL_OK" tm:lock_status="" tm:position="000002"/>
+          </tm:task>
+        </tm:request>
+      </tm:root>`;
+      const http = mockHttp(xml);
+      await deleteTransport(http, enabledSafety, 'DEVK900001', false, true);
+
+      const putCalls = (http.put as ReturnType<typeof vi.fn>).mock.calls;
+      expect(putCalls).toHaveLength(1);
+      expect(putCalls[0]?.[1]).toContain('tm:name="ZGHOST"');
+      expect(putCalls[0]?.[1]).not.toContain('ZCL_OK');
+    });
   });
 
   // ─── reassignTransport ────────────────────────────────────────────

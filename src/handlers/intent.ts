@@ -7107,8 +7107,25 @@ async function handleSAPTransport(client: AdtClient, args: Record<string, unknow
       const id = String(args.id ?? '');
       if (!id) return errorResult('Transport ID is required for "delete" action.');
       const recursive = Boolean(args.recursive ?? false);
-      await deleteTransport(client.http, client.safety, id, recursive);
-      return textResult(`Deleted transport request: ${id}${recursive ? ' (recursive)' : ''}`);
+      const removeLockedObjects = Boolean(args.removeLockedObjects ?? false);
+      try {
+        await deleteTransport(client.http, client.safety, id, recursive, removeLockedObjects);
+      } catch (e) {
+        // ADT refuses to delete a request/task that still holds locked objects (e.g. a deleted
+        // object's lingering record). Point the caller at removeLockedObjects instead of a raw [?/009].
+        if (!removeLockedObjects && e instanceof Error && /locked objects/i.test(e.message)) {
+          return errorResult(
+            `${e.message}\n\nThe request still holds locked object(s). ` +
+              `Retry with removeLockedObjects=true to strip them first:\n` +
+              `  SAPTransport(action="delete", id="${id}", removeLockedObjects=true)`,
+          );
+        }
+        throw e;
+      }
+      const extras = [recursive ? 'recursive' : '', removeLockedObjects ? 'removed locked objects' : '']
+        .filter(Boolean)
+        .join(', ');
+      return textResult(`Deleted transport request: ${id}${extras ? ` (${extras})` : ''}`);
     }
     case 'reassign': {
       const id = String(args.id ?? '');
