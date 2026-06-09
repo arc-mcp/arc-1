@@ -507,8 +507,13 @@ when a new `ghcr.io/marianfoo/arc-1` image tag is published.
 2. **Protect your `.env` file.** If using `--env-file`, ensure the file has
    restricted permissions (`chmod 600`) and is in `.gitignore`.
 
-3. **Default is already read-only.** Only enable write access on
-   development systems via `SAP_ALLOW_WRITES=true SAP_ALLOW_TRANSPORT_WRITES=true` or `SAP_ALLOW_WRITES=false`.
+3. **Default is already read-only.** Writes, free SQL, table preview, transports,
+   and Git are each off until you opt in (`SAP_ALLOW_WRITES`, `SAP_ALLOW_FREE_SQL`,
+   `SAP_ALLOW_DATA_PREVIEW`, `SAP_ALLOW_TRANSPORT_WRITES`, `SAP_ALLOW_GIT_WRITES`).
+   Enable them only on systems you are comfortable mutating, and pair writes with a
+   tight `SAP_ALLOWED_PACKAGES`. ARC-1 feeds SAP-resident content to the LLM, which
+   then issues tool calls — the package allowlist is the backstop that contains a
+   prompt-injected model writing outside scope.
 
 4. **The container runs as a non-root user** (`arc1:arc1`) inside Alpine. There
    are no open ports — the attack surface is minimal.
@@ -517,7 +522,16 @@ when a new `ghcr.io/marianfoo/arc-1` image tag is published.
    use short-lived sessions where possible.
 
 6. **Use `SAP_INSECURE=false` (the default).** Only set it to `true` in isolated
-   development environments with no sensitive data.
+   development environments with no sensitive data — it disables SAP TLS
+   verification entirely (any certificate accepted, MITM masked) with no startup
+   warning. Note the bundled `manifest.yml` / `mta.yaml` ship `"true"` for the
+   Cloud Connector path; flip them to `"false"` on CA-signed landscapes.
+
+7. **The SQLite cache stores SAP source in cleartext.** In HTTP mode the cache
+   defaults to `sqlite` at `.arc1-cache.db` (full ABAP source, unencrypted, default
+   file perms), and a mounted volume persists it. For IP-sensitive landscapes set
+   `ARC1_CACHE=memory` or `none`, or use an encrypted volume. The file audit sink
+   (`ARC1_LOG_FILE`) likewise contains un-redacted source/error snippets.
 
 ---
 

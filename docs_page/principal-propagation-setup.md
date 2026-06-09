@@ -115,6 +115,7 @@ Verify these profile parameters (transaction `/nRZ10`):
 export SAP_BTP_DESTINATION=SAP_TRIAL
 export SAP_BTP_PP_DESTINATION=SAP_TRIAL_PP
 export SAP_PP_ENABLED=true
+export SAP_PP_STRICT=true
 ```
 
 ### Behavior
@@ -123,6 +124,9 @@ export SAP_PP_ENABLED=true
 - **PP failure + `SAP_PP_STRICT=false`** (default) → falls back to shared destination
 - **PP failure + `SAP_PP_STRICT=true`** → returns error, no fallback
 - **API key / non-JWT request** → uses shared destination
+
+!!! danger "Set `SAP_PP_STRICT=true` on any multi-user instance"
+    With the default `SAP_PP_STRICT=false`, a per-user PP failure (destination error, missing CERTRULE mapping, untrusted JWT issuer) **silently falls back to the shared service account**. The request then runs with the technical user's full authorizations and SAP audits it as that technical user — not the real caller. An attacker who can force PP to fail escalates to the shared account and defeats the per-user audit trail this setup exists to provide. Keep the fallback only for mixed API-key deployments; for a per-user instance set `SAP_PP_STRICT=true`.
 
 ### All PP-related config
 
