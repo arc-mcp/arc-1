@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.9.13](https://github.com/marianfoo/arc-1/compare/v0.9.12...v0.9.13) (2026-06-09)
+
+
+### Bug Fixes
+
+* **git:** enforce package allowlist on abapGit pull/push ([#389](https://github.com/marianfoo/arc-1/issues/389)) ([82cec9b](https://github.com/marianfoo/arc-1/commit/82cec9b105a31134322834bb40b90df171ebd846))
+* **limits:** clamp unbounded result limits to prevent resource exhaustion ([#388](https://github.com/marianfoo/arc-1/issues/388)) ([9656162](https://github.com/marianfoo/arc-1/commit/9656162782a8161675d957b54fdd39cd66eff34c))
+* **oauth:** match redirect-uri allowlist against parsed URL components ([#387](https://github.com/marianfoo/arc-1/issues/387)) ([c795b53](https://github.com/marianfoo/arc-1/commit/c795b53de317dc6386626b8a8afb35f9d3dd8c18))
+* **transport:** delete requests holding locked objects via removeLockedObjects ([#386](https://github.com/marianfoo/arc-1/issues/386)) ([e64b497](https://github.com/marianfoo/arc-1/commit/e64b49728067dd5b909b905bbfd4766b54b4732c))
+
 ## [0.9.12](https://github.com/marianfoo/arc-1/compare/v0.9.11...v0.9.12) (2026-06-09)
 
 
