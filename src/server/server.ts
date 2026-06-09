@@ -548,7 +548,7 @@ export function createServer(
   startupAuthPreflightPromise?: Promise<StartupAuthPreflightResult>,
   adtSemaphore?: Semaphore,
   mcpRateLimiter?: McpRateLimiter,
-  systemClientPool?: Map<string, { client: AdtClient; entry: SystemEntry }>,
+  systemClientPool?: Map<string, { client: AdtClient; entry: SystemEntry; proxy: BTPProxyConfig | undefined }>,
 ): Server {
   const server = new Server({ name: 'arc-1', version: VERSION }, { capabilities: { tools: {} } });
 
@@ -622,8 +622,8 @@ export function createServer(
         isError: true,
       } as Record<string, unknown>;
     }
-    // Use system-specific base proxy when routing to a secondary system.
-    const effectiveBtpProxy = systemEntry ? undefined : btpProxy;
+    // Use system-specific proxy when routing to a secondary system (on-premise needs Cloud Connector).
+    const effectiveBtpProxy = systemEntry ? systemEntry.proxy : btpProxy;
 
     // Principal propagation: create per-user ADT client if enabled and user JWT available.
     // Only attempt PP when the token is a JWT (3 dot-separated parts), not a plain API key.
@@ -969,7 +969,9 @@ export async function createAndStartServer(
   })();
 
   // Build multi-system client pool (ARC1_SYSTEMS).
-  let systemClientPool: Map<string, { client: AdtClient; entry: import('./types.js').SystemEntry }> | undefined;
+  let systemClientPool:
+    | Map<string, { client: AdtClient; entry: import('./types.js').SystemEntry; proxy: BTPProxyConfig | undefined }>
+    | undefined;
   if (config.systems.length > 0 && btpConfig) {
     systemClientPool = new Map();
     const { lookupDestination, createConnectivityProxy } = await import('../adt/btp.js');
@@ -986,7 +988,7 @@ export async function createAndStartServer(
           adtSemaphore,
         );
         const sysClient = new AdtClient(sysAdtConfig);
-        systemClientPool.set(entry.alias, { client: sysClient, entry });
+        systemClientPool.set(entry.alias, { client: sysClient, entry, proxy: proxy ?? undefined });
         logger.info('Multi-system client registered', { alias: entry.alias, url: dest.URL, profile: entry.profile });
       } catch (err) {
         logger.warn('Multi-system client failed to initialize — system skipped', {
