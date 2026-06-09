@@ -197,6 +197,7 @@ const TableQueryWhereItemSchema = z.object({
 
 export const SAPReadSchema = z
   .object({
+    system: z.string().optional(),
     type: z.enum(SAPREAD_TYPES_ONPREM),
     name: z.string().optional(),
     include: z.string().optional(),
@@ -224,6 +225,7 @@ export const SAPReadSchema = z
 
 export const SAPReadSchemaBtp = z
   .object({
+    system: z.string().optional(),
     type: z.enum(SAPREAD_TYPES_BTP),
     name: z.string().optional(),
     include: z.string().optional(),
@@ -252,6 +254,7 @@ export const SAPReadSchemaBtp = z
 
 export const SAPSearchSchema = z
   .object({
+    system: z.string().optional(),
     query: z.string().optional(),
     maxResults: z.coerce.number().optional(),
     searchType: z.enum(['object', 'source_code', 'tadir_lookup']).optional(),
@@ -293,6 +296,7 @@ export const SAPSearchSchema = z
 
 export const SAPSearchSchemaNoSource = z
   .object({
+    system: z.string().optional(),
     query: z.string().optional(),
     maxResults: z.coerce.number().optional(),
     searchType: z.enum(['object', 'tadir_lookup']).optional(),
@@ -334,6 +338,7 @@ export const SAPSearchSchemaNoSource = z
 // ─── SAPQuery ───────────────────────────────────────────────────────
 
 export const SAPQuerySchema = z.object({
+  system: z.string().optional(),
   sql: z.string(),
   maxRows: z.coerce.number().optional(),
 });
@@ -557,6 +562,7 @@ const batchObjectSchemaBtp = z.object({
 
 export const SAPWriteSchema = z
   .object({
+    system: z.string().optional(),
     action: z.enum([
       'create',
       'update',
@@ -651,6 +657,7 @@ export const SAPWriteSchema = z
 
 export const SAPWriteSchemaBtp = z
   .object({
+    system: z.string().optional(),
     action: z.enum([
       'create',
       'update',
@@ -738,6 +745,7 @@ export const SAPWriteSchemaBtp = z
 // ─── SAPActivate ────────────────────────────────────────────────────
 
 export const SAPActivateSchema = z.object({
+  system: z.string().optional(),
   action: z.enum(['activate', 'publish_srvb', 'unpublish_srvb']).optional(),
   name: z.string().optional(),
   type: z.string().optional(),
@@ -757,6 +765,7 @@ export const SAPActivateSchema = z.object({
 // ─── SAPNavigate ────────────────────────────────────────────────────
 
 export const SAPNavigateSchema = z.object({
+  system: z.string().optional(),
   action: z.enum(['definition', 'references', 'completion', 'hierarchy']),
   uri: z.string().optional(),
   type: z.string().optional(),
@@ -770,6 +779,7 @@ export const SAPNavigateSchema = z.object({
 // ─── SAPLint ────────────────────────────────────────────────────────
 
 export const SAPLintSchema = z.object({
+  system: z.string().optional(),
   action: z.enum(['lint', 'lint_and_fix', 'list_rules', 'format', 'get_formatter_settings', 'set_formatter_settings']),
   source: z.string().optional(),
   name: z.string().optional(),
@@ -789,6 +799,7 @@ const QuickfixAffectedObjectSchema = z.object({
 });
 
 export const SAPDiagnoseSchema = z.object({
+  system: z.string().optional(),
   action: z.enum([
     'syntax',
     'unittest',
@@ -828,6 +839,7 @@ export const SAPDiagnoseSchema = z.object({
 // ─── SAPTransport ───────────────────────────────────────────────────
 
 export const SAPTransportSchema = z.object({
+  system: z.string().optional(),
   action: z.enum([
     'list',
     'get',
@@ -857,6 +869,7 @@ export const SAPTransportSchema = z.object({
 // ─── SAPGit ─────────────────────────────────────────────────────────
 
 export const SAPGitSchema = z.object({
+  system: z.string().optional(),
   action: z.enum([
     'list_repos',
     'whoami',
@@ -917,6 +930,7 @@ const siblingMaxCandidatesSchema = z.coerce
   });
 
 export const SAPContextSchema = z.object({
+  system: z.string().optional(),
   action: z.enum(['deps', 'usages', 'impact']).optional(),
   type: z.enum(SAPCONTEXT_TYPES_ONPREM).optional(),
   name: z.string(),
@@ -930,6 +944,7 @@ export const SAPContextSchema = z.object({
 });
 
 export const SAPContextSchemaBtp = z.object({
+  system: z.string().optional(),
   action: z.enum(['deps', 'usages', 'impact']).optional(),
   type: z.enum(SAPCONTEXT_TYPES_BTP).optional(),
   name: z.string(),
@@ -955,6 +970,7 @@ const flpTileSchema = z.object({
 });
 
 export const SAPManageSchema = z.object({
+  system: z.string().optional(),
   action: z.enum([
     'features',
     'probe',

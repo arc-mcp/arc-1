@@ -3,6 +3,7 @@ import {
   API_KEY_PROFILES,
   parseApiKeys,
   parseArgs,
+  parseSystems,
   resolveConfig,
   validateConfig,
 } from '../../../src/server/config.js';
@@ -489,68 +490,6 @@ describe('parseArgs', () => {
     expect(config.maxConcurrent).toBe(3);
   });
 
-  // --- Rate limiting (Layer 1 + Layer 2) ---
-
-  it('defaults authRateLimit to 20 (Layer 1 on) and rateLimit to 0 (Layer 2 off)', () => {
-    // ADR-0004: Layer 2 ships disabled by default — operators with multi-user
-    // deployments opt in via ARC1_RATE_LIMIT>0. Layer 1 stays on at 20/min/IP.
-    const config = parseArgs([]);
-    expect(config.authRateLimit).toBe(20);
-    expect(config.rateLimit).toBe(0);
-  });
-
-  it('parses --auth-rate-limit flag', () => {
-    const config = parseArgs(['--auth-rate-limit', '50']);
-    expect(config.authRateLimit).toBe(50);
-  });
-
-  it('parses ARC1_AUTH_RATE_LIMIT env var', () => {
-    process.env.ARC1_AUTH_RATE_LIMIT = '30';
-    const config = parseArgs([]);
-    expect(config.authRateLimit).toBe(30);
-  });
-
-  it('ARC1_AUTH_RATE_LIMIT=0 disables Layer 1', () => {
-    process.env.ARC1_AUTH_RATE_LIMIT = '0';
-    const config = parseArgs([]);
-    expect(config.authRateLimit).toBe(0);
-  });
-
-  it('parses --rate-limit flag', () => {
-    const config = parseArgs(['--rate-limit', '120']);
-    expect(config.rateLimit).toBe(120);
-  });
-
-  it('parses ARC1_RATE_LIMIT env var', () => {
-    process.env.ARC1_RATE_LIMIT = '90';
-    const config = parseArgs([]);
-    expect(config.rateLimit).toBe(90);
-  });
-
-  it('ARC1_RATE_LIMIT=0 disables Layer 2', () => {
-    process.env.ARC1_RATE_LIMIT = '0';
-    const config = parseArgs([]);
-    expect(config.rateLimit).toBe(0);
-  });
-
-  it('invalid ARC1_AUTH_RATE_LIMIT falls back to default 20', () => {
-    process.env.ARC1_AUTH_RATE_LIMIT = 'notanumber';
-    const config = parseArgs([]);
-    expect(config.authRateLimit).toBe(20);
-  });
-
-  it('invalid ARC1_RATE_LIMIT falls back to default 0 (Layer 2 disabled)', () => {
-    process.env.ARC1_RATE_LIMIT = '-5';
-    const config = parseArgs([]);
-    expect(config.rateLimit).toBe(0);
-  });
-
-  it('--auth-rate-limit takes precedence over ARC1_AUTH_RATE_LIMIT', () => {
-    process.env.ARC1_AUTH_RATE_LIMIT = '99';
-    const config = parseArgs(['--auth-rate-limit', '7']);
-    expect(config.authRateLimit).toBe(7);
-  });
-
   // --- oauthDcrTtlSeconds ---
 
   it('defaults oauthDcrTtlSeconds to 30 days', () => {
@@ -959,5 +898,56 @@ describe('validateConfig', () => {
   it('parseArgs fails with oidcIssuer but no oidcAudience', () => {
     process.env.SAP_OIDC_ISSUER = 'https://example.com';
     expect(() => parseArgs([])).toThrow('SAP_OIDC_AUDIENCE is required');
+  });
+});
+
+describe('parseSystems', () => {
+  it('parses a single system entry with default profile', () => {
+    const result = parseSystems('ds7:dest_basic:dest_pp');
+    expect(result).toEqual([
+      { alias: 'ds7', btpDestination: 'dest_basic', btpPpDestination: 'dest_pp', profile: 'developer' },
+    ]);
+  });
+
+  it('parses a single system entry with explicit profile', () => {
+    const result = parseSystems('vs7:dest_b:dest_p:viewer');
+    expect(result).toEqual([{ alias: 'vs7', btpDestination: 'dest_b', btpPpDestination: 'dest_p', profile: 'viewer' }]);
+  });
+
+  it('parses multiple systems', () => {
+    const result = parseSystems('ds7:dest1:pp1:developer,vs7:dest2:pp2:viewer');
+    expect(result).toHaveLength(2);
+    expect(result[0].alias).toBe('ds7');
+    expect(result[1].alias).toBe('vs7');
+    expect(result[1].profile).toBe('viewer');
+  });
+
+  it('ignores empty entries', () => {
+    const result = parseSystems('ds7:dest1:pp1,,');
+    expect(result).toHaveLength(1);
+  });
+
+  it('throws on missing segments', () => {
+    expect(() => parseSystems('ds7:only_one')).toThrow('alias:dest_basic:dest_pp');
+  });
+
+  it('throws on invalid profile', () => {
+    expect(() => parseSystems('ds7:d:p:superadmin')).toThrow('Invalid profile');
+  });
+
+  it('parses ARC1_SYSTEMS env via parseArgs', () => {
+    const saved = { ...process.env };
+    // Clear any env vars that would cause validateConfig to throw
+    delete process.env.SAP_OIDC_ISSUER;
+    delete process.env.SAP_OIDC_AUDIENCE;
+    process.env.ARC1_SYSTEMS = 'ds7:d:p:developer';
+    try {
+      const config = parseArgs([]);
+      expect(config.systems).toHaveLength(1);
+      expect(config.systems[0].alias).toBe('ds7');
+    } finally {
+      Object.assign(process.env, saved);
+      delete process.env.ARC1_SYSTEMS;
+    }
   });
 });

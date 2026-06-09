@@ -19,7 +19,7 @@
 import type { SafetyConfig } from '../adt/safety.js';
 import { parseDenyActions, validateDenyActions } from './deny-actions.js';
 import { logger } from './logger.js';
-import type { ConfigSource, FeatureToggle, ServerConfig, TransportType } from './types.js';
+import type { ConfigSource, FeatureToggle, ServerConfig, SystemEntry, TransportType } from './types.js';
 import { DEFAULT_CONFIG } from './types.js';
 
 /**
@@ -142,6 +142,48 @@ export function parseApiKeys(raw: string): Array<{ key: string; profile: string 
   }
   if (entries.length === 0) {
     throw new Error('ARC1_API_KEYS is set but contains no valid entries. Format: "key1:profile1,key2:profile2"');
+  }
+  return entries;
+}
+
+const VALID_SYSTEM_PROFILES = [
+  'viewer',
+  'viewer-data',
+  'viewer-sql',
+  'developer',
+  'developer-data',
+  'developer-sql',
+  'admin',
+] as const;
+
+/**
+ * Parse ARC1_SYSTEMS env var into structured SystemEntry array.
+ * Format: "alias:dest_basic:dest_pp[:profile],..."
+ * profile defaults to 'developer' when omitted.
+ */
+export function parseSystems(raw: string): SystemEntry[] {
+  const entries: SystemEntry[] = [];
+  for (const part of raw.split(',')) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    const segments = trimmed.split(':');
+    if (segments.length < 3) {
+      throw new Error(
+        `Invalid ARC1_SYSTEMS entry '${trimmed}': expected 'alias:dest_basic:dest_pp[:profile]'. ` +
+          `Valid profiles: ${VALID_SYSTEM_PROFILES.join(', ')}`,
+      );
+    }
+    const [alias, btpDestination, btpPpDestination, rawProfile] = segments;
+    if (!alias || !btpDestination || !btpPpDestination) {
+      throw new Error(`Invalid ARC1_SYSTEMS entry '${trimmed}': alias, dest_basic and dest_pp are required.`);
+    }
+    const profile = (rawProfile?.trim() || 'developer') as SystemEntry['profile'];
+    if (!VALID_SYSTEM_PROFILES.includes(profile)) {
+      throw new Error(
+        `Invalid profile '${profile}' in ARC1_SYSTEMS entry '${trimmed}'. Valid profiles: ${VALID_SYSTEM_PROFILES.join(', ')}`,
+      );
+    }
+    entries.push({ alias, btpDestination, btpPpDestination, profile });
   }
   return entries;
 }
@@ -499,40 +541,6 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     config.maxConcurrent = Number.isNaN(parsed) || parsed < 1 ? 1 : parsed;
   }
 
-  // ── Rate limiting (Layer 1 + Layer 2) ──────────────────────────────
-  // Both knobs accept a positive integer (requests per minute) or `0` to disable.
-  // Malformed input → log warning, keep default. See docs_page/rate-limiting.md.
-  const authRateLimitRaw = getFlag('auth-rate-limit') ?? process.env.ARC1_AUTH_RATE_LIMIT;
-  if (authRateLimitRaw !== undefined) {
-    const parsed = Number.parseInt(authRateLimitRaw, 10);
-    if (Number.isNaN(parsed) || parsed < 0 || String(parsed) !== authRateLimitRaw.trim()) {
-      logger.warn(
-        `Invalid ARC1_AUTH_RATE_LIMIT='${authRateLimitRaw}' — expected positive integer or 0. Using default 20.`,
-      );
-    } else {
-      config.authRateLimit = parsed;
-      sources.authRateLimit =
-        getFlag('auth-rate-limit') !== undefined ? { flag: '--auth-rate-limit' } : { env: 'ARC1_AUTH_RATE_LIMIT' };
-    }
-  } else {
-    sources.authRateLimit = 'default';
-  }
-
-  const rateLimitRaw = getFlag('rate-limit') ?? process.env.ARC1_RATE_LIMIT;
-  if (rateLimitRaw !== undefined) {
-    const parsed = Number.parseInt(rateLimitRaw, 10);
-    if (Number.isNaN(parsed) || parsed < 0 || String(parsed) !== rateLimitRaw.trim()) {
-      logger.warn(
-        `Invalid ARC1_RATE_LIMIT='${rateLimitRaw}' — expected positive integer or 0. Using default 0 (Layer 2 disabled).`,
-      );
-    } else {
-      config.rateLimit = parsed;
-      sources.rateLimit = getFlag('rate-limit') !== undefined ? { flag: '--rate-limit' } : { env: 'ARC1_RATE_LIMIT' };
-    }
-  } else {
-    sources.rateLimit = 'default';
-  }
-
   // ── CORS (browser-based MCP clients only) ──────────────────────────
   // Empty allowlist (the default) disables CORS. Native MCP clients don't need
   // this — only set when a browser UI calls /mcp directly.
@@ -556,6 +564,15 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
   ) as ServerConfig['logLevel'];
   const logFormat = resolveStr('log-format', 'ARC1_LOG_FORMAT', 'text', 'logFormat');
   config.logFormat = (logFormat === 'json' ? 'json' : 'text') as ServerConfig['logFormat'];
+
+  // ── Multi-system ───────────────────────────────────────────────────
+  const systemsRaw = getFlag('systems') ?? process.env.ARC1_SYSTEMS;
+  if (systemsRaw) {
+    config.systems = parseSystems(systemsRaw);
+    sources.systems = getFlag('systems') !== undefined ? { flag: '--systems' } : { env: 'ARC1_SYSTEMS' };
+  } else {
+    sources.systems = 'default';
+  }
 
   // ── Misc ───────────────────────────────────────────────────────────
   config.verbose = resolveBool('verbose', 'SAP_VERBOSE', false, 'verbose');

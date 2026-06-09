@@ -11,6 +11,22 @@
 /** MCP transport type */
 export type TransportType = 'stdio' | 'http-streamable';
 
+/**
+ * Multi-system entry — one SAP system reachable via BTP Destination Service.
+ * Parsed from ARC1_SYSTEMS="alias:dest_basic:dest_pp:profile,...".
+ * profile defaults to 'developer' when omitted.
+ */
+export interface SystemEntry {
+  /** Short alias used as the `system` parameter value in tool calls (e.g. "ds7", "vs7") */
+  alias: string;
+  /** BTP Destination name for startup / shared client (BasicAuthentication) */
+  btpDestination: string;
+  /** BTP Destination name for per-user PP requests (PrincipalPropagation) */
+  btpPpDestination: string;
+  /** Safety profile ceiling for this system (intersected with user scopes at request time) */
+  profile: 'viewer' | 'viewer-data' | 'viewer-sql' | 'developer' | 'developer-data' | 'developer-sql' | 'admin';
+}
+
 /** Feature toggle: auto detects from SAP system, on/off forces */
 export type FeatureToggle = 'auto' | 'on' | 'off';
 
@@ -175,6 +191,15 @@ export interface ServerConfig {
    *  use native HTTP, not the browser fetch API, and never trigger CORS. */
   allowedOrigins: string[];
 
+  // --- Multi-system ---
+  /**
+   * Optional list of additional SAP systems reachable from this instance.
+   * Parsed from ARC1_SYSTEMS="ds7:dest_basic:dest_pp:profile,vs7:...".
+   * When set, tool calls can include a `system` parameter to route to a
+   * specific system. Omitting `system` routes to the primary system (SAP_BTP_DESTINATION).
+   */
+  systems: SystemEntry[];
+
   // --- Misc ---
   verbose: boolean;
 }
@@ -225,6 +250,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
   authRateLimit: 20,
   rateLimit: 0, // Layer 2 disabled by default — operators opt in (see ADR-0004)
   allowedOrigins: [],
+  systems: [],
   logLevel: 'info',
   logFormat: 'text',
   verbose: false,

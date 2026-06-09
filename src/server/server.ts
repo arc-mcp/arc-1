@@ -35,7 +35,7 @@ import { isActionDenied } from './deny-actions.js';
 import { initLogger, logger } from './logger.js';
 import { createMcpRateLimiter, type McpRateLimiter } from './mcp-rate-limit.js';
 import { FileSink } from './sinks/file.js';
-import type { ServerConfig } from './types.js';
+import type { ServerConfig, SystemEntry } from './types.js';
 
 /** ARC-1 version */
 export const VERSION = '0.9.11'; // x-release-please-version
@@ -234,13 +234,11 @@ async function createPerUserClient(
   btpProxy: BTPProxyConfig | undefined,
   userJwt: string,
   adtSemaphore?: Semaphore,
+  ppDestName?: string,
 ): Promise<AdtClient> {
   const { lookupDestinationWithUserToken } = await import('../adt/btp.js');
-  // Use SAP_BTP_PP_DESTINATION if set, otherwise fall back to SAP_BTP_DESTINATION.
-  // This enables a dual-destination approach:
-  // - SAP_BTP_DESTINATION = BasicAuth destination (shared client, startup resolution)
-  // - SAP_BTP_PP_DESTINATION = PrincipalPropagation destination (per-user, runtime)
-  const destName = process.env.SAP_BTP_PP_DESTINATION ?? process.env.SAP_BTP_DESTINATION;
+  // Use provided ppDestName (multi-system), or fall back to env vars (single-system).
+  const destName = ppDestName ?? process.env.SAP_BTP_PP_DESTINATION ?? process.env.SAP_BTP_DESTINATION;
   if (!destName) {
     throw new Error('SAP_BTP_PP_DESTINATION or SAP_BTP_DESTINATION is required for principal propagation');
   }
@@ -550,6 +548,7 @@ export function createServer(
   startupAuthPreflightPromise?: Promise<StartupAuthPreflightResult>,
   adtSemaphore?: Semaphore,
   mcpRateLimiter?: McpRateLimiter,
+  systemClientPool?: Map<string, { client: AdtClient; entry: SystemEntry }>,
 ): Server {
   const server = new Server({ name: 'arc-1', version: VERSION }, { capabilities: { tools: {} } });
 
@@ -613,17 +612,31 @@ export function createServer(
       }
     }
 
+    // Multi-system routing: if `system` arg is provided and matches the pool, use that entry.
+    const requestedSystem = typeof args.system === 'string' ? args.system : undefined;
+    const systemEntry = requestedSystem ? systemClientPool?.get(requestedSystem) : undefined;
+    if (requestedSystem && !systemEntry) {
+      const available = systemClientPool ? Array.from(systemClientPool.keys()).join(', ') : '(none)';
+      return {
+        content: [{ type: 'text' as const, text: `Unknown system '${requestedSystem}'. Available: ${available}` }],
+        isError: true,
+      } as Record<string, unknown>;
+    }
+    // Use system-specific base proxy when routing to a secondary system.
+    const effectiveBtpProxy = systemEntry ? undefined : btpProxy;
+
     // Principal propagation: create per-user ADT client if enabled and user JWT available.
     // Only attempt PP when the token is a JWT (3 dot-separated parts), not a plain API key.
-    let client = defaultClient;
+    let client = systemEntry ? systemEntry.client : defaultClient;
     let isPerUserClient = false;
     const token = extra.authInfo?.token;
     const isJwt = token && token.split('.').length === 3;
+    const ppDestName = systemEntry ? systemEntry.entry.btpPpDestination : undefined;
     if (config.ppEnabled && btpConfig && isJwt) {
       const ppUser = (extra.authInfo?.extra?.userName ?? extra.authInfo?.clientId) as string | undefined;
-      const ppDest = process.env.SAP_BTP_PP_DESTINATION ?? process.env.SAP_BTP_DESTINATION ?? '';
+      const ppDest = ppDestName ?? process.env.SAP_BTP_PP_DESTINATION ?? process.env.SAP_BTP_DESTINATION ?? '';
       try {
-        client = await createPerUserClient(config, btpConfig, btpProxy, token, adtSemaphore);
+        client = await createPerUserClient(config, btpConfig, effectiveBtpProxy, token, adtSemaphore, ppDestName);
         isPerUserClient = true;
         logger.emitAudit({
           timestamp: new Date().toISOString(),
@@ -676,11 +689,20 @@ export function createServer(
     client.http.setDiscoveryMap(getCachedDiscovery());
 
     // Per-request safety: merge server ceiling with per-user policy.
+    //   - Multi-system: apply the system entry's profile as an additional ceiling first.
     //   - API-key path: clientId starts with "api-key:<profile>" — intersect server with profile's partial SafetyConfig.
     //   - XSUAA/OIDC path: derive from scopes only (server ceiling, scopes can only tighten).
     // API-key intersection is stricter — profile can narrow allowedPackages / feature flags
     // that scopes alone cannot (scopes don't encode allowedPackages, etc.).
     let effectiveClient = client;
+    if (systemEntry) {
+      // Apply the system-level profile ceiling (e.g. 'readonly' for VS7)
+      const sysProfile = API_KEY_PROFILES[systemEntry.entry.profile];
+      if (sysProfile) {
+        const sysSafety = deriveUserSafetyFromProfile(client.safety, sysProfile.safety);
+        effectiveClient = client.withSafety(sysSafety);
+      }
+    }
     if (extra.authInfo?.clientId?.startsWith('api-key:')) {
       const profileName = extra.authInfo.clientId.slice('api-key:'.length);
       const profile = API_KEY_PROFILES[profileName];
@@ -946,6 +968,35 @@ export async function createAndStartServer(
     await runStartupProbe(config, btpProxy, bearerTokenProvider, btpConfig, adtSemaphore);
   })();
 
+  // Build multi-system client pool (ARC1_SYSTEMS).
+  let systemClientPool: Map<string, { client: AdtClient; entry: import('./types.js').SystemEntry }> | undefined;
+  if (config.systems.length > 0 && btpConfig) {
+    systemClientPool = new Map();
+    const { lookupDestination, createConnectivityProxy } = await import('../adt/btp.js');
+    for (const entry of config.systems) {
+      try {
+        const dest = await lookupDestination(btpConfig, entry.btpDestination);
+        const proxy =
+          dest.ProxyType === 'OnPremise' ? createConnectivityProxy(btpConfig, dest.CloudConnectorLocationId) : null;
+        const sysAdtConfig = buildAdtConfig(
+          { ...config, url: dest.URL, username: dest.User ?? '', password: dest.Password ?? '' },
+          proxy ?? undefined,
+          undefined,
+          undefined,
+          adtSemaphore,
+        );
+        const sysClient = new AdtClient(sysAdtConfig);
+        systemClientPool.set(entry.alias, { client: sysClient, entry });
+        logger.info('Multi-system client registered', { alias: entry.alias, url: dest.URL, profile: entry.profile });
+      } catch (err) {
+        logger.warn('Multi-system client failed to initialize — system skipped', {
+          alias: entry.alias,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  }
+
   const server = createServer(
     config,
     btpProxy,
@@ -956,6 +1007,7 @@ export async function createAndStartServer(
     startupAuthPreflightPromise,
     adtSemaphore,
     mcpRateLimiter,
+    systemClientPool,
   );
 
   // Shutdown hook for SQLite cache cleanup (guard against double-close from multiple signals).
@@ -1036,6 +1088,7 @@ export async function createAndStartServer(
           startupAuthPreflightPromise,
           adtSemaphore,
           mcpRateLimiter,
+          systemClientPool,
         ),
       config,
       xsuaaCredentials,

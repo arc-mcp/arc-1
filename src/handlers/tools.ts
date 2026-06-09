@@ -1642,5 +1642,21 @@ export function getToolDefinitions(
     });
   }
 
+  // Multi-system: inject `system` parameter into every tool's inputSchema when ARC1_SYSTEMS is configured.
+  if (config.systems.length > 0) {
+    const aliases = config.systems.map((s) => s.alias);
+    const systemProp = {
+      type: 'string',
+      enum: aliases,
+      description: `Target SAP system. Available: ${aliases.join(', ')}. Omit to use the primary system.`,
+    };
+    for (const tool of tools) {
+      const schema = tool.inputSchema as { properties?: Record<string, unknown> };
+      if (schema.properties) {
+        schema.properties = { system: systemProp, ...schema.properties };
+      }
+    }
+  }
+
   return tools;
 }
