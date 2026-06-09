@@ -237,34 +237,25 @@ This is the only operation that invalidates DCR state. Routine restarts (`cf res
 
 ### Recovering a stuck client (`invalid_client` / `invalid_token`)
 
-After a client has been connected for a while it can fail with one of two errors. They have different causes but the **same one-step fix — restart the client**, which re-runs the OAuth handshake.
+After a client has been connected for a while it can fail with one of two errors. They look alike but invalidate **different things, so they have different fixes**:
 
-| Error | What's stale | Why it happens | Prevent it |
-|-------|--------------|----------------|------------|
-| `invalid_client` / `Invalid client_id` | the cached **DCR registration** | the signing key changed — an MTA `cf deploy` rotates the XSUAA `clientsecret` (the default signing key), or the DCR TTL expired | stable [`ARC1_DCR_SIGNING_SECRET`](#stable-dcr-signing-key-recommended) + `ARC1_OAUTH_DCR_TTL_SECONDS=0` |
-| `invalid_token` / "not a valid XSUAA, OIDC, or API key token" | the cached **access token** | it expired and the client didn't refresh in time (e.g. a session left idle overnight) | a longer `refresh-token-validity` in `xs-security.json` — **30 days** by default |
+| Error | What's stale | Cached token still works? | Fix |
+|-------|--------------|---------------------------|-----|
+| `invalid_token` / "not a valid XSUAA, OIDC, or API key token" | the **access token** | no — it expired | **restart the client** — a cold start re-runs auth |
+| `invalid_client` / `Invalid client_id` | the **DCR registration** | usually yes — so tool calls keep working | **clear the cached registration** — a restart alone won't, because the client keeps using its still-valid token and never re-registers |
 
-**The fix: restart your MCP client.** A cold start re-runs authentication, which mints a fresh registration *and* a fresh token — so it clears **both** errors. Most clients (Claude Desktop, VS Code's MCP client, MCP Inspector) refresh and re-register automatically and rarely surface either one.
+**Prevent both:** for `invalid_client`, set a stable [`ARC1_DCR_SIGNING_SECRET`](#stable-dcr-signing-key-recommended) + `ARC1_OAUTH_DCR_TTL_SECONDS=0` so a redeploy can't rotate the signing key. For `invalid_token`, the default `refresh-token-validity` in `xs-security.json` is **30 days**, so idle sessions survive far longer.
 
-**Eclipse GitHub Copilot** is the exception worth calling out: it doesn't refresh or re-register on its own mid-session, so when it gets stuck, **quit and reopen Eclipse**. On restart the Copilot agent re-runs the sign-in — you'll see its *"… wants to authenticate"* dialog — and the session is restored. (There's no per-server "restart MCP" action yet: [copilot-for-eclipse#237](https://github.com/microsoft/copilot-for-eclipse/issues/237).)
+**Most clients self-heal** — Claude Desktop, VS Code's MCP client, and MCP Inspector refresh and re-register on their own and rarely surface either error. The two that need a manual nudge are **Eclipse GitHub Copilot** and **Cursor** (Eclipse has no per-server "restart MCP" / re-auth action yet — [copilot-for-eclipse#237](https://github.com/microsoft/copilot-for-eclipse/issues/237)).
 
-#### If a restart doesn't clear it
+#### Eclipse GitHub Copilot
 
-This only happens with a genuinely stale **registration** (`invalid_client`) that the client keeps reloading — not with `invalid_token`, which a restart always re-auths. Clear Eclipse Copilot's cached registration:
+**For `invalid_token`** (an expired or long-idle session — you're effectively logged out): **quit and reopen Eclipse**. On the cold start it re-runs the sign-in — its *"… wants to authenticate"* dialog appears — and you're back.
 
-| OS | File |
-|----|------|
-| macOS / Linux | `~/.config/github-copilot/copilot-eclipse.db` |
-| Windows | `%LOCALAPPDATA%\github-copilot\copilot-eclipse.db` |
-
-**Quit Eclipse first** (it rewrites the file on exit), delete that one file, then reopen Eclipse — it recreates the file and prompts you to sign in again. Deleting it sounds drastic but is low-impact:
-
-- ✅ The only cost: you re-authorize your MCP server(s) once (a browser sign-in each).
-- ❌ It does **not** sign you out of GitHub Copilot itself — that lives in a separate `auth.db`.
-- ❌ It does **not** touch your code, workspaces, Eclipse preferences, or your configured MCP server list — only cached MCP auth tokens.
+**For `invalid_client`** (the server's signing key rotated, e.g. an MTA `cf deploy`): **a restart usually won't help** — Copilot keeps using its still-valid access token and never re-registers, so the stale `client_id` only resurfaces on the next forced sign-in. You have to clear its cached registration so it calls `/register` again. **Quit Eclipse**, then delete its one cache file:
 
 ```bash
-# macOS / Linux
+# macOS / Linux — clears cached MCP logins; you re-authorize each server once
 rm ~/.config/github-copilot/copilot-eclipse.db
 ```
 ```powershell
@@ -272,7 +263,13 @@ rm ~/.config/github-copilot/copilot-eclipse.db
 Remove-Item "$env:LOCALAPPDATA\github-copilot\copilot-eclipse.db"
 ```
 
-> Want to keep your *other* MCP servers signed in? With the `sqlite3` CLI, delete only ARC-1's rows instead of the whole file (the cache is keyed by server URL):
+Reopen Eclipse → use the server → it registers fresh and prompts you to sign in. Deleting the file is low-impact:
+
+- ✅ The only cost: re-authorize your MCP server(s) once (a browser sign-in each).
+- ❌ It does **not** sign you out of GitHub Copilot itself — that's a separate `auth.db`.
+- ❌ It does **not** touch your code, workspaces, Eclipse preferences, or your MCP server list — only cached MCP auth.
+
+> Want to keep your *other* MCP servers signed in? With the `sqlite3` CLI, delete only this server's rows (the cache is keyed by server URL):
 > ```bash
 > sqlite3 ~/.config/github-copilot/copilot-eclipse.db \
 >   "DELETE FROM state WHERE key LIKE 'dynamicAuthProvider:%your-app.cfapps%';"
@@ -283,6 +280,8 @@ Remove-Item "$env:LOCALAPPDATA\github-copilot\copilot-eclipse.db"
 #### Cursor
 
 Cursor also caches its registration and may not re-register on `invalid_client`. Reset it by **removing the MCP server entry, restarting Cursor, then re-adding it**. With the stable signing key set (above), you only ever do this once.
+
+> **Found an easier way to recover an Eclipse or Cursor MCP login?** MCP-client behavior is still evolving — please [open an issue or PR](https://github.com/marianfoo/arc-1/issues/new) so these docs can capture the simplest known fix.
 
 ### Browser-based DCR clients (rare)
 
