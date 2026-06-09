@@ -207,6 +207,17 @@ export function clampPreviewRows(requested: number | undefined, fallback = 100):
   return Math.min(Math.floor(requested), MAX_TABLE_QUERY_ROWS);
 }
 
+const MAX_SEARCH_RESULTS = 1_000;
+
+/** Coerce a caller-supplied search-result limit into a safe positive integer in
+ *  [1, MAX_SEARCH_RESULTS]. NaN / non-finite / non-positive / undefined fall back to the
+ *  caller's default — prevents an unbounded `maxResults` from buffering a huge result set
+ *  on the shared event loop. */
+export function clampSearchResults(requested: number | undefined, fallback: number): number {
+  if (requested === undefined || !Number.isFinite(requested) || requested < 1) return fallback;
+  return Math.min(Math.floor(requested), MAX_SEARCH_RESULTS);
+}
+
 /** Sanitize a SQL identifier (table / column / field): uppercase, then strip everything but
  *  word characters and the namespace slash. Throws when nothing survives — a structurally
  *  invalid identifier must fail closed rather than emit malformed SQL (e.g. `SELECT , X FROM`).
@@ -1006,8 +1017,9 @@ export class AdtClient {
   /** Search for ABAP objects by name pattern */
   async searchObject(query: string, maxResults = 100): Promise<AdtSearchResult[]> {
     checkOperation(this.safety, OperationType.Search, 'SearchObject');
+    const limit = clampSearchResults(maxResults, 100);
     const resp = await this.http.get(
-      `/sap/bc/adt/repository/informationsystem/search?operation=quickSearch&query=${encodeURIComponent(query)}&maxResults=${maxResults}`,
+      `/sap/bc/adt/repository/informationsystem/search?operation=quickSearch&query=${encodeURIComponent(query)}&maxResults=${limit}`,
     );
     return parseSearchResults(resp.body);
   }
@@ -1172,7 +1184,8 @@ export class AdtClient {
     packageName?: string,
   ): Promise<SourceSearchResult[]> {
     checkOperation(this.safety, OperationType.Search, 'SearchSource');
-    let url = `/sap/bc/adt/repository/informationsystem/textSearch?searchString=${encodeURIComponent(pattern)}&maxResults=${maxResults}`;
+    const limit = clampSearchResults(maxResults, 50);
+    let url = `/sap/bc/adt/repository/informationsystem/textSearch?searchString=${encodeURIComponent(pattern)}&maxResults=${limit}`;
     if (objectType) url += `&objectType=${encodeURIComponent(objectType)}`;
     if (packageName) url += `&packageName=${encodeURIComponent(packageName)}`;
     const resp = await this.http.get(url);
@@ -1295,8 +1308,9 @@ export class AdtClient {
     sqlFilter?: string,
   ): Promise<{ columns: string[]; rows: Record<string, string>[] }> {
     checkOperation(this.safety, OperationType.Query, 'GetTableContents');
+    const rowLimit = clampPreviewRows(maxRows);
     const resp = await this.http.post(
-      `/sap/bc/adt/datapreview/ddic?rowNumber=${maxRows}&ddicEntityName=${encodeURIComponent(tableName)}`,
+      `/sap/bc/adt/datapreview/ddic?rowNumber=${rowLimit}&ddicEntityName=${encodeURIComponent(tableName)}`,
       sqlFilter,
       'text/plain',
     );
