@@ -11,6 +11,7 @@
 .env.local
 .env.*
 !.env.example
+*service-key*.json
 cookies.txt
 cookie.txt
 cookies

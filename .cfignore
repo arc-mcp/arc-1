@@ -13,6 +13,7 @@ compare/
 # Dev config
 .env
 .env.*
+*service-key*.json
 .github/
 .husky/
 .cursor/
