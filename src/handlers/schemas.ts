@@ -11,6 +11,7 @@
  */
 
 import { z } from 'zod';
+import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
 
 /**
  * Optional boolean that accepts real JSON booleans AND string-serialized booleans from
@@ -228,7 +229,7 @@ export const SAPReadSchema = z
     include: z.string().optional(),
     group: z.string().optional(),
     method: z.string().optional(),
-    grep: z.string().optional(),
+    grep: z.string().max(MAX_GREP_PATTERN_LENGTH).optional(),
     expand_includes: looseOptionalBoolean,
     format: z.enum(['text', 'structured']).optional(),
     version: z.enum(['active', 'inactive', 'auto']).optional().default('active'),
@@ -255,7 +256,7 @@ export const SAPReadSchemaBtp = z
     include: z.string().optional(),
     group: z.string().optional(),
     method: z.string().optional(),
-    grep: z.string().optional(),
+    grep: z.string().max(MAX_GREP_PATTERN_LENGTH).optional(),
     format: z.enum(['text', 'structured']).optional(),
     version: z.enum(['active', 'inactive', 'auto']).optional().default('active'),
     force_refresh: looseOptionalBoolean,

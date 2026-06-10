@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { MAX_GREP_PATTERN_LENGTH } from '../../../src/context/grep.js';
 import { getToolDefinitions } from '../../../src/handlers/tools.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 
@@ -21,6 +22,7 @@ describe('Tool Definitions', () => {
       const props = (sapRead!.inputSchema as Record<string, any>).properties;
       expect(props.grep).toBeDefined();
       expect(props.grep.type).toBe('string');
+      expect(props.grep.maxLength).toBe(MAX_GREP_PATTERN_LENGTH);
     }
   });
 

@@ -18,6 +18,7 @@
  */
 
 import type { ResolvedFeatures } from '../adt/types.js';
+import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
 import type { ServerConfig } from '../server/types.js';
 import { getHyperfocusedToolDefinition } from './hyperfocused.js';
 
@@ -617,6 +618,7 @@ export function getToolDefinitions(
           },
           grep: {
             type: 'string',
+            maxLength: MAX_GREP_PATTERN_LENGTH,
             description:
               'Regex pattern (case-insensitive) to search within the object source. Returns only matching lines with 1-based line numbers and ±3 context lines, instead of the full source — token-efficient. ' +
               'For CLAS, matches are annotated with the owning class/method; combine with include= to scope a section, but do NOT combine with method= (use grep to find, then method= to read). ' +

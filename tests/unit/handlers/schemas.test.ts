@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { MAX_GREP_PATTERN_LENGTH } from '../../../src/context/grep.js';
 import {
   getToolSchema,
   SAPActivateSchema,
@@ -210,6 +211,12 @@ describe('SAPReadSchema', () => {
   it('rejects a non-string grep', () => {
     expect(SAPReadSchema.safeParse({ type: 'CLAS', name: 'ZCL_X', grep: 123 }).success).toBe(false);
     expect(SAPReadSchemaBtp.safeParse({ type: 'CLAS', name: 'ZCL_X', grep: ['a'] }).success).toBe(false);
+  });
+
+  it('rejects grep patterns beyond the server-side length cap', () => {
+    const grep = 'x'.repeat(MAX_GREP_PATTERN_LENGTH + 1);
+    expect(SAPReadSchema.safeParse({ type: 'CLAS', name: 'ZCL_X', grep }).success).toBe(false);
+    expect(SAPReadSchemaBtp.safeParse({ type: 'CLAS', name: 'ZCL_X', grep }).success).toBe(false);
   });
 
   it('accepts on-prem AUTH/FEATURE_TOGGLE/ENHO types', () => {
