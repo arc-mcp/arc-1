@@ -28,6 +28,7 @@ After starting, check the server's first INFO log line: `auth: MCP=[...] SAP=[..
 | Your situation | MCP Client → ARC-1 | ARC-1 → SAP | Setup Guide |
 |----------------|-------------------|-------------|-------------|
 | **Local dev** (single user, `npx`) | None needed | Basic Auth | [Quickstart](quickstart.md) |
+| **Local dev + RFC/SAProuter-only access** | None needed | Local ADT-to-RFC bridge | [Local bridge](#local-adt-to-rfc-bridge-rfcsaprouter-only-local-systems) |
 | **Shared server** (team, quick start) | API Key | Basic Auth | [API Key Setup](api-key-setup.md) |
 | **Team server** (role-based access) | API Keys (multi) | Basic Auth | [API Key Setup](api-key-setup.md) |
 | **Enterprise** (per-user identity) | OIDC / JWT | Basic Auth (shared user) | [OAuth / JWT Setup](oauth-jwt-setup.md) |
@@ -132,6 +133,16 @@ Reuse session cookies from a browser session. Useful for one-off sessions.
 ```bash
 arc1 --url http://sap:50000 --cookie-file cookies.txt
 ```
+
+### Local ADT-to-RFC Bridge (RFC/SAProuter-only Local Systems)
+
+ARC-1 speaks ADT over HTTP. If your laptop cannot reach the SAP ADT HTTP(S) endpoint, but Eclipse ADT works through RFC/SAProuter, you can run a local bridge that exposes a loopback HTTP endpoint and forwards ADT REST requests through RFC. One open-source option is [`enricoandreoli/adt-rfc-bridge`](https://github.com/enricoandreoli/adt-rfc-bridge), which forwards requests through SAP's `SADT_REST_RFC_ENDPOINT`.
+
+**Upsides:** Lets local HTTP-only ADT clients work against RFC/SAProuter-only systems. No ARC-1 code or SAP-side installation required when the RFC ADT path already works.
+**Downsides:** Local-only workaround. Requires SAP NW RFC SDK + PyRFC. SAP sees the RFC user configured in the bridge, not an ARC-1 propagated end user. Not a replacement for BTP Destination Service, Cloud Connector, or Principal Propagation in team/enterprise deployments.
+**When to use:** One local developer, direct ADT HTTP(S) is blocked, Eclipse ADT already works for the same user/client via RFC/SAProuter.
+
+**Setup:** See [Detailed SAP Authentication Reference -> Local ADT-to-RFC Bridge](#3-local-adt-to-rfc-bridge-local-rfcsaprouter-workaround).
 
 ### OAuth2 / Service Key (BTP ABAP Environment, local interactive)
 
@@ -290,7 +301,79 @@ arc1 --url https://sap-host:443 --cookie-string "MYSAPSSO2=abc123; SAP_SESSIONID
 
 ---
 
-## 3. BTP ABAP Environment (Local Service Key + Browser OAuth)
+## 3. Local ADT-to-RFC Bridge (Local RFC/SAProuter Workaround)
+
+ARC-1 normally sends ADT REST requests directly to SAP's HTTP(S) endpoint (`/sap/bc/adt/...`). Some local/customer networks allow Eclipse ADT through RFC/SAProuter but do not allow raw HTTP(S) routing to the SAP ICM port. In that case, you can run a local ADT-to-RFC bridge and point ARC-1 at the bridge's localhost URL.
+
+One open-source option is [`enricoandreoli/adt-rfc-bridge`](https://github.com/enricoandreoli/adt-rfc-bridge). It accepts normal ADT HTTP requests on `127.0.0.1`, forwards them via PyRFC through `SADT_REST_RFC_ENDPOINT`, and translates the response back to HTTP.
+
+Use this only when all of these are true:
+
+- Direct ADT HTTP(S) access to SAP is blocked or unavailable.
+- RFC/SAProuter access works locally.
+- Eclipse ADT already works for the same SAP user and client.
+- You are running ARC-1 locally for one user.
+
+You do not need this for normal deployments. If ARC-1 runs as a managed server, prefer BTP Destination Service + Cloud Connector, and use Principal Propagation when SAP must see the real end user.
+
+### Bridge Startup
+
+Install and configure the bridge following its README. The bridge uses `RFC_*` variables for the real SAP RFC logon, for example:
+
+```bash
+BRIDGE_PORT=8410
+RFC_ASHOST=10.0.0.1
+RFC_SYSNR=00
+RFC_CLIENT=100
+RFC_USER=YOUR_USER
+RFC_PASSWD=YOUR_PASS
+RFC_SAPROUTER=/H/router.example.com/S/3299
+python adt_rfc_bridge.py
+```
+
+Then point ARC-1 at the bridge:
+
+```bash
+SAP_URL=http://127.0.0.1:8410
+SAP_USER=YOUR_USER
+SAP_PASSWORD=YOUR_PASS
+SAP_CLIENT=100
+ARC1_MAX_CONCURRENT=1
+arc1
+```
+
+For Claude Desktop, use the same `SAP_URL` value in the `env` block:
+
+```json
+{
+  "mcpServers": {
+    "sap": {
+      "command": "npx",
+      "args": ["-y", "arc-1@latest"],
+      "env": {
+        "SAP_URL": "http://127.0.0.1:8410",
+        "SAP_USER": "YOUR_USER",
+        "SAP_PASSWORD": "YOUR_PASS",
+        "SAP_CLIENT": "100",
+        "ARC1_MAX_CONCURRENT": "1"
+      }
+    }
+  }
+}
+```
+
+**Security and behavior notes:**
+
+- ARC-1 safety gates still apply: writes, SQL, table preview, transports, and package allowlists remain opt-in.
+- SAP sees the RFC user configured in the bridge. This is not ARC-1 Principal Propagation.
+- Run one bridge per SAP user/client/port.
+- Keep the bridge bound to `127.0.0.1`; do not expose it as a shared service.
+- `ARC1_MAX_CONCURRENT=1` is recommended because the bridge reuses a serialized RFC connection.
+- The SAP user needs the RFC authorizations for `SADT_REST_RFC_ENDPOINT` plus the normal ADT resource authorizations.
+
+---
+
+## 4. BTP ABAP Environment (Local Service Key + Browser OAuth)
 
 For local SAP BTP ABAP Environment development. ARC-1 uses a service key for OAuth2 Authorization Code flow with interactive browser login. For deployed BTP CF servers, use the per-user destination setup in [BTP ABAP Environment](btp-abap-environment.md#recommended-btp-deployment-with-a-per-user-destination).
 
@@ -328,7 +411,7 @@ The service key JSON is downloaded from SAP BTP Cockpit and looks like:
 
 ---
 
-## 4. BTP Destination Service
+## 5. BTP Destination Service
 
 For BTP Cloud Foundry deployments connecting to on-premise SAP systems via Cloud Connector, or to BTP ABAP Environment via `OAuth2UserTokenExchange`.
 
@@ -340,7 +423,7 @@ The Destination Service handles connection details, credentials, Cloud Connector
 
 ---
 
-## 5. Per-User Destination (BTP Destination)
+## 6. Per-User Destination (BTP Destination)
 
 Per-user SAP identity for JWT-authenticated users via BTP Destination Service.
 

@@ -36,6 +36,20 @@ INFO: ARC-1 MCP server running on stdio
 
 Hit `Ctrl+C` to stop. If this failed, check TLS (`--insecure` for self-signed dev certs), the client number, and that the user can log into SE80 via the web GUI.
 
+### If direct ADT HTTP(S) is not reachable
+
+ARC-1 normally connects to SAP's ADT HTTP(S) endpoint. For local systems where Eclipse ADT works through RFC/SAProuter but raw HTTP(S) routing to the ICM port is blocked, run a local ADT-to-RFC bridge and point `SAP_URL` at the bridge instead. One open-source option is [`enricoandreoli/adt-rfc-bridge`](https://github.com/enricoandreoli/adt-rfc-bridge):
+
+```bash
+# After starting the bridge on port 8410
+SAP_URL=http://127.0.0.1:8410 \
+SAP_USER=YOUR_USER SAP_PASSWORD=YOUR_PASS SAP_CLIENT=100 \
+ARC1_MAX_CONCURRENT=1 \
+npx arc-1@latest
+```
+
+This is a local development workaround, not needed for normal deployments. Details and caveats: [Authentication Overview -> Local ADT-to-RFC Bridge](enterprise-auth.md#3-local-adt-to-rfc-bridge-local-rfcsaprouter-workaround).
+
 ---
 
 ## 2. Wire it into Claude Desktop
