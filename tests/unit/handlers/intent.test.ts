@@ -12075,6 +12075,23 @@ ENDCLASS.`;
         expect(xml).toContain('adtcore:masterLanguage="DE"');
       });
 
+      it('threads the configured language into MSAG language + masterLanguage (blank-SPRSL fix)', () => {
+        // Guards the intent.ts → buildMessageClassXml wiring, not just the builder in
+        // isolation: the MSAG handler keys T100 text rows by the BODY adtcore:language
+        // (live-verified on a4h 7.58), so messages created without it land under a blank
+        // SPRSL and never resolve at runtime.
+        const xml = buildCreateXml(
+          'MSAG',
+          'ZMSG',
+          '$TMP',
+          'Msg',
+          { messages: [{ number: '001', shortText: 'Probe &1' }] },
+          'DE',
+        );
+        expect(xml).toContain('adtcore:language="DE"');
+        expect(xml).toContain('adtcore:masterLanguage="DE"');
+      });
+
       it('threads the configured language into DOMA create XML', () => {
         const xml = buildCreateXml('DOMA', 'ZDOM', '$TMP', 'Dom', { dataType: 'CHAR', length: 1 }, 'DE');
         expect(xml).toContain('adtcore:masterLanguage="DE"');
