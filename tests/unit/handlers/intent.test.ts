@@ -5730,6 +5730,80 @@ ENDCLASS.`;
       expect(resolvedObjectMetadata).toBe(false);
     });
 
+    it('blocks publish_srvb when the service binding package is not allowed', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(
+        mockResponse(
+          200,
+          '<srvb:serviceBinding xmlns:srvb="http://www.sap.com/adt/ddic/ServiceBindings" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="ZSB_SECRET"><adtcore:packageRef adtcore:name="ZRESTRICTED"/></srvb:serviceBinding>',
+          { 'x-csrf-token': 'T' },
+        ),
+      );
+
+      const result = await handleToolCall(restrictedTmpClient(), DEFAULT_CONFIG, 'SAPActivate', {
+        action: 'publish_srvb',
+        name: 'ZSB_SECRET',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('ZRESTRICTED');
+      expect(result.content[0]?.text).toContain('blocked');
+      expect(mockFetch.mock.calls.some((c) => String(c[0]).includes('/publishjobs'))).toBe(false);
+    });
+
+    it('blocks unpublish_srvb when the service binding package is not allowed', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(
+        mockResponse(
+          200,
+          '<srvb:serviceBinding xmlns:srvb="http://www.sap.com/adt/ddic/ServiceBindings" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="ZSB_SECRET"><adtcore:packageRef adtcore:name="ZRESTRICTED"/></srvb:serviceBinding>',
+          { 'x-csrf-token': 'T' },
+        ),
+      );
+
+      const result = await handleToolCall(restrictedTmpClient(), DEFAULT_CONFIG, 'SAPActivate', {
+        action: 'unpublish_srvb',
+        name: 'ZSB_SECRET',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('ZRESTRICTED');
+      expect(result.content[0]?.text).toContain('blocked');
+      expect(mockFetch.mock.calls.some((c) => String(c[0]).includes('/unpublishjobs'))).toBe(false);
+    });
+
+    it('allows publish_srvb when the resolved service binding package is allowed', async () => {
+      mockFetch.mockReset();
+      const srvbXml =
+        '<srvb:serviceBinding xmlns:srvb="http://www.sap.com/adt/ddic/ServiceBindings" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="ZSB_OK" srvb:published="false"><adtcore:packageRef adtcore:name="$TMP"/><srvb:binding srvb:version="V2" srvb:type="ODATA" srvb:category="0"/></srvb:serviceBinding>';
+      mockFetch
+        .mockResolvedValueOnce(mockResponse(200, srvbXml, { 'x-csrf-token': 'T' }))
+        .mockResolvedValueOnce(mockResponse(200, srvbXml, { 'x-csrf-token': 'T' }))
+        .mockResolvedValueOnce(
+          mockResponse(
+            200,
+            '<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><SEVERITY>OK</SEVERITY><SHORT_TEXT>Published</SHORT_TEXT><LONG_TEXT></LONG_TEXT></DATA></asx:values></asx:abap>',
+            { 'x-csrf-token': 'T' },
+          ),
+        )
+        .mockResolvedValueOnce(
+          mockResponse(
+            200,
+            '<srvb:serviceBinding xmlns:srvb="http://www.sap.com/adt/ddic/ServiceBindings" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="ZSB_OK" srvb:published="true"><adtcore:packageRef adtcore:name="$TMP"/></srvb:serviceBinding>',
+            { 'x-csrf-token': 'T' },
+          ),
+        );
+
+      const result = await handleToolCall(restrictedTmpClient(), DEFAULT_CONFIG, 'SAPActivate', {
+        action: 'publish_srvb',
+        name: 'ZSB_OK',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('Successfully published service binding ZSB_OK');
+      expect(mockFetch.mock.calls.some((c) => String(c[0]).includes('/publishjobs'))).toBe(true);
+    });
+
     it('batch activation uses type from individual objects', async () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPActivate', {
         objects: [
