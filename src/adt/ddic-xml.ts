@@ -262,9 +262,19 @@ export interface MessageClassCreateParams {
   description: string;
   package: string;
   messages?: MessageClassMessage[];
+  /** Maintenance + master language (e.g. "EN", "DE"), emitted as BOTH
+   *  adtcore:language and adtcore:masterLanguage — matching the server's own
+   *  GET serialization. Live-verified on a4h (S/4HANA 2023, 7.58): the MSAG
+   *  handler keys the T100 text rows by the BODY adtcore:language; without it
+   *  every message is stored under a BLANK language key (SPRSL = space), so
+   *  MESSAGE ... INTO never resolves the text at runtime and ATC/SLIN flags
+   *  every message number as missing. The sap-language URL param and
+   *  adtcore:masterLanguage alone do NOT prevent this. Defaults to "EN". */
+  language?: string;
 }
 
 export function buildMessageClassXml(params: MessageClassCreateParams): string {
+  const masterLanguage = normalizeAdtLanguage(params.language);
   const messages = params.messages ?? [];
   const messagesXml =
     messages.length === 0
@@ -281,7 +291,9 @@ export function buildMessageClassXml(params: MessageClassCreateParams): string {
 <mc:messageClass xmlns:mc="http://www.sap.com/adt/MessageClass"
                  xmlns:adtcore="http://www.sap.com/adt/core"
                  adtcore:description="${escapeXml(params.description)}"
-                 adtcore:name="${escapeXml(params.name)}">
+                 adtcore:name="${escapeXml(params.name)}"
+                 adtcore:language="${masterLanguage}"
+                 adtcore:masterLanguage="${masterLanguage}">
   <adtcore:packageRef adtcore:name="${escapeXml(params.package)}"/>${messagesXml}
 </mc:messageClass>`;
 }

@@ -3154,6 +3154,13 @@ export function buildCreateXml(
         description,
         package: pkg,
         messages: messages.length > 0 ? messages : undefined,
+        // Thread the configured language into the body (same spirit as #343).
+        // Live-verified on a4h 7.58: the MSAG handler keys T100.SPRSL by the
+        // BODY adtcore:language — without it the messages are stored under a
+        // BLANK language key (texts never resolve at runtime; ATC/SLIN flags
+        // every number as missing). The sap-language URL param alone does NOT
+        // prevent this.
+        language: masterLanguage,
       };
       return buildMessageClassXml(params);
     }

@@ -75,6 +75,30 @@ describe('ddic-xml builders', () => {
       expect(xml).toContain('adtcore:masterLanguage="EN"');
     });
 
+    it('buildMessageClassXml emits the configured language as BOTH language and masterLanguage', () => {
+      // The MSAG handler keys the T100 text rows by the BODY adtcore:language
+      // (live-verified on a4h 7.58); masterLanguage matches the server's own
+      // serialization and drives the object master language.
+      const xml = buildMessageClassXml({
+        name: 'ZM',
+        description: 'd',
+        package: '$TMP',
+        language: 'DE',
+        messages: [{ number: '001', shortText: 'Probe &1' }],
+      });
+      expect(xml).toContain('adtcore:language="DE"');
+      expect(xml).toContain('adtcore:masterLanguage="DE"');
+    });
+
+    it('buildMessageClassXml defaults to EN when no language given (blank-SPRSL bug)', () => {
+      // Without adtcore:language the handler stores the T100 rows with
+      // SPRSL = space: MESSAGE ... INTO never resolves the texts and ATC/SLIN
+      // reports every message number as missing. Verified on a4h 7.58.
+      const xml = buildMessageClassXml({ name: 'ZM', description: 'd', package: '$TMP' });
+      expect(xml).toContain('adtcore:language="EN"');
+      expect(xml).toContain('adtcore:masterLanguage="EN"');
+    });
+
     it('normalizes a lower-case 2-char language to upper case', () => {
       const xml = buildDataElementXml({ name: 'ZE', description: 'd', package: '$TMP', language: 'de' });
       expect(xml).toContain('adtcore:masterLanguage="DE"');
