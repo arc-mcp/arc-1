@@ -5115,6 +5115,139 @@ ENDCLASS.`;
       expect(result.content[0]?.text).toContain('CDS dependency context for ZI_ORDER');
     });
 
+    it('does not serve cached dependency contracts under principal propagation', async () => {
+      const layer = new CachingLayer(new MemoryCache());
+      const source = 'CLASS zcl_root DEFINITION PUBLIC. ENDCLASS.';
+      layer.putDepGraph(source, 'ZCL_ROOT', 'CLAS', [
+        { name: 'ZCL_SECRET', type: 'CLAS', methodCount: 0, source: 'SECRET SOURCE', success: true },
+      ]);
+      const auth: AuthInfo = {
+        token: 'jwt',
+        clientId: 'oidc-client',
+        scopes: ['read'],
+        expiresAt: Math.floor(Date.now() / 1000) + 3600,
+        extra: { sub: 'user-a' },
+      };
+
+      const result = await handleToolCall(
+        createClient(),
+        DEFAULT_CONFIG,
+        'SAPContext',
+        { type: 'CLAS', name: 'ZCL_ROOT', source },
+        auth,
+        undefined,
+        layer,
+        true,
+      );
+
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).not.toContain('SECRET SOURCE');
+      expect(result.content[0]?.text).not.toContain('[cached]');
+      expect(result.content[0]?.text).toContain('0 deps resolved');
+    });
+
+    it('disables shared warmup usages under principal propagation', async () => {
+      const layer = new CachingLayer(new MemoryCache());
+      layer.setWarmupDone(true);
+      layer.cache.putEdge({
+        fromId: 'ZCL_SECRET',
+        toId: 'ZCL_TARGET',
+        edgeType: 'USES',
+        discoveredAt: new Date().toISOString(),
+        valid: true,
+      });
+      const auth: AuthInfo = {
+        token: 'jwt',
+        clientId: 'oidc-client',
+        scopes: ['read'],
+        expiresAt: Math.floor(Date.now() / 1000) + 3600,
+        extra: { sub: 'user-a' },
+      };
+
+      const result = await handleToolCall(
+        createClient(),
+        DEFAULT_CONFIG,
+        'SAPContext',
+        { action: 'usages', type: 'CLAS', name: 'ZCL_TARGET' },
+        auth,
+        undefined,
+        layer,
+        true,
+      );
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('shared warmup index');
+      expect(result.content[0]?.text).toContain('SAPNavigate');
+      expect(result.content[0]?.text).not.toContain('ZCL_SECRET');
+    });
+
+    it('keys inactive-list caching by authenticated user under principal propagation', async () => {
+      const layer = new CachingLayer(new MemoryCache());
+      const client = new AdtClient({
+        baseUrl: 'http://sap:8000',
+        username: '',
+        password: 'secret',
+        safety: unrestrictedSafetyConfig(),
+      });
+      let inactiveCalls = 0;
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL) => {
+        const urlStr = String(url);
+        if (urlStr.includes('/sap/bc/adt/activation/inactiveobjects')) {
+          inactiveCalls += 1;
+          return Promise.resolve(
+            mockResponse(
+              200,
+              '<?xml version="1.0" encoding="utf-8"?><ioc:inactiveObjects xmlns:ioc="http://www.sap.com/adt/inactiveObjects"/>',
+              { 'x-csrf-token': 'T' },
+            ),
+          );
+        }
+        return Promise.resolve(mockResponse(200, "REPORT zfoo.\nWRITE 'x'.", { 'x-csrf-token': 'T' }));
+      });
+      const auth = (sub: string): AuthInfo => ({
+        token: 'jwt',
+        clientId: 'oidc-client',
+        scopes: ['read'],
+        expiresAt: Math.floor(Date.now() / 1000) + 3600,
+        extra: { sub },
+      });
+
+      await handleToolCall(
+        client,
+        DEFAULT_CONFIG,
+        'SAPRead',
+        { type: 'PROG', name: 'ZFOO', version: 'auto' },
+        auth('alice'),
+        undefined,
+        layer,
+        true,
+      );
+      await handleToolCall(
+        client,
+        DEFAULT_CONFIG,
+        'SAPRead',
+        { type: 'PROG', name: 'ZFOO', version: 'auto' },
+        auth('bob'),
+        undefined,
+        layer,
+        true,
+      );
+      await handleToolCall(
+        client,
+        DEFAULT_CONFIG,
+        'SAPRead',
+        { type: 'PROG', name: 'ZFOO', version: 'auto' },
+        auth('alice'),
+        undefined,
+        layer,
+        true,
+      );
+
+      expect(inactiveCalls).toBe(2);
+      expect(layer.inactiveLists.stats()).toEqual({ userCount: 2, totalEntries: 0 });
+    });
+
     it('returns CDS impact with upstream and downstream buckets', async () => {
       mockFetch.mockReset();
       const whereUsedXml = `<?xml version="1.0" encoding="utf-8"?>
