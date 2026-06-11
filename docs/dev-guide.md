@@ -1,65 +1,18 @@
 # ARC-1 Developer Guide — Extended Reference
 
 Verbose companion to [AGENTS.md](../AGENTS.md) (the always-loaded agent guide). AGENTS.md keeps
-task→file routing and config terse to save per-session tokens; this file holds the full per-option
-details and the hard-won, live-verified gotchas that used to live there. When AGENTS.md routes you
+task→file routing and config terse to save per-session tokens; this file holds the full Key-Files
+gotchas (hard-won, live-verified) that used to live there, and points at the existing verbose config
+reference. When AGENTS.md routes you
 to a task and you need the deep background (exact endpoints, version quirks, verified behaviors),
 read the matching row here. Content moved verbatim from the pre-2026-06 root file; module pointers
 reflect the post-consolidation handler layout (dispatch.ts + per-tool modules + write/ package).
 
-## Configuration — full reference (Priority: CLI > Env > .env > Defaults)
+## Configuration — full reference
 
-Copy `.env.example` to `.env`. All options live in `src/server/config.ts` (parser) and `src/server/types.ts` (`ServerConfig` defaults).
-
-| Variable / Flag | Description |
-|-----------------|-------------|
-| `SAP_URL` / `--url` | SAP system URL (e.g., `http://host:50000`) |
-| `SAP_USER` / `--user` | SAP username |
-| `SAP_PASSWORD` / `--password` | SAP password |
-| `SAP_CLIENT` / `--client` | SAP client number (default: 100) |
-| `SAP_LANGUAGE` / `--language` | SAP language (default: EN). Sent as the `sap-language` request param **and** used as the master/original language in object-creation XML (`adtcore:masterLanguage`), so DDIC texts of newly created DTEL/DOMA are filed under this language (issue #343). |
-| `SAP_INSECURE` / `--insecure` | Skip TLS verification (default: false) |
-| `SAP_TRANSPORT` / `--transport` | MCP transport: `stdio` (default) or `http-streamable` |
-| `ARC1_PORT` / `--port` | HTTP server port (default: `8080`). Simpler alternative to `ARC1_HTTP_ADDR` when only the port needs to change |
-| `ARC1_HTTP_ADDR` / `--http-addr` | HTTP server bind address (default: `0.0.0.0:8080`). Use when you need to change both host and port |
-| `SAP_ALLOW_WRITES` / `--allow-writes` | Enable object mutations (create/update/delete/activate/FLP/package mgmt). Default: `false` (restrictive). Also required for transport/git writes. |
-| `SAP_ALLOW_DATA_PREVIEW` / `--allow-data-preview` | Enable named table content preview (`SAPRead(type=TABLE_CONTENTS)`). Default: `false`. |
-| `SAP_ALLOW_FREE_SQL` / `--allow-free-sql` | Enable freestyle SQL (`SAPQuery`). Default: `false`. |
-| `SAP_ALLOW_TRANSPORT_WRITES` / `--allow-transport-writes` | Enable transport mutations (`SAPTransport.create`/`release`/`delete`). Default: `false`. **Also requires** `SAP_ALLOW_WRITES=true`. |
-| `SAP_ALLOW_GIT_WRITES` / `--allow-git-writes` | Enable git mutations (`SAPGit.clone`/`pull`/`push`). Default: `false`. **Also requires** `SAP_ALLOW_WRITES=true`. |
-| `SAP_ALLOWED_PACKAGES` / `--allowed-packages` | Restrict writes to packages (default `$TMP`). Supports exact (`ZFOO`), prefix (`Z*`), DEVCLASS subtree (`ZFOO/**` via `TDEVC.PARENTCL`), and `*`. Subtree resolution is lazy + TTL-cached, fail-closed. Reads are never package-gated. Enforced on **every** mutating op against the object's **real** package (resolved from ADT, fail-closed) — create/update/delete/surgery, **activation** (`SAPActivate` single+batch), and **`change_package`** (gates the move's real source, never the caller-supplied `oldPackage`) — via the shared `enforceAllowedPackageForObjectUrl` helper. |
-| `SAP_DENY_ACTIONS` / `--deny-actions` | Per-action denial; CSV or file. Grammar: `Tool`, `Tool.action`, `Tool.glob*`. See [authorization.md](docs_page/authorization.md#advanced-deny-actions). |
-| `ARC1_API_KEYS` / `--api-keys` | API keys + profiles (`key1:viewer,key2:developer`). Profiles: `viewer`, `viewer-data`, `viewer-sql`, `developer`, `developer-data`, `developer-sql`, `admin`. Profile safety is intersected with server ceiling. |
-| `SAP_OIDC_ISSUER` / `--oidc-issuer` | OIDC issuer URL for JWT validation |
-| `SAP_OIDC_AUDIENCE` / `--oidc-audience` | OIDC audience for JWT validation |
-| `ARC1_OAUTH_DCR_TTL_SECONDS` / `--oauth-dcr-ttl-seconds` | Lifetime of an OAuth DCR `client_id` (default `2592000` = 30 days; clamped `[60s, 7776000s]`). Set `0` to disable expiry — recommended when clients don't auto-re-register on `invalid_client` (Copilot CLI, Cursor). Only with `SAP_XSUAA_AUTH=true`. |
-| `ARC1_DCR_SIGNING_SECRET` / `--dcr-signing-secret` | Optional dedicated HMAC secret for DCR `client_id`s — decouples signing from the XSUAA `clientsecret` so `cf deploy` (which rotates `clientsecret`) doesn't invalidate cached `client_id`s. Use ≥32 bytes; set once via `cf set-env`. Falls back to `clientsecret` when omitted (legacy). Re-setting it + `cf restage` is the revocation knob. Only with `SAP_XSUAA_AUTH=true`. |
-| `ARC1_ALLOWED_ORIGINS` / `--allowed-origins` | Comma-separated CORS allowlist for **browser-based** MCP clients. Empty (default) = CORS disabled. Native clients (Claude Desktop/Cursor/VS Code/Copilot Studio) don't need it. Exact-match only (pairs with `credentials: true`). |
-| `ARC1_PUBLIC_URL` | Public URL ARC-1 advertises in OAuth metadata (issuer + authorize/token/register/revoke + resource metadata). Set when reached via a reverse proxy on a different host or base-path than the CF route (optional path prefix supported). Defaults to the CF route from `VCAP_APPLICATION`, then `http://<bind-host>:<port>`. |
-| `SAP_BTP_SERVICE_KEY` / `--btp-service-key` | BTP ABAP service key JSON (direct connection) |
-| `SAP_BTP_SERVICE_KEY_FILE` / `--btp-service-key-file` | Path to BTP ABAP service key file |
-| `SAP_BTP_OAUTH_CALLBACK_PORT` / `--btp-oauth-callback-port` | OAuth browser callback port (default: auto) |
-| `SAP_SYSTEM_TYPE` / `--system-type` | System type: `auto` (default), `btp`, or `onprem` |
-| `SAP_ABAP_RELEASE` / `--abap-release` | Optional SAP_BASIS release override for local tooling such as abaplint (for example `758` for S/4HANA 2023, `816` for ABAP Platform 2025 — SAP renumbered 75x→8xx). Probe-detected release still wins when available. |
-| `ARC1_TOOL_MODE` / `--tool-mode` | Tool mode: `standard` (12 tools, `SAPGit` feature-gated) or `hyperfocused` (1 universal SAP tool, ~200 tokens) |
-| `SAP_ABAPLINT_CONFIG` / `--abaplint-config` | Path to custom abaplint.jsonc config file for lint rules |
-| `SAP_LINT_BEFORE_WRITE` / `--lint-before-write` | Enable pre-write lint validation (default: true) |
-| `SAP_CHECK_BEFORE_WRITE` / `--check-before-write` | Pre-write SAP-side syntax check via ADT checkruns; warnings appended to response (non-blocking). Default `false` (extra round-trip; activation is the definitive check). |
-| `ARC1_CACHE` / `--cache` | Cache mode: `auto` (default), `memory`, `sqlite`, `none` |
-| `ARC1_CACHE_FILE` / `--cache-file` | SQLite cache file path (default: `.arc1-cache.db`) |
-| `ARC1_CACHE_WARMUP` / `--cache-warmup` | Pre-warm cache on startup via TADIR scan (default: false) |
-| `ARC1_CACHE_WARMUP_PACKAGES` / `--cache-warmup-packages` | Package filter for warmup (e.g., "Z*,Y*") |
-| `ARC1_MAX_CONCURRENT` / `--max-concurrent` | Max concurrent SAP HTTP requests, **server-wide across all users** (default `10`). One shared `Semaphore` gates every `AdtClient`. Honors `Retry-After` on `429`/`503`. Size against `rdisp/wp_no_dia` — see [Rate Limiting Guide](docs_page/rate-limiting.md). |
-| `ARC1_AUTH_RATE_LIMIT` / `--auth-rate-limit` | **Layer 1.** Per-IP cap on OAuth endpoints in req/min (default `20`); `/mcp` gets `max(value × 30, 600)`. `0` disables. On hit: HTTP `429` + `Retry-After` + RFC 9331 headers + `auth_rate_limited` audit. |
-| `ARC1_RATE_LIMIT` / `--rate-limit` | **Layer 2.** Per-user cap on MCP tool calls in req/min. **Default `0` (disabled)** — multi-user deployments opt in (typical `60`); it's the only layer that can fail user-visible work (ADR-0004). Key resolution (`resolveRateLimitUserKey()`) prefers the most-specific identity claim: `userName`→`email`→`sub`→`preferred_username`→`clientId` (the `sub` step keeps OIDC users from collapsing into one bucket). Stdio exempt. Returns MCP error w/ `retryAfter` (not HTTP 429); emits `mcp_rate_limited`. |
-| `SAP_BTP_DESTINATION` | BTP Destination name (overrides URL/user/password) |
-| `SAP_BTP_PP_DESTINATION` | BTP PP Destination name (PrincipalPropagation type) |
-| `SAP_PP_ENABLED` / `--pp-enabled` | Enable per-user principal propagation (default: false) |
-| `SAP_PP_STRICT` / `--pp-strict` | PP failure = error, no fallback to shared client (default: false) |
-| `SAP_PP_ALLOW_SHARED_COOKIES` / `--pp-allow-shared-cookies` | Escape hatch: allow `SAP_COOKIE_FILE`/`STRING` to coexist with `SAP_PP_ENABLED` (cookies stay on shared client only). Default `false`. |
-| `SAP_DISABLE_SAML` / `--disable-saml` | Disable SAML redirect (`X-SAP-SAML2: disabled` + `?saml2=disabled`). Do NOT use on BTP ABAP or S/4 Public Cloud. Default `false`. |
-| `ARC1_PROFILE` / `--profile` | Safety profile shortcut: `viewer`, `viewer-data`, `viewer-sql`, `developer`, `developer-data`, `developer-sql` |
-| `ARC1_LOG_HTTP_DEBUG` | Attach full request/response bodies+headers to `http_request` audit events. Sensitive headers redacted, bodies truncated at 64KB. Not for production. Default `false`. |
+Lives in [docs_page/configuration-reference.md](../docs_page/configuration-reference.md) (defaults,
+CLI flags, clamps, layer interactions — the user-facing reference is the single verbose source;
+duplicating it here proved to drift). The compact per-variable table stays in AGENTS.md.
 
 ## Key Files for Common Tasks — full reference
 
@@ -80,7 +33,7 @@ Copy `.env.example` to `.env`. All options live in `src/server/config.ts` (parse
 | Read FUGR full code tree (`SAPRead type=FUGR expand_includes=true`) | `src/adt/client.ts` (`getFunctionGroupExpanded` — BFS over the include graph, depth cap 5 / block cap 80, cycle+dedup guard), `src/handlers/read.ts` (`case 'FUGR'` expand branch, emits `=== name ===` blocks + `[truncated]` note), tests. Recursion is required — `FUNCTION…ENDFUNCTION` bodies live in nested `LZ<grp>U01/U02` includes. Dynpros + GUI status are NOT reachable via ADT (SE51/SE41 only; 404 on a4h). |
 | Add FUNC structured parameters (#252) | `src/adt/fm-signature.ts` (`buildFmSignatureClause`/`parseFmSignature`/`spliceFmSignature`), `src/handlers/write.ts` + `src/handlers/read.ts` (splice signature into source on FUNC create+update when `args.parameters` set; `handleSAPRead` returns `{source, signature}` when `includeSignature`), `schemas.ts`/`tools.ts`. `FUNC` is excluded from `runPreWriteLint` LINTABLE_TYPES — abaplint can't parse source-based FM signatures. |
 | Modify CLAS include writes | `src/handlers/write/update-delete.ts` (`SAPWrite update` with `include=definitions|implementations|macros|testclasses`, parent-class lock + include URL PUT), `src/adt/crud.ts` (`safeUpdateClassInclude` — GET-probes the include and POST-creates it under the class lock when missing, e.g. fresh `testclasses`/CCAU), `src/adt/errors.ts` (`include-not-initialized` category), `schemas.ts`/`tools.ts`, tests. |
-| Modify package listing (`SAPRead type=DEVC`) | `src/adt/client.ts` (`getPackageContents` uses `informationsystem/search?packageName=...` GET, not `nodestructure` POST; `maxResults` clamps `[1,1000]`, default 200), `src/adt/xml-parser.ts`, `src/handlers/{intent,schemas,tools}.ts`, tests. Search omits legacy SEGW types (e.g. `IWSV`) — use `SAPSearch` for those. |
+| Modify package listing (`SAPRead type=DEVC`) | `src/adt/client.ts` (`getPackageContents` uses `informationsystem/search?packageName=...` GET, not `nodestructure` POST; `maxResults` clamps `[1,1000]`, default 200), `src/adt/xml-parser.ts`, `src/handlers/read.ts`, `src/handlers/{schemas,tools}.ts`, tests. Search omits legacy SEGW types (e.g. `IWSV`) — use `SAPSearch` for those. |
 | Add object transport history (reverse lookup) | `src/adt/transport.ts` (`getObjectTransports`), `src/adt/types.ts` (`ObjectTransportHistory`), `src/handlers/transport.ts` (`handleSAPTransport` case `history`), `src/handlers/schemas.ts`, `src/handlers/tools.ts` |
 | Modify SAPTransport.create / transport target (TR_TARGET) / layer+target discovery | `src/adt/transport.ts` (`createTransportWithTarget` sets the explicit target via `tm:root`/`newrequest` `POST /cts/transportrequests` — the only ADT path that sets it; `CreateCorrectionRequest` at `/cts/transports` ignores `<TARGET>`. `supportsExplicitTransportTarget(http)` discovery-gates it: true iff `/cts/transportrequests` advertises `transportorganizer.v1+xml` — 7.58 yes, 7.50 no. `listTransportTargets`/`listTransportLayers` value-helps), `src/handlers/transport.ts` (`handleSAPTransport` create routing + `layers`/`targets` actions), `schemas.ts`/`tools.ts` (`target`/`transportLayer` params), `src/authz/policy.ts`, `src/adt/http.ts` (discovery accessors). Verified: a4h 7.58 sets target → 201; npl 7.50 gate fail-fast. |
 | Add gCTS / abapGit operation | `src/adt/gcts.ts` or `src/adt/abapgit.ts`, `src/handlers/git.ts` (`handleSAPGit`), `src/handlers/tools.ts`, `src/handlers/schemas.ts` |
@@ -104,7 +57,7 @@ Copy `.env.example` to `.env`. All options live in `src/server/config.ts` (parse
 | Add method-level surgery | `src/context/method-surgery.ts`. `MethodInfo.containingClass` tracks the local class per METHOD block (CCDEF/CCIMP); `extractMethod` honors `<localclass>~<method>` specifiers; ambiguous bare-name lookups across classes error. |
 | Add/extend SAPRead `grep` regex search | `src/context/grep.ts` (`grepSource` — `gim` regex w/ literal fallback, ±3 context, 100-match cap), `src/handlers/read.ts` (`if (args.grep)` branch per source-bearing read; CLAS uses `client.getClassInclude`; rejects `grep`+`method` together), `src/adt/client.ts` (`getClassInclude`), `schemas.ts`/`tools.ts`, tests (#313). |
 | Extend edit_method for class-local includes (CCDEF/CCIMP) | `src/handlers/write/class-surgery.ts` (`detectLocalHandlerInclude` + `edit_method` include routing), `src/handlers/schemas.ts` (`validateSapWriteInput` accepts `include`), `tools.ts`, tests. Auto-detect: `lhc_*`/`lcl_*`→implementations, `ltc_*`→testclasses, `zif_X~method`→MAIN. |
-| Add CLAS class-section surgery (`add_method`/`delete_method`/`edit_method_signature`/`change_method_visibility`/`edit_class_definition`, #303) | `src/adt/class-structure.ts` (splice/diff helpers), `src/adt/client.ts` (`getClassStructure`), `src/adt/xml-parser.ts` (`parseClassStructure` — 7.50 split + 7.58+ unified shapes), `src/handlers/{intent,schemas,tools}.ts`, `src/authz/policy.ts`, tests + `objectstructure-clas-*` fixtures. Refuse-policy diff runs client-side before PUT (adds need an IMPL stub; orphan IMPLs rejected); `include=` writes skip it. |
+| Add CLAS class-section surgery (`add_method`/`delete_method`/`edit_method_signature`/`change_method_visibility`/`edit_class_definition`, #303) | `src/adt/class-structure.ts` (splice/diff helpers), `src/adt/client.ts` (`getClassStructure`), `src/adt/xml-parser.ts` (`parseClassStructure` — 7.50 split + 7.58+ unified shapes), `src/handlers/write/class-surgery.ts`, `src/handlers/{schemas,tools}.ts`, `src/authz/policy.ts`, tests + `objectstructure-clas-*` fixtures. Refuse-policy diff runs client-side before PUT (adds need an IMPL stub; orphan IMPLs rejected); `include=` writes skip it. |
 | Add SAPSearch tadir_lookup `source` variants (adt/db/both) | `src/handlers/search.ts` (`handleSAPSearch` tadir_lookup branch + merge/splitBrain), `src/handlers/{schemas,tools}.ts` (`source` enum), `src/adt/client.ts` (`lookupObjectsViaDb` via `runQuery`), `src/authz/policy.ts`, `src/adt/types.ts`, tests. `db`/`both` escalate to **sql scope** (viewer-only can't piggyback); default `adt`. |
 | Add SAPWrite batch_create `activateAtEnd` | `src/handlers/write/create.ts` (`case 'batch_create'` — accumulates objects, skips inline `activate()`, fires one terminal `activateBatch`, defers cache invalidation till it succeeds), `schemas.ts`/`tools.ts`, tests. Prefer `activateAtEnd: true` for interdependent objects so the activator resolves cross-refs in one pass. |
 | Modify hyperfocused mode | `src/handlers/hyperfocused.ts`, `src/handlers/tools.ts` |

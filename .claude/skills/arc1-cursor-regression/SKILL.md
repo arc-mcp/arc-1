@@ -101,7 +101,7 @@ Map changed files to test modules:
   - `module_auth_preflight`
 - `src/handlers/schemas.ts`, `TABLE_CONTENTS`, validation
   - `module_schema_validation`
-- `src/handlers/intent.ts`, hints/scope/routing/diagnose actions
+- `src/handlers/dispatch.ts` + per-tool handlers, hints/scope/routing/diagnose actions
   - `module_handler_behavior`
 - `src/adt/diagnostics.ts`, dump/gateway/system message parsing
   - `module_diagnostics_runtime`
@@ -162,7 +162,7 @@ Rules:
 - Allow user override via `ARC1_ENV_FILE`.
 - Generated scripts must fail fast if root/env/build artifacts are missing or required keys are empty.
 - Generated scripts may accept `ARC1_EXPECT_DIST_TEXT`; when set, fail startup if
-  the expected text is missing from `dist/handlers/intent.js`. This catches stale
+  the expected text is missing from `dist/handlers/dispatch.js`. This catches stale
   MCP server builds before Cursor runs a long live regression.
 - Include an `ARC1_RUNTIME_FINGERPRINT` env value in generated MCP profiles for
   branch-specific runs, and tell the tester to restart/toggle MCP servers after
@@ -205,8 +205,8 @@ fi
 [[ -n "$ROOT" ]] || { echo "Unable to resolve ARC-1 root. Set ARC1_ROOT=/absolute/path/to/arc-1"; exit 1; }
 [[ -f "$ROOT/package.json" ]] || { echo "Invalid ARC1_ROOT: $ROOT (package.json missing)"; exit 1; }
 [[ -f "$ROOT/dist/index.js" ]] || { echo "Missing build artifact: $ROOT/dist/index.js. Run: (cd \"$ROOT\" && npm run build)"; exit 1; }
-if [[ -n "${ARC1_EXPECT_DIST_TEXT:-}" ]] && ! grep -Fq "$ARC1_EXPECT_DIST_TEXT" "$ROOT/dist/handlers/intent.js"; then
-  echo "Built dist is stale: expected text not found in dist/handlers/intent.js. Run: (cd \"$ROOT\" && npm run build)" >&2
+if [[ -n "${ARC1_EXPECT_DIST_TEXT:-}" ]] && ! grep -Fq "$ARC1_EXPECT_DIST_TEXT" "$ROOT/dist/handlers/dispatch.js"; then
+  echo "Built dist is stale: expected text not found in dist/handlers/dispatch.js. Run: (cd \"$ROOT\" && npm run build)" >&2
   exit 1
 fi
 

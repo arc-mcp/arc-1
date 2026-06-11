@@ -42,7 +42,7 @@ Pre-commit: Husky runs `lint-staged` → Biome auto-fixes staged `*.{ts,js,json}
 ## Configuration (Priority: CLI > Env > .env > Defaults)
 
 Copy `.env.example` to `.env`. Parser: `src/server/config.ts`; defaults: `src/server/types.ts`.
-Full per-option details (verified behaviors, clamps, interactions): [docs/dev-guide.md](docs/dev-guide.md).
+Full per-option details (defaults, clamps, layer interactions): [docs_page/configuration-reference.md](docs_page/configuration-reference.md).
 
 | Variable / Flag | Description |
 |-----------------|-------------|
@@ -266,7 +266,7 @@ Every code change requires tests. Skip taxonomy: `docs/testing-skip-policy.md`.
 
 - **ESM-only**: local imports need `.js` extensions. **TypeScript strict** (noUnusedLocals/Parameters, Node16 resolution). **Biome**: 2-space, single quotes, 120 cols — auto-fixed on commit, never hand-format.
 - **Logging to stderr only** (`src/server/logger.ts`); `console.log` corrupts MCP JSON-RPC on stdout.
-- Stack: TypeScript 5.8, Node 22+, `@modelcontextprotocol/sdk`, `@abaplint/core`, `undici`, `fast-xml-parser` v5, `better-sqlite3`, `commander`, `ajv` (2020-12), `zod` v4, `vitest`, `biome`.
+- Stack: TypeScript 6.0, Node 22+, `@modelcontextprotocol/sdk`, `@abaplint/core`, `undici`, `fast-xml-parser` v5, `better-sqlite3`, `commander`, `ajv` (2020-12), `zod` v4, `vitest`, `biome`.
 - **Releasing** ([release-please](https://github.com/googleapis/release-please)): `feat:` → minor, `fix:` → patch, `feat!:`/`BREAKING CHANGE:` → major; `refactor:`/`test:`/`docs:`/`chore:`/`ci:` → **no release** (use these for behavior-preserving PRs). Version lives in `package.json` + `src/server/server.ts` `VERSION` (the `x-release-please-version` marker — never bump by hand). npm publishes via OIDC trusted publishing.
 
 ## Security & Architectural Invariants

@@ -319,7 +319,7 @@ flowchart TD
 ```
 
 Runtime policy is centralized in `src/authz/policy.ts`. It maps every tool
-action/type to a user scope and internal operation type. `src/handlers/intent.ts`
+action/type to a user scope and internal operation type. `src/handlers/dispatch.ts`
 checks that policy before input validation, and `src/server/server.ts` uses the
 same policy to prune tool schemas during `tools/list`.
 
@@ -410,21 +410,21 @@ returns an ABAP-context bearer token, and ARC-1 sends that token to ADT.
 
 | Change | Start here |
 | ------ | ---------- |
-| Add a new tool action/type | `src/handlers/schemas.ts`, `src/authz/policy.ts`, `src/handlers/tools.ts`, `src/handlers/intent.ts` |
-| Add a new ADT read | `src/adt/client.ts`, parser in `src/adt/xml-parser.ts` if needed, handler in `src/handlers/intent.ts` |
-| Add a new mutation | Domain module in `src/adt/`, safety checks in `src/adt/safety.ts`, route in `src/handlers/intent.ts` |
+| Add a new tool action/type | `src/handlers/schemas.ts`, `src/authz/policy.ts`, `src/handlers/tools.ts`, `src/handlers/dispatch.ts` + the per-tool handler module |
+| Add a new ADT read | `src/adt/client.ts`, parser in `src/adt/xml-parser.ts` if needed, handler in `src/handlers/read.ts` |
+| Add a new mutation | Domain module in `src/adt/`, safety checks in `src/adt/safety.ts`, route in `src/handlers/write.ts` (or the matching tool handler) |
 | Add scope or safety behavior | `src/authz/policy.ts`, `src/adt/safety.ts`, `src/server/server.ts` |
 | Add HTTP auth behavior | `src/server/http.ts`, `src/server/xsuaa.ts` |
 | Add SAP identity/BTP behavior | `src/adt/btp.ts`, `src/adt/oauth.ts`, `src/server/server.ts` |
 | Add cache behavior | `src/cache/*`, `src/context/*` |
-| Add diagnostics | `src/adt/diagnostics.ts`, `src/handlers/intent.ts`, `src/handlers/tools.ts` |
+| Add diagnostics | `src/adt/diagnostics.ts`, `src/handlers/diagnose.ts`, `src/handlers/tools.ts` |
 
 When adding a new action, keep the four source-of-truth files aligned:
 
 1. Input schema in `src/handlers/schemas.ts`
 2. User/safety policy in `src/authz/policy.ts`
 3. Tool description/schema in `src/handlers/tools.ts`
-4. Runtime handler in `src/handlers/intent.ts`
+4. Runtime handler in the per-tool module (`src/handlers/read.ts`, `write.ts`, … — routed by `src/handlers/dispatch.ts`)
 
 Then run:
 
