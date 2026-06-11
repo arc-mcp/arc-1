@@ -57,19 +57,16 @@ function typeEnum(config: ServerConfig, toolName: string): string[] {
 }
 
 // No "BTP ∪ ONPREM_ONLY == on-prem" partition block: both arrays are now derived from one
-// `*_TYPE_TABLE` in tool-registry.ts (onprem = every row, btp = the `btp:true` rows), so that
-// invariant holds by construction. The exact BTP membership is still pinned cross-layer by the
-// JSON-Schema/Zod enum-equality blocks below and the per-config tool-definition snapshots. This
-// block is just a cheap smoke test that the `deriveTypeArrays` helper yields a proper, non-empty
-// subset (it would catch a regression returning the on-prem rows for both).
+// `*_TYPE_TABLE` in tool-registry.ts (onprem = every row, btp = the `btp:true` rows), so subset
+// membership holds by construction and asserting it here could never fail. The exact BTP
+// membership is pinned independently by the committed tool-definition snapshot fixtures
+// (tests/fixtures/tool-definitions/btp-*.json). This block only length-checks that the
+// derivation yields a PROPER subset — the one regression class (filter returning all/no rows)
+// the enum-equality blocks below can't see, since they compare the derived array to itself.
 describe('registry sync — derived BTP arrays are a proper non-empty subset of on-prem', () => {
   function expectProperSubset(onpremTypes: readonly string[], btpTypes: readonly string[]) {
     expect(btpTypes.length).toBeGreaterThan(0);
     expect(btpTypes.length).toBeLessThan(onpremTypes.length); // every tool has on-prem-only types
-    expect(
-      btpTypes.every((t) => onpremTypes.includes(t)),
-      'every BTP type is also on-prem',
-    ).toBe(true);
   }
   it('SAPRead', () => expectProperSubset(SAPREAD_TYPES_ONPREM, SAPREAD_TYPES_BTP));
   it('SAPWrite', () => expectProperSubset(SAPWRITE_TYPES_ONPREM, SAPWRITE_TYPES_BTP));

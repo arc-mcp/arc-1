@@ -3,7 +3,7 @@
  *
  * Downstream-impact bucketing/ordering, where-used scoping, the update/delete/activation
  * dependency hints, and the CDS reserved-keyword guard. Shared by the SAPWrite, SAPActivate and
- * SAPContext handlers. warnCdsReservedKeywords is re-exported from intent.ts (barrel-locked).
+ * SAPContext handlers.
  */
 
 import { type CdsImpactDownstream, classifyCdsImpact } from '../adt/cds-impact.js';

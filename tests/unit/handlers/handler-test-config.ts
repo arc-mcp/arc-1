@@ -23,7 +23,11 @@ export function feat(id: string, available: boolean): FeatureStatus {
  * dropped (those keys aren't mapped below).
  */
 type FeatureKey = {
-  [K in keyof ResolvedFeatures]: ResolvedFeatures[K] extends FeatureStatus ? K : never;
+  // `-?` strips optionality before indexing: without it the optional metadata keys contribute
+  // `undefined` to the union, which makes Record<FeatureKey, boolean> a TS2344 error. (tests/ are
+  // outside tsconfig's typecheck today, so tsc wouldn't flag it in CI — but IDEs and any future
+  // tests-covering typecheck would.)
+  [K in keyof ResolvedFeatures]-?: ResolvedFeatures[K] extends FeatureStatus ? K : never;
 }[keyof ResolvedFeatures];
 
 /** A complete ResolvedFeatures with every feature available unless overridden. */

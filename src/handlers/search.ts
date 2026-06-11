@@ -1,7 +1,6 @@
 /**
  * SAPSearch handler — repository search (text, tadir lookup, info-system) + query transliteration
- * helpers. Extracted from intent.ts (Stage B; moved verbatim). transliterateQuery + looksLikeFieldName
- * are re-exported from intent.ts (barrel-locked).
+ * helpers. Extracted from intent.ts (Stage B; moved verbatim).
  */
 
 import type { AdtClient } from '../adt/client.js';

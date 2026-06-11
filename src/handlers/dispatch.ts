@@ -3,7 +3,7 @@
  *
  * Runs the per-call pipeline (rate-limit → scope → deny-actions → Zod → route to one of the 12
  * tool handlers → audit) and owns the LLM-facing error-formatting tree. Extracted from intent.ts
- * (Stage B). intent.ts now re-exports handleToolCall + the public surface as a back-compat barrel.
+ * (Stage B); the intent.ts back-compat barrel was removed in Stage E — import from here directly.
  */
 
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';

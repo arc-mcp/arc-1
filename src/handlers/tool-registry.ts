@@ -16,7 +16,7 @@
  *   2. Add/remove the matching `case` in the tool's handler module: SAPRead → src/handlers/read.ts,
  *      SAPWrite → src/handlers/write.ts (note write routes by URL via objectBasePath/server-driven,
  *      not a per-type switch — see the registry-sync write-routing guard), SAPContext →
- *      src/handlers/context.ts. (intent.ts is now only a re-export barrel — no cases live there.)
+ *      src/handlers/context.ts.
  *   3. Add/remove the ACTION_POLICY entry if it needs a non-default scope (src/authz/policy.ts).
  * The registry-sync + validate:policy checks will fail loudly if any of these drift.
  *
@@ -25,8 +25,24 @@
  * same literal set, in table order.
  */
 
-/** Pull the on-prem (all rows) + BTP (btp:true rows) type arrays out of an `as const` type table. */
-function deriveTypeArrays<const R extends { readonly type: string; readonly btp: boolean }>(table: readonly R[]) {
+/**
+ * Pull the on-prem (all rows) + BTP (btp:true rows) type arrays out of an `as const` type table.
+ * The return type is annotated explicitly — inside the generic body `r.type` is seen as plain
+ * `string` (property access resolves via the constraint), so without the annotation every derived
+ * array and union would silently widen from literal types to `string`, losing compile-time typo
+ * protection for consumers. Throws on a duplicate `type` row at module load: Zod's z.enum would
+ * silently dedupe it while the JSON-Schema `enum:` shipped to LLM clients would carry the
+ * duplicate — strict clients reject such a schema, and no equality test could catch it because
+ * every comparison derives from this same table.
+ */
+function deriveTypeArrays<const R extends { readonly type: string; readonly btp: boolean }>(
+  table: readonly R[],
+): { onprem: R['type'][]; btp: Extract<R, { btp: true }>['type'][] } {
+  const seen = new Set<string>();
+  for (const row of table) {
+    if (seen.has(row.type)) throw new Error(`tool-registry: duplicate type row '${row.type}' in a *_TYPE_TABLE`);
+    seen.add(row.type);
+  }
   return {
     onprem: table.map((r) => r.type),
     btp: table.filter((r): r is Extract<R, { btp: true }> => r.btp).map((r) => r.type),

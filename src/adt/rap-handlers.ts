@@ -1146,7 +1146,7 @@ function applySignaturesAcrossSections(
  *      existing/new declarations, including semantic names bound via
  *      `FOR ACTION alias~ActionName`
  *
- * Keeping this plan here prevents `intent.ts` from duplicating RAP parser
+ * Keeping this plan here prevents the write handlers from duplicating RAP parser
  * invariants such as "deferred classes are not editable" and "stub method
  * names come from declarations, not necessarily from BDEF action names".
  */

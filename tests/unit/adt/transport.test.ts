@@ -1101,7 +1101,7 @@ describe('Transport Management', () => {
       const result = await getObjectTransports(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/zcl_test');
       expect(result.lockedTransport).toBe('A4HK900123');
       // /transports only reports the current lock — candidate transports
-      // come from the transportchecks fallback in intent.ts, not here.
+      // come from the transportchecks fallback in the SAPTransport handler, not here.
       expect(result.candidateTransports).toEqual([]);
     });
 

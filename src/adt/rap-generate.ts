@@ -140,7 +140,7 @@ const STALE_ACTIVE_HINT =
   'followed by SAPWrite(action="create", type="CLAS", …) and rerun generate_behavior_implementation against ' +
   'the freshly created class. The just-written CCDEF/CCIMP source is correct and reusable in both recovery paths.';
 
-/** Build the include URL for CCDEF/CCIMP/macros/testclasses (mirror of intent.ts:classIncludeUrl). */
+/** Build the include URL for CCDEF/CCIMP/macros/testclasses (mirror of object-types.ts classIncludeUrl). */
 function classIncludeUrlFor(
   name: string,
   include: 'definitions' | 'implementations' | 'macros' | 'testclasses',

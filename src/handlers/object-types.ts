@@ -3,10 +3,7 @@
  *
  * Slash-form alias maps, canonical-type normalization, the objectBasePath/URL builders,
  * LLM arg-stripping, and class-include helpers. Moved verbatim from intent.ts
- * (docs/plans/architecture-consolidation-plan.md, Stage B). The public subset
- * (SLASH_TYPE_MAP, SLASH_TYPE_EVIDENCE, KNOWN_BASE_TYPES, normalizeObjectType,
- * stripLlmEmptyValues, normalizeTypeArgsForValidation, objectBasePath) is re-exported from
- * intent.ts for back-compat (locked by barrel-surface.test.ts).
+ * (docs/plans/architecture-consolidation-plan.md, Stage B).
  */
 
 // ─── Object URL Mapping ──────────────────────────────────────────────

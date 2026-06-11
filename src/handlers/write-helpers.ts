@@ -3,8 +3,7 @@
  *
  * Content-type negotiation, DDIC metadata write properties, buildCreateXml, the pre-write
  * lint/syntax/RAP-preflight gates, package enforcement, and the server-driven-object write engine.
- * Shared by the SAPWrite and SAPLint handlers. buildCreateXml + stripFmParamCommentBlock are
- * re-exported from intent.ts (barrel-locked).
+ * Shared by the SAPWrite and SAPLint handlers.
  */
 
 import type { AdtClient } from '../adt/client.js';

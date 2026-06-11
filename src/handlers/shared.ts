@@ -3,7 +3,7 @@
  *
  * `textResult`/`errorResult` are used by every handler, so they live in a dependency-free module
  * (extracted from intent.ts, Stage B) that handler modules can import without pulling in the whole
- * dispatcher. `ToolResult` is re-exported from intent.ts for back-compat (barrel-surface.test.ts).
+ * dispatcher.
  */
 
 /** MCP tool call result */

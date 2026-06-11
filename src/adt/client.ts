@@ -94,7 +94,7 @@ function appendQueryParam(path: string, key: string, value: string): string {
  * Build a navigation hint URL for a TADIR row.
  *
  * Internal mirror of the handler-side `objectBasePath()` table — kept local to
- * `client.ts` to avoid circular dependencies (`intent.ts` imports `AdtClient`).
+ * `client.ts` to avoid circular dependencies (the handler modules import `AdtClient`).
  * Returns `''` for types that cannot be addressed via a single base URL
  * (FUNC requires a parent group; SEGW legacy types have no ADT handler);
  * callers must treat the empty string as "no direct navigation".
