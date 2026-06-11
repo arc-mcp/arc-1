@@ -1,13 +1,13 @@
 /**
  * Drift guards for the single-source object-type registry (Stage A4).
  *
- * tool-registry.ts feeds four places that must never disagree:
+ * tool-registry.ts feeds three places that must never disagree:
  *   - the JSON-Schema `enum`s in tools.ts (what the LLM is allowed to send),
  *   - the Zod `z.enum`s in schemas.ts (what the runtime accepts),
- *   - the per-tool handler routing (read.ts switch / write.ts URL routing / context.ts),
- *   - the BTP-vs-onprem split (a type must be in the BTP list or the explicit ONPREM_ONLY list).
- * A type present in one but not another is a latent bug (advertised-but-rejected,
- * accepted-but-unhandled, or supported-but-BTP-rejected). These tests fail loudly if any drifts.
+ *   - the per-tool handler routing (read.ts switch / write.ts URL routing / context.ts).
+ * A type present in one but not another is a latent bug (advertised-but-rejected or
+ * accepted-but-unhandled). These tests fail loudly if any drifts. (The BTP-vs-onprem split is no
+ * longer a drift risk: both arrays derive from one `*_TYPE_TABLE`, so they can't disagree.)
  */
 
 import { describe, expect, it, vi } from 'vitest';
@@ -18,13 +18,10 @@ import { getToolSchema } from '../../../src/handlers/schemas.js';
 import {
   SAPCONTEXT_TYPES_BTP,
   SAPCONTEXT_TYPES_ONPREM,
-  SAPCONTEXT_TYPES_ONPREM_ONLY,
   SAPREAD_TYPES_BTP,
   SAPREAD_TYPES_ONPREM,
-  SAPREAD_TYPES_ONPREM_ONLY,
   SAPWRITE_TYPES_BTP,
   SAPWRITE_TYPES_ONPREM,
-  SAPWRITE_TYPES_ONPREM_ONLY,
 } from '../../../src/handlers/tool-registry.js';
 import { getToolDefinitions } from '../../../src/handlers/tools.js';
 import type { ServerConfig } from '../../../src/server/types.js';
@@ -58,24 +55,24 @@ function typeEnum(config: ServerConfig, toolName: string): string[] {
   return (tool.inputSchema as any).properties.type.enum as string[];
 }
 
-// Note: a dedicated "BTP ⊆ on-prem" block is intentionally absent — it is strictly implied by the
-// partition guard below (btp ⊆ btp ∪ onprem_only = on-prem), so it would only ever fail in tandem.
-describe('registry sync — BTP + ONPREM_ONLY partition the on-prem list exactly', () => {
-  // Forgetting to add a new type to the BTP list is otherwise indistinguishable from a deliberate
-  // on-prem-only type. Requiring `onprem === btp ∪ onprem_only` (disjoint) turns that omission into
-  // a test failure: a new type lands in onprem but in neither partition, so the union differs.
-  function expectPartition(onpremTypes: readonly string[], btpTypes: readonly string[], onpremOnly: readonly string[]) {
+// No "BTP ∪ ONPREM_ONLY == on-prem" partition block: both arrays are now derived from one
+// `*_TYPE_TABLE` in tool-registry.ts (onprem = every row, btp = the `btp:true` rows), so that
+// invariant holds by construction. The exact BTP membership is still pinned cross-layer by the
+// JSON-Schema/Zod enum-equality blocks below and the per-config tool-definition snapshots. This
+// block is just a cheap smoke test that the `deriveTypeArrays` helper yields a proper, non-empty
+// subset (it would catch a regression returning the on-prem rows for both).
+describe('registry sync — derived BTP arrays are a proper non-empty subset of on-prem', () => {
+  function expectProperSubset(onpremTypes: readonly string[], btpTypes: readonly string[]) {
+    expect(btpTypes.length).toBeGreaterThan(0);
+    expect(btpTypes.length).toBeLessThan(onpremTypes.length); // every tool has on-prem-only types
     expect(
-      btpTypes.filter((t) => onpremOnly.includes(t)),
-      'BTP and ONPREM_ONLY must be disjoint',
-    ).toEqual([]);
-    expect([...new Set([...btpTypes, ...onpremOnly])].sort(), 'BTP ∪ ONPREM_ONLY must equal on-prem').toEqual(
-      [...new Set(onpremTypes)].sort(),
-    );
+      btpTypes.every((t) => onpremTypes.includes(t)),
+      'every BTP type is also on-prem',
+    ).toBe(true);
   }
-  it('SAPRead', () => expectPartition(SAPREAD_TYPES_ONPREM, SAPREAD_TYPES_BTP, SAPREAD_TYPES_ONPREM_ONLY));
-  it('SAPWrite', () => expectPartition(SAPWRITE_TYPES_ONPREM, SAPWRITE_TYPES_BTP, SAPWRITE_TYPES_ONPREM_ONLY));
-  it('SAPContext', () => expectPartition(SAPCONTEXT_TYPES_ONPREM, SAPCONTEXT_TYPES_BTP, SAPCONTEXT_TYPES_ONPREM_ONLY));
+  it('SAPRead', () => expectProperSubset(SAPREAD_TYPES_ONPREM, SAPREAD_TYPES_BTP));
+  it('SAPWrite', () => expectProperSubset(SAPWRITE_TYPES_ONPREM, SAPWRITE_TYPES_BTP));
+  it('SAPContext', () => expectProperSubset(SAPCONTEXT_TYPES_ONPREM, SAPCONTEXT_TYPES_BTP));
 });
 
 describe('registry sync — every SAPWrite type is routable (no silent objectBasePath fallback)', () => {
