@@ -12,8 +12,13 @@ intent.test.ts (712 tests) into 10 per-module files — read, search-navigate, l
 manage-context, transport, write-ddic, write-create-batch, write-surgery-rap, dispatch-misc — all
 under the 3,000-line budget, blocks moved verbatim (names unchanged), exactly 712 tests preserved.
 Stage R ride-alongs landed as separate commits: R1 SDO⊆table registry-sync assertion
-(mutation-proven), R2 the #403-stale dev-guide SRVB row, R3 the `SAPWRITE_CLAS_INCLUDES` alias
-retirement (fixtures byte-identical). The mapping/grouping below is the as-shipped layout.
+(mutation-proven; later superseded in this PR by deriving the table rows from `SDO_TYPES` —
+by-construction, which also covers the BTP side the assertion missed), R2 the #403-stale dev-guide
+SRVB row, R3 the `SAPWRITE_CLAS_INCLUDES` alias retirement (fixtures byte-identical). A full
+multi-agent review of the PR then landed: split-file titles/comment repairs, the features()/
+featuresOff() factory sweep, two typecheck-gate hole closures (mjs `any`-wildcard → allowJs;
+root vitest configs into the tests program), and the shared undici-mock prologue helper.
+The mapping/grouping below is the as-shipped layout.
 
 ## Baseline (measured on `origin/main` @ 909f2534, 2026-06-11, post-#402+#403)
 

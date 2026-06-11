@@ -12,7 +12,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
-import { isServerDrivenObjectType, SDO_REGISTRY } from '../../../src/adt/server-driven.js';
+import { isServerDrivenObjectType } from '../../../src/adt/server-driven.js';
 import { canonicalTablType, KNOWN_BASE_TYPES } from '../../../src/handlers/object-types.js';
 import { getToolSchema } from '../../../src/handlers/schemas.js';
 import {
@@ -86,17 +86,11 @@ describe('registry sync — every SAPWrite type is routable (no silent objectBas
   }
 });
 
-describe('registry sync — every SDO_REGISTRY type is exposed to LLMs', () => {
-  // The routable/dispatch blocks above catch a table row WITHOUT an engine entry, but not the
-  // converse: a new server-driven type wired into SDO_REGISTRY (src/adt/server-driven.ts) without
-  // SAPRead/SAPWrite table rows would ship silently unexposed to LLM clients.
-  it('every SDO_REGISTRY type has a SAPRead and a SAPWrite table row', () => {
-    for (const sdoType of Object.keys(SDO_REGISTRY)) {
-      expect(SAPREAD_TYPES_ONPREM, `${sdoType} missing from SAPREAD_TYPE_TABLE`).toContain(sdoType);
-      expect(SAPWRITE_TYPES_ONPREM, `${sdoType} missing from SAPWRITE_TYPE_TABLE`).toContain(sdoType);
-    }
-  });
-});
+// No SDO_REGISTRY ⊆ *_TYPE_TABLE block: the SDO rows in both tables now DERIVE from SDO_TYPES
+// (src/adt/server-driven.ts; registry keys are pinned to that tuple via `satisfies`), so the
+// containment this once asserted holds by construction — including on the BTP side, which the
+// test never covered. Removing the spread from a table would surface as a loud tool-definition
+// fixture diff (the enums are pinned byte-exactly).
 
 describe('registry sync — JSON-Schema enums equal the registry', () => {
   it('SAPRead', () => {
