@@ -29,7 +29,7 @@ const BUDGETS = {
   'src/handlers/write.ts': 2050,
   'src/handlers/tools.ts': 1700,
   'src/adt/xml-parser.ts': 1650,
-  'tests/unit/handlers/intent.test.ts': 15300,
+  'tests/unit/handlers/intent.test.ts': 15500,
 };
 
 const DEFAULT_SRC = 1500;

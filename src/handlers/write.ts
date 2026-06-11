@@ -48,13 +48,13 @@ import { spliceMethod } from '../context/method-surgery.js';
 import { logger } from '../server/logger.js';
 import type { ServerConfig } from '../server/types.js';
 import { type BatchActivationObject, buildBatchActivationStatuses, formatBatchActivationStatuses } from './activate.js';
+import { type CacheSecurityContext, invalidateInactiveList } from './cache-security.js';
 import {
   buildCdsDeleteDependencyHint,
   buildCdsUpdateCrudHint,
   CDS_DEPENDENCY_SENSITIVE_TYPES,
   guardCdsSyntax,
 } from './cds-hints.js';
-import { type CacheSecurityContext, invalidateInactiveList } from './cache-security.js';
 import { cachedFeatures, isTablesEndpointAvailable } from './feature-cache.js';
 import {
   CLASS_WRITE_INCLUDES,
