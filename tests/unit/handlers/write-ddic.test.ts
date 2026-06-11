@@ -5,9 +5,9 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
-import type { ResolvedFeatures } from '../../../src/adt/types.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
+import { featuresOff } from './handler-test-config.js';
 
 // Mock undici's fetch (used by AdtHttpClient.doFetch)
 const mockFetch = vi.fn();
@@ -885,10 +885,11 @@ describe('SAPWrite handler — DDIC writes', () => {
       // Pre-fix this 404'd at the POST collection with a confusing error; post-fix we refuse
       // upfront with the SE11 hint.
       setCachedFeatures({
+        ...featuresOff(),
         abapRelease: '750',
         systemType: 'onprem',
         discoveryMap: new Map<string, string[]>([['/sap/bc/adt/ddic/structures', ['application/*']]]),
-      } as ResolvedFeatures);
+      });
       try {
         mockFetch.mockReset();
         const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
@@ -915,10 +916,11 @@ describe('SAPWrite handler — DDIC writes', () => {
       // Update path goes through resolveTablObjectUrlForWrite. On NW 7.50 the resolver
       // throws AdtSafetyError before any PUT can fire.
       setCachedFeatures({
+        ...featuresOff(),
         abapRelease: '750',
         systemType: 'onprem',
         discoveryMap: new Map<string, string[]>([['/sap/bc/adt/ddic/structures', ['application/*']]]),
-      } as ResolvedFeatures);
+      });
       try {
         mockFetch.mockReset();
         mockFetch.mockResolvedValueOnce(
@@ -953,10 +955,11 @@ describe('SAPWrite handler — DDIC writes', () => {
     it('allows TABL update for TABL/DS structures on 7.50 (structures endpoint is available)', async () => {
       // Structures live at /ddic/structures/ on all releases — writes must still succeed.
       setCachedFeatures({
+        ...featuresOff(),
         abapRelease: '750',
         systemType: 'onprem',
         discoveryMap: new Map<string, string[]>([['/sap/bc/adt/ddic/structures', ['application/*']]]),
-      } as ResolvedFeatures);
+      });
       try {
         mockFetch.mockReset();
         const calls: Array<{ method: string; url: string }> = [];
@@ -1004,10 +1007,11 @@ describe('SAPWrite handler — DDIC writes', () => {
 
     it('refuses TABL in batch_create when /tables/ is missing — other entries continue (issue #285)', async () => {
       setCachedFeatures({
+        ...featuresOff(),
         abapRelease: '750',
         systemType: 'onprem',
         discoveryMap: new Map<string, string[]>([['/sap/bc/adt/ddic/structures', ['application/*']]]),
-      } as ResolvedFeatures);
+      });
       try {
         mockFetch.mockReset();
         mockFetch.mockResolvedValue(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
@@ -1200,10 +1204,11 @@ describe('SAPWrite handler — DDIC writes', () => {
       // for issue #285). TABL/DS must skip the gate because /structures/ exists on
       // every ADT release. This unlocks structure CRUD on NW 7.50 as a bonus.
       setCachedFeatures({
+        ...featuresOff(),
         abapRelease: '750',
         systemType: 'onprem',
         discoveryMap: new Map<string, string[]>([['/sap/bc/adt/ddic/structures', ['application/*']]]),
-      } as ResolvedFeatures);
+      });
       try {
         mockFetch.mockReset();
         const calls: Array<{ method: string; url: string; body?: string }> = [];
@@ -1245,10 +1250,11 @@ describe('SAPWrite handler — DDIC writes', () => {
     it('PR #286 discovery gate still refuses bare TABL create when /tables/ is missing', async () => {
       // Regression guard: PR #286's refusal must continue to fire for bare TABL.
       setCachedFeatures({
+        ...featuresOff(),
         abapRelease: '750',
         systemType: 'onprem',
         discoveryMap: new Map<string, string[]>([['/sap/bc/adt/ddic/structures', ['application/*']]]),
-      } as ResolvedFeatures);
+      });
       try {
         mockFetch.mockReset();
         const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
@@ -1268,10 +1274,11 @@ describe('SAPWrite handler — DDIC writes', () => {
     it('PR #286 discovery gate also refuses explicit TABL/DT create when /tables/ is missing', async () => {
       // Explicit transparent-table form must hit the same refusal as bare TABL.
       setCachedFeatures({
+        ...featuresOff(),
         abapRelease: '750',
         systemType: 'onprem',
         discoveryMap: new Map<string, string[]>([['/sap/bc/adt/ddic/structures', ['application/*']]]),
-      } as ResolvedFeatures);
+      });
       try {
         mockFetch.mockReset();
         const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
@@ -1290,10 +1297,11 @@ describe('SAPWrite handler — DDIC writes', () => {
 
     it('SAPWrite batch_create: TABL/DS succeeds while TABL/DT is refused on NW 7.50 (mixed batch)', async () => {
       setCachedFeatures({
+        ...featuresOff(),
         abapRelease: '750',
         systemType: 'onprem',
         discoveryMap: new Map<string, string[]>([['/sap/bc/adt/ddic/structures', ['application/*']]]),
-      } as ResolvedFeatures);
+      });
       try {
         mockFetch.mockReset();
         mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
@@ -1398,10 +1406,11 @@ describe('SAPWrite handler — DDIC writes', () => {
       // The explicit TABL/DT slash form must hit the same SE11-hint refusal as
       // bare TABL when /sap/bc/adt/ddic/tables/ is missing from discovery.
       setCachedFeatures({
+        ...featuresOff(),
         abapRelease: '750',
         systemType: 'onprem',
         discoveryMap: new Map<string, string[]>([['/sap/bc/adt/ddic/structures', ['application/*']]]),
-      } as ResolvedFeatures);
+      });
       try {
         mockFetch.mockReset();
         // First call: search returns TABL/DT — resolver decides this is a
@@ -1500,13 +1509,14 @@ describe('SAPWrite handler — DDIC writes', () => {
       // entries succeed. Asserts TABL/DT lands at /tables/, TABL/DS at /structures/,
       // and there's no cross-routing.
       setCachedFeatures({
+        ...featuresOff(),
         abapRelease: '758',
         systemType: 'onprem',
         discoveryMap: new Map<string, string[]>([
           ['/sap/bc/adt/ddic/tables', ['application/*']],
           ['/sap/bc/adt/ddic/structures', ['application/*']],
         ]),
-      } as ResolvedFeatures);
+      });
       try {
         mockFetch.mockReset();
         const calls: Array<{ method: string; url: string }> = [];

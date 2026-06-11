@@ -12,6 +12,7 @@ import { MemoryCache } from '../../../src/cache/memory.js';
 import { logger } from '../../../src/server/logger.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
+import { featuresOff } from './handler-test-config.js';
 
 // Mock undici's fetch (used by AdtHttpClient.doFetch)
 const mockFetch = vi.fn();
@@ -723,23 +724,14 @@ describe('SAPRead handler', () => {
     });
 
     it('returns error when ui5 feature is unavailable', async () => {
-      setCachedFeatures({
-        hana: { id: 'hana', available: false, mode: 'auto' },
-        abapGit: { id: 'abapGit', available: false, mode: 'auto' },
-        rap: { id: 'rap', available: false, mode: 'auto' },
-        amdp: { id: 'amdp', available: false, mode: 'auto' },
-        ui5: { id: 'ui5', available: false, mode: 'auto' },
-        transport: { id: 'transport', available: false, mode: 'auto' },
-        gcts: { id: 'gcts', available: false, mode: 'auto' },
-        ui5repo: { id: 'ui5repo', available: false, mode: 'auto' },
-        flp: { id: 'flp', available: false, mode: 'auto' },
-      });
+      setCachedFeatures(featuresOff());
       try {
         const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
           type: 'BSP',
         });
         expect(result.isError).toBe(true);
-        expect(result.content[0]!.text).toContain('not available');
+        // Pin the ui5 gate's own message — 'not available' alone also matches the ui5repo gate.
+        expect(result.content[0]!.text).toContain('UI5/Fiori BSP Filestore is not available');
       } finally {
         resetCachedFeatures();
       }
@@ -787,24 +779,15 @@ describe('SAPRead handler', () => {
     });
 
     it('returns error for BSP_DEPLOY when ui5repo feature is unavailable', async () => {
-      setCachedFeatures({
-        hana: { id: 'hana', available: false, mode: 'auto' },
-        abapGit: { id: 'abapGit', available: false, mode: 'auto' },
-        rap: { id: 'rap', available: false, mode: 'auto' },
-        amdp: { id: 'amdp', available: false, mode: 'auto' },
-        ui5: { id: 'ui5', available: false, mode: 'auto' },
-        ui5repo: { id: 'ui5repo', available: false, mode: 'auto' },
-        transport: { id: 'transport', available: false, mode: 'auto' },
-        gcts: { id: 'gcts', available: false, mode: 'auto' },
-        flp: { id: 'flp', available: false, mode: 'auto' },
-      });
+      setCachedFeatures(featuresOff());
       try {
         const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
           type: 'BSP_DEPLOY',
           name: 'ZAPP_BOOKING',
         });
         expect(result.isError).toBe(true);
-        expect(result.content[0]!.text).toContain('not available');
+        // Pin the ui5repo gate's own message — 'not available' alone also matches the ui5 gate.
+        expect(result.content[0]!.text).toContain('ABAP Repository OData Service is not available');
       } finally {
         resetCachedFeatures();
       }

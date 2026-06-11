@@ -7,10 +7,10 @@ import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdtApiError } from '../../../src/adt/errors.js';
 import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
-import type { ResolvedFeatures } from '../../../src/adt/types.js';
 import { logger } from '../../../src/server/logger.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
+import { featuresOff } from './handler-test-config.js';
 
 // Mock undici's fetch (used by AdtHttpClient.doFetch)
 const mockFetch = vi.fn();
@@ -190,7 +190,7 @@ ENDCLASS.`;
     });
 
     it('list_rules prefers cached feature release over config.abapRelease', async () => {
-      setCachedFeatures({ abapRelease: '750', systemType: 'onprem' } as ResolvedFeatures);
+      setCachedFeatures({ ...featuresOff(), abapRelease: '750', systemType: 'onprem' });
       try {
         const s4Config = { ...DEFAULT_CONFIG, systemType: 'onprem' as const, abapRelease: '758' };
         const result = await handleToolCall(createClient(), s4Config, 'SAPLint', {
@@ -919,7 +919,7 @@ ENDCLASS.`;
     });
 
     it('returns a BTP guardrail for gateway_errors action', async () => {
-      setCachedFeatures({ abapRelease: '757', systemType: 'btp' } as ResolvedFeatures);
+      setCachedFeatures({ ...featuresOff(), abapRelease: '757', systemType: 'btp' });
       try {
         const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPDiagnose', {
           action: 'gateway_errors',

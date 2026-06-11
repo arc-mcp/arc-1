@@ -31,8 +31,11 @@ type FeatureKey = {
 }[keyof ResolvedFeatures];
 
 /** A complete ResolvedFeatures with every feature available unless overridden. */
-export function features(overrides: Partial<Record<FeatureKey, boolean>> = {}): ResolvedFeatures {
-  const on = (k: FeatureKey) => (overrides[k] === undefined ? true : (overrides[k] as boolean));
+export function features(
+  overrides: Partial<Record<FeatureKey, boolean>> = {},
+  defaultAvailable = true,
+): ResolvedFeatures {
+  const on = (k: FeatureKey) => overrides[k] ?? defaultAvailable;
   return {
     hana: feat('hana', on('hana')),
     abapGit: feat('abapGit', on('abapGit')),
@@ -45,6 +48,15 @@ export function features(overrides: Partial<Record<FeatureKey, boolean>> = {}): 
     flp: feat('flp', on('flp')),
   };
 }
+
+/**
+ * A complete ResolvedFeatures with every feature UNavailable unless overridden — for tests that
+ * model a bare system. Runtime-equivalent to the monolith-era partial literals (absent ≡ off:
+ * every handler gate checks `?.available`) but total, so it can never crash a non-optional access
+ * and a new feature key is still added in features() alone.
+ */
+export const featuresOff = (overrides: Partial<Record<FeatureKey, boolean>> = {}): ResolvedFeatures =>
+  features(overrides, false);
 
 export const onprem = (o: Partial<ServerConfig> = {}): ServerConfig => ({
   ...DEFAULT_CONFIG,

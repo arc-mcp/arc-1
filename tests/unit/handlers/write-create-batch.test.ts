@@ -5,9 +5,9 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
-import type { ResolvedFeatures } from '../../../src/adt/types.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
+import { featuresOff } from './handler-test-config.js';
 
 // Mock undici's fetch (used by AdtHttpClient.doFetch)
 const mockFetch = vi.fn();
@@ -2270,7 +2270,7 @@ lv = CONV string( 1 ).`,
     });
 
     it('rejects "define table entity" on SAP_BASIS 756', async () => {
-      setCachedFeatures({ abapRelease: '756', systemType: 'onprem' } as ResolvedFeatures);
+      setCachedFeatures({ ...featuresOff(), abapRelease: '756', systemType: 'onprem' });
       // Mock: first call = CSRF, subsequent calls = whatever
       mockFetch.mockResolvedValue(mockResponse(200, '', { 'x-csrf-token': 'T' }));
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
@@ -2286,7 +2286,7 @@ lv = CONV string( 1 ).`,
     });
 
     it('allows "define table entity" on BTP', async () => {
-      setCachedFeatures({ abapRelease: '756', systemType: 'btp' } as ResolvedFeatures);
+      setCachedFeatures({ ...featuresOff(), abapRelease: '756', systemType: 'btp' });
       mockFetch.mockResolvedValue(mockResponse(200, '', { 'x-csrf-token': 'T' }));
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
         action: 'create',
@@ -2302,7 +2302,7 @@ lv = CONV string( 1 ).`,
     });
 
     it('allows "define table entity" on SAP_BASIS 757+', async () => {
-      setCachedFeatures({ abapRelease: '757', systemType: 'onprem' } as ResolvedFeatures);
+      setCachedFeatures({ ...featuresOff(), abapRelease: '757', systemType: 'onprem' });
       mockFetch.mockResolvedValue(mockResponse(200, '', { 'x-csrf-token': 'T' }));
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
         action: 'create',
@@ -2333,7 +2333,7 @@ lv = CONV string( 1 ).`,
     });
 
     it('rejects "define table entity" in update path on old release', async () => {
-      setCachedFeatures({ abapRelease: '750', systemType: 'onprem' } as ResolvedFeatures);
+      setCachedFeatures({ ...featuresOff(), abapRelease: '750', systemType: 'onprem' });
       mockFetch.mockResolvedValue(mockResponse(200, '', { 'x-csrf-token': 'T' }));
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
         action: 'update',

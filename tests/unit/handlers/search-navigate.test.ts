@@ -7,9 +7,9 @@ import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdtApiError } from '../../../src/adt/errors.js';
 import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
-import type { ResolvedFeatures } from '../../../src/adt/types.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
+import { featuresOff } from './handler-test-config.js';
 
 // Mock undici's fetch (used by AdtHttpClient.doFetch)
 const mockFetch = vi.fn();
@@ -506,15 +506,7 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
 
     it('returns precise probe reason when textSearch probe says unavailable', async () => {
       setCachedFeatures({
-        hana: { id: 'hana', available: true, mode: 'auto' },
-        abapGit: { id: 'abapGit', available: false, mode: 'auto' },
-        rap: { id: 'rap', available: true, mode: 'auto' },
-        amdp: { id: 'amdp', available: false, mode: 'auto' },
-        ui5: { id: 'ui5', available: false, mode: 'auto' },
-        transport: { id: 'transport', available: true, mode: 'auto' },
-        gcts: { id: 'gcts', available: false, mode: 'auto' },
-        ui5repo: { id: 'ui5repo', available: false, mode: 'auto' },
-        flp: { id: 'flp', available: false, mode: 'auto' },
+        ...featuresOff({ hana: true, rap: true, transport: true }),
         textSearch: {
           available: false,
           reason:
@@ -532,15 +524,7 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
 
     it('searches normally when textSearch probe says available', async () => {
       setCachedFeatures({
-        hana: { id: 'hana', available: true, mode: 'auto' },
-        abapGit: { id: 'abapGit', available: false, mode: 'auto' },
-        rap: { id: 'rap', available: true, mode: 'auto' },
-        amdp: { id: 'amdp', available: false, mode: 'auto' },
-        ui5: { id: 'ui5', available: false, mode: 'auto' },
-        transport: { id: 'transport', available: true, mode: 'auto' },
-        gcts: { id: 'gcts', available: false, mode: 'auto' },
-        ui5repo: { id: 'ui5repo', available: false, mode: 'auto' },
-        flp: { id: 'flp', available: false, mode: 'auto' },
+        ...featuresOff({ hana: true, rap: true, transport: true }),
         textSearch: { available: true },
       });
       mockFetch.mockReset();
@@ -561,15 +545,7 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
 
     it('re-throws transient errors (e.g. 503) instead of claiming unavailable', async () => {
       setCachedFeatures({
-        hana: { id: 'hana', available: true, mode: 'auto' },
-        abapGit: { id: 'abapGit', available: false, mode: 'auto' },
-        rap: { id: 'rap', available: true, mode: 'auto' },
-        amdp: { id: 'amdp', available: false, mode: 'auto' },
-        ui5: { id: 'ui5', available: false, mode: 'auto' },
-        transport: { id: 'transport', available: true, mode: 'auto' },
-        gcts: { id: 'gcts', available: false, mode: 'auto' },
-        ui5repo: { id: 'ui5repo', available: false, mode: 'auto' },
-        flp: { id: 'flp', available: false, mode: 'auto' },
+        ...featuresOff({ hana: true, rap: true, transport: true }),
         textSearch: { available: true },
       });
       mockFetch.mockReset();
@@ -786,10 +762,7 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
     });
 
     it('auto-selects gCTS when both backends are available', async () => {
-      setCachedFeatures({
-        gcts: { id: 'gcts', available: true, mode: 'auto' },
-        abapGit: { id: 'abapGit', available: true, mode: 'auto' },
-      } as ResolvedFeatures);
+      setCachedFeatures(featuresOff({ gcts: true, abapGit: true }));
       mockFetch.mockReset();
       mockFetch.mockResolvedValueOnce(mockResponse(200, gctsReposJson));
 
@@ -801,10 +774,7 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
     });
 
     it('honors explicit backend override to abapgit', async () => {
-      setCachedFeatures({
-        gcts: { id: 'gcts', available: true, mode: 'auto' },
-        abapGit: { id: 'abapGit', available: true, mode: 'auto' },
-      } as ResolvedFeatures);
+      setCachedFeatures(featuresOff({ gcts: true, abapGit: true }));
       mockFetch.mockReset();
       mockFetch.mockResolvedValueOnce(mockResponse(200, abapGitReposXml));
 
@@ -819,20 +789,14 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
     });
 
     it('returns helpful error when no backend is available', async () => {
-      setCachedFeatures({
-        gcts: { id: 'gcts', available: false, mode: 'auto' },
-        abapGit: { id: 'abapGit', available: false, mode: 'auto' },
-      } as ResolvedFeatures);
+      setCachedFeatures(featuresOff());
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPGit', { action: 'list_repos' });
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toContain('Neither gCTS nor abapGit is available');
     });
 
     it('blocks write actions for read-only scoped users (requires git scope in v0.7)', async () => {
-      setCachedFeatures({
-        gcts: { id: 'gcts', available: true, mode: 'auto' },
-        abapGit: { id: 'abapGit', available: false, mode: 'auto' },
-      } as ResolvedFeatures);
+      setCachedFeatures(featuresOff({ gcts: true }));
       const result = await handleToolCall(
         createClient(),
         DEFAULT_CONFIG,
@@ -845,10 +809,7 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
     });
 
     it('returns backend-mismatch error for gCTS-only action on abapGit backend', async () => {
-      setCachedFeatures({
-        gcts: { id: 'gcts', available: false, mode: 'auto' },
-        abapGit: { id: 'abapGit', available: true, mode: 'auto' },
-      } as ResolvedFeatures);
+      setCachedFeatures(featuresOff({ abapGit: true }));
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPGit', {
         action: 'whoami',
         backend: 'abapgit',
@@ -858,10 +819,7 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
     });
 
     it('dispatches stage action to abapGit backend and returns JSON payload', async () => {
-      setCachedFeatures({
-        gcts: { id: 'gcts', available: false, mode: 'auto' },
-        abapGit: { id: 'abapGit', available: true, mode: 'auto' },
-      } as ResolvedFeatures);
+      setCachedFeatures(featuresOff({ abapGit: true }));
       mockFetch.mockReset();
       mockFetch.mockResolvedValueOnce(mockResponse(200, abapGitReposXml));
       mockFetch.mockResolvedValueOnce(mockResponse(200, stagingXml));
@@ -878,10 +836,7 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
     });
 
     it('surfaces AdtSafetyError from git write operations when allowGitWrites=false', async () => {
-      setCachedFeatures({
-        gcts: { id: 'gcts', available: true, mode: 'auto' },
-        abapGit: { id: 'abapGit', available: false, mode: 'auto' },
-      } as ResolvedFeatures);
+      setCachedFeatures(featuresOff({ gcts: true }));
       const client = new AdtClient({
         baseUrl: 'http://sap:8000',
         username: 'admin',
@@ -899,10 +854,7 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
     });
 
     it('surfaces AdtApiError details from backend calls', async () => {
-      setCachedFeatures({
-        gcts: { id: 'gcts', available: true, mode: 'auto' },
-        abapGit: { id: 'abapGit', available: false, mode: 'auto' },
-      } as ResolvedFeatures);
+      setCachedFeatures(featuresOff({ gcts: true }));
       mockFetch.mockReset();
       mockFetch.mockResolvedValueOnce(
         mockResponse(500, '{"exception":"No relation between system and repository"}', {

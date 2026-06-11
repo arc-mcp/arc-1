@@ -7,10 +7,10 @@ import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdtApiError } from '../../../src/adt/errors.js';
 import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
-import type { ResolvedFeatures } from '../../../src/adt/types.js';
 import { logger } from '../../../src/server/logger.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
+import { features, featuresOff } from './handler-test-config.js';
 
 // Mock undici's fetch (used by AdtHttpClient.doFetch)
 const mockFetch = vi.fn();
@@ -539,7 +539,7 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
     });
 
     it('423 on detected SAP_BASIS < 7.51 leads with the abapfs_extensions fix', async () => {
-      setCachedFeatures({ abapRelease: '750', systemType: 'onprem' } as ResolvedFeatures);
+      setCachedFeatures({ ...featuresOff(), abapRelease: '750', systemType: 'onprem' });
       try {
         mockFetch.mockReset();
         mockFetch.mockRejectedValueOnce(
@@ -560,7 +560,7 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
     });
 
     it('423 on detected SAP_BASIS >= 7.51 does NOT mention abapfs_extensions', async () => {
-      setCachedFeatures({ abapRelease: '758', systemType: 'onprem' } as ResolvedFeatures);
+      setCachedFeatures({ ...featuresOff(), abapRelease: '758', systemType: 'onprem' });
       try {
         mockFetch.mockReset();
         mockFetch.mockRejectedValueOnce(
@@ -700,20 +700,11 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
   describe('BTP ABAP handler adaptation', () => {
     /** Create minimal BTP-detected features for testing */
     function setBtpMode(): void {
-      const btpFeatures: ResolvedFeatures = {
-        hana: { id: 'hana', available: true, mode: 'auto' },
-        abapGit: { id: 'abapGit', available: false, mode: 'auto' },
-        gcts: { id: 'gcts', available: false, mode: 'auto' },
-        rap: { id: 'rap', available: true, mode: 'auto' },
-        amdp: { id: 'amdp', available: false, mode: 'auto' },
-        ui5: { id: 'ui5', available: false, mode: 'auto' },
-        transport: { id: 'transport', available: true, mode: 'auto' },
-        ui5repo: { id: 'ui5repo', available: false, mode: 'auto' },
-        flp: { id: 'flp', available: false, mode: 'auto' },
+      setCachedFeatures({
+        ...features({ abapGit: false, gcts: false, amdp: false, ui5: false, ui5repo: false, flp: false }),
         abapRelease: '758',
         systemType: 'btp',
-      };
-      setCachedFeatures(btpFeatures);
+      });
     }
 
     afterEach(() => {
