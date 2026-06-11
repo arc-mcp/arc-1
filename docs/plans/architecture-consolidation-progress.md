@@ -27,7 +27,7 @@ JSON the LLM sees. They must be zero-diff from the first Stage-A commit to the f
 - [x] **A6** coverage/count baseline recorded (this file).
 - [x] **A7** file-size ratchet — `scripts/ci/check-file-sizes.mjs`, wired into `test.yml` (+ `validate:policy`, previously not run in CI).
 - [~] **A8** regenerate SAPRead default-case error from registry — **DEFERRED**. The current message deliberately omits the 6 server-driven types and curates alias notes; regenerating from the full registry would change user-visible error text (a behavior change this PR forbids). A4's dispatch-coverage test already removes the drift risk A8 targeted.
-- [~] **B** split `intent.ts` (move-only) → dispatch + 12 handlers + 6 helper modules + ≤60-line barrel. **IN PROGRESS** — leaf modules extracted so far: `object-types.ts` (508), `feature-cache.ts` (live-binding state), `shared.ts` (ToolResult + textResult/errorResult). intent.ts 8,199 → 7,707. Remaining: `cds-hints.ts` (bulk contiguous ~728–1010 + constants + guardCdsSyntax/warnCdsReservedKeywords cluster), `write-helpers.ts`, then the 12 handler modules + `dispatch.ts`, then reduce intent.ts to the barrel. Error-formatting tree (`formatErrorForLLM` + helpers) is dispatch-only (1 call site) so it stays with dispatch, not shared.ts.
+- [x] **B** split `intent.ts` (move-only) → **DONE**. `intent.ts` is now a **38-line back-compat barrel**. Created: 6 leaf modules (`object-types` 508, `feature-cache` 53, `shared` 34, `cds-hints` 459, `write-helpers` 996, `tool-registry` 185), 12 handler modules (`read` 690, `write` 1961, `search` 239, `query` 216, `lint` 100, `activate` 397, `navigate` 230, `diagnose` 333, `git` 278, `transport` 329, `context` 434, `manage` 443), and `dispatch.ts` (765, handleToolCall + error tree + scope). Every step was move-only with typecheck + full suite + A1 zero-diff + commit. Cross-cutting helpers relocated to leaf modules along the way (isBtpSystem/isTablesEndpointAvailable→feature-cache; inactiveSyntaxDiagnostic/tryPostSaveSyntaxCheck→write-helpers; hasSqlParserSignature→shared). Handler→handler deps are acyclic (write→read for resolveVersionAndDraftInfo, write→activate for batch helpers). 25 commits, all green.
 - [ ] **C** split `intent.test.ts` along the same seams (count parity ≥ baseline).
 - [ ] **D** split `handleSAPWrite` (1,827 lines) into `write/{index,create,update-delete,class-surgery,rap,server-driven}.ts`.
 - [ ] **E** migrate consumers off the barrel (keep ≤60-line `@deprecated` shim one release).
@@ -44,6 +44,11 @@ JSON the LLM sees. They must be zero-diff from the first Stage-A commit to the f
 | `70baf97f` | B | extract object-types.ts |
 | `d4a140ce` | B | extract feature-cache.ts (live bindings) |
 | `2a692be6` | B | extract shared.ts (ToolResult + result ctors) |
+| (multiple) | B | extract cds-hints, write-helpers, + relocate shared helpers |
+| (multiple) | B | extract 12 handler modules (manage…write) |
+| (final) | B | extract dispatch.ts; intent.ts → 38-line barrel |
+
+**Stage B end state:** intent.ts 8,199 → 38 lines (barrel). Largest handler file: write.ts 1,961 (Stage D target). All gates green; A1 byte-identical from first commit to here.
 
 ## Verification run each stage
 
