@@ -17,5 +17,7 @@ describe('security ignore patterns', () => {
     for (const fileName of ['.gitignore', '.dockerignore', '.cfignore']) {
       expect(ignoredPatterns(fileName)).toContain('*service-key*.json');
     }
+
+    expect(ignoredPatterns('.dockerignore')).toContain('**/*service-key*.json');
   });
 });

@@ -12,6 +12,7 @@
 .env.*
 !.env.example
 *service-key*.json
+**/*service-key*.json
 cookies.txt
 cookie.txt
 cookies
