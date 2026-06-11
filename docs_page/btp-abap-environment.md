@@ -149,7 +149,7 @@ SAP_BTP_SERVICE_KEY_FILE=~/.config/arc-1/btp-service-key.json arc1
 ```
 
 !!! danger "A service key is a full-access SAP credential — keep it outside the repo"
-    The `uaa.clientid` + `uaa.clientsecret` + `url` in a service key grant OAuth access to the entire ABAP system. Store it outside the repository (e.g. `~/.config/arc-1/`, as above) and never commit it. ARC-1's `.gitignore` does **not** currently match `*service-key*.json`, so a key dropped into the project tree can be committed by accident — treat an inline `SAP_BTP_SERVICE_KEY` env value the same way.
+    The `uaa.clientid` + `uaa.clientsecret` + `url` in a service key grant OAuth access to the entire ABAP system. Store it outside the repository (e.g. `~/.config/arc-1/`, as above) and never commit it. ARC-1's `.gitignore` / `.dockerignore` / `.cfignore` match `*service-key*.json` so an in-tree key won't be committed or baked into an image by accident — but keep keys outside the tree as defense-in-depth, and treat an inline `SAP_BTP_SERVICE_KEY` env value the same way.
 
 ### Option B: Inline Service Key (short-lived local env only)
 
