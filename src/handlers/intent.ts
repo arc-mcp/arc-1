@@ -210,6 +210,7 @@ import { generateRequestId, requestContext } from '../server/context.js';
 import { logger } from '../server/logger.js';
 import { type McpRateLimiter, resolveRateLimitUserKey } from '../server/mcp-rate-limit.js';
 import type { ServerConfig } from '../server/types.js';
+import { cachedDiscovery, cachedFeatures, setCachedFeatures } from './feature-cache.js';
 import { expandHyperfocusedArgs } from './hyperfocused.js';
 import {
   CLASS_WRITE_INCLUDES,
@@ -235,6 +236,14 @@ import {
 import { getToolSchema } from './schemas.js';
 import { formatZodError } from './zod-errors.js';
 
+// Re-export the feature-cache accessors (moved to feature-cache.ts, Stage B; barrel-locked).
+export {
+  getCachedDiscovery,
+  getCachedFeatures,
+  resetCachedFeatures,
+  setCachedDiscovery,
+  setCachedFeatures,
+} from './feature-cache.js';
 // Re-export the public object-type surface for back-compat (locked by barrel-surface.test.ts).
 // These moved to object-types.ts (Stage B) but consumers still import them from here.
 export {
@@ -7413,10 +7422,6 @@ function isLikelyCdsViewName(name: string): boolean {
 
 // ─── SAPManage Handler ────────────────────────────────────────────────
 
-/** Cached feature status — populated on first probe */
-let cachedFeatures: ResolvedFeatures | undefined;
-let cachedDiscovery: Map<string, string[]> = new Map();
-
 async function handleSAPManage(
   client: AdtClient,
   config: ServerConfig,
@@ -7819,7 +7824,7 @@ async function handleSAPManage(
             probed.textSearch = undefined;
           }
         }
-        cachedFeatures = probed;
+        setCachedFeatures(probed);
       }
       return textResult(JSON.stringify(probed, null, 2));
     }
@@ -7829,30 +7834,4 @@ async function handleSAPManage(
         `Unknown SAPManage action: ${action}. Supported: features, probe, cache_stats, create_package, delete_package, change_package, flp_list_catalogs, flp_list_groups, flp_list_tiles, flp_create_catalog, flp_create_group, flp_create_tile, flp_add_tile_to_group, flp_delete_catalog`,
       );
   }
-}
-
-/** Reset cached features (for testing) */
-export function resetCachedFeatures(): void {
-  cachedFeatures = undefined;
-  cachedDiscovery = new Map();
-}
-
-/** Set cached features directly (for testing BTP mode, etc.) */
-export function setCachedFeatures(features: ResolvedFeatures | undefined): void {
-  cachedFeatures = features;
-}
-
-/** Get cached features (for tool definition adaptation) */
-export function getCachedFeatures(): ResolvedFeatures | undefined {
-  return cachedFeatures;
-}
-
-/** Set startup-cached ADT discovery MIME map. */
-export function setCachedDiscovery(map: Map<string, string[]>): void {
-  cachedDiscovery = map;
-}
-
-/** Get startup-cached ADT discovery MIME map. */
-export function getCachedDiscovery(): Map<string, string[]> {
-  return cachedDiscovery;
 }
