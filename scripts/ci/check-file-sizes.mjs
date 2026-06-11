@@ -22,7 +22,11 @@ import { readFileSync } from 'node:fs';
  * Stages B–E land.
  */
 const BUDGETS = {
-  'src/handlers/intent.ts': 8300,
+  // intent.ts is now a dispatch + barrel module after the Stage B handler split (was 8199).
+  'src/handlers/intent.ts': 900,
+  // write.ts is the un-split SAPWrite handler; the plan's Stage D splits it into a write/ package.
+  // Budget set above its current size pending that split; lower it when write/ lands.
+  'src/handlers/write.ts': 2050,
   'src/handlers/tools.ts': 1700,
   'src/adt/xml-parser.ts': 1650,
   'tests/unit/handlers/intent.test.ts': 15300,
