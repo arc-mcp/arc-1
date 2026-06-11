@@ -23,7 +23,6 @@ import {
 import { getToolDefinitions } from '../../../src/handlers/tools.js';
 import type { ServerConfig } from '../../../src/server/types.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
-import { mockResponse } from '../../helpers/mock-fetch.js';
 
 // Real AdtClient over a mocked fetch — used only by the SAPRead dispatch-coverage block.
 const mockFetch = vi.fn();
