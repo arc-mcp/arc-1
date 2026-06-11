@@ -107,8 +107,11 @@ src/
 │   ├── context.ts, elicit.ts   # MCP context helpers, elicitation
 │   ├── xsuaa.ts                # XSUAA JWT validation for BTP
 │   └── sinks/                  # Audit sinks: stderr, file, btp-auditlog
-├── handlers/
-│   ├── intent.ts               # 12 intent-based tool router (handleToolCall)
+├── handlers/                   # one module per tool (split from the former intent.ts monolith)
+│   ├── dispatch.ts             # handleToolCall router + scope checks + LLM error formatting (was intent.ts; the intent.ts barrel is now deleted — import from the owning module)
+│   ├── read.ts, write.ts       # SAPRead / SAPWrite handlers (write/ package: create, update-delete, class-surgery, rap)
+│   ├── search.ts, query.ts, activate.ts, navigate.ts, diagnose.ts, git.ts, transport.ts, context.ts, lint.ts, manage.ts  # the other tool handlers
+│   ├── object-types.ts, write-helpers.ts, cds-hints.ts, tool-registry.ts, feature-cache.ts, cache-security.ts, shared.ts  # shared leaf modules
 │   ├── tools.ts                # Tool definitions (names, descriptions, JSON schemas)
 │   ├── schemas.ts              # Zod v4 input schemas (runtime validation)
 │   ├── zod-errors.ts           # Zod error formatting for LLM clients
@@ -161,9 +164,9 @@ tests/
 
 | Task | Files |
 |------|-------|
-| Add new read operation | `src/adt/client.ts`, `src/handlers/intent.ts`, `src/handlers/tools.ts` (for structured format, also `src/adt/xml-parser.ts`, `src/adt/types.ts`) |
-| Add OData-based read (non-ADT) | `src/adt/ui5-repository.ts`, `src/handlers/intent.ts`, `src/handlers/tools.ts`, `src/handlers/schemas.ts` |
-| Add new tool type | `src/handlers/tools.ts`, `src/handlers/schemas.ts`, `src/handlers/intent.ts` |
+| Add new read operation | `src/adt/client.ts`, `src/handlers/read.ts`, `src/handlers/tools.ts` (for structured format, also `src/adt/xml-parser.ts`, `src/adt/types.ts`) |
+| Add OData-based read (non-ADT) | `src/adt/ui5-repository.ts`, `src/handlers/read.ts`, `src/handlers/tools.ts`, `src/handlers/schemas.ts` |
+| Add new tool type | `src/handlers/tools.ts`, `src/handlers/schemas.ts`, `src/handlers/dispatch.ts` |
 | Add/modify tool input schema | `src/handlers/schemas.ts`, `src/handlers/tools.ts` |
 | Add method-level surgery | `src/context/method-surgery.ts` |
 | Modify hyperfocused mode | `src/handlers/hyperfocused.ts`, `src/handlers/tools.ts` |
@@ -175,13 +178,13 @@ tests/
 | Add CDS dependency pattern | `src/context/cds-deps.ts` |
 | Add contract extraction for new type | `src/context/contract.ts` |
 | Modify context output format | `src/context/compressor.ts` |
-| Add runtime diagnostic | `src/adt/diagnostics.ts`, `src/handlers/intent.ts` |
+| Add runtime diagnostic | `src/adt/diagnostics.ts`, `src/handlers/diagnose.ts` |
 | Add audit logging | `src/server/audit.ts`, `src/server/sinks/` |
 | Add elicitation prompt | `src/server/elicit.ts` |
 | Add XSUAA/JWT auth | `src/server/xsuaa.ts` |
-| Modify scope enforcement | `src/authz/policy.ts` (`ACTION_POLICY`), `src/handlers/intent.ts` (runtime check), `src/server/server.ts` (tool listing filter) |
+| Modify scope enforcement | `src/authz/policy.ts` (`ACTION_POLICY`), `src/handlers/dispatch.ts` (runtime check), `src/server/server.ts` (tool listing filter) |
 | Modify OIDC token handling | `src/server/http.ts` (validateOidcToken, ~line 274) |
-| Add/modify auth scopes | `xs-security.json`, `src/server/xsuaa.ts`, `src/server/http.ts`, `src/handlers/intent.ts` |
+| Add/modify auth scopes | `xs-security.json`, `src/server/xsuaa.ts`, `src/server/http.ts`, `src/handlers/dispatch.ts` |
 | Add safety config option | `src/adt/safety.ts`, `src/server/config.ts`, `src/server/types.ts` |
 | Add feature probe | `src/adt/features.ts` |
 | Add E2E test | `tests/e2e/`, helpers in `tests/e2e/helpers.ts`, fixtures in `tests/e2e/fixtures.ts` |
@@ -194,7 +197,7 @@ tests/
 | BTP ABAP Environment auth | `src/adt/oauth.ts`, `src/server/server.ts` |
 | BTP Destination Service / Connectivity proxy | `src/adt/btp.ts` |
 | Add AFF schema | `src/aff/schemas/` (add `{type}-v1.json`), `src/aff/validator.ts` (add type mapping) |
-| Modify AFF validation | `src/aff/validator.ts`, `src/handlers/intent.ts` (create/batch_create paths) |
+| Modify AFF validation | `src/aff/validator.ts`, `src/handlers/write/create.ts` (create/batch_create paths) |
 | Add skip policy test | `tests/helpers/skip-policy.ts` |
 | Add expected error assertion | `tests/helpers/expected-error.ts` |
 | Add CRUD integration test | `tests/integration/crud-harness.ts`, `tests/integration/crud.lifecycle.integration.test.ts` |
@@ -224,7 +227,7 @@ Tool Call Handler (server/server.ts)
   ├─ Per-user client? (PP: ppEnabled + JWT → BTP Destination → per-user SAP session)
   │
   ▼
-handleToolCall (handlers/intent.ts)
+handleToolCall (handlers/dispatch.ts)
   │
   ├─ 1. Scope check: ACTION_POLICY[tool/action-or-type] vs authInfo.scopes (only when authInfo present)
   ├─ 2. Zod validation: getToolSchema(toolName) → safeParse(args) (rejects invalid input with LLM-friendly errors)
@@ -267,7 +270,7 @@ Mutating operations require `allowWrites=true`. Transport writes additionally re
 `allowTransportWrites=true`; Git writes additionally require `allowGitWrites=true`.
 All ADT endpoints must have `checkOperation()` guards.
 
-### Scope Enforcement (`src/authz/policy.ts`, `src/handlers/intent.ts`)
+### Scope Enforcement (`src/authz/policy.ts`, `src/handlers/dispatch.ts`)
 
 `ACTION_POLICY` maps each `(tool, action/type)` to a required scope and operation type. It is the
 single source of truth for runtime scope checks and tool-list pruning. Stdio has no user auth, so
@@ -303,7 +306,7 @@ async getProgram(name: string): Promise<string> {
 }
 ```
 
-### Handler Pattern (intent.ts)
+### Handler Pattern (per-tool handler module, e.g. read.ts)
 
 ```typescript
 case 'PROG':
@@ -429,7 +432,7 @@ Automated via [release-please](https://github.com/googleapis/release-please). No
 - CSRF tokens are auto-managed by `src/adt/http.ts` (fetch via HEAD, refresh on 403)
 - **Safety config is the server ceiling** — per-user scopes (JWT) can only restrict further, never expand beyond server config
 - **All ADT endpoints have safety guards** — every `http.get/post/put/delete` call is preceded by `checkOperation()`. No unguarded HTTP calls.
-- **Error types matter**: `AdtApiError` (SAP HTTP error), `AdtSafetyError` (blocked by config), `AdtNetworkError` (connectivity). `intent.ts` formats these with LLM-friendly hints.
+- **Error types matter**: `AdtApiError` (SAP HTTP error), `AdtSafetyError` (blocked by config), `AdtNetworkError` (connectivity). `dispatch.ts` formats these with LLM-friendly hints.
 - **Stateful sessions**: Lock→modify→unlock sequences must use `http.withStatefulSession()` to share cookies/CSRF tokens across requests
 
 ## History
