@@ -996,7 +996,7 @@ describe('DevTools', () => {
         '/sap/bc/adt/businessservices/odatav2/publishjobs?servicename=ZSB_BOOKING_V4&serviceversion=0001',
         expect.stringContaining('adtcore:objectReference adtcore:name="ZSB_BOOKING_V4"'),
         'application/xml',
-        expect.objectContaining({ Accept: 'application/*' }),
+        expect.objectContaining({ Accept: 'application/vnd.sap.as+xml, application/*;q=0.8' }),
       );
       expect(result.severity).toBe('OK');
       expect(result.shortText).toBe('published locally');
@@ -1054,7 +1054,7 @@ describe('DevTools', () => {
         '/sap/bc/adt/businessservices/odatav2/unpublishjobs?servicename=ZSB_BOOKING_V4&serviceversion=0001',
         expect.stringContaining('adtcore:objectReference adtcore:name="ZSB_BOOKING_V4"'),
         'application/xml',
-        expect.objectContaining({ Accept: 'application/*' }),
+        expect.objectContaining({ Accept: 'application/vnd.sap.as+xml, application/*;q=0.8' }),
       );
       expect(result.severity).toBe('OK');
       expect(result.shortText).toBe('un-published locally');
@@ -1075,6 +1075,126 @@ describe('DevTools', () => {
       const http = mockHttp();
       const safety = { ...unrestrictedSafetyConfig(), allowWrites: false };
       await expect(unpublishServiceBinding(http, safety, 'ZSB_TEST')).rejects.toThrow(AdtSafetyError);
+    });
+  });
+
+  // ─── publish/unpublish as+xml content negotiation fallback (issue: 406 on SAP_BASIS 758) ──
+
+  describe('publish/unpublish as+xml 406 fallback', () => {
+    const okResponse =
+      '<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><SEVERITY>OK</SEVERITY><SHORT_TEXT>ZSSI_UI_S_ORD_O4 published locally</SHORT_TEXT><LONG_TEXT/></DATA></asx:values></asx:abap>';
+    // Verbatim 406 body from S/4HANA 2023 (SAP_BASIS 758) when Accept does not cover
+    // application/vnd.sap.as+xml (T100 SADT_RESOURCE 044).
+    const notAcceptableBody =
+      '<?xml version="1.0" encoding="utf-8"?><exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework"><namespace id="com.sap.adt"/><type id="ExceptionResourceNotAcceptable"/><message lang="EN">The message content is not acceptable. Accepted content types: application/vnd.sap.as+xml</message><localizedMessage lang="EN">The message content is not acceptable. Accepted content types: application/vnd.sap.as+xml</localizedMessage><properties><entry key="T100KEY-ID">SADT_RESOURCE</entry><entry key="T100KEY-NO">044</entry><entry key="T100KEY-V1">application/vnd.sap.as+xml</entry></properties></exc:exception>';
+
+    function http406ThenOk(path: string): AdtHttpClient {
+      const post = vi
+        .fn()
+        .mockRejectedValueOnce(new AdtApiError(notAcceptableBody, 406, path, notAcceptableBody))
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: okResponse });
+      return {
+        get: vi.fn(),
+        post,
+        put: vi.fn(),
+        delete: vi.fn(),
+        fetchCsrfToken: vi.fn(),
+        withStatefulSession: vi.fn(),
+      } as unknown as AdtHttpClient;
+    }
+
+    it('publish retries a 406 naming application/vnd.sap.as+xml with the dataname-qualified as+xml type (odatav4)', async () => {
+      const path = '/sap/bc/adt/businessservices/odatav4/publishjobs?servicename=ZSSI_UI_S_ORD_O4&serviceversion=0001';
+      const http = http406ThenOk(path);
+      const result = await publishServiceBinding(
+        http,
+        unrestrictedSafetyConfig(),
+        'ZSSI_UI_S_ORD_O4',
+        '0001',
+        'odatav4',
+      );
+
+      expect(http.post).toHaveBeenCalledTimes(2);
+      expect(http.post).toHaveBeenNthCalledWith(
+        1,
+        path,
+        expect.stringContaining('adtcore:objectReference adtcore:name="ZSSI_UI_S_ORD_O4"'),
+        'application/xml',
+        { Accept: 'application/vnd.sap.as+xml, application/*;q=0.8' },
+      );
+      const asXmlType =
+        'application/vnd.sap.as+xml; charset=UTF-8; dataname=com.sap.adt.businessservices.odatav4.publishjob';
+      expect(http.post).toHaveBeenNthCalledWith(
+        2,
+        path,
+        expect.stringContaining('adtcore:objectReference adtcore:name="ZSSI_UI_S_ORD_O4"'),
+        asXmlType,
+        { Accept: asXmlType },
+      );
+      expect(result.severity).toBe('OK');
+      expect(result.shortText).toBe('ZSSI_UI_S_ORD_O4 published locally');
+    });
+
+    it('unpublish retries with the unpublishjob dataname (odatav4)', async () => {
+      const path =
+        '/sap/bc/adt/businessservices/odatav4/unpublishjobs?servicename=ZSSI_UI_S_ORD_O4&serviceversion=0001';
+      const http = http406ThenOk(path);
+      const result = await unpublishServiceBinding(
+        http,
+        unrestrictedSafetyConfig(),
+        'ZSSI_UI_S_ORD_O4',
+        '0001',
+        'odatav4',
+      );
+
+      const asXmlType =
+        'application/vnd.sap.as+xml; charset=UTF-8; dataname=com.sap.adt.businessservices.odatav4.unpublishjob';
+      expect(http.post).toHaveBeenCalledTimes(2);
+      expect(http.post).toHaveBeenNthCalledWith(2, path, expect.any(String), asXmlType, { Accept: asXmlType });
+      expect(result.severity).toBe('OK');
+    });
+
+    it('publish retry uses the odatav2 dataname for odatav2 bindings', async () => {
+      const path = '/sap/bc/adt/businessservices/odatav2/publishjobs?servicename=ZSB_FLIGHT&serviceversion=0001';
+      const http = http406ThenOk(path);
+      await publishServiceBinding(http, unrestrictedSafetyConfig(), 'ZSB_FLIGHT');
+
+      const asXmlType =
+        'application/vnd.sap.as+xml; charset=UTF-8; dataname=com.sap.adt.businessservices.odatav2.publishjob';
+      expect(http.post).toHaveBeenNthCalledWith(2, path, expect.any(String), asXmlType, { Accept: asXmlType });
+    });
+
+    it('does not retry a 406 that does not name application/vnd.sap.as+xml', async () => {
+      const err = new AdtApiError('Not acceptable', 406, '/sap/bc/adt/businessservices/odatav4/publishjobs');
+      const post = vi.fn().mockRejectedValue(err);
+      const http = { post } as unknown as AdtHttpClient;
+
+      await expect(
+        publishServiceBinding(http, unrestrictedSafetyConfig(), 'ZSB_TEST', '0001', 'odatav4'),
+      ).rejects.toThrow(AdtApiError);
+      expect(post).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not retry non-negotiation errors', async () => {
+      const err = new AdtApiError('Internal server error', 500, '/sap/bc/adt/businessservices/odatav4/publishjobs');
+      const post = vi.fn().mockRejectedValue(err);
+      const http = { post } as unknown as AdtHttpClient;
+
+      await expect(
+        publishServiceBinding(http, unrestrictedSafetyConfig(), 'ZSB_TEST', '0001', 'odatav4'),
+      ).rejects.toThrow('Internal server error');
+      expect(post).toHaveBeenCalledTimes(1);
+    });
+
+    it('surfaces the error when the as+xml retry also fails (no retry loop)', async () => {
+      const err = new AdtApiError(notAcceptableBody, 406, '/x', notAcceptableBody);
+      const post = vi.fn().mockRejectedValue(err);
+      const http = { post } as unknown as AdtHttpClient;
+
+      await expect(
+        publishServiceBinding(http, unrestrictedSafetyConfig(), 'ZSB_TEST', '0001', 'odatav4'),
+      ).rejects.toThrow(AdtApiError);
+      expect(post).toHaveBeenCalledTimes(2);
     });
   });
 
