@@ -964,3 +964,35 @@ export async function runPreWriteSyntaxCheck(
     return '';
   }
 }
+
+// ─── Post-save syntax check (moved from intent.ts, Stage B) ───
+export const DDIC_POST_SAVE_CHECK_TYPES = new Set(['TABL', 'DDLS', 'DCLS', 'BDEF', 'SRVD', 'SRVB', 'DDLX']);
+
+/** Run a syntax check on the inactive version and format the errors for appending to an
+ *  error message. Returns '' on any failure or when no errors are reported. */
+export async function inactiveSyntaxDiagnostic(client: AdtClient, type: string, name: string): Promise<string> {
+  try {
+    const checkResult = await syntaxCheck(client.http, client.safety, objectUrlForType(type, name), {
+      version: 'inactive',
+    });
+    if (!checkResult.hasErrors) return '';
+
+    const errors = checkResult.messages.filter((msg) => msg.severity === 'error');
+    if (errors.length === 0) return '';
+
+    const lines = errors.map((msg) => {
+      const prefix = msg.line ? `[line ${msg.line}] ` : '';
+      const suffix = msg.uri ? ` (${msg.uri})` : '';
+      return `- ${prefix}${msg.text}${suffix}`;
+    });
+
+    return `\nServer syntax check (inactive):\n${lines.join('\n')}`;
+  } catch {
+    return '';
+  }
+}
+
+export async function tryPostSaveSyntaxCheck(client: AdtClient, type: string, name: string): Promise<string> {
+  if (!DDIC_POST_SAVE_CHECK_TYPES.has(canonicalTablType(type.toUpperCase()))) return '';
+  return inactiveSyntaxDiagnostic(client, type, name);
+}

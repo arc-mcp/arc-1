@@ -170,7 +170,7 @@ import {
   CDS_DEPENDENCY_SENSITIVE_TYPES,
   guardCdsSyntax,
 } from './cds-hints.js';
-import { cachedDiscovery, cachedFeatures } from './feature-cache.js';
+import { cachedFeatures, isTablesEndpointAvailable } from './feature-cache.js';
 import { expandHyperfocusedArgs } from './hyperfocused.js';
 import { handleSAPManage } from './manage.js';
 import { handleSAPNavigate } from './navigate.js';
@@ -206,6 +206,7 @@ import {
   escapeXml,
   getMetadataWriteProperties,
   handleServerDrivenObjectWrite,
+  inactiveSyntaxDiagnostic,
   isMetadataWriteType,
   mergeMetadataWriteProperties,
   mergePreWriteWarnings,
@@ -217,6 +218,7 @@ import {
   SERVICEBINDING_V2_CONTENT_TYPE,
   SKTD_V2_CONTENT_TYPE,
   stripFmParamCommentBlock,
+  tryPostSaveSyntaxCheck,
   vendorContentTypeForType,
 } from './write-helpers.js';
 import { formatZodError } from './zod-errors.js';
@@ -294,7 +296,6 @@ export function hasRequiredScope(authInfo: AuthInfo, requiredScope: string): boo
 }
 
 const DDIC_SAVE_HINT_TYPES = new Set(['TABL', 'DDLS', 'DCLS', 'BDEF', 'SRVD', 'SRVB', 'DDLX', 'DOMA', 'DTEL']);
-const DDIC_POST_SAVE_CHECK_TYPES = new Set(['TABL', 'DDLS', 'DCLS', 'BDEF', 'SRVD', 'SRVB', 'DDLX']);
 // ─── Search Helpers ─────────────────────────────────────────────────
 
 /**
@@ -640,35 +641,6 @@ function isDeleteDependencyError(err: AdtApiError): boolean {
   return /could not be deleted|cannot be deleted|still in use|used by|dependent object|existing reference/.test(
     `${clean}\n${body}`,
   );
-}
-
-/** Run a syntax check on the inactive version and format the errors for appending to an
- *  error message. Returns '' on any failure or when no errors are reported. */
-async function inactiveSyntaxDiagnostic(client: AdtClient, type: string, name: string): Promise<string> {
-  try {
-    const checkResult = await syntaxCheck(client.http, client.safety, objectUrlForType(type, name), {
-      version: 'inactive',
-    });
-    if (!checkResult.hasErrors) return '';
-
-    const errors = checkResult.messages.filter((msg) => msg.severity === 'error');
-    if (errors.length === 0) return '';
-
-    const lines = errors.map((msg) => {
-      const prefix = msg.line ? `[line ${msg.line}] ` : '';
-      const suffix = msg.uri ? ` (${msg.uri})` : '';
-      return `- ${prefix}${msg.text}${suffix}`;
-    });
-
-    return `\nServer syntax check (inactive):\n${lines.join('\n')}`;
-  } catch {
-    return '';
-  }
-}
-
-async function tryPostSaveSyntaxCheck(client: AdtClient, type: string, name: string): Promise<string> {
-  if (!DDIC_POST_SAVE_CHECK_TYPES.has(canonicalTablType(type.toUpperCase()))) return '';
-  return inactiveSyntaxDiagnostic(client, type, name);
 }
 
 /** Detect transport/corrNr failure signatures and return a remediation hint, or undefined if not transport-related. */
@@ -1074,11 +1046,6 @@ function isBtpSystem(): boolean {
  *  discovery cache is empty (e.g. probe never ran, tests that bypass SAPManage),
  *  returns `undefined` so callers can decide whether to default-allow.
  *  See issue #285. */
-function isTablesEndpointAvailable(): boolean | undefined {
-  const map = cachedFeatures?.discoveryMap ?? cachedDiscovery;
-  if (!map || map.size === 0) return undefined;
-  return map.has('/sap/bc/adt/ddic/tables');
-}
 
 /** Stable hint surfaced when ARC-1 refuses a TABL/DT write because the connected
  *  system does not expose /sap/bc/adt/ddic/tables/. Shared between the

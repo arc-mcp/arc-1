@@ -39,3 +39,10 @@ export function setCachedDiscovery(map: Map<string, string[]>): void {
 export function getCachedDiscovery(): Map<string, string[]> {
   return cachedDiscovery;
 }
+
+/** True/false if the ADT /ddic/tables endpoint is advertised by discovery; undefined if not probed. */
+export function isTablesEndpointAvailable(): boolean | undefined {
+  const map = cachedFeatures?.discoveryMap ?? cachedDiscovery;
+  if (!map || map.size === 0) return undefined;
+  return map.has('/sap/bc/adt/ddic/tables');
+}
