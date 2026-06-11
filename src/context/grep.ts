@@ -51,6 +51,10 @@ const NESTED_QUANTIFIER_GROUP =
 const BACKREFERENCE = /\\[1-9]/;
 const LOOKAROUND = /\(\?(?:[=!]|<[=!])/;
 
+interface RegexGroupFrame {
+  hasAlternation: boolean;
+}
+
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -62,6 +66,61 @@ function tryCompile(pattern: string): RegExp | null {
   } catch {
     return null;
   }
+}
+
+function isRegexQuantifierAt(pattern: string, index: number): boolean {
+  const char = pattern[index];
+  if (char === '{') return /^\{\d+(?:,\d*)?\}/.test(pattern.slice(index));
+  return char === '+' || char === '*' || char === '?';
+}
+
+function hasQuantifiedAlternationGroup(pattern: string): boolean {
+  const stack: RegexGroupFrame[] = [];
+  let inCharClass = false;
+
+  for (let i = 0; i < pattern.length; i++) {
+    const char = pattern[i]!;
+
+    if (char === '\\') {
+      i++;
+      continue;
+    }
+
+    if (inCharClass) {
+      if (char === ']') inCharClass = false;
+      continue;
+    }
+
+    if (char === '[') {
+      inCharClass = true;
+      continue;
+    }
+
+    if (char === '(') {
+      stack.push({ hasAlternation: false });
+      continue;
+    }
+
+    if (char === '|') {
+      const top = stack[stack.length - 1];
+      if (top) top.hasAlternation = true;
+      continue;
+    }
+
+    if (char === ')') {
+      const frame = stack.pop();
+      if (!frame) continue;
+
+      if (frame.hasAlternation && isRegexQuantifierAt(pattern, i + 1)) {
+        return true;
+      }
+
+      const parent = stack[stack.length - 1];
+      if (parent && frame.hasAlternation) parent.hasAlternation = true;
+    }
+  }
+
+  return false;
 }
 
 function unsafePatternReason(pattern: string): string | null {
@@ -76,6 +135,9 @@ function unsafePatternReason(pattern: string): string | null {
   }
   if (NESTED_QUANTIFIER_GROUP.test(pattern)) {
     return 'nested quantified groups are disabled for server-side grep';
+  }
+  if (hasQuantifiedAlternationGroup(pattern)) {
+    return 'quantified alternation groups are disabled for server-side grep';
   }
   return null;
 }

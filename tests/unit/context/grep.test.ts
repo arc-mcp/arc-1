@@ -121,6 +121,23 @@ describe('grepSource', () => {
     expect(r.output).toContain('nested quantified groups');
   });
 
+  it('rejects quantified alternation groups that can cause catastrophic backtracking', () => {
+    const repeatedChar = String.fromCharCode(97);
+    const source = `${repeatedChar.repeat(40)}!`;
+    const unsafePattern = `^(${repeatedChar}|${repeatedChar}${repeatedChar})+$`;
+    const started = Date.now();
+    const r = grepSource(source, unsafePattern);
+    expect(Date.now() - started).toBeLessThan(50);
+    expect(r.invalidPattern).toBe(true);
+    expect(r.output).toContain('quantified alternation groups');
+  });
+
+  it('still allows simple non-quantified alternation searches', () => {
+    const r = grepSource(SOURCE, '\\b(?:SELECT|WRITE)\\b');
+    expect(r.invalidPattern).toBe(false);
+    expect(r.matchCount).toBe(4);
+  });
+
   it('searches only the bounded line prefix while rendering the original source line', () => {
     const longLine = `${'x'.repeat(MAX_GREP_LINE_LENGTH)}TAIL`;
     expect(grepSource(longLine, 'TAIL').matchCount).toBe(0);
