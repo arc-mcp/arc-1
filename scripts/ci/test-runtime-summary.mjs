@@ -226,6 +226,7 @@ function sortByDurationDesc(items) {
   return [...items].sort((a, b) => b.durationMs - a.durationMs);
 }
 
+/** @param {{ junitDirs?: string[], resultsDir?: string }} [options] */
 export function collectRuntimeData({ junitDirs = [], resultsDir = 'test-results' } = {}) {
   const vitestResults = collectVitestResults(resolve(resultsDir));
   return {
