@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.9.14](https://github.com/marianfoo/arc-1/compare/v0.9.13...v0.9.14) (2026-06-11)
+
+
+### Bug Fixes
+
+* enforce SRVB package gate ([#394](https://github.com/marianfoo/arc-1/issues/394)) ([6b91dea](https://github.com/marianfoo/arc-1/commit/6b91deada618fa01eba066410aff0bc234dcadb2))
+* harden SAPRead grep regex handling ([#392](https://github.com/marianfoo/arc-1/issues/392)) ([9d23287](https://github.com/marianfoo/arc-1/commit/9d23287b79cbcee6e0a29bd0b55409952aaf00f8))
+* ignore BTP service key files ([#395](https://github.com/marianfoo/arc-1/issues/395)) ([ec7b6a9](https://github.com/marianfoo/arc-1/commit/ec7b6a926ed2a46fb1e38188cfb498cf6be5e646))
+* isolate PP cache state ([#393](https://github.com/marianfoo/arc-1/issues/393)) ([3278eb8](https://github.com/marianfoo/arc-1/commit/3278eb8e2ab40d3a0e1619411455e791549a279b))
+* **write:** emit adtcore:language + masterLanguage on MSAG payloads ([#397](https://github.com/marianfoo/arc-1/issues/397)) ([07f9a9c](https://github.com/marianfoo/arc-1/commit/07f9a9c301b250a6dc5cf062ffc8f81ee01d1839))
+
 ## [0.9.13](https://github.com/marianfoo/arc-1/compare/v0.9.12...v0.9.13) (2026-06-09)
 
 
