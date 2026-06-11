@@ -445,6 +445,7 @@ Automated via [release-please](https://github.com/googleapis/release-please) —
 
 ## Security & Architectural Invariants
 
+- **Threat model + the 7 security invariants + per-PR review checklist + residual-risk register live in [docs/security-model.md](docs/security-model.md)** (review narrative + remediation roadmap in [docs/security-review-2026-06.md](docs/security-review-2026-06.md)). Read it before touching auth, the safety ceiling, caches, audit sinks, or any arg→URL/SQL/XML sink.
 - **stdout is sacred** — logging goes to stderr; stdout carries MCP JSON-RPC only. `console.log` breaks the protocol.
 - Never commit `.env`, `cookies.txt`, `.arc1.json`. Sensitive fields (password/token/cookie) are redacted in logs.
 - **MTA layout** — `mta.yaml` committed (placeholder destinations, safe defaults); `mta-overrides.mtaext` gitignored (copy from `.example`). Deploy: `cf deploy ... -e mta-overrides.mtaext` or `npm run btp:build-deploy-ext`.
