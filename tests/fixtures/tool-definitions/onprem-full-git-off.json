@@ -73,6 +73,7 @@
         },
         "grep": {
           "type": "string",
+          "maxLength": 512,
           "description": "Regex pattern (case-insensitive) to search within the object source. Returns only matching lines with 1-based line numbers and ±3 context lines, instead of the full source — token-efficient. For CLAS, matches are annotated with the owning class/method; combine with include= to scope a section, but do NOT combine with method= (use grep to find, then method= to read). Works for source-bearing types (CLAS, INTF, DDLS, DCLS, BDEF, SRVD, SRVB, SKTD, DDLX, TABL, PROG, FUNC, FUGR, INCL, VIEW). Falls back to a literal search when the pattern is not valid regex."
         },
         "expand_includes": {
