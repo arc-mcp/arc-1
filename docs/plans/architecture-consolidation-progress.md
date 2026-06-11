@@ -27,7 +27,7 @@ JSON the LLM sees. They must be zero-diff from the first Stage-A commit to the f
 - [x] **A6** coverage/count baseline recorded (this file).
 - [x] **A7** file-size ratchet — `scripts/ci/check-file-sizes.mjs`, wired into `test.yml` (+ `validate:policy`, previously not run in CI).
 - [~] **A8** regenerate SAPRead default-case error from registry — **DEFERRED**. The current message deliberately omits the 6 server-driven types and curates alias notes; regenerating from the full registry would change user-visible error text (a behavior change this PR forbids). A4's dispatch-coverage test already removes the drift risk A8 targeted.
-- [ ] **B** split `intent.ts` (move-only) → dispatch + 12 handlers + 6 helper modules + ≤60-line barrel.
+- [~] **B** split `intent.ts` (move-only) → dispatch + 12 handlers + 6 helper modules + ≤60-line barrel. **IN PROGRESS** — leaf modules extracted so far: `object-types.ts` (508), `feature-cache.ts` (live-binding state), `shared.ts` (ToolResult + textResult/errorResult). intent.ts 8,199 → 7,707. Remaining: `cds-hints.ts` (bulk contiguous ~728–1010 + constants + guardCdsSyntax/warnCdsReservedKeywords cluster), `write-helpers.ts`, then the 12 handler modules + `dispatch.ts`, then reduce intent.ts to the barrel. Error-formatting tree (`formatErrorForLLM` + helpers) is dispatch-only (1 call site) so it stays with dispatch, not shared.ts.
 - [ ] **C** split `intent.test.ts` along the same seams (count parity ≥ baseline).
 - [ ] **D** split `handleSAPWrite` (1,827 lines) into `write/{index,create,update-delete,class-surgery,rap,server-driven}.ts`.
 - [ ] **E** migrate consumers off the barrel (keep ≤60-line `@deprecated` shim one release).
@@ -40,6 +40,10 @@ JSON the LLM sees. They must be zero-diff from the first Stage-A commit to the f
 | `ce252f1e` | A1 | snapshot LLM-visible tool surface + Biome exclude |
 | `7328ba07` | A2/A3 | single-source `tool-registry.ts` + barrel-surface lock |
 | `10dc2b67` | A4/A5/A7 | registry drift guards + file-size ratchet |
+| `92f4639f` | A6 | progress tracker + baselines |
+| `70baf97f` | B | extract object-types.ts |
+| `d4a140ce` | B | extract feature-cache.ts (live bindings) |
+| `2a692be6` | B | extract shared.ts (ToolResult + result ctors) |
 
 ## Verification run each stage
 
