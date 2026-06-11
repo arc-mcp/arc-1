@@ -6,13 +6,14 @@ monoliths (intent.ts → per-tool modules, write.ts → write/ package) and dele
 plan covers what was deliberately deferred: the last monolith — `tests/unit/handlers/intent.test.ts`
 — plus the small verified follow-ups from the three review rounds.
 
-**Status: Stage T + Stage C DONE** (this PR). Stage T type-checks `tests/` via `tsconfig.tests.json`
-chained onto `npm run typecheck` (fixed 65 latent errors). Stage C split intent.test.ts (712 tests)
-into 10 per-module files — read, search-navigate, lint-diagnose, activate, manage-context, transport,
-write-ddic, write-create-batch, write-surgery-rap, dispatch-misc — all under the 3,000-line budget,
-blocks moved verbatim (names unchanged), exactly 712 tests preserved. Stage R ride-alongs (SDO⊆table
-assert, the #403-stale dev-guide SRVB row, the alias rename) are **not** in this PR — left for a
-follow-up. The mapping/grouping below is the as-shipped layout.
+**Status: Stage T + Stage C + Stage R DONE** (this PR). Stage T type-checks `tests/` via
+`tsconfig.tests.json` chained onto `npm run typecheck` (fixed 65 latent errors). Stage C split
+intent.test.ts (712 tests) into 10 per-module files — read, search-navigate, lint-diagnose, activate,
+manage-context, transport, write-ddic, write-create-batch, write-surgery-rap, dispatch-misc — all
+under the 3,000-line budget, blocks moved verbatim (names unchanged), exactly 712 tests preserved.
+Stage R ride-alongs landed as separate commits: R1 SDO⊆table registry-sync assertion
+(mutation-proven), R2 the #403-stale dev-guide SRVB row, R3 the `SAPWRITE_CLAS_INCLUDES` alias
+retirement (fixtures byte-identical). The mapping/grouping below is the as-shipped layout.
 
 ## Baseline (measured on `origin/main` @ 909f2534, 2026-06-11, post-#402+#403)
 
