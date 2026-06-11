@@ -1,0 +1,156 @@
+/**
+ * Drift guards for the single-source object-type registry (Stage A4).
+ *
+ * tool-registry.ts feeds three places that must never disagree:
+ *   - the JSON-Schema `enum`s in tools.ts (what the LLM is allowed to send),
+ *   - the Zod `z.enum`s in schemas.ts (what the runtime accepts),
+ *   - the dispatch switches in intent.ts (what actually gets handled).
+ * A type present in one but not another is a latent bug (advertised-but-rejected, or
+ * accepted-but-unhandled). These tests fail loudly if any pair drifts.
+ */
+
+import { describe, expect, it, vi } from 'vitest';
+import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
+import { getToolSchema } from '../../../src/handlers/schemas.js';
+import {
+  SAPCONTEXT_TYPES_BTP,
+  SAPCONTEXT_TYPES_ONPREM,
+  SAPREAD_TYPES_BTP,
+  SAPREAD_TYPES_ONPREM,
+  SAPWRITE_TYPES_BTP,
+  SAPWRITE_TYPES_ONPREM,
+} from '../../../src/handlers/tool-registry.js';
+import { getToolDefinitions } from '../../../src/handlers/tools.js';
+import type { ServerConfig } from '../../../src/server/types.js';
+import { DEFAULT_CONFIG } from '../../../src/server/types.js';
+import { mockResponse } from '../../helpers/mock-fetch.js';
+
+// Real AdtClient over a mocked fetch — used only by the SAPRead dispatch-coverage block.
+const mockFetch = vi.fn();
+vi.mock('undici', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('undici')>();
+  return { ...actual, fetch: mockFetch };
+});
+const { AdtClient } = await import('../../../src/adt/client.js');
+const { handleToolCall, resetCachedFeatures } = await import('../../../src/handlers/intent.js');
+
+const onpremFull: ServerConfig = { ...DEFAULT_CONFIG, systemType: 'onprem', allowWrites: true };
+const btpFull: ServerConfig = { ...DEFAULT_CONFIG, systemType: 'btp', allowWrites: true };
+
+function typeEnum(config: ServerConfig, toolName: string): string[] {
+  const tool = getToolDefinitions(config, true).find((t) => t.name === toolName);
+  if (!tool) throw new Error(`tool ${toolName} not present for config`);
+  return (tool.inputSchema as any).properties.type.enum as string[];
+}
+
+describe('registry sync — BTP lists are subsets of on-prem', () => {
+  it('SAPRead BTP ⊆ on-prem', () => {
+    const onprem = new Set<string>(SAPREAD_TYPES_ONPREM);
+    expect(SAPREAD_TYPES_BTP.filter((t) => !onprem.has(t))).toEqual([]);
+  });
+  it('SAPWrite BTP ⊆ on-prem', () => {
+    const onprem = new Set<string>(SAPWRITE_TYPES_ONPREM);
+    expect(SAPWRITE_TYPES_BTP.filter((t) => !onprem.has(t))).toEqual([]);
+  });
+  it('SAPContext BTP ⊆ on-prem', () => {
+    const onprem = new Set<string>(SAPCONTEXT_TYPES_ONPREM);
+    expect(SAPCONTEXT_TYPES_BTP.filter((t) => !onprem.has(t))).toEqual([]);
+  });
+});
+
+describe('registry sync — JSON-Schema enums equal the registry', () => {
+  it('SAPRead', () => {
+    expect(typeEnum(onpremFull, 'SAPRead')).toEqual([...SAPREAD_TYPES_ONPREM]);
+    expect(typeEnum(btpFull, 'SAPRead')).toEqual([...SAPREAD_TYPES_BTP]);
+  });
+  it('SAPWrite', () => {
+    expect(typeEnum(onpremFull, 'SAPWrite')).toEqual([...SAPWRITE_TYPES_ONPREM]);
+    expect(typeEnum(btpFull, 'SAPWrite')).toEqual([...SAPWRITE_TYPES_BTP]);
+  });
+  it('SAPContext', () => {
+    expect(typeEnum(onpremFull, 'SAPContext')).toEqual([...SAPCONTEXT_TYPES_ONPREM]);
+    expect(typeEnum(btpFull, 'SAPContext')).toEqual([...SAPCONTEXT_TYPES_BTP]);
+  });
+});
+
+describe('registry sync — Zod enums accept every registry type and reject bogus', () => {
+  function readArgs(type: string): Record<string, unknown> {
+    const base: Record<string, unknown> = { type, name: 'ZARC1_X' };
+    if (type === 'VERSION_SOURCE') base.versionUri = '/sap/bc/adt/x';
+    return base;
+  }
+
+  it('SAPRead onprem + btp', () => {
+    for (const t of SAPREAD_TYPES_ONPREM) {
+      expect(getToolSchema('SAPRead', false)!.safeParse(readArgs(t)).success, `onprem accepts ${t}`).toBe(true);
+    }
+    for (const t of SAPREAD_TYPES_BTP) {
+      expect(getToolSchema('SAPRead', true)!.safeParse(readArgs(t)).success, `btp accepts ${t}`).toBe(true);
+    }
+    expect(getToolSchema('SAPRead', false)!.safeParse({ type: 'NOPE', name: 'x' }).success).toBe(false);
+  });
+
+  it('SAPWrite onprem + btp', () => {
+    const wargs = (type: string) => ({ action: 'create', type, name: 'ZARC1_X', source: 'x', package: '$TMP' });
+    for (const t of SAPWRITE_TYPES_ONPREM) {
+      expect(getToolSchema('SAPWrite', false)!.safeParse(wargs(t)).success, `onprem accepts ${t}`).toBe(true);
+    }
+    for (const t of SAPWRITE_TYPES_BTP) {
+      expect(getToolSchema('SAPWrite', true)!.safeParse(wargs(t)).success, `btp accepts ${t}`).toBe(true);
+    }
+    expect(getToolSchema('SAPWrite', false)!.safeParse({ action: 'create', type: 'NOPE', name: 'x' }).success).toBe(
+      false,
+    );
+  });
+
+  it('SAPContext onprem + btp', () => {
+    for (const t of SAPCONTEXT_TYPES_ONPREM) {
+      expect(getToolSchema('SAPContext', false)!.safeParse({ action: 'deps', type: t, name: 'X' }).success).toBe(true);
+    }
+    for (const t of SAPCONTEXT_TYPES_BTP) {
+      expect(getToolSchema('SAPContext', true)!.safeParse({ action: 'deps', type: t, name: 'X' }).success).toBe(true);
+    }
+  });
+});
+
+describe('registry sync — every SAPRead type reaches a real handler case', () => {
+  // The SAPRead switch has a `default:` that returns 'Unknown SAPRead type: ...'. If a registry
+  // type lacked a case it would fall there. We drive the real handler with a fetch that always
+  // rejects: known types fail with a transport error (not the default), unknown types (unreachable
+  // via Zod anyway) would hit the default. So: result must never be the unknown-type message.
+  const config: ServerConfig = {
+    ...DEFAULT_CONFIG,
+    allowWrites: true,
+    allowDataPreview: true,
+    allowFreeSQL: true,
+  };
+
+  function client() {
+    return new AdtClient({
+      baseUrl: 'http://sap:8000',
+      username: 'u',
+      password: 'p',
+      safety: unrestrictedSafetyConfig(),
+    });
+  }
+
+  function readArgs(type: string): Record<string, unknown> {
+    const base: Record<string, unknown> = { type, name: 'ZARC1_X' };
+    if (type === 'VERSION_SOURCE') base.versionUri = '/sap/bc/adt/x';
+    return base;
+  }
+
+  for (const type of SAPREAD_TYPES_ONPREM) {
+    it(`SAPRead ${type} dispatches (not the unknown-type default)`, async () => {
+      vi.resetAllMocks();
+      resetCachedFeatures();
+      mockFetch.mockRejectedValue(new Error('SENTINEL_FETCH_FAIL'));
+      // Self-check: the minimal args must be valid input, else the test below proves nothing.
+      expect(getToolSchema('SAPRead', false)!.safeParse(readArgs(type)).success, `args valid for ${type}`).toBe(true);
+
+      const result = await handleToolCall(client(), config, 'SAPRead', readArgs(type));
+      const text = result.content.map((c) => c.text).join('');
+      expect(text, `${type} fell through to the SAPRead default case`).not.toContain('Unknown SAPRead type:');
+    });
+  }
+});

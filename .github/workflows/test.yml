@@ -87,6 +87,12 @@ jobs:
       - name: Type check
         run: npm run typecheck
 
+      - name: Validate action policy
+        run: npm run validate:policy
+
+      - name: Check file-size ratchet
+        run: npm run check:sizes
+
       - name: npx package smoke test
         run: npm run test:npx-smoke
 
