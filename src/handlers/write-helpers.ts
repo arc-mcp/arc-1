@@ -993,3 +993,13 @@ export async function tryPostSaveSyntaxCheck(client: AdtClient, type: string, na
   if (!DDIC_POST_SAVE_CHECK_TYPES.has(canonicalTablType(type.toUpperCase()))) return '';
   return inactiveSyntaxDiagnostic(client, type, name);
 }
+
+// Stable hint surfaced when ARC-1 refuses a TABL/DT write because the connected system does not
+// expose /sap/bc/adt/ddic/tables/. Shared by the discovery gate (write.ts prologue) and batch create.
+export const TABL_DT_WRITE_UNAVAILABLE_HINT =
+  'Transparent table writes via ADT REST are not available on this system ' +
+  '(/sap/bc/adt/ddic/tables/ is not exposed — NW 7.50/7.51 ship the DDIC ' +
+  'structures endpoint only; the table editor was added in NW 7.52). ' +
+  'Use SE11 in SAPGUI, or connect ARC-1 to an SAP_BASIS ≥ 7.52 system. ' +
+  'Writing the source via /sap/bc/adt/ddic/structures/ would silently flip ' +
+  'DD02L-TABCLASS to INTTAB and corrupt the table.';

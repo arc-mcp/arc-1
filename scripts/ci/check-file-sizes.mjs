@@ -28,9 +28,10 @@ const BUDGETS = {
   // intent.ts is now a 38-line deprecated back-compat barrel (the dispatcher moved to dispatch.ts
   // in Stage B). Budget kept tight so the emptied file can't silently regrow into a monolith.
   'src/handlers/intent.ts': 80,
-  // write.ts is the un-split SAPWrite handler; the plan's Stage D splits it into a write/ package.
-  // Budget set above its current size pending that split; lower it when write/ lands.
-  'src/handlers/write.ts': 2050,
+  // write.ts is now a thin SAPWrite orchestrator (prologue + ctx + action dispatch) after the
+  // Stage D split into src/handlers/write/{create,update-delete,class-surgery,rap}.ts. The action
+  // submodules ride the default src budget; keep this tight so the dispatcher can't reabsorb them.
+  'src/handlers/write.ts': 360,
   'src/handlers/tools.ts': 1700,
   'src/adt/xml-parser.ts': 1650,
   'tests/unit/handlers/intent.test.ts': 15500,
