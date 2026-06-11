@@ -27,6 +27,7 @@ import { getToolDefinitions } from '../../../src/handlers/tools.js';
 import type { ServerConfig } from '../../../src/server/types.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { btp, onprem } from './handler-test-config.js';
+import { AdtClient, mockFetch } from './setup-undici-mock.js';
 
 /** Minimal valid SAPRead input per type — shared by the Zod-accept and dispatch-coverage blocks. */
 function readArgs(type: string): Record<string, unknown> {
@@ -35,13 +36,7 @@ function readArgs(type: string): Record<string, unknown> {
   return base;
 }
 
-// Real AdtClient over a mocked fetch — used only by the SAPRead dispatch-coverage block.
-const mockFetch = vi.fn();
-vi.mock('undici', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('undici')>();
-  return { ...actual, fetch: mockFetch };
-});
-const { AdtClient } = await import('../../../src/adt/client.js');
+// Real AdtClient over the shared mocked fetch — used only by the SAPRead dispatch-coverage block.
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 const { resetCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
 

@@ -1,7 +1,7 @@
 /**
  * SAPRead handler unit tests — split from the former intent.test.ts monolith.
- * Each split file keeps its own vi.mock('undici') prologue (the mock factory references the
- * module-level mockFetch, so AdtClient is imported dynamically AFTER mockFetch is defined).
+ * The undici mock + AdtClient + createClient live in ./setup-undici-mock.ts — import that helper
+ * and keep all other src-module imports dynamic (see its header for the ordering rules).
  */
 import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -13,26 +13,10 @@ import { logger } from '../../../src/server/logger.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 import { featuresOff } from './handler-test-config.js';
+import { AdtClient, createClient, mockFetch } from './setup-undici-mock.js';
 
-// Mock undici's fetch (used by AdtHttpClient.doFetch)
-const mockFetch = vi.fn();
-vi.mock('undici', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('undici')>();
-  return { ...actual, fetch: mockFetch };
-});
-
-const { AdtClient } = await import('../../../src/adt/client.js');
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 const { resetCachedFeatures, setCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
-
-function createClient(): InstanceType<typeof AdtClient> {
-  return new AdtClient({
-    baseUrl: 'http://sap:8000',
-    username: 'admin',
-    password: 'secret',
-    safety: unrestrictedSafetyConfig(),
-  });
-}
 
 describe('SAPRead handler', () => {
   beforeEach(() => {
