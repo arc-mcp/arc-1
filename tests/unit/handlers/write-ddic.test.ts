@@ -1,5 +1,5 @@
 /**
- * SAPxxx handler unit tests — split from the former intent.test.ts monolith.
+ * SAPWrite DDIC-write unit tests — split from the former intent.test.ts monolith.
  * Each split file keeps its own vi.mock('undici') prologue (the mock factory references the
  * module-level mockFetch, so AdtClient is imported dynamically AFTER mockFetch is defined).
  */
@@ -29,7 +29,7 @@ function createClient(): InstanceType<typeof AdtClient> {
   });
 }
 
-describe('Intent Handler', () => {
+describe('SAPWrite handler — DDIC writes', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     // Default: return ABAP source with CSRF token for any request
@@ -1073,6 +1073,15 @@ describe('Intent Handler', () => {
     });
   });
 
+  // TABL subtype routing on create (follow-up to issue #285)
+  // Bug shape: SAPWrite(action='create', type='TABL/DS') always routed to
+  // /sap/bc/adt/ddic/tables with adtcore:type="TABL/DT" because:
+  //   1. normalizeObjectType('TABL/DS') collapsed to bare 'TABL' before validation
+  //   2. objectBasePath('TABL') hardcoded /sap/bc/adt/ddic/tables/
+  //   3. buildCreateXml('TABL') hardcoded adtcore:type="TABL/DT"
+  // The fix preserves the slash form for SAPWrite, branches URL + envelope on
+  // subtype, and scopes PR #286's discovery-gated refusal to bare TABL + TABL/DT.
+  // ──────────────────────────────────────────────────────────────────────────
   describe('SAPWrite TABL/DS create routing (follow-up to issue #285)', () => {
     it('SAPWrite create type="TABL/DS" routes POST to /sap/bc/adt/ddic/structures and emits adtcore:type="TABL/DS"', async () => {
       mockFetch.mockReset();

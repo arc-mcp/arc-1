@@ -1,5 +1,5 @@
 /**
- * SAPxxx handler unit tests — split from the former intent.test.ts monolith.
+ * SAPWrite create / batch_create unit tests — split from the former intent.test.ts monolith.
  * Each split file keeps its own vi.mock('undici') prologue (the mock factory references the
  * module-level mockFetch, so AdtClient is imported dynamically AFTER mockFetch is defined).
  */
@@ -30,7 +30,7 @@ function createClient(): InstanceType<typeof AdtClient> {
   });
 }
 
-describe('Intent Handler', () => {
+describe('SAPWrite handler — create / batch_create', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     // Default: return ABAP source with CSRF token for any request
@@ -1883,8 +1883,8 @@ lv = CONV string( 1 ).`,
       });
 
       it('threads the configured language into MSAG language + masterLanguage (blank-SPRSL fix)', () => {
-        // Guards the intent.ts → buildMessageClassXml wiring, not just the builder in
-        // isolation: the MSAG handler keys T100 text rows by the BODY adtcore:language
+        // Guards the write-helpers buildCreateXml → buildMessageClassXml wiring, not just the
+        // builder in isolation: the MSAG handler keys T100 text rows by the BODY adtcore:language
         // (live-verified on a4h 7.58), so messages created without it land under a blank
         // SPRSL and never resolve at runtime.
         const xml = buildCreateXml(

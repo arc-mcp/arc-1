@@ -1,5 +1,5 @@
 /**
- * SAPxxx handler unit tests — split from the former intent.test.ts monolith.
+ * SAPManage / SAPContext handler unit tests — split from the former intent.test.ts monolith.
  * Each split file keeps its own vi.mock('undici') prologue (the mock factory references the
  * module-level mockFetch, so AdtClient is imported dynamically AFTER mockFetch is defined).
  */
@@ -30,7 +30,7 @@ function createClient(): InstanceType<typeof AdtClient> {
   });
 }
 
-describe('Intent Handler', () => {
+describe('SAPManage / SAPContext handlers', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     // Default: return ABAP source with CSRF token for any request

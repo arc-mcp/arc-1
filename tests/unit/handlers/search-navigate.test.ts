@@ -1,5 +1,5 @@
 /**
- * SAPxxx handler unit tests — split from the former intent.test.ts monolith.
+ * SAPSearch / SAPQuery / SAPGit / SAPNavigate handler unit tests — split from the former intent.test.ts monolith.
  * Each split file keeps its own vi.mock('undici') prologue (the mock factory references the
  * module-level mockFetch, so AdtClient is imported dynamically AFTER mockFetch is defined).
  */
@@ -44,7 +44,7 @@ function freestylePostCalls(): Array<[unknown, Record<string, unknown>]> {
   ) as Array<[unknown, Record<string, unknown>]>;
 }
 
-describe('Intent Handler', () => {
+describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     // Default: return ABAP source with CSRF token for any request
