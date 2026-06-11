@@ -234,6 +234,7 @@ import {
   stripLlmEmptyValues,
 } from './object-types.js';
 import { getToolSchema } from './schemas.js';
+import { errorResult, type ToolResult, textResult } from './shared.js';
 import { formatZodError } from './zod-errors.js';
 
 // Re-export the feature-cache accessors (moved to feature-cache.ts, Stage B; barrel-locked).
@@ -244,6 +245,8 @@ export {
   setCachedDiscovery,
   setCachedFeatures,
 } from './feature-cache.js';
+// ToolResult moved to shared.ts (Stage B); re-exported for back-compat (barrel-surface.test.ts).
+export type { ToolResult } from './shared.js';
 // Re-export the public object-type surface for back-compat (locked by barrel-surface.test.ts).
 // These moved to object-types.ts (Stage B) but consumers still import them from here.
 export {
@@ -255,12 +258,6 @@ export {
   SLASH_TYPE_MAP,
   stripLlmEmptyValues,
 };
-
-/** MCP tool call result */
-export interface ToolResult {
-  content: Array<{ type: 'text'; text: string }>;
-  isError?: boolean;
-}
 
 /**
  * Scope required for each tool.
@@ -306,14 +303,6 @@ export function hasRequiredScope(authInfo: AuthInfo, requiredScope: string): boo
     authInfo.scopes,
     requiredScope as 'read' | 'write' | 'data' | 'sql' | 'transports' | 'git' | 'admin',
   );
-}
-
-function textResult(text: string): ToolResult {
-  return { content: [{ type: 'text', text }] };
-}
-
-function errorResult(message: string): ToolResult {
-  return { content: [{ type: 'text', text: message }], isError: true };
 }
 
 const DDIC_SAVE_HINT_TYPES = new Set(['TABL', 'DDLS', 'DCLS', 'BDEF', 'SRVD', 'SRVB', 'DDLX', 'DOMA', 'DTEL']);
