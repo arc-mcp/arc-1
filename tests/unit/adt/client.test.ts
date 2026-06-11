@@ -1932,6 +1932,28 @@ describe('AdtClient', () => {
       await client.resolveObjectPackage('/sap/bc/adt/oo/classes/ZCL_X');
       expect(fetchHeaders(0).Accept ?? '').not.toContain('blues');
     });
+
+    it('strips media-type parameters from a caller-supplied Accept', async () => {
+      // On-prem backends (758 + 816, live-verified on the SRVB bindings resource) reject an
+      // Accept carrying "; charset=utf-8" with 406 SADT_RESOURCE 037 — and that body names no
+      // accepted type, so the negotiation retry cannot recover. The choke point sends the bare
+      // media type regardless of what the caller passes.
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(
+        mockResponse(
+          200,
+          '<srvb:serviceBinding xmlns:adtcore="http://www.sap.com/adt/core">' +
+            '<adtcore:packageRef adtcore:name="Z_GATED"/></srvb:serviceBinding>',
+        ),
+      );
+      const client = createClient();
+      const pkg = await client.resolveObjectPackage(
+        '/sap/bc/adt/businessservices/bindings/ZSB_X',
+        'application/vnd.sap.adt.businessservices.servicebinding.v2+xml; charset=utf-8',
+      );
+      expect(pkg).toBe('Z_GATED');
+      expect(fetchHeaders(0).Accept).toBe('application/vnd.sap.adt.businessservices.servicebinding.v2+xml');
+    });
   });
 
   describe('getInactiveObjects', () => {

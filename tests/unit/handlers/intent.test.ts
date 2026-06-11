@@ -6250,6 +6250,53 @@ ENDCLASS.`;
       expect(unpublishUrl).toContain('servicename=ZSB_TRAVEL_O4');
     });
 
+    it('package-gate metadata read for unpublish_srvb sends the parameter-less servicebinding Accept', async () => {
+      // Symmetric to the publish_srvb gate regression test: the unpublish gate runs the same
+      // resolveObjectPackage GET and must send the bare media type (758/816 reject parameters
+      // with 406 SADT_RESOURCE 037).
+      const bindingXml =
+        '<srvb:serviceBinding xmlns:srvb="http://www.sap.com/adt/ddic/ServiceBindings" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="ZSB_TRAVEL_O4"><adtcore:packageRef adtcore:name="Z_TEST_PKG"/><binding version="V2" type="ODATA" category="0"/></srvb:serviceBinding>';
+      mockFetch
+        // 1) package-gate resolveObjectPackage GET (also delivers CSRF token)
+        .mockResolvedValueOnce(mockResponse(200, bindingXml, { 'x-csrf-token': 'T' }))
+        // 2) getSrvb for service type detection
+        .mockResolvedValueOnce(mockResponse(200, bindingXml, { 'x-csrf-token': 'T' }))
+        // 3) unpublish POST
+        .mockResolvedValueOnce(
+          mockResponse(
+            200,
+            '<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><SEVERITY>OK</SEVERITY><SHORT_TEXT>Unpublished</SHORT_TEXT><LONG_TEXT></LONG_TEXT></DATA></asx:values></asx:abap>',
+            { 'x-csrf-token': 'T' },
+          ),
+        )
+        // 4) getSrvb readback
+        .mockResolvedValueOnce(
+          mockResponse(
+            200,
+            '<serviceBinding xmlns="http://www.sap.com/adt/ddic/ServiceBindings" name="ZSB_TRAVEL_O4" published="false"></serviceBinding>',
+            { 'x-csrf-token': 'T' },
+          ),
+        );
+      const client = new AdtClient({
+        baseUrl: 'http://sap:8000',
+        username: 'admin',
+        password: 'secret',
+        safety: { ...unrestrictedSafetyConfig(), allowedPackages: ['Z*'] },
+      });
+      const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPActivate', {
+        action: 'unpublish_srvb',
+        name: 'ZSB_TRAVEL_O4',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('Successfully unpublished service binding ZSB_TRAVEL_O4');
+
+      const gateCall = mockFetch.mock.calls[0];
+      expect(String(gateCall[0])).toContain('/sap/bc/adt/businessservices/bindings/ZSB_TRAVEL_O4');
+      const gateHeaders = ((gateCall[1] as Record<string, unknown>)?.headers ?? {}) as Record<string, string>;
+      expect(gateHeaders.Accept).toBe('application/vnd.sap.adt.businessservices.servicebinding.v2+xml');
+      expect(gateHeaders.Accept).not.toContain('charset');
+    });
+
     it('activates a DDIC structure via TABL with structure URL in XML body', async () => {
       // Model B: structures use type='TABL'. The activate handler resolves the
       // URL via client.resolveTablObjectUrlForWrite which asks SAP for the

@@ -128,13 +128,16 @@ right shape (mirrors the `crud.ts` lock Accept; ADR-0002-style narrow quirk).
 
 ## Residual notes (non-blocking)
 
-1. The unit suite's `DEFAULT_CONFIG`-based publish tests run with an *unrestricted* allowlist, so
-   the gate path was previously untested — that blind spot let #394 ship the 406. The new
-   regression test closes it for publish; an equivalent unpublish-gate test would be symmetric
-   polish.
-2. `resolveObjectPackage` could defensively strip media-type parameters from any caller-supplied
-   Accept at the choke point. Deliberately not done here (narrow fix per ADR-0002); worth
-   considering if a third parameter-bearing Accept ever appears.
+1. ~~An equivalent unpublish-gate test would be symmetric polish.~~ **Implemented** (review
+   follow-up commit): `intent.test.ts` now pins the gate GET's bare Accept for both
+   `publish_srvb` and `unpublish_srvb`. (Background: the `DEFAULT_CONFIG`-based publish tests
+   run with an *unrestricted* allowlist, so the gate path was previously untested — that blind
+   spot let #394 ship the 406.)
+2. ~~`resolveObjectPackage` could defensively strip media-type parameters at the choke point.~~
+   **Implemented** (review follow-up commit): `resolveObjectPackage` sends only the bare media
+   type from any caller-supplied Accept (`src/adt/client.ts`), with a unit test. Call sites keep
+   passing the bare `SERVICEBINDING_V2_ACCEPT` for clarity; the choke point now protects future
+   callers.
 3. The published-state readback after publish parses `getSrvb` JSON and only checks
    `published === false` — fine, but it means a readback parse failure silently passes. Existing
    behavior, unchanged by this PR.
