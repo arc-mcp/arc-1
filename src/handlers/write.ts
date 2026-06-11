@@ -11,14 +11,9 @@
 
 import type { AdtClient } from '../adt/client.js';
 import { AdtSafetyError } from '../adt/errors.js';
-import {} from '../adt/features.js';
-import {} from '../adt/safety.js';
 import { isServerDrivenObjectType } from '../adt/server-driven.js';
 import type { ClassStructure } from '../adt/types.js';
-import {} from '../aff/validator.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
-import {} from '../context/method-surgery.js';
-import {} from '../server/logger.js';
 import type { ServerConfig } from '../server/types.js';
 import { type CacheSecurityContext, invalidateInactiveList } from './cache-security.js';
 import { isTablesEndpointAvailable } from './feature-cache.js';
@@ -49,13 +44,6 @@ import {
   NAME_CASE_GUARD_ACTIONS,
   TABL_DT_WRITE_UNAVAILABLE_HINT,
 } from './write-helpers.js';
-
-/** Stable hint surfaced when ARC-1 refuses a TABL/DT write because the connected
- *  system does not expose /sap/bc/adt/ddic/tables/. Shared between the
- *  resolver-driven update/delete/activate paths and the discovery-gated create
- *  paths so the LLM always sees the same recovery instructions. */
-
-/** BTP-specific error messages for unavailable operations */
 
 export async function handleSAPWrite(
   client: AdtClient,
@@ -234,7 +222,6 @@ export async function handleSAPWrite(
     config,
     cachingLayer,
     cacheSecurity,
-    action,
     type,
     name,
     source,
@@ -260,16 +247,7 @@ export async function handleSAPWrite(
     case 'edit_method':
       return writeActionEditMethod(ctx);
 
-    // ─── Class-section surgery actions (issue #303) ─────────────────────
-    //
-    // Four actions share a common shape: fetch objectstructure → optional
-    // diff/refuse → splice into /source/main (or /includes/<inc> when
-    // include= is set) → PUT under lock → no auto-activate.
-    //
-    // Pre-write lint runs on the SPLICED FULL source (not the partial input
-    // fragment) because a raw DEFINITION block alone fails abaplint with
-    // "Expected CLASSIMPLEMENTATION" — verified live on a4h. Lint is skipped
-    // for include= writes (same precedent as `update include=` path).
+    // Class-section surgery actions (issue #303) — see write/class-surgery.ts.
     case 'edit_class_definition':
       return writeActionEditClassDefinition(ctx);
 

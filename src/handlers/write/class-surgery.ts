@@ -1,5 +1,11 @@
 /**
  * SAPWrite actions — class-section surgery (issue #303). Split from write.ts (Stage D).
+ *
+ * These actions share a common shape: fetch objectstructure → optional diff/refuse → splice into
+ * /source/main (or /includes/<inc> when include= is set) → PUT under lock → no auto-activate.
+ * Pre-write lint runs on the SPLICED FULL source (not the partial input fragment) because a raw
+ * DEFINITION block alone fails abaplint with "Expected CLASSIMPLEMENTATION" (verified live on a4h);
+ * lint is skipped for include= writes (same precedent as the `update include=` path).
  */
 
 import {

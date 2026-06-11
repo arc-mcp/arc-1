@@ -20,32 +20,36 @@ import * as objectTypes from '../../../src/handlers/object-types.js';
 import * as search from '../../../src/handlers/search.js';
 import * as writeHelpers from '../../../src/handlers/write-helpers.js';
 
-const EXPECTED_RUNTIME_EXPORTS = [
-  'KNOWN_BASE_TYPES',
-  'SLASH_TYPE_EVIDENCE',
-  'SLASH_TYPE_MAP',
-  'TOOL_SCOPES',
-  'buildCreateXml',
-  'getCachedDiscovery',
-  'getCachedFeatures',
-  'handleToolCall',
-  'hasRequiredScope',
-  'looksLikeFieldName',
-  'normalizeObjectType',
-  'normalizeTypeArgsForValidation',
-  'objectBasePath',
-  'resetCachedFeatures',
-  'setCachedDiscovery',
-  'setCachedFeatures',
-  'stripFmParamCommentBlock',
-  'stripLlmEmptyValues',
-  'transliterateQuery',
-  'warnCdsReservedKeywords',
-].sort();
+// Single source: each runtime export the barrel must re-expose → the module that actually owns it.
+// Both the name-set lock and the binding-identity check derive from this map, so they can't drift
+// (adding an entry here is the only way to extend the surface, and it gets identity coverage for
+// free). If you intentionally add/remove a public handler export, edit this map in the same change.
+const OWNER: Record<string, Record<string, unknown>> = {
+  handleToolCall: dispatch,
+  hasRequiredScope: dispatch,
+  TOOL_SCOPES: dispatch,
+  warnCdsReservedKeywords: cdsHints,
+  getCachedDiscovery: featureCache,
+  getCachedFeatures: featureCache,
+  resetCachedFeatures: featureCache,
+  setCachedDiscovery: featureCache,
+  setCachedFeatures: featureCache,
+  looksLikeFieldName: search,
+  transliterateQuery: search,
+  KNOWN_BASE_TYPES: objectTypes,
+  SLASH_TYPE_EVIDENCE: objectTypes,
+  SLASH_TYPE_MAP: objectTypes,
+  normalizeObjectType: objectTypes,
+  normalizeTypeArgsForValidation: objectTypes,
+  objectBasePath: objectTypes,
+  stripLlmEmptyValues: objectTypes,
+  buildCreateXml: writeHelpers,
+  stripFmParamCommentBlock: writeHelpers,
+};
 
 describe('handlers/intent.ts public surface', () => {
   it('re-exports exactly the locked runtime set', () => {
-    expect(Object.keys(intent).sort()).toEqual(EXPECTED_RUNTIME_EXPORTS);
+    expect(Object.keys(intent).sort()).toEqual(Object.keys(OWNER).sort());
   });
 
   it('still exports the ToolResult type', () => {
@@ -58,25 +62,9 @@ describe('handlers/intent.ts public surface', () => {
     // Object.keys() above only checks names — a re-export pointed at the wrong same-named symbol
     // (e.g. a stale stub left behind by a future split) would pass it. Assert binding identity
     // against the module that actually owns each symbol so a mis-pointed re-export fails loudly.
-    expect(intent.handleToolCall).toBe(dispatch.handleToolCall);
-    expect(intent.hasRequiredScope).toBe(dispatch.hasRequiredScope);
-    expect(intent.TOOL_SCOPES).toBe(dispatch.TOOL_SCOPES);
-    expect(intent.warnCdsReservedKeywords).toBe(cdsHints.warnCdsReservedKeywords);
-    expect(intent.getCachedDiscovery).toBe(featureCache.getCachedDiscovery);
-    expect(intent.getCachedFeatures).toBe(featureCache.getCachedFeatures);
-    expect(intent.resetCachedFeatures).toBe(featureCache.resetCachedFeatures);
-    expect(intent.setCachedDiscovery).toBe(featureCache.setCachedDiscovery);
-    expect(intent.setCachedFeatures).toBe(featureCache.setCachedFeatures);
-    expect(intent.looksLikeFieldName).toBe(search.looksLikeFieldName);
-    expect(intent.transliterateQuery).toBe(search.transliterateQuery);
-    expect(intent.KNOWN_BASE_TYPES).toBe(objectTypes.KNOWN_BASE_TYPES);
-    expect(intent.SLASH_TYPE_EVIDENCE).toBe(objectTypes.SLASH_TYPE_EVIDENCE);
-    expect(intent.SLASH_TYPE_MAP).toBe(objectTypes.SLASH_TYPE_MAP);
-    expect(intent.normalizeObjectType).toBe(objectTypes.normalizeObjectType);
-    expect(intent.normalizeTypeArgsForValidation).toBe(objectTypes.normalizeTypeArgsForValidation);
-    expect(intent.objectBasePath).toBe(objectTypes.objectBasePath);
-    expect(intent.stripLlmEmptyValues).toBe(objectTypes.stripLlmEmptyValues);
-    expect(intent.buildCreateXml).toBe(writeHelpers.buildCreateXml);
-    expect(intent.stripFmParamCommentBlock).toBe(writeHelpers.stripFmParamCommentBlock);
+    const barrel = intent as Record<string, unknown>;
+    for (const [name, owner] of Object.entries(OWNER)) {
+      expect(barrel[name], `intent.${name} must be the same binding as its owning module`).toBe(owner[name]);
+    }
   });
 });

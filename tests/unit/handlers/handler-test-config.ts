@@ -16,9 +16,19 @@ export function feat(id: string, available: boolean): FeatureStatus {
   return { id, available, mode: 'auto' };
 }
 
+/**
+ * Keys of ResolvedFeatures whose value is a FeatureStatus — the toggleable backend features.
+ * Excludes the metadata keys (abapRelease/systemType/textSearch/authProbe/discoveryMap) so an
+ * override like `features({ textSearch: false })` is a compile error instead of being silently
+ * dropped (those keys aren't mapped below).
+ */
+type FeatureKey = {
+  [K in keyof ResolvedFeatures]: ResolvedFeatures[K] extends FeatureStatus ? K : never;
+}[keyof ResolvedFeatures];
+
 /** A complete ResolvedFeatures with every feature available unless overridden. */
-export function features(overrides: Partial<Record<keyof ResolvedFeatures, boolean>> = {}): ResolvedFeatures {
-  const on = (k: keyof ResolvedFeatures) => (overrides[k] === undefined ? true : (overrides[k] as boolean));
+export function features(overrides: Partial<Record<FeatureKey, boolean>> = {}): ResolvedFeatures {
+  const on = (k: FeatureKey) => (overrides[k] === undefined ? true : (overrides[k] as boolean));
   return {
     hana: feat('hana', on('hana')),
     abapGit: feat('abapGit', on('abapGit')),

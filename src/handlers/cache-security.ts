@@ -62,7 +62,7 @@ export function buildCacheSecurityContext(
 }
 
 export function inactiveListUserKey(client: AdtClient, cacheSecurity: CacheSecurityContext): string | undefined {
-  return cacheSecurity?.isPerUserClient ? cacheSecurity.userKey : client.username;
+  return cacheSecurity.isPerUserClient ? cacheSecurity.userKey : client.username;
 }
 
 export function invalidateInactiveList(
@@ -77,5 +77,5 @@ export function contextCacheForDependencyPayloads(
   cachingLayer: CachingLayer | undefined,
   cacheSecurity: CacheSecurityContext,
 ): CachingLayer | undefined {
-  return cacheSecurity?.isPerUserClient ? undefined : cachingLayer;
+  return cacheSecurity.isPerUserClient ? undefined : cachingLayer;
 }

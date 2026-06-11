@@ -57,7 +57,7 @@ export async function handleSAPContext(
   // ─── Reverse dep lookup (pre-warmer only) ─────────────────────────
   if (action === 'usages') {
     if (!name) return errorResult('"name" is required for usages action.');
-    if (cacheSecurity?.isPerUserClient) {
+    if (cacheSecurity.isPerUserClient) {
       return errorResult(
         'SAPContext(action="usages") is disabled under principal propagation because it reads the shared warmup index. ' +
           `Use SAPNavigate(action="references", type="${type || 'CLAS'}", name="${name}") for a live SAP-authorized lookup.`,

@@ -215,8 +215,12 @@ export const SAPCONTEXT_TYPES_ONPREM_ONLY = ['PROG', 'FUNC'] as const;
 
 // ─── SAPWrite class-section includes ────────────────────────────────
 
-/** Class-local include sections a SAPWrite CLAS update can target (JSON-Schema enum + Zod enum). */
-export const SAPWRITE_CLAS_INCLUDES = ['definitions', 'implementations', 'macros', 'testclasses'] as const;
+// Class-local include sections a SAPWrite CLAS update can target — surfaced here under the
+// schema-layer name so tools.ts (JSON-Schema enum) and schemas.ts (Zod enum) consume the SAME
+// runtime list the write path validates against (object-types.ts owns it alongside the
+// ClassWriteInclude type + classIncludeUrl + normalizeClassWriteInclude). Re-export, not a copy,
+// so a new include section can't be schema-accepted but runtime-rejected.
+export { CLASS_WRITE_INCLUDES as SAPWRITE_CLAS_INCLUDES } from './object-types.js';
 
 // ─── Derived union types ────────────────────────────────────────────
 

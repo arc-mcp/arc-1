@@ -59,6 +59,18 @@ const files = execSync('git ls-files -z src tests bin', { encoding: 'utf8' })
   .split('\0')
   .filter((f) => f.endsWith('.ts') || f.endsWith('.mjs'));
 
+// A BUDGETS key that no longer names a tracked file is a silent loosening: the renamed/deleted
+// file's successor falls back to the (much larger) default budget while the tight entry sits dead.
+// Fail loudly so a rename must move its budget in the same change.
+const tracked = new Set(files);
+const danglingBudgets = Object.keys(BUDGETS).filter((p) => !tracked.has(p));
+if (danglingBudgets.length > 0) {
+  console.error('✗ file-size ratchet: these BUDGETS keys no longer match a tracked file (rename/delete?):\n');
+  for (const p of danglingBudgets) console.error(`  ${p}`);
+  console.error('\nUpdate the key in scripts/ci/check-file-sizes.mjs to the new path, or remove it.');
+  process.exit(1);
+}
+
 const offenders = [];
 for (const f of files) {
   // A file tracked in the index but missing from the worktree (e.g. deleted-not-committed) is not

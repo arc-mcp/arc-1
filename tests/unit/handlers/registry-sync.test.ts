@@ -29,6 +29,7 @@ import {
 import { getToolDefinitions } from '../../../src/handlers/tools.js';
 import type { ServerConfig } from '../../../src/server/types.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
+import { btp, onprem } from './handler-test-config.js';
 
 /** Minimal valid SAPRead input per type — shared by the Zod-accept and dispatch-coverage blocks. */
 function readArgs(type: string): Record<string, unknown> {
@@ -46,8 +47,10 @@ vi.mock('undici', async (importOriginal) => {
 const { AdtClient } = await import('../../../src/adt/client.js');
 const { handleToolCall, resetCachedFeatures } = await import('../../../src/handlers/intent.js');
 
-const onpremFull: ServerConfig = { ...DEFAULT_CONFIG, systemType: 'onprem', allowWrites: true };
-const btpFull: ServerConfig = { ...DEFAULT_CONFIG, systemType: 'btp', allowWrites: true };
+// allowWrites registers SAPWrite (the BTP/onprem type matrix this file checks); the other gate
+// flags don't affect the type enums, so they're left at their defaults.
+const onpremFull: ServerConfig = onprem({ allowWrites: true });
+const btpFull: ServerConfig = btp({ allowWrites: true });
 
 function typeEnum(config: ServerConfig, toolName: string): string[] {
   const tool = getToolDefinitions(config, true).find((t) => t.name === toolName);
@@ -55,32 +58,19 @@ function typeEnum(config: ServerConfig, toolName: string): string[] {
   return (tool.inputSchema as any).properties.type.enum as string[];
 }
 
-describe('registry sync — BTP lists are subsets of on-prem', () => {
-  it('SAPRead BTP ⊆ on-prem', () => {
-    const onprem = new Set<string>(SAPREAD_TYPES_ONPREM);
-    expect(SAPREAD_TYPES_BTP.filter((t) => !onprem.has(t))).toEqual([]);
-  });
-  it('SAPWrite BTP ⊆ on-prem', () => {
-    const onprem = new Set<string>(SAPWRITE_TYPES_ONPREM);
-    expect(SAPWRITE_TYPES_BTP.filter((t) => !onprem.has(t))).toEqual([]);
-  });
-  it('SAPContext BTP ⊆ on-prem', () => {
-    const onprem = new Set<string>(SAPCONTEXT_TYPES_ONPREM);
-    expect(SAPCONTEXT_TYPES_BTP.filter((t) => !onprem.has(t))).toEqual([]);
-  });
-});
-
+// Note: a dedicated "BTP ⊆ on-prem" block is intentionally absent — it is strictly implied by the
+// partition guard below (btp ⊆ btp ∪ onprem_only = on-prem), so it would only ever fail in tandem.
 describe('registry sync — BTP + ONPREM_ONLY partition the on-prem list exactly', () => {
   // Forgetting to add a new type to the BTP list is otherwise indistinguishable from a deliberate
   // on-prem-only type. Requiring `onprem === btp ∪ onprem_only` (disjoint) turns that omission into
   // a test failure: a new type lands in onprem but in neither partition, so the union differs.
-  function expectPartition(onprem: readonly string[], btp: readonly string[], onpremOnly: readonly string[]) {
+  function expectPartition(onpremTypes: readonly string[], btpTypes: readonly string[], onpremOnly: readonly string[]) {
     expect(
-      [...btp].filter((t) => onpremOnly.includes(t)),
+      btpTypes.filter((t) => onpremOnly.includes(t)),
       'BTP and ONPREM_ONLY must be disjoint',
     ).toEqual([]);
-    expect([...new Set([...btp, ...onpremOnly])].sort(), 'BTP ∪ ONPREM_ONLY must equal on-prem').toEqual(
-      [...new Set(onprem)].sort(),
+    expect([...new Set([...btpTypes, ...onpremOnly])].sort(), 'BTP ∪ ONPREM_ONLY must equal on-prem').toEqual(
+      [...new Set(onpremTypes)].sort(),
     );
   }
   it('SAPRead', () => expectPartition(SAPREAD_TYPES_ONPREM, SAPREAD_TYPES_BTP, SAPREAD_TYPES_ONPREM_ONLY));
