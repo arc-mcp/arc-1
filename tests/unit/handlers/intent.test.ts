@@ -5248,6 +5248,63 @@ ENDCLASS.`;
       expect(layer.inactiveLists.stats()).toEqual({ userCount: 2, totalEntries: 0 });
     });
 
+    it('bypasses inactive-list caching under principal propagation when auth has no user-specific key', async () => {
+      const layer = new CachingLayer(new MemoryCache());
+      const client = new AdtClient({
+        baseUrl: 'http://sap:8000',
+        username: 'DISPLAY_USER',
+        password: 'secret',
+        safety: unrestrictedSafetyConfig(),
+      });
+      let inactiveCalls = 0;
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL) => {
+        const urlStr = String(url);
+        if (urlStr.includes('/sap/bc/adt/activation/inactiveobjects')) {
+          inactiveCalls += 1;
+          return Promise.resolve(
+            mockResponse(
+              200,
+              '<?xml version="1.0" encoding="utf-8"?><ioc:inactiveObjects xmlns:ioc="http://www.sap.com/adt/inactiveObjects"/>',
+              { 'x-csrf-token': 'T' },
+            ),
+          );
+        }
+        return Promise.resolve(mockResponse(200, "REPORT zfoo.\nWRITE 'x'.", { 'x-csrf-token': 'T' }));
+      });
+      const auth: AuthInfo = {
+        token: 'jwt',
+        clientId: 'shared-oidc-client',
+        scopes: ['read'],
+        expiresAt: Math.floor(Date.now() / 1000) + 3600,
+        extra: {},
+      };
+
+      await handleToolCall(
+        client,
+        DEFAULT_CONFIG,
+        'SAPRead',
+        { type: 'PROG', name: 'ZFOO', version: 'auto' },
+        auth,
+        undefined,
+        layer,
+        true,
+      );
+      await handleToolCall(
+        client,
+        DEFAULT_CONFIG,
+        'SAPRead',
+        { type: 'PROG', name: 'ZFOO', version: 'auto' },
+        auth,
+        undefined,
+        layer,
+        true,
+      );
+
+      expect(inactiveCalls).toBe(2);
+      expect(layer.inactiveLists.stats()).toEqual({ userCount: 0, totalEntries: 0 });
+    });
+
     it('returns CDS impact with upstream and downstream buckets', async () => {
       mockFetch.mockReset();
       const whereUsedXml = `<?xml version="1.0" encoding="utf-8"?>

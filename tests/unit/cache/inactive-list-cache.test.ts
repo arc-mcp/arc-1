@@ -50,6 +50,16 @@ describe('InactiveListCache', () => {
     expect(cache.stats()).toEqual({ userCount: 0, totalEntries: 0 });
   });
 
+  it('bypasses the cache for an explicit undefined key even when client.username is set', async () => {
+    const client = makeClient('SHARED_DISPLAY', [{ name: 'ZCL_A', type: 'CLAS/OC', uri: '/a' }]);
+
+    await cache.getOrFetch(client, undefined);
+    await cache.getOrFetch(client, undefined);
+
+    expect(client.getInactiveObjects).toHaveBeenCalledTimes(2);
+    expect(cache.stats()).toEqual({ userCount: 0, totalEntries: 0 });
+  });
+
   it('getOrFetch refetches after TTL expiry', async () => {
     vi.useFakeTimers();
     const client = makeClient('MARIAN', [{ name: 'ZCL_A', type: 'CLAS/OC', uri: '/a' }]);

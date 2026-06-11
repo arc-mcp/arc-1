@@ -1441,12 +1441,42 @@ function inactiveTypeMatches(readType: string, inactiveType: string): boolean {
   return (inactiveType.split('/')[0] ?? inactiveType).toUpperCase() === readType.toUpperCase();
 }
 
+function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function resolveCacheUserKey(authInfo: AuthInfo | undefined): string | undefined {
+  if (!authInfo) return undefined;
+  const extra = (authInfo.extra ?? {}) as {
+    userName?: unknown;
+    email?: unknown;
+    sub?: unknown;
+    preferred_username?: unknown;
+    iss?: unknown;
+  };
+  const issuerOrClient = nonEmptyString(extra.iss) ?? nonEmptyString(authInfo.clientId) ?? 'unknown-auth-source';
+  const namespace = issuerOrClient.toLowerCase();
+
+  const userName = nonEmptyString(extra.userName);
+  if (userName) return `${namespace}:userName:${userName.toUpperCase()}`;
+
+  const email = nonEmptyString(extra.email);
+  if (email) return `${namespace}:email:${email.toLowerCase()}`;
+
+  const sub = nonEmptyString(extra.sub);
+  if (sub) return `${namespace}:sub:${sub}`;
+
+  const preferredUsername = nonEmptyString(extra.preferred_username);
+  if (preferredUsername) return `${namespace}:preferred_username:${preferredUsername.toLowerCase()}`;
+
+  return undefined;
+}
+
 function buildCacheSecurityContext(authInfo: AuthInfo | undefined, isPerUserClient?: boolean): CacheSecurityContext {
   if (!isPerUserClient) return { isPerUserClient: false };
-  const userKey = authInfo ? resolveRateLimitUserKey(authInfo) : undefined;
   return {
     isPerUserClient: true,
-    userKey: userKey && userKey !== '__anon__' ? userKey : undefined,
+    userKey: resolveCacheUserKey(authInfo),
   };
 }
 

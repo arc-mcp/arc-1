@@ -11,8 +11,9 @@ export class InactiveListCache {
   private byUserKey = new Map<string, CachedInactiveList>();
   private ttlMs = 60_000;
 
-  async getOrFetch(client: AdtClient, userKey = client.username): Promise<InactiveObject[]> {
-    const key = userKey.trim();
+  async getOrFetch(client: AdtClient, ...userKeyArg: [] | [string | undefined]): Promise<InactiveObject[]> {
+    const keySource = userKeyArg.length > 0 ? userKeyArg[0] : client.username;
+    const key = typeof keySource === 'string' ? keySource.trim() : '';
     if (!key) return client.getInactiveObjects();
 
     const cached = this.byUserKey.get(key);
@@ -30,12 +31,13 @@ export class InactiveListCache {
   }
 
   getCached(userKey: string): InactiveObject[] | null {
-    return this.byUserKey.get(userKey)?.objects ?? null;
+    return this.byUserKey.get(userKey.trim())?.objects ?? null;
   }
 
   invalidate(userKey: string | undefined): void {
-    if (!userKey) return;
-    this.byUserKey.delete(userKey);
+    const key = userKey?.trim();
+    if (!key) return;
+    this.byUserKey.delete(key);
   }
 
   clear(): void {
