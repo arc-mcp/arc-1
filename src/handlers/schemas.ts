@@ -17,13 +17,14 @@ import {
   SAPCONTEXT_TYPES_ONPREM,
   SAPREAD_TYPES_BTP,
   SAPREAD_TYPES_ONPREM,
+  SAPWRITE_CLAS_INCLUDES,
   SAPWRITE_TYPES_BTP,
   SAPWRITE_TYPES_ONPREM,
 } from './tool-registry.js';
 
 // Re-exported so tests/unit/handlers/schemas.test.ts can assert the write-type matrix against
 // the single source of truth. The lists themselves live in tool-registry.ts.
-export { SAPWRITE_TYPES_BTP, SAPWRITE_TYPES_ONPREM };
+export { SAPWRITE_CLAS_INCLUDES, SAPWRITE_TYPES_BTP, SAPWRITE_TYPES_ONPREM };
 
 /**
  * Optional boolean that accepts real JSON booleans AND string-serialized booleans from
@@ -55,7 +56,6 @@ const looseOptionalBoolean = z
 
 const SAPREAD_CLAS_INCLUDES = ['main', 'testclasses', 'definitions', 'implementations', 'macros'] as const;
 const SAPREAD_DDLS_INCLUDES = ['elements'] as const;
-export const SAPWRITE_CLAS_INCLUDES = ['definitions', 'implementations', 'macros', 'testclasses'] as const;
 
 function validateSapReadInput(
   input: { type: string; include?: string; versionUri?: string; sqlFilter?: string },

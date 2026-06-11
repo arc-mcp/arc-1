@@ -61,21 +61,21 @@ export function buildCacheSecurityContext(
   };
 }
 
-export function inactiveListUserKey(client: AdtClient, cacheSecurity?: CacheSecurityContext): string | undefined {
+export function inactiveListUserKey(client: AdtClient, cacheSecurity: CacheSecurityContext): string | undefined {
   return cacheSecurity?.isPerUserClient ? cacheSecurity.userKey : client.username;
 }
 
 export function invalidateInactiveList(
   cachingLayer: CachingLayer | undefined,
   client: AdtClient,
-  cacheSecurity?: CacheSecurityContext,
+  cacheSecurity: CacheSecurityContext,
 ): void {
   cachingLayer?.inactiveLists.invalidate(inactiveListUserKey(client, cacheSecurity));
 }
 
 export function contextCacheForDependencyPayloads(
   cachingLayer: CachingLayer | undefined,
-  cacheSecurity?: CacheSecurityContext,
+  cacheSecurity: CacheSecurityContext,
 ): CachingLayer | undefined {
   return cacheSecurity?.isPerUserClient ? undefined : cachingLayer;
 }

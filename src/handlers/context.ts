@@ -38,8 +38,8 @@ function parseSiblingMaxCandidates(value: unknown): number {
 export async function handleSAPContext(
   client: AdtClient,
   args: Record<string, unknown>,
-  cachingLayer?: CachingLayer,
-  cacheSecurity?: CacheSecurityContext,
+  cachingLayer: CachingLayer | undefined,
+  cacheSecurity: CacheSecurityContext,
 ): Promise<ToolResult> {
   const action = String(args.action ?? '');
   // action="impact" is DDLS-only on the server side — default the type so LLMs

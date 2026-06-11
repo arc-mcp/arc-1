@@ -1,28 +1,41 @@
 /**
  * Drift guards for the single-source object-type registry (Stage A4).
  *
- * tool-registry.ts feeds three places that must never disagree:
+ * tool-registry.ts feeds four places that must never disagree:
  *   - the JSON-Schema `enum`s in tools.ts (what the LLM is allowed to send),
  *   - the Zod `z.enum`s in schemas.ts (what the runtime accepts),
- *   - the dispatch switches in intent.ts (what actually gets handled).
- * A type present in one but not another is a latent bug (advertised-but-rejected, or
- * accepted-but-unhandled). These tests fail loudly if any pair drifts.
+ *   - the per-tool handler routing (read.ts switch / write.ts URL routing / context.ts),
+ *   - the BTP-vs-onprem split (a type must be in the BTP list or the explicit ONPREM_ONLY list).
+ * A type present in one but not another is a latent bug (advertised-but-rejected,
+ * accepted-but-unhandled, or supported-but-BTP-rejected). These tests fail loudly if any drifts.
  */
 
 import { describe, expect, it, vi } from 'vitest';
 import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
+import { isServerDrivenObjectType } from '../../../src/adt/server-driven.js';
+import { canonicalTablType, KNOWN_BASE_TYPES } from '../../../src/handlers/object-types.js';
 import { getToolSchema } from '../../../src/handlers/schemas.js';
 import {
   SAPCONTEXT_TYPES_BTP,
   SAPCONTEXT_TYPES_ONPREM,
+  SAPCONTEXT_TYPES_ONPREM_ONLY,
   SAPREAD_TYPES_BTP,
   SAPREAD_TYPES_ONPREM,
+  SAPREAD_TYPES_ONPREM_ONLY,
   SAPWRITE_TYPES_BTP,
   SAPWRITE_TYPES_ONPREM,
+  SAPWRITE_TYPES_ONPREM_ONLY,
 } from '../../../src/handlers/tool-registry.js';
 import { getToolDefinitions } from '../../../src/handlers/tools.js';
 import type { ServerConfig } from '../../../src/server/types.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
+
+/** Minimal valid SAPRead input per type — shared by the Zod-accept and dispatch-coverage blocks. */
+function readArgs(type: string): Record<string, unknown> {
+  const base: Record<string, unknown> = { type, name: 'ZARC1_X' };
+  if (type === 'VERSION_SOURCE') base.versionUri = '/sap/bc/adt/x';
+  return base;
+}
 
 // Real AdtClient over a mocked fetch — used only by the SAPRead dispatch-coverage block.
 const mockFetch = vi.fn();
@@ -57,6 +70,42 @@ describe('registry sync — BTP lists are subsets of on-prem', () => {
   });
 });
 
+describe('registry sync — BTP + ONPREM_ONLY partition the on-prem list exactly', () => {
+  // Forgetting to add a new type to the BTP list is otherwise indistinguishable from a deliberate
+  // on-prem-only type. Requiring `onprem === btp ∪ onprem_only` (disjoint) turns that omission into
+  // a test failure: a new type lands in onprem but in neither partition, so the union differs.
+  function expectPartition(onprem: readonly string[], btp: readonly string[], onpremOnly: readonly string[]) {
+    expect(
+      [...btp].filter((t) => onpremOnly.includes(t)),
+      'BTP and ONPREM_ONLY must be disjoint',
+    ).toEqual([]);
+    expect([...new Set([...btp, ...onpremOnly])].sort(), 'BTP ∪ ONPREM_ONLY must equal on-prem').toEqual(
+      [...new Set(onprem)].sort(),
+    );
+  }
+  it('SAPRead', () => expectPartition(SAPREAD_TYPES_ONPREM, SAPREAD_TYPES_BTP, SAPREAD_TYPES_ONPREM_ONLY));
+  it('SAPWrite', () => expectPartition(SAPWRITE_TYPES_ONPREM, SAPWRITE_TYPES_BTP, SAPWRITE_TYPES_ONPREM_ONLY));
+  it('SAPContext', () => expectPartition(SAPCONTEXT_TYPES_ONPREM, SAPCONTEXT_TYPES_BTP, SAPCONTEXT_TYPES_ONPREM_ONLY));
+});
+
+describe('registry sync — every SAPWrite type is routable (no silent objectBasePath fallback)', () => {
+  // write.ts routes by URL (objectBasePath / server-driven engine), not a per-type switch, so an
+  // unhandled write type does NOT throw — it silently falls through objectBasePath to the generic
+  // /programs/programs/ path and mis-writes. Guard structurally: every write type must resolve to a
+  // real base path (canonical type in KNOWN_BASE_TYPES), be a server-driven object, or be FUNC
+  // (which objectBasePath deliberately throws on because it needs the parent group — write.ts
+  // handles FUNC via a dedicated pre-switch branch).
+  for (const type of SAPWRITE_TYPES_ONPREM) {
+    it(`${type} has a real route`, () => {
+      const canonical = canonicalTablType(type);
+      const routable = KNOWN_BASE_TYPES.has(canonical) || isServerDrivenObjectType(canonical) || canonical === 'FUNC';
+      expect(routable, `${type} (canonical ${canonical}) has no objectBasePath case / server-driven / FUNC route`).toBe(
+        true,
+      );
+    });
+  }
+});
+
 describe('registry sync — JSON-Schema enums equal the registry', () => {
   it('SAPRead', () => {
     expect(typeEnum(onpremFull, 'SAPRead')).toEqual([...SAPREAD_TYPES_ONPREM]);
@@ -73,12 +122,6 @@ describe('registry sync — JSON-Schema enums equal the registry', () => {
 });
 
 describe('registry sync — Zod enums accept every registry type and reject bogus', () => {
-  function readArgs(type: string): Record<string, unknown> {
-    const base: Record<string, unknown> = { type, name: 'ZARC1_X' };
-    if (type === 'VERSION_SOURCE') base.versionUri = '/sap/bc/adt/x';
-    return base;
-  }
-
   it('SAPRead onprem + btp', () => {
     for (const t of SAPREAD_TYPES_ONPREM) {
       expect(getToolSchema('SAPRead', false)!.safeParse(readArgs(t)).success, `onprem accepts ${t}`).toBe(true);
@@ -133,19 +176,13 @@ describe('registry sync — every SAPRead type reaches a real handler case', () 
     });
   }
 
-  function readArgs(type: string): Record<string, unknown> {
-    const base: Record<string, unknown> = { type, name: 'ZARC1_X' };
-    if (type === 'VERSION_SOURCE') base.versionUri = '/sap/bc/adt/x';
-    return base;
-  }
-
+  // The shared readArgs is already proven valid for every type by the Zod-accept block above,
+  // so no per-iteration self-check is needed here.
   for (const type of SAPREAD_TYPES_ONPREM) {
     it(`SAPRead ${type} dispatches (not the unknown-type default)`, async () => {
       vi.resetAllMocks();
       resetCachedFeatures();
       mockFetch.mockRejectedValue(new Error('SENTINEL_FETCH_FAIL'));
-      // Self-check: the minimal args must be valid input, else the test below proves nothing.
-      expect(getToolSchema('SAPRead', false)!.safeParse(readArgs(type)).success, `args valid for ${type}`).toBe(true);
 
       const result = await handleToolCall(client(), config, 'SAPRead', readArgs(type));
       const text = result.content.map((c) => c.text).join('');

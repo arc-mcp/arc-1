@@ -15,8 +15,7 @@
 import { describe, expect, it } from 'vitest';
 import { getToolSchema } from '../../../src/handlers/schemas.js';
 import { getToolDefinitions } from '../../../src/handlers/tools.js';
-import type { ServerConfig } from '../../../src/server/types.js';
-import { DEFAULT_CONFIG } from '../../../src/server/types.js';
+import { features, fullConfig } from './handler-test-config.js';
 
 const TOOLS = [
   'SAPRead',
@@ -48,24 +47,9 @@ function zodObjectKeys(schema: unknown): string[] {
   throw new Error('could not unwrap Zod schema to an object');
 }
 
-// A config where every tool is registered (writes/data/sql/git all on).
-function fullConfig(btp: boolean): ServerConfig {
-  return {
-    ...DEFAULT_CONFIG,
-    systemType: btp ? 'btp' : 'onprem',
-    allowWrites: true,
-    allowTransportWrites: true,
-    allowGitWrites: true,
-    allowDataPreview: true,
-    allowFreeSQL: true,
-  };
-}
-
 function jsonSchemaKeys(tool: string, btp: boolean): string[] | null {
-  const defs = getToolDefinitions(fullConfig(btp), true, {
-    gcts: { id: 'gcts', available: true, mode: 'auto' },
-    abapGit: { id: 'abapGit', available: true, mode: 'auto' },
-  } as any);
+  // features() has every backend feature available, so feature-gated tools (SAPGit) are registered.
+  const defs = getToolDefinitions(fullConfig(btp), true, features());
   const def = defs.find((d) => d.name === tool);
   if (!def) return null;
   return Object.keys((def.inputSchema as any).properties ?? {});
@@ -76,10 +60,10 @@ describe('Zod ↔ JSON-Schema field-key parity', () => {
     for (const btp of [false, true]) {
       it(`${tool} (${btp ? 'btp' : 'onprem'}) has matching property keys`, () => {
         const jsonKeys = jsonSchemaKeys(tool, btp);
-        if (jsonKeys === null) {
-          // Tool legitimately absent for this variant (none today with the full config) — skip.
-          return;
-        }
+        // Under the all-gates-on full config every one of the 12 tools must be registered — a null
+        // means the tool silently dropped out of getToolDefinitions (a gating regression), which
+        // would otherwise make this parity check pass vacuously. Fail loudly instead.
+        expect(jsonKeys, `${tool} (${btp ? 'btp' : 'onprem'}) is not registered under the full config`).not.toBeNull();
         const zodKeys = new Set(zodObjectKeys(getToolSchema(tool, btp)));
         const jsonSet = new Set(jsonKeys);
 

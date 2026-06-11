@@ -8,8 +8,14 @@
  * asserts the JSON-Schema enums, the Zod enums, and the dispatch switch all stay in agreement.
  *
  * To add/remove a SAPRead/SAPWrite/SAPContext type:
- *   1. Edit the relevant array here (BTP lists must stay a subset of the on-prem list).
- *   2. Add/remove the matching `case` in the handler (src/handlers/intent.ts).
+ *   1. Edit the on-prem array here, AND put the type in EITHER the matching BTP array (available
+ *      on BTP) OR the matching `*_ONPREM_ONLY` array below — registry-sync enforces that the two
+ *      partition the on-prem list exactly, so a forgotten BTP entry is a test failure rather than
+ *      a silent "BTP rejects a supported type".
+ *   2. Add/remove the matching `case` in the tool's handler module: SAPRead → src/handlers/read.ts,
+ *      SAPWrite → src/handlers/write.ts (note write routes by URL via objectBasePath/server-driven,
+ *      not a per-type switch — see the registry-sync write-routing guard), SAPContext →
+ *      src/handlers/context.ts. (intent.ts is now only a re-export barrel — no cases live there.)
  *   3. Add/remove the ACTION_POLICY entry if it needs a non-default scope (src/authz/policy.ts).
  * The registry-sync + validate:policy checks will fail loudly if any of these drift.
  *
@@ -177,6 +183,40 @@ export const SAPWRITE_TYPES_BTP = [
 export const SAPCONTEXT_TYPES_ONPREM = ['CLAS', 'INTF', 'PROG', 'FUNC', 'DDLS'] as const;
 /** SAPContext types on BTP. */
 export const SAPCONTEXT_TYPES_BTP = ['CLAS', 'INTF', 'DDLS'] as const;
+
+// ─── On-prem-only partitions ────────────────────────────────────────
+// Every on-prem type must be EITHER in the matching BTP list OR named here, so that omitting a
+// new type from the BTP list (a "BTP rejects a supported type" bug) is a registry-sync failure
+// rather than indistinguishable from a deliberate on-prem-only type. Keep these in sync when a
+// type's BTP availability changes.
+
+/** SAPRead types that exist on on-prem but NOT on BTP ABAP Environment. */
+export const SAPREAD_TYPES_ONPREM_ONLY = [
+  'PROG',
+  'INCL',
+  'VIEW',
+  'TRAN',
+  'SOBJ',
+  'TEXT_ELEMENTS',
+  'VARIANTS',
+  'AUTH',
+  'FEATURE_TOGGLE',
+  'FTG2',
+  'ENHO',
+  'VERSIONS',
+  'VERSION_SOURCE',
+] as const;
+
+/** SAPWrite types that exist on on-prem but NOT on BTP ABAP Environment. */
+export const SAPWRITE_TYPES_ONPREM_ONLY = ['PROG', 'INCL', 'FUNC', 'FUGR'] as const;
+
+/** SAPContext types that exist on on-prem but NOT on BTP ABAP Environment. */
+export const SAPCONTEXT_TYPES_ONPREM_ONLY = ['PROG', 'FUNC'] as const;
+
+// ─── SAPWrite class-section includes ────────────────────────────────
+
+/** Class-local include sections a SAPWrite CLAS update can target (JSON-Schema enum + Zod enum). */
+export const SAPWRITE_CLAS_INCLUDES = ['definitions', 'implementations', 'macros', 'testclasses'] as const;
 
 // ─── Derived union types ────────────────────────────────────────────
 

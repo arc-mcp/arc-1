@@ -26,6 +26,7 @@ import {
   SAPCONTEXT_TYPES_ONPREM,
   SAPREAD_TYPES_BTP,
   SAPREAD_TYPES_ONPREM,
+  SAPWRITE_CLAS_INCLUDES,
   SAPWRITE_TYPES_BTP,
   SAPWRITE_TYPES_ONPREM,
 } from './tool-registry.js';
@@ -58,8 +59,6 @@ const SAPREAD_DESC_BTP =
   'Optional version parameter (default "active"): set to "inactive" to read the user\'s unactivated draft, or "auto" for the developer view. Active reads include a note when an inactive draft exists.';
 
 // ─── SAPWrite Types ─────────────────────────────────────────────────
-
-const SAPWRITE_CLAS_INCLUDES = ['definitions', 'implementations', 'macros', 'testclasses'];
 
 const SAPWRITE_DESC_ONPREM =
   'Create or update ABAP source code and DDIC metadata. Handles lock/modify/unlock automatically. Supports PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. ' +

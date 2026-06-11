@@ -16,9 +16,9 @@ import { errorResult } from './shared.js';
 
 export const CDS_DEPENDENCY_SENSITIVE_TYPES = new Set(['DDLS', 'DCLS', 'DDLX', 'BDEF', 'SRVD', 'SRVB', 'TABL']);
 
-export type CdsImpactBucket = Exclude<keyof CdsImpactDownstream, 'summary'>;
+type CdsImpactBucket = Exclude<keyof CdsImpactDownstream, 'summary'>;
 
-export const CDS_IMPACT_BUCKET_ORDER: CdsImpactBucket[] = [
+const CDS_IMPACT_BUCKET_ORDER: CdsImpactBucket[] = [
   'projectionViews',
   'bdefs',
   'serviceDefinitions',
@@ -31,7 +31,7 @@ export const CDS_IMPACT_BUCKET_ORDER: CdsImpactBucket[] = [
   'other',
 ];
 
-export const CDS_IMPACT_BUCKET_LABEL: Record<CdsImpactBucket, string> = {
+const CDS_IMPACT_BUCKET_LABEL: Record<CdsImpactBucket, string> = {
   projectionViews: 'Projection views (DDLS)',
   bdefs: 'Behavior definitions (BDEF)',
   serviceDefinitions: 'Service definitions (SRVD)',
@@ -44,7 +44,7 @@ export const CDS_IMPACT_BUCKET_LABEL: Record<CdsImpactBucket, string> = {
   other: 'Other',
 };
 
-export const CDS_REACTIVATION_BUCKET_ORDER: CdsImpactBucket[] = [
+const CDS_REACTIVATION_BUCKET_ORDER: CdsImpactBucket[] = [
   'projectionViews',
   'accessControls',
   'metadataExtensions',
@@ -54,7 +54,7 @@ export const CDS_REACTIVATION_BUCKET_ORDER: CdsImpactBucket[] = [
   'other',
 ];
 
-export const CDS_DELETE_BUCKET_ORDER: CdsImpactBucket[] = [
+const CDS_DELETE_BUCKET_ORDER: CdsImpactBucket[] = [
   'serviceBindings',
   'serviceDefinitions',
   'bdefs',
@@ -64,13 +64,13 @@ export const CDS_DELETE_BUCKET_ORDER: CdsImpactBucket[] = [
   'other',
 ];
 
-export interface CdsOrderedObject {
+interface CdsOrderedObject {
   type: string;
   name: string;
 }
 
-export const CDS_ORDERABLE_TYPES = new Set(['DDLS', 'DCLS', 'DDLX', 'BDEF', 'SRVD', 'SRVB']);
-export const CDS_IMPACT_WHERE_USED_TYPES = new Set([
+const CDS_ORDERABLE_TYPES = new Set(['DDLS', 'DCLS', 'DDLX', 'BDEF', 'SRVD', 'SRVB']);
+const CDS_IMPACT_WHERE_USED_TYPES = new Set([
   'DDLS',
   'DCLS',
   'DDLX',
@@ -85,7 +85,7 @@ export const CDS_IMPACT_WHERE_USED_TYPES = new Set([
   'SKTD',
 ]);
 
-export function formatCdsImpactBuckets(downstream: CdsImpactDownstream, maxNames = 4): string[] {
+function formatCdsImpactBuckets(downstream: CdsImpactDownstream, maxNames = 4): string[] {
   const lines: string[] = [];
 
   for (const bucket of CDS_IMPACT_BUCKET_ORDER) {
@@ -107,7 +107,7 @@ export function formatCdsImpactBuckets(downstream: CdsImpactDownstream, maxNames
   return lines;
 }
 
-export function mainObjectType(type: string): string {
+function mainObjectType(type: string): string {
   // First consult SLASH_TYPE_MAP so collapsed types (TABL/DS → TABL, legacy
   // STRU/DS → TABL) resolve to ARC-1's canonical short type. Then fall back to
   // splitting on '/' so unknown slash forms (e.g. BDEF/BO from where-used
@@ -117,7 +117,7 @@ export function mainObjectType(type: string): string {
   return type.split('/')[0]?.toUpperCase() ?? '';
 }
 
-export function collectOrderedCdsObjects(
+function collectOrderedCdsObjects(
   downstream: CdsImpactDownstream,
   bucketOrder: readonly CdsImpactBucket[],
 ): CdsOrderedObject[] {
@@ -139,7 +139,7 @@ export function collectOrderedCdsObjects(
   return ordered;
 }
 
-export function dedupeCdsObjects(objects: readonly CdsOrderedObject[]): CdsOrderedObject[] {
+function dedupeCdsObjects(objects: readonly CdsOrderedObject[]): CdsOrderedObject[] {
   const seen = new Set<string>();
   const deduped: CdsOrderedObject[] = [];
   for (const obj of objects) {
@@ -151,7 +151,7 @@ export function dedupeCdsObjects(objects: readonly CdsOrderedObject[]): CdsOrder
   return deduped;
 }
 
-export function formatCdsObjectList(objects: readonly CdsOrderedObject[], max = 8): string {
+function formatCdsObjectList(objects: readonly CdsOrderedObject[], max = 8): string {
   if (objects.length === 0) return '';
   const listed = objects
     .slice(0, max)
@@ -160,7 +160,7 @@ export function formatCdsObjectList(objects: readonly CdsOrderedObject[], max = 
   return objects.length > max ? `${listed} (+${objects.length - max} more)` : listed;
 }
 
-export function formatCdsActivationPayload(objects: readonly CdsOrderedObject[], max = 8): string {
+function formatCdsActivationPayload(objects: readonly CdsOrderedObject[], max = 8): string {
   if (objects.length === 0) return '[]';
   const listed = objects
     .slice(0, max)
@@ -169,7 +169,7 @@ export function formatCdsActivationPayload(objects: readonly CdsOrderedObject[],
   return objects.length > max ? `[${listed}, ...] (+${objects.length - max} more)` : `[${listed}]`;
 }
 
-export function dedupeWhereUsedResults(results: readonly WhereUsedResult[]): WhereUsedResult[] {
+function dedupeWhereUsedResults(results: readonly WhereUsedResult[]): WhereUsedResult[] {
   const seen = new Set<string>();
   const deduped: WhereUsedResult[] = [];
 
@@ -185,11 +185,11 @@ export function dedupeWhereUsedResults(results: readonly WhereUsedResult[]): Whe
   return deduped;
 }
 
-export function isCdsImpactWhereUsedType(objectType: string): boolean {
+function isCdsImpactWhereUsedType(objectType: string): boolean {
   return CDS_IMPACT_WHERE_USED_TYPES.has(mainObjectType(objectType));
 }
 
-export async function loadScopedCdsWhereUsedResults(client: AdtClient, objectUrl: string): Promise<WhereUsedResult[]> {
+async function loadScopedCdsWhereUsedResults(client: AdtClient, objectUrl: string): Promise<WhereUsedResult[]> {
   try {
     const scope = await getWhereUsedScope(client.http, client.safety, objectUrl);
     const scopedTypes = Array.from(
@@ -221,10 +221,7 @@ export async function loadScopedCdsWhereUsedResults(client: AdtClient, objectUrl
   }
 }
 
-export async function loadCdsImpactDownstream(
-  client: AdtClient,
-  objectUrl: string,
-): Promise<CdsImpactDownstream | undefined> {
+async function loadCdsImpactDownstream(client: AdtClient, objectUrl: string): Promise<CdsImpactDownstream | undefined> {
   try {
     const whereUsed = await findWhereUsed(client.http, client.safety, objectUrl);
     // Some SAP releases return a shallow/default result set for unfiltered
@@ -352,7 +349,7 @@ export async function buildCdsActivationDependencyHint(
 // ─── CDS Pre-Write Validation ──────────────────────────────────────
 
 /** Common CDS reserved/function keywords that cause silent DDL save failures when used as field names */
-export const CDS_RESERVED_KEYWORDS = new Set([
+const CDS_RESERVED_KEYWORDS = new Set([
   'position',
   'value',
   'type',

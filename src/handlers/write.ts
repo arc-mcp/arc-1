@@ -139,8 +139,8 @@ export async function handleSAPWrite(
   client: AdtClient,
   args: Record<string, unknown>,
   config: ServerConfig,
-  cachingLayer?: CachingLayer,
-  cacheSecurity?: CacheSecurityContext,
+  cachingLayer: CachingLayer | undefined,
+  cacheSecurity: CacheSecurityContext,
 ): Promise<ToolResult> {
   const action = String(args.action ?? '');
   const type = normalizeWriteObjectType(String(args.type ?? ''));

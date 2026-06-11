@@ -134,12 +134,12 @@ export function normalizeObjectType(type: string): string {
 /** TABL subtypes that SAPWrite preserves (instead of collapsing to bare 'TABL' via
  *  SLASH_TYPE_MAP) so the create path can route TABL/DT → /ddic/tables and
  *  TABL/DS → /ddic/structures. See docs/plans/completed/fix-tabl-ds-create-routing.md. */
-export const TABL_WRITE_SUBTYPES = new Set(['TABL/DT', 'TABL/DS']);
+const TABL_WRITE_SUBTYPES = new Set(['TABL/DT', 'TABL/DS']);
 
 /** Legacy slash-form aliases SAPWrite remaps to a canonical subtype before
  *  SLASH_TYPE_MAP runs — otherwise STRU/DS would collapse to bare 'TABL' and
  *  route the structure create to /ddic/tables. */
-export const SAPWRITE_TABL_ALIAS: Record<string, string> = {
+const SAPWRITE_TABL_ALIAS: Record<string, string> = {
   'STRU/DS': 'TABL/DS',
 };
 
@@ -174,7 +174,7 @@ export function canonicalTablType(type: string): string {
  * Keep this set minimal: it only needs entries where a handler distinguishes ""-present
  * from absent. Empty strings on enums/numbers/everything-else are safe to strip.
  */
-export const EMPTY_STRING_MEANINGFUL_FIELDS = new Set(['target', 'proposalUserContent']);
+const EMPTY_STRING_MEANINGFUL_FIELDS = new Set(['target', 'proposalUserContent']);
 
 /**
  * Strip GPT/OpenAI "overpopulation" pollution before Zod validation:

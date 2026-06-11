@@ -12,7 +12,7 @@ import type { ResolvedFeatures } from '../adt/types.js';
 /** Cached feature status — populated on first probe. Imported read-only elsewhere (live binding). */
 export let cachedFeatures: ResolvedFeatures | undefined;
 /** Startup-cached ADT discovery MIME map. */
-export let cachedDiscovery: Map<string, string[]> = new Map();
+let cachedDiscovery: Map<string, string[]> = new Map();
 
 /** Reset cached features (for testing) */
 export function resetCachedFeatures(): void {

@@ -12,43 +12,10 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import type { FeatureStatus, ResolvedFeatures } from '../../../src/adt/types.js';
+import type { ResolvedFeatures } from '../../../src/adt/types.js';
 import { getToolDefinitions } from '../../../src/handlers/tools.js';
 import type { ServerConfig } from '../../../src/server/types.js';
-import { DEFAULT_CONFIG } from '../../../src/server/types.js';
-
-function feat(id: string, available: boolean): FeatureStatus {
-  // Deterministic: no probedAt timestamp, no message.
-  return { id, available, mode: 'auto' };
-}
-
-/** A complete ResolvedFeatures with every feature available unless overridden. */
-function features(overrides: Partial<Record<keyof ResolvedFeatures, boolean>> = {}): ResolvedFeatures {
-  const on = (k: keyof ResolvedFeatures) => (overrides[k] === undefined ? true : (overrides[k] as boolean));
-  return {
-    hana: feat('hana', on('hana')),
-    abapGit: feat('abapGit', on('abapGit')),
-    gcts: feat('gcts', on('gcts')),
-    rap: feat('rap', on('rap')),
-    amdp: feat('amdp', on('amdp')),
-    ui5: feat('ui5', on('ui5')),
-    transport: feat('transport', on('transport')),
-    ui5repo: feat('ui5repo', on('ui5repo')),
-    flp: feat('flp', on('flp')),
-  };
-}
-
-const onprem = (o: Partial<ServerConfig> = {}): ServerConfig => ({ ...DEFAULT_CONFIG, systemType: 'onprem', ...o });
-const btp = (o: Partial<ServerConfig> = {}): ServerConfig => ({ ...DEFAULT_CONFIG, systemType: 'btp', ...o });
-
-// Maximal write/data surface — captures SAPWrite, SAPTransport, SAPGit, SAPQuery, SAPManage in full.
-const FULL: Partial<ServerConfig> = {
-  allowWrites: true,
-  allowTransportWrites: true,
-  allowGitWrites: true,
-  allowDataPreview: true,
-  allowFreeSQL: true,
-};
+import { btp, FULL, features, onprem } from './handler-test-config.js';
 
 interface Variant {
   name: string;

@@ -67,20 +67,20 @@ export const DOMAIN_V2_CONTENT_TYPE = 'application/vnd.sap.adt.domains.v2+xml; c
 export const DATAELEMENT_V2_CONTENT_TYPE = 'application/vnd.sap.adt.dataelements.v2+xml; charset=utf-8';
 export const SERVICEBINDING_V2_CONTENT_TYPE =
   'application/vnd.sap.adt.businessservices.servicebinding.v2+xml; charset=utf-8';
-export const BDEF_CONTENT_TYPE = 'application/vnd.sap.adt.blues.v1+xml';
-export const MESSAGECLASS_CONTENT_TYPE = 'application/vnd.sap.adt.mc.messageclass+xml';
+const BDEF_CONTENT_TYPE = 'application/vnd.sap.adt.blues.v1+xml';
+const MESSAGECLASS_CONTENT_TYPE = 'application/vnd.sap.adt.mc.messageclass+xml';
 export const SKTD_V2_CONTENT_TYPE = 'application/vnd.sap.adt.sktdv2+xml';
 // Function group + function module content types — verified live on a4h S/4HANA 2023
 // (issue #250). FUGR uses the v3 group envelope; FUNC uses the unversioned fmodule envelope.
-export const FUNCTION_GROUP_CONTENT_TYPE = 'application/vnd.sap.adt.functions.groups.v3+xml';
-export const FUNCTION_MODULE_CONTENT_TYPE = 'application/vnd.sap.adt.functions.fmodules+xml';
+const FUNCTION_GROUP_CONTENT_TYPE = 'application/vnd.sap.adt.functions.groups.v3+xml';
+const FUNCTION_MODULE_CONTENT_TYPE = 'application/vnd.sap.adt.functions.fmodules+xml';
 
 export function isMetadataWriteType(type: string): boolean {
   return type === 'DOMA' || type === 'DTEL' || type === 'MSAG' || type === 'SRVB';
 }
 
 /** Types that require a specific vendor content type for creation (not application/*) */
-export function needsVendorContentType(type: string): boolean {
+function needsVendorContentType(type: string): boolean {
   return (
     type === 'DOMA' ||
     type === 'DTEL' ||
@@ -144,7 +144,7 @@ export function vendorContentTypeForType(type: string): string {
   }
 }
 
-export function toBoolean(value: unknown): boolean | undefined {
+function toBoolean(value: unknown): boolean | undefined {
   if (typeof value === 'boolean') return value;
   if (typeof value === 'number') return value !== 0;
   if (typeof value === 'string') {
@@ -201,7 +201,7 @@ export function getMetadataWriteProperties(input: Record<string, unknown>): Reco
  * Internal _description and _package fields carry the existing values
  * for the caller to use as fallbacks.
  */
-export function normalizeSrvbCategory(value: unknown): '0' | '1' | undefined {
+function normalizeSrvbCategory(value: unknown): '0' | '1' | undefined {
   if (value === '0' || value === 0 || value === 'UI') return '0';
   if (value === '1' || value === 1 || value === 'Web API') return '1';
   return undefined;
@@ -660,8 +660,8 @@ export async function handleServerDrivenObjectWrite(
   type: string,
   name: string,
   args: Record<string, unknown>,
-  cachingLayer?: CachingLayer,
-  cacheSecurity?: CacheSecurityContext,
+  cachingLayer: CachingLayer | undefined,
+  cacheSecurity: CacheSecurityContext,
 ): Promise<ToolResult> {
   // Discovery gate — mirror handleSAPRead's server-driven branch.
   if (supportsServerDrivenObject(client.http, type) === false) {
@@ -758,7 +758,7 @@ export interface PreWriteLintResult {
 }
 
 /** Pre-write RAP preflight check result */
-export interface PreWriteRapPreflightResult {
+interface PreWriteRapPreflightResult {
   /** Whether the write was blocked by RAP preflight errors */
   blocked: boolean;
   /** Error result to return if blocked */
@@ -871,12 +871,9 @@ export function runPreWriteLint(
 
   try {
     const filename = detectFilename(source, name);
-    const systemType = cachedFeatures?.systemType ?? (config.systemType !== 'auto' ? config.systemType : undefined);
-    const configOptions: LintConfigOptions = {
-      systemType,
-      abapRelease: cachedFeatures?.abapRelease ?? config.abapRelease,
-      configFile: config.abaplintConfig,
-    };
+    // Reuse the single systemType/abapRelease/configFile resolution (avoids drift with SAPLint's
+    // own config — a release-ceiling fix applied to one copy only would split lint behavior).
+    const configOptions = buildLintConfigOptions(config);
     const result = validateBeforeWrite(source, filename, configOptions);
 
     if (!result.pass) {
@@ -907,7 +904,7 @@ export function runPreWriteLint(
 
 /** Types that carry source code that SAP's /checkruns endpoint can meaningfully compile.
  *  Metadata-write types (DOMA/DTEL/TABL/MSAG/DEVC/SKTD) have no /source/main artifact. */
-export const SYNTAX_CHECKABLE_TYPES = new Set([
+const SYNTAX_CHECKABLE_TYPES = new Set([
   'PROG',
   'CLAS',
   'INTF',
@@ -966,7 +963,7 @@ export async function runPreWriteSyntaxCheck(
 }
 
 // ─── Post-save syntax check (moved from intent.ts, Stage B) ───
-export const DDIC_POST_SAVE_CHECK_TYPES = new Set(['TABL', 'DDLS', 'DCLS', 'BDEF', 'SRVD', 'SRVB', 'DDLX']);
+const DDIC_POST_SAVE_CHECK_TYPES = new Set(['TABL', 'DDLS', 'DCLS', 'BDEF', 'SRVD', 'SRVB', 'DDLX']);
 
 /** Run a syntax check on the inactive version and format the errors for appending to an
  *  error message. Returns '' on any failure or when no errors are reported. */

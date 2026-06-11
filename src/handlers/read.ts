@@ -35,7 +35,7 @@ const BTP_HINTS: Record<string, string> = {
 };
 
 export type SourceVersion = 'active' | 'inactive';
-export type RequestedSourceVersion = SourceVersion | 'auto';
+type RequestedSourceVersion = SourceVersion | 'auto';
 
 const VERSIONED_SOURCE_READ_TYPES = new Set([
   'PROG',
@@ -64,7 +64,7 @@ export async function resolveVersionAndDraftInfo(
   type: string,
   name: string,
   requestedVersion: RequestedSourceVersion,
-  cacheSecurity?: CacheSecurityContext,
+  cacheSecurity: CacheSecurityContext,
 ): Promise<{ effectiveVersion: SourceVersion; draft?: InactiveObject }> {
   if (!VERSIONED_SOURCE_READ_TYPES.has(type)) {
     return { effectiveVersion: requestedVersion === 'auto' ? 'active' : requestedVersion };
@@ -111,8 +111,8 @@ function sourceVersionWarning(effectiveVersion: SourceVersion, draft?: InactiveO
 export async function handleSAPRead(
   client: AdtClient,
   args: Record<string, unknown>,
-  cachingLayer?: CachingLayer,
-  cacheSecurity?: CacheSecurityContext,
+  cachingLayer: CachingLayer | undefined,
+  cacheSecurity: CacheSecurityContext,
 ): Promise<ToolResult> {
   const type = normalizeObjectType(String(args.type ?? ''));
   const name = String(args.name ?? '');

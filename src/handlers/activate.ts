@@ -30,8 +30,8 @@ import {
 export async function handleSAPActivate(
   client: AdtClient,
   args: Record<string, unknown>,
-  cachingLayer?: CachingLayer,
-  cacheSecurity?: CacheSecurityContext,
+  cachingLayer: CachingLayer | undefined,
+  cacheSecurity: CacheSecurityContext,
 ): Promise<ToolResult> {
   const action = String(args.action ?? 'activate');
   const name = String(args.name ?? '');
