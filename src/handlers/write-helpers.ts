@@ -66,6 +66,13 @@ export const DOMAIN_V2_CONTENT_TYPE = 'application/vnd.sap.adt.domains.v2+xml; c
 export const DATAELEMENT_V2_CONTENT_TYPE = 'application/vnd.sap.adt.dataelements.v2+xml; charset=utf-8';
 export const SERVICEBINDING_V2_CONTENT_TYPE =
   'application/vnd.sap.adt.businessservices.servicebinding.v2+xml; charset=utf-8';
+// Accept variant WITHOUT media-type parameters. On-prem 758 rejects an Accept that carries
+// "; charset=utf-8" on the bindings resource with 406 SADT_RESOURCE 037 ("The message content
+// is not acceptable", no accepted-types list — so the generic negotiation retry cannot infer a
+// fallback either). Live-verified on S/4HANA 2023: bare type → 200, charset-suffixed → 406.
+// Use this for reads (the publish/unpublish package gate); keep the charset form for PUT/POST
+// Content-Type only.
+export const SERVICEBINDING_V2_ACCEPT = 'application/vnd.sap.adt.businessservices.servicebinding.v2+xml';
 const BDEF_CONTENT_TYPE = 'application/vnd.sap.adt.blues.v1+xml';
 const MESSAGECLASS_CONTENT_TYPE = 'application/vnd.sap.adt.mc.messageclass+xml';
 export const SKTD_V2_CONTENT_TYPE = 'application/vnd.sap.adt.sktdv2+xml';

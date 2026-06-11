@@ -22,7 +22,7 @@ import { errorResult, type ToolResult, textResult } from './shared.js';
 import {
   enforceAllowedPackageForObjectUrl,
   inactiveSyntaxDiagnostic,
-  SERVICEBINDING_V2_CONTENT_TYPE,
+  SERVICEBINDING_V2_ACCEPT,
 } from './write-helpers.js';
 
 // ─── SAPActivate Handler ─────────────────────────────────────────────
@@ -61,7 +61,7 @@ export async function handleSAPActivate(
       client,
       objectUrlForType('SRVB', name),
       `Publish of service binding '${name}'`,
-      SERVICEBINDING_V2_CONTENT_TYPE,
+      SERVICEBINDING_V2_ACCEPT,
     );
     const serviceType = await resolveServiceType();
     const result = await publishServiceBinding(client.http, client.safety, name, version, serviceType);
@@ -111,7 +111,7 @@ export async function handleSAPActivate(
       client,
       objectUrlForType('SRVB', name),
       `Unpublish of service binding '${name}'`,
-      SERVICEBINDING_V2_CONTENT_TYPE,
+      SERVICEBINDING_V2_ACCEPT,
     );
     const serviceType = await resolveServiceType();
     const result = await unpublishServiceBinding(client.http, client.safety, name, version, serviceType);
