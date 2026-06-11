@@ -19,3 +19,16 @@ export function textResult(text: string): ToolResult {
 export function errorResult(message: string): ToolResult {
   return { content: [{ type: 'text', text: message }], isError: true };
 }
+
+/** True when an error body carries an Open-SQL parser/grammar signature (SAPQuery + error hints). */
+export function hasSqlParserSignature(text: string): boolean {
+  const normalized = text.toLowerCase();
+  return (
+    normalized.includes('only one select statement is allowed') ||
+    normalized.includes('only select statement is allowed') ||
+    normalized.includes('invalid query string') ||
+    normalized.includes('due to grammar') ||
+    normalized.includes('is invalid here') ||
+    normalized.includes('is invalid at this position')
+  );
+}
