@@ -20,8 +20,14 @@ jobs:
         # which sets bump-minor-pre-major: true so breaking changes only bump
         # the minor version while the package is pre-1.0.0.
 
+  # Gate the npm publish on the Docker CVE scan (publish-docker) so a release is
+  # atomic: if the image fails the gating Trivy scan, npm does NOT publish either.
+  # Previously publish-npm and publish-docker ran in parallel (both only needed
+  # release-please), so a HIGH/CRITICAL CVE failed Docker AFTER npm had already
+  # shipped — a split release that a re-run can't fix (the tagged commit predates
+  # the patch). Serializing costs ~1.5 min per release; consistency is worth it.
   publish-npm:
-    needs: release-please
+    needs: [release-please, publish-docker]
     if: ${{ needs.release-please.outputs.release_created }}
     runs-on: ubuntu-latest
     permissions:
