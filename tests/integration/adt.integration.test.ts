@@ -702,7 +702,7 @@ describe('ADT Integration Tests', () => {
     // ────────────────────────────────────────────────────────────────────────
     it('SAPWrite TABL/DS create routes POST to /sap/bc/adt/ddic/structures and accepts long names', async () => {
       const { createObject, deleteObject, lockObject, unlockObject } = await import('../../src/adt/crud.js');
-      const { buildCreateXml } = await import('../../src/handlers/intent.js');
+      const { buildCreateXml } = await import('../../src/handlers/write-helpers.js');
       const { unrestrictedSafetyConfig } = await import('../../src/adt/safety.js');
       const { generateUniqueName } = await import('./crud-harness.js');
       const safety = unrestrictedSafetyConfig();
@@ -1432,7 +1432,7 @@ describe('ADT Integration Tests', () => {
 
     it('creates multiple programs in sequence', async () => {
       const { createObject } = await import('../../src/adt/crud.js');
-      const { buildCreateXml } = await import('../../src/handlers/intent.js');
+      const { buildCreateXml } = await import('../../src/handlers/write-helpers.js');
       const { unrestrictedSafetyConfig } = await import('../../src/adt/safety.js');
       const safety = unrestrictedSafetyConfig();
 
@@ -1660,7 +1660,7 @@ describe('ADT Integration Tests', () => {
     it('round-trips a local handler method body through /includes/implementations', async (ctx) => {
       requireOrSkip(ctx, process.env.TEST_SAP_URL, SkipReason.NO_CREDENTIALS);
       const { generateUniqueName } = await import('./crud-harness.js');
-      const { handleToolCall } = await import('../../src/handlers/intent.js');
+      const { handleToolCall } = await import('../../src/handlers/dispatch.js');
       const className = generateUniqueName('ZARC1_PRD');
       const config = {
         arc1Port: 8080,
@@ -1830,7 +1830,7 @@ describe('ADT Integration Tests', () => {
     it('source=adt|db|both all find a freshly-created Z DDLS in $TMP (no splitBrain)', async (ctx) => {
       requireOrSkip(ctx, process.env.TEST_SAP_URL, SkipReason.NO_CREDENTIALS);
       const { generateUniqueName } = await import('./crud-harness.js');
-      const { handleToolCall } = await import('../../src/handlers/intent.js');
+      const { handleToolCall } = await import('../../src/handlers/dispatch.js');
       const ddlsName = generateUniqueName('ZRES_TADIR_');
       const config = {
         arc1Port: 8080,
@@ -1911,7 +1911,7 @@ describe('ADT Integration Tests', () => {
     it('source variants stay shape-consistent after delete (ghost or clean)', async (ctx) => {
       requireOrSkip(ctx, process.env.TEST_SAP_URL, SkipReason.NO_CREDENTIALS);
       const { generateUniqueName } = await import('./crud-harness.js');
-      const { handleToolCall } = await import('../../src/handlers/intent.js');
+      const { handleToolCall } = await import('../../src/handlers/dispatch.js');
       const ddlsName = generateUniqueName('ZRES_TGHOST_');
       const config = {
         arc1Port: 8080,
@@ -1979,7 +1979,7 @@ describe('ADT Integration Tests', () => {
     it('default (activateAtEnd=false) fails on composition-linked DDLS — documents the failure mode', async (ctx) => {
       requireOrSkip(ctx, process.env.TEST_SAP_URL, SkipReason.NO_CREDENTIALS);
       const { generateUniqueName } = await import('./crud-harness.js');
-      const { handleToolCall } = await import('../../src/handlers/intent.js');
+      const { handleToolCall } = await import('../../src/handlers/dispatch.js');
       const parentName = generateUniqueName('ZRES_BCPAR_');
       const childName = generateUniqueName('ZRES_BCCHD_');
       const config = {
@@ -2041,7 +2041,7 @@ describe('ADT Integration Tests', () => {
     it('activateAtEnd=true activates a composition-linked DDLS pair in a single terminal batch', async (ctx) => {
       requireOrSkip(ctx, process.env.TEST_SAP_URL, SkipReason.NO_CREDENTIALS);
       const { generateUniqueName } = await import('./crud-harness.js');
-      const { handleToolCall } = await import('../../src/handlers/intent.js');
+      const { handleToolCall } = await import('../../src/handlers/dispatch.js');
       const parentName = generateUniqueName('ZRES_AAPAR_');
       const childName = generateUniqueName('ZRES_AACHD_');
       const config = {
@@ -2120,7 +2120,7 @@ describe('ADT Integration Tests', () => {
     it('initialises a missing testclasses include on first write, then activates', async (ctx) => {
       requireOrSkip(ctx, process.env.TEST_SAP_URL, SkipReason.NO_CREDENTIALS);
       const { generateUniqueName } = await import('./crud-harness.js');
-      const { handleToolCall } = await import('../../src/handlers/intent.js');
+      const { handleToolCall } = await import('../../src/handlers/dispatch.js');
       const className = generateUniqueName('ZARC1_TCI');
       const config = {
         arc1Port: 8080,
@@ -2380,7 +2380,7 @@ describe('ADT Integration Tests', () => {
 
     it('create → activate → read → delete a DESD via handleToolCall', async (ctx) => {
       await gateOrSkip(ctx, 'DESD');
-      const { handleToolCall } = await import('../../src/handlers/intent.js');
+      const { handleToolCall } = await import('../../src/handlers/dispatch.js');
       const { generateUniqueName } = await import('./crud-harness.js');
       const config = {
         arc1Port: 8080,
@@ -2465,7 +2465,7 @@ describe('ADT Integration Tests', () => {
       // SAP correctly rejecting incomplete content — see docs/research §3.1.) Live-verified on a4h
       // (758) and a4h-2025 (816).
       await gateOrSkip(ctx, 'EVTB');
-      const { handleToolCall } = await import('../../src/handlers/intent.js');
+      const { handleToolCall } = await import('../../src/handlers/dispatch.js');
       const { generateUniqueName } = await import('./crud-harness.js');
       const config = {
         arc1Port: 8080,

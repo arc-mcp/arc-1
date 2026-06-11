@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AdtClient } from '../../../src/adt/client.js';
-import { handleToolCall } from '../../../src/handlers/intent.js';
+import { handleToolCall } from '../../../src/handlers/dispatch.js';
 import type { AuditEvent } from '../../../src/server/audit.js';
 import { logger } from '../../../src/server/logger.js';
 import type { McpRateLimiter } from '../../../src/server/mcp-rate-limit.js';

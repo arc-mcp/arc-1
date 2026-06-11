@@ -42,7 +42,8 @@ vi.mock('undici', async (importOriginal) => {
   return { ...actual, fetch: mockFetch };
 });
 const { AdtClient } = await import('../../../src/adt/client.js');
-const { handleToolCall, resetCachedFeatures } = await import('../../../src/handlers/intent.js');
+const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
+const { resetCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
 
 // allowWrites registers SAPWrite (the BTP/onprem type matrix this file checks); the other gate
 // flags don't affect the type enums, so they're left at their defaults.

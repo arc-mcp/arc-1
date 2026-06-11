@@ -25,9 +25,6 @@ import { existsSync, readFileSync } from 'node:fs';
  * hole this script exists to close).
  */
 const BUDGETS = {
-  // intent.ts is now a 38-line deprecated back-compat barrel (the dispatcher moved to dispatch.ts
-  // in Stage B). Budget kept tight so the emptied file can't silently regrow into a monolith.
-  'src/handlers/intent.ts': 80,
   // write.ts is now a thin SAPWrite orchestrator (prologue + ctx + action dispatch) after the
   // Stage D split into src/handlers/write/{create,update-delete,class-surgery,rap}.ts. The action
   // submodules ride the default src budget; keep this tight so the dispatcher can't reabsorb them.

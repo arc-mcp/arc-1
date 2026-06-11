@@ -25,7 +25,7 @@ import { CachingLayer } from '../../src/cache/caching-layer.js';
 import { MemoryCache } from '../../src/cache/memory.js';
 import { SqliteCache } from '../../src/cache/sqlite.js';
 import { runWarmup } from '../../src/cache/warmup.js';
-import { handleToolCall } from '../../src/handlers/intent.js';
+import { handleToolCall } from '../../src/handlers/dispatch.js';
 import { DEFAULT_CONFIG } from '../../src/server/types.js';
 import { requireOrSkip, SkipReason } from '../helpers/skip-policy.js';
 import { getTestClient, requireSapCredentials } from './helpers.js';

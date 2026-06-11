@@ -12,7 +12,7 @@ import type { AdtClient } from '../../src/adt/client.js';
 import { CachingLayer } from '../../src/cache/caching-layer.js';
 import { MemoryCache } from '../../src/cache/memory.js';
 import { runWarmup } from '../../src/cache/warmup.js';
-import { handleToolCall } from '../../src/handlers/intent.js';
+import { handleToolCall } from '../../src/handlers/dispatch.js';
 import { DEFAULT_CONFIG } from '../../src/server/types.js';
 import { requireOrSkip } from '../helpers/skip-policy.js';
 import { getTestClient, requireSapCredentials } from './helpers.js';

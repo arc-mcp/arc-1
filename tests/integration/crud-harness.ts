@@ -141,4 +141,4 @@ export async function cleanupAll(
 }
 
 // buildCreateXml is re-exported from src/handlers/intent.ts — no local duplicate needed.
-export { buildCreateXml } from '../../src/handlers/intent.js';
+export { buildCreateXml } from '../../src/handlers/write-helpers.js';

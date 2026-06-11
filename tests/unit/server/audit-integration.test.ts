@@ -24,7 +24,7 @@ vi.mock('undici', async (importOriginal) => {
 });
 
 const { AdtClient } = await import('../../../src/adt/client.js');
-const { handleToolCall } = await import('../../../src/handlers/intent.js');
+const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 
 function createClient(): AdtClient {
   return new AdtClient({

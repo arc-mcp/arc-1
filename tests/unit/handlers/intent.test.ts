@@ -18,21 +18,14 @@ vi.mock('undici', async (importOriginal) => {
 });
 
 const { AdtClient } = await import('../../../src/adt/client.js');
-const {
-  handleToolCall,
-  hasRequiredScope,
-  resetCachedFeatures,
-  setCachedFeatures,
-  TOOL_SCOPES,
-  buildCreateXml,
-  transliterateQuery,
-  looksLikeFieldName,
-  normalizeObjectType,
-  warnCdsReservedKeywords,
-  stripFmParamCommentBlock,
-  stripLlmEmptyValues,
-  normalizeTypeArgsForValidation,
-} = await import('../../../src/handlers/intent.js');
+const { handleToolCall, hasRequiredScope, TOOL_SCOPES } = await import('../../../src/handlers/dispatch.js');
+const { resetCachedFeatures, setCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
+const { buildCreateXml, stripFmParamCommentBlock } = await import('../../../src/handlers/write-helpers.js');
+const { transliterateQuery, looksLikeFieldName } = await import('../../../src/handlers/search.js');
+const { normalizeObjectType, stripLlmEmptyValues, normalizeTypeArgsForValidation } = await import(
+  '../../../src/handlers/object-types.js'
+);
+const { warnCdsReservedKeywords } = await import('../../../src/handlers/cds-hints.js');
 
 function createClient(): AdtClient {
   return new AdtClient({
@@ -6525,7 +6518,7 @@ ENDCLASS.`;
     };
 
     it('returns message when features not yet probed', async () => {
-      const { resetCachedFeatures } = await import('../../../src/handlers/intent.js');
+      const { resetCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
       resetCachedFeatures();
 
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {

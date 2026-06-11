@@ -14,7 +14,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it, type TaskContext } from 'vitest';
-import { handleToolCall } from '../../src/handlers/intent.js';
+import { handleToolCall } from '../../src/handlers/dispatch.js';
 import { DEFAULT_CONFIG } from '../../src/server/types.js';
 import { expectSapFailureClass } from '../helpers/expected-error.js';
 import { SkipReason, skipTest } from '../helpers/skip-policy.js';
