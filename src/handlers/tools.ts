@@ -21,6 +21,14 @@ import type { ResolvedFeatures } from '../adt/types.js';
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
 import type { ServerConfig } from '../server/types.js';
 import { getHyperfocusedToolDefinition } from './hyperfocused.js';
+import {
+  SAPCONTEXT_TYPES_BTP,
+  SAPCONTEXT_TYPES_ONPREM,
+  SAPREAD_TYPES_BTP,
+  SAPREAD_TYPES_ONPREM,
+  SAPWRITE_TYPES_BTP,
+  SAPWRITE_TYPES_ONPREM,
+} from './tool-registry.js';
 
 export interface ToolDefinition {
   name: string;
@@ -36,93 +44,8 @@ function isBtpMode(config: ServerConfig): boolean {
 // ─── SAPRead Types ──────────────────────────────────────────────────
 
 /** All SAPRead types available on on-premise */
-const SAPREAD_TYPES_ONPREM = [
-  'PROG',
-  'CLAS',
-  'INTF',
-  'FUNC',
-  'FUGR',
-  'INCL',
-  'DDLS',
-  'DCLS',
-  'DDLX',
-  'BDEF',
-  'SRVD',
-  'SRVB',
-  'SKTD',
-  'TABL',
-  'VIEW',
-  'DOMA',
-  'DTEL',
-  'TRAN',
-  'TABLE_CONTENTS',
-  'TABLE_QUERY',
-  'DEVC',
-  'SOBJ',
-  'SYSTEM',
-  'COMPONENTS',
-  // MSAG is canonical; MESSAGES is a deprecated alias kept for one minor release.
-  // See research/abap-types/types/msag.md.
-  'MSAG',
-  'MESSAGES',
-  'TEXT_ELEMENTS',
-  'VARIANTS',
-  'BSP',
-  'BSP_DEPLOY',
-  'API_STATE',
-  'INACTIVE_OBJECTS',
-  'AUTH',
-  // FEATURE_TOGGLE is canonical; FTG2 is a deprecated alias (research/abap-types/types/ftg2.md).
-  'FEATURE_TOGGLE',
-  'FTG2',
-  'ENHO',
-  'VERSIONS',
-  'VERSION_SOURCE',
-  // Server-driven objects (ABAP Platform 2025 / SAP_BASIS 8.16+) — discovery-gated AFF read.
-  'DESD',
-  'DTSC',
-  'CSNM',
-  'EVTB',
-  'EVTO',
-  'COTA',
-];
 
 /** SAPRead types available on BTP ABAP Environment (no PROG, INCL, VIEW, TEXT_ELEMENTS, VARIANTS) */
-const SAPREAD_TYPES_BTP = [
-  'CLAS',
-  'INTF',
-  'FUNC',
-  'FUGR',
-  'DDLS',
-  'DCLS',
-  'DDLX',
-  'BDEF',
-  'SRVD',
-  'SRVB',
-  'SKTD',
-  'TABL',
-  'DOMA',
-  'DTEL',
-  'TABLE_CONTENTS',
-  'TABLE_QUERY',
-  'DEVC',
-  'SYSTEM',
-  'COMPONENTS',
-  // MSAG canonical, MESSAGES deprecated alias (research/abap-types/types/msag.md)
-  'MSAG',
-  'MESSAGES',
-  'BSP',
-  'BSP_DEPLOY',
-  'API_STATE',
-  'INACTIVE_OBJECTS',
-  // Server-driven objects (8.16+ / ABAP Cloud) — discovery-gated AFF read.
-  'DESD',
-  'DTSC',
-  'CSNM',
-  'EVTB',
-  'EVTO',
-  'COTA',
-];
 
 const SAPREAD_DESC_ONPREM =
   'Read SAP ABAP objects. Types: PROG, CLAS, INTF, FUNC, FUGR (use expand_includes=true to get all include sources), INCL, DDLS, DCLS (CDS access controls), DDLX (CDS metadata extensions — UI annotations), BDEF, SRVD, SRVB (service bindings — returns structured binding info: OData version, publish status, service definition ref), SKTD (Knowledge Transfer Documents — Markdown documentation attached to ABAP objects like CDS views, BDEFs, classes), TABL (DDIC TABL — covers transparent tables like T000 AND DDIC structures like BAPIRET2; returns CDS-like source. ARC-1 auto-resolves the URL: tries /sap/bc/adt/ddic/tables/ first, falls back to /sap/bc/adt/ddic/structures/. Note: there is no separate STRU type — TABL is the canonical short type for both, mirroring TADIR R3TR TABL and abapGit conventions), VIEW, DOMA (DDIC domains — returns type info, value table, fixed values), DTEL (data elements — returns domain, labels, search help), TRAN (transaction codes — returns description, program, package), TABLE_CONTENTS (simple row preview — no filter or single-column filter; use TABLE_QUERY for multi-column WHERE), TABLE_QUERY (structured multi-column query on DDIC tables and CDS views via the freestyle endpoint — supports AND conditions, column selection; gated by allowDataPreview; use instead of TABLE_CONTENTS when filtering on multiple fields. Note: CDS views require SAP_BASIS 752+ — NW 7.50/7.51 rejects them with "TABLE is invalid here"), DEVC, SOBJ (BOR business objects — returns method catalog or full implementation), SYSTEM, COMPONENTS, MSAG (message classes — returns class metadata + messages array), TEXT_ELEMENTS, VARIANTS. For CLAS: omit include to get the full class source (definition + implementation combined). The include param is optional — use it only to read class-local sections: definitions (local types), implementations (local helper classes), macros, testclasses (ABAP Unit). For CLAS with method param: use method="*" to list all methods with signatures and visibility, or method="method_name" to read a single method implementation (95% fewer tokens than full source). For SOBJ: returns BOR method catalog; use method param to read a specific method implementation. BSP (deployed UI5/Fiori apps — list apps, browse files, read content; use name to browse app structure, include for subfolder or file), BSP_DEPLOY (query deployed UI5 apps via ABAP Repository OData Service — returns name, package, description). API_STATE (API release state — checks if an object is released for ABAP Cloud / S/4HANA Clean Core; returns contract states C0-C4, successor info; use objectType param for non-class objects). INACTIVE_OBJECTS (list all objects pending activation — no name param needed; use before SAPActivate batch_activate to see what needs activating). AUTH (Authorization Fields — returns check table, domain, conversion exit, org-level flags; on-prem only). FEATURE_TOGGLE (Feature Toggles — returns current toggle state per system from SAP switch framework; on-prem only). ENHO (Enhancement Implementations / BAdI — returns technology type, referenced enhancement object, and BAdI implementations with implementing classes; on-prem only). VERSIONS (list revision history of an object — returns JSON with object metadata and revisions [{id, author, timestamp, versionTitle?, transport?, uri}]; pass optional include for CLAS or group for FUNC; on-prem only and may return 404 for some DDIC types on non-S/4 backends). VERSION_SOURCE (fetch source at a specific revision URI from VERSIONS response; returns raw source text; on-prem only). ' +
@@ -136,58 +59,6 @@ const SAPREAD_DESC_BTP =
 
 // ─── SAPWrite Types ─────────────────────────────────────────────────
 
-const SAPWRITE_TYPES_ONPREM = [
-  'PROG',
-  'CLAS',
-  'INTF',
-  'FUNC',
-  'FUGR',
-  'INCL',
-  'DDLS',
-  'DCLS',
-  'DDLX',
-  'BDEF',
-  'SRVD',
-  'SRVB',
-  'SKTD',
-  'TABL',
-  'TABL/DT',
-  'TABL/DS',
-  'DOMA',
-  'DTEL',
-  'MSAG',
-  // Server-driven objects (8.16+) — write via the generic blue:blueSource + AFF JSON engine.
-  'DESD',
-  'DTSC',
-  'CSNM',
-  'EVTB',
-  'EVTO',
-  'COTA',
-];
-const SAPWRITE_TYPES_BTP = [
-  'CLAS',
-  'INTF',
-  'DDLS',
-  'DCLS',
-  'DDLX',
-  'BDEF',
-  'SRVD',
-  'SRVB',
-  'SKTD',
-  'TABL',
-  'TABL/DT',
-  'TABL/DS',
-  'DOMA',
-  'DTEL',
-  'MSAG',
-  // Server-driven objects (8.16+ / ABAP Cloud) — write via the generic blue:blueSource + AFF JSON engine.
-  'DESD',
-  'DTSC',
-  'CSNM',
-  'EVTB',
-  'EVTO',
-  'COTA',
-];
 const SAPWRITE_CLAS_INCLUDES = ['definitions', 'implementations', 'macros', 'testclasses'];
 
 const SAPWRITE_DESC_ONPREM =
@@ -249,9 +120,6 @@ const SAPWRITE_MINIMAL_PAYLOAD_GUIDE =
   'Do NOT send `include` unless type=CLAS, and do NOT send DDIC/metadata fields (dataType, length, decimals, signExists, lowercase, typeKind, domainName, odataVersion, category, version, labels, …) on a source-object or delete call. ';
 
 // ─── SAPContext Types ───────────────────────────────────────────────
-
-const SAPCONTEXT_TYPES_ONPREM = ['CLAS', 'INTF', 'PROG', 'FUNC', 'DDLS'];
-const SAPCONTEXT_TYPES_BTP = ['CLAS', 'INTF', 'DDLS'];
 
 const SAPCONTEXT_DESC_ONPREM =
   'Get compressed dependency context or CDS blast-radius impact for an ABAP / CDS object.\n\n' +
