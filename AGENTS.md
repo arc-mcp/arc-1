@@ -29,7 +29,7 @@ npm run build                   # TypeScript → dist/ (also copies AFF schemas)
 npm test                        # Unit tests (all)
 npx vitest run tests/unit/adt/client.test.ts   # Single test file
 npx vitest run -t "getProgram"  # Tests matching a name pattern
-npm run typecheck               # tsc --noEmit
+npm run typecheck               # tsc --noEmit (src + scripts + tests via tsconfig.tests.json)
 npm run lint / lint:fix / format  # Biome
 npm run dev / dev:http          # Dev mode (stdio / HTTP Streamable)
 npm run test:integration[:slow|:crud]  # Needs SAP credentials (TEST_SAP_URL)

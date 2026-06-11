@@ -44,7 +44,7 @@ CLASS ${name.toLowerCase()} IMPLEMENTATION.
 
 ENDCLASS.`;
 
-async function seed(client: Client, ctx: import('vitest').TaskContext, className: string): Promise<boolean> {
+async function seed(client: Client, ctx: import('vitest').TestContext, className: string): Promise<boolean> {
   const create = await callTool(client, 'SAPWrite', {
     action: 'create',
     type: 'CLAS',

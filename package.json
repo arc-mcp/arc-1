@@ -49,7 +49,7 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.scripts.json",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.scripts.json && tsc --noEmit -p tsconfig.tests.json",
     "validate:policy": "tsx scripts/validate-action-policy.ts",
     "check:sizes": "node scripts/ci/check-file-sizes.mjs",
     "cli": "tsx src/cli.ts",

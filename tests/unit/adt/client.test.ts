@@ -22,7 +22,7 @@ function setupDefaultMock() {
   mockFetch.mockResolvedValue(mockResponse(200, "REPORT zhello.\nWRITE: / 'Hello'."));
 }
 
-function createClient(overrides: Record<string, unknown> = {}): AdtClient {
+function createClient(overrides: Record<string, unknown> = {}): InstanceType<typeof AdtClient> {
   return new AdtClient({
     baseUrl: 'http://sap:8000',
     username: 'admin',

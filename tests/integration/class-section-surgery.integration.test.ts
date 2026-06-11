@@ -13,7 +13,7 @@
  * Note 2727890 — pre-existing, not specific to this feature).
  */
 
-import { afterAll, beforeAll, describe, expect, it, type TaskContext } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, type TestContext } from 'vitest';
 import { handleToolCall } from '../../src/handlers/dispatch.js';
 import { DEFAULT_CONFIG } from '../../src/server/types.js';
 import { expectSapFailureClass } from '../helpers/expected-error.js';
@@ -115,7 +115,7 @@ ENDCLASS.`;
     }
   });
 
-  function requireSeeded(ctx: TaskContext): boolean {
+  function requireSeeded(ctx: TestContext): boolean {
     if (seeded) return true;
     skipTest(ctx, seedSkipReason ?? `${SkipReason.NO_FIXTURE}: transient class ${className} was not seeded`);
     return false;

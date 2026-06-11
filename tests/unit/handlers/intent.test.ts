@@ -27,7 +27,7 @@ const { normalizeObjectType, stripLlmEmptyValues, normalizeTypeArgsForValidation
 );
 const { warnCdsReservedKeywords } = await import('../../../src/handlers/cds-hints.js');
 
-function createClient(): AdtClient {
+function createClient(): InstanceType<typeof AdtClient> {
   return new AdtClient({
     baseUrl: 'http://sap:8000',
     username: 'admin',
@@ -748,12 +748,15 @@ describe('Intent Handler', () => {
 
     it('returns error when ui5 feature is unavailable', async () => {
       setCachedFeatures({
-        hana: { available: false },
-        abapGit: { available: false },
-        rap: { available: false },
-        amdp: { available: false },
-        ui5: { available: false },
-        transport: { available: false },
+        hana: { id: 'hana', available: false, mode: 'auto' },
+        abapGit: { id: 'abapGit', available: false, mode: 'auto' },
+        rap: { id: 'rap', available: false, mode: 'auto' },
+        amdp: { id: 'amdp', available: false, mode: 'auto' },
+        ui5: { id: 'ui5', available: false, mode: 'auto' },
+        transport: { id: 'transport', available: false, mode: 'auto' },
+        gcts: { id: 'gcts', available: false, mode: 'auto' },
+        ui5repo: { id: 'ui5repo', available: false, mode: 'auto' },
+        flp: { id: 'flp', available: false, mode: 'auto' },
       });
       try {
         const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
@@ -809,13 +812,15 @@ describe('Intent Handler', () => {
 
     it('returns error for BSP_DEPLOY when ui5repo feature is unavailable', async () => {
       setCachedFeatures({
-        hana: { available: false },
-        abapGit: { available: false },
-        rap: { available: false },
-        amdp: { available: false },
-        ui5: { available: false },
-        ui5repo: { available: false },
-        transport: { available: false },
+        hana: { id: 'hana', available: false, mode: 'auto' },
+        abapGit: { id: 'abapGit', available: false, mode: 'auto' },
+        rap: { id: 'rap', available: false, mode: 'auto' },
+        amdp: { id: 'amdp', available: false, mode: 'auto' },
+        ui5: { id: 'ui5', available: false, mode: 'auto' },
+        ui5repo: { id: 'ui5repo', available: false, mode: 'auto' },
+        transport: { id: 'transport', available: false, mode: 'auto' },
+        gcts: { id: 'gcts', available: false, mode: 'auto' },
+        flp: { id: 'flp', available: false, mode: 'auto' },
       });
       try {
         const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
@@ -3415,7 +3420,7 @@ ENDCLASS.`;
         });
       }
 
-      function clientWith(allowedPackages: string[]): AdtClient {
+      function clientWith(allowedPackages: string[]): InstanceType<typeof AdtClient> {
         return new AdtClient({
           baseUrl: 'http://sap:8000',
           username: 'admin',
@@ -4505,14 +4510,6 @@ lv = CONV string( 1 ).`,
       clientId: 'test-client',
       scopes: ['read', 'sql'],
       expiresAt: Math.floor(Date.now() / 1000) + 3600,
-    };
-
-    const _adminAuth: AuthInfo = {
-      token: 'test-token',
-      clientId: 'test-client',
-      scopes: ['read', 'write', 'data', 'sql', 'admin'],
-      expiresAt: Math.floor(Date.now() / 1000) + 3600,
-      extra: { userName: 'test.user@company.com', email: 'test.user@company.com' },
     };
 
     it('allows SAPRead with read scope', async () => {
@@ -5832,7 +5829,7 @@ ENDCLASS.`;
     // version) and must honor allowedPackages against the object's REAL package,
     // exactly like create/update/delete. Without this, a write-scoped user confined
     // to e.g. $TMP could activate a pre-existing draft in a restricted package.
-    function restrictedTmpClient(): AdtClient {
+    function restrictedTmpClient(): InstanceType<typeof AdtClient> {
       return new AdtClient({
         baseUrl: 'http://sap:8000',
         username: 'admin',
@@ -7942,6 +7939,9 @@ ENDCLASS.`;
         amdp: { id: 'amdp', available: false, mode: 'auto' },
         ui5: { id: 'ui5', available: false, mode: 'auto' },
         transport: { id: 'transport', available: true, mode: 'auto' },
+        gcts: { id: 'gcts', available: false, mode: 'auto' },
+        ui5repo: { id: 'ui5repo', available: false, mode: 'auto' },
+        flp: { id: 'flp', available: false, mode: 'auto' },
         textSearch: {
           available: false,
           reason:
@@ -7965,6 +7965,9 @@ ENDCLASS.`;
         amdp: { id: 'amdp', available: false, mode: 'auto' },
         ui5: { id: 'ui5', available: false, mode: 'auto' },
         transport: { id: 'transport', available: true, mode: 'auto' },
+        gcts: { id: 'gcts', available: false, mode: 'auto' },
+        ui5repo: { id: 'ui5repo', available: false, mode: 'auto' },
+        flp: { id: 'flp', available: false, mode: 'auto' },
         textSearch: { available: true },
       });
       mockFetch.mockReset();
@@ -7991,6 +7994,9 @@ ENDCLASS.`;
         amdp: { id: 'amdp', available: false, mode: 'auto' },
         ui5: { id: 'ui5', available: false, mode: 'auto' },
         transport: { id: 'transport', available: true, mode: 'auto' },
+        gcts: { id: 'gcts', available: false, mode: 'auto' },
+        ui5repo: { id: 'ui5repo', available: false, mode: 'auto' },
+        flp: { id: 'flp', available: false, mode: 'auto' },
         textSearch: { available: true },
       });
       mockFetch.mockReset();
@@ -8367,7 +8373,7 @@ ENDCLASS.`;
       const refs = JSON.parse(result.content[0]?.text);
       // Only the 2 entries SAP returned — no augmentation
       expect(refs).toHaveLength(2);
-      expect(refs.find((r: { name: string }) => r.type === 'CLAS/OC')).toBeUndefined();
+      expect(refs.find((r: { name: string; type: string }) => r.type === 'CLAS/OC')).toBeUndefined();
     });
 
     it('skips augmentation when objectType filter excludes CLAS', async () => {
@@ -8584,6 +8590,7 @@ ENDCLASS.`;
       const btpFeatures: ResolvedFeatures = {
         hana: { id: 'hana', available: true, mode: 'auto' },
         abapGit: { id: 'abapGit', available: false, mode: 'auto' },
+        gcts: { id: 'gcts', available: false, mode: 'auto' },
         rap: { id: 'rap', available: true, mode: 'auto' },
         amdp: { id: 'amdp', available: false, mode: 'auto' },
         ui5: { id: 'ui5', available: false, mode: 'auto' },
@@ -13359,7 +13366,7 @@ ENDCLASS.`;
   // ─── SAPTransport handler routing ─────────────────────────────────
 
   describe('SAPTransport handler routing', () => {
-    function createTransportClient(): AdtClient {
+    function createTransportClient(): InstanceType<typeof AdtClient> {
       return new AdtClient({
         baseUrl: 'http://sap:8000',
         username: 'admin',
@@ -13435,7 +13442,8 @@ ENDCLASS.`;
       expect(result.content[0]?.text).toContain('DEVK900099');
       // Verify the package was sent as DEVCLASS in the asx:abap body
       const fetchBody = mockFetch.mock.calls.find(
-        (c: unknown[]) => typeof c[1]?.body === 'string' && c[1].body.includes('DEVCLASS'),
+        (c: unknown[]) =>
+          typeof (c[1] as { body?: string })?.body === 'string' && (c[1] as { body: string }).body.includes('DEVCLASS'),
       );
       expect(fetchBody?.[1]?.body).toContain('<DEVCLASS>ZTEST</DEVCLASS>');
       expect(fetchBody?.[1]?.body).toContain('<OPERATION>I</OPERATION>');
@@ -13450,7 +13458,8 @@ ENDCLASS.`;
       expect(result.isError).toBeUndefined();
       expect(result.content[0]?.text).toContain('DEVK900099');
       const fetchBody = mockFetch.mock.calls.find(
-        (c: unknown[]) => typeof c[1]?.body === 'string' && c[1].body.includes('DEVCLASS'),
+        (c: unknown[]) =>
+          typeof (c[1] as { body?: string })?.body === 'string' && (c[1] as { body: string }).body.includes('DEVCLASS'),
       );
       expect(fetchBody?.[1]?.body).toContain('<DEVCLASS>$TMP</DEVCLASS>');
     });
@@ -13468,7 +13477,9 @@ ENDCLASS.`;
       expect(result.content[0]?.text).toContain('/TRG/');
       // The request must go to /cts/transportrequests with a tm:target attribute.
       const call = mockFetch.mock.calls.find(
-        (c: unknown[]) => typeof c[1]?.body === 'string' && c[1].body.includes('tm:useraction'),
+        (c: unknown[]) =>
+          typeof (c[1] as { body?: string })?.body === 'string' &&
+          (c[1] as { body: string }).body.includes('tm:useraction'),
       );
       expect(String(call?.[0])).toContain('/sap/bc/adt/cts/transportrequests');
       expect(call?.[1]?.body).toContain('tm:target="/TRG/"');

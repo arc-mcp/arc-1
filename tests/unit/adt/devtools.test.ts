@@ -922,7 +922,7 @@ describe('DevTools', () => {
 
           const auditCalls = emitSpy.mock.calls.filter((c) => c[0].event === 'activation_preaudit_completed');
           expect(auditCalls).toHaveLength(1);
-          const event = auditCalls[0]![0] as Record<string, unknown>;
+          const event = auditCalls[0]![0] as unknown as Record<string, unknown>;
           expect(event.objectLabel).toBe('ZCL_TEST');
           expect(event.refCount).toBe(2);
           expect(event.outcome).toBe('success');
@@ -943,7 +943,7 @@ describe('DevTools', () => {
 
           const auditCalls = emitSpy.mock.calls.filter((c) => c[0].event === 'activation_preaudit_completed');
           expect(auditCalls).toHaveLength(1);
-          expect((auditCalls[0]![0] as Record<string, unknown>).outcome).toBe('error');
+          expect((auditCalls[0]![0] as unknown as Record<string, unknown>).outcome).toBe('error');
         } finally {
           emitSpy.mockRestore();
         }
@@ -975,7 +975,7 @@ describe('DevTools', () => {
 
           const auditCalls = emitSpy.mock.calls.filter((c) => c[0].event === 'activation_preaudit_completed');
           expect(auditCalls).toHaveLength(1);
-          expect((auditCalls[0]![0] as Record<string, unknown>).objectLabel).toBe('ZA, ZB');
+          expect((auditCalls[0]![0] as unknown as Record<string, unknown>).objectLabel).toBe('ZA, ZB');
         } finally {
           emitSpy.mockRestore();
         }

@@ -1,23 +1,23 @@
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { TaskContext } from 'vitest';
+import type { TestContext } from 'vitest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { requireOrSkip, skipTest } from '../../helpers/skip-policy.js';
 
 const originalSkipReasonsFile = process.env.ARC1_SKIP_REASONS_FILE;
 let tempDir: string | undefined;
 
-/** Create a mock TaskContext with a spy on skip that throws (like real Vitest). */
-function mockCtx(): TaskContext {
+/** Create a mock TestContext with a spy on skip that throws (like real Vitest). */
+function mockCtx(): TestContext {
   return {
     skip: vi.fn(() => {
       throw new Error('VITEST_SKIP');
     }),
-  } as unknown as TaskContext;
+  } as unknown as TestContext;
 }
 
-function mockCtxWithTask(file: string): TaskContext {
+function mockCtxWithTask(file: string): TestContext {
   return {
     ...mockCtx(),
     task: {
@@ -25,7 +25,7 @@ function mockCtxWithTask(file: string): TaskContext {
       fullName: `${file} > live suite > skips for a known backend gap`,
       file: { filepath: file },
     },
-  } as unknown as TaskContext;
+  } as unknown as TestContext;
 }
 
 describe('skip-policy', () => {

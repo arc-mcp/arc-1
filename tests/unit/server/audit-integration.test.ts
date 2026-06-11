@@ -26,7 +26,7 @@ vi.mock('undici', async (importOriginal) => {
 const { AdtClient } = await import('../../../src/adt/client.js');
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 
-function createClient(): AdtClient {
+function createClient(): InstanceType<typeof AdtClient> {
   return new AdtClient({
     baseUrl: 'http://sap:8000',
     username: 'admin',
