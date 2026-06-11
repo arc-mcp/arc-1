@@ -1,0 +1,54 @@
+[
+  {
+    "name": "SAP",
+    "description": "Universal SAP tool. Actions: read, search, query, navigate, context, lint, diagnose, transport, git, manage, write, activate. Use \"type\" and \"name\" for object operations, \"params\" for additional tool-specific parameters.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "read",
+            "search",
+            "query",
+            "navigate",
+            "context",
+            "lint",
+            "diagnose",
+            "transport",
+            "git",
+            "manage",
+            "write",
+            "activate"
+          ],
+          "description": "Operation to perform"
+        },
+        "type": {
+          "type": "string",
+          "description": "Object or action type (e.g., CLAS, PROG, INTF, syntax, unittest)"
+        },
+        "name": {
+          "type": "string",
+          "description": "Object name"
+        },
+        "version": {
+          "type": "string",
+          "enum": [
+            "active",
+            "inactive",
+            "auto"
+          ],
+          "description": "For read action: source version (active, inactive, auto)"
+        },
+        "params": {
+          "type": "object",
+          "description": "Additional parameters (tool-specific). Merged with type/name.",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "action"
+      ]
+    }
+  }
+]

@@ -49,6 +49,6 @@
     }
   ],
   "files": {
-    "includes": ["src/**", "tests/**", "bin/**"]
+    "includes": ["src/**", "tests/**", "bin/**", "!tests/fixtures/tool-definitions"]
   }
 }
