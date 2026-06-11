@@ -46,3 +46,8 @@ export function isTablesEndpointAvailable(): boolean | undefined {
   if (!map || map.size === 0) return undefined;
   return map.has('/sap/bc/adt/ddic/tables');
 }
+
+/** True when the probed system is BTP ABAP Environment. */
+export function isBtpSystem(): boolean {
+  return cachedFeatures?.systemType === 'btp';
+}
