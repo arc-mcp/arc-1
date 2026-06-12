@@ -23,9 +23,17 @@
  */
 
 import 'dotenv/config';
-import { randomBytes } from 'node:crypto';
 
-const LETTERS = 26;
+/**
+ * A random uppercase letter A-Z. `Math.random` (NOT a cryptographically secure
+ * source) is the right tool here: this is a throwaway test-object-name token, not
+ * a security value, so there is no need for crypto randomness — and using it
+ * avoids the modulo/division bias CodeQL flags on crypto sources. Matches
+ * scripts/e2e-local-utils.mjs `generateRunId`.
+ */
+function randomLetter(): string {
+  return String.fromCharCode(65 + Math.floor(Math.random() * 26));
+}
 
 /**
  * Resolve a run id from a raw env value, falling back to a random token.
@@ -37,8 +45,7 @@ export function deriveRunId(rawEnv: string | undefined): string {
   if (sanitized) return sanitized.slice(0, 4);
   // 2 random uppercase letters (676 combinations) — ample to separate the
   // handful of runs that realistically overlap on one SAP system.
-  const n = randomBytes(2).readUInt16BE(0) % (LETTERS * LETTERS);
-  return String.fromCharCode(65 + Math.floor(n / LETTERS)) + String.fromCharCode(65 + (n % LETTERS));
+  return randomLetter() + randomLetter();
 }
 
 /** Stable per-process run id (uppercase letters, 2-4 chars). */
