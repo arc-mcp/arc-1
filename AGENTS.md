@@ -271,6 +271,7 @@ Every code change requires tests. Skip taxonomy: `docs/testing-skip-policy.md`.
 
 ## Security & Architectural Invariants
 
+- **Threat model + the 7 security invariants + per-PR review checklist + residual-risk register live in [docs/security-model.md](docs/security-model.md)** (review narrative + remediation roadmap in [docs/security-review-2026-06.md](docs/security-review-2026-06.md)). Read it before touching auth, the safety ceiling, caches, audit sinks, or any arg→URL/SQL/XML sink.
 - **stdout is sacred** — MCP JSON-RPC only; all logging to stderr.
 - Never commit `.env`, `cookies.txt`, `.arc1.json`; sensitive fields are redacted in logs.
 - **Safety config is the server ceiling** — per-user scopes only restrict.
