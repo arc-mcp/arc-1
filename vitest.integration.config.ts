@@ -10,9 +10,17 @@ export default defineConfig({
     // Live SAP suite hooks can list CTS state or seed objects; keep this above
     // the default 10s so setup/cleanup does not fail before tests can skip.
     hookTimeout: 60000,
-    // Run test files one at a time — SAP has limited work processes and
-    // parallel files exhaust them, causing "Service cannot be reached" errors.
-    fileParallelism: false,
+    // Run test files one at a time by DEFAULT — SAP has limited work processes
+    // and parallel files have exhausted them before ("Service cannot be
+    // reached"). Opt in to a capped 2-file-parallel run to shorten wall-clock:
+    //   TEST_FILE_PARALLELISM=true npm run test:integration
+    // The maxWorkers cap bounds WP pressure; measure with `npm run
+    // test:runtime-report` and watch for "Service cannot be reached" before
+    // raising it. Tests WITHIN a file stay sequential (sequence, below).
+    // (fileParallelism:false forces maxWorkers to 1, so the cap only bites when
+    // the opt-in is on.)
+    fileParallelism: process.env.TEST_FILE_PARALLELISM === 'true',
+    maxWorkers: 2,
     // Run tests within each file sequentially to avoid SAP session conflicts
     sequence: {
       concurrent: false,
