@@ -67,7 +67,7 @@
     "test:e2e:stop": "bash scripts/e2e-stop-local.sh",
     "test:e2e:deploy": "bash scripts/e2e-deploy.sh",
     "test:e2e:stop:remote": "bash scripts/e2e-stop.sh",
-    "test:e2e:full": "npm run build && npm run test:e2e:start && npm run test:e2e; EXIT=$?; npm run test:e2e:stop; exit $EXIT",
+    "test:e2e:full": "bash scripts/e2e-run-local.sh",
     "test:e2e:skip-summary": "vitest run --config tests/e2e/vitest.e2e.config.ts --reporter=verbose 2>&1 | node scripts/ci/summarize-skips.mjs",
     "test:reliability-report": "node scripts/ci/collect-test-reliability.mjs",
     "test:runtime-report": "node scripts/ci/test-runtime-summary.mjs",

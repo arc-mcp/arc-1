@@ -3,7 +3,8 @@
 # Stops the local MCP server and shows error summary.
 set -euo pipefail
 
-PID_FILE="/tmp/arc1-e2e.pid"
+# Match the (optionally per-run) PID file chosen by e2e-start-local.sh.
+PID_FILE="${E2E_PID_FILE:-/tmp/arc1-e2e.pid}"
 LOG_DIR="${E2E_LOG_DIR:-/tmp/arc1-e2e-logs}"
 LOG_FILE="${LOG_DIR}/mcp-server.log"
 

@@ -8,7 +8,10 @@ set -euo pipefail
 MCP_PORT="${E2E_MCP_PORT:-3000}"
 LOG_DIR="${E2E_LOG_DIR:-/tmp/arc1-e2e-logs}"
 LOG_FILE="${LOG_DIR}/mcp-server.log"
-PID_FILE="/tmp/arc1-e2e.pid"
+# Per-run PID file when set by scripts/e2e-run-local.sh, so concurrent local
+# runs don't clobber each other's PID tracking. Defaults to the shared path
+# (CI and single-run dev use this).
+PID_FILE="${E2E_PID_FILE:-/tmp/arc1-e2e.pid}"
 
 mkdir -p "${LOG_DIR}"
 
@@ -35,7 +38,12 @@ fi
 
 # Kill anything still on the port (belt-and-suspenders). Prefer lsof because
 # it works on macOS and Linux; fuser's "<port>/tcp" form is Linux-specific.
-if command -v lsof > /dev/null 2>&1; then
+# Skipped when scripts/e2e-run-local.sh already probed a free port for this run:
+# there's nothing of ours to reap, and sweeping must never reach into a
+# concurrent run that happens to be on a neighbouring port.
+if [ "${E2E_SKIP_PORT_SWEEP:-0}" = "1" ]; then
+  echo "-- Port ${MCP_PORT} was probed free for this run; skipping listener sweep"
+elif command -v lsof > /dev/null 2>&1; then
   LISTENER_PIDS=$(lsof -tiTCP:"${MCP_PORT}" -sTCP:LISTEN 2>/dev/null || true)
   if [ -n "${LISTENER_PIDS}" ]; then
     echo "-- Stopping process(es) listening on port ${MCP_PORT}: ${LISTENER_PIDS//$'\n'/ }"
