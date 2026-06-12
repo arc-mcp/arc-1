@@ -1,6 +1,6 @@
 /**
  * SAPDiagnose handler — runtime diagnostics: short dumps (ST22), traces, gateway errors, object
- * state, ATC, unit tests, CDS test cases. Extracted from intent.ts (Stage B; moved verbatim).
+ * state, ATC, unit tests, CDS test cases.
  */
 
 import type { AdtClient } from '../adt/client.js';

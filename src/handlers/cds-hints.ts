@@ -1,5 +1,5 @@
 /**
- * CDS impact + pre-write hint helpers (extracted from intent.ts, Stage B; moved verbatim).
+ * CDS impact + pre-write hint helpers.
  *
  * Downstream-impact bucketing/ordering, where-used scoping, the update/delete/activation
  * dependency hints, and the CDS reserved-keyword guard. Shared by the SAPWrite, SAPActivate and

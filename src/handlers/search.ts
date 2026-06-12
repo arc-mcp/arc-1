@@ -1,6 +1,6 @@
 /**
  * SAPSearch handler — repository search (text, tadir lookup, info-system) + query transliteration
- * helpers. Extracted from intent.ts (Stage B; moved verbatim).
+ * helpers.
  */
 
 import type { AdtClient } from '../adt/client.js';

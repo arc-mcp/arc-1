@@ -1,6 +1,6 @@
 /**
  * SAPContext handler — object context: relatives, hierarchy, method listings, CDS upstream/
- * downstream dependency analysis. Extracted from intent.ts (Stage B; moved verbatim).
+ * downstream dependency analysis.
  */
 
 import {

@@ -1,7 +1,7 @@
 /**
  * Process-wide cache of probed SAP feature status + ADT discovery MIME map.
  *
- * The single home of this mutable module state (extracted from intent.ts, Stage B). Handlers
+ * The single home of this mutable module state. Handlers
  * read `cachedFeatures`/`cachedDiscovery` as ESM live bindings; the only writers are the probe
  * (via setCachedFeatures) and the test/startup accessors below. Keeping the state in one module
  * means every handler module shares the same instance instead of accidentally forking it.

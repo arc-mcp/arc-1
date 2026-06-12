@@ -2,8 +2,7 @@
  * Object-type normalization + ADT URL building (pure utilities, no project-internal imports).
  *
  * Slash-form alias maps, canonical-type normalization, the objectBasePath/URL builders,
- * LLM arg-stripping, and class-include helpers. Moved verbatim from intent.ts
- * (docs/plans/completed/architecture-consolidation-plan.md, Stage B).
+ * LLM arg-stripping, and class-include helpers.
  */
 
 // ─── Object URL Mapping ──────────────────────────────────────────────

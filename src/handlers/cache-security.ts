@@ -6,8 +6,7 @@
  * never leaks into another's. handleToolCall builds the context once per call and threads it into
  * the read/write/activate/context handlers and the server-driven write engine.
  *
- * Moved verbatim from intent.ts during the Stage B handler split (this is the leaf home for the
- * helpers because five handler modules + dispatch consume them).
+ * This is the leaf home for the helpers because five handler modules + dispatch consume them.
  */
 
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';

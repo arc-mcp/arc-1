@@ -1,6 +1,6 @@
 /**
  * SAPLint handler — offline abaplint (lint, lint_and_fix, list_rules) + ADT formatter APIs
- * (format, get/set formatter settings). Extracted from intent.ts (Stage B; moved verbatim).
+ * (format, get/set formatter settings).
  */
 
 import type { AdtClient } from '../adt/client.js';

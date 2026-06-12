@@ -1,5 +1,5 @@
 /**
- * SAPWrite actions — RAP behavior scaffolding. Split from write.ts (Stage D).
+ * SAPWrite actions — RAP behavior scaffolding.
  */
 
 import { lockObject, unlockObject, updateSource } from '../../adt/crud.js';

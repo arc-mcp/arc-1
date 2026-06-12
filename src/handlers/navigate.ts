@@ -1,6 +1,6 @@
 /**
  * SAPNavigate handler — code navigation (go-to-definition, references, where-used, completion,
- * interface implementers, method surgery). Extracted from intent.ts (Stage B; moved verbatim).
+ * interface implementers, method surgery).
  */
 
 import type { AdtClient } from '../adt/client.js';

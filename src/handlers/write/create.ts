@@ -1,5 +1,5 @@
 /**
- * SAPWrite actions — create + batch_create. Split from write.ts (Stage D).
+ * SAPWrite actions — create + batch_create.
  */
 
 import {
