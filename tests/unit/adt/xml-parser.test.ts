@@ -1501,6 +1501,10 @@ describe('XML Parser', () => {
       expect(escapeXmlAttr('a&b<c>d"e\'f')).toBe('a&amp;b&lt;c&gt;d&quot;e&apos;f');
     });
 
+    it('does not re-process replacement text from the same escape pass', () => {
+      expect(escapeXmlAttr('&lt;already&gt; & raw')).toBe('&amp;lt;already&amp;gt; &amp; raw');
+    });
+
     it('passes through normal strings unchanged', () => {
       expect(escapeXmlAttr('/sap/bc/adt/oo/classes/ZCL_TEST')).toBe('/sap/bc/adt/oo/classes/ZCL_TEST');
     });

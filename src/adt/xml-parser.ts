@@ -50,13 +50,16 @@ import type {
  * `&#39;`, not the XML `&apos;`, and must stay separate.)
  */
 export function escapeXmlAttr(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
+  return s.replace(/[&<>"']/g, (char) => XML_ESCAPE_MAP[char]!);
 }
+
+const XML_ESCAPE_MAP: Record<string, string> = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&apos;',
+};
 
 // These elements can appear 0-N times; force arrays even for a single item.
 const ARRAY_TAGS = new Set([
