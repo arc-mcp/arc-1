@@ -3,7 +3,12 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { grepSource, type MethodRange } from '../../../src/context/grep.js';
+import {
+  grepSource,
+  MAX_GREP_LINE_LENGTH,
+  MAX_GREP_PATTERN_LENGTH,
+  type MethodRange,
+} from '../../../src/context/grep.js';
 
 // ─── Fixtures ───────────────────────────────────────────────────────
 
@@ -92,11 +97,55 @@ describe('grepSource', () => {
     expect(r.output).toContain('read_entities(');
   });
 
-  it('flags invalidPattern only when a malformed regex also has no literal match', () => {
+  it('flags invalidPattern when a malformed regex also has no literal match', () => {
     const r = grepSource(SOURCE, 'nope(');
     expect(r.invalidPattern).toBe(true);
     expect(r.matchCount).toBe(0);
     expect(r.output).toContain('Invalid regex pattern');
+  });
+
+  it('rejects oversized patterns before compiling regex', () => {
+    const r = grepSource(SOURCE, 'x'.repeat(MAX_GREP_PATTERN_LENGTH + 1));
+    expect(r.invalidPattern).toBe(true);
+    expect(r.output).toContain('pattern is too long');
+  });
+
+  it('rejects nested quantified groups that can cause catastrophic backtracking', () => {
+    const repeatedChar = String.fromCharCode(97);
+    const source = `${repeatedChar.repeat(30)}!`;
+    const unsafePattern = `(${repeatedChar}+)+$`;
+    const started = Date.now();
+    const r = grepSource(source, unsafePattern);
+    expect(Date.now() - started).toBeLessThan(50);
+    expect(r.invalidPattern).toBe(true);
+    expect(r.output).toContain('nested quantified groups');
+  });
+
+  it('rejects quantified alternation groups that can cause catastrophic backtracking', () => {
+    const repeatedChar = String.fromCharCode(97);
+    const source = `${repeatedChar.repeat(40)}!`;
+    const unsafePattern = `^(${repeatedChar}|${repeatedChar}${repeatedChar})+$`;
+    const started = Date.now();
+    const r = grepSource(source, unsafePattern);
+    expect(Date.now() - started).toBeLessThan(50);
+    expect(r.invalidPattern).toBe(true);
+    expect(r.output).toContain('quantified alternation groups');
+  });
+
+  it('still allows simple non-quantified alternation searches', () => {
+    const r = grepSource(SOURCE, '\\b(?:SELECT|WRITE)\\b');
+    expect(r.invalidPattern).toBe(false);
+    expect(r.matchCount).toBe(4);
+  });
+
+  it('searches only the bounded line prefix while rendering the original source line', () => {
+    const longLine = `${'x'.repeat(MAX_GREP_LINE_LENGTH)}TAIL`;
+    expect(grepSource(longLine, 'TAIL').matchCount).toBe(0);
+
+    const visiblePrefix = `HEAD${'x'.repeat(MAX_GREP_LINE_LENGTH)}`;
+    const r = grepSource(visiblePrefix, 'HEAD');
+    expect(r.matchCount).toBe(1);
+    expect(r.output).toContain(visiblePrefix);
   });
 
   it('does not mutate the caller pattern argument', () => {

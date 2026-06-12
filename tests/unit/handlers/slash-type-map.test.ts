@@ -25,7 +25,7 @@ import {
   objectBasePath,
   SLASH_TYPE_EVIDENCE,
   SLASH_TYPE_MAP,
-} from '../../../src/handlers/intent.js';
+} from '../../../src/handlers/object-types.js';
 
 // Codex review of PR #223 found that iterating only over SLASH_TYPE_EVIDENCE
 // keys was insufficient — a contributor could add a SLASH_TYPE_MAP entry

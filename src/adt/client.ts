@@ -94,7 +94,7 @@ function appendQueryParam(path: string, key: string, value: string): string {
  * Build a navigation hint URL for a TADIR row.
  *
  * Internal mirror of the handler-side `objectBasePath()` table — kept local to
- * `client.ts` to avoid circular dependencies (`intent.ts` imports `AdtClient`).
+ * `client.ts` to avoid circular dependencies (the handler modules import `AdtClient`).
  * Returns `''` for types that cannot be addressed via a single base URL
  * (FUNC requires a parent group; SEGW legacy types have no ADT handler);
  * callers must treat the empty string as "no direct navigation".
@@ -1452,7 +1452,12 @@ export class AdtClient {
     // Server-driven objects (8.16+) only render their <blue:blueSource> metadata (with the
     // adtcore:packageRef) under the blues.vN+xml Accept — callers pass it so the allowedPackages
     // ceiling can resolve the real package. Other callers rely on discovery-driven negotiation.
-    const resp = await this.http.get(objectUrl, accept ? { Accept: accept } : undefined);
+    // Send the bare media type only: on-prem backends reject an Accept carrying parameters
+    // ("; charset=utf-8" → 406 SADT_RESOURCE 037, live-verified on 758 and 816 against the SRVB
+    // bindings resource), and that 406 body names no accepted type, so the generic negotiation
+    // retry cannot recover. Parameters select nothing on these metadata reads.
+    const bareAccept = accept?.split(';')[0]?.trim();
+    const resp = await this.http.get(objectUrl, bareAccept ? { Accept: bareAccept } : undefined);
     const packageRefMatch = resp.body.match(/adtcore:packageRef[^>]*adtcore:name="([^"]*)"/);
     if (packageRefMatch?.[1]) return packageRefMatch[1];
     const containerRefMatch = resp.body.match(/adtcore:containerRef[^>]*adtcore:packageName="([^"]*)"/);

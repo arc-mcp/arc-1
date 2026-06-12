@@ -12,7 +12,7 @@ import type { AdtClient } from '../../src/adt/client.js';
 import { CachingLayer } from '../../src/cache/caching-layer.js';
 import { MemoryCache } from '../../src/cache/memory.js';
 import { runWarmup } from '../../src/cache/warmup.js';
-import { handleToolCall } from '../../src/handlers/intent.js';
+import { handleToolCall } from '../../src/handlers/dispatch.js';
 import { DEFAULT_CONFIG } from '../../src/server/types.js';
 import { requireOrSkip } from '../helpers/skip-policy.js';
 import { getTestClient, requireSapCredentials } from './helpers.js';
@@ -35,7 +35,7 @@ describe('Cache Warmup Slow Integration Tests', () => {
     }
   });
 
-  function requireDepGraphFixture(ctx: import('vitest').TaskContext): void {
+  function requireDepGraphFixture(ctx: import('vitest').TestContext): void {
     if (!hasTestClassWithDeps) {
       requireOrSkip(ctx, undefined, `NO_FIXTURE (${TEST_CLASS_WITH_DEPS}) — S/4 BOBF demo not on this system`);
     }

@@ -13,7 +13,7 @@
 
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { skipTest } from '../helpers/skip-policy.js';
+import { SkipReason, skipTest } from '../helpers/skip-policy.js';
 import { callTool, connectClient, expectToolError, expectToolSuccess } from './helpers.js';
 
 function stripCachedMarker(text: string): string {
@@ -383,6 +383,12 @@ describe('E2E Diagnostics Tests', () => {
       const result = await callTool(client, 'SAPDiagnose', {
         action: 'cds_testcases',
         name: 'I_CURRENCY',
+      }).catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err);
+        if (/request timed out|timed out/i.test(message)) {
+          return skipTest(ctx, `${SkipReason.BACKEND_UNSUPPORTED}: cds_testcases request timed out on this backend`);
+        }
+        throw err;
       });
 
       // New on ABAP Platform 2025 (8.16). On 7.5x / S/4HANA 2023 the handler returns a

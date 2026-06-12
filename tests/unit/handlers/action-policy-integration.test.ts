@@ -14,7 +14,8 @@ vi.mock('undici', async (importOriginal) => {
 
 const { AdtClient } = await import('../../../src/adt/client.js');
 const { unrestrictedSafetyConfig } = await import('../../../src/adt/safety.js');
-const { handleToolCall, setCachedFeatures } = await import('../../../src/handlers/intent.js');
+const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
+const { setCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
 const { getToolDefinitions } = await import('../../../src/handlers/tools.js');
 const { filterToolsByAuthScope } = await import('../../../src/server/server.js');
 const { DEFAULT_CONFIG } = await import('../../../src/server/types.js');

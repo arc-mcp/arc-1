@@ -11,6 +11,7 @@ cookie
 # Infrastructure credentials (NEVER commit)
 INFRASTRUCTURE.md
 .env.infrastructure
+*service-key*.json
 
 # Session context files
 MEMORY.md

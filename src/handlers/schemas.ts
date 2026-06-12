@@ -11,6 +11,20 @@
  */
 
 import { z } from 'zod';
+import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
+import { CLASS_WRITE_INCLUDES } from './object-types.js';
+import {
+  SAPCONTEXT_TYPES_BTP,
+  SAPCONTEXT_TYPES_ONPREM,
+  SAPREAD_TYPES_BTP,
+  SAPREAD_TYPES_ONPREM,
+  SAPWRITE_TYPES_BTP,
+  SAPWRITE_TYPES_ONPREM,
+} from './tool-registry.js';
+
+// Re-exported so tests/unit/handlers/schemas.test.ts can assert the write-type matrix against
+// the single source of truth. The lists themselves live in tool-registry.ts.
+export { SAPWRITE_TYPES_BTP, SAPWRITE_TYPES_ONPREM };
 
 /**
  * Optional boolean that accepts real JSON booleans AND string-serialized booleans from
@@ -40,100 +54,8 @@ const looseOptionalBoolean = z
 
 // ─── SAPRead ────────────────────────────────────────────────────────
 
-const SAPREAD_TYPES_ONPREM = [
-  'PROG',
-  'CLAS',
-  'INTF',
-  'FUNC',
-  'FUGR',
-  'INCL',
-  'DDLS',
-  'DCLS',
-  'DDLX',
-  'BDEF',
-  'SRVD',
-  'SRVB',
-  'SKTD',
-  'TABL',
-  'VIEW',
-  'DOMA',
-  'DTEL',
-  'TRAN',
-  'TABLE_CONTENTS',
-  'TABLE_QUERY',
-  'DEVC',
-  'SOBJ',
-  'SYSTEM',
-  'COMPONENTS',
-  // MSAG is the canonical TADIR R3TR type for message classes (table T100).
-  // 'MESSAGES' is kept as a deprecated alias for one minor release; both
-  // resolve to the same handler. See research/abap-types/types/msag.md and
-  // docs/plans/completed/audit-symmetry-and-ftg2-rename.md.
-  'MSAG',
-  'MESSAGES',
-  'TEXT_ELEMENTS',
-  'VARIANTS',
-  'BSP',
-  'BSP_DEPLOY',
-  'API_STATE',
-  'INACTIVE_OBJECTS',
-  'AUTH',
-  // FTG2 is an ARC-1-private invented identifier (see research/abap-types/types/ftg2.md).
-  // FEATURE_TOGGLE is the new canonical name; FTG2 stays as deprecated alias for one minor.
-  'FEATURE_TOGGLE',
-  'FTG2',
-  'ENHO',
-  'VERSIONS',
-  'VERSION_SOURCE',
-  // Server-driven objects (ABAP Platform 2025 / SAP_BASIS 8.16+) — generic AFF read path,
-  // discovery-gated (src/adt/server-driven.ts). Read returns JSON metadata + AFF JSON source.
-  'DESD',
-  'DTSC',
-  'CSNM',
-  'EVTB',
-  'EVTO',
-  'COTA',
-] as const;
-
-const SAPREAD_TYPES_BTP = [
-  'CLAS',
-  'INTF',
-  'FUNC',
-  'FUGR',
-  'DDLS',
-  'DCLS',
-  'DDLX',
-  'BDEF',
-  'SRVD',
-  'SRVB',
-  'SKTD',
-  'TABL',
-  'DOMA',
-  'DTEL',
-  'TABLE_CONTENTS',
-  'TABLE_QUERY',
-  'DEVC',
-  'SYSTEM',
-  'COMPONENTS',
-  // MSAG canonical, MESSAGES deprecated alias (see research/abap-types/types/msag.md)
-  'MSAG',
-  'MESSAGES',
-  'BSP',
-  'BSP_DEPLOY',
-  'API_STATE',
-  'INACTIVE_OBJECTS',
-  // Server-driven objects (8.16+ / ABAP Cloud) — generic AFF read path, discovery-gated.
-  'DESD',
-  'DTSC',
-  'CSNM',
-  'EVTB',
-  'EVTO',
-  'COTA',
-] as const;
-
 const SAPREAD_CLAS_INCLUDES = ['main', 'testclasses', 'definitions', 'implementations', 'macros'] as const;
 const SAPREAD_DDLS_INCLUDES = ['elements'] as const;
-export const SAPWRITE_CLAS_INCLUDES = ['definitions', 'implementations', 'macros', 'testclasses'] as const;
 
 function validateSapReadInput(
   input: { type: string; include?: string; versionUri?: string; sqlFilter?: string },
@@ -228,7 +150,7 @@ export const SAPReadSchema = z
     include: z.string().optional(),
     group: z.string().optional(),
     method: z.string().optional(),
-    grep: z.string().optional(),
+    grep: z.string().max(MAX_GREP_PATTERN_LENGTH).optional(),
     expand_includes: looseOptionalBoolean,
     format: z.enum(['text', 'structured']).optional(),
     version: z.enum(['active', 'inactive', 'auto']).optional().default('active'),
@@ -255,7 +177,7 @@ export const SAPReadSchemaBtp = z
     include: z.string().optional(),
     group: z.string().optional(),
     method: z.string().optional(),
-    grep: z.string().optional(),
+    grep: z.string().max(MAX_GREP_PATTERN_LENGTH).optional(),
     format: z.enum(['text', 'structured']).optional(),
     version: z.enum(['active', 'inactive', 'auto']).optional().default('active'),
     force_refresh: looseOptionalBoolean,
@@ -368,59 +290,6 @@ export const SAPQuerySchema = z.object({
 
 // Exported so tests/unit/handlers/schemas.test.ts can derive its read/write
 // symmetry guard from a single source of truth (audit Plan B / PR #224).
-export const SAPWRITE_TYPES_ONPREM = [
-  'PROG',
-  'CLAS',
-  'INTF',
-  'FUNC',
-  'FUGR',
-  'INCL',
-  'DDLS',
-  'DCLS',
-  'DDLX',
-  'BDEF',
-  'SRVD',
-  'SRVB',
-  'SKTD',
-  'TABL',
-  // Subtype routing for create — see docs/plans/completed/fix-tabl-ds-create-routing.md.
-  'TABL/DT',
-  'TABL/DS',
-  'DOMA',
-  'DTEL',
-  'MSAG',
-  // Server-driven objects (8.16+) — write via the generic blue:blueSource + AFF JSON engine.
-  'DESD',
-  'DTSC',
-  'CSNM',
-  'EVTB',
-  'EVTO',
-  'COTA',
-] as const;
-export const SAPWRITE_TYPES_BTP = [
-  'CLAS',
-  'INTF',
-  'DDLS',
-  'DCLS',
-  'DDLX',
-  'BDEF',
-  'SRVD',
-  'SRVB',
-  'SKTD',
-  'TABL',
-  'TABL/DT',
-  'TABL/DS',
-  'DOMA',
-  'DTEL',
-  'MSAG',
-  // Server-driven objects (8.16+ / ABAP Cloud) — write via the generic blue:blueSource + AFF JSON engine.
-  'DESD',
-  'DTSC',
-  'CSNM',
-  'EVTB',
-  'EVTO',
-  'COTA',
-] as const;
 
 const ddicFixedValueSchema = z.object({
   low: z.string(),
@@ -583,7 +452,7 @@ export const SAPWriteSchema = z
     source: z.string().optional(),
     include: z.preprocess(
       (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
-      z.enum(SAPWRITE_CLAS_INCLUDES).optional(),
+      z.enum(CLASS_WRITE_INCLUDES).optional(),
     ),
     method: z.string().optional(),
     /**
@@ -677,7 +546,7 @@ export const SAPWriteSchemaBtp = z
     source: z.string().optional(),
     include: z.preprocess(
       (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
-      z.enum(SAPWRITE_CLAS_INCLUDES).optional(),
+      z.enum(CLASS_WRITE_INCLUDES).optional(),
     ),
     method: z.string().optional(),
     /**
@@ -914,8 +783,6 @@ export const SAPGitSchema = z.object({
 
 // ─── SAPContext ─────────────────────────────────────────────────────
 
-const SAPCONTEXT_TYPES_ONPREM = ['CLAS', 'INTF', 'PROG', 'FUNC', 'DDLS'] as const;
-const SAPCONTEXT_TYPES_BTP = ['CLAS', 'INTF', 'DDLS'] as const;
 const SAPCONTEXT_SIBLING_MAX_CANDIDATES_CAP = 10;
 const siblingMaxCandidatesSchema = z.coerce
   .number()

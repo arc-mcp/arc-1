@@ -37,13 +37,23 @@ export interface GrepResult {
   matchCount: number;
   /** Formatted, LLM-friendly match report (or a no-match / invalid-pattern message). */
   output: string;
-  /** True only when the pattern is not valid regex AND has no literal match either. */
+  /** True when the pattern cannot be used safely or has no valid regex/literal interpretation. */
   invalidPattern: boolean;
 }
 
 const DEFAULT_CONTEXT_LINES = 3;
 const DEFAULT_MAX_MATCHES = 100;
+export const MAX_GREP_PATTERN_LENGTH = 512;
+export const MAX_GREP_LINE_LENGTH = 1000;
 const REGEX_META = /[.*+?^${}()|[\]\\]/;
+const NESTED_QUANTIFIER_GROUP =
+  /\((?:\?:)?(?:[^()[\]\\]|\\.|\[[^\]]*])*[*+{](?:[^()[\]\\]|\\.|\[[^\]]*])*\)\s*(?:[+*?]|\{\d)/;
+const BACKREFERENCE = /\\[1-9]/;
+const LOOKAROUND = /\(\?(?:[=!]|<[=!])/;
+
+interface RegexGroupFrame {
+  hasAlternation: boolean;
+}
 
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -58,12 +68,90 @@ function tryCompile(pattern: string): RegExp | null {
   }
 }
 
+function isRegexQuantifierAt(pattern: string, index: number): boolean {
+  const char = pattern[index];
+  if (char === '{') return /^\{\d+(?:,\d*)?\}/.test(pattern.slice(index));
+  return char === '+' || char === '*' || char === '?';
+}
+
+function hasQuantifiedAlternationGroup(pattern: string): boolean {
+  const stack: RegexGroupFrame[] = [];
+  let inCharClass = false;
+
+  for (let i = 0; i < pattern.length; i++) {
+    const char = pattern[i]!;
+
+    if (char === '\\') {
+      i++;
+      continue;
+    }
+
+    if (inCharClass) {
+      if (char === ']') inCharClass = false;
+      continue;
+    }
+
+    if (char === '[') {
+      inCharClass = true;
+      continue;
+    }
+
+    if (char === '(') {
+      stack.push({ hasAlternation: false });
+      continue;
+    }
+
+    if (char === '|') {
+      const top = stack[stack.length - 1];
+      if (top) top.hasAlternation = true;
+      continue;
+    }
+
+    if (char === ')') {
+      const frame = stack.pop();
+      if (!frame) continue;
+
+      if (frame.hasAlternation && isRegexQuantifierAt(pattern, i + 1)) {
+        return true;
+      }
+
+      const parent = stack[stack.length - 1];
+      if (parent && frame.hasAlternation) parent.hasAlternation = true;
+    }
+  }
+
+  return false;
+}
+
+function unsafePatternReason(pattern: string): string | null {
+  if (pattern.length > MAX_GREP_PATTERN_LENGTH) {
+    return `pattern is too long (${pattern.length} characters; maximum ${MAX_GREP_PATTERN_LENGTH})`;
+  }
+  if (LOOKAROUND.test(pattern)) {
+    return 'lookaround assertions are disabled for server-side grep';
+  }
+  if (BACKREFERENCE.test(pattern)) {
+    return 'backreferences are disabled for server-side grep';
+  }
+  if (NESTED_QUANTIFIER_GROUP.test(pattern)) {
+    return 'nested quantified groups are disabled for server-side grep';
+  }
+  if (hasQuantifiedAlternationGroup(pattern)) {
+    return 'quantified alternation groups are disabled for server-side grep';
+  }
+  return null;
+}
+
+function trimSearchLine(line: string): string {
+  return line.length <= MAX_GREP_LINE_LENGTH ? line : line.slice(0, MAX_GREP_LINE_LENGTH);
+}
+
 /** 0-based indexes of lines matching `regex` (resets lastIndex so the global flag never skips a line). */
 function matchingIndexes(lines: string[], regex: RegExp): number[] {
   const out: number[] = [];
   for (let i = 0; i < lines.length; i++) {
     regex.lastIndex = 0;
-    if (regex.test(lines[i]!)) out.push(i);
+    if (regex.test(trimSearchLine(lines[i]!))) out.push(i);
   }
   return out;
 }
@@ -125,6 +213,15 @@ export function grepSource(source: string, pattern: string, opts: GrepOptions = 
   const contextLines = opts.contextLines ?? DEFAULT_CONTEXT_LINES;
   const maxMatches = opts.maxMatches ?? DEFAULT_MAX_MATCHES;
   const lines = source.replace(/\r\n/g, '\n').split('\n');
+  const unsafeReason = unsafePatternReason(pattern);
+
+  if (unsafeReason) {
+    return {
+      matchCount: 0,
+      invalidPattern: true,
+      output: `Unsupported grep pattern: ${unsafeReason}. Use a shorter literal token or a simpler regex.`,
+    };
+  }
 
   const { indexes, effectivePattern, invalidPattern } = resolveMatches(lines, pattern);
 

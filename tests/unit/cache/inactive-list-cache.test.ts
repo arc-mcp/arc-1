@@ -26,6 +26,40 @@ describe('InactiveListCache', () => {
     expect(client.getInactiveObjects).toHaveBeenCalledTimes(1);
   });
 
+  it('uses an explicit user key instead of client.username', async () => {
+    const alice = makeClient('', [{ name: 'ZCL_ALICE', type: 'CLAS/OC', uri: '/alice' }]);
+    const bob = makeClient('', [{ name: 'ZCL_BOB', type: 'CLAS/OC', uri: '/bob' }]);
+
+    expect(await cache.getOrFetch(alice, 'sub-alice')).toEqual([{ name: 'ZCL_ALICE', type: 'CLAS/OC', uri: '/alice' }]);
+    expect(await cache.getOrFetch(bob, 'sub-bob')).toEqual([{ name: 'ZCL_BOB', type: 'CLAS/OC', uri: '/bob' }]);
+    expect(await cache.getOrFetch(alice, 'sub-alice')).toEqual([{ name: 'ZCL_ALICE', type: 'CLAS/OC', uri: '/alice' }]);
+
+    expect(alice.getInactiveObjects).toHaveBeenCalledTimes(1);
+    expect(bob.getInactiveObjects).toHaveBeenCalledTimes(1);
+    expect(cache.getCached('sub-alice')?.[0]?.name).toBe('ZCL_ALICE');
+    expect(cache.getCached('sub-bob')?.[0]?.name).toBe('ZCL_BOB');
+  });
+
+  it('bypasses the cache when no non-empty key is available', async () => {
+    const client = makeClient('', [{ name: 'ZCL_A', type: 'CLAS/OC', uri: '/a' }]);
+
+    await cache.getOrFetch(client, '');
+    await cache.getOrFetch(client, '  ');
+
+    expect(client.getInactiveObjects).toHaveBeenCalledTimes(2);
+    expect(cache.stats()).toEqual({ userCount: 0, totalEntries: 0 });
+  });
+
+  it('bypasses the cache for an explicit undefined key even when client.username is set', async () => {
+    const client = makeClient('SHARED_DISPLAY', [{ name: 'ZCL_A', type: 'CLAS/OC', uri: '/a' }]);
+
+    await cache.getOrFetch(client, undefined);
+    await cache.getOrFetch(client, undefined);
+
+    expect(client.getInactiveObjects).toHaveBeenCalledTimes(2);
+    expect(cache.stats()).toEqual({ userCount: 0, totalEntries: 0 });
+  });
+
   it('getOrFetch refetches after TTL expiry', async () => {
     vi.useFakeTimers();
     const client = makeClient('MARIAN', [{ name: 'ZCL_A', type: 'CLAS/OC', uri: '/a' }]);

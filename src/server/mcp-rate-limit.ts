@@ -1,7 +1,7 @@
 /**
  * Layer 2 — Per-user MCP tool-call rate limiter.
  *
- * Applied at the top of `handleToolCall` in `src/handlers/intent.ts`. Returns an MCP
+ * Applied at the top of `handleToolCall` in `src/handlers/dispatch.ts`. Returns an MCP
  * tool error (NOT HTTP 429) on denial so the LLM client surfaces it as a tool failure
  * and the agent loop backs off correctly. Per-user token bucket keyed on the resolved
  * user identity (userName / clientId / __anon__).

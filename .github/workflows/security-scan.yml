@@ -1,0 +1,74 @@
+name: Security scan (scheduled)
+
+# Proactively catch base-image + dependency CVEs BEFORE they can block a release.
+#
+# release.yml gates HIGH/CRITICAL Trivy findings (exit-code 1) so customers never
+# pull a vulnerable :vX.Y.Z. Historically those CVEs first surfaced AT release time
+# — after publish-npm had already shipped — leaving a split release (npm published,
+# Docker did not) that a plain re-run cannot fix, because re-running checks out the
+# tagged commit, which predates the patch. The dev docker.yml scan is non-gating, so
+# nothing flagged the CVE in between.
+#
+# This job runs the EXACT release gate against an image built from the current
+# Dockerfile, on a cadence. A newly-disclosed CVE shows up as a red scheduled run
+# with days of lead time to `apk upgrade` / bump the base image before the next
+# release — turning a release-blocking surprise into a routine maintenance ping.
+
+on:
+  schedule:
+    # 06:17 UTC Mon/Wed/Fri. Off-the-hour minute dodges top-of-hour scheduler
+    # congestion (delayed/dropped runs). 3×/week balances lead time vs. CI noise.
+    - cron: '17 6 * * 1,3,5'
+  workflow_dispatch:
+
+# Scheduled runs always use the default branch's copy of this file, so it only
+# takes effect once merged to main.
+permissions:
+  contents: read
+  # Trivy uploads SARIF findings to the Security tab.
+  security-events: write
+
+concurrency:
+  group: security-scan
+  cancel-in-progress: true
+
+jobs:
+  trivy-release-gate-preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5  # v4
+
+      # Build the runtime image locally (load into the daemon, no push). amd64 only:
+      # Alpine OS advisories and node_modules CVEs are identical across architectures,
+      # so a single-arch scan catches everything the multi-arch release gate would.
+      # Reuses the release build cache for speed; a cache miss just builds fresh.
+      - name: Build image for scan
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf  # v7
+        with:
+          context: .
+          load: true
+          tags: arc-1:scan
+          cache-from: type=gha,scope=${{ github.repository }}-linux/amd64
+
+      # Identical gate to release.yml: HIGH,CRITICAL + limit-severities-for-sarif so
+      # the exit-code honors the severity filter (without it, format=sarif evaluates
+      # exit-code across ALL severities and fires on MEDIUM/LOW too).
+      - name: Scan image with Trivy (release gate preview)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          image-ref: arc-1:scan
+          format: sarif
+          output: trivy-results.sarif
+          severity: HIGH,CRITICAL
+          limit-severities-for-sarif: true
+          exit-code: '1'
+
+      - name: Upload Trivy SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-scheduled

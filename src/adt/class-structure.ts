@@ -2,7 +2,7 @@
  * Pure splice + diff helpers for class-section surgery (issue #303).
  *
  * All functions operate on `(source, structure)` and return new source. No HTTP,
- * no lock, no I/O. The handler in `src/handlers/intent.ts` wires lock → splice →
+ * no lock, no I/O. The handler in `src/handlers/write/class-surgery.ts` wires lock → splice →
  * PUT /source/main → unlock around these.
  *
  * Line-range semantics (matches `LineRange` in `src/adt/types.ts`):

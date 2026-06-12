@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AdtClient } from '../../src/adt/client.js';
-import { handleToolCall } from '../../src/handlers/intent.js';
+import { handleToolCall } from '../../src/handlers/dispatch.js';
 import type { AuditEvent } from '../../src/server/audit.js';
 import { logger } from '../../src/server/logger.js';
 import { FileSink } from '../../src/server/sinks/file.js';

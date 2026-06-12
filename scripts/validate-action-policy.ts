@@ -16,6 +16,7 @@ import { dirname, resolve } from 'node:path';
 
 import { ACTION_POLICY, allPolicyKeys } from '../src/authz/policy.js';
 import { OperationType, type OperationTypeCode } from '../src/adt/safety.js';
+import { SAPREAD_TYPES_ONPREM } from '../src/handlers/tool-registry.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SCHEMAS_PATH = resolve(__dirname, '..', 'src', 'handlers', 'schemas.ts');
@@ -52,12 +53,9 @@ function extractToolActions(source: string): { tool: string; actions: string[] }
     }
   }
 
-  // SAPRead types (uses `type: z.enum(SAPREAD_TYPES_ONPREM)`)
-  const sapreadTypesMatch = source.match(/const SAPREAD_TYPES_ONPREM\s*=\s*\[([\s\S]*?)\]\s*as const/);
-  if (sapreadTypesMatch) {
-    const types = [...sapreadTypesMatch[1].matchAll(/'([^']+)'/g)].map((a) => a[1]);
-    results.push({ tool: 'SAPRead', actions: types });
-  }
+  // SAPRead types now live in tool-registry.ts (single source of truth) — import them directly
+  // instead of regex-scanning schemas.ts, which no longer declares them inline.
+  results.push({ tool: 'SAPRead', actions: [...SAPREAD_TYPES_ONPREM] });
 
   return results;
 }

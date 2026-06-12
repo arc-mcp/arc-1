@@ -469,6 +469,53 @@ function publishBody(name: string): string {
   return `<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:objectReference adtcore:name="${escapeXmlAttr(name)}"/></adtcore:objectReferences>`;
 }
 
+// On-prem releases (live-verified on S/4HANA 2023, SAP_BASIS 758) render the publish/unpublish
+// job status ONLY as application/vnd.sap.as+xml: any Accept that does not cover it is rejected
+// with 406 SADT_RESOURCE 044 ("The message content is not acceptable. Accepted content types:
+// application/vnd.sap.as+xml") — e.g. the newer-release media type
+// application/vnd.sap.adt.businessservices.odatav4.v1+xml. Naming as+xml first keeps 758
+// deterministic; the wildcard keeps backends with other renderers working.
+const PUBLISH_JOB_ACCEPT = 'application/vnd.sap.as+xml, application/*;q=0.8';
+
+/**
+ * Fully-qualified AS-XML media type for a publish/unpublish job, as Eclipse ADT sends it.
+ * All four serviceType × job combinations live-verified against S/4HANA 2023 (SAP_BASIS 758).
+ */
+function publishJobAsXmlType(serviceType: 'odatav2' | 'odatav4', job: 'publishjob' | 'unpublishjob'): string {
+  return `application/vnd.sap.as+xml; charset=UTF-8; dataname=com.sap.adt.businessservices.${serviceType}.${job}`;
+}
+
+/**
+ * True when the backend rejected content negotiation and named application/vnd.sap.as+xml as
+ * the only type it supports. Self-scoping: only ever fires on backends that emit exactly this
+ * complaint, so the as+xml retry cannot affect systems that accept the primary headers.
+ */
+function isAsXmlOnlyNegotiationError(err: unknown): boolean {
+  if (!(err instanceof AdtApiError)) return false;
+  if (err.statusCode !== 406 && err.statusCode !== 415) return false;
+  return `${err.message} ${err.responseBody ?? ''}`.includes('application/vnd.sap.as+xml');
+}
+
+async function postPublishJob(
+  http: AdtHttpClient,
+  serviceType: 'odatav2' | 'odatav4',
+  job: 'publishjob' | 'unpublishjob',
+  name: string,
+  version: string,
+): Promise<PublishResult> {
+  const path = `/sap/bc/adt/businessservices/${serviceType}/${job}s?servicename=${encodeURIComponent(name)}&serviceversion=${encodeURIComponent(version)}`;
+  try {
+    const resp = await http.post(path, publishBody(name), 'application/xml', { Accept: PUBLISH_JOB_ACCEPT });
+    return parsePublishResponse(resp.body);
+  } catch (err) {
+    if (!isAsXmlOnlyNegotiationError(err)) throw err;
+    const asXmlType = publishJobAsXmlType(serviceType, job);
+    logger.debug(`Publish job content negotiation rejected — retrying with ${asXmlType}`, { path });
+    const resp = await http.post(path, publishBody(name), asXmlType, { Accept: asXmlType });
+    return parsePublishResponse(resp.body);
+  }
+}
+
 /** Publish an OData service binding (makes the service available for consumption) */
 export async function publishServiceBinding(
   http: AdtHttpClient,
@@ -478,15 +525,7 @@ export async function publishServiceBinding(
   serviceType: 'odatav2' | 'odatav4' = 'odatav2',
 ): Promise<PublishResult> {
   checkOperation(safety, OperationType.Activate, 'PublishServiceBinding');
-
-  const resp = await http.post(
-    `/sap/bc/adt/businessservices/${serviceType}/publishjobs?servicename=${encodeURIComponent(name)}&serviceversion=${encodeURIComponent(version)}`,
-    publishBody(name),
-    'application/xml',
-    { Accept: 'application/*' },
-  );
-
-  return parsePublishResponse(resp.body);
+  return postPublishJob(http, serviceType, 'publishjob', name, version);
 }
 
 /** Unpublish an OData service binding (removes the service from consumption) */
@@ -498,15 +537,7 @@ export async function unpublishServiceBinding(
   serviceType: 'odatav2' | 'odatav4' = 'odatav2',
 ): Promise<PublishResult> {
   checkOperation(safety, OperationType.Activate, 'UnpublishServiceBinding');
-
-  const resp = await http.post(
-    `/sap/bc/adt/businessservices/${serviceType}/unpublishjobs?servicename=${encodeURIComponent(name)}&serviceversion=${encodeURIComponent(version)}`,
-    publishBody(name),
-    'application/xml',
-    { Accept: 'application/*' },
-  );
-
-  return parsePublishResponse(resp.body);
+  return postPublishJob(http, serviceType, 'unpublishjob', name, version);
 }
 
 /** Run ABAP unit tests for an object */

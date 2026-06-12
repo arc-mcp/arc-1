@@ -31,16 +31,16 @@ Based on the feature description, identify and read all relevant source files. U
 
 | Task | Files |
 |------|-------|
-| Add new read operation | `src/adt/client.ts`, `src/handlers/intent.ts`, `src/handlers/tools.ts` |
-| Add new tool type | `src/handlers/tools.ts`, `src/handlers/intent.ts` |
+| Add new read operation | `src/adt/client.ts`, `src/handlers/read.ts`, `src/handlers/tools.ts` |
+| Add new tool type | `src/handlers/tools.ts`, `src/handlers/schemas.ts`, `src/handlers/dispatch.ts` |
 | Add safety check | `src/adt/safety.ts` |
 | Add XML parser rule | `src/adt/xml-parser.ts` |
-| Add error handling | `src/adt/errors.ts`, `src/handlers/intent.ts` |
-| Add transport feature | `src/adt/transport.ts`, `src/handlers/intent.ts` |
-| Add DDIC domain/data element write | `src/adt/ddic-xml.ts`, `src/adt/crud.ts`, `src/handlers/intent.ts`, `src/handlers/schemas.ts`, `src/handlers/tools.ts` |
+| Add error handling | `src/adt/errors.ts`, `src/handlers/dispatch.ts` |
+| Add transport feature | `src/adt/transport.ts`, `src/handlers/transport.ts` |
+| Add DDIC domain/data element write | `src/adt/ddic-xml.ts`, `src/adt/crud.ts`, `src/handlers/write.ts`, `src/handlers/schemas.ts`, `src/handlers/tools.ts` |
 | Add context feature | `src/context/compressor.ts`, `src/context/deps.ts` |
-| Add CDS impact analysis context | `src/adt/cds-impact.ts`, `src/adt/codeintel.ts` (`findWhereUsed`), `src/handlers/intent.ts` (`SAPContext action="impact"`), `tests/unit/adt/cds-impact.test.ts` |
-| Add diagnostic | `src/adt/diagnostics.ts`, `src/handlers/intent.ts` |
+| Add CDS impact analysis context | `src/adt/cds-impact.ts`, `src/adt/codeintel.ts` (`findWhereUsed`), `src/handlers/context.ts` (`SAPContext action="impact"`), `tests/unit/adt/cds-impact.test.ts` |
+| Add diagnostic | `src/adt/diagnostics.ts`, `src/handlers/diagnose.ts` |
 
 ### 1c. Read existing tests for the affected area
 
@@ -122,7 +122,7 @@ Run `npm test` to confirm the new tests fail (since the implementation doesn't e
 Write the minimal code to make the tests pass. Follow project patterns:
 
 - **ADT client methods**: `checkOperation()` → HTTP call → parse response
-- **Handler routing**: case statement in `intent.ts` dispatching to client methods
+- **Handler routing**: case statement in the per-tool handler module (`read.ts`, `write.ts`, …) dispatching to client methods
 - **Safety checks**: use `checkOperation(this.safety, OperationType.X, 'OpName')`
 - **Error handling**: throw typed errors (`AdtApiError`, `AdtSafetyError`)
 - **Input validation**: define Zod v4 schemas in `src/handlers/schemas.ts` — see existing schemas for pattern

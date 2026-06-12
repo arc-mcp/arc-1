@@ -22,13 +22,13 @@ import { getActionPolicy, hasRequiredScope } from '../authz/policy.js';
 import type { Cache } from '../cache/cache.js';
 import { CachingLayer } from '../cache/caching-layer.js';
 import { MemoryCache } from '../cache/memory.js';
+import { handleToolCall } from '../handlers/dispatch.js';
 import {
   getCachedDiscovery,
   getCachedFeatures,
-  handleToolCall,
   setCachedDiscovery,
   setCachedFeatures,
-} from '../handlers/intent.js';
+} from '../handlers/feature-cache.js';
 import { getToolDefinitions, type ToolDefinition } from '../handlers/tools.js';
 import { API_KEY_PROFILES } from './config.js';
 import { isActionDenied } from './deny-actions.js';
@@ -38,7 +38,7 @@ import { FileSink } from './sinks/file.js';
 import type { ServerConfig } from './types.js';
 
 /** ARC-1 version */
-export const VERSION = '0.9.13'; // x-release-please-version
+export const VERSION = '0.9.14'; // x-release-please-version
 
 /**
  * Prune a tool's action OR type enum (or both) based on the user's scopes and

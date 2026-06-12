@@ -214,7 +214,7 @@ with the credential caveat (see Task N).>
 
 **Files:**
 - Create: `src/adt/new-module.ts`
-- Modify: `src/handlers/intent.ts` (the `handleSAPRead` switch, near `case 'TABL'` at ~line NNNN)
+- Modify: `src/handlers/read.ts` (the `handleSAPRead` switch, near `case 'TABL'` at ~line NNNN)
 - Modify: `tests/unit/adt/new-module.test.ts`
 
 <1-2 sentences of context ending in WHY this task exists. Point to prior art to mirror, e.g.
@@ -223,7 +223,7 @@ with the credential caveat (see Task N).>
 - [ ] Add the `<Thing>` type to `src/adt/types.ts` near the other `*Result` types. Shape:
       interface ExampleResult { name: string; kind: string; optionalField?: string }
 - [ ] Implement `<function>()` in `src/adt/new-module.ts`, calling `checkOperation(this.safety, OperationType.Read, '<Name>')` first (every ADT endpoint must be safety-guarded)
-- [ ] Wire it into `handleSAPRead` in `src/handlers/intent.ts`; keep the three-file schema sync (`tools.ts` + `schemas.ts` + handler) — see Rule 7
+- [ ] Wire it into `handleSAPRead` in `src/handlers/read.ts`; keep the three-file schema sync (`tools.ts` + `schemas.ts` + handler) — see Rule 7
 - [ ] Regression guard: existing `<type>` reads must behave identically — do not change that path
 - [ ] Add unit tests (~N tests) in the `describe('<function>')` block: happy path against a captured real fixture, the 404/not-found branch, and one malformed/over-populated-input case
 - [ ] Run `npm test` — all tests must pass
@@ -255,9 +255,9 @@ These rules are non-negotiable — violating them causes ralphex to malfunction:
 
 5. **Each task must be self-contained** — ralphex executes each task in a fresh Claude Code session with no memory of previous tasks. Include enough context in each task for the agent to understand what to do without reading other tasks.
 
-6. **Anchor references on stable symbols, not bare line numbers.** Line numbers drift between planning and execution. Lead with the function/const/type/`describe()` name (which the executor can grep for) and treat any line number as an approximate hint, prefixed `~` (e.g. "in `normalizeWriteObjectType()` at `intent.ts:~3247`"). The executor re-confirms by searching for the symbol.
+6. **Anchor references on stable symbols, not bare line numbers.** Line numbers drift between planning and execution. Lead with the function/const/type/`describe()` name (which the executor can grep for) and treat any line number as an approximate hint, prefixed `~` (e.g. "in `normalizeWriteObjectType()` at `object-types.ts:~330`"). The executor re-confirms by searching for the symbol.
 
-7. **Respect the three-file schema sync (ARC-1-specific).** Any task that adds or changes a tool parameter/type must touch all of `src/handlers/tools.ts` (JSON Schema the LLM sees), `src/handlers/schemas.ts` (Zod validation), and `src/handlers/intent.ts` (handler) — plus the separate `batch_create` item sub-schema and any per-mode local copies (e.g. `SAPREAD_TYPES_ONPREM` exists in both `tools.ts` and `schemas.ts`). A parameter missing from `tools.ts` is invisible to LLMs; missing from `schemas.ts` fails Zod. The task's **Files:** block must name all of them.
+7. **Respect the three-file schema sync (ARC-1-specific).** Any task that adds or changes a tool parameter/type must touch all of `src/handlers/tools.ts` (JSON Schema the LLM sees), `src/handlers/schemas.ts` (Zod validation), and the per-tool handler module (`src/handlers/read.ts`, `write.ts`, …) — plus the separate `batch_create` item sub-schema. Object-type lists are single-sourced in `src/handlers/tool-registry.ts` (`*_TYPE_TABLE` rows) — add the row there, never hand-copy lists into `tools.ts`/`schemas.ts`. A parameter missing from `tools.ts` is invisible to LLMs; missing from `schemas.ts` fails Zod. The task's **Files:** block must name all of them.
 
 ### Writing Effective Tasks
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { MAX_GREP_PATTERN_LENGTH } from '../../../src/context/grep.js';
 import { getToolDefinitions } from '../../../src/handlers/tools.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 
@@ -21,6 +22,7 @@ describe('Tool Definitions', () => {
       const props = (sapRead!.inputSchema as Record<string, any>).properties;
       expect(props.grep).toBeDefined();
       expect(props.grep.type).toBe('string');
+      expect(props.grep.maxLength).toBe(MAX_GREP_PATTERN_LENGTH);
     }
   });
 
@@ -283,7 +285,7 @@ describe('Tool Definitions', () => {
     expect(onPremDescription).toContain('DCLS');
     expect(onPremTypeDescription).toContain('change_method_visibility');
     // include is CLAS-ONLY and is dropped (not rejected) for the surgery actions, which
-    // operate on /source/main — see the normalizer drop in intent.ts (issue #360).
+    // operate on /source/main — see the normalizer drop in object-types.ts (issue #360).
     expect(onPremSchema.properties.include.description).toContain('CLAS-ONLY');
     expect(onPremSchema.properties.include.description).toContain('change_method_visibility');
     expect(onPremSchema.properties.source.description).toContain('change_method_visibility');

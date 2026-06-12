@@ -70,7 +70,7 @@ describe('collect-test-reliability', () => {
         ].join('\n'),
       );
 
-      expect(records.map((record) => record.reason)).toEqual([
+      expect(records.map((record: { reason: string }) => record.reason)).toEqual([
         'Backend feature not supported on this SAP system',
         'TEST_TRANSPORT_PACKAGE not configured',
       ]);

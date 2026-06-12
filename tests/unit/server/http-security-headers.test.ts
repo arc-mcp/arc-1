@@ -153,8 +153,8 @@ describe('applySecurityMiddleware — cors_rejected audit', () => {
       .set('Origin', 'https://evil.example.com')
       .send({ jsonrpc: '2.0', method: 'ping', id: 1 });
     const corsCalls = emitSpy.mock.calls
-      .map((c) => c[0] as { event: string; origin?: string; method?: string; path?: string })
-      .filter((e) => e.event === 'cors_rejected');
+      .map((c: unknown[]) => c[0] as { event: string; origin?: string; method?: string; path?: string })
+      .filter((e: { event: string }) => e.event === 'cors_rejected');
     expect(corsCalls.length).toBe(1);
     expect(corsCalls[0]).toMatchObject({
       event: 'cors_rejected',
@@ -170,8 +170,8 @@ describe('applySecurityMiddleware — cors_rejected audit', () => {
       .set('Origin', 'https://app.example.com')
       .send({ jsonrpc: '2.0', method: 'ping', id: 1 });
     const corsCalls = emitSpy.mock.calls
-      .map((c) => c[0] as { event: string })
-      .filter((e) => e.event === 'cors_rejected');
+      .map((c: unknown[]) => c[0] as { event: string })
+      .filter((e: { event: string }) => e.event === 'cors_rejected');
     expect(corsCalls.length).toBe(0);
   });
 
@@ -180,8 +180,8 @@ describe('applySecurityMiddleware — cors_rejected audit', () => {
       .post('/mcp')
       .send({ jsonrpc: '2.0', method: 'ping', id: 1 });
     const corsCalls = emitSpy.mock.calls
-      .map((c) => c[0] as { event: string })
-      .filter((e) => e.event === 'cors_rejected');
+      .map((c: unknown[]) => c[0] as { event: string })
+      .filter((e: { event: string }) => e.event === 'cors_rejected');
     expect(corsCalls.length).toBe(0);
   });
 });

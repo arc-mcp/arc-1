@@ -25,7 +25,7 @@ import { CachingLayer } from '../../src/cache/caching-layer.js';
 import { MemoryCache } from '../../src/cache/memory.js';
 import { SqliteCache } from '../../src/cache/sqlite.js';
 import { runWarmup } from '../../src/cache/warmup.js';
-import { handleToolCall } from '../../src/handlers/intent.js';
+import { handleToolCall } from '../../src/handlers/dispatch.js';
 import { DEFAULT_CONFIG } from '../../src/server/types.js';
 import { requireOrSkip, SkipReason } from '../helpers/skip-policy.js';
 import { getTestClient, requireSapCredentials } from './helpers.js';
@@ -73,14 +73,14 @@ describe('Cache Integration Tests', () => {
   });
 
   /** Gate a test on the base-cache fixture being present. */
-  function requireCacheFixture(ctx: import('vitest').TaskContext): void {
+  function requireCacheFixture(ctx: import('vitest').TestContext): void {
     if (!hasTestClass) {
       requireOrSkip(ctx, undefined, `${SkipReason.NO_FIXTURE} (${TEST_CLASS}) — run npm run test:e2e once to seed`);
     }
   }
 
   /** Gate a test on the dep-graph fixture (S/4 BOBF demo) being present. */
-  function requireDepGraphFixture(ctx: import('vitest').TaskContext): void {
+  function requireDepGraphFixture(ctx: import('vitest').TestContext): void {
     if (!hasTestClassWithDeps) {
       requireOrSkip(
         ctx,

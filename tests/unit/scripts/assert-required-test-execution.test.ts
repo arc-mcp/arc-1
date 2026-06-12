@@ -73,7 +73,7 @@ describe('assert-required-test-execution', () => {
     it('reports per-suite pass/fail status', () => {
       const thresholds = { unit: { minExecuted: 0 }, integration: { minExecuted: 0 }, e2e: { minExecuted: 0 } };
       const results = checkThresholds(FIXTURES_DIR, thresholds);
-      expect(results.every((r) => r.pass)).toBe(true);
+      expect(results.every((r: { pass: boolean }) => r.pass)).toBe(true);
     });
   });
 
