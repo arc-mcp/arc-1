@@ -69,7 +69,7 @@
     "sap_allowed_packages": {
       "type": "string",
       "title": "Allowed Packages (write scope)",
-      "description": "Comma-separated write allowlist: exact names, Z* wildcards, ZFOO/** subtrees, or * for ALL packages. Default $TMP (local/throwaway only). WARNING: leaving this empty also allows writes to ALL packages — set it explicitly. Only applies when Allow Writes is on.",
+      "description": "Comma-separated write allowlist: exact names, Z* wildcards, ZFOO/** subtrees, or * for ALL packages. Default $TMP (local/throwaway only); leave empty to keep the $TMP default. Only applies when Allow Writes is on.",
       "default": "$TMP"
     },
     "sap_allow_data_preview": {
