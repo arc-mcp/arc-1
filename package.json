@@ -80,7 +80,7 @@
     "btp:build-deploy-ext": "npm run btp:build && npm run btp:deploy-ext"
   },
   "dependencies": {
-    "@abaplint/core": "^2.119.24",
+    "@abaplint/core": "^2.119.27",
     "@modelcontextprotocol/sdk": "^1.28.0",
     "@sap-cloud-sdk/connectivity": "^4.7.0",
     "@sap/xsenv": "^6.2.1",
