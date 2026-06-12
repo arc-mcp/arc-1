@@ -4,7 +4,25 @@ Best-practice agent skills for common SAP development workflows with ARC-1.
 
 Each skill is a directory containing a `SKILL.md` file with YAML frontmatter — the format used by [Anthropic Agent Skills](https://code.claude.com/docs/en/skills) and consumed by the [`vercel-labs/skills`](https://github.com/vercel-labs/skills) CLI. Agents discover them by `description` and load them on demand.
 
-## Install via the `skills` CLI (recommended)
+## Install as a Claude Code plugin (MCP server + all skills in one step)
+
+For **Claude Code**, the whole toolchain ships as a single plugin — the ARC-1 **MCP server** *and* every skill below — from a marketplace hosted in this repo:
+
+```text
+/plugin marketplace add marianfoo/arc-1
+/plugin install arc-1@arc-1
+```
+
+Claude Code prompts for your SAP connection (URL, user, password — the password goes to the OS
+keychain) when the plugin is enabled, starts the `arc-1` MCP server via `npx`, and loads every skill
+namespaced as `/arc-1:<skill>` (e.g. `/arc-1:generate-rap-service`). Manage it with `/plugin`; run
+`/reload-plugins` after an update.
+
+> Already running the ARC-1 server another way (Claude Desktop MCPB, `claude mcp add`, or a BTP
+> custom connector)? Use the `skills` CLI below to add just the skills — the plugin is only needed
+> when you also want it to wire up the bundled MCP server.
+
+## Install the skills via the `skills` CLI (any agent)
 
 The fastest way is `npx skills` — it auto-detects the agents installed in your project (Claude Code, Cursor, GitHub Copilot, OpenCode, Gemini CLI, Codex, …) and installs into the right paths.
 

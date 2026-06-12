@@ -11,7 +11,8 @@ This document describes how to publish ARC-1 to various MCP server registries, m
 | [Cline Marketplace](#3-cline-marketplace) | Manual | Ready | Cline VS Code extension marketplace |
 | [VS Code / GitHub Copilot](#4-vs-code--github-copilot) | Via MCP Registry | Automatic | VS Code Extensions `@mcp` gallery |
 | [Cursor Marketplace](#5-cursor-marketplace) | Manual | Ready | Cursor IDE built-in marketplace |
-| [Claude Desktop Extensions](#6-claude-desktop-extensions) | Manual (CI builds .mcpb) | Ready | Claude Desktop Extensions directory |
+| [Claude Desktop Extensions](#6-claude-desktop-extensions) | Yes (CI builds + validates + self-signs .mcpb) | Ready | Claude Desktop Extensions directory |
+| [Claude Code Plugin](#8-claude-code-plugin--marketplace) | Yes (repo is the marketplace) | Ready | `/plugin install` — MCP server + skills |
 
 ## Files in This Repository
 
@@ -23,6 +24,9 @@ This document describes how to publish ARC-1 to various MCP server registries, m
 | `.cursor-plugin/plugin.json` | Cursor Marketplace plugin manifest |
 | `mcpb-manifest.json` | Claude Desktop Extension (MCPB) manifest |
 | `.mcpbignore` | Files excluded from MCPB bundle |
+| `icon.png` | Bundle + listing icon (regenerate with `scripts/assets/generate-icon.py`) |
+| `.claude-plugin/plugin.json` | Claude Code plugin manifest (inline `arc-1` MCP server + `userConfig`) |
+| `.claude-plugin/marketplace.json` | Single-plugin Claude Code marketplace (`source: "./"`) |
 
 ---
 
@@ -135,7 +139,7 @@ ARC-1's rich tool descriptions should score well.
      Install: npx -y arc-1
      License: MIT
      
-     11 intent-based MCP tools for SAP ABAP Development Tools (ADT).
+     12 intent-based MCP tools for SAP ABAP Development Tools (ADT).
      Read, write, search, activate, lint, navigate, query, and manage
      ABAP objects. Read-only by default with configurable safety gates.
      Supports on-premise SAP and BTP ABAP Environment.
@@ -216,44 +220,56 @@ cursor://anysphere.cursor-deeplink/mcp/install?name=arc-1&config=eyJjb21tYW5kIjo
 
 ### Building the MCPB Bundle
 
-```bash
-# Install the MCPB CLI
-npm install -g @anthropic-ai/mcpb
+**This is automated** — the `build-mcpb` job in `.github/workflows/release.yml` assembles, packs,
+self-signs, and attaches `arc-1-<version>.mcpb` to every GitHub Release. The steps below reproduce
+it locally for testing.
 
+```bash
 # Build the project first
 npm run build
 
 # Prepare a bundle directory with production files
 mkdir -p mcpb-bundle
 cp mcpb-manifest.json mcpb-bundle/manifest.json
-cp -r dist mcpb-bundle/
-cp package.json mcpb-bundle/
-cd mcpb-bundle && npm ci --omit=dev && cd ..
+cp icon.png mcpb-bundle/
+cp -r dist mcpb-bundle/dist
+cp package.json package-lock.json mcpb-bundle/
 
-# Validate the manifest
-mcpb validate mcpb-bundle/manifest.json
+# Install prod deps WITHOUT the native better-sqlite3, so the bundle is pure-JS and
+# cross-platform (darwin/win32/linux). The server falls back to the in-memory cache at
+# runtime — see createCachingLayer() in src/server/server.ts.
+( cd mcpb-bundle && npm ci --omit=dev --ignore-scripts )
+rm -rf mcpb-bundle/node_modules/better-sqlite3
 
-# Pack the bundle
-mcpb pack mcpb-bundle/ arc-1.mcpb
+# Validate, then pack (+ optional self-sign)
+npx @anthropic-ai/mcpb validate mcpb-bundle/manifest.json
+npx @anthropic-ai/mcpb pack mcpb-bundle/ arc-1.mcpb
+npx @anthropic-ai/mcpb sign arc-1.mcpb --self-signed   # optional
 ```
 
 ### Distribution
 
-Users install by double-clicking the `.mcpb` file or dragging it into Claude Desktop.
-
-Attach the `.mcpb` file to GitHub Releases. The CI can be extended to build this automatically (see workflow template below).
+Users install by double-clicking the `.mcpb` file or dragging it into Claude Desktop → Settings →
+Extensions. CI builds, validates, and best-effort self-signs `arc-1-<version>.mcpb`, then attaches it to every GitHub Release automatically (the
+`build-mcpb` job — see [CI Automation](#ci-automation-implemented) below). User-facing install steps
+live in [docs_page/install-in-claude.md](../docs_page/install-in-claude.md).
 
 ### Submitting to the Extensions Directory
 
 The Claude Desktop Extensions Directory is currently Anthropic-curated with no public self-service submission. To get listed:
 
-1. Build the `.mcpb` bundle with all tool annotations (`readOnlyHint`, `destructiveHint`)
+1. Confirm the release carries the `.mcpb` (self-signed when the signer is available) and that tool annotations are emitted (both automated below)
 2. Submit via the connector submission form at https://claude.com/partners/mcp
 3. Anthropic reviews for quality, security, and compatibility
 
 ### Tool Annotations
 
-ARC-1 should add MCP tool annotations to the tool definitions in `src/handlers/tools.ts`. This is required for the Extensions Directory and recommended in general:
+ARC-1 **emits** MCP tool annotations from `src/handlers/tools.ts` (`getToolDefinitions()` attaches
+them from the `TOOL_ANNOTATIONS` map; guarded by `tests/unit/handlers/tool-annotations.test.ts`).
+These travel in the **MCP protocol** tool list the client receives — they are **not** the
+`mcpb-manifest.json` `tools[]` array (that array is only a static display hint for the listing).
+Clients use them to badge tools and to auto-approve read-only ones; the Extensions Directory
+requires them.
 
 | Tool | readOnlyHint | destructiveHint |
 |------|-------------|----------------|
@@ -267,54 +283,17 @@ ARC-1 should add MCP tool annotations to the tool definitions in `src/handlers/t
 | SAPWrite | false | false |
 | SAPActivate | false | false |
 | SAPTransport | false | false |
+| SAPGit | false | false |
 | SAPManage | false | true |
 
-### Optional CI Automation
+### CI Automation (implemented)
 
-Add to `.github/workflows/release.yml` to build and attach `.mcpb` to releases:
-
-```yaml
-  build-mcpb:
-    needs: release-please
-    if: ${{ needs.release-please.outputs.release_created }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: 'npm'
-
-      - run: npm ci
-      - run: npm run build
-
-      - name: Prepare MCPB bundle
-        run: |
-          mkdir -p mcpb-bundle
-          cp mcpb-manifest.json mcpb-bundle/manifest.json
-          cp -r dist mcpb-bundle/
-          cp package.json mcpb-bundle/
-          cd mcpb-bundle && npm ci --omit=dev
-
-      - name: Install mcpb CLI
-        run: npm install -g @anthropic-ai/mcpb
-
-      - name: Validate manifest
-        run: mcpb validate mcpb-bundle/manifest.json
-
-      - name: Pack bundle
-        run: |
-          VERSION=$(echo "${{ needs.release-please.outputs.tag_name }}" | sed 's/^v//')
-          mcpb pack mcpb-bundle/ "arc-1-${VERSION}.mcpb"
-
-      - name: Upload to GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ needs.release-please.outputs.tag_name }}
-          files: arc-1-*.mcpb
-```
+The `build-mcpb` job in `.github/workflows/release.yml` runs on every release: it builds, assembles
+a **pure-JS** bundle (omitting the native `better-sqlite3` so one `.mcpb` runs on macOS / Windows /
+Linux — the server falls back to the in-memory cache), validates, packs, self-signs, and attaches
+`arc-1-<version>.mcpb` to the GitHub Release via `gh release upload`. The manifest `version` is kept
+in sync with `package.json` by release-please (`extra-files` in `release-please-config.json`). No
+manual step is required.
 
 ---
 
@@ -338,10 +317,45 @@ These don't require files in the repo — just web submissions:
 After Glama listing is live, submit a PR to `punkpeye/awesome-mcp-servers`:
 
 ```markdown
-- [ARC-1](https://github.com/marianfoo/arc-1) [![marianfoo/arc-1 MCP server](https://glama.ai/mcp/servers/marianfoo/arc-1/badges/score.svg)](https://glama.ai/mcp/servers/marianfoo/arc-1) - MCP server for SAP ABAP systems with 11 intent-based tools for reading, writing, searching, activating, and managing ABAP objects
+- [ARC-1](https://github.com/marianfoo/arc-1) [![marianfoo/arc-1 MCP server](https://glama.ai/mcp/servers/marianfoo/arc-1/badges/score.svg)](https://glama.ai/mcp/servers/marianfoo/arc-1) - MCP server for SAP ABAP systems with 12 intent-based tools for reading, writing, searching, activating, and managing ABAP objects
 ```
 
 Place in the appropriate category (likely "Developer Tools" or "Enterprise").
+
+---
+
+## 8. Claude Code Plugin & Marketplace
+
+**URL:** Claude Code → `/plugin`
+**Impact:** High. One install gives Claude Code users the MCP server **and** all SAP skills.
+
+The repository root doubles as a **single-plugin Claude Code marketplace**.
+
+### Files Already in Repo
+
+- `.claude-plugin/plugin.json` — plugin manifest. Declares the `arc-1` MCP server **inline**
+  (`mcpServers` → `npx arc-1`) and a `userConfig` that prompts for the SAP connection (password →
+  OS keychain). Skills are the repo's existing `skills/` directory, which Claude Code always
+  auto-scans for a plugin — no duplication. Inline `mcpServers` (rather than a root `.mcp.json`)
+  avoids auto-starting the server for anyone developing *in* this repo.
+- `.claude-plugin/marketplace.json` — catalog listing one plugin with `source: "./"`.
+
+### Install (users)
+
+```text
+/plugin marketplace add marianfoo/arc-1
+/plugin install arc-1@arc-1
+```
+
+Skills load namespaced as `/arc-1:<skill>`. `plugin.json` `$.version` is bumped by release-please.
+Validate locally with `claude plugin validate .`. Guard: `tests/unit/plugin/plugin-manifest.test.ts`.
+
+### Submit to the Community Marketplace (optional)
+
+- **claude.ai** (Team/Enterprise + directory-management access): https://claude.ai/admin-settings/directory/submissions/plugins/new
+- **Console** (individual authors): https://platform.claude.com/plugins/submit
+
+Run `claude plugin validate` first; approved plugins are pinned into `anthropics/claude-plugins-community`.
 
 ---
 
@@ -355,6 +369,8 @@ Place in the appropriate category (likely "Developer Tools" or "Enterprise").
 - [ ] Submit Cline Marketplace issue (need 400x400 logo)
 - [ ] Submit Cursor Marketplace at cursor.com/marketplace/publish
 - [ ] Submit cursor.directory listing
-- [ ] Submit Claude Code plugin at claude.ai/settings/plugins/submit
+- [ ] Verify the release attached `arc-1-<version>.mcpb` (self-signed when the signer is available; build-mcpb job)
+- [ ] Test the Claude Code plugin: `/plugin marketplace add marianfoo/arc-1` → `/plugin install arc-1@arc-1`
+- [ ] Submit Claude Code plugin (claude.ai/admin-settings/directory/submissions/plugins/new or platform.claude.com/plugins/submit)
 - [ ] Submit Claude Desktop extension at claude.com/partners/mcp
 - [ ] Submit to PulseMCP, MCP.so, Smithery (lower priority)

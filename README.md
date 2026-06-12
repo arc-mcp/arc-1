@@ -129,9 +129,21 @@ ARC-1's strategy is to stay close to documented and discoverable ADT behavior, p
 
 ## Quick Start
 
-```bash
-npx arc-1@latest --url https://your-sap-host:44300 --user YOUR_USER
-```
+**Install in Claude** — pick your surface (full guide: [Install in Claude](https://marianfoo.github.io/arc-1/install-in-claude/)):
+
+- **Claude Desktop** — download the latest `arc-1-*.mcpb` from [Releases](https://github.com/marianfoo/arc-1/releases) and double-click it (or Settings → Extensions). Claude prompts for your SAP connection. (The `.mcpb` is attached to releases automatically; if the newest one doesn't have it yet, see [Install in Claude](https://marianfoo.github.io/arc-1/install-in-claude/).)
+- **Claude Code** — one install for the MCP server **and** all [SAP skills](https://github.com/marianfoo/arc-1/tree/main/skills):
+
+  ```text
+  /plugin marketplace add marianfoo/arc-1
+  /plugin install arc-1@arc-1
+  ```
+
+- **Any MCP client / manual** — run it directly:
+
+  ```bash
+  npx arc-1@latest --url https://your-sap-host:44300 --user YOUR_USER
+  ```
 
 - **Trying it out on your laptop?** → [Quickstart](https://marianfoo.github.io/arc-1/quickstart/)
 - **Full local dev setup (Docker, cookie extractor, client configs)?** → [Local Development](https://marianfoo.github.io/arc-1/local-development/)
@@ -158,6 +170,7 @@ Full documentation is available at **[marianfoo.github.io/arc-1](https://marianf
 | Guide | Description |
 |-------|-------------|
 | [Quickstart](https://marianfoo.github.io/arc-1/quickstart/) | 5-minute npx + Claude Desktop setup |
+| [Install in Claude](https://marianfoo.github.io/arc-1/install-in-claude/) | Desktop `.mcpb`, Claude Code plugin (server + skills), and remote BTP connector |
 | [Local Development](https://marianfoo.github.io/arc-1/local-development/) | Full local dev — all install methods, MCP client configs, SSO cookie extractor |
 | [Deployment](https://marianfoo.github.io/arc-1/deployment/) | Multi-user deployment — Docker, BTP Cloud Foundry, BTP ABAP |
 | [Configuration](https://marianfoo.github.io/arc-1/configuration-reference/) | Every flag and env var, one table |

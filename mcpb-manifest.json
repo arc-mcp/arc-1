@@ -5,7 +5,8 @@
   "display_name": "ARC-1 - SAP ABAP MCP Server",
   "version": "0.9.14",
   "description": "MCP server for SAP ABAP Development Tools (ADT). Read, write, search, activate, and manage ABAP objects in SAP systems.",
-  "long_description": "ARC-1 connects Claude to SAP ABAP systems via the ABAP Development Tools (ADT) REST API. Provides 11 intent-based tools covering the full ABAP development lifecycle: read source code, create/update objects, search, activate, navigate references, run SQL queries, manage transports, lint, and diagnose runtime issues. Read-only by default with configurable safety gates. Supports on-premise SAP and BTP ABAP Environment.",
+  "long_description": "ARC-1 connects Claude to SAP ABAP systems via the ABAP Development Tools (ADT) REST API. Provides 12 intent-based tools covering the full ABAP development lifecycle: read source code, create/update objects, search, activate, navigate references, run SQL queries, manage transports and Git, lint, and diagnose runtime issues. Read-only by default with configurable safety gates. Supports on-premise SAP and BTP ABAP Environment.",
+  "icon": "icon.png",
   "author": {
     "name": "Marian Zeis",
     "url": "https://github.com/marianfoo"
@@ -32,7 +33,12 @@
         "SAP_CLIENT": "${user_config.sap_client}",
         "SAP_LANGUAGE": "${user_config.sap_language}",
         "SAP_INSECURE": "${user_config.sap_insecure}",
-        "SAP_ALLOW_WRITES": "${user_config.sap_allow_writes}"
+        "SAP_ALLOW_WRITES": "${user_config.sap_allow_writes}",
+        "SAP_ALLOWED_PACKAGES": "${user_config.sap_allowed_packages}",
+        "SAP_ALLOW_DATA_PREVIEW": "${user_config.sap_allow_data_preview}",
+        "SAP_ALLOW_FREE_SQL": "${user_config.sap_allow_free_sql}",
+        "SAP_ALLOW_TRANSPORT_WRITES": "${user_config.sap_allow_transport_writes}",
+        "SAP_ALLOW_GIT_WRITES": "${user_config.sap_allow_git_writes}"
       }
     }
   },
@@ -64,6 +70,10 @@
     {
       "name": "SAPTransport",
       "description": "Manage CTS transport requests"
+    },
+    {
+      "name": "SAPGit",
+      "description": "Version control for ABAP via gCTS or abapGit (status, clone, pull, commit, push) — available when a Git backend is present"
     },
     {
       "name": "SAPContext",
@@ -106,47 +116,82 @@
     "sap_url": {
       "type": "string",
       "title": "SAP System URL",
-      "description": "URL of your SAP system (e.g., http://host:50000 or https://host:44300)",
+      "description": "URL of your SAP system (e.g. http://host:50000 or https://host:44300).",
       "required": true
     },
     "sap_user": {
       "type": "string",
       "title": "SAP Username",
-      "description": "Your SAP user ID for authentication",
+      "description": "Your SAP user ID for authentication.",
       "required": true
     },
     "sap_password": {
       "type": "string",
       "title": "SAP Password",
-      "description": "Your SAP password",
+      "description": "Your SAP password (stored securely in the OS keychain).",
       "sensitive": true,
       "required": true
     },
     "sap_client": {
       "type": "string",
       "title": "SAP Client",
-      "description": "SAP client number",
+      "description": "SAP logon client number.",
       "default": "100",
       "required": false
     },
     "sap_language": {
       "type": "string",
       "title": "SAP Language",
-      "description": "SAP logon language",
+      "description": "SAP logon language and master language for created objects.",
       "default": "EN",
       "required": false
     },
     "sap_insecure": {
       "type": "boolean",
       "title": "Skip TLS Verification",
-      "description": "Skip TLS certificate verification (for self-signed certificates)",
+      "description": "Skip TLS certificate verification (only for self-signed dev/test systems).",
       "default": false,
       "required": false
     },
     "sap_allow_writes": {
       "type": "boolean",
       "title": "Allow Writes",
-      "description": "Allow ABAP object mutations. Keep false for read/search-only usage.",
+      "description": "Allow ABAP object mutations (create/update/activate). Prerequisite for transport and Git writes. Keep off for read/search-only usage.",
+      "default": false,
+      "required": false
+    },
+    "sap_allowed_packages": {
+      "type": "string",
+      "title": "Allowed Packages (write scope)",
+      "description": "Comma-separated write allowlist: exact names, Z* wildcards, ZFOO/** subtrees, or * for ALL packages. Default $TMP (local/throwaway only); leave empty to keep the $TMP default. Only applies when Allow Writes is on.",
+      "default": "$TMP",
+      "required": false
+    },
+    "sap_allow_data_preview": {
+      "type": "boolean",
+      "title": "Allow Table Data Preview",
+      "description": "Allow SAPRead(type=TABLE_CONTENTS) and SAPQuery table preview. Can expose application data — review your data-governance rules.",
+      "default": false,
+      "required": false
+    },
+    "sap_allow_free_sql": {
+      "type": "boolean",
+      "title": "Allow Freestyle SQL",
+      "description": "Allow read-only ad-hoc ABAP SQL via SAPQuery. Can expose application data — review your data-governance rules.",
+      "default": false,
+      "required": false
+    },
+    "sap_allow_transport_writes": {
+      "type": "boolean",
+      "title": "Allow Transport Writes",
+      "description": "Allow CTS transport mutations (create/assign/release). Also requires Allow Writes.",
+      "default": false,
+      "required": false
+    },
+    "sap_allow_git_writes": {
+      "type": "boolean",
+      "title": "Allow Git Writes",
+      "description": "Allow gCTS / abapGit mutations (commit/push/pull). Also requires Allow Writes.",
       "default": false,
       "required": false
     }
