@@ -307,7 +307,7 @@ Optional pre-write validation layers and tool-set selection.
 | `--lint-before-write` | `SAP_LINT_BEFORE_WRITE` | `true` | Runs `@abaplint/core` against the source body before every `SAPWrite`. Syntax errors block the write; warnings are appended to the response (non-blocking). When `false`, lint is skipped — the write goes straight to the activation/save round-trip. Some object types (e.g. `FUNC` source with structured signatures) are exempt from lint regardless of this flag. |
 | `--abaplint-config` | `SAP_ABAPLINT_CONFIG` | — (uses built-in preset) | Path to a custom `abaplint.jsonc`. When unset, ARC-1 builds a preset config based on the detected system type (cloud-strict for BTP, relaxed for on-prem). Custom config takes full precedence. |
 | `--check-before-write` | `SAP_CHECK_BEFORE_WRITE` | `false` | See [Authorization and safety](#authorization-and-safety) — adds a server-side ADT syntax check round-trip before save. Different layer from `lint-before-write` (this hits SAP, lint runs locally). |
-| `--tool-mode` | `ARC1_TOOL_MODE` | `standard` | `standard` exposes the 12 intent-based tools (~5K schema tokens). `hyperfocused` exposes a single universal `sap` tool (~200 tokens) that dispatches everything internally. Use `hyperfocused` for severely token-constrained LLM clients (e.g. GPT-4o-mini, Copilot Studio). |
+| `--tool-mode` | `ARC1_TOOL_MODE` | `standard` | `standard` exposes the 12 intent-based tools (schema payload guarded by CI budgets). `hyperfocused` exposes a single universal `sap` tool (~200 tokens) that dispatches everything internally. Use `hyperfocused` for severely token-constrained LLM clients (e.g. GPT-4o-mini, Copilot Studio). |
 
 ---
 
