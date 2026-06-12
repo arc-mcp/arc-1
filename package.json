@@ -96,7 +96,7 @@
     "helmet": "^8.2.0",
     "jose": "^6.2.2",
     "rate-limiter-flexible": "^11.1.1",
-    "undici": "^8.4.0",
+    "undici": "^8.4.1",
     "zod": "^4.3.6"
   },
   "lint-staged": {
