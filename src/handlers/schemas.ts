@@ -2,8 +2,11 @@
  * Zod v4 input schemas for all 12 MCP tools.
  *
  * These schemas provide runtime validation via safeParse() in handleToolCall().
- * JSON Schema generation via z.toJSONSchema() is planned for a future PR
- * (currently, JSON Schema is still hand-written in tools.ts).
+ * The JSON Schema the LLM sees is hand-written in tools.ts (NOT generated from these). Generating
+ * it via z.toJSONSchema() was evaluated and rejected — the 263 LLM-facing descriptions live only in
+ * tools.ts (these schemas carry ~zero .describe()), and `.transform()` fields can't be represented;
+ * see docs/research/zod-to-jsonschema-spike.md. The two are kept in sync by schema-key-sync,
+ * registry-sync, zod-jsonschema-parity, and tool-definitions-snapshot tests, not by generation.
  *
  * BTP variants exclude types not available on BTP ABAP Environment.
  * Numeric fields use z.coerce.number() for MCP client compatibility
