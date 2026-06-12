@@ -13,7 +13,7 @@
  *   - `parseFmSignature`       — FM source → array (+ body bounds)
  *   - `spliceFmSignature`      — replace the signature region of FM source
  *
- * No I/O, no client coupling. The wiring lives in `src/handlers/intent.ts`.
+ * No I/O, no client coupling. The wiring lives in the SAPWrite handlers (`src/handlers/write/`).
  */
 
 export type FmParameterKind = 'importing' | 'exporting' | 'changing' | 'tables' | 'exceptions' | 'raising';

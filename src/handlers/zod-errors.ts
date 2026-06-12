@@ -2,7 +2,7 @@
  * Format Zod validation errors into LLM-friendly messages.
  *
  * Produces structured error text with field paths and expected values,
- * consistent with the existing errorResult() pattern in intent.ts.
+ * consistent with the existing errorResult() pattern in shared.ts.
  */
 
 /**

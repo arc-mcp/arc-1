@@ -20,6 +20,10 @@ jobs:
         # which sets bump-minor-pre-major: true so breaking changes only bump
         # the minor version while the package is pre-1.0.0.
 
+  # npm publishes independently of the Docker CVE gate — a HIGH/CRITICAL finding
+  # blocks the Docker image but not the npm package. (The scheduled security-scan.yml
+  # gate-preview is what keeps base-image CVEs from reaching a release in the first
+  # place, so the two artifacts rarely diverge.)
   publish-npm:
     needs: release-please
     if: ${{ needs.release-please.outputs.release_created }}

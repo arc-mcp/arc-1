@@ -424,7 +424,7 @@ ENDCLASS.`;
 
 // ──────────────────────────────────────────────────────────────────────
 // isRapGenerateResultSuccess truth table (Codex review on PR #260, P1).
-// The handler in src/handlers/intent.ts delegates to this helper to decide
+// The handler in src/handlers/write/rap.ts delegates to this helper to decide
 // whether to surface the orchestrator outcome via textResult or errorResult.
 // ──────────────────────────────────────────────────────────────────────
 

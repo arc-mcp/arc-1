@@ -235,6 +235,12 @@ merged yet at time of writing.
 Grouped by theme. Each entry gives the mechanism, scope, location, exploit/impact, the minimal fix,
 the test to add, and a rough effort (S = a few hours, M = a day, L = multi-day).
 
+> **Code-location note:** `src/handlers/intent.ts` was split into focused modules (`read.ts`,
+> `write.ts`, `write/*`, `context.ts`, `git.ts`, `manage.ts`, `diagnose.ts`, …) in
+> [#402](https://github.com/marianfoo/arc-1/pull/402). `intent.ts:NNNN` locations predate that
+> split — find the named symbol (e.g. `enrichWithSapDetails`, `change_package`) in the matching
+> `src/handlers/` module.
+
 > **Update (2026-06-11):** the original ⭐ next picks — **R1, R2, R3, R4, R12, R16** — are now
 > **merged** (along with R8/R9-abapGit/R11); see §4/§5 for current status. The entries below are
 > retained as the historical record of each finding. The still-open items are **R5, R6, R7,
@@ -250,7 +256,7 @@ the worst class of finding for the flagship multi-user-PP deployment, and a sing
 ⭐ **R1 — Cross-user dependency-source leak — High — PP only**
 - **Where:** [`caching-layer.ts:126`](../src/cache/caching-layer.ts) (`getCachedDepGraph`),
   payload [`cache.ts:76`](../src/cache/cache.ts) (`CachedContract.source`/`fullSource`), hit path
-  [`intent.ts:7616`](../src/handlers/intent.ts).
+  [`intent.ts:7616`](../src/handlers/).
 - **Mechanism:** the dep-graph contract cache stores each dependency's `source`/`fullSource` keyed
   **only by the root object's source hash** — no identity. The root read is revalidated per-user,
   but on a cache hit the cached *dependencies'* source is returned with no per-user SAP check.
@@ -283,7 +289,7 @@ the worst class of finding for the flagship multi-user-PP deployment, and a sing
 - **Effort:** S–M. *(Cheap, high-value — the fix already exists in-repo as `resolveRateLimitUserKey`.)*
 
 ⭐ **R12 — Reverse-dependency (`usages`) index served cross-user — Med — PP + warmup**
-- **Where:** serve [`intent.ts:7337`](../src/handlers/intent.ts), index
+- **Where:** serve [`intent.ts:7337`](../src/handlers/), index
   [`caching-layer.ts:191`](../src/cache/caching-layer.ts) (`getUsages` → `getEdgesTo`), populated by
   warmup under the shared service account.
 - **Mechanism:** `getUsages` returns the warmup-built reverse-dependency edge index (scanned across
@@ -335,7 +341,7 @@ the worst class of finding for the flagship multi-user-PP deployment, and a sing
 ### 6.3 Authorization / integrity
 
 ⭐ **R4 — SRVB publish/unpublish bypass the package allowlist — Med — all**
-- **Where:** [`intent.ts:5931`](../src/handlers/intent.ts) / [`:5975`](../src/handlers/intent.ts)
+- **Where:** [`intent.ts:5931`](../src/handlers/) / [`:5975`](../src/handlers/)
   (`publish_srvb`/`unpublish_srvb`).
 - **Mechanism:** both check `allowWrites` but never `enforceAllowedPackageForObjectUrl`. A baseline
   `write` user can expose (or take offline) an OData service whose package is outside the allowlist
@@ -361,7 +367,7 @@ the worst class of finding for the flagship multi-user-PP deployment, and a sing
 
 **R9 (gCTS) — finish the git pull/push gate — Med — allowGitWrites** 🟡
 - **Where:** gCTS `pullRepo` [`gcts.ts:206`](../src/adt/gcts.ts) and `commitRepo`; handler
-  [`intent.ts:6936`](../src/handlers/intent.ts).
+  [`intent.ts:6936`](../src/handlers/).
 - **Remaining work:** the merged R9 ([#389](https://github.com/marianfoo/arc-1/pull/389)) gated
   abapGit only. gCTS repos can span multiple packages, so the gate needs the per-repo object/package
   list (`listRepos` → match `rid` → gate `.package`, fail-closed under a restricted allowlist when
@@ -395,7 +401,7 @@ the worst class of finding for the flagship multi-user-PP deployment, and a sing
 
 **R14 — No minimal-error mode (recon oracle) — Low/Med — all**
 - **Where:** [`errors.ts:308`](../src/adt/errors.ts) (`extractLockOwner`, `classifySapDomainError`),
-  [`intent.ts:651`](../src/handlers/intent.ts) (`enrichWithSapDetails`).
+  [`intent.ts:651`](../src/handlers/) (`enrichWithSapDetails`).
 - **Mechanism:** SAP error detail surfaced to the LLM/client includes another user's lock-owner
   **username** + transport id (T100 slots) and auth-object names; no opt-out. Lock-probing →
   valid-user + activity enumeration.
@@ -437,7 +443,7 @@ the worst class of finding for the flagship multi-user-PP deployment, and a sing
   scope-gated. Not reachable today, but a CI/lint guard asserting every dispatchable action has a
   policy would prevent a future ungated handler.
 - **`change_package` compiles an unbounded `objectType` into a RegExp**
-  ([`intent.ts:6884`](../src/handlers/intent.ts)): escape with a literal matcher or bound the
+  ([`intent.ts:6884`](../src/handlers/)): escape with a literal matcher or bound the
   length. Impact bounded (matched only against SAP's own search response).
 - **Effort:** S total.
 
@@ -519,4 +525,4 @@ re-materialize it there or regenerate from this section's description.
   R1/R3/R12 ([#393](https://github.com/marianfoo/arc-1/pull/393)), R4 ([#394](https://github.com/marianfoo/arc-1/pull/394)),
   R16 ([#395](https://github.com/marianfoo/arc-1/pull/395)) merged on top of R8/R9-abapGit/R11 —
   **all High findings closed.** Updated §1/§4/§6 status; open set is now R5, R6, R7, R9-gCTS, R10,
-  R13, R14, R15, R17 (all Med/Low). These fixes landed after the v0.9.13 release; they ship next release.
+  R13, R14, R15, R17 (all Med/Low). These fixes shipped in **v0.9.14**.

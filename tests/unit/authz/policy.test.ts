@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { OperationType } from '../../../src/adt/safety.js';
+import { OperationType, type OperationTypeCode } from '../../../src/adt/safety.js';
 import {
   ACTION_POLICY,
   allPolicyKeys,
@@ -280,7 +280,7 @@ describe('opType ↔ scope consistency invariant', () => {
   // FreeSQL opType must require sql+. This locks the invariant so a future entry
   // (or a state-changing action that silently inherits a read-default tool scope)
   // can't under-scope a privileged operation. (security audit 2026-06)
-  const MUTATING = new Set([
+  const MUTATING = new Set<OperationTypeCode>([
     OperationType.Create,
     OperationType.Update,
     OperationType.Delete,

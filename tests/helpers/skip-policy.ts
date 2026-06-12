@@ -6,7 +6,7 @@
  */
 import { appendFileSync, mkdirSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import type { TaskContext } from 'vitest';
+import type { TestContext } from 'vitest';
 
 /** Standard skip reason constants for common precondition failures. */
 export const SkipReason = {
@@ -65,8 +65,8 @@ export function resetSkipReasonArtifacts(): void {
   }
 }
 
-export function recordSkipReason(ctx: TaskContext, reason: string): void {
-  const task = (ctx as Partial<TaskContext>).task;
+export function recordSkipReason(ctx: TestContext, reason: string): void {
+  const task = (ctx as Partial<TestContext>).task;
   if (!task) return;
 
   const file = task.file?.filepath ?? '';
@@ -89,7 +89,7 @@ export function recordSkipReason(ctx: TaskContext, reason: string): void {
   }
 }
 
-export function skipTest(ctx: TaskContext, reason: string): never {
+export function skipTest(ctx: TestContext, reason: string): never {
   recordSkipReason(ctx, reason);
   ctx.skip(reason);
   // ctx.skip(reason) throws internally in Vitest, so the line below is normally unreachable.
@@ -103,7 +103,7 @@ export function skipTest(ctx: TaskContext, reason: string): never {
  * After this call, TypeScript narrows `value` to `T` (non-null, non-undefined).
  * Falsy-but-defined values like `0`, `false`, and `''` are NOT skipped.
  */
-export function requireOrSkip<T>(ctx: TaskContext, value: T | null | undefined, reason: string): asserts value is T {
+export function requireOrSkip<T>(ctx: TestContext, value: T | null | undefined, reason: string): asserts value is T {
   if (value === null || value === undefined) {
     skipTest(ctx, reason);
   }

@@ -1,5 +1,5 @@
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import type { TaskContext } from 'vitest';
+import type { TestContext } from 'vitest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { skipTest } from '../helpers/skip-policy.js';
 import { callTool, connectClient, expectToolError, expectToolSuccess, expectToolSuccessOrSkip } from './helpers.js';
@@ -14,7 +14,7 @@ import { callTool, connectClient, expectToolError, expectToolSuccess, expectTool
  * revision list survives this helper.
  */
 function parseVersionsOrSkip(
-  ctx: TaskContext,
+  ctx: TestContext,
   text: string,
   fixtureName: string,
 ): { object: { name: string }; revisions: Array<{ uri?: string }> } {

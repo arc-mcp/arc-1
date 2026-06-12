@@ -30,7 +30,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsc && node -e \"const fs=require('fs');fs.rmSync('dist/aff/schemas',{recursive:true,force:true});fs.cpSync('src/aff/schemas','dist/aff/schemas',{recursive:true})\"",
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc && node -e \"const fs=require('fs');fs.cpSync('src/aff/schemas','dist/aff/schemas',{recursive:true})\"",
     "dev": "tsx src/index.ts",
     "dev:http": "npm run build && tsx src/index.ts --transport http-streamable",
     "start": "node dist/index.js",
@@ -49,8 +49,9 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.scripts.json",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.scripts.json && tsc --noEmit -p tsconfig.tests.json",
     "validate:policy": "tsx scripts/validate-action-policy.ts",
+    "check:sizes": "node scripts/ci/check-file-sizes.mjs",
     "cli": "tsx src/cli.ts",
     "extract-sap-cookies": "tsx src/extract-sap-cookies.ts",
     "probe": "tsx scripts/probe-adt-types.ts",

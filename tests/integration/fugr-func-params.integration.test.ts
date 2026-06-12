@@ -18,7 +18,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AdtClient } from '../../src/adt/client.js';
 import { AdtApiError } from '../../src/adt/errors.js';
-import { handleToolCall, type ToolResult } from '../../src/handlers/intent.js';
+import { handleToolCall } from '../../src/handlers/dispatch.js';
+import type { ToolResult } from '../../src/handlers/shared.js';
 import type { ServerConfig } from '../../src/server/types.js';
 import { SkipReason, skipTest } from '../helpers/skip-policy.js';
 import { CrudRegistry, cleanupAll, generateUniqueName } from './crud-harness.js';

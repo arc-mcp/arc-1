@@ -12,7 +12,7 @@
  *     for common operations.
  *
  * The `call` command bypasses the MCP transport but reuses the same dispatch
- * path (`handleToolCall` in src/handlers/intent.ts), so Zod validation,
+ * path (`handleToolCall` in src/handlers/dispatch.ts), so Zod validation,
  * safety gates (`SAP_READ_ONLY`, `SAP_ALLOWED_PACKAGES`, ...), and audit
  * logging all apply exactly as they do under `arc1 serve` stdio mode.
  */
@@ -23,7 +23,8 @@ import { config } from 'dotenv';
 import { AdtClient } from './adt/client.js';
 import type { AdtClientConfig } from './adt/config.js';
 import { buildArgs, type OutputMode } from './cli-args.js';
-import { handleToolCall, type ToolResult } from './handlers/intent.js';
+import { handleToolCall } from './handlers/dispatch.js';
+import type { ToolResult } from './handlers/shared.js';
 import { getToolDefinitions } from './handlers/tools.js';
 import { detectFilename, lintAbapSource } from './lint/lint.js';
 import { parseArgs, resolveConfig } from './server/config.js';

@@ -285,7 +285,7 @@ describe('Tool Definitions', () => {
     expect(onPremDescription).toContain('DCLS');
     expect(onPremTypeDescription).toContain('change_method_visibility');
     // include is CLAS-ONLY and is dropped (not rejected) for the surgery actions, which
-    // operate on /source/main — see the normalizer drop in intent.ts (issue #360).
+    // operate on /source/main — see the normalizer drop in object-types.ts (issue #360).
     expect(onPremSchema.properties.include.description).toContain('CLAS-ONLY');
     expect(onPremSchema.properties.include.description).toContain('change_method_visibility');
     expect(onPremSchema.properties.source.description).toContain('change_method_visibility');

@@ -1,7 +1,7 @@
 /**
  * ACTION_POLICY — single source of truth for scope/opType/featureGate per tool+action.
  *
- * Every MCP tool call is gated by this matrix. `handleToolCall` in intent.ts looks up
+ * Every MCP tool call is gated by this matrix. `handleToolCall` in dispatch.ts looks up
  * `(tool, action-or-type)` here to get the required scope (user-gate) and OperationType
  * (server-safety gate). Tool-listing pruning in server.ts also reads from here to hide
  * actions the user can't execute.

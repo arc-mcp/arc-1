@@ -51,8 +51,16 @@ const BLUES_V2 = 'application/vnd.sap.adt.blues.v2+xml';
 /** AFF source is JSON for every server-driven type (read GET + write PUT). */
 const SDO_SOURCE_CONTENT_TYPE = 'application/json';
 
-/** Curated registry of high-value 816 server-driven object types. */
-export const SDO_REGISTRY: Record<string, SdoRegistryEntry> = {
+/**
+ * The registered server-driven type codes, in registry (= LLM tool-surface) order. The SAPRead/
+ * SAPWrite rows in src/handlers/tool-registry.ts derive from this tuple, so registering a type
+ * here is the ONLY step needed to expose it — `btp: true` by construction (every SDO type is
+ * 8.16+, and runtime availability is discovery-gated per system anyway).
+ */
+export const SDO_TYPES = ['DESD', 'DTSC', 'CSNM', 'EVTB', 'EVTO', 'COTA'] as const;
+
+/** Curated registry of high-value 816 server-driven object types — keys are exactly SDO_TYPES. */
+export const SDO_REGISTRY = {
   DESD: {
     href: '/sap/bc/adt/ddic/desd',
     label: 'CDS Logical External Schema',
@@ -89,7 +97,11 @@ export const SDO_REGISTRY: Record<string, SdoRegistryEntry> = {
     createType: 'COTA/TYP',
     blueContentType: BLUES_V1,
   },
-};
+} satisfies Record<(typeof SDO_TYPES)[number], SdoRegistryEntry>;
+
+// String-indexed view of the registry for the unknown-code lookups below (the satisfies-typed
+// object has exactly the SDO_TYPES keys, which a plain `string` cannot index).
+const REGISTRY_BY_CODE: Record<string, SdoRegistryEntry | undefined> = SDO_REGISTRY;
 
 /** True when `code` is one of the registered server-driven object types. */
 export function isServerDrivenObjectType(code: string): boolean {
@@ -98,7 +110,7 @@ export function isServerDrivenObjectType(code: string): boolean {
 
 /** Registry lookup that throws a clean 400 for an unknown code (shared by every engine fn). */
 function sdoEntry(code: string): SdoRegistryEntry {
-  const entry = SDO_REGISTRY[code];
+  const entry = REGISTRY_BY_CODE[code];
   if (!entry) throw new AdtApiError(`Unknown server-driven object type "${code}".`, 400, '');
   return entry;
 }
@@ -124,7 +136,7 @@ export function serverDrivenBlueContentType(code: string): string {
  * supportsExplicitTransportTarget() / supportsCdsTestCases(). Version-agnostic: matches v1 and v2.
  */
 export function supportsServerDrivenObject(http: AdtHttpClient, code: string): boolean | undefined {
-  const entry = SDO_REGISTRY[code];
+  const entry = REGISTRY_BY_CODE[code];
   if (!entry) return false;
   if (!http.hasDiscoveryData()) return undefined;
   return (http.discoveryAcceptFor(entry.href) ?? '').includes('blues');

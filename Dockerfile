@@ -33,7 +33,15 @@ LABEL io.modelcontextprotocol.server.name="io.github.marianfoo/arc-1"
 
 # tini: proper PID 1 init (handles SIGTERM gracefully)
 # ca-certificates: needed for HTTPS connections to SAP systems
-RUN apk add --no-cache tini ca-certificates
+#
+# apk upgrade first: node:22-alpine trails the Alpine 3.24 security repo, so its
+# bundled OS packages (libssl3/libcrypto3, busybox, zlib, …) periodically carry
+# fixed-upstream HIGH CVEs that block the gating Trivy scan in release.yml — e.g.
+# CVE-2026-45447 (openssl 3.5.6-r0 → 3.5.7-r0). Upgrading the OS layer to the
+# latest 3.24 patch level keeps the release image CVE-clean without waiting for a
+# base-image rebuild. Stays on the 3.24 branch (patch/security only) since the
+# node:22-alpine tag pins the Alpine release.
+RUN apk upgrade --no-cache && apk add --no-cache tini ca-certificates
 
 # Drop the bundled npm CLI from the runtime image. We exec `node dist/index.js`
 # directly, so npm/npx are never invoked at runtime — but their transitive

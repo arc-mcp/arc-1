@@ -5,7 +5,7 @@ import {
   parseServerArgs,
   planExtraction,
   toNetscapeCookieFile,
-} from '../../src/extract-sap-cookies.ts';
+} from '../../src/extract-sap-cookies.js';
 
 describe('extract-sap-cookies pure helpers', () => {
   it('parses server args with CLI URL taking precedence over env URL', () => {

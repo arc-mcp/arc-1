@@ -22,13 +22,13 @@ import { getActionPolicy, hasRequiredScope } from '../authz/policy.js';
 import type { Cache } from '../cache/cache.js';
 import { CachingLayer } from '../cache/caching-layer.js';
 import { MemoryCache } from '../cache/memory.js';
+import { handleToolCall } from '../handlers/dispatch.js';
 import {
   getCachedDiscovery,
   getCachedFeatures,
-  handleToolCall,
   setCachedDiscovery,
   setCachedFeatures,
-} from '../handlers/intent.js';
+} from '../handlers/feature-cache.js';
 import { getToolDefinitions, type ToolDefinition } from '../handlers/tools.js';
 import { API_KEY_PROFILES } from './config.js';
 import { isActionDenied } from './deny-actions.js';
