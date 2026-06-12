@@ -13,6 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { skipTest } from '../helpers/skip-policy.js';
 import {
   callTool,
+  classifyToolErrorSkip,
   connectClient,
   expectToolError,
   expectToolSuccess,
@@ -158,6 +159,7 @@ describe('E2E RAP Completeness Tests', () => {
     // on 7.5x the fixture's resolved real package tripped the activation
     // package-ceiling check (the 06-05 "package 'SABP' blocked" CI failures).
     const actNames: string[] = [];
+    let setupSkip: string | null = null;
 
     beforeAll(async () => {
       for (let i = 0; i < 2; i++) {
@@ -169,7 +171,18 @@ describe('E2E RAP Completeness Tests', () => {
           source: `REPORT ${name.toLowerCase()}.\nWRITE: / 'arc1 activate test'.`,
           package: '$TMP',
         });
-        expectToolSuccess(create);
+        if (create.isError) {
+          // A classified backend gap (e.g. NW 7.50 lock-handle 423) should SKIP
+          // these tests, not hard-fail them — matching every other create-in-test
+          // in this suite. beforeAll has no ctx, so stash the reason and skip in
+          // each test below.
+          const skip = classifyToolErrorSkip(create);
+          if (skip) {
+            setupSkip = skip;
+            return;
+          }
+          expectToolSuccess(create); // genuinely unexpected → fail loudly
+        }
         actNames.push(name);
       }
     });
@@ -184,13 +197,21 @@ describe('E2E RAP Completeness Tests', () => {
       }
     });
 
-    it('activates a single object successfully', async () => {
+    it('activates a single object successfully', async (ctx) => {
+      if (setupSkip) {
+        skipTest(ctx, setupSkip);
+        return;
+      }
       const result = await callTool(client, 'SAPActivate', { type: 'PROG', name: actNames[0] });
       const text = expectToolSuccess(result);
       expect(text).toContain(actNames[0]);
     });
 
-    it('batch activates multiple objects together', async () => {
+    it('batch activates multiple objects together', async (ctx) => {
+      if (setupSkip) {
+        skipTest(ctx, setupSkip);
+        return;
+      }
       const result = await callTool(client, 'SAPActivate', {
         objects: actNames.map((name) => ({ type: 'PROG', name })),
       });
