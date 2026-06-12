@@ -63,6 +63,7 @@
     "test:e2e:slow": "npm run test:e2e:fixtures && vitest run --config tests/e2e/vitest.e2e.slow.config.ts",
     "test:e2e:fixtures": "tsx tests/e2e/sync-fixtures.ts",
     "test:e2e:fixtures:clean": "tsx tests/e2e/sync-fixtures.ts --clean",
+    "test:cleanup": "tsx scripts/test-janitor.ts",
     "test:e2e:start": "bash scripts/e2e-start-local.sh",
     "test:e2e:stop": "bash scripts/e2e-stop-local.sh",
     "test:e2e:deploy": "bash scripts/e2e-deploy.sh",
