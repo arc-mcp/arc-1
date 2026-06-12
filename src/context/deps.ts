@@ -15,7 +15,8 @@
  * - exception:      RAISING <name>, CATCH <name>
  */
 
-import { Config, Expressions, MemoryFile, Registry, Statements, Version } from '@abaplint/core';
+import { Expressions, MemoryFile, Registry, Statements, Version } from '@abaplint/core';
+import { getDefaultAbaplintConfig } from '../lint/abaplint-config-cache.js';
 import { detectFilename } from '../lint/lint.js';
 import type { Dependency, DependencyKind } from './types.js';
 
@@ -111,7 +112,7 @@ export function extractDependencies(
 ): Dependency[] {
   // Normalize CRLF → LF (SAP ADT returns CRLF which can break abaplint parsing)
   const normalizedSource = source.replace(/\r\n/g, '\n');
-  const config = Config.getDefault(abaplintVersion ?? ABAPLINT_VERSION);
+  const config = getDefaultAbaplintConfig(abaplintVersion ?? ABAPLINT_VERSION);
   const filename = detectFilename(normalizedSource, objectName);
   const reg = new Registry(config);
   reg.addFile(new MemoryFile(filename, normalizedSource));

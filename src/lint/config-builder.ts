@@ -25,6 +25,7 @@ import { readFileSync } from 'node:fs';
 import { Config, Version } from '@abaplint/core';
 import { isBeyondAbaplintCeiling, mapSapReleaseToAbaplintVersion } from '../adt/features.js';
 import type { SystemType } from '../adt/types.js';
+import { cloneDefaultAbaplintConfig } from './abaplint-config-cache.js';
 import { CLOUD_DISABLED_RULES, CLOUD_ERROR_RULES, CLOUD_WARNING_RULES } from './presets/cloud.js';
 import { ONPREM_DISABLED_RULES, ONPREM_ERROR_RULES, ONPREM_WARNING_RULES } from './presets/onprem.js';
 
@@ -54,8 +55,7 @@ export interface LintConfigOptions {
  */
 export function buildLintConfig(options: LintConfigOptions = {}): Config {
   const version = resolveVersion(options);
-  const base = Config.getDefault(version);
-  const raw = JSON.parse(JSON.stringify(base.get())) as Record<string, unknown>;
+  const raw = cloneDefaultAbaplintConfig(version);
 
   // Apply system preset
   const preset = options.systemType === 'btp' ? 'cloud' : 'onprem';
@@ -92,8 +92,7 @@ export function buildLintConfig(options: LintConfigOptions = {}): Config {
  */
 export function buildPreWriteConfig(options: LintConfigOptions = {}): Config {
   const version = resolveVersion(options);
-  const base = Config.getDefault(version);
-  const raw = JSON.parse(JSON.stringify(base.get())) as Record<string, unknown>;
+  const raw = cloneDefaultAbaplintConfig(version);
   const rules = raw.rules as Record<string, unknown>;
 
   // Disable ALL rules first
