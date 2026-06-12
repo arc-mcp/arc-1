@@ -558,6 +558,49 @@ describe('SAPRead handler', () => {
       expect(url).toContain('maxResults=750');
     });
 
+    it('accepts a float maxResults end-to-end and clamps it at the sink (advertised contract)', async () => {
+      // An LLM following the published schema (`type: number`, "clamped to [1, 1000]") may send
+      // 50.5 — which previously returned a Zod "expected int" error. It must now succeed and floor
+      // to 50. See docs/research/maxresults-contract-asymmetry.md.
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(
+        mockResponse(
+          200,
+          `<?xml version="1.0" encoding="utf-8"?>
+<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core"/>`,
+        ),
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'DEVC',
+        name: 'ZPKG',
+        maxResults: 50.5,
+      });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text ?? '').not.toContain('Invalid arguments');
+      const url = String(mockFetch.mock.calls[0]?.[0] ?? '');
+      expect(url).toContain('maxResults=50');
+      // 'maxResults=50' is a substring of the un-floored 'maxResults=50.5' — pin the floor too.
+      expect(url).not.toContain('maxResults=50.5');
+    });
+
+    it('accepts an out-of-range maxResults end-to-end and clamps to 1000 (the promised clamping)', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(
+        mockResponse(
+          200,
+          `<?xml version="1.0" encoding="utf-8"?>
+<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core"/>`,
+        ),
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'DEVC',
+        name: 'ZPKG',
+        maxResults: 1001,
+      });
+      expect(result.isError).toBeUndefined();
+      expect(String(mockFetch.mock.calls[0]?.[0] ?? '')).toContain('maxResults=1000');
+    });
+
     it('reads installed components (COMPONENTS)', async () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
         type: 'COMPONENTS',

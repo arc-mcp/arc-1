@@ -118,10 +118,23 @@ describe('SAPReadSchema', () => {
     }
   });
 
-  it('rejects DEVC maxResults out of range (0, 1001, negative)', () => {
-    expect(SAPReadSchema.safeParse({ type: 'DEVC', name: 'ZPKG', maxResults: 0 }).success).toBe(false);
-    expect(SAPReadSchema.safeParse({ type: 'DEVC', name: 'ZPKG', maxResults: 1001 }).success).toBe(false);
-    expect(SAPReadSchema.safeParse({ type: 'DEVC', name: 'ZPKG', maxResults: -1 }).success).toBe(false);
+  it('accepts out-of-range and float DEVC maxResults (clamping happens at the sink)', () => {
+    // The JSON Schema advertises maxResults as `type: number` and the DEVC description promises
+    // "clamped to [1, 1000]" — so the schema must ACCEPT these and round-trip the raw value;
+    // floor + range handling is the sink's job (getPackageContents). See
+    // docs/research/maxresults-contract-asymmetry.md.
+    for (const v of [0, 1001, -1, 50.5]) {
+      const r = SAPReadSchema.safeParse({ type: 'DEVC', name: 'ZPKG', maxResults: v });
+      expect(r.success, `maxResults ${v} should parse`).toBe(true);
+      if (r.success) expect(r.data.maxResults).toBe(v);
+    }
+  });
+
+  it('rejects non-numeric DEVC maxResults — and agrees with SAPSearchSchema (the contract twin)', () => {
+    // z.coerce.number() turns "abc" into NaN, which z.number() rejects. Both schemas must behave
+    // identically now that SAPRead no longer carries the divergent .int()/.min/.max.
+    expect(SAPReadSchema.safeParse({ type: 'DEVC', name: 'ZPKG', maxResults: 'abc' }).success).toBe(false);
+    expect(SAPSearchSchema.safeParse({ query: 'X', maxResults: 'abc' }).success).toBe(false);
   });
 
   it('accepts SAPRead without maxResults (it is optional)', () => {
