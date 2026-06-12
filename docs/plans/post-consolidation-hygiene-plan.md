@@ -146,37 +146,32 @@ The local helper is appropriately specialized; no real divergence risk (they moc
 **Acceptance met:** 3,723 tests green (count unchanged); zero `as ResolvedFeatures` in
 tests/unit/handlers; no fixture diff; full gate. **Risk:** none.
 
-## PR 5 — Zod → JSON Schema generation (spike first, GO/NO-GO)
+## PR 5 — Zod → JSON Schema generation (spike → **NO-GO** → sync-test fallback)
 
-**Status: planned; checkpoint after PR 4 merge. The only LLM-surface-touching PR — highest rigor.**
+**Status: DONE (branch pr5-zod-jsonschema-spike).** The spike ran via `/deep-feature`; full evidence
+in [docs/research/zod-to-jsonschema-spike.md](../research/zod-to-jsonschema-spike.md).
 
-Today `schemas.ts` (Zod, 919 lines) and `tools.ts` (hand-written JSON Schema, 1,587 lines,
-263 `description:` strings) define the same 12 tool surfaces twice — the root of the "three-file
-sync" invariant. Codex's complication list is real and verified: ~50 `z.preprocess`/
-`looseOptionalBoolean` usages + 4 `superRefine` blocks in schemas.ts (superRefine is
-runtime-only — fine; `z.preprocess` is where `z.toJSONSchema()` needs explicit input types or
-overrides), feature-gated enums, BTP/on-prem variants, OpenAI-compat nullable handling, and rich
-LLM-facing prose that must survive byte-for-byte.
+**Spike result — NO-GO on full generation.** The premise (descriptions live in `.describe()` and
+come along for free) is empirically false: across all of `schemas.ts` there are **2** `.describe()`
+calls vs **263** hand-written `description:` strings in `tools.ts`, so `z.toJSONSchema()` produces a
+schema with **0/53** descriptions on SAPWrite. Generation would mean hand-migrating 263 LLM-facing
+strings into Zod — the exact high-risk surface the spike was meant to de-risk — for a benefit
+already captured by existing guards. Also found: `.transform()` fields make `z.toJSONSchema` *throw*
+(`siblingMaxCandidates`), and the SAPWrite-only `makeOptionalPropertiesNullable` quirk isn't
+reproduced. Net: a lot of LLM-surface risk for a drift class that's already ~covered.
 
-**Phase A — spike (no behavior change, throwaway branch):** generate JSON Schema for ONE complex
-tool (SAPWrite) via `z.toJSONSchema()`; write a semantic differ (deep-equal modulo key order +
-formatting) against the hand-written schema; inventory every divergence class:
-`looseOptionalBoolean` → must emit plain `{type:'boolean'}` (what LLMs should send, not what Zod
-accepts), enum pruning parity for all 9 fixture variants, `items`/array shapes, nullability,
-description placement. Output: a divergence table + **GO/NO-GO**.
-**Phase B(GO):** generate `inputSchema` for all tools from the Zod schemas (per-field overrides
-where preprocess obscures the wire type); tool-level prose stays as constants; regenerate the 9
-snapshot fixtures **intentionally** (the one legitimate `vitest -u`), with a committed semantic
-proof: a test asserting old-vs-new schema deep-equality modulo formatting, plus a reviewed fixture
-diff. Three-file sync becomes two-file (registry + Zod). AGENTS.md invariant row updated.
-**Phase B(NO-GO fallback):** keep hand-written tools.ts but add a **semantic sync test**
-(Zod-derived schema ≅ hand-written, modulo the inventoried acceptable divergences) — the drift
-class dies either way; generation can be revisited later.
-**Acceptance (Codex's criteria, adopted):** preserve every description, preserve
-nullable/optional-field semantics, preserve array `items`, regenerate snapshots intentionally with
-semantic-comparison tests, MCP client smoke (e2e suite) green. Commit: `refactor(handlers):` if
-output is semantically identical; anything user-visible beyond formatting → stop and re-plan.
-**Risk:** the LLM-visible surface — bounded by the spike's GO/NO-GO and the semantic differ.
+**Shipped — the NO-GO fallback** (`test(handlers):`, no LLM-surface change, no fixture regen):
+`zod-jsonschema-parity.test.ts` derives each tool's JSON Schema from Zod via `z.toJSONSchema()` and
+asserts per-property base-type + enum-membership parity vs the hand-written `tools.ts` (modulo
+descriptions + the nullable wrap + `.transform()` fields). This closes the ONE drift sliver the
+existing guards miss — a field's base type changed in Zod but not tools.ts (boolean→string) passes
+key-sync, the snapshot, AND registry-sync, yet silently makes Zod reject what the LLM is told is
+valid. Mutation-proven (flip `depth` number→string → 2 failures). The stale `schemas.ts` header
+("generation planned for a future PR") now records the decision + the four guards.
+
+**Sync coverage after this PR:** key set (schema-key-sync) ∧ type enums (registry-sync) ∧
+per-property base type (zod-jsonschema-parity) ∧ exact bytes (tool-definitions-snapshot).
+**Revisit generation only if** descriptions are ever migrated into Zod for an independent reason.
 
 ## Parked (explicit non-goals until triggered)
 
