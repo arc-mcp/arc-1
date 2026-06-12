@@ -577,7 +577,10 @@ describe('SAPRead handler', () => {
       });
       expect(result.isError).toBeUndefined();
       expect(result.content[0]?.text ?? '').not.toContain('Invalid arguments');
-      expect(String(mockFetch.mock.calls[0]?.[0] ?? '')).toContain('maxResults=50');
+      const url = String(mockFetch.mock.calls[0]?.[0] ?? '');
+      expect(url).toContain('maxResults=50');
+      // 'maxResults=50' is a substring of the un-floored 'maxResults=50.5' — pin the floor too.
+      expect(url).not.toContain('maxResults=50.5');
     });
 
     it('accepts an out-of-range maxResults end-to-end and clamps to 1000 (the promised clamping)', async () => {

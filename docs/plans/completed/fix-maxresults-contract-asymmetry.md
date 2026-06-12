@@ -1,5 +1,12 @@
 # Fix the `maxResults` contract asymmetry (advertised `number`, SAPRead rejects floats + out-of-range)
 
+> **As shipped (deviation note):** the plan inventoried THREE unfloored inline sinks; Task 2's
+> sink-inventory closeout grep found a FOURTH during execution — `getSubpackages`
+> (`client.ts:~1259`, identical clamp shape) — exactly the drift class that checkbox exists to
+> catch. The shipped commit floors all FOUR via one shared `clampUrlLimit` helper. The dossier's
+> status header records the final inventory; sink counts in the plan body below are the
+> as-planned numbers.
+
 ## Overview
 
 The LLM-visible JSON Schema advertises `maxResults` as `type: 'number'` on every tool that has it,
@@ -205,7 +212,8 @@ DEVC dispatch tests in `read.test.ts` (grep `getPackageContents` there for the m
       test: `maxResults: 1001` → URL contains `maxResults=1000` (the promised clamping, end to end).
 - [ ] Update the dossier `docs/research/maxresults-contract-asymmetry.md`: flip the Status header to
       "Implemented — see docs/plans/completed/fix-maxresults-contract-asymmetry.md" and append a
-      one-line note that flooring landed at the two inline sinks.
+      one-line note that flooring landed at the inline sinks (as shipped: four — see the deviation
+      note at the top).
 - [ ] Run `npm test` — all green.
 
 ### Task 4: Final verification

@@ -1003,16 +1003,20 @@ describe('AdtClient', () => {
     it('floors a fractional maxResults and falls back to default on NaN (no float reaches the URL)', async () => {
       // SAPReadSchema now accepts any number (the advertised `type: number` contract); flooring +
       // range handling is this sink's job — see docs/research/maxresults-contract-asymmetry.md.
+      // NOTE: 'maxResults=50' is a SUBSTRING of the un-floored 'maxResults=50.5', so each row also
+      // pins the absence of the raw input — without that, the toContain is vacuous for floats.
       const client = createClient();
-      for (const [input, expected] of [
-        [50.5, 'maxResults=50'],
-        [0.4, 'maxResults=1'],
-        [Number.NaN, 'maxResults=200'],
+      for (const [input, expected, mustNotContain] of [
+        [50.5, 'maxResults=50', 'maxResults=50.5'],
+        [0.4, 'maxResults=1', 'maxResults=0.4'],
+        [Number.NaN, 'maxResults=200', 'maxResults=NaN'],
       ] as const) {
         mockFetch.mockReset();
         mockFetch.mockResolvedValue(mockResponse(200, SEARCH_RESPONSE));
         await client.getPackageContents('ZPARENT', input);
-        expect(String(mockFetch.mock.calls[0]?.[0] ?? '')).toContain(expected);
+        const url = String(mockFetch.mock.calls[0]?.[0] ?? '');
+        expect(url).toContain(expected);
+        expect(url).not.toContain(mustNotContain);
       }
     });
 
