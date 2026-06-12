@@ -8,7 +8,35 @@
  */
 
 import { readFileSync } from 'node:fs';
+import { createServer } from 'node:net';
 import { pathToFileURL } from 'node:url';
+
+/**
+ * Generate a short, letters-only run id (3 uppercase A-Z chars). Letters-only so
+ * it survives tests/helpers/run-id.ts sanitization unchanged and is valid inside
+ * BDEF/CDS identifiers. `rng` is injectable for deterministic tests.
+ */
+export function generateRunId(rng = Math.random) {
+  let n = Math.floor(rng() * 26 * 26 * 26);
+  let s = '';
+  for (let i = 0; i < 3; i++) {
+    s = String.fromCharCode(65 + (n % 26)) + s;
+    n = Math.floor(n / 26);
+  }
+  return s;
+}
+
+/** Resolve a free TCP port by binding to port 0 and reading the assigned port. */
+export function findFreePort() {
+  return new Promise((resolve, reject) => {
+    const srv = createServer();
+    srv.on('error', reject);
+    srv.listen(0, () => {
+      const { port } = srv.address();
+      srv.close(() => resolve(port));
+    });
+  });
+}
 
 export function readHealthField(rawJson, field) {
   try {
@@ -104,7 +132,17 @@ async function main() {
     return;
   }
 
-  console.error('Usage: node scripts/e2e-local-utils.mjs <health-field|error-summary> ...');
+  if (command === 'run-id') {
+    console.log(generateRunId());
+    return;
+  }
+
+  if (command === 'free-port') {
+    console.log(await findFreePort());
+    return;
+  }
+
+  console.error('Usage: node scripts/e2e-local-utils.mjs <health-field|error-summary|run-id|free-port> ...');
   process.exitCode = 1;
 }
 

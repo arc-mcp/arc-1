@@ -15,12 +15,12 @@ set -euo pipefail
 # ── Per-run identity ─────────────────────────────────────────────────
 # Short alphanumeric token; also exported as TEST_RUN_ID so the TS layer
 # (tests/helpers/run-id.ts) stamps the SAME id into generated object names.
-RUN_ID="${TEST_RUN_ID:-$(node -e "process.stdout.write((Math.floor(Math.random()*46656)).toString(36).toUpperCase().padStart(3,'0'))")}"
+RUN_ID="${TEST_RUN_ID:-$(node scripts/e2e-local-utils.mjs run-id)}"
 export TEST_RUN_ID="${RUN_ID}"
 
 # ── Free port (unless caller pinned one) ─────────────────────────────
 if [ -z "${E2E_MCP_PORT:-}" ]; then
-  E2E_MCP_PORT="$(node -e "const s=require('net').createServer();s.listen(0,()=>{const p=s.address().port;s.close(()=>process.stdout.write(String(p)))})")"
+  E2E_MCP_PORT="$(node scripts/e2e-local-utils.mjs free-port)"
   # The port was just probed free — tell the start script not to sweep it
   # (sweeping is the "kill whatever is on this port" belt-and-suspenders that
   # must never reach into another run).
@@ -57,6 +57,12 @@ fi
 
 # ── build → start → test → stop ──────────────────────────────────────
 npm run build
+
+# Always stop the server, even if start or the tests fail under `set -e`. The old
+# inline test:e2e:full ran stop unconditionally; this trap preserves that so a
+# failed start can never leak the spawned (write-enabled) MCP server.
+trap 'npm run test:e2e:stop || true' EXIT
+
 npm run test:e2e:start
 
 set +e
@@ -64,5 +70,4 @@ npm run test:e2e
 TEST_EXIT=$?
 set -e
 
-npm run test:e2e:stop || true
 exit "${TEST_EXIT}"

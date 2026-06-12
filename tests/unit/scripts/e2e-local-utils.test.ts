@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { isErrorLogLine, readHealthField, summarizeLogErrors } from '../../../scripts/e2e-local-utils.mjs';
+import {
+  generateRunId,
+  isErrorLogLine,
+  readHealthField,
+  summarizeLogErrors,
+} from '../../../scripts/e2e-local-utils.mjs';
 
 describe('e2e-local-utils', () => {
   describe('readHealthField', () => {
@@ -19,6 +24,17 @@ describe('e2e-local-utils', () => {
       expect(readHealthField('{"version":"0.9.6"}', 'startedAt')).toBe('unknown');
       expect(readHealthField('{"version":{"nested":true}}', 'version')).toBe('unknown');
       expect(readHealthField('{not-json', 'version')).toBe('unknown');
+    });
+  });
+
+  describe('generateRunId', () => {
+    it('produces 3 uppercase letters', () => {
+      expect(generateRunId()).toMatch(/^[A-Z]{3}$/);
+    });
+
+    it('is deterministic given an injected rng and spans the full A-Z range', () => {
+      expect(generateRunId(() => 0)).toBe('AAA');
+      expect(generateRunId(() => 0.9999999)).toBe('ZZZ');
     });
   });
 

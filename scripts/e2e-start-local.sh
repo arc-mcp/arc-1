@@ -121,4 +121,8 @@ echo "   PID alive: $(kill -0 $NEW_PID 2>/dev/null && echo 'yes' || echo 'NO')"
 echo "-- Server log (last 50 lines): --"
 tail -50 "${LOG_FILE}"
 echo "-- End of server log --"
+# Don't leak the server we just spawned — it may still be coming up and would
+# otherwise hold SAP sessions with no owner. Diagnostics are already printed above.
+kill "$NEW_PID" 2>/dev/null || true
+rm -f "$PID_FILE"
 exit 1
