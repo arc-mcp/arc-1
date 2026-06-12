@@ -11,7 +11,14 @@
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { skipTest } from '../helpers/skip-policy.js';
-import { callTool, connectClient, expectToolError, expectToolSuccess, expectToolSuccessOrSkip } from './helpers.js';
+import {
+  callTool,
+  connectClient,
+  expectToolError,
+  expectToolSuccess,
+  expectToolSuccessOrSkip,
+  uniqueName,
+} from './helpers.js';
 
 function parsePossiblyCachedJson(text: string): any {
   return JSON.parse(text.replace(/^\[cached(?::revalidated)?\]\n/, ''));
@@ -145,28 +152,52 @@ describe('E2E RAP Completeness Tests', () => {
   // ── SAPActivate: Single + Batch ───────────────────────────────────
 
   describe('SAPActivate', () => {
+    // Use transient $TMP programs created per run rather than activating the
+    // shared persistent fixtures (ZARC1_TEST_REPORT / ZCL_ARC1_TEST). Mutating
+    // those caused cross-run 423 lock conflicts when two runs overlapped, and
+    // on 7.5x the fixture's resolved real package tripped the activation
+    // package-ceiling check (the 06-05 "package 'SABP' blocked" CI failures).
+    const actNames: string[] = [];
+
+    beforeAll(async () => {
+      for (let i = 0; i < 2; i++) {
+        const name = uniqueName(`ZARC1_ACT${i}`);
+        const create = await callTool(client, 'SAPWrite', {
+          action: 'create',
+          type: 'PROG',
+          name,
+          source: `REPORT ${name.toLowerCase()}.\nWRITE: / 'arc1 activate test'.`,
+          package: '$TMP',
+        });
+        expectToolSuccess(create);
+        actNames.push(name);
+      }
+    });
+
+    afterAll(async () => {
+      for (const name of actNames) {
+        try {
+          await callTool(client, 'SAPWrite', { action: 'delete', type: 'PROG', name });
+        } catch {
+          // best-effort-cleanup
+        }
+      }
+    });
+
     it('activates a single object successfully', async () => {
-      // Activating an already-active managed fixture is a no-op, but still
-      // exercises SAPActivate inside the CI allowedPackages ceiling.
-      const result = await callTool(client, 'SAPActivate', {
-        type: 'PROG',
-        name: 'ZARC1_TEST_REPORT',
-      });
+      const result = await callTool(client, 'SAPActivate', { type: 'PROG', name: actNames[0] });
       const text = expectToolSuccess(result);
-      expect(text).toContain('ZARC1_TEST_REPORT');
+      expect(text).toContain(actNames[0]);
     });
 
     it('batch activates multiple objects together', async () => {
       const result = await callTool(client, 'SAPActivate', {
-        objects: [
-          { type: 'PROG', name: 'ZARC1_TEST_REPORT' },
-          { type: 'CLAS', name: 'ZCL_ARC1_TEST' },
-        ],
+        objects: actNames.map((name) => ({ type: 'PROG', name })),
       });
       const text = expectToolSuccess(result);
       expect(text).toContain('2 objects');
-      expect(text).toContain('ZARC1_TEST_REPORT');
-      expect(text).toContain('ZCL_ARC1_TEST');
+      expect(text).toContain(actNames[0]);
+      expect(text).toContain(actNames[1]);
     });
   });
 
