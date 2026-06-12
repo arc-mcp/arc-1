@@ -144,8 +144,9 @@ including 429, is the system under test and must never be retried).
       only the bare reject changes.
 - [ ] Add one failure-path unit test (~1 test) in a new `describe('test helpers')`:
       create `withJsonServer`, `await close()` it, then `post()` → expect the rejection message to
-      match `/POST \/authorize request #\d+ failed: /` (proves the context wrapper; the retry path
-      is exercised implicitly since ECONNREFUSED to a closed server retries once then rejects).
+      match `/POST \/authorize request #\d+ failed/` — no trailing `: ` since the retry path's
+      message is "failed after retry: <code>" (proves the context wrapper; the retry path is
+      exercised implicitly since ECONNREFUSED to a closed server retries once then rejects).
 - [ ] Run `npx vitest run tests/unit/server/auth-rate-limit.test.ts` — 17/17 green, then
       `npm test` — all green.
 

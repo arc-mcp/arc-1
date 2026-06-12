@@ -57,6 +57,12 @@ async function fireRequests(
         },
         (response) => {
           response.on('data', () => {});
+          // A reset between headers and body emits 'error' on the IncomingMessage, NOT on req —
+          // without this handler the promise never settles and vitest dies with a context-free
+          // unhandled error (the exact bare-failure class this helper exists to eliminate).
+          response.on('error', (err: NodeJS.ErrnoException) =>
+            reject(new Error(`GET /test request #${i + 1} response failed: ${err.code ?? err.message}`)),
+          );
           response.on('end', () => {
             resolve({
               status: response.statusCode ?? 0,
@@ -195,6 +201,11 @@ describe('/authorize JSON-RPC dispatch (Copilot Studio MCP fix via skip())', () 
 
   // Transport errors (no HTTP response at all) that are worth one retry under full-suite load.
   // An HTTP response — including 429, the behavior under test — never reaches the retry path.
+  // Known residual (accepted): a request the server COUNTED but whose response bytes were lost
+  // mid-flight also surfaces as ECONNRESET; the retry then consumes a second bucket slot, which
+  // could flip an expected 200 into 429 one request early. On loopback the realistic ECONNRESET
+  // causes are connect-phase/stale-socket resets the server never counted, so the retry is the
+  // right trade-off — and the console.warn below leaves a breadcrumb if the double-count ever bites.
   const TRANSIENT_CODES = new Set(['ECONNRESET', 'ECONNREFUSED', 'EADDRNOTAVAIL']);
 
   /**
@@ -237,6 +248,9 @@ describe('/authorize JSON-RPC dispatch (Copilot Studio MCP fix via skip())', () 
           },
           (response) => {
             response.on('data', () => {});
+            // Mid-body resets emit 'error' on the IncomingMessage, not on req — without this the
+            // promise never settles (the bare-failure class this helper exists to eliminate).
+            response.on('error', reject);
             response.on('end', () => {
               resolve({
                 status: response.statusCode ?? 0,
