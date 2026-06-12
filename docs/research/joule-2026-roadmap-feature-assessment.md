@@ -5,6 +5,12 @@
 > **Method:** Code audit of `src/handlers/intent.ts`, `src/adt/*`, and `src/aff/schemas/*`; web research across SAP Help + SAP Community + Sapphire 2026 sessions; GitHub code search for ADT REST endpoints (`marcellourbani/abap-adt-api`, `abapify/adt-cli`, `SAP/open-ux-tools`); cross-reference with prior research in [`compare/J4D/01-joule-for-developers.md`](../../compare/J4D/01-joule-for-developers.md) and [`compare/J4D/02-sap-abap-mcp-server-vscode.md`](../../compare/J4D/02-sap-abap-mcp-server-vscode.md).
 > **Date:** 2026-05-13.
 
+> **Code-location note (post-#402):** this assessment predates the `src/handlers/intent.ts` split.
+> Its `src/handlers/intent.ts` paths and line numbers are stale — the handlers are now per-tool
+> modules (`read.ts`, `write.ts`, `dispatch.ts`, …) and the XML builders (`buildCreateXml`) live in
+> `write-helpers.ts`. Re-verify each touchpoint against [AGENTS.md](../../AGENTS.md) before
+> implementing.
+
 ---
 
 ## TL;DR

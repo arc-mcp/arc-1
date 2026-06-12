@@ -91,26 +91,37 @@ Commit: `refactor(adt):` (no release).
 
 ## PR 3 — `docs:` truth pass (bounded)
 
-**Status: planned; checkpoint after PR 2 merge.**
+**Status: DONE (branch pr3-docs-truth).** Scope was **current-guidance accuracy, not history
+rewriting** (Codex's bound, adopted). The checkpoint's authoritative grep found 23 intent.ts-bearing
+doc files — far more than the original scoped sweep — so the bound tightened: dated audits, ADRs,
+and deep research snapshots are faithful point-in-time records and were **left as-is**; only live
+guidance and concrete broken-link defects were fixed.
 
-Scope is **current-guidance accuracy, not history rewriting** (Codex's bound, adopted):
+1. **Plan moves (commit 1):** `architecture-consolidation-{plan,progress}.md` (#402) +
+   `test-split-and-typecheck-plan.md` (#405) → `completed/`; AGENTS.md History link + 3 stale
+   headers + README cleanup log fixed. Triage of the other ~27 plans: **none** moved — the 3 were
+   the only ones whose own header said executed (`fiori-deployment-research.md`'s "Implemented" is a
+   phase status that the still-backlog `phase4-deploy-fiori-app.md` references, so it stays).
+2. **Code-side path refs (commit 2):** the file-size ratchet comment **and its CI failure message**,
+   the tool-definitions-snapshot header, and the object-types.ts comment repointed to `completed/`.
+3. **intent.ts truth pass (commit 3), bounded:** `docs_page/roadmap.md` got one point-in-time note
+   + a fix to the single forward-looking line (the "edit six files … intent.ts" extension-point
+   rationale); `tool-extension-points.md` got its 3 **broken clickable links** repointed to the
+   real `dispatch.ts:651`/`:488` + a top note; `joule-…-assessment.md` and `spau-…-access.md`
+   (forward-looking proposals) got one snapshot note each. **Deliberately NOT touched:** ADRs
+   0001/0003/0004 (immutable decision records), the dated security audits/reviews (already carry a
+   #402 note; their links point at the `handlers/` dir, not the dead file), and the ~12 deep
+   research snapshots — annotating those is the "rewrite every historical doc" Codex warned against.
 
-1. Move the three known-executed plans to `docs/plans/completed/`:
-   `architecture-consolidation-plan.md`, `architecture-consolidation-progress.md`,
-   `test-split-and-typecheck-plan.md` — and fix the AGENTS.md "History" link that points at the
-   progress file. Mark the first one's stale "Proposed — v2 for owner review" header as executed
-   (PR #402).
-2. Quick status triage of the other ~27 top-level plans: move ONLY those whose own header already
-   says done/shipped; touch nothing ambiguous.
-3. Fix references that present the deleted `src/handlers/intent.ts` as CURRENT:
-   `docs_page/roadmap.md` (8 line refs — public site) and
-   `docs/research/joule-2026-roadmap-feature-assessment.md` (describes the consolidation as future
-   work). Frame as "implemented in the former intent.ts, split into per-tool modules in #402" —
-   do not rewrite historical changelog entries.
-
-**Acceptance:** `grep -rn "handlers/intent.ts" docs_page/ docs/research/ README.md` returns only
-clearly-historical phrasing; AGENTS.md links resolve; no source changes.
-**Risk:** broken links only — grep-verify all moved-file references.
+**Acceptance met:** every remaining `handlers/intent.ts` mention in *live guidance* (AGENTS.md,
+dev-guide, security-model, the public roadmap, the touched research docs) is accurate or behind a
+snapshot note; the moved-plan paths grep to zero outside `completed/`; AGENTS.md links resolve; the
+only source-tree change is comment/CI-string text. **Explicitly out of scope as a class** (treated
+like a changelog — point-in-time records, not current guidance): `docs/adr/*` (immutable decision
+records) and the rest of `docs/plans/*` (active backlog + `completed/`), which still carry
+`intent.ts:NNNN` refs from when they were written. A few backlog plans (`pr-alpha/beta/gamma`,
+`discovery-driven-endpoint-routing`) describe since-shipped #196-era work and are completed-but-not-
+moved — a separate triage can move them; this PR does not expand into the backlog. **Risk:** links only.
 
 ## PR 4 — `test:`/`chore:` small hygiene batch
 

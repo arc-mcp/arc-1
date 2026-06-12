@@ -2,6 +2,11 @@
 
 **Date:** 2026-04-26
 **Status:** Research / Not yet decided — design only, no implementation in this PR
+
+> **Code-location note (post-#402):** this doc predates the `src/handlers/intent.ts` split. The
+> `switch (toolName)` router + `tool_call_*` audit wrapper now live in `src/handlers/dispatch.ts`
+> (`handleToolCall`); per-tool logic is in `read.ts`/`write.ts`/etc. The clickable table/step links
+> point at the current locations; remaining prose that says "intent.ts" means today's `dispatch.ts`.
 **Related roadmap:** [FEAT-61: Tool Extension Points (Custom Tools)](../../docs_page/roadmap.md#feat-61)
 **Related (deferred):** FEAT-29g (Embeddable server mode), FEAT-59 (Multi-tenant per-instance config), FEAT-26 (MCP Client Config Snippets)
 
@@ -48,11 +53,11 @@ A built-in tool such as `SAPRead` is split across six places. Any extension cont
 | MCP tool definition (name, description, JSON schema) | [src/handlers/tools.ts](../../src/handlers/tools.ts) | Hand-written `ToolDefinition` plus BTP/on-prem variants | One `defineTool()` call returns the definition |
 | Runtime input validation | [src/handlers/schemas.ts](../../src/handlers/schemas.ts) | Zod v4 schema, BTP/on-prem variants, `getToolSchema()` lookup | Same Zod schema, exposed by the plugin |
 | Scope + opType + featureGate | [src/authz/policy.ts](../../src/authz/policy.ts) (`ACTION_POLICY`) | Static map, validated by `scripts/validate-action-policy.ts` | One entry per (tool, action) declared by the plugin |
-| Routing | [src/handlers/intent.ts:1104](../../src/handlers/intent.ts#L1104) (`switch (toolName)`) | Hand-written switch | Plugin tools route via the registry, not the switch |
+| Routing | [src/handlers/dispatch.ts:651](../../src/handlers/dispatch.ts#L651) (`switch (toolName)`) | Hand-written switch | Plugin tools route via the registry, not the switch |
 | Hyperfocused mapping | [src/handlers/hyperfocused.ts](../../src/handlers/hyperfocused.ts) (`ACTION_TO_TOOL`) | Static map | Plugin opts in by exposing a hyperfocused action key |
 | BTP/on-prem variant | tools.ts + schemas.ts BTP arrays | Two enums per tool | Plugin declares `availableOn: ['onprem','btp']` (or `'all'`) |
 | Scope-aware listing pruning | [src/server/server.ts:101](../../src/server/server.ts#L101) | Reads `ACTION_POLICY` | Same code, no change — relies on (3) |
-| Audit logging | [src/handlers/intent.ts:1011](../../src/handlers/intent.ts#L1011) | `tool_call_start` / `tool_call_end` wrapper | Plugin code never logs `tool_call_*` itself; the framework wraps |
+| Audit logging | [src/handlers/dispatch.ts:488](../../src/handlers/dispatch.ts#L488) | `tool_call_start` / `tool_call_end` wrapper | Plugin code never logs `tool_call_*` itself; the framework wraps |
 
 The intent surface is intentionally narrow — there are 12 built-in tools, not 200. Extensions must follow the same intent-based shape: small N of well-described tools, each with `action`/`type` enums. A plugin that adds 50 micro-tools defeats the whole point of the design.
 
@@ -430,7 +435,7 @@ Listed so the next implementer does not rediscover them.
 A single, narrow PR that ships **Phase 0 + Phase 1** together:
 
 1. Move public symbols into a stable `src/public/` (or `package.json#exports`) re-export path; document them in `docs_page/extension-api.md`.
-2. Refactor [src/handlers/intent.ts:1104](../../src/handlers/intent.ts#L1104) `switch (toolName)` to dispatch through a `ToolRegistry`, and register all 12 built-ins into it at server start. No external behaviour change.
+2. Refactor [src/handlers/dispatch.ts:651](../../src/handlers/dispatch.ts#L651) `switch (toolName)` to dispatch through a `ToolRegistry`, and register all 12 built-ins into it at server start. No external behaviour change.
 3. Add `defineTool` and the `ToolContext` types to the public surface. Convert one built-in tool (suggest `SAPManage` with action `cache_stats` — read-only, simple) to register through `defineTool` end-to-end as a self-test.
 4. Update `scripts/validate-action-policy.ts` to walk the registry instead of (or in addition to) the static map.
 5. Add unit tests covering: registry collision, ACTION_POLICY-required-on-register, name-prefix validation.

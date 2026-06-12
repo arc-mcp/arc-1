@@ -4,6 +4,11 @@
 **Project:** ARC-1 (ABAP Relay Connector) — MCP Server for SAP ABAP Systems
 **Repository:** https://github.com/marianfoo/arc-1
 
+> **Note on file paths:** dated entries below reference the codebase as it was when written. The
+> former `src/handlers/intent.ts` monolith was split into per-tool modules (`read.ts`, `write.ts`,
+> `dispatch.ts`, …) in [#402](https://github.com/marianfoo/arc-1/pull/402) — see
+> [AGENTS.md](../AGENTS.md) for the current file map.
+
 ---
 
 ## Vision
@@ -1889,7 +1894,7 @@ For FUGR (function groups), the same pattern applies with `objecttype=FUGR/P` an
 
 **What:** A documented, opinionated way for downstream users to add their own MCP tools to an ARC-1 instance and reuse the same building blocks the built-in tools rely on (`AdtClient`, `AdtHttpClient`, `SafetyConfig`, `CachingLayer`, `logger`, typed errors), without forking the repository.
 
-**Why:** Today the only way to add a tool is to fork the repo and edit six files (`tools.ts`, `schemas.ts`, `intent.ts`, `policy.ts`, plus tests). Customers with private/internal tools cannot upstream them. A defined extension point keeps the in-tree tool surface focused on the universally useful tools while letting teams extend their own instance.
+**Why:** Today the only way to add a tool is to fork the repo and edit several files (`tools.ts`, `schemas.ts`, the per-tool handler module + `dispatch.ts`, `policy.ts`, plus tests). Customers with private/internal tools cannot upstream them. A defined extension point keeps the in-tree tool surface focused on the universally useful tools while letting teams extend their own instance.
 
 **Phased plan (recommended):**
 

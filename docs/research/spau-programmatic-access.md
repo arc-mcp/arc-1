@@ -5,6 +5,10 @@
 **Scope:** Audit of prior work in the ARC-1 codebase, external OSS ecosystem, and a live probe against an S/4HANA 2023 on-prem trial. Goal: determine whether SPAU can be driven programmatically from an MCP tool, and if so, how.
 **Test system used for the live probe:** `a4h.marianzeis.de` (S/4HANA 2023 on-prem trial).
 
+> **Code-location note (post-#402):** the "new handler `handleSAPUpgrade` in `src/handlers/intent.ts`"
+> sketch below predates the intent.ts split — a new handler now lives in its own
+> `src/handlers/<tool>.ts` module wired into `dispatch.ts`. See [AGENTS.md](../../AGENTS.md).
+
 ---
 
 ## TL;DR
