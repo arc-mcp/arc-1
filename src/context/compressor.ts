@@ -27,6 +27,29 @@ const DEFAULT_DEPTH = 1;
 const MAX_DEPTH = 3;
 const MAX_CONCURRENT = 5;
 
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  if (items.length === 0) return [];
+
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(concurrency, items.length);
+
+  const worker = async () => {
+    while (true) {
+      const index = nextIndex++;
+      if (index >= items.length) return;
+      results[index] = await mapper(items[index]!, index);
+    }
+  };
+
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return results;
+}
+
 function readResultSource(result: SourceReadResult | string): string {
   return typeof result === 'string' ? result : result.source;
 }
@@ -155,15 +178,9 @@ async function fetchContractsParallel(
   abaplintVersion?: Version,
   cachingLayer?: CachingLayer,
 ): Promise<Contract[]> {
-  const results: Contract[] = [];
-  for (let i = 0; i < deps.length; i += MAX_CONCURRENT) {
-    const batch = deps.slice(i, i + MAX_CONCURRENT);
-    const batchResults = await Promise.all(
-      batch.map((dep) => fetchSingleContract(client, dep, abaplintVersion, cachingLayer)),
-    );
-    results.push(...batchResults);
-  }
-  return results;
+  return mapWithConcurrency(deps, MAX_CONCURRENT, (dep) =>
+    fetchSingleContract(client, dep, abaplintVersion, cachingLayer),
+  );
 }
 
 /**
@@ -398,12 +415,12 @@ async function resolveCdsDepthLevel(
   }
   const limited = newDeps.slice(0, maxDeps);
 
-  // Fetch in bounded parallel batches
-  for (let i = 0; i < limited.length; i += MAX_CONCURRENT) {
-    const batch = limited.slice(i, i + MAX_CONCURRENT);
-    const results = await Promise.all(batch.map((dep) => fetchCdsDependency(client, dep, cachingLayer)));
-    resolved.push(...results);
-  }
+  // Fetch with a bounded worker pool. This keeps MAX_CONCURRENT requests in
+  // flight instead of waiting for the slowest request in fixed-size waves.
+  const results = await mapWithConcurrency(limited, MAX_CONCURRENT, (dep) =>
+    fetchCdsDependency(client, dep, cachingLayer),
+  );
+  resolved.push(...results);
 
   // Recurse into resolved DDLS sources if depth > 1
   if (depth > 1) {

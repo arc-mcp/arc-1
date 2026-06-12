@@ -35,6 +35,25 @@ function mockClient(sources: Record<string, string>): AdtClient {
   } as unknown as AdtClient;
 }
 
+async function waitUntil(assertion: () => boolean, timeoutMs = 250): Promise<void> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (assertion()) return;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  throw new Error('Timed out waiting for condition');
+}
+
+function dependencyClassSource(name: string): string {
+  return `CLASS ${name} DEFINITION PUBLIC.
+  PUBLIC SECTION.
+    METHODS run.
+ENDCLASS.
+CLASS ${name} IMPLEMENTATION.
+  METHOD run. ENDMETHOD.
+ENDCLASS.`;
+}
+
 describe('compressContext', () => {
   it('compresses class with dependencies', async () => {
     const mainSource = `CLASS zcl_order DEFINITION PUBLIC.
@@ -106,6 +125,48 @@ ENDCLASS.`;
 
     // Should resolve at most 2
     expect(result.depsResolved).toBeLessThanOrEqual(2);
+  });
+
+  it('starts the next dependency as soon as a worker slot frees up', async () => {
+    const mainSource = `CLASS zcl_test DEFINITION PUBLIC.
+  PUBLIC SECTION.
+    DATA m1 TYPE REF TO zcl_dep1.
+    DATA m2 TYPE REF TO zcl_dep2.
+    DATA m3 TYPE REF TO zcl_dep3.
+    DATA m4 TYPE REF TO zcl_dep4.
+    DATA m5 TYPE REF TO zcl_dep5.
+    DATA m6 TYPE REF TO zcl_dep6.
+ENDCLASS.
+CLASS zcl_test IMPLEMENTATION.
+ENDCLASS.`;
+
+    const started: string[] = [];
+    const resolvers = new Map<string, () => void>();
+    const client = {
+      getClass: vi.fn(async (name: string) => {
+        const upper = name.toUpperCase();
+        started.push(upper);
+        await new Promise<void>((resolve) => resolvers.set(upper, resolve));
+        return dependencyClassSource(name);
+      }),
+      getInterface: vi.fn(),
+      getFunction: vi.fn(),
+      searchObject: vi.fn(),
+      http: {},
+      safety: {},
+    } as unknown as AdtClient;
+
+    const resultPromise = compressContext(client, mainSource, 'zcl_test', 'CLAS', 6);
+    await waitUntil(() => started.length === 5);
+
+    resolvers.get('ZCL_DEP1')?.();
+    await waitUntil(() => started.includes('ZCL_DEP6'));
+
+    expect(started).toEqual(['ZCL_DEP1', 'ZCL_DEP2', 'ZCL_DEP3', 'ZCL_DEP4', 'ZCL_DEP5', 'ZCL_DEP6']);
+
+    for (const resolve of resolvers.values()) resolve();
+    const result = await resultPromise;
+    expect(result.depsResolved).toBe(6);
   });
 
   it('handles fetch failures gracefully', async () => {
@@ -357,6 +418,43 @@ define view entity ZC_ORDER as projection on ZI_ORDER { key OrderId }`;
     expect(result.depsResolved).toBe(1);
     expect(result.output).toContain('ZI_ORDER');
     expect(result.output).toContain('ddls');
+  });
+
+  it('starts the next CDS dependency as soon as a worker slot frees up', async () => {
+    const ddlSource = `define view entity ZC_ORDER as projection on ZI_DEP1 {
+  key order_id,
+  association to ZI_DEP2 as _D2 on _D2.ID = order_id,
+  association to ZI_DEP3 as _D3 on _D3.ID = order_id,
+  association to ZI_DEP4 as _D4 on _D4.ID = order_id,
+  association to ZI_DEP5 as _D5 on _D5.ID = order_id,
+  association to ZI_DEP6 as _D6 on _D6.ID = order_id
+}`;
+
+    const started: string[] = [];
+    const resolvers = new Map<string, () => void>();
+    const client = {
+      getDdls: vi.fn(async (name: string) => {
+        const upper = name.toUpperCase();
+        started.push(upper);
+        await new Promise<void>((resolve) => resolvers.set(upper, resolve));
+        return `define view entity ${name} as select from zbase { key id }`;
+      }),
+      getTabl: vi.fn(),
+      http: {},
+      safety: {},
+    } as unknown as AdtClient;
+
+    const resultPromise = compressCdsContext(client, ddlSource, 'ZC_ORDER', 6);
+    await waitUntil(() => started.length === 5);
+
+    resolvers.get('ZI_DEP1')?.();
+    await waitUntil(() => started.includes('ZI_DEP6'));
+
+    expect(started).toEqual(['ZI_DEP1', 'ZI_DEP2', 'ZI_DEP3', 'ZI_DEP4', 'ZI_DEP5', 'ZI_DEP6']);
+
+    for (const resolve of resolvers.values()) resolve();
+    const result = await resultPromise;
+    expect(result.depsResolved).toBe(6);
   });
 
   it('handles failed dependencies gracefully', async () => {
