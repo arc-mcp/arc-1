@@ -233,7 +233,7 @@ Run the invariant(s) for whatever the change touches. This is the operational co
 | **Any loop/regex/list built from tool args** | **I5**: bounded length + count + (for regex) time/complexity. Never compile a raw LLM regex without a length cap and timeout/RE2. |
 | **A new URL path, SQL, XML payload, or HTTP header from args** | **I6**: `encodeURIComponent` per path segment; `sanitizeIdentifier`/`quoteSqlLiteral`/charset-allowlist for SQL; `escapeXmlAttr` for XML; enum/charset for headers. Add a defense-in-depth schema constraint too. |
 | **A new capability or a default value** | **I7**: it is read-only unless an explicit admin opt-in is set; no default loosens; user scopes can only restrict. Update the safety ceiling + `ACTION_POLICY` together. |
-| **`withSafety()` / a new `AdtClient` field** | The clone re-attaches the field (it bypasses the constructor); per-user data is not shared across users via a shared holder. (Regression class: #333.) |
+| **`withSafety()` / a new `AdtClient` field** | The clone copies every own field by reference (`Object.assign`, skipping the ctor) and overrides only `safety`, so a new field shares automatically; per-user data is not shared across users via a shared holder. (Regression class: #333.) |
 | **GPT/OpenAI arg hardening** | Stripping/coercion can only make a field *absent* (→ safe default) or error — never flip a deny to allow. Never `z.coerce.boolean()`. |
 | **A URL/redirect allowlist or any string later `new URL()`-parsed** | The allowlist must match a **canonical form rebuilt from parsed components** (`${protocol}//${host}${pathname}`), not the raw string — `\`, `#`, `?`, userinfo all diverge string-match from parse-host (regression class: R8). |
 | **A cache served from the warmup/edge index** (`getUsages`, reverse-deps, node metadata) | **I2**: the warmup index is built by the shared service account; gate the serve with a per-user check (resolve+`checkPackage` or live where-used) before returning it in PP mode (regression class: R12). |
@@ -270,8 +270,8 @@ if the change is *in* one of them.
 - **SQL injection** — structured SQL is allowlisted (`sanitizeIdentifier`, `quoteSqlLiteral`,
   operator allowlist); ad-hoc SQL charset-whitelists before interpolation.
 - **XML injection** — DDIC/FUGR/FUNC builders escape every free string via the shared `escapeXmlAttr` (`src/adt/xml-parser.ts`).
-- **`withSafety()` clone** — re-attaches all instance fields; the restricted safety is applied;
-  shared holders carry no per-user data. [`src/adt/client.ts`](../src/adt/client.ts).
+- **`withSafety()` clone** — copies all instance fields by reference and applies the restricted
+  safety; shared holders carry no per-user data. [`src/adt/client.ts`](../src/adt/client.ts).
 - **CORS** — off by default; exact `Set.has` origin match with `credentials:true`; no wildcard.
 - **Per-user credential stripping** — `buildAdtConfig(...,{perUser:true})` strips
   username/password/cookies; per-user cookie/CSRF jars are per-instance.

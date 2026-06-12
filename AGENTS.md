@@ -192,7 +192,7 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 | Auth combination rule | `src/server/config.ts` (`validateConfig`), `src/server/types.ts`, `docs_page/enterprise-auth.md` |
 | Layer B auth mechanism | `src/adt/http.ts` (`applyAuthHeader`), `src/server/server.ts` (`buildAdtConfig` perUser flag — strips shared creds) |
 | Safety config option | `src/adt/safety.ts`, `src/server/config.ts`, `src/server/types.ts` |
-| AdtClient instance field / `withSafety()` clone | `src/adt/client.ts` — `Object.create()` bypasses the ctor; re-attach EVERY field or the clone crashes (#333) |
+| AdtClient instance field / `withSafety()` clone | `src/adt/client.ts` — clone is `Object.assign(Object.create(proto), this, {safety})`; new own fields share automatically (use TS `private`, never `#private`) (#333) |
 | `allowedPackages` pattern syntax | `src/adt/safety.ts`, `src/adt/package-hierarchy.ts`, `src/handlers/write-helpers.ts` (`enforceAllowedPackageForObjectUrl`, fail-closed) — details: dev-guide |
 | Feature probe / feature-gated write guard | `src/adt/features.ts` (`PROBES`) / `src/handlers/write/rap.ts` pattern |
 | E2E test / fixture | `tests/e2e/`, `tests/e2e/fixtures.ts` + `tests/fixtures/abap/` + `tests/e2e/setup.ts` |

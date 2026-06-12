@@ -61,21 +61,33 @@ write/create.ts that a one-line grep missed — exactly the Stage-T safety net w
 
 ## PR 2 — `refactor(adt)`: `withSafety()` clone safe by construction
 
-**Status: planned; checkpoint after PR 1 merge.**
+**Status: DONE (branch pr2-withsafety).**
 
-`src/adt/client.ts:329` clones via `Object.create(AdtClient.prototype)` + 6 hand-attached fields;
-a forgotten field is the proven #333 crash class (runtime `undefined`), guarded today only by a
-comment. **Design constraint (Codex + #333 history): the clone must SHARE the live `http` client
-(cookie jar / CSRF / sessions) and the cache holders — a naive `new AdtClient(config)` would build
-a fresh `AdtHttpClient` and break authenticated sessions.** Shape: a private constructor path
-(e.g. an internal options overload or static `AdtClient.cloneWithSafety(source, safety)`) that
-receives the existing `http` + caches explicitly, so a NEW instance field is a missing-argument
-**compile error** instead of a silent `undefined`.
-**Acceptance:** existing `describe('withSafety')` identity assertions stay green (same `http`,
-same cache instances, only `safety` differs); the hand-attach invariant comment is deleted because
-the invariant is structural; AGENTS.md row for `withSafety()` updated; no fixture diff; full gate.
-**Risk:** low-medium — touches the auth-critical client path; mitigated by the existing
-clone-identity tests + integration suite. Commit: `refactor(adt):` (no release).
+`client.ts` cloned via `Object.create(AdtClient.prototype)` + **6 hand-attached `defineProperty`
+fields**; a forgotten field is the proven #333 crash class (runtime `undefined`), guarded only by a
+comment. **Checkpoint design decision — landed stronger than the plan's sketch.** The plan proposed
+a private ctor / static factory that takes each field, so a forgotten one is a *compile error*.
+The shipped fix is simpler and stronger: a **one-liner**
+
+```ts
+withSafety(safety) { return Object.assign(Object.create(AdtClient.prototype), this, { safety }); }
+```
+
+`Object.create` keeps the prototype (methods + `instanceof`) while skipping the ctor (which would
+build a fresh `AdtHttpClient` with a new cookie jar and break the shared session — the constraint
+Codex flagged). `Object.assign` then copies **whatever own fields exist** by reference and overrides
+only `safety` — so a new field is shared *automatically*. There is no re-attach list to forget at
+all (eliminating the list beats guarding it). Verified: the 6 fields are all own-enumerable class
+fields (TS `private`, not `#private`), no subclasses, no dynamic field assignments; Object.assign
+preserves `instanceof` and reference-shares Maps/holders (Node probe + 156 client tests).
+**Test:** added a **structural** guard — iterates `Object.keys(client)` and asserts every field
+except `safety` is reference-identical on the clone, so it can't rot when a field is added
+(mutation-proven: a non-shared field fails it). The named #333 per-field tests stay as complements.
+**Docs:** AGENTS.md + dev-guide + security-model rows updated off "re-attach EVERY field" onto the
+Object.assign model (incl. the `#private` caveat).
+**Risk:** low — auth-critical path, but the clone semantics are byte-for-byte the same (same http,
+same caches, only safety differs); existing identity tests + integration suite cover it.
+Commit: `refactor(adt):` (no release).
 
 ## PR 3 — `docs:` truth pass (bounded)
 
