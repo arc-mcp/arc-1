@@ -13,7 +13,7 @@ This skill replicates SAP Joule's "Unit Test Generation" capability for ABAP cla
 
 | Setting | Default | Rationale |
 |---|---|---|
-| Test class name | `ZCL_TEST_<CLASS>` | Standard convention |
+| Test class name | `ltc_<short_class_name>` | ABAP Unit tests for a global class belong in its local `testclasses` (CCAU) include |
 | Methods to test | All public methods | User can narrow after seeing the list |
 | Package | `$TMP` | Fast prototyping |
 | Risk level | `HARMLESS` | Test doubles don't modify real data |
@@ -27,7 +27,7 @@ The user provides an ABAP class to test (e.g., `ZCL_TRAVEL_HANDLER`).
 Only the **class name** is required. If the user provides just a class name, apply Smart Defaults and proceed immediately.
 
 Optionally, the user may specify:
-- **Test class name** (default: `ZCL_TEST_<CLASS>`)
+- **Test class name** (default: local class `ltc_<short_class_name>` inside the target class's `testclasses` include)
 - **Methods to test** (default: all public methods)
 - **Package** (default: `$TMP`)
 - **Transport request** (only needed for non-`$TMP` packages)
@@ -164,7 +164,7 @@ Generate a complete ABAP test class following this structure:
 ```abap
 "! @testing <CLASS_UNDER_TEST>
 CLASS <test_class_name> DEFINITION
-  PUBLIC FINAL
+  FINAL
   FOR TESTING
   DURATION SHORT
   RISK LEVEL HARMLESS.
@@ -286,7 +286,7 @@ Follow these principles when generating test data:
 
 ### Naming Conventions
 
-- Test class: `ZCL_TEST_<CLASS>` or `ZCL_<CLASS>_TEST`
+- Test class: local class `ltc_<short_class_name>` in the class's `testclasses` include
 - Test methods: `test_<method>_<scenario>` (e.g., `test_create_success`, `test_validate_no_date`)
 - Use snake_case for method names (ABAP convention for test methods)
 - Keep method names under 30 characters
@@ -294,42 +294,50 @@ Follow these principles when generating test data:
 
 ## Step 5: Preview and Confirm
 
-Show the user the complete generated test class source code and ask:
+Show the user the complete generated `testclasses` include source code and ask:
 
-**"Here's the generated test class. Should I create it on the SAP system? (yes / edit first / cancel)"**
+**"Here's the generated testclasses include. Should I write it to the SAP system? (yes / edit first / cancel)"**
 
 If the user wants edits, incorporate them before proceeding.
 
-## Step 6: Create, Activate, and Test
+## Step 6: Write, Activate, and Test
 
 ### 6-pre. Lint-check generated code (optional)
 
 Before writing, validate the generated code against lint rules:
 
 ```
-SAPLint(action="lint", source="<generated_source>", name="<test_class_name>")
+SAPLint(action="lint", source="<generated_testclasses_include>", name="<class_under_test>")
 ```
 
 Fix any lint findings before proceeding. Pre-write lint validation also runs automatically when enabled (default: on).
 
-### 6a. Create the test class
+### 6a. Write the local test class to the target class's testclasses include
 
 ```
-SAPWrite(action="create", type="CLAS", name="<test_class_name>", source="<generated_source>", package="<package>", transport="<transport>")
+SAPWrite(action="update", type="CLAS", name="<class_under_test>", include="testclasses", source="<generated_testclasses_include>", transport="<transport>")
 ```
 
-### 6b. Update the source (if create only scaffolds)
+This is a local include write, not a separate global class create. Do not pass a lock handle or add lock/unlock code to the ABAP source; ARC-1 performs the ADT lock -> initialize missing CCAU include -> write -> unlock sequence internally. On a fresh class, ARC-1 auto-creates the missing `testclasses` include before writing.
+
+### 6b. Update existing tests
 
 ```
-SAPWrite(action="update", type="CLAS", name="<test_class_name>", source="<generated_source>", transport="<transport>")
+SAPWrite(action="update", type="CLAS", name="<class_under_test>", include="testclasses", source="<full_updated_testclasses_include>", transport="<transport>")
 ```
 
-**Note:** For the update action, `transport` is recommended but not always required. ARC-1 auto-propagates the lock-provided `corrNr` when no explicit transport is supplied.
-
-### 6c. Activate the test class
+For a small fix to an existing local test method, use method surgery after the include exists:
 
 ```
-SAPActivate(type="CLAS", name="<test_class_name>")
+SAPWrite(action="edit_method", type="CLAS", name="<class_under_test>", method="<ltc_class>~<failing_method>", source="<fixed_method_body>")
+```
+
+**Note:** For update actions, `transport` is recommended but not always required. ARC-1 auto-propagates the lock-provided `corrNr` when no explicit transport is supplied.
+
+### 6c. Activate the class under test
+
+```
+SAPActivate(type="CLAS", name="<class_under_test>")
 ```
 
 Activation returns structured responses with detailed error/warning messages including line numbers. Use these to pinpoint exact issues.
@@ -337,7 +345,7 @@ Activation returns structured responses with detailed error/warning messages inc
 ### 6d. Run the unit tests
 
 ```
-SAPDiagnose(action="unittest", type="CLAS", name="<test_class_name>")
+SAPDiagnose(action="unittest", type="CLAS", name="<class_under_test>")
 ```
 
 ### 6e. Report results and fix failures
@@ -352,7 +360,7 @@ If tests fail:
 2. Determine if it's a mock setup issue, assertion issue, or CUT logic issue
 3. Fix the specific test method using method surgery:
    ```
-   SAPWrite(action="edit_method", type="CLAS", name="<test_class_name>", method="<failing_method>", source="<fixed_source>")
+   SAPWrite(action="edit_method", type="CLAS", name="<class_under_test>", method="<ltc_class>~<failing_method>", source="<fixed_source>")
    ```
 4. Re-activate and re-run
 
@@ -368,13 +376,14 @@ If tests fail:
 | Activation error | Syntax error in generated code — typo, wrong type, missing variable declaration | Read activation error, fix syntax, re-activate |
 | `cl_abap_testdouble` not found | Test double framework not available on system (older releases) | Use local test double class pattern instead |
 | Method not found on CUT | Method is private or protected — not callable from test | Test only public methods; for protected, use `FRIENDS` clause |
-| Test class already exists | Duplicate creation attempt | Use `SAPWrite(action="update", ...)` instead |
+| `testclasses`/CCAU include missing | Fresh class has no ABAP Unit include yet | Use `SAPWrite(action="update", type="CLAS", include="testclasses", source=...)`; ARC-1 auto-initializes it |
+| Method not found in `edit_method` | The local `ltc_*` method does not exist yet, or the wrong local class name was used | First write the full `testclasses` include with `update include="testclasses"`, then use `edit_method` for existing methods |
 
 ## Notes
 
 ### BTP vs On-Premise Differences
 
-- **BTP**: Only Z*/Y* test classes can be created. Must use ABAP Cloud syntax — no classic ABAP statements. Only released APIs are available for mocking. `cl_abap_testdouble` is available. Constructor injection is the standard pattern.
+- **BTP**: Write local `ltc_*` test classes into custom Z*/Y* classes. Must use ABAP Cloud syntax — no classic ABAP statements. Only released APIs are available for mocking. `cl_abap_testdouble` is available. Constructor injection is the standard pattern.
 - **On-Premise**: Full flexibility. Can use classic ABAP. `cl_abap_testdouble` available from 7.51+. On older systems, use local test double classes.
 
 ### What This Skill Does NOT Do

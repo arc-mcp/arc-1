@@ -448,8 +448,9 @@ ENDCLASS.`,
 
       expect(result.isError).toBeUndefined();
       const includeGets = calls.filter((c) => c.method === 'GET' && c.url.includes('/includes/implementations'));
-      // Exactly one GET against the include URL — no cache hit, no double-fetch.
-      expect(includeGets.length).toBe(1);
+      // One GET reads the include for method splicing; the second is the locked
+      // existence probe in safeUpdateClassInclude. Neither comes from the cache.
+      expect(includeGets.length).toBe(2);
     });
   });
 
@@ -1210,6 +1211,9 @@ ENDCLASS.`;
       mainSource: string;
       structureXml: string;
       packageName?: string;
+      includeName?: string;
+      includeGetStatus?: 200 | 404;
+      includeSource?: string;
     }): Array<{ method: string; url: string; body?: string }> {
       const calls: Array<{ method: string; url: string; body?: string }> = [];
       mockFetch.mockReset();
@@ -1243,7 +1247,23 @@ ENDCLASS.`;
           if (method === 'GET' && urlStr.includes(`/sap/bc/adt/oo/classes/${opts.className}/source/main`)) {
             return Promise.resolve(mockResponse(200, opts.mainSource, { 'x-csrf-token': 'T' }));
           }
-          if (method === 'GET' && urlStr.includes('/sap/bc/adt/discovery')) {
+          if (
+            opts.includeName &&
+            method === 'GET' &&
+            urlStr.includes(`/sap/bc/adt/oo/classes/${opts.className}/includes/${opts.includeName}`)
+          ) {
+            if (opts.includeGetStatus === 404) {
+              return Promise.resolve(
+                mockResponse(
+                  404,
+                  `<exc:exception xmlns:exc="x"><type id="ExceptionResourceNotFound"/><message>not found</message></exc:exception>`,
+                  { 'x-csrf-token': 'T' },
+                ),
+              );
+            }
+            return Promise.resolve(mockResponse(200, opts.includeSource ?? '', { 'x-csrf-token': 'T' }));
+          }
+          if ((method === 'GET' || method === 'HEAD') && urlStr.includes('/discovery')) {
             return Promise.resolve(
               mockResponse(200, '<service xmlns="http://www.w3.org/2007/app"/>', { 'x-csrf-token': 'T' }),
             );
@@ -1259,6 +1279,9 @@ ENDCLASS.`;
           }
           if (method === 'POST' && urlStr.includes('_action=UNLOCK')) {
             return Promise.resolve(mockResponse(200, '<ok/>', { 'x-csrf-token': 'T' }));
+          }
+          if (opts.includeName && method === 'POST' && urlStr.includes(`/includes/${opts.includeName}?lockHandle=`)) {
+            return Promise.resolve(mockResponse(201, '', { 'x-csrf-token': 'T' }));
           }
           if (method === 'PUT') {
             return Promise.resolve(mockResponse(200, '<ok/>', { 'x-csrf-token': 'T' }));
@@ -1342,6 +1365,67 @@ ENDCLASS.`;
       expect(result.content[0]?.text).toMatch(/Successfully updated DEFINITION/);
       // PUT must have happened.
       expect(calls.some((c) => c.method === 'PUT' && c.url.includes('/source/main'))).toBe(true);
+    });
+
+    it('edit_class_definition include=testclasses auto-initialises a missing CCAU before PUT', async () => {
+      const calls = mockClassSurgeryFlow({
+        className: 'ZCL_PROBE',
+        mainSource: PROBE_MAIN,
+        structureXml: PROBE_STRUCTURE,
+        includeName: 'testclasses',
+        includeGetStatus: 404,
+      });
+      const source = `CLASS ltc_probe DEFINITION FOR TESTING DURATION SHORT RISK LEVEL HARMLESS.
+  PRIVATE SECTION.
+    METHODS smoke FOR TESTING.
+ENDCLASS.
+CLASS ltc_probe IMPLEMENTATION.
+  METHOD smoke.
+    cl_abap_unit_assert=>assert_equals( act = 1 exp = 1 ).
+  ENDMETHOD.
+ENDCLASS.`;
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'edit_class_definition',
+        type: 'CLAS',
+        name: 'ZCL_PROBE',
+        include: 'testclasses',
+        source,
+      });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toMatch(/Initialised the testclasses include first/i);
+
+      const initIndex = calls.findIndex(
+        (c) => c.method === 'POST' && c.url.includes('/includes/testclasses?lockHandle='),
+      );
+      const putIndex = calls.findIndex((c) => c.method === 'PUT' && c.url.includes('/includes/testclasses'));
+      expect(initIndex).toBeGreaterThan(-1);
+      expect(putIndex).toBeGreaterThan(initIndex);
+      expect(calls[putIndex]?.body).toBe(`${source}\n`);
+      expect(calls.some((c) => c.url.includes('/objectstructure'))).toBe(false);
+    });
+
+    it('edit_class_definition include=definitions skips init when the include already exists', async () => {
+      const calls = mockClassSurgeryFlow({
+        className: 'ZCL_PROBE',
+        mainSource: PROBE_MAIN,
+        structureXml: PROBE_STRUCTURE,
+        includeName: 'definitions',
+        includeGetStatus: 200,
+        includeSource: 'CLASS lcl_existing DEFINITION. ENDCLASS.',
+      });
+      const source = 'CLASS lcl_new DEFINITION. ENDCLASS.';
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'edit_class_definition',
+        type: 'CLAS',
+        name: 'ZCL_PROBE',
+        include: 'definitions',
+        source,
+      });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).not.toMatch(/Initialised the/i);
+      expect(calls.some((c) => c.method === 'POST' && c.url.includes('/includes/definitions?lockHandle='))).toBe(false);
+      const put = calls.find((c) => c.method === 'PUT' && c.url.includes('/includes/definitions'));
+      expect(put?.body).toBe(`${source}\n`);
     });
 
     it('edit_class_definition refuse-policy: added concrete method without IMPL stub', async () => {

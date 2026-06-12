@@ -18,7 +18,7 @@ import {
   spliceClassDefinition,
   spliceMethodSignature,
 } from '../../adt/class-structure.js';
-import { safeUpdateSource } from '../../adt/crud.js';
+import { safeUpdateClassInclude, safeUpdateSource } from '../../adt/crud.js';
 import { mapSapReleaseToAbaplintVersion } from '../../adt/features.js';
 import { spliceMethod } from '../../context/method-surgery.js';
 import { cachedFeatures } from '../feature-cache.js';
@@ -148,19 +148,30 @@ export async function writeActionEditMethod(ctx: SapWriteContext): Promise<ToolR
     checkNotes = await runPreWriteSyntaxCheck(client, type, spliced.newSource, objectUrl, config, checkOverride);
   }
 
-  // Write the full source back (existing lock/modify/unlock flow).
-  // For include writes, the parent class lock auto-applies; the include URL
-  // takes the body. See `compare/eclipse-adt/api/05-lock-create-update-transport.md`.
-  const writeUrl = resolvedInclude ? classIncludeUrl(name, resolvedInclude) : srcUrl;
-  await safeUpdateSource(
-    client.http,
-    client.safety,
-    objectUrl,
-    writeUrl,
-    spliced.newSource,
-    transport,
-    cachedFeatures?.abapRelease,
-  );
+  // Write the full source back. Include writes use the class-include helper so
+  // a missing CCAU/CCDEF/CCIMP/CCMAC include is initialised under the same lock
+  // before the content PUT.
+  if (resolvedInclude) {
+    await safeUpdateClassInclude(
+      client.http,
+      client.safety,
+      objectUrl,
+      classIncludeUrl(name, resolvedInclude),
+      spliced.newSource,
+      transport,
+      cachedFeatures?.abapRelease,
+    );
+  } else {
+    await safeUpdateSource(
+      client.http,
+      client.safety,
+      objectUrl,
+      srcUrl,
+      spliced.newSource,
+      transport,
+      cachedFeatures?.abapRelease,
+    );
+  }
   invalidateWrittenObject(type, name);
   const where = resolvedInclude ? ` (include: ${resolvedInclude})` : '';
   const msg = `Successfully updated method "${method}" in ${type} ${name}${where}.`;
@@ -257,19 +268,33 @@ export async function writeActionEditClassDefinition(ctx: SapWriteContext): Prom
     if (lintWarnings.blocked) return lintWarnings.result!;
   }
 
-  await safeUpdateSource(
-    client.http,
-    client.safety,
-    objectUrl,
-    writeUrl,
-    spliced,
-    transport,
-    cachedFeatures?.abapRelease,
-  );
+  const includeInit = include
+    ? await safeUpdateClassInclude(
+        client.http,
+        client.safety,
+        objectUrl,
+        writeUrl,
+        spliced,
+        transport,
+        cachedFeatures?.abapRelease,
+      )
+    : undefined;
+  if (!include) {
+    await safeUpdateSource(
+      client.http,
+      client.safety,
+      objectUrl,
+      writeUrl,
+      spliced,
+      transport,
+      cachedFeatures?.abapRelease,
+    );
+  }
   invalidateWrittenObject(type, name);
-  const whereLabel = include ? ` (include: ${include})` : '';
+  const initNote = includeInit?.initialized ? ` Initialised the ${include} include first.` : '';
+  const targetLabel = include ? `include ${include} of ${type} ${name}` : `DEFINITION of ${type} ${name}`;
   return textResult(
-    `Successfully updated DEFINITION of ${type} ${name}${whereLabel}. Active version unchanged until activation; read with SAPRead(version="inactive") to verify, then SAPActivate.`,
+    `Successfully updated ${targetLabel}.${initNote} Active version unchanged until activation; read with SAPRead(version="inactive") to verify, then SAPActivate.`,
   );
 }
 

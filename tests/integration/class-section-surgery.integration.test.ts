@@ -147,6 +147,44 @@ ENDCLASS.`;
     expect(activate.isError).toBeUndefined();
   });
 
+  it('edit_class_definition include=testclasses: initialises missing CCAU and activates', async (ctx) => {
+    if (!requireSeeded(ctx)) return;
+    const testclasses = `CLASS ltc_csurg DEFINITION FOR TESTING DURATION SHORT RISK LEVEL HARMLESS.
+  PRIVATE SECTION.
+    METHODS smoke FOR TESTING.
+ENDCLASS.
+
+CLASS ltc_csurg IMPLEMENTATION.
+  METHOD smoke.
+    cl_abap_unit_assert=>assert_equals( act = 1 exp = 1 ).
+  ENDMETHOD.
+ENDCLASS.`;
+
+    const write = await handleToolCall(client, cfg, 'SAPWrite', {
+      action: 'edit_class_definition',
+      type: 'CLAS',
+      name: className,
+      include: 'testclasses',
+      source: testclasses,
+      lintBeforeWrite: false,
+    });
+    expect(write.isError).toBeUndefined();
+    expect(write.content[0]?.text).toMatch(/initialised the testclasses include first/i);
+
+    const activate = await handleToolCall(client, cfg, 'SAPActivate', {
+      objects: [{ type: 'CLAS', name: className }],
+    });
+    expect(activate.isError).toBeUndefined();
+
+    const read = await handleToolCall(client, cfg, 'SAPRead', {
+      type: 'CLAS',
+      name: className,
+      include: 'testclasses',
+    });
+    expect(read.isError).toBeUndefined();
+    expect(read.content[0]?.text ?? '').toMatch(/ltc_csurg/i);
+  });
+
   it('edit_class_definition: refuses added method without IMPL stub', async (ctx) => {
     if (!requireSeeded(ctx)) return;
     const badDef = `CLASS ${className.toLowerCase()} DEFINITION PUBLIC CREATE PUBLIC.
