@@ -64,6 +64,23 @@ describe('XML Parser', () => {
       expect(item['@_code']).toBe('001'); // NOT number 1
     });
 
+    it('forces configured repeatable ADT tags into arrays', () => {
+      const result = parseXml(
+        '<atom:feed xmlns:atom="http://www.w3.org/2005/Atom"><atom:entry><atom:link href="/x"/></atom:entry></atom:feed>',
+      );
+      const feed = result.feed as Record<string, unknown>;
+      const entries = feed.entry as Array<Record<string, unknown>>;
+      expect(Array.isArray(entries)).toBe(true);
+      expect(Array.isArray(entries[0]?.link)).toBe(true);
+    });
+
+    it('keeps non-repeatable tags as objects for single elements', () => {
+      const result = parseXml('<root><single attr="x"/></root>');
+      const root = result.root as Record<string, unknown>;
+      expect(Array.isArray(root.single)).toBe(false);
+      expect(root.single).toEqual({ '@_attr': 'x' });
+    });
+
     it('handles empty XML', () => {
       const result = parseXml('<root/>');
       expect(result.root).toBeDefined();
