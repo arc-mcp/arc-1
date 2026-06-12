@@ -307,7 +307,7 @@ export function classifyToolErrorSkip(result: ToolResult): string | null {
  *
  * Returns true when a skip was triggered (caller should early-return).
  */
-export function skipOnBatchCreateFailure(ctx: import('vitest').TaskContext, text: string): boolean {
+export function skipOnBatchCreateFailure(ctx: import('vitest').TestContext, text: string): boolean {
   if (!/Batch created 0\/\d+ objects/i.test(text)) return false;
   if (!/✗/i.test(text)) return false;
   const match = text.match(/✗\s*—\s*([^\n]{0,160})/);
@@ -327,7 +327,7 @@ export function skipOnBatchCreateFailure(ctx: import('vitest').TaskContext, text
  *   const text = await expectToolSuccessOrSkip(ctx, result);
  *   // text is guaranteed non-null here.
  */
-export function expectToolSuccessOrSkip(ctx: import('vitest').TaskContext, result: ToolResult): string {
+export function expectToolSuccessOrSkip(ctx: import('vitest').TestContext, result: ToolResult): string {
   const skip = classifyToolErrorSkip(result);
   if (skip !== null) {
     skipTest(ctx, skip);

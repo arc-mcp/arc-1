@@ -191,7 +191,7 @@ describe('SDO registry write metadata', () => {
 
   it('EVTO uses blues v2; the others use v1 (verified live on 816)', () => {
     expect(SDO_REGISTRY.EVTO.blueContentType).toContain('v2');
-    for (const code of ['DESD', 'DTSC', 'CSNM', 'EVTB', 'COTA']) {
+    for (const code of ['DESD', 'DTSC', 'CSNM', 'EVTB', 'COTA'] as const) {
       expect(SDO_REGISTRY[code].blueContentType).toContain('v1');
     }
   });

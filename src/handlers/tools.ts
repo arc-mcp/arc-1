@@ -21,12 +21,12 @@ import type { ResolvedFeatures } from '../adt/types.js';
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
 import type { ServerConfig } from '../server/types.js';
 import { getHyperfocusedToolDefinition } from './hyperfocused.js';
+import { CLASS_WRITE_INCLUDES } from './object-types.js';
 import {
   SAPCONTEXT_TYPES_BTP,
   SAPCONTEXT_TYPES_ONPREM,
   SAPREAD_TYPES_BTP,
   SAPREAD_TYPES_ONPREM,
-  SAPWRITE_CLAS_INCLUDES,
   SAPWRITE_TYPES_BTP,
   SAPWRITE_TYPES_ONPREM,
 } from './tool-registry.js';
@@ -632,7 +632,7 @@ export function getToolDefinitions(
           },
           include: {
             type: 'string',
-            enum: SAPWRITE_CLAS_INCLUDES,
+            enum: CLASS_WRITE_INCLUDES,
             description:
               'CLAS-ONLY. Do NOT send this field unless type=CLAS AND action is one of update / edit_method / edit_class_definition. OMIT it entirely for every other object type (PROG, INTF, INCL, FUNC, FUGR, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, TABL, DOMA, DTEL, MSAG) and for delete / batch_create / add_method / edit_method_signature / delete_method / change_method_visibility (those operate on the global class /source/main). When it does apply: target a class-local include instead of /source/main — definitions (CCDEF), implementations (CCIMP), macros, testclasses; omit it to operate on source/main. For edit_method, ARC-1 auto-detects the include from the method specifier (lhc_*/lcl_* → implementations, ltc_* → testclasses), so you usually need not pass it. Include writes create an inactive draft; read with SAPRead version="inactive" before activation. NOTE: edit_class_definition with include= skips the symmetry refuse-policy — cross-include validation is not performed; rely on SAPActivate to catch breaks.',
           },

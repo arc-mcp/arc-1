@@ -29,7 +29,7 @@ npm run build                   # TypeScript → dist/ (also copies AFF schemas)
 npm test                        # Unit tests (all)
 npx vitest run tests/unit/adt/client.test.ts   # Single test file
 npx vitest run -t "getProgram"  # Tests matching a name pattern
-npm run typecheck               # tsc --noEmit
+npm run typecheck               # tsc --noEmit (src + scripts + tests via tsconfig.tests.json)
 npm run lint / lint:fix / format  # Biome
 npm run dev / dev:http          # Dev mode (stdio / HTTP Streamable)
 npm run test:integration[:slow|:crud]  # Needs SAP credentials (TEST_SAP_URL)
@@ -175,7 +175,7 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 | Hyperfocused mode | `src/handlers/hyperfocused.ts`, `src/handlers/tools.ts` |
 | ATC run (`SAPDiagnose action=atc`) | `src/adt/devtools.ts` (`runAtcCheck`) — three-step flow; variant MUST bind at worklist creation; ATC skips `$TMP` (details: dev-guide) |
 | CDS test-case suggestions (8.16+) | `src/adt/devtools.ts`, `src/handlers/diagnose.ts` — discovery-gated, read-only |
-| Server-driven objects read/write (DESD/EVTB/…) | `src/adt/server-driven.ts`, `src/handlers/read.ts` + `write.ts`/`write-helpers.ts` early branches, `src/handlers/tool-registry.ts` rows — per-type/release-adaptive gates; EVTO=v2 content type (details: dev-guide) |
+| Server-driven objects read/write (DESD/EVTB/…) | `src/adt/server-driven.ts` (`SDO_TYPES` + `SDO_REGISTRY` — the SAPRead/SAPWrite table rows derive from the tuple), `src/handlers/read.ts` + `write.ts`/`write-helpers.ts` early branches — per-type/release-adaptive gates; EVTO=v2 content type (details: dev-guide) |
 | XML response parser / safety check | `src/adt/xml-parser.ts` / `src/adt/safety.ts` |
 | PrettyPrint / lint rules / pre-write hints | `src/handlers/lint.ts` + `src/adt/devtools.ts` / `src/lint/{lint,config-builder}.ts` + presets/ / `src/lint/pre-write-hints.ts` |
 | abaplint beyond its grammar ceiling (8xx) | `src/adt/features.ts` (`ABAPLINT_MAX_RELEASE`), `src/lint/config-builder.ts` — parser errors demoted to warnings when release > 758 |

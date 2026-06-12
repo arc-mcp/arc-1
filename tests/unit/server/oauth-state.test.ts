@@ -133,10 +133,14 @@ describe('OAuthStateCodec', () => {
 
   it('rejects malformed tokens (malformed)', () => {
     const codec = new OAuthStateCodec(SECRET);
-    expect(codec.decode('', T0).reason).toBe('malformed');
-    expect(codec.decode('no-dot-here', T0).reason).toBe('malformed');
-    expect(codec.decode('.sigonly', T0).reason).toBe('malformed');
-    expect(codec.decode('payloadonly.', T0).reason).toBe('malformed');
+    const reasonFor = (token: string) => {
+      const r = codec.decode(token, T0);
+      return r.kind === 'error' ? r.reason : undefined;
+    };
+    expect(reasonFor('')).toBe('malformed');
+    expect(reasonFor('no-dot-here')).toBe('malformed');
+    expect(reasonFor('.sigonly')).toBe('malformed');
+    expect(reasonFor('payloadonly.')).toBe('malformed');
   });
 
   it("a fresh codec with the same secret can verify another instance's token (stateless / multi-instance)", () => {

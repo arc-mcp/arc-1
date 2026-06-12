@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    "types": ["node"],
+    // Resolve the scripts/*.mjs the script-tests import to their real sources so tsc infers their
+    // exports (checkJs stays off — the scripts themselves aren't error-checked). A `declare module
+    // '*.mjs'` wildcard would type every such import `any`, silently voiding this gate for them.
+    "allowJs": true
+  },
+  "include": ["src/**/*", "tests/**/*", "vitest*.config.ts"],
+  "exclude": ["node_modules", "dist"]
+}

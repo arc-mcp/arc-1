@@ -35,7 +35,7 @@ describe('Cache Warmup Slow Integration Tests', () => {
     }
   });
 
-  function requireDepGraphFixture(ctx: import('vitest').TaskContext): void {
+  function requireDepGraphFixture(ctx: import('vitest').TestContext): void {
     if (!hasTestClassWithDeps) {
       requireOrSkip(ctx, undefined, `NO_FIXTURE (${TEST_CLASS_WITH_DEPS}) — S/4 BOBF demo not on this system`);
     }

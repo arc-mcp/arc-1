@@ -12,19 +12,19 @@
 
 import { z } from 'zod';
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
+import { CLASS_WRITE_INCLUDES } from './object-types.js';
 import {
   SAPCONTEXT_TYPES_BTP,
   SAPCONTEXT_TYPES_ONPREM,
   SAPREAD_TYPES_BTP,
   SAPREAD_TYPES_ONPREM,
-  SAPWRITE_CLAS_INCLUDES,
   SAPWRITE_TYPES_BTP,
   SAPWRITE_TYPES_ONPREM,
 } from './tool-registry.js';
 
 // Re-exported so tests/unit/handlers/schemas.test.ts can assert the write-type matrix against
 // the single source of truth. The lists themselves live in tool-registry.ts.
-export { SAPWRITE_CLAS_INCLUDES, SAPWRITE_TYPES_BTP, SAPWRITE_TYPES_ONPREM };
+export { SAPWRITE_TYPES_BTP, SAPWRITE_TYPES_ONPREM };
 
 /**
  * Optional boolean that accepts real JSON booleans AND string-serialized booleans from
@@ -452,7 +452,7 @@ export const SAPWriteSchema = z
     source: z.string().optional(),
     include: z.preprocess(
       (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
-      z.enum(SAPWRITE_CLAS_INCLUDES).optional(),
+      z.enum(CLASS_WRITE_INCLUDES).optional(),
     ),
     method: z.string().optional(),
     /**
@@ -546,7 +546,7 @@ export const SAPWriteSchemaBtp = z
     source: z.string().optional(),
     include: z.preprocess(
       (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
-      z.enum(SAPWRITE_CLAS_INCLUDES).optional(),
+      z.enum(CLASS_WRITE_INCLUDES).optional(),
     ),
     method: z.string().optional(),
     /**

@@ -12,7 +12,9 @@
  * never disagree and there is no separate on-prem-only list to keep in sync.
  *
  * To add/remove a SAPRead/SAPWrite/SAPContext type:
- *   1. Add/remove ONE row in the matching `*_TYPE_TABLE` below, with its `btp` flag.
+ *   1. Add/remove ONE row in the matching `*_TYPE_TABLE` below, with its `btp` flag. (Exception:
+ *      server-driven types — their rows derive from `SDO_TYPES`, so register the type in
+ *      src/adt/server-driven.ts instead and both tables pick it up.)
  *   2. Add/remove the matching `case` in the tool's handler module: SAPRead → src/handlers/read.ts,
  *      SAPWrite → src/handlers/write.ts (note write routes by URL via objectBasePath/server-driven,
  *      not a per-type switch — see the registry-sync write-routing guard), SAPContext →
@@ -24,6 +26,8 @@
  * `z.enum(...)` (needs a readonly string list) and the JSON-Schema `enum: [...]` consume the exact
  * same literal set, in table order.
  */
+
+import { SDO_TYPES } from '../adt/server-driven.js';
 
 /**
  * Pull the on-prem (all rows) + BTP (btp:true rows) type arrays out of an `as const` type table.
@@ -96,13 +100,10 @@ const SAPREAD_TYPE_TABLE = [
   { type: 'VERSIONS', btp: false },
   { type: 'VERSION_SOURCE', btp: false },
   // Server-driven objects (ABAP Platform 2025 / SAP_BASIS 8.16+) — generic AFF read path,
-  // discovery-gated (src/adt/server-driven.ts). Read returns JSON metadata + AFF JSON source.
-  { type: 'DESD', btp: true },
-  { type: 'DTSC', btp: true },
-  { type: 'CSNM', btp: true },
-  { type: 'EVTB', btp: true },
-  { type: 'EVTO', btp: true },
-  { type: 'COTA', btp: true },
+  // discovery-gated (src/adt/server-driven.ts). Rows DERIVE from SDO_TYPES, so registering a type
+  // there is the only step: btp is true by construction (SDO types are 8.16+; runtime availability
+  // is discovery-gated), and deriveTypeArrays' duplicate guard throws if a hand row ever collides.
+  ...SDO_TYPES.map((t) => ({ type: t, btp: true }) as const),
 ] as const;
 const sapReadTypes = deriveTypeArrays(SAPREAD_TYPE_TABLE);
 /** All SAPRead object types available on on-premise (the superset). */
@@ -134,12 +135,8 @@ const SAPWRITE_TYPE_TABLE = [
   { type: 'DTEL', btp: true },
   { type: 'MSAG', btp: true },
   // Server-driven objects (8.16+) — write via the generic blue:blueSource + AFF JSON engine.
-  { type: 'DESD', btp: true },
-  { type: 'DTSC', btp: true },
-  { type: 'CSNM', btp: true },
-  { type: 'EVTB', btp: true },
-  { type: 'EVTO', btp: true },
-  { type: 'COTA', btp: true },
+  // Rows derive from SDO_TYPES exactly like the SAPRead table above.
+  ...SDO_TYPES.map((t) => ({ type: t, btp: true }) as const),
 ] as const;
 const sapWriteTypes = deriveTypeArrays(SAPWRITE_TYPE_TABLE);
 /** All SAPWrite object types available on on-premise (the superset). */
@@ -161,15 +158,6 @@ const sapContextTypes = deriveTypeArrays(SAPCONTEXT_TYPE_TABLE);
 export const SAPCONTEXT_TYPES_ONPREM = sapContextTypes.onprem;
 /** SAPContext types on BTP. */
 export const SAPCONTEXT_TYPES_BTP = sapContextTypes.btp;
-
-// ─── SAPWrite class-section includes ────────────────────────────────
-
-// Class-local include sections a SAPWrite CLAS update can target — surfaced here under the
-// schema-layer name so tools.ts (JSON-Schema enum) and schemas.ts (Zod enum) consume the SAME
-// runtime list the write path validates against (object-types.ts owns it alongside the
-// ClassWriteInclude type + classIncludeUrl + normalizeClassWriteInclude). Re-export, not a copy,
-// so a new include section can't be schema-accepted but runtime-rejected.
-export { CLASS_WRITE_INCLUDES as SAPWRITE_CLAS_INCLUDES } from './object-types.js';
 
 // ─── Derived union types ────────────────────────────────────────────
 

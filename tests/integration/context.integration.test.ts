@@ -85,17 +85,17 @@ describe('SAPContext Integration Tests', () => {
     }
   });
 
-  function requireFlightLegacy(ctx: import('vitest').TaskContext): void {
+  function requireFlightLegacy(ctx: import('vitest').TestContext): void {
     if (!hasFlightLegacy) {
       requireOrSkip(ctx, undefined, `${SkipReason.NO_FIXTURE} (/DMO/CL_FLIGHT_LEGACY) — S/4 demo content`);
     }
   }
-  function requireIfFlightLegacy(ctx: import('vitest').TaskContext): void {
+  function requireIfFlightLegacy(ctx: import('vitest').TestContext): void {
     if (!hasIfFlightLegacy) {
       requireOrSkip(ctx, undefined, `${SkipReason.NO_FIXTURE} (/DMO/IF_FLIGHT_LEGACY) — S/4 demo content`);
     }
   }
-  function requireBobfDemo(ctx: import('vitest').TaskContext): void {
+  function requireBobfDemo(ctx: import('vitest').TestContext): void {
     if (!hasBobfDemo) {
       requireOrSkip(ctx, undefined, `${SkipReason.NO_FIXTURE} (ZCL_DEMO_D_CALC_AMOUNT) — S/4 BOBF demo class`);
     }
