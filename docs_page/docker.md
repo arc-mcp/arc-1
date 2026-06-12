@@ -87,8 +87,8 @@ ghcr.io/marianfoo/arc-1
 | Tag | Example | Description |
 |---|---|---|
 | `latest` | `ghcr.io/marianfoo/arc-1:latest` | Updated on every push to main (dev builds) and on every release |
-| `x.y.z` | `ghcr.io/marianfoo/arc-1:0.2.0` | Exact version (immutable, created on release) |
-| `x.y` | `ghcr.io/marianfoo/arc-1:0.2` | Latest patch within minor (created on release) |
+| `x.y.z` | `ghcr.io/marianfoo/arc-1:0.9.14` | Exact version (immutable, created on release) |
+| `x.y` | `ghcr.io/marianfoo/arc-1:0.9` | Latest patch within minor (created on release) |
 
 **`latest`** is rebuilt on every push to `main`, so it always reflects the newest code — even unreleased changes. Use versioned tags for production.
 
@@ -99,7 +99,7 @@ ghcr.io/marianfoo/arc-1
 docker pull ghcr.io/marianfoo/arc-1:latest
 
 # Pinned version (recommended for production/team use)
-docker pull ghcr.io/marianfoo/arc-1:0.2.0
+docker pull ghcr.io/marianfoo/arc-1:0.9.14
 ```
 
 ### Supported platforms
@@ -120,7 +120,7 @@ The workflow `.github/workflows/docker.yml` triggers on every `v*` tag push
 
 ```
 release.yml
-  └─► git tag v2.22.0 + git push tag
+  └─► git tag v0.9.14 + git push tag
             │
             └─► docker.yml triggered
                   ├── docker/setup-qemu-action     (arm64 emulation)
@@ -169,10 +169,10 @@ docker build -t arc1 .
 
 # With version metadata (recommended for releases)
 docker build \
-  --build-arg VERSION=2.22.0 \
+  --build-arg VERSION=0.9.14 \
   --build-arg COMMIT=$(git rev-parse --short HEAD) \
   --build-arg BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
-  -t arc1:2.22.0 .
+  -t arc1:0.9.14 .
 ```
 
 ### Multi-platform build (for sharing)
@@ -180,8 +180,8 @@ docker build \
 ```bash
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
-  --build-arg VERSION=2.22.0 \
-  -t ghcr.io/yourorg/arc1:2.22.0 \
+  --build-arg VERSION=0.9.14 \
+  -t ghcr.io/yourorg/arc1:0.9.14 \
   --push .
 ```
 
@@ -456,17 +456,17 @@ For a comprehensive update guide covering all deployment modes (Docker, BTP, npm
 
 ```bash
 # Pull a specific version (recommended for production)
-docker pull ghcr.io/marianfoo/arc-1:0.2.0
+docker pull ghcr.io/marianfoo/arc-1:0.9.14
 
 # Pull latest (includes unreleased changes from main)
 docker pull ghcr.io/marianfoo/arc-1:latest
 
 # Stop, remove, restart with new image
 docker stop arc1 && docker rm arc1
-docker run -d --name arc1 -p 8080:8080 --env-file .env ghcr.io/marianfoo/arc-1:0.2.0
+docker run -d --name arc1 -p 8080:8080 --env-file .env ghcr.io/marianfoo/arc-1:0.9.14
 
 # Verify version
-docker run --rm ghcr.io/marianfoo/arc-1:0.2.0 --version
+docker run --rm ghcr.io/marianfoo/arc-1:0.9.14 --version
 ```
 
 ### Pinning a version (recommended)
@@ -475,7 +475,7 @@ For production or shared team environments, always pin to a specific version
 tag rather than `latest`:
 
 ```
-ghcr.io/marianfoo/arc-1:0.2.0
+ghcr.io/marianfoo/arc-1:0.9.14
 ```
 
 This ensures every team member uses the same binary regardless

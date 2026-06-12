@@ -32,7 +32,7 @@ CLI flag   >   process.env   >   .env file (in CWD)   >   built-in default
 
 For the full per-deployment-mode breakdown (npx vs local vs Docker vs BTP, and the gotcha where mcp.json `env` does nothing for `url`-based remote connections), see [Configuration Precedence](configuration-precedence.md).
 
-**Boolean values.** Most boolean flags accept either `"true"` or `"1"`. One exception: `ARC1_LOG_HTTP_DEBUG` accepts only `"true"` ([known inconsistency](#logging--observability)).
+**Boolean values.** Most boolean flags accept either `"true"` or `"1"`. One exception: `ARC1_LOG_HTTP_DEBUG` accepts only `"true"` ([known inconsistency](#logging-and-observability)).
 
 **Comma-separated lists.** `SAP_ALLOWED_PACKAGES`, `SAP_ALLOWED_TRANSPORTS`, `SAP_DENY_ACTIONS`, and `ARC1_ALLOWED_ORIGINS` are split on `,` and `.trim()`-ed. Quote shell-sensitive entries (`*`, `$TMP`, glob characters): `-e SAP_ALLOWED_PACKAGES='Z*,$TMP'`. In `.env` files no extra quoting is needed.
 
