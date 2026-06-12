@@ -5,6 +5,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { mockResponse } from '../../helpers/mock-fetch.js';
+import { featuresOff } from './handler-test-config.js';
 
 const mockFetch = vi.fn();
 vi.mock('undici', async (importOriginal) => {
@@ -19,7 +20,6 @@ const { setCachedFeatures } = await import('../../../src/handlers/feature-cache.
 const { getToolDefinitions } = await import('../../../src/handlers/tools.js');
 const { filterToolsByAuthScope } = await import('../../../src/server/server.js');
 const { DEFAULT_CONFIG } = await import('../../../src/server/types.js');
-type ResolvedFeatures = Awaited<ReturnType<typeof import('../../../src/adt/features.js').probeFeatures>>;
 
 function createClient() {
   mockFetch.mockResolvedValue(mockResponse(200, 'ok', { 'x-csrf-token': 'T' }));
@@ -212,10 +212,7 @@ describe('ACTION_POLICY runtime integration — classification bug fixes', () =>
 
   describe('Bug fix #4/5/6: SAPGit requires git scope for writes (not plain write)', () => {
     it('write user WITHOUT git scope is blocked on SAPGit.clone', async () => {
-      setCachedFeatures({
-        gcts: { id: 'gcts', available: true, mode: 'auto' },
-        abapGit: { id: 'abapGit', available: false, mode: 'auto' },
-      } as ResolvedFeatures);
+      setCachedFeatures(featuresOff({ gcts: true }));
       const result = await handleToolCall(
         createClient(),
         DEFAULT_CONFIG,
@@ -228,10 +225,7 @@ describe('ACTION_POLICY runtime integration — classification bug fixes', () =>
     });
 
     it('user with git scope CAN clone', async () => {
-      setCachedFeatures({
-        gcts: { id: 'gcts', available: true, mode: 'auto' },
-        abapGit: { id: 'abapGit', available: false, mode: 'auto' },
-      } as ResolvedFeatures);
+      setCachedFeatures(featuresOff({ gcts: true }));
       const result = await handleToolCall(
         createClient(),
         DEFAULT_CONFIG,
@@ -243,10 +237,7 @@ describe('ACTION_POLICY runtime integration — classification bug fixes', () =>
     });
 
     it('read user can still call SAPGit.list_repos (read action)', async () => {
-      setCachedFeatures({
-        gcts: { id: 'gcts', available: true, mode: 'auto' },
-        abapGit: { id: 'abapGit', available: false, mode: 'auto' },
-      } as ResolvedFeatures);
+      setCachedFeatures(featuresOff({ gcts: true }));
       const result = await handleToolCall(
         createClient(),
         DEFAULT_CONFIG,
@@ -300,10 +291,7 @@ describe('ACTION_POLICY runtime integration — SAP_DENY_ACTIONS enforcement', (
 
   it('tool-level deny blocks everything for that tool', async () => {
     const config = { ...DEFAULT_CONFIG, denyActions: ['SAPGit'] };
-    setCachedFeatures({
-      gcts: { id: 'gcts', available: true, mode: 'auto' },
-      abapGit: { id: 'abapGit', available: false, mode: 'auto' },
-    } as ResolvedFeatures);
+    setCachedFeatures(featuresOff({ gcts: true }));
     const result = await handleToolCall(createClient(), config, 'SAPGit', { action: 'list_repos' }, readAuth());
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toMatch(/denied by server policy/);
@@ -428,10 +416,7 @@ describe('ACTION_POLICY runtime integration — admin-implies-all', () => {
   });
 
   it('admin scope alone satisfies git scope requirement', async () => {
-    setCachedFeatures({
-      gcts: { id: 'gcts', available: true, mode: 'auto' },
-      abapGit: { id: 'abapGit', available: false, mode: 'auto' },
-    } as ResolvedFeatures);
+    setCachedFeatures(featuresOff({ gcts: true }));
     const result = await handleToolCall(
       createClient(),
       DEFAULT_CONFIG,
