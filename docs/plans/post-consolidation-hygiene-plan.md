@@ -39,7 +39,7 @@ shared `escapeXmlAttr`:
 
 | Site | Form | Coverage | Output change |
 |---|---|---|---|
-| `xml-parser.ts:45` `escapeXmlAttr` | exported keeper, 4 importers | `& < > " '` | — (keeper) |
+| `xml-parser.ts:45` `escapeXmlAttr` | exported keeper, 5 importers (abapgit, codeintel, devtools, server-driven, transport) | `& < > " '` | — (keeper) |
 | `ddic-xml.ts` `escapeXml` (45 calls) | private | `& " ' < >` (order-equivalent) | none |
 | `write-helpers.ts` `escapeXml` (45 calls; ALSO imported by `write/create.ts`) | exported | `& " ' < >` | none |
 | `devtools.ts` `escapeXmlText` (3 calls) | private | byte-identical to keeper | none |

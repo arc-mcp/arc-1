@@ -148,7 +148,7 @@ Fails when: a pattern/loop derived from args has no cap (R2).
 Every argument interpolated into a URL, SQL statement, XML payload, or HTTP header is
 encoded/escaped/allowlisted **at the sink** *and* constrained at the schema (defense in depth) —
 `encodeURIComponent` for path segments, `sanitizeIdentifier`/`quoteSqlLiteral` for SQL,
-`escapeXml` for XML, enum/charset for headers.
+`escapeXmlAttr` (`src/adt/xml-parser.ts`) for XML, enum/charset for headers.
 
 Where: URL building in [`src/adt/client.ts`](../src/adt/client.ts) and
 [`src/handlers/intent.ts`](../src/handlers/), SQL helpers in
@@ -231,7 +231,7 @@ Run the invariant(s) for whatever the change touches. This is the operational co
 | **Auth, PP, or scope resolution** | **I3**: every error path denies; no fall-through to success, to the shared client, or to a broader scope. Distinguish "token isn't mine" from "validator threw". |
 | **Logging, audit, a new event field, or a new sink** | **I4**: the field is redacted in *all* sinks (prefer centralizing in `Logger.emitAudit`); secret-bearing values never logged; redaction recurses into nested objects. |
 | **Any loop/regex/list built from tool args** | **I5**: bounded length + count + (for regex) time/complexity. Never compile a raw LLM regex without a length cap and timeout/RE2. |
-| **A new URL path, SQL, XML payload, or HTTP header from args** | **I6**: `encodeURIComponent` per path segment; `sanitizeIdentifier`/`quoteSqlLiteral`/charset-allowlist for SQL; `escapeXml` for XML; enum/charset for headers. Add a defense-in-depth schema constraint too. |
+| **A new URL path, SQL, XML payload, or HTTP header from args** | **I6**: `encodeURIComponent` per path segment; `sanitizeIdentifier`/`quoteSqlLiteral`/charset-allowlist for SQL; `escapeXmlAttr` for XML; enum/charset for headers. Add a defense-in-depth schema constraint too. |
 | **A new capability or a default value** | **I7**: it is read-only unless an explicit admin opt-in is set; no default loosens; user scopes can only restrict. Update the safety ceiling + `ACTION_POLICY` together. |
 | **`withSafety()` / a new `AdtClient` field** | The clone re-attaches the field (it bypasses the constructor); per-user data is not shared across users via a shared holder. (Regression class: #333.) |
 | **GPT/OpenAI arg hardening** | Stripping/coercion can only make a field *absent* (→ safe default) or error — never flip a deny to allow. Never `z.coerce.boolean()`. |
@@ -269,7 +269,7 @@ if the change is *in* one of them.
   `ARC1_PUBLIC_URL`/CF route, never from `Host`/`X-Forwarded-*`.
 - **SQL injection** — structured SQL is allowlisted (`sanitizeIdentifier`, `quoteSqlLiteral`,
   operator allowlist); ad-hoc SQL charset-whitelists before interpolation.
-- **XML injection** — DDIC/FUGR/FUNC builders `escapeXml` every free string.
+- **XML injection** — DDIC/FUGR/FUNC builders escape every free string via the shared `escapeXmlAttr` (`src/adt/xml-parser.ts`).
 - **`withSafety()` clone** — re-attaches all instance fields; the restricted safety is applied;
   shared holders carry no per-user data. [`src/adt/client.ts`](../src/adt/client.ts).
 - **CORS** — off by default; exact `Set.has` origin match with `credentials:true`; no wildcard.
