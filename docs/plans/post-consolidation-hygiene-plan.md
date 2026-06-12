@@ -125,20 +125,25 @@ moved — a separate triage can move them; this PR does not expand into the back
 
 ## PR 4 — `test:`/`chore:` small hygiene batch
 
-**Status: planned; checkpoint after PR 3 merge.**
+**Status: DONE (branch pr4-test-hygiene).** 3 commits (was 4 — one item dropped at the checkpoint):
+1. `chore(tests):` renamed `intent-rate-limit.test.ts` → `dispatch-rate-limit.test.ts` (it tests
+   `dispatch.ts`; zero "intent" in the body) + fixed the one live cross-reference comment in
+   `mcp-rate-limit.test.ts`.
+2. `test(handlers):` the 5 `as ResolvedFeatures` casts in `action-policy-integration.test.ts`
+   (all `{gcts:true, abapGit:false}`) → `featuresOff({ gcts: true })`; dropped the file-local
+   `type ResolvedFeatures` alias. Finishes the #405 factory sweep.
+3. `chore(handlers):` stripped the "extracted from intent.ts (Stage B…)" / "Split from write.ts
+   (Stage D)" provenance from ~24 handler/write headers + a banner, keeping every "why" clause.
+   **Result: zero intent.ts/Stage-B/D/E mentions remain in `src/`.**
 
-One commit each:
-1. `chore(tests):` rename `tests/unit/handlers/intent-rate-limit.test.ts` →
-   `dispatch-rate-limit.test.ts` (it tests dispatch.ts; the name is the last "intent" in tests).
-2. `test(handlers):` convert the 5 remaining `as ResolvedFeatures` casts in
-   `action-policy-integration.test.ts` (lines ~218/234/249/306/434) to the
-   `features()`/`featuresOff()` factory — finishing the #405 sweep (file was out of scope then).
-3. `test(server):` `xsuaa.test.ts:280` hand-built Response mock → `mockResponse()` from
-   `tests/helpers/mock-fetch.ts`.
-4. `chore(handlers):` strip the "extracted from intent.ts (Stage B …)" provenance lines from the
-   ~15 handler module headers — per the playbook, comments must not record where code came from.
+**Dropped at checkpoint — the xsuaa `mockResponse()` reuse.** On inspection the two mocks serve
+different consumers: `mockResponse(status, body, …)` is ADT-client-shaped (string body, derived
+`ok`, `getSetCookie`); xsuaa's `mockFetchResponse({ok, status, json, text})` is OAuth-fetch-shaped
+(explicit `ok`, a pre-parsed `json` object, `vi.fn()` spies). Forcing the swap means
+`JSON.stringify`-ing objects to round-trip through `.json()` and losing the spies — churn-negative.
+The local helper is appropriately specialized; no real divergence risk (they mock different things).
 
-**Acceptance:** suite count unchanged (rename is discovery-neutral); zero `as ResolvedFeatures` in
+**Acceptance met:** 3,723 tests green (count unchanged); zero `as ResolvedFeatures` in
 tests/unit/handlers; no fixture diff; full gate. **Risk:** none.
 
 ## PR 5 — Zod → JSON Schema generation (spike first, GO/NO-GO)
