@@ -2,8 +2,7 @@
  * Shared primitives for the intent handlers: the MCP tool-result type and its two constructors.
  *
  * `textResult`/`errorResult` are used by every handler, so they live in a dependency-free module
- * (extracted from intent.ts, Stage B) that handler modules can import without pulling in the whole
- * dispatcher.
+ * that handler modules can import without pulling in the whole dispatcher.
  */
 
 /** MCP tool call result */

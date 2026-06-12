@@ -1,6 +1,6 @@
 /**
  * SAPManage handler — server lifecycle: feature probe, discovery cache, package CRUD, FLP catalog
- * management. Extracted from intent.ts (Stage B; moved verbatim).
+ * management.
  */
 
 import type { AdtClient } from '../adt/client.js';

@@ -1,12 +1,11 @@
 /**
  * SAPWrite handler — create/update/delete ABAP source + DDIC metadata, class-section surgery,
- * RAP scaffolding, batch create. Extracted from intent.ts (Stage B).
+ * RAP scaffolding, batch create.
  *
- * Stage D: this file is now the orchestrator. handleSAPWrite resolves the request prologue
- * (object/source URLs + the three shared closures), packs them into a SapWriteContext
- * (./write/context.ts), and dispatches to the per-action handlers in ./write/{create,
- * update-delete,class-surgery,rap}.ts. Each action body was moved verbatim; the context carries
- * everything they reference so the bodies stay unchanged.
+ * This file is the orchestrator: handleSAPWrite resolves the request prologue (object/source URLs
+ * + the three shared closures), packs them into a SapWriteContext (./write/context.ts), and
+ * dispatches to the per-action handlers in ./write/{create,update-delete,class-surgery,rap}.ts.
+ * The context carries everything those action handlers reference.
  */
 
 import type { AdtClient } from '../adt/client.js';

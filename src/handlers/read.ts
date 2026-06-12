@@ -1,7 +1,6 @@
 /**
  * SAPRead handler — read ABAP source + DDIC metadata, version/draft resolution, grep, table
- * preview. Extracted from intent.ts (Stage B; moved verbatim). Exports version helpers shared
- * with the write handler.
+ * preview. Exports version helpers shared with the write handler.
  */
 
 import type { AdtClient, SourceReadResult } from '../adt/client.js';

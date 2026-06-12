@@ -1,5 +1,5 @@
 /**
- * Shared context for the per-action SAPWrite handlers (Stage D split of write.ts).
+ * Shared context for the per-action SAPWrite handlers.
  */
 
 import type { AdtClient } from '../../adt/client.js';

@@ -1,5 +1,5 @@
 /**
- * SAPWrite actions — class-section surgery (issue #303). Split from write.ts (Stage D).
+ * SAPWrite actions — class-section surgery (issue #303).
  *
  * These actions share a common shape: fetch objectstructure → optional diff/refuse → splice into
  * /source/main (or /includes/<inc> when include= is set) → PUT under lock → no auto-activate.

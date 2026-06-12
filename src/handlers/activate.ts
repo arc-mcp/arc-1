@@ -1,6 +1,6 @@
 /**
  * SAPActivate handler — activate single/batch objects, CDS activation ordering, message
- * formatting. Extracted from intent.ts (Stage B; moved verbatim).
+ * formatting.
  */
 
 import type { AdtClient } from '../adt/client.js';

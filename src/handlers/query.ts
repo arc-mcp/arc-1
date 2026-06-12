@@ -1,6 +1,5 @@
 /**
  * SAPQuery handler — freestyle SQL execution with IN-list chunking + SQL literal parsing.
- * Extracted from intent.ts (Stage B; moved verbatim).
  */
 
 import type { AdtClient } from '../adt/client.js';

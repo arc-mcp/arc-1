@@ -1,5 +1,5 @@
 /**
- * Write + pre-write-validation helpers (extracted from intent.ts, Stage B; moved verbatim).
+ * Write + pre-write-validation helpers.
  *
  * Content-type negotiation, DDIC metadata write properties, buildCreateXml, the pre-write
  * lint/syntax/RAP-preflight gates, package enforcement, and the server-driven-object write engine.
@@ -959,7 +959,7 @@ export async function runPreWriteSyntaxCheck(
   }
 }
 
-// ─── Post-save syntax check (moved from intent.ts, Stage B) ───
+// ─── Post-save syntax check ───
 const DDIC_POST_SAVE_CHECK_TYPES = new Set(['TABL', 'DDLS', 'DCLS', 'BDEF', 'SRVD', 'SRVB', 'DDLX']);
 
 /** Run a syntax check on the inactive version and format the errors for appending to an

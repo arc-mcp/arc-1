@@ -1,6 +1,6 @@
 /**
  * SAPGit handler — abapGit + gCTS version control (clone, pull, push, branches, commits, repo
- * info). Extracted from intent.ts (Stage B; moved verbatim).
+ * info).
  */
 
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';

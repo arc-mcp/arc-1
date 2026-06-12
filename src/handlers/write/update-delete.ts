@@ -1,5 +1,5 @@
 /**
- * SAPWrite actions — update + delete. Split from write.ts (Stage D).
+ * SAPWrite actions — update + delete.
  */
 
 import {

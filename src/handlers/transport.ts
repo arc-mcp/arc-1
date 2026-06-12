@@ -1,6 +1,6 @@
 /**
  * SAPTransport handler — CTS transport management (create, release, list, history, targets,
- * layers). Extracted from intent.ts (Stage B; moved verbatim).
+ * layers).
  */
 
 import type { AdtClient } from '../adt/client.js';
