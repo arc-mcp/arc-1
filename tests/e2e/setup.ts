@@ -94,17 +94,7 @@ export async function syncPersistentFixtures(client: Client): Promise<FixtureSyn
 
     if (!hasExpectedType && existingTypes.length === 0) {
       console.log(`    [setup] ${label}: missing -> creating from ${obj.fixture}`);
-      try {
-        await createObjectFromFixture(client, obj);
-        await activateObject(client, obj.type, obj.name);
-        summary.created.push(label);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        const reason = classifyFixtureError(msg);
-        if (reason === null) throw err;
-        console.warn(`    [setup] ${label}: skipping — ${reason}`);
-        summary.skipped.push({ label, reason });
-      }
+      await createActivateOrReconcile(client, obj, desiredSource, summary, verifiedActiveSources, 'create');
       continue;
     }
 
@@ -135,17 +125,7 @@ export async function syncPersistentFixtures(client: Client): Promise<FixtureSyn
     }
 
     console.log(`    [setup] ${label}: recreating from ${obj.fixture}`);
-    try {
-      await createObjectFromFixture(client, obj);
-      await activateObject(client, obj.type, obj.name);
-      summary.recreated.push(label);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      const reason = classifyFixtureError(msg);
-      if (reason === null) throw err;
-      console.warn(`    [setup] ${label}: skipping recreate — ${reason}`);
-      summary.skipped.push({ label, reason });
-    }
+    await createActivateOrReconcile(client, obj, desiredSource, summary, verifiedActiveSources, 'recreate');
   }
 
   await assertSyncedFixturesActive(client, summary, verifiedActiveSources);
@@ -198,6 +178,83 @@ async function createObjectFromFixture(client: Client, obj: PersistentObject): P
 async function activateObject(client: Client, type: string, name: string): Promise<void> {
   const activateResult = await callTool(client, 'SAPActivate', { type, name });
   assertToolSuccess(activateResult, `activate ${type} ${name}`);
+}
+
+const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Create + activate a fixture, tolerating a concurrent run that produced the
+ * same object microseconds earlier. On a known backend-quirk error (423 /
+ * "already exists" — see {@link classifyFixtureError}) we re-check the system
+ * before skipping: a parallel worktree / CI run may simply have won the create
+ * race, in which case the object is already correct and we record it as
+ * unchanged rather than skipping a chunk of the suite.
+ */
+async function createActivateOrReconcile(
+  client: Client,
+  obj: PersistentObject,
+  desiredSource: string,
+  summary: FixtureSyncSummary,
+  verifiedActiveSources: Set<string>,
+  mode: 'create' | 'recreate',
+): Promise<void> {
+  const label = `${obj.type} ${obj.name}`;
+  try {
+    await createObjectFromFixture(client, obj);
+    await activateObject(client, obj.type, obj.name);
+    (mode === 'create' ? summary.created : summary.recreated).push(label);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const reason = classifyFixtureError(msg);
+    if (reason === null) throw err;
+    const recon = await reconcileConcurrentFixture(client, obj, desiredSource);
+    if (recon === 'reconciled') {
+      console.log(`    [setup] ${label}: produced by a concurrent run — reconciled (source matches)`);
+      summary.unchanged.push(label);
+      verifiedActiveSources.add(label);
+      return;
+    }
+    if (recon === 'drift') {
+      const driftReason =
+        'Concurrent run created a different version of this fixture (likely another branch) — re-run once it finishes';
+      console.warn(`    [setup] ${label}: skipping ${mode} — ${driftReason}`);
+      summary.skipped.push({ label, reason: driftReason });
+      return;
+    }
+    console.warn(`    [setup] ${label}: skipping ${mode} — ${reason}`);
+    summary.skipped.push({ label, reason });
+  }
+}
+
+/**
+ * After a create race, poll a few times to see whether the object now exists on
+ * SAP and matches our fixture:
+ *   - 'reconciled' — present with matching source (another run won; we idempotently
+ *     re-activate in case that run hasn't finished activating yet)
+ *   - 'drift'      — present but DIFFERENT source (a genuinely conflicting writer,
+ *     e.g. another branch) — caller skips rather than fighting it
+ *   - 'absent'     — still not there, so the original error stands
+ */
+async function reconcileConcurrentFixture(
+  client: Client,
+  obj: PersistentObject,
+  desiredSource: string,
+): Promise<'reconciled' | 'drift' | 'absent'> {
+  const expectedType = obj.type.toUpperCase();
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    await delay(1500 * attempt);
+    const types = await findExistingObjectTypes(client, obj.name);
+    if (!types.includes(expectedType)) continue;
+    const live = normalizeSource(await readObjectSource(client, obj.type, obj.name), obj.type);
+    if (live !== desiredSource) return 'drift';
+    try {
+      await activateObject(client, obj.type, obj.name);
+    } catch {
+      // best-effort — the other run may hold the lock or have already activated it
+    }
+    return 'reconciled';
+  }
+  return 'absent';
 }
 
 // Types SAPWrite(action="delete") accepts. SAP-generated siblings like STOB (structure
@@ -301,7 +358,13 @@ async function assertSyncedFixturesActive(
   const checkedFixtures = PERSISTENT_OBJECTS.filter((obj) => !skippedLabels.has(`${obj.type} ${obj.name}`));
   if (checkedFixtures.length === 0) return;
 
-  const inactiveFixtures = await findInactiveFixtures(client, checkedFixtures);
+  let inactiveFixtures = await findInactiveFixtures(client, checkedFixtures);
+  if (inactiveFixtures.length > 0) {
+    // A concurrent run's activation (or our own, just issued) may still be
+    // settling. Wait briefly and re-check once before declaring failure.
+    await delay(5000);
+    inactiveFixtures = await findInactiveFixtures(client, checkedFixtures);
+  }
   if (inactiveFixtures.length > 0) {
     const details = inactiveFixtures
       .map((obj) => {
