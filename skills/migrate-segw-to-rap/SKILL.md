@@ -482,6 +482,43 @@ SAPQuery(action="sql", sql="SELECT obj_name, object, devclass, korrnum FROM tadi
 If a planned name appears in a *different* package, it's a leftover stub — delete via its
 actual transport before proceeding.
 
+### 6a-gen. (Optional) Seed the root BO via SAP's official ABAP generator
+
+If the **official SAP ABAP MCP server** is connected alongside ARC-1 (ships with ABAP Development
+Tools for VS Code; enabled in Eclipse ADT 3.60+; appears as the `abap-mcp` server), its
+*Generate ABAP Repository Objects* framework can scaffold the **root** managed+draft BO for you.
+It does **not** replace this skill — Phases 1–5 (discovery + translation) and most of Phase 6 are
+still ARC-1's job, because the generator is **single-entity and one-shot**:
+
+> *"a maximum of one entity, no compositions or hierarchies"* and *"not intended for
+> post-generation — subsequent changes require manual developer intervention."*
+
+So it fits a SEGW migration **only** when the legacy service is effectively a **single root entity**,
+managed+draft, whose table carries the modern timestamp fields `last_changed : abp_lastchange_tstmpl`
+and `local_last_changed : abp_locinst_lastchange_tstmpl`. Most SEGW services are multi-entity with
+classic `ERDAT/AEDAT` admin fields and function imports → **the generator does not apply; use the
+manual build (6b) as normal.** Where it *does* apply, it only seeds the root; ARC-1 still adds the
+children, compositions, actions, and field mappings afterward (the generator can't, being one-shot).
+
+If you use it:
+
+1. **Probe.** No `abap_generators-list_generators` tool (the `abap-mcp` server) → skip to 6b, build manually.
+2. **Resolve the ID — release-specific, never hardcode.** Call `abap_generators-list_generators`,
+   match the **"OData UI Service"** generator by display name, use the **returned `id`** (proven live:
+   `uiservice` on SAP_BASIS 758 / S4 2023; `ui-service` on 816 / ABAP Platform 2025; 816 also has
+   `x-ui-service` "from scratch"). Not listed → skip to 6b.
+3. **Schema → generate.** `abap_generators-get_schema(generatorId, packageName="<target_package>",
+   referencedObjectType="TABL", referencedObjectName="<root table, e.g. ZDM_PROJECT>")`, fill every
+   required field from the **returned** schema, then `abap_generators-generate_objects(generatorId, …)`.
+   This is a mutation — target `<target_package>` + `<transport>`, same guardrails as any write.
+4. **Hand back to ARC-1.** Continue at **Step 2 onward in 6b** for the children/compositions, the
+   projection contract level, the action (`approve_project`) + handler body, and activation —
+   adapting the names the generator chose for the root. Reconcile its root CDS/BDEF naming with this
+   skill's `ZR_*`/`ZC_*`/`ZI_*_BEH` plan, or accept the generator's names and update Phase 5f's contract.
+
+State which path you took so the run stays auditable. **When in doubt, prefer the manual build (6b)** —
+it is the proven path for the multi-entity SEGW shape and never depends on a second MCP server.
+
 ### 6b. Build order — strict, no improvisation
 
 The order below was learned the hard way (Run 1, calls #22–33). **Do not reorder.** Each step

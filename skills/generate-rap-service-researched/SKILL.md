@@ -542,6 +542,7 @@ Create a comprehensive design table:
 | Strict mode | strict(2) / strict | [system dependent] |
 | Admin fields | syuname+timestampl / abp_* types | [system dependent] |
 | Authorization | `#MANDATORY + DCLS` / prototype-only | [why] |
+| Build engine | ARC-1 (manual stack) / SAP `abap-mcp` generator (single-root seed) | [generator only if it's connected AND the model is a single root, managed+draft] |
 
 ### Entity Model
 | Entity | Role | Key Fields | Business Fields |
@@ -721,6 +722,14 @@ SAPActivate(objects=[{type:"DOMA", name:"Z<DOMAIN>"}, {type:"DTEL", name:"Z<DATA
 ```
 
 Then reference the data elements in the table entity DDL instead of inline types (e.g., `status : z<dataelement>` instead of `status : abap.char(1)`).
+
+### 4-gen. (Optional) Delegate the single-root build to SAP's official generator
+
+If the **official SAP ABAP MCP server** is connected alongside ARC-1 (the `abap-mcp` server bundled with ABAP Development Tools for VS Code / Eclipse ADT 3.60+) and the approved plan's *Build engine* is the generator, hand the single-root build to SAP's *Generate ABAP Repository Objects* framework, then return here for everything it can't do. **Only valid for a single root entity** (the generator does "a maximum of one entity, no compositions") that is **managed+draft** on a table with `last_changed : abp_lastchange_tstmpl` + `local_last_changed : abp_locinst_lastchange_tstmpl` (or use the from-scratch variant that generates the table). It is **one-shot** — not for post-generation. Anything else → use 4a/4b.
+
+1. **Probe + resolve ID (release-specific, never hardcode).** No `abap_generators-list_generators` tool → use 4a/4b. Else call it and match **"OData UI Service"** (or "OData Web API Service") by display name, use the returned `id` (`uiservice`/`webapiservice` on SAP_BASIS 758; `ui-service`/`webapi-service`/`x-ui-service` on 816).
+2. **Schema → generate.** `abap_generators-get_schema(generatorId, packageName, referencedObjectType="TABL", referencedObjectName="<table>")` → fill every required field from the **returned** schema → `abap_generators-generate_objects(generatorId, …)` into the planned package + transport (a mutation — same guardrails as 4a).
+3. **Continue with ARC-1.** Validate (4d), then add fields / children / actions / logic and run the quality checks using ARC-1 — the generator won't extend its own output. Record in the summary (Phase 5) which artifacts came from the generator vs ARC-1.
 
 ### 4a. Batch Creation (Preferred)
 

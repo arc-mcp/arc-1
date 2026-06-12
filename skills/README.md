@@ -55,6 +55,17 @@ These skills assume you have:
 3. **SAPUI5 MCP server** (`@ui5/mcp-server`). Required for `modernize-ui5-app` and `convert-ui5-to-fiori-elements` — provides the authoritative TypeScript conversion guidelines, project scaffolding, ui5-linter, and manifest validation.
 4. **Fiori MCP server** (`@sap-ux/fiori-mcp-server`). Required for `convert-ui5-to-fiori-elements` only — provides the LROP scaffold + annotation-aware page-template configuration.
 5. **A browser MCP** — `Claude_in_Chrome` or `Claude_Preview`. Used by `modernize-ui5-app` for the final render verification step (HTTP 200 alone is not a sufficient acceptance gate — see the "blank page" traps in the skill).
+6. **(Optional) Official SAP ABAP MCP server** — the `abap-mcp` server that ships with ABAP Development Tools for VS Code and is enabled in Eclipse ADT 3.60+. When connected *alongside* ARC-1, the RAP-build skills can offload the single-root managed+draft build to SAP's own *Generate ABAP Repository Objects* generators. Entirely optional and auto-detected — every skill falls back to the ARC-1 build when it's absent.
+
+## Interop with the official SAP ABAP MCP server
+
+`generate-rap-service`, `generate-rap-service-researched`, and `migrate-segw-to-rap` can each delegate the **single-root** build step to SAP's official generator framework (`abap_generators-list_generators` / `get_schema` / `generate_objects`) when the `abap-mcp` server is connected. The pattern, baked into each skill, is deliberately defensive:
+
+1. **Probe the server** — no `abap_generators-list_generators` tool ⇒ official server absent ⇒ ARC-1 build.
+2. **Resolve the generator by name, never by a hardcoded ID** — IDs are release-specific (`uiservice` / `webapiservice` on SAP_BASIS 758; `ui-service` / `webapi-service` / `x-ui-service` on 816). Call `list_generators`, match "OData UI Service" / "OData Web API Service" by display name, use the returned `id`. Not listed ⇒ ARC-1 build.
+3. **Respect the generator's hard limits** — a single entity, managed+draft, a table with the modern timestamp fields (`abp_lastchange_tstmpl` / `abp_locinst_lastchange_tstmpl`), and one-shot (not for post-generation). ARC-1 owns discovery, multi-entity compositions, actions, custom logic, and every later edit.
+
+Net effect with both servers in context: SAP's generator produces a blessed managed+draft baseline for the simple case; ARC-1 does everything around it and is the complete fallback when the generator isn't there.
 
 ## Available Skills
 
@@ -62,8 +73,8 @@ These skills assume you have:
 
 | Skill | What it does | When to use |
 |---|---|---|
-| [generate-rap-service](generate-rap-service/SKILL.md) | Creates a complete RAP OData service stack (table, CDS views, BDEF, SRVD, SRVB, class) from a natural language description, with provider-contract-aware service generation | Quick prototyping, simple CRUD, standard UI service generation |
-| [generate-rap-service-researched](generate-rap-service-researched/SKILL.md) | Same output as above, but researches the target system first (existing naming conventions, architecture patterns, revisions, docs, formatter settings, impact) and builds an approved plan before creating anything | Production-quality services in transportable packages, complex domains, "measure twice, cut once" mode |
+| [generate-rap-service](generate-rap-service/SKILL.md) | Creates a complete RAP OData service stack (table, CDS views, BDEF, SRVD, SRVB, class) from a natural language description, with provider-contract-aware service generation. Optionally offloads the single-root managed+draft build to SAP's official `abap-mcp` generator when that server is connected (falls back to the ARC-1 build otherwise) | Quick prototyping, simple CRUD, standard UI service generation |
+| [generate-rap-service-researched](generate-rap-service-researched/SKILL.md) | Same output as above, but researches the target system first (existing naming conventions, architecture patterns, revisions, docs, formatter settings, impact) and builds an approved plan before creating anything. The plan records a *Build engine* decision — ARC-1's manual stack, or SAP's official `abap-mcp` generator for the single-root seed when that server is connected | Production-quality services in transportable packages, complex domains, "measure twice, cut once" mode |
 | [generate-rap-logic](generate-rap-logic/SKILL.md) | Implements determination and validation methods in an existing RAP behavior pool using structured class reads, version-aware edits, and quickfix-aware validation | After creating a RAP service — fills in the empty method stubs with ABAP Cloud logic |
 | [generate-cds-unit-test](generate-cds-unit-test/SKILL.md) | Generates ABAP Unit tests for CDS entities using the CDS Test Double Framework | When a CDS view has calculations, CASE expressions, WHERE filters, JOINs, or aggregations worth testing |
 | [generate-abap-unit-test](generate-abap-unit-test/SKILL.md) | Generates ABAP Unit tests for classes with dependency analysis and test doubles | When a class has non-trivial business logic and uses dependency injection |
@@ -120,7 +131,7 @@ End-to-end conversion of legacy SAP stacks. `migrate-segw-to-rap` handles the OD
 
 | Skill | What it does | When to use |
 |---|---|---|
-| [migrate-segw-to-rap](migrate-segw-to-rap/SKILL.md) | Reverse-engineers a SEGW-built OData V2 service (MPC/DPC/MPC_EXT/DPC_EXT) into a modern RAP V4 service: tables, CDS views (interface + projection), behavior definitions, draft entities, service definition + binding | S/4HANA modernization; ABAP Cloud readiness; replacing CASE_MANAGEMENT_API / SEGW services that need to land on a Fiori Elements or modern UI5 app |
+| [migrate-segw-to-rap](migrate-segw-to-rap/SKILL.md) | Reverse-engineers a SEGW-built OData V2 service (MPC/DPC/MPC_EXT/DPC_EXT) into a modern RAP V4 service: tables, CDS views (interface + projection), behavior definitions, draft entities, service definition + binding. For the single-root case, can optionally seed the root BO via SAP's official `abap-mcp` generator, then layer the children/actions on with ARC-1 | S/4HANA modernization; ABAP Cloud readiness; replacing CASE_MANAGEMENT_API / SEGW services that need to land on a Fiori Elements or modern UI5 app |
 | [convert-ui5-to-fiori-elements](convert-ui5-to-fiori-elements/SKILL.md) | Generates a Fiori Elements V4 LROP app (list report + object page) driven by `@UI.*` annotations on the V4 service, using the Fiori MCP server's 3-step (`list_functionalities` → `get_functionality_details` → `execute_functionality`) workflow | The legacy UI maps cleanly to a standard LROP pattern; you want minimum custom code and maximum SAP-managed consistency |
 | [modernize-ui5-app](modernize-ui5-app/SKILL.md) | Converts a legacy UI5 freestyle JavaScript app (sync bootstrap, jQuery.sap.*, ES5, sap_belize) into a modern UI5 TypeScript app on UI5 1.147 with `sap.f.FlexibleColumnLayout`, typed event handlers, ES modules, `BaseController`, sap_horizon — with 5 documented "Critical Traps" up front to skip past common debugging detours | The legacy UI has custom controls / non-standard UX that don't fit a Fiori Elements template, or you want a TypeScript freestyle baseline for further customization |
 
