@@ -16,6 +16,7 @@ import { AdtApiError } from '../../adt/errors.js';
 import { type FmParameter, spliceFmSignature } from '../../adt/fm-signature.js';
 import { checkPackage } from '../../adt/safety.js';
 import { getTransport, getTransportInfo } from '../../adt/transport.js';
+import { escapeXmlAttr } from '../../adt/xml-parser.js';
 import { validateAffHeader } from '../../aff/validator.js';
 import { logger } from '../../server/logger.js';
 import {
@@ -38,7 +39,6 @@ import {
   buildCreateXml,
   createContentTypeForType,
   dtelNeedsPostCreateUpdate,
-  escapeXml,
   getMetadataWriteProperties,
   isMetadataWriteType,
   mergePreWriteWarnings,
@@ -188,9 +188,9 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
 
     const ktdLang = normalizeAdtLanguage(config.language);
     const ktdBody = `<?xml version="1.0" encoding="UTF-8"?>
-<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:language="${ktdLang}" adtcore:name="${escapeXml(name)}" adtcore:type="SKTD/TYP" adtcore:masterLanguage="${ktdLang}">
-  <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
-  <sktd:refObject adtcore:description="${escapeXml(refDescription)}" adtcore:name="${escapeXml(refName)}" adtcore:type="${escapeXml(refType)}" adtcore:uri="${escapeXml(refUri)}"/>
+<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:language="${ktdLang}" adtcore:name="${escapeXmlAttr(name)}" adtcore:type="SKTD/TYP" adtcore:masterLanguage="${ktdLang}">
+  <adtcore:packageRef adtcore:name="${escapeXmlAttr(pkg)}"/>
+  <sktd:refObject adtcore:description="${escapeXmlAttr(refDescription)}" adtcore:name="${escapeXmlAttr(refName)}" adtcore:type="${escapeXmlAttr(refType)}" adtcore:uri="${escapeXmlAttr(refUri)}"/>
 </sktd:docu>`;
 
     const ktdCreateUrl = '/sap/bc/adt/documentation/ktd/documents';
