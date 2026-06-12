@@ -2280,7 +2280,10 @@ describe('ADT Integration Tests', () => {
       }
       // I_CURRENCY has calculated fields → at least one CALCULATION case naming a calculatedField.
       expect(result.testCases.some((tc) => tc.semanticType === 'CALCULATION' && !!tc.calculatedField)).toBe(true);
-    });
+      // The first testcases call against a CDS view can take >30s on a cold 8.16 system
+      // (observed timing out the default 30s in CI runs 27263405092 / 27301375927). Match
+      // the 90s precedent used by the runAtcCheck tests in this file.
+    }, 90_000);
 
     it('surfaces a 400 for a nonexistent CDS entity (8.16+; skips on older releases)', async (ctx) => {
       const disco = await fetchDiscoveryDocument(client.http);
