@@ -37,6 +37,7 @@ theme:
 nav:
   - Home: index.md
   - Quickstart: quickstart.md
+  - Install in Claude: install-in-claude.md
   - Deployment:
       - Overview: deployment.md
       - Docker: docker.md

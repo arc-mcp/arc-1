@@ -6,6 +6,11 @@ This page is the published index for those files. The canonical copies stay in `
 
 See the full source catalog in [`skills/README.md`](https://github.com/marianfoo/arc-1/blob/main/skills/README.md).
 
+!!! tip "Fastest path for Claude Code"
+    Install the [Claude Code plugin](install-in-claude.md#claude-code-plugin-server-skills) — it
+    bundles the ARC-1 MCP server **and** every skill below in one step (`/plugin install
+    arc-1@arc-1`). The per-assistant copy instructions below are for other tools and manual setups.
+
 ## What Skills Are
 
 Skills are task-focused prompt files for common SAP development workflows with ARC-1. They are not server features and do not require code changes in ARC-1 itself. They package good tool usage patterns so the assistant starts from a better workflow.
@@ -22,7 +27,7 @@ Typical uses:
 
 Choose the integration style that matches your assistant:
 
-- **Claude Code**: copy a skill file into `~/.claude/commands/` and invoke it as a slash command
+- **Claude Code**: install the [plugin](install-in-claude.md#claude-code-plugin-server-skills) (recommended — server + skills), or `npx skills add marianfoo/arc-1`, or copy a skill folder into `.claude/skills/<name>/`
 - **GitHub Copilot**: add the file as a prompt or instruction file under `.github/`
 - **Cursor**: place the file under `.cursor/rules/`
 - **OpenAI Codex**: copy the content into a rule file under your Codex rules directory
