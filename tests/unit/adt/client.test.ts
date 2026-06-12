@@ -1420,11 +1420,36 @@ describe('AdtClient', () => {
       expect(derived).toBeInstanceOf(AdtClient);
     });
 
-    // Regression: issue #333 — withSafety() must re-attach EVERY AdtClient instance
-    // field, because Object.create() bypasses the constructor. A missing
-    // `tablWriteUrlCache` left it `undefined` on the clone, crashing TABL
-    // writes/activates with "Cannot read properties of undefined (reading 'get')"
-    // on every authenticated HTTP path (XSUAA/OIDC scopes or API-key profile).
+    // By-construction guard (issue #333): withSafety() now shares every own field via
+    // Object.assign and overrides only `safety`, so a NEW AdtClient field is shared
+    // automatically — there is no hand-maintained re-attach list to forget. This test
+    // enumerates the fields structurally (not by name), so it keeps holding as fields
+    // are added: every own-enumerable property except `safety` must be the SAME reference
+    // on the clone. A field that silently fails to share (e.g. a stray `#private`) fails here.
+    it('shares every instance field except safety, by reference (no per-field re-attach list)', () => {
+      const client = createClient({ username: 'u' });
+      const newSafety = { ...unrestrictedSafetyConfig(), allowWrites: false };
+      const derived = client.withSafety(newSafety);
+      expect(derived.safety).toBe(newSafety);
+      const fields = Object.keys(client);
+      expect(fields).toContain('safety'); // sanity: the override target is actually an own field
+      expect(fields.length).toBeGreaterThan(1); // there ARE other fields to share
+      for (const key of fields) {
+        if (key === 'safety') continue;
+        const sameRef = Object.is(
+          (derived as unknown as Record<string, unknown>)[key],
+          (client as unknown as Record<string, unknown>)[key],
+        );
+        expect(sameRef, `clone must share field '${key}' by reference (issue #333)`).toBe(true);
+      }
+    });
+
+    // Regression: issue #333 — withSafety() must share EVERY AdtClient instance field
+    // (the clone skips the constructor via Object.create). A missing `tablWriteUrlCache`
+    // once left it `undefined` on the clone, crashing TABL writes/activates with
+    // "Cannot read properties of undefined (reading 'get')" on every authenticated HTTP
+    // path (XSUAA/OIDC scopes or API-key profile). These named-field checks complement
+    // the structural guard above.
     type CacheView = { tablWriteUrlCache?: Map<string, string>; tablUrlCache?: Map<string, string> };
     const searchResponse = (uri: string, type: string, name: string) =>
       mockResponse(
