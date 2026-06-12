@@ -127,18 +127,28 @@ duplicating it here proved to drift). The compact per-variable table stays in AG
 Multiple integration/e2e runs can target ONE SAP system at once (several git worktrees, or a local
 run overlapping CI) without interfering. Mechanics and seams:
 
-- **Run identity** — `tests/helpers/run-id.ts` exports `RUN_ID`, a 2-char token (`TEST_RUN_ID` env if
-  set, else random per process). Every generated object name embeds it: `generateUniqueName`
-  (`tests/integration/crud-harness.ts`) and the shared `uniqueName` / `uniqueLettersName`
-  (`tests/e2e/helpers.ts`). This closes the same-millisecond collision window that timestamp +
-  process-local counter alone left open. Set `TEST_RUN_ID` to pin a readable id.
+- **Run identity** — `tests/helpers/run-id.ts` exports `RUN_ID`, a short LETTERS-ONLY token
+  (`TEST_RUN_ID` env if set — sanitised to A-Z, capped at 4 — else 2 random letters per process;
+  letters-only so one token works for both the alphanumeric `uniqueName` and the BDEF/CDS-safe
+  `uniqueLettersName` with no lossy mapping). Every generated object name embeds it:
+  `generateUniqueName` (`tests/integration/crud-harness.ts`) and the shared `uniqueName` /
+  `uniqueLettersName` (`tests/e2e/helpers.ts`). This closes the same-millisecond cross-process
+  collision window. LEAVE `TEST_RUN_ID` UNSET for an automatic per-run id — pin it only to make one
+  run's objects recognisable, and never to the SAME value in two concurrent worktrees (they'd
+  collide). `run-id.ts` loads `.env` itself, so a `.env`-set `TEST_RUN_ID` is honoured regardless of
+  import order.
 - **One e2e server per run** — `npm run test:e2e:full` now runs `scripts/e2e-run-local.sh`, which picks
   a FREE port and per-run PID/log paths (`/tmp/arc1-e2e-<id>.pid`, `/tmp/arc1-e2e-logs/<id>/`) and
   exports `TEST_RUN_ID`, so two local full runs don't kill each other (the old fixed port 3000 + fixed
-  PID file meant the second run murdered the first). CI is unchanged: it runs start/test/stop
-  separately on the fixed port 3000, one run at a time via the `…-sap-live-a4h` concurrency group.
-  Overrides: `E2E_MCP_PORT` pins the port (skips the free-port probe and the listener sweep guard),
-  `E2E_PID_FILE` / `E2E_LOG_DIR` pin paths, `E2E_MCP_URL` points the vitest client at the server.
+  PID file meant the second run murdered the first). A trap stops the server even if start or the
+  tests fail, and the start script kills its own spawn on a health-check timeout, so a failed start
+  never leaks a write-enabled server. CI is unchanged: it runs start/test/stop separately on the fixed
+  port 3000, one run at a time via the `…-sap-live-a4h` concurrency group. Overrides: `E2E_MCP_PORT`
+  pins the port (skips the free-port probe and the listener sweep guard), `E2E_PID_FILE` /
+  `E2E_LOG_DIR` pin paths, `E2E_MCP_URL` points the vitest client at the server. Note: under the
+  orchestrator the e2e JSON/JUnit results land in the per-run `E2E_LOG_DIR`, not `test-results/` (so
+  `npm run test:runtime-report`, which reads `test-results/`, reflects the integration suite — the F1
+  measurement target — not orchestrated e2e runs).
 - **Shared fixtures tolerate races** — `tests/e2e/setup.ts` reconciles a concurrent create (423 /
   "already exists") by re-polling the system instead of skipping; only a genuinely different fixture
   source (another branch mid-run) is skipped, and `assertSyncedFixturesActive` re-checks once after a
