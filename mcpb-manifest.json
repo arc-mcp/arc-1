@@ -33,7 +33,12 @@
         "SAP_CLIENT": "${user_config.sap_client}",
         "SAP_LANGUAGE": "${user_config.sap_language}",
         "SAP_INSECURE": "${user_config.sap_insecure}",
-        "SAP_ALLOW_WRITES": "${user_config.sap_allow_writes}"
+        "SAP_ALLOW_WRITES": "${user_config.sap_allow_writes}",
+        "SAP_ALLOWED_PACKAGES": "${user_config.sap_allowed_packages}",
+        "SAP_ALLOW_DATA_PREVIEW": "${user_config.sap_allow_data_preview}",
+        "SAP_ALLOW_FREE_SQL": "${user_config.sap_allow_free_sql}",
+        "SAP_ALLOW_TRANSPORT_WRITES": "${user_config.sap_allow_transport_writes}",
+        "SAP_ALLOW_GIT_WRITES": "${user_config.sap_allow_git_writes}"
       }
     }
   },
@@ -151,7 +156,42 @@
     "sap_allow_writes": {
       "type": "boolean",
       "title": "Allow Writes",
-      "description": "Allow ABAP object mutations. Keep false for read/search-only usage.",
+      "description": "Allow ABAP object mutations (create/update/activate). Prerequisite for transport and Git writes. Keep false for read/search-only usage.",
+      "default": false,
+      "required": false
+    },
+    "sap_allowed_packages": {
+      "type": "string",
+      "title": "Allowed Packages (write scope)",
+      "description": "Comma-separated write allowlist: exact names, Z* wildcards, ZFOO/** subtrees, or * for ALL packages. Default $TMP (local/throwaway only). Only applies when Allow Writes is on.",
+      "default": "$TMP",
+      "required": false
+    },
+    "sap_allow_data_preview": {
+      "type": "boolean",
+      "title": "Allow Table Data Preview",
+      "description": "Allow SAPRead(type=TABLE_CONTENTS) and SAPQuery table preview. Can expose application data — review your data-governance rules.",
+      "default": false,
+      "required": false
+    },
+    "sap_allow_free_sql": {
+      "type": "boolean",
+      "title": "Allow Freestyle SQL",
+      "description": "Allow read-only ad-hoc ABAP SQL via SAPQuery. Can expose application data — review your data-governance rules.",
+      "default": false,
+      "required": false
+    },
+    "sap_allow_transport_writes": {
+      "type": "boolean",
+      "title": "Allow Transport Writes",
+      "description": "Allow CTS transport mutations (create/assign/release). Also requires Allow Writes.",
+      "default": false,
+      "required": false
+    },
+    "sap_allow_git_writes": {
+      "type": "boolean",
+      "title": "Allow Git Writes",
+      "description": "Allow gCTS / abapGit mutations (commit/push/pull). Also requires Allow Writes.",
       "default": false,
       "required": false
     }

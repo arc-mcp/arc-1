@@ -100,6 +100,40 @@ describe('mcpb-manifest.json (Claude Desktop bundle)', () => {
   });
 });
 
+describe('config surface parity (plugin ↔ mcpb)', () => {
+  const mcpb = readJson('mcpb-manifest.json');
+  const CAPABILITY_ENV = [
+    'SAP_ALLOW_WRITES',
+    'SAP_ALLOWED_PACKAGES',
+    'SAP_ALLOW_DATA_PREVIEW',
+    'SAP_ALLOW_FREE_SQL',
+    'SAP_ALLOW_TRANSPORT_WRITES',
+    'SAP_ALLOW_GIT_WRITES',
+  ];
+
+  const surfaces: Record<string, { env: Record<string, string>; cfg: Record<string, unknown> }> = {
+    plugin: { env: plugin.mcpServers['arc-1'].env, cfg: plugin.userConfig },
+    mcpb: { env: mcpb.server.mcp_config.env, cfg: mcpb.user_config },
+  };
+
+  for (const [name, { env, cfg }] of Object.entries(surfaces)) {
+    it(`${name} exposes the full write/data/sql/transport/git surface`, () => {
+      for (const key of CAPABILITY_ENV) expect(Object.keys(env), `${name} env ${key}`).toContain(key);
+    });
+
+    it(`${name} has no dangling user_config substitution`, () => {
+      for (const value of Object.values(env)) {
+        const m = /\$\{user_config\.([a-z0-9_]+)\}/.exec(value);
+        if (m) expect(cfg, `${name} → ${m[1]}`).toHaveProperty(m[1]);
+      }
+    });
+  }
+
+  it('plugin and mcpb declare the same user-config keys', () => {
+    expect(Object.keys(plugin.userConfig).sort()).toEqual(Object.keys(mcpb.user_config).sort());
+  });
+});
+
 describe('version sync (release-please manages all four)', () => {
   it('keeps plugin/mcpb/server in lockstep with package.json', () => {
     const pkg = readJson('package.json').version;
