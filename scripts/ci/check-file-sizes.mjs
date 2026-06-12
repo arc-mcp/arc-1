@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * File-size ratchet — a regrowth brake for the handler refactor
- * (docs/plans/architecture-consolidation-plan.md).
+ * (docs/plans/completed/architecture-consolidation-plan.md).
  *
  * The codebase doubled in 8 weeks and the growth concentrated in a few monoliths (intent.ts,
  * intent.test.ts). This guard fails CI when a tracked source/test file crosses its line budget,
@@ -83,7 +83,7 @@ if (offenders.length > 0) {
     console.error(`  ${o.f}: ${o.lines} lines (budget ${o.budget})`);
   }
   console.error(
-    '\nSplit the file (see docs/plans/architecture-consolidation-plan.md), or — if justified —\n' +
+    '\nSplit the file (see docs/plans/completed/architecture-consolidation-plan.md), or — if justified —\n' +
       'raise its budget in scripts/ci/check-file-sizes.mjs (a deliberate, reviewed change).',
   );
   process.exit(1);

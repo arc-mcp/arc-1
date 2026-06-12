@@ -3,7 +3,7 @@
  *
  * Slash-form alias maps, canonical-type normalization, the objectBasePath/URL builders,
  * LLM arg-stripping, and class-include helpers. Moved verbatim from intent.ts
- * (docs/plans/architecture-consolidation-plan.md, Stage B).
+ * (docs/plans/completed/architecture-consolidation-plan.md, Stage B).
  */
 
 // ─── Object URL Mapping ──────────────────────────────────────────────
