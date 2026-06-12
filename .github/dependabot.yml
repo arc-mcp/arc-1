@@ -49,8 +49,8 @@ updates:
           - "biome"
     ignore:
       # @types/node major must match `engines.node` minimum (currently
-      # `>=22.22.1` — a minor bump kept lint-staged 17.x happy; the major
-      # is still 22), not Node's latest release line. Bumping to a newer
+      # `>=22.19` — aligned with the strictest runtime dependency floor;
+      # the major is still 22), not Node's latest release line. Bumping to a newer
       # major surfaces APIs that don't exist on the minimum supported
       # runtime, allowing accidental use of APIs that crash at runtime.
       # Bump @types/node major in the same PR that bumps engines.node.
