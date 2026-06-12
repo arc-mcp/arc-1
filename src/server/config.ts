@@ -221,15 +221,20 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     return undefined;
   };
 
+  // An empty flag/env value (a cleared install-dialog field, or a shell-expanded unset $VAR) is
+  // treated as "not provided" and falls through to the default instead of overriding it with "".
+  // This stops non-empty defaults (e.g. SAP_CLIENT=100, SAP_LANGUAGE=EN) from being silently
+  // dropped — an empty client would otherwise log the user on to the system default client.
   const resolveStr = (flag: string, envVar: string, defaultVal: string, fieldName: string): string => {
     const flagVal = getFlag(flag);
-    if (flagVal !== undefined) {
+    if (flagVal !== undefined && flagVal !== '') {
       sources[fieldName] = { flag: `--${flag}` };
       return flagVal;
     }
-    if (process.env[envVar] !== undefined) {
+    const envVal = process.env[envVar];
+    if (envVal !== undefined && envVal !== '') {
       sources[fieldName] = { env: envVar };
-      return process.env[envVar] as string;
+      return envVal;
     }
     sources[fieldName] = 'default';
     return defaultVal;
@@ -334,15 +339,26 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
   if (pkgs !== undefined) {
     const raw = pkgs.split(',').map((p) => p.trim());
     const filtered = raw.filter((p) => p.length > 0);
-    if (raw.length !== filtered.length) {
+    if (filtered.length === 0) {
+      // Empty / separator-only value ("" or ",," from a shell-expanded unset $VAR, or a cleared
+      // install-dialog field). Treat as "not provided" and keep the $TMP default — do NOT fall
+      // through to [], which safety.ts treats as "all packages allowed". Use '*' for unrestricted.
       logger.warn(
-        "SAP_ALLOWED_PACKAGES contained empty entries — likely shell expansion of unset $VARs. Use single quotes: SAP_ALLOWED_PACKAGES='$TMP,Z*'",
-        { raw: pkgs, parsed: filtered },
+        "SAP_ALLOWED_PACKAGES resolved to no packages — keeping the $TMP default (writes are NOT unrestricted). Set it to '*' to allow all packages explicitly.",
+        { raw: pkgs },
       );
+      sources.allowedPackages = 'default';
+    } else {
+      if (raw.length !== filtered.length) {
+        logger.warn(
+          "SAP_ALLOWED_PACKAGES contained empty entries — likely shell expansion of unset $VARs. Use single quotes: SAP_ALLOWED_PACKAGES='$TMP,Z*'",
+          { raw: pkgs, parsed: filtered },
+        );
+      }
+      config.allowedPackages = filtered;
+      sources.allowedPackages =
+        getFlag('allowed-packages') !== undefined ? { flag: '--allowed-packages' } : { env: 'SAP_ALLOWED_PACKAGES' };
     }
-    config.allowedPackages = filtered;
-    sources.allowedPackages =
-      getFlag('allowed-packages') !== undefined ? { flag: '--allowed-packages' } : { env: 'SAP_ALLOWED_PACKAGES' };
   } else {
     sources.allowedPackages = 'default';
   }

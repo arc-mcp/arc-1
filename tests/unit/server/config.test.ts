@@ -228,17 +228,35 @@ describe('parseArgs', () => {
     expect(config.allowedPackages).toEqual(['Z*', '$TMP']);
   });
 
-  it('filters out empty entries from SAP_ALLOWED_PACKAGES (e.g. shell-expanded unset $VARs)', () => {
-    // Simulates `SAP_ALLOWED_PACKAGES=$tmp,$locals,$*` with unset shell vars → ",,"
+  it('keeps the $TMP default when SAP_ALLOWED_PACKAGES is empty (fail closed, NOT unrestricted)', () => {
+    // "" or ",," (shell-expanded unset $VARs, or a cleared install-dialog field) must NOT become []
+    // — [] means "all packages allowed" in safety.ts. Empty falls back to the safe $TMP default;
+    // unrestricted stays an explicit opt-in via '*'.
     process.env.SAP_ALLOWED_PACKAGES = ',,';
-    const config = parseArgs([]);
-    expect(config.allowedPackages).toEqual([]);
+    expect(parseArgs([]).allowedPackages).toEqual(['$TMP']);
+    process.env.SAP_ALLOWED_PACKAGES = '';
+    expect(parseArgs([]).allowedPackages).toEqual(['$TMP']);
   });
 
   it('filters empty entries but keeps valid ones', () => {
     process.env.SAP_ALLOWED_PACKAGES = 'Z*,,$TMP,';
     const config = parseArgs([]);
     expect(config.allowedPackages).toEqual(['Z*', '$TMP']);
+  });
+
+  it('still allows explicit unrestricted writes via *', () => {
+    process.env.SAP_ALLOWED_PACKAGES = '*';
+    expect(parseArgs([]).allowedPackages).toEqual(['*']);
+  });
+
+  it('keeps the SAP_CLIENT / SAP_LANGUAGE defaults when the env value is empty', () => {
+    // A cleared install-dialog field sends "" — it must fall back to the default, not override it.
+    // An empty client would otherwise drop the sap-client param and log on to the system default.
+    process.env.SAP_CLIENT = '';
+    process.env.SAP_LANGUAGE = '';
+    const config = parseArgs([]);
+    expect(config.client).toBe('100');
+    expect(config.language).toBe('EN');
   });
 
   describe('legacy config migration errors', () => {
