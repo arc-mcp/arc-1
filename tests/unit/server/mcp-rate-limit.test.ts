@@ -12,7 +12,7 @@ function authInfo(extra: Record<string, unknown>, clientId?: string): AuthInfo {
  *
  * Pure unit tests of the limiter wrapper. The handler-integration tests
  * (handleToolCall returns MCP tool error on denial) live in
- * tests/unit/handlers/intent-rate-limit.test.ts.
+ * tests/unit/handlers/dispatch-rate-limit.test.ts.
  */
 describe('createMcpRateLimiter (Layer 2)', () => {
   it('allows requests under the per-minute cap', async () => {
