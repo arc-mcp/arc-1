@@ -5,7 +5,8 @@
   "display_name": "ARC-1 - SAP ABAP MCP Server",
   "version": "0.9.14",
   "description": "MCP server for SAP ABAP Development Tools (ADT). Read, write, search, activate, and manage ABAP objects in SAP systems.",
-  "long_description": "ARC-1 connects Claude to SAP ABAP systems via the ABAP Development Tools (ADT) REST API. Provides 11 intent-based tools covering the full ABAP development lifecycle: read source code, create/update objects, search, activate, navigate references, run SQL queries, manage transports, lint, and diagnose runtime issues. Read-only by default with configurable safety gates. Supports on-premise SAP and BTP ABAP Environment.",
+  "long_description": "ARC-1 connects Claude to SAP ABAP systems via the ABAP Development Tools (ADT) REST API. Provides 12 intent-based tools covering the full ABAP development lifecycle: read source code, create/update objects, search, activate, navigate references, run SQL queries, manage transports and Git, lint, and diagnose runtime issues. Read-only by default with configurable safety gates. Supports on-premise SAP and BTP ABAP Environment.",
+  "icon": "icon.png",
   "author": {
     "name": "Marian Zeis",
     "url": "https://github.com/marianfoo"
@@ -64,6 +65,10 @@
     {
       "name": "SAPTransport",
       "description": "Manage CTS transport requests"
+    },
+    {
+      "name": "SAPGit",
+      "description": "Version control for ABAP via gCTS or abapGit (status, clone, pull, commit, push) — available when a Git backend is present"
     },
     {
       "name": "SAPContext",

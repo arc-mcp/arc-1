@@ -69,6 +69,57 @@ jobs:
       - name: Publish to npm
         run: npm publish --provenance --access public
 
+  # Build the MCPB (.mcpb) bundle and attach it to the GitHub Release so users can
+  # one-click install ARC-1 in Claude Desktop (Settings → Extensions, or double-click).
+  # The bundle is pure-JS and cross-platform: better-sqlite3 (a native module with no
+  # prebuilds) is omitted, and the server falls back to the in-memory cache at runtime
+  # (createCachingLayer in src/server/server.ts catches the missing module). The MCPB
+  # manifest version is kept in sync with package.json by release-please.
+  build-mcpb:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Assemble bundle (pure-JS, native better-sqlite3 omitted)
+        run: |
+          mkdir -p mcpb-bundle
+          cp mcpb-manifest.json mcpb-bundle/manifest.json
+          cp icon.png mcpb-bundle/
+          cp -r dist mcpb-bundle/dist
+          cp package.json package-lock.json mcpb-bundle/
+          ( cd mcpb-bundle && npm ci --omit=dev --ignore-scripts )
+          rm -rf mcpb-bundle/node_modules/better-sqlite3
+
+      - name: Pack and self-sign
+        run: |
+          VERSION="${{ needs.release-please.outputs.tag_name }}"
+          VERSION="${VERSION#v}"
+          npx --yes @anthropic-ai/mcpb@latest pack mcpb-bundle "arc-1-${VERSION}.mcpb"
+          # Self-signed for integrity; the Anthropic-curated directory does its own signing.
+          npx --yes @anthropic-ai/mcpb@latest sign "arc-1-${VERSION}.mcpb" --self-signed \
+            || echo "::warning::MCPB self-sign skipped"
+
+      - name: Attach .mcpb to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ needs.release-please.outputs.tag_name }}" arc-1-*.mcpb --clobber
+
   # Publish server metadata to the Official MCP Registry.
   # This makes ARC-1 discoverable in VS Code (@mcp search), GitHub MCP Registry,
   # and other MCP clients that consume the registry API.

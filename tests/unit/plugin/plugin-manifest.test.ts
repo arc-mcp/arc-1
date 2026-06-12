@@ -70,6 +70,36 @@ describe('marketplace.json', () => {
   });
 });
 
+describe('mcpb-manifest.json (Claude Desktop bundle)', () => {
+  const mcpb = readJson('mcpb-manifest.json');
+  const STANDARD_TOOLS = [
+    'SAPRead',
+    'SAPSearch',
+    'SAPWrite',
+    'SAPActivate',
+    'SAPNavigate',
+    'SAPQuery',
+    'SAPTransport',
+    'SAPGit',
+    'SAPContext',
+    'SAPLint',
+    'SAPDiagnose',
+    'SAPManage',
+  ];
+
+  it('lists all 12 intent tools (incl. SAPGit) with no duplicates', () => {
+    const names = mcpb.tools.map((t: { name: string }) => t.name);
+    expect(new Set(names).size).toBe(names.length);
+    for (const t of STANDARD_TOOLS) expect(names).toContain(t);
+    expect(mcpb.tools).toHaveLength(STANDARD_TOOLS.length);
+  });
+
+  it('references the bundled icon and states the tool count', () => {
+    expect(mcpb.icon).toBe('icon.png');
+    expect(mcpb.long_description).toContain('12 intent-based tools');
+  });
+});
+
 describe('version sync (release-please manages all four)', () => {
   it('keeps plugin/mcpb/server in lockstep with package.json', () => {
     const pkg = readJson('package.json').version;
