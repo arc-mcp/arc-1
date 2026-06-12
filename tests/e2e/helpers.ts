@@ -12,7 +12,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { expect } from 'vitest';
-import { RUN_ID, RUN_ID_ALPHA } from '../helpers/run-id.js';
+import { RUN_ID } from '../helpers/run-id.js';
 import { skipTest } from '../helpers/skip-policy.js';
 
 /** MCP tool call result shape */
@@ -53,7 +53,11 @@ export function uniqueLettersName(prefix: string): string {
     }
     return s || 'A';
   };
-  return `${prefix}${RUN_ID_ALPHA}${toLetters(Date.now())}${toLetters(Math.floor(Math.random() * 1e6))}`.slice(0, 30);
+  // RUN_ID is letters-only, so no separate mapping is needed. Random BEFORE the
+  // timestamp so per-call entropy survives caller-side truncation — rap-write
+  // call sites do `.slice(0, 16)` for ≤16-char CDS/TABL names, which would
+  // otherwise chop a trailing random component off entirely.
+  return `${prefix}${RUN_ID}${toLetters(Math.floor(Math.random() * 1e6))}${toLetters(Date.now())}`.slice(0, 30);
 }
 
 /** Server identity from /health endpoint */
