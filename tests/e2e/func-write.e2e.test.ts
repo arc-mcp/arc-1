@@ -10,22 +10,14 @@
 
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { callTool, connectClient, expectToolError, expectToolSuccess, expectToolSuccessOrSkip } from './helpers.js';
-
-/** Generate a collision-safe unique name (letters-only suffix). */
-function uniqueName(prefix: string): string {
-  const toLetters = (n: number): string => {
-    let s = '';
-    let v = n;
-    while (v > 0) {
-      s = String.fromCharCode(65 + (v % 26)) + s;
-      v = Math.floor(v / 26);
-    }
-    return s || 'A';
-  };
-  const suffix = `${toLetters(Date.now())}${toLetters(Math.floor(Math.random() * 1e6))}`;
-  return `${prefix}${suffix}`.slice(0, 30);
-}
+import {
+  callTool,
+  connectClient,
+  expectToolError,
+  expectToolSuccess,
+  expectToolSuccessOrSkip,
+  uniqueLettersName as uniqueName,
+} from './helpers.js';
 
 /** Best-effort delete helper — for FUNC requires `group`. */
 async function bestEffortDeleteFm(client: Client, group: string, name: string): Promise<void> {

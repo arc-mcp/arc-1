@@ -22,7 +22,14 @@ import { fileURLToPath } from 'node:url';
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { skipTest } from '../helpers/skip-policy.js';
-import { callTool, classifyToolErrorSkip, connectClient, expectToolError, expectToolSuccess } from './helpers.js';
+import {
+  callTool,
+  classifyToolErrorSkip,
+  connectClient,
+  expectToolError,
+  expectToolSuccess,
+  uniqueName,
+} from './helpers.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = join(__dirname, '..', 'fixtures', 'abap');
@@ -44,9 +51,8 @@ describe('E2E SAPActivate failure path (PR #179 regression)', () => {
 
   it('reports activation failure with a clear error message for a deliberately broken PROG', async (ctx) => {
     const brokenSource = readFileSync(join(FIXTURES_DIR, 'zarc1_e2e_act_broken.abap'), 'utf-8');
-    // Unique name per run to avoid collisions on parallel CI executions.
-    const suffix = Date.now().toString(36).slice(-6);
-    const progName = `ZARC1_E2E_ACTBROKE_${suffix}`.toUpperCase();
+    // Unique, run-scoped name so concurrent CI/local executions never collide.
+    const progName = uniqueName('ZARC1_E2E_ACTBRK');
 
     let created = false;
     try {

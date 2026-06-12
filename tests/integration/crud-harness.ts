@@ -10,17 +10,20 @@
 import { deleteObject, lockObject } from '../../src/adt/crud.js';
 import type { AdtHttpClient } from '../../src/adt/http.js';
 import type { SafetyConfig } from '../../src/adt/safety.js';
+import { RUN_ID } from '../helpers/run-id.js';
 
 let nameCounter = 0;
 
 /**
  * Generate a unique ABAP-valid object name.
- * Returns `${prefix}_${timestamp_base36}${counter_base36}` — uppercase, max 30 chars.
- * Uses a monotonic counter to guarantee uniqueness even within the same millisecond.
+ * Returns `${prefix}_${RUN_ID}${timestamp_base36}${counter_base36}` — uppercase, max 30 chars.
+ * The per-run id (see tests/helpers/run-id.ts) separates concurrent runs against
+ * the same SAP system; the monotonic counter guarantees uniqueness within a run
+ * even inside the same millisecond.
  */
 export function generateUniqueName(prefix: string): string {
-  const suffix = `${Date.now().toString(36)}${(nameCounter++).toString(36)}`.toUpperCase().slice(-6);
-  const name = `${prefix}_${suffix}`;
+  const tail = `${Date.now().toString(36)}${(nameCounter++).toString(36)}`.toUpperCase().slice(-5);
+  const name = `${prefix}_${RUN_ID}${tail}`;
   if (name.length > 30) {
     throw new Error(`Generated name "${name}" exceeds 30 characters. Use a shorter prefix.`);
   }

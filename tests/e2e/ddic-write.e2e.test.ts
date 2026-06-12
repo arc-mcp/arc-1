@@ -7,14 +7,8 @@ import {
   expectToolSuccess,
   expectToolSuccessOrSkip,
   skipOnBatchCreateFailure,
+  uniqueName,
 } from './helpers.js';
-
-function uniqueName(prefix: string): string {
-  const suffix = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e5)
-    .toString(36)
-    .padStart(3, '0')}`.toUpperCase();
-  return `${prefix}_${suffix}`.slice(0, 30);
-}
 
 function parsePossiblyCachedJson(text: string): any {
   return JSON.parse(text.replace(/^\[cached(?::revalidated)?\]\n/, ''));

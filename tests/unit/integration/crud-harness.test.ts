@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { RUN_ID } from '../../helpers/run-id.js';
 import {
   buildCreateXml,
   CrudRegistry,
@@ -16,6 +17,11 @@ describe('generateUniqueName', () => {
   it('produces names <= 30 characters', () => {
     const name = generateUniqueName('ZARC1_IT');
     expect(name.length).toBeLessThanOrEqual(30);
+  });
+
+  it('embeds the per-run id so concurrent runs do not collide', () => {
+    const name = generateUniqueName('ZARC1_IT');
+    expect(name).toContain(`_${RUN_ID}`);
   });
 
   it('produces different names on sequential calls even within the same millisecond', () => {

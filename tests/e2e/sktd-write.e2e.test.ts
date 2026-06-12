@@ -14,14 +14,14 @@
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { requireOrSkip, SkipReason } from '../helpers/skip-policy.js';
-import { callTool, connectClient, expectToolError, expectToolSuccess, expectToolSuccessOrSkip } from './helpers.js';
-
-function uniqueName(prefix: string): string {
-  const suffix = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e5)
-    .toString(36)
-    .padStart(3, '0')}`.toUpperCase();
-  return `${prefix}${suffix}`.slice(0, 30);
-}
+import {
+  callTool,
+  connectClient,
+  expectToolError,
+  expectToolSuccess,
+  expectToolSuccessOrSkip,
+  uniqueName,
+} from './helpers.js';
 
 describe('E2E SKTD (Knowledge Transfer Document) tests', () => {
   let client: Client;

@@ -1,23 +1,14 @@
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { callTool } from './helpers.js';
 
-/** Generate a collision-safe unique name with a given prefix (max 30 chars).
- *  Uses letters-only encoding to avoid ABAP/CDS identifier issues —
- *  digit sequences like "00" confuse the BDEF parser in certain positions. */
-export function uniqueName(prefix: string): string {
-  // Encode timestamp + random as letters only (A-Z, base 26)
-  const toLetters = (n: number): string => {
-    let s = '';
-    let v = n;
-    while (v > 0) {
-      s = String.fromCharCode(65 + (v % 26)) + s;
-      v = Math.floor(v / 26);
-    }
-    return s || 'A';
-  };
-  const suffix = `${toLetters(Date.now())}${toLetters(Math.floor(Math.random() * 1e6))}`;
-  return `${prefix}${suffix}`.slice(0, 30);
-}
+/**
+ * Generate a collision-safe unique name with a given prefix (max 30 chars).
+ * Re-exports the shared letters-only generator: RAP/BDEF identifiers must avoid
+ * digit sequences like "00" that confuse the BDEF parser in certain positions,
+ * and the letters-only form also carries the per-run id (run-scoped to keep
+ * concurrent runs against one SAP system from colliding).
+ */
+export { uniqueLettersName as uniqueName } from './helpers.js';
 
 /** Best-effort delete helper. Swallows all errors. */
 export async function bestEffortDelete(client: Client, type: string, name: string): Promise<void> {

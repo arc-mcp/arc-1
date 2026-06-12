@@ -12,14 +12,7 @@
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { skipTest } from '../helpers/skip-policy.js';
-import { callTool, connectClient, expectToolSuccess, expectToolSuccessOrSkip } from './helpers.js';
-
-function uniqueName(prefix: string): string {
-  const suffix = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e5)
-    .toString(36)
-    .padStart(3, '0')}`.toUpperCase();
-  return `${prefix}_${suffix}`.slice(0, 30);
-}
+import { callTool, connectClient, expectToolSuccess, expectToolSuccessOrSkip, uniqueName } from './helpers.js';
 
 const PROBE_V1 = (name: string) => `CLASS ${name.toLowerCase()} DEFINITION PUBLIC FINAL CREATE PUBLIC.
   PUBLIC SECTION.
