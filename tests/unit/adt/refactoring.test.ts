@@ -67,6 +67,13 @@ describe('refactoring — change package', () => {
       expect(xml).toContain('<generic:title>Change Package</generic:title>');
       expect(xml).toContain('</generic:genericRefactoring>');
     });
+
+    it('escapes all five XML entities incl. apostrophes in the description (shared escapeXmlAttr)', () => {
+      const xml = buildPreviewXml({ ...BASE_PARAMS, description: `O'Brien & <Co> "x"` });
+      expect(xml).toContain('adtcore:description="O&apos;Brien &amp; &lt;Co&gt; &quot;x&quot;"');
+      // No raw apostrophe survives in the description attribute (the former local escaper omitted it).
+      expect(xml).not.toContain("O'Brien");
+    });
   });
 
   describe('buildExecuteXml', () => {

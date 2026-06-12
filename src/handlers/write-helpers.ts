@@ -32,6 +32,7 @@ import {
   updateServerDrivenObjectSource,
 } from '../adt/server-driven.js';
 import type { ResolvedFeatures } from '../adt/types.js';
+import { escapeXmlAttr } from '../adt/xml-parser.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
 import type { LintConfigOptions, RuleOverrides } from '../lint/config-builder.js';
 import { detectFilename, validateBeforeWrite } from '../lint/lint.js';
@@ -318,73 +319,73 @@ export function buildCreateXml(
       return `<?xml version="1.0" encoding="UTF-8"?>
 <program:abapProgram xmlns:program="http://www.sap.com/adt/programs/programs"
                      xmlns:adtcore="http://www.sap.com/adt/core"
-                     adtcore:description="${escapeXml(description)}"
-                     adtcore:name="${escapeXml(name)}"
+                     adtcore:description="${escapeXmlAttr(description)}"
+                     adtcore:name="${escapeXmlAttr(name)}"
                      adtcore:type="PROG/P"
                      adtcore:masterLanguage="${masterLanguage}"
                      adtcore:masterSystem="H00"
-                     adtcore:responsible="${escapeXml(responsibleUser)}">
-  <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
+                     adtcore:responsible="${escapeXmlAttr(responsibleUser)}">
+  <adtcore:packageRef adtcore:name="${escapeXmlAttr(pkg)}"/>
 </program:abapProgram>`;
     case 'CLAS':
       return `<?xml version="1.0" encoding="UTF-8"?>
 <class:abapClass xmlns:class="http://www.sap.com/adt/oo/classes"
                  xmlns:adtcore="http://www.sap.com/adt/core"
-                 adtcore:description="${escapeXml(description)}"
-                 adtcore:name="${escapeXml(name)}"
+                 adtcore:description="${escapeXmlAttr(description)}"
+                 adtcore:name="${escapeXmlAttr(name)}"
                  adtcore:type="CLAS/OC"
                  adtcore:masterLanguage="${masterLanguage}"
                  adtcore:masterSystem="H00"
-                 adtcore:responsible="${escapeXml(responsibleUser)}">
-  <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
+                 adtcore:responsible="${escapeXmlAttr(responsibleUser)}">
+  <adtcore:packageRef adtcore:name="${escapeXmlAttr(pkg)}"/>
 </class:abapClass>`;
     case 'INTF':
       return `<?xml version="1.0" encoding="UTF-8"?>
 <intf:abapInterface xmlns:intf="http://www.sap.com/adt/oo/interfaces"
                     xmlns:adtcore="http://www.sap.com/adt/core"
-                    adtcore:description="${escapeXml(description)}"
-                    adtcore:name="${escapeXml(name)}"
+                    adtcore:description="${escapeXmlAttr(description)}"
+                    adtcore:name="${escapeXmlAttr(name)}"
                     adtcore:type="INTF/OI"
                     adtcore:masterLanguage="${masterLanguage}"
                     adtcore:masterSystem="H00"
-                    adtcore:responsible="${escapeXml(responsibleUser)}">
-  <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
+                    adtcore:responsible="${escapeXmlAttr(responsibleUser)}">
+  <adtcore:packageRef adtcore:name="${escapeXmlAttr(pkg)}"/>
 </intf:abapInterface>`;
     case 'INCL':
       return `<?xml version="1.0" encoding="UTF-8"?>
 <include:abapInclude xmlns:include="http://www.sap.com/adt/programs/includes"
                      xmlns:adtcore="http://www.sap.com/adt/core"
-                     adtcore:description="${escapeXml(description)}"
-                     adtcore:name="${escapeXml(name)}"
+                     adtcore:description="${escapeXmlAttr(description)}"
+                     adtcore:name="${escapeXmlAttr(name)}"
                      adtcore:type="PROG/I"
                      adtcore:masterLanguage="${masterLanguage}"
                      adtcore:masterSystem="H00"
-                     adtcore:responsible="${escapeXml(responsibleUser)}">
-  <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
+                     adtcore:responsible="${escapeXmlAttr(responsibleUser)}">
+  <adtcore:packageRef adtcore:name="${escapeXmlAttr(pkg)}"/>
 </include:abapInclude>`;
     case 'DDLS':
       return `<?xml version="1.0" encoding="UTF-8"?>
 <ddl:ddlSource xmlns:ddl="http://www.sap.com/adt/ddic/ddlsources"
                xmlns:adtcore="http://www.sap.com/adt/core"
-               adtcore:description="${escapeXml(description)}"
-               adtcore:name="${escapeXml(name)}"
+               adtcore:description="${escapeXmlAttr(description)}"
+               adtcore:name="${escapeXmlAttr(name)}"
                adtcore:type="DDLS/DF"
                adtcore:masterLanguage="${masterLanguage}"
                adtcore:masterSystem="H00"
-                 adtcore:responsible="${escapeXml(responsibleUser)}">
-  <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
+                 adtcore:responsible="${escapeXmlAttr(responsibleUser)}">
+  <adtcore:packageRef adtcore:name="${escapeXmlAttr(pkg)}"/>
 </ddl:ddlSource>`;
     case 'DCLS':
       return `<?xml version="1.0" encoding="UTF-8"?>
 <dcl:dclSource xmlns:dcl="http://www.sap.com/adt/acm/dclsources"
                xmlns:adtcore="http://www.sap.com/adt/core"
-               adtcore:description="${escapeXml(description)}"
-               adtcore:name="${escapeXml(name)}"
+               adtcore:description="${escapeXmlAttr(description)}"
+               adtcore:name="${escapeXmlAttr(name)}"
                adtcore:type="DCLS/DL"
                adtcore:masterLanguage="${masterLanguage}"
                adtcore:masterSystem="H00"
-               adtcore:responsible="${escapeXml(responsibleUser)}">
-  <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
+               adtcore:responsible="${escapeXmlAttr(responsibleUser)}">
+  <adtcore:packageRef adtcore:name="${escapeXmlAttr(pkg)}"/>
 </dcl:dclSource>`;
     case 'TABL':
     case 'TABL/DT':
@@ -396,13 +397,13 @@ export function buildCreateXml(
       return `<?xml version="1.0" encoding="UTF-8"?>
 <blue:blueSource xmlns:blue="http://www.sap.com/wbobj/blue"
                  xmlns:adtcore="http://www.sap.com/adt/core"
-                 adtcore:description="${escapeXml(description)}"
-                 adtcore:name="${escapeXml(name)}"
+                 adtcore:description="${escapeXmlAttr(description)}"
+                 adtcore:name="${escapeXmlAttr(name)}"
                  adtcore:type="${adtType}"
                  adtcore:masterLanguage="${masterLanguage}"
                  adtcore:masterSystem="H00"
-                 adtcore:responsible="${escapeXml(responsibleUser)}">
-  <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
+                 adtcore:responsible="${escapeXmlAttr(responsibleUser)}">
+  <adtcore:packageRef adtcore:name="${escapeXmlAttr(pkg)}"/>
 </blue:blueSource>`;
     }
     case 'BDEF':
@@ -411,26 +412,26 @@ export function buildCreateXml(
       return `<?xml version="1.0" encoding="UTF-8"?>
 <blue:blueSource xmlns:blue="http://www.sap.com/wbobj/blue"
                  xmlns:adtcore="http://www.sap.com/adt/core"
-                 adtcore:description="${escapeXml(description)}"
-                 adtcore:name="${escapeXml(name)}"
+                 adtcore:description="${escapeXmlAttr(description)}"
+                 adtcore:name="${escapeXmlAttr(name)}"
                  adtcore:type="BDEF/BDO"
                  adtcore:masterLanguage="${masterLanguage}"
                  adtcore:masterSystem="H00"
-                 adtcore:responsible="${escapeXml(responsibleUser)}">
-  <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
+                 adtcore:responsible="${escapeXmlAttr(responsibleUser)}">
+  <adtcore:packageRef adtcore:name="${escapeXmlAttr(pkg)}"/>
 </blue:blueSource>`;
     case 'SRVD':
       return `<?xml version="1.0" encoding="UTF-8"?>
 <srvd:srvdSource xmlns:srvd="http://www.sap.com/adt/ddic/srvdsources"
                  xmlns:adtcore="http://www.sap.com/adt/core"
-                 adtcore:description="${escapeXml(description)}"
-                 adtcore:name="${escapeXml(name)}"
+                 adtcore:description="${escapeXmlAttr(description)}"
+                 adtcore:name="${escapeXmlAttr(name)}"
                  adtcore:type="SRVD/SRV"
                  adtcore:masterLanguage="${masterLanguage}"
                  adtcore:masterSystem="H00"
-                 adtcore:responsible="${escapeXml(responsibleUser)}"
+                 adtcore:responsible="${escapeXmlAttr(responsibleUser)}"
                  srvd:srvdSourceType="S">
-  <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
+  <adtcore:packageRef adtcore:name="${escapeXmlAttr(pkg)}"/>
 </srvd:srvdSource>`;
     case 'SRVB': {
       const serviceDefinition = String(properties?.serviceDefinition ?? '').trim();
@@ -458,13 +459,13 @@ export function buildCreateXml(
       return `<?xml version="1.0" encoding="UTF-8"?>
 <ddlx:ddlxSource xmlns:ddlx="http://www.sap.com/adt/ddic/ddlxsources"
                  xmlns:adtcore="http://www.sap.com/adt/core"
-                 adtcore:description="${escapeXml(description)}"
-                 adtcore:name="${escapeXml(name)}"
+                 adtcore:description="${escapeXmlAttr(description)}"
+                 adtcore:name="${escapeXmlAttr(name)}"
                  adtcore:type="DDLX/EX"
                  adtcore:masterLanguage="${masterLanguage}"
                  adtcore:masterSystem="H00"
-                     adtcore:responsible="${escapeXml(responsibleUser)}">
-  <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
+                     adtcore:responsible="${escapeXmlAttr(responsibleUser)}">
+  <adtcore:packageRef adtcore:name="${escapeXmlAttr(pkg)}"/>
 </ddlx:ddlxSource>`;
     case 'DOMA': {
       const fixedValuesRaw = Array.isArray(properties?.fixedValues) ? properties.fixedValues : [];
@@ -550,8 +551,8 @@ export function buildCreateXml(
       // with Content-Type: application/vnd.sap.adt.functions.groups.v3+xml.
       // Verified live on a4h S/4HANA 2023 (issue #250).
       return `<?xml version="1.0" encoding="UTF-8"?>
-<group:abapFunctionGroup xmlns:group="http://www.sap.com/adt/functions/groups" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:description="${escapeXml(description)}" adtcore:language="${masterLanguage}" adtcore:name="${escapeXml(name)}" adtcore:type="FUGR/F" adtcore:masterLanguage="${masterLanguage}">
-  <adtcore:packageRef adtcore:name="${escapeXml(pkg)}"/>
+<group:abapFunctionGroup xmlns:group="http://www.sap.com/adt/functions/groups" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:description="${escapeXmlAttr(description)}" adtcore:language="${masterLanguage}" adtcore:name="${escapeXmlAttr(name)}" adtcore:type="FUGR/F" adtcore:masterLanguage="${masterLanguage}">
+  <adtcore:packageRef adtcore:name="${escapeXmlAttr(pkg)}"/>
 </group:abapFunctionGroup>`;
     case 'FUNC': {
       // Function module create envelope. POSTed to
@@ -567,15 +568,15 @@ export function buildCreateXml(
       }
       const groupLc = encodeURIComponent(group.toLowerCase());
       return `<?xml version="1.0" encoding="UTF-8"?>
-<fmodule:abapFunctionModule xmlns:fmodule="http://www.sap.com/adt/functions/fmodules" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:description="${escapeXml(description)}" adtcore:name="${escapeXml(name)}" adtcore:type="FUGR/FF">
-  <adtcore:containerRef adtcore:name="${escapeXml(group)}" adtcore:type="FUGR/F" adtcore:uri="/sap/bc/adt/functions/groups/${groupLc}"/>
+<fmodule:abapFunctionModule xmlns:fmodule="http://www.sap.com/adt/functions/fmodules" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:description="${escapeXmlAttr(description)}" adtcore:name="${escapeXmlAttr(name)}" adtcore:type="FUGR/FF">
+  <adtcore:containerRef adtcore:name="${escapeXmlAttr(group)}" adtcore:type="FUGR/F" adtcore:uri="/sap/bc/adt/functions/groups/${groupLc}"/>
 </fmodule:abapFunctionModule>`;
     }
     default:
       // Fallback — generic objectReferences using the correct URL for the type
       return `<?xml version="1.0" encoding="UTF-8"?>
 <adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">
-  <adtcore:objectReference adtcore:uri="${escapeXml(objectUrlForType(type, name))}" adtcore:type="${escapeXml(type)}" adtcore:name="${escapeXml(name)}" adtcore:packageName="${escapeXml(pkg)}"/>
+  <adtcore:objectReference adtcore:uri="${escapeXmlAttr(objectUrlForType(type, name))}" adtcore:type="${escapeXmlAttr(type)}" adtcore:name="${escapeXmlAttr(name)}" adtcore:packageName="${escapeXmlAttr(pkg)}"/>
 </adtcore:objectReferences>`;
   }
 }
@@ -600,16 +601,6 @@ export function stripFmParamCommentBlock(source: string): { source: string; wasS
   const lines = source.split('\n');
   const kept = lines.filter((line) => !/^\s*\*"/.test(line));
   return { source: kept.join('\n'), wasStripped: kept.length !== lines.length };
-}
-
-/** Escape special characters for XML attribute values */
-export function escapeXml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
 }
 
 // ─── SAPWrite Handler ────────────────────────────────────────────────

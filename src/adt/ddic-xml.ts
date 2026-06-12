@@ -5,6 +5,8 @@
  * structured XML payloads on create/update.
  */
 
+import { escapeXmlAttr } from './xml-parser.js';
+
 export interface DomainFixedValue {
   low: string;
   high?: string;
@@ -165,15 +167,6 @@ export function normalizeAdtResponsible(responsible?: string): string {
   return (responsible ?? '').trim().toUpperCase() || 'DEVELOPER';
 }
 
-function escapeXml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
-
 function formatLength(value: number | string | undefined, width: number): string {
   if (value === undefined || value === null || String(value).trim() === '') {
     return ''.padStart(width, '0');
@@ -211,9 +204,9 @@ export function buildDomainXml(params: DomainCreateParams): string {
           ...fixedValues.map(
             (value, index) => `        <doma:fixValue>
           <doma:position>${String(index + 1).padStart(4, '0')}</doma:position>
-          <doma:low>${escapeXml(value.low)}</doma:low>
-          <doma:high>${escapeXml(value.high ?? '')}</doma:high>
-          <doma:text>${escapeXml(value.description ?? '')}</doma:text>
+          <doma:low>${escapeXmlAttr(value.low)}</doma:low>
+          <doma:high>${escapeXmlAttr(value.high ?? '')}</doma:high>
+          <doma:text>${escapeXmlAttr(value.description ?? '')}</doma:text>
         </doma:fixValue>`,
           ),
           '      </doma:fixValues>',
@@ -222,29 +215,29 @@ export function buildDomainXml(params: DomainCreateParams): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <doma:domain xmlns:doma="http://www.sap.com/dictionary/domain"
              xmlns:adtcore="http://www.sap.com/adt/core"
-             adtcore:description="${escapeXml(params.description)}"
-             adtcore:name="${escapeXml(params.name)}"
+             adtcore:description="${escapeXmlAttr(params.description)}"
+             adtcore:name="${escapeXmlAttr(params.name)}"
              adtcore:type="DOMA/DD"
              adtcore:masterLanguage="${masterLanguage}"
              adtcore:masterSystem="H00"
-             adtcore:responsible="${escapeXml(responsible)}">
-  <adtcore:packageRef adtcore:name="${escapeXml(params.package)}"/>
+             adtcore:responsible="${escapeXmlAttr(responsible)}">
+  <adtcore:packageRef adtcore:name="${escapeXmlAttr(params.package)}"/>
   <doma:content>
     <doma:typeInformation>
-      <doma:datatype>${escapeXml(params.dataType)}</doma:datatype>
+      <doma:datatype>${escapeXmlAttr(params.dataType)}</doma:datatype>
       <doma:length>${formatLength(params.length, 6)}</doma:length>
       <doma:decimals>${formatLength(params.decimals, 6)}</doma:decimals>
     </doma:typeInformation>
     <doma:outputInformation>
       <doma:length>${formatLength(params.outputLength ?? params.length, 6)}</doma:length>
       <doma:style>00</doma:style>
-      <doma:conversionExit>${escapeXml(params.conversionExit ?? '')}</doma:conversionExit>
+      <doma:conversionExit>${escapeXmlAttr(params.conversionExit ?? '')}</doma:conversionExit>
       <doma:signExists>${boolToXml(params.signExists)}</doma:signExists>
       <doma:lowercase>${boolToXml(params.lowercase)}</doma:lowercase>
       <doma:ampmFormat>false</doma:ampmFormat>
     </doma:outputInformation>
     <doma:valueInformation>
-${valueTable ? `      <doma:valueTableRef adtcore:type="TABL/DT" adtcore:name="${escapeXml(valueTable)}"/>` : ''}
+${valueTable ? `      <doma:valueTableRef adtcore:type="TABL/DT" adtcore:name="${escapeXmlAttr(valueTable)}"/>` : ''}
       <doma:appendExists>false</doma:appendExists>
 ${fixValuesXml}
     </doma:valueInformation>
@@ -283,18 +276,18 @@ export function buildMessageClassXml(params: MessageClassCreateParams): string {
         messages
           .map(
             (m) =>
-              `  <mc:messages mc:msgno="${escapeXml(m.number)}" mc:msgtext="${escapeXml(m.shortText)}" mc:selfexplainatory="true" mc:documented="false"/>`,
+              `  <mc:messages mc:msgno="${escapeXmlAttr(m.number)}" mc:msgtext="${escapeXmlAttr(m.shortText)}" mc:selfexplainatory="true" mc:documented="false"/>`,
           )
           .join('\n');
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <mc:messageClass xmlns:mc="http://www.sap.com/adt/MessageClass"
                  xmlns:adtcore="http://www.sap.com/adt/core"
-                 adtcore:description="${escapeXml(params.description)}"
-                 adtcore:name="${escapeXml(params.name)}"
+                 adtcore:description="${escapeXmlAttr(params.description)}"
+                 adtcore:name="${escapeXmlAttr(params.name)}"
                  adtcore:language="${masterLanguage}"
                  adtcore:masterLanguage="${masterLanguage}">
-  <adtcore:packageRef adtcore:name="${escapeXml(params.package)}"/>${messagesXml}
+  <adtcore:packageRef adtcore:name="${escapeXmlAttr(params.package)}"/>${messagesXml}
 </mc:messageClass>`;
 }
 
@@ -311,35 +304,35 @@ export function buildDataElementXml(params: DataElementCreateParams): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <blue:wbobj xmlns:blue="http://www.sap.com/wbobj/dictionary/dtel"
             xmlns:adtcore="http://www.sap.com/adt/core"
-            adtcore:description="${escapeXml(params.description)}"
-            adtcore:name="${escapeXml(params.name)}"
+            adtcore:description="${escapeXmlAttr(params.description)}"
+            adtcore:name="${escapeXmlAttr(params.name)}"
             adtcore:type="DTEL/DE"
             adtcore:masterLanguage="${masterLanguage}"
             adtcore:masterSystem="H00"
-            adtcore:responsible="${escapeXml(responsible)}">
-  <adtcore:packageRef adtcore:name="${escapeXml(params.package)}"/>
+            adtcore:responsible="${escapeXmlAttr(responsible)}">
+  <adtcore:packageRef adtcore:name="${escapeXmlAttr(params.package)}"/>
   <dtel:dataElement xmlns:dtel="http://www.sap.com/adt/dictionary/dataelements">
-    <dtel:typeKind>${escapeXml(typeKind)}</dtel:typeKind>
-    <dtel:typeName>${escapeXml(typeName)}</dtel:typeName>
-    <dtel:dataType>${escapeXml(params.dataType ?? '')}</dtel:dataType>
+    <dtel:typeKind>${escapeXmlAttr(typeKind)}</dtel:typeKind>
+    <dtel:typeName>${escapeXmlAttr(typeName)}</dtel:typeName>
+    <dtel:dataType>${escapeXmlAttr(params.dataType ?? '')}</dtel:dataType>
     <dtel:dataTypeLength>${formatLength(params.length, 6)}</dtel:dataTypeLength>
     <dtel:dataTypeDecimals>${formatLength(params.decimals, 6)}</dtel:dataTypeDecimals>
-    <dtel:shortFieldLabel>${escapeXml(shortLabel)}</dtel:shortFieldLabel>
+    <dtel:shortFieldLabel>${escapeXmlAttr(shortLabel)}</dtel:shortFieldLabel>
     <dtel:shortFieldLength>${formatLabelLength(shortLabel, DTEL_MAX_LABEL_LENGTHS.short)}</dtel:shortFieldLength>
     <dtel:shortFieldMaxLength>${String(DTEL_MAX_LABEL_LENGTHS.short).padStart(2, '0')}</dtel:shortFieldMaxLength>
-    <dtel:mediumFieldLabel>${escapeXml(mediumLabel)}</dtel:mediumFieldLabel>
+    <dtel:mediumFieldLabel>${escapeXmlAttr(mediumLabel)}</dtel:mediumFieldLabel>
     <dtel:mediumFieldLength>${formatLabelLength(mediumLabel, DTEL_MAX_LABEL_LENGTHS.medium)}</dtel:mediumFieldLength>
     <dtel:mediumFieldMaxLength>${DTEL_MAX_LABEL_LENGTHS.medium}</dtel:mediumFieldMaxLength>
-    <dtel:longFieldLabel>${escapeXml(longLabel)}</dtel:longFieldLabel>
+    <dtel:longFieldLabel>${escapeXmlAttr(longLabel)}</dtel:longFieldLabel>
     <dtel:longFieldLength>${formatLabelLength(longLabel, DTEL_MAX_LABEL_LENGTHS.long)}</dtel:longFieldLength>
     <dtel:longFieldMaxLength>${DTEL_MAX_LABEL_LENGTHS.long}</dtel:longFieldMaxLength>
-    <dtel:headingFieldLabel>${escapeXml(headingLabel)}</dtel:headingFieldLabel>
+    <dtel:headingFieldLabel>${escapeXmlAttr(headingLabel)}</dtel:headingFieldLabel>
     <dtel:headingFieldLength>${formatLabelLength(headingLabel, DTEL_MAX_LABEL_LENGTHS.heading)}</dtel:headingFieldLength>
     <dtel:headingFieldMaxLength>${DTEL_MAX_LABEL_LENGTHS.heading}</dtel:headingFieldMaxLength>
-    <dtel:searchHelp>${escapeXml(params.searchHelp ?? '')}</dtel:searchHelp>
-    <dtel:searchHelpParameter>${escapeXml(params.searchHelpParameter ?? '')}</dtel:searchHelpParameter>
-    <dtel:setGetParameter>${escapeXml(params.setGetParameter ?? '')}</dtel:setGetParameter>
-    <dtel:defaultComponentName>${escapeXml(params.defaultComponentName ?? '')}</dtel:defaultComponentName>
+    <dtel:searchHelp>${escapeXmlAttr(params.searchHelp ?? '')}</dtel:searchHelp>
+    <dtel:searchHelpParameter>${escapeXmlAttr(params.searchHelpParameter ?? '')}</dtel:searchHelpParameter>
+    <dtel:setGetParameter>${escapeXmlAttr(params.setGetParameter ?? '')}</dtel:setGetParameter>
+    <dtel:defaultComponentName>${escapeXmlAttr(params.defaultComponentName ?? '')}</dtel:defaultComponentName>
     <dtel:deactivateInputHistory>false</dtel:deactivateInputHistory>
     <dtel:changeDocument>${boolToXml(params.changeDocument)}</dtel:changeDocument>
     <dtel:leftToRightDirection>false</dtel:leftToRightDirection>
@@ -361,18 +354,18 @@ export function buildPackageXml(params: PackageCreateParams): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <pak:package xmlns:pak="http://www.sap.com/adt/packages"
              xmlns:adtcore="http://www.sap.com/adt/core"
-             adtcore:description="${escapeXml(params.description)}"
-             adtcore:name="${escapeXml(params.name)}"
+             adtcore:description="${escapeXmlAttr(params.description)}"
+             adtcore:name="${escapeXmlAttr(params.name)}"
              adtcore:type="DEVC/K"
              adtcore:version="active"
-             adtcore:responsible="${escapeXml(responsible)}">
-  <adtcore:packageRef adtcore:name="${escapeXml(params.name)}"/>
-  <pak:attributes pak:packageType="${escapeXml(packageType)}" pak:recordChanges="${boolToXml(recordChanges)}"/>
-  <pak:superPackage adtcore:name="${escapeXml(superPackage)}"/>
+             adtcore:responsible="${escapeXmlAttr(responsible)}">
+  <adtcore:packageRef adtcore:name="${escapeXmlAttr(params.name)}"/>
+  <pak:attributes pak:packageType="${escapeXmlAttr(packageType)}" pak:recordChanges="${boolToXml(recordChanges)}"/>
+  <pak:superPackage adtcore:name="${escapeXmlAttr(superPackage)}"/>
   <pak:applicationComponent/>
   <pak:transport>
-    <pak:softwareComponent pak:name="${escapeXml(softwareComponent)}"/>
-    <pak:transportLayer pak:name="${escapeXml(transportLayer)}"/>
+    <pak:softwareComponent pak:name="${escapeXmlAttr(softwareComponent)}"/>
+    <pak:transportLayer pak:name="${escapeXmlAttr(transportLayer)}"/>
   </pak:transport>
   <pak:translation/>
   <pak:useAccesses/>
@@ -394,19 +387,19 @@ export function buildServiceBindingXml(params: ServiceBindingCreateParams): stri
   return `<?xml version="1.0" encoding="UTF-8"?>
 <srvb:serviceBinding xmlns:srvb="http://www.sap.com/adt/ddic/ServiceBindings"
                      xmlns:adtcore="http://www.sap.com/adt/core"
-                     adtcore:description="${escapeXml(params.description)}"
-                     adtcore:name="${escapeXml(params.name)}"
+                     adtcore:description="${escapeXmlAttr(params.description)}"
+                     adtcore:name="${escapeXmlAttr(params.name)}"
                      adtcore:type="SRVB/SVB"
                      adtcore:language="${masterLanguage}"
                      adtcore:masterLanguage="${masterLanguage}"
-                     adtcore:responsible="${escapeXml(responsible)}">
-  <adtcore:packageRef adtcore:name="${escapeXml(params.package)}"/>
-  <srvb:services srvb:name="${escapeXml(params.name)}">
-    <srvb:content srvb:version="${escapeXml(serviceVersion)}">
-      <srvb:serviceDefinition adtcore:name="${escapeXml(params.serviceDefinition)}"/>
+                     adtcore:responsible="${escapeXmlAttr(responsible)}">
+  <adtcore:packageRef adtcore:name="${escapeXmlAttr(params.package)}"/>
+  <srvb:services srvb:name="${escapeXmlAttr(params.name)}">
+    <srvb:content srvb:version="${escapeXmlAttr(serviceVersion)}">
+      <srvb:serviceDefinition adtcore:name="${escapeXmlAttr(params.serviceDefinition)}"/>
     </srvb:content>
   </srvb:services>
-  <srvb:binding srvb:category="${category}" srvb:type="${escapeXml(normalized.type)}" srvb:version="${escapeXml(odataVersion)}">
+  <srvb:binding srvb:category="${category}" srvb:type="${escapeXmlAttr(normalized.type)}" srvb:version="${escapeXmlAttr(odataVersion)}">
     <srvb:implementation adtcore:name=""/>
   </srvb:binding>
 </srvb:serviceBinding>`;

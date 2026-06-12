@@ -122,7 +122,7 @@ Mirror the existing `buildDataElementXml()` / `buildDomainXml()` exports in `src
   </blue:appendStructure>
   ```
   Verify root element + namespace against the existing DDIC builders. The exact root name TBD against live a4h on first integration run — use `R3TR APPS` semantics.
-- [ ] Use the existing `escapeXml()` helper for all attribute values
+- [ ] Use the existing `escapeXmlAttr()` helper (`src/adt/xml-parser.ts`) for all attribute values
 - [ ] Add unit tests (~4 tests): happy path, empty fields list rejected, name validation (starts with Z/Y), special characters escaped correctly
 - [ ] Run `npm test -- ddic-xml` — all tests pass
 

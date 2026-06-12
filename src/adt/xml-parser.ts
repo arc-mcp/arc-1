@@ -41,7 +41,14 @@ import type {
   TransactionInfo,
 } from './types.js';
 
-/** Escape XML special characters for safe interpolation into XML attributes */
+/**
+ * Escape the five predefined XML entities (`& < > " '`) for safe interpolation into XML.
+ *
+ * This is the ONE XML escaper for the codebase — safe for both attribute values and element text
+ * (escaping `"`/`'` in text content is valid and harmless). Do NOT add a local copy in another
+ * module; import this. (HTML/XSS contexts are different — `escapeHtml` in oauth.ts/http.ts emits
+ * `&#39;`, not the XML `&apos;`, and must stay separate.)
+ */
 export function escapeXmlAttr(s: string): string {
   return s
     .replace(/&/g, '&amp;')

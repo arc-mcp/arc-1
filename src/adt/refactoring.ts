@@ -14,6 +14,7 @@
 
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
+import { escapeXmlAttr } from './xml-parser.js';
 
 /** Parameters for a change-package refactoring operation */
 export interface ChangePackageParams {
@@ -43,32 +44,27 @@ const NS_CHANGEPACKAGE = 'http://www.sap.com/adt/refactoring/changepackagerefact
 const NS_GENERIC = 'http://www.sap.com/adt/refactoring/genericrefactoring';
 const NS_ADTCORE = 'http://www.sap.com/adt/core';
 
-/** Escape XML special characters */
-function escapeXml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
 /** Build the inner genericRefactoring XML fragment (shared by preview and execute) */
 function buildGenericRefactoringInner(params: ChangePackageParams): string {
-  const desc = escapeXml(params.description ?? 'ABAP Object');
+  const desc = escapeXmlAttr(params.description ?? 'ABAP Object');
   const transport = params.transport ?? '';
   return [
     `<generic:title>Change Package</generic:title>`,
-    `<generic:adtObjectUri>${escapeXml(params.objectUri)}</generic:adtObjectUri>`,
+    `<generic:adtObjectUri>${escapeXmlAttr(params.objectUri)}</generic:adtObjectUri>`,
     `<generic:affectedObjects>`,
     `<generic:affectedObject`,
     ` adtcore:description="${desc}"`,
-    ` adtcore:name="${escapeXml(params.objectName)}"`,
-    ` adtcore:packageName="${escapeXml(params.oldPackage)}"`,
-    ` adtcore:type="${escapeXml(params.objectType)}"`,
-    ` adtcore:uri="${escapeXml(params.objectUri)}">`,
+    ` adtcore:name="${escapeXmlAttr(params.objectName)}"`,
+    ` adtcore:packageName="${escapeXmlAttr(params.oldPackage)}"`,
+    ` adtcore:type="${escapeXmlAttr(params.objectType)}"`,
+    ` adtcore:uri="${escapeXmlAttr(params.objectUri)}">`,
     `<generic:userContent/>`,
     `<generic:changePackageDelta>`,
-    `<generic:newPackage>${escapeXml(params.newPackage)}</generic:newPackage>`,
+    `<generic:newPackage>${escapeXmlAttr(params.newPackage)}</generic:newPackage>`,
     `</generic:changePackageDelta>`,
     `</generic:affectedObject>`,
     `</generic:affectedObjects>`,
-    `<generic:transport>${escapeXml(transport)}</generic:transport>`,
+    `<generic:transport>${escapeXmlAttr(transport)}</generic:transport>`,
     `<generic:ignoreSyntaxErrorsAllowed>false</generic:ignoreSyntaxErrorsAllowed>`,
     `<generic:ignoreSyntaxErrors>false</generic:ignoreSyntaxErrors>`,
     `<generic:userContent/>`,
@@ -86,8 +82,8 @@ export function buildPreviewXml(params: ChangePackageParams): string {
     ` xmlns:adtcore="${NS_ADTCORE}"`,
     ` xmlns:generic="${NS_GENERIC}"`,
     ` xmlns:changepackage="${NS_CHANGEPACKAGE}">`,
-    `<changepackage:oldPackage>${escapeXml(params.oldPackage)}</changepackage:oldPackage>`,
-    `<changepackage:newPackage>${escapeXml(params.newPackage)}</changepackage:newPackage>`,
+    `<changepackage:oldPackage>${escapeXmlAttr(params.oldPackage)}</changepackage:oldPackage>`,
+    `<changepackage:newPackage>${escapeXmlAttr(params.newPackage)}</changepackage:newPackage>`,
     `<generic:genericRefactoring>`,
     buildGenericRefactoringInner(params),
     `</generic:genericRefactoring>`,

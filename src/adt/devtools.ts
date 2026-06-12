@@ -714,14 +714,14 @@ export async function applyFixProposal(
     proposal.userContent === undefined
       ? ''
       : `
-  <userContent>${escapeXmlText(proposal.userContent)}</userContent>`;
+  <userContent>${escapeXmlAttr(proposal.userContent)}</userContent>`;
   const affectedObjects = serializeAffectedObjects(proposal.affectedObjects);
   // quickfixes.xsd uses elementFormDefault="unqualified"; only the root and imported adtcore
   // elements are prefixed.
   const body = `<?xml version="1.0" encoding="UTF-8"?>
 <quickfixes:proposalRequest xmlns:quickfixes="http://www.sap.com/adt/quickfixes" xmlns:adtcore="http://www.sap.com/adt/core">
   <input>
-    <content>${escapeXmlText(source)}</content>
+    <content>${escapeXmlAttr(source)}</content>
     <adtcore:objectReference adtcore:uri="${escapeXmlAttr(uriWithStart)}"/>
   </input>${affectedObjects}${userContent}
 </quickfixes:proposalRequest>`;
@@ -976,15 +976,6 @@ function parseUnitTestResults(xml: string): UnitTestResult[] {
   return results;
 }
 
-function escapeXmlText(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
-}
-
 function toNodeRecord(value: unknown): Record<string, unknown> | undefined {
   if (!value) return undefined;
   if (Array.isArray(value)) {
@@ -1063,7 +1054,7 @@ function serializeAffectedObjects(affectedObjects: FixAffectedObject[] | undefin
     .filter((affected) => affected.uri && affected.content !== undefined)
     .map(
       (affected) => `    <unit>
-      <content>${escapeXmlText(affected.content ?? '')}</content>
+      <content>${escapeXmlAttr(affected.content ?? '')}</content>
       <adtcore:objectReference ${serializeObjectReferenceAttrs(affected)}/>
     </unit>`,
     );
