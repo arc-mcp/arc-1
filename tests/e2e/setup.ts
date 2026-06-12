@@ -11,6 +11,7 @@
  */
 
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { bareObjectName } from '../helpers/test-prefixes.js';
 import { PERSISTENT_OBJECTS, readFixture } from './fixtures.js';
 import { callTool, type ToolResult } from './helpers.js';
 
@@ -207,23 +208,37 @@ async function createActivateOrReconcile(
     const msg = err instanceof Error ? err.message : String(err);
     const reason = classifyFixtureError(msg);
     if (reason === null) throw err;
-    const recon = await reconcileConcurrentFixture(client, obj, desiredSource);
-    if (recon === 'reconciled') {
-      console.log(`    [setup] ${label}: produced by a concurrent run — reconciled (source matches)`);
-      summary.unchanged.push(label);
-      verifiedActiveSources.add(label);
-      return;
-    }
-    if (recon === 'drift') {
-      const driftReason =
-        'Concurrent run created a different version of this fixture (likely another branch) — re-run once it finishes';
-      console.warn(`    [setup] ${label}: skipping ${mode} — ${driftReason}`);
-      summary.skipped.push({ label, reason: driftReason });
-      return;
+    // Only a create RACE (a concurrent run beat us to the same object) is worth
+    // re-polling; release gaps / stale phantoms can never appear via a re-check,
+    // so skip them immediately as before (no wasted poll/backoff).
+    if (isConcurrencyRaceError(msg)) {
+      const recon = await reconcileConcurrentFixture(client, obj, desiredSource);
+      if (recon === 'reconciled') {
+        console.log(`    [setup] ${label}: produced by a concurrent run — reconciled (source matches)`);
+        summary.unchanged.push(label);
+        verifiedActiveSources.add(label);
+        return;
+      }
+      if (recon === 'drift') {
+        const driftReason =
+          'Concurrent run created a different version of this fixture (likely another branch) — re-run once it finishes';
+        console.warn(`    [setup] ${label}: skipping ${mode} — ${driftReason}`);
+        summary.skipped.push({ label, reason: driftReason });
+        return;
+      }
     }
     console.warn(`    [setup] ${label}: skipping ${mode} — ${reason}`);
     summary.skipped.push({ label, reason });
   }
+}
+
+/** A create error that looks like a lost race — another run created the same object first. */
+function isConcurrencyRaceError(message: string): boolean {
+  return (
+    /status 423.*invalid lock handle/i.test(message) ||
+    /already exists/i.test(message) ||
+    /does already exist/i.test(message)
+  );
 }
 
 /**
@@ -241,18 +256,28 @@ async function reconcileConcurrentFixture(
   desiredSource: string,
 ): Promise<'reconciled' | 'drift' | 'absent'> {
   const expectedType = obj.type.toUpperCase();
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    await delay(1500 * attempt);
-    const types = await findExistingObjectTypes(client, obj.name);
-    if (!types.includes(expectedType)) continue;
-    const live = normalizeSource(await readObjectSource(client, obj.type, obj.name), obj.type);
-    if (live !== desiredSource) return 'drift';
+  // Probe first (an "already exists" race means the object is there NOW), then a
+  // single short re-poll for a still-in-flight create. The whole body is guarded
+  // so a read/search failure mid-reconcile (release-gapped source read, object
+  // locked by the other run) returns 'absent' and the caller records the
+  // ORIGINAL skip — never an uncaught throw that aborts the entire sync.
+  for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      await activateObject(client, obj.type, obj.name);
+      const types = await findExistingObjectTypes(client, obj.name);
+      if (types.includes(expectedType)) {
+        const live = normalizeSource(await readObjectSource(client, obj.type, obj.name), obj.type);
+        if (live !== desiredSource) return 'drift';
+        try {
+          await activateObject(client, obj.type, obj.name);
+        } catch {
+          // best-effort — the other run may hold the lock or have already activated it
+        }
+        return 'reconciled';
+      }
     } catch {
-      // best-effort — the other run may hold the lock or have already activated it
+      // fall through to the retry / 'absent' — see the comment above
     }
-    return 'reconciled';
+    if (attempt < 2) await delay(1500);
   }
   return 'absent';
 }
@@ -334,9 +359,9 @@ async function findExistingObjectTypes(client: Client, name: string): Promise<st
     const objectType = getString(entry, 'objectType');
     if (!objectName || !objectType) continue;
     // On NW 7.50 the search result decorates the name with a display suffix
-    // like "ZIF_ARC1_TEST (Interface)". Normalize by stripping anything after
-    // the first space or "(" so equality matches the bare object name.
-    const bareName = objectName.split(/\s|\(/)[0];
+    // like "ZIF_ARC1_TEST (Interface)". Normalize to the bare name (shared with
+    // the janitor's selector) so equality matches.
+    const bareName = bareObjectName(objectName);
     if (bareName.toUpperCase() !== name.toUpperCase()) continue;
     types.add(objectType.split('/')[0].toUpperCase());
   }
@@ -359,9 +384,11 @@ async function assertSyncedFixturesActive(
   if (checkedFixtures.length === 0) return;
 
   let inactiveFixtures = await findInactiveFixtures(client, checkedFixtures);
-  if (inactiveFixtures.length > 0) {
-    // A concurrent run's activation (or our own, just issued) may still be
-    // settling. Wait briefly and re-check once before declaring failure.
+  // Only wait-and-recheck if THIS run actually issued an activation that might
+  // still be settling. If everything was already unchanged, an inactive fixture
+  // is a durable problem — fail fast instead of paying a blind 5s.
+  const issuedActivations = summary.created.length > 0 || summary.recreated.length > 0;
+  if (inactiveFixtures.length > 0 && issuedActivations) {
     await delay(5000);
     inactiveFixtures = await findInactiveFixtures(client, checkedFixtures);
   }
