@@ -48,27 +48,32 @@ export interface ToolDefinition {
 }
 
 /**
- * Read-only / destructive hints for the 12 standard tools — the single source of truth,
- * attached in getToolDefinitions() and asserted in tests. Clients use them to badge tools
+ * Read-only / destructive hints for the 12 standard tools. Clients use them to badge tools
  * and to decide auto-approval (read-only tools are safe to auto-run); they are also required
  * for the Claude Desktop Extensions Directory. Hyperfocused mode's universal tool is left
  * unannotated because it can both read and write.
+ *
+ * These MUST agree with ACTION_POLICY (src/authz/policy.ts): a tool is read-only iff none of
+ * its actions mutate (opType ∉ MUTATING_OPS), and destructive iff it has a delete action.
+ * tool-annotations.test.ts derives the expected values from ACTION_POLICY and fails on drift —
+ * e.g. SAPLint is NOT read-only because action=set_formatter_settings PUTs ADT settings, and
+ * SAPWrite/SAPTransport/SAPGit are destructive because they can delete/unlink/overwrite objects.
  */
 const TOOL_ANNOTATIONS: Record<string, ToolAnnotations> = {
-  // Read-only: no SAP mutation.
+  // Read-only: every action is non-mutating.
   SAPRead: { readOnlyHint: true },
   SAPSearch: { readOnlyHint: true },
   SAPNavigate: { readOnlyHint: true },
   SAPQuery: { readOnlyHint: true },
   SAPContext: { readOnlyHint: true },
-  SAPLint: { readOnlyHint: true },
   SAPDiagnose: { readOnlyHint: true },
-  // Mutating but non-destructive: create/update/activate/version-control.
-  SAPWrite: { readOnlyHint: false, destructiveHint: false },
+  // Mutating, non-destructive (no delete action).
+  SAPLint: { readOnlyHint: false, destructiveHint: false },
   SAPActivate: { readOnlyHint: false, destructiveHint: false },
-  SAPTransport: { readOnlyHint: false, destructiveHint: false },
-  SAPGit: { readOnlyHint: false, destructiveHint: false },
-  // Destructive: deletes objects.
+  // Mutating AND destructive (delete / unlink / overwriting actions).
+  SAPWrite: { readOnlyHint: false, destructiveHint: true },
+  SAPTransport: { readOnlyHint: false, destructiveHint: true },
+  SAPGit: { readOnlyHint: false, destructiveHint: true },
   SAPManage: { readOnlyHint: false, destructiveHint: true },
 };
 
