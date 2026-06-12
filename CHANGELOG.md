@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.16](https://github.com/marianfoo/arc-1/compare/v0.9.15...v0.9.16) (2026-06-12)
+
+
+### Bug Fixes
+
+* initialise class test include surgery ([#429](https://github.com/marianfoo/arc-1/issues/429)) ([f076a67](https://github.com/marianfoo/arc-1/commit/f076a671f738267945f9c7936c77d63a37291437))
+
 ## [0.9.15](https://github.com/marianfoo/arc-1/compare/v0.9.14...v0.9.15) (2026-06-12)
 
 
