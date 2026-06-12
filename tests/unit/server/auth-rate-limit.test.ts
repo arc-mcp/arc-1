@@ -70,7 +70,11 @@ async function fireRequests(
           });
         },
       );
-      req.on('error', reject);
+      // Name the failing request so a transport error under full-suite load is self-diagnosing
+      // (mirrors withJsonServer.post; see docs/research/auth-rate-limit-test-flake.md).
+      req.on('error', (err: NodeJS.ErrnoException) =>
+        reject(new Error(`GET /test request #${i + 1} failed: ${err.code ?? err.message}`)),
+      );
       req.end();
     });
     codes.push(res.status);
@@ -189,21 +193,36 @@ describe('/authorize JSON-RPC dispatch (Copilot Studio MCP fix via skip())', () 
     return app;
   }
 
-  async function fireJsonPost(
-    app: express.Express,
-    path: string,
-    body: object,
-    ip = '10.7.7.1',
-  ): Promise<{ status: number; headers: Record<string, string> }> {
+  // Transport errors (no HTTP response at all) that are worth one retry under full-suite load.
+  // An HTTP response — including 429, the behavior under test — never reaches the retry path.
+  const TRANSIENT_CODES = new Set(['ECONNRESET', 'ECONNREFUSED', 'EADDRNOTAVAIL']);
+
+  /**
+   * One server per test (mirrors `fireRequests`), replacing the former `fireJsonPost` that created
+   * and tore down a fresh `http.Server` per request — 16 listen/close cycles in the bug_006 test
+   * alone, the front-runner mechanism for the rare full-suite flake (docs/research/
+   * auth-rate-limit-test-flake.md). `post()` reuses the one listening port; transport errors are
+   * retried once for the known-transient codes and otherwise rejected with the path + request index
+   * + syscall so any future failure is self-diagnosing instead of a bare reject.
+   */
+  async function withJsonServer(app: express.Express): Promise<{
+    post: (path: string, body: object, ip?: string) => Promise<{ status: number; headers: Record<string, string> }>;
+    close: () => Promise<void>;
+  }> {
     const http = await import('node:http');
     const server = http.createServer(app);
     await new Promise<void>((r) => server.listen(0, r));
     const addr = server.address();
     if (!addr || typeof addr === 'string') throw new Error('server not listening');
     const port = addr.port;
-    const payload = JSON.stringify(body);
-    try {
-      return await new Promise<{ status: number; headers: Record<string, string> }>((resolve, reject) => {
+    let counter = 0;
+
+    function once(
+      path: string,
+      payload: string,
+      ip: string,
+    ): Promise<{ status: number; headers: Record<string, string> }> {
+      return new Promise((resolve, reject) => {
         const req = http.request(
           {
             hostname: '127.0.0.1',
@@ -235,34 +254,62 @@ describe('/authorize JSON-RPC dispatch (Copilot Studio MCP fix via skip())', () 
         req.write(payload);
         req.end();
       });
-    } finally {
-      await new Promise<void>((r) => server.close(() => r()));
     }
+
+    async function post(path: string, body: object, ip = '10.7.7.1') {
+      const n = ++counter;
+      const payload = JSON.stringify(body);
+      try {
+        return await once(path, payload, ip);
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code && TRANSIENT_CODES.has(code)) {
+          console.warn(`auth-rate-limit test: transient ${code} on ${path} request #${n}, retrying once`);
+          try {
+            return await once(path, payload, ip);
+          } catch (retryErr) {
+            const rc = (retryErr as NodeJS.ErrnoException).code ?? (retryErr as Error).message;
+            throw new Error(`POST ${path} request #${n} failed after retry: ${rc}`);
+          }
+        }
+        throw new Error(`POST ${path} request #${n} failed: ${code ?? (err as Error).message}`);
+      }
+    }
+
+    return { post, close: () => new Promise<void>((r) => server.close(() => r())) };
   }
 
   it('JSON-RPC POST /authorize uses the /mcp cap, not the OAuth cap', async () => {
     // OAuth cap=2, /mcp cap=10. Fire 5 JSON-RPC POSTs to /authorize — all should pass
     // (would be capped at 2 if the OAuth limiter were applied).
-    const app = buildApp(2, 10);
-    const results: number[] = [];
-    for (let i = 0; i < 5; i++) {
-      const r = await fireJsonPost(app, '/authorize', { jsonrpc: '2.0', id: i, method: 'tools/list' });
-      results.push(r.status);
+    const srv = await withJsonServer(buildApp(2, 10));
+    try {
+      const results: number[] = [];
+      for (let i = 0; i < 5; i++) {
+        const r = await srv.post('/authorize', { jsonrpc: '2.0', id: i, method: 'tools/list' });
+        results.push(r.status);
+      }
+      expect(results).toEqual([200, 200, 200, 200, 200]);
+    } finally {
+      await srv.close();
     }
-    expect(results).toEqual([200, 200, 200, 200, 200]);
   });
 
   it('non-JSON-RPC POST /authorize still uses the OAuth cap', async () => {
     // OAuth cap=2. A POST body WITHOUT jsonrpc field (a real OAuth flow) — should hit
     // the OAuth cap at request 3.
-    const app = buildApp(2, 10);
-    const results: number[] = [];
-    for (let i = 0; i < 4; i++) {
-      const r = await fireJsonPost(app, '/authorize', { client_id: 'foo', response_type: 'code' });
-      results.push(r.status);
+    const srv = await withJsonServer(buildApp(2, 10));
+    try {
+      const results: number[] = [];
+      for (let i = 0; i < 4; i++) {
+        const r = await srv.post('/authorize', { client_id: 'foo', response_type: 'code' });
+        results.push(r.status);
+      }
+      expect(results.slice(0, 2)).toEqual([200, 200]);
+      expect(results.slice(2)).toEqual([429, 429]);
+    } finally {
+      await srv.close();
     }
-    expect(results.slice(0, 2)).toEqual([200, 200]);
-    expect(results.slice(2)).toEqual([429, 429]);
   });
 
   it('regression (bug_006): POST /authorize with falsy jsonrpc still uses the OAuth cap', async () => {
@@ -277,17 +324,21 @@ describe('/authorize JSON-RPC dispatch (Copilot Studio MCP fix via skip())', () 
       { falsy: 0, ip: '10.6.6.3' },
       { falsy: false, ip: '10.6.6.4' },
     ];
-    const app = buildApp(2, 10);
-    for (const { falsy, ip } of variants) {
-      const results: number[] = [];
-      for (let i = 0; i < 4; i++) {
-        const r = await fireJsonPost(app, '/authorize', { jsonrpc: falsy, client_id: 'foo' }, ip);
-        results.push(r.status);
+    const srv = await withJsonServer(buildApp(2, 10));
+    try {
+      for (const { falsy, ip } of variants) {
+        const results: number[] = [];
+        for (let i = 0; i < 4; i++) {
+          const r = await srv.post('/authorize', { jsonrpc: falsy, client_id: 'foo' }, ip);
+          results.push(r.status);
+        }
+        // Per-IP OAuth bucket of 2; the 3rd and 4th requests from the same IP
+        // must hit 429 — proving the OAuth limiter is applied to falsy-jsonrpc traffic.
+        expect(results.slice(0, 2)).toEqual([200, 200]);
+        expect(results.slice(2)).toEqual([429, 429]);
       }
-      // Per-IP OAuth bucket of 2; the 3rd and 4th requests from the same IP
-      // must hit 429 — proving the OAuth limiter is applied to falsy-jsonrpc traffic.
-      expect(results.slice(0, 2)).toEqual([200, 200]);
-      expect(results.slice(2)).toEqual([429, 429]);
+    } finally {
+      await srv.close();
     }
   });
 
@@ -299,17 +350,30 @@ describe('/authorize JSON-RPC dispatch (Copilot Studio MCP fix via skip())', () 
     // and not worth the complexity of a custom shared store.
     //
     // mcpCap=3. Fire 3 JSON-RPC POSTs each to /authorize and /mcp → all 6 pass.
-    const app = buildApp(2, 3);
-    const results: { path: string; status: number }[] = [];
-    const sequence = ['/authorize', '/authorize', '/authorize', '/mcp', '/mcp', '/mcp'];
-    for (const path of sequence) {
-      const r = await fireJsonPost(app, path, { jsonrpc: '2.0', id: 1, method: 'tools/list' });
-      results.push({ path, status: r.status });
+    const srv = await withJsonServer(buildApp(2, 3));
+    try {
+      const results: { path: string; status: number }[] = [];
+      const sequence = ['/authorize', '/authorize', '/authorize', '/mcp', '/mcp', '/mcp'];
+      for (const path of sequence) {
+        const r = await srv.post(path, { jsonrpc: '2.0', id: 1, method: 'tools/list' });
+        results.push({ path, status: r.status });
+      }
+      expect(results.every((r) => r.status === 200)).toBe(true);
+      // But each individual route still enforces its own cap.
+      const next = await srv.post('/authorize', { jsonrpc: '2.0', id: 4, method: 'tools/list' });
+      expect(next.status).toBe(429);
+    } finally {
+      await srv.close();
     }
-    expect(results.every((r) => r.status === 200)).toBe(true);
-    // But each individual route still enforces its own cap.
-    const next = await fireJsonPost(app, '/authorize', { jsonrpc: '2.0', id: 4, method: 'tools/list' });
-    expect(next.status).toBe(429);
+  });
+
+  it('post() rejects with path + request index context when the server is closed (diagnosability)', async () => {
+    // The former helper rejected bare on transport errors, producing context-free fast failures
+    // like the one observed full-suite flake. A closed server now yields a named rejection (and
+    // the ECONNREFUSED retry path runs once before it). See docs/research/auth-rate-limit-test-flake.md.
+    const srv = await withJsonServer(buildApp(2, 10));
+    await srv.close();
+    await expect(srv.post('/authorize', { jsonrpc: '2.0' })).rejects.toThrow(/POST \/authorize request #\d+ failed/);
   });
 });
 
