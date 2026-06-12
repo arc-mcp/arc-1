@@ -218,6 +218,18 @@ export function clampSearchResults(requested: number | undefined, fallback: numb
   return Math.min(Math.floor(requested), MAX_SEARCH_RESULTS);
 }
 
+/** Floor + clamp a caller-supplied result limit to [1, 1000] before it is interpolated into an
+ *  ADT search/listing URL query param (`maxResults=`, `rowNumber=`). Non-finite input — NaN from a
+ *  coerced non-numeric, or undefined — falls back to the caller's default, so no float or
+ *  out-of-range value ever reaches a SAP URL regardless of which tool supplied it. Mirrors
+ *  `clampSearchResults` and diagnostics' `clampMaxResults`. The tool schemas advertise `maxResults`
+ *  as `type: number` and SAPRead promises "clamped to [1, 1000]"; this is where that promise is
+ *  kept (see docs/research/maxresults-contract-asymmetry.md). */
+function clampUrlLimit(requested: number | undefined, fallback: number): number {
+  if (requested === undefined || !Number.isFinite(requested)) return fallback;
+  return Math.max(1, Math.min(1000, Math.floor(requested)));
+}
+
 /** Sanitize a SQL identifier (table / column / field): uppercase, then strip everything but
  *  word characters and the namespace slash. Throws when nothing survives — a structurally
  *  invalid identifier must fail closed rather than emit malformed SQL (e.g. `SELECT , X FROM`).
@@ -1041,7 +1053,7 @@ export class AdtClient {
           .map((t) => t.toUpperCase()),
       ),
     ];
-    const limit = Math.max(1, Math.min(options.maxResults ?? 100, 1000));
+    const limit = clampUrlLimit(options.maxResults, 100);
 
     const searchOnce = async (name: string, objectType?: string): Promise<AdtSearchResult[]> => {
       const params = new URLSearchParams({
@@ -1123,7 +1135,7 @@ export class AdtClient {
           .map((t) => t.toUpperCase()),
       ),
     ];
-    const limit = Math.max(1, Math.min(options.maxResults ?? 1000, 1000));
+    const limit = clampUrlLimit(options.maxResults, 1000);
 
     const quoteSqlLiteral = (v: string): string => `'${v.replace(/'/g, "''")}'`;
     const namesClause = cleanedNames.map(quoteSqlLiteral).join(', ');
@@ -1213,7 +1225,7 @@ export class AdtClient {
     maxResults = 200,
   ): Promise<Array<{ type: string; name: string; description: string; uri: string }>> {
     checkOperation(this.safety, OperationType.Read, 'GetPackage');
-    const limit = Math.max(1, Math.min(maxResults, 1000));
+    const limit = clampUrlLimit(maxResults, 200);
     const resp = await this.http.get(
       `/sap/bc/adt/repository/informationsystem/search?operation=quickSearch&query=*&packageName=${encodeURIComponent(packageName)}&maxResults=${limit}`,
     );
@@ -1256,7 +1268,7 @@ export class AdtClient {
    */
   async getSubpackages(packageName: string, maxResults = 1000): Promise<string[]> {
     checkOperation(this.safety, OperationType.Read, 'GetSubpackages');
-    const limit = Math.max(1, Math.min(maxResults, 1000));
+    const limit = clampUrlLimit(maxResults, 1000);
     const enc = encodeURIComponent(packageName);
     const url =
       `/sap/bc/adt/repository/nodestructure` +

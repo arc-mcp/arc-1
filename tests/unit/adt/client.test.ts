@@ -1000,6 +1000,22 @@ describe('AdtClient', () => {
       expect(url).toContain('maxResults=200');
     });
 
+    it('floors a fractional maxResults and falls back to default on NaN (no float reaches the URL)', async () => {
+      // SAPReadSchema now accepts any number (the advertised `type: number` contract); flooring +
+      // range handling is this sink's job — see docs/research/maxresults-contract-asymmetry.md.
+      const client = createClient();
+      for (const [input, expected] of [
+        [50.5, 'maxResults=50'],
+        [0.4, 'maxResults=1'],
+        [Number.NaN, 'maxResults=200'],
+      ] as const) {
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValue(mockResponse(200, SEARCH_RESPONSE));
+        await client.getPackageContents('ZPARENT', input);
+        expect(String(mockFetch.mock.calls[0]?.[0] ?? '')).toContain(expected);
+      }
+    });
+
     it('encodes special characters in package names', async () => {
       mockFetch.mockReset();
       mockFetch.mockResolvedValue(mockResponse(200, SEARCH_RESPONSE));
@@ -1308,6 +1324,18 @@ describe('AdtClient', () => {
       // Second call: SQL POST returns the TADIR rows
       mockFetch.mockResolvedValueOnce(mockResponse(200, tadirSqlResponse(rows)));
     }
+
+    it('floors a fractional maxResults into the freestyle rowNumber (no float reaches the URL)', async () => {
+      // SAPSearch tadir_lookup source=db|both reaches this sink; SAPSearchSchema accepts any number,
+      // so flooring must happen here — see docs/research/maxresults-contract-asymmetry.md.
+      mockTadirPost([{ pgmid: 'R3TR', object: 'DDLS', obj_name: 'ZA', devclass: 'ZPKG' }]);
+      const client = createClient();
+      await client.lookupObjectsViaDb(['ZA'], { maxResults: 50.5 });
+      // calls[0] = CSRF HEAD, calls[1] = the freestyle SQL POST whose URL carries rowNumber.
+      const postUrl = String(mockFetch.mock.calls[1]?.[0] ?? '');
+      expect(postUrl).toContain('rowNumber=50');
+      expect(postUrl).not.toContain('rowNumber=50.5');
+    });
 
     it('returns three matches all tagged _origin=db when three names are present', async () => {
       mockTadirPost([
