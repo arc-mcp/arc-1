@@ -133,6 +133,7 @@ export interface Cache {
   // Management
   clear(): void;
   stats(): CacheStats;
+  transaction<T>(fn: () => T): T;
   close(): void;
 }
 

@@ -247,6 +247,17 @@ describe('SqliteCache', () => {
     expect(stats.contractCount).toBe(1);
   });
 
+  it('rolls back transaction writes when the callback throws', () => {
+    expect(() =>
+      cache.transaction(() => {
+        cache.putNode(makeNode('ROLLBACK'));
+        throw new Error('boom');
+      }),
+    ).toThrow('boom');
+
+    expect(cache.getNode('ROLLBACK')).toBeNull();
+  });
+
   it('clears all data including sources, dep graphs, and func groups', () => {
     cache.putNode(makeNode('A'));
     cache.putApi({ name: 'X', type: 'CLAS', releaseState: 'released' });

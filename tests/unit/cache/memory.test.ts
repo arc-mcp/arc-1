@@ -203,6 +203,16 @@ describe('MemoryCache', () => {
   });
 
   describe('management', () => {
+    it('runs transaction callbacks inline', () => {
+      const result = cache.transaction(() => {
+        cache.putNode(makeNode('A'));
+        return 'done';
+      });
+
+      expect(result).toBe('done');
+      expect(cache.getNode('A')).not.toBeNull();
+    });
+
     it('returns correct stats including sourceCount and contractCount', () => {
       cache.putNode(makeNode('A'));
       cache.putNode(makeNode('B'));

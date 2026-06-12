@@ -243,7 +243,7 @@ The pre-warmer runs at startup when `ARC1_CACHE_WARMUP=true`. It populates the c
 2. **Fetch** — retrieves source code for each object in parallel batches of 5 concurrent requests. Stores body + ETag.
 3. **Delta check** — compares the SHA-256 hash of fetched source against the cached hash. If unchanged, the object is skipped (no re-parsing).
 4. **Extract** — runs the local AST parser (`@abaplint/core`) on each changed source to extract dependencies. No additional ADT calls are needed for this step.
-5. **Index** — stores source, node metadata, and dependency edges in the cache. For function groups, individual function modules are enumerated and indexed separately.
+5. **Index** — stores source, node metadata, and dependency edges in the cache. Writes from each parallel fetch batch are committed in one cache transaction, so SQLite warmup avoids per-statement commits on the request path. For function groups, individual function modules are enumerated and indexed separately.
 6. **Enable reverse lookup** — sets the `warmupDone` flag, which enables `SAPContext(action="usages")`.
 
 After warmup completes, subsequent reads of warmed objects use conditional GET — so a re-read against a server with the same content costs ~50 bytes per object.

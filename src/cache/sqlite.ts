@@ -283,6 +283,10 @@ export class SqliteCache implements Cache {
     return { nodeCount, edgeCount, apiCount, sourceCount, contractCount };
   }
 
+  transaction<T>(fn: () => T): T {
+    return this.db.transaction(fn)();
+  }
+
   close(): void {
     this.db.close();
   }

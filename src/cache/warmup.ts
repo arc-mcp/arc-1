@@ -45,6 +45,14 @@ interface TadirEntry {
   packageName: string;
 }
 
+type WarmupIndexStatus = 'fetched' | 'skipped' | 'failed';
+
+interface WarmupIndexResult {
+  status: WarmupIndexStatus;
+  edges: number;
+  write?: () => void;
+}
+
 /**
  * Run cache warmup: enumerate + fetch + index all custom objects.
  *
@@ -86,6 +94,16 @@ export async function runWarmup(
       }),
     );
 
+    try {
+      applyWarmupWrites(cachingLayer, results);
+    } catch (err) {
+      logger.warn('Cache warmup: failed to store indexed batch', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      failed += results.length;
+      continue;
+    }
+
     for (const r of results) {
       if (r.status === 'fetched') {
         fetched++;
@@ -118,6 +136,15 @@ export async function runWarmup(
   });
 
   return { totalObjects: entries.length, fetched, skipped, failed, edgesCreated, durationMs };
+}
+
+function applyWarmupWrites(cachingLayer: CachingLayer, results: WarmupIndexResult[]): void {
+  const writers = results.flatMap((result) => (result.write ? [result.write] : []));
+  if (writers.length === 0) return;
+
+  cachingLayer.cache.transaction(() => {
+    for (const write of writers) write();
+  });
 }
 
 /**
@@ -210,7 +237,7 @@ async function indexObject(
   client: AdtClient,
   cachingLayer: CachingLayer,
   entry: TadirEntry,
-): Promise<{ status: 'fetched' | 'skipped' | 'failed'; edges: number }> {
+): Promise<WarmupIndexResult> {
   const { objectType, objectName, packageName } = entry;
 
   // For FUGR: we enumerate the function modules within the group
@@ -220,14 +247,17 @@ async function indexObject(
 
   // Fetch source
   let source: string;
+  let etag: string | undefined;
   try {
     const cached = cachingLayer.getCachedSourceWithEtag(objectType, objectName);
     if (objectType === 'CLAS') {
       const result = await client.getClass(objectName, undefined, { ifNoneMatch: cached?.etag });
       source = result.notModified && cached ? cached.source : result.source;
+      etag = result.notModified && cached ? cached.etag : result.etag;
     } else if (objectType === 'INTF') {
       const result = await client.getInterface(objectName, { ifNoneMatch: cached?.etag });
       source = result.notModified && cached ? cached.source : result.source;
+      etag = result.notModified && cached ? cached.etag : result.etag;
     } else {
       return { status: 'failed', edges: 0 };
     }
@@ -242,37 +272,38 @@ async function indexObject(
     return { status: 'skipped', edges: 0 };
   }
 
-  // Store source
-  cachingLayer.cache.putSource(objectType, objectName, source);
-
-  // Store node metadata
-  cachingLayer.cache.putNode({
+  const cachedAt = new Date().toISOString();
+  const node = {
     id: `${objectType}:${objectName}`.toUpperCase(),
     objectType,
     objectName: objectName.toUpperCase(),
     packageName: packageName.toUpperCase(),
     sourceHash: newHash,
-    cachedAt: new Date().toISOString(),
+    cachedAt,
     valid: true,
-  });
+  };
 
-  // Extract and store dependencies as edges
+  // Extract dependencies before opening the SQLite transaction. Only the
+  // synchronous cache writes are batched; SAP/network work never runs inside it.
   const deps = extractDependencies(source, objectName, true);
-  let edges = 0;
   const fromId = objectName.toUpperCase();
-  for (const dep of deps) {
-    const edgeType = mapDepKindToEdgeType(dep.kind);
-    cachingLayer.cache.putEdge({
-      fromId,
-      toId: dep.name.toUpperCase(),
-      edgeType,
-      discoveredAt: new Date().toISOString(),
-      valid: true,
-    });
-    edges++;
-  }
+  const edgeRecords = deps.map((dep) => ({
+    fromId,
+    toId: dep.name.toUpperCase(),
+    edgeType: mapDepKindToEdgeType(dep.kind),
+    discoveredAt: cachedAt,
+    valid: true,
+  }));
 
-  return { status: 'fetched', edges };
+  return {
+    status: 'fetched',
+    edges: edgeRecords.length,
+    write: () => {
+      cachingLayer.cache.putSource(objectType, objectName, source, { etag });
+      cachingLayer.cache.putNode(node);
+      for (const edge of edgeRecords) cachingLayer.cache.putEdge(edge);
+    },
+  };
 }
 
 /**
@@ -283,57 +314,81 @@ async function indexFunctionGroup(
   cachingLayer: CachingLayer,
   groupName: string,
   packageName: string,
-): Promise<{ status: 'fetched' | 'skipped' | 'failed'; edges: number }> {
+): Promise<WarmupIndexResult> {
   try {
     const fg = await client.getFunctionGroup(groupName);
     let totalEdges = 0;
     let anyFetched = false;
+    const writers: Array<() => void> = [];
 
     // fg is a parsed object with functions list
     const fgData = typeof fg === 'string' ? JSON.parse(fg) : fg;
     const functions: string[] = fgData.functions ?? [];
 
     for (const funcName of functions) {
-      // Cache the group mapping
-      cachingLayer.cache.putFuncGroup(funcName, groupName);
+      const funcWriters: Array<() => void> = [() => cachingLayer.cache.putFuncGroup(funcName, groupName)];
 
       try {
         const cached = cachingLayer.getCachedSource('FUNC', funcName);
         const result = await client.getFunction(groupName, funcName, { ifNoneMatch: cached?.etag });
         const source = result.notModified && cached ? cached.source : result.source;
+        const etag = result.notModified && cached ? cached.etag : result.etag;
         const newHash = hashSource(source);
 
-        if (cached && cached.hash === newHash) continue;
+        if (cached && cached.hash === newHash) {
+          writers.push(() => {
+            for (const write of funcWriters) write();
+          });
+          continue;
+        }
 
-        cachingLayer.cache.putSource('FUNC', funcName, source);
-        cachingLayer.cache.putNode({
+        const cachedAt = new Date().toISOString();
+        const node = {
           id: `FUNC:${funcName}`.toUpperCase(),
           objectType: 'FUNC',
           objectName: funcName.toUpperCase(),
           packageName: packageName.toUpperCase(),
           sourceHash: newHash,
-          cachedAt: new Date().toISOString(),
+          cachedAt,
           valid: true,
-        });
+        };
 
         const deps = extractDependencies(source, funcName, true);
-        for (const dep of deps) {
-          cachingLayer.cache.putEdge({
-            fromId: funcName.toUpperCase(),
-            toId: dep.name.toUpperCase(),
-            edgeType: mapDepKindToEdgeType(dep.kind),
-            discoveredAt: new Date().toISOString(),
-            valid: true,
-          });
-          totalEdges++;
-        }
+        const edgeRecords = deps.map((dep) => ({
+          fromId: funcName.toUpperCase(),
+          toId: dep.name.toUpperCase(),
+          edgeType: mapDepKindToEdgeType(dep.kind),
+          discoveredAt: cachedAt,
+          valid: true,
+        }));
+        totalEdges += edgeRecords.length;
+        funcWriters.push(
+          () => cachingLayer.cache.putSource('FUNC', funcName, source, { etag }),
+          () => cachingLayer.cache.putNode(node),
+          ...edgeRecords.map((edge) => () => cachingLayer.cache.putEdge(edge)),
+        );
+        writers.push(() => {
+          for (const write of funcWriters) write();
+        });
         anyFetched = true;
       } catch {
         // Individual func fetch failure — continue with others
+        writers.push(() => {
+          for (const write of funcWriters) write();
+        });
       }
     }
 
-    return { status: anyFetched ? 'fetched' : 'skipped', edges: totalEdges };
+    return {
+      status: anyFetched ? 'fetched' : 'skipped',
+      edges: totalEdges,
+      write:
+        writers.length > 0
+          ? () => {
+              for (const write of writers) write();
+            }
+          : undefined,
+    };
   } catch {
     return { status: 'failed', edges: 0 };
   }

@@ -170,6 +170,10 @@ export class MemoryCache implements Cache {
     };
   }
 
+  transaction<T>(fn: () => T): T {
+    return fn();
+  }
+
   close(): void {
     this.clear();
   }
