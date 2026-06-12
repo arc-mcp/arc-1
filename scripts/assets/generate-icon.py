@@ -30,7 +30,10 @@ def load_font(px: int) -> ImageFont.FreeTypeFont:
     for path in FONT_CANDIDATES:
         if os.path.exists(path):
             return ImageFont.truetype(path, px)
-    return ImageFont.load_default()
+    # No bundled candidate font on this host. ImageFont.load_default() ignores `px` and would
+    # render a ~10px wordmark on the 2048px canvas — an effectively blank icon, committed with no
+    # error. Fail loudly instead: install one of the fonts above (e.g. DejaVu Sans Bold) and re-run.
+    raise SystemExit(f"generate-icon: no usable font found. Install one of: {', '.join(FONT_CANDIDATES)}")
 
 
 def main() -> None:

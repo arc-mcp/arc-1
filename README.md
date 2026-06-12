@@ -131,7 +131,7 @@ ARC-1's strategy is to stay close to documented and discoverable ADT behavior, p
 
 **Install in Claude** — pick your surface (full guide: [Install in Claude](https://marianfoo.github.io/arc-1/install-in-claude/)):
 
-- **Claude Desktop** — download the latest `arc-1-*.mcpb` from [Releases](https://github.com/marianfoo/arc-1/releases) and double-click it (or Settings → Extensions). Claude prompts for your SAP connection.
+- **Claude Desktop** — download the latest `arc-1-*.mcpb` from [Releases](https://github.com/marianfoo/arc-1/releases) and double-click it (or Settings → Extensions). Claude prompts for your SAP connection. (The `.mcpb` is attached to releases automatically; if the newest one doesn't have it yet, see [Install in Claude](https://marianfoo.github.io/arc-1/install-in-claude/).)
 - **Claude Code** — one install for the MCP server **and** all [SAP skills](https://github.com/marianfoo/arc-1/tree/main/skills):
 
   ```text

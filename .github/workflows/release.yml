@@ -106,14 +106,34 @@ jobs:
           ( cd mcpb-bundle && npm ci --omit=dev --ignore-scripts )
           rm -rf mcpb-bundle/node_modules/better-sqlite3
 
-      - name: Pack and self-sign
+      - name: Smoke-test the assembled bundle boots (stdio)
+        # Guards the prune: if better-sqlite3 (or a future second native/pruned dep) is actually
+        # load-bearing at startup, this fails the release instead of shipping a broken .mcpb.
+        run: |
+          SAP_URL=http://127.0.0.1:1 SAP_USER=x SAP_PASSWORD=x \
+            node mcpb-bundle/dist/index.js >/tmp/mcpb-smoke.log 2>&1 &
+          PID=$!
+          sleep 5
+          kill "$PID" 2>/dev/null || true
+          if ! grep -q "running on stdio" /tmp/mcpb-smoke.log; then
+            echo "::error::Assembled MCPB bundle failed to boot — a pruned dependency may be load-bearing"
+            cat /tmp/mcpb-smoke.log
+            exit 1
+          fi
+
+      - name: Validate, pack, self-sign
+        # Pin the MCPB CLI (not @latest) so the release is reproducible and a CLI change can't
+        # silently alter the artifact — bump deliberately, like the SHA-pinned actions above.
+        env:
+          MCPB: '@anthropic-ai/mcpb@2.1.2'
         run: |
           VERSION="${{ needs.release-please.outputs.tag_name }}"
           VERSION="${VERSION#v}"
-          npx --yes @anthropic-ai/mcpb@latest pack mcpb-bundle "arc-1-${VERSION}.mcpb"
-          # Self-signed for integrity; the Anthropic-curated directory does its own signing.
-          npx --yes @anthropic-ai/mcpb@latest sign "arc-1-${VERSION}.mcpb" --self-signed \
-            || echo "::warning::MCPB self-sign skipped"
+          npx --yes "$MCPB" validate mcpb-bundle/manifest.json
+          npx --yes "$MCPB" pack mcpb-bundle "arc-1-${VERSION}.mcpb"
+          # Self-signed is best-effort integrity only; the Anthropic-curated directory signs its side.
+          npx --yes "$MCPB" sign "arc-1-${VERSION}.mcpb" --self-signed \
+            || echo "::warning::MCPB self-sign skipped — bundle is attached UNSIGNED"
 
       - name: Attach .mcpb to GitHub Release
         env:

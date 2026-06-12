@@ -24,11 +24,16 @@ Find your row, then jump to that section.
 The simplest path for a single developer on a SAP system reachable from your laptop.
 
 1. Download the latest **`arc-1-<version>.mcpb`** from the
-   [Releases page](https://github.com/marianfoo/arc-1/releases).
+   [Releases page](https://github.com/marianfoo/arc-1/releases). It is attached to every release
+   from the first one after this feature ships; if the newest release has no `.mcpb` yet, build it
+   locally per the
+   [publishing guide](https://github.com/marianfoo/arc-1/blob/main/docs/publishing-guide.md#6-claude-desktop-extensions).
 2. **Double-click** it, or open Claude Desktop → **Settings → Extensions** and drag the file in.
-3. Claude prompts for your SAP connection — **URL, user, password** (the password is stored in your
-   OS keychain), plus optional client, language, *Skip TLS*, and *Allow Writes*. Fill them in and
-   enable the extension.
+3. Claude prompts for your SAP connection. **URL, user, and password** are required (the password is
+   stored in your OS keychain). The rest are optional and default to the safe choice — client,
+   language, TLS, and the **safety toggles** (Allow Writes, the write **package scope**, data preview,
+   free SQL, transport and Git writes). Fill them in and enable the extension. Full field list:
+   [configuration reference](configuration-reference.md).
 4. Ask Claude: *"Using the SAP tools, show me the source of report `RSPO0041`."* — it should call
    `SAPRead`.
 

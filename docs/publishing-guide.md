@@ -11,7 +11,7 @@ This document describes how to publish ARC-1 to various MCP server registries, m
 | [Cline Marketplace](#3-cline-marketplace) | Manual | Ready | Cline VS Code extension marketplace |
 | [VS Code / GitHub Copilot](#4-vs-code--github-copilot) | Via MCP Registry | Automatic | VS Code Extensions `@mcp` gallery |
 | [Cursor Marketplace](#5-cursor-marketplace) | Manual | Ready | Cursor IDE built-in marketplace |
-| [Claude Desktop Extensions](#6-claude-desktop-extensions) | Yes (CI builds + signs .mcpb) | Ready | Claude Desktop Extensions directory |
+| [Claude Desktop Extensions](#6-claude-desktop-extensions) | Yes (CI builds + validates + self-signs .mcpb) | Ready | Claude Desktop Extensions directory |
 | [Claude Code Plugin](#8-claude-code-plugin--marketplace) | Yes (repo is the marketplace) | Ready | `/plugin install` — MCP server + skills |
 
 ## Files in This Repository
@@ -139,7 +139,7 @@ ARC-1's rich tool descriptions should score well.
      Install: npx -y arc-1
      License: MIT
      
-     11 intent-based MCP tools for SAP ABAP Development Tools (ADT).
+     12 intent-based MCP tools for SAP ABAP Development Tools (ADT).
      Read, write, search, activate, lint, navigate, query, and manage
      ABAP objects. Read-only by default with configurable safety gates.
      Supports on-premise SAP and BTP ABAP Environment.
@@ -250,7 +250,7 @@ npx @anthropic-ai/mcpb sign arc-1.mcpb --self-signed   # optional
 ### Distribution
 
 Users install by double-clicking the `.mcpb` file or dragging it into Claude Desktop → Settings →
-Extensions. CI attaches a signed `arc-1-<version>.mcpb` to every GitHub Release automatically (the
+Extensions. CI builds, validates, and best-effort self-signs `arc-1-<version>.mcpb`, then attaches it to every GitHub Release automatically (the
 `build-mcpb` job — see [CI Automation](#ci-automation-implemented) below). User-facing install steps
 live in [docs_page/install-in-claude.md](../docs_page/install-in-claude.md).
 
@@ -258,7 +258,7 @@ live in [docs_page/install-in-claude.md](../docs_page/install-in-claude.md).
 
 The Claude Desktop Extensions Directory is currently Anthropic-curated with no public self-service submission. To get listed:
 
-1. Confirm the release carries the signed `.mcpb` and that tool annotations are emitted (both automated below)
+1. Confirm the release carries the `.mcpb` (self-signed when the signer is available) and that tool annotations are emitted (both automated below)
 2. Submit via the connector submission form at https://claude.com/partners/mcp
 3. Anthropic reviews for quality, security, and compatibility
 
@@ -369,7 +369,7 @@ Run `claude plugin validate` first; approved plugins are pinned into `anthropics
 - [ ] Submit Cline Marketplace issue (need 400x400 logo)
 - [ ] Submit Cursor Marketplace at cursor.com/marketplace/publish
 - [ ] Submit cursor.directory listing
-- [ ] Verify the release attached a signed `arc-1-<version>.mcpb` (build-mcpb job)
+- [ ] Verify the release attached `arc-1-<version>.mcpb` (self-signed when the signer is available; build-mcpb job)
 - [ ] Test the Claude Code plugin: `/plugin marketplace add marianfoo/arc-1` → `/plugin install arc-1@arc-1`
 - [ ] Submit Claude Code plugin (claude.ai/admin-settings/directory/submissions/plugins/new or platform.claude.com/plugins/submit)
 - [ ] Submit Claude Desktop extension at claude.com/partners/mcp
