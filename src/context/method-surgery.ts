@@ -10,7 +10,8 @@
  * Uses @abaplint/core AST for accurate parsing with regex fallback for unparseable source.
  */
 
-import { Config, MemoryFile, Registry, Statements, Structures, Version } from '@abaplint/core';
+import { MemoryFile, Registry, Statements, Structures, Version } from '@abaplint/core';
+import { getDefaultAbaplintConfig } from '../lint/abaplint-config-cache.js';
 
 const DEFAULT_VERSION = Version.Cloud;
 
@@ -115,7 +116,7 @@ export function listMethods(source: string, className: string, abaplintVersion?:
 }
 
 function listMethodsAST(source: string, className: string, ver: Version): MethodListResult {
-  const config = Config.getDefault(ver);
+  const config = getDefaultAbaplintConfig(ver);
   const reg = new Registry(config);
   reg.addFile(new MemoryFile(`${className.toLowerCase().replace(/\//g, '#')}.clas.abap`, source));
   reg.parse();

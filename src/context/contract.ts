@@ -9,7 +9,8 @@
  * This achieves 7-30x token compression vs full source code.
  */
 
-import { Config, MemoryFile, Registry, Statements, Structures, Version } from '@abaplint/core';
+import { MemoryFile, Registry, Statements, Structures, Version } from '@abaplint/core';
+import { getDefaultAbaplintConfig } from '../lint/abaplint-config-cache.js';
 import type { Contract } from './types.js';
 
 // Cast helpers for abaplint AST nodes
@@ -65,7 +66,7 @@ export function extractContract(
  * Strips PROTECTED, PRIVATE sections and entire CLASS IMPLEMENTATION.
  */
 function extractClassContract(source: string, name: string, ver: Version): Contract {
-  const config = Config.getDefault(ver);
+  const config = getDefaultAbaplintConfig(ver);
   const reg = new Registry(config);
   reg.addFile(new MemoryFile(`${name.toLowerCase()}.clas.abap`, source));
   reg.parse();
@@ -172,7 +173,7 @@ function extractClassContractRegex(source: string, name: string): Contract {
  * Count methods for stats.
  */
 function extractInterfaceContract(source: string, name: string, ver: Version): Contract {
-  const config = Config.getDefault(ver);
+  const config = getDefaultAbaplintConfig(ver);
   const reg = new Registry(config);
   reg.addFile(new MemoryFile(`${name.toLowerCase()}.intf.abap`, source));
   reg.parse();

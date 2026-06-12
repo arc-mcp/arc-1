@@ -14,7 +14,8 @@
  * - Pre-write validation (blocks writes on hard errors)
  */
 
-import { Config, Edits, MemoryFile, Registry, Version } from '@abaplint/core';
+import { type Config, Edits, MemoryFile, Registry, Version } from '@abaplint/core';
+import { getDefaultAbaplintConfig } from './abaplint-config-cache.js';
 import { buildPreWriteConfig, type LintConfigOptions } from './config-builder.js';
 import { inspectTablSource } from './pre-write-hints.js';
 
@@ -52,7 +53,7 @@ export interface PreWriteResult {
 }
 
 /** Default abaplint configuration for ARC-1 (legacy, used as fallback) */
-const DEFAULT_CONFIG = Config.getDefault(Version.v702);
+const DEFAULT_CONFIG = getDefaultAbaplintConfig(Version.v702);
 
 /**
  * Lint ABAP source code using @abaplint/core.
