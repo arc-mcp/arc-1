@@ -144,6 +144,9 @@
       "required": [
         "type"
       ]
+    },
+    "annotations": {
+      "readOnlyHint": true
     }
   },
   {
@@ -201,6 +204,9 @@
           "description": "For source_code search: filter by package name"
         }
       }
+    },
+    "annotations": {
+      "readOnlyHint": true
     }
   },
   {
@@ -1046,6 +1052,10 @@
       "required": [
         "action"
       ]
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false
     }
   },
   {
@@ -1109,6 +1119,10 @@
           "description": "Batch activation: array of objects to activate in one call. Use whenever activating 2+ objects. Works for any mix of types — e.g., [{type:\"DOMA\",name:\"Z_DOM\"},{type:\"DTEL\",name:\"Z_DEL\"}] or RAP stacks like [{type:\"DDLS\",name:\"ZI_TRAVEL\"},{type:\"BDEF\",name:\"ZI_TRAVEL\"},{type:\"SRVD\",name:\"ZSD_TRAVEL\"}]."
         }
       }
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false
     }
   },
   {
@@ -1159,6 +1173,9 @@
       "required": [
         "action"
       ]
+    },
+    "annotations": {
+      "readOnlyHint": true
     }
   },
   {
@@ -1179,6 +1196,9 @@
       "required": [
         "sql"
       ]
+    },
+    "annotations": {
+      "readOnlyHint": true
     }
   },
   {
@@ -1229,6 +1249,9 @@
       "required": [
         "action"
       ]
+    },
+    "annotations": {
+      "readOnlyHint": true
     }
   },
   {
@@ -1382,6 +1405,9 @@
       "required": [
         "action"
       ]
+    },
+    "annotations": {
+      "readOnlyHint": true
     }
   },
   {
@@ -1440,6 +1466,9 @@
       "required": [
         "name"
       ]
+    },
+    "annotations": {
+      "readOnlyHint": true
     }
   },
   {
@@ -1593,6 +1622,10 @@
       "required": [
         "action"
       ]
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true
     }
   },
   {
@@ -1670,6 +1703,10 @@
       "required": [
         "action"
       ]
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false
     }
   },
   {
@@ -1791,6 +1828,10 @@
       "required": [
         "action"
       ]
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false
     }
   }
 ]

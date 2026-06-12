@@ -144,6 +144,9 @@
       "required": [
         "type"
       ]
+    },
+    "annotations": {
+      "readOnlyHint": true
     }
   },
   {
@@ -196,6 +199,9 @@
           "description": "For tadir_lookup only: data source for the lookup. \"adt\" (default) uses the ADT info-system endpoint — workbench-resolvable objects only. \"db\" issues SQL against table TADIR — also surfaces orphan/ghost rows from aborted create-delete cycles (requires sql scope and SAP_ALLOW_FREE_SQL=true). \"both\" runs both paths and adds a \"splitBrain\" array listing names where the two sources disagree, plus a \"warnings\" array explaining each divergence (requires sql scope)."
         }
       }
+    },
+    "annotations": {
+      "readOnlyHint": true
     }
   },
   {
@@ -246,6 +252,9 @@
       "required": [
         "action"
       ]
+    },
+    "annotations": {
+      "readOnlyHint": true
     }
   },
   {
@@ -296,6 +305,9 @@
       "required": [
         "action"
       ]
+    },
+    "annotations": {
+      "readOnlyHint": true
     }
   },
   {
@@ -449,6 +461,9 @@
       "required": [
         "action"
       ]
+    },
+    "annotations": {
+      "readOnlyHint": true
     }
   },
   {
@@ -507,6 +522,9 @@
       "required": [
         "name"
       ]
+    },
+    "annotations": {
+      "readOnlyHint": true
     }
   },
   {
@@ -652,6 +670,10 @@
       "required": [
         "action"
       ]
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true
     }
   },
   {
@@ -724,6 +746,10 @@
       "required": [
         "action"
       ]
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false
     }
   },
   {
@@ -837,6 +863,10 @@
       "required": [
         "action"
       ]
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false
     }
   }
 ]

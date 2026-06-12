@@ -31,11 +31,46 @@ import {
   SAPWRITE_TYPES_ONPREM,
 } from './tool-registry.js';
 
+/** MCP tool behavior annotations (a subset of the spec; all optional, all advisory hints). */
+export interface ToolAnnotations {
+  readOnlyHint?: boolean;
+  destructiveHint?: boolean;
+  idempotentHint?: boolean;
+  openWorldHint?: boolean;
+  title?: string;
+}
+
 export interface ToolDefinition {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  annotations?: ToolAnnotations;
 }
+
+/**
+ * Read-only / destructive hints for the 12 standard tools — the single source of truth,
+ * attached in getToolDefinitions() and asserted in tests. Clients use them to badge tools
+ * and to decide auto-approval (read-only tools are safe to auto-run); they are also required
+ * for the Claude Desktop Extensions Directory. Hyperfocused mode's universal tool is left
+ * unannotated because it can both read and write.
+ */
+const TOOL_ANNOTATIONS: Record<string, ToolAnnotations> = {
+  // Read-only: no SAP mutation.
+  SAPRead: { readOnlyHint: true },
+  SAPSearch: { readOnlyHint: true },
+  SAPNavigate: { readOnlyHint: true },
+  SAPQuery: { readOnlyHint: true },
+  SAPContext: { readOnlyHint: true },
+  SAPLint: { readOnlyHint: true },
+  SAPDiagnose: { readOnlyHint: true },
+  // Mutating but non-destructive: create/update/activate/version-control.
+  SAPWrite: { readOnlyHint: false, destructiveHint: false },
+  SAPActivate: { readOnlyHint: false, destructiveHint: false },
+  SAPTransport: { readOnlyHint: false, destructiveHint: false },
+  SAPGit: { readOnlyHint: false, destructiveHint: false },
+  // Destructive: deletes objects.
+  SAPManage: { readOnlyHint: false, destructiveHint: true },
+};
 
 /** Check if tools should use BTP-adapted definitions */
 function isBtpMode(config: ServerConfig): boolean {
@@ -1581,6 +1616,12 @@ export function getToolDefinitions(
         required: ['action'],
       },
     });
+  }
+
+  // Attach read-only / destructive annotations (single source of truth: TOOL_ANNOTATIONS).
+  for (const tool of tools) {
+    const annotations = TOOL_ANNOTATIONS[tool.name];
+    if (annotations) tool.annotations = { ...annotations };
   }
 
   return tools;
