@@ -230,11 +230,22 @@ abap_generators-get_schema(
 
 (The from-scratch `x-ui-service` does not need a referenced table — confirm from the schema it returns.) Typical config points in the returned schema: package, data model (root entity name + EML alias), behavior (draft table name), service projection name, service definition, service binding (OData service name), transport. **Read the real schema and fill every required field** — don't assume field names from this doc; they vary by release.
 
+Observed shape on S/4HANA 2023 (`uiservice`, referenced table `ZARC1_DEMO_BOOK`) — verified live; yours may differ, so read the live response:
+
+```
+dataModelEntity.cdsName  → ZR_ARC1_DEMO_BOOK      (root CDS)
+implementationClass      → ZBP_ARC1_DEMO_BOOK     (behavior pool class)
+draftTable               → ZARC1_DEMO_BOOKD
+serviceProjection.name   → ZC_ARC1_DEMO_BOOK       (projection CDS, exposed by the service)
+serviceDefinition.name   → ZUI_ARC1_DEMO_BOOK_O4
+serviceBinding.name      → ZUI_ARC1_DEMO_BOOK_O4   (binding type: OData V4 - UI)
+```
+
 ### 3b-4. Generate
 `abap_generators-generate_objects(generatorId="<id>", <filled schema>)`. This is a **mutation** — apply the same guardrails as any ARC-1 write (allowlisted package + a real transport, or `$TMP`). One call creates the CDS root + projection, BDEF + behavior class, metadata extension (DDLX), draft table, service definition, and service binding.
 
 ### 3b-5. Verify, then continue with ARC-1
-Activate/verify with ARC-1 (`SAPActivate`, `SAPRead`) or the official `abap_activate_objects`, then use **ARC-1** for anything the single-entity, one-shot generator can't do — add fields, compositions/children, actions + handler bodies (`SAPWrite action="edit_method"`), determinations, validations, and all later edits.
+Activate/verify with ARC-1 (`SAPActivate`, `SAPRead`) or the official `abap_activate_objects`. **Publish the service binding with ARC-1** — `SAPActivate(action="publish_srvb", name="<binding>")` — because on 7.5x the generator creates and activates the SRVB but its *own* publish step returns a 406 (publish-job content negotiation), leaving it `published:false` with no runtime URL. ARC-1's `publish_srvb` handles the 758 content type and flips it to `published:true` (verified live on S/4HANA 2023: the generated binding went unpublished → published, and `$metadata` then returned HTTP 200). Then use **ARC-1** for anything the single-entity, one-shot generator can't do — add fields, compositions/children, actions + handler bodies (`SAPWrite action="edit_method"`), determinations, validations, and all later edits.
 
 **State which path you took** ("base BO generated via `abap-mcp` `<id>`, extended via ARC-1" vs "built entirely via ARC-1") so the run stays auditable.
 
