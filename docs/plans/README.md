@@ -7,6 +7,13 @@ When a plan is fully implemented, move it to `docs/plans/completed/` in the same
 work, or add a clear status note near the top if it must remain in the active folder for a follow-up
 reason. This keeps test and architecture audits from repeatedly re-triaging work that already shipped.
 
+2026-06-12 cleanup:
+
+- Moved `architecture-consolidation-plan.md` and `architecture-consolidation-progress.md` to
+  `completed/` — executed as [#402](https://github.com/marianfoo/arc-1/pull/402) (intent.ts + write.ts split).
+- Moved `test-split-and-typecheck-plan.md` to `completed/` — shipped as
+  [#405](https://github.com/marianfoo/arc-1/pull/405) (Stage T/C/R).
+
 2026-06-07 cleanup:
 
 - Moved `layered-rate-limiting.md` to `completed/` because rate limiting is implemented and

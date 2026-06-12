@@ -299,4 +299,4 @@ modules; write.ts 2K → write/ package) — apply to any sizeable change:
 ## History
 
 Migrated from Go to TypeScript on 2026-03-26. Handler monolith split into per-tool modules 2026-06
-(see `docs/plans/architecture-consolidation-progress.md`).
+(see `docs/plans/completed/architecture-consolidation-progress.md`).

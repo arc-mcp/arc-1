@@ -1,6 +1,6 @@
 # Architecture Consolidation Plan (v2)
 
-**Status:** Proposed — v2 for owner review
+**Status:** ✅ Executed as [PR #402](https://github.com/marianfoo/arc-1/pull/402) (2026-06-11). Historical record.
 **Date:** 2026-06-11 (v2, same day as v1)
 **Audience:** An LLM coding agent executing this plan, plus human review.
 **Scope:** PR 1 = the complete code refactor (tests-first, single PR, no behavior change). PR 2 = knowledge/docs architecture — **deferred; the owner will specify it in detail separately.**
