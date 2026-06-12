@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "arc-1",
+  "displayName": "ARC-1 — SAP ABAP for Claude",
+  "version": "0.9.14",
+  "description": "SAP ABAP development for Claude Code: bundles the ARC-1 MCP server (read/write/search/activate/lint/diagnose ABAP via the ADT REST API) with best-practice skills for RAP services, CDS modelling, ABAP Unit tests, clean-core audits, and UI5 modernization. Read-only by default; opt-in write gates.",
+  "author": {
+    "name": "Marian Zeis",
+    "url": "https://github.com/marianfoo"
+  },
+  "homepage": "https://marianfoo.github.io/arc-1/",
+  "repository": "https://github.com/marianfoo/arc-1",
+  "license": "MIT",
+  "keywords": [
+    "sap",
+    "abap",
+    "adt",
+    "s4hana",
+    "btp",
+    "rap",
+    "cds",
+    "fiori",
+    "abap-cloud"
+  ],
+  "userConfig": {
+    "sap_url": {
+      "type": "string",
+      "title": "SAP System URL",
+      "description": "URL of your SAP system (e.g. http://host:50000 or https://host:44300).",
+      "required": true
+    },
+    "sap_user": {
+      "type": "string",
+      "title": "SAP Username",
+      "description": "Your SAP user ID for authentication.",
+      "required": true
+    },
+    "sap_password": {
+      "type": "string",
+      "title": "SAP Password",
+      "description": "Your SAP password. Stored in the OS keychain, never in settings.json.",
+      "sensitive": true,
+      "required": true
+    },
+    "sap_client": {
+      "type": "string",
+      "title": "SAP Client",
+      "description": "SAP logon client number.",
+      "default": "100"
+    },
+    "sap_language": {
+      "type": "string",
+      "title": "SAP Language",
+      "description": "SAP logon language and master language for created objects.",
+      "default": "EN"
+    },
+    "sap_insecure": {
+      "type": "boolean",
+      "title": "Skip TLS Verification",
+      "description": "Skip TLS certificate verification (only for self-signed dev/test systems).",
+      "default": false
+    },
+    "sap_allow_writes": {
+      "type": "boolean",
+      "title": "Allow Writes",
+      "description": "Allow ABAP object mutations (create/update/activate). Keep off for read/search-only usage.",
+      "default": false
+    }
+  },
+  "mcpServers": {
+    "arc-1": {
+      "command": "npx",
+      "args": ["-y", "arc-1"],
+      "env": {
+        "SAP_URL": "${user_config.sap_url}",
+        "SAP_USER": "${user_config.sap_user}",
+        "SAP_PASSWORD": "${user_config.sap_password}",
+        "SAP_CLIENT": "${user_config.sap_client}",
+        "SAP_LANGUAGE": "${user_config.sap_language}",
+        "SAP_INSECURE": "${user_config.sap_insecure}",
+        "SAP_ALLOW_WRITES": "${user_config.sap_allow_writes}"
+      }
+    }
+  }
+}
