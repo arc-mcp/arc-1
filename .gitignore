@@ -109,3 +109,7 @@ dist/
 node_modules/
 *.tsbuildinfo
 .vitest/
+
+# MCPB bundle build artifacts (produced by the release CI / local `mcpb pack`; never committed)
+*.mcpb
+mcpb-bundle/
