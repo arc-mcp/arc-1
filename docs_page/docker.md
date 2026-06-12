@@ -87,8 +87,8 @@ ghcr.io/marianfoo/arc-1
 | Tag | Example | Description |
 |---|---|---|
 | `latest` | `ghcr.io/marianfoo/arc-1:latest` | Updated on every push to main (dev builds) and on every release |
-| `x.y.z` | `ghcr.io/marianfoo/arc-1:0.2.0` | Exact version (immutable, created on release) |
-| `x.y` | `ghcr.io/marianfoo/arc-1:0.2` | Latest patch within minor (created on release) |
+| `x.y.z` | `ghcr.io/marianfoo/arc-1:0.9.14` | Exact version (immutable, created on release) |
+| `x.y` | `ghcr.io/marianfoo/arc-1:0.9` | Latest patch within minor (created on release) |
 
 **`latest`** is rebuilt on every push to `main`, so it always reflects the newest code — even unreleased changes. Use versioned tags for production.
 
@@ -99,7 +99,7 @@ ghcr.io/marianfoo/arc-1
 docker pull ghcr.io/marianfoo/arc-1:latest
 
 # Pinned version (recommended for production/team use)
-docker pull ghcr.io/marianfoo/arc-1:0.2.0
+docker pull ghcr.io/marianfoo/arc-1:0.9.14
 ```
 
 ### Supported platforms
@@ -120,7 +120,7 @@ The workflow `.github/workflows/docker.yml` triggers on every `v*` tag push
 
 ```
 release.yml
-  └─► git tag v2.22.0 + git push tag
+  └─► git tag v0.9.14 + git push tag
             │
             └─► docker.yml triggered
                   ├── docker/setup-qemu-action     (arm64 emulation)
@@ -169,10 +169,10 @@ docker build -t arc1 .
 
 # With version metadata (recommended for releases)
 docker build \
-  --build-arg VERSION=2.22.0 \
+  --build-arg VERSION=0.9.14 \
   --build-arg COMMIT=$(git rev-parse --short HEAD) \
   --build-arg BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
-  -t arc1:2.22.0 .
+  -t arc1:0.9.14 .
 ```
 
 ### Multi-platform build (for sharing)
@@ -180,8 +180,8 @@ docker build \
 ```bash
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
-  --build-arg VERSION=2.22.0 \
-  -t ghcr.io/yourorg/arc1:2.22.0 \
+  --build-arg VERSION=0.9.14 \
+  -t ghcr.io/yourorg/arc1:0.9.14 \
   --push .
 ```
 
@@ -456,17 +456,17 @@ For a comprehensive update guide covering all deployment modes (Docker, BTP, npm
 
 ```bash
 # Pull a specific version (recommended for production)
-docker pull ghcr.io/marianfoo/arc-1:0.2.0
+docker pull ghcr.io/marianfoo/arc-1:0.9.14
 
 # Pull latest (includes unreleased changes from main)
 docker pull ghcr.io/marianfoo/arc-1:latest
 
 # Stop, remove, restart with new image
 docker stop arc1 && docker rm arc1
-docker run -d --name arc1 -p 8080:8080 --env-file .env ghcr.io/marianfoo/arc-1:0.2.0
+docker run -d --name arc1 -p 8080:8080 --env-file .env ghcr.io/marianfoo/arc-1:0.9.14
 
 # Verify version
-docker run --rm ghcr.io/marianfoo/arc-1:0.2.0 --version
+docker run --rm ghcr.io/marianfoo/arc-1:0.9.14 --version
 ```
 
 ### Pinning a version (recommended)
@@ -475,7 +475,7 @@ For production or shared team environments, always pin to a specific version
 tag rather than `latest`:
 
 ```
-ghcr.io/marianfoo/arc-1:0.2.0
+ghcr.io/marianfoo/arc-1:0.9.14
 ```
 
 This ensures every team member uses the same binary regardless
@@ -507,8 +507,13 @@ when a new `ghcr.io/marianfoo/arc-1` image tag is published.
 2. **Protect your `.env` file.** If using `--env-file`, ensure the file has
    restricted permissions (`chmod 600`) and is in `.gitignore`.
 
-3. **Default is already read-only.** Only enable write access on
-   development systems via `SAP_ALLOW_WRITES=true SAP_ALLOW_TRANSPORT_WRITES=true` or `SAP_ALLOW_WRITES=false`.
+3. **Default is already read-only.** Writes, free SQL, table preview, transports,
+   and Git are each off until you opt in (`SAP_ALLOW_WRITES`, `SAP_ALLOW_FREE_SQL`,
+   `SAP_ALLOW_DATA_PREVIEW`, `SAP_ALLOW_TRANSPORT_WRITES`, `SAP_ALLOW_GIT_WRITES`).
+   Enable them only on systems you are comfortable mutating, and pair writes with a
+   tight `SAP_ALLOWED_PACKAGES`. ARC-1 feeds SAP-resident content to the LLM, which
+   then issues tool calls — the package allowlist is the backstop that contains a
+   prompt-injected model writing outside scope.
 
 4. **The container runs as a non-root user** (`arc1:arc1`) inside Alpine. There
    are no open ports — the attack surface is minimal.
@@ -517,7 +522,16 @@ when a new `ghcr.io/marianfoo/arc-1` image tag is published.
    use short-lived sessions where possible.
 
 6. **Use `SAP_INSECURE=false` (the default).** Only set it to `true` in isolated
-   development environments with no sensitive data.
+   development environments with no sensitive data — it disables SAP TLS
+   verification entirely (any certificate accepted, MITM masked) with no startup
+   warning. Note the bundled `manifest.yml` / `mta.yaml` ship `"true"` for the
+   Cloud Connector path; flip them to `"false"` on CA-signed landscapes.
+
+7. **The SQLite cache stores SAP source in cleartext.** In HTTP mode the cache
+   defaults to `sqlite` at `.arc1-cache.db` (full ABAP source, unencrypted, default
+   file perms), and a mounted volume persists it. For IP-sensitive landscapes set
+   `ARC1_CACHE=memory` or `none`, or use an encrypted volume. The file audit sink
+   (`ARC1_LOG_FILE`) likewise contains un-redacted source/error snippets.
 
 ---
 

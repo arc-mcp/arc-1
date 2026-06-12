@@ -318,6 +318,7 @@ Or via SAP GUI: Transaction **SMICM** → Administration → ICM → Soft Restar
 cf set-env arc1-mcp-server SAP_BTP_DESTINATION SAP_TRIAL        # BasicAuth (shared)
 cf set-env arc1-mcp-server SAP_BTP_PP_DESTINATION SAP_TRIAL_PP  # PP (per-user)
 cf set-env arc1-mcp-server SAP_PP_ENABLED true
+cf set-env arc1-mcp-server SAP_PP_STRICT true
 cf set-env arc1-mcp-server SAP_XSUAA_AUTH true
 cf restage arc1-mcp-server
 ```
@@ -329,6 +330,7 @@ env:
   SAP_BTP_DESTINATION: "SAP_TRIAL"
   SAP_BTP_PP_DESTINATION: "SAP_TRIAL_PP"
   SAP_PP_ENABLED: "true"
+  SAP_PP_STRICT: "true"
   SAP_XSUAA_AUTH: "true"
 ```
 
@@ -342,16 +344,22 @@ When `SAP_PP_ENABLED=true`:
 
 This means you can enable PP without breaking existing API key users.
 
+!!! danger "The PP fallback is a privilege-escalation path — set `SAP_PP_STRICT=true` in production"
+    With `SAP_PP_STRICT=false` (default), any PP failure silently routes the call through the shared service account in `SAP_BTP_DESTINATION`. The action then executes with the technical user's authorizations and is audited in SAP as that technical user, not the real caller — so an attacker who can force PP failure escalates to the shared account. Keep the fallback only for deployments that intentionally mix API-key and per-user access; for a pure per-user instance set `SAP_PP_STRICT=true`.
+
 ### How ARC-1 Resolves PP Destinations
 
 ARC-1 uses the [SAP Cloud SDK](https://sap.github.io/cloud-sdk/docs/js/features/connectivity/destinations) `getDestination()` for per-user destination resolution. The SDK handles:
 
 1. **Service token acquisition** — obtains a client_credentials token for the Destination Service
 2. **X-User-Token header** — passes the user's JWT to the Destination Service
-3. **Per-user caching** — caches resolved destinations keyed by destination name + user JWT
+3. **Per-user caching** — caches resolved destinations with tenant-user isolation when the JWT carries `user_id` / `user_uuid`; otherwise SDK defaults can fall back to tenant-level isolation
 4. **Auth token extraction** — returns `authTokens` array with PP tokens or Bearer tokens
 
 The startup path (`SAP_BTP_DESTINATION`) uses direct REST API calls instead of the SDK, because no user JWT is available at startup.
+
+!!! warning "Per-user isolation depends on the token carrying a user id"
+    The SDK's per-user destination/token cache isolates correctly only when the user JWT carries `user_id` / `user_uuid` — XSUAA-issued tokens do. A generic OIDC / Entra bearer token that lacks those claims can collapse to **tenant-wide** caching, where one user's exchanged token may be reused for another. Prefer XSUAA-issued tokens for principal propagation, or verify per-user isolation end-to-end before trusting external OIDC here.
 
 ### Principal Propagation: Option 1 vs Option 2
 

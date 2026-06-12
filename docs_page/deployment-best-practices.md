@@ -217,6 +217,11 @@ applications:
 5. **Deploy separate instances per system** — limits blast radius
 6. **Use XSUAA auth for deployed instances** — proper OAuth 2.0 with scopes (read/write/data/sql/transports/git/admin)
 7. **Set `SAP_SYSTEM_TYPE`** explicitly in production — ensures correct tool definitions from startup
+8. **Set `SAP_INSECURE=false` on CA-signed landscapes** — the tracked `mta.yaml` / `manifest.yml` ship `"true"` for the on-prem HTTP Cloud Connector path; on a TLS landscape it silently disables certificate verification (no startup warning)
+9. **Set `ARC1_RATE_LIMIT` (e.g. `60`) on multi-user instances** — the per-user MCP quota is off by default, so one runaway agent loop can saturate the shared SAP request semaphore
+
+!!! note "Why the package allowlist matters"
+    ARC-1 feeds SAP-resident content (source, comments, errors) to the LLM, which then issues tool calls under the user's identity. `SAP_ALLOWED_PACKAGES` is the backstop that contains a prompt-injected model writing outside its scope — prefer a DEVCLASS subtree (`ZTEAM/**`) over `*` so the containment survives even a steered model.
 
 ---
 
@@ -232,7 +237,7 @@ If you deploy ARC-1 behind a reverse proxy (nginx, Envoy, etc.) outside of Cloud
 
 | File | Purpose | Customize? |
 |------|---------|-----------|
-| `mta.yaml` | MTA build descriptor — services, safe defaults, **placeholder destinations**. Tracked. | Rarely — use `.mtaext` for overrides |
+| `mta.yaml` | MTA build descriptor — services, conservative `SAP_ALLOW_*` defaults, **placeholder destinations**. Tracked. Ships `SAP_INSECURE: "true"` for the Cloud Connector HTTP path — override to `"false"` on CA-signed landscapes. | Rarely — use `.mtaext` for overrides |
 | `mta-overrides.mtaext.example` | Tracked template documenting every overridable property. | No — copy it to `mta-overrides.mtaext` (gitignored) and edit that |
 | `mta-overrides.mtaext` (or any `mta-*.mtaext`) | Per-landscape MTA extension (real destinations, safety flags). **Gitignored.** | Yes — uncomment and set values for your environment |
 | `manifest.yml` | CF deployment manifest (on-premise via Cloud Connector) | Yes — change `SAP_URL`, destination name, safety flags |

@@ -208,22 +208,29 @@ applications:
       SAP_URL: "http://a4h-abap:50000"
       SAP_CLIENT: "001"
       SAP_LANGUAGE: "EN"
-      SAP_INSECURE: "true"
+      SAP_INSECURE: "true"                     # TLS-off for the Cloud Connector HTTP host — set "false" on CA-signed landscapes
       # MCP transport (CF sets PORT env var automatically)
       SAP_TRANSPORT: "http-streamable"
       # BTP Destination Service — dual-destination pattern
       SAP_BTP_DESTINATION: "SAP_TRIAL"         # BasicAuth (startup)
       SAP_BTP_PP_DESTINATION: "SAP_TRIAL_PP"   # PrincipalPropagation (per-user)
       SAP_PP_ENABLED: "true"
+      SAP_PP_STRICT: "true"                    # fail closed — never fall back to the shared service account
       SAP_XSUAA_AUTH: "true"
-      # Safety: read-only, no SQL
-      SAP_ALLOW_WRITES: "true"
-      SAP_ALLOW_FREE_SQL: "true"
+      # Safety: read-only by default. Widen one flag at a time per landscape (see the note below).
+      SAP_ALLOW_WRITES: "false"
+      SAP_ALLOW_FREE_SQL: "false"
     services:
       - arc1-xsuaa
       - arc1-connectivity
       - arc1-destination
 ```
+
+!!! danger "Read-only is the prompt-injection backstop — widen deliberately"
+    ARC-1 feeds SAP-resident content (source, comments, error text) to the LLM, which then issues the next tool calls under the user's identity — a poisoned ABAP comment is an attack vector. `SAP_ALLOW_WRITES=false` and a tight `SAP_ALLOWED_PACKAGES` are the controls that hold *regardless of what the model decides*. Enable writes / free SQL / `SAP_ALLOWED_PACKAGES=*` only when the landscape genuinely needs it.
+
+!!! warning "`SAP_INSECURE: \"true\"` disables SAP TLS verification"
+    The bundled templates ship `SAP_INSECURE: "true"` for the on-prem-via-HTTP Cloud Connector path. On a landscape with CA-signed certificates set it to `"false"` and supply the CA via `NODE_EXTRA_CA_CERTS` — it accepts *any* certificate otherwise, masking man-in-the-middle. ARC-1 prints no startup warning when verification is off.
 
 ### 5. Build and Push Docker Image
 
@@ -446,9 +453,11 @@ applications:
       SAP_BTP_DESTINATION: "SAP_TRIAL"
       SAP_BTP_PP_DESTINATION: "SAP_TRIAL_PP"
       SAP_PP_ENABLED: "true"
+      SAP_PP_STRICT: "true"
       SAP_XSUAA_AUTH: "true"
-      SAP_ALLOW_WRITES: "true"
-      SAP_ALLOW_FREE_SQL: "true"
+      # read-only by default — widen per landscape
+      SAP_ALLOW_WRITES: "false"
+      SAP_ALLOW_FREE_SQL: "false"
     services:
       - arc1-xsuaa
       - arc1-connectivity

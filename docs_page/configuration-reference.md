@@ -32,7 +32,7 @@ CLI flag   >   process.env   >   .env file (in CWD)   >   built-in default
 
 For the full per-deployment-mode breakdown (npx vs local vs Docker vs BTP, and the gotcha where mcp.json `env` does nothing for `url`-based remote connections), see [Configuration Precedence](configuration-precedence.md).
 
-**Boolean values.** Most boolean flags accept either `"true"` or `"1"`. One exception: `ARC1_LOG_HTTP_DEBUG` accepts only `"true"` ([known inconsistency](#logging--observability)).
+**Boolean values.** Most boolean flags accept either `"true"` or `"1"`. One exception: `ARC1_LOG_HTTP_DEBUG` accepts only `"true"` ([known inconsistency](#logging-and-observability)).
 
 **Comma-separated lists.** `SAP_ALLOWED_PACKAGES`, `SAP_ALLOWED_TRANSPORTS`, `SAP_DENY_ACTIONS`, and `ARC1_ALLOWED_ORIGINS` are split on `,` and `.trim()`-ed. Quote shell-sensitive entries (`*`, `$TMP`, glob characters): `-e SAP_ALLOWED_PACKAGES='Z*,$TMP'`. In `.env` files no extra quoting is needed.
 
@@ -54,6 +54,9 @@ The bare minimum needed to reach a SAP system. None of these affect what tool ca
 ### TLS / proxy notes
 
 ARC-1 uses [undici](https://github.com/nodejs/undici) for all SAP HTTP. It respects standard `HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY` env vars. For custom CA certificates, set `NODE_EXTRA_CA_CERTS=/path/to/ca.pem` (read by Node, not by ARC-1 directly). For Docker mounts of CA bundles, see [docker.md](docker.md#self-signed-or-internal-ca-certificates).
+
+!!! danger "`SAP_INSECURE` has no startup warning, and the repo's manifests ship it `\"true\"`"
+    `SAP_INSECURE=true` disables all SAP TLS verification — it accepts *any* certificate (masking man-in-the-middle), not just self-signed ones, and ARC-1 logs nothing when it is on. The bundled `manifest.yml` / `mta.yaml` set it `"true"` for the on-prem HTTP Cloud Connector path; set it `"false"` on CA-signed landscapes and use `NODE_EXTRA_CA_CERTS` for an internal CA instead.
 
 ---
 
@@ -253,6 +256,9 @@ ARC-1 caches SAP source/metadata with ETag revalidation on every hit. See [cachi
 | `--cache-file` | `ARC1_CACHE_FILE` | `.arc1-cache.db` | SQLite file path when `ARC1_CACHE=sqlite` (or `auto` → sqlite). Created on first use. |
 | `--cache-warmup` | `ARC1_CACHE_WARMUP` | `false` | When `true`, ARC-1 runs a TADIR scan on startup and bulk-fetches matching object sources into the cache. Speeds up first reads at the cost of a longer startup and more SAP load. |
 | `--cache-warmup-packages` | `ARC1_CACHE_WARMUP_PACKAGES` | (empty = all custom) | Comma-separated package filter for warmup (e.g. `Z*,Y*,/COMPANY/*`). Empty matches all custom packages found in TADIR. Ignored when `ARC1_CACHE_WARMUP=false`. |
+
+!!! warning "`ARC1_CACHE=sqlite` stores SAP source in cleartext at rest"
+    The SQLite cache holds full ABAP source unencrypted at `.arc1-cache.db`, created with default file permissions. For IP-sensitive landscapes use `ARC1_CACHE=memory` or `none`, or place the file on an encrypted volume with restricted permissions. The file audit sink (`ARC1_LOG_FILE`) similarly contains un-redacted source/error snippets.
 
 ---
 
