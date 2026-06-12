@@ -33,7 +33,11 @@ async function main(): Promise<void> {
 
   const hits: AdtSearchResult[] = [];
   for (const prefix of TEST_OBJECT_PREFIXES) {
-    const results = await client.searchObject(prefix, SEARCH_CAP);
+    // The trailing `*` is ESSENTIAL: ADT quick-search does NOT do implicit prefix
+    // matching — searchObject('ZARC1') returns 0 hits, searchObject('ZARC1*')
+    // returns the matches (verified live). selectSweepCandidates re-filters with a
+    // strict bare-name startsWith, so the wildcard only widens the server query.
+    const results = await client.searchObject(`${prefix}*`, SEARCH_CAP);
     hits.push(...results);
     if (results.length >= SEARCH_CAP) {
       console.warn(

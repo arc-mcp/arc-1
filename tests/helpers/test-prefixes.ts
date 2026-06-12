@@ -1,24 +1,30 @@
 /**
  * Canonical naming the ARC-1 test suites use for the throwaway SAP objects they
  * create, plus a pure selector the janitor (scripts/test-janitor.ts) uses to
- * decide what to sweep. Single source of truth so a new test prefix can't drift
- * out of the cleanup set silently (see Engineering Playbook §3 in AGENTS.md).
+ * decide what to sweep.
  */
 
+import type { AdtSearchResult } from '../../src/adt/types.js';
 import { PERSISTENT_OBJECTS } from '../e2e/fixtures.js';
 
 /** Exact names of managed persistent fixtures — these must NEVER be swept. */
 export const PERSISTENT_FIXTURE_NAMES: readonly string[] = PERSISTENT_OBJECTS.map((o) => o.name);
 
 /**
- * Name prefixes the integration + e2e suites use for transient objects. The
- * janitor sweeps leftovers (from crashed/interrupted runs) that start with one
- * of these. Kept deliberately to cleanly-deletable workbench types (PROG/CLAS/
- * INTF/DDLS/TABL/DOMA/DTEL); RAP/FUGR fixtures self-clean in finally blocks and
- * need ordered teardown, so they're intentionally out of scope here.
+ * Name prefixes the integration + e2e suites use for transient objects, for the
+ * janitor to sweep leftovers from crashed/interrupted runs.
+ *
+ * This is a CURATED list, NOT auto-derived — keep it in step with the prefixes
+ * the suites pass to uniqueName/generateUniqueName. `ZARC1` covers the whole
+ * ZARC1* namespace (incl. ZARC1FG/FM function groups, ZARC1MC message classes,
+ * ZARC1SKTD, …). Deletion is best-effort: standalone objects delete cleanly,
+ * while types needing ordered teardown (FUNC modules under a group, RAP behavior
+ * pools) may be reported as failures to remove manually. The `$ARC1T_*` PACKAGES
+ * that RAP tests create are NOT swept here — delete those manually (e.g. SE80) if
+ * they accumulate.
  */
 export const TEST_OBJECT_PREFIXES: readonly string[] = [
-  'ZARC1_', // broad integration + e2e: ZARC1_ACT*, ZARC1_DOMA*, ZARC1_E2E_*, ZARC1_TDOM*, …
+  'ZARC1', // the whole ZARC1* test namespace (ZARC1_*, ZARC1FG, ZARC1MC, ZARC1SKTD, …)
   'ZARC360', // #360 schema-pollution tests
   'ZCL_ARC1', // ZCL_ARC1_E303*, ZCL_ARC1_CSURG*, …
   'ZIF_ARC1',
@@ -28,16 +34,8 @@ export const TEST_OBJECT_PREFIXES: readonly string[] = [
   'ZRES_', // ZRES_TADIR_*, ZRES_TGHOST_*, ZRES_*PAR/CHD
 ];
 
-/** Package-name prefixes the suites create (e.g. RAP local packages). */
-export const TEST_PACKAGE_PREFIXES: readonly string[] = ['$ARC1T_'];
-
-/** Minimal shape of a search hit the selector needs (subset of AdtSearchResult). */
-export interface SweepableObject {
-  objectName: string;
-  objectType: string;
-  uri: string;
-  packageName: string;
-}
+/** Minimal shape of a search hit the selector needs. */
+export type SweepableObject = Pick<AdtSearchResult, 'objectName' | 'objectType' | 'uri' | 'packageName'>;
 
 /** A leftover object the janitor may delete. */
 export interface SweepCandidate {
@@ -48,10 +46,20 @@ export interface SweepCandidate {
 }
 
 /**
+ * Strip the NW 7.50 search-result display decoration ("ZIF_X (Interface)") to
+ * the bare object name. Shared with tests/e2e/setup.ts so the janitor and the
+ * fixture-sync agree on what an object is called (otherwise a decorated hit
+ * would slip past the persistent-fixture exclusion below).
+ */
+export function bareObjectName(objectName: string): string {
+  return objectName.split(/\s|\(/)[0];
+}
+
+/**
  * From raw search hits, pick the objects that are (a) NOT a persistent fixture
  * and (b) STRICT-prefix-match one of the test prefixes (ADT quick-search is
- * fuzzy/substring, so the strict `startsWith` filter is what keeps unrelated
- * objects safe). De-duplicated by type+name.
+ * fuzzy, so the strict bare-name `startsWith` filter is what keeps unrelated
+ * objects safe). De-duplicated by bare type + name.
  */
 export function selectSweepCandidates(
   results: readonly SweepableObject[],
@@ -62,11 +70,12 @@ export function selectSweepCandidates(
   const upperPrefixes = prefixes.map((p) => p.toUpperCase());
   const byKey = new Map<string, SweepCandidate>();
   for (const r of results) {
-    const name = r.objectName?.toUpperCase();
+    const name = bareObjectName(r.objectName ?? '').toUpperCase();
     if (!name || !r.uri) continue;
     if (exclude.has(name)) continue;
     if (!upperPrefixes.some((p) => name.startsWith(p))) continue;
-    byKey.set(`${r.objectType}|${name}`, {
+    const bareType = (r.objectType?.split('/')[0] ?? r.objectType ?? '').toUpperCase();
+    byKey.set(`${bareType}|${name}`, {
       name,
       type: r.objectType,
       uri: r.uri,

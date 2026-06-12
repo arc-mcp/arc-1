@@ -17,9 +17,27 @@ describe('selectSweepCandidates', () => {
   });
 
   it('never sweeps persistent fixtures', () => {
-    const fixture = PERSISTENT_FIXTURE_NAMES[0]; // e.g. ZARC1_TEST_REPORT — matches ZARC1_ prefix
+    const fixture = PERSISTENT_FIXTURE_NAMES[0]; // e.g. ZARC1_TEST_REPORT — matches ZARC1 prefix
     const out = selectSweepCandidates([hit(fixture), hit('ZARC1_LEFTOVER')]);
     expect(out.map((c) => c.name)).toEqual(['ZARC1_LEFTOVER']);
+  });
+
+  it('strips NW 7.50 name decoration before excluding fixtures and matching prefixes', () => {
+    const decoratedFixture: SweepableObject = {
+      objectName: `${PERSISTENT_FIXTURE_NAMES[2]} (Interface)`, // ZIF_ARC1_TEST (Interface)
+      objectType: 'INTF/OI',
+      uri: '/sap/bc/adt/oo/interfaces/zif_arc1_test',
+      packageName: '$TMP',
+    };
+    const decoratedLeftover: SweepableObject = {
+      objectName: 'ZCL_ARC1_E303A (Class)',
+      objectType: 'CLAS/OC',
+      uri: '/sap/bc/adt/oo/classes/zcl_arc1_e303a',
+      packageName: '$TMP',
+    };
+    const out = selectSweepCandidates([decoratedFixture, decoratedLeftover]);
+    // The decorated fixture is still excluded; the decorated leftover is matched on its bare name.
+    expect(out.map((c) => c.name)).toEqual(['ZCL_ARC1_E303A']);
   });
 
   it('deduplicates by type + name', () => {
