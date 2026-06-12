@@ -116,54 +116,54 @@
     "sap_url": {
       "type": "string",
       "title": "SAP System URL",
-      "description": "URL of your SAP system (e.g., http://host:50000 or https://host:44300)",
+      "description": "URL of your SAP system (e.g. http://host:50000 or https://host:44300).",
       "required": true
     },
     "sap_user": {
       "type": "string",
       "title": "SAP Username",
-      "description": "Your SAP user ID for authentication",
+      "description": "Your SAP user ID for authentication.",
       "required": true
     },
     "sap_password": {
       "type": "string",
       "title": "SAP Password",
-      "description": "Your SAP password",
+      "description": "Your SAP password (stored securely in the OS keychain).",
       "sensitive": true,
       "required": true
     },
     "sap_client": {
       "type": "string",
       "title": "SAP Client",
-      "description": "SAP client number",
+      "description": "SAP logon client number.",
       "default": "100",
       "required": false
     },
     "sap_language": {
       "type": "string",
       "title": "SAP Language",
-      "description": "SAP logon language",
+      "description": "SAP logon language and master language for created objects.",
       "default": "EN",
       "required": false
     },
     "sap_insecure": {
       "type": "boolean",
       "title": "Skip TLS Verification",
-      "description": "Skip TLS certificate verification (for self-signed certificates)",
+      "description": "Skip TLS certificate verification (only for self-signed dev/test systems).",
       "default": false,
       "required": false
     },
     "sap_allow_writes": {
       "type": "boolean",
       "title": "Allow Writes",
-      "description": "Allow ABAP object mutations (create/update/activate). Prerequisite for transport and Git writes. Keep false for read/search-only usage.",
+      "description": "Allow ABAP object mutations (create/update/activate). Prerequisite for transport and Git writes. Keep off for read/search-only usage.",
       "default": false,
       "required": false
     },
     "sap_allowed_packages": {
       "type": "string",
       "title": "Allowed Packages (write scope)",
-      "description": "Comma-separated write allowlist: exact names, Z* wildcards, ZFOO/** subtrees, or * for ALL packages. Default $TMP (local/throwaway only). Only applies when Allow Writes is on.",
+      "description": "Comma-separated write allowlist: exact names, Z* wildcards, ZFOO/** subtrees, or * for ALL packages. Default $TMP (local/throwaway only). WARNING: leaving this empty also allows writes to ALL packages — set it explicitly. Only applies when Allow Writes is on.",
       "default": "$TMP",
       "required": false
     },

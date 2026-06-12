@@ -102,7 +102,14 @@ describe('mcpb-manifest.json (Claude Desktop bundle)', () => {
 
 describe('config surface parity (plugin ↔ mcpb)', () => {
   const mcpb = readJson('mcpb-manifest.json');
-  const CAPABILITY_ENV = [
+  // Every SAP_* the server reads must be wired in BOTH surfaces — not just the capability gates.
+  const ENV_KEYS = [
+    'SAP_URL',
+    'SAP_USER',
+    'SAP_PASSWORD',
+    'SAP_CLIENT',
+    'SAP_LANGUAGE',
+    'SAP_INSECURE',
     'SAP_ALLOW_WRITES',
     'SAP_ALLOWED_PACKAGES',
     'SAP_ALLOW_DATA_PREVIEW',
@@ -111,26 +118,36 @@ describe('config surface parity (plugin ↔ mcpb)', () => {
     'SAP_ALLOW_GIT_WRITES',
   ];
 
-  const surfaces: Record<string, { env: Record<string, string>; cfg: Record<string, unknown> }> = {
+  const surfaces: Record<string, { env: Record<string, string>; cfg: Record<string, Record<string, unknown>> }> = {
     plugin: { env: plugin.mcpServers['arc-1'].env, cfg: plugin.userConfig },
     mcpb: { env: mcpb.server.mcp_config.env, cfg: mcpb.user_config },
   };
 
   for (const [name, { env, cfg }] of Object.entries(surfaces)) {
-    it(`${name} exposes the full write/data/sql/transport/git surface`, () => {
-      for (const key of CAPABILITY_ENV) expect(Object.keys(env), `${name} env ${key}`).toContain(key);
-    });
-
-    it(`${name} has no dangling user_config substitution`, () => {
-      for (const value of Object.values(env)) {
-        const m = /\$\{user_config\.([a-z0-9_]+)\}/.exec(value);
-        if (m) expect(cfg, `${name} → ${m[1]}`).toHaveProperty(m[1]);
+    it(`${name} wires every SAP_* env var to an existing user_config key`, () => {
+      expect(Object.keys(env).sort()).toEqual([...ENV_KEYS].sort());
+      for (const [key, value] of Object.entries(env)) {
+        // Each value must be EXACTLY a ${user_config.<key>} substitution (anchored) — a typo like
+        // ${userconfig.x} or a stray literal fails here instead of silently shipping a broken value.
+        const m = /^\$\{user_config\.([a-z0-9_]+)\}$/.exec(value);
+        expect(m, `${name}.${key} = ${value}`).not.toBeNull();
+        expect(cfg, `${name} → ${m?.[1]}`).toHaveProperty(m?.[1] as string);
       }
     });
   }
 
-  it('plugin and mcpb declare the same user-config keys', () => {
-    expect(Object.keys(plugin.userConfig).sort()).toEqual(Object.keys(mcpb.user_config).sort());
+  it('plugin and mcpb declare identical user-config field bodies', () => {
+    const keys = Object.keys(plugin.userConfig).sort();
+    expect(keys).toEqual(Object.keys(mcpb.user_config).sort());
+    // Pin the security-relevant + user-facing fields so Desktop and Claude Code can't diverge
+    // (a different default/sensitive/type/description between the two surfaces is a real bug).
+    for (const key of keys) {
+      const p = plugin.userConfig[key];
+      const m = mcpb.user_config[key];
+      for (const field of ['type', 'title', 'description', 'default', 'sensitive'] as const) {
+        expect(m[field], `mcpb.${key}.${field} vs plugin`).toEqual(p[field]);
+      }
+    }
   });
 });
 
