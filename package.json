@@ -51,7 +51,7 @@
     "format": "biome format --write .",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.scripts.json && tsc --noEmit -p tsconfig.tests.json",
     "validate:policy": "tsx scripts/validate-action-policy.ts",
-    "check:sizes": "node scripts/ci/check-file-sizes.mjs",
+    "check:sizes": "node scripts/ci/check-file-sizes.mjs && tsx scripts/ci/check-tool-schema-budget.ts",
     "cli": "tsx src/cli.ts",
     "extract-sap-cookies": "tsx src/extract-sap-cookies.ts",
     "probe": "tsx scripts/probe-adt-types.ts",

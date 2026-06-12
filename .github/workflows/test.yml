@@ -90,7 +90,7 @@ jobs:
       - name: Validate action policy
         run: npm run validate:policy
 
-      - name: Check file-size ratchet
+      - name: Check size and schema budgets
         run: npm run check:sizes
 
       - name: npx package smoke test
