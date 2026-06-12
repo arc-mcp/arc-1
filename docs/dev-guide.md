@@ -116,5 +116,49 @@ duplicating it here proved to drift). The compact per-variable table stays in AG
 | Add skip policy test | `tests/helpers/skip-policy.ts` |
 | Add expected error assertion | `tests/helpers/expected-error.ts` |
 | Add CRUD integration test | `tests/integration/crud-harness.ts`, `tests/integration/crud.lifecycle.integration.test.ts` |
+| Run integration/e2e concurrently vs one SAP system / isolate runs | `tests/helpers/run-id.ts` (`RUN_ID`/`TEST_RUN_ID`), `scripts/e2e-run-local.sh` (per-run port/PID/log), `tests/e2e/setup.ts` (race-tolerant fixture sync) — see "Testing — concurrent runs" below |
+| Opt into faster parallel integration runs | `vitest.integration.config.ts` (`TEST_FILE_PARALLELISM=true`, `maxWorkers: 2`) — default sequential; measure with `npm run test:runtime-report` |
+| Sweep leaked test objects after a crashed run | `scripts/test-janitor.ts` (`npm run test:cleanup`; dry-run by default, `-- --execute` deletes), `tests/helpers/test-prefixes.ts` (prefixes + pure selector, derived from the fixture list) |
 | Modify CI coverage reporting | `scripts/ci/coverage-summary.mjs`, `.github/workflows/test.yml`, `.github/workflows/release.yml` |
 | Modify CI reliability reporting | `scripts/ci/collect-test-reliability.mjs`, `scripts/ci/assert-required-test-execution.mjs`, `.github/workflows/test.yml` |
+
+## Testing — concurrent runs, isolation & teardown
+
+Multiple integration/e2e runs can target ONE SAP system at once (several git worktrees, or a local
+run overlapping CI) without interfering. Mechanics and seams:
+
+- **Run identity** — `tests/helpers/run-id.ts` exports `RUN_ID`, a 2-char token (`TEST_RUN_ID` env if
+  set, else random per process). Every generated object name embeds it: `generateUniqueName`
+  (`tests/integration/crud-harness.ts`) and the shared `uniqueName` / `uniqueLettersName`
+  (`tests/e2e/helpers.ts`). This closes the same-millisecond collision window that timestamp +
+  process-local counter alone left open. Set `TEST_RUN_ID` to pin a readable id.
+- **One e2e server per run** — `npm run test:e2e:full` now runs `scripts/e2e-run-local.sh`, which picks
+  a FREE port and per-run PID/log paths (`/tmp/arc1-e2e-<id>.pid`, `/tmp/arc1-e2e-logs/<id>/`) and
+  exports `TEST_RUN_ID`, so two local full runs don't kill each other (the old fixed port 3000 + fixed
+  PID file meant the second run murdered the first). CI is unchanged: it runs start/test/stop
+  separately on the fixed port 3000, one run at a time via the `…-sap-live-a4h` concurrency group.
+  Overrides: `E2E_MCP_PORT` pins the port (skips the free-port probe and the listener sweep guard),
+  `E2E_PID_FILE` / `E2E_LOG_DIR` pin paths, `E2E_MCP_URL` points the vitest client at the server.
+- **Shared fixtures tolerate races** — `tests/e2e/setup.ts` reconciles a concurrent create (423 /
+  "already exists") by re-polling the system instead of skipping; only a genuinely different fixture
+  source (another branch mid-run) is skipped, and `assertSyncedFixturesActive` re-checks once after a
+  short delay so a still-settling activation doesn't fail the sync. The rap SAPActivate tests create
+  transient `$TMP` objects rather than mutating the shared fixtures.
+- **Teardown backstop** — normal runs clean up after themselves (`CrudRegistry` + lock-aware
+  `retryDelete`); a crashed/interrupted run leaks objects. `npm run test:cleanup`
+  (`scripts/test-janitor.ts`) sweeps leftovers whose name strict-prefix-matches a canonical test
+  prefix, excluding the managed persistent fixtures. Dry-run by default; `-- --execute` deletes.
+  Prefixes + the pure selector live in `tests/helpers/test-prefixes.ts` (derived from
+  `PERSISTENT_OBJECTS`), so the cleanup set can't drift from what the suites create. Needs only SAP
+  creds (no running server). RAP/FUGR objects are intentionally out of scope (they self-clean and
+  need ordered teardown).
+- **Optional file parallelism** — `TEST_FILE_PARALLELISM=true npm run test:integration` runs up to two
+  files in parallel (`maxWorkers: 2` cap in `vitest.integration.config.ts`; `fileParallelism:false`
+  forces it to 1 otherwise). Default stays sequential because parallel files once exhausted SAP work
+  processes ("Service cannot be reached"). Measure before/after with `npm run test:runtime-report` and
+  watch for that error class before raising the cap. Size it against the system's `rdisp/wp_no_dia`;
+  the e2e server's per-request fan-out is separately capped by `ARC1_MAX_CONCURRENT` (default 10 —
+  lower toward ~4 when several runs share one small system).
+- **Not yet shipped** (see `docs/plans/test-isolation-and-parallel-runs.md`): CI `retry: 1` paired
+  with flake telemetry (H2), a parallel read-only e2e project (F2), and a cross-run flake-aggregation
+  workflow (H3). The plan rates these measure-first / conditional on the F1 numbers.
