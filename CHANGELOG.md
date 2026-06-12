@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.9.15](https://github.com/marianfoo/arc-1/compare/v0.9.14...v0.9.15) (2026-06-12)
+
+
+### Features
+
+* one-step "Install in Claude" — Claude Code plugin, MCPB bundle, tool annotations ([#425](https://github.com/marianfoo/arc-1/issues/425)) ([48013b7](https://github.com/marianfoo/arc-1/commit/48013b70fa3cb57fb9d72a31b8246c85b7c300c0))
+
+
+### Bug Fixes
+
+* **adt:** make SRVB publish/unpublish content negotiation 758-proof ([#403](https://github.com/marianfoo/arc-1/issues/403)) ([909f253](https://github.com/marianfoo/arc-1/commit/909f25340474285dc882ade952cab696a1d0c58f))
+* **cache:** batch warmup writes in transactions ([#417](https://github.com/marianfoo/arc-1/issues/417)) ([6a5ec76](https://github.com/marianfoo/arc-1/commit/6a5ec760cf985df7cb7a5f1d35cf18e41dd56f8b))
+* **config:** empty env values fall back to defaults (fail closed, not fail open) ([#427](https://github.com/marianfoo/arc-1/issues/427)) ([cd32f54](https://github.com/marianfoo/arc-1/commit/cd32f5403fab29437f5881589b48cd610e777bbc))
+* **context:** avoid SAPContext dependency convoy ([#411](https://github.com/marianfoo/arc-1/issues/411)) ([f37373b](https://github.com/marianfoo/arc-1/commit/f37373b6f34b5e8a86e1f72345e1604645d1f307))
+* **docker:** patch OpenSSL CVE-2026-45447 and harden release CVE gate ([#400](https://github.com/marianfoo/arc-1/issues/400)) ([951ca09](https://github.com/marianfoo/arc-1/commit/951ca0987af27ca02fdbd2c5c0ae2be7800291a5))
+* **handlers:** accept any maxResults number, floor+clamp at the sinks ([#423](https://github.com/marianfoo/arc-1/issues/423)) ([1eb1758](https://github.com/marianfoo/arc-1/commit/1eb175840cea93a38209c6d566a7838f38d27ccb))
+* type-check the test suite + split intent.test.ts ([#405](https://github.com/marianfoo/arc-1/issues/405)) ([5cb235c](https://github.com/marianfoo/arc-1/commit/5cb235c1ca27c35e4b232a923d4e2516e3a87f41))
+* **xml:** make XML escaping single pass ([#414](https://github.com/marianfoo/arc-1/issues/414)) ([df0c285](https://github.com/marianfoo/arc-1/commit/df0c28513b97ed98855383f0e2c342a7037881a2))
+* **xml:** reuse parser array tag set ([#412](https://github.com/marianfoo/arc-1/issues/412)) ([2d12d3d](https://github.com/marianfoo/arc-1/commit/2d12d3d779adf2d3f90392213841621c65858bd8))
+
+
+### Tests
+
+* **handlers:** Zod↔JSON-Schema type-parity guard ([#415](https://github.com/marianfoo/arc-1/issues/415)) ([0855e2c](https://github.com/marianfoo/arc-1/commit/0855e2c6bf4dd3ff8e8abc2a7e2d39620959ed6f))
+* isolate concurrent integration/e2e runs, add teardown janitor, fix flake ([#426](https://github.com/marianfoo/arc-1/issues/426)) ([5895a75](https://github.com/marianfoo/arc-1/commit/5895a75f3d16e9ab07e60d1113aaa32496393c3d))
+* rename dispatch-rate-limit test, featuresOff() sweep, strip intent.ts provenance ([#410](https://github.com/marianfoo/arc-1/issues/410)) ([8a34886](https://github.com/marianfoo/arc-1/commit/8a3488673423c598a1af0f347929fc6e29bdf5a4))
+* **server:** de-flake auth-rate-limit (one server per test) + diagnosable transport errors ([#424](https://github.com/marianfoo/arc-1/issues/424)) ([96fb89d](https://github.com/marianfoo/arc-1/commit/96fb89dc6b30c55a710fb1028d368dca1f1c542c))
+
+
+### Performance Improvements
+
+* **lint:** memoize abaplint default configs ([#413](https://github.com/marianfoo/arc-1/issues/413)) ([1e78acb](https://github.com/marianfoo/arc-1/commit/1e78acb8a2fa51e47fe6731ea67d021d638c80d5))
+
 ## [0.9.14](https://github.com/marianfoo/arc-1/compare/v0.9.13...v0.9.14) (2026-06-11)
 
 
