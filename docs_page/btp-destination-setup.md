@@ -17,6 +17,8 @@ ARC-1 supports these destination-related ways to authenticate to SAP:
 
 All modes can coexist with any MCP client authentication (API key, OIDC, XSUAA), but per-user destinations need a real JWT. XSUAA is the BTP-native path.
 
+> **`OAuth2UserTokenExchange` requires ARC-1 and the BTP ABAP Environment to be in the *same* subaccount** (it's an XSUAA→XSUAA exchange within one identity zone). For ARC-1 and the ABAP env in *different* subaccounts, use `OAuth2SAMLBearerAssertion` + trust instead. See [BTP ABAP Environment → Cross-subaccount principal propagation](btp-abap-environment.md#cross-subaccount-principal-propagation-fails).
+
 ---
 
 ## Mode 1: Hardcoded Credentials (No BTP)
