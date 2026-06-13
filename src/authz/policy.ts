@@ -137,6 +137,7 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   'SAPTransport.release_recursive': { scope: 'transports', opType: OperationType.Transport, featureGate: 'transport' },
   'SAPTransport.reassign': { scope: 'transports', opType: OperationType.Transport, featureGate: 'transport' },
   'SAPTransport.delete': { scope: 'transports', opType: OperationType.Transport, featureGate: 'transport' },
+  'SAPTransport.remove_object': { scope: 'transports', opType: OperationType.Transport, featureGate: 'transport' },
 
   // ── SAPGit ───────────────────────────────────────────────────────
   SAPGit: { scope: 'read', opType: OperationType.Read, featureGate: 'git' },

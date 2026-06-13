@@ -702,7 +702,7 @@
   },
   {
     "name": "SAPTransport",
-    "description": "Manage CTS transport requests (SE09/SE10 equivalent). Actions: list (defaults to current user, modifiable transports — both Workbench and Customizing), get (details with tasks and objects), create (K=Workbench, W=Customizing, T=Transport of Copies), release, delete, reassign (change owner), release_recursive (release tasks first, then parent), check (check if a package requires a transport — provide type, name, package), history (find transports referencing an object — provide type, name; read-only, works without SAP_ALLOW_TRANSPORT_WRITES). Transport IDs look like A4HK900123. Status: D=modifiable, R=released.",
+    "description": "Manage CTS transport requests (SE09/SE10 equivalent). Actions: list (defaults to current user, modifiable transports — both Workbench and Customizing), get (details with tasks and objects), create (K=Workbench, W=Customizing, T=Transport of Copies), release, delete, remove_object (remove an object, keep the request), reassign (change owner), release_recursive (release tasks first, then parent), check (check if a package requires a transport — provide type, name, package), history (find transports referencing an object — provide type, name; read-only, works without SAP_ALLOW_TRANSPORT_WRITES). Transport IDs look like A4HK900123. Status: D=modifiable, R=released.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -716,11 +716,11 @@
             "layers",
             "targets"
           ],
-          "description": "list: show transports (defaults to current user, modifiable only). get: fetch transport details including tasks and objects. create: create a new transport request (description required). To target another system, pass target=<system | system.client | /group/> (the Transportziel / TR_TARGET, e.g. \"/TRG/\" or \"C11\"; the group and system.client forms require extended transport control to be active). Otherwise omit target and pass an optional package to let SAP infer the route (defaults to $TMP). The response reports the resolved transport target; an empty target means a LOCAL request (cannot be transported onward). release: release a single transport or task. delete: delete a transport (use recursive=true to delete tasks first; removeLockedObjects=true to strip locked objects that otherwise block deletion with \"...contains locked objects\"). reassign: change transport owner (use recursive=true for tasks too). release_recursive: release all unreleased tasks first, then the transport itself. check: check if a transport is needed for a package/object (requires type, name, package). history: list transports referencing an object (reverse lookup; requires type, name; works without SAP_ALLOW_TRANSPORT_WRITES). layers: list the transport layers this system offers (name + description + resolved target where any) — the valid values for create's transportLayer. Use this to discover a real value instead of guessing; works without SAP_ALLOW_TRANSPORT_WRITES. Uses the package value-help endpoint (NW 7.52+); older releases report it's unavailable. targets: list the valid transport targets (Transportziel / TR_TARGET) this system offers — the valid values for create's target. Use this to discover a real target (e.g. before create with target=). Uses the official ADT target value-help; available only on releases whose ADT stack supports explicit targets (NW 7.50/7.51 report it's unavailable). Read-only."
+          "description": "list: show transports (defaults to current user, modifiable only). get: fetch transport details including tasks and objects. create: create a new transport request (description required). To target another system, pass target=<system | system.client | /group/> (the Transportziel / TR_TARGET, e.g. \"/TRG/\" or \"C11\"; the group and system.client forms require extended transport control to be active). Otherwise omit target and pass an optional package to let SAP infer the route (defaults to $TMP). The response reports the resolved transport target; an empty target means a LOCAL request (cannot be transported onward). release: release a single transport or task. delete: delete a transport (use recursive=true to delete tasks first; removeLockedObjects=true to strip locked objects that otherwise block deletion with \"...contains locked objects\"). remove_object: remove one object from a request, keeping the request — needs the full key pgmid+type+name. reassign: change transport owner (use recursive=true for tasks too). release_recursive: release all unreleased tasks first, then the transport itself. check: check if a transport is needed for a package/object (requires type, name, package). history: list transports referencing an object (reverse lookup; requires type, name; works without SAP_ALLOW_TRANSPORT_WRITES). layers: list the transport layers this system offers (name + description + resolved target where any) — the valid values for create's transportLayer. Use this to discover a real value instead of guessing; works without SAP_ALLOW_TRANSPORT_WRITES. Uses the package value-help endpoint (NW 7.52+); older releases report it's unavailable. targets: list the valid transport targets (Transportziel / TR_TARGET) this system offers — the valid values for create's target. Use this to discover a real target (e.g. before create with target=). Uses the official ADT target value-help; available only on releases whose ADT stack supports explicit targets (NW 7.50/7.51 report it's unavailable). Read-only."
         },
         "id": {
           "type": "string",
-          "description": "Transport request ID, e.g. A4HK900123 (required for get/release/delete/reassign/release_recursive)"
+          "description": "Transport request ID, e.g. A4HK900123 (required for get/release/delete/reassign/release_recursive/remove_object)"
         },
         "description": {
           "type": "string",
@@ -728,7 +728,7 @@
         },
         "name": {
           "type": "string",
-          "description": "Object name (for check or history actions)"
+          "description": "Object name (for check, history, or remove_object actions)"
         },
         "package": {
           "type": "string",
@@ -752,7 +752,11 @@
         },
         "type": {
           "type": "string",
-          "description": "Object type for check/history actions (PROG, CLAS, DDLS, etc.). Not used by create — the SAP backend infers transport type (K/W/T) from the package's TADIR route on the CreateCorrectionRequest endpoint."
+          "description": "Object type for check/history/remove_object actions (PROG, CLAS, DDLS, etc.). Not used by create — the SAP backend infers transport type (K/W/T) from the package's TADIR route on the CreateCorrectionRequest endpoint."
+        },
+        "pgmid": {
+          "type": "string",
+          "description": "Program ID for remove_object: \"R3TR\" (whole object) or \"LIMU\" (sub-object). Required — object type alone does not determine pgmid."
         },
         "owner": {
           "type": "string",

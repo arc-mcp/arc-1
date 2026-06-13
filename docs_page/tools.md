@@ -670,14 +670,15 @@ Manage CTS transport requests (SE09/SE10 equivalent): list, get details, create,
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `action` | string | Yes | `list`, `get`, `create`, `release`, `delete`, `reassign`, `release_recursive`, `check`, or `history` |
-| `id` | string | No | Transport request ID, e.g. `A4HK900123` (for get/release/delete/reassign/release_recursive) |
+| `action` | string | Yes | `list`, `get`, `create`, `release`, `delete`, `remove_object`, `reassign`, `release_recursive`, `check`, or `history` |
+| `id` | string | No | Transport request ID, e.g. `A4HK900123` (for get/release/delete/remove_object/reassign/release_recursive) |
 | `description` | string | No | Transport description text (required for create) |
-| `name` | string | No | Object name (for check/history actions, e.g. `ZCL_ORDER`) |
+| `name` | string | No | Object name (for check/history/remove_object actions, e.g. `ZCL_ORDER`) |
 | `package` | string | No | Package name. For `create`: optional — defaults to `$TMP`, pass an explicit package to influence the transport route. For `check`: required. |
 | `user` | string | No | SAP username to filter by (for list). Defaults to the current SAP user. Use `*` to list all users. |
 | `status` | string | No | Transport status filter (for list). `D`=modifiable (default), `R`=released, `*`=all statuses. |
-| `type` | string | No | Object type for `check`/`history` actions (`PROG`, `CLAS`, `DDLS`, etc.). Not used by `create` — the SAP backend infers transport type (K/W/T) from the package's TADIR route on the `CreateCorrectionRequest` endpoint. |
+| `type` | string | No | Object type for `check`/`history`/`remove_object` actions (`PROG`, `CLAS`, `DDLS`, etc.). For `remove_object` it is the CTS/E071 object type exactly as shown by `get` (e.g. `PROG`, `DEVC`). Not used by `create` — the SAP backend infers transport type (K/W/T) from the package's TADIR route on the `CreateCorrectionRequest` endpoint. |
+| `pgmid` | string | No | Program ID for `remove_object`: `R3TR` (whole object) or `LIMU` (sub-object). Required for `remove_object` — the object type alone does not determine `pgmid`. |
 | `owner` | string | No | New owner SAP username (required for reassign) |
 | `recursive` | boolean | No | Apply recursively to child tasks (for delete/reassign). `release_recursive` always recurses. |
 
@@ -688,6 +689,7 @@ Manage CTS transport requests (SE09/SE10 equivalent): list, get details, create,
 - **`create`** — Create a new transport request. Requires `description`. Optional `package` (defaults to `$TMP` — pass an explicit package to influence the transport route, which determines K/W/T type). Uses the ADT `CreateCorrectionRequest` endpoint (`POST /sap/bc/adt/cts/transports`); legacy NW 7.50 systems are supported.
 - **`release`** — Release a single transport or task.
 - **`delete`** — Delete a transport. Use `recursive=true` to delete tasks first.
+- **`remove_object`** — Remove a single object from a request while **keeping the request** (the SE09/SE10 "remove from request" operation). Requires the full CTS object key `pgmid` + `type` + `name` (the object type alone does not determine `pgmid` — e.g. `COMM` is valid under both `R3OB` and `LIMU`). ARC-1 resolves the entry from the request's object list and removes it via the ADT `removeobject` operation; the object itself is **not** deleted. Functional on SAP_BASIS 7.58/8.16; on NW 7.5x the backend ignores `removeobject` (HTTP 400) — clean such requests in SE09/SE10.
 - **`reassign`** — Change transport owner. Requires `owner`. Use `recursive=true` for tasks too.
 - **`release_recursive`** — Release all unreleased tasks first, then the transport itself.
 - **`check`** — Check if a transport number is required for creating an object in a specific package. Requires `type`, `name`, and `package`. Returns whether transport recording is required, whether the package is local, existing transports, and any locked transport. **Does NOT require `--allow-transport-writes`** — this is a read-only pre-flight check.
@@ -726,7 +728,7 @@ Manage CTS transport requests (SE09/SE10 equivalent): list, get details, create,
 
 **Protocol compatibility:** ARC-1 uses startup ADT service discovery (`/sap/bc/adt/discovery`) to proactively select endpoint MIME types, with endpoint-specific CTS media types and a one-retry 406/415 fallback as defense-in-depth.
 
-**Note:** Transport mutations (`create`, `release`, `release_recursive`, `reassign`, `delete`) require `write` + `transports` scopes and both `SAP_ALLOW_WRITES=true` and `SAP_ALLOW_TRANSPORT_WRITES=true`. `list`, `get`, `check`, and `history` are read actions and work without `--allow-transport-writes`.
+**Note:** Transport mutations (`create`, `release`, `release_recursive`, `reassign`, `delete`, `remove_object`) require `write` + `transports` scopes and both `SAP_ALLOW_WRITES=true` and `SAP_ALLOW_TRANSPORT_WRITES=true`. `list`, `get`, `check`, and `history` are read actions and work without `--allow-transport-writes`.
 
 ---
 

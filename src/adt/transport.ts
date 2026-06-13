@@ -427,6 +427,54 @@ export async function deleteTransport(
   await http.delete(`/sap/bc/adt/cts/transportrequests/${encodeURIComponent(transportId)}`);
 }
 
+/**
+ * Remove a single object from a transport request, keeping the request itself.
+ *
+ * The full CTS object key is (pgmid, type, name) — the OBJECT type alone does NOT determine the
+ * PGMID (e.g. object type COMM is valid under both R3OB and LIMU; SAP message TR220), so all three
+ * are required and matched together. ARC-1 resolves the entry from the request's actual object list
+ * (which carries the real `position` the removeobject PUT needs) and removes it via the ADT
+ * "Remove Locked Object" operation — regardless of whether the entry is locked.
+ *
+ * Use this to clean an object out of a request you want to KEEP (e.g. an object you created and then
+ * deleted without transporting it onward). To discard the whole request, use deleteTransport.
+ */
+export async function removeObjectFromTransport(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  transportId: string,
+  pgmid: string,
+  type: string,
+  name: string,
+): Promise<{ taskId: string; object: TransportObject }> {
+  checkTransport(safety, transportId, 'RemoveTransportObject', true);
+
+  const transport = await getTransport(http, safety, transportId);
+  if (!transport) {
+    throw new Error(`Transport request ${transportId} not found.`);
+  }
+
+  const wantPgmid = pgmid.trim().toUpperCase();
+  const wantType = type.trim().toUpperCase();
+  const wantName = name.trim().toUpperCase();
+
+  for (const task of transport.tasks) {
+    const match = task.objects.find(
+      (o) =>
+        o.pgmid.toUpperCase() === wantPgmid && o.type.toUpperCase() === wantType && o.name.toUpperCase() === wantName,
+    );
+    if (match) {
+      checkTransport(safety, task.id, 'RemoveTransportObject', true);
+      await removeTransportObject(http, task.id, match);
+      return { taskId: task.id, object: match };
+    }
+  }
+
+  throw new Error(
+    `Object ${wantPgmid} ${wantType} ${wantName} is not in transport ${transportId} (checked all tasks).`,
+  );
+}
+
 /** Reassign a transport request to a new owner */
 export async function reassignTransport(
   http: AdtHttpClient,
