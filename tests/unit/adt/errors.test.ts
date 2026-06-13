@@ -7,6 +7,7 @@ import {
   classifyAbapgitError,
   classifyGctsError,
   classifySapDomainError,
+  destinationPpHint,
   extractExceptionType,
   extractLockOwner,
 } from '../../../src/adt/errors.js';
@@ -700,5 +701,38 @@ describe('AdtApiError', () => {
     it('returns empty object for empty payload', () => {
       expect(classifyAbapgitError('')).toEqual({});
     });
+  });
+});
+
+describe('destinationPpHint', () => {
+  it('hints cross-subaccount on the OAuth2UserTokenExchange "unknown signing key" error (issue #434)', () => {
+    const msg =
+      'Retrieval of OAuthToken failed due to: Unable to fetch refresh token from the specified token ' +
+      'service URL. Response was: Token header claim [kid] references unknown signing key : [default-jwt-key-8826357d37]';
+    const hint = destinationPpHint(msg);
+    expect(hint).toBeDefined();
+    expect(hint).toContain('different BTP subaccounts');
+    expect(hint).toContain('OAuth2SAMLBearerAssertion');
+  });
+
+  it('hints cross-subaccount on the "Unable to map issuer / No identity provider found" variant', () => {
+    const hint = destinationPpHint(
+      'Unable to map issuer: No identity provider found for issuer: https://x.authentication…',
+    );
+    expect(hint).toBeDefined();
+    expect(hint).toContain('OAuth2SAMLBearerAssertion');
+  });
+
+  it('returns undefined for an unrelated PP failure', () => {
+    expect(
+      destinationPpHint(
+        'no SAP-Connectivity-Authentication header, Bearer token, or jwt-bearer exchange token returned',
+      ),
+    ).toBeUndefined();
+  });
+
+  it('returns undefined for empty/undefined input', () => {
+    expect(destinationPpHint(undefined)).toBeUndefined();
+    expect(destinationPpHint('')).toBeUndefined();
   });
 });

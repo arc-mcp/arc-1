@@ -21,6 +21,7 @@ import {
   type Destination as SdkDestination,
 } from '@sap-cloud-sdk/connectivity';
 import { logger } from '../server/logger.js';
+import { destinationPpHint } from './errors.js';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -380,7 +381,9 @@ export async function lookupDestinationWithUserToken(
           tokenType: token.type,
           error: token.error,
         });
-        throw new Error(`Destination Service auth token error for '${destinationName}': ${token.error}`);
+        const hint = destinationPpHint(token.error);
+        const hintSuffix = hint ? ` — ${hint}` : '';
+        throw new Error(`Destination Service auth token error for '${destinationName}': ${token.error}${hintSuffix}`);
       }
 
       // SAP-Connectivity-Authentication header (used by Cloud Connector for PP)

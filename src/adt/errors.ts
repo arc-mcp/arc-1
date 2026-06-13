@@ -624,6 +624,40 @@ export function classifyAbapgitError(xmlBody: string): AbapGitErrorClassificatio
   };
 }
 
+/**
+ * Markers for a cross-subaccount principal-propagation trust failure, as surfaced by the BTP
+ * Destination Service (`authTokens[].error`) for an `OAuth2UserTokenExchange` destination whose
+ * target XSUAA lives in a DIFFERENT subaccount than the one that issued the user token.
+ */
+const CROSS_SUBACCOUNT_PP_MARKERS = [
+  /unknown signing key/i,
+  /unable to map issuer/i,
+  /no identity provider found for issuer/i,
+];
+
+/**
+ * Actionable hint for a principal-propagation / destination token-exchange failure.
+ *
+ * The raw Destination Service messages ("Token header claim [kid] references unknown signing key",
+ * "Unable to map issuer: No identity provider found for issuer …") are opaque. SAP's documented rule
+ * (Routing via Destination, BTP ABAP Environment): same subaccount → `OAuth2UserTokenExchange`;
+ * different subaccounts → `OAuth2SAMLBearerAssertion` + trust. ARC-1 already handles the SAMLBearer
+ * bearer token, so this is a destination-configuration fix, not a code change.
+ *
+ * Returns a one-line hint when the message matches a known cross-subaccount marker, else undefined.
+ * Validated live (issue #434).
+ */
+export function destinationPpHint(message: string | undefined): string | undefined {
+  if (!message) return undefined;
+  if (!CROSS_SUBACCOUNT_PP_MARKERS.some((re) => re.test(message))) return undefined;
+  return (
+    'ARC-1 and the SAP system appear to be in different BTP subaccounts: the target XSUAA does not ' +
+    'trust the token issuer. OAuth2UserTokenExchange only works when ARC-1 and the ABAP system are in ' +
+    'the SAME subaccount; for different subaccounts use an OAuth2SAMLBearerAssertion destination with ' +
+    'trust established (ARC-1 supports this with no code change). See docs_page/btp-abap-environment.md.'
+  );
+}
+
 function parseOptionalInt(value: string | undefined): number | undefined {
   if (!value) return undefined;
   const parsed = Number.parseInt(value, 10);

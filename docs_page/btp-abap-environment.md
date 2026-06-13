@@ -295,6 +295,18 @@ Take the OAuth client credentials from the ABAP instance's **service key** (`uaa
 | **Token Service URL** | `<uaa.url>/oauth/token` |
 | **Client ID / Secret** | service key `uaa.clientid` / `uaa.clientsecret` (the ABAP instance's own OAuth client) |
 
+> **⚠️ `OAuth2UserTokenExchange` requires the same subaccount.** This auth type is an XSUAA→XSUAA
+> token exchange *within one subaccount/identity zone*, so ARC-1 and the ABAP Environment must be in
+> the **same BTP subaccount**. If they are in **different subaccounts**, the Destination Service fails
+> with `Token header claim [kid] references unknown signing key` (or `Unable to map issuer`) and every
+> tool call returns `Principal propagation failed`. Per SAP's
+> [Routing via Destination](https://help.sap.com/docs/ABAP_ENVIRONMENT/250515df61b74848810389e964f8c367/97d7a02cd6fd4f579fd96f41ee0d0c1d.html):
+> **same subaccount → `OAuth2UserTokenExchange`; different subaccounts → `OAuth2SAMLBearerAssertion`**
+> (the source subaccount's Destination Service becomes a trusted IdP in the ABAP env's subaccount; see
+> [User Propagation via SAML 2.0 Bearer Assertion Flow](https://help.sap.com/docs/connectivity/sap-btp-connectivity-cf/user-propagation-via-saml-2-0-bearer-assertion-flow)).
+> ARC-1 handles the bearer token from an `OAuth2SAMLBearerAssertion` destination with no extra
+> configuration on its side. See [Troubleshooting](#cross-subaccount-principal-propagation-fails).
+
 ### 3. Configure ARC-1
 
 ```yaml
@@ -528,6 +540,19 @@ Auth and connectivity failures are expected with free-tier instances. Assertion 
 - BTP test execution is local-only by design in this project
 
 ## Troubleshooting
+
+### Cross-subaccount principal propagation fails
+
+**Symptom:** Tool calls fail with `Principal propagation failed (SAP_PP_STRICT=true): Destination Service auth token error … Token header claim [kid] references unknown signing key` (or `Unable to map issuer: No identity provider found for issuer …`). MCP login itself works; only the SAP call fails, and the audit log shows `auth_pp_created` with `success:false`.
+
+**Cause:** ARC-1 (its XSUAA) and the ABAP Environment are in **different BTP subaccounts**. `OAuth2UserTokenExchange` exchanges the MCP user's token at the ABAP env's XSUAA, but XSUAA tokens are subaccount-scoped — the ABAP env's XSUAA does not trust a signing key issued by another subaccount.
+
+**Fix — pick one** (per SAP's [Routing via Destination](https://help.sap.com/docs/ABAP_ENVIRONMENT/250515df61b74848810389e964f8c367/97d7a02cd6fd4f579fd96f41ee0d0c1d.html)):
+
+1. **Same subaccount (simplest):** deploy ARC-1 in the **same subaccount** as the ABAP Environment and keep `OAuth2UserTokenExchange`. This is ARC-1's recommended one-instance-per-system model (see [BTP Setup for multiple systems](btp-cloud-foundry-deployment.md)).
+2. **Different subaccounts:** change the destination's `Authentication` to **`OAuth2SAMLBearerAssertion`** and establish trust — register the source subaccount's Destination Service as a trusted IdP in the ABAP env's subaccount (see [User Propagation via SAML 2.0 Bearer Assertion Flow](https://help.sap.com/docs/connectivity/sap-btp-connectivity-cf/user-propagation-via-saml-2-0-bearer-assertion-flow)). ARC-1 needs no code change — it already handles the bearer token this destination type returns.
+
+To serve several ABAP systems across subaccounts from a single ARC-1 instance, use option 2 (trust set up once per backend).
 
 ### Classic login form (Benutzer/Kennwort) instead of SSO redirect
 
