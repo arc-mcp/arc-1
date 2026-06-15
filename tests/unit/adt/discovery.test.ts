@@ -94,9 +94,11 @@ describe('ADT Discovery', () => {
       const client = mockClient(async () => ({ body: xml }));
       const { map } = await fetchDiscoveryDocument(client);
       expect(map.size).toBe(9);
-      expect((client as any).get).toHaveBeenCalledWith('/sap/bc/adt/discovery', {
-        Accept: 'application/atomsvc+xml',
-      });
+      expect((client as any).get).toHaveBeenCalledWith(
+        '/sap/bc/adt/discovery',
+        { Accept: 'application/atomsvc+xml' },
+        { probe: true },
+      );
     });
 
     it('returns empty map on 404', async () => {

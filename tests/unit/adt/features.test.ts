@@ -475,9 +475,25 @@ describe('Feature Detection', () => {
       const client = mockProbeClient();
       await probeFeatures(client, defaultConfig);
 
-      expect((client as any).get).toHaveBeenCalledWith('/sap/bc/adt/discovery', {
-        Accept: 'application/atomsvc+xml',
-      });
+      expect((client as any).get).toHaveBeenCalledWith(
+        '/sap/bc/adt/discovery',
+        { Accept: 'application/atomsvc+xml' },
+        { probe: true },
+      );
+    });
+
+    it('marks every startup probe GET as a probe so expected misses log at debug, not warn', async () => {
+      const client = mockProbeClient();
+      await probeFeatures(client, defaultConfig);
+
+      // Every startup GET (feature probes, textSearch, auth probes, system/components,
+      // syntax configurations, discovery) must pass { probe: true } — otherwise an
+      // expected 404/400 miss logs a scary WARN on a perfectly healthy startup.
+      const calls = (client as any).get.mock.calls as Array<[string, unknown, { probe?: boolean }?]>;
+      expect(calls.length).toBeGreaterThan(0);
+      for (const [url, , opts] of calls) {
+        expect(opts, `startup GET ${url} must pass { probe: true }`).toMatchObject({ probe: true });
+      }
     });
 
     it('does not fail feature probing when discovery request fails', async () => {
@@ -543,9 +559,11 @@ describe('Feature Detection', () => {
       const result = await probeFeatures(client, defaultConfig);
 
       expect(result.abapRelease).toBe('757');
-      expect((client as any).get).toHaveBeenCalledWith('/sap/bc/adt/abapsource/syntax/configurations', {
-        Accept: 'application/vnd.sap.adt.syntaxconfigurations+xml',
-      });
+      expect((client as any).get).toHaveBeenCalledWith(
+        '/sap/bc/adt/abapsource/syntax/configurations',
+        { Accept: 'application/vnd.sap.adt.syntaxconfigurations+xml' },
+        { probe: true },
+      );
     });
 
     it('skips syntax-configurations probe when components feed already yields a release', async () => {

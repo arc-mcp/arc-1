@@ -32,7 +32,7 @@ export function hasNhiWorkspace(xml: string): boolean {
  */
 export async function fetchDiscoveryDocument(client: AdtHttpClient): Promise<DiscoveryFetchResult> {
   try {
-    const resp = await client.get('/sap/bc/adt/discovery', { Accept: 'application/atomsvc+xml' });
+    const resp = await client.get('/sap/bc/adt/discovery', { Accept: 'application/atomsvc+xml' }, { probe: true });
     return { map: parseDiscoveryDocument(resp.body), nhiPresent: hasNhiWorkspace(resp.body) };
   } catch (err) {
     const reason =

@@ -108,7 +108,7 @@ export async function probeFeatures(
     Promise.all(
       probesToRun.map(async (probe) => {
         try {
-          await client.get(probe.endpoint);
+          await client.get(probe.endpoint, undefined, { probe: true });
           return classifyFeatureProbeStatus(probe.id, 200);
         } catch (err) {
           if (err instanceof AdtApiError) {
@@ -257,7 +257,11 @@ interface SystemDetection {
  */
 async function detectSystemFromComponents(client: AdtHttpClient): Promise<SystemDetection> {
   try {
-    const resp = await client.get('/sap/bc/adt/system/components', { Accept: 'application/atom+xml;type=feed' });
+    const resp = await client.get(
+      '/sap/bc/adt/system/components',
+      { Accept: 'application/atom+xml;type=feed' },
+      { probe: true },
+    );
     if (resp.statusCode >= 400) return {};
     const components = parseInstalledComponents(resp.body);
     const basis = components.find((c) => c.name.toUpperCase() === 'SAP_BASIS');
@@ -282,9 +286,11 @@ async function detectSystemFromComponents(client: AdtHttpClient): Promise<System
  */
 async function detectReleaseFromSyntaxConfigurations(client: AdtHttpClient): Promise<string | undefined> {
   try {
-    const resp = await client.get('/sap/bc/adt/abapsource/syntax/configurations', {
-      Accept: 'application/vnd.sap.adt.syntaxconfigurations+xml',
-    });
+    const resp = await client.get(
+      '/sap/bc/adt/abapsource/syntax/configurations',
+      { Accept: 'application/vnd.sap.adt.syntaxconfigurations+xml' },
+      { probe: true },
+    );
     if (resp.statusCode >= 400) return undefined;
     const configs = parseSyntaxConfigurations(resp.body);
     return configs.find((c) => c.version === 'X')?.etag || undefined;
@@ -347,7 +353,13 @@ export function detectSystemType(
  */
 export async function probeTextSearch(client: AdtHttpClient): Promise<{ available: boolean; reason?: string }> {
   try {
-    await client.get('/sap/bc/adt/repository/informationsystem/textSearch?searchString=SY-SUBRC&maxResults=1');
+    await client.get(
+      '/sap/bc/adt/repository/informationsystem/textSearch?searchString=SY-SUBRC&maxResults=1',
+      undefined,
+      {
+        probe: true,
+      },
+    );
     return { available: true };
   } catch (err: unknown) {
     if (err && typeof err === 'object' && 'statusCode' in err) {
@@ -404,6 +416,8 @@ async function probeSearchAccess(client: AdtHttpClient): Promise<{ available: bo
   try {
     const resp = await client.get(
       '/sap/bc/adt/repository/informationsystem/search?operation=quickSearch&query=CL_ABAP_*&maxResults=1',
+      undefined,
+      { probe: true },
     );
     if (resp.statusCode < 400) {
       return { available: true };
@@ -419,7 +433,7 @@ async function probeSearchAccess(client: AdtHttpClient): Promise<{ available: bo
 
 async function probeTransportAccess(client: AdtHttpClient): Promise<{ available: boolean; reason?: string }> {
   try {
-    const resp = await client.get('/sap/bc/adt/cts/transportrequests?user=__PROBE__');
+    const resp = await client.get('/sap/bc/adt/cts/transportrequests?user=__PROBE__', undefined, { probe: true });
     if (resp.statusCode < 400) {
       return { available: true };
     }

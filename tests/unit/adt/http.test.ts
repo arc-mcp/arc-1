@@ -422,6 +422,47 @@ describe('AdtHttpClient', () => {
       emitSpy.mockRestore();
     });
 
+    it('logs probe misses at debug level for any status (404 and 400)', async () => {
+      const { logger } = await import('../../../src/server/logger.js');
+
+      // 404 — feature absent (e.g. abapGit/AMDP not installed)
+      const spy404 = vi.spyOn(logger, 'emitAudit').mockImplementation(() => undefined);
+      mockFetch.mockResolvedValueOnce(mockResponse(404, 'No suitable resource found'));
+      await expect(
+        new AdtHttpClient(getDefaultConfig()).get('/sap/bc/adt/abapgit/repos', undefined, { probe: true }),
+      ).rejects.toThrow(AdtApiError);
+      const ev404 = spy404.mock.calls.map((c) => c[0]).find((e) => e.event === 'http_request' && e.statusCode === 404);
+      expect(ev404?.level).toBe('debug');
+      spy404.mockRestore();
+
+      // 400 — the RAP probe (`/ddic/ddl/sources`) intentionally 400s without query params;
+      // suppressNotFoundLog (404-only) can't cover this, which is why `probe` exists.
+      const spy400 = vi.spyOn(logger, 'emitAudit').mockImplementation(() => undefined);
+      mockFetch.mockResolvedValueOnce(mockResponse(400, 'uriMappingError'));
+      await expect(
+        new AdtHttpClient(getDefaultConfig()).get('/sap/bc/adt/ddic/ddl/sources', undefined, { probe: true }),
+      ).rejects.toThrow(AdtApiError);
+      const ev400 = spy400.mock.calls.map((c) => c[0]).find((e) => e.event === 'http_request' && e.statusCode === 400);
+      expect(ev400?.level).toBe('debug');
+      spy400.mockRestore();
+    });
+
+    it('logs a non-probe 404 at warn level (default — no opt-in)', async () => {
+      const { logger } = await import('../../../src/server/logger.js');
+      const emitSpy = vi.spyOn(logger, 'emitAudit').mockImplementation(() => undefined);
+      mockFetch.mockResolvedValueOnce(mockResponse(404, 'Object not found'));
+
+      await expect(
+        new AdtHttpClient(getDefaultConfig()).get('/sap/bc/adt/programs/programs/ZNOPE/source/main'),
+      ).rejects.toThrow(AdtApiError);
+
+      const failedRequest = emitSpy.mock.calls
+        .map((call) => call[0])
+        .find((event) => event.event === 'http_request' && event.statusCode === 404);
+      expect(failedRequest?.level).toBe('warn');
+      emitSpy.mockRestore();
+    });
+
     it('throws AdtApiError on 500', async () => {
       mockFetch.mockResolvedValueOnce(mockResponse(500, 'Internal Server Error'));
 

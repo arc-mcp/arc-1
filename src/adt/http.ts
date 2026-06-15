@@ -42,6 +42,16 @@ export interface AdtRequestOptions {
    * Callers that handle those 404s can opt into debug-level audit logging.
    */
   suppressNotFoundLog?: boolean;
+  /**
+   * Startup capability/discovery probe. ANY non-2xx is expected here (the feature
+   * is simply absent/not activated, or the endpoint intentionally 400s without
+   * query params, e.g. the RAP probe on `/ddic/ddl/sources`). The outcome is
+   * captured as structured data and re-reported at a higher layer (feature map,
+   * the `Authorization probe: …` lines, the contextual discovery warn), so the
+   * raw `http_request` failure is logged at debug instead of warn to keep a
+   * healthy startup quiet. Unlike `suppressNotFoundLog` this is not limited to 404.
+   */
+  probe?: boolean;
 }
 
 /**
@@ -752,7 +762,12 @@ export class AdtHttpClient {
       // Log failed HTTP requests
       const durationMs = Date.now() - httpStart;
       if (err instanceof AdtApiError) {
-        const level = options?.suppressNotFoundLog && err.statusCode === 404 ? 'debug' : 'warn';
+        // Probe calls expect misses (feature absent / intentional 400); their outcome is
+        // reported at a higher layer, so the raw failure is debug-level noise. suppressNotFoundLog
+        // stays 404-only for its callers (optional class includes etc.).
+        const isProbeMiss = options?.probe === true;
+        const isSuppressedNotFound = options?.suppressNotFoundLog === true && err.statusCode === 404;
+        const level = isProbeMiss || isSuppressedNotFound ? 'debug' : 'warn';
         logger.emitAudit({
           timestamp: new Date().toISOString(),
           level,
