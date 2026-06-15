@@ -1233,7 +1233,13 @@ export class AdtHttpClient {
         }
       }
 
-      return new Response(responseBody, {
+      // Statuses 204/205/304 are "null body status" per the Fetch spec — the
+      // Response constructor throws if given a non-null body (and `.text()`
+      // yields '' not null). Pass null so a 304 from a conditional GET (ETag
+      // revalidation) survives the proxy path instead of crashing the write
+      // (e.g. edit_method's read-before-write through the Cloud Connector).
+      const isNullBodyStatus = resp.statusCode === 204 || resp.statusCode === 205 || resp.statusCode === 304;
+      return new Response(isNullBodyStatus ? null : responseBody, {
         status: resp.statusCode,
         headers: responseHeaders,
       });
