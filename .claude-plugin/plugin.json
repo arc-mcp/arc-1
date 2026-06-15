@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "arc-1",
   "displayName": "ARC-1 — SAP ABAP for Claude",
-  "version": "0.9.16",
+  "version": "0.9.17",
   "description": "SAP ABAP development for Claude Code: bundles the ARC-1 MCP server (read/write/search/activate/lint/diagnose ABAP via the ADT REST API) with best-practice skills for RAP services, CDS modelling, ABAP Unit tests, clean-core audits, and UI5 modernization. Read-only by default; opt-in write gates.",
   "author": {
     "name": "Marian Zeis",

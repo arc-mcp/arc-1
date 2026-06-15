@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.9.17](https://github.com/marianfoo/arc-1/compare/v0.9.16...v0.9.17) (2026-06-15)
+
+
+### Features
+
+* **transport:** add SAPTransport remove_object to clean an object out of a request ([#432](https://github.com/marianfoo/arc-1/issues/432)) ([fc4e7d4](https://github.com/marianfoo/arc-1/commit/fc4e7d41237674f9c2e29dade88b24e04b972dcb))
+
+
+### Bug Fixes
+
+* clearer guidance for cross-subaccount OAuth2UserTokenExchange ([#436](https://github.com/marianfoo/arc-1/issues/436)) ([226c437](https://github.com/marianfoo/arc-1/commit/226c437c83922c84c69af616297c164d473b4bbb)), closes [#434](https://github.com/marianfoo/arc-1/issues/434)
+* **http:** handle 304/204/205 null-body status on Cloud Connector proxy path ([#440](https://github.com/marianfoo/arc-1/issues/440)) ([9e3906e](https://github.com/marianfoo/arc-1/commit/9e3906ecb2e73551c02d05438e2343e5b029d601))
+
 ## [0.9.16](https://github.com/marianfoo/arc-1/compare/v0.9.15...v0.9.16) (2026-06-12)
 
 

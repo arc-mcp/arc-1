@@ -38,7 +38,7 @@ import { FileSink } from './sinks/file.js';
 import type { ServerConfig } from './types.js';
 
 /** ARC-1 version */
-export const VERSION = '0.9.16'; // x-release-please-version
+export const VERSION = '0.9.17'; // x-release-please-version
 
 /**
  * Prune a tool's action OR type enum (or both) based on the user's scopes and

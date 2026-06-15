@@ -188,7 +188,7 @@ For any deployment visible to a network, before you open the gate:
 - [ ] If using cookies: `SAP_PP_ENABLED=true` and cookies both set? → refuses unless `SAP_PP_ALLOW_SHARED_COOKIES=true` escape hatch is explicit
 - [ ] Audit log sink configured (file or BTP Audit Log Service) — note the file/BTP sinks contain un-redacted SAP source/error snippets, so restrict their permissions and rotation
 - [ ] `ARC1_CACHE=memory`/`none` or an encrypted volume on IP-sensitive landscapes — the SQLite cache stores SAP source in cleartext at `.arc1-cache.db`
-- [ ] Image pinned to an exact version (for example `:0.9.16`), not `:latest` <!-- x-release-please-version -->
+- [ ] Image pinned to an exact version (for example `:0.9.17`), not `:latest` <!-- x-release-please-version -->
 - [ ] Update procedure rehearsed → [updating.md](updating.md)
 
 Full production hardening guide: [security-guide.md](security-guide.md).
