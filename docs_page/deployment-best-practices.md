@@ -56,6 +56,8 @@ cf deploy mta_archives/arc1-mcp_*.mtar -e mta-ecc-dev.mtaext
 cf deploy mta_archives/arc1-mcp_*.mtar -e mta-ecc-prod.mtaext
 ```
 
+> **Route URL:** pin a `host:` in each `.mtaext` so the app gets the short, predictable URL its MCP clients connect to (`arc1-ecc-dev` → `https://arc1-ecc-dev.cfapps.<region>.hana.ondemand.com/mcp`). Without a pinned host the deploy service assigns a long, globally-unique auto-route that you only learn after deploy via `cf app <name>`. The host must be free across the *whole* shared `cfapps.<region>.hana.ondemand.com` domain (unique per region, not per subaccount), so use landscape-specific names. See the "Route host" block in `mta-overrides.mtaext.example`.
+
 ```
 CF Apps:
 ┌──────────────────────────────────┐

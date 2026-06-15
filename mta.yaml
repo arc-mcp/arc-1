@@ -52,12 +52,15 @@ modules:
       memory: 512M
       disk-quota: 1024M
       instances: 1
-      # Per-space route host. `${space}` is resolved by the deploy service at
-      # deploy time, so the SAME mtar deployed into different spaces of one
-      # subaccount gets a unique route each time (arc1-mcp-<space>.cfapps...).
-      # NOTE: the resolved value must be a DNS-valid host (lowercase, no
-      # underscores). Override explicitly if a space name violates that.
-      host: arc1-mcp-${space}
+      # No `host:` on purpose. The deploy service then assigns `${default-host}`
+      # (derived from org+space+app), which is GLOBALLY unique on the shared
+      # `cfapps.<region>.hana.ondemand.com` domain and always DNS-valid. CF
+      # routes must be unique across EVERY subaccount on that domain, not just
+      # within yours — a fixed `arc1-mcp-<space>` host collides as soon as two
+      # landscapes (or a space literally named "mcp") pick the same name.
+      # The default route is long/auto-generated; read it back with
+      # `cf app arc1-mcp-server`. To deploy under a short URL you choose, pin
+      # `host:` in your `mta-overrides.mtaext` (see mta-overrides.mtaext.example).
       health-check-type: http
       health-check-http-endpoint: /health
       # Node heap target sized to 87.5% of dyno memory (512M -> 448M) so V8 GCs

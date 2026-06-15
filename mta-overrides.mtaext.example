@@ -139,16 +139,25 @@ modules:
       # landscapes with proper CA-signed certificates.
       # SAP_INSECURE: "false"
 
-    # ── Per-space naming override (host / xsappname) ─────────────────
-    # Base mta.yaml derives the route host and the XSUAA `xsappname` from the
-    # CF space via `${space}`, which must resolve to a valid host AND xsappname
-    # (lowercase letters, digits, hyphens — no spaces or underscores). If your
-    # space name violates that, or you want explicit names, pin them:
-    #   • add a `parameters:` block to the arc1-mcp-server module above (a
-    #     sibling of `properties:`):
+    # ── Route host — pick your public URL (recommended) ──────────────
+    # Base mta.yaml sets NO host, so the deploy service assigns a globally
+    # unique but long auto-host (e.g.
+    # myorg-1a2b3c4d-dev-myspace-arc1-mcp-server.cfapps.<region>...). To deploy
+    # under a short URL you control — the one your MCP clients connect to — pin
+    # `host:` here. Add a `parameters:` block to the arc1-mcp-server module
+    # above (a sibling of `properties:`):
     #       parameters:
-    #         host: arc1-mcp-prod
-    #   • and append this resource block (a sibling of `modules:`):
+    #         host: arc1-mcp-prod    # -> https://arc1-mcp-prod.cfapps.<region>.../mcp
+    # The host must be lowercase letters/digits/hyphens (no spaces/underscores)
+    # AND free on the shared `cfapps.<region>.hana.ondemand.com` domain (it is
+    # first-come-first-served across ALL subaccounts in that region) — pick a
+    # customer/landscape-specific name like `arc1-mcp-teag` to avoid clashes.
+    #
+    # ── XSUAA xsappname (optional, independent of the route) ─────────
+    # Base mta.yaml derives the XSUAA `xsappname` from the CF space via
+    # `${space}` (unique within your subaccount — fine to leave as-is). Pin it
+    # only if your space name isn't a valid xsappname or you want a fixed name.
+    # Append this resource block (a sibling of `modules:`):
     #       resources:
     #         - name: arc1-xsuaa
     #           parameters:
