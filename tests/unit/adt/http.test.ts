@@ -1368,6 +1368,30 @@ describe('AdtHttpClient', () => {
       // The path should be the full URL (standard HTTP proxy protocol)
       expect(clientRequestPath(0)).toBe('http://sap.example.com:8000/path?sap-client=001&sap-language=EN');
     });
+
+    it('handles a 304 (null-body status) from the proxy without crashing the Response constructor', async () => {
+      // Regression: a conditional GET (If-None-Match) that revalidates to 304
+      // over the Cloud Connector proxy must not throw "Invalid response status
+      // code 304" — that crashed edit_method's read-before-write on RISE/CC.
+      mockClientRequest.mockResolvedValueOnce(mockClientResponse(304, '', { etag: '"abc"' }));
+
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        btpProxy: {
+          host: 'proxy.example.com',
+          port: 20003,
+          protocol: 'http',
+          getProxyToken: async () => 'proxy-token',
+        },
+      });
+
+      const resp = await client.get('/path', { 'If-None-Match': '"abc"' });
+      expect(resp.statusCode).toBe(304);
+      expect(resp.body).toBe('');
+      // The ETag must survive the proxy reconstruction — that's what lets the
+      // caching layer serve the cached source on a 304 revalidation.
+      expect(resp.headers.etag).toBe('"abc"');
+    });
   });
 
   // ─── 503 Retry ──────────────────────────────────────────────────────
