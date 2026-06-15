@@ -13,24 +13,11 @@
 import type { AdtClient, SourceReadOptions } from './client.js';
 import { AdtApiError } from './errors.js';
 import { checkOperation, OperationType } from './safety.js';
-import { unifiedDiff } from './source-diff.js';
+import { type UnifiedDiffResult, unifiedDiff } from './source-diff.js';
 import type { RevisionInfo } from './types.js';
 
 /** One side of a version diff: `"active"`, `"inactive"`, a revision id, or a `/sap/bc/adt/` URI. */
 export type DiffRef = string;
-
-export interface VersionDiffResult {
-  type: string;
-  name: string;
-  from: string;
-  to: string;
-  /** True when both sides are byte-equal (after newline normalization). */
-  identical: boolean;
-  /** Unified-diff text; empty when identical. */
-  diff: string;
-  added: number;
-  removed: number;
-}
 
 /** Object types whose source diff is supported (plain-text `/source/main` endpoints). */
 export const DIFF_SUPPORTED_TYPES = [
@@ -45,6 +32,7 @@ export const DIFF_SUPPORTED_TYPES = [
   'BDEF',
   'SRVD',
   'DDLX',
+  'TABL',
 ] as const;
 
 interface DiffOptions {
@@ -64,7 +52,7 @@ export async function getVersionDiff(
   from: DiffRef,
   to: DiffRef,
   opts: DiffOptions = {},
-): Promise<VersionDiffResult> {
+): Promise<UnifiedDiffResult> {
   checkOperation(client.safety, OperationType.Read, 'GetVersionDiff');
 
   // Resolve the FUNC group ONCE up front so both the revision feed and the active/inactive
@@ -91,8 +79,7 @@ export async function getVersionDiff(
     resolveDiffSource(client, type, name, to, resolved, revList),
   ]);
 
-  const result = unifiedDiff(fromSrc, toSrc, `${name} (${from})`, `${name} (${to})`);
-  return { type, name, from: String(from), to: String(to), ...result };
+  return unifiedDiff(fromSrc, toSrc, `${name} (${from})`, `${name} (${to})`);
 }
 
 /** Resolve one diff ref to raw source text. */
@@ -181,6 +168,9 @@ async function fetchSourceByType(
       return (await client.getSrvd(name, base)).source;
     case 'DDLX':
       return (await client.getDdlx(name, base)).source;
+    case 'TABL':
+      // /ddic/tables|structures/<name>/source/main returns DDL text ("define table …") — diffable.
+      return (await client.getTabl(name, base)).source;
     default:
       throw new AdtApiError(
         `Version diff is not supported for type "${type}". Supported: ${DIFF_SUPPORTED_TYPES.join(', ')}.`,

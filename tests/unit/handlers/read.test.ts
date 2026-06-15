@@ -2055,8 +2055,8 @@ ENDCLASS.`;
 
     it('rejects diff for an unsupported (non-source) type', async () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
-        type: 'TABL',
-        name: 'ZMY_TABLE',
+        type: 'DOMA',
+        name: 'ZMY_DOMAIN',
         action: 'diff',
       });
       expect(result.isError).toBe(true);
@@ -2137,6 +2137,22 @@ ENDCLASS.`;
       });
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toContain('Revision-id diff is not available for type FUGR');
+    });
+
+    it('diffs a TABL via its DDL source', async () => {
+      const V1 = "@EndUserText.label : 'x'\ndefine table ztab {\n  key id : abap.int4;\n}\n";
+      const V2 = "@EndUserText.label : 'x'\ndefine table ztab {\n  key id : abap.int4;\n  name : abap.char(20);\n}\n";
+      mockFetch.mockImplementation((url: unknown) =>
+        Promise.resolve(mockResponse(200, String(url).includes('version=inactive') ? V2 : V1)),
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'TABL',
+        name: 'ZTAB',
+        action: 'diff',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]!.text).toContain('Diff TABL ZTAB: active → inactive');
+      expect(result.content[0]!.text).toContain('+  name : abap.char(20);');
     });
   });
 

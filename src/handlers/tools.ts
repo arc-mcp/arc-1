@@ -507,7 +507,7 @@ export function getToolDefinitions(
             type: 'string',
             enum: ['diff'],
             description:
-              'Set to "diff" for a unified diff between two source versions (uses from/to) — cheaper than fetching both sources. Source types only: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, BDEF, SRVD, DDLX.',
+              'Set to "diff" for a unified diff between two source versions (uses from/to) — cheaper than fetching both sources. Source types only: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, BDEF, SRVD, DDLX, TABL.',
           },
           from: {
             type: 'string',
