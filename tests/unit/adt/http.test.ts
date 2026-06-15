@@ -1388,6 +1388,9 @@ describe('AdtHttpClient', () => {
       const resp = await client.get('/path', { 'If-None-Match': '"abc"' });
       expect(resp.statusCode).toBe(304);
       expect(resp.body).toBe('');
+      // The ETag must survive the proxy reconstruction — that's what lets the
+      // caching layer serve the cached source on a 304 revalidation.
+      expect(resp.headers.etag).toBe('"abc"');
     });
   });
 

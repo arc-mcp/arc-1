@@ -1238,6 +1238,8 @@ export class AdtHttpClient {
       // yields '' not null). Pass null so a 304 from a conditional GET (ETag
       // revalidation) survives the proxy path instead of crashing the write
       // (e.g. edit_method's read-before-write through the Cloud Connector).
+      // (1xx informational statuses are null-body too, but never surface here:
+      // undici's Client doesn't return them as a final status and ADT never emits them.)
       const isNullBodyStatus = resp.statusCode === 204 || resp.statusCode === 205 || resp.statusCode === 304;
       return new Response(isNullBodyStatus ? null : responseBody, {
         status: resp.statusCode,
