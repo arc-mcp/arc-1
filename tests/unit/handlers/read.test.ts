@@ -2071,6 +2071,73 @@ ENDCLASS.`;
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text.toLowerCase()).toContain('name');
     });
+
+    it('diffs a CLAS include with RAW source on both sides (no "=== include ===" false diff)', async () => {
+      // Both sides return identical raw include source. With the bug, the active side would carry a
+      // "=== definitions ===" marker (from getClass) while the revision side stays raw → false diff.
+      const RAW_INCLUDE = 'INTERFACE zif_x.\n  METHODS m.\nENDINTERFACE.\n';
+      mockFetch.mockImplementation(() => Promise.resolve(mockResponse(200, RAW_INCLUDE)));
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'CLAS',
+        name: 'ZCL_X',
+        action: 'diff',
+        include: 'definitions',
+        from: 'active',
+        to: '/sap/bc/adt/oo/classes/ZCL_X/includes/definitions/versions/1/00001/content',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]!.text).toContain('No differences');
+      expect(result.content[0]!.text).not.toContain('==='); // marker must not leak into the diff
+    });
+
+    it('auto-resolves the FUNC group for a bare-revision-id diff', async () => {
+      const FEED = `<?xml version="1.0" encoding="utf-8"?>
+<atom:feed xmlns:atom="http://www.w3.org/2005/Atom">
+  <atom:entry>
+    <atom:author><atom:name>MARIAN</atom:name></atom:author>
+    <atom:content src="/sap/bc/adt/functions/groups/zgroup/fmodules/z_my_func/source/main/versions/1/00001/content"/>
+    <atom:id>00001</atom:id>
+    <atom:updated>2026-06-10T18:36:35Z</atom:updated>
+  </atom:entry>
+</atom:feed>`;
+      mockFetch.mockImplementation((url: unknown) => {
+        const u = String(url);
+        // group resolution via quickSearch (no group passed) — must succeed before the feed is fetched
+        if (u.includes('informationsystem/search'))
+          return Promise.resolve(
+            mockResponse(
+              200,
+              '<objectReferences><objectReference type="FUGR/FF" name="Z_MY_FUNC" uri="/sap/bc/adt/functions/groups/zgroup/fmodules/z_my_func" packageName="ZT" description="x"/></objectReferences>',
+            ),
+          );
+        if (u.includes('/content'))
+          return Promise.resolve(mockResponse(200, 'FUNCTION z_my_func.\n* old\nENDFUNCTION.\n'));
+        if (u.includes('/versions')) return Promise.resolve(mockResponse(200, FEED));
+        return Promise.resolve(mockResponse(200, 'FUNCTION z_my_func.\n* new\nENDFUNCTION.\n')); // active fmodule
+      });
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'FUNC',
+        name: 'Z_MY_FUNC',
+        action: 'diff',
+        from: '00001',
+        to: 'active',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('Diff FUNC Z_MY_FUNC: 00001 → active');
+    });
+
+    it('gives a clear error for a bare revision id on a type with no revision feed (FUGR)', async () => {
+      mockFetch.mockImplementation(() => Promise.resolve(mockResponse(200, 'FUNCTION-POOL zx.')));
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'FUGR',
+        name: 'ZX',
+        action: 'diff',
+        from: '00001',
+        to: 'active',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('Revision-id diff is not available for type FUGR');
+    });
   });
 
   describe('INACTIVE_OBJECTS', () => {

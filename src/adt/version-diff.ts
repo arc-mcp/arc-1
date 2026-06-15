@@ -67,17 +67,28 @@ export async function getVersionDiff(
 ): Promise<VersionDiffResult> {
   checkOperation(client.safety, OperationType.Read, 'GetVersionDiff');
 
+  // Resolve the FUNC group ONCE up front so both the revision feed and the active/inactive
+  // reads agree — otherwise a bare-id FUNC diff hits getRevisions with no group and throws.
+  let group = opts.group;
+  if (type === 'FUNC' && !group) {
+    group = (await client.resolveFunctionGroup(name)) ?? undefined;
+    if (!group) {
+      throw new AdtApiError(`Cannot resolve function group for FUNC "${name}". Pass group=<function group>.`, 400, '');
+    }
+  }
+  const resolved: DiffOptions = { include: opts.include, group };
+
   // Fetch the revisions feed at most once, and only if a bare id needs resolving.
   // Cache the promise (not the result) so concurrent from/to id lookups share one fetch.
   let revListPromise: Promise<RevisionInfo[]> | undefined;
   const revList = (): Promise<RevisionInfo[]> => {
-    revListPromise ??= client.getRevisions(type, name, opts).then((r) => r.revisions);
+    revListPromise ??= client.getRevisions(type, name, resolved).then((r) => r.revisions);
     return revListPromise;
   };
 
   const [fromSrc, toSrc] = await Promise.all([
-    resolveDiffSource(client, type, name, from, opts, revList),
-    resolveDiffSource(client, type, name, to, opts, revList),
+    resolveDiffSource(client, type, name, from, resolved, revList),
+    resolveDiffSource(client, type, name, to, resolved, revList),
   ]);
 
   const result = unifiedDiff(fromSrc, toSrc, `${name} (${from})`, `${name} (${to})`);
@@ -99,7 +110,20 @@ async function resolveDiffSource(
   if (ref.startsWith('/sap/bc/adt/')) {
     return client.getRevisionSource(ref);
   }
-  const revs = await revList();
+  // Bare revision id → resolve via the feed. Some diff-supported types (FUGR, DDLX) have no
+  // revisions endpoint; getRevisions throws a plain Error for those — turn it into clear guidance.
+  // Real HTTP failures surface as AdtApiError and propagate unchanged.
+  let revs: RevisionInfo[];
+  try {
+    revs = await revList();
+  } catch (err) {
+    if (err instanceof AdtApiError) throw err;
+    throw new AdtApiError(
+      `Revision-id diff is not available for type ${type}. Use "active"/"inactive", or pass a full /sap/bc/adt/ revision URI.`,
+      400,
+      '',
+    );
+  }
   const match = revs.find((r) => r.id === ref);
   if (!match) {
     const available = revs.map((r) => r.id).join(', ') || '(none)';
@@ -125,19 +149,23 @@ async function fetchSourceByType(
     case 'PROG':
       return (await client.getProgram(name, base)).source;
     case 'CLAS':
-      return (await client.getClass(name, opts.include, base)).source;
+      // Non-main includes must use the RAW reader: getClass(name, include) prepends a
+      // "=== include ===" marker, but revision sources are raw — mixing them is a false diff.
+      return opts.include && opts.include.toLowerCase() !== 'main'
+        ? (await client.getClassInclude(name, opts.include, base)).source
+        : (await client.getClass(name, undefined, base)).source;
     case 'INTF':
       return (await client.getInterface(name, base)).source;
     case 'FUNC': {
-      const group = opts.group ?? (await client.resolveFunctionGroup(name)) ?? undefined;
-      if (!group) {
+      // Group is pre-resolved in getVersionDiff (so the revision feed and this read agree).
+      if (!opts.group) {
         throw new AdtApiError(
           `Cannot resolve function group for FUNC "${name}". Pass group=<function group>.`,
           400,
           '',
         );
       }
-      return (await client.getFunction(group, name, base)).source;
+      return (await client.getFunction(opts.group, name, base)).source;
     }
     case 'FUGR':
       return (await client.getFunctionGroupSource(name, base)).source;
