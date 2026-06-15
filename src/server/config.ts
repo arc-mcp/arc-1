@@ -17,6 +17,7 @@
  */
 
 import type { SafetyConfig } from '../adt/safety.js';
+import { type AdtlsDestinationFields, defaultDestinationsPath, loadAdtlsDestination } from './adtls-destinations.js';
 import { parseDenyActions, validateDenyActions } from './deny-actions.js';
 import { logger } from './logger.js';
 import type { ConfigSource, FeatureToggle, ServerConfig, TransportType } from './types.js';
@@ -225,7 +226,15 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
   // treated as "not provided" and falls through to the default instead of overriding it with "".
   // This stops non-empty defaults (e.g. SAP_CLIENT=100, SAP_LANGUAGE=EN) from being silently
   // dropped — an empty client would otherwise log the user on to the system default client.
-  const resolveStr = (flag: string, envVar: string, defaultVal: string, fieldName: string): string => {
+  // `fallback` sits between env and default (used by the ~/.adtls/destinations.json layer, #442):
+  // explicit flag/env always wins; the destination only fills in what the user didn't set.
+  const resolveStr = (
+    flag: string,
+    envVar: string,
+    defaultVal: string,
+    fieldName: string,
+    fallback?: { value: string | undefined; source: ConfigSource },
+  ): string => {
     const flagVal = getFlag(flag);
     if (flagVal !== undefined && flagVal !== '') {
       sources[fieldName] = { flag: `--${flag}` };
@@ -235,6 +244,10 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     if (envVal !== undefined && envVal !== '') {
       sources[fieldName] = { env: envVar };
       return envVal;
+    }
+    if (fallback?.value !== undefined && fallback.value !== '') {
+      sources[fieldName] = fallback.source;
+      return fallback.value;
     }
     sources[fieldName] = 'default';
     return defaultVal;
@@ -285,12 +298,29 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     return undefined;
   };
 
+  // ── ADT-for-VSC destination (~/.adtls/destinations.json) — opt-in dedup, #442 ───────
+  // Seeds the non-secret connection fields (url/user/client/language) from a named destination,
+  // below any explicit flag/env. Never supplies a password (not stored in the file by design).
+  let adtls: AdtlsDestinationFields | undefined;
+  let adtlsSourceLabel = '';
+  const adtlsDest = getFlag('adtls-destination') || process.env.SAP_ADTLS_DESTINATION;
+  if (adtlsDest) {
+    const adtlsFile =
+      getFlag('adtls-destinations-file') || process.env.SAP_ADTLS_DESTINATIONS_FILE || defaultDestinationsPath();
+    adtls = loadAdtlsDestination(adtlsDest, adtlsFile, (msg) => logger.warn(msg));
+    adtlsSourceLabel = `${adtlsFile}#${adtlsDest}`;
+  }
+  const adtlsFallback = (value: string | undefined): { value: string | undefined; source: ConfigSource } => ({
+    value,
+    source: { file: adtlsSourceLabel },
+  });
+
   // ── SAP Connection ─────────────────────────────────────────────────
-  config.url = resolveStr('url', 'SAP_URL', '', 'url');
-  config.username = resolveStr('user', 'SAP_USER', '', 'username');
+  config.url = resolveStr('url', 'SAP_URL', '', 'url', adtlsFallback(adtls?.url));
+  config.username = resolveStr('user', 'SAP_USER', '', 'username', adtlsFallback(adtls?.username));
   config.password = resolveStr('password', 'SAP_PASSWORD', '', 'password');
-  config.client = resolveStr('client', 'SAP_CLIENT', '100', 'client');
-  config.language = resolveStr('language', 'SAP_LANGUAGE', 'EN', 'language');
+  config.client = resolveStr('client', 'SAP_CLIENT', '100', 'client', adtlsFallback(adtls?.client));
+  config.language = resolveStr('language', 'SAP_LANGUAGE', 'EN', 'language', adtlsFallback(adtls?.language));
   config.insecure = resolveBool('insecure', 'SAP_INSECURE', false, 'insecure');
 
   // ── Cookie Auth ────────────────────────────────────────────────────

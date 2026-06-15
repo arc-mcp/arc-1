@@ -43,11 +43,13 @@ describe('plugin.json', () => {
   });
 
   it('maps SAP credentials from userConfig into the server env', () => {
-    // password must be sensitive (keychain), url/user/password required.
-    for (const key of ['sap_url', 'sap_user', 'sap_password']) {
-      expect(plugin.userConfig?.[key]?.required, key).toBe(true);
-    }
+    // password must be sensitive (keychain) and required. url/user are NOT hard-required: an
+    // ADT-for-VSC destination (sap_adtls_destination, #442) can supply them, so forcing them in the
+    // dialog would defeat the dedup.
+    expect(plugin.userConfig?.sap_password?.required).toBe(true);
     expect(plugin.userConfig.sap_password.sensitive).toBe(true);
+    expect(plugin.userConfig?.sap_url?.required).toBeFalsy();
+    expect(plugin.userConfig?.sap_user?.required).toBeFalsy();
     // env values are user_config substitutions (asserted without the ${} literal to keep lint quiet).
     expect(plugin.mcpServers['arc-1'].env.SAP_URL).toContain('user_config.sap_url');
     expect(plugin.mcpServers['arc-1'].env.SAP_PASSWORD).toContain('user_config.sap_password');
@@ -104,6 +106,7 @@ describe('config surface parity (plugin ↔ mcpb)', () => {
   const mcpb = readJson('mcpb-manifest.json');
   // Every SAP_* the server reads must be wired in BOTH surfaces — not just the capability gates.
   const ENV_KEYS = [
+    'SAP_ADTLS_DESTINATION',
     'SAP_URL',
     'SAP_USER',
     'SAP_PASSWORD',

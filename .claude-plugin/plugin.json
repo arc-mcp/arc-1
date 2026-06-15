@@ -23,17 +23,20 @@
     "abap-cloud"
   ],
   "userConfig": {
+    "sap_adtls_destination": {
+      "type": "string",
+      "title": "ADT-for-VSC Destination (optional)",
+      "description": "Reuse a connection from SAP ADT for VS Code: the destination id (e.g. A4H) from ~/.adtls/destinations.json. Seeds URL/User/Client/Language from that destination, so you can leave those fields blank. The password is never in that file — still set it below. Leave empty to enter connection details manually."
+    },
     "sap_url": {
       "type": "string",
       "title": "SAP System URL",
-      "description": "URL of your SAP system (e.g. http://host:50000 or https://host:44300).",
-      "required": true
+      "description": "URL of your SAP system (e.g. http://host:50000 or https://host:44300). Leave blank if set via an ADT-for-VSC Destination above."
     },
     "sap_user": {
       "type": "string",
       "title": "SAP Username",
-      "description": "Your SAP user ID for authentication.",
-      "required": true
+      "description": "Your SAP user ID for authentication. Leave blank if set via an ADT-for-VSC Destination above."
     },
     "sap_password": {
       "type": "string",
@@ -105,6 +108,7 @@
         "arc-1"
       ],
       "env": {
+        "SAP_ADTLS_DESTINATION": "${user_config.sap_adtls_destination}",
         "SAP_URL": "${user_config.sap_url}",
         "SAP_USER": "${user_config.sap_user}",
         "SAP_PASSWORD": "${user_config.sap_password}",

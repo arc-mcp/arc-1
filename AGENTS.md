@@ -63,6 +63,7 @@ Full per-option details (defaults, clamps, layer interactions): [docs_page/confi
 | `ARC1_ALLOWED_ORIGINS` | CORS allowlist for browser MCP clients (empty = CORS off) |
 | `ARC1_PUBLIC_URL` | Advertised OAuth-metadata URL when behind a reverse proxy |
 | `SAP_BTP_SERVICE_KEY[_FILE]` / `SAP_BTP_OAUTH_CALLBACK_PORT` | BTP ABAP service key / OAuth callback port |
+| `SAP_ADTLS_DESTINATION` / `SAP_ADTLS_DESTINATIONS_FILE` | Reuse a connection from ADT-for-VSC `~/.adtls/destinations.json` (#442): seeds url/user/client/language below explicit env; never a password (not in the file) |
 | `SAP_SYSTEM_TYPE` | `auto` (default), `btp`, `onprem` |
 | `SAP_ABAP_RELEASE` | SAP_BASIS release override for abaplint (e.g. 758, 816); probe wins |
 | `ARC1_TOOL_MODE` | `standard` (12 tools) or `hyperfocused` (1 tool, ~200 tokens) |

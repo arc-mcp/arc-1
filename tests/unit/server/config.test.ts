@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   API_KEY_PROFILES,
@@ -977,5 +980,101 @@ describe('validateConfig', () => {
   it('parseArgs fails with oidcIssuer but no oidcAudience', () => {
     process.env.SAP_OIDC_ISSUER = 'https://example.com';
     expect(() => parseArgs([])).toThrow('SAP_OIDC_AUDIENCE is required');
+  });
+});
+
+describe('ADT-for-VSC destinations.json dedup (#442)', () => {
+  const savedEnv = { ...process.env };
+  let dir: string;
+  let file: string;
+
+  beforeEach(() => {
+    for (const key of Object.keys(process.env)) {
+      if (key.startsWith('SAP_') || key.startsWith('ARC1_')) delete process.env[key];
+    }
+    dir = mkdtempSync(join(tmpdir(), 'arc1-adtls-'));
+    file = join(dir, 'destinations.json');
+  });
+
+  afterEach(() => {
+    process.env = { ...savedEnv };
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const write = (destinations: unknown) => writeFileSync(file, JSON.stringify({ formatVersion: '1.0', destinations }));
+
+  it('seeds url/user/client/language from a basicAuth destination', () => {
+    write([
+      {
+        id: 'A4H',
+        protocol: 'http',
+        properties: {
+          authenticationKind: 'basicAuth',
+          systemUrl: 'http://a4h.example:50000',
+          user: 'DEVELOPER',
+          client: '001',
+          language: 'DE',
+        },
+      },
+    ]);
+    process.env.SAP_ADTLS_DESTINATION = 'A4H';
+    process.env.SAP_ADTLS_DESTINATIONS_FILE = file;
+    const config = parseArgs([]);
+    expect(config.url).toBe('http://a4h.example:50000');
+    expect(config.username).toBe('DEVELOPER');
+    expect(config.client).toBe('001');
+    expect(config.language).toBe('DE');
+  });
+
+  it('never reads a password from the destination (must come from env)', () => {
+    write([{ id: 'A4H', properties: { systemUrl: 'http://a4h.example:50000', user: 'DEVELOPER' } }]);
+    process.env.SAP_ADTLS_DESTINATION = 'A4H';
+    process.env.SAP_ADTLS_DESTINATIONS_FILE = file;
+    const config = parseArgs([]);
+    expect(config.password).toBe('');
+  });
+
+  it('reentranceTicket destination yields url only; client/language keep defaults', () => {
+    write([
+      { id: 'BTP', properties: { authenticationKind: 'reentranceticket', systemUrl: 'https://x.hana.ondemand.com' } },
+    ]);
+    process.env.SAP_ADTLS_DESTINATION = 'BTP';
+    process.env.SAP_ADTLS_DESTINATIONS_FILE = file;
+    const config = parseArgs([]);
+    expect(config.url).toBe('https://x.hana.ondemand.com');
+    expect(config.client).toBe('100');
+    expect(config.language).toBe('EN');
+  });
+
+  it('explicit env overrides the destination value', () => {
+    write([{ id: 'A4H', properties: { systemUrl: 'http://from-file:50000', client: '001' } }]);
+    process.env.SAP_ADTLS_DESTINATION = 'A4H';
+    process.env.SAP_ADTLS_DESTINATIONS_FILE = file;
+    process.env.SAP_URL = 'http://from-env:8080';
+    const config = parseArgs([]);
+    expect(config.url).toBe('http://from-env:8080');
+    expect(config.client).toBe('001'); // not overridden → still from file
+  });
+
+  it('unknown destination id falls through to defaults (fail-soft, no throw)', () => {
+    write([{ id: 'A4H', properties: { systemUrl: 'http://a4h.example:50000' } }]);
+    process.env.SAP_ADTLS_DESTINATION = 'NOPE';
+    process.env.SAP_ADTLS_DESTINATIONS_FILE = file;
+    const config = parseArgs([]);
+    expect(config.url).toBe('');
+    expect(config.client).toBe('100');
+  });
+
+  it('missing file falls through to defaults (fail-soft, no throw)', () => {
+    process.env.SAP_ADTLS_DESTINATION = 'A4H';
+    process.env.SAP_ADTLS_DESTINATIONS_FILE = join(dir, 'does-not-exist.json');
+    const config = parseArgs([]);
+    expect(config.url).toBe('');
+  });
+
+  it('does nothing when SAP_ADTLS_DESTINATION is unset', () => {
+    write([{ id: 'A4H', properties: { systemUrl: 'http://a4h.example:50000' } }]);
+    const config = parseArgs([]);
+    expect(config.url).toBe('');
   });
 });
