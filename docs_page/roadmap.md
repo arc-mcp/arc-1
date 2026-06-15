@@ -91,6 +91,7 @@ SORT RULES for this table — DO NOT BREAK when adding rows:
 | [FEAT-59](#feat-59) | Embeddable multi-tenant server (per-instance `systemType`) | P3 | M | Features |
 | [FEAT-61](#feat-61) | Tool Extension Points (custom tools on top of ARC-1) | P3 | M-L (phased) | Features |
 | [OPS-03](#ops-03) | Multi-System Routing | P3 | L | Ops |
+| [OPS-05](#ops-05) | SAP Cloud Logging (OpenTelemetry) observability — replace the deprecated Application Logging Service | P3 | M | Ops |
 | ~~[COMPAT-01](#compat-01)~~ | ~~modificationSupport guard in lockObject()~~ | ~~P0~~ | ~~XS~~ | ~~Completed 2026-04-16~~ |
 | ~~[COMPAT-02](#compat-02)~~ | ~~CSRF HEAD→GET fallback (S/4HANA Public Cloud)~~ | ~~P0~~ | ~~XS~~ | ~~Completed 2026-04-16~~ |
 | ~~[COMPAT-03](#compat-03)~~ | ~~V4 SRVB publish endpoint bug~~ | ~~P0~~ | ~~XS~~ | ~~Completed 2026-04-15~~ |
@@ -2005,6 +2006,23 @@ The following features are tracked but not planned for near-term implementation.
 **Why:** Enterprises have multiple SAP systems (DEV, QAS, PRD, sandboxes).
 
 **Why not:** Fundamentally changes the architecture — ARC-1 is a single-system gateway by design. Multi-system routing adds routing logic, session management per system, namespace separation, and tenant isolation complexity. If routing breaks, users from system A could theoretically access system B's data. Better handled at infrastructure level: run one ARC-1 per SAP system and use a load balancer or Kubernetes service mesh to route clients. This follows the 12-factor app pattern and keeps each instance simple and secure.
+
+---
+
+<a id="ops-05"></a>
+### OPS-05: SAP Cloud Logging (OpenTelemetry) observability
+| Field | Value |
+|-------|-------|
+| **Priority** | P3 |
+| **Effort** | M |
+| **Risk** | Low — additive; ARC-1 logs to stderr regardless |
+| **Status** | Not started |
+
+**What:** Optionally bind/emit to **SAP Cloud Logging** (OpenTelemetry-based logs, metrics, traces) as the managed observability backend, replacing the deprecated SAP Application Logging Service.
+
+**Why:** SAP removed the Application Logging Service from the list of Eligible Cloud Services on 2025-07-31 (SAP Note 3557260). ARC-1 already ships that service `active: false` and works on `cf logs` alone; Cloud Logging is the forward-looking managed stack for customers who want aggregation/dashboards.
+
+**Why not yet:** Larger than the off-by-default toggle already shipped — needs a Cloud Logging service binding, an OTLP exporter, and config plumbing. Tracked separately from the XSUAA→AMS authorization migration (a different deprecation often conflated with this one).
 
 ---
 

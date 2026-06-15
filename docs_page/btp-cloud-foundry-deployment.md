@@ -123,14 +123,23 @@ npm run btp:build
 cf deploy mta_archives/arc1-mcp_*.mtar -e mta-overrides.mtaext
 ```
 
-The `mta.yaml` defines four BTP services that are created automatically:
+The `mta.yaml` creates three BTP services automatically, plus one optional service that is off by default:
 
 | Service | Instance Name | Plan | Purpose |
 |---------|--------------|------|---------|
 | XSUAA | `arc1-xsuaa` | `application` | MCP client OAuth authentication |
 | Destination | `arc1-destination` | `lite` | SAP system lookup |
 | Connectivity | `arc1-connectivity` | `lite` | Cloud Connector proxy |
-| Application Logs | `arc1-application-logs` | `lite` | Centralized log aggregation (Kibana) |
+| Application Logs | `arc1-application-logs` | `lite` | **Optional, off by default** — CF log aggregation (Kibana). The service is **deprecated** (SAP Note 3557260; use SAP Cloud Logging instead), so ARC-1 ships it with `active: false`. `cf logs` works without it; re-enable via `mta-overrides.mtaext` only on subaccounts that still offer it (see below). |
+
+> **Application Logs is off by default.** SAP removed the Application Logging
+> Service from the list of Eligible Cloud Services on 2025-07-31. Binding it by
+> default would warn where it still exists and **fail the deploy** on newer
+> subaccounts where it doesn't. ARC-1 logs to stderr regardless — `cf logs`
+> and `cf logs --recent` work out of the box. To opt back in to managed
+> aggregation, set the resource `active: true` in your `mta-overrides.mtaext`
+> (the template shows the block). For new observability, prefer **SAP Cloud
+> Logging** (OpenTelemetry).
 
 > **Multiple landscapes from one repo.** The gitignore matches any
 > `mta-*.mtaext`, so you can keep `mta-ecc-dev.mtaext`,

@@ -128,6 +128,8 @@ modules:
       - name: arc1-xsuaa
       - name: arc1-destination
       - name: arc1-connectivity
+      # Bound only when the (deprecated) application-logs resource is active —
+      # off by default; skipped automatically while inactive. See resource below.
       - name: arc1-application-logs
 
 resources:
@@ -193,8 +195,21 @@ resources:
       service: connectivity
       service-plan: lite
 
+  # SAP Application Logging Service — OFF by default (`active: false`).
+  # The service is DEPRECATED: SAP removed it from the list of Eligible Cloud
+  # Services on 2025-07-31 (SAP Note 3557260; replacement: SAP Cloud Logging).
+  # Binding it by default would warn on subaccounts that still have it and
+  # HARD-FAIL the deploy on newer subaccounts where it is no longer offered.
+  # ARC-1 logs to stderr regardless, so `cf logs` / `cf logs --recent` keep
+  # working without it — only the managed aggregation backend (Kibana) is gone.
+  # To re-enable CF log aggregation on a subaccount that still offers the
+  # service, flip `active: true` in your `mta-overrides.mtaext` (see the
+  # template). `active` is overridable per-deploy via an extension descriptor;
+  # the module `requires:` entry above stays put and is simply skipped while
+  # the resource is inactive.
   - name: arc1-application-logs
     type: org.cloudfoundry.managed-service
+    active: false
     parameters:
       service: application-logs
       service-plan: lite

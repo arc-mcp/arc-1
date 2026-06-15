@@ -163,3 +163,15 @@ modules:
     #           parameters:
     #             config:
     #               xsappname: arc1-mcp-prod
+
+# ── Application logging (OFF by default — deprecated service) ───────────
+# SAP Application Logging Service is deprecated (SAP Note 3557260; removed from
+# Eligible Cloud Services 2025-07-31 — use SAP Cloud Logging instead), so the
+# base mta.yaml ships it with `active: false` and does NOT create it. ARC-1
+# logs to stderr regardless, so `cf logs` / `cf logs --recent` keep working.
+# To re-enable CF log aggregation on a subaccount that still offers the
+# service, uncomment this resource block (a sibling of `modules:`) to flip the
+# resource active:
+# resources:
+#   - name: arc1-application-logs
+#     active: true

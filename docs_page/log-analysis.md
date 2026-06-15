@@ -16,6 +16,12 @@ env:
   ARC1_LOG_FILE: /tmp/arc1-audit.jsonl
 ```
 
+On BTP Cloud Foundry, ARC-1's stderr logs are always available via `cf logs arc1-mcp-server`
+(live) and `cf logs arc1-mcp-server --recent` (buffer) — no service binding required. The
+deprecated Application Logging Service (Kibana) is **off by default** (SAP Note 3557260); see
+[BTP Cloud Foundry Deployment](btp-cloud-foundry-deployment.md) to opt back in, or use **SAP Cloud
+Logging** for a managed observability stack.
+
 ## Log Levels
 
 Control stderr verbosity with `ARC1_LOG_LEVEL`:
