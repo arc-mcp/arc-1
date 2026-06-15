@@ -44,6 +44,88 @@ The file sink always receives ALL events regardless of stderr level.
 | `elicitation_sent` | info | Elicitation prompt sent to client |
 | `elicitation_response` | info | User response to elicitation |
 
+## What a Healthy Startup Looks Like
+
+After you deploy (or run locally), the **startup transcript is the fastest way to confirm SAP
+connectivity and authorization are working** — before you ever make a tool call. On BTP Cloud Foundry,
+read it with `cf logs arc1-mcp-server --recent` (or the **Logs** tab of the app in the BTP Cockpit).
+
+A healthy startup at the default `info` level looks like this (real output, S/4HANA 2023 / ABAP
+Platform 2025):
+
+```
+INFO: [server_start] {"version":"0.9.x","transport":"stdio","allowWrites":...,"url":"http://your-sap:50000"}
+INFO: ARC-1 starting {"version":"0.9.x","transport":"...","url":"..."}
+INFO: SAP semaphore {"maxConcurrent":10,"scope":"server-wide"}
+INFO: Object cache enabled {"mode":"auto",...}
+INFO: ARC-1 MCP server running on stdio          # (or: "ARC-1 HTTP server started" on BTP)
+INFO: Startup auth preflight succeeded for shared SAP credentials. {"endpoint":"/sap/bc/adt/core/discovery"}
+INFO: Authorization probe: object search access is available
+INFO: Authorization probe: transport access is available
+```
+
+### The two green-light signals
+
+```
+INFO: Authorization probe: object search access is available
+INFO: Authorization probe: transport access is available
+```
+
+**These two lines mean your SAP authorizations are correct.** If you see them, ARC-1 reached SAP,
+authenticated, and the SAP user can search the repository and read transports — the foundation every
+tool call builds on. (Under principal propagation the preflight is skipped — each user authenticates at
+runtime — so you'll instead see `Skipped startup auth preflight: principal propagation mode is enabled`;
+the per-user authorization probe then runs on that user's first call.)
+
+If instead you see either of:
+
+```
+WARN: Authorization probe: object search access denied — <reason>
+INFO: Authorization probe: transport access is not available — <reason>
+```
+
+…the SAP **user** is missing an authorization (not an ARC-1 bug). Search/read needs `S_DEVELOP` and
+`S_ADT_RES` (read-only users need `S_ADT_RES` with `ACTVT = 01 AND 02` — several ADT reads are POSTs).
+See [Authorization](authorization.md) and [Principal Propagation](principal-propagation-setup.md).
+
+### "Feature not available" is normal, not an error
+
+ARC-1 probes optional capabilities at startup (abapGit, AMDP, RAP/CDS, UI5, HANA info, source search,
+…). Any capability your system doesn't have simply returns `404` (not installed / ICF service not
+active) or `400` — **this is expected and is recorded as data, not an error.** These probe misses are
+logged at `debug`, so they do **not** appear at the default `info` level. A clean startup has **no
+`WARN` lines** from probing.
+
+If you run with `ARC1_LOG_LEVEL=debug`, you'll see them — and they're still harmless:
+
+```
+DEBUG: [http_request] {"method":"GET","path":"/sap/bc/adt/abapgit/repos","statusCode":404,...}
+DEBUG: [http_request] {"method":"GET","path":"/sap/bc/adt/debugger/amdp","statusCode":404,...}
+DEBUG: [http_request] {"method":"GET","path":"/sap/bc/adt/ddic/ddl/sources","statusCode":400,...}
+```
+
+These just mean abapGit/AMDP aren't installed and the RAP probe returned its expected `400` — ARC-1
+disables those features gracefully and serves the rest. The resolved feature set is what matters, not
+the individual probe responses.
+
+> A genuine problem looks different: a `WARN`/`error` `auth_scope_denied`, a `401` on the auth
+> preflight, an `Authorization probe: … denied` line, or `Startup auth preflight failed` — those are
+> worth investigating; a `404` probe miss at `debug` is not.
+
+### OAuth scope errors on the MCP client (not SAP)
+
+A different failure class: the MCP client (Claude, Copilot, …) can't complete OAuth and reports an
+`invalid_scope` / scope error even though your user has the right role collection. This is almost always
+a **stale cache**, not a missing authorization:
+
+- Log out of the MCP client's OAuth session and reconnect — or use a fresh/incognito browser window for
+  the consent step. A previous deployment's XSUAA/DCR client registration is often cached.
+- Verify the role collection is assigned under the **correct identity provider**. If your subaccount
+  uses a custom IdP (e.g. SAP IAS), assign the role collection to the user *under that IdP*
+  (`--of-idp <your-idp>`), not the default SAP ID service — otherwise the JWT carries no ARC-1 scopes.
+- After a redeploy that recreated the XSUAA service, give the client one clean re-login; cached
+  `client_id`s from the old service instance produce scope errors until they re-register.
+
 ## Analyzing Logs with jq
 
 ### Recent Errors

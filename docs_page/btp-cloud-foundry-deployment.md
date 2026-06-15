@@ -57,6 +57,25 @@ Deploy ARC-1 on SAP BTP Cloud Foundry, connecting to an on-premise SAP system vi
 
 MTA (Multi-Target Application) deployment bundles ARC-1 with its BTP service dependencies (XSUAA, Destination, Connectivity) into a single deployable archive. Services are created automatically.
 
+!!! tip "No local dev environment? Deploy entirely from SAP Business Application Studio (BAS)"
+    You do **not** need a local toolchain to deploy ARC-1. SAP Business Application Studio ships with
+    `git`, the `cf` CLI, and `mbt` (MTA Build Tool) preinstalled — so a BTP admin can deploy and
+    configure ARC-1 without setting up a developer machine.
+
+    1. In the BTP Cockpit, open **Business Application Studio** and create a **Dev Space** (the *Full
+       Stack Cloud Application* type already has CF tools).
+    2. Open a terminal in the Dev Space and run the same steps as below:
+       ```bash
+       git clone https://github.com/marianfoo/arc-1.git
+       cd arc-1
+       cp mta-overrides.mtaext.example mta-overrides.mtaext   # edit your destinations + flags
+       cf login -a <your-cf-api-endpoint>                     # target the org/space to deploy into
+       npm ci                                                 # mbt's before-all build needs deps
+       npm run btp:build-deploy-ext
+       ```
+    3. To redeploy a newer version later, just `git pull` in the same Dev Space and re-run
+       `npm run btp:build-deploy-ext`. Everything stays inside BTP — nothing is built or stored locally.
+
 ### 1. Configure your landscape via `mta-overrides.mtaext`
 
 `mta.yaml` ships with placeholder destinations (`your-basic-destination` / `your-pp-destination`) and conservative safety defaults (writes off, free SQL off, package allowlist `$TMP`). Every landscape must override at least the two destination names — deploying `mta.yaml` as-is will fail with a "destination not found" error from BTP, which is the intended fail-fast signal.
@@ -138,6 +157,28 @@ The base `mta.yaml` already configures these properties (override any of them vi
 - `SAP_PP_ENABLED: "true"` — per-user principal propagation
 - `SAP_XSUAA_AUTH: "true"` — XSUAA OAuth for MCP clients
 - `SAP_ALLOW_*: "false"` and `SAP_ALLOWED_PACKAGES: "$TMP"` — safe defaults; widen only as needed
+
+### 4. Verify a healthy startup
+
+After the app starts, the startup log tells you immediately whether ARC-1 reached SAP and the SAP user
+has the right authorizations — **before** you connect an MCP client:
+
+```bash
+cf logs arc1-mcp-server --recent
+```
+
+Look for the two green-light lines (you can also read these in the **Logs** tab of the app in the BTP
+Cockpit):
+
+```
+INFO: Authorization probe: object search access is available
+INFO: Authorization probe: transport access is available
+```
+
+`404`/`400` probe lines for optional features (abapGit, AMDP, RAP, UI5, …) are **expected and harmless**
+— they're logged at `debug`, not `warn`, and just mean those capabilities aren't installed. A clean
+startup has no `WARN` lines from probing. For the full annotated transcript, the green/red signals, and
+OAuth scope troubleshooting, see **[Log Analysis → What a Healthy Startup Looks Like](log-analysis.md#what-a-healthy-startup-looks-like)**.
 
 ---
 

@@ -24,7 +24,8 @@ That's it. No global install, no config files.
 ```bash
 npx arc-1@latest --url https://your-sap-host:44300 \
                  --user YOUR_USER --password YOUR_PASS \
-                 --client 100
+                 --client 100 \
+                 --insecure true   # only for self-signed dev certs; omit on trusted TLS
 ```
 
 You should see a startup line like:
@@ -34,7 +35,13 @@ INFO: auth: MCP=[none] SAP=basic (shared)
 INFO: ARC-1 MCP server running on stdio
 ```
 
-Hit `Ctrl+C` to stop. If this failed, check TLS (`--insecure` for self-signed dev certs), the client number, and that the user can log into SE80 via the web GUI.
+Hit `Ctrl+C` to stop. If this failed, check TLS, the client number, and that the user can log into SE80 via the web GUI.
+
+!!! warning "`--insecure` needs an explicit value"
+    Pass `--insecure true` (or `--insecure=true`), **not** a bare `--insecure`. The flag takes a value;
+    `--insecure` on its own is parsed as *off*, so a self-signed cert still fails with `fetch failed`.
+    The same applies to the other boolean flags (`--allow-writes true`, etc.) and to the `SAP_INSECURE=true`
+    environment variable.
 
 ### If direct ADT HTTP(S) is not reachable
 
