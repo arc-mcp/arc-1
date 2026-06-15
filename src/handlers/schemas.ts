@@ -752,6 +752,8 @@ export const SAPTransportSchema = z.object({
   // "true"/"false" coerce instead of erroring at validation (CLAUDE.md boolean guidance).
   recursive: looseOptionalBoolean,
   removeLockedObjects: looseOptionalBoolean,
+  // For list: headers-only view — omit each transport's object lists (keep an objectCount).
+  summary: looseOptionalBoolean,
 });
 
 // ─── SAPGit ─────────────────────────────────────────────────────────

@@ -686,10 +686,11 @@ Manage CTS transport requests (SE09/SE10 equivalent): list, get details, create,
 | `pgmid` | string | No | Program ID for `remove_object`: `R3TR` (whole object) or `LIMU` (sub-object). Required for `remove_object` — the object type alone does not determine `pgmid`. |
 | `owner` | string | No | New owner SAP username (required for reassign) |
 | `recursive` | boolean | No | Apply recursively to child tasks (for delete/reassign). `release_recursive` always recurses. |
+| `summary` | boolean | No | For `list` only. Headers-only overview — omits each transport's (and task's) `objects[]`, keeping `id`/`description`/`owner`/`status`/`target` plus an `objectCount`. |
 
 **Actions:**
 
-- **`list`** — List transport requests. Defaults to current user, modifiable (status D), all types (Workbench, Customizing, Transport of Copies).
+- **`list`** — List transport requests. Defaults to current user, modifiable (status D), all types (Workbench, Customizing, Transport of Copies). Pass `summary=true` for a headers-only overview that omits the (often large) object lists and keeps an `objectCount` per transport — scan many open transports cheaply, then `get` the one you want in full. (Live: on a busy box this cut a 94 KB / ~23.5K-token list to 20 KB / ~5K tokens.)
 - **`get`** — Get transport details including tasks and objects.
 - **`create`** — Create a new transport request. Requires `description`. Optional `package` (defaults to `$TMP` — pass an explicit package to influence the transport route, which determines K/W/T type). Uses the ADT `CreateCorrectionRequest` endpoint (`POST /sap/bc/adt/cts/transports`); legacy NW 7.50 systems are supported.
 - **`release`** — Release a single transport or task.

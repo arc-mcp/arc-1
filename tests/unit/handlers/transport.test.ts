@@ -360,6 +360,47 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
       expect(parsed).toHaveLength(2);
     });
 
+    const LIST_WITH_OBJECTS_XML = `<tm:root xmlns:tm="http://www.sap.com/cts/transports">
+        <tm:request tm:number="DEVK900001" tm:owner="admin" tm:desc="Feature X" tm:status="D" tm:type="K">
+          <tm:task tm:number="DEVK900002" tm:owner="admin" tm:desc="Task" tm:status="D">
+            <tm:abap_object tm:pgmid="R3TR" tm:type="CLAS" tm:name="ZCL_A" tm:wbtype="CLAS/OC" tm:obj_desc="Class A"/>
+            <tm:abap_object tm:pgmid="R3TR" tm:type="PROG" tm:name="ZREPORT_B" tm:wbtype="PROG/P" tm:obj_desc="Report B"/>
+          </tm:task>
+        </tm:request>
+      </tm:root>`;
+
+    it('list summary=true omits object lists and keeps an objectCount', async () => {
+      mockFetch.mockResolvedValue(mockResponse(200, LIST_WITH_OBJECTS_XML, { 'x-csrf-token': 'T' }));
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'list',
+        summary: true,
+      });
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0]!.text);
+      expect(parsed).toHaveLength(1);
+      expect(parsed[0].id).toBe('DEVK900001');
+      expect(parsed[0].description).toBe('Feature X');
+      expect(parsed[0].objectCount).toBe(2);
+      expect(parsed[0].tasks[0].objectCount).toBe(2);
+      // objects[] must be gone — no object names or keys anywhere in the payload
+      const text = result.content[0]!.text;
+      expect(text).not.toContain('ZCL_A');
+      expect(text).not.toContain('pgmid');
+      expect(parsed[0].tasks[0].objects).toBeUndefined();
+    });
+
+    it('list without summary keeps full object lists (default behaviour unchanged)', async () => {
+      mockFetch.mockResolvedValue(mockResponse(200, LIST_WITH_OBJECTS_XML, { 'x-csrf-token': 'T' }));
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'list',
+      });
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0]!.text);
+      expect(parsed[0].tasks[0].objects).toHaveLength(2);
+      expect(result.content[0]!.text).toContain('ZCL_A');
+      expect(parsed[0].objectCount).toBeUndefined(); // count is summary-only
+    });
+
     it('history returns object transport data as JSON', async () => {
       // Real /transports response shape: com.sap.adt.lock.result2 with flat
       // CORRNR/CORRUSER/CORRTEXT on DATA. CORRNR is already the parent

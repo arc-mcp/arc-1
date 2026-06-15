@@ -21,11 +21,37 @@ import {
   removeObjectFromTransport,
   supportsExplicitTransportTarget,
 } from '../adt/transport.js';
-import type { ObjectTransportHistory } from '../adt/types.js';
+import type { ObjectTransportHistory, TransportRequest } from '../adt/types.js';
 import { objectUrlForType } from './object-types.js';
 import { errorResult, type ToolResult, textResult } from './shared.js';
 
 // ─── SAPTransport Handler ────────────────────────────────────────────
+
+/**
+ * Headers-only view of a transport for `list` summary mode: drop the (often large)
+ * per-task object lists and keep an objectCount. The `list` response embeds every
+ * object of every open transport inline, so on a busy box this turns a ~80 KB payload
+ * into a few KB — the caller `get`s a specific id when it needs the objects.
+ */
+function summarizeTransport(t: TransportRequest) {
+  return {
+    id: t.id,
+    description: t.description,
+    owner: t.owner,
+    status: t.status,
+    type: t.type,
+    target: t.target,
+    targetDesc: t.targetDesc,
+    objectCount: t.tasks.reduce((n, task) => n + task.objects.length, 0),
+    tasks: t.tasks.map((task) => ({
+      id: task.id,
+      description: task.description,
+      owner: task.owner,
+      status: task.status,
+      objectCount: task.objects.length,
+    })),
+  };
+}
 
 export async function handleSAPTransport(client: AdtClient, args: Record<string, unknown>): Promise<ToolResult> {
   const action = String(args.action ?? '');
@@ -35,7 +61,8 @@ export async function handleSAPTransport(client: AdtClient, args: Record<string,
       const user = (args.user as string | undefined) || client.username;
       const status = (args.status as string | undefined) ?? 'D';
       const transports = await listTransports(client.http, client.safety, user, status === '*' ? undefined : status);
-      return textResult(JSON.stringify(transports, null, 2));
+      const payload = args.summary === true ? transports.map(summarizeTransport) : transports;
+      return textResult(JSON.stringify(payload, null, 2));
     }
     case 'get': {
       const id = String(args.id ?? '');

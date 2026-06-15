@@ -1481,7 +1481,7 @@ export function getToolDefinitions(
             type: 'string',
             enum: sapTransportActions,
             description:
-              'list: show transports (defaults to current user, modifiable only). ' +
+              "list: show transports (defaults to current user, modifiable only). Pass summary=true for a headers-only overview that omits each transport's object lists (keeps an objectCount) — far cheaper when many transports are open. " +
               'get: fetch transport details including tasks and objects. ' +
               'create: create a new transport request (description required). To target another system, pass target=<system | system.client | /group/> (the Transportziel / TR_TARGET, e.g. "/TRG/" or "C11"; the group and system.client forms require extended transport control to be active). Otherwise omit target and pass an optional package to let SAP infer the route (defaults to $TMP). The response reports the resolved transport target; an empty target means a LOCAL request (cannot be transported onward). ' +
               'release: release a single transport or task. ' +
@@ -1544,6 +1544,11 @@ export function getToolDefinitions(
             type: 'boolean',
             description:
               'For delete only. Strip locked objects from each task before deleting, so a request that still holds a locked object (e.g. a deleted object\'s lingering record → HTTP 400 "...contains locked objects") can be removed.',
+          },
+          summary: {
+            type: 'boolean',
+            description:
+              'For list only. Headers-only overview: omit each transport\'s (and task\'s) object lists, keeping id/description/owner/status/target plus an objectCount. Use it to scan many open transports cheaply, then action="get" the one you want in full.',
           },
         },
         required: ['action'],
