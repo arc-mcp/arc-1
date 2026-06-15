@@ -89,7 +89,7 @@ All read-only; one mutating flavor-2 probe on a `$TMP` throwaway, deleted afterw
 | 4 | `from=active to=active` | ✅ No differences |
 | 5 | `from=<full /sap/bc/adt/ URI> to=active` | ✅ same `(+2 -28)` |
 | 6 | `from="99999"` (bad id) | ✅ `404 … Revision "99999" not found … Available revision ids: 00000` |
-| 7 | `type="TABL"` | ✅ `400 … Version diff is not supported for type "TABL"` |
+| 7 | unsupported type (`DOMA`) | ✅ `400 … Version diff is not supported for type "DOMA"` |
 | 8 | `type=PROG` + `type=FUGR` dispatch | ✅ both fetch active+inactive and diff |
 | 9 | **Flavor 2 real draft**: create `$TMP` PROG → activate → update-without-activate → diff | ✅ `(+2 -1)` showing `+WRITE 'a brand new pending line'.`; object deleted |
 
@@ -97,3 +97,34 @@ Conclusion: all three fetch paths (active/inactive via `?version=`, revision-by-
 revision-by-URI), the no-draft guard, both error paths, multi-type dispatch, and the real
 active-vs-inactive in-flight diff are verified live. Gate: typecheck + lint + 3853 unit tests +
 `check:sizes` + `validate:policy` all green.
+
+## Diff coverage across ALL SAPRead object types (empirical, a4h 758)
+
+Tested every SAPRead object type to decide diff eligibility. Criterion: does the read return
+**plain-text source** (diffable) or **parsed metadata / JSON / data** (a diff would be noise or
+meaningless)? Only types whose `/source/main` returns raw text qualify.
+
+**DIFFABLE — the 12 supported types (plain-text via `fetchSource`).** Live-confirmed clean
+source/diff routing: PROG, CLAS, FUGR, INCL, TABL (`SCARR` DDL), DDLS (`I_CURRENCY`, `ZR_FBCLUBTP`),
+DCLS, BDEF (`ZR_FbClubTP`), SRVD (`ZSD_FB_VB1`), DDLX, INTF, FUNC.
+
+**NOT DIFFABLE — read returns metadata/structured, not source (live-confirmed shapes):**
+
+| Type | Live read shape | Verdict |
+|------|-----------------|---------|
+| DOMA | JSON `{name, dataType, length, fixedValues…}` | metadata — exclude |
+| DTEL | JSON `{name, typeKind, domain…}` | metadata — exclude |
+| MSAG | JSON `{name, messages[]}` | metadata — exclude |
+| SRVB | JSON `{name, bindingType, odataVersion…}` (`parseServiceBinding`) | metadata — exclude |
+| VIEW | XML `<adtcore:mainObject …/>` envelope (no definition) | metadata — exclude |
+| AUTH, ENHO, FEATURE_TOGGLE, TRAN, API_STATE | parsed JSON metadata | exclude |
+| BSP / BSP_DEPLOY, DEVC, TABLE_CONTENTS/QUERY, SYSTEM, COMPONENTS, INACTIVE_OBJECTS, TEXT_ELEMENTS, VARIANTS | listings / data, not object source | exclude |
+| SKTD | base64-decoded markdown doc (lossy, niche) | exclude |
+| DESD / EVTB / EVTO / DTSC / CSNM / COTA (server-driven) | AFF JSON via `getServerDrivenObject` (different path, mostly 8.16+) | exclude |
+
+`action="diff"` on an excluded type returns a clean `400` listing the 12 supported types
+(live-confirmed: DOMA, MSAG, VIEW).
+
+**Conclusion: the 12 source-bearing types are exactly the diffable set — no additions (metadata
+diffs are noise), no removals.** CDS views diff as `DDLS`; classic `VIEW` cannot (VIT metadata only).
+Coverage is complete; this is recorded so it is not re-litigated.

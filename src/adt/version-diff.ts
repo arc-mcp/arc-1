@@ -19,8 +19,8 @@ import type { RevisionInfo } from './types.js';
 /** One side of a version diff: `"active"`, `"inactive"`, a revision id, or a `/sap/bc/adt/` URI. */
 export type DiffRef = string;
 
-/** Object types whose source diff is supported (plain-text `/source/main` endpoints). */
-export const DIFF_SUPPORTED_TYPES = [
+/** Object types whose source diff is supported (plain-text `/source/main` endpoints). Local — only used in the rejection message; the switch in fetchSourceByType is the authoritative gate. */
+const DIFF_SUPPORTED_TYPES = [
   'PROG',
   'CLAS',
   'INTF',
