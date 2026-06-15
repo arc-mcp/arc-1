@@ -1972,6 +1972,107 @@ ENDCLASS.`;
     });
   });
 
+  describe('action="diff" (version diff)', () => {
+    const ACTIVE_SRC = 'CLASS zcl_x DEFINITION.\n  METHOD a.\n  ENDMETHOD.\nENDCLASS.\n';
+    const INACTIVE_SRC = 'CLASS zcl_x DEFINITION.\n  METHOD a.\n  ENDMETHOD.\n  METHOD b.\n  ENDMETHOD.\nENDCLASS.\n';
+    const FEED_XML = `<?xml version="1.0" encoding="utf-8"?>
+<atom:feed xmlns:atom="http://www.w3.org/2005/Atom">
+  <atom:entry>
+    <atom:author><atom:name>MARIAN</atom:name></atom:author>
+    <atom:content src="/sap/bc/adt/oo/classes/ZCL_X/includes/main/versions/1/00001/content"/>
+    <atom:id>00001</atom:id>
+    <atom:updated>2026-06-10T18:36:35Z</atom:updated>
+  </atom:entry>
+</atom:feed>`;
+
+    it('diffs active vs inactive and returns only the unified diff', async () => {
+      // URL-aware so the result is independent of concurrent fetch ordering.
+      mockFetch.mockImplementation((url: unknown) =>
+        Promise.resolve(mockResponse(200, String(url).includes('version=inactive') ? INACTIVE_SRC : ACTIVE_SRC)),
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'CLAS',
+        name: 'ZCL_X',
+        action: 'diff',
+      });
+      expect(result.isError).toBeUndefined();
+      const text = result.content[0]!.text;
+      expect(text).toContain('Diff CLAS ZCL_X: active → inactive');
+      expect(text).toContain('(+2 -0)'); // METHOD b. added (2 lines)
+      expect(text).toContain('@@');
+      expect(text).toContain('+  METHOD b.');
+      // only the changed method shows as a hunk; the unchanged METHOD a is context, not duplicated
+      expect((text.match(/METHOD a\./g) ?? []).length).toBe(1);
+    });
+
+    it('reports "No differences" when both sides are identical (e.g. no draft)', async () => {
+      mockFetch.mockImplementation(() => Promise.resolve(mockResponse(200, ACTIVE_SRC)));
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'CLAS',
+        name: 'ZCL_X',
+        action: 'diff',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toBe('No differences between active and inactive for CLAS ZCL_X.');
+    });
+
+    it('resolves a bare revision id via the VERSIONS feed', async () => {
+      mockFetch.mockImplementation((url: unknown) => {
+        const u = String(url);
+        if (u.includes('/content')) return Promise.resolve(mockResponse(200, INACTIVE_SRC));
+        if (u.includes('/versions')) return Promise.resolve(mockResponse(200, FEED_XML));
+        return Promise.resolve(mockResponse(200, ACTIVE_SRC));
+      });
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'CLAS',
+        name: 'ZCL_X',
+        action: 'diff',
+        from: 'active',
+        to: '00001',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('Diff CLAS ZCL_X: active → 00001');
+      expect(result.content[0]?.text).toContain('+  METHOD b.');
+    });
+
+    it('errors clearly when a revision id is not found', async () => {
+      mockFetch.mockImplementation((url: unknown) => {
+        const u = String(url);
+        if (u.includes('/versions')) return Promise.resolve(mockResponse(200, FEED_XML));
+        return Promise.resolve(mockResponse(200, ACTIVE_SRC));
+      });
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'CLAS',
+        name: 'ZCL_X',
+        action: 'diff',
+        from: 'active',
+        to: '99999',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('not found');
+      expect(result.content[0]?.text).toContain('00001'); // lists available ids
+    });
+
+    it('rejects diff for an unsupported (non-source) type', async () => {
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'TABL',
+        name: 'ZMY_TABLE',
+        action: 'diff',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('not supported');
+    });
+
+    it('requires a name (schema validation)', async () => {
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'CLAS',
+        action: 'diff',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text.toLowerCase()).toContain('name');
+    });
+  });
+
   describe('INACTIVE_OBJECTS', () => {
     it('surfaces backend 404 through the normal error formatter', async () => {
       mockFetch.mockReset();

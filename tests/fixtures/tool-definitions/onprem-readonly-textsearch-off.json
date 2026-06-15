@@ -59,6 +59,21 @@
           "type": "string",
           "description": "Object name (e.g., ZTEST_PROGRAM, ZCL_ORDER, MARA)"
         },
+        "action": {
+          "type": "string",
+          "enum": [
+            "diff"
+          ],
+          "description": "Set to \"diff\" for a unified diff between two source versions (uses from/to) — cheaper than fetching both sources. Source types only: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, BDEF, SRVD, DDLX."
+        },
+        "from": {
+          "type": "string",
+          "description": "action=\"diff\" OLD side: \"active\" (default), \"inactive\", a revision id from SAPRead(type=\"VERSIONS\"), or a /sap/bc/adt/ revision URI."
+        },
+        "to": {
+          "type": "string",
+          "description": "action=\"diff\" NEW side (default \"inactive\" = pending unactivated changes). Same values as from."
+        },
         "include": {
           "type": "string",
           "description": "For CLAS: DO NOT use this to read the main class — omit include entirely to get the full class source (CLASS DEFINITION + CLASS IMPLEMENTATION). This parameter reads class-LOCAL auxiliary files only: definitions (local type definitions, NOT the main class definition), implementations (local helper class implementations), macros, testclasses (ABAP Unit). Comma-separated. Not all classes have these sections — missing ones return a note instead of an error. For DDLS: use include=\"elements\" to get a structured field list extracted from the CDS DDL source — shows key fields, aliases, associations, and expression types (calculated, case, cast). Useful for understanding CDS entity structure without parsing raw DDL. For VERSIONS (CLAS): include selects the class include history to query (main, definitions, implementations, macros, testclasses)."

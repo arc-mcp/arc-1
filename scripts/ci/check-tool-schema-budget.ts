@@ -83,8 +83,9 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     textSearchAvailable: true,
     resolvedFeatures: ALL_FEATURES_AVAILABLE,
     budget: {
-      schemaTokenEstimate: 11_500,
-      descriptionTokenEstimate: 9_000,
+      // +200/+150 for SAPRead action="diff" (action/from/to params + their descriptions).
+      schemaTokenEstimate: 11_700,
+      descriptionTokenEstimate: 9_150,
       descriptionCount: 150,
     },
   },
@@ -94,7 +95,8 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     textSearchAvailable: true,
     resolvedFeatures: ALL_FEATURES_AVAILABLE,
     budget: {
-      schemaTokenEstimate: 19_500,
+      // schema +200 for SAPRead action="diff" (action/from/to params).
+      schemaTokenEstimate: 19_700,
       descriptionTokenEstimate: 15_000,
       descriptionCount: 265,
     },
@@ -107,8 +109,9 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     budget: {
       // Bumped +200 for the SAPTransport `remove_object` action (its pgmid/type/name key +
       // action description). Keeps ~110 tokens of headroom, matching the other scenarios.
-      schemaTokenEstimate: 17_700,
-      descriptionTokenEstimate: 13_200,
+      // Further +200/+150 for SAPRead action="diff" (action/from/to params + descriptions).
+      schemaTokenEstimate: 17_900,
+      descriptionTokenEstimate: 13_350,
       descriptionCount: 265,
     },
   },

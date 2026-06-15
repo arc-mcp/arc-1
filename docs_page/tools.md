@@ -18,6 +18,9 @@ Read any SAP ABAP object.
 |-----------|------|----------|-------------|
 | `type` | string | Yes | Object type (see below; includes `AUTH`, `FEATURE_TOGGLE`, `ENHO`, `VERSIONS`, `VERSION_SOURCE` on on-prem systems, and the server-driven objects `DESD`/`EVTB`/`EVTO`/`DTSC`/`CSNM`/`COTA` where the system advertises them — ABAP Platform 2025 / 8.16+, plus `EVTB` on S/4HANA 2023) |
 | `name` | string | No | Object name (e.g., `ZTEST_PROGRAM`, `ZCL_ORDER`, `MARA`) |
+| `action` | string | No | `"diff"` — return a unified diff between two source versions on this system (only the hunks, not two full sources), using `from`/`to`. Source types only: `PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, BDEF, SRVD, DDLX`. Note: SAP only snapshots a version on transport *release*, so `from`/`to` revision ids are sparse — `active` vs `inactive` (pending unactivated changes) is the most reliable use. |
+| `from` | string | No | For `action="diff"`: OLD side — `"active"` (default), `"inactive"`, a revision id (from a VERSIONS response), or a full `/sap/bc/adt/` revision URI. |
+| `to` | string | No | For `action="diff"`: NEW side — defaults to `"inactive"`. Same accepted values as `from`. |
 | `format` | string | No | Output format: `"text"` (default) or `"structured"` (CLAS only, see below) |
 | `include` | string | No | For CLAS: `main`, `testclasses`, `definitions`, `implementations`, `macros`. For DDLS: `elements` (extract CDS view elements). |
 | `method` | string | No | For CLAS: method name to read (e.g., `get_name`), or `*` to list all methods |
@@ -114,6 +117,8 @@ SAPRead(type="ENHO", name="ZMY_BADI_IMPL")       — enhancement implementation 
 SAPRead(type="VERSIONS", name="ZARC1_TEST_REPORT") — list object revisions with revision URIs
 SAPRead(type="VERSIONS", name="ZCL_X", include="definitions") — list revisions for CLAS definitions include
 SAPRead(type="VERSION_SOURCE", versionUri="/sap/bc/adt/programs/programs/ZARC1_TEST_REPORT/source/main/versions/20260410185851/00000/content") — fetch source at one revision
+SAPRead(type="CLAS", name="ZCL_ORDER", action="diff")                       — diff active vs your inactive draft (pending changes)
+SAPRead(type="CLAS", name="ZCL_ORDER", action="diff", from="00001", to="active") — diff a revision against the active version
 SAPRead(type="TRAN", name="SE38")                — transaction metadata
 SAPRead(type="SOBJ", name="BUS2032")             — list BOR object methods
 SAPRead(type="BSP")                              — list all BSP/UI5 apps

@@ -12,6 +12,7 @@ import { isOperationAllowed, OperationType } from '../adt/safety.js';
 import { getServerDrivenObject, isServerDrivenObjectType, supportsServerDrivenObject } from '../adt/server-driven.js';
 import type { InactiveObject } from '../adt/types.js';
 import { getAppInfo } from '../adt/ui5-repository.js';
+import { getVersionDiff } from '../adt/version-diff.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
 import { extractCdsElements } from '../context/cds-deps.js';
 import { grepSource } from '../context/grep.js';
@@ -120,6 +121,33 @@ export async function handleSAPRead(
   // BTP: return helpful error for unavailable types
   if (isBtpSystem() && BTP_HINTS[type]) {
     return errorResult(BTP_HINTS[type]);
+  }
+
+  // action="diff": unified diff between two source versions (single system). Bypasses the
+  // cache/draft machinery below on purpose — both sides must be RAW source, or the no-draft
+  // banner (sourceVersionWarning) would surface as a spurious hunk.
+  // See docs/research/version-diff-saved-read-action.md.
+  if (args.action === 'diff') {
+    if (!name) return errorResult('SAPRead action="diff" requires a "name".');
+    const from = typeof args.from === 'string' && args.from ? args.from : 'active';
+    const to = typeof args.to === 'string' && args.to ? args.to : 'inactive';
+    try {
+      const r = await getVersionDiff(client, type, name, from, to, {
+        include: typeof args.include === 'string' ? args.include : undefined,
+        group: typeof args.group === 'string' ? args.group : undefined,
+      });
+      if (r.identical) {
+        return textResult(`No differences between ${from} and ${to} for ${type} ${name}.`);
+      }
+      return textResult(`Diff ${type} ${name}: ${from} → ${to}  (+${r.added} -${r.removed})\n\n${r.diff}`);
+    } catch (err) {
+      if (isNotFoundError(err)) {
+        return errorResult(
+          `Could not diff ${type} ${name}: object or revision not found.${err instanceof Error ? ` ${err.message}` : ''}`,
+        );
+      }
+      throw err;
+    }
   }
 
   // Server-driven objects (ABAP Platform 2025 / SAP_BASIS 8.16+): DESD, EVTB, DTSC, COTA, …

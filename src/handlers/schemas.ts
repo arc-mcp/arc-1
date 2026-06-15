@@ -61,9 +61,13 @@ const SAPREAD_CLAS_INCLUDES = ['main', 'testclasses', 'definitions', 'implementa
 const SAPREAD_DDLS_INCLUDES = ['elements'] as const;
 
 function validateSapReadInput(
-  input: { type: string; include?: string; versionUri?: string; sqlFilter?: string },
+  input: { type: string; name?: string; action?: string; include?: string; versionUri?: string; sqlFilter?: string },
   ctx: { addIssue: (issue: { code: 'custom'; path: string[]; message: string }) => void },
 ): void {
+  if (input.action === 'diff' && !input.name) {
+    ctx.addIssue({ code: 'custom', path: ['name'], message: 'SAPRead action="diff" requires a "name".' });
+  }
+
   if (input.include) {
     const include = input.include.toLowerCase();
     if (
@@ -150,6 +154,12 @@ export const SAPReadSchema = z
   .object({
     type: z.enum(SAPREAD_TYPES_ONPREM),
     name: z.string().optional(),
+    /** Set to "diff" for a unified source diff between two versions (uses from/to). */
+    action: z.enum(['diff']).optional(),
+    /** For action="diff": OLD side — "active" (default), "inactive", a revision id, or a /sap/bc/adt/ URI. */
+    from: z.string().optional(),
+    /** For action="diff": NEW side — defaults to "inactive". Same accepted values as from. */
+    to: z.string().optional(),
     include: z.string().optional(),
     group: z.string().optional(),
     method: z.string().optional(),
@@ -177,6 +187,12 @@ export const SAPReadSchemaBtp = z
   .object({
     type: z.enum(SAPREAD_TYPES_BTP),
     name: z.string().optional(),
+    /** Set to "diff" for a unified source diff between two versions (uses from/to). */
+    action: z.enum(['diff']).optional(),
+    /** For action="diff": OLD side — "active" (default), "inactive", a revision id, or a /sap/bc/adt/ URI. */
+    from: z.string().optional(),
+    /** For action="diff": NEW side — defaults to "inactive". Same accepted values as from. */
+    to: z.string().optional(),
     include: z.string().optional(),
     group: z.string().optional(),
     method: z.string().optional(),

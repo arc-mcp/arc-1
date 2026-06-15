@@ -503,6 +503,22 @@ export function getToolDefinitions(
               : 'Object type to read (on-prem): PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL (transparent tables and DDIC structures), VIEW, DOMA, DTEL, MSAG, TRAN, TABLE_CONTENTS, TABLE_QUERY, DEVC, SOBJ, SYSTEM, COMPONENTS, TEXT_ELEMENTS, VARIANTS, BSP, BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS, AUTH, FEATURE_TOGGLE, ENHO, VERSIONS, VERSION_SOURCE. Server-driven objects (ABAP Platform 2025 / SAP_BASIS 8.16+, discovery-gated, return JSON metadata + AFF JSON source): DESD (CDS Logical External Schema), EVTB (RAP Event Binding), EVTO (RAP Event Object), DTSC (CDS Static Cache), CSNM (Core Schema Notation Model), COTA (Communication Target). Deprecated aliases: MESSAGES (use MSAG), FTG2 (use FEATURE_TOGGLE).',
           },
           name: { type: 'string', description: 'Object name (e.g., ZTEST_PROGRAM, ZCL_ORDER, MARA)' },
+          action: {
+            type: 'string',
+            enum: ['diff'],
+            description:
+              'Set to "diff" for a unified diff between two source versions (uses from/to) — cheaper than fetching both sources. Source types only: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, BDEF, SRVD, DDLX.',
+          },
+          from: {
+            type: 'string',
+            description:
+              'action="diff" OLD side: "active" (default), "inactive", a revision id from SAPRead(type="VERSIONS"), or a /sap/bc/adt/ revision URI.',
+          },
+          to: {
+            type: 'string',
+            description:
+              'action="diff" NEW side (default "inactive" = pending unactivated changes). Same values as from.',
+          },
           include: {
             type: 'string',
             description:
