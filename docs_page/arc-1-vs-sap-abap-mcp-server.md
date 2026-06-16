@@ -166,6 +166,7 @@ flowchart LR
 | Process model | A server you deploy (CF app / container / `npx` / stdio) | A `localhost` process the IDE starts for you |
 | Network exposure | Remote over HTTPS (or local stdio) | **`localhost` only** + auto-generated bearer token (a Host-header / DNS-rebinding guard was also observed in teardown) |
 | Multi-user | **Yes** — one endpoint, many users | No — one server per developer machine, tied to the IDE session |
+| Multiple SAP systems | One SAP system per server instance (a central BTP deployment routes to its configured destination; many systems → many instances/destinations) | **Yes** — every tool takes a `destination` arg, so one running server spans all the systems your IDE has configured |
 | Connection to SAP | ADT REST (HTTP) everywhere, incl. on-prem via Cloud Connector | **Inherits the IDE destination**: RFC (SNC/SSO) on-prem, HTTP (OAuth) cloud |
 | Runtime footprint | Lightweight Node process | Bundled inside the ADT engine (heavier; the price of full ADT fidelity) |
 | Who operates it | You (or your platform team) | SAP's extension; nothing to operate |
@@ -311,6 +312,8 @@ user being authorized.
 | Inline completion / form editors | ❌ | ✅ (in the IDE) |
 | Server-side AI model | ❌ (bring your own LLM) | ✅ Joule (licensed; model not publicly pinned) |
 | Rate limiting | ✅ (3 layers) | ❌ |
+| Multiple SAP systems in one server | ❌ (one system per instance) | ✅ (`destination` arg per tool) |
+| Token efficiency (hyperfocused / context compression / method surgery) | ✅ | ❌ (verbose tool descriptions) |
 
 ⚠️ = available but indirectly / partially, or only inside the IDE.
 
@@ -380,6 +383,7 @@ automated clients — Copilot Studio agents, CI pipelines, web apps, scheduled a
 | Write safety | Default-deny + allowlists + deny-actions + scopes | The developer's SAP authorizations are the gate; **SAP authorizations remain final** |
 | Auditability | Central, per-user, structured (incl. BTP Audit Log) | The SAP system's own logging |
 | Secrets handling | `.env`/service keys redacted in logs; never committed | Token in IDE settings; destinations in the IDE config |
+| Supply-chain hardening | Dependabot · CodeQL · Trivy image scan · npm provenance · SHA-pinned actions · `SECURITY.md` | Closed-source; covered by SAP's PSRT process |
 
 Neither is "insecure" — they make **different trust assumptions**. The SAP server assumes a **local-machine
 trust boundary** and relies on SAP authorizations; ARC-1 assumes a shared, possibly hostile-adjacent
@@ -509,6 +513,8 @@ Namespaces differ (`abap_*` vs `SAPRead`/`SAPWrite`/…) and an agent can hold s
     - **Joule AI** ATC fix proposals (licensed, BTP-hosted).
     - The surrounding **IDE**: debugger, completion, navigation, form editors, virtual workspace.
     - **Human-in-the-loop** transport selection baked into the tools.
+    - **Multi-destination** — one running server spans every system configured in your IDE (each tool
+      takes a `destination` arg), handy when you hop between systems.
     - The same MCP tooling across **Eclipse and VS Code**.
 
 === "ARC-1 is better at…"
@@ -523,6 +529,8 @@ Namespaces differ (`abap_*` vs `SAPRead`/`SAPWrite`/…) and an agent can hold s
     - **Ops breadth**: free SQL, git, transport release/delete, **ST22 dumps & traces**.
     - **Any MCP client** and **any LLM**; multiple **distribution** options (`.mcpb`, Claude Code plugin +
       skills, Docker, npm, BTP connector).
+    - **Token efficiency** — hyperfocused 1-tool mode (~200 tokens), context compression, and
+      method-level surgery keep tight context windows and mid-tier LLMs viable.
     - **No cloud/AI-Core dependency and no licence** for any tool.
 
 ### ARC-1's honest limitations
