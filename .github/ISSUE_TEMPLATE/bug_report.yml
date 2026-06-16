@@ -12,6 +12,41 @@ body:
 
         Before filing, please skim the [documentation](https://marianfoo.github.io/arc-1/) ([quickstart](https://marianfoo.github.io/arc-1/quickstart/) · [tool reference](https://marianfoo.github.io/arc-1/tools/)) and [search existing issues](https://github.com/marianfoo/arc-1/issues?q=is%3Aissue).
 
+  - type: markdown
+    attributes:
+      value: |
+        <details><summary>🤖 <b>Using an AI assistant (Claude, Copilot, Cursor, …)? Let it fill this out for you — click to expand.</b></summary>
+
+        ARC-1 runs through an assistant, so the assistant that hit the problem already has the exact tool call and error in context. Paste the prompt below to it, then drop its answer into the fields here.
+
+        ```text
+        I hit a problem using ARC-1 (the SAP ADT MCP server). Help me file a precise bug report.
+
+        1. Summarize the problem in 2–3 sentences: what I asked for, what ARC-1 actually did, and what I expected.
+        2. Recover from THIS session, verbatim — do not paraphrase or invent:
+           - the exact failing tool call: tool name, action, and full JSON arguments
+           - the exact response/error: message, HTTP status code, and ADT URL if present
+        3. Determine what you can about the environment; write "unknown" for anything you can't (do NOT guess):
+           ARC-1 version, SAP system type, SAP_BASIS release, how ARC-1 is deployed, which MCP client this is, the ABAP object type involved.
+        4. Sanity-check first: ARC-1 is read-only and $TMP-only by default. If this is a write that failed, it may just need
+           SAP_ALLOW_WRITES=true and the target package added to SAP_ALLOWED_PACKAGES — if that's the likely cause, tell me that
+           instead of writing a bug report.
+        5. Then output the filled-in fields below, ready for me to paste into the GitHub bug form:
+
+        Version:
+        SAP system:
+        SAP_BASIS release:
+        Deployment:
+        MCP client:
+        Tool(s):
+        Object type:
+        What happened:
+        Steps to reproduce (the exact call):
+        Expected:
+        Error / HTTP status / ADT response:
+        ```
+        </details>
+
   - type: checkboxes
     id: preflight
     attributes:
