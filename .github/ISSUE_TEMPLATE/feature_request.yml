@@ -59,6 +59,14 @@ body:
       required: false
 
   - type: input
+    id: area-other
+    attributes:
+      label: Other area — please specify
+      description: Only if you selected "Other" above.
+    validations:
+      required: false
+
+  - type: input
     id: release
     attributes:
       label: Release-specific?

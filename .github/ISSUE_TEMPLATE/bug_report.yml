@@ -88,6 +88,14 @@ body:
       required: true
 
   - type: input
+    id: system-other
+    attributes:
+      label: Other SAP system — please specify
+      description: Only if you selected "Other / not sure" above.
+    validations:
+      required: false
+
+  - type: input
     id: sap-basis
     attributes:
       label: SAP_BASIS release
@@ -109,6 +117,14 @@ body:
     validations:
       required: true
 
+  - type: input
+    id: deployment-other
+    attributes:
+      label: Other deployment — please specify
+      description: Only if you selected "Other" above.
+    validations:
+      required: false
+
   - type: dropdown
     id: client
     attributes:
@@ -124,6 +140,14 @@ body:
         - Gemini CLI
         - Windsurf
         - Other / N/A
+    validations:
+      required: false
+
+  - type: input
+    id: client-other
+    attributes:
+      label: Other MCP client — please specify
+      description: Only if you selected "Other / N/A" above.
     validations:
       required: false
 
