@@ -55,12 +55,12 @@ nav:
   - Using ARC-1:
       - Tools Reference: tools.md
       - MCP Usage Guide: mcp-usage.md
-      - vs SAP ABAP MCP Server: arc-1-vs-sap-abap-mcp-server.md
       - Skills: skills.md
       - Blog Series: blog-series.md
   - Reference:
       - Configuration: configuration-reference.md
       - Configuration Precedence: configuration-precedence.md
+      - vs SAP ABAP MCP Server: arc-1-vs-sap-abap-mcp-server.md
       - Security: security-guide.md
       - Caching: caching.md
       - Log Analysis: log-analysis.md
