@@ -18,6 +18,16 @@ Complements [explain-abap-code](../explain-abap-code/SKILL.md) (deep single-obje
 [sap-object-documenter](../sap-object-documenter/SKILL.md) (written docs for a package). This skill is
 about **delta** — what moved between two points in time — for code review, hand-off, or a pre-release gate.
 
+## Pick the mode (who's asking)
+
+| You are… | Scope | What the skill does |
+|---|---|---|
+| **Reviewing a transport** (senior dev / approver) | one transport id | Diff every diffable object **+ impact + ATC by default** — risk-focused. The chat / whole-transport twin of Eclipse ADT 3.6's "Object Changes" tab (same per-object diffs, **same coverage boundary**). |
+| **Checking your own recent work** (dev) | your modifiable transports | "What have I changed since my last release?" — diff each object's last-released version → current. Light: skip impact/ATC unless asked. |
+
+For a **system-wide inventory of every open transport** (basis: who has what open, how big, conflicts —
+*no diffs*) that's a different job → [sap-transport-overview](../sap-transport-overview/SKILL.md).
+
 ## Smart Defaults (apply silently, do NOT ask)
 
 | Setting | Default | Rationale |
@@ -27,7 +37,7 @@ about **delta** — what moved between two points in time — for code review, h
 | Diff direction (in-flight) | `from="active"`, `to="inactive"` | "What I'm about to activate" — the reliable diff (no snapshot needed) |
 | Diffable types | PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, BDEF, SRVD, DDLX, TABL | The plain-text source types `action="diff"` supports |
 | Object-diff cap | ~40 | Above that, summarize counts and ask which to expand |
-| Impact / ATC | off unless asked or the change is risky (DDLS/BDEF/SRVD) | Keep the default pass fast and token-light |
+| Impact / ATC | **ON** in transport-review mode; off in the quick "what did I change" pass | A reviewer needs "what breaks / quality"; a dev glancing at their own drafts doesn't |
 
 ## Input
 
@@ -57,9 +67,12 @@ worse than no review.
 Split the object list into:
 
 - **Diffable** (source types above) → these get a real diff in Step 3.
-- **Metadata-only** (DOMA, DTEL, MSAG, SRVB, VIEW, ENHO, AUTH, server-driven, …) → `action="diff"`
-  returns "not supported" for these (their read is parsed metadata/XML, not source). List them in the
-  report as "changed (metadata — no source diff)"; do not try to diff them.
+- **Metadata-only** (SRVB, G4BA, SUSH, DOMA, DTEL, MSAG, VIEW, ENHO, AUTH, DEVC, server-driven, …) →
+  `action="diff"` returns "not supported" (their read is parsed metadata/XML, not plain-text source).
+  **This is exactly the boundary SAP's own Eclipse ADT 3.6 "Object Changes" has** — it prints
+  *"Feature not supported for object …"* for these same types (e.g. SRVB). Don't try to diff them.
+  For a thorough review, still read the object's metadata (e.g. `SAPRead(type="SRVB", name=…)`) so the
+  report names *what* the object is and that it's in the change set — just without a source diff.
 
 ## Step 3: Diff each object — pick `from`/`to` by intent
 
@@ -74,8 +87,9 @@ Choose the sides by what the user is reviewing:
 | Intent | from → to | Notes |
 |---|---|---|
 | **In-flight** ("what I'm about to activate/release") | `active` → `inactive` | The reliable diff. No draft → "no pending changes" (clean). |
+| **Since my last release** (dev's recent work) | `<last released revision id>` → `active` (or `inactive` if still draft) | "What changed after my last request." Last-released revision = newest `VERSIONS` entry carrying a transport title; captures both activated-since-release and pending edits. |
 | **Released transport** ("what did this TR change") | `<pre-transport revision id>` → `active` | Get ids from `SAPRead(type="VERSIONS", name=…)`; SAP only snapshots on **release**. |
-| **Specific revisions** | `<id|uri>` → `<id|uri|active>` | From a VERSIONS response. |
+| **Specific revisions** | `<id\|uri>` → `<id\|uri\|active>` | From a VERSIONS response. |
 
 **Snapshot-sparsity reality (important):** ABAP cuts a version snapshot only when a transport is
 *released*. So for an open/unreleased transport, objects usually have just the active version (+ maybe
@@ -144,12 +158,14 @@ Write to disk (default `docs/reviews/transport-<id>-<date>.md`) only if asked; o
 ## When to use this skill
 
 - Pre-release / pre-activation gate — "show me everything I'm about to ship."
-- Code review of a colleague's transport without leaving the chat.
+- Code review of a colleague's transport without leaving the chat — the headless / pasteable / whole-transport-at-once counterpart to Eclipse ADT 3.6's "Object Changes" tab (same per-object diffs, same coverage boundary).
 - Hand-off / audit — a written delta of a change set.
+- "What changed after my last request / since my last release?" (since-last-release mode).
 - "I've been editing for an hour — what have I actually changed?" (pending-drafts mode).
 
 ## When NOT to use this skill
 
+- **System-wide inventory of every open transport** (basis: who has what open, sizes, conflicts — no diffs) → [sap-transport-overview](../sap-transport-overview/SKILL.md). This skill is depth-on-one-transport; that one is breadth-across-the-system.
 - **Understanding one object deeply** → [explain-abap-code](../explain-abap-code/SKILL.md).
 - **Documenting a whole package** (not a delta) → [sap-object-documenter](../sap-object-documenter/SKILL.md).
 - **Across multiple systems** (DEV vs QAS source compare) → out of scope here: ARC-1 binds to one system
