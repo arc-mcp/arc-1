@@ -1,0 +1,76 @@
+name: 💡 Feature request
+description: Suggest a new capability, a new object type / tool action, or an improvement to existing behavior.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: "Thanks for the idea! Please [search existing issues](https://github.com/marianfoo/arc-1/issues?q=is%3Aissue) first — many requests are already tracked."
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched existing issues (open and closed) and this isn't already requested.
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / use case
+      description: What are you trying to do, and what's blocking you today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should ARC-1 do? If it's a tool change, name the tool, the action, and the object type.
+      placeholder: "e.g. SAPWrite should support creating table types (TTYP) and writing function-group includes."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Select all that apply.
+      multiple: true
+      options:
+        - SAPRead
+        - SAPSearch
+        - SAPWrite
+        - SAPActivate
+        - SAPNavigate
+        - SAPQuery
+        - SAPTransport
+        - SAPGit
+        - SAPContext
+        - SAPLint
+        - SAPDiagnose
+        - SAPManage
+        - Connection / auth / deployment
+        - Caching / performance
+        - Documentation
+        - Other
+    validations:
+      required: false
+
+  - type: input
+    id: release
+    attributes:
+      label: Release-specific?
+      description: If this only applies to certain SAP releases, which ones?
+      placeholder: "e.g. only 8.16+, or NW 7.50"
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives / workarounds
+      description: Anything you've tried, or other tools that already do this (e.g. fr0ster/mcp-abap-adt).
+    validations:
+      required: false

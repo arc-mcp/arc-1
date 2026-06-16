@@ -1,0 +1,202 @@
+name: 🐞 Bug report
+description: A tool call fails, returns wrong data, or a connection / auth problem.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug! 🙏
+
+        A few seconds of context saves a round-trip. The most useful things are your **SAP release**, the **exact tool call** you made, and the **exact error / HTTP status** you got back.
+
+        Before filing, please skim the [documentation](https://marianfoo.github.io/arc-1/) ([quickstart](https://marianfoo.github.io/arc-1/quickstart/) · [tool reference](https://marianfoo.github.io/arc-1/tools/)) and [search existing issues](https://github.com/marianfoo/arc-1/issues?q=is%3Aissue).
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight checks
+      options:
+        - label: I searched [existing issues](https://github.com/marianfoo/arc-1/issues?q=is%3Aissue) (open and closed) and this isn't a duplicate.
+          required: true
+        - label: I checked the [documentation](https://marianfoo.github.io/arc-1/) (quickstart, tool reference, configuration).
+          required: false
+        - label: Writes failing? I confirmed `SAP_ALLOW_WRITES=true` and my target package is covered by `SAP_ALLOWED_PACKAGES` — ARC-1 is read-only and `$TMP`-only by default.
+          required: false
+
+  - type: markdown
+    attributes:
+      value: "### Environment"
+
+  - type: input
+    id: version
+    attributes:
+      label: ARC-1 version
+      description: "Run `arc1-cli --version`, or check the installed `arc-1` package version / Docker image tag."
+      placeholder: "e.g. 0.9.17"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: system
+    attributes:
+      label: SAP system
+      description: Which kind of SAP backend are you connecting to?
+      options:
+        - SAP S/4HANA (on-premise or private cloud)
+        - SAP S/4HANA Cloud Public Edition
+        - SAP BTP ABAP Environment (Steampunk / embedded)
+        - SAP NetWeaver AS ABAP (7.0x – 7.5x)
+        - SAP ERP / ECC
+        - Other / not sure
+    validations:
+      required: true
+
+  - type: input
+    id: sap-basis
+    attributes:
+      label: SAP_BASIS release
+      description: "ARC-1 gates tools and behavior by release, so this matters a lot. Find it via System → Status in SAP GUI (component SAP_BASIS), or in ARC-1's startup log (the feature probe prints the detected release)."
+      placeholder: "e.g. 750, 758, 816, or 'ECC EHP8 / 740'"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: How are you running ARC-1?
+      options:
+        - Local — npx / npm (stdio)
+        - Docker (ghcr.io/marianfoo/arc-1)
+        - SAP BTP Cloud Foundry
+        - Self-hosted HTTP Streamable server
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: client
+    attributes:
+      label: MCP client
+      description: Which assistant / client is calling ARC-1?
+      options:
+        - Claude Desktop
+        - Claude Code
+        - VS Code (GitHub Copilot / Continue / Cline)
+        - Cursor
+        - Eclipse (GitHub Copilot)
+        - Microsoft Copilot Studio
+        - Gemini CLI
+        - Windsurf
+        - Other / N/A
+    validations:
+      required: false
+
+  - type: dropdown
+    id: auth
+    attributes:
+      label: Authentication mode
+      options:
+        - Basic (SAP_USER / SAP_PASSWORD)
+        - API key
+        - XSUAA OAuth (BTP)
+        - OIDC / Entra ID
+        - BTP Destination + Principal Propagation
+        - Cookies
+        - Not sure
+    validations:
+      required: false
+
+  - type: markdown
+    attributes:
+      value: "### What went wrong"
+
+  - type: dropdown
+    id: tool
+    attributes:
+      label: Which ARC-1 tool(s)?
+      description: Select all that apply.
+      multiple: true
+      options:
+        - SAPRead
+        - SAPSearch
+        - SAPWrite
+        - SAPActivate
+        - SAPNavigate
+        - SAPQuery
+        - SAPTransport
+        - SAPGit
+        - SAPContext
+        - SAPLint
+        - SAPDiagnose
+        - SAPManage
+        - Not sure / not tool-specific (connection, setup, auth)
+    validations:
+      required: false
+
+  - type: input
+    id: object-type
+    attributes:
+      label: ABAP object type(s) involved
+      description: If the bug is about a specific object kind.
+      placeholder: "e.g. TABL, TTYP (table type), FUGR include, DTEL, CLAS, DDLS"
+    validations:
+      required: false
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear, concise description of the bug.
+      placeholder: "SAPWrite create of a table type (TTYP) returns ... / the function-group include is never written ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: "Include the **exact** tool call — the `arc1-cli call …` command, or the JSON arguments your client sent. This is the single most helpful thing you can provide."
+      placeholder: |
+        1. ...
+        2. Call the tool, e.g.:
+           {
+             "action": "create",
+             "type": "TTYP",
+             "name": "ZTT_DEMO",
+             "package": "$TMP"
+           }
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: "The table type should be created and activate cleanly."
+    validations:
+      required: true
+
+  - type: textarea
+    id: error
+    attributes:
+      label: Exact error / HTTP status / ADT response
+      description: "Copy the full message, including the HTTP status code and ADT URL if present (e.g. `status 423 at /sap/bc/adt/...`)."
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs & relevant configuration
+      description: "Set `ARC1_LOG_HTTP_DEBUG=true` for full ADT request/response logging. Paste relevant env vars (e.g. `SAP_ALLOW_WRITES`, `SAP_ALLOWED_PACKAGES`, `SAP_LANGUAGE`, `SAP_SYSTEM_TYPE`, `ARC1_TOOL_MODE`). ⚠️ Redact `SAP_PASSWORD`, API keys, service keys, and cookies."
+      render: shell
+    validations:
+      required: false
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+        💡 Many "write doesn't work" reports turn out to be configuration: ARC-1 is **read-only by default** and only allows the `$TMP` package until you set `SAP_ALLOW_WRITES=true` and add your package to `SAP_ALLOWED_PACKAGES`. See the [configuration reference](https://marianfoo.github.io/arc-1/).
