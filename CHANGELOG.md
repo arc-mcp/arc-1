@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.9.18](https://github.com/marianfoo/arc-1/compare/v0.9.17...v0.9.18) (2026-06-16)
+
+
+### Features
+
+* **SAPRead:** add action="diff" for server-side single-system version diff ([#445](https://github.com/marianfoo/arc-1/issues/445)) ([7d603ef](https://github.com/marianfoo/arc-1/commit/7d603eff8534e7d96ed7b1a8c8feba387fcc8b40))
+* **SAPTransport:** add summary=true headers-only mode for list ([#448](https://github.com/marianfoo/arc-1/issues/448)) ([3ac3619](https://github.com/marianfoo/arc-1/commit/3ac361969dbeabd0ef6f0593f830c2dea623f460))
+
+
+### Bug Fixes
+
+* **startup:** quiet expected feature-probe log noise + deployment/onboarding docs ([#444](https://github.com/marianfoo/arc-1/issues/444)) ([951cb38](https://github.com/marianfoo/arc-1/commit/951cb385e8e2dc664cd095fe5299871a75d526de))
+
 ## [0.9.17](https://github.com/marianfoo/arc-1/compare/v0.9.16...v0.9.17) (2026-06-15)
 
 
