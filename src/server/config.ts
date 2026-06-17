@@ -489,6 +489,21 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
   const toolMode = resolveStr('tool-mode', 'ARC1_TOOL_MODE', 'standard', 'toolMode');
   config.toolMode = (toolMode === 'hyperfocused' ? 'hyperfocused' : 'standard') as ServerConfig['toolMode'];
 
+  // ── Extensions (FEAT-61) ───────────────────────────────────────────
+  // CSV of absolute paths to extension plugins (local dirs/files, NOT npm names). Loaded at startup.
+  const pluginsRaw = getFlag('plugins') ?? process.env.ARC1_PLUGINS;
+  config.plugins = (pluginsRaw ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  // Opt-in: let plugin tools execute ABAP console classes (ctx.run.classRun). Also needs allowWrites.
+  config.allowPluginExecute = resolveBool(
+    'allow-plugin-execute',
+    'SAP_ALLOW_PLUGIN_EXECUTE',
+    false,
+    'allowPluginExecute',
+  );
+
   // ── Lint ───────────────────────────────────────────────────────────
   config.abaplintConfig = resolveOptionalStr('abaplint-config', 'SAP_ABAPLINT_CONFIG', 'abaplintConfig');
   config.lintBeforeWrite = resolveBool('lint-before-write', 'SAP_LINT_BEFORE_WRITE', true, 'lintBeforeWrite');

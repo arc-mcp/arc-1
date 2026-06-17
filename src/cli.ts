@@ -23,12 +23,13 @@ import { config } from 'dotenv';
 import { AdtClient } from './adt/client.js';
 import type { AdtClientConfig } from './adt/config.js';
 import { buildArgs, type OutputMode } from './cli-args.js';
-import { handleToolCall } from './handlers/dispatch.js';
+import { getToolRegistry, handleToolCall } from './handlers/dispatch.js';
 import type { ToolResult } from './handlers/shared.js';
 import { getToolDefinitions } from './handlers/tools.js';
 import { detectFilename, lintAbapSource } from './lint/lint.js';
 import { parseArgs, resolveConfig } from './server/config.js';
 import { initLogger } from './server/logger.js';
+import { loadPlugins } from './server/plugin-loader.js';
 import { buildAdtConfig, VERSION } from './server/server.js';
 import type { ConfigSource, ServerConfig } from './server/types.js';
 
@@ -89,9 +90,20 @@ program
 program
   .command('tools [tool]')
   .description('List MCP tools, or show the JSON input schema for a specific tool')
-  .action((tool: string | undefined) => {
+  .action(async (tool: string | undefined) => {
     const { config: serverConfig } = resolveCliContext();
-    const defs = getToolDefinitions(serverConfig);
+    // FEAT-61: load plugins so `tools` discovery matches `call` invocation (both see Custom_* tools).
+    if (serverConfig.plugins?.length) {
+      await loadPlugins(serverConfig.plugins, getToolRegistry());
+    }
+    const pluginDefs = getToolRegistry()
+      .list()
+      .flatMap((e) =>
+        e.source === 'plugin' && e.listing
+          ? [{ name: e.name, description: e.listing.description, inputSchema: e.listing.inputSchema }]
+          : [],
+      );
+    const defs = [...getToolDefinitions(serverConfig), ...pluginDefs];
     if (!tool) {
       for (const def of defs) {
         const firstLine = def.description.split('\n')[0].trim();
@@ -321,7 +333,14 @@ function resolveCliContext(): { client: AdtClient; config: ServerConfig } {
 
 async function runToolCall(toolName: string, args: Record<string, unknown>, outputMode: OutputMode): Promise<number> {
   const { client, config: serverConfig } = resolveCliContext();
+  // FEAT-61: load extension plugins so `arc1-cli call Custom_*` reaches the same registry the server uses.
+  if (serverConfig.plugins?.length) {
+    await loadPlugins(serverConfig.plugins, getToolRegistry());
+  }
   const available = new Set(getToolDefinitions(serverConfig).map((t) => t.name));
+  for (const e of getToolRegistry().list()) {
+    if (e.source === 'plugin') available.add(e.name);
+  }
   if (!available.has(toolName)) {
     console.error(`Unknown tool: ${toolName}`);
     console.error(`Available tools: ${[...available].join(', ')}`);

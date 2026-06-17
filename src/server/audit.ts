@@ -24,6 +24,8 @@ export interface AuditEventBase {
 export interface ToolCallStartEvent extends AuditEventBase {
   event: 'tool_call_start';
   tool: string;
+  /** Contributing plugin name when `tool` is a plugin-sourced `Custom_*` tool (FEAT-61). */
+  pluginName?: string;
   args: Record<string, unknown>;
 }
 
@@ -31,6 +33,8 @@ export interface ToolCallStartEvent extends AuditEventBase {
 export interface ToolCallEndEvent extends AuditEventBase {
   event: 'tool_call_end';
   tool: string;
+  /** Contributing plugin name when `tool` is a plugin-sourced `Custom_*` tool (FEAT-61). */
+  pluginName?: string;
   durationMs: number;
   status: 'success' | 'error';
   errorClass?: string;

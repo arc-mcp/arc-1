@@ -20,6 +20,21 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./public": {
+      "types": "./dist/public/index.d.ts",
+      "default": "./dist/public/index.js"
+    },
+    "./public/testing": {
+      "types": "./dist/public/testing.d.ts",
+      "default": "./dist/public/testing.js"
+    },
+    "./package.json": "./package.json"
+  },
   "files": [
     "dist",
     "bin",

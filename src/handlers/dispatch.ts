@@ -24,6 +24,7 @@ import { AdtApiError, AdtNetworkError, AdtSafetyError, classifySapDomainError } 
  */
 import { getActionPolicy, hasRequiredScope as hasScopeHelper } from '../authz/policy.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
+import { type RegistryEntry, type ToolDispatchContext, ToolRegistry } from '../registry/tool-registry.js';
 import { sanitizeArgs } from '../server/audit.js';
 import { generateRequestId, requestContext } from '../server/context.js';
 import { logger } from '../server/logger.js';
@@ -458,6 +459,52 @@ function classifyError(err: unknown): string {
   return 'Unknown';
 }
 
+// ─── Tool registry (FEAT-61) ─────────────────────────────────────────
+// The 12 built-ins register through the same ToolRegistry that plugin (Custom_*) tools use. Each
+// built-in `invoke` is a thin adapter over its existing handler — the shared pipeline (rate-limit,
+// scope, deny, Zod, audit) stays in handleToolCall; the registry only owns the inner dispatch that
+// used to be a `switch`. See docs/research/extension-framework-spec.md §4.
+let _toolRegistry: ToolRegistry | undefined;
+
+/** The process-wide tool registry, lazily seeded with the built-ins. Exported for tests. */
+export function getToolRegistry(): ToolRegistry {
+  if (_toolRegistry) return _toolRegistry;
+  const r = new ToolRegistry();
+  const reg = (name: string, invoke: RegistryEntry['invoke']): void => {
+    const policy = getActionPolicy(name);
+    if (!policy) throw new Error(`Built-in tool '${name}' has no ACTION_POLICY entry`);
+    r.register({ name, source: 'builtin', policy, invoke });
+  };
+  reg('SAPRead', (ctx) => handleSAPRead(ctx.client, ctx.args, ctx.cache, ctx.cacheSecurity));
+  reg('SAPSearch', (ctx) => handleSAPSearch(ctx.client, ctx.args));
+  reg('SAPQuery', (ctx) => handleSAPQuery(ctx.client, ctx.args));
+  reg('SAPWrite', (ctx) => handleSAPWrite(ctx.client, ctx.args, ctx.config, ctx.cache, ctx.cacheSecurity));
+  reg('SAPActivate', (ctx) => handleSAPActivate(ctx.client, ctx.args, ctx.cache, ctx.cacheSecurity));
+  reg('SAPNavigate', (ctx) => handleSAPNavigate(ctx.client, ctx.args));
+  reg('SAPLint', (ctx) => handleSAPLint(ctx.client, ctx.args, ctx.config));
+  reg('SAPDiagnose', (ctx) => handleSAPDiagnose(ctx.client, ctx.args));
+  reg('SAPTransport', (ctx) => handleSAPTransport(ctx.client, ctx.args));
+  reg('SAPGit', (ctx) => handleSAPGit(ctx.client, ctx.args, ctx.authInfo));
+  reg('SAPContext', (ctx) => handleSAPContext(ctx.client, ctx.args, ctx.cache, ctx.cacheSecurity));
+  reg('SAPManage', (ctx) => handleSAPManage(ctx.client, ctx.config, ctx.args, ctx.cache, ctx.isPerUserClient));
+  reg('SAP', async (ctx) => {
+    const expanded = expandHyperfocusedArgs(ctx.args);
+    if ('error' in expanded) return errorResult(expanded.error);
+    return handleToolCall(
+      ctx.client,
+      ctx.config,
+      expanded.toolName,
+      expanded.expandedArgs,
+      ctx.authInfo,
+      ctx.server,
+      ctx.cache,
+      ctx.isPerUserClient,
+    );
+  });
+  _toolRegistry = r;
+  return r;
+}
+
 /**
  * Handle an MCP tool call.
  *
@@ -483,6 +530,8 @@ export async function handleToolCall(
   // Build user context for audit logging
   const user = authInfo?.extra?.userName as string | undefined;
   const clientId = authInfo?.clientId;
+  // For plugin (Custom_*) tools, tag every audit event with the contributing plugin (spec §9).
+  const pluginName = getToolRegistry().get(toolName)?.pluginName;
 
   // Emit tool_call_start audit event
   logger.emitAudit({
@@ -493,6 +542,7 @@ export async function handleToolCall(
     user,
     clientId,
     tool: toolName,
+    pluginName,
     args: sanitizeArgs(args),
   });
 
@@ -573,7 +623,9 @@ export async function handleToolCall(
       actionOrType = `tadir_lookup_${src}`;
     }
   }
-  const policy = getActionPolicy(toolName, actionOrType);
+  // Built-in policy from ACTION_POLICY; plugin (Custom_*) policy from the registry (FEAT-61).
+  // Kept here (not inside getActionPolicy) so validate-action-policy.ts stays built-ins-only.
+  const policy = getActionPolicy(toolName, actionOrType) ?? getToolRegistry().get(toolName)?.policy;
 
   if (authInfo && policy) {
     if (!hasRequiredScope(authInfo, policy.scope)) {
@@ -644,69 +696,31 @@ export async function handleToolCall(
   // Run within request context so HTTP-level logs get the requestId
   return requestContext.run({ requestId: reqId, user, tool: toolName }, async () => {
     try {
-      let result: ToolResult;
       const cacheSecurity = buildCacheSecurityContext(authInfo, isPerUserClient);
 
-      switch (toolName) {
-        case 'SAPRead':
-          result = await handleSAPRead(client, args, cachingLayer, cacheSecurity);
-          break;
-        case 'SAPSearch':
-          result = await handleSAPSearch(client, args);
-          break;
-        case 'SAPQuery':
-          result = await handleSAPQuery(client, args);
-          break;
-        case 'SAPWrite':
-          result = await handleSAPWrite(client, args, config, cachingLayer, cacheSecurity);
-          break;
-        case 'SAPActivate':
-          result = await handleSAPActivate(client, args, cachingLayer, cacheSecurity);
-          break;
-        case 'SAPNavigate':
-          result = await handleSAPNavigate(client, args);
-          break;
-        case 'SAPLint':
-          result = await handleSAPLint(client, args, config);
-          break;
-        case 'SAPDiagnose':
-          result = await handleSAPDiagnose(client, args);
-          break;
-        case 'SAPTransport':
-          result = await handleSAPTransport(client, args);
-          break;
-        case 'SAPGit':
-          result = await handleSAPGit(client, args, authInfo);
-          break;
-        case 'SAPContext':
-          result = await handleSAPContext(client, args, cachingLayer, cacheSecurity);
-          break;
-        case 'SAPManage':
-          result = await handleSAPManage(client, config, args, cachingLayer, isPerUserClient);
-          break;
-        case 'SAP': {
-          // Hyperfocused mode: route to the appropriate handler
-          const expanded = expandHyperfocusedArgs(args);
-          if ('error' in expanded) {
-            result = errorResult(expanded.error);
-            break;
-          }
-          // Delegate to the real handler (recursive call, but with the mapped tool name)
-          // The concrete tool/action policy is enforced by the recursive call.
-          result = await handleToolCall(
-            client,
-            config,
-            expanded.toolName,
-            expanded.expandedArgs,
-            authInfo,
-            _server,
-            cachingLayer,
-            isPerUserClient,
-          );
-          break;
-        }
-        default:
-          result = errorResult(`Unknown tool: ${toolName}`);
+      // FEAT-61: inner dispatch is owned by the ToolRegistry (built-ins + plugin Custom_* tools).
+      // The shared pipeline above (rate-limit, scope, deny, Zod, audit) is unchanged; the registry
+      // only replaces the former `switch (toolName)`. See extension-framework-spec.md §4.
+      const entry = getToolRegistry().get(toolName);
+      let result: ToolResult;
+      // Plugin (Custom_*) tools are out of scope for hyperfocused mode (spec §1): hidden from
+      // tools/list AND not directly invocable, so a client that knows a Custom_ name can't reach a
+      // plugin tool here either. Built-ins (incl. the `SAP` wrapper) dispatch normally.
+      if (!entry || (config.toolMode === 'hyperfocused' && entry.source === 'plugin')) {
+        result = errorResult(`Unknown tool: ${toolName}`);
+      } else {
+        const dispatchCtx: ToolDispatchContext = {
+          client,
+          config,
+          args,
+          cache: cachingLayer,
+          authInfo,
+          isPerUserClient,
+          cacheSecurity,
+          server: _server,
+          requestId: reqId,
+        };
+        result = await entry.invoke(dispatchCtx);
       }
 
       const durationMs = Date.now() - start;
@@ -722,6 +736,7 @@ export async function handleToolCall(
         user,
         clientId,
         tool: toolName,
+        pluginName,
         durationMs,
         status: result.isError ? 'error' : 'success',
         errorMessage: result.isError ? result.content[0]?.text : undefined,
@@ -743,6 +758,7 @@ export async function handleToolCall(
         user,
         clientId,
         tool: toolName,
+        pluginName,
         durationMs,
         status: 'error',
         errorClass: classifyError(err),
