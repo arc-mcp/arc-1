@@ -7,10 +7,10 @@
  * - http-streamable: for remote/containerized deployments
  */
 
+import type { BTPConfig, BTPProxyConfig, PerUserAuthTokens } from '@arc-mcp/xsuaa-auth/btp';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import type { BTPConfig, BTPProxyConfig, PerUserAuthTokens } from '../adt/btp.js';
 import { AdtClient } from '../adt/client.js';
 import type { AdtClientConfig } from '../adt/config.js';
 import { resolveCookies } from '../adt/cookies.js';
@@ -32,7 +32,7 @@ import {
 import { getToolDefinitions, type ToolDefinition } from '../handlers/tools.js';
 import { API_KEY_PROFILES } from './config.js';
 import { isActionDenied } from './deny-actions.js';
-import { initLogger, logger } from './logger.js';
+import { authLibLogger, initLogger, logger } from './logger.js';
 import { createMcpRateLimiter, type McpRateLimiter } from './mcp-rate-limit.js';
 import { FileSink } from './sinks/file.js';
 import type { ServerConfig } from './types.js';
@@ -235,7 +235,7 @@ async function createPerUserClient(
   userJwt: string,
   adtSemaphore?: Semaphore,
 ): Promise<AdtClient> {
-  const { lookupDestinationWithUserToken } = await import('../adt/btp.js');
+  const { lookupDestinationWithUserToken } = await import('@arc-mcp/xsuaa-auth/btp');
   // Use SAP_BTP_PP_DESTINATION if set, otherwise fall back to SAP_BTP_DESTINATION.
   // This enables a dual-destination approach:
   // - SAP_BTP_DESTINATION = BasicAuth destination (shared client, startup resolution)
@@ -245,7 +245,7 @@ async function createPerUserClient(
     throw new Error('SAP_BTP_PP_DESTINATION or SAP_BTP_DESTINATION is required for principal propagation');
   }
 
-  const { destination, authTokens } = await lookupDestinationWithUserToken(btpConfig, destName, userJwt);
+  const { destination, authTokens } = await lookupDestinationWithUserToken(btpConfig, destName, userJwt, authLibLogger);
 
   // Build an effective proxy that uses the PP destination's Location ID, not the
   // startup destination's. In dual-destination setups, SAP_BTP_DESTINATION and
@@ -848,8 +848,8 @@ export async function createAndStartServer(
   let btpConfig: BTPConfig | undefined;
   const btpDestination = process.env.SAP_BTP_DESTINATION;
   if (btpDestination) {
-    const { resolveBTPDestination, parseVCAPServices } = await import('../adt/btp.js');
-    const resolved = await resolveBTPDestination(btpDestination);
+    const { resolveBTPDestination, parseVCAPServices } = await import('@arc-mcp/xsuaa-auth/btp');
+    const resolved = await resolveBTPDestination(btpDestination, authLibLogger);
     config.url = resolved.url;
     config.username = resolved.username;
     config.password = resolved.password;
@@ -999,7 +999,7 @@ export async function createAndStartServer(
     // to one transport at a time, and clients like Copilot Studio send
     // concurrent requests.
     // Load XSUAA credentials if XSUAA auth is enabled
-    let xsuaaCredentials: import('./xsuaa.js').XsuaaCredentials | undefined;
+    let xsuaaCredentials: import('@arc-mcp/xsuaa-auth').XsuaaCredentials | undefined;
     if (config.xsuaaAuth) {
       try {
         const xsenv = await import('@sap/xsenv');

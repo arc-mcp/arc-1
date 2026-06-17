@@ -27,9 +27,9 @@
  *    No external HTTP dependencies — undici ships with Node.js 22+.
  */
 
+import type { BTPProxyConfig } from '@arc-mcp/xsuaa-auth/btp';
 import { Agent, Client, type Dispatcher, fetch as undiciFetch } from 'undici';
 import { logger } from '../server/logger.js';
-import type { BTPProxyConfig } from './btp.js';
 import { resolveCookies } from './cookies.js';
 import { resolveAcceptType, resolveContentType } from './discovery.js';
 import { AdtApiError, AdtNetworkError } from './errors.js';
