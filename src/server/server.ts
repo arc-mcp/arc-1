@@ -22,7 +22,7 @@ import { getActionPolicy, hasRequiredScope } from '../authz/policy.js';
 import type { Cache } from '../cache/cache.js';
 import { CachingLayer } from '../cache/caching-layer.js';
 import { MemoryCache } from '../cache/memory.js';
-import { handleToolCall } from '../handlers/dispatch.js';
+import { getToolRegistry, handleToolCall } from '../handlers/dispatch.js';
 import {
   getCachedDiscovery,
   getCachedFeatures,
@@ -34,6 +34,7 @@ import { API_KEY_PROFILES } from './config.js';
 import { isActionDenied } from './deny-actions.js';
 import { initLogger, logger } from './logger.js';
 import { createMcpRateLimiter, type McpRateLimiter } from './mcp-rate-limit.js';
+import { loadPlugins } from './plugin-loader.js';
 import { FileSink } from './sinks/file.js';
 import type { ServerConfig } from './types.js';
 
@@ -583,6 +584,18 @@ export function createServer(
       tools = filterToolsByAuthScope(tools, extra.authInfo.scopes, config.denyActions);
     }
 
+    // FEAT-61: append plugin (Custom_*) tools, gated identically to built-ins (deny-list + scope).
+    for (const entry of getToolRegistry().list()) {
+      if (entry.source !== 'plugin' || !entry.listing) continue;
+      if (isActionDenied(entry.name, undefined, config.denyActions)) continue;
+      if (extra.authInfo && !hasRequiredScope(extra.authInfo.scopes, entry.policy.scope)) continue;
+      tools.push({
+        name: entry.name,
+        description: entry.listing.description,
+        inputSchema: entry.listing.inputSchema,
+      });
+    }
+
     return { tools };
   });
 
@@ -761,6 +774,12 @@ export async function createAndStartServer(
   const { logEffectivePolicy, detectContradictions, logContradictions } = await import('./effective-policy-log.js');
   logEffectivePolicy(config, effectiveSources, logger);
   logContradictions(detectContradictions(config), logger);
+
+  // FEAT-61: load extension plugins (Custom_* tools) into the shared registry before serving.
+  // Fail-fast: a malformed plugin or name collision throws here and refuses server start.
+  if (config.plugins?.length) {
+    await loadPlugins(config.plugins, getToolRegistry());
+  }
 
   // Add file sink if configured
   if (config.logFile) {

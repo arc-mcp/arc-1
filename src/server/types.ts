@@ -117,6 +117,11 @@ export interface ServerConfig {
   /** Tool mode: 'standard' (12 intent tools, SAPGit feature-gated) or 'hyperfocused' (1 universal SAP tool, ~200 tokens) */
   toolMode: 'standard' | 'hyperfocused';
 
+  // --- Extensions (FEAT-61) ---
+  /** Absolute paths to extension plugins to load at startup (from ARC1_PLUGINS, CSV). Each contributes
+   *  `Custom_*` tools via the ToolRegistry. Empty (default) = no plugins. NOT npm package names. */
+  plugins: string[];
+
   // --- Lint ---
   /** Path to custom abaplint.jsonc config file for lint rules */
   abaplintConfig?: string;
@@ -215,6 +220,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
   ppAllowSharedCookies: false,
   disableSaml2: false,
   toolMode: 'standard',
+  plugins: [],
   lintBeforeWrite: true,
   checkBeforeWrite: false,
   cacheMode: 'auto',
