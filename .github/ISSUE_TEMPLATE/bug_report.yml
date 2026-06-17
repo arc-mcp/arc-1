@@ -10,7 +10,7 @@ body:
 
         A few seconds of context saves a round-trip. The most useful things are your **SAP release**, the **exact tool call** you made, and the **exact error / HTTP status** you got back.
 
-        Before filing, please skim the [documentation](https://marianfoo.github.io/arc-1/) ([quickstart](https://marianfoo.github.io/arc-1/quickstart/) · [tool reference](https://marianfoo.github.io/arc-1/tools/)) and [search existing issues](https://github.com/marianfoo/arc-1/issues?q=is%3Aissue).
+        Before filing, please skim the [documentation](https://arc-mcp.github.io/arc-1/) ([quickstart](https://arc-mcp.github.io/arc-1/quickstart/) · [tool reference](https://arc-mcp.github.io/arc-1/tools/)) and [search existing issues](https://github.com/arc-mcp/arc-1/issues?q=is%3Aissue).
 
   - type: markdown
     attributes:
@@ -52,9 +52,9 @@ body:
     attributes:
       label: Preflight checks
       options:
-        - label: I searched [existing issues](https://github.com/marianfoo/arc-1/issues?q=is%3Aissue) (open and closed) and this isn't a duplicate.
+        - label: I searched [existing issues](https://github.com/arc-mcp/arc-1/issues?q=is%3Aissue) (open and closed) and this isn't a duplicate.
           required: true
-        - label: I checked the [documentation](https://marianfoo.github.io/arc-1/) (quickstart, tool reference, configuration).
+        - label: I checked the [documentation](https://arc-mcp.github.io/arc-1/) (quickstart, tool reference, configuration).
           required: false
         - label: Writes failing? I confirmed `SAP_ALLOW_WRITES=true` and my target package is covered by `SAP_ALLOWED_PACKAGES` — ARC-1 is read-only and `$TMP`-only by default.
           required: false
@@ -110,7 +110,7 @@ body:
       label: How are you running ARC-1?
       options:
         - Local — npx / npm (stdio)
-        - Docker (ghcr.io/marianfoo/arc-1)
+        - Docker (ghcr.io/arc-mcp/arc-1)
         - SAP BTP Cloud Foundry
         - Self-hosted HTTP Streamable server
         - Other
@@ -258,4 +258,4 @@ body:
     attributes:
       value: |
         ---
-        💡 Many "write doesn't work" reports turn out to be configuration: ARC-1 is **read-only by default** and only allows the `$TMP` package until you set `SAP_ALLOW_WRITES=true` and add your package to `SAP_ALLOWED_PACKAGES`. See the [configuration reference](https://marianfoo.github.io/arc-1/).
+        💡 Many "write doesn't work" reports turn out to be configuration: ARC-1 is **read-only by default** and only allows the `$TMP` package until you set `SAP_ALLOW_WRITES=true` and add your package to `SAP_ALLOWED_PACKAGES`. See the [configuration reference](https://arc-mcp.github.io/arc-1/).

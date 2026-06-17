@@ -26,7 +26,7 @@ arc1 --url https://your-sap-host:44300 --user YOUR_USER
 
 # Or use Docker
 docker run -e SAP_URL=https://host:44300 -e SAP_USER=dev -e SAP_PASSWORD=secret \
-  ghcr.io/marianfoo/arc-1
+  ghcr.io/arc-mcp/arc-1
 ```
 
 ### BTP ABAP Environment
@@ -227,4 +227,4 @@ For production, combine conservative tool exposure with real user identity, SAP-
 
 ## License
 
-MIT — [GitHub Repository](https://github.com/marianfoo/arc-1)
+MIT — [GitHub Repository](https://github.com/arc-mcp/arc-1)

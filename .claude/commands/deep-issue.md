@@ -1,6 +1,6 @@
 # Deep Issue — research & validate an external GitHub issue against real sources
 
-Deeply research a community-filed issue on **`marianfoo/arc-1`** before anyone touches code. The whole point: **decide whether the issue is real, and why, from verified evidence — not from the reporter's claim and not from memory.** ARC-1's worst bugs come from reasoning about ADT behavior instead of checking what the system actually does; the same trap turns a plausible-sounding issue into a wrong fix.
+Deeply research a community-filed issue on **`arc-mcp/arc-1`** before anyone touches code. The whole point: **decide whether the issue is real, and why, from verified evidence — not from the reporter's claim and not from memory.** ARC-1's worst bugs come from reasoning about ADT behavior instead of checking what the system actually does; the same trap turns a plausible-sounding issue into a wrong fix.
 
 Use this for any non-trivial external issue (bug report, feature request, "X doesn't work on release Y"). For an obvious typo-fix or a duplicate you can close in one line, just do that directly.
 
@@ -10,7 +10,7 @@ The output is a **validated dossier + a paste-able GitHub reply + a recommendati
 
 ## Input
 
-An issue number or URL (e.g. `379` or `https://github.com/marianfoo/arc-1/issues/379`). If the user gives a vague description instead, ask for the number, then start.
+An issue number or URL (e.g. `379` or `https://github.com/arc-mcp/arc-1/issues/379`). If the user gives a vague description instead, ask for the number, then start.
 
 ---
 

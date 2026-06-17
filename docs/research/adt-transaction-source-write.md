@@ -22,7 +22,7 @@ Recommendation: add `TRAN/T` source/write support as a feature-detected on-prem 
 
 ## Current ARC-1 State
 
-ARC-1 has transaction metadata read support from PR [#21](https://github.com/marianfoo/arc-1/pull/21), merged 2026-04-02.
+ARC-1 has transaction metadata read support from PR [#21](https://github.com/arc-mcp/arc-1/pull/21), merged 2026-04-02.
 
 Relevant code:
 
@@ -92,7 +92,7 @@ Findings:
 
 - `jfilak/sapcli` is the only public result found that implements transaction `TRAN/T` against `/sap/bc/adt/aps/iam/tran`.
 - [`SAP/open-ux-tools`](https://github.com/SAP/open-ux-tools/blob/33a479c8fd5ae654b1cd8d4e5b2d5caa106647b1/packages/axios-extension/test/abap/abap-service-provider.test.ts) also references `application/vnd.sap.adt.serverdriven.content.v1+json`, but for RAP generator content (`framework=generators.v1`), not transaction objects.
-- No ARC-1 issue or PR was found for `TRAN/T`, `/aps/iam/tran`, transaction source, or `SAPWrite` transaction support. The only related ARC-1 PR is [#21](https://github.com/marianfoo/arc-1/pull/21), which explicitly implemented `TRAN` metadata through VIT plus optional `TSTC` SQL.
+- No ARC-1 issue or PR was found for `TRAN/T`, `/aps/iam/tran`, transaction source, or `SAPWrite` transaction support. The only related ARC-1 PR is [#21](https://github.com/arc-mcp/arc-1/pull/21), which explicitly implemented `TRAN` metadata through VIT plus optional `TSTC` SQL.
 
 ## Live Probe Results
 

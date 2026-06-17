@@ -39,7 +39,7 @@ docker run -d --name arc1 -p 8080:8080 \
   -e SAP_USER=YOUR_USER \
   -e SAP_PASSWORD=YOUR_PASS \
   -e SAP_CLIENT=100 \
-  ghcr.io/marianfoo/arc-1:latest
+  ghcr.io/arc-mcp/arc-1:latest
 ```
 
 Defaults to HTTP Streamable on `:8080`. Connect MCP clients to `http://localhost:8080/mcp`. Full Docker reference → [docker.md](docker.md).
@@ -49,7 +49,7 @@ For stdio mode inside Docker (Claude Desktop wraps the `docker run` in the MCP c
 ### git clone (contributing or running from source)
 
 ```bash
-git clone https://github.com/marianfoo/arc-1.git
+git clone https://github.com/arc-mcp/arc-1.git
 cd arc-1
 npm ci
 cp .env.example .env       # then edit for your SAP system
@@ -87,7 +87,7 @@ SAP_LANGUAGE=EN
 
 **The `.env` file loads automatically for `npm run dev`, `npm start`, and the `arc1` CLI.** For `npx` and Docker, pass values as env vars or flags instead.
 
-Full grouped template with every option: see [`.env.example`](https://github.com/marianfoo/arc-1/blob/main/.env.example). The file is grouped into Layer B (ARC-1 → SAP) and Layer A (MCP Client → ARC-1) blocks with fail-fast rules documented inline.
+Full grouped template with every option: see [`.env.example`](https://github.com/arc-mcp/arc-1/blob/main/.env.example). The file is grouped into Layer B (ARC-1 → SAP) and Layer A (MCP Client → ARC-1) blocks with fail-fast rules documented inline.
 
 ### Where do my config values come from?
 

@@ -32,8 +32,8 @@ without spawning a new process per session.
 ## Quick Start
 
 > **No Docker Hub needed.** Pre-built images are published automatically to
-> [GitHub Container Registry (GHCR)](https://github.com/marianfoo/arc-1/pkgs/container/arc-1) on every
-> release. Pull them with `docker pull ghcr.io/marianfoo/arc-1:latest`.
+> [GitHub Container Registry (GHCR)](https://github.com/arc-mcp/arc-1/pkgs/container/arc-1) on every
+> release. Pull them with `docker pull ghcr.io/arc-mcp/arc-1:latest`.
 
 ### HTTP streamable (default — recommended)
 
@@ -48,7 +48,7 @@ docker run -d --rm \
   -e SAP_URL=https://host:44300 \
   -e SAP_USER=developer \
   -e SAP_PASSWORD=secret \
-  ghcr.io/marianfoo/arc-1:latest
+  ghcr.io/arc-mcp/arc-1:latest
 
 # Verify it is up
 curl -s http://localhost:8080/mcp   # should return an MCP protocol response
@@ -62,7 +62,7 @@ docker run -i --rm \
   -e SAP_USER=developer \
   -e SAP_PASSWORD=secret \
   -e SAP_TRANSPORT=stdio \
-  ghcr.io/marianfoo/arc-1:latest
+  ghcr.io/arc-mcp/arc-1:latest
 ```
 
 > **`-i` is required for stdio mode.** MCP communicates over stdin/stdout.
@@ -79,16 +79,16 @@ pulling or publishing.
 ### Image location
 
 ```
-ghcr.io/marianfoo/arc-1
+ghcr.io/arc-mcp/arc-1
 ```
 
 ### Available tags
 
 | Tag | Example | Description |
 |---|---|---|
-| `latest` | `ghcr.io/marianfoo/arc-1:latest` | Updated on every push to main (dev builds) and on every release |
-| `x.y.z` | `ghcr.io/marianfoo/arc-1:0.9.14` | Exact version (immutable, created on release) |
-| `x.y` | `ghcr.io/marianfoo/arc-1:0.9` | Latest patch within minor (created on release) |
+| `latest` | `ghcr.io/arc-mcp/arc-1:latest` | Updated on every push to main (dev builds) and on every release |
+| `x.y.z` | `ghcr.io/arc-mcp/arc-1:0.9.14` | Exact version (immutable, created on release) |
+| `x.y` | `ghcr.io/arc-mcp/arc-1:0.9` | Latest patch within minor (created on release) |
 
 **`latest`** is rebuilt on every push to `main`, so it always reflects the newest code — even unreleased changes. Use versioned tags for production.
 
@@ -96,10 +96,10 @@ ghcr.io/marianfoo/arc-1
 
 ```bash
 # Latest (includes unreleased changes from main)
-docker pull ghcr.io/marianfoo/arc-1:latest
+docker pull ghcr.io/arc-mcp/arc-1:latest
 
 # Pinned version (recommended for production/team use)
-docker pull ghcr.io/marianfoo/arc-1:0.9.14
+docker pull ghcr.io/arc-mcp/arc-1:0.9.14
 ```
 
 ### Supported platforms
@@ -257,7 +257,7 @@ docker run -d --rm \
   -p 8080:8080 \
   --env-file .env \
   -e SAP_ALLOW_WRITES=true -e SAP_ALLOW_TRANSPORT_WRITES=true \
-  ghcr.io/marianfoo/arc-1:latest
+  ghcr.io/arc-mcp/arc-1:latest
 ```
 
 For the "everything on" local-dev path:
@@ -268,7 +268,7 @@ docker run -d --rm \
   --env-file .env \
   -e SAP_ALLOW_WRITES=true SAP_ALLOW_DATA_PREVIEW=true SAP_ALLOW_FREE_SQL=true SAP_ALLOW_TRANSPORT_WRITES=true \
   -e SAP_ALLOWED_PACKAGES='*' \
-  ghcr.io/marianfoo/arc-1:latest
+  ghcr.io/arc-mcp/arc-1:latest
 ```
 
 Keep credentials and stable connection settings in `.env`; layer temporary overrides with `-e`.
@@ -286,7 +286,7 @@ docker run -i --rm \
   -e SAP_URL=https://host:44300 \
   -e SAP_COOKIE_FILE=/cookies/cookies.txt \
   -v /path/to/local/cookies.txt:/cookies/cookies.txt:ro \
-  ghcr.io/marianfoo/arc-1:latest
+  ghcr.io/arc-mcp/arc-1:latest
 ```
 
 The cookie file must use the Netscape format exported by browser extensions like *Edit This Cookie* or *Cookie-Editor*.
@@ -314,7 +314,7 @@ docker run -i --rm \
 For a permanent fix, extend the image:
 
 ```dockerfile
-FROM ghcr.io/marianfoo/arc-1:latest
+FROM ghcr.io/arc-mcp/arc-1:latest
 USER root
 COPY company-ca.crt /usr/local/share/ca-certificates/
 RUN update-ca-certificates
@@ -371,7 +371,7 @@ docker run -d --name arc1 \
   -e SAP_URL=https://my-sap-system:44300 \
   -e SAP_USER=developer \
   -e SAP_PASSWORD=secret \
-  ghcr.io/marianfoo/arc-1:latest
+  ghcr.io/arc-mcp/arc-1:latest
 ```
 
 Then configure your MCP client to use the HTTP URL:
@@ -405,7 +405,7 @@ stdio mode by overriding the transport:
         "-e", "SAP_USER=developer",
         "-e", "SAP_PASSWORD=secret",
         "-e", "SAP_TRANSPORT=stdio",
-        "ghcr.io/marianfoo/arc-1:latest"
+        "ghcr.io/arc-mcp/arc-1:latest"
       ]
     }
   }
@@ -425,7 +425,7 @@ For a production system (read-only is already the default — no extra flags nee
         "-e", "SAP_USER=readonly_user",
         "-e", "SAP_PASSWORD=secret",
         "-e", "SAP_TRANSPORT=stdio",
-        "ghcr.io/marianfoo/arc-1:latest"
+        "ghcr.io/arc-mcp/arc-1:latest"
       ]
     }
   }
@@ -436,7 +436,7 @@ For a production system (read-only is already the default — no extra flags nee
 > out of the config file. Reference the absolute path to the env file:
 >
 > ```json
-> "args": ["run", "-i", "--rm", "-e", "SAP_TRANSPORT=stdio", "--env-file", "/Users/me/.arc1-prod.env", "ghcr.io/marianfoo/arc-1:latest"]
+> "args": ["run", "-i", "--rm", "-e", "SAP_TRANSPORT=stdio", "--env-file", "/Users/me/.arc1-prod.env", "ghcr.io/arc-mcp/arc-1:latest"]
 > ```
 
 ### Gemini CLI / Other Agents
@@ -456,17 +456,17 @@ For a comprehensive update guide covering all deployment modes (Docker, BTP, npm
 
 ```bash
 # Pull a specific version (recommended for production)
-docker pull ghcr.io/marianfoo/arc-1:0.9.14
+docker pull ghcr.io/arc-mcp/arc-1:0.9.14
 
 # Pull latest (includes unreleased changes from main)
-docker pull ghcr.io/marianfoo/arc-1:latest
+docker pull ghcr.io/arc-mcp/arc-1:latest
 
 # Stop, remove, restart with new image
 docker stop arc1 && docker rm arc1
-docker run -d --name arc1 -p 8080:8080 --env-file .env ghcr.io/marianfoo/arc-1:0.9.14
+docker run -d --name arc1 -p 8080:8080 --env-file .env ghcr.io/arc-mcp/arc-1:0.9.14
 
 # Verify version
-docker run --rm ghcr.io/marianfoo/arc-1:0.9.14 --version
+docker run --rm ghcr.io/arc-mcp/arc-1:0.9.14 --version
 ```
 
 ### Pinning a version (recommended)
@@ -475,12 +475,12 @@ For production or shared team environments, always pin to a specific version
 tag rather than `latest`:
 
 ```
-ghcr.io/marianfoo/arc-1:0.9.14
+ghcr.io/arc-mcp/arc-1:0.9.14
 ```
 
 This ensures every team member uses the same binary regardless
 of when the image was pulled. Check the
-[GitHub releases page](https://github.com/marianfoo/arc-1/releases)
+[GitHub releases page](https://github.com/arc-mcp/arc-1/releases)
 for the latest version.
 
 ### Rebuilding from source
@@ -495,7 +495,7 @@ docker build -t arc1:latest .
 Teams that want automatic image updates can use tools like
 [Renovate](https://docs.renovatebot.com/) or
 [Dependabot](https://docs.github.com/en/code-security/dependabot) to open PRs
-when a new `ghcr.io/marianfoo/arc-1` image tag is published.
+when a new `ghcr.io/arc-mcp/arc-1` image tag is published.
 
 ---
 

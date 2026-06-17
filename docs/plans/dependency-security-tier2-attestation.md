@@ -24,7 +24,7 @@ Design decisions:
 
 - `.github/workflows/release.yml:66` runs `npm publish --provenance --access public`. npm provenance is **enabled** — every release tarball on npmjs.org carries a Sigstore-signed attestation pointing to this repo + commit + workflow. Verifiable via `npm audit signatures` after install.
 - No SBOM is generated or attached to releases. `npm sbom` (npm 10+) is available locally but not invoked in CI.
-- No Docker image signing. Images at `ghcr.io/marianfoo/arc-1:<tag>` are published unsigned (the registry's transport-layer auth is the only attestation).
+- No Docker image signing. Images at `ghcr.io/arc-mcp/arc-1:<tag>` are published unsigned (the registry's transport-layer auth is the only attestation).
 - No OpenSSF Scorecard workflow. No score is computed or published. No badge.
 - The release workflow uses `npm publish --provenance --access public` with `permissions: id-token: write` (`release.yml:28-29`) — the OIDC plumbing for Sigstore is already configured. Cosign keyless signing reuses the same `id-token: write` permission.
 - `release.yml:155-156` exports per-arch image digests as workflow artifacts before merging into a multi-arch manifest in `publish-docker-merge`. The merge step is `release.yml:168-205` — the right place to sign the *manifest* (which is what `:vX.Y.Z` and `:latest` tags resolve to), not the per-arch images.
@@ -38,7 +38,7 @@ Design decisions:
 - Every release publishes:
   1. A CycloneDX SBOM (`arc-1-<version>-sbom.cdx.json`) attached to the GitHub Release.
   2. A second CycloneDX SBOM (`arc-1-<version>-image-sbom.cdx.json`) generated from the published image and attached as a Cosign attestation.
-  3. A Cosign keyless signature on the multi-arch image manifest at `ghcr.io/marianfoo/arc-1:<version>` and `:latest`, verifiable via `cosign verify --certificate-identity-regexp "https://github.com/marianfoo/arc-1/.github/workflows/release.yml" --certificate-oidc-issuer "https://token.actions.githubusercontent.com" ghcr.io/marianfoo/arc-1:<version>`.
+  3. A Cosign keyless signature on the multi-arch image manifest at `ghcr.io/arc-mcp/arc-1:<version>` and `:latest`, verifiable via `cosign verify --certificate-identity-regexp "https://github.com/arc-mcp/arc-1/.github/workflows/release.yml" --certificate-oidc-issuer "https://token.actions.githubusercontent.com" ghcr.io/arc-mcp/arc-1:<version>`.
 - npm provenance remains enabled and is **documented** (`docs_page/security-guide.md`) with the verification command `npm audit signatures arc-1`.
 - An OpenSSF Scorecard workflow runs weekly, publishes results to the Security tab, and updates a Scorecard badge in `README.md`. Target initial score: ≥ 7/10 (achievable with Tier 1 + Tier 2 together; Tier 1 alone scores around 5).
 - `docs_page/security-guide.md` has a new section "Supply-Chain Attestation (Tier 2)" with verification commands. `docs_page/roadmap.md` adds `SEC-12` completed entry. `compare/00-feature-matrix.md` extends the Tier 1 supply-chain subsection with attestation rows. `README.md` adds the Scorecard badge. `CLAUDE.md` Key Files table lists the new workflow steps.
@@ -91,7 +91,7 @@ Generate two SBOMs per release: one for the npm tarball (built from `package-loc
   - Inputs: `tag_name: ${{ needs.release-please.outputs.tag_name }}`, `files: arc-1-*-sbom.cdx.json`, `fail_on_unmatched_files: true`.
   - The `release-please` action created the release earlier in the workflow; this step adds an asset to the existing release rather than creating a new one.
 - [ ] In the `publish-docker-merge` job (line 168-205), after the `Create manifest list and push` step (line 199-205), add a step `Generate image SBOM (CycloneDX)` using `anchore/sbom-action@<commit-SHA>`:
-  - Inputs: `image: ghcr.io/marianfoo/arc-1:${{ needs.release-please.outputs.tag_name }}`, `format: cyclonedx-json`, `output-file: arc-1-${{ needs.release-please.outputs.tag_name }}-image-sbom.cdx.json`, `upload-artifact: false` (uploaded as a release asset in the next step).
+  - Inputs: `image: ghcr.io/arc-mcp/arc-1:${{ needs.release-please.outputs.tag_name }}`, `format: cyclonedx-json`, `output-file: arc-1-${{ needs.release-please.outputs.tag_name }}-image-sbom.cdx.json`, `upload-artifact: false` (uploaded as a release asset in the next step).
 - [ ] Add another step `Attach image SBOM to GitHub Release`:
   - `softprops/action-gh-release@<commit-SHA>` again, `files: arc-1-*-image-sbom.cdx.json`.
 - [ ] Validate YAML.
@@ -103,20 +103,20 @@ Generate two SBOMs per release: one for the npm tarball (built from `package-loc
 **Files:**
 - Modify: `.github/workflows/release.yml`
 
-Sign the multi-arch manifest in the `publish-docker-merge` job using `cosign sign --yes` with keyless OIDC. The signer identity becomes `https://github.com/marianfoo/arc-1/.github/workflows/release.yml@<ref>` issued by `https://token.actions.githubusercontent.com`. Verifiers (Kyverno, Gatekeeper, Connaisseur, manual `cosign verify`) check both the issuer URL and the workflow path — pinning verification to *this* repo's *this* workflow.
+Sign the multi-arch manifest in the `publish-docker-merge` job using `cosign sign --yes` with keyless OIDC. The signer identity becomes `https://github.com/arc-mcp/arc-1/.github/workflows/release.yml@<ref>` issued by `https://token.actions.githubusercontent.com`. Verifiers (Kyverno, Gatekeeper, Connaisseur, manual `cosign verify`) check both the issuer URL and the workflow path — pinning verification to *this* repo's *this* workflow.
 
 - [ ] In `.github/workflows/release.yml`, in the `publish-docker-merge` job, ensure `permissions:` includes `id-token: write` (already present? confirm — if not, add). Currently the job has `contents: read, packages: write`; add `id-token: write` if missing.
 - [ ] After `Create manifest list and push` (line 199-205) and after the SBOM steps from Task 1, add a step `Install Cosign`:
   - Use `sigstore/cosign-installer@<commit-SHA>` with `cosign-release: 'v2.4.0'` (pin to a known version; bump via Dependabot's `github-actions` group).
 - [ ] Add a step `Sign image with Cosign (keyless)`:
-  - Run: `cosign sign --yes ghcr.io/marianfoo/arc-1@${digest}` for each tag — but the cleanest approach is signing by digest (immutable). Get the merged manifest digest from the `imagetools create` output: capture stdout into `MANIFEST_DIGEST`, then `cosign sign --yes ghcr.io/marianfoo/arc-1@${MANIFEST_DIGEST}`.
-  - Alternative (simpler, sufficient): sign by tag — `for tag in latest ${VERSION} ${MAJOR_MINOR}; do cosign sign --yes ghcr.io/marianfoo/arc-1:$tag; done`. Tag-based signing works because Cosign records the digest at sign-time; verifiers resolve `:tag` to digest before checking the signature. Use this approach unless there's a specific reason for digest-only.
+  - Run: `cosign sign --yes ghcr.io/arc-mcp/arc-1@${digest}` for each tag — but the cleanest approach is signing by digest (immutable). Get the merged manifest digest from the `imagetools create` output: capture stdout into `MANIFEST_DIGEST`, then `cosign sign --yes ghcr.io/arc-mcp/arc-1@${MANIFEST_DIGEST}`.
+  - Alternative (simpler, sufficient): sign by tag — `for tag in latest ${VERSION} ${MAJOR_MINOR}; do cosign sign --yes ghcr.io/arc-mcp/arc-1:$tag; done`. Tag-based signing works because Cosign records the digest at sign-time; verifiers resolve `:tag` to digest before checking the signature. Use this approach unless there's a specific reason for digest-only.
   - Environment: `COSIGN_EXPERIMENTAL: '1'` is no longer needed for v2+; omit it.
 - [ ] Add a step `Verify Cosign signature (sanity check)`:
-  - `cosign verify ghcr.io/marianfoo/arc-1:${{ needs.release-please.outputs.tag_name }} --certificate-identity-regexp "https://github.com/marianfoo/arc-1/.github/workflows/release.yml" --certificate-oidc-issuer "https://token.actions.githubusercontent.com"`.
+  - `cosign verify ghcr.io/arc-mcp/arc-1:${{ needs.release-please.outputs.tag_name }} --certificate-identity-regexp "https://github.com/arc-mcp/arc-1/.github/workflows/release.yml" --certificate-oidc-issuer "https://token.actions.githubusercontent.com"`.
   - This step **must** succeed; if it fails, the release fails. Do NOT use `continue-on-error: true` here — a verification failure means signing didn't actually work.
 - [ ] Validate YAML.
-- [ ] Test end-to-end on a feature branch via a `workflow_dispatch` trigger (or wait for the next release-please PR to fire it naturally). After a successful signed release, run from a workstation: `cosign verify ghcr.io/marianfoo/arc-1:<test-tag> --certificate-identity-regexp "https://github.com/marianfoo/arc-1/.github/workflows/release.yml" --certificate-oidc-issuer "https://token.actions.githubusercontent.com"` — must print the certificate details and exit 0.
+- [ ] Test end-to-end on a feature branch via a `workflow_dispatch` trigger (or wait for the next release-please PR to fire it naturally). After a successful signed release, run from a workstation: `cosign verify ghcr.io/arc-mcp/arc-1:<test-tag> --certificate-identity-regexp "https://github.com/arc-mcp/arc-1/.github/workflows/release.yml" --certificate-oidc-issuer "https://token.actions.githubusercontent.com"` — must print the certificate details and exit 0.
 - [ ] Run `npm test` — all tests must pass.
 
 ### Task 3: Attach Image SBOM as Cosign Attestation
@@ -127,13 +127,13 @@ Sign the multi-arch manifest in the `publish-docker-merge` job using `cosign sig
 The image SBOM generated in Task 1 currently lives only on the GitHub Release. Attach it to the image as an OCI attestation so customers pulling from `ghcr.io` can fetch the SBOM with `cosign download attestation` without GitHub access. Use `cosign attest` with `--predicate <sbom-file>` and `--type cyclonedx`.
 
 - [ ] In `release.yml` `publish-docker-merge` job, after the Cosign signature step (Task 2) and after the image SBOM generation step (Task 1), add a step `Attach SBOM as Cosign attestation`:
-  - Run: `cosign attest --yes --type cyclonedx --predicate arc-1-${{ needs.release-please.outputs.tag_name }}-image-sbom.cdx.json ghcr.io/marianfoo/arc-1:${{ needs.release-please.outputs.tag_name }}`.
+  - Run: `cosign attest --yes --type cyclonedx --predicate arc-1-${{ needs.release-please.outputs.tag_name }}-image-sbom.cdx.json ghcr.io/arc-mcp/arc-1:${{ needs.release-please.outputs.tag_name }}`.
   - Optionally repeat for `:latest` and `:major.minor` tags so all three resolve to a tagged-but-attested image.
 - [ ] Add a step `Verify SBOM attestation (sanity check)`:
-  - `cosign verify-attestation --type cyclonedx ghcr.io/marianfoo/arc-1:${{ needs.release-please.outputs.tag_name }} --certificate-identity-regexp "https://github.com/marianfoo/arc-1/.github/workflows/release.yml" --certificate-oidc-issuer "https://token.actions.githubusercontent.com"`.
+  - `cosign verify-attestation --type cyclonedx ghcr.io/arc-mcp/arc-1:${{ needs.release-please.outputs.tag_name }} --certificate-identity-regexp "https://github.com/arc-mcp/arc-1/.github/workflows/release.yml" --certificate-oidc-issuer "https://token.actions.githubusercontent.com"`.
   - Must succeed — same fail-loud rule as Task 2.
 - [ ] Document the verification flow in this task's notes (carries forward to docs in Task 5):
-  - `cosign download attestation ghcr.io/marianfoo/arc-1:<version> | jq '.payload | @base64d | fromjson | .predicate' > sbom.json` extracts the SBOM into a usable file.
+  - `cosign download attestation ghcr.io/arc-mcp/arc-1:<version> | jq '.payload | @base64d | fromjson | .predicate' > sbom.json` extracts the SBOM into a usable file.
 - [ ] Validate YAML.
 - [ ] Test end-to-end via the same `workflow_dispatch` path used in Task 2.
 - [ ] Run `npm test` — all tests must pass.
@@ -152,7 +152,7 @@ OpenSSF Scorecard is an automated security health check (18 checks: branch prote
   - `ossf/scorecard-action@<commit-SHA>` (third-party — pin to SHA). Inputs: `results_file: results.sarif`, `results_format: sarif`, `publish_results: true` (publishes to the OpenSSF Scorecard public dashboard so the badge resolves).
   - `actions/upload-artifact@v7` with `name: SARIF file`, `path: results.sarif`, `retention-days: 5`.
   - `github/codeql-action/upload-sarif@v4` with `sarif_file: results.sarif`.
-- [ ] Note: `publish_results: true` requires the `id-token: write` permission and submits results to `https://api.securityscorecards.dev/`. Once published, the badge URL `https://api.securityscorecards.dev/projects/github.com/marianfoo/arc-1/badge` resolves to the score.
+- [ ] Note: `publish_results: true` requires the `id-token: write` permission and submits results to `https://api.securityscorecards.dev/`. Once published, the badge URL `https://api.securityscorecards.dev/projects/github.com/arc-mcp/arc-1/badge` resolves to the score.
 - [ ] Validate YAML.
 - [ ] Push the branch. Trigger the workflow via `workflow_dispatch` and verify:
   - It runs successfully.
@@ -175,8 +175,8 @@ Operators need a single page that shows verification commands for npm provenance
   - `### 14.1 npm package provenance` — explain npm provenance; verification command: `npm audit signatures arc-1` (after `npm install arc-1`). Reference the Sigstore docs.
   - `### 14.2 Container image signature` — verification command:
     ```bash
-    cosign verify ghcr.io/marianfoo/arc-1:<version> \
-      --certificate-identity-regexp "https://github.com/marianfoo/arc-1/.github/workflows/release.yml" \
+    cosign verify ghcr.io/arc-mcp/arc-1:<version> \
+      --certificate-identity-regexp "https://github.com/arc-mcp/arc-1/.github/workflows/release.yml" \
       --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
     ```
     Document Kyverno / Gatekeeper / Connaisseur policy snippets that pin to this identity for customers running admission-controlled clusters.
@@ -186,14 +186,14 @@ Operators need a single page that shows verification commands for npm provenance
     gh release download v<version> --pattern '*-sbom.cdx.json'
 
     # Image attestation
-    cosign download attestation ghcr.io/marianfoo/arc-1:<version> \
+    cosign download attestation ghcr.io/arc-mcp/arc-1:<version> \
       | jq '.payload | @base64d | fromjson | .predicate'
     ```
-  - `### 14.4 OpenSSF Scorecard` — what the score measures, where the dashboard is (`https://scorecard.dev/viewer/?uri=github.com/marianfoo/arc-1`), and how to interpret a low score.
+  - `### 14.4 OpenSSF Scorecard` — what the score measures, where the dashboard is (`https://scorecard.dev/viewer/?uri=github.com/arc-mcp/arc-1`), and how to interpret a low score.
 - [ ] In `README.md`:
   - Add the Scorecard badge in the badges block:
     ```
-    [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/marianfoo/arc-1/badge)](https://scorecard.dev/viewer/?uri=github.com/marianfoo/arc-1)
+    [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/arc-mcp/arc-1/badge)](https://scorecard.dev/viewer/?uri=github.com/arc-mcp/arc-1)
     ```
   - Update the existing "Supply-chain security" bullet (added in Tier 1) to read: "Dependabot, npm audit, Dependency Review, CodeQL, Trivy, **Cosign keyless image signing, CycloneDX SBOM, npm provenance, OpenSSF Scorecard**. See [security guide §13–14](docs_page/security-guide.md#13-dependency--supply-chain-security)."
 - [ ] In `docs_page/roadmap.md`:
@@ -215,20 +215,20 @@ Operators need a single page that shows verification commands for npm provenance
 - [ ] Run `npm run lint` — no errors.
 - [ ] Confirm the next release (or the `workflow_dispatch` test trigger) produces:
   - A GitHub Release with both `arc-1-<version>-sbom.cdx.json` and `arc-1-<version>-image-sbom.cdx.json` as assets.
-  - A signed image at `ghcr.io/marianfoo/arc-1:<version>` — verify locally:
+  - A signed image at `ghcr.io/arc-mcp/arc-1:<version>` — verify locally:
     ```
-    cosign verify ghcr.io/marianfoo/arc-1:<version> \
-      --certificate-identity-regexp "https://github.com/marianfoo/arc-1/.github/workflows/release.yml" \
+    cosign verify ghcr.io/arc-mcp/arc-1:<version> \
+      --certificate-identity-regexp "https://github.com/arc-mcp/arc-1/.github/workflows/release.yml" \
       --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
     ```
   - An SBOM attestation on the same image — verify locally:
     ```
-    cosign verify-attestation --type cyclonedx ghcr.io/marianfoo/arc-1:<version> \
-      --certificate-identity-regexp "https://github.com/marianfoo/arc-1/.github/workflows/release.yml" \
+    cosign verify-attestation --type cyclonedx ghcr.io/arc-mcp/arc-1:<version> \
+      --certificate-identity-regexp "https://github.com/arc-mcp/arc-1/.github/workflows/release.yml" \
       --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
     ```
   - npm provenance verifies via `npm install arc-1@<version> && npm audit signatures arc-1`.
 - [ ] Confirm the OpenSSF Scorecard badge in README.md resolves to a score image (not a "not found" placeholder).
-- [ ] Confirm the Scorecard public dashboard shows the project: `https://scorecard.dev/viewer/?uri=github.com/marianfoo/arc-1`.
+- [ ] Confirm the Scorecard public dashboard shows the project: `https://scorecard.dev/viewer/?uri=github.com/arc-mcp/arc-1`.
 - [ ] Confirm `docs_page/security-guide.md` §14 renders correctly via `mkdocs build`.
 - [ ] Move this plan to `docs/plans/completed/dependency-security-tier2-attestation.md`.

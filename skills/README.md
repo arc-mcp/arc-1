@@ -9,7 +9,7 @@ Each skill is a directory containing a `SKILL.md` file with YAML frontmatter —
 For **Claude Code**, the whole toolchain ships as a single plugin — the ARC-1 **MCP server** *and* every skill below — from a marketplace hosted in this repo:
 
 ```text
-/plugin marketplace add marianfoo/arc-1
+/plugin marketplace add arc-mcp/arc-1
 /plugin install arc-1@arc-1
 ```
 
@@ -28,16 +28,16 @@ The fastest way is `npx skills` — it auto-detects the agents installed in your
 
 ```bash
 # Install all ARC-1 skills into the current project
-npx skills add marianfoo/arc-1
+npx skills add arc-mcp/arc-1
 
 # Install globally (available in every project)
-npx skills add marianfoo/arc-1 -g
+npx skills add arc-mcp/arc-1 -g
 
 # Install just one skill
-npx skills add marianfoo/arc-1 -s generate-rap-service
+npx skills add arc-mcp/arc-1 -s generate-rap-service
 
 # Pin to a release tag
-npx skills add marianfoo/arc-1#v1.0.0
+npx skills add arc-mcp/arc-1#v1.0.0
 ```
 
 See the [`skills` CLI docs](https://github.com/vercel-labs/skills#readme) for `update`, `remove`, project-pinned lockfiles, and the full agent compatibility matrix.
@@ -58,7 +58,7 @@ Copy the whole `skills/<skill-name>/` directory into your tool's skills director
 Example for Claude Code (project scope):
 
 ```bash
-git clone https://github.com/marianfoo/arc-1.git /tmp/arc-1
+git clone https://github.com/arc-mcp/arc-1.git /tmp/arc-1
 mkdir -p .claude/skills
 cp -r /tmp/arc-1/skills/generate-rap-service .claude/skills/
 ```

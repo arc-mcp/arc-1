@@ -1,7 +1,7 @@
 # Test Suite Audit
 
 Date: 2026-05-11
-Repository: `marianfoo/arc-1`
+Repository: `arc-mcp/arc-1`
 Baseline commit: `85112917` (`chore(main): release 0.9.5 (#266)`)
 Target SAP system used: A4H/S4 test system via local infrastructure credentials.
 
@@ -198,7 +198,7 @@ Validation commands also run:
 
 ## GitHub Actions Runtime Deep Dive
 
-Reference run: <https://github.com/marianfoo/arc-1/actions/runs/25674270461?pr=262><br>
+Reference run: <https://github.com/arc-mcp/arc-1/actions/runs/25674270461?pr=262><br>
 Workflow title: `feat(skills): add SEGW→RAP migration + UI5 modernization + Fiori Elements skills`<br>
 Run date: 2026-05-11.<br>
 Status: success.

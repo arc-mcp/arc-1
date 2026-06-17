@@ -5,7 +5,7 @@ labels: ["enhancement"]
 body:
   - type: markdown
     attributes:
-      value: "Thanks for the idea! Please [search existing issues](https://github.com/marianfoo/arc-1/issues?q=is%3Aissue) first — many requests are already tracked."
+      value: "Thanks for the idea! Please [search existing issues](https://github.com/arc-mcp/arc-1/issues?q=is%3Aissue) first — many requests are already tracked."
 
   - type: checkboxes
     id: preflight

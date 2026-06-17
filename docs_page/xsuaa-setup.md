@@ -284,7 +284,7 @@ Reopen Eclipse → use the server → it registers fresh and prompts you to sign
 
 Cursor also caches its registration and may not re-register on `invalid_client`. Reset it by **removing the MCP server entry, restarting Cursor, then re-adding it**. With the stable signing key set (above), you only ever do this once.
 
-> **Found an easier way to recover an Eclipse or Cursor MCP login?** MCP-client behavior is still evolving — please [open an issue or PR](https://github.com/marianfoo/arc-1/issues/new) so these docs can capture the simplest known fix.
+> **Found an easier way to recover an Eclipse or Cursor MCP login?** MCP-client behavior is still evolving — please [open an issue or PR](https://github.com/arc-mcp/arc-1/issues/new) so these docs can capture the simplest known fix.
 
 ### Browser-based DCR clients (rare)
 

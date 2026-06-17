@@ -302,11 +302,11 @@ Other actions (`edit_method`, surgery, `batch_create`, RAP scaffolding) are not 
 
 **Function group (`FUGR`) create:** POSTs `<group:abapFunctionGroup … adtcore:type="FUGR/F">` to `/sap/bc/adt/functions/groups` with content type `application/vnd.sap.adt.functions.groups.v3+xml`. Provide `package` and (for non-`$TMP`) `transport`. Delete the FUGR only after all its function modules have been deleted.
 
-**Function module (`FUNC`) create / update / delete (issue [#250](https://github.com/marianfoo/arc-1/issues/250)):** The parent FUGR must already exist — pass `group` explicitly on create (or auto-resolve via search on update/delete). Create POSTs `<fmodule:abapFunctionModule … adtcore:type="FUGR/FF">` with `<adtcore:containerRef>` to `/sap/bc/adt/functions/groups/{group}/fmodules`. The FM inherits its package from the parent FUGR — do not pass `package`. SAPGUI-style `*"…IMPORTING…"*` parameter comment blocks in source are auto-stripped before PUT as defense-in-depth (SAP rejects them with `FUNC_ADT028`) and a warning is appended in that case.
+**Function module (`FUNC`) create / update / delete (issue [#250](https://github.com/arc-mcp/arc-1/issues/250)):** The parent FUGR must already exist — pass `group` explicitly on create (or auto-resolve via search on update/delete). Create POSTs `<fmodule:abapFunctionModule … adtcore:type="FUGR/FF">` with `<adtcore:containerRef>` to `/sap/bc/adt/functions/groups/{group}/fmodules`. The FM inherits its package from the parent FUGR — do not pass `package`. SAPGUI-style `*"…IMPORTING…"*` parameter comment blocks in source are auto-stripped before PUT as defense-in-depth (SAP rejects them with `FUNC_ADT028`) and a warning is appended in that case.
 
 #### SAPWrite for FUNC: create / update with structured parameters
 
-Issue [#252](https://github.com/marianfoo/arc-1/issues/252) added structured FM parameter management. Pass a `parameters` array to declare the function module's signature; ARC-1 builds the ABAP-source-based `IMPORTING / EXPORTING / CHANGING / TABLES / EXCEPTIONS / RAISING` clause and splices it into the source body before PUT. SAP ADT exposes parameters ONLY through `/source/main` (verified live on a4h S/4HANA 2023 + NPL 7.50 SP02) — there is no separate metadata endpoint.
+Issue [#252](https://github.com/arc-mcp/arc-1/issues/252) added structured FM parameter management. Pass a `parameters` array to declare the function module's signature; ARC-1 builds the ABAP-source-based `IMPORTING / EXPORTING / CHANGING / TABLES / EXCEPTIONS / RAISING` clause and splices it into the source body before PUT. SAP ADT exposes parameters ONLY through `/source/main` (verified live on a4h S/4HANA 2023 + NPL 7.50 SP02) — there is no separate metadata endpoint.
 
 Each parameter:
 
@@ -478,7 +478,7 @@ SAPWrite(action="generate_behavior_implementation", type="CLAS", name="ZBP_DM_PR
 
 ### Class-section surgery
 
-[Issue #303](https://github.com/marianfoo/arc-1/issues/303). Four token-efficient `SAPWrite` actions for editing a global ABAP class without re-sending the full `/source/main` body. All require `type=CLAS` and use SAP's existing `/sap/bc/adt/oo/classes/{name}/objectstructure` endpoint to locate the precise line ranges to splice — no client-side ABAP parsing of the existing source is needed.
+[Issue #303](https://github.com/arc-mcp/arc-1/issues/303). Four token-efficient `SAPWrite` actions for editing a global ABAP class without re-sending the full `/source/main` body. All require `type=CLAS` and use SAP's existing `/sap/bc/adt/oo/classes/{name}/objectstructure` endpoint to locate the precise line ranges to splice — no client-side ABAP parsing of the existing source is needed.
 
 Backing pattern for main-source surgery: GET `/objectstructure` → fetch active or inactive-draft `/source/main` → splice → PUT under lock → no auto-activate. Caller runs `SAPActivate` next. For `edit_class_definition include=...`, ARC-1 whole-replaces the class-local include directly and auto-initializes a missing include under the same parent class lock before the PUT.
 
@@ -655,7 +655,7 @@ Execute ABAP SQL queries against SAP tables.
 
 ABAP SQL as a language supports JOINs and subqueries, but the freestyle endpoint parser can still reject valid-looking statements on some backend versions (for example grammar errors or single-SELECT enforcement). ARC-1 automatically chunks simple long literal `IN (...)` lists into smaller freestyle calls. If parsing still fails, simplify to one SELECT and split complex logic into staged queries.
 
-See: [SAPQuery Freestyle Capability Matrix](https://github.com/marianfoo/arc-1/blob/main/docs/research/sapquery-freestyle-capability-matrix.md)
+See: [SAPQuery Freestyle Capability Matrix](https://github.com/arc-mcp/arc-1/blob/main/docs/research/sapquery-freestyle-capability-matrix.md)
 
 **Examples:**
 ```

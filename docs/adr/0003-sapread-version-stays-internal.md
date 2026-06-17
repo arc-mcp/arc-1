@@ -1,13 +1,13 @@
 # ADR 0003 — SAPRead `version` parameter stays internal until diff feature is designed
 
-**Status:** **Superseded** — see [PR #186](https://github.com/marianfoo/arc-1/pull/186) (merged 2026-04-28).
+**Status:** **Superseded** — see [PR #186](https://github.com/arc-mcp/arc-1/pull/186) (merged 2026-04-28).
 **Original date:** 2026-04-28 (proposed)
 **Superseded date:** 2026-04-28
-**Related PR:** [#196](https://github.com/marianfoo/arc-1/pull/196) (NW 7.50 compatibility fixes — proposed `version` on SAPRead)
+**Related PR:** [#196](https://github.com/arc-mcp/arc-1/pull/196) (NW 7.50 compatibility fixes — proposed `version` on SAPRead)
 
 ## Resolution: superseded by maintainer design choice
 
-PR [#186](https://github.com/marianfoo/arc-1/pull/186) (merged 2026-04-28, the same day this ADR was drafted) shipped the etag-validated source cache and **also** added a user-facing `version: 'active' | 'inactive' | 'auto'` parameter to `SAPRead`. The maintainer judged that surfacing the version axis directly to LLMs was valuable enough to warrant the public-API change despite Principle #6 of the etag plan. ADR-0003 is therefore retained only as a record of the analysis at the time the PR-196 split was being designed; it does not reflect ARC-1's current shipped behavior.
+PR [#186](https://github.com/arc-mcp/arc-1/pull/186) (merged 2026-04-28, the same day this ADR was drafted) shipped the etag-validated source cache and **also** added a user-facing `version: 'active' | 'inactive' | 'auto'` parameter to `SAPRead`. The maintainer judged that surfacing the version axis directly to LLMs was valuable enough to warrant the public-API change despite Principle #6 of the etag plan. ADR-0003 is therefore retained only as a record of the analysis at the time the PR-196 split was being designed; it does not reflect ARC-1's current shipped behavior.
 
 The analysis below is preserved verbatim. Read it as a snapshot of one design option, not a current recommendation. Two of its three claims still hold:
 
@@ -17,7 +17,7 @@ The analysis below is preserved verbatim. Read it as a snapshot of one design op
 
 ## Context (preserved from original draft)
 
-[PR #196](https://github.com/marianfoo/arc-1/pull/196) proposes adding `version: 'active' \| 'inactive'` to `SAPReadSchema` / `SAPReadSchemaBtp`, with an early-return path in [src/handlers/intent.ts](../../src/handlers/intent.ts) that appends `?version=…` to the source URL.
+[PR #196](https://github.com/arc-mcp/arc-1/pull/196) proposes adding `version: 'active' \| 'inactive'` to `SAPReadSchema` / `SAPReadSchemaBtp`, with an early-return path in [src/handlers/intent.ts](../../src/handlers/intent.ts) that appends `?version=…` to the source URL.
 
 The pre-existing etag-and-inactive-objects plan (commit `c9ebe47`, [docs/plans/etag-conditional-get-and-inactive-objects-fix.md](../plans/etag-conditional-get-and-inactive-objects-fix.md)) explicitly excluded this surface change in Design Principle #6:
 
@@ -30,7 +30,7 @@ Live probe of A4H 758 SP02 confirmed both halves of this plan's reasoning are ac
 
 The roadmap also already lists [FEAT-24 CompareSource (Diff)](../../docs_page/roadmap.md) as the home for user-facing version-aware reads — *"Client-side diff of two revision sources — ADT has no server-side diff endpoint"*. Adding `version` on `SAPRead` now creates a near-future API churn (add now, possibly remove or restructure when FEAT-DIFF lands).
 
-PR [#179](https://github.com/marianfoo/arc-1/pull/179) (already merged) added `version: 'active' \| 'inactive'` to `SAPDiagnose action=syntax`, scoped to the syntax-check use case where active-vs-inactive matters today (post-write diagnostics on the inactive draft).
+PR [#179](https://github.com/arc-mcp/arc-1/pull/179) (already merged) added `version: 'active' \| 'inactive'` to `SAPDiagnose action=syntax`, scoped to the syntax-check use case where active-vs-inactive matters today (post-write diagnostics on the inactive draft).
 
 ## Original decision (not adopted)
 
@@ -44,7 +44,7 @@ Defer surfacing `version` on `SAPRead` until FEAT-DIFF is designed. Concrete act
 
 ## What main actually shipped
 
-PR #186 added `version: 'active' | 'inactive' | 'auto'` to both `SAPReadSchema` and `SAPReadSchemaBtp` (default `'active'`). The handler routes through the conditional-GET cache layer with the version axis as the cache key. STRU was independently collapsed into TABL by PR [#219](https://github.com/marianfoo/arc-1/pull/219). The combined effect: LLMs can now read active or inactive sources directly, and the etag-validated cache treats the two as separate cache entries (per the etag plan's internal design).
+PR #186 added `version: 'active' | 'inactive' | 'auto'` to both `SAPReadSchema` and `SAPReadSchemaBtp` (default `'active'`). The handler routes through the conditional-GET cache layer with the version axis as the cache key. STRU was independently collapsed into TABL by PR [#219](https://github.com/arc-mcp/arc-1/pull/219). The combined effect: LLMs can now read active or inactive sources directly, and the etag-validated cache treats the two as separate cache entries (per the etag plan's internal design).
 
 ## Lesson for future ADRs
 
@@ -52,7 +52,7 @@ ADRs that recommend declining a feature are at higher risk of being superseded b
 
 ## References
 
-- [PR #186](https://github.com/marianfoo/arc-1/pull/186) — etag-validated source cache + `version` parameter (the change that superseded this ADR).
+- [PR #186](https://github.com/arc-mcp/arc-1/pull/186) — etag-validated source cache + `version` parameter (the change that superseded this ADR).
 - [docs/plans/etag-conditional-get-and-inactive-objects-fix.md](../plans/etag-conditional-get-and-inactive-objects-fix.md) — the pre-existing plan with Principle #6 (now overridden in practice).
 - [docs_page/roadmap.md](../../docs_page/roadmap.md) FEAT-24 CompareSource (Diff) — needs to choose a non-`version` parameter name to avoid collision with the now-shipped SAPRead `version`.
-- PR [#179](https://github.com/marianfoo/arc-1/pull/179) — SAPDiagnose `version` precedent.
+- PR [#179](https://github.com/arc-mcp/arc-1/pull/179) — SAPDiagnose `version` precedent.

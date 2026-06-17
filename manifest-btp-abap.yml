@@ -22,7 +22,7 @@
 applications:
   - name: arc1-btp-abap
     docker:
-      image: ghcr.io/marianfoo/arc-1:latest
+      image: ghcr.io/arc-mcp/arc-1:latest
     instances: 1
     memory: 256M
     disk_quota: 512M

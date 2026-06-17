@@ -60,7 +60,7 @@ These are all the knobs you have. Set values via env vars, CLI flags, or `.env`.
 **When to tune.**
 - Increase if you operate an automated security scanner or load test against the OAuth surface from one IP.
 - Set to `0` only if an upstream reverse proxy already rate-limits this surface.
-- Per-endpoint differentiation lives in code (not env) so the operator surface stays one knob. If the per-endpoint logic needs adjustment, it's a code change in [src/server/http.ts](https://github.com/marianfoo/arc-1/blob/main/src/server/http.ts).
+- Per-endpoint differentiation lives in code (not env) so the operator surface stays one knob. If the per-endpoint logic needs adjustment, it's a code change in [src/server/http.ts](https://github.com/arc-mcp/arc-1/blob/main/src/server/http.ts).
 
 ### `ARC1_RATE_LIMIT` — Layer 2 (default `0` — DISABLED)
 

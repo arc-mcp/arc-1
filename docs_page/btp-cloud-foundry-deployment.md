@@ -66,7 +66,7 @@ MTA (Multi-Target Application) deployment bundles ARC-1 with its BTP service dep
        Stack Cloud Application* type already has CF tools).
     2. Open a terminal in the Dev Space and run the same steps as below:
        ```bash
-       git clone https://github.com/marianfoo/arc-1.git
+       git clone https://github.com/arc-mcp/arc-1.git
        cd arc-1
        cp mta-overrides.mtaext.example mta-overrides.mtaext   # edit your destinations + flags
        cf login -a <your-cf-api-endpoint>                     # target the org/space to deploy into
@@ -82,7 +82,7 @@ MTA (Multi-Target Application) deployment bundles ARC-1 with its BTP service dep
 
 ```bash
 # Clone the repo
-git clone https://github.com/marianfoo/arc-1.git
+git clone https://github.com/arc-mcp/arc-1.git
 cd arc-1
 
 # One-time per landscape — copy the template (it's tracked) to a real
@@ -108,7 +108,7 @@ modules:
       SAP_ALLOWED_PACKAGES: "Z*,Y*,$TMP"
 ```
 
-The full set of overridable properties is documented in [`mta-overrides.mtaext.example`](https://github.com/marianfoo/arc-1/blob/main/mta-overrides.mtaext.example): destinations, all `SAP_ALLOW_*` safety flags, `SAP_DENY_ACTIONS`, `SAP_PP_STRICT`, `ARC1_PUBLIC_URL` (for reverse-proxy deployments), `ARC1_ALLOWED_ORIGINS` (CORS), `ARC1_TOOL_MODE`, cache warmup, and `ARC1_LOG_HTTP_DEBUG`. Any property left out of the override falls back to the `mta.yaml` value.
+The full set of overridable properties is documented in [`mta-overrides.mtaext.example`](https://github.com/arc-mcp/arc-1/blob/main/mta-overrides.mtaext.example): destinations, all `SAP_ALLOW_*` safety flags, `SAP_DENY_ACTIONS`, `SAP_PP_STRICT`, `ARC1_PUBLIC_URL` (for reverse-proxy deployments), `ARC1_ALLOWED_ORIGINS` (CORS), `ARC1_TOOL_MODE`, cache warmup, and `ARC1_LOG_HTTP_DEBUG`. Any property left out of the override falls back to the `mta.yaml` value.
 
 See the [BTP Destination Setup Guide](btp-destination-setup.md) for creating the destinations themselves.
 
@@ -247,7 +247,7 @@ Additional Properties:
 applications:
   - name: arc1-mcp-server
     docker:
-      image: ghcr.io/marianfoo/arc-1:latest
+      image: ghcr.io/arc-mcp/arc-1:latest
     instances: 1
     memory: 256M
     disk_quota: 512M
@@ -469,7 +469,7 @@ The MTA deployment (Method 1) already uses the Node.js buildpack. If you need a 
 
 ```bash
 # Clone and build
-git clone https://github.com/marianfoo/arc-1.git
+git clone https://github.com/arc-mcp/arc-1.git
 cd arc-1
 npm ci
 npm run build

@@ -232,7 +232,7 @@ The direct service-key Docker example is only useful for a local interactive run
 docker run -p 8080:8080 \
   -e SAP_BTP_SERVICE_KEY='{"uaa":{"url":"...","clientid":"...","clientsecret":"..."},"url":"..."}' \
   -e SAP_SYSTEM_TYPE=btp \
-  ghcr.io/marianfoo/arc-1:latest
+  ghcr.io/arc-mcp/arc-1:latest
 ```
 
 ## Step 4: First Login
@@ -610,4 +610,4 @@ To serve several ABAP systems across subaccounts from a single ARC-1 instance, u
 
 ## Architecture Details
 
-For the research report covering authentication options, competitor analysis, and design decisions, see [btp-abap-environment-connectivity.md](https://github.com/marianfoo/arc-1/blob/main/docs/plans/completed/btp-abap-environment-connectivity.md) in the repo.
+For the research report covering authentication options, competitor analysis, and design decisions, see [btp-abap-environment-connectivity.md](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/completed/btp-abap-environment-connectivity.md) in the repo.

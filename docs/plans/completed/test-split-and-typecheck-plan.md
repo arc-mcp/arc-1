@@ -1,12 +1,12 @@
 # Test Split & Typecheck Plan — Stage C + follow-ups (PR after #402)
 
 Successor to [architecture-consolidation-plan.md](architecture-consolidation-plan.md) (v2, executed
-as [PR #402](https://github.com/marianfoo/arc-1/pull/402)). That PR drained the two source
+as [PR #402](https://github.com/arc-mcp/arc-1/pull/402)). That PR drained the two source
 monoliths (intent.ts → per-tool modules, write.ts → write/ package) and deleted the barrel. This
 plan covers what was deliberately deferred: the last monolith — `tests/unit/handlers/intent.test.ts`
 — plus the small verified follow-ups from the three review rounds.
 
-**Status: ✅ Stage T + Stage C + Stage R DONE** (shipped as [PR #405](https://github.com/marianfoo/arc-1/pull/405)). Stage T type-checks `tests/` via
+**Status: ✅ Stage T + Stage C + Stage R DONE** (shipped as [PR #405](https://github.com/arc-mcp/arc-1/pull/405)). Stage T type-checks `tests/` via
 `tsconfig.tests.json` chained onto `npm run typecheck` (fixed 65 latent errors). Stage C split
 intent.test.ts (712 tests) into 10 per-module files — read, search-navigate, lint-diagnose, activate,
 manage-context, transport, write-ddic, write-create-batch, write-surgery-rap, dispatch-misc — all

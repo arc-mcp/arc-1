@@ -2,7 +2,7 @@
 
 Date: 2026-06-06
 
-Branch baseline: original runtime-profile work started from `origin/main` at `94551af0`; the manual slow workflow follow-up in PR [#366](https://github.com/marianfoo/arc-1/pull/366) is based on `origin/main` at `d22392d3` after PR [#365](https://github.com/marianfoo/arc-1/pull/365).
+Branch baseline: original runtime-profile work started from `origin/main` at `94551af0`; the manual slow workflow follow-up in PR [#366](https://github.com/arc-mcp/arc-1/pull/366) is based on `origin/main` at `d22392d3` after PR [#365](https://github.com/arc-mcp/arc-1/pull/365).
 
 Scope: follow-up to `docs/research/test-suite-audit-2026-05-11.md` items 8-15. This checkpoint covers the remaining PR-path runtime reductions, slow-profile split, feature-probe cleanup, read-only concurrency smoke, and focused unit coverage for HTTP/server/BTP/cookie extraction surfaces.
 
@@ -235,7 +235,7 @@ GitHub:
 
 ## Follow-Up Completed: GitHub A4H 2025 Migration
 
-The 2025 system was prepared for GitHub Actions in PR [#365](https://github.com/marianfoo/arc-1/pull/365) on branch `codex/github-ci-a4h-2025`.
+The 2025 system was prepared for GitHub Actions in PR [#365](https://github.com/arc-mcp/arc-1/pull/365) on branch `codex/github-ci-a4h-2025`.
 
 - `.github/workflows/test.yml` now uses `TEST_SAP_*` as the one live SAP target for both integration and E2E; E2E maps those values to the `SAP_*` runtime env expected by the local MCP server.
 - Live SAP preflight now fails fast unless the required secrets are present and authenticated ADT core discovery returns HTTP 200. This prevents a green live SAP job caused by an auth skip.
@@ -257,7 +257,7 @@ Runtime implication:
 
 ## Follow-Up Completed: Manual Slow SAP Workflow
 
-PR [#366](https://github.com/marianfoo/arc-1/pull/366) added `.github/workflows/sap-slow-tests.yml` as the operator-run path for the slow SAP profiles. The workflow has a cheap pull-request definition check so the workflow file is validated in CI, but the live slow SAP job runs only through `workflow_dispatch`, not `push`, `pull_request`, or a schedule.
+PR [#366](https://github.com/arc-mcp/arc-1/pull/366) added `.github/workflows/sap-slow-tests.yml` as the operator-run path for the slow SAP profiles. The workflow has a cheap pull-request definition check so the workflow file is validated in CI, but the live slow SAP job runs only through `workflow_dispatch`, not `push`, `pull_request`, or a schedule.
 
 Manual dispatch settings:
 
@@ -292,7 +292,7 @@ First manual baseline after PR #366 merged:
 
 | Evidence | Result |
 |---|---:|
-| Workflow run | [`27068686650`](https://github.com/marianfoo/arc-1/actions/runs/27068686650), `workflow_dispatch` on `main` at `cee8ac1c` |
+| Workflow run | [`27068686650`](https://github.com/arc-mcp/arc-1/actions/runs/27068686650), `workflow_dispatch` on `main` at `cee8ac1c` |
 | Slow live SAP profiles job | passed in 5m08s |
 | Slow integration step | passed in 51s; JSON artifact reports 7 total, 6 passed, 1 skipped |
 | Slow E2E step | passed in 3m45s; JSON artifact reports 9 total, 8 passed, 1 skipped |

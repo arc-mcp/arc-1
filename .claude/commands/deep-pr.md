@@ -1,6 +1,6 @@
 # Deep PR — review an external pull request against real sources & ARC-1's invariants
 
-Deeply review a community pull request on **`marianfoo/arc-1`** before it merges. The whole point: **verify the PR is correct, safe, and actually does what it claims — from your own evidence, not the PR description.** External PRs touch the most dangerous surfaces (write paths, schemas, the safety system); a PR body that says "verified live on 8.16" is a claim to check, not a fact to trust. ARC-1's worst regressions come from accepting ADT behavior on faith.
+Deeply review a community pull request on **`arc-mcp/arc-1`** before it merges. The whole point: **verify the PR is correct, safe, and actually does what it claims — from your own evidence, not the PR description.** External PRs touch the most dangerous surfaces (write paths, schemas, the safety system); a PR body that says "verified live on 8.16" is a claim to check, not a fact to trust. ARC-1's worst regressions come from accepting ADT behavior on faith.
 
 Use this for any non-trivial external PR (bug fix, new ADT op, schema change, safety change). For a dependency bump or a one-line doc fix, a normal read is enough.
 
@@ -10,7 +10,7 @@ The output is a **review verdict + paste-able review comments + a dossier** — 
 
 ## Input
 
-A PR number or URL (e.g. `380` or `https://github.com/marianfoo/arc-1/pull/380`).
+A PR number or URL (e.g. `380` or `https://github.com/arc-mcp/arc-1/pull/380`).
 
 ---
 

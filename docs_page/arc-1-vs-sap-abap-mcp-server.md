@@ -15,7 +15,7 @@ with *ABAP Development Tools for VS Code* and *ADT for Eclipse*) so you can deci
     - **Public / primary sources** (strongest): SAP's Marketplace listing, the **SAP Help "Model
       Context Protocol Tools"** page (toolset + per-tool *Joule License* column), SAP Help
       *Enabling/Configuring ADT MCP Server*, SAP-samples (RAP130), SAP News, the
-      [ARC-1 repo/docs](https://github.com/marianfoo/arc-1), and the MCP spec. The **20-tool set, exact
+      [ARC-1 repo/docs](https://github.com/arc-mcp/arc-1), and the MCP spec. The **20-tool set, exact
       IDs, and licensing split** below are confirmed against SAP Help. See [Sources](#sources).
     - **Author's live snapshot (2026-06-16 — observed, not product-wide):** a running `ADT MCP Server`
       v1.0.0 in **Eclipse** (port **2234**, MCP protocol `2025-06-18` *as that server reported it* —
@@ -106,7 +106,7 @@ ABAP / SQL · git · transports · dumps**, that is ARC-1's design center. Many 
 === "ARC-1"
 
     A standalone **TypeScript MCP server** (npm package `arc-1`, Docker image
-    `ghcr.io/marianfoo/arc-1`) that turns AI tool calls into **ADT REST** requests (`/sap/bc/adt/*`) —
+    `ghcr.io/arc-mcp/arc-1`) that turns AI tool calls into **ADT REST** requests (`/sap/bc/adt/*`) —
     the same public API the Eclipse ADT client uses.
 
     - **Distribution — "and other stuff":** `npx`/global npm; **Docker**; a **`.mcpb` one-click bundle**

@@ -15,7 +15,7 @@ invariants and `security-model.md` §5 is authoritative for the current register
 | **Last updated** | 2026-06-10 |
 | **Status** | Living — update §4 and §5 as findings move |
 | **Findings** | 17 numbered (R1–R17) + 1 partial (R9 gCTS) |
-| **Shipped (merged to `main`)** | R8 [#387](https://github.com/marianfoo/arc-1/pull/387) · R11 [#388](https://github.com/marianfoo/arc-1/pull/388) · R9-abapGit [#389](https://github.com/marianfoo/arc-1/pull/389) · R2 [#392](https://github.com/marianfoo/arc-1/pull/392) · R1/R3/R12 [#393](https://github.com/marianfoo/arc-1/pull/393) · R4 [#394](https://github.com/marianfoo/arc-1/pull/394) · R16 [#395](https://github.com/marianfoo/arc-1/pull/395). Deployment-docs [#391](https://github.com/marianfoo/arc-1/pull/391) still open. **All High findings closed.** |
+| **Shipped (merged to `main`)** | R8 [#387](https://github.com/arc-mcp/arc-1/pull/387) · R11 [#388](https://github.com/arc-mcp/arc-1/pull/388) · R9-abapGit [#389](https://github.com/arc-mcp/arc-1/pull/389) · R2 [#392](https://github.com/arc-mcp/arc-1/pull/392) · R1/R3/R12 [#393](https://github.com/arc-mcp/arc-1/pull/393) · R4 [#394](https://github.com/arc-mcp/arc-1/pull/394) · R16 [#395](https://github.com/arc-mcp/arc-1/pull/395). Deployment-docs [#391](https://github.com/arc-mcp/arc-1/pull/391) still open. **All High findings closed.** |
 | **Related** | [`security-model.md`](security-model.md) · [`../docs_page/security-guide.md`](../docs_page/security-guide.md) · [`../SECURITY.md`](../SECURITY.md) |
 
 ---
@@ -45,11 +45,11 @@ Headline outcomes:
   escaping — were found already closed, several with prior-audit provenance and regression tests.
 - **One High, confirmed auth bypass.** The deep review's adversarial pass *broke* a control listed
   "already-strong": the XSUAA **redirect-URI allowlist** (R8). It was verified end-to-end,
-  including a live regex test against the production globs, and is now fixed ([#387](https://github.com/marianfoo/arc-1/pull/387)).
-- **Four PRs shipped:** R8 ([#387](https://github.com/marianfoo/arc-1/pull/387)), R11
-  ([#388](https://github.com/marianfoo/arc-1/pull/388)), R9-abapGit
-  ([#389](https://github.com/marianfoo/arc-1/pull/389)), and a deployment-docs hardening pass
-  ([#391](https://github.com/marianfoo/arc-1/pull/391)).
+  including a live regex test against the production globs, and is now fixed ([#387](https://github.com/arc-mcp/arc-1/pull/387)).
+- **Four PRs shipped:** R8 ([#387](https://github.com/arc-mcp/arc-1/pull/387)), R11
+  ([#388](https://github.com/arc-mcp/arc-1/pull/388)), R9-abapGit
+  ([#389](https://github.com/arc-mcp/arc-1/pull/389)), and a deployment-docs hardening pass
+  ([#391](https://github.com/arc-mcp/arc-1/pull/391)).
 - **The rest of the challenge pass held.** DCR/state HMAC, SSRF containment, undici cross-origin
   credential-stripping, structured-SQL allowlisting, and XML escaping all survived refutation.
 
@@ -135,33 +135,33 @@ Legend: ✅ merged to `main` · 🟡 partial · 📄 #391 = operator caveat in t
 
 | ID | Risk | Sev | Scope | Status | PR |
 |----|------|-----|-------|--------|----|
-| R1 | Cross-user dependency-source leak (dep-graph cache) | High | PP only | ✅ merged | [#393](https://github.com/marianfoo/arc-1/pull/393) |
-| R2 | grep ReDoS (event-loop DoS) | High | all HTTP | ✅ merged | [#392](https://github.com/marianfoo/arc-1/pull/392) |
-| R3 | Inactive-draft list cross-user leak (`username=''`) | High/Med | PP only | ✅ merged | [#393](https://github.com/marianfoo/arc-1/pull/393) |
-| R4 | SRVB publish/unpublish bypass package allowlist | Med | all | ✅ merged | [#394](https://github.com/marianfoo/arc-1/pull/394) |
+| R1 | Cross-user dependency-source leak (dep-graph cache) | High | PP only | ✅ merged | [#393](https://github.com/arc-mcp/arc-1/pull/393) |
+| R2 | grep ReDoS (event-loop DoS) | High | all HTTP | ✅ merged | [#392](https://github.com/arc-mcp/arc-1/pull/392) |
+| R3 | Inactive-draft list cross-user leak (`username=''`) | High/Med | PP only | ✅ merged | [#393](https://github.com/arc-mcp/arc-1/pull/393) |
+| R4 | SRVB publish/unpublish bypass package allowlist | Med | all | ✅ merged | [#394](https://github.com/arc-mcp/arc-1/pull/394) |
 | R5 | File/BTP audit sinks do zero redaction | Med | file/btp sink | ⬜ open | — |
 | R6 | Non-strict PP fallback → shared service account | Med | PP only | ⬜ open · 📄 #391 | — |
 | R7 | Silent `SAP_INSECURE` + path-encoding gaps | Low/Med | all | ⬜ open · 📄 #391 (TLS) | — |
-| R8 | Redirect-URI allowlist bypass → OAuth code interception | **High** | XSUAA | ✅ merged | [#387](https://github.com/marianfoo/arc-1/pull/387) |
-| R9 | gCTS/abapGit pull/push bypass package allowlist | Med | allowGitWrites | 🟡 abapGit merged; gCTS open | [#389](https://github.com/marianfoo/arc-1/pull/389) |
+| R8 | Redirect-URI allowlist bypass → OAuth code interception | **High** | XSUAA | ✅ merged | [#387](https://github.com/arc-mcp/arc-1/pull/387) |
+| R9 | gCTS/abapGit pull/push bypass package allowlist | Med | allowGitWrites | 🟡 abapGit merged; gCTS open | [#389](https://github.com/arc-mcp/arc-1/pull/389) |
 | R10 | `apply_quickfix` arbitrary authenticated POST (read scope) | Med | all | ⬜ open | — |
-| R11 | Unbounded LLM counts → DoS | Med | all HTTP | ✅ merged | [#388](https://github.com/marianfoo/arc-1/pull/388) |
-| R12 | Reverse-dep (`usages`) index served cross-user | Med | PP + warmup | ✅ merged | [#393](https://github.com/marianfoo/arc-1/pull/393) |
+| R11 | Unbounded LLM counts → DoS | Med | all HTTP | ✅ merged | [#388](https://github.com/arc-mcp/arc-1/pull/388) |
+| R12 | Reverse-dep (`usages`) index served cross-user | Med | PP + warmup | ✅ merged | [#393](https://github.com/arc-mcp/arc-1/pull/393) |
 | R13 | PP destination cache may collapse to tenant-wide isolation | Med (cond.) | PP + OIDC | ⬜ open · 📄 #391 | — |
 | R14 | No minimal-error mode (recon oracle) | Low/Med | all | ⬜ open | — |
 | R15 | Cleartext SAP source at rest + default file perms | Low/Med | disk cache | ⬜ open · 📄 #391 | — |
-| R16 | BTP service-key files not gitignored | Low/Med | repo hygiene | ✅ merged | [#395](https://github.com/marianfoo/arc-1/pull/395) |
+| R16 | BTP service-key files not gitignored | Low/Med | repo hygiene | ✅ merged | [#395](https://github.com/arc-mcp/arc-1/pull/395) |
 | R17 | Hardening cluster (4 low items) | Low | mixed | ⬜ open | — |
 
 ---
 
 ## 5. Completed & in-flight work
 
-All four PRs target `main` on the public `marianfoo/arc-1` repo, are one focused commit each, and
+All four PRs target `main` on the public `arc-mcp/arc-1` repo, are one focused commit each, and
 were verified locally (tests + typecheck for code PRs; `mkdocs build` for the docs PR). None are
 merged yet at time of writing.
 
-### PR [#387](https://github.com/marianfoo/arc-1/pull/387) — R8 redirect-URI bypass (High)
+### PR [#387](https://github.com/arc-mcp/arc-1/pull/387) — R8 redirect-URI bypass (High)
 - **Branch / commit:** `claude/harden-redirect-uri-canonical` · `dbb018b2`
 - **The bug:** `matchesXsuaaRedirectPattern` ([`stateless-client-store.ts:171`](../src/server/stateless-client-store.ts))
   tested the glob against the **raw** URI string and guarded only `@`-userinfo. For `http`/`https`,
@@ -180,7 +180,7 @@ merged yet at time of writing.
   *exchange* the code depends on client confidentiality / PKCE binding at `/oauth/token`, which was
   not fully traced. The fix is correct regardless. Severity **High** (Critical if exchangeable).
 
-### PR [#388](https://github.com/marianfoo/arc-1/pull/388) — R11 unbounded counts (Med)
+### PR [#388](https://github.com/arc-mcp/arc-1/pull/388) — R11 unbounded counts (Med)
 - **Branch / commit:** `claude/clamp-unbounded-result-limits` · `47b4b7d2`
 - **The bug:** `maxRows` (TABLE_CONTENTS), `maxResults` (object/source search), and `maxDeps`
   (dependency context) were interpolated/sliced with no `[1, CAP]` clamp — the clamp existed only
@@ -193,7 +193,7 @@ merged yet at time of writing.
 - **Test:** `clampSearchResults` unit test + URL-level assertions that each sink clamps an oversized
   value and falls back on NaN. Full suite 154/154 (client), typecheck clean.
 
-### PR [#389](https://github.com/marianfoo/arc-1/pull/389) — R9 abapGit pull/push package gate (Med) 🟡
+### PR [#389](https://github.com/arc-mcp/arc-1/pull/389) — R9 abapGit pull/push package gate (Med) 🟡
 - **Branch / commit:** `claude/gate-git-pull-package-allowlist` · `a63bb9fd`
 - **The bug:** `clone`/`create_branch` are package-gated, but `pull`/`push` checked only the
   `allowGitWrites` flag — no per-package gate. A repo bound (out-of-band) to a package outside
@@ -209,7 +209,7 @@ merged yet at time of writing.
   still open** — gCTS repos can span packages, so resolution needs the per-repo object list. Tracked
   as a follow-up (see §6.3).
 
-### PR [#391](https://github.com/marianfoo/arc-1/pull/391) — deployment-docs hardening (docs)
+### PR [#391](https://github.com/arc-mcp/arc-1/pull/391) — deployment-docs hardening (docs)
 - **Branch / commit:** `claude/docs-deployment-security-caveats` · `ca203e47` (9 files, +72/−11)
 - **Correctness fixes (docs shipped insecure-by-copy-paste):**
   - `btp-cloud-foundry-deployment.md` had two manifest examples with `SAP_ALLOW_WRITES:"true"` /
@@ -237,7 +237,7 @@ the test to add, and a rough effort (S = a few hours, M = a day, L = multi-day).
 
 > **Code-location note:** `src/handlers/intent.ts` was split into focused modules (`read.ts`,
 > `write.ts`, `write/*`, `context.ts`, `git.ts`, `manage.ts`, `diagnose.ts`, …) in
-> [#402](https://github.com/marianfoo/arc-1/pull/402). `intent.ts:NNNN` locations predate that
+> [#402](https://github.com/arc-mcp/arc-1/pull/402). `intent.ts:NNNN` locations predate that
 > split — find the named symbol (e.g. `enrichWithSapDetails`, `change_package`) in the matching
 > `src/handlers/` module.
 
@@ -316,7 +316,7 @@ the worst class of finding for the flagship multi-user-PP deployment, and a sing
   claim (hard-fail in strict mode) before minting the per-user client.
 - **Test:** two JWTs with the same tenant but different `user_id` must not produce the same cache
   key; a token with no `user_id`/`user_uuid` is rejected for PP.
-- **Status:** operator caveat shipped in [#391](https://github.com/marianfoo/arc-1/pull/391); code
+- **Status:** operator caveat shipped in [#391](https://github.com/arc-mcp/arc-1/pull/391); code
   fix open. Needs config-specific confirmation of the SDK default on this version.
 - **Effort:** S–M.
 
@@ -368,7 +368,7 @@ the worst class of finding for the flagship multi-user-PP deployment, and a sing
 **R9 (gCTS) — finish the git pull/push gate — Med — allowGitWrites** 🟡
 - **Where:** gCTS `pullRepo` [`gcts.ts:206`](../src/adt/gcts.ts) and `commitRepo`; handler
   [`intent.ts:6936`](../src/handlers/).
-- **Remaining work:** the merged R9 ([#389](https://github.com/marianfoo/arc-1/pull/389)) gated
+- **Remaining work:** the merged R9 ([#389](https://github.com/arc-mcp/arc-1/pull/389)) gated
   abapGit only. gCTS repos can span multiple packages, so the gate needs the per-repo object/package
   list (`listRepos` → match `rid` → gate `.package`, fail-closed under a restricted allowlist when
   the package can't be resolved).
@@ -383,7 +383,7 @@ the worst class of finding for the flagship multi-user-PP deployment, and a sing
 - **Fix options:** make `SAP_PP_STRICT=true` the default for multi-user/HTTP mode; **or** when
   falling back, downgrade the request to read-only and tag the tool-call audit
   `identity=service-account-fallback`.
-- **Status:** operator caveat shipped in [#391](https://github.com/marianfoo/arc-1/pull/391); code
+- **Status:** operator caveat shipped in [#391](https://github.com/arc-mcp/arc-1/pull/391); code
   default/behavior change open.
 - **Effort:** S (default flip) / M (downgrade-on-fallback).
 
@@ -450,7 +450,7 @@ the worst class of finding for the flagship multi-user-PP deployment, and a sing
 ### 6.7 Recommended remediation order
 
 The original top picks (R2, R1/R3/R12, R4, R16) shipped in
-[#392](https://github.com/marianfoo/arc-1/pull/392)–[#395](https://github.com/marianfoo/arc-1/pull/395).
+[#392](https://github.com/arc-mcp/arc-1/pull/392)–[#395](https://github.com/arc-mcp/arc-1/pull/395).
 Suggested order for the remaining open items:
 
 1. **Authorization gaps:** **R10** — constrain `apply_quickfix`'s `proposalUri` to the
@@ -504,10 +504,10 @@ re-materialize it there or regenerate from this section's description.
 
 ## Appendix C — references
 
-- **PRs:** [#387](https://github.com/marianfoo/arc-1/pull/387) (R8),
-  [#388](https://github.com/marianfoo/arc-1/pull/388) (R11),
-  [#389](https://github.com/marianfoo/arc-1/pull/389) (R9-abapGit),
-  [#391](https://github.com/marianfoo/arc-1/pull/391) (deployment docs).
+- **PRs:** [#387](https://github.com/arc-mcp/arc-1/pull/387) (R8),
+  [#388](https://github.com/arc-mcp/arc-1/pull/388) (R11),
+  [#389](https://github.com/arc-mcp/arc-1/pull/389) (R9-abapGit),
+  [#391](https://github.com/arc-mcp/arc-1/pull/391) (deployment docs).
 - **Branches / commits:** `claude/harden-redirect-uri-canonical` `dbb018b2` ·
   `claude/clamp-unbounded-result-limits` `47b4b7d2` ·
   `claude/gate-git-pull-package-allowlist` `a63bb9fd` ·
@@ -521,8 +521,8 @@ re-materialize it there or regenerate from this section's description.
 ## Changelog
 - **2026-06-10** — Initial report. Documents Wave 1 + Wave 2, PRs #387/#388/#389/#391, and the open
   roadmap (R1–R7, R10, R12–R17, R9-gCTS). Mirrors `security-model.md` register R1–R17.
-- **2026-06-11** — Remediation update. R2 ([#392](https://github.com/marianfoo/arc-1/pull/392)),
-  R1/R3/R12 ([#393](https://github.com/marianfoo/arc-1/pull/393)), R4 ([#394](https://github.com/marianfoo/arc-1/pull/394)),
-  R16 ([#395](https://github.com/marianfoo/arc-1/pull/395)) merged on top of R8/R9-abapGit/R11 —
+- **2026-06-11** — Remediation update. R2 ([#392](https://github.com/arc-mcp/arc-1/pull/392)),
+  R1/R3/R12 ([#393](https://github.com/arc-mcp/arc-1/pull/393)), R4 ([#394](https://github.com/arc-mcp/arc-1/pull/394)),
+  R16 ([#395](https://github.com/arc-mcp/arc-1/pull/395)) merged on top of R8/R9-abapGit/R11 —
   **all High findings closed.** Updated §1/§4/§6 status; open set is now R5, R6, R7, R9-gCTS, R10,
   R13, R14, R15, R17 (all Med/Low). These fixes shipped in **v0.9.14**.

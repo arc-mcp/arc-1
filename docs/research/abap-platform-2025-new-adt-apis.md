@@ -3,7 +3,7 @@
 **Status:** research / evidence-gathering. Not implemented.
 **Date:** 2026-06-04.
 **Systems:** `a4h-2025.marianzeis.de:50100` (ABAP Platform 2025, SAP_BASIS **816**, S/4HANA 2025) vs `a4h.marianzeis.de:50000` (S/4HANA 2023, SAP_BASIS **758**). Both probed live as user `MARIAN`, client 001.
-**Companion artifacts:** probe fixture `tests/fixtures/probe/abap-platform-2025-onprem-trial/`; memory `project_sap_2025_816_system`. Builds on [PR #347](https://github.com/marianfoo/arc-1/pull/347), which added 816 as a validated probe target.
+**Companion artifacts:** probe fixture `tests/fixtures/probe/abap-platform-2025-onprem-trial/`; memory `project_sap_2025_816_system`. Builds on [PR #347](https://github.com/arc-mcp/arc-1/pull/347), which added 816 as a validated probe target.
 
 ---
 

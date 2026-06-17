@@ -1,6 +1,6 @@
 # PR #403 — fix(adt): make SRVB publish/unpublish content negotiation 758-proof
 
-- **PR**: https://github.com/marianfoo/arc-1/pull/403 (branch `claude/wonderful-buck-c8e366`, same-repo, not a fork)
+- **PR**: https://github.com/arc-mcp/arc-1/pull/403 (branch `claude/wonderful-buck-c8e366`, same-repo, not a fork)
 - **Reviewed**: 2026-06-11, after rebasing onto `origin/main` @ `bc5cfc46` (post-#402 handler split) per maintainer request
 - **Verdict**: **APPROVE (after rebase + one added commit)** — see "What the rebase surfaced" below; the PR as originally pushed did *not* fix the reported bug on current main and was extended with the real root-cause fix during this review.
 
@@ -17,7 +17,7 @@ The PR (commit 1) hardens the `publishjobs`/`unpublishjobs` POST content negotia
 
 Re-running the live verification on the rebased branch immediately failed — but **not** on the
 publish POST. The failing request was the **package-gate metadata read** introduced by
-[#394 "fix: enforce SRVB package gate"](https://github.com/marianfoo/arc-1/pull/394) (shipped in
+[#394 "fix: enforce SRVB package gate"](https://github.com/arc-mcp/arc-1/pull/394) (shipped in
 **0.9.14**, merged after this PR's original live verification):
 
 ```

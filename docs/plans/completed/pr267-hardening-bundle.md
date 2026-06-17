@@ -2,7 +2,7 @@
 
 ## Overview
 
-A deeper audit of [PR #267](https://github.com/marianfoo/arc-1/pull/267) (`feat: stable DCR signing key + 0/negative TTL = infinite`) surfaced seven concrete issues — three bugs that affect correctness, one RFC 7591 spec-compliance gap, two configuration coexistence concerns, and one false statement in the docs. This plan rolls all of them into PR #267 directly, plus the operational documentation that was originally drafted as PR #268.
+A deeper audit of [PR #267](https://github.com/arc-mcp/arc-1/pull/267) (`feat: stable DCR signing key + 0/negative TTL = infinite`) surfaced seven concrete issues — three bugs that affect correctness, one RFC 7591 spec-compliance gap, two configuration coexistence concerns, and one false statement in the docs. This plan rolls all of them into PR #267 directly, plus the operational documentation that was originally drafted as PR #268.
 
 The bugs reduce to: empty / whitespace `ARC1_DCR_SIGNING_SECRET` either crashes server startup or silently produces a weak HMAC key; `dcrSigningSource` label can disagree with the secret actually in use; legacy-fallback warning promised in docs is not actually emitted by code. The spec gap: `registerClient` response omits `client_secret_expires_at`, so spec-aware MCP clients can't see "never expires" when an operator sets `ARC1_OAUTH_DCR_TTL_SECONDS=0`. The configuration concerns: orphan `ARC1_DCR_SIGNING_SECRET` (set without `SAP_XSUAA_AUTH=true`) is dead config that adds attack surface via env-var leaks; the operational `mta-overrides.mtaext.example` template has no DCR section and operators have no place to start.
 

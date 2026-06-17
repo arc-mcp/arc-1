@@ -10,7 +10,7 @@ row; verbose details and live-verified behaviors live in [docs/dev-guide.md](doc
 **ARC-1** is a TypeScript MCP (Model Context Protocol) server for SAP ABAP Development Tools (ADT).
 It provides 12 intent-based tools (SAPRead, SAPSearch, SAPWrite, SAPActivate, SAPNavigate, SAPQuery,
 SAPTransport, SAPGit, SAPContext, SAPLint, SAPDiagnose, SAPManage) for Claude and other MCP clients.
-Distributed as npm package (`arc-1`) and Docker image (`ghcr.io/marianfoo/arc-1`).
+Distributed as npm package (`arc-1`) and Docker image (`ghcr.io/arc-mcp/arc-1`).
 
 ## Design Principles
 

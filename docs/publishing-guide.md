@@ -46,8 +46,8 @@ The `publish-mcp-registry` job in `.github/workflows/release.yml` runs automatic
 
 ### Prerequisites (One-Time)
 
-1. **`mcpName` in package.json** — Already added: `"mcpName": "io.github.marianfoo/arc-1"`
-2. **OCI label in Dockerfile** — Already added: `LABEL io.modelcontextprotocol.server.name="io.github.marianfoo/arc-1"`
+1. **`mcpName` in package.json** — Already added: `"mcpName": "io.github.arc-mcp/arc-1"`
+2. **OCI label in Dockerfile** — Already added: `LABEL io.modelcontextprotocol.server.name="io.github.arc-mcp/arc-1"`
 3. **`id-token: write` permission** — Already set on the `publish-mcp-registry` job
 
 ### First-Time Manual Publish
@@ -95,14 +95,14 @@ After publishing, verify at:
    Visit https://glama.ai/mcp/servers?query=arc-1
 
 2. **If not indexed, submit manually:**
-   Go to https://glama.ai/mcp/servers and click "Add Server", provide `https://github.com/marianfoo/arc-1`
+   Go to https://glama.ai/mcp/servers and click "Add Server", provide `https://github.com/arc-mcp/arc-1`
 
 3. **Claim ownership:**
    Authenticate with GitHub at Glama. The `glama.json` file in the repo root establishes `marianfoo` as maintainer.
 
 4. **Get the badge** (for awesome-mcp-servers PR):
    ```markdown
-   [![MCP Server](https://glama.ai/mcp/servers/marianfoo/arc-1/badges/score.svg)](https://glama.ai/mcp/servers/marianfoo/arc-1)
+   [![MCP Server](https://glama.ai/mcp/servers/arc-mcp/arc-1/badges/score.svg)](https://glama.ai/mcp/servers/arc-mcp/arc-1)
    ```
 
 ### Quality Score
@@ -128,14 +128,14 @@ ARC-1's rich tool descriptions should score well.
    https://github.com/cline/mcp-marketplace/issues/new?template=mcp-server-submission.yml
 
 3. **Fill in the template:**
-   - **GitHub Repository URL:** `https://github.com/marianfoo/arc-1`
+   - **GitHub Repository URL:** `https://github.com/arc-mcp/arc-1`
    - **Logo Image:** Upload the 400x400 PNG
    - **Installation Testing:** Check both boxes (test with Cline first)
    - **Additional Information:**
      ```
      Name: ARC-1 - MCP Server for SAP ABAP Systems
      npm: https://www.npmjs.com/package/arc-1
-     Docker: ghcr.io/marianfoo/arc-1
+     Docker: ghcr.io/arc-mcp/arc-1
      Install: npx -y arc-1
      License: MIT
      
@@ -195,7 +195,7 @@ Add this to the README for one-click VS Code setup:
    ```
 
 2. **Submit at:** https://cursor.com/marketplace/publish
-   - Provide the GitHub repository URL: `https://github.com/marianfoo/arc-1`
+   - Provide the GitHub repository URL: `https://github.com/arc-mcp/arc-1`
    - The plugin must be open source (ARC-1 is MIT)
    - Every submission and update is manually reviewed by the Cursor team
 
@@ -317,7 +317,7 @@ These don't require files in the repo — just web submissions:
 After Glama listing is live, submit a PR to `punkpeye/awesome-mcp-servers`:
 
 ```markdown
-- [ARC-1](https://github.com/marianfoo/arc-1) [![marianfoo/arc-1 MCP server](https://glama.ai/mcp/servers/marianfoo/arc-1/badges/score.svg)](https://glama.ai/mcp/servers/marianfoo/arc-1) - MCP server for SAP ABAP systems with 12 intent-based tools for reading, writing, searching, activating, and managing ABAP objects
+- [ARC-1](https://github.com/arc-mcp/arc-1) [![arc-mcp/arc-1 MCP server](https://glama.ai/mcp/servers/arc-mcp/arc-1/badges/score.svg)](https://glama.ai/mcp/servers/arc-mcp/arc-1) - MCP server for SAP ABAP systems with 12 intent-based tools for reading, writing, searching, activating, and managing ABAP objects
 ```
 
 Place in the appropriate category (likely "Developer Tools" or "Enterprise").
@@ -343,7 +343,7 @@ The repository root doubles as a **single-plugin Claude Code marketplace**.
 ### Install (users)
 
 ```text
-/plugin marketplace add marianfoo/arc-1
+/plugin marketplace add arc-mcp/arc-1
 /plugin install arc-1@arc-1
 ```
 
@@ -370,7 +370,7 @@ Run `claude plugin validate` first; approved plugins are pinned into `anthropics
 - [ ] Submit Cursor Marketplace at cursor.com/marketplace/publish
 - [ ] Submit cursor.directory listing
 - [ ] Verify the release attached `arc-1-<version>.mcpb` (self-signed when the signer is available; build-mcpb job)
-- [ ] Test the Claude Code plugin: `/plugin marketplace add marianfoo/arc-1` → `/plugin install arc-1@arc-1`
+- [ ] Test the Claude Code plugin: `/plugin marketplace add arc-mcp/arc-1` → `/plugin install arc-1@arc-1`
 - [ ] Submit Claude Code plugin (claude.ai/admin-settings/directory/submissions/plugins/new or platform.claude.com/plugins/submit)
 - [ ] Submit Claude Desktop extension at claude.com/partners/mcp
 - [ ] Submit to PulseMCP, MCP.so, Smithery (lower priority)

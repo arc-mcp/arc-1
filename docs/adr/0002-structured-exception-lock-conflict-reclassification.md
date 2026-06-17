@@ -2,13 +2,13 @@
 
 **Status:** Proposed
 **Date:** 2026-04-28
-**Related PR:** [#196](https://github.com/marianfoo/arc-1/pull/196) (NW 7.50 compatibility fixes)
+**Related PR:** [#196](https://github.com/arc-mcp/arc-1/pull/196) (NW 7.50 compatibility fixes)
 **Supersedes:** N/A
 **Superseded by:** N/A
 
 ## Context
 
-[PR #196](https://github.com/marianfoo/arc-1/pull/196) introduced `rethrowIfNw750LockConflict` in [src/adt/crud.ts](../../src/adt/crud.ts) to reclassify NW 7.50 lock conflicts that the SAP ICM transforms into HTML `401 Logon Error Message` responses. The heuristic checks `responseBody?.includes('Logon Error Message')` and, if matched, throws a synthetic `409 locked by another session` instead of the misleading 401.
+[PR #196](https://github.com/arc-mcp/arc-1/pull/196) introduced `rethrowIfNw750LockConflict` in [src/adt/crud.ts](../../src/adt/crud.ts) to reclassify NW 7.50 lock conflicts that the SAP ICM transforms into HTML `401 Logon Error Message` responses. The heuristic checks `responseBody?.includes('Logon Error Message')` and, if matched, throws a synthetic `409 locked by another session` instead of the misleading 401.
 
 The PR comment claims the body marker self-scopes to NW 7.50 because *"S/4 returns Anmeldung fehlgeschlagen, NW 7.50 returns Logon Error Message"*. Live probe of both test systems on 2026-04-28 disproves this:
 
@@ -74,4 +74,4 @@ Naming and surface changes:
 - Live probe data captured 2026-04-28 against A4H 758 SP02 and NPL 750 SP02.
 - `extractExceptionType` and `classifySapDomainError` in [src/adt/errors.ts](../../src/adt/errors.ts).
 - [src/adt/crud.ts](../../src/adt/crud.ts) `lockObject` and `createObject` (call sites).
-- PR [#202](https://github.com/marianfoo/arc-1/pull/202) — PR-γ ships the layered detection helper, `cachedFeatures?.abapRelease` threading, classifier extension, and MSAG transport guard. The plan file `docs/plans/pr-gamma-nw750-quirks-refined.md` lives on the PR-γ branch and lands in main alongside the implementation when PR #202 merges.
+- PR [#202](https://github.com/arc-mcp/arc-1/pull/202) — PR-γ ships the layered detection helper, `cachedFeatures?.abapRelease` threading, classifier extension, and MSAG transport guard. The plan file `docs/plans/pr-gamma-nw750-quirks-refined.md` lives on the PR-γ branch and lands in main alongside the implementation when PR #202 merges.

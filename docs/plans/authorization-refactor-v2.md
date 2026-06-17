@@ -4,7 +4,7 @@
 
 Rewrite ARC-1's authorization system to be simpler for admins to configure and harder for developers to misclassify. Introduces a single `ACTION_POLICY` matrix as the source of truth for `(tool, action-or-type) → { scope, opType, featureGate? }`; renames all safety flags to positive opt-ins (`allow*`); makes `allowWrites=false` truly block every mutation (including transports, git, activation); fixes six known scope/safety classification bugs; adds per-user scopes for transports and git; implements real per-key API-key safety intersection; and deletes the `ARC1_PROFILE` server preset, the single `ARC1_API_KEY` mode, and the op-code allowlist/blocklist env vars.
 
-This is a **breaking change**. Pre-1.0, no backward compatibility is provided. Old env vars and flag names are removed outright. Continues PR [#181](https://github.com/marianfoo/arc-1/pull/181) — the earlier commits on that branch (op-code rename/harden, doc clarifications) will be superseded by this work.
+This is a **breaking change**. Pre-1.0, no backward compatibility is provided. Old env vars and flag names are removed outright. Continues PR [#181](https://github.com/arc-mcp/arc-1/pull/181) — the earlier commits on that branch (op-code rename/harden, doc clarifications) will be superseded by this work.
 
 Documentation is treated as core scope: every doc referencing a removed identifier is updated in this PR (list built by repo-wide grep in Task 0, not by hand-curation). Tests are also core scope: the `ACTION_POLICY` validator runs in CI to prevent future drift.
 
@@ -699,7 +699,7 @@ The exact list comes from the Task 0 inventory. The guaranteed set:
   - Call SAPGit(action=list_repos) — succeeds.
   - Switch role collection to `ARC-1 Viewer` → SAPTransport(action=create) blocked with "Insufficient scope: 'transports' required"; SAPWrite(action=create) blocked with "Insufficient scope: 'write' required"; SAPRead works.
   - Confirm effective-policy and any contradiction warnings appear in CF logs: `cf logs arc1-mcp --recent`.
-- [ ] Update PR [#181](https://github.com/marianfoo/arc-1/pull/181):
+- [ ] Update PR [#181](https://github.com/arc-mcp/arc-1/pull/181):
   - New title: `feat: authorization refactor v2 — ACTION_POLICY matrix, positive opt-in flags, admin-implies-all`.
   - Body: list the 11 removed identifiers + 7 new flags/scopes/profiles + 6 classification bug fixes + 1 security-gap fix (readOnly-now-blocks-transport/git-writes). Include a one-paragraph migration note referencing `docs_page/updating.md`.
   - Update PR test plan checklist: unit tests pass; typecheck clean; lint clean; validate:policy clean; manual local (6 scenarios); manual BTP (1 scenario).

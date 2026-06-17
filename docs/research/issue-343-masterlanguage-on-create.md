@@ -12,7 +12,7 @@
 
 ## 1. Verdict
 
-The bug reported in [#343](https://github.com/marianfoo/arc-1/issues/343) is **real on modern S/4HANA**, but the reporter's *mechanism* and *affected-type list* are both partly wrong. The corrected picture:
+The bug reported in [#343](https://github.com/arc-mcp/arc-1/issues/343) is **real on modern S/4HANA**, but the reporter's *mechanism* and *affected-type list* are both partly wrong. The corrected picture:
 
 1. **Two different "master language" values exist** and are written from **two different inputs**:
    - The **per-object DDIC master language** (`DD04L-DTELMASTER` for data elements, `DD01L-DOMMASTER` for domains) is taken from the **XML body** `adtcore:masterLanguage`.

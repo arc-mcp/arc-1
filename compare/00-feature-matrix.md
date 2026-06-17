@@ -146,7 +146,7 @@ Tier 2 (CycloneDX SBOM, Cosign image signing, OpenSSF Scorecard) and Tier 3 (Soc
 | Domain write (DOMA) | ✅ | ❌ (classic DDIC, out of scope) | ❌ | ✅ | ❌ | ❌ | ✅ | N/A | ❌ | ✅ (PR #149 merged) |
 | Data element write (DTEL) | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ✅ | N/A | ❌ | ✅ |
 | Multi-object batch creation | ✅ (item-level package/transport overrides) | ⚠️ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
-| Deterministic RAP preflight (TABL/BDEF/DDLX/DDLS static checks) | ⚠️ (in-flight PR [#173](https://github.com/marianfoo/arc-1/pull/173) — `preflightBeforeWrite` toggle) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
+| Deterministic RAP preflight (TABL/BDEF/DDLX/DDLS static checks) | ⚠️ (in-flight PR [#173](https://github.com/arc-mcp/arc-1/pull/173) — `preflightBeforeWrite` toggle) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
 | RAP behavior-pool handler scaffolding | ✅ (`SAPWrite action=scaffold_rap_handlers` dry-run/autoApply, native CLAS include writes, auto-creates missing `lhc_*` skeletons in CCIMP only — both DEFINITION + IMPLEMENTATION blocks per SAP-canonical layout, verified against demo `BP_DEMO_RAP_STRICT`) | ✅ (abap_generators) | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
 | Generate Behavior Implementation (RAP one-shot) | ✅ (`SAPWrite action=generate_behavior_implementation` — auto-discover BDEF via rootEntityRef, scaffold all handlers in CCIMP, write under one lock, optionally activate; reliable equivalent of Eclipse ADT's Cmd+1 "Generate Behavior Implementation" quickfix without the broken server endpoint) | ✅ (abap_generators — native Joule skill) | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
 | AFF schema validation (pre-create) | ✅ | ⚠️ (AFF used internally) | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
@@ -239,7 +239,7 @@ Tier 2 (CycloneDX SBOM, Cosign image signing, OpenSSF Scorecard) and Tier 3 (Soc
 | Lua scripting engine | ❌ | ❌ | ✅ (50+ bindings) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | WASM-to-ABAP compiler | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | MCP client configurator | ❌ | N/A (IDE-embedded) | ❌ | ❌ | ❌ | ❌ | ✅ (11 clients) | ❌ | ❌ | ❌ |
-| CLI mode (non-MCP) | ⚠️ (generic `call`/`tools` entry points + 6 ergonomic shortcuts; 9 of 12 MCP tools lack shortcuts or expose fewer knobs than the Zod schema — tracked as [FEAT-60](../docs_page/roadmap.md#feat-60-cliserver-alignment-shortcut-parity-with-mcp-tool-schemas) + PR [#179](https://github.com/marianfoo/arc-1/pull/179)) | ❌ (VS Code only) | ✅ (28 commands) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (28+ commands, primary mode) |
+| CLI mode (non-MCP) | ⚠️ (generic `call`/`tools` entry points + 6 ergonomic shortcuts; 9 of 12 MCP tools lack shortcuts or expose fewer knobs than the Zod schema — tracked as [FEAT-60](../docs_page/roadmap.md#feat-60-cliserver-alignment-shortcut-parity-with-mcp-tool-schemas) + PR [#179](https://github.com/arc-mcp/arc-1/pull/179)) | ❌ (VS Code only) | ✅ (28 commands) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (28+ commands, primary mode) |
 | Health endpoint | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ (v4.3.0) | ❌ | ✅ | ❌ |
 | RFC connectivity | ❌ | ✅ (bundles JCo) | ❌ | ❌ | ❌ | ❌ | ✅ (sap-rfc-lite) | ❌ | ❌ | ✅ (PyRFC, optional) |
 | MCPB one-click install | ❌ | ❌ (VSIX marketplace) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |

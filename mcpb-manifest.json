@@ -13,11 +13,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/marianfoo/arc-1.git"
+    "url": "https://github.com/arc-mcp/arc-1.git"
   },
-  "homepage": "https://marianfoo.github.io/arc-1/",
-  "documentation": "https://marianfoo.github.io/arc-1/quickstart/",
-  "support": "https://github.com/marianfoo/arc-1/issues",
+  "homepage": "https://arc-mcp.github.io/arc-1/",
+  "documentation": "https://arc-mcp.github.io/arc-1/quickstart/",
+  "support": "https://github.com/arc-mcp/arc-1/issues",
   "server": {
     "type": "node",
     "entry_point": "dist/index.js",

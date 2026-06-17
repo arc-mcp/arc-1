@@ -2,7 +2,7 @@
 
 ## Overview
 
-PR #307 (class-section surgery) shipped four `SAPWrite` actions. The issue author ([samibouge, PR feedback](https://github.com/marianfoo/arc-1/pull/307#issuecomment-4574155604)) validated all four against real + artificial scenarios — zero bugs — and surfaced one important gap: when asked to change a method's visibility, Claude's **default instinct was the destructive path** (`delete_method` + `add_method`), which wipes the method body and recreates an empty stub. The author found the safe `edit_class_definition` route manually, but an autonomous agent would silently lose implementation code.
+PR #307 (class-section surgery) shipped four `SAPWrite` actions. The issue author ([samibouge, PR feedback](https://github.com/arc-mcp/arc-1/pull/307#issuecomment-4574155604)) validated all four against real + artificial scenarios — zero bugs — and surfaced one important gap: when asked to change a method's visibility, Claude's **default instinct was the destructive path** (`delete_method` + `add_method`), which wipes the method body and recreates an empty stub. The author found the safe `edit_class_definition` route manually, but an autonomous agent would silently lose implementation code.
 
 This plan closes that gap two ways:
 

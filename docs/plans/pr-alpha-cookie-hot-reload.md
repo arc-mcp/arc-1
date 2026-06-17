@@ -6,7 +6,7 @@ Today, when ARC-1 is configured with `SAP_COOKIE_FILE` and the SAP session cooki
 
 This PR adds a **lazy cookie-reload mechanism**: on a persistent 401 in cookie-auth mode, the client clears the in-memory cookie jar and re-reads the configured `cookieFile` (or, where applicable, `cookieString`) on the **next** outgoing request. The mechanism never polls, never restarts on its own, and never expands the auth surface — it simply lets `arc1-cli extract-cookies` (or any equivalent refresh) take effect without a process restart.
 
-This PR is the first of three "ship-now" splits of [PR #196](https://github.com/marianfoo/arc-1/pull/196), cherry-picked because the cookie-reload work is fully orthogonal to the NW 7.50 compatibility work in that PR. The architectural decisions and plans for the rest of PR #196 are captured under `docs/adr/0001..0003.md` and `docs/plans/discovery-driven-endpoint-routing.md`.
+This PR is the first of three "ship-now" splits of [PR #196](https://github.com/arc-mcp/arc-1/pull/196), cherry-picked because the cookie-reload work is fully orthogonal to the NW 7.50 compatibility work in that PR. The architectural decisions and plans for the rest of PR #196 are captured under `docs/adr/0001..0003.md` and `docs/plans/discovery-driven-endpoint-routing.md`.
 
 ## Context
 

@@ -1,7 +1,7 @@
 # ARC-1 Extension Framework — v2 Specification (FEAT-61, draft)
 
 > **Status:** 📝 **DRAFT / planning** — not implemented. Captures everything deferred from v1
-> (shipped in [PR #454](https://github.com/marianfoo/arc-1/pull/454)) so the work is scoped before
+> (shipped in [PR #454](https://github.com/arc-mcp/arc-1/pull/454)) so the work is scoped before
 > it starts. The v1 spec is [`extension-framework-spec.md`](extension-framework-spec.md); the
 > rationale is [`extension-framework-deep-research.md`](extension-framework-deep-research.md).
 > **Stability:** v1 is `@experimental` (one `apiVersion` integer fuse). v2's headline non-feature
@@ -44,7 +44,7 @@ framework-managed ABAP deployment; sandboxing; a marketplace; hot-reload.
 
 ## 0.5 Post-merge gap review — risk × value backlog (do-next order)
 
-After v1 merged ([PR #454](https://github.com/marianfoo/arc-1/pull/454)), a review surfaced gaps
+After v1 merged ([PR #454](https://github.com/arc-mcp/arc-1/pull/454)), a review surfaced gaps
 **beyond** the original §0 deferral list — mostly operability, release hygiene, and one under-stated
 security property. This table triages **all** open extension work (original deferrals + the new
 gaps) by **risk × value**, in the order to tackle it. *Risk* = the danger of leaving it undone (or

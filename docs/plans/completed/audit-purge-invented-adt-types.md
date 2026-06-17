@@ -2,10 +2,10 @@
 
 **References**
 
-- Issue [#218](https://github.com/marianfoo/arc-1/issues/218) — original `STRU/DS` report
-- [Comment 4404553535](https://github.com/marianfoo/arc-1/issues/218#issuecomment-4404553535) — `FUNC/FM` flagged by @oisee
-- PR [#219](https://github.com/marianfoo/arc-1/pull/219) — Model B / STRU→TABL collapse (merged)
-- PR [#222](https://github.com/marianfoo/arc-1/pull/222) — Audit (research-only, this plan ships in it)
+- Issue [#218](https://github.com/arc-mcp/arc-1/issues/218) — original `STRU/DS` report
+- [Comment 4404553535](https://github.com/arc-mcp/arc-1/issues/218#issuecomment-4404553535) — `FUNC/FM` flagged by @oisee
+- PR [#219](https://github.com/arc-mcp/arc-1/pull/219) — Model B / STRU→TABL collapse (merged)
+- PR [#222](https://github.com/arc-mcp/arc-1/pull/222) — Audit (research-only, this plan ships in it)
 - [`research/abap-types/02-master-overview.md`](../../research/abap-types/02-master-overview.md) — synthesis + verdict matrix
 - [`research/abap-types/00-methodology.md`](../../research/abap-types/00-methodology.md) — research procedure
 - Per-type evidence: [`func.md`](../../research/abap-types/types/func.md), [`fugr.md`](../../research/abap-types/types/fugr.md), [`view.md`](../../research/abap-types/types/view.md), [`clas.md`](../../research/abap-types/types/clas.md), [`ddlx.md`](../../research/abap-types/types/ddlx.md), [`tran.md`](../../research/abap-types/types/tran.md)
@@ -16,11 +16,11 @@
 
 ## Overview
 
-Issue [#218](https://github.com/marianfoo/arc-1/issues/218)'s `STRU/DS` was not the only
+Issue [#218](https://github.com/arc-mcp/arc-1/issues/218)'s `STRU/DS` was not the only
 invented entry in `SLASH_TYPE_MAP`. After PR
-[#219](https://github.com/marianfoo/arc-1/pull/219) (Model B / STRU→TABL collapse) merged,
+[#219](https://github.com/arc-mcp/arc-1/pull/219) (Model B / STRU→TABL collapse) merged,
 @oisee flagged in
-[issue #218 comment 4404553535](https://github.com/marianfoo/arc-1/issues/218#issuecomment-4404553535)
+[issue #218 comment 4404553535](https://github.com/arc-mcp/arc-1/issues/218#issuecomment-4404553535)
 that `'FUNC/FM': 'FUNC'` is also wrong — function modules don't exist as TADIR R3TR
 objects (they're `LIMU FUNC` under `R3TR FUGR`), and the real ADT slash code is `FUGR/FF`.
 

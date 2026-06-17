@@ -168,6 +168,6 @@ Pin the safety property checked in Task 1 with an automated test. The test exerc
 - [ ] Run `npm run lint` — no errors.
 - [ ] Verify the three flagged sites have the expected inline comments by `grep -n "codeql\[js/clear-text-logging\]" src/cli.ts` — expect 3 matches.
 - [ ] Verify the regression test exists and runs: `npx vitest run tests/unit/cli/clear-text-logging-regression.test.ts` — expect 5 passes.
-- [ ] After PR merges to `main`: manually dismiss CodeQL alerts #9, #10, #11 in the Security UI ([https://github.com/marianfoo/arc-1/security/code-scanning](https://github.com/marianfoo/arc-1/security/code-scanning)) with rationale text (paste from Task 1's audit summary):
+- [ ] After PR merges to `main`: manually dismiss CodeQL alerts #9, #10, #11 in the Security UI ([https://github.com/arc-mcp/arc-1/security/code-scanning](https://github.com/arc-mcp/arc-1/security/code-scanning)) with rationale text (paste from Task 1's audit summary):
   > Verified false positive in PR #N. The flagged `console.X` sinks log either `err.message` from upstream errors (not credentials) or an explicitly-constructed `out` object that excludes `apiKeys`/`apiKeysRaw`/`oauthDcrTtlSeconds`. Audit and rationale documented inline in src/cli.ts; safety property pinned by `tests/unit/cli/clear-text-logging-regression.test.ts` (5 tests).
 - [ ] Move this plan to `docs/plans/completed/codeql-alerts-clear-text-logging-triage.md`.

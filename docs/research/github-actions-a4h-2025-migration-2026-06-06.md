@@ -36,7 +36,7 @@ The old preflight only treated HTTP 401 as a skip condition. Other failures were
 
 ### GitHub Secret Inventory
 
-Repository secret names checked with `gh secret list -R marianfoo/arc-1`:
+Repository secret names checked with `gh secret list -R arc-mcp/arc-1`:
 
 | Secret | Present | Last updated before rotation |
 |---|---:|---|
@@ -130,8 +130,8 @@ GitHub Actions validation completed on implementation commit `39c388f6`:
 
 | Evidence | Result |
 |---|---:|
-| PR | [#365](https://github.com/marianfoo/arc-1/pull/365) |
-| Workflow | [Test run 27058553382](https://github.com/marianfoo/arc-1/actions/runs/27058553382) |
+| PR | [#365](https://github.com/arc-mcp/arc-1/pull/365) |
+| Workflow | [Test run 27058553382](https://github.com/arc-mcp/arc-1/actions/runs/27058553382) |
 | Event | `pull_request` |
 | Head branch | `codex/github-ci-a4h-2025` |
 | Head SHA | `39c388f6e9c1b488f228e0a9366d140116a6b5f5` |
@@ -240,5 +240,5 @@ Do not treat every `SAP_URL`/`SAP_USER`/`SAP_PASSWORD` string in docs or scripts
 
 ## Remaining Follow-Ups
 
-- Completed: the first manual **SAP Slow Tests** workflow run after `.github/workflows/sap-slow-tests.yml` reached `main` passed as run [`27068686650`](https://github.com/marianfoo/arc-1/actions/runs/27068686650). Slow integration, slow E2E, MCP server shutdown, reliability summary, and required-execution threshold checks all passed. The baseline is documented in `docs/research/test-runtime-profiles-and-coverage-2026-06-06.md`.
+- Completed: the first manual **SAP Slow Tests** workflow run after `.github/workflows/sap-slow-tests.yml` reached `main` passed as run [`27068686650`](https://github.com/arc-mcp/arc-1/actions/runs/27068686650). Slow integration, slow E2E, MCP server shutdown, reliability summary, and required-execution threshold checks all passed. The baseline is documented in `docs/research/test-runtime-profiles-and-coverage-2026-06-06.md`.
 - Remaining external cleanup: remove the old repository `SAP_*` secrets from GitHub unless another external operational process is still using them. This is GitHub repository state, not a code change; current workflow files use `TEST_SAP_*` for live SAP CI and map to runtime `SAP_*` names only inside E2E server/test steps.
