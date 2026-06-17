@@ -68,8 +68,8 @@ const CUSTOM_PREFIX = 'Custom_';
  * built-in or silently dropping a tool.
  */
 export class ToolRegistry {
+  // Map preserves insertion order (ECMAScript guarantee), so it IS the registration order.
   private readonly entries = new Map<string, RegistryEntry>();
-  private readonly order: string[] = [];
 
   register(entry: RegistryEntry): void {
     if (!entry?.name) {
@@ -89,7 +89,6 @@ export class ToolRegistry {
       throw new Error(`ToolRegistry.register: duplicate tool name '${entry.name}'`);
     }
     this.entries.set(entry.name, entry);
-    this.order.push(entry.name);
   }
 
   get(name: string): RegistryEntry | undefined {
@@ -102,7 +101,7 @@ export class ToolRegistry {
 
   /** Built-ins first (registration order), then plugins (registration order). Deterministic for `tools/list`. */
   list(): RegistryEntry[] {
-    const all = this.order.map((n) => this.entries.get(n)!);
+    const all = [...this.entries.values()];
     return [...all.filter((e) => e.source === 'builtin'), ...all.filter((e) => e.source === 'plugin')];
   }
 
