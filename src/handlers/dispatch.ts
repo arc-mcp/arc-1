@@ -703,7 +703,10 @@ export async function handleToolCall(
       // only replaces the former `switch (toolName)`. See extension-framework-spec.md §4.
       const entry = getToolRegistry().get(toolName);
       let result: ToolResult;
-      if (!entry) {
+      // Plugin (Custom_*) tools are out of scope for hyperfocused mode (spec §1): hidden from
+      // tools/list AND not directly invocable, so a client that knows a Custom_ name can't reach a
+      // plugin tool here either. Built-ins (incl. the `SAP` wrapper) dispatch normally.
+      if (!entry || (config.toolMode === 'hyperfocused' && entry.source === 'plugin')) {
         result = errorResult(`Unknown tool: ${toolName}`);
       } else {
         const dispatchCtx: ToolDispatchContext = {

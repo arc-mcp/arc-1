@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -122,6 +122,37 @@ describe('loadPlugins — manifest tools', () => {
       expect(r.get('Custom_Mf')?.source).toBe('plugin');
       expect(r.get('Custom_Mf')?.policy.scope).toBe('read');
       expect(loaded[0].toolNames).toContain('Custom_Mf');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('loadPlugins — path safety (assertLoadablePath)', () => {
+  it('refuses a non-absolute ARC1_PLUGINS entry', async () => {
+    await expect(loadPlugins(['relative/plugin.js'], new ToolRegistry())).rejects.toThrow(/absolute path/);
+  });
+
+  it('refuses a missing path (ENOENT)', async () => {
+    await expect(loadPlugins(['/no/such/arc1-plugin.json'], new ToolRegistry())).rejects.toThrow();
+  });
+
+  it('refuses a world-writable plugin file', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'arc1-plugin-perm-'));
+    const mf = join(dir, 'Custom_Ww.tool.json');
+    writeFileSync(
+      mf,
+      JSON.stringify({
+        name: 'Custom_Ww',
+        description: 'd',
+        scope: 'read',
+        inputSchema: { type: 'object', additionalProperties: false, properties: {} },
+        request: { method: 'GET', path: '/sap/bc/adt/discovery' },
+      }),
+    );
+    chmodSync(mf, 0o777); // sets the world-writable bit assertLoadablePath rejects
+    try {
+      await expect(loadPlugins([mf], new ToolRegistry())).rejects.toThrow(/world-writable/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

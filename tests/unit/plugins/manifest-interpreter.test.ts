@@ -98,7 +98,10 @@ describe('registerManifestTool dispatch', () => {
       },
     });
     const { ctx, calls } = ctxFor({ name: '..' });
-    await expect(r.get('Custom_Loose')!.invoke(ctx)).rejects.toThrow(/forbidden sequence/);
+    // Parity with the Ajv branch: a path-param violation returns an isError result, not a throw.
+    const res = await r.get('Custom_Loose')!.invoke(ctx);
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toMatch(/forbidden sequence/);
     expect(calls).toHaveLength(0);
   });
 

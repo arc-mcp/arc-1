@@ -12,7 +12,7 @@
 > - **`ctx.cache` is removed** from the public `ToolContext` for v1: the raw `CachingLayer` exposed cache-only source/where-used reads that bypass the per-user `cacheSecurity` revalidation (PP cross-user leak class). A safe per-user cache facade is a v2 item.
 > - **`availableOn` is enforced** in `tools/list` against the resolved system type (was inert metadata). **`pluginName`** now rides `tool_call_start`/`tool_call_end` audit events; the `http_request`-level `pluginName` tag (§5.4/§9) is deferred — `ctx.http` calls are still logged via the underlying `http_request` event, just untagged.
 > - **Loader handles `.js` + `.json` only.** Single-directory (`package.json#main`) loading and `package.json#arc1.requires` ceiling-intersection (§3.1/§6/§7) are deferred to **v2** — not implemented in v1. The ceiling already constrains every call via scope + `checkOperation`, so `requires` would only be a redundant narrowing.
-> - **Plugin tools are excluded from hyperfocused `tools/list`** (matches §1 "hyperfocused participation out of scope").
+> - **Plugin tools are excluded from hyperfocused mode** — both hidden from `tools/list` AND refused at dispatch (a client that knows a `Custom_` name still gets "Unknown tool"), matching §1 "hyperfocused participation out of scope".
 
 ---
 

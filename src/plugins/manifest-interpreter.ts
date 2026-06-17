@@ -122,7 +122,22 @@ export function registerManifestTool(registry: ToolRegistry, pluginName: string,
           isError: true,
         };
       }
-      const path = renderPath(m.request.path, m.request.pathParams, args) + renderQuery(m.request.query, args);
+      let path: string;
+      try {
+        // Anti-traversal / ref-resolution failures surface as an isError result (parity with the
+        // ajv branch above), not a thrown exception out of invoke.
+        path = renderPath(m.request.path, m.request.pathParams, args) + renderQuery(m.request.query, args);
+      } catch (err) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Invalid arguments for ${m.name}: ${err instanceof Error ? err.message : String(err)}`,
+            },
+          ],
+          isError: true,
+        };
+      }
       const http = createSafeHttpClient(ctx.client.http, ctx.client.safety, m.name);
       const headers = m.request.accept ? { Accept: m.request.accept } : undefined;
       const res = await http.get(path, headers);

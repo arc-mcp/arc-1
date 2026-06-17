@@ -57,4 +57,23 @@ describe('plugin dispatch through handleToolCall (FEAT-61 PR3)', () => {
     expect(res.isError).toBe(true);
     expect(res.content[0].text).toMatch(/Unknown tool/);
   });
+
+  it('refuses a registered plugin tool in hyperfocused mode (not just hidden from tools/list)', async () => {
+    registerPluginTool(
+      getToolRegistry(),
+      'demo',
+      defineTool({
+        name: 'Custom_PdHf',
+        description: 'echo',
+        schema: z.object({ msg: z.string() }),
+        policy: { scope: 'read', opType: 'R' },
+        handler: async (a) => ({ content: [{ type: 'text', text: (a as { msg: string }).msg }] }),
+      }),
+    );
+    // Even with a scope-passing user, hyperfocused mode must not dispatch a plugin tool.
+    const hyperfocused = { ...config, toolMode: 'hyperfocused' } as unknown as ServerConfig;
+    const res = await handleToolCall(fakeClient, hyperfocused, 'Custom_PdHf', { msg: 'x' }, auth(['read']));
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toMatch(/Unknown tool/);
+  });
 });
