@@ -42,6 +42,45 @@ framework-managed ABAP deployment; sandboxing; a marketplace; hot-reload.
 
 ---
 
+## 0.5 Post-merge gap review — risk × value backlog (do-next order)
+
+After v1 merged ([PR #454](https://github.com/marianfoo/arc-1/pull/454)), a review surfaced gaps
+**beyond** the original §0 deferral list — mostly operability, release hygiene, and one under-stated
+security property. This table triages **all** open extension work (original deferrals + the new
+gaps) by **risk × value**, in the order to tackle it. *Risk* = the danger of leaving it undone (or
+that the item itself represents). Several P0 items are cheap docs/hygiene with outsized risk
+reduction and should land as **v1.x patches, before v2 proper**. This supersedes the §16 PR sequence
+as the priority view; §16 stays as the implementation breakdown for the write surface specifically.
+
+| # | Item | Risk | Value | Effort | When |
+|---|------|------|-------|--------|------|
+| **G1** | **State the trust model bluntly** — a loaded plugin runs in-process with **full ARC-1 privileges** (reads `process.env` creds, FS, outbound network); the gated `ctx` is an API, **not** a sandbox. `classRun`'s gate guards a *buggy*/over-eager plugin + the admin's posture, **not** a hostile one (which already has `child_process`). Add to SECURITY.md + docs_page/extensions.md. | **High** — operators load under a false sense of containment → SAP-credential exfiltration | High | **Low** (docs) | **P0** |
+| **G2** | **Published-package smoke** — verify `npm i arc-1@0.10 && import 'arc-1/public'` (+ `/public/testing`) actually resolve **from the tarball** (only `npm link`-tested so far). Add `publint` + `attw` + a pack-and-import test to CI. | Med — the first external install could fail on a bad `exports`/path | High | **Low** | **P0** |
+| **G3** | **Contract-freeze `arc-1/public`** — snapshot the exported surface (types, `defineTool`, `ToolContext`, manifest grammar) so a refactor can't silently break it. We froze the *LLM tool* surface, not the *plugin-author API*. | Med — silent public-API drift breaks downstream plugins | High | Low–Med | **P0** |
+| **G4** | **Wire the sample into CI** — `arc-mcp/arc-1-extension-sample` is the smoke test + canonical example but isn't built/tested against arc-1 changes, so it rots; breaks are found late + by users. | Med | Med | Med (cross-repo: scheduled build or vendored copy) | **P1** |
+| **G5** | **Per-handler timeout + `ctx.signal`** (= §7) — a hung plugin holds a `maxConcurrent` slot indefinitely. This is a **latent availability bug today**, not just a v2 nicety — promote to a v1.x patch. | Med — accidental DoS / slot exhaustion | Med–High | Low–Med | **P1** |
+| **G6** | **Plugin dependency supply chain** — a code plugin's transitive `node_modules` run in-process; a compromised dep = full compromise (the practical consequence of G1). Ship guidance (committed lockfile, `npm audit`, minimal deps, prefer the manifest tier when it suffices). | **High** — the #1 real attack vector | Med | Low (guidance) | **P1** |
+| **G7** | **Manifest `response.extract`** (jsonpath projection, the v1.1 fast-follow) — without it the manifest tier is too thin for real (nested-JSON) OData, pushing authors to the code tier for trivial wraps and defeating the no-code value. | Low | Med | Low–Med | **P1** |
+| **G8** | **`ctx.write` package-aware writes** (§2) — the headline v2 feature; ADT writes stay package-allowlist-gated, raw non-ADT behind an opt-in. | — (it *is* the point of v2) | High | High | **P1→P2** (centerpiece; gated on §2 design + §15 open Qs) |
+| **G9** | **Load-failure mode** — fail-fast means one bad plugin blocks server start; decide whether an opt-in **skip-and-warn** belongs for multi-plugin deployments. | Med — availability footgun on a managed instance | Med | Low–Med | **P2** |
+| **G10** | **Runtime observability** — a `SAPManage` action / startup summary listing loaded plugins + their tools + versions. | Low | Med (operability) | Low | **P2** |
+| **G11** | **The mechanical deferrals** — safe `ctx.cache` (§3), loader directory + npm-specifier (§4), `package.json#arc1.requires` intersection (§5), `http_request` `pluginName` tag (§6). | Low–Med | Med | Med | **P2** |
+| **G12** | **MCP resources + prompts** (§11) — let a plugin contribute browsable **resources** / prompt templates, not only tools. Resources may fit "expose this data" better than a tool. | Low | Med (broader MCP surface) | Med–High | **P2→P3** |
+| **G13** | **Custom visibility labels** (§8), **observer hooks** (§9), **multi-system** (§10, gated on FEAT-59). | Low | Low–Med | Med | **P3** |
+| **G14** | **Per-plugin resource fairness / call budget** — bound a greedy plugin on a shared instance (the global semaphore already caps *total* concurrency). | Low–Med | Low–Med | Med | **P3** (YAGNI until a real multi-plugin / high-traffic deploy) |
+| **G15** | **Per-plugin tool namespacing** (`Custom_<plugin>_<tool>`) — only matters once many plugins coexist; collisions already fail-fast safely. | Low | Low | Med (name-contract change) | **P3** (maybe never) |
+
+**Do-next summary:**
+
+- **P0 — now, mostly docs/hygiene, land as v1.x:** **G1** (trust-model statement), **G2** (published-package smoke), **G3** (public-API contract freeze). Cheap, high risk-reduction, *true today* — independent of the v2 write work.
+- **P1 — soon:** **G4** (sample-in-CI), **G5** (timeout — latent bug), **G6** (dep-supply-chain guidance), **G7** (manifest projection); then **G8** `ctx.write` as the v2 centerpiece.
+- **P2 — v2 proper:** **G9** (load-failure mode), **G10** (observability), **G11** (the mechanical deferrals), **G12** (resources/prompts).
+- **P3 — defer / YAGNI:** **G13** (labels/hooks/multi-system), **G14** (fairness), **G15** (namespacing) — revisit only when a concrete multi-plugin, high-traffic deployment makes them real.
+
+The throughline: the highest-risk open items (**G1**, **G6**) are about being *honest that a plugin is trusted code with full privileges*, and they're nearly free to address (docs + guidance). Do those before shipping more capability.
+
+---
+
 ## 1. Scope of v2
 
 v2 makes plugins **write-capable without weakening any safety invariant**, stabilizes the public
