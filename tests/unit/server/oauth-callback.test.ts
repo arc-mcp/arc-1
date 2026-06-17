@@ -1,9 +1,8 @@
+import { OAuthStateCodec, StatelessDcrClientStore } from '@arc-mcp/xsuaa-auth';
 import express from 'express';
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createOAuthCallbackHandler } from '../../../src/server/http.js';
-import { OAuthStateCodec } from '../../../src/server/oauth-state.js';
-import { StatelessDcrClientStore } from '../../../src/server/stateless-client-store.js';
 
 const SECRET = 'callback-test-signing-secret-1234567890';
 const TEST_CLIENT_ID = 'arc1-test-client';

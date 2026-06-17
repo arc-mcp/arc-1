@@ -6,7 +6,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { getAppUrl } from '../../../src/adt/btp.js';
+import { getAppUrl } from '../../../src/server/app-url.js';
 
 describe('getAppUrl', () => {
   let savedPublicUrl: string | undefined;

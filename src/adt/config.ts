@@ -6,7 +6,7 @@
  * only needs to know about SAP — it doesn't care about MCP.
  */
 
-import type { BTPProxyConfig } from './btp.js';
+import type { BTPProxyConfig } from '@arc-mcp/xsuaa-auth/btp';
 import type { SafetyConfig } from './safety.js';
 import { unrestrictedSafetyConfig } from './safety.js';
 

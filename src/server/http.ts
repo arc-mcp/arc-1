@@ -25,6 +25,7 @@
  * 4. Health endpoint is always unauthenticated — needed for CF health checks.
  */
 
+import type { ApiKeyEntry, OAuthStateCodec, StatelessDcrClientStore, XsuaaCredentials } from '@arc-mcp/xsuaa-auth';
 import type { Server as McpServer } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import cors from 'cors';
@@ -33,12 +34,9 @@ import express from 'express';
 import helmet from 'helmet';
 import { expandScopes } from '../authz/policy.js';
 import { API_KEY_PROFILES } from './config.js';
-import { logger } from './logger.js';
-import type { OAuthStateCodec } from './oauth-state.js';
+import { authLibLogger, logger } from './logger.js';
 import { VERSION } from './server.js';
-import type { StatelessDcrClientStore } from './stateless-client-store.js';
 import type { ServerConfig } from './types.js';
-import type { XsuaaCredentials } from './xsuaa.js';
 
 // ─── OAuth Callback Proxy Handler (issue #214) ───────────────────────
 
@@ -284,6 +282,28 @@ function matchApiKey(
   return undefined;
 }
 
+/**
+ * Map ARC-1's `config.apiKeys` (`{key, profile}[]`) to the package's
+ * `ApiKeyEntry[]` (`{key, scopes, clientId}`) so the package's chained verifier
+ * resolves them identically to ARC-1's legacy `matchApiKey`:
+ *   - scopes come from `API_KEY_PROFILES[profile]` after `expandScopes` (same as
+ *     `matchApiKey`),
+ *   - clientId is `api-key:<profile>` (same string `matchApiKey` returned, so
+ *     audit/identity output is unchanged).
+ * Entries whose profile is unknown are dropped (matching `matchApiKey`'s
+ * defense-in-depth `undefined`); profiles are validated at config-parse time.
+ */
+function toApiKeyEntries(config: ServerConfig): ApiKeyEntry[] {
+  if (!config.apiKeys) return [];
+  const entries: ApiKeyEntry[] = [];
+  for (const entry of config.apiKeys) {
+    const profile = API_KEY_PROFILES[entry.profile];
+    if (!profile) continue;
+    entries.push({ key: entry.key, scopes: expandScopes(profile.scopes), clientId: `api-key:${entry.profile}` });
+  }
+  return entries;
+}
+
 // ─── JWKS / JWT types (lazy-loaded from jose) ────────────────────────
 
 let joseModule: typeof import('jose') | null = null;
@@ -485,9 +505,9 @@ export async function startHttpServer(
     const { mcpAuthRouter } = await import('@modelcontextprotocol/sdk/server/auth/router.js');
     const { requireBearerAuth } = await import('@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js');
     const { createXsuaaOAuthProvider, createChainedTokenVerifier, createXsuaaTokenVerifier } = await import(
-      './xsuaa.js'
+      '@arc-mcp/xsuaa-auth'
     );
-    const { getAppUrl } = await import('../adt/btp.js');
+    const { getAppUrl } = await import('./app-url.js');
 
     // Determine app URL for OAuth metadata
     const appUrl = getAppUrl() ?? `http://${bindHost}:${port}`;
@@ -505,15 +525,35 @@ export async function startHttpServer(
     // `/oauth/callback` below since the proxy strips the prefix before forwarding.
     const oauthCallbackUrl = `${oauthFullBase}/oauth/callback`;
 
-    // Create XSUAA provider + chained verifier
+    // Create XSUAA provider + chained verifier.
+    //
+    // The package defaults its client_id prefix + KDF labels to `mcp-*`. ARC-1
+    // MUST override them to the historical `arc1-*` values so client_ids and
+    // OAuth-state tokens minted by previous ARC-1 releases keep validating
+    // (the signing-key derivation folds in the KDF label, and the prefix gates
+    // `getClient`). These three strings are part of ARC-1's on-the-wire
+    // contract — do not change them.
     const { provider, clientStore, stateCodec } = createXsuaaOAuthProvider(xsuaaCredentials, appUrl, {
+      clientIdPrefix: 'arc1-',
+      dcrKdfLabel: 'arc1-dcr/v1',
+      stateKdfLabel: 'arc1-oauth-state/v1',
       dcrTtlSeconds: config.oauthDcrTtlSeconds,
       dcrSigningSecret: config.dcrSigningSecret,
       callbackUrl: oauthCallbackUrl,
+      logger: authLibLogger,
     });
-    const xsuaaVerifier = createXsuaaTokenVerifier(xsuaaCredentials);
+    // Inject ARC-1's scope-expansion policy + logger so the verifier emits the
+    // same expanded AuthInfo.scopes ARC-1 produced before the extraction.
+    const xsuaaVerifier = createXsuaaTokenVerifier(xsuaaCredentials, { expandScopes, logger: authLibLogger });
+    // ARC-1 keeps its OWN inline createOidcVerifier (jose + ServerConfig-driven);
+    // it does not depend on a moved module, so it stays as-is.
     const oidcVerifier = config.oidcIssuer ? await createOidcVerifier(config) : undefined;
-    const chainedVerifier = createChainedTokenVerifier(config, xsuaaVerifier, oidcVerifier);
+    const chainedVerifier = createChainedTokenVerifier(
+      { apiKeys: toApiKeyEntries(config) },
+      xsuaaVerifier,
+      oidcVerifier,
+      { expandScopes, logger: authLibLogger },
+    );
 
     // Include resourceMetadataUrl so the 401 WWW-Authenticate header contains the PRM URL.
     // Copilot Studio (and other PRM-aware clients) use this to discover the OAuth endpoints.
