@@ -5,10 +5,16 @@ import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
 import { AdtApiError } from '../../../src/adt/errors.js';
 import { AdtHttpClient } from '../../../src/adt/http.js';
+import type { ResolvedFeatures } from '../../../src/adt/types.js';
+import { getToolRegistry } from '../../../src/handlers/dispatch.js';
+import { resetCachedFeatures, setCachedFeatures } from '../../../src/handlers/feature-cache.js';
 import { getToolDefinitions } from '../../../src/handlers/tools.js';
+import { defineTool } from '../../../src/public/index.js';
 import { logger } from '../../../src/server/logger.js';
+import { registerPluginTool } from '../../../src/server/plugin-loader.js';
 import {
   buildAdtConfig,
   createServer,
@@ -213,6 +219,65 @@ describe('createServer request handlers', () => {
     await handler({ method: 'tools/call', params: { name: 'UnknownTool', arguments: {} } }, {});
 
     expect(markSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('createServer tools/list — plugin tools (FEAT-61)', () => {
+  afterEach(() => resetCachedFeatures());
+
+  function readTool(name: `Custom_${string}`, extra: Partial<Parameters<typeof defineTool>[0]> = {}) {
+    return defineTool({
+      name,
+      description: 'd',
+      schema: z.object({}),
+      policy: { scope: 'read', opType: 'R' },
+      handler: async () => ({ content: [{ type: 'text', text: 'x' }] }),
+      ...extra,
+    });
+  }
+
+  async function listToolNames(
+    config: Parameters<typeof createServer>[0],
+    authInfo: AuthInfo = readAuth(),
+  ): Promise<string[]> {
+    const server = createServer(config);
+    const handler = requestHandler(server, ListToolsRequestSchema.shape.method.value);
+    const result = await handler({ method: 'tools/list', params: {} }, { authInfo });
+    return (result.tools as Array<{ name: string }>).map((t) => t.name);
+  }
+
+  it('lists a read plugin tool but scope-prunes a write plugin tool for a read user', async () => {
+    registerPluginTool(getToolRegistry(), 'demo', readTool('Custom_ListedRead'));
+    registerPluginTool(
+      getToolRegistry(),
+      'demo',
+      defineTool({
+        name: 'Custom_HiddenWrite',
+        description: 'w',
+        schema: z.object({}),
+        policy: { scope: 'write', opType: 'U' },
+        handler: async () => ({ content: [{ type: 'text', text: 'x' }] }),
+      }),
+    );
+    const names = await listToolNames({ ...DEFAULT_CONFIG, allowWrites: true });
+    expect(names).toContain('Custom_ListedRead');
+    expect(names).not.toContain('Custom_HiddenWrite'); // read user lacks the write scope
+  });
+
+  it('hides plugin tools in hyperfocused mode (only the SAP tool is exposed)', async () => {
+    registerPluginTool(getToolRegistry(), 'demo', readTool('Custom_HfHidden'));
+    const names = await listToolNames({ ...DEFAULT_CONFIG, toolMode: 'hyperfocused' });
+    expect(names).toContain('SAP');
+    expect(names).not.toContain('Custom_HfHidden');
+  });
+
+  it('enforces availableOn against the resolved system type', async () => {
+    setCachedFeatures({ systemType: 'onprem' } as ResolvedFeatures);
+    registerPluginTool(getToolRegistry(), 'demo', readTool('Custom_BtpOnly', { availableOn: 'btp' }));
+    registerPluginTool(getToolRegistry(), 'demo', readTool('Custom_OnpremOnly', { availableOn: 'onprem' }));
+    const names = await listToolNames(DEFAULT_CONFIG);
+    expect(names).not.toContain('Custom_BtpOnly');
+    expect(names).toContain('Custom_OnpremOnly');
   });
 });
 

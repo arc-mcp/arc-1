@@ -12,19 +12,21 @@ describe('createMockToolContext', () => {
     expect(ctx.requestId).toBe('test-request');
   });
 
-  it('supports per-path responses and records bodies', async () => {
+  it('supports per-path responses and records GET/HEAD calls', async () => {
     const ctx = createMockToolContext({ responses: { '/a': 'AAA', '/b': 'BBB' } });
     expect((await ctx.http.get('/a')).body).toBe('AAA');
-    expect((await ctx.http.post('/b', 'payload')).body).toBe('BBB');
+    expect((await ctx.http.head('/b')).body).toBe('BBB');
     expect(ctx.httpCalls).toEqual([
       { method: 'GET', path: '/a' },
-      { method: 'POST', path: '/b', body: 'payload' },
+      { method: 'HEAD', path: '/b' },
     ]);
   });
 
-  it('gates nothing (a pure recorder) and threads through withStatefulSession', async () => {
-    const ctx = createMockToolContext({ responseBody: 'S' });
-    const out = await ctx.http.withStatefulSession(async (s) => (await s.get('/x')).body);
-    expect(out).toBe('S');
+  it('exposes a read-only http surface (no write verbs in v1)', () => {
+    const ctx = createMockToolContext();
+    const http = ctx.http as unknown as Record<string, unknown>;
+    expect(http.post).toBeUndefined();
+    expect(http.put).toBeUndefined();
+    expect(http.delete).toBeUndefined();
   });
 });

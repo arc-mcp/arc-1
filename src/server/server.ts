@@ -584,16 +584,25 @@ export function createServer(
       tools = filterToolsByAuthScope(tools, extra.authInfo.scopes, config.denyActions);
     }
 
-    // FEAT-61: append plugin (Custom_*) tools, gated identically to built-ins (deny-list + scope).
-    for (const entry of getToolRegistry().list()) {
-      if (entry.source !== 'plugin' || !entry.listing) continue;
-      if (isActionDenied(entry.name, undefined, config.denyActions)) continue;
-      if (extra.authInfo && !hasRequiredScope(extra.authInfo.scopes, entry.policy.scope)) continue;
-      tools.push({
-        name: entry.name,
-        description: entry.listing.description,
-        inputSchema: entry.listing.inputSchema,
-      });
+    // FEAT-61: append plugin (Custom_*) tools, gated identically to built-ins (deny-list + scope +
+    // `availableOn` system-type visibility). Hyperfocused mode is out of scope for plugins (spec §10),
+    // so its single `SAP` tool is the only surface there.
+    if (config.toolMode !== 'hyperfocused') {
+      const systemType = features?.systemType;
+      for (const entry of getToolRegistry().list()) {
+        if (entry.source !== 'plugin' || !entry.listing) continue;
+        if (isActionDenied(entry.name, undefined, config.denyActions)) continue;
+        if (extra.authInfo && !hasRequiredScope(extra.authInfo.scopes, entry.policy.scope)) continue;
+        // Only filter when the system type is KNOWN and the tool declares a non-matching target.
+        if (entry.availableOn && entry.availableOn !== 'all' && systemType && entry.availableOn !== systemType) {
+          continue;
+        }
+        tools.push({
+          name: entry.name,
+          description: entry.listing.description,
+          inputSchema: entry.listing.inputSchema,
+        });
+      }
     }
 
     return { tools };

@@ -530,6 +530,8 @@ export async function handleToolCall(
   // Build user context for audit logging
   const user = authInfo?.extra?.userName as string | undefined;
   const clientId = authInfo?.clientId;
+  // For plugin (Custom_*) tools, tag every audit event with the contributing plugin (spec §9).
+  const pluginName = getToolRegistry().get(toolName)?.pluginName;
 
   // Emit tool_call_start audit event
   logger.emitAudit({
@@ -540,6 +542,7 @@ export async function handleToolCall(
     user,
     clientId,
     tool: toolName,
+    pluginName,
     args: sanitizeArgs(args),
   });
 
@@ -730,6 +733,7 @@ export async function handleToolCall(
         user,
         clientId,
         tool: toolName,
+        pluginName,
         durationMs,
         status: result.isError ? 'error' : 'success',
         errorMessage: result.isError ? result.content[0]?.text : undefined,
@@ -751,6 +755,7 @@ export async function handleToolCall(
         user,
         clientId,
         tool: toolName,
+        pluginName,
         durationMs,
         status: 'error',
         errorClass: classifyError(err),

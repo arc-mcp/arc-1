@@ -5,6 +5,15 @@
 > **Date:** 2026-06-17. Tracks roadmap FEAT-61, issues #187 / #332.
 > **Review:** adversarial review (2026-06-17) — 1 blocker (B1, fixed inline in §2) + integration/signature clarifications in **§16**. Address §16 before PR1.
 
+> **Post-review hardening (2026-06-17, PR #454 — these supersede the design where they differ):**
+> A second adversarial (Codex) review of the implementation drove the following **v1 narrowings**, all conservative-by-default:
+> - **`ctx.http` is READ-ONLY (`GET`/`HEAD`).** `post/put/delete/withStatefulSession` are removed from the plugin surface for v1. Reason: a raw write can't be constrained by `SAP_ALLOWED_PACKAGES` (package resolution needs the ADT object-URL shape), so shipping un-package-gated writes would bypass the safety ceiling. The §5 "ADT object writes still get checkPackage" promise is deferred with the rest of writes to **v2** (a package-aware write vocabulary). This applies to BOTH tiers (the manifest tier was already GET-only — §8).
+> - **`ctx.client` read-only is enforced at RUNTIME**, not just by the `ReadOnlyAdtClient` type: `createReadOnlyAdtClient` wraps it in a Proxy that blocks `http`/`safety`/`withSafety`/package-mutators, so `(ctx.client as any).http` resolves to `undefined`. (Closes the residual half of B1 — a type-only narrowing was castable.)
+> - **`ctx.cache` is removed** from the public `ToolContext` for v1: the raw `CachingLayer` exposed cache-only source/where-used reads that bypass the per-user `cacheSecurity` revalidation (PP cross-user leak class). A safe per-user cache facade is a v2 item.
+> - **`availableOn` is enforced** in `tools/list` against the resolved system type (was inert metadata). **`pluginName`** now rides `tool_call_start`/`tool_call_end` audit events; the `http_request`-level `pluginName` tag (§5.4/§9) is deferred — `ctx.http` calls are still logged via the underlying `http_request` event, just untagged.
+> - **Loader handles `.js` + `.json` only.** Single-directory (`package.json#main`) loading and `package.json#arc1.requires` ceiling-intersection (§3.1/§6/§7) are deferred to **v2** — not implemented in v1. The ceiling already constrains every call via scope + `checkOperation`, so `requires` would only be a redundant narrowing.
+> - **Plugin tools are excluded from hyperfocused `tools/list`** (matches §1 "hyperfocused participation out of scope").
+
 ---
 
 ## 1. Scope

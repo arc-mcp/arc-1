@@ -52,6 +52,8 @@ export interface RegistryEntry {
   readonly pluginName?: string;
   /** Authorization metadata — the SAME shape ACTION_POLICY uses; gated identically to a built-in. */
   readonly policy: { scope: Scope; opType: OperationTypeCode; featureGate?: string };
+  /** Plugin tools only: system-type visibility hint, enforced in `tools/list` (default `all`). */
+  readonly availableOn?: 'all' | 'onprem' | 'btp';
   /** For plugin tools: the pre-computed MCP `tools/list` shape (built-ins list via getToolDefinitions). */
   readonly listing?: { description: string; inputSchema: Record<string, unknown> };
   invoke(ctx: ToolDispatchContext): Promise<ToolResult>;

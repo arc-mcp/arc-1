@@ -123,7 +123,7 @@ export function registerManifestTool(registry: ToolRegistry, pluginName: string,
         };
       }
       const path = renderPath(m.request.path, m.request.pathParams, args) + renderQuery(m.request.query, args);
-      const http = createSafeHttpClient(ctx.client.http, ctx.client.safety, m.scope, m.name);
+      const http = createSafeHttpClient(ctx.client.http, ctx.client.safety, m.name);
       const headers = m.request.accept ? { Accept: m.request.accept } : undefined;
       const res = await http.get(path, headers);
       const max = m.response?.maxBytes ?? 100_000;

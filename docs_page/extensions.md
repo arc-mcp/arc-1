@@ -33,10 +33,16 @@ Extensions never ship ABAP — any custom endpoint they call must already exist 
 
 | Tier | What you write | Use when |
 |---|---|---|
-| **Code** (`defineTool`, TypeScript) | a handler function | you need logic, response shaping, multiple calls, or **writes** |
+| **Code** (`defineTool`, TypeScript) | a handler function | you need logic, response shaping, or multiple reads |
 | **Manifest** (`*.tool.json`, no code) | one JSON file declaring `input → one GET` | you just wrap a single **read** endpoint |
 
 Both produce a `Custom_*` tool, gated identically.
+
+!!! warning "v1 is read-only"
+    Both tiers are **read-only** in v1 — `ctx.http` exposes **`GET`/`HEAD` only**. Write/`POST` support
+    is deferred to v2 because a raw write can't be constrained by `SAP_ALLOWED_PACKAGES` (package
+    resolution needs the ADT object-URL shape); shipping un-package-gated writes would bypass the
+    server safety ceiling. v2 adds a package-aware write vocabulary.
 
 ---
 
@@ -58,9 +64,9 @@ ARC1_PLUGINS=$PWD/dist/index.js  arc1 --http-streamable
 ARC1_PLUGINS=$PWD/dist/index.js  arc1-cli call Custom_ProgramLineCount --json '{"name":"RSPARAM"}'
 ```
 
-`ARC1_PLUGINS` is a CSV of **absolute paths**. An entry can be a `.js` code plugin, a directory, or a
-bare `*.tool.json` manifest. Loading is **fail-fast** — a malformed plugin or a name collision refuses
-server start.
+`ARC1_PLUGINS` is a CSV of **absolute paths**. An entry is either a `.js` code plugin (point at the
+built module, e.g. `dist/index.js`) or a bare `*.tool.json` manifest. Loading is **fail-fast** — a
+malformed plugin or a name collision refuses server start.
 
 ---
 
@@ -107,15 +113,15 @@ export default { name: 'my-ext', version: '0.1.0', apiVersion: 1, tools: [...], 
 ```
 
 v1 manifests are **read-only GET**: `additionalProperties:false` is required, `path` is a template with
-**no host**, and path params are percent-encoded (traversal-safe). Writes/POST stay in the code tier.
+**no host**, and path params are percent-encoded (traversal-safe).
 
 ---
 
 ## Calling SAP APIs
 
-Everything goes through **`ctx.http`** — a **gated** wrapper over ARC-1's authenticated client. It can
-reach **any SAP path** on the connected system, with auth, CSRF, cookies, per-user PP, and sessions
-handled for you:
+Everything goes through **`ctx.http`** — a **gated, read-only** (`GET`/`HEAD`) wrapper over ARC-1's
+authenticated client. It can reach **any SAP path** on the connected system, with auth, CSRF, cookies,
+per-user PP, and sessions handled for you:
 
 | API | Example |
 |---|---|
@@ -123,12 +129,13 @@ handled for you:
 | OData | `ctx.http.get('/sap/opu/odata/sap/ZSVC/EntitySet?$filter=…')` (caller `Accept: application/json`) |
 | custom ICF/REST | `ctx.http.get('/sap/bc/http/sap/zmyservice')` (endpoint must already exist) |
 
-The raw client is **never** exposed — `ctx.client` offers high-level reads only (no `.http`).
+The raw client is **never** exposed — `ctx.client` offers high-level reads only; its `.http`/`.safety`
+escape hatches are blocked **at runtime** (a `(ctx.client as any).http` cast yields `undefined`), not
+just hidden by types.
 
 !!! warning "OData/ICF specifics"
     A service must be **activated in `/IWFND`** even if it appears in the catalog (a 403 *"No service
-    found"* means it is registered but not activated). OData/ICF **writes** need a CSRF token fetched
-    against the service path and a stateful session (`ctx.http.withStatefulSession`).
+    found"* means it is registered but not activated).
 
 ---
 
@@ -139,29 +146,29 @@ gated exactly like a built-in. Two layers must both pass: the **user's scope** (
 **and** the **server's safety ceiling** (the admin's `allow*` flags). Per-user **principal propagation**
 means the tool acts as the calling SAP user, so SAP-side auth (`S_DEVELOP`, package checks) applies too.
 
-Declare `policy: { scope, opType }` to match the **highest** operation your tool performs. A
-`read`-scoped tool that tries to `POST` is **blocked** (scope coverage), even before the server ceiling.
+Declare `policy: { scope, opType }` to match the operation your tool performs. The user's scope must
+**cover** it (a `read` user never sees a `write`-scoped tool), and the server ceiling must allow it.
 
 | Use case | `scope` | `opType` | Server flag the admin must set | The user needs (XSUAA role / OIDC scope / API-key profile) |
 |---|---|---|---|---|
 | Read-only diagnostic (ADT/OData/ICF) | `read` | `R` | — | `read` |
-| Create / update / delete an ABAP object | `write` | `C`/`U`/`D` | `SAP_ALLOW_WRITES=true` **+** target package in `SAP_ALLOWED_PACKAGES` | `write` |
-| Table-content preview | `data` | `Q` | `SAP_ALLOW_DATA_PREVIEW=true` | `data` |
-| Free-style SQL | `sql` | `F` | `SAP_ALLOW_FREE_SQL=true` | `sql` |
-| Transport operation | `transports` | `X` | `SAP_ALLOW_TRANSPORT_WRITES=true` | `transports` |
+| Create / update / delete an ABAP object *(v2)* | `write` | `C`/`U`/`D` | `SAP_ALLOW_WRITES=true` **+** target package in `SAP_ALLOWED_PACKAGES` | `write` |
+| Table-content preview *(v2)* | `data` | `Q` | `SAP_ALLOW_DATA_PREVIEW=true` | `data` |
+| Free-style SQL *(v2)* | `sql` | `F` | `SAP_ALLOW_FREE_SQL=true` | `sql` |
+| Transport operation *(v2)* | `transports` | `X` | `SAP_ALLOW_TRANSPORT_WRITES=true` | `transports` |
+
+Since v1 `ctx.http` is read-only, only the `read` row is live today; the rest document the model for the
+v2 write surface (and the package-allowlist enforcement that ships with it).
 
 Key points:
 
-- **Package allowlist only gates ADT object writes.** For OData/ICF calls there is no ABAP package in
-  the path, so `SAP_ALLOWED_PACKAGES` does **not** constrain them — the gates are `allowWrites` + scope +
-  the **Cloud Connector** resource allowlist (BTP) + SAP-side auth.
 - **`custom` scopes are not supported.** Reuse the 7 built-in scopes — XSUAA scopes are deploy-time
   static (`xs-security.json`), so reuse maps cleanly to existing roles. See
   [Authorization & Roles](authorization.md).
 - **Admins keep the kill switch.** `SAP_DENY_ACTIONS=Custom_*` removes all plugin tools;
   `SAP_DENY_ACTIONS=Custom_Foo` removes one.
-- **`package.json#arc1.requires`** declares the scopes/packages a plugin needs; ARC-1 **intersects**
-  this with the server ceiling at load — it can only narrow, never expand.
+- **System-type visibility.** A tool may declare `availableOn: 'onprem' | 'btp'` (default `all`); it is
+  hidden from `tools/list` when the resolved system type is known and differs.
 - **Trust model:** plugins are local files an admin explicitly opts into via `ARC1_PLUGINS` (no
   marketplace). They run in-process with the gated context — no sandbox, by design.
 

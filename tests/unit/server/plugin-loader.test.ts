@@ -64,27 +64,41 @@ describe('registerPluginTool', () => {
     expect(() => registerPluginTool(r, 'demo', bad)).toThrow(/Custom_/);
   });
 
-  it('gives the plugin a gated ctx.http (a read tool cannot POST)', async () => {
+  it('gives the plugin a read-only ctx.http + a runtime-locked ctx.client (no write/escape surface)', async () => {
     const r = new ToolRegistry();
-    let threw = false;
     const tool = defineTool({
-      name: 'Custom_TryWrite',
-      description: 'attempts a POST from a read-scoped tool',
+      name: 'Custom_Surface',
+      description: 'reports the shape of the ctx surfaces it was handed',
       schema: z.object({}),
       policy: { scope: 'read', opType: 'R' },
       handler: async (_args, ctx) => {
-        try {
-          await ctx.http.post('/x', 'body');
-        } catch {
-          threw = true;
-        }
-        return { content: [{ type: 'text', text: String(threw) }] };
+        const http = ctx.http as unknown as Record<string, unknown>;
+        const client = ctx.client as unknown as Record<string, unknown>;
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                post: http.post === undefined,
+                put: http.put === undefined,
+                clientHttp: client.http === undefined,
+                clientSafety: client.safety === undefined,
+                clientWithSafety: client.withSafety === undefined,
+              }),
+            },
+          ],
+        };
       },
     });
     registerPluginTool(r, 'demo', tool);
-    const res = await r.get('Custom_TryWrite')!.invoke(dispatchCtx({}));
-    expect(threw).toBe(true);
-    expect(res.content[0].text).toBe('true');
+    const res = await r.get('Custom_Surface')!.invoke(dispatchCtx({}));
+    expect(JSON.parse(res.content[0].text)).toEqual({
+      post: true,
+      put: true,
+      clientHttp: true,
+      clientSafety: true,
+      clientWithSafety: true,
+    });
   });
 });
 

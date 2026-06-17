@@ -5,7 +5,6 @@ import type { ZodTypeAny } from 'zod';
 import type { AdtClient } from '../adt/client.js';
 import type { OperationTypeCode } from '../adt/safety.js';
 import type { Scope } from '../authz/policy.js';
-import type { CachingLayer } from '../cache/caching-layer.js';
 import type { ToolResult } from '../registry/tool-registry.js';
 import type { SafeHttpClient } from '../server/safe-http-client.js';
 
@@ -32,9 +31,8 @@ export interface PluginLogger {
 
 /** Per-call context a plugin tool receives. Built fresh per request (never bound at registration). */
 export interface ToolContext {
-  readonly client: ReadOnlyAdtClient; // high-level reads only — `.http` deliberately absent
-  readonly http: SafeHttpClient; // the ONLY HTTP path — gated, any SAP path
-  readonly cache?: CachingLayer;
+  readonly client: ReadOnlyAdtClient; // high-level reads only — `.http`/`.safety` blocked at runtime too
+  readonly http: SafeHttpClient; // the ONLY low-level HTTP path — gated; v1 is read-only (GET/HEAD)
   readonly logger: PluginLogger;
   readonly authInfo?: { userName?: string; scopes: string[]; clientId?: string };
   readonly requestId: string;
@@ -59,6 +57,8 @@ export interface PluginToolDefinition {
   readonly description: string;
   readonly schema: ZodTypeAny; // input validation; converted to JSON Schema for tools/list (PR3)
   readonly policy: { scope: Scope; opType: OperationTypeCode };
+  /** System-type visibility, enforced in `tools/list`: a non-`all` tool is hidden when the resolved
+   *  system type is known and differs (e.g. `btp` tool on an on-prem system). Default `all`. */
   readonly availableOn?: 'all' | 'onprem' | 'btp';
   handler(args: unknown, ctx: ToolContext): Promise<ToolResult>;
 }

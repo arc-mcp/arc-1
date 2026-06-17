@@ -90,9 +90,20 @@ program
 program
   .command('tools [tool]')
   .description('List MCP tools, or show the JSON input schema for a specific tool')
-  .action((tool: string | undefined) => {
+  .action(async (tool: string | undefined) => {
     const { config: serverConfig } = resolveCliContext();
-    const defs = getToolDefinitions(serverConfig);
+    // FEAT-61: load plugins so `tools` discovery matches `call` invocation (both see Custom_* tools).
+    if (serverConfig.plugins?.length) {
+      await loadPlugins(serverConfig.plugins, getToolRegistry());
+    }
+    const pluginDefs = getToolRegistry()
+      .list()
+      .flatMap((e) =>
+        e.source === 'plugin' && e.listing
+          ? [{ name: e.name, description: e.listing.description, inputSchema: e.listing.inputSchema }]
+          : [],
+      );
+    const defs = [...getToolDefinitions(serverConfig), ...pluginDefs];
     if (!tool) {
       for (const def of defs) {
         const firstLine = def.description.split('\n')[0].trim();

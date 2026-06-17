@@ -9,9 +9,8 @@ import type { SafeHttpClient } from '../server/safe-http-client.js';
 import type { ToolContext } from './types.js';
 
 export interface MockHttpCall {
-  method: 'GET' | 'HEAD' | 'POST' | 'PUT' | 'DELETE';
+  method: 'GET' | 'HEAD';
   path: string;
-  body?: string;
 }
 
 export interface MockToolContext extends ToolContext {
@@ -45,25 +44,11 @@ export function createMockToolContext(options: MockToolContextOptions = {}): Moc
       httpCalls.push({ method: 'HEAD', path });
       return resp(path);
     },
-    post: async (path, body) => {
-      httpCalls.push({ method: 'POST', path, body });
-      return resp(path);
-    },
-    put: async (path, body) => {
-      httpCalls.push({ method: 'PUT', path, body });
-      return resp(path);
-    },
-    delete: async (path) => {
-      httpCalls.push({ method: 'DELETE', path });
-      return resp(path);
-    },
-    withStatefulSession: (fn) => fn(http),
   };
 
   const ctx: MockToolContext = {
     client: (options.client ?? {}) as unknown as ToolContext['client'],
     http,
-    cache: undefined,
     logger: { info: () => {}, warn: () => {}, error: () => {} },
     authInfo: { userName: 'test-user', scopes: options.scopes ?? ['read'], clientId: 'test' },
     requestId: options.requestId ?? 'test-request',
