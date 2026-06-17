@@ -198,6 +198,18 @@ expect(ctx.httpCalls[0].path).toContain('/programs/ZX/');
 
 ---
 
+## Roadmap (v2)
+
+v1 is **read-only** on purpose. The biggest v2 item is a **package-aware write surface** — a
+`ctx.write` vocabulary that routes ADT object writes through the same package-allowlist gate built-in
+`SAPWrite` uses (so a plugin still can't write outside `SAP_ALLOWED_PACKAGES`), plus opt-in raw writes
+for package-less OData/ICF calls. Also planned: a safe per-user `ctx.cache`, directory + npm-package
+loading, `package.json#arc1.requires` capability intersection, per-handler timeouts, and graduating
+the API from `@experimental` to semver-stable. Full design:
+`docs/research/extension-framework-v2-spec.md`.
+
+---
+
 ## Reference
 
 - **Sample repo:** <https://github.com/arc-mcp/arc-1-extension-sample>

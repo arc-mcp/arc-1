@@ -279,7 +279,15 @@ PR1 ships and **bakes one release** before PR3 (the loader) makes plugins real.
 
 ## 13. v2 roadmap (deferred)
 
-Named code-backed operation vocabulary for declarative writes; observer hook bus (`onToolCall`/`onToolResult`); `withRetryOnSessionExpiry`; cache-invalidation hooks; multi-system `sap_system_id` (FEAT-59); MCP prompts (FEAT-62); dassian-adt gap absorption; pre-declared `custom.<plugin>` visibility labels; (maybe) npm peer-package discovery; API stabilization + semver if it graduates from experimental.
+**→ Full draft: [`extension-framework-v2-spec.md`](extension-framework-v2-spec.md).** It scopes every
+deferral with a design + PR sequence. Headline items: the **package-aware write surface** (`ctx.write`
+vocabulary routing through the built-in `write/` path so ADT writes stay package-gated; raw non-ADT
+writes behind an opt-in) — the centerpiece, since v1 is read-only; a **safe `ctx.cache`** facade
+(cacheSecurity-bound, no PP leak); **directory + npm-specifier loading**; **`package.json#arc1.requires`**
+ceiling intersection; **`http_request` pluginName** tag; a **per-handler timeout + `ctx.signal`**
+(review N4); custom `custom.<plugin>` visibility labels; an observer hook bus
+(`onToolCall`/`onToolResult`/`onCacheInvalidate`); multi-system `sap_system_id` (FEAT-59); MCP prompts
+(FEAT-62); and **API stabilization + semver** (graduate from `@experimental`).
 
 ---
 
