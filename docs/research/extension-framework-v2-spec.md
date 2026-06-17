@@ -14,7 +14,13 @@
 
 v1 shipped a **read-only**, conservatively-scoped framework. Every narrowing below was a safety
 choice made during the 2026-06-17 implementation review, not an oversight. v2 lifts them, in
-priority order:
+priority order.
+
+> **Precedent already in v1:** `ctx.run.classRun` (execute an `IF_OO_ADT_CLASSRUN` console class)
+> shipped in v1 as the **first named privileged op** — gated behind `SAP_ALLOW_PLUGIN_EXECUTE` +
+> `allowWrites` + `write` scope, validated class name, no generic POST. It proves the §2.2 "named
+> operation vocabulary" model end-to-end (live on a4h), and is the template the v2 `ctx.write.*` ops
+> follow. The `ctx.run` namespace is where future execute-class ops land (e.g. `programRun`).
 
 | # | Deferred from v1 | Why it was deferred | v2 section |
 |---|------------------|---------------------|-----------|

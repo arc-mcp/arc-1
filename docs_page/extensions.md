@@ -38,11 +38,13 @@ Extensions never ship ABAP — any custom endpoint they call must already exist 
 
 Both produce a `Custom_*` tool, gated identically.
 
-!!! warning "v1 is read-only"
-    Both tiers are **read-only** in v1 — `ctx.http` exposes **`GET`/`HEAD` only**. Write/`POST` support
-    is deferred to v2 because a raw write can't be constrained by `SAP_ALLOWED_PACKAGES` (package
-    resolution needs the ADT object-URL shape); shipping un-package-gated writes would bypass the
-    server safety ceiling. v2 adds a package-aware write vocabulary.
+!!! warning "v1 is read-only — with one gated exception"
+    Both tiers are **read-only** in v1: `ctx.http` exposes **`GET`/`HEAD` only**. General write/`POST`
+    support is deferred to v2 because a raw write can't be constrained by `SAP_ALLOWED_PACKAGES`
+    (package resolution needs the ADT object-URL shape); shipping un-package-gated writes would bypass
+    the server safety ceiling. The **one** privileged op available in v1 is **executing a console class**
+    (`ctx.run.classRun`, see below) — a *named* operation (not a generic POST, so no package-bypass),
+    locked behind a default-off opt-in. v2 adds the full package-aware write vocabulary.
 
 ---
 
@@ -139,6 +141,42 @@ just hidden by types.
 
 ---
 
+## Executing ABAP (console classes)
+
+The one privileged operation a v1 plugin can perform is **running an ABAP console class** — a class
+that implements `IF_OO_ADT_CLASSRUN` (the modern replacement for executable reports on ABAP Cloud).
+It runs through **`ctx.run.classRun(name)`**, which returns the class's `out->write( … )` console
+output:
+
+```ts
+export default defineTool({
+  name: 'Custom_RunClass',
+  description: 'Execute an ABAP console class and return its console output.',
+  schema: z.object({ className: z.string().min(1).max(40) }),
+  policy: { scope: 'write', opType: OperationType.Workflow },   // execute ⇒ write-class op
+  async handler(args, ctx) {
+    const out = await ctx.run.classRun((args as { className: string }).className);
+    return { content: [{ type: 'text', text: out }] };
+  },
+});
+```
+
+Executing arbitrary ABAP can mutate anything, so this is the **strictest-gated** capability in the
+framework — **all** of the following must hold, or the call is refused with an `AdtSafetyError`:
+
+| Gate | Why |
+|---|---|
+| `SAP_ALLOW_PLUGIN_EXECUTE=true` | a **dedicated** opt-in (default off) — enabling built-in writes never silently grants plugins code execution |
+| `SAP_ALLOW_WRITES=true` | execution is a mutation vector; keeps the `allowWrites=false ⇒ no mutation` guarantee |
+| tool declares `scope: 'write'` | a `read`-scoped tool can never execute |
+| user has the `write` scope + SAP-side execute auth | the usual `scope ∧ SAP-auth` |
+
+`classRun` is a **named** op (not a raw POST), so a plugin can only run a class **by name** (validated,
+no path injection) — it cannot reach arbitrary write endpoints. That's why it can ship in read-only v1
+safely; the general write surface still waits for v2.
+
+---
+
 ## Security & roles (by use case)
 
 This is the most important part. An extension tool **inherits ARC-1's full safety pipeline** — it is
@@ -167,6 +205,8 @@ Key points:
   [Authorization & Roles](authorization.md).
 - **Admins keep the kill switch.** `SAP_DENY_ACTIONS=Custom_*` removes all plugin tools;
   `SAP_DENY_ACTIONS=Custom_Foo` removes one.
+- **Code execution is opt-in + default off.** `ctx.run.classRun` requires `SAP_ALLOW_PLUGIN_EXECUTE=true`
+  **and** `SAP_ALLOW_WRITES=true` **and** a `write`-scoped tool (see [Executing ABAP](#executing-abap-console-classes)).
 - **System-type visibility.** A tool may declare `availableOn: 'onprem' | 'btp'` (default `all`); it is
   hidden from `tools/list` when the resolved system type is known and differs.
 - **Trust model:** plugins are local files an admin explicitly opts into via `ARC1_PLUGINS` (no

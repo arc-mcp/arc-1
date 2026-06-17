@@ -14,7 +14,7 @@ import { registerManifestTool } from '../plugins/manifest-interpreter.js';
 import type { Plugin, PluginToolDefinition, ToolContext } from '../public/types.js';
 import type { RegistryEntry, ToolDispatchContext, ToolRegistry, ToolResult } from '../registry/tool-registry.js';
 import { logger } from './logger.js';
-import { createReadOnlyAdtClient, createSafeHttpClient } from './safe-http-client.js';
+import { createPluginRunOps, createReadOnlyAdtClient, createSafeHttpClient } from './safe-http-client.js';
 
 /** The apiVersion this ARC-1 understands. Bump on every breaking change to the plugin API. */
 export const SUPPORTED_API_VERSION = 1;
@@ -99,6 +99,13 @@ function makePluginInvoke(def: PluginToolDefinition): (ctx: ToolDispatchContext)
       // HTTP path. Both close review B1. See safe-http-client.ts.
       client: createReadOnlyAdtClient(dispatchCtx.client),
       http: createSafeHttpClient(dispatchCtx.client.http, dispatchCtx.client.safety, def.name),
+      run: createPluginRunOps(
+        dispatchCtx.client.http,
+        dispatchCtx.client.safety,
+        dispatchCtx.config.allowPluginExecute,
+        def.policy.scope,
+        def.name,
+      ),
       logger: pluginLogger(def.name),
       authInfo: dispatchCtx.authInfo
         ? {

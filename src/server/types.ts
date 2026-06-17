@@ -121,6 +121,11 @@ export interface ServerConfig {
   /** Absolute paths to extension plugins to load at startup (from ARC1_PLUGINS, CSV). Each contributes
    *  `Custom_*` tools via the ToolRegistry. Empty (default) = no plugins. NOT npm package names. */
   plugins: string[];
+  /** Opt-in: allow plugin tools to EXECUTE ABAP console classes (`ctx.run.classRun`, IF_OO_ADT_CLASSRUN).
+   *  Default false. Running arbitrary ABAP is a mutation vector, so it ALSO requires `allowWrites=true`
+   *  and the tool must declare `write` scope. A dedicated switch (not implied by `allowWrites`) so
+   *  enabling built-in writes never silently grants plugins code execution. */
+  allowPluginExecute: boolean;
 
   // --- Lint ---
   /** Path to custom abaplint.jsonc config file for lint rules */
@@ -221,6 +226,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
   disableSaml2: false,
   toolMode: 'standard',
   plugins: [],
+  allowPluginExecute: false,
   lintBeforeWrite: true,
   checkBeforeWrite: false,
   cacheMode: 'auto',

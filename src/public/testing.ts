@@ -16,6 +16,8 @@ export interface MockHttpCall {
 export interface MockToolContext extends ToolContext {
   /** Every `ctx.http` call the handler made, in order. */
   httpCalls: MockHttpCall[];
+  /** Every class name passed to `ctx.run.classRun`, in order. */
+  classRunCalls: string[];
 }
 
 export interface MockToolContextOptions {
@@ -28,6 +30,8 @@ export interface MockToolContextOptions {
   requestId?: string;
   /** Partial `ctx.client` for handlers that call high-level read methods. */
   client?: Partial<ToolContext['client']>;
+  /** Console output returned by `ctx.run.classRun` (default ''). The mock never gates. */
+  classRunOutput?: string;
 }
 
 export function createMockToolContext(options: MockToolContextOptions = {}): MockToolContext {
@@ -46,13 +50,23 @@ export function createMockToolContext(options: MockToolContextOptions = {}): Moc
     },
   };
 
+  const classRunCalls: string[] = [];
+  const run: ToolContext['run'] = {
+    classRun: async (className) => {
+      classRunCalls.push(className);
+      return options.classRunOutput ?? '';
+    },
+  };
+
   const ctx: MockToolContext = {
     client: (options.client ?? {}) as unknown as ToolContext['client'],
     http,
+    run,
     logger: { info: () => {}, warn: () => {}, error: () => {} },
     authInfo: { userName: 'test-user', scopes: options.scopes ?? ['read'], clientId: 'test' },
     requestId: options.requestId ?? 'test-request',
     httpCalls,
+    classRunCalls,
   };
   return ctx;
 }

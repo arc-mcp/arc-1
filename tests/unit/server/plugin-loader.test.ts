@@ -150,6 +150,7 @@ describe('plugin MCP capabilities (PR5: elicit/notify/sampling)', () => {
   const dispatchWith = (server: unknown): ToolDispatchContext =>
     ({
       client: { http: {}, safety: unrestrictedSafetyConfig() },
+      config: {},
       args: {},
       requestId: 'r',
       server,

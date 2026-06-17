@@ -1,9 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { AdtClient } from '../../../src/adt/client.js';
+import { AdtSafetyError } from '../../../src/adt/errors.js';
 import type { AdtHttpClient } from '../../../src/adt/http.js';
-import { defaultSafetyConfig } from '../../../src/adt/safety.js';
-import { createReadOnlyAdtClient, createSafeHttpClient } from '../../../src/server/safe-http-client.js';
+import { defaultSafetyConfig, unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
+import {
+  createPluginRunOps,
+  createReadOnlyAdtClient,
+  createSafeHttpClient,
+} from '../../../src/server/safe-http-client.js';
 
 const resp = { statusCode: 200, headers: {}, body: 'ok' };
 
@@ -11,7 +16,7 @@ function fakeUnderlying() {
   return {
     get: vi.fn(async () => resp),
     head: vi.fn(async () => resp),
-    post: vi.fn(async () => resp),
+    post: vi.fn(async (_path: string) => ({ ...resp, body: 'console output' })),
   };
 }
 
@@ -35,6 +40,45 @@ describe('createSafeHttpClient (v1: read-only)', () => {
     expect(c.put).toBeUndefined();
     expect(c.delete).toBeUndefined();
     expect(c.withStatefulSession).toBeUndefined();
+  });
+});
+
+describe('createPluginRunOps.classRun (gated code execution)', () => {
+  // (allowExecute, safety, toolScope) → expectation
+  it('refuses when the SAP_ALLOW_PLUGIN_EXECUTE opt-in is off', async () => {
+    const u = fakeUnderlying();
+    const run = createPluginRunOps(as(u), unrestrictedSafetyConfig(), false, 'write', 'Custom_Run');
+    await expect(run.classRun('ZCL_X')).rejects.toBeInstanceOf(AdtSafetyError);
+    expect(u.post).not.toHaveBeenCalled();
+  });
+
+  it('refuses a tool that does not declare write scope (even with the opt-in on)', async () => {
+    const u = fakeUnderlying();
+    const run = createPluginRunOps(as(u), unrestrictedSafetyConfig(), true, 'read', 'Custom_Run');
+    await expect(run.classRun('ZCL_X')).rejects.toBeInstanceOf(AdtSafetyError);
+    expect(u.post).not.toHaveBeenCalled();
+  });
+
+  it('refuses when allowWrites=false (execution is a mutation vector)', async () => {
+    const u = fakeUnderlying();
+    const run = createPluginRunOps(as(u), defaultSafetyConfig(), true, 'write', 'Custom_Run');
+    await expect(run.classRun('ZCL_X')).rejects.toBeInstanceOf(AdtSafetyError);
+    expect(u.post).not.toHaveBeenCalled();
+  });
+
+  it('refuses an invalid class name (path-injection guard)', async () => {
+    const u = fakeUnderlying();
+    const run = createPluginRunOps(as(u), unrestrictedSafetyConfig(), true, 'write', 'Custom_Run');
+    await expect(run.classRun('../../etc/passwd')).rejects.toBeInstanceOf(AdtSafetyError);
+    await expect(run.classRun('ZCL X')).rejects.toBeInstanceOf(AdtSafetyError);
+    expect(u.post).not.toHaveBeenCalled();
+  });
+
+  it('POSTs to the classrun endpoint and returns the console output when all gates pass', async () => {
+    const u = fakeUnderlying();
+    const run = createPluginRunOps(as(u), unrestrictedSafetyConfig(), true, 'write', 'Custom_Run');
+    await expect(run.classRun('ZCL_ARC1_RUN_DEMO')).resolves.toBe('console output');
+    expect(u.post).toHaveBeenCalledWith('/sap/bc/adt/oo/classrun/zcl_arc1_run_demo');
   });
 });
 

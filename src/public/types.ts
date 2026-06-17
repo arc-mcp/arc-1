@@ -22,6 +22,22 @@ export type ReadOnlyAdtClient = Omit<
   'http' | 'safety' | 'withSafety' | 'getPackageHierarchyResolver' | 'invalidatePackageHierarchy'
 >;
 
+/**
+ * Named, privileged operations a plugin can invoke. Unlike `ctx.http` (read-only), these EXECUTE.
+ * Each op is gated server-side; calling one when its gate is closed throws `AdtSafetyError`.
+ */
+export interface PluginRunOps {
+  /**
+   * Run an ABAP **console class** (one implementing `IF_OO_ADT_CLASSRUN`) and return its console
+   * output (`out->write( … )`) as plain text. Wraps `POST /sap/bc/adt/oo/classrun/{class}`.
+   *
+   * Gated (all must hold): the server opt-in `SAP_ALLOW_PLUGIN_EXECUTE=true`, `SAP_ALLOW_WRITES=true`
+   * (executing ABAP is a mutation vector), and the calling tool must declare `write` scope. SAP-side
+   * the user still needs execute authorization. The class name is validated (no path injection).
+   */
+  classRun(className: string): Promise<string>;
+}
+
 /** Minimal structured logger handed to plugins (stderr only — never `console.log`). */
 export interface PluginLogger {
   info(message: string, data?: unknown): void;
@@ -33,6 +49,7 @@ export interface PluginLogger {
 export interface ToolContext {
   readonly client: ReadOnlyAdtClient; // high-level reads only — `.http`/`.safety` blocked at runtime too
   readonly http: SafeHttpClient; // the ONLY low-level HTTP path — gated; v1 is read-only (GET/HEAD)
+  readonly run: PluginRunOps; // named privileged ops (e.g. classRun) — each gated server-side
   readonly logger: PluginLogger;
   readonly authInfo?: { userName?: string; scopes: string[]; clientId?: string };
   readonly requestId: string;

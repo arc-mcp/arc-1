@@ -18,9 +18,11 @@
 // See docs/research/extension-framework-spec.md §5.
 
 import type { AdtClient } from '../adt/client.js';
+import { AdtSafetyError } from '../adt/errors.js';
 import type { AdtHttpClient, AdtResponse } from '../adt/http.js';
 import { checkOperation, OperationType, type SafetyConfig } from '../adt/safety.js';
-import type { ReadOnlyAdtClient } from '../public/types.js';
+import { hasRequiredScope, type Scope } from '../authz/policy.js';
+import type { PluginRunOps, ReadOnlyAdtClient } from '../public/types.js';
 
 /** The read-only HTTP surface a plugin tool receives as `ctx.http`. v1: GET/HEAD only. */
 export interface SafeHttpClient {
@@ -84,4 +86,45 @@ export function createReadOnlyAdtClient(client: AdtClient): ReadOnlyAdtClient {
     defineProperty: () => false,
     deleteProperty: () => false,
   }) as unknown as ReadOnlyAdtClient;
+}
+
+/** ABAP object name (class): letters/digits/underscore/slash, ≤ 40 chars. Blocks path injection. */
+const ABAP_CLASS_NAME = /^[A-Za-z_/][A-Za-z0-9_/]{0,39}$/;
+
+/**
+ * Build the `ctx.run` named-operation surface. Unlike `ctx.http` (read-only), these EXECUTE — so the
+ * gate is the strictest in the framework. `classRun` (the only op in v1) runs an `IF_OO_ADT_CLASSRUN`
+ * console class, which can mutate anything, so it requires ALL of: the dedicated opt-in
+ * `SAP_ALLOW_PLUGIN_EXECUTE`; `allowWrites` (via `checkOperation`, since execution is a mutation
+ * vector); and the calling tool declaring `write` scope. SAP-side execute auth is the final backstop.
+ */
+export function createPluginRunOps(
+  underlying: AdtHttpClient,
+  safety: SafetyConfig,
+  allowPluginExecute: boolean,
+  toolScope: Scope,
+  opLabel: string,
+): PluginRunOps {
+  return {
+    async classRun(className: string): Promise<string> {
+      if (!allowPluginExecute) {
+        throw new AdtSafetyError(
+          `Extension tool '${opLabel}' tried to execute a class, but plugin code execution is disabled. ` +
+            'Set SAP_ALLOW_PLUGIN_EXECUTE=true (and SAP_ALLOW_WRITES=true) to allow it.',
+        );
+      }
+      if (!hasRequiredScope([toolScope], 'write')) {
+        throw new AdtSafetyError(
+          `Extension tool '${opLabel}' declares scope '${toolScope}' and may not execute a class (needs scope 'write').`,
+        );
+      }
+      // Execution is a mutation vector — keep the `allowWrites=false ⇒ no mutation path` invariant.
+      checkOperation(safety, OperationType.Workflow, `Custom:${opLabel}:classRun`);
+      if (typeof className !== 'string' || !ABAP_CLASS_NAME.test(className)) {
+        throw new AdtSafetyError(`Extension tool '${opLabel}': invalid ABAP class name '${className}'.`);
+      }
+      const res = await underlying.post(`/sap/bc/adt/oo/classrun/${encodeURIComponent(className.toLowerCase())}`);
+      return res.body;
+    },
+  };
 }
