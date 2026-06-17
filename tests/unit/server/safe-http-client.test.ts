@@ -115,6 +115,18 @@ describe('createReadOnlyAdtClient (runtime escape-hatch guard, review B1)', () =
     await expect(ro.getProgram('ZHELLO')).resolves.toBe('ZHELLO:ok:safe');
   });
 
+  it('does not leak blocked members via getOwnPropertyDescriptor or enumeration (descriptor bypass)', () => {
+    const ro = createReadOnlyAdtClient(fakeClient() as unknown as AdtClient);
+    // The `get` trap alone left this hole: the descriptor path returned the raw client's `.value`.
+    expect(Object.getOwnPropertyDescriptor(ro, 'http')).toBeUndefined();
+    expect(Object.getOwnPropertyDescriptor(ro, 'safety')).toBeUndefined();
+    expect(Reflect.getOwnPropertyDescriptor(ro, 'http')).toBeUndefined();
+    expect(Object.keys(ro)).not.toContain('http');
+    expect(Object.keys(ro)).not.toContain('safety');
+    // Nothing http-shaped (a `.post`) escapes through enumeration either.
+    expect(Object.values(ro).some((v) => typeof (v as { post?: unknown })?.post === 'function')).toBe(false);
+  });
+
   it('refuses mutation of the wrapped client', () => {
     const ro = createReadOnlyAdtClient(fakeClient() as unknown as AdtClient) as unknown as Record<string, unknown>;
     expect(() => {

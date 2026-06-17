@@ -72,15 +72,27 @@ const BLOCKED_CLIENT_KEYS: ReadonlySet<string> = new Set([
  * the object either.
  */
 export function createReadOnlyAdtClient(client: AdtClient): ReadOnlyAdtClient {
+  const isBlocked = (prop: string | symbol): boolean => typeof prop === 'string' && BLOCKED_CLIENT_KEYS.has(prop);
   return new Proxy(client, {
     get(target, prop) {
-      if (typeof prop === 'string' && BLOCKED_CLIENT_KEYS.has(prop)) return undefined;
+      if (isBlocked(prop)) return undefined;
       const value = Reflect.get(target, prop, target);
       return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
     },
     has(target, prop) {
-      if (typeof prop === 'string' && BLOCKED_CLIENT_KEYS.has(prop)) return false;
+      if (isBlocked(prop)) return false;
       return Reflect.has(target, prop);
+    },
+    // `http`/`safety` are own data properties, so without these two traps a plugin could read the
+    // raw client back via `Object.getOwnPropertyDescriptor(ctx.client, 'http').value` (the `get`
+    // trap alone does NOT cover the descriptor path) or enumerate it. They are configurable on the
+    // target (TS `readonly` is compile-time only), so hiding them violates no Proxy invariant.
+    getOwnPropertyDescriptor(target, prop) {
+      if (isBlocked(prop)) return undefined;
+      return Reflect.getOwnPropertyDescriptor(target, prop);
+    },
+    ownKeys(target) {
+      return Reflect.ownKeys(target).filter((k) => !isBlocked(k));
     },
     set: () => false,
     defineProperty: () => false,
