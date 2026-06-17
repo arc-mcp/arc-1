@@ -238,6 +238,54 @@ expect(ctx.httpCalls[0].path).toContain('/programs/ZX/');
 
 ---
 
+## Deploying extensions (BTP Cloud Foundry / Docker)
+
+A plugin is a **local file** the server loads at startup from an **absolute** `ARC1_PLUGINS` path
+(it's a literal CSV — **no `$HOME`/shell expansion**). On a managed deployment the container
+filesystem comes from the deploy artifact, so "getting the plugin onto a stable absolute path" is the
+whole problem. Three ways, with trade-offs:
+
+| Strategy | How | Upside | Downside |
+|---|---|---|---|
+| **Derived Docker image** *(recommended)* | `FROM ghcr.io/marianfoo/arc-1`, `COPY --chown` the plugin's `dist/`, set `ENV ARC1_PLUGINS=…` | self-contained + version-pinned with ARC-1; one immutable artifact through your image review/supply chain; identical local / CF‑Docker / k8s | rebuild + repush to change a plugin; needs a registry; **must `--chown`** (see gotcha) |
+| **Buildpack co-deploy** *(matches the committed `mta.yaml`, `nodejs_buildpack`)* | put the plugin's built `dist/` in the pushed app bits (e.g. `plugins/<name>/`), set `ARC1_PLUGINS=/home/vcap/app/plugins/<name>/dist/index.js` | no image build; plain `cf push` / `mta build`; bits are `vcap`-owned so the owner check passes | the plugin rides ARC-1's deploy bits (coupled); rebuild the bits to change it |
+| **Volume service (NFS)** | mount a CF volume, point `ARC1_PLUGINS` at it | swap a plugin without rebuilding the image/bits | plugin lives **outside** the audited artifact (trust gap); the mount's uid/permissions must satisfy the loader's owner + not‑world‑writable checks; still needs a restart |
+
+### Derived Docker image — the recipe
+
+```dockerfile
+FROM ghcr.io/marianfoo/arc-1:latest
+# ARC-1 runs as the non-root user `arc1`. A plain COPY lands files as root → the loader rejects them.
+COPY --chown=arc1:arc1 dist/      /home/arc1/plugins/myext/dist/
+COPY --chown=arc1:arc1 manifests/ /home/arc1/plugins/myext/manifests/
+ENV ARC1_PLUGINS=/home/arc1/plugins/myext/dist/index.js
+```
+Then `cf push my-arc1 --docker-image <registry>/my-arc1:<tag>` (or k8s / local `docker run`).
+
+### The owner / permission gotcha (bites on Docker)
+
+The loader **refuses** a plugin file that is **not owned by the server process user** or is
+**world-writable** — defense-in-depth against a tampered drop-in. ARC-1's image runs as `arc1`, but a
+plain `COPY` lands files as **root** → `"Plugin … is not owned by the server user — refusing to load"`.
+Fix: **`COPY --chown=arc1:arc1`**, and never `chmod 777` a plugin. On the buildpack the bits are
+already `vcap`-owned, so this is a non-issue there.
+
+### Cross-cutting
+
+- **No hot-reload.** Plugins load once at startup; changing one means a redeploy / `cf restage`. The
+  `apiVersion` integer is the compatibility fuse across ARC-1 upgrades.
+- **Adding a plugin needs NO XSUAA change.** Plugin tools reuse the 7 built-in scopes (no custom
+  scopes), so you do **not** touch `xs-security.json` or role collections to ship a new `Custom_*`
+  tool — a real operational win on BTP.
+- **Per-user principal propagation still applies** — a plugin's `ctx` carries the per-user (PP) SAP
+  client, so its calls run as the calling SAP user, same as built-in tools.
+- **Execution is per-deployment opt-in.** `SAP_ALLOW_PLUGIN_EXECUTE` / `SAP_ALLOW_WRITES` are server
+  env (`cf set-env` / MTA) — set them only where you intend plugins to run classes.
+- **Trust = supply chain.** Plugins are baked into the deploy artifact and reviewed with it; there is
+  no runtime upload. Keep `ARC1_PLUGINS` under the same change control as the rest of the app.
+
+---
+
 ## Roadmap (v2)
 
 v1 is **read-only** on purpose. The biggest v2 item is a **package-aware write surface** — a
