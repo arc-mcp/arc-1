@@ -1,7 +1,7 @@
 blank_issues_enabled: false
 contact_links:
   - name: 📖 Documentation
-    url: https://arc-1-mcp.com/
+    url: https://docs.arc-1-mcp.com/
     about: Setup, configuration, authentication, and the full tool reference — most "how do I…" questions are answered here.
   - name: 🔐 Report a security vulnerability
     url: https://github.com/arc-mcp/arc-1/blob/main/SECURITY.md

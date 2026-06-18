@@ -1,6 +1,6 @@
 site_name: ARC-1 — SAP ADT MCP Server
 site_description: Enterprise-ready MCP proxy for SAP ABAP Development Tools. npm package + Docker image, admin safety controls, works with Claude, Copilot, and all MCP clients.
-site_url: https://arc-1-mcp.com/
+site_url: https://docs.arc-1-mcp.com/
 repo_url: https://github.com/arc-mcp/arc-1
 repo_name: arc-mcp/arc-1
 edit_uri: edit/main/docs_page/

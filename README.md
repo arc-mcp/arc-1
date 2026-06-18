@@ -8,7 +8,7 @@ ARC-1 connects AI assistants (Claude, GitHub Copilot, Copilot Studio, and any MC
 [![CodeQL](https://github.com/arc-mcp/arc-1/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/arc-mcp/arc-1/security/code-scanning)
 [![Dependency Review](https://github.com/arc-mcp/arc-1/actions/workflows/dependency-review.yml/badge.svg)](https://github.com/arc-mcp/arc-1/actions/workflows/dependency-review.yml)
 
-**[Full Documentation](https://arc-1-mcp.com/)** | **[Quickstart](https://arc-1-mcp.com/quickstart/)** | **[Tool Reference](https://arc-1-mcp.com/tools/)** | **[Blog Series](https://blog.zeis.de/tags/ai-abap-development-series/)**
+**[Full Documentation](https://docs.arc-1-mcp.com/)** | **[Quickstart](https://docs.arc-1-mcp.com/quickstart/)** | **[Tool Reference](https://docs.arc-1-mcp.com/tools/)** | **[Blog Series](https://blog.zeis.de/tags/ai-abap-development-series/)**
 
 > 📖 **New: AI ABAP Development blog series** — long-form posts on AI for ABAP, ARC-1 design, and real-world BTP / Copilot Studio / Joule walkthroughs. **[Read the series →](https://blog.zeis.de/tags/ai-abap-development-series/)**
 
@@ -28,8 +28,8 @@ Built for organizations that need AI-assisted SAP development with guardrails. I
 - **Writes restricted to `$TMP` when enabled** — only local/throwaway objects; writing to transportable packages requires explicit `--allowed-packages`
 - **HTTP security headers (helmet) on by default** — HSTS, CSP, X-Frame-Options, CORP, X-Content-Type-Options. COOP is deliberately not set so popup-based OAuth flows (Copilot Studio) keep working. No flag to disable.
 - **Opt-in CORS for browser MCP clients** — `ARC1_ALLOWED_ORIGINS` (comma-separated, exact match). Off by default; native MCP clients don't need it
-- **Layered rate limiting** — three layers out of the box: per-IP OAuth/`/mcp` edge (Layer 1, default 20/min/IP, **on**), per-user MCP quota (Layer 2, **off by default** — multi-user deployments opt in via `ARC1_RATE_LIMIT=60`), server-wide SAP-bound semaphore (Layer 3, default 10, **on**). Honors `Retry-After` on 429/503 from SAP / BTP gateways. Two operator env vars; per-endpoint OAuth ceilings are constants in code. Closes CodeQL alert `js/missing-rate-limiting`. See the [Rate Limiting Guide](https://arc-1-mcp.com/rate-limiting/)
-- **Supply-chain security** — Dependabot (npm + GitHub Actions + Docker, weekly + same-day security advisories), `npm audit --audit-level=high` PR gate, GitHub Dependency Review on every PR, CodeQL SAST, Trivy container scanning (gating on release, advisory on dev), all third-party GitHub Actions pinned to commit SHA, [`SECURITY.md`](SECURITY.md) policy with severity-tiered SLAs. Image and npm package both ship with [provenance attestations](https://docs.npmjs.com/generating-provenance-statements). See the [security guide §13](https://arc-1-mcp.com/security-guide/#13-dependency--supply-chain-security)
+- **Layered rate limiting** — three layers out of the box: per-IP OAuth/`/mcp` edge (Layer 1, default 20/min/IP, **on**), per-user MCP quota (Layer 2, **off by default** — multi-user deployments opt in via `ARC1_RATE_LIMIT=60`), server-wide SAP-bound semaphore (Layer 3, default 10, **on**). Honors `Retry-After` on 429/503 from SAP / BTP gateways. Two operator env vars; per-endpoint OAuth ceilings are constants in code. Closes CodeQL alert `js/missing-rate-limiting`. See the [Rate Limiting Guide](https://docs.arc-1-mcp.com/rate-limiting/)
+- **Supply-chain security** — Dependabot (npm + GitHub Actions + Docker, weekly + same-day security advisories), `npm audit --audit-level=high` PR gate, GitHub Dependency Review on every PR, CodeQL SAST, Trivy container scanning (gating on release, advisory on dev), all third-party GitHub Actions pinned to commit SHA, [`SECURITY.md`](SECURITY.md) policy with severity-tiered SLAs. Image and npm package both ship with [provenance attestations](https://docs.npmjs.com/generating-provenance-statements). See the [security guide §13](https://docs.arc-1-mcp.com/security-guide/#13-dependency--supply-chain-security)
 
 ### Authentication
 
@@ -129,9 +129,9 @@ ARC-1's strategy is to stay close to documented and discoverable ADT behavior, p
 
 ## Quick Start
 
-**Install in Claude** — pick your surface (full guide: [Install in Claude](https://arc-1-mcp.com/install-in-claude/)):
+**Install in Claude** — pick your surface (full guide: [Install in Claude](https://docs.arc-1-mcp.com/install-in-claude/)):
 
-- **Claude Desktop** — download the latest `arc-1-*.mcpb` from [Releases](https://github.com/arc-mcp/arc-1/releases) and double-click it (or Settings → Extensions). Claude prompts for your SAP connection. (The `.mcpb` is attached to releases automatically; if the newest one doesn't have it yet, see [Install in Claude](https://arc-1-mcp.com/install-in-claude/).)
+- **Claude Desktop** — download the latest `arc-1-*.mcpb` from [Releases](https://github.com/arc-mcp/arc-1/releases) and double-click it (or Settings → Extensions). Claude prompts for your SAP connection. (The `.mcpb` is attached to releases automatically; if the newest one doesn't have it yet, see [Install in Claude](https://docs.arc-1-mcp.com/install-in-claude/).)
 - **Claude Code** — one install for the MCP server **and** all [SAP skills](https://github.com/arc-mcp/arc-1/tree/main/skills):
 
   ```text
@@ -145,9 +145,9 @@ ARC-1's strategy is to stay close to documented and discoverable ADT behavior, p
   npx arc-1@latest --url https://your-sap-host:44300 --user YOUR_USER
   ```
 
-- **Trying it out on your laptop?** → [Quickstart](https://arc-1-mcp.com/quickstart/)
-- **Full local dev setup (Docker, cookie extractor, client configs)?** → [Local Development](https://arc-1-mcp.com/local-development/)
-- **Deploying for a team / BTP?** → [Deployment](https://arc-1-mcp.com/deployment/)
+- **Trying it out on your laptop?** → [Quickstart](https://docs.arc-1-mcp.com/quickstart/)
+- **Full local dev setup (Docker, cookie extractor, client configs)?** → [Local Development](https://docs.arc-1-mcp.com/local-development/)
+- **Deploying for a team / BTP?** → [Deployment](https://docs.arc-1-mcp.com/deployment/)
 
 ## Blog Series — AI ABAP Development
 
@@ -165,21 +165,21 @@ Full list and new posts → **[blog.zeis.de/tags/ai-abap-development-series](htt
 
 ## Documentation
 
-Full documentation is available at **[arc-1-mcp.com](https://arc-1-mcp.com/)**.
+Full documentation is available at **[docs.arc-1-mcp.com](https://docs.arc-1-mcp.com/)**.
 
 | Guide | Description |
 |-------|-------------|
-| [Quickstart](https://arc-1-mcp.com/quickstart/) | 5-minute npx + Claude Desktop setup |
-| [Install in Claude](https://arc-1-mcp.com/install-in-claude/) | Desktop `.mcpb`, Claude Code plugin (server + skills), and remote BTP connector |
-| [Local Development](https://arc-1-mcp.com/local-development/) | Full local dev — all install methods, MCP client configs, SSO cookie extractor |
-| [Deployment](https://arc-1-mcp.com/deployment/) | Multi-user deployment — Docker, BTP Cloud Foundry, BTP ABAP |
-| [Configuration](https://arc-1-mcp.com/configuration-reference/) | Every flag and env var, one table |
-| [Updating](https://arc-1-mcp.com/updating/) | Update procedures per install method |
-| [Enterprise Auth](https://arc-1-mcp.com/enterprise-auth/) | Layer A / Layer B auth internals, coexistence matrix |
-| [Tool Reference](https://arc-1-mcp.com/tools/) | Complete reference for all 12 tools |
-| [Architecture](https://arc-1-mcp.com/architecture/) | System architecture with diagrams |
-| [AI Usage Patterns](https://arc-1-mcp.com/mcp-usage/) | Agent workflow patterns and best practices |
-| [Blog Series](https://arc-1-mcp.com/blog-series/) | Long-form posts on AI for ABAP development, ARC-1 internals, and real-world walkthroughs |
+| [Quickstart](https://docs.arc-1-mcp.com/quickstart/) | 5-minute npx + Claude Desktop setup |
+| [Install in Claude](https://docs.arc-1-mcp.com/install-in-claude/) | Desktop `.mcpb`, Claude Code plugin (server + skills), and remote BTP connector |
+| [Local Development](https://docs.arc-1-mcp.com/local-development/) | Full local dev — all install methods, MCP client configs, SSO cookie extractor |
+| [Deployment](https://docs.arc-1-mcp.com/deployment/) | Multi-user deployment — Docker, BTP Cloud Foundry, BTP ABAP |
+| [Configuration](https://docs.arc-1-mcp.com/configuration-reference/) | Every flag and env var, one table |
+| [Updating](https://docs.arc-1-mcp.com/updating/) | Update procedures per install method |
+| [Enterprise Auth](https://docs.arc-1-mcp.com/enterprise-auth/) | Layer A / Layer B auth internals, coexistence matrix |
+| [Tool Reference](https://docs.arc-1-mcp.com/tools/) | Complete reference for all 12 tools |
+| [Architecture](https://docs.arc-1-mcp.com/architecture/) | System architecture with diagrams |
+| [AI Usage Patterns](https://docs.arc-1-mcp.com/mcp-usage/) | Agent workflow patterns and best practices |
+| [Blog Series](https://docs.arc-1-mcp.com/blog-series/) | Long-form posts on AI for ABAP development, ARC-1 internals, and real-world walkthroughs |
 
 ## Development
 
