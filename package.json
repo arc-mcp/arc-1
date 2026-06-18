@@ -103,7 +103,7 @@
     "@sap/xsenv": "^6.2.1",
     "@sap/xssec": "^4.13.0",
     "ajv": "^8.18.0",
-    "better-sqlite3": "^12.10.1",
+    "better-sqlite3": "^12.11.1",
     "commander": "^15.0.0",
     "cors": "2.8.6",
     "diff": "^9.0.0",
