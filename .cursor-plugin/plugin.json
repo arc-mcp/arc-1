@@ -6,8 +6,8 @@
   "author": {
     "name": "Marian Zeis"
   },
-  "homepage": "https://github.com/marianfoo/arc-1",
-  "repository": "https://github.com/marianfoo/arc-1",
+  "homepage": "https://github.com/arc-mcp/arc-1",
+  "repository": "https://github.com/arc-mcp/arc-1",
   "license": "MIT",
   "keywords": ["sap", "abap", "adt", "mcp", "erp", "s4hana", "btp"],
   "category": "developer-tools",

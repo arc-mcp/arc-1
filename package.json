@@ -1,13 +1,13 @@
 {
   "name": "arc-1",
   "version": "0.9.18",
-  "mcpName": "io.github.marianfoo/arc-1",
+  "mcpName": "io.github.arc-mcp/arc-1",
   "description": "ARC-1 — MCP Server for SAP ABAP Systems",
   "author": "Marian Zeis",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/marianfoo/arc-1"
+    "url": "https://github.com/arc-mcp/arc-1"
   },
   "type": "module",
   "engines": {

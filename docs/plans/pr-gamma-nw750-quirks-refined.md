@@ -2,12 +2,12 @@
 
 ## Overview
 
-This PR ships the genuinely NW-7.50-specific runtime behavior bundled in [PR #196](https://github.com/marianfoo/arc-1/pull/196), refined per the layered-detection design (ADR-0002 in [PR #199](https://github.com/marianfoo/arc-1/pull/199)):
+This PR ships the genuinely NW-7.50-specific runtime behavior bundled in [PR #196](https://github.com/arc-mcp/arc-1/pull/196), refined per the layered-detection design (ADR-0002 in [PR #199](https://github.com/arc-mcp/arc-1/pull/199)):
 
 - **Lock-conflict reclassification.** NW 7.50's ICM transforms `CX_ADT_RES_NO_ACCESS` (lock conflict on `lockObject` / `createObject`) into a 401 HTML "Logon Error Message" page. PR #196 reclassifies these 4xx HTML responses into a clean 409 lock conflict so the LLM doesn't chase auth red herrings. This PR keeps the intent but replaces the fragile body-string heuristic with a layered detection strategy: structured exception type first, body-marker fallback gated by a release feature signal.
 - **MSAG transport-vs-task guard.** NW 7.50's `CL_ADT_MESSAGE_CLASS_API=>create()` silently ignores task numbers passed as `corrNr` — TADIR records the entry but T100/T100A are never written, leaving a phantom MSAG. The behavior is "confirmed on NW 7.50, unclear elsewhere" per the PR comment. Validate the transport-id-is-a-request before MSAG create on every release; cache the result within the request to avoid extra HTTP roundtrips on every MSAG batch_create.
 
-This PR is the third of three "ship-now" splits of [PR #196](https://github.com/marianfoo/arc-1/pull/196). The cookie hot-reload work ships in PR-α; the universal sync + write guards ship in PR-β. The release-gated tool enums and TABL→STRU routing **do not ship here** — they are deferred until ARCH-01 (discovery-driven routing) lands. The full architectural rationale (ADR-0001 / ADR-0002) lives in [PR #199](https://github.com/marianfoo/arc-1/pull/199); this PR does not depend on #199 merging first.
+This PR is the third of three "ship-now" splits of [PR #196](https://github.com/arc-mcp/arc-1/pull/196). The cookie hot-reload work ships in PR-α; the universal sync + write guards ship in PR-β. The release-gated tool enums and TABL→STRU routing **do not ship here** — they are deferred until ARCH-01 (discovery-driven routing) lands. The full architectural rationale (ADR-0001 / ADR-0002) lives in [PR #199](https://github.com/arc-mcp/arc-1/pull/199); this PR does not depend on #199 merging first.
 
 ## Context
 

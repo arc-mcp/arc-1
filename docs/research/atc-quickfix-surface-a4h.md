@@ -2,7 +2,7 @@
 
 > **What:** A live smoke-test of the ABAP Test Cockpit (ATC), the quickfix engine, and the auto-quickfix batch endpoint against the A4H test system, to ground the "Semi-Automated Fixes of Clean Core ATC Findings" roadmap feature (Joule Feature 2) in what the SAP backend actually does.
 > **System:** A4H — S/4HANA 2023, SAP_BASIS 758, on-prem ABAP-cloud developer trial.
-> **Method:** `arc1-cli` tool calls + raw ADT `curl` (CSRF-authenticated), 2026-06-03. Built on top of [PR #336](https://github.com/marianfoo/arc-1/pull/336), which fixed `runAtcCheck` so ATC returns findings at all.
+> **Method:** `arc1-cli` tool calls + raw ADT `curl` (CSRF-authenticated), 2026-06-03. Built on top of [PR #336](https://github.com/arc-mcp/arc-1/pull/336), which fixed `runAtcCheck` so ATC returns findings at all.
 > **Status:** All rows below are live-verified; quotes are actual responses.
 
 ---

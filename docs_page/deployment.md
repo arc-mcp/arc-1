@@ -51,7 +51,7 @@ docker run -d --name arc1 -p 8080:8080 \
   -e ARC1_API_KEYS="$(openssl rand -hex 32):admin" \
   -e SAP_ALLOW_WRITES=true SAP_ALLOW_TRANSPORT_WRITES=true \
   -e SAP_ALLOWED_PACKAGES='Z*,$TMP' \
-  ghcr.io/marianfoo/arc-1:latest
+  ghcr.io/arc-mcp/arc-1:latest
 ```
 
 MCP clients pass `Authorization: Bearer <api-key>` when connecting to `http://host:8080/mcp`.
@@ -66,7 +66,7 @@ docker run -d --name arc1 -p 8080:8080 \
   -e SAP_USER=SVC_ARC1 -e SAP_PASSWORD=... \
   -e SAP_OIDC_ISSUER=https://login.microsoftonline.com/{tenant}/v2.0 \
   -e SAP_OIDC_AUDIENCE={client-id-guid} \
-  ghcr.io/marianfoo/arc-1:latest
+  ghcr.io/arc-mcp/arc-1:latest
 ```
 
 This example only turns on OIDC validation for the MCP endpoint. It does **not** widen the server's safety ceiling: ARC-1 still defaults to read-only, no SQL, no named table preview, no transport writes, and writes restricted to `$TMP` unless you set explicit `SAP_ALLOW_*` safety flags.

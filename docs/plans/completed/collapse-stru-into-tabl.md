@@ -4,7 +4,7 @@
 
 DDIC structures and transparent tables share one parent in TADIR: `R3TR TABL` (distinguished only by `DD02L-TABCLASS = TRANSP` for transparent tables vs `INTTAB`/`APPEND` for structures). ADT's slash subtypes reflect the same legacy: `TABL/DT` for transparent tables, `TABL/DS` for structures. Independent ABAP tooling (abapGit, sap/abap-file-formats) follows the same convention — there is no separate `STRU` object type; structures are handled under `TABL` and disambiguated by `TABCLASS`.
 
-ARC-1 currently maintains a fictional `STRU` short type and a hardcoded `STRU/DS` slash mapping that no SAP system actually returns. The mapping is dead code; the user-visible duality (`STRU` vs `TABL`) is misleading; and the `STRU` write path silently falls through to a broken generic envelope. GitHub issue [#218](https://github.com/marianfoo/arc-1/issues/218) reports this from external observation.
+ARC-1 currently maintains a fictional `STRU` short type and a hardcoded `STRU/DS` slash mapping that no SAP system actually returns. The mapping is dead code; the user-visible duality (`STRU` vs `TABL`) is misleading; and the `STRU` write path silently falls through to a broken generic envelope. GitHub issue [#218](https://github.com/arc-mcp/arc-1/issues/218) reports this from external observation.
 
 This plan collapses `STRU` into `TABL` to match abapGit and SAP file-format conventions. ARC-1 ships pre-1.0, so this is an outright breaking change — no `STRU` alias is preserved at the public API level (only an internal slash-type alias for back-compat with any LLM-stored prompts that learned the old form).
 

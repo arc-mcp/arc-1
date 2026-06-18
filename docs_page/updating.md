@@ -52,7 +52,7 @@ Users assigned to `ARC-1 Developer` role collection automatically gain transport
 
 1. Open your `.env`.
 2. For each old env var, replace per the table above. Remember: `SAP_READ_ONLY`/`SAP_BLOCK_*` flags flip polarity (`true` → `false` and vice versa).
-3. If you used `ARC1_PROFILE`, pick the matching recipe from the new [.env.example](https://github.com/marianfoo/arc-1/blob/main/.env.example).
+3. If you used `ARC1_PROFILE`, pick the matching recipe from the new [.env.example](https://github.com/arc-mcp/arc-1/blob/main/.env.example).
 4. If you used single `ARC1_API_KEY`, switch to `ARC1_API_KEYS="your-key:admin"` (or choose a restricted profile).
 5. If you used `SAP_ALLOWED_OPS` / `SAP_DISALLOWED_OPS`, see the [deny actions doc](authorization.md#advanced-deny-actions) for the `SAP_DENY_ACTIONS` equivalent.
 6. Start the server. It will either start successfully (with a new `effective safety: ...` log line) or error with a migration hint for any legacy var you missed.
@@ -77,7 +77,7 @@ See the full [Authorization & Roles](authorization.md) doc for the complete mode
 
 ## Before you update
 
-1. **Check the changelog** — review [CHANGELOG.md](https://github.com/marianfoo/arc-1/blob/main/CHANGELOG.md) or the [Releases page](https://github.com/marianfoo/arc-1/releases) for breaking changes.
+1. **Check the changelog** — review [CHANGELOG.md](https://github.com/arc-mcp/arc-1/blob/main/CHANGELOG.md) or the [Releases page](https://github.com/arc-mcp/arc-1/releases) for breaking changes.
 2. **Pin to a version** — in production, use exact version tags (for example `:0.9.18`), never `:latest`. Prevents surprise upgrades. <!-- x-release-please-version -->
 3. **Test first** — update a dev/staging instance before production. Verify MCP clients still connect and tools work as expected.
 4. **Read the startup auth line after upgrade** — a drift-free instance will log the same `auth: MCP=[...] SAP=[...]` summary before and after. If it's different, the upgrade changed something you didn't expect.
@@ -122,7 +122,7 @@ If you pin in MCP client config, update the `args`:
 <!-- x-release-please-start-version -->
 ```bash
 # 1. Pull the new image
-docker pull ghcr.io/marianfoo/arc-1:0.9.18
+docker pull ghcr.io/arc-mcp/arc-1:0.9.18
 
 # 2. Stop & remove the running container
 docker stop arc1 && docker rm arc1
@@ -130,7 +130,7 @@ docker stop arc1 && docker rm arc1
 # 3. Start with the new image (same env vars / config)
 docker run -d --name arc1 -p 8080:8080 \
   --env-file .env \
-  ghcr.io/marianfoo/arc-1:0.9.18
+  ghcr.io/arc-mcp/arc-1:0.9.18
 
 # 4. Verify
 docker logs arc1 | head -20
@@ -144,7 +144,7 @@ curl -s http://localhost:8080/mcp
 
 ```bash
 docker stop arc1 && docker rm arc1
-docker run -d --name arc1 -p 8080:8080 --env-file .env ghcr.io/marianfoo/arc-1:0.6.8
+docker run -d --name arc1 -p 8080:8080 --env-file .env ghcr.io/arc-mcp/arc-1:0.6.8
 ```
 
 ---
@@ -160,7 +160,7 @@ CF supports rolling updates natively — no manual stop/start.
 applications:
   - name: arc1-mcp-server
     docker:
-      image: ghcr.io/marianfoo/arc-1:0.9.18   # ← update this
+      image: ghcr.io/arc-mcp/arc-1:0.9.18   # ← update this
 ```
 <!-- x-release-please-end -->
 
@@ -255,4 +255,4 @@ Automated via [release-please](https://github.com/googleapis/release-please):
 - `feat!:` / `BREAKING CHANGE:` → major bump
 - `chore:` / `docs:` / `ci:` → no release
 
-Published simultaneously to **npm** (`arc-1`) and **GHCR** (`ghcr.io/marianfoo/arc-1`).
+Published simultaneously to **npm** (`arc-1`) and **GHCR** (`ghcr.io/arc-mcp/arc-1`).

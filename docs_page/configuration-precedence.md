@@ -16,8 +16,8 @@ CLI flag   >   process.env   >   .env file (in CWD)   >   built-in default
 
 - **CLI flag** — `--allow-writes`, `--port`, etc. Highest precedence. Always wins.
 - **`process.env`** — anything already in the running process's environment when ARC-1 starts. This includes shell exports, `docker run -e`, Cloud Foundry env, and the `env` block of an `mcp.json` (because the MCP client launches ARC-1 as a subprocess with that block as its environment).
-- **`.env` file** — loaded by [dotenv](https://github.com/motdotla/dotenv) from `process.cwd()` at startup ([src/index.ts:16](https://github.com/marianfoo/arc-1/blob/main/src/index.ts#L16)). **Dotenv never overrides values that are already set in `process.env`** — it only fills in missing keys.
-- **Built-in default** — defined in [src/server/config.ts](https://github.com/marianfoo/arc-1/blob/main/src/server/config.ts).
+- **`.env` file** — loaded by [dotenv](https://github.com/motdotla/dotenv) from `process.cwd()` at startup ([src/index.ts:16](https://github.com/arc-mcp/arc-1/blob/main/src/index.ts#L16)). **Dotenv never overrides values that are already set in `process.env`** — it only fills in missing keys.
+- **Built-in default** — defined in [src/server/config.ts](https://github.com/arc-mcp/arc-1/blob/main/src/server/config.ts).
 
 That last point is the one most people miss: if `SAP_URL` is set in your shell and also in `.env`, the shell value wins. Putting something in `.env` doesn't "override" anything — it's a fallback.
 

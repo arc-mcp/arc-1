@@ -2,7 +2,7 @@
 
 ## Overview
 
-Replace the static SAP_BASIS release maps proposed in [PR #196](https://github.com/marianfoo/arc-1/pull/196) with a routing primitive that reads the truth from the SAP system's own `/sap/bc/adt/discovery` feed. The discovery feed already lists every collection the system publishes; the static release maps were a manually-maintained proxy for what the feed says directly.
+Replace the static SAP_BASIS release maps proposed in [PR #196](https://github.com/arc-mcp/arc-1/pull/196) with a routing primitive that reads the truth from the SAP system's own `/sap/bc/adt/discovery` feed. The discovery feed already lists every collection the system publishes; the static release maps were a manually-maintained proxy for what the feed says directly.
 
 This plan implements the foundation. A follow-up plan ([discovery-driven-routing-cleanup.md](#) — to be created after this lands) consumes the foundation by removing the release-version literals and the `isRelease750()` helper from PR #196 and rewriting tool-enum filtering.
 

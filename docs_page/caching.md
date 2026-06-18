@@ -230,7 +230,7 @@ docker run -d \
   -v arc1-cache:/app/cache \
   -e ARC1_CACHE_FILE=/app/cache/arc1.db \
   -p 8080:8080 \
-  ghcr.io/marianfoo/arc-1
+  ghcr.io/arc-mcp/arc-1
 ```
 
 ## Pre-Warmer
@@ -294,7 +294,7 @@ docker run -d --name arc1 \
   -e ARC1_CACHE_WARMUP=true \
   -e ARC1_CACHE_WARMUP_PACKAGES="Z*" \
   # ... other env vars ...
-  ghcr.io/marianfoo/arc-1
+  ghcr.io/arc-mcp/arc-1
 ```
 
 ## Reverse Dependency Lookup

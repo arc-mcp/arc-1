@@ -2,7 +2,7 @@
 
 ## Overview
 
-PR #307's [author feedback](https://github.com/marianfoo/arc-1/pull/307#issuecomment-4574252428) reported that ARC-1 cannot initialise the `testclasses` include: on a freshly-created class the CCAU include does not exist, and `SAPWrite(action="update", type="CLAS", include="testclasses", source=…)` fails with a cryptic **HTTP 500 `ExceptionResourceSaveFailure: "…CCAU does not have any inactive version"`** because the PUT path assumes the include already exists.
+PR #307's [author feedback](https://github.com/arc-mcp/arc-1/pull/307#issuecomment-4574252428) reported that ARC-1 cannot initialise the `testclasses` include: on a freshly-created class the CCAU include does not exist, and `SAPWrite(action="update", type="CLAS", include="testclasses", source=…)` fails with a cryptic **HTTP 500 `ExceptionResourceSaveFailure: "…CCAU does not have any inactive version"`** because the PUT path assumes the include already exists.
 
 Live verification on a4h (S/4HANA 2023) established the exact mechanism: inside a locked stateful session, an **empty `POST /sap/bc/adt/oo/classes/{name}/includes/{include}?lockHandle=<LH>` returns 201** and creates the include (SAP generates an empty skeleton); the include is then GET-able (200) and PUT-able. A bare POST without a lock returns 423 (`"Resource CLASS_INCLUDE …/TESTCLASSES is not locked"`).
 

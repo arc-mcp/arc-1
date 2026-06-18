@@ -1,6 +1,6 @@
 # GitHub Actions A4H 2025 Migration
 
-Status: completed in PR [#365](https://github.com/marianfoo/arc-1/pull/365). The implementation workflow run [27058553382](https://github.com/marianfoo/arc-1/actions/runs/27058553382) passed with GitHub artifact counts of unit `3,468/0 skipped`, integration `208/54 skipped`, and E2E `137/4 skipped`. Later CI reruns exposed a live SAP ADT lock/unlock routing flake; the PR now includes the skip-classifier hardening and final green Test workflow run [27059551872](https://github.com/marianfoo/arc-1/actions/runs/27059551872), with Node 22/24 unit `3,473/0 skipped`, integration `208/54 skipped`, and E2E `119/22 skipped / 0 failed`.
+Status: completed in PR [#365](https://github.com/arc-mcp/arc-1/pull/365). The implementation workflow run [27058553382](https://github.com/arc-mcp/arc-1/actions/runs/27058553382) passed with GitHub artifact counts of unit `3,468/0 skipped`, integration `208/54 skipped`, and E2E `137/4 skipped`. Later CI reruns exposed a live SAP ADT lock/unlock routing flake; the PR now includes the skip-classifier hardening and final green Test workflow run [27059551872](https://github.com/arc-mcp/arc-1/actions/runs/27059551872), with Node 22/24 unit `3,473/0 skipped`, integration `208/54 skipped`, and E2E `119/22 skipped / 0 failed`.
 
 ## Overview
 
@@ -86,14 +86,14 @@ This task records the migration research while work is in progress and removes s
 ### Task 3: Rotate repository live-test secrets to A4H 2025
 
 **Files:**
-- External state only: GitHub repository Actions secrets for `marianfoo/arc-1`
+- External state only: GitHub repository Actions secrets for `arc-mcp/arc-1`
 - Read only: `/Users/marianzeis/DEV/arc-1/.env.infrastructure`
 
 This task points GitHub's canonical `TEST_SAP_*` secret set at the tuned A4H 2025 system. It intentionally does not change the committed repository except through docs that record the fact of rotation.
 
-- [x] List current repository secret names with `gh secret list -R marianfoo/arc-1` and confirm `TEST_SAP_URL`, `TEST_SAP_USER`, `TEST_SAP_PASSWORD`, `TEST_SAP_CLIENT`, and `TEST_SAP_INSECURE` exist or can be created.
+- [x] List current repository secret names with `gh secret list -R arc-mcp/arc-1` and confirm `TEST_SAP_URL`, `TEST_SAP_USER`, `TEST_SAP_PASSWORD`, `TEST_SAP_CLIENT`, and `TEST_SAP_INSECURE` exist or can be created.
 - [x] Parse `.env.infrastructure` without shell evaluation so special characters in the password are not interpreted.
-- [x] Set `TEST_SAP_URL`, `TEST_SAP_USER`, `TEST_SAP_PASSWORD`, `TEST_SAP_CLIENT`, and `TEST_SAP_INSECURE` to the A4H 2025 values with `gh secret set -R marianfoo/arc-1`.
+- [x] Set `TEST_SAP_URL`, `TEST_SAP_USER`, `TEST_SAP_PASSWORD`, `TEST_SAP_CLIENT`, and `TEST_SAP_INSECURE` to the A4H 2025 values with `gh secret set -R arc-mcp/arc-1`.
 - [x] Re-list secret names and timestamps only; do not print secret values.
 - [x] Run an authenticated local ADT core discovery probe against A4H 2025 and record only target label, client, HTTP status, and response size.
 

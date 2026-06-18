@@ -3,7 +3,7 @@
  *
  * The repo root doubles as a single-plugin Claude Code marketplace: `.claude-plugin/plugin.json`
  * declares the ARC-1 MCP server inline and `.claude-plugin/marketplace.json` lists this repo
- * (source "./") so users can `/plugin marketplace add marianfoo/arc-1` →
+ * (source "./") so users can `/plugin marketplace add arc-mcp/arc-1` →
  * `/plugin install arc-1@arc-1`. The plugin's skills are the existing root `skills/` directory,
  * which Claude Code always auto-scans for a plugin.
  *

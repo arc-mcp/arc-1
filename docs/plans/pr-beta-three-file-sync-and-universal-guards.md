@@ -2,14 +2,14 @@
 
 ## Overview
 
-This PR ships the universal (i.e. not NW 7.50-specific) write-side improvements bundled in [PR #196](https://github.com/marianfoo/arc-1/pull/196). Each item fixes a real LLM-facing gap that applies on every supported SAP release:
+This PR ships the universal (i.e. not NW 7.50-specific) write-side improvements bundled in [PR #196](https://github.com/arc-mcp/arc-1/pull/196). Each item fixes a real LLM-facing gap that applies on every supported SAP release:
 
 - **Three-file sync gap for `messages`.** The `SAPWrite` handler already consumes `args.messages` for MSAG create/update, and Zod already validates it, but the JSON tool schema in [src/handlers/tools.ts](../../src/handlers/tools.ts) never exposed the property — so LLMs cannot discover or use it.
 - **STRU as a first-class writable type.** DDIC structures (`/ddic/structures/`) are writable on every supported SAP release (verified live: A4H 758, NPL 750). PR #196 added STRU to the Zod schema and handler routing but only conditionally surfaced it in the tool enum (when TABL was filtered out by the release map). On modern systems, STRU writes are valid in handler+schema but invisible to LLMs. Make STRU a first-class entry in `SAPWRITE_TYPES_*` and the description blurb.
 - **Mixed-case object name rejection.** SAP TADIR uses uppercase for all object names; mixed-case names are silently corrupted (e.g. DDLS created as "Zc_MyView" instead of "ZC_MYVIEW"). This is universal SAP convention, not 7.50-specific. Reject at the handler with a clear message that distinguishes between the object name (must be uppercase) and the source body (can be mixed case).
 - **STRU update guard against transparent tables.** The `/sap/bc/adt/ddic/structures/` PUT endpoint silently converts a `TABL/DT` (transparent table) into a `TABL/DS` (structure) by creating an inactive `INTTAB` version. This corrupts DD02L and confuses SE11 on every release where the endpoint exists. Block STRU updates on objects that are actually transparent tables, with a single neutral error message that doesn't claim a specific release.
 
-This PR is the second of three "ship-now" splits of [PR #196](https://github.com/marianfoo/arc-1/pull/196). Architectural decisions live under `docs/adr/0001..0003.md`. The NW 7.50-specific runtime behavior (lock-conflict reclassification, MSAG transport guard) ships separately in PR-γ.
+This PR is the second of three "ship-now" splits of [PR #196](https://github.com/arc-mcp/arc-1/pull/196). Architectural decisions live under `docs/adr/0001..0003.md`. The NW 7.50-specific runtime behavior (lock-conflict reclassification, MSAG transport guard) ships separately in PR-γ.
 
 ## Context
 

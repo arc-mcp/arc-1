@@ -9,7 +9,7 @@ Set the `ARC1_LOG_FILE` environment variable to enable JSON line audit logging:
 ARC1_LOG_FILE=/tmp/arc1-audit.jsonl npm run dev
 
 # Docker
-docker run -v /data/logs:/logs -e ARC1_LOG_FILE=/logs/arc1-audit.jsonl ghcr.io/marianfoo/arc-1
+docker run -v /data/logs:/logs -e ARC1_LOG_FILE=/logs/arc1-audit.jsonl ghcr.io/arc-mcp/arc-1
 
 # BTP Cloud Foundry (in manifest.yml)
 env:
@@ -232,7 +232,7 @@ docker run -d \
   -e SAP_URL=http://sap:50000 \
   -e SAP_USER=admin \
   -e SAP_PASSWORD=secret \
-  ghcr.io/marianfoo/arc-1
+  ghcr.io/arc-mcp/arc-1
 
 # Tail logs in real-time
 tail -f /data/arc1-logs/audit.jsonl | jq .

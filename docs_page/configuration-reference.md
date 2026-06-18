@@ -4,7 +4,7 @@ Every environment variable and CLI flag that ARC-1 reads, grouped by what it con
 
 This page is the flat reference. For the mental model (three-layer authorization, scope semantics), start with [Authorization & Roles](authorization.md). For *where values come from* across `npx` / local / Docker / BTP, see [Configuration Precedence](configuration-precedence.md).
 
-The full grouped template with inline commentary is [`.env.example`](https://github.com/marianfoo/arc-1/blob/main/.env.example).
+The full grouped template with inline commentary is [`.env.example`](https://github.com/arc-mcp/arc-1/blob/main/.env.example).
 
 ---
 
@@ -207,7 +207,7 @@ API-key profile note: `developer`, `developer-data`, and `developer-sql` profile
 
 ARC-1 classifies each action internally using an `OperationType` enum: Read, Search, Query, FreeSQL, Create, Update, Delete, Activate, Workflow, Test, Lock, Intelligence, Transport. This drives the safety check at `checkOperation()`. The enum is **internal** — admins configure via the `SAP_ALLOW_*` flags and `SAP_DENY_ACTIONS`, not directly.
 
-The `(tool, action) → (scope, opType)` mapping lives at [src/authz/policy.ts](https://github.com/marianfoo/arc-1/blob/main/src/authz/policy.ts). `npm run validate:policy` asserts every action in `src/handlers/schemas.ts` has a matching policy entry.
+The `(tool, action) → (scope, opType)` mapping lives at [src/authz/policy.ts](https://github.com/arc-mcp/arc-1/blob/main/src/authz/policy.ts). `npm run validate:policy` asserts every action in `src/handlers/schemas.ts` has a matching policy entry.
 
 | Op type | Admin-facing flag | Example actions |
 |---|---|---|
@@ -335,5 +335,5 @@ Full migration guide: [updating.md](updating.md#v07-authorization-refactor-break
 - [Configuration Precedence](configuration-precedence.md) — CLI vs env vs `.env`, and what changes across npx / local / Docker / BTP.
 - [Authorization & Roles](authorization.md) — three-layer model, scope semantics, capability requirements.
 - [Enterprise Auth](enterprise-auth.md) — Layer A / Layer B coexistence matrix.
-- [`.env.example`](https://github.com/marianfoo/arc-1/blob/main/.env.example) — grouped template with inline commentary.
+- [`.env.example`](https://github.com/arc-mcp/arc-1/blob/main/.env.example) — grouped template with inline commentary.
 - Effective config at startup: ARC-1 logs `auth: MCP=[…] SAP=[…]` and a safety summary line on every boot. When in doubt, read that first.

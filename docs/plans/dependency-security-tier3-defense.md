@@ -33,7 +33,7 @@ Design decisions:
 
 ### Target State
 
-- Socket.dev GitHub App is installed on `marianfoo/arc-1`. Every PR that adds or updates a dependency receives a Socket bot comment with severity ratings. The default policy is **advisory** (warn, don't block); a 30-day review cycle decides which severities to promote to blocking.
+- Socket.dev GitHub App is installed on `arc-mcp/arc-1`. Every PR that adds or updates a dependency receives a Socket bot comment with severity ratings. The default policy is **advisory** (warn, don't block); a 30-day review cycle decides which severities to promote to blocking.
 - A `.github/socket.yml` configuration file customizes which Socket alert categories are surfaced and at what severity (e.g., `malware: critical`, `install-scripts: high`, `telemetry: medium`, `unknown-license: low`).
 - `docs_page/security-guide.md` has a new section "Active Supply-Chain Defense (Tier 3)" with:
   - How Socket.dev integrates and how to read its PR comments.
@@ -81,7 +81,7 @@ This plan is mostly configuration and documentation; no source code changes. Ver
 
 Socket.dev is a free-for-OSS GitHub App that posts a PR comment summarizing supply-chain risks for any package added or updated in the PR. Categories include `malware`, `install-scripts`, `network`, `telemetry`, `obfuscated-code`, `typo-squat`, `unknown-license`, `deprecated`, etc. The configuration file `.github/socket.yml` lets the maintainer choose which categories to surface and at what severity.
 
-- [ ] Install the Socket.dev GitHub App at `https://github.com/apps/socket-security` and grant it access to `marianfoo/arc-1`. The free OSS plan is sufficient — no paid features are used in this plan. Document this manual install step in the PR description so the reviewer confirms post-merge.
+- [ ] Install the Socket.dev GitHub App at `https://github.com/apps/socket-security` and grant it access to `arc-mcp/arc-1`. The free OSS plan is sufficient — no paid features are used in this plan. Document this manual install step in the PR description so the reviewer confirms post-merge.
 - [ ] Create `.github/socket.yml` with:
   ```yaml
   version: 2
@@ -140,7 +140,7 @@ Socket.dev is a free-for-OSS GitHub App that posts a PR comment summarizing supp
 **Files:**
 - Modify: `docs_page/security-guide.md`
 
-**🟨 Partially completed in [arc-1#237](https://github.com/marianfoo/arc-1/pull/237)** (merged 2026-05-08). The verification + GitHub-native features documentation landed as a new `### GitHub-native security features (verified enabled)` subsection inside §13 (instead of §15.2 — §15 is reserved for Tier 3's umbrella once Socket.dev + the triage runbook also land). All 8 toggles verified live:
+**🟨 Partially completed in [arc-1#237](https://github.com/arc-mcp/arc-1/pull/237)** (merged 2026-05-08). The verification + GitHub-native features documentation landed as a new `### GitHub-native security features (verified enabled)` subsection inside §13 (instead of §15.2 — §15 is reserved for Tier 3's umbrella once Socket.dev + the triage runbook also land). All 8 toggles verified live:
 
 - Dependabot alerts (HTTP 204), security updates, version updates, grouped security updates, malware alerts
 - Secret scanning, push protection
@@ -156,11 +156,11 @@ Plus two opt-in toggles deliberately not enabled (`secret_scanning_non_provider_
 When Tier 3 Tasks 1, 3, and the §15.4 memo land, restructure §13 + new §15 so the GitHub-native subsection moves under §15.2 for the canonical layout the plan originally specified. Until then, leaving it under §13 is fine — the content is correct, only the section number differs.
 
 - [x] Verify, via repository settings or `gh api`:
-  - `gh api repos/marianfoo/arc-1/vulnerability-alerts` → expect 204 (enabled by Tier 1).
-  - `gh api repos/marianfoo/arc-1 --jq '.security_and_analysis'` → expect `secret_scanning.status == 'enabled'`, `secret_scanning_push_protection.status == 'enabled'`, `dependabot_security_updates.status == 'enabled'`.
-  - If any are `disabled`, enable them via repo settings UI (`https://github.com/marianfoo/arc-1/settings/security_analysis`) and re-verify. Capture the final state.
+  - `gh api repos/arc-mcp/arc-1/vulnerability-alerts` → expect 204 (enabled by Tier 1).
+  - `gh api repos/arc-mcp/arc-1 --jq '.security_and_analysis'` → expect `secret_scanning.status == 'enabled'`, `secret_scanning_push_protection.status == 'enabled'`, `dependabot_security_updates.status == 'enabled'`.
+  - If any are `disabled`, enable them via repo settings UI (`https://github.com/arc-mcp/arc-1/settings/security_analysis`) and re-verify. Capture the final state.
 - [x] Verify the maintainer account has push protection at the user level (`https://github.com/settings/security_analysis`) — this catches secrets pushed to *any* repo the maintainer commits to, including private forks. Document the recommendation; cannot be enforced via repo settings.
-- [x] Verify Private Vulnerability Reporting is enabled (Tier 1 task). `gh api repos/marianfoo/arc-1 --jq '.security_and_analysis.private_vulnerability_reporting.status'` → expect `'enabled'`. *(Note: the field doesn't appear in `.security_and_analysis` — verify via the dedicated endpoint `gh api repos/marianfoo/arc-1/private-vulnerability-reporting --jq .enabled` instead. Plan updated to reflect this.)*
+- [x] Verify Private Vulnerability Reporting is enabled (Tier 1 task). `gh api repos/arc-mcp/arc-1 --jq '.security_and_analysis.private_vulnerability_reporting.status'` → expect `'enabled'`. *(Note: the field doesn't appear in `.security_and_analysis` — verify via the dedicated endpoint `gh api repos/arc-mcp/arc-1/private-vulnerability-reporting --jq .enabled` instead. Plan updated to reflect this.)*
 - [ ] In `docs_page/security-guide.md`, add the section **`## 15. Active Supply-Chain Defense`** (after §14 from Tier 2). Subsections:
   - `### 15.1 Socket.dev PR review` — what Socket checks, how to read PR comments, the severity rules from `.github/socket.yml`, and the calibration policy. *(Blocked on Task 1.)*
   - [x] `### 15.2 GitHub-native security features (verified enabled)` — landed in #237 as a subsection of §13. Will be re-homed under §15.2 once §15 is created.
@@ -238,9 +238,9 @@ Wire the Tier 3 controls into the canonical artifacts so future maintainers and 
 - [ ] Run full test suite: `npm test` — all tests pass.
 - [ ] Run `npm run typecheck` — no errors.
 - [ ] Run `npm run lint` — no errors.
-- [ ] Confirm Socket.dev GitHub App is installed on `marianfoo/arc-1` (visible at `https://github.com/marianfoo/arc-1/settings/installations`).
+- [ ] Confirm Socket.dev GitHub App is installed on `arc-mcp/arc-1` (visible at `https://github.com/arc-mcp/arc-1/settings/installations`).
 - [ ] Confirm `.github/socket.yml` is read by Socket — the next PR that touches `package.json` or `package-lock.json` should produce a Socket comment that respects the configured `issueRules`.
-- [ ] Confirm `gh api repos/marianfoo/arc-1 --jq '.security_and_analysis'` returns enabled status for: secret_scanning, secret_scanning_push_protection, dependabot_security_updates, private_vulnerability_reporting.
+- [ ] Confirm `gh api repos/arc-mcp/arc-1 --jq '.security_and_analysis'` returns enabled status for: secret_scanning, secret_scanning_push_protection, dependabot_security_updates, private_vulnerability_reporting.
 - [ ] Confirm `docs/security-triage-process.md` is reachable from `docs_page/security-guide.md` §15.3 link.
 - [ ] Confirm `docs_page/security-guide.md` §13–15 build correctly via `mkdocs build`.
 - [ ] Confirm `docs_page/roadmap.md` has SEC-11, SEC-12, SEC-13 entries linked correctly.

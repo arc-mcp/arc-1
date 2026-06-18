@@ -26,9 +26,9 @@ Commands and results used for this analysis:
 - `npm run test:e2e`: fails fast if MCP server preflight is unreachable.
 - `npm run test:eval`: fails if configured local model is unavailable.
 - `npm run test:coverage`: fails because `@vitest/coverage-v8` is missing.
-- `gh api repos/marianfoo/arc-1/actions/runs/<run-id>/jobs`: used to extract exact job conclusions for requested workflow runs.
-- `gh run view <run-id> --repo marianfoo/arc-1 --log-failed`: used to extract failed test names and stack traces.
-- `gh api repos/marianfoo/arc-1/branches/main/protection`: used to verify whether required checks are enforced at branch level.
+- `gh api repos/arc-mcp/arc-1/actions/runs/<run-id>/jobs`: used to extract exact job conclusions for requested workflow runs.
+- `gh run view <run-id> --repo arc-mcp/arc-1 --log-failed`: used to extract failed test names and stack traces.
+- `gh api repos/arc-mcp/arc-1/branches/main/protection`: used to verify whether required checks are enforced at branch level.
 
 Key files reviewed:
 
@@ -45,9 +45,9 @@ Key files reviewed:
 
 Runs requested for detailed workflow behavior review:
 
-- [24213793920](https://github.com/marianfoo/arc-1/actions/runs/24213793920)
-- [24212490295](https://github.com/marianfoo/arc-1/actions/runs/24212490295)
-- [24197428731](https://github.com/marianfoo/arc-1/actions/runs/24197428731)
+- [24213793920](https://github.com/arc-mcp/arc-1/actions/runs/24213793920)
+- [24212490295](https://github.com/arc-mcp/arc-1/actions/runs/24212490295)
+- [24197428731](https://github.com/arc-mcp/arc-1/actions/runs/24197428731)
 
 | Run | Event / Branch | Job outcomes | Reliability signal |
 |---|---|---|---|

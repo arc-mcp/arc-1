@@ -17,12 +17,12 @@ inferred**, and **the known gaps and follow-ups** that are out of scope.
 ## TL;DR for review
 
 PR #223 implements [Plan A](../plans/completed/audit-purge-invented-adt-types.md) from
-PR [#222](https://github.com/marianfoo/arc-1/pull/222) (the audit research). It purges
+PR [#222](https://github.com/arc-mcp/arc-1/pull/222) (the audit research). It purges
 five invented or mis-routed entries from `SLASH_TYPE_MAP`, fixes the silently-broken
 DDIC VIEW read path, and adds anti-cargo-cult guards. Verified live against both SAP
 test systems — a4h S/4HANA 2023 and npl NW 7.50 — on 2026-05-08.
 
-The previous round of review (PR [#219](https://github.com/marianfoo/arc-1/pull/219),
+The previous round of review (PR [#219](https://github.com/arc-mcp/arc-1/pull/219),
 which collapsed `STRU` into `TABL`) found two real bugs that this author had missed:
 P1 (SAPNavigate TABL routing on 7.50) and P2 (T000 brittle integration assertion).
 **That review pattern is what we want again** — the codebase has many cross-cutting

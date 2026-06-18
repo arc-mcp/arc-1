@@ -2,7 +2,7 @@
 
 ## Overview
 
-Issue [#250](https://github.com/marianfoo/arc-1/issues/250) reports that `SAPWrite(action='create', type='FUNC', …)` errors out because `objectBasePath('FUNC')` deliberately throws (since PR [#223](https://github.com/marianfoo/arc-1/pull/223)). Live verification on A4H (S/4HANA 2023) confirms ADT supports a full FM lifecycle via `/sap/bc/adt/functions/groups/{group}/fmodules/{name}` — ARC-1 simply hasn't wired the write path. `FUGR` write is also missing (not in `SAPWRITE_TYPES_ONPREM`), and FUGR is the prerequisite parent for an FM.
+Issue [#250](https://github.com/arc-mcp/arc-1/issues/250) reports that `SAPWrite(action='create', type='FUNC', …)` errors out because `objectBasePath('FUNC')` deliberately throws (since PR [#223](https://github.com/arc-mcp/arc-1/pull/223)). Live verification on A4H (S/4HANA 2023) confirms ADT supports a full FM lifecycle via `/sap/bc/adt/functions/groups/{group}/fmodules/{name}` — ARC-1 simply hasn't wired the write path. `FUGR` write is also missing (not in `SAPWRITE_TYPES_ONPREM`), and FUGR is the prerequisite parent for an FM.
 
 This plan adds **FUGR + FUNC create + source-update + delete** as a bundled MVP. Signature/parameter management (the well-known parameter-loss bug class — see [`compare/fr0ster/evaluations/issue-77-fm-update-parameter-loss.md`](../../compare/fr0ster/evaluations/issue-77-fm-update-parameter-loss.md)) is explicitly **out of scope** — callers can add parameters via SAPGUI/Eclipse afterwards. The MVP exposes a clear caveat in the tool description so LLMs warn the user.
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Issue [#252](https://github.com/marianfoo/arc-1/issues/252) is the user-asked follow-up to [#250](https://github.com/marianfoo/arc-1/issues/250): "New function module is created successfully, but no parameters can be added via mcp — tool returns that input/output parameters should be set via SE37/Eclipse. Can direct parameter addition be added later? Maybe via SAPWrite update?"
+Issue [#252](https://github.com/arc-mcp/arc-1/issues/252) is the user-asked follow-up to [#250](https://github.com/arc-mcp/arc-1/issues/250): "New function module is created successfully, but no parameters can be added via mcp — tool returns that input/output parameters should be set via SE37/Eclipse. Can direct parameter addition be added later? Maybe via SAPWrite update?"
 
 Live probing of a4h S/4HANA 2023 + NPL 7.50 SP02 settles a year of speculation around fr0ster's #77 ("parameter loss"): **FM parameters are not in a separate ADT metadata document**. They live INSIDE `/source/main` as ABAP source-based signature syntax (`IMPORTING VALUE(name) TYPE type [DEFAULT x] [OPTIONAL]`). Every standard FM (BAPI_USER_GETLIST, POPUP_TO_CONFIRM, STFC_CONNECTION, ...) ships its parameters this way. PUTting an `<fmodule:parameter>` element to the root metadata endpoint silently no-ops; PUTting `*"IMPORTING"*` SAPGUI-comment-block syntax is rejected with `HTTP 400 / FUNC_ADT028 "Parameter comment blocks are not allowed"`. **The only channel is `PUT /source/main` with the signature embedded as ABAP.**
 

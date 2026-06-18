@@ -3,7 +3,7 @@
 **Date:** 2026-03-23
 **Report ID:** 2026-03-23-001
 **Subject:** Comprehensive plan for transforming vsp into an enterprise-grade SAP connector for Microsoft Copilot Studio
-**Fork:** https://github.com/marianfoo/arc-1 (working branch, never touch oisee/vibing-steampunk)
+**Fork:** https://github.com/arc-mcp/arc-1 (working branch, never touch oisee/vibing-steampunk)
 
 ---
 
@@ -593,7 +593,7 @@ Copilot Studio passes credentials via environment or headers. The connector uses
 # Docker Compose for enterprise deployment
 services:
   vsp:
-    image: ghcr.io/marianfoo/arc-1:latest
+    image: ghcr.io/arc-mcp/arc-1:latest
     ports:
       - "8080:8080"
     environment:
@@ -613,7 +613,7 @@ services:
 ```
 
 ### Module Name Change
-The Go module is still `github.com/oisee/vibing-steampunk`. This should be updated to `github.com/marianfoo/arc-1` as part of the fork takeover.
+The Go module is still `github.com/oisee/vibing-steampunk`. This should be updated to `github.com/arc-mcp/arc-1` as part of the fork takeover.
 
 This is a mechanical change: update `go.mod` and find+replace all import paths across every `.go` file. Also update `Dockerfile`, `README.md`, `.goreleaser.yml`, `.github/workflows/`.
 
@@ -641,7 +641,7 @@ Steps:
 **Success criteria:** All tests pass, build works, no import of removed packages anywhere.
 
 ### Phase 2 — Module Rename
-**Scope:** Rename Go module from `github.com/oisee/vibing-steampunk` to `github.com/marianfoo/arc-1`
+**Scope:** Rename Go module from `github.com/oisee/vibing-steampunk` to `github.com/arc-mcp/arc-1`
 
 Steps:
 1. Update `go.mod` module path

@@ -1087,7 +1087,7 @@ jobs:
         with:
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: ghcr.io/marianfoo/arc-1:${{ github.ref_name }}
+          tags: ghcr.io/arc-mcp/arc-1:${{ github.ref_name }}
 ```
 
 ---
@@ -1660,9 +1660,9 @@ Ensure "ARC-1" (ABAP Relay Connector) is used consistently:
 
 - **npm package name:** `arc-1`
 - **CLI binary name:** `arc1`
-- **Docker image:** `ghcr.io/marianfoo/arc-1`
+- **Docker image:** `ghcr.io/arc-mcp/arc-1`
 - **MCP server name:** `arc-1` (in Server constructor)
-- **GitHub repo:** `marianfoo/arc-1`
+- **GitHub repo:** `arc-mcp/arc-1`
 - **User-facing docs:** "ARC-1" (capitalized, with hyphen)
 - **Internal references:** `arc1` (no hyphen, lowercase)
 

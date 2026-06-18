@@ -16,7 +16,7 @@ A lean MCP server that relays AI tool calls to SAP ABAP systems via ADT (ABAP De
 ## Implementation Phases
 
 ### Phase 1: Module Rename ✅
-- Go module: `github.com/oisee/vibing-steampunk` → `github.com/marianfoo/arc-1`
+- Go module: `github.com/oisee/vibing-steampunk` → `github.com/arc-mcp/arc-1`
 - Binary name: `vsp` → `arc1`
 - MCP server name: `vsp-abap-tools` → `arc1`
 - All import paths updated across every .go file

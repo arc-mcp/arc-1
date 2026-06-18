@@ -372,4 +372,4 @@ Wiring:
 
 ---
 
-*Contact:* open an issue on [marianfoo/arc-1](https://github.com/marianfoo/arc-1) referencing this document if you want to collaborate on a `SAPUpgrade` tool PR.
+*Contact:* open an issue on [arc-mcp/arc-1](https://github.com/arc-mcp/arc-1) referencing this document if you want to collaborate on a `SAPUpgrade` tool PR.

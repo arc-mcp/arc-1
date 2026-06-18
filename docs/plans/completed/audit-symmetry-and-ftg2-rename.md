@@ -2,9 +2,9 @@
 
 **References**
 
-- Issue [#218](https://github.com/marianfoo/arc-1/issues/218) — original audit trigger
-- PR [#219](https://github.com/marianfoo/arc-1/pull/219) — Model B / STRU→TABL collapse (precedent for breaking-rename + deprecation alias)
-- PR [#222](https://github.com/marianfoo/arc-1/pull/222) — Audit (research-only, this plan ships in it)
+- Issue [#218](https://github.com/arc-mcp/arc-1/issues/218) — original audit trigger
+- PR [#219](https://github.com/arc-mcp/arc-1/pull/219) — Model B / STRU→TABL collapse (precedent for breaking-rename + deprecation alias)
+- PR [#222](https://github.com/arc-mcp/arc-1/pull/222) — Audit (research-only, this plan ships in it)
 - [`research/abap-types/02-master-overview.md`](../../../research/abap-types/02-master-overview.md) — synthesis + verdict matrix
 - Per-type evidence: [`msag.md`](../../../research/abap-types/types/msag.md), [`messages.md`](../../../research/abap-types/types/messages.md), [`ftg2.md`](../../../research/abap-types/types/ftg2.md)
 - Companion plan: [`audit-purge-invented-adt-types.md`](../audit-purge-invented-adt-types.md) (Plan A — runs independently of this one)
@@ -47,7 +47,7 @@ servers. Per [`research/abap-types/types/ftg2.md`](../../../research/abap-types/
 identifier.
 
 This is the same bug class as `STRU` and `FUNC/FM` from issue
-[#218](https://github.com/marianfoo/arc-1/issues/218): an ARC-1-private name that looks
+[#218](https://github.com/arc-mcp/arc-1/issues/218): an ARC-1-private name that looks
 like a SAP type but isn't. Fix: rename to `FEATURE_TOGGLE` (descriptive, no false-TADIR
 appearance), keep `FTG2` as deprecated alias for one minor.
 

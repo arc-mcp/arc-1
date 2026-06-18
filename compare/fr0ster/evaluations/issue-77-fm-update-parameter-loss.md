@@ -43,7 +43,7 @@ Until the upstream investigation in fr0ster lands, ARC-1 should **not advertise 
 
 ## 2026-05-09 update — ARC-1 latent gap closed (issue #250)
 
-ARC-1 issue [#250](https://github.com/marianfoo/arc-1/issues/250) reported that `SAPWrite(type='FUNC')` errored out at the URL builder. A live verification on a4h S/4HANA 2023 confirmed the ADT FM endpoints work end-to-end (FUGR + FM create, source update, activate, delete), and the gap was on the ARC-1 side — `objectBasePath('FUNC')` deliberately throws to keep generic URL builders from silently mis-routing. Closed by adding a FUNC-aware branch to `handleSAPWrite` (and to `SAPActivate` single + batch paths) that pre-resolves the URL from `args.group`, plus a `case 'FUNC'` in `buildCreateXml` returning the verified `<fmodule:abapFunctionModule>` envelope. `FUGR` was added to `SAPWRITE_TYPES_ONPREM` for the same release (FUGR is the prerequisite parent for FM creation).
+ARC-1 issue [#250](https://github.com/arc-mcp/arc-1/issues/250) reported that `SAPWrite(type='FUNC')` errored out at the URL builder. A live verification on a4h S/4HANA 2023 confirmed the ADT FM endpoints work end-to-end (FUGR + FM create, source update, activate, delete), and the gap was on the ARC-1 side — `objectBasePath('FUNC')` deliberately throws to keep generic URL builders from silently mis-routing. Closed by adding a FUNC-aware branch to `handleSAPWrite` (and to `SAPActivate` single + batch paths) that pre-resolves the URL from `args.group`, plus a `case 'FUNC'` in `buildCreateXml` returning the verified `<fmodule:abapFunctionModule>` envelope. `FUGR` was added to `SAPWRITE_TYPES_ONPREM` for the same release (FUGR is the prerequisite parent for FM creation).
 
 The parameter-loss bug class fr0ster identified is **still upstream-blocked** and intentionally out of scope for ARC-1's MVP. ARC-1's tool description warns LLMs explicitly that FM signature/parameter management (IMPORTING/EXPORTING/EXCEPTIONS) is NOT handled — operators add parameters via SAPGUI/SE37 or Eclipse after activation. SAPGUI-style `*"…IMPORTING…"*` parameter comment blocks in source are auto-stripped before PUT (SAP rejects them with `FUNC_ADT028 "Parameter comment blocks are not allowed"`) and a warning is appended to the response.
 
@@ -55,7 +55,7 @@ User-asked follow-up to ARC-1 issue #250: ghostxwheel asked "no parameters can b
 
 The original "parameter loss" symptom fr0ster observed had a different cause than they suspected: `UpdateFunctionModule` lost parameters because the LLM-supplied source body omitted the IMPORTING/EXPORTING block (read returned just the source body, LLM rewrote it without preserving the signature lines, the PUT stripped them). The fix is structural, not metadata-endpoint based.
 
-ARC-1 [PR #253](https://github.com/marianfoo/arc-1/pull/253) (issue [#252](https://github.com/marianfoo/arc-1/issues/252)) ships:
+ARC-1 [PR #253](https://github.com/arc-mcp/arc-1/pull/253) (issue [#252](https://github.com/arc-mcp/arc-1/issues/252)) ships:
 
 - `src/adt/fm-signature.ts` — pure-function `buildFmSignatureClause` / `parseFmSignature` / `spliceFmSignature` (~25 unit tests, including round-trip property test against real BAPI_USER_GETLIST + POPUP_TO_CONFIRM source bodies).
 - `SAPWrite(type='FUNC', parameters=[{kind, name, type, byValue?, default?, optional?}, …])` — array-to-source generator. Splices the signature into the user's body before PUT. Backward-compat: omitting `parameters` runs the existing source-only path unchanged.

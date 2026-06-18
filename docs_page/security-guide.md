@@ -394,7 +394,7 @@ This is the most critical on-premise PP compromise scenario -- a compromised Clo
 
 ## 13. Dependency & Supply-Chain Security
 
-ARC-1 ships as an [npm package](https://www.npmjs.com/package/arc-1) and a [Docker image](https://github.com/marianfoo/arc-1/pkgs/container/arc-1) consumed by enterprise customers running on regulated landscapes (banks, government, defense, pharma). Customers will run their own image scanners (Aqua, Prisma Cloud, Microsoft Defender) against the published image and reject vulnerable artifacts. ARC-1 layers its own supply-chain controls on top of GitHub-native primitives so issues are caught upstream of those scanners.
+ARC-1 ships as an [npm package](https://www.npmjs.com/package/arc-1) and a [Docker image](https://github.com/arc-mcp/arc-1/pkgs/container/arc-1) consumed by enterprise customers running on regulated landscapes (banks, government, defense, pharma). Customers will run their own image scanners (Aqua, Prisma Cloud, Microsoft Defender) against the published image and reject vulnerable artifacts. ARC-1 layers its own supply-chain controls on top of GitHub-native primitives so issues are caught upstream of those scanners.
 
 ### What runs in CI
 
@@ -417,14 +417,14 @@ These toggles live on the repo's Settings → Code security page and are checked
 
 | Feature | API verification | Status |
 |---|---|---|
-| Dependabot alerts | `gh api repos/marianfoo/arc-1/vulnerability-alerts -i \| head -1` → `HTTP/2.0 204` | ✅ enabled |
-| Dependabot security updates | `gh api repos/marianfoo/arc-1 --jq '.security_and_analysis.dependabot_security_updates.status'` → `"enabled"` | ✅ enabled |
-| Dependabot version updates | reads `.github/dependabot.yml` (in repo root) — toggled on at the same time as security updates; verify activity in [Insights → Dependency graph → Dependabot](https://github.com/marianfoo/arc-1/network/updates) | ✅ enabled |
+| Dependabot alerts | `gh api repos/arc-mcp/arc-1/vulnerability-alerts -i \| head -1` → `HTTP/2.0 204` | ✅ enabled |
+| Dependabot security updates | `gh api repos/arc-mcp/arc-1 --jq '.security_and_analysis.dependabot_security_updates.status'` → `"enabled"` | ✅ enabled |
+| Dependabot version updates | reads `.github/dependabot.yml` (in repo root) — toggled on at the same time as security updates; verify activity in [Insights → Dependency graph → Dependabot](https://github.com/arc-mcp/arc-1/network/updates) | ✅ enabled |
 | Dependabot grouped security updates | toggled on in Settings → Code security; no public REST field — verify by inspecting any auto-opened security PR (groups multiple advisories per ecosystem into one PR) | ✅ enabled |
 | Dependabot malware alerts | toggled on in Settings → Code security; no public REST field — verify only via the Security tab when an alert fires | ✅ enabled |
-| Secret scanning | `gh api repos/marianfoo/arc-1 --jq '.security_and_analysis.secret_scanning.status'` → `"enabled"` | ✅ enabled |
-| Push protection | `gh api repos/marianfoo/arc-1 --jq '.security_and_analysis.secret_scanning_push_protection.status'` → `"enabled"` | ✅ enabled |
-| Private vulnerability reporting | `gh api repos/marianfoo/arc-1/private-vulnerability-reporting --jq .enabled` → `true` | ✅ enabled |
+| Secret scanning | `gh api repos/arc-mcp/arc-1 --jq '.security_and_analysis.secret_scanning.status'` → `"enabled"` | ✅ enabled |
+| Push protection | `gh api repos/arc-mcp/arc-1 --jq '.security_and_analysis.secret_scanning_push_protection.status'` → `"enabled"` | ✅ enabled |
+| Private vulnerability reporting | `gh api repos/arc-mcp/arc-1/private-vulnerability-reporting --jq .enabled` → `true` | ✅ enabled |
 
 Optional toggles **not** enabled (deliberate — listed here so the absence is documented, not silent):
 
@@ -446,22 +446,22 @@ npm audit --audit-level=high
 # Expected: "found 0 vulnerabilities"
 
 # 3. Docker image — scan locally with the same scanner CI uses
-trivy image ghcr.io/marianfoo/arc-1:<version> \
+trivy image ghcr.io/arc-mcp/arc-1:<version> \
   --severity HIGH,CRITICAL \
   --exit-code 1
 # Expected: exit 0, "No vulnerabilities found"
 
 # 4. View the full advisory history for the project
-open https://github.com/marianfoo/arc-1/security/advisories
+open https://github.com/arc-mcp/arc-1/security/advisories
 ```
 
 ### Reporting a vulnerability
 
-See [`SECURITY.md`](https://github.com/marianfoo/arc-1/blob/main/SECURITY.md). Preferred channel is GitHub [Private Vulnerability Reporting](https://github.com/marianfoo/arc-1/security/advisories/new); fallback is email. Do **not** open a public issue or post on the SAP Community before the maintainers acknowledge the report — that bypasses coordinated disclosure and can put deployed instances at risk.
+See [`SECURITY.md`](https://github.com/arc-mcp/arc-1/blob/main/SECURITY.md). Preferred channel is GitHub [Private Vulnerability Reporting](https://github.com/arc-mcp/arc-1/security/advisories/new); fallback is email. Do **not** open a public issue or post on the SAP Community before the maintainers acknowledge the report — that bypasses coordinated disclosure and can put deployed instances at risk.
 
 ### Roadmap
 
 This section corresponds to roadmap entry **SEC-11 (Tier 1: Foundation)**. Future tiers extend the chain:
 
-- **Tier 2 (Attestation)** — CycloneDX SBOM (npm + image), Cosign keyless image signing, OpenSSF Scorecard. Plan in [`docs/plans/dependency-security-tier2-attestation.md`](https://github.com/marianfoo/arc-1/blob/main/docs/plans/dependency-security-tier2-attestation.md).
-- **Tier 3 (Active Defense)** — Socket.dev PR review, vulnerability triage runbook, formal non-adoption decisions for Renovate / Snyk / SLSA L3. Plan in [`docs/plans/dependency-security-tier3-defense.md`](https://github.com/marianfoo/arc-1/blob/main/docs/plans/dependency-security-tier3-defense.md).
+- **Tier 2 (Attestation)** — CycloneDX SBOM (npm + image), Cosign keyless image signing, OpenSSF Scorecard. Plan in [`docs/plans/dependency-security-tier2-attestation.md`](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/dependency-security-tier2-attestation.md).
+- **Tier 3 (Active Defense)** — Socket.dev PR review, vulnerability triage runbook, formal non-adoption decisions for Renovate / Snyk / SLSA L3. Plan in [`docs/plans/dependency-security-tier3-defense.md`](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/dependency-security-tier3-defense.md).

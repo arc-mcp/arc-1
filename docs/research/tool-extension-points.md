@@ -459,7 +459,7 @@ A subsequent PR adds Phase 2 (`ARC1_PLUGINS` loader). A possible third PR adds P
 
 ## 14. Worked example: samibouge NW 7.50 fork — what fits, what doesn't
 
-**Source:** [main...samibouge:arc-1:feat/nw750-version-fix](https://github.com/marianfoo/arc-1/compare/main...samibouge:arc-1:feat/nw750-version-fix) (18 commits, +2&nbsp;936 / −151 lines)
+**Source:** [main...samibouge:arc-1:feat/nw750-version-fix](https://github.com/arc-mcp/arc-1/compare/main...samibouge:arc-1:feat/nw750-version-fix) (18 commits, +2&nbsp;936 / −151 lines)
 
 This is a real third-party branch that hardens ARC-1 against SAP NetWeaver 7.50 backend quirks. It is the right shape of contribution to test the extension concept against a concrete case. The author bundled fixes, features, and **one site-local capability that requires installing custom ABAP code on the SAP system**. Maintaining customer-side ABAP is exactly what we don't want in upstream ARC-1 — but the underlying need is real, and this is precisely the situation FEAT-61 is designed to handle.
 
@@ -467,7 +467,7 @@ This is a real third-party branch that hardens ARC-1 against SAP NetWeaver 7.50 
 
 | # | Commit | Subject | Disposition | Why |
 |---|--------|---------|-------------|-----|
-| 1 | `8e9c12f` | SAPActivate phantom success + CLI/server alignment (NW 7.50) | **Already upstream** ([PR #179](https://github.com/marianfoo/arc-1/pull/179), merged 2026-04-26) | n/a — superseded |
+| 1 | `8e9c12f` | SAPActivate phantom success + CLI/server alignment (NW 7.50) | **Already upstream** ([PR #179](https://github.com/arc-mcp/arc-1/pull/179), merged 2026-04-26) | n/a — superseded |
 | 2 | `e3a8de6` | PR #179 follow-ups + auth-refactor rebase | **Already upstream** (folded into #179 / #181) | n/a — superseded |
 | 3 | `7fd90ce` | Two-phase activation handshake + NW 7.50 lock-conflict detection | **Upstream as bug fix** | Affects every system that hits preaudit; lock-as-auth-error reclassification is a universal correctness fix |
 | 4 | `dd8dd7e` | Activation error formatting (line numbers, decode entities, dedupe) | **Upstream as bug fix** | Universal output-formatting fix |

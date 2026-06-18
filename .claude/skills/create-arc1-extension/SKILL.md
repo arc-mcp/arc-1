@@ -155,7 +155,7 @@ volume trade-offs), point the developer at the **Deploying extensions** section 
 
 Point at **Deploying extensions** in [`docs_page/extensions.md`](../../../docs_page/extensions.md).
 Key facts: plugins are **local files** loaded from an **absolute** `ARC1_PLUGINS` path (no `$HOME`
-expansion); on BTP CF use a **derived Docker image** (`FROM ghcr.io/marianfoo/arc-1`, `COPY --chown=arc1:arc1`
+expansion); on BTP CF use a **derived Docker image** (`FROM ghcr.io/arc-mcp/arc-1`, `COPY --chown=arc1:arc1`
 — a plain `COPY` lands as root and the loader **rejects non-owner / world-writable** files) **or**
 co-deploy the built `dist/` in the buildpack app bits (`/home/vcap/app/...`, `vcap`-owned). **No
 hot-reload** (redeploy to change). **No XSUAA change** to add a plugin (scopes are reused).

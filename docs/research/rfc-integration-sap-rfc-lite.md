@@ -433,8 +433,8 @@ CMD ["node", "dist/index.js"]
 
 | Image | Tag | Size | RFC |
 |-------|-----|------|-----|
-| `ghcr.io/marianfoo/arc-1:latest` | Standard | ~30 MB | No |
-| `ghcr.io/marianfoo/arc-1:rfc` | RFC-enabled | ~80+ MB | Yes |
+| `ghcr.io/arc-mcp/arc-1:latest` | Standard | ~30 MB | No |
+| `ghcr.io/arc-mcp/arc-1:rfc` | RFC-enabled | ~80+ MB | Yes |
 
 **Note:** The RFC-enabled Docker image cannot be published publicly because it contains the proprietary SAP NW RFC SDK. It would need to be built privately by each organization with their own SDK copy.
 

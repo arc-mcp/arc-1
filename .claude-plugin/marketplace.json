@@ -15,8 +15,8 @@
       "author": {
         "name": "Marian Zeis"
       },
-      "homepage": "https://marianfoo.github.io/arc-1/",
-      "repository": "https://github.com/marianfoo/arc-1",
+      "homepage": "https://docs.arc-1-mcp.com/",
+      "repository": "https://github.com/arc-mcp/arc-1",
       "license": "MIT",
       "category": "Developer Tools",
       "keywords": ["sap", "abap", "adt", "s4hana", "btp", "rap", "cds", "fiori"],

@@ -4,7 +4,7 @@ A diagnostic tool that tells you, for any reachable SAP system, which ADT object
 
 ## Motivation
 
-GitHub issue [#162](https://github.com/marianfoo/arc-1/issues/162) asks for a way to keep the LLM from speculating about types that don't exist on the connected system (e.g. `BDEF` on NW 7.50). The obvious fix is a hardcoded SAP_BASIS → type-list table. That is brittle: add-ons, backports, and feature toggles move the goalposts regularly, and a previous RAP-availability probe ([PR #93](https://github.com/marianfoo/arc-1/pull/93) → reverted by [PR #96](https://github.com/marianfoo/arc-1/pull/96)) burned us after a single-signal check blocked legitimate writes.
+GitHub issue [#162](https://github.com/arc-mcp/arc-1/issues/162) asks for a way to keep the LLM from speculating about types that don't exist on the connected system (e.g. `BDEF` on NW 7.50). The obvious fix is a hardcoded SAP_BASIS → type-list table. That is brittle: add-ons, backports, and feature toggles move the goalposts regularly, and a previous RAP-availability probe ([PR #93](https://github.com/arc-mcp/arc-1/pull/93) → reverted by [PR #96](https://github.com/arc-mcp/arc-1/pull/96)) burned us after a single-signal check blocked legitimate writes.
 
 This probe takes the opposite approach:
 
@@ -95,7 +95,7 @@ These fixtures are read back by [`tests/unit/probe/replay.test.ts`](../tests/uni
 
 ### Why there's a `synthetic-752` fixture next to the real ones
 
-Real-system fixtures are rich but non-exhaustive — a given SAP system may never emit the HTTP 400 "valid endpoint, bad params" response or the uniform 401/403 "auth blocked" pattern. The hand-crafted `synthetic-752` fixture deterministically covers every decision branch in [`classifyVerdict`](../src/probe/runner.ts), most importantly the `ok-400-bad-params` path which is the [#94 / #95 regression guard](https://github.com/marianfoo/arc-1/pull/96) against classifying HTTP 400 as "unavailable". Keep it even as real fixtures accumulate — it's the branch-coverage fixture, not a redundant sample.
+Real-system fixtures are rich but non-exhaustive — a given SAP system may never emit the HTTP 400 "valid endpoint, bad params" response or the uniform 401/403 "auth blocked" pattern. The hand-crafted `synthetic-752` fixture deterministically covers every decision branch in [`classifyVerdict`](../src/probe/runner.ts), most importantly the `ok-400-bad-params` path which is the [#94 / #95 regression guard](https://github.com/arc-mcp/arc-1/pull/96) against classifying HTTP 400 as "unavailable". Keep it even as real fixtures accumulate — it's the branch-coverage fixture, not a redundant sample.
 
 ### How to contribute a fixture set from your own system
 
@@ -106,6 +106,6 @@ Real-system fixtures are rich but non-exhaustive — a given SAP system may neve
 
 ## What the probe does *not* do
 
-- It does **not** change product behavior. No SAPWrite is blocked based on probe output; no catalog filter is applied; no tool is hidden. The explicit design lesson from [PR #96](https://github.com/marianfoo/arc-1/pull/96) is *fail open, report only*.
+- It does **not** change product behavior. No SAPWrite is blocked based on probe output; no catalog filter is applied; no tool is hidden. The explicit design lesson from [PR #96](https://github.com/arc-mcp/arc-1/pull/96) is *fail open, report only*.
 - It does **not** enumerate actual objects on the system. The known-object reads are a handful of well-known SAP-shipped fixtures (T000, ABAP_BOOL, MANDT, …), not an inventory.
 - It does **not** persist state between runs beyond fixture files you explicitly ask for.

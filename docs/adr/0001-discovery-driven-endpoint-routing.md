@@ -2,13 +2,13 @@
 
 **Status:** Proposed
 **Date:** 2026-04-28
-**Related PR:** [#196](https://github.com/marianfoo/arc-1/pull/196) (NW 7.50 compatibility fixes)
+**Related PR:** [#196](https://github.com/arc-mcp/arc-1/pull/196) (NW 7.50 compatibility fixes)
 **Supersedes:** N/A
 **Superseded by:** N/A
 
 ## Context
 
-[PR #196](https://github.com/marianfoo/arc-1/pull/196) introduced static SAP_BASIS release maps (`READ_RELEASE_GATES`, `WRITE_RELEASE_GATES`, `ACTION_RELEASE_GATES`) duplicated in [src/handlers/intent.ts](../../src/handlers/intent.ts) and [src/handlers/tools.ts](../../src/handlers/tools.ts) to gate types and route TABL→STRU on NW 7.50. Live verification surfaced four problems with this design:
+[PR #196](https://github.com/arc-mcp/arc-1/pull/196) introduced static SAP_BASIS release maps (`READ_RELEASE_GATES`, `WRITE_RELEASE_GATES`, `ACTION_RELEASE_GATES`) duplicated in [src/handlers/intent.ts](../../src/handlers/intent.ts) and [src/handlers/tools.ts](../../src/handlers/tools.ts) to gate types and route TABL→STRU on NW 7.50. Live verification surfaced four problems with this design:
 
 1. **Two sources of truth.** The maps in `intent.ts` and `tools.ts` must stay in sync manually; the PR already had a divergence (`TABL: 751` was in tools.ts but missing from intent.ts).
 2. **Manual maintenance burden.** Every new SAP support pack that back-ports an endpoint to NW 7.50 needs a manual map update. Conversely, S/4HANA endpoints that reach BTP at different times require per-release literals.
@@ -77,6 +77,6 @@ Out of scope for this ADR (retain release-aware logic where structurally needed)
 ## References
 
 - Live probe data captured 2026-04-28 against `a4h.marianzeis.de:50000` (S/4HANA 2023, SAP_BASIS 758 SP02) and `npl.marianzeis.de` (NetWeaver 7.50 SP02).
-- [docs/nw750-discovery-gap-analysis.md](../nw750-discovery-gap-analysis.md) — empirical NW 7.50 endpoint inventory contributed by PR [#196](https://github.com/marianfoo/arc-1/pull/196) author.
+- [docs/nw750-discovery-gap-analysis.md](../nw750-discovery-gap-analysis.md) — empirical NW 7.50 endpoint inventory contributed by PR [#196](https://github.com/arc-mcp/arc-1/pull/196) author.
 - [docs/plans/discovery-driven-endpoint-routing.md](../plans/discovery-driven-endpoint-routing.md) — implementation plan (ARCH-01 / PR-δ).
 - [src/adt/discovery.ts](../../src/adt/discovery.ts), [src/adt/xml-parser.ts](../../src/adt/xml-parser.ts) `parseDiscoveryDocument`.

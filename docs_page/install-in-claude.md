@@ -24,10 +24,10 @@ Find your row, then jump to that section.
 The simplest path for a single developer on a SAP system reachable from your laptop.
 
 1. Download the latest **`arc-1-<version>.mcpb`** from the
-   [Releases page](https://github.com/marianfoo/arc-1/releases). It is attached to every release
+   [Releases page](https://github.com/arc-mcp/arc-1/releases). It is attached to every release
    from the first one after this feature ships; if the newest release has no `.mcpb` yet, build it
    locally per the
-   [publishing guide](https://github.com/marianfoo/arc-1/blob/main/docs/publishing-guide.md#6-claude-desktop-extensions).
+   [publishing guide](https://github.com/arc-mcp/arc-1/blob/main/docs/publishing-guide.md#6-claude-desktop-extensions).
 2. **Double-click** it, or open Claude Desktop → **Settings → Extensions** and drag the file in.
 3. Claude prompts for your SAP connection. **URL, user, and password** are required (the password is
    stored in your OS keychain). The rest are optional and default to the safe choice — client,
@@ -56,7 +56,7 @@ For Claude Code, ARC-1 ships as a single **plugin** from a marketplace hosted in
 install gives you the **MCP server** *and* every SAP skill.
 
 ```text
-/plugin marketplace add marianfoo/arc-1
+/plugin marketplace add arc-mcp/arc-1
 /plugin install arc-1@arc-1
 ```
 
@@ -68,8 +68,8 @@ starts the `arc-1` MCP server via `npx`, and loads the skills namespaced as `/ar
     - **Only the MCP server** (no skills, no plugin): `claude mcp add arc-1 --env SAP_URL=… --env
       SAP_USER=… --env SAP_PASSWORD=… -- npx -y arc-1` — see the
       [Claude Code MCP docs](https://code.claude.com/docs/en/mcp).
-    - **Only the skills** (server already added another way): `npx skills add marianfoo/arc-1` —
-      see the [skills README](https://github.com/marianfoo/arc-1/tree/main/skills) for the
+    - **Only the skills** (server already added another way): `npx skills add arc-mcp/arc-1` —
+      see the [skills README](https://github.com/arc-mcp/arc-1/tree/main/skills) for the
       cross-agent CLI (Cursor, Copilot, Codex, Gemini CLI, …).
 
 ---
@@ -99,7 +99,7 @@ MCPB is local-only. You connect a **custom connector** by URL.
     ```
 
     Claude Code opens a browser for the OAuth login. Add the [skills](#claude-code-plugin-server-skills)
-    separately with `npx skills add marianfoo/arc-1`.
+    separately with `npx skills add arc-mcp/arc-1`.
 
 **Setting up the deployment** (XSUAA, Destination Service, Cloud Connector, per-user principal
 propagation) is covered in [BTP Cloud Foundry Deployment](btp-cloud-foundry-deployment.md),
