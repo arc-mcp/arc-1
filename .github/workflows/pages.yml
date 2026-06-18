@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'docs_page/**'
+      - 'overrides/**'
       - 'README.md'
       - 'mkdocs.yml'
   workflow_dispatch:
