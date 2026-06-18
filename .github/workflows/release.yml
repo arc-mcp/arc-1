@@ -161,12 +161,49 @@ jobs:
 
       - name: Update version in server.json
         run: |
-          VERSION=$(echo "${{ needs.release-please.outputs.tag_name }}" | sed 's/^v//')
-          jq --arg v "$VERSION" '
-            .version = $v |
-            .packages[0].version = $v |
-            .packages[1].identifier = "ghcr.io/arc-mcp/arc-1:" + $v
-          ' server.json > server.tmp && mv server.tmp server.json
+          set -o pipefail
+
+          VERSION="${{ needs.release-please.outputs.tag_name }}"
+          VERSION="${VERSION#v}"
+          OCI_IMAGE="ghcr.io/arc-mcp/arc-1:${VERSION}"
+          GHCR_REPOSITORY="arc-mcp/arc-1"
+          GHCR_TOKEN_URL="https://ghcr.io/token?service=ghcr.io&scope=repository:${GHCR_REPOSITORY}:pull"
+          GHCR_MANIFEST_URL="https://ghcr.io/v2/${GHCR_REPOSITORY}/manifests/${VERSION}"
+          GHCR_ACCEPT="application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json"
+
+          OCI_PUBLIC=false
+          for attempt in 1 2 3; do
+            if TOKEN=$(curl -fsSL "$GHCR_TOKEN_URL" 2>/dev/null | jq -er .token); then
+              if curl -fsSL \
+                -H "Authorization: Bearer $TOKEN" \
+                -H "Accept: $GHCR_ACCEPT" \
+                "$GHCR_MANIFEST_URL" >/dev/null 2>&1; then
+                OCI_PUBLIC=true
+                break
+              fi
+            fi
+            echo "OCI image $OCI_IMAGE is not anonymously pullable yet (attempt $attempt/3)"
+            if [[ "$attempt" != "3" ]]; then
+              sleep 10
+            fi
+          done
+
+          if [[ "$OCI_PUBLIC" == "true" ]]; then
+            echo "Including public OCI package $OCI_IMAGE in MCP Registry metadata"
+            jq --arg v "$VERSION" --arg image "$OCI_IMAGE" '
+              .version = $v |
+              (.packages[] | select(.registryType == "npm").version) = $v |
+              (.packages[] | select(.registryType == "oci").identifier) = $image
+            ' server.json > server.tmp
+          else
+            echo "::warning::Skipping OCI package in MCP Registry metadata because $OCI_IMAGE is not publicly pullable"
+            jq --arg v "$VERSION" '
+              .version = $v |
+              (.packages[] | select(.registryType == "npm").version) = $v |
+              .packages |= map(select(.registryType != "oci"))
+            ' server.json > server.tmp
+          fi
+          mv server.tmp server.json
 
       - name: Validate server.json
         run: ./mcp-publisher validate server.json

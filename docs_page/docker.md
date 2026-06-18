@@ -153,9 +153,11 @@ package version.
 
 ### Visibility
 
-Packages on GHCR inherit the visibility of the repository. If the repository is
-public, the images are public and can be pulled anonymously. If private,
-authentication is required (`docker login ghcr.io`).
+GHCR container package visibility is configured separately from repository
+visibility. The repository can be public while the package is still private.
+Set the `ghcr.io/arc-mcp/arc-1` package visibility to public when images should
+be pulled anonymously or published as Docker metadata in the MCP Registry;
+otherwise authentication is required (`docker login ghcr.io`).
 
 ---
 
