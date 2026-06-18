@@ -89,11 +89,11 @@ duplicating it here proved to drift). The compact per-variable table stays in AG
 | Add SAP version-quirk workaround (NW 7.50 / S/4 gating) | Prefer `extractExceptionType` in `src/adt/errors.ts` (structured XML error). Body-marker heuristics only with a release-scoped guard — see `convertHtmlConflictToProperError` in `src/adt/crud.ts` (scoped to `abapRelease < 751`). Inline-comment why the heuristic self-scopes. ADR-0002 (#199). |
 | Add activation batch quirk recovery | `src/adt/devtools.ts` (`activateBatch`, ED064 retry helper), `tests/unit/adt/devtools.test.ts`. Pure ED064 / "no next/previous object found" failures retried once as individual activations; mixed real errors must not retry. |
 | Add elicitation prompt | `src/server/elicit.ts` |
-| Add XSUAA/JWT auth | `src/server/xsuaa.ts` |
-| Modify OAuth DCR client store / signed-token format | `src/server/stateless-client-store.ts` (HMAC sign/verify, payload schema, TTL), `src/server/xsuaa.ts`, `src/server/http.ts`, tests. Bumping `KDF_LABEL` is the in-code revocation knob. Audit: `oauth_client_registered`/`oauth_client_lookup_failed`/`oauth_redirect_uri_registered`. |
+| Add XSUAA/JWT auth | Provided by [`@arc-mcp/xsuaa-auth`](https://github.com/arc-mcp/xsuaa-auth) (`createXsuaaTokenVerifier` / `createChainedTokenVerifier`); wired in `src/server/http.ts` + `src/server/server.ts`. (Was `src/server/xsuaa.ts`, extracted in #456.) |
+| Modify OAuth DCR client store / signed-token format | Now [`@arc-mcp/xsuaa-auth`](https://github.com/arc-mcp/xsuaa-auth)'s `StatelessDcrClientStore`; ARC-1 sets `clientIdPrefix: 'arc1-'` + `dcrKdfLabel: 'arc1-dcr/v1'` in `src/server/http.ts`. Bump the kdf label to revoke issued client_ids. Audit: `oauth_client_registered`/`oauth_client_lookup_failed`/`oauth_redirect_uri_registered`. (Was `src/server/stateless-client-store.ts`, extracted in #456.) |
 | Modify scope enforcement | `src/authz/policy.ts` (`ACTION_POLICY`), `src/handlers/dispatch.ts` (runtime check), `src/server/server.ts` (tool listing filter) |
 | Modify OIDC token handling | `src/server/http.ts` (validateOidcToken, ~line 274) |
-| Add/modify auth scopes | `xs-security.json`, `src/server/xsuaa.ts`, `src/server/http.ts`, `src/handlers/dispatch.ts` |
+| Add/modify auth scopes | `xs-security.json`, `src/authz/policy.ts`, `src/server/http.ts` (verifier wiring via `@arc-mcp/xsuaa-auth`), `src/handlers/dispatch.ts` |
 | Add / modify auth combination rule | `src/server/config.ts` (validateConfig at ~line 305), `src/server/types.ts` (ServerConfig), `tests/unit/server/config.test.ts`, `docs_page/enterprise-auth.md` (Coexistence Matrix) |
 | Add Layer B auth mechanism | `src/adt/http.ts` (applyAuthHeader at ~line 830, fetchCsrfToken at ~line 669), `src/server/server.ts` (buildAdtConfig — perUser flag), `tests/unit/adt/http.test.ts` |
 | Add safety config option | `src/adt/safety.ts`, `src/server/config.ts`, `src/server/types.ts` |
@@ -110,7 +110,7 @@ duplicating it here proved to drift). The compact per-variable table stays in AG
 | Add BTP ABAP integration test | `tests/integration/btp-abap.integration.test.ts` |
 | Add BTP smoke test | `tests/integration/btp-abap.smoke.integration.test.ts` |
 | BTP ABAP Environment auth | `src/adt/oauth.ts`, `src/server/server.ts` |
-| BTP Destination Service / Connectivity proxy | `src/adt/btp.ts` |
+| BTP Destination Service / Connectivity proxy | [`@arc-mcp/xsuaa-auth/btp`](https://github.com/arc-mcp/xsuaa-auth) (`resolveBTPDestination` / `lookupDestinationWithUserToken` / `parseVCAPServices`); used from `src/adt/http.ts` + `src/server/server.ts`. (Was `src/adt/btp.ts`, extracted in #456.) |
 | Add AFF schema | `src/aff/schemas/` (add `{type}-v1.json`), `src/aff/validator.ts` (add type mapping) |
 | Modify AFF validation | `src/aff/validator.ts`, `src/handlers/write/create.ts` (create/batch_create paths) |
 | Add skip policy test | `tests/helpers/skip-policy.ts` |
