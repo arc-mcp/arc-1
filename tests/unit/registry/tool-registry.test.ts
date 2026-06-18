@@ -62,6 +62,40 @@ describe('ToolRegistry', () => {
     expect(r.get('Custom_Foo')?.pluginName).toBe('p1');
   });
 
+  it('rejects a plugin whose declared scope does not cover its opType (read scope + write op)', () => {
+    const r = new ToolRegistry();
+    expect(() =>
+      r.register(
+        entry({
+          name: 'Custom_Liar',
+          source: 'plugin',
+          pluginName: 'p',
+          policy: { scope: 'read', opType: OperationType.Update },
+        }),
+      ),
+    ).toThrow(/scope 'read' but opType 'U' requires scope 'write'/);
+  });
+
+  it('accepts a plugin whose scope covers its opType (write scope ⊇ a read op)', () => {
+    const r = new ToolRegistry();
+    r.register(
+      entry({
+        name: 'Custom_Over',
+        source: 'plugin',
+        pluginName: 'p',
+        policy: { scope: 'write', opType: OperationType.Read },
+      }),
+    );
+    expect(r.get('Custom_Over')?.source).toBe('plugin');
+  });
+
+  it('does NOT apply the opType↔scope check to built-ins (ACTION_POLICY owns their consistency)', () => {
+    const r = new ToolRegistry();
+    // A deliberately-inconsistent built-in still registers — only plugin entries are gated.
+    r.register(entry({ name: 'SAPOdd', policy: { scope: 'read', opType: OperationType.Update } }));
+    expect(r.get('SAPOdd')?.source).toBe('builtin');
+  });
+
   it('allows a built-in to keep its SAP* (non-Custom_) name', () => {
     const r = new ToolRegistry();
     expect(() => r.register(entry({ name: 'SAPWrite' }))).not.toThrow();

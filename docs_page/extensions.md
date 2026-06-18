@@ -61,7 +61,7 @@ cd arc-1-extension-sample
 npm install && npm link arc-1 && npm run build
 
 # load into an ARC-1 instance…
-ARC1_PLUGINS=$PWD/dist/index.js  arc1 --http-streamable
+ARC1_PLUGINS=$PWD/dist/index.js  arc1 --transport http-streamable
 # …or drive one call (args are --json, never positional):
 ARC1_PLUGINS=$PWD/dist/index.js  arc1-cli call Custom_ProgramLineCount --json '{"name":"RSPARAM"}'
 ```
@@ -179,6 +179,22 @@ safely; the general write surface still waits for v2.
 
 ## Security & roles (by use case)
 
+!!! danger "A plugin is trusted code, not a sandbox"
+    A code plugin is `import()`-ed into the ARC-1 process and runs with the **full privileges of the
+    server**: it can read `process.env` (SAP credentials, the XSUAA `clientsecret`, the DCR signing
+    secret), read/write the local filesystem, open outbound network connections, and spawn processes.
+    The gated `ctx` (read-only `ctx.http`, the blocked `ctx.client`, the `classRun` gate) is a **clean
+    API surface** that protects against a *buggy or over-eager* plugin and honours the admin's posture
+    — it is **not** a containment boundary against a *hostile* one (a malicious plugin doesn't need
+    `ctx`; it has `child_process`). **Loading a plugin is exactly as much a trust decision as adding a
+    dependency to ARC-1 itself.** Only load plugins you have reviewed, and:
+
+    - **Vet the supply chain.** A code plugin's transitive `node_modules` run in-process — a compromised
+      dependency is a full ARC-1 compromise. Commit a lockfile, keep dependencies minimal, `npm audit`,
+      and prefer the **manifest tier** (no code, no deps) when one GET suffices.
+    - **Bake into an immutable artifact.** Ship plugins inside the reviewed deploy image / app bits,
+      under the same change control as the rest of the server (see [Deploying](#deploying-extensions-btp-cloud-foundry--docker)).
+
 This is the most important part. An extension tool **inherits ARC-1's full safety pipeline** — it is
 gated exactly like a built-in. Two layers must both pass: the **user's scope** (their MCP role/profile)
 **and** the **server's safety ceiling** (the admin's `allow*` flags). Per-user **principal propagation**
@@ -209,8 +225,13 @@ Key points:
   **and** `SAP_ALLOW_WRITES=true` **and** a `write`-scoped tool (see [Executing ABAP](#executing-abap-console-classes)).
 - **System-type visibility.** A tool may declare `availableOn: 'onprem' | 'btp'` (default `all`); it is
   hidden from `tools/list` when the resolved system type is known and differs.
-- **Trust model:** plugins are local files an admin explicitly opts into via `ARC1_PLUGINS` (no
-  marketplace). They run in-process with the gated context — no sandbox, by design.
+- **Trust model:** plugins are **trusted in-process code** (see the danger callout above), loaded
+  only from local `ARC1_PLUGINS` paths an admin opts into — no marketplace, no runtime upload, no
+  sandbox by design. The `ctx` gates bound a buggy plugin and the server's posture, not a hostile one.
+- **`policy.opType` is checked at registration, not per HTTP call.** The declared `scope` must cover
+  the `opType`'s required scope (a tool can't claim `read` while declaring a write op, else it
+  fails-fast at load). In v1 the *runtime* gates are the read-only `ctx.http` and `classRun`'s own
+  checks; `opType` is reused for v2's write gating.
 
 ---
 

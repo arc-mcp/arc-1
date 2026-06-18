@@ -91,6 +91,10 @@ describe('createReadOnlyAdtClient (runtime escape-hatch guard, review B1)', () =
       safety: defaultSafetyConfig(),
       withSafety: vi.fn(),
       invalidatePackageHierarchy: vi.fn(),
+      // Scope-escalating reads — must NOT be reachable from a read-declared plugin's ctx.client.
+      getTableContents: vi.fn(),
+      runQuery: vi.fn(),
+      runTableQuery: vi.fn(),
       async getProgram(name: string) {
         // Uses `this` — must resolve to the REAL client even when called via the read-only Proxy.
         const r = await this.http.get(`/programs/${name}`);
@@ -106,6 +110,15 @@ describe('createReadOnlyAdtClient (runtime escape-hatch guard, review B1)', () =
     expect(ro.withSafety).toBeUndefined();
     expect(ro.invalidatePackageHierarchy).toBeUndefined();
     expect('http' in ro).toBe(false);
+  });
+
+  it('blocks the scope-escalating data/SQL reads (a read tool cannot reach data/sql via ctx.client)', () => {
+    const ro = createReadOnlyAdtClient(fakeClient() as unknown as AdtClient) as unknown as Record<string, unknown>;
+    expect(ro.getTableContents).toBeUndefined(); // OperationType.Query → data
+    expect(ro.runQuery).toBeUndefined(); // OperationType.FreeSQL → sql
+    expect(ro.runTableQuery).toBeUndefined(); // OperationType.Query → data
+    expect(Object.getOwnPropertyDescriptor(ro, 'runQuery')).toBeUndefined();
+    expect('runQuery' in ro).toBe(false);
   });
 
   it('still runs read methods, bound to the real client so internal this.http works', async () => {

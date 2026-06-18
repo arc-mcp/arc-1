@@ -29,6 +29,27 @@ export interface ActionPolicy {
   featureGate?: FeatureGate;
 }
 
+/**
+ * The scope each operation class minimally requires — the same opType↔scope consistency the built-in
+ * ACTION_POLICY rows satisfy. Used to validate that a plugin's declared `policy.scope` actually
+ * covers its declared `policy.opType` (a tool can't claim `read` while declaring a write op).
+ */
+export const OPTYPE_SCOPE: Record<OperationTypeCode, Scope> = {
+  [OperationType.Read]: 'read',
+  [OperationType.Search]: 'read',
+  [OperationType.Intelligence]: 'read',
+  [OperationType.Test]: 'read',
+  [OperationType.Lock]: 'read',
+  [OperationType.Query]: 'data',
+  [OperationType.FreeSQL]: 'sql',
+  [OperationType.Create]: 'write',
+  [OperationType.Update]: 'write',
+  [OperationType.Delete]: 'write',
+  [OperationType.Activate]: 'write',
+  [OperationType.Workflow]: 'write',
+  [OperationType.Transport]: 'transports',
+};
+
 /** The central policy matrix — all tools, all actions/types. */
 export const ACTION_POLICY: Record<string, ActionPolicy> = {
   // ── SAPRead ──────────────────────────────────────────────────────

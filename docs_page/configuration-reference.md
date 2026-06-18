@@ -19,6 +19,7 @@ The full grouped template with inline commentary is [`.env.example`](https://git
 7. [Logging and observability](#logging-and-observability) — log file, level, format, HTTP debug
 8. [ABAP feature toggles](#abap-feature-toggles) — abapGit, gCTS, RAP, AMDP, UI5, HANA, FLP
 9. [Code-quality gates](#code-quality-gates) — pre-write lint/check, abaplint config, tool mode
+10. [Extensions](#extensions-feat-61) — `ARC1_PLUGINS`, plugin code-execution opt-in
 
 ---
 
@@ -308,6 +309,18 @@ Optional pre-write validation layers and tool-set selection.
 | `--abaplint-config` | `SAP_ABAPLINT_CONFIG` | — (uses built-in preset) | Path to a custom `abaplint.jsonc`. When unset, ARC-1 builds a preset config based on the detected system type (cloud-strict for BTP, relaxed for on-prem). Custom config takes full precedence. |
 | `--check-before-write` | `SAP_CHECK_BEFORE_WRITE` | `false` | See [Authorization and safety](#authorization-and-safety) — adds a server-side ADT syntax check round-trip before save. Different layer from `lint-before-write` (this hits SAP, lint runs locally). |
 | `--tool-mode` | `ARC1_TOOL_MODE` | `standard` | `standard` exposes the 12 intent-based tools (schema payload guarded by CI budgets). `hyperfocused` exposes a single universal `sap` tool (~200 tokens) that dispatches everything internally. Use `hyperfocused` for severely token-constrained LLM clients (e.g. GPT-4o-mini, Copilot Studio). |
+
+---
+
+## Extensions (FEAT-61)
+
+Load your own `Custom_*` tools (the [extension framework](extensions.md)). Plugins are **trusted
+in-process code** — see the security note on that page before enabling.
+
+| Flag | Env var | Default | Effect |
+|---|---|---|---|
+| `--plugins` | `ARC1_PLUGINS` | — (none) | CSV of **absolute LOCAL paths** to extension plugins, loaded at startup. Each entry is a `.js` code plugin (point at the built module, e.g. `/abs/dist/index.js`) or a bare `*.tool.json` manifest. **Not** npm package names; **no `$HOME`/shell expansion** (use a concrete absolute path). Empty entries are trimmed/ignored. Loading is **fail-fast** — a malformed plugin, a name collision, a non-absolute path, or a non-owner/world-writable file refuses server start. v1 plugins are read-only (GET/HEAD), plus the gated `classRun` execute op. |
+| `--allow-plugin-execute` | `SAP_ALLOW_PLUGIN_EXECUTE` | `false` | Opt-in: let plugin tools **execute ABAP console classes** (`ctx.run.classRun`, `IF_OO_ADT_CLASSRUN`). Refused unless this is `true` **and** `SAP_ALLOW_WRITES=true` **and** the tool declares `write` scope. A dedicated switch so enabling built-in writes never silently grants plugins code execution. Only `true`/`1` enable it; `false`/empty stay off. |
 
 ---
 

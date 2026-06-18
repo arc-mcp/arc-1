@@ -11,7 +11,7 @@ import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import type { AdtClient } from '../adt/client.js';
 import type { OperationTypeCode } from '../adt/safety.js';
-import type { Scope } from '../authz/policy.js';
+import { hasRequiredScope, OPTYPE_SCOPE, type Scope } from '../authz/policy.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
 import type { CacheSecurityContext } from '../handlers/cache-security.js';
 import type { ServerConfig } from '../server/types.js';
@@ -84,6 +84,17 @@ export class ToolRegistry {
       throw new Error(
         `ToolRegistry.register: plugin tool '${entry.name}' must use the reserved '${CUSTOM_PREFIX}' namespace`,
       );
+    }
+    // policy.opType↔scope consistency: the declared scope must COVER the op's required scope, so a
+    // plugin can't claim a benign `read` scope while declaring (and later performing) a higher op.
+    // Built-ins derive their policy from ACTION_POLICY (already consistent); only gate plugin entries.
+    if (entry.source === 'plugin') {
+      const needed = OPTYPE_SCOPE[entry.policy.opType];
+      if (!needed || !hasRequiredScope([entry.policy.scope], needed)) {
+        throw new Error(
+          `ToolRegistry.register: plugin tool '${entry.name}' declares scope '${entry.policy.scope}' but opType '${entry.policy.opType}' requires scope '${needed ?? '?'}'`,
+        );
+      }
     }
     if (this.entries.has(entry.name)) {
       throw new Error(`ToolRegistry.register: duplicate tool name '${entry.name}'`);

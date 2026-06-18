@@ -13,6 +13,18 @@
 > - **`availableOn` is enforced** in `tools/list` against the resolved system type (was inert metadata). **`pluginName`** now rides `tool_call_start`/`tool_call_end` audit events; the `http_request`-level `pluginName` tag (§5.4/§9) is deferred — `ctx.http` calls are still logged via the underlying `http_request` event, just untagged.
 > - **Loader handles `.js` + `.json` only.** Single-directory (`package.json#main`) loading and `package.json#arc1.requires` ceiling-intersection (§3.1/§6/§7) are deferred to **v2** — not implemented in v1. The ceiling already constrains every call via scope + `checkOperation`, so `requires` would only be a redundant narrowing.
 > - **Plugin tools are excluded from hyperfocused mode** — both hidden from `tools/list` AND refused at dispatch (a client that knows a `Custom_` name still gets "Unknown tool"), matching §1 "hyperfocused participation out of scope".
+>
+> **Post-merge review (2026-06-18) — further narrowings:**
+> - **`ctx.client` is a *plain-read* facade** — `getTableContents`/`runQuery`/`runTableQuery` (the `data`/`sql`-scoped reads) are now ALSO blocked at runtime + omitted from `ReadOnlyAdtClient`, so a `read`-declared plugin can't escalate to data/SQL. v1 plugins have no data/SQL surface; a scoped `ctx.data`/`ctx.sql` is a v2 item.
+> - **`policy.opType` is validated at registration** — a plugin's declared `scope` must cover its `opType`'s required scope (fail-fast otherwise). It is NOT a per-`ctx.http`-call gate in v1 (the surface is read-only); it is reused for v2 write gating.
+
+> ⚠️ **AUTHORITATIVE SOURCE.** The sections below are the **original design** (retained for rationale).
+> Several API surfaces shown in code blocks — the `ctx` fields in §2 (`ctx.cache`/`ctx.safety`/`ctx.config`),
+> the `SafeHttpClient` write methods in §5 (`post`/`put`/`delete`/`withStatefulSession`/`fetchCsrfToken`),
+> directory loading in §7, and the manifest `POST`/`response.extract` in §8 — were **narrowed or deferred**
+> before v1 shipped (see the banners above). **For the shipped API, read `src/public/types.ts` and
+> [docs_page/extensions.md](../../docs_page/extensions.md); do not implement against the snippets below
+> without cross-checking.**
 
 ---
 

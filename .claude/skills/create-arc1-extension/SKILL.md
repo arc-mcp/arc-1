@@ -115,7 +115,7 @@ Create a new repo `arc1-plugin-<name>` (pure TS, **no ABAP**):
 npm install && npm link arc-1 && npm run build
 
 # load into an instance…
-ARC1_PLUGINS=$PWD/dist/index.js  arc1 --http-streamable
+ARC1_PLUGINS=$PWD/dist/index.js  arc1 --transport http-streamable
 # …or drive one read call (args MUST be --json, not positional):
 ARC1_PLUGINS=$PWD/dist/index.js  arc1-cli call Custom_<X> --json '{"name":"RSPARAM"}'
 # …an execute tool ALSO needs the two opt-ins (else it's refused):
@@ -134,8 +134,12 @@ volume trade-offs), point the developer at the **Deploying extensions** section 
 - **`ctx.http` is read-only (GET/HEAD).** `post`/`put`/`delete`/`withStatefulSession` are **not on the
   surface** in v1 (a raw write can't be package-allowlist-gated → deferred to v2). Don't write a tool
   that needs them yet.
-- **`ctx.client` is a runtime read-only view** — its `.http`/`.safety` are blocked at runtime (a
-  `(ctx.client as any).http` cast yields `undefined`), so use the high-level read methods only.
+- **`ctx.client` is a runtime *plain-read* view** — `.http`/`.safety` AND the data/SQL reads
+  (`getTableContents`/`runQuery`/`runTableQuery`) are blocked at runtime (a cast yields `undefined`).
+  v1 plugins have no data/SQL surface; use the plain read methods (or `ctx.http.get`).
+- **`policy.opType` must match `scope`** — the declared scope has to cover the opType's required scope
+  (e.g. `opType:'U'` needs `scope:'write'`), or the plugin **fails server start**. Keep them consistent
+  with the examples above.
 - **Executing a class is the one privileged op.** `ctx.run.classRun(name)` runs an `IF_OO_ADT_CLASSRUN`
   console class. Gated: needs `SAP_ALLOW_PLUGIN_EXECUTE=true` **and** `SAP_ALLOW_WRITES=true` **and** a
   `write`-scoped tool; the class name is validated (no path injection). Off by default.

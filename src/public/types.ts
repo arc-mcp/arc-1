@@ -11,15 +11,26 @@ import type { SafeHttpClient } from '../server/safe-http-client.js';
 export type { SafeHttpClient, Scope, ToolResult };
 
 /**
- * `AdtClient` narrowed to its safe read facade. Omits (review B1):
+ * `AdtClient` narrowed to its safe **plain-read** facade. Omits (review B1 + post-merge review):
  *  - `http`            — the raw, UNGATED AdtHttpClient (all HTTP must go through `ctx.http`)
  *  - `safety`/`withSafety` — the safety ref + the escalation hatch
  *  - the package-hierarchy cache mutators
- * Every retained method already runs `checkOperation` internally, so exposing them is safe.
+ *  - `getTableContents`/`runQuery`/`runTableQuery` — the **scope-escalating** reads (they gate on
+ *    `data`/`sql`, not `read`); a `read`-declared plugin must not reach them. v1 plugins have no
+ *    data/SQL surface; a scoped `ctx.data`/`ctx.sql` facade is a v2 item.
+ * Every retained method gates on `read` via `checkOperation`, so exposing them is safe. Enforced at
+ * RUNTIME too — see `createReadOnlyAdtClient` (the type Omit alone is not a security boundary).
  */
 export type ReadOnlyAdtClient = Omit<
   AdtClient,
-  'http' | 'safety' | 'withSafety' | 'getPackageHierarchyResolver' | 'invalidatePackageHierarchy'
+  | 'http'
+  | 'safety'
+  | 'withSafety'
+  | 'getPackageHierarchyResolver'
+  | 'invalidatePackageHierarchy'
+  | 'getTableContents'
+  | 'runQuery'
+  | 'runTableQuery'
 >;
 
 /**

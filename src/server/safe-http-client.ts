@@ -59,6 +59,14 @@ const BLOCKED_CLIENT_KEYS: ReadonlySet<string> = new Set([
   'withSafety', // the safety-escalation clone hatch
   'getPackageHierarchyResolver',
   'invalidatePackageHierarchy',
+  // Scope-escalating reads: these `checkOperation` against `data`/`sql`, not `read`. A plugin
+  // declaring only `scope: 'read'` must not reach them via `ctx.client` (the Omit was a type-only
+  // narrowing — without these a read tool could call data/SQL whenever the effective safety allowed
+  // it). v1 plugins have no data/SQL surface at all (ctx.http is GET-only too); a scoped ctx.data /
+  // ctx.sql facade is a v2 item.
+  'getTableContents', // OperationType.Query → `data`
+  'runQuery', // OperationType.FreeSQL → `sql`
+  'runTableQuery', // OperationType.Query → `data`
 ]);
 
 /**

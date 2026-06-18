@@ -355,6 +355,33 @@ describe('parseArgs', () => {
     expect(config.xsuaaAuth).toBe(true);
   });
 
+  // --- Extensions (FEAT-61) ---
+
+  it('defaults extension flags: plugins empty, allowPluginExecute false', () => {
+    const config = parseArgs([]);
+    expect(config.plugins).toEqual([]);
+    expect(config.allowPluginExecute).toBe(false);
+  });
+
+  it('parses ARC1_PLUGINS as a trimmed, empty-filtered CSV of absolute paths', () => {
+    process.env.ARC1_PLUGINS = ' /abs/a/dist/index.js , ,/abs/b.tool.json ';
+    expect(parseArgs([]).plugins).toEqual(['/abs/a/dist/index.js', '/abs/b.tool.json']);
+  });
+
+  it('--plugins flag overrides ARC1_PLUGINS', () => {
+    process.env.ARC1_PLUGINS = '/abs/env.js';
+    expect(parseArgs(['--plugins', '/abs/flag.js']).plugins).toEqual(['/abs/flag.js']);
+  });
+
+  it('parses SAP_ALLOW_PLUGIN_EXECUTE=true; "false"/"" stay false (no coerce footgun)', () => {
+    process.env.SAP_ALLOW_PLUGIN_EXECUTE = 'true';
+    expect(parseArgs([]).allowPluginExecute).toBe(true);
+    process.env.SAP_ALLOW_PLUGIN_EXECUTE = 'false';
+    expect(parseArgs([]).allowPluginExecute).toBe(false);
+    process.env.SAP_ALLOW_PLUGIN_EXECUTE = '';
+    expect(parseArgs([]).allowPluginExecute).toBe(false);
+  });
+
   // --- BTP ABAP Environment (service key) ---
 
   it('defaults BTP service key fields', () => {
