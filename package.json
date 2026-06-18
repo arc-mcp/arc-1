@@ -96,7 +96,7 @@
     "btp:build-deploy-ext": "npm run btp:build && npm run btp:deploy-ext"
   },
   "dependencies": {
-    "@abaplint/core": "^2.119.29",
+    "@abaplint/core": "^2.119.35",
     "@arc-mcp/xsuaa-auth": "^0.1.3",
     "@modelcontextprotocol/sdk": "^1.28.0",
     "@sap-cloud-sdk/connectivity": "^4.7.0",
