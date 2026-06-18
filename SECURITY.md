@@ -59,4 +59,4 @@ We commit to:
 
 ## Hardening Recommendations for Operators
 
-This policy covers vulnerability *reporting*. For runtime hardening recommendations (auth modes, safety flags, audit logging, network policy, secrets management, incident-response playbooks), see the [Security Best Practices Guide](https://arc-mcp.github.io/arc-1/security-guide/).
+This policy covers vulnerability *reporting*. For runtime hardening recommendations (auth modes, safety flags, audit logging, network policy, secrets management, incident-response playbooks), see the [Security Best Practices Guide](https://arc-1-mcp.com/security-guide/).

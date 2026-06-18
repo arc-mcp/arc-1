@@ -4,7 +4,7 @@
   "title": "ARC-1",
   "description": "MCP server for SAP ABAP systems",
   "version": "0.9.18",
-  "websiteUrl": "https://arc-mcp.github.io/arc-1/",
+  "websiteUrl": "https://arc-1-mcp.com/",
   "repository": {
     "url": "https://github.com/arc-mcp/arc-1.git",
     "source": "github"
