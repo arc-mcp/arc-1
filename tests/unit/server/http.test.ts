@@ -1,11 +1,18 @@
 import { InvalidTokenError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
 import { describe, expect, it } from 'vitest';
-import { createStandardVerifier, extractOidcScopes } from '../../../src/server/http.js';
+import { createStandardVerifier } from '../../../src/server/http.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 
-describe('createStandardVerifier', () => {
+// These tests cover ARC-1's WIRING of the standard-mode verifier onto the
+// `@arc-mcp/xsuaa-auth` package's chained verifier (constant-time api-key compare
+// + hardened OIDC). The package ships its own 200+ tests for the verifier
+// internals (scope extraction, fallback semantics, the `algorithms` allowlist,
+// timing-safe compare), so we only assert that ARC-1 maps `config.apiKeys`
+// profiles to the right scopes/clientId and rejects unknown tokens — i.e. that
+// the adoption preserves ARC-1's observable api-key contract.
+describe('createStandardVerifier (api-key wiring)', () => {
   it('accepts a viewer API key and returns read-only auth info', async () => {
-    const verifier = createStandardVerifier({
+    const verifier = await createStandardVerifier({
       ...DEFAULT_CONFIG,
       apiKeys: [{ key: 'viewer-secret', profile: 'viewer' }],
     });
@@ -20,7 +27,7 @@ describe('createStandardVerifier', () => {
   });
 
   it('accepts an admin API key and returns expanded admin scopes', async () => {
-    const verifier = createStandardVerifier({
+    const verifier = await createStandardVerifier({
       ...DEFAULT_CONFIG,
       apiKeys: [{ key: 'admin-secret', profile: 'admin' }],
     });
@@ -32,92 +39,28 @@ describe('createStandardVerifier', () => {
   });
 
   it('rejects an unknown bearer token when OIDC is not configured', async () => {
-    const verifier = createStandardVerifier({
+    const verifier = await createStandardVerifier({
       ...DEFAULT_CONFIG,
       apiKeys: [{ key: 'known-secret', profile: 'viewer' }],
     });
 
     await expect(verifier('unknown-secret')).rejects.toBeInstanceOf(InvalidTokenError);
   });
-});
 
-describe('extractOidcScopes', () => {
-  it('extracts scopes from space-separated string claim (standard OIDC)', () => {
-    const scopes = extractOidcScopes({ scope: 'read write' });
-    expect(scopes).toContain('read');
-    expect(scopes).toContain('write');
+  it('drops api-key entries with an unknown profile (defense in depth)', async () => {
+    // toApiKeyEntries skips profiles not in API_KEY_PROFILES, so a token whose
+    // profile is bogus never matches — mirrors the old matchApiKey `undefined`.
+    const verifier = await createStandardVerifier({
+      ...DEFAULT_CONFIG,
+      apiKeys: [{ key: 'bogus-secret', profile: 'not-a-real-profile' }],
+    });
+
+    await expect(verifier('bogus-secret')).rejects.toBeInstanceOf(InvalidTokenError);
   });
 
-  it('extracts scopes from array claim (Azure AD style)', () => {
-    const scopes = extractOidcScopes({ scp: ['read', 'data'] });
-    expect(scopes).toContain('read');
-    expect(scopes).toContain('data');
-  });
+  it('rejects any token when neither api-keys nor OIDC are configured', async () => {
+    const verifier = await createStandardVerifier({ ...DEFAULT_CONFIG });
 
-  it('filters out unknown scopes', () => {
-    const scopes = extractOidcScopes({ scope: 'read openid profile email write' });
-    expect(scopes).toContain('read');
-    expect(scopes).toContain('write');
-    expect(scopes).not.toContain('openid');
-    expect(scopes).not.toContain('profile');
-    expect(scopes).not.toContain('email');
-  });
-
-  it('returns read-only when no scope claims present (safe default)', () => {
-    const scopes = extractOidcScopes({ sub: 'user123' });
-    expect(scopes).toEqual(['read']);
-  });
-
-  it('applies implied scope expansion: sql adds data', () => {
-    const scopes = extractOidcScopes({ scope: 'sql' });
-    expect(scopes).toContain('sql');
-    expect(scopes).toContain('data');
-  });
-
-  it('applies implied scope expansion: write adds read', () => {
-    const scopes = extractOidcScopes({ scope: 'write' });
-    expect(scopes).toContain('write');
-    expect(scopes).toContain('read');
-  });
-
-  it('returns minimum read when scopes are present but none are known', () => {
-    const scopes = extractOidcScopes({ scope: 'openid profile email' });
-    expect(scopes).toEqual(['read']);
-  });
-
-  it('prefers scope claim over scp claim', () => {
-    const scopes = extractOidcScopes({ scope: 'read', scp: ['write', 'admin'] });
-    expect(scopes).toContain('read');
-    expect(scopes).not.toContain('admin');
-  });
-
-  it('handles empty scope string', () => {
-    const scopes = extractOidcScopes({ scope: '' });
-    expect(scopes).toEqual(['read']);
-  });
-
-  it('handles scp array with non-string values', () => {
-    const scopes = extractOidcScopes({ scp: ['read', 42, null, 'write'] as unknown[] });
-    expect(scopes).toContain('read');
-    expect(scopes).toContain('write');
-  });
-
-  it('extracts scopes from scp as space-delimited string (Entra delegated tokens)', () => {
-    const scopes = extractOidcScopes({ scp: 'read write data' });
-    expect(scopes).toContain('read');
-    expect(scopes).toContain('write');
-    expect(scopes).toContain('data');
-  });
-
-  it('filters unknown scopes from scp string (Entra delegated tokens)', () => {
-    const scopes = extractOidcScopes({ scp: 'User.Read read openid' });
-    expect(scopes).toContain('read');
-    expect(scopes).not.toContain('User.Read');
-    expect(scopes).not.toContain('openid');
-  });
-
-  it('does not overgrant when scp is a string with no known scopes', () => {
-    const scopes = extractOidcScopes({ scp: 'User.Read User.Write' });
-    expect(scopes).toEqual(['read']);
+    await expect(verifier('anything')).rejects.toBeInstanceOf(InvalidTokenError);
   });
 });

@@ -255,43 +255,17 @@ export function createOAuthCallbackHandler(stateCodec: OAuthStateCodec, clientSt
   };
 }
 
-// ─── API Key Matching Helper ─────────────────────────────────────────
-
-/**
- * Match a token against configured API keys (multi-key with profiles).
- * Returns the matched entry's profile and scopes, or undefined if no match.
- */
-function matchApiKey(
-  token: string,
-  config: ServerConfig,
-): { profile: string; scopes: string[]; clientId: string } | undefined {
-  // Multi-key: each API key has a named profile that maps to a scope set + partial SafetyConfig
-  if (config.apiKeys) {
-    for (const entry of config.apiKeys) {
-      if (token === entry.key) {
-        const profile = API_KEY_PROFILES[entry.profile];
-        if (!profile) {
-          // Should have been caught at config parse; defense in depth
-          return undefined;
-        }
-        const scopes = expandScopes(profile.scopes);
-        return { profile: entry.profile, scopes, clientId: `api-key:${entry.profile}` };
-      }
-    }
-  }
-  return undefined;
-}
+// ─── API Key Entry Mapping ───────────────────────────────────────────
 
 /**
  * Map ARC-1's `config.apiKeys` (`{key, profile}[]`) to the package's
- * `ApiKeyEntry[]` (`{key, scopes, clientId}`) so the package's chained verifier
- * resolves them identically to ARC-1's legacy `matchApiKey`:
- *   - scopes come from `API_KEY_PROFILES[profile]` after `expandScopes` (same as
- *     `matchApiKey`),
- *   - clientId is `api-key:<profile>` (same string `matchApiKey` returned, so
- *     audit/identity output is unchanged).
- * Entries whose profile is unknown are dropped (matching `matchApiKey`'s
- * defense-in-depth `undefined`); profiles are validated at config-parse time.
+ * `ApiKeyEntry[]` (`{key, scopes, clientId}`) so the package's constant-time
+ * api-key verifier resolves them identically to ARC-1's previous profile-based
+ * matching:
+ *   - scopes come from `API_KEY_PROFILES[profile]` after `expandScopes`,
+ *   - clientId is `api-key:<profile>` (same audit/identity string as before).
+ * Entries whose profile is unknown are dropped (defense in depth — profiles are
+ * already validated at config-parse time). Used by BOTH XSUAA and standard mode.
  */
 function toApiKeyEntries(config: ServerConfig): ApiKeyEntry[] {
   if (!config.apiKeys) return [];
@@ -303,11 +277,6 @@ function toApiKeyEntries(config: ServerConfig): ApiKeyEntry[] {
   }
   return entries;
 }
-
-// ─── JWKS / JWT types (lazy-loaded from jose) ────────────────────────
-
-let joseModule: typeof import('jose') | null = null;
-let jwksClient: ReturnType<typeof import('jose').createRemoteJWKSet> | null = null;
 
 // ─── Security Middleware (helmet + opt-in CORS) ──────────────────────
 
@@ -504,9 +473,8 @@ export async function startHttpServer(
   if (config.xsuaaAuth && xsuaaCredentials) {
     const { mcpAuthRouter } = await import('@modelcontextprotocol/sdk/server/auth/router.js');
     const { requireBearerAuth } = await import('@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js');
-    const { createXsuaaOAuthProvider, createChainedTokenVerifier, createXsuaaTokenVerifier } = await import(
-      '@arc-mcp/xsuaa-auth'
-    );
+    const { createXsuaaOAuthProvider, createChainedTokenVerifier, createXsuaaTokenVerifier, createOidcVerifier } =
+      await import('@arc-mcp/xsuaa-auth');
     const { getAppUrl } = await import('./app-url.js');
 
     // Determine app URL for OAuth metadata
@@ -545,9 +513,12 @@ export async function startHttpServer(
     // Inject ARC-1's scope-expansion policy + logger so the verifier emits the
     // same expanded AuthInfo.scopes ARC-1 produced before the extraction.
     const xsuaaVerifier = createXsuaaTokenVerifier(xsuaaCredentials, { expandScopes, logger: authLibLogger });
-    // ARC-1 keeps its OWN inline createOidcVerifier (jose + ServerConfig-driven);
-    // it does not depend on a moved module, so it stays as-is.
-    const oidcVerifier = config.oidcIssuer ? await createOidcVerifier(config) : undefined;
+    // OIDC verifier comes from the package (hardened: pinned `algorithms`
+    // allowlist, no `sub` in debug logs). `buildPackageOidcVerifier` threads
+    // ARC-1's historical contract (accepted scopes, `expandScopes`, the
+    // `['read']` fallback, clock tolerance). Construction is SYNC — the package
+    // lazy-imports jose + memoizes the JWKS on first verify.
+    const oidcVerifier = config.oidcIssuer ? buildPackageOidcVerifier(config, createOidcVerifier) : undefined;
     const chainedVerifier = createChainedTokenVerifier(
       { apiKeys: toApiKeyEntries(config) },
       xsuaaVerifier,
@@ -775,9 +746,9 @@ export async function startHttpServer(
     });
   } else {
     // ─── Standard Auth Mode (API key / OIDC) ─────────────────
-    if (config.oidcIssuer) {
-      await initJwks(config.oidcIssuer);
-    }
+    // No JWKS pre-warm needed: the package's OIDC verifier lazy-imports jose and
+    // memoizes the remote JWKS on the first verify (and retries on a transient
+    // discovery failure instead of caching the rejection).
 
     // Layer 1 on /mcp also applies outside XSUAA mode — API-key / OIDC / no-auth
     // deployments get the same anonymous-probing protection. OAuth endpoints don't
@@ -790,7 +761,7 @@ export async function startHttpServer(
       // Use requireBearerAuth so that authInfo is populated on the MCP request context.
       // This enables scope enforcement, per-request safety, and principal propagation.
       const { requireBearerAuth } = await import('@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js');
-      const verifier = createStandardVerifier(config);
+      const verifier = await createStandardVerifier(config);
       const bearerAuth = requireBearerAuth({ verifier: { verifyAccessToken: verifier } });
       app.all('/mcp', bearerAuth, mcpHandler);
     } else {
@@ -836,177 +807,76 @@ export async function startHttpServer(
   });
 }
 
+// ─── OIDC Verifier (package-backed) ─────────────────────────────────
+
+/**
+ * ARC-1's recognised scope names — the `acceptedScopes` allowlist threaded into
+ * the package's OIDC verifier so non-ARC-1 claims (e.g. Entra's `User.Read`) are
+ * filtered out, exactly as ARC-1's removed inline `extractOidcScopes` did.
+ */
+const KNOWN_SCOPES = ['read', 'write', 'data', 'sql', 'transports', 'git', 'admin'];
+
+/**
+ * Build the package's OIDC verifier from `ServerConfig`, threading ARC-1's
+ * historical contract so adopting it changes nothing observable except the two
+ * intended hardening wins (pinned `algorithms` allowlist + no `sub` in the debug
+ * log — both live inside the package now):
+ *   - `acceptedScopes = KNOWN_SCOPES` (same filter as the old inline code),
+ *   - `expandScopes` = ARC-1's policy expander (implied scopes: write⊇read, …),
+ *   - `fallbackScopes: ['read']` = ARC-1's legacy default — a verified token with
+ *     no scope claims, OR scope claims none of which are accepted, grants `['read']`
+ *     (the package defaults this to `[]`; ARC-1 opts back into read-only),
+ *   - `scopeClaim` left default (`'scope'`, preferred over `scp`),
+ *   - `clockToleranceSec` only when `config.oidcClockTolerance` is set.
+ *
+ * `config.oidcAudience` is optional in ARC-1 and was historically forwarded to
+ * jose verbatim (jose treats `undefined` as "skip the audience check"); the
+ * package forwards it the same way, so we pass it through unchanged. The package
+ * signature types `audience` as `string`; the cast preserves the
+ * undefined-passthrough without an empty-string audience that would force a
+ * (failing) audience check. `config.oidcIssuer` is asserted non-null — every
+ * call site is gated on `config.oidcIssuer`.
+ *
+ * Construction is synchronous: the package lazy-imports jose and memoizes the
+ * remote JWKS on the first verify.
+ */
+function buildPackageOidcVerifier(
+  config: ServerConfig,
+  createOidcVerifier: typeof import('@arc-mcp/xsuaa-auth').createOidcVerifier,
+): import('@arc-mcp/xsuaa-auth').Verifier {
+  return createOidcVerifier(config.oidcIssuer as string, config.oidcAudience as string, {
+    acceptedScopes: KNOWN_SCOPES,
+    expandScopes,
+    fallbackScopes: ['read'],
+    ...(config.oidcClockTolerance != null ? { clockToleranceSec: config.oidcClockTolerance } : {}),
+    logger: authLibLogger,
+  });
+}
+
 // ─── Standard Mode Verifier ─────────────────────────────────────────
 
 /**
  * Create a token verifier for standard auth mode (API key + OIDC).
- * Returns AuthInfo so the MCP SDK populates extra.authInfo on the request,
- * enabling scope enforcement, per-request safety, and principal propagation.
- */
-export function createStandardVerifier(
-  config: ServerConfig,
-): (token: string) => Promise<import('@modelcontextprotocol/sdk/server/auth/types.js').AuthInfo> {
-  return async (token: string) => {
-    // Lazy-import SDK error classes so bearerAuth maps them to 401/403
-    const { InvalidTokenError } = await import('@modelcontextprotocol/sdk/server/auth/errors.js');
-
-    // API key: match against multi-key map or single key
-    const apiKeyMatch = matchApiKey(token, config);
-    if (apiKeyMatch) {
-      // expiresAt is required by requireBearerAuth — use far-future expiry for static keys
-      const ONE_YEAR_SECS = 365 * 24 * 60 * 60;
-      return {
-        token,
-        clientId: apiKeyMatch.clientId,
-        scopes: apiKeyMatch.scopes,
-        expiresAt: Math.floor(Date.now() / 1000) + ONE_YEAR_SECS,
-      };
-    }
-
-    // OIDC: validate JWT and extract scopes
-    if (config.oidcIssuer) {
-      try {
-        if (!joseModule || !jwksClient) {
-          await initJwks(config.oidcIssuer);
-        }
-        if (!joseModule || !jwksClient) {
-          throw new Error('OIDC not initialized — check SAP_OIDC_ISSUER configuration');
-        }
-        const { payload } = await joseModule.jwtVerify(token, jwksClient, {
-          issuer: config.oidcIssuer,
-          audience: config.oidcAudience,
-          requiredClaims: ['exp'],
-          ...(config.oidcClockTolerance != null ? { clockTolerance: config.oidcClockTolerance } : {}),
-        });
-
-        logger.debug('Standard OIDC JWT validated', { sub: payload.sub, iss: payload.iss });
-
-        const scopes = extractOidcScopes(payload);
-
-        return {
-          token,
-          clientId: (payload.azp as string) ?? (payload.sub as string) ?? 'oidc-user',
-          scopes,
-          expiresAt: payload.exp,
-          extra: { sub: payload.sub, iss: payload.iss },
-        };
-      } catch (err) {
-        // Wrap JWT validation errors as InvalidTokenError so bearerAuth returns 401
-        if (err instanceof InvalidTokenError) throw err;
-        throw new InvalidTokenError((err as Error).message ?? 'Invalid token');
-      }
-    }
-
-    throw new InvalidTokenError('Authentication failed: invalid token');
-  };
-}
-
-// ─── OIDC Verifier Factory ───────────────────────────────────────────
-
-/**
- * Create an Entra ID / OIDC token verifier using jose.
- * Returns a function compatible with the chained verifier.
- */
-async function createOidcVerifier(
-  config: ServerConfig,
-): Promise<(token: string) => Promise<import('@modelcontextprotocol/sdk/server/auth/types.js').AuthInfo>> {
-  await initJwks(config.oidcIssuer!);
-
-  return async (token: string) => {
-    if (!joseModule || !jwksClient) {
-      throw new Error('OIDC not initialized');
-    }
-    const { payload } = await joseModule.jwtVerify(token, jwksClient, {
-      issuer: config.oidcIssuer,
-      audience: config.oidcAudience,
-      requiredClaims: ['exp'],
-      ...(config.oidcClockTolerance != null ? { clockTolerance: config.oidcClockTolerance } : {}),
-    });
-
-    logger.debug('OIDC JWT validated', { sub: payload.sub, iss: payload.iss });
-
-    const scopes = extractOidcScopes(payload);
-
-    return {
-      token,
-      clientId: (payload.azp as string) ?? (payload.sub as string) ?? 'oidc-user',
-      scopes,
-      expiresAt: payload.exp,
-      extra: { sub: payload.sub, iss: payload.iss },
-    };
-  };
-}
-
-// ─── OIDC Scope Extraction ──────────────────────────────────────────
-
-const KNOWN_SCOPES = ['read', 'write', 'data', 'sql', 'transports', 'git', 'admin'];
-
-/**
- * Extract scopes from an OIDC JWT payload.
  *
- * Tries `scope` (space-separated string, standard OIDC) then `scp` (array, Azure AD style).
- * Filters to known scopes, applies implied scope expansion, and falls back to read-only
- * when no scope claims are present (safe default for providers that don't emit scopes).
+ * Built entirely from the `@arc-mcp/xsuaa-auth` package's chained verifier
+ * (constant-time api-key compare + hardened OIDC), mirroring how XSUAA mode wires
+ * its chain — minus the XSUAA verifier, which standard mode doesn't have. The
+ * chain order is XSUAA → OIDC → api-key; with no XSUAA verifier that collapses to
+ * OIDC → api-key, which is order-immaterial here (token types are disjoint) and
+ * preserves the previous behavior (api-key matched first only mattered because
+ * the two paths never overlap). Returns `AuthInfo` so the MCP SDK populates
+ * `extra.authInfo` on the request context, enabling scope enforcement,
+ * per-request safety, and principal propagation.
+ *
+ * Async because the package is dynamic-imported (lazy, consistent with the rest
+ * of this module); the returned verifier itself is the package's sync-built
+ * chained verifier.
  */
-export function extractOidcScopes(payload: Record<string, unknown>): string[] {
-  let rawScopes: string[] | undefined;
-
-  // Standard OIDC: space-separated string
-  if (typeof payload.scope === 'string') {
-    rawScopes = payload.scope.split(' ').filter((s) => s.length > 0);
-  }
-  // Azure AD / Entra: `scp` as space-delimited string (delegated tokens) or array (app tokens)
-  else if (typeof payload.scp === 'string') {
-    rawScopes = payload.scp.split(' ').filter((s) => s.length > 0);
-  } else if (Array.isArray(payload.scp)) {
-    rawScopes = (payload.scp as string[]).filter((s) => typeof s === 'string' && s.length > 0);
-  }
-
-  // No scope claims at all → read-only (safe default)
-  if (rawScopes === undefined) {
-    logger.warn(
-      'OIDC JWT has no scope/scp claims — granting read-only access. ' +
-        'Configure scope claims in your OIDC provider to grant write/data/sql access.',
-    );
-    return ['read'];
-  }
-
-  // Filter to known scopes
-  const filtered = rawScopes.filter((s) => KNOWN_SCOPES.includes(s));
-
-  // If scopes were present but none are known, grant minimum read access
-  if (filtered.length === 0) {
-    logger.warn('OIDC JWT has scope claims but none match known scopes — granting read-only', { rawScopes });
-    return ['read'];
-  }
-
-  return expandScopes(filtered);
-}
-
-/**
- * Initialize JWKS client from OIDC discovery.
- */
-async function initJwks(issuer: string): Promise<void> {
-  if (joseModule && jwksClient) return;
-
-  try {
-    if (!joseModule) {
-      joseModule = await import('jose');
-    }
-    const jwksUri = new URL('.well-known/openid-configuration', issuer.endsWith('/') ? issuer : `${issuer}/`);
-    const discoveryResp = await fetch(jwksUri.toString());
-    const discovery = (await discoveryResp.json()) as { jwks_uri: string };
-
-    if (!discovery.jwks_uri) {
-      throw new Error(`No jwks_uri in OIDC discovery response from ${jwksUri}`);
-    }
-
-    jwksClient = joseModule.createRemoteJWKSet(new URL(discovery.jwks_uri));
-    logger.info('OIDC JWKS initialized', { issuer, jwksUri: discovery.jwks_uri });
-  } catch (err) {
-    logger.error('Failed to initialize OIDC JWKS', {
-      issuer,
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
+export async function createStandardVerifier(config: ServerConfig): Promise<import('@arc-mcp/xsuaa-auth').Verifier> {
+  const { createChainedTokenVerifier, createOidcVerifier } = await import('@arc-mcp/xsuaa-auth');
+  const oidcVerifier = config.oidcIssuer ? buildPackageOidcVerifier(config, createOidcVerifier) : undefined;
+  return createChainedTokenVerifier({ apiKeys: toApiKeyEntries(config) }, undefined, oidcVerifier, {
+    expandScopes,
+    logger: authLibLogger,
+  });
 }
