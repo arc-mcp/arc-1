@@ -63,6 +63,14 @@ describe('parseArgs', () => {
     expect(config.client).toBe('200');
   });
 
+  it('throws end-to-end on a non-3-digit client', () => {
+    expect(() => parseArgs(['--client', '10'])).toThrow(/Invalid SAP_CLIENT '10'/);
+  });
+
+  it('accepts a zero-padded 3-digit client', () => {
+    expect(parseArgs(['--client', '010']).client).toBe('010');
+  });
+
   it('CLI flags take precedence over env vars', () => {
     process.env.SAP_URL = 'http://env:8000';
     const config = parseArgs(['--url', 'http://cli:9000']);
@@ -1004,5 +1012,17 @@ describe('validateConfig', () => {
   it('parseArgs fails with oidcIssuer but no oidcAudience', () => {
     process.env.SAP_OIDC_ISSUER = 'https://example.com';
     expect(() => parseArgs([])).toThrow('SAP_OIDC_AUDIENCE is required');
+  });
+
+  it.each(['100', '000', '999', '010', '001'])('accepts the 3-digit client %s', (client) => {
+    expect(() => validateConfig({ ...DEFAULT_CONFIG, client })).not.toThrow();
+  });
+
+  it.each(['10', '1', '0', '1000', '00', 'abc', '10a', ' 100'])('throws on the malformed client %s', (client) => {
+    expect(() => validateConfig({ ...DEFAULT_CONFIG, client })).toThrow(/Invalid SAP_CLIENT/);
+  });
+
+  it('skips client validation when empty (resolveConfig substitutes the default)', () => {
+    expect(() => validateConfig({ ...DEFAULT_CONFIG, client: '' })).not.toThrow();
   });
 });

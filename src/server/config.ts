@@ -611,6 +611,19 @@ export function parseArgs(args: string[]): ServerConfig {
  * Fails fast at startup for invalid or dangerous config combinations.
  */
 export function validateConfig(config: ServerConfig): void {
+  // SAP client (MANDT) is a canonical 3-digit value (CHAR 3, range 000-999). SAP
+  // does NOT zero-pad the sap-client URL parameter, so a 1-2 digit value like '10'
+  // authenticates against a different (or non-existent) client and surfaces as a
+  // confusing 401 — not an obvious config error. Fail fast with a clear hint instead.
+  // Empty is skipped here: resolveConfig already substitutes the '100' default for it.
+  if (config.client && !/^\d{3}$/.test(config.client)) {
+    throw new Error(
+      `Invalid SAP_CLIENT '${config.client}': must be a 3-digit SAP client (000-999). ` +
+        `SAP does not pad the client number — write it with leading zeros, ` +
+        `e.g. '010' for client 10 or '100' for client 100.`,
+    );
+  }
+
   if (config.oidcIssuer && !config.oidcAudience) {
     throw new Error(
       'SAP_OIDC_AUDIENCE is required when SAP_OIDC_ISSUER is set — ' +
