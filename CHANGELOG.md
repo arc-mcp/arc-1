@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.9.19](https://github.com/arc-mcp/arc-1/compare/v0.9.18...v0.9.19) (2026-06-18)
+
+
+### Features
+
+* **auth:** use @arc-mcp/xsuaa-auth for XSUAA/OAuth + BTP principal propagation ([#456](https://github.com/arc-mcp/arc-1/issues/456)) ([0e4795b](https://github.com/arc-mcp/arc-1/commit/0e4795b9e1709afdfc61cc638db726a05c49548d))
+* **config:** reject non-3-digit SAP_CLIENT at startup ([#471](https://github.com/arc-mcp/arc-1/issues/471)) ([4e1b8e4](https://github.com/arc-mcp/arc-1/commit/4e1b8e409373d4c8be8473677173cdecb9a6871e))
+* **extensions:** extension framework for Custom_* plugin tools ([#454](https://github.com/arc-mcp/arc-1/issues/454)) ([7425f00](https://github.com/arc-mcp/arc-1/commit/7425f005042c089ac103297386866969ba8700fb))
+
+
+### Bug Fixes
+
+* **auth:** adopt @arc-mcp/xsuaa-auth hardened OIDC + constant-time api-key verifiers ([#468](https://github.com/arc-mcp/arc-1/issues/468)) ([2dfb512](https://github.com/arc-mcp/arc-1/commit/2dfb5128baba588ac472a90d7319b3f86f7ff400))
+* **extensions:** close 2 policy-boundary gaps + doc sharp edges (post-merge review) ([#467](https://github.com/arc-mcp/arc-1/issues/467)) ([8c6bbb4](https://github.com/arc-mcp/arc-1/commit/8c6bbb4b400b2b51c7dab1350375d07289feac65))
+
 ## [0.9.18](https://github.com/arc-mcp/arc-1/compare/v0.9.17...v0.9.18) (2026-06-16)
 
 
