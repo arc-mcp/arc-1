@@ -35,13 +35,38 @@ export interface SafeHttpClient {
   delete(path: string, headers?: Record<string, string>): Promise<AdtResponse>;
 }
 
-/** True for any path under the ADT namespace. Normalized (lowercase + collapsed slashes) so neither
- *  `/SAP/BC/ADT/…` nor `//sap/bc/adt/…` can slip a raw write past the refusal. */
+/**
+ * True for any path SAP would route to the ADT namespace. Must check the path SAP *actually* routes,
+ * not the raw argument — so it is computed exactly the way `AdtHttpClient.buildUrl` builds the request
+ * (`new URL('<host>' + (leadingSlash ? path : '/'+path))`, which prepends a slash, deletes tab/CR/LF,
+ * folds `\`→`/`, resolves `..`, collapses slashes) and THEN percent-decoded (SAP decodes the routed
+ * path; `new URL` keeps `%xx` literal, so `/sap/bc/%61dt/…` would otherwise slip through). A bare
+ * `.includes` on the raw arg misses no-leading-slash, embedded `\t`, and `%`-encoded variants.
+ * Anchored with `startsWith` so a non-ADT path that merely *contains* the substring isn't over-blocked.
+ * Fail-closed: an unparseable path or malformed `%`-encoding is treated as ADT (refused).
+ */
 function isAdtPath(path: string): boolean {
-  return path
+  let pathname: string;
+  try {
+    pathname = new URL(`http://h${path.startsWith('/') ? path : `/${path}`}`).pathname;
+  } catch {
+    return true; // unparseable → refuse (fail-closed)
+  }
+  let decoded = pathname;
+  for (let i = 0; i < 5; i++) {
+    let next: string;
+    try {
+      next = decodeURIComponent(decoded);
+    } catch {
+      return true; // malformed %-encoding → refuse (fail-closed)
+    }
+    if (next === decoded) break;
+    decoded = next;
+  }
+  return decoded
     .toLowerCase()
     .replace(/\/{2,}/g, '/')
-    .includes('/sap/bc/adt/');
+    .startsWith('/sap/bc/adt/');
 }
 
 /**

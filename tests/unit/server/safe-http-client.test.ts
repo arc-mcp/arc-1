@@ -58,17 +58,33 @@ describe('createSafeHttpClient — gated non-ADT writes (SAP_ALLOW_PLUGIN_RAW_WR
     expect(u.post).not.toHaveBeenCalled();
   });
 
-  it('refuses a write to an ADT path even when every other gate is open (normalization-proof)', async () => {
+  it('refuses a write to an ADT path even when every other gate is open (routes like buildUrl)', async () => {
     const u = fakeUnderlying();
     const c = createSafeHttpClient(as(u), unrestrictedSafetyConfig(), 'Custom_W', 'write', true);
     for (const p of [
-      '/sap/bc/adt/oo/classes/zcl_x',
-      '/SAP/BC/ADT/oo/classes/zcl_x',
-      '//sap/bc/adt//oo/classes/zcl_x',
+      '/sap/bc/adt/oo/classes/zcl_x', // literal
+      '/SAP/BC/ADT/oo/classes/zcl_x', // case
+      '//sap/bc/adt//oo/classes/zcl_x', // double slashes
+      'sap/bc/adt/oo/classes/zcl_x', // NO leading slash — buildUrl prepends it
+      '/sap/bc\t/adt/oo/classes/zcl_x', // embedded TAB — new URL strips it
+      '/sap/bc/\nadt/oo/classes/zcl_x', // embedded LF — new URL strips it
+      '/sap/bc/%61dt/oo/classes/zcl_x', // %-encoded 'a' → decodes to adt
+      '/sap/bc/%2561dt/oo/classes/zcl_x', // double-encoded → fully decodes to adt
+      '/sap/bc\\adt/oo/classes/zcl_x', // backslash — new URL folds to /
+      '/x/../sap/bc/adt/oo/classes/zcl_x', // dot-segment — new URL resolves to adt
+      '/sap/bc/%adt/x', // malformed %-encoding → fail-closed refuse
     ]) {
       await expect(c.post(p, 'body')).rejects.toBeInstanceOf(AdtSafetyError);
     }
     expect(u.post).not.toHaveBeenCalled();
+  });
+
+  it('does NOT over-refuse a non-ADT path that merely contains the substring later', async () => {
+    const u = fakeUnderlying();
+    const c = createSafeHttpClient(as(u), unrestrictedSafetyConfig(), 'Custom_W', 'write', true);
+    await expect(c.post('/sap/opu/odata/sap/ZSVC/to_/sap/bc/adt/decoy', 'b')).resolves.toBeTruthy();
+    await expect(c.post("/sap/opu/odata/sap/ZSVC/Set(K='a%20b')", 'b')).resolves.toBeTruthy();
+    expect(u.post).toHaveBeenCalledTimes(2);
   });
 
   it('ALLOWS a POST to a non-ADT (OData/ICF) path when all gates pass, and delegates', async () => {
