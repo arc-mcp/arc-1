@@ -38,13 +38,13 @@ Extensions never ship ABAP — any custom endpoint they call must already exist 
 
 Both produce a `Custom_*` tool, gated identically.
 
-!!! warning "v1 is read-only — with one gated exception"
-    Both tiers are **read-only** in v1: `ctx.http` exposes **`GET`/`HEAD` only**. General write/`POST`
-    support is deferred to v2 because a raw write can't be constrained by `SAP_ALLOWED_PACKAGES`
-    (package resolution needs the ADT object-URL shape); shipping un-package-gated writes would bypass
-    the server safety ceiling. The **one** privileged op available in v1 is **executing a console class**
-    (`ctx.run.classRun`, see below) — a *named* operation (not a generic POST, so no package-bypass),
-    locked behind a default-off opt-in. v2 adds the full package-aware write vocabulary.
+!!! warning "Reads are open; writes are gated and opt-in"
+    `ctx.http` always allows **`GET`/`HEAD`**. **Writes** (`POST`/`PUT`/`DELETE`) are allowed **only to
+    non-ADT paths** (OData/ICF) and **only** behind the default-off opt-in `SAP_ALLOW_PLUGIN_RAW_WRITES`
+    (see [Writing](#writing-non-adt-odataicf)). Writes to **`/sap/bc/adt/…` object endpoints are always
+    refused** — they need `SAP_ALLOWED_PACKAGES` enforcement that a raw path can't provide; those wait
+    for the v2 package-aware `ctx.write` vocabulary. The other privileged op is **executing a console
+    class** (`ctx.run.classRun`, below). Manifest tools stay GET-only.
 
 ---
 
@@ -141,6 +141,48 @@ just hidden by types.
 
 ---
 
+## Writing (non-ADT, OData/ICF)
+
+A code-tier tool can **write** to a SAP **OData service** or a **custom ICF endpoint** with
+`ctx.http.post` / `put` / `delete` — the same gated client, with CSRF fetched + attached
+automatically. This is exactly how you'd wrap a custom write service (e.g. a translation setter that
+POSTs to `/sap/bc/http/sap/your_service`):
+
+```ts
+export default defineTool({
+  name: 'Custom_SetSomething',
+  description: 'Write via a custom OData/ICF service.',
+  schema: z.object({ id: z.string(), value: z.string() }),
+  policy: { scope: 'write', opType: OperationType.Update },   // a write verb needs write scope
+  async handler(args, ctx) {
+    const a = args as { id: string; value: string };
+    const res = await ctx.http.post('/sap/bc/http/sap/your_service', JSON.stringify(a), 'application/json',
+      { Accept: 'application/json' });
+    return { content: [{ type: 'text', text: `HTTP ${res.statusCode}\n${res.body}` }] };
+  },
+});
+```
+
+Refused with an `AdtSafetyError` unless **all** hold:
+
+| Gate | Why |
+|---|---|
+| `SAP_ALLOW_PLUGIN_RAW_WRITES=true` | dedicated opt-in (default off) — raw writes aren't constrained by `SAP_ALLOWED_PACKAGES` (no ABAP package in an OData/ICF path), so the admin opts in explicitly |
+| `SAP_ALLOW_WRITES=true` | the server write ceiling (`checkOperation`) |
+| tool declares `scope: 'write'` | POST→Create / PUT→Update / DELETE→Delete all require `write` |
+| path is **not** under `/sap/bc/adt/` | ADT object writes need package enforcement → always refused; use the (v2) `ctx.write` vocabulary for those |
+
+!!! note "What `SAP_ALLOWED_PACKAGES` does and doesn't cover here"
+    The package allowlist gates **ADT object** writes. It does **not** apply to OData/ICF paths (there
+    is no ABAP package in them) — those writes are gated by the opt-in + `allowWrites` + scope +
+    `denyActions` + the service's own SAP-side auth (+ Cloud Connector resource allowlist on BTP). The
+    custom service's ABAP handler owns its locking/transport.
+
+ADT **object** create/update/delete (CLAS, DDLS, …) stay on the roadmap as the package-aware v2
+`ctx.write` vocabulary — see `docs/research/extension-framework-v2-spec.md`.
+
+---
+
 ## Executing ABAP (console classes)
 
 The one privileged operation a v1 plugin can perform is **running an ABAP console class** — a class
@@ -206,13 +248,14 @@ Declare `policy: { scope, opType }` to match the operation your tool performs. T
 | Use case | `scope` | `opType` | Server flag the admin must set | The user needs (XSUAA role / OIDC scope / API-key profile) |
 |---|---|---|---|---|
 | Read-only diagnostic (ADT/OData/ICF) | `read` | `R` | — | `read` |
-| Create / update / delete an ABAP object *(v2)* | `write` | `C`/`U`/`D` | `SAP_ALLOW_WRITES=true` **+** target package in `SAP_ALLOWED_PACKAGES` | `write` |
+| **Write to an OData/ICF service** (`ctx.http.post`/`put`/`delete`) | `write` | `C`/`U`/`D` | `SAP_ALLOW_PLUGIN_RAW_WRITES=true` **+** `SAP_ALLOW_WRITES=true` | `write` |
+| Run a console class (`ctx.run.classRun`) | `write` | `W` | `SAP_ALLOW_PLUGIN_EXECUTE=true` **+** `SAP_ALLOW_WRITES=true` | `write` |
+| Create / update / delete an **ADT object** *(v2)* | `write` | `C`/`U`/`D` | `SAP_ALLOW_WRITES=true` **+** target package in `SAP_ALLOWED_PACKAGES` | `write` |
 | Table-content preview *(v2)* | `data` | `Q` | `SAP_ALLOW_DATA_PREVIEW=true` | `data` |
 | Free-style SQL *(v2)* | `sql` | `F` | `SAP_ALLOW_FREE_SQL=true` | `sql` |
-| Transport operation *(v2)* | `transports` | `X` | `SAP_ALLOW_TRANSPORT_WRITES=true` | `transports` |
 
-Since v1 `ctx.http` is read-only, only the `read` row is live today; the rest document the model for the
-v2 write surface (and the package-allowlist enforcement that ships with it).
+Live today: reads, the gated **OData/ICF write**, and `classRun`. The *(v2)* rows — ADT **object**
+writes, data preview, SQL — wait for the package-aware `ctx.write` surface and scoped `ctx.data`/`ctx.sql`.
 
 Key points:
 

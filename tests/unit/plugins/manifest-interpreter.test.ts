@@ -32,6 +32,7 @@ function ctxFor(args: Record<string, unknown>) {
   };
   const ctx = {
     client: { http: fakeHttp, safety: unrestrictedSafetyConfig() },
+    config: { allowPluginRawWrites: false },
     args,
     requestId: 'r1',
   } as unknown as ToolDispatchContext;

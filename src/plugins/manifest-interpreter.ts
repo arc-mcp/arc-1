@@ -138,7 +138,15 @@ export function registerManifestTool(registry: ToolRegistry, pluginName: string,
           isError: true,
         };
       }
-      const http = createSafeHttpClient(ctx.client.http, ctx.client.safety, m.name);
+      // Manifests are GET-only (validateManifest rejects non-GET), so the write opt-in is irrelevant
+      // here — pass it through for signature consistency; only `http.get` is ever called below.
+      const http = createSafeHttpClient(
+        ctx.client.http,
+        ctx.client.safety,
+        m.name,
+        m.scope,
+        ctx.config.allowPluginRawWrites,
+      );
       const headers = m.request.accept ? { Accept: m.request.accept } : undefined;
       const res = await http.get(path, headers);
       const max = m.response?.maxBytes ?? 100_000;

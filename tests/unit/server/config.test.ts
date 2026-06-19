@@ -365,10 +365,11 @@ describe('parseArgs', () => {
 
   // --- Extensions (FEAT-61) ---
 
-  it('defaults extension flags: plugins empty, allowPluginExecute false', () => {
+  it('defaults extension flags: plugins empty, execute + raw-writes false', () => {
     const config = parseArgs([]);
     expect(config.plugins).toEqual([]);
     expect(config.allowPluginExecute).toBe(false);
+    expect(config.allowPluginRawWrites).toBe(false);
   });
 
   it('parses ARC1_PLUGINS as a trimmed, empty-filtered CSV of absolute paths', () => {
@@ -388,6 +389,16 @@ describe('parseArgs', () => {
     expect(parseArgs([]).allowPluginExecute).toBe(false);
     process.env.SAP_ALLOW_PLUGIN_EXECUTE = '';
     expect(parseArgs([]).allowPluginExecute).toBe(false);
+  });
+
+  it('parses SAP_ALLOW_PLUGIN_RAW_WRITES=true; "false"/"" stay false (no coerce footgun)', () => {
+    process.env.SAP_ALLOW_PLUGIN_RAW_WRITES = 'true';
+    expect(parseArgs([]).allowPluginRawWrites).toBe(true);
+    process.env.SAP_ALLOW_PLUGIN_RAW_WRITES = 'false';
+    expect(parseArgs([]).allowPluginRawWrites).toBe(false);
+    process.env.SAP_ALLOW_PLUGIN_RAW_WRITES = '';
+    expect(parseArgs([]).allowPluginRawWrites).toBe(false);
+    expect(parseArgs(['--allow-plugin-raw-writes', 'true']).allowPluginRawWrites).toBe(true);
   });
 
   // --- BTP ABAP Environment (service key) ---

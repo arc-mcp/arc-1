@@ -3,12 +3,13 @@
 // FEAT-61 / review B1: an extension tool must NOT receive the raw, ungated client. There are two
 // escape routes a plugin could otherwise take, and both are closed here:
 //
-//   1. `ctx.http` — the raw AdtHttpClient's post/put/delete bypass `checkOperation`. v1 hands
-//      plugins a READ-ONLY surface (get/head). Writes are deliberately deferred to v2: a raw
-//      `http.post(path, …)` can't be constrained by `SAP_ALLOWED_PACKAGES` (package resolution
-//      needs the ADT object-URL shape, which an arbitrary path doesn't give us), so shipping
-//      un-package-gated writes would punch straight through the server safety ceiling. v2 adds a
-//      package-aware write vocabulary; until then, code-tier and manifest-tier tools are read-only.
+//   1. `ctx.http` — the raw AdtHttpClient's post/put/delete bypass `checkOperation`. This wrapper
+//      always allows GET/HEAD; it allows POST/PUT/DELETE **only to non-ADT paths** (OData/ICF) and
+//      **only** when the server opts in via `SAP_ALLOW_PLUGIN_RAW_WRITES` (+ `allowWrites` + a
+//      `write`-scoped tool). Writes to `/sap/bc/adt/…` object endpoints are ALWAYS refused: they need
+//      `SAP_ALLOWED_PACKAGES` enforcement, which package resolution from an arbitrary path can't give
+//      us — those wait for the v2 package-aware `ctx.write` vocabulary. (`SAP_ALLOWED_PACKAGES` does
+//      not apply to OData/ICF paths — there is no ABAP package in them.)
 //
 //   2. `ctx.client` — typed as `ReadOnlyAdtClient` (Omit of `http`/`safety`/`withSafety`/…), but a
 //      cast (`(ctx.client as any).http`) would defeat a type-only narrowing. `createReadOnlyAdtClient`
@@ -20,34 +21,91 @@
 import type { AdtClient } from '../adt/client.js';
 import { AdtSafetyError } from '../adt/errors.js';
 import type { AdtHttpClient, AdtResponse } from '../adt/http.js';
-import { checkOperation, OperationType, type SafetyConfig } from '../adt/safety.js';
+import { checkOperation, OperationType, type OperationTypeCode, type SafetyConfig } from '../adt/safety.js';
 import { hasRequiredScope, type Scope } from '../authz/policy.js';
 import type { PluginRunOps, ReadOnlyAdtClient } from '../public/types.js';
 
-/** The read-only HTTP surface a plugin tool receives as `ctx.http`. v1: GET/HEAD only. */
+/** The gated HTTP surface a plugin tool receives as `ctx.http`. GET/HEAD always; POST/PUT/DELETE to
+ *  NON-ADT paths only when the server opts in — see {@link createSafeHttpClient}. */
 export interface SafeHttpClient {
   get(path: string, headers?: Record<string, string>): Promise<AdtResponse>;
   head(path: string, headers?: Record<string, string>): Promise<AdtResponse>;
+  post(path: string, body?: string, contentType?: string, headers?: Record<string, string>): Promise<AdtResponse>;
+  put(path: string, body: string, contentType?: string, headers?: Record<string, string>): Promise<AdtResponse>;
+  delete(path: string, headers?: Record<string, string>): Promise<AdtResponse>;
+}
+
+/** True for any path under the ADT namespace. Normalized (lowercase + collapsed slashes) so neither
+ *  `/SAP/BC/ADT/…` nor `//sap/bc/adt/…` can slip a raw write past the refusal. */
+function isAdtPath(path: string): boolean {
+  return path
+    .toLowerCase()
+    .replace(/\/{2,}/g, '/')
+    .includes('/sap/bc/adt/');
 }
 
 /**
- * Wrap a per-user `AdtHttpClient` in the read-only gated surface for one tool call.
+ * Wrap a per-user `AdtHttpClient` in the gated surface for one tool call.
  *
- * @param underlying  the request's per-user (PP/`withSafety`) AdtHttpClient
- * @param safety      the effective per-user SafetyConfig (server ceiling ∧ user)
- * @param opLabel     tool name, used in error messages
+ * @param underlying      the request's per-user (PP/`withSafety`) AdtHttpClient
+ * @param safety          the effective per-user SafetyConfig (server ceiling ∧ user)
+ * @param opLabel         tool name, used in error messages
+ * @param toolScope       the calling tool's declared `policy.scope` — a write verb needs `write`
+ * @param allowRawWrites  the server opt-in (`SAP_ALLOW_PLUGIN_RAW_WRITES`) for non-ADT writes
  */
-export function createSafeHttpClient(underlying: AdtHttpClient, safety: SafetyConfig, opLabel: string): SafeHttpClient {
-  // Reads always pass the safety ceiling, but route through checkOperation anyway so the gate is
-  // the single seam where v2 write support will re-enter (and any future read opt-in lands here).
+export function createSafeHttpClient(
+  underlying: AdtHttpClient,
+  safety: SafetyConfig,
+  opLabel: string,
+  toolScope: Scope,
+  allowRawWrites: boolean,
+): SafeHttpClient {
+  function gateRead(): void {
+    checkOperation(safety, OperationType.Read, `Custom:${opLabel}`);
+  }
+  function gateWrite(op: OperationTypeCode, path: string): void {
+    if (!allowRawWrites) {
+      throw new AdtSafetyError(
+        `Extension tool '${opLabel}' attempted a write, but plugin raw writes are disabled. ` +
+          'Set SAP_ALLOW_PLUGIN_RAW_WRITES=true (and SAP_ALLOW_WRITES=true) to allow non-ADT (OData/ICF) writes.',
+      );
+    }
+    // A write verb (POST→Create / PUT→Update / DELETE→Delete) requires the tool to declare `write`.
+    if (!hasRequiredScope([toolScope], 'write')) {
+      throw new AdtSafetyError(
+        `Extension tool '${opLabel}' declares scope '${toolScope}' and may not issue a ${op}-class write (needs scope 'write').`,
+      );
+    }
+    // ADT object writes need `SAP_ALLOWED_PACKAGES` enforcement this raw surface can't do — refuse.
+    if (isAdtPath(path)) {
+      throw new AdtSafetyError(
+        `Extension tool '${opLabel}' may not write to an ADT path ('${path}') — SAP_ALLOWED_PACKAGES can't be enforced on a raw write. ` +
+          'Use a non-ADT (OData/ICF) path; ADT object writes are a v2 ctx.write feature.',
+      );
+    }
+    // The server safety ceiling — POST/PUT/DELETE are mutating, so this requires allowWrites=true.
+    checkOperation(safety, op, `Custom:${opLabel}`);
+  }
   return {
     async get(path, headers) {
-      checkOperation(safety, OperationType.Read, `Custom:${opLabel}`);
+      gateRead();
       return underlying.get(path, headers);
     },
     async head(path, headers) {
-      checkOperation(safety, OperationType.Read, `Custom:${opLabel}`);
+      gateRead();
       return underlying.head(path, headers);
+    },
+    async post(path, body, contentType, headers) {
+      gateWrite(OperationType.Create, path);
+      return underlying.post(path, body, contentType, headers);
+    },
+    async put(path, body, contentType, headers) {
+      gateWrite(OperationType.Update, path);
+      return underlying.put(path, body, contentType, headers);
+    },
+    async delete(path, headers) {
+      gateWrite(OperationType.Delete, path);
+      return underlying.delete(path, headers);
     },
   };
 }

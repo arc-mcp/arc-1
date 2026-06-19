@@ -19,9 +19,10 @@ tools to an ARC-1 instance **without forking**, reusing ARC-1's authenticated SA
   — two read tools (ADT + OData), one manifest tool, and **`Custom_RunClass`** (the gated execute op),
   all live-verified on S/4HANA.
 
-**v1 reality (do not get this wrong):** plugins are **read-only** — `ctx.http` is **GET/HEAD only**. The
-ONE privileged op is **executing a console class** via `ctx.run.classRun` (gated, opt-in). General
-object writes (create/update/delete) are **v2** (`ctx.write`, package-aware) — not available yet.
+**v1 reality (do not get this wrong):** reads are open (`ctx.http.get`/`head`). **Writes** (`ctx.http.post`/
+`put`/`delete`) work **only to non-ADT paths** (OData/ICF) behind the opt-in `SAP_ALLOW_PLUGIN_RAW_WRITES`.
+A console class runs via `ctx.run.classRun` (opt-in `SAP_ALLOW_PLUGIN_EXECUTE`). **ADT object** writes
+(CLAS/DDLS/… via `/sap/bc/adt/…`) are **always refused** — those are the v2 package-aware `ctx.write`.
 
 ## Trigger
 
@@ -50,11 +51,13 @@ Use `AskUserQuestion`. The first question is a gate:
    For a custom endpoint: it **must already exist on SAP** — extensions ship **no ABAP**.
 4. **What it does**, and the **scope** + **opType**:
    - read (any of the three APIs) → `scope: 'read'`, `opType: 'R'` — uses `ctx.http.get`.
+   - **write to an OData/ICF service** (`ctx.http.post`/`put`/`delete`) → `scope: 'write'`, `opType:
+     `C`/`U`/`D`. Refused unless the admin sets **`SAP_ALLOW_PLUGIN_RAW_WRITES=true` + `SAP_ALLOW_WRITES=true`**.
+     The path must be **non-ADT** (`/sap/opu/odata/…` or `/sap/bc/http/…`).
    - **execute a console class** (`IF_OO_ADT_CLASSRUN`) → `scope: 'write'`, `opType: OperationType.Workflow`
-     — uses `ctx.run.classRun`. Refused unless the admin sets **`SAP_ALLOW_PLUGIN_EXECUTE=true` +
-     `SAP_ALLOW_WRITES=true`**. This is the only privileged op in v1.
-   - **object create/update/delete** → **NOT available in v1** — that's the v2 `ctx.write` surface.
-     If the tool needs it, say so and stop; it can't ship yet.
+     — uses `ctx.run.classRun`. Refused unless **`SAP_ALLOW_PLUGIN_EXECUTE=true` + `SAP_ALLOW_WRITES=true`**.
+   - **ADT object create/update/delete** (CLAS/DDLS/… via `/sap/bc/adt/…`) → **NOT available in v1** —
+     always refused; that's the v2 package-aware `ctx.write`. If the tool needs it, say so and stop.
 
 ## Step 2 — scaffold (mirror `arc-1-extension-sample`)
 
@@ -131,9 +134,11 @@ volume trade-offs), point the developer at the **Deploying extensions** section 
 ## Gotchas (learned the hard way)
 
 - **`Custom_` namespace is mandatory** and collisions **fail server start** (fail-fast).
-- **`ctx.http` is read-only (GET/HEAD).** `post`/`put`/`delete`/`withStatefulSession` are **not on the
-  surface** in v1 (a raw write can't be package-allowlist-gated → deferred to v2). Don't write a tool
-  that needs them yet.
+- **`ctx.http` reads freely (GET/HEAD); writes (`post`/`put`/`delete`) hit only NON-ADT paths** and
+  only when the admin sets `SAP_ALLOW_PLUGIN_RAW_WRITES=true` (+ `SAP_ALLOW_WRITES=true`) and the tool
+  declares `scope:'write'`. Writes to `/sap/bc/adt/…` object paths are **always refused** (package
+  allowlist can't be enforced on a raw write — ADT object writes are the v2 `ctx.write` vocabulary).
+  CSRF is fetched + attached automatically. Use this for OData / custom-ICF write services.
 - **`ctx.client` is a runtime *plain-read* view** — `.http`/`.safety` AND the data/SQL reads
   (`getTableContents`/`runQuery`/`runTableQuery`) are blocked at runtime (a cast yields `undefined`).
   v1 plugins have no data/SQL surface; use the plain read methods (or `ctx.http.get`).

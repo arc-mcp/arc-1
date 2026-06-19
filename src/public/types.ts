@@ -34,8 +34,8 @@ export type ReadOnlyAdtClient = Omit<
 >;
 
 /**
- * Named, privileged operations a plugin can invoke. Unlike `ctx.http` (read-only), these EXECUTE.
- * Each op is gated server-side; calling one when its gate is closed throws `AdtSafetyError`.
+ * Named, privileged operations a plugin can invoke (e.g. executing a console class). Each op is
+ * gated server-side; calling one when its gate is closed throws `AdtSafetyError`.
  */
 export interface PluginRunOps {
   /**
@@ -59,7 +59,8 @@ export interface PluginLogger {
 /** Per-call context a plugin tool receives. Built fresh per request (never bound at registration). */
 export interface ToolContext {
   readonly client: ReadOnlyAdtClient; // high-level reads only — `.http`/`.safety` blocked at runtime too
-  readonly http: SafeHttpClient; // the ONLY low-level HTTP path — gated; v1 is read-only (GET/HEAD)
+  readonly http: SafeHttpClient; // the ONLY low-level HTTP path — gated. GET/HEAD always; POST/PUT/DELETE
+  // to NON-ADT (OData/ICF) paths only when the admin sets SAP_ALLOW_PLUGIN_RAW_WRITES (+ allowWrites + write scope).
   readonly run: PluginRunOps; // named privileged ops (e.g. classRun) — each gated server-side
   readonly logger: PluginLogger;
   readonly authInfo?: { userName?: string; scopes: string[]; clientId?: string };

@@ -64,23 +64,27 @@ describe('registerPluginTool', () => {
     expect(() => registerPluginTool(r, 'demo', bad)).toThrow(/Custom_/);
   });
 
-  it('gives the plugin a read-only ctx.http + a runtime-locked ctx.client (no write/escape surface)', async () => {
+  it('refuses a read tool a write (raw-writes opt-in off + read scope) and runtime-locks ctx.client', async () => {
     const r = new ToolRegistry();
     const tool = defineTool({
       name: 'Custom_Surface',
-      description: 'reports the shape of the ctx surfaces it was handed',
+      description: 'reports the gated shape of the ctx surfaces it was handed',
       schema: z.object({}),
       policy: { scope: 'read', opType: 'R' },
       handler: async (_args, ctx) => {
-        const http = ctx.http as unknown as Record<string, unknown>;
         const client = ctx.client as unknown as Record<string, unknown>;
+        let postRefused = false;
+        try {
+          await ctx.http.post('/sap/opu/odata/sap/ZSVC/Set', 'body'); // read tool + opt-in off → refused
+        } catch {
+          postRefused = true;
+        }
         return {
           content: [
             {
               type: 'text',
               text: JSON.stringify({
-                post: http.post === undefined,
-                put: http.put === undefined,
+                postRefused,
                 clientHttp: client.http === undefined,
                 clientSafety: client.safety === undefined,
                 clientWithSafety: client.withSafety === undefined,
@@ -93,8 +97,7 @@ describe('registerPluginTool', () => {
     registerPluginTool(r, 'demo', tool);
     const res = await r.get('Custom_Surface')!.invoke(dispatchCtx({}));
     expect(JSON.parse(res.content[0].text)).toEqual({
-      post: true,
-      put: true,
+      postRefused: true,
       clientHttp: true,
       clientSafety: true,
       clientWithSafety: true,

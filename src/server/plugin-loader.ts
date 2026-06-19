@@ -98,7 +98,13 @@ function makePluginInvoke(def: PluginToolDefinition): (ctx: ToolDispatchContext)
       // not just type-hidden); `http` is the gated read-only surface — the only sanctioned low-level
       // HTTP path. Both close review B1. See safe-http-client.ts.
       client: createReadOnlyAdtClient(dispatchCtx.client),
-      http: createSafeHttpClient(dispatchCtx.client.http, dispatchCtx.client.safety, def.name),
+      http: createSafeHttpClient(
+        dispatchCtx.client.http,
+        dispatchCtx.client.safety,
+        def.name,
+        def.policy.scope,
+        dispatchCtx.config.allowPluginRawWrites,
+      ),
       run: createPluginRunOps(
         dispatchCtx.client.http,
         dispatchCtx.client.safety,

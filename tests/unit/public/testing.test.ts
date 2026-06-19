@@ -22,11 +22,15 @@ describe('createMockToolContext', () => {
     ]);
   });
 
-  it('exposes a read-only http surface (no write verbs in v1)', () => {
-    const ctx = createMockToolContext();
-    const http = ctx.http as unknown as Record<string, unknown>;
-    expect(http.post).toBeUndefined();
-    expect(http.put).toBeUndefined();
-    expect(http.delete).toBeUndefined();
+  it('records write calls (post/put/delete) as a pure recorder — gating is tested separately', async () => {
+    const ctx = createMockToolContext({ responseBody: 'OK' });
+    expect((await ctx.http.post('/sap/bc/http/sap/svc', 'payload')).body).toBe('OK');
+    await ctx.http.put('/sap/opu/odata/x', 'b');
+    await ctx.http.delete('/sap/opu/odata/x');
+    expect(ctx.httpCalls).toEqual([
+      { method: 'POST', path: '/sap/bc/http/sap/svc', body: 'payload' },
+      { method: 'PUT', path: '/sap/opu/odata/x', body: 'b' },
+      { method: 'DELETE', path: '/sap/opu/odata/x' },
+    ]);
   });
 });

@@ -17,29 +17,75 @@ function fakeUnderlying() {
     get: vi.fn(async () => resp),
     head: vi.fn(async () => resp),
     post: vi.fn(async (_path: string) => ({ ...resp, body: 'console output' })),
+    put: vi.fn(async (_path: string) => resp),
+    delete: vi.fn(async (_path: string) => resp),
   };
 }
 
 const as = (u: ReturnType<typeof fakeUnderlying>) => u as unknown as AdtHttpClient;
+const ODATA = '/sap/opu/odata/sap/ZSVC/EntitySet';
+const ICF = '/sap/bc/http/sap/zi18n_service';
 
-describe('createSafeHttpClient (v1: read-only)', () => {
-  it('allows GET and HEAD and delegates to the underlying client', async () => {
+describe('createSafeHttpClient — reads', () => {
+  it('allows GET and HEAD for any tool/opt-in and delegates', async () => {
     const u = fakeUnderlying();
-    const c = createSafeHttpClient(as(u), defaultSafetyConfig(), 'Custom_R');
+    const c = createSafeHttpClient(as(u), defaultSafetyConfig(), 'Custom_R', 'read', false);
     await expect(c.get('/sap/bc/adt/x', { Accept: 'text/plain' })).resolves.toBe(resp);
     expect(u.get).toHaveBeenCalledWith('/sap/bc/adt/x', { Accept: 'text/plain' });
     await expect(c.head('/sap/bc/adt/x')).resolves.toBe(resp);
   });
+});
 
-  it('exposes NO write verbs — post/put/delete/withStatefulSession are absent (package-allowlist gap)', () => {
-    const c = createSafeHttpClient(as(fakeUnderlying()), defaultSafetyConfig(), 'Custom_R') as unknown as Record<
-      string,
-      unknown
-    >;
-    expect(c.post).toBeUndefined();
-    expect(c.put).toBeUndefined();
-    expect(c.delete).toBeUndefined();
-    expect(c.withStatefulSession).toBeUndefined();
+describe('createSafeHttpClient — gated non-ADT writes (SAP_ALLOW_PLUGIN_RAW_WRITES)', () => {
+  it('refuses a write when the raw-writes opt-in is off', async () => {
+    const u = fakeUnderlying();
+    const c = createSafeHttpClient(as(u), unrestrictedSafetyConfig(), 'Custom_W', 'write', false);
+    await expect(c.post(ICF, 'body')).rejects.toBeInstanceOf(AdtSafetyError);
+    expect(u.post).not.toHaveBeenCalled();
+  });
+
+  it('refuses a write from a non-write-scoped tool (even with the opt-in on)', async () => {
+    const u = fakeUnderlying();
+    const c = createSafeHttpClient(as(u), unrestrictedSafetyConfig(), 'Custom_R', 'read', true);
+    await expect(c.post(ICF, 'body')).rejects.toBeInstanceOf(AdtSafetyError);
+    expect(u.post).not.toHaveBeenCalled();
+  });
+
+  it('refuses a write when allowWrites=false (server ceiling)', async () => {
+    const u = fakeUnderlying();
+    const c = createSafeHttpClient(as(u), defaultSafetyConfig(), 'Custom_W', 'write', true);
+    await expect(c.post(ICF, 'body')).rejects.toBeInstanceOf(AdtSafetyError);
+    expect(u.post).not.toHaveBeenCalled();
+  });
+
+  it('refuses a write to an ADT path even when every other gate is open (normalization-proof)', async () => {
+    const u = fakeUnderlying();
+    const c = createSafeHttpClient(as(u), unrestrictedSafetyConfig(), 'Custom_W', 'write', true);
+    for (const p of [
+      '/sap/bc/adt/oo/classes/zcl_x',
+      '/SAP/BC/ADT/oo/classes/zcl_x',
+      '//sap/bc/adt//oo/classes/zcl_x',
+    ]) {
+      await expect(c.post(p, 'body')).rejects.toBeInstanceOf(AdtSafetyError);
+    }
+    expect(u.post).not.toHaveBeenCalled();
+  });
+
+  it('ALLOWS a POST to a non-ADT (OData/ICF) path when all gates pass, and delegates', async () => {
+    const u = fakeUnderlying();
+    const c = createSafeHttpClient(as(u), unrestrictedSafetyConfig(), 'Custom_W', 'write', true);
+    await expect(c.post(ICF, 'payload', 'application/json')).resolves.toBeTruthy();
+    expect(u.post).toHaveBeenCalledWith(ICF, 'payload', 'application/json', undefined);
+  });
+
+  it('gates PUT and DELETE the same way (allowed to non-ADT when all gates pass)', async () => {
+    const u = fakeUnderlying();
+    const c = createSafeHttpClient(as(u), unrestrictedSafetyConfig(), 'Custom_W', 'write', true);
+    await expect(c.put(ODATA, 'b')).resolves.toBe(resp);
+    await expect(c.delete(ODATA)).resolves.toBe(resp);
+    // …and refused to ADT paths
+    await expect(c.put('/sap/bc/adt/x', 'b')).rejects.toBeInstanceOf(AdtSafetyError);
+    await expect(c.delete('/sap/bc/adt/x')).rejects.toBeInstanceOf(AdtSafetyError);
   });
 });
 

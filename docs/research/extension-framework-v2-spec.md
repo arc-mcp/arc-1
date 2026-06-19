@@ -21,6 +21,13 @@ priority order.
 > `allowWrites` + `write` scope, validated class name, no generic POST. It proves the §2.2 "named
 > operation vocabulary" model end-to-end (live on a4h), and is the template the v2 `ctx.write.*` ops
 > follow. The `ctx.run` namespace is where future execute-class ops land (e.g. `programRun`).
+>
+> **§2.2 "Path B" (raw non-ADT writes) SHIPPED (2026-06-19):** `ctx.http.post`/`put`/`delete` are live
+> for **non-ADT** (OData/ICF) paths behind the default-off `SAP_ALLOW_PLUGIN_RAW_WRITES` opt-in (+
+> `allowWrites` + `write` scope); `/sap/bc/adt/…` writes stay refused (normalization-proof). This
+> enables LISA-style custom-ICF write tools. **Still deferred:** the §2.2 "Path A" package-aware
+> `ctx.write` vocabulary for ADT **object** writes (create/update/delete of CLAS/DDLS/…) — the hard
+> part (package resolution + lock-aware writes). G8 below now means specifically *Path A*.
 
 | # | Deferred from v1 | Why it was deferred | v2 section |
 |---|------------------|---------------------|-----------|

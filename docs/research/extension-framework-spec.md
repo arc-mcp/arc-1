@@ -16,7 +16,9 @@
 >
 > **Post-merge review (2026-06-18) — further narrowings:**
 > - **`ctx.client` is a *plain-read* facade** — `getTableContents`/`runQuery`/`runTableQuery` (the `data`/`sql`-scoped reads) are now ALSO blocked at runtime + omitted from `ReadOnlyAdtClient`, so a `read`-declared plugin can't escalate to data/SQL. v1 plugins have no data/SQL surface; a scoped `ctx.data`/`ctx.sql` is a v2 item.
-> - **`policy.opType` is validated at registration** — a plugin's declared `scope` must cover its `opType`'s required scope (fail-fast otherwise). It is NOT a per-`ctx.http`-call gate in v1 (the surface is read-only); it is reused for v2 write gating.
+> - **`policy.opType` is validated at registration** — a plugin's declared `scope` must cover its `opType`'s required scope (fail-fast otherwise). It is reused for v2 write gating.
+>
+> **Raw non-ADT writes shipped (2026-06-19, v2 §2.2 "Path B"):** `ctx.http` regained `post`/`put`/`delete` for **non-ADT** (OData/ICF) paths behind the default-off `SAP_ALLOW_PLUGIN_RAW_WRITES` opt-in (+ `allowWrites` + `write` scope). Writes to `/sap/bc/adt/…` are still **always refused** (normalization-proof) — ADT object writes remain the v2 package-aware `ctx.write` vocabulary. `SAP_ALLOWED_PACKAGES` doesn't apply to OData/ICF paths. So the §5 "read-only" framing below is superseded: reads are open, non-ADT writes are opt-in, ADT object writes deferred.
 
 > ⚠️ **AUTHORITATIVE SOURCE.** The sections below are the **original design** (retained for rationale).
 > Several API surfaces shown in code blocks — the `ctx` fields in §2 (`ctx.cache`/`ctx.safety`/`ctx.config`),

@@ -126,6 +126,14 @@ export interface ServerConfig {
    *  and the tool must declare `write` scope. A dedicated switch (not implied by `allowWrites`) so
    *  enabling built-in writes never silently grants plugins code execution. */
   allowPluginExecute: boolean;
+  /** Opt-in: allow plugin tools to make low-level WRITE calls (`ctx.http.post`/`put`/`delete`) to
+   *  **non-ADT** SAP paths (OData `/sap/opu/odata/…`, custom ICF `/sap/bc/http/…`). Default false.
+   *  Writes to `/sap/bc/adt/…` object endpoints are ALWAYS refused (they need package-allowlist
+   *  enforcement that this raw surface can't do — those wait for the v2 `ctx.write` vocabulary). Also
+   *  requires `allowWrites=true` and a `write`-scoped tool. `SAP_ALLOWED_PACKAGES` does NOT constrain
+   *  these calls (no ABAP package in an OData/ICF path) — the gates are this opt-in + `allowWrites` +
+   *  scope + `denyActions` + SAP-side service auth (+ Cloud Connector allowlist on BTP). */
+  allowPluginRawWrites: boolean;
 
   // --- Lint ---
   /** Path to custom abaplint.jsonc config file for lint rules */
@@ -227,6 +235,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
   toolMode: 'standard',
   plugins: [],
   allowPluginExecute: false,
+  allowPluginRawWrites: false,
   lintBeforeWrite: true,
   checkBeforeWrite: false,
   cacheMode: 'auto',

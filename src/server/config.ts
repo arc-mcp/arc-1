@@ -503,6 +503,14 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     false,
     'allowPluginExecute',
   );
+  // Opt-in: let plugin tools write (ctx.http.post/put/delete) to non-ADT (OData/ICF) paths. Also
+  // needs allowWrites; ADT object writes are always refused (no package gate on this raw surface).
+  config.allowPluginRawWrites = resolveBool(
+    'allow-plugin-raw-writes',
+    'SAP_ALLOW_PLUGIN_RAW_WRITES',
+    false,
+    'allowPluginRawWrites',
+  );
 
   // ── Lint ───────────────────────────────────────────────────────────
   config.abaplintConfig = resolveOptionalStr('abaplint-config', 'SAP_ABAPLINT_CONFIG', 'abaplintConfig');

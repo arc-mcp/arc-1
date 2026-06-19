@@ -9,8 +9,9 @@ import type { SafeHttpClient } from '../server/safe-http-client.js';
 import type { ToolContext } from './types.js';
 
 export interface MockHttpCall {
-  method: 'GET' | 'HEAD';
+  method: 'GET' | 'HEAD' | 'POST' | 'PUT' | 'DELETE';
   path: string;
+  body?: string;
 }
 
 export interface MockToolContext extends ToolContext {
@@ -39,6 +40,7 @@ export function createMockToolContext(options: MockToolContextOptions = {}): Moc
   const bodyFor = (path: string): string => options.responses?.[path] ?? options.responseBody ?? '';
   const resp = (path: string): AdtResponse => ({ statusCode: 200, headers: {}, body: bodyFor(path) });
 
+  // A pure recorder — never gates (the gate is unit-tested against the real createSafeHttpClient).
   const http: SafeHttpClient = {
     get: async (path) => {
       httpCalls.push({ method: 'GET', path });
@@ -46,6 +48,18 @@ export function createMockToolContext(options: MockToolContextOptions = {}): Moc
     },
     head: async (path) => {
       httpCalls.push({ method: 'HEAD', path });
+      return resp(path);
+    },
+    post: async (path, body) => {
+      httpCalls.push({ method: 'POST', path, body });
+      return resp(path);
+    },
+    put: async (path, body) => {
+      httpCalls.push({ method: 'PUT', path, body });
+      return resp(path);
+    },
+    delete: async (path) => {
+      httpCalls.push({ method: 'DELETE', path });
       return resp(path);
     },
   };
