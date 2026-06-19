@@ -16,8 +16,10 @@ tools to an ARC-1 instance **without forking**, reusing ARC-1's authenticated SA
   the docs site under *Using ARC-1 → Extensions (Custom Tools)*.
 - **Spec:** `docs/research/extension-framework-spec.md` (v1) + `extension-framework-v2-spec.md` (what's deferred).
 - **Worked sample:** [`arc-mcp/arc-1-extension-sample`](https://github.com/arc-mcp/arc-1-extension-sample)
-  — two read tools (ADT + OData), one manifest tool, and **`Custom_RunClass`** (the gated execute op),
-  all live-verified on S/4HANA.
+  — ADT + OData **reads**, a **manifest** tool, **`Custom_RunClass`** (gated execute), an OData
+  **write** (`Custom_CreateSalesOrder`), and a full **[LISA](https://github.com/ClementRingot/LISA)
+  custom-ICF integration** (`Custom_ListLanguages`/`GetTranslation`/`SetTranslation`) — all
+  live-verified on S/4HANA (real HTTP 201/200 writes). Copy the closest tool and adapt.
 
 **v1 reality (do not get this wrong):** reads are open (`ctx.http.get`/`head`). **Writes** (`ctx.http.post`/
 `put`/`delete`) work **only to non-ADT paths** (OData/ICF) behind the opt-in `SAP_ALLOW_PLUGIN_RAW_WRITES`.
@@ -44,16 +46,17 @@ Use `AskUserQuestion`. The first question is a gate:
    - **Yes** → continue.
 2. **Tier.**
    - **Manifest tier** (declarative JSON, no code) — if the tool is "validate inputs → one **read**
-     GET → return". No logic.
+     GET → return". No logic, no writes.
    - **Code tier** (`defineTool`, TypeScript) — if it needs logic, response shaping, multiple reads,
-     or to **execute a console class** (`ctx.run.classRun`).
+     a **write** to an OData/ICF service (`ctx.http.post`/`put`/`delete`), or to **execute a console
+     class** (`ctx.run.classRun`).
 3. **SAP API** — ADT (`/sap/bc/adt/…`), OData (`/sap/opu/odata/…`), or a custom ICF (`/sap/bc/http/…`).
    For a custom endpoint: it **must already exist on SAP** — extensions ship **no ABAP**.
 4. **What it does**, and the **scope** + **opType**:
-   - read (any of the three APIs) → `scope: 'read'`, `opType: 'R'` — uses `ctx.http.get`.
-   - **write to an OData/ICF service** (`ctx.http.post`/`put`/`delete`) → `scope: 'write'`, `opType:
-     `C`/`U`/`D`. Refused unless the admin sets **`SAP_ALLOW_PLUGIN_RAW_WRITES=true` + `SAP_ALLOW_WRITES=true`**.
-     The path must be **non-ADT** (`/sap/opu/odata/…` or `/sap/bc/http/…`).
+   - read (any of the three APIs) → `scope: 'read'`, `opType: OperationType.Read` — uses `ctx.http.get`.
+   - **write to an OData/ICF service** (`ctx.http.post`/`put`/`delete`) → `scope: 'write'`, `opType`
+     `Create`/`Update`/`Delete`. Refused unless the admin sets **`SAP_ALLOW_PLUGIN_RAW_WRITES=true` +
+     `SAP_ALLOW_WRITES=true`**. The path must be **non-ADT** (`/sap/opu/odata/…` or `/sap/bc/http/…`).
    - **execute a console class** (`IF_OO_ADT_CLASSRUN`) → `scope: 'write'`, `opType: OperationType.Workflow`
      — uses `ctx.run.classRun`. Refused unless **`SAP_ALLOW_PLUGIN_EXECUTE=true` + `SAP_ALLOW_WRITES=true`**.
    - **ADT object create/update/delete** (CLAS/DDLS/… via `/sap/bc/adt/…`) → **NOT available in v1** —
@@ -68,7 +71,7 @@ Create a new repo `arc1-plugin-<name>` (pure TS, **no ABAP**):
   (only if it has manifests). An optional `"arc1": { "apiVersion": 1 }` block is a **forward
   declaration** — in v1 the loader reads `apiVersion` from the `Plugin` **default export** (`src/index.ts`),
   and `requires:{scopes,packages}` is **v2** (declared-but-not-yet-enforced), so don't rely on it.
-- **Code tier** → `src/tools/Custom_<X>.ts`:
+- **Read (code tier)** → `src/tools/Custom_<X>.ts`:
   ```ts
   import { z } from 'zod';
   import { defineTool, OperationType } from 'arc-1/public';
@@ -92,7 +95,25 @@ Create a new repo `arc1-plugin-<name>` (pure TS, **no ABAP**):
       "pathParams": { "name": "$.name" }, "accept": "text/plain" },
     "response": { "maxBytes": 50000 } }
   ```
-- **Execute tier** (run a console class) → `src/tools/Custom_<X>.ts`:
+- **Write (code tier)** — OData / custom-ICF `POST`/`PUT`/`DELETE` → `src/tools/Custom_<X>.ts`:
+  ```ts
+  import { z } from 'zod';
+  import { defineTool, OperationType } from 'arc-1/public';
+  export default defineTool({
+    name: 'Custom_<X>',
+    description: 'Create something via an OData/ICF service.',
+    schema: z.object({ /* … */ }),
+    policy: { scope: 'write', opType: OperationType.Create },   // POST→Create / PUT→Update / DELETE→Delete
+    async handler(args, ctx) {
+      const body = JSON.stringify(/* entity / payload */);
+      // path MUST be non-ADT (OData/ICF); CSRF is fetched + attached automatically.
+      const res = await ctx.http.post('/sap/opu/odata/<ns>/<SERVICE>/<EntitySet>', body, 'application/json',
+        { Accept: 'application/json' });
+      return { content: [{ type: 'text', text: `HTTP ${res.statusCode}\n${res.body}` }] };
+    },
+  });
+  ```
+- **Execute (code tier)** — run a console class → `src/tools/Custom_<X>.ts`:
   ```ts
   import { z } from 'zod';
   import { defineTool, OperationType } from 'arc-1/public';
@@ -121,10 +142,18 @@ npm install && npm link arc-1 && npm run build
 ARC1_PLUGINS=$PWD/dist/index.js  arc1 --transport http-streamable
 # …or drive one read call (args MUST be --json, not positional):
 ARC1_PLUGINS=$PWD/dist/index.js  arc1-cli call Custom_<X> --json '{"name":"RSPARAM"}'
-# …an execute tool ALSO needs the two opt-ins (else it's refused):
+# …a WRITE tool (OData/ICF) needs the raw-write opt-ins (else it's refused):
+SAP_ALLOW_PLUGIN_RAW_WRITES=true SAP_ALLOW_WRITES=true \
+  ARC1_PLUGINS=$PWD/dist/index.js  arc1-cli call Custom_<X> --json '{ … }'
+# …an EXECUTE tool needs the execute opt-ins:
 SAP_ALLOW_PLUGIN_EXECUTE=true SAP_ALLOW_WRITES=true \
   ARC1_PLUGINS=$PWD/dist/index.js  arc1-cli call Custom_<X> --json '{"className":"ZCL_FOO"}'
 ```
+
+Read the result, not just the exit. A gate refusal is an **`AdtSafetyError`** ("…disabled" / "may not
+write to an ADT path"); a SAP-side problem (wrong path, missing service, bad payload) is an
+**`AdtApiError`** with the SAP status + body — that means the gate *passed* and the request reached SAP
+(useful signal). Iterate on the path/payload from the SAP error.
 
 Confirm the tool appears in `tools/list` and the call returns real SAP data. For **deploying** the
 plugin to BTP Cloud Foundry or Docker (the owner-check / `--chown` gotcha, image vs buildpack vs
@@ -148,8 +177,22 @@ volume trade-offs), point the developer at the **Deploying extensions** section 
 - **Executing a class is the one privileged op.** `ctx.run.classRun(name)` runs an `IF_OO_ADT_CLASSRUN`
   console class. Gated: needs `SAP_ALLOW_PLUGIN_EXECUTE=true` **and** `SAP_ALLOW_WRITES=true` **and** a
   `write`-scoped tool; the class name is validated (no path injection). Off by default.
-- **OData service must be ACTIVATED in `/IWFND`** even if it shows in the catalog (a 403
-  "No service found" means it is registered but not activated).
+- **OData path discovery — a 403 `/IWFND/MED/170 "No service found"` usually means the WRONG path,
+  not just an inactive service.** The service name AND namespace matter: e.g. the EPM demo is
+  `/sap/opu/odata/iwbep/GWSAMPLE_BASIC`, *not* `/sap/opu/odata/sap/ZGWSAMPLE_BASIC`. Find the real
+  path by `GET …/$metadata` (200 = right; 403 = wrong path or genuinely inactive → `/IWFND/MAINT_SERVICE`).
+- **OData V2 *create* gotcha:** a `POST` must **not** carry a `$format=json` query option (it's a
+  SystemQueryOption → `400 "not allowed for this Request Type"`). Negotiate JSON via the `Accept`
+  header instead. Required entity fields vary — `GET …/<EntitySet>?$top=1` to see the shape.
+- **Custom-ICF (LISA-style) services:** typically `POST /sap/bc/http/sap/<SERVICE>/<action>` with a
+  **JSON body** (the action is in the URL path; the body is the params). Two consequences: (1) if the
+  service uses `POST` for *reads* too, those read tools STILL need `SAP_ALLOW_PLUGIN_RAW_WRITES` +
+  `scope:'write'` (`ctx.http` gates by HTTP method) — declare `opType: Read` to keep the operation
+  honest; (2) a write may require an **open transport request** — create one with `SAPTransport`
+  (on a system with no STMS routes it's a local request, which is fine).
+- **A write reaching SAP ≠ a 2xx.** The gate + CSRF + POST can all succeed and SAP still returns a
+  4xx (bad payload, inactive service, missing transport). That's an `AdtApiError`, not a gate
+  refusal — adjust the request, the framework did its job.
 - **Manifest tier = read-only GET**, `additionalProperties:false` required, `path` is a template with
   **no host**, path params percent-encoded (traversal-safe). No POST/body in v1.
 - **`availableOn: 'onprem' | 'btp'`** (optional, default `all`) hides the tool from `tools/list` when
