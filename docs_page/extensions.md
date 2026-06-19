@@ -137,9 +137,10 @@ v1 manifests are **read-only GET**: `additionalProperties:false` is required, `p
 
 ## Calling SAP APIs
 
-Everything goes through **`ctx.http`** — a **gated, read-only** (`GET`/`HEAD`) wrapper over ARC-1's
-authenticated client. It can reach **any SAP path** on the connected system, with auth, CSRF, cookies,
-per-user PP, and sessions handled for you:
+Everything goes through **`ctx.http`** — a **gated** wrapper over ARC-1's authenticated client
+(`GET`/`HEAD` always; `POST`/`PUT`/`DELETE` to **non-ADT** paths behind the raw-write opt-in — see
+[Writing](#writing-non-adt-odataicf)). It can reach **any SAP path** on the connected system, with
+auth, CSRF, cookies, per-user PP, and sessions handled for you:
 
 | API | Example |
 |---|---|
@@ -230,8 +231,8 @@ framework — **all** of the following must hold, or the call is refused with an
 | user has the `write` scope + SAP-side execute auth | the usual `scope ∧ SAP-auth` |
 
 `classRun` is a **named** op (not a raw POST), so a plugin can only run a class **by name** (validated,
-no path injection) — it cannot reach arbitrary write endpoints. That's why it can ship in read-only v1
-safely; the general write surface still waits for v2.
+no path injection) — it cannot reach arbitrary endpoints. That's why it has its own dedicated gate,
+distinct from the raw `ctx.http` write surface; ADT **object** writes still wait for the v2 `ctx.write`.
 
 ---
 
@@ -241,8 +242,9 @@ safely; the general write surface still waits for v2.
     A code plugin is `import()`-ed into the ARC-1 process and runs with the **full privileges of the
     server**: it can read `process.env` (SAP credentials, the XSUAA `clientsecret`, the DCR signing
     secret), read/write the local filesystem, open outbound network connections, and spawn processes.
-    The gated `ctx` (read-only `ctx.http`, the blocked `ctx.client`, the `classRun` gate) is a **clean
-    API surface** that protects against a *buggy or over-eager* plugin and honours the admin's posture
+    The gated `ctx` (GET/HEAD + opt-in non-ADT writes on `ctx.http`, the blocked `ctx.client`, the
+    `classRun` + raw-write gates) is a **clean API surface** that protects against a *buggy or
+    over-eager* plugin and honours the admin's posture
     — it is **not** a containment boundary against a *hostile* one (a malicious plugin doesn't need
     `ctx`; it has `child_process`). **Loading a plugin is exactly as much a trust decision as adding a
     dependency to ARC-1 itself.** Only load plugins you have reviewed, and:
@@ -289,8 +291,8 @@ Key points:
   sandbox by design. The `ctx` gates bound a buggy plugin and the server's posture, not a hostile one.
 - **`policy.opType` is checked at registration, not per HTTP call.** The declared `scope` must cover
   the `opType`'s required scope (a tool can't claim `read` while declaring a write op, else it
-  fails-fast at load). In v1 the *runtime* gates are the read-only `ctx.http` and `classRun`'s own
-  checks; `opType` is reused for v2's write gating.
+  fails-fast at load). In v1 the *runtime* gates are `ctx.http`'s method + raw-write-opt-in checks and
+  `classRun`'s own checks; `opType` is reused for v2's write gating.
 
 ---
 
@@ -368,12 +370,12 @@ already `vcap`-owned, so this is a non-issue there.
 
 ## Roadmap (v2)
 
-v1 is **read-only** on purpose. The biggest v2 item is a **package-aware write surface** — a
-`ctx.write` vocabulary that routes ADT object writes through the same package-allowlist gate built-in
-`SAPWrite` uses (so a plugin still can't write outside `SAP_ALLOWED_PACKAGES`), plus opt-in raw writes
-for package-less OData/ICF calls. Also planned: a safe per-user `ctx.cache`, directory + npm-package
-loading, `package.json#arc1.requires` capability intersection, per-handler timeouts, and graduating
-the API from `@experimental` to semver-stable. Full design:
+v1 ships **reads**, gated **non-ADT (OData/ICF) writes**, and **`classRun`**. The biggest remaining v2
+item is the **package-aware ADT *object* write surface** — a `ctx.write` vocabulary that routes
+CLAS/DDLS/… writes through the same package-allowlist gate built-in `SAPWrite` uses (so a plugin still
+can't write outside `SAP_ALLOWED_PACKAGES`). Also planned: a safe per-user `ctx.cache`, directory +
+npm-package loading, `package.json#arc1.requires` capability intersection, per-handler timeouts, and
+graduating the API from `@experimental` to semver-stable. Full design:
 `docs/research/extension-framework-v2-spec.md`.
 
 ---

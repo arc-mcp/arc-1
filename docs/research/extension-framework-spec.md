@@ -1,6 +1,6 @@
 # ARC-1 Extension Framework — v1 Specification (FEAT-61)
 
-> **Status:** ✅ **IMPLEMENTED 2026-06-17** — PR1–PR5 + loader / `package.json#exports` / CLI + the `create-arc1-extension` skill; full unit suite green (3620) and **live-verified on a4h** (code + manifest tiers return real SAP source). Deferred (documented): plugin writes (lock/unlock/CSRF) + the 3rd reference endpoint (Q-O). Derived from [`extension-framework-deep-research.md`](extension-framework-deep-research.md); retained as the design reference.
+> **Status:** ✅ **IMPLEMENTED 2026-06-17** — PR1–PR5 + loader / `package.json#exports` / CLI + the `create-arc1-extension` skill; full unit suite green (3620) and **live-verified on a4h** (code + manifest tiers return real SAP source). Since shipped: gated **non-ADT (OData/ICF) writes** (`SAP_ALLOW_PLUGIN_RAW_WRITES`) + **`classRun`** (see the post-merge banner). Still deferred: **package-aware ADT *object* writes** (the v2 `ctx.write` vocabulary). Derived from [`extension-framework-deep-research.md`](extension-framework-deep-research.md); retained as the design reference.
 > **Stability:** The plugin API is **`@experimental` — it may break in any release.** A single `apiVersion` integer is the only compatibility fuse.
 > **Date:** 2026-06-17. Tracks roadmap FEAT-61, issues #187 / #332.
 > **Review:** adversarial review (2026-06-17) — 1 blocker (B1, fixed inline in §2) + integration/signature clarifications in **§16**. Address §16 before PR1.
@@ -155,7 +155,7 @@ Loaded by **local path** (`.js` / `.json` / directory) via `ARC1_PLUGINS=` — s
 | `scope` | ✅ | one of the 7 scopes |
 | `opType` | — | default = method→opType; declare to override (e.g. an OData function-import POST = Read) |
 | `inputSchema` | ✅ | JSON Schema, `additionalProperties:false` |
-| `request.method` | ✅ | GET or simple stateless POST (v1) |
+| `request.method` | ✅ | GET only (v1 — the interpreter rejects non-GET) |
 | `request.path` | ✅ | fixed template against the authed client (no host) |
 | `request.{pathParams,query,headers,accept,body}` | — | bindings (`$.field`); omit-if-absent |
 | `response.{extract,maxBytes}` | — | optional select / truncate |
@@ -241,7 +241,7 @@ A `*.tool.json` manifest → a synthetic `ToolDefinition`. Interpreter is a pure
   "inputSchema": { "type":"object", "additionalProperties":false,
     "required":["name"], "properties":{ "name":{"type":"string","pattern":"^[A-Za-z0-9_/]{1,40}$"} } },
   "request": {
-    "method": "GET",                                   // v1: GET + simple stateless POST only
+    "method": "GET",                                   // v1: GET only (the interpreter rejects non-GET)
     "path": "/sap/bc/adt/programs/programs/{name}/source/main",
     "pathParams": { "name": "$.name" },                // each segment: validate → percent-encode
     "query": {},                                       // omit-if-absent; repeated-key array default
@@ -313,7 +313,7 @@ ceiling intersection; **`http_request` pluginName** tag; a **per-handler timeout
 
 ## 15. Reference plugin
 
-`arc-1-extension-sample` (separate repo / DEV playground at `~/dev/arc-1-extension-sample`) — pure TS, demonstrates: an **ADT** read tool, an **OData** read tool (`ZGWSAMPLE_BASIC`), a **manifest** example, and (later) a non-ADT/non-OData tool. Doubles as the dogfood + the `ARC1_PLUGINS` smoke test once PR1–PR3 land. (Review confirmed it uses `ctx.http`, not the B1 bypass.)
+[`arc-mcp/arc-1-extension-sample`](https://github.com/arc-mcp/arc-1-extension-sample) — pure TS, demonstrates: an **ADT** read, an **OData** read (`GWSAMPLE_BASIC`), a **manifest** example, a gated **console-class execute** (`Custom_RunClass`), an **OData write** (`Custom_CreateSalesOrder`), and a full **LISA** custom-ICF integration (`Custom_ListLanguages`/`GetTranslation`/`SetTranslation`) — all live-verified on S/4HANA. Doubles as the dogfood + the `ARC1_PLUGINS` smoke test. (Uses the gated `ctx.http`, not the B1 bypass.)
 
 ---
 

@@ -31,7 +31,7 @@ priority order.
 
 | # | Deferred from v1 | Why it was deferred | v2 section |
 |---|------------------|---------------------|-----------|
-| 1 | **Plugin writes** (`ctx.http` POST/PUT/DELETE) | A raw write can't be constrained by `SAP_ALLOWED_PACKAGES` (package resolution needs the ADT object-URL shape) → would bypass the safety ceiling | **§2** |
+| 1 | **Plugin writes** — *non-ADT (OData/ICF) part SHIPPED* (Path B, `SAP_ALLOW_PLUGIN_RAW_WRITES`); **ADT object writes still deferred** (Path A) | An ADT-object raw write can't be constrained by `SAP_ALLOWED_PACKAGES` (package resolution needs the ADT object-URL shape) → would bypass the safety ceiling, so `/sap/bc/adt/…` writes are refused and wait for `ctx.write` | **§2** |
 | 2 | **Lock-aware writes** (lock → modify → unlock, CSRF, stateful session) | Not expressible declaratively; needs `lock`/`unlock` + `fetchCsrfToken(path?)` plumbing | §2.5 |
 | 3 | **Safe `ctx.cache`** | The raw `CachingLayer` bypassed per-user `cacheSecurity` revalidation (PP cross-user leak class) | §3 |
 | 4 | **Directory loading** (`ARC1_PLUGINS=/abs/plugin-dir`) | Node ESM dir-import needs `package.json#main` resolution; not worth it for a read-only v1 | §4.1 |
@@ -145,12 +145,16 @@ POSTs and custom ICF writes have **no ABAP package**, so the package allowlist g
 constrain them (documented limitation, v1 spec §5). For these, `ctx.http` regains
 `post/put/delete`, but:
 
-- gated by `checkOperation(safety, opType)` **+** the tool's declared scope **+** `denyActions`,
-- **refused for any `/sap/bc/adt/…` path** unless it is a known package-less ADT action
-  (e.g. activation) on an allowlist — ADT **object** writes MUST use Path A (so the package gate
-  can't be skipped),
-- behind a new server opt-in `SAP_ALLOW_PLUGIN_RAW_WRITES` (default **false**) AND `allowWrites`,
-- audited with the full path + `pluginName`.
+- gated by `checkOperation(safety, opType)` **+** the tool's declared scope (`write`) **+** `denyActions`,
+- **refused for ANY `/sap/bc/adt/…` path** — checked against the path SAP actually routes (`new URL`
+  normalization + percent-decode + `startsWith`), so no-leading-slash / tab / `%61`-encoded variants
+  can't slip through. ADT **object** writes MUST use Path A (so the package gate can't be skipped),
+- behind the server opt-in `SAP_ALLOW_PLUGIN_RAW_WRITES` (default **false**) AND `allowWrites`,
+- audited via the underlying `http_request` event.
+
+> **As shipped (v1.x):** the above is implemented exactly, with **no exception** for package-less ADT
+> actions (e.g. activation) — *all* `/sap/bc/adt/…` writes are refused. A future allowlist for specific
+> non-object ADT actions is a possible refinement, not current behavior.
 
 On BTP the **Cloud Connector resource allowlist** is the backstop for raw non-ADT writes; on-prem
 the gate is `allowWrites` + scope + `denyActions` + SAP-side auth. This is spelled out so an admin
@@ -162,8 +166,8 @@ enabling it understands exactly what is and isn't constrained.
 |------|-----------|------|
 | `ctx.write.createObject/updateSource/deleteObject` | ADT object | scope + `allowWrites` + **package allowlist** + lint (= built-in `SAPWrite`) |
 | `ctx.http.post` to OData/ICF | non-ADT | scope + `allowWrites` + `denyActions` + `SAP_ALLOW_PLUGIN_RAW_WRITES` + CC allowlist (BTP) |
-| `ctx.http.post` to `/sap/bc/adt/<object>` | ADT object | **refused** — must use `ctx.write` |
-| `ctx.http.post` to a package-less ADT action (e.g. activation) | ADT action | scope + `allowWrites` + action allowlist |
+| `ctx.http.post` to ANY `/sap/bc/adt/…` path | ADT | **refused** (shipped: no exception) — ADT object writes must use `ctx.write` |
+| `ctx.http.post` to a package-less ADT action (e.g. activation) | ADT action | *future* allowlist idea — currently **refused** with the rest of ADT |
 
 ### 2.4 CSRF + sessions for writes
 
