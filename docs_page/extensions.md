@@ -8,9 +8,25 @@ and per-user principal propagation. This is the FEAT-61 extension framework.
     The extension API (`arc-1/public`) is **`@experimental`** — it may break in any release. A plugin
     declares a single `apiVersion` integer as the compatibility fuse. No semver guarantee yet.
 
-- **Worked sample:** [`arc-mcp/arc-1-extension-sample`](https://github.com/arc-mcp/arc-1-extension-sample) — two code tools + one manifest tool, **live-verified against S/4HANA**.
+- **Worked sample:** [`arc-mcp/arc-1-extension-sample`](https://github.com/arc-mcp/arc-1-extension-sample) — ADT + OData reads, a manifest tool, a gated console-class execute, an OData write, and a full LISA custom-ICF integration, **all live-verified against S/4HANA**.
 - **Guided setup:** the **`create-arc1-extension`** skill (`.claude/skills/create-arc1-extension/`) walks you through the decisions, scaffolds the plugin, and points out the security implications for your use case.
 - **Design:** `docs/research/extension-framework-spec.md` (spec) + `extension-framework-deep-research.md` (rationale).
+
+---
+
+## What you can build
+
+Each row links to a worked, live-verified tool in the [sample repo](https://github.com/arc-mcp/arc-1-extension-sample):
+
+| Use case | How | Sample tool |
+|---|---|---|
+| **Token-efficient read wrapper** — expose one SAP read as a focused tool | manifest tier (no code) or `ctx.http.get` | `Custom_ReadProgram` (manifest), `Custom_ProgramLineCount` |
+| **Custom diagnostics** — SM37 jobs, SLG1 / application logs, gateway logs, ST22 dumps | wrap the relevant ADT/OData/ICF read | (pattern of `Custom_ProgramLineCount`) |
+| **Business-data read/write** — query or create entities in an OData service | `ctx.http.get` / `ctx.http.post` | `Custom_QuerySalesOrders`, `Custom_CreateSalesOrder` |
+| **Drive a custom ABAP HTTP service** — e.g. translation management with [LISA](https://github.com/ClementRingot/LISA) | gated `ctx.http.post` to `/sap/bc/http/sap/<service>` | `Custom_ListLanguages` / `GetTranslation` / `SetTranslation` |
+| **Run ad-hoc ABAP** — execute a console class and return its output | `ctx.run.classRun` | `Custom_RunClass` |
+
+Writes and execution are **off by default** and opt-in per deployment (see [Security & roles](#security--roles-by-use-case)); ADT **object** writes (CLAS/DDLS/…) stay a v2 item.
 
 ---
 
