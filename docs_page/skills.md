@@ -392,6 +392,7 @@ References: [ABAP Development Tools for VS Code marketplace page](https://market
 |---|---|---|
 | [explain-abap-code](https://github.com/arc-mcp/arc-1/blob/main/skills/explain-abap-code/SKILL.md) | Reads an ABAP object, pulls dependency context, and explains it in structure | Onboarding, debugging, and code comprehension |
 | [migrate-custom-code](https://github.com/arc-mcp/arc-1/blob/main/skills/migrate-custom-code/SKILL.md) | Runs migration-oriented checks and groups findings by priority | S/4HANA migration and ABAP Cloud readiness |
+| [sap-migration-dossier](https://github.com/arc-mcp/arc-1/blob/main/skills/sap-migration-dossier/SKILL.md) | Builds a scoped ECC to S/4HANA migration dossier with inventory, usage, ATC, Clean Core, dependency, and SAP Docs evidence | Package- or namespace-level migration planning |
 | [sap-object-documenter](https://github.com/arc-mcp/arc-1/blob/main/skills/sap-object-documenter/SKILL.md) | Batch-documents custom objects as Markdown | Package onboarding and handoffs |
 
 ### Clean Core And Custom Code Retirement
@@ -426,6 +427,7 @@ References: [ABAP Development Tools for VS Code marketplace page](https://market
 
 - Run `bootstrap-system-context` first when starting a session against an unfamiliar system — it grounds every later prompt in real constraints.
 - Run `setup-abap-mirror` after bootstrap to pull a package into local abapGit-style files for IDE context and `git diff`.
+- Use `sap-migration-dossier` when the user wants a shareable migration audit rather than a chat-only answer or one-object fix workflow.
 - Start with `generate-rap-service` when the goal is speed and the design is straightforward.
 - Start with `generate-rap-service-researched` when writing into transportable packages or when team conventions matter.
 - Use `explain-abap-code` before editing unfamiliar objects.

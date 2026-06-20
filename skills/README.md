@@ -198,6 +198,7 @@ Both skills produce the same RAP artifact stack. The difference is how they get 
 |---|---|---|
 | [explain-abap-code](explain-abap-code/SKILL.md) | Reads an ABAP object, fetches all dependencies via SAPContext, and produces a structured explanation — including behavior definitions (BDEF: parses `implementation in class`, reads the behavior pool CCIMP handlers, runs SAPContext impact on the bound CDS root) | Onboarding to unfamiliar code, investigating bugs, documenting undocumented objects, understanding a RAP behavior (SAP Joule "AI Explain for Behavior Definitions" parity) |
 | [migrate-custom-code](migrate-custom-code/SKILL.md) | Runs ATC readiness checks, groups findings by priority, and generates replacement code | Preparing custom code for S/4HANA migration or ABAP Cloud readiness |
+| [sap-migration-dossier](sap-migration-dossier/SKILL.md) | Creates human-reviewed ECC → S/4HANA migration dossiers with inventory, usage, ATC, clean-core, review cards, and optional Markdown/HTML/JSON/CSV/graph outputs | Package- or namespace-level migration planning where the output needs to be saved, reviewed, visualized, or shared |
 | [sap-object-documenter](sap-object-documenter/SKILL.md) | Batch-documents many custom objects at once — purpose, style (Classic/Modern/Mixed), dependencies — as Markdown | Onboarding packages, handoffs, seeding a repo wiki (vs. explain-abap-code which is single-object interactive) |
 | [sap-transport-review](sap-transport-review/SKILL.md) | Reviews what *changed* — in a transport or in your unactivated drafts — as per-object unified diffs (`SAPTransport summary` to scan, `SAPRead action="diff"` to diff) plus risk flags and optional impact/ATC. The headless/whole-transport twin of Eclipse ADT 3.6's "Object Changes" | Pre-release/pre-activation gate, reviewing a transport (senior dev), "what have I changed since my last release?", change hand-off or audit |
 | [sap-transport-overview](sap-transport-overview/SKILL.md) | System-wide inventory of every open transport (all users) — owner, size, and risk flags (object in two requests, $TMP, stale, empty) via `SAPTransport(list, summary=true, user="*")`. Breadth, no diffs — the companion to sap-transport-review | Basis/release manager: "what's open across the system and what's risky to import", backlog & cleanup, pre-go-live conflict check |
@@ -277,6 +278,7 @@ For codebase onboarding or pre-migration work:
 2. setup-abap-mirror         →  Pull the target package(s) into abapGit-style files
 3. explain-abap-code         →  Understand key objects with dependency context
 4. migrate-custom-code       →  Run ATC readiness checks and group findings
+5. sap-migration-dossier     →  Save a reviewed dossier with optional HTML/CSV/graph outputs
 ```
 
 For clean-core / custom-code retirement planning:
@@ -287,6 +289,7 @@ For clean-core / custom-code retirement planning:
 3. sap-clean-core-atc        →  Classify the USED code into Levels A–D
 4. sap-object-documenter     →  Document the keepers before rewriting
 5. migrate-custom-code       →  Fix the Level B/C/D findings one at a time
+6. sap-migration-dossier     →  Package the evidence into a reviewed migration plan
 ```
 
 For end-to-end legacy SEGW + UI5 modernization (backend + UI):

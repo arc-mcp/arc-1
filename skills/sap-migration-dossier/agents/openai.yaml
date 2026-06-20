@@ -1,0 +1,4 @@
+interface:
+  display_name: "SAP Migration Dossier"
+  short_description: "Create reviewed S/4HANA migration dossiers."
+  default_prompt: "Use $sap-migration-dossier to create a migration-readiness dossier for this SAP custom-code scope."

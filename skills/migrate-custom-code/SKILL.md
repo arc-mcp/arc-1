@@ -282,7 +282,7 @@ Next steps:
 ### What This Skill Does NOT Do
 
 - **No transport management**: User is responsible for creating and releasing transport requests
-- **No mass migration**: Handles one object or one package at a time — not a full system migration tool
+- **No migration dossier**: Handles one object or one package finding workflow — for reviewed, saved, or visual package-level dossiers, use [sap-migration-dossier](../sap-migration-dossier/SKILL.md)
 - **No custom ATC variant creation**: Uses existing ATC variants on the system
 - **No table structure migration**: Cannot modify DDIC table structures (e.g., field length changes for S/4HANA)
 - **No test execution**: Does not run regression tests after fixes — user should validate manually or use generate-abap-unit-test skill

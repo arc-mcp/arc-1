@@ -163,6 +163,7 @@ Offer next steps:
 - "Want to migrate one of these objects now?" (→ [migrate-custom-code](../migrate-custom-code/SKILL.md))
 - "Want to see which Z-objects are even USED?" (→ [sap-unused-code](../sap-unused-code/SKILL.md) — no point migrating dead code)
 - "Want to document the Level A objects as reference examples?" (→ [sap-object-documenter](../sap-object-documenter/SKILL.md))
+- "Want a reviewed dossier with saved evidence, customer questions, and visualizations?" (→ [sap-migration-dossier](../sap-migration-dossier/SKILL.md))
 
 ## Error Handling
 

@@ -191,6 +191,7 @@ Longest objects (may need deeper docs):
 - "Want to expand any of these into deeper explanations?" (→ [explain-abap-code](../explain-abap-code/SKILL.md))
 - "Want to check clean-core readiness for this package?" (→ [sap-clean-core-atc](../sap-clean-core-atc/SKILL.md))
 - "Want to prune the dead ones first?" (→ [sap-unused-code](../sap-unused-code/SKILL.md))
+- "Want to package documentation, usage, ATC, and review cards into a migration dossier?" (→ [sap-migration-dossier](../sap-migration-dossier/SKILL.md))
 
 ## Error Handling
 
