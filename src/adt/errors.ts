@@ -100,28 +100,26 @@ export class AdtApiError extends AdtError {
     if (!raw || raw.length === 0) return 'Unknown error';
 
     // 1. Try XML: extract <localizedMessage> or <message> content
-    const xmlMatch =
-      raw.match(/<(?:\w+:)?localizedMessage[^>]*>([^<]+)</) ?? raw.match(/<(?:\w+:)?message[^>]*>([^<]+)</);
-    if (xmlMatch?.[1]) {
-      return xmlMatch[1].trim();
+    const xmlMessage = findFirstElementText(raw, ['localizedMessage', 'message']);
+    if (xmlMessage) {
+      return xmlMessage;
     }
 
     // 2. Try HTML: extract SAP's error detail from <span id="msgText"> or <p class="detailText">
     //    SAP 500 pages embed the actual error (e.g., "Syntax error in program ...") in these elements.
-    const msgTextMatch =
-      raw.match(/<span\s+id="msgText"[^>]*>([^<]+)</) ?? raw.match(/<p\s+class="detailText"[^>]*>([^<]+)</);
-    if (msgTextMatch?.[1]) {
-      const detail = msgTextMatch[1].trim();
+    const detail =
+      findFirstElementText(raw, ['span'], { id: 'msgText' }) ??
+      findFirstElementText(raw, ['p'], { class: 'detailText' });
+    if (detail) {
       // Also grab the title for context (e.g., "Application Server Error")
-      const titleMatch = raw.match(/<title>([^<]+)</);
-      const title = titleMatch?.[1]?.trim();
+      const title = findFirstElementText(raw, ['title']);
       return title && title !== detail ? `${title}: ${detail}` : detail;
     }
 
     // 3. Try HTML: extract <title> or <h1> content
-    const htmlMatch = raw.match(/<title>([^<]+)</) ?? raw.match(/<h1>([^<]+)</);
-    if (htmlMatch?.[1]) {
-      return htmlMatch[1].trim();
+    const htmlMessage = findFirstElementText(raw, ['title', 'h1']);
+    if (htmlMessage) {
+      return htmlMessage;
     }
 
     // 4. If no XML/HTML tags at all, it's plain text — use as-is (truncated)
@@ -130,10 +128,7 @@ export class AdtApiError extends AdtError {
     }
 
     // 5. Fallback: strip all tags and use whatever text remains
-    const stripped = raw
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
+    const stripped = stripTagsAndCollapseWhitespace(raw);
     return stripped.length > 0 ? stripped.slice(0, 300) : 'SAP returned an error (no readable message)';
   }
 
@@ -173,15 +168,14 @@ export class AdtApiError extends AdtError {
    */
   static extractAllMessages(xml: string): string[] {
     if (!xml) return [];
-    const matches = xml.matchAll(/<(?:\w+:)?localizedMessage[^>]*>([^<]+)</g);
+    const matches = findElementTexts(xml, ['localizedMessage']);
     const messages: string[] = [];
     let first = true;
-    for (const match of matches) {
+    for (const text of matches) {
       if (first) {
         first = false;
         continue; // Skip the first — it's already in extractCleanMessage
       }
-      const text = match[1]?.trim();
       if (text) messages.push(text);
     }
     return messages;
@@ -194,10 +188,9 @@ export class AdtApiError extends AdtError {
   static extractProperties(xml: string): Record<string, string> {
     if (!xml) return {};
     const props: Record<string, string> = {};
-    const matches = xml.matchAll(/<entry\s+key="([^"]+)">([^<]*)<\/entry>/g);
-    for (const match of matches) {
-      const key = match[1]?.trim();
-      const value = match[2]?.trim();
+    for (const entry of findElements(xml, ['entry'])) {
+      const key = entry.attributes.key?.trim();
+      const value = entry.text.trim();
       if (key && value) props[key] = value;
     }
     return props;
@@ -213,9 +206,7 @@ export class AdtApiError extends AdtError {
     if (!xml) return [];
 
     const props = AdtApiError.extractProperties(xml);
-    const localizedMessages = [...xml.matchAll(/<(?:\w+:)?localizedMessage[^>]*>([^<]+)</g)]
-      .map((match) => match[1]?.trim())
-      .filter((text): text is string => Boolean(text));
+    const localizedMessages = findElementTexts(xml, ['localizedMessage']);
 
     const messageId = props['T100KEY-MSGID'];
     const messageNumber = props['T100KEY-MSGNO'] ?? props['T100KEY-NO'];
@@ -287,6 +278,202 @@ export class AdtApiError extends AdtError {
 
     return `DDIC diagnostics:\n${lines.join('\n')}`;
   }
+}
+
+interface DirectTextElement {
+  name: string;
+  attributes: Record<string, string>;
+  text: string;
+}
+
+function findFirstElementText(
+  input: string,
+  names: string[],
+  requiredAttributes: Record<string, string> = {},
+): string | undefined {
+  for (const name of names) {
+    const text = findElements(input, [name], requiredAttributes)[0]?.text;
+    if (text) return text;
+  }
+  return undefined;
+}
+
+function findElementTexts(input: string, names: string[]): string[] {
+  return findElements(input, names).map((element) => element.text);
+}
+
+function findElements(
+  input: string,
+  names: string[],
+  requiredAttributes: Record<string, string> = {},
+): DirectTextElement[] {
+  const out: DirectTextElement[] = [];
+  let cursor = 0;
+
+  while (cursor < input.length) {
+    const lt = input.indexOf('<', cursor);
+    if (lt < 0) break;
+
+    const gt = findTagEnd(input, lt + 1);
+    if (gt < 0) break;
+
+    const startTag = parseStartTag(input, lt, gt);
+    cursor = gt + 1;
+    if (!startTag || startTag.selfClosing || !names.includes(startTag.name)) continue;
+    if (!attributesMatch(startTag.attributes, requiredAttributes)) continue;
+
+    const nextTag = input.indexOf('<', cursor);
+    if (nextTag < 0 || input[nextTag + 1] !== '/') continue;
+
+    const text = input.slice(cursor, nextTag).trim();
+    if (text) out.push({ name: startTag.name, attributes: startTag.attributes, text });
+  }
+
+  return out;
+}
+
+function findTagEnd(input: string, start: number): number {
+  let quote: string | undefined;
+  for (let i = start; i < input.length; i++) {
+    const ch = input[i];
+    if (quote) {
+      if (ch === quote) quote = undefined;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      continue;
+    }
+    if (ch === '>') return i;
+  }
+  return -1;
+}
+
+function parseStartTag(
+  input: string,
+  lt: number,
+  gt: number,
+): { name: string; attributes: Record<string, string>; selfClosing: boolean } | undefined {
+  let pos = lt + 1;
+  while (pos < gt && isWhitespace(input.charCodeAt(pos))) pos++;
+
+  const first = input[pos];
+  if (!first || first === '/' || first === '!' || first === '?') return undefined;
+
+  const nameStart = pos;
+  while (pos < gt && !isWhitespace(input.charCodeAt(pos)) && input[pos] !== '/') pos++;
+
+  const rawName = input.slice(nameStart, pos);
+  if (!rawName) return undefined;
+
+  return {
+    name: localName(rawName),
+    attributes: parseAttributes(input, pos, gt),
+    selfClosing: isSelfClosingTag(input, lt, gt),
+  };
+}
+
+function parseAttributes(input: string, start: number, end: number): Record<string, string> {
+  const attributes: Record<string, string> = {};
+  let pos = start;
+
+  while (pos < end) {
+    while (pos < end && isWhitespace(input.charCodeAt(pos))) pos++;
+    if (pos >= end || input[pos] === '/') break;
+
+    const nameStart = pos;
+    while (
+      pos < end &&
+      !isWhitespace(input.charCodeAt(pos)) &&
+      input[pos] !== '=' &&
+      input[pos] !== '/' &&
+      input[pos] !== '>'
+    ) {
+      pos++;
+    }
+
+    const attrName = localName(input.slice(nameStart, pos)).toLowerCase();
+    while (pos < end && isWhitespace(input.charCodeAt(pos))) pos++;
+
+    let attrValue = '';
+    if (input[pos] === '=') {
+      pos++;
+      while (pos < end && isWhitespace(input.charCodeAt(pos))) pos++;
+      const quote = input[pos];
+      if (quote === '"' || quote === "'") {
+        const valueStart = ++pos;
+        while (pos < end && input[pos] !== quote) pos++;
+        attrValue = input.slice(valueStart, pos);
+        if (input[pos] === quote) pos++;
+      } else {
+        const valueStart = pos;
+        while (pos < end && !isWhitespace(input.charCodeAt(pos)) && input[pos] !== '/') pos++;
+        attrValue = input.slice(valueStart, pos);
+      }
+    }
+
+    if (attrName) attributes[attrName] = attrValue;
+  }
+
+  return attributes;
+}
+
+function localName(name: string): string {
+  const colon = name.indexOf(':');
+  return colon >= 0 ? name.slice(colon + 1) : name;
+}
+
+function isSelfClosingTag(input: string, lt: number, gt: number): boolean {
+  let pos = gt - 1;
+  while (pos > lt && isWhitespace(input.charCodeAt(pos))) pos--;
+  return input[pos] === '/';
+}
+
+function attributesMatch(attributes: Record<string, string>, required: Record<string, string>): boolean {
+  for (const [key, value] of Object.entries(required)) {
+    if (attributes[key.toLowerCase()] !== value) return false;
+  }
+  return true;
+}
+
+function stripTagsAndCollapseWhitespace(input: string): string {
+  let out = '';
+  let inTag = false;
+  let previousWasSpace = true;
+
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i];
+    if (inTag) {
+      if (ch === '>') inTag = false;
+      continue;
+    }
+
+    if (ch === '<') {
+      inTag = true;
+      if (!previousWasSpace) {
+        out += ' ';
+        previousWasSpace = true;
+      }
+      continue;
+    }
+
+    if (isWhitespace(input.charCodeAt(i))) {
+      if (!previousWasSpace) {
+        out += ' ';
+        previousWasSpace = true;
+      }
+      continue;
+    }
+
+    out += ch;
+    previousWasSpace = false;
+  }
+
+  return previousWasSpace ? out.trimEnd() : out;
+}
+
+function isWhitespace(code: number): boolean {
+  return code === 9 || code === 10 || code === 11 || code === 12 || code === 13 || code === 32;
 }
 
 /** Extract SAP ADT exception type id from XML response bodies. */
