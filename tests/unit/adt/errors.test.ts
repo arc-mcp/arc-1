@@ -72,6 +72,11 @@ describe('AdtApiError', () => {
       );
     });
 
+    it('handles repeated malformed tags without backtracking', () => {
+      const raw = '<localizedMessage'.repeat(500);
+      expect(AdtApiError.extractCleanMessage(raw)).toBe('SAP returned an error (no readable message)');
+    });
+
     it('extracts msgText from SAP HTML 500 error page', () => {
       const html = `<!DOCTYPE html>
 <html><head><title>Application Server Error</title></head><body>
@@ -142,6 +147,10 @@ describe('AdtApiError', () => {
       const messages = AdtApiError.extractAllMessages(xml);
       expect(messages).toHaveLength(1);
       expect(messages[0]).toBe('Second error on line 10');
+    });
+
+    it('returns empty array for repeated malformed localizedMessage tags', () => {
+      expect(AdtApiError.extractAllMessages('<localizedMessage'.repeat(500))).toEqual([]);
     });
   });
 
