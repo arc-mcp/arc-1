@@ -180,6 +180,7 @@ Full documentation is available at **[docs.arc-1-mcp.com](https://docs.arc-1-mcp
 | [Extensions (Custom Tools)](https://docs.arc-1-mcp.com/extensions/) | Add your own `Custom_*` tools without forking (FEAT-61) — reads, gated non-ADT writes, console-class execute |
 | [Architecture](https://docs.arc-1-mcp.com/architecture/) | System architecture with diagrams |
 | [AI Usage Patterns](https://docs.arc-1-mcp.com/mcp-usage/) | Agent workflow patterns and best practices |
+| [Skills](https://docs.arc-1-mcp.com/skills/) | Reusable ARC-1 agent skills, including GitHub Copilot in Eclipse and VS Code ADT setup |
 | [Blog Series](https://docs.arc-1-mcp.com/blog-series/) | Long-form posts on AI for ABAP development, ARC-1 internals, and real-world walkthroughs |
 
 ## Development
