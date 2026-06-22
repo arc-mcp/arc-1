@@ -67,32 +67,35 @@ For tools not listed above, copy the body of `SKILL.md` into your tool's system 
 
 ## Eclipse ADT + GitHub Copilot
 
-For Eclipse ADT, use a GitHub Copilot **Custom Agent**, not direct Agent Skills discovery. Eclipse Copilot lists `.agent.md` files from `.github/agents`; it does not show `.agents/skills/<name>/SKILL.md` folders as Custom Agents.
+For Eclipse ADT, use GitHub Copilot **Agent Skills** in Agent Mode. Eclipse does not list skills in the **Custom Agents** table; that table is only for optional `.github/agents/<name>.agent.md` custom agents. Skills appear in chat as `/skill:<name>` entries when **Enable Skills** is turned on.
 
-Keep the custom agent in a normal local Eclipse project, not inside the ABAP system/package tree. ADT's ABAP projects are semantic repository views, so Copilot may not see local instruction files unless you import a real filesystem folder into the workspace.
+Keep skills in a normal local Eclipse project, not inside the ABAP system/package tree. ADT's ABAP projects are semantic repository views, so Copilot may not see local instruction files unless you import a real filesystem folder into the workspace.
 
 Recommended setup:
 
 ```bash
 # macOS / Linux
-mkdir -p ~/ADT_ECLIPSE_ARC1/.github/agents
+mkdir -p ~/ADT_ECLIPSE_ARC1
 cd ~/ADT_ECLIPSE_ARC1
+npx skills add arc-mcp/arc-1 --agent github-copilot
 ```
 
 ```powershell
 # Windows PowerShell
-New-Item -ItemType Directory -Force "$env:USERPROFILE\ADT_ECLIPSE_ARC1\.github\agents"
+New-Item -ItemType Directory -Force "$env:USERPROFILE\ADT_ECLIPSE_ARC1"
 Set-Location "$env:USERPROFILE\ADT_ECLIPSE_ARC1"
+npx skills add arc-mcp/arc-1 --agent github-copilot
 ```
 
-Create `.github/agents/arc1-abap.agent.md` with a short ARC-1 ABAP agent profile. You can optionally install the ARC-1 skill folders into `.agents/skills` as reference files for that custom agent, but Eclipse will still show only the `.agent.md` agent entry.
+You can optionally create `.github/agents/arc1-abap.agent.md` with a short ARC-1 ABAP agent profile, but that is not required for `/skill:*` commands to work.
 
 Then in Eclipse:
 
 1. Import `~/ADT_ECLIPSE_ARC1` on macOS/Linux or `%USERPROFILE%\ADT_ECLIPSE_ARC1` on Windows with **File → Open Projects from File System...**.
 2. If dot folders are hidden, disable the `.* resources` filter in Project Explorer.
-3. Confirm the agent under **Window → Preferences → GitHub Copilot → Custom Agents**.
+3. Turn on **Window → Preferences → GitHub Copilot → Chat → Enable Skills**.
 4. Use Copilot Chat **Agent Mode** and configure ARC-1 as an MCP server under **GitHub Copilot → MCP**.
+5. Type `/` in chat and confirm entries such as `/skill:sap-unused-code` or `/skill:generate-rap-service` appear.
 
 Full setup, including ARC-1 MCP JSON examples and troubleshooting, is in the published [Skills guide](https://docs.arc-1-mcp.com/skills/#github-copilot-in-eclipse-with-adt).
 

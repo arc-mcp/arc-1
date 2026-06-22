@@ -55,7 +55,7 @@ Choose the integration style that matches your assistant:
 
 - **Claude Code**: install the [plugin](install-in-claude.md#claude-code-plugin-server-skills) (recommended — server + skills), run `npx skills add arc-mcp/arc-1`, or copy a skill folder into `.claude/skills/<name>/`
 - **GitHub Copilot in VS Code / CLI / cloud agent**: install into `.agents/skills/<name>/`, `.github/skills/<name>/`, or `~/.copilot/skills/<name>/`
-- **GitHub Copilot in Eclipse**: create a custom agent in `.github/agents/<name>.agent.md`; Eclipse does not list `.agents/skills/<name>/SKILL.md` folders as Custom Agents
+- **GitHub Copilot in Eclipse**: install into `.agents/skills/<name>/`, `.github/skills/<name>/`, or `~/.copilot/skills/<name>/` in a normal local Eclipse project; use **Enable Skills** and the `/skill:<name>` slash menu
 - **Cursor**: install into `.agents/skills/<name>/` or `~/.cursor/skills/<name>/`
 - **OpenAI Codex**: install into `.agents/skills/<name>/` or `~/.codex/skills/<name>/`
 - **Generic tools**: paste the markdown into project instructions, system prompt, or reusable templates
@@ -67,9 +67,9 @@ These skills assume:
 
 ## GitHub Copilot In Eclipse With ADT
 
-This is the Eclipse-specific setup that is easy to miss. Eclipse Copilot's **Custom Agents** preference discovers `.agent.md` files under `.github/agents`; it does not show VS Code-style Agent Skills from `.agents/skills/<name>/SKILL.md`.
+This is the Eclipse-specific setup that is easy to miss. Eclipse Copilot supports Agent Skills in Agent Mode, but the skills are not listed on the **Custom Agents** preference page. They appear in chat through the `/skill:<name>` slash menu and can enrich chat context when **Enable Skills** is turned on.
 
-Keep a small normal local project in the same Eclipse workspace and put the Eclipse custom agent there. You may also keep ARC-1 `SKILL.md` folders in that project as reference material, but the visible entry in Eclipse Copilot is the `.agent.md` file.
+Keep a small normal local project in the same Eclipse workspace and put the `SKILL.md` folders there. Custom agents are a separate optional Copilot feature stored as `.github/agents/<name>.agent.md`; they are useful when you want a named ABAP persona, but they are not required for ARC-1 skills.
 
 ### Why It Helps
 
@@ -87,48 +87,22 @@ Skills are guidance, not an enforcement boundary. ARC-1 safety flags, API-key pr
 
 ### Eclipse Setup
 
-1. Install or update **GitHub Copilot for Eclipse**, sign in, and use **Agent Mode**. Current Copilot for Eclipse supports Agent Mode, MCP, and Custom Agents. Eclipse 2024-09 or newer is required for the Copilot extension.
+1. Install or update **GitHub Copilot for Eclipse**, sign in, and use **Agent Mode**. Current Copilot for Eclipse supports Agent Mode, MCP, Custom Agents, and Agent Skills. Eclipse 2024-09 or newer is required for the Copilot extension.
 2. Create a normal local folder. Pick the command for your OS:
 
    ```bash
    # macOS / Linux
-   mkdir -p ~/ADT_ECLIPSE_ARC1/.github/agents
+   mkdir -p ~/ADT_ECLIPSE_ARC1
    ```
 
    ```powershell
    # Windows PowerShell
-   New-Item -ItemType Directory -Force "$env:USERPROFILE\ADT_ECLIPSE_ARC1\.github\agents"
+   New-Item -ItemType Directory -Force "$env:USERPROFILE\ADT_ECLIPSE_ARC1"
    ```
 
 3. In Eclipse, choose **File** → **Open Projects from File System...** and import that folder into the same workspace as your ABAP projects. Use `~/ADT_ECLIPSE_ARC1` on macOS/Linux or `%USERPROFILE%\ADT_ECLIPSE_ARC1` on Windows.
 4. If dot folders are hidden, open the Project Explorer view menu, go to **Filters and Customization**, and disable the `.* resources` filter.
-5. Create `.github/agents/arc1-abap.agent.md` with this starter profile:
-
-   ```markdown
-   ---
-   name: arc1-abap
-   description: SAP ABAP development in Eclipse ADT using ARC-1 MCP tools and ARC-1 workflow guidance.
-   ---
-
-   You are an ARC-1 ABAP development agent for Eclipse ADT.
-
-   Prefer ARC-1 MCP tools for SAP work when they are available:
-   SAPRead, SAPSearch, SAPContext, SAPLint, SAPDiagnose, SAPActivate,
-   SAPTransport, SAPWrite, SAPGit, SAPQuery, and SAPManage.
-
-   Before changing ABAP:
-   - read the existing object and relevant dependencies
-   - bootstrap system context when the system is unfamiliar
-   - run lint, syntax, ATC, activation, and transport checks appropriate to the change
-   - treat ARC-1 server safety settings and SAP authorization as authoritative
-
-   If local ARC-1 skill files are present under .agents/skills/**/SKILL.md
-   or .github/skills/**/SKILL.md, inspect the relevant skill before starting
-   a specialized workflow such as RAP generation, CDS tests, ABAP Unit tests,
-   migration, Clean Core analysis, or code explanation.
-   ```
-
-6. Optional: install the full ARC-1 skill folders into the same local project so the custom agent can read them as workspace files. Eclipse still shows only the `.agent.md` custom agent, not each skill as a separate entry.
+5. Open a terminal in the local project folder and install skills:
 
    ```bash
    # macOS / Linux
@@ -144,12 +118,34 @@ Skills are guidance, not an enforcement boundary. ARC-1 safety flags, API-key pr
    npx skills add arc-mcp/arc-1 --agent github-copilot
    ```
 
-7. In Eclipse, open **Window** → **Preferences** → **GitHub Copilot** → **Custom Agents**. You should see the custom agent from `.github/agents/arc1-abap.agent.md`. If you created it from the Eclipse UI, Copilot writes the same kind of file under `.github/agents`.
-8. Start a new Copilot Chat in **Agent Mode** and choose the custom agent from the agent selector.
+6. In Eclipse, open **Window** → **Preferences** → **GitHub Copilot** → **Chat** and turn on **Enable Skills**. This controls whether Agent Skills can enrich chat context.
+7. Start a new Copilot Chat in **Agent Mode**, type `/`, and confirm entries such as `/skill:sap-unused-code` or `/skill:generate-rap-service` appear. Use a skill explicitly with `/skill:<name>`, or ask a task that matches a skill description and let Copilot load relevant context.
+
+### Optional Custom Agent
+
+Use a custom agent only if you want a named ABAP/ARC-1 persona in the agent selector. Custom agents live under `.github/agents/<name>.agent.md` and are managed from **Window** → **Preferences** → **GitHub Copilot** → **Custom Agents**. They are separate from skills; creating one is not required for `/skill:*` entries to work.
+
+Example `.github/agents/arc1-abap.agent.md`:
+
+```markdown
+---
+name: arc1-abap
+description: SAP ABAP development in Eclipse ADT using ARC-1 MCP tools and ARC-1 workflow guidance.
+---
+
+Prefer ARC-1 MCP tools for SAP work when they are available:
+SAPRead, SAPSearch, SAPContext, SAPLint, SAPDiagnose, SAPActivate,
+SAPTransport, SAPWrite, SAPGit, SAPQuery, and SAPManage.
+
+Before changing ABAP, read the existing object and relevant dependencies,
+then run lint, syntax, ATC, activation, and transport checks appropriate to
+the change. Treat ARC-1 server safety settings and SAP authorization as
+authoritative.
+```
 
 ### Optional Copilot Instructions
 
-The custom agent is the important Eclipse-specific file. If your team also wants always-on repository instructions, add `.github/copilot-instructions.md` in the local project:
+If your team also wants always-on repository instructions, add `.github/copilot-instructions.md` in the local project:
 
 ```markdown
 When working on SAP ABAP with ARC-1, inspect available SKILL.md files under
@@ -210,9 +206,9 @@ See [Quickstart](quickstart.md), [BTP Cloud Foundry Deployment](btp-cloud-foundr
 ### Troubleshooting
 
 - Use a new Agent Mode chat after adding or updating skills.
-- Check that the local skills/custom-agent folder is imported as an Eclipse project, not just present on disk.
-- Confirm the visible Eclipse custom agent is under `.github/agents/<name>.agent.md`.
-- If you installed `.agents/skills/<name>/SKILL.md`, use those files as workspace context for the custom agent; do not expect them to appear in Eclipse's Custom Agents table.
+- Check that the local skills folder is imported as an Eclipse project, not just present on disk.
+- Confirm **Enable Skills** is turned on under **Window** → **Preferences** → **GitHub Copilot** → **Chat**.
+- Type `/` in a fresh Agent Mode chat and look for `/skill:<name>` entries. Skills do not appear in the **Custom Agents** table; that table is only for `.github/agents/<name>.agent.md`.
 - On Windows, `~` means your user profile; in PowerShell examples use `$env:USERPROFILE`, and in Explorer paths use `%USERPROFILE%`.
 - Keep one local skills project in the workspace instead of scattering instruction files across many ABAP projects.
 - If an XSUAA/OIDC MCP login gets stale in Eclipse, see [XSUAA Setup → Eclipse GitHub Copilot](xsuaa-setup.md#eclipse-github-copilot).
