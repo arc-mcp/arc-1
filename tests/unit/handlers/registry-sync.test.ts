@@ -13,7 +13,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
 import { isServerDrivenObjectType } from '../../../src/adt/server-driven.js';
-import { canonicalTablType, KNOWN_BASE_TYPES } from '../../../src/handlers/object-types.js';
+import { canonicalTablType, KNOWN_BASE_TYPES, normalizeObjectType } from '../../../src/handlers/object-types.js';
 import { getToolSchema } from '../../../src/handlers/schemas.js';
 import {
   SAPCONTEXT_TYPES_BTP,
@@ -77,7 +77,7 @@ describe('registry sync — every SAPWrite type is routable (no silent objectBas
   // handles FUNC via a dedicated pre-switch branch).
   for (const type of SAPWRITE_TYPES_ONPREM) {
     it(`${type} has a real route`, () => {
-      const canonical = canonicalTablType(type);
+      const canonical = canonicalTablType(normalizeObjectType(type));
       const routable = KNOWN_BASE_TYPES.has(canonical) || isServerDrivenObjectType(canonical) || canonical === 'FUNC';
       expect(routable, `${type} (canonical ${canonical}) has no objectBasePath case / server-driven / FUNC route`).toBe(
         true,

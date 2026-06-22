@@ -14,6 +14,11 @@ import { AdtClient, createClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 
+function ktdEnvelope(markdown: string): string {
+  const base64 = Buffer.from(markdown, 'utf-8').toString('base64');
+  return `<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd"><sktd:element><sktd:text>${base64}</sktd:text></sktd:element></sktd:docu>`;
+}
+
 describe('SAPManage / SAPContext handlers', () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -774,6 +779,136 @@ ENDCLASS.`;
       // It should not error — it calls getDdls and runs CDS context pipeline
       expect(result.isError).toBeUndefined();
       expect(result.content[0]?.text).toContain('CDS dependency context for ZI_ORDER');
+    });
+
+    it('prepends decoded KTD before dependency context when available', async () => {
+      const calls: string[] = [];
+      const source = `CLASS zcl_doc DEFINITION PUBLIC.
+  PUBLIC SECTION.
+    METHODS run.
+ENDCLASS.
+CLASS zcl_doc IMPLEMENTATION.
+  METHOD run. ENDMETHOD.
+ENDCLASS.`;
+      const markdown = '# Existing KTD\n\nBusiness meaning.';
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL) => {
+        const urlStr = String(url);
+        calls.push(urlStr);
+        if (urlStr.includes('/sap/bc/adt/documentation/ktd/documents/')) {
+          return Promise.resolve(mockResponse(200, ktdEnvelope(markdown), { 'x-csrf-token': 'T' }));
+        }
+        return Promise.resolve(mockResponse(200, source, { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPContext', {
+        type: 'CLAS',
+        name: 'ZCL_DOC',
+      });
+
+      const text = result.content[0]?.text ?? '';
+      expect(result.isError).toBeUndefined();
+      expect(text).toContain('Knowledge Transfer Document for ZCL_DOC');
+      expect(text).toContain(markdown);
+      expect(text.indexOf('Knowledge Transfer Document')).toBeLessThan(text.indexOf('Dependency context'));
+      expect(calls.some((url) => url.includes('/sap/bc/adt/documentation/ktd/documents/zcl_doc'))).toBe(true);
+    });
+
+    it('continues dependency context when KTD is not found', async () => {
+      const source = `CLASS zcl_no_doc DEFINITION PUBLIC.
+  PUBLIC SECTION.
+    METHODS run.
+ENDCLASS.
+CLASS zcl_no_doc IMPLEMENTATION.
+  METHOD run. ENDMETHOD.
+ENDCLASS.`;
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL) => {
+        const urlStr = String(url);
+        if (urlStr.includes('/sap/bc/adt/documentation/ktd/documents/')) {
+          return Promise.resolve(mockResponse(404, 'Not Found', { 'x-csrf-token': 'T' }));
+        }
+        return Promise.resolve(mockResponse(200, source, { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPContext', {
+        type: 'CLAS',
+        name: 'ZCL_NO_DOC',
+      });
+
+      const text = result.content[0]?.text ?? '';
+      expect(result.isError).toBeUndefined();
+      expect(text).toContain('Dependency context for ZCL_NO_DOC');
+      expect(text).not.toContain('Knowledge Transfer Document');
+    });
+
+    it('skips the KTD lookup when includeKtd=false', async () => {
+      const calls: string[] = [];
+      const source = `CLASS zcl_skip_doc DEFINITION PUBLIC.
+  PUBLIC SECTION.
+    METHODS run.
+ENDCLASS.
+CLASS zcl_skip_doc IMPLEMENTATION.
+  METHOD run. ENDMETHOD.
+ENDCLASS.`;
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL) => {
+        const urlStr = String(url);
+        calls.push(urlStr);
+        return Promise.resolve(mockResponse(200, source, { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPContext', {
+        type: 'CLAS',
+        name: 'ZCL_SKIP_DOC',
+        includeKtd: false,
+      });
+
+      const text = result.content[0]?.text ?? '';
+      expect(result.isError).toBeUndefined();
+      expect(text).toContain('Dependency context for ZCL_SKIP_DOC');
+      expect(text).not.toContain('Knowledge Transfer Document');
+      expect(calls.some((url) => url.includes('/sap/bc/adt/documentation/ktd/documents/'))).toBe(false);
+    });
+
+    it('composes KTD with cached dependency context', async () => {
+      const layer = new CachingLayer(new MemoryCache());
+      const source = 'CLASS zcl_root DEFINITION PUBLIC. ENDCLASS.';
+      const markdown = '# Cached Root KTD\n\nUse this before editing.';
+      layer.putDepGraph(source, 'ZCL_ROOT', 'CLAS', [
+        {
+          name: 'ZIF_DEP',
+          type: 'INTF',
+          methodCount: 1,
+          source: 'INTERFACE zif_dep PUBLIC.\n  METHODS run.\nENDINTERFACE.',
+          success: true,
+        },
+      ]);
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL) => {
+        const urlStr = String(url);
+        if (urlStr.includes('/sap/bc/adt/documentation/ktd/documents/')) {
+          return Promise.resolve(mockResponse(200, ktdEnvelope(markdown), { 'x-csrf-token': 'T' }));
+        }
+        return Promise.resolve(mockResponse(200, source, { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(
+        createClient(),
+        DEFAULT_CONFIG,
+        'SAPContext',
+        { type: 'CLAS', name: 'ZCL_ROOT' },
+        undefined,
+        undefined,
+        layer,
+      );
+
+      const text = result.content[0]?.text ?? '';
+      expect(result.isError).toBeUndefined();
+      expect(text).toContain('Knowledge Transfer Document for ZCL_ROOT');
+      expect(text).toContain(markdown);
+      expect(text).toContain('[cached]');
+      expect(text).toContain('ZIF_DEP');
     });
 
     it('does not serve cached dependency contracts under principal propagation', async () => {

@@ -165,6 +165,8 @@ All MCP clients that support stdio work out of the box — just point them at `n
 
 ARC-1 exposes 12 intent-based tools via MCP, designed for AI agents like Copilot Studio.
 
+For object understanding, start with `SAPContext(action="deps")` instead of raw `SAPRead`: ARC-1 prepends the object's Knowledge Transfer Document (`SKTD`, also accepted as `KTD`) when one exists, then returns compressed dependency contracts. Use `SAPRead` after that when you need exact source, a method body, grep output, drafts, revisions, or metadata.
+
 Full reference: **[tools.md](tools.md)**
 
 ## Testing & CI
@@ -215,7 +217,7 @@ For production, combine conservative tool exposure with real user identity, SAP-
 | [tools.md](tools.md) | Complete tool reference (12 intent-based tools) |
 | [mcp-usage.md](mcp-usage.md) | AI agent usage guide & workflow patterns |
 | [architecture.md](architecture.md) | System architecture with Mermaid diagrams |
-| [caching.md](caching.md) | Object caching — server-validated via `ETag`/`If-None-Match`, active/inactive source views, pre-warmer, reverse dep lookup |
+| [caching.md](caching.md) | Object caching — server-validated via `ETag`/`If-None-Match`, active/inactive source views, KTD source entries, pre-warmer, reverse dep lookup |
 | [security-guide.md](security-guide.md) | Security hardening checklist for production |
 | [cli-guide.md](cli-guide.md) | CLI commands and configuration |
 | [docker.md](docker.md) | Full Docker reference |

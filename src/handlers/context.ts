@@ -12,7 +12,8 @@ import {
 } from '../adt/cds-impact.js';
 import type { AdtClient, SourceReadResult } from '../adt/client.js';
 import { findWhereUsed } from '../adt/codeintel.js';
-import { AdtApiError } from '../adt/errors.js';
+import { decodeKtdText } from '../adt/ddic-xml.js';
+import { AdtApiError, isNotFoundError } from '../adt/errors.js';
 import { mapSapReleaseToAbaplintVersion } from '../adt/features.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
 import { extractCdsDependencies } from '../context/cds-deps.js';
@@ -314,6 +315,7 @@ export async function handleSAPContext(
 
   // Get source — either provided or fetched from SAP
   let source: string;
+  const shouldIncludeKtd = args.includeKtd !== false && !args.source && (action === '' || action === 'deps');
   if (args.source) {
     source = String(args.source);
   } else {
@@ -347,12 +349,15 @@ export async function handleSAPContext(
           depth,
           contextCacheForDependencyPayloads(cachingLayer, cacheSecurity),
         );
-        return textResult(cdsResult.output);
+        const ktdMarkdown = shouldIncludeKtd ? await readKtdMarkdown(client, name, cachingLayer) : undefined;
+        return textResult(prependKtd(cdsResult.output, name, ktdMarkdown));
       }
       default:
         return errorResult(`SAPContext supports types: CLAS, INTF, PROG, FUNC, DDLS. Got: ${type}`);
     }
   }
+
+  const ktdMarkdown = shouldIncludeKtd ? await readKtdMarkdown(client, name, cachingLayer) : undefined;
 
   // Check dep graph cache — if source hash matches, return cached contracts
   const dependencyPayloadCache = contextCacheForDependencyPayloads(cachingLayer, cacheSecurity);
@@ -384,7 +389,7 @@ export async function handleSAPContext(
       lines.push(
         `* Stats: ${successful.length + failed.length} deps found, ${successful.length} resolved, ${failed.length} failed, ${totalLines} lines [from cache]`,
       );
-      return textResult(lines.join('\n'));
+      return textResult(prependKtd(lines.join('\n'), name, ktdMarkdown));
     }
   }
 
@@ -403,7 +408,33 @@ export async function handleSAPContext(
     abaplintVersion,
     dependencyPayloadCache,
   );
-  return textResult(result.output);
+  return textResult(prependKtd(result.output, name, ktdMarkdown));
+}
+
+async function readKtdMarkdown(
+  client: AdtClient,
+  name: string,
+  cachingLayer: CachingLayer | undefined,
+): Promise<string | undefined> {
+  try {
+    const envelope = cachingLayer
+      ? (
+          await cachingLayer.getSource('SKTD', name, (ifNoneMatch) =>
+            client.getKtd(name, { ifNoneMatch, version: 'active' }),
+          )
+        ).source
+      : (await client.getKtd(name, { version: 'active' })).source;
+    const markdown = decodeKtdText(envelope).trim();
+    return markdown.length > 0 ? markdown : undefined;
+  } catch (err) {
+    if (isNotFoundError(err)) return undefined;
+    throw err;
+  }
+}
+
+function prependKtd(output: string, name: string, ktdMarkdown: string | undefined): string {
+  if (!ktdMarkdown) return output;
+  return `* === Knowledge Transfer Document for ${name} ===\n\n${ktdMarkdown}\n\n${output}`;
 }
 
 function buildCdsUpstream(

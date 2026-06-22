@@ -8,7 +8,7 @@ The cache is **server-validated**: every cached source carries the SAP-emitted `
 
 The cache stores six types of data:
 
-- **Source code** — raw ABAP source keyed by `(objectType, objectName, version)`, with the SAP `ETag` and a SHA-256 content hash. Active and inactive views never collide.
+- **Source code** — raw ABAP source and Knowledge Transfer Documents (`SKTD`/`KTD`) keyed by `(objectType, objectName, version)`, with the SAP `ETag` and a SHA-256 content hash. Active and inactive views never collide.
 - **Dependency graphs** — compressed dependency contracts keyed by source hash.
 - **Dependency edges** — directional relationships between objects (CALLS, USES, IMPLEMENTS, INCLUDES).
 - **Node metadata** — object type, name, package, and source hash for each cached object.
@@ -82,7 +82,7 @@ All source-bearing types that go through the cache:
 - CDS family: DDLS, DCLS, BDEF, SRVD, DDLX
 - DDIC metadata: TABL (covers transparent tables and DDIC structures), VIEW
 - Service binding: SRVB
-- Knowledge transfer: SKTD
+- Knowledge transfer: SKTD / KTD
 
 Other read types (DOMA, DTEL, AUTH, FEATURE_TOGGLE, ENHO, MSAG, etc. — deprecated aliases `FTG2`/`MESSAGES` route to the same handlers) are not cached because they don't go through `/source/main`.
 
@@ -144,6 +144,8 @@ The SHA-256 hash serves a dual purpose:
 ### Dependency graph caching
 
 When `SAPContext(action="deps")` resolves dependencies for an object, the result is a list of contracts. This list is stored keyed by the source hash. On the next request the dep graph is reused **if the source hash is unchanged** — independent of whether the source-cache layer revalidated via 304 or fetched a fresh body.
+
+KTD composition is deliberately separate from the dep-graph cache. When `SAPContext(action="deps")` includes a KTD, ARC-1 reads the target object's `SKTD`/`KTD` through the source cache first and prepends the decoded Markdown at render time. A cached dependency graph can therefore still be returned with a freshly revalidated KTD, and changing documentation does not invalidate dependency contracts for unchanged source.
 
 When a dep graph is served from cache, the response prefix is `[cached]` (different label from source-cache hits, because dep graphs are hash-keyed and naturally correct without server validation).
 
@@ -329,7 +331,7 @@ If warmup has not run, `SAPContext(action="usages", ...)` returns an `isError: t
 
 **Cache hits still make HTTP calls** — they're conditional GETs that return 304 with no body. The savings are bandwidth (no body transfer on 304) and dep-graph resolution (skipped when source hash unchanged), not RTT count. This trade is intentional: structurally correct freshness beats round-trip optimisation.
 
-The biggest savings still come from dependency graph caching. A single `SAPContext` call for a class with 15 dependencies would normally require 16+ ADT calls (1 for the class + 1 per dependency). With a warm cache and unchanged source, this drops to 1 conditional-GET (the source) + 0 dep calls.
+The biggest savings still come from dependency graph caching. A single `SAPContext` call for a class with 15 dependencies would normally require 16+ ADT calls (1 for the class + 1 per dependency), plus an optional KTD read for the documented object. With a warm cache and unchanged source, this drops to 1 conditional-GET for the source, 1 conditional-GET for the KTD when present, and 0 dependency calls.
 
 ## Disk Space
 

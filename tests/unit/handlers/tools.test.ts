@@ -439,6 +439,17 @@ describe('Tool Definitions', () => {
       expect(sapContext.description).toMatch(/who consumes/i);
     });
 
+    it('SAPContext description steers object-understanding questions away from raw SAPRead', () => {
+      const tools = getToolDefinitions(DEFAULT_CONFIG);
+      const sapContext = tools.find((t) => t.name === 'SAPContext')!;
+      const sapRead = tools.find((t) => t.name === 'SAPRead')!;
+
+      expect(sapContext.description).toMatch(/what does <object> do/i);
+      expect(sapContext.description).toMatch(/KTD/i);
+      expect(sapContext.description).toMatch(/Use SAPRead after SAPContext/i);
+      expect(sapRead.description).toMatch(/prefer SAPContext first/i);
+    });
+
     it('SAPContext action description steers LLMs away from SAPQuery-against-DDDDLSRC', () => {
       const tools = getToolDefinitions(DEFAULT_CONFIG);
       const sapContext = tools.find((t) => t.name === 'SAPContext')!;
@@ -494,6 +505,18 @@ describe('Tool Definitions', () => {
       expect(siblingMaxCandidates.type).toBe('number');
       expect(siblingMaxCandidates.description).toMatch(/default 4/i);
       expect(siblingMaxCandidates.description).toMatch(/hard cap 10/i);
+    });
+
+    it('SAPContext exposes includeKtd for dependency context', () => {
+      const tools = getToolDefinitions(DEFAULT_CONFIG);
+      const sapContext = tools.find((t) => t.name === 'SAPContext')!;
+      const schema = sapContext.inputSchema as Record<string, any>;
+      const includeKtd = schema.properties.includeKtd;
+
+      expect(includeKtd).toBeDefined();
+      expect(includeKtd.type).toBe('boolean');
+      expect(includeKtd.description).toMatch(/KTD|SKTD/);
+      expect(includeKtd.description).toMatch(/deps/);
     });
   });
 
@@ -662,7 +685,7 @@ describe('Tool Definitions', () => {
       expect(typeEnum).not.toContain('ENHO');
     });
 
-    it('keeps CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB on BTP', () => {
+    it('keeps CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, KTD on BTP', () => {
       const tools = getToolDefinitions(btpConfig);
       const sapRead = tools.find((t) => t.name === 'SAPRead')!;
       const schema = sapRead.inputSchema as Record<string, any>;
@@ -676,6 +699,8 @@ describe('Tool Definitions', () => {
       expect(typeEnum).toContain('BDEF');
       expect(typeEnum).toContain('SRVD');
       expect(typeEnum).toContain('SRVB');
+      expect(typeEnum).toContain('SKTD');
+      expect(typeEnum).toContain('KTD');
       expect(typeEnum).toContain('TABLE_CONTENTS');
     });
 
@@ -693,6 +718,7 @@ describe('Tool Definitions', () => {
       expect(typeEnum).toContain('SOBJ');
       expect(typeEnum).toContain('DDLX');
       expect(typeEnum).toContain('SRVB');
+      expect(typeEnum).toContain('KTD');
       expect(typeEnum).toContain('AUTH');
       expect(typeEnum).toContain('FEATURE_TOGGLE');
       // FTG2 retained as deprecated alias for one minor — see
@@ -704,7 +730,7 @@ describe('Tool Definitions', () => {
       expect(typeEnum).toContain('MESSAGES');
     });
 
-    it('includes DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL, DOMA, DTEL in SAPWrite types on both BTP and on-prem', () => {
+    it('includes DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD, TABL, DOMA, DTEL in SAPWrite types on both BTP and on-prem', () => {
       for (const config of [btpConfig, onpremConfig]) {
         const tools = getToolDefinitions(config);
         const sapWrite = tools.find((t) => t.name === 'SAPWrite')!;
@@ -718,6 +744,7 @@ describe('Tool Definitions', () => {
         expect(typeEnum).toContain('SRVD');
         expect(typeEnum).toContain('SRVB');
         expect(typeEnum).toContain('SKTD');
+        expect(typeEnum).toContain('KTD');
         expect(typeEnum).toContain('TABL');
         expect(typeEnum).toContain('DOMA');
         expect(typeEnum).toContain('DTEL');

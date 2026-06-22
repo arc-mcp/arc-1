@@ -451,6 +451,27 @@ describe('SAPRead handler', () => {
       expect(getUrl).not.toContain('version=workingArea');
     });
 
+    it('accepts KTD as a friendly alias for SKTD reads', async () => {
+      mockFetch.mockReset();
+      const calls: string[] = [];
+      const markdown = '# Friendly alias';
+      const base64 = Buffer.from(markdown, 'utf-8').toString('base64');
+      const envelope = `<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd"><sktd:element><sktd:text>${base64}</sktd:text></sktd:element></sktd:docu>`;
+      mockFetch.mockImplementation((url: string | URL) => {
+        calls.push(String(url));
+        return Promise.resolve(mockResponse(200, envelope, { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'KTD',
+        name: 'ZCL_ALIAS_DOC',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toBe(markdown);
+      expect(calls.some((u) => u.includes('/sap/bc/adt/documentation/ktd/documents/zcl_alias_doc'))).toBe(true);
+    });
+
     it('returns soft informational message when SKTD is not found (404)', async () => {
       mockFetch.mockReset();
       mockFetch.mockResolvedValueOnce(mockResponse(404, 'Not Found', { 'x-csrf-token': 'mock-csrf-token' }));

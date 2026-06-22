@@ -84,9 +84,10 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     resolvedFeatures: ALL_FEATURES_AVAILABLE,
     budget: {
       // +200/+150 for SAPRead action="diff" (action/from/to params + their descriptions).
-      schemaTokenEstimate: 11_700,
-      descriptionTokenEstimate: 9_150,
-      descriptionCount: 150,
+      // +350/+350/+1 for context-first KTD guidance (KTD alias + SAPContext includeKtd).
+      schemaTokenEstimate: 12_050,
+      descriptionTokenEstimate: 9_500,
+      descriptionCount: 151,
     },
   },
   {
@@ -96,8 +97,9 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     resolvedFeatures: ALL_FEATURES_AVAILABLE,
     budget: {
       // schema +200 for SAPRead action="diff" (action/from/to params).
-      schemaTokenEstimate: 19_700,
-      descriptionTokenEstimate: 15_000,
+      // +400/+350 for context-first KTD guidance (KTD alias + SAPContext includeKtd).
+      schemaTokenEstimate: 20_100,
+      descriptionTokenEstimate: 15_350,
       descriptionCount: 265,
     },
   },
@@ -110,8 +112,9 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // Bumped +200 for the SAPTransport `remove_object` action (its pgmid/type/name key +
       // action description). Keeps ~110 tokens of headroom, matching the other scenarios.
       // Further +200/+150 for SAPRead action="diff" (action/from/to params + descriptions).
-      schemaTokenEstimate: 17_900,
-      descriptionTokenEstimate: 13_350,
+      // +450/+350 for context-first KTD guidance (KTD alias + SAPContext includeKtd).
+      schemaTokenEstimate: 18_350,
+      descriptionTokenEstimate: 13_700,
       descriptionCount: 265,
     },
   },

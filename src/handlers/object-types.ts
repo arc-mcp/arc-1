@@ -1,7 +1,7 @@
 /**
  * Object-type normalization + ADT URL building (pure utilities, no project-internal imports).
  *
- * Slash-form alias maps, canonical-type normalization, the objectBasePath/URL builders,
+ * Slash-form alias maps, friendly aliases, canonical-type normalization, the objectBasePath/URL builders,
  * LLM arg-stripping, and class-include helpers.
  */
 
@@ -90,6 +90,12 @@ export const SLASH_TYPE_EVIDENCE: Record<string, string> = {
   'SKTD/TYP': 'research/abap-types/types/sktd.md',
 };
 
+const FRIENDLY_TYPE_ALIAS_MAP: Record<string, string> = {
+  // Human-facing alias for SAP Knowledge Transfer Documents. SKTD remains the canonical
+  // ADT/TADIR type; KTD is accepted so callers do not need to know SAP's technical short code.
+  KTD: 'SKTD',
+};
+
 /**
  * Set of canonical short types that MUST have a working `objectBasePath` case.
  * Drives the exhaustiveness guard inside `objectBasePath` so a new canonical type
@@ -124,7 +130,7 @@ export const KNOWN_BASE_TYPES = new Set([
 export function normalizeObjectType(type: string): string {
   const normalized = String(type).trim().toUpperCase();
   if (!normalized) return '';
-  return SLASH_TYPE_MAP[normalized] ?? normalized;
+  return FRIENDLY_TYPE_ALIAS_MAP[normalized] ?? SLASH_TYPE_MAP[normalized] ?? normalized;
 }
 
 /** TABL subtypes that SAPWrite preserves (instead of collapsing to bare 'TABL' via

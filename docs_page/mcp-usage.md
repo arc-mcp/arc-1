@@ -54,6 +54,7 @@ SELECT carrid, COUNT(*) as cnt FROM sflight GROUP BY carrid ORDER BY cnt DESC
 | DDLS (CDS DDL Source) | **Y** | CDS view definitions |
 | BDEF (Behavior Definition) | **Y** | RAP behavior definitions |
 | SRVD (Service Definition) | **Y** | RAP service definitions |
+| KTD / SKTD | **Y** | Knowledge Transfer Documents; `KTD` is the friendly alias for canonical `SKTD` |
 | TABL (Table Definition) | **Y** | Table structure |
 | VIEW (DDIC View) | **Y** | Dictionary views |
 | TABLE_CONTENTS | **Y** | Table data with SQL filtering |
@@ -75,7 +76,8 @@ flowchart TD
     START --> READ{Read or Write?}
 
     READ -->|Read| RTYPE{What type?}
-    RTYPE -->|Source code| SR[SAPRead type,name]
+    RTYPE -->|Understand object first| SC[SAPContext action=deps]
+    RTYPE -->|Exact source/method/grep| SR[SAPRead type,name]
     RTYPE -->|Table data| TD{Need SQL?}
     TD -->|Simple| SR2[SAPRead type=TABLE_CONTENTS]
     TD -->|Complex| SQ[SAPQuery]
@@ -98,6 +100,7 @@ flowchart TD
 
 | Task | Tool | Parameters |
 |------|------|------------|
+| Understand class/object first | `SAPContext` | `action=deps, type=CLAS, name=ZCL_TEST` |
 | Read program | `SAPRead` | `type=PROG, name=ZTEST` |
 | Read class | `SAPRead` | `type=CLAS, name=ZCL_TEST` |
 | Read class definitions | `SAPRead` | `type=CLAS, name=ZCL_TEST, include=definitions` |
@@ -106,6 +109,7 @@ flowchart TD
 | Read function module | `SAPRead` | `type=FUNC, name=Z_FM, group=ZFUGR` |
 | Read function group | `SAPRead` | `type=FUGR, name=ZFUGR` |
 | Read CDS view | `SAPRead` | `type=DDLS, name=ZDDL_VIEW` |
+| Read KTD only | `SAPRead` | `type=KTD, name=ZCL_TEST` |
 | Read message class | `SAPRead` | `type=MSAG, name=ZMSG` (deprecated alias: `type=MESSAGES`) |
 | Read table structure | `SAPRead` | `type=TABL, name=MARA` |
 | Read table data | `SAPRead` | `type=TABLE_CONTENTS, name=MARA, maxRows=10, sqlFilter="MANDT = '100'"` |
@@ -157,27 +161,27 @@ Step 1: SAPRead(type="SYSTEM")
 Step 2: Run parallel/large investigation batches only after SYSTEM succeeds
 ```
 
-### 1. Read and Understand a Class
+### 1. Understand a Class
 
 ```
-Step 1: SAPRead(type="CLAS", name="ZCL_ORDER")
-        → Returns full class source
+Step 1: SAPContext(action="deps", type="CLAS", name="ZCL_ORDER")
+        → Returns the object's KTD when available plus compressed dependency context
 
-Step 2: SAPRead(type="CLAS", name="ZCL_ORDER", include="testclasses")
-        → Returns unit test source
+Step 2: SAPRead(type="CLAS", name="ZCL_ORDER", method="*")
+        → Use only if you need exact method list/signatures after context
 
-Step 3: SAPContext(name="ZCL_ORDER", type="CLAS")
-        → Returns compressed dependency context (7-30x smaller)
+Step 3: SAPRead(type="CLAS", name="ZCL_ORDER", include="testclasses")
+        → Use only if test implementation is relevant to the change
 ```
 
 ### 2. Read CDS View and Dependencies
 
 ```
-Step 1: SAPRead(type="DDLS", name="ZRAY_00_I_DOC_NODE_00")
-        → Returns CDS source code
+Step 1: SAPContext(action="deps", type="DDLS", name="ZRAY_00_I_DOC_NODE_00")
+        → Returns KTD when available plus CDS upstream dependency context
 
-Step 2: SAPRead(type="TABL", name="ZLLM_00_NODE")
-        → Returns table structure
+Step 2: SAPRead(type="DDLS", name="ZRAY_00_I_DOC_NODE_00")
+        → Use if you need exact CDS source after context
 ```
 
 ### 2b. Diagnose Sibling DDLS Annotation Mismatch
@@ -353,8 +357,8 @@ SAPWrite(action="batch_create", package="$TMP", objects=[
 ### Search Strategy
 
 1. **Start with SAPSearch:** Find objects by name pattern
-2. **Use SAPRead selectively:** Read only the objects you need
-3. **Use SAPContext for deps:** One call = source + dependency context
+2. **Use SAPContext before raw reads:** For "what does this object do?", `SAPContext(action="deps")` returns KTD + dependency contracts first
+3. **Use SAPRead selectively:** Read exact source/methods only after the context tells you what matters
 4. **Limit SAPQuery results:** Use `maxRows` to prevent overwhelming responses
 
 ---

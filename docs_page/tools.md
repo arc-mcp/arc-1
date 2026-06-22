@@ -12,6 +12,8 @@ ARC-1 exposes **12 intent-based tools** designed for AI agents. Instead of 200+ 
 
 Read any SAP ABAP object.
 
+Use `SAPRead` when you need exact raw source, one method body, grep output, inactive drafts, revision history, or metadata. For object understanding questions such as "what does this class do?" or pre-change/spec/review orientation, start with `SAPContext(action="deps")`; it includes the object's KTD when available and avoids reading full source before the model knows what matters.
+
 **Parameters:**
 
 | Parameter | Type | Required | Description |
@@ -24,14 +26,14 @@ Read any SAP ABAP object.
 | `format` | string | No | Output format: `"text"` (default) or `"structured"` (CLAS only, see below) |
 | `include` | string | No | For CLAS: `main`, `testclasses`, `definitions`, `implementations`, `macros`. For DDLS: `elements` (extract CDS view elements). |
 | `method` | string | No | For CLAS: method name to read (e.g., `get_name`), or `*` to list all methods |
-| `grep` | string | No | Case-insensitive regex; returns only matching source lines (+3 lines of context, with line numbers) instead of the full object — token-efficient search over source-bearing types (`PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, BDEF, SRVD, SRVB, SKTD, DDLX, TABL, VIEW`). For CLAS, matches are annotated with the owning class/method; combine with `include=` to scope a section, but not with `method=`. Falls back to a literal search when the pattern is not valid regex. |
+| `grep` | string | No | Case-insensitive regex; returns only matching source lines (+3 lines of context, with line numbers) instead of the full object — token-efficient search over source-bearing types (`PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, BDEF, SRVD, SRVB, SKTD/KTD, DDLX, TABL, VIEW`). For CLAS, matches are annotated with the owning class/method; combine with `include=` to scope a section, but not with `method=`. Falls back to a literal search when the pattern is not valid regex. |
 | `expand_includes` | boolean | No | For FUGR: expand include source inline |
 | `group` | string | No | For FUNC: function group name |
 | `versionUri` | string | No | For VERSION_SOURCE: revision URI from a VERSIONS response (`revisions[].uri`), must start with `/sap/bc/adt/` |
 | `maxRows` | number | No | For TABLE_CONTENTS: max rows (default 100) |
 | `sqlFilter` | string | No | For TABLE_CONTENTS: condition expression only (no `WHERE`, no `SELECT`), e.g. `MANDT = '100'` |
 | `objectType` | string | No | For API_STATE: SAP object type (CLAS, INTF, PROG, FUGR, etc.) — auto-detected from name if omitted |
-| `version` | string | No | Source version: `active` (default), `inactive`, or `auto`. Applies to source-bearing types (PROG, CLAS, INTF, FUNC, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, FUGR, SRVB, SKTD, TABL, VIEW). See [Active vs Inactive Source](#active-vs-inactive-source) below. |
+| `version` | string | No | Source version: `active` (default), `inactive`, or `auto`. Applies to source-bearing types (PROG, CLAS, INTF, FUNC, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, FUGR, SRVB, SKTD/KTD, TABL, VIEW). See [Active vs Inactive Source](#active-vs-inactive-source) below. |
 | `force_refresh` | boolean | No | For source reads: bypass the cached source AND the inactive-list cache before reading. Use when you know the object changed outside ARC-1 in a way conditional GET can't catch. |
 | `includeSignature` | boolean | No | For `FUNC` only. When `true`, response is JSON `{source, signature: {importing[], exporting[], changing[], tables[], exceptions[], raising[]}}` — each parameter parsed into `{kind, name, type, byValue?, default?, optional?}`. Default `false` (returns plain source body). Use this to introspect FM signatures programmatically. See [SAPWrite for FUNC](#sapwrite-for-func-create--update-with-structured-parameters) for the round-trip. |
 
@@ -51,6 +53,7 @@ Read any SAP ABAP object.
 | `BDEF` | Behavior definition |
 | `SRVD` | Service definition |
 | `SRVB` | Service binding (structured JSON: OData version, binding type, publish status) |
+| `SKTD` / `KTD` | Knowledge Transfer Document attached to an ABAP object. Returns Markdown decoded from the ADT XML envelope. `KTD` is a friendly alias; `SKTD` remains the canonical SAP object type. |
 | `TABL` | DDIC TABL — covers both transparent tables (T000-style) and DDIC structures (BAPIRET2-style). Returns CDS-like source. ARC-1 auto-resolves the URL: tries `/sap/bc/adt/ddic/tables/{name}` first, falls back to `/sap/bc/adt/ddic/structures/{name}` on 404. There is no separate `STRU` type — `TABL` is the canonical short type for both, mirroring TADIR `R3TR TABL` and abapGit conventions. |
 | `VIEW` | DDIC view |
 | `DOMA` | Domain metadata (structured JSON: data type, length, fixed values, value table) |
@@ -105,6 +108,7 @@ SAPRead(type="DDLS", name="ZI_TRAVEL", include="elements")   — extract CDS vie
 SAPRead(type="DCLS", name="ZI_TRAVEL_DCL")       — CDS access control source
 SAPRead(type="DDLX", name="ZC_TRAVEL")          — metadata extension with UI annotations
 SAPRead(type="SRVB", name="ZUI_TRAVEL_O4")       — service binding metadata as JSON
+SAPRead(type="KTD", name="ZCL_ORDER")            — read the object's Knowledge Transfer Document as Markdown
 SAPRead(type="FUGR", name="ZUTILS", expand_includes=true)    — function group with all includes expanded
 SAPRead(type="TABL", name="BAPIRET2")            — DDIC structure (auto-resolved to /structures/)
 SAPRead(type="TABL", name="T000")                — transparent table (auto-resolved to /tables/)
@@ -230,7 +234,7 @@ Create or update ABAP source code. Handles lock/modify/unlock automatically.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `action` | string | Yes | `create`, `update`, `delete`, `edit_method`, `edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`, `batch_create`, `scaffold_rap_handlers`, or `generate_behavior_implementation`. The class-section surgery actions (`edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`) are token-efficient edits to a global class without re-sending `/source/main`. See [Class-section surgery](#class-section-surgery) below. |
-| `type` | string | No | `PROG`, `CLAS`, `INTF`, `FUNC`, `FUGR`, `INCL`, `DDLS`, `DCLS`, `DDLX`, `BDEF`, `SRVD`, `SRVB`, `SKTD`, `TABL`, `TABL/DT`, `TABL/DS`, `DOMA`, `DTEL`, `MSAG` (for single object actions; availability is adapted for BTP vs. on-prem), plus the server-driven objects `DESD`/`EVTB`/`DTSC`/`CSNM`/`EVTO`/`COTA` on 8.16+ (see [Server-driven object writes](#server-driven-object-writes)). Slash/case aliases are auto-normalized (e.g., `CLAS/OC` or `clas` → `CLAS`). |
+| `type` | string | No | `PROG`, `CLAS`, `INTF`, `FUNC`, `FUGR`, `INCL`, `DDLS`, `DCLS`, `DDLX`, `BDEF`, `SRVD`, `SRVB`, `SKTD`/`KTD`, `TABL`, `TABL/DT`, `TABL/DS`, `DOMA`, `DTEL`, `MSAG` (for single object actions; availability is adapted for BTP vs. on-prem), plus the server-driven objects `DESD`/`EVTB`/`DTSC`/`CSNM`/`EVTO`/`COTA` on 8.16+ (see [Server-driven object writes](#server-driven-object-writes)). Slash/case aliases are auto-normalized (e.g., `CLAS/OC` or `clas` → `CLAS`; `KTD` → `SKTD`). |
 | `group` | string | No | For `FUNC`: parent function-group name. **Required for FUNC create** (the FUGR must already exist — create it first via `SAPWrite type=FUGR`). Auto-resolved via search for FUNC update/delete if omitted. Ignored for other types. |
 | `name` | string | No | Object name (for single object actions) |
 | `source` | string | No | ABAP source code. For `create`/`update`: full source body. For `edit_method`: new method body. For `edit_class_definition` without `include=`: ONLY the new global `CLASS … DEFINITION … ENDCLASS.` block (~10–80 lines instead of full class). For `edit_class_definition` with `include=`: the FULL replacement body of that class-local include; for `include="testclasses"` this normally includes both local `CLASS ltc_* DEFINITION` and `CLASS ltc_* IMPLEMENTATION`. For `edit_method_signature`: ONLY the new METHODS clause for one method (~1–5 lines). Not used by `add_method`/`delete_method`/`change_method_visibility` — pass the method clause/name and target visibility via `method`/`visibility` instead. |
@@ -278,7 +282,7 @@ Create or update ABAP source code. Handles lock/modify/unlock automatically.
 
 **DDIC metadata writes:** `DOMA`, `DTEL`, `MSAG`, and `SRVB` use structured XML payloads and do **not** use `/source/main`. `MSAG` writes use the `/sap/bc/adt/messageclass/` endpoint and accept a `messages` array of `{number, shortText, longText?}` entries. `SRVB` create uses wildcard content type (`application/*`) and SRVB update uses vendor type (`application/vnd.sap.adt.businessservices.servicebinding.v2+xml`).
 
-**Source-based DDIC writes:** `TABL`, `DDLS`, `DCLS`, `BDEF`, `SRVD`, and `SKTD` are source-based and write source via `/source/main`. `TABL` covers both transparent tables (`TABL/DT`) and DDIC structures (`TABL/DS`); ARC-1 auto-resolves between `/ddic/tables/` and `/ddic/structures/` for read/update. `SKTD` writes Markdown knowledge-transfer documentation attached to one ABAP object; create requires `refObjectType` and uses `name` as the documented object name.
+**Source-based DDIC writes:** `TABL`, `DDLS`, `DCLS`, `BDEF`, `SRVD`, and `SKTD`/`KTD` are source-based and write source via `/source/main`. `TABL` covers both transparent tables (`TABL/DT`) and DDIC structures (`TABL/DS`); ARC-1 auto-resolves between `/ddic/tables/` and `/ddic/structures/` for read/update. `SKTD` writes Markdown knowledge-transfer documentation attached to one ABAP object; `KTD` is accepted as a friendly alias. Create requires `refObjectType` and uses `name` as the documented object name.
 
 #### Server-driven object writes
 
@@ -789,20 +793,22 @@ SAPGit(action="clone", backend="abapgit", package="$TMP", url="https://github.co
 
 ## SAPContext
 
-Get compressed dependency context for an ABAP object, or look up reverse dependencies (who uses a given object).
+Get context-first understanding for an ABAP object, or look up reverse dependencies (who uses a given object).
+
+Use this before `SAPRead` when the user asks what an existing class, interface, program, function module, or CDS view does, or before drafting a spec/change/review. `action="deps"` prepends the object's Knowledge Transfer Document (`SKTD`/`KTD`) when one exists, then returns compressed dependency contracts. Use `SAPRead` after that only when you need exact source, method-level detail, grep output, drafts, revisions, or metadata.
 
 SAPContext has three modes controlled by the `action` parameter:
 
 **Quick decision rule:**
 - *"What breaks if I change `<CDS view>`?"* / *"Who consumes `I_*`?"* / *"Impact of `<DDLS>`"* → **`action="impact"`**
-- *"What does `<object>` depend on?"* / dependency context before editing → **`action="deps"`** (default)
+- *"What does `<object>` do?"* / *"Explain `<object>`"* / spec, review, or dependency context before editing → **`action="deps"`** (default)
 - *"Who calls `<object>`?"* (requires cache warmup) → **`action="usages"`**
 
 > **Do not** hand-roll CDS impact analysis by querying `DDDDLSRC`, `ACMDCLSRC`, `DDLXSRC_SRC`, or `SRVDSRC_SRC` via `SAPQuery`. Those text-scans produce substring-match noise and package group nodes. `action="impact"` uses SAP's where-used index and returns deduplicated, RAP-classified results.
 
 ### action="deps" (default) — Dependency context
 
-Returns only the public API contracts (method signatures, interface definitions, type declarations) of all objects that the target depends on — NOT the full source code. Typical compression: 7-30x fewer tokens.
+Returns the target object's KTD first when available, followed by only the public API contracts (method signatures, interface definitions, type declarations) of all objects that the target depends on — NOT the full source code. Typical compression: 7-30x fewer tokens.
 
 **What gets extracted per dependency:**
 - **Classes:** `CLASS DEFINITION` with `PUBLIC SECTION` only. `PROTECTED`, `PRIVATE` sections and `CLASS IMPLEMENTATION` are stripped.
@@ -821,6 +827,7 @@ Returns only the public API contracts (method signatures, interface definitions,
 | `type` | string | Yes (for deps), optional for impact | Object type: `CLAS`, `INTF`, `PROG`, `FUNC`, `DDLS` |
 | `name` | string | Yes | Object name (e.g., `ZCL_ORDER`) |
 | `source` | string | No | Provide source directly instead of fetching from SAP |
+| `includeKtd` | boolean | No | Only for `action="deps"`. Defaults to `true`; prepends the object's KTD (`SKTD`/`KTD`) when one exists. Set `false` to skip the KTD lookup. Ignored when `source` is supplied. |
 | `group` | string | No | Required for `FUNC` type. The function group name. |
 | `maxDeps` | number | No | Maximum dependencies to resolve (default 20) |
 | `depth` | number | No | Dependency depth: 1 = direct only (default), 2 = deps of deps, 3 = max |
@@ -838,6 +845,12 @@ SAPContext(action="deps", type="CLAS", name="ZCL_ORDER")
 
 **Output format:**
 ```
+* === Knowledge Transfer Document for ZCL_ORDER ===
+
+# ZCL_ORDER
+
+Business intent and object notes from the KTD.
+
 * === Dependency context for ZCL_ORDER (3 deps resolved) ===
 
 * --- ZIF_ORDER (intf, 4 methods) ---
@@ -855,6 +868,8 @@ ENDCLASS.
 
 * Stats: 5 deps found, 3 resolved, 0 failed, 25 lines
 ```
+
+If the object has no KTD or the backend returns 404/410 for the KTD document, ARC-1 silently omits the KTD section and still returns the dependency context. Other KTD read errors are surfaced normally.
 
 **Cache indicator:** When the dependency graph is served from the hash-keyed dep-graph cache (no further ADT calls beyond the source revalidation), the header changes to:
 ```

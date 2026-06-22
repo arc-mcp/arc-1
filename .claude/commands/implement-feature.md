@@ -53,6 +53,8 @@ Find and read the corresponding test files in `tests/unit/` that mirror the sour
 
 Search the codebase for similar patterns already implemented. If the feature extends an existing pattern (e.g., adding a new error hint follows the same shape as existing ones), identify that pattern to follow consistently.
 
+When researching an existing ABAP object in a connected SAP system, start with `SAPContext(action="deps", type=..., name=...)` before raw `SAPRead`. The context call includes the object's KTD when available and compressed dependency contracts; use `SAPRead` afterward only for exact source, method bodies, grep, drafts, revisions, or metadata.
+
 ### 1e. Summarize findings
 
 Before proceeding, output a brief summary:

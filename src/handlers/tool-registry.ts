@@ -69,6 +69,8 @@ const SAPREAD_TYPE_TABLE = [
   { type: 'SRVD', btp: true },
   { type: 'SRVB', btp: true },
   { type: 'SKTD', btp: true },
+  // Friendly alias for Knowledge Transfer Documents; normalized to canonical SKTD at dispatch.
+  { type: 'KTD', btp: true },
   { type: 'TABL', btp: true },
   { type: 'VIEW', btp: false },
   { type: 'DOMA', btp: true },
@@ -127,6 +129,8 @@ const SAPWRITE_TYPE_TABLE = [
   { type: 'SRVD', btp: true },
   { type: 'SRVB', btp: true },
   { type: 'SKTD', btp: true },
+  // Friendly alias for Knowledge Transfer Documents; normalized to canonical SKTD at dispatch.
+  { type: 'KTD', btp: true },
   { type: 'TABL', btp: true },
   // Subtype routing for create — see docs/plans/completed/fix-tabl-ds-create-routing.md.
   { type: 'TABL/DT', btp: true },

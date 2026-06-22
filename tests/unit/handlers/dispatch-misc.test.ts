@@ -887,6 +887,7 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
     it('is case-insensitive for friendly and slash types', () => {
       expect(normalizeObjectType('clas')).toBe('CLAS');
       expect(normalizeObjectType('Prog/P')).toBe('PROG');
+      expect(normalizeObjectType('ktd')).toBe('SKTD');
     });
 
     it('passes through already-correct types', () => {

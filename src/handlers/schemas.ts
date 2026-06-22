@@ -827,6 +827,7 @@ export const SAPContextSchema = z.object({
   includeIndirect: z.boolean().optional(),
   siblingCheck: z.boolean().optional(),
   siblingMaxCandidates: siblingMaxCandidatesSchema,
+  includeKtd: looseOptionalBoolean,
 });
 
 export const SAPContextSchemaBtp = z.object({
@@ -839,6 +840,7 @@ export const SAPContextSchemaBtp = z.object({
   includeIndirect: z.boolean().optional(),
   siblingCheck: z.boolean().optional(),
   siblingMaxCandidates: siblingMaxCandidatesSchema,
+  includeKtd: looseOptionalBoolean,
 });
 
 // ─── SAPManage ──────────────────────────────────────────────────────

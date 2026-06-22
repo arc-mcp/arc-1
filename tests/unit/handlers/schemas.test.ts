@@ -255,6 +255,27 @@ describe('SAPReadSchema', () => {
     expect(SAPReadSchemaBtp.safeParse({ type: 'MESSAGES', name: 'ZMSG' }).success).toBe(true);
   });
 
+  it('accepts KTD as a friendly read/write alias for SKTD', () => {
+    expect(SAPReadSchema.safeParse({ type: 'KTD', name: 'ZCL_DOC' }).success).toBe(true);
+    expect(SAPReadSchemaBtp.safeParse({ type: 'KTD', name: 'ZCL_DOC' }).success).toBe(true);
+    expect(
+      SAPWriteSchema.safeParse({
+        action: 'update',
+        type: 'KTD',
+        name: 'ZCL_DOC',
+        source: '# Documentation',
+      }).success,
+    ).toBe(true);
+    expect(
+      SAPWriteSchemaBtp.safeParse({
+        action: 'update',
+        type: 'KTD',
+        name: 'ZCL_DOC',
+        source: '# Documentation',
+      }).success,
+    ).toBe(true);
+  });
+
   it('write enum has MSAG (canonical) — read/write symmetry guard', () => {
     // Anti-cargo-cult guard from docs/plans/completed/audit-symmetry-and-ftg2-rename.md:
     // every type that supports both verbs in ADT MUST be in both enums under the
@@ -1529,6 +1550,7 @@ describe('SAPContextSchema', () => {
       maxDeps: 10,
       depth: 2,
       includeIndirect: true,
+      includeKtd: true,
       siblingCheck: false,
       siblingMaxCandidates: 5,
     });
@@ -1583,6 +1605,12 @@ describe('SAPContextSchema', () => {
   it('rejects depth < 1', () => {
     const result = SAPContextSchema.safeParse({ name: 'ZCL_TEST', depth: 0 });
     expect(result.success).toBe(false);
+  });
+
+  it('accepts string false for includeKtd without inverting it', () => {
+    const result = SAPContextSchema.safeParse({ name: 'ZCL_TEST', type: 'CLAS', includeKtd: 'false' });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.includeKtd).toBe(false);
   });
 });
 
