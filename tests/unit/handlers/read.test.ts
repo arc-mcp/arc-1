@@ -472,6 +472,25 @@ describe('SAPRead handler', () => {
       expect(calls.some((u) => u.includes('/sap/bc/adt/documentation/ktd/documents/zcl_alias_doc'))).toBe(true);
     });
 
+    it('greps decoded KTD Markdown instead of the XML envelope', async () => {
+      mockFetch.mockReset();
+      const markdown = '# KTD\n\nPayment term behavior.\n\nImplementation notes.';
+      const base64 = Buffer.from(markdown, 'utf-8').toString('base64');
+      const envelope = `<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd"><sktd:element><sktd:text>${base64}</sktd:text></sktd:element></sktd:docu>`;
+      mockFetch.mockResolvedValueOnce(mockResponse(200, envelope, { 'x-csrf-token': 'T' }));
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'KTD',
+        name: 'ZCL_ALIAS_DOC',
+        grep: 'payment',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('Payment term behavior.');
+      expect(result.content[0]?.text).not.toContain('<sktd:docu');
+      expect(result.content[0]?.text).not.toContain(base64);
+    });
+
     it('returns soft informational message when SKTD is not found (404)', async () => {
       mockFetch.mockReset();
       mockFetch.mockResolvedValueOnce(mockResponse(404, 'Not Found', { 'x-csrf-token': 'mock-csrf-token' }));

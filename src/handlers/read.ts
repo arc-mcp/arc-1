@@ -445,7 +445,9 @@ export async function handleSAPRead(
         const { source, cacheHit, revalidated } = await cachedGet('SKTD', name, effectiveVersion, (ifNoneMatch) =>
           client.getKtd(name, { ifNoneMatch, version: effectiveVersion }),
         );
-        return cachedTextResult(decodeKtdText(source), cacheHit, revalidated, versionWarning);
+        const markdown = decodeKtdText(source);
+        if (args.grep) return grepText(markdown);
+        return cachedTextResult(markdown, cacheHit, revalidated, versionWarning);
       } catch (err) {
         if (isNotFoundError(err)) {
           return textResult(
