@@ -124,49 +124,43 @@ Keep this file short. Put detailed ABAP, RAP, Clean Core, or company rules into 
 
 ### ARC-1 MCP In Eclipse
 
-In Copilot Chat, choose **Configure Tools...** or open **Preferences** → **GitHub Copilot** → **MCP**. For a centrally deployed ARC-1 server with an API key:
+In Copilot Chat, choose **Configure Tools...** or open **Preferences** → **GitHub Copilot** → **MCP**.
+
+Use one of these ARC-1 connection patterns:
+
+**Local quickstart-style `npx` config** — Eclipse starts ARC-1 directly as an MCP server. This is the same local shape as the [Quickstart](quickstart.md), adapted for Copilot's MCP configuration:
 
 ```json
 {
   "servers": {
-    "arc1": {
-      "type": "http",
-      "url": "https://arc1.company.com/mcp",
-      "requestInit": {
-        "headers": {
-          "Authorization": "Bearer YOUR_ARC1_API_KEY"
-        }
+    "arc1-local": {
+      "command": "npx",
+      "args": ["-y", "arc-1@latest"],
+      "env": {
+        "SAP_URL": "https://your-sap-host:44300",
+        "SAP_USER": "YOUR_USER",
+        "SAP_PASSWORD": "YOUR_PASS",
+        "SAP_CLIENT": "100"
       }
     }
   }
 }
 ```
 
-For XSUAA or OIDC deployments, use the ARC-1 `/mcp` URL without embedding an API key and let Copilot complete the OAuth sign-in. See [XSUAA Setup](xsuaa-setup.md) and [OAuth / JWT Setup](oauth-jwt-setup.md).
-
-For local development, you can also point Copilot at a local HTTP ARC-1 instance:
-
-```bash
-npx arc-1@latest \
-  --transport http-streamable \
-  --http-addr 127.0.0.1:3000 \
-  --url https://your-sap-host:44300 \
-  --user YOUR_USER \
-  --password YOUR_PASS
-```
-
-Then configure Eclipse Copilot with:
+**BTP Cloud Foundry URL login** — use this when ARC-1 is deployed centrally with XSUAA/OAuth. Configure only the `/mcp` URL and let Copilot complete the browser login:
 
 ```json
 {
   "servers": {
-    "arc1-local": {
+    "arc1-btp": {
       "type": "http",
-      "url": "http://127.0.0.1:3000/mcp"
+      "url": "https://arc1-mcp-<space>.cfapps.<landscape>.hana.ondemand.com/mcp"
     }
   }
 }
 ```
+
+See [Quickstart](quickstart.md), [BTP Cloud Foundry Deployment](btp-cloud-foundry-deployment.md), and [XSUAA Setup](xsuaa-setup.md) for the full server-side setup details.
 
 ### Troubleshooting
 
@@ -264,7 +258,7 @@ Then configure:
 }
 ```
 
-SAP's bundled ADT MCP server is a separate MCP surface. You can enable it from the SAP ADT extension settings and then enable its tools in Copilot's tool picker. That is useful when you want Copilot to operate through SAP's extension-managed session. The ARC-1 skills still help as workflow guidance, but tool names and parameters differ; if you use SAP's ADT MCP server without ARC-1, adapt the skill wording or add a small Copilot instruction telling the agent to translate ARC-1 tool steps to the ADT MCP tools that are enabled in this workspace.
+SAP's bundled ADT MCP server is a separate MCP surface. Follow SAP's [Configuring ADT MCP Server](https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/configuring-adt-mcp-server-ed94320814734d97801f51a5b6deb802?locale=en-US) guide, then enable its tools in Copilot's tool picker. That is useful when you want Copilot to operate through SAP's extension-managed session. The ARC-1 skills still help as workflow guidance, but tool names and parameters differ; if you use SAP's ADT MCP server without ARC-1, adapt the skill wording or add a small Copilot instruction telling the agent to translate ARC-1 tool steps to the ADT MCP tools that are enabled in this workspace.
 
 When both ARC-1 and SAP ADT MCP tools are enabled, be explicit in the prompt:
 
@@ -312,7 +306,7 @@ This is intentionally short. Put Clean ABAP, RAP, CDS, migration, and company-sp
 - If SAP ADT MCP tools are missing, check the SAP ADT extension settings, then enable the ADT MCP tools in Copilot's tool picker.
 - Avoid enabling every write-capable tool by default. Keep ARC-1 server safety flags, package allowlists, and Copilot tool approvals aligned with the system you are working in.
 
-References: [ABAP Development Tools for VS Code marketplace page](https://marketplace.visualstudio.com/items?itemName=SAPSE.adt-vscode), [SAP Help: ABAP Development Tools for VS Code](https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/abap-development-tools-for-visual-studio-code), [SAP Help: Enabling ADT MCP Server](https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/enabling-adt-mcp-server), [VS Code Agent Skills](https://code.visualstudio.com/docs/agent-customization/agent-skills), [VS Code MCP servers](https://code.visualstudio.com/docs/agent-customization/mcp-servers), and [VS Code MCP configuration reference](https://code.visualstudio.com/docs/agents/reference/mcp-configuration).
+References: [ABAP Development Tools for VS Code marketplace page](https://marketplace.visualstudio.com/items?itemName=SAPSE.adt-vscode), [SAP Help: ABAP Development Tools for VS Code](https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/abap-development-tools-for-visual-studio-code), [SAP Help: Configuring ADT MCP Server](https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/configuring-adt-mcp-server-ed94320814734d97801f51a5b6deb802?locale=en-US), [VS Code Agent Skills](https://code.visualstudio.com/docs/agent-customization/agent-skills), [VS Code MCP servers](https://code.visualstudio.com/docs/agent-customization/mcp-servers), and [VS Code MCP configuration reference](https://code.visualstudio.com/docs/agents/reference/mcp-configuration).
 
 ## Available Skills
 
