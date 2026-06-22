@@ -112,6 +112,9 @@ modules:
       #
       # That extension enables ARC1_UI=web and activates the optional AppRouter,
       # which performs XSUAA login and forwards an admin-scoped JWT to ARC-1.
+      # The deploy script writes an ignored mta-ui-deploy.mtaext by merging this
+      # file with the UI activation, so your destination/route/xsappname values
+      # stay in the same single extension descriptor passed to `cf deploy`.
       # ARC1_UI: "web"
 
       # ── Tool surface ─────────────────────────────────────────────────

@@ -392,7 +392,9 @@ npm run btp:build-deploy-ui-ext
 cf app arc1-ui-router
 ```
 
-Open the `arc1-ui-router` route in the browser. `/` and `/ui/` both lead to the UI. The signed-in user must be assigned the `ARC-1 Admin (<space>)` role collection; non-admin users are blocked by AppRouter before the request reaches ARC-1. The extension file [`mta-ui-approuter.mtaext`](../mta-ui-approuter.mtaext) does two things: sets `ARC1_UI=web` on `arc1-mcp-server`, and activates the otherwise-excluded `arc1-ui-router` module. The base `mta.yaml` keeps the AppRouter excluded from Cloud Foundry builds, so default deployments still create only the ARC-1 backend app.
+Open the `arc1-ui-router` route in the browser. `/` and `/ui/` both lead to the UI. The signed-in user must be assigned the `ARC-1 Admin (<space>)` role collection; non-admin users are blocked by AppRouter before the request reaches ARC-1.
+
+The extension file [`mta-ui-approuter.mtaext`](../mta-ui-approuter.mtaext) does two things: sets `ARC1_UI=web` on `arc1-mcp-server`, and activates the otherwise-excluded `arc1-ui-router` module. `npm run btp:deploy-ui-ext` first writes an ignored `mta-ui-deploy.mtaext` by merging your local `mta-overrides.mtaext` with that UI activation, then deploys with the generated single extension descriptor. This keeps landscape-specific values (destinations, route host, `xsappname`) intact on CF deploy plugins that only apply one extension file reliably. The base `mta.yaml` keeps the AppRouter excluded from Cloud Foundry builds, so default deployments still create only the ARC-1 backend app.
 
 For stricter network privacy, map the AppRouter to an internal/private route or put it behind your corporate access layer. The v1 UI is read-only and does not expose cached source bodies.
 

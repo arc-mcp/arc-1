@@ -93,7 +93,7 @@
     "btp:build-ui-ext": "npx mbt build -e mta-ui-approuter.mtaext",
     "btp:deploy": "node -e \"const v=require('./package.json').version;require('child_process').execSync('cf deploy mta_archives/arc1-mcp_'+v+'.mtar',{stdio:'inherit'})\"",
     "btp:deploy-ext": "node -e \"const v=require('./package.json').version;require('child_process').execSync('cf deploy mta_archives/arc1-mcp_'+v+'.mtar -e mta-overrides.mtaext',{stdio:'inherit'})\"",
-    "btp:deploy-ui-ext": "node -e \"const v=require('./package.json').version;require('child_process').execSync('cf deploy mta_archives/arc1-mcp_'+v+'.mtar -e mta-overrides.mtaext -e mta-ui-approuter.mtaext',{stdio:'inherit'})\"",
+    "btp:deploy-ui-ext": "node scripts/btp/prepare-ui-mtaext.mjs && node -e \"const v=require('./package.json').version;require('child_process').execSync('cf deploy mta_archives/arc1-mcp_'+v+'.mtar -e mta-ui-deploy.mtaext',{stdio:'inherit'})\"",
     "btp:build-deploy": "npm run btp:build && npm run btp:deploy",
     "btp:build-deploy-ext": "npm run btp:build && npm run btp:deploy-ext",
     "btp:build-deploy-ui-ext": "npm run btp:build-ui-ext && npm run btp:deploy-ui-ext"
@@ -141,6 +141,7 @@
     "supertest": "^7.2.2",
     "tsx": "^4.22.4",
     "typescript": "~6.0.3",
-    "vitest": "^4.1.1"
+    "vitest": "^4.1.1",
+    "yaml": "^2.9.0"
   }
 }
