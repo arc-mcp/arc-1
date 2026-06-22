@@ -54,7 +54,7 @@ docker run -d --rm \
 curl -s http://localhost:8080/mcp   # should return an MCP protocol response
 ```
 
-The experimental read-only UI is off by default. To try it in HTTP mode, add `-e ARC1_UI=web` and open `http://localhost:8080/ui/`. If API keys, OIDC, or XSUAA are configured, `/ui/api/*` requires an `admin`-scoped bearer token; otherwise it is open like the MCP endpoint. The UI shows metadata only and does not return cached ABAP source bodies.
+The experimental read-only UI is off by default. HTTP mode requires real HTTP auth before it will start, for example `-e ARC1_UI=web -e ARC1_API_KEYS="$ADMIN_KEY:admin"`. All `/ui/*` routes require an `admin`-scoped bearer token, so browser-first use should go through a local or enterprise reverse proxy that performs login and forwards the bearer token. For direct laptop use with Claude-style stdio clients, prefer `ARC1_UI=local`. The UI shows metadata only and does not return cached ABAP source bodies.
 
 ### stdio mode (classic, pipe-based)
 
@@ -241,7 +241,7 @@ MCP Client
 |---|---|---|---|
 | `SAP_TRANSPORT` | `--transport` | `http-streamable` | `stdio` or `http-streamable` |
 | `SAP_HTTP_ADDR` | `--http-addr` | `0.0.0.0:8080` | Listen address for http-streamable |
-| `ARC1_UI` | `--ui` | `off` | Experimental read-only console. `web` mounts it at `/ui`; `local` starts a loopback sidecar inside the container and is usually not useful unless you forward that port deliberately |
+| `ARC1_UI` | `--ui` | `off` | Experimental read-only console. `web` mounts it at `/ui` and requires HTTP auth plus admin scope; `local` starts a loopback sidecar inside the container and is usually not useful unless you forward that port deliberately |
 | `ARC1_UI_ADDR` | `--ui-addr` | `127.0.0.1:8711` | Sidecar bind address for `ARC1_UI=local` |
 
 ---

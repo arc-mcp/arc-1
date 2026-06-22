@@ -205,7 +205,7 @@ describe('parseArgs', () => {
 
   it('maps ARC1_UI=true to web mode for HTTP transport', () => {
     process.env.ARC1_UI = 'true';
-    const config = parseArgs(['--transport', 'http-streamable']);
+    const config = parseArgs(['--transport', 'http-streamable', '--api-keys', 'admin-secret:admin']);
     expect(config.uiMode).toBe('web');
   });
 
@@ -227,6 +227,12 @@ describe('parseArgs', () => {
 
   it('rejects web UI mode on stdio transport', () => {
     expect(() => parseArgs(['--ui', 'web'])).toThrow(/requires SAP_TRANSPORT=http-streamable/);
+  });
+
+  it('rejects web UI mode without HTTP authentication', () => {
+    expect(() => parseArgs(['--transport', 'http-streamable', '--ui', 'web'])).toThrow(
+      /ARC1_UI=web requires HTTP authentication/,
+    );
   });
 
   it('rejects non-loopback local UI addresses', () => {
@@ -1081,5 +1087,37 @@ describe('validateConfig', () => {
 
   it('skips client validation when empty (resolveConfig substitutes the default)', () => {
     expect(() => validateConfig({ ...DEFAULT_CONFIG, client: '' })).not.toThrow();
+  });
+
+  it('throws when web UI is enabled without HTTP auth', () => {
+    expect(() =>
+      validateConfig({
+        ...DEFAULT_CONFIG,
+        transport: 'http-streamable',
+        uiMode: 'web',
+      }),
+    ).toThrow('ARC1_UI=web requires HTTP authentication');
+  });
+
+  it('throws when web UI is enabled with API keys but no admin key', () => {
+    expect(() =>
+      validateConfig({
+        ...DEFAULT_CONFIG,
+        transport: 'http-streamable',
+        uiMode: 'web',
+        apiKeys: [{ key: 'viewer-secret', profile: 'viewer' }],
+      }),
+    ).toThrow('ARC1_UI=web requires HTTP authentication');
+  });
+
+  it('accepts web UI with an admin API key configured', () => {
+    expect(() =>
+      validateConfig({
+        ...DEFAULT_CONFIG,
+        transport: 'http-streamable',
+        uiMode: 'web',
+        apiKeys: [{ key: 'admin-secret', profile: 'admin' }],
+      }),
+    ).not.toThrow();
   });
 });

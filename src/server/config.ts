@@ -737,6 +737,13 @@ export function validateConfig(config: ServerConfig): void {
     throw new Error('ARC1_UI=web requires SAP_TRANSPORT=http-streamable. Use ARC1_UI=local for stdio clients.');
   }
 
+  const hasAdminApiKey = config.apiKeys?.some((entry) => entry.profile === 'admin') ?? false;
+  if (config.uiMode === 'web' && !(hasAdminApiKey || config.oidcIssuer || config.xsuaaAuth)) {
+    throw new Error(
+      'ARC1_UI=web requires HTTP authentication: set ARC1_API_KEYS with an admin key, SAP_OIDC_ISSUER/SAP_OIDC_AUDIENCE, or SAP_XSUAA_AUTH=true.',
+    );
+  }
+
   if (config.uiMode === 'local' && !isLoopbackAddr(config.uiAddr)) {
     throw new Error(
       `ARC1_UI=local must bind to a loopback address, got '${config.uiAddr}'. Use ARC1_UI=web with HTTP transport for network-exposed deployments.`,

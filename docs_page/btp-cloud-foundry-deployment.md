@@ -176,7 +176,7 @@ The base `mta.yaml` already configures these properties (override any of them vi
 - `SAP_PP_ENABLED: "true"` — per-user principal propagation
 - `SAP_XSUAA_AUTH: "true"` — XSUAA OAuth for MCP clients
 - `SAP_ALLOW_*: "false"` and `SAP_ALLOWED_PACKAGES: "$TMP"` — safe defaults; widen only as needed
-- `ARC1_UI: "off"` — experimental UI is not enabled by default. Set `ARC1_UI: "web"` in `mta-overrides.mtaext` or via `cf set-env` to mount the read-only console at `/ui`.
+- `ARC1_UI: "off"` — experimental UI is not enabled by default. Set `ARC1_UI: "web"` in `mta-overrides.mtaext` or via `cf set-env` to mount the read-only console at `/ui`; HTTP UI mode requires XSUAA, OIDC, or an admin API key and every `/ui/*` request requires admin scope.
 
 ### 4. Verify a healthy startup
 
@@ -382,7 +382,7 @@ cf restage arc1-mcp-server
 
 Origins are comma-separated and must match exactly (no wildcards), because CORS responses are sent with `credentials: true`. Disallowed origins emit a `cors_rejected` audit event for triage. Full reference: [Security Guide §11](security-guide.md#11-network-security).
 
-**Read-only UI.** This is experimental and off by default. Set `ARC1_UI=web` to serve `https://<your-app>/ui/` from the same CF app. Static assets are public; `/ui/api/*` requires an `admin`-scoped XSUAA/API-key/OIDC bearer token. In a browser-first rollout, put SAP AppRouter or another corporate reverse proxy in front of ARC-1 so users authenticate with XSUAA there and the proxy forwards a bearer token to ARC-1. The v1 UI is read-only and does not expose cached source bodies.
+**Read-only UI.** This is experimental and off by default. Set `ARC1_UI=web` to serve `https://<your-app>/ui/` from the same CF app. ARC-1 refuses HTTP UI mode unless an admin API key, OIDC, or XSUAA auth is configured, and every `/ui/*` route requires an `admin`-scoped bearer token. Direct CF route access is therefore not public, but a plain browser address-bar request will get `401` unless something supplies the token. For a browser-first rollout, put SAP AppRouter or another corporate reverse proxy in front of ARC-1 so users authenticate there and the proxy forwards an admin-scoped bearer token to ARC-1. For stricter network privacy, expose the UI through an internal route/private domain or corporate access layer rather than relying on the default public CF route. The v1 UI is read-only and does not expose cached source bodies.
 
 ## How BTP Connectivity Works
 

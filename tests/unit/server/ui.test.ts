@@ -6,12 +6,11 @@ import { describe, expect, it } from 'vitest';
 import { CachingLayer } from '../../../src/cache/caching-layer.js';
 import { MemoryCache } from '../../../src/cache/memory.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
-import { createUiApiRouter, mountUiStaticRoutes, type UiServerDeps } from '../../../src/server/ui.js';
+import { createUiApiRouter, mountUiRoutes, mountUiStaticRoutes, type UiServerDeps } from '../../../src/server/ui.js';
 import { UiLogBufferSink } from '../../../src/server/ui-log-buffer.js';
 
-function buildApp(deps: Partial<UiServerDeps> = {}) {
-  const app = express();
-  const defaultDeps: UiServerDeps = {
+function defaultUiDeps(deps: Partial<UiServerDeps> = {}): UiServerDeps {
+  return {
     config: { ...DEFAULT_CONFIG },
     sources: {},
     version: '0.0.0-test',
@@ -19,7 +18,11 @@ function buildApp(deps: Partial<UiServerDeps> = {}) {
     getFeatures: () => undefined,
     ...deps,
   };
-  app.use('/ui/api', createUiApiRouter(defaultDeps));
+}
+
+function buildApp(deps: Partial<UiServerDeps> = {}) {
+  const app = express();
+  app.use('/ui/api', createUiApiRouter(defaultUiDeps(deps)));
   return app;
 }
 
@@ -35,6 +38,32 @@ describe('UI API', () => {
     expect(redirect.headers.location).toBe('/ui/');
     expect(index.status).toBe(200);
     expect(index.text).toContain('ARC-1 Console');
+  });
+
+  it('protects static assets and API routes when auth middleware is mounted', async () => {
+    const app = express();
+    mountUiRoutes(app, defaultUiDeps(), (req, res, next) => {
+      if (req.header('authorization') !== 'Bearer admin-token') {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+      next();
+    });
+
+    expect((await request(app).get('/ui/')).status).toBe(401);
+    expect((await request(app).get('/ui/cache')).status).toBe(401);
+    expect((await request(app).get('/ui/api/overview')).status).toBe(401);
+
+    const index = await request(app).get('/ui/').set('Authorization', 'Bearer admin-token');
+    const fallback = await request(app).get('/ui/cache').set('Authorization', 'Bearer admin-token');
+    const api = await request(app).get('/ui/api/overview').set('Authorization', 'Bearer admin-token');
+
+    expect(index.status).toBe(200);
+    expect(index.text).toContain('ARC-1 Console');
+    expect(fallback.status).toBe(200);
+    expect(fallback.text).toContain('ARC-1 Console');
+    expect(api.status).toBe(200);
+    expect(api.body.app.name).toBe('ARC-1');
   });
 
   it('returns overview runtime state', async () => {

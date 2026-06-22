@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import type { Server as HttpServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
-import type { Express, Request } from 'express';
+import type { Express, Request, RequestHandler } from 'express';
 import express from 'express';
 import helmet from 'helmet';
 import type { CachingLayer } from '../cache/caching-layer.js';
@@ -166,6 +166,14 @@ export function mountUiStaticRoutes(app: Express): void {
   });
 }
 
+export function mountUiRoutes(app: Express, deps: UiServerDeps, auth?: RequestHandler): void {
+  if (auth) {
+    app.use('/ui', auth);
+  }
+  mountUiStaticRoutes(app);
+  app.use('/ui/api', createUiApiRouter(deps));
+}
+
 export async function startLocalUiServer(deps: UiServerDeps): Promise<HttpServer> {
   const { host, port } = parseBindAddr(deps.config.uiAddr);
   const app = express();
@@ -182,8 +190,7 @@ export async function startLocalUiServer(deps: UiServerDeps): Promise<HttpServer
     }),
   );
   app.get('/', (_req, res) => res.redirect(302, '/ui/'));
-  mountUiStaticRoutes(app);
-  app.use('/ui/api', createUiApiRouter(deps));
+  mountUiRoutes(app, deps);
   app.use((_req, res) => {
     res.status(404).json({ error: 'Not found. Use /ui for the ARC-1 read-only UI.' });
   });

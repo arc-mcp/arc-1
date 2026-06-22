@@ -37,7 +37,7 @@ import { API_KEY_PROFILES } from './config.js';
 import { authLibLogger, logger } from './logger.js';
 import { VERSION } from './server.js';
 import type { ServerConfig } from './types.js';
-import { createUiApiRouter, mountUiStaticRoutes, type UiServerDeps } from './ui.js';
+import { mountUiRoutes, type UiServerDeps } from './ui.js';
 
 // ─── API Key Entry Mapping ───────────────────────────────────────────
 
@@ -231,8 +231,9 @@ export async function startHttpServer(
   app.use(express.json());
   app.use(express.urlencoded({ extended: false }));
   const mcpHandler = createMcpHandler(serverFactory);
-  if (uiDeps) {
-    mountUiStaticRoutes(app);
+  const hasAdminApiKey = config.apiKeys?.some((entry) => entry.profile === 'admin') ?? false;
+  if (uiDeps && !(hasAdminApiKey || config.oidcIssuer || (config.xsuaaAuth && xsuaaCredentials))) {
+    throw new Error('ARC1_UI=web requires an admin API key, OIDC, or XSUAA HTTP authentication.');
   }
 
   // ─── Global Request Logger ──────────────────────────────────
@@ -332,7 +333,7 @@ export async function startHttpServer(
         requiredScopes: ['admin'],
         resourceMetadataUrl,
       });
-      app.use('/ui/api', uiBearerAuth, createUiApiRouter(uiDeps));
+      mountUiRoutes(app, uiDeps, uiBearerAuth);
     }
 
     // ─── Layer 1: per-IP rate limiters on OAuth endpoints + /mcp ────────
@@ -569,14 +570,11 @@ export async function startHttpServer(
           verifier: { verifyAccessToken: verifier },
           requiredScopes: ['admin'],
         });
-        app.use('/ui/api', uiBearerAuth, createUiApiRouter(uiDeps));
+        mountUiRoutes(app, uiDeps, uiBearerAuth);
       }
       app.all('/mcp', bearerAuth, mcpHandler);
     } else {
       // No auth configured — open access
-      if (uiDeps) {
-        app.use('/ui/api', createUiApiRouter(uiDeps));
-      }
       app.all('/mcp', mcpHandler);
     }
   }
