@@ -67,7 +67,7 @@ async function loadTab(tab) {
   try {
     if (tab === 'overview') renderOverview(await apiGet(endpoints.overview));
     if (tab === 'config') renderConfig(await apiGet(endpoints.config));
-    if (tab === 'safety') renderObjectPanel('Safety Ceiling', await apiGet(endpoints.safety));
+    if (tab === 'safety') renderSafety(await apiGet(endpoints.safety));
     if (tab === 'features') renderFeatures(await apiGet(endpoints.features));
     if (tab === 'cache') renderCache();
     if (tab === 'logs') renderLogs();
@@ -99,7 +99,7 @@ async function refreshActiveTab() {
     await preserveScroll(async () => {
       if (state.tab === 'overview') renderOverview(await apiGet(endpoints.overview));
       if (state.tab === 'config') renderConfig(await apiGet(endpoints.config));
-      if (state.tab === 'safety') renderObjectPanel('Safety Ceiling', await apiGet(endpoints.safety));
+      if (state.tab === 'safety') renderSafety(await apiGet(endpoints.safety));
       if (state.tab === 'features') renderFeatures(await apiGet(endpoints.features));
       if (state.tab === 'cache') await refreshCache({ silent: true });
       if (state.tab === 'logs') await refreshLogs({ silent: true });
@@ -122,20 +122,76 @@ async function preserveScroll(action) {
 
 function renderOverview(data) {
   subtitle.textContent = `${data.app.version} - ${data.transport.type}`;
+  const safety = data.safety || {};
+  const auth = data.auth || {};
+  const sapAuth = auth.sap || {};
+  const cache = data.cache || {};
   content.replaceChildren(
     panel(
       'Runtime',
       metricGrid([
-        ['Version', data.app.version],
-        ['Uptime', `${data.app.uptimeSeconds}s`],
-        ['Transport', data.transport.type],
-        ['UI mode', data.transport.uiMode],
-        ['SAP auth', sapAuthLabel(data.auth.sap)],
-        ['Cache', data.cache.mode],
+        ['Version', data.app.version, 'accent'],
+        ['Uptime', `${data.app.uptimeSeconds}s`, 'info'],
+        ['Transport', data.transport.type, 'info'],
+        ['UI mode', data.transport.uiMode, data.transport.uiMode === 'local' ? 'ok' : 'info'],
+        ['SAP auth', sapAuthLabel(sapAuth), hasSapAuth(sapAuth) ? 'ok' : 'warn'],
+        ['Cache', cache.mode, cache.mode === 'none' ? 'warn' : 'ok'],
+      ]),
+      detailsList([
+        ['Started at', data.app.startedAt],
+        ['Process ID', data.app.pid],
+        ['Node runtime', data.app.node],
+        ['HTTP address', data.transport.httpAddr],
+        ['UI address', data.transport.uiAddr],
       ]),
     ),
-    panel('Safety', keyValue(data.safety)),
-    panel('Auth', keyValue(data.auth)),
+    panel(
+      'Safety Posture',
+      statusGrid(safetyStatusRows(safety)),
+      detailsList([
+        ['Allowed packages', safety.allowedPackages],
+        ['Allowed transports', safety.allowedTransports],
+        ['Denied actions', safety.denyActions],
+      ]),
+    ),
+    panel(
+      'Authentication',
+      statusGrid(authStatusRows(auth)),
+      detailsList([
+        ['API key profiles', auth.apiKeys?.profiles],
+        ['OIDC issuer', auth.oidc?.issuer || 'none'],
+        ['OIDC audience', auth.oidc?.audience || 'none'],
+        ['XSUAA DCR TTL', auth.xsuaa?.dcrTtlSeconds],
+        ['DCR signing secret', auth.xsuaa?.dcrSigningSecret],
+      ]),
+    ),
+    panel(
+      'Cache',
+      metricGrid([
+        ['Mode', cache.mode || 'none', cache.mode === 'none' ? 'warn' : 'ok'],
+        ['Warmup', cache.warmup ? 'enabled' : 'disabled', cache.warmup ? 'ok' : ''],
+        ['Packages', cache.warmupPackages || 'default', 'info'],
+      ]),
+      detailsList([
+        ['Cache file', cache.file || 'none'],
+        ['Warmup packages', cache.warmupPackages || 'default'],
+      ]),
+    ),
+  );
+}
+
+function renderSafety(data) {
+  const safety = data || {};
+  content.replaceChildren(
+    panel(
+      'Safety Ceiling',
+      statusGrid(safetyStatusRows(safety)),
+      detailsList([
+        ['Allowed packages', safety.allowedPackages],
+        ['Allowed transports', safety.allowedTransports],
+        ['Denied actions', safety.denyActions],
+      ]),
+    ),
   );
 }
 
@@ -150,12 +206,12 @@ function renderConfig(data) {
     panel(
       'Configuration Summary',
       metricGrid([
-        ['Transport', cfg.transport || ''],
-        ['UI mode', cfg.uiMode || ''],
-        ['Tool mode', cfg.toolMode || ''],
-        ['Cache', cache.mode || ''],
-        ['Writes', safety.allowWrites ? 'enabled' : 'blocked'],
-        ['API keys', auth.apiKeys?.count ?? 0],
+        ['Transport', cfg.transport || '', 'info'],
+        ['UI mode', cfg.uiMode || '', cfg.uiMode === 'local' ? 'ok' : 'info'],
+        ['Tool mode', cfg.toolMode || '', 'accent'],
+        ['Cache', cache.mode || '', cache.mode === 'none' ? 'warn' : 'ok'],
+        ['Writes', safety.allowWrites ? 'enabled' : 'blocked', safety.allowWrites ? 'warn' : 'ok'],
+        ['API keys', auth.apiKeys?.count ?? 0, auth.apiKeys?.count ? 'ok' : ''],
       ]),
     ),
     panel(
@@ -172,14 +228,7 @@ function renderConfig(data) {
     ),
     panel(
       'Safety Gates',
-      statusGrid([
-        ['Writes', safety.allowWrites, safety.allowWrites ? 'warn' : 'ok'],
-        ['Data preview', safety.allowDataPreview, safety.allowDataPreview ? 'warn' : 'ok'],
-        ['Free SQL', safety.allowFreeSQL, safety.allowFreeSQL ? 'warn' : 'ok'],
-        ['Transport writes', safety.allowTransportWrites, safety.allowTransportWrites ? 'warn' : 'ok'],
-        ['Git writes', safety.allowGitWrites, safety.allowGitWrites ? 'warn' : 'ok'],
-        ['Read-only default', safety.readOnlyDefault, safety.readOnlyDefault ? 'ok' : 'warn'],
-      ]),
+      statusGrid(safetyStatusRows(safety)),
       detailsList([
         ['Allowed packages', safety.allowedPackages],
         ['Allowed transports', safety.allowedTransports],
@@ -192,15 +241,7 @@ function renderConfig(data) {
     ),
     panel(
       'Auth & Principal Propagation',
-      statusGrid([
-        ['Basic SAP auth', auth.sap?.basic, auth.sap?.basic ? 'ok' : ''],
-        ['Cookie auth', auth.sap?.cookieFile || auth.sap?.cookieString, auth.sap?.cookieFile || auth.sap?.cookieString ? 'ok' : ''],
-        ['BTP service key', auth.sap?.btpServiceKey, auth.sap?.btpServiceKey ? 'ok' : ''],
-        ['Destination', auth.sap?.destination, auth.sap?.destination ? 'ok' : ''],
-        ['OIDC', auth.oidc?.configured, auth.oidc?.configured ? 'ok' : ''],
-        ['XSUAA', auth.xsuaa?.enabled, auth.xsuaa?.enabled ? 'ok' : ''],
-        ['Principal propagation', cfg.principalPropagation?.enabled, cfg.principalPropagation?.enabled ? 'ok' : ''],
-      ]),
+      statusGrid(authStatusRows(auth, cfg.principalPropagation)),
       detailsList([
         ['API key profiles', auth.apiKeys?.profiles],
         ['OIDC issuer', auth.oidc?.issuer || 'none'],
@@ -246,12 +287,12 @@ function renderFeatures(data) {
     panel(
       'Feature Summary',
       metricGrid([
-        ['Available', available],
-        ['Unavailable', unavailable],
-        ['SAP release', data.abapRelease || 'unknown'],
-        ['System type', data.systemType || 'unknown'],
-        ['Discovery endpoints', data.discovery?.endpointCount ?? 0],
-        ['Text search', data.textSearch?.available ? 'available' : 'unavailable'],
+        ['Available', available, 'ok'],
+        ['Unavailable', unavailable, unavailable > 0 ? 'warn' : 'ok'],
+        ['SAP release', data.abapRelease || 'unknown', 'accent'],
+        ['System type', data.systemType || 'unknown', 'info'],
+        ['Discovery endpoints', data.discovery?.endpointCount ?? 0, 'info'],
+        ['Text search', data.textSearch?.available ? 'available' : 'unavailable', data.textSearch?.available ? 'ok' : 'warn'],
       ]),
       chartGrid([
         barChart('Feature Availability', [
@@ -325,7 +366,13 @@ async function refreshCacheStats() {
   try {
     const stats = await apiGet(endpoints.cacheStats);
     if (!stats.enabled) {
-      target.replaceChildren(objectView(stats));
+      target.replaceChildren(
+        metricGrid([
+          ['State', 'disabled', 'warn'],
+          ['Configured mode', stats.mode || 'none', stats.mode === 'none' ? 'warn' : 'info'],
+        ]),
+        detailsList([['Reason', 'No cache layer is attached to this process.']]),
+      );
       activityTarget.replaceChildren(text('Cache is disabled.'));
       return;
     }
@@ -333,18 +380,18 @@ async function refreshCacheStats() {
     const activityCounts = stats.activity?.counts || {};
     target.replaceChildren(
       metricGrid([
-        ['Backend', stats.backend?.effective || stats.mode],
-        ['Persistence', stats.backend?.persistent ? 'persistent' : 'ephemeral'],
-        ['Nodes', stats.stats.nodeCount],
-        ['Edges', stats.stats.edgeCount],
-        ['APIs', stats.stats.apiCount],
-        ['Sources', stats.stats.sourceCount],
-        ['Contracts', stats.stats.contractCount],
-        ['Warmup', stats.warmup?.available ? 'available' : 'not available'],
-        ['Invalidations', activityCounts.source_invalidate || 0],
-        ['Evictions', activityCounts.source_evict || 0],
-        ['Cache hits', activityCounts.source_hit || 0],
-        ['Cache misses', activityCounts.source_miss || 0],
+        ['Backend', stats.backend?.effective || stats.mode, stats.backend?.persistent ? 'ok' : 'info'],
+        ['Persistence', stats.backend?.persistent ? 'persistent' : 'ephemeral', stats.backend?.persistent ? 'ok' : 'info'],
+        ['Nodes', stats.stats.nodeCount, 'info'],
+        ['Edges', stats.stats.edgeCount, 'info'],
+        ['APIs', stats.stats.apiCount, 'info'],
+        ['Sources', stats.stats.sourceCount, stats.stats.sourceCount ? 'ok' : ''],
+        ['Contracts', stats.stats.contractCount, stats.stats.contractCount ? 'ok' : ''],
+        ['Warmup', stats.warmup?.available ? 'available' : 'not available', stats.warmup?.available ? 'ok' : 'warn'],
+        ['Invalidations', activityCounts.source_invalidate || 0, activityCounts.source_invalidate ? 'warn' : ''],
+        ['Evictions', activityCounts.source_evict || 0, activityCounts.source_evict ? 'warn' : ''],
+        ['Cache hits', activityCounts.source_hit || 0, activityCounts.source_hit ? 'ok' : ''],
+        ['Cache misses', activityCounts.source_miss || 0, activityCounts.source_miss ? 'warn' : ''],
       ]),
       chartGrid([
         barChart('Source Types', objectRows(stats.sources?.byType || {})),
@@ -411,7 +458,13 @@ async function refreshCacheSources(options = {}) {
     }
     const data = await apiGet(`${endpoints.cacheSources}?${params.toString()}`);
     if (data.enabled === false) {
-      target.replaceChildren(objectView(data));
+      target.replaceChildren(
+        detailsList([
+          ['State', 'disabled'],
+          ['Configured mode', data.mode || 'none'],
+          ['Entries', data.total ?? 0],
+        ]),
+      );
       return;
     }
     target.replaceChildren(
@@ -493,14 +546,19 @@ async function refreshLogs(options = {}) {
     if (event) params.set('event', event);
     if (level) params.set('level', level);
     if (limit) params.set('limit', limit);
-    const data = await apiGet(`${endpoints.logs}?${params.toString()}`);
-    if (summaryTarget) summaryTarget.replaceChildren(logSummary(data));
+    const summaryParams = new URLSearchParams();
+    summaryParams.set('limit', String(Math.max(200, Number.parseInt(limit || '100', 10) || 100)));
+    const [data, summaryData] = await Promise.all([
+      apiGet(`${endpoints.logs}?${params.toString()}`),
+      apiGet(`${endpoints.logs}?${summaryParams.toString()}`),
+    ]);
+    if (summaryTarget) summaryTarget.replaceChildren(logSummary(summaryData, data));
     target.replaceChildren(
       table(
         ['Time', 'Level', 'Event', 'Request', 'Detail'],
         data.items.map((item) => [
           item.timestamp,
-          item.level,
+          pill(item.level, statusForLabel(item.level)),
           item.event,
           item.requestId || '',
           compactLogDetail(item),
@@ -532,10 +590,6 @@ function renderDocs(data) {
   content.replaceChildren(panel('Documentation', list));
 }
 
-function renderObjectPanel(title, data) {
-  content.replaceChildren(panel(title, objectView(data)));
-}
-
 function panel(title, ...children) {
   const section = document.createElement('section');
   section.className = 'panel';
@@ -548,9 +602,9 @@ function panel(title, ...children) {
 function metricGrid(items) {
   const grid = document.createElement('div');
   grid.className = 'grid';
-  for (const [label, value] of items) {
+  for (const [label, value, status] of items) {
     const item = document.createElement('div');
-    item.className = 'metric';
+    item.className = `metric ${status || ''}`.trim();
     const strong = document.createElement('strong');
     strong.textContent = String(value ?? '');
     const span = document.createElement('span');
@@ -615,7 +669,7 @@ function statusGrid(items) {
   grid.className = 'status-grid';
   for (const [label, value, status] of items) {
     const item = document.createElement('div');
-    item.className = 'status-item';
+    item.className = `status-item ${status || ''}`.trim();
     const name = document.createElement('span');
     name.textContent = label;
     const rendered = typeof value === 'boolean' ? pill(value ? 'enabled' : 'disabled', value ? status || 'ok' : '') : renderInlineValue(value);
@@ -623,19 +677,6 @@ function statusGrid(items) {
     grid.append(item);
   }
   return grid;
-}
-
-function keyValue(data) {
-  const wrap = document.createElement('div');
-  wrap.className = 'kv';
-  for (const [key, value] of Object.entries(data || {})) {
-    const name = document.createElement('div');
-    name.textContent = key;
-    const val = document.createElement('div');
-    val.append(renderValue(value));
-    wrap.append(name, val);
-  }
-  return wrap;
 }
 
 function detailsList(items) {
@@ -649,22 +690,6 @@ function detailsList(items) {
     wrap.append(name, val);
   }
   return wrap;
-}
-
-function objectView(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return renderValue(value);
-  }
-  return keyValue(value);
-}
-
-function renderValue(value) {
-  if (value === null || value === undefined) return text('');
-  if (typeof value === 'boolean') return pill(value ? 'true' : 'false', value ? 'ok' : '');
-  if (typeof value === 'number') return text(String(value));
-  if (typeof value === 'string') return text(value);
-  if (Array.isArray(value)) return text(value.join(', '));
-  return codeBlock(JSON.stringify(value, null, 2));
 }
 
 function renderInlineValue(value) {
@@ -787,31 +812,59 @@ function sapAuthLabel(sap) {
   return 'none';
 }
 
-function compactLogDetail(item) {
-  const clone = { ...item };
-  for (const key of ['timestamp', 'level', 'event', 'requestId']) delete clone[key];
-  return JSON.stringify(clone);
+function hasSapAuth(sap) {
+  return Boolean(sap.basic || sap.cookieFile || sap.cookieString || sap.btpServiceKey || sap.destination || sap.principalPropagation);
 }
 
-function logSummary(data) {
+function compactLogDetail(item) {
+  const chips = [];
+  for (const key of [
+    'tool',
+    'status',
+    'durationMs',
+    'resultSize',
+    'method',
+    'path',
+    'statusCode',
+    'operation',
+    'reason',
+    'errorClass',
+    'errorMessage',
+  ]) {
+    if (item[key] !== undefined && item[key] !== '') chips.push([detailLabel(key), formatPrimitive(item[key]), detailStatus(key, item[key])]);
+  }
+  if (chips.length === 0) {
+    const clone = { ...item };
+    for (const key of ['timestamp', 'level', 'event', 'requestId']) delete clone[key];
+    for (const [key, value] of Object.entries(clone)) {
+      chips.push([detailLabel(key), formatPrimitive(value), detailStatus(key, value)]);
+    }
+  }
+  return detailChips(chips);
+}
+
+function logSummary(data, streamData) {
   const items = data.items || [];
   const toolCalls = items.filter((item) => item.event === 'tool_call_end');
   const avgDuration = average(toolCalls.map((item) => item.durationMs).filter((value) => typeof value === 'number'));
+  const httpRequests = items.filter((item) => item.event === 'http_request');
+  const streamFilterLabel = streamData && streamData.total !== data.total ? `${streamData.items?.length || 0} filtered rows shown` : 'unfiltered stream';
   const fragment = document.createDocumentFragment();
   fragment.append(
     metricGrid([
-      ['Events shown', items.length],
-      ['Matching total', data.total ?? items.length],
-      ['Tool calls', toolCalls.length],
-      ['Errors', toolCalls.filter((item) => item.status === 'error').length],
-      ['Avg tool duration', avgDuration === undefined ? 'n/a' : `${Math.round(avgDuration)}ms`],
-      ['Slowest tool', slowestToolLabel(toolCalls)],
+      ['Recent events', items.length, 'info'],
+      ['Tool calls', toolCalls.length, 'accent'],
+      ['Errors', toolCalls.filter((item) => item.status === 'error').length, toolCalls.some((item) => item.status === 'error') ? 'warn' : 'ok'],
+      ['HTTP requests', httpRequests.length, 'info'],
+      ['Avg tool duration', avgDuration === undefined ? 'n/a' : `${Math.round(avgDuration)}ms`, avgDuration && avgDuration > 1000 ? 'warn' : 'ok'],
+      ['Stream filter', streamFilterLabel, streamFilterLabel === 'unfiltered stream' ? 'ok' : 'info'],
     ]),
     chartGrid([
-      barChart('Tool Calls by Tool', countRows(toolCalls.map((item) => item.tool || 'unknown'))),
+      barChart('Tool Calls by Tool', countRows(toolCalls.map((item) => item.tool || 'unknown'), toolStatus)),
       barChart('Tool Call Status', countRows(toolCalls.map((item) => item.status || 'unknown'), statusForLabel)),
       barChart('Event Mix', countRows(items.map((item) => item.event || 'unknown'))),
       barChart('Level Mix', countRows(items.map((item) => item.level || 'unknown'), statusForLabel)),
+      barChart('HTTP Status Codes', countRows(httpRequests.map((item) => item.statusCode || 'unknown'), httpStatus)),
     ]),
     slowestCallsTable(toolCalls),
   );
@@ -823,7 +876,7 @@ function slowestCallsTable(toolCalls) {
     .filter((item) => typeof item.durationMs === 'number')
     .sort((a, b) => b.durationMs - a.durationMs)
     .slice(0, 5)
-    .map((item) => [item.timestamp, item.tool || '', item.status || '', item.durationMs, item.requestId || '']);
+    .map((item) => [item.timestamp, item.tool || '', pill(item.status || '', statusForLabel(item.status)), `${item.durationMs}ms`, item.requestId || '']);
   if (rows.length === 0) return text('No timed tool calls in the current log slice.');
   return table(['Time', 'Tool', 'Status', 'Duration', 'Request'], rows);
 }
@@ -854,7 +907,24 @@ function average(values) {
 function statusForLabel(label) {
   const normalized = String(label).toLowerCase();
   if (['success', 'info', 'available', 'ok'].includes(normalized)) return 'ok';
-  if (['error', 'warn', 'warning', 'unavailable', 'disabled'].includes(normalized)) return 'warn';
+  if (['error'].includes(normalized)) return 'error';
+  if (['warn', 'warning', 'unavailable', 'disabled'].includes(normalized)) return 'warn';
+  return '';
+}
+
+function toolStatus(tool) {
+  const normalized = String(tool).toLowerCase();
+  if (normalized.includes('read') || normalized.includes('search') || normalized.includes('navigate')) return 'info';
+  if (normalized.includes('query') || normalized.includes('context') || normalized.includes('diagnose')) return 'accent';
+  if (normalized.includes('write') || normalized.includes('activate') || normalized.includes('transport') || normalized.includes('git')) return 'warn';
+  return '';
+}
+
+function httpStatus(code) {
+  const statusCode = Number(code);
+  if (statusCode >= 200 && statusCode < 300) return 'ok';
+  if (statusCode >= 400 && statusCode < 500) return 'warn';
+  if (statusCode >= 500) return 'error';
   return '';
 }
 
@@ -877,6 +947,29 @@ function cacheEventLabel(event) {
 
 function isFeatureStatus(value) {
   return value && typeof value === 'object' && typeof value.available === 'boolean' && 'mode' in value;
+}
+
+function safetyStatusRows(safety) {
+  return [
+    ['Writes', safety.allowWrites, safety.allowWrites ? 'warn' : 'ok'],
+    ['Data preview', safety.allowDataPreview, safety.allowDataPreview ? 'warn' : 'ok'],
+    ['Free SQL', safety.allowFreeSQL, safety.allowFreeSQL ? 'warn' : 'ok'],
+    ['Transport writes', safety.allowTransportWrites, safety.allowTransportWrites ? 'warn' : 'ok'],
+    ['Git writes', safety.allowGitWrites, safety.allowGitWrites ? 'warn' : 'ok'],
+    ['Read-only default', safety.readOnlyDefault, safety.readOnlyDefault ? 'ok' : 'warn'],
+  ];
+}
+
+function authStatusRows(auth, principalPropagation = {}) {
+  return [
+    ['Basic SAP auth', auth.sap?.basic, auth.sap?.basic ? 'ok' : ''],
+    ['Cookie auth', auth.sap?.cookieFile || auth.sap?.cookieString, auth.sap?.cookieFile || auth.sap?.cookieString ? 'ok' : ''],
+    ['BTP service key', auth.sap?.btpServiceKey, auth.sap?.btpServiceKey ? 'ok' : ''],
+    ['Destination', auth.sap?.destination, auth.sap?.destination ? 'ok' : ''],
+    ['OIDC', auth.oidc?.configured, auth.oidc?.configured ? 'ok' : ''],
+    ['XSUAA', auth.xsuaa?.enabled, auth.xsuaa?.enabled ? 'ok' : ''],
+    ['Principal propagation', principalPropagation.enabled ?? auth.sap?.principalPropagation, principalPropagation.enabled || auth.sap?.principalPropagation ? 'ok' : ''],
+  ];
 }
 
 function featureLabel(name) {
@@ -905,4 +998,41 @@ function configSourceLabel(source) {
   return Object.entries(source)
     .map(([kind, value]) => `${kind}: ${value}`)
     .join(', ');
+}
+
+function detailChips(chips) {
+  const wrap = document.createElement('div');
+  wrap.className = 'detail-chips';
+  for (const [label, value, status] of chips) {
+    const chip = document.createElement('span');
+    chip.className = `detail-chip ${status || ''}`.trim();
+    const name = document.createElement('span');
+    name.textContent = label;
+    const val = document.createElement('strong');
+    val.textContent = value;
+    chip.append(name, val);
+    wrap.append(chip);
+  }
+  return wrap;
+}
+
+function detailLabel(key) {
+  return (
+    {
+      durationMs: 'duration',
+      resultSize: 'result',
+      statusCode: 'http',
+      errorClass: 'class',
+      errorMessage: 'error',
+    }[key] || key
+  );
+}
+
+function detailStatus(key, value) {
+  if (key === 'status') return statusForLabel(value);
+  if (key === 'level') return statusForLabel(value);
+  if (key === 'statusCode') return httpStatus(value);
+  if (key === 'errorClass' || key === 'errorMessage' || key === 'reason') return 'warn';
+  if (key === 'durationMs' && Number(value) > 1000) return 'warn';
+  return '';
 }

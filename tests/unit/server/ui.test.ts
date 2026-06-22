@@ -235,12 +235,18 @@ describe('UI API', () => {
     expect(appJs).toContain('input.value = defaultValue;');
     expect(appJs).toContain('window.setInterval(refreshActiveTab, 5000)');
     expect(appJs).toContain('preserveScroll');
+    expect(appJs).toContain('Safety Posture');
+    expect(appJs).toContain('Authentication');
     expect(appJs).toContain('Configuration Summary');
     expect(appJs).toContain('Feature Availability');
     expect(appJs).toContain('Log Overview');
+    expect(appJs).toContain('HTTP Status Codes');
     expect(appJs).toContain('barChart');
+    expect(appJs).toContain('detailChips');
     expect(styles).toContain('.chart-grid');
     expect(styles).toContain('.status-grid');
+    expect(styles).toContain('.metric.ok');
+    expect(styles).toContain('.detail-chip');
   });
 
   it('rejects non-GET methods', async () => {
