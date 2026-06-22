@@ -1,0 +1,20 @@
+{
+  "authenticationMethod": "route",
+  "welcomeFile": "/ui/",
+  "routes": [
+    {
+      "source": "^/$",
+      "target": "/ui/",
+      "destination": "arc1-backend",
+      "authenticationType": "xsuaa",
+      "scope": "$XSAPPNAME.admin"
+    },
+    {
+      "source": "^/ui(.*)$",
+      "target": "/ui$1",
+      "destination": "arc1-backend",
+      "authenticationType": "xsuaa",
+      "scope": "$XSAPPNAME.admin"
+    }
+  ]
+}

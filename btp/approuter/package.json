@@ -1,0 +1,17 @@
+{
+  "name": "arc1-ui-approuter",
+  "private": true,
+  "version": "0.0.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node node_modules/@sap/approuter/approuter.js"
+  },
+  "dependencies": {
+    "@sap/approuter": "22.0.3"
+  },
+  "overrides": {
+    "ws": "^8.17.1"
+  }
+}

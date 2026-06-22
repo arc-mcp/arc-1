@@ -99,10 +99,11 @@ mta_archives/
 # MTA extension descriptors with per-landscape values (destinations, safety
 # flags, etc.). Deployers copy `mta-overrides.mtaext.example` to
 # `mta-overrides.mtaext` (or any `mta-*.mtaext`) and fill in their values;
-# only the `.example` template is tracked.
+# only explicit templates/non-secret extensions are tracked.
 mta-overrides.mtaext
 mta-*.mtaext
 !mta-overrides.mtaext.example
+!mta-ui-approuter.mtaext
 
 # TypeScript / Node.js
 dist/

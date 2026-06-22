@@ -88,12 +88,15 @@
     "test:reliability-report": "node scripts/ci/collect-test-reliability.mjs",
     "test:runtime-report": "node scripts/ci/test-runtime-summary.mjs",
     "test:assert-execution": "node scripts/ci/assert-required-test-execution.mjs",
-    "btp:validate": "npx mbt validate && npx mbt validate -e mta-overrides.mtaext.example",
+    "btp:validate": "npx mbt validate && npx mbt validate -e mta-overrides.mtaext.example && npx mbt validate -e mta-overrides.mtaext.example -e mta-ui-approuter.mtaext",
     "btp:build": "npx mbt build",
+    "btp:build-ui-ext": "npx mbt build -e mta-ui-approuter.mtaext",
     "btp:deploy": "node -e \"const v=require('./package.json').version;require('child_process').execSync('cf deploy mta_archives/arc1-mcp_'+v+'.mtar',{stdio:'inherit'})\"",
     "btp:deploy-ext": "node -e \"const v=require('./package.json').version;require('child_process').execSync('cf deploy mta_archives/arc1-mcp_'+v+'.mtar -e mta-overrides.mtaext',{stdio:'inherit'})\"",
+    "btp:deploy-ui-ext": "node -e \"const v=require('./package.json').version;require('child_process').execSync('cf deploy mta_archives/arc1-mcp_'+v+'.mtar -e mta-overrides.mtaext -e mta-ui-approuter.mtaext',{stdio:'inherit'})\"",
     "btp:build-deploy": "npm run btp:build && npm run btp:deploy",
-    "btp:build-deploy-ext": "npm run btp:build && npm run btp:deploy-ext"
+    "btp:build-deploy-ext": "npm run btp:build && npm run btp:deploy-ext",
+    "btp:build-deploy-ui-ext": "npm run btp:build-ui-ext && npm run btp:deploy-ui-ext"
   },
   "dependencies": {
     "@abaplint/core": "^2.119.37",

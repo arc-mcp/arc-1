@@ -382,7 +382,19 @@ cf restage arc1-mcp-server
 
 Origins are comma-separated and must match exactly (no wildcards), because CORS responses are sent with `credentials: true`. Disallowed origins emit a `cors_rejected` audit event for triage. Full reference: [Security Guide §11](security-guide.md#11-network-security).
 
-**Read-only UI.** This is experimental and off by default. Set `ARC1_UI=web` to serve `https://<your-app>/ui/` from the same CF app. ARC-1 refuses HTTP UI mode unless an admin API key, OIDC, or XSUAA auth is configured, and every `/ui/*` route requires an `admin`-scoped bearer token. Direct CF route access is therefore not public, but a plain browser address-bar request will get `401` unless something supplies the token. For a browser-first rollout, put SAP AppRouter or another corporate reverse proxy in front of ARC-1 so users authenticate there and the proxy forwards an admin-scoped bearer token to ARC-1. For stricter network privacy, expose the UI through an internal route/private domain or corporate access layer rather than relying on the default public CF route. The v1 UI is read-only and does not expose cached source bodies.
+**Read-only UI.** This is experimental and off by default. Direct ARC-1 backend access at `https://<arc1-app>/ui/` is protected with bearer auth, so a normal browser address-bar request returns `401`. For browser access, deploy the optional SAP AppRouter module shipped in this repo. AppRouter handles the interactive XSUAA login, checks the ARC-1 admin scope, and forwards the user JWT to ARC-1.
+
+```bash
+# One-time per landscape, after creating mta-overrides.mtaext as described above:
+npm run btp:build-deploy-ui-ext
+
+# Find the browser-facing route:
+cf app arc1-ui-router
+```
+
+Open the `arc1-ui-router` route in the browser. `/` and `/ui/` both lead to the UI. The signed-in user must be assigned the `ARC-1 Admin (<space>)` role collection; non-admin users are blocked by AppRouter before the request reaches ARC-1. The extension file [`mta-ui-approuter.mtaext`](../mta-ui-approuter.mtaext) does two things: sets `ARC1_UI=web` on `arc1-mcp-server`, and activates the otherwise-excluded `arc1-ui-router` module. The base `mta.yaml` keeps the AppRouter excluded from Cloud Foundry builds, so default deployments still create only the ARC-1 backend app.
+
+For stricter network privacy, map the AppRouter to an internal/private route or put it behind your corporate access layer. The v1 UI is read-only and does not expose cached source bodies.
 
 ## How BTP Connectivity Works
 

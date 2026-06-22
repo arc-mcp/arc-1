@@ -105,10 +105,13 @@ modules:
       # ARC1_ALLOWED_ORIGINS: "https://my-app.cfapps.eu10.hana.ondemand.com"
 
       # ── Read-only UI ─────────────────────────────────────────────────
-      # Experimental and off by default. Mount the read-only console at /ui
-      # on the ARC-1 HTTP app. Every /ui/* route requires an admin-scoped
-      # XSUAA/OIDC/API-key bearer token; browser-first use should go through
-      # AppRouter or another authenticated reverse proxy.
+      # Experimental and off by default. For browser access on BTP CF, deploy
+      # with mta-ui-approuter.mtaext instead of uncommenting only this line:
+      #
+      #   npm run btp:build-deploy-ui-ext
+      #
+      # That extension enables ARC1_UI=web and activates the optional AppRouter,
+      # which performs XSUAA login and forwards an admin-scoped JWT to ARC-1.
       # ARC1_UI: "web"
 
       # ── Tool surface ─────────────────────────────────────────────────

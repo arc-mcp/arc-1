@@ -1,0 +1,13 @@
+_schema-version: "3.1"
+ID: arc1-mcp-ui-approuter
+extends: arc1-mcp
+
+modules:
+  - name: arc1-mcp-server
+    properties:
+      ARC1_UI: "web"
+
+  - name: arc1-ui-router
+    build-parameters:
+      supported-platforms:
+        - CF

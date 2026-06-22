@@ -320,7 +320,7 @@ curl -sI https://<your-app-url>/health | \
 
 `ARC1_UI` is experimental and off by default. When enabled, ARC-1 serves static UI assets at `/ui` and read-only JSON endpoints under `/ui/api/*`. The endpoints expose sanitized config, safety/auth state, feature status, cache counts/source metadata, and recent sanitized audit events. They do not expose mutation controls, cached ABAP source bodies, request/response bodies, OAuth client IDs, or secrets.
 
-In HTTP mode, ARC-1 refuses `ARC1_UI=web` unless an admin API key, OIDC, or XSUAA auth is configured, and the whole `/ui/*` subtree is mounted behind bearer auth with the `admin` scope. When `ARC1_UI=off`, no UI routes are mounted. In stdio mode, `ARC1_UI=local` binds only to loopback (`127.0.0.1`/`localhost`) and rejects non-loopback addresses.
+In HTTP mode, ARC-1 refuses `ARC1_UI=web` unless an admin API key, OIDC, or XSUAA auth is configured, and the whole `/ui/*` subtree is mounted behind bearer auth with the `admin` scope. When `ARC1_UI=off`, no UI routes are mounted. On BTP CF, browser users should enter through the optional `arc1-ui-router` AppRouter (`mta-ui-approuter.mtaext`), which performs interactive XSUAA login and forwards the user JWT to ARC-1. In stdio mode, `ARC1_UI=local` binds only to loopback (`127.0.0.1`/`localhost`) and rejects non-loopback addresses.
 
 ### CORS for browser-based MCP clients (opt-in)
 
