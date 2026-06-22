@@ -333,12 +333,12 @@ function table(headers, rows) {
   return wrap;
 }
 
-function labeledInput(id, label, placeholder) {
+function labeledInput(id, label, defaultValue = '') {
   const wrap = document.createElement('label');
   wrap.append(text(label));
   const input = document.createElement('input');
   input.id = id;
-  input.placeholder = placeholder;
+  input.value = defaultValue;
   input.spellcheck = false;
   wrap.append(input);
   return wrap;

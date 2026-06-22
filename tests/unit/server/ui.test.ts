@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import express from 'express';
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
@@ -136,6 +138,45 @@ describe('UI API', () => {
     expect(res.status).toBe(200);
     expect(res.body.items[0].event).toBe('tool_call_end');
     expect(res.body.items[0]).not.toHaveProperty('resultPreview');
+  });
+
+  it('filters audit logs by event and level', async () => {
+    const logBuffer = new UiLogBufferSink();
+    logBuffer.write({
+      timestamp: '2026-01-01T00:00:00.000Z',
+      level: 'debug',
+      event: 'http_request',
+      method: 'GET',
+      path: '/sap/bc/adt/discovery',
+      statusCode: 200,
+      durationMs: 1,
+    });
+    logBuffer.write({
+      timestamp: '2026-01-01T00:00:01.000Z',
+      level: 'info',
+      event: 'tool_call_end',
+      tool: 'SAPSearch',
+      durationMs: 12,
+      status: 'success',
+      resultSize: 42,
+    });
+
+    const res = await request(buildApp({ logBuffer })).get('/ui/api/logs').query({
+      event: 'tool_call_end',
+      level: 'info',
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(1);
+    expect(res.body.items).toHaveLength(1);
+    expect(res.body.items[0]).toMatchObject({ event: 'tool_call_end', level: 'info', tool: 'SAPSearch' });
+  });
+
+  it('uses real default values for UI filter inputs', async () => {
+    const appJs = await readFile(resolve('public/ui/app.js'), 'utf8');
+
+    expect(appJs).toContain("labeledInput('log-event', 'Event', 'tool_call_end')");
+    expect(appJs).toContain('input.value = defaultValue;');
   });
 
   it('rejects non-GET methods', async () => {
