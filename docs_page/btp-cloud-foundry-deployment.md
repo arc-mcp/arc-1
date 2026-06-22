@@ -160,6 +160,16 @@ cf set-env arc1-mcp-server SAP_CLIENT "001"
 cf restage arc1-mcp-server
 ```
 
+**Set a stable DCR signing secret (XSUAA OAuth instances).** With `SAP_XSUAA_AUTH=true`, the DCR signing key defaults to the XSUAA `clientsecret`, which `cf deploy` rotates — invalidating every cached MCP `client_id` and forcing all users to re-register (`invalid_client`). Set a dedicated, stable secret so logins survive redeploys:
+
+```bash
+cf set-env arc1-mcp-server ARC1_DCR_SIGNING_SECRET "$(openssl rand -base64 48)"
+cf set-env arc1-mcp-server ARC1_OAUTH_DCR_TTL_SECONDS 0   # for clients that don't auto-re-register (Eclipse Copilot, Cursor)
+cf restage arc1-mcp-server
+```
+
+Why it matters, plus how to recover a client that's already stuck: [Stable DCR signing key](xsuaa-setup.md#stable-dcr-signing-key-recommended).
+
 The base `mta.yaml` already configures these properties (override any of them via `mta-overrides.mtaext`):
 - `SAP_TRANSPORT: http-streamable` — HTTP transport for MCP
 - `SAP_BTP_DESTINATION` / `SAP_BTP_PP_DESTINATION` — placeholders, MUST be overridden
@@ -317,9 +327,16 @@ cf push
 # Optional API key for break-glass/admin testing
 cf set-env arc1-mcp-server ARC1_API_KEYS "your-secure-api-key:admin"
 
+# Stable DCR signing secret — keeps MCP client logins valid across redeploys.
+# Without it the key derives from the XSUAA clientsecret, which cf deploy rotates → invalid_client.
+cf set-env arc1-mcp-server ARC1_DCR_SIGNING_SECRET "$(openssl rand -base64 48)"
+cf set-env arc1-mcp-server ARC1_OAUTH_DCR_TTL_SECONDS 0   # for clients that don't auto-re-register (Eclipse Copilot, Cursor)
+
 # Restart to apply
 cf restart arc1-mcp-server
 ```
+
+See [Stable DCR signing key](xsuaa-setup.md#stable-dcr-signing-key-recommended) for why this matters and how to recover a client that's already stuck.
 
 For normal BTP-native deployments, `SAP_XSUAA_AUTH=true` in the manifest/MTA properties is the MCP authentication path. XSUAA uses the subaccount trust setup, which may show SAP Cloud Identity Services, SAP ID service, or a federated corporate IdP depending on your BTP trust configuration. Generic OIDC (`SAP_OIDC_ISSUER` / `SAP_OIDC_AUDIENCE`) is still supported for non-BTP identity-provider setups, but it is not required for XSUAA deployments.
 

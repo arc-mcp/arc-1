@@ -220,6 +220,8 @@ Properties:
 
 ARC-1 logs the active signing source as `dcrSigningSource: 'env' | 'xsuaa'` in the startup INFO line for observability — `'env'` means the dedicated `ARC1_DCR_SIGNING_SECRET` is in use, `'xsuaa'` means the legacy `clientsecret` fallback.
 
+**Why this is best practice.** A `client_id` issued via [RFC 7591 Dynamic Client Registration](https://www.rfc-editor.org/rfc/rfc7591) is only as durable as the key that signs it — in ARC-1's stateless design the signing key *is* the registration store. Tying that key to a credential that rotates on deploy (the XSUAA `clientsecret`) turns every redeploy into an unintended key rotation — the same failure mode a web framework hits when its session-signing key (Django `SECRET_KEY`, Rails `secret_key_base`) is regenerated per release: all previously-signed artifacts silently become invalid. The fix is the standard one for any signing key — externalize it from the deploy artifact and keep it stable across releases ([12-Factor Config](https://12factor.net/config)), rotating only when you intend to ([OWASP Secrets Management Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html)).
+
 ### Service-binding rotation
 
 The XSUAA `clientsecret` is the trust anchor for both upstream OAuth calls and the DCR signing key. Rotating the binding is the only way to force-revoke every outstanding DCR registration in one shot:

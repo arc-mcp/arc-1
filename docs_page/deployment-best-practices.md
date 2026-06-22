@@ -221,6 +221,7 @@ applications:
 7. **Set `SAP_SYSTEM_TYPE`** explicitly in production — ensures correct tool definitions from startup
 8. **Set `SAP_INSECURE=false` on CA-signed landscapes** — the tracked `mta.yaml` / `manifest.yml` ship `"true"` for the on-prem HTTP Cloud Connector path; on a TLS landscape it silently disables certificate verification (no startup warning)
 9. **Set `ARC1_RATE_LIMIT` (e.g. `60`) on multi-user instances** — the per-user MCP quota is off by default, so one runaway agent loop can saturate the shared SAP request semaphore
+10. **Set a stable `ARC1_DCR_SIGNING_SECRET` on XSUAA OAuth instances** — otherwise the DCR signing key derives from the XSUAA `clientsecret`, so every `cf deploy` that recreates the service binding rotates it and invalidates all cached MCP `client_id`s. Users then hit `invalid_client` after each redeploy, and some clients (Eclipse Copilot, Cursor) can't recover without manual cache surgery. Set it once with `cf set-env arc1-mcp-server ARC1_DCR_SIGNING_SECRET "$(openssl rand -base64 48)"`; see [Stable DCR signing key](xsuaa-setup.md#stable-dcr-signing-key-recommended)
 
 !!! note "Why the package allowlist matters"
     ARC-1 feeds SAP-resident content (source, comments, errors) to the LLM, which then issues tool calls under the user's identity. `SAP_ALLOWED_PACKAGES` is the backstop that contains a prompt-injected model writing outside its scope — prefer a DEVCLASS subtree (`ZTEAM/**`) over `*` so the containment survives even a steered model.
