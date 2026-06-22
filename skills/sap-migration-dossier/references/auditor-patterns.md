@@ -128,11 +128,52 @@ Usage:
 - prefer SCMON/SUSG from `sap-unused-code`
 - ST03N-style aggregates are weaker evidence; label them as aggregate usage, not per-object proof
 
+## SAP Docs MCP Tool Map
+
+The SAP Docs MCP server is optional for running the dossier, but strongly recommended for better migration decisions. Tool namespaces vary by client; use the tool with the matching function name when available.
+
+| Tool | Use in a migration dossier | When to skip |
+|---|---|---|
+| `sap_get_object_details` | Classify SAP references by release state and Clean Core level; find successor objects for deprecated/internal APIs | Skip for custom Z/Y objects; use ARC-1 metadata instead |
+| `search` | Find official/reference docs for ATC themes, RAP/ABAP Cloud patterns, simplification guidance, and replacement APIs | Skip broad generic queries; query only top themes or uncertain decisions |
+| `fetch` | Retrieve full content for search results actually used in the rationale | Skip low-ranked or merely interesting results |
+| `abap_feature_matrix` | Check whether ABAP syntax/features are available in the target release | Skip when the target release is unknown; first record it as a methodology gap |
+| `sap_community_search` | Troubleshoot exact errors or obscure migration symptoms after official docs are insufficient | Skip for normal architecture decisions; community content is supporting evidence |
+| `sap_discovery_center_service` | Assess BTP service feasibility, pricing, and roadmap when a replacement implies SAP BTP services | Skip for pure ABAP code audits with no BTP service decision |
+
+Older connector variants may expose equivalent tools as `_search`, `_fetch`, `_sap_docs_search`, `_sap_docs_get`, `_sap_help_search`, or `_sap_help_get`. Prefer the richer `search` / `fetch` / `sap_get_object_details` / `abap_feature_matrix` set when present.
+
+Recommended usage:
+
+1. Extract SAP references from the audited custom objects.
+2. Call `sap_get_object_details` for unique SAP APIs that drive risk, not for every trivial reference.
+3. Use `search(includeSamples=false)` for official/reference guidance on top ATC themes and replacement strategy.
+4. Use `fetch` only for results cited in the report.
+5. Use `abap_feature_matrix` for release-sensitive remediation proposals.
+6. Use `sap_community_search` only for exact errors, niche symptoms, or workaround research.
+
+Suggested queries:
+
+```
+search(query="<ATC check title> S/4HANA migration", includeSamples=false, abapFlavor="<cloud|standard>")
+search(query="<deprecated API> successor released API", includeSamples=false, abapFlavor="<cloud|standard>")
+search(query="ABAP Cloud released API replacement <object>", includeSamples=false, abapFlavor="cloud")
+abap_feature_matrix(query="<ABAP feature>")
+sap_community_search(query="<exact error text or obscure symptom>")
+```
+
+Report evidence source labels:
+- `docs=sap_get_object_details` when Clean Core levels or successors came from SAP Docs MCP
+- `docs=search/fetch` when rationale cites documentation
+- `docs=unavailable` when SAP Docs MCP is not connected
+- `docs=not-used` when the scope did not require external documentation
+
 ## Report Quality Rules
 
 - Put reviewed/corrected evidence before generated rationale.
 - Exclude `ai_draft` cards from final reports unless the file is explicitly a draft.
 - Show pending review counts on the cover or executive summary.
 - Separate retirement candidates from migration-remediation candidates.
+- Separate SAP Docs evidence from ARC-1 live-system evidence; one is documentation/release-state context, the other is observed system state.
 - Keep top-level decision labels stable; put nuance in rationale and questions.
 - Include customer questions when evidence is incomplete instead of inventing migration conclusions.

@@ -11,6 +11,8 @@ Default to a concise chat report. Offer files, review cards, HTML, CSV/JSON, and
 
 Read `references/auditor-patterns.md` only when the user asks for persistent artifacts, human review, imported extracts, deep ECC enhancement extraction, integrity hashes, HTML dashboards, or graph output.
 
+Use SAP Docs MCP when available, especially for Clean Core/API status, successor APIs, release-specific syntax, and migration guidance. If SAP Docs MCP is not connected, still run the dossier with ARC-1 evidence and list "SAP Docs MCP unavailable" as an evidence gap.
+
 ## Default Path
 
 If the scope is clear, start immediately:
@@ -24,6 +26,7 @@ If the scope is clear, start immediately:
 3. Add migration signals:
    - ATC: `SAPDiagnose(action="atc", type="<type>", name="<name>")`
    - Clean-core/API risk: reuse `sap-clean-core-atc` logic
+   - SAP Docs MCP: enrich SAP API references with `sap_get_object_details`; use `search`/`fetch` for the top ATC themes or replacement guidance
    - Usage/retirement: reuse `sap-unused-code` only if SCMON/SUSG data is available
    - Dependencies/where-used: `SAPContext` or `SAPNavigate(action="references")`
 4. Return a concise report with:
@@ -51,6 +54,8 @@ Use optional modes only when the user asks or the scope makes chat output imprac
 | "reviewed", "consultant validation", "not AI-only" | Create draft cards and include only validated/corrected cards in the final report |
 | "graph", "visualize", "dependency map" | Generate a bounded Mermaid graph for the top risk/high-fanout objects |
 | "deep ECC", "user exits", "BAdIs", "standard modifications" | Use deep evidence from `references/auditor-patterns.md`; only use `SAPQuery` when allowed |
+| "successor API", "released API", "what replaces this" | Use SAP Docs MCP `sap_get_object_details`, then `search`/`fetch` for guidance if needed |
+| "will this syntax work on release X" | Use SAP Docs MCP `abap_feature_matrix` plus `search` with the right ABAP flavor |
 | "fix this" | Switch to `migrate-custom-code` for selected findings; this skill should not mass-remediate |
 
 ## Output Shape
@@ -61,7 +66,7 @@ For chat output, keep it short:
 Migration Dossier - <scope>
 
 Scope: <n> objects, <types>, <packages>
-Evidence: ATC=<variant/default>, usage=<SCMON/SUSG/unavailable>, clean-core=<source>, dependencies=<source>
+Evidence: ATC=<variant/default>, docs=<SAP Docs MCP/unavailable>, usage=<SCMON/SUSG/unavailable>, clean-core=<source>, dependencies=<source>
 
 Summary:
 - <1-3 lines>
