@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.9.20](https://github.com/arc-mcp/arc-1/compare/v0.9.19...v0.9.20) (2026-06-22)
+
+
+### Features
+
+* add context-first KTD workflow with guarded writes ([#486](https://github.com/arc-mcp/arc-1/issues/486)) ([32cc3bc](https://github.com/arc-mcp/arc-1/commit/32cc3bc4fb1554f8b1439be40696922ef6484e52))
+* add read-only UI console ([#485](https://github.com/arc-mcp/arc-1/issues/485)) ([68b3f2a](https://github.com/arc-mcp/arc-1/commit/68b3f2a55e38b216d16785d00aa586f809b31387))
+* **extensions:** gated non-ADT writes via ctx.http (v2 §2.2 Path B) ([#474](https://github.com/arc-mcp/arc-1/issues/474)) ([4294c94](https://github.com/arc-mcp/arc-1/commit/4294c942b42ffa0fd23c534c2376202c1a5b1b5c))
+
+
+### Bug Fixes
+
+* avoid regex backtracking in ADT error parsing ([#476](https://github.com/arc-mcp/arc-1/issues/476)) ([48b32bc](https://github.com/arc-mcp/arc-1/commit/48b32bc2645e19a1152c7163470ab2ede6a2b164))
+
 ## [0.9.19](https://github.com/arc-mcp/arc-1/compare/v0.9.18...v0.9.19) (2026-06-18)
 
 
