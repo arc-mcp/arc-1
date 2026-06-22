@@ -85,18 +85,32 @@ Skills are guidance, not an enforcement boundary. ARC-1 safety flags, API-key pr
 ### Eclipse Setup
 
 1. Install or update **GitHub Copilot for Eclipse**, sign in, and use **Agent Mode**. Current Copilot for Eclipse supports Agent Mode, MCP, custom instructions, and `SKILL.md` discovery. Eclipse 2024-09 or newer is required for the Copilot extension.
-2. Create a normal local folder, for example:
+2. Create a normal local folder. Pick the command for your OS:
 
    ```bash
+   # macOS / Linux
    mkdir -p ~/ADT_ECLIPSE_ARC1
    ```
 
-3. In Eclipse, choose **File** → **Open Projects from File System...** and import that folder into the same workspace as your ABAP projects.
+   ```powershell
+   # Windows PowerShell
+   New-Item -ItemType Directory -Force "$env:USERPROFILE\ADT_ECLIPSE_ARC1"
+   ```
+
+3. In Eclipse, choose **File** → **Open Projects from File System...** and import that folder into the same workspace as your ABAP projects. Use `~/ADT_ECLIPSE_ARC1` on macOS/Linux or `%USERPROFILE%\ADT_ECLIPSE_ARC1` on Windows.
 4. If dot folders are hidden, open the Project Explorer view menu, go to **Filters and Customization**, and disable the `.* resources` filter.
 5. Open a terminal in the local project folder and install skills:
 
    ```bash
+   # macOS / Linux
    cd ~/ADT_ECLIPSE_ARC1
+   npx skills add arc-mcp/arc-1 --agent github-copilot --list
+   npx skills add arc-mcp/arc-1 --agent github-copilot
+   ```
+
+   ```powershell
+   # Windows PowerShell
+   Set-Location "$env:USERPROFILE\ADT_ECLIPSE_ARC1"
    npx skills add arc-mcp/arc-1 --agent github-copilot --list
    npx skills add arc-mcp/arc-1 --agent github-copilot
    ```
@@ -147,6 +161,8 @@ Use one of these ARC-1 connection patterns:
 }
 ```
 
+On Windows, if Eclipse cannot resolve `npx`, use `"command": "npx.cmd"` or the absolute path returned by `where.exe npx`.
+
 **BTP Cloud Foundry URL login** — use this when ARC-1 is deployed centrally with XSUAA/OAuth. Configure only the `/mcp` URL and let Copilot complete the browser login:
 
 ```json
@@ -167,6 +183,7 @@ See [Quickstart](quickstart.md), [BTP Cloud Foundry Deployment](btp-cloud-foundr
 - Use a new Agent Mode chat after adding or updating skills.
 - Check that the local skills folder is imported as an Eclipse project, not just present on disk.
 - Confirm skills are under a supported path such as `.agents/skills/<name>/SKILL.md`, `.github/skills/<name>/SKILL.md`, or `~/.copilot/skills/<name>/SKILL.md`.
+- On Windows, `~` means your user profile; in PowerShell examples use `$env:USERPROFILE`, and in Explorer paths use `%USERPROFILE%`.
 - Keep one local skills project in the workspace instead of scattering instruction files across many ABAP projects.
 - If an XSUAA/OIDC MCP login gets stale in Eclipse, see [XSUAA Setup → Eclipse GitHub Copilot](xsuaa-setup.md#eclipse-github-copilot).
 
@@ -182,7 +199,7 @@ Do not put detailed ABAP style guides into one large Copilot instruction file. P
 
 Use a multi-root workspace with both:
 
-- one normal local folder for AI assets, for example `~/ADT_VSCODE_ARC1`
+- one normal local folder for AI assets, for example `~/ADT_VSCODE_ARC1` on macOS/Linux or `%USERPROFILE%\ADT_VSCODE_ARC1` on Windows
 - one or more ABAP destinations or packages added by the SAP ADT extension
 
 In VS Code:
@@ -196,13 +213,24 @@ In VS Code:
 Example local folder setup:
 
 ```bash
+# macOS / Linux
 mkdir -p ~/ADT_VSCODE_ARC1
 cd ~/ADT_VSCODE_ARC1
 npx skills add arc-mcp/arc-1 --agent github-copilot --list
 npx skills add arc-mcp/arc-1 --agent github-copilot
 ```
 
+```powershell
+# Windows PowerShell
+New-Item -ItemType Directory -Force "$env:USERPROFILE\ADT_VSCODE_ARC1"
+Set-Location "$env:USERPROFILE\ADT_VSCODE_ARC1"
+npx skills add arc-mcp/arc-1 --agent github-copilot --list
+npx skills add arc-mcp/arc-1 --agent github-copilot
+```
+
 VS Code Copilot discovers project skills from `.github/skills/<name>/SKILL.md`, `.claude/skills/<name>/SKILL.md`, or `.agents/skills/<name>/SKILL.md`, and personal skills from `~/.copilot/skills/<name>/SKILL.md`, `~/.claude/skills/<name>/SKILL.md`, or `~/.agents/skills/<name>/SKILL.md`.
+
+On Windows, those personal paths live under your user profile, for example `%USERPROFILE%\.copilot\skills\<name>\SKILL.md`.
 
 Use **Chat: Open Customizations** or type `/skills` in Copilot Chat to inspect available skills. Start a new Agent Mode chat after adding or updating skills.
 
