@@ -30,9 +30,19 @@ The `adtcore:type="SKTD/TYP"` literal appears in the create XML envelope at
 
 ## SAP docs & notes
 - No public SAP help portal page for the `documentation/ktd/documents` endpoint; ADT
-  surfaces it implicitly through the "Documentation" tab on supported object types
-  (CLAS, INTF, DDLS, PROG, BDEF, SRVD).
+  surfaces it implicitly through the "Documentation" tab on supported object types.
 - MIME `application/vnd.sap.adt.sktdv2+xml` is the v2 envelope (PR #134 only supports v2).
+- SAP Note 3102916 says KTD is supported from SAP_BASIS 7.55, but it covers an
+  outdated-client exception, not the class-parent null-reference dump.
+- Live registry check (`WBOBJTYPES_SCOPE`, `SCOPE_ID = 'DOCUMENTATION'`) on SAP_BASIS
+  758 and 816 is the backend source of truth for KTD parent support. Observed entries:
+  `APIC/TYP`, `BDEF/*`, `CFDB/CFB`, `CFDG/CFG`, `CFDS/CFS`, `CHKO/TYP`, `DDLA/ADF`,
+  `DDLS/DF`, `DEVC/K`, `DRTY/STY`, `DSFD/SCF`, `EEEC/EVC`, `EVTB/EVB`, `PARA/R`,
+  `RONT/ROT`, `SMBC/TYP`, `SOD1`, `SOD2`, `SRVB/SVB`, and `SRVD/SRV`. Some are
+  release-specific (for example 816-only entries) and some are not yet routable by
+  ARC-1 because `objectBasePath` has no parent URI builder for them.
+- `CLAS/OC`, `INTF/OI`, and `PROG/P` are **not** in that registry on the tested systems.
+  For those code objects, use ABAP Doc.
 
 ## Other MCP servers / cross-reference
 - `compare/00-feature-matrix.md:108` and `:138` and `:302`/`:347`: ARC-1 is the **only**
@@ -43,11 +53,15 @@ The `adtcore:type="SKTD/TYP"` literal appears in the create XML envelope at
 
 ## Live verification
 ### a4h (S/4HANA 2023)
-- Test object: any KTD attached to a class/DDLS via Eclipse ADT
+- Test object: KTD attached to a DDLS via Eclipse ADT
 - ADT response: `200 application/vnd.sap.adt.sktdv2+xml` with `<sktd:docu>` root
   containing base64-encoded `<sktd:text>` body. Verified in PR #134 integration tests.
   ARC-1 caches the raw envelope (`src/handlers/intent.ts:1534` comment) and edits only
   `<sktd:text>` on update to preserve metadata.
+- Negative test (2026-06-22): class-backed KTD create with `refObjectType="CLAS/OC"`
+  dumps in SAP standard code (`CL_KTD_UTILITY=>GET_DOCU_STRUCTURE`,
+  `OBJECTS_OBJREF_NOT_ASSIGNED_NO`) because no `CLAS/OC` DOCUMENTATION-scope handler
+  exists in `WBOBJTYPES_SCOPE`.
 
 ### 7.50 (NW 7.50)
 - Test object: N/A — could not verify directly; SKTD is an S/4-era feature and likely
@@ -71,8 +85,13 @@ The `adtcore:type="SKTD/TYP"` literal appears in the create XML envelope at
 - **Status**: correct
 - **Evidence**: verified-from-source (eclipse ADT api docs + ARC-1 PR #134 integration tests
   on a4h)
-- **Issue**: none for the type/URL mapping itself. Minor: SKTD has no probe entry, so
-  the type is silently exposed on backends that 404 the documentation/ktd endpoint.
+- **Issue**: none for the type/URL mapping itself. Parent object type support is narrower
+  than the early ARC-1 wording implied: class/interface/program parents are not
+  registered for KTD on the tested 758/816 systems and can dump SAP standard code if
+  posted blindly. SAP-registered parent types that ARC-1 cannot yet route should return
+  an explicit "parent URI routing not implemented" error rather than falling through to
+  `objectBasePath` or SAP. Minor: SKTD has no probe entry, so the type is silently exposed
+  on backends that 404 the documentation/ktd endpoint.
   abap-file-formats lacks an `sktd/` directory, which means SAP has not yet committed to
   a stable serialization for git/CTS — keep an eye on this for future CTS workflows.
 
@@ -80,6 +99,11 @@ The `adtcore:type="SKTD/TYP"` literal appears in the create XML envelope at
 - **Keep as-is.** Slash form `SKTD/TYP`, short form `SKTD`, URL prefix
   `/sap/bc/adt/documentation/ktd/documents/`, and MIME `application/vnd.sap.adt.sktdv2+xml`
   are all canonical.
+- Guard SKTD create by `refObjectType`: allow ARC-routable documented parents such as
+  `DDLS/DF`, `BDEF/*`, `SRVD/SRV`, `SRVB/SVB`, and `DEVC/K`; reject `CLAS/OC`, `INTF/OI`,
+  and `PROG/P` with an ABAP Doc hint before SAP can dump. For SAP-registered but
+  non-routable parents such as `DDLA/ADF` or `EVTB/EVB`, fail fast with a routing-specific
+  message until ARC-1 adds verified parent URI builders.
 - **Optional follow-up:** add a probe entry in `src/probe/catalog.ts` so non-S/4 backends
   (NW 7.50) report SKTD as unavailable instead of returning a raw 404 to the LLM.
 - **Breaking change**: no.

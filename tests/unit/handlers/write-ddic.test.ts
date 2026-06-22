@@ -326,6 +326,41 @@ describe('SAPWrite handler — DDIC writes', () => {
       expect(result.content[0]?.text).toContain('DDLS/DF');
     });
 
+    it('SKTD create rejects class parents before SAP dumps in CL_KTD_UTILITY', async () => {
+      mockFetch.mockReset();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'SKTD',
+        name: 'ZCL_KTD_DOC_TARGET',
+        package: '$TMP',
+        refObjectType: 'CLAS/OC',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('CLAS/OC');
+      expect(result.content[0]?.text).toContain('CL_KTD_UTILITY=>GET_DOCU_STRUCTURE');
+      expect(result.content[0]?.text).toContain('Use ABAP Doc');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('SKTD create rejects SAP-registered parents that ARC cannot route yet', async () => {
+      mockFetch.mockReset();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'SKTD',
+        name: 'Z_ANNOTATION_DOC_TARGET',
+        package: '$TMP',
+        refObjectType: 'DDLA/ADF',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('DDLA/ADF');
+      expect(result.content[0]?.text).toContain('SAP KTD-capable');
+      expect(result.content[0]?.text).toContain('does not yet have ADT parent URI routing');
+      expect(result.content[0]?.text).toContain('WBOBJTYPES_SCOPE');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
     it('SKTD create rejects when name differs from refObjectName (KTD inherits parent name)', async () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
         action: 'create',
