@@ -11,6 +11,9 @@
 /** MCP transport type */
 export type TransportType = 'stdio' | 'http-streamable';
 
+/** Read-only admin UI mode */
+export type UiMode = 'off' | 'local' | 'web';
+
 /** Feature toggle: auto detects from SAP system, on/off forces */
 export type FeatureToggle = 'auto' | 'on' | 'off';
 
@@ -34,6 +37,14 @@ export interface ServerConfig {
   // --- MCP Transport ---
   transport: TransportType;
   httpAddr: string;
+
+  // --- Read-only Admin UI ---
+  /** Read-only inspection UI: off (default), local sidecar server, or mounted web routes on the HTTP server. */
+  uiMode: UiMode;
+  /** Bind address for local sidecar UI mode. Ignored when uiMode='web'. */
+  uiAddr: string;
+  /** Open the local UI in the system browser after startup (local/dev convenience only). */
+  uiOpen: boolean;
 
   // --- Safety (positive opt-ins; defaults restrictive) ---
   allowWrites: boolean;
@@ -207,6 +218,9 @@ export const DEFAULT_CONFIG: ServerConfig = {
   insecure: false,
   transport: 'stdio',
   httpAddr: '0.0.0.0:8080',
+  uiMode: 'off',
+  uiAddr: '127.0.0.1:8711',
+  uiOpen: false,
   allowWrites: false,
   allowDataPreview: false,
   allowFreeSQL: false,

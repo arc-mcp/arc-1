@@ -6,7 +6,18 @@
  * Thread-safe by default in Node.js (single-threaded event loop).
  */
 
-import type { Cache, CacheApi, CachedDepGraph, CachedSource, CacheEdge, CacheNode, CacheStats } from './cache.js';
+import type {
+  Cache,
+  CacheApi,
+  CachedDepGraph,
+  CachedSource,
+  CacheEdge,
+  CacheListSourcesQuery,
+  CacheListSourcesResult,
+  CacheNode,
+  CacheSourceSummary,
+  CacheStats,
+} from './cache.js';
 import { hashSource, sourceKey } from './cache.js';
 
 export class MemoryCache implements Cache {
@@ -115,6 +126,32 @@ export class MemoryCache implements Cache {
     return this.sources.get(sourceKey(objectType, objectName, version)) ?? null;
   }
 
+  listSources(query: CacheListSourcesQuery = {}): CacheListSourcesResult {
+    const limit = clampLimit(query.limit);
+    const offset = clampOffset(query.offset);
+    const objectType = query.objectType?.trim().toUpperCase();
+    const nameQuery = query.query?.trim().toUpperCase();
+
+    const filtered = Array.from(this.sources.values())
+      .filter((entry) => !objectType || entry.objectType === objectType)
+      .filter((entry) => !query.version || entry.version === query.version)
+      .filter((entry) => !nameQuery || entry.objectName.includes(nameQuery))
+      .sort((a, b) => {
+        const typeCompare = a.objectType.localeCompare(b.objectType);
+        if (typeCompare !== 0) return typeCompare;
+        const nameCompare = a.objectName.localeCompare(b.objectName);
+        if (nameCompare !== 0) return nameCompare;
+        return a.version.localeCompare(b.version);
+      });
+
+    return {
+      total: filtered.length,
+      limit,
+      offset,
+      items: filtered.slice(offset, offset + limit).map(toSourceSummary),
+    };
+  }
+
   invalidateSource(objectType: string, objectName: string, version: 'active' | 'inactive' | 'all' = 'active'): void {
     if (version === 'all') {
       this.sources.delete(sourceKey(objectType, objectName, 'active'));
@@ -177,4 +214,26 @@ export class MemoryCache implements Cache {
   close(): void {
     this.clear();
   }
+}
+
+function toSourceSummary(entry: CachedSource): CacheSourceSummary {
+  return {
+    objectType: entry.objectType,
+    objectName: entry.objectName,
+    version: entry.version,
+    hash: entry.hash,
+    etagPresent: !!entry.etag,
+    cachedAt: entry.cachedAt,
+    sourceLength: entry.source.length,
+  };
+}
+
+function clampLimit(limit: number | undefined): number {
+  if (limit === undefined || !Number.isFinite(limit)) return 50;
+  return Math.max(1, Math.min(200, Math.trunc(limit)));
+}
+
+function clampOffset(offset: number | undefined): number {
+  if (offset === undefined || !Number.isFinite(offset)) return 0;
+  return Math.max(0, Math.trunc(offset));
 }

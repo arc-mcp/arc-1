@@ -104,6 +104,11 @@ modules:
       # Studio). Comma-separated, exact origin match, no wildcards.
       # ARC1_ALLOWED_ORIGINS: "https://my-app.cfapps.eu10.hana.ondemand.com"
 
+      # ── Read-only UI ─────────────────────────────────────────────────
+      # Mount the read-only console at /ui on the ARC-1 HTTP app. The JSON
+      # API under /ui/api/* requires an admin-scoped XSUAA bearer token.
+      # ARC1_UI: "web"
+
       # ── Tool surface ─────────────────────────────────────────────────
       # Tool mode: "standard" (12 tools) or "hyperfocused" (1 universal
       # SAP tool, ~200 tokens — useful for token-tight clients).

@@ -19,7 +19,7 @@
 import type { SafetyConfig } from '../adt/safety.js';
 import { parseDenyActions, validateDenyActions } from './deny-actions.js';
 import { logger } from './logger.js';
-import type { ConfigSource, FeatureToggle, ServerConfig, TransportType } from './types.js';
+import type { ConfigSource, FeatureToggle, ServerConfig, TransportType, UiMode } from './types.js';
 import { DEFAULT_CONFIG } from './types.js';
 
 /**
@@ -146,6 +146,18 @@ export function parseApiKeys(raw: string): Array<{ key: string; profile: string 
   return entries;
 }
 
+function parseUiMode(raw: string, transport: TransportType): UiMode {
+  const value = raw.trim().toLowerCase();
+  if (value === '') return 'off';
+  if (['0', 'false', 'no', 'off'].includes(value)) return 'off';
+  if (['local', 'sidecar'].includes(value)) return 'local';
+  if (['web', 'http', 'server'].includes(value)) return 'web';
+  if (['1', 'true', 'yes', 'on'].includes(value)) {
+    return transport === 'stdio' ? 'local' : 'web';
+  }
+  throw new Error('Invalid ARC1_UI value: expected off, local, web, true, or false');
+}
+
 /** Map of legacy env-var names → human-readable migration hint. */
 const LEGACY_ENV_VARS: Record<string, string> = {
   SAP_READ_ONLY: 'Replaced by SAP_ALLOW_WRITES (inverted). Set SAP_ALLOW_WRITES=true to enable writes.',
@@ -216,6 +228,18 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     const prefix = `--${name}=`;
     for (let i = 0; i < args.length; i++) {
       if (args[i] === `--${name}` && i + 1 < args.length) return args[i + 1];
+      if (args[i]?.startsWith(prefix)) return args[i].slice(prefix.length);
+    }
+    return undefined;
+  };
+
+  const getOptionalFlagValue = (name: string): string | undefined => {
+    const prefix = `--${name}=`;
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === `--${name}`) {
+        const next = args[i + 1];
+        return next && !next.startsWith('--') ? next : 'true';
+      }
       if (args[i]?.startsWith(prefix)) return args[i].slice(prefix.length);
     }
     return undefined;
@@ -322,6 +346,33 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     config.httpAddr = `${addrHost}:${parsedPort}`;
     sources.httpAddr = getFlag('port') !== undefined ? { flag: '--port' } : { env: 'ARC1_PORT' };
   }
+
+  // ── Read-only Admin UI ────────────────────────────────────────────
+  const uiFlag = getOptionalFlagValue('ui');
+  const uiEnv = process.env.ARC1_UI;
+  if (uiFlag !== undefined) {
+    config.uiMode = parseUiMode(uiFlag, config.transport);
+    sources.uiMode = { flag: '--ui' };
+  } else if (uiEnv !== undefined && uiEnv !== '') {
+    config.uiMode = parseUiMode(uiEnv, config.transport);
+    sources.uiMode = { env: 'ARC1_UI' };
+  } else {
+    config.uiMode = 'off';
+    sources.uiMode = 'default';
+  }
+
+  config.uiAddr = resolveStr('ui-addr', 'ARC1_UI_ADDR', DEFAULT_CONFIG.uiAddr, 'uiAddr');
+  const uiPortOverride = getFlag('ui-port') ?? process.env.ARC1_UI_PORT;
+  if (uiPortOverride) {
+    const parsedPort = Number.parseInt(uiPortOverride, 10);
+    if (Number.isNaN(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
+      throw new Error(`Invalid UI port '${uiPortOverride}': must be a number between 1 and 65535`);
+    }
+    const addrHost = config.uiAddr.includes(':') ? config.uiAddr.split(':')[0] : '127.0.0.1';
+    config.uiAddr = `${addrHost}:${parsedPort}`;
+    sources.uiAddr = getFlag('ui-port') !== undefined ? { flag: '--ui-port' } : { env: 'ARC1_UI_PORT' };
+  }
+  config.uiOpen = resolveBool('ui-open', 'ARC1_UI_OPEN', false, 'uiOpen');
 
   // ── Safety (positive opt-ins) ──────────────────────────────────────
   config.allowWrites = resolveBool('allow-writes', 'SAP_ALLOW_WRITES', false, 'allowWrites');
@@ -681,4 +732,20 @@ export function validateConfig(config: ServerConfig): void {
       '[warn] ARC1_DCR_SIGNING_SECRET is set but SAP_XSUAA_AUTH=false — the secret is unused. Unset it to reduce attack surface, or enable XSUAA OAuth proxy mode (SAP_XSUAA_AUTH=true).',
     );
   }
+
+  if (config.transport === 'stdio' && config.uiMode === 'web') {
+    throw new Error('ARC1_UI=web requires SAP_TRANSPORT=http-streamable. Use ARC1_UI=local for stdio clients.');
+  }
+
+  if (config.uiMode === 'local' && !isLoopbackAddr(config.uiAddr)) {
+    throw new Error(
+      `ARC1_UI=local must bind to a loopback address, got '${config.uiAddr}'. Use ARC1_UI=web with HTTP transport for network-exposed deployments.`,
+    );
+  }
+}
+
+function isLoopbackAddr(addr: string): boolean {
+  if (/^\d+$/.test(addr)) return true;
+  const host = addr.includes(':') ? addr.split(':')[0] : addr;
+  return host === 'localhost' || host === '::1' || host.startsWith('127.') || host === '';
 }

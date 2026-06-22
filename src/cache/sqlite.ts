@@ -9,7 +9,17 @@
  */
 
 import Database from 'better-sqlite3';
-import type { Cache, CacheApi, CachedDepGraph, CachedSource, CacheEdge, CacheNode, CacheStats } from './cache.js';
+import type {
+  Cache,
+  CacheApi,
+  CachedDepGraph,
+  CachedSource,
+  CacheEdge,
+  CacheListSourcesQuery,
+  CacheListSourcesResult,
+  CacheNode,
+  CacheStats,
+} from './cache.js';
 import { hashSource, sourceKey } from './cache.js';
 
 export class SqliteCache implements Cache {
@@ -216,6 +226,55 @@ export class SqliteCache implements Cache {
     };
   }
 
+  listSources(query: CacheListSourcesQuery = {}): CacheListSourcesResult {
+    const limit = clampLimit(query.limit);
+    const offset = clampOffset(query.offset);
+    const where: string[] = [];
+    const params: unknown[] = [];
+
+    if (query.objectType?.trim()) {
+      where.push('object_type = ?');
+      params.push(query.objectType.trim().toUpperCase());
+    }
+    if (query.version) {
+      where.push('version = ?');
+      params.push(query.version);
+    }
+    if (query.query?.trim()) {
+      where.push("UPPER(object_name) LIKE ? ESCAPE '\\'");
+      params.push(`%${escapeLike(query.query.trim().toUpperCase())}%`);
+    }
+
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const countRow = this.db.prepare(`SELECT COUNT(*) as cnt FROM sources ${whereSql}`).get(...params) as {
+      cnt: number;
+    };
+    const rows = this.db
+      .prepare(
+        `SELECT object_type, object_name, version, hash, etag IS NOT NULL AND etag != '' AS etag_present, cached_at, LENGTH(source) AS source_length
+         FROM sources
+         ${whereSql}
+         ORDER BY object_type ASC, object_name ASC, version ASC
+         LIMIT ? OFFSET ?`,
+      )
+      .all(...params, limit, offset) as Array<Record<string, unknown>>;
+
+    return {
+      total: countRow.cnt,
+      limit,
+      offset,
+      items: rows.map((row) => ({
+        objectType: String(row.object_type),
+        objectName: String(row.object_name),
+        version: String(row.version) as 'active' | 'inactive',
+        hash: String(row.hash),
+        etagPresent: row.etag_present === 1,
+        cachedAt: String(row.cached_at),
+        sourceLength: Number(row.source_length),
+      })),
+    };
+  }
+
   invalidateSource(objectType: string, objectName: string, version: 'active' | 'inactive' | 'all' = 'active'): void {
     if (version === 'all') {
       this.db
@@ -314,4 +373,18 @@ function rowToEdge(row: Record<string, unknown>): CacheEdge {
     discoveredAt: String(row.discovered_at),
     valid: row.valid === 1,
   };
+}
+
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, '\\$&');
+}
+
+function clampLimit(limit: number | undefined): number {
+  if (limit === undefined || !Number.isFinite(limit)) return 50;
+  return Math.max(1, Math.min(200, Math.trunc(limit)));
+}
+
+function clampOffset(offset: number | undefined): number {
+  if (offset === undefined || !Number.isFinite(offset)) return 0;
+  return Math.max(0, Math.trunc(offset));
 }

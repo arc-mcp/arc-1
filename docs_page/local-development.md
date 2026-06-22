@@ -69,6 +69,19 @@ npm run build && npm start # production-style: compile to dist/, run from there
 
 All four read `.env` from the repo root (their CWD). CLI flags and shell env vars override `.env` — see [Where do my config values come from?](#where-do-my-config-values-come-from) below.
 
+### Read-only local UI
+
+For Claude Desktop, Claude Code, Cursor, or any stdio client, add `ARC1_UI=local` (or pass `--ui`) to start a loopback browser console next to the MCP subprocess:
+
+```bash
+npx arc-1@latest --ui --ui-open true \
+  --url https://your-sap-host:44300 \
+  --user YOUR_USER --password YOUR_PASS \
+  --client 100
+```
+
+The sidecar binds to `127.0.0.1:8711` by default and serves `http://127.0.0.1:8711/ui/`. It is read-only: sanitized config, safety/auth state, feature status, cache metadata, and recent sanitized audit events. It never exposes cached ABAP source bodies or mutation controls.
+
 ---
 
 ## Using a `.env` file

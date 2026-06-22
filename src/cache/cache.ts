@@ -57,6 +57,33 @@ export interface CacheStats {
   contractCount: number;
 }
 
+/** Metadata-only cached source listing entry. Never includes ABAP source text. */
+export interface CacheSourceSummary {
+  objectType: string;
+  objectName: string;
+  version: 'active' | 'inactive';
+  hash: string;
+  etagPresent: boolean;
+  cachedAt: string;
+  sourceLength: number;
+}
+
+/** Query options for metadata-only source cache inventory. */
+export interface CacheListSourcesQuery {
+  objectType?: string;
+  query?: string;
+  version?: 'active' | 'inactive';
+  limit?: number;
+  offset?: number;
+}
+
+export interface CacheListSourcesResult {
+  total: number;
+  limit: number;
+  offset: number;
+  items: CacheSourceSummary[];
+}
+
 // ─── Source Cache Types ──────────────────────────────────────────────
 
 /** Cached source code entry */
@@ -120,6 +147,7 @@ export interface Cache {
     opts?: { version?: 'active' | 'inactive'; etag?: string },
   ): void;
   getSource(objectType: string, objectName: string, version?: 'active' | 'inactive'): CachedSource | null;
+  listSources(query?: CacheListSourcesQuery): CacheListSourcesResult;
   invalidateSource(objectType: string, objectName: string, version?: 'active' | 'inactive' | 'all'): void;
 
   // Dependency contract cache (keyed by source hash)

@@ -156,6 +156,33 @@ describe('SqliteCache', () => {
     expect(cache.getSource('PROG', 'ZTEST', 'inactive')).toBeNull();
   });
 
+  it('lists source metadata without source bodies', () => {
+    cache.putSource('CLAS', 'ZCL_ALPHA', 'CLASS zcl_alpha DEFINITION.', { etag: 'abc' });
+    cache.putSource('PROG', 'ZREPORT', 'REPORT zreport.');
+
+    const result = cache.listSources({ objectType: 'CLAS', limit: 10 });
+
+    expect(result.total).toBe(1);
+    expect(result.items[0]).toMatchObject({
+      objectType: 'CLAS',
+      objectName: 'ZCL_ALPHA',
+      version: 'active',
+      etagPresent: true,
+      sourceLength: 'CLASS zcl_alpha DEFINITION.'.length,
+    });
+    expect(result.items[0]).not.toHaveProperty('source');
+  });
+
+  it('filters source metadata by name query and version', () => {
+    cache.putSource('CLAS', 'ZCL_ALPHA', 'alpha');
+    cache.putSource('CLAS', 'ZCL_BETA', 'beta', { version: 'inactive' });
+
+    const result = cache.listSources({ query: 'beta', version: 'inactive' });
+
+    expect(result.total).toBe(1);
+    expect(result.items[0]?.objectName).toBe('ZCL_BETA');
+  });
+
   it('migrates an old sources table by dropping and recreating', () => {
     const dbPath = path.join(os.tmpdir(), `arc1-migrate-test-${Date.now()}.db`);
     const rawDb = new Database(dbPath);

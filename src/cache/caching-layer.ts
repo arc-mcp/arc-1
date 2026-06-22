@@ -25,7 +25,7 @@
 import type { AdtClient, SourceReadResult } from '../adt/client.js';
 import { AdtApiError } from '../adt/errors.js';
 import { logger } from '../server/logger.js';
-import type { Cache, CachedDepGraph, CachedSource } from './cache.js';
+import type { Cache, CachedDepGraph, CachedSource, CacheListSourcesQuery, CacheListSourcesResult } from './cache.js';
 import { hashSource } from './cache.js';
 import { InactiveListCache } from './inactive-list-cache.js';
 
@@ -115,6 +115,14 @@ export class CachingLayer {
     const cached = this.cache.getSource(objectType, objectName, version);
     if (!cached) return null;
     return { source: cached.source, etag: cached.etag };
+  }
+
+  /**
+   * List cached source metadata for read-only inspection UIs.
+   * Intentionally returns no source bodies.
+   */
+  listCachedSources(query?: CacheListSourcesQuery): CacheListSourcesResult {
+    return this.cache.listSources(query);
   }
 
   // ─── Dependency Graph Cache ───────────────────────────────────────

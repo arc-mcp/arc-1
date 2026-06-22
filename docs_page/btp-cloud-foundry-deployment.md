@@ -108,7 +108,7 @@ modules:
       SAP_ALLOWED_PACKAGES: "Z*,Y*,$TMP"
 ```
 
-The full set of overridable properties is documented in [`mta-overrides.mtaext.example`](https://github.com/arc-mcp/arc-1/blob/main/mta-overrides.mtaext.example): destinations, all `SAP_ALLOW_*` safety flags, `SAP_DENY_ACTIONS`, `SAP_PP_STRICT`, `ARC1_PUBLIC_URL` (for reverse-proxy deployments), `ARC1_ALLOWED_ORIGINS` (CORS), `ARC1_TOOL_MODE`, cache warmup, and `ARC1_LOG_HTTP_DEBUG`. Any property left out of the override falls back to the `mta.yaml` value.
+The full set of overridable properties is documented in [`mta-overrides.mtaext.example`](https://github.com/arc-mcp/arc-1/blob/main/mta-overrides.mtaext.example): destinations, all `SAP_ALLOW_*` safety flags, `SAP_DENY_ACTIONS`, `SAP_PP_STRICT`, `ARC1_PUBLIC_URL` (for reverse-proxy deployments), `ARC1_ALLOWED_ORIGINS` (CORS), `ARC1_UI`, `ARC1_TOOL_MODE`, cache warmup, and `ARC1_LOG_HTTP_DEBUG`. Any property left out of the override falls back to the `mta.yaml` value.
 
 See the [BTP Destination Setup Guide](btp-destination-setup.md) for creating the destinations themselves.
 
@@ -176,6 +176,7 @@ The base `mta.yaml` already configures these properties (override any of them vi
 - `SAP_PP_ENABLED: "true"` — per-user principal propagation
 - `SAP_XSUAA_AUTH: "true"` — XSUAA OAuth for MCP clients
 - `SAP_ALLOW_*: "false"` and `SAP_ALLOWED_PACKAGES: "$TMP"` — safe defaults; widen only as needed
+- `ARC1_UI` is not enabled by default. Set `ARC1_UI: "web"` in `mta-overrides.mtaext` or via `cf set-env` to mount the read-only console at `/ui`.
 
 ### 4. Verify a healthy startup
 
@@ -380,6 +381,8 @@ cf restage arc1-mcp-server
 ```
 
 Origins are comma-separated and must match exactly (no wildcards), because CORS responses are sent with `credentials: true`. Disallowed origins emit a `cors_rejected` audit event for triage. Full reference: [Security Guide §11](security-guide.md#11-network-security).
+
+**Read-only UI.** Set `ARC1_UI=web` to serve `https://<your-app>/ui/` from the same CF app. Static assets are public; `/ui/api/*` requires an `admin`-scoped XSUAA/API-key/OIDC bearer token. In a browser-first rollout, put SAP AppRouter or another corporate reverse proxy in front of ARC-1 so users authenticate with XSUAA there and the proxy forwards a bearer token to ARC-1. The v1 UI is read-only and does not expose cached source bodies.
 
 ## How BTP Connectivity Works
 

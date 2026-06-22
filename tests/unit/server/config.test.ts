@@ -191,6 +191,52 @@ describe('parseArgs', () => {
     expect(() => parseArgs(['--port', '0'])).toThrow(/Invalid port/);
   });
 
+  it('keeps the read-only UI disabled by default', () => {
+    const config = parseArgs([]);
+    expect(config.uiMode).toBe('off');
+    expect(config.uiAddr).toBe('127.0.0.1:8711');
+    expect(config.uiOpen).toBe(false);
+  });
+
+  it('maps bare --ui to local mode for stdio', () => {
+    const config = parseArgs(['--ui']);
+    expect(config.uiMode).toBe('local');
+  });
+
+  it('maps ARC1_UI=true to web mode for HTTP transport', () => {
+    process.env.ARC1_UI = 'true';
+    const config = parseArgs(['--transport', 'http-streamable']);
+    expect(config.uiMode).toBe('web');
+  });
+
+  it('parses UI bind address, port override, and open flag', () => {
+    const config = parseArgs([
+      '--ui',
+      'local',
+      '--ui-addr',
+      'localhost:9000',
+      '--ui-port',
+      '9001',
+      '--ui-open',
+      'true',
+    ]);
+    expect(config.uiMode).toBe('local');
+    expect(config.uiAddr).toBe('localhost:9001');
+    expect(config.uiOpen).toBe(true);
+  });
+
+  it('rejects web UI mode on stdio transport', () => {
+    expect(() => parseArgs(['--ui', 'web'])).toThrow(/requires SAP_TRANSPORT=http-streamable/);
+  });
+
+  it('rejects non-loopback local UI addresses', () => {
+    expect(() => parseArgs(['--ui', 'local', '--ui-addr', '0.0.0.0:8711'])).toThrow(/must bind to a loopback/);
+  });
+
+  it('throws on invalid UI port value', () => {
+    expect(() => parseArgs(['--ui', 'local', '--ui-port', '99999'])).toThrow(/Invalid UI port/);
+  });
+
   it('parses feature toggles', () => {
     const config = parseArgs([
       '--feature-abapgit',

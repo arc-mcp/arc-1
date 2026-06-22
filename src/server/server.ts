@@ -37,6 +37,8 @@ import { createMcpRateLimiter, type McpRateLimiter } from './mcp-rate-limit.js';
 import { loadPlugins } from './plugin-loader.js';
 import { FileSink } from './sinks/file.js';
 import type { ServerConfig } from './types.js';
+import { startLocalUiServer, type UiServerDeps } from './ui.js';
+import { UiLogBufferSink } from './ui-log-buffer.js';
 
 /** ARC-1 version */
 export const VERSION = '0.9.19'; // x-release-please-version
@@ -775,6 +777,11 @@ export async function createAndStartServer(
   sources?: Record<string, import('./types.js').ConfigSource>,
 ): Promise<Server> {
   initLogger(config.logFormat, config.verbose);
+  const startedAt = new Date().toISOString();
+  const uiLogBuffer = config.uiMode !== 'off' ? new UiLogBufferSink() : undefined;
+  if (uiLogBuffer) {
+    logger.addSink(uiLogBuffer);
+  }
   logAuthSummary(config);
 
   // Effective-policy log + contradiction warnings (Task 8 observability).
@@ -986,6 +993,19 @@ export async function createAndStartServer(
     mcpRateLimiter,
   );
 
+  const uiDeps: UiServerDeps | undefined =
+    config.uiMode !== 'off'
+      ? {
+          config,
+          sources: effectiveSources,
+          version: VERSION,
+          startedAt,
+          cachingLayer,
+          logBuffer: uiLogBuffer,
+          getFeatures: getCachedFeatures,
+        }
+      : undefined;
+
   // Shutdown hook for SQLite cache cleanup (guard against double-close from multiple signals).
   // IMPORTANT: registering a SIGINT/SIGTERM listener suppresses Node's default exit behavior,
   // so we must call process.exit() explicitly after cleanup — otherwise Ctrl+C hangs the process.
@@ -1017,10 +1037,16 @@ export async function createAndStartServer(
   }
 
   if (config.transport === 'stdio') {
+    if (uiDeps && config.uiMode === 'local') {
+      await startLocalUiServer(uiDeps);
+    }
     const transport = new StdioServerTransport();
     await server.connect(transport);
     logger.info('ARC-1 MCP server running on stdio');
   } else {
+    if (uiDeps && config.uiMode === 'local') {
+      await startLocalUiServer(uiDeps);
+    }
     // HTTP Streamable transport — for containerized/BTP deployments
     // Pass the factory function so HTTP server can create fresh server+transport
     // per request. This is required because MCP SDK's Server can only connect
@@ -1067,6 +1093,7 @@ export async function createAndStartServer(
         ),
       config,
       xsuaaCredentials,
+      config.uiMode === 'web' ? uiDeps : undefined,
     );
   }
 

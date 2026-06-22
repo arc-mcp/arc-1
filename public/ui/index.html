@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ARC-1 Console</title>
+    <link rel="icon" href="./arc-mark.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <img src="./arc-mark.svg" alt="" width="32" height="32" />
+        <div>
+          <h1>ARC-1 Console</h1>
+          <p id="subtitle">Read-only runtime view</p>
+        </div>
+      </div>
+      <div class="auth">
+        <input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="Admin bearer token" />
+        <button id="save-token" type="button">Set</button>
+        <button id="clear-token" type="button" class="ghost">Clear</button>
+      </div>
+    </header>
+
+    <main>
+      <nav class="tabs" aria-label="Console views">
+        <button type="button" data-tab="overview" class="active">Overview</button>
+        <button type="button" data-tab="config">Config</button>
+        <button type="button" data-tab="safety">Safety</button>
+        <button type="button" data-tab="features">Features</button>
+        <button type="button" data-tab="cache">Cache</button>
+        <button type="button" data-tab="logs">Logs</button>
+        <button type="button" data-tab="docs">Docs</button>
+      </nav>
+
+      <section id="status" class="status" hidden></section>
+      <section id="content" class="content" aria-live="polite"></section>
+    </main>
+
+    <script src="./app.js" type="module"></script>
+  </body>
+</html>
