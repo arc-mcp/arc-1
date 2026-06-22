@@ -128,21 +128,21 @@ export function createUiApiRouter(deps: UiServerDeps): express.Router {
       links: [
         {
           label: 'Configuration reference',
-          href: 'https://github.com/arc-mcp/arc-1/blob/main/docs_page/configuration-reference.md',
+          href: 'https://docs.arc-1-mcp.com/configuration-reference/',
         },
-        { label: 'Caching', href: 'https://github.com/arc-mcp/arc-1/blob/main/docs_page/caching.md' },
+        { label: 'Caching', href: 'https://docs.arc-1-mcp.com/caching/' },
         {
           label: 'Security guide',
-          href: 'https://github.com/arc-mcp/arc-1/blob/main/docs_page/security-guide.md',
+          href: 'https://docs.arc-1-mcp.com/security-guide/',
         },
         {
           label: 'BTP Cloud Foundry deployment',
-          href: 'https://github.com/arc-mcp/arc-1/blob/main/docs_page/btp-cloud-foundry-deployment.md',
+          href: 'https://docs.arc-1-mcp.com/btp-cloud-foundry-deployment/',
         },
-        { label: 'Docker deployment', href: 'https://github.com/arc-mcp/arc-1/blob/main/docs_page/docker.md' },
+        { label: 'Docker deployment', href: 'https://docs.arc-1-mcp.com/docker/' },
         {
           label: 'Local development',
-          href: 'https://github.com/arc-mcp/arc-1/blob/main/docs_page/local-development.md',
+          href: 'https://docs.arc-1-mcp.com/local-development/',
         },
       ],
     });

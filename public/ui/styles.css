@@ -154,9 +154,12 @@ select {
 .content {
   display: grid;
   gap: 14px;
+  min-width: 0;
 }
 
 .panel {
+  min-width: 0;
+  overflow: hidden;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -167,6 +170,7 @@ select {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 10px;
+  min-width: 0;
 }
 
 .metric {
@@ -178,6 +182,7 @@ select {
   border: 1px solid var(--line);
   border-left-width: 4px;
   border-radius: 6px;
+  min-width: 0;
   padding: 10px 12px;
 }
 
@@ -214,9 +219,12 @@ select {
 .metric strong {
   font-size: 20px;
   line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 
 .metric span {
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--muted);
 }
 
@@ -224,6 +232,7 @@ select {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 12px;
+  min-width: 0;
   margin-top: 12px;
 }
 
@@ -354,6 +363,7 @@ select {
   grid-template-columns: repeat(5, minmax(120px, 1fr));
   gap: 8px;
   align-items: end;
+  min-width: 0;
 }
 
 label {
@@ -364,6 +374,8 @@ label {
 }
 
 .table-wrap {
+  max-width: 100%;
+  min-width: 0;
   overflow-x: auto;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -379,6 +391,7 @@ th,
 td {
   padding: 8px 10px;
   border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
   text-align: left;
   vertical-align: top;
 }
@@ -444,10 +457,13 @@ code,
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .detail-chip {
   display: inline-flex;
+  flex: 0 1 auto;
   min-width: 0;
   max-width: 100%;
   align-items: center;
@@ -461,15 +477,16 @@ code,
 }
 
 .detail-chip span {
+  flex: 0 0 auto;
   color: var(--muted);
 }
 
 .detail-chip strong {
+  flex: 1 1 auto;
   min-width: 0;
-  overflow: hidden;
+  overflow-wrap: anywhere;
   font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .detail-chip.ok {

@@ -256,6 +256,28 @@ describe('UI API', () => {
     expect(res.body.items[0]).toMatchObject({ event: 'tool_call_end', level: 'info', tool: 'SAPSearch' });
   });
 
+  it('links documentation to the published docs site, not GitHub source files', async () => {
+    const res = await request(buildApp()).get('/ui/api/docs');
+
+    expect(res.status).toBe(200);
+    expect(res.body.links).toEqual(
+      expect.arrayContaining([
+        {
+          label: 'Configuration reference',
+          href: 'https://docs.arc-1-mcp.com/configuration-reference/',
+        },
+        {
+          label: 'BTP Cloud Foundry deployment',
+          href: 'https://docs.arc-1-mcp.com/btp-cloud-foundry-deployment/',
+        },
+      ]),
+    );
+    const hrefs = res.body.links.map((link: { href: string }) => link.href).join(' ');
+    expect(hrefs).not.toContain('github.com');
+    expect(hrefs).not.toContain('docs_page');
+    expect(hrefs).not.toContain('.md');
+  });
+
   it('uses real default values for UI filter inputs', async () => {
     const appJs = await readFile(resolve('public/ui/app.js'), 'utf8');
     const styles = await readFile(resolve('public/ui/styles.css'), 'utf8');
@@ -276,6 +298,7 @@ describe('UI API', () => {
     expect(styles).toContain('.status-grid');
     expect(styles).toContain('.metric.ok');
     expect(styles).toContain('.detail-chip');
+    expect(styles).toContain('overflow-wrap: anywhere');
   });
 
   it('rejects non-GET methods', async () => {
