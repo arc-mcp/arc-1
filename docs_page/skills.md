@@ -145,7 +145,12 @@ authoritative.
 
 ### Optional Copilot Instructions
 
-If your team also wants always-on repository instructions, add `.github/copilot-instructions.md` in the local project:
+If your team also wants always-on instructions, keep them short and separate from the detailed skills. Eclipse gives you two practical options:
+
+- **Workspace instructions**: open **Window** → **Preferences** → **GitHub Copilot** → **Custom Instructions**, check **Enable workspace instructions**, and paste a short baseline into the workspace text box. This is local to the Eclipse workspace.
+- **Project instructions**: add `.github/copilot-instructions.md` in the local skills project. Eclipse lists only open projects that contain this file in the **Project** table on the Custom Instructions page.
+
+Example `.github/copilot-instructions.md`:
 
 ```markdown
 When working on SAP ABAP with ARC-1, inspect available SKILL.md files under
@@ -159,7 +164,7 @@ Prefer this baseline:
 - do not treat skills as permission; ARC-1 server safety settings and SAP authorization are authoritative
 ```
 
-Keep this file short. Put detailed ABAP, RAP, Clean Core, or company rules into separate skills so Copilot can load them only when relevant.
+Keep workspace or project instructions short. Put detailed ABAP, RAP, Clean Core, or company rules into separate skills so Copilot can load them only when relevant.
 
 ### ARC-1 MCP In Eclipse
 
@@ -208,12 +213,14 @@ See [Quickstart](quickstart.md), [BTP Cloud Foundry Deployment](btp-cloud-foundr
 - Use a new Agent Mode chat after adding or updating skills.
 - Check that the local skills folder is imported as an Eclipse project, not just present on disk.
 - Confirm **Enable Skills** is turned on under **Window** → **Preferences** → **GitHub Copilot** → **Chat**.
-- Type `/` in a fresh Agent Mode chat and look for `/skill:<name>` entries. Skills do not appear in the **Custom Agents** table; that table is only for `.github/agents/<name>.agent.md`.
+- Type `/` in a fresh Agent Mode chat and look for `/skill:<name>` entries. If newly added skills do not appear, close the chat and restart Eclipse.
+- Skills do not appear in the **Custom Agents** table; that table is only for `.github/agents/<name>.agent.md`.
+- Custom instructions are separate from skills. Use the workspace text box or a project `.github/copilot-instructions.md` only for a short always-on baseline.
 - On Windows, `~` means your user profile; in PowerShell examples use `$env:USERPROFILE`, and in Explorer paths use `%USERPROFILE%`.
 - Keep one local skills project in the workspace instead of scattering instruction files across many ABAP projects.
 - If an XSUAA/OIDC MCP login gets stale in Eclipse, see [XSUAA Setup → Eclipse GitHub Copilot](xsuaa-setup.md#eclipse-github-copilot).
 
-References: [SAPDEV.EU Agentic Skills for ABAP Development](https://www.sapdev.eu/agentic-skills-for-abap-development/), [GitHub Copilot for Eclipse](https://github.com/microsoft/copilot-for-eclipse), [GitHub Docs: MCP in Eclipse](https://docs.github.com/en/copilot/how-tos/provide-context/use-mcp-in-your-ide/extend-copilot-chat-with-mcp), [GitHub Docs: custom agents in Eclipse](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/cloud-agent/create-custom-agents-in-your-ide), and [`skills` CLI](https://github.com/vercel-labs/skills#readme).
+References: [SAPDEV.EU Agentic Skills for ABAP Development](https://www.sapdev.eu/agentic-skills-for-abap-development/), [GitHub Copilot for Eclipse](https://github.com/microsoft/copilot-for-eclipse), [GitHub Docs: MCP in Eclipse](https://docs.github.com/en/copilot/how-tos/provide-context/use-mcp-in-your-ide/extend-copilot-chat-with-mcp), [GitHub Docs: custom instructions](https://docs.github.com/copilot/customizing-copilot/adding-custom-instructions-for-github-copilot), [GitHub Docs: custom agents in Eclipse](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/cloud-agent/create-custom-agents-in-your-ide), and [`skills` CLI](https://github.com/vercel-labs/skills#readme).
 
 ## GitHub Copilot In VS Code With SAP ADT
 

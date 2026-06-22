@@ -95,7 +95,9 @@ Then in Eclipse:
 2. If dot folders are hidden, disable the `.* resources` filter in Project Explorer.
 3. Turn on **Window → Preferences → GitHub Copilot → Chat → Enable Skills**.
 4. Use Copilot Chat **Agent Mode** and configure ARC-1 as an MCP server under **GitHub Copilot → MCP**.
-5. Type `/` in chat and confirm entries such as `/skill:sap-unused-code` or `/skill:generate-rap-service` appear.
+5. Type `/` in chat and confirm entries such as `/skill:sap-unused-code` or `/skill:generate-rap-service` appear. If newly added skills do not show up, open a new Agent Mode chat and restart Eclipse.
+
+Use **Window → Preferences → GitHub Copilot → Custom Instructions** only for short always-on workspace instructions or project `.github/copilot-instructions.md` files. Do not paste the full skill catalog there.
 
 Full setup, including ARC-1 MCP JSON examples and troubleshooting, is in the published [Skills guide](https://docs.arc-1-mcp.com/skills/#github-copilot-in-eclipse-with-adt).
 
