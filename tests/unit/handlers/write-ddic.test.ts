@@ -355,9 +355,27 @@ describe('SAPWrite handler — DDIC writes', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toContain('DDLA/ADF');
-      expect(result.content[0]?.text).toContain('SAP KTD-capable');
-      expect(result.content[0]?.text).toContain('does not yet have ADT parent URI routing');
+      expect(result.content[0]?.text).toContain('SAP-registered for KTD DOCUMENTATION scope');
+      expect(result.content[0]?.text).toContain('does not yet have verified ADT parent URI routing');
       expect(result.content[0]?.text).toContain('WBOBJTYPES_SCOPE');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('SKTD create rejects unverified parent types without claiming SAP can never support them', async () => {
+      mockFetch.mockReset();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'SKTD',
+        name: 'Z_UNKNOWN_DOC_TARGET',
+        package: '$TMP',
+        refObjectType: 'ZZZZ/ABC',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('will not attempt unverified refObjectType "ZZZZ/ABC"');
+      expect(result.content[0]?.text).toContain('requires both a SAP Workbench DOCUMENTATION scope handler');
+      expect(result.content[0]?.text).toContain('exact ADT parent object URI');
+      expect(result.content[0]?.text).not.toContain('does not support refObjectType');
       expect(mockFetch).not.toHaveBeenCalled();
     });
 

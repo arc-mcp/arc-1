@@ -101,9 +101,11 @@ The `adtcore:type="SKTD/TYP"` literal appears in the create XML envelope at
   are all canonical.
 - Guard SKTD create by `refObjectType`: allow ARC-routable documented parents such as
   `DDLS/DF`, `BDEF/*`, `SRVD/SRV`, `SRVB/SVB`, and `DEVC/K`; reject `CLAS/OC`, `INTF/OI`,
-  and `PROG/P` with an ABAP Doc hint before SAP can dump. For SAP-registered but
-  non-routable parents such as `DDLA/ADF` or `EVTB/EVB`, fail fast with a routing-specific
-  message until ARC-1 adds verified parent URI builders.
+  and `PROG/P` with an ABAP Doc hint before SAP can dump. Phrase unknown-type errors as
+  "unverified" rather than "SAP cannot support this type": KTD create needs both a
+  `WBOBJTYPES_SCOPE` DOCUMENTATION handler and a correct parent `adtcore:uri`. For
+  SAP-registered but non-routable parents such as `DDLA/ADF` or `EVTB/EVB`, fail fast with a
+  routing-specific message until ARC-1 adds verified parent URI builders.
 - **Optional follow-up:** add a probe entry in `src/probe/catalog.ts` so non-S/4 backends
   (NW 7.50) report SKTD as unavailable instead of returning a raw 404 to the LLM.
 - **Breaking change**: no.
