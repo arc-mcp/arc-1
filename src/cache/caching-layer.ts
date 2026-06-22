@@ -326,6 +326,7 @@ export class CachingLayer {
     event: CacheActivityEvent,
     details: Omit<CacheActivityEntry, 'timestamp' | 'event'> = {},
   ): void {
+    if (this.maxActivityEntries < 1) return;
     const entry: CacheActivityEntry = {
       timestamp: new Date().toISOString(),
       event,

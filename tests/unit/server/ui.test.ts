@@ -106,14 +106,25 @@ describe('UI API', () => {
       buildApp({
         getFeatures: () => ({
           abapRelease: '758',
+          hana: {
+            id: 'hana',
+            available: true,
+            mode: 'auto',
+            message: 'available',
+            secretProbeToken: 'should-not-leak',
+          },
           discoveryMap: new Map([['/sap/bc/adt', 'application/xml']]),
+          internalSecret: 'should-not-leak',
         }),
       }),
     ).get('/ui/api/features');
 
     expect(res.status).toBe(200);
+    expect(res.body.hana).toEqual({ id: 'hana', available: true, mode: 'auto', message: 'available' });
+    expect(res.body.abapRelease).toBe('758');
     expect(res.body.discovery).toEqual({ endpointCount: 1 });
     expect(res.body.discoveryMap).toBeUndefined();
+    expect(JSON.stringify(res.body)).not.toContain('should-not-leak');
   });
 
   it('lists cache source metadata without source bodies', async () => {

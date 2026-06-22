@@ -766,7 +766,8 @@ async function createCachingLayer(config: ServerConfig): Promise<CachingLayer | 
     cache = new MemoryCache();
   }
 
-  return new CachingLayer(cache);
+  const maxActivityEntries = config.uiMode === 'off' ? 0 : undefined;
+  return new CachingLayer(cache, maxActivityEntries);
 }
 
 /**

@@ -1,5 +1,7 @@
 import type { ConfigSource, ServerConfig } from './types.js';
 
+const FEATURE_KEYS = ['hana', 'abapGit', 'gcts', 'rap', 'amdp', 'ui5', 'transport', 'ui5repo', 'flp'] as const;
+
 export interface UiOverview {
   app: {
     name: 'ARC-1';
@@ -144,16 +146,55 @@ export function sanitizeFeaturesForUi(features: unknown): Record<string, unknown
     };
   }
 
+  const source = features as Record<string, unknown>;
   const result: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(features)) {
-    if (key === 'discoveryMap' && value instanceof Map) {
-      result.discovery = { endpointCount: value.size };
-      continue;
-    }
-    result[key] = value;
+  for (const key of FEATURE_KEYS) {
+    const status = sanitizeFeatureStatus(key, source[key]);
+    if (status) result[key] = status;
   }
+  if (typeof source.abapRelease === 'string') result.abapRelease = source.abapRelease;
+  if (source.systemType === 'btp' || source.systemType === 'onprem') result.systemType = source.systemType;
+  if (source.discoveryMap instanceof Map) result.discovery = { endpointCount: source.discoveryMap.size };
+  const textSearch = sanitizeTextSearch(source.textSearch);
+  if (textSearch) result.textSearch = textSearch;
+  const authProbe = sanitizeAuthProbe(source.authProbe);
+  if (authProbe) result.authProbe = authProbe;
   result.probed = true;
   return result;
+}
+
+function sanitizeFeatureStatus(name: string, value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const source = value as Record<string, unknown>;
+  if (typeof source.available !== 'boolean') return undefined;
+  return {
+    id: typeof source.id === 'string' ? source.id : name,
+    available: source.available,
+    mode: typeof source.mode === 'string' ? source.mode : 'unknown',
+    ...(typeof source.message === 'string' ? { message: source.message } : {}),
+    ...(typeof source.probedAt === 'string' ? { probedAt: source.probedAt } : {}),
+  };
+}
+
+function sanitizeTextSearch(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const source = value as Record<string, unknown>;
+  if (typeof source.available !== 'boolean') return undefined;
+  return {
+    available: source.available,
+    ...(typeof source.reason === 'string' ? { reason: source.reason } : {}),
+  };
+}
+
+function sanitizeAuthProbe(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const source = value as Record<string, unknown>;
+  return {
+    searchAccess: source.searchAccess === true,
+    ...(typeof source.searchReason === 'string' ? { searchReason: source.searchReason } : {}),
+    transportAccess: source.transportAccess === true,
+    ...(typeof source.transportReason === 'string' ? { transportReason: source.transportReason } : {}),
+  };
 }
 
 export function sanitizeSafetyConfig(config: ServerConfig): Record<string, unknown> {

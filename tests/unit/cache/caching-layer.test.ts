@@ -166,6 +166,25 @@ describe('CachingLayer', () => {
       expect(activity.items[3]).not.toHaveProperty('sourceLength');
     });
 
+    it('can disable source cache activity recording', async () => {
+      const silentLayer = new CachingLayer(new MemoryCache(), 0);
+      const fetcher = vi.fn().mockResolvedValue({
+        source: 'REPORT zsilent.',
+        etag: 'e1',
+        notModified: false,
+        statusCode: 200,
+      });
+
+      await silentLayer.getSource('PROG', 'ZSILENT', fetcher);
+      silentLayer.invalidate('PROG', 'ZSILENT');
+
+      expect(silentLayer.listActivity()).toMatchObject({
+        total: 0,
+        counts: {},
+        items: [],
+      });
+    });
+
     it('invalidate(type, name) defaults to active version', async () => {
       cache.putSource('PROG', 'ZTEST', 'active');
       cache.putSource('PROG', 'ZTEST', 'inactive', { version: 'inactive' });

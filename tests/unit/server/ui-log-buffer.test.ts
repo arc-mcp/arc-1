@@ -60,4 +60,27 @@ describe('UiLogBufferSink', () => {
     expect(entry).not.toHaveProperty('responseHeaders');
     expect(entry).not.toHaveProperty('errorBody');
   });
+
+  it('omits future top-level fields that look sensitive', () => {
+    const sink = new UiLogBufferSink();
+    const event = {
+      timestamp: '2026-01-01T00:00:00.000Z',
+      level: 'info',
+      event: 'server_start',
+      version: '1',
+      transport: 'stdio',
+      allowWrites: false,
+      url: '',
+      apiToken: 'secret-token',
+      csrfSecret: 'secret-csrf',
+    } as Parameters<UiLogBufferSink['write']>[0] & { apiToken: string; csrfSecret: string };
+
+    sink.write(event);
+
+    const entry = sink.list().items[0];
+    expect(entry).not.toHaveProperty('apiToken');
+    expect(entry).not.toHaveProperty('csrfSecret');
+    expect(JSON.stringify(entry)).not.toContain('secret-token');
+    expect(JSON.stringify(entry)).not.toContain('secret-csrf');
+  });
 });

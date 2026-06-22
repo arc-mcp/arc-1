@@ -55,15 +55,17 @@ function sanitizeAuditEvent(event: AuditEvent): UiLogEntry {
 }
 
 function isSensitiveLogField(key: string): boolean {
-  return [
-    'requestBody',
-    'responseBody',
-    'requestHeaders',
-    'responseHeaders',
-    'errorBody',
-    'resultPreview',
-    'registeredClientId',
-  ].includes(key);
+  return (
+    [
+      'requestBody',
+      'responseBody',
+      'requestHeaders',
+      'responseHeaders',
+      'errorBody',
+      'resultPreview',
+      'registeredClientId',
+    ].includes(key) || /password|token|secret|cookie|authorization|csrf/i.test(key)
+  );
 }
 
 function sanitizeValue(value: unknown): unknown {
@@ -76,7 +78,7 @@ function sanitizeValue(value: unknown): unknown {
   if (value && typeof value === 'object') {
     const result: Record<string, unknown> = {};
     for (const [key, nested] of Object.entries(value)) {
-      if (isSensitiveLogField(key) || /password|token|secret|cookie|authorization|csrf/i.test(key)) {
+      if (isSensitiveLogField(key)) {
         result[key] = '[REDACTED]';
       } else {
         result[key] = sanitizeValue(nested);
