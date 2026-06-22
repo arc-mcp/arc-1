@@ -121,6 +121,8 @@ Skills are guidance, not an enforcement boundary. ARC-1 safety flags, API-key pr
 6. In Eclipse, open **Window** → **Preferences** → **GitHub Copilot** → **Chat** and turn on **Enable Skills**. This controls whether Agent Skills can enrich chat context.
 7. Start a new Copilot Chat in **Agent Mode**, type `/`, and confirm entries such as `/skill:sap-unused-code` or `/skill:generate-rap-service` appear. Use a skill explicitly with `/skill:<name>`, or ask a task that matches a skill description and let Copilot load relevant context.
 
+![GitHub Copilot for Eclipse Agent Mode showing ARC-1 skills in the slash menu](images/eclipse-copilot-skill-slash-menu.png)
+
 ### Optional Custom Agent
 
 Use a custom agent only if you want a named ABAP/ARC-1 persona in the agent selector. Custom agents live under `.github/agents/<name>.agent.md` and are managed from **Window** → **Preferences** → **GitHub Copilot** → **Custom Agents**. They are separate from skills; creating one is not required for `/skill:*` entries to work.
