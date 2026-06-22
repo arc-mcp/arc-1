@@ -133,16 +133,37 @@ describe('CachingLayer', () => {
 
       expect(activity.counts).toMatchObject({
         source_miss: 1,
+        source_store: 1,
         source_hit: 1,
         source_invalidate: 1,
       });
-      expect(activity.items.map((item) => item.event)).toEqual(['source_invalidate', 'source_hit', 'source_miss']);
+      expect(activity.items.map((item) => item.event)).toEqual([
+        'source_invalidate',
+        'source_hit',
+        'source_store',
+        'source_miss',
+      ]);
       expect(activity.items[0]).toMatchObject({
         objectType: 'PROG',
         objectName: 'ZPROG',
         version: 'active',
         removed: 1,
       });
+      expect(activity.items[2]).toMatchObject({
+        objectType: 'PROG',
+        objectName: 'ZPROG',
+        version: 'active',
+        sourceLength: 'REPORT zprog.'.length,
+        etagPresent: true,
+        detail: 'loaded from SAP',
+      });
+      expect(activity.items[3]).toMatchObject({
+        objectType: 'PROG',
+        objectName: 'ZPROG',
+        version: 'active',
+        detail: 'no cached source entry',
+      });
+      expect(activity.items[3]).not.toHaveProperty('sourceLength');
     });
 
     it('invalidate(type, name) defaults to active version', async () => {

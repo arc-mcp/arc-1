@@ -310,6 +310,24 @@ function cacheActivityForUi(
       sourceLength: item.sourceLength,
       etagPresent: item.etagPresent,
       removed: item.removed,
+      detail: safeRedactedCacheActivityDetail(item),
     })),
   };
+}
+
+function safeRedactedCacheActivityDetail(
+  item: ReturnType<CachingLayer['listActivity']>['items'][number],
+): string | undefined {
+  switch (item.event) {
+    case 'source_miss':
+    case 'source_store':
+    case 'source_refresh':
+    case 'source_evict':
+    case 'depgraph_hit':
+    case 'depgraph_store':
+    case 'warmup_state':
+      return item.detail;
+    default:
+      return undefined;
+  }
 }

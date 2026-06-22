@@ -39,6 +39,7 @@ export interface CacheHitInfo {
 
 export type CacheActivityEvent =
   | 'source_miss'
+  | 'source_store'
   | 'source_hit'
   | 'source_refresh'
   | 'source_invalidate'
@@ -102,15 +103,22 @@ export class CachingLayer {
     const version = opts.version ?? 'active';
     const cached = this.cache.getSource(objectType, objectName, version);
     if (!cached) {
+      this.recordActivity('source_miss', {
+        objectType,
+        objectName,
+        version,
+        detail: 'no cached source entry',
+      });
       const result = await fetcher(undefined);
       this.cache.putSource(objectType, objectName, result.source, { version, etag: result.etag });
-      this.recordActivity('source_miss', {
+      this.recordActivity('source_store', {
         objectType,
         objectName,
         version,
         hash: hashSource(result.source),
         sourceLength: result.source.length,
         etagPresent: !!result.etag,
+        detail: 'loaded from SAP',
       });
       logger.debug(`[cache] source MISS ${objectType}:${objectName}:${version} (${result.source.length} chars stored)`);
       return { source: result.source, hit: false, revalidated: false };
@@ -139,6 +147,7 @@ export class CachingLayer {
         hash: hashSource(result.source),
         sourceLength: result.source.length,
         etagPresent: !!result.etag,
+        detail: 'reloaded from SAP',
       });
       logger.debug(
         `[cache] source REFRESH ${objectType}:${objectName}:${version} (${result.source.length} chars stored)`,

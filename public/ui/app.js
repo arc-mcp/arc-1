@@ -392,6 +392,11 @@ async function refreshCacheStats() {
         ['Evictions', activityCounts.source_evict || 0, activityCounts.source_evict ? 'warn' : ''],
         ['Cache hits', activityCounts.source_hit || 0, activityCounts.source_hit ? 'ok' : ''],
         ['Cache misses', activityCounts.source_miss || 0, activityCounts.source_miss ? 'warn' : ''],
+        [
+          'SAP loads',
+          (activityCounts.source_store || 0) + (activityCounts.source_refresh || 0),
+          activityCounts.source_store || activityCounts.source_refresh ? 'info' : '',
+        ],
       ]),
       chartGrid([
         barChart('Source Types', objectRows(stats.sources?.byType || {})),
@@ -932,6 +937,7 @@ function cacheEventLabel(event) {
   return (
     {
       source_miss: 'Source miss',
+      source_store: 'SAP source load',
       source_hit: 'Source hit',
       source_refresh: 'Source refresh',
       source_invalidate: 'Invalidation',

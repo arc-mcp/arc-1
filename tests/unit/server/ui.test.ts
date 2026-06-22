@@ -153,12 +153,25 @@ describe('UI API', () => {
       byType: {},
       byVersion: {},
     });
-    expect(res.body.activity.counts).toMatchObject({ source_miss: 1, source_invalidate: 1 });
+    expect(res.body.activity.counts).toMatchObject({ source_miss: 1, source_store: 1, source_invalidate: 1 });
     expect(res.body.activity.items[0]).toMatchObject({
       event: 'source_invalidate',
       objectType: 'CLAS',
       objectName: 'ZCL_ALPHA',
       removed: 1,
+    });
+    expect(res.body.activity.items[1]).toMatchObject({
+      event: 'source_store',
+      objectType: 'CLAS',
+      objectName: 'ZCL_ALPHA',
+      sourceLength: 'CLASS zcl_alpha DEFINITION.'.length,
+      detail: 'loaded from SAP',
+    });
+    expect(res.body.activity.items[2]).toMatchObject({
+      event: 'source_miss',
+      objectType: 'CLAS',
+      objectName: 'ZCL_ALPHA',
+      detail: 'no cached source entry',
     });
     expect(JSON.stringify(res.body)).not.toContain('CLASS zcl_alpha');
   });
@@ -197,10 +210,15 @@ describe('UI API', () => {
     ).get('/ui/api/cache/stats');
 
     expect(res.status).toBe(200);
-    expect(res.body.activity.counts).toMatchObject({ source_miss: 1, source_invalidate: 1 });
+    expect(res.body.activity.counts).toMatchObject({ source_miss: 1, source_store: 1, source_invalidate: 1 });
     expect(res.body.activity.items[0]).toMatchObject({ event: 'source_invalidate', removed: 1 });
+    expect(res.body.activity.items[1]).toMatchObject({ event: 'source_store', detail: 'loaded from SAP' });
+    expect(res.body.activity.items[2]).toMatchObject({ event: 'source_miss', detail: 'no cached source entry' });
     expect(res.body.activity.items[0]).not.toHaveProperty('objectName');
     expect(res.body.activity.items[0]).not.toHaveProperty('hash');
+    expect(res.body.activity.items[1]).not.toHaveProperty('objectName');
+    expect(res.body.activity.items[1]).not.toHaveProperty('hash');
+    expect(res.body.activity.items[2]).not.toHaveProperty('objectName');
     expect(JSON.stringify(res.body)).not.toContain('ZCL_SECRET');
     expect(JSON.stringify(res.body)).not.toContain('CLASS zcl_secret');
   });
@@ -292,6 +310,8 @@ describe('UI API', () => {
     expect(appJs).toContain('Feature Availability');
     expect(appJs).toContain('Log Overview');
     expect(appJs).toContain('HTTP Status Codes');
+    expect(appJs).toContain('SAP loads');
+    expect(appJs).toContain('source_store');
     expect(appJs).toContain('barChart');
     expect(appJs).toContain('detailChips');
     expect(styles).toContain('.chart-grid');

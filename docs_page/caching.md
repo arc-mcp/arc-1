@@ -331,6 +331,8 @@ If warmup has not run, `SAPContext(action="usages", ...)` returns an `isError: t
 
 **Cache hits still make HTTP calls** — they're conditional GETs that return 304 with no body. The savings are bandwidth (no body transfer on 304) and dep-graph resolution (skipped when source hash unchanged), not RTT count. This trade is intentional: structurally correct freshness beats round-trip optimisation.
 
+The read-only UI reports cache source reads in two steps: `source_miss` means ARC-1 had no cached source entry at lookup time; `source_store` means the follow-up SAP ADT read succeeded and ARC-1 stored the returned source. `source_refresh` is the equivalent SAP reload for an existing cached entry when the conditional read returns a fresh body instead of `304 Not Modified`.
+
 The biggest savings still come from dependency graph caching. A single `SAPContext` call for a class with 15 dependencies would normally require 16+ ADT calls (1 for the class + 1 per dependency), plus an optional KTD read for the documented object. With a warm cache and unchanged source, this drops to 1 conditional-GET for the source, 1 conditional-GET for the KTD when present, and 0 dependency calls.
 
 ## Disk Space
