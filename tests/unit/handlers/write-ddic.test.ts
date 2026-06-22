@@ -326,6 +326,20 @@ describe('SAPWrite handler — DDIC writes', () => {
       expect(result.content[0]?.text).toContain('DDLS/DF');
     });
 
+    it('KTD create alias rejects missing refObjectType before generic object routing', async () => {
+      mockFetch.mockReset();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'KTD',
+        name: 'ZTR_C_PAYMENT_VALUE_DATE',
+        package: '$TMP',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('refObjectType');
+      expect(result.content[0]?.text).toContain('SKTD/KTD create');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
     it('SKTD create rejects class parents before SAP dumps in CL_KTD_UTILITY', async () => {
       mockFetch.mockReset();
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
@@ -392,6 +406,74 @@ describe('SAPWrite handler — DDIC writes', () => {
       expect(result.content[0]?.text).toContain('must match refObjectName');
       expect(result.content[0]?.text).toContain('one KTD per object');
       expect(result.content[0]?.text).toContain('name="ZTR_C_PAYMENT_VALUE_DATE"');
+    });
+
+    it('KTD create alias routes through the SKTD collection endpoint', async () => {
+      const calls: Array<{ method: string; url: string; body?: string; contentType?: string }> = [];
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL, init?: RequestInit) => {
+        calls.push({
+          method: init?.method ?? 'GET',
+          url: String(url),
+          body: init?.body?.toString(),
+          contentType: init?.headers ? String((init.headers as Record<string, string>)['Content-Type'] ?? '') : '',
+        });
+        return Promise.resolve(
+          mockResponse(201, '<sktd:docu/>', {
+            location: '/sap/bc/adt/documentation/ktd/documents/ztr_c_payment_value_date',
+            'x-csrf-token': 'T',
+          }),
+        );
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'KTD',
+        name: 'ZTR_C_PAYMENT_VALUE_DATE',
+        package: '$TMP',
+        refObjectType: 'DDLS/DF',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('Created SKTD ZTR_C_PAYMENT_VALUE_DATE');
+      const postCall = calls.find(
+        (c) => c.method === 'POST' && c.url.includes('/sap/bc/adt/documentation/ktd/documents'),
+      );
+      expect(postCall).toBeDefined();
+      expect(postCall!.url).not.toContain('/programs/programs');
+      expect(postCall!.body).toContain('adtcore:type="SKTD/TYP"');
+      expect(postCall!.body).toContain('adtcore:type="DDLS/DF"');
+    });
+
+    it('SKTD create returns a capability error when the KTD collection endpoint is unavailable', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL, init?: RequestInit) => {
+        const method = init?.method ?? 'GET';
+        const urlStr = String(url);
+        if (method === 'POST' && urlStr.includes('/sap/bc/adt/documentation/ktd/documents')) {
+          return Promise.resolve(
+            mockResponse(
+              404,
+              '<?xml version="1.0" encoding="utf-8"?><exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework"><exc:localizedMessage lang="EN">Resource  /sap/bc/adt/documentation/ktd/documents does not exist.</exc:localizedMessage></exc:exception>',
+              { 'x-csrf-token': 'T' },
+            ),
+          );
+        }
+        return Promise.resolve(mockResponse(200, '<xml/>', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'KTD',
+        name: 'ZTR_C_PAYMENT_VALUE_DATE',
+        package: '$TMP',
+        refObjectType: 'DDLS/DF',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('SKTD/KTD create endpoint is not available');
+      expect(result.content[0]?.text).toContain('SAP_BASIS 7.55+');
+      expect(result.content[0]?.text).not.toContain('Object "ZTR_C_PAYMENT_VALUE_DATE"');
     });
 
     it('creates SKTD and writes initial Markdown content when "source" is provided', async () => {

@@ -151,6 +151,8 @@ const SAPWRITE_TABL_ALIAS: Record<string, string> = {
 export function normalizeWriteObjectType(type: string): string {
   const normalized = String(type).trim().toUpperCase();
   if (!normalized) return '';
+  const friendlyAlias = FRIENDLY_TYPE_ALIAS_MAP[normalized];
+  if (friendlyAlias) return friendlyAlias;
   const aliased = SAPWRITE_TABL_ALIAS[normalized];
   if (aliased) return aliased;
   if (TABL_WRITE_SUBTYPES.has(normalized)) return normalized;

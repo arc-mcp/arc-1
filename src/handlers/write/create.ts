@@ -122,7 +122,7 @@ function validateKtdRefObjectType(refObjectType: string): string | undefined {
   }
   if (KTD_REF_OBJECT_TYPES_SAP_DOCUMENTATION_SCOPE.has(normalized)) {
     return (
-      `SKTD/KTD create recognizes refObjectType "${normalized}" as SAP-registered for KTD DOCUMENTATION scope on tested systems, ` +
+      `SKTD/KTD create recognizes refObjectType "${normalized}" as observed SAP-registered for KTD DOCUMENTATION scope on SAP_BASIS 758/816, ` +
       `but ARC-1 does not yet have verified ADT parent URI routing for this type. ` +
       `ARC-1 only creates KTDs when it can build both the SAP refObjectType and the parent adtcore:uri. ` +
       `ARC-1 currently supports KTD creation for: ${KTD_REF_OBJECT_TYPES_HINT}. ` +
@@ -140,6 +140,13 @@ function validateKtdRefObjectType(refObjectType: string): string | undefined {
     `ARC-1 currently supports KTD creation for: ${KTD_REF_OBJECT_TYPES_HINT}.` +
     codeDocumentationHint
   );
+}
+
+function isKtdCreateEndpointUnavailable(err: unknown): err is AdtApiError {
+  if (!(err instanceof AdtApiError)) return false;
+  if (err.statusCode !== 404 || err.path !== '/sap/bc/adt/documentation/ktd/documents') return false;
+  const combined = `${err.message}\n${err.responseBody ?? ''}`.toLowerCase();
+  return combined.includes('resource') && combined.includes('/sap/bc/adt/documentation/ktd/documents');
 }
 
 export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResult> {
@@ -270,16 +277,28 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
 </sktd:docu>`;
 
     const ktdCreateUrl = '/sap/bc/adt/documentation/ktd/documents';
-    const ktdResult = await createObject(
-      client.http,
-      client.safety,
-      ktdCreateUrl,
-      ktdBody,
-      SKTD_V2_CONTENT_TYPE,
-      effectiveTransport,
-      undefined,
-      cachedFeatures?.abapRelease,
-    );
+    let ktdResult: string;
+    try {
+      ktdResult = await createObject(
+        client.http,
+        client.safety,
+        ktdCreateUrl,
+        ktdBody,
+        SKTD_V2_CONTENT_TYPE,
+        effectiveTransport,
+        undefined,
+        cachedFeatures?.abapRelease,
+      );
+    } catch (err) {
+      if (isKtdCreateEndpointUnavailable(err)) {
+        return errorResult(
+          `SKTD/KTD create endpoint is not available on this SAP system: ${ktdCreateUrl} returned 404. ` +
+            `KTD creation requires SAP_BASIS 7.55+ with the ADT Knowledge Transfer Document service active. ` +
+            `ARC-1 did not create "${name}". On older systems, use the documentation mechanism supported by that release or connect to a KTD-capable backend.`,
+        );
+      }
+      throw err;
+    }
 
     // If initial Markdown was provided, follow up with an update PUT to write it.
     // Same envelope contract as the update path: fetch-then-rewrite ensures we
