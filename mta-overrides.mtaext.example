@@ -105,8 +105,9 @@ modules:
       # ARC1_ALLOWED_ORIGINS: "https://my-app.cfapps.eu10.hana.ondemand.com"
 
       # ── Read-only UI ─────────────────────────────────────────────────
-      # Mount the read-only console at /ui on the ARC-1 HTTP app. The JSON
-      # API under /ui/api/* requires an admin-scoped XSUAA bearer token.
+      # Experimental and off by default. Mount the read-only console at /ui
+      # on the ARC-1 HTTP app. The JSON API under /ui/api/* requires an
+      # admin-scoped XSUAA bearer token.
       # ARC1_UI: "web"
 
       # ── Tool surface ─────────────────────────────────────────────────

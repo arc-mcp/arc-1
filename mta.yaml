@@ -118,6 +118,9 @@ modules:
       SAP_ALLOW_TRANSPORT_WRITES: "false"
       SAP_ALLOW_GIT_WRITES: "false"
       SAP_ALLOWED_PACKAGES: "$TMP"
+      # Experimental read-only UI. Keep off in the base descriptor; opt in
+      # per landscape with ARC1_UI=web in mta-overrides.mtaext.
+      ARC1_UI: "off"
       # CORS — empty (default) disables CORS entirely. Set per landscape via
       # `mta-overrides.mtaext` or `cf set-env` only when a browser UI talks to
       # /mcp directly. Native MCP clients (Claude Desktop, Cursor, VS Code,

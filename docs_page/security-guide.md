@@ -318,7 +318,7 @@ curl -sI https://<your-app-url>/health | \
 
 ### Read-only UI surface
 
-`ARC1_UI` is off by default. When enabled, ARC-1 serves static UI assets at `/ui` and read-only JSON endpoints under `/ui/api/*`. The endpoints expose sanitized config, safety/auth state, feature status, cache counts/source metadata, and recent sanitized audit events. They do not expose mutation controls, cached ABAP source bodies, request/response bodies, OAuth client IDs, or secrets.
+`ARC1_UI` is experimental and off by default. When enabled, ARC-1 serves static UI assets at `/ui` and read-only JSON endpoints under `/ui/api/*`. The endpoints expose sanitized config, safety/auth state, feature status, cache counts/source metadata, and recent sanitized audit events. They do not expose mutation controls, cached ABAP source bodies, request/response bodies, OAuth client IDs, or secrets.
 
 In HTTP mode, `/ui/api/*` is mounted behind bearer auth and requires the `admin` scope whenever API keys, OIDC, or XSUAA are configured. If HTTP auth is not configured, it is open like `/mcp`. In stdio mode, `ARC1_UI=local` binds only to loopback (`127.0.0.1`/`localhost`) and rejects non-loopback addresses.
 

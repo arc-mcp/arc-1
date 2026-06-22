@@ -201,7 +201,7 @@
     "arc1_ui": {
       "type": "boolean",
       "title": "Enable Read-only UI",
-      "description": "Start a loopback browser console for sanitized config, cache metadata, feature status, and recent sanitized logs.",
+      "description": "Experimental and off by default. Start a loopback browser console for sanitized config, cache metadata, feature status, and recent sanitized logs.",
       "default": false,
       "required": false
     },

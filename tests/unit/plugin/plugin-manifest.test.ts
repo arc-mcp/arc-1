@@ -152,6 +152,14 @@ describe('config surface parity (plugin ↔ mcpb)', () => {
       }
     }
   });
+
+  it('keeps the experimental UI disabled by default in packaged installs', () => {
+    for (const [name, { cfg }] of Object.entries(surfaces)) {
+      expect(cfg.arc1_ui?.default, `${name}.arc1_ui.default`).toBe(false);
+      expect(cfg.arc1_ui_open?.default, `${name}.arc1_ui_open.default`).toBe(false);
+      expect(cfg.arc1_ui_addr?.default, `${name}.arc1_ui_addr.default`).toBe('127.0.0.1:8711');
+    }
+  });
 });
 
 describe('version sync (release-please manages all four)', () => {
@@ -160,6 +168,15 @@ describe('version sync (release-please manages all four)', () => {
     expect(plugin.version).toBe(pkg);
     expect(readJson('mcpb-manifest.json').version).toBe(pkg);
     expect(readJson('server.json').version).toBe(pkg);
+  });
+});
+
+describe('deployment templates', () => {
+  it('keep the experimental UI explicitly disabled in CF descriptors', () => {
+    for (const rel of ['mta.yaml', 'manifest.yml', 'manifest-btp-abap.yml']) {
+      const body = readFileSync(join(ROOT, rel), 'utf8');
+      expect(body, rel).toContain('ARC1_UI: "off"');
+    }
   });
 });
 
