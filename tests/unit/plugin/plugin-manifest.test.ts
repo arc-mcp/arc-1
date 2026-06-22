@@ -102,7 +102,7 @@ describe('mcpb-manifest.json (Claude Desktop bundle)', () => {
 
 describe('config surface parity (plugin ↔ mcpb)', () => {
   const mcpb = readJson('mcpb-manifest.json');
-  // Every SAP_* the server reads must be wired in BOTH surfaces — not just the capability gates.
+  // Every env var exposed by the packaged config surfaces must be wired in BOTH surfaces.
   const ENV_KEYS = [
     'SAP_URL',
     'SAP_USER',
@@ -116,6 +116,9 @@ describe('config surface parity (plugin ↔ mcpb)', () => {
     'SAP_ALLOW_FREE_SQL',
     'SAP_ALLOW_TRANSPORT_WRITES',
     'SAP_ALLOW_GIT_WRITES',
+    'ARC1_UI',
+    'ARC1_UI_OPEN',
+    'ARC1_UI_ADDR',
   ];
 
   const surfaces: Record<string, { env: Record<string, string>; cfg: Record<string, Record<string, unknown>> }> = {
@@ -124,7 +127,7 @@ describe('config surface parity (plugin ↔ mcpb)', () => {
   };
 
   for (const [name, { env, cfg }] of Object.entries(surfaces)) {
-    it(`${name} wires every SAP_* env var to an existing user_config key`, () => {
+    it(`${name} wires every packaged env var to an existing user_config key`, () => {
       expect(Object.keys(env).sort()).toEqual([...ENV_KEYS].sort());
       for (const [key, value] of Object.entries(env)) {
         // Each value must be EXACTLY a ${user_config.<key>} substitution (anchored) — a typo like

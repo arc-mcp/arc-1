@@ -95,6 +95,24 @@
       "title": "Allow Git Writes",
       "description": "Allow gCTS / abapGit mutations (commit/push/pull). Also requires Allow Writes.",
       "default": false
+    },
+    "arc1_ui": {
+      "type": "boolean",
+      "title": "Enable Read-only UI",
+      "description": "Start a loopback browser console for sanitized config, cache metadata, feature status, and recent sanitized logs.",
+      "default": false
+    },
+    "arc1_ui_open": {
+      "type": "boolean",
+      "title": "Open UI on Startup",
+      "description": "Open the read-only UI in your browser when ARC-1 starts. Only applies when the UI is enabled.",
+      "default": false
+    },
+    "arc1_ui_addr": {
+      "type": "string",
+      "title": "UI Loopback Address",
+      "description": "Loopback bind address for the local read-only UI.",
+      "default": "127.0.0.1:8711"
     }
   },
   "mcpServers": {
@@ -116,7 +134,10 @@
         "SAP_ALLOW_DATA_PREVIEW": "${user_config.sap_allow_data_preview}",
         "SAP_ALLOW_FREE_SQL": "${user_config.sap_allow_free_sql}",
         "SAP_ALLOW_TRANSPORT_WRITES": "${user_config.sap_allow_transport_writes}",
-        "SAP_ALLOW_GIT_WRITES": "${user_config.sap_allow_git_writes}"
+        "SAP_ALLOW_GIT_WRITES": "${user_config.sap_allow_git_writes}",
+        "ARC1_UI": "${user_config.arc1_ui}",
+        "ARC1_UI_OPEN": "${user_config.arc1_ui_open}",
+        "ARC1_UI_ADDR": "${user_config.arc1_ui_addr}"
       }
     }
   }

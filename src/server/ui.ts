@@ -63,12 +63,26 @@ export function createUiApiRouter(deps: UiServerDeps): express.Router {
       res.json({ enabled: false, mode: deps.config.cacheMode });
       return;
     }
+    const effectiveBackend = cacheBackendKind(deps.cachingLayer);
     res.json({
       enabled: true,
       mode: deps.config.cacheMode,
+      backend: {
+        effective: effectiveBackend,
+        persistent: effectiveBackend === 'sqlite',
+        ephemeral: effectiveBackend === 'memory',
+        file: effectiveBackend === 'sqlite' ? deps.config.cacheFile : undefined,
+      },
+      warmup: {
+        configured: deps.config.cacheWarmup,
+        available: deps.cachingLayer.isWarmupAvailable,
+        packages: deps.config.cacheWarmupPackages,
+      },
       warmupAvailable: deps.cachingLayer.isWarmupAvailable,
       stats: deps.cachingLayer.stats(),
       inactiveLists: deps.cachingLayer.inactiveLists.stats(),
+      sources: summarizeCachedSources(deps.cachingLayer),
+      activity: cacheActivityForUi(deps.cachingLayer, deps.config.ppEnabled),
     });
   });
 
@@ -235,4 +249,60 @@ function numberQuery(req: Request, name: string): number | undefined {
   if (!value) return undefined;
   const parsed = Number.parseInt(value, 10);
   return Number.isNaN(parsed) ? undefined : parsed;
+}
+
+function cacheBackendKind(cachingLayer: CachingLayer): 'memory' | 'sqlite' | 'unknown' {
+  const ctor = cachingLayer.cache.constructor.name;
+  if (ctor === 'MemoryCache') return 'memory';
+  if (ctor === 'SqliteCache') return 'sqlite';
+  return 'unknown';
+}
+
+function summarizeCachedSources(cachingLayer: CachingLayer): Record<string, unknown> {
+  const inventory = cachingLayer.listCachedSources({ limit: 200 });
+  const byType: Record<string, number> = {};
+  const byVersion: Record<string, number> = {};
+  let etagCount = 0;
+  let totalSourceLength = 0;
+  let newestCachedAt = '';
+
+  for (const item of inventory.items) {
+    byType[item.objectType] = (byType[item.objectType] ?? 0) + 1;
+    byVersion[item.version] = (byVersion[item.version] ?? 0) + 1;
+    if (item.etagPresent) etagCount += 1;
+    totalSourceLength += item.sourceLength;
+    if (!newestCachedAt || item.cachedAt > newestCachedAt) {
+      newestCachedAt = item.cachedAt;
+    }
+  }
+
+  return {
+    total: inventory.total,
+    sampled: inventory.items.length < inventory.total,
+    sampleSize: inventory.items.length,
+    byType,
+    byVersion,
+    etagCount,
+    totalSourceLength,
+    newestCachedAt: newestCachedAt || undefined,
+  };
+}
+
+function cacheActivityForUi(
+  cachingLayer: CachingLayer,
+  redactObjectDetails: boolean,
+): ReturnType<CachingLayer['listActivity']> {
+  const activity = cachingLayer.listActivity(50);
+  if (!redactObjectDetails) return activity;
+  return {
+    ...activity,
+    items: activity.items.map((item) => ({
+      timestamp: item.timestamp,
+      event: item.event,
+      version: item.version,
+      sourceLength: item.sourceLength,
+      etagPresent: item.etagPresent,
+      removed: item.removed,
+    })),
+  };
 }

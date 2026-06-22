@@ -105,6 +105,35 @@ describe('UI API', () => {
     expect(res.body.items[0]).not.toHaveProperty('source');
   });
 
+  it('returns cache backend, source summary, and recent activity', async () => {
+    const cachingLayer = new CachingLayer(new MemoryCache());
+    await cachingLayer.getSource('CLAS', 'ZCL_ALPHA', async () => ({
+      source: 'CLASS zcl_alpha DEFINITION.',
+      etag: 'abc',
+      notModified: false,
+      statusCode: 200,
+    }));
+    cachingLayer.invalidate('CLAS', 'ZCL_ALPHA');
+
+    const res = await request(buildApp({ cachingLayer })).get('/ui/api/cache/stats');
+
+    expect(res.status).toBe(200);
+    expect(res.body.backend).toMatchObject({ effective: 'memory', persistent: false, ephemeral: true });
+    expect(res.body.sources).toMatchObject({
+      total: 0,
+      byType: {},
+      byVersion: {},
+    });
+    expect(res.body.activity.counts).toMatchObject({ source_miss: 1, source_invalidate: 1 });
+    expect(res.body.activity.items[0]).toMatchObject({
+      event: 'source_invalidate',
+      objectType: 'CLAS',
+      objectName: 'ZCL_ALPHA',
+      removed: 1,
+    });
+    expect(JSON.stringify(res.body)).not.toContain('CLASS zcl_alpha');
+  });
+
   it('blocks cache source inventory when principal propagation is enabled', async () => {
     const cache = new MemoryCache();
     cache.putSource('CLAS', 'ZCL_ALPHA', 'source');
@@ -119,6 +148,32 @@ describe('UI API', () => {
 
     expect(res.status).toBe(403);
     expect(res.body.reason).toMatch(/principal propagation/);
+  });
+
+  it('redacts cache activity object details when principal propagation is enabled', async () => {
+    const cachingLayer = new CachingLayer(new MemoryCache());
+    await cachingLayer.getSource('CLAS', 'ZCL_SECRET', async () => ({
+      source: 'CLASS zcl_secret DEFINITION.',
+      etag: 'abc',
+      notModified: false,
+      statusCode: 200,
+    }));
+    cachingLayer.invalidate('CLAS', 'ZCL_SECRET');
+
+    const res = await request(
+      buildApp({
+        config: { ...DEFAULT_CONFIG, ppEnabled: true },
+        cachingLayer,
+      }),
+    ).get('/ui/api/cache/stats');
+
+    expect(res.status).toBe(200);
+    expect(res.body.activity.counts).toMatchObject({ source_miss: 1, source_invalidate: 1 });
+    expect(res.body.activity.items[0]).toMatchObject({ event: 'source_invalidate', removed: 1 });
+    expect(res.body.activity.items[0]).not.toHaveProperty('objectName');
+    expect(res.body.activity.items[0]).not.toHaveProperty('hash');
+    expect(JSON.stringify(res.body)).not.toContain('ZCL_SECRET');
+    expect(JSON.stringify(res.body)).not.toContain('CLASS zcl_secret');
   });
 
   it('returns sanitized audit logs', async () => {
@@ -177,6 +232,7 @@ describe('UI API', () => {
 
     expect(appJs).toContain("labeledInput('log-event', 'Event', 'tool_call_end')");
     expect(appJs).toContain('input.value = defaultValue;');
+    expect(appJs).toContain('window.setInterval(refreshActiveTab, 5000)');
   });
 
   it('rejects non-GET methods', async () => {

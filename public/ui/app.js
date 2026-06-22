@@ -12,6 +12,8 @@ const endpoints = {
 const state = {
   token: sessionStorage.getItem('arc1.ui.token') || '',
   tab: 'overview',
+  refreshTimer: undefined,
+  refreshInFlight: false,
 };
 
 const content = document.querySelector('#content');
@@ -59,6 +61,7 @@ async function apiGet(path) {
 }
 
 async function loadTab(tab) {
+  clearAutoRefresh();
   showStatus('');
   content.replaceChildren(panel('Loading', text('Fetching current state...')));
   try {
@@ -72,6 +75,37 @@ async function loadTab(tab) {
   } catch (error) {
     if (error.status === 401) showStatus('Authentication required.');
     content.replaceChildren(panel('Request Failed', codeBlock(error.message || String(error))));
+  } finally {
+    scheduleAutoRefresh();
+  }
+}
+
+function scheduleAutoRefresh() {
+  clearAutoRefresh();
+  state.refreshTimer = window.setInterval(refreshActiveTab, 5000);
+}
+
+function clearAutoRefresh() {
+  if (state.refreshTimer) {
+    window.clearInterval(state.refreshTimer);
+    state.refreshTimer = undefined;
+  }
+}
+
+async function refreshActiveTab() {
+  if (state.refreshInFlight || document.hidden) return;
+  state.refreshInFlight = true;
+  try {
+    if (state.tab === 'overview') renderOverview(await apiGet(endpoints.overview));
+    if (state.tab === 'config') renderConfig(await apiGet(endpoints.config));
+    if (state.tab === 'safety') renderObjectPanel('Safety Ceiling', await apiGet(endpoints.safety));
+    if (state.tab === 'features') renderObjectPanel('Feature State', await apiGet(endpoints.features));
+    if (state.tab === 'cache') await refreshCache();
+    if (state.tab === 'logs') await refreshLogs();
+  } catch (error) {
+    if (error.status === 401) showStatus('Authentication required.');
+  } finally {
+    state.refreshInFlight = false;
   }
 }
 
@@ -99,30 +133,88 @@ function renderConfig(data) {
 }
 
 async function renderCache() {
-  const stats = await apiGet(endpoints.cacheStats);
   const container = document.createElement('div');
   container.className = 'content';
-  container.append(
-    panel(
-      'Cache Stats',
-      stats.enabled
-        ? metricGrid([
-            ['Nodes', stats.stats.nodeCount],
-            ['Edges', stats.stats.edgeCount],
-            ['APIs', stats.stats.apiCount],
-            ['Sources', stats.stats.sourceCount],
-            ['Contracts', stats.stats.contractCount],
-            ['Warmup', stats.warmupAvailable ? 'available' : 'not available'],
-          ])
-        : keyValue(stats),
-    ),
-  );
+  const statsResult = document.createElement('div');
+  statsResult.id = 'cache-stats-result';
 
   const sourceResult = document.createElement('div');
   sourceResult.id = 'cache-source-result';
-  container.append(panel('Source Metadata', cacheSourceControls()), panel('Source Entries', sourceResult));
+  const activityResult = document.createElement('div');
+  activityResult.id = 'cache-activity-result';
+  container.append(
+    panel('Cache Stats', statsResult),
+    panel('Source Metadata', cacheSourceControls()),
+    panel('Source Entries', sourceResult),
+    panel('Recent Cache Activity', activityResult),
+  );
   content.replaceChildren(container);
+  await refreshCache();
+}
+
+async function refreshCache() {
+  await refreshCacheStats();
   await refreshCacheSources();
+}
+
+async function refreshCacheStats() {
+  const target = document.querySelector('#cache-stats-result');
+  const activityTarget = document.querySelector('#cache-activity-result');
+  if (!target || !activityTarget) return;
+  try {
+    const stats = await apiGet(endpoints.cacheStats);
+    if (!stats.enabled) {
+      target.replaceChildren(objectView(stats));
+      activityTarget.replaceChildren(text('Cache is disabled.'));
+      return;
+    }
+
+    const activityCounts = stats.activity?.counts || {};
+    target.replaceChildren(
+      metricGrid([
+        ['Backend', stats.backend?.effective || stats.mode],
+        ['Persistence', stats.backend?.persistent ? 'persistent' : 'ephemeral'],
+        ['Nodes', stats.stats.nodeCount],
+        ['Edges', stats.stats.edgeCount],
+        ['APIs', stats.stats.apiCount],
+        ['Sources', stats.stats.sourceCount],
+        ['Contracts', stats.stats.contractCount],
+        ['Warmup', stats.warmup?.available ? 'available' : 'not available'],
+        ['Invalidations', activityCounts.source_invalidate || 0],
+        ['Evictions', activityCounts.source_evict || 0],
+        ['Cache hits', activityCounts.source_hit || 0],
+        ['Cache misses', activityCounts.source_miss || 0],
+      ]),
+      detailsList([
+        ['Mode', stats.mode],
+        ['Cache file', stats.backend?.file || 'none'],
+        ['Warmup configured', stats.warmup?.configured ? 'yes' : 'no'],
+        ['Warmup packages', stats.warmup?.packages || 'all configured packages'],
+        ['Inactive-list users', stats.inactiveLists?.userCount ?? 0],
+        ['Inactive-list entries', stats.inactiveLists?.totalEntries ?? 0],
+        ['Source inventory', sourceInventoryLabel(stats.sources)],
+      ]),
+      sourceBreakdown(stats.sources),
+    );
+
+    const activityItems = stats.activity?.items || [];
+    activityTarget.replaceChildren(
+      table(
+        ['Time', 'Event', 'Object', 'Version', 'Detail'],
+        activityItems.map((item) => [
+          item.timestamp,
+          item.event,
+          cacheObjectLabel(item),
+          item.version || '',
+          cacheActivityDetail(item),
+        ]),
+      ),
+      text(`${activityItems.length} of ${stats.activity?.total ?? 0} events`),
+    );
+  } catch (error) {
+    target.replaceChildren(codeBlock(error.message || String(error)));
+    activityTarget.replaceChildren(codeBlock(error.message || String(error)));
+  }
 }
 
 function cacheSourceControls() {
@@ -175,6 +267,38 @@ async function refreshCacheSources() {
   } catch (error) {
     target.replaceChildren(codeBlock(error.message || String(error)));
   }
+}
+
+function sourceBreakdown(sources) {
+  if (!sources || sources.total === 0) return text('No cached source entries yet.');
+  const rows = [];
+  for (const [type, count] of Object.entries(sources.byType || {})) {
+    rows.push([type, count]);
+  }
+  return table(['Source Type', 'Entries'], rows);
+}
+
+function sourceInventoryLabel(sources) {
+  if (!sources) return 'unavailable';
+  const sampled = sources.sampled ? `, sampled ${sources.sampleSize}` : '';
+  const etags = `${sources.etagCount || 0} with ETag`;
+  const newest = sources.newestCachedAt ? `, newest ${sources.newestCachedAt}` : '';
+  return `${sources.total} entries${sampled}, ${etags}${newest}`;
+}
+
+function cacheObjectLabel(item) {
+  if (!item.objectType && !item.objectName) return '';
+  return `${item.objectType || ''} ${item.objectName || ''}`.trim();
+}
+
+function cacheActivityDetail(item) {
+  const parts = [];
+  if (item.removed !== undefined) parts.push(`removed ${item.removed}`);
+  if (item.sourceLength !== undefined) parts.push(`${item.sourceLength} chars`);
+  if (item.etagPresent !== undefined) parts.push(item.etagPresent ? 'ETag' : 'no ETag');
+  if (item.hash) parts.push(`hash ${item.hash.slice(0, 12)}`);
+  if (item.detail) parts.push(item.detail);
+  return parts.join(', ');
 }
 
 async function renderLogs() {
@@ -285,6 +409,19 @@ function keyValue(data) {
     name.textContent = key;
     const val = document.createElement('div');
     val.append(renderValue(value));
+    wrap.append(name, val);
+  }
+  return wrap;
+}
+
+function detailsList(items) {
+  const wrap = document.createElement('div');
+  wrap.className = 'kv';
+  for (const [key, value] of items) {
+    const name = document.createElement('div');
+    name.textContent = key;
+    const val = document.createElement('div');
+    val.textContent = String(value ?? '');
     wrap.append(name, val);
   }
   return wrap;

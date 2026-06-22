@@ -119,6 +119,32 @@ describe('CachingLayer', () => {
       expect(fetcherV2).toHaveBeenCalledTimes(1);
     });
 
+    it('records source cache activity for UI inspection', async () => {
+      const fetcher = vi
+        .fn()
+        .mockResolvedValueOnce({ source: 'REPORT zprog.', etag: 'e1', notModified: false, statusCode: 200 })
+        .mockResolvedValueOnce({ source: '', etag: 'e1', notModified: true, statusCode: 304 });
+
+      await layer.getSource('PROG', 'ZPROG', fetcher);
+      await layer.getSource('PROG', 'ZPROG', fetcher);
+      layer.invalidate('PROG', 'ZPROG');
+
+      const activity = layer.listActivity();
+
+      expect(activity.counts).toMatchObject({
+        source_miss: 1,
+        source_hit: 1,
+        source_invalidate: 1,
+      });
+      expect(activity.items.map((item) => item.event)).toEqual(['source_invalidate', 'source_hit', 'source_miss']);
+      expect(activity.items[0]).toMatchObject({
+        objectType: 'PROG',
+        objectName: 'ZPROG',
+        version: 'active',
+        removed: 1,
+      });
+    });
+
     it('invalidate(type, name) defaults to active version', async () => {
       cache.putSource('PROG', 'ZTEST', 'active');
       cache.putSource('PROG', 'ZTEST', 'inactive', { version: 'inactive' });
