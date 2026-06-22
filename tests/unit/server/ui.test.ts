@@ -229,10 +229,18 @@ describe('UI API', () => {
 
   it('uses real default values for UI filter inputs', async () => {
     const appJs = await readFile(resolve('public/ui/app.js'), 'utf8');
+    const styles = await readFile(resolve('public/ui/styles.css'), 'utf8');
 
     expect(appJs).toContain("labeledInput('log-event', 'Event', 'tool_call_end')");
     expect(appJs).toContain('input.value = defaultValue;');
     expect(appJs).toContain('window.setInterval(refreshActiveTab, 5000)');
+    expect(appJs).toContain('preserveScroll');
+    expect(appJs).toContain('Configuration Summary');
+    expect(appJs).toContain('Feature Availability');
+    expect(appJs).toContain('Log Overview');
+    expect(appJs).toContain('barChart');
+    expect(styles).toContain('.chart-grid');
+    expect(styles).toContain('.status-grid');
   });
 
   it('rejects non-GET methods', async () => {
