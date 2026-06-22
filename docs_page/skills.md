@@ -152,6 +152,8 @@ If your team also wants always-on instructions, keep them short and separate fro
 - **Workspace instructions**: open **Window** → **Preferences** → **GitHub Copilot** → **Custom Instructions**, check **Enable workspace instructions**, and paste a short baseline into the workspace text box. This is local to the Eclipse workspace.
 - **Project instructions**: add `.github/copilot-instructions.md` in the local skills project. Eclipse lists only open projects that contain this file in the **Project** table on the Custom Instructions page.
 
+The **Load custom instructions from** dropdown controls which Eclipse projects contribute those instruction files to chat context, for example all projects in the workspace or only referenced projects. It does not install or manage Agent Skills.
+
 Example `.github/copilot-instructions.md`:
 
 ```markdown
@@ -201,7 +203,6 @@ On Windows, if Eclipse cannot resolve `npx`, use `"command": "npx.cmd"` or the a
 {
   "servers": {
     "arc1-btp": {
-      "type": "http",
       "url": "https://arc1-mcp-<space>.cfapps.<landscape>.hana.ondemand.com/mcp"
     }
   }
@@ -222,7 +223,7 @@ See [Quickstart](quickstart.md), [BTP Cloud Foundry Deployment](btp-cloud-foundr
 - Keep one local skills project in the workspace instead of scattering instruction files across many ABAP projects.
 - If an XSUAA/OIDC MCP login gets stale in Eclipse, see [XSUAA Setup → Eclipse GitHub Copilot](xsuaa-setup.md#eclipse-github-copilot).
 
-References: [SAPDEV.EU Agentic Skills for ABAP Development](https://www.sapdev.eu/agentic-skills-for-abap-development/), [GitHub Copilot for Eclipse](https://github.com/microsoft/copilot-for-eclipse), [GitHub Docs: MCP in Eclipse](https://docs.github.com/en/copilot/how-tos/provide-context/use-mcp-in-your-ide/extend-copilot-chat-with-mcp), [GitHub Docs: custom instructions](https://docs.github.com/copilot/customizing-copilot/adding-custom-instructions-for-github-copilot), [GitHub Docs: custom agents in Eclipse](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/cloud-agent/create-custom-agents-in-your-ide), and [`skills` CLI](https://github.com/vercel-labs/skills#readme).
+References: [SAPDEV.EU Agentic Skills for ABAP Development](https://www.sapdev.eu/agentic-skills-for-abap-development/), [GitHub Copilot for Eclipse](https://github.com/microsoft/copilot-for-eclipse), [GitHub Changelog: Copilot in Eclipse skills and custom-instructions preference](https://github.blog/changelog/2026-06-02-github-copilot-in-eclipse-byok-skills-and-chat-updates/), [GitHub Docs: MCP in Eclipse](https://docs.github.com/en/copilot/how-tos/provide-context/use-mcp-in-your-ide/extend-copilot-chat-with-mcp), [GitHub Docs: custom agents in Eclipse](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/cloud-agent/create-custom-agents-in-your-ide), and [`skills` CLI](https://github.com/vercel-labs/skills#readme).
 
 ## GitHub Copilot In VS Code With SAP ADT
 
