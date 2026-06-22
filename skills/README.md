@@ -67,29 +67,31 @@ For tools not listed above, copy the body of `SKILL.md` into your tool's system 
 
 ## Eclipse ADT + GitHub Copilot
 
-For Eclipse ADT, keep skills in a normal local Eclipse project, not inside the ABAP system/package tree. ADT's ABAP projects are semantic repository views, so Copilot may not see `.agents/skills`, `.github/skills`, or other local instruction files unless you import a real filesystem folder into the workspace.
+For Eclipse ADT, use a GitHub Copilot **Custom Agent**, not direct Agent Skills discovery. Eclipse Copilot lists `.agent.md` files from `.github/agents`; it does not show `.agents/skills/<name>/SKILL.md` folders as Custom Agents.
+
+Keep the custom agent in a normal local Eclipse project, not inside the ABAP system/package tree. ADT's ABAP projects are semantic repository views, so Copilot may not see local instruction files unless you import a real filesystem folder into the workspace.
 
 Recommended setup:
 
 ```bash
 # macOS / Linux
-mkdir -p ~/ADT_ECLIPSE_ARC1
+mkdir -p ~/ADT_ECLIPSE_ARC1/.github/agents
 cd ~/ADT_ECLIPSE_ARC1
-npx skills add arc-mcp/arc-1 --agent github-copilot
 ```
 
 ```powershell
 # Windows PowerShell
-New-Item -ItemType Directory -Force "$env:USERPROFILE\ADT_ECLIPSE_ARC1"
+New-Item -ItemType Directory -Force "$env:USERPROFILE\ADT_ECLIPSE_ARC1\.github\agents"
 Set-Location "$env:USERPROFILE\ADT_ECLIPSE_ARC1"
-npx skills add arc-mcp/arc-1 --agent github-copilot
 ```
+
+Create `.github/agents/arc1-abap.agent.md` with a short ARC-1 ABAP agent profile. You can optionally install the ARC-1 skill folders into `.agents/skills` as reference files for that custom agent, but Eclipse will still show only the `.agent.md` agent entry.
 
 Then in Eclipse:
 
 1. Import `~/ADT_ECLIPSE_ARC1` on macOS/Linux or `%USERPROFILE%\ADT_ECLIPSE_ARC1` on Windows with **File → Open Projects from File System...**.
 2. If dot folders are hidden, disable the `.* resources` filter in Project Explorer.
-3. Enable skills under **Window → Preferences → Copilot → Chat → Enable Skills**.
+3. Confirm the agent under **Window → Preferences → GitHub Copilot → Custom Agents**.
 4. Use Copilot Chat **Agent Mode** and configure ARC-1 as an MCP server under **GitHub Copilot → MCP**.
 
 Full setup, including ARC-1 MCP JSON examples and troubleshooting, is in the published [Skills guide](https://docs.arc-1-mcp.com/skills/#github-copilot-in-eclipse-with-adt).
