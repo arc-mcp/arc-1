@@ -192,6 +192,18 @@ export interface CorsRejectedEvent extends AuditEventBase {
   path: string;
 }
 
+/** A request to the HTTP transport was rejected because its `Host` header was not in the
+ *  configured allowlist (DNS-rebinding defense, SEC-14). Mirrors `cors_rejected`. */
+export interface HostRejectedEvent extends AuditEventBase {
+  event: 'host_rejected';
+  /** Host header sent by the client. May be attacker-controlled — treat as untrusted. */
+  host: string;
+  /** HTTP method on the rejected request. */
+  method: string;
+  /** Request path, e.g. `/mcp`. */
+  path: string;
+}
+
 /** Layer 1: a per-IP HTTP-edge rate limit fired. Either OAuth (`/register`, `/authorize`,
  *  `/token`, `/revoke`) or `/mcp` (pre-bearer-auth probing). Returned a 429 with
  *  `Retry-After` and RFC 9331 `RateLimit-*` headers. See docs_page/rate-limiting.md. */
@@ -238,6 +250,7 @@ export type AuditEvent =
   | OAuthRedirectUriRegisteredEvent
   | OAuthRedirectUriRejectedEvent
   | CorsRejectedEvent
+  | HostRejectedEvent
   | AuthRateLimitedEvent
   | McpRateLimitedEvent;
 

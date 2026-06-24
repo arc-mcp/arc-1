@@ -210,6 +210,12 @@ export interface ServerConfig {
    *  use native HTTP, not the browser fetch API, and never trigger CORS. */
   allowedOrigins: string[];
 
+  /** Exact-match `Host`-header allowlist (incl. port) for DNS-rebinding defense on the HTTP
+   *  transport. Empty (the default) auto-protects loopback binds only (a derived
+   *  localhost allowlist); non-loopback binds (0.0.0.0 / reverse proxy / BTP gorouter, which
+   *  already controls Host) stay off unless set. `*` disables entirely. SEC-14. */
+  allowedHosts: string[];
+
   // --- Misc ---
   verbose: boolean;
 }
@@ -268,6 +274,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
   authRateLimit: 20,
   rateLimit: 0, // Layer 2 disabled by default — operators opt in (see ADR-0004)
   allowedOrigins: [],
+  allowedHosts: [],
   logLevel: 'info',
   logFormat: 'text',
   minimalErrors: false,

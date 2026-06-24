@@ -249,6 +249,7 @@ ARC-1 emits structured audit events to all registered sinks. Three sink types ar
 | `oauth_client_lookup_failed` | XSUAA only: a `client_id` failed to resolve. `reason` ∈ {`unknown_prefix`, `malformed`, `bad_signature`, `invalid_payload`, `expired`}. Useful for spotting forgery / probing. |
 | `oauth_redirect_uri_registered` | XSUAA only: a redirect URI was added at `/authorize` time to the pre-registered XSUAA default client. |
 | `cors_rejected` | A browser request was blocked because its `Origin` header is not in `ARC1_ALLOWED_ORIGINS`. Includes origin, method, path. Useful for spotting misconfigured browser clients or probing. |
+| `host_rejected` | An HTTP-transport request was blocked because its `Host` header is not in the allowlist (`ARC1_ALLOWED_HOSTS`, or the auto-derived loopback list) — DNS-rebinding defense. Includes host, method, path. |
 | `auth_rate_limited` | **Layer 1** rate-limit denial on OAuth or `/mcp` endpoint (per-IP). Includes endpoint, IP, `limitPerMinute`. See [Rate Limiting Guide](rate-limiting.md). |
 | `mcp_rate_limited` | **Layer 2** rate-limit denial on per-user MCP tool quota. Includes user, tool, `limitPerMinute`, `retryAfterMs`. The MCP client receives a tool error with `retryAfter` (not HTTP 429). |
 
@@ -322,6 +323,16 @@ curl -sI https://<your-app-url>/health | \
 `ARC1_UI` is experimental and off by default. When enabled, ARC-1 serves static UI assets at `/ui` and read-only JSON endpoints under `/ui/api/*`. The endpoints expose sanitized config, safety/auth state, feature status, cache counts/source metadata, and recent sanitized audit events. They do not expose mutation controls, cached ABAP source bodies, request/response bodies, OAuth client IDs, or secrets.
 
 In HTTP mode, ARC-1 refuses `ARC1_UI=web` unless an admin API key, OIDC, or XSUAA auth is configured, and the whole `/ui/*` subtree is mounted behind bearer auth with the `admin` scope. When `ARC1_UI=off`, no UI routes are mounted. On BTP CF, browser users should enter through the optional `arc1-ui-router` AppRouter (`mta-ui-approuter.mtaext`), which performs interactive XSUAA login and forwards the user JWT to ARC-1. In stdio mode, `ARC1_UI=local` binds only to loopback (`127.0.0.1`/`localhost`) and rejects non-loopback addresses.
+
+### Host-header validation (DNS-rebinding defense)
+
+The HTTP transport can validate the `Host` header against an allowlist (`ARC1_ALLOWED_HOSTS`) to defend against **DNS-rebinding** — where a malicious web page rebinds its DNS to `127.0.0.1` and POSTs to a locally-running ARC-1 from the victim's browser. CORS doesn't stop this (the attacker's page sends no `Origin`, or a same-origin-looking one), so Host validation is a separate control.
+
+- **Non-breaking default.** With `ARC1_ALLOWED_HOSTS` unset, the check is active **only when ARC-1 is bound to a loopback interface** (`ARC1_HTTP_ADDR=127.0.0.1:…`/`localhost`) — the exact case DNS-rebinding targets — using an allowlist derived from the bind (`localhost:<port>`, `127.0.0.1:<port>`, `[::1]:<port>`). Non-loopback binds (`0.0.0.0`, or behind a reverse proxy / the BTP gorouter, which already control `Host`) are **not** checked unless you set `ARC1_ALLOWED_HOSTS` explicitly. The default `0.0.0.0:8080` deployment is unaffected.
+- **Explicit allowlist.** `ARC1_ALLOWED_HOSTS=mcp.example.com:443,…` enforces a fixed set regardless of bind (include the port). `ARC1_ALLOWED_HOSTS=*` disables the check entirely.
+- **Rejections** return `403` + a JSON-RPC error and emit a `host_rejected` audit event (host, method, path). See [§9 Audit Logging](#what-gets-logged).
+
+> The MCP SDK exposes `enableDnsRebindingProtection`/`allowedHosts` on the transport but marks them `@deprecated` ("use external middleware for host validation instead"), so ARC-1 implements this as Express middleware.
 
 ### CORS for browser-based MCP clients (opt-in)
 

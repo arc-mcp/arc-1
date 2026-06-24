@@ -40,6 +40,30 @@ describe('parseArgs', () => {
     expect(config.verbose).toBe(false);
   });
 
+  it('allowedHosts defaults to empty when unset (SEC-14)', () => {
+    expect(parseArgs([]).allowedHosts).toEqual([]);
+  });
+
+  it('parses ARC1_ALLOWED_HOSTS as a trimmed, non-empty CSV', () => {
+    process.env.ARC1_ALLOWED_HOSTS = 'localhost:8080, 127.0.0.1:8080 ,,mcp.example.com,';
+    expect(parseArgs([]).allowedHosts).toEqual(['localhost:8080', '127.0.0.1:8080', 'mcp.example.com']);
+  });
+
+  it('parses a single ARC1_ALLOWED_HOSTS value', () => {
+    process.env.ARC1_ALLOWED_HOSTS = 'mcp.example.com';
+    expect(parseArgs([]).allowedHosts).toEqual(['mcp.example.com']);
+  });
+
+  it('keeps `*` as a literal element (the middleware interprets it)', () => {
+    process.env.ARC1_ALLOWED_HOSTS = '*';
+    expect(parseArgs([]).allowedHosts).toEqual(['*']);
+  });
+
+  it('--allowed-hosts flag wins over ARC1_ALLOWED_HOSTS env', () => {
+    process.env.ARC1_ALLOWED_HOSTS = 'env.example.com';
+    expect(parseArgs(['--allowed-hosts', 'flag.example.com']).allowedHosts).toEqual(['flag.example.com']);
+  });
+
   it('parses CLI flags (--flag value)', () => {
     const config = parseArgs(['--url', 'http://sap:8000', '--user', 'admin', '--password', 'secret']);
     expect(config.url).toBe('http://sap:8000');

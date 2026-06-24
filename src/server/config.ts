@@ -656,6 +656,21 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     sources.allowedOrigins = 'default';
   }
 
+  // Host-header allowlist (DNS-rebinding defense, SEC-14). Empty (the default) auto-protects
+  // loopback binds only; `*` disables. The middleware (src/server/http.ts) interprets `*`/empty —
+  // the parser just normalizes the CSV.
+  const hostsRaw = getFlag('allowed-hosts') ?? process.env.ARC1_ALLOWED_HOSTS;
+  if (hostsRaw !== undefined) {
+    config.allowedHosts = hostsRaw
+      .split(',')
+      .map((h) => h.trim())
+      .filter((h) => h.length > 0);
+    sources.allowedHosts =
+      getFlag('allowed-hosts') !== undefined ? { flag: '--allowed-hosts' } : { env: 'ARC1_ALLOWED_HOSTS' };
+  } else {
+    sources.allowedHosts = 'default';
+  }
+
   // ── Logging ────────────────────────────────────────────────────────
   config.logFile = resolveOptionalStr('log-file', 'ARC1_LOG_FILE', 'logFile');
   const logLevel = resolveStr('log-level', 'ARC1_LOG_LEVEL', 'info', 'logLevel');

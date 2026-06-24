@@ -87,7 +87,50 @@ function toApiKeyEntries(config: ServerConfig): ApiKeyEntry[] {
  *
  * Exported for unit tests; also called from `startHttpServer` below.
  */
-export function applySecurityMiddleware(app: express.Application, allowedOrigins: string[]): void {
+/**
+ * True only when the server is bound to a loopback interface — the case DNS-rebinding
+ * targets. An empty/unspecified bindHost is treated as NON-loopback (validation off) so
+ * callers that don't pass a bind address (incl. tests) are never gated; `startHttpServer`
+ * always passes a concrete host (`host || '0.0.0.0'`).
+ */
+export function isLoopbackBind(bindHost: string): boolean {
+  const h = bindHost.trim().toLowerCase();
+  return h === 'localhost' || h === '127.0.0.1' || h === '::1' || h === '[::1]';
+}
+
+/**
+ * Resolve the effective `Host` allowlist (lower-cased), or `null` when host validation is
+ * DISABLED (caller mounts no middleware → existing deployments are byte-for-byte unchanged):
+ *  - `*` anywhere → null (operator opt-out)
+ *  - explicit non-empty list → that list (lower-cased)
+ *  - empty + loopback bind → derived localhost allowlist (auto-protect dev)
+ *  - empty + non-loopback bind → null (off; a reverse proxy / BTP gorouter already controls Host)
+ */
+export function resolveAllowedHosts(configuredHosts: string[], bindHost: string, port: number): string[] | null {
+  if (configuredHosts.includes('*')) return null;
+  if (configuredHosts.length > 0) return configuredHosts.map((h) => h.trim().toLowerCase());
+  if (!isLoopbackBind(bindHost)) return null;
+  return [`localhost:${port}`, `127.0.0.1:${port}`, `[::1]:${port}`, 'localhost', '127.0.0.1'];
+}
+
+/**
+ * Host-header predicate. `null` allowlist ⇒ validation disabled (always allow). A missing/empty
+ * Host is rejected. Comparison is case-insensitive; the port (when present in an allowlist entry)
+ * must match exactly.
+ */
+export function checkHostAllowed(hostHeader: string | undefined, allowList: string[] | null): boolean {
+  if (allowList === null) return true;
+  if (!hostHeader) return false;
+  return allowList.includes(hostHeader.toLowerCase());
+}
+
+export function applySecurityMiddleware(
+  app: express.Application,
+  allowedOrigins: string[],
+  allowedHosts: string[] = [],
+  bindHost = '',
+  port = 0,
+): void {
   const hasCorsOrigins = allowedOrigins.length > 0;
   app.use(
     helmet({
@@ -148,6 +191,32 @@ export function applySecurityMiddleware(app: express.Application, allowedOrigins
     });
     logger.info('CORS enabled', { origins: allowedOrigins });
   }
+
+  // ─── DNS-rebinding defense: Host-header allowlist (SEC-14) ───────────
+  // The MCP SDK's transport-level allowedHosts/enableDnsRebindingProtection are @deprecated
+  // ("use external middleware for host validation instead"), so we validate Host here. No
+  // middleware is mounted unless bound to loopback or explicitly configured — see
+  // resolveAllowedHosts — so non-loopback (reverse-proxy/BTP) deployments are unaffected.
+  const hostAllowList = resolveAllowedHosts(allowedHosts, bindHost, port);
+  if (hostAllowList !== null) {
+    app.use((req, res, next) => {
+      const host = req.headers.host;
+      if (!checkHostAllowed(host, hostAllowList)) {
+        logger.emitAudit({
+          timestamp: new Date().toISOString(),
+          level: 'warn',
+          event: 'host_rejected',
+          host: host ?? '',
+          method: req.method,
+          path: req.path,
+        });
+        res.status(403).json({ jsonrpc: '2.0', error: { code: -32000, message: 'Invalid Host header' }, id: null });
+        return;
+      }
+      next();
+    });
+    logger.info('Host-header validation enabled', { allowedHosts: hostAllowList });
+  }
 }
 
 // ─── MCP Request Handler ─────────────────────────────────────────────
@@ -205,7 +274,7 @@ export async function startHttpServer(
   // and correct client IP detection behind CF's reverse proxy.
   app.set('trust proxy', 1);
 
-  applySecurityMiddleware(app, config.allowedOrigins);
+  applySecurityMiddleware(app, config.allowedOrigins, config.allowedHosts, bindHost, port);
 
   // ─── Layer 1: HTTP-edge rate limiter helper ──────────────────────────
   // One operator-facing knob (`ARC1_AUTH_RATE_LIMIT`, default 20/min/IP) controls all
