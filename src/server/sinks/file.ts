@@ -70,8 +70,8 @@ export class FileSink implements LogSink {
 
   private ensurePrivateFile(): Promise<void> {
     if (!this.permissionsPromise) {
-      this.permissionsPromise = appendFile(this.filePath, '', { encoding: 'utf-8', mode: PRIVATE_FILE_MODE }).then(
-        () => chmod(this.filePath, PRIVATE_FILE_MODE),
+      this.permissionsPromise = appendFile(this.filePath, '', { encoding: 'utf-8', mode: PRIVATE_FILE_MODE }).then(() =>
+        chmod(this.filePath, PRIVATE_FILE_MODE),
       );
     }
     return this.permissionsPromise;
