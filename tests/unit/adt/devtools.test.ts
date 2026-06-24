@@ -1553,6 +1553,94 @@ describe('DevTools', () => {
       expect((http.post as ReturnType<typeof vi.fn>).mock.calls[0]?.[3]).toEqual({ Accept: 'application/xml' });
     });
 
+    it('applyFixProposal requires write safety before posting', async () => {
+      const http = mockHttp('<quickfixes:applicationResult xmlns:quickfixes="http://www.sap.com/adt/quickfixes"/>');
+      await expect(
+        applyFixProposal(
+          http,
+          defaultSafetyConfig(),
+          {
+            uri: '/sap/bc/adt/quickfixes/123',
+            type: 'quickfix/proposal',
+            name: 'Fix',
+            description: 'Fix',
+            userContent: 'opaque',
+          },
+          '/sap/bc/adt/programs/programs/ZTEST/source/main',
+          'REPORT ztest.',
+          1,
+          0,
+        ),
+      ).rejects.toThrow(AdtSafetyError);
+      expect(http.post).not.toHaveBeenCalled();
+    });
+
+    it('applyFixProposal rejects caller-controlled non-quickfix ADT URIs', async () => {
+      const http = mockHttp('<quickfixes:applicationResult xmlns:quickfixes="http://www.sap.com/adt/quickfixes"/>');
+      await expect(
+        applyFixProposal(
+          http,
+          unrestrictedSafetyConfig(),
+          {
+            uri: '/sap/bc/adt/oo/classes/ZCL_TARGET/source/main',
+            type: 'quickfix/proposal',
+            name: 'Fix',
+            description: 'Fix',
+            userContent: 'opaque',
+          },
+          '/sap/bc/adt/programs/programs/ZTEST/source/main',
+          'REPORT ztest.',
+          1,
+          0,
+        ),
+      ).rejects.toThrow(/non-quickfix proposal URI/);
+      expect(http.post).not.toHaveBeenCalled();
+    });
+
+    it('applyFixProposal rejects absolute quickfix URIs', async () => {
+      const http = mockHttp('<quickfixes:applicationResult xmlns:quickfixes="http://www.sap.com/adt/quickfixes"/>');
+      await expect(
+        applyFixProposal(
+          http,
+          unrestrictedSafetyConfig(),
+          {
+            uri: 'https://sap.example.test/sap/bc/adt/quickfixes/123',
+            type: 'quickfix/proposal',
+            name: 'Fix',
+            description: 'Fix',
+            userContent: 'opaque',
+          },
+          '/sap/bc/adt/programs/programs/ZTEST/source/main',
+          'REPORT ztest.',
+          1,
+          0,
+        ),
+      ).rejects.toThrow(/non-quickfix proposal URI/);
+      expect(http.post).not.toHaveBeenCalled();
+    });
+
+    it('applyFixProposal rejects protocol-relative quickfix URIs', async () => {
+      const http = mockHttp('<quickfixes:applicationResult xmlns:quickfixes="http://www.sap.com/adt/quickfixes"/>');
+      await expect(
+        applyFixProposal(
+          http,
+          unrestrictedSafetyConfig(),
+          {
+            uri: '//arc1.invalid/sap/bc/adt/quickfixes/123',
+            type: 'quickfix/proposal',
+            name: 'Fix',
+            description: 'Fix',
+            userContent: 'opaque',
+          },
+          '/sap/bc/adt/programs/programs/ZTEST/source/main',
+          'REPORT ztest.',
+          1,
+          0,
+        ),
+      ).rejects.toThrow(/non-quickfix proposal URI/);
+      expect(http.post).not.toHaveBeenCalled();
+    });
+
     it('applyFixProposal includes userContent in request XML', async () => {
       const http = mockHttp('<quickfixes:applicationResult xmlns:quickfixes="http://www.sap.com/adt/quickfixes"/>');
       await applyFixProposal(

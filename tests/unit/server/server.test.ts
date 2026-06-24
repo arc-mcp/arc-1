@@ -90,6 +90,28 @@ describe('MCP Server', () => {
     expect(filtered.map((tool) => tool.name)).toContain('SAPWrite');
   });
 
+  it('prunes SAPDiagnose apply_quickfix for read-scoped users', () => {
+    const tools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true });
+    const filtered = filterToolsByAuthScope(tools, ['read']);
+    const sapDiagnose = filtered.find((tool) => tool.name === 'SAPDiagnose');
+    expect(sapDiagnose).toBeDefined();
+    const schema = sapDiagnose!.inputSchema as Record<string, any>;
+    const actionEnum: string[] = schema.properties.action.enum;
+    expect(actionEnum).toContain('quickfix');
+    expect(actionEnum).not.toContain('apply_quickfix');
+  });
+
+  it('keeps SAPDiagnose apply_quickfix for write-scoped users', () => {
+    const tools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true });
+    const filtered = filterToolsByAuthScope(tools, ['read', 'write']);
+    const sapDiagnose = filtered.find((tool) => tool.name === 'SAPDiagnose');
+    expect(sapDiagnose).toBeDefined();
+    const schema = sapDiagnose!.inputSchema as Record<string, any>;
+    const actionEnum: string[] = schema.properties.action.enum;
+    expect(actionEnum).toContain('quickfix');
+    expect(actionEnum).toContain('apply_quickfix');
+  });
+
   it('prunes hyperfocused SAP actions for read-scoped users', () => {
     const tools = getToolDefinitions({
       ...DEFAULT_CONFIG,

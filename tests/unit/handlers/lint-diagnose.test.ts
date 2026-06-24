@@ -15,6 +15,8 @@ import { createClient, mockFetch } from './setup-undici-mock.js';
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 const { resetCachedFeatures, setCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
 
+const WRITE_CONFIG = { ...DEFAULT_CONFIG, allowWrites: true };
+
 function fetchedPathWithVersion(urls: string[], pathname: string, version: 'active' | 'inactive'): boolean {
   return urls.some((rawUrl) => {
     const url = new URL(rawUrl);
@@ -652,7 +654,7 @@ ENDCLASS.`;
         },
       );
 
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPDiagnose', {
+      const result = await handleToolCall(createClient(), WRITE_CONFIG, 'SAPDiagnose', {
         action: 'apply_quickfix',
         type: 'CLAS',
         name: 'ZCL_TEST',
@@ -701,7 +703,7 @@ ENDCLASS.`;
         },
       );
 
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPDiagnose', {
+      const result = await handleToolCall(createClient(), WRITE_CONFIG, 'SAPDiagnose', {
         action: 'apply_quickfix',
         type: 'CLAS',
         name: 'ZCL_TEST',
@@ -728,6 +730,24 @@ ENDCLASS.`;
       expect(applyCall?.body).toContain('<affectedObjects>');
       expect(applyCall?.body).toContain('adtcore:uri="/sap/bc/adt/oo/classes/ZCL_HELPER/source/main"');
       expect(applyCall?.body).toContain('<content>CLASS zcl_helper DEFINITION. ENDCLASS.</content>');
+    });
+
+    it('apply_quickfix action rejects non-quickfix proposal URIs before posting', async () => {
+      const result = await handleToolCall(createClient(), WRITE_CONFIG, 'SAPDiagnose', {
+        action: 'apply_quickfix',
+        type: 'CLAS',
+        name: 'ZCL_TEST',
+        source: 'CLASS zcl_test DEFINITION. ENDCLASS.',
+        line: 3,
+        proposalUri: '/sap/bc/adt/oo/classes/ZCL_TARGET/source/main',
+        proposalUserContent: 'opaque-state',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('refused non-quickfix proposal URI');
+      expect(mockFetch).not.toHaveBeenCalledWith(
+        expect.stringContaining('/sap/bc/adt/oo/classes/ZCL_TARGET'),
+        expect.anything(),
+      );
     });
 
     it('apply_quickfix action returns error when proposalUri is missing', async () => {

@@ -9,7 +9,7 @@
  */
 
 import { logger } from '../server/logger.js';
-import { AdtApiError } from './errors.js';
+import { AdtApiError, AdtSafetyError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import type {
@@ -669,6 +669,25 @@ export function supportsCdsTestCases(http: AdtHttpClient): boolean | undefined {
   return http.discoveryAcceptFor('/sap/bc/adt/aunit/dbtestdoubles/cds/testcases') !== undefined;
 }
 
+function assertQuickfixProposalUri(uri: string): void {
+  const quickfixProposalPrefix = '/sap/bc/adt/quickfixes/';
+  let parsed: URL;
+  try {
+    parsed = new URL(uri, 'https://arc1.invalid');
+  } catch {
+    throw new AdtSafetyError(`ApplyFixProposal refused invalid quickfix proposal URI: '${uri}'`);
+  }
+  if (
+    !uri.startsWith(quickfixProposalPrefix) ||
+    parsed.origin !== 'https://arc1.invalid' ||
+    !parsed.pathname.startsWith(quickfixProposalPrefix)
+  ) {
+    throw new AdtSafetyError(
+      `ApplyFixProposal refused non-quickfix proposal URI: '${uri}'. Use a proposal URI returned by SAPDiagnose(action="quickfix").`,
+    );
+  }
+}
+
 /** Get SAP quick fix proposals for a given source position */
 export async function getFixProposals(
   http: AdtHttpClient,
@@ -707,7 +726,8 @@ export async function applyFixProposal(
   line: number,
   column: number,
 ): Promise<FixDelta[]> {
-  checkOperation(safety, OperationType.Read, 'ApplyFixProposal');
+  checkOperation(safety, OperationType.Update, 'ApplyFixProposal');
+  assertQuickfixProposalUri(proposal.uri);
 
   const uriWithStart = `${sourceUri}#start=${line},${column}`;
   const userContent =

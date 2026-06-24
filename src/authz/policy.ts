@@ -142,7 +142,7 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   'SAPDiagnose.gateway_errors': { scope: 'read', opType: OperationType.Read },
   'SAPDiagnose.object_state': { scope: 'read', opType: OperationType.Read },
   'SAPDiagnose.quickfix': { scope: 'read', opType: OperationType.Read },
-  'SAPDiagnose.apply_quickfix': { scope: 'read', opType: OperationType.Read },
+  'SAPDiagnose.apply_quickfix': { scope: 'write', opType: OperationType.Update },
 
   // ── SAPTransport ─────────────────────────────────────────────────
   // CLASSIFICATION BUG FIX: check/history/list/get are reads; previously required write
