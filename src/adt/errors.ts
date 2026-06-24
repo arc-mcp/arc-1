@@ -883,3 +883,20 @@ export function isNotFoundError(err: unknown): boolean {
 export function isSessionExpiredError(err: unknown): boolean {
   return err instanceof AdtApiError && err.isSessionExpired;
 }
+
+/**
+ * Extract the offending column from an "Unknown column name" SAP error (datapreview / freestyle 400),
+ * else null. Live-verified message shape on S/4HANA 2023 (758) + ABAP Platform 2025 (816):
+ * `Unknown column name "NOSUCHCOL".`. Used to self-correct unknown-column queries with the table's
+ * real column list (see `formatUnknownColumnHint`).
+ */
+export function extractUnknownColumn(err: unknown): string | null {
+  if (!(err instanceof AdtApiError)) return null;
+  const m = err.message.match(/Unknown column name\s+"?([A-Za-z0-9_/]+)"?/i);
+  return m ? m[1]! : null;
+}
+
+/** Render the self-correcting hint listing a table's actual columns. */
+export function formatUnknownColumnHint(badColumn: string, tableName: string, columns: string[]): string {
+  return `Unknown column "${badColumn}" on ${tableName.toUpperCase()}. Available columns: ${columns.join(', ')}.`;
+}

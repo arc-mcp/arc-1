@@ -10,6 +10,8 @@ import {
   destinationPpHint,
   extractExceptionType,
   extractLockOwner,
+  extractUnknownColumn,
+  formatUnknownColumnHint,
 } from '../../../src/adt/errors.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -743,5 +745,33 @@ describe('destinationPpHint', () => {
   it('returns undefined for empty/undefined input', () => {
     expect(destinationPpHint(undefined)).toBeUndefined();
     expect(destinationPpHint('')).toBeUndefined();
+  });
+});
+
+describe('extractUnknownColumn / formatUnknownColumnHint (FEAT-64)', () => {
+  // Live message shape (a4h 758 + a4h-2025 816): `Unknown column name "NOSUCHCOL".`
+  const unknownColErr = (col: string) =>
+    new AdtApiError(`Unknown column name "${col}".`, 400, '/sap/bc/adt/datapreview/freestyle');
+
+  it('extracts the column from the live "Unknown column name" 400 message (no trailing quote/dot)', () => {
+    expect(extractUnknownColumn(unknownColErr('NOSUCHCOL'))).toBe('NOSUCHCOL');
+    expect(extractUnknownColumn(unknownColErr('My_Col/2'))).toBe('My_Col/2');
+  });
+
+  it('is case-insensitive on the phrase', () => {
+    expect(extractUnknownColumn(new AdtApiError('unknown COLUMN name "X".', 400, '/p'))).toBe('X');
+  });
+
+  it('returns null for unrelated errors', () => {
+    expect(extractUnknownColumn(new AdtApiError('Object not found', 404, '/p'))).toBeNull();
+    expect(extractUnknownColumn(new AdtApiError('Syntax error', 400, '/p'))).toBeNull();
+    expect(extractUnknownColumn(new Error('Unknown column name "X".'))).toBeNull(); // not an AdtApiError
+    expect(extractUnknownColumn(undefined)).toBeNull();
+  });
+
+  it('formats the hint with the table upper-cased and the column list', () => {
+    expect(formatUnknownColumnHint('nosuchcol', 't000', ['MANDT', 'MTEXT'])).toBe(
+      'Unknown column "nosuchcol" on T000. Available columns: MANDT, MTEXT.',
+    );
   });
 });
