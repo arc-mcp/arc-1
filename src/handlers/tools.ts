@@ -66,8 +66,9 @@ const TOOL_ANNOTATIONS: Record<string, ToolAnnotations> = {
   SAPNavigate: { readOnlyHint: true },
   SAPQuery: { readOnlyHint: true },
   SAPContext: { readOnlyHint: true },
-  SAPDiagnose: { readOnlyHint: true },
   // Mutating, non-destructive (no delete action).
+  // SAPDiagnose.apply_quickfix is a write/Update action, so the tool is not read-only.
+  SAPDiagnose: { readOnlyHint: false, destructiveHint: false },
   SAPLint: { readOnlyHint: false, destructiveHint: false },
   SAPActivate: { readOnlyHint: false, destructiveHint: false },
   // Mutating AND destructive (delete / unlink / overwriting actions).

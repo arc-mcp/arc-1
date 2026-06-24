@@ -497,7 +497,8 @@
       ]
     },
     "annotations": {
-      "readOnlyHint": true
+      "readOnlyHint": false,
+      "destructiveHint": false
     }
   },
   {
