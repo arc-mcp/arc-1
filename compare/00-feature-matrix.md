@@ -2,7 +2,7 @@
 
 A comprehensive comparison of all SAP ADT/MCP projects against ARC-1.
 
-_Last updated: 2026-06-24 (deep fr0ster v7.2.1 + sapcli scan — net new: **SEC-13** DNS-rebinding gap + **CDS API-release-write** dual-signal; see the 2026-06-24 tracker rows below). Earlier — 2026-06-05. **New column — "SAP ABAP MCP"**: SAP's official `SAPSE.adt-vscode` bundled ABAP MCP server (headless Eclipse/Equinox + Anthropic MCP Java SDK 1.0.1; localhost Streamable-HTTP on port 2236, static bearer token; 14 built-in tools + dynamic backend "IDE Actions"; ABAP-Cloud / RAP-generation scope; disabled-by-default, part of Joule for Developers; GA Q2 2026, v1.0.0). Detailed teardown: [J4D/02-sap-abap-mcp-server-vscode.md](J4D/02-sap-abap-mcp-server-vscode.md). Earlier dated changelog prose has been trimmed for readability — see git history and per-project docs for the full change log._
+_Last updated: 2026-06-24 (deep fr0ster v7.2.1 + sapcli scan — net new: **SEC-14** DNS-rebinding gap + **CDS API-release-write** dual-signal; see the 2026-06-24 tracker rows below). Earlier — 2026-06-05. **New column — "SAP ABAP MCP"**: SAP's official `SAPSE.adt-vscode` bundled ABAP MCP server (headless Eclipse/Equinox + Anthropic MCP Java SDK 1.0.1; localhost Streamable-HTTP on port 2236, static bearer token; 14 built-in tools + dynamic backend "IDE Actions"; ABAP-Cloud / RAP-generation scope; disabled-by-default, part of Joule for Developers; GA Q2 2026, v1.0.0). Detailed teardown: [J4D/02-sap-abap-mcp-server-vscode.md](J4D/02-sap-abap-mcp-server-vscode.md). Earlier dated changelog prose has been trimmed for readability — see git history and per-project docs for the full change log._
 
 ## Legend
 - ✅ = Supported
@@ -70,7 +70,7 @@ _Last updated: 2026-06-24 (deep fr0ster v7.2.1 + sapcli scan — net new: **SEC-
 | MCP scope system (OAuth) | ✅ (2D: scopes+roles+safety) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A |
 | Layered rate limiting | ✅ (3 layers: per-IP edge + per-user MCP quota + server-wide SAP semaphore) | ❌ | ❌ | ❌ | ❌ | ⚠️ (API Gateway-side only) | ❌ | ❌ | ❌ | N/A |
 | `Retry-After` honoring (429/503) | ✅ (RFC 7231, clamped 60 s, audit records source) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| DNS-rebinding protection (Host-header allowlist) | ❌ (gap → SEC-13) | ⚠️ (localhost + static bearer) | ❌ | ❌ | ❌ | ❌ | ✅ (v7.2.0) | ❌ | ❌ | ❌ |
+| DNS-rebinding protection (Host-header allowlist) | ❌ (gap → SEC-14) | ⚠️ (localhost + static bearer) | ❌ | ❌ | ❌ | ❌ | ✅ (v7.2.0) | ❌ | ❌ | ❌ |
 
 ### 4.1 Supply-Chain Security (SEC-11, Tier 1)
 
@@ -333,7 +333,7 @@ The following items were incorrectly marked in the previous version and have sin
 | **— 2026-06-24 deep scan (fr0ster + sapcli focus) —** | | | |
 | fr0ster version | v6.5.1 (2026-04-27, 29★) | **v7.2.1** (2026-06-22, 63★) | 22 releases, 97 commits. v6.6–6.8 SearchSource (package source grep) + RuntimeRunClass profiling; v6.9 certificate/Kerberos auth + NTLM reject; v7.0.0 BREAKING Read/Get dedup; v7.1 function-group include CRUD; **v7.2.0 DNS-rebinding (Host/Origin allowlist)**. Details: [05-fr0ster](05-fr0ster-mcp-abap-adt.md). |
 | sapcli activity | last scan 2026-04-12 (79★) | **2026-06-22 (91★)** | ~100 commits. BTP OAuth + auth_plugin protocol; abapCheckRun-before-save; **AUnit branch/procedure coverage**; MSAG CRUD; Transaction (TRAN) write; BDEF listinterfaces/extensions/adtTemplate; DDL API-release write; package `--package-type`/recordChanges. Details: [09-sapcli](09-sapcli.md). |
-| ARC-1 DNS-rebinding / Host-header validation | not tracked | ❌ **GAP → SEC-13 (P2)** | fr0ster v7.2.0 + MCP spec recommend a Host-header allowlist for HTTP/SSE. ARC-1 validates `Origin`/CORS + OAuth hosts but not `Host` (`src/server/http.ts`); matters for localhost / stdio-HTTP-bridge deploys. Fix = Express middleware + `ARC1_ALLOWED_HOSTS`. |
+| ARC-1 DNS-rebinding / Host-header validation | not tracked | ❌ **GAP → SEC-14 (P2)** | fr0ster v7.2.0 + MCP spec recommend a Host-header allowlist for HTTP/SSE. ARC-1 validates `Origin`/CORS + OAuth hosts but not `Host` (`src/server/http.ts`); matters for localhost / stdio-HTTP-bridge deploys. Fix = Express middleware + `ARC1_ALLOWED_HOSTS`. |
 | ARC-1 CDS API-release **write** (set C1 / apistate) | read-only (FEAT-02) | gap confirmed — **dual-signal** | Both sapcli (`874c3b3` apistate set) AND vibing-steampunk now *set* the release contract; ARC-1 only *reads* via `getApiReleaseState`. Rising clean-core relevance → extend FEAT-02. |
 | ARC-1 AUnit coverage (FEAT-31/41) | tracked, no ref impl | sapcli reference impl shipped | sapcli `942d70b` prints branch + procedure coverage; ARC-1 still hardcodes `coverage active="false"` (`devtools.ts:554`). Raises confidence on FEAT-41. |
 | ARC-1 TRAN write (FEAT-62) | tracked (research only) | sapcli reference impl merged | sapcli `d7a6f2d`/`df954a3` shipped the TRAN ADT mapper + create envelope — concrete reference for FEAT-62. |

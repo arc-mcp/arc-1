@@ -1,6 +1,6 @@
 # ARC-1 Roadmap
 
-**Last Updated:** 2026-06-24 (competitor deep-scan: fr0ster v7.2.1 + sapcli + dassian-adt — new **SEC-13** (DNS-rebinding/Host-header), **FEAT-63** (pre-release inactive-objects check), **FEAT-64** (unknown-column self-correcting hint), **FEAT-65** (TTYP), **COMPAT-05** (verify ToC type-T creation); flagged CDS API-release-**write** as a dual-signal gap; reinforced FEAT-41/FEAT-62 with sapcli reference impls; see [`compare/`](../compare/)). Earlier 2026-05-29 (SAPRead `grep` — case-insensitive regex returning only matching source lines + context with line numbers, method-annotated for classes, literal fallback; token-efficient search over source-bearing types, complements #307 class-section surgery; issue #313). Earlier: ARC-1-native pre-write hint `arc1-tabl-draft-admin-include` — non-blocking warning when a TABL source uses bare `include sych_bdl_draft_admin_inc` instead of the SAP-canonical `"%admin"` named-include prefix; closes Run 6 micro-improvement #5 from the SEGW→RAP migration skill iteration log; earlier same day: SAPSearch tadir_lookup `source` modes for TADIR ghost detection + SAPWrite batch_create `activateAtEnd` for composition-linked DDLS / interdependent RAP graphs; earlier same day: RAP handler skeleton CCIMP-only fix)
+**Last Updated:** 2026-06-24 (competitor deep-scan: fr0ster v7.2.1 + sapcli + dassian-adt — new **SEC-14** (DNS-rebinding/Host-header), **FEAT-63** (pre-release inactive-objects check), **FEAT-64** (unknown-column self-correcting hint), **FEAT-65** (TTYP), **COMPAT-05** (verify ToC type-T creation); flagged CDS API-release-**write** as a dual-signal gap; reinforced FEAT-41/FEAT-62 with sapcli reference impls; see [`compare/`](../compare/)). Earlier 2026-05-29 (SAPRead `grep` — case-insensitive regex returning only matching source lines + context with line numbers, method-annotated for classes, literal fallback; token-efficient search over source-bearing types, complements #307 class-section surgery; issue #313). Earlier: ARC-1-native pre-write hint `arc1-tabl-draft-admin-include` — non-blocking warning when a TABL source uses bare `include sych_bdl_draft_admin_inc` instead of the SAP-canonical `"%admin"` named-include prefix; closes Run 6 micro-improvement #5 from the SEGW→RAP migration skill iteration log; earlier same day: SAPSearch tadir_lookup `source` modes for TADIR ghost detection + SAPWrite batch_create `activateAtEnd` for composition-linked DDLS / interdependent RAP graphs; earlier same day: RAP handler skeleton CCIMP-only fix)
 **Project:** ARC-1 (ABAP Relay Connector) — MCP Server for SAP ABAP Systems
 **Repository:** https://github.com/arc-mcp/arc-1
 
@@ -84,7 +84,7 @@ SORT RULES for this table — DO NOT BREAK when adding rows:
 | [FEAT-64](#feat-64) | Self-correcting "unknown column" hint on SAPQuery / table preview (list valid columns on error — extends the unknown-*table* self-correction) | P2 | S | Features |
 | COMPAT-05 | Verify ToC (type `T`) creation actually works — `tools.ts` advertises K/W/T but `createTransport`/`createTransportWithTarget` look K-only (possible advertise-vs-impl mismatch) | P2 | XS | Compatibility |
 | [SEC-05](#sec-05) | Rate Limiting | P2 | S | Security |
-| [SEC-13](#sec-13) | DNS-rebinding / Host-header allowlist for HTTP/SSE transport (`ARC1_ALLOWED_HOSTS`) — defense-in-depth for self-hosted/localhost; BTP gorouter already controls `Host`. fr0ster v7.2.0 + MCP spec | P2 | S | Security |
+| [SEC-14](#sec-14) | DNS-rebinding / Host-header allowlist for HTTP/SSE transport (`ARC1_ALLOWED_HOSTS`) — defense-in-depth for self-hosted/localhost; BTP gorouter already controls `Host`. fr0ster v7.2.0 + MCP spec | P2 | S | Security |
 | [OPS-02](#ops-02) | Health Check Enhancements | P2 | XS | Ops |
 | [DOC-03](#doc-03) | SAP Community Blog Post | P2 | S | Docs |
 | [COMPAT-04](#compat-04) | BTP transport omission in safeUpdateSource() — verify only | P2 | XS | Compatibility |
@@ -323,7 +323,7 @@ These bugs affect real-world deployments and were confirmed by cross-project com
 24. ~~**FEAT-48** SKTD (Knowledge Transfer Documents) Read/Write (S)~~ — **✅ Completed 2026-04-16** (PR #134 merged). Unique to ARC-1. LLM-generated documentation for ABAP objects.
 25. **FEAT-09** SQL Trace Monitoring (S) — completes diagnostics story (SM02 and /IWFND/ERROR_LOG already completed 2026-04-21 via FEAT-55 — SQL trace is the only fr0ster-v5 diagnostic still missing)
 26. **SEC-05** Rate Limiting (S) — prevent runaway AI loops
-26b. **SEC-13** DNS-rebinding / Host-header validation (S) — Host allowlist for HTTP/SSE; fr0ster v7.2.0 + MCP spec recommend it. Defense-in-depth for self-hosted/localhost (BTP gorouter already fixes `Host`).
+26b. **SEC-14** DNS-rebinding / Host-header validation (S) — Host allowlist for HTTP/SSE; fr0ster v7.2.0 + MCP spec recommend it. Defense-in-depth for self-hosted/localhost (BTP gorouter already fixes `Host`).
 26. ~~**FEAT-20** Source Version / Revision History (S) — promoted to P1/Phase B and completed 2026-04-17~~
 27. **FEAT-31** Code Coverage from Unit Tests (S) — VSP has this (Apr 4). See also FEAT-41 for sapcli's approach.
 28. ~~**FEAT-33** CDS Impact Analysis (S)~~ — **completed 2026-04-16** (`SAPContext(action="impact")` for DDLS upstream+downstream analysis)
@@ -620,8 +620,8 @@ SAP confirmed GA of ABAP Cloud Extension for VS Code with built-in agentic AI po
 
 ---
 
-<a id="sec-13"></a>
-### SEC-13: DNS-Rebinding / Host-Header Validation (HTTP/SSE)
+<a id="sec-14"></a>
+### SEC-14: DNS-Rebinding / Host-Header Validation (HTTP/SSE)
 | Field | Value |
 |-------|-------|
 | **Priority** | P2 |
@@ -633,9 +633,9 @@ SAP confirmed GA of ABAP Cloud Extension for VS Code with built-in agentic AI po
 
 **What:** Validate the `Host` header on every HTTP/SSE request against an allowlist before the `/mcp` handler runs. A malicious web page can rebind its DNS to `127.0.0.1` and POST to a local MCP server from the victim's browser; `Origin`/CORS checks don't stop a same-origin-looking `Host`. fr0ster shipped a Host/Origin allowlist in v7.2.0; the MCP spec calls for the same.
 
-**Why ARC-1 doesn't have it yet:** ARC-1 validates `Origin` (CORS, `ARC1_ALLOWED_ORIGINS`, off by default) and OAuth redirect/issuer hosts, but never the `Host` header (`src/server/http.ts`). The bundled MCP SDK (1.29.0) does not expose the newer `enableDnsRebindingProtection`/`allowedHosts` transport options, so this needs explicit Express middleware rather than an SDK flag.
+**Why ARC-1 doesn't have it yet:** ARC-1 validates `Origin` (CORS, `ARC1_ALLOWED_ORIGINS`, off by default) and OAuth redirect/issuer hosts, but never the `Host` header (`src/server/http.ts`). The bundled MCP SDK (1.29.0) *does* expose `enableDnsRebindingProtection`/`allowedHosts`/`allowedOrigins`, but marks all three **`@deprecated`** ("use external middleware for host validation instead" — verified in `webStandardStreamableHttp.d.ts:82-96`), so a hand-rolled Express middleware is the correct path, not the SDK flag (fr0ster v7.2.0 reached the same conclusion).
 
-**Implementation sketch:** Middleware in `applySecurityMiddleware` (before `/mcp`) that rejects requests whose `Host` is not in `ARC1_ALLOWED_HOSTS` (default `localhost,127.0.0.1,[::1]`; empty or `*` = disabled, preserving the reverse-proxy/BTP case where the proxy sets a non-local Host). Add the env to `src/server/{config,types}.ts`, emit a rejected-host audit event, and register A4 as a controlled risk in `docs/security-model.md`.
+**Implementation sketch:** Middleware in `applySecurityMiddleware` (before `/mcp`) gated by `ARC1_ALLOWED_HOSTS`. Default empty = **auto-protect loopback binds only** (derive a `localhost`/`127.0.0.1`/`[::1]` allowlist from the bind addr) — the exact DNS-rebinding target; non-loopback binds (`0.0.0.0`, proxy/BTP where the gorouter controls `Host`) stay **off** unless configured; `*` disables. Add the env to `src/server/{config,types}.ts`, emit a `host_rejected` audit event (`level:'warn'`, mirroring `cors_rejected`), and register A4 as a controlled risk in `docs/security-model.md`. Full plan: [docs/plans/sec-14-dns-rebinding-host-validation.md](../docs/plans/sec-14-dns-rebinding-host-validation.md).
 
 ---
 
@@ -2647,7 +2647,7 @@ The VS Code client-side issue — [microsoft/vscode#314715](https://github.com/m
 
 **Key competitive threats** (tracked in [`compare/`](../compare/)):
 1. **vibing-steampunk** (392 stars) — community favorite. **Major threat escalation (Apr 2026)**: massive sprint added Streamable HTTP, API release state, i18n (7 tools), gCTS (10 tools), version history, code coverage, health analysis, rename preview, dead code analysis, CDS impact, and recovery primitives. ARC-1 has now closed the prioritized gCTS/abapGit gap via FEAT-22, but VSP remains strong on breadth and release velocity.
-2. **fr0ster** (v7.2.1, 120+ releases, 63 stars) — closest enterprise competitor; doubled its stars since April. Q2 sprint added SearchSource (package source grep), RuntimeRunClass + profiling, certificate/Kerberos auth, function-group include CRUD, and — notably — **DNS-rebinding protection (v7.2.0)**, the one security control ARC-1 currently lacks (→ **SEC-13**). 9+ auth providers, TLS, RFC, embeddable. Watch for convergence on enterprise **and security** features.
+2. **fr0ster** (v7.2.1, 120+ releases, 63 stars) — closest enterprise competitor; doubled its stars since April. Q2 sprint added SearchSource (package source grep), RuntimeRunClass + profiling, certificate/Kerberos auth, function-group include CRUD, and — notably — **DNS-rebinding protection (v7.2.0)**, the one security control ARC-1 currently lacks (→ **SEC-14**). 9+ auth providers, TLS, RFC, embeddable. Watch for convergence on enterprise **and security** features.
 3. **dassian-adt / abap-mcpb** (33 stars, 53 tools) — fast April sprint added OAuth/XSUAA, multi-system support, more transport tooling, trace flows, and test/include helpers. No safety system is still a major gap, but the pace is notable.
 4. **btp-odata-mcp** (120 stars) — different category (OData) but high adoption. Could expand into ADT territory.
 
