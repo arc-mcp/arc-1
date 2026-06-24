@@ -53,7 +53,7 @@ Start the MCP server. This is the default command when no subcommand is given.
 arc1
 
 # HTTP Streamable transport (for VS Code, Copilot Studio)
-arc1 --transport http-streamable --http-addr 0.0.0.0:3000
+arc1 --transport http-streamable --http-addr 0.0.0.0:3000 --api-keys "my-secret-key:viewer"
 ```
 
 ### call

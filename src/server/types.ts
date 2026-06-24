@@ -82,6 +82,8 @@ export interface ServerConfig {
   /** Clock tolerance in seconds for JWT exp/nbf validation (default: 0 — no tolerance) */
   oidcClockTolerance?: number;
   xsuaaAuth: boolean;
+  /** Explicit unsafe opt-in for HTTP `/mcp` without API-key, OIDC, or XSUAA auth. */
+  allowHttpNoAuth: boolean;
 
   /**
    * Lifetime of an OAuth DCR registration (`client_id`) in seconds.
@@ -240,6 +242,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
   featureFlp: 'auto',
   systemType: 'auto',
   xsuaaAuth: false,
+  allowHttpNoAuth: false,
   oauthDcrTtlSeconds: 30 * 24 * 60 * 60, // 30 days; set to 0 to disable expiration
   btpOAuthCallbackPort: 0,
   ppEnabled: false,

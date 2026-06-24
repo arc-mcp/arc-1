@@ -78,6 +78,7 @@ echo "-- Starting MCP server..."
 
 SAP_TRANSPORT=http-streamable \
 ARC1_PORT="${MCP_PORT}" \
+ARC1_ALLOW_HTTP_NO_AUTH=true \
 SAP_INSECURE=true \
 SAP_ALLOW_WRITES=true \
 SAP_ALLOW_DATA_PREVIEW=true \
