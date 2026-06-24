@@ -30,11 +30,14 @@ import {
   deleteTransport,
   getObjectTransports,
   getTransport,
+  inactiveObjectsForTransport,
   listTransportLayers,
   listTransports,
   listTransportTargets,
   reassignTransport,
 } from '../../src/adt/transport.js';
+import { handleToolCall } from '../../src/handlers/dispatch.js';
+import { DEFAULT_CONFIG } from '../../src/server/types.js';
 import { expectSapFailureClass } from '../helpers/expected-error.js';
 import { requireOrSkip, SkipReason, skipTest } from '../helpers/skip-policy.js';
 import { buildCreateXml, generateUniqueName } from './crud-harness.js';
@@ -564,6 +567,31 @@ describe('Transport Integration Tests', () => {
       // Verify update succeeded
       const { source } = await client.getProgram(testName);
       expect(source).toContain('explicit transport used');
+    }, 60_000);
+  });
+
+  // ─── Pre-release inactive-objects check (FEAT-63) ───────────────────
+  // Non-destructive: the release handler must FAIL FAST (return before releasing) when the transport
+  // contains inactive objects. Drives whatever transport-assigned inactive objects already exist on
+  // the system (live-verified shape on a4h 758). Skips cleanly where none exist (e.g. systems whose
+  // inactive objects are all $TMP/unassigned — observed on the 816 and 7.50 boxes 2026-06-24).
+  describe('pre-release inactive-objects guard', () => {
+    it('blocks releasing a transport that still has inactive objects', async (ctx) => {
+      const client = getTransportEnabledClient();
+      const inactive = await client.getInactiveObjects();
+      const candidate = inactive.find((o) => o.parentTransport || o.transport);
+      requireOrSkip(ctx, candidate, SkipReason.NO_FIXTURE);
+
+      const requestId = candidate.parentTransport?.split('/').pop() || candidate.transport || '';
+      // The pure correlation must pick the object up for its request id...
+      expect(inactiveObjectsForTransport(inactive, requestId).length).toBeGreaterThan(0);
+      // ...and the release handler must fail-fast (non-destructive — returns before the release POST).
+      const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'release',
+        id: requestId,
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('cannot be released');
     }, 60_000);
   });
 });

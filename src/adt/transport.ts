@@ -8,8 +8,33 @@
 import { AdtApiError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, checkTransport, OperationType, type SafetyConfig } from './safety.js';
-import type { TransportLayer, TransportObject, TransportRequest, TransportTarget, TransportTask } from './types.js';
+import type {
+  InactiveObject,
+  TransportLayer,
+  TransportObject,
+  TransportRequest,
+  TransportTarget,
+  TransportTask,
+} from './types.js';
 import { escapeXmlAttr, findDeepNodes, parseXml } from './xml-parser.js';
+
+/**
+ * Filter inactive objects (from `getInactiveObjects()`) down to those that belong to transport
+ * `transportId` — i.e. those that would block its release. SAP activates objects before exporting a
+ * transport, so an inactive one makes the release pipeline hang ("operation timed out", no detail).
+ *
+ * Matches whether `transportId` is the request or a task: an inactive object's `transport` is its
+ * **task** id and `parentTransport` is the parent **request** URI, so we match on either
+ * `transport === id` or `parentTransport` ending in `/<id>`. `$TMP`/unassigned objects carry neither
+ * field and never match. Pure; case-insensitive.
+ */
+export function inactiveObjectsForTransport(objects: InactiveObject[], transportId: string): InactiveObject[] {
+  const id = transportId.trim().toUpperCase();
+  if (!id) return [];
+  return objects.filter(
+    (o) => (o.transport ?? '').toUpperCase() === id || (o.parentTransport ?? '').toUpperCase().endsWith(`/${id}`),
+  );
+}
 
 // ─── CTS Media Types & Namespaces ──────────────────────────────────
 
