@@ -20,7 +20,7 @@
  * context (session ID, tool name, duration).
  */
 
-import type { AuditEvent } from './audit.js';
+import { type AuditEvent, redactAuditEvent } from './audit.js';
 import { getCurrentContext } from './context.js';
 import { type LogFormat as SinkLogFormat, StderrSink } from './sinks/stderr.js';
 import type { LogSink } from './sinks/types.js';
@@ -84,18 +84,24 @@ export class Logger {
    * Automatically attaches requestId from AsyncLocalStorage context.
    */
   emitAudit(event: AuditEvent): void {
+    let eventWithContext = event;
     // Attach requestId from context if not already set
     if (!event.requestId) {
       const ctx = getCurrentContext();
       if (ctx) {
-        event.requestId = ctx.requestId;
-        if (!event.user && ctx.user) event.user = ctx.user;
+        eventWithContext = {
+          ...event,
+          requestId: ctx.requestId,
+          ...(!event.user && ctx.user ? { user: ctx.user } : {}),
+        };
       }
     }
 
+    const safeEvent = redactAuditEvent(eventWithContext);
+
     for (const sink of this.sinks) {
       try {
-        sink.write(event);
+        sink.write(safeEvent);
       } catch {
         // Sinks must not throw — but if they do, don't crash the server
       }

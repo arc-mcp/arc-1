@@ -56,8 +56,8 @@ The bare minimum needed to reach a SAP system. None of these affect what tool ca
 
 ARC-1 uses [undici](https://github.com/nodejs/undici) for all SAP HTTP. It respects standard `HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY` env vars. For custom CA certificates, set `NODE_EXTRA_CA_CERTS=/path/to/ca.pem` (read by Node, not by ARC-1 directly). For Docker mounts of CA bundles, see [docker.md](docker.md#self-signed-or-internal-ca-certificates).
 
-!!! danger "`SAP_INSECURE` has no startup warning, and the repo's manifests ship it `\"true\"`"
-    `SAP_INSECURE=true` disables all SAP TLS verification — it accepts *any* certificate (masking man-in-the-middle), not just self-signed ones, and ARC-1 logs nothing when it is on. The bundled `manifest.yml` / `mta.yaml` set it `"true"` for the on-prem HTTP Cloud Connector path; set it `"false"` on CA-signed landscapes and use `NODE_EXTRA_CA_CERTS` for an internal CA instead.
+!!! danger "Avoid `SAP_INSECURE=true` outside isolated development"
+    `SAP_INSECURE=true` disables all SAP TLS verification — it accepts *any* certificate (masking man-in-the-middle), not just self-signed ones, and ARC-1 logs nothing when it is on. The bundled `manifest.yml` / `mta.yaml` keep it `"false"`; use `NODE_EXTRA_CA_CERTS` for an internal CA instead of disabling verification.
 
 ---
 
@@ -280,7 +280,7 @@ All ARC-1 logging goes to **stderr** to keep stdout clean for MCP JSON-RPC. Neve
 | `--log-format` | `ARC1_LOG_FORMAT` | `text` | `text` (human-readable) or `json` (one JSON object per line — for shipping to ELK / Loki / CF log aggregator). |
 | `--minimal-errors` | `ARC1_MINIMAL_ERRORS` | `false` | When `true`, client-facing tool errors hide SAP diagnostic details such as lock owners, transport IDs, T100 variables, and authorization object names. Server-side audit logs retain request correlation and status data; use SAP-native logs or a trusted admin retry for full diagnostics. |
 | `--verbose` | `SAP_VERBOSE` | `false` | Alias for `--log-level=debug`. Slightly older flag, kept for compatibility. |
-| — | `ARC1_LOG_HTTP_DEBUG` | `false` | When `"true"`, attaches the full HTTP request and response bodies + headers to `http_request` audit events. Sensitive headers (`Authorization`, `Cookie`, CSRF tokens) are redacted; bodies are truncated at 64 KB. **Do not enable in production** — increases log volume substantially and can leak business data in payloads. **Boolean parsing inconsistency:** unlike other booleans, this one accepts only the literal string `"true"` — `"1"` does **not** work. |
+| — | `ARC1_LOG_HTTP_DEBUG` | `false` | When `"true"`, captures HTTP request/response body fields and headers on `http_request` audit events. Sensitive headers (`Authorization`, `Cookie`, CSRF tokens) are redacted immediately; payload bodies are length-capped and centrally redacted before sink writes. **Do not enable in production** — it still increases log volume and records payload-size/timing metadata. **Boolean parsing inconsistency:** unlike other booleans, this one accepts only the literal string `"true"` — `"1"` does **not** work. |
 
 ---
 

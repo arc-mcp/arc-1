@@ -269,7 +269,7 @@ applications:
       SAP_URL: "http://a4h-abap:50000"
       SAP_CLIENT: "001"
       SAP_LANGUAGE: "EN"
-      SAP_INSECURE: "true"                     # TLS-off for the Cloud Connector HTTP host — set "false" on CA-signed landscapes
+      SAP_INSECURE: "false"                    # Keep TLS verification on when SAP_URL uses HTTPS
       # MCP transport (CF sets PORT env var automatically)
       SAP_TRANSPORT: "http-streamable"
       # BTP Destination Service — dual-destination pattern
@@ -290,7 +290,7 @@ applications:
     ARC-1 feeds SAP-resident content (source, comments, error text) to the LLM, which then issues the next tool calls under the user's identity — a poisoned ABAP comment is an attack vector. `SAP_ALLOW_WRITES=false` and a tight `SAP_ALLOWED_PACKAGES` are the controls that hold *regardless of what the model decides*. Enable writes / free SQL / `SAP_ALLOWED_PACKAGES=*` only when the landscape genuinely needs it.
 
 !!! warning "`SAP_INSECURE: \"true\"` disables SAP TLS verification"
-    The bundled templates ship `SAP_INSECURE: "true"` for the on-prem-via-HTTP Cloud Connector path. On a landscape with CA-signed certificates set it to `"false"` and supply the CA via `NODE_EXTRA_CA_CERTS` — it accepts *any* certificate otherwise, masking man-in-the-middle. ARC-1 prints no startup warning when verification is off.
+    The bundled templates ship `SAP_INSECURE: "false"`. Only set it `"true"` in isolated development when you deliberately accept any SAP certificate. For internal CAs, keep verification enabled and supply the CA via `NODE_EXTRA_CA_CERTS`.
 
 ### 5. Build and Push Docker Image
 

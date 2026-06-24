@@ -218,7 +218,7 @@ applications:
 5. **Deploy separate instances per system** — limits blast radius
 6. **Use XSUAA auth for deployed instances** — proper OAuth 2.0 with scopes (read/write/data/sql/transports/git/admin)
 7. **Set `SAP_SYSTEM_TYPE`** explicitly in production — ensures correct tool definitions from startup
-8. **Set `SAP_INSECURE=false` on CA-signed landscapes** — the tracked `mta.yaml` / `manifest.yml` ship `"true"` for the on-prem HTTP Cloud Connector path; on a TLS landscape it silently disables certificate verification (no startup warning)
+8. **Keep `SAP_INSECURE=false` on CA-signed landscapes** — the tracked `mta.yaml` / `manifest.yml` ship `"false"`; only set it `"true"` in isolated development when you deliberately accept all SAP certificates
 9. **Set `ARC1_RATE_LIMIT` (e.g. `60`) on multi-user instances** — the per-user MCP quota is off by default, so one runaway agent loop can saturate the shared SAP request semaphore
 10. **Set a stable `ARC1_DCR_SIGNING_SECRET` on XSUAA OAuth instances** — otherwise the DCR signing key derives from the XSUAA `clientsecret`, so every `cf deploy` that recreates the service binding rotates it and invalidates all cached MCP `client_id`s. Users then hit `invalid_client` after each redeploy, and some clients (Eclipse Copilot, Cursor) can't recover without manual cache surgery. Set it once with `cf set-env arc1-mcp-server ARC1_DCR_SIGNING_SECRET "$(openssl rand -base64 48)"`; see [Stable DCR signing key](xsuaa-setup.md#stable-dcr-signing-key-recommended)
 
@@ -239,7 +239,7 @@ If you deploy ARC-1 behind a reverse proxy (nginx, Envoy, etc.) outside of Cloud
 
 | File | Purpose | Customize? |
 |------|---------|-----------|
-| `mta.yaml` | MTA build descriptor — services, conservative `SAP_ALLOW_*` defaults, **placeholder destinations**. Tracked. Ships `SAP_INSECURE: "true"` for the Cloud Connector HTTP path — override to `"false"` on CA-signed landscapes. | Rarely — use `.mtaext` for overrides |
+| `mta.yaml` | MTA build descriptor — services, conservative `SAP_ALLOW_*` defaults, **placeholder destinations**. Tracked. Ships `SAP_INSECURE: "false"`; prefer `NODE_EXTRA_CA_CERTS` for internal CAs over disabling verification. | Rarely — use `.mtaext` for overrides |
 | `mta-overrides.mtaext.example` | Tracked template documenting every overridable property. | No — copy it to `mta-overrides.mtaext` (gitignored) and edit that |
 | `mta-overrides.mtaext` (or any `mta-*.mtaext`) | Per-landscape MTA extension (real destinations, safety flags). **Gitignored.** | Yes — uncomment and set values for your environment |
 | `manifest.yml` | CF deployment manifest (on-premise via Cloud Connector) | Yes — change `SAP_URL`, destination name, safety flags |

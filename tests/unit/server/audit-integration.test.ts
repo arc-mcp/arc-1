@@ -201,7 +201,7 @@ describe('Audit Logging Integration', () => {
       | Record<string, unknown>
       | undefined;
     const preview = String(end?.resultPreview ?? '');
-    expect(preview).toContain('[omitted');
+    expect(preview).toContain('[REDACTED');
     expect(preview).not.toContain('SECRET_DUMP_CONTENT_SHOULD_NOT_APPEAR_IN_AUDIT_PREVIEW');
   });
 });

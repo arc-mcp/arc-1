@@ -96,7 +96,7 @@ modules:
       SAP_TRANSPORT: http-streamable
       SAP_SYSTEM_TYPE: auto
       SAP_LANGUAGE: EN
-      SAP_INSECURE: "true"
+      SAP_INSECURE: "false"
       SAP_XSUAA_AUTH: "true"
       # Destinations. The base values below are placeholders — every landscape
       # MUST override them via `mta-overrides.mtaext` (see the

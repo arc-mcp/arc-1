@@ -1001,6 +1001,26 @@ describe('Runtime Diagnostics', () => {
         Accept: 'application/xml',
       });
     });
+
+    it('encodes raw trace IDs as one path segment', async () => {
+      const http = mockHttp('<hitList/>');
+      const rawId = 'TRACE 001/../../secret';
+      await getTraceHitlist(http, unrestrictedSafetyConfig(), rawId);
+      expect(http.get).toHaveBeenCalledWith(
+        `/sap/bc/adt/runtime/traces/abaptraces/${encodeURIComponent(rawId)}/hitlist`,
+        { Accept: 'application/xml' },
+      );
+    });
+
+    it('passes already-encoded trace IDs through unchanged', async () => {
+      const http = mockHttp('<hitList/>');
+      const encodedId = 'TRACE%20001%2Fsegment';
+      await getTraceHitlist(http, unrestrictedSafetyConfig(), encodedId);
+      expect(http.get).toHaveBeenCalledWith(`/sap/bc/adt/runtime/traces/abaptraces/${encodedId}/hitlist`, {
+        Accept: 'application/xml',
+      });
+      expect((http.get as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]).not.toContain('%252F');
+    });
   });
 
   describe('getTraceStatements', () => {
@@ -1011,6 +1031,16 @@ describe('Runtime Diagnostics', () => {
         Accept: 'application/xml',
       });
     });
+
+    it('encodes raw trace IDs as one path segment', async () => {
+      const http = mockHttp('<statements/>');
+      const rawId = 'TRACE 002/../../secret';
+      await getTraceStatements(http, unrestrictedSafetyConfig(), rawId);
+      expect(http.get).toHaveBeenCalledWith(
+        `/sap/bc/adt/runtime/traces/abaptraces/${encodeURIComponent(rawId)}/statements`,
+        { Accept: 'application/xml' },
+      );
+    });
   });
 
   describe('getTraceDbAccesses', () => {
@@ -1020,6 +1050,16 @@ describe('Runtime Diagnostics', () => {
       expect(http.get).toHaveBeenCalledWith('/sap/bc/adt/runtime/traces/abaptraces/TRACE_003/dbAccesses', {
         Accept: 'application/xml',
       });
+    });
+
+    it('encodes raw trace IDs as one path segment', async () => {
+      const http = mockHttp('<dbAccesses/>');
+      const rawId = 'TRACE 003/../../secret';
+      await getTraceDbAccesses(http, unrestrictedSafetyConfig(), rawId);
+      expect(http.get).toHaveBeenCalledWith(
+        `/sap/bc/adt/runtime/traces/abaptraces/${encodeURIComponent(rawId)}/dbAccesses`,
+        { Accept: 'application/xml' },
+      );
     });
   });
 

@@ -52,11 +52,11 @@ export interface HttpRequestEvent extends AuditEventBase {
   statusCode: number;
   durationMs: number;
   errorBody?: string;
-  /** Full request body when ARC1_LOG_HTTP_DEBUG=true. Truncated past 65536 chars. */
+  /** Request body captured when ARC1_LOG_HTTP_DEBUG=true; redacted before sink writes. */
   requestBody?: string;
   /** Request headers with sensitive values redacted when ARC1_LOG_HTTP_DEBUG=true. */
   requestHeaders?: Record<string, string>;
-  /** Full response body when ARC1_LOG_HTTP_DEBUG=true. Truncated past 65536 chars. */
+  /** Response body captured when ARC1_LOG_HTTP_DEBUG=true; redacted before sink writes. */
   responseBody?: string;
   /** Response headers with sensitive values redacted when ARC1_LOG_HTTP_DEBUG=true. */
   responseHeaders?: Record<string, string>;
@@ -241,23 +241,51 @@ export type AuditEvent =
   | AuthRateLimitedEvent
   | McpRateLimitedEvent;
 
+const SENSITIVE_KEY_FRAGMENTS = [
+  'password',
+  'token',
+  'secret',
+  'cookie',
+  'authorization',
+  'csrf',
+  'apikey',
+  'authpwd',
+  'authtoken',
+  'remotepassword',
+];
+
+const PAYLOAD_BODY_KEYS = new Set(['errorbody', 'errormessage', 'requestbody', 'responsebody', 'resultpreview']);
+
+function isSensitiveKey(key: string): boolean {
+  const lower = key.toLowerCase();
+  return SENSITIVE_KEY_FRAGMENTS.some((fragment) => lower.includes(fragment));
+}
+
+function redactPayloadValue(value: unknown): string {
+  if (typeof value === 'string') return `[REDACTED ${value.length} chars]`;
+  return '[REDACTED]';
+}
+
+function redactValue(key: string, value: unknown): unknown {
+  if (isSensitiveKey(key)) return '[REDACTED]';
+  if (PAYLOAD_BODY_KEYS.has(key.toLowerCase())) return redactPayloadValue(value);
+  if (Array.isArray(value)) return value.map((entry) => redactValue('', entry));
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, redactValue(k, v)]));
+  }
+  return value;
+}
+
+/** Redact sensitive or high-volume SAP payload fields before any audit sink sees them. */
+export function redactAuditEvent(event: AuditEvent): AuditEvent {
+  return redactValue('', event) as AuditEvent;
+}
+
 /** Sanitize tool call arguments — remove values that might contain sensitive data */
 export function sanitizeArgs(args: Record<string, unknown>): Record<string, unknown> {
-  const sensitiveKeys = [
-    'password',
-    'token',
-    'secret',
-    'cookie',
-    'authorization',
-    'csrf',
-    'apikey',
-    'authpwd',
-    'authtoken',
-    'remotepassword',
-  ];
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(args)) {
-    if (sensitiveKeys.some((s) => key.toLowerCase().includes(s))) {
+    if (isSensitiveKey(key)) {
       result[key] = '[REDACTED]';
     } else if (typeof value === 'string' && value.length > 500) {
       result[key] = `${value.slice(0, 200)}... [truncated ${value.length} chars]`;

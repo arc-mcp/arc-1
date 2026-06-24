@@ -59,9 +59,10 @@ export interface AdtRequestOptions {
  *
  * When ARC1_LOG_HTTP_DEBUG=true, every completed HTTP call to SAP ADT attaches
  * its request body, request headers, response body, and response headers to
- * the audit event. Sensitive headers are redacted; bodies are truncated at
- * 64KB. Intended for ad-hoc debugging of content negotiation, CSRF, and
- * activation preaudit responses — not for production.
+ * the audit event. Sensitive headers are redacted here, bodies are truncated at
+ * 64KB, and the central audit logger redacts payload bodies again before any sink
+ * write. Intended for ad-hoc debugging of content negotiation, CSRF, and
+ * activation preaudit response sizes — not for production.
  */
 const HTTP_DEBUG_BODY_LIMIT = 65536;
 const HTTP_DEBUG_REDACT_HEADERS = new Set([

@@ -530,8 +530,8 @@ when a new `ghcr.io/arc-mcp/arc-1` image tag is published.
 6. **Use `SAP_INSECURE=false` (the default).** Only set it to `true` in isolated
    development environments with no sensitive data — it disables SAP TLS
    verification entirely (any certificate accepted, MITM masked) with no startup
-   warning. Note the bundled `manifest.yml` / `mta.yaml` ship `"true"` for the
-   Cloud Connector path; flip them to `"false"` on CA-signed landscapes.
+   warning. The bundled `manifest.yml` / `mta.yaml` ship `"false"`; keep that
+   default on CA-signed landscapes.
 
 7. **The SQLite cache stores SAP source in cleartext.** In HTTP mode the cache
    defaults to `sqlite` at `.arc1-cache.db` (full ABAP source, unencrypted, default

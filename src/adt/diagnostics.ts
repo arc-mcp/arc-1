@@ -193,7 +193,7 @@ export async function listDumps(
 export async function getDump(http: AdtHttpClient, safety: SafetyConfig, dumpId: string): Promise<DumpDetail> {
   checkOperation(safety, OperationType.Read, 'GetDump');
 
-  const safeId = normalizeDumpId(dumpId);
+  const safeId = normalizeAdtPathSegment(dumpId);
 
   // Fetch XML metadata and formatted text in parallel
   const [xmlResp, textResp] = await Promise.all([
@@ -214,8 +214,8 @@ export async function getDump(http: AdtHttpClient, safety: SafetyConfig, dumpId:
  * `%20` for spaces); otherwise we encode it once. Trims surrounding
  * whitespace which would otherwise be encoded as `%20` and break lookup.
  */
-function normalizeDumpId(dumpId: string): string {
-  const trimmed = String(dumpId ?? '').trim();
+function normalizeAdtPathSegment(value: string): string {
+  const trimmed = String(value ?? '').trim();
   if (!trimmed) return '';
   return trimmed.includes('%') ? trimmed : encodeURIComponent(trimmed);
 }
@@ -321,7 +321,8 @@ export async function getTraceHitlist(
 ): Promise<TraceHitlistEntry[]> {
   checkOperation(safety, OperationType.Read, 'GetTraceHitlist');
 
-  const resp = await http.get(`/sap/bc/adt/runtime/traces/abaptraces/${traceId}/hitlist`, {
+  const safeTraceId = normalizeAdtPathSegment(traceId);
+  const resp = await http.get(`/sap/bc/adt/runtime/traces/abaptraces/${safeTraceId}/hitlist`, {
     Accept: 'application/xml',
   });
 
@@ -340,7 +341,8 @@ export async function getTraceStatements(
 ): Promise<TraceStatement[]> {
   checkOperation(safety, OperationType.Read, 'GetTraceStatements');
 
-  const resp = await http.get(`/sap/bc/adt/runtime/traces/abaptraces/${traceId}/statements`, {
+  const safeTraceId = normalizeAdtPathSegment(traceId);
+  const resp = await http.get(`/sap/bc/adt/runtime/traces/abaptraces/${safeTraceId}/statements`, {
     Accept: 'application/xml',
   });
 
@@ -359,7 +361,8 @@ export async function getTraceDbAccesses(
 ): Promise<TraceDbAccess[]> {
   checkOperation(safety, OperationType.Read, 'GetTraceDbAccesses');
 
-  const resp = await http.get(`/sap/bc/adt/runtime/traces/abaptraces/${traceId}/dbAccesses`, {
+  const safeTraceId = normalizeAdtPathSegment(traceId);
+  const resp = await http.get(`/sap/bc/adt/runtime/traces/abaptraces/${safeTraceId}/dbAccesses`, {
     Accept: 'application/xml',
   });
 

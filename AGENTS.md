@@ -79,7 +79,7 @@ Full per-option details (defaults, clamps, layer interactions): [docs_page/confi
 | `SAP_DISABLE_SAML` | Disable SAML redirect — never on BTP ABAP / S/4 Public Cloud |
 | `ARC1_PROFILE` | Safety profile shortcut (viewer…developer-sql) |
 | `ARC1_MINIMAL_ERRORS` | Hide SAP diagnostic details from client-facing tool errors; keep request correlation for operators |
-| `ARC1_LOG_HTTP_DEBUG` | Full req/resp bodies in audit (redacted, truncated; not for prod) |
+| `ARC1_LOG_HTTP_DEBUG` | HTTP debug fields in audit; bodies are centrally redacted before sink writes |
 
 ## Codebase Structure
 

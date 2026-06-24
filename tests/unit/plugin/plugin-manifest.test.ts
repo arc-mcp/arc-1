@@ -19,11 +19,16 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 
 function readJson(rel: string): Record<string, any> {
   return JSON.parse(readFileSync(join(ROOT, rel), 'utf8'));
+}
+
+function readYaml(rel: string): Record<string, any> {
+  return parse(readFileSync(join(ROOT, rel), 'utf8')) as Record<string, any>;
 }
 
 const plugin = readJson('.claude-plugin/plugin.json');
@@ -177,6 +182,16 @@ describe('deployment templates', () => {
       const body = readFileSync(join(ROOT, rel), 'utf8');
       expect(body, rel).toContain('ARC1_UI: "off"');
     }
+  });
+
+  it('keep SAP TLS verification enabled by default in shipped CF descriptors', () => {
+    const mta = readYaml('mta.yaml');
+    const appModule = (mta.modules as Array<Record<string, any>>).find((entry) => entry.name === 'arc1-mcp-server');
+    expect(appModule?.properties?.SAP_INSECURE).toBe('false');
+
+    const manifest = readYaml('manifest.yml');
+    const app = (manifest.applications as Array<Record<string, any>>).find((entry) => entry.name === 'arc1-mcp-server');
+    expect(app?.env?.SAP_INSECURE).toBe('false');
   });
 });
 
