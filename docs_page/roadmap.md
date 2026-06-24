@@ -1,6 +1,6 @@
 # ARC-1 Roadmap
 
-**Last Updated:** 2026-06-24 (competitor deep-scan: fr0ster v7.2.1 + sapcli — added **SEC-13** DNS-rebinding/Host-header gap, flagged CDS API-release-**write** as a dual-signal gap, reinforced FEAT-41/FEAT-62 with sapcli reference impls; see [`compare/`](../compare/)). Earlier 2026-05-29 (SAPRead `grep` — case-insensitive regex returning only matching source lines + context with line numbers, method-annotated for classes, literal fallback; token-efficient search over source-bearing types, complements #307 class-section surgery; issue #313). Earlier: ARC-1-native pre-write hint `arc1-tabl-draft-admin-include` — non-blocking warning when a TABL source uses bare `include sych_bdl_draft_admin_inc` instead of the SAP-canonical `"%admin"` named-include prefix; closes Run 6 micro-improvement #5 from the SEGW→RAP migration skill iteration log; earlier same day: SAPSearch tadir_lookup `source` modes for TADIR ghost detection + SAPWrite batch_create `activateAtEnd` for composition-linked DDLS / interdependent RAP graphs; earlier same day: RAP handler skeleton CCIMP-only fix)
+**Last Updated:** 2026-06-24 (competitor deep-scan: fr0ster v7.2.1 + sapcli + dassian-adt — new **SEC-13** (DNS-rebinding/Host-header), **FEAT-63** (pre-release inactive-objects check), **FEAT-64** (unknown-column self-correcting hint), **FEAT-65** (TTYP), **COMPAT-05** (verify ToC type-T creation); flagged CDS API-release-**write** as a dual-signal gap; reinforced FEAT-41/FEAT-62 with sapcli reference impls; see [`compare/`](../compare/)). Earlier 2026-05-29 (SAPRead `grep` — case-insensitive regex returning only matching source lines + context with line numbers, method-annotated for classes, literal fallback; token-efficient search over source-bearing types, complements #307 class-section surgery; issue #313). Earlier: ARC-1-native pre-write hint `arc1-tabl-draft-admin-include` — non-blocking warning when a TABL source uses bare `include sych_bdl_draft_admin_inc` instead of the SAP-canonical `"%admin"` named-include prefix; closes Run 6 micro-improvement #5 from the SEGW→RAP migration skill iteration log; earlier same day: SAPSearch tadir_lookup `source` modes for TADIR ghost detection + SAPWrite batch_create `activateAtEnd` for composition-linked DDLS / interdependent RAP graphs; earlier same day: RAP handler skeleton CCIMP-only fix)
 **Project:** ARC-1 (ABAP Relay Connector) — MCP Server for SAP ABAP Systems
 **Repository:** https://github.com/arc-mcp/arc-1
 
@@ -80,6 +80,9 @@ SORT RULES for this table — DO NOT BREAK when adding rows:
 | [FEAT-34](#feat-34) | i18n Translation Management | P2 | M | Features |
 | [FEAT-60](#feat-60) | CLI/server alignment (shortcut parity with MCP tool schemas) | P2 | S | Features |
 | [FEAT-62](#feat-62) | ADT Transaction (`TRAN/T`) source/write support | P2 | M | Features |
+| [FEAT-63](#feat-63) | Pre-release inactive-objects check in SAPTransport `release`/`release_recursive` (wire existing `getInactiveObjects`; warn/block) | P2 | S | Features |
+| [FEAT-64](#feat-64) | Self-correcting "unknown column" hint on SAPQuery / table preview (list valid columns on error — extends the unknown-*table* self-correction) | P2 | S | Features |
+| COMPAT-05 | Verify ToC (type `T`) creation actually works — `tools.ts` advertises K/W/T but `createTransport`/`createTransportWithTarget` look K-only (possible advertise-vs-impl mismatch) | P2 | XS | Compatibility |
 | [SEC-05](#sec-05) | Rate Limiting | P2 | S | Security |
 | [SEC-13](#sec-13) | DNS-rebinding / Host-header allowlist for HTTP/SSE transport (`ARC1_ALLOWED_HOSTS`) — defense-in-depth for self-hosted/localhost; BTP gorouter already controls `Host`. fr0ster v7.2.0 + MCP spec | P2 | S | Security |
 | [OPS-02](#ops-02) | Health Check Enhancements | P2 | XS | Ops |
@@ -87,6 +90,7 @@ SORT RULES for this table — DO NOT BREAK when adding rows:
 | [COMPAT-04](#compat-04) | BTP transport omission in safeUpdateSource() — verify only | P2 | XS | Compatibility |
 | [FEAT-05](#feat-05) | Code Refactoring (Rename, Extract) | P3 | L | Features |
 | [FEAT-07](#feat-07) | TLS/HTTPS for HTTP Streamable | P3 | S | Features |
+| [FEAT-65](#feat-65) | TTYP (Table Type) read/write — no table-type support today (dassian + sapcli have create) | P3 | M | Features |
 | [FEAT-29](#feat-29) | P3 Backlog (14 items) | P3 | various | Features |
 | [FEAT-50](#feat-50) | ADT Probe Fixture Coverage (contributed fixtures) | P3 | XS-each | Diagnostics |
 | [FEAT-59](#feat-59) | Embeddable multi-tenant server (per-instance `systemType`) | P3 | M | Features |
@@ -632,6 +636,55 @@ SAP confirmed GA of ABAP Cloud Extension for VS Code with built-in agentic AI po
 **Why ARC-1 doesn't have it yet:** ARC-1 validates `Origin` (CORS, `ARC1_ALLOWED_ORIGINS`, off by default) and OAuth redirect/issuer hosts, but never the `Host` header (`src/server/http.ts`). The bundled MCP SDK (1.29.0) does not expose the newer `enableDnsRebindingProtection`/`allowedHosts` transport options, so this needs explicit Express middleware rather than an SDK flag.
 
 **Implementation sketch:** Middleware in `applySecurityMiddleware` (before `/mcp`) that rejects requests whose `Host` is not in `ARC1_ALLOWED_HOSTS` (default `localhost,127.0.0.1,[::1]`; empty or `*` = disabled, preserving the reverse-proxy/BTP case where the proxy sets a non-local Host). Add the env to `src/server/{config,types}.ts`, emit a rejected-host audit event, and register A4 as a controlled risk in `docs/security-model.md`.
+
+---
+
+<a id="feat-63"></a>
+### FEAT-63: Pre-Release Inactive-Objects Check (SAPTransport)
+| Field | Value |
+|-------|-------|
+| **Priority** | P2 |
+| **Effort** | S (≤1 day) |
+| **Risk** | Low |
+| **Usefulness** | High — releasing a transport that still contains inactive objects fails SAP-side with a cryptic error; catching it client-side is a real CI/CD-promotion win. |
+| **Status** | Not started |
+| **Source** | [dassian-adt `4cfd841`](../compare/07-dassian-adt.md) |
+
+**What:** Before `SAPTransport action=release` / `release_recursive`, cross-check the transport's object list against the inactive-objects list and warn (or block unless `force`) when there is overlap.
+
+**Why it's cheap:** the primitive already exists — `client.getInactiveObjects()` + `InactiveListCache` (`src/cache/inactive-list-cache.ts`), surfaced today as `SAPRead type=INACTIVE_OBJECTS`. The release path (`src/handlers/transport.ts` `release`/`release_recursive` → `src/adt/transport.ts`) simply never consults it. Wire the check into the release handler and reuse the cached list.
+
+---
+
+<a id="feat-64"></a>
+### FEAT-64: Self-Correcting "Unknown Column" Hint (SAPQuery / Table Preview)
+| Field | Value |
+|-------|-------|
+| **Priority** | P2 |
+| **Effort** | S (1-2 days) |
+| **Risk** | Low |
+| **Usefulness** | High — turns a dead-end "unknown column" error into a one-shot self-correction, the same way ARC-1 already self-corrects unknown *table* names. |
+| **Status** | Not started |
+| **Source** | [dassian-adt `afc1b66`](../compare/07-dassian-adt.md) |
+
+**What:** When a table/SQL query references a column that doesn't exist, enrich the error with the table's valid column names so the agent retries without a human round-trip.
+
+**Where:** ARC-1 already self-corrects unknown *tables* (`src/handlers/query.ts:180` suggests similar names via search) but not unknown columns. Add column enrichment in the `getTableContents`/`runTableQuery`/`runQuery` catch path (`src/adt/client.ts`) — fetch the table's component list (DD03L / structure read, already available) and append "valid columns: …". Best as a shared helper called from `query.ts`.
+
+---
+
+<a id="feat-65"></a>
+### FEAT-65: TTYP (Table Type) Read/Write
+| Field | Value |
+|-------|-------|
+| **Priority** | P3 |
+| **Effort** | M (3-5 days) |
+| **Risk** | Low |
+| **Usefulness** | Medium — table types are common DDIC objects; ARC-1 has no read or write support at all. Both dassian-adt (`5f691ff`) and sapcli ship create. |
+| **Status** | Not started |
+| **Source** | [dassian-adt `5f691ff`](../compare/07-dassian-adt.md) |
+
+**What:** Read + create/update DDIC Table Types (TTYP). Add `TTYP` rows to both `*_TYPE_TABLE`s in `src/handlers/tool-registry.ts`, a create-XML builder in `src/adt/ddic-xml.ts` (DOMA/DTEL are the templates), and URL routing in `src/handlers/object-types.ts`.
 
 ---
 

@@ -338,7 +338,7 @@ The following items were incorrectly marked in the previous version and have sin
 | ARC-1 AUnit coverage (FEAT-31/41) | tracked, no ref impl | sapcli reference impl shipped | sapcli `942d70b` prints branch + procedure coverage; ARC-1 still hardcodes `coverage active="false"` (`devtools.ts:554`). Raises confidence on FEAT-41. |
 | ARC-1 TRAN write (FEAT-62) | tracked (research only) | sapcli reference impl merged | sapcli `d7a6f2d`/`df954a3` shipped the TRAN ADT mapper + create envelope — concrete reference for FEAT-62. |
 | vibing-steampunk | 295★ | **392★** | Quiet in-window (1 doc commit since v2.40.0); +97★. Boundary/dynamic-call analyzer already captured (doc 01); deliberate defer (roadmap 29n). |
-| dassian-adt | 37★ (DassianInc) | ⚠️ DassianInc/dassian-adt now **5★** | Star count collapsed — likely repo reset/transfer (successor `albanleong/abap-mcpb` previously noted). Flag for next scan to confirm the canonical repo. |
+| dassian-adt | "no commits since Apr 14", 37★ | **active again** — 11 commits May–Jun, 5★ | **Was wrongly logged as dormant.** The private→public repo toggle (2026-06) reset GitHub's star count (33★→5★) — not a loss of interest. New gaps from the deep scan: **pre-release inactive-objects check** (High, S — primitive exists), **unknown-column self-correcting hint** (High), **TTYP create** (Med), **ToC bundling** (verify — advertise-vs-impl mismatch). Already-have: class-local include reads, transport/lock/write resilience, output cap+compress. Details: [07-dassian-adt](07-dassian-adt.md). |
 
 ---
 

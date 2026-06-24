@@ -2,8 +2,8 @@
 
 > **Repository**: https://github.com/DassianInc/dassian-adt
 > **Successor/MCPB**: https://github.com/albanleong/abap-mcpb (MCPB format for Claude Desktop)
-> **Language**: TypeScript / JavaScript | **License**: MIT | **Stars**: 33 | **Forks**: 7
-> **Status**: Active (no new commits since 2026-04-14) — explosive April sprint concluded at 53 tools
+> **Language**: TypeScript / JavaScript | **License**: MIT | **Stars**: 5 (was 33 — the repo was toggled private→public in 2026-06, which resets GitHub's star count; not a loss of interest) | **Forks**: 7
+> **Status**: **Active** — 11 new commits May–Jun 2026 resumed after the April sprint (transport/DDIC hardening, TTYP, ToC bundling, pre-release inactive check, BSP handlers, self-correcting query hints)
 > **Relationship**: Fork of mario-andreschak's wrapper → dassian rewrite → enterprise-grade MCP server
 > **Deep analysis**: See [07-dassian-adt-updated.md](07-dassian-adt-updated.md) for full implementation internals
 
@@ -227,6 +227,13 @@ Safety system (read-only, op filter, pkg filter, SQL blocking, transport gating,
 
 | Date | Change | Relevant? | Action for ARC-1 | Status |
 |------|--------|-----------|-------------------|--------|
+| 2026-06-22 | `afc1b66` self-correcting **"Unknown column"** hint on abap_table/abap_query; `df255e1` `abap_get_class_include` (read class-local includes / RAP behavior handlers); `baa4488` wire up BspHandlers | **High / No** | (1) **Unknown-column hint = GAP (High)**: ARC-1 self-corrects unknown *tables* (`query.ts:180`) but not unknown *columns* — add valid-column enrichment on error. (2) class-local include read = **ALREADY-HAVE** (`getClassInclude`, `read.ts include=`). (3) BSP: ARC-1 *reads* BSP (`listBspApps`) but BSP *write*/upload is a PARTIAL gap. | TODO (col hint) |
+| 2026-06-15 | `ef70b9e` transport/lock/write resilience from prod error-log analysis | No | **ALREADY-HAVE**: ARC-1's lock/transport/write path is already robust — try-finally unlock, CSRF refresh-on-403, 415/406 negotiation retry, 423 handling, stateful session + semaphore (`crud.ts`, `http.ts`). | Done |
+| 2026-05-15 | `4cfd841` **pre-release inactive-objects check** + auto-package lookup on create | **High / No** | **Pre-release inactive check = GAP (High, S)** — cleanest win: ARC-1 has the primitive (`getInactiveObjects`/`InactiveListCache`) but the transport `release`/`release_recursive` path never consults it. Wire it in to warn/block. Auto-package lookup: ARC-1 deliberately defaults `$TMP` + allowlist (no action). | TODO (inactive check) |
+| 2026-05-14 | `3080b28` clean ToC creation + `transport_bundle_into_toc` | **Med** | **PARTIAL / verify**: ARC-1 lists ToCs and its tool advertises K/W/T create, but `createTransport` (CreateCorrectionRequest) has no type param and `createTransportWithTarget` hardcodes `tm:type="K"` — true ToC (type T) creation + object-bundling looks like a gap (possible advertise-vs-impl mismatch in `tools.ts:240`). | Verify |
+| 2026-05-12 | `5f691ff` **TTYP (Table Type) creation** + auto-classify transport tasks on release | **Med / Low** | **TTYP = GAP (Med, M)**: ARC-1 has no table-type read/write at all — add TTYP rows + `ddic-xml.ts` builder (mirror DOMA/DTEL). Auto-classify tasks on release = Low (cosmetic). | TODO (TTYP) |
+| 2026-05-11 | `9911be0` DEVC package creation via CL_PACKAGE_FACTORY (FM-based) | No | ARC-1 creates DEVC via ADT-native `ddic-xml.ts` (packageType + recordChanges). Different (FM) approach — N/A. | Evaluated |
+| 2026-05-02 | `5632a0f` transport/DDIC improvements + output pagination | No | ARC-1 already caps + compresses + summarizes large output (`maxResults`/`maxRows` 100, SAPContext, transport `summary` mode); true offset pagination infeasible (ADT `/datapreview` ignores offset). | Evaluated |
 | 2026-04-14 | **feat: MCP OAuth 2.0 per-user SAP authentication** | **High** | Enterprise auth catch-up. ARC-1 has PP via BTP — different approach. Monitor adoption. | Evaluated |
 | 2026-04-14 | feat: Azure App Service PORT env var compatibility | Low | ARC-1 uses ARC1_HTTP_ADDR | -- |
 | 2026-04-13 | fix: TOC creation — reclassify after create instead of wrong OPERATION | Low | Verify ARC-1 transport.ts TOC handling | -- |
@@ -264,4 +271,4 @@ albanleong/abap-mcpb packages dassian-adt as an **MCPB** (MCP Bundle) for Claude
 
 **Risk:** If Dassian adds safety controls and BTP support, the gap narrows significantly. Monitor closely.
 
-_Last updated: 2026-04-16 (no new commits since 2026-04-14; stars +1 to 33; deep implementation analysis added in 07-dassian-adt-updated.md)_
+_Last updated: 2026-06-24 (deep scan — 11 commits May–Jun resumed after the April sprint; private→public toggle explains 33★→5★, not a loss of interest). Net new gaps: pre-release inactive-objects check (High, S — primitive exists), unknown-column self-correcting hint (High, M), TTYP create (Med, M); ToC bundling needs a focused verify (tool advertises K/W/T but impl looks K-only). Already-have: class-local include reads, transport/lock/write resilience, output cap+compress._
