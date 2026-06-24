@@ -102,6 +102,18 @@ describe('parseArgs', () => {
     expect(config.allowGitWrites).toBe(true);
   });
 
+  it('parses ARC1_MINIMAL_ERRORS env var', () => {
+    process.env.ARC1_MINIMAL_ERRORS = 'true';
+    const config = parseArgs([]);
+    expect(config.minimalErrors).toBe(true);
+  });
+
+  it('--minimal-errors takes precedence over ARC1_MINIMAL_ERRORS env var', () => {
+    process.env.ARC1_MINIMAL_ERRORS = 'false';
+    const config = parseArgs(['--minimal-errors', 'true']);
+    expect(config.minimalErrors).toBe(true);
+  });
+
   it('defaults ppStrict to true when principal propagation is enabled', () => {
     process.env.SAP_PP_ENABLED = 'true';
     const config = parseArgs([]);

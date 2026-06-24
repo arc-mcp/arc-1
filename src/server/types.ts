@@ -127,6 +127,8 @@ export interface ServerConfig {
   logFile?: string;
   logLevel: 'debug' | 'info' | 'warn' | 'error';
   logFormat: 'text' | 'json';
+  /** Hide SAP response details from client-facing tool errors while retaining server-side correlation data. */
+  minimalErrors: boolean;
 
   // --- Tool Mode ---
   /** Tool mode: 'standard' (12 intent tools, SAPGit feature-gated) or 'hyperfocused' (1 universal SAP tool, ~200 tokens) */
@@ -268,5 +270,6 @@ export const DEFAULT_CONFIG: ServerConfig = {
   allowedOrigins: [],
   logLevel: 'info',
   logFormat: 'text',
+  minimalErrors: false,
   verbose: false,
 };

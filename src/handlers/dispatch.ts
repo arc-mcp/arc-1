@@ -128,6 +128,8 @@ function buildBaseErrorMessage(
   config: ServerConfig,
 ): string {
   if (err instanceof AdtApiError) {
+    if (config.minimalErrors) return formatMinimalAdtError(err);
+
     // Append additional SAP messages (line numbers, secondary errors) if available
     const enriched = enrichWithSapDetails(err, message);
     const argType = canonicalTablType(String(args.type ?? '').toUpperCase());
@@ -249,6 +251,16 @@ function buildBaseErrorMessage(
   }
 
   return message;
+}
+
+function formatMinimalAdtError(err: AdtApiError): string {
+  const classification = classifySapDomainError(err.statusCode, err.responseBody, err.path);
+  const category = classification ? ` Category: ${classification.category}.` : '';
+  return (
+    `ADT API error: status ${err.statusCode}.${category}\n\n` +
+    'Hint: Detailed SAP error text is hidden because ARC1_MINIMAL_ERRORS=true. ' +
+    'Use the request ID to correlate server-side audit and SAP-native logs, or retry in a trusted admin session with minimal errors disabled.'
+  );
 }
 
 function buildDiagnosticsNotFoundHint(tool: string, args: Record<string, unknown>): string | undefined {

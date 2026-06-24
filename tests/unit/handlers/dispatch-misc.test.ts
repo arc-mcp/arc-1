@@ -1046,6 +1046,42 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
       expect(result.content[0]?.text).not.toContain('DDIC diagnostics:');
     });
 
+    it('hides SAP diagnostic details from client-facing errors when minimal errors are enabled', async () => {
+      const xmlResponse = `<?xml version="1.0" encoding="utf-8"?>
+<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework">
+  <exc:localizedMessage lang="EN">Object is locked by SECRETUSER</exc:localizedMessage>
+  <exc:properties>
+    <entry key="LOCK_USER">SECRETUSER</entry>
+    <entry key="TRANSPORT">DEVK900001</entry>
+  </exc:properties>
+</exc:exception>`;
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(423, xmlResponse, { 'x-csrf-token': 'T' }));
+
+      const detailed = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'PROG',
+        name: 'ZTEST',
+      });
+      expect(detailed.isError).toBe(true);
+      expect(detailed.content[0]?.text).toContain('SECRETUSER');
+      expect(detailed.content[0]?.text).toContain('DEVK900001');
+
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(423, xmlResponse, { 'x-csrf-token': 'T' }));
+      const minimal = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, minimalErrors: true }, 'SAPRead', {
+        type: 'PROG',
+        name: 'ZTEST',
+      });
+
+      expect(minimal.isError).toBe(true);
+      const text = minimal.content[0]?.text ?? '';
+      expect(text).toContain('ADT API error: status 423');
+      expect(text).toContain('ARC1_MINIMAL_ERRORS=true');
+      expect(text).not.toContain('SECRETUSER');
+      expect(text).not.toContain('DEVK900001');
+      expect(text).not.toContain('Properties:');
+    });
+
     it('includes DDIC diagnostics block when T100KEY entries are present', async () => {
       const xmlResponse = `<?xml version="1.0" encoding="utf-8"?>
 <exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework">
