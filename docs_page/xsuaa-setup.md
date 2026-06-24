@@ -251,7 +251,7 @@ After a client has been connected for a while it can fail with one of two errors
 
 **Prevent both:** for `invalid_client`, set a stable [`ARC1_DCR_SIGNING_SECRET`](#stable-dcr-signing-key-recommended) + `ARC1_OAUTH_DCR_TTL_SECONDS=0` so a redeploy can't rotate the signing key. For `invalid_token`, the default `refresh-token-validity` in `xs-security.json` is **30 days**, so idle sessions survive far longer.
 
-**Most clients self-heal** — Claude Desktop, VS Code's MCP client, and MCP Inspector refresh and re-register on their own and rarely surface either error. The two that need a manual nudge are **Eclipse GitHub Copilot** and **Cursor** (Eclipse has no per-server "restart MCP" / re-auth action yet — [copilot-for-eclipse#237](https://github.com/microsoft/copilot-for-eclipse/issues/237)).
+**Client behaviour varies.** Claude Desktop and MCP Inspector usually re-register on their own and rarely surface either error. **VS Code, Cursor, and Eclipse GitHub Copilot cache the DCR registration and can stay stuck on `invalid_client`** until you clear it — steps per client below. (Eclipse additionally has no per-server "restart MCP" / re-auth action yet — [copilot-for-eclipse#237](https://github.com/microsoft/copilot-for-eclipse/issues/237).)
 
 #### Eclipse GitHub Copilot
 
@@ -286,7 +286,17 @@ Reopen Eclipse → use the server → it registers fresh and prompts you to sign
 
 Cursor also caches its registration and may not re-register on `invalid_client`. Reset it by **removing the MCP server entry, restarting Cursor, then re-adding it**. With the stable signing key set (above), you only ever do this once.
 
-> **Found an easier way to recover an Eclipse or Cursor MCP login?** MCP-client behavior is still evolving — please [open an issue or PR](https://github.com/arc-mcp/arc-1/issues/new) so these docs can capture the simplest known fix.
+#### VS Code
+
+VS Code caches the DCR registration in its **own secret storage, keyed by the OAuth issuer URL** — so for `invalid_client` (a rotated signing key) **signing out, _Restart Server_, and removing or renaming the server in `mcp.json` do _not_ clear it** (a sign-out drops the access token but keeps the registration; the issuer URL never changes). Clear the registration itself:
+
+1. Command Palette (`Ctrl`/`Cmd`+`Shift`+`P`) → **"Authentication: Remove Dynamic Authentication Providers"**.
+2. Tick the ARC-1 entry — there may be **several** stale ones; remove them all, then **OK**.
+3. **Restart Server** (the `arc-1-…` entry's actions menu) → trigger any tool → VS Code registers a fresh `client_id` and prompts you to sign in again.
+
+See [Manage MCP servers in VS Code](https://code.visualstudio.com/docs/agent-customization/mcp-servers) for the Accounts-menu auth controls; the stale-credential cleanup is tracked in [microsoft/vscode#269379](https://github.com/microsoft/vscode/issues/269379).
+
+> **Found an easier way to recover an Eclipse, VS Code, or Cursor MCP login?** MCP-client behavior is still evolving — please [open an issue or PR](https://github.com/arc-mcp/arc-1/issues/new) so these docs can capture the simplest known fix.
 
 ### Browser-based DCR clients (rare)
 
