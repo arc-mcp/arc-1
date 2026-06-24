@@ -77,6 +77,23 @@ describe('audit redaction', () => {
     }
   });
 
+  it('does not add redacted placeholders for absent payload fields', () => {
+    const redacted = redactAuditEvent({
+      timestamp: '2026-06-24T00:00:00.000Z',
+      level: 'info',
+      event: 'tool_call_end',
+      tool: 'SAPRead',
+      durationMs: 1,
+      status: 'success',
+      errorMessage: undefined,
+      resultSize: 2,
+      resultPreview: undefined,
+    } satisfies ToolCallEndEvent) as ToolCallEndEvent;
+
+    expect(redacted.errorMessage).toBeUndefined();
+    expect(redacted.resultPreview).toBeUndefined();
+  });
+
   it('attaches request context before redacting the event', async () => {
     const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     try {

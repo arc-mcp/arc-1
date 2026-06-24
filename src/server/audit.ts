@@ -268,7 +268,10 @@ function redactPayloadValue(value: unknown): string {
 
 function redactValue(key: string, value: unknown): unknown {
   if (isSensitiveKey(key)) return '[REDACTED]';
-  if (PAYLOAD_BODY_KEYS.has(key.toLowerCase())) return redactPayloadValue(value);
+  if (PAYLOAD_BODY_KEYS.has(key.toLowerCase())) {
+    if (value == null) return value;
+    return redactPayloadValue(value);
+  }
   if (Array.isArray(value)) return value.map((entry) => redactValue('', entry));
   if (value && typeof value === 'object') {
     return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, redactValue(k, v)]));
