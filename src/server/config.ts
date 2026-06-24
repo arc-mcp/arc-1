@@ -753,6 +753,12 @@ export function validateConfig(config: ServerConfig): void {
     );
   }
 
+  if (config.insecure) {
+    console.error(
+      '[warn] SAP_INSECURE=true disables SAP TLS certificate verification. Use only in isolated development, and prefer NODE_EXTRA_CA_CERTS for internal CAs.',
+    );
+  }
+
   if (config.dcrSigningSecret && !config.xsuaaAuth) {
     console.error(
       '[warn] ARC1_DCR_SIGNING_SECRET is set but SAP_XSUAA_AUTH=false — the secret is unused. Unset it to reduce attack surface, or enable XSUAA OAuth proxy mode (SAP_XSUAA_AUTH=true).',

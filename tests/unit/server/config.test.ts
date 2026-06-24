@@ -1068,6 +1068,23 @@ describe('validateConfig', () => {
     }
   });
 
+  it('warns to stderr (without throwing) when SAP TLS verification is disabled', () => {
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      expect(() =>
+        validateConfig({
+          ...DEFAULT_CONFIG,
+          insecure: true,
+        }),
+      ).not.toThrow();
+      expect(stderrSpy).toHaveBeenCalledWith(
+        expect.stringContaining('SAP_INSECURE=true disables SAP TLS certificate verification'),
+      );
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
   it('warns to stderr (without throwing) when dcrSigningSecret is set with xsuaaAuth=false', () => {
     const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     try {
