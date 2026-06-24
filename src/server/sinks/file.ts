@@ -8,13 +8,16 @@
  * All events are written regardless of level (file is the full audit trail).
  */
 
-import { appendFile } from 'node:fs/promises';
+import { appendFile, chmod } from 'node:fs/promises';
 import type { AuditEvent } from '../audit.js';
 import type { LogSink } from './types.js';
+
+const PRIVATE_FILE_MODE = 0o600;
 
 export class FileSink implements LogSink {
   private buffer: string[] = [];
   private flushTimer: ReturnType<typeof setInterval> | undefined;
+  private permissionsPromise: Promise<void> | undefined;
 
   constructor(private filePath: string) {
     // Flush buffer every 500ms to balance write frequency vs latency
@@ -44,7 +47,7 @@ export class FileSink implements LogSink {
     const lines = this.buffer.splice(0);
     const data = `${lines.join('\n')}\n`;
     // Fire-and-forget — errors go to stderr
-    appendFile(this.filePath, data, 'utf-8').catch((err) => {
+    this.appendPrivate(data).catch((err) => {
       process.stderr.write(`[FileSink] Failed to write to ${this.filePath}: ${err}\n`);
     });
   }
@@ -54,9 +57,23 @@ export class FileSink implements LogSink {
     const lines = this.buffer.splice(0);
     const data = `${lines.join('\n')}\n`;
     try {
-      await appendFile(this.filePath, data, 'utf-8');
+      await this.appendPrivate(data);
     } catch (err) {
       process.stderr.write(`[FileSink] Failed to write to ${this.filePath}: ${err}\n`);
     }
+  }
+
+  private async appendPrivate(data: string): Promise<void> {
+    await this.ensurePrivateFile();
+    await appendFile(this.filePath, data, { encoding: 'utf-8', mode: PRIVATE_FILE_MODE });
+  }
+
+  private ensurePrivateFile(): Promise<void> {
+    if (!this.permissionsPromise) {
+      this.permissionsPromise = appendFile(this.filePath, '', { encoding: 'utf-8', mode: PRIVATE_FILE_MODE }).then(
+        () => chmod(this.filePath, PRIVATE_FILE_MODE),
+      );
+    }
+    return this.permissionsPromise;
   }
 }

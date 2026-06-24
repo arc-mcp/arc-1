@@ -18,6 +18,10 @@ function makeNode(id: string, pkg = '$TMP'): CacheNode {
   };
 }
 
+function fileMode(filePath: string): number {
+  return fs.statSync(filePath).mode & 0o777;
+}
+
 describe('SqliteCache', () => {
   let cache: SqliteCache;
 
@@ -40,6 +44,34 @@ describe('SqliteCache', () => {
 
   it('returns null for missing node', () => {
     expect(cache.getNode('MISSING')).toBeNull();
+  });
+
+  it('creates file-backed cache databases with private file permissions', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'arc1-cache-mode-'));
+    const dbPath = path.join(dir, 'cache.db');
+    const fileCache = new SqliteCache(dbPath);
+
+    try {
+      expect(fileMode(dbPath)).toBe(0o600);
+    } finally {
+      fileCache.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('repairs permissive permissions on an existing cache database', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'arc1-cache-mode-'));
+    const dbPath = path.join(dir, 'cache.db');
+    fs.writeFileSync(dbPath, '', { mode: 0o666 });
+    fs.chmodSync(dbPath, 0o666);
+
+    const fileCache = new SqliteCache(dbPath);
+    try {
+      expect(fileMode(dbPath)).toBe(0o600);
+    } finally {
+      fileCache.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('finds nodes by package (case-insensitive)', () => {

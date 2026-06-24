@@ -265,7 +265,7 @@ ARC-1 caches SAP source/metadata with ETag revalidation on every hit. See [cachi
 | `--cache-warmup-packages` | `ARC1_CACHE_WARMUP_PACKAGES` | (empty = all custom) | Comma-separated package filter for warmup (e.g. `Z*,Y*,/COMPANY/*`). Empty matches all custom packages found in TADIR. Ignored when `ARC1_CACHE_WARMUP=false`. |
 
 !!! warning "`ARC1_CACHE=sqlite` stores SAP source in cleartext at rest"
-    The SQLite cache holds full ABAP source unencrypted at `.arc1-cache.db`, created with default file permissions. For IP-sensitive landscapes use `ARC1_CACHE=memory` or `none`, or place the file on an encrypted volume with restricted permissions. The file audit sink (`ARC1_LOG_FILE`) similarly contains un-redacted source/error snippets.
+    The SQLite cache holds full ABAP source unencrypted at `.arc1-cache.db`. ARC-1 creates and repairs the cache DB and file audit sink (`ARC1_LOG_FILE`) with owner-only file permissions (`0600`), but this is not encryption. For IP-sensitive landscapes use `ARC1_CACHE=memory` or `none`, or place persistent files on an encrypted volume with restricted access.
 
 ---
 

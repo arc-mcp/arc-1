@@ -534,10 +534,11 @@ when a new `ghcr.io/arc-mcp/arc-1` image tag is published.
    Cloud Connector path; flip them to `"false"` on CA-signed landscapes.
 
 7. **The SQLite cache stores SAP source in cleartext.** In HTTP mode the cache
-   defaults to `sqlite` at `.arc1-cache.db` (full ABAP source, unencrypted, default
-   file perms), and a mounted volume persists it. For IP-sensitive landscapes set
-   `ARC1_CACHE=memory` or `none`, or use an encrypted volume. The file audit sink
-   (`ARC1_LOG_FILE`) likewise contains un-redacted source/error snippets.
+   defaults to `sqlite` at `.arc1-cache.db` (full ABAP source, unencrypted), and a
+   mounted volume persists it. ARC-1 creates and repairs cache DB and file audit
+   sink files with owner-only permissions (`0600`), but this is not encryption. For
+   IP-sensitive landscapes set `ARC1_CACHE=memory` or `none`, or use an encrypted
+   volume.
 
 ---
 

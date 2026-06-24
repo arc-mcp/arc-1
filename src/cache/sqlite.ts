@@ -8,6 +8,7 @@
  * alternatives for single-process use (no Promise overhead).
  */
 
+import { chmodSync, closeSync, openSync } from 'node:fs';
 import Database from 'better-sqlite3';
 import type {
   Cache,
@@ -26,6 +27,7 @@ export class SqliteCache implements Cache {
   private db: Database.Database;
 
   constructor(dbPath: string) {
+    ensurePrivateSqliteFile(dbPath);
     this.db = new Database(dbPath);
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('synchronous = NORMAL');
@@ -349,6 +351,15 @@ export class SqliteCache implements Cache {
   close(): void {
     this.db.close();
   }
+}
+
+const PRIVATE_FILE_MODE = 0o600;
+
+function ensurePrivateSqliteFile(dbPath: string): void {
+  if (dbPath === ':memory:') return;
+  const fd = openSync(dbPath, 'a', PRIVATE_FILE_MODE);
+  closeSync(fd);
+  chmodSync(dbPath, PRIVATE_FILE_MODE);
 }
 
 function rowToNode(row: Record<string, unknown>): CacheNode {

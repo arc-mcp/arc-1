@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, unlinkSync } from 'node:fs';
+import { chmodSync, existsSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -25,6 +25,8 @@ describe('FileSink', () => {
       ...overrides,
     }) as AuditEvent;
 
+  const fileMode = () => statSync(tmpFile).mode & 0o777;
+
   it('writes JSON lines to file', async () => {
     const sink = new FileSink(tmpFile);
     sink.write(makeEvent());
@@ -41,6 +43,25 @@ describe('FileSink', () => {
 
     const second = JSON.parse(lines[1]!);
     expect(second.requestId).toBe('REQ-2');
+  });
+
+  it('creates the audit log with private file permissions', async () => {
+    const sink = new FileSink(tmpFile);
+    sink.write(makeEvent());
+    await sink.flush();
+
+    expect(fileMode()).toBe(0o600);
+  });
+
+  it('repairs permissive permissions on an existing audit log', async () => {
+    writeFileSync(tmpFile, '', { mode: 0o666 });
+    chmodSync(tmpFile, 0o666);
+
+    const sink = new FileSink(tmpFile);
+    sink.write(makeEvent());
+    await sink.flush();
+
+    expect(fileMode()).toBe(0o600);
   });
 
   it('writes all event types', async () => {
