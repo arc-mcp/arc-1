@@ -28,7 +28,7 @@ applications:
       SAP_URL: "http://a4h-abap:50000"
       SAP_CLIENT: "001"
       SAP_LANGUAGE: "EN"
-      SAP_INSECURE: "true"
+      SAP_INSECURE: "false"
       # System type (auto-detects, or set explicitly)
       SAP_SYSTEM_TYPE: "auto"
       # MCP transport (CF sets PORT env var automatically)

@@ -219,7 +219,7 @@ merged yet at time of writing.
 - **Operator caveats added (MkDocs admonitions), mitigating these register items at the operator
   level (the code fix remains open):**
   - **R6** — `SAP_PP_STRICT` privilege-escalation/audit-misattribution danger (PP docs, deployment, BTP CF).
-  - **R7 (TLS half)** — `SAP_INSECURE` disables TLS with no warning and ships `"true"` in the manifests.
+  - **R7 (TLS half)** — `SAP_INSECURE` disables TLS with no warning; at review time the manifests shipped `"true"`.
   - **R13** — PP per-user token isolation depends on `user_id`/`user_uuid` (OIDC/Entra caveat).
   - **R15** — `ARC1_CACHE=sqlite` stores SAP source cleartext at rest.
   - **R16** — BTP service key is a full credential; `.gitignore` doesn't match `*service-key*.json`.

@@ -56,8 +56,8 @@ The bare minimum needed to reach a SAP system. None of these affect what tool ca
 
 ARC-1 uses [undici](https://github.com/nodejs/undici) for all SAP HTTP. It respects standard `HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY` env vars. For custom CA certificates, set `NODE_EXTRA_CA_CERTS=/path/to/ca.pem` (read by Node, not by ARC-1 directly). For Docker mounts of CA bundles, see [docker.md](docker.md#self-signed-or-internal-ca-certificates).
 
-!!! danger "`SAP_INSECURE` has no startup warning, and the repo's manifests ship it `\"true\"`"
-    `SAP_INSECURE=true` disables all SAP TLS verification — it accepts *any* certificate (masking man-in-the-middle), not just self-signed ones, and ARC-1 logs nothing when it is on. The bundled `manifest.yml` / `mta.yaml` set it `"true"` for the on-prem HTTP Cloud Connector path; set it `"false"` on CA-signed landscapes and use `NODE_EXTRA_CA_CERTS` for an internal CA instead.
+!!! danger "Avoid `SAP_INSECURE=true` outside isolated development"
+    `SAP_INSECURE=true` disables all SAP TLS verification — it accepts *any* certificate (masking man-in-the-middle), not just self-signed ones, and ARC-1 logs nothing when it is on. The bundled `manifest.yml` / `mta.yaml` keep it `"false"`; use `NODE_EXTRA_CA_CERTS` for an internal CA instead of disabling verification.
 
 ---
 

@@ -184,7 +184,7 @@ For any deployment visible to a network, before you open the gate:
 - [ ] `SAP_ALLOW_GIT_WRITES=false` unless you need gCTS/abapGit writes (reads are always allowed when the backends are available)
 - [ ] `SAP_PP_STRICT=true` if principal propagation is on — otherwise a PP failure silently runs as the shared service account (wrong identity + wrong SAP audit)
 - [ ] `ARC1_RATE_LIMIT` set (e.g. `60`) for multi-user instances — the per-user MCP quota is **off by default**, so one runaway agent loop can saturate the shared SAP request semaphore
-- [ ] `SAP_INSECURE=false` (the default) — the bundled `manifest.yml` / `mta.yaml` ship `"true"` for the Cloud Connector path; flip it on CA-signed landscapes
+- [ ] `SAP_INSECURE=false` (the default) — the bundled `manifest.yml` / `mta.yaml` ship `"false"`; keep it that way on CA-signed landscapes
 - [ ] If using cookies: `SAP_PP_ENABLED=true` and cookies both set? → refuses unless `SAP_PP_ALLOW_SHARED_COOKIES=true` escape hatch is explicit
 - [ ] Audit log sink configured (file or BTP Audit Log Service) — note the file/BTP sinks contain un-redacted SAP source/error snippets, so restrict their permissions and rotation
 - [ ] `ARC1_CACHE=memory`/`none` or an encrypted volume on IP-sensitive landscapes — the SQLite cache stores SAP source in cleartext at `.arc1-cache.db`
