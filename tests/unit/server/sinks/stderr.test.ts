@@ -57,19 +57,8 @@ describe('StderrSink', () => {
     expect(stderrSpy).toHaveBeenCalled();
   });
 
-  it('redacts sensitive fields', () => {
-    const sink = new StderrSink('json', 'info');
-    sink.write(
-      makeEvent({
-        args: { password: 'secret', token: 'abc', name: 'visible' },
-      } as Partial<AuditEvent>),
-    );
-    const output = stderrSpy.mock.calls[0]?.[0] as string;
-    const parsed = JSON.parse(output);
-    expect(parsed.args.password).toBe('[REDACTED]');
-    expect(parsed.args.token).toBe('[REDACTED]');
-    expect(parsed.args.name).toBe('visible');
-  });
+  // Redaction is now centralized in Logger.emitAudit (covered by audit-redaction.test.ts),
+  // so StderrSink no longer self-redacts — it writes whatever the logger already sanitized.
 
   it('shows debug messages when min level is debug', () => {
     const sink = new StderrSink('text', 'debug');
