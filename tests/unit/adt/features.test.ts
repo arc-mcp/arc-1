@@ -497,8 +497,7 @@ describe('Feature Detection', () => {
     });
 
     it('probes the ui5 filestore via the /objects collection, not the handler-less bare node', async () => {
-      // Regression: the bare /sap/bc/adt/filestore/ui5-bsp node has no ADT handler and 404s on
-      // every release, which false-disabled BSP reads on the long-running server. Probe /objects.
+      // Regression: the bare node 404s (no handler) → false-disabled BSP. Probe /objects.
       const client = mockProbeClient();
       await probeFeatures(client, defaultConfig);
       const urls = ((client as any).get.mock.calls as Array<[string]>).map((c) => c[0]);
