@@ -184,7 +184,13 @@ export async function handleSAPGit(
     case 'pull':
       if (!repoId) return errorResult('SAPGit(action="pull") requires repoId.');
       if (backend === 'gcts') {
-        result = await gctsPullRepo(client.http, client.safety, repoId, String(args.commit ?? '').trim() || undefined);
+        result = await gctsPullRepo(
+          client.http,
+          client.safety,
+          repoId,
+          String(args.commit ?? '').trim() || undefined,
+          client.getPackageHierarchyResolver(),
+        );
       } else {
         // R9: a pull deserializes remote content into the repo's server-bound package, which is
         // NOT the caller-supplied `package` (abapGit ignores that for an existing repo). Gate the
@@ -227,11 +233,17 @@ export async function handleSAPGit(
     }
     case 'commit':
       if (!repoId) return errorResult('SAPGit(action="commit") requires repoId.');
-      result = await gctsCommitRepo(client.http, client.safety, repoId, {
-        message: String(args.message ?? '').trim() || undefined,
-        description: String(args.description ?? '').trim() || undefined,
-        objects: Array.isArray(args.objects) ? (args.objects as Array<{ type?: string; name?: string }>) : undefined,
-      });
+      result = await gctsCommitRepo(
+        client.http,
+        client.safety,
+        repoId,
+        {
+          message: String(args.message ?? '').trim() || undefined,
+          description: String(args.description ?? '').trim() || undefined,
+          objects: Array.isArray(args.objects) ? (args.objects as Array<{ type?: string; name?: string }>) : undefined,
+        },
+        client.getPackageHierarchyResolver(),
+      );
       break;
     case 'switch_branch':
       if (!repoId || !branch) return errorResult('SAPGit(action="switch_branch") requires repoId and branch.');

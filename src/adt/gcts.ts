@@ -105,6 +105,33 @@ function withRepoCredentials(payload: Record<string, unknown>, user?: string, pa
   };
 }
 
+function repoPackage(repo: GctsRepo): string | undefined {
+  return typeof repo.package === 'string' && repo.package.trim() ? repo.package.trim() : undefined;
+}
+
+function findRepoById(repos: GctsRepo[], repoId: string): GctsRepo | undefined {
+  return repos.find((repo) => repo.rid === repoId || repo.name === repoId);
+}
+
+async function enforceExistingRepoPackage(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  repoId: string,
+  operation: string,
+  resolver?: PackageHierarchyResolver | null,
+): Promise<void> {
+  if (safety.allowedPackages.length === 0) return;
+
+  const repo = findRepoById(await listRepos(http, safety), repoId);
+  const pkg = repo ? repoPackage(repo) : undefined;
+  if (!pkg) {
+    throw new AdtSafetyError(
+      `${operation} could not resolve package for gCTS repository '${repoId}'; refusing to mutate because allowedPackages is configured.`,
+    );
+  }
+  await checkPackage(safety, pkg, resolver);
+}
+
 /** gCTS system status (/system). */
 export async function getSystemInfo(http: AdtHttpClient, safety: SafetyConfig): Promise<GctsSystemInfo> {
   checkOperation(safety, OperationType.Read, 'GctsGetSystemInfo');
@@ -208,9 +235,11 @@ export async function pullRepo(
   safety: SafetyConfig,
   repoId: string,
   commit?: string,
+  resolver?: PackageHierarchyResolver | null,
 ): Promise<Record<string, unknown>> {
   checkOperation(safety, OperationType.Update, 'GctsPullRepo');
   checkGit(safety, 'pull');
+  await enforceExistingRepoPackage(http, safety, repoId, 'GctsPullRepo', resolver);
 
   const path = `${GCTS_BASE}/repository/${encodeURIComponent(repoId)}/pullByCommit`;
   const resp = await requestGcts(path, () =>
@@ -230,9 +259,11 @@ export async function commitRepo(
   safety: SafetyConfig,
   repoId: string,
   params: GctsCommitParams,
+  resolver?: PackageHierarchyResolver | null,
 ): Promise<Record<string, unknown>> {
   checkOperation(safety, OperationType.Update, 'GctsCommitRepo');
   checkGit(safety, 'commit');
+  await enforceExistingRepoPackage(http, safety, repoId, 'GctsCommitRepo', resolver);
 
   const path = `${GCTS_BASE}/repository/${encodeURIComponent(repoId)}/commit`;
   const body = JSON.stringify({

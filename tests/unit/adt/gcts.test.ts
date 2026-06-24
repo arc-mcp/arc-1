@@ -147,6 +147,56 @@ describe('gCTS client helpers', () => {
     );
   });
 
+  it('pullRepo enforces existing repository package allowlist before posting', async () => {
+    const http = mockHttp(loadFixture('gcts-repository.json'));
+    const safety = { ...gitSafety, allowedPackages: ['$TMP'] };
+
+    await expect(pullRepo(http, safety, 'ZARC1')).rejects.toThrow(AdtSafetyError);
+    expect(http.get).toHaveBeenCalledWith(
+      '/sap/bc/cts_abapvcs/repository',
+      expect.objectContaining({ Accept: 'application/json' }),
+    );
+    expect(http.post).not.toHaveBeenCalled();
+  });
+
+  it('pullRepo allows existing repository package that matches the allowlist', async () => {
+    const http = mockHttp(loadFixture('gcts-repository.json'));
+    const safety = { ...gitSafety, allowedPackages: ['ZARC1'] };
+
+    await expect(pullRepo(http, safety, 'ZARC1')).resolves.toBeDefined();
+    expect(http.post).toHaveBeenCalledTimes(1);
+    expect((http.post as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]).toContain(
+      '/sap/bc/cts_abapvcs/repository/ZARC1/pullByCommit',
+    );
+  });
+
+  it('pullRepo fails closed when repository package metadata is unavailable', async () => {
+    const http = mockHttp('{"result":[{"rid":"ZARC1","name":"ZARC1"}]}');
+    const safety = { ...gitSafety, allowedPackages: ['ZARC1'] };
+
+    await expect(pullRepo(http, safety, 'ZARC1')).rejects.toThrow(/could not resolve package/);
+    expect(http.post).not.toHaveBeenCalled();
+  });
+
+  it('commitRepo enforces existing repository package allowlist before posting', async () => {
+    const http = mockHttp(loadFixture('gcts-repository.json'));
+    const safety = { ...gitSafety, allowedPackages: ['$TMP'] };
+
+    await expect(commitRepo(http, safety, 'ZARC1', { message: 'test' })).rejects.toThrow(AdtSafetyError);
+    expect(http.post).not.toHaveBeenCalled();
+  });
+
+  it('commitRepo allows existing repository package that matches the allowlist', async () => {
+    const http = mockHttp(loadFixture('gcts-repository.json'));
+    const safety = { ...gitSafety, allowedPackages: ['ZARC1'] };
+
+    await expect(commitRepo(http, safety, 'ZARC1', { message: 'test' })).resolves.toBeDefined();
+    expect(http.post).toHaveBeenCalledTimes(1);
+    expect((http.post as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]).toContain(
+      '/sap/bc/cts_abapvcs/repository/ZARC1/commit',
+    );
+  });
+
   it('pullRepo surfaces 200/log ERROR payload as AdtApiError', async () => {
     const http = mockHttp(loadFixture('gcts-log-error.json'));
     await expect(pullRepo(http, gitSafety, 'ZARC1')).rejects.toThrow(AdtApiError);
