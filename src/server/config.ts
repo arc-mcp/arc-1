@@ -525,7 +525,19 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
 
   // ── Principal Propagation ──────────────────────────────────────────
   config.ppEnabled = resolveBool('pp-enabled', 'SAP_PP_ENABLED', false, 'ppEnabled');
-  config.ppStrict = resolveBool('pp-strict', 'SAP_PP_STRICT', false, 'ppStrict');
+  const ppStrictFlag = getFlag('pp-strict');
+  if (ppStrictFlag !== undefined) {
+    config.ppStrict = ppStrictFlag === 'true' || ppStrictFlag === '1';
+    sources.ppStrict = { flag: '--pp-strict' };
+  } else if (process.env.SAP_PP_STRICT !== undefined) {
+    config.ppStrict = process.env.SAP_PP_STRICT === 'true' || process.env.SAP_PP_STRICT === '1';
+    sources.ppStrict = { env: 'SAP_PP_STRICT' };
+  } else {
+    // Principal propagation should fail closed by default. Operators who need
+    // mixed PP/API-key fallback must opt into the shared-client path explicitly.
+    config.ppStrict = config.ppEnabled;
+    sources.ppStrict = 'default';
+  }
   config.ppAllowSharedCookies = resolveBool(
     'pp-allow-shared-cookies',
     'SAP_PP_ALLOW_SHARED_COOKIES',

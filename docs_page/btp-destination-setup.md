@@ -38,7 +38,7 @@ This works for:
 - Direct network access to SAP (no Cloud Connector needed)
 - Testing and demos
 
-**Important:** With `SAP_PP_STRICT=false` (default) hardcoded credentials or the destination's service account act as a fallback when PP fails. Set `SAP_PP_STRICT=true` to disable fallback and surface PP failures as errors. Per-user sessions never inherit shared Basic/cookie credentials — cookies combined with `SAP_PP_ENABLED=true` fail fast at startup unless the `SAP_PP_ALLOW_SHARED_COOKIES=true` escape hatch is set (SEC-09). See [Coexistence Matrix](enterprise-auth.md#coexistence-matrix).
+**Important:** With `SAP_PP_ENABLED=true`, ARC-1 fails closed by default when per-user PP fails. Setting `SAP_PP_STRICT=false` explicitly restores the hardcoded-credential or destination-service-account fallback. Per-user sessions never inherit shared Basic/cookie credentials — cookies combined with `SAP_PP_ENABLED=true` fail fast at startup unless the `SAP_PP_ALLOW_SHARED_COOKIES=true` escape hatch is set (SEC-09). See [Coexistence Matrix](enterprise-auth.md#coexistence-matrix).
 
 ---
 
@@ -340,14 +340,15 @@ env:
 
 When `SAP_PP_ENABLED=true`:
 - If the user has a valid JWT (XSUAA/OIDC, 3 dot-separated parts) → per-user ADT client via `SAP_BTP_PP_DESTINATION`
-- If PP fails (destination error, missing user mapping, etc.) → falls back to shared service account via `SAP_BTP_DESTINATION`
+- If PP fails (destination error, missing user mapping, etc.) → returns an error by default
+- If PP fails and `SAP_PP_STRICT=false` is set explicitly → falls back to shared service account via `SAP_BTP_DESTINATION`
 - If no JWT available (API key auth, stdio) → uses shared service account
 - API key tokens are detected as non-JWT and skip PP entirely (no wasted API calls)
 
-This means you can enable PP without breaking existing API key users.
+This means you can enable PP without breaking existing API key users while still failing closed for JWT requests whose per-user session cannot be created.
 
-!!! danger "The PP fallback is a privilege-escalation path — set `SAP_PP_STRICT=true` in production"
-    With `SAP_PP_STRICT=false` (default), any PP failure silently routes the call through the shared service account in `SAP_BTP_DESTINATION`. The action then executes with the technical user's authorizations and is audited in SAP as that technical user, not the real caller — so an attacker who can force PP failure escalates to the shared account. Keep the fallback only for deployments that intentionally mix API-key and per-user access; for a pure per-user instance set `SAP_PP_STRICT=true`.
+!!! warning "The PP fallback is a privilege-escalation path"
+    `SAP_PP_STRICT=false` routes PP failures through the shared service account in `SAP_BTP_DESTINATION`. The action then executes with the technical user's authorizations and is audited in SAP as that technical user, not the real caller. Keep this setting only for deployments that intentionally mix API-key and per-user access.
 
 ### How ARC-1 Resolves PP Destinations
 

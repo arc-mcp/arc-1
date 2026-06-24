@@ -436,8 +436,8 @@ export SAP_PP_ENABLED=true
 **How it works:** ARC-1 passes the user's JWT to BTP Destination Service, which resolves the per-user destination. For on-premise SAP, Cloud Connector propagates the user identity via client certificate and SAP maps that certificate to a SAP user via CERTRULE / VUSREXTID. For BTP ABAP Environment, the destination exchanges the user token for an ABAP bearer token.
 
 **Fallback behavior:**
-- `SAP_PP_STRICT=false` (default): falls back to shared destination on PP failure
-- `SAP_PP_STRICT=true`: returns error on PP failure, no fallback
+- Default when `SAP_PP_ENABLED=true`: returns error on PP failure, no shared-client fallback
+- Explicit `SAP_PP_STRICT=false`: falls back to shared destination on PP failure
 
 See [Principal Propagation Setup](principal-propagation-setup.md) for the on-premise Cloud Connector setup, or [BTP ABAP Environment](btp-abap-environment.md#recommended-btp-deployment-with-a-per-user-destination) for the cloud-to-cloud `OAuth2UserTokenExchange` setup.
 

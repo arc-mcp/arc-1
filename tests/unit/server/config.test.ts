@@ -102,6 +102,28 @@ describe('parseArgs', () => {
     expect(config.allowGitWrites).toBe(true);
   });
 
+  it('defaults ppStrict to true when principal propagation is enabled', () => {
+    process.env.SAP_PP_ENABLED = 'true';
+    const config = parseArgs([]);
+    expect(config.ppEnabled).toBe(true);
+    expect(config.ppStrict).toBe(true);
+  });
+
+  it('allows explicit shared-client PP fallback with SAP_PP_STRICT=false', () => {
+    process.env.SAP_PP_ENABLED = 'true';
+    process.env.SAP_PP_STRICT = 'false';
+    const config = parseArgs([]);
+    expect(config.ppEnabled).toBe(true);
+    expect(config.ppStrict).toBe(false);
+  });
+
+  it('--pp-strict takes precedence over SAP_PP_STRICT env var', () => {
+    process.env.SAP_PP_ENABLED = 'true';
+    process.env.SAP_PP_STRICT = 'false';
+    const config = parseArgs(['--pp-strict', 'true']);
+    expect(config.ppStrict).toBe(true);
+  });
+
   it('defaults allowGitWrites to false without explicit configuration', () => {
     const config = parseArgs([]);
     expect(config.allowGitWrites).toBe(false);
