@@ -2043,7 +2043,7 @@ The following features are tracked but not planned for near-term implementation.
 - Per-request ADT client creation in `src/server/server.ts` — `createPerUserClient()` creates a fresh ADT client for each authenticated user
 - `SAP-Connectivity-Authentication` header injection in `src/adt/http.ts` — carries SAML assertion to Cloud Connector
 - `SAP_PP_ENABLED=true` config flag — opt-in for principal propagation
-- Graceful fallback — if per-user lookup fails, falls back to shared service account
+- Fail-closed PP default — if per-user lookup fails, return an error unless `SAP_PP_STRICT=false` explicitly allows shared-service-account fallback
 - No basic auth when PP active — username/password cleared, user identity from SAML assertion only
 - 7 unit tests (5 BTP PP destination + 2 HTTP header injection)
 

@@ -124,14 +124,13 @@ MCP client (user JWT) → XSUAA validates → ARC-1 on CF
 cf set-env arc1 SAP_BTP_DESTINATION MY_SAP_DESTINATION
 cf set-env arc1 SAP_BTP_PP_DESTINATION MY_SAP_PP_DESTINATION
 cf set-env arc1 SAP_PP_ENABLED true
-cf set-env arc1 SAP_PP_STRICT true     # fail closed — don't run as the shared service account if PP fails
 cf set-env arc1 SAP_XSUAA_AUTH true
 cf set-env arc1 SAP_ALLOW_WRITES true && cf set-env arc1 SAP_ALLOW_TRANSPORT_WRITES true
 cf set-env arc1 SAP_ALLOWED_PACKAGES 'Z*'
 ```
 
-!!! warning "Set `SAP_PP_STRICT=true` for per-user deployments"
-    Without it, a principal-propagation failure silently falls back to the shared service account — the request runs with the wrong (broader) identity and SAP audits the technical user, not the human. See [Principal Propagation Setup](principal-propagation-setup.md).
+!!! warning "Principal propagation fails closed by default"
+    With `SAP_PP_ENABLED=true`, JWT principal-propagation failures return an error instead of falling back to the shared service account. Set `SAP_PP_STRICT=true` explicitly only for JWT-only deployments that should reject API-key / non-JWT calls too. See [Principal Propagation Setup](principal-propagation-setup.md).
 
 Startup summary:
 
@@ -160,7 +159,6 @@ cf create-service destination lite arc1-destination
 cf set-env arc1 SAP_SYSTEM_TYPE btp
 cf set-env arc1 SAP_XSUAA_AUTH true
 cf set-env arc1 SAP_PP_ENABLED true
-cf set-env arc1 SAP_PP_STRICT true
 cf set-env arc1 SAP_BTP_DESTINATION ABAP_PP
 ```
 
@@ -182,7 +180,7 @@ For any deployment visible to a network, before you open the gate:
 - [ ] `SAP_ALLOW_DATA_PREVIEW=false` and `SAP_ALLOW_FREE_SQL=false` unless you need them
 - [ ] `SAP_ALLOW_TRANSPORT_WRITES=false` unless you need CTS management
 - [ ] `SAP_ALLOW_GIT_WRITES=false` unless you need gCTS/abapGit writes (reads are always allowed when the backends are available)
-- [ ] `SAP_PP_STRICT=true` if principal propagation is on — otherwise a PP failure silently runs as the shared service account (wrong identity + wrong SAP audit)
+- [ ] `SAP_PP_ENABLED=true` where per-user SAP identity is required — JWT PP failures fail closed by default; add `SAP_PP_STRICT=true` only to reject API-key / non-JWT calls too
 - [ ] `ARC1_RATE_LIMIT` set (e.g. `60`) for multi-user instances — the per-user MCP quota is **off by default**, so one runaway agent loop can saturate the shared SAP request semaphore
 - [ ] `SAP_INSECURE=false` (the default) — the bundled `manifest.yml` / `mta.yaml` ship `"true"` for the Cloud Connector path; flip it on CA-signed landscapes
 - [ ] If using cookies: `SAP_PP_ENABLED=true` and cookies both set? → refuses unless `SAP_PP_ALLOW_SHARED_COOKIES=true` escape hatch is explicit

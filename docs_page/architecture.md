@@ -279,9 +279,11 @@ flowchart TD
     ServiceKey --> SAP
 ```
 
-In strict principal propagation mode (`SAP_PP_STRICT=true`), a request fails if
-ARC-1 cannot build the per-user SAP client. Without strict mode, ARC-1 can fall
-back to the shared client after logging an audit event.
+With principal propagation enabled, JWT requests fail closed by default if ARC-1
+cannot build the per-user SAP client. Set `SAP_PP_STRICT=false` explicitly only
+when a failed per-user lookup may fall back to the shared client after logging an
+audit event. Set `SAP_PP_STRICT=true` explicitly when API-key / non-JWT requests
+should be rejected too.
 
 ## Safety system
 

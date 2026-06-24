@@ -112,6 +112,8 @@ export interface ServerConfig {
   // --- Principal Propagation (per-user SAP auth) ---
   ppEnabled: boolean;
   ppStrict: boolean; // If true, PP failure = error (no fallback to shared client)
+  /** True only when SAP_PP_STRICT / --pp-strict was explicitly provided. */
+  ppStrictExplicit: boolean;
   /** Opt-in: allow shared cookie auth to coexist with PP (shared client only) */
   ppAllowSharedCookies: boolean;
 
@@ -244,6 +246,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
   btpOAuthCallbackPort: 0,
   ppEnabled: false,
   ppStrict: false,
+  ppStrictExplicit: false,
   ppAllowSharedCookies: false,
   disableSaml2: false,
   toolMode: 'standard',

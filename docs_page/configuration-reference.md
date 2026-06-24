@@ -114,7 +114,7 @@ Full reference: [btp-destination-setup.md](btp-destination-setup.md).
 | Flag | Env var | Default | Effect |
 |---|---|---|---|
 | `--pp-enabled` | `SAP_PP_ENABLED` | `false` | Enables ARC-1's per-user destination path. For on-premise SAP this resolves a `PrincipalPropagation` destination through Connectivity Service and Cloud Connector. For BTP ABAP Environment this resolves an `OAuth2UserTokenExchange` destination and uses the returned ABAP bearer token. Without it, every SAP call uses the shared technical client. |
-| `--pp-strict` | `SAP_PP_STRICT` | `true` when PP is enabled | When PP fails (token mapping missing, destination unavailable), the default is to return an error to the MCP caller — no shared-client fallback. Set explicitly to `false` only when you intentionally want fallback to the shared technical client. |
+| `--pp-strict` | `SAP_PP_STRICT` | `true` when PP is enabled | When JWT PP fails (token mapping missing, destination unavailable), the default is to return an error to the MCP caller — no shared-client fallback. Set explicitly to `false` only when you intentionally want fallback to the shared technical client. Set explicitly to `true` only when API-key / non-JWT requests should also be rejected. |
 | `--pp-allow-shared-cookies` | `SAP_PP_ALLOW_SHARED_COOKIES` | `false` | Escape hatch. Without it, setting `SAP_COOKIE_FILE`/`SAP_COOKIE_STRING` together with `SAP_PP_ENABLED=true` fails at startup (cookies belong to one user, PP wants per-user). With `true`, cookies stay on the shared client only and PP traffic runs cookie-free. |
 
 Full reference: [principal-propagation-setup.md](principal-propagation-setup.md).

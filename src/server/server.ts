@@ -683,7 +683,7 @@ export function createServer(
         }
         // Fall back to shared client (service account)
       }
-    } else if (config.ppStrict && config.ppEnabled && !isJwt) {
+    } else if (config.ppStrictExplicit && config.ppStrict && config.ppEnabled && !isJwt) {
       // Strict mode with non-JWT token (e.g., API key) — reject
       return {
         content: [

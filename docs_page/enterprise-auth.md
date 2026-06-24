@@ -436,8 +436,9 @@ export SAP_PP_ENABLED=true
 **How it works:** ARC-1 passes the user's JWT to BTP Destination Service, which resolves the per-user destination. For on-premise SAP, Cloud Connector propagates the user identity via client certificate and SAP maps that certificate to a SAP user via CERTRULE / VUSREXTID. For BTP ABAP Environment, the destination exchanges the user token for an ABAP bearer token.
 
 **Fallback behavior:**
-- Default when `SAP_PP_ENABLED=true`: returns error on PP failure, no shared-client fallback
+- Default when `SAP_PP_ENABLED=true`: JWT PP failures return an error, with no shared-client fallback
 - Explicit `SAP_PP_STRICT=false`: falls back to shared destination on PP failure
+- API-key / non-JWT requests use the shared destination unless `SAP_PP_STRICT=true` was set explicitly
 
 See [Principal Propagation Setup](principal-propagation-setup.md) for the on-premise Cloud Connector setup, or [BTP ABAP Environment](btp-abap-environment.md#recommended-btp-deployment-with-a-per-user-destination) for the cloud-to-cloud `OAuth2UserTokenExchange` setup.
 
@@ -507,7 +508,7 @@ S_ADT_RES authorization, SSO-only system needing `SAP_DISABLE_SAML=true`).
 | — | `SAP_BTP_DESTINATION` | BTP Destination name (shared, or BTP ABAP per-user destination) |
 | — | `SAP_BTP_PP_DESTINATION` | BTP PP Destination name (per-user) |
 | `--pp-enabled` | `SAP_PP_ENABLED` | Enable ARC-1's per-user destination path |
-| `--pp-strict` | `SAP_PP_STRICT` | Fail on PP errors (no fallback) |
+| `--pp-strict` | `SAP_PP_STRICT` | Fail on PP errors; explicit `true` also rejects non-JWT/API-key requests |
 | `--pp-allow-shared-cookies` | `SAP_PP_ALLOW_SHARED_COOKIES` | Allow PP + cookie auth only for shared client (advanced escape hatch) |
 | `--disable-saml` | `SAP_DISABLE_SAML` | Disable SAML redirect via `X-SAP-SAML2` + `saml2=disabled` (advanced) |
 | `--insecure` | `SAP_INSECURE` | Skip TLS verification |

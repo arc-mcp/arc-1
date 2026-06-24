@@ -120,7 +120,7 @@ Two ARC-1 capabilities can expose business data or execute ad-hoc SQL and requir
 | `SAP_ALLOW_TRANSPORT_WRITES`       | `false` unless CTS needed | Opt-in for transport mutations (`SAPTransport.create`/`release`/`delete`).                           |
 | `SAP_ALLOW_GIT_WRITES`             | `false` unless Git needed | Opt-in for abapGit/gCTS mutations (`clone`/`pull`/`push`/`commit`).                                 |
 | `SAP_DENY_ACTIONS`                 | Use for fine-grained blocks | E.g. `SAPWrite.delete,SAPManage.flp_*` — overrides scope + flag checks.                              |
-| `SAP_PP_STRICT`                    | `true` when PP is enabled | Rejects requests without user identity (no fallback to shared account).                              |
+| `SAP_PP_STRICT`                    | `true` when PP is enabled | JWT PP failures fail closed by default. Explicit `true` also rejects API-key / non-JWT requests.      |
 
 ### API-key profiles (non-BTP multi-user)
 
@@ -194,7 +194,7 @@ Scopes are assigned to BTP users via role templates and role collections in the 
 
 ### Principal Propagation
 
-When `SAP_PP_ENABLED=true`, each MCP user's JWT identity flows through to SAP via BTP Destination Service. For on-premise systems this routes through Connectivity Service + Cloud Connector principal propagation; for BTP ABAP Environment it uses a cloud-to-cloud destination such as `OAuth2UserTokenExchange`. SAP sees the real user identity for authorization checks and audit logging. Use `SAP_PP_STRICT=true` in production to reject requests without user identity.
+When `SAP_PP_ENABLED=true`, each MCP user's JWT identity flows through to SAP via BTP Destination Service. For on-premise systems this routes through Connectivity Service + Cloud Connector principal propagation; for BTP ABAP Environment it uses a cloud-to-cloud destination such as `OAuth2UserTokenExchange`. SAP sees the real user identity for authorization checks and audit logging. JWT PP failures fail closed by default. Set `SAP_PP_STRICT=true` explicitly only when production API-key / non-JWT requests should also be rejected.
 
 ### Destination Service
 

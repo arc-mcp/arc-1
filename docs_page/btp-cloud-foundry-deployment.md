@@ -276,7 +276,6 @@ applications:
       SAP_BTP_DESTINATION: "SAP_TRIAL"         # BasicAuth (startup)
       SAP_BTP_PP_DESTINATION: "SAP_TRIAL_PP"   # PrincipalPropagation (per-user)
       SAP_PP_ENABLED: "true"
-      SAP_PP_STRICT: "true"                    # fail closed — never fall back to the shared service account
       SAP_XSUAA_AUTH: "true"
       # Safety: read-only by default. Widen one flag at a time per landscape (see the note below).
       SAP_ALLOW_WRITES: "false"
@@ -357,7 +356,8 @@ curl https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com/.well-known/oaut
 # → {"authorization_endpoint":"...","token_endpoint":"...","registration_endpoint":"...",...}
 
 # Test with Bearer token from your MCP client's XSUAA login flow,
-# or use the optional ARC1_API_KEYS fallback if you configured one.
+# or use the optional ARC1_API_KEYS fallback if you configured one and did
+# not explicitly set SAP_PP_STRICT=true.
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' \
@@ -537,7 +537,6 @@ applications:
       SAP_BTP_DESTINATION: "SAP_TRIAL"
       SAP_BTP_PP_DESTINATION: "SAP_TRIAL_PP"
       SAP_PP_ENABLED: "true"
-      SAP_PP_STRICT: "true"
       SAP_XSUAA_AUTH: "true"
       # read-only by default — widen per landscape
       SAP_ALLOW_WRITES: "false"

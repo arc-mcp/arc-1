@@ -203,7 +203,6 @@ applications:
     env:
       SAP_BTP_DESTINATION: SAP_ECC_DEV
       SAP_PP_ENABLED: true
-      SAP_PP_STRICT: true
       SAP_TRANSPORT: http-streamable
       SAP_XSUAA_AUTH: true
 ```
@@ -215,7 +214,7 @@ applications:
 1. **Use `SAP_ALLOW_WRITES=false` for production systems** — prevents object, transport, and Git mutations
 2. **Use `SAP_ALLOW_FREE_SQL=false` for sensitive systems** — blocks arbitrary SQL queries
 3. **Use `SAP_ALLOWED_PACKAGES=Z*,Y*,$TMP`** — restricts write operations to custom code packages (default is `$TMP` only — local objects)
-4. **Use `ppStrict=true`** — ensures every request has a user identity (no fallback to service account)
+4. **Use `SAP_PP_ENABLED=true` for per-user deployments** — JWT principal-propagation failures fail closed by default; set `SAP_PP_STRICT=true` explicitly only when API-key / non-JWT calls must also be rejected
 5. **Deploy separate instances per system** — limits blast radius
 6. **Use XSUAA auth for deployed instances** — proper OAuth 2.0 with scopes (read/write/data/sql/transports/git/admin)
 7. **Set `SAP_SYSTEM_TYPE`** explicitly in production — ensures correct tool definitions from startup

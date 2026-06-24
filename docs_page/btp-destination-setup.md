@@ -38,7 +38,7 @@ This works for:
 - Direct network access to SAP (no Cloud Connector needed)
 - Testing and demos
 
-**Important:** With `SAP_PP_ENABLED=true`, ARC-1 fails closed by default when per-user PP fails. Setting `SAP_PP_STRICT=false` explicitly restores the hardcoded-credential or destination-service-account fallback. Per-user sessions never inherit shared Basic/cookie credentials — cookies combined with `SAP_PP_ENABLED=true` fail fast at startup unless the `SAP_PP_ALLOW_SHARED_COOKIES=true` escape hatch is set (SEC-09). See [Coexistence Matrix](enterprise-auth.md#coexistence-matrix).
+**Important:** With `SAP_PP_ENABLED=true`, ARC-1 fails closed by default when per-user PP fails. Setting `SAP_PP_STRICT=false` explicitly restores the hardcoded-credential or destination-service-account fallback for JWT PP failures. Per-user sessions never inherit shared Basic/cookie credentials — cookies combined with `SAP_PP_ENABLED=true` fail fast at startup unless the `SAP_PP_ALLOW_SHARED_COOKIES=true` escape hatch is set (SEC-09). See [Coexistence Matrix](enterprise-auth.md#coexistence-matrix).
 
 ---
 
@@ -134,7 +134,7 @@ The recommended approach uses **two destinations** — one for the shared servic
 | **Password** | `<password>` |
 | `sap-client` | `001` |
 
-This destination is resolved at startup and used as the fallback for API key auth and when PP fails.
+This destination is resolved at startup and used for API key auth, non-JWT requests, and explicit `SAP_PP_STRICT=false` fallback when JWT PP fails.
 
 **Destination 2: `SAP_TRIAL_PP` (PrincipalPropagation — per-user)**
 
@@ -320,7 +320,6 @@ Or via SAP GUI: Transaction **SMICM** → Administration → ICM → Soft Restar
 cf set-env arc1-mcp-server SAP_BTP_DESTINATION SAP_TRIAL        # BasicAuth (shared)
 cf set-env arc1-mcp-server SAP_BTP_PP_DESTINATION SAP_TRIAL_PP  # PP (per-user)
 cf set-env arc1-mcp-server SAP_PP_ENABLED true
-cf set-env arc1-mcp-server SAP_PP_STRICT true
 cf set-env arc1-mcp-server SAP_XSUAA_AUTH true
 cf restage arc1-mcp-server
 ```
@@ -332,7 +331,6 @@ env:
   SAP_BTP_DESTINATION: "SAP_TRIAL"
   SAP_BTP_PP_DESTINATION: "SAP_TRIAL_PP"
   SAP_PP_ENABLED: "true"
-  SAP_PP_STRICT: "true"
   SAP_XSUAA_AUTH: "true"
 ```
 
@@ -348,7 +346,7 @@ When `SAP_PP_ENABLED=true`:
 This means you can enable PP without breaking existing API key users while still failing closed for JWT requests whose per-user session cannot be created.
 
 !!! warning "The PP fallback is a privilege-escalation path"
-    `SAP_PP_STRICT=false` routes PP failures through the shared service account in `SAP_BTP_DESTINATION`. The action then executes with the technical user's authorizations and is audited in SAP as that technical user, not the real caller. Keep this setting only for deployments that intentionally mix API-key and per-user access.
+    `SAP_PP_STRICT=false` routes PP failures through the shared service account in `SAP_BTP_DESTINATION`. The action then executes with the technical user's authorizations and is audited in SAP as that technical user, not the real caller. Keep this setting only for deployments that intentionally allow failed per-user requests to fall back to shared-client access.
 
 ### How ARC-1 Resolves PP Destinations
 
@@ -408,7 +406,6 @@ Create an HTTP destination in BTP Cockpit or through the Destination service:
 cf set-env arc1-mcp-server SAP_SYSTEM_TYPE btp
 cf set-env arc1-mcp-server SAP_BTP_DESTINATION ABAP_PP
 cf set-env arc1-mcp-server SAP_PP_ENABLED true
-cf set-env arc1-mcp-server SAP_PP_STRICT true
 cf set-env arc1-mcp-server SAP_XSUAA_AUTH true
 cf restage arc1-mcp-server
 ```

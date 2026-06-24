@@ -183,6 +183,7 @@ describe('createServer request handlers', () => {
       ...DEFAULT_CONFIG,
       ppEnabled: true,
       ppStrict: true,
+      ppStrictExplicit: true,
     });
     const handler = requestHandler(server, CallToolRequestSchema.shape.method.value);
 
@@ -200,6 +201,31 @@ describe('createServer request handlers', () => {
 
     expect(result.isError).toBe(true);
     expect(result.content?.[0]?.text).toContain('Principal propagation requires a JWT token');
+  });
+
+  it('allows API-key calls when PP fail-closed mode is only the derived default', async () => {
+    const server = createServer({
+      ...DEFAULT_CONFIG,
+      ppEnabled: true,
+      ppStrict: true,
+      ppStrictExplicit: false,
+    });
+    const handler = requestHandler(server, CallToolRequestSchema.shape.method.value);
+
+    const result = await handler(
+      { method: 'tools/call', params: { name: 'SAPRead', arguments: {} } },
+      {
+        authInfo: {
+          token: 'plain-api-key',
+          clientId: 'api-key:admin',
+          scopes: ['admin'],
+          extra: {},
+        },
+      },
+    );
+
+    expect(result.content?.[0]?.text).not.toContain('Principal propagation requires a JWT token');
+    expect(result.content?.[0]?.text).toContain('Invalid arguments');
   });
 
   it('marks default-client cookies stale once after non-blocking cookie preflight 401', async () => {
