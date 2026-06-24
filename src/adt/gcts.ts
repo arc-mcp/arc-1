@@ -324,9 +324,13 @@ export async function switchBranch(
   safety: SafetyConfig,
   repoId: string,
   branch: string,
+  resolver?: PackageHierarchyResolver | null,
 ): Promise<Record<string, unknown>> {
   checkOperation(safety, OperationType.Update, 'GctsSwitchBranch');
   checkGit(safety, 'switch_branch');
+  // A checkout deserializes the branch's objects into the repo's server-bound package, just like a
+  // pull — gate it against the same allowlist so it cannot mutate a package outside the ceiling.
+  await enforceExistingRepoPackage(http, safety, repoId, 'GctsSwitchBranch', resolver);
 
   const path = `${GCTS_BASE}/repository/${encodeURIComponent(repoId)}/checkout/${encodeURIComponent(branch)}`;
   const resp = await requestGcts(path, () => http.post(path, JSON.stringify({}), JSON_CONTENT_TYPE, JSON_HEADERS));

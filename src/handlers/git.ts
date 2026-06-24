@@ -248,7 +248,13 @@ export async function handleSAPGit(
     case 'switch_branch':
       if (!repoId || !branch) return errorResult('SAPGit(action="switch_branch") requires repoId and branch.');
       if (backend === 'gcts') {
-        result = await gctsSwitchBranch(client.http, client.safety, repoId, branch);
+        result = await gctsSwitchBranch(
+          client.http,
+          client.safety,
+          repoId,
+          branch,
+          client.getPackageHierarchyResolver(),
+        );
       } else {
         await abapGitSwitchBranch(client.http, client.safety, repoId, branch, false);
         result = { ok: true };

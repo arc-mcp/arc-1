@@ -197,6 +197,25 @@ describe('gCTS client helpers', () => {
     );
   });
 
+  it('switchBranch enforces existing repository package allowlist before posting', async () => {
+    const http = mockHttp(loadFixture('gcts-repository.json'));
+    const safety = { ...gitSafety, allowedPackages: ['$TMP'] };
+
+    await expect(switchBranch(http, safety, 'ZARC1', 'feature')).rejects.toThrow(AdtSafetyError);
+    expect(http.post).not.toHaveBeenCalled();
+  });
+
+  it('switchBranch allows existing repository package that matches the allowlist', async () => {
+    const http = mockHttp(loadFixture('gcts-repository.json'));
+    const safety = { ...gitSafety, allowedPackages: ['ZARC1'] };
+
+    await expect(switchBranch(http, safety, 'ZARC1', 'feature')).resolves.toBeDefined();
+    expect(http.post).toHaveBeenCalledTimes(1);
+    expect((http.post as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]).toContain(
+      '/sap/bc/cts_abapvcs/repository/ZARC1/checkout/feature',
+    );
+  });
+
   it('pullRepo surfaces 200/log ERROR payload as AdtApiError', async () => {
     const http = mockHttp(loadFixture('gcts-log-error.json'));
     await expect(pullRepo(http, gitSafety, 'ZARC1')).rejects.toThrow(AdtApiError);
