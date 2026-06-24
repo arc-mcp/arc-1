@@ -52,11 +52,11 @@ export interface HttpRequestEvent extends AuditEventBase {
   statusCode: number;
   durationMs: number;
   errorBody?: string;
-  /** Full request body when ARC1_LOG_HTTP_DEBUG=true. Truncated past 65536 chars. */
+  /** Request body captured when ARC1_LOG_HTTP_DEBUG=true; redacted before sink writes. */
   requestBody?: string;
   /** Request headers with sensitive values redacted when ARC1_LOG_HTTP_DEBUG=true. */
   requestHeaders?: Record<string, string>;
-  /** Full response body when ARC1_LOG_HTTP_DEBUG=true. Truncated past 65536 chars. */
+  /** Response body captured when ARC1_LOG_HTTP_DEBUG=true; redacted before sink writes. */
   responseBody?: string;
   /** Response headers with sensitive values redacted when ARC1_LOG_HTTP_DEBUG=true. */
   responseHeaders?: Record<string, string>;

@@ -150,8 +150,8 @@ jq -s '[.[] | select(.event == "tool_call_end" and .status == "error")] | group_
 ### Bad/Wrong Tool Calls (for improving LLM feedback)
 
 ```bash
-# Tool calls with unknown types (LLM sent wrong type parameter)
-jq 'select(.event == "tool_call_end" and .status == "error" and (.errorMessage | contains("Unknown")))' arc1-audit.jsonl
+# Tool calls that returned client-visible handler errors (unknown tool/action, validation, etc.)
+jq 'select(.event == "tool_call_end" and .status == "error" and .errorClass == "result-path")' arc1-audit.jsonl
 
 # Tool calls blocked by safety (LLM tried a blocked operation)
 jq 'select(.event == "tool_call_end" and .errorClass == "AdtSafetyError")' arc1-audit.jsonl
@@ -159,8 +159,8 @@ jq 'select(.event == "tool_call_end" and .errorClass == "AdtSafetyError")' arc1-
 # Auth scope denials (LLM called a tool the user can't access)
 jq 'select(.event == "auth_scope_denied")' arc1-audit.jsonl
 
-# All error messages — useful to find patterns in LLM mistakes
-jq -s '[.[] | select(.event == "tool_call_end" and .status == "error") | .errorMessage] | group_by(.) | map({message: .[0], count: length}) | sort_by(-.count)' arc1-audit.jsonl
+# Error counts by class — errorMessage content is redacted before sink writes
+jq -s '[.[] | select(.event == "tool_call_end" and .status == "error") | .errorClass] | group_by(.) | map({errorClass: .[0], count: length}) | sort_by(-.count)' arc1-audit.jsonl
 ```
 
 ### Slow Operations
@@ -194,7 +194,7 @@ jq -s '[.[] | select(.event == "http_request")] | group_by(.requestId) | map({re
 # Failed HTTP requests (4xx/5xx)
 jq 'select(.event == "http_request" and .statusCode >= 400)' arc1-audit.jsonl
 
-# HTTP requests with error bodies (SAP error messages)
+# HTTP requests with redacted error-body placeholders
 jq 'select(.event == "http_request" and .errorBody != null)' arc1-audit.jsonl
 
 # Most common ADT paths called

@@ -279,7 +279,7 @@ All ARC-1 logging goes to **stderr** to keep stdout clean for MCP JSON-RPC. Neve
 | `--log-level` | `ARC1_LOG_LEVEL` | `info` | One of `debug` / `info` / `warn` / `error`. Filters every log line, including the audit stream's structured entries. |
 | `--log-format` | `ARC1_LOG_FORMAT` | `text` | `text` (human-readable) or `json` (one JSON object per line — for shipping to ELK / Loki / CF log aggregator). |
 | `--verbose` | `SAP_VERBOSE` | `false` | Alias for `--log-level=debug`. Slightly older flag, kept for compatibility. |
-| — | `ARC1_LOG_HTTP_DEBUG` | `false` | When `"true"`, attaches the full HTTP request and response bodies + headers to `http_request` audit events. Sensitive headers (`Authorization`, `Cookie`, CSRF tokens) are redacted; bodies are truncated at 64 KB. **Do not enable in production** — increases log volume substantially and can leak business data in payloads. **Boolean parsing inconsistency:** unlike other booleans, this one accepts only the literal string `"true"` — `"1"` does **not** work. |
+| — | `ARC1_LOG_HTTP_DEBUG` | `false` | When `"true"`, captures HTTP request/response body fields and headers on `http_request` audit events. Sensitive headers (`Authorization`, `Cookie`, CSRF tokens) are redacted immediately; payload bodies are length-capped and centrally redacted before sink writes. **Do not enable in production** — it still increases log volume and records payload-size/timing metadata. **Boolean parsing inconsistency:** unlike other booleans, this one accepts only the literal string `"true"` — `"1"` does **not** work. |
 
 ---
 
