@@ -291,7 +291,8 @@ When ARC-1 runs with `--transport http-streamable`, the default bind address is 
 
 - Always place ARC-1 behind a TLS-terminating reverse proxy or load balancer.
 - Restrict network access using firewall rules, security groups, or VPN.
-- Without `--api-keys`, `--oidc-issuer`, or `--xsuaa-auth`, the HTTP endpoint is open to anyone who can reach the port.
+- ARC-1 refuses to start HTTP transport without `--api-keys`, `--oidc-issuer`, or `--xsuaa-auth`
+  unless `ARC1_ALLOW_HTTP_NO_AUTH=true` / `--allow-http-no-auth true` is set explicitly for local/dev use.
 
 ### HTTP Security Headers (helmet)
 

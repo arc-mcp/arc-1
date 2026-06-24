@@ -481,6 +481,7 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     config.oidcClockTolerance = Number.isNaN(parsed) ? undefined : parsed;
   }
   config.xsuaaAuth = resolveBool('xsuaa-auth', 'SAP_XSUAA_AUTH', false, 'xsuaaAuth');
+  config.allowHttpNoAuth = resolveBool('allow-http-no-auth', 'ARC1_ALLOW_HTTP_NO_AUTH', false, 'allowHttpNoAuth');
 
   // OAuth DCR client_id lifetime. Default: 30 days (matches typical
   // refresh-token lifetimes). Positive values are clamped to [60s, 90d] so
@@ -696,6 +697,14 @@ export function validateConfig(config: ServerConfig): void {
   if (config.ppStrict && !config.ppEnabled) {
     throw new Error(
       'SAP_PP_STRICT=true requires SAP_PP_ENABLED=true — strict mode has no effect without principal propagation enabled',
+    );
+  }
+
+  const hasHttpAuth = !!(config.apiKeys?.length || config.oidcIssuer || config.xsuaaAuth);
+  if (config.transport === 'http-streamable' && !hasHttpAuth && !config.allowHttpNoAuth) {
+    throw new Error(
+      'HTTP transport requires ARC-1 authentication. Set ARC1_API_KEYS, SAP_OIDC_ISSUER/SAP_OIDC_AUDIENCE, or SAP_XSUAA_AUTH=true. ' +
+        'For local/dev-only unauthenticated HTTP, set ARC1_ALLOW_HTTP_NO_AUTH=true explicitly.',
     );
   }
 

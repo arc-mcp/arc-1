@@ -113,9 +113,16 @@ describe('parseArgs', () => {
     expect(config.allowGitWrites).toBe(true);
   });
 
-  it('parses transport type', () => {
-    const config = parseArgs(['--transport', 'http-streamable']);
+  it('parses transport type with explicit no-auth opt-in', () => {
+    const config = parseArgs(['--transport', 'http-streamable', '--allow-http-no-auth', 'true']);
     expect(config.transport).toBe('http-streamable');
+    expect(config.allowHttpNoAuth).toBe(true);
+  });
+
+  it('parses ARC1_ALLOW_HTTP_NO_AUTH env var', () => {
+    process.env.ARC1_ALLOW_HTTP_NO_AUTH = 'true';
+    const config = parseArgs(['--transport', 'http-streamable']);
+    expect(config.allowHttpNoAuth).toBe(true);
   });
 
   it('defaults unknown transport to stdio', () => {
@@ -230,7 +237,7 @@ describe('parseArgs', () => {
   });
 
   it('rejects web UI mode without HTTP authentication', () => {
-    expect(() => parseArgs(['--transport', 'http-streamable', '--ui', 'web'])).toThrow(
+    expect(() => parseArgs(['--transport', 'http-streamable', '--allow-http-no-auth', 'true', '--ui', 'web'])).toThrow(
       /ARC1_UI=web requires HTTP authentication/,
     );
   });
@@ -1089,12 +1096,42 @@ describe('validateConfig', () => {
     expect(() => validateConfig({ ...DEFAULT_CONFIG, client: '' })).not.toThrow();
   });
 
+  it('throws when HTTP transport has no authentication and no explicit unsafe opt-in', () => {
+    expect(() =>
+      validateConfig({
+        ...DEFAULT_CONFIG,
+        transport: 'http-streamable',
+      }),
+    ).toThrow('HTTP transport requires ARC-1 authentication');
+  });
+
+  it('accepts HTTP transport without authentication only with explicit unsafe opt-in', () => {
+    expect(() =>
+      validateConfig({
+        ...DEFAULT_CONFIG,
+        transport: 'http-streamable',
+        allowHttpNoAuth: true,
+      }),
+    ).not.toThrow();
+  });
+
+  it('accepts HTTP transport with API key authentication', () => {
+    expect(() =>
+      validateConfig({
+        ...DEFAULT_CONFIG,
+        transport: 'http-streamable',
+        apiKeys: [{ key: 'viewer-secret', profile: 'viewer' }],
+      }),
+    ).not.toThrow();
+  });
+
   it('throws when web UI is enabled without HTTP auth', () => {
     expect(() =>
       validateConfig({
         ...DEFAULT_CONFIG,
         transport: 'http-streamable',
         uiMode: 'web',
+        allowHttpNoAuth: true,
       }),
     ).toThrow('ARC1_UI=web requires HTTP authentication');
   });

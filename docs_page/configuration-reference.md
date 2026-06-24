@@ -140,6 +140,7 @@ Set nothing. Stdio only. Anyone who can pipe stdin to the process is "authentica
 | Flag | Env var | Effect |
 |---|---|---|
 | `--api-keys` | `ARC1_API_KEYS` | Comma-separated `key:profile` pairs. Each profile maps to a scope set (read/write/data/sql/transports/git/admin) **and** a partial SafetyConfig intersected with the server ceiling. Valid profiles: `viewer`, `viewer-data`, `viewer-sql`, `developer`, `developer-data`, `developer-sql`, `admin`. Caller sends `Authorization: Bearer <key>` (or `X-API-Key: <key>`); ARC-1 looks the key up and applies that profile's scopes for the request. |
+| `--allow-http-no-auth` | `ARC1_ALLOW_HTTP_NO_AUTH` | Unsafe local/dev escape hatch. HTTP transport refuses to start without API key, OIDC, or XSUAA auth unless this is explicitly `true`. Never use on a network-reachable instance. |
 
 Full reference: [api-key-setup.md](api-key-setup.md). The single-key `ARC1_API_KEY` env var was removed in v0.7 — see [updating.md](updating.md#v07-authorization-refactor-breaking-change).
 
