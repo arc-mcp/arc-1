@@ -123,7 +123,7 @@ work against the live system today.
 |---|---|
 | `src/adt/features.ts:42` | **the fix** — `ui5` probe endpoint |
 | `tests/unit/adt/features.test.ts` | add regression test: ui5 probe hits `/objects`, not the bare node |
-| `src/handlers/read.ts:673` | BSP/BSP_DEPLOY gate — now surfaces the probe's 403-vs-404 reason + remedy |
+| `src/handlers/read.ts:673` | BSP/BSP_DEPLOY gate — clearer error (403-vs-404 causes + `SAP_FEATURE_UI5[_REPO]=on` override) |
 | `src/adt/client.ts:1402–1435` | `listBspApps` / `getBspAppStructure` / `getBspFileContent` (already use `/objects`, correct) |
 
 Adjacent, verified correct — no change: `xml-parser.ts` (`parseBspAppList`/`parseBspFolderListing`),
@@ -181,10 +181,28 @@ repo for custom extensions. (Unverified claim in that report: the program name
 
 ### Read-error UX improvement (shipped with this fix)
 
-`read.ts` BSP/BSP_DEPLOY gates now append the probe's actual reason (so a 403 auth gap reads as
-authorization, not "ICF not activated") and name the real overrides (`SAP_FEATURE_UI5=on` /
-`SAP_FEATURE_UI5REPO=on`). This turns the exact "is it auth or activation?" confusion above into a
-self-answering error.
+`read.ts` BSP/BSP_DEPLOY gate errors now name the two real causes — **403** = the ADT user lacks
+`S_ADT_RES` for the filestore (authorization, *not* ICF activation); **404** = the resource is
+genuinely absent on that release — and point to `SAPManage(action="probe")` for the exact status
+plus the `SAP_FEATURE_UI5[_REPO]=on` overrides. (Deliberately does *not* echo the probe's raw
+`message`, whose shared "ICF service not activated" text is misleading for a single-REST-node 404.)
+
+### End-to-end verification through the cached-feature gate
+
+Replicating the exact server startup (`probeFeatures` → `setCachedFeatures`) then calling
+`handleToolCall('SAPRead', …)` — i.e. the path the long-running MCP server uses, which the one-shot
+CLI skips — against a4h-2023 after the fix:
+
+```
+PROBE   ui5.available = true
+LIST    type=BSP                                  → app list (gate passes)
+TREE    type=BSP name=/UI2/USHELL                 → folder tree
+FILE    type=BSP name=/UI2/USHELL include=manifest.json → 3360 bytes of source
+SUBDIR  type=BSP name=/UI2/USHELL include=i18n    → i18n/i18n.properties
+```
+
+All four BSP operations succeed through the cached gate — confirming the probe fix is the complete
+fix for reading BSP going forward, not just a probe cosmetic.
 
 ## Open questions / follow-ups (out of scope for the fix)
 
