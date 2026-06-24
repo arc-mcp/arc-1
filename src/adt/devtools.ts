@@ -15,12 +15,14 @@ import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import type {
   CdsTestCase,
   CdsTestCasesResult,
+  CoverageSummary,
   FixAffectedObject,
   FixDelta,
   FixProposal,
   SyntaxCheckResult,
   SyntaxMessage,
   UnitTestResult,
+  UnitTestRunResult,
 } from './types.js';
 import { decodeXmlEntities, escapeXmlAttr, findDeepNodes, parseXml } from './xml-parser.js';
 
@@ -545,13 +547,14 @@ export async function runUnitTests(
   http: AdtHttpClient,
   safety: SafetyConfig,
   objectUrl: string,
-): Promise<UnitTestResult[]> {
+  opts: { coverage?: boolean } = {},
+): Promise<UnitTestRunResult> {
   checkOperation(safety, OperationType.Test, 'RunUnitTests');
 
   const body = `<?xml version="1.0" encoding="UTF-8"?>
 <aunit:runConfiguration xmlns:aunit="http://www.sap.com/adt/aunit">
   <external>
-    <coverage active="false"/>
+    <coverage active="${opts.coverage ? 'true' : 'false'}"/>
   </external>
   <options>
     <uriType value="semantic"/>
@@ -577,7 +580,51 @@ export async function runUnitTests(
     },
   );
 
-  return parseUnitTestResults(resp.body);
+  const tests = parseUnitTestResults(resp.body);
+  if (!opts.coverage) return { tests };
+
+  // Coverage is a second step: the run result references a coverage measurement, which we POST
+  // (with the same object set) to retrieve the statement/branch/procedure aggregate. Best-effort —
+  // older releases (e.g. NW 7.50) lack this endpoint; on any failure, return tests with no coverage.
+  const measurementUri = extractCoverageMeasurementUri(resp.body);
+  if (!measurementUri) return { tests };
+  try {
+    const coverageQuery = `<?xml version="1.0" encoding="UTF-8"?>
+<cov:query xmlns:cov="http://www.sap.com/adt/cov"><adtcore:objectSets xmlns:adtcore="http://www.sap.com/adt/core"><objectSet kind="inclusive"><adtcore:objectReferences><adtcore:objectReference adtcore:uri="${escapeXmlAttr(objectUrl)}"/></adtcore:objectReferences></objectSet></adtcore:objectSets></cov:query>`;
+    const measResp = await http.post(measurementUri, coverageQuery, 'application/xml', { Accept: 'application/xml' });
+    return { tests, coverage: parseCoverageMeasurement(measResp.body) };
+  } catch {
+    return { tests };
+  }
+}
+
+/** Extract the coverage-measurement URI from an abapunit testruns result run with coverage="true". */
+export function extractCoverageMeasurementUri(testrunsXml: string): string | null {
+  const parsed = parseXml(testrunsXml);
+  for (const node of findDeepNodes(parsed, 'coverage')) {
+    const uri = (node as Record<string, unknown>)['@_uri'];
+    if (typeof uri === 'string' && uri.includes('/coverage/measurements/')) return uri;
+  }
+  return null;
+}
+
+/** Parse the object-level statement/branch/procedure aggregate from a coverage-measurement response. */
+export function parseCoverageMeasurement(xml: string): CoverageSummary {
+  const parsed = parseXml(xml);
+  const firstCoverages = findDeepNodes(parsed, 'coverages')[0] as Record<string, unknown> | undefined;
+  if (!firstCoverages) return {};
+  const raw = firstCoverages.coverage;
+  const entries = (Array.isArray(raw) ? raw : raw ? [raw] : []) as Array<Record<string, unknown>>;
+  const summary: CoverageSummary = {};
+  for (const e of entries) {
+    const type = String(e['@_type'] ?? '');
+    const total = Number(e['@_total'] ?? 0);
+    const executed = Number(e['@_executed'] ?? 0);
+    if (type === 'statement' || type === 'branch' || type === 'procedure') {
+      summary[type] = { executed, total, percent: total ? Math.round((executed / total) * 10000) / 100 : 0 };
+    }
+  }
+  return summary;
 }
 
 /** Run ATC check on an object */

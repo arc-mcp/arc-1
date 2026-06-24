@@ -2558,3 +2558,38 @@ describe('ADT Integration Tests', () => {
     });
   });
 });
+
+// ─── ABAP Unit coverage (FEAT-41) ─────────────────────────────────────
+// The coverage measurement endpoint is standard ADT (verified live on 758: stmt 61% / branch 36% /
+// proc 38% for ZCL_ABAPGIT_HASH). abapGit classes carry unit tests on 758 but are absent on
+// a4h-2025/816 + NPL 7.50 → this skips cleanly there.
+describe('AUnit coverage (FEAT-41)', () => {
+  it('unittest coverage=true returns statement/branch/procedure for a class with tests', async (ctx) => {
+    requireOrSkip(ctx, process.env.TEST_SAP_URL, SkipReason.NO_CREDENTIALS);
+    const { handleToolCall } = await import('../../src/handlers/dispatch.js');
+    const config = {
+      arc1Port: 8080,
+      arc1HttpAddr: '0.0.0.0:8080',
+      toolMode: 'standard',
+    } as unknown as Parameters<typeof handleToolCall>[1];
+    const result = await handleToolCall(getTestClient(), config, 'SAPDiagnose', {
+      action: 'unittest',
+      type: 'CLAS',
+      name: 'ZCL_ABAPGIT_HASH',
+      coverage: true,
+    });
+    expect(result.isError).toBeUndefined();
+    const out = JSON.parse(result.content[0]?.text ?? '{}') as {
+      tests?: unknown[];
+      coverage?: { statement?: { total: number }; branch?: unknown; procedure?: unknown };
+    };
+    requireOrSkip(
+      ctx,
+      Array.isArray(out.tests) && out.tests.length > 0 ? true : undefined,
+      `${SkipReason.NO_FIXTURE} (no ZCL_ABAPGIT_HASH unit tests on this system)`,
+    );
+    expect(out.coverage?.statement?.total).toBeGreaterThan(0);
+    expect(out.coverage?.branch).toBeDefined();
+    expect(out.coverage?.procedure).toBeDefined();
+  }, 60_000);
+});

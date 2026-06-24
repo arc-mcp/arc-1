@@ -85,9 +85,10 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     budget: {
       // +200/+150 for SAPRead action="diff" (action/from/to params + their descriptions).
       // +350/+350/+1 for context-first KTD guidance (KTD alias + SAPContext includeKtd).
-      schemaTokenEstimate: 12_050,
-      descriptionTokenEstimate: 9_500,
-      descriptionCount: 151,
+      // +1 descriptionCount for SAPDiagnose `coverage` param (FEAT-41 AUnit coverage).
+      schemaTokenEstimate: 12_120,
+      descriptionTokenEstimate: 9_560,
+      descriptionCount: 153,
     },
   },
   {
@@ -98,9 +99,10 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     budget: {
       // schema +200 for SAPRead action="diff" (action/from/to params).
       // +400/+350 for context-first KTD guidance (KTD alias + SAPContext includeKtd).
-      schemaTokenEstimate: 20_100,
-      descriptionTokenEstimate: 15_350,
-      descriptionCount: 265,
+      // +1 descriptionCount / ~60 desc tokens for SAPDiagnose `coverage` param (FEAT-41).
+      schemaTokenEstimate: 20_180,
+      descriptionTokenEstimate: 15_420,
+      descriptionCount: 267,
     },
   },
   {
@@ -113,9 +115,10 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // action description). Keeps ~110 tokens of headroom, matching the other scenarios.
       // Further +200/+150 for SAPRead action="diff" (action/from/to params + descriptions).
       // +450/+350 for context-first KTD guidance (KTD alias + SAPContext includeKtd).
-      schemaTokenEstimate: 18_350,
-      descriptionTokenEstimate: 13_700,
-      descriptionCount: 265,
+      // +1 descriptionCount / ~60 desc tokens for SAPDiagnose `coverage` param (FEAT-41).
+      schemaTokenEstimate: 18_430,
+      descriptionTokenEstimate: 13_770,
+      descriptionCount: 267,
     },
   },
   {

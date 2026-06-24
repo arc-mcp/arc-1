@@ -717,6 +717,7 @@ export const SAPDiagnoseSchema = z.object({
   maxResults: z.coerce.number().optional(),
   sections: z.array(z.string()).optional(),
   includeFullText: looseOptionalBoolean,
+  coverage: looseOptionalBoolean,
   analysis: z.enum(['hitlist', 'statements', 'dbAccesses']).optional(),
 });
 
