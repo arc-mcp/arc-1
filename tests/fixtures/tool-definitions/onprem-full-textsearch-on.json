@@ -27,6 +27,7 @@
             "DOMA",
             "DTEL",
             "TRAN",
+            "TTYP",
             "TABLE_CONTENTS",
             "TABLE_QUERY",
             "DEVC",
@@ -292,6 +293,7 @@
             "DOMA",
             "DTEL",
             "MSAG",
+            "TTYP",
             "DESD",
             "DTSC",
             "CSNM",
@@ -430,6 +432,24 @@
             "null"
           ],
           "description": "DOMA/DTEL: ABAP data type (e.g., CHAR, NUMC, DEC)"
+        },
+        "rowType": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "TTYP create: the row type — a built-in ABAP type (STRING, I, …) or a DDIC structure/type name. Required for TTYP create."
+        },
+        "rowTypeKind": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "builtin",
+            "structure"
+          ],
+          "description": "TTYP create: row-type mode (auto-detected from rowType if omitted)."
         },
         "length": {
           "type": [
@@ -801,6 +821,7 @@
                   "DOMA",
                   "DTEL",
                   "MSAG",
+                  "TTYP",
                   "DESD",
                   "DTSC",
                   "CSNM",
@@ -848,6 +869,24 @@
                   "null"
                 ],
                 "description": "DOMA/DTEL: ABAP data type"
+              },
+              "rowType": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "TTYP: row type (built-in ABAP type or DDIC structure/type name)"
+              },
+              "rowTypeKind": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "builtin",
+                  "structure"
+                ],
+                "description": "TTYP: row-type mode"
               },
               "length": {
                 "type": [

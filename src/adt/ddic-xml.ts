@@ -5,7 +5,7 @@
  * structured XML payloads on create/update.
  */
 
-import { escapeXmlAttr } from './xml-parser.js';
+import { escapeXmlAttr, parseXml } from './xml-parser.js';
 
 export interface DomainFixedValue {
   low: string;
@@ -243,6 +243,99 @@ ${fixValuesXml}
     </doma:valueInformation>
   </doma:content>
 </doma:domain>`;
+}
+
+/** ABAP built-in types accepted as a table-type row (typeKind=predefinedAbapType). */
+const TTYP_BUILTIN_ROW_TYPES = new Set([
+  'STRING',
+  'XSTRING',
+  'I',
+  'INT8',
+  'F',
+  'P',
+  'D',
+  'T',
+  'C',
+  'N',
+  'X',
+  'B',
+  'S',
+  'DECFLOAT16',
+  'DECFLOAT34',
+]);
+
+export interface TableTypeCreateParams {
+  name: string;
+  description: string;
+  package: string;
+  /** The row type: a built-in ABAP type (STRING, I, …) or a DDIC structure/type name. */
+  rowType: string;
+  /** Defaults to "builtin" for a known ABAP type, else "structure". */
+  rowTypeKind?: 'builtin' | 'structure';
+  language?: string;
+  responsible?: string;
+}
+
+/**
+ * Build the create XML for a DDIC table type (TTYP). Live-verified on a4h 758 + 816 (201): the
+ * `<ttyp:rowType>` children are XSD-required IN ORDER — typeKind, typeName, builtInType, rangeType.
+ * Built-in row → predefinedAbapType + builtInType.dataType=<builtin>; structure row → dictionaryType +
+ * typeName=<struct> + builtInType.dataType=STRU. Standard table, non-unique standard key (advanced
+ * options not yet exposed). See research/abap-types/types/ttyp.md.
+ */
+export function buildTableTypeXml(params: TableTypeCreateParams): string {
+  const masterLanguage = normalizeAdtLanguage(params.language);
+  const responsible = normalizeAdtResponsible(params.responsible);
+  const rowType = params.rowType.trim().toUpperCase();
+  const kind = params.rowTypeKind ?? (TTYP_BUILTIN_ROW_TYPES.has(rowType) ? 'builtin' : 'structure');
+
+  const rowTypeXml =
+    kind === 'builtin'
+      ? `<ttyp:typeKind>predefinedAbapType</ttyp:typeKind><ttyp:typeName/><ttyp:builtInType><ttyp:dataType>${escapeXmlAttr(rowType)}</ttyp:dataType><ttyp:length>000000</ttyp:length><ttyp:decimals>000000</ttyp:decimals></ttyp:builtInType><ttyp:rangeType/>`
+      : `<ttyp:typeKind>dictionaryType</ttyp:typeKind><ttyp:typeName>${escapeXmlAttr(rowType)}</ttyp:typeName><ttyp:builtInType><ttyp:dataType>STRU</ttyp:dataType><ttyp:length>000000</ttyp:length><ttyp:decimals>000000</ttyp:decimals></ttyp:builtInType><ttyp:rangeType/>`;
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<ttyp:tableType xmlns:ttyp="http://www.sap.com/dictionary/tabletype"
+                xmlns:adtcore="http://www.sap.com/adt/core"
+                adtcore:description="${escapeXmlAttr(params.description)}"
+                adtcore:name="${escapeXmlAttr(params.name)}"
+                adtcore:type="TTYP/DA"
+                adtcore:masterLanguage="${masterLanguage}"
+                adtcore:responsible="${escapeXmlAttr(responsible)}">
+  <adtcore:packageRef adtcore:name="${escapeXmlAttr(params.package)}"/>
+  <ttyp:rowType>${rowTypeXml}</ttyp:rowType>
+  <ttyp:initialRowCount>00000</ttyp:initialRowCount>
+  <ttyp:accessType>standard</ttyp:accessType>
+  <ttyp:primaryKey ttyp:isVisible="true" ttyp:isEditable="true"><ttyp:definition>standard</ttyp:definition><ttyp:kind>nonUnique</ttyp:kind><ttyp:components ttyp:isVisible="false"/><ttyp:alias/></ttyp:primaryKey>
+  <ttyp:secondaryKeys ttyp:isVisible="true" ttyp:isEditable="true"><ttyp:allowed>notSpecified</ttyp:allowed></ttyp:secondaryKeys>
+</ttyp:tableType>`;
+}
+
+export interface TableTypeInfo {
+  name: string;
+  description: string;
+  rowType: string;
+  rowTypeKind: string;
+  accessType: string;
+  keyKind: string;
+}
+
+/** Parse the key fields of a table-type read response (`<ttyp:tableType>`). */
+export function parseTableType(xml: string): TableTypeInfo {
+  const parsed = parseXml(xml);
+  const tt = (parsed.tableType ?? {}) as Record<string, unknown>;
+  const rowTypeNode = (tt.rowType ?? {}) as Record<string, unknown>;
+  const builtIn = (rowTypeNode.builtInType ?? {}) as Record<string, unknown>;
+  const pk = (tt.primaryKey ?? {}) as Record<string, unknown>;
+  const typeName = String(rowTypeNode.typeName ?? '').trim();
+  return {
+    name: String(tt['@_name'] ?? ''),
+    description: String(tt['@_description'] ?? ''),
+    rowType: typeName || String(builtIn.dataType ?? ''),
+    rowTypeKind: String(rowTypeNode.typeKind ?? ''),
+    accessType: String(tt.accessType ?? ''),
+    keyKind: String(pk.kind ?? ''),
+  };
 }
 
 export interface MessageClassMessage {

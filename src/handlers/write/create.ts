@@ -391,6 +391,19 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
         }
       });
     }
+    // TTYP: the POST creates a default-typed (CHAR) shell — a follow-up PUT writes the real row type.
+    if (type === 'TTYP') {
+      const ct = vendorContentTypeForType(type);
+      await client.http.withStatefulSession(async (session) => {
+        const lock = await lockObject(session, client.safety, objectUrl, 'MODIFY', cachedFeatures?.abapRelease);
+        const lockTransport = effectiveTransport ?? (lock.corrNr || undefined);
+        try {
+          await updateObject(session, client.safety, objectUrl, body, lock.lockHandle, ct, lockTransport);
+        } finally {
+          await unlockObject(session, objectUrl, lock.lockHandle);
+        }
+      });
+    }
     invalidateWrittenObject();
     const followUpHint =
       type === 'SRVB'

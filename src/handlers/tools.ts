@@ -761,6 +761,16 @@ export function getToolDefinitions(
               'For FUNC: parent function-group name. Required for FUNC create (the FUGR must already exist — create it first via SAPWrite type=FUGR). Auto-resolved via search for FUNC update/delete if omitted.',
           },
           dataType: { type: 'string', description: 'DOMA/DTEL: ABAP data type (e.g., CHAR, NUMC, DEC)' },
+          rowType: {
+            type: 'string',
+            description:
+              'TTYP create: the row type — a built-in ABAP type (STRING, I, …) or a DDIC structure/type name. Required for TTYP create.',
+          },
+          rowTypeKind: {
+            type: 'string',
+            enum: ['builtin', 'structure'],
+            description: 'TTYP create: row-type mode (auto-detected from rowType if omitted).',
+          },
           length: { type: 'number', description: 'DOMA/DTEL: data type length' },
           decimals: { type: 'number', description: 'DOMA/DTEL: decimal places' },
           outputLength: { type: 'number', description: 'DOMA: output length' },
@@ -909,6 +919,11 @@ export function getToolDefinitions(
                   description: 'Object-specific transport request. Overrides top-level transport for this item.',
                 },
                 dataType: { type: 'string', description: 'DOMA/DTEL: ABAP data type' },
+                rowType: {
+                  type: 'string',
+                  description: 'TTYP: row type (built-in ABAP type or DDIC structure/type name)',
+                },
+                rowTypeKind: { type: 'string', enum: ['builtin', 'structure'], description: 'TTYP: row-type mode' },
                 length: { type: 'number', description: 'DOMA/DTEL: data type length' },
                 decimals: { type: 'number', description: 'DOMA/DTEL: decimal places' },
                 outputLength: { type: 'number', description: 'DOMA: output length' },

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   buildDataElementXml,
@@ -5,9 +7,11 @@ import {
   buildMessageClassXml,
   buildPackageXml,
   buildServiceBindingXml,
+  buildTableTypeXml,
   decodeKtdText,
   normalizeAdtResponsible,
   normalizeSrvbBindingType,
+  parseTableType,
   rewriteKtdText,
 } from '../../../src/adt/ddic-xml.js';
 
@@ -812,5 +816,61 @@ describe('ddic-xml builders', () => {
         expect(decodeKtdText(rewritten)).toBe(malicious);
       });
     });
+  });
+});
+
+describe('buildTableTypeXml / parseTableType (FEAT-65)', () => {
+  it('built-in row → predefinedAbapType + builtInType.dataType, children in XSD order', () => {
+    const xml = buildTableTypeXml({ name: 'ZARC1_TT', description: 'x', package: '$TMP', rowType: 'string' });
+    expect(xml).toContain('adtcore:type="TTYP/DA"');
+    expect(xml).toContain('<ttyp:typeKind>predefinedAbapType</ttyp:typeKind>');
+    expect(xml).toContain('<ttyp:dataType>STRING</ttyp:dataType>'); // upper-cased
+    // typeKind → typeName → builtInType → rangeType order (XSD-required, live-verified)
+    expect(xml.indexOf('typeKind')).toBeLessThan(xml.indexOf('typeName'));
+    expect(xml.indexOf('typeName')).toBeLessThan(xml.indexOf('builtInType'));
+    expect(xml.indexOf('builtInType')).toBeLessThan(xml.indexOf('rangeType'));
+    expect(xml).toContain('<ttyp:accessType>standard</ttyp:accessType>');
+  });
+
+  it('structure row → dictionaryType + typeName + dataType=STRU', () => {
+    const xml = buildTableTypeXml({ name: 'ZARC1_TT', description: 'x', package: '$TMP', rowType: 'BAPIRET2' });
+    expect(xml).toContain('<ttyp:typeKind>dictionaryType</ttyp:typeKind>');
+    expect(xml).toContain('<ttyp:typeName>BAPIRET2</ttyp:typeName>');
+    expect(xml).toContain('<ttyp:dataType>STRU</ttyp:dataType>');
+  });
+
+  it('explicit rowTypeKind overrides the auto-detect', () => {
+    // "STRING" is a known built-in, but forcing structure mode emits dictionaryType.
+    const xml = buildTableTypeXml({
+      name: 'ZARC1_TT',
+      description: 'x',
+      package: '$TMP',
+      rowType: 'ZMY_STRUCT',
+      rowTypeKind: 'structure',
+    });
+    expect(xml).toContain('dictionaryType');
+    expect(xml).toContain('<ttyp:typeName>ZMY_STRUCT</ttyp:typeName>');
+  });
+
+  it('responsible is upper-cased; package/description flow through', () => {
+    const xml = buildTableTypeXml({
+      name: 'ZARC1_TT',
+      description: 'My desc',
+      package: 'ZPKG',
+      rowType: 'I',
+      responsible: 'marian',
+    });
+    expect(xml).toContain('adtcore:responsible="MARIAN"');
+    expect(xml).toContain('adtcore:name="ZPKG"'); // packageRef
+    expect(xml).toContain('adtcore:description="My desc"');
+  });
+
+  it('parseTableType extracts row type + access from the REAL captured STRINGTAB response', () => {
+    const fixture = readFileSync(join(import.meta.dirname, '../../fixtures/xml/tabletype-stringtab.xml'), 'utf-8');
+    const info = parseTableType(fixture);
+    expect(info.name).toBe('STRINGTAB');
+    expect(info.rowTypeKind).toBe('predefinedAbapType');
+    expect(info.rowType).toBe('STRING'); // built-in dataType (no typeName)
+    expect(info.accessType).toBe('standard');
   });
 });

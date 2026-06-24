@@ -76,6 +76,7 @@ const SAPREAD_TYPE_TABLE = [
   { type: 'DOMA', btp: true },
   { type: 'DTEL', btp: true },
   { type: 'TRAN', btp: false },
+  { type: 'TTYP', btp: false },
   { type: 'TABLE_CONTENTS', btp: true },
   { type: 'TABLE_QUERY', btp: true },
   { type: 'DEVC', btp: true },
@@ -138,6 +139,7 @@ const SAPWRITE_TYPE_TABLE = [
   { type: 'DOMA', btp: true },
   { type: 'DTEL', btp: true },
   { type: 'MSAG', btp: true },
+  { type: 'TTYP', btp: false },
   // Server-driven objects (8.16+) — write via the generic blue:blueSource + AFF JSON engine.
   // Rows derive from SDO_TYPES exactly like the SAPRead table above.
   ...SDO_TYPES.map((t) => ({ type: t, btp: true }) as const),

@@ -98,9 +98,10 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     budget: {
       // schema +200 for SAPRead action="diff" (action/from/to params).
       // +400/+350 for context-first KTD guidance (KTD alias + SAPContext includeKtd).
-      schemaTokenEstimate: 20_100,
-      descriptionTokenEstimate: 15_350,
-      descriptionCount: 265,
+      // +TTYP read/write type + SAPWrite rowType/rowTypeKind params (FEAT-65).
+      schemaTokenEstimate: 20_260,
+      descriptionTokenEstimate: 15_450,
+      descriptionCount: 270,
     },
   },
   {
@@ -113,9 +114,10 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // action description). Keeps ~110 tokens of headroom, matching the other scenarios.
       // Further +200/+150 for SAPRead action="diff" (action/from/to params + descriptions).
       // +450/+350 for context-first KTD guidance (KTD alias + SAPContext includeKtd).
-      schemaTokenEstimate: 18_350,
-      descriptionTokenEstimate: 13_700,
-      descriptionCount: 265,
+      // +SAPWrite rowType/rowTypeKind params (FEAT-65; global SAPWrite props, present on BTP too).
+      schemaTokenEstimate: 18_500,
+      descriptionTokenEstimate: 13_790,
+      descriptionCount: 268,
     },
   },
   {

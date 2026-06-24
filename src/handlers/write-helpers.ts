@@ -12,6 +12,7 @@ import {
   buildDomainXml,
   buildMessageClassXml,
   buildServiceBindingXml,
+  buildTableTypeXml,
   type DataElementCreateParams,
   type DomainCreateParams,
   type MessageClassCreateParams,
@@ -77,13 +78,15 @@ export const SERVICEBINDING_V2_ACCEPT = 'application/vnd.sap.adt.businessservice
 const BDEF_CONTENT_TYPE = 'application/vnd.sap.adt.blues.v1+xml';
 const MESSAGECLASS_CONTENT_TYPE = 'application/vnd.sap.adt.mc.messageclass+xml';
 export const SKTD_V2_CONTENT_TYPE = 'application/vnd.sap.adt.sktdv2+xml';
+// Table type (TTYP) create/read — verified live on a4h 758 + 816 (POST → 201).
+const TABLETYPE_CONTENT_TYPE = 'application/vnd.sap.adt.tabletype.v1+xml';
 // Function group + function module content types — verified live on a4h S/4HANA 2023
 // (issue #250). FUGR uses the v3 group envelope; FUNC uses the unversioned fmodule envelope.
 const FUNCTION_GROUP_CONTENT_TYPE = 'application/vnd.sap.adt.functions.groups.v3+xml';
 const FUNCTION_MODULE_CONTENT_TYPE = 'application/vnd.sap.adt.functions.fmodules+xml';
 
 export function isMetadataWriteType(type: string): boolean {
-  return type === 'DOMA' || type === 'DTEL' || type === 'MSAG' || type === 'SRVB';
+  return type === 'DOMA' || type === 'DTEL' || type === 'MSAG' || type === 'SRVB' || type === 'TTYP';
 }
 
 /** Types that require a specific vendor content type for creation (not application/*) */
@@ -94,6 +97,7 @@ function needsVendorContentType(type: string): boolean {
     type === 'BDEF' ||
     type === 'MSAG' ||
     type === 'SKTD' ||
+    type === 'TTYP' ||
     type === 'FUGR' ||
     type === 'FUNC'
   );
@@ -139,6 +143,8 @@ export function vendorContentTypeForType(type: string): string {
       return MESSAGECLASS_CONTENT_TYPE;
     case 'SKTD':
       return SKTD_V2_CONTENT_TYPE;
+    case 'TTYP':
+      return TABLETYPE_CONTENT_TYPE;
     case 'FUGR':
       return FUNCTION_GROUP_CONTENT_TYPE;
     case 'FUNC':
@@ -175,6 +181,8 @@ export function getMetadataWriteProperties(input: Record<string, unknown>): Reco
     valueTable: input.valueTable,
     typeKind: input.typeKind,
     typeName: input.typeName,
+    rowType: input.rowType,
+    rowTypeKind: input.rowTypeKind,
     domainName: input.domainName,
     shortLabel: input.shortLabel,
     mediumLabel: input.mediumLabel,
@@ -494,6 +502,25 @@ export function buildCreateXml(
         responsible: responsibleUser,
       };
       return buildDomainXml(params);
+    }
+    case 'TTYP': {
+      const rowType = String(properties?.rowType ?? '').trim();
+      if (!rowType) {
+        throw new Error(
+          'SAPWrite create type=TTYP requires "rowType" — a built-in ABAP type (STRING, I, …) or a DDIC structure/type name.',
+        );
+      }
+      const rowTypeKindRaw = String(properties?.rowTypeKind ?? '');
+      const rowTypeKind = rowTypeKindRaw === 'builtin' || rowTypeKindRaw === 'structure' ? rowTypeKindRaw : undefined;
+      return buildTableTypeXml({
+        name,
+        description,
+        package: pkg,
+        rowType,
+        rowTypeKind,
+        language: masterLanguage,
+        responsible: responsibleUser,
+      });
     }
     case 'DTEL': {
       const typeKindRaw = String(properties?.typeKind ?? '');

@@ -482,6 +482,10 @@ export async function handleSAPRead(
       const dtel = await client.getDataElement(name);
       return textResult(JSON.stringify(dtel, null, 2));
     }
+    case 'TTYP': {
+      const ttyp = await client.getTableType(name);
+      return textResult(JSON.stringify(ttyp, null, 2));
+    }
     case 'AUTH': {
       const authField = await client.getAuthorizationField(name);
       return textResult(JSON.stringify(authField, null, 2));

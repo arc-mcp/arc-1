@@ -18,6 +18,7 @@
 
 import type { AdtClientConfig } from './config.js';
 import { defaultAdtClientConfig } from './config.js';
+import { parseTableType, type TableTypeInfo } from './ddic-xml.js';
 import { AdtApiError, AdtSafetyError, isNotFoundError } from './errors.js';
 import { AdtHttpClient, type AdtHttpConfig } from './http.js';
 import { AdtPackageHierarchyResolver, type PackageHierarchyResolver } from './package-hierarchy.js';
@@ -876,6 +877,15 @@ export class AdtClient {
     checkOperation(this.safety, OperationType.Read, 'GetDomain');
     const resp = await this.http.get(`/sap/bc/adt/ddic/domains/${encodeURIComponent(name)}`);
     return parseDomainMetadata(resp.body);
+  }
+
+  /** Get table type (TTYP) metadata: row type, access type, key kind. */
+  async getTableType(name: string): Promise<TableTypeInfo> {
+    checkOperation(this.safety, OperationType.Read, 'GetTableType');
+    const resp = await this.http.get(`/sap/bc/adt/ddic/tabletypes/${encodeURIComponent(name)}`, {
+      Accept: 'application/vnd.sap.adt.tabletype.v1+xml',
+    });
+    return parseTableType(resp.body);
   }
 
   /** Get data element metadata (domain, labels, search help) */
