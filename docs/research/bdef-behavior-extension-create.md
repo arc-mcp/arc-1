@@ -1,57 +1,40 @@
-# BDEF behavior-extension create — investigation (tier-3 #10)
+# BDEF behavior-extension create — SOLVED (tier-3 #10)
 
-Status: **mechanism not yet cracked.** Deep live investigation on a4h-2025 (816) done; the exact ADT
-create call that yields an object whose source parser accepts `extend behavior for <base>` remains
-unknown. Not a hard blocker (Eclipse creates them), but needs an Eclipse ADT trace to finish.
+Status: **shipped.** `SAPWrite create type=BDEF` with an `extend behavior for …` source creates a RAP
+behavior extension. Full create → activate lifecycle live-verified on a4h 758 + 816. Parity with
+sapcli `bdef extend` (commit `2337844`).
 
-## Goal
+## The mechanism (live reverse-engineered on a4h 816, confirmed against sapcli)
 
-Let ARC-1 create a RAP **behavior extension** (`extend behavior for ZBase { … }`), not just a behavior
-**definition** (`define behavior for ZRoot { … }`). Parity with sapcli `bdef extend` (commit `2337844`).
+A behavior extension is **`adtcore:type="BDEF/BDO"`** at the same `/sap/bc/adt/bo/behaviordefinitions/`
+endpoint as a definition — the type does NOT discriminate. Two things make it an extension:
 
-## What ARC-1 has today
+1. **The create POST carries `<adtcore:adtTemplate>`** with `<adtcore:adtProperty adtcore:key="base_bdef">BaseBdef</adtcore:adtProperty>`, and it **MUST precede `<adtcore:packageRef>`** in the
+   `blue:blueSource` body — the elements are schema-ordered (sapcli declares them in that order via
+   `OrderedClassMembers`). A *trailing* template is silently ignored and SAP scaffolds a plain
+   definition. This single ordering detail was the whole puzzle.
+2. **The base BDEF must be `extensible`** (`strict(2)` + `extensible` in the header + `extensible` on
+   the entity + `mapping … corresponding extensible`). Otherwise the create 400s with "Behavior
+   Definition X is not marked as extensible". This is the base author's responsibility, not ARC-1's.
 
-`SAPWrite create type=BDEF` POSTs a `blue:blueSource` with `adtcore:type="BDEF/BDO"` to
-`/sap/bc/adt/bo/behaviordefinitions/`, then PUTs the source — a behavior **definition**. There is no
-extension path.
+Given those, the POST scaffolds `extension implementation in class zbp_<name> unique; extend behavior
+for <Base> { }`, and a normal source PUT writes the real extension body. The extension source needs the
+`extension implementation in class … unique;` header (a plain `extend behavior …` alone → "extension
+was expected, not extend").
 
-## sapcli's mechanism (`sap/adt/behaviordefinition.py`, `sap/cli/behaviordefinition.py`)
+## ARC-1 implementation
 
-- `bdef extend <name> <desc> <pkg> <base-bdef> [--interface-bdef …]`.
-- `BehaviorDefinition.OBJTYPE` is **`BDEF/BDO`** even for extensions — the type does NOT discriminate.
-- The extension create attaches an **`ADTTemplate`**: `<adtcore:adtTemplate>` with two
-  `<adtcore:adtProperty adtcore:key="base_bdef|interface_bdef">…</adtcore:adtProperty>` children.
+- `src/handlers/write/create.ts`: detect `\bextend behavior for (Name)` in the BDEF source → set
+  `behaviorExtension` + `baseBdef = Name` (a BDEF shares its root entity's name, so the name in
+  `extend behavior for <X>` IS the base BDEF). No new parameter — extracted from the source.
+- `src/handlers/write-helpers.ts` `buildCreateXml('BDEF')`: when `behaviorExtension`, emit the
+  `adtcore:adtTemplate(base_bdef)` immediately before `packageRef`. The rest (POST scaffold → PUT
+  source → activate) is the existing BDEF create flow unchanged.
 
-## Live findings (a4h-2025 816) — all verified, all dead ends so far
+## Verification
 
-1. **A base RAP BO works end-to-end.** Table `ZARC1_RAPB` (mandt+id+descr) → root view entity
-   `ZR_ARC1_RAPB` → `managed` behavior `ZR_ARC1_RAPB` → all activate. (The managed behavior activates
-   without a hand-written behavior pool — only standard `create/update/delete`.)
-2. **`adtcore:type="BDEF/BDE"` is ignored.** POSTing a `blueSource` with type `BDEF/BDE` → 201 but the
-   object is created as **`BDEF/BDO`**. SAP normalizes the type. (So my first implementation attempt —
-   detect `extend behavior for` → emit `BDEF/BDE` — was wrong and was reverted.)
-3. **`adtcore:adtTemplate` with `base_bdef` does NOT make an extension.** POSTing the blueSource with
-   `<adtcore:adtTemplate><adtcore:adtProperty adtcore:key="base_bdef">ZR_ARC1_RAPB</…></…>` → 201, but
-   the scaffolded source is `unmanaged;\ndefine behavior for ZR_ARC1_RAPB_X {}` — a **definition of the
-   new object itself**, not `extend behavior for ZR_ARC1_RAPB`. The template was ignored (wrong element
-   namespace/position, wrong endpoint, or it needs a different content type).
-4. **A normal BDO rejects `extend` source.** PUTting `extend behavior for ZR_ARC1_RAPB {}` onto any
-   BDO object and activating → `[line 1] "abstract | interface | managed | projection | unmanaged" was
-   expected, not "extend"`. So an extension is a genuinely distinct object kind; the source parser only
-   accepts `extend` when the object was created AS an extension.
-
-## The remaining unknown
-
-The ADT create that produces an object whose parser accepts `extend behavior for`. Hypotheses to test
-next: (a) the `adtTemplate` must ride a **different content type / endpoint** than the plain blueSource
-create (capture sapcli's *actual* HTTP, not just its Python model); (b) the base behavior must be
-declared **`extensible`** first; (c) Eclipse posts to a dedicated `…/behaviordefinitions/…/extensions`
-or templates route. **Fastest path: capture an Eclipse ADT "New Behavior Definition Extension" HTTP
-trace** (the one source of ground truth I can't get from the CLI), or run sapcli `bdef extend` against
-a4h with request logging and diff its body against finding #3.
-
-## Why deferred (not shipped)
-
-Shipping requires a create that round-trips to an activatable extension, verified on 758 + 816. Findings
-2–4 show my reconstructions don't, and the right body needs an IDE trace. Per ARC-1's golden rule
-(verify live) + ponytail (don't ship unverified), this is parked here rather than guessed into code.
+Full lifecycle (extensible base RAP BO → extension create → read-back `extend behavior for` → activate)
+on **a4h 758 AND a4h-2025 816**. Unit: `write-ddic.test.ts` (template emitted+ordered for an extension;
+omitted for a definition). Integration: `adt.integration.test.ts` builds the whole base BO live + the
+extension. Dead ends ruled out on the way: `type="BDEF/BDE"` (normalized to BDO), trailing adtTemplate
+(ignored), plain BDO + `extend` source (parser rejects).

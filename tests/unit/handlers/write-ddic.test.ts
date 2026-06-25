@@ -2222,4 +2222,57 @@ define role ZTEST_DCL {
       expect(text).toContain('Fix the metadata and retry');
     });
   });
+
+  // ── BDEF behavior extension create (tier-3 #10) ─────────────────────
+  // An extension (`extend behavior for <Base>`) is the same BDEF/BDO endpoint as a definition, but
+  // its create POST must carry an adtcore:adtTemplate(base_bdef) BEFORE packageRef, or SAP scaffolds
+  // a plain definition (live-verified a4h 758 + 816 — full lifecycle in the integration suite).
+  describe('SAPWrite BDEF behavior extension create (#10)', () => {
+    function captureCreateFlow() {
+      const calls: { method: string; url: string; body?: string }[] = [];
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string; body?: unknown }) => {
+        const method = opts?.method ?? 'GET';
+        const urlStr = String(url);
+        calls.push({ method, url: urlStr, body: typeof opts?.body === 'string' ? opts.body : undefined });
+        if (method === 'POST' && urlStr.includes('_action=LOCK')) {
+          return Promise.resolve(
+            mockResponse(200, '<DATA><LOCK_HANDLE>LH</LOCK_HANDLE></DATA>', { 'x-csrf-token': 'T' }),
+          );
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+      return calls;
+    }
+
+    it('emits adtTemplate(base_bdef) before packageRef when the source is `extend behavior for X`', async () => {
+      const calls = captureCreateFlow();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'BDEF',
+        name: 'ZR_BASE_X',
+        package: '$TMP',
+        source: 'extension implementation in class zbp_base_x unique;\nextend behavior for ZR_BASE\n{\n}',
+      });
+      expect(result.isError).toBeUndefined();
+      const post = calls.find(
+        (c) => c.method === 'POST' && c.url.includes('/bo/behaviordefinitions') && c.body?.includes('blueSource'),
+      );
+      expect(post?.body).toContain('<adtcore:adtProperty adtcore:key="base_bdef">ZR_BASE</adtcore:adtProperty>');
+      // The template must precede packageRef — the blueSource elements are schema-ordered.
+      expect(post!.body!.indexOf('adtTemplate')).toBeLessThan(post!.body!.indexOf('packageRef'));
+    });
+
+    it('omits the template for a plain `define behavior for` definition', async () => {
+      const calls = captureCreateFlow();
+      await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'BDEF',
+        name: 'ZR_BASE',
+        package: '$TMP',
+        source: 'managed implementation in class zbp_base unique;\ndefine behavior for ZR_BASE\n{\n}',
+      });
+      const post = calls.find((c) => c.method === 'POST' && c.body?.includes('blueSource'));
+      expect(post?.body).not.toContain('adtTemplate');
+    });
+  });
 });

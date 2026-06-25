@@ -2558,3 +2558,86 @@ describe('ADT Integration Tests', () => {
     });
   });
 });
+
+// ─── BDEF behavior extension create (tier-3 #10) ──────────────────────
+// Live-verified on a4h 758 + 816: build a full extensible base RAP BO (table → root view →
+// `extensible` managed behavior), then create + activate a behavior extension. ARC-1 detects the
+// `extend behavior for X` source and adds the adtTemplate(base_bdef) the create POST needs.
+describe('BDEF behavior extension create (#10)', () => {
+  it('creates a behavior extension against an extensible base and activates it', async (ctx) => {
+    requireOrSkip(ctx, process.env.TEST_SAP_URL, SkipReason.NO_CREDENTIALS);
+    const { generateUniqueName } = await import('./crud-harness.js');
+    const { handleToolCall } = await import('../../src/handlers/dispatch.js');
+    const config = {
+      arc1Port: 8080,
+      arc1HttpAddr: '0.0.0.0:8080',
+      toolMode: 'standard',
+    } as unknown as Parameters<typeof handleToolCall>[1];
+    const client = getTestClient();
+    const tab = generateUniqueName('ZARC1_BX');
+    const root = `ZR_${tab}`;
+    const ext = `${root}_X`;
+    const W = async (args: Record<string, unknown>) => {
+      const r = await handleToolCall(client, config, 'SAPWrite', args);
+      if (r.isError) throw new Error(`${args.action} ${args.type} ${args.name}: ${r.content[0]?.text}`);
+      return r;
+    };
+    const A = async (type: string, name: string) => {
+      const r = await handleToolCall(client, config, 'SAPActivate', { type, name });
+      if (r.isError) throw new Error(`activate ${type} ${name}: ${r.content[0]?.text}`);
+    };
+    try {
+      await W({
+        action: 'create',
+        type: 'TABL',
+        name: tab,
+        package: '$TMP',
+        description: 'rap base',
+        source: `@EndUserText.label : 'rap base'\n@AbapCatalog.enhancementCategory : #NOT_EXTENSIBLE\n@AbapCatalog.tableCategory : #TRANSPARENT\n@AbapCatalog.deliveryClass : #A\n@AbapCatalog.dataMaintenance : #RESTRICTED\ndefine table ${tab.toLowerCase()} {\n  key mandt : mandt not null;\n  key id    : abap.char(10) not null;\n  descr     : abap.char(40);\n}`,
+      });
+      await A('TABL', tab);
+      await W({
+        action: 'create',
+        type: 'DDLS',
+        name: root,
+        package: '$TMP',
+        description: 'rap base view',
+        source: `@AccessControl.authorizationCheck: #NOT_REQUIRED\ndefine root view entity ${root} as select from ${tab.toLowerCase()} { key id, descr }`,
+      });
+      await A('DDLS', root);
+      await W({
+        action: 'create',
+        type: 'BDEF',
+        name: root,
+        package: '$TMP',
+        description: 'extensible base behavior',
+        source: `managed implementation in class zbp_${root.toLowerCase()} unique;\nstrict ( 2 );\nextensible;\ndefine behavior for ${root} alias RapBase persistent table ${tab.toLowerCase()} lock master authorization master ( global ) extensible { create; update; delete; mapping for ${tab.toLowerCase()} corresponding extensible; }`,
+      });
+      await A('BDEF', root);
+      // The actual feature under test: create a behavior EXTENSION.
+      await W({
+        action: 'create',
+        type: 'BDEF',
+        name: ext,
+        package: '$TMP',
+        description: 'behavior extension',
+        source: `extension implementation in class zbp_${ext.toLowerCase()} unique;\nextend behavior for ${root}\n{\n  action doNothing result [1] $self;\n}`,
+      });
+      const read = await handleToolCall(client, config, 'SAPRead', { type: 'BDEF', name: ext });
+      expect(read.content[0]?.text).toContain('extend behavior for');
+      await A('BDEF', ext);
+    } finally {
+      // Reverse dependency order; best-effort.
+      for (const [t, n] of [
+        ['BDEF', ext],
+        ['BDEF', root],
+        ['DDLS', root],
+        ['TABL', tab],
+      ] as const) {
+        await handleToolCall(client, config, 'SAPWrite', { action: 'delete', type: t, name: n }).catch(() => {
+          // best-effort-cleanup
+        });
+      }
+    }
+  }, 180_000);
+});

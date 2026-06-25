@@ -406,9 +406,16 @@ export function buildCreateXml(
   <adtcore:packageRef adtcore:name="${escapeXmlAttr(pkg)}"/>
 </blue:blueSource>`;
     }
-    case 'BDEF':
+    case 'BDEF': {
       // BDEF uses SAP's "blue" framework — blue:blueSource with http://www.sap.com/wbobj/blue namespace.
       // Confirmed by vibing-steampunk (Go) and fr0ster (TypeScript) reference implementations.
+      // A behavior EXTENSION (`extend behavior for …`) is still adtcore:type BDEF/BDO, but its create
+      // POST carries an `adtcore:adtTemplate` naming the base BDEF — and it MUST precede packageRef
+      // (the elements are schema-ordered; a trailing template is silently ignored — live-verified a4h
+      // 816). Without it SAP scaffolds a plain definition; with it SAP scaffolds `extend behavior for`.
+      const extTemplate = properties?.behaviorExtension
+        ? `\n  <adtcore:adtTemplate>\n    <adtcore:adtProperty adtcore:key="base_bdef">${escapeXmlAttr(String(properties.baseBdef ?? ''))}</adtcore:adtProperty>\n  </adtcore:adtTemplate>`
+        : '';
       return `<?xml version="1.0" encoding="UTF-8"?>
 <blue:blueSource xmlns:blue="http://www.sap.com/wbobj/blue"
                  xmlns:adtcore="http://www.sap.com/adt/core"
@@ -417,9 +424,10 @@ export function buildCreateXml(
                  adtcore:type="BDEF/BDO"
                  adtcore:masterLanguage="${masterLanguage}"
                  adtcore:masterSystem="H00"
-                 adtcore:responsible="${escapeXmlAttr(responsibleUser)}">
+                 adtcore:responsible="${escapeXmlAttr(responsibleUser)}">${extTemplate}
   <adtcore:packageRef adtcore:name="${escapeXmlAttr(pkg)}"/>
 </blue:blueSource>`;
+    }
     case 'SRVD':
       return `<?xml version="1.0" encoding="UTF-8"?>
 <srvd:srvdSource xmlns:srvd="http://www.sap.com/adt/ddic/srvdsources"

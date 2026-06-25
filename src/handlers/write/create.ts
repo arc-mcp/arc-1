@@ -331,6 +331,17 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
   // SAP ADT requires the root element to match the object type —
   // a generic objectReferences body returns 400 "System expected the element ...".
   const metadataProperties = getMetadataWriteProperties(args);
+  // BDEF behavior EXTENSION (`extend behavior for <BaseEntity>`) vs definition (`define behavior
+  // for …`): both are adtcore:type BDEF/BDO at the same /bo/behaviordefinitions endpoint, but an
+  // extension's create POST must carry an `adtcore:adtTemplate` naming the base BDEF, or SAP just
+  // scaffolds another definition (live-verified a4h 816). The base BDEF name = the entity named in
+  // `extend behavior for <X>` (a BDEF shares its root entity's name); the base must itself be
+  // `extensible`. Extracted from the source so no extra parameter is needed.
+  const bdefExtMatch = type === 'BDEF' ? /\bextend\s+behavior\s+for\s+([A-Za-z_]\w*)/i.exec(source) : null;
+  if (bdefExtMatch) {
+    metadataProperties.behaviorExtension = true;
+    metadataProperties.baseBdef = bdefExtMatch[1];
+  }
   const body = buildCreateXml(type, name, pkg, description, metadataProperties, config.language, config.username);
 
   // Step 1: Create the object (metadata only)
