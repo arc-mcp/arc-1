@@ -2585,6 +2585,20 @@ describe('FUGR structural include update (FEAT-18 sibling)', () => {
         description: 'ARC-1 IT function group',
       });
       expect(created.isError).toBeUndefined();
+      const includeUrl = `/sap/bc/adt/functions/groups/${group.toLowerCase()}/includes/${topInclude.toLowerCase()}`;
+      // Requires live confirmation on 7.50/758/816: the package gate depends on this metadata
+      // carrying either packageRef or containerRef packageName. If absent, ARC-1 must fail closed.
+      const resolvedIncludePackage = await client.resolveObjectPackage(includeUrl).catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        requireOrSkip(ctx, undefined, `${SkipReason.BACKEND_UNSUPPORTED}: FUGR include metadata unreadable (${msg})`);
+        return undefined;
+      });
+      requireOrSkip(
+        ctx,
+        resolvedIncludePackage || undefined,
+        `${SkipReason.BACKEND_UNSUPPORTED}: FUGR include metadata lacks packageRef/containerRef packageName`,
+      );
+      expect(resolvedIncludePackage).toBe('$TMP');
       const updated = await handleToolCall(client, config, 'SAPWrite', {
         action: 'update',
         type: 'INCL',
@@ -2597,9 +2611,7 @@ describe('FUGR structural include update (FEAT-18 sibling)', () => {
       expect(activated.isError).toBeUndefined();
       // Read the include source back directly (getInclude only serves standalone includes, so
       // GET the FUGR-include source URL via the client's HTTP layer).
-      const back = await client.http.get(
-        `/sap/bc/adt/functions/groups/${group.toLowerCase()}/includes/${topInclude.toLowerCase()}/source/main`,
-      );
+      const back = await client.http.get(`${includeUrl}/source/main`);
       expect(back.body).toContain(marker);
     } finally {
       await handleToolCall(client, config, 'SAPWrite', { action: 'delete', type: 'FUGR', name: group }).catch(() => {

@@ -867,7 +867,12 @@ export function runPreWriteLint(
   }
 
   try {
-    const filename = detectFilename(source, name);
+    let filename = detectFilename(source, name);
+    if (type === 'INCL' && filename.endsWith('.clas.abap')) {
+      // ABAP includes are often source fragments (FORM/MODULE/DATA...) without a REPORT/CLASS header.
+      // Lint them as program-style source; treating the fallback as a class rejects valid include fragments.
+      filename = `${name.toLowerCase()}.prog.abap`;
+    }
     // Reuse the single systemType/abapRelease/configFile resolution (avoids drift with SAPLint's
     // own config — a release-ceiling fix applied to one copy only would split lint behavior).
     const configOptions = buildLintConfigOptions(config);

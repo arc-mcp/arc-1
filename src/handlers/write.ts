@@ -155,7 +155,12 @@ export async function handleSAPWrite(
     srcUrl = `${objectUrl}/source/main`;
     // Pass the resolved group through to buildCreateXml via args.group
     (args as Record<string, unknown>).group = group;
-  } else if (type === 'INCL' && action === 'update' && String(args.group ?? '').trim()) {
+  } else if (type === 'INCL' && String(args.group ?? '').trim()) {
+    if (action !== 'update') {
+      return errorResult(
+        'SAPWrite type=INCL with group supports action="update" only; create/delete of FUGR structural includes is unsupported.',
+      );
+    }
     // FUGR structural include update (LZ<grp>TOP global data, form/PBO/PAI includes): addressed by
     // type=INCL + group=<FUGR>. The include OBJECT is the lock + package-resolution target — its
     // containerRef carries the group's packageName, and locking the GROUP 423s the source PUT
