@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   buildDataElementXml,
@@ -5,9 +7,11 @@ import {
   buildMessageClassXml,
   buildPackageXml,
   buildServiceBindingXml,
+  buildTableTypeXml,
   decodeKtdText,
   normalizeAdtResponsible,
   normalizeSrvbBindingType,
+  parseTableType,
   rewriteKtdText,
 } from '../../../src/adt/ddic-xml.js';
 
@@ -812,5 +816,136 @@ describe('ddic-xml builders', () => {
         expect(decodeKtdText(rewritten)).toBe(malicious);
       });
     });
+  });
+});
+
+describe('buildTableTypeXml / parseTableType (FEAT-65)', () => {
+  it('built-in row → predefinedAbapType + builtInType.dataType, children in XSD order', () => {
+    const xml = buildTableTypeXml({ name: 'ZARC1_TT', description: 'x', package: '$TMP', rowType: 'string' });
+    expect(xml).toContain('adtcore:type="TTYP/DA"');
+    expect(xml).toContain('<ttyp:typeKind>predefinedAbapType</ttyp:typeKind>');
+    expect(xml).toContain('<ttyp:dataType>STRING</ttyp:dataType>'); // upper-cased
+    // typeKind → typeName → builtInType → rangeType order (XSD-required, live-verified)
+    expect(xml.indexOf('typeKind')).toBeLessThan(xml.indexOf('typeName'));
+    expect(xml.indexOf('typeName')).toBeLessThan(xml.indexOf('builtInType'));
+    expect(xml.indexOf('builtInType')).toBeLessThan(xml.indexOf('rangeType'));
+    expect(xml).toContain('<ttyp:accessType>standard</ttyp:accessType>');
+  });
+
+  it('structure row → dictionaryType + typeName + dataType=STRU', () => {
+    const xml = buildTableTypeXml({ name: 'ZARC1_TT', description: 'x', package: '$TMP', rowType: 'BAPIRET2' });
+    expect(xml).toContain('<ttyp:typeKind>dictionaryType</ttyp:typeKind>');
+    expect(xml).toContain('<ttyp:typeName>BAPIRET2</ttyp:typeName>');
+    expect(xml).toContain('<ttyp:dataType>STRU</ttyp:dataType>');
+  });
+
+  it('explicit rowTypeKind overrides the auto-detect', () => {
+    // "STRING" is a known built-in, but forcing structure mode emits dictionaryType.
+    const xml = buildTableTypeXml({
+      name: 'ZARC1_TT',
+      description: 'x',
+      package: '$TMP',
+      rowType: 'ZMY_STRUCT',
+      rowTypeKind: 'structure',
+    });
+    expect(xml).toContain('dictionaryType');
+    expect(xml).toContain('<ttyp:typeName>ZMY_STRUCT</ttyp:typeName>');
+  });
+
+  it('responsible is upper-cased; package/description flow through', () => {
+    const xml = buildTableTypeXml({
+      name: 'ZARC1_TT',
+      description: 'My desc',
+      package: 'ZPKG',
+      rowType: 'I',
+      responsible: 'marian',
+    });
+    expect(xml).toContain('adtcore:responsible="MARIAN"');
+    expect(xml).toContain('adtcore:name="ZPKG"'); // packageRef
+    expect(xml).toContain('adtcore:description="My desc"');
+  });
+
+  it('uses the configured SAP language as the TTYP master language', () => {
+    const xml = buildTableTypeXml({
+      name: 'ZARC1_TT',
+      description: 'My desc',
+      package: '$TMP',
+      rowType: 'STRING',
+      language: 'de',
+    });
+    expect(xml).toContain('adtcore:masterLanguage="DE"');
+  });
+
+  it('rejects garbage rowType before emitting TTYP XML', () => {
+    expect(() =>
+      buildTableTypeXml({ name: 'ZARC1_TT', description: 'x', package: '$TMP', rowType: 'not a type!' }),
+    ).toThrow(/Invalid TTYP rowType/);
+  });
+
+  it('auto-detects UTCLONG as a built-in row type (list kept current)', () => {
+    const xml = buildTableTypeXml({ name: 'ZARC1_TT', description: 'x', package: '$TMP', rowType: 'UTCLONG' });
+    expect(xml).toContain('<ttyp:typeKind>predefinedAbapType</ttyp:typeKind>');
+    expect(xml).toContain('<ttyp:dataType>UTCLONG</ttyp:dataType>');
+  });
+
+  it('trusts an explicit rowTypeKind="builtin" even for a type not in the heuristic list', () => {
+    // SAP adds built-ins over releases (UTCLONG in 7.54, more later); an incomplete allow-list must
+    // NOT reject a valid explicit built-in (regression: UTCLONG+builtin used to throw). SAP validates.
+    const xml = buildTableTypeXml({
+      name: 'ZARC1_TT',
+      description: 'x',
+      package: '$TMP',
+      rowType: 'SOMEFUTURETYPE',
+      rowTypeKind: 'builtin',
+    });
+    expect(xml).toContain('<ttyp:typeKind>predefinedAbapType</ttyp:typeKind>');
+    expect(xml).toContain('<ttyp:dataType>SOMEFUTURETYPE</ttyp:dataType>');
+  });
+
+  it('still rejects rowTypeKind="structure" for a built-in row type name', () => {
+    expect(() =>
+      buildTableTypeXml({
+        name: 'ZARC1_TT',
+        description: 'x',
+        package: '$TMP',
+        rowType: 'STRING',
+        rowTypeKind: 'structure',
+      }),
+    ).toThrow(/is a built-in ABAP row type/);
+  });
+
+  it('parseTableType extracts row type + access from the REAL captured STRINGTAB response', () => {
+    const fixture = readFileSync(join(import.meta.dirname, '../../fixtures/xml/tabletype-stringtab.xml'), 'utf-8');
+    const info = parseTableType(fixture);
+    expect(info.name).toBe('STRINGTAB');
+    expect(info.rowTypeKind).toBe('predefinedAbapType');
+    expect(info.rowType).toBe('STRING'); // built-in dataType (no typeName)
+    expect(info.accessType).toBe('standard');
+  });
+
+  it('parseTableType throws cleanly for non-table-type XML', () => {
+    expect(() => parseTableType('<html><body>not a table type</body></html>')).toThrow(
+      /Invalid TTYP response: expected <ttyp:tableType>/,
+    );
+  });
+
+  it('parseTableType throws cleanly when the rowType node is missing', () => {
+    expect(() =>
+      parseTableType(
+        '<ttyp:tableType xmlns:ttyp="http://www.sap.com/dictionary/tabletype" adtcore:name="ZBAD" xmlns:adtcore="http://www.sap.com/adt/core"/>',
+      ),
+    ).toThrow(/Invalid TTYP response: missing <ttyp:rowType>/);
+  });
+
+  it('parseTableType returns an unlisted row type kind verbatim (reads stay permissive)', () => {
+    // A read must NOT hard-fail on a typeKind ARC-1 hasn't enumerated — only on structurally broken
+    // XML. 264 real table types across a4h 758+816 used 4 kinds; newer releases may add more.
+    const xml =
+      '<ttyp:tableType xmlns:ttyp="http://www.sap.com/dictionary/tabletype" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="ZWEIRD" adtcore:type="TTYP/DA">' +
+      '<ttyp:rowType><ttyp:typeKind>someFutureKind</ttyp:typeKind><ttyp:typeName>ZSOMETHING</ttyp:typeName></ttyp:rowType>' +
+      '</ttyp:tableType>';
+    const info = parseTableType(xml);
+    expect(info.rowTypeKind).toBe('someFutureKind');
+    expect(info.rowType).toBe('ZSOMETHING');
   });
 });

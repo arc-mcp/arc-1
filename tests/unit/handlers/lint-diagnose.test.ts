@@ -16,6 +16,10 @@ const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 const { resetCachedFeatures, setCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
 
 const WRITE_CONFIG = { ...DEFAULT_CONFIG, allowWrites: true };
+const AUNIT_TESTRUN_WITH_COVERAGE = readFileSync(
+  new URL('../../fixtures/xml/aunit-testrun-with-coverage.xml', import.meta.url),
+  'utf-8',
+);
 
 function fetchedPathWithVersion(urls: string[], pathname: string, version: 'active' | 'inactive'): boolean {
   return urls.some((rawUrl) => {
@@ -782,6 +786,94 @@ ENDCLASS.`;
       });
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toContain('Invalid arguments for SAPDiagnose');
+    });
+  });
+
+  describe('SAPDiagnose unittest coverage', () => {
+    function mockAunitCoverageFlow(measurementStatus: number, measurementBody: string): void {
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string; body?: string | Buffer }) => {
+        const method = opts?.method ?? 'GET';
+        const urlStr = String(url);
+        if (method === 'HEAD' && urlStr.includes('/sap/bc/adt/core/discovery')) {
+          return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+        }
+        if (method === 'POST' && urlStr.includes('/sap/bc/adt/abapunit/testruns')) {
+          return Promise.resolve(mockResponse(201, AUNIT_TESTRUN_WITH_COVERAGE, { 'x-csrf-token': 'T' }));
+        }
+        if (method === 'POST' && urlStr.includes('/sap/bc/adt/runtime/traces/coverage/measurements/')) {
+          return Promise.resolve(mockResponse(measurementStatus, measurementBody, { 'x-csrf-token': 'T' }));
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+    }
+
+    it('coverage=false keeps the historical array output and does not fetch measurements', async () => {
+      mockAunitCoverageFlow(200, '<unexpected/>');
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPDiagnose', {
+        action: 'unittest',
+        type: 'CLAS',
+        name: 'ZCL_ABAPGIT_HASH',
+        coverage: 'false',
+      });
+
+      expect(result.isError).toBeUndefined();
+      const out = JSON.parse(result.content[0]?.text ?? 'null');
+      expect(Array.isArray(out)).toBe(true);
+      expect(out.length).toBeGreaterThan(0);
+      const calls = mockFetch.mock.calls.map((call) => ({
+        url: String(call[0]),
+        method: (call[1] as { method?: string } | undefined)?.method ?? 'GET',
+        body: String((call[1] as { body?: unknown } | undefined)?.body ?? ''),
+      }));
+      expect(calls.some((call) => call.url.includes('/coverage/measurements/'))).toBe(false);
+      expect(calls.find((call) => call.url.includes('/abapunit/testruns'))?.body).toContain(
+        '<coverage active="false"/>',
+      );
+    });
+
+    it('coverage=true keeps test results when the coverage measurement fetch returns 404', async () => {
+      mockAunitCoverageFlow(404, 'Not Found');
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPDiagnose', {
+        action: 'unittest',
+        type: 'CLAS',
+        name: 'ZCL_ABAPGIT_HASH',
+        coverage: true,
+      });
+
+      expect(result.isError).toBeUndefined();
+      const out = JSON.parse(result.content[0]?.text ?? '{}');
+      expect(out.tests.length).toBeGreaterThan(0);
+      expect(out.coverage).toBeUndefined();
+      expect(out.coverageNote).toContain('Coverage unavailable');
+    });
+
+    it('coverage=true keeps test results when the coverage measurement XML has no valid aggregate', async () => {
+      mockAunitCoverageFlow(
+        200,
+        `<?xml version="1.0"?>
+<cov:result name="ADT_ROOT_NODE" xmlns:cov="http://www.sap.com/adt/cov">
+  <nodes>
+    <node>
+      <coverages>
+        <coverage type="statement" total="bad" executed="1"/>
+      </coverages>
+    </node>
+  </nodes>
+</cov:result>`,
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPDiagnose', {
+        action: 'unittest',
+        type: 'CLAS',
+        name: 'ZCL_ABAPGIT_HASH',
+        coverage: true,
+      });
+
+      expect(result.isError).toBeUndefined();
+      const out = JSON.parse(result.content[0]?.text ?? '{}');
+      expect(out.tests.length).toBeGreaterThan(0);
+      expect(out.coverage).toBeUndefined();
+      expect(out.coverageNote).toContain('Coverage unavailable');
     });
   });
 

@@ -29,8 +29,13 @@ const BUDGETS = {
   // Stage D split into src/handlers/write/{create,update-delete,class-surgery,rap}.ts. The action
   // submodules ride the default src budget; keep this tight so the dispatcher can't reabsorb them.
   'src/handlers/write.ts': 360,
-  'src/handlers/tools.ts': 1700,
+  // tools.ts holds every tool's JSON schema; FEAT-65 (TTYP) + set_api_state's contract/apiState
+  // params nudged it up. Trim a description before raising further.
+  'src/handlers/tools.ts': 1715,
   'src/adt/xml-parser.ts': 1650,
+  // The ADT client facade aggregates every read/write op; the set_api_state read-back +
+  // idempotency handling (PR #506) pushed it just past the default. Keep tight headroom.
+  'src/adt/client.ts': 1540,
 };
 
 const DEFAULT_SRC = 1500;

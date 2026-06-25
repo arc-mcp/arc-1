@@ -43,6 +43,7 @@ export interface SapErrorClassification {
     | 'object-exists'
     | 'method-not-supported'
     | 'icf-handler-not-bound'
+    | 'bdef-base-not-extensible'
     | 'include-not-initialized';
   hint: string;
   transaction?: string;
@@ -664,6 +665,21 @@ export function classifySapDomainError(
     };
   }
 
+  if (
+    statusCode === 400 &&
+    /\bbehavior\s+definition\b/i.test(bodyRaw) &&
+    /\bnot\s+marked\s+as\s+extensible\b/i.test(bodyRaw)
+  ) {
+    return {
+      category: 'bdef-base-not-extensible',
+      hint:
+        'The base behavior definition is not extensible, so SAP refused the behavior extension create. ' +
+        'Update and activate the base BDEF with strict(2), an `extensible` header, an `extensible` entity declaration, ' +
+        'and `mapping ... corresponding extensible`; then retry the extension create.',
+      details: typeId ? { exceptionType: typeId } : undefined,
+    };
+  }
+
   const objectExistsPattern = bodyLower.includes('already exists') || bodyLower.includes('does already exist');
   const resourceExistsPattern =
     /\bresource\b[^.\n]*\bdoes?\s+already\s+exist\b/i.test(bodyRaw) ||
@@ -882,4 +898,29 @@ export function isNotFoundError(err: unknown): boolean {
 
 export function isSessionExpiredError(err: unknown): boolean {
   return err instanceof AdtApiError && err.isSessionExpired;
+}
+
+/**
+ * Extract the offending column from an "unknown column name" data-preview / freestyle error, else
+ * null. Anchored on the LANGUAGE-STABLE T100 message id, not localized prose: the failure is class
+ * `ADT_DATAPREVIEW_MSG` number `004` on every release/logon language (live-verified 7.58 + 8.16, EN
+ * AND DE — under DE the prose is "Unbekannter Spaltenname"). The column is always the quoted token in
+ * `T100KEY-V1` regardless of language. Missing-table is the same class but number `022`, so the number
+ * guards against that false positive. (ADR-0002: anchor on the message id, never the prose.) Used to
+ * self-correct unknown-column queries with the table's real column list (see `formatUnknownColumnHint`).
+ */
+export function extractUnknownColumn(err: unknown): string | null {
+  if (!(err instanceof AdtApiError)) return null;
+  const body = err.responseBody ?? '';
+  if (!body.includes('ADT_DATAPREVIEW_MSG') || !/<entry key="T100KEY-NO">0*4<\/entry>/.test(body)) {
+    return null;
+  }
+  const v1 = body.match(/<entry key="T100KEY-V1">([^<]*)<\/entry>/);
+  const col = v1?.[1]?.match(/"([A-Za-z0-9_/]+)"/);
+  return col ? col[1]! : null;
+}
+
+/** Render the self-correcting hint listing a table's actual columns. */
+export function formatUnknownColumnHint(badColumn: string, tableName: string, columns: string[]): string {
+  return `Unknown column "${badColumn}" on ${tableName.toUpperCase()}. Available columns: ${columns.join(', ')}.`;
 }

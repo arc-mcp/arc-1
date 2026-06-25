@@ -1930,4 +1930,157 @@ ENDCLASS.`.replace(/\n/g, '\r\n');
       expect(result.content[0]?.text).toMatch(/visibility.*required/i);
     });
   });
+
+  // ── FUGR structural-include update (FEAT-18 sibling) ─────────────────
+  // Routing only — the full live lifecycle (create FUGR → update TOP include → activate →
+  // read-back) is covered by the integration test, verified on a4h 758 + 816.
+  describe('SAPWrite FUGR structural include update', () => {
+    function captureLockingFlow(): { method: string; url: string }[] {
+      const calls: { method: string; url: string }[] = [];
+      mockFetch.mockImplementation((url: string | URL, fetchOpts?: { method?: string }) => {
+        const method = fetchOpts?.method ?? 'GET';
+        const urlStr = String(url);
+        calls.push({ method, url: urlStr });
+        if (method === 'POST' && urlStr.includes('_action=LOCK')) {
+          return Promise.resolve(
+            mockResponse(200, '<DATA><LOCK_HANDLE>LH123</LOCK_HANDLE></DATA>', { 'x-csrf-token': 'T' }),
+          );
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+      return calls;
+    }
+
+    it('routes type=INCL + group to the function-group include source PUT, locking the include (not the group)', async () => {
+      const calls = captureLockingFlow();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'update',
+        type: 'INCL',
+        name: 'LZARC1_FG_INCTOP',
+        group: 'ZARC1_FG_INC',
+        source: 'FUNCTION-POOL ZARC1_FG_INC.\n* edited',
+        lintBeforeWrite: false,
+      });
+      expect(result.isError).toBeUndefined();
+      const put = calls.find((c) => c.method === 'PUT');
+      expect(put?.url).toContain('/sap/bc/adt/functions/groups/zarc1_fg_inc/includes/lzarc1_fg_inctop/source/main');
+      // The include object is the lock target; locking the group 423s the PUT (live-verified).
+      const lock = calls.find((c) => c.method === 'POST' && c.url.includes('_action=LOCK'));
+      expect(lock?.url).toContain('/functions/groups/zarc1_fg_inc/includes/lzarc1_fg_inctop');
+      expect(lock?.url).not.toContain('/source/main');
+    });
+
+    it('rejects type=INCL + group create instead of creating a standalone program include', async () => {
+      const calls = captureLockingFlow();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'INCL',
+        name: 'LZMY_FGTOP',
+        group: 'ZMY_FG',
+        package: '$TMP',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toMatch(/update only|create\/delete.*unsupported/i);
+      expect(calls.some((c) => c.url.includes('/sap/bc/adt/programs/includes'))).toBe(false);
+    });
+
+    it('rejects type=INCL + group delete instead of deleting a standalone program include', async () => {
+      const calls = captureLockingFlow();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'delete',
+        type: 'INCL',
+        name: 'LZMY_FGTOP',
+        group: 'ZMY_FG',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toMatch(/update only|create\/delete.*unsupported/i);
+      expect(calls.some((c) => c.url.includes('/sap/bc/adt/programs/includes'))).toBe(false);
+    });
+
+    it('fails closed cleanly when FUGR include metadata has no packageRef or packageName', async () => {
+      const calls: { method: string; url: string }[] = [];
+      mockFetch.mockImplementation((url: string | URL, fetchOpts?: { method?: string }) => {
+        const method = fetchOpts?.method ?? 'GET';
+        const urlStr = String(url);
+        calls.push({ method, url: urlStr });
+        if (method === 'GET' && urlStr.includes('/sap/bc/adt/functions/groups/zmy_fg/includes/lzmy_fgtop')) {
+          return Promise.resolve(
+            mockResponse(
+              200,
+              '<include:abapInclude xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="LZMY_FGTOP"/>',
+              { 'x-csrf-token': 'T' },
+            ),
+          );
+        }
+        return Promise.resolve(
+          mockResponse(500, `<unexpected>${method} ${urlStr}</unexpected>`, { 'x-csrf-token': 'T' }),
+        );
+      });
+      const restrictedClient = new AdtClient({
+        baseUrl: 'http://sap:8000',
+        username: 'admin',
+        password: 'secret',
+        safety: { ...unrestrictedSafetyConfig(), allowedPackages: ['ZSAFE'] },
+      });
+
+      const result = await handleToolCall(restrictedClient, DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'update',
+        type: 'INCL',
+        name: 'LZMY_FGTOP',
+        group: 'ZMY_FG',
+        source: 'FUNCTION-POOL ZMY_FG.\n* edited',
+        lintBeforeWrite: false,
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('could not determine');
+      expect(result.content[0]?.text).toContain('Fail-closed');
+      expect(result.content[0]?.text).not.toContain('500');
+      expect(calls.some((c) => c.method === 'PUT' || c.url.includes('_action=LOCK'))).toBe(false);
+      // Requires live confirmation on 7.50/758/816: whether include metadata carries
+      // adtcore:containerRef adtcore:packageName. This test only pins safe fail-closed behavior.
+    });
+
+    it('does not block a realistic TOP include source at the pre-write lint gate', async () => {
+      const calls = captureLockingFlow();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'update',
+        type: 'INCL',
+        name: 'LZMY_FGTOP',
+        group: 'ZMY_FG',
+        source: 'FUNCTION-POOL ZMY_FG.\n* global data\nDATA gv_count TYPE i.',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(calls.some((c) => c.method === 'PUT')).toBe(true);
+    });
+
+    it.each([
+      ['form', 'LZMY_FGF01', 'FORM update_counter.\n  DATA lv_count TYPE i.\nENDFORM.'],
+      ['module', 'LZMY_FGO01', 'MODULE status_0100 OUTPUT.\nENDMODULE.'],
+    ])('does not misclassify FUGR %s includes as class source during pre-write lint', async (_kind, includeName, source) => {
+      const calls = captureLockingFlow();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'update',
+        type: 'INCL',
+        name: includeName,
+        group: 'ZMY_FG',
+        source,
+      });
+      expect(result.isError).toBeUndefined();
+      expect(calls.some((c) => c.method === 'PUT')).toBe(true);
+    });
+
+    it('a bare INCL with no group stays a standalone /programs/includes/ include (no FUGR routing)', async () => {
+      const calls = captureLockingFlow();
+      await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'update',
+        type: 'INCL',
+        name: 'ZSTANDALONE_INC',
+        source: '* x',
+        lintBeforeWrite: false,
+      });
+      const put = calls.find((c) => c.method === 'PUT');
+      expect(put?.url.toLowerCase()).toContain('/sap/bc/adt/programs/includes/zstandalone_inc/source/main');
+      expect(put?.url).not.toContain('/functions/groups/');
+    });
+  });
 });

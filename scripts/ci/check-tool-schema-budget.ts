@@ -85,9 +85,12 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     budget: {
       // +200/+150 for SAPRead action="diff" (action/from/to params + their descriptions).
       // +350/+350/+1 for context-first KTD guidance (KTD alias + SAPContext includeKtd).
-      schemaTokenEstimate: 12_050,
-      descriptionTokenEstimate: 9_500,
-      descriptionCount: 151,
+      // +135/+100/+1 for SAPManage action="set_api_state" (apiState param + action/visibility docs).
+      // +90/+60/+1 for the set_api_state `contract` param (C0–C4 enum + per-type docs).
+      // +1 descriptionCount for SAPDiagnose `coverage` param (FEAT-41 AUnit coverage).
+      schemaTokenEstimate: 12_540,
+      descriptionTokenEstimate: 9_910,
+      descriptionCount: 154,
     },
   },
   {
@@ -98,9 +101,13 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     budget: {
       // schema +200 for SAPRead action="diff" (action/from/to params).
       // +400/+350 for context-first KTD guidance (KTD alias + SAPContext includeKtd).
-      schemaTokenEstimate: 20_100,
-      descriptionTokenEstimate: 15_350,
-      descriptionCount: 265,
+      // +135/+135 for SAPManage action="set_api_state" (apiState param + action/visibility docs).
+      // +120/+80/+1 for the set_api_state `contract` param (C0–C4 enum + per-type docs).
+      // +1 descriptionCount / ~60 desc tokens for SAPDiagnose `coverage` param (FEAT-41).
+      // +TTYP read/write type + SAPWrite rowType/rowTypeKind params (FEAT-65).
+      schemaTokenEstimate: 20_730,
+      descriptionTokenEstimate: 15_870,
+      descriptionCount: 271,
     },
   },
   {
@@ -113,9 +120,13 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // action description). Keeps ~110 tokens of headroom, matching the other scenarios.
       // Further +200/+150 for SAPRead action="diff" (action/from/to params + descriptions).
       // +450/+350 for context-first KTD guidance (KTD alias + SAPContext includeKtd).
-      schemaTokenEstimate: 18_350,
-      descriptionTokenEstimate: 13_700,
-      descriptionCount: 265,
+      // +135/+135 for SAPManage action="set_api_state" (apiState param + action/visibility docs).
+      // +120/+80 for the set_api_state `contract` param (C0–C4 enum + per-type docs).
+      // +1 descriptionCount / ~60 desc tokens for SAPDiagnose `coverage` param (FEAT-41).
+      // +SAPWrite rowType/rowTypeKind params (FEAT-65; global SAPWrite props, present on BTP too).
+      schemaTokenEstimate: 18_980,
+      descriptionTokenEstimate: 14_220,
+      descriptionCount: 269,
     },
   },
   {

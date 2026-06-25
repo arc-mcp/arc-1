@@ -87,6 +87,107 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
       expect(result.content[0]?.text).toContain('DEVK900001');
     });
 
+    // ─── Pre-release inactive-objects check (FEAT-63) ─────────────────
+    // Rich inactive-objects shape (live-verified on a4h 758): object on task DEVK900002, whose
+    // parent request is DEVK900001 → releasing DEVK900001 must be blocked.
+    const inactiveXmlMatching = `<ioc:inactiveObjects xmlns:ioc="http://www.sap.com/adt/inactivectsobjects" xmlns:adtcore="http://www.sap.com/adt/core">
+      <ioc:entry>
+        <ioc:object ioc:user="DEV" ioc:deleted="false">
+          <ioc:ref adtcore:uri="/sap/bc/adt/bo/behaviordefinitions/zc_test" adtcore:type="BDEF/BDO" adtcore:name="ZC_TEST"/>
+        </ioc:object>
+        <ioc:transport><ioc:ref adtcore:name="DEVK900002" adtcore:parentUri="/sap/bc/adt/cts/transportrequests/DEVK900001"/></ioc:transport>
+      </ioc:entry>
+    </ioc:inactiveObjects>`;
+    const inactiveXmlOther = inactiveXmlMatching
+      .replace(/DEVK900001/g, 'DEVK999999')
+      .replace('DEVK900002', 'DEVK999998');
+
+    it('release: blocks when the transport contains inactive objects (no release sent)', async () => {
+      mockFetch.mockImplementation((url: unknown) =>
+        Promise.resolve(
+          String(url).includes('inactiveobjects')
+            ? mockResponse(200, inactiveXmlMatching, {})
+            : mockResponse(200, '', { 'x-csrf-token': 'T' }),
+        ),
+      );
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'release',
+        id: 'DEVK900001',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('cannot be released');
+      expect(result.content[0]?.text).toContain('ZC_TEST');
+      // The release pipeline must never be invoked when blocked.
+      const calledRelease = mockFetch.mock.calls.some((c: unknown[]) => String(c[0]).includes('newreleasejobs'));
+      expect(calledRelease).toBe(false);
+    });
+
+    it('release: proceeds when the inactive-objects probe fails (graceful degradation)', async () => {
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+      mockFetch.mockImplementation((url: unknown) =>
+        Promise.resolve(
+          String(url).includes('inactiveobjects')
+            ? mockResponse(500, 'boom', {})
+            : mockResponse(200, '', { 'x-csrf-token': 'T' }),
+        ),
+      );
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'release',
+        id: 'DEVK900001',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('Released transport request: DEVK900001');
+      expect(warnSpy).toHaveBeenCalled();
+      warnSpy.mockRestore();
+    });
+
+    it('release: proceeds when inactive objects belong to a different transport', async () => {
+      mockFetch.mockImplementation((url: unknown) =>
+        Promise.resolve(
+          String(url).includes('inactiveobjects')
+            ? mockResponse(200, inactiveXmlOther, {})
+            : mockResponse(200, '', { 'x-csrf-token': 'T' }),
+        ),
+      );
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'release',
+        id: 'DEVK900001',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('Released transport request: DEVK900001');
+    });
+
+    // P2 (Codex review): the transport-write safety ceiling must be enforced BEFORE the diagnostic
+    // inactive-objects read. Otherwise an unauthorized caller whose transport happens to contain
+    // inactive objects gets a misleading "activate them first" instead of the real "writes blocked",
+    // and we waste an ADT round-trip on a release we will refuse.
+    it('release: enforces allowTransportWrites BEFORE the inactive-objects probe', async () => {
+      mockFetch.mockImplementation((url: unknown) =>
+        Promise.resolve(
+          String(url).includes('inactiveobjects')
+            ? mockResponse(200, inactiveXmlMatching, {}) // transport DOES contain inactive objects
+            : mockResponse(200, '', { 'x-csrf-token': 'T' }),
+        ),
+      );
+      const noWriteClient = new AdtClient({
+        baseUrl: 'http://sap:8000',
+        username: 'admin',
+        password: 'secret',
+        safety: { ...unrestrictedSafetyConfig(), allowTransportWrites: false },
+      });
+      const result = await handleToolCall(noWriteClient, DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'release',
+        id: 'DEVK900001',
+      });
+      expect(result.isError).toBe(true);
+      // The real reason — not the misleading inactive-objects remediation.
+      expect(result.content[0]?.text).toContain('allowTransportWrites=false');
+      expect(result.content[0]?.text).not.toContain('cannot be released');
+      // The diagnostic read must NOT run for a release refused on safety grounds.
+      const probedInactive = mockFetch.mock.calls.some((c: unknown[]) => String(c[0]).includes('inactiveobjects'));
+      expect(probedInactive).toBe(false);
+    });
+
     it('create with package passes DEVCLASS through', async () => {
       // CreateCorrectionRequest endpoint returns a path like /com.sap.cts/object_record/<id>
       mockFetch.mockResolvedValue(mockResponse(200, '/com.sap.cts/object_record/DEVK900099', { 'x-csrf-token': 'T' }));

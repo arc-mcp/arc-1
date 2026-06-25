@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  buildApiReleasePutBody,
   decodeXmlEntities,
   escapeXmlAttr,
   findDeepNodes,
@@ -961,6 +962,75 @@ describe('XML Parser', () => {
       expect(state.contracts[0]!.successors).toHaveLength(2);
       expect(state.contracts[0]!.successors[0]!.name).toBe('CL_NEW_A');
       expect(state.contracts[0]!.successors[1]!.name).toBe('CL_NEW_B');
+    });
+  });
+
+  // ─── buildApiReleasePutBody (FEAT-02 write) ────────────────────────
+  // The PUT schema is far narrower than the GET response — the builder must KEEP the contract +
+  // status + successor scaffold + apiCatalogData/ApiCatalogs and DROP the response-only nodes
+  // (atom:link, stateTransitions, transportObject, authValueObject), or SAP 400s. Live-verified
+  // against this real unreleased-class fixture on a4h 758 + 816.
+  describe('buildApiReleasePutBody', () => {
+    const getXml = loadFixture('api-release-unreleased.xml');
+
+    it('builds a RELEASED C1 PUT body with visibility from the behaviour default', () => {
+      const body = buildApiReleasePutBody(getXml, 'C1', 'RELEASED');
+      expect(body).toContain('<ars:status ars:state="RELEASED"/>');
+      // The fixture's c1 behaviour default is SAP Cloud Platform → visibility must be set true.
+      expect(body).toContain('ars:useInSAPCloudPlatform="true"');
+      expect(body).toContain(
+        '<ars:apiCatalogData ars:isAnyAssignmentPossible="true" ars:isAnyContractReleased="true"><ars:ApiCatalogs/></ars:apiCatalogData>',
+      );
+      // Response-only nodes must NOT survive into the request (they 400 the PUT).
+      expect(body).not.toContain('atom:link');
+      expect(body).not.toContain('stateTransitions');
+      expect(body).not.toContain('transportObject');
+      expect(body).not.toContain('authValueObject');
+      // Exactly one contract block, correctly closed.
+      expect(body.match(/<ars:c1Release\b/g)).toHaveLength(1);
+      expect(body).toContain('</ars:c1Release>');
+    });
+
+    it('never invents visibility — with no default, both flags stay false and SAP decides', () => {
+      // Defensive: ARC-1 must not fabricate broader exposure, and must not pre-judge whether the
+      // contract even requires visibility (it varies — C0/C1 demand it, C4 has other rules). So with
+      // both defaults false it sends both false; SAP returns the contract-accurate error if needed.
+      const noDefaultVisibility = getXml.replace(
+        'ars:useInSAPCloudPlatformDefault="true"',
+        'ars:useInSAPCloudPlatformDefault="false"',
+      );
+      const body = buildApiReleasePutBody(noDefaultVisibility, 'C1', 'RELEASED');
+      expect(body).toContain('ars:useInSAPCloudPlatform="false"');
+      expect(body).toContain('ars:useInKeyUserApps="false"');
+      expect(body).not.toContain('ars:useInSAPCloudPlatform="true"');
+      expect(body).toContain('<ars:status ars:state="RELEASED"/>');
+    });
+
+    it('builds a NOT_RELEASED body (revoke) without forcing visibility', () => {
+      const body = buildApiReleasePutBody(getXml, 'C1', 'NOT_RELEASED');
+      expect(body).toContain('<ars:status ars:state="NOT_RELEASED"/>');
+      expect(body).not.toContain('stateTransitions');
+    });
+
+    it('targets a non-C1 contract the object supports (C4)', () => {
+      // The captured class fixture supports C1 + C4. The transform must build the c4Release block.
+      // Use NOT_RELEASED so the assertion is about contract routing, not per-contract visibility.
+      const body = buildApiReleasePutBody(getXml, 'C4', 'NOT_RELEASED');
+      expect(body).toContain('<ars:c4Release');
+      expect(body).toContain('<ars:status ars:state="NOT_RELEASED"/>');
+      expect(body).toContain('</ars:c4Release>');
+    });
+
+    it('lists the supported contracts when the requested one is unavailable (e.g. C0 on a class)', () => {
+      // The class fixture supports C1 + C4 only — C0 is not settable, so the error must name C1, C4.
+      expect(() => buildApiReleasePutBody(getXml, 'C0', 'RELEASED')).toThrow(
+        /contract C0 is not available.*supports: C1, C4/is,
+      );
+    });
+
+    it('throws when the requested contract is not settable on the object', () => {
+      // The fixture supports C1; C3 has no standalone settable block.
+      expect(() => buildApiReleasePutBody(getXml, 'C3', 'RELEASED')).toThrow(/contract C3 is not available/i);
     });
   });
 

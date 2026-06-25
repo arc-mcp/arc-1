@@ -218,16 +218,12 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
     });
 
     it('blocks SAPManage write actions with read scope', async () => {
-      const result = await handleToolCall(
-        createClient(),
-        DEFAULT_CONFIG,
-        'SAPManage',
-        { action: 'create_package' },
-        readAuth,
-      );
-      expect(result.isError).toBe(true);
-      expect(result.content[0]?.text).toContain("Insufficient scope: 'write'");
-      expect(result.content[0]?.text).toContain('SAPManage(action="create_package")');
+      for (const action of ['create_package', 'set_api_state']) {
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', { action }, readAuth);
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toContain("Insufficient scope: 'write'");
+        expect(result.content[0]?.text).toContain(`SAPManage(action="${action}")`);
+      }
     });
 
     it('blocks SAP(manage) write sub-action escalation with read scope', async () => {
@@ -1139,6 +1135,29 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
       });
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toContain('Hint: DDIC save failed.');
+    });
+
+    it('adds a BDEF base-extensible hint for behavior extension create failures', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(
+        mockResponse(
+          400,
+          '<exc:exception><localizedMessage>Behavior Definition ZR_BASE is not marked as extensible</localizedMessage></exc:exception>',
+          { 'x-csrf-token': 'T' },
+        ),
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'BDEF',
+        name: 'ZR_BASE_X',
+        package: '$TMP',
+        source: 'extension implementation in class zbp_base_x unique;\nextend behavior for ZR_BASE\n{\n}',
+      });
+      const text = result.content[0]?.text ?? '';
+      expect(result.isError).toBe(true);
+      expect(text).toContain('Behavior Definition ZR_BASE is not marked as extensible');
+      expect(text).toContain('Hint: The base behavior definition is not extensible');
+      expect(text).toContain('mapping ... corresponding extensible');
     });
 
     it('keeps DDIC hint for generic "already exists" conflicts without creation signatures', async () => {

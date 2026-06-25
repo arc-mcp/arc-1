@@ -14,6 +14,7 @@ import {
   getObjectTransports,
   getTransport,
   getTransportInfo,
+  inactiveObjectsForTransport,
   listTransportLayers,
   listTransports,
   listTransportTargets,
@@ -1211,5 +1212,49 @@ describe('Transport Management', () => {
         getObjectTransports(mockHttp(xml), readOnlySafety, '/sap/bc/adt/oo/classes/zcl_test'),
       ).resolves.toBeDefined();
     });
+  });
+});
+
+describe('inactiveObjectsForTransport', () => {
+  // Shapes captured live from a4h (758) `SAPRead type=INACTIVE_OBJECTS`: `transport` = task id,
+  // `parentTransport` = parent request URI; `$TMP`/unassigned objects omit both.
+  const onTask = {
+    name: 'ZC_FbClubTP',
+    type: 'BDEF/BDO',
+    uri: '/sap/bc/adt/bo/behaviordefinitions/zc_fbclubtp',
+    transport: 'A4HK901087', // a child TASK of request A4HK901086
+    parentTransport: '/sap/bc/adt/cts/transportrequests/A4HK901086',
+  };
+  const onTmp = {
+    name: 'ZARC1_TST_RPT_1',
+    type: 'PROG/P',
+    uri: '/sap/bc/adt/programs/programs/zarc1_tst_rpt_1',
+  }; // no transport fields
+
+  it('matches an object via parentTransport when releasing the REQUEST', () => {
+    expect(inactiveObjectsForTransport([onTask, onTmp], 'A4HK901086')).toEqual([onTask]);
+  });
+
+  it('matches an object via transport when releasing its TASK', () => {
+    expect(inactiveObjectsForTransport([onTask, onTmp], 'A4HK901087')).toEqual([onTask]);
+  });
+
+  it('is case-insensitive on the transport id', () => {
+    expect(inactiveObjectsForTransport([onTask], 'a4hk901086')).toEqual([onTask]);
+  });
+
+  it('never matches $TMP / unassigned objects', () => {
+    expect(inactiveObjectsForTransport([onTmp], 'A4HK901086')).toEqual([]);
+  });
+
+  it('does not false-match on a prefix collision (leading slash guards the boundary)', () => {
+    // request A4HK90108 must NOT match an object whose parent is .../A4HK901086
+    expect(inactiveObjectsForTransport([onTask], 'A4HK90108')).toEqual([]);
+  });
+
+  it('returns [] for an unrelated id and for empty input', () => {
+    expect(inactiveObjectsForTransport([onTask], 'A4HK999999')).toEqual([]);
+    expect(inactiveObjectsForTransport([], 'A4HK901086')).toEqual([]);
+    expect(inactiveObjectsForTransport([onTask], '')).toEqual([]);
   });
 });

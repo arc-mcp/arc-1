@@ -26,7 +26,7 @@ import {
 } from '../activate.js';
 import { invalidateInactiveList } from '../cache-security.js';
 import { guardCdsSyntax } from '../cds-hints.js';
-import { cachedFeatures, isTablesEndpointAvailable } from '../feature-cache.js';
+import { cachedFeatures, isTablesEndpointAvailable, isTableTypesEndpointAvailable } from '../feature-cache.js';
 import {
   normalizeObjectType,
   normalizeWriteObjectType,
@@ -47,6 +47,7 @@ import {
   SKTD_V2_CONTENT_TYPE,
   stripFmParamCommentBlock,
   TABL_DT_WRITE_UNAVAILABLE_HINT,
+  TTYP_WRITE_UNAVAILABLE_HINT,
   tryPostSaveSyntaxCheck,
   vendorContentTypeForType,
 } from '../write-helpers.js';
@@ -66,6 +67,40 @@ function normalizeTransportOverride(rawTransport: unknown): string | undefined {
   }
   const value = String(rawTransport).trim();
   return value || undefined;
+}
+
+function ttypPostCreateFailureMessage(name: string, cause: unknown): string {
+  const detail = cause instanceof Error ? cause.message : String(cause);
+  return (
+    `TTYP post-create update failed for ${name} after SAP accepted the create POST. ` +
+    `The object may remain as SAP's default metadata shell (CHAR). To recover, run ` +
+    `SAPWrite(action="update", type="TTYP", name="${name}", rowType=…) to write the intended row type, ` +
+    `or delete it — a plain re-create fails with "already exists". Verify with SAPRead first. ` +
+    detail
+  );
+}
+
+async function putTtypMetadataAfterCreate(
+  client: SapWriteContext['client'],
+  objectUrl: string,
+  name: string,
+  body: string,
+  contentType: string,
+  transport: string | undefined,
+): Promise<void> {
+  try {
+    await client.http.withStatefulSession(async (session) => {
+      const lock = await lockObject(session, client.safety, objectUrl, 'MODIFY', cachedFeatures?.abapRelease);
+      const lockTransport = transport ?? (lock.corrNr || undefined);
+      try {
+        await updateObject(session, client.safety, objectUrl, body, lock.lockHandle, contentType, lockTransport);
+      } finally {
+        await unlockObject(session, objectUrl, lock.lockHandle);
+      }
+    });
+  } catch (err) {
+    throw new Error(ttypPostCreateFailureMessage(name, err));
+  }
 }
 
 const KTD_REF_OBJECT_TYPES_ROUTABLE_BY_ARC = new Set([
@@ -139,6 +174,100 @@ function validateKtdRefObjectType(refObjectType: string): string | undefined {
     `posting unknown parent types can trigger a SAP short dump in CL_KTD_UTILITY=>GET_DOCU_STRUCTURE before SAP returns a normal validation error. ` +
     `ARC-1 currently supports KTD creation for: ${KTD_REF_OBJECT_TYPES_HINT}.` +
     codeDocumentationHint
+  );
+}
+
+const BDEF_IDENTIFIER_PATTERN = '(?:/[A-Za-z0-9_]+/[A-Za-z_][A-Za-z0-9_]*|[A-Za-z_][A-Za-z0-9_]*)';
+const BDEF_EXTENSION_PATTERN = new RegExp(String.raw`\bextend\s+behavior\s+for\s+(${BDEF_IDENTIFIER_PATTERN})\b`, 'i');
+
+function replaceNonNewlineWithSpaces(text: string): string {
+  return text.replace(/[^\n]/g, ' ');
+}
+
+function stripBdefCommentsAndStrings(source: string): string {
+  const withoutBlockComments = source.replace(/\/\*[\s\S]*?\*\//g, replaceNonNewlineWithSpaces);
+  return withoutBlockComments
+    .split('\n')
+    .map((line) => {
+      if (/^\s*\*/.test(line)) return '';
+      let stripped = '';
+      let inString = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        const next = line[i + 1];
+        if (!inString) {
+          if (ch === '"' || (ch === '/' && next === '/')) break;
+          if (ch === "'") {
+            inString = true;
+            stripped += ' ';
+            continue;
+          }
+          stripped += ch;
+          continue;
+        }
+        if (ch === "'" && next === "'") {
+          stripped += '  ';
+          i++;
+          continue;
+        }
+        if (ch === "'") {
+          inString = false;
+          stripped += ' ';
+          continue;
+        }
+        stripped += ' ';
+      }
+      return stripped;
+    })
+    .join('\n');
+}
+
+function extractBdefBehaviorExtensionBase(source: string): string | undefined {
+  return BDEF_EXTENSION_PATTERN.exec(stripBdefCommentsAndStrings(source))?.[1];
+}
+
+function sameBdefName(left: string, right: string): boolean {
+  return left.toUpperCase() === right.toUpperCase();
+}
+
+function applyBdefBehaviorExtensionMetadata(
+  type: string,
+  source: string | undefined,
+  metadataProperties: Record<string, unknown>,
+): string | undefined {
+  if (type !== 'BDEF' || !source) return undefined;
+  const baseBdef = extractBdefBehaviorExtensionBase(source);
+  if (!baseBdef) return undefined;
+  metadataProperties.behaviorExtension = true;
+  metadataProperties.baseBdef = baseBdef;
+  return baseBdef;
+}
+
+/**
+ * After a behavior-extension create+PUT, read the inactive draft back and confirm it really is an
+ * `extend behavior for <base>` extension. Returns a NON-BLOCKING warning string if it isn't (the
+ * object was still created — SAP may have scaffolded a plain definition, e.g. if a future release
+ * ignores the ADT template). On the tested releases (758/816) this never fires; it's a cheap
+ * data-integrity hint, not a hard gate. Returns undefined when the extension is confirmed.
+ */
+async function warnIfBdefExtensionUnconfirmed(
+  client: SapWriteContext['client'],
+  name: string,
+  expectedBaseBdef: string,
+): Promise<string | undefined> {
+  const readBack = await client.getBdef(name, { version: 'inactive' });
+  const actualBaseBdef = extractBdefBehaviorExtensionBase(readBack.source);
+  if (actualBaseBdef && sameBdefName(actualBaseBdef, expectedBaseBdef)) return undefined;
+
+  const actual =
+    actualBaseBdef !== undefined
+      ? `read-back shows \`extend behavior for ${actualBaseBdef}\` instead`
+      : 'read-back shows no `extend behavior for` declaration';
+  return (
+    `Warning: created BDEF ${name}, but the inactive read-back did not confirm ` +
+    `\`extend behavior for ${expectedBaseBdef}\` (${actual}). SAP may have scaffolded a plain behavior ` +
+    'definition (e.g. if the ADT template was ignored or the base BDEF is not extensible). ' +
+    `Verify with SAPRead(type="BDEF", name="${name}", version="inactive") before activating.`
   );
 }
 
@@ -331,6 +460,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
   // SAP ADT requires the root element to match the object type —
   // a generic objectReferences body returns 400 "System expected the element ...".
   const metadataProperties = getMetadataWriteProperties(args);
+  const bdefExtensionBase = applyBdefBehaviorExtensionMetadata(type, source, metadataProperties);
   const body = buildCreateXml(type, name, pkg, description, metadataProperties, config.language, config.username);
 
   // Step 1: Create the object (metadata only)
@@ -390,6 +520,11 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
           await unlockObject(session, objectUrl, lock.lockHandle);
         }
       });
+    }
+    // TTYP: the POST creates a default-typed (CHAR) shell — a follow-up PUT writes the real row type.
+    if (type === 'TTYP') {
+      const ct = vendorContentTypeForType(type);
+      await putTtypMetadataAfterCreate(client, objectUrl, name, body, ct, effectiveTransport);
     }
     invalidateWrittenObject();
     const followUpHint =
@@ -456,6 +591,9 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
       effectiveTransport,
       cachedFeatures?.abapRelease,
     );
+    const bdefExtensionWarning = bdefExtensionBase
+      ? await warnIfBdefExtensionUnconfirmed(client, name, bdefExtensionBase)
+      : undefined;
     invalidateWrittenObject(type, name);
     const msg = `Created ${type} ${name} in package ${pkg} and wrote source code.`;
     const warnings = mergePreWriteWarnings(
@@ -463,6 +601,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
       lintWarnings.warnings,
       fmParamStripWarning,
       fmParamMergeWarning,
+      bdefExtensionWarning,
     );
     return warnings ? textResult(`${msg}\n\n${warnings}`) : textResult(msg);
   }
@@ -680,9 +819,23 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
         });
         break;
       }
+      // TTYP create needs /ddic/tabletypes/ (absent on NW 7.50) — mirror the TABL/DT gate above.
+      if (objType === 'TTYP' && isTableTypesEndpointAvailable() === false) {
+        results.push({
+          type: objType,
+          name: objName,
+          packageName: objPackage,
+          status: 'failed',
+          error: TTYP_WRITE_UNAVAILABLE_HINT,
+        });
+        break;
+      }
       const objUrl = objectUrlForType(objType, objName);
       const createUrl = objUrl.replace(/\/[^/]+$/, '');
       const objMetadataProps = getMetadataWriteProperties(obj);
+      // Sets behaviorExtension + baseBdef on the metadata so buildCreateXml emits the adtTemplate;
+      // the return value (used for the optional read-back warning) isn't needed in the batch path.
+      applyBdefBehaviorExtensionMetadata(objType, objSource, objMetadataProps);
       const body = buildCreateXml(
         objType,
         objName,
@@ -727,6 +880,11 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
             await unlockObject(session, objUrl, lock.lockHandle);
           }
         });
+      }
+
+      // TTYP POST creates SAP's default table-type shell; PUT the real row type before activation.
+      if (objType === 'TTYP') {
+        await putTtypMetadataAfterCreate(client, objUrl, objName, body, contentType, objTransport);
       }
 
       // Step 2: Write source if provided

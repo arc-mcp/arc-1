@@ -12,6 +12,7 @@ import {
   buildDomainXml,
   buildMessageClassXml,
   buildServiceBindingXml,
+  buildTableTypeXml,
   type DataElementCreateParams,
   type DomainCreateParams,
   type MessageClassCreateParams,
@@ -77,13 +78,15 @@ export const SERVICEBINDING_V2_ACCEPT = 'application/vnd.sap.adt.businessservice
 const BDEF_CONTENT_TYPE = 'application/vnd.sap.adt.blues.v1+xml';
 const MESSAGECLASS_CONTENT_TYPE = 'application/vnd.sap.adt.mc.messageclass+xml';
 export const SKTD_V2_CONTENT_TYPE = 'application/vnd.sap.adt.sktdv2+xml';
+// Table type (TTYP) create/read — verified live on a4h 758 + 816 (POST → 201).
+const TABLETYPE_CONTENT_TYPE = 'application/vnd.sap.adt.tabletype.v1+xml';
 // Function group + function module content types — verified live on a4h S/4HANA 2023
 // (issue #250). FUGR uses the v3 group envelope; FUNC uses the unversioned fmodule envelope.
 const FUNCTION_GROUP_CONTENT_TYPE = 'application/vnd.sap.adt.functions.groups.v3+xml';
 const FUNCTION_MODULE_CONTENT_TYPE = 'application/vnd.sap.adt.functions.fmodules+xml';
 
 export function isMetadataWriteType(type: string): boolean {
-  return type === 'DOMA' || type === 'DTEL' || type === 'MSAG' || type === 'SRVB';
+  return type === 'DOMA' || type === 'DTEL' || type === 'MSAG' || type === 'SRVB' || type === 'TTYP';
 }
 
 /** Types that require a specific vendor content type for creation (not application/*) */
@@ -94,6 +97,7 @@ function needsVendorContentType(type: string): boolean {
     type === 'BDEF' ||
     type === 'MSAG' ||
     type === 'SKTD' ||
+    type === 'TTYP' ||
     type === 'FUGR' ||
     type === 'FUNC'
   );
@@ -139,6 +143,8 @@ export function vendorContentTypeForType(type: string): string {
       return MESSAGECLASS_CONTENT_TYPE;
     case 'SKTD':
       return SKTD_V2_CONTENT_TYPE;
+    case 'TTYP':
+      return TABLETYPE_CONTENT_TYPE;
     case 'FUGR':
       return FUNCTION_GROUP_CONTENT_TYPE;
     case 'FUNC':
@@ -175,6 +181,8 @@ export function getMetadataWriteProperties(input: Record<string, unknown>): Reco
     valueTable: input.valueTable,
     typeKind: input.typeKind,
     typeName: input.typeName,
+    rowType: input.rowType,
+    rowTypeKind: input.rowTypeKind,
     domainName: input.domainName,
     shortLabel: input.shortLabel,
     mediumLabel: input.mediumLabel,
@@ -406,9 +414,20 @@ export function buildCreateXml(
   <adtcore:packageRef adtcore:name="${escapeXmlAttr(pkg)}"/>
 </blue:blueSource>`;
     }
-    case 'BDEF':
+    case 'BDEF': {
       // BDEF uses SAP's "blue" framework — blue:blueSource with http://www.sap.com/wbobj/blue namespace.
       // Confirmed by vibing-steampunk (Go) and fr0ster (TypeScript) reference implementations.
+      // A behavior EXTENSION (`extend behavior for …`) is still adtcore:type BDEF/BDO, but its create
+      // POST carries an `adtcore:adtTemplate` naming the base BDEF — and it MUST precede packageRef
+      // (the elements are schema-ordered; a trailing template is silently ignored — live-verified a4h
+      // 816). Without it SAP scaffolds a plain definition; with it SAP scaffolds `extend behavior for`.
+      const baseBdef = String(properties?.baseBdef ?? '').trim();
+      if (properties?.behaviorExtension && !baseBdef) {
+        throw new Error('BDEF behavior extension create requires a non-empty baseBdef metadata property.');
+      }
+      const extTemplate = properties?.behaviorExtension
+        ? `\n  <adtcore:adtTemplate>\n    <adtcore:adtProperty adtcore:key="base_bdef">${escapeXmlAttr(baseBdef)}</adtcore:adtProperty>\n  </adtcore:adtTemplate>`
+        : '';
       return `<?xml version="1.0" encoding="UTF-8"?>
 <blue:blueSource xmlns:blue="http://www.sap.com/wbobj/blue"
                  xmlns:adtcore="http://www.sap.com/adt/core"
@@ -417,9 +436,10 @@ export function buildCreateXml(
                  adtcore:type="BDEF/BDO"
                  adtcore:masterLanguage="${masterLanguage}"
                  adtcore:masterSystem="H00"
-                 adtcore:responsible="${escapeXmlAttr(responsibleUser)}">
+                 adtcore:responsible="${escapeXmlAttr(responsibleUser)}">${extTemplate}
   <adtcore:packageRef adtcore:name="${escapeXmlAttr(pkg)}"/>
 </blue:blueSource>`;
+    }
     case 'SRVD':
       return `<?xml version="1.0" encoding="UTF-8"?>
 <srvd:srvdSource xmlns:srvd="http://www.sap.com/adt/ddic/srvdsources"
@@ -494,6 +514,25 @@ export function buildCreateXml(
         responsible: responsibleUser,
       };
       return buildDomainXml(params);
+    }
+    case 'TTYP': {
+      const rowType = String(properties?.rowType ?? '').trim();
+      if (!rowType) {
+        throw new Error(
+          'SAPWrite create type=TTYP requires "rowType" — a built-in ABAP type (STRING, I, …) or a DDIC structure/type name.',
+        );
+      }
+      const rowTypeKindRaw = String(properties?.rowTypeKind ?? '');
+      const rowTypeKind = rowTypeKindRaw === 'builtin' || rowTypeKindRaw === 'structure' ? rowTypeKindRaw : undefined;
+      return buildTableTypeXml({
+        name,
+        description,
+        package: pkg,
+        rowType,
+        rowTypeKind,
+        language: masterLanguage,
+        responsible: responsibleUser,
+      });
     }
     case 'DTEL': {
       const typeKindRaw = String(properties?.typeKind ?? '');
@@ -867,7 +906,12 @@ export function runPreWriteLint(
   }
 
   try {
-    const filename = detectFilename(source, name);
+    let filename = detectFilename(source, name);
+    if (type === 'INCL' && filename.endsWith('.clas.abap')) {
+      // ABAP includes are often source fragments (FORM/MODULE/DATA...) without a REPORT/CLASS header.
+      // Lint them as program-style source; treating the fallback as a class rejects valid include fragments.
+      filename = `${name.toLowerCase()}.prog.abap`;
+    }
     // Reuse the single systemType/abapRelease/configFile resolution (avoids drift with SAPLint's
     // own config — a release-ceiling fix applied to one copy only would split lint behavior).
     const configOptions = buildLintConfigOptions(config);
@@ -1000,3 +1044,8 @@ export const TABL_DT_WRITE_UNAVAILABLE_HINT =
   'Use SE11 in SAPGUI, or connect ARC-1 to an SAP_BASIS ≥ 7.52 system. ' +
   'Writing the source via /sap/bc/adt/ddic/structures/ would silently flip ' +
   'DD02L-TABCLASS to INTTAB and corrupt the table.';
+
+export const TTYP_WRITE_UNAVAILABLE_HINT =
+  'Table type (TTYP) writes are not available on this system ' +
+  '(/sap/bc/adt/ddic/tabletypes/ is not exposed by ADT discovery — verified absent on NW 7.50). ' +
+  'Use SE11 in SAPGUI, or connect ARC-1 to a system that exposes the table-type endpoint (S/4HANA 2023 / ABAP Platform 2025 verified).';

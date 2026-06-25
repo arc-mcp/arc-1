@@ -18,6 +18,7 @@
 
 import type { AdtClientConfig } from './config.js';
 import { defaultAdtClientConfig } from './config.js';
+import { parseTableType, type TableTypeInfo } from './ddic-xml.js';
 import { AdtApiError, AdtSafetyError, isNotFoundError } from './errors.js';
 import { AdtHttpClient, type AdtHttpConfig } from './http.js';
 import { AdtPackageHierarchyResolver, type PackageHierarchyResolver } from './package-hierarchy.js';
@@ -44,6 +45,8 @@ import type {
   TransactionInfo,
 } from './types.js';
 import {
+  assertApiReleaseStateConfirmed,
+  buildApiReleasePutBody,
   parseApiReleaseState,
   parseAuthorizationField,
   parseBspAppList,
@@ -878,6 +881,15 @@ export class AdtClient {
     return parseDomainMetadata(resp.body);
   }
 
+  /** Get table type (TTYP) metadata: row type, access type, key kind. */
+  async getTableType(name: string): Promise<TableTypeInfo> {
+    checkOperation(this.safety, OperationType.Read, 'GetTableType');
+    const resp = await this.http.get(`/sap/bc/adt/ddic/tabletypes/${encodeURIComponent(name)}`, {
+      Accept: 'application/vnd.sap.adt.tabletype.v1+xml',
+    });
+    return parseTableType(resp.body);
+  }
+
   /** Get data element metadata (domain, labels, search help) */
   async getDataElement(name: string): Promise<DataElementInfo> {
     checkOperation(this.safety, OperationType.Read, 'GetDataElement');
@@ -996,6 +1008,59 @@ export class AdtClient {
       Accept: 'application/vnd.sap.adt.apirelease.v10+xml',
     });
     return parseApiReleaseState(resp.body);
+  }
+
+  /**
+   * Set an object's API release contract state (RELEASED / NOT_RELEASED) — the clean-core
+   * governance write. Uses GET→narrow PUT→GET read-back with v10; no lock needed.
+   */
+  async setApiReleaseState(
+    objectUri: string,
+    opts: { state?: string; contract?: string; transport?: string } = {},
+  ): Promise<ApiReleaseStateInfo & { changed: boolean }> {
+    checkOperation(this.safety, OperationType.Update, 'SetApiReleaseState');
+    const state = (opts.state ?? 'RELEASED').toUpperCase();
+    const contract = (opts.contract ?? 'C1').toUpperCase();
+    if (state !== 'RELEASED' && state !== 'NOT_RELEASED') {
+      throw new Error(`apiState must be RELEASED or NOT_RELEASED, got ${opts.state}.`);
+    }
+    const accept = 'application/vnd.sap.adt.apirelease.v10+xml';
+    const encoded = encodeURIComponent(objectUri);
+    const current = await this.http.get(`/sap/bc/adt/apireleases/${encoded}`, { Accept: accept });
+    const body = buildApiReleasePutBody(current.body, contract, state);
+    const path = `/sap/bc/adt/apireleases/${encoded}/${contract.toLowerCase()}`;
+    const expectedVisibility = {
+      useInSAPCloudPlatform: /ars:useInSAPCloudPlatform="true"/.test(body),
+      useInKeyUserApps: /ars:useInKeyUserApps="true"/.test(body),
+    };
+    let changed = true;
+    try {
+      await this.http.put(
+        opts.transport ? `${path}?request=${encodeURIComponent(opts.transport)}` : path,
+        body,
+        accept,
+        { Accept: accept },
+      );
+    } catch (err) {
+      // SAP returns 400 "No changes were made" when the contract is already in the requested state.
+      // Treat that as an idempotent no-op (the desired state already holds — confirmed via read-back
+      // below) rather than surfacing a confusing error for "release something already released".
+      if (
+        err instanceof AdtApiError &&
+        err.statusCode === 400 &&
+        /no changes were made/i.test(`${err.message} ${err.responseBody ?? ''}`)
+      ) {
+        changed = false;
+      } else {
+        throw err;
+      }
+    }
+    const confirmedResp = await this.http.get(`/sap/bc/adt/apireleases/${encoded}`, { Accept: accept });
+    const confirmed = parseApiReleaseState(confirmedResp.body);
+    // On a real write, assert the full target (state + requested visibility). On an idempotent no-op,
+    // assert only that the state already matches — the pre-existing visibility is whatever SAP stored.
+    assertApiReleaseStateConfirmed(confirmed, contract, state, changed ? expectedVisibility : undefined);
+    return { ...confirmed, changed };
   }
 
   /** List objects pending activation (inactive objects).

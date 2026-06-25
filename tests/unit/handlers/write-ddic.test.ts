@@ -120,6 +120,151 @@ describe('SAPWrite handler — DDIC writes', () => {
       expect(calls.some((c) => c.method === 'PUT')).toBe(false);
     });
 
+    it('create TTYP returns an error if the post-create lock fails, not a Created message', async () => {
+      mockFetch.mockReset();
+      const calls: Array<{ method: string; url: string }> = [];
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
+        const method = opts?.method ?? 'GET';
+        const urlStr = String(url);
+        calls.push({ method, url: urlStr });
+        if (method === 'POST' && urlStr.includes('/sap/bc/adt/ddic/tabletypes') && urlStr.includes('_action=LOCK')) {
+          return Promise.resolve(mockResponse(423, 'locked by another user', { 'x-csrf-token': 'T' }));
+        }
+        return Promise.resolve(mockResponse(201, '<xml>created</xml>', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'TTYP',
+        name: 'ZTTYP_LOCKED',
+        package: '$TMP',
+        rowType: 'BAPIRET2',
+      });
+
+      expect(result.isError).toBe(true);
+      const message = result.content[0]?.text ?? '';
+      expect(message).toMatch(/423|locked/i);
+      expect(message).not.toContain('Created TTYP ZTTYP_LOCKED');
+      expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+    });
+
+    it('create TTYP returns an error and unlocks if the post-create PUT fails', async () => {
+      mockFetch.mockReset();
+      const calls: Array<{ method: string; url: string; body?: string }> = [];
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string; body?: unknown }) => {
+        const method = opts?.method ?? 'GET';
+        const urlStr = String(url);
+        calls.push({ method, url: urlStr, body: typeof opts?.body === 'string' ? opts.body : undefined });
+        if (method === 'POST' && urlStr.includes('_action=LOCK')) {
+          return Promise.resolve(
+            mockResponse(200, '<asx:values><LOCK_HANDLE>LH_TTYP</LOCK_HANDLE><CORRNR></CORRNR></asx:values>', {
+              'x-csrf-token': 'T',
+            }),
+          );
+        }
+        if (method === 'PUT' && urlStr.includes('/sap/bc/adt/ddic/tabletypes/ZTTYP_PUT_FAIL')) {
+          return Promise.resolve(mockResponse(500, 'PUT failed', { 'x-csrf-token': 'T' }));
+        }
+        return Promise.resolve(mockResponse(201, '<xml>created</xml>', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'TTYP',
+        name: 'ZTTYP_PUT_FAIL',
+        package: '$TMP',
+        rowType: 'BAPIRET2',
+      });
+
+      expect(result.isError).toBe(true);
+      const message = result.content[0]?.text ?? '';
+      expect(message).toMatch(/500|PUT failed/i);
+      expect(message).not.toContain('Created TTYP ZTTYP_PUT_FAIL');
+      expect(calls.some((c) => c.method === 'POST' && c.url.includes('_action=UNLOCK'))).toBe(true);
+    });
+
+    it('batch_create TTYP writes the real row type with a post-create PUT before activation', async () => {
+      mockFetch.mockReset();
+      const calls: Array<{ method: string; url: string; contentType?: string; body?: string }> = [];
+      mockFetch.mockImplementation(
+        (url: string | URL, opts?: { method?: string; headers?: Record<string, string>; body?: unknown }) => {
+          const method = opts?.method ?? 'GET';
+          const headers = (opts?.headers ?? {}) as Record<string, string>;
+          const urlStr = String(url);
+          calls.push({
+            method,
+            url: urlStr,
+            contentType: headers['content-type'] ?? headers['Content-Type'],
+            body: typeof opts?.body === 'string' ? opts.body : undefined,
+          });
+          if (method === 'POST' && urlStr.includes('_action=LOCK')) {
+            return Promise.resolve(
+              mockResponse(200, '<asx:values><LOCK_HANDLE>LH_TTYP</LOCK_HANDLE><CORRNR></CORRNR></asx:values>', {
+                'x-csrf-token': 'T',
+              }),
+            );
+          }
+          return Promise.resolve(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
+        },
+      );
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'batch_create',
+        package: '$TMP',
+        objects: [{ type: 'TTYP', name: 'ZTTYP_BATCH', rowType: 'BAPIRET2', description: 'Table type' }],
+      });
+
+      expect(result.isError).toBeUndefined();
+      const putIndex = calls.findIndex(
+        (c) => c.method === 'PUT' && c.url.includes('/sap/bc/adt/ddic/tabletypes/ZTTYP_BATCH?lockHandle=LH_TTYP'),
+      );
+      expect(putIndex).toBeGreaterThan(-1);
+      const putCall = calls[putIndex];
+      expect(putCall.contentType).toContain('application/vnd.sap.adt.tabletype.v1+xml');
+      expect(putCall.body).toContain('<ttyp:typeName>BAPIRET2</ttyp:typeName>');
+      expect(putCall.body).toContain('<ttyp:dataType>STRU</ttyp:dataType>');
+      const activationIndex = calls.findIndex((c) => c.method === 'POST' && c.url.includes('/sap/bc/adt/activation'));
+      expect(activationIndex).toBeGreaterThan(putIndex);
+    });
+
+    it('batch_create TTYP returns an error if the post-create PUT fails, not a Created summary', async () => {
+      mockFetch.mockReset();
+      const calls: Array<{ method: string; url: string }> = [];
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
+        const method = opts?.method ?? 'GET';
+        const urlStr = String(url);
+        calls.push({ method, url: urlStr });
+        if (method === 'POST' && urlStr.includes('_action=LOCK')) {
+          return Promise.resolve(
+            mockResponse(200, '<asx:values><LOCK_HANDLE>LH_TTYP</LOCK_HANDLE><CORRNR></CORRNR></asx:values>', {
+              'x-csrf-token': 'T',
+            }),
+          );
+        }
+        if (method === 'PUT' && urlStr.includes('/sap/bc/adt/ddic/tabletypes/ZTTYP_BATCH_FAIL')) {
+          return Promise.resolve(mockResponse(500, 'PUT failed', { 'x-csrf-token': 'T' }));
+        }
+        return Promise.resolve(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'batch_create',
+        package: '$TMP',
+        objects: [{ type: 'TTYP', name: 'ZTTYP_BATCH_FAIL', rowType: 'BAPIRET2', description: 'Table type' }],
+      });
+
+      expect(result.isError).toBe(true);
+      const message = result.content[0]?.text ?? '';
+      expect(message).toContain('Batch created 0/1 objects');
+      expect(message).toContain('TTYP post-create update failed');
+      expect(message).toContain('default metadata shell');
+      // Recovery guidance must point at the path that actually works (update), not a plain re-create
+      // which 400s "already exists" (live-verified on 816).
+      expect(message).toContain('action="update"');
+      expect(calls.some((c) => c.method === 'POST' && c.url.includes('_action=UNLOCK'))).toBe(true);
+      expect(calls.some((c) => c.method === 'POST' && c.url.includes('/sap/bc/adt/activation'))).toBe(false);
+    });
+
     it('updates DOMA via lock/PUT/unlock to object URL', async () => {
       const calls: Array<{ method: string; url: string; contentType?: string }> = [];
       const lockBody =
@@ -1025,6 +1170,35 @@ describe('SAPWrite handler — DDIC writes', () => {
         expect(message).toContain('SE11');
         expect(message).toContain('TABCLASS');
         // The handler must refuse BEFORE making any HTTP call to /tables/.
+        expect(mockFetch.mock.calls).toHaveLength(0);
+      } finally {
+        resetCachedFeatures();
+      }
+    });
+
+    it('refuses TTYP create when /sap/bc/adt/ddic/tabletypes/ is missing from discovery (FEAT-65; NW 7.50)', async () => {
+      // Live-verified: NW 7.50 returns 404 + advertises no tabletypes collection in discovery.
+      // Refuse upfront with a clear hint instead of letting the POST 404 "Resource ... does not exist".
+      setCachedFeatures({
+        ...featuresOff(),
+        abapRelease: '750',
+        systemType: 'onprem',
+        discoveryMap: new Map<string, string[]>([['/sap/bc/adt/ddic/structures', ['application/*']]]),
+      });
+      try {
+        mockFetch.mockReset();
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+          action: 'create',
+          type: 'TTYP',
+          name: 'ZTTYP_750',
+          package: '$TMP',
+          rowType: 'BAPIRET2',
+        });
+        expect(result.isError).toBe(true);
+        const message = result.content[0]?.text ?? '';
+        expect(message).toContain('Table type (TTYP) writes are not available');
+        expect(message).toContain('tabletypes');
+        // Refuse BEFORE any HTTP call to /tabletypes/.
         expect(mockFetch.mock.calls).toHaveLength(0);
       } finally {
         resetCachedFeatures();
@@ -2220,6 +2394,139 @@ define role ZTEST_DCL {
       // Should mention the field path and constraint
       expect(text).toContain('/header/description');
       expect(text).toContain('Fix the metadata and retry');
+    });
+  });
+
+  // ── BDEF behavior extension create (tier-3 #10) ─────────────────────
+  // An extension (`extend behavior for <Base>`) is the same BDEF/BDO endpoint as a definition, but
+  // its create POST must carry an adtcore:adtTemplate(base_bdef) BEFORE packageRef, or SAP scaffolds
+  // a plain definition (live-verified a4h 758 + 816 — full lifecycle in the integration suite).
+  describe('SAPWrite BDEF behavior extension create (#10)', () => {
+    function captureCreateFlow(readBackSource?: string) {
+      const calls: { method: string; url: string; body?: string }[] = [];
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string; body?: unknown }) => {
+        const method = opts?.method ?? 'GET';
+        const urlStr = String(url);
+        calls.push({ method, url: urlStr, body: typeof opts?.body === 'string' ? opts.body : undefined });
+        if (method === 'GET' && urlStr.includes('/bo/behaviordefinitions/') && urlStr.includes('/source/main')) {
+          return Promise.resolve(mockResponse(200, readBackSource ?? '', { 'x-csrf-token': 'T' }));
+        }
+        if (method === 'POST' && urlStr.includes('_action=LOCK')) {
+          return Promise.resolve(
+            mockResponse(200, '<DATA><LOCK_HANDLE>LH</LOCK_HANDLE></DATA>', { 'x-csrf-token': 'T' }),
+          );
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+      return calls;
+    }
+
+    it('emits adtTemplate(base_bdef) before packageRef when the source is `extend behavior for X`', async () => {
+      const calls = captureCreateFlow(
+        'extension implementation in class zbp_base_x unique;\nextend behavior for ZR_BASE\n{\n}',
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'BDEF',
+        name: 'ZR_BASE_X',
+        package: '$TMP',
+        source: 'extension implementation in class zbp_base_x unique;\nextend behavior for ZR_BASE\n{\n}',
+      });
+      expect(result.isError).toBeUndefined();
+      const post = calls.find(
+        (c) => c.method === 'POST' && c.url.includes('/bo/behaviordefinitions') && c.body?.includes('blueSource'),
+      );
+      expect(post?.body).toContain('<adtcore:adtProperty adtcore:key="base_bdef">ZR_BASE</adtcore:adtProperty>');
+      // The template must precede packageRef — the blueSource elements are schema-ordered.
+      expect(post!.body!.indexOf('adtTemplate')).toBeLessThan(post!.body!.indexOf('packageRef'));
+    });
+
+    it('emits adtTemplate(base_bdef) for BDEF extensions in batch_create', async () => {
+      const calls = captureCreateFlow(
+        'extension implementation in class zbp_base_x unique;\nextend behavior for ZR_BASE\n{\n}',
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'batch_create',
+        package: '$TMP',
+        objects: [
+          {
+            type: 'BDEF',
+            name: 'ZR_BASE_X',
+            source: 'extension implementation in class zbp_base_x unique;\nextend behavior for ZR_BASE\n{\n}',
+          },
+        ],
+      });
+      expect(result.isError).toBeUndefined();
+      const post = calls.find(
+        (c) => c.method === 'POST' && c.url.includes('/bo/behaviordefinitions') && c.body?.includes('blueSource'),
+      );
+      expect(post?.body).toContain('<adtcore:adtProperty adtcore:key="base_bdef">ZR_BASE</adtcore:adtProperty>');
+      expect(post!.body!.indexOf('adtTemplate')).toBeLessThan(post!.body!.indexOf('packageRef'));
+    });
+
+    it('supports namespaced base BDEF names in the extension template', async () => {
+      const calls = captureCreateFlow(
+        'extension implementation in class /dmo/bp_base_x unique;\nextend behavior for /DMO/I_BASE\n{\n}',
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'BDEF',
+        name: '/DMO/I_BASE_X',
+        package: '$TMP',
+        source: 'extension implementation in class /dmo/bp_base_x unique;\nextend behavior for /DMO/I_BASE\n{\n}',
+      });
+      expect(result.isError).toBeUndefined();
+      const post = calls.find(
+        (c) => c.method === 'POST' && c.url.includes('/bo/behaviordefinitions') && c.body?.includes('blueSource'),
+      );
+      expect(post?.body).toContain('<adtcore:adtProperty adtcore:key="base_bdef">/DMO/I_BASE</adtcore:adtProperty>');
+    });
+
+    it('omits the template for a plain `define behavior for` definition', async () => {
+      const calls = captureCreateFlow();
+      await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'BDEF',
+        name: 'ZR_BASE',
+        package: '$TMP',
+        source: 'managed implementation in class zbp_base unique;\ndefine behavior for ZR_BASE\n{\n}',
+      });
+      const post = calls.find((c) => c.method === 'POST' && c.body?.includes('blueSource'));
+      expect(post?.body).not.toContain('adtTemplate');
+    });
+
+    it('ignores `extend behavior for` inside comments when creating a plain definition', async () => {
+      const calls = captureCreateFlow();
+      await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'BDEF',
+        name: 'ZR_BASE',
+        package: '$TMP',
+        source:
+          '" extend behavior for ZCOMMENT\n// extend behavior for ZCOMMENT2\nmanaged implementation in class zbp_base unique;\ndefine behavior for ZR_BASE\n{\n}',
+      });
+      const post = calls.find((c) => c.method === 'POST' && c.body?.includes('blueSource'));
+      expect(post?.body).not.toContain('adtTemplate');
+    });
+
+    it('warns (non-blocking) when inactive read-back does not confirm the created BDEF is an extension', async () => {
+      const calls = captureCreateFlow(
+        'managed implementation in class zbp_base_x unique;\ndefine behavior for ZR_BASE_X\n{\n}',
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'BDEF',
+        name: 'ZR_BASE_X',
+        package: '$TMP',
+        source: 'extension implementation in class zbp_base_x unique;\nextend behavior for ZR_BASE\n{\n}',
+      });
+      // Non-blocking: the object was created (success), but the warning is appended.
+      expect(result.isError).toBeUndefined();
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('and wrote source code');
+      expect(text).toContain('did not confirm');
+      expect(text).toContain('extend behavior for ZR_BASE');
+      expect(calls.some((c) => c.method === 'GET' && c.url.includes('version=inactive'))).toBe(true);
     });
   });
 });
