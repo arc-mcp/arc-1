@@ -2,10 +2,10 @@
  * Runtime diagnostics for SAP ADT.
  *
  * - Short dumps (ST22): list and read ABAP runtime errors
- * - ABAP traces: list and analyze profiler trace files
+ * - ABAP traces: list/analyze recorded profiler traces, and arm/list/cancel trace requests
  *
- * All operations are read-only (GET requests).
- * Follows the same pure-function pattern as devtools.ts.
+ * Most operations are read-only (GET); arming and cancelling a trace request mutate server state and
+ * go through OperationType.Update. Follows the same pure-function pattern as devtools.ts.
  */
 
 import { createHash } from 'node:crypto';
@@ -27,11 +27,15 @@ import type {
   ObjectStateSourceVersion,
   SystemMessageEntry,
   TraceDbAccess,
+  TracedObjectType,
+  TracedProcessType,
   TraceEntry,
   TraceHitlistEntry,
+  TraceRequest,
+  TraceRequestCreateOptions,
   TraceStatement,
 } from './types.js';
-import { findDeepNodes, parseXml } from './xml-parser.js';
+import { escapeXmlAttr, findDeepNodes, parseXml } from './xml-parser.js';
 
 // ─── Short Dumps ────────────────────────────────────────────────────
 
@@ -367,6 +371,244 @@ export async function getTraceDbAccesses(
   });
 
   return parseTraceDbAccesses(resp.body);
+}
+
+// ─── ABAP Trace Requests (arm a profiler trace, then read it back) ───
+
+const TRACE_BASE = '/sap/bc/adt/runtime/traces/abaptraces';
+
+const TRACE_PROCESS_TYPE_URIS: Record<TracedProcessType, string> = {
+  any: `${TRACE_BASE}/processtypes/any`,
+  http: `${TRACE_BASE}/processtypes/http`,
+  dialog: `${TRACE_BASE}/processtypes/dialog`,
+  batch: `${TRACE_BASE}/processtypes/batch`,
+  rfc: `${TRACE_BASE}/processtypes/rfc`,
+};
+
+const TRACE_OBJECT_TYPE_URIS: Record<TracedObjectType, string> = {
+  any: `${TRACE_BASE}/objecttypes/any`,
+  url: `${TRACE_BASE}/objecttypes/url`,
+  transaction: `${TRACE_BASE}/objecttypes/transaction`,
+  report: `${TRACE_BASE}/objecttypes/report`,
+  functionModule: `${TRACE_BASE}/objecttypes/functionmodule`,
+};
+
+/** Object types valid per process type; the first entry is the sensible default. */
+const TRACE_PROCESS_OBJECTS: Record<TracedProcessType, TracedObjectType[]> = {
+  any: ['any', 'url', 'transaction', 'report', 'functionModule'],
+  http: ['url'],
+  dialog: ['transaction', 'report'],
+  batch: ['report'],
+  rfc: ['functionModule'],
+};
+
+/**
+ * Build the trc:parameters body. Procedural units stay on (hitlist/statements); SQL/aggregate per opts.
+ * allDbEvents follows sqlTrace: without it the `dbAccesses` analysis comes back EMPTY (only kernel summary
+ * rows) — live-verified — so the whole point of the trace (which tables/joins were hit) is lost.
+ */
+function buildTraceParametersXml(p: { description: string; aggregate: boolean; sqlTrace: boolean }): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<trc:parameters xmlns:trc="http://www.sap.com/adt/runtime/traces/abaptraces">
+  <trc:allMiscAbapStatements value="false"/>
+  <trc:allProceduralUnits value="true"/>
+  <trc:allInternalTableEvents value="false"/>
+  <trc:allDynproEvents value="false"/>
+  <trc:description value="${escapeXmlAttr(p.description)}"/>
+  <trc:aggregate value="${p.aggregate}"/>
+  <trc:explicitOnOff value="false"/>
+  <trc:withRfcTracing value="false"/>
+  <trc:allSystemKernelEvents value="false"/>
+  <trc:sqlTrace value="${p.sqlTrace}"/>
+  <trc:allDbEvents value="${p.sqlTrace}"/>
+  <trc:maxSizeForTraceFile value="100"/>
+  <trc:maxTimeForTracing value="600"/>
+</trc:parameters>`;
+}
+
+/**
+ * Arm a profiler trace request. The next execution matching {traceUser, processType, objectType} is
+ * recorded; read it back later via listTraces + the analysis sub-resources (dbAccesses needs sqlTrace).
+ * Two ADT POSTs: parameters (capture flags → parametersId in Location) then requests (when/who).
+ */
+export async function createTraceRequest(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  connectedUser: string,
+  client: string,
+  opts: TraceRequestCreateOptions = {},
+): Promise<TraceRequest> {
+  checkOperation(safety, OperationType.Update, 'CreateTraceRequest');
+
+  const processType: TracedProcessType = opts.processType ?? 'http';
+  const validObjects = TRACE_PROCESS_OBJECTS[processType];
+  const objectType: TracedObjectType = opts.objectType ?? validObjects[0]!;
+  if (!validObjects.includes(objectType)) {
+    throw new AdtApiError(
+      `Invalid objectType "${objectType}" for processType "${processType}". Valid: ${validObjects.join(', ')}.`,
+      400,
+      `${TRACE_BASE}/requests`,
+    );
+  }
+
+  const traceUser = (opts.traceUser ?? connectedUser).toUpperCase();
+  const sqlTrace = opts.sqlTrace !== false; // default true
+  const aggregate = opts.aggregate !== false; // default true
+  const maxExecutions = Math.max(1, Math.floor(opts.maxExecutions ?? 1));
+  const expiresHours = opts.expiresHours ?? 24;
+  if (!Number.isFinite(expiresHours) || expiresHours <= 0) {
+    throw new AdtApiError('expiresHours must be a positive number of hours.', 400, `${TRACE_BASE}/requests`);
+  }
+  const expires = new Date(Date.now() + expiresHours * 3_600_000).toISOString().replace(/\.\d+Z$/, 'Z');
+  const description = opts.description ?? `arc-1 ${processType}/${objectType} trace`;
+
+  // 1) capture parameters → parametersId (Location header)
+  const paramsResp = await http.post(
+    `${TRACE_BASE}/parameters`,
+    buildTraceParametersXml({ description, aggregate, sqlTrace }),
+    'application/xml',
+  );
+  const parametersId = paramsResp.headers.location;
+  if (!parametersId) {
+    throw new AdtApiError(
+      'Trace parameters POST returned no Location header (parametersId).',
+      paramsResp.statusCode,
+      `${TRACE_BASE}/parameters`,
+      paramsResp.body,
+    );
+  }
+
+  // 2) create the request (when/who)
+  const qs = new URLSearchParams({
+    server: '*',
+    description,
+    traceUser,
+    traceClient: client,
+    processType: TRACE_PROCESS_TYPE_URIS[processType],
+    objectType: TRACE_OBJECT_TYPE_URIS[objectType],
+    expires,
+    maximalExecutions: String(maxExecutions),
+    parametersId,
+  }).toString();
+  const resp = await http.post(`${TRACE_BASE}/requests?${qs}`, '', 'application/xml');
+  const created = parseTraceRequestFeed(resp.body)[0];
+  if (!created?.id) {
+    throw new AdtApiError(
+      'Trace request POST returned no usable request entry (missing id).',
+      resp.statusCode,
+      `${TRACE_BASE}/requests`,
+      resp.body,
+    );
+  }
+  return created;
+}
+
+/** List armed trace requests for a user (read-only). */
+export async function listTraceRequests(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  user: string,
+): Promise<TraceRequest[]> {
+  checkOperation(safety, OperationType.Read, 'ListTraceRequests');
+  const resp = await http.get(`${TRACE_BASE}/requests?user=${encodeURIComponent(user.toUpperCase())}`, {
+    Accept: 'application/atom+xml;type=feed',
+  });
+  return parseTraceRequestFeed(resp.body);
+}
+
+/** Cancel (delete) an armed trace request by id (the full ADT path from a request entry). */
+export async function deleteTraceRequest(http: AdtHttpClient, safety: SafetyConfig, id: string): Promise<void> {
+  checkOperation(safety, OperationType.Update, 'DeleteTraceRequest');
+  await http.delete(traceRequestPath(id));
+}
+
+// Normalize full-path, absolute-URL, or bare trace-request ids without creating an arbitrary DELETE primitive.
+function traceRequestPath(id: string): string {
+  const prefix = `${TRACE_BASE}/requests/`;
+  const trimmed = String(id ?? '').trim();
+  if (!trimmed) throw new AdtApiError('Refusing to cancel an empty trace-request id.', 400, prefix);
+  if (trimmed.includes('\\'))
+    throw new AdtApiError(`Refusing to cancel "${id}": malformed trace-request id.`, 400, trimmed);
+  const isAbsoluteUrl = /^https?:\/\//i.test(trimmed);
+  let raw = '';
+  try {
+    if (isAbsoluteUrl) new URL(trimmed);
+    raw = isAbsoluteUrl
+      ? (trimmed.match(/^https?:\/\/[^/?#]*(\/[^?#]*)?/i)?.[1] ?? '/')
+      : trimmed.startsWith('/')
+        ? trimmed
+        : `${prefix}${trimmed}`;
+  } catch {
+    throw new AdtApiError(`Refusing to cancel "${id}": malformed trace-request id.`, 400, trimmed);
+  }
+
+  const decoded = decodeTraceRequestPath(raw, id);
+  const tail = decoded.startsWith(prefix) ? decoded.slice(prefix.length) : '';
+  if (!tail || tail !== tail.trim() || /[\\/?#\s]/.test(tail) || tail === '.' || tail === '..') {
+    throw new AdtApiError(
+      `Refusing to cancel "${id}": not an abaptraces trace-request id (expected ${prefix}<id>).`,
+      400,
+      decoded,
+    );
+  }
+  return raw;
+}
+
+function decodeTraceRequestPath(path: string, originalId: string): string {
+  let decoded = path;
+  for (let i = 0; i < 5; i++) {
+    try {
+      const next = decodeURIComponent(decoded);
+      if (next === decoded) return decoded;
+      decoded = next;
+    } catch {
+      throw new AdtApiError(`Refusing to cancel "${originalId}": malformed trace-request id.`, 400, decoded);
+    }
+  }
+  throw new AdtApiError(`Refusing to cancel "${originalId}": over-encoded trace-request id.`, 400, decoded);
+}
+
+/** Pick the value of a node that repeats per role (admin/trace); prefer `trace`, else the first. */
+function pickTraceRole(node: unknown, valueKey: '#text' | 'name'): string | undefined {
+  const arr = toRecordArray(node);
+  const match = arr.find((n) => n['@_role'] === 'trace') ?? arr[0];
+  const value = match?.[valueKey];
+  return value != null ? String(value) : undefined;
+}
+
+/**
+ * Parse the abaptraces/requests atom feed into TraceRequest[] (used for both list + create responses).
+ * Request id = the `<atom:id>` element (full ADT path with URL-encoded commas) → passed verbatim to DELETE.
+ */
+export function parseTraceRequestFeed(xml: string): TraceRequest[] {
+  if (!xml || xml.trim().length === 0) return [];
+  const parsed = parseXml(xml);
+  const entries = findDeepNodes(parsed, 'entry');
+  return entries.map((entry) => {
+    const ext = (entry.extendedData ?? {}) as Record<string, unknown>;
+    const executions = (ext.executions ?? {}) as Record<string, unknown>;
+    const processType = (ext.processType ?? {}) as Record<string, unknown>;
+    const object = (ext.object ?? {}) as Record<string, unknown>;
+    const content = (entry.content ?? {}) as Record<string, unknown>;
+
+    const req: TraceRequest = {
+      id: String(entry.id ?? content['@_src'] ?? ''),
+      title: String(entry.title ?? ext.description ?? ''),
+    };
+    const user = pickTraceRole(entry.author, 'name');
+    if (user) req.user = user;
+    const client = pickTraceRole(ext.client, '#text');
+    if (client) req.client = client;
+    if (ext.expires != null) req.expires = String(ext.expires);
+    if (processType['@_processTypeId'] != null) req.processType = String(processType['@_processTypeId']);
+    if (object['@_objectTypeId'] != null) req.objectType = String(object['@_objectTypeId']);
+    const maximal = Number(executions['@_maximal']);
+    if (Number.isFinite(maximal)) req.maxExecutions = maximal;
+    const completed = Number(executions['@_completed']);
+    if (Number.isFinite(completed)) req.completedExecutions = completed;
+    if (ext.host != null) req.host = String(ext.host);
+    return req;
+  });
 }
 
 // ─── Parsers ────────────────────────────────────────────────────────

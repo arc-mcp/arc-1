@@ -281,6 +281,44 @@ export function parseTableContents(xml: string): { columns: string[]; rows: Reco
   return { columns: colNames, rows };
 }
 
+/** Metrics ADT returns alongside a datapreview result (already in the body, normally discarded). */
+export interface DataPreviewMeta {
+  /** True number of rows the query matched, independent of the rowNumber cap. */
+  totalRows?: number;
+  /** Server-side execution time in milliseconds (ADT `queryExecutionTime`, as shown by Eclipse Data Preview). */
+  queryExecutionTimeMs?: number;
+  /** The actual OpenSQL ADT generated and ran (whitespace-collapsed). */
+  executedQueryString?: string;
+}
+
+/**
+ * Parse the scalar metrics from a datapreview response — `totalRows`, `queryExecutionTime`,
+ * `executedQueryString`. All optional: absent fields are omitted. Reads the same body
+ * `parseTableContents` does; surfaced so SAPQuery can report real row counts + server-side timing.
+ */
+export function parseDataPreviewMeta(xml: string): DataPreviewMeta {
+  if (!xml || xml.trim().length === 0) return {};
+  const parsed = parseXml(xml);
+  const td = (parsed.tableData ?? parsed) as Record<string, unknown>;
+  const meta: DataPreviewMeta = {};
+
+  // Guard blank values too: an empty <totalRows/> would otherwise coerce via Number('') to a spurious 0.
+  const totalRowsText = td.totalRows != null ? String(td.totalRows).trim() : '';
+  const totalRows = Number(totalRowsText);
+  if (totalRowsText !== '' && Number.isFinite(totalRows)) meta.totalRows = totalRows;
+  const execMsText = td.queryExecutionTime != null ? String(td.queryExecutionTime).trim() : '';
+  const execMs = Number(execMsText);
+  if (execMsText !== '' && Number.isFinite(execMs)) {
+    meta.queryExecutionTimeMs = execMs;
+  }
+
+  const executed = td.executedQueryString;
+  if (typeof executed === 'string' && executed.trim()) {
+    meta.executedQueryString = executed.trim().replace(/\s+/g, ' ');
+  }
+  return meta;
+}
+
 /**
  * Parse installed components response.
  *

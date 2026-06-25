@@ -22,6 +22,12 @@ function dataPreviewXml(column: string, values: string[]): string {
     .join('')}</DATASET></COLUMN></COLUMNS></values></abap>`;
 }
 
+function dataPreviewXmlWithMetrics(column: string, values: string[]): string {
+  return `<dataPreview:tableData xmlns:dataPreview="http://www.sap.com/adt/dataPreview"><dataPreview:totalRows>${values.length * 10}</dataPreview:totalRows><dataPreview:executedQueryString>SELECT ${column} FROM TADIR</dataPreview:executedQueryString><dataPreview:queryExecutionTime>7.5</dataPreview:queryExecutionTime><dataPreview:columns><dataPreview:metadata dataPreview:name="${column}"/><dataPreview:dataSet>${values
+    .map((value) => `<dataPreview:data>${value}</dataPreview:data>`)
+    .join('')}</dataPreview:dataSet></dataPreview:columns></dataPreview:tableData>`;
+}
+
 function freestylePostCalls(): Array<[unknown, Record<string, unknown>]> {
   return mockFetch.mock.calls.filter(
     (call) => String(call[0]).includes('/sap/bc/adt/datapreview/freestyle') && call[1]?.method === 'POST',
@@ -557,6 +563,28 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(result.content[0]?.type).toBe('text');
     });
 
+    it('surfaces datapreview metrics (totalRows, queryExecutionTimeMs, executedQueryString, rowsReturned)', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          `<?xml version="1.0" encoding="utf-8"?><dataPreview:tableData xmlns:dataPreview="http://www.sap.com/adt/dataPreview"><dataPreview:totalRows>511927</dataPreview:totalRows><dataPreview:executedQueryString>SELECT MANDT FROM T000 UP TO 2 ROWS .</dataPreview:executedQueryString><dataPreview:queryExecutionTime>12.5</dataPreview:queryExecutionTime><dataPreview:columns><dataPreview:metadata dataPreview:name="MANDT" dataPreview:type="C"/><dataPreview:dataSet><dataPreview:data>000</dataPreview:data><dataPreview:data>001</dataPreview:data></dataPreview:dataSet></dataPreview:columns></dataPreview:tableData>`,
+        ),
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPQuery', {
+        sql: 'SELECT mandt FROM t000',
+      });
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0]?.text);
+      expect(parsed.totalRows).toBe(511927);
+      expect(parsed.queryExecutionTimeMs).toBeCloseTo(12.5);
+      expect(parsed.executedQueryString).toBe('SELECT MANDT FROM T000 UP TO 2 ROWS .');
+      expect(parsed.rowsReturned).toBe(2);
+      expect(parsed.columns).toEqual(['MANDT']);
+      expect(parsed.rows).toHaveLength(2);
+    });
+
     it('returns parser hint with JOIN-specific addendum when a JOIN query fails with 400', async () => {
       mockFetch.mockReset();
       // First call: CSRF token fetch (200)
@@ -594,9 +622,12 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       mockFetch.mockReset();
       mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
       mockFetch.mockResolvedValueOnce(
-        mockResponse(200, dataPreviewXml('OBJ_NAME', ['Z01', 'Z02', 'Z03', 'Z04', 'Z05', 'Z06', 'Z07', 'Z08'])),
+        mockResponse(
+          200,
+          dataPreviewXmlWithMetrics('OBJ_NAME', ['Z01', 'Z02', 'Z03', 'Z04', 'Z05', 'Z06', 'Z07', 'Z08']),
+        ),
       );
-      mockFetch.mockResolvedValueOnce(mockResponse(200, dataPreviewXml('OBJ_NAME', ['Z09', 'Z10'])));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, dataPreviewXmlWithMetrics('OBJ_NAME', ['Z09', 'Z10'])));
 
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPQuery', {
         sql: "SELECT object_name FROM tadir WHERE object_name IN ('Z01', 'Z02', 'Z03', 'Z04', 'Z05', 'Z06', 'Z07', 'Z08', 'Z09', 'Z10')",
@@ -618,6 +649,9 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
         'Z09',
         'Z10',
       ]);
+      expect(data.totalRows).toBeUndefined();
+      expect(data.queryExecutionTimeMs).toBeUndefined();
+      expect(data.executedQueryString).toBeUndefined();
 
       const postCalls = freestylePostCalls();
       expect(postCalls).toHaveLength(2);

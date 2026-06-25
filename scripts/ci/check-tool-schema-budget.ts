@@ -88,10 +88,11 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // +135/+100/+1 for SAPManage action="set_api_state" (apiState param + action/visibility docs).
       // +90/+60/+1 for the set_api_state `contract` param (C0–C4 enum + per-type docs).
       // +1 descriptionCount for SAPDiagnose `coverage` param (FEAT-41 AUnit coverage).
-      // +odata_perf/cds_sql actions + `url` param (OData/SQL perf-insight): schema/desc bumps + 1 descriptionCount (url).
-      schemaTokenEstimate: 12_900,
-      descriptionTokenEstimate: 10_250,
-      descriptionCount: 156,
+      // +~590/+440/+7 for SAPDiagnose trace_start/trace_requests/trace_cancel actions + their params.
+      // +odata_perf/cds_sql actions + `url` param (PR #509 OData/SQL perf-insight).
+      schemaTokenEstimate: 13_550,
+      descriptionTokenEstimate: 10_750,
+      descriptionCount: 164,
     },
   },
   {
@@ -106,10 +107,11 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // +120/+80/+1 for the set_api_state `contract` param (C0–C4 enum + per-type docs).
       // +1 descriptionCount / ~60 desc tokens for SAPDiagnose `coverage` param (FEAT-41).
       // +TTYP read/write type + SAPWrite rowType/rowTypeKind params (FEAT-65).
-      // +odata_perf/cds_sql actions + `url` param (OData/SQL perf-insight): schema/desc bumps + 1 descriptionCount (url).
-      schemaTokenEstimate: 21_100,
-      descriptionTokenEstimate: 16_220,
-      descriptionCount: 273,
+      // +~570/+460/+6 for SAPDiagnose trace_start/trace_requests/trace_cancel actions + their params.
+      // +odata_perf/cds_sql actions + `url` param (PR #509 OData/SQL perf-insight).
+      schemaTokenEstimate: 21_750,
+      descriptionTokenEstimate: 16_700,
+      descriptionCount: 281,
     },
   },
   {
@@ -126,10 +128,11 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // +120/+80 for the set_api_state `contract` param (C0–C4 enum + per-type docs).
       // +1 descriptionCount / ~60 desc tokens for SAPDiagnose `coverage` param (FEAT-41).
       // +SAPWrite rowType/rowTypeKind params (FEAT-65; global SAPWrite props, present on BTP too).
-      // +odata_perf/cds_sql actions + `url` param (OData/SQL perf-insight): schema/desc bumps + 1 descriptionCount (url).
-      schemaTokenEstimate: 19_340,
-      descriptionTokenEstimate: 14_570,
-      descriptionCount: 271,
+      // +~570/+460/+4 for SAPDiagnose trace_start/trace_requests/trace_cancel actions + their params.
+      // +odata_perf/cds_sql actions + `url` param (PR #509 OData/SQL perf-insight).
+      schemaTokenEstimate: 19_980,
+      descriptionTokenEstimate: 15_050,
+      descriptionCount: 279,
     },
   },
   {

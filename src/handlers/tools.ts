@@ -1168,7 +1168,10 @@ export function getToolDefinitions(
         '- "quickfix": Get SAP quick fix proposals for a specific source position. Requires name + type + source + line. Optional: column, sourceUri for exact ADT include/source targets.\n' +
         '- "apply_quickfix": Apply one quick fix proposal and return text deltas (does not write source). Requires name + type + source + line + proposalUri + proposalUserContent. Optional: column, sourceUri, proposalAffectedObjects. proposalUserContent may be an empty string; pass it through exactly from quickfix.\n' +
         '- "dumps": List or read ABAP short dumps (ST22). Without id: lists recent dumps (filter by user, maxResults). With id: returns focused chapter sections by default; set includeFullText=true to include the full formatted dump blob. Optional sections=[kap0,kap3,...] to request specific chapter IDs.\n' +
-        '- "traces": List or analyze ABAP profiler traces. Without id: lists trace files. With id + analysis: returns trace analysis (hitlist = hot spots, statements = call tree, dbAccesses = database access statistics).\n\n' +
+        '- "traces": List or analyze ABAP profiler traces. Without id: lists recorded trace files. With id + analysis: returns trace analysis (hitlist = hot spots, statements = call tree, dbAccesses = database access statistics).\n' +
+        '- "trace_start": ARM an ABAP profiler trace so the NEXT matching execution is recorded — for debugging a slow OData/Gateway call or report. Defaults: trace the next HTTP/URL request by the connected user with SQL tracing on. Then reproduce the slow action and read it via action="traces" with the returned id (analysis="dbAccesses" shows which tables/joins dominate). Optional: traceUser, processType (any/http/dialog/batch/rfc; default http), objectType (default = the valid type for the process type, e.g. url for http), maxExecutions (default 1), expiresHours (default 24), sqlTrace (default true), aggregate (default true), description. Write scope (mutates server state).\n' +
+        '- "trace_requests": List armed (not-yet-consumed) trace requests for a user (default the connected user) — to confirm a request is armed or find a stale one to cancel.\n' +
+        '- "trace_cancel": Cancel an armed trace request by id (from trace_start or trace_requests). Write scope.\n\n' +
         '- "system_messages": List SM02 system messages via ADT feed (filter by user, maxResults, from, to).\n' +
         '- "gateway_errors": List SAP Gateway error log entries (/IWFND/ERROR_LOG, on-prem). For detail mode provide detailUrl (preferred) or id+errorType.\n' +
         '- "odata_perf": Diagnose WHY a Fiori/OData request is slow. Requires url (the host-relative OData path from the app\'s Network tab). ARC-1 GETs it with ?sap-statistics=true and a wall-clock timer, then returns the server-side timing split (gwtotal, gwapp, gwappdb=DB time, gwfw=framework, icfauth=auth) plus a verdict routing you to the dominant cost (DB vs ABAP/SADL vs framework vs auth). Read-only GET; gated like data preview.\n' +
@@ -1186,6 +1189,9 @@ export function getToolDefinitions(
               'cds_testcases',
               'dumps',
               'traces',
+              'trace_start',
+              'trace_requests',
+              'trace_cancel',
               'system_messages',
               'gateway_errors',
               'object_state',
@@ -1261,7 +1267,8 @@ export function getToolDefinitions(
           variant: { type: 'string', description: 'ATC check variant (for atc action)' },
           id: {
             type: 'string',
-            description: 'Dump or trace ID (for dumps/traces actions). Omit to list, provide to get details.',
+            description:
+              'Dump or trace ID (for dumps/traces actions); also the trace-request id to cancel (for trace_cancel). Omit to list, provide to get details.',
           },
           detailUrl: {
             type: 'string',
@@ -1310,6 +1317,45 @@ export function getToolDefinitions(
             enum: ['hitlist', 'statements', 'dbAccesses'],
             description:
               'Trace analysis type (for traces action with id). hitlist = execution hot spots, statements = call tree, dbAccesses = database access stats.',
+          },
+          traceUser: {
+            type: 'string',
+            description:
+              'For trace_start/trace_requests: the SAP user whose matching execution is traced/listed. Defaults to the connected user.',
+          },
+          processType: {
+            type: 'string',
+            enum: ['any', 'http', 'dialog', 'batch', 'rfc'],
+            description:
+              'For trace_start: the kind of work process to capture. Default "http" (OData/Gateway). dialog = SAP GUI transaction, batch = background job, rfc = RFC call.',
+          },
+          objectType: {
+            type: 'string',
+            enum: ['any', 'url', 'transaction', 'report', 'functionModule'],
+            description:
+              'For trace_start: what to match within the process. Defaults to the valid type for the process type (http→url, dialog→transaction, batch→report, rfc→functionModule).',
+          },
+          maxExecutions: {
+            type: 'number',
+            description:
+              'For trace_start: how many matching executions to capture before the request is consumed (default 1).',
+          },
+          expiresHours: {
+            type: 'number',
+            description: 'For trace_start: hours until the armed request auto-expires (default 24).',
+          },
+          sqlTrace: {
+            type: 'boolean',
+            description:
+              'For trace_start: capture SQL/DB accesses (default true — required for analysis="dbAccesses").',
+          },
+          aggregate: {
+            type: 'boolean',
+            description: 'For trace_start: aggregate the trace (default true).',
+          },
+          description: {
+            type: 'string',
+            description: 'For trace_start: optional label for the trace request.',
           },
         },
         required: ['action'],

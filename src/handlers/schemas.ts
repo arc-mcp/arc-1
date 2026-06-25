@@ -699,6 +699,9 @@ export const SAPDiagnoseSchema = z.object({
     'cds_testcases',
     'dumps',
     'traces',
+    'trace_start',
+    'trace_requests',
+    'trace_cancel',
     'system_messages',
     'gateway_errors',
     'object_state',
@@ -730,6 +733,15 @@ export const SAPDiagnoseSchema = z.object({
   includeFullText: looseOptionalBoolean,
   coverage: looseOptionalBoolean,
   analysis: z.enum(['hitlist', 'statements', 'dbAccesses']).optional(),
+  // trace_start / trace_requests (arm a profiler trace, then read it back via action="traces")
+  traceUser: z.string().optional(),
+  processType: z.enum(['any', 'http', 'dialog', 'batch', 'rfc']).optional(),
+  objectType: z.enum(['any', 'url', 'transaction', 'report', 'functionModule']).optional(),
+  maxExecutions: z.coerce.number().optional(),
+  expiresHours: z.coerce.number().optional(),
+  sqlTrace: looseOptionalBoolean,
+  aggregate: looseOptionalBoolean,
+  description: z.string().optional(),
 });
 
 // ─── SAPTransport ───────────────────────────────────────────────────

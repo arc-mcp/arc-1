@@ -111,7 +111,10 @@ Same structure as Path A — only the `env` block changes. Use this only on a de
         "SAP_USER": "YOUR_USER",
         "SAP_PASSWORD": "YOUR_PASS",
         "SAP_CLIENT": "100",
-        "SAP_ALLOW_WRITES": "true", "SAP_ALLOW_DATA_PREVIEW": "true", "SAP_ALLOW_FREE_SQL": "true", "SAP_ALLOW_TRANSPORT_WRITES": "true",
+        "SAP_ALLOW_WRITES": "true",
+        "SAP_ALLOW_DATA_PREVIEW": "true",
+        "SAP_ALLOW_FREE_SQL": "true",
+        "SAP_ALLOW_TRANSPORT_WRITES": "true",
         "SAP_ALLOWED_PACKAGES": "*"
       }
     }
