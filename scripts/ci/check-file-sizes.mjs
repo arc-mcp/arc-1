@@ -29,8 +29,13 @@ const BUDGETS = {
   // Stage D split into src/handlers/write/{create,update-delete,class-surgery,rap}.ts. The action
   // submodules ride the default src budget; keep this tight so the dispatcher can't reabsorb them.
   'src/handlers/write.ts': 360,
-  'src/handlers/tools.ts': 1740, // +~19 for SAPDiagnose trace_start/trace_requests/trace_cancel actions + params
+  // tools.ts holds every tool's JSON schema; FEAT-65 (TTYP) + set_api_state's contract/apiState params
+  // + the SAPDiagnose trace_start/trace_requests/trace_cancel actions nudged it up. Trim before raising.
+  'src/handlers/tools.ts': 1759,
   'src/adt/xml-parser.ts': 1650,
+  // The ADT client facade aggregates every read/write op; set_api_state (#506) + runQueryWithMetrics
+  // (SAPQuery metrics, this PR) pushed it past the default. Keep tight headroom.
+  'src/adt/client.ts': 1560,
 };
 
 const DEFAULT_SRC = 1500;

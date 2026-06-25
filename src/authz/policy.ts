@@ -197,6 +197,7 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   'SAPManage.create_package': { scope: 'write', opType: OperationType.Create },
   'SAPManage.delete_package': { scope: 'write', opType: OperationType.Delete },
   'SAPManage.change_package': { scope: 'write', opType: OperationType.Update },
+  'SAPManage.set_api_state': { scope: 'write', opType: OperationType.Update },
   // CLASSIFICATION BUG FIX: flp_list_* are read operations; previously required write
   'SAPManage.flp_list_catalogs': { scope: 'read', opType: OperationType.Read, featureGate: 'flp' },
   'SAPManage.flp_list_groups': { scope: 'read', opType: OperationType.Read, featureGate: 'flp' },

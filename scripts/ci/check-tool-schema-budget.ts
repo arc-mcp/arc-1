@@ -85,11 +85,13 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     budget: {
       // +200/+150 for SAPRead action="diff" (action/from/to params + their descriptions).
       // +350/+350/+1 for context-first KTD guidance (KTD alias + SAPContext includeKtd).
+      // +135/+100/+1 for SAPManage action="set_api_state" (apiState param + action/visibility docs).
+      // +90/+60/+1 for the set_api_state `contract` param (C0–C4 enum + per-type docs).
       // +1 descriptionCount for SAPDiagnose `coverage` param (FEAT-41 AUnit coverage).
       // +~590/+440/+7 for SAPDiagnose trace_start/trace_requests/trace_cancel actions + their params.
-      schemaTokenEstimate: 12_707,
-      descriptionTokenEstimate: 9_996,
-      descriptionCount: 160,
+      schemaTokenEstimate: 13_047,
+      descriptionTokenEstimate: 10_289,
+      descriptionCount: 162,
     },
   },
   {
@@ -100,11 +102,14 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     budget: {
       // schema +200 for SAPRead action="diff" (action/from/to params).
       // +400/+350 for context-first KTD guidance (KTD alias + SAPContext includeKtd).
+      // +135/+135 for SAPManage action="set_api_state" (apiState param + action/visibility docs).
+      // +120/+80/+1 for the set_api_state `contract` param (C0–C4 enum + per-type docs).
       // +1 descriptionCount / ~60 desc tokens for SAPDiagnose `coverage` param (FEAT-41).
+      // +TTYP read/write type + SAPWrite rowType/rowTypeKind params (FEAT-65).
       // +~570/+460/+6 for SAPDiagnose trace_start/trace_requests/trace_cancel actions + their params.
-      schemaTokenEstimate: 20_750,
-      descriptionTokenEstimate: 15_878,
-      descriptionCount: 273,
+      schemaTokenEstimate: 21_237,
+      descriptionTokenEstimate: 16_240,
+      descriptionCount: 279,
     },
   },
   {
@@ -117,11 +122,14 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // action description). Keeps ~110 tokens of headroom, matching the other scenarios.
       // Further +200/+150 for SAPRead action="diff" (action/from/to params + descriptions).
       // +450/+350 for context-first KTD guidance (KTD alias + SAPContext includeKtd).
+      // +135/+135 for SAPManage action="set_api_state" (apiState param + action/visibility docs).
+      // +120/+80 for the set_api_state `contract` param (C0–C4 enum + per-type docs).
       // +1 descriptionCount / ~60 desc tokens for SAPDiagnose `coverage` param (FEAT-41).
+      // +SAPWrite rowType/rowTypeKind params (FEAT-65; global SAPWrite props, present on BTP too).
       // +~570/+460/+4 for SAPDiagnose trace_start/trace_requests/trace_cancel actions + their params.
-      schemaTokenEstimate: 18_998,
-      descriptionTokenEstimate: 14_232,
-      descriptionCount: 271,
+      schemaTokenEstimate: 19_480,
+      descriptionTokenEstimate: 14_593,
+      descriptionCount: 277,
     },
   },
   {

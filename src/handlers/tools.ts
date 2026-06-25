@@ -273,7 +273,9 @@ const SAPMANAGE_DESC_ONPREM =
   '- "flp_create_group": Create a group (requires "groupId", "title").\n' +
   '- "flp_create_tile": Create a tile in a catalog (requires "catalogId", "tile").\n' +
   '- "flp_add_tile_to_group": Add a catalog tile to a group (requires "groupId", "catalogId", "tileInstanceId").\n' +
-  '- "flp_delete_catalog": Delete a business catalog (requires "catalogId").\n\n' +
+  '- "flp_delete_catalog": Delete a business catalog (requires "catalogId").\n' +
+  '- "set_api_state": Release (or revoke) an object\'s API release contract for ABAP Cloud / Clean Core ' +
+  '(requires "objectUri", or "name" + "objectType"; "apiState" defaults to RELEASED, "contract" defaults to C1 — pass C0 for SRVD, C3 for classic views). The write counterpart of SAPRead(type="API_STATE").\n\n' +
   'Returns JSON with features, each having: id, available (bool), mode, message, and probedAt timestamp. ' +
   'Also returns systemType ("btp" or "onprem") for understanding available capabilities. ' +
   '"available: false" means do NOT attempt operations that depend on it.';
@@ -287,7 +289,9 @@ const SAPMANAGE_DESC_BTP =
   '- "cache_stats": Show object cache health and warmup state.\n' +
   '- "create_package": Create a package (DEVC) via ADT packages API.\n' +
   '- "delete_package": Delete an existing package.\n' +
-  '- FLP actions: flp_list_catalogs, flp_list_groups, flp_list_tiles, flp_create_catalog, flp_create_group, flp_create_tile, flp_add_tile_to_group, flp_delete_catalog.\n\n' +
+  '- FLP actions: flp_list_catalogs, flp_list_groups, flp_list_tiles, flp_create_catalog, flp_create_group, flp_create_tile, flp_add_tile_to_group, flp_delete_catalog.\n' +
+  '- "set_api_state": Release (or revoke) an object\'s API release contract for ABAP Cloud / Clean Core ' +
+  '(requires "objectUri", or "name" + "objectType"; "apiState" defaults to RELEASED, "contract" defaults to C1 — pass C0 for SRVD, C3 for classic views). The write counterpart of SAPRead(type="API_STATE").\n\n' +
   'Returns JSON with features and systemType="btp". On BTP, RAP/CDS and transports are always available. ' +
   'abapGit, AMDP, UI5/BSP, and FLP customization may not be available depending on the BTP ABAP configuration.';
 
@@ -308,6 +312,7 @@ const SAPMANAGE_ACTIONS_WRITE = [
   'flp_create_tile',
   'flp_add_tile_to_group',
   'flp_delete_catalog',
+  'set_api_state',
 ];
 
 const SAPTRANSPORT_ACTIONS_READ = ['list', 'get', 'check', 'history', 'layers', 'targets'];
@@ -761,6 +766,16 @@ export function getToolDefinitions(
               'For FUNC: parent function-group name. Required for FUNC create (the FUGR must already exist — create it first via SAPWrite type=FUGR). Auto-resolved via search for FUNC update/delete if omitted.',
           },
           dataType: { type: 'string', description: 'DOMA/DTEL: ABAP data type (e.g., CHAR, NUMC, DEC)' },
+          rowType: {
+            type: 'string',
+            description:
+              'TTYP create: the row type — a built-in ABAP type (STRING, I, …) or a DDIC structure/type name. Required for TTYP create.',
+          },
+          rowTypeKind: {
+            type: 'string',
+            enum: ['builtin', 'structure'],
+            description: 'TTYP create: row-type mode (auto-detected from rowType if omitted).',
+          },
           length: { type: 'number', description: 'DOMA/DTEL: data type length' },
           decimals: { type: 'number', description: 'DOMA/DTEL: decimal places' },
           outputLength: { type: 'number', description: 'DOMA: output length' },
@@ -909,6 +924,11 @@ export function getToolDefinitions(
                   description: 'Object-specific transport request. Overrides top-level transport for this item.',
                 },
                 dataType: { type: 'string', description: 'DOMA/DTEL: ABAP data type' },
+                rowType: {
+                  type: 'string',
+                  description: 'TTYP: row type (built-in ABAP type or DDIC structure/type name)',
+                },
+                rowTypeKind: { type: 'string', enum: ['builtin', 'structure'], description: 'TTYP: row-type mode' },
                 length: { type: 'number', description: 'DOMA/DTEL: data type length' },
                 decimals: { type: 'number', description: 'DOMA/DTEL: decimal places' },
                 outputLength: { type: 'number', description: 'DOMA: output length' },
@@ -1463,11 +1483,24 @@ export function getToolDefinitions(
         objectUri: {
           type: 'string',
           description:
-            'ADT URI of the object to move (e.g., /sap/bc/adt/oo/classes/zcl_my_class). If not provided, resolved automatically from objectName + objectType via search.',
+            'ADT URI of the object to move (e.g., /sap/bc/adt/oo/classes/zcl_my_class). If not provided, resolved automatically from objectName + objectType via search. For set_api_state: the object whose API release contract to set (or pass name + objectType instead).',
         },
         objectType: {
           type: 'string',
-          description: 'ADT object type (e.g., CLAS/OC, DDLS/DF, PROG/P). Required for change_package.',
+          description:
+            'ADT object type (e.g., CLAS/OC, DDLS/DF, PROG/P). Required for change_package. For set_api_state: object type of "name" when objectUri is omitted (e.g. CLAS, INTF, DDLS, TABL).',
+        },
+        apiState: {
+          type: 'string',
+          enum: ['RELEASED', 'NOT_RELEASED'],
+          description:
+            'For set_api_state: target state of the object\'s API release contract — RELEASED (mark released for ABAP Cloud / Clean Core) or NOT_RELEASED (revoke). Default RELEASED. Visibility (ABAP Cloud / Key User Apps) follows the contract\'s defaults. Read the current state first with SAPRead(type="API_STATE").',
+        },
+        contract: {
+          type: 'string',
+          enum: ['C0', 'C1', 'C2', 'C3', 'C4'],
+          description:
+            'For set_api_state: which release contract to set. Default C1 (Key-User/Cloud — the common clean-core contract). Object types support different contracts: e.g. service definitions (SRVD) only support C0, classic DDIC views only C3, behavior definitions and tables support C0+C1. If the object does not support the chosen contract, the error lists the ones it does.',
         },
         objectName: {
           type: 'string',

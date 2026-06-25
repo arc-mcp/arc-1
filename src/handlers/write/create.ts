@@ -26,7 +26,7 @@ import {
 } from '../activate.js';
 import { invalidateInactiveList } from '../cache-security.js';
 import { guardCdsSyntax } from '../cds-hints.js';
-import { cachedFeatures, isTablesEndpointAvailable } from '../feature-cache.js';
+import { cachedFeatures, isTablesEndpointAvailable, isTableTypesEndpointAvailable } from '../feature-cache.js';
 import {
   normalizeObjectType,
   normalizeWriteObjectType,
@@ -47,6 +47,7 @@ import {
   SKTD_V2_CONTENT_TYPE,
   stripFmParamCommentBlock,
   TABL_DT_WRITE_UNAVAILABLE_HINT,
+  TTYP_WRITE_UNAVAILABLE_HINT,
   tryPostSaveSyntaxCheck,
   vendorContentTypeForType,
 } from '../write-helpers.js';
@@ -66,6 +67,40 @@ function normalizeTransportOverride(rawTransport: unknown): string | undefined {
   }
   const value = String(rawTransport).trim();
   return value || undefined;
+}
+
+function ttypPostCreateFailureMessage(name: string, cause: unknown): string {
+  const detail = cause instanceof Error ? cause.message : String(cause);
+  return (
+    `TTYP post-create update failed for ${name} after SAP accepted the create POST. ` +
+    `The object may remain as SAP's default metadata shell (CHAR). To recover, run ` +
+    `SAPWrite(action="update", type="TTYP", name="${name}", rowType=…) to write the intended row type, ` +
+    `or delete it — a plain re-create fails with "already exists". Verify with SAPRead first. ` +
+    detail
+  );
+}
+
+async function putTtypMetadataAfterCreate(
+  client: SapWriteContext['client'],
+  objectUrl: string,
+  name: string,
+  body: string,
+  contentType: string,
+  transport: string | undefined,
+): Promise<void> {
+  try {
+    await client.http.withStatefulSession(async (session) => {
+      const lock = await lockObject(session, client.safety, objectUrl, 'MODIFY', cachedFeatures?.abapRelease);
+      const lockTransport = transport ?? (lock.corrNr || undefined);
+      try {
+        await updateObject(session, client.safety, objectUrl, body, lock.lockHandle, contentType, lockTransport);
+      } finally {
+        await unlockObject(session, objectUrl, lock.lockHandle);
+      }
+    });
+  } catch (err) {
+    throw new Error(ttypPostCreateFailureMessage(name, err));
+  }
 }
 
 const KTD_REF_OBJECT_TYPES_ROUTABLE_BY_ARC = new Set([
@@ -486,6 +521,11 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
         }
       });
     }
+    // TTYP: the POST creates a default-typed (CHAR) shell — a follow-up PUT writes the real row type.
+    if (type === 'TTYP') {
+      const ct = vendorContentTypeForType(type);
+      await putTtypMetadataAfterCreate(client, objectUrl, name, body, ct, effectiveTransport);
+    }
     invalidateWrittenObject();
     const followUpHint =
       type === 'SRVB'
@@ -779,6 +819,17 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
         });
         break;
       }
+      // TTYP create needs /ddic/tabletypes/ (absent on NW 7.50) — mirror the TABL/DT gate above.
+      if (objType === 'TTYP' && isTableTypesEndpointAvailable() === false) {
+        results.push({
+          type: objType,
+          name: objName,
+          packageName: objPackage,
+          status: 'failed',
+          error: TTYP_WRITE_UNAVAILABLE_HINT,
+        });
+        break;
+      }
       const objUrl = objectUrlForType(objType, objName);
       const createUrl = objUrl.replace(/\/[^/]+$/, '');
       const objMetadataProps = getMetadataWriteProperties(obj);
@@ -829,6 +880,11 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
             await unlockObject(session, objUrl, lock.lockHandle);
           }
         });
+      }
+
+      // TTYP POST creates SAP's default table-type shell; PUT the real row type before activation.
+      if (objType === 'TTYP') {
+        await putTtypMetadataAfterCreate(client, objUrl, objName, body, contentType, objTransport);
       }
 
       // Step 2: Write source if provided

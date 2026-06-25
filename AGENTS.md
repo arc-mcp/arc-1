@@ -95,8 +95,7 @@ src/
 │   ├── logger.ts               # Structured logger (stderr only, never stdout)
 │   ├── audit.ts, sinks/        # Audit events + stderr/file/btp-auditlog sinks
 │   ├── context.ts, elicit.ts   # MCP context helpers, elicitation
-│   ├── xsuaa.ts                # XSUAA JWT validation (BTP)
-│   ├── stateless-client-store.ts # OAuth DCR store (HMAC-signed client_ids)
+│   ├── xsuaa.ts                # XSUAA JWT validation (BTP); OAuth DCR store + proxy live in the @arc-mcp/xsuaa-auth dep
 │   └── auth-rate-limit.ts, mcp-rate-limit.ts  # Rate-limit layers 1+2
 ├── handlers/                   # one module per tool (split from the former intent.ts monolith)
 │   ├── dispatch.ts             # handleToolCall router + scope checks + LLM error formatting
@@ -150,6 +149,7 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 | Add fix proposal / quickfix | `src/adt/devtools.ts`, `src/handlers/diagnose.ts`, `src/handlers/{schemas,tools}.ts`, tests |
 | OData-based read (non-ADT) / FLP ops | `src/adt/ui5-repository.ts` → `src/handlers/read.ts` / `src/adt/flp.ts` → `src/handlers/manage.ts` |
 | Package create/delete/move (DEVC) | `src/handlers/manage.ts`, `src/adt/ddic-xml.ts`, `src/adt/refactoring.ts`, `{schemas,tools}.ts` |
+| API release write (`SAPManage set_api_state`) | `src/adt/client.ts` (`setApiReleaseState`) + `src/adt/xml-parser.ts` (`buildApiReleasePutBody`), `src/handlers/manage.ts` — GET→transform→PUT→GET `/apireleases/{uri}/{contract}`; PUT schema is a NARROW subset of the GET (drop atom:link/stateTransitions/transportObject/authValueObject) + needs `apiCatalogData/ApiCatalogs`; visibility taken VERBATIM from the contract's behaviour defaults (never invented/broadened) — ARC-1 does NOT pre-judge whether visibility is required (varies: C0/C1 need ≥1, C4 wants AMDP etc.), it sends defaults and lets SAP return the contract-accurate error; use v10 (v11 500s on 7.58). `contract` param C0–C4 (default C1) — types support different contracts (SRVD=C0-only, classic VIEW=C3-only; the matrix is per-release, so rely on the live `meta/supportedcontracts` + the not-available error which lists supported ones). Idempotent: SAP 400 "No changes were made" → `changed:false` no-op success |
 | FUGR/FUNC write (#250) | `src/handlers/write.ts` + `write-helpers.ts` — FUNC bypasses `objectBasePath` (keep its throw); SAPGUI `*"…"*` blocks auto-stripped |
 | FUGR expanded read (`expand_includes`) | `src/adt/client.ts` (`getFunctionGroupExpanded`), `src/handlers/read.ts` — bodies live in nested LZ…U01 includes; dynpros NOT reachable via ADT |
 | FUNC structured parameters (#252) | `src/adt/fm-signature.ts`, `src/handlers/write.ts`, `src/handlers/read.ts` — FUNC excluded from pre-write lint |
@@ -164,6 +164,7 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 | Add/modify tool input schema | `src/handlers/schemas.ts` + `src/handlers/tools.ts` (three-file sync — see invariants) |
 | Harden against GPT/OpenAI arg pollution (#360) | `src/handlers/object-types.ts` (`stripLlmEmptyValues`), `src/handlers/schemas.ts` — `looseOptionalBoolean` for EVERY optional boolean, never `z.coerce.boolean()` (maps "false"→true) |
 | DDIC domain/data-element write | `src/adt/ddic-xml.ts`, `src/adt/crud.ts`, `src/handlers/write.ts` |
+| TTYP (table type) read/write (FEAT-65) | `src/adt/ddic-xml.ts` (`buildTableTypeXml`/`parseTableType`), `src/handlers/write/create.ts` (POST creates a CHAR shell → follow-up PUT sets the real row type; `rowType`/`rowTypeKind` params), `src/adt/client.ts` (`getTableType`). TRAN write is NOT supported — `/sap/bc/adt/aps/iam/tran` is absent on 758/816/7.50 |
 | Master language on create (#343) | `src/adt/ddic-xml.ts`, `src/handlers/write-helpers.ts`, `src/handlers/write/create.ts` — see docs/research/issue-343-masterlanguage-on-create.md |
 | ADT discovery / MIME types | `src/adt/discovery.ts`, `src/adt/http.ts` |
 | SAP error classification + hints | `src/adt/errors.ts`, `src/handlers/dispatch.ts` — ground hints in verified SAP Notes; release-aware via `src/adt/release.ts` (#293) |
@@ -193,7 +194,7 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 | CLI sub-command | `src/cli.ts`, `src/cli-args.ts` — never duplicate Zod validation; `handleToolCall` does it |
 | SAP version-quirk workaround | `src/adt/errors.ts` (`extractExceptionType` preferred); body-marker heuristics only with a release-scoped guard (ADR-0002) |
 | Activation batch ED064 recovery | `src/adt/devtools.ts` (`activateBatch`) — pure ED064 retried once as singles; mixed real errors must NOT retry |
-| Elicitation / XSUAA / OIDC / DCR store | `src/server/elicit.ts` / `src/server/xsuaa.ts` / `src/server/http.ts` / `src/server/stateless-client-store.ts` (KDF_LABEL bump = revocation) |
+| Elicitation / XSUAA / OIDC / DCR store | `src/server/elicit.ts` / `src/server/xsuaa.ts` / `src/server/http.ts` / DCR store + OAuth proxy in the `@arc-mcp/xsuaa-auth` dep (revocation = rotate `ARC1_DCR_SIGNING_SECRET` or rebind XSUAA; `KDF_LABEL` bump lives in the package) |
 | Scope enforcement / auth scopes | `src/authz/policy.ts` (`ACTION_POLICY`), `src/handlers/dispatch.ts`, `src/server/server.ts`, `xs-security.json` |
 | Auth combination rule | `src/server/config.ts` (`validateConfig`), `src/server/types.ts`, `docs_page/enterprise-auth.md` |
 | Layer B auth mechanism | `src/adt/http.ts` (`applyAuthHeader`), `src/server/server.ts` (`buildAdtConfig` perUser flag — strips shared creds) |
