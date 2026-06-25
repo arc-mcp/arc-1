@@ -194,7 +194,7 @@ This means:
 
 - DCR registrations survive `cf restart`, `cf push`, `cf restage`, cell evacuations, OOM auto-recovery, and multi-instance scale-out — none of these invalidate cached `client_id`s.
 - The default lifetime is **30 days** (matches typical OAuth refresh-token lifetimes). Configurable via `--oauth-dcr-ttl-seconds` / `ARC1_OAUTH_DCR_TTL_SECONDS` (positive values clamped to `[60s, 90d]`). Set to `0` (or any non-positive value) to disable expiration entirely — recommended when MCP clients in use don't auto-re-register on `invalid_client` (Copilot CLI, Cursor) and a finite TTL would just produce periodic outages without security gain.
-- Per-client revocation is intentionally not supported. Forced revocation goes through full key rotation (see below) — either rotate the DCR signing key, rebind the XSUAA service, or bump `KDF_LABEL` in `stateless-client-store.ts` (`arc1-dcr/v1` → `v2`).
+- Per-client revocation is intentionally not supported. Forced revocation goes through full key rotation (see below) — rotate the DCR signing key (`ARC1_DCR_SIGNING_SECRET`) or rebind the XSUAA service. (A deeper `KDF_LABEL` bump, `arc1-dcr/v1` → `v2`, also revokes everything, but it lives in the `@arc-mcp/xsuaa-auth` package now, not this repo.)
 - `/register`, `/authorize`, `/token`, `/revoke` are per-IP rate-limited by default (`ARC1_AUTH_RATE_LIMIT=20`/min/IP). Closes CodeQL alert `js/missing-rate-limiting`. Tune via the env var or disable with `=0` if an upstream proxy already provides this. See the [Rate Limiting Guide](rate-limiting.md).
 
 ### Stable DCR signing key (recommended)
@@ -218,7 +218,7 @@ Properties:
 - Empty or whitespace-only values are treated as unset (with a `[warn]`), so a misconfigured env var won't crash startup
 - A signing secret shorter than 16 bytes (128 bits) triggers a soft warning at startup; use `openssl rand -base64 48` for the recommended ≥32 bytes
 
-ARC-1 logs the active signing source as `dcrSigningSource: 'env' | 'xsuaa'` in the startup INFO line for observability — `'env'` means the dedicated `ARC1_DCR_SIGNING_SECRET` is in use, `'xsuaa'` means the legacy `clientsecret` fallback.
+ARC-1 logs the active signing source as `dcrSigningSource: 'override' | 'xsuaa'` in the startup INFO line for observability — `'override'` means the dedicated `ARC1_DCR_SIGNING_SECRET` is in use, `'xsuaa'` means the legacy `clientsecret` fallback.
 
 **Why this is best practice.** A `client_id` issued via [RFC 7591 Dynamic Client Registration](https://www.rfc-editor.org/rfc/rfc7591) is only as durable as the key that signs it — in ARC-1's stateless design the signing key *is* the registration store. Tying that key to a credential that rotates on deploy (the XSUAA `clientsecret`) turns every redeploy into an unintended key rotation — the same failure mode a web framework hits when its session-signing key (Django `SECRET_KEY`, Rails `secret_key_base`) is regenerated per release: all previously-signed artifacts silently become invalid. The fix is the standard one for any signing key — externalize it from the deploy artifact and keep it stable across releases ([12-Factor Config](https://12factor.net/config)), rotating only when you intend to ([OWASP Secrets Management Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html)).
 
@@ -251,7 +251,7 @@ After a client has been connected for a while it can fail with one of two errors
 
 **Prevent both:** for `invalid_client`, set a stable [`ARC1_DCR_SIGNING_SECRET`](#stable-dcr-signing-key-recommended) + `ARC1_OAUTH_DCR_TTL_SECONDS=0` so a redeploy can't rotate the signing key. For `invalid_token`, the default `refresh-token-validity` in `xs-security.json` is **30 days**, so idle sessions survive far longer.
 
-**Most clients self-heal** — Claude Desktop, VS Code's MCP client, and MCP Inspector refresh and re-register on their own and rarely surface either error. The two that need a manual nudge are **Eclipse GitHub Copilot** and **Cursor** (Eclipse has no per-server "restart MCP" / re-auth action yet — [copilot-for-eclipse#237](https://github.com/microsoft/copilot-for-eclipse/issues/237)).
+**Client behaviour varies.** Claude Desktop and MCP Inspector usually re-register on their own and rarely surface either error. **VS Code, Cursor, and Eclipse GitHub Copilot cache the DCR registration and can stay stuck on `invalid_client`** until you clear it — steps per client below. (Eclipse additionally has no per-server "restart MCP" / re-auth action yet — [copilot-for-eclipse#237](https://github.com/microsoft/copilot-for-eclipse/issues/237).)
 
 #### Eclipse GitHub Copilot
 
@@ -267,6 +267,11 @@ rm ~/.config/github-copilot/copilot-eclipse.db
 # Windows (PowerShell)
 Remove-Item "$env:LOCALAPPDATA\github-copilot\copilot-eclipse.db"
 ```
+
+> **Citrix / VDI / roaming profiles:** `%LOCALAPPDATA%` is often *not* the literal `C:\Users\<you>\AppData\Local` — the profile is redirected into a container, so the file is there under a different path. Resolve the variable in-session instead of guessing (Eclipse closed):
+> ```powershell
+> Get-ChildItem $env:USERPROFILE, $env:LOCALAPPDATA, $env:APPDATA -Recurse -Filter copilot-eclipse.db -Force -ErrorAction SilentlyContinue | Select FullName
+> ```
 
 Reopen Eclipse → use the server → it registers fresh and prompts you to sign in. Deleting the file is low-impact:
 
@@ -286,7 +291,17 @@ Reopen Eclipse → use the server → it registers fresh and prompts you to sign
 
 Cursor also caches its registration and may not re-register on `invalid_client`. Reset it by **removing the MCP server entry, restarting Cursor, then re-adding it**. With the stable signing key set (above), you only ever do this once.
 
-> **Found an easier way to recover an Eclipse or Cursor MCP login?** MCP-client behavior is still evolving — please [open an issue or PR](https://github.com/arc-mcp/arc-1/issues/new) so these docs can capture the simplest known fix.
+#### VS Code
+
+VS Code caches the DCR registration in its **own secret storage, keyed by the OAuth issuer URL** — so for `invalid_client` (a rotated signing key) **signing out, _Restart Server_, and removing or renaming the server in `mcp.json` do _not_ clear it** (a sign-out drops the access token but keeps the registration; the issuer URL never changes). Clear the registration itself:
+
+1. Command Palette (`Ctrl`/`Cmd`+`Shift`+`P`) → **"Authentication: Remove Dynamic Authentication Providers"**.
+2. Tick the ARC-1 entry — there may be **several** stale ones; remove them all, then **OK**.
+3. **Restart Server** (the `arc-1-…` entry's actions menu) → trigger any tool → VS Code registers a fresh `client_id` and prompts you to sign in again.
+
+See [Manage MCP servers in VS Code](https://code.visualstudio.com/docs/agent-customization/mcp-servers) for the Accounts-menu auth controls; the stale-credential cleanup is tracked in [microsoft/vscode#269379](https://github.com/microsoft/vscode/issues/269379).
+
+> **Found an easier way to recover an Eclipse, VS Code, or Cursor MCP login?** MCP-client behavior is still evolving — please [open an issue or PR](https://github.com/arc-mcp/arc-1/issues/new) so these docs can capture the simplest known fix.
 
 ### Browser-based DCR clients (rare)
 
