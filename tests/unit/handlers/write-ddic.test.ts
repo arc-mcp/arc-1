@@ -2509,6 +2509,23 @@ define role ZTEST_DCL {
       expect(post?.body).not.toContain('adtTemplate');
     });
 
+    it('ignores `extend behavior for` inside a /* */ block comment and a string literal', async () => {
+      const calls = captureCreateFlow();
+      await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'BDEF',
+        name: 'ZR_BASE',
+        package: '$TMP',
+        // A block comment AND a single-quoted string literal both mention `extend behavior for`,
+        // but the real statement is a definition — stripBdefCommentsAndStrings must blank both so the
+        // create stays a plain definition (no adtTemplate). Regression guard for the comment/string scrubber.
+        source:
+          "/* extend behavior for ZBLOCK */\nmanaged implementation in class zbp_base unique;\nconstant foo = 'extend behavior for ZSTR';\ndefine behavior for ZR_BASE\n{\n}",
+      });
+      const post = calls.find((c) => c.method === 'POST' && c.body?.includes('blueSource'));
+      expect(post?.body).not.toContain('adtTemplate');
+    });
+
     it('warns (non-blocking) when inactive read-back does not confirm the created BDEF is an extension', async () => {
       const calls = captureCreateFlow(
         'managed implementation in class zbp_base_x unique;\ndefine behavior for ZR_BASE_X\n{\n}',
