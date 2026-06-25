@@ -1930,4 +1930,58 @@ ENDCLASS.`.replace(/\n/g, '\r\n');
       expect(result.content[0]?.text).toMatch(/visibility.*required/i);
     });
   });
+
+  // ── FUGR structural-include update (FEAT-18 sibling) ─────────────────
+  // Routing only — the full live lifecycle (create FUGR → update TOP include → activate →
+  // read-back) is covered by the integration test, verified on a4h 758 + 816.
+  describe('SAPWrite FUGR structural include update', () => {
+    function captureLockingFlow(): { method: string; url: string }[] {
+      const calls: { method: string; url: string }[] = [];
+      mockFetch.mockImplementation((url: string | URL, fetchOpts?: { method?: string }) => {
+        const method = fetchOpts?.method ?? 'GET';
+        const urlStr = String(url);
+        calls.push({ method, url: urlStr });
+        if (method === 'POST' && urlStr.includes('_action=LOCK')) {
+          return Promise.resolve(
+            mockResponse(200, '<DATA><LOCK_HANDLE>LH123</LOCK_HANDLE></DATA>', { 'x-csrf-token': 'T' }),
+          );
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+      return calls;
+    }
+
+    it('routes type=INCL + group to the function-group include source PUT, locking the include (not the group)', async () => {
+      const calls = captureLockingFlow();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'update',
+        type: 'INCL',
+        name: 'LZARC1_FG_INCTOP',
+        group: 'ZARC1_FG_INC',
+        source: 'FUNCTION-POOL ZARC1_FG_INC.\n* edited',
+        lintBeforeWrite: false,
+      });
+      expect(result.isError).toBeUndefined();
+      const put = calls.find((c) => c.method === 'PUT');
+      expect(put?.url).toContain('/sap/bc/adt/functions/groups/zarc1_fg_inc/includes/lzarc1_fg_inctop/source/main');
+      // The include object is the lock target; locking the group 423s the PUT (live-verified).
+      const lock = calls.find((c) => c.method === 'POST' && c.url.includes('_action=LOCK'));
+      expect(lock?.url).toContain('/functions/groups/zarc1_fg_inc/includes/lzarc1_fg_inctop');
+      expect(lock?.url).not.toContain('/source/main');
+    });
+
+    it('a bare INCL with no group stays a standalone /programs/includes/ include (no FUGR routing)', async () => {
+      const calls = captureLockingFlow();
+      await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'update',
+        type: 'INCL',
+        name: 'ZSTANDALONE_INC',
+        source: '* x',
+        lintBeforeWrite: false,
+      });
+      const put = calls.find((c) => c.method === 'PUT');
+      expect(put?.url.toLowerCase()).toContain('/sap/bc/adt/programs/includes/zstandalone_inc/source/main');
+      expect(put?.url).not.toContain('/functions/groups/');
+    });
+  });
 });

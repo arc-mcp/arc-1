@@ -2558,3 +2558,53 @@ describe('ADT Integration Tests', () => {
     });
   });
 });
+
+// ─── FUGR structural-include write (FEAT-18 sibling) ──────────────────
+// Live-verified on a4h 758 + 816: the TOP include is the lock + package-resolution target
+// (its containerRef carries the group's package); locking the group 423s the source PUT.
+describe('FUGR structural include update (FEAT-18 sibling)', () => {
+  it('creates a FUGR, edits its TOP include via type=INCL+group, activates, reads the new source back', async (ctx) => {
+    requireOrSkip(ctx, process.env.TEST_SAP_URL, SkipReason.NO_CREDENTIALS);
+    const { generateUniqueName } = await import('./crud-harness.js');
+    const { handleToolCall } = await import('../../src/handlers/dispatch.js');
+    const config = {
+      arc1Port: 8080,
+      arc1HttpAddr: '0.0.0.0:8080',
+      toolMode: 'standard',
+    } as unknown as Parameters<typeof handleToolCall>[1];
+    const client = getTestClient();
+    const group = generateUniqueName('ZARC1_FGI');
+    const topInclude = `L${group}TOP`;
+    const marker = `* arc-1 structural include write ${group}`;
+    try {
+      const created = await handleToolCall(client, config, 'SAPWrite', {
+        action: 'create',
+        type: 'FUGR',
+        name: group,
+        package: '$TMP',
+        description: 'ARC-1 IT function group',
+      });
+      expect(created.isError).toBeUndefined();
+      const updated = await handleToolCall(client, config, 'SAPWrite', {
+        action: 'update',
+        type: 'INCL',
+        name: topInclude,
+        group,
+        source: `FUNCTION-POOL ${group}.\n${marker}`,
+      });
+      expect(updated.isError).toBeUndefined();
+      const activated = await handleToolCall(client, config, 'SAPActivate', { type: 'FUGR', name: group });
+      expect(activated.isError).toBeUndefined();
+      // Read the include source back directly (getInclude only serves standalone includes, so
+      // GET the FUGR-include source URL via the client's HTTP layer).
+      const back = await client.http.get(
+        `/sap/bc/adt/functions/groups/${group.toLowerCase()}/includes/${topInclude.toLowerCase()}/source/main`,
+      );
+      expect(back.body).toContain(marker);
+    } finally {
+      await handleToolCall(client, config, 'SAPWrite', { action: 'delete', type: 'FUGR', name: group }).catch(() => {
+        // best-effort-cleanup
+      });
+    }
+  }, 90_000);
+});

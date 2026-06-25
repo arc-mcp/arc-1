@@ -154,6 +154,7 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 | FUGR expanded read (`expand_includes`) | `src/adt/client.ts` (`getFunctionGroupExpanded`), `src/handlers/read.ts` — bodies live in nested LZ…U01 includes; dynpros NOT reachable via ADT |
 | FUNC structured parameters (#252) | `src/adt/fm-signature.ts`, `src/handlers/write.ts`, `src/handlers/read.ts` — FUNC excluded from pre-write lint |
 | CLAS include writes | `src/handlers/write/update-delete.ts`, `src/adt/crud.ts` (`safeUpdateClassInclude` POST-creates a missing include under the class lock) |
+| FUGR structural-include write (FEAT-18 sibling) | `src/handlers/write.ts` (objectUrl branch: `type=INCL`+`group` → `/functions/groups/{grp}/includes/{inc}`, flows the generic `safeUpdateSource` path) — lock the INCLUDE not the group (group 423s the PUT); the include's `containerRef` carries the group package (fail-closed gate intact). Update only; structural create/delete unsupported |
 | Package listing (`SAPRead type=DEVC`) | `src/adt/client.ts` (`getPackageContents` — informationsystem/search GET, omits legacy SEGW types) |
 | Transport history / create / TR_TARGET | `src/adt/transport.ts`, `src/handlers/transport.ts`, `src/authz/policy.ts` — only `/cts/transportrequests` sets the target, discovery-gated (7.58 yes, 7.50 no) |
 | gCTS / abapGit operation | `src/adt/gcts.ts` or `src/adt/abapgit.ts`, `src/handlers/git.ts`, `{schemas,tools}.ts` |
