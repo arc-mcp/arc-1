@@ -268,6 +268,11 @@ rm ~/.config/github-copilot/copilot-eclipse.db
 Remove-Item "$env:LOCALAPPDATA\github-copilot\copilot-eclipse.db"
 ```
 
+> **Citrix / VDI / roaming profiles:** `%LOCALAPPDATA%` is often *not* the literal `C:\Users\<you>\AppData\Local` — the profile is redirected into a container, so the file is there under a different path. Resolve the variable in-session instead of guessing (Eclipse closed):
+> ```powershell
+> Get-ChildItem $env:USERPROFILE, $env:LOCALAPPDATA, $env:APPDATA -Recurse -Filter copilot-eclipse.db -Force -ErrorAction SilentlyContinue | Select FullName
+> ```
+
 Reopen Eclipse → use the server → it registers fresh and prompts you to sign in. Deleting the file is low-impact:
 
 - ✅ The only cost: re-authorize your MCP server(s) once (a browser sign-in each).
