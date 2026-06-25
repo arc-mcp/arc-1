@@ -256,7 +256,7 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
           {
             armed: true,
             request,
-            next: 'Reproduce the slow action (e.g. the OData call) as this user PROMPTLY — an http request captures the user\'s very next matching HTTP call, so avoid other ARC-1 calls in between (they would consume it). Then SAPDiagnose(action="traces") with no id to list recorded traces, find the new trace id, and read it with analysis="dbAccesses".',
+            next: 'Reproduce the slow action (e.g. the OData call) as this user PROMPTLY — an http request captures the user\'s very next matching HTTP call, so avoid other ARC-1 calls in between (they would consume it). Then SAPDiagnose(action="traces") with no id to list recorded traces, find the new trace id, and read it with analysis="dbAccesses". Note: for an HTTP/OData trace, dbAccesses lists the tables the request touched but SAP returns no per-statement SQL text/timing here (hitlist/statements are usually empty); for the actual slow SQL + duration + plan use ST05 in SAP GUI. The profiler trace is richest for dialog/report/RFC traces of ABAP-side code.',
           },
           null,
           2,
