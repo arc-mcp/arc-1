@@ -446,6 +446,15 @@ describe('AdtApiError', () => {
       expect(classification?.category).not.toBe('icf-service-inactive');
     });
 
+    it('does not classify structured ADT XML as inactive ICF even if the message says service cannot be reached', () => {
+      const xml =
+        '<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework">' +
+        '<type id="ExceptionResourceNotFound"/>' +
+        '<message lang="EN">Service cannot be reached</message></exc:exception>';
+      const classification = classifySapDomainError(404, xml, '/sap/bc/adt/foo');
+      expect(classification?.category).not.toBe('icf-service-inactive');
+    });
+
     it('still classifies a plain 403 auth body as authorization, not icf-service-inactive', () => {
       const classification = classifySapDomainError(403, 'Not authorized: S_ADT_RES check failed', '/sap/bc/adt/x');
       expect(classification?.category).toBe('authorization');

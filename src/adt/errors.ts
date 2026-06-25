@@ -663,7 +663,7 @@ export function classifySapDomainError(
   // generic ICF page: HTTP 403/404, text/html, "<title>Service cannot be reached</title>". This is
   // NOT an ADT object-not-found (XML ExceptionResourceNotFound) — turn it into an activation hint.
   // Reused by the ST05/TMC SQL-trace perf features (their endpoints live under inactive-by-default nodes).
-  if ((statusCode === 403 || statusCode === 404) && /Service cannot be reached/i.test(bodyRaw)) {
+  if ((statusCode === 403 || statusCode === 404) && !typeId && looksLikeIcfServiceInactivePage(bodyRaw)) {
     return {
       category: 'icf-service-inactive',
       hint:
@@ -744,6 +744,10 @@ export function classifySapDomainError(
   }
 
   return undefined;
+}
+
+function looksLikeIcfServiceInactivePage(body: string): boolean {
+  return /<(?:title|h1)[^>]*>\s*Service cannot be reached\s*<\/(?:title|h1)>/i.test(body);
 }
 
 /**

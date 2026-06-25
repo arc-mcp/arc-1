@@ -1169,6 +1169,14 @@ describe('verdictFromStatistics', () => {
     expect(verdictFromStatistics({ gwtotal: 100, icfauth: 80, gwapp: 5, gwappdb: 2, gwfw: 3 }).bound).toBe('auth');
   });
 
+  it('does not let an inconsistent gwapp/gwappdb split produce negative app time', () => {
+    expect(verdictFromStatistics({ gwtotal: 100, gwapp: 20, gwappdb: 80, gwfw: 30 }).bound).toBe('db');
+  });
+
+  it('uses stable candidate order for ties', () => {
+    expect(verdictFromStatistics({ gwtotal: 100, gwapp: 50, gwappdb: 50, gwfw: 50, icfauth: 50 }).bound).toBe('db');
+  });
+
   it('returns unknown when there is no Gateway timing', () => {
     expect(verdictFromStatistics({}).bound).toBe('unknown');
   });
@@ -1200,9 +1208,24 @@ describe('probeODataPerformance', () => {
   });
 
   it('rejects an absolute URL (SSRF boundary)', async () => {
-    await expect(probeODataPerformance(mockHttp(), unrestrictedSafetyConfig(), 'http://evil.test/x')).rejects.toThrow(
+    const http = mockHttp();
+    await expect(probeODataPerformance(http, unrestrictedSafetyConfig(), 'http://evil.test/x')).rejects.toThrow(
       /host-relative/,
     );
+    expect(http.get).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['protocol-relative URL', '//evil.test/x'],
+    ['backslash path', '/\\evil.test/x'],
+    ['encoded backslash path', '/sap/opu/odata/sap/X/%5cevil'],
+    ['dot-segment path', '/sap/opu/foo/../odata/sap/X'],
+    ['fragment path', '/sap/opu/odata/sap/X#fragment'],
+    ['non-OData SAP path', '/sap/bc/adt/core/discovery'],
+  ])('rejects %s before making an HTTP request', async (_label, url) => {
+    const http = mockHttp();
+    await expect(probeODataPerformance(http, unrestrictedSafetyConfig(), url)).rejects.toThrow(/OData path/);
+    expect(http.get).not.toHaveBeenCalled();
   });
 });
 
@@ -1223,6 +1246,21 @@ describe('parseCdsCreateStatements', () => {
   it('returns no statements for an empty createStatements element', () => {
     const xml = '<ddl:source xmlns:ddl="http://www.sap.com/adt/ddl"><ddl:createStatements/></ddl:source>';
     expect(parseCdsCreateStatements(xml).statements).toEqual([]);
+  });
+
+  it('parses multiple createStatement entries and array-shaped statement text', () => {
+    const xml =
+      '<ddl:source xmlns:ddl="http://www.sap.com/adt/ddl" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="ZSQL">' +
+      '<ddl:createStatements>' +
+      '<ddl:createStatement adtcore:name="ZSQL" adtcore:type="1" state="A"><ddl:statement>CREATE VIEW "A"</ddl:statement></ddl:createStatement>' +
+      '<ddl:createStatement adtcore:name="ZSQL_TEXT" adtcore:type="2" state="I"><ddl:statement>CREATE VIEW "B"</ddl:statement></ddl:createStatement>' +
+      '</ddl:createStatements></ddl:source>';
+    const result = parseCdsCreateStatements(xml);
+    expect(result.name).toBe('ZSQL');
+    expect(result.statements).toEqual([
+      { name: 'ZSQL', type: '1', state: 'A', sql: 'CREATE VIEW "A"' },
+      { name: 'ZSQL_TEXT', type: '2', state: 'I', sql: 'CREATE VIEW "B"' },
+    ]);
   });
 
   it('does not throw on a malformed body', () => {

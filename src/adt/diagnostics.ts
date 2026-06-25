@@ -800,7 +800,7 @@ export function verdictFromStatistics(m: Record<string, number>): ODataPerfResul
     ],
     [
       'app',
-      (m.gwapp ?? 0) - db,
+      Math.max((m.gwapp ?? 0) - db, 0),
       'ABAP/SADL-bound: application logic dominates (not the DB). Arm an ABAP profiler trace (SAPDiagnose action="traces") and read its hitlist for the hot path.',
     ],
     [
@@ -835,11 +835,7 @@ export async function probeODataPerformance(
   url: string,
 ): Promise<ODataPerfResult> {
   checkOperation(safety, OperationType.Query, 'ProbeODataPerformance');
-  if (!url.startsWith('/') || url.includes('://')) {
-    throw new Error(
-      'odata_perf url must be a host-relative path on the configured SAP system (e.g. "/sap/opu/odata4/.../Entity?$filter=..."); absolute URLs are not allowed.',
-    );
-  }
+  assertODataPerfUrl(url);
   const withStat = url.includes('?') ? `${url}&sap-statistics=true` : `${url}?sap-statistics=true`;
   const t0 = Date.now();
   const resp = await http.get(withStat);
@@ -855,6 +851,47 @@ export async function probeODataPerformance(
     responseBytes: Buffer.byteLength(resp.body ?? ''),
     verdict: verdictFromStatistics(statistics),
   };
+}
+
+function assertODataPerfUrl(url: string): void {
+  const rawPath = url.split(/[?#]/, 1)[0] ?? '';
+  let parsed: URL;
+  try {
+    parsed = new URL(url, 'https://arc1.invalid');
+  } catch {
+    throw invalidODataPerfUrl();
+  }
+
+  if (
+    url.length > 4096 ||
+    !url.startsWith('/') ||
+    url.startsWith('//') ||
+    url.includes('://') ||
+    url.includes('\\') ||
+    url.includes('#') ||
+    /(?:^|\/)(?:\.|%2e)(?:\/|$)/i.test(rawPath) ||
+    /(?:^|\/)(?:\.|%2e){2}(?:\/|$)/i.test(rawPath) ||
+    /%5c/i.test(rawPath) ||
+    parsed.origin !== 'https://arc1.invalid' ||
+    !isODataPath(parsed.pathname)
+  ) {
+    throw invalidODataPerfUrl();
+  }
+}
+
+function isODataPath(pathname: string): boolean {
+  return (
+    pathname === '/sap/opu/odata' ||
+    pathname.startsWith('/sap/opu/odata/') ||
+    pathname === '/sap/opu/odata4' ||
+    pathname.startsWith('/sap/opu/odata4/')
+  );
+}
+
+function invalidODataPerfUrl(): Error {
+  return new Error(
+    'odata_perf url must be a host-relative OData path on the configured SAP system (e.g. "/sap/opu/odata4/.../Entity?$filter=..."); absolute URLs and non-OData SAP paths are not allowed.',
+  );
 }
 
 // ─── CDS Show-SQL (createstatements) ────────────────────────────────
