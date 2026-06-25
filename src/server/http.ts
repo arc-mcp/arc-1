@@ -25,6 +25,7 @@
  * 4. Health endpoint is always unauthenticated — needed for CF health checks.
  */
 
+import { isIP } from 'node:net';
 import type { ApiKeyEntry, XsuaaCredentials } from '@arc-mcp/xsuaa-auth';
 import type { Server as McpServer } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -33,6 +34,7 @@ import type { Request, Response } from 'express';
 import express from 'express';
 import helmet from 'helmet';
 import { expandScopes } from '../authz/policy.js';
+import { getAppUrl } from './app-url.js';
 import { API_KEY_PROFILES } from './config.js';
 import { authLibLogger, logger } from './logger.js';
 import { VERSION } from './server.js';
@@ -87,41 +89,69 @@ function toApiKeyEntries(config: ServerConfig): ApiKeyEntry[] {
  *
  * Exported for unit tests; also called from `startHttpServer` below.
  */
-/**
- * True only when the server is bound to a loopback interface — the case DNS-rebinding
- * targets. An empty/unspecified bindHost is treated as NON-loopback (validation off) so
- * callers that don't pass a bind address (incl. tests) are never gated; `startHttpServer`
- * always passes a concrete host (`host || '0.0.0.0'`).
- */
+/** Canonicalize Host-like values once before allowlist comparison. */
+function normalizeHostForCompare(host: string): string {
+  let h = host.trim().toLowerCase();
+  if (!h) return '';
+
+  if (h.startsWith('[')) {
+    const close = h.indexOf(']');
+    if (close === -1) return h;
+    h = h.slice(1, close);
+  } else {
+    const colon = h.lastIndexOf(':');
+    if (colon !== -1 && h.indexOf(':') === colon && /^\d+$/.test(h.slice(colon + 1))) {
+      h = h.slice(0, colon);
+    }
+  }
+
+  return h.replace(/\.+$/, '');
+}
+
+/** True only when the server is bound to a loopback interface — the case DNS-rebinding targets. */
 export function isLoopbackBind(bindHost: string): boolean {
-  const h = bindHost.trim().toLowerCase();
-  return h === 'localhost' || h === '127.0.0.1' || h === '::1' || h === '[::1]';
+  const h = normalizeHostForCompare(bindHost);
+  return h === 'localhost' || h === '::1' || (isIP(h) === 4 && h.startsWith('127.'));
 }
 
 /**
- * Resolve the effective `Host` allowlist (lower-cased), or `null` when host validation is
- * DISABLED (caller mounts no middleware → existing deployments are byte-for-byte unchanged):
+ * Resolve the effective `Host` allowlist (canonicalized), or `null` when host validation is
+ * DISABLED (caller mounts no middleware):
  *  - `*` anywhere → null (operator opt-out)
- *  - explicit non-empty list → that list (lower-cased)
- *  - empty + loopback bind → derived localhost allowlist (auto-protect dev)
- *  - empty + non-loopback bind → null (off; a reverse proxy / BTP gorouter already controls Host)
+ *  - explicit non-empty list → that list (canonicalized)
+ *  - empty + unspecified bind → null (unit/helper callers that have no real listener context)
+ *  - empty + concrete bind → auto-protect: the loopback Host values (always safe — a DNS-rebind
+ *    attacker cannot forge them; the browser sends the navigated domain) PLUS the advertised public
+ *    host (`publicHost`, from ARC1_PUBLIC_URL / VCAP) so reverse-proxy / BTP deploys — reached via
+ *    that exact host — work with no extra config. Arbitrary Host values (the rebind payload) are
+ *    rejected, which closes the default 0.0.0.0 listener.
  */
-export function resolveAllowedHosts(configuredHosts: string[], bindHost: string, port: number): string[] | null {
-  if (configuredHosts.includes('*')) return null;
-  if (configuredHosts.length > 0) return configuredHosts.map((h) => h.trim().toLowerCase());
-  if (!isLoopbackBind(bindHost)) return null;
-  return [`localhost:${port}`, `127.0.0.1:${port}`, `[::1]:${port}`, 'localhost', '127.0.0.1'];
+export function resolveAllowedHosts(
+  configuredHosts: string[],
+  bindHost: string,
+  port: number,
+  publicHost?: string,
+): string[] | null {
+  if (configuredHosts.some((h) => h.trim() === '*')) return null;
+  const normalized = configuredHosts.map(normalizeHostForCompare).filter((h) => h.length > 0);
+  if (normalized.length > 0) return normalized;
+  if (bindHost.trim() === '') return null;
+  void port;
+  const auto = ['localhost', '127.0.0.1', '::1'];
+  const ph = normalizeHostForCompare(publicHost ?? '');
+  if (ph && !auto.includes(ph)) auto.push(ph);
+  return auto;
 }
 
 /**
  * Host-header predicate. `null` allowlist ⇒ validation disabled (always allow). A missing/empty
- * Host is rejected. Comparison is case-insensitive; the port (when present in an allowlist entry)
- * must match exactly.
+ * Host is rejected. Comparison canonicalizes case, trailing dots, IPv6 brackets, and ports.
  */
 export function checkHostAllowed(hostHeader: string | undefined, allowList: string[] | null): boolean {
   if (allowList === null) return true;
   if (!hostHeader) return false;
-  return allowList.includes(hostHeader.toLowerCase());
+  const host = normalizeHostForCompare(hostHeader);
+  return host.length > 0 && allowList.includes(host);
 }
 
 export function applySecurityMiddleware(
@@ -130,6 +160,7 @@ export function applySecurityMiddleware(
   allowedHosts: string[] = [],
   bindHost = '',
   port = 0,
+  publicHost?: string,
 ): void {
   const hasCorsOrigins = allowedOrigins.length > 0;
   app.use(
@@ -152,6 +183,38 @@ export function applySecurityMiddleware(
         : undefined,
     }),
   );
+
+  // ─── DNS-rebinding defense: Host-header allowlist (SEC-14) ───────────
+  // The MCP SDK's transport-level allowedHosts/enableDnsRebindingProtection are @deprecated
+  // ("use external middleware for host validation instead"), so we validate Host here before
+  // any CORS preflight, OAuth, health, UI, or MCP route can respond.
+  const hostAllowList = resolveAllowedHosts(allowedHosts, bindHost, port, publicHost);
+  if (hostAllowList !== null) {
+    app.use((req, res, next) => {
+      const host = req.headers.host;
+      if (!checkHostAllowed(host, hostAllowList)) {
+        logger.emitAudit({
+          timestamp: new Date().toISOString(),
+          level: 'warn',
+          event: 'host_rejected',
+          host: host ?? '',
+          method: req.method,
+          path: req.path,
+        });
+        res.status(403).json({ jsonrpc: '2.0', error: { code: -32000, message: 'Invalid Host header' }, id: null });
+        return;
+      }
+      next();
+    });
+    if (!isLoopbackBind(bindHost) && allowedHosts.length === 0 && !publicHost) {
+      logger.warn(
+        'Host validation: non-loopback bind with no ARC1_ALLOWED_HOSTS or ARC1_PUBLIC_URL — only loopback Host values are accepted. ' +
+          'Set ARC1_ALLOWED_HOSTS to your public hostname(s), or `*` to disable.',
+        { bindHost },
+      );
+    }
+    logger.info('Host-header validation enabled', { allowedHosts: hostAllowList });
+  }
 
   if (hasCorsOrigins) {
     const allowed = new Set(allowedOrigins);
@@ -190,32 +253,6 @@ export function applySecurityMiddleware(
       next();
     });
     logger.info('CORS enabled', { origins: allowedOrigins });
-  }
-
-  // ─── DNS-rebinding defense: Host-header allowlist (SEC-14) ───────────
-  // The MCP SDK's transport-level allowedHosts/enableDnsRebindingProtection are @deprecated
-  // ("use external middleware for host validation instead"), so we validate Host here. No
-  // middleware is mounted unless bound to loopback or explicitly configured — see
-  // resolveAllowedHosts — so non-loopback (reverse-proxy/BTP) deployments are unaffected.
-  const hostAllowList = resolveAllowedHosts(allowedHosts, bindHost, port);
-  if (hostAllowList !== null) {
-    app.use((req, res, next) => {
-      const host = req.headers.host;
-      if (!checkHostAllowed(host, hostAllowList)) {
-        logger.emitAudit({
-          timestamp: new Date().toISOString(),
-          level: 'warn',
-          event: 'host_rejected',
-          host: host ?? '',
-          method: req.method,
-          path: req.path,
-        });
-        res.status(403).json({ jsonrpc: '2.0', error: { code: -32000, message: 'Invalid Host header' }, id: null });
-        return;
-      }
-      next();
-    });
-    logger.info('Host-header validation enabled', { allowedHosts: hostAllowList });
   }
 }
 
@@ -274,7 +311,20 @@ export async function startHttpServer(
   // and correct client IP detection behind CF's reverse proxy.
   app.set('trust proxy', 1);
 
-  applySecurityMiddleware(app, config.allowedOrigins, config.allowedHosts, bindHost, port);
+  // Derive the advertised public host (ARC1_PUBLIC_URL / VCAP) so the Host allowlist auto-includes
+  // the hostname proxied / BTP clients actually send — see resolveAllowedHosts.
+  let publicHost: string | undefined;
+  {
+    const url = getAppUrl();
+    if (url) {
+      try {
+        publicHost = new URL(url).host || undefined;
+      } catch {
+        publicHost = url.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '').split('/')[0] || undefined;
+      }
+    }
+  }
+  applySecurityMiddleware(app, config.allowedOrigins, config.allowedHosts, bindHost, port, publicHost);
 
   // ─── Layer 1: HTTP-edge rate limiter helper ──────────────────────────
   // One operator-facing knob (`ARC1_AUTH_RATE_LIMIT`, default 20/min/IP) controls all
@@ -338,7 +388,6 @@ export async function startHttpServer(
       createOidcVerifier,
       createOAuthCallbackHandler,
     } = await import('@arc-mcp/xsuaa-auth');
-    const { getAppUrl } = await import('./app-url.js');
 
     // Determine app URL for OAuth metadata
     const appUrl = getAppUrl() ?? `http://${bindHost}:${port}`;

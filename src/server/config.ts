@@ -656,9 +656,9 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     sources.allowedOrigins = 'default';
   }
 
-  // Host-header allowlist (DNS-rebinding defense, SEC-14). Empty (the default) auto-protects
-  // loopback binds only; `*` disables. The middleware (src/server/http.ts) interprets `*`/empty —
-  // the parser just normalizes the CSV.
+  // Host-header allowlist (DNS-rebinding defense, SEC-14). Empty (the default) auto-protects any
+  // concrete bind (loopback hosts + the ARC1_PUBLIC_URL/VCAP-derived public host); `*` disables. The
+  // middleware (src/server/http.ts) interprets `*`/empty — the parser just normalizes the CSV.
   const hostsRaw = getFlag('allowed-hosts') ?? process.env.ARC1_ALLOWED_HOSTS;
   if (hostsRaw !== undefined) {
     config.allowedHosts = hostsRaw

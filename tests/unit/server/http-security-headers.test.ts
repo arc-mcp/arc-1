@@ -1,3 +1,5 @@
+import { createServer } from 'node:http';
+import { connect } from 'node:net';
 import express from 'express';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -9,17 +11,51 @@ import {
 } from '../../../src/server/http.js';
 import { logger } from '../../../src/server/logger.js';
 
-function buildApp(allowedOrigins: string[], allowedHosts: string[] = [], bindHost = '', port = 0): express.Express {
+function buildApp(
+  allowedOrigins: string[],
+  allowedHosts: string[] = [],
+  bindHost = '',
+  port = 0,
+  publicHost?: string,
+): express.Express {
   const app = express();
   app.set('trust proxy', 1);
-  applySecurityMiddleware(app, allowedOrigins, allowedHosts, bindHost, port);
+  applySecurityMiddleware(app, allowedOrigins, allowedHosts, bindHost, port, publicHost);
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok' });
+  });
+  app.get('/.well-known/oauth-protected-resource/mcp', (_req, res) => {
+    res.json({ resource: 'ok' });
   });
   app.post('/mcp', (_req, res) => {
     res.json({ jsonrpc: '2.0', result: 'ok', id: 1 });
   });
   return app;
+}
+
+async function rawHttpRequest(app: express.Express, requestText: string): Promise<string> {
+  const server = createServer(app);
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('test server did not bind to an IP socket');
+    return await new Promise<string>((resolve, reject) => {
+      const socket = connect(address.port, '127.0.0.1', () => {
+        socket.end(requestText);
+      });
+      let response = '';
+      socket.setEncoding('utf8');
+      socket.on('data', (chunk) => {
+        response += chunk;
+      });
+      socket.on('error', reject);
+      socket.on('end', () => resolve(response));
+    });
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((err) => (err ? reject(err) : resolve()));
+    });
+  }
 }
 
 describe('applySecurityMiddleware — helmet defaults', () => {
@@ -194,42 +230,54 @@ describe('applySecurityMiddleware — cors_rejected audit', () => {
 // ─── DNS-rebinding / Host-header validation (SEC-14) ──────────────────
 
 describe('host validation — pure helpers', () => {
-  it('isLoopbackBind: true only for loopback hosts; empty + 0.0.0.0 + real host are false', () => {
-    for (const h of ['localhost', '127.0.0.1', '::1', '[::1]', 'LOCALHOST', ' 127.0.0.1 ']) {
+  it('isLoopbackBind: true only for loopback hosts; wildcard, unspecified, and routable hosts are false', () => {
+    for (const h of ['localhost', '127.0.0.1', '127.0.0.2', '127.1.2.3', '::1', '[::1]', 'LOCALHOST']) {
       expect(isLoopbackBind(h)).toBe(true);
     }
-    for (const h of ['', '0.0.0.0', 'a4h.example.com', '10.0.0.5']) {
+    for (const h of ['', '0.0.0.0', '::', 'a4h.example.com', '10.0.0.5', '203.0.113.10']) {
       expect(isLoopbackBind(h)).toBe(false);
     }
   });
 
-  it('resolveAllowedHosts: loopback+empty → localhost list; non-loopback+empty → null', () => {
-    expect(resolveAllowedHosts([], '127.0.0.1', 8080)).toEqual([
-      'localhost:8080',
-      '127.0.0.1:8080',
-      '[::1]:8080',
+  it('resolveAllowedHosts: empty config auto-protects (loopback always; folds in publicHost); empty bind disables', () => {
+    // Loopback and 0.0.0.0 binds alike get the loopback allowlist — a rebind attacker cannot forge a
+    // loopback Host, so allowing them is safe and keeps localhost dev working on a wildcard bind.
+    expect(resolveAllowedHosts([], '127.0.0.1', 8080)).toEqual(['localhost', '127.0.0.1', '::1']);
+    expect(resolveAllowedHosts([], '0.0.0.0', 8080)).toEqual(['localhost', '127.0.0.1', '::1']);
+    expect(resolveAllowedHosts([], '203.0.113.10', 8080)).toEqual(['localhost', '127.0.0.1', '::1']);
+    // The advertised public host (ARC1_PUBLIC_URL / VCAP) is folded in — port-stripped — so
+    // reverse-proxy / BTP deploys work with no extra config.
+    expect(resolveAllowedHosts([], '0.0.0.0', 8080, 'mcp.example.com:443')).toEqual([
       'localhost',
       '127.0.0.1',
+      '::1',
+      'mcp.example.com',
     ]);
-    expect(resolveAllowedHosts([], '0.0.0.0', 8080)).toBeNull();
+    // …and de-duped when it is already a loopback alias.
+    expect(resolveAllowedHosts([], '127.0.0.1', 8080, 'localhost')).toEqual(['localhost', '127.0.0.1', '::1']);
+    // Unspecified bind (unit/helper callers with no real listener) disables validation.
     expect(resolveAllowedHosts([], '', 8080)).toBeNull();
+    expect(resolveAllowedHosts([], '', 8080, 'mcp.example.com')).toBeNull();
   });
 
-  it('resolveAllowedHosts: explicit list passes through lower-cased; `*` disables', () => {
-    expect(resolveAllowedHosts(['Mcp.Example.COM', 'host2:9000'], '0.0.0.0', 8080)).toEqual([
+  it('resolveAllowedHosts: explicit list canonicalizes host values; `*` disables', () => {
+    expect(resolveAllowedHosts(['Mcp.Example.COM:443', 'host2.', '[::1]:8080'], '0.0.0.0', 8080)).toEqual([
       'mcp.example.com',
-      'host2:9000',
+      'host2',
+      '::1',
     ]);
     expect(resolveAllowedHosts(['*'], '127.0.0.1', 8080)).toBeNull();
     expect(resolveAllowedHosts(['a.com', '*'], '127.0.0.1', 8080)).toBeNull();
+    expect(resolveAllowedHosts(['*.'], '127.0.0.1', 8080)).toEqual(['*']);
   });
 
-  it('checkHostAllowed: null → always allow; exact + case-insensitive match; wrong/missing rejected', () => {
+  it('checkHostAllowed: normalizes port, brackets, case, and trailing dots before compare', () => {
     expect(checkHostAllowed('anything', null)).toBe(true);
-    const list = ['localhost:8080', '127.0.0.1'];
+    const list = ['localhost', '127.0.0.1', '::1'];
     expect(checkHostAllowed('localhost:8080', list)).toBe(true);
-    expect(checkHostAllowed('LOCALHOST:8080', list)).toBe(true);
-    expect(checkHostAllowed('localhost:9999', list)).toBe(false); // wrong port
+    expect(checkHostAllowed('[::1]:8080', list)).toBe(true);
+    expect(checkHostAllowed('LOCALHOST', list)).toBe(true);
+    expect(checkHostAllowed('localhost.', list)).toBe(true);
     expect(checkHostAllowed('evil.com', list)).toBe(false);
     expect(checkHostAllowed(undefined, list)).toBe(false);
     expect(checkHostAllowed('', list)).toBe(false);
@@ -251,14 +299,34 @@ describe('applySecurityMiddleware — Host-header validation (SEC-14)', () => {
     const res = await request(buildApp([], [], '127.0.0.1', 8080))
       .post('/mcp')
       .set('Host', 'evil.com')
-      .send({});
+      .set('Authorization', 'Bearer should-not-appear-in-host-rejected')
+      .send({ password: 'should-not-appear-in-host-rejected' });
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ jsonrpc: '2.0', error: { code: -32000 }, id: null });
     const hostCalls = emitSpy.mock.calls
-      .map((c: unknown[]) => c[0] as { event: string; host?: string; method?: string; path?: string })
+      .map(
+        (c: unknown[]) =>
+          c[0] as {
+            event: string;
+            level?: string;
+            host?: string;
+            method?: string;
+            path?: string;
+            authorization?: string;
+            requestBody?: unknown;
+          },
+      )
       .filter((e: { event: string }) => e.event === 'host_rejected');
     expect(hostCalls.length).toBe(1);
-    expect(hostCalls[0]).toMatchObject({ event: 'host_rejected', host: 'evil.com', method: 'POST', path: '/mcp' });
+    expect(hostCalls[0]).toMatchObject({
+      event: 'host_rejected',
+      level: 'warn',
+      host: 'evil.com',
+      method: 'POST',
+      path: '/mcp',
+    });
+    expect(hostCalls[0]).not.toHaveProperty('authorization');
+    expect(hostCalls[0]).not.toHaveProperty('requestBody');
   });
 
   it('allows a matching loopback Host through to the route', async () => {
@@ -270,24 +338,88 @@ describe('applySecurityMiddleware — Host-header validation (SEC-14)', () => {
     expect(res.body).toMatchObject({ result: 'ok' });
   });
 
-  it('rejects a wrong-port Host even on the matching hostname', async () => {
-    const res = await request(buildApp([], [], '127.0.0.1', 8080))
-      .post('/mcp')
-      .set('Host', 'localhost:9999')
-      .send({});
-    expect(res.status).toBe(403);
+  it('normalizes Host before middleware comparison', async () => {
+    const app = buildApp([], ['host', '::1'], '0.0.0.0', 8080);
+    for (const host of ['host:8080', '[::1]:8080', 'HOST', 'host.']) {
+      const res = await request(app).get('/health').set('Host', host);
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ status: 'ok' });
+    }
+
+    const rejected = await request(app).get('/health').set('Host', 'evil-host:8080');
+    expect(rejected.status).toBe(403);
   });
 
-  it('regression guard: non-loopback bind with no config mounts NO host check (BTP/proxy unaffected)', async () => {
-    const res = await request(buildApp([], [], '0.0.0.0', 8080))
+  it('ignores X-Forwarded-Host and Forwarded when deciding whether Host is allowed', async () => {
+    const res = await request(buildApp([], [], '127.0.0.1', 8080))
       .post('/mcp')
-      .set('Host', 'whatever.example.com')
+      .set('Host', 'localhost:8080')
+      .set('X-Forwarded-Host', 'evil.com')
+      .set('Forwarded', 'host=evil.com')
       .send({});
     expect(res.status).toBe(200);
     const hostCalls = emitSpy.mock.calls
       .map((c: unknown[]) => c[0] as { event: string })
       .filter((e: { event: string }) => e.event === 'host_rejected');
     expect(hostCalls.length).toBe(0);
+  });
+
+  it('auto-protect on a wildcard bind: rejects a foreign Host, allows loopback and the derived public host', async () => {
+    // The rebind payload (a foreign Host) is rejected even with no explicit config…
+    const rebind = await request(buildApp([], [], '0.0.0.0', 8080))
+      .post('/mcp')
+      .set('Host', 'whatever.example.com')
+      .send({});
+    expect(rebind.status).toBe(403);
+    // …but localhost still works for local dev on the default 0.0.0.0 bind (a rebind attacker cannot
+    // forge a loopback Host). This would 403 under a naive deny-all fail-closed default.
+    const dev = await request(buildApp([], [], '0.0.0.0', 8080))
+      .post('/mcp')
+      .set('Host', 'localhost:8080')
+      .send({});
+    expect(dev.status).toBe(200);
+    // …and the advertised public host (ARC1_PUBLIC_URL / VCAP — e.g. the CF gorouter route) is
+    // auto-allowed so reverse-proxy / BTP deploys work with no extra config.
+    const proxied = await request(buildApp([], [], '0.0.0.0', 8080, 'mcp.example.com'))
+      .post('/mcp')
+      .set('Host', 'mcp.example.com')
+      .send({});
+    expect(proxied.status).toBe(200);
+    // A foreign Host is still rejected when a public host is configured.
+    const stillRejected = await request(buildApp([], [], '0.0.0.0', 8080, 'mcp.example.com'))
+      .post('/mcp')
+      .set('Host', 'evil.com')
+      .send({});
+    expect(stillRejected.status).toBe(403);
+  });
+
+  it('covers non-MCP routes including health and OAuth metadata', async () => {
+    const app = buildApp([], [], '127.0.0.1', 8080);
+    const health = await request(app).get('/health').set('Host', 'evil.com');
+    const metadata = await request(app).get('/.well-known/oauth-protected-resource/mcp').set('Host', 'evil.com');
+    expect(health.status).toBe(403);
+    expect(metadata.status).toBe(403);
+  });
+
+  it('rejects absolute-form requests based on the real Host header', async () => {
+    const response = await rawHttpRequest(
+      buildApp([], [], '127.0.0.1', 8080),
+      'GET http://evil.example/health HTTP/1.1\r\nHost: evil.com\r\nConnection: close\r\n\r\n',
+    );
+    expect(response).toContain('HTTP/1.1 403 Forbidden');
+  });
+
+  it('rejects bad Host before CORS can complete an allowed preflight', async () => {
+    const res = await request(buildApp(['https://trusted.example'], [], '127.0.0.1', 8080))
+      .options('/mcp')
+      .set('Host', 'evil.com')
+      .set('Origin', 'https://trusted.example')
+      .set('Access-Control-Request-Method', 'POST');
+    expect(res.status).toBe(403);
+    const hostCalls = emitSpy.mock.calls
+      .map((c: unknown[]) => c[0] as { event: string })
+      .filter((e: { event: string }) => e.event === 'host_rejected');
+    expect(hostCalls.length).toBe(1);
   });
 
   it('explicit allowlist enforces even on a non-loopback bind; `*` disables', async () => {

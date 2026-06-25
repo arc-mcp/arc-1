@@ -23,17 +23,18 @@ Key design decisions (each verified, see Verified Evidence):
   `@modelcontextprotocol/sdk@1.29.0` **all three are `@deprecated` with the guidance "Use external
   middleware for host validation instead."** Using them invites removal-on-upgrade breakage and fights
   the SDK's own direction. fr0ster reached the same conclusion in their v7.2.0 implementation.
-- **Non-breaking default.** Empty `ARC1_ALLOWED_HOSTS` (the default) means: auto-protect only when the
-  server is bound to a **loopback** interface (`127.0.0.1`/`localhost`/`::1`) — the exact case DNS-
-  rebinding targets — using a derived localhost allowlist. For non-loopback binds (`0.0.0.0`, a real
-  IP — server/proxy/BTP deployments where the gorouter or reverse proxy already controls `Host`) the
-  check stays **off** unless explicitly configured. `ARC1_ALLOWED_HOSTS=*` disables it entirely.
+- **Auto-protect default.** Empty `ARC1_ALLOWED_HOSTS` (the default) protects every concrete bind:
+  the loopback Host values (`127.0.0.0/8`/`localhost`/`::1` — a rebind attacker cannot forge them, so
+  local dev works even on `0.0.0.0`) plus the advertised public host derived from
+  `ARC1_PUBLIC_URL` / `VCAP_APPLICATION` (so reverse-proxy / BTP deploys, reached via that exact host,
+  work no-config) are accepted, and arbitrary Hosts — the rebind payload — rejected. A non-loopback
+  bind with no public host or explicit allowlist logs a warning and accepts loopback Hosts only.
+  `ARC1_ALLOWED_HOSTS=*` disables validation entirely.
 
 Success criteria (plain bullets, not checkboxes):
 - A bad `Host` to a loopback-bound server returns `403` + a `host_rejected` audit event; a good `Host`
   passes through.
-- The default `0.0.0.0:8080` bind with no `ARC1_ALLOWED_HOSTS` mounts NO host check — existing
-  BTP/proxy/Docker deployments are byte-for-byte unaffected.
+- The default `0.0.0.0:8080` bind with no `ARC1_ALLOWED_HOSTS` rejects arbitrary Host values.
 - `npm test`, `npm run typecheck`, `npm run lint`, `npm run build` all green.
 
 Scope: HTTP transport only (stdio has no network surface). `Origin` validation already exists in the
@@ -107,16 +108,15 @@ CORS layer and is out of scope — this plan is Host-only to avoid duplicating t
 
 1. **External middleware over the deprecated SDK flag** (verified above). Do NOT pass `allowedHosts`/
    `enableDnsRebindingProtection` to `new StreamableHTTPServerTransport({...})`.
-2. **Non-breaking by default.** Default `ARC1_ALLOWED_HOSTS=[]`: enforce **only** for loopback binds;
-   for non-loopback binds, off unless configured. ARC-1's default bind is `0.0.0.0:8080` (non-loopback),
-   so the check is OFF out of the box → no existing deployment changes. `*` disables entirely.
+2. **Auto-protect by default.** Default `ARC1_ALLOWED_HOSTS=[]`: every concrete bind accepts loopback
+   Host values plus the `ARC1_PUBLIC_URL`/VCAP-derived public host, and rejects arbitrary Hosts. No
+   legit deploy (local dev, reverse proxy, BTP) needs extra config; `*` disables validation.
 3. **Host-only.** `Origin`/CORS already exists; do not duplicate it. One concern per layer.
 4. **Mirror existing patterns exactly.** The audit event/emit, config parse, and middleware placement
    copy the established `cors_rejected` / `allowedOrigins` code — including the **required `level:'warn'`**
    on the emit (`AuditEventBase.level` is required; an emit without it fails `npm run typecheck`).
-5. **Exact match, port-sensitive, case-insensitive host.** `Host: evil.com` and `Host: localhost:9999`
-   (wrong port) are rejected. Hostnames compared lower-cased (`Host` is case-insensitive per RFC 9110);
-   ports exactly.
+5. **Canonical host match.** Hostnames compare case-insensitively after stripping ports, IPv6 brackets,
+   and trailing dots. `X-Forwarded-Host` / `Forwarded` are not trusted for this decision.
 6. No new dependency — `express`/`helmet` are already present. This is a config/env var, **not** a tool
    parameter, so the `tools.ts`/`schemas.ts`/handler three-file sync does NOT apply.
 
@@ -133,9 +133,9 @@ real express app through `applySecurityMiddleware` and spies on `logger.emitAudi
 requests with `supertest` or the file's existing request helper, assert 403 + `host_rejected`). Do NOT
 rebuild a parallel harness in `http.test.ts` (that file only covers `createStandardVerifier`).
 
-Failure/negative paths are the point: tests MUST cover missing `Host`, wrong-port `Host`, foreign-host
-`Host`, the `*` disable escape hatch, case-insensitive host match, and — the critical regression guard —
-a non-loopback bind (`0.0.0.0`) with empty config that must NOT reject any `Host`.
+Failure/negative paths are the point: tests MUST cover missing `Host`, foreign-host `Host`, the `*`
+disable escape hatch, canonical host matching, forwarded-header spoofing, and — the critical
+regression guard — a non-loopback bind (`0.0.0.0`) with empty config that MUST reject arbitrary hosts.
 
 No integration/E2E tier and no live SAP run — there is no SAP surface. State this in the docs task so
 the next agent doesn't add a phantom 3-system check.
@@ -184,24 +184,20 @@ Foundation task: introduce the config surface and audit type the later tasks con
 The core task. Add three pure helpers + one middleware. Mirror fr0ster's `checkDnsRebinding` logic
 (verified prior art) and ARC-1's `cors_rejected` audit hook/emit (`http.ts:~135`).
 
-- [ ] Add an exported pure helper `isLoopbackBind(bindHost: string): boolean` — true for `''`,
-      `localhost`, `127.0.0.1`, `::1`, `[::1]` (compare lower-cased); `0.0.0.0` and any real
-      hostname/IP → false. (Empty bindHost ⇒ loopback: an unspecified dev bind usually means localhost;
-      note this inline.)
+- [ ] Add an exported pure helper `isLoopbackBind(bindHost: string): boolean` — true for
+      `localhost`, `127.0.0.0/8`, `::1`, `[::1]`; `0.0.0.0`, `::`, empty, and real hostname/IP → false.
 - [ ] Add an exported pure helper
       `resolveAllowedHosts(configuredHosts: string[], bindHost: string, port: number): string[] | null`.
-      Rules: contains `'*'` → return `null` ("disabled, allow all"). Non-empty → return it lower-cased.
+      Rules: contains `'*'` → return `null` ("disabled, allow all"). Non-empty → return it canonicalized.
       Empty AND `isLoopbackBind(bindHost)` → return
-      `['localhost:'+port, '127.0.0.1:'+port, '[::1]:'+port, 'localhost', '127.0.0.1']`
-      (the bare host entries cover clients that omit a default port). Empty AND NOT loopback → `null`
-      (off — the BTP/proxy regression guard).
+      `['localhost', '127.0.0.1', '::1']`. Empty AND concrete non-loopback → `[]` (fail closed).
 - [ ] Add an exported pure predicate
       `checkHostAllowed(hostHeader: string | undefined, allowList: string[] | null): boolean` —
-      `allowList === null` → true (disabled). Otherwise lower-case `hostHeader` and return
+      `allowList === null` → true (disabled). Otherwise canonicalize `hostHeader` and return
       `allowList.includes(it)`; missing/empty `Host` → false (reject).
 - [ ] Extend `applySecurityMiddleware` to
       `applySecurityMiddleware(app, allowedOrigins: string[], allowedHosts: string[] = [], bindHost = '', port = 0)`.
-      After the helmet/CORS block, compute `const hostAllowList = resolveAllowedHosts(allowedHosts, bindHost, port)`
+      After helmet and before CORS, compute `const hostAllowList = resolveAllowedHosts(allowedHosts, bindHost, port)`
       and, ONLY when `hostAllowList !== null`, `app.use((req,res,next) => {...})` that: reads
       `req.headers.host`; if `!checkHostAllowed(host, hostAllowList)` → emit audit by COPYING the
       `cors_rejected` emit at `http.ts:~138` exactly, swapping fields:
@@ -212,19 +208,19 @@ The core task. Add three pure helpers + one middleware. Mirror fr0ster's `checkD
 - [ ] Update the `startHttpServer` call site (~`:208`) to
       `applySecurityMiddleware(app, config.allowedOrigins, config.allowedHosts, bindHost, port)`
       (`bindHost`/`port` are computed just above, ~`:195`).
-- [ ] Regression guard: when `hostAllowList === null` (non-loopback bind, empty config, or `*`), NO host
-      middleware is mounted — existing deployments behave identically. Add a test that proves it.
+- [ ] Regression guard: concrete non-loopback bind + empty config mounts host middleware and rejects
+      arbitrary Host values. `*` remains the explicit disable path.
 - [ ] Add unit tests (~10 tests) in `tests/unit/server/http-security-headers.test.ts`:
-      - `isLoopbackBind`: true for localhost/127.0.0.1/::1/empty; false for 0.0.0.0 and `a4h.example.com`.
-      - `resolveAllowedHosts`: loopback+empty → localhost list; non-loopback+empty → null; explicit list
-        passthrough (lower-cased); `['*']` → null.
-      - `checkHostAllowed`: exact match, case-insensitive host, wrong port rejected, foreign host
-        rejected, missing Host rejected, `null` allowList → always true.
+      - `isLoopbackBind`: true for localhost/127.0.0.0/8/::1; false for 0.0.0.0, `::`, and routable hosts.
+      - `resolveAllowedHosts`: loopback+empty → localhost list; non-loopback+empty → `[]`; explicit list
+        canonicalized; `['*']` → null.
+      - `checkHostAllowed`: case-insensitive match, port/IPv6-bracket/trailing-dot normalization,
+        foreign host rejected, missing Host rejected, `null` allowList → always true.
       - Middleware (reuse the file's app-builder + `emitAudit` spy): app built with
         `applySecurityMiddleware(app, [], [], '127.0.0.1', 8080)`; request `Host: evil.com` → 403 +
         JSON-RPC `-32000` body + a `host_rejected` audit event; request `Host: localhost:8080` → reaches
         a probe route (not 403). One test: `applySecurityMiddleware(app, [], [], '0.0.0.0', 8080)` +
-        `Host: anything` → NOT 403 (regression guard).
+        `Host: anything` → 403 (fail-closed regression guard).
 - [ ] Run `npm test` — all tests pass.
 
 ### Task 3: Documentation + roadmap + security-model
@@ -239,12 +235,12 @@ The core task. Add three pure helpers + one middleware. Mirror fr0ster's `checkD
 - Modify: `docs/security-model.md` (move A4 DNS-rebinding from open threat to a documented control)
 
 Docs run last so they describe what shipped. Document the as-shipped behavior precisely, including the
-non-breaking default (loopback-only auto-protect) and the `*` escape hatch — over-promising "secure by
-default everywhere" would be wrong and would mislead operators behind a proxy.
+fail-closed default and the explicit `*` escape hatch.
 
 - [ ] `configuration-reference.md`: add `ARC1_ALLOWED_HOSTS` — "Comma-separated Host-header allowlist
-      (incl. port) for the HTTP transport (DNS-rebinding defense). Default empty = auto-protect loopback
-      binds only; set explicitly for self-hosted non-loopback HTTP; `*` disables."
+      for the HTTP transport (DNS-rebinding defense). Default empty = auto-protect loopback binds and
+      fail closed on concrete non-loopback binds; set explicitly for self-hosted non-loopback HTTP;
+      `*` disables."
 - [ ] `security-guide.md`: short subsection — what DNS-rebinding is, when it applies (localhost / HTTP
       bridge), why CORS doesn't cover it, and the `ARC1_ALLOWED_HOSTS` knob + default behavior.
 - [ ] `.env.example` + `AGENTS.md` config table rows.
@@ -265,7 +261,7 @@ default everywhere" would be wrong and would mislead operators behind a proxy.
       `curl -s -o /dev/null -w '%{http_code}' -H 'Host: evil.com' http://127.0.0.1:8080/mcp` → `403`;
       `curl ... -H 'Host: localhost:8080' .../mcp` → NOT 403 (401/400/200 from the auth/MCP layer is
       fine — the Host gate let it through). Do not commit the smoke script.
-- [ ] Confirm non-loopback is unaffected: `ARC1_HTTP_ADDR=0.0.0.0:8080` with no `ARC1_ALLOWED_HOSTS` →
-      `curl -H 'Host: anything' .../mcp` is NOT 403.
+- [ ] Confirm concrete non-loopback fails closed: `ARC1_HTTP_ADDR=0.0.0.0:8080` with no
+      `ARC1_ALLOWED_HOSTS` → `curl -H 'Host: anything' .../mcp` is 403.
 - [ ] Move this plan to `docs/plans/completed/` and fix any relative links (one level deeper → `../`
       paths gain a level).

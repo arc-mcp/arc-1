@@ -210,10 +210,11 @@ export interface ServerConfig {
    *  use native HTTP, not the browser fetch API, and never trigger CORS. */
   allowedOrigins: string[];
 
-  /** Exact-match `Host`-header allowlist (incl. port) for DNS-rebinding defense on the HTTP
-   *  transport. Empty (the default) auto-protects loopback binds only (a derived
-   *  localhost allowlist); non-loopback binds (0.0.0.0 / reverse proxy / BTP gorouter, which
-   *  already controls Host) stay off unless set. `*` disables entirely. SEC-14. */
+  /** Canonical `Host`-header allowlist for DNS-rebinding defense on the HTTP transport.
+   *  Ports, case, IPv6 brackets, and trailing dots are normalized before compare.
+   *  Empty (the default) auto-protects any concrete bind: the loopback hosts plus the
+   *  advertised public host (derived from ARC1_PUBLIC_URL / VCAP) are accepted and arbitrary
+   *  Hosts rejected. Set explicit hosts to add more (proxy/BTP); `*` disables entirely. SEC-14. */
   allowedHosts: string[];
 
   // --- Misc ---

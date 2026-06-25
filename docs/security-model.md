@@ -277,7 +277,7 @@ if the change is *in* one of them.
 - **`withSafety()` clone** — copies all instance fields by reference and applies the restricted
   safety; shared holders carry no per-user data. [`src/adt/client.ts`](../src/adt/client.ts).
 - **CORS** — off by default; exact `Set.has` origin match with `credentials:true`; no wildcard.
-- **Host-header validation (DNS-rebinding, A4)** — the HTTP transport rejects requests whose `Host` is not in `ARC1_ALLOWED_HOSTS`; auto-enabled for loopback binds, off for `0.0.0.0`/proxy/BTP binds (which fix `Host` upstream). Closes the localhost / HTTP-bridge case of threat A4. [`applySecurityMiddleware` in `src/server/http.ts`](../src/server/http.ts). SEC-14.
+- **Host-header validation (DNS-rebinding, A4)** — the HTTP transport rejects requests whose canonical `Host` is not in `ARC1_ALLOWED_HOSTS`. With no explicit config it auto-protects every bind: loopback Host values (a rebind attacker cannot forge them) plus the advertised public host (`ARC1_PUBLIC_URL`/VCAP, so proxy/BTP work no-config) are accepted and arbitrary Hosts rejected. Closes the localhost / HTTP-bridge case of threat A4. [`applySecurityMiddleware` in `src/server/http.ts`](../src/server/http.ts). SEC-14.
 - **Per-user credential stripping** — `buildAdtConfig(...,{perUser:true})` strips
   username/password/cookies; per-user cookie/CSRF jars are per-instance.
 - **stdout discipline** — no `console.log` on the MCP path; all logging to stderr.

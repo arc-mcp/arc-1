@@ -61,7 +61,7 @@ Full per-option details (defaults, clamps, layer interactions): [docs_page/confi
 | `ARC1_OAUTH_DCR_TTL_SECONDS` | DCR client_id lifetime (default 30d; `0` = no expiry for clients that don't re-register) |
 | `ARC1_DCR_SIGNING_SECRET` | Dedicated HMAC secret so `cf deploy` doesn't invalidate cached client_ids |
 | `ARC1_ALLOWED_ORIGINS` | CORS allowlist for browser MCP clients (empty = CORS off) |
-| `ARC1_ALLOWED_HOSTS` | `Host`-header allowlist for the HTTP transport — DNS-rebinding defense (empty = auto-protect loopback binds only; `*` disables) |
+| `ARC1_ALLOWED_HOSTS` | `Host`-header allowlist for the HTTP transport — DNS-rebinding defense (empty = auto-protect: loopback + the `ARC1_PUBLIC_URL`/VCAP-derived host allowed, arbitrary Hosts rejected; `*` disables) |
 | `ARC1_PUBLIC_URL` | Advertised OAuth-metadata URL when behind a reverse proxy |
 | `SAP_BTP_SERVICE_KEY[_FILE]` / `SAP_BTP_OAUTH_CALLBACK_PORT` | BTP ABAP service key / OAuth callback port |
 | `SAP_SYSTEM_TYPE` | `auto` (default), `btp`, `onprem` |
