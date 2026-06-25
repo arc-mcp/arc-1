@@ -2335,7 +2335,7 @@ define role ZTEST_DCL {
       expect(post?.body).not.toContain('adtTemplate');
     });
 
-    it('returns an error when inactive read-back does not confirm the created BDEF is an extension', async () => {
+    it('warns (non-blocking) when inactive read-back does not confirm the created BDEF is an extension', async () => {
       const calls = captureCreateFlow(
         'managed implementation in class zbp_base_x unique;\ndefine behavior for ZR_BASE_X\n{\n}',
       );
@@ -2346,8 +2346,10 @@ define role ZTEST_DCL {
         package: '$TMP',
         source: 'extension implementation in class zbp_base_x unique;\nextend behavior for ZR_BASE\n{\n}',
       });
-      expect(result.isError).toBe(true);
+      // Non-blocking: the object was created (success), but the warning is appended.
+      expect(result.isError).toBeUndefined();
       const text = result.content[0]?.text ?? '';
+      expect(text).toContain('and wrote source code');
       expect(text).toContain('did not confirm');
       expect(text).toContain('extend behavior for ZR_BASE');
       expect(calls.some((c) => c.method === 'GET' && c.url.includes('version=inactive'))).toBe(true);

@@ -208,7 +208,14 @@ function applyBdefBehaviorExtensionMetadata(
   return baseBdef;
 }
 
-async function verifyBdefBehaviorExtensionReadBack(
+/**
+ * After a behavior-extension create+PUT, read the inactive draft back and confirm it really is an
+ * `extend behavior for <base>` extension. Returns a NON-BLOCKING warning string if it isn't (the
+ * object was still created — SAP may have scaffolded a plain definition, e.g. if a future release
+ * ignores the ADT template). On the tested releases (758/816) this never fires; it's a cheap
+ * data-integrity hint, not a hard gate. Returns undefined when the extension is confirmed.
+ */
+async function warnIfBdefExtensionUnconfirmed(
   client: SapWriteContext['client'],
   name: string,
   expectedBaseBdef: string,
@@ -219,14 +226,13 @@ async function verifyBdefBehaviorExtensionReadBack(
 
   const actual =
     actualBaseBdef !== undefined
-      ? `read-back contains \`extend behavior for ${actualBaseBdef}\` instead`
-      : 'read-back contains no `extend behavior for` declaration';
+      ? `read-back shows \`extend behavior for ${actualBaseBdef}\` instead`
+      : 'read-back shows no `extend behavior for` declaration';
   return (
-    `Created and wrote BDEF ${name}, but inactive read-back did not confirm ` +
-    `\`extend behavior for ${expectedBaseBdef}\` (${actual}). ` +
-    'SAP may have scaffolded a plain behavior definition, for example if the ADT template was ignored ' +
-    'or the base BDEF is not extensible. Activation was not run. Verify with SAPRead(type="BDEF", ' +
-    `name="${name}", version="inactive"), then delete/recreate the object after fixing the base or create path.`
+    `Warning: created BDEF ${name}, but the inactive read-back did not confirm ` +
+    `\`extend behavior for ${expectedBaseBdef}\` (${actual}). SAP may have scaffolded a plain behavior ` +
+    'definition (e.g. if the ADT template was ignored or the base BDEF is not extensible). ' +
+    `Verify with SAPRead(type="BDEF", name="${name}", version="inactive") before activating.`
   );
 }
 
@@ -545,13 +551,9 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
       effectiveTransport,
       cachedFeatures?.abapRelease,
     );
-    if (bdefExtensionBase) {
-      const verificationError = await verifyBdefBehaviorExtensionReadBack(client, name, bdefExtensionBase);
-      if (verificationError) {
-        invalidateWrittenObject(type, name);
-        return errorResult(verificationError);
-      }
-    }
+    const bdefExtensionWarning = bdefExtensionBase
+      ? await warnIfBdefExtensionUnconfirmed(client, name, bdefExtensionBase)
+      : undefined;
     invalidateWrittenObject(type, name);
     const msg = `Created ${type} ${name} in package ${pkg} and wrote source code.`;
     const warnings = mergePreWriteWarnings(
@@ -559,6 +561,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
       lintWarnings.warnings,
       fmParamStripWarning,
       fmParamMergeWarning,
+      bdefExtensionWarning,
     );
     return warnings ? textResult(`${msg}\n\n${warnings}`) : textResult(msg);
   }
@@ -779,7 +782,9 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
       const objUrl = objectUrlForType(objType, objName);
       const createUrl = objUrl.replace(/\/[^/]+$/, '');
       const objMetadataProps = getMetadataWriteProperties(obj);
-      const objBdefExtensionBase = applyBdefBehaviorExtensionMetadata(objType, objSource, objMetadataProps);
+      // Sets behaviorExtension + baseBdef on the metadata so buildCreateXml emits the adtTemplate;
+      // the return value (used for the optional read-back warning) isn't needed in the batch path.
+      applyBdefBehaviorExtensionMetadata(objType, objSource, objMetadataProps);
       const body = buildCreateXml(
         objType,
         objName,
@@ -838,12 +843,6 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
           objTransport,
           cachedFeatures?.abapRelease,
         );
-        if (objBdefExtensionBase) {
-          const verificationError = await verifyBdefBehaviorExtensionReadBack(client, objName, objBdefExtensionBase);
-          if (verificationError) {
-            throw new Error(verificationError);
-          }
-        }
       }
 
       // Resolve the activation URL up front so both the inline path and the
