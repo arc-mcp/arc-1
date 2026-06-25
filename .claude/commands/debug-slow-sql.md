@@ -28,10 +28,10 @@ If you only have a vague "X is slow", get the OData URL or the object name first
 Work top-down. Each rung is cheaper than the next and usually tells you whether to descend.
 
 ### 0. Orient (no execution)
-- `SAPContext(action="deps", name=…)` / `SAPRead(type="DDLS", name=…)` — read the CDS/ABAP source. Eyeball it
-  for the usual suspects **before** measuring: `LIKE '%term%'` (leading wildcard = no index), `SELECT … FROM`
-  with no `WHERE` on a key, `SELECT *`, nested `SELECT` in a `LOOP` (N+1), client-side filtering, missing
-  `FOR ALL ENTRIES` pre-check, calculated fields forcing a full scan.
+- `SAPContext(action="deps", type="<type>", name=…)` / `SAPRead(type="DDLS", name=…)` — read the CDS/ABAP
+  source. Eyeball it for the usual suspects **before** measuring: `LIKE '%term%'` (leading wildcard = no
+  index), `SELECT … FROM` with no `WHERE` on a key, `SELECT *`, nested `SELECT` in a `LOOP` (N+1),
+  client-side filtering, missing `FOR ALL ENTRIES` pre-check, calculated fields forcing a full scan.
 - `SAPContext(action="impact", type="DDLS", name=…)` — the CDS stack (projection → base views → tables). The
   slow view is often a thin projection over a heavy base.
 
@@ -43,22 +43,26 @@ SAPDiagnose(action="odata_perf", url="/sap/opu/odata4/sap/…/Entity?$filter=…
 Read the `verdict`:
 - **`db`** (`gwappdb` dominates) → the CDS/SQL query is the cost → go to rung 2.
 - **`app`** (`gwapp − gwappdb`) → ABAP/SADL logic, not the DB → go to rung 3 (profiler trace).
-- **`framework`** (`gwfw`/`gwhub`) → metadata / first-call / cold cache → re-probe warm; usually not your query.
+- **`framework`** (`gwfw`; on 7.50 often only `gwhub`) → metadata / first-call / cold cache → re-probe warm.
+  If only `gwhub` is present, you do not have a DB/app split yet; descend to a trace if it is not just cold
+  cache.
 - **`auth`** (`icfauth`) → ICF/DCL authorization overhead.
-- **`unknown`** → no per-component split on this release (e.g. 7.50 reports only `gwhub`); treat as Gateway
-  time and descend to a trace anyway.
+- **`unknown`** → no usable Gateway timing at all; confirm the URL is an OData/Gateway service on the SAP host.
 
 (`odata_perf` needs `SAP_ALLOW_DATA_PREVIEW`; the OData service must be on the SAP host ARC-1 connects to.)
 
 ### 2. DB-bound → see and measure the actual SQL
-- `SAPDiagnose(action="cds_sql", name="I_TheView")` — the **native `CREATE VIEW`** the CDS compiles to. Now you
-  see the real joins, `CAST`s, `COALESCE`s, and whether a sub-view drags in extra tables.
-- `SAPQuery("SELECT … FROM <cds-or-base> WHERE <the filter> ")` — returns `queryExecutionTimeMs`, `totalRows`,
-  and the `executedQueryString`. Run it with the **real filter values** from the slow request. A big
-  `totalRows` scanned for a small result = a scan/selectivity problem. (Needs `SAP_ALLOW_FREE_SQL` for
-  freestyle SQL; multi-column `WHERE` via `SAPRead(type="TABLE_QUERY")` needs `SAP_ALLOW_DATA_PREVIEW`.)
-- Compare timings: probe the OData URL, then run `SAPQuery` on the underlying CDS — if both are slow, it's the
-  DB; if only OData is slow, it's the SADL/framework layer above.
+- `SAPDiagnose(action="cds_sql", name="I_TheView")` — the **native `CREATE VIEW`** the CDS compiles to
+  (read-only; verified on 7.50/758/816). Now you see the real joins, `CAST`s, `COALESCE`s, and whether a
+  sub-view drags in extra tables.
+- `SAPQuery(sql="SELECT … FROM <cds-or-base> WHERE <the filter>")` — returns `columns` and `rows`. Run it with
+  the **real filter values** from the slow request to validate the result shape and catch overly broad filters.
+  It does **not** expose scan counts, execution time, or execution plans; use ST05/HANA for rows fetched and
+  plan details. (Needs `SAP_ALLOW_FREE_SQL` for freestyle SQL; multi-column `WHERE` via
+  `SAPRead(type="TABLE_QUERY")` needs `SAP_ALLOW_DATA_PREVIEW`.)
+- Compare signals: if `odata_perf` is DB-bound and `cds_sql`/`SAPQuery` show a broad or complex query, continue
+  to ST05 for the exact statement, rows fetched, duration, and plan. If OData is slow without DB dominance,
+  inspect the SADL/framework layer above.
 
 ### 3. App-bound → ABAP profiler trace (which code, which tables)
 ```
@@ -67,8 +71,8 @@ SAPDiagnose(action="traces", id="<id>", analysis="hitlist")    # hottest call pa
 SAPDiagnose(action="traces", id="<id>", analysis="dbAccesses") # which tables, counts, buffered?
 ```
 The `dbAccesses` view tells you *which* tables a request hit and how often (N+1 shows up as a huge count on one
-table). The `hitlist` tells you the ABAP hot path. (Traces must already be recorded; arm them in SAT/ST12 or via
-the profiler-trace request API.)
+table). The `hitlist` tells you the ABAP hot path. (ARC-1 lists/analyzes existing profiler traces; record them in
+SAT/ST12 first.)
 
 ### 4. The exact SQL + plan → ST05 SQL trace
 ARC-1 can **arm/disarm** the ST05 SQL trace and point you to the records (it can't read the records over ADT —
@@ -88,8 +92,9 @@ Available on 758/816; **not** on NW 7.50 (the `/st05/trace` ADT API returns 404 
 > activate the named SICF node (`/sap/bc/stmc` for the trace UI) in tcode SICF.
 
 ### 5. Static check (anytime)
-`SAPDiagnose(action="atc", name=…, variant="PERFORMANCE_DB")` — flags perf anti-patterns statically (it won't
-catch a runtime `LIKE` scan that depends on data, but it's free and catches the obvious ones).
+`SAPDiagnose(action="atc", type="<type>", name=…, variant="PERFORMANCE_DB")` — flags perf anti-patterns
+statically (it won't catch a runtime `LIKE` scan that depends on data, but it's free and catches the obvious
+ones).
 
 ---
 
@@ -119,7 +124,7 @@ the `url` argument.
 
 | Symptom in the trace/SQL | Likely cause | Confirm | Typical fix |
 |--------------------------|--------------|---------|-------------|
-| Huge `rows fetched` ≫ rows shown; long duration | Full scan / poor selectivity | `cds_sql` shows no indexed `WHERE`; `SAPQuery totalRows` large | Add a `WHERE` on indexed fields; add a secondary index (SE11); push the filter into the CDS |
+| Huge `rows fetched` ≫ rows shown; long duration | Full scan / poor selectivity | `cds_sql` shows no indexed `WHERE`; ST05 shows high rows fetched | Add a `WHERE` on indexed fields; add a secondary index (SE11); push the filter into the CDS |
 | `LIKE '%term%'` | Leading-wildcard = index unusable | Read DDLS/ABAP source | Search help / fuzzy (HANA) / full-text index; anchor the pattern; pre-filter |
 | Same table hit thousands of times | N+1 (SELECT in LOOP) | `traces dbAccesses` shows a giant count on one table | `FOR ALL ENTRIES` / a join / read-all-then-loop; RAP: prefetch |
 | `SELECT *` then use 2 fields | Over-fetch | `cds_sql` / source | Select only needed fields; trim the CDS projection |
@@ -135,7 +140,7 @@ the `url` argument.
 Deliver a tight diagnosis, not a tool log:
 
 1. **Verdict** — DB / app / framework / auth, with the number that proves it (e.g. "`gwappdb` 412 ms of 480 ms").
-2. **The statement** — the offending SQL (from `cds_sql` / ST05) and what it scans (`totalRows`, the table,
+2. **The statement** — the offending SQL (from `cds_sql` / ST05) and what it scans (ST05 rows fetched, the table,
    the missing index).
 3. **Root cause** — one sentence, mapped to the catalog above.
 4. **Fix** — concrete and minimal (the index to add, the filter to push down, the N+1 to collapse), with the
