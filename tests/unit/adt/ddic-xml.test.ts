@@ -882,16 +882,36 @@ describe('buildTableTypeXml / parseTableType (FEAT-65)', () => {
     ).toThrow(/Invalid TTYP rowType/);
   });
 
-  it('rejects an explicit builtin rowTypeKind for a non-built-in row type', () => {
+  it('auto-detects UTCLONG as a built-in row type (list kept current)', () => {
+    const xml = buildTableTypeXml({ name: 'ZARC1_TT', description: 'x', package: '$TMP', rowType: 'UTCLONG' });
+    expect(xml).toContain('<ttyp:typeKind>predefinedAbapType</ttyp:typeKind>');
+    expect(xml).toContain('<ttyp:dataType>UTCLONG</ttyp:dataType>');
+  });
+
+  it('trusts an explicit rowTypeKind="builtin" even for a type not in the heuristic list', () => {
+    // SAP adds built-ins over releases (UTCLONG in 7.54, more later); an incomplete allow-list must
+    // NOT reject a valid explicit built-in (regression: UTCLONG+builtin used to throw). SAP validates.
+    const xml = buildTableTypeXml({
+      name: 'ZARC1_TT',
+      description: 'x',
+      package: '$TMP',
+      rowType: 'SOMEFUTURETYPE',
+      rowTypeKind: 'builtin',
+    });
+    expect(xml).toContain('<ttyp:typeKind>predefinedAbapType</ttyp:typeKind>');
+    expect(xml).toContain('<ttyp:dataType>SOMEFUTURETYPE</ttyp:dataType>');
+  });
+
+  it('still rejects rowTypeKind="structure" for a built-in row type name', () => {
     expect(() =>
       buildTableTypeXml({
         name: 'ZARC1_TT',
         description: 'x',
         package: '$TMP',
-        rowType: 'BAPIRET2',
-        rowTypeKind: 'builtin',
+        rowType: 'STRING',
+        rowTypeKind: 'structure',
       }),
-    ).toThrow(/not a supported built-in ABAP row type/);
+    ).toThrow(/is a built-in ABAP row type/);
   });
 
   it('parseTableType extracts row type + access from the REAL captured STRINGTAB response', () => {

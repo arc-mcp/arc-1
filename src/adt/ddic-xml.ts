@@ -262,6 +262,7 @@ const TTYP_BUILTIN_ROW_TYPES = new Set([
   'S',
   'DECFLOAT16',
   'DECFLOAT34',
+  'UTCLONG',
 ]);
 
 const TTYP_ROW_TYPE_NAME_RE = /^(?:\/[A-Z0-9_]+\/)?[A-Z0-9_]+$/;
@@ -289,15 +290,20 @@ export function buildTableTypeXml(params: TableTypeCreateParams): string {
   const masterLanguage = normalizeAdtLanguage(params.language);
   const responsible = normalizeAdtResponsible(params.responsible);
   const rowType = params.rowType.trim().toUpperCase();
+  // TTYP_BUILTIN_ROW_TYPES is a best-effort heuristic for AUTO-DETECTION ONLY (when the caller omits
+  // rowTypeKind). It must not gate an EXPLICIT rowTypeKind: SAP adds built-in types over releases
+  // (e.g. UTCLONG in 7.54), so allow-listing them and throwing on a miss would reject a valid type
+  // ARC-1 simply hasn't enumerated. When rowTypeKind is given we trust it and let SAP be the
+  // authority (it rejects a genuinely wrong type). See the UTCLONG case in research/abap-types/types/ttyp.md.
   const kind = params.rowTypeKind ?? (TTYP_BUILTIN_ROW_TYPES.has(rowType) ? 'builtin' : 'structure');
   if (!TTYP_ROW_TYPE_NAME_RE.test(rowType)) {
     throw new Error(
       `Invalid TTYP rowType "${params.rowType}". Use a built-in ABAP type or a DDIC type name such as BAPIRET2 or /NS/TYPE.`,
     );
   }
-  if (kind === 'builtin' && !TTYP_BUILTIN_ROW_TYPES.has(rowType)) {
-    throw new Error(`TTYP rowType "${rowType}" is not a supported built-in ABAP row type.`);
-  }
+  // A row type whose NAME is a known built-in cannot be a DDIC structure (built-in names are reserved),
+  // so an explicit rowTypeKind="structure" there is a caller mistake we can catch cheaply. The inverse
+  // (rowTypeKind="builtin" for an unlisted name) is NOT checked — see the heuristic note above.
   if (kind === 'structure' && TTYP_BUILTIN_ROW_TYPES.has(rowType)) {
     throw new Error(`TTYP rowType "${rowType}" is a built-in ABAP row type; omit rowTypeKind or use "builtin".`);
   }
