@@ -3,7 +3,7 @@
  */
 
 import type { AdtClient } from '../adt/client.js';
-import { AdtApiError } from '../adt/errors.js';
+import { AdtApiError, extractUnknownColumn, formatUnknownColumnHint } from '../adt/errors.js';
 import { errorResult, hasSqlParserSignature, type ToolResult, textResult } from './shared.js';
 
 function classifySapQueryParserError(err: AdtApiError, sql: string): string | undefined {
@@ -203,6 +203,20 @@ export async function handleSAPQuery(client: AdtClient, args: Record<string, unk
       }
     }
     if (err instanceof AdtApiError) {
+      // Self-correct an unknown-column error by listing the table's real columns (best-effort).
+      const badColumn = extractUnknownColumn(err);
+      if (badColumn) {
+        const tableMatch = sql.match(/FROM\s+["']?([A-Za-z0-9_/$]+)["']?/i);
+        const table = tableMatch?.[1];
+        if (table && /^[A-Za-z0-9_/]+$/.test(table)) {
+          try {
+            const { columns } = await client.runQuery(`SELECT * FROM ${table}`, 1);
+            if (columns.length > 0) return errorResult(formatUnknownColumnHint(badColumn, table, columns));
+          } catch {
+            // best-effort — fall through to the generic parser hint / original error
+          }
+        }
+      }
       let parserHint = classifySapQueryParserError(err, sql);
       if (parserHint && chunkingAttempted) {
         parserHint +=
