@@ -24,8 +24,9 @@ a note, never error.
 **Follow-up shipped (2026-06-25):** per-method drill-down (`methodsBelowFull` — methods below 100%
 statement coverage, worst-first). It is FREE: the per-method (`CLAS/OM`) nodes are already nested in
 the single measurement response — NO `rel="next"` recursion / extra round-trip (the plan's original
-assumption was wrong). Live-verified on 758 + 7.50 (7.50 tags methods `CLAS/OM/<visibility>` — matched
-by prefix; 816 pending — MARIAN was locked there during verification).
+assumption was wrong). Live-verified on 758 + 816 + 7.50 (2026-06-25): 758 `ZCL_ABAPGIT_HASH` → 7
+methods worst-first; 816 + 7.50 → the partially-covered method surfaced. 7.50 tags methods
+`CLAS/OM/<visibility>` (e.g. CLAS/OM/public) vs `CLAS/OM` on 758/816 — matched by prefix.
 
 Success criteria (plain bullets):
 - `SAPDiagnose action=unittest coverage=true` returns the tests AND
