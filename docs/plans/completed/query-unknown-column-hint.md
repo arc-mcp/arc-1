@@ -11,6 +11,15 @@ error, enrich the message with the table's **actual** column list so the agent r
 Competitor parity: dassian-adt `afc1b66` (`unknownColumnHint` — detect "unknown column name", fetch
 the table's field list, append "Available columns: …"; best-effort, never throws).
 
+> **Update — #502 review (language-independence).** The shipped `extractUnknownColumn` does **not** match
+> the localized English prose described below. SAP localizes the error text by logon language
+> (live-verified DE: `Unbekannter Spaltenname "X"`), so detection now anchors on the language-stable
+> T100 message id — class `ADT_DATAPREVIEW_MSG` number `004` (missing-table is `022`, used as a
+> false-positive guard) — and extracts the always-quoted column from `T100KEY-V1`. Verified end-to-end
+> on 758 + 816 in EN **and** DE (the hint now fires under DE; it did not before); 7.50's datapreview is
+> unbound (404) so the hint is N/A there. The regex references in the sections below describe the
+> original English-only detection, kept for historical context.
+
 Ponytail: two tiny pure helpers + two best-effort call-site enrichments that reuse existing primitives
 (`runQuery` / `getTableContents`). No new ADT endpoint, no new scope, no config.
 
