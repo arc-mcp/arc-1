@@ -885,15 +885,23 @@ export function isSessionExpiredError(err: unknown): boolean {
 }
 
 /**
- * Extract the offending column from an "Unknown column name" SAP error (datapreview / freestyle 400),
- * else null. Live-verified message shape on S/4HANA 2023 (758) + ABAP Platform 2025 (816):
- * `Unknown column name "NOSUCHCOL".`. Used to self-correct unknown-column queries with the table's
- * real column list (see `formatUnknownColumnHint`).
+ * Extract the offending column from an "unknown column name" data-preview / freestyle error, else
+ * null. Anchored on the LANGUAGE-STABLE T100 message id, not localized prose: the failure is class
+ * `ADT_DATAPREVIEW_MSG` number `004` on every release/logon language (live-verified 7.58 + 8.16, EN
+ * AND DE — under DE the prose is "Unbekannter Spaltenname"). The column is always the quoted token in
+ * `T100KEY-V1` regardless of language. Missing-table is the same class but number `022`, so the number
+ * guards against that false positive. (ADR-0002: anchor on the message id, never the prose.) Used to
+ * self-correct unknown-column queries with the table's real column list (see `formatUnknownColumnHint`).
  */
 export function extractUnknownColumn(err: unknown): string | null {
   if (!(err instanceof AdtApiError)) return null;
-  const m = err.message.match(/Unknown column name\s+"?([A-Za-z0-9_/]+)"?/i);
-  return m ? m[1]! : null;
+  const body = err.responseBody ?? '';
+  if (!body.includes('ADT_DATAPREVIEW_MSG') || !/<entry key="T100KEY-NO">0*4<\/entry>/.test(body)) {
+    return null;
+  }
+  const v1 = body.match(/<entry key="T100KEY-V1">([^<]*)<\/entry>/);
+  const col = v1?.[1]?.match(/"([A-Za-z0-9_/]+)"/);
+  return col ? col[1]! : null;
 }
 
 /** Render the self-correcting hint listing a table's actual columns. */
