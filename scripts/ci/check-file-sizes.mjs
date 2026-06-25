@@ -29,7 +29,7 @@ const BUDGETS = {
   // Stage D split into src/handlers/write/{create,update-delete,class-surgery,rap}.ts. The action
   // submodules ride the default src budget; keep this tight so the dispatcher can't reabsorb them.
   'src/handlers/write.ts': 360,
-  'src/handlers/tools.ts': 1700,
+  'src/handlers/tools.ts': 1740, // +~19 for SAPDiagnose trace_start/trace_requests/trace_cancel actions + params
   'src/adt/xml-parser.ts': 1650,
 };
 

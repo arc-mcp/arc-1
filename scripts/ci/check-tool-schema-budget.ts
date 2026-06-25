@@ -86,9 +86,10 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // +200/+150 for SAPRead action="diff" (action/from/to params + their descriptions).
       // +350/+350/+1 for context-first KTD guidance (KTD alias + SAPContext includeKtd).
       // +1 descriptionCount for SAPDiagnose `coverage` param (FEAT-41 AUnit coverage).
-      schemaTokenEstimate: 12_120,
-      descriptionTokenEstimate: 9_560,
-      descriptionCount: 153,
+      // +~590/+440/+7 for SAPDiagnose trace_start/trace_requests/trace_cancel actions + their params.
+      schemaTokenEstimate: 12_707,
+      descriptionTokenEstimate: 9_996,
+      descriptionCount: 160,
     },
   },
   {
@@ -100,9 +101,10 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // schema +200 for SAPRead action="diff" (action/from/to params).
       // +400/+350 for context-first KTD guidance (KTD alias + SAPContext includeKtd).
       // +1 descriptionCount / ~60 desc tokens for SAPDiagnose `coverage` param (FEAT-41).
-      schemaTokenEstimate: 20_180,
-      descriptionTokenEstimate: 15_420,
-      descriptionCount: 267,
+      // +~570/+460/+6 for SAPDiagnose trace_start/trace_requests/trace_cancel actions + their params.
+      schemaTokenEstimate: 20_750,
+      descriptionTokenEstimate: 15_878,
+      descriptionCount: 273,
     },
   },
   {
@@ -116,9 +118,10 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // Further +200/+150 for SAPRead action="diff" (action/from/to params + descriptions).
       // +450/+350 for context-first KTD guidance (KTD alias + SAPContext includeKtd).
       // +1 descriptionCount / ~60 desc tokens for SAPDiagnose `coverage` param (FEAT-41).
-      schemaTokenEstimate: 18_430,
-      descriptionTokenEstimate: 13_770,
-      descriptionCount: 267,
+      // +~570/+460/+4 for SAPDiagnose trace_start/trace_requests/trace_cancel actions + their params.
+      schemaTokenEstimate: 18_998,
+      descriptionTokenEstimate: 14_232,
+      descriptionCount: 271,
     },
   },
   {

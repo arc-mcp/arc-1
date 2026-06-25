@@ -11,6 +11,7 @@ import {
   parseBspFolderListing,
   parseClassMetadata,
   parseDataElementMetadata,
+  parseDataPreviewMeta,
   parseDomainMetadata,
   parseEnhancementImplementation,
   parseFeatureToggleStates,
@@ -269,6 +270,32 @@ describe('XML Parser', () => {
       const result = parseTableContents(xml);
       expect(result.columns).toEqual(['EMPTY_COL']);
       expect(result.rows).toEqual([]);
+    });
+  });
+
+  // ─── parseDataPreviewMeta ──────────────────────────────────────────
+
+  describe('parseDataPreviewMeta', () => {
+    it('extracts totalRows, queryExecutionTimeMs, executedQueryString (real freestyle response)', () => {
+      const xml = `<?xml version="1.0" encoding="utf-8"?><dataPreview:tableData xmlns:dataPreview="http://www.sap.com/adt/dataPreview"><dataPreview:totalRows>511927</dataPreview:totalRows><dataPreview:isHanaAnalyticalView>false</dataPreview:isHanaAnalyticalView><dataPreview:executedQueryString>SELECT MANDT FROM T000   INTO     TABLE @DATA(LT_RESULT)   UP TO 3  ROWS   .</dataPreview:executedQueryString><dataPreview:queryExecutionTime>0.3150000</dataPreview:queryExecutionTime><dataPreview:columns><dataPreview:metadata dataPreview:name="MANDT"/></dataPreview:columns></dataPreview:tableData>`;
+      const meta = parseDataPreviewMeta(xml);
+      expect(meta.totalRows).toBe(511927);
+      expect(meta.queryExecutionTimeMs).toBeCloseTo(0.315);
+      expect(meta.executedQueryString).toBe('SELECT MANDT FROM T000 INTO TABLE @DATA(LT_RESULT) UP TO 3 ROWS .');
+    });
+
+    it('returns empty object when fields are absent (old asx format)', () => {
+      const xml = `<?xml version="1.0" encoding="utf-8"?><asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><COLUMNS></COLUMNS></asx:values></asx:abap>`;
+      expect(parseDataPreviewMeta(xml)).toEqual({});
+    });
+
+    it('surfaces only the fields present (partial)', () => {
+      const xml = `<dataPreview:tableData xmlns:dataPreview="http://www.sap.com/adt/dataPreview"><dataPreview:totalRows>42</dataPreview:totalRows></dataPreview:tableData>`;
+      expect(parseDataPreviewMeta(xml)).toEqual({ totalRows: 42 });
+    });
+
+    it('returns empty object for empty input', () => {
+      expect(parseDataPreviewMeta('')).toEqual({});
     });
   });
 

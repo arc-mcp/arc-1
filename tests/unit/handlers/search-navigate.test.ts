@@ -557,6 +557,28 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(result.content[0]?.type).toBe('text');
     });
 
+    it('surfaces datapreview metrics (totalRows, queryExecutionTimeMs, executedQueryString, rowsReturned)', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          `<?xml version="1.0" encoding="utf-8"?><dataPreview:tableData xmlns:dataPreview="http://www.sap.com/adt/dataPreview"><dataPreview:totalRows>511927</dataPreview:totalRows><dataPreview:executedQueryString>SELECT MANDT FROM T000 UP TO 2 ROWS .</dataPreview:executedQueryString><dataPreview:queryExecutionTime>12.5</dataPreview:queryExecutionTime><dataPreview:columns><dataPreview:metadata dataPreview:name="MANDT" dataPreview:type="C"/><dataPreview:dataSet><dataPreview:data>000</dataPreview:data><dataPreview:data>001</dataPreview:data></dataPreview:dataSet></dataPreview:columns></dataPreview:tableData>`,
+        ),
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPQuery', {
+        sql: 'SELECT mandt FROM t000',
+      });
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0]?.text);
+      expect(parsed.totalRows).toBe(511927);
+      expect(parsed.queryExecutionTimeMs).toBeCloseTo(12.5);
+      expect(parsed.executedQueryString).toBe('SELECT MANDT FROM T000 UP TO 2 ROWS .');
+      expect(parsed.rowsReturned).toBe(2);
+      expect(parsed.columns).toEqual(['MANDT']);
+      expect(parsed.rows).toHaveLength(2);
+    });
+
     it('returns parser hint with JOIN-specific addendum when a JOIN query fails with 400', async () => {
       mockFetch.mockReset();
       // First call: CSRF token fetch (200)
