@@ -1,3 +1,8 @@
+---
+name: debug-slow-sql
+description: Find the root cause of a slow ABAP SQL or Fiori-Elements OData request and propose the cheapest fix — GUI-free via ARC-1 (odata_perf sap-statistics timing split, cds_sql "Show SQL", SAPQuery execution metrics, ST05 SQL-trace control, ABAP profiler traces), escalating to SAP GUI / HANA only for trace records and execution plans. Use when a report, transaction, Fiori list, CDS view, or OData entity is slow, a query times out under load, or someone asks "why is this SQL/OData so slow" or "where is the time going".
+---
+
 # Debug Slow SQL / OData
 
 Find the **root cause** of a slow ABAP SQL or Fiori-Elements OData request and propose a fix — driving

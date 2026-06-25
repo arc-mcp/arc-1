@@ -391,6 +391,7 @@ References: [ABAP Development Tools for VS Code marketplace page](https://market
 | Skill | What it does | Best for |
 |---|---|---|
 | [explain-abap-code](https://github.com/arc-mcp/arc-1/blob/main/skills/explain-abap-code/SKILL.md) | Reads an ABAP object, pulls dependency context, and explains it in structure | Onboarding, debugging, and code comprehension |
+| [debug-slow-sql](https://github.com/arc-mcp/arc-1/blob/main/skills/debug-slow-sql/SKILL.md) | Root-causes a slow ABAP SQL or Fiori OData request — sap-statistics timing split (`odata_perf`), CDS Show-SQL, SAPQuery execution metrics, ST05 trace control + ABAP profiler — and proposes the cheapest fix | Slow reports, OData/Fiori lists, CDS views, query timeouts |
 | [migrate-custom-code](https://github.com/arc-mcp/arc-1/blob/main/skills/migrate-custom-code/SKILL.md) | Runs migration-oriented checks and groups findings by priority | S/4HANA migration and ABAP Cloud readiness |
 | [sap-migration-dossier](https://github.com/arc-mcp/arc-1/blob/main/skills/sap-migration-dossier/SKILL.md) | Builds a scoped ECC to S/4HANA migration dossier with inventory, usage, ATC, Clean Core, dependency, and SAP Docs evidence | Package- or namespace-level migration planning |
 | [sap-object-documenter](https://github.com/arc-mcp/arc-1/blob/main/skills/sap-object-documenter/SKILL.md) | Batch-documents custom objects as Markdown | Package onboarding and handoffs |
