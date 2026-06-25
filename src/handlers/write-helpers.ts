@@ -414,9 +414,20 @@ export function buildCreateXml(
   <adtcore:packageRef adtcore:name="${escapeXmlAttr(pkg)}"/>
 </blue:blueSource>`;
     }
-    case 'BDEF':
+    case 'BDEF': {
       // BDEF uses SAP's "blue" framework — blue:blueSource with http://www.sap.com/wbobj/blue namespace.
       // Confirmed by vibing-steampunk (Go) and fr0ster (TypeScript) reference implementations.
+      // A behavior EXTENSION (`extend behavior for …`) is still adtcore:type BDEF/BDO, but its create
+      // POST carries an `adtcore:adtTemplate` naming the base BDEF — and it MUST precede packageRef
+      // (the elements are schema-ordered; a trailing template is silently ignored — live-verified a4h
+      // 816). Without it SAP scaffolds a plain definition; with it SAP scaffolds `extend behavior for`.
+      const baseBdef = String(properties?.baseBdef ?? '').trim();
+      if (properties?.behaviorExtension && !baseBdef) {
+        throw new Error('BDEF behavior extension create requires a non-empty baseBdef metadata property.');
+      }
+      const extTemplate = properties?.behaviorExtension
+        ? `\n  <adtcore:adtTemplate>\n    <adtcore:adtProperty adtcore:key="base_bdef">${escapeXmlAttr(baseBdef)}</adtcore:adtProperty>\n  </adtcore:adtTemplate>`
+        : '';
       return `<?xml version="1.0" encoding="UTF-8"?>
 <blue:blueSource xmlns:blue="http://www.sap.com/wbobj/blue"
                  xmlns:adtcore="http://www.sap.com/adt/core"
@@ -425,9 +436,10 @@ export function buildCreateXml(
                  adtcore:type="BDEF/BDO"
                  adtcore:masterLanguage="${masterLanguage}"
                  adtcore:masterSystem="H00"
-                 adtcore:responsible="${escapeXmlAttr(responsibleUser)}">
+                 adtcore:responsible="${escapeXmlAttr(responsibleUser)}">${extTemplate}
   <adtcore:packageRef adtcore:name="${escapeXmlAttr(pkg)}"/>
 </blue:blueSource>`;
+    }
     case 'SRVD':
       return `<?xml version="1.0" encoding="UTF-8"?>
 <srvd:srvdSource xmlns:srvd="http://www.sap.com/adt/ddic/srvdsources"
@@ -894,7 +906,12 @@ export function runPreWriteLint(
   }
 
   try {
-    const filename = detectFilename(source, name);
+    let filename = detectFilename(source, name);
+    if (type === 'INCL' && filename.endsWith('.clas.abap')) {
+      // ABAP includes are often source fragments (FORM/MODULE/DATA...) without a REPORT/CLASS header.
+      // Lint them as program-style source; treating the fallback as a class rejects valid include fragments.
+      filename = `${name.toLowerCase()}.prog.abap`;
+    }
     // Reuse the single systemType/abapRelease/configFile resolution (avoids drift with SAPLint's
     // own config — a release-ceiling fix applied to one copy only would split lint behavior).
     const configOptions = buildLintConfigOptions(config);

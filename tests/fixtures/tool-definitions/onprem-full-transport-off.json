@@ -1475,6 +1475,10 @@
           "type": "boolean",
           "description": "For dumps detail mode only: include full formattedText blob. Default false to reduce token usage."
         },
+        "coverage": {
+          "type": "boolean",
+          "description": "For action=\"unittest\": also return statement/branch/procedure coverage for the object, plus methodsBelowFull — the methods below 100% statement coverage, worst first (what to test next) — in one extra round-trip. If the coverage endpoint or measurement is unavailable, returns the tests without coverage. Default false."
+        },
         "analysis": {
           "type": "string",
           "enum": [

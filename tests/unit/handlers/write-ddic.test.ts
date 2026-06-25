@@ -2396,4 +2396,137 @@ define role ZTEST_DCL {
       expect(text).toContain('Fix the metadata and retry');
     });
   });
+
+  // ── BDEF behavior extension create (tier-3 #10) ─────────────────────
+  // An extension (`extend behavior for <Base>`) is the same BDEF/BDO endpoint as a definition, but
+  // its create POST must carry an adtcore:adtTemplate(base_bdef) BEFORE packageRef, or SAP scaffolds
+  // a plain definition (live-verified a4h 758 + 816 — full lifecycle in the integration suite).
+  describe('SAPWrite BDEF behavior extension create (#10)', () => {
+    function captureCreateFlow(readBackSource?: string) {
+      const calls: { method: string; url: string; body?: string }[] = [];
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string; body?: unknown }) => {
+        const method = opts?.method ?? 'GET';
+        const urlStr = String(url);
+        calls.push({ method, url: urlStr, body: typeof opts?.body === 'string' ? opts.body : undefined });
+        if (method === 'GET' && urlStr.includes('/bo/behaviordefinitions/') && urlStr.includes('/source/main')) {
+          return Promise.resolve(mockResponse(200, readBackSource ?? '', { 'x-csrf-token': 'T' }));
+        }
+        if (method === 'POST' && urlStr.includes('_action=LOCK')) {
+          return Promise.resolve(
+            mockResponse(200, '<DATA><LOCK_HANDLE>LH</LOCK_HANDLE></DATA>', { 'x-csrf-token': 'T' }),
+          );
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+      return calls;
+    }
+
+    it('emits adtTemplate(base_bdef) before packageRef when the source is `extend behavior for X`', async () => {
+      const calls = captureCreateFlow(
+        'extension implementation in class zbp_base_x unique;\nextend behavior for ZR_BASE\n{\n}',
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'BDEF',
+        name: 'ZR_BASE_X',
+        package: '$TMP',
+        source: 'extension implementation in class zbp_base_x unique;\nextend behavior for ZR_BASE\n{\n}',
+      });
+      expect(result.isError).toBeUndefined();
+      const post = calls.find(
+        (c) => c.method === 'POST' && c.url.includes('/bo/behaviordefinitions') && c.body?.includes('blueSource'),
+      );
+      expect(post?.body).toContain('<adtcore:adtProperty adtcore:key="base_bdef">ZR_BASE</adtcore:adtProperty>');
+      // The template must precede packageRef — the blueSource elements are schema-ordered.
+      expect(post!.body!.indexOf('adtTemplate')).toBeLessThan(post!.body!.indexOf('packageRef'));
+    });
+
+    it('emits adtTemplate(base_bdef) for BDEF extensions in batch_create', async () => {
+      const calls = captureCreateFlow(
+        'extension implementation in class zbp_base_x unique;\nextend behavior for ZR_BASE\n{\n}',
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'batch_create',
+        package: '$TMP',
+        objects: [
+          {
+            type: 'BDEF',
+            name: 'ZR_BASE_X',
+            source: 'extension implementation in class zbp_base_x unique;\nextend behavior for ZR_BASE\n{\n}',
+          },
+        ],
+      });
+      expect(result.isError).toBeUndefined();
+      const post = calls.find(
+        (c) => c.method === 'POST' && c.url.includes('/bo/behaviordefinitions') && c.body?.includes('blueSource'),
+      );
+      expect(post?.body).toContain('<adtcore:adtProperty adtcore:key="base_bdef">ZR_BASE</adtcore:adtProperty>');
+      expect(post!.body!.indexOf('adtTemplate')).toBeLessThan(post!.body!.indexOf('packageRef'));
+    });
+
+    it('supports namespaced base BDEF names in the extension template', async () => {
+      const calls = captureCreateFlow(
+        'extension implementation in class /dmo/bp_base_x unique;\nextend behavior for /DMO/I_BASE\n{\n}',
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'BDEF',
+        name: '/DMO/I_BASE_X',
+        package: '$TMP',
+        source: 'extension implementation in class /dmo/bp_base_x unique;\nextend behavior for /DMO/I_BASE\n{\n}',
+      });
+      expect(result.isError).toBeUndefined();
+      const post = calls.find(
+        (c) => c.method === 'POST' && c.url.includes('/bo/behaviordefinitions') && c.body?.includes('blueSource'),
+      );
+      expect(post?.body).toContain('<adtcore:adtProperty adtcore:key="base_bdef">/DMO/I_BASE</adtcore:adtProperty>');
+    });
+
+    it('omits the template for a plain `define behavior for` definition', async () => {
+      const calls = captureCreateFlow();
+      await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'BDEF',
+        name: 'ZR_BASE',
+        package: '$TMP',
+        source: 'managed implementation in class zbp_base unique;\ndefine behavior for ZR_BASE\n{\n}',
+      });
+      const post = calls.find((c) => c.method === 'POST' && c.body?.includes('blueSource'));
+      expect(post?.body).not.toContain('adtTemplate');
+    });
+
+    it('ignores `extend behavior for` inside comments when creating a plain definition', async () => {
+      const calls = captureCreateFlow();
+      await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'BDEF',
+        name: 'ZR_BASE',
+        package: '$TMP',
+        source:
+          '" extend behavior for ZCOMMENT\n// extend behavior for ZCOMMENT2\nmanaged implementation in class zbp_base unique;\ndefine behavior for ZR_BASE\n{\n}',
+      });
+      const post = calls.find((c) => c.method === 'POST' && c.body?.includes('blueSource'));
+      expect(post?.body).not.toContain('adtTemplate');
+    });
+
+    it('warns (non-blocking) when inactive read-back does not confirm the created BDEF is an extension', async () => {
+      const calls = captureCreateFlow(
+        'managed implementation in class zbp_base_x unique;\ndefine behavior for ZR_BASE_X\n{\n}',
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'BDEF',
+        name: 'ZR_BASE_X',
+        package: '$TMP',
+        source: 'extension implementation in class zbp_base_x unique;\nextend behavior for ZR_BASE\n{\n}',
+      });
+      // Non-blocking: the object was created (success), but the warning is appended.
+      expect(result.isError).toBeUndefined();
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('and wrote source code');
+      expect(text).toContain('did not confirm');
+      expect(text).toContain('extend behavior for ZR_BASE');
+      expect(calls.some((c) => c.method === 'GET' && c.url.includes('version=inactive'))).toBe(true);
+    });
+  });
 });

@@ -591,6 +591,16 @@ describe('AdtApiError', () => {
       expect(classification?.hint).toContain('already exists');
     });
 
+    it('classifies non-extensible base BDEF create errors', () => {
+      const classification = classifySapDomainError(
+        400,
+        '<exc:exception><localizedMessage>Behavior Definition ZR_BASE is not marked as extensible</localizedMessage></exc:exception>',
+      );
+      expect(classification?.category).toBe('bdef-base-not-extensible');
+      expect(classification?.hint).toContain('base behavior definition is not extensible');
+      expect(classification?.hint).toContain('mapping ... corresponding extensible');
+    });
+
     it('does not classify generic "already exists" messages without creation context', () => {
       const classification = classifySapDomainError(
         409,

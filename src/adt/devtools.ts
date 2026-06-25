@@ -15,12 +15,15 @@ import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import type {
   CdsTestCase,
   CdsTestCasesResult,
+  CoverageSummary,
   FixAffectedObject,
   FixDelta,
   FixProposal,
+  MethodCoverage,
   SyntaxCheckResult,
   SyntaxMessage,
   UnitTestResult,
+  UnitTestRunResult,
 } from './types.js';
 import { decodeXmlEntities, escapeXmlAttr, findDeepNodes, parseXml } from './xml-parser.js';
 
@@ -545,13 +548,14 @@ export async function runUnitTests(
   http: AdtHttpClient,
   safety: SafetyConfig,
   objectUrl: string,
-): Promise<UnitTestResult[]> {
+  opts: { coverage?: boolean } = {},
+): Promise<UnitTestRunResult> {
   checkOperation(safety, OperationType.Test, 'RunUnitTests');
 
   const body = `<?xml version="1.0" encoding="UTF-8"?>
 <aunit:runConfiguration xmlns:aunit="http://www.sap.com/adt/aunit">
   <external>
-    <coverage active="false"/>
+    <coverage active="${opts.coverage ? 'true' : 'false'}"/>
   </external>
   <options>
     <uriType value="semantic"/>
@@ -577,7 +581,115 @@ export async function runUnitTests(
     },
   );
 
-  return parseUnitTestResults(resp.body);
+  const tests = parseUnitTestResults(resp.body);
+  if (!opts.coverage) return { tests };
+
+  // Coverage is a second step: the run result references a coverage measurement, which we POST
+  // (with the same object set) to retrieve the statement/branch/procedure aggregate. The endpoint is
+  // live-verified on 7.50 + 758 + 816 (2026-06-25); the best-effort fallback (missing URI / fetch
+  // failure / no valid metrics → return tests with no coverage) is defensive for unknown systems.
+  const measurementUri = extractCoverageMeasurementUri(resp.body);
+  if (!measurementUri) return { tests };
+  try {
+    const coverageQuery = `<?xml version="1.0" encoding="UTF-8"?>
+<cov:query xmlns:cov="http://www.sap.com/adt/cov"><adtcore:objectSets xmlns:adtcore="http://www.sap.com/adt/core"><objectSet kind="inclusive"><adtcore:objectReferences><adtcore:objectReference adtcore:uri="${escapeXmlAttr(objectUrl)}"/></adtcore:objectReferences></objectSet></adtcore:objectSets></cov:query>`;
+    const measResp = await http.post(measurementUri, coverageQuery, 'application/xml', { Accept: 'application/xml' });
+    const coverage = parseCoverageMeasurement(measResp.body);
+    return hasCoverageMetrics(coverage) ? { tests, coverage } : { tests };
+  } catch {
+    return { tests };
+  }
+}
+
+/** Extract the coverage-measurement URI from an abapunit testruns result run with coverage="true". */
+export function extractCoverageMeasurementUri(testrunsXml: string): string | null {
+  const parsed = parseXml(testrunsXml);
+  for (const node of findDeepNodes(parsed, 'coverage')) {
+    const uri = (node as Record<string, unknown>)['@_uri'];
+    if (typeof uri === 'string' && uri.includes('/coverage/measurements/')) return uri;
+  }
+  return null;
+}
+
+/** Max per-method entries returned (worst-first); pathological classes don't bloat the output. */
+const MAX_METHODS_BELOW_FULL = 50;
+
+/** Validate + extract the statement/branch/procedure metrics from one `<coverages>` node.
+ *  Non-finite / negative attrs are skipped so malformed XML degrades instead of emitting NaN. */
+function parseCoverageEntries(coveragesNode: Record<string, unknown>): Omit<MethodCoverage, 'method'> {
+  const raw = coveragesNode.coverage;
+  const entries = (Array.isArray(raw) ? raw : raw ? [raw] : []) as Array<Record<string, unknown>>;
+  const out: Omit<MethodCoverage, 'method'> = {};
+  for (const e of entries) {
+    const type = String(e['@_type'] ?? '');
+    const total = Number(e['@_total'] ?? 0);
+    const executed = Number(e['@_executed'] ?? 0);
+    if (
+      (type === 'statement' || type === 'branch' || type === 'procedure') &&
+      Number.isFinite(total) &&
+      Number.isFinite(executed) &&
+      total >= 0 &&
+      executed >= 0
+    ) {
+      out[type] = { executed, total, percent: total ? Math.round((executed / total) * 10000) / 100 : 0 };
+    }
+  }
+  return out;
+}
+
+/** Walk the measurement tree and collect every per-method (CLAS/OM) coverage node. */
+function collectMethodCoverages(parsed: unknown): MethodCoverage[] {
+  const methods: MethodCoverage[] = [];
+  const visit = (obj: unknown): void => {
+    if (!obj || typeof obj !== 'object') return;
+    if (Array.isArray(obj)) {
+      for (const item of obj) visit(item);
+      return;
+    }
+    const rec = obj as Record<string, unknown>;
+    // removeNSPrefix strips adtcore: (element key `objectReference`, attrs `@_type`/`@_name`); the
+    // parser also arrays `objectReference` (ARRAY_TAGS), so unwrap the single entry.
+    const refRaw = rec.objectReference;
+    const ref = (Array.isArray(refRaw) ? refRaw[0] : refRaw) as Record<string, unknown> | undefined;
+    // Method node type is `CLAS/OM` on 758/816 but `CLAS/OM/<visibility>` (e.g. CLAS/OM/public) on
+    // NW 7.50 — live-verified 2026-06-25; match the prefix so per-method works on all three.
+    const refType = ref ? String(ref['@_type'] ?? '') : '';
+    if (ref && (refType === 'CLAS/OM' || refType.startsWith('CLAS/OM/')) && rec.coverages) {
+      const name = String(ref['@_name'] ?? '');
+      const coveragesNode = (Array.isArray(rec.coverages) ? rec.coverages[0] : rec.coverages) as Record<
+        string,
+        unknown
+      >;
+      const metrics = parseCoverageEntries(coveragesNode);
+      if (name && (metrics.statement || metrics.branch || metrics.procedure)) {
+        methods.push({ method: name, ...metrics });
+      }
+    }
+    for (const value of Object.values(rec)) visit(value);
+  };
+  visit(parsed);
+  return methods;
+}
+
+/** Parse the object-level statement/branch/procedure aggregate from a coverage-measurement response,
+ *  plus the per-method drill-down (methods below full statement coverage, worst-first). */
+export function parseCoverageMeasurement(xml: string): CoverageSummary {
+  const parsed = parseXml(xml);
+  const firstCoverages = findDeepNodes(parsed, 'coverages')[0] as Record<string, unknown> | undefined;
+  if (!firstCoverages) return {};
+  const summary: CoverageSummary = parseCoverageEntries(firstCoverages);
+  // Per-method nodes are already in THIS response (no extra round-trip). Surface only methods below
+  // 100% statement coverage — the actionable subset the object aggregate hides — worst-first, capped.
+  const below = collectMethodCoverages(parsed)
+    .filter((m) => m.statement !== undefined && m.statement.executed < m.statement.total)
+    .sort((a, b) => a.statement!.percent - b.statement!.percent || b.statement!.total - a.statement!.total)
+    .slice(0, MAX_METHODS_BELOW_FULL);
+  if (below.length > 0) summary.methodsBelowFull = below;
+  return summary;
+}
+
+function hasCoverageMetrics(summary: CoverageSummary): boolean {
+  return Boolean(summary.statement || summary.branch || summary.procedure);
 }
 
 /** Run ATC check on an object */

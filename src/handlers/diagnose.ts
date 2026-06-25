@@ -53,8 +53,16 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
     }
     case 'unittest': {
       const objectUrl = objectUrlForType(type, name);
-      const results = await runUnitTests(client.http, client.safety, objectUrl);
-      return textResult(JSON.stringify(results, null, 2));
+      const coverage = args.coverage === true;
+      const result = await runUnitTests(client.http, client.safety, objectUrl, { coverage });
+      // Default (no coverage) keeps the historical array output; coverage requested → {tests, coverage}.
+      if (!coverage) return textResult(JSON.stringify(result.tests, null, 2));
+      const out: Record<string, unknown> = { tests: result.tests };
+      if (result.coverage) out.coverage = result.coverage;
+      else
+        out.coverageNote =
+          'Coverage unavailable on this system (the coverage-measurement endpoint or measurement result was not available).';
+      return textResult(JSON.stringify(out, null, 2));
     }
     case 'atc': {
       const objectUrl = objectUrlForType(type, name);

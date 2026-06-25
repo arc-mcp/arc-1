@@ -1,13 +1,17 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
   activate,
   activateBatch,
   applyFixProposal,
+  extractCoverageMeasurementUri,
   getCdsTestCases,
   getFixProposals,
   getPrettyPrinterSettings,
   parseActivationOutcome,
   parseActivationResult,
+  parseCoverageMeasurement,
   prettyPrint,
   publishServiceBinding,
   runAtcCheck,
@@ -1208,7 +1212,11 @@ describe('DevTools', () => {
         </testClass>
       </testResult>`;
       const http = mockHttp(xml);
-      const results = await runUnitTests(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_TEST');
+      const { tests: results } = await runUnitTests(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/ZCL_TEST',
+      );
       expect(results).toHaveLength(1);
       expect(results[0]?.testMethod).toBe('test_success');
       expect(results[0]?.status).toBe('passed');
@@ -1223,14 +1231,22 @@ describe('DevTools', () => {
         </testClass>
       </testResult>`;
       const http = mockHttp(xml);
-      const results = await runUnitTests(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_TEST');
+      const { tests: results } = await runUnitTests(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/ZCL_TEST',
+      );
       expect(results).toHaveLength(1);
       expect(results[0]?.status).toBe('failed');
     });
 
     it('handles empty results (no test methods)', async () => {
       const http = mockHttp('<testResult/>');
-      const results = await runUnitTests(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_TEST');
+      const { tests: results } = await runUnitTests(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/ZCL_TEST',
+      );
       expect(results).toEqual([]);
     });
 
@@ -1243,7 +1259,11 @@ describe('DevTools', () => {
         </testClass>
       </testResult>`;
       const http = mockHttp(xml);
-      const results = await runUnitTests(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_TEST');
+      const { tests: results } = await runUnitTests(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/ZCL_TEST',
+      );
       expect(results).toHaveLength(3);
       expect(results[0]?.status).toBe('passed');
       expect(results[1]?.status).toBe('failed');
@@ -1259,7 +1279,11 @@ describe('DevTools', () => {
         </testClass>
       </testResult>`;
       const http = mockHttp(xml);
-      const results = await runUnitTests(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_TEST');
+      const { tests: results } = await runUnitTests(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/ZCL_TEST',
+      );
       expect(results).toHaveLength(1);
       expect(results[0]?.message).toBe('Expected 42 got 0');
     });
@@ -1274,7 +1298,11 @@ describe('DevTools', () => {
         </testClass>
       </testResult>`;
       const http = mockHttp(xml);
-      const results = await runUnitTests(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_TEST');
+      const { tests: results } = await runUnitTests(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/ZCL_TEST',
+      );
       expect(results).toHaveLength(2);
       expect(results[0]?.testClass).toBe('LTCL_FIRST');
       expect(results[0]?.testMethod).toBe('test_one');
@@ -1289,7 +1317,11 @@ describe('DevTools', () => {
         </testClass>
       </testResult>`;
       const http = mockHttp(xml);
-      const results = await runUnitTests(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_MY_CLASS');
+      const { tests: results } = await runUnitTests(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/ZCL_MY_CLASS',
+      );
       expect(results[0]?.program).toBe('ZCL_MY_CLASS');
     });
 
@@ -1300,8 +1332,186 @@ describe('DevTools', () => {
         </testClass>
       </testResult>`;
       const http = mockHttp(xml);
-      const results = await runUnitTests(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_TEST');
+      const { tests: results } = await runUnitTests(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/ZCL_TEST',
+      );
       expect(results[0]?.duration).toBe(0.015);
+    });
+  });
+
+  describe('AUnit coverage (FEAT-41)', () => {
+    const fixturesDir = join(import.meta.dirname, '../../fixtures/xml');
+    const testrunWithCoverage = readFileSync(join(fixturesDir, 'aunit-testrun-with-coverage.xml'), 'utf-8');
+    const coverageMeasurement = readFileSync(join(fixturesDir, 'aunit-coverage-measurement.xml'), 'utf-8');
+
+    it('extractCoverageMeasurementUri finds the measurement URI (real fixture); null when absent', () => {
+      expect(extractCoverageMeasurementUri(testrunWithCoverage)).toMatch(/\/coverage\/measurements\/[A-F0-9]+$/);
+      expect(extractCoverageMeasurementUri('<testResult/>')).toBeNull();
+    });
+
+    it('parseCoverageMeasurement returns the statement/branch/procedure aggregate (real fixture)', () => {
+      const cov = parseCoverageMeasurement(coverageMeasurement);
+      expect(cov.statement).toEqual({ executed: 30, total: 49, percent: 61.22 });
+      expect(cov.branch).toEqual({ executed: 5, total: 14, percent: 35.71 });
+      expect(cov.procedure).toEqual({ executed: 3, total: 8, percent: 37.5 });
+    });
+
+    it('parseCoverageMeasurement surfaces methods below full statement coverage, worst-first (real fixture)', () => {
+      const cov = parseCoverageMeasurement(coverageMeasurement);
+      const below = cov.methodsBelowFull ?? [];
+      const names = below.map((m) => m.method);
+      // 7 of the 8 ZCL_ABAPGIT_HASH methods are < 100% statement coverage; SHA1 (11/11) is excluded.
+      expect(below).toHaveLength(7);
+      expect(names).not.toContain('SHA1');
+      // Worst-first by percent, then larger gap (total) first → SHA1_STRING (0/7) leads.
+      expect(below[0]).toEqual({
+        method: 'SHA1_STRING',
+        statement: { executed: 0, total: 7, percent: 0 },
+        branch: { executed: 0, total: 2, percent: 0 },
+        procedure: { executed: 0, total: 1, percent: 0 },
+      });
+      // A fully-untested 0/2 method is present; the partial 87.5% method ranks last.
+      expect(names).toContain('SHA1_BLOB');
+      expect(below.at(-1)?.method).toBe('ADLER32');
+      // Monotonic non-decreasing statement percent.
+      const pcts = below.map((m) => m.statement?.percent ?? 0);
+      expect(pcts).toEqual([...pcts].sort((a, b) => a - b));
+    });
+
+    it('parseCoverageMeasurement reads per-method coverage on NW 7.50 (CLAS/OM/<visibility> type)', () => {
+      // 7.50 tags method nodes `CLAS/OM/public` (vs `CLAS/OM` on 758/816) — live-verified 2026-06-25.
+      const nw750 = `<?xml version="1.0"?>
+<cov:result name="ADT_ROOT_NODE" xmlns:cov="http://www.sap.com/adt/cov" xmlns:adtcore="http://www.sap.com/adt/core">
+  <nodes><node>
+    <adtcore:objectReference adtcore:name="ZCL_ARC1_COV==========CP" adtcore:type="CLAS/OCI"/>
+    <coverages><coverage type="statement" total="4" executed="3"/></coverages>
+    <nodes><node>
+      <adtcore:objectReference adtcore:type="CLAS/OM/public" adtcore:name="ADD"/>
+      <coverages><coverage type="statement" total="4" executed="3"/></coverages>
+    </node></nodes>
+  </node></nodes>
+</cov:result>`;
+      const cov = parseCoverageMeasurement(nw750);
+      expect(cov.statement).toEqual({ executed: 3, total: 4, percent: 75 });
+      expect(cov.methodsBelowFull).toEqual([{ method: 'ADD', statement: { executed: 3, total: 4, percent: 75 } }]);
+    });
+
+    it('parseCoverageMeasurement omits methodsBelowFull when every method is fully covered', () => {
+      const fullyCovered = `<?xml version="1.0"?>
+<cov:result name="ADT_ROOT_NODE" xmlns:cov="http://www.sap.com/adt/cov" xmlns:adtcore="http://www.sap.com/adt/core">
+  <nodes><node>
+    <adtcore:objectReference adtcore:name="ZCL_X==========CP" adtcore:type="CLAS/OCI"/>
+    <coverages><coverage type="statement" total="5" executed="5"/></coverages>
+    <nodes><node>
+      <adtcore:objectReference adtcore:name="ONLY_METHOD" adtcore:type="CLAS/OM"/>
+      <coverages><coverage type="statement" total="5" executed="5"/></coverages>
+    </node></nodes>
+  </node></nodes>
+</cov:result>`;
+      const cov = parseCoverageMeasurement(fullyCovered);
+      expect(cov.statement).toEqual({ executed: 5, total: 5, percent: 100 });
+      expect(cov.methodsBelowFull).toBeUndefined();
+    });
+
+    it('parseCoverageMeasurement returns {} when there is no coverage node', () => {
+      expect(parseCoverageMeasurement('<result name="ADT_ROOT_NODE"/>')).toEqual({});
+      expect(parseCoverageMeasurement('')).toEqual({});
+    });
+
+    it('parseCoverageMeasurement reads the root program aggregate, not nested method coverage', () => {
+      const cov = parseCoverageMeasurement(`<?xml version="1.0"?>
+<cov:result name="ADT_ROOT_NODE" xmlns:cov="http://www.sap.com/adt/cov" xmlns:adtcore="http://www.sap.com/adt/core">
+  <nodes>
+    <node>
+      <adtcore:objectReference adtcore:name="ZCL_AGGREGATE==========CP" adtcore:type="CLAS/OCI"/>
+      <nodes>
+        <node>
+          <adtcore:objectReference adtcore:name="METHOD_ONE" adtcore:type="CLAS/OM"/>
+          <coverages>
+            <coverage type="statement" total="1" executed="1"/>
+          </coverages>
+        </node>
+      </nodes>
+      <coverages>
+        <coverage type="statement" total="80" executed="40"/>
+      </coverages>
+    </node>
+  </nodes>
+</cov:result>`);
+      expect(cov.statement).toEqual({ executed: 40, total: 80, percent: 50 });
+    });
+
+    it('parseCoverageMeasurement skips malformed numeric metrics and keeps zero totals finite', () => {
+      const cov = parseCoverageMeasurement(`<?xml version="1.0"?>
+<cov:result name="ADT_ROOT_NODE" xmlns:cov="http://www.sap.com/adt/cov">
+  <nodes>
+    <node>
+      <coverages>
+        <coverage type="statement" total="0" executed="0"/>
+        <coverage type="branch" total="not-a-number" executed="1"/>
+      </coverages>
+    </node>
+  </nodes>
+</cov:result>`);
+      expect(cov.statement).toEqual({ executed: 0, total: 0, percent: 0 });
+      expect(cov.branch).toBeUndefined();
+      expect(Number.isNaN(cov.statement?.percent)).toBe(false);
+    });
+
+    it('runUnitTests({coverage:true}) runs the 2-step flow and returns tests + aggregate', async () => {
+      const http = mockHttpSequence(testrunWithCoverage, coverageMeasurement);
+      const result = await runUnitTests(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_ABAPGIT_HASH', {
+        coverage: true,
+      });
+      expect(result.tests.length).toBeGreaterThan(0);
+      expect(result.coverage?.statement?.percent).toBe(61.22);
+    });
+
+    it('runUnitTests degrades gracefully when the coverage measurement POST fails', async () => {
+      const post = vi
+        .fn()
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: testrunWithCoverage })
+        .mockRejectedValueOnce(new AdtApiError('method not supported', 405, '/cov'));
+      const http = {
+        get: vi.fn(),
+        post,
+        put: vi.fn(),
+        delete: vi.fn(),
+        fetchCsrfToken: vi.fn(),
+      } as unknown as AdtHttpClient;
+      const result = await runUnitTests(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_ABAPGIT_HASH', {
+        coverage: true,
+      });
+      expect(result.tests.length).toBeGreaterThan(0);
+      expect(result.coverage).toBeUndefined();
+    });
+
+    it('runUnitTests degrades gracefully when coverage XML contains no valid aggregate', async () => {
+      const invalidCoverage = `<?xml version="1.0"?>
+<cov:result name="ADT_ROOT_NODE" xmlns:cov="http://www.sap.com/adt/cov">
+  <nodes>
+    <node>
+      <coverages>
+        <coverage type="statement" total="bad" executed="1"/>
+      </coverages>
+    </node>
+  </nodes>
+</cov:result>`;
+      const http = mockHttpSequence(testrunWithCoverage, invalidCoverage);
+      const result = await runUnitTests(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_ABAPGIT_HASH', {
+        coverage: true,
+      });
+      expect(result.tests.length).toBeGreaterThan(0);
+      expect(result.coverage).toBeUndefined();
+    });
+
+    it('runUnitTests without coverage makes only the one testruns call', async () => {
+      const http = mockHttp(testrunWithCoverage);
+      const result = await runUnitTests(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_ABAPGIT_HASH');
+      expect(result.coverage).toBeUndefined();
+      expect(http.post).toHaveBeenCalledTimes(1);
     });
   });
 

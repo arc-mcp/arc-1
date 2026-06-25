@@ -43,6 +43,7 @@ export interface SapErrorClassification {
     | 'object-exists'
     | 'method-not-supported'
     | 'icf-handler-not-bound'
+    | 'bdef-base-not-extensible'
     | 'include-not-initialized';
   hint: string;
   transaction?: string;
@@ -660,6 +661,21 @@ export function classifySapDomainError(
         ? `${endpointHint} Run transaction SU53 in SAP GUI immediately after the failed call to see the exact missing authorization object.`
         : 'The SAP user lacks required authorization. Run transaction SU53 in SAP GUI to inspect the last failed authorization check. Common objects: S_DEVELOP (development), S_ADT_RES (ADT resources), S_TRANSPRT (transports). Contact your basis admin or review PFCG role assignments.',
       transaction: 'SU53',
+      details: typeId ? { exceptionType: typeId } : undefined,
+    };
+  }
+
+  if (
+    statusCode === 400 &&
+    /\bbehavior\s+definition\b/i.test(bodyRaw) &&
+    /\bnot\s+marked\s+as\s+extensible\b/i.test(bodyRaw)
+  ) {
+    return {
+      category: 'bdef-base-not-extensible',
+      hint:
+        'The base behavior definition is not extensible, so SAP refused the behavior extension create. ' +
+        'Update and activate the base BDEF with strict(2), an `extensible` header, an `extensible` entity declaration, ' +
+        'and `mapping ... corresponding extensible`; then retry the extension create.',
       details: typeId ? { exceptionType: typeId } : undefined,
     };
   }

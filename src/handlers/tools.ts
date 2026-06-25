@@ -237,7 +237,7 @@ const SAPSEARCH_DESC_BTP =
 const SAPTRANSPORT_DESC_ONPREM =
   'Manage CTS transport requests (SE09/SE10 equivalent). ' +
   'Actions: list (defaults to current user, modifiable transports — both Workbench and Customizing), ' +
-  'get (details with tasks and objects), create (K=Workbench, W=Customizing, T=Transport of Copies), ' +
+  'get (details with tasks and objects), create (always a Workbench (K) request — the package/target sets the transport target & layer, not the request category; optional explicit target. Customizing (W) and Transport-of-Copies (T) requests are not created here), ' +
   'release, delete, remove_object (remove an object, keep the request), reassign (change owner), release_recursive (release tasks first, then parent), ' +
   'check (check if a package requires a transport — provide type, name, package), ' +
   'history (find transports referencing an object — provide type, name; read-only, works without SAP_ALLOW_TRANSPORT_WRITES). ' +
@@ -246,7 +246,7 @@ const SAPTRANSPORT_DESC_ONPREM =
 const SAPTRANSPORT_DESC_BTP =
   'Manage transport requests (BTP ABAP Environment, SE09/SE10 equivalent). ' +
   'Actions: list (defaults to current user, modifiable transports — both Workbench and Customizing), ' +
-  'get (details with tasks and objects), create (K=Workbench, W=Customizing, T=Transport of Copies), ' +
+  'get (details with tasks and objects), create (always a Workbench (K) request — the package/target sets the transport target & layer, not the request category; optional explicit target. Customizing (W) and Transport-of-Copies (T) requests are not created here), ' +
   'release, delete, remove_object (remove an object, keep the request), reassign (change owner), release_recursive (release tasks first, then parent), ' +
   'check (check if a package requires a transport — provide type, name, package), ' +
   'history (find transports referencing an object — provide type, name; read-only, works without SAP_ALLOW_TRANSPORT_WRITES). ' +
@@ -1285,6 +1285,11 @@ export function getToolDefinitions(
             type: 'boolean',
             description:
               'For dumps detail mode only: include full formattedText blob. Default false to reduce token usage.',
+          },
+          coverage: {
+            type: 'boolean',
+            description:
+              'For action="unittest": also return statement/branch/procedure coverage for the object, plus methodsBelowFull — the methods below 100% statement coverage, worst first (what to test next) — in one extra round-trip. If the coverage endpoint or measurement is unavailable, returns the tests without coverage. Default false.',
           },
           analysis: {
             type: 'string',

@@ -2559,6 +2559,151 @@ describe('ADT Integration Tests', () => {
   });
 });
 
+// ─── BDEF behavior extension create (tier-3 #10) ──────────────────────
+// Live-verified on a4h 758 + 816: build a full extensible base RAP BO (table → root view →
+// `extensible` managed behavior), then create + activate a behavior extension. ARC-1 detects the
+// `extend behavior for X` source and adds the adtTemplate(base_bdef) the create POST needs.
+describe('BDEF behavior extension create (#10)', () => {
+  it('creates a behavior extension against an extensible base and activates it', async (ctx) => {
+    requireOrSkip(ctx, process.env.TEST_SAP_URL, SkipReason.NO_CREDENTIALS);
+    const { generateUniqueName } = await import('./crud-harness.js');
+    const { handleToolCall } = await import('../../src/handlers/dispatch.js');
+    const config = {
+      arc1Port: 8080,
+      arc1HttpAddr: '0.0.0.0:8080',
+      toolMode: 'standard',
+    } as unknown as Parameters<typeof handleToolCall>[1];
+    const client = getTestClient();
+    const tab = generateUniqueName('ZARC1_BX');
+    const root = `ZR_${tab}`;
+    const ext = `${root}_X`;
+    const W = async (args: Record<string, unknown>) => {
+      const r = await handleToolCall(client, config, 'SAPWrite', args);
+      if (r.isError) throw new Error(`${args.action} ${args.type} ${args.name}: ${r.content[0]?.text}`);
+      return r;
+    };
+    const A = async (type: string, name: string) => {
+      const r = await handleToolCall(client, config, 'SAPActivate', { type, name });
+      if (r.isError) throw new Error(`activate ${type} ${name}: ${r.content[0]?.text}`);
+    };
+    try {
+      await W({
+        action: 'create',
+        type: 'TABL',
+        name: tab,
+        package: '$TMP',
+        description: 'rap base',
+        source: `@EndUserText.label : 'rap base'\n@AbapCatalog.enhancementCategory : #NOT_EXTENSIBLE\n@AbapCatalog.tableCategory : #TRANSPARENT\n@AbapCatalog.deliveryClass : #A\n@AbapCatalog.dataMaintenance : #RESTRICTED\ndefine table ${tab.toLowerCase()} {\n  key mandt : mandt not null;\n  key id    : abap.char(10) not null;\n  descr     : abap.char(40);\n}`,
+      });
+      await A('TABL', tab);
+      await W({
+        action: 'create',
+        type: 'DDLS',
+        name: root,
+        package: '$TMP',
+        description: 'rap base view',
+        source: `@AccessControl.authorizationCheck: #NOT_REQUIRED\ndefine root view entity ${root} as select from ${tab.toLowerCase()} { key id, descr }`,
+      });
+      await A('DDLS', root);
+      await W({
+        action: 'create',
+        type: 'BDEF',
+        name: root,
+        package: '$TMP',
+        description: 'extensible base behavior',
+        source: `managed implementation in class zbp_${root.toLowerCase()} unique;\nstrict ( 2 );\nextensible;\ndefine behavior for ${root} alias RapBase persistent table ${tab.toLowerCase()} lock master authorization master ( global ) extensible { create; update; delete; mapping for ${tab.toLowerCase()} corresponding extensible; }`,
+      });
+      await A('BDEF', root);
+      // The actual feature under test: create a behavior EXTENSION.
+      await W({
+        action: 'create',
+        type: 'BDEF',
+        name: ext,
+        package: '$TMP',
+        description: 'behavior extension',
+        source: `extension implementation in class zbp_${ext.toLowerCase()} unique;\nextend behavior for ${root}\n{\n  action doNothing result [1] $self;\n}`,
+      });
+      const read = await handleToolCall(client, config, 'SAPRead', { type: 'BDEF', name: ext });
+      expect(read.content[0]?.text).toContain('extend behavior for');
+      await A('BDEF', ext);
+    } finally {
+      // Reverse dependency order; best-effort.
+      for (const [t, n] of [
+        ['BDEF', ext],
+        ['BDEF', root],
+        ['DDLS', root],
+        ['TABL', tab],
+      ] as const) {
+        await handleToolCall(client, config, 'SAPWrite', { action: 'delete', type: t, name: n }).catch(() => {
+          // best-effort-cleanup
+        });
+      }
+    }
+  }, 180_000);
+});
+
+// ─── FUGR structural-include write (FEAT-18 sibling) ──────────────────
+// Live-verified on a4h 758 + 816: the TOP include is the lock + package-resolution target
+// (its containerRef carries the group's package); locking the group 423s the source PUT.
+describe('FUGR structural include update (FEAT-18 sibling)', () => {
+  it('creates a FUGR, edits its TOP include via type=INCL+group, activates, reads the new source back', async (ctx) => {
+    requireOrSkip(ctx, process.env.TEST_SAP_URL, SkipReason.NO_CREDENTIALS);
+    const { generateUniqueName } = await import('./crud-harness.js');
+    const { handleToolCall } = await import('../../src/handlers/dispatch.js');
+    const config = {
+      arc1Port: 8080,
+      arc1HttpAddr: '0.0.0.0:8080',
+      toolMode: 'standard',
+    } as unknown as Parameters<typeof handleToolCall>[1];
+    const client = getTestClient();
+    const group = generateUniqueName('ZARC1_FGI');
+    const topInclude = `L${group}TOP`;
+    const marker = `* arc-1 structural include write ${group}`;
+    try {
+      const created = await handleToolCall(client, config, 'SAPWrite', {
+        action: 'create',
+        type: 'FUGR',
+        name: group,
+        package: '$TMP',
+        description: 'ARC-1 IT function group',
+      });
+      expect(created.isError).toBeUndefined();
+      const includeUrl = `/sap/bc/adt/functions/groups/${group.toLowerCase()}/includes/${topInclude.toLowerCase()}`;
+      // Requires live confirmation on 7.50/758/816: the package gate depends on this metadata
+      // carrying either packageRef or containerRef packageName. If absent, ARC-1 must fail closed.
+      const resolvedIncludePackage = await client.resolveObjectPackage(includeUrl).catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        requireOrSkip(ctx, undefined, `${SkipReason.BACKEND_UNSUPPORTED}: FUGR include metadata unreadable (${msg})`);
+        return undefined;
+      });
+      requireOrSkip(
+        ctx,
+        resolvedIncludePackage || undefined,
+        `${SkipReason.BACKEND_UNSUPPORTED}: FUGR include metadata lacks packageRef/containerRef packageName`,
+      );
+      expect(resolvedIncludePackage).toBe('$TMP');
+      const updated = await handleToolCall(client, config, 'SAPWrite', {
+        action: 'update',
+        type: 'INCL',
+        name: topInclude,
+        group,
+        source: `FUNCTION-POOL ${group}.\n${marker}`,
+      });
+      expect(updated.isError).toBeUndefined();
+      const activated = await handleToolCall(client, config, 'SAPActivate', { type: 'FUGR', name: group });
+      expect(activated.isError).toBeUndefined();
+      // Read the include source back directly (getInclude only serves standalone includes, so
+      // GET the FUGR-include source URL via the client's HTTP layer).
+      const back = await client.http.get(`${includeUrl}/source/main`);
+      expect(back.body).toContain(marker);
+    } finally {
+      await handleToolCall(client, config, 'SAPWrite', { action: 'delete', type: 'FUGR', name: group }).catch(() => {
+        // best-effort-cleanup
+      });
+    }
+  }, 90_000);
+});
+
 // ─── Self-correcting "unknown column" hint (FEAT-64) ──────────────────
 // On systems where datapreview is bound (758/816) an unknown column yields the table's real column
 // list; on NPL 7.50 the datapreview endpoint is unbound (404), so the original error is shown — both
@@ -2604,6 +2749,54 @@ describe('Self-correcting unknown-column hint (FEAT-64)', () => {
     });
     expectHintOrGraceful(result);
   });
+});
+
+// ─── ABAP Unit coverage (FEAT-41) ─────────────────────────────────────
+// The coverage measurement endpoint is standard ADT, live-verified on 7.50 + 758 + 816 (2026-06-25 —
+// identical {stmt 3/4, branch 2/3, proc 1/1} for a controlled tested class on each). This CI test
+// targets ZCL_ABAPGIT_HASH (758: stmt 61% / branch 36% / proc 38%); abapGit classes carry unit tests
+// on 758 but are absent on a4h-2025/816 + NPL 7.50, so it skips cleanly there (NOT a coverage gap).
+describe('AUnit coverage (FEAT-41)', () => {
+  it('unittest coverage=true returns statement/branch/procedure for a class with tests', async (ctx) => {
+    requireOrSkip(ctx, process.env.TEST_SAP_URL, SkipReason.NO_CREDENTIALS);
+    const { handleToolCall } = await import('../../src/handlers/dispatch.js');
+    const config = {
+      arc1Port: 8080,
+      arc1HttpAddr: '0.0.0.0:8080',
+      toolMode: 'standard',
+    } as unknown as Parameters<typeof handleToolCall>[1];
+    const result = await handleToolCall(getTestClient(), config, 'SAPDiagnose', {
+      action: 'unittest',
+      type: 'CLAS',
+      name: 'ZCL_ABAPGIT_HASH',
+      coverage: true,
+    });
+    expect(result.isError).toBeUndefined();
+    const out = JSON.parse(result.content[0]?.text ?? '{}') as {
+      tests?: unknown[];
+      coverage?: {
+        statement?: { total: number };
+        branch?: unknown;
+        procedure?: unknown;
+        methodsBelowFull?: Array<{ method: string; statement?: { percent: number } }>;
+      };
+    };
+    requireOrSkip(
+      ctx,
+      Array.isArray(out.tests) && out.tests.length > 0 ? true : undefined,
+      `${SkipReason.NO_FIXTURE} (no ZCL_ABAPGIT_HASH unit tests on this system)`,
+    );
+    expect(out.coverage?.statement?.total).toBeGreaterThan(0);
+    expect(out.coverage?.branch).toBeDefined();
+    expect(out.coverage?.procedure).toBeDefined();
+    // Per-method drill-down: ZCL_ABAPGIT_HASH has partially-covered methods (it isn't fully tested),
+    // worst-first by statement percent. (Skips elsewhere; method node type is CLAS/OM on 758/816 and
+    // CLAS/OM/<visibility> on 7.50 — both matched.)
+    const below = out.coverage?.methodsBelowFull ?? [];
+    expect(below.length).toBeGreaterThan(0);
+    const pcts = below.map((m) => m.statement?.percent ?? 0);
+    expect(pcts).toEqual([...pcts].sort((a, b) => a - b));
+  }, 60_000);
 });
 
 // ─── TTYP (table type) read + create (FEAT-65) ────────────────────────
