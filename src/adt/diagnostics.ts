@@ -1043,7 +1043,7 @@ export function verdictFromStatistics(m: Record<string, number>): ODataPerfResul
     [
       'app',
       Math.max((m.gwapp ?? 0) - db, 0),
-      'ABAP/SADL-bound: application logic dominates (not the DB). Arm an ABAP profiler trace (SAPDiagnose action="traces") and read its hitlist for the hot path.',
+      'ABAP/SADL-bound: application logic dominates, not the DB (an $expand N+1 is the classic cause) — do not ST05-hunt for a slow query. Find the OData implementation (the CDS behind a V4/RAP binding, or the SEGW Gateway DPC class) and arm a profiler trace via SAPDiagnose(action="trace_start"), then read it with action="traces" analysis="dbAccesses". Note: for HTTP/OData traces the ABAP hitlist/statements are usually empty — use ST12/SAT in SAP GUI for the call tree.',
     ],
     [
       // gwfw (GW framework) and gwhub (GW hub processing) both measure framework time; older

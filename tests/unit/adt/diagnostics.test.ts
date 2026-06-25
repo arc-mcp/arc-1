@@ -1400,6 +1400,15 @@ describe('verdictFromStatistics', () => {
     expect(verdictFromStatistics({ gwtotal: 100, icfauth: 80, gwapp: 5, gwappdb: 2, gwfw: 3 }).bound).toBe('auth');
   });
 
+  it('routes a gwapp-dominant (gwappdb-absent) request to app, arming via trace_start (not "traces")', () => {
+    // live GWSAMPLE_BASIC ?$expand: gwapp 439 of gwtotal 609, gwappdb absent → app-bound
+    const v = verdictFromStatistics({ gwtotal: 609, gwapp: 439, gwfw: 167 });
+    expect(v.bound).toBe('app');
+    // regression: the note used to say arm via action="traces" (wrong) + "read its hitlist" (empty for HTTP)
+    expect(v.note).toContain('trace_start');
+    expect(v.note).toMatch(/dbAccesses|ST12|SAT/);
+  });
+
   it('does not let an inconsistent gwapp/gwappdb split produce negative app time', () => {
     expect(verdictFromStatistics({ gwtotal: 100, gwapp: 20, gwappdb: 80, gwfw: 30 }).bound).toBe('db');
   });
