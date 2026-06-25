@@ -49,7 +49,9 @@ Read the `verdict`:
 - **`auth`** (`icfauth`) → ICF/DCL authorization overhead.
 - **`unknown`** → no usable Gateway timing at all; confirm the URL is an OData/Gateway service on the SAP host.
 
-(`odata_perf` needs `SAP_ALLOW_DATA_PREVIEW`; the OData service must be on the SAP host ARC-1 connects to.)
+(`odata_perf` needs `SAP_ALLOW_DATA_PREVIEW`; `url` must be a host-relative OData path under `/sap/opu/odata`
+or `/sap/opu/odata4` on the SAP host ARC-1 connects to — other paths are rejected. It does a GET, so use the
+entity/list request from the Network tab, not a `$batch` POST.)
 
 ### 2. DB-bound → see and measure the actual SQL
 - `SAPDiagnose(action="cds_sql", name="I_TheView")` — the **native `CREATE VIEW`** the CDS compiles to
@@ -134,6 +136,24 @@ the `url` argument.
 | `gwappdb` small but OData slow | SADL / determinations / virtual elements / auth (DCL) | `odata_perf` verdict `app`/`auth`; profiler `hitlist` | Move logic to the DB/CDS; simplify DCL; cache; avoid per-row ABAP virtual elements |
 | Slow only first call | Metadata / cold cache | `odata_perf` verdict `framework`; re-probe warm | Expected; warm-up; don't optimize the query |
 | `TIME_OUT` / memory dump under load | Unbounded result / missing paging | ST22 + ST05 | Server-side paging (`$top`/`$skip`); add filters; package the work |
+
+---
+
+## Worked example (real, a4h S/4HANA 2023)
+
+A "message-text search screen is slow" complaint. The query behind it:
+
+```
+SAPQuery(sql="SELECT sprsl, arbgb, msgnr, text FROM t100 WHERE text LIKE '%error%'")
+→ { totalRows: 12549, queryExecutionTimeMs: 49.086, rowsReturned: 100,
+    executedQueryString: "SELECT … FROM T100 WHERE TEXT LIKE '%error%' … UP TO 100 ROWS" }
+```
+
+Read it: **12 549 rows matched** a leading-wildcard `LIKE '%…%'` on a non-indexed text column → a full table
+scan (the index is unusable because the pattern starts with `%`). The result the user actually wanted was a
+handful of rows. **Fix:** drop the leading wildcard (anchor the search) / add a search help or full-text index /
+pre-filter on an indexed field first. For the HANA plan + rows-fetched, arm an ST05 trace (rung 4), reproduce,
+and open the directory deep-link.
 
 ---
 
