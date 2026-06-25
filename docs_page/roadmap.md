@@ -84,7 +84,7 @@ SORT RULES for this table — DO NOT BREAK when adding rows:
 | [FEAT-64](#feat-64) | Self-correcting "unknown column" hint on SAPQuery / table preview (list valid columns on error — extends the unknown-*table* self-correction) | P2 | S | Features |
 | COMPAT-05 | Verify ToC (type `T`) creation actually works — `tools.ts` advertises K/W/T but `createTransport`/`createTransportWithTarget` look K-only (possible advertise-vs-impl mismatch) | P2 | XS | Compatibility |
 | [SEC-05](#sec-05) | Rate Limiting | P2 | S | Security |
-| [SEC-14](#sec-14) | DNS-rebinding / Host-header allowlist for HTTP/SSE transport (`ARC1_ALLOWED_HOSTS`) — defense-in-depth for self-hosted/localhost; BTP gorouter already controls `Host`. fr0ster v7.2.0 + MCP spec | P2 | S | Security |
+| [SEC-14](#sec-14) | DNS-rebinding / Host-header allowlist for HTTP/SSE transport (`ARC1_ALLOWED_HOSTS`) — defense-in-depth for self-hosted/localhost; BTP gorouter already controls `Host`. fr0ster v7.2.0 + MCP spec. **Implemented then DEFERRED** (PR #500) — mandatory HTTP auth is the primary control; see [details](#sec-14) | P2 | S | Security |
 | [OPS-02](#ops-02) | Health Check Enhancements | P2 | XS | Ops |
 | [DOC-03](#doc-03) | SAP Community Blog Post | P2 | S | Docs |
 | [COMPAT-04](#compat-04) | BTP transport omission in safeUpdateSource() — verify only | P2 | XS | Compatibility |
@@ -323,7 +323,7 @@ These bugs affect real-world deployments and were confirmed by cross-project com
 24. ~~**FEAT-48** SKTD (Knowledge Transfer Documents) Read/Write (S)~~ — **✅ Completed 2026-04-16** (PR #134 merged). Unique to ARC-1. LLM-generated documentation for ABAP objects.
 25. **FEAT-09** SQL Trace Monitoring (S) — completes diagnostics story (SM02 and /IWFND/ERROR_LOG already completed 2026-04-21 via FEAT-55 — SQL trace is the only fr0ster-v5 diagnostic still missing)
 26. **SEC-05** Rate Limiting (S) — prevent runaway AI loops
-26b. **SEC-14** DNS-rebinding / Host-header validation (S) — Host allowlist for HTTP/SSE; fr0ster v7.2.0 + MCP spec recommend it. Defense-in-depth for self-hosted/localhost (BTP gorouter already fixes `Host`).
+26b. ~~**SEC-14** DNS-rebinding / Host-header validation (S)~~ — **implemented then DEFERRED 2026-06-25** (PR #500, closed-deferred). Mandatory HTTP auth is the primary rebind control; Host validation only matters in the no-auth mode a real deploy shouldn't use, so it's parked to avoid the `ARC1_ALLOWED_HOSTS` setup surface. Decision record + resume guide: [docs/plans/sec-14-dns-rebinding-host-validation.md](../docs/plans/sec-14-dns-rebinding-host-validation.md).
 26. ~~**FEAT-20** Source Version / Revision History (S) — promoted to P1/Phase B and completed 2026-04-17~~
 27. **FEAT-31** Code Coverage from Unit Tests (S) — VSP has this (Apr 4). See also FEAT-41 for sapcli's approach.
 28. ~~**FEAT-33** CDS Impact Analysis (S)~~ — **completed 2026-04-16** (`SAPContext(action="impact")` for DDLS upstream+downstream analysis)
@@ -628,8 +628,10 @@ SAP confirmed GA of ABAP Cloud Extension for VS Code with built-in agentic AI po
 | **Effort** | S (≤1 day) |
 | **Risk** | Low |
 | **Usefulness** | Medium — defense-in-depth for self-hosted / localhost HTTP deployments; the MCP spec recommends it. On BTP CF the gorouter already fixes the `Host`, so the live exposure is the stdio→HTTP-bridge and bare-`localhost` cases. |
-| **Status** | Not started |
+| **Status** | **Implemented, then DEFERRED (2026-06-25)** — built + hardened + live-verified on branch `feat/sec-14-dns-rebinding` (PR #500, closed-deferred); parked by product decision. Decision record + resume guide: [docs/plans/sec-14-dns-rebinding-host-validation.md](../docs/plans/sec-14-dns-rebinding-host-validation.md). |
 | **Source** | [fr0ster v7.2.0 `d1688c9`](../compare/05-fr0ster-mcp-abap-adt.md); threat A4 in [docs/security-model.md](../docs/security-model.md) |
+
+> **Deferred — why:** ARC-1's HTTP transport already *requires* MCP auth to start (`ARC1_API_KEYS` / OIDC / XSUAA, unless `allowHttpNoAuth` is explicitly set), which is the primary DNS-rebind control — a rebind attacker is rejected `401` before any tool call. Host validation is only load-bearing in the no-auth HTTP mode a real deploy should never use; everywhere else (stdio = no HTTP; BTP = gorouter + XSUAA; self-hosted = mandatory auth) it's redundant. The real cost is operator setup surface (`ARC1_ALLOWED_HOSTS`), so we keep it out to make deployment simpler. Resume by reopening PR #500 if a no-auth HTTP mode ever becomes a real deployment.
 
 **What:** Validate the `Host` header on every HTTP/SSE request against an allowlist before the `/mcp` handler runs. A malicious web page can rebind its DNS to `127.0.0.1` and POST to a local MCP server from the victim's browser; `Origin`/CORS checks don't stop a same-origin-looking `Host`. fr0ster shipped a Host/Origin allowlist in v7.2.0; the MCP spec calls for the same.
 
