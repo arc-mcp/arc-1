@@ -41,7 +41,7 @@ import { startLocalUiServer, type UiServerDeps } from './ui.js';
 import { UiLogBufferSink } from './ui-log-buffer.js';
 
 /** ARC-1 version */
-export const VERSION = '0.9.20'; // x-release-please-version
+export const VERSION = '0.9.21'; // x-release-please-version
 
 /**
  * Prune a tool's action OR type enum (or both) based on the user's scopes and

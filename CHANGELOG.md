@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.9.21](https://github.com/arc-mcp/arc-1/compare/v0.9.20...v0.9.21) (2026-06-25)
+
+
+### Features
+
+* **ddic:** TTYP (table type) read + create (FEAT-65) ([#504](https://github.com/arc-mcp/arc-1/issues/504)) ([22c49b6](https://github.com/arc-mcp/arc-1/commit/22c49b613b9fcd7de2f763174039dec3371c88da))
+* **diagnose:** ABAP Unit test coverage (statement/branch/procedure) for SAPDiagnose ([#503](https://github.com/arc-mcp/arc-1/issues/503)) ([f6ab40e](https://github.com/arc-mcp/arc-1/commit/f6ab40edd0a84648a96d2a922ec6a588e0429ccd))
+* **diagnose:** OData sap-statistics perf probe + CDS Show-SQL + ICF-inactive guard ([#509](https://github.com/arc-mcp/arc-1/issues/509)) ([f111216](https://github.com/arc-mcp/arc-1/commit/f11121668795c09baa10f909be9c32335d4d930d))
+* **diagnose:** ST05 SQL-trace state control + record-viewer directory ([#510](https://github.com/arc-mcp/arc-1/issues/510)) ([a54a99b](https://github.com/arc-mcp/arc-1/commit/a54a99b7b8ef0475363ec27be559326acdcb05a3))
+* **fugr:** write FUGR structural include source ([#505](https://github.com/arc-mcp/arc-1/issues/505)) ([0e4f522](https://github.com/arc-mcp/arc-1/commit/0e4f52299df16108cf95f0c7db70cfe96a040961))
+* **manage:** SAPManage set_api_state — write an object's API release contract (clean-core) ([#506](https://github.com/arc-mcp/arc-1/issues/506)) ([30d68fd](https://github.com/arc-mcp/arc-1/commit/30d68fdd4558f50b2f64624d57ffdb50acacad03))
+* **query:** self-correcting "unknown column" hint for SAPQuery + TABLE_QUERY (FEAT-64) ([#502](https://github.com/arc-mcp/arc-1/issues/502)) ([39c119b](https://github.com/arc-mcp/arc-1/commit/39c119b4d9c9ee8bcca3c4a7d071ee3f4d6b551d))
+* **rap:** create RAP behavior extensions (`extend behavior for`) ([#507](https://github.com/arc-mcp/arc-1/issues/507)) ([209893b](https://github.com/arc-mcp/arc-1/commit/209893b6a370fdb5070066377627305c21255449))
+* SAPQuery datapreview metrics + SAPDiagnose ABAP trace requests ([#508](https://github.com/arc-mcp/arc-1/issues/508)) ([b10fab9](https://github.com/arc-mcp/arc-1/commit/b10fab9c0e1f1f677afd10af61260bc20bbbe181))
+* **transport:** pre-release inactive-objects check + fix misleading K/W/T create claim ([#501](https://github.com/arc-mcp/arc-1/issues/501)) ([3519b1b](https://github.com/arc-mcp/arc-1/commit/3519b1b49d6c4a101d1b6d4be3c18dce48f8bd9b))
+* **transport:** surface release-check report from SAPTransport release ([#514](https://github.com/arc-mcp/arc-1/issues/514)) ([fd7e907](https://github.com/arc-mcp/arc-1/commit/fd7e907b84c1d8f7b2033c180d4f929d8d720146))
+
+
+### Bug Fixes
+
+* add minimal client-facing SAP errors ([#495](https://github.com/arc-mcp/arc-1/issues/495)) ([f6b7fea](https://github.com/arc-mcp/arc-1/commit/f6b7fea940e0a7115851fcf5c2dcc9e15fab2dfe))
+* **cli:** send correct arg shapes from sql/search shortcuts ([#512](https://github.com/arc-mcp/arc-1/issues/512)) ([b7e5325](https://github.com/arc-mcp/arc-1/commit/b7e53258271605ebab04c56428e8a1decc5ac700))
+* create audit and cache files privately ([#496](https://github.com/arc-mcp/arc-1/issues/496)) ([b409672](https://github.com/arc-mcp/arc-1/commit/b409672df119042679100f5ce0488b5e1c366b4f))
+* default deployment descriptors to verified SAP TLS ([#491](https://github.com/arc-mcp/arc-1/issues/491)) ([e70eaf7](https://github.com/arc-mcp/arc-1/commit/e70eaf75c3b90cd33010818c119a2d0260c02d71))
+* **diagnose:** correct odata_perf "app" verdict note ([#513](https://github.com/arc-mcp/arc-1/issues/513)) ([fe12767](https://github.com/arc-mcp/arc-1/commit/fe12767e82a917036e869152a2cbdb808ccc99ea))
+* enforce package allowlist for gCTS mutations ([#490](https://github.com/arc-mcp/arc-1/issues/490)) ([dfce4be](https://github.com/arc-mcp/arc-1/commit/dfce4be6e2e76ca17a7f11b5fd1111f12e17f1df))
+* fail closed on principal propagation errors ([#488](https://github.com/arc-mcp/arc-1/issues/488)) ([8c22795](https://github.com/arc-mcp/arc-1/commit/8c227951693eeff11b857d3173acfb70c7794f7f))
+* gate quickfix application as a write ([#489](https://github.com/arc-mcp/arc-1/issues/489)) ([f25dce5](https://github.com/arc-mcp/arc-1/commit/f25dce5b82f80c29ed71d14c16b96eb86ae9383a))
+* probe UI5 BSP filestore via /objects, not the handler-less bare node ([#498](https://github.com/arc-mcp/arc-1/issues/498)) ([0f1676c](https://github.com/arc-mcp/arc-1/commit/0f1676c95f10196766478aa42f0ee42570fb804f))
+* redact audit events before sink writes ([#493](https://github.com/arc-mcp/arc-1/issues/493)) ([f7af34e](https://github.com/arc-mcp/arc-1/commit/f7af34e59dba6879adc8847711a94b541d45249f))
+* require auth for HTTP transport ([#487](https://github.com/arc-mcp/arc-1/issues/487)) ([46c68a0](https://github.com/arc-mcp/arc-1/commit/46c68a097263c366611d6d2f520721da7b920cfe))
+* warn on insecure SAP TLS and encode trace paths ([#494](https://github.com/arc-mcp/arc-1/issues/494)) ([b67586e](https://github.com/arc-mcp/arc-1/commit/b67586e4bb0dd741e7e05da6120b03ff55412359))
+
 ## [0.9.20](https://github.com/arc-mcp/arc-1/compare/v0.9.19...v0.9.20) (2026-06-22)
 
 
