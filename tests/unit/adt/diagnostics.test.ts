@@ -1219,11 +1219,12 @@ describe('Runtime Diagnostics', () => {
       expect(posts[0]?.body).toContain('<trc:allDbEvents value="false"');
     });
 
-    it('treats expiresHours=0 as the default (not an immediately-expired request)', async () => {
-      const { http, posts } = mockTraceHttp();
-      await createTraceRequest(http, unrestrictedSafetyConfig(), 'marian', '001', { expiresHours: 0 });
-      const expires = new URLSearchParams(posts[1]?.url.split('?')[1]).get('expires') ?? '';
-      expect(new Date(expires).getTime()).toBeGreaterThan(Date.now() + 60 * 60 * 1000);
+    it('rejects expiresHours=0 instead of silently defaulting it', async () => {
+      const { http } = mockTraceHttp();
+      await expect(
+        createTraceRequest(http, unrestrictedSafetyConfig(), 'marian', '001', { expiresHours: 0 }),
+      ).rejects.toThrow(/expiresHours/);
+      expect(http.post).not.toHaveBeenCalled();
     });
 
     it('rejects an objectType invalid for the process type', async () => {
@@ -1239,6 +1240,13 @@ describe('Runtime Diagnostics', () => {
     it('throws when the parameters POST returns no Location (parametersId)', async () => {
       const { http } = mockTraceHttp('');
       await expect(createTraceRequest(http, unrestrictedSafetyConfig(), 'marian', '001')).rejects.toThrow(/Location/);
+    });
+
+    it('is blocked when writes are disabled', async () => {
+      const { http } = mockTraceHttp();
+      const safety = { ...unrestrictedSafetyConfig(), allowWrites: false };
+      await expect(createTraceRequest(http, safety, 'marian', '001')).rejects.toThrow(/allowWrites=false/);
+      expect(http.post).not.toHaveBeenCalled();
     });
   });
 
@@ -1266,6 +1274,16 @@ describe('Runtime Diagnostics', () => {
       expect(http.delete).toHaveBeenCalledWith('/sap/bc/adt/runtime/traces/abaptraces/requests/abc%2c1');
     });
 
+    it('accepts an absolute URL only when its path is a request id path', async () => {
+      const http = mockHttp('');
+      await deleteTraceRequest(
+        http,
+        unrestrictedSafetyConfig(),
+        'https://a4h.example/sap/bc/adt/runtime/traces/abaptraces/requests/abc%2c1',
+      );
+      expect(http.delete).toHaveBeenCalledWith('/sap/bc/adt/runtime/traces/abaptraces/requests/abc%2c1');
+    });
+
     it('refuses an arbitrary ADT path (no arbitrary DELETE primitive)', async () => {
       const http = mockHttp('');
       await expect(
@@ -1287,6 +1305,18 @@ describe('Runtime Diagnostics', () => {
       expect(http.delete).not.toHaveBeenCalled();
     });
 
+    it('refuses a traversal that normalizes to another request id', async () => {
+      const http = mockHttp('');
+      await expect(
+        deleteTraceRequest(
+          http,
+          unrestrictedSafetyConfig(),
+          '/sap/bc/adt/runtime/traces/abaptraces/requests/foo/../bar',
+        ),
+      ).rejects.toThrow(/not an abaptraces trace-request id/);
+      expect(http.delete).not.toHaveBeenCalled();
+    });
+
     it('refuses a percent-encoded (%2f / %2e) separator traversal', async () => {
       const http = mockHttp('');
       // %2f isn't decoded by new URL().pathname alone — validation must decode first (SAP ICM may too).
@@ -1297,6 +1327,36 @@ describe('Runtime Diagnostics', () => {
           '/sap/bc/adt/runtime/traces/abaptraces/requests/%2f..%2f..%2f..%2foo%2fclasses%2fzcl_victim',
         ),
       ).rejects.toThrow(/not an abaptraces trace-request id/);
+      expect(http.delete).not.toHaveBeenCalled();
+    });
+
+    it('refuses a double-encoded separator traversal', async () => {
+      const http = mockHttp('');
+      await expect(
+        deleteTraceRequest(
+          http,
+          unrestrictedSafetyConfig(),
+          '/sap/bc/adt/runtime/traces/abaptraces/requests/foo%252fbar',
+        ),
+      ).rejects.toThrow(/not an abaptraces trace-request id/);
+      expect(http.delete).not.toHaveBeenCalled();
+    });
+
+    it('refuses backslashes and blank request ids', async () => {
+      const http = mockHttp('');
+      await expect(deleteTraceRequest(http, unrestrictedSafetyConfig(), 'foo\\bar')).rejects.toThrow(
+        /malformed trace-request id/,
+      );
+      await expect(deleteTraceRequest(http, unrestrictedSafetyConfig(), '   ')).rejects.toThrow(
+        /empty trace-request id/,
+      );
+      expect(http.delete).not.toHaveBeenCalled();
+    });
+
+    it('is blocked when writes are disabled', async () => {
+      const http = mockHttp('');
+      const safety = { ...unrestrictedSafetyConfig(), allowWrites: false };
+      await expect(deleteTraceRequest(http, safety, 'abc%2c1')).rejects.toThrow(/allowWrites=false/);
       expect(http.delete).not.toHaveBeenCalled();
     });
   });

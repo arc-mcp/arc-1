@@ -302,12 +302,13 @@ export function parseDataPreviewMeta(xml: string): DataPreviewMeta {
   const td = (parsed.tableData ?? parsed) as Record<string, unknown>;
   const meta: DataPreviewMeta = {};
 
-  // Guard `!== ''` too: an empty <totalRows/> would otherwise coerce via Number('') to a spurious 0.
-  const totalRows = Number(td.totalRows);
-  if (td.totalRows != null && td.totalRows !== '' && Number.isFinite(totalRows)) meta.totalRows = totalRows;
-
-  const execMs = Number(td.queryExecutionTime);
-  if (td.queryExecutionTime != null && td.queryExecutionTime !== '' && Number.isFinite(execMs)) {
+  // Guard blank values too: an empty <totalRows/> would otherwise coerce via Number('') to a spurious 0.
+  const totalRowsText = td.totalRows != null ? String(td.totalRows).trim() : '';
+  const totalRows = Number(totalRowsText);
+  if (totalRowsText !== '' && Number.isFinite(totalRows)) meta.totalRows = totalRows;
+  const execMsText = td.queryExecutionTime != null ? String(td.queryExecutionTime).trim() : '';
+  const execMs = Number(execMsText);
+  if (execMsText !== '' && Number.isFinite(execMs)) {
     meta.queryExecutionTimeMs = execMs;
   }
 

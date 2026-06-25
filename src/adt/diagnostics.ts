@@ -455,8 +455,10 @@ export async function createTraceRequest(
   const sqlTrace = opts.sqlTrace !== false; // default true
   const aggregate = opts.aggregate !== false; // default true
   const maxExecutions = Math.max(1, Math.floor(opts.maxExecutions ?? 1));
-  // `?? 24` would let an explicit 0 (or LLM-sent 0) arm an already-expired request — guard like maxExecutions.
-  const expiresHours = opts.expiresHours && opts.expiresHours > 0 ? opts.expiresHours : 24;
+  const expiresHours = opts.expiresHours ?? 24;
+  if (!Number.isFinite(expiresHours) || expiresHours <= 0) {
+    throw new AdtApiError('expiresHours must be a positive number of hours.', 400, `${TRACE_BASE}/requests`);
+  }
   const expires = new Date(Date.now() + expiresHours * 3_600_000).toISOString().replace(/\.\d+Z$/, 'Z');
   const description = opts.description ?? `arc-1 ${processType}/${objectType} trace`;
 
@@ -520,25 +522,29 @@ export async function deleteTraceRequest(http: AdtHttpClient, safety: SafetyConf
   await http.delete(traceRequestPath(id));
 }
 
-/**
- * Normalize a trace-request id (full path, absolute URL, or bare segment) to a DELETE-able ADT path,
- * constrained to the abaptraces/requests collection so trace_cancel cannot become an arbitrary ADT DELETE.
- */
+// Normalize full-path, absolute-URL, or bare trace-request ids without creating an arbitrary DELETE primitive.
 function traceRequestPath(id: string): string {
   const prefix = `${TRACE_BASE}/requests/`;
-  const raw = /^https?:\/\//.test(id) ? new URL(id).pathname : id.startsWith('/') ? id : `${prefix}${id}`;
-  // A request id is a SINGLE slash-free segment directly under requests/. Validate on a fully DECODED +
-  // normalized form — SAP's ICM may decode %2f/%2e before routing, so neither `..` nor an encoded
-  // separator (%2f, %2e%2e) can be allowed to resolve into a sub-path or escape the collection. We still
-  // return the original (e.g. %2c-encoded) form, which is what SAP expects for the DELETE.
-  let decoded: string;
+  const trimmed = String(id ?? '').trim();
+  if (!trimmed) throw new AdtApiError('Refusing to cancel an empty trace-request id.', 400, prefix);
+  if (trimmed.includes('\\'))
+    throw new AdtApiError(`Refusing to cancel "${id}": malformed trace-request id.`, 400, trimmed);
+  const isAbsoluteUrl = /^https?:\/\//i.test(trimmed);
+  let raw = '';
   try {
-    decoded = new URL(decodeURIComponent(raw), 'http://x').pathname;
+    if (isAbsoluteUrl) new URL(trimmed);
+    raw = isAbsoluteUrl
+      ? (trimmed.match(/^https?:\/\/[^/?#]*(\/[^?#]*)?/i)?.[1] ?? '/')
+      : trimmed.startsWith('/')
+        ? trimmed
+        : `${prefix}${trimmed}`;
   } catch {
-    throw new AdtApiError(`Refusing to cancel "${id}": malformed trace-request id.`, 400, raw);
+    throw new AdtApiError(`Refusing to cancel "${id}": malformed trace-request id.`, 400, trimmed);
   }
+
+  const decoded = decodeTraceRequestPath(raw, id);
   const tail = decoded.startsWith(prefix) ? decoded.slice(prefix.length) : '';
-  if (!tail || tail.includes('/')) {
+  if (!tail || tail !== tail.trim() || /[\\/?#\s]/.test(tail) || tail === '.' || tail === '..') {
     throw new AdtApiError(
       `Refusing to cancel "${id}": not an abaptraces trace-request id (expected ${prefix}<id>).`,
       400,
@@ -546,6 +552,20 @@ function traceRequestPath(id: string): string {
     );
   }
   return raw;
+}
+
+function decodeTraceRequestPath(path: string, originalId: string): string {
+  let decoded = path;
+  for (let i = 0; i < 5; i++) {
+    try {
+      const next = decodeURIComponent(decoded);
+      if (next === decoded) return decoded;
+      decoded = next;
+    } catch {
+      throw new AdtApiError(`Refusing to cancel "${originalId}": malformed trace-request id.`, 400, decoded);
+    }
+  }
+  throw new AdtApiError(`Refusing to cancel "${originalId}": over-encoded trace-request id.`, 400, decoded);
 }
 
 /** Pick the value of a node that repeats per role (admin/trace); prefer `trace`, else the first. */

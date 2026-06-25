@@ -295,6 +295,11 @@ describe('XML Parser', () => {
       expect(parseDataPreviewMeta(xml)).toEqual({ totalRows: 42 });
     });
 
+    it('ignores empty and non-numeric metric fields', () => {
+      const xml = `<dataPreview:tableData xmlns:dataPreview="http://www.sap.com/adt/dataPreview"><dataPreview:totalRows> </dataPreview:totalRows><dataPreview:queryExecutionTime>not-a-number</dataPreview:queryExecutionTime><dataPreview:executedQueryString>  </dataPreview:executedQueryString></dataPreview:tableData>`;
+      expect(parseDataPreviewMeta(xml)).toEqual({});
+    });
+
     it('returns empty object for empty input', () => {
       expect(parseDataPreviewMeta('')).toEqual({});
     });

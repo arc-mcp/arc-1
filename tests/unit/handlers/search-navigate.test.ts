@@ -22,6 +22,12 @@ function dataPreviewXml(column: string, values: string[]): string {
     .join('')}</DATASET></COLUMN></COLUMNS></values></abap>`;
 }
 
+function dataPreviewXmlWithMetrics(column: string, values: string[]): string {
+  return `<dataPreview:tableData xmlns:dataPreview="http://www.sap.com/adt/dataPreview"><dataPreview:totalRows>${values.length * 10}</dataPreview:totalRows><dataPreview:executedQueryString>SELECT ${column} FROM TADIR</dataPreview:executedQueryString><dataPreview:queryExecutionTime>7.5</dataPreview:queryExecutionTime><dataPreview:columns><dataPreview:metadata dataPreview:name="${column}"/><dataPreview:dataSet>${values
+    .map((value) => `<dataPreview:data>${value}</dataPreview:data>`)
+    .join('')}</dataPreview:dataSet></dataPreview:columns></dataPreview:tableData>`;
+}
+
 function freestylePostCalls(): Array<[unknown, Record<string, unknown>]> {
   return mockFetch.mock.calls.filter(
     (call) => String(call[0]).includes('/sap/bc/adt/datapreview/freestyle') && call[1]?.method === 'POST',
@@ -616,9 +622,12 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       mockFetch.mockReset();
       mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
       mockFetch.mockResolvedValueOnce(
-        mockResponse(200, dataPreviewXml('OBJ_NAME', ['Z01', 'Z02', 'Z03', 'Z04', 'Z05', 'Z06', 'Z07', 'Z08'])),
+        mockResponse(
+          200,
+          dataPreviewXmlWithMetrics('OBJ_NAME', ['Z01', 'Z02', 'Z03', 'Z04', 'Z05', 'Z06', 'Z07', 'Z08']),
+        ),
       );
-      mockFetch.mockResolvedValueOnce(mockResponse(200, dataPreviewXml('OBJ_NAME', ['Z09', 'Z10'])));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, dataPreviewXmlWithMetrics('OBJ_NAME', ['Z09', 'Z10'])));
 
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPQuery', {
         sql: "SELECT object_name FROM tadir WHERE object_name IN ('Z01', 'Z02', 'Z03', 'Z04', 'Z05', 'Z06', 'Z07', 'Z08', 'Z09', 'Z10')",
@@ -640,6 +649,9 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
         'Z09',
         'Z10',
       ]);
+      expect(data.totalRows).toBeUndefined();
+      expect(data.queryExecutionTimeMs).toBeUndefined();
+      expect(data.executedQueryString).toBeUndefined();
 
       const postCalls = freestylePostCalls();
       expect(postCalls).toHaveLength(2);
