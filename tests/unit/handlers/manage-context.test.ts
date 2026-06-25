@@ -340,6 +340,60 @@ describe('SAPManage / SAPContext handlers', () => {
       expect(result.content[0]?.text).toContain('Moved ZOK');
     });
 
+    it('set_api_state is blocked by the resolved real package before release PUT', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(
+        mockResponse(
+          200,
+          '<class:abapClass xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:packageRef adtcore:name="SAP_BASIS"/></class:abapClass>',
+          { 'x-csrf-token': 'T' },
+        ),
+      );
+      const restrictedClient = new AdtClient({
+        baseUrl: 'http://sap:8000',
+        username: 'admin',
+        password: 'secret',
+        safety: { ...unrestrictedSafetyConfig(), allowedPackages: ['$TMP'] },
+      });
+
+      const result = await handleToolCall(restrictedClient, DEFAULT_CONFIG, 'SAPManage', {
+        action: 'set_api_state',
+        objectUri: '/sap/bc/adt/oo/classes/cl_salv_table',
+        apiState: 'RELEASED',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('SAP_BASIS');
+      expect(result.content[0]?.text).toContain('blocked');
+      expect(mockFetch.mock.calls.some((c) => String(c[0]).includes('/apireleases/'))).toBe(false);
+    });
+
+    it('set_api_state fails closed before revoke PUT when package metadata has no packageRef/containerRef', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(
+        mockResponse(200, '<class:abapClass xmlns:adtcore="http://www.sap.com/adt/core"/>', {
+          'x-csrf-token': 'T',
+        }),
+      );
+      const restrictedClient = new AdtClient({
+        baseUrl: 'http://sap:8000',
+        username: 'admin',
+        password: 'secret',
+        safety: { ...unrestrictedSafetyConfig(), allowedPackages: ['$TMP'] },
+      });
+
+      const result = await handleToolCall(restrictedClient, DEFAULT_CONFIG, 'SAPManage', {
+        action: 'set_api_state',
+        objectUri: '/sap/bc/adt/oo/classes/zcl_no_pkg',
+        apiState: 'NOT_RELEASED',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('could not determine');
+      expect(result.content[0]?.text).toContain('Fail-closed');
+      expect(mockFetch.mock.calls.some((c) => String(c[0]).includes('/apireleases/'))).toBe(false);
+    });
+
     it('change_package returns error when objectName is missing', async () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
         action: 'change_package',
