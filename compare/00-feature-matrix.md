@@ -219,7 +219,7 @@ Tier 2 (CycloneDX SBOM, Cosign image signing, OpenSSF Scorecard) and Tier 3 (Soc
 | System messages (SM02) | ✅ (`SAPDiagnose action=system_messages`, ADT feed, PR #174 2026-04-21) | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (v5.0.0) | N/A | ❌ | ❌ |
 | Gateway error log (IWFND) | ✅ (`SAPDiagnose action=gateway_errors`, on-prem, list + detailUrl/id detail modes, PR #174 2026-04-21) | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (v5.0.0, on-prem) | N/A | ❌ | ❌ |
 | ADT feed reader (unified) | ✅ (dumps + traces + system_messages + gateway_errors; all under `SAPDiagnose`) | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (v5.0.0, 5 types) | N/A | ❌ | ❌ |
-| SQL traces | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
+| SQL traces | ⚠️ (ST05 state control — arm/read via `SAPDiagnose sql_trace_state`/`set_sql_trace_state`; records via the TMC "SQL Trace Analysis" deep-link, ADT-native Cross Trace reader planned) | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
 | OData perf probe (sap-statistics) | ✅ (`SAPDiagnose action=odata_perf`, gw* timing split + routing verdict; verified 750/758/816) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
 | CDS Show-SQL (createstatements) | ✅ (`SAPDiagnose action=cds_sql`, native CREATE VIEW; verified 750/758/816) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
 | ABAP debugger | ❌ | ⚠️ (Eclipse debugger, IDE-side, not MCP) | ✅ (8 tools) | ✅ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |

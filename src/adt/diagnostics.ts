@@ -1191,6 +1191,129 @@ export async function getCdsCreateStatements(
   return parseCdsCreateStatements(resp.body, name);
 }
 
+// ─── ST05 SQL-trace state control ───────────────────────────────────
+
+const ST05_STATE_URL = '/sap/bc/adt/st05/trace/state';
+const ST05_DIRECTORY_URL = '/sap/bc/adt/st05/trace/directory';
+const ST05_STATE_CONTENT_TYPE = 'application/vnd.sap.adt.perf.trace.state.v1+xml';
+
+export interface SqlTraceTypes {
+  sql: boolean;
+  buf: boolean;
+  enq: boolean;
+  rfc: boolean;
+  http: boolean;
+  apc: boolean;
+  amc: boolean;
+  auth: boolean;
+}
+export interface SqlTraceInstance {
+  instance: string;
+  host?: string;
+  isLocal: boolean;
+  isSelected: boolean;
+  traceTypes: SqlTraceTypes;
+  filter: {
+    user?: string;
+    transactionCode?: string;
+    program?: string;
+    rfcFunction?: string;
+    url?: string;
+    wpId?: string;
+  };
+}
+export interface SqlTraceDirectory {
+  recordViewerUrl?: string;
+  note: string;
+}
+
+function boolText(value: unknown): boolean {
+  return nodeText(value).trim().toLowerCase() === 'true';
+}
+function optText(value: unknown): string | undefined {
+  const t = nodeText(value).trim();
+  return t.length > 0 ? t : undefined;
+}
+
+/** Parse the `ts:traceStateInstanceTable` (ST05 trace on/off per instance + filter). */
+export function parseSqlTraceState(xml: string): SqlTraceInstance[] {
+  const parsed = parseXml(xml);
+  return findDeepNodes(parsed, 'traceStateInstance').map((node) => {
+    const tt = (node.traceTypes ?? {}) as Record<string, unknown>;
+    const f = (node.traceFilter ?? {}) as Record<string, unknown>;
+    return {
+      instance: nodeText(node.instance),
+      host: optText(node.host),
+      isLocal: boolText(node.isLocal),
+      isSelected: boolText(node.isSelected),
+      traceTypes: {
+        sql: boolText(tt.sqlOn),
+        buf: boolText(tt.bufOn),
+        enq: boolText(tt.enqOn),
+        rfc: boolText(tt.rfcOn),
+        http: boolText(tt.httpOn),
+        apc: boolText(tt.apcOn),
+        amc: boolText(tt.amcOn),
+        auth: boolText(tt.authOn),
+      },
+      filter: {
+        user: optText(f.traceUser),
+        transactionCode: optText(f.transactionCode),
+        program: optText(f.program),
+        rfcFunction: optText(f.rfcFunction),
+        url: optText(f.url),
+        wpId: optText(f.wpId),
+      },
+    };
+  });
+}
+
+/** Parse `td:traceDirectory` — SAP returns the TMC "SQL Trace Analysis" deep-link (no ADT record API). */
+export function parseSqlTraceDirectory(xml: string): SqlTraceDirectory {
+  const parsed = parseXml(xml);
+  const dir = findDeepNodes(parsed, 'traceDirectory')[0] as Record<string, unknown> | undefined;
+  const url = dir ? optText(dir.uri) : undefined;
+  return {
+    recordViewerUrl: url,
+    note: url
+      ? 'SAP returns the SQL Trace Analysis (Technical Monitoring Cockpit) deep-link as the place to read the recorded SQL — there is no ADT SQL-record API. Open this URL in a browser (needs the /sap/bc/stmc SICF service active).'
+      : 'No trace-directory URL returned by ADT on this system.',
+  };
+}
+
+export async function getSqlTraceState(http: AdtHttpClient, safety: SafetyConfig): Promise<SqlTraceInstance[]> {
+  checkOperation(safety, OperationType.Read, 'GetSqlTraceState');
+  const resp = await http.get(ST05_STATE_URL, { Accept: ST05_STATE_CONTENT_TYPE });
+  return parseSqlTraceState(resp.body);
+}
+
+export async function getSqlTraceDirectory(http: AdtHttpClient, safety: SafetyConfig): Promise<SqlTraceDirectory> {
+  checkOperation(safety, OperationType.Read, 'GetSqlTraceDirectory');
+  const resp = await http.get(ST05_DIRECTORY_URL, { Accept: 'application/*' });
+  return parseSqlTraceDirectory(resp.body);
+}
+
+/** Arm/disarm the ST05 SQL trace (optionally filtered to one user): GET the state, edit, PUT it back. */
+export async function setSqlTraceState(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  opts: { sqlOn: boolean; traceUser?: string },
+): Promise<SqlTraceInstance[]> {
+  checkOperation(safety, OperationType.Update, 'SetSqlTraceState');
+  const current = await http.get(ST05_STATE_URL, { Accept: ST05_STATE_CONTENT_TYPE });
+  // ponytail: targeted replace on the raw state XML — preserves SAP's exact element set/order and any
+  // fields ARC-1 doesn't model; flips ALL instances (add per-instance targeting only if a multi-instance
+  // system needs it).
+  let body = current.body.replace(/<ts:sqlOn>[^<]*<\/ts:sqlOn>/g, `<ts:sqlOn>${opts.sqlOn}</ts:sqlOn>`);
+  if (opts.traceUser !== undefined) {
+    const u = opts.traceUser.trim();
+    const repl = u.length > 0 ? `<ts:traceUser>${escapeXmlAttr(u)}</ts:traceUser>` : '<ts:traceUser/>';
+    body = body.replace(/<ts:traceUser\/>|<ts:traceUser>[^<]*<\/ts:traceUser>/g, repl);
+  }
+  const resp = await http.put(ST05_STATE_URL, body, ST05_STATE_CONTENT_TYPE);
+  return parseSqlTraceState(resp.body);
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────
 
 function buildFeedQueryString(

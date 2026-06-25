@@ -9,6 +9,8 @@ import {
   getDump,
   getGatewayErrorDetail,
   getObjectState,
+  getSqlTraceDirectory,
+  getSqlTraceState,
   getTraceDbAccesses,
   getTraceHitlist,
   getTraceStatements,
@@ -23,6 +25,8 @@ import {
   parseGatewayErrorDetail,
   parseGatewayErrors,
   parseSapStatistics,
+  parseSqlTraceDirectory,
+  parseSqlTraceState,
   parseSystemMessages,
   parseTraceDbAccesses,
   parseTraceHitlist,
@@ -30,6 +34,7 @@ import {
   parseTraceRequestFeed,
   parseTraceStatements,
   probeODataPerformance,
+  setSqlTraceState,
   stripHtmlTags,
   verdictFromStatistics,
 } from '../../../src/adt/diagnostics.js';
@@ -1503,5 +1508,95 @@ describe('getCdsCreateStatements', () => {
     expect(http.post).toHaveBeenCalledWith('/sap/bc/adt/ddic/ddl/createstatements/I_CURRENCY', '', undefined, {
       Accept: 'application/vnd.sap.adt.ddl.createStatements+xml',
     });
+  });
+});
+
+// ─── ST05 SQL-trace state control (#4) ──────────────────────────────
+
+describe('parseSqlTraceState', () => {
+  const xml = readFileSync(join(FIXTURES_DIR, 'st05-trace-state.xml'), 'utf-8');
+
+  it('parses the trace-state table (types + filter) from a captured response', () => {
+    const states = parseSqlTraceState(xml);
+    expect(states).toHaveLength(1);
+    expect(states[0].instance).toBe('vhcala4hci_A4H_00');
+    expect(states[0].isLocal).toBe(true);
+    expect(states[0].traceTypes.sql).toBe(false);
+    expect(states[0].traceTypes).toMatchObject({ buf: false, enq: false, rfc: false, auth: false });
+  });
+
+  it('returns [] for an empty body', () => {
+    expect(parseSqlTraceState('<x/>')).toEqual([]);
+  });
+});
+
+describe('parseSqlTraceDirectory', () => {
+  it('extracts SAP’s TMC SQL Trace Analysis deep-link', () => {
+    const xml = readFileSync(join(FIXTURES_DIR, 'st05-trace-directory.xml'), 'utf-8');
+    const dir = parseSqlTraceDirectory(xml);
+    expect(dir.recordViewerUrl).toContain('SQL_TRACE_ANALYSIS');
+    expect(dir.note).toMatch(/Trace Analysis|deep-link/i);
+  });
+
+  it('handles a missing directory URL', () => {
+    expect(parseSqlTraceDirectory('<td:traceDirectory xmlns:td="x"/>').recordViewerUrl).toBeUndefined();
+  });
+});
+
+describe('getSqlTraceState / getSqlTraceDirectory', () => {
+  it('GETs the state with the trace-state media type and parses it', async () => {
+    const xml = readFileSync(join(FIXTURES_DIR, 'st05-trace-state.xml'), 'utf-8');
+    const http = mockHttp(xml);
+    const states = await getSqlTraceState(http, unrestrictedSafetyConfig());
+    expect(states[0].traceTypes.sql).toBe(false);
+    expect(http.get).toHaveBeenCalledWith('/sap/bc/adt/st05/trace/state', {
+      Accept: 'application/vnd.sap.adt.perf.trace.state.v1+xml',
+    });
+  });
+
+  it('GETs the directory and returns SAP’s TMC deep-link', async () => {
+    const xml = readFileSync(join(FIXTURES_DIR, 'st05-trace-directory.xml'), 'utf-8');
+    const http = mockHttp(xml);
+    const dir = await getSqlTraceDirectory(http, unrestrictedSafetyConfig());
+    expect(dir.recordViewerUrl).toContain('SQL_TRACE_ANALYSIS');
+    expect(http.get).toHaveBeenCalledWith('/sap/bc/adt/st05/trace/directory', { Accept: 'application/*' });
+  });
+});
+
+describe('setSqlTraceState', () => {
+  const stateXml = readFileSync(join(FIXTURES_DIR, 'st05-trace-state.xml'), 'utf-8');
+
+  function mockGetPut(getBody: string) {
+    const put = vi.fn().mockResolvedValue({ statusCode: 200, headers: {}, body: getBody });
+    const http = {
+      get: vi.fn().mockResolvedValue({ statusCode: 200, headers: {}, body: getBody }),
+      put,
+      fetchCsrfToken: vi.fn(),
+      withStatefulSession: vi.fn(),
+    } as unknown as AdtHttpClient;
+    return { http, put };
+  }
+
+  it('arms the SQL trace and writes a user filter into the PUT body', async () => {
+    const { http, put } = mockGetPut(stateXml); // fixture is sqlOn=false, traceUser empty
+    await setSqlTraceState(http, unrestrictedSafetyConfig(), { sqlOn: true, traceUser: 'MARIAN' });
+    const [path, body, contentType] = put.mock.calls[0];
+    expect(path).toBe('/sap/bc/adt/st05/trace/state');
+    expect(body).toContain('<ts:sqlOn>true</ts:sqlOn>');
+    expect(body).toContain('<ts:traceUser>MARIAN</ts:traceUser>');
+    expect(contentType).toBe('application/vnd.sap.adt.perf.trace.state.v1+xml');
+  });
+
+  it('disarms the SQL trace and clears the user filter', async () => {
+    const armed = stateXml
+      .replace('<ts:sqlOn>false</ts:sqlOn>', '<ts:sqlOn>true</ts:sqlOn>')
+      .replace('<ts:traceUser/>', '<ts:traceUser>MARIAN</ts:traceUser>');
+    const { http, put } = mockGetPut(armed);
+    await setSqlTraceState(http, unrestrictedSafetyConfig(), { sqlOn: false, traceUser: '' });
+    const body = put.mock.calls[0][1] as string;
+    expect(body).toContain('<ts:sqlOn>false</ts:sqlOn>');
+    expect(body).toContain('<ts:traceUser/>');
+    // the filter user is cleared (modificationUser may still be MARIAN — that's a different element)
+    expect(body).not.toContain('<ts:traceUser>MARIAN</ts:traceUser>');
   });
 });

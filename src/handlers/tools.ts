@@ -1175,7 +1175,10 @@ export function getToolDefinitions(
         '- "system_messages": List SM02 system messages via ADT feed (filter by user, maxResults, from, to).\n' +
         '- "gateway_errors": List SAP Gateway error log entries (/IWFND/ERROR_LOG, on-prem). For detail mode provide detailUrl (preferred) or id+errorType.\n' +
         '- "odata_perf": Diagnose WHY a Fiori/OData request is slow. Requires url (the host-relative OData path from the app\'s Network tab). ARC-1 GETs it with ?sap-statistics=true and a wall-clock timer, then returns the server-side timing split (gwtotal, gwapp, gwappdb=DB time, gwfw=framework, icfauth=auth) plus a verdict routing you to the dominant cost (DB vs ABAP/SADL vs framework vs auth). Read-only GET; gated like data preview.\n' +
-        '- "cds_sql": Show the native SQL a CDS view compiles to (ADT "Show SQL Create Statement"). Requires name (the CDS DDL source / DDLS, e.g. "I_CURRENCY"). Returns the CREATE VIEW statement(s) so you can see the joins/scans behind a slow entity. Read-only; may be unavailable on older releases (e.g. NW 7.50).\n\n' +
+        '- "cds_sql": Show the native SQL a CDS view compiles to (ADT "Show SQL Create Statement"). Requires name (the CDS DDL source / DDLS, e.g. "I_CURRENCY"). Returns the CREATE VIEW statement(s) so you can see the joins/scans behind a slow entity. Read-only; may be unavailable on older releases (e.g. NW 7.50).\n' +
+        '- "sql_trace_state": Read the current ST05 trace state (SQL/buffer/enqueue/RFC/HTTP/… on-off per app server + filters). Read-only.\n' +
+        '- "set_sql_trace_state": Arm or disarm the ST05 SQL trace. Requires sqlOn (true=arm, false=disarm); optional user filters the trace to one SAP user. Workflow: arm → reproduce the slow request → sql_trace_directory for the record link. Needs SAP_ALLOW_WRITES (mutates server trace state).\n' +
+        '- "sql_trace_directory": Return where the recorded SQL statements are read — SAP answers with the TMC "SQL Trace Analysis" deep-link (there is no ADT SQL-record API; open the URL in a browser, needs /sap/bc/stmc active). Read-only.\n\n' +
         'Quickfix workflow: run syntax/ATC first to identify issues and line positions, then call quickfix to retrieve SAP-verified proposals, then apply_quickfix to get exact text deltas, and finally write the updated source via SAPWrite.',
       inputSchema: {
         type: 'object',
@@ -1199,6 +1202,9 @@ export function getToolDefinitions(
               'apply_quickfix',
               'odata_perf',
               'cds_sql',
+              'sql_trace_state',
+              'set_sql_trace_state',
+              'sql_trace_directory',
             ],
             description: 'Diagnostic action',
           },
@@ -1311,6 +1317,11 @@ export function getToolDefinitions(
             type: 'boolean',
             description:
               'For action="unittest": also return statement/branch/procedure coverage for the object, plus methodsBelowFull — the methods below 100% statement coverage, worst first (what to test next) — in one extra round-trip. If the coverage endpoint or measurement is unavailable, returns the tests without coverage. Default false.',
+          },
+          sqlOn: {
+            type: 'boolean',
+            description:
+              'For action="set_sql_trace_state": true to arm the ST05 SQL trace, false to disarm. Combine with user to filter the trace to one SAP user.',
           },
           analysis: {
             type: 'string',

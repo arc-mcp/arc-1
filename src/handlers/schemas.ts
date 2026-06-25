@@ -709,6 +709,9 @@ export const SAPDiagnoseSchema = z.object({
     'apply_quickfix',
     'odata_perf',
     'cds_sql',
+    'sql_trace_state',
+    'set_sql_trace_state',
+    'sql_trace_directory',
   ]),
   name: z.string().optional(),
   url: z.string().optional(),
@@ -732,6 +735,7 @@ export const SAPDiagnoseSchema = z.object({
   sections: z.array(z.string()).optional(),
   includeFullText: looseOptionalBoolean,
   coverage: looseOptionalBoolean,
+  sqlOn: looseOptionalBoolean,
   analysis: z.enum(['hitlist', 'statements', 'dbAccesses']).optional(),
   // trace_start / trace_requests (arm a profiler trace, then read it back via action="traces")
   traceUser: z.string().optional(),

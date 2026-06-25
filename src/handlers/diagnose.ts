@@ -20,6 +20,8 @@ import {
   getDump,
   getGatewayErrorDetail,
   getObjectState,
+  getSqlTraceDirectory,
+  getSqlTraceState,
   getTraceDbAccesses,
   getTraceHitlist,
   getTraceStatements,
@@ -29,6 +31,7 @@ import {
   listTraceRequests,
   listTraces,
   probeODataPerformance,
+  setSqlTraceState,
 } from '../adt/diagnostics.js';
 import type {
   DumpDetail,
@@ -326,9 +329,39 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
       const cdsSql = await getCdsCreateStatements(client.http, client.safety, name);
       return textResult(JSON.stringify(cdsSql, null, 2));
     }
+    case 'sql_trace_state': {
+      const states = await getSqlTraceState(client.http, client.safety);
+      return textResult(JSON.stringify(states, null, 2));
+    }
+    case 'set_sql_trace_state': {
+      if (args.sqlOn === undefined) {
+        return errorResult(
+          'SAPDiagnose action="set_sql_trace_state" requires "sqlOn" (true to arm the ST05 SQL trace, false to disarm). Optional "user" filters the trace to one SAP user. After arming, reproduce the slow request, then call action="sql_trace_directory" for the record-viewer link. Needs SAP_ALLOW_WRITES.',
+        );
+      }
+      const sqlOn = args.sqlOn === true || String(args.sqlOn) === 'true';
+      const traceUser = args.user !== undefined ? String(args.user) : undefined;
+      const states = await setSqlTraceState(client.http, client.safety, { sqlOn, traceUser });
+      return textResult(
+        JSON.stringify(
+          {
+            states,
+            next: sqlOn
+              ? 'SQL trace armed. Reproduce the slow request, then call SAPDiagnose(action="sql_trace_directory") for the SQL Trace Analysis link, or read the generated SQL with SAPDiagnose(action="cds_sql").'
+              : 'SQL trace disarmed.',
+          },
+          null,
+          2,
+        ),
+      );
+    }
+    case 'sql_trace_directory': {
+      const dir = await getSqlTraceDirectory(client.http, client.safety);
+      return textResult(JSON.stringify(dir, null, 2));
+    }
     default:
       return errorResult(
-        `Unknown SAPDiagnose action: ${action}. Supported: syntax, unittest, atc, cds_testcases, object_state, quickfix, apply_quickfix, dumps, traces, trace_start, trace_requests, trace_cancel, system_messages, gateway_errors, odata_perf, cds_sql`,
+        `Unknown SAPDiagnose action: ${action}. Supported: syntax, unittest, atc, cds_testcases, object_state, quickfix, apply_quickfix, dumps, traces, trace_start, trace_requests, trace_cancel, system_messages, gateway_errors, odata_perf, cds_sql, sql_trace_state, set_sql_trace_state, sql_trace_directory`,
       );
   }
 }
