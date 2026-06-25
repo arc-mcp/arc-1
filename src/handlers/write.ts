@@ -15,7 +15,7 @@ import type { ClassStructure } from '../adt/types.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
 import type { ServerConfig } from '../server/types.js';
 import { type CacheSecurityContext, invalidateInactiveList } from './cache-security.js';
-import { isTablesEndpointAvailable } from './feature-cache.js';
+import { isTablesEndpointAvailable, isTableTypesEndpointAvailable } from './feature-cache.js';
 import {
   canonicalTablType,
   normalizeClassWriteInclude,
@@ -42,6 +42,7 @@ import {
   handleServerDrivenObjectWrite,
   NAME_CASE_GUARD_ACTIONS,
   TABL_DT_WRITE_UNAVAILABLE_HINT,
+  TTYP_WRITE_UNAVAILABLE_HINT,
 } from './write-helpers.js';
 
 export async function handleSAPWrite(
@@ -176,6 +177,10 @@ export async function handleSAPWrite(
       if (isTablesEndpointAvailable() === false) {
         return errorResult(TABL_DT_WRITE_UNAVAILABLE_HINT);
       }
+    }
+    // Discovery gate: TTYP (table type) create needs /ddic/tabletypes/, absent on NW 7.50 (FEAT-65).
+    if (type === 'TTYP' && action === 'create' && isTableTypesEndpointAvailable() === false) {
+      return errorResult(TTYP_WRITE_UNAVAILABLE_HINT);
     }
     objectUrl = objectUrlForType(type, name);
     srcUrl = sourceUrlForType(type, name);

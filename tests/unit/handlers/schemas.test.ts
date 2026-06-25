@@ -22,6 +22,7 @@ import {
   SAPWriteSchema,
   SAPWriteSchemaBtp,
 } from '../../../src/handlers/schemas.js';
+import { getMetadataWriteProperties } from '../../../src/handlers/write-helpers.js';
 
 describe('SAPReadSchema', () => {
   it('accepts valid on-prem input', () => {
@@ -634,6 +635,61 @@ describe('SAPWriteSchema', () => {
     if (dtel.success) {
       expect(dtel.data.changeDocument).toBe(true);
     }
+  });
+
+  it('keeps TTYP rowType fields in on-prem/BTP top-level and batch schemas plus metadata whitelist', () => {
+    const topLevelOnprem = SAPWriteSchema.safeParse({
+      action: 'create',
+      type: 'TTYP',
+      name: 'ZTTYP',
+      rowType: 'BAPIRET2',
+      rowTypeKind: 'structure',
+    });
+    expect(topLevelOnprem.success).toBe(true);
+    if (topLevelOnprem.success) {
+      expect(topLevelOnprem.data.rowType).toBe('BAPIRET2');
+      expect(topLevelOnprem.data.rowTypeKind).toBe('structure');
+    }
+
+    const batchOnprem = SAPWriteSchema.safeParse({
+      action: 'batch_create',
+      package: '$TMP',
+      objects: [{ type: 'TTYP', name: 'ZTTYP', rowType: 'STRING', rowTypeKind: 'builtin' }],
+    });
+    expect(batchOnprem.success).toBe(true);
+    if (batchOnprem.success) {
+      expect(batchOnprem.data.objects?.[0]).toMatchObject({ rowType: 'STRING', rowTypeKind: 'builtin' });
+    }
+
+    const topLevelBtp = SAPWriteSchemaBtp.safeParse({
+      action: 'create',
+      type: 'DOMA',
+      name: 'ZDOMAIN',
+      rowType: 'STRING',
+      rowTypeKind: 'builtin',
+    });
+    expect(topLevelBtp.success).toBe(true);
+    if (topLevelBtp.success) {
+      expect(topLevelBtp.data.rowTypeKind).toBe('builtin');
+    }
+
+    const batchBtp = SAPWriteSchemaBtp.safeParse({
+      action: 'batch_create',
+      package: '$TMP',
+      objects: [{ type: 'DOMA', name: 'ZDOMAIN', rowType: 'BAPIRET2', rowTypeKind: 'structure' }],
+    });
+    expect(batchBtp.success).toBe(true);
+    if (batchBtp.success) {
+      expect(batchBtp.data.objects?.[0]).toMatchObject({ rowType: 'BAPIRET2', rowTypeKind: 'structure' });
+    }
+
+    expect(SAPWriteSchema.safeParse({ action: 'create', type: 'TTYP', name: 'ZTTYP', rowTypeKind: true }).success).toBe(
+      false,
+    );
+    expect(getMetadataWriteProperties({ rowType: 'BAPIRET2', rowTypeKind: 'structure' })).toMatchObject({
+      rowType: 'BAPIRET2',
+      rowTypeKind: 'structure',
+    });
   });
 
   it('accepts SRVB fields and validates category enum', () => {

@@ -2798,3 +2798,74 @@ describe('AUnit coverage (FEAT-41)', () => {
     expect(pcts).toEqual([...pcts].sort((a, b) => a - b));
   }, 60_000);
 });
+
+// ─── TTYP (table type) read + create (FEAT-65) ────────────────────────
+// Full lifecycle live-verified on a4h 758 + 816: create (POST shell + follow-up PUT sets the real row
+// type) → read → activate → delete. Requires live re-confirmation on 7.50/758/816 before release.
+// Endpoint /ddic/tabletypes is standard ADT.
+describe('TTYP table type read + create (FEAT-65)', () => {
+  // NW 7.50 has no /ddic/tabletypes endpoint (live-verified: 404 + absent from discovery), so the
+  // feature is unavailable there — skip rather than fail when the endpoint isn't advertised.
+  let tabletypesAvailable = false;
+  beforeAll(async () => {
+    if (!process.env.TEST_SAP_URL) return;
+    const { map } = await fetchDiscoveryDocument(getTestClient().http);
+    tabletypesAvailable = map.has('/sap/bc/adt/ddic/tabletypes');
+  });
+
+  it('creates a table type (structure row), reads it back with the right row type, activates, deletes', async (ctx) => {
+    requireOrSkip(ctx, process.env.TEST_SAP_URL, SkipReason.NO_CREDENTIALS);
+    requireOrSkip(ctx, tabletypesAvailable || undefined, SkipReason.BACKEND_UNSUPPORTED);
+    const { generateUniqueName } = await import('./crud-harness.js');
+    const { handleToolCall } = await import('../../src/handlers/dispatch.js');
+    const config = {
+      arc1Port: 8080,
+      arc1HttpAddr: '0.0.0.0:8080',
+      toolMode: 'standard',
+    } as unknown as Parameters<typeof handleToolCall>[1];
+    const client = getTestClient();
+    const name = generateUniqueName('ZARC1_TTYP');
+    try {
+      const created = await handleToolCall(client, config, 'SAPWrite', {
+        action: 'create',
+        type: 'TTYP',
+        name,
+        package: '$TMP',
+        rowType: 'BAPIRET2',
+        description: 'ARC-1 IT table type',
+      });
+      expect(created.isError).toBeUndefined();
+      const read = await handleToolCall(client, config, 'SAPRead', { type: 'TTYP', name });
+      const info = JSON.parse(read.content[0]?.text ?? '{}') as { rowType?: string; rowTypeKind?: string };
+      // The follow-up PUT must have set the real row type (not the CHAR shell the POST creates).
+      expect(info.rowType).toBe('BAPIRET2');
+      expect(info.rowTypeKind).toBe('dictionaryType');
+      const activated = await handleToolCall(client, config, 'SAPActivate', { type: 'TTYP', name });
+      expect(activated.isError).toBeUndefined();
+    } finally {
+      await handleToolCall(client, config, 'SAPWrite', { action: 'delete', type: 'TTYP', name }).catch(() => {
+        // best-effort-cleanup
+      });
+    }
+  }, 60_000);
+
+  it('rejects a TTYP create without rowType (failure path)', async (ctx) => {
+    requireOrSkip(ctx, process.env.TEST_SAP_URL, SkipReason.NO_CREDENTIALS);
+    requireOrSkip(ctx, tabletypesAvailable || undefined, SkipReason.BACKEND_UNSUPPORTED);
+    const { handleToolCall } = await import('../../src/handlers/dispatch.js');
+    const config = {
+      arc1Port: 8080,
+      arc1HttpAddr: '0.0.0.0:8080',
+      toolMode: 'standard',
+    } as unknown as Parameters<typeof handleToolCall>[1];
+    const result = await handleToolCall(getTestClient(), config, 'SAPWrite', {
+      action: 'create',
+      type: 'TTYP',
+      name: 'ZARC1_TTYP_NOROW',
+      package: '$TMP',
+      description: 'x',
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain('rowType');
+  }, 30_000);
+});

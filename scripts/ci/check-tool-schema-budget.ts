@@ -100,9 +100,10 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // schema +200 for SAPRead action="diff" (action/from/to params).
       // +400/+350 for context-first KTD guidance (KTD alias + SAPContext includeKtd).
       // +1 descriptionCount / ~60 desc tokens for SAPDiagnose `coverage` param (FEAT-41).
-      schemaTokenEstimate: 20_180,
-      descriptionTokenEstimate: 15_420,
-      descriptionCount: 267,
+      // +TTYP read/write type + SAPWrite rowType/rowTypeKind params (FEAT-65).
+      schemaTokenEstimate: 20_340,
+      descriptionTokenEstimate: 15_510,
+      descriptionCount: 271,
     },
   },
   {
@@ -116,9 +117,10 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // Further +200/+150 for SAPRead action="diff" (action/from/to params + descriptions).
       // +450/+350 for context-first KTD guidance (KTD alias + SAPContext includeKtd).
       // +1 descriptionCount / ~60 desc tokens for SAPDiagnose `coverage` param (FEAT-41).
-      schemaTokenEstimate: 18_430,
-      descriptionTokenEstimate: 13_770,
-      descriptionCount: 267,
+      // +SAPWrite rowType/rowTypeKind params (FEAT-65; global SAPWrite props, present on BTP too).
+      schemaTokenEstimate: 18_580,
+      descriptionTokenEstimate: 13_850,
+      descriptionCount: 269,
     },
   },
   {
