@@ -68,6 +68,38 @@ function normalizeTransportOverride(rawTransport: unknown): string | undefined {
   return value || undefined;
 }
 
+function ttypPostCreateFailureMessage(name: string, cause: unknown): string {
+  const detail = cause instanceof Error ? cause.message : String(cause);
+  return (
+    `TTYP post-create update failed for ${name} after SAP accepted the create POST. ` +
+    `The object may remain as SAP's default metadata shell; verify with SAPRead and delete or retry it before use. ` +
+    detail
+  );
+}
+
+async function putTtypMetadataAfterCreate(
+  client: SapWriteContext['client'],
+  objectUrl: string,
+  name: string,
+  body: string,
+  contentType: string,
+  transport: string | undefined,
+): Promise<void> {
+  try {
+    await client.http.withStatefulSession(async (session) => {
+      const lock = await lockObject(session, client.safety, objectUrl, 'MODIFY', cachedFeatures?.abapRelease);
+      const lockTransport = transport ?? (lock.corrNr || undefined);
+      try {
+        await updateObject(session, client.safety, objectUrl, body, lock.lockHandle, contentType, lockTransport);
+      } finally {
+        await unlockObject(session, objectUrl, lock.lockHandle);
+      }
+    });
+  } catch (err) {
+    throw new Error(ttypPostCreateFailureMessage(name, err));
+  }
+}
+
 const KTD_REF_OBJECT_TYPES_ROUTABLE_BY_ARC = new Set([
   'BDEF/BAC',
   'BDEF/BAE',
@@ -394,15 +426,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
     // TTYP: the POST creates a default-typed (CHAR) shell — a follow-up PUT writes the real row type.
     if (type === 'TTYP') {
       const ct = vendorContentTypeForType(type);
-      await client.http.withStatefulSession(async (session) => {
-        const lock = await lockObject(session, client.safety, objectUrl, 'MODIFY', cachedFeatures?.abapRelease);
-        const lockTransport = effectiveTransport ?? (lock.corrNr || undefined);
-        try {
-          await updateObject(session, client.safety, objectUrl, body, lock.lockHandle, ct, lockTransport);
-        } finally {
-          await unlockObject(session, objectUrl, lock.lockHandle);
-        }
-      });
+      await putTtypMetadataAfterCreate(client, objectUrl, name, body, ct, effectiveTransport);
     }
     invalidateWrittenObject();
     const followUpHint =
@@ -740,6 +764,11 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
             await unlockObject(session, objUrl, lock.lockHandle);
           }
         });
+      }
+
+      // TTYP POST creates SAP's default table-type shell; PUT the real row type before activation.
+      if (objType === 'TTYP') {
+        await putTtypMetadataAfterCreate(client, objUrl, objName, body, contentType, objTransport);
       }
 
       // Step 2: Write source if provided

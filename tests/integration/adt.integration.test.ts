@@ -2561,7 +2561,8 @@ describe('ADT Integration Tests', () => {
 
 // ─── TTYP (table type) read + create (FEAT-65) ────────────────────────
 // Full lifecycle live-verified on a4h 758 + 816: create (POST shell + follow-up PUT sets the real row
-// type) → read → activate → delete. Endpoint /ddic/tabletypes is standard ADT.
+// type) → read → activate → delete. Requires live re-confirmation on 7.50/758/816 before release.
+// Endpoint /ddic/tabletypes is standard ADT.
 describe('TTYP table type read + create (FEAT-65)', () => {
   it('creates a table type (structure row), reads it back with the right row type, activates, deletes', async (ctx) => {
     requireOrSkip(ctx, process.env.TEST_SAP_URL, SkipReason.NO_CREDENTIALS);

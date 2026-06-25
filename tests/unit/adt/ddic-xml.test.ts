@@ -865,6 +865,35 @@ describe('buildTableTypeXml / parseTableType (FEAT-65)', () => {
     expect(xml).toContain('adtcore:description="My desc"');
   });
 
+  it('uses the configured SAP language as the TTYP master language', () => {
+    const xml = buildTableTypeXml({
+      name: 'ZARC1_TT',
+      description: 'My desc',
+      package: '$TMP',
+      rowType: 'STRING',
+      language: 'de',
+    });
+    expect(xml).toContain('adtcore:masterLanguage="DE"');
+  });
+
+  it('rejects garbage rowType before emitting TTYP XML', () => {
+    expect(() =>
+      buildTableTypeXml({ name: 'ZARC1_TT', description: 'x', package: '$TMP', rowType: 'not a type!' }),
+    ).toThrow(/Invalid TTYP rowType/);
+  });
+
+  it('rejects an explicit builtin rowTypeKind for a non-built-in row type', () => {
+    expect(() =>
+      buildTableTypeXml({
+        name: 'ZARC1_TT',
+        description: 'x',
+        package: '$TMP',
+        rowType: 'BAPIRET2',
+        rowTypeKind: 'builtin',
+      }),
+    ).toThrow(/not a supported built-in ABAP row type/);
+  });
+
   it('parseTableType extracts row type + access from the REAL captured STRINGTAB response', () => {
     const fixture = readFileSync(join(import.meta.dirname, '../../fixtures/xml/tabletype-stringtab.xml'), 'utf-8');
     const info = parseTableType(fixture);
@@ -872,5 +901,31 @@ describe('buildTableTypeXml / parseTableType (FEAT-65)', () => {
     expect(info.rowTypeKind).toBe('predefinedAbapType');
     expect(info.rowType).toBe('STRING'); // built-in dataType (no typeName)
     expect(info.accessType).toBe('standard');
+  });
+
+  it('parseTableType throws cleanly for non-table-type XML', () => {
+    expect(() => parseTableType('<html><body>not a table type</body></html>')).toThrow(
+      /Invalid TTYP response: expected <ttyp:tableType>/,
+    );
+  });
+
+  it('parseTableType throws cleanly when the rowType node is missing', () => {
+    expect(() =>
+      parseTableType(
+        '<ttyp:tableType xmlns:ttyp="http://www.sap.com/dictionary/tabletype" adtcore:name="ZBAD" xmlns:adtcore="http://www.sap.com/adt/core"/>',
+      ),
+    ).toThrow(/Invalid TTYP response: missing <ttyp:rowType>/);
+  });
+
+  it('parseTableType returns an unlisted row type kind verbatim (reads stay permissive)', () => {
+    // A read must NOT hard-fail on a typeKind ARC-1 hasn't enumerated — only on structurally broken
+    // XML. 264 real table types across a4h 758+816 used 4 kinds; newer releases may add more.
+    const xml =
+      '<ttyp:tableType xmlns:ttyp="http://www.sap.com/dictionary/tabletype" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="ZWEIRD" adtcore:type="TTYP/DA">' +
+      '<ttyp:rowType><ttyp:typeKind>someFutureKind</ttyp:typeKind><ttyp:typeName>ZSOMETHING</ttyp:typeName></ttyp:rowType>' +
+      '</ttyp:tableType>';
+    const info = parseTableType(xml);
+    expect(info.rowTypeKind).toBe('someFutureKind');
+    expect(info.rowType).toBe('ZSOMETHING');
   });
 });

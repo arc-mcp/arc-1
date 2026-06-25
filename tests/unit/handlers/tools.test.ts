@@ -987,6 +987,24 @@ describe('Tool Definitions', () => {
       expect(item.properties.transport.type).toContain('string');
     });
 
+    it('exposes TTYP rowType fields at top-level and inside batch_create items with enum rowTypeKind', () => {
+      for (const btp of [false, true]) {
+        const schema = getSAPWriteSchema(btp);
+        expect(schema.properties.rowType).toBeDefined();
+        expect(schema.properties.rowType.type).toContain('string');
+        expect(schema.properties.rowTypeKind).toBeDefined();
+        expect(schema.properties.rowTypeKind.type).toContain('string');
+        expect(schema.properties.rowTypeKind.enum).toEqual(['builtin', 'structure']);
+
+        const item = schema.properties.objects.items;
+        expect(item.properties.rowType).toBeDefined();
+        expect(item.properties.rowType.type).toContain('string');
+        expect(item.properties.rowTypeKind).toBeDefined();
+        expect(item.properties.rowTypeKind.type).toContain('string');
+        expect(item.properties.rowTypeKind.enum).toEqual(['builtin', 'structure']);
+      }
+    });
+
     it('exposes the messages property at top-level SAPWrite (BTP)', () => {
       const schema = getSAPWriteSchema(true);
       expect(schema.properties.messages).toBeDefined();

@@ -264,6 +264,8 @@ const TTYP_BUILTIN_ROW_TYPES = new Set([
   'DECFLOAT34',
 ]);
 
+const TTYP_ROW_TYPE_NAME_RE = /^(?:\/[A-Z0-9_]+\/)?[A-Z0-9_]+$/;
+
 export interface TableTypeCreateParams {
   name: string;
   description: string;
@@ -288,6 +290,17 @@ export function buildTableTypeXml(params: TableTypeCreateParams): string {
   const responsible = normalizeAdtResponsible(params.responsible);
   const rowType = params.rowType.trim().toUpperCase();
   const kind = params.rowTypeKind ?? (TTYP_BUILTIN_ROW_TYPES.has(rowType) ? 'builtin' : 'structure');
+  if (!TTYP_ROW_TYPE_NAME_RE.test(rowType)) {
+    throw new Error(
+      `Invalid TTYP rowType "${params.rowType}". Use a built-in ABAP type or a DDIC type name such as BAPIRET2 or /NS/TYPE.`,
+    );
+  }
+  if (kind === 'builtin' && !TTYP_BUILTIN_ROW_TYPES.has(rowType)) {
+    throw new Error(`TTYP rowType "${rowType}" is not a supported built-in ABAP row type.`);
+  }
+  if (kind === 'structure' && TTYP_BUILTIN_ROW_TYPES.has(rowType)) {
+    throw new Error(`TTYP rowType "${rowType}" is a built-in ABAP row type; omit rowTypeKind or use "builtin".`);
+  }
 
   const rowTypeXml =
     kind === 'builtin'
@@ -320,19 +333,49 @@ export interface TableTypeInfo {
   keyKind: string;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
 /** Parse the key fields of a table-type read response (`<ttyp:tableType>`). */
 export function parseTableType(xml: string): TableTypeInfo {
   const parsed = parseXml(xml);
-  const tt = (parsed.tableType ?? {}) as Record<string, unknown>;
-  const rowTypeNode = (tt.rowType ?? {}) as Record<string, unknown>;
-  const builtIn = (rowTypeNode.builtInType ?? {}) as Record<string, unknown>;
-  const pk = (tt.primaryKey ?? {}) as Record<string, unknown>;
+  const tt = asRecord(parsed.tableType);
+  if (!tt) {
+    throw new Error('Invalid TTYP response: expected <ttyp:tableType>.');
+  }
+  const adtType = String(tt['@_type'] ?? '').trim();
+  if (adtType && adtType !== 'TTYP/DA') {
+    throw new Error(`Invalid TTYP response: expected adtcore:type="TTYP/DA", got "${adtType}".`);
+  }
+  const rowTypeNode = asRecord(tt.rowType);
+  if (!rowTypeNode) {
+    throw new Error('Invalid TTYP response: missing <ttyp:rowType>.');
+  }
+  const builtIn = asRecord(rowTypeNode.builtInType) ?? {};
+  const pk = asRecord(tt.primaryKey) ?? {};
   const typeName = String(rowTypeNode.typeName ?? '').trim();
+  const builtInDataType = String(builtIn.dataType ?? '').trim();
+  const typeKind = String(rowTypeNode.typeKind ?? '').trim();
+  if (!typeKind) {
+    throw new Error('Invalid TTYP response: missing row type kind.');
+  }
+  // NOTE: we intentionally do NOT allow-list typeKind values. A read must stay permissive — SAP has
+  // several row-type kinds (dictionaryType, predefinedAbapType, refTo*, rangeType*, and possibly more
+  // in newer releases); 264 real table types across a4h 758+816 only exercised four. Hard-failing a
+  // read on an unlisted-but-valid kind is worse than returning it verbatim, and genuine junk/error XML
+  // is already caught above by the missing <ttyp:tableType>/<ttyp:rowType> checks.
+  const rowType = typeName || builtInDataType;
+  if (!rowType) {
+    throw new Error('Invalid TTYP response: missing row type name.');
+  }
   return {
     name: String(tt['@_name'] ?? ''),
     description: String(tt['@_description'] ?? ''),
-    rowType: typeName || String(builtIn.dataType ?? ''),
-    rowTypeKind: String(rowTypeNode.typeKind ?? ''),
+    rowType,
+    rowTypeKind: typeKind,
     accessType: String(tt.accessType ?? ''),
     keyKind: String(pk.kind ?? ''),
   };

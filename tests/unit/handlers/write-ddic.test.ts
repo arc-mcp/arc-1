@@ -120,6 +120,148 @@ describe('SAPWrite handler — DDIC writes', () => {
       expect(calls.some((c) => c.method === 'PUT')).toBe(false);
     });
 
+    it('create TTYP returns an error if the post-create lock fails, not a Created message', async () => {
+      mockFetch.mockReset();
+      const calls: Array<{ method: string; url: string }> = [];
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
+        const method = opts?.method ?? 'GET';
+        const urlStr = String(url);
+        calls.push({ method, url: urlStr });
+        if (method === 'POST' && urlStr.includes('/sap/bc/adt/ddic/tabletypes') && urlStr.includes('_action=LOCK')) {
+          return Promise.resolve(mockResponse(423, 'locked by another user', { 'x-csrf-token': 'T' }));
+        }
+        return Promise.resolve(mockResponse(201, '<xml>created</xml>', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'TTYP',
+        name: 'ZTTYP_LOCKED',
+        package: '$TMP',
+        rowType: 'BAPIRET2',
+      });
+
+      expect(result.isError).toBe(true);
+      const message = result.content[0]?.text ?? '';
+      expect(message).toMatch(/423|locked/i);
+      expect(message).not.toContain('Created TTYP ZTTYP_LOCKED');
+      expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+    });
+
+    it('create TTYP returns an error and unlocks if the post-create PUT fails', async () => {
+      mockFetch.mockReset();
+      const calls: Array<{ method: string; url: string; body?: string }> = [];
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string; body?: unknown }) => {
+        const method = opts?.method ?? 'GET';
+        const urlStr = String(url);
+        calls.push({ method, url: urlStr, body: typeof opts?.body === 'string' ? opts.body : undefined });
+        if (method === 'POST' && urlStr.includes('_action=LOCK')) {
+          return Promise.resolve(
+            mockResponse(200, '<asx:values><LOCK_HANDLE>LH_TTYP</LOCK_HANDLE><CORRNR></CORRNR></asx:values>', {
+              'x-csrf-token': 'T',
+            }),
+          );
+        }
+        if (method === 'PUT' && urlStr.includes('/sap/bc/adt/ddic/tabletypes/ZTTYP_PUT_FAIL')) {
+          return Promise.resolve(mockResponse(500, 'PUT failed', { 'x-csrf-token': 'T' }));
+        }
+        return Promise.resolve(mockResponse(201, '<xml>created</xml>', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'TTYP',
+        name: 'ZTTYP_PUT_FAIL',
+        package: '$TMP',
+        rowType: 'BAPIRET2',
+      });
+
+      expect(result.isError).toBe(true);
+      const message = result.content[0]?.text ?? '';
+      expect(message).toMatch(/500|PUT failed/i);
+      expect(message).not.toContain('Created TTYP ZTTYP_PUT_FAIL');
+      expect(calls.some((c) => c.method === 'POST' && c.url.includes('_action=UNLOCK'))).toBe(true);
+    });
+
+    it('batch_create TTYP writes the real row type with a post-create PUT before activation', async () => {
+      mockFetch.mockReset();
+      const calls: Array<{ method: string; url: string; contentType?: string; body?: string }> = [];
+      mockFetch.mockImplementation(
+        (url: string | URL, opts?: { method?: string; headers?: Record<string, string>; body?: unknown }) => {
+          const method = opts?.method ?? 'GET';
+          const headers = (opts?.headers ?? {}) as Record<string, string>;
+          const urlStr = String(url);
+          calls.push({
+            method,
+            url: urlStr,
+            contentType: headers['content-type'] ?? headers['Content-Type'],
+            body: typeof opts?.body === 'string' ? opts.body : undefined,
+          });
+          if (method === 'POST' && urlStr.includes('_action=LOCK')) {
+            return Promise.resolve(
+              mockResponse(200, '<asx:values><LOCK_HANDLE>LH_TTYP</LOCK_HANDLE><CORRNR></CORRNR></asx:values>', {
+                'x-csrf-token': 'T',
+              }),
+            );
+          }
+          return Promise.resolve(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
+        },
+      );
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'batch_create',
+        package: '$TMP',
+        objects: [{ type: 'TTYP', name: 'ZTTYP_BATCH', rowType: 'BAPIRET2', description: 'Table type' }],
+      });
+
+      expect(result.isError).toBeUndefined();
+      const putIndex = calls.findIndex(
+        (c) => c.method === 'PUT' && c.url.includes('/sap/bc/adt/ddic/tabletypes/ZTTYP_BATCH?lockHandle=LH_TTYP'),
+      );
+      expect(putIndex).toBeGreaterThan(-1);
+      const putCall = calls[putIndex];
+      expect(putCall.contentType).toContain('application/vnd.sap.adt.tabletype.v1+xml');
+      expect(putCall.body).toContain('<ttyp:typeName>BAPIRET2</ttyp:typeName>');
+      expect(putCall.body).toContain('<ttyp:dataType>STRU</ttyp:dataType>');
+      const activationIndex = calls.findIndex((c) => c.method === 'POST' && c.url.includes('/sap/bc/adt/activation'));
+      expect(activationIndex).toBeGreaterThan(putIndex);
+    });
+
+    it('batch_create TTYP returns an error if the post-create PUT fails, not a Created summary', async () => {
+      mockFetch.mockReset();
+      const calls: Array<{ method: string; url: string }> = [];
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
+        const method = opts?.method ?? 'GET';
+        const urlStr = String(url);
+        calls.push({ method, url: urlStr });
+        if (method === 'POST' && urlStr.includes('_action=LOCK')) {
+          return Promise.resolve(
+            mockResponse(200, '<asx:values><LOCK_HANDLE>LH_TTYP</LOCK_HANDLE><CORRNR></CORRNR></asx:values>', {
+              'x-csrf-token': 'T',
+            }),
+          );
+        }
+        if (method === 'PUT' && urlStr.includes('/sap/bc/adt/ddic/tabletypes/ZTTYP_BATCH_FAIL')) {
+          return Promise.resolve(mockResponse(500, 'PUT failed', { 'x-csrf-token': 'T' }));
+        }
+        return Promise.resolve(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'batch_create',
+        package: '$TMP',
+        objects: [{ type: 'TTYP', name: 'ZTTYP_BATCH_FAIL', rowType: 'BAPIRET2', description: 'Table type' }],
+      });
+
+      expect(result.isError).toBe(true);
+      const message = result.content[0]?.text ?? '';
+      expect(message).toContain('Batch created 0/1 objects');
+      expect(message).toContain('TTYP post-create update failed');
+      expect(message).toContain('default metadata shell');
+      expect(calls.some((c) => c.method === 'POST' && c.url.includes('_action=UNLOCK'))).toBe(true);
+      expect(calls.some((c) => c.method === 'POST' && c.url.includes('/sap/bc/adt/activation'))).toBe(false);
+    });
+
     it('updates DOMA via lock/PUT/unlock to object URL', async () => {
       const calls: Array<{ method: string; url: string; contentType?: string }> = [];
       const lockBody =
