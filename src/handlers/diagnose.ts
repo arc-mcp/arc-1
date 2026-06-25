@@ -61,7 +61,7 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
       if (result.coverage) out.coverage = result.coverage;
       else
         out.coverageNote =
-          'Coverage unavailable on this system (the coverage-measurement endpoint is not supported here, e.g. older NetWeaver releases).';
+          'Coverage unavailable on this system (the coverage-measurement endpoint or measurement result was not available).';
       return textResult(JSON.stringify(out, null, 2));
     }
     case 'atc': {

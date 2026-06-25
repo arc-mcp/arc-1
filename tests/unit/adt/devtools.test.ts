@@ -1360,6 +1360,47 @@ describe('DevTools', () => {
 
     it('parseCoverageMeasurement returns {} when there is no coverage node', () => {
       expect(parseCoverageMeasurement('<result name="ADT_ROOT_NODE"/>')).toEqual({});
+      expect(parseCoverageMeasurement('')).toEqual({});
+    });
+
+    it('parseCoverageMeasurement reads the root program aggregate, not nested method coverage', () => {
+      const cov = parseCoverageMeasurement(`<?xml version="1.0"?>
+<cov:result name="ADT_ROOT_NODE" xmlns:cov="http://www.sap.com/adt/cov" xmlns:adtcore="http://www.sap.com/adt/core">
+  <nodes>
+    <node>
+      <adtcore:objectReference adtcore:name="ZCL_AGGREGATE==========CP" adtcore:type="CLAS/OCI"/>
+      <nodes>
+        <node>
+          <adtcore:objectReference adtcore:name="METHOD_ONE" adtcore:type="CLAS/OM"/>
+          <coverages>
+            <coverage type="statement" total="1" executed="1"/>
+          </coverages>
+        </node>
+      </nodes>
+      <coverages>
+        <coverage type="statement" total="80" executed="40"/>
+      </coverages>
+    </node>
+  </nodes>
+</cov:result>`);
+      expect(cov.statement).toEqual({ executed: 40, total: 80, percent: 50 });
+    });
+
+    it('parseCoverageMeasurement skips malformed numeric metrics and keeps zero totals finite', () => {
+      const cov = parseCoverageMeasurement(`<?xml version="1.0"?>
+<cov:result name="ADT_ROOT_NODE" xmlns:cov="http://www.sap.com/adt/cov">
+  <nodes>
+    <node>
+      <coverages>
+        <coverage type="statement" total="0" executed="0"/>
+        <coverage type="branch" total="not-a-number" executed="1"/>
+      </coverages>
+    </node>
+  </nodes>
+</cov:result>`);
+      expect(cov.statement).toEqual({ executed: 0, total: 0, percent: 0 });
+      expect(cov.branch).toBeUndefined();
+      expect(Number.isNaN(cov.statement?.percent)).toBe(false);
     });
 
     it('runUnitTests({coverage:true}) runs the 2-step flow and returns tests + aggregate', async () => {
@@ -1383,6 +1424,25 @@ describe('DevTools', () => {
         delete: vi.fn(),
         fetchCsrfToken: vi.fn(),
       } as unknown as AdtHttpClient;
+      const result = await runUnitTests(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_ABAPGIT_HASH', {
+        coverage: true,
+      });
+      expect(result.tests.length).toBeGreaterThan(0);
+      expect(result.coverage).toBeUndefined();
+    });
+
+    it('runUnitTests degrades gracefully when coverage XML contains no valid aggregate', async () => {
+      const invalidCoverage = `<?xml version="1.0"?>
+<cov:result name="ADT_ROOT_NODE" xmlns:cov="http://www.sap.com/adt/cov">
+  <nodes>
+    <node>
+      <coverages>
+        <coverage type="statement" total="bad" executed="1"/>
+      </coverages>
+    </node>
+  </nodes>
+</cov:result>`;
+      const http = mockHttpSequence(testrunWithCoverage, invalidCoverage);
       const result = await runUnitTests(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_ABAPGIT_HASH', {
         coverage: true,
       });

@@ -2560,9 +2560,10 @@ describe('ADT Integration Tests', () => {
 });
 
 // ─── ABAP Unit coverage (FEAT-41) ─────────────────────────────────────
-// The coverage measurement endpoint is standard ADT (verified live on 758: stmt 61% / branch 36% /
-// proc 38% for ZCL_ABAPGIT_HASH). abapGit classes carry unit tests on 758 but are absent on
-// a4h-2025/816 + NPL 7.50 → this skips cleanly there.
+// The coverage measurement endpoint is standard ADT, live-verified on 7.50 + 758 + 816 (2026-06-25 —
+// identical {stmt 3/4, branch 2/3, proc 1/1} for a controlled tested class on each). This CI test
+// targets ZCL_ABAPGIT_HASH (758: stmt 61% / branch 36% / proc 38%); abapGit classes carry unit tests
+// on 758 but are absent on a4h-2025/816 + NPL 7.50, so it skips cleanly there (NOT a coverage gap).
 describe('AUnit coverage (FEAT-41)', () => {
   it('unittest coverage=true returns statement/branch/procedure for a class with tests', async (ctx) => {
     requireOrSkip(ctx, process.env.TEST_SAP_URL, SkipReason.NO_CREDENTIALS);

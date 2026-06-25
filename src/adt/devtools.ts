@@ -584,15 +584,17 @@ export async function runUnitTests(
   if (!opts.coverage) return { tests };
 
   // Coverage is a second step: the run result references a coverage measurement, which we POST
-  // (with the same object set) to retrieve the statement/branch/procedure aggregate. Best-effort —
-  // older releases (e.g. NW 7.50) lack this endpoint; on any failure, return tests with no coverage.
+  // (with the same object set) to retrieve the statement/branch/procedure aggregate. The endpoint is
+  // live-verified on 7.50 + 758 + 816 (2026-06-25); the best-effort fallback (missing URI / fetch
+  // failure / no valid metrics → return tests with no coverage) is defensive for unknown systems.
   const measurementUri = extractCoverageMeasurementUri(resp.body);
   if (!measurementUri) return { tests };
   try {
     const coverageQuery = `<?xml version="1.0" encoding="UTF-8"?>
 <cov:query xmlns:cov="http://www.sap.com/adt/cov"><adtcore:objectSets xmlns:adtcore="http://www.sap.com/adt/core"><objectSet kind="inclusive"><adtcore:objectReferences><adtcore:objectReference adtcore:uri="${escapeXmlAttr(objectUrl)}"/></adtcore:objectReferences></objectSet></adtcore:objectSets></cov:query>`;
     const measResp = await http.post(measurementUri, coverageQuery, 'application/xml', { Accept: 'application/xml' });
-    return { tests, coverage: parseCoverageMeasurement(measResp.body) };
+    const coverage = parseCoverageMeasurement(measResp.body);
+    return hasCoverageMetrics(coverage) ? { tests, coverage } : { tests };
   } catch {
     return { tests };
   }
@@ -620,11 +622,21 @@ export function parseCoverageMeasurement(xml: string): CoverageSummary {
     const type = String(e['@_type'] ?? '');
     const total = Number(e['@_total'] ?? 0);
     const executed = Number(e['@_executed'] ?? 0);
-    if (type === 'statement' || type === 'branch' || type === 'procedure') {
+    if (
+      (type === 'statement' || type === 'branch' || type === 'procedure') &&
+      Number.isFinite(total) &&
+      Number.isFinite(executed) &&
+      total >= 0 &&
+      executed >= 0
+    ) {
       summary[type] = { executed, total, percent: total ? Math.round((executed / total) * 10000) / 100 : 0 };
     }
   }
   return summary;
+}
+
+function hasCoverageMetrics(summary: CoverageSummary): boolean {
+  return Boolean(summary.statement || summary.branch || summary.procedure);
 }
 
 /** Run ATC check on an object */

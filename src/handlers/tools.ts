@@ -1274,7 +1274,7 @@ export function getToolDefinitions(
           coverage: {
             type: 'boolean',
             description:
-              'For action="unittest": also return statement/branch/procedure coverage for the object (one extra round-trip). Modern releases only — older NetWeaver (e.g. 7.50) returns the tests without coverage. Default false.',
+              'For action="unittest": also return statement/branch/procedure coverage for the object (one extra round-trip). If the coverage endpoint or measurement is unavailable, returns the tests without coverage. Default false.',
           },
           analysis: {
             type: 'string',

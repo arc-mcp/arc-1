@@ -67,12 +67,14 @@ Success criteria (plain bullets):
     </adtcore:objectReferences></objectSet></adtcore:objectSets></cov:query>`, `Content-Type: application/xml`.
   - Expected parsed aggregate for the fixture: statement 30/49 = **61.22%**, branch 5/14 = **35.71%**,
     procedure 3/8 = **37.50%**.
-- **Release note (to verify in Task 4):** the coverage endpoint is modern ADT — present on 758/816,
-  likely **absent on NW 7.50** (its `runtime/traces` surface is limited; same family as the unbound
-  `datapreview` there). The implementation degrades gracefully (coverage step in a try/catch → tests
-  return without coverage). The integration test uses a class that has tests on the target system
-  (abapGit classes exist on 758 but NOT on a4h-2025/816 — pick a system-appropriate class or
-  `requireOrSkip`).
+- **Release note (LIVE-VERIFIED 2026-06-25 on 7.50 + 758 + 816):** the coverage measurement endpoint
+  works on **all three** releases — the original "modern releases only / 7.50 lacks it" guess was
+  WRONG. Ran `SAPDiagnose unittest coverage=true` against a controlled tested class (`ZCL_ARC1_COV`
+  with one branched method + a local test) on NPL 7.50, a4h 758, and a4h-2025 816; every system
+  returned identical `{statement 3/4, branch 2/3, procedure 1/1}`. The try/catch graceful-degrade
+  (tests return without coverage) is therefore purely defensive — no release is known to lack it. The
+  758-targeted integration test uses `ZCL_ABAPGIT_HASH` (abapGit classes carry unit tests on 758 but
+  are absent on 816/7.50, so it `requireOrSkip`s there — not because coverage is unavailable).
 
 ### Design Principles
 
@@ -84,7 +86,8 @@ Success criteria (plain bullets):
 4. **Parser tested against the REAL captured fixture**, never a hand-written one.
 5. **Three-file schema sync** for the new `coverage` param: `tools.ts` + `schemas.ts`
    (`looseOptionalBoolean`, never `z.coerce.boolean`) + the `diagnose.ts` handler.
-6. Release-aware: 758/816 expected to work; 7.50 graceful-degrades.
+6. Release-aware: coverage live-verified on 7.50 + 758 + 816 (2026-06-25); the graceful-degrade path
+   stays as defense for any unknown system that lacks the endpoint.
 
 ## Development Approach
 
@@ -173,15 +176,16 @@ test. Failure path: the measurement POST 405/404 → tests return, coverage unde
 - [ ] Integration (guarded by `TEST_SAP_URL`): run `SAPDiagnose unittest coverage=true` against a class
       that has unit tests on the target system (758: an abapGit class such as `ZCL_ABAPGIT_HASH`;
       `requireOrSkip` if no such class / coverage endpoint). Assert tests present AND a coverage block
-      with statement/branch/procedure when the endpoint is available. Per release: 758 + 816; on 7.50
-      expect graceful (tests without coverage). Note abapGit classes are absent on a4h-2025/816 — pick a
-      816-appropriate class with tests or skip.
+      with statement/branch/procedure when the endpoint is available. Per release: coverage live-verified
+      on 7.50 + 758 + 816 (2026-06-25). Note abapGit classes are absent on a4h-2025/816 — pick a
+      system-appropriate class with tests or skip.
 - [ ] Docs note.
 - [ ] Run `npm test`.
 
 ### Task 5: Final verification
 
 - [ ] `npm test`, `npm run typecheck`, `npm run lint`, `npm run build` — green.
-- [ ] Live smoke on 758: `SAPDiagnose unittest coverage=true name=ZCL_ABAPGIT_HASH type=CLAS` shows the
-      three percentages (~stmt 61% / branch 36% / proc 38%). Try 816 (modern endpoint) + 7.50 (graceful).
+- [x] Live smoke on 758: `SAPDiagnose unittest coverage=true name=ZCL_ABAPGIT_HASH type=CLAS` shows the
+      three percentages (~stmt 61% / branch 36% / proc 38%). 7.50 + 816 confirmed (2026-06-25) with a
+      controlled tested class (`ZCL_ARC1_COV`): all three returned `{stmt 3/4, branch 2/3, proc 1/1}`.
 - [ ] Move this plan to `docs/plans/completed/`.
