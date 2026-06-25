@@ -1203,6 +1203,8 @@ describe('Runtime Diagnostics', () => {
       expect(posts[0]?.url).toContain('/parameters');
       expect(posts[0]?.body).toContain('<trc:sqlTrace value="true"');
       expect(posts[0]?.body).toContain('<trc:aggregate value="true"');
+      // allDbEvents must follow sqlTrace — without it dbAccesses comes back empty (live-verified).
+      expect(posts[0]?.body).toContain('<trc:allDbEvents value="true"');
       // 2) then the request with the uppercased user + bounded executions + the parametersId
       expect(posts[1]?.url).toContain('/requests?');
       expect(posts[1]?.url).toContain('traceUser=MARIAN');
@@ -1210,10 +1212,11 @@ describe('Runtime Diagnostics', () => {
       expect(posts[1]?.url).toContain('parametersId=');
     });
 
-    it('respects sqlTrace=false', async () => {
+    it('respects sqlTrace=false (and disables DB events with it)', async () => {
       const { http, posts } = mockTraceHttp();
       await createTraceRequest(http, unrestrictedSafetyConfig(), 'marian', '001', { sqlTrace: false });
       expect(posts[0]?.body).toContain('<trc:sqlTrace value="false"');
+      expect(posts[0]?.body).toContain('<trc:allDbEvents value="false"');
     });
 
     it('treats expiresHours=0 as the default (not an immediately-expired request)', async () => {

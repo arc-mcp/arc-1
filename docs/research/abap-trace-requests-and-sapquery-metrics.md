@@ -190,3 +190,13 @@ low-risk (the 816 `datapreview/ddic` 404 quirk does not affect the `freestyle` p
 - **Minor:** `expiresHours:0` no-op guarded; empty `<totalRows/>` → spurious 0 guarded; empty-`id` create-response
   rejected; `pickTraceRole` reuses `toRecordArray`. Empty-string `traceUser` is already stripped pre-Zod by
   `stripLlmEmptyValues` (no fix needed).
+
+## Live OData demo + `allDbEvents` fix (2026-06-25, a4h 758)
+
+Built a reproducible slow-OData artifact (the MUP "slow substring search" problem) to test the full loop:
+- `ZI_TRACE_DEMO` (DDLS over `t100`, 615,690 rows) → `ZUI_TRACE_DEMO` (SRVD) → `ZUI_TRACE_DEMO` (SRVB, OData V4, **published**), all in `$TMP`. Read-only service — **no BDEF/behavior needed**.
+- URL: `…/sap/opu/odata4/sap/zui_trace_demo/srvd/sap/zui_trace_demo/0001/TraceDemo?$filter=contains(MessageText,'error')&$count=true` → **~0.4–1.4 s**, `@odata.count=30525` (substring scan = `LIKE '%error%'` over 615k rows).
+
+**Bug found end-to-end:** with `processType=http objectType=url`, arming **does** capture the OData call (a trace with the request's title appears), but `dbAccesses`/`hitlist`/`statements` came back EMPTY — the shipped `buildTraceParametersXml` hardcoded `allDbEvents=false`. **Fix:** `allDbEvents` now follows `sqlTrace` (default on). With it, `dbAccesses` returns ~30 real entries for the OData call (the `/IWFND/*` Gateway-dispatch tables, BAdI/auth-config reads, plus the CDS query's DB access). Locked by a unit assertion so it can't regress.
+
+**Nuance (important for the MUP case):** an OData V4 query over a CDS view pushes the heavy work to HANA, so the ABAP profiler's `dbAccesses` shows the **Gateway/ABAP-side** DB events (IWFND dispatch + the single CDS SELECT), not a HANA-internal per-table breakdown of the substring scan. For statement-level SQL with bind values + DB execution plan you still need ST05 (no ADT REST surface — the original FEAT-09 conclusion). The profiler trace is most informative when the slow path has real ABAP-side Open SQL / loops; for pure CDS pushdown it shows the framework overhead + the CDS access, not the HANA plan.

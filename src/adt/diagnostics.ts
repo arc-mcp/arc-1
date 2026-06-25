@@ -402,7 +402,11 @@ const TRACE_PROCESS_OBJECTS: Record<TracedProcessType, TracedObjectType[]> = {
   rfc: ['functionModule'],
 };
 
-/** Build the trc:parameters body. Procedural units stay on (hitlist/statements); SQL/aggregate per opts. */
+/**
+ * Build the trc:parameters body. Procedural units stay on (hitlist/statements); SQL/aggregate per opts.
+ * allDbEvents follows sqlTrace: without it the `dbAccesses` analysis comes back EMPTY (only kernel summary
+ * rows) — live-verified — so the whole point of the trace (which tables/joins were hit) is lost.
+ */
 function buildTraceParametersXml(p: { description: string; aggregate: boolean; sqlTrace: boolean }): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <trc:parameters xmlns:trc="http://www.sap.com/adt/runtime/traces/abaptraces">
@@ -416,7 +420,7 @@ function buildTraceParametersXml(p: { description: string; aggregate: boolean; s
   <trc:withRfcTracing value="false"/>
   <trc:allSystemKernelEvents value="false"/>
   <trc:sqlTrace value="${p.sqlTrace}"/>
-  <trc:allDbEvents value="false"/>
+  <trc:allDbEvents value="${p.sqlTrace}"/>
   <trc:maxSizeForTraceFile value="100"/>
   <trc:maxTimeForTracing value="600"/>
 </trc:parameters>`;
