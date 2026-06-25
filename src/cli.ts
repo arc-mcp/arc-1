@@ -171,7 +171,8 @@ program
   .description('Execute an OpenSQL query (SAPQuery; requires SAP_ALLOW_FREE_SQL=true)')
   .addOption(outputOption)
   .action(async (query: string, opts: { output: OutputMode }) => {
-    process.exit(await runToolCall('SAPQuery', { action: 'sql', query }, opts.output));
+    // SAPQuerySchema is { sql, maxRows } — no `action`, and the query field is `sql` (not `query`).
+    process.exit(await runToolCall('SAPQuery', { sql: query }, opts.output));
   });
 
 // ─── Legacy / local-only commands ──────────────────────────────────────
@@ -182,9 +183,8 @@ program
   .option('--max <number>', 'Maximum results', '50')
   .addOption(outputOption)
   .action(async (query: string, opts: { max: string; output: OutputMode }) => {
-    process.exit(
-      await runToolCall('SAPSearch', { action: 'object', query, maxResults: Number(opts.max) }, opts.output),
-    );
+    // SAPSearchSchema has no `action` field (object search is the default searchType); pass query + maxResults.
+    process.exit(await runToolCall('SAPSearch', { query, maxResults: Number(opts.max) }, opts.output));
   });
 
 program
