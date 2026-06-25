@@ -2,7 +2,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  createTraceRequest,
   decodeHtmlEntities,
+  deleteTraceRequest,
   getDump,
   getGatewayErrorDetail,
   getObjectState,
@@ -12,6 +14,7 @@ import {
   listDumps,
   listGatewayErrors,
   listSystemMessages,
+  listTraceRequests,
   listTraces,
   parseDumpDetail,
   parseDumpList,
@@ -21,6 +24,7 @@ import {
   parseTraceDbAccesses,
   parseTraceHitlist,
   parseTraceList,
+  parseTraceRequestFeed,
   parseTraceStatements,
   stripHtmlTags,
 } from '../../../src/adt/diagnostics.js';
@@ -1132,6 +1136,228 @@ describe('Runtime Diagnostics', () => {
       expect(decodeHtmlEntities(null as unknown as string)).toBe('');
       expect(decodeHtmlEntities(undefined as unknown as string)).toBe('');
       expect(decodeHtmlEntities('')).toBe('');
+    });
+  });
+
+  // ─── ABAP Trace Requests (arm/list/cancel) ──────────────────────────
+
+  // Real feed captured live on a4h 758 (docs/research/abap-trace-requests-and-sapquery-metrics.md).
+  const CREATE_FEED = `<?xml version="1.0" encoding="utf-8"?><atom:feed xmlns:atom="http://www.w3.org/2005/Atom"><atom:title>ABAP Trace Requests A4H</atom:title><atom:entry xml:lang="EN"><atom:author trc:role="admin" xmlns:trc="http://www.sap.com/adt/runtime/traces/abaptraces"><atom:name>MARIAN</atom:name></atom:author><atom:author trc:role="trace" xmlns:trc="http://www.sap.com/adt/runtime/traces/abaptraces"><atom:name>MARIAN</atom:name></atom:author><atom:content type="application/atom+xml" src="/sap/bc/adt/runtime/traces/abaptraces/requests/vhcala4hci_A4H_00%2c1%2c20260625093701"/><atom:id>/sap/bc/adt/runtime/traces/abaptraces/requests/vhcala4hci_A4H_00%2c1%2c20260625093701</atom:id><atom:title>arc1 spike</atom:title><trc:extendedData xmlns:trc="http://www.sap.com/adt/runtime/traces/abaptraces"><trc:host>vhcala4hci</trc:host><trc:client trc:role="admin">001</trc:client><trc:client trc:role="trace">001</trc:client><trc:description>arc1 spike</trc:description><trc:isAggregated>true</trc:isAggregated><trc:expires>2026-06-26T23:59:59Z</trc:expires><trc:processType trc:processTypeId="/sap/bc/adt/runtime/traces/abaptraces/processtypes/http"/><trc:object trc:objectTypeId="/sap/bc/adt/runtime/traces/abaptraces/objecttypes/url"/><trc:executions trc:maximal="1" trc:completed="0"/></trc:extendedData></atom:entry></atom:feed>`;
+
+  describe('parseTraceRequestFeed', () => {
+    it('parses a real request entry (id, user, expires, types, executions)', () => {
+      const [r] = parseTraceRequestFeed(CREATE_FEED);
+      expect(r?.id).toBe('/sap/bc/adt/runtime/traces/abaptraces/requests/vhcala4hci_A4H_00%2c1%2c20260625093701');
+      expect(r?.title).toBe('arc1 spike');
+      expect(r?.user).toBe('MARIAN');
+      expect(r?.client).toBe('001');
+      expect(r?.expires).toBe('2026-06-26T23:59:59Z');
+      expect(r?.processType).toContain('/processtypes/http');
+      expect(r?.objectType).toContain('/objecttypes/url');
+      expect(r?.maxExecutions).toBe(1);
+      expect(r?.completedExecutions).toBe(0);
+      expect(r?.host).toBe('vhcala4hci');
+    });
+
+    it('returns [] for an empty feed and empty input', () => {
+      expect(
+        parseTraceRequestFeed(
+          '<atom:feed xmlns:atom="http://www.w3.org/2005/Atom"><atom:title>x</atom:title></atom:feed>',
+        ),
+      ).toEqual([]);
+      expect(parseTraceRequestFeed('')).toEqual([]);
+    });
+  });
+
+  describe('createTraceRequest', () => {
+    function mockTraceHttp(parametersId = '/sap/bc/adt/runtime/traces/abaptraces/parameters/ABC123') {
+      const posts: Array<{ url: string; body: string }> = [];
+      const http = {
+        post: vi.fn().mockImplementation((url: string, body: string) => {
+          posts.push({ url, body });
+          if (url.includes('/parameters')) {
+            return Promise.resolve({
+              statusCode: 200,
+              headers: parametersId ? { location: parametersId } : {},
+              body: '',
+            });
+          }
+          return Promise.resolve({ statusCode: 200, headers: {}, body: CREATE_FEED });
+        }),
+        get: vi.fn(),
+        put: vi.fn(),
+        delete: vi.fn(),
+        fetchCsrfToken: vi.fn(),
+        withStatefulSession: vi.fn(),
+      } as unknown as AdtHttpClient;
+      return { http, posts };
+    }
+
+    it('posts parameters then requests with uppercased user + parametersId, returns parsed request', async () => {
+      const { http, posts } = mockTraceHttp();
+      const req = await createTraceRequest(http, unrestrictedSafetyConfig(), 'marian', '001', { processType: 'http' });
+      expect(req.id).toContain('/requests/vhcala4hci_A4H_00');
+      expect(req.processType).toContain('/processtypes/http');
+      expect(req.maxExecutions).toBe(1);
+      // 1) parameters first, sqlTrace + aggregate on by default
+      expect(posts[0]?.url).toContain('/parameters');
+      expect(posts[0]?.body).toContain('<trc:sqlTrace value="true"');
+      expect(posts[0]?.body).toContain('<trc:aggregate value="true"');
+      // allDbEvents must follow sqlTrace — without it dbAccesses comes back empty (live-verified).
+      expect(posts[0]?.body).toContain('<trc:allDbEvents value="true"');
+      // 2) then the request with the uppercased user + bounded executions + the parametersId
+      expect(posts[1]?.url).toContain('/requests?');
+      expect(posts[1]?.url).toContain('traceUser=MARIAN');
+      expect(posts[1]?.url).toContain('maximalExecutions=1');
+      expect(posts[1]?.url).toContain('parametersId=');
+    });
+
+    it('respects sqlTrace=false (and disables DB events with it)', async () => {
+      const { http, posts } = mockTraceHttp();
+      await createTraceRequest(http, unrestrictedSafetyConfig(), 'marian', '001', { sqlTrace: false });
+      expect(posts[0]?.body).toContain('<trc:sqlTrace value="false"');
+      expect(posts[0]?.body).toContain('<trc:allDbEvents value="false"');
+    });
+
+    it('rejects expiresHours=0 instead of silently defaulting it', async () => {
+      const { http } = mockTraceHttp();
+      await expect(
+        createTraceRequest(http, unrestrictedSafetyConfig(), 'marian', '001', { expiresHours: 0 }),
+      ).rejects.toThrow(/expiresHours/);
+      expect(http.post).not.toHaveBeenCalled();
+    });
+
+    it('rejects an objectType invalid for the process type', async () => {
+      const { http } = mockTraceHttp();
+      await expect(
+        createTraceRequest(http, unrestrictedSafetyConfig(), 'marian', '001', {
+          processType: 'http',
+          objectType: 'transaction',
+        }),
+      ).rejects.toThrow(/Invalid objectType/);
+    });
+
+    it('throws when the parameters POST returns no Location (parametersId)', async () => {
+      const { http } = mockTraceHttp('');
+      await expect(createTraceRequest(http, unrestrictedSafetyConfig(), 'marian', '001')).rejects.toThrow(/Location/);
+    });
+
+    it('is blocked when writes are disabled', async () => {
+      const { http } = mockTraceHttp();
+      const safety = { ...unrestrictedSafetyConfig(), allowWrites: false };
+      await expect(createTraceRequest(http, safety, 'marian', '001')).rejects.toThrow(/allowWrites=false/);
+      expect(http.post).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('listTraceRequests', () => {
+    it('GETs requests for the uppercased user and parses the feed', async () => {
+      const http = mockHttp(CREATE_FEED);
+      const list = await listTraceRequests(http, unrestrictedSafetyConfig(), 'marian');
+      expect(list).toHaveLength(1);
+      expect(list[0]?.id).toContain('/requests/');
+      expect(http.get).toHaveBeenCalledWith(expect.stringContaining('user=MARIAN'), expect.anything());
+    });
+  });
+
+  describe('deleteTraceRequest', () => {
+    it('DELETEs the request id path verbatim (keeps URL-encoded commas)', async () => {
+      const http = mockHttp('');
+      const id = '/sap/bc/adt/runtime/traces/abaptraces/requests/vhcala4hci_A4H_00%2c1%2c20260625093701';
+      await deleteTraceRequest(http, unrestrictedSafetyConfig(), id);
+      expect(http.delete).toHaveBeenCalledWith(id);
+    });
+
+    it('scopes a bare segment under the requests collection', async () => {
+      const http = mockHttp('');
+      await deleteTraceRequest(http, unrestrictedSafetyConfig(), 'abc%2c1');
+      expect(http.delete).toHaveBeenCalledWith('/sap/bc/adt/runtime/traces/abaptraces/requests/abc%2c1');
+    });
+
+    it('accepts an absolute URL only when its path is a request id path', async () => {
+      const http = mockHttp('');
+      await deleteTraceRequest(
+        http,
+        unrestrictedSafetyConfig(),
+        'https://a4h.example/sap/bc/adt/runtime/traces/abaptraces/requests/abc%2c1',
+      );
+      expect(http.delete).toHaveBeenCalledWith('/sap/bc/adt/runtime/traces/abaptraces/requests/abc%2c1');
+    });
+
+    it('refuses an arbitrary ADT path (no arbitrary DELETE primitive)', async () => {
+      const http = mockHttp('');
+      await expect(
+        deleteTraceRequest(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/zcl_victim'),
+      ).rejects.toThrow(/not an abaptraces trace-request id/);
+      expect(http.delete).not.toHaveBeenCalled();
+    });
+
+    it('refuses a `..` traversal that escapes the requests collection after normalization', async () => {
+      const http = mockHttp('');
+      // startsWith() on the raw string would pass, but new URL() collapses the `..` to /sap/bc/adt/oo/...
+      await expect(
+        deleteTraceRequest(
+          http,
+          unrestrictedSafetyConfig(),
+          '/sap/bc/adt/runtime/traces/abaptraces/requests/../../../oo/classes/sources/zcl_victim',
+        ),
+      ).rejects.toThrow(/not an abaptraces trace-request id/);
+      expect(http.delete).not.toHaveBeenCalled();
+    });
+
+    it('refuses a traversal that normalizes to another request id', async () => {
+      const http = mockHttp('');
+      await expect(
+        deleteTraceRequest(
+          http,
+          unrestrictedSafetyConfig(),
+          '/sap/bc/adt/runtime/traces/abaptraces/requests/foo/../bar',
+        ),
+      ).rejects.toThrow(/not an abaptraces trace-request id/);
+      expect(http.delete).not.toHaveBeenCalled();
+    });
+
+    it('refuses a percent-encoded (%2f / %2e) separator traversal', async () => {
+      const http = mockHttp('');
+      // %2f isn't decoded by new URL().pathname alone — validation must decode first (SAP ICM may too).
+      await expect(
+        deleteTraceRequest(
+          http,
+          unrestrictedSafetyConfig(),
+          '/sap/bc/adt/runtime/traces/abaptraces/requests/%2f..%2f..%2f..%2foo%2fclasses%2fzcl_victim',
+        ),
+      ).rejects.toThrow(/not an abaptraces trace-request id/);
+      expect(http.delete).not.toHaveBeenCalled();
+    });
+
+    it('refuses a double-encoded separator traversal', async () => {
+      const http = mockHttp('');
+      await expect(
+        deleteTraceRequest(
+          http,
+          unrestrictedSafetyConfig(),
+          '/sap/bc/adt/runtime/traces/abaptraces/requests/foo%252fbar',
+        ),
+      ).rejects.toThrow(/not an abaptraces trace-request id/);
+      expect(http.delete).not.toHaveBeenCalled();
+    });
+
+    it('refuses backslashes and blank request ids', async () => {
+      const http = mockHttp('');
+      await expect(deleteTraceRequest(http, unrestrictedSafetyConfig(), 'foo\\bar')).rejects.toThrow(
+        /malformed trace-request id/,
+      );
+      await expect(deleteTraceRequest(http, unrestrictedSafetyConfig(), '   ')).rejects.toThrow(
+        /empty trace-request id/,
+      );
+      expect(http.delete).not.toHaveBeenCalled();
+    });
+
+    it('is blocked when writes are disabled', async () => {
+      const http = mockHttp('');
+      const safety = { ...unrestrictedSafetyConfig(), allowWrites: false };
+      await expect(deleteTraceRequest(http, safety, 'abc%2c1')).rejects.toThrow(/allowWrites=false/);
+      expect(http.delete).not.toHaveBeenCalled();
     });
   });
 });

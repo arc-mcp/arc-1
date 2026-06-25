@@ -138,6 +138,10 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   'SAPDiagnose.cds_testcases': { scope: 'read', opType: OperationType.Read },
   'SAPDiagnose.dumps': { scope: 'read', opType: OperationType.Read },
   'SAPDiagnose.traces': { scope: 'read', opType: OperationType.Read },
+  // Arming/cancelling a trace request mutates server state → write; listing armed requests is read-only.
+  'SAPDiagnose.trace_start': { scope: 'write', opType: OperationType.Update },
+  'SAPDiagnose.trace_requests': { scope: 'read', opType: OperationType.Read },
+  'SAPDiagnose.trace_cancel': { scope: 'write', opType: OperationType.Update },
   'SAPDiagnose.system_messages': { scope: 'read', opType: OperationType.Read },
   'SAPDiagnose.gateway_errors': { scope: 'read', opType: OperationType.Read },
   'SAPDiagnose.object_state': { scope: 'read', opType: OperationType.Read },

@@ -47,6 +47,7 @@ import type {
 import {
   assertApiReleaseStateConfirmed,
   buildApiReleasePutBody,
+  type DataPreviewMeta,
   parseApiReleaseState,
   parseAuthorizationField,
   parseBspAppList,
@@ -54,6 +55,7 @@ import {
   parseClassMetadata,
   parseClassStructure,
   parseDataElementMetadata,
+  parseDataPreviewMeta,
   parseDomainMetadata,
   parseEnhancementImplementation,
   parseFeatureToggleStates,
@@ -293,6 +295,8 @@ export class AdtClient {
   readonly safety: SafetyConfig;
   /** The configured SAP username (from --user / SAP_USER) */
   readonly username: string;
+  /** The configured SAP client number (from --client / SAP_CLIENT) */
+  readonly sapClient: string;
   /** Per-client cache of resolved TABL URLs for **reads** (transparent table at
    *  /tables/, structure at /structures/). Populated by getTabl() via the
    *  /tables/→/structures/ 404 fallback. */
@@ -311,6 +315,7 @@ export class AdtClient {
     const config = { ...defaultAdtClientConfig(), ...options };
     this.safety = config.safety;
     this.username = config.username;
+    this.sapClient = config.client;
 
     const httpConfig: AdtHttpConfig = {
       baseUrl: config.baseUrl,
@@ -1382,11 +1387,29 @@ export class AdtClient {
     return parseTableContents(resp.body);
   }
 
-  /** Execute freestyle SQL query */
+  /** Execute freestyle SQL query and return just the rows/columns. */
   async runQuery(sql: string, maxRows = 100): Promise<{ columns: string[]; rows: Record<string, string>[] }> {
+    return parseTableContents(await this.postFreestyleQuery(sql, maxRows));
+  }
+
+  /**
+   * Like runQuery, but also returns the datapreview metrics ADT already includes in the response
+   * (totalRows, server-side queryExecutionTimeMs, executedQueryString). Kept separate from runQuery so
+   * these — including the internal generated SQL — only surface where asked (SAPQuery), not in every
+   * runQuery consumer that JSON-stringifies the result.
+   */
+  async runQueryWithMetrics(
+    sql: string,
+    maxRows = 100,
+  ): Promise<{ columns: string[]; rows: Record<string, string>[] } & DataPreviewMeta> {
+    const body = await this.postFreestyleQuery(sql, maxRows);
+    return { ...parseTableContents(body), ...parseDataPreviewMeta(body) };
+  }
+
+  private async postFreestyleQuery(sql: string, maxRows: number): Promise<string> {
     checkOperation(this.safety, OperationType.FreeSQL, 'RunQuery');
     const resp = await this.http.post(`/sap/bc/adt/datapreview/freestyle?rowNumber=${maxRows}`, sql, 'text/plain');
-    return parseTableContents(resp.body);
+    return resp.body;
   }
 
   /**

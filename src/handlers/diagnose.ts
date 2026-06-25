@@ -14,6 +14,8 @@ import {
   syntaxCheck,
 } from '../adt/devtools.js';
 import {
+  createTraceRequest,
+  deleteTraceRequest,
   getDump,
   getGatewayErrorDetail,
   getObjectState,
@@ -23,9 +25,16 @@ import {
   listDumps,
   listGatewayErrors,
   listSystemMessages,
+  listTraceRequests,
   listTraces,
 } from '../adt/diagnostics.js';
-import type { DumpDetail, FixAffectedObject } from '../adt/types.js';
+import type {
+  DumpDetail,
+  FixAffectedObject,
+  TracedObjectType,
+  TracedProcessType,
+  TraceRequestCreateOptions,
+} from '../adt/types.js';
 import { isBtpSystem } from './feature-cache.js';
 import { classIncludeUrl, normalizeObjectType, objectUrlForType, sourceUrlForType } from './object-types.js';
 import { errorResult, type ToolResult, textResult } from './shared.js';
@@ -230,6 +239,40 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
       // List traces
       const traces = await listTraces(client.http, client.safety);
       return textResult(JSON.stringify(traces, null, 2));
+    }
+    case 'trace_start': {
+      const opts: TraceRequestCreateOptions = {};
+      if (args.traceUser !== undefined) opts.traceUser = String(args.traceUser);
+      if (args.processType !== undefined) opts.processType = args.processType as TracedProcessType;
+      if (args.objectType !== undefined) opts.objectType = args.objectType as TracedObjectType;
+      if (args.maxExecutions !== undefined) opts.maxExecutions = Number(args.maxExecutions);
+      if (args.expiresHours !== undefined) opts.expiresHours = Number(args.expiresHours);
+      if (args.sqlTrace !== undefined) opts.sqlTrace = args.sqlTrace === true;
+      if (args.aggregate !== undefined) opts.aggregate = args.aggregate === true;
+      if (args.description !== undefined) opts.description = String(args.description);
+      const request = await createTraceRequest(client.http, client.safety, client.username, client.sapClient, opts);
+      return textResult(
+        JSON.stringify(
+          {
+            armed: true,
+            request,
+            next: 'Reproduce the slow action (e.g. the OData call) as this user PROMPTLY — an http request captures the user\'s very next matching HTTP call, so avoid other ARC-1 calls in between (they would consume it). Then SAPDiagnose(action="traces") with no id to list recorded traces, find the new trace id, and read it with analysis="dbAccesses". Note: for an HTTP/OData trace, dbAccesses lists the tables the request touched but SAP returns no per-statement SQL text/timing here (hitlist/statements are usually empty); for the actual slow SQL + duration + plan use ST05 in SAP GUI. The profiler trace is richest for dialog/report/RFC traces of ABAP-side code.',
+          },
+          null,
+          2,
+        ),
+      );
+    }
+    case 'trace_requests': {
+      const user = (args.traceUser as string | undefined) ?? (args.user as string | undefined) ?? client.username;
+      const requests = await listTraceRequests(client.http, client.safety, user);
+      return textResult(JSON.stringify(requests, null, 2));
+    }
+    case 'trace_cancel': {
+      const id = args.id as string | undefined;
+      if (!id) return errorResult('trace_cancel requires "id" (from trace_start or trace_requests).');
+      await deleteTraceRequest(client.http, client.safety, id);
+      return textResult(JSON.stringify({ cancelled: true, id }, null, 2));
     }
     case 'system_messages': {
       const user = args.user as string | undefined;

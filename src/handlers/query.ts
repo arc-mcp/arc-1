@@ -4,6 +4,7 @@
 
 import type { AdtClient } from '../adt/client.js';
 import { AdtApiError, extractUnknownColumn, formatUnknownColumnHint } from '../adt/errors.js';
+import type { DataPreviewMeta } from '../adt/xml-parser.js';
 import { errorResult, hasSqlParserSignature, type ToolResult, textResult } from './shared.js';
 
 function classifySapQueryParserError(err: AdtApiError, sql: string): string | undefined {
@@ -150,7 +151,9 @@ async function runChunkedSapQuery(
   client: AdtClient,
   plan: SimpleInListChunkPlan,
   maxRows: number,
-): Promise<{ columns: string[]; rows: Record<string, string>[] }> {
+): Promise<{ columns: string[]; rows: Record<string, string>[] } & DataPreviewMeta> {
+  // Metrics are intentionally omitted for the chunked path: an early break on the row cap would make
+  // totalRows a misleading partial sum, so we report metrics only for the single-statement path below.
   const rowLimit = Number.isFinite(maxRows) && maxRows > 0 ? Math.floor(maxRows) : 100;
   const rows: Record<string, string>[] = [];
   let columns: string[] = [];
@@ -174,8 +177,19 @@ export async function handleSAPQuery(client: AdtClient, args: Record<string, unk
 
   try {
     chunkingAttempted = chunkPlan != null;
-    const data = chunkPlan ? await runChunkedSapQuery(client, chunkPlan, maxRows) : await client.runQuery(sql, maxRows);
-    return textResult(JSON.stringify(data, null, 2));
+    const data = chunkPlan
+      ? await runChunkedSapQuery(client, chunkPlan, maxRows)
+      : await client.runQueryWithMetrics(sql, maxRows);
+    // Surface ADT's own metrics first (real match count + server-side time) — most useful for perf triage
+    // ("847 ms, 511927 rows matched") and not buried under a long rows array.
+    const out: Record<string, unknown> = {};
+    if (data.totalRows !== undefined) out.totalRows = data.totalRows;
+    if (data.queryExecutionTimeMs !== undefined) out.queryExecutionTimeMs = data.queryExecutionTimeMs;
+    if (data.executedQueryString) out.executedQueryString = data.executedQueryString;
+    out.rowsReturned = data.rows.length;
+    out.columns = data.columns;
+    out.rows = data.rows;
+    return textResult(JSON.stringify(out, null, 2));
   } catch (err) {
     if (err instanceof AdtApiError && err.isNotFound) {
       // Try to extract table name from SQL and suggest similar names

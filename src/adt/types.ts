@@ -625,6 +625,58 @@ export interface TraceDbAccess {
   accessTime: number;
 }
 
+// ─── ABAP trace requests (arm a profiler trace, then read it back) ───
+
+/** Process type a trace request targets (which kind of work process to capture). */
+export type TracedProcessType = 'any' | 'http' | 'dialog' | 'batch' | 'rfc';
+
+/** Object type a trace request matches within the process. */
+export type TracedObjectType = 'any' | 'url' | 'transaction' | 'report' | 'functionModule';
+
+/** An armed trace request parsed from the `abaptraces/requests` feed. */
+export interface TraceRequest {
+  /** Request id (full ADT path; may contain URL-encoded commas) — pass to trace_cancel. */
+  id: string;
+  /** Request description / title. */
+  title: string;
+  /** SAP user whose matching execution will be traced. */
+  user?: string;
+  /** Client of the traced work. */
+  client?: string;
+  /** Expiry (ISO 8601). */
+  expires?: string;
+  /** Process-type URI the request targets. */
+  processType?: string;
+  /** Object-type URI the request matches. */
+  objectType?: string;
+  /** Maximum executions to capture. */
+  maxExecutions?: number;
+  /** Executions captured so far. */
+  completedExecutions?: number;
+  /** Application-server host. */
+  host?: string;
+}
+
+/** Options for arming a trace request (`createTraceRequest`). */
+export interface TraceRequestCreateOptions {
+  /** SAP user whose next matching execution is traced (defaults to the connected user). */
+  traceUser?: string;
+  /** Process type to capture (default `http` — the OData/Gateway case). */
+  processType?: TracedProcessType;
+  /** Object type to match (default = first valid for the process type). */
+  objectType?: TracedObjectType;
+  /** Maximum executions to capture (default 1). */
+  maxExecutions?: number;
+  /** Hours until the request expires (default 24). */
+  expiresHours?: number;
+  /** Capture SQL/DB accesses (default true — needed for `dbAccesses` analysis). */
+  sqlTrace?: boolean;
+  /** Aggregate the trace (default true). */
+  aggregate?: boolean;
+  /** Request description. */
+  description?: string;
+}
+
 /** SM02 system message entry */
 export interface SystemMessageEntry {
   id: string;
