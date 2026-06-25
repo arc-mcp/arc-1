@@ -90,9 +90,10 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // +1 descriptionCount for SAPDiagnose `coverage` param (FEAT-41 AUnit coverage).
       // +~590/+440/+7 for SAPDiagnose trace_start/trace_requests/trace_cancel actions + their params.
       // +odata_perf/cds_sql actions + `url` param (PR #509 OData/SQL perf-insight).
-      schemaTokenEstimate: 13_550,
-      descriptionTokenEstimate: 10_750,
-      descriptionCount: 164,
+      // +sql_trace_state/set_sql_trace_state/sql_trace_directory + `sqlOn` param (PR #510 ST05 trace control).
+      schemaTokenEstimate: 13_800,
+      descriptionTokenEstimate: 11_000,
+      descriptionCount: 165,
     },
   },
   {
@@ -109,9 +110,10 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // +TTYP read/write type + SAPWrite rowType/rowTypeKind params (FEAT-65).
       // +~570/+460/+6 for SAPDiagnose trace_start/trace_requests/trace_cancel actions + their params.
       // +odata_perf/cds_sql actions + `url` param (PR #509 OData/SQL perf-insight).
-      schemaTokenEstimate: 21_750,
-      descriptionTokenEstimate: 16_700,
-      descriptionCount: 281,
+      // +sql_trace_* actions + `sqlOn` param (PR #510 ST05 trace control).
+      schemaTokenEstimate: 22_000,
+      descriptionTokenEstimate: 16_950,
+      descriptionCount: 282,
     },
   },
   {
@@ -130,9 +132,10 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // +SAPWrite rowType/rowTypeKind params (FEAT-65; global SAPWrite props, present on BTP too).
       // +~570/+460/+4 for SAPDiagnose trace_start/trace_requests/trace_cancel actions + their params.
       // +odata_perf/cds_sql actions + `url` param (PR #509 OData/SQL perf-insight).
-      schemaTokenEstimate: 19_980,
-      descriptionTokenEstimate: 15_050,
-      descriptionCount: 279,
+      // +sql_trace_* actions + `sqlOn` param (PR #510 ST05 trace control).
+      schemaTokenEstimate: 20_240,
+      descriptionTokenEstimate: 15_300,
+      descriptionCount: 280,
     },
   },
   {
