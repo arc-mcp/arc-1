@@ -10,6 +10,8 @@ import {
   destinationPpHint,
   extractExceptionType,
   extractLockOwner,
+  extractUnknownColumn,
+  formatUnknownColumnHint,
 } from '../../../src/adt/errors.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -753,5 +755,53 @@ describe('destinationPpHint', () => {
   it('returns undefined for empty/undefined input', () => {
     expect(destinationPpHint(undefined)).toBeUndefined();
     expect(destinationPpHint('')).toBeUndefined();
+  });
+});
+
+describe('extractUnknownColumn / formatUnknownColumnHint (FEAT-64)', () => {
+  // Real data-preview error wire shape, live-captured on a4h 758 + a4h-2025 816 (EN AND DE). The
+  // offending column is the quoted token in T100KEY-V1; the prose is localized but the T100 id+number
+  // (ADT_DATAPREVIEW_MSG/004) is language-stable. Extraction is anchored on the id, not the prose.
+  const dataPreviewErr = (msgNo: string, prose: string) =>
+    new AdtApiError(
+      'boom',
+      400,
+      '/sap/bc/adt/datapreview/freestyle',
+      '<?xml version="1.0" encoding="utf-8"?><exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework">' +
+        '<namespace id="http://www.sap.com/adt/wda/dataPreview"/><type id="ExceptionDataPreviewGeneral"/>' +
+        `<message lang="EN">${prose}</message><localizedMessage lang="EN">${prose}</localizedMessage>` +
+        `<properties><entry key="T100KEY-ID">ADT_DATAPREVIEW_MSG</entry><entry key="T100KEY-NO">${msgNo}</entry>` +
+        `<entry key="T100KEY-V1">${prose}</entry></properties></exc:exception>`,
+    );
+  const unknownColErr = (prose: string) => dataPreviewErr('004', prose);
+
+  it('extracts the column from the live EN unknown-column 400 (ADT_DATAPREVIEW_MSG/004)', () => {
+    expect(extractUnknownColumn(unknownColErr('Unknown column name "NOSUCHCOL".'))).toBe('NOSUCHCOL');
+    expect(extractUnknownColumn(unknownColErr('Unknown column name "My_Col/2".'))).toBe('My_Col/2');
+  });
+
+  it('is LANGUAGE-INDEPENDENT — extracts the column from the localized DE message (regression for #502 review)', () => {
+    // Live DE shape (sap-language=DE): same id/number, German prose, column still quoted.
+    expect(extractUnknownColumn(unknownColErr('Unbekannter Spaltenname "NOSUCHCOL".'))).toBe('NOSUCHCOL');
+  });
+
+  it('does NOT fire on the missing-table error (same class, number 022)', () => {
+    // Live: SELECT * FROM <missing> → ADT_DATAPREVIEW_MSG/022 "Cannot find 'X'".
+    expect(extractUnknownColumn(dataPreviewErr('022', `Cannot find 'NOSUCHTAB'`))).toBeNull();
+  });
+
+  it('returns null for unrelated errors and a ReDoS-sized body (linear, anchored regexes)', () => {
+    expect(extractUnknownColumn(new AdtApiError('Object not found', 404, '/p'))).toBeNull();
+    expect(extractUnknownColumn(new AdtApiError('Syntax error', 400, '/p'))).toBeNull(); // no responseBody
+    expect(extractUnknownColumn(new Error('Unknown column name "X".'))).toBeNull(); // not an AdtApiError
+    expect(extractUnknownColumn(undefined)).toBeNull();
+    // 200 kB body without the data-preview id → early-exit null, no catastrophic backtracking.
+    expect(extractUnknownColumn(new AdtApiError('boom', 400, '/p', `<x>${'A'.repeat(200_000)}</x>`))).toBeNull();
+  });
+
+  it('formats the hint with the table upper-cased and the column list', () => {
+    expect(formatUnknownColumnHint('nosuchcol', 't000', ['MANDT', 'MTEXT'])).toBe(
+      'Unknown column "nosuchcol" on T000. Available columns: MANDT, MTEXT.',
+    );
   });
 });
