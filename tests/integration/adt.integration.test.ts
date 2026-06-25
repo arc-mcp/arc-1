@@ -2642,6 +2642,68 @@ describe('BDEF behavior extension create (#10)', () => {
   }, 180_000);
 });
 
+// ─── FUGR structural-include write (FEAT-18 sibling) ──────────────────
+// Live-verified on a4h 758 + 816: the TOP include is the lock + package-resolution target
+// (its containerRef carries the group's package); locking the group 423s the source PUT.
+describe('FUGR structural include update (FEAT-18 sibling)', () => {
+  it('creates a FUGR, edits its TOP include via type=INCL+group, activates, reads the new source back', async (ctx) => {
+    requireOrSkip(ctx, process.env.TEST_SAP_URL, SkipReason.NO_CREDENTIALS);
+    const { generateUniqueName } = await import('./crud-harness.js');
+    const { handleToolCall } = await import('../../src/handlers/dispatch.js');
+    const config = {
+      arc1Port: 8080,
+      arc1HttpAddr: '0.0.0.0:8080',
+      toolMode: 'standard',
+    } as unknown as Parameters<typeof handleToolCall>[1];
+    const client = getTestClient();
+    const group = generateUniqueName('ZARC1_FGI');
+    const topInclude = `L${group}TOP`;
+    const marker = `* arc-1 structural include write ${group}`;
+    try {
+      const created = await handleToolCall(client, config, 'SAPWrite', {
+        action: 'create',
+        type: 'FUGR',
+        name: group,
+        package: '$TMP',
+        description: 'ARC-1 IT function group',
+      });
+      expect(created.isError).toBeUndefined();
+      const includeUrl = `/sap/bc/adt/functions/groups/${group.toLowerCase()}/includes/${topInclude.toLowerCase()}`;
+      // Requires live confirmation on 7.50/758/816: the package gate depends on this metadata
+      // carrying either packageRef or containerRef packageName. If absent, ARC-1 must fail closed.
+      const resolvedIncludePackage = await client.resolveObjectPackage(includeUrl).catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        requireOrSkip(ctx, undefined, `${SkipReason.BACKEND_UNSUPPORTED}: FUGR include metadata unreadable (${msg})`);
+        return undefined;
+      });
+      requireOrSkip(
+        ctx,
+        resolvedIncludePackage || undefined,
+        `${SkipReason.BACKEND_UNSUPPORTED}: FUGR include metadata lacks packageRef/containerRef packageName`,
+      );
+      expect(resolvedIncludePackage).toBe('$TMP');
+      const updated = await handleToolCall(client, config, 'SAPWrite', {
+        action: 'update',
+        type: 'INCL',
+        name: topInclude,
+        group,
+        source: `FUNCTION-POOL ${group}.\n${marker}`,
+      });
+      expect(updated.isError).toBeUndefined();
+      const activated = await handleToolCall(client, config, 'SAPActivate', { type: 'FUGR', name: group });
+      expect(activated.isError).toBeUndefined();
+      // Read the include source back directly (getInclude only serves standalone includes, so
+      // GET the FUGR-include source URL via the client's HTTP layer).
+      const back = await client.http.get(`${includeUrl}/source/main`);
+      expect(back.body).toContain(marker);
+    } finally {
+      await handleToolCall(client, config, 'SAPWrite', { action: 'delete', type: 'FUGR', name: group }).catch(() => {
+        // best-effort-cleanup
+      });
+    }
+  }, 90_000);
+});
+
 // ─── Self-correcting "unknown column" hint (FEAT-64) ──────────────────
 // On systems where datapreview is bound (758/816) an unknown column yields the table's real column
 // list; on NPL 7.50 the datapreview endpoint is unbound (404), so the original error is shown — both

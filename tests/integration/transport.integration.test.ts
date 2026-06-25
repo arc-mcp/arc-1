@@ -30,11 +30,14 @@ import {
   deleteTransport,
   getObjectTransports,
   getTransport,
+  inactiveObjectsForTransport,
   listTransportLayers,
   listTransports,
   listTransportTargets,
   reassignTransport,
 } from '../../src/adt/transport.js';
+import { handleToolCall } from '../../src/handlers/dispatch.js';
+import { DEFAULT_CONFIG } from '../../src/server/types.js';
 import { expectSapFailureClass } from '../helpers/expected-error.js';
 import { requireOrSkip, SkipReason, skipTest } from '../helpers/skip-policy.js';
 import { buildCreateXml, generateUniqueName } from './crud-harness.js';
@@ -565,5 +568,86 @@ describe('Transport Integration Tests', () => {
       const { source } = await client.getProgram(testName);
       expect(source).toContain('explicit transport used');
     }, 60_000);
+  });
+
+  // ─── Pre-release inactive-objects check (FEAT-63) ───────────────────
+  // Non-destructive: the release handler must FAIL FAST (return before releasing) when the transport
+  // contains inactive objects. Drives whatever transport-assigned inactive objects already exist on
+  // the system (live-verified shape on a4h 758). Skips cleanly where none exist (e.g. systems whose
+  // inactive objects are all $TMP/unassigned — observed on the 816 and 7.50 boxes 2026-06-24).
+  describe('pre-release inactive-objects guard', () => {
+    it('blocks releasing a transport that still has inactive objects', async (ctx) => {
+      const client = getTransportEnabledClient();
+      const inactive = await client.getInactiveObjects();
+      const candidate = inactive.find((o) => o.parentTransport || o.transport);
+      requireOrSkip(ctx, candidate, SkipReason.NO_FIXTURE);
+
+      const requestId = candidate.parentTransport?.split('/').pop() || candidate.transport || '';
+      // The pure correlation must pick the object up for its request id...
+      expect(inactiveObjectsForTransport(inactive, requestId).length).toBeGreaterThan(0);
+      // ...and the release handler must fail-fast (non-destructive — returns before the release POST).
+      const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'release',
+        id: requestId,
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('cannot be released');
+    }, 60_000);
+
+    // Deterministic counterpart: self-seed a transport with an inactive object so the guard is
+    // verified end-to-end (not dependent on pre-existing inactive state, which is all $TMP/unassigned
+    // on some boxes). Gated like the other transportable-write tests above. Self-cleans in `finally`
+    // with removeLockedObjects=true rather than the shared tracker — an inactive object locks its
+    // task, which the tracker's plain recursive delete cannot strip (live-verified on a4h 758).
+    it('blocks releasing a self-seeded transport holding an inactive object', async (ctx) => {
+      requireOrSkip(
+        ctx,
+        transportPackageWriteTestsEnabled ? true : undefined,
+        SkipReason.TRANSPORT_PACKAGE_WRITES_DISABLED,
+      );
+      const pkg = process.env.TEST_TRANSPORT_PACKAGE;
+      requireOrSkip(ctx, pkg, SkipReason.NO_TRANSPORT_PACKAGE);
+
+      // A fresh transport + a created-but-not-activated program = an inactive object on the request.
+      const requestId = await createTransport(client.http, client.safety, `ARC-1 IT inactive-guard ${Date.now()}`, pkg);
+      expect(requestId).toBeTruthy();
+      const testName = generateUniqueName('ZARC1_TR');
+      const objectUrl = `/sap/bc/adt/programs/programs/${testName.toLowerCase()}`;
+      try {
+        await createObject(
+          client.http,
+          client.safety,
+          '/sap/bc/adt/programs/programs',
+          buildCreateXml('PROG', testName, pkg, 'ARC-1 inactive-objects guard'),
+          'application/xml',
+          requestId,
+        );
+        await safeUpdateSource(
+          client.http,
+          client.safety,
+          objectUrl,
+          `${objectUrl}/source/main`,
+          `REPORT ${testName.toLowerCase()}.\nWRITE: / 'inactive guard'.`,
+          requestId,
+        );
+
+        // The pure correlation must pick the inactive object up for its request id (live-verified on
+        // a4h 758: a created-not-activated PROG is listed with parentTransport = the request URI)...
+        const inactive = await client.getInactiveObjects();
+        expect(inactiveObjectsForTransport(inactive, requestId).length).toBeGreaterThan(0);
+        // ...and the release handler must fail-fast (returns before the release POST).
+        const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPTransport', {
+          action: 'release',
+          id: requestId,
+        });
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toContain('cannot be released');
+      } finally {
+        // removeLockedObjects=true strips the inactive object's task lock AND drops the object in one
+        // shot; recursive=true releases the child task. best-effort-cleanup (afterAll leak-net catches
+        // any residue).
+        await deleteTransport(client.http, client.safety, requestId, true, true).catch(() => {});
+      }
+    }, 90_000);
   });
 });

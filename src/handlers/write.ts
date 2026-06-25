@@ -155,6 +155,19 @@ export async function handleSAPWrite(
     srcUrl = `${objectUrl}/source/main`;
     // Pass the resolved group through to buildCreateXml via args.group
     (args as Record<string, unknown>).group = group;
+  } else if (type === 'INCL' && String(args.group ?? '').trim()) {
+    if (action !== 'update') {
+      return errorResult(
+        'SAPWrite type=INCL with group supports action="update" only; create/delete of FUGR structural includes is unsupported.',
+      );
+    }
+    // FUGR structural include update (LZ<grp>TOP global data, form/PBO/PAI includes): addressed by
+    // type=INCL + group=<FUGR>. The include OBJECT is the lock + package-resolution target — its
+    // containerRef carries the group's packageName, and locking the GROUP 423s the source PUT
+    // (live-verified a4h 816 + 758). A bare INCL with no group stays a standalone /programs/includes/.
+    const groupLc = encodeURIComponent(String(args.group).trim().toLowerCase());
+    objectUrl = `/sap/bc/adt/functions/groups/${groupLc}/includes/${encodeURIComponent(name.toLowerCase())}`;
+    srcUrl = `${objectUrl}/source/main`;
   } else {
     // Discovery gate: refuse transparent-table creates upfront on systems that
     // don't expose /ddic/tables/ (NW 7.50/7.51). TABL/DS skips this — /structures/

@@ -5,6 +5,7 @@
 
 import type { AdtClient } from '../adt/client.js';
 import { AdtApiError } from '../adt/errors.js';
+import { checkTransport } from '../adt/safety.js';
 import {
   createTransport,
   createTransportWithTarget,
@@ -12,6 +13,7 @@ import {
   getObjectTransports,
   getTransport,
   getTransportInfo,
+  inactiveObjectsForTransport,
   listTransportLayers,
   listTransports,
   listTransportTargets,
@@ -21,9 +23,40 @@ import {
   removeObjectFromTransport,
   supportsExplicitTransportTarget,
 } from '../adt/transport.js';
-import type { ObjectTransportHistory, TransportRequest } from '../adt/types.js';
+import type { InactiveObject, ObjectTransportHistory, TransportRequest } from '../adt/types.js';
+import { logger } from '../server/logger.js';
 import { objectUrlForType } from './object-types.js';
 import { errorResult, type ToolResult, textResult } from './shared.js';
+
+/**
+ * Pre-release guard: find inactive objects that belong to `transportId`. Releasing a transport that
+ * still contains inactive objects makes SAP's release pipeline hang (it activates before exporting),
+ * which the agent sees only as an opaque timeout. Returns the blocking objects — or `[]` if there are
+ * none, OR if the probe itself fails (graceful degradation: never block a legitimate release on a
+ * diagnostic error).
+ */
+async function precheckInactiveForRelease(client: AdtClient, transportId: string): Promise<InactiveObject[]> {
+  try {
+    const inactive = await client.getInactiveObjects();
+    return inactiveObjectsForTransport(inactive, transportId);
+  } catch (err) {
+    logger.warn('Pre-release inactive-objects check failed; proceeding with release', {
+      transportId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return [];
+  }
+}
+
+/** Format the blocking-inactive error shared by `release` / `release_recursive`. */
+function inactiveReleaseError(transportId: string, blocking: InactiveObject[]): ToolResult {
+  const list = blocking.map((o) => `  - ${o.type} ${o.name}`).join('\n');
+  return errorResult(
+    `Transport ${transportId} cannot be released: ${blocking.length} inactive object(s) would hang the ` +
+      `release (SAP activates objects before exporting; an inactive one makes the release pipeline time out ` +
+      `with no detail):\n${list}\nActivate them first (SAPActivate), then retry the release.`,
+  );
+}
 
 // ─── SAPTransport Handler ────────────────────────────────────────────
 
@@ -231,6 +264,13 @@ export async function handleSAPTransport(client: AdtClient, args: Record<string,
     case 'release': {
       const id = String(args.id ?? '');
       if (!id) return errorResult('Transport ID is required for "release" action.');
+      // Enforce the transport-write safety ceiling BEFORE the diagnostic read so an unauthorized
+      // caller gets the real "writes blocked" reason (not a misleading "activate inactive objects
+      // first") and we don't spend an ADT round-trip for a release we'll refuse. releaseTransport
+      // re-checks defensively.
+      checkTransport(client.safety, id, 'ReleaseTransport', true);
+      const blocking = await precheckInactiveForRelease(client, id);
+      if (blocking.length > 0) return inactiveReleaseError(id, blocking);
       await releaseTransport(client.http, client.safety, id);
       return textResult(`Released transport request: ${id}`);
     }
@@ -295,6 +335,13 @@ export async function handleSAPTransport(client: AdtClient, args: Record<string,
     case 'release_recursive': {
       const id = String(args.id ?? '');
       if (!id) return errorResult('Transport ID is required for "release_recursive" action.');
+      // Safety ceiling before the diagnostic read (see 'release' above). releaseTransportRecursive
+      // re-checks the request and each task defensively.
+      checkTransport(client.safety, id, 'ReleaseTransportRecursive', true);
+      // One probe on the parent request id catches child-task objects too (their parentTransport
+      // ends in /<request>), so no per-task fetch is needed.
+      const blocking = await precheckInactiveForRelease(client, id);
+      if (blocking.length > 0) return inactiveReleaseError(id, blocking);
       const result = await releaseTransportRecursive(client.http, client.safety, id);
       return textResult(JSON.stringify(result, null, 2));
     }
