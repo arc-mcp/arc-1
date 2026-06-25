@@ -55,14 +55,15 @@ Read the `verdict`:
 - `SAPDiagnose(action="cds_sql", name="I_TheView")` — the **native `CREATE VIEW`** the CDS compiles to
   (read-only; verified on 7.50/758/816). Now you see the real joins, `CAST`s, `COALESCE`s, and whether a
   sub-view drags in extra tables.
-- `SAPQuery(sql="SELECT … FROM <cds-or-base> WHERE <the filter>")` — returns `columns` and `rows`. Run it with
-  the **real filter values** from the slow request to validate the result shape and catch overly broad filters.
-  It does **not** expose scan counts, execution time, or execution plans; use ST05/HANA for rows fetched and
-  plan details. (Needs `SAP_ALLOW_FREE_SQL` for freestyle SQL; multi-column `WHERE` via
+- `SAPQuery(sql="SELECT … FROM <cds-or-base> WHERE <the filter>")` — returns `columns`/`rows` plus datapreview
+  metrics: `queryExecutionTimeMs`, `totalRows` (total matches), `rowsReturned`, and the `executedQueryString`.
+  Run it with the **real filter values** from the slow request: a large `totalRows` / `queryExecutionTimeMs` for
+  a small useful result = a scan/selectivity problem. It does **not** expose the HANA execution plan or buffer
+  state — use ST05/HANA for those. (Needs `SAP_ALLOW_FREE_SQL` for freestyle SQL; multi-column `WHERE` via
   `SAPRead(type="TABLE_QUERY")` needs `SAP_ALLOW_DATA_PREVIEW`.)
-- Compare signals: if `odata_perf` is DB-bound and `cds_sql`/`SAPQuery` show a broad or complex query, continue
-  to ST05 for the exact statement, rows fetched, duration, and plan. If OData is slow without DB dominance,
-  inspect the SADL/framework layer above.
+- Compare signals: probe the OData URL, then run `SAPQuery` on the underlying CDS/base — if `queryExecutionTimeMs`
+  is close to the OData `gwappdb`, the DB query is the cost; if OData is slow but the query is fast, it's the
+  SADL/framework layer above. For the exact statement + execution plan, descend to ST05.
 
 ### 3. App-bound → ABAP profiler trace (which code, which tables)
 ```
@@ -71,8 +72,9 @@ SAPDiagnose(action="traces", id="<id>", analysis="hitlist")    # hottest call pa
 SAPDiagnose(action="traces", id="<id>", analysis="dbAccesses") # which tables, counts, buffered?
 ```
 The `dbAccesses` view tells you *which* tables a request hit and how often (N+1 shows up as a huge count on one
-table). The `hitlist` tells you the ABAP hot path. (ARC-1 lists/analyzes existing profiler traces; record them in
-SAT/ST12 first.)
+table). The `hitlist` tells you the ABAP hot path. ARC-1 can **arm** a profiler trace request itself —
+`SAPDiagnose(action="trace_start", …)`, then `trace_requests` to list and `trace_cancel` to clean up — or record
+one in SAT/ST12; then list/analyze it with the `traces` action above.
 
 ### 4. The exact SQL + plan → ST05 SQL trace
 ARC-1 can **arm/disarm** the ST05 SQL trace and point you to the records (it can't read the records over ADT —
@@ -124,7 +126,7 @@ the `url` argument.
 
 | Symptom in the trace/SQL | Likely cause | Confirm | Typical fix |
 |--------------------------|--------------|---------|-------------|
-| Huge `rows fetched` ≫ rows shown; long duration | Full scan / poor selectivity | `cds_sql` shows no indexed `WHERE`; ST05 shows high rows fetched | Add a `WHERE` on indexed fields; add a secondary index (SE11); push the filter into the CDS |
+| Huge `rows fetched` ≫ rows shown; long duration | Full scan / poor selectivity | `cds_sql` shows no indexed `WHERE`; `SAPQuery totalRows` large / ST05 high rows fetched | Add a `WHERE` on indexed fields; add a secondary index (SE11); push the filter into the CDS |
 | `LIKE '%term%'` | Leading-wildcard = index unusable | Read DDLS/ABAP source | Search help / fuzzy (HANA) / full-text index; anchor the pattern; pre-filter |
 | Same table hit thousands of times | N+1 (SELECT in LOOP) | `traces dbAccesses` shows a giant count on one table | `FOR ALL ENTRIES` / a join / read-all-then-loop; RAP: prefetch |
 | `SELECT *` then use 2 fields | Over-fetch | `cds_sql` / source | Select only needed fields; trim the CDS projection |
@@ -140,8 +142,8 @@ the `url` argument.
 Deliver a tight diagnosis, not a tool log:
 
 1. **Verdict** — DB / app / framework / auth, with the number that proves it (e.g. "`gwappdb` 412 ms of 480 ms").
-2. **The statement** — the offending SQL (from `cds_sql` / ST05) and what it scans (ST05 rows fetched, the table,
-   the missing index).
+2. **The statement** — the offending SQL (from `cds_sql` / ST05) and what it scans (`SAPQuery totalRows` / ST05
+   rows fetched, the table, the missing index).
 3. **Root cause** — one sentence, mapped to the catalog above.
 4. **Fix** — concrete and minimal (the index to add, the filter to push down, the N+1 to collapse), with the
    cheapest option first and the trade-off named.
