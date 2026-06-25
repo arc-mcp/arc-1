@@ -341,12 +341,12 @@ describe('applySecurityMiddleware — Host-header validation (SEC-14)', () => {
   it('normalizes Host before middleware comparison', async () => {
     const app = buildApp([], ['host', '::1'], '0.0.0.0', 8080);
     for (const host of ['host:8080', '[::1]:8080', 'HOST', 'host.']) {
-      const res = await request(app).get('/health').set('Host', host);
+      const res = await request(app).post('/mcp').set('Host', host).send({});
       expect(res.status).toBe(200);
-      expect(res.body).toMatchObject({ status: 'ok' });
+      expect(res.body).toMatchObject({ result: 'ok' });
     }
 
-    const rejected = await request(app).get('/health').set('Host', 'evil-host:8080');
+    const rejected = await request(app).post('/mcp').set('Host', 'evil-host:8080').send({});
     expect(rejected.status).toBe(403);
   });
 
@@ -393,18 +393,23 @@ describe('applySecurityMiddleware — Host-header validation (SEC-14)', () => {
     expect(stillRejected.status).toBe(403);
   });
 
-  it('covers non-MCP routes including health and OAuth metadata', async () => {
+  it('gates OAuth metadata and other routes, but exempts /health for infra probes', async () => {
     const app = buildApp([], [], '127.0.0.1', 8080);
+    // /health is exempt — CF Diego / k8s httpGet liveness probes hit it directly on the bind address
+    // with a non-loopback Host (k8s defaults the probe Host to the pod IP). Gating it would
+    // crash-loop a healthy deploy; it returns only a static {status:ok} so there is nothing to protect.
     const health = await request(app).get('/health').set('Host', 'evil.com');
+    expect(health.status).toBe(200);
+    expect(health.body).toMatchObject({ status: 'ok' });
+    // Every other route (here the unauthenticated OAuth metadata endpoint) is still Host-gated.
     const metadata = await request(app).get('/.well-known/oauth-protected-resource/mcp').set('Host', 'evil.com');
-    expect(health.status).toBe(403);
     expect(metadata.status).toBe(403);
   });
 
   it('rejects absolute-form requests based on the real Host header', async () => {
     const response = await rawHttpRequest(
       buildApp([], [], '127.0.0.1', 8080),
-      'GET http://evil.example/health HTTP/1.1\r\nHost: evil.com\r\nConnection: close\r\n\r\n',
+      'GET http://evil.example/mcp HTTP/1.1\r\nHost: evil.com\r\nConnection: close\r\n\r\n',
     );
     expect(response).toContain('HTTP/1.1 403 Forbidden');
   });

@@ -187,10 +187,19 @@ export function applySecurityMiddleware(
   // ─── DNS-rebinding defense: Host-header allowlist (SEC-14) ───────────
   // The MCP SDK's transport-level allowedHosts/enableDnsRebindingProtection are @deprecated
   // ("use external middleware for host validation instead"), so we validate Host here before
-  // any CORS preflight, OAuth, health, UI, or MCP route can respond.
+  // any CORS preflight, OAuth, UI, or MCP route can respond.
   const hostAllowList = resolveAllowedHosts(allowedHosts, bindHost, port, publicHost);
   if (hostAllowList !== null) {
     app.use((req, res, next) => {
+      // /health is exempt: infra health checkers (CF Diego, k8s httpGet liveness — which defaults the
+      // Host to the pod IP, load balancers) hit it directly on the bind address with an
+      // implementation-defined, non-loopback Host. It returns only a static {status:ok} with no SAP
+      // state or secrets, so Host-checking it would crash-loop a healthy deploy for zero security gain
+      // (a rebind attacker learns nothing from /health). Every state/auth-bearing route stays gated.
+      if (req.path === '/health') {
+        next();
+        return;
+      }
       const host = req.headers.host;
       if (!checkHostAllowed(host, hostAllowList)) {
         logger.emitAudit({
