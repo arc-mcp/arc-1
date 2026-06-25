@@ -427,6 +427,30 @@ describe('AdtApiError', () => {
       expect(classification?.category).toBe('authorization');
     });
 
+    it('classifies an un-activated ICF node (403 "Service cannot be reached" HTML) as icf-service-inactive', () => {
+      const html =
+        '<html><head><title>Service cannot be reached</title></head><body>' +
+        '<span class="errorTextHeader"> 403 Forbidden </span></body></html>';
+      const classification = classifySapDomainError(403, html, '/sap/bc/stmc/data');
+      expect(classification?.category).toBe('icf-service-inactive');
+      expect(classification?.transaction).toBe('SICF');
+      expect(classification?.hint).toContain('/sap/bc/stmc/data');
+    });
+
+    it('does not mistake an ADT object-not-found (XML ExceptionResourceNotFound) for an inactive ICF node', () => {
+      const xml2 =
+        '<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework">' +
+        '<type id="ExceptionResourceNotFound"/>' +
+        '<message lang="EN">Resource /sap/bc/adt/foo does not exist.</message></exc:exception>';
+      const classification = classifySapDomainError(404, xml2, '/sap/bc/adt/foo');
+      expect(classification?.category).not.toBe('icf-service-inactive');
+    });
+
+    it('still classifies a plain 403 auth body as authorization, not icf-service-inactive', () => {
+      const classification = classifySapDomainError(403, 'Not authorized: S_ADT_RES check failed', '/sap/bc/adt/x');
+      expect(classification?.category).toBe('authorization');
+    });
+
     it('classifies enqueue errors for 423 (release unknown → combined guidance)', () => {
       const classification = classifySapDomainError(423, 'Lock handle invalid');
       expect(classification?.category).toBe('enqueue-error');

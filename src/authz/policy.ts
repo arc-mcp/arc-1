@@ -143,6 +143,8 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   'SAPDiagnose.object_state': { scope: 'read', opType: OperationType.Read },
   'SAPDiagnose.quickfix': { scope: 'read', opType: OperationType.Read },
   'SAPDiagnose.apply_quickfix': { scope: 'write', opType: OperationType.Update },
+  'SAPDiagnose.odata_perf': { scope: 'data', opType: OperationType.Query },
+  'SAPDiagnose.cds_sql': { scope: 'read', opType: OperationType.Read },
 
   // ── SAPTransport ─────────────────────────────────────────────────
   // CLASSIFICATION BUG FIX: check/history/list/get are reads; previously required write

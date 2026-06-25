@@ -756,6 +756,162 @@ export function parseTraceDbAccesses(xml: string): TraceDbAccess[] {
     }));
 }
 
+// ─── OData performance probe (sap-statistics) ───────────────────────
+
+export interface ODataPerfResult {
+  url: string;
+  statusCode: number;
+  wallClockMs: number;
+  /** Parsed `sap-statistics` header — variable field set; `gwappdb` (when present) is DB time. */
+  statistics: Record<string, number>;
+  fesrecMicros?: number;
+  responseBytes: number;
+  verdict: { bound: 'db' | 'app' | 'framework' | 'auth' | 'unknown'; note: string };
+}
+
+/** Parse the `sap-statistics` header (`k=v,k=v,…`) into a numeric map. Tolerates missing/extra fields. */
+export function parseSapStatistics(header: string): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const pair of header.split(',')) {
+    const idx = pair.indexOf('=');
+    if (idx <= 0) continue;
+    const key = pair.slice(0, idx).trim();
+    const val = Number(pair.slice(idx + 1).trim());
+    if (key && Number.isFinite(val)) out[key] = val;
+  }
+  return out;
+}
+
+/** Route to the dominant time component so the LLM picks the right deeper signal. */
+export function verdictFromStatistics(m: Record<string, number>): ODataPerfResult['verdict'] {
+  const total = m.gwtotal ?? m.total ?? 0;
+  if (total <= 0) {
+    return {
+      bound: 'unknown',
+      note: 'No Gateway timing in sap-statistics — ensure the URL is an OData/Gateway service on the SAP host ARC-1 connects to.',
+    };
+  }
+  const db = m.gwappdb ?? 0;
+  const candidates: Array<[ODataPerfResult['verdict']['bound'], number, string]> = [
+    [
+      'db',
+      db,
+      'DB-bound: the CDS/SQL query dominates. Inspect the generated SQL with SAPDiagnose(action="cds_sql"), measure it with SAPQuery (queryExecutionTime), or arm an ST05 SQL trace.',
+    ],
+    [
+      'app',
+      (m.gwapp ?? 0) - db,
+      'ABAP/SADL-bound: application logic dominates (not the DB). Arm an ABAP profiler trace (SAPDiagnose action="traces") and read its hitlist for the hot path.',
+    ],
+    [
+      // gwfw (GW framework) and gwhub (GW hub processing) both measure framework time; older
+      // releases (e.g. NW 7.50) report only gwhub, so take whichever is present.
+      'framework',
+      Math.max(m.gwfw ?? 0, m.gwhub ?? 0),
+      'Gateway-framework-bound: likely metadata/first-call (cold-cache) cost. Re-probe to compare warm vs cold.',
+    ],
+    ['auth', m.icfauth ?? 0, 'Auth-bound: ICF/DCL authorization overhead dominates.'],
+  ];
+  candidates.sort((a, b) => b[1] - a[1]);
+  const [bound, top, note] = candidates[0];
+  // Gateway reported a total but no component is > 0 (the release didn't break it down) — don't
+  // guess "db". Report the total as undifferentiated Gateway time and point to the deeper traces.
+  if (top <= 0) {
+    return {
+      bound: 'unknown',
+      note: `Gateway total ${total}ms, but sap-statistics didn't break it into components on this release (no gwappdb/gwapp/gwfw). Treat it as Gateway processing; arm an ST05 SQL trace or ABAP profiler trace (SAPDiagnose action="traces") for the breakdown.`,
+    };
+  }
+  return { bound, note };
+}
+
+/**
+ * GET an OData URL with `?sap-statistics=true` + a wall-clock timer → server-side timing split + verdict.
+ * Security: `url` must be a host-relative path on the configured SAP system (no absolute URLs / SSRF).
+ */
+export async function probeODataPerformance(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  url: string,
+): Promise<ODataPerfResult> {
+  checkOperation(safety, OperationType.Query, 'ProbeODataPerformance');
+  if (!url.startsWith('/') || url.includes('://')) {
+    throw new Error(
+      'odata_perf url must be a host-relative path on the configured SAP system (e.g. "/sap/opu/odata4/.../Entity?$filter=..."); absolute URLs are not allowed.',
+    );
+  }
+  const withStat = url.includes('?') ? `${url}&sap-statistics=true` : `${url}?sap-statistics=true`;
+  const t0 = Date.now();
+  const resp = await http.get(withStat);
+  const wallClockMs = Date.now() - t0;
+  const statistics = parseSapStatistics(resp.headers['sap-statistics'] ?? '');
+  const fesrec = Number(resp.headers['sap-perf-fesrec']);
+  return {
+    url: withStat,
+    statusCode: resp.statusCode,
+    wallClockMs,
+    statistics,
+    fesrecMicros: Number.isFinite(fesrec) ? fesrec : undefined,
+    responseBytes: Buffer.byteLength(resp.body ?? ''),
+    verdict: verdictFromStatistics(statistics),
+  };
+}
+
+// ─── CDS Show-SQL (createstatements) ────────────────────────────────
+
+export interface CdsCreateStatement {
+  name?: string;
+  type?: string;
+  state?: string;
+  sql: string;
+}
+export interface CdsCreateStatements {
+  name: string;
+  statements: CdsCreateStatement[];
+}
+
+function nodeText(value: unknown): string {
+  // `statement` is an ARRAY_TAG in the XML parser, so a single <ddl:statement> arrives as [text].
+  if (Array.isArray(value)) return value.map(nodeText).join('\n');
+  if (typeof value === 'string') return value;
+  if (value && typeof value === 'object') return String((value as Record<string, unknown>)['#text'] ?? '');
+  return '';
+}
+
+/** Parse the `ddl:createStatements` response → the native SQL each CDS view compiles to. */
+export function parseCdsCreateStatements(xml: string, fallbackName = ''): CdsCreateStatements {
+  const parsed = parseXml(xml);
+  const sourceNodes = findDeepNodes(parsed, 'source');
+  const name =
+    sourceNodes.length > 0 && sourceNodes[0]['@_name'] != null ? String(sourceNodes[0]['@_name']) : fallbackName;
+  const statements = findDeepNodes(parsed, 'createStatement')
+    .map((node) => ({
+      name: node['@_name'] != null ? String(node['@_name']) : undefined,
+      type: node['@_type'] != null ? String(node['@_type']) : undefined,
+      state: node['@_state'] != null ? String(node['@_state']) : undefined,
+      sql: nodeText(node.statement).trim(),
+    }))
+    .filter((s) => s.sql.length > 0);
+  return { name, statements };
+}
+
+/**
+ * Return the native SQL `CREATE VIEW` statements a CDS view (DDLS) generates.
+ * POST-only + CSRF (auto-managed) + a dedicated Accept type. May 404/405 on releases without the
+ * modern CDS DDL stack (e.g. NW 7.50) — let that surface so the caller learns the feature is absent.
+ */
+export async function getCdsCreateStatements(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  name: string,
+): Promise<CdsCreateStatements> {
+  checkOperation(safety, OperationType.Read, 'GetCdsCreateStatements');
+  const resp = await http.post(`/sap/bc/adt/ddic/ddl/createstatements/${encodeURIComponent(name)}`, '', undefined, {
+    Accept: 'application/vnd.sap.adt.ddl.createStatements+xml',
+  });
+  return parseCdsCreateStatements(resp.body, name);
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────
 
 function buildFeedQueryString(

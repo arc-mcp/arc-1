@@ -88,9 +88,10 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // +135/+100/+1 for SAPManage action="set_api_state" (apiState param + action/visibility docs).
       // +90/+60/+1 for the set_api_state `contract` param (C0–C4 enum + per-type docs).
       // +1 descriptionCount for SAPDiagnose `coverage` param (FEAT-41 AUnit coverage).
-      schemaTokenEstimate: 12_540,
-      descriptionTokenEstimate: 9_910,
-      descriptionCount: 154,
+      // +odata_perf/cds_sql actions + `url` param (OData/SQL perf-insight): schema/desc bumps + 1 descriptionCount (url).
+      schemaTokenEstimate: 12_900,
+      descriptionTokenEstimate: 10_250,
+      descriptionCount: 156,
     },
   },
   {
@@ -105,9 +106,10 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // +120/+80/+1 for the set_api_state `contract` param (C0–C4 enum + per-type docs).
       // +1 descriptionCount / ~60 desc tokens for SAPDiagnose `coverage` param (FEAT-41).
       // +TTYP read/write type + SAPWrite rowType/rowTypeKind params (FEAT-65).
-      schemaTokenEstimate: 20_730,
-      descriptionTokenEstimate: 15_870,
-      descriptionCount: 271,
+      // +odata_perf/cds_sql actions + `url` param (OData/SQL perf-insight): schema/desc bumps + 1 descriptionCount (url).
+      schemaTokenEstimate: 21_100,
+      descriptionTokenEstimate: 16_220,
+      descriptionCount: 273,
     },
   },
   {
@@ -124,9 +126,10 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // +120/+80 for the set_api_state `contract` param (C0–C4 enum + per-type docs).
       // +1 descriptionCount / ~60 desc tokens for SAPDiagnose `coverage` param (FEAT-41).
       // +SAPWrite rowType/rowTypeKind params (FEAT-65; global SAPWrite props, present on BTP too).
-      schemaTokenEstimate: 18_980,
-      descriptionTokenEstimate: 14_220,
-      descriptionCount: 269,
+      // +odata_perf/cds_sql actions + `url` param (OData/SQL perf-insight): schema/desc bumps + 1 descriptionCount (url).
+      schemaTokenEstimate: 19_340,
+      descriptionTokenEstimate: 14_570,
+      descriptionCount: 271,
     },
   },
   {

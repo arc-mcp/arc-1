@@ -263,6 +263,7 @@ SORT RULES for this table — DO NOT BREAK when adding rows:
 > - `SAPTransport(action="history")` (FEAT-49, 2026-04-17) is live with `transportchecks` fallback.
 > - `SAPDiagnose` now covers dumps + traces + system_messages + gateway_errors + quickfix + apply_quickfix (FEAT-55, 2026-04-21). SQL trace (FEAT-09) is the only fr0ster-v5 diagnostic still missing.
 > - `SAPGit` (FEAT-22, 2026-04-18) auto-selects gCTS→abapGit with a `--allow-git-writes` safety gate; VSP's gCTS lead is closed for the prioritized workflow set.
+> - **OData/SQL performance insight** (2026-06-25): `SAPDiagnose action=odata_perf` (probe an OData URL with `?sap-statistics=true` → server-side gw* timing split + routing verdict) + `action=cds_sql` (CDS Show-SQL via `ddic/ddl/createstatements`) + an ICF-inactive activation guard (`icf-service-inactive`). Verified live on 7.50 / 758 / 816. Answers "why is this Fiori/OData request slow" without SAP GUI; SQL-trace control (FEAT-09 / ST05) is the next step.
 >
 > Competitor scan (2026-04-23): only **fr0ster** has moved this week — v6.2.0 shipped per-object-type tool descriptions (13 types) and v6.4.0 added per-instance `systemType` on `EmbeddableMcpServer` (multi-tenant embedding capability ARC-1 lacks — tracked as FEAT-59). VSP, dassian-adt, mario, AWS Accelerator all quiet since before 2026-04-17.
 >

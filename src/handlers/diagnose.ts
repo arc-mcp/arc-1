@@ -14,6 +14,7 @@ import {
   syntaxCheck,
 } from '../adt/devtools.js';
 import {
+  getCdsCreateStatements,
   getDump,
   getGatewayErrorDetail,
   getObjectState,
@@ -24,6 +25,7 @@ import {
   listGatewayErrors,
   listSystemMessages,
   listTraces,
+  probeODataPerformance,
 } from '../adt/diagnostics.js';
 import type { DumpDetail, FixAffectedObject } from '../adt/types.js';
 import { isBtpSystem } from './feature-cache.js';
@@ -262,9 +264,28 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
       const errors = await listGatewayErrors(client.http, client.safety, { user, maxResults, from, to });
       return textResult(JSON.stringify(errors, null, 2));
     }
+    case 'odata_perf': {
+      const url = String(args.url ?? '').trim();
+      if (!url) {
+        return errorResult(
+          'SAPDiagnose action="odata_perf" requires a "url" — the host-relative OData path from the Fiori app\'s Network tab (e.g. "/sap/opu/odata4/sap/.../Entity?$filter=..." or "/sap/opu/odata/sap/<SRV>/<EntitySet>?$top=20"). ARC-1 GETs it with ?sap-statistics=true and a wall-clock timer, then returns the server-side timing split + a routing verdict.',
+        );
+      }
+      const perf = await probeODataPerformance(client.http, client.safety, url);
+      return textResult(JSON.stringify(perf, null, 2));
+    }
+    case 'cds_sql': {
+      if (!name) {
+        return errorResult(
+          'SAPDiagnose action="cds_sql" requires a "name" — the CDS DDL source (DDLS), e.g. "I_CURRENCY". Returns the native SQL CREATE VIEW statements the CDS view compiles to.',
+        );
+      }
+      const cdsSql = await getCdsCreateStatements(client.http, client.safety, name);
+      return textResult(JSON.stringify(cdsSql, null, 2));
+    }
     default:
       return errorResult(
-        `Unknown SAPDiagnose action: ${action}. Supported: syntax, unittest, atc, object_state, quickfix, apply_quickfix, dumps, traces, system_messages, gateway_errors`,
+        `Unknown SAPDiagnose action: ${action}. Supported: syntax, unittest, atc, cds_testcases, object_state, quickfix, apply_quickfix, dumps, traces, system_messages, gateway_errors, odata_perf, cds_sql`,
       );
   }
 }

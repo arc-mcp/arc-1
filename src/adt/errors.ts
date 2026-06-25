@@ -43,6 +43,7 @@ export interface SapErrorClassification {
     | 'object-exists'
     | 'method-not-supported'
     | 'icf-handler-not-bound'
+    | 'icf-service-inactive'
     | 'bdef-base-not-extensible'
     | 'include-not-initialized';
   hint: string;
@@ -531,6 +532,12 @@ export function extractLockOwner(text: string): { user?: string; transport?: str
   };
 }
 
+/** Name the SICF node from a request path for an activation hint (drops the query string). */
+function sicfNodeFromPath(path?: string): string {
+  if (!path) return 'the requested ICF service';
+  return `\`${path.split('?')[0]}\``;
+}
+
 /** Classify SAP ADT errors into actionable domain categories with remediation hints. */
 export function classifySapDomainError(
   statusCode: number,
@@ -647,6 +654,22 @@ export function classifySapDomainError(
         'looks active, the ADT framework itself may be missing the internal resource registration ' +
         '(often caused by incomplete activation after an upgrade or on minimally-configured ' +
         'systems). Consult your Basis admin or SAP KBA 3128830 (Troubleshooting ICF 404 Errors).',
+      transaction: 'SICF',
+      details: typeId ? { exceptionType: typeId } : undefined,
+    };
+  }
+
+  // An un-activated SICF node (non-ADT — e.g. an OData service or /sap/bc/stmc) returns SAP's
+  // generic ICF page: HTTP 403/404, text/html, "<title>Service cannot be reached</title>". This is
+  // NOT an ADT object-not-found (XML ExceptionResourceNotFound) — turn it into an activation hint.
+  // Reused by the ST05/TMC SQL-trace perf features (their endpoints live under inactive-by-default nodes).
+  if ((statusCode === 403 || statusCode === 404) && /Service cannot be reached/i.test(bodyRaw)) {
+    return {
+      category: 'icf-service-inactive',
+      hint:
+        `The ICF service node ${sicfNodeFromPath(path)} is not activated (SAP returned its "Service cannot be ` +
+        'reached" page). Activate it in tcode SICF (locate the node under /default_host/…, right-click → ' +
+        "Activate Service). For ARC-1's ST05/TMC SQL-trace features, activate /sap/bc/stmc and its sub-nodes (data, ui5).",
       transaction: 'SICF',
       details: typeId ? { exceptionType: typeId } : undefined,
     };

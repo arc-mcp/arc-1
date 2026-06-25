@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
   decodeHtmlEntities,
+  getCdsCreateStatements,
   getDump,
   getGatewayErrorDetail,
   getObjectState,
@@ -13,16 +14,20 @@ import {
   listGatewayErrors,
   listSystemMessages,
   listTraces,
+  parseCdsCreateStatements,
   parseDumpDetail,
   parseDumpList,
   parseGatewayErrorDetail,
   parseGatewayErrors,
+  parseSapStatistics,
   parseSystemMessages,
   parseTraceDbAccesses,
   parseTraceHitlist,
   parseTraceList,
   parseTraceStatements,
+  probeODataPerformance,
   stripHtmlTags,
+  verdictFromStatistics,
 } from '../../../src/adt/diagnostics.js';
 import { AdtApiError } from '../../../src/adt/errors.js';
 import type { AdtHttpClient } from '../../../src/adt/http.js';
@@ -1132,6 +1137,107 @@ describe('Runtime Diagnostics', () => {
       expect(decodeHtmlEntities(null as unknown as string)).toBe('');
       expect(decodeHtmlEntities(undefined as unknown as string)).toBe('');
       expect(decodeHtmlEntities('')).toBe('');
+    });
+  });
+});
+
+// ─── OData performance probe (#1) ───────────────────────────────────
+
+describe('parseSapStatistics', () => {
+  it('parses a real sap-statistics header into a numeric map', () => {
+    expect(parseSapStatistics('gwtotal=173,gwfw=38,gwapp=131,gwappdb=100,icfauth=0')).toEqual({
+      gwtotal: 173,
+      gwfw: 38,
+      gwapp: 131,
+      gwappdb: 100,
+      icfauth: 0,
+    });
+  });
+
+  it('tolerates an empty or malformed header', () => {
+    expect(parseSapStatistics('')).toEqual({});
+    expect(parseSapStatistics('garbage;no;equals')).toEqual({});
+  });
+});
+
+describe('verdictFromStatistics', () => {
+  it('routes a gwappdb-dominant request to db', () => {
+    expect(verdictFromStatistics({ gwtotal: 173, gwapp: 131, gwappdb: 100, gwfw: 38 }).bound).toBe('db');
+  });
+
+  it('routes an icfauth-dominant request to auth', () => {
+    expect(verdictFromStatistics({ gwtotal: 100, icfauth: 80, gwapp: 5, gwappdb: 2, gwfw: 3 }).bound).toBe('auth');
+  });
+
+  it('returns unknown when there is no Gateway timing', () => {
+    expect(verdictFromStatistics({}).bound).toBe('unknown');
+  });
+
+  it('treats gwhub (NW 7.50 form, no gwfw) as framework time', () => {
+    // Live a4h 7.50: CATALOGSERVICE returned gwtotal=6788,gwhub=6788 with no gwfw/gwappdb.
+    expect(verdictFromStatistics({ gwtotal: 6788, gwhub: 6788, gwapp: 0 }).bound).toBe('framework');
+  });
+
+  it('returns unknown (not db) when the total has no component breakdown', () => {
+    expect(verdictFromStatistics({ gwtotal: 500, gwbe: 0 }).bound).toBe('unknown');
+  });
+});
+
+describe('probeODataPerformance', () => {
+  it('appends sap-statistics=true, times the call, and returns the parsed split + verdict', async () => {
+    const http = mockHttpSequence([
+      {
+        headers: { 'sap-statistics': 'gwtotal=173,gwapp=131,gwappdb=100,gwfw=38', 'sap-perf-fesrec': '129509' },
+        body: '{}',
+      },
+    ]);
+    const result = await probeODataPerformance(http, unrestrictedSafetyConfig(), '/sap/opu/odata/sap/X/E?$top=1');
+    expect(http.get).toHaveBeenCalledWith('/sap/opu/odata/sap/X/E?$top=1&sap-statistics=true');
+    expect(result.statistics.gwappdb).toBe(100);
+    expect(result.verdict.bound).toBe('db');
+    expect(result.wallClockMs).toBeGreaterThanOrEqual(0);
+    expect(result.fesrecMicros).toBe(129509);
+  });
+
+  it('rejects an absolute URL (SSRF boundary)', async () => {
+    await expect(probeODataPerformance(mockHttp(), unrestrictedSafetyConfig(), 'http://evil.test/x')).rejects.toThrow(
+      /host-relative/,
+    );
+  });
+});
+
+// ─── CDS Show-SQL (#2) ──────────────────────────────────────────────
+
+describe('parseCdsCreateStatements', () => {
+  const fixture = readFileSync(join(FIXTURES_DIR, 'createstatements-i-currency.xml'), 'utf-8');
+
+  it('parses the native SQL CREATE VIEW from a captured createstatements response', () => {
+    const result = parseCdsCreateStatements(fixture);
+    expect(result.name).toBe('I_CURRENCY');
+    expect(result.statements).toHaveLength(1);
+    expect(result.statements[0].sql).toContain('CREATE OR REPLACE VIEW');
+    expect(result.statements[0].sql).toContain('LEFT OUTER JOIN');
+    expect(result.statements[0].state).toBe('A');
+  });
+
+  it('returns no statements for an empty createStatements element', () => {
+    const xml = '<ddl:source xmlns:ddl="http://www.sap.com/adt/ddl"><ddl:createStatements/></ddl:source>';
+    expect(parseCdsCreateStatements(xml).statements).toEqual([]);
+  });
+
+  it('does not throw on a malformed body', () => {
+    expect(parseCdsCreateStatements('not xml at all').statements).toEqual([]);
+  });
+});
+
+describe('getCdsCreateStatements', () => {
+  it('POSTs to createstatements with CSRF-Accept and parses the SQL', async () => {
+    const fixture = readFileSync(join(FIXTURES_DIR, 'createstatements-i-currency.xml'), 'utf-8');
+    const http = mockHttp(fixture);
+    const result = await getCdsCreateStatements(http, unrestrictedSafetyConfig(), 'I_CURRENCY');
+    expect(result.statements[0].sql).toContain('CREATE OR REPLACE VIEW');
+    expect(http.post).toHaveBeenCalledWith('/sap/bc/adt/ddic/ddl/createstatements/I_CURRENCY', '', undefined, {
+      Accept: 'application/vnd.sap.adt.ddl.createStatements+xml',
     });
   });
 });
