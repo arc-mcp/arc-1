@@ -4,8 +4,8 @@
  * - Short dumps (ST22): list and read ABAP runtime errors
  * - ABAP traces: list/analyze recorded profiler traces, and arm/list/cancel trace requests
  *
- * Most operations are read-only (GET); arming and cancelling a trace request mutate server state and
- * go through OperationType.Update. Follows the same pure-function pattern as devtools.ts.
+ * Most operations are read-only (GET); arming/cancelling a trace request and changing ST05 SQL-trace
+ * state mutate server state via OperationType.Update. Follows the same pure-function pattern as devtools.ts.
  */
 
 import { createHash } from 'node:crypto';
@@ -1301,14 +1301,14 @@ export async function setSqlTraceState(
 ): Promise<SqlTraceInstance[]> {
   checkOperation(safety, OperationType.Update, 'SetSqlTraceState');
   const current = await http.get(ST05_STATE_URL, { Accept: ST05_STATE_CONTENT_TYPE });
-  // ponytail: targeted replace on the raw state XML — preserves SAP's exact element set/order and any
+  // Known ceiling: targeted replace on the raw state XML preserves SAP's exact element set/order and any
   // fields ARC-1 doesn't model; flips ALL instances (add per-instance targeting only if a multi-instance
   // system needs it).
-  let body = current.body.replace(/<ts:sqlOn>[^<]*<\/ts:sqlOn>/g, `<ts:sqlOn>${opts.sqlOn}</ts:sqlOn>`);
+  let body = current.body.replace(/<ts:sqlOn>[^<]*<\/ts:sqlOn>/g, () => `<ts:sqlOn>${opts.sqlOn}</ts:sqlOn>`);
   if (opts.traceUser !== undefined) {
     const u = opts.traceUser.trim();
     const repl = u.length > 0 ? `<ts:traceUser>${escapeXmlAttr(u)}</ts:traceUser>` : '<ts:traceUser/>';
-    body = body.replace(/<ts:traceUser\/>|<ts:traceUser>[^<]*<\/ts:traceUser>/g, repl);
+    body = body.replace(/<ts:traceUser\/>|<ts:traceUser>[^<]*<\/ts:traceUser>/g, () => repl);
   }
   const resp = await http.put(ST05_STATE_URL, body, ST05_STATE_CONTENT_TYPE);
   return parseSqlTraceState(resp.body);

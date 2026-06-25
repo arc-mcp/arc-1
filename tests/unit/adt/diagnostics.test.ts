@@ -1520,9 +1520,27 @@ describe('parseSqlTraceState', () => {
     const states = parseSqlTraceState(xml);
     expect(states).toHaveLength(1);
     expect(states[0].instance).toBe('vhcala4hci_A4H_00');
+    expect(states[0].host).toBe('vhcala4hci');
     expect(states[0].isLocal).toBe(true);
-    expect(states[0].traceTypes.sql).toBe(false);
-    expect(states[0].traceTypes).toMatchObject({ buf: false, enq: false, rfc: false, auth: false });
+    expect(states[0].isSelected).toBe(false);
+    expect(states[0].traceTypes).toEqual({
+      sql: false,
+      buf: false,
+      enq: false,
+      rfc: false,
+      http: false,
+      apc: false,
+      amc: false,
+      auth: false,
+    });
+    expect(states[0].filter).toEqual({
+      user: undefined,
+      transactionCode: undefined,
+      program: undefined,
+      rfcFunction: undefined,
+      url: undefined,
+      wpId: undefined,
+    });
   });
 
   it('returns [] for an empty body', () => {
@@ -1585,6 +1603,13 @@ describe('setSqlTraceState', () => {
     expect(body).toContain('<ts:sqlOn>true</ts:sqlOn>');
     expect(body).toContain('<ts:traceUser>MARIAN</ts:traceUser>');
     expect(contentType).toBe('application/vnd.sap.adt.perf.trace.state.v1+xml');
+  });
+
+  it('writes dollar-containing user filters literally into the PUT body', async () => {
+    const { http, put } = mockGetPut(stateXml);
+    await setSqlTraceState(http, unrestrictedSafetyConfig(), { sqlOn: true, traceUser: "A$&B$`C$'D" });
+    const body = put.mock.calls[0][1] as string;
+    expect(body).toContain('<ts:traceUser>A$&amp;B$`C$&apos;D</ts:traceUser>');
   });
 
   it('disarms the SQL trace and clears the user filter', async () => {
