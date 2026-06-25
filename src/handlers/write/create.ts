@@ -142,6 +142,94 @@ function validateKtdRefObjectType(refObjectType: string): string | undefined {
   );
 }
 
+const BDEF_IDENTIFIER_PATTERN = '(?:/[A-Za-z0-9_]+/[A-Za-z_][A-Za-z0-9_]*|[A-Za-z_][A-Za-z0-9_]*)';
+const BDEF_EXTENSION_PATTERN = new RegExp(String.raw`\bextend\s+behavior\s+for\s+(${BDEF_IDENTIFIER_PATTERN})\b`, 'i');
+
+function replaceNonNewlineWithSpaces(text: string): string {
+  return text.replace(/[^\n]/g, ' ');
+}
+
+function stripBdefCommentsAndStrings(source: string): string {
+  const withoutBlockComments = source.replace(/\/\*[\s\S]*?\*\//g, replaceNonNewlineWithSpaces);
+  return withoutBlockComments
+    .split('\n')
+    .map((line) => {
+      if (/^\s*\*/.test(line)) return '';
+      let stripped = '';
+      let inString = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        const next = line[i + 1];
+        if (!inString) {
+          if (ch === '"' || (ch === '/' && next === '/')) break;
+          if (ch === "'") {
+            inString = true;
+            stripped += ' ';
+            continue;
+          }
+          stripped += ch;
+          continue;
+        }
+        if (ch === "'" && next === "'") {
+          stripped += '  ';
+          i++;
+          continue;
+        }
+        if (ch === "'") {
+          inString = false;
+          stripped += ' ';
+          continue;
+        }
+        stripped += ' ';
+      }
+      return stripped;
+    })
+    .join('\n');
+}
+
+function extractBdefBehaviorExtensionBase(source: string): string | undefined {
+  return BDEF_EXTENSION_PATTERN.exec(stripBdefCommentsAndStrings(source))?.[1];
+}
+
+function sameBdefName(left: string, right: string): boolean {
+  return left.toUpperCase() === right.toUpperCase();
+}
+
+function applyBdefBehaviorExtensionMetadata(
+  type: string,
+  source: string | undefined,
+  metadataProperties: Record<string, unknown>,
+): string | undefined {
+  if (type !== 'BDEF' || !source) return undefined;
+  const baseBdef = extractBdefBehaviorExtensionBase(source);
+  if (!baseBdef) return undefined;
+  metadataProperties.behaviorExtension = true;
+  metadataProperties.baseBdef = baseBdef;
+  return baseBdef;
+}
+
+async function verifyBdefBehaviorExtensionReadBack(
+  client: SapWriteContext['client'],
+  name: string,
+  expectedBaseBdef: string,
+): Promise<string | undefined> {
+  const readBack = await client.getBdef(name, { version: 'inactive' });
+  const actualBaseBdef = extractBdefBehaviorExtensionBase(readBack.source);
+  if (actualBaseBdef && sameBdefName(actualBaseBdef, expectedBaseBdef)) return undefined;
+
+  const actual =
+    actualBaseBdef !== undefined
+      ? `read-back contains \`extend behavior for ${actualBaseBdef}\` instead`
+      : 'read-back contains no `extend behavior for` declaration';
+  return (
+    `Created and wrote BDEF ${name}, but inactive read-back did not confirm ` +
+    `\`extend behavior for ${expectedBaseBdef}\` (${actual}). ` +
+    'SAP may have scaffolded a plain behavior definition, for example if the ADT template was ignored ' +
+    'or the base BDEF is not extensible. Activation was not run. Verify with SAPRead(type="BDEF", ' +
+    `name="${name}", version="inactive"), then delete/recreate the object after fixing the base or create path.`
+  );
+}
+
 function isKtdCreateEndpointUnavailable(err: unknown): err is AdtApiError {
   if (!(err instanceof AdtApiError)) return false;
   if (err.statusCode !== 404 || err.path !== '/sap/bc/adt/documentation/ktd/documents') return false;
@@ -331,17 +419,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
   // SAP ADT requires the root element to match the object type —
   // a generic objectReferences body returns 400 "System expected the element ...".
   const metadataProperties = getMetadataWriteProperties(args);
-  // BDEF behavior EXTENSION (`extend behavior for <BaseEntity>`) vs definition (`define behavior
-  // for …`): both are adtcore:type BDEF/BDO at the same /bo/behaviordefinitions endpoint, but an
-  // extension's create POST must carry an `adtcore:adtTemplate` naming the base BDEF, or SAP just
-  // scaffolds another definition (live-verified a4h 816). The base BDEF name = the entity named in
-  // `extend behavior for <X>` (a BDEF shares its root entity's name); the base must itself be
-  // `extensible`. Extracted from the source so no extra parameter is needed.
-  const bdefExtMatch = type === 'BDEF' ? /\bextend\s+behavior\s+for\s+([A-Za-z_]\w*)/i.exec(source) : null;
-  if (bdefExtMatch) {
-    metadataProperties.behaviorExtension = true;
-    metadataProperties.baseBdef = bdefExtMatch[1];
-  }
+  const bdefExtensionBase = applyBdefBehaviorExtensionMetadata(type, source, metadataProperties);
   const body = buildCreateXml(type, name, pkg, description, metadataProperties, config.language, config.username);
 
   // Step 1: Create the object (metadata only)
@@ -467,6 +545,13 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
       effectiveTransport,
       cachedFeatures?.abapRelease,
     );
+    if (bdefExtensionBase) {
+      const verificationError = await verifyBdefBehaviorExtensionReadBack(client, name, bdefExtensionBase);
+      if (verificationError) {
+        invalidateWrittenObject(type, name);
+        return errorResult(verificationError);
+      }
+    }
     invalidateWrittenObject(type, name);
     const msg = `Created ${type} ${name} in package ${pkg} and wrote source code.`;
     const warnings = mergePreWriteWarnings(
@@ -694,6 +779,7 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
       const objUrl = objectUrlForType(objType, objName);
       const createUrl = objUrl.replace(/\/[^/]+$/, '');
       const objMetadataProps = getMetadataWriteProperties(obj);
+      const objBdefExtensionBase = applyBdefBehaviorExtensionMetadata(objType, objSource, objMetadataProps);
       const body = buildCreateXml(
         objType,
         objName,
@@ -752,6 +838,12 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
           objTransport,
           cachedFeatures?.abapRelease,
         );
+        if (objBdefExtensionBase) {
+          const verificationError = await verifyBdefBehaviorExtensionReadBack(client, objName, objBdefExtensionBase);
+          if (verificationError) {
+            throw new Error(verificationError);
+          }
+        }
       }
 
       // Resolve the activation URL up front so both the inline path and the

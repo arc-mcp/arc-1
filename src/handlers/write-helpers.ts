@@ -413,8 +413,12 @@ export function buildCreateXml(
       // POST carries an `adtcore:adtTemplate` naming the base BDEF — and it MUST precede packageRef
       // (the elements are schema-ordered; a trailing template is silently ignored — live-verified a4h
       // 816). Without it SAP scaffolds a plain definition; with it SAP scaffolds `extend behavior for`.
+      const baseBdef = String(properties?.baseBdef ?? '').trim();
+      if (properties?.behaviorExtension && !baseBdef) {
+        throw new Error('BDEF behavior extension create requires a non-empty baseBdef metadata property.');
+      }
       const extTemplate = properties?.behaviorExtension
-        ? `\n  <adtcore:adtTemplate>\n    <adtcore:adtProperty adtcore:key="base_bdef">${escapeXmlAttr(String(properties.baseBdef ?? ''))}</adtcore:adtProperty>\n  </adtcore:adtTemplate>`
+        ? `\n  <adtcore:adtTemplate>\n    <adtcore:adtProperty adtcore:key="base_bdef">${escapeXmlAttr(baseBdef)}</adtcore:adtProperty>\n  </adtcore:adtTemplate>`
         : '';
       return `<?xml version="1.0" encoding="UTF-8"?>
 <blue:blueSource xmlns:blue="http://www.sap.com/wbobj/blue"
