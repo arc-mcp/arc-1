@@ -5,6 +5,7 @@
 
 import type { AdtClient } from '../adt/client.js';
 import { AdtApiError } from '../adt/errors.js';
+import { checkTransport } from '../adt/safety.js';
 import {
   createTransport,
   createTransportWithTarget,
@@ -263,6 +264,11 @@ export async function handleSAPTransport(client: AdtClient, args: Record<string,
     case 'release': {
       const id = String(args.id ?? '');
       if (!id) return errorResult('Transport ID is required for "release" action.');
+      // Enforce the transport-write safety ceiling BEFORE the diagnostic read so an unauthorized
+      // caller gets the real "writes blocked" reason (not a misleading "activate inactive objects
+      // first") and we don't spend an ADT round-trip for a release we'll refuse. releaseTransport
+      // re-checks defensively.
+      checkTransport(client.safety, id, 'ReleaseTransport', true);
       const blocking = await precheckInactiveForRelease(client, id);
       if (blocking.length > 0) return inactiveReleaseError(id, blocking);
       await releaseTransport(client.http, client.safety, id);
@@ -329,6 +335,9 @@ export async function handleSAPTransport(client: AdtClient, args: Record<string,
     case 'release_recursive': {
       const id = String(args.id ?? '');
       if (!id) return errorResult('Transport ID is required for "release_recursive" action.');
+      // Safety ceiling before the diagnostic read (see 'release' above). releaseTransportRecursive
+      // re-checks the request and each task defensively.
+      checkTransport(client.safety, id, 'ReleaseTransportRecursive', true);
       // One probe on the parent request id catches child-task objects too (their parentTransport
       // ends in /<request>), so no per-task fetch is needed.
       const blocking = await precheckInactiveForRelease(client, id);

@@ -157,6 +157,37 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
       expect(result.content[0]?.text).toContain('Released transport request: DEVK900001');
     });
 
+    // P2 (Codex review): the transport-write safety ceiling must be enforced BEFORE the diagnostic
+    // inactive-objects read. Otherwise an unauthorized caller whose transport happens to contain
+    // inactive objects gets a misleading "activate them first" instead of the real "writes blocked",
+    // and we waste an ADT round-trip on a release we will refuse.
+    it('release: enforces allowTransportWrites BEFORE the inactive-objects probe', async () => {
+      mockFetch.mockImplementation((url: unknown) =>
+        Promise.resolve(
+          String(url).includes('inactiveobjects')
+            ? mockResponse(200, inactiveXmlMatching, {}) // transport DOES contain inactive objects
+            : mockResponse(200, '', { 'x-csrf-token': 'T' }),
+        ),
+      );
+      const noWriteClient = new AdtClient({
+        baseUrl: 'http://sap:8000',
+        username: 'admin',
+        password: 'secret',
+        safety: { ...unrestrictedSafetyConfig(), allowTransportWrites: false },
+      });
+      const result = await handleToolCall(noWriteClient, DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'release',
+        id: 'DEVK900001',
+      });
+      expect(result.isError).toBe(true);
+      // The real reason — not the misleading inactive-objects remediation.
+      expect(result.content[0]?.text).toContain('allowTransportWrites=false');
+      expect(result.content[0]?.text).not.toContain('cannot be released');
+      // The diagnostic read must NOT run for a release refused on safety grounds.
+      const probedInactive = mockFetch.mock.calls.some((c: unknown[]) => String(c[0]).includes('inactiveobjects'));
+      expect(probedInactive).toBe(false);
+    });
+
     it('create with package passes DEVCLASS through', async () => {
       // CreateCorrectionRequest endpoint returns a path like /com.sap.cts/object_record/<id>
       mockFetch.mockResolvedValue(mockResponse(200, '/com.sap.cts/object_record/DEVK900099', { 'x-csrf-token': 'T' }));
