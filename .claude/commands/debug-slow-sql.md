@@ -34,6 +34,13 @@ Work top-down. Each rung is cheaper than the next and usually tells you whether 
   client-side filtering, missing `FOR ALL ENTRIES` pre-check, calculated fields forcing a full scan.
 - `SAPContext(action="impact", type="DDLS", name=…)` — the CDS stack (projection → base views → tables). The
   slow view is often a thin projection over a heavy base.
+- **Find the generator, not just the literal SQL.** A slow `LIKE '%…%'`/scan is often *generated* — by a search
+  help, SADL/RAP, or a framework — not hand-written, so a `grep`/where-used for the literal `SELECT` comes up
+  empty. Trace the generator instead: for a value-help / type-ahead screen, the **search help**
+  (`DD30L.SELMETHOD` + `FUZZY_SEARCH`, `DD32S` fields) and its DSH/SADL classes (`CL_DSH_*`, the F4→WHERE
+  conversion) via `SAPSearch`/`SAPNavigate`/`SAPRead`; for OData, the CDS view + its SADL annotations. (Don't
+  confuse SE91/`WBMESSAGES`, which loads one message class in memory and searches with `CS`, with a search-help
+  path that issues a real DB `LIKE`.)
 
 ### 1. Where did the time go? (one cheap call)
 For an **OData / Fiori** request:
@@ -66,6 +73,11 @@ entity/list request from the Network tab, not a `$batch` POST.)
 - Compare signals: probe the OData URL, then run `SAPQuery` on the underlying CDS/base — if `queryExecutionTimeMs`
   is close to the OData `gwappdb`, the DB query is the cost; if OData is slow but the query is fast, it's the
   SADL/framework layer above. For the exact statement + execution plan, descend to ST05.
+- Recommending a HANA full-text / `CONTAINS` / fuzzy fix? You **can't A/B-test it with `SAPQuery`** — the ADT
+  freestyle endpoint is Open-SQL-only and rejects `CONTAINS(...)` / `… CP '*x*'` (`400 "(" is not allowed`).
+  Prove it instead with an **ST05 trace during a live reproduce** of the real feature, or a one-off ABAP probe
+  report. First confirm the table even has a full-text index: `SAPQuery(sql="SELECT indexname, full_text FROM
+  dd12l WHERE sqltab = '<TABLE>'")` → `full_text = 'X'`.
 
 ### 3. App-bound → ABAP profiler trace (which code, which tables)
 ```
@@ -77,6 +89,13 @@ The `dbAccesses` view tells you *which* tables a request hit and how often (N+1 
 table). The `hitlist` tells you the ABAP hot path. ARC-1 can **arm** a profiler trace request itself —
 `SAPDiagnose(action="trace_start", …)`, then `trace_requests` to list and `trace_cancel` to clean up — or record
 one in SAT/ST12; then list/analyze it with the `traces` action above.
+
+**Two caveats `trace_start` itself flags — heed them:** (1) an HTTP trace captures the user's *very next* matching
+HTTP call, so after arming make **no** other ARC-1/MCP calls until the user has reproduced — your own ADT calls
+will consume the trap. (2) For HTTP/OData traces on HANA the profiler is weak: `hitlist`/`statements` are usually
+empty (or 400 `"Data is invalid…"`), and business tables hide inside a `<DB Access from Kernel>` bucket — use
+`dbAccesses` only for "did we touch table X, how often", and use **ST05** (rung 4) for the actual OData SQL +
+timings. The profiler is richest for dialog/report/RFC traces of ABAP-side code.
 
 ### 4. The exact SQL + plan → ST05 SQL trace
 ARC-1 can **arm/disarm** the ST05 SQL trace and point you to the records (it can't read the records over ADT —
@@ -91,6 +110,13 @@ SAPDiagnose(action="set_sql_trace_state", sqlOn=false)                  # always
 Then read the records (see "SAP GUI / Fiori escalation"). The record list gives you the exact `SELECT`, its
 **duration**, **rows fetched**, the object, and (in ST05) the **EXPLAIN / execution plan** + buffer state.
 Available on 758/816; **not** on NW 7.50 (the `/st05/trace` ADT API returns 404 there — use SAP GUI ST05).
+
+**Reading the records** (there is **no** `sql_trace_records`/`sql_trace_read` ADT action — `sql_trace_directory`
+only returns the viewer link): open the deep-link (TMC "SQL Trace Analysis") **or** SAP GUI **ST05 → Display
+Trace** → pick the app server + your trace file → sort by **Duration** desc → per row read the SQL text,
+Duration, **Records** (rows fetched), Object (table/view); double-click the slowest → **Explain** for the HANA
+plan. Look for: extra hits on association/text tables (SADL expansion), repeated identical `SELECT`s (N+1), or
+Records ≫ visible rows (selectivity).
 
 > If a perf endpoint 403s with "Service cannot be reached", ARC-1 surfaces an `icf-service-inactive` hint —
 > activate the named SICF node (`/sap/bc/stmc` for the trace UI) in tcode SICF.
