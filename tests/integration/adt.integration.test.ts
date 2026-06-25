@@ -2564,8 +2564,18 @@ describe('ADT Integration Tests', () => {
 // type) → read → activate → delete. Requires live re-confirmation on 7.50/758/816 before release.
 // Endpoint /ddic/tabletypes is standard ADT.
 describe('TTYP table type read + create (FEAT-65)', () => {
+  // NW 7.50 has no /ddic/tabletypes endpoint (live-verified: 404 + absent from discovery), so the
+  // feature is unavailable there — skip rather than fail when the endpoint isn't advertised.
+  let tabletypesAvailable = false;
+  beforeAll(async () => {
+    if (!process.env.TEST_SAP_URL) return;
+    const { map } = await fetchDiscoveryDocument(getTestClient().http);
+    tabletypesAvailable = map.has('/sap/bc/adt/ddic/tabletypes');
+  });
+
   it('creates a table type (structure row), reads it back with the right row type, activates, deletes', async (ctx) => {
     requireOrSkip(ctx, process.env.TEST_SAP_URL, SkipReason.NO_CREDENTIALS);
+    requireOrSkip(ctx, tabletypesAvailable || undefined, SkipReason.BACKEND_UNSUPPORTED);
     const { generateUniqueName } = await import('./crud-harness.js');
     const { handleToolCall } = await import('../../src/handlers/dispatch.js');
     const config = {
@@ -2601,6 +2611,7 @@ describe('TTYP table type read + create (FEAT-65)', () => {
 
   it('rejects a TTYP create without rowType (failure path)', async (ctx) => {
     requireOrSkip(ctx, process.env.TEST_SAP_URL, SkipReason.NO_CREDENTIALS);
+    requireOrSkip(ctx, tabletypesAvailable || undefined, SkipReason.BACKEND_UNSUPPORTED);
     const { handleToolCall } = await import('../../src/handlers/dispatch.js');
     const config = {
       arc1Port: 8080,

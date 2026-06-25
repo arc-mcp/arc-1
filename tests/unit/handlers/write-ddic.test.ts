@@ -258,6 +258,9 @@ describe('SAPWrite handler — DDIC writes', () => {
       expect(message).toContain('Batch created 0/1 objects');
       expect(message).toContain('TTYP post-create update failed');
       expect(message).toContain('default metadata shell');
+      // Recovery guidance must point at the path that actually works (update), not a plain re-create
+      // which 400s "already exists" (live-verified on 816).
+      expect(message).toContain('action="update"');
       expect(calls.some((c) => c.method === 'POST' && c.url.includes('_action=UNLOCK'))).toBe(true);
       expect(calls.some((c) => c.method === 'POST' && c.url.includes('/sap/bc/adt/activation'))).toBe(false);
     });
@@ -1167,6 +1170,35 @@ describe('SAPWrite handler — DDIC writes', () => {
         expect(message).toContain('SE11');
         expect(message).toContain('TABCLASS');
         // The handler must refuse BEFORE making any HTTP call to /tables/.
+        expect(mockFetch.mock.calls).toHaveLength(0);
+      } finally {
+        resetCachedFeatures();
+      }
+    });
+
+    it('refuses TTYP create when /sap/bc/adt/ddic/tabletypes/ is missing from discovery (FEAT-65; NW 7.50)', async () => {
+      // Live-verified: NW 7.50 returns 404 + advertises no tabletypes collection in discovery.
+      // Refuse upfront with a clear hint instead of letting the POST 404 "Resource ... does not exist".
+      setCachedFeatures({
+        ...featuresOff(),
+        abapRelease: '750',
+        systemType: 'onprem',
+        discoveryMap: new Map<string, string[]>([['/sap/bc/adt/ddic/structures', ['application/*']]]),
+      });
+      try {
+        mockFetch.mockReset();
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+          action: 'create',
+          type: 'TTYP',
+          name: 'ZTTYP_750',
+          package: '$TMP',
+          rowType: 'BAPIRET2',
+        });
+        expect(result.isError).toBe(true);
+        const message = result.content[0]?.text ?? '';
+        expect(message).toContain('Table type (TTYP) writes are not available');
+        expect(message).toContain('tabletypes');
+        // Refuse BEFORE any HTTP call to /tabletypes/.
         expect(mockFetch.mock.calls).toHaveLength(0);
       } finally {
         resetCachedFeatures();

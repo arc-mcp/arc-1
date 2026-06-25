@@ -1027,3 +1027,8 @@ export const TABL_DT_WRITE_UNAVAILABLE_HINT =
   'Use SE11 in SAPGUI, or connect ARC-1 to an SAP_BASIS ≥ 7.52 system. ' +
   'Writing the source via /sap/bc/adt/ddic/structures/ would silently flip ' +
   'DD02L-TABCLASS to INTTAB and corrupt the table.';
+
+export const TTYP_WRITE_UNAVAILABLE_HINT =
+  'Table type (TTYP) writes are not available on this system ' +
+  '(/sap/bc/adt/ddic/tabletypes/ is not exposed by ADT discovery — verified absent on NW 7.50). ' +
+  'Use SE11 in SAPGUI, or connect ARC-1 to a system that exposes the table-type endpoint (S/4HANA 2023 / ABAP Platform 2025 verified).';

@@ -47,6 +47,16 @@ export function isTablesEndpointAvailable(): boolean | undefined {
   return map.has('/sap/bc/adt/ddic/tables');
 }
 
+/**
+ * True/false if the ADT /ddic/tabletypes endpoint is advertised by discovery; undefined if not probed.
+ * Live-verified absent on NW 7.50 (404 + not in discovery) and present on S/4 758 + ABAP 816 (FEAT-65).
+ */
+export function isTableTypesEndpointAvailable(): boolean | undefined {
+  const map = cachedFeatures?.discoveryMap ?? cachedDiscovery;
+  if (!map || map.size === 0) return undefined;
+  return map.has('/sap/bc/adt/ddic/tabletypes');
+}
+
 /** True when the probed system is BTP ABAP Environment. */
 export function isBtpSystem(): boolean {
   return cachedFeatures?.systemType === 'btp';

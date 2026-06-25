@@ -26,7 +26,7 @@ import {
 } from '../activate.js';
 import { invalidateInactiveList } from '../cache-security.js';
 import { guardCdsSyntax } from '../cds-hints.js';
-import { cachedFeatures, isTablesEndpointAvailable } from '../feature-cache.js';
+import { cachedFeatures, isTablesEndpointAvailable, isTableTypesEndpointAvailable } from '../feature-cache.js';
 import {
   normalizeObjectType,
   normalizeWriteObjectType,
@@ -47,6 +47,7 @@ import {
   SKTD_V2_CONTENT_TYPE,
   stripFmParamCommentBlock,
   TABL_DT_WRITE_UNAVAILABLE_HINT,
+  TTYP_WRITE_UNAVAILABLE_HINT,
   tryPostSaveSyntaxCheck,
   vendorContentTypeForType,
 } from '../write-helpers.js';
@@ -72,7 +73,9 @@ function ttypPostCreateFailureMessage(name: string, cause: unknown): string {
   const detail = cause instanceof Error ? cause.message : String(cause);
   return (
     `TTYP post-create update failed for ${name} after SAP accepted the create POST. ` +
-    `The object may remain as SAP's default metadata shell; verify with SAPRead and delete or retry it before use. ` +
+    `The object may remain as SAP's default metadata shell (CHAR). To recover, run ` +
+    `SAPWrite(action="update", type="TTYP", name="${name}", rowType=…) to write the intended row type, ` +
+    `or delete it — a plain re-create fails with "already exists". Verify with SAPRead first. ` +
     detail
   );
 }
@@ -714,6 +717,17 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
           packageName: objPackage,
           status: 'failed',
           error: TABL_DT_WRITE_UNAVAILABLE_HINT,
+        });
+        break;
+      }
+      // TTYP create needs /ddic/tabletypes/ (absent on NW 7.50) — mirror the TABL/DT gate above.
+      if (objType === 'TTYP' && isTableTypesEndpointAvailable() === false) {
+        results.push({
+          type: objType,
+          name: objName,
+          packageName: objPackage,
+          status: 'failed',
+          error: TTYP_WRITE_UNAVAILABLE_HINT,
         });
         break;
       }
