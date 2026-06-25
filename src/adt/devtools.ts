@@ -19,6 +19,7 @@ import type {
   FixAffectedObject,
   FixDelta,
   FixProposal,
+  MethodCoverage,
   SyntaxCheckResult,
   SyntaxMessage,
   UnitTestResult,
@@ -610,14 +611,15 @@ export function extractCoverageMeasurementUri(testrunsXml: string): string | nul
   return null;
 }
 
-/** Parse the object-level statement/branch/procedure aggregate from a coverage-measurement response. */
-export function parseCoverageMeasurement(xml: string): CoverageSummary {
-  const parsed = parseXml(xml);
-  const firstCoverages = findDeepNodes(parsed, 'coverages')[0] as Record<string, unknown> | undefined;
-  if (!firstCoverages) return {};
-  const raw = firstCoverages.coverage;
+/** Max per-method entries returned (worst-first); pathological classes don't bloat the output. */
+const MAX_METHODS_BELOW_FULL = 50;
+
+/** Validate + extract the statement/branch/procedure metrics from one `<coverages>` node.
+ *  Non-finite / negative attrs are skipped so malformed XML degrades instead of emitting NaN. */
+function parseCoverageEntries(coveragesNode: Record<string, unknown>): Omit<MethodCoverage, 'method'> {
+  const raw = coveragesNode.coverage;
   const entries = (Array.isArray(raw) ? raw : raw ? [raw] : []) as Array<Record<string, unknown>>;
-  const summary: CoverageSummary = {};
+  const out: Omit<MethodCoverage, 'method'> = {};
   for (const e of entries) {
     const type = String(e['@_type'] ?? '');
     const total = Number(e['@_total'] ?? 0);
@@ -629,9 +631,60 @@ export function parseCoverageMeasurement(xml: string): CoverageSummary {
       total >= 0 &&
       executed >= 0
     ) {
-      summary[type] = { executed, total, percent: total ? Math.round((executed / total) * 10000) / 100 : 0 };
+      out[type] = { executed, total, percent: total ? Math.round((executed / total) * 10000) / 100 : 0 };
     }
   }
+  return out;
+}
+
+/** Walk the measurement tree and collect every per-method (CLAS/OM) coverage node. */
+function collectMethodCoverages(parsed: unknown): MethodCoverage[] {
+  const methods: MethodCoverage[] = [];
+  const visit = (obj: unknown): void => {
+    if (!obj || typeof obj !== 'object') return;
+    if (Array.isArray(obj)) {
+      for (const item of obj) visit(item);
+      return;
+    }
+    const rec = obj as Record<string, unknown>;
+    // removeNSPrefix strips adtcore: (element key `objectReference`, attrs `@_type`/`@_name`); the
+    // parser also arrays `objectReference` (ARRAY_TAGS), so unwrap the single entry.
+    const refRaw = rec.objectReference;
+    const ref = (Array.isArray(refRaw) ? refRaw[0] : refRaw) as Record<string, unknown> | undefined;
+    // Method node type is `CLAS/OM` on 758/816 but `CLAS/OM/<visibility>` (e.g. CLAS/OM/public) on
+    // NW 7.50 — live-verified 2026-06-25; match the prefix so per-method works on all three.
+    const refType = ref ? String(ref['@_type'] ?? '') : '';
+    if (ref && (refType === 'CLAS/OM' || refType.startsWith('CLAS/OM/')) && rec.coverages) {
+      const name = String(ref['@_name'] ?? '');
+      const coveragesNode = (Array.isArray(rec.coverages) ? rec.coverages[0] : rec.coverages) as Record<
+        string,
+        unknown
+      >;
+      const metrics = parseCoverageEntries(coveragesNode);
+      if (name && (metrics.statement || metrics.branch || metrics.procedure)) {
+        methods.push({ method: name, ...metrics });
+      }
+    }
+    for (const value of Object.values(rec)) visit(value);
+  };
+  visit(parsed);
+  return methods;
+}
+
+/** Parse the object-level statement/branch/procedure aggregate from a coverage-measurement response,
+ *  plus the per-method drill-down (methods below full statement coverage, worst-first). */
+export function parseCoverageMeasurement(xml: string): CoverageSummary {
+  const parsed = parseXml(xml);
+  const firstCoverages = findDeepNodes(parsed, 'coverages')[0] as Record<string, unknown> | undefined;
+  if (!firstCoverages) return {};
+  const summary: CoverageSummary = parseCoverageEntries(firstCoverages);
+  // Per-method nodes are already in THIS response (no extra round-trip). Surface only methods below
+  // 100% statement coverage — the actionable subset the object aggregate hides — worst-first, capped.
+  const below = collectMethodCoverages(parsed)
+    .filter((m) => m.statement !== undefined && m.statement.executed < m.statement.total)
+    .sort((a, b) => a.statement!.percent - b.statement!.percent || b.statement!.total - a.statement!.total)
+    .slice(0, MAX_METHODS_BELOW_FULL);
+  if (below.length > 0) summary.methodsBelowFull = below;
   return summary;
 }
 

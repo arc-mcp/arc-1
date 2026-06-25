@@ -17,10 +17,15 @@ Verified live on a4h 758, the flow is three steps:
    object-level aggregate: a `<cov:coverages>` of three `<cov:coverage type="statement|branch|procedure"
    total executed>` entries.
 
-Ponytail scope: return the **object-level aggregate** (the program node's three percentages). The
-per-method drill-down (`rel="next"` child measurements) is deferred — the aggregate is the high-value
-80% and avoids the recursive fetch. Best-effort: if the coverage step fails (older release, no
-measurement), return the tests as today plus a note, never error.
+Ponytail scope: return the **object-level aggregate** (the program node's three percentages).
+Best-effort: if the coverage step fails (older release, no measurement), return the tests as today plus
+a note, never error.
+
+**Follow-up shipped (2026-06-25):** per-method drill-down (`methodsBelowFull` — methods below 100%
+statement coverage, worst-first). It is FREE: the per-method (`CLAS/OM`) nodes are already nested in
+the single measurement response — NO `rel="next"` recursion / extra round-trip (the plan's original
+assumption was wrong). Live-verified on 758 + 7.50 (7.50 tags methods `CLAS/OM/<visibility>` — matched
+by prefix; 816 pending — MARIAN was locked there during verification).
 
 Success criteria (plain bullets):
 - `SAPDiagnose action=unittest coverage=true` returns the tests AND
@@ -82,7 +87,8 @@ Success criteria (plain bullets):
    shape semantics; only when requested does the extra round-trip happen.
 2. **Best-effort coverage.** The measurement POST is wrapped — any failure (405/404/parse) returns the
    tests plus a "coverage unavailable on this system" note, never an error.
-3. **Object-level aggregate only** (program node). Defer per-method `rel=next` recursion.
+3. **Object-level aggregate + per-method below-full** (the follow-up). The per-method nodes ride the
+   same response — no extra round-trip; only methods below 100% statement coverage are surfaced (capped, worst-first).
 4. **Parser tested against the REAL captured fixture**, never a hand-written one.
 5. **Three-file schema sync** for the new `coverage` param: `tools.ts` + `schemas.ts`
    (`looseOptionalBoolean`, never `z.coerce.boolean`) + the `diagnose.ts` handler.

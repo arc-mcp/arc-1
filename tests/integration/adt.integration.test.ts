@@ -2582,7 +2582,12 @@ describe('AUnit coverage (FEAT-41)', () => {
     expect(result.isError).toBeUndefined();
     const out = JSON.parse(result.content[0]?.text ?? '{}') as {
       tests?: unknown[];
-      coverage?: { statement?: { total: number }; branch?: unknown; procedure?: unknown };
+      coverage?: {
+        statement?: { total: number };
+        branch?: unknown;
+        procedure?: unknown;
+        methodsBelowFull?: Array<{ method: string; statement?: { percent: number } }>;
+      };
     };
     requireOrSkip(
       ctx,
@@ -2592,5 +2597,12 @@ describe('AUnit coverage (FEAT-41)', () => {
     expect(out.coverage?.statement?.total).toBeGreaterThan(0);
     expect(out.coverage?.branch).toBeDefined();
     expect(out.coverage?.procedure).toBeDefined();
+    // Per-method drill-down: ZCL_ABAPGIT_HASH has partially-covered methods (it isn't fully tested),
+    // worst-first by statement percent. (Skips elsewhere; method node type is CLAS/OM on 758/816 and
+    // CLAS/OM/<visibility> on 7.50 — both matched.)
+    const below = out.coverage?.methodsBelowFull ?? [];
+    expect(below.length).toBeGreaterThan(0);
+    const pcts = below.map((m) => m.statement?.percent ?? 0);
+    expect(pcts).toEqual([...pcts].sort((a, b) => a - b));
   }, 60_000);
 });

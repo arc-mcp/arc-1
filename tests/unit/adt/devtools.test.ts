@@ -1358,6 +1358,63 @@ describe('DevTools', () => {
       expect(cov.procedure).toEqual({ executed: 3, total: 8, percent: 37.5 });
     });
 
+    it('parseCoverageMeasurement surfaces methods below full statement coverage, worst-first (real fixture)', () => {
+      const cov = parseCoverageMeasurement(coverageMeasurement);
+      const below = cov.methodsBelowFull ?? [];
+      const names = below.map((m) => m.method);
+      // 7 of the 8 ZCL_ABAPGIT_HASH methods are < 100% statement coverage; SHA1 (11/11) is excluded.
+      expect(below).toHaveLength(7);
+      expect(names).not.toContain('SHA1');
+      // Worst-first by percent, then larger gap (total) first → SHA1_STRING (0/7) leads.
+      expect(below[0]).toEqual({
+        method: 'SHA1_STRING',
+        statement: { executed: 0, total: 7, percent: 0 },
+        branch: { executed: 0, total: 2, percent: 0 },
+        procedure: { executed: 0, total: 1, percent: 0 },
+      });
+      // A fully-untested 0/2 method is present; the partial 87.5% method ranks last.
+      expect(names).toContain('SHA1_BLOB');
+      expect(below.at(-1)?.method).toBe('ADLER32');
+      // Monotonic non-decreasing statement percent.
+      const pcts = below.map((m) => m.statement?.percent ?? 0);
+      expect(pcts).toEqual([...pcts].sort((a, b) => a - b));
+    });
+
+    it('parseCoverageMeasurement reads per-method coverage on NW 7.50 (CLAS/OM/<visibility> type)', () => {
+      // 7.50 tags method nodes `CLAS/OM/public` (vs `CLAS/OM` on 758/816) — live-verified 2026-06-25.
+      const nw750 = `<?xml version="1.0"?>
+<cov:result name="ADT_ROOT_NODE" xmlns:cov="http://www.sap.com/adt/cov" xmlns:adtcore="http://www.sap.com/adt/core">
+  <nodes><node>
+    <adtcore:objectReference adtcore:name="ZCL_ARC1_COV==========CP" adtcore:type="CLAS/OCI"/>
+    <coverages><coverage type="statement" total="4" executed="3"/></coverages>
+    <nodes><node>
+      <adtcore:objectReference adtcore:type="CLAS/OM/public" adtcore:name="ADD"/>
+      <coverages><coverage type="statement" total="4" executed="3"/></coverages>
+    </node></nodes>
+  </node></nodes>
+</cov:result>`;
+      const cov = parseCoverageMeasurement(nw750);
+      expect(cov.statement).toEqual({ executed: 3, total: 4, percent: 75 });
+      expect(cov.methodsBelowFull).toEqual([{ method: 'ADD', statement: { executed: 3, total: 4, percent: 75 } }]);
+    });
+
+    it('parseCoverageMeasurement omits methodsBelowFull when every method is fully covered', () => {
+      const fullyCovered = `<?xml version="1.0"?>
+<cov:result name="ADT_ROOT_NODE" xmlns:cov="http://www.sap.com/adt/cov" xmlns:adtcore="http://www.sap.com/adt/core">
+  <nodes><node>
+    <adtcore:objectReference adtcore:name="ZCL_X==========CP" adtcore:type="CLAS/OCI"/>
+    <coverages><coverage type="statement" total="5" executed="5"/></coverages>
+    <nodes><node>
+      <adtcore:objectReference adtcore:name="ONLY_METHOD" adtcore:type="CLAS/OM"/>
+      <coverages><coverage type="statement" total="5" executed="5"/></coverages>
+    </node></nodes>
+  </node></nodes>
+</cov:result>`;
+      const cov = parseCoverageMeasurement(fullyCovered);
+      expect(cov.statement).toEqual({ executed: 5, total: 5, percent: 100 });
+      expect(cov.methodsBelowFull).toBeUndefined();
+    });
+
     it('parseCoverageMeasurement returns {} when there is no coverage node', () => {
       expect(parseCoverageMeasurement('<result name="ADT_ROOT_NODE"/>')).toEqual({});
       expect(parseCoverageMeasurement('')).toEqual({});

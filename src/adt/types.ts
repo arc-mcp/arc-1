@@ -265,11 +265,22 @@ export interface CoverageMetric {
   percent: number;
 }
 
+/** One method's coverage (CLAS/OM node) from the measurement drill-down. */
+export interface MethodCoverage {
+  method: string;
+  statement?: CoverageMetric;
+  branch?: CoverageMetric;
+  procedure?: CoverageMetric;
+}
+
 /** Object-level ABAP Unit coverage aggregate. Any dimension may be absent if the system omits it. */
 export interface CoverageSummary {
   statement?: CoverageMetric;
   branch?: CoverageMetric;
   procedure?: CoverageMetric;
+  /** Methods below 100% statement coverage, worst-first (the actionable "test next" subset the
+   *  object aggregate hides). Present only when the measurement carries per-method nodes. */
+  methodsBelowFull?: MethodCoverage[];
 }
 
 /** Result of a unit-test run: the test outcomes plus optional coverage (when requested + available). */
