@@ -23,6 +23,7 @@ import { getTransportInfo } from '../adt/transport.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
 import type { ServerConfig } from '../server/types.js';
 import { cachedFeatures, setCachedFeatures } from './feature-cache.js';
+import { inferObjectType, normalizeObjectType, objectUrlForTypeRaw } from './object-types.js';
 import { errorResult, type ToolResult, textResult } from './shared.js';
 import { enforceAllowedPackageForObjectUrl } from './write-helpers.js';
 
@@ -47,6 +48,52 @@ export async function handleSAPManage(
         );
       }
       return textResult(JSON.stringify(cachedFeatures, null, 2));
+    }
+
+    case 'set_api_state': {
+      // Clean-core API release: set an object's release contract to RELEASED / NOT_RELEASED.
+      const stateArg = String(args.apiState ?? 'RELEASED').toUpperCase();
+      if (stateArg !== 'RELEASED' && stateArg !== 'NOT_RELEASED') {
+        return errorResult('apiState must be "RELEASED" or "NOT_RELEASED".');
+      }
+      // Which release contract to set. C1 (Key-User/Cloud) is the common clean-core default, but
+      // object types support different contracts — e.g. SRVD only C0, classic VIEW only C3 — so the
+      // caller can pick. SAP validates the choice (set_api_state surfaces the supported list on error).
+      const contract = String(args.contract ?? 'C1').toUpperCase();
+      if (!/^C[0-4]$/.test(contract)) {
+        return errorResult('contract must be one of C0, C1, C2, C3, C4.');
+      }
+      // Address by objectUri, or compute from objectType + name (same inference as SAPRead API_STATE).
+      let objectUri = String(args.objectUri ?? '').trim();
+      if (!objectUri) {
+        const name = String(args.name ?? '').trim();
+        if (!name) {
+          return errorResult('set_api_state requires "objectUri", or "name" (+ optional "objectType").');
+        }
+        const inferred = normalizeObjectType(String(args.objectType ?? '')) || inferObjectType(name);
+        if (!inferred) {
+          return errorResult(
+            `Cannot infer object type from name "${name}". Specify objectType (e.g. CLAS, INTF, DDLS, TABL).`,
+          );
+        }
+        objectUri = objectUrlForTypeRaw(inferred, name);
+      }
+      // Fail-closed package gate against the object's REAL package (resolves via the object URI).
+      await enforceAllowedPackageForObjectUrl(client, objectUri, `set_api_state on ${objectUri}`);
+      const result = await client.setApiReleaseState(objectUri, {
+        state: stateArg,
+        contract,
+        transport: args.transport as string | undefined,
+      });
+      const c = result.contracts.find((ct) => ct.contract === contract);
+      const vis = [c?.useInSAPCloudPlatform ? 'ABAP Cloud' : '', c?.useInKeyUserApps ? 'Key User Apps' : '']
+        .filter(Boolean)
+        .join(', ');
+      const endState = c?.state ?? stateArg;
+      const lead = result.changed
+        ? `Set API release contract ${contract} of ${objectUri} to ${endState}`
+        : `API release contract ${contract} of ${objectUri} is already ${endState} (no change)`;
+      return textResult(`${lead}${vis ? ` (visible in ${vis})` : ''}.\n\n${JSON.stringify(result, null, 2)}`);
     }
 
     case 'create_package': {

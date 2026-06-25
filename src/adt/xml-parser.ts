@@ -872,6 +872,95 @@ export function parseApiReleaseState(xml: string): ApiReleaseStateInfo {
   };
 }
 
+export function assertApiReleaseStateConfirmed(
+  info: ApiReleaseStateInfo,
+  contract: string,
+  expectedState: string,
+  expectedVisibility?: { useInSAPCloudPlatform: boolean; useInKeyUserApps: boolean },
+): void {
+  const c = contract.toUpperCase();
+  const confirmedContract = info.contracts.find((release) => release.contract.toUpperCase() === c);
+  if (!confirmedContract) {
+    throw new Error(`API release contract ${c} read-back did not include the contract after PUT.`);
+  }
+  if (confirmedContract.state !== expectedState) {
+    throw new Error(
+      `API release contract ${c} read-back state is ${confirmedContract.state || '(missing)'}, expected ${expectedState}.`,
+    );
+  }
+  if (
+    expectedState === 'RELEASED' &&
+    expectedVisibility &&
+    (confirmedContract.useInSAPCloudPlatform !== expectedVisibility.useInSAPCloudPlatform ||
+      confirmedContract.useInKeyUserApps !== expectedVisibility.useInKeyUserApps)
+  ) {
+    throw new Error(`API release contract ${c} read-back visibility does not match the requested visibility.`);
+  }
+}
+
+/**
+ * Build the PUT body that sets an object's API release contract `state` (RELEASED / NOT_RELEASED).
+ *
+ * The apireleases GET (v10) returns a rich document, but the PUT to `…/apireleases/{uri}/{contract}`
+ * accepts only a NARROW, strictly-ordered subset — live reverse-engineered on a4h 758 + 816: the
+ * standalone contract block (`ars:contract="C1"`) carrying `status` + the successor scaffold, plus
+ * a sibling `apiCatalogData`/`ApiCatalogs` envelope. Response-only nodes (`atom:link`,
+ * `stateTransitions`, `transportObject`, `authValueObject`) are rejected with HTTP 400.
+ *
+ * Visibility on a RELEASED contract is taken VERBATIM from that contract's behaviour DEFAULT flags
+ * (`useInSAPCloudPlatformDefault` / `useInKeyUserAppsDefault`) — never broadened. We deliberately do
+ * NOT pre-judge whether visibility is even required: that varies by contract (C0/C1 demand ≥1
+ * visibility — ARS_STATE_HANDLER/119 — but e.g. C4 has entirely different rules, like "must be an AMDP
+ * method"). So if both defaults are false we send both false and let SAP return the contract-accurate
+ * error, rather than guessing it's a visibility problem. Crucially this still never INVENTS visibility
+ * the contract didn't warrant (the original over-exposure bug). For NOT_RELEASED visibility is untouched.
+ */
+export function buildApiReleasePutBody(getXml: string, contract: string, state: string): string {
+  const c = contract.toUpperCase();
+  const targetState = state.toUpperCase();
+  if (targetState !== 'RELEASED' && targetState !== 'NOT_RELEASED') {
+    throw new Error(`API release state must be RELEASED or NOT_RELEASED, got ${state}.`);
+  }
+  const tag = `c${c.slice(1)}Release`; // 'C1' -> 'c1Release'
+  // The behaviour block lists the *Default visibility flags (self-closing element with "Default" attrs).
+  const behaviour = new RegExp(`<ars:${tag}\\b([^>]*Default[^>]*)/>`).exec(getXml)?.[1] ?? '';
+  const cloudDefault = /useInSAPCloudPlatformDefault="true"/.test(behaviour);
+  const keyUserDefault = /useInKeyUserAppsDefault="true"/.test(behaviour);
+  // The standalone contract block's opening tag (has ars:contract="<C>").
+  const openTagMatch = new RegExp(`<ars:${tag}\\b[^>]*\\bars:contract="${c}"[^>]*>`).exec(getXml);
+  if (!openTagMatch) {
+    // Only the contracts the object type supports appear as settable `ars:contract="Cn"` blocks
+    // (e.g. SRVD supports only C0, classic VIEW only C3) — list them so the caller can retry.
+    const supported = [...new Set([...getXml.matchAll(/ars:contract="(C\d)"/g)].map((m) => m[1]))];
+    const hint = supported.length ? ` This object supports: ${supported.join(', ')}.` : '';
+    throw new Error(`API release contract ${c} is not available for this object.${hint}`);
+  }
+  let openTag = openTagMatch[0];
+  if (targetState === 'RELEASED') {
+    // Set both visibility flags from the contract's own defaults — both-false stays both-false (no
+    // invented exposure); SAP decides whether that's acceptable for this contract.
+    const setAttr = (tagText: string, attr: string, value: boolean): string => {
+      const rendered = `${attr}="${value}"`;
+      return new RegExp(`\\b${attr}="[^"]*"`).test(tagText)
+        ? tagText.replace(new RegExp(`\\b${attr}="[^"]*"`), rendered)
+        : tagText.replace(/>$/, ` ${rendered}>`);
+    };
+    openTag = setAttr(openTag, 'ars:useInSAPCloudPlatform', cloudDefault);
+    openTag = setAttr(openTag, 'ars:useInKeyUserApps', keyUserDefault);
+  }
+  const contractBlock =
+    `${openTag}<ars:status ars:state="${targetState}"/>` +
+    '<ars:useConceptAsSuccessor>false</ars:useConceptAsSuccessor><ars:successors/><ars:successorConceptName/>' +
+    `</ars:${tag}>`;
+  return (
+    '<?xml version="1.0" encoding="utf-8"?>' +
+    '<ars:apiRelease xmlns:ars="http://www.sap.com/adt/ars" xmlns:adtcore="http://www.sap.com/adt/core">' +
+    contractBlock +
+    '<ars:apiCatalogData ars:isAnyAssignmentPossible="true" ars:isAnyContractReleased="true"><ars:ApiCatalogs/></ars:apiCatalogData>' +
+    '</ars:apiRelease>'
+  );
+}
+
 /**
  * Parse service binding metadata XML into a human-readable summary.
  *

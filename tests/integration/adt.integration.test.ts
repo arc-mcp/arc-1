@@ -2869,3 +2869,60 @@ describe('TTYP table type read + create (FEAT-65)', () => {
     expect(result.content[0]?.text).toContain('rowType');
   }, 30_000);
 });
+// ─── API release write (set_api_state) — FEAT-02 write counterpart ─────
+// Live-verified on a4h 758 (v10) + 816 (v10): create a class → release C1 → read RELEASED back →
+// revoke → delete. v10 is used for GET+PUT (v11 500s on 758).
+describe('SAPManage set_api_state (API release write)', () => {
+  it('releases a class C1 contract, reads RELEASED back via API_STATE, then revokes', async (ctx) => {
+    requireOrSkip(ctx, process.env.TEST_SAP_URL, SkipReason.NO_CREDENTIALS);
+    const { generateUniqueName } = await import('./crud-harness.js');
+    const { handleToolCall } = await import('../../src/handlers/dispatch.js');
+    const config = {
+      arc1Port: 8080,
+      arc1HttpAddr: '0.0.0.0:8080',
+      toolMode: 'standard',
+    } as unknown as Parameters<typeof handleToolCall>[1];
+    const client = getTestClient();
+    const name = generateUniqueName('ZCL_ARC1_ARS');
+    try {
+      const created = await handleToolCall(client, config, 'SAPWrite', {
+        action: 'create',
+        type: 'CLAS',
+        name,
+        package: '$TMP',
+        description: 'ARC-1 IT api-release',
+        source: `CLASS ${name.toLowerCase()} DEFINITION PUBLIC FINAL CREATE PUBLIC.\n  PUBLIC SECTION.\nENDCLASS.\nCLASS ${name.toLowerCase()} IMPLEMENTATION.\nENDCLASS.`,
+      });
+      expect(created.isError).toBeUndefined();
+      const activated = await handleToolCall(client, config, 'SAPActivate', { type: 'CLAS', name });
+      expect(activated.isError).toBeUndefined();
+
+      const released = await handleToolCall(client, config, 'SAPManage', {
+        action: 'set_api_state',
+        name,
+        objectType: 'CLAS',
+        apiState: 'RELEASED',
+      });
+      expect(released.isError).toBeUndefined();
+      expect(released.content[0]?.text).toContain('RELEASED');
+
+      const read = await handleToolCall(client, config, 'SAPRead', { type: 'API_STATE', name, objectType: 'CLAS' });
+      const info = JSON.parse(read.content[0]?.text ?? '{}') as {
+        contracts?: Array<{ contract: string; state: string }>;
+      };
+      expect(info.contracts?.find((c) => c.contract === 'C1')?.state).toBe('RELEASED');
+
+      const revoked = await handleToolCall(client, config, 'SAPManage', {
+        action: 'set_api_state',
+        name,
+        objectType: 'CLAS',
+        apiState: 'NOT_RELEASED',
+      });
+      expect(revoked.isError).toBeUndefined();
+    } finally {
+      await handleToolCall(client, config, 'SAPWrite', { action: 'delete', type: 'CLAS', name }).catch(() => {
+        // best-effort-cleanup
+      });
+    }
+  }, 90_000);
+});

@@ -218,16 +218,12 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
     });
 
     it('blocks SAPManage write actions with read scope', async () => {
-      const result = await handleToolCall(
-        createClient(),
-        DEFAULT_CONFIG,
-        'SAPManage',
-        { action: 'create_package' },
-        readAuth,
-      );
-      expect(result.isError).toBe(true);
-      expect(result.content[0]?.text).toContain("Insufficient scope: 'write'");
-      expect(result.content[0]?.text).toContain('SAPManage(action="create_package")');
+      for (const action of ['create_package', 'set_api_state']) {
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', { action }, readAuth);
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toContain("Insufficient scope: 'write'");
+        expect(result.content[0]?.text).toContain(`SAPManage(action="${action}")`);
+      }
     });
 
     it('blocks SAP(manage) write sub-action escalation with read scope', async () => {

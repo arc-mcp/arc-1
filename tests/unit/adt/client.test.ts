@@ -861,6 +861,97 @@ describe('AdtClient', () => {
     });
   });
 
+  describe('setApiReleaseState', () => {
+    const objectUri = '/sap/bc/adt/oo/classes/zcl_arc1_apifix';
+    const apiReleaseUnreleased = () => loadFixture('api-release-unreleased.xml');
+    const apiReleaseReleased = () =>
+      apiReleaseUnreleased()
+        .replace(
+          '<ars:status ars:state="NOT_RELEASED" ars:stateDescription="Not Released"/>',
+          '<ars:status ars:state="RELEASED" ars:stateDescription="Released"/>',
+        )
+        .replace('ars:useInSAPCloudPlatform="false"', 'ars:useInSAPCloudPlatform="true"')
+        .replace('ars:isAnyContractReleased="false"', 'ars:isAnyContractReleased="true"');
+
+    it('reads back after PUT and returns only the confirmed post-write state', async () => {
+      mockFetch.mockReset();
+      mockFetch
+        .mockResolvedValueOnce(mockResponse(200, apiReleaseUnreleased(), { 'x-csrf-token': 'T' }))
+        .mockResolvedValueOnce(mockResponse(200, apiReleaseReleased(), { 'x-csrf-token': 'T' }))
+        .mockResolvedValueOnce(mockResponse(200, apiReleaseReleased(), { 'x-csrf-token': 'T' }));
+
+      const client = createClient();
+      const result = await client.setApiReleaseState(objectUri, { state: 'RELEASED' });
+
+      expect(result.contracts.find((c) => c.contract === 'C1')?.state).toBe('RELEASED');
+      const urls = mockFetch.mock.calls.map((c) => String(c[0]));
+      expect(urls.filter((u) => u.includes('/sap/bc/adt/apireleases/'))).toHaveLength(3);
+      expect(mockFetch.mock.calls[2]?.[1]?.method).toBe('GET');
+    });
+
+    it('throws when the authoritative read-back still has the old state after a 2xx PUT', async () => {
+      mockFetch.mockReset();
+      mockFetch
+        .mockResolvedValueOnce(mockResponse(200, apiReleaseUnreleased(), { 'x-csrf-token': 'T' }))
+        .mockResolvedValueOnce(mockResponse(200, apiReleaseReleased(), { 'x-csrf-token': 'T' }))
+        .mockResolvedValueOnce(mockResponse(200, apiReleaseUnreleased(), { 'x-csrf-token': 'T' }));
+
+      const client = createClient();
+      await expect(client.setApiReleaseState(objectUri, { state: 'RELEASED' })).rejects.toThrow(
+        /read-back.*NOT_RELEASED.*expected RELEASED/i,
+      );
+    });
+
+    it('throws when the read-back visibility does not match the requested release visibility', async () => {
+      const releasedWithoutCloudVisibility = apiReleaseReleased().replace(
+        'ars:useInSAPCloudPlatform="true"',
+        'ars:useInSAPCloudPlatform="false"',
+      );
+      mockFetch.mockReset();
+      mockFetch
+        .mockResolvedValueOnce(mockResponse(200, apiReleaseUnreleased(), { 'x-csrf-token': 'T' }))
+        .mockResolvedValueOnce(mockResponse(200, apiReleaseReleased(), { 'x-csrf-token': 'T' }))
+        .mockResolvedValueOnce(mockResponse(200, releasedWithoutCloudVisibility, { 'x-csrf-token': 'T' }));
+
+      const client = createClient();
+      await expect(client.setApiReleaseState(objectUri, { state: 'RELEASED' })).rejects.toThrow(
+        /read-back visibility/i,
+      );
+    });
+
+    it('treats SAP "No changes were made" as an idempotent no-op (changed=false), not an error', async () => {
+      mockFetch.mockReset();
+      mockFetch
+        .mockResolvedValueOnce(mockResponse(200, apiReleaseReleased(), { 'x-csrf-token': 'T' })) // current: already released
+        .mockResolvedValueOnce(
+          mockResponse(400, '<exc:exception><message>No changes were made.</message></exc:exception>', {
+            'x-csrf-token': 'T',
+          }),
+        ) // PUT no-op
+        .mockResolvedValueOnce(mockResponse(200, apiReleaseReleased(), { 'x-csrf-token': 'T' })); // read-back: still released
+
+      const client = createClient();
+      const result = await client.setApiReleaseState(objectUri, { state: 'RELEASED' });
+      expect(result.changed).toBe(false);
+      expect(result.contracts.find((c) => c.contract === 'C1')?.state).toBe('RELEASED');
+    });
+
+    it('routes the PUT to the requested contract path (C4)', async () => {
+      mockFetch.mockReset();
+      mockFetch
+        .mockResolvedValueOnce(mockResponse(200, apiReleaseUnreleased(), { 'x-csrf-token': 'T' }))
+        .mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'T' }))
+        .mockResolvedValueOnce(mockResponse(200, apiReleaseUnreleased(), { 'x-csrf-token': 'T' }));
+
+      const client = createClient();
+      const result = await client.setApiReleaseState(objectUri, { state: 'NOT_RELEASED', contract: 'C4' });
+      expect(result.changed).toBe(true);
+      const putCall = mockFetch.mock.calls[1];
+      expect(putCall?.[1]?.method).toBe('PUT');
+      expect(String(putCall?.[0])).toMatch(/\/apireleases\/[^?]*\/c4(?:\?|$)/);
+    });
+  });
+
   // ─── URL Encoding (Issues #18, #52) ─────────────────────────────
 
   describe('URL encoding for namespaced objects', () => {
