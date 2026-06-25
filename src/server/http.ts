@@ -105,7 +105,11 @@ function normalizeHostForCompare(host: string): string {
     }
   }
 
-  return h.replace(/\.+$/, '');
+  // Strip trailing dot(s) with a backward index walk, not `/\.+$/` — that pattern is polynomial
+  // ReDoS on the attacker-controlled Host header (CodeQL js/polynomial-redos). This is O(n).
+  let end = h.length;
+  while (end > 0 && h[end - 1] === '.') end--;
+  return h.slice(0, end);
 }
 
 /** True only when the server is bound to a loopback interface — the case DNS-rebinding targets. */

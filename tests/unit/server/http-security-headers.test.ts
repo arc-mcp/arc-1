@@ -278,9 +278,19 @@ describe('host validation — pure helpers', () => {
     expect(checkHostAllowed('[::1]:8080', list)).toBe(true);
     expect(checkHostAllowed('LOCALHOST', list)).toBe(true);
     expect(checkHostAllowed('localhost.', list)).toBe(true);
+    expect(checkHostAllowed('localhost...', list)).toBe(true); // multiple trailing dots
     expect(checkHostAllowed('evil.com', list)).toBe(false);
     expect(checkHostAllowed(undefined, list)).toBe(false);
     expect(checkHostAllowed('', list)).toBe(false);
+  });
+
+  it('trailing-dot stripping is linear, not polynomial-ReDoS, on the attacker-controlled Host', () => {
+    // A backward index walk replaced `/\.+$/` (CodeQL js/polynomial-redos). The pathological input —
+    // many dots then a non-dot — is the O(n^2) case for that regex; here it must resolve instantly.
+    const start = performance.now();
+    expect(checkHostAllowed(`${'.'.repeat(200_000)}evil.com`, ['localhost'])).toBe(false);
+    expect(checkHostAllowed(`localhost${'.'.repeat(200_000)}`, ['localhost'])).toBe(true);
+    expect(performance.now() - start).toBeLessThan(250);
   });
 });
 
