@@ -11,6 +11,7 @@ import {
   createTransport,
   createTransportWithTarget,
   deleteTransport,
+  failedReleaseReports,
   getObjectTransports,
   getTransport,
   getTransportInfo,
@@ -18,12 +19,14 @@ import {
   listTransportLayers,
   listTransports,
   listTransportTargets,
+  parseReleaseReports,
   reassignTransport,
   releaseTransport,
   releaseTransportRecursive,
   removeObjectFromTransport,
   supportsExplicitTransportTarget,
 } from '../../../src/adt/transport.js';
+import type { TransportReleaseReport } from '../../../src/adt/types.js';
 
 const fixturesDir = join(import.meta.dirname, '../../fixtures/xml');
 const loadFixture = (name: string) => readFileSync(join(fixturesDir, name), 'utf-8');
@@ -486,6 +489,79 @@ describe('Transport Management', () => {
       const url = (http.post as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as string;
       expect(url).toContain('A4HK900100');
     });
+
+    it('returns the parsed release report', async () => {
+      const http = mockHttp(loadFixture('transport-release-report-success.xml'));
+      const reports = await releaseTransport(http, enabledSafety, 'A4HK906303');
+      expect(reports).toHaveLength(1);
+      expect(reports[0]).toMatchObject({ status: 'released', released: true });
+    });
+
+    it('returns [] for an empty 200 body (graceful)', async () => {
+      const http = mockHttp('');
+      expect(await releaseTransport(http, enabledSafety, 'DEVK900001')).toEqual([]);
+    });
+  });
+
+  // ─── parseReleaseReports / failedReleaseReports ────────────────────
+
+  describe('parseReleaseReports', () => {
+    it('parses a clean release report (no messages)', () => {
+      const reports = parseReleaseReports(loadFixture('transport-release-report-success.xml'));
+      expect(reports).toHaveLength(1);
+      expect(reports[0]).toMatchObject({ reporter: 'transportrelease', status: 'released', released: true });
+      expect(reports[0]?.statusText).toContain('successfully released');
+      expect(reports[0]?.triggeringUri).toContain('A4HK906303');
+      expect(reports[0]?.messages).toEqual([]);
+    });
+
+    it('parses a real blocked release (abortrelapifail + finding)', () => {
+      // Real a4h 758 capture: releasing an empty/unclassified task. The checkMessage carries a nested
+      // atom:link (longtext) child the parser must ignore.
+      const reports = parseReleaseReports(loadFixture('transport-release-report-blocked.xml'));
+      expect(reports).toHaveLength(1);
+      expect(reports[0]).toMatchObject({ reporter: 'transportrelease', status: 'abortrelapifail', released: false });
+      expect(reports[0]?.statusText).toContain('has failed');
+      expect(reports[0]?.messages).toHaveLength(1);
+      expect(reports[0]?.messages[0]).toMatchObject({ severity: 'error', type: 'E' });
+      expect(reports[0]?.messages[0]?.text).toContain('unclassified');
+    });
+
+    it('maps chkrun severity codes (E→error, W→warning, else info)', () => {
+      const xml = `<tm:root xmlns:tm="t"><tm:releasereports>
+        <chkrun:checkReport xmlns:chkrun="c" chkrun:reporter="atc" chkrun:status="abortrelapifail" chkrun:statusText="x">
+          <chkrun:checkMessageList>
+            <chkrun:checkMessage chkrun:type="E" chkrun:shortText="err" chkrun:uri="/a#start=1,2"/>
+            <chkrun:checkMessage chkrun:type="W" chkrun:shortText="warn"/>
+            <chkrun:checkMessage chkrun:type="I" chkrun:shortText="info"/>
+          </chkrun:checkMessageList>
+        </chkrun:checkReport></tm:releasereports></tm:root>`;
+      const [report] = parseReleaseReports(xml);
+      expect(report?.messages.map((m) => m.severity)).toEqual(['error', 'warning', 'info']);
+      expect(report?.messages[0]?.uri).toBe('/a#start=1,2');
+    });
+
+    it('returns [] for empty or report-less XML (graceful)', () => {
+      expect(parseReleaseReports('')).toEqual([]);
+      expect(parseReleaseReports('<tm:root xmlns:tm="x"/>')).toEqual([]);
+    });
+  });
+
+  describe('failedReleaseReports', () => {
+    const report = (status: string, released: boolean): TransportReleaseReport => ({
+      reporter: 'transportrelease',
+      status,
+      statusText: '',
+      released,
+      messages: [],
+    });
+
+    it('flags non-released reports, ignores clean and status-less ones (fail-soft)', () => {
+      expect(failedReleaseReports([report('released', true)])).toEqual([]);
+      expect(failedReleaseReports([report('', false)])).toEqual([]); // status-less = not a confirmed failure
+      const blocked = report('abortrelapifail', false);
+      expect(failedReleaseReports([blocked])).toEqual([blocked]);
+    });
   });
 
   // ─── deleteTransport ───────────────────────────────────────────────
@@ -819,6 +895,39 @@ describe('Transport Management', () => {
       // Parent already released — no release calls, empty result
       expect(result.released).toEqual([]);
       expect((http.post as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(0);
+    });
+
+    it('a task that cannot release on its own (e.g. unclassified) does NOT abort the parent release', async () => {
+      // Live reality (a4h 758): releasing an empty/unclassified task returns abortrelapifail, but the
+      // parent request release still succeeds and folds it in. The parent report is authoritative.
+      const listXml = `<tm:root xmlns:tm="http://www.sap.com/cts/transports">
+        <tm:request tm:number="DEVK900001" tm:owner="DEV" tm:desc="Test" tm:status="D" tm:type="K">
+          <tm:task tm:number="DEVK900001T1" tm:owner="DEV1" tm:desc="Task 1" tm:status="D"/>
+        </tm:request>
+      </tm:root>`;
+      const blocked = loadFixture('transport-release-report-blocked.xml'); // the task release "fails"
+      const success = loadFixture('transport-release-report-success.xml'); // the parent release succeeds
+      const http = {
+        get: vi.fn().mockResolvedValue({ statusCode: 200, headers: {}, body: listXml }),
+        post: vi.fn().mockImplementation((url: unknown) =>
+          Promise.resolve({
+            statusCode: 200,
+            headers: {},
+            body: String(url).includes('DEVK900001T1') ? blocked : success,
+          }),
+        ),
+        put: vi.fn(),
+        delete: vi.fn(),
+        fetchCsrfToken: vi.fn(),
+        withStatefulSession: vi.fn(),
+      } as unknown as AdtHttpClient;
+      const result = await releaseTransportRecursive(http, enabledSafety, 'DEVK900001');
+      // Both the task and the parent were attempted; the benign task failure did not abort the parent.
+      expect((http.post as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(2);
+      expect(result.released).toContain('DEVK900001'); // parent released
+      expect(result.released).not.toContain('DEVK900001T1'); // benign-failed task not listed
+      // Returned reports are the authoritative parent release → clean.
+      expect(result.reports.every((r) => r.released)).toBe(true);
     });
   });
 

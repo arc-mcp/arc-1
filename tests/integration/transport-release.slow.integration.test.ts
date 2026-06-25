@@ -94,6 +94,9 @@ describe('Transport Release Slow Integration Tests', () => {
 
       const result = await releaseTransportRecursive(client.http, client.safety, id);
       expect(result.released).toContain(id);
+      // #433: the release now surfaces the chkrun report — a clean release must carry a released:true report.
+      expect(result.reports.length).toBeGreaterThan(0);
+      expect(result.reports.every((r) => r.released)).toBe(true);
       released = true;
       createdTransportIds.delete(id);
 

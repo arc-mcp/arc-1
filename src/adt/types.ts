@@ -447,6 +447,38 @@ export interface TransportTask {
   objects: TransportObject[];
 }
 
+/** One message inside a release check report (an ATC finding, lock conflict, …). */
+export interface TransportReleaseMessage {
+  /** Mapped severity for display/logic. */
+  severity: 'error' | 'warning' | 'info';
+  /** Raw `chkrun:type` severity code (E/W/I/S/…). */
+  type: string;
+  /** `chkrun:shortText`. */
+  text: string;
+  /** `chkrun:uri` — may carry a `#start=LINE,COL` source position. */
+  uri?: string;
+}
+
+/**
+ * A `chkrun:checkReport` from the `newreleasejobs` response (`tm:releasereports`). One per
+ * request/task processed by the release. A blocked release returns HTTP 200 with `released:false`
+ * (`status` e.g. `abortrelapifail`) — so this is the only reliable signal that a release actually failed.
+ */
+export interface TransportReleaseReport {
+  /** `chkrun:reporter`, e.g. `transportrelease`. */
+  reporter: string;
+  /** `chkrun:status` — `released` on success, otherwise an abort code (e.g. `abortrelapifail`). */
+  status: string;
+  /** `chkrun:statusText` — human-readable outcome. */
+  statusText: string;
+  /** `chkrun:triggeringUri` — the request/task this report is about. */
+  triggeringUri?: string;
+  /** `true` iff `status === 'released'`. */
+  released: boolean;
+  /** Findings (empty on a clean release). */
+  messages: TransportReleaseMessage[];
+}
+
 /** Result of looking up transports related to a given ABAP object. */
 export interface ObjectTransportHistory {
   object: { type: string; name: string; uri: string };

@@ -10,6 +10,7 @@ import {
   createTransport,
   createTransportWithTarget,
   deleteTransport,
+  failedReleaseReports,
   getObjectTransports,
   getTransport,
   getTransportInfo,
@@ -23,7 +24,7 @@ import {
   removeObjectFromTransport,
   supportsExplicitTransportTarget,
 } from '../adt/transport.js';
-import type { InactiveObject, ObjectTransportHistory, TransportRequest } from '../adt/types.js';
+import type { InactiveObject, ObjectTransportHistory, TransportReleaseReport, TransportRequest } from '../adt/types.js';
 import { logger } from '../server/logger.js';
 import { objectUrlForType } from './object-types.js';
 import { errorResult, type ToolResult, textResult } from './shared.js';
@@ -56,6 +57,42 @@ function inactiveReleaseError(transportId: string, blocking: InactiveObject[]): 
       `release (SAP activates objects before exporting; an inactive one makes the release pipeline time out ` +
       `with no detail):\n${list}\nActivate them first (SAPActivate), then retry the release.`,
   );
+}
+
+/** Render one release report's findings as indented lines. */
+function formatReleaseReport(r: TransportReleaseReport): string {
+  const head = r.statusText || `[${r.status}] ${r.reporter}`;
+  const msgs = r.messages.map((m) => `    - ${m.severity}: ${m.text}${m.uri ? ` (${m.uri})` : ''}`);
+  return [`  • ${head}`, ...msgs].join('\n');
+}
+
+/**
+ * Turn release check reports into a tool result. A blocked release returns HTTP 200 with
+ * `status≠released` — so this is the only place that distinguishes a real release from a silent abort.
+ * Clean release → the same concise line as before (token-lean); warnings → that line + the findings;
+ * blocked → an error with the reporter status + messages so the agent knows why.
+ *
+ * @param released  ids that actually released (recursive case); enables the `Released (recursive): …` form.
+ */
+function summarizeRelease(id: string, reports: TransportReleaseReport[], released?: string[]): ToolResult {
+  const failed = failedReleaseReports(reports);
+  if (failed.length > 0) {
+    const detail = failed.map(formatReleaseReport).join('\n');
+    const partial = released && released.length > 0 ? `\nReleased before the block: ${released.join(', ')}.` : '';
+    return errorResult(
+      `Transport ${id} was NOT released — SAP returned HTTP 200 but aborted the release:\n${detail}${partial}\n` +
+        `Fix the reported errors (e.g. ATC findings, locks), then retry.`,
+    );
+  }
+  const prefix = released
+    ? `Released (recursive): ${released.length ? released.join(', ') : id}`
+    : `Released transport request: ${id}`;
+  const warnings = reports.flatMap((r) => r.messages);
+  if (warnings.length > 0) {
+    const list = warnings.map((m) => `  - ${m.severity}: ${m.text}${m.uri ? ` (${m.uri})` : ''}`).join('\n');
+    return textResult(`${prefix}\nReleased with ${warnings.length} warning(s):\n${list}`);
+  }
+  return textResult(prefix);
 }
 
 // ─── SAPTransport Handler ────────────────────────────────────────────
@@ -271,8 +308,8 @@ export async function handleSAPTransport(client: AdtClient, args: Record<string,
       checkTransport(client.safety, id, 'ReleaseTransport', true);
       const blocking = await precheckInactiveForRelease(client, id);
       if (blocking.length > 0) return inactiveReleaseError(id, blocking);
-      await releaseTransport(client.http, client.safety, id);
-      return textResult(`Released transport request: ${id}`);
+      const reports = await releaseTransport(client.http, client.safety, id);
+      return summarizeRelease(id, reports);
     }
     case 'delete': {
       const id = String(args.id ?? '');
@@ -342,8 +379,8 @@ export async function handleSAPTransport(client: AdtClient, args: Record<string,
       // ends in /<request>), so no per-task fetch is needed.
       const blocking = await precheckInactiveForRelease(client, id);
       if (blocking.length > 0) return inactiveReleaseError(id, blocking);
-      const result = await releaseTransportRecursive(client.http, client.safety, id);
-      return textResult(JSON.stringify(result, null, 2));
+      const { released, reports } = await releaseTransportRecursive(client.http, client.safety, id);
+      return summarizeRelease(id, reports, released);
     }
     case 'check': {
       // Check transport requirements for an object/package combination.

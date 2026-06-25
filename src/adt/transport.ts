@@ -12,11 +12,13 @@ import type {
   InactiveObject,
   TransportLayer,
   TransportObject,
+  TransportReleaseMessage,
+  TransportReleaseReport,
   TransportRequest,
   TransportTarget,
   TransportTask,
 } from './types.js';
-import { escapeXmlAttr, findDeepNodes, parseXml } from './xml-parser.js';
+import { decodeXmlEntities, escapeXmlAttr, findDeepNodes, parseXml } from './xml-parser.js';
 
 /**
  * Filter inactive objects (from `getInactiveObjects()`) down to those that belong to transport
@@ -334,24 +336,85 @@ export function supportsExplicitTransportTarget(http: AdtHttpClient): boolean | 
   return (http.discoveryAcceptFor('/sap/bc/adt/cts/transportrequests') ?? '').includes('transportorganizer');
 }
 
-/** Release a transport request */
-export async function releaseTransport(http: AdtHttpClient, safety: SafetyConfig, transportId: string): Promise<void> {
+/**
+ * Parse the `newreleasejobs` response body into release reports.
+ *
+ * Real a4h 758 shape (verified live): `tm:root > tm:releasereports > chkrun:checkReport`, each carrying
+ * `chkrun:reporter`/`status`/`statusText`/`triggeringUri`; on a blocked release the report also nests
+ * `chkrun:checkMessageList > chkrun:checkMessage` (`chkrun:type`/`shortText`/`uri`). `removeNSPrefix`
+ * strips the namespaces, so we read `checkReport`/`checkMessage` + `@_`-prefixed attrs — same idiom as
+ * `parseSyntaxCheckResult`. Empty/garbage body → `[]` (graceful: NW 7.5x never reaches here, and a
+ * non-report 200 must not throw). NOTE: relies on all `checkReport`s sharing one `tm:releasereports`
+ * parent (the verified contract); `findDeepNodes` returns the first matching branch's children.
+ */
+export function parseReleaseReports(xml: string): TransportReleaseReport[] {
+  const parsed = parseXml(xml);
+  return findDeepNodes(parsed, 'checkReport').map((report) => {
+    const r = report as Record<string, unknown>;
+    const status = String(r['@_status'] ?? '');
+    const messages: TransportReleaseMessage[] = findDeepNodes(report, 'checkMessage').map((m) => {
+      const msg = m as Record<string, unknown>;
+      const type = String(msg['@_type'] ?? '');
+      const uri = String(msg['@_uri'] ?? '');
+      return {
+        severity: type === 'E' ? 'error' : type === 'W' ? 'warning' : 'info',
+        type,
+        text: decodeXmlEntities(String(msg['@_shortText'] ?? '')),
+        ...(uri ? { uri } : {}),
+      };
+    });
+    return {
+      reporter: String(r['@_reporter'] ?? ''),
+      status,
+      statusText: decodeXmlEntities(String(r['@_statusText'] ?? '')),
+      ...(r['@_triggeringUri'] ? { triggeringUri: String(r['@_triggeringUri']) } : {}),
+      released: status === 'released',
+      messages,
+    };
+  });
+}
+
+/**
+ * Reports that signal a FAILED release: a `status` that is present and not `released`. A status-less
+ * report is treated as non-failing (fail-soft) — real a4h reports always carry `status`, so a missing
+ * one means a shape we don't recognize, not a confirmed failure.
+ */
+export function failedReleaseReports(reports: TransportReleaseReport[]): TransportReleaseReport[] {
+  return reports.filter((r) => r.status !== '' && !r.released);
+}
+
+/** Release a transport request; returns the parsed release check report(s) (`[]` if none/unparseable). */
+export async function releaseTransport(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  transportId: string,
+): Promise<TransportReleaseReport[]> {
   checkTransport(safety, transportId, 'ReleaseTransport', true);
 
-  await http.post(
+  const resp = await http.post(
     `/sap/bc/adt/cts/transportrequests/${encodeURIComponent(transportId)}/newreleasejobs`,
     undefined,
     undefined,
     { Accept: CTS_CONTENT_TYPE_ORGANIZER },
   );
+  return parseReleaseReports(resp.body);
 }
 
-/** Release a transport request recursively — tasks first, then parent */
+/**
+ * Release a transport request recursively — tasks first, then the parent request.
+ *
+ * The **parent request release is authoritative**: SAP only releases a request once every task is
+ * released, so its report (`reports`) is the real outcome. Task releases are best-effort — an empty or
+ * "unclassified" task can't be released on its own (SAP returns HTTP 200 `abortrelapifail`, verified
+ * live on a4h 758), but the parent release folds it in. So a failed *task* release is NOT fatal and the
+ * task is simply not listed in `released`; only the parent report decides success. `released` lists the
+ * ids that released cleanly.
+ */
 export async function releaseTransportRecursive(
   http: AdtHttpClient,
   safety: SafetyConfig,
   transportId: string,
-): Promise<{ released: string[] }> {
+): Promise<{ released: string[]; reports: TransportReleaseReport[] }> {
   checkTransport(safety, transportId, 'ReleaseTransportRecursive', true);
 
   const transport = await getTransport(http, safety, transportId);
@@ -361,21 +424,22 @@ export async function releaseTransportRecursive(
     for (const task of transport.tasks) {
       if (task.status !== 'R') {
         checkTransport(safety, task.id, 'ReleaseTransportRecursive', true);
-        await releaseTransport(http, safety, task.id);
-        released.push(task.id);
+        const taskReports = await releaseTransport(http, safety, task.id);
+        // Don't abort on a benign task failure; don't list a task that didn't actually release.
+        if (failedReleaseReports(taskReports).length === 0) released.push(task.id);
       }
     }
 
     // Skip parent if already released (idempotent/retry-safe)
     if (transport.status === 'R') {
-      return { released };
+      return { released, reports: [] };
     }
   }
 
-  await releaseTransport(http, safety, transportId);
-  released.push(transportId);
+  const reports = await releaseTransport(http, safety, transportId);
+  if (failedReleaseReports(reports).length === 0) released.push(transportId);
 
-  return { released };
+  return { released, reports };
 }
 
 /**

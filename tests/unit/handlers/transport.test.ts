@@ -3,6 +3,8 @@
  * The undici mock + AdtClient + createClient live in ./setup-undici-mock.ts — import that helper
  * and keep all other src-module imports dynamic (see its header for the ordering rules).
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdtApiError } from '../../../src/adt/errors.js';
 import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
@@ -10,6 +12,8 @@ import { logger } from '../../../src/server/logger.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 import { AdtClient, createClient, mockFetch } from './setup-undici-mock.js';
+
+const loadFixture = (name: string) => readFileSync(join(import.meta.dirname, '../../fixtures/xml', name), 'utf-8');
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 
@@ -186,6 +190,40 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
       // The diagnostic read must NOT run for a release refused on safety grounds.
       const probedInactive = mockFetch.mock.calls.some((c: unknown[]) => String(c[0]).includes('inactiveobjects'));
       expect(probedInactive).toBe(false);
+    });
+
+    // ─── Release check report (issue #433 item 1) ─────────────────────
+    // inactiveXmlOther belongs to DEVK999999, so it never blocks the A4HK90630x releases below.
+    const releaseMock = (reportBody: string) => (url: unknown) =>
+      Promise.resolve(
+        String(url).includes('newreleasejobs')
+          ? mockResponse(200, reportBody, {})
+          : String(url).includes('inactiveobjects')
+            ? mockResponse(200, inactiveXmlOther, {})
+            : mockResponse(200, '', { 'x-csrf-token': 'T' }),
+      );
+
+    it('release: confirms success when the check report says released', async () => {
+      mockFetch.mockImplementation(releaseMock(loadFixture('transport-release-report-success.xml')));
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'release',
+        id: 'A4HK906303',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('Released transport request: A4HK906303');
+    });
+
+    it('release: reports a BLOCKED release even though SAP returned HTTP 200', async () => {
+      mockFetch.mockImplementation(releaseMock(loadFixture('transport-release-report-blocked.xml')));
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'release',
+        id: 'A4HK906307',
+      });
+      // The core fix: a status≠released report surfaces as an error, not a false success.
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('was NOT released');
+      expect(result.content[0]?.text).toContain('aborted'); // handler wording for the HTTP-200-but-failed case
+      expect(result.content[0]?.text).toContain('unclassified'); // the real finding's shortText
     });
 
     it('create with package passes DEVCLASS through', async () => {
