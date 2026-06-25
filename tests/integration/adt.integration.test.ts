@@ -2559,6 +2559,53 @@ describe('ADT Integration Tests', () => {
   });
 });
 
+// ─── Self-correcting "unknown column" hint (FEAT-64) ──────────────────
+// On systems where datapreview is bound (758/816) an unknown column yields the table's real column
+// list; on NPL 7.50 the datapreview endpoint is unbound (404), so the original error is shown — both
+// are errors, only the text differs. Drives the handlers via handleToolCall (not the raw client).
+describe('Self-correcting unknown-column hint (FEAT-64)', () => {
+  function expectHintOrGraceful(result: { isError?: boolean; content: Array<{ text?: string }> }): void {
+    expect(result.isError).toBe(true);
+    const text = result.content[0]?.text ?? '';
+    if (/datapreview/.test(text) && /404|No suitable resource/i.test(text)) {
+      expect(text).toMatch(/No suitable resource|404/i); // 7.50: datapreview unbound — graceful
+    } else {
+      expect(text).toContain('Available columns');
+      expect(text).toContain('MANDT');
+    }
+  }
+
+  it('SAPQuery surfaces the table real columns on an unknown column', async (ctx) => {
+    requireOrSkip(ctx, process.env.TEST_SAP_URL, SkipReason.NO_CREDENTIALS);
+    const { handleToolCall } = await import('../../src/handlers/dispatch.js');
+    const config = {
+      arc1Port: 8080,
+      arc1HttpAddr: '0.0.0.0:8080',
+      toolMode: 'standard',
+    } as unknown as Parameters<typeof handleToolCall>[1];
+    const result = await handleToolCall(getTestClient(), config, 'SAPQuery', {
+      sql: 'SELECT mandt, nosuchcol FROM t000',
+    });
+    expectHintOrGraceful(result);
+  });
+
+  it('SAPRead TABLE_QUERY surfaces the table real columns on an unknown column', async (ctx) => {
+    requireOrSkip(ctx, process.env.TEST_SAP_URL, SkipReason.NO_CREDENTIALS);
+    const { handleToolCall } = await import('../../src/handlers/dispatch.js');
+    const config = {
+      arc1Port: 8080,
+      arc1HttpAddr: '0.0.0.0:8080',
+      toolMode: 'standard',
+    } as unknown as Parameters<typeof handleToolCall>[1];
+    const result = await handleToolCall(getTestClient(), config, 'SAPRead', {
+      type: 'TABLE_QUERY',
+      name: 'T000',
+      columns: ['MANDT', 'NOSUCHCOL'],
+    });
+    expectHintOrGraceful(result);
+  });
+});
+
 // ─── TTYP (table type) read + create (FEAT-65) ────────────────────────
 // Full lifecycle live-verified on a4h 758 + 816: create (POST shell + follow-up PUT sets the real row
 // type) → read → activate → delete. Requires live re-confirmation on 7.50/758/816 before release.

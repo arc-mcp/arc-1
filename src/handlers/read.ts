@@ -5,7 +5,7 @@
 
 import type { AdtClient, SourceReadResult } from '../adt/client.js';
 import { decodeKtdText } from '../adt/ddic-xml.js';
-import { isNotFoundError } from '../adt/errors.js';
+import { extractUnknownColumn, formatUnknownColumnHint, isNotFoundError } from '../adt/errors.js';
 import { mapSapReleaseToAbaplintVersion } from '../adt/features.js';
 import { type FmParameter, type FmParameterKind, parseFmSignature } from '../adt/fm-signature.js';
 import { isOperationAllowed, OperationType } from '../adt/safety.js';
@@ -597,8 +597,23 @@ export async function handleSAPRead(
       const where = Array.isArray(args.where)
         ? (args.where as Array<{ field: string; op: string; value?: string }>)
         : undefined;
-      const data = await client.runTableQuery(name, { columns, where, maxRows });
-      return textResult(JSON.stringify(data, null, 2));
+      try {
+        const data = await client.runTableQuery(name, { columns, where, maxRows });
+        return textResult(JSON.stringify(data, null, 2));
+      } catch (err) {
+        // Self-correct an unknown-column error (a bad entry in `columns`/`where`) by listing the
+        // table's real columns (best-effort).
+        const badColumn = extractUnknownColumn(err);
+        if (badColumn) {
+          try {
+            const { columns: valid } = await client.getTableContents(name, 1);
+            if (valid.length > 0) return errorResult(formatUnknownColumnHint(badColumn, name, valid));
+          } catch {
+            // best-effort — fall through to the original error
+          }
+        }
+        throw err;
+      }
     }
     case 'SOBJ': {
       const method = String(args.method ?? '');
