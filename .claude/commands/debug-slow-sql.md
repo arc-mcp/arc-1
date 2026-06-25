@@ -38,7 +38,7 @@ Work top-down. Each rung is cheaper than the next and usually tells you whether 
   help, SADL/RAP, or a framework — not hand-written, so a `grep`/where-used for the literal `SELECT` comes up
   empty. Trace the generator instead: for a value-help / type-ahead screen, the **search help**
   (`DD30L.SELMETHOD` + `FUZZY_SEARCH`, `DD32S` fields) and its DSH/SADL classes (`CL_DSH_*`, the F4→WHERE
-  conversion) via `SAPSearch`/`SAPNavigate`/`SAPRead`; for OData, the CDS view + its SADL annotations. (Don't
+  conversion) via `SAPSearch`/`SAPNavigate`/`SAPRead`. For an OData service, find its implementation: a **V4/RAP** binding → `SAPRead(type="SRVB", name=…)` → the service definition → the CDS view (then use `cds_sql`, rung 2); a **classic SEGW / Gateway V2** service has **no CDS** → find the DPC class (`SAPSearch "<SERVICE>_DPC*"`, read its `*_get_entityset` / `*_get_entity` / expand / `resolve_navigation_path` methods) and **skip rung 2**. (Don't
   confuse SE91/`WBMESSAGES`, which loads one message class in memory and searches with `CS`, with a search-help
   path that issues a real DB `LIKE`.)
 
@@ -49,7 +49,10 @@ SAPDiagnose(action="odata_perf", url="/sap/opu/odata4/sap/…/Entity?$filter=…
 ```
 Read the `verdict`:
 - **`db`** (`gwappdb` dominates) → the CDS/SQL query is the cost → go to rung 2.
-- **`app`** (`gwapp − gwappdb`) → ABAP/SADL logic, not the DB → go to rung 3 (profiler trace).
+- **`app`** (`gwapp` ≫ `gwappdb`, or `gwappdb` **absent**) → ABAP/SADL logic, **not the DB**. Do **not**
+  ST05-hunt for a slow query — find what implements the service (rung 0) and trace it (rung 3). Classic
+  culprit is an `$expand` **N+1** — isolate it by re-probing the URL **with vs without** `$expand`/`$select`
+  and watch `gwapp` move.
 - **`framework`** (`gwfw`; on 7.50 often only `gwhub`) → metadata / first-call / cold cache → re-probe warm.
   If only `gwhub` is present, you do not have a DB/app split yet; descend to a trace if it is not just cold
   cache.
