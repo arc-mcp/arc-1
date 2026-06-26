@@ -1081,9 +1081,9 @@ export function getToolDefinitions(
         '- "trace_start": arm a profiler trace for the NEXT matching execution, then reproduce and read via "traces" (write scope; defaults: next HTTP request, SQL on; optional traceUser/processType/maxExecutions/expiresHours/sqlTrace/…).\n' +
         '- "trace_requests": list armed trace requests. "trace_cancel": cancel one by id (write scope).\n' +
         '- "system_messages": list SM02 messages. "gateway_errors": list /IWFND/ERROR_LOG (on-prem; detailUrl or id+errorType for detail).\n' +
-        '- "odata_perf": diagnose why an OData call is slow (url = host-relative path from the Network tab); returns the sap-statistics timing split (DB/ABAP/framework/auth) + a verdict. Read-only.\n' +
+        '- "odata_perf": diagnose why an OData call is slow (url = host-relative path from the Network tab); returns the sap-statistics timing split (DB/ABAP/framework/auth) + a verdict. Read-only; needs allowDataPreview.\n' +
         '- "cds_sql": show the native SQL a CDS view compiles to (name; read-only; may be absent on old releases).\n' +
-        '- "sql_trace_state" / "set_sql_trace_state" (sqlOn; write) / "sql_trace_directory": ST05 SQL-trace control.\n' +
+        '- "sql_trace_state" / "set_sql_trace_state" (sqlOn; needs SAP_ALLOW_WRITES) / "sql_trace_directory": ST05 SQL-trace control.\n' +
         'Quickfix workflow: syntax/ATC → quickfix → apply_quickfix → write via SAPWrite. Full action reference: docs_page SAPDiagnose.',
       inputSchema: {
         type: 'object',
@@ -1449,11 +1449,11 @@ export function getToolDefinitions(
         },
         title: {
           type: 'string',
-          description: 'Title for FLP catalog/group creation.',
+          description: 'Title — required for flp_create_catalog and flp_create_group.',
         },
         domainId: {
           type: 'string',
-          description: 'Domain ID for FLP catalog creation (e.g., ZARC1_SALES).',
+          description: 'Domain ID — required for flp_create_catalog (e.g., ZARC1_SALES).',
         },
         tileInstanceId: {
           type: 'string',

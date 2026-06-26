@@ -56,7 +56,7 @@ function warnIfToolsListTooLarge(tools: ToolDefinition[]): void {
   if (bytes <= TOOLS_LIST_SOFT_WARN_BYTES) return;
   warnedLargeToolsList = true;
   logger.warn(
-    'Large tools/list payload — some MCP clients (e.g. GitHub Copilot for Eclipse) silently drop a tool list this big, ' +
+    'Large tools/list payload — GitHub Copilot for Eclipse (and possibly other clients) silently drops a tool list this big, ' +
       'so no tools appear. If that happens, set ARC1_TOOL_MODE=hyperfocused, or reduce the surface (fewer enabled write/data/SQL/git scopes or plugins). See issue #520.',
     { bytes, tools: tools.length },
   );

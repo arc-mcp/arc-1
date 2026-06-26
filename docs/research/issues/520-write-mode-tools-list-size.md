@@ -178,6 +178,28 @@ are an untested hypothesis — document it that way, don't claim a broad multi-c
 **Not now (noted as future options):** per-action lazy/dynamic schemas (bigger redesign); a second
 soft-ratchet tier (over-engineering — the hard wall + visible top-N reporting suffices).
 
+## As shipped (PR #523) — supersedes the target numbers above
+
+The implemented walls landed a notch above the initial 64/56/18 KB plan, **deliberately**: hitting the
+~60 KB target would have required cutting load-bearing prose (Codex F3 risk), so the trim stopped where
+it only removed redundancy/examples/duplicated catalogs, and the wall was set to the **evidence-based
+proven-good line** (the 0.9.11 size that loads in Copilot-for-Eclipse) rather than an arbitrary lower
+number. Read-only got its own lower ceiling.
+
+| | initial plan | as shipped (`scripts/ci/check-tool-schema-budget.ts`) |
+|---|---|---|
+| write/btp `{tools}` wall | 64_000 | **68_000** (0.9.11 proven-good; 84 KB known-bad) |
+| read-only wall | 56_000 | **50_000** |
+| per-tool wall | 18_000 | **21_000** |
+| write-mode actual | ~63 KB | **66.6 KB** |
+| read-only actual | ~44 KB | **43 KB** |
+| SAPWrite (largest tool) | ~16 KB | **20 KB** |
+
+Net: write-mode `{tools}` 87→66.6 KB, read 54→43 KB, SAPWrite 28→20 KB; the reporter's 11-tool config
+lands ~64 KB, comfortably under the 68 KB proven-good line. A startup `logger.warn` fires once when the
+live list (incl. runtime plugin `Custom_*` tools) exceeds a 60 KB soft threshold. Lower is better for
+untested clients (F6), but the trim deliberately did not over-cut to chase 60 KB.
+
 ## Ruled out (earlier hypotheses)
 
 - **Non-3-digit `SAP_CLIENT`** (`#471`, 0.9.19): a real startup throw, but reporter confirmed a

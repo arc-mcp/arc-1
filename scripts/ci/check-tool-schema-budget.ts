@@ -231,14 +231,9 @@ export function checkToolSchemaBudgets(
     const budget = scenarios.find((scenario) => scenario.name === measurement.scenario)?.budget;
     if (!budget) continue;
 
-    // Token ratchets (cost). Order preserved for the existing test.
-    for (const metric of ['schemaTokenEstimate', 'descriptionTokenEstimate', 'descriptionCount'] as const) {
-      if (measurement[metric] > budget[metric]) {
-        offenders.push({ scenario: measurement.scenario, metric, actual: measurement[metric], budget: budget[metric] });
-      }
-    }
-
-    // Hard wire-byte walls (client safety) — primary failure, fail on total first.
+    // Hard wire-byte walls (client safety) FIRST — these are the breaking failure; report total
+    // before per-tool. Token ratchets (cost) follow. A scenario with no wall budgets (e.g. the
+    // tiny-budget test) emits only the token offenders, in their original order.
     if (budget.maxTotalWireBytes !== undefined && measurement.schemaBytes > budget.maxTotalWireBytes) {
       offenders.push({
         scenario: measurement.scenario,
@@ -254,6 +249,12 @@ export function checkToolSchemaBudgets(
         actual: measurement.maxToolBytes,
         budget: budget.maxPerToolWireBytes,
       });
+    }
+
+    for (const metric of ['schemaTokenEstimate', 'descriptionTokenEstimate', 'descriptionCount'] as const) {
+      if (measurement[metric] > budget[metric]) {
+        offenders.push({ scenario: measurement.scenario, metric, actual: measurement[metric], budget: budget[metric] });
+      }
     }
   }
 
