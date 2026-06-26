@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  clientWaitFrom,
   createTraceRequest,
   decodeHtmlEntities,
   deleteTraceRequest,
@@ -1466,6 +1467,25 @@ describe('probeODataPerformance', () => {
     const http = mockHttp();
     await expect(probeODataPerformance(http, unrestrictedSafetyConfig(), url)).rejects.toThrow(/OData path/);
     expect(http.get).not.toHaveBeenCalled();
+  });
+});
+
+describe('clientWaitFrom', () => {
+  it('flags time outside SAP Gateway when client wait dwarfs gwtotal', () => {
+    const { clientWaitMs, note } = clientWaitFrom(75043, { gwtotal: 30126 });
+    expect(clientWaitMs).toBe(44917);
+    expect(note).toMatch(/OUTSIDE SAP Gateway/);
+    expect(note).toMatch(/not wallClockMs/);
+  });
+
+  it('reports clientWaitMs without a note when wall-clock ≈ gwtotal', () => {
+    const { clientWaitMs, note } = clientWaitFrom(190, { gwtotal: 173 });
+    expect(clientWaitMs).toBe(17);
+    expect(note).toBeUndefined();
+  });
+
+  it('returns nothing when gwtotal is absent (no SAP figure to subtract)', () => {
+    expect(clientWaitFrom(5000, { gwhub: 200 })).toEqual({});
   });
 });
 

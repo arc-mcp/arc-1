@@ -1004,6 +1004,8 @@ export interface ODataPerfResult {
   url: string;
   statusCode: number;
   wallClockMs: number;
+  /** `wallClockMs − gwtotal`: time spent OUTSIDE SAP Gateway (network/MCP/proxy/queueing). Only when gwtotal is present. */
+  clientWaitMs?: number;
   /** Parsed `sap-statistics` header — variable field set; `gwappdb` (when present) is DB time. */
   statistics: Record<string, number>;
   fesrecMicros?: number;
@@ -1068,6 +1070,27 @@ export function verdictFromStatistics(m: Record<string, number>): ODataPerfResul
 }
 
 /**
+ * Time spent outside SAP Gateway (network/MCP/proxy/queueing): `wallClockMs − gwtotal`. When that overhead
+ * dwarfs the SAP server time, the latency is the landscape, not the query — return a note so the LLM cites
+ * `gwtotal` rather than `wallClockMs` as "SAP time".
+ */
+export function clientWaitFrom(
+  wallClockMs: number,
+  statistics: Record<string, number>,
+): { clientWaitMs?: number; note?: string } {
+  const gwtotal = statistics.gwtotal ?? statistics.total;
+  if (gwtotal === undefined || !Number.isFinite(gwtotal)) return {};
+  const clientWaitMs = Math.max(Math.round(wallClockMs - gwtotal), 0);
+  if (clientWaitMs > gwtotal && clientWaitMs > 1000) {
+    return {
+      clientWaitMs,
+      note: `${clientWaitMs}ms of the ${Math.round(wallClockMs)}ms wall-clock was OUTSIDE SAP Gateway (gwtotal=${gwtotal}ms) — network/MCP/proxy/queueing, not server time. Cite gwtotal/gwappdb as the SAP figure, not wallClockMs.`,
+    };
+  }
+  return { clientWaitMs };
+}
+
+/**
  * GET an OData URL with `?sap-statistics=true` + a wall-clock timer → server-side timing split + verdict.
  * Security: `url` must be a host-relative path on the configured SAP system (no absolute URLs / SSRF).
  */
@@ -1084,14 +1107,18 @@ export async function probeODataPerformance(
   const wallClockMs = Date.now() - t0;
   const statistics = parseSapStatistics(resp.headers['sap-statistics'] ?? '');
   const fesrec = Number(resp.headers['sap-perf-fesrec']);
+  const verdict = verdictFromStatistics(statistics);
+  const { clientWaitMs, note: clientNote } = clientWaitFrom(wallClockMs, statistics);
+  if (clientNote) verdict.note += ` ${clientNote}`;
   return {
     url: withStat,
     statusCode: resp.statusCode,
     wallClockMs,
+    clientWaitMs,
     statistics,
     fesrecMicros: Number.isFinite(fesrec) ? fesrec : undefined,
     responseBytes: Buffer.byteLength(resp.body ?? ''),
-    verdict: verdictFromStatistics(statistics),
+    verdict,
   };
 }
 
@@ -1132,7 +1159,7 @@ function isODataPath(pathname: string): boolean {
 
 function invalidODataPerfUrl(): Error {
   return new Error(
-    'odata_perf url must be a host-relative OData path on the configured SAP system (e.g. "/sap/opu/odata4/.../Entity?$filter=..."); absolute URLs and non-OData SAP paths are not allowed.',
+    'odata_perf url must be a host-relative OData path on the configured SAP system — V4 "/sap/opu/odata4/sap/.../Entity?$filter=..." or classic V2/SEGW "/sap/opu/odata/sap/<SRV>/<EntitySet>?$top=20"; absolute URLs and non-OData SAP paths are not allowed.',
   );
 }
 
