@@ -7,7 +7,7 @@
  * - http-streamable: for remote/containerized deployments
  */
 
-import type { BTPConfig, BTPProxyConfig, PerUserAuthTokens } from '@arc-mcp/xsuaa-auth/btp';
+import type { BTPConfig, BTPProxyConfig, Destination, PerUserAuthTokens } from '@arc-mcp/xsuaa-auth/btp';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
@@ -240,6 +240,32 @@ export function buildAdtConfig(
 }
 
 /**
+ * Pick the Cloud Connector proxy for a per-user (principal-propagation) request.
+ * Exported for unit testing.
+ *
+ * Only on-premise destinations tunnel through the Cloud Connector proxy. Internet
+ * destinations (e.g. S/4HANA Public Cloud with SAMLAssertion) must connect directly —
+ * returning a proxy here would wrongly route them through the SCC, since http.ts
+ * proxies whenever btpProxy is set.
+ *
+ * For on-prem, the PP destination's own CloudConnectorLocationId overrides the startup
+ * proxy's: dual-destination setups (SAP_BTP_DESTINATION vs SAP_BTP_PP_DESTINATION) may
+ * point at different Cloud Connectors, and reusing the startup Location ID would route PP
+ * requests to the wrong SCC (hard-to-debug 401/403/404).
+ */
+export function selectPerUserProxy(
+  destination: Pick<Destination, 'ProxyType' | 'CloudConnectorLocationId'>,
+  btpProxy: BTPProxyConfig | undefined,
+): BTPProxyConfig | undefined {
+  if (destination.ProxyType !== 'OnPremise' || !btpProxy) {
+    return undefined;
+  }
+  return destination.CloudConnectorLocationId !== undefined
+    ? { ...btpProxy, locationId: destination.CloudConnectorLocationId }
+    : btpProxy;
+}
+
+/**
  * Create a per-user ADT client for principal propagation.
  *
  * Called per MCP request when ppEnabled=true and user JWT is available.
@@ -269,25 +295,7 @@ async function createPerUserClient(
 
   const { destination, authTokens } = await lookupDestinationWithUserToken(btpConfig, destName, userJwt, authLibLogger);
 
-  // Build an effective proxy that uses the PP destination's Location ID, not the
-  // startup destination's. In dual-destination setups, SAP_BTP_DESTINATION and
-  // SAP_BTP_PP_DESTINATION may point to different Cloud Connectors (different
-  // Location IDs). If we blindly reuse the startup proxy, PP requests route to
-  // the wrong SCC instance — causing 401/403/404 errors that are hard to debug.
-  //
-  // Only on-premise destinations go through the Cloud Connector proxy. Internet
-  // destinations (e.g. S/4HANA Public Cloud with SAMLAssertion) must connect
-  // directly — otherwise, if the Connectivity service is also bound, the request
-  // would be wrongly tunnelled through the proxy (http.ts proxies whenever btpProxy is set).
-  let effectiveProxy: BTPProxyConfig | undefined;
-  if (destination.ProxyType === 'OnPremise' && btpProxy) {
-    effectiveProxy =
-      destination.CloudConnectorLocationId !== undefined
-        ? { ...btpProxy, locationId: destination.CloudConnectorLocationId }
-        : btpProxy;
-  } else {
-    effectiveProxy = undefined;
-  }
+  const effectiveProxy = selectPerUserProxy(destination, btpProxy);
 
   const adtConfig = buildAdtConfig(config, effectiveProxy, undefined, { perUser: true }, adtSemaphore);
   // Override URL from destination (in case it differs from startup-resolved URL)
