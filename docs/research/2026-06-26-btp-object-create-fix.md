@@ -166,3 +166,24 @@ Deferred (verified-feasible / intentional, out of this PR's create-path scope):
 
 Note: the smoke run that surfaced these executed against `arc-1-lsp-local` (the configured `arc-1-btp`
 server wasn't connected); both bugs were re-confirmed against this PR's `dist/` before fixing.
+
+## Re-test (2026-06-27) — green on the real build + one small DX fix
+
+A second smoke run, correctly on `arc-1-btp` (H01 919), passed **all 7 smokes**: INTF create works (no
+language-version 500), the ZLOCAL package 403 carries *no* SM12 hint, the data gates return the 400 +
+CDS hint, and a released-view query works. Both headline fixes are confirmed on the shipped build.
+
+One clean DX fix taken from the feedback:
+- **DOMA `outputLength` on update — FIXED.** Updating a domain's length (e.g. 10→20) without an explicit
+  `outputLength` kept the old value, so SAP warned *"Output length (10) is less than the calculated
+  output length (20)"*. The update merge now follows a changed length
+  (`provided.outputLength ?? provided.length ?? existing.outputLength`), matching the create default.
+  Unit-tested.
+
+Deferred (pre-existing, cross-cutting cache/DX — not create-path, warrant their own focused PRs):
+- **Post-activate read staleness** — after `SAPActivate`, a `SAPRead(version=active)` can return the
+  stale empty shell until `force_refresh`, even though `activate.ts` already invalidates the
+  inactive-list + source caches. Needs live cache/ETag investigation (cache key vs SAP eventual
+  consistency); risky to touch shared read paths here.
+- **DEVC ghost after delete** — a deleted object lingers in the package listing though `SAPRead` on it
+  404s (package-index/cache lag).

@@ -13,6 +13,7 @@ import { resetCachedFeatures, setCachedFeatures } from '../../../src/handlers/fe
 import {
   buildCreateXml,
   createContentTypeForType,
+  mergeMetadataWriteProperties,
   resolveWriteSystemType,
 } from '../../../src/handlers/write-helpers.js';
 import type { ServerConfig } from '../../../src/server/types.js';
@@ -108,5 +109,32 @@ describe('createContentTypeForType — cloud INTF content-type (review fix)', ()
 
   it('does not change CLAS (works with application/* on cloud)', () => {
     expect(createContentTypeForType('CLAS', true)).toBe('application/*');
+  });
+});
+
+describe('mergeMetadataWriteProperties — DOMA outputLength follows a length change (review fix)', () => {
+  const stubClient = (existing: Record<string, unknown>) =>
+    ({ getDomain: async () => existing }) as unknown as AdtClient;
+  const base = { description: 'd', package: 'P', dataType: 'CHAR', length: 10, outputLength: 10 };
+
+  it('defaults outputLength to a changed length when not provided (avoids SAP output-length warning)', async () => {
+    const merged = await mergeMetadataWriteProperties(stubClient(base), 'DOMA', 'ZDOMA', { length: 20 });
+    expect(merged.outputLength).toBe(20);
+    expect(merged.length).toBe(20);
+  });
+
+  it('keeps the existing outputLength when length is unchanged', async () => {
+    const merged = await mergeMetadataWriteProperties(stubClient({ ...base, outputLength: 8 }), 'DOMA', 'ZDOMA', {
+      description: 'new',
+    });
+    expect(merged.outputLength).toBe(8);
+  });
+
+  it('respects an explicit outputLength', async () => {
+    const merged = await mergeMetadataWriteProperties(stubClient(base), 'DOMA', 'ZDOMA', {
+      length: 20,
+      outputLength: 15,
+    });
+    expect(merged.outputLength).toBe(15);
   });
 });

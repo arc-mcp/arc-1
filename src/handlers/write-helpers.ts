@@ -249,7 +249,9 @@ export async function mergeMetadataWriteProperties(
         dataType: provided.dataType ?? existing.dataType,
         length: provided.length ?? existing.length,
         decimals: provided.decimals ?? existing.decimals,
-        outputLength: provided.outputLength ?? existing.outputLength,
+        // When length changes but outputLength isn't given, follow the new length (mirrors the create
+        // default of `outputLength ?? length`) — otherwise SAP warns "Output length < calculated length".
+        outputLength: provided.outputLength ?? provided.length ?? existing.outputLength,
         conversionExit: provided.conversionExit ?? existing.conversionExit,
         signExists: provided.signExists ?? existing.signExists,
         lowercase: provided.lowercase ?? existing.lowercase,
