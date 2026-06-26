@@ -41,7 +41,7 @@ import { startLocalUiServer, type UiServerDeps } from './ui.js';
 import { UiLogBufferSink } from './ui-log-buffer.js';
 
 /** ARC-1 version */
-export const VERSION = '0.9.21'; // x-release-please-version
+export const VERSION = '0.9.22'; // x-release-please-version
 
 // Soft warning for an unusually large served tools/list. It is re-sent on every conversation (a
 // recurring token + latency cost), and some MCP clients cap tool-list size. CI's

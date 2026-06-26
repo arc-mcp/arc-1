@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.9.22](https://github.com/arc-mcp/arc-1/compare/v0.9.21...v0.9.22) (2026-06-26)
+
+
+### Features
+
+* add DDIC structure context ([#515](https://github.com/arc-mcp/arc-1/issues/515)) ([76e24dc](https://github.com/arc-mcp/arc-1/commit/76e24dcfd86d9c6d2b6afbe49dd70e252b0c2bdf))
+* **diagnose:** odata_perf client-wait + debug-slow-sql field findings ([#521](https://github.com/arc-mcp/arc-1/issues/521)) ([ddb0ffe](https://github.com/arc-mcp/arc-1/commit/ddb0ffe3190ed4c1c051fc0065652daecd66f08f))
+* S/4HANA Public Cloud support ([#524](https://github.com/arc-mcp/arc-1/issues/524)) ([bdcd330](https://github.com/arc-mcp/arc-1/commit/bdcd330f71eee6dfbf4739e30dc6da168a84f029))
+
+
+### Bug Fixes
+
+* make nullable SAPWrite schemas opt-in ([#526](https://github.com/arc-mcp/arc-1/issues/526)) ([992ce76](https://github.com/arc-mcp/arc-1/commit/992ce76fff43430fdea9dd5835fe729b319bde75))
+
+
+### Tests
+
+* cover per-user Cloud Connector proxy selection ([#525](https://github.com/arc-mcp/arc-1/issues/525)) ([d755ff9](https://github.com/arc-mcp/arc-1/commit/d755ff96432c4336ccdbc4c7e9454faaeb619aa4))
+
 ## [0.9.21](https://github.com/arc-mcp/arc-1/compare/v0.9.20...v0.9.21) (2026-06-25)
 
 
