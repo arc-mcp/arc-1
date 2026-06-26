@@ -583,6 +583,28 @@ export function classifySapDomainError(
 
   const lockPattern =
     /\blocked by\b|\bbeing edited by\b|\bcurrently editing\b|\bresource is locked\b|\balready locked\b/i.test(bodyRaw);
+
+  // A create-time package/authorization denial surfaces as ExceptionResourceNoAccess too (a structure
+  // package, a non-writable package, missing authorization), but it is NOT a lock — never send the user
+  // to SM12 (which doesn't even exist on BTP). crud.ts already produced the actionable 403 message; this
+  // keeps the classifier consistent so no contradictory lock hint is appended. A bare/409
+  // ExceptionResourceNoAccess (no package markers) still classifies as a lock below — ADR-0002.
+  if (
+    typeId === 'ExceptionResourceNoAccess' &&
+    !lockPattern &&
+    /structure package|cannot contain development objects|\bnot authorized\b|person responsible|S_DEVELOP|S_ABPLNGVS/i.test(
+      bodyRaw,
+    )
+  ) {
+    return {
+      category: 'authorization',
+      hint:
+        'This is a package or authorization denial on create — not a lock, so SM12 does not apply. ' +
+        'Target a writable, regular (non-structure) package you are authorized to develop in.',
+      details: { exceptionType: typeId },
+    };
+  }
+
   if (
     typeId === 'ExceptionResourceLockedByAnotherUser' ||
     typeId === 'ExceptionResourceNoAccess' ||

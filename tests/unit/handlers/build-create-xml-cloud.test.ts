@@ -10,7 +10,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { AdtClient } from '../../../src/adt/client.js';
 import type { ResolvedFeatures } from '../../../src/adt/types.js';
 import { resetCachedFeatures, setCachedFeatures } from '../../../src/handlers/feature-cache.js';
-import { buildCreateXml, resolveWriteSystemType } from '../../../src/handlers/write-helpers.js';
+import {
+  buildCreateXml,
+  createContentTypeForType,
+  resolveWriteSystemType,
+} from '../../../src/handlers/write-helpers.js';
 import type { ServerConfig } from '../../../src/server/types.js';
 
 describe('buildCreateXml — cloud mode (G-3)', () => {
@@ -88,5 +92,21 @@ describe('resolveWriteSystemType (G-3, Codex #1)', () => {
 
   it('returns undefined when unresolved and not bearer auth (on-prem)', () => {
     expect(resolveWriteSystemType(cfg('auto'), client(false))).toBeUndefined();
+  });
+});
+
+describe('createContentTypeForType — cloud INTF content-type (review fix)', () => {
+  it('uses the v5 interfaces content-type for cloud INTF create', () => {
+    // application/* routes cloud INTF to an older ST that drops abapLanguageVersion → 500. Live-verified 919.
+    expect(createContentTypeForType('INTF', true)).toBe('application/vnd.sap.adt.oo.interfaces.v5+xml');
+  });
+
+  it('keeps application/* for on-prem INTF create (unchanged)', () => {
+    expect(createContentTypeForType('INTF', false)).toBe('application/*');
+    expect(createContentTypeForType('INTF')).toBe('application/*');
+  });
+
+  it('does not change CLAS (works with application/* on cloud)', () => {
+    expect(createContentTypeForType('CLAS', true)).toBe('application/*');
   });
 });

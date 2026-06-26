@@ -499,5 +499,69 @@ describeIf('BTP ABAP Environment Integration Tests', () => {
         }
       }
     });
+
+    // INTF needs the v5 content-type on cloud — application/* routes to an older ST that drops the
+    // language version (HTTP 500 "ABAP language version  is not allowed"). Review fix; live-verified 919.
+    (writablePkg ? it : it.skip)(
+      'INTF create → activate → read → delete in a cloud package (v5 content-type)',
+      async () => {
+        const pkg = writablePkg as string;
+        const name = generateUniqueName('ZIF_ARC1_BTP');
+        const lc = name.toLowerCase();
+        const objectUrl = `/sap/bc/adt/oo/interfaces/${lc}`;
+        const responsible = await client.getEffectiveUser();
+        const body = buildCreateXml('INTF', name, pkg, 'ARC-1 BTP intf test', undefined, 'EN', responsible, true);
+
+        let created = false;
+        try {
+          await createObject(
+            client.http,
+            client.safety,
+            '/sap/bc/adt/oo/interfaces',
+            body,
+            createContentTypeForType('INTF', true),
+            undefined,
+            undefined,
+            '919',
+            'btp',
+            name,
+          );
+          created = true;
+
+          const source = [`INTERFACE ${lc} PUBLIC.`, '  METHODS ping.', 'ENDINTERFACE.'].join('\n');
+          await client.http.withStatefulSession(async (session) => {
+            const lock = await lockObject(session, client.safety, objectUrl, 'MODIFY', '919', 'btp');
+            try {
+              await updateSource(
+                session,
+                client.safety,
+                `${objectUrl}/source/main`,
+                source,
+                lock.lockHandle,
+                lock.corrNr || undefined,
+              );
+            } finally {
+              await unlockObject(session, objectUrl, lock.lockHandle);
+            }
+          });
+
+          await activate(client.http, client.safety, objectUrl, { name });
+          const read = await client.getInterface(name);
+          expect(read.source).toContain('ping');
+        } finally {
+          if (created) {
+            // best-effort-cleanup
+            try {
+              await client.http.withStatefulSession(async (session) => {
+                const lock = await lockObject(session, client.safety, objectUrl, 'MODIFY', '919', 'btp');
+                await deleteObject(session, client.safety, objectUrl, lock.lockHandle, lock.corrNr || undefined);
+              });
+            } catch {
+              // leave the object; a follow-up run reuses a fresh unique name
+            }
+          }
+        }
+      },
+    );
   });
 });

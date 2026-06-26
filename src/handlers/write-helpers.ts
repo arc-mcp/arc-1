@@ -104,7 +104,11 @@ function needsVendorContentType(type: string): boolean {
 }
 
 /** Content type used for create POST */
-export function createContentTypeForType(type: string): string {
+export function createContentTypeForType(type: string, cloud = false): string {
+  // Cloud INTF create needs the v5 ST: `application/*` routes to an older ST that silently drops the
+  // cloud abapLanguageVersion → HTTP 500 "ABAP language version  is not allowed in this software
+  // component". On-prem INTF create keeps `application/*` (unchanged). Live-verified BTP 919.
+  if (type === 'INTF' && cloud) return 'application/vnd.sap.adt.oo.interfaces.v5+xml';
   // SRVB creation works with wildcard content type; updates use vendor v2 type.
   if (type === 'SRVB') return 'application/*';
   return needsVendorContentType(type) ? vendorContentTypeForType(type) : 'application/*';

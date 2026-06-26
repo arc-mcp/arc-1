@@ -473,7 +473,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
   // DOMA/DTEL/BDEF require vendor-specific content types; all other types use
   // 'application/*' — the wildcard lets the SAP server resolve the correct
   // handler (matching how ADT Eclipse and abap-adt-api send requests).
-  const contentType = createContentTypeForType(type);
+  const contentType = createContentTypeForType(type, cloud);
   const needsPackageParam = type === 'BDEF' || type === 'TABL' || type === 'TABL/DT' || type === 'TABL/DS';
   let result: string;
   try {
@@ -873,7 +873,7 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
         responsible,
         cloud,
       );
-      const contentType = createContentTypeForType(objType);
+      const contentType = createContentTypeForType(objType, cloud);
       const needsPackageParam =
         objType === 'BDEF' || objType === 'TABL' || objType === 'TABL/DT' || objType === 'TABL/DS';
       try {

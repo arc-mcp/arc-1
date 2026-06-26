@@ -137,3 +137,32 @@ Three one-line nits: **G-6** AMDP probe path `/sap/bc/adt/debugger/amdp` → `/s
 **G-7** `features.ts` comment claimed BTP reports release `"sap_btp"` — it reports a numeric SAP_BASIS
 (`919`). **G-8** `AGENTS.md` referenced a non-existent `src/adt/btp.ts` — the BTP Destination Service is
 `oauth.ts` + `server.ts` (`buildAdtConfig`) + the `@arc-mcp/xsuaa-auth` dep.
+
+## Live smoke-test review (2026-06-27) — two more P1 create-path bugs
+
+A full MCP smoke run surfaced two real create-path bugs (both reproduced and fixed against my build, H01 919):
+
+- **INTF create — FIXED.** Cloud INTF create POSTed with `application/*` returned HTTP 500 `[?/537]
+  "ABAP language version  is not allowed in this software component"` (blank version): `application/*`
+  routes INTF to an older deserialize ST that drops `adtcore:abapLanguageVersion`. The body is correct
+  (it carries `cloudDevelopment`) — the **content-type** is the fix. `createContentTypeForType(type, cloud)`
+  now returns `application/vnd.sap.adt.oo.interfaces.v5+xml` for cloud INTF (on-prem keeps `application/*`).
+  CLAS/DDLS are unaffected (their `application/*` ST is fine). Live-verified: `INTF create → activate →
+  read → delete` green; unit + integration tested.
+- **SM12 hint on a structure-package 403 — FIXED.** The G-4 message was correct, but
+  `classifySapDomainError` then appended a contradictory *"Object is locked … check SM12"* hint, because
+  the lock-conflict rule treated *any* `ExceptionResourceNoAccess` as a lock. Create-time
+  `ExceptionResourceNoAccess` with package markers (structure package / `not authorized` / `S_DEVELOP`)
+  and no lock markers now classifies as `authorization` (no SM12); a bare/409 `ExceptionResourceNoAccess`
+  still classifies as a lock (ADR-0002 preserved). Unit-tested.
+
+Deferred (verified-feasible / intentional, out of this PR's create-path scope):
+- **TTYP on BTP** — the registry has `btp:false`, but a TTYP shell create POST **succeeds** on BTP
+  (live, 200). Enabling `btp:true` needs the full 2-step (shell + row-type PUT + activate) verified —
+  follow-up.
+- **PROG read on BTP** — classic programs are readable via ADT (T-1), but BTP `SAPRead` intentionally
+  drops PROG. `SAPSearch` still finds them, so the find-but-can't-read gap is a deliberate tool-surface
+  choice; revisit if read-only classic-program inspection is wanted.
+
+Note: the smoke run that surfaced these executed against `arc-1-lsp-local` (the configured `arc-1-btp`
+server wasn't connected); both bugs were re-confirmed against this PR's `dist/` before fixing.

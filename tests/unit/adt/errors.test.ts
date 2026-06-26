@@ -429,6 +429,18 @@ describe('AdtApiError', () => {
       expect(classification?.category).toBe('lock-conflict');
     });
 
+    it('classifies a create-time structure-package 403 as authorization, NOT a lock (no SM12) — review fix', () => {
+      // Live BTP 919: creating into a structure package → 403 ExceptionResourceNoAccess + PAK/149
+      // "Structure packages cannot contain development objects". Must NOT get the misleading SM12 lock hint.
+      const xml = `<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework"><type id="ExceptionResourceNoAccess"/><message lang="EN">Structure packages cannot contain development objects</message></exc:exception>`;
+      const classification = classifySapDomainError(403, xml);
+      expect(classification?.category).toBe('authorization');
+      expect(classification?.category).not.toBe('lock-conflict');
+      // Not the lock path: no SM12 transaction, and the hint is the package/auth guidance.
+      expect(classification?.transaction).not.toBe('SM12');
+      expect(classification?.hint).toMatch(/not a lock|package/i);
+    });
+
     it('does not misclassify 403 auth error as lock conflict', () => {
       const xml = `<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework">
   <type id="ExceptionNotAuthorized"/>
