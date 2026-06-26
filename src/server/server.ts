@@ -255,10 +255,20 @@ async function createPerUserClient(
   // SAP_BTP_PP_DESTINATION may point to different Cloud Connectors (different
   // Location IDs). If we blindly reuse the startup proxy, PP requests route to
   // the wrong SCC instance — causing 401/403/404 errors that are hard to debug.
-  const effectiveProxy =
-    btpProxy && destination.CloudConnectorLocationId !== undefined
-      ? { ...btpProxy, locationId: destination.CloudConnectorLocationId }
-      : btpProxy;
+  //
+  // Only on-premise destinations go through the Cloud Connector proxy. Internet
+  // destinations (e.g. S/4HANA Public Cloud with SAMLAssertion) must connect
+  // directly — otherwise, if the Connectivity service is also bound, the request
+  // would be wrongly tunnelled through the proxy (http.ts proxies whenever btpProxy is set).
+  let effectiveProxy: BTPProxyConfig | undefined;
+  if (destination.ProxyType === 'OnPremise' && btpProxy) {
+    effectiveProxy =
+      destination.CloudConnectorLocationId !== undefined
+        ? { ...btpProxy, locationId: destination.CloudConnectorLocationId }
+        : btpProxy;
+  } else {
+    effectiveProxy = undefined;
+  }
 
   const adtConfig = buildAdtConfig(config, effectiveProxy, undefined, { perUser: true }, adtSemaphore);
   // Override URL from destination (in case it differs from startup-resolved URL)
@@ -319,11 +329,17 @@ export function applyPerUserAuthTokens(
     logger.debug('PP: using destination-exchanged Bearer token (OAuth2UserTokenExchange)', {
       destination: destName,
     });
+  } else if (authTokens.samlAssertionAuthorization) {
+    // SAMLAssertion (e.g. S/4HANA Public Cloud developer extensibility — same flow BAS uses):
+    // the Destination Service returns a ready-to-use Authorization header value (the assertion);
+    // http.ts sends it verbatim as Authorization + `x-sap-security-session: create`.
+    adtConfig.samlAuthorization = authTokens.samlAssertionAuthorization;
+    logger.debug('PP: using SAMLAssertion Authorization header', { destination: destName });
   } else {
     // No per-user auth token received.
     throw new Error(
       `Principal propagation failed for destination '${destName}': ` +
-        'no SAP-Connectivity-Authentication header, Bearer token, or jwt-bearer exchange token returned. ' +
+        'no SAP-Connectivity-Authentication header, Bearer token, SAML assertion, or jwt-bearer exchange token returned. ' +
         'Check Cloud Connector status, destination configuration, and user JWT validity.',
     );
   }

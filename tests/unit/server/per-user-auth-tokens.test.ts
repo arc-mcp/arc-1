@@ -55,6 +55,35 @@ describe('applyPerUserAuthTokens', () => {
     expect(cfg.bearerTokenProvider).toBeUndefined();
   });
 
+  it('wires a SAMLAssertion Authorization header (S/4HANA Public Cloud, same flow as BAS)', () => {
+    const cfg = applyPerUserAuthTokens(
+      baseConfig(),
+      { samlAssertionAuthorization: 'SAML2.0 ass=base64assertion' },
+      'jdoe@example.com',
+      'S4HC_PP',
+    );
+
+    expect(cfg.samlAuthorization).toBe('SAML2.0 ass=base64assertion');
+    // SAML path must clear shared Basic creds and must NOT set the other per-user auth modes.
+    expect(cfg.password).toBeUndefined();
+    expect(cfg.username).toBe('jdoe@example.com');
+    expect(cfg.bearerTokenProvider).toBeUndefined();
+    expect(cfg.sapConnectivityAuth).toBeUndefined();
+    expect(cfg.ppProxyAuth).toBeUndefined();
+  });
+
+  it('prefers a Bearer token over a SAML assertion when both are present', () => {
+    const cfg = applyPerUserAuthTokens(
+      baseConfig(),
+      { bearerToken: 'abap-user-token', samlAssertionAuthorization: 'SAML2.0 ass=x' },
+      'jdoe@example.com',
+      'S4HC_PP',
+    );
+
+    expect(cfg.bearerTokenProvider).toBeDefined();
+    expect(cfg.samlAuthorization).toBeUndefined();
+  });
+
   it('throws when the Destination Service returns no usable per-user token', () => {
     expect(() => applyPerUserAuthTokens(baseConfig(), {}, 'jdoe@example.com', 'ABAP_PP')).toThrow(
       /Principal propagation failed for destination 'ABAP_PP'/,

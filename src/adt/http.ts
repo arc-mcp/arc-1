@@ -153,6 +153,12 @@ export interface AdtHttpConfig {
    * Used for direct BTP ABAP connections via service key.
    */
   bearerTokenProvider?: () => Promise<string>;
+  /**
+   * Per-user SAMLAssertion Authorization header value (e.g. "SAML2.0 <assertion>") from the BTP
+   * Destination Service. When set, sent verbatim as `Authorization` + `x-sap-security-session: create`.
+   * Used for S/4HANA Public Cloud developer extensibility (the same destination flow BAS uses).
+   */
+  samlAuthorization?: string;
   /** Opt-in: disable SAML redirect via X-SAP-SAML2 header + saml2 query param */
   disableSaml?: boolean;
   /** Optional concurrency limiter shared across requests */
@@ -1130,6 +1136,16 @@ export class AdtHttpClient {
 
   /** Apply Basic Auth header if username/password are configured (and no bearer provider) */
   private applyAuthHeader(headers: Record<string, string>): void {
+    // Principal Propagation via SAMLAssertion (e.g. S/4HANA Public Cloud developer extensibility —
+    // the same destination flow BAS uses). The BTP Destination Service returns a ready-to-use
+    // Authorization value (the SAML assertion); send it verbatim plus `x-sap-security-session: create`
+    // so SAP establishes a session and returns cookies the jar reuses (mirrors @sap-cloud-sdk's
+    // SAMLAssertion handling). Mutually exclusive with the other per-user auth modes below.
+    if (this.config.samlAuthorization) {
+      headers.Authorization = this.config.samlAuthorization;
+      headers['x-sap-security-session'] = 'create';
+      return;
+    }
     if (
       this.config.username &&
       this.config.password &&

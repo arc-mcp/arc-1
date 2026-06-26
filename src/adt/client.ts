@@ -331,6 +331,7 @@ export class AdtClient {
       sapConnectivityAuth: config.sapConnectivityAuth,
       ppProxyAuth: config.ppProxyAuth,
       bearerTokenProvider: config.bearerTokenProvider,
+      samlAuthorization: config.samlAuthorization,
       disableSaml: config.disableSaml,
       // Prefer the shared server-wide semaphore when provided so all per-user PP clients
       // share one cap. Fall back to a private semaphore for stdio/tests when only maxConcurrent

@@ -118,6 +118,57 @@ describe('AdtHttpClient', () => {
     });
   });
 
+  // ─── Auth headers ──────────────────────────────────────────────────
+
+  describe('SAMLAssertion principal propagation (S/4HANA Public Cloud)', () => {
+    function samlConfig(): AdtHttpConfig {
+      // Per-user config as applyPerUserAuthTokens builds it: shared Basic creds stripped,
+      // the ready-to-use assertion in samlAuthorization.
+      return {
+        baseUrl: 'https://my.s4hana.cloud.sap',
+        client: '100',
+        language: 'EN',
+        samlAuthorization: 'SAML2.0 ass=base64assertion',
+      } as AdtHttpConfig;
+    }
+
+    it('sends the SAML assertion as Authorization plus x-sap-security-session: create', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok'));
+
+      const client = new AdtHttpClient(samlConfig());
+      await client.get('/sap/bc/adt/core/discovery');
+
+      const headers = fetchHeaders(0);
+      expect(headers.Authorization).toBe('SAML2.0 ass=base64assertion');
+      expect(headers['x-sap-security-session']).toBe('create');
+    });
+
+    it('does NOT send Basic auth when a SAML assertion is configured', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok'));
+
+      // Even if creds linger, the SAML path wins and Basic is never emitted.
+      const client = new AdtHttpClient({ ...samlConfig(), username: 'TECH', password: 'secret' } as AdtHttpConfig);
+      await client.get('/sap/bc/adt/core/discovery');
+
+      expect(fetchHeaders(0).Authorization).toBe('SAML2.0 ass=base64assertion');
+      expect(fetchHeaders(0).Authorization).not.toContain('Basic');
+    });
+
+    it('carries the SAML assertion on the CSRF fetch for a write (same session)', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'T' })); // CSRF fetch
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'created')); // POST
+
+      const client = new AdtHttpClient(samlConfig());
+      await client.post('/sap/bc/adt/path', '<xml/>', 'application/xml');
+
+      // CSRF fetch (call 0) must also carry the assertion + session-create so the token
+      // binds to the SAML-authenticated session.
+      expect(fetchHeaders(0).Authorization).toBe('SAML2.0 ass=base64assertion');
+      expect(fetchHeaders(0)['x-sap-security-session']).toBe('create');
+      expect(fetchHeaders(1).Authorization).toBe('SAML2.0 ass=base64assertion');
+    });
+  });
+
   // ─── POST/PUT/DELETE ───────────────────────────────────────────────
 
   describe('modifying requests', () => {

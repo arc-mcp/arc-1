@@ -126,6 +126,32 @@ export SAP_PP_ENABLED=true
 - **PP failure + explicit `SAP_PP_STRICT=false`** → falls back to shared destination
 - **API key / non-JWT request** → uses shared destination unless `SAP_PP_STRICT=true` was set explicitly
 
+## Cloud targets: S/4HANA Public Cloud & BTP ABAP (no Cloud Connector)
+
+The Steps above describe **on-premise** propagation via the Cloud Connector (destination type
+`PrincipalPropagation`). For **cloud** targets reached over the Internet, there is no Cloud Connector
+— ARC-1 connects directly and the per-user identity rides in the destination's auth token. Pick the
+destination `Authentication` type the target supports:
+
+| Target | Destination `Authentication` | `ProxyType` | Per-user credential ARC-1 sends |
+|--------|------------------------------|-------------|---------------------------------|
+| **S/4HANA Public Cloud** (developer extensibility) | `SAMLAssertion` | `Internet` | `Authorization: SAML2.0 …` + `x-sap-security-session: create` — the **same flow BAS uses** |
+| S/4HANA Public Cloud / BTP ABAP (OAuth client configured) | `OAuth2SAMLBearerAssertion` | `Internet` | `Authorization: Bearer …` |
+| BTP ABAP, same subaccount | `OAuth2UserTokenExchange` | `Internet` | `Authorization: Bearer …` |
+
+For all of these you only need the **Destination + XSUAA** service instances bound (no Connectivity
+service / Cloud Connector). ARC-1 detects `ProxyType: Internet` and connects directly — the
+connectivity proxy is used **only** for `OnPremise` destinations.
+
+For the full **S/4HANA Public Cloud** walkthrough (the `SAMLAssertion` destination + S/4HC SAML trust,
+identical to the BAS setup, plus ARC-1 configuration), see the dedicated guide:
+**[SAP S/4HANA Public Cloud Setup](s4hana-public-cloud.md)**.
+
+> `OAuth2SAMLBearerAssertion` is SAP's *recommended* alternative (the SDK warns about raw
+> `SAMLAssertion`), but it needs an OAuth 2.0 client/communication arrangement on the S/4HC side.
+> `SAMLAssertion` reuses the SAML trust BAS already established, so it's usually the lower-config path.
+> Either way, keep `SAP_DISABLE_SAML` **unset/false** — never disable SAML on S/4HANA Public Cloud.
+
 !!! warning "Use `SAP_PP_STRICT=false` only for intentional mixed-mode fallback"
     With `SAP_PP_ENABLED=true`, ARC-1 fails closed by default when per-user PP fails. Setting `SAP_PP_STRICT=false` restores the shared-service-account fallback for JWT PP failures: the request then runs with the technical user's authorizations and SAP audits the technical user, not the human. Keep this only for deployments that intentionally mix fallback shared-client access with PP.
 

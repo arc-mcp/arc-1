@@ -16,6 +16,7 @@ For single-developer setups on your own laptop, use [local-development.md](local
 | Destination Service resolves it (on-prem via Cloud Connector) | BTP Destination | Depends on destination type |
 | Destination uses `PrincipalPropagation` + Cloud Connector | **Principal Propagation** | ✅ Per-user |
 | BTP CF app connects to BTP ABAP Environment | Destination `OAuth2UserTokenExchange` | ✅ Per-user |
+| BTP CF app connects to S/4HANA Public Cloud (developer extensibility) | Destination `SAMLAssertion` (same as BAS) | ✅ Per-user (PP only) |
 | Local developer connects to BTP ABAP Environment | BTP service-key OAuth + browser login | ✅ One local user; not headless |
 
 **Who authenticates to ARC-1 (the MCP endpoint)?**
@@ -34,6 +35,7 @@ For single-developer setups on your own laptop, use [local-development.md](local
 | Docker on any VM / container host | [Docker deployment](#docker-on-any-vm) |
 | BTP Cloud Foundry, on-prem SAP via Cloud Connector | [BTP CF with PP](#btp-cloud-foundry-with-principal-propagation) |
 | BTP Cloud Foundry, BTP ABAP backend | [BTP CF + BTP ABAP](#btp-cloud-foundry-btp-abap-environment) |
+| BTP Cloud Foundry, S/4HANA Public Cloud backend | [S/4HANA Public Cloud (PP via SAMLAssertion)](s4hana-public-cloud.md) |
 
 ---
 

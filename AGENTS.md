@@ -199,7 +199,7 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 | Elicitation / XSUAA / OIDC / DCR store | `src/server/elicit.ts` / `src/server/xsuaa.ts` / `src/server/http.ts` / DCR store + OAuth proxy in the `@arc-mcp/xsuaa-auth` dep (revocation = rotate `ARC1_DCR_SIGNING_SECRET` or rebind XSUAA; `KDF_LABEL` bump lives in the package) |
 | Scope enforcement / auth scopes | `src/authz/policy.ts` (`ACTION_POLICY`), `src/handlers/dispatch.ts`, `src/server/server.ts`, `xs-security.json` |
 | Auth combination rule | `src/server/config.ts` (`validateConfig`), `src/server/types.ts`, `docs_page/enterprise-auth.md` |
-| Layer B auth mechanism | `src/adt/http.ts` (`applyAuthHeader`), `src/server/server.ts` (`buildAdtConfig` perUser flag — strips shared creds) |
+| Layer B auth mechanism | `src/adt/http.ts` (`applyAuthHeader` — Basic / `samlAuthorization`→`Authorization`+`x-sap-security-session:create`), `src/server/server.ts` (`applyPerUserAuthTokens` sets PP creds incl. SAMLAssertion for S/4HC; `buildAdtConfig` perUser flag — strips shared creds). New Layer B field must also be mapped in `src/adt/client.ts` httpConfig + set only per-user |
 | Safety config option | `src/adt/safety.ts`, `src/server/config.ts`, `src/server/types.ts` |
 | AdtClient instance field / `withSafety()` clone | `src/adt/client.ts` — clone is `Object.assign(Object.create(proto), this, {safety})`; new own fields share automatically (use TS `private`, never `#private`) (#333) |
 | `allowedPackages` pattern syntax | `src/adt/safety.ts`, `src/adt/package-hierarchy.ts`, `src/handlers/write-helpers.ts` (`enforceAllowedPackageForObjectUrl`, fail-closed) — details: dev-guide |

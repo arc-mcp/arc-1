@@ -90,6 +90,13 @@ export interface AdtClientConfig {
    * The function handles token lifecycle (caching, refresh, re-login).
    */
   bearerTokenProvider?: () => Promise<string>;
+  /**
+   * Per-user SAMLAssertion Authorization header value (e.g. "SAML2.0 <assertion>") from the BTP
+   * Destination Service. When set, sent verbatim as `Authorization` + `x-sap-security-session: create`
+   * (mirrors the SAP Cloud SDK's SAMLAssertion handling). Used for S/4HANA Public Cloud developer
+   * extensibility — the same destination flow BAS uses. Set only per-user, never from shared creds.
+   */
+  samlAuthorization?: string;
   /** Opt-in: disable SAML redirect via X-SAP-SAML2 header + saml2 query param */
   disableSaml?: boolean;
   /** Maximum concurrent SAP HTTP requests. When set, requests beyond this limit queue.
