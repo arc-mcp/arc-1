@@ -32,6 +32,12 @@ If you only have a vague "X is slow", get the OData URL or the object name first
 
 Work top-down. Each rung is cheaper than the next and usually tells you whether to descend.
 
+> **Reachability — don't promise a plan you can't reach.** Rungs 3–4 (profiler, ST05) need `SAP_ALLOW_WRITES`
+> to arm and `S_ADT_RES` (ACTVT 01 **and** 02) to read — and don't exist on NW 7.50. If arming returns *writes
+> disabled* or a `403`, say so and **stop at rung 2**: `odata_perf` + `cds_sql` + `SAPQuery` already pin a
+> DB-bound root cause GUI-free. Tier-3–4 (the exact statement + execution plan) then depends on Basis/config, so
+> hand the user the precise ST05/SAT steps below instead of pretending you reached the plan.
+
 ### 0. Orient (no execution)
 - `SAPContext(action="deps", type="<type>", name=…)` / `SAPRead(type="DDLS", name=…)` — read the CDS/ABAP
   source. Eyeball it for the usual suspects **before** measuring: `LIKE '%term%'` (leading wildcard = no
@@ -43,7 +49,7 @@ Work top-down. Each rung is cheaper than the next and usually tells you whether 
   help, SADL/RAP, or a framework — not hand-written, so a `grep`/where-used for the literal `SELECT` comes up
   empty. Trace the generator instead: for a value-help / type-ahead screen, the **search help**
   (`DD30L.SELMETHOD` + `FUZZY_SEARCH`, `DD32S` fields) and its DSH/SADL classes (`CL_DSH_*`, the F4→WHERE
-  conversion) via `SAPSearch`/`SAPNavigate`/`SAPRead`. For an OData service, find its implementation: a **V4/RAP** binding → `SAPRead(type="SRVB", name=…)` → the service definition → the CDS view (then use `cds_sql`, rung 2); a **classic SEGW / Gateway V2** service has **no CDS** → find the DPC class (`SAPSearch "<SERVICE>_DPC*"`, read its `*_get_entityset` / `*_get_entity` / expand / `resolve_navigation_path` methods) and **skip rung 2**. (Don't
+  conversion) via `SAPSearch`/`SAPNavigate`/`SAPRead`. For an OData service, find its implementation: a **V4/RAP** binding → `SAPRead(type="SRVB", name=…)` → the service definition → the CDS view (then use `cds_sql`, rung 2). The **binding** (SRVB) name often differs from the URL's service path — if `SRVB` 404s, `SAPSearch` the service name to find the actual binding, or read the **service definition** (`SRVD`) directly for its `expose … as` entities. A **classic SEGW / Gateway V2** service has **no CDS** → find the DPC class (`SAPSearch "<SERVICE>_DPC*"`, read its `*_get_entityset` / `*_get_entity` / expand / `resolve_navigation_path` methods) and **skip rung 2**. (Don't
   confuse SE91/`WBMESSAGES`, which loads one message class in memory and searches with `CS`, with a search-help
   path that issues a real DB `LIKE`.)
 
@@ -76,8 +82,15 @@ entity/list request from the Network tab, not a `$batch` POST.)
   metrics: `queryExecutionTimeMs`, `totalRows` (total matches), `rowsReturned`, and the `executedQueryString`.
   Run it with the **real filter values** from the slow request: a large `totalRows` / `queryExecutionTimeMs` for
   a small useful result = a scan/selectivity problem. It does **not** expose the HANA execution plan or buffer
-  state — use ST05/HANA for those. (Needs `SAP_ALLOW_FREE_SQL` for freestyle SQL; multi-column `WHERE` via
-  `SAPRead(type="TABLE_QUERY")` needs `SAP_ALLOW_DATA_PREVIEW`.)
+  state — use ST05/HANA for those. A `SAPQuery` that **times out** is itself evidence of an unbounded scan —
+  record the timeout as the signal, don't just retry with a smaller `maxRows`. (Needs `SAP_ALLOW_FREE_SQL` for
+  freestyle SQL; multi-column `WHERE` via `SAPRead(type="TABLE_QUERY")` needs `SAP_ALLOW_DATA_PREVIEW`.)
+- **Equality also slow? It's the view, not your filter.** If `SAPQuery` with an exact `WHERE key = '…'` is as
+  slow as a `LIKE '%…%'` (both tens of seconds), the `LIKE` is a red herring — the cost is the CDS itself: a wide
+  `SELECT DISTINCT`, a deep join the filter can't start from (the filtered field isn't index-leading), or an
+  aggregate / `$count=true`. `cds_sql` shows the join order; the fix is to invert the join so the **selective**
+  table leads, trim the `DISTINCT`/aggregate out of the list projection, or drop `$count=true` on a large scan —
+  not to touch the `LIKE`.
 - Compare signals: probe the OData URL, then run `SAPQuery` on the underlying CDS/base — if `queryExecutionTimeMs`
   is close to the OData `gwappdb`, the DB query is the cost; if OData is slow but the query is fast, it's the
   SADL/framework layer above. For the exact statement + execution plan, descend to ST05.
@@ -189,13 +202,21 @@ handful of rows. **Fix:** drop the leading wildcard (anchor the search) / add a 
 pre-filter on an indexed field first. For the HANA plan + rows-fetched, arm an ST05 trace (rung 4), reproduce,
 and open the directory deep-link.
 
+This is the **simple** case — a single-table scan where the leading wildcard really is the bottleneck. On a
+wide CDS view it often is **not**: if an exact-match `WHERE key = '…'` is just as slow as the `LIKE`, the cost is
+the view's joins / `DISTINCT` / `$count`, not the wildcard (rung 2, "Equality also slow?"). Measure both before
+you blame the `LIKE`.
+
 ---
 
 ## Output
 
 Deliver a tight diagnosis, not a tool log:
 
-1. **Verdict** — DB / app / framework / auth, with the number that proves it (e.g. "`gwappdb` 412 ms of 480 ms").
+1. **Verdict** — DB / app / framework / auth, with the number that proves it (e.g. "`gwappdb` 412 ms of `gwtotal`
+   480 ms"). Cite the **SAP** figure (`gwtotal`/`gwappdb`), never `wallClockMs`: wall-clock also counts
+   network/MCP/proxy (`odata_perf` returns that gap as `clientWaitMs`), so when `clientWaitMs` dwarfs `gwtotal`
+   the latency is the landscape, not the query.
 2. **The statement** — the offending SQL (from `cds_sql` / ST05) and what it scans (`SAPQuery totalRows` / ST05
    rows fetched, the table, the missing index).
 3. **Root cause** — one sentence, mapped to the catalog above.
