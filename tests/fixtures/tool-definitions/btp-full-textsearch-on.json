@@ -250,10 +250,7 @@
           "description": "Write action. create/update/delete: standard object writes. edit_method: replace one method body (type=CLAS, method, source). Class-section surgery (type=CLAS only): edit_class_definition without include= replaces the global DEFINITION block (refuses a diff that would leave the class non-activatable, e.g. a concrete method with no IMPL stub); with include= it whole-replaces a class-local include (CCDEF/CCIMP/macros/testclasses), auto-creating it. add_method inserts a METHODS clause + empty stub (visibility, abstract=true skips the stub); edit_method_signature replaces one METHODS clause (no IMPL change); delete_method removes the clause AND body — WARNING: destructive, discards the method body (to re-section a method use change_method_visibility, NOT delete+add); change_method_visibility moves a method between PUBLIC/PROTECTED/PRIVATE, preserves the body. add_method/edit_method_signature/delete_method/change_method_visibility act on /source/main only. batch_create: create+activate multiple objects (objects array). scaffold_rap_handlers / generate_behavior_implementation: derive RAP behavior-pool handlers from the BDEF (the latter the equivalent of Eclipse's \"Generate Behavior Implementation\")."
         },
         "type": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
           "enum": [
             "CLAS",
             "INTF",
@@ -281,24 +278,15 @@
           "description": "Object type (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on BTP: CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require type=CLAS. Server-driven objects (8.16+, discovery-gated): DESD, DTSC, CSNM, EVTB, EVTO, COTA — create/update/delete with AFF JSON in \"source\", then SAPActivate."
         },
         "name": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
           "description": "Object name (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility)."
         },
         "source": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
           "description": "ABAP source code. create/update: full source body. edit_method: the new method body. edit_class_definition without include=: only the new global CLASS…DEFINITION…ENDCLASS block (no IMPLEMENTATION); with include=: the full replacement body of that include. edit_method_signature: only the new METHODS clause. Not used by add_method/delete_method/change_method_visibility (use `method`/`visibility`)."
         },
         "include": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
           "enum": [
             "definitions",
             "implementations",
@@ -308,17 +296,11 @@
           "description": "CLAS-ONLY. Do NOT send unless type=CLAS AND action is update / edit_method / edit_class_definition. OMIT it entirely for every other type and for delete / batch_create / add_method / edit_method_signature / delete_method / change_method_visibility (those use /source/main). Targets a class-local include: definitions (CCDEF), implementations (CCIMP), macros, testclasses. edit_method auto-detects it from the method specifier (lhc_*/lcl_* → implementations, ltc_* → testclasses), so you rarely pass it; use include=testclasses to create a new local test class. Whole-include writes auto-create a missing include and produce an inactive draft (read with SAPRead version=\"inactive\" before activation)."
         },
         "method": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
           "description": "edit_method/edit_method_signature/delete_method/change_method_visibility: the method NAME (e.g. \"get_name\", \"zif_order~process\", \"lhc_project~approve_project\"). add_method: the full METHODS clause as ABAP source. Local-class methods auto-route by prefix (lhc_*/lcl_* → implementations, ltc_* → testclasses); use the qualified <localclass>~<method> form when a bare name is ambiguous."
         },
         "visibility": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
           "enum": [
             "public",
             "protected",
@@ -327,101 +309,59 @@
           "description": "For action=add_method: target visibility section to insert into (default \"public\"). For action=change_method_visibility: the TARGET section to move the method to (required). The target section header must already exist in the DEFINITION block — if not, ARC-1 refuses with a hint to use edit_class_definition first."
         },
         "abstract": {
-          "type": [
-            "boolean",
-            "null"
-          ],
+          "type": "boolean",
           "description": "For action=add_method: when true, only the METHODS clause is inserted into DEFINITION; no METHOD/ENDMETHOD stub is added to IMPLEMENTATION. Default false (concrete method — DEFINITION + IMPL stub written atomically)."
         },
         "bdefName": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
           "description": "For scaffold_rap_handlers: interface BDEF name whose actions/determinations/validations/authorizations define the required handlers (e.g. ZI_TRAVELREQ). For generate_behavior_implementation: optional override (default discovery reads the class rootEntityRef)."
         },
         "autoApply": {
-          "type": [
-            "boolean",
-            "null"
-          ],
+          "type": "boolean",
           "description": "For scaffold_rap_handlers: true inserts missing METHODS signatures + empty stubs and writes the class under one lock; false (default) returns a required-vs-missing report without modifying (preview, then re-run with autoApply=true). Not used by generate_behavior_implementation (use dryRun to preview there)."
         },
         "targetAlias": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
           "description": "For scaffold_rap_handlers and generate_behavior_implementation: optional RAP entity alias filter (e.g., Travel, Segment) to scaffold only one handler class. When omitted, all entities declared in the BDEF are scaffolded. Case-insensitive."
         },
         "activate": {
-          "type": [
-            "boolean",
-            "null"
-          ],
+          "type": "boolean",
           "description": "For generate_behavior_implementation: true (default) activates the class after writing; false writes source only. The known \"Local classes of CL_ABAP_BEHAVIOR_HANDLER…\" stale-active activation failure does not throw — it returns activation.success=false with a recovery hint."
         },
         "activateAtEnd": {
-          "type": [
-            "boolean",
-            "null"
-          ],
+          "type": "boolean",
           "description": "For batch_create only. false (default): per-object inline activation in order. true: write all inactive drafts then one terminal activateBatch so SAP resolves cross-references between siblings — use for interdependent RAP stacks (TABL→DDLS→DCLS→BDEF→SRVD). A write-phase failure still breaks the loop; the terminal activate runs over the already-written subset."
         },
         "dryRun": {
-          "type": [
-            "boolean",
-            "null"
-          ],
+          "type": "boolean",
           "description": "For generate_behavior_implementation: when true, runs discovery + cross-validation + scaffold planning and returns the report without writing or activating. Use this to preview what would change."
         },
         "description": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
           "description": "Object description for create action (defaults to name if omitted). Max 60 chars for most types."
         },
         "package": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
           "description": "Package for new objects (default $TMP). Non-$TMP packages require a transport number."
         },
         "transport": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
           "description": "Transport request number. Required for non-$TMP packages. Use SAPTransport(action=\"list\") to find or SAPTransport(action=\"create\") to create one."
         },
         "group": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
           "description": "For FUNC: parent function-group name. Required for FUNC create (the FUGR must already exist — create it first via SAPWrite type=FUGR). Auto-resolved via search for FUNC update/delete if omitted."
         },
         "dataType": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
           "description": "DOMA/DTEL: ABAP data type (e.g., CHAR, NUMC, DEC)"
         },
         "rowType": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
           "description": "TTYP create: the row type — a built-in ABAP type (STRING, I, …) or a DDIC structure/type name. Required for TTYP create."
         },
         "rowTypeKind": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
           "enum": [
             "builtin",
             "structure"
@@ -429,52 +369,31 @@
           "description": "TTYP create: row-type mode (auto-detected from rowType if omitted)."
         },
         "length": {
-          "type": [
-            "number",
-            "null"
-          ],
+          "type": "number",
           "description": "DOMA/DTEL: data type length"
         },
         "decimals": {
-          "type": [
-            "number",
-            "null"
-          ],
+          "type": "number",
           "description": "DOMA/DTEL: decimal places"
         },
         "outputLength": {
-          "type": [
-            "number",
-            "null"
-          ],
+          "type": "number",
           "description": "DOMA: output length"
         },
         "conversionExit": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
           "description": "DOMA: conversion exit (e.g., ALPHA)"
         },
         "signExists": {
-          "type": [
-            "boolean",
-            "null"
-          ],
+          "type": "boolean",
           "description": "DOMA: signed values allowed"
         },
         "lowercase": {
-          "type": [
-            "boolean",
-            "null"
-          ],
+          "type": "boolean",
           "description": "DOMA: lowercase characters allowed"
         },
         "fixedValues": {
-          "type": [
-            "array",
-            "null"
-          ],
+          "type": "array",
           "description": "DOMA: fixed value ranges",
           "items": {
             "type": "object",
@@ -484,17 +403,11 @@
                 "description": "Low value (required)"
               },
               "high": {
-                "type": [
-                  "string",
-                  "null"
-                ],
+                "type": "string",
                 "description": "High value for ranges (optional)"
               },
               "description": {
-                "type": [
-                  "string",
-                  "null"
-                ],
+                "type": "string",
                 "description": "Value description (optional)"
               }
             },
@@ -504,17 +417,11 @@
           }
         },
         "valueTable": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
           "description": "DOMA: value table reference (e.g., T001)"
         },
         "typeKind": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
           "enum": [
             "domain",
             "predefinedAbapType"
@@ -522,87 +429,51 @@
           "description": "DTEL: type source (domain reference or predefined ABAP type)"
         },
         "typeName": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
           "description": "DTEL: domain/type name reference (for typeKind=domain)"
         },
         "domainName": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
           "description": "DTEL: alias for typeName when referencing a domain"
         },
         "shortLabel": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
           "description": "DTEL: short field label"
         },
         "mediumLabel": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
           "description": "DTEL: medium field label"
         },
         "longLabel": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
           "description": "DTEL: long field label"
         },
         "headingLabel": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
           "description": "DTEL: heading field label"
         },
         "searchHelp": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
           "description": "DTEL: search help name"
         },
         "searchHelpParameter": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
           "description": "DTEL: search help parameter"
         },
         "setGetParameter": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
           "description": "DTEL: SET/GET parameter ID"
         },
         "defaultComponentName": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
           "description": "DTEL: default component name"
         },
         "changeDocument": {
-          "type": [
-            "boolean",
-            "null"
-          ],
+          "type": "boolean",
           "description": "DTEL: enable change document flag"
         },
         "messages": {
-          "type": [
-            "array",
-            "null"
-          ],
+          "type": "array",
           "description": "MSAG: message entries for create/update",
           "items": {
             "type": "object",
@@ -623,10 +494,7 @@
           }
         },
         "parameters": {
-          "type": [
-            "array",
-            "null"
-          ],
+          "type": "array",
           "description": "FUNC: structured signature parameters. ARC-1 builds the IMPORTING/EXPORTING/CHANGING/TABLES/EXCEPTIONS/RAISING clause and splices it into the FM body. When omitted, the supplied source is PUT verbatim.",
           "items": {
             "type": "object",
@@ -648,31 +516,19 @@
                 "description": "Parameter / exception name (uppercased on emit)."
               },
               "type": {
-                "type": [
-                  "string",
-                  "null"
-                ],
+                "type": "string",
                 "description": "ABAP type expression. Required for IMPORTING/EXPORTING/CHANGING/TABLES; ignored for EXCEPTIONS/RAISING. Examples: \"STRING\", \"I\", \"BAPIRET2\", \"TYPE STANDARD TABLE OF X\", \"LIKE DOKHL-OBJECT\". For TABLES, include the leading TYPE/LIKE keyword."
               },
               "byValue": {
-                "type": [
-                  "boolean",
-                  "null"
-                ],
+                "type": "boolean",
                 "description": "Emit `VALUE(name)` wrapper. Default false (pass-by-reference)."
               },
               "default": {
-                "type": [
-                  "string",
-                  "null"
-                ],
+                "type": "string",
                 "description": "Raw ABAP literal — IMPORTING/CHANGING only. Emitted verbatim. Example: \"'X'\", \"0\", \"SPACE\"."
               },
               "optional": {
-                "type": [
-                  "boolean",
-                  "null"
-                ],
+                "type": "boolean",
                 "description": "Emit `OPTIONAL` keyword."
               }
             },
@@ -683,24 +539,15 @@
           }
         },
         "serviceDefinition": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
           "description": "SRVB: service definition name (SRVD) to bind to"
         },
         "bindingType": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
           "description": "SRVB: binding type — human-readable values like \"ODataV4-UI\", \"OData V2 - Web API\" are auto-normalized (sets odataVersion + category)."
         },
         "odataVersion": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
           "enum": [
             "V2",
             "V4"
@@ -708,10 +555,7 @@
           "description": "SRVB: OData protocol version (default: V2). Overrides version inferred from bindingType."
         },
         "category": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
           "enum": [
             "0",
             "1"
@@ -719,59 +563,35 @@
           "description": "SRVB: binding category (0=UI, 1=Web API; default: 0). Overrides category inferred from bindingType."
         },
         "version": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
           "description": "SRVB: service version number (default: 0001)"
         },
         "lintBeforeWrite": {
-          "type": [
-            "boolean",
-            "null"
-          ],
+          "type": "boolean",
           "description": "Override server lint-before-write for this call (false skips it). Lint covers PROG/CLAS/INTF/FUNC and DDLS; other types rely on RAP preflight."
         },
         "preflightBeforeWrite": {
-          "type": [
-            "boolean",
-            "null"
-          ],
+          "type": "boolean",
           "description": "Enable/disable deterministic RAP preflight checks (default true) — TABL/BDEF/DDLX static rules (curr/quan semantics, invalid BDEF enums, DDLX scope on 7.5x)."
         },
         "checkBeforeWrite": {
-          "type": [
-            "boolean",
-            "null"
-          ],
+          "type": "boolean",
           "description": "Override server check-before-write (default off). When true, runs a SAP syntax check and appends diagnostics to the response — the write is NOT blocked. Off by default (adds a round-trip; intermediate refactor writes legitimately trip transient dependency errors). Activation remains the definitive check."
         },
         "refObjectType": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
           "description": "SKTD/KTD create (required): ADT type+subtype of the documented parent (e.g. \"DDLS/DF\", \"BDEF/BDO\", \"SRVD/SRV\", \"DEVC/K\"). Not CLAS/INTF/PROG (use ABAP Doc for code)."
         },
         "refObjectName": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
           "description": "SKTD/KTD create: name of the parent object the KTD documents (defaults to \"name\")."
         },
         "refObjectDescription": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
           "description": "SKTD/KTD create: description of the parent object (shown in Eclipse tooltips)."
         },
         "objects": {
-          "type": [
-            "array",
-            "null"
-          ],
+          "type": "array",
           "items": {
             "type": "object",
             "properties": {
@@ -808,96 +628,54 @@
                 "description": "Object name"
               },
               "source": {
-                "type": [
-                  "string",
-                  "null"
-                ],
+                "type": "string",
                 "description": "ABAP source code (optional — some objects have no source)"
               },
               "description": {
-                "type": [
-                  "string",
-                  "null"
-                ],
+                "type": "string",
                 "description": "Object description (defaults to name if omitted)"
               },
               "package": {
-                "type": [
-                  "string",
-                  "null"
-                ],
+                "type": "string",
                 "description": "Object-specific package. Overrides top-level package for this item."
               },
               "transport": {
-                "type": [
-                  "string",
-                  "null"
-                ],
+                "type": "string",
                 "description": "Object-specific transport request. Overrides top-level transport for this item."
               },
               "dataType": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "string"
               },
               "rowType": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "string"
               },
               "rowTypeKind": {
-                "type": [
-                  "string",
-                  "null"
-                ],
+                "type": "string",
                 "enum": [
                   "builtin",
                   "structure"
                 ]
               },
               "length": {
-                "type": [
-                  "number",
-                  "null"
-                ]
+                "type": "number"
               },
               "decimals": {
-                "type": [
-                  "number",
-                  "null"
-                ]
+                "type": "number"
               },
               "outputLength": {
-                "type": [
-                  "number",
-                  "null"
-                ]
+                "type": "number"
               },
               "conversionExit": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "string"
               },
               "signExists": {
-                "type": [
-                  "boolean",
-                  "null"
-                ]
+                "type": "boolean"
               },
               "lowercase": {
-                "type": [
-                  "boolean",
-                  "null"
-                ]
+                "type": "boolean"
               },
               "fixedValues": {
-                "type": [
-                  "array",
-                  "null"
-                ],
+                "type": "array",
                 "items": {
                   "type": "object",
                   "properties": {
@@ -905,16 +683,10 @@
                       "type": "string"
                     },
                     "high": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": "string"
                     },
                     "description": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -923,92 +695,50 @@
                 }
               },
               "valueTable": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "string"
               },
               "typeKind": {
-                "type": [
-                  "string",
-                  "null"
-                ],
+                "type": "string",
                 "enum": [
                   "domain",
                   "predefinedAbapType"
                 ]
               },
               "typeName": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "string"
               },
               "domainName": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "string"
               },
               "shortLabel": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "string"
               },
               "mediumLabel": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "string"
               },
               "longLabel": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "string"
               },
               "headingLabel": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "string"
               },
               "searchHelp": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "string"
               },
               "searchHelpParameter": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "string"
               },
               "setGetParameter": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "string"
               },
               "defaultComponentName": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "string"
               },
               "changeDocument": {
-                "type": [
-                  "boolean",
-                  "null"
-                ]
+                "type": "boolean"
               },
               "messages": {
-                "type": [
-                  "array",
-                  "null"
-                ],
+                "type": "array",
                 "items": {
                   "type": "object",
                   "properties": {
@@ -1026,42 +756,27 @@
                 }
               },
               "serviceDefinition": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "string"
               },
               "bindingType": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "string"
               },
               "odataVersion": {
-                "type": [
-                  "string",
-                  "null"
-                ],
+                "type": "string",
                 "enum": [
                   "V2",
                   "V4"
                 ]
               },
               "category": {
-                "type": [
-                  "string",
-                  "null"
-                ],
+                "type": "string",
                 "enum": [
                   "0",
                   "1"
                 ]
               },
               "version": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "string"
               }
             },
             "required": [

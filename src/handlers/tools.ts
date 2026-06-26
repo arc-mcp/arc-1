@@ -47,6 +47,10 @@ export interface ToolDefinition {
   annotations?: ToolAnnotations;
 }
 
+export interface ToolDefinitionOptions {
+  nullableOptionals?: boolean;
+}
+
 /**
  * Read-only / destructive hints for the 12 standard tools. Clients use them to badge tools
  * and to decide auto-approval (read-only tools are safe to auto-run); they are also required
@@ -380,8 +384,8 @@ function buildSAPSearchTool(btp: boolean, textSearchAvailable?: boolean): ToolDe
 
 // ─── GPT/OpenAI strict-mode nullable helper (issue #360) ────────────
 
-/** Add `null` to a property's `type` (string → ["string","null"]). Per OpenAI's Structured
- *  Outputs guide, null goes in `type` ONLY — never added to `enum`. */
+/** Add `null` to a property's `type` (string -> ["string","null"]). Per OpenAI's Structured
+ *  Outputs guide, null goes in `type` only, never into `enum`. */
 function makeNullableType(def: Record<string, unknown>): Record<string, unknown> {
   const d = { ...def };
   const t = d.type;
@@ -394,17 +398,15 @@ function makeNullableType(def: Record<string, unknown>): Record<string, unknown>
 }
 
 /**
- * Recursively make every NON-required property of a JSON-schema object nullable.
+ * Recursively make every non-required property of a JSON-schema object nullable.
  *
- * GPT/OpenAI strict mode (the default for the Responses API) marks every property required;
- * a non-nullable optional field then leaves the model no way to signal "unused" — for an enum
- * it is FORCED to emit one of the values (the hallucinated typeKind=domain / odataVersion=V4
- * seen on unrelated writes, issue #360). The OpenAI-documented fix is a union with null
- * (`"type": ["string","null"]`) so the model can emit null = "not used"; ARC-1's runtime
- * `stripLlmEmptyValues` then drops the nulls before Zod. Each object node's OWN `required`
- * array decides what stays non-nullable, so it is correct at every nesting level (top level
- * keeps `action`; batch `objects[]` items keep `type`/`name`; leaf arrays keep their keys).
- * Pure — returns a copy, does not mutate the input.
+ * This exists only for explicit OpenAI/Azure strict-mode compatibility (#360), where a strict
+ * function schema can force every optional field to be present and enum optionals then get
+ * fabricated values. Several MCP clients reject `type: ["x","null"]` unions, so the default
+ * visible schema stays plain for broad client compatibility (#520).
+ *
+ * Pure — returns a copy and does not mutate the input. Each object node's own `required` array
+ * decides what stays non-nullable, so top-level `action` and batch-item `type`/`name` remain plain.
  */
 function makeOptionalPropertiesNullable(node: unknown): unknown {
   if (Array.isArray(node)) return node.map(makeOptionalPropertiesNullable);
@@ -433,6 +435,7 @@ export function getToolDefinitions(
   config: ServerConfig,
   textSearchAvailable?: boolean,
   resolvedFeatures?: ResolvedFeatures,
+  options: ToolDefinitionOptions = {},
 ): ToolDefinition[] {
   // Hyperfocused mode: single universal SAP tool (~200 tokens)
   if (config.toolMode === 'hyperfocused') {
@@ -594,12 +597,12 @@ export function getToolDefinitions(
       const pkgList = config.allowedPackages.join(', ');
       sapWriteDesc += ` Write access is restricted to packages: ${pkgList}.`;
     }
-    tools.push({
+    const sapWriteTool: ToolDefinition = {
       name: 'SAPWrite',
       description: sapWriteDesc,
-      // Make optional fields nullable so GPT/OpenAI strict-mode callers can emit null for
-      // unused fields instead of fabricating values; the runtime strip removes the nulls (#360).
-      inputSchema: makeOptionalPropertiesNullable({
+      // Keep visible schemas on widely supported JSON Schema primitives. Runtime argument
+      // normalization still strips null-valued optionals from strict clients before Zod (#360).
+      inputSchema: {
         type: 'object',
         properties: {
           action: {
@@ -920,8 +923,12 @@ export function getToolDefinitions(
           },
         },
         required: ['action'],
-      }) as Record<string, unknown>,
-    });
+      },
+    };
+    if (options.nullableOptionals) {
+      sapWriteTool.inputSchema = makeOptionalPropertiesNullable(sapWriteTool.inputSchema) as Record<string, unknown>;
+    }
+    tools.push(sapWriteTool);
 
     tools.push({
       name: 'SAPActivate',

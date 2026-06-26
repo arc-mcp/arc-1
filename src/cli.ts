@@ -25,12 +25,11 @@ import type { AdtClientConfig } from './adt/config.js';
 import { buildArgs, type OutputMode } from './cli-args.js';
 import { getToolRegistry, handleToolCall } from './handlers/dispatch.js';
 import type { ToolResult } from './handlers/shared.js';
-import { getToolDefinitions } from './handlers/tools.js';
 import { detectFilename, lintAbapSource } from './lint/lint.js';
 import { parseArgs, resolveConfig } from './server/config.js';
 import { initLogger } from './server/logger.js';
 import { loadPlugins } from './server/plugin-loader.js';
-import { buildAdtConfig, VERSION } from './server/server.js';
+import { buildAdtConfig, getConfiguredToolDefinitions, VERSION } from './server/server.js';
 import type { ConfigSource, ServerConfig } from './server/types.js';
 
 // Load .env without printing dotenv tips to stdout.
@@ -103,7 +102,7 @@ program
           ? [{ name: e.name, description: e.listing.description, inputSchema: e.listing.inputSchema }]
           : [],
       );
-    const defs = [...getToolDefinitions(serverConfig), ...pluginDefs];
+    const defs = [...getConfiguredToolDefinitions(serverConfig), ...pluginDefs];
     if (!tool) {
       for (const def of defs) {
         const firstLine = def.description.split('\n')[0].trim();
@@ -337,7 +336,7 @@ async function runToolCall(toolName: string, args: Record<string, unknown>, outp
   if (serverConfig.plugins?.length) {
     await loadPlugins(serverConfig.plugins, getToolRegistry());
   }
-  const available = new Set(getToolDefinitions(serverConfig).map((t) => t.name));
+  const available = new Set(getConfiguredToolDefinitions(serverConfig).map((t) => t.name));
   for (const e of getToolRegistry().list()) {
     if (e.source === 'plugin') available.add(e.name);
   }

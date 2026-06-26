@@ -17,6 +17,9 @@ export type UiMode = 'off' | 'local' | 'web';
 /** Feature toggle: auto detects from SAP system, on/off forces */
 export type FeatureToggle = 'auto' | 'on' | 'off';
 
+/** Tool-schema nullable optional mode: auto currently resolves to portable off. */
+export type NullableOptionalsMode = 'auto' | 'on' | 'off';
+
 /** Per-field config source (used by resolveConfig + startup log + `config show`). */
 export type ConfigSource = 'default' | { env: string } | { flag: string } | { file: string };
 
@@ -133,6 +136,8 @@ export interface ServerConfig {
   // --- Tool Mode ---
   /** Tool mode: 'standard' (12 intent tools, SAPGit feature-gated) or 'hyperfocused' (1 universal SAP tool, ~200 tokens) */
   toolMode: 'standard' | 'hyperfocused';
+  /** JSON Schema compatibility for optional SAPWrite fields. */
+  schemaNullableOptionals: NullableOptionalsMode;
 
   // --- Extensions (FEAT-61) ---
   /** Absolute paths to extension plugins to load at startup (from ARC1_PLUGINS, CSV). Each contributes
@@ -255,6 +260,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
   ppAllowSharedCookies: false,
   disableSaml2: false,
   toolMode: 'standard',
+  schemaNullableOptionals: 'auto',
   plugins: [],
   allowPluginExecute: false,
   allowPluginRawWrites: false,

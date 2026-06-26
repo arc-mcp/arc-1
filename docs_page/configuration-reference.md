@@ -18,7 +18,7 @@ The full grouped template with inline commentary is [`.env.example`](https://git
 6. [Caching](#caching) — source cache, warmup
 7. [Logging and observability](#logging-and-observability) — log file, level, format, HTTP debug
 8. [ABAP feature toggles](#abap-feature-toggles) — abapGit, gCTS, RAP, AMDP, UI5, HANA, FLP
-9. [Code-quality gates](#code-quality-gates) — pre-write lint/check, abaplint config, tool mode
+9. [Code-quality gates](#code-quality-gates) — pre-write lint/check, abaplint config, tool/schema mode
 10. [Extensions](#extensions-feat-61) — `ARC1_PLUGINS`, plugin code-execution opt-in
 
 ---
@@ -308,7 +308,7 @@ When a feature is `off` (either set explicitly or detected as unavailable), ever
 
 ## Code-quality gates
 
-Optional pre-write validation layers and tool-set selection.
+Optional pre-write validation layers and tool/schema selection.
 
 | Flag | Env var | Default | Effect |
 |---|---|---|---|
@@ -316,6 +316,7 @@ Optional pre-write validation layers and tool-set selection.
 | `--abaplint-config` | `SAP_ABAPLINT_CONFIG` | — (uses built-in preset) | Path to a custom `abaplint.jsonc`. When unset, ARC-1 builds a preset config based on the detected system type (cloud-strict for BTP, relaxed for on-prem). Custom config takes full precedence. |
 | `--check-before-write` | `SAP_CHECK_BEFORE_WRITE` | `false` | See [Authorization and safety](#authorization-and-safety) — adds a server-side ADT syntax check round-trip before save. Different layer from `lint-before-write` (this hits SAP, lint runs locally). |
 | `--tool-mode` | `ARC1_TOOL_MODE` | `standard` | `standard` exposes the 12 intent-based tools (schema payload guarded by CI budgets). `hyperfocused` exposes a single universal `sap` tool (~200 tokens) that dispatches everything internally. Use `hyperfocused` for severely token-constrained LLM clients (e.g. GPT-4o-mini, Copilot Studio). |
+| `--schema-nullable-optionals` | `ARC1_SCHEMA_NULLABLE_OPTIONALS` | `auto` | Controls whether optional `SAPWrite` JSON Schema fields are emitted as nullable unions (`type: ["string","null"]`). `auto` currently resolves to `off` and logs MCP client info for future allow-listing. `off` keeps the portable plain schema required by clients that reject unions (GitHub Copilot IDEs, Gemini CLI, Cursor/Foundry-style converters). `on` is an explicit compatibility escape hatch for OpenAI/Azure strict-mode function schemas that need nullable optionals to avoid fabricated enum values ([#360](https://github.com/arc-mcp/arc-1/issues/360)). Use `on` only after testing the target client accepts nullable unions; it can break clients affected by [#520](https://github.com/arc-mcp/arc-1/issues/520). |
 
 ---
 

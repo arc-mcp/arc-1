@@ -19,7 +19,14 @@
 import type { SafetyConfig } from '../adt/safety.js';
 import { parseDenyActions, validateDenyActions } from './deny-actions.js';
 import { logger } from './logger.js';
-import type { ConfigSource, FeatureToggle, ServerConfig, TransportType, UiMode } from './types.js';
+import type {
+  ConfigSource,
+  FeatureToggle,
+  NullableOptionalsMode,
+  ServerConfig,
+  TransportType,
+  UiMode,
+} from './types.js';
 import { DEFAULT_CONFIG } from './types.js';
 
 /**
@@ -156,6 +163,12 @@ function parseUiMode(raw: string, transport: TransportType): UiMode {
     return transport === 'stdio' ? 'local' : 'web';
   }
   throw new Error('Invalid ARC1_UI value: expected off, local, web, true, or false');
+}
+
+function parseNullableOptionalsMode(raw: string): NullableOptionalsMode {
+  const value = raw.trim().toLowerCase();
+  if (value === 'auto' || value === 'on' || value === 'off') return value;
+  throw new Error('Invalid ARC1_SCHEMA_NULLABLE_OPTIONALS value: expected auto, on, or off');
 }
 
 /** Map of legacy env-var names → human-readable migration hint. */
@@ -557,6 +570,13 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
   // ── Tool Mode ──────────────────────────────────────────────────────
   const toolMode = resolveStr('tool-mode', 'ARC1_TOOL_MODE', 'standard', 'toolMode');
   config.toolMode = (toolMode === 'hyperfocused' ? 'hyperfocused' : 'standard') as ServerConfig['toolMode'];
+  const schemaNullableOptionals = resolveStr(
+    'schema-nullable-optionals',
+    'ARC1_SCHEMA_NULLABLE_OPTIONALS',
+    DEFAULT_CONFIG.schemaNullableOptionals,
+    'schemaNullableOptionals',
+  );
+  config.schemaNullableOptionals = parseNullableOptionalsMode(schemaNullableOptionals);
 
   // ── Extensions (FEAT-61) ───────────────────────────────────────────
   // CSV of absolute paths to extension plugins (local dirs/files, NOT npm names). Loaded at startup.
@@ -752,6 +772,11 @@ export function validateConfig(config: ServerConfig): void {
     console.error(
       '[warn] SAP_DISABLE_SAML=true on a BTP system usually breaks login — BTP ABAP and S/4HANA Public Cloud require SAML. Continuing because you explicitly set this, but check docs/enterprise-auth.md if login starts failing.',
     );
+  }
+
+  // Normal resolveConfig() already parses this fail-fast; keep the guard for tests and hand-built configs.
+  if (!['auto', 'on', 'off'].includes(config.schemaNullableOptionals)) {
+    throw new Error('Invalid ARC1_SCHEMA_NULLABLE_OPTIONALS value: expected auto, on, or off');
   }
 
   if (config.insecure) {

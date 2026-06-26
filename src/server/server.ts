@@ -10,7 +10,7 @@
 import type { BTPConfig, BTPProxyConfig, Destination, PerUserAuthTokens } from '@arc-mcp/xsuaa-auth/btp';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { CallToolRequestSchema, type Implementation, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { AdtClient } from '../adt/client.js';
 import type { AdtClientConfig } from '../adt/config.js';
 import { resolveCookies } from '../adt/cookies.js';
@@ -29,7 +29,7 @@ import {
   setCachedDiscovery,
   setCachedFeatures,
 } from '../handlers/feature-cache.js';
-import { getToolDefinitions, type ToolDefinition } from '../handlers/tools.js';
+import { getToolDefinitions, type ToolDefinition, type ToolDefinitionOptions } from '../handlers/tools.js';
 import { API_KEY_PROFILES } from './config.js';
 import { isActionDenied } from './deny-actions.js';
 import { authLibLogger, initLogger, logger } from './logger.js';
@@ -60,6 +60,33 @@ function warnIfToolsListTooLarge(tools: ToolDefinition[]): void {
       '(tools may then fail to load). Consider ARC1_TOOL_MODE=hyperfocused, or reduce the surface (fewer enabled write/data/SQL/git scopes or plugins).',
     { bytes, tools: tools.length },
   );
+}
+
+function schemaNullableClientInfo(client?: Implementation): { clientName: string; clientVersion: string } {
+  return {
+    clientName: client?.name ?? 'unknown',
+    clientVersion: client?.version ?? 'unknown',
+  };
+}
+
+export function resolveNullableOptionals(config: ServerConfig, client?: Implementation): boolean {
+  if (config.schemaNullableOptionals === 'on') return true;
+  if (config.schemaNullableOptionals === 'off') return false;
+  logger.debug('schema nullable optionals auto mode resolved to off', schemaNullableClientInfo(client));
+  return false;
+}
+
+export function getToolDefinitionOptions(config: ServerConfig, client?: Implementation): ToolDefinitionOptions {
+  return { nullableOptionals: resolveNullableOptionals(config, client) };
+}
+
+export function getConfiguredToolDefinitions(
+  config: ServerConfig,
+  textSearchAvailable?: boolean,
+  resolvedFeatures?: Parameters<typeof getToolDefinitions>[2],
+  client?: Implementation,
+): ToolDefinition[] {
+  return getToolDefinitions(config, textSearchAvailable, resolvedFeatures, getToolDefinitionOptions(config, client));
 }
 
 /**
@@ -612,6 +639,7 @@ export function createServer(
   // wasting one round-trip per startup-stale-cookie cycle. We propagate the stale state
   // once on first tool call — idempotent flag keeps later calls O(1).
   let preflightStalePropagated = false;
+  let schemaNullableAutoClientInfoLogged = false;
 
   // Register tool listing — filtered by user's scopes when auth is active
   server.setRequestHandler(ListToolsRequestSchema, async (_request, extra) => {
@@ -622,7 +650,15 @@ export function createServer(
       await Promise.race([startupProbePromise, new Promise((resolve) => setTimeout(resolve, 10_000))]);
     }
     const features = getCachedFeatures();
-    let tools = getToolDefinitions(config, features?.textSearch?.available, features);
+    const clientVersion = server.getClientVersion();
+    if (config.schemaNullableOptionals === 'auto' && !schemaNullableAutoClientInfoLogged) {
+      schemaNullableAutoClientInfoLogged = true;
+      logger.info('schema nullable optionals auto mode clientInfo', {
+        ...schemaNullableClientInfo(clientVersion),
+        resolvedNullableOptionals: false,
+      });
+    }
+    let tools = getConfiguredToolDefinitions(config, features?.textSearch?.available, features, clientVersion);
 
     // When authenticated, only show tools the user has scopes for
     if (extra.authInfo) {

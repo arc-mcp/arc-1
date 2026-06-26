@@ -37,6 +37,7 @@ describe('parseArgs', () => {
     expect(config.allowTransportWrites).toBe(false);
     expect(config.allowGitWrites).toBe(false);
     expect(config.denyActions).toEqual([]);
+    expect(config.schemaNullableOptionals).toBe('auto');
     expect(config.verbose).toBe(false);
   });
 
@@ -106,6 +107,23 @@ describe('parseArgs', () => {
     process.env.ARC1_MINIMAL_ERRORS = 'true';
     const config = parseArgs([]);
     expect(config.minimalErrors).toBe(true);
+  });
+
+  it('parses ARC1_SCHEMA_NULLABLE_OPTIONALS env var', () => {
+    process.env.ARC1_SCHEMA_NULLABLE_OPTIONALS = 'on';
+    const config = parseArgs([]);
+    expect(config.schemaNullableOptionals).toBe('on');
+  });
+
+  it('--schema-nullable-optionals takes precedence over ARC1_SCHEMA_NULLABLE_OPTIONALS', () => {
+    process.env.ARC1_SCHEMA_NULLABLE_OPTIONALS = 'on';
+    const config = parseArgs(['--schema-nullable-optionals', 'off']);
+    expect(config.schemaNullableOptionals).toBe('off');
+  });
+
+  it('rejects invalid ARC1_SCHEMA_NULLABLE_OPTIONALS values', () => {
+    process.env.ARC1_SCHEMA_NULLABLE_OPTIONALS = 'nullable';
+    expect(() => parseArgs([])).toThrow(/Invalid ARC1_SCHEMA_NULLABLE_OPTIONALS/);
   });
 
   it('--minimal-errors takes precedence over ARC1_MINIMAL_ERRORS env var', () => {
@@ -881,17 +899,21 @@ describe('parseArgs', () => {
     const { sources } = resolveConfig([]);
     expect(sources.allowWrites).toBe('default');
     expect(sources.allowedPackages).toBe('default');
+    expect(sources.schemaNullableOptionals).toBe('default');
   });
 
   it('resolveConfig reports env source for env-set fields', () => {
     process.env.SAP_ALLOW_WRITES = 'true';
+    process.env.ARC1_SCHEMA_NULLABLE_OPTIONALS = 'on';
     const { sources } = resolveConfig([]);
     expect(sources.allowWrites).toEqual({ env: 'SAP_ALLOW_WRITES' });
+    expect(sources.schemaNullableOptionals).toEqual({ env: 'ARC1_SCHEMA_NULLABLE_OPTIONALS' });
   });
 
   it('resolveConfig reports flag source for CLI-set fields', () => {
-    const { sources } = resolveConfig(['--allow-writes', 'true']);
+    const { sources } = resolveConfig(['--allow-writes', 'true', '--schema-nullable-optionals', 'off']);
     expect(sources.allowWrites).toEqual({ flag: '--allow-writes' });
+    expect(sources.schemaNullableOptionals).toEqual({ flag: '--schema-nullable-optionals' });
   });
 
   it('resolveConfig returns both config and sources', () => {
@@ -1157,6 +1179,15 @@ describe('validateConfig', () => {
 
   it('skips client validation when empty (resolveConfig substitutes the default)', () => {
     expect(() => validateConfig({ ...DEFAULT_CONFIG, client: '' })).not.toThrow();
+  });
+
+  it('validateConfig rejects invalid schemaNullableOptionals values', () => {
+    expect(() =>
+      validateConfig({
+        ...DEFAULT_CONFIG,
+        schemaNullableOptionals: 'nullable' as any,
+      }),
+    ).toThrow(/Invalid ARC1_SCHEMA_NULLABLE_OPTIONALS/);
   });
 
   it('throws when HTTP transport has no authentication and no explicit unsafe opt-in', () => {

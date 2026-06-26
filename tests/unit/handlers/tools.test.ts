@@ -256,8 +256,7 @@ describe('Tool Definitions', () => {
     const sapWrite = tools.find((t) => t.name === 'SAPWrite')!;
     const schema = sapWrite.inputSchema as Record<string, any>;
     expect(schema.properties.parameters).toBeDefined();
-    // Optional fields are nullable for GPT/OpenAI strict mode (#360) → type is ['array','null'].
-    expect(schema.properties.parameters.type).toContain('array');
+    expect(schema.properties.parameters.type).toBe('array');
     const item = schema.properties.parameters.items;
     expect(item.properties.kind.enum).toEqual([
       'importing',
@@ -319,8 +318,7 @@ describe('Tool Definitions', () => {
     expect(schema.properties.visibility).toBeDefined();
     expect(schema.properties.visibility.enum).toEqual(['public', 'protected', 'private']);
     expect(schema.properties.abstract).toBeDefined();
-    // Optional fields are nullable for GPT/OpenAI strict mode (#360) → type is ['boolean','null'].
-    expect(schema.properties.abstract.type).toContain('boolean');
+    expect(schema.properties.abstract.type).toBe('boolean');
   });
 
   it('SAPWrite action description mentions class-section surgery (issue #303)', () => {
@@ -343,27 +341,72 @@ describe('Tool Definitions', () => {
     }
   });
 
-  it('SAPWrite optional fields are nullable for GPT/OpenAI strict mode; required stay non-nullable (issue #360)', () => {
+  it('SAPWrite avoids nullable JSON Schema unions for Copilot Eclipse compatibility (issue #520)', () => {
     const tools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true });
     const sapWrite = tools.find((t) => t.name === 'SAPWrite')!;
     const schema = sapWrite.inputSchema as Record<string, any>;
     const props = schema.properties;
 
-    // Required field stays a plain (non-nullable) string.
     expect(props.action.type).toBe('string');
+    expect(props.dataType.type).toBe('string');
+    expect(props.length.type).toBe('number');
+    expect(props.signExists.type).toBe('boolean');
+    expect(props.odataVersion.type).toBe('string');
+    expect(props.odataVersion.enum).toEqual(['V2', 'V4']);
+    expect(props.odataVersion.enum).not.toContain(null);
 
-    // Optional plain/number/boolean fields become a union with null.
+    const itemProps = props.objects.items.properties;
+    expect(itemProps.type.type).toBe('string');
+    expect(itemProps.name.type).toBe('string');
+    expect(itemProps.source.type).toBe('string');
+
+    const typeArrays: string[] = [];
+    const walk = (node: unknown, path = '$') => {
+      if (!node || typeof node !== 'object') return;
+      const record = node as Record<string, unknown>;
+      if (Array.isArray(record.type)) typeArrays.push(path);
+      for (const [key, value] of Object.entries(record)) walk(value, `${path}.${key}`);
+    };
+    walk(schema);
+    expect(typeArrays).toEqual([]);
+  });
+
+  it('default tool schemas contain no nullable JSON Schema type arrays (issue #520)', () => {
+    const tools = getToolDefinitions({
+      ...DEFAULT_CONFIG,
+      allowWrites: true,
+      allowFreeSQL: true,
+      allowTransportWrites: true,
+      allowGitWrites: true,
+    });
+
+    const typeArrays: string[] = [];
+    const walk = (node: unknown, path = '$') => {
+      if (!node || typeof node !== 'object') return;
+      const record = node as Record<string, unknown>;
+      if (Array.isArray(record.type)) typeArrays.push(path);
+      for (const [key, value] of Object.entries(record)) walk(value, `${path}.${key}`);
+    };
+    for (const tool of tools) walk(tool.inputSchema, tool.name);
+    expect(typeArrays).toEqual([]);
+  });
+
+  it('SAPWrite can opt into nullable optionals for OpenAI strict-mode compatibility (issue #360)', () => {
+    const tools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true }, undefined, undefined, {
+      nullableOptionals: true,
+    });
+    const sapWrite = tools.find((t) => t.name === 'SAPWrite')!;
+    const schema = sapWrite.inputSchema as Record<string, any>;
+    const props = schema.properties;
+
+    expect(props.action.type).toBe('string');
     expect(props.dataType.type).toEqual(['string', 'null']);
     expect(props.length.type).toEqual(['number', 'null']);
     expect(props.signExists.type).toEqual(['boolean', 'null']);
-
-    // Optional ENUM: null added to `type` ONLY, never to `enum` (OpenAI's documented form).
     expect(props.odataVersion.type).toEqual(['string', 'null']);
     expect(props.odataVersion.enum).toEqual(['V2', 'V4']);
     expect(props.odataVersion.enum).not.toContain(null);
 
-    // Nested batch objects[] items keep their own required keys (type, name) non-nullable,
-    // but optional per-item fields are nullable.
     const itemProps = props.objects.items.properties;
     expect(itemProps.type.type).toBe('string');
     expect(itemProps.name.type).toBe('string');

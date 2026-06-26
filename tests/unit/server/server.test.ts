@@ -20,7 +20,9 @@ import {
   createServer,
   filterToolsByAuthScope,
   formatStartupAuthPreflightToolError,
+  getConfiguredToolDefinitions,
   logAuthSummary,
+  resolveNullableOptionals,
   runStartupAuthPreflight,
   VERSION,
 } from '../../../src/server/server.js';
@@ -46,6 +48,35 @@ describe('MCP Server', () => {
 
   it('has a valid version string', () => {
     expect(VERSION).toMatch(/^\d+\.\d+\.\d+/);
+  });
+
+  it('resolves schema nullable optionals off by default in auto mode', () => {
+    const debugSpy = vi.spyOn(logger, 'debug').mockImplementation(() => undefined);
+
+    expect(resolveNullableOptionals(DEFAULT_CONFIG, { name: 'GitHub Copilot', version: '1.0.0' })).toBe(false);
+    expect(debugSpy).toHaveBeenCalledWith('schema nullable optionals auto mode resolved to off', {
+      clientName: 'GitHub Copilot',
+      clientVersion: '1.0.0',
+    });
+
+    debugSpy.mockRestore();
+  });
+
+  it('resolves schema nullable optionals explicit on/off overrides', () => {
+    expect(resolveNullableOptionals({ ...DEFAULT_CONFIG, schemaNullableOptionals: 'on' })).toBe(true);
+    expect(resolveNullableOptionals({ ...DEFAULT_CONFIG, schemaNullableOptionals: 'off' })).toBe(false);
+  });
+
+  it('configured tool definitions honor explicit nullable-optionals mode', () => {
+    const tools = getConfiguredToolDefinitions({
+      ...DEFAULT_CONFIG,
+      allowWrites: true,
+      schemaNullableOptionals: 'on',
+    });
+    const sapWrite = tools.find((tool) => tool.name === 'SAPWrite')!;
+    const schema = sapWrite.inputSchema as Record<string, any>;
+
+    expect(schema.properties.dataType.type).toEqual(['string', 'null']);
   });
 
   it('filters SAPManage actions to read-only set for read-scoped users', () => {
@@ -151,6 +182,34 @@ describe('MCP Server', () => {
     const schema = sap!.inputSchema as Record<string, any>;
     const actionEnum: string[] = schema.properties.action.enum;
     expect(actionEnum).toEqual(['query']);
+  });
+
+  it('passes explicit nullable-optionals mode through tools/list', async () => {
+    const server = createServer({ ...DEFAULT_CONFIG, allowWrites: true, schemaNullableOptionals: 'on' });
+    const handler = requestHandler(server, ListToolsRequestSchema.shape.method.value);
+    const result = await handler({ method: 'tools/list', params: {} }, {});
+    const sapWrite = (result.tools as Array<{ name: string; inputSchema: Record<string, any> }>).find(
+      (tool) => tool.name === 'SAPWrite',
+    );
+
+    expect(sapWrite?.inputSchema.properties.dataType.type).toEqual(['string', 'null']);
+  });
+
+  it('logs nullable-optionals auto clientInfo once during tools/list', async () => {
+    const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+    const server = createServer(DEFAULT_CONFIG);
+    const handler = requestHandler(server, ListToolsRequestSchema.shape.method.value);
+
+    await handler({ method: 'tools/list', params: {} }, {});
+    await handler({ method: 'tools/list', params: {} }, {});
+
+    expect(infoSpy).toHaveBeenCalledTimes(1);
+    expect(infoSpy).toHaveBeenCalledWith('schema nullable optionals auto mode clientInfo', {
+      clientName: 'unknown',
+      clientVersion: 'unknown',
+      resolvedNullableOptionals: false,
+    });
+    infoSpy.mockRestore();
   });
 });
 
