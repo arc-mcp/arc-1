@@ -387,6 +387,22 @@ Without this flag, ARC-1 auto-detects the system type on the first `SAPManage pr
 
 4. **Token lifecycle**: Access tokens are cached in memory. When they expire, ARC-1 uses the refresh token to get a new one. Only if the refresh token also expires does it trigger another browser login.
 
+## Writing objects on BTP
+
+Object create/update works on the ABAP Environment (live-verified: `CLAS create → activate → read → delete`). ARC-1 emits the **cloud-correct** create body automatically when the system type is `btp` — it drops the on-prem `adtcore:masterSystem`/`adtcore:responsible` and adds `abapLanguageVersion="cloudDevelopment"`; the object owner is taken from your JWT. Two prerequisites:
+
+1. **Enable writes** — `SAP_ALLOW_WRITES=true`.
+2. **Target a real development package** — the booster-provided `ZLOCAL` is a *structure* package that cannot contain development objects, and `$TMP` does not exist on BTP. Create a development **sub-package under `ZLOCAL`** in ADT/Eclipse (e.g. `ZARC1_DEV`, software component `ZLOCAL`), then point the allowlist at it:
+
+   ```bash
+   SAP_ALLOW_WRITES=true
+   SAP_ALLOWED_PACKAGES=Z*          # or the exact package name, e.g. ZARC1_DEV
+   ```
+
+You also need the developer role assigned — see [Required: Run the Booster and Assign Developer Role](#required-run-the-booster-and-assign-developer-role).
+
+> **Package creation is Eclipse-only.** ARC-1 cannot create the package for you. The ABAP Environment rejects the package-create body every ADT REST client sends (`SPAK_ST_PACKAGES` won't accept `adtcore:responsible`, yet the package framework requires it — Eclipse's interactive session resolves the owner a bearer token can't). Create the dev package once in Eclipse; everything **inside** it is then fully scriptable via ARC-1.
+
 ## Constraints vs On-Premise
 
 BTP ABAP Environment has some limitations compared to on-premise:
