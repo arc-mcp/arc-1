@@ -43,10 +43,10 @@ import { UiLogBufferSink } from './ui-log-buffer.js';
 /** ARC-1 version */
 export const VERSION = '0.9.21'; // x-release-please-version
 
-// Soft warning threshold for the served tools/list payload (issue #520). Some MCP clients (GitHub
-// Copilot-for-Eclipse's gateway) silently DROP a tools/list larger than ~68–80 KB. CI's
+// Soft warning for an unusually large served tools/list. It is re-sent on every conversation (a
+// recurring token + latency cost), and some MCP clients cap tool-list size. CI's
 // check-tool-schema-budget guards the built-in surface, but plugin (Custom_*) tools are added at
-// runtime and invisible to CI — so warn once at serve time if the real list crosses the threshold.
+// runtime and invisible to CI — so warn once at serve time if the live list crosses the threshold.
 const TOOLS_LIST_SOFT_WARN_BYTES = 60_000;
 let warnedLargeToolsList = false;
 
@@ -56,8 +56,8 @@ function warnIfToolsListTooLarge(tools: ToolDefinition[]): void {
   if (bytes <= TOOLS_LIST_SOFT_WARN_BYTES) return;
   warnedLargeToolsList = true;
   logger.warn(
-    'Large tools/list payload — GitHub Copilot for Eclipse (and possibly other clients) silently drops a tool list this big, ' +
-      'so no tools appear. If that happens, set ARC1_TOOL_MODE=hyperfocused, or reduce the surface (fewer enabled write/data/SQL/git scopes or plugins). See issue #520.',
+    'Large tools/list payload — this adds tokens to every request, and some MCP clients cap tool-list size ' +
+      '(tools may then fail to load). Consider ARC1_TOOL_MODE=hyperfocused, or reduce the surface (fewer enabled write/data/SQL/git scopes or plugins).',
     { bytes, tools: tools.length },
   );
 }

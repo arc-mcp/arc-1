@@ -1,10 +1,28 @@
-# Issue #520 — write-mode `tools/list` too large for Copilot-for-Eclipse (VALIDATED)
+# Issue #520 — write-mode `tools/list` fails to load in Copilot-for-Eclipse
 
-**Status:** Root cause confirmed live (2026-06-26). Real, ARC-1-side, fixable + future-proofable.
-**Verdict:** In write mode (`SAP_ALLOW_WRITES=true`) the MCP `tools/list` payload has grown to
-~84 KB on 0.9.21, exceeding a payload-size limit in GitHub Copilot-for-Eclipse's MCP gateway, which
-**silently drops the tool list** (logs `MCP server arc-1 is already running` but never `Refreshed N
-tools`). Read-only (~52 KB) and 0.9.11 write mode (~68 KB) stay under the limit and work.
+> ## ⚠️ CORRECTION (2026-06-27) — size is NOT the root cause
+> Controlled A/B testing (parallel Codex investigation) **disproved** the size theory documented
+> below. A clean **~74 KB** build still fails in Copilot-for-Eclipse, while a **full-schema 0.9.21
+> build (all 253 enums, ~82 KB) with only the nullable unions removed** (`ARC1_SAPWRITE_NO_NULLABLE`)
+> **loads fine**. The real trigger is **`makeOptionalPropertiesNullable()` (PR #363)** emitting
+> `type: ["string","null"]` nullable union types for SAPWrite's optional fields — Copilot-for-Eclipse's
+> MCP client **rejects nullable union types and drops the whole tool set**. Version correlation
+> confirms it: 0.9.11 (works, nullableTypes=0) → 0.9.12 (first release with nullableTypes, #363) →
+> 0.9.21 (fails, nullableTypes=95); read-only works because SAPWrite is absent.
+>
+> The size analysis below was a **confound** — payload size *and* nullable-union count both jumped
+> 0.9.11→0.9.21, so the size correlation fit a non-causal pattern. It is retained as the investigation
+> record. **The #520 fix** = stop emitting nullable unions in the default `tools/list` schema; keep the
+> runtime `stripLlmEmptyValues` cleanup so polluted calls still work; make nullable-schema emission
+> opt-in/client-specific for OpenAI strict mode; add a regression test that default schemas contain no
+> `type: [...]` arrays. **PR #523** (the work in this dossier) is a **token-efficiency / schema-hygiene**
+> change that does NOT fix #520 by itself.
+
+**Status:** SUPERSEDED — original size verdict (2026-06-26) disproven 2026-06-27; see correction above.
+**Original verdict (kept as record):** In write mode (`SAP_ALLOW_WRITES=true`) the MCP `tools/list`
+payload has grown to ~84 KB on 0.9.21, *seemingly* exceeding a payload-size limit in Copilot-for-Eclipse
+(logs `MCP server arc-1 is already running` but never `Refreshed N tools`); read-only (~52 KB) and
+0.9.11 write mode (~68 KB) work. — **this size explanation was later disproven (see correction).**
 
 **Reporter:** `@lorandmatyas` (external), S/4HANA 816, Eclipse (GitHub Copilot), stdio + Basic auth.
 

@@ -70,7 +70,7 @@ describe('check-tool-schema-budget', () => {
     expect(metrics).toContain('maxPerToolWireBytes');
     const report = formatToolSchemaBudgetReport(measurements, offenders);
     expect(report).toContain('WALL');
-    expect(report).toContain('CLIENT-SAFETY WALLS');
+    expect(report).toContain('wire-byte ceilings');
   });
 
   it('reports every metric that exceeds a scenario budget', () => {

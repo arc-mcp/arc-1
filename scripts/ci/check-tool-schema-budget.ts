@@ -2,22 +2,22 @@
 /**
  * MCP tool schema budget guard.
  *
- * Two kinds of limit per scenario:
+ * The `tools/list` is re-sent on every conversation, so its size is a recurring token (cost) and
+ * latency tax — and some MCP clients also cap how large a tool list they will accept. This guard
+ * keeps the surface lean with two kinds of limit per scenario:
  *
- * 1. HARD WIRE-BYTE WALLS — `maxTotalWireBytes` / `maxPerToolWireBytes`. These are the real
- *    constraint: some MCP clients silently DROP a `tools/list` whose payload is too large. GitHub
- *    Copilot-for-Eclipse's gateway drops the write-mode list above ~68–80 KB (issue #520: 68 KB
- *    loads, 84 KB does not), logging "MCP server … is already running" but never registering a
- *    tool. The walls are derived from that evidence (68 KB proven-good) — they are a CLIENT-SAFETY
- *    CEILING, NOT a ratchet. Do NOT raise them to make CI pass: trim the schema (shorter
- *    descriptions, move long guidance to docs_page/) so the payload fits. Measured on the exact
+ * 1. WIRE-BYTE CEILINGS — `maxTotalWireBytes` / `maxPerToolWireBytes`, measured on the exact
  *    `JSON.stringify({ tools })` shape the client receives (the JSON-RPC envelope adds only tens of
- *    bytes on top).
+ *    bytes on top). Conservative ceilings that keep the payload small; do NOT raise them to make CI
+ *    pass — trim the schema (shorter descriptions, move long guidance to docs_page/) instead.
  *
  * 2. TOKEN RATCHETS — `schemaTokenEstimate` / `descriptionTokenEstimate` / `descriptionCount`. A
- *    deterministic byte/4 estimate (no tokenizer dep). These are a COST ratchet seeded at
- *    current+headroom; lower them when the surface shrinks, bump consciously (in the diff) when a
- *    feature legitimately grows it — but never above the wire wall.
+ *    deterministic byte/4 estimate (no tokenizer dep), seeded at current+headroom; lower them when
+ *    the surface shrinks, bump consciously (in the diff) when a feature legitimately grows it.
+ *
+ * History: this guard was added during the #520 investigation under the (later DISPROVEN) theory
+ * that Copilot-for-Eclipse drops a `tools/list` >68–80 KB. The real #520 trigger is nullable schema
+ * unions (`type: ["x","null"]`), not size. These ceilings remain a sound token/size-hygiene guard.
  *
  * Run: npm run check:sizes
  */
@@ -99,9 +99,9 @@ const FULL_ACCESS_CONFIG: ServerConfig = {
   allowGitWrites: true,
 };
 
-// Client-safety wire walls (issue #520). 68 KB is the largest write-mode tools/list proven to load
-// in Copilot-for-Eclipse; we hold the full surface a few KB under it. Read-only is far smaller, so
-// it gets its own lower wall. These are walls, not ratchets — trim the surface, don't raise them.
+// Wire-byte ceilings that keep the tools/list lean (recurring per-request token cost; some clients
+// also cap tool-list size). Conservative — the full write surface sits a few KB under, read-only is
+// far smaller so it gets its own lower ceiling. Ceilings, not ratchets — trim the surface, don't raise.
 const WRITE_WIRE_WALL = 68_000;
 const READ_WIRE_WALL = 50_000;
 const PER_TOOL_WIRE_WALL = 21_000;
@@ -113,7 +113,7 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     textSearchAvailable: true,
     resolvedFeatures: ALL_FEATURES_AVAILABLE,
     budget: {
-      // Post-#520 trim: read-only surface measured ~43.3 KB / ~10.8k schema tokens / 164 descriptions.
+      // Post-trim: read-only surface measured ~43.3 KB / ~10.8k schema tokens / 164 descriptions.
       schemaTokenEstimate: 11_800,
       descriptionTokenEstimate: 8_800,
       descriptionCount: 175,
@@ -127,7 +127,7 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     textSearchAvailable: true,
     resolvedFeatures: ALL_FEATURES_AVAILABLE,
     budget: {
-      // Post-#520 trim: full write surface ~66.3 KB / ~16.6k schema tokens / 250 descriptions.
+      // Post-trim: full write surface ~66.3 KB / ~16.6k schema tokens / 250 descriptions.
       schemaTokenEstimate: 17_300,
       descriptionTokenEstimate: 12_400,
       descriptionCount: 265,
@@ -141,7 +141,7 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     textSearchAvailable: true,
     resolvedFeatures: { ...ALL_FEATURES_AVAILABLE, systemType: 'btp' },
     budget: {
-      // Post-#520 trim: full BTP write surface ~64.5 KB / ~16.1k schema tokens / 248 descriptions.
+      // Post-trim: full BTP write surface ~64.5 KB / ~16.1k schema tokens / 248 descriptions.
       schemaTokenEstimate: 16_800,
       descriptionTokenEstimate: 12_000,
       descriptionCount: 260,
@@ -292,8 +292,10 @@ export function formatToolSchemaBudgetReport(
   }
   lines.push(
     '',
-    'maxTotalWireBytes / maxPerToolWireBytes are CLIENT-SAFETY WALLS (issue #520: large tools/list silently dropped by Copilot-for-Eclipse). ' +
-      'Do NOT raise them — trim tool descriptions/schema payload or move long guidance into docs_page/. Token budgets may be bumped consciously, but never above the wire wall.',
+    'maxTotalWireBytes / maxPerToolWireBytes are wire-byte ceilings — the tools/list is re-sent on every ' +
+      'request (a recurring token cost) and some MCP clients cap its size. Do NOT raise them — trim tool ' +
+      'descriptions/schema payload or move long guidance into docs_page/. Token budgets may be bumped ' +
+      'consciously, but never above the wire ceiling.',
   );
   return lines.join('\n');
 }
