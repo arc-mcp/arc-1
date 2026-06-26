@@ -6,7 +6,7 @@
  * signature syntax (`IMPORTING VALUE(name) TYPE type [DEFAULT x] [OPTIONAL]`)
  * between `FUNCTION <name>` and the trailing period that terminates the
  * signature. There is no separate metadata endpoint (verified live on a4h
- * S/4HANA 2023 + NPL 7.50 SP02 — see docs/plans/completed/add-fm-parameters.md).
+ * S/4HANA 2023 + NPL 7.50 SP02 — see docs/plans/completed/2026-05-10-add-fm-parameters.md).
  *
  * This module provides three pure functions:
  *   - `buildFmSignatureClause` — array → ABAP signature clause

@@ -722,10 +722,10 @@ describe('Tool Definitions', () => {
       expect(typeEnum).toContain('AUTH');
       expect(typeEnum).toContain('FEATURE_TOGGLE');
       // FTG2 retained as deprecated alias for one minor — see
-      // research/abap-types/types/ftg2.md and audit-symmetry-and-ftg2-rename.md.
+      // docs/research/abap-types/types/ftg2.md and audit-symmetry-and-ftg2-rename.md.
       expect(typeEnum).toContain('FTG2');
       expect(typeEnum).toContain('ENHO');
-      // MSAG canonical + MESSAGES deprecated alias (research/abap-types/types/msag.md)
+      // MSAG canonical + MESSAGES deprecated alias (docs/research/abap-types/types/msag.md)
       expect(typeEnum).toContain('MSAG');
       expect(typeEnum).toContain('MESSAGES');
     });

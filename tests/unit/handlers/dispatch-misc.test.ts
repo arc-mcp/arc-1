@@ -835,7 +835,7 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
     it('normalizes all supported slash-type mappings', () => {
       // Issue #218 audit follow-up: every entry below is verified against either
       // Eclipse ADT apidoc 3.58.1 or live a4h+npl ADT responses captured
-      // 2026-05-08. See research/abap-types/types/<short>.md.
+      // 2026-05-08. See docs/research/abap-types/types/<short>.md.
       const mappings: Array<[string, string]> = [
         ['PROG/P', 'PROG'],
         ['PROG/I', 'INCL'],
@@ -871,7 +871,7 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
     });
 
     it('passes through invented slash codes removed in PR (regression guard)', () => {
-      // These were aliased pre-audit. The audit (research/abap-types/) verified
+      // These were aliased pre-audit. The audit (docs/research/abap-types/) verified
       // they don't exist in ADT or any SAP source. Pass-through means schema
       // validation rejects them loudly so the breaking change surfaces.
       expect(normalizeObjectType('FUNC/FM')).toBe('FUNC/FM');

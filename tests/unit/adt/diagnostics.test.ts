@@ -1078,7 +1078,7 @@ describe('Runtime Diagnostics', () => {
   });
 
   // Regression tests for CodeQL alerts #6, #7 — see
-  // docs/plans/codeql-alerts-html-hygiene.md
+  // docs/plans/2026-05-08-codeql-alerts-html-hygiene.md
   describe('stripHtmlTags (CodeQL alert #6 — js/incomplete-multi-character-sanitization)', () => {
     it('strips simple tags', () => {
       expect(stripHtmlTags('<p>hello</p>')).toBe('hello');
@@ -1151,7 +1151,7 @@ describe('Runtime Diagnostics', () => {
 
   // ─── ABAP Trace Requests (arm/list/cancel) ──────────────────────────
 
-  // Real feed captured live on a4h 758 (docs/research/abap-trace-requests-and-sapquery-metrics.md).
+  // Real feed captured live on a4h 758 (docs/research/2026-06-25-abap-trace-requests-and-sapquery-metrics.md).
   const CREATE_FEED = `<?xml version="1.0" encoding="utf-8"?><atom:feed xmlns:atom="http://www.w3.org/2005/Atom"><atom:title>ABAP Trace Requests A4H</atom:title><atom:entry xml:lang="EN"><atom:author trc:role="admin" xmlns:trc="http://www.sap.com/adt/runtime/traces/abaptraces"><atom:name>MARIAN</atom:name></atom:author><atom:author trc:role="trace" xmlns:trc="http://www.sap.com/adt/runtime/traces/abaptraces"><atom:name>MARIAN</atom:name></atom:author><atom:content type="application/atom+xml" src="/sap/bc/adt/runtime/traces/abaptraces/requests/vhcala4hci_A4H_00%2c1%2c20260625093701"/><atom:id>/sap/bc/adt/runtime/traces/abaptraces/requests/vhcala4hci_A4H_00%2c1%2c20260625093701</atom:id><atom:title>arc1 spike</atom:title><trc:extendedData xmlns:trc="http://www.sap.com/adt/runtime/traces/abaptraces"><trc:host>vhcala4hci</trc:host><trc:client trc:role="admin">001</trc:client><trc:client trc:role="trace">001</trc:client><trc:description>arc1 spike</trc:description><trc:isAggregated>true</trc:isAggregated><trc:expires>2026-06-26T23:59:59Z</trc:expires><trc:processType trc:processTypeId="/sap/bc/adt/runtime/traces/abaptraces/processtypes/http"/><trc:object trc:objectTypeId="/sap/bc/adt/runtime/traces/abaptraces/objecttypes/url"/><trc:executions trc:maximal="1" trc:completed="0"/></trc:extendedData></atom:entry></atom:feed>`;
 
   describe('parseTraceRequestFeed', () => {

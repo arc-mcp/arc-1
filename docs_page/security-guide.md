@@ -470,5 +470,5 @@ See [`SECURITY.md`](https://github.com/arc-mcp/arc-1/blob/main/SECURITY.md). Pre
 
 This section corresponds to roadmap entry **SEC-11 (Tier 1: Foundation)**. Future tiers extend the chain:
 
-- **Tier 2 (Attestation)** — CycloneDX SBOM (npm + image), Cosign keyless image signing, OpenSSF Scorecard. Plan in [`docs/plans/dependency-security-tier2-attestation.md`](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/dependency-security-tier2-attestation.md).
-- **Tier 3 (Active Defense)** — Socket.dev PR review, vulnerability triage runbook, formal non-adoption decisions for Renovate / Snyk / SLSA L3. Plan in [`docs/plans/dependency-security-tier3-defense.md`](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/dependency-security-tier3-defense.md).
+- **Tier 2 (Attestation)** — CycloneDX SBOM (npm + image), Cosign keyless image signing, OpenSSF Scorecard. Plan in [`docs/plans/2026-05-08-dependency-security-tier2-attestation.md`](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-05-08-dependency-security-tier2-attestation.md).
+- **Tier 3 (Active Defense)** — Socket.dev PR review, vulnerability triage runbook, formal non-adoption decisions for Renovate / Snyk / SLSA L3. Plan in [`docs/plans/2026-05-08-dependency-security-tier3-defense.md`](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-05-08-dependency-security-tier3-defense.md).

@@ -75,9 +75,9 @@ describe('SLASH_TYPE_MAP citation guard (anti-cargo-cult)', () => {
   it('replacement aliases ARE in SLASH_TYPE_EVIDENCE', () => {
     // The aliases that replaced the invented ones must be cited.
     const replacements: Array<[string, string]> = [
-      ['FUGR/FF', 'research/abap-types/types/fugr.md'],
-      ['VIEW/DV', 'research/abap-types/types/view.md'],
-      ['TRAN/T', 'research/abap-types/types/tran.md'],
+      ['FUGR/FF', 'docs/research/abap-types/types/fugr.md'],
+      ['VIEW/DV', 'docs/research/abap-types/types/view.md'],
+      ['TRAN/T', 'docs/research/abap-types/types/tran.md'],
     ];
     for (const [code, expectedPath] of replacements) {
       expect(SLASH_TYPE_EVIDENCE[code]).toBe(expectedPath);

@@ -16,7 +16,7 @@
 //      enforces the same omission at RUNTIME via a Proxy, so the cast yields `undefined`.
 //
 // CSRF, cookies, PP auth, sessions, the semaphore all ride the underlying client unchanged.
-// See docs/research/extension-framework-spec.md §5.
+// See docs/research/2026-06-17-extension-framework-spec.md §5.
 
 import type { AdtClient } from '../adt/client.js';
 import { AdtSafetyError } from '../adt/errors.js';

@@ -29,10 +29,10 @@ All `~/DEV/*` repos are **read-only references** — never modify them.
 | Source | Where | Use it for |
 |--------|-------|------------|
 | **The PR itself** | `gh pr view <n> --json ...,isCrossRepository,headRepositoryOwner,files,reviews,comments`; `gh pr diff <n>` | The diff, the author, cross-repo fork?, the linked issue, the author's claims to verify |
-| **The linked issue** | `gh issue view <linked>` + its dossier in `research/issues/` (run `/deep-issue` first if none exists) | What problem the PR *should* solve — judge the diff against the real need, not the PR's framing |
+| **The linked issue** | `gh issue view <linked>` + its dossier in `docs/research/issues/` (run `/deep-issue` first if none exists) | What problem the PR *should* solve — judge the diff against the real need, not the PR's framing |
 | **ARC-1 project guide** | `CLAUDE.md` (esp. **Security & Architectural Invariants**, **Authorization & Safety System**, **three-file schema sync**), `INFRASTRUCTURE.md` | The invariant checklist below; conventions; the 3 live systems |
 | **Current HEAD code** | the files the diff touches + their neighbors (`grep -a` for `intent.ts`) | Does the change fit existing patterns? Does it break an adjacent path (create/update/delete/activate, the `withSafety()` clone)? |
-| **ARC-1 live research notes** | `docs/research/`, `research/abap-types/` | Has the PR's SAP assumption already been proven/disproven here? |
+| **ARC-1 live research notes** | `docs/research/`, `docs/research/abap-types/` | Has the PR's SAP assumption already been proven/disproven here? |
 | **Eclipse ADT — apidoc + contracts** | `~/DEV/arc-1-eclipse-adt/` (`api/01..20-*.md`, apidoc) | **The real ADT contract** the PR must match — URIs, media types, request/response shapes. The deciding source when the PR's claim and the contract disagree |
 | **SAP ADT language server** | `~/DEV/arc-1-lsp/` (`vendor/adt-ls`, `docs/adt-ls-*`) | How SAP's own server calls it — second witness |
 | **Reference ADT-over-MCP impls** | `~/DEV/mcp-abap-adt/`, `~/DEV/mcp-abap-adt-fr0ster/` | How others implement the same op; whether the PR reinvents or contradicts a known-good approach |
@@ -45,7 +45,7 @@ All `~/DEV/*` repos are **read-only references** — never modify them.
 ## Phase 1: Frame & fetch
 
 1. **Read the PR** — `gh pr view <n>` for title/body/author/`isCrossRepository`/files/reviews/comments, `gh pr diff <n>` for the full diff. Note whether it's a **cross-repo fork** PR (most external ones are) and **what it claims** (the "verified live" table, "all tests pass", etc.) — these become your verification checklist.
-2. **Understand the goal** — read the linked issue and its `research/issues/` dossier (if none, run **`/deep-issue`** on it first; you can't judge a fix without knowing the real bug). Judge the diff against the actual need.
+2. **Understand the goal** — read the linked issue and its `docs/research/issues/` dossier (if none, run **`/deep-issue`** on it first; you can't judge a fix without knowing the real bug). Judge the diff against the actual need.
 3. **Scope the review** — code change vs. docs/skills-only (a large skills-only PR like #283 is reviewed for accuracy & sources, not for ADT correctness/tests). Set the depth accordingly.
 
 ## Phase 2: Get the diff locally & run the gates
@@ -95,7 +95,7 @@ Consider running **`/security-review`** on the checked-out diff for an independe
 
 ## Phase 6: Verdict, review comments & dossier
 
-1. **Write the dossier** — **`research/pull-requests/<n>-<short-slug>.md`** (mirrors `research/issues/`): the verdict, what you ran and observed (gate output + live `arc1-cli` results), invariant findings, and each issue with `file:line`.
+1. **Write the dossier** — **`docs/research/pull-requests/<n>-<short-slug>.md`** (mirrors `docs/research/issues/`): the verdict, what you ran and observed (gate output + live `arc1-cli` results), invariant findings, and each issue with `file:line`.
 2. **Verdict** — one of **APPROVE** / **REQUEST CHANGES** / **COMMENT**, with a one-paragraph rationale grounded in the evidence above.
 3. **Paste-able review** — a fenced markdown block the user can paste into the GitHub review: a summary, then findings as `**file:line** — finding + suggested change`, ordered blocking-first. Be specific and kind to the external contributor; cite the contract / Note / release that backs each point.
 4. **Hand back, don't act** — present the verdict + the paste-able review. **Do not `gh pr review`/approve/merge, do not push to the fork branch, do not post comments.** If the fix is small and the user asks, you may prepare a diff suggestion in the block — but the user pushes it (to origin, `marianfoo`), not you. Clean up the worktree (`git worktree remove ../arc-1-pr-<n>`) when done.

@@ -9,7 +9,7 @@ docs_dir: docs_page
 
 theme:
   name: material
-  custom_dir: overrides
+  custom_dir: docs/overrides
   palette:
     - scheme: default
       primary: deep orange

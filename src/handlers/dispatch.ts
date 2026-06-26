@@ -475,7 +475,7 @@ function classifyError(err: unknown): string {
 // The 12 built-ins register through the same ToolRegistry that plugin (Custom_*) tools use. Each
 // built-in `invoke` is a thin adapter over its existing handler — the shared pipeline (rate-limit,
 // scope, deny, Zod, audit) stays in handleToolCall; the registry only owns the inner dispatch that
-// used to be a `switch`. See docs/research/extension-framework-spec.md §4.
+// used to be a `switch`. See docs/research/2026-06-17-extension-framework-spec.md §4.
 let _toolRegistry: ToolRegistry | undefined;
 
 /** The process-wide tool registry, lazily seeded with the built-ins. Exported for tests. */

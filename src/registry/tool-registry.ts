@@ -5,7 +5,7 @@
 // call their existing handlers; the shared pipeline (rate-limit, scope, Zod, audit) stays in
 // `handleToolCall` and is unchanged — the registry only owns the inner dispatch.
 //
-// See docs/research/extension-framework-spec.md §4.
+// See docs/research/2026-06-17-extension-framework-spec.md §4.
 
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';

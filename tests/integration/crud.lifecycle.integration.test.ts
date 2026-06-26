@@ -297,7 +297,7 @@ describe('CRUD lifecycle', () => {
   // sap-language URL param, already DE), NOT the body, so ADT cannot discriminate
   // the DOMMASTER/DD01T text-language fix here — that is covered by the unit test
   // (POST body carries masterLanguage="DE") plus the manual HANA verification in
-  // docs/research/issue-343-masterlanguage-on-create.md. This only asserts that a
+  // docs/research/2026-06-04-issue-343-masterlanguage-on-create.md. This only asserts that a
   // DE-language DOMA create still succeeds (non-regression).
   it('DOMA create with SAP_LANGUAGE=DE succeeds (issue #343 non-regression)', async (ctx) => {
     const deClient = getTestClient('DE');

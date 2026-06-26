@@ -143,7 +143,7 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 | Task | Files (+ key gotcha) |
 |------|------|
 | Add new read operation | `src/adt/client.ts`, `src/handlers/read.ts`, `src/handlers/tools.ts` (+ `src/adt/xml-parser.ts`, `src/adt/types.ts` for structured) |
-| Add ADT slash alias to `SLASH_TYPE_MAP` | `src/handlers/object-types.ts`, `tests/unit/handlers/slash-type-map.test.ts` — needs `research/abap-types/types/<short>.md` evidence, verify live `<adtcore:type>` first (#218) |
+| Add ADT slash alias to `SLASH_TYPE_MAP` | `src/handlers/object-types.ts`, `tests/unit/handlers/slash-type-map.test.ts` — needs `docs/research/abap-types/types/<short>.md` evidence, verify live `<adtcore:type>` first (#218) |
 | SAPWrite TABL subtype routing (TABL/DT vs /DS, #285) | `src/handlers/object-types.ts`, `src/handlers/write-helpers.ts`, `src/handlers/write/create.ts`, `src/handlers/{schemas,tools}.ts` — reads collapse to bare `TABL` |
 | AUTH/FEATURE_TOGGLE/ENHO/VERSIONS/MSAG-style reads | `src/adt/client.ts`, `src/adt/xml-parser.ts`, `src/adt/types.ts`, `src/handlers/read.ts`, `src/handlers/{schemas,tools}.ts` |
 | Add fix proposal / quickfix | `src/adt/devtools.ts`, `src/handlers/diagnose.ts`, `src/handlers/{schemas,tools}.ts`, tests |
@@ -159,13 +159,13 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 | Transport history / create / TR_TARGET | `src/adt/transport.ts`, `src/handlers/transport.ts`, `src/authz/policy.ts` — only `/cts/transportrequests` sets the target, discovery-gated (7.58 yes, 7.50 no); `release`/`release_recursive` run a fail-fast `getInactiveObjects` pre-check (`inactiveObjectsForTransport`) AFTER the `checkTransport` write gate — inactive objects hang SAP's release pipeline; `create` always makes a Workbench (K) request (type is not a param; the package sets the target/layer, not the K/W category — live-verified) |
 | gCTS / abapGit operation | `src/adt/gcts.ts` or `src/adt/abapgit.ts`, `src/handlers/git.ts`, `{schemas,tools}.ts` |
 | RAP preflight / scaffolding / generate_behavior_implementation | `src/adt/rap-preflight.ts` + `src/handlers/write-helpers.ts` / `src/adt/rap-handlers.ts` + `src/handlers/write/rap.ts` (skeletons → CCIMP only, never CCDEF) / `src/adt/rap-generate.ts` |
-| BDEF behavior EXTENSION create (`extend behavior for`) | `src/handlers/write/create.ts` (detect `extend behavior for X` → `baseBdef=X`) + `src/handlers/write-helpers.ts` (`buildCreateXml` BDEF emits `adtcore:adtTemplate(base_bdef)` BEFORE packageRef — trailing = ignored). Type stays BDEF/BDO; base must be `extensible`. Details: docs/research/bdef-behavior-extension-create.md |
+| BDEF behavior EXTENSION create (`extend behavior for`) | `src/handlers/write/create.ts` (detect `extend behavior for X` → `baseBdef=X`) + `src/handlers/write-helpers.ts` (`buildCreateXml` BDEF emits `adtcore:adtTemplate(base_bdef)` BEFORE packageRef — trailing = ignored). Type stays BDEF/BDO; base must be `extensible`. Details: docs/research/2026-06-25-bdef-behavior-extension-create.md |
 | Add new tool type | `src/handlers/tools.ts`, `src/handlers/schemas.ts`, `src/handlers/dispatch.ts` |
 | Add/modify tool input schema | `src/handlers/schemas.ts` + `src/handlers/tools.ts` (three-file sync — see invariants) |
 | Harden against GPT/OpenAI arg pollution (#360) | `src/handlers/object-types.ts` (`stripLlmEmptyValues`), `src/handlers/schemas.ts` — `looseOptionalBoolean` for EVERY optional boolean, never `z.coerce.boolean()` (maps "false"→true) |
 | DDIC domain/data-element write | `src/adt/ddic-xml.ts`, `src/adt/crud.ts`, `src/handlers/write.ts` |
 | TTYP (table type) read/write (FEAT-65) | `src/adt/ddic-xml.ts` (`buildTableTypeXml`/`parseTableType`), `src/handlers/write/create.ts` (POST creates a CHAR shell → follow-up PUT sets the real row type; `rowType`/`rowTypeKind` params), `src/adt/client.ts` (`getTableType`). TRAN write is NOT supported — `/sap/bc/adt/aps/iam/tran` is absent on 758/816/7.50 |
-| Master language on create (#343) | `src/adt/ddic-xml.ts`, `src/handlers/write-helpers.ts`, `src/handlers/write/create.ts` — see docs/research/issue-343-masterlanguage-on-create.md |
+| Master language on create (#343) | `src/adt/ddic-xml.ts`, `src/handlers/write-helpers.ts`, `src/handlers/write/create.ts` — see docs/research/2026-06-04-issue-343-masterlanguage-on-create.md |
 | ADT discovery / MIME types | `src/adt/discovery.ts`, `src/adt/http.ts` |
 | SAP error classification + hints | `src/adt/errors.ts`, `src/handlers/dispatch.ts` — ground hints in verified SAP Notes; release-aware via `src/adt/release.ts` (#293) |
 | Release-gated content-type fallback | `src/adt/crud.ts` (`CONTENT_TYPE_FALLBACKS` — narrow allowlist, 415-only retry) |
@@ -308,4 +308,4 @@ modules; write.ts 2K → write/ package) — apply to any sizeable change:
 ## History
 
 Migrated from Go to TypeScript on 2026-03-26. Handler monolith split into per-tool modules 2026-06
-(see `docs/plans/completed/architecture-consolidation-progress.md`).
+(see `docs/plans/completed/2026-06-11-architecture-consolidation-progress.md`).

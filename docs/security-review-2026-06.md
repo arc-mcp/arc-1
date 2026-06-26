@@ -433,7 +433,7 @@ the worst class of finding for the flagship multi-user-PP deployment, and a sing
 ### 6.6 Low hardening cluster
 
 **R17 — four small items — Low — mixed**
-- **API-key compare not constant-time** ([`http.ts:273`](../src/server/http.ts)): switch
+- **API-key docs/compare not constant-time** ([`http.ts:273`](../src/server/http.ts)): switch
   `token === entry.key` to a length-checked `crypto.timingSafeEqual` helper (the DCR/state paths
   already do). Inconsistent, marginal over a network.
 - **PR-title `${{ }}` into a `run:` shell** (`.github/workflows/test.yml`): move
@@ -461,7 +461,7 @@ Suggested order for the remaining open items:
 3. **Identity/fallback:** **R6** (default `SAP_PP_STRICT=true` for multi-user, or
    downgrade-on-fallback) and **R13** (pin `isolationStrategy` + require a per-user claim).
 4. **Hardening:** **R7** (startup TLS-off warning + `encodeURIComponent` the trace/dump paths) and
-   the **R17** cluster (timing-safe API-key compare, PR-title env-var, ACTION_POLICY completeness
+   the **R17** cluster (timing-safe API-key docs/compare, PR-title env-var, ACTION_POLICY completeness
    guard, `change_package` regex bound).
 
 ---

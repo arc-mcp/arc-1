@@ -1356,7 +1356,7 @@ embedded/              # Embedded ABAP deployment (removed)
 |------|--------|------------|
 | CSRF token handling differences | High — breaks all ADT operations | Study abap-adt-api + fr0ster implementations closely; port HTTP tests first |
 | Stateful session behavior | High — breaks CRUD operations | Test lock/modify/unlock sequences in integration tests early |
-| XML parsing differences | Medium — wrong data extraction | Create XML fixtures from Go test mocks; compare parsed output |
+| XML parsing differences | Medium — wrong data extraction | Create XML fixtures from Go test mocks; docs/compare parsed output |
 | better-sqlite3 native addon | Medium — Docker/CI build issues | Use node:20-alpine with build tools; test in CI early |
 | @abaplint/core API surface | Low — well-documented package | Use existing abaplint documentation; already TS-native |
 | MCP SDK API changes | Low — well-maintained | Pin to specific version; follow SDK changelog |

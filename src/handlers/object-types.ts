@@ -9,7 +9,7 @@
 
 // Every entry verified against either Eclipse ADT apidoc 3.58.1, live a4h S/4HANA
 // 2023 + npl NW 7.50 ADT responses (captured 2026-05-08 — both systems agree), or
-// abap-file-formats schemas. Per-entry evidence in research/abap-types/types/<x>.md.
+// abap-file-formats schemas. Per-entry evidence in docs/research/abap-types/types/<x>.md.
 // SLASH_TYPE_EVIDENCE below MUST stay key-equal (anti-cargo-cult guard, enforced by
 // tests/unit/handlers/slash-type-map.test.ts — see issue #218 follow-up).
 // Exported for tests only — the citation guard
@@ -17,47 +17,47 @@
 // against SLASH_TYPE_EVIDENCE so a new entry without evidence fails CI.
 // Production callers should keep using normalizeObjectType().
 export const SLASH_TYPE_MAP: Record<string, string> = {
-  'PROG/P': 'PROG', // research/abap-types/types/prog.md
-  'PROG/I': 'INCL', // research/abap-types/types/incl.md
-  'CLAS/OC': 'CLAS', // research/abap-types/types/clas.md
+  'PROG/P': 'PROG', // docs/research/abap-types/types/prog.md
+  'PROG/I': 'INCL', // docs/research/abap-types/types/incl.md
+  'CLAS/OC': 'CLAS', // docs/research/abap-types/types/clas.md
   // 'CLAS/LI' removed — invented; absent from Eclipse apidoc; no live ADT response
   // emits it. Pass-through means schema validation rejects it loudly.
-  'INTF/OI': 'INTF', // research/abap-types/types/intf.md
+  'INTF/OI': 'INTF', // docs/research/abap-types/types/intf.md
   // 'FUNC/FM' removed — invented; ADT emits FUGR/FF for function modules, not
   // FUNC/FM. Function modules are LIMU FUNC under R3TR FUGR.
-  'FUGR/F': 'FUGR', // function group container — research/abap-types/types/fugr.md
+  'FUGR/F': 'FUGR', // function group container — docs/research/abap-types/types/fugr.md
   // FUGR/FF is a function module (LIMU FUNC under FUGR), not the function group.
   // Live a4h: GET .../groups/su_user/fmodules/bapi_user_getlist returns
   // adtcore:type="FUGR/FF" with <adtcore:containerRef adtcore:type="FUGR/F"/>.
-  'FUGR/FF': 'FUNC', // research/abap-types/types/fugr.md + func.md
-  'DDLS/DF': 'DDLS', // research/abap-types/types/ddls.md
-  'DCLS/DL': 'DCLS', // research/abap-types/types/dcls.md
-  'BDEF/BDO': 'BDEF', // research/abap-types/types/bdef.md
-  'SRVD/SRV': 'SRVD', // research/abap-types/types/srvd.md
-  'SRVB/SVB': 'SRVB', // research/abap-types/types/srvb.md
-  'DDLX/EX': 'DDLX', // research/abap-types/types/ddlx.md (live a4h + npl 2026-05-08)
+  'FUGR/FF': 'FUNC', // docs/research/abap-types/types/fugr.md + func.md
+  'DDLS/DF': 'DDLS', // docs/research/abap-types/types/ddls.md
+  'DCLS/DL': 'DCLS', // docs/research/abap-types/types/dcls.md
+  'BDEF/BDO': 'BDEF', // docs/research/abap-types/types/bdef.md
+  'SRVD/SRV': 'SRVD', // docs/research/abap-types/types/srvd.md
+  'SRVB/SVB': 'SRVB', // docs/research/abap-types/types/srvb.md
+  'DDLX/EX': 'DDLX', // docs/research/abap-types/types/ddlx.md (live a4h + npl 2026-05-08)
   // DDIC TABL: ADT exposes /DT (transparent table) and /DS (DDIC structure)
   // subtypes. Both share TADIR R3TR TABL (DD02L-TABCLASS = TRANSP vs INTTAB).
   // ARC-1 collapses both into the canonical short type 'TABL' (Model B — see
-  // docs/plans/completed/collapse-stru-into-tabl.md).
-  'TABL/DT': 'TABL', // research/abap-types/types/tabl.md
-  'TABL/DS': 'TABL', // research/abap-types/types/tabl.md
+  // docs/plans/completed/2026-05-07-collapse-stru-into-tabl.md).
+  'TABL/DT': 'TABL', // docs/research/abap-types/types/tabl.md
+  'TABL/DS': 'TABL', // docs/research/abap-types/types/tabl.md
   // Legacy slash-form alias — ADT never actually returns this, but pre-Model-B
   // ARC-1 prompts learned it from older docs. Kept so they normalize to TABL
   // instead of producing a schema error. Bare 'STRU' is NOT aliased.
-  'STRU/DS': 'TABL', // research/abap-types/types/tabl.md (legacy alias)
-  'DOMA/DD': 'DOMA', // research/abap-types/types/doma.md
-  'DTEL/DE': 'DTEL', // research/abap-types/types/dtel.md
-  'MSAG/N': 'MSAG', // research/abap-types/types/msag.md
-  'DEVC/K': 'DEVC', // research/abap-types/types/devc.md
+  'STRU/DS': 'TABL', // docs/research/abap-types/types/tabl.md (legacy alias)
+  'DOMA/DD': 'DOMA', // docs/research/abap-types/types/doma.md
+  'DTEL/DE': 'DTEL', // docs/research/abap-types/types/dtel.md
+  'MSAG/N': 'MSAG', // docs/research/abap-types/types/msag.md
+  'DEVC/K': 'DEVC', // docs/research/abap-types/types/devc.md
   // TRAN/T (was TRAN/O — invented). Live a4h + npl 2026-05-08 both return
   // adtcore:type="TRAN/T" for SE38, SU01, etc.
-  'TRAN/T': 'TRAN', // research/abap-types/types/tran.md
+  'TRAN/T': 'TRAN', // docs/research/abap-types/types/tran.md
   // VIEW/DV (was VIEW/V — invented). Live a4h + npl 2026-05-08 both return
   // adtcore:type="VIEW/DV" for V_USR_NAME.
-  'VIEW/DV': 'VIEW', // research/abap-types/types/view.md
-  'SKTD/TYP': 'SKTD', // research/abap-types/types/sktd.md
-  'TTYP/DA': 'TTYP', // research/abap-types/types/ttyp.md — live a4h 758 + 816 return adtcore:type="TTYP/DA"
+  'VIEW/DV': 'VIEW', // docs/research/abap-types/types/view.md
+  'SKTD/TYP': 'SKTD', // docs/research/abap-types/types/sktd.md
+  'TTYP/DA': 'TTYP', // docs/research/abap-types/types/ttyp.md — live a4h 758 + 816 return adtcore:type="TTYP/DA"
 };
 
 /**
@@ -67,29 +67,29 @@ export const SLASH_TYPE_MAP: Record<string, string> = {
  * Adding an entry without evidence is the anti-cargo-cult guard.
  */
 export const SLASH_TYPE_EVIDENCE: Record<string, string> = {
-  'PROG/P': 'research/abap-types/types/prog.md',
-  'PROG/I': 'research/abap-types/types/incl.md',
-  'CLAS/OC': 'research/abap-types/types/clas.md',
-  'INTF/OI': 'research/abap-types/types/intf.md',
-  'FUGR/F': 'research/abap-types/types/fugr.md',
-  'FUGR/FF': 'research/abap-types/types/fugr.md',
-  'DDLS/DF': 'research/abap-types/types/ddls.md',
-  'DCLS/DL': 'research/abap-types/types/dcls.md',
-  'BDEF/BDO': 'research/abap-types/types/bdef.md',
-  'SRVD/SRV': 'research/abap-types/types/srvd.md',
-  'SRVB/SVB': 'research/abap-types/types/srvb.md',
-  'DDLX/EX': 'research/abap-types/types/ddlx.md',
-  'TABL/DT': 'research/abap-types/types/tabl.md',
-  'TABL/DS': 'research/abap-types/types/tabl.md',
-  'STRU/DS': 'research/abap-types/types/tabl.md',
-  'DOMA/DD': 'research/abap-types/types/doma.md',
-  'DTEL/DE': 'research/abap-types/types/dtel.md',
-  'MSAG/N': 'research/abap-types/types/msag.md',
-  'DEVC/K': 'research/abap-types/types/devc.md',
-  'TRAN/T': 'research/abap-types/types/tran.md',
-  'VIEW/DV': 'research/abap-types/types/view.md',
-  'SKTD/TYP': 'research/abap-types/types/sktd.md',
-  'TTYP/DA': 'research/abap-types/types/ttyp.md',
+  'PROG/P': 'docs/research/abap-types/types/prog.md',
+  'PROG/I': 'docs/research/abap-types/types/incl.md',
+  'CLAS/OC': 'docs/research/abap-types/types/clas.md',
+  'INTF/OI': 'docs/research/abap-types/types/intf.md',
+  'FUGR/F': 'docs/research/abap-types/types/fugr.md',
+  'FUGR/FF': 'docs/research/abap-types/types/fugr.md',
+  'DDLS/DF': 'docs/research/abap-types/types/ddls.md',
+  'DCLS/DL': 'docs/research/abap-types/types/dcls.md',
+  'BDEF/BDO': 'docs/research/abap-types/types/bdef.md',
+  'SRVD/SRV': 'docs/research/abap-types/types/srvd.md',
+  'SRVB/SVB': 'docs/research/abap-types/types/srvb.md',
+  'DDLX/EX': 'docs/research/abap-types/types/ddlx.md',
+  'TABL/DT': 'docs/research/abap-types/types/tabl.md',
+  'TABL/DS': 'docs/research/abap-types/types/tabl.md',
+  'STRU/DS': 'docs/research/abap-types/types/tabl.md',
+  'DOMA/DD': 'docs/research/abap-types/types/doma.md',
+  'DTEL/DE': 'docs/research/abap-types/types/dtel.md',
+  'MSAG/N': 'docs/research/abap-types/types/msag.md',
+  'DEVC/K': 'docs/research/abap-types/types/devc.md',
+  'TRAN/T': 'docs/research/abap-types/types/tran.md',
+  'VIEW/DV': 'docs/research/abap-types/types/view.md',
+  'SKTD/TYP': 'docs/research/abap-types/types/sktd.md',
+  'TTYP/DA': 'docs/research/abap-types/types/ttyp.md',
 };
 
 const FRIENDLY_TYPE_ALIAS_MAP: Record<string, string> = {
@@ -102,7 +102,7 @@ const FRIENDLY_TYPE_ALIAS_MAP: Record<string, string> = {
  * Set of canonical short types that MUST have a working `objectBasePath` case.
  * Drives the exhaustiveness guard inside `objectBasePath` so a new canonical type
  * added to SAPRead/SAPWrite enums without an URL builder fails loudly. The VIEW
- * silent-fallthrough bug (research/abap-types/types/view.md) is exactly what this
+ * silent-fallthrough bug (docs/research/abap-types/types/view.md) is exactly what this
  * guard prevents from reoccurring.
  */
 export const KNOWN_BASE_TYPES = new Set([
@@ -138,7 +138,7 @@ export function normalizeObjectType(type: string): string {
 
 /** TABL subtypes that SAPWrite preserves (instead of collapsing to bare 'TABL' via
  *  SLASH_TYPE_MAP) so the create path can route TABL/DT → /ddic/tables and
- *  TABL/DS → /ddic/structures. See docs/plans/completed/fix-tabl-ds-create-routing.md. */
+ *  TABL/DS → /ddic/structures. See docs/plans/completed/2026-05-27-fix-tabl-ds-create-routing.md. */
 const TABL_WRITE_SUBTYPES = new Set(['TABL/DT', 'TABL/DS']);
 
 /** Legacy slash-form aliases SAPWrite remaps to a canonical subtype before
@@ -381,7 +381,7 @@ export function objectBasePath(type: string): string {
       return '/sap/bc/adt/ddic/dataelements/';
     case 'TTYP':
       // DDIC table types. Live a4h 758 + 816 confirm GET/POST/DELETE here; XML-metadata
-      // (no source/main). research/abap-types/types/ttyp.md.
+      // (no source/main). docs/research/abap-types/types/ttyp.md.
       return '/sap/bc/adt/ddic/tabletypes/';
     case 'MSAG':
       return '/sap/bc/adt/messageclass/';
@@ -396,7 +396,7 @@ export function objectBasePath(type: string): string {
       // VIT generic-object endpoint for DDIC views. /sap/bc/adt/ddic/views/
       // returns HTTP 500 on a4h + npl (verified 2026-05-08); only the VIT URL
       // works. Without this case, VIEW reads silently fell through to
-      // /programs/programs/ — see research/abap-types/types/view.md.
+      // /programs/programs/ — see docs/research/abap-types/types/view.md.
       return '/sap/bc/adt/vit/wb/object_type/viewdv/object_name/';
     case 'SKTD':
       return '/sap/bc/adt/documentation/ktd/documents/';
@@ -407,7 +407,7 @@ export function objectBasePath(type: string): string {
         throw new Error(
           `objectBasePath: canonical type '${type}' is in KNOWN_BASE_TYPES but ` +
             `has no switch case. Add a case here or remove it from KNOWN_BASE_TYPES. ` +
-            `See docs/plans/completed/audit-purge-invented-adt-types.md.`,
+            `See docs/plans/completed/2026-05-08-audit-purge-invented-adt-types.md.`,
         );
       }
       // Slash-form guard: a normalized slash code (e.g. 'FUNC/FM', 'CLAS/LI',
@@ -425,7 +425,7 @@ export function objectBasePath(type: string): string {
             `this normally indicates an invented or unmapped ADT slash code. Add ` +
             `it to SLASH_TYPE_MAP + SLASH_TYPE_EVIDENCE (with a research entry) ` +
             `if it is real, or correct the caller. See ` +
-            `docs/plans/completed/audit-purge-invented-adt-types.md and ` +
+            `docs/plans/completed/2026-05-08-audit-purge-invented-adt-types.md and ` +
             `tests/unit/handlers/slash-type-map.test.ts.`,
         );
       }

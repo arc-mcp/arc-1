@@ -77,7 +77,6 @@ modules:
         - src/
         - tests/
         - docs/
-        - compare/
         - skills/
         - coverage/
         - test-results/

@@ -12,10 +12,10 @@
  * is told is valid. This test closes that sliver by deriving each tool's JSON Schema from Zod via
  * z.toJSONSchema() and asserting the per-property base type + enum membership match the hand-written
  * schema, modulo the two documented, mechanical differences:
- *   - descriptions          — live only in tools.ts, never in Zod (see docs/research/zod-to-jsonschema-spike.md)
+ *   - descriptions          — live only in tools.ts, never in Zod (see docs/research/2026-06-12-zod-to-jsonschema-spike.md)
  *   - nullable optional props — tools.ts wraps SAPWrite optionals as `type: [..., "null"]` for OpenAI
  *
- * Background + the GO/NO-GO that rejected full schema generation: docs/research/zod-to-jsonschema-spike.md.
+ * Background + the GO/NO-GO that rejected full schema generation: docs/research/2026-06-12-zod-to-jsonschema-spike.md.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -49,7 +49,7 @@ type JsonNode = Record<string, unknown>;
  */
 // `integer` is a refinement-subtype of `number`, not a different category. zod emits `integer` for
 // `.int()` while several hand-written maxResults fields say `number` (a real but benign pre-existing
-// looseness — see docs/research/zod-to-jsonschema-spike.md). This test guards base-type CATEGORY
+// looseness — see docs/research/2026-06-12-zod-to-jsonschema-spike.md). This test guards base-type CATEGORY
 // drift (boolean→string, array→object), so both collapse to `number`.
 const normPrim = (t: string): string => (t === 'integer' ? 'number' : t);
 
@@ -99,7 +99,7 @@ describe('Zod ↔ JSON-Schema per-property type parity', () => {
         expect(hand, `${tool} (${btp ? 'btp' : 'onprem'}) not registered under the full config`).not.toBeNull();
         const gen = generatedProps(tool, btp);
 
-        // Only compare keys present on BOTH sides — the key SET is schema-key-sync.test.ts's job.
+        // Only docs/compare keys present on BOTH sides — the key SET is schema-key-sync.test.ts's job.
         // Skip keys zod can't represent (ANY_NODE, i.e. `.transform()` fields): nothing to compare.
         const shared = Object.keys(hand as object).filter((k) => k in gen && wireType(gen[k]) !== ANY_NODE);
         const mismatches = shared

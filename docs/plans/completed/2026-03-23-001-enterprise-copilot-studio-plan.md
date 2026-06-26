@@ -429,7 +429,7 @@ blocked in read-only mode.
 
 Parameters:
   action: create_package | delete | move | create_table
-        | export_to_file | import_from_file | compare_source
+        | export_to_file | import_from_file | docs/compare_source
   type?: Object type
   name?: Object name
   package?: string       — Target package

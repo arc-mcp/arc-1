@@ -7,7 +7,7 @@ import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 // `@arc-mcp/xsuaa-auth` package's chained verifier (constant-time api-key compare
 // + hardened OIDC). The package ships its own 200+ tests for the verifier
 // internals (scope extraction, fallback semantics, the `algorithms` allowlist,
-// timing-safe compare), so we only assert that ARC-1 maps `config.apiKeys`
+// timing-safe docs/compare), so we only assert that ARC-1 maps `config.apiKeys`
 // profiles to the right scopes/clientId and rejects unknown tokens — i.e. that
 // the adoption preserves ARC-1's observable api-key contract.
 describe('createStandardVerifier (api-key wiring)', () => {

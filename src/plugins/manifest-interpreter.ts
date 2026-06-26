@@ -4,7 +4,7 @@
 // against the already-authenticated client (no host — paths only). The interpreter renders the
 // request from validated args and runs it through the SAME gated SafeHttpClient as code plugins.
 // v1 scope: GET only; POST/body + response extraction are a fast-follow.
-// Security per docs/research/extension-framework-spec.md §8.1.
+// Security per docs/research/2026-06-17-extension-framework-spec.md §8.1.
 
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import type { OperationTypeCode } from '../adt/safety.js';

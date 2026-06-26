@@ -6,9 +6,9 @@ Fetch new commits and issues from all tracked repos, evaluate relevance to ARC-1
 
 | Repo | Tracker Dir | Comparison Doc | Purpose |
 |------|------------|----------------|---------|
-| `fr0ster/mcp-abap-adt` | `compare/fr0ster/` | `compare/05-fr0ster-mcp-abap-adt.md` | Competitor analysis |
-| `oisee/vibing-steampunk` | `compare/vibing-steampunk/` | `compare/01-vibing-steampunk.md` | Competitor analysis |
-| `marcellourbani/abap-adt-api` | `compare/abap-adt-api/` | `compare/02-mcp-abap-abap-adt-api.md` | API implementation reference |
+| `fr0ster/mcp-abap-adt` | `docs/compare/fr0ster/` | `docs/compare/05-fr0ster-mcp-abap-adt.md` | Competitor analysis |
+| `oisee/vibing-steampunk` | `docs/compare/vibing-steampunk/` | `docs/compare/01-vibing-steampunk.md` | Competitor analysis |
+| `marcellourbani/abap-adt-api` | `docs/compare/abap-adt-api/` | `docs/compare/02-mcp-abap-abap-adt-api.md` | API implementation reference |
 
 ## Instructions
 
@@ -18,7 +18,7 @@ Fetch new commits and issues from all tracked repos, evaluate relevance to ARC-1
 
 ### 1. Fetch New Commits
 
-Read `compare/<repo>/commits.json` and note the `lastCheckedSha`.
+Read `docs/compare/<repo>/commits.json` and note the `lastCheckedSha`.
 
 Fetch commits newer than that SHA:
 ```
@@ -46,13 +46,13 @@ For each new commit:
    - Update stats counters
 
 4. **Create evaluation files** for high/medium priority items:
-   - Path: `compare/<repo>/evaluations/<sha>-<slug>.md` for commits
+   - Path: `docs/compare/<repo>/evaluations/<sha>-<slug>.md` for commits
    - Follow the existing format (Priority, Source, ARC-1 component, What they did, ARC-1 current state, Assessment, Decision)
    - For low/skip items, the JSON entry is sufficient — no separate file needed
 
 ### 3. Fetch New Issues
 
-Read `compare/<repo>/issues.json` and check the highest issue number.
+Read `docs/compare/<repo>/issues.json` and check the highest issue number.
 
 Fetch issues newer than that:
 ```
@@ -73,18 +73,18 @@ Add to `issues.json` with status, priority, relevance, and evaluationFile.
 
 ### 5. Update All Documents (once, after both repos)
 
-**Per-repo overview** (`compare/<repo>/overview.md`):
+**Per-repo overview** (`docs/compare/<repo>/overview.md`):
 - Update stats table
 - Update priority summary if new high/medium items found
 - Update `_Last updated` date
 
-**Per-repo comparison doc** (`compare/01-vibing-steampunk.md` or `compare/05-fr0ster-mcp-abap-adt.md`):
+**Per-repo comparison doc** (`docs/compare/01-vibing-steampunk.md` or `docs/compare/05-fr0ster-mcp-abap-adt.md`):
 - Update version/release count in header
 - Add new entries to `## Changelog & Relevance Tracker` table
 - Update feature gap tables if new features found or ARC-1 closes gaps
 - Update `_Last updated` date
 
-**Feature matrix** (`compare/00-feature-matrix.md`, if needed):
+**Feature matrix** (`docs/compare/00-feature-matrix.md`, if needed):
 - Update columns if new capabilities added
 - Update version references
 - Add corrections to the corrections table if anything changed

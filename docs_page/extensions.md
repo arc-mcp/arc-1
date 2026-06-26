@@ -10,7 +10,7 @@ and per-user principal propagation. This is the FEAT-61 extension framework.
 
 - **Worked sample:** [`arc-mcp/arc-1-extension-sample`](https://github.com/arc-mcp/arc-1-extension-sample) — ADT + OData reads, a manifest tool, a gated console-class execute, an OData write, and a full LISA custom-ICF integration, **all live-verified against S/4HANA**.
 - **Guided setup:** the **`create-arc1-extension`** skill (`.claude/skills/create-arc1-extension/`) walks you through the decisions, scaffolds the plugin, and points out the security implications for your use case.
-- **Design:** `docs/research/extension-framework-spec.md` (spec) + `extension-framework-deep-research.md` (rationale).
+- **Design:** `docs/research/2026-06-17-extension-framework-spec.md` (spec) + `extension-framework-deep-research.md` (rationale).
 
 ---
 
@@ -196,7 +196,7 @@ Refused with an `AdtSafetyError` unless **all** hold:
     custom service's ABAP handler owns its locking/transport.
 
 ADT **object** create/update/delete (CLAS, DDLS, …) stay on the roadmap as the package-aware v2
-`ctx.write` vocabulary — see `docs/research/extension-framework-v2-spec.md`.
+`ctx.write` vocabulary — see `docs/research/2026-06-17-extension-framework-v2-spec.md`.
 
 ---
 
@@ -376,7 +376,7 @@ CLAS/DDLS/… writes through the same package-allowlist gate built-in `SAPWrite`
 can't write outside `SAP_ALLOWED_PACKAGES`). Also planned: a safe per-user `ctx.cache`, directory +
 npm-package loading, `package.json#arc1.requires` capability intersection, per-handler timeouts, and
 graduating the API from `@experimental` to semver-stable. Full design:
-`docs/research/extension-framework-v2-spec.md`.
+`docs/research/2026-06-17-extension-framework-v2-spec.md`.
 
 ---
 
@@ -384,5 +384,5 @@ graduating the API from `@experimental` to semver-stable. Full design:
 
 - **Sample repo:** <https://github.com/arc-mcp/arc-1-extension-sample>
 - **Guided skill:** `create-arc1-extension` (`.claude/skills/create-arc1-extension/`)
-- **Spec & research:** `docs/research/extension-framework-spec.md`, `extension-framework-deep-research.md`
+- **Spec & research:** `docs/research/2026-06-17-extension-framework-spec.md`, `extension-framework-deep-research.md`
 - **Related:** [Authorization & Roles](authorization.md) · [Tools Reference](tools.md) · [CLI Guide](cli-guide.md)

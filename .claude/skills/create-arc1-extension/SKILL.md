@@ -14,7 +14,7 @@ tools to an ARC-1 instance **without forking**, reusing ARC-1's authenticated SA
 - **User guide (point the developer here):** [`docs_page/extensions.md`](../../../docs_page/extensions.md)
   — the canonical how-to (tiers, `ctx.http`/`ctx.run`, security, **CF/Docker deployment**). Published at
   the docs site under *Using ARC-1 → Extensions (Custom Tools)*.
-- **Spec:** `docs/research/extension-framework-spec.md` (v1) + `extension-framework-v2-spec.md` (what's deferred).
+- **Spec:** `docs/research/2026-06-17-extension-framework-spec.md` (v1) + `extension-framework-v2-spec.md` (what's deferred).
 - **Worked sample:** [`arc-mcp/arc-1-extension-sample`](https://github.com/arc-mcp/arc-1-extension-sample)
   — ADT + OData **reads**, a **manifest** tool, **`Custom_RunClass`** (gated execute), an OData
   **write** (`Custom_CreateSalesOrder`), and a full **[LISA](https://github.com/ClementRingot/LISA)

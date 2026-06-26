@@ -1617,7 +1617,7 @@ describe('XML Parser', () => {
   });
 
   // Regression tests for CodeQL alert #8 — see
-  // docs/plans/codeql-alerts-html-hygiene.md
+  // docs/plans/2026-05-08-codeql-alerts-html-hygiene.md
   describe('decodeXmlEntities (CodeQL alert #8 — js/double-escaping)', () => {
     it('decodes the five standard XML entities', () => {
       expect(decodeXmlEntities('&lt;tag/&gt;')).toBe('<tag/>');

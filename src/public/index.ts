@@ -2,7 +2,7 @@
 //
 // Stability: this API may break in ANY release. A plugin declares `apiVersion` (a single integer
 // fuse); the loader rejects a mismatch. No semver guarantee until the feature graduates.
-// See docs/research/extension-framework-spec.md §2.
+// See docs/research/2026-06-17-extension-framework-spec.md §2.
 
 export { AdtApiError, AdtNetworkError, AdtSafetyError } from '../adt/errors.js';
 export type { AdtResponse } from '../adt/http.js';

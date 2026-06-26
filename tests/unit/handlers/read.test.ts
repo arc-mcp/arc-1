@@ -601,7 +601,7 @@ describe('SAPRead handler', () => {
     it('accepts a float maxResults end-to-end and clamps it at the sink (advertised contract)', async () => {
       // An LLM following the published schema (`type: number`, "clamped to [1, 1000]") may send
       // 50.5 — which previously returned a Zod "expected int" error. It must now succeed and floor
-      // to 50. See docs/research/maxresults-contract-asymmetry.md.
+      // to 50. See docs/research/2026-06-12-maxresults-contract-asymmetry.md.
       mockFetch.mockReset();
       mockFetch.mockResolvedValue(
         mockResponse(
@@ -658,7 +658,7 @@ describe('SAPRead handler', () => {
 
     it('reads messages (MESSAGES deprecated alias) — same handler + deprecation warning', async () => {
       // MSAG is the canonical TADIR R3TR type; 'MESSAGES' was the original ARC-1 name.
-      // Per research/abap-types/types/msag.md it is now a deprecated alias kept for
+      // Per docs/research/abap-types/types/msag.md it is now a deprecated alias kept for
       // one minor release.
       const warnSpy = vi.spyOn(logger, 'warn');
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
@@ -1035,7 +1035,7 @@ describe('SAPRead handler', () => {
     });
 
     it('reads feature toggle states (FTG2 deprecated alias) — same result + deprecation warning', async () => {
-      // FTG2 is an ARC-1-private invented identifier (research/abap-types/types/ftg2.md).
+      // FTG2 is an ARC-1-private invented identifier (docs/research/abap-types/types/ftg2.md).
       // Renamed to FEATURE_TOGGLE in the audit-symmetry plan; FTG2 stays as a deprecated
       // alias for one minor release with a stderr warning.
       mockFetch.mockReset();

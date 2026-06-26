@@ -74,4 +74,4 @@ Naming and surface changes:
 - Live probe data captured 2026-04-28 against A4H 758 SP02 and NPL 750 SP02.
 - `extractExceptionType` and `classifySapDomainError` in [src/adt/errors.ts](../../src/adt/errors.ts).
 - [src/adt/crud.ts](../../src/adt/crud.ts) `lockObject` and `createObject` (call sites).
-- PR [#202](https://github.com/arc-mcp/arc-1/pull/202) — PR-γ ships the layered detection helper, `cachedFeatures?.abapRelease` threading, classifier extension, and MSAG transport guard. The plan file `docs/plans/pr-gamma-nw750-quirks-refined.md` lives on the PR-γ branch and lands in main alongside the implementation when PR #202 merges.
+- PR [#202](https://github.com/arc-mcp/arc-1/pull/202) — PR-γ ships the layered detection helper, `cachedFeatures?.abapRelease` threading, classifier extension, and MSAG transport guard. The plan file `docs/plans/2026-05-08-pr-gamma-nw750-quirks-refined.md` lives on the PR-γ branch and lands in main alongside the implementation when PR #202 merges.

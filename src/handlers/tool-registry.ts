@@ -85,7 +85,7 @@ const SAPREAD_TYPE_TABLE = [
   { type: 'COMPONENTS', btp: true },
   // MSAG is the canonical TADIR R3TR type for message classes (table T100). 'MESSAGES' is kept as a
   // deprecated alias for one minor release; both resolve to the same handler. See
-  // research/abap-types/types/msag.md and docs/plans/completed/audit-symmetry-and-ftg2-rename.md.
+  // docs/research/abap-types/types/msag.md and docs/plans/completed/2026-05-08-audit-symmetry-and-ftg2-rename.md.
   { type: 'MSAG', btp: true },
   { type: 'MESSAGES', btp: true },
   { type: 'TEXT_ELEMENTS', btp: false },
@@ -95,7 +95,7 @@ const SAPREAD_TYPE_TABLE = [
   { type: 'API_STATE', btp: true },
   { type: 'INACTIVE_OBJECTS', btp: true },
   { type: 'AUTH', btp: false },
-  // FTG2 is an ARC-1-private invented identifier (see research/abap-types/types/ftg2.md).
+  // FTG2 is an ARC-1-private invented identifier (see docs/research/abap-types/types/ftg2.md).
   // FEATURE_TOGGLE is the new canonical name; FTG2 stays as deprecated alias for one minor.
   { type: 'FEATURE_TOGGLE', btp: false },
   { type: 'FTG2', btp: false },
@@ -133,7 +133,7 @@ const SAPWRITE_TYPE_TABLE = [
   // Friendly alias for Knowledge Transfer Documents; normalized to canonical SKTD at dispatch.
   { type: 'KTD', btp: true },
   { type: 'TABL', btp: true },
-  // Subtype routing for create — see docs/plans/completed/fix-tabl-ds-create-routing.md.
+  // Subtype routing for create — see docs/plans/completed/2026-05-27-fix-tabl-ds-create-routing.md.
   { type: 'TABL/DT', btp: true },
   { type: 'TABL/DS', btp: true },
   { type: 'DOMA', btp: true },

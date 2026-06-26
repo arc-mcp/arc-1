@@ -3,7 +3,7 @@
  *
  * These freeze the exact JSON that `getToolDefinitions()` emits to MCP clients across
  * every meaningful config branch. They are the headline guarantee of the handler refactor
- * (docs/plans/completed/architecture-consolidation-plan.md, Stage A1): the bytes an LLM sees must not
+ * (docs/plans/completed/2026-06-11-architecture-consolidation-plan.md, Stage A1): the bytes an LLM sees must not
  * change. Any diff here during the refactor means a behavior change slipped in — investigate,
  * do not bless the new snapshot.
  *

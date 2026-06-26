@@ -29,7 +29,7 @@ ABAP SQL as a language supports JOINs and subqueries, but the freestyle endpoint
 
 **Parser variability:** Errors like `Only one SELECT statement is allowed` or `"INTO" is invalid ...` come from endpoint parsing, not necessarily from ABAP SQL language limitations. Rewrite to one SELECT statement and remove ABAP target clauses (`INTO`, `APPENDING`, `PACKAGE SIZE`).
 
-Reference: [SAPQuery Freestyle Capability Matrix](../docs/research/sapquery-freestyle-capability-matrix.md)
+Reference: [SAPQuery Freestyle Capability Matrix](../docs/research/2026-04-21-sapquery-freestyle-capability-matrix.md)
 
 **Correct Example:**
 ```sql

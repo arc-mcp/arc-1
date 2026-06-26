@@ -46,7 +46,7 @@ export async function writeActionScaffoldRapHandlers(ctx: SapWriteContext): Prom
   //   boilerplate-heavy step that is easy to get wrong (alias case,
   //   RESULT vs no RESULT, factory/static modifiers). The activation
   //   errors for an incomplete pool are particularly unhelpful. See
-  //   docs/plans/completed/rap-onprem-agent-gap-closure.md.
+  //   docs/plans/completed/2026-04-21-rap-onprem-agent-gap-closure.md.
   if (type !== 'CLAS') {
     return errorResult('scaffold_rap_handlers is only supported for type=CLAS behavior pool classes.');
   }
@@ -264,7 +264,7 @@ export async function writeActionGenerateBehaviorImplementation(ctx: SapWriteCon
   // Reliable equivalent of Eclipse ADT's "Generate Behavior Implementation"
   // Cmd+1 quickfix; avoids the broken /sap/bc/adt/quickfixes/proposals/
   // create_class_implementation server endpoint (HTTP 500 on a4h, verified
-  // live during PR-C research). See docs/plans/add-generate-behavior-implementation.md.
+  // live during PR-C research). See docs/plans/completed/2026-05-10-add-generate-behavior-implementation.md.
   if (type !== 'CLAS') {
     return errorResult('generate_behavior_implementation is only supported for type=CLAS behavior pool classes.');
   }

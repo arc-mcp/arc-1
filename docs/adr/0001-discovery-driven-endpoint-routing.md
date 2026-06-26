@@ -77,6 +77,6 @@ Out of scope for this ADR (retain release-aware logic where structurally needed)
 ## References
 
 - Live probe data captured 2026-04-28 against `a4h.marianzeis.de:50000` (S/4HANA 2023, SAP_BASIS 758 SP02) and `npl.marianzeis.de` (NetWeaver 7.50 SP02).
-- [docs/nw750-discovery-gap-analysis.md](../nw750-discovery-gap-analysis.md) — empirical NW 7.50 endpoint inventory contributed by PR [#196](https://github.com/arc-mcp/arc-1/pull/196) author.
-- [docs/plans/discovery-driven-endpoint-routing.md](../plans/discovery-driven-endpoint-routing.md) — implementation plan (ARCH-01 / PR-δ).
+- [docs/research/2026-05-08-nw750-discovery-gap-analysis.md](../research/2026-05-08-nw750-discovery-gap-analysis.md) — empirical NW 7.50 endpoint inventory contributed by PR [#196](https://github.com/arc-mcp/arc-1/pull/196) author.
+- [docs/plans/2026-05-08-discovery-driven-endpoint-routing.md](../plans/2026-05-08-discovery-driven-endpoint-routing.md) — implementation plan (ARCH-01 / PR-δ).
 - [src/adt/discovery.ts](../../src/adt/discovery.ts), [src/adt/xml-parser.ts](../../src/adt/xml-parser.ts) `parseDiscoveryDocument`.

@@ -31,9 +31,9 @@ All `~/DEV/*` repos are **read-only references** — never modify them. If a pat
 | **The issue itself** | `gh issue view <n> --comments`; linked PRs via `gh issue view <n> --json` | The claim, the repro steps, prior maintainer replies, any linked fix attempt |
 | **ARC-1 project guide** | `CLAUDE.md`, `INFRASTRUCTURE.md` | Conventions, Key-Files map, code patterns; the **3 live systems** + how to reach them |
 | **Current HEAD code** | the cited `src/...` files (use `grep -a` — `intent.ts` contains raw NULs) | **Is it already fixed / never was as described?** Read the exact lines the issue cites before believing them |
-| **Prior issue dossiers** | `research/issues/` (e.g. `293-ecc-423-invalid-lock-handle.md`) | Duplicate? Same root cause as a solved one? Reuse the proven analysis |
-| **ARC-1 live research notes** | `docs/research/`, type-code evidence under `research/abap-types/` | Prior **live spikes & ground truth** — read first so you don't re-derive proven facts |
-| **Competitor / reference trackers** | `compare/` (esp. `compare/05-fr0ster-mcp-abap-adt.md`, `compare/01-vibing-steampunk.md`) | Did a sibling client hit the same SAP bug? Issues often cite `fr0ster`/`vibing-steampunk` precedent |
+| **Prior issue dossiers** | `docs/research/issues/` (e.g. `293-ecc-423-invalid-lock-handle.md`) | Duplicate? Same root cause as a solved one? Reuse the proven analysis |
+| **ARC-1 live research notes** | `docs/research/`, type-code evidence under `docs/research/abap-types/` | Prior **live spikes & ground truth** — read first so you don't re-derive proven facts |
+| **Competitor / reference trackers** | `docs/compare/` (esp. `docs/compare/05-fr0ster-mcp-abap-adt.md`, `docs/compare/01-vibing-steampunk.md`) | Did a sibling client hit the same SAP bug? Issues often cite `fr0ster`/`vibing-steampunk` precedent |
 | **Eclipse ADT — apidoc + contracts** | `~/DEV/arc-1-eclipse-adt/` (`com.sap.adt.core.apidoc-*`, `api/01..20-*.md`) | **Exact ADT endpoint URIs, media types, request/response contracts.** Ground truth for "what should this endpoint do" |
 | **SAP ADT language server** | `~/DEV/arc-1-lsp/` (`vendor/adt-ls`, `docs/adt-ls-*`) | How SAP's **own** server calls ADT — a second independent witness |
 | **Reference ADT-over-MCP impls** | `~/DEV/mcp-abap-adt/`, `~/DEV/mcp-abap-adt-fr0ster/` | How **others** implement the same op — and whether they fixed this exact bug |
@@ -47,7 +47,7 @@ All `~/DEV/*` repos are **read-only references** — never modify them. If a pat
 
 1. **Fetch everything** — `gh issue view <n> --comments` plus `--json title,author,labels,body,closed,stateReason` and any linked PRs/issues. Note the **author** (external contributor?), the **claimed release**, and any prior maintainer reply (don't contradict yourself across the thread).
 2. **Restate the claim** in one paragraph: what the reporter did, what happened, what they expected. Identify the SAP objects/operations and the exact ARC-1 files/endpoints cited.
-3. **Classify** — `bug` / `feature-request` / `question-or-support` / `duplicate` / `already-fixed`. A quick `grep` of `research/issues/` and open+closed issues (`gh issue list --search`) catches duplicates before you spend an hour.
+3. **Classify** — `bug` / `feature-request` / `question-or-support` / `duplicate` / `already-fixed`. A quick `grep` of `docs/research/issues/` and open+closed issues (`gh issue list --search`) catches duplicates before you spend an hour.
 
 ## Phase 2: Verify the claim (this is the work)
 
@@ -63,12 +63,12 @@ Work the sources above until the prime directive is satisfied:
 - [ ] I reproduced the issue live (or proved it does **not** reproduce), on the release(s) it names, with the response body captured
 - [ ] I read the cited HEAD code and stated what it actually does today
 - [ ] I checked the ADT contract (eclipse-adt) and ≥1 reference repo / SAP Note
-- [ ] I checked for a duplicate in `research/issues/` and open/closed issues
+- [ ] I checked for a duplicate in `docs/research/issues/` and open/closed issues
 - [ ] I know the true root cause and the per-release behavior
 
 ## Phase 3: Write the dossier
 
-Capture findings in **`research/issues/<n>-<short-slug>.md`** (the existing convention — model it on `research/issues/293-ecc-423-invalid-lock-handle.md`):
+Capture findings in **`docs/research/issues/<n>-<short-slug>.md`** (the existing convention — model it on `docs/research/issues/293-ecc-423-invalid-lock-handle.md`):
 
 - **Status** + one-line verdict (e.g. "Confirmed bug, root cause validated live 2026-06-09" / "Not reproducible on 816, likely client-side" / "Already fixed on HEAD — docs gap only" / "Duplicate of #NNN").
 - **TL;DR**, **live validation** (the `arc1-cli` commands run + observed before/after, ideally a small table), **root cause**, **affected files**, **out of scope**.
@@ -78,7 +78,7 @@ Capture findings in **`research/issues/<n>-<short-slug>.md`** (the existing conv
 
 1. **Draft the GitHub comment** — paste-able markdown in a fenced block in the dossier (as #293 does). Lead with the verdict, give the evidence, be precise and kind to the external reporter, cite Note numbers / `file:line` / releases. **Do not post it** — hand it back for the user to review and post (origin = `marianfoo`).
 2. **Recommend the next step**, explicitly:
-   - **Fix it** → "hand this dossier to `/deep-feature`" (point it at `research/issues/<n>-*.md`). For a one-file surgical fix, `/implement-feature` instead.
+   - **Fix it** → "hand this dossier to `/deep-feature`" (point it at `docs/research/issues/<n>-*.md`). For a one-file surgical fix, `/implement-feature` instead.
    - **Close** as duplicate / already-fixed / works-as-designed → the drafted comment is the closing rationale.
    - **Needs info** → the drafted comment asks the reporter for the specific missing piece (release SP, exact payload, response body).
 

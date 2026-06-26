@@ -101,8 +101,8 @@ Read `docs_page/roadmap.md`. Check whether:
 - The "Current State" feature matrix at the top needs a new row
 - Any related items should be marked as unblocked or superseded
 
-**Feature matrix (`compare/00-feature-matrix.md`)**
-Read `compare/00-feature-matrix.md`. Check whether:
+**Feature matrix (`docs/compare/00-feature-matrix.md`)**
+Read `docs/compare/00-feature-matrix.md`. Check whether:
 - The feature adds a new capability that should appear in the comparison matrix
 - An existing row needs its status updated (e.g., from ❌ to ✅)
 - The "Last Updated" date should be refreshed
@@ -134,7 +134,7 @@ Before writing any task that depends on an external surface, confirm it against 
 
 Then **cite the evidence in the plan**: a captured real ADT response saved to `tests/fixtures/xml/`, an `npm run probe` fixture, the `arc1-cli` command + its observed output, or a `docs/research/` write-up. A task that introduces or changes an ADT endpoint URL, an `objectType`/slash code, an Accept/content-type header, or an XML-response parser MUST include a step that asserts the parser against a *real* captured response — never against a hand-written fixture alone. Never reference a tool action, endpoint, or payload shape you have not confirmed exists on the target release.
 
-For a strong example of a live-verified plan, see `docs/plans/completed/add-server-driven-object-read.md` (its dated "Verified Live Evidence" block) and `docs/plans/completed/audit-purge-invented-adt-types.md` (the audit that unwound a batch of invented type codes that had shipped because nobody checked the response *content*).
+For a strong example of a live-verified plan, see `docs/plans/completed/2026-06-05-add-server-driven-object-read.md` (its dated "Verified Live Evidence" block) and `docs/plans/completed/2026-05-08-audit-purge-invented-adt-types.md` (the audit that unwound a batch of invented type codes that had shipped because nobody checked the response *content*).
 
 ### 1h. Summarize findings
 
@@ -296,7 +296,7 @@ Order tasks to minimize cross-task dependencies:
    - Published docs in `docs_page/` — `tools.md`, `architecture.md`, `security-guide.md`, `authorization.md`, `caching.md`, `cli-guide.md`, etc.
    - End-user docs — `README.md`, `docs_page/index.md`
    - `docs_page/roadmap.md` — mark items completed, add new entries, update current state matrix
-   - `compare/00-feature-matrix.md` — add/update capability rows, refresh "Last Updated"
+   - `docs/compare/00-feature-matrix.md` — add/update capability rows, refresh "Last Updated"
    - Skills in `.claude/commands/` — update existing skills that can leverage the feature, fix stale references
 7. **Final verification last** — always the last task; for object-write features it MUST activate on a live system (activation is the definitive check)
 
@@ -387,7 +387,7 @@ A good plan review catches plan-killing bugs *before* a single autonomous task r
    - [ ] **End-user docs**: Does a task update `README.md` and/or `docs_page/index.md` if the feature is user-visible?
    - [ ] **CLAUDE.md**: Does a task update the codebase structure tree, Key Files table, config table, or code patterns?
    - [ ] **Roadmap**: Does a task update `docs_page/roadmap.md` (mark completed, add entry, update current state)?
-   - [ ] **Feature matrix**: Does a task update `compare/00-feature-matrix.md` if the feature adds a new capability?
+   - [ ] **Feature matrix**: Does a task update `docs/compare/00-feature-matrix.md` if the feature adds a new capability?
    - [ ] **Skills**: Does a task update `.claude/commands/*.md` skills that reference changed behavior or could leverage the new feature?
    - [ ] **Outdated docs**: Are doc claims that no longer match code included as required fixes (and unrelated staleness as bonus items)?
 

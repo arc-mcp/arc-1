@@ -123,7 +123,7 @@ describe('SAPReadSchema', () => {
     // The JSON Schema advertises maxResults as `type: number` and the DEVC description promises
     // "clamped to [1, 1000]" — so the schema must ACCEPT these and round-trip the raw value;
     // floor + range handling is the sink's job (getPackageContents). See
-    // docs/research/maxresults-contract-asymmetry.md.
+    // docs/research/2026-06-12-maxresults-contract-asymmetry.md.
     for (const v of [0, 1001, -1, 50.5]) {
       const r = SAPReadSchema.safeParse({ type: 'DEVC', name: 'ZPKG', maxResults: v });
       expect(r.success, `maxResults ${v} should parse`).toBe(true);
@@ -240,14 +240,14 @@ describe('SAPReadSchema', () => {
   });
 
   it('still accepts deprecated FTG2 alias for one minor release', () => {
-    // Per docs/plans/completed/audit-symmetry-and-ftg2-rename.md: FTG2 was an ARC-1-invented
-    // identifier (research/abap-types/types/ftg2.md). FEATURE_TOGGLE is the new
+    // Per docs/plans/completed/2026-05-08-audit-symmetry-and-ftg2-rename.md: FTG2 was an ARC-1-invented
+    // identifier (docs/research/abap-types/types/ftg2.md). FEATURE_TOGGLE is the new
     // canonical short type, FTG2 stays as a deprecated alias for one minor.
     expect(SAPReadSchema.safeParse({ type: 'FTG2', name: 'ABC_TOGGLE' }).success).toBe(true);
   });
 
   it('accepts MSAG canonical message-class type and MESSAGES deprecated alias', () => {
-    // MSAG = TADIR R3TR truth (research/abap-types/types/msag.md). 'MESSAGES' was the
+    // MSAG = TADIR R3TR truth (docs/research/abap-types/types/msag.md). 'MESSAGES' was the
     // original ARC-1 read-side alias, kept for one minor release.
     expect(SAPReadSchema.safeParse({ type: 'MSAG', name: 'SY' }).success).toBe(true);
     expect(SAPReadSchema.safeParse({ type: 'MESSAGES', name: 'SY' }).success).toBe(true);
@@ -278,7 +278,7 @@ describe('SAPReadSchema', () => {
   });
 
   it('write enum has MSAG (canonical) — read/write symmetry guard', () => {
-    // Anti-cargo-cult guard from docs/plans/completed/audit-symmetry-and-ftg2-rename.md:
+    // Anti-cargo-cult guard from docs/plans/completed/2026-05-08-audit-symmetry-and-ftg2-rename.md:
     // every type that supports both verbs in ADT MUST be in both enums under the
     // same canonical short form. The audit found MSAG missing from the read enum.
     // This test asserts the symmetry; new types that violate it will fail loudly.

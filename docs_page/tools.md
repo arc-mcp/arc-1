@@ -59,7 +59,7 @@ Use `SAPRead` when you need exact raw source, one method body, grep output, inac
 | `DOMA` | Domain metadata (structured JSON: data type, length, fixed values, value table) |
 | `DTEL` | Data element metadata (structured JSON: type, labels, search help) |
 | `AUTH` | Authorization field metadata (structured JSON: role name, check table, domain, conversion exit, org-level info) |
-| `FEATURE_TOGGLE` | Feature toggle states (structured JSON: toggle state per system from SAP switch framework). Renamed from `FTG2` in audit Plan B (research/abap-types/types/ftg2.md) — `FTG2` still accepted as deprecated alias for one minor release with stderr warning. |
+| `FEATURE_TOGGLE` | Feature toggle states (structured JSON: toggle state per system from SAP switch framework). Renamed from `FTG2` in audit Plan B (docs/research/abap-types/types/ftg2.md) — `FTG2` still accepted as deprecated alias for one minor release with stderr warning. |
 | `ENHO` | Enhancement implementation metadata (structured JSON: BAdI technology, referenced object, implementation classes) |
 | `VERSIONS` | Revision history for an ABAP object. Returns JSON: `{ object: { name, type }, revisions: [{ id, author, timestamp, transport?, uri }] }`. Optional `include` for CLAS and `group` for FUNC. On-prem only. |
 | `VERSION_SOURCE` | Source code at a specific revision. Pass `versionUri` from a VERSIONS response. Returns raw source text. On-prem only. |
@@ -77,7 +77,7 @@ Use `SAPRead` when you need exact raw source, one method body, grep output, inac
 | `DEVC` | Package contents |
 | `SYSTEM` | System info (SID, release, kernel) |
 | `COMPONENTS` | Installed software components |
-| `MSAG` | Message class metadata (structured JSON with `number`, `shortText`, `longText` per message). `MSAG` is the canonical TADIR R3TR short type (added in audit Plan B — research/abap-types/types/msag.md). |
+| `MSAG` | Message class metadata (structured JSON with `number`, `shortText`, `longText` per message). `MSAG` is the canonical TADIR R3TR short type (added in audit Plan B — docs/research/abap-types/types/msag.md). |
 | `MESSAGES` | Deprecated alias for `MSAG`. Still accepted for one minor release with stderr warning; use `MSAG` going forward. |
 | `TEXT_ELEMENTS` | Program text elements |
 | `VARIANTS` | Program variants |
@@ -661,7 +661,7 @@ Execute ABAP SQL queries against SAP tables.
 
 ABAP SQL as a language supports JOINs and subqueries, but the freestyle endpoint parser can still reject valid-looking statements on some backend versions (for example grammar errors or single-SELECT enforcement). ARC-1 automatically chunks simple long literal `IN (...)` lists into smaller freestyle calls. If parsing still fails, simplify to one SELECT and split complex logic into staged queries.
 
-See: [SAPQuery Freestyle Capability Matrix](https://github.com/arc-mcp/arc-1/blob/main/docs/research/sapquery-freestyle-capability-matrix.md)
+See: [SAPQuery Freestyle Capability Matrix](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-04-21-sapquery-freestyle-capability-matrix.md)
 
 **Examples:**
 ```

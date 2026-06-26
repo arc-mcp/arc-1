@@ -126,7 +126,7 @@ export async function handleSAPRead(
   // action="diff": unified diff between two source versions (single system). Bypasses the
   // cache/draft machinery below on purpose — both sides must be RAW source, or the no-draft
   // banner (sourceVersionWarning) would surface as a spurious hunk.
-  // See docs/research/version-diff-saved-read-action.md.
+  // See docs/research/2026-06-15-version-diff-saved-read-action.md.
   if (args.action === 'diff') {
     if (!name) return errorResult('SAPRead action="diff" requires a "name".');
     const from = typeof args.from === 'string' && args.from ? args.from : 'active';
@@ -493,7 +493,7 @@ export async function handleSAPRead(
     case 'FTG2':
     case 'FEATURE_TOGGLE': {
       // FEATURE_TOGGLE is the canonical short type. 'FTG2' is a deprecated alias —
-      // see research/abap-types/types/ftg2.md (ARC-1-invented; zero hits in TADIR,
+      // see docs/research/abap-types/types/ftg2.md (ARC-1-invented; zero hits in TADIR,
       // abap-file-formats, Eclipse apidoc). Removed in the next minor.
       if (type === 'FTG2') {
         logger.warn('SAPRead type "FTG2" is deprecated — use "FEATURE_TOGGLE" instead', {
@@ -670,7 +670,7 @@ export async function handleSAPRead(
     case 'MSAG': {
       // MSAG is the canonical TADIR R3TR type for message classes; 'MESSAGES' is a
       // deprecated read alias kept for one minor release. See
-      // research/abap-types/types/msag.md.
+      // docs/research/abap-types/types/msag.md.
       if (type === 'MESSAGES') {
         logger.warn('SAPRead type "MESSAGES" is deprecated — use "MSAG" instead', {
           type: 'MESSAGES',

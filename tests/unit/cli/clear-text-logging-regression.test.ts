@@ -13,7 +13,7 @@
  * stderr output. If a future change introduces a real leak (e.g., adding
  * `apiKeys` to the `out` object below), one of these tests will fail.
  *
- * See also: docs/plans/codeql-alerts-clear-text-logging-triage.md
+ * See also: docs/plans/2026-05-08-codeql-alerts-clear-text-logging-triage.md
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';

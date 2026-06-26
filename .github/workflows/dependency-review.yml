@@ -2,7 +2,7 @@
 # adds a dependency with a known HIGH/CRITICAL advisory or an
 # incompatible license. Complements Dependabot (post-fact patches) by
 # catching introductions before merge. Documented in
-# docs/plans/dependency-security-tier1-foundation.md (SEC-11).
+# docs/plans/2026-05-08-dependency-security-tier1-foundation.md (SEC-11).
 
 name: Dependency Review
 

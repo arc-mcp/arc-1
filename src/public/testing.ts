@@ -2,7 +2,7 @@
 //
 // `createMockToolContext` returns a ToolContext whose `http` records every call and returns a
 // configurable body, so a plugin author can assert "my handler GETs /sap/bc/adt/… and shapes the
-// response like X" without a server. See docs/research/extension-framework-spec.md §2/§12.
+// response like X" without a server. See docs/research/2026-06-17-extension-framework-spec.md §2/§12.
 
 import type { AdtResponse } from '../adt/http.js';
 import type { SafeHttpClient } from '../server/safe-http-client.js';

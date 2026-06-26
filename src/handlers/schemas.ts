@@ -5,7 +5,7 @@
  * The JSON Schema the LLM sees is hand-written in tools.ts (NOT generated from these). Generating
  * it via z.toJSONSchema() was evaluated and rejected — the 263 LLM-facing descriptions live only in
  * tools.ts (these schemas carry ~zero .describe()), and `.transform()` fields can't be represented;
- * see docs/research/zod-to-jsonschema-spike.md. The two are kept in sync by schema-key-sync,
+ * see docs/research/2026-06-12-zod-to-jsonschema-spike.md. The two are kept in sync by schema-key-sync,
  * registry-sync, zod-jsonschema-parity, and tool-definitions-snapshot tests, not by generation.
  *
  * BTP variants exclude types not available on BTP ABAP Environment.

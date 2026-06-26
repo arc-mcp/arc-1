@@ -77,7 +77,7 @@ async function fireRequests(
         },
       );
       // Name the failing request so a transport error under full-suite load is self-diagnosing
-      // (mirrors withJsonServer.post; see docs/research/auth-rate-limit-test-flake.md).
+      // (mirrors withJsonServer.post; see docs/research/2026-06-12-auth-rate-limit-test-flake.md).
       req.on('error', (err: NodeJS.ErrnoException) =>
         reject(new Error(`GET /test request #${i + 1} failed: ${err.code ?? err.message}`)),
       );
@@ -384,7 +384,7 @@ describe('/authorize JSON-RPC dispatch (Copilot Studio MCP fix via skip())', () 
   it('post() rejects with path + request index context when the server is closed (diagnosability)', async () => {
     // The former helper rejected bare on transport errors, producing context-free fast failures
     // like the one observed full-suite flake. A closed server now yields a named rejection (and
-    // the ECONNREFUSED retry path runs once before it). See docs/research/auth-rate-limit-test-flake.md.
+    // the ECONNREFUSED retry path runs once before it). See docs/research/2026-06-12-auth-rate-limit-test-flake.md.
     const srv = await withJsonServer(buildApp(2, 10));
     await srv.close();
     await expect(srv.post('/authorize', { jsonrpc: '2.0' })).rejects.toThrow(/POST \/authorize request #\d+ failed/);

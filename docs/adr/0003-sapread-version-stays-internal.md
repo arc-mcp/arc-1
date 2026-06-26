@@ -19,7 +19,7 @@ The analysis below is preserved verbatim. Read it as a snapshot of one design op
 
 [PR #196](https://github.com/arc-mcp/arc-1/pull/196) proposes adding `version: 'active' \| 'inactive'` to `SAPReadSchema` / `SAPReadSchemaBtp`, with an early-return path in [src/handlers/intent.ts](../../src/handlers/intent.ts) that appends `?version=…` to the source URL.
 
-The pre-existing etag-and-inactive-objects plan (commit `c9ebe47`, [docs/plans/etag-conditional-get-and-inactive-objects-fix.md](../plans/etag-conditional-get-and-inactive-objects-fix.md)) explicitly excluded this surface change in Design Principle #6:
+The pre-existing etag-and-inactive-objects plan (commit `c9ebe47`, [docs/plans/completed/2026-04-28-etag-conditional-get-and-inactive-objects-fix.md](../plans/completed/2026-04-28-etag-conditional-get-and-inactive-objects-fix.md)) explicitly excluded this surface change in Design Principle #6:
 
 > **No breaking changes to the SAPRead schema.** This plan does not add a `version` parameter to the SAPRead Zod schema or tool description. The cache internally tracks versions for correctness; the surface stays exactly as today. A future plan can add the user-facing parameter if there's demand for reading inactive drafts directly.
 
@@ -53,6 +53,6 @@ ADRs that recommend declining a feature are at higher risk of being superseded b
 ## References
 
 - [PR #186](https://github.com/arc-mcp/arc-1/pull/186) — etag-validated source cache + `version` parameter (the change that superseded this ADR).
-- [docs/plans/etag-conditional-get-and-inactive-objects-fix.md](../plans/etag-conditional-get-and-inactive-objects-fix.md) — the pre-existing plan with Principle #6 (now overridden in practice).
+- [docs/plans/completed/2026-04-28-etag-conditional-get-and-inactive-objects-fix.md](../plans/completed/2026-04-28-etag-conditional-get-and-inactive-objects-fix.md) — the pre-existing plan with Principle #6 (now overridden in practice).
 - [docs_page/roadmap.md](../../docs_page/roadmap.md) FEAT-24 CompareSource (Diff) — needs to choose a non-`version` parameter name to avoid collision with the now-shipped SAPRead `version`.
 - PR [#179](https://github.com/arc-mcp/arc-1/pull/179) — SAPDiagnose `version` precedent.

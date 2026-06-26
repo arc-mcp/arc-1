@@ -9,7 +9,7 @@
 
 ## Context
 
-Three independent threats were uncovered during planning ([docs/plans/completed/layered-rate-limiting.md](../plans/completed/layered-rate-limiting.md)):
+Three independent threats were uncovered during planning ([docs/plans/completed/2026-05-27-layered-rate-limiting.md](../plans/completed/2026-05-27-layered-rate-limiting.md)):
 
 1. **SAP backend overload.** The pre-existing `Semaphore` ([src/adt/semaphore.ts](../../src/adt/semaphore.ts)) was constructed **per `AdtClient`** at [src/adt/client.ts:183](../../src/adt/client.ts:183). With principal propagation enabled, `createPerUserClient` builds a fresh `AdtClient` per MCP request → 100 active PP users gave 100 × `ARC1_MAX_CONCURRENT` concurrent SAP requests, not the documented total. An LLM-driven developer fires tool calls every 1–3 s with batch bursts; the aggregate request rate from 100 ARC-1 users can be 10–50× that of 100 Eclipse users. The same SAP dialog-work-process pool absorbs both.
 
@@ -94,6 +94,6 @@ Rejected for v1. Single retry with `Retry-After` honoring already gives graceful
 ## References
 
 - [Rate Limiting Guide](../../docs_page/rate-limiting.md) — operator-facing guide
-- [docs/plans/completed/layered-rate-limiting.md](../plans/completed/layered-rate-limiting.md) — implementation plan
+- [docs/plans/completed/2026-05-27-layered-rate-limiting.md](../plans/completed/2026-05-27-layered-rate-limiting.md) — implementation plan
 - [docs_page/roadmap.md#sec-05](../../docs_page/roadmap.md#sec-05) — original roadmap entry
 - [PR #212](https://github.com/arc-mcp/arc-1/pull/212) — stateless DCR (the design we preserve by going per-instance)

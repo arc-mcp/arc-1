@@ -96,7 +96,7 @@ export const CATALOG: CatalogEntry[] = [
     // returns HTTP 500 and /ddic/views/{name}/source/main returns HTTP 404.
     // Only /sap/bc/adt/vit/wb/object_type/viewdv/object_name/{name} returns
     // 200 (with metadata XML — VIEW does not expose a /source/main
-    // sub-resource). See research/abap-types/types/view.md and PR #223.
+    // sub-resource). See docs/research/abap-types/types/view.md and PR #223.
     collectionUrl: '/sap/bc/adt/vit/wb/object_type/viewdv',
     objectUrlTemplate: '/sap/bc/adt/vit/wb/object_type/viewdv/object_name/{name}',
     knownObjects: ['V_USR_NAME'],
@@ -182,7 +182,7 @@ export const CATALOG: CatalogEntry[] = [
     note: 'Authorization field read — may require newer ICF activation',
   },
   {
-    // FEATURE_TOGGLE — was 'FTG2' before audit Plan B (research/abap-types/types/ftg2.md).
+    // FEATURE_TOGGLE — was 'FTG2' before audit Plan B (docs/research/abap-types/types/ftg2.md).
     // FTG2 was an ARC-1-private invented identifier (zero hits in TADIR /
     // abap-file-formats / Eclipse apidoc 3.58.1). The endpoint is real; only the
     // short name was renamed. 'FTG2' still routes here at the SAPRead handler with a

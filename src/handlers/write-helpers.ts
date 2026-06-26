@@ -400,7 +400,7 @@ export function buildCreateXml(
     case 'TABL/DS': {
       // Bare TABL is the legacy alias for TABL/DT (transparent table). The same
       // <blue:blueSource> envelope works for both subtypes — only adtcore:type
-      // and the POST URL differ. See docs/plans/completed/fix-tabl-ds-create-routing.md.
+      // and the POST URL differ. See docs/plans/completed/2026-05-27-fix-tabl-ds-create-routing.md.
       const adtType = type === 'TABL/DS' ? 'TABL/DS' : 'TABL/DT';
       return `<?xml version="1.0" encoding="UTF-8"?>
 <blue:blueSource xmlns:blue="http://www.sap.com/wbobj/blue"

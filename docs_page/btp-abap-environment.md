@@ -610,4 +610,4 @@ To serve several ABAP systems across subaccounts from a single ARC-1 instance, u
 
 ## Architecture Details
 
-For the research report covering authentication options, competitor analysis, and design decisions, see [btp-abap-environment-connectivity.md](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/completed/btp-abap-environment-connectivity.md) in the repo.
+For the research report covering authentication options, competitor analysis, and design decisions, see [btp-abap-environment-connectivity.md](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/completed/2026-04-01-btp-abap-environment-connectivity.md) in the repo.

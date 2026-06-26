@@ -141,7 +141,7 @@ const DTEL_MAX_LABEL_LENGTHS = {
  * (SAP doc ABENORIGINAL_LANGU_GUIDL; SAP Note 727896). ARC-1 already sends that
  * as the `sap-language` URL param; this keeps the create-XML body consistent so
  * DDIC texts (DD04T/DD01T) are filed under the correct language. See issue #343
- * and docs/research/issue-343-masterlanguage-on-create.md.
+ * and docs/research/2026-06-04-issue-343-masterlanguage-on-create.md.
  */
 export function normalizeAdtLanguage(language?: string): string {
   return (language ?? '').trim().toUpperCase() || 'EN';
@@ -284,7 +284,7 @@ export interface TableTypeCreateParams {
  * `<ttyp:rowType>` children are XSD-required IN ORDER — typeKind, typeName, builtInType, rangeType.
  * Built-in row → predefinedAbapType + builtInType.dataType=<builtin>; structure row → dictionaryType +
  * typeName=<struct> + builtInType.dataType=STRU. Standard table, non-unique standard key (advanced
- * options not yet exposed). See research/abap-types/types/ttyp.md.
+ * options not yet exposed). See docs/research/abap-types/types/ttyp.md.
  */
 export function buildTableTypeXml(params: TableTypeCreateParams): string {
   const masterLanguage = normalizeAdtLanguage(params.language);
@@ -294,7 +294,7 @@ export function buildTableTypeXml(params: TableTypeCreateParams): string {
   // rowTypeKind). It must not gate an EXPLICIT rowTypeKind: SAP adds built-in types over releases
   // (e.g. UTCLONG in 7.54), so allow-listing them and throwing on a miss would reject a valid type
   // ARC-1 simply hasn't enumerated. When rowTypeKind is given we trust it and let SAP be the
-  // authority (it rejects a genuinely wrong type). See the UTCLONG case in research/abap-types/types/ttyp.md.
+  // authority (it rejects a genuinely wrong type). See the UTCLONG case in docs/research/abap-types/types/ttyp.md.
   const kind = params.rowTypeKind ?? (TTYP_BUILTIN_ROW_TYPES.has(rowType) ? 'builtin' : 'structure');
   if (!TTYP_ROW_TYPE_NAME_RE.test(rowType)) {
     throw new Error(

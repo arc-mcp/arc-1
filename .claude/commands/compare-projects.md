@@ -4,7 +4,7 @@ Evaluate all competing SAP ADT/MCP projects against ARC-1 for new features, bug 
 
 ## Instructions
 
-For each project in the `compare/` folder, perform the following checks:
+For each project in the `docs/compare/` folder, perform the following checks:
 
 ### 1. Check Recent Activity
 For each repository, fetch the latest commits and releases:
@@ -30,13 +30,13 @@ For each new change since the last update (check the `_Last updated` date in eac
 3. **Is it a pattern improvement?** → Review if ARC-1's implementation can benefit
 
 ### 3. Update Documents
-For each project document (`compare/01-*.md` through `compare/07-*.md`):
+For each project document (`docs/compare/01-*.md` through `docs/compare/07-*.md`):
 - Update the `## Changelog & Relevance Tracker` table with new entries
 - Update the `_Last updated` date
 - If a new feature was found, add it to the appropriate "Features This Project Has That ARC-1 Lacks" table
 
 ### 4. Update Feature Matrix
-Update `compare/00-feature-matrix.md` if any project added new capabilities.
+Update `docs/compare/00-feature-matrix.md` if any project added new capabilities.
 
 ### 5. Update Priority Action Items
 Review and re-prioritize the action items at the bottom of `00-feature-matrix.md` based on:

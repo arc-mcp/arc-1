@@ -1606,7 +1606,7 @@ describe('AdtHttpClient', () => {
   //
   // Verifies the lazy reload state machine: persistent 401 in cookie-auth
   // mode clears the cookie jar and re-reads the configured cookieFile on
-  // the NEXT request, with no restart. See docs/plans/pr-alpha-cookie-hot-reload.md
+  // the NEXT request, with no restart. See docs/plans/2026-05-08-pr-alpha-cookie-hot-reload.md
   // and docs/adr/0001-discovery-driven-endpoint-routing.md (architectural context).
 
   describe('cookie hot-reload', () => {

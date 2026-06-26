@@ -1093,7 +1093,7 @@ describe('AdtClient', () => {
 
     it('floors a fractional maxResults and falls back to default on NaN (no float reaches the URL)', async () => {
       // SAPReadSchema now accepts any number (the advertised `type: number` contract); flooring +
-      // range handling is this sink's job — see docs/research/maxresults-contract-asymmetry.md.
+      // range handling is this sink's job — see docs/research/2026-06-12-maxresults-contract-asymmetry.md.
       // NOTE: 'maxResults=50' is a SUBSTRING of the un-floored 'maxResults=50.5', so each row also
       // pins the absence of the raw input — without that, the toContain is vacuous for floats.
       const client = createClient();
@@ -1422,7 +1422,7 @@ describe('AdtClient', () => {
 
     it('floors a fractional maxResults into the freestyle rowNumber (no float reaches the URL)', async () => {
       // SAPSearch tadir_lookup source=db|both reaches this sink; SAPSearchSchema accepts any number,
-      // so flooring must happen here — see docs/research/maxresults-contract-asymmetry.md.
+      // so flooring must happen here — see docs/research/2026-06-12-maxresults-contract-asymmetry.md.
       mockTadirPost([{ pgmid: 'R3TR', object: 'DDLS', obj_name: 'ZA', devclass: 'ZPKG' }]);
       const client = createClient();
       await client.lookupObjectsViaDb(['ZA'], { maxResults: 50.5 });

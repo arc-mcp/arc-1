@@ -893,7 +893,7 @@ describe('ADT Integration Tests', () => {
     });
 
     it('reads feature toggle state (FEATURE_TOGGLE) when available', async (ctx) => {
-      // Renamed from FTG2 in audit Plan B (research/abap-types/types/ftg2.md). The
+      // Renamed from FTG2 in audit Plan B (docs/research/abap-types/types/ftg2.md). The
       // endpoint is unchanged: /sap/bc/adt/sfw/featuretoggles/<name>/states.
       const toggleName = process.env.TEST_FEATURE_TOGGLE || 'SAP_PARA_DCFK_SUPP_GENERAL';
       try {
@@ -912,7 +912,7 @@ describe('ADT Integration Tests', () => {
     });
 
     it('reads message class via MSAG canonical type (audit Plan B)', async () => {
-      // MSAG was added to SAPREAD_TYPES_* by docs/plans/completed/audit-symmetry-and-ftg2-rename.md.
+      // MSAG was added to SAPREAD_TYPES_* by docs/plans/completed/2026-05-08-audit-symmetry-and-ftg2-rename.md.
       // Endpoint /sap/bc/adt/messageclass/{name} verified live (2026-05-08) on:
       //   - a4h S/4HANA 2023 (returns adtcore:type="MSAG/N")
       //   - npl NW 7.50 SP02 (returns adtcore:type="MSAG/N")

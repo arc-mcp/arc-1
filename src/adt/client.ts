@@ -229,7 +229,7 @@ export function clampSearchResults(requested: number | undefined, fallback: numb
  *  out-of-range value ever reaches a SAP URL regardless of which tool supplied it. Mirrors
  *  `clampSearchResults` and diagnostics' `clampMaxResults`. The tool schemas advertise `maxResults`
  *  as `type: number` and SAPRead promises "clamped to [1, 1000]"; this is where that promise is
- *  kept (see docs/research/maxresults-contract-asymmetry.md). */
+ *  kept (see docs/research/2026-06-12-maxresults-contract-asymmetry.md). */
 function clampUrlLimit(requested: number | undefined, fallback: number): number {
   if (requested === undefined || !Number.isFinite(requested)) return fallback;
   return Math.max(1, Math.min(1000, Math.floor(requested)));
@@ -726,7 +726,7 @@ export class AdtClient {
    * attributes). Returning that XML as `source` is consistent with the
    * SourceReadResult contract; structured parsing is out of scope here.
    *
-   * See research/abap-types/types/view.md and PR #222 follow-up.
+   * See docs/research/abap-types/types/view.md and PR #222 follow-up.
    */
   async getView(name: string, opts?: SourceReadOptions): Promise<SourceReadResult> {
     checkOperation(this.safety, OperationType.Read, 'GetView');
@@ -1323,7 +1323,7 @@ export class AdtClient {
    * silently ignores `packageName` and returns ~1000 unrelated packages.
    * That bug caused `allowedPackages` `X/**` rules to silently over-grant
    * writes to unrelated packages. See
-   * `docs/research/package-subtree-endpoints.md` for the comparative analysis.
+   * `docs/research/2026-05-28-package-subtree-endpoints.md` for the comparative analysis.
    *
    * Backs the `allowedPackages` subtree-rule (`ZFOO/**`) safety gate, so any
    * failure (network, 4xx/5xx, parse) is surfaced as an exception, NEVER as

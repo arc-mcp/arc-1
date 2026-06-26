@@ -1,5 +1,5 @@
 // Public extension API types (@experimental — may break in any release; gated by `apiVersion`).
-// See docs/research/extension-framework-spec.md §2.
+// See docs/research/2026-06-17-extension-framework-spec.md §2.
 
 import type { ZodTypeAny } from 'zod';
 import type { AdtClient } from '../adt/client.js';

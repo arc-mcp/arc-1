@@ -1,5 +1,5 @@
 // Plugin loader — loads local trusted extensions listed in ARC1_PLUGINS and registers their
-// Custom_* tools into the ToolRegistry. FEAT-61 PR3. See docs/research/extension-framework-spec.md §7.
+// Custom_* tools into the ToolRegistry. FEAT-61 PR3. See docs/research/2026-06-17-extension-framework-spec.md §7.
 //
 // A plugin is a LOCAL file (no npm). Each `ARC1_PLUGINS` entry is an absolute path to a `.js`
 // module whose default export is a `Plugin`. Loading is fail-fast: a malformed plugin, an

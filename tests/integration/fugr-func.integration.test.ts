@@ -1,7 +1,7 @@
 /**
  * Integration test for FUGR + FUNC create/update/delete lifecycle.
  *
- * Exercises the verified live ADT recipe (issue #250 / docs/plans/add-func-fugr-create-write.md):
+ * Exercises the verified live ADT recipe (issue #250 / docs/plans/completed/2026-05-09-add-func-fugr-create-write.md):
  *   create FUGR → create FM → lock → write source → unlock → activate → delete FM → delete FUGR
  *
  * Cleans up via try/finally + retryDelete. NPL 7.50 lock-handle 423 issues are
