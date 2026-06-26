@@ -29,9 +29,10 @@ const BUDGETS = {
   // Stage D split into src/handlers/write/{create,update-delete,class-surgery,rap}.ts. The action
   // submodules ride the default src budget; keep this tight so the dispatcher can't reabsorb them.
   'src/handlers/write.ts': 360,
-  // tools.ts holds every tool's JSON schema; FEAT-65 (TTYP) + set_api_state's contract/apiState params
-  // + the SAPDiagnose trace_* + odata_perf/cds_sql + sql_trace_* actions nudged it up. Trim before raising.
-  'src/handlers/tools.ts': 1790,
+  // tools.ts holds every tool's JSON schema. The #520 description trim (write-mode tools/list
+  // 87→66 KB to clear the Copilot-for-Eclipse gateway limit) shrank it; lowered to match. The
+  // CLIENT-SAFETY size guard is scripts/ci/check-tool-schema-budget.ts — trim there before raising this.
+  'src/handlers/tools.ts': 1700,
   'src/adt/xml-parser.ts': 1650,
   // diagnostics.ts gained the ABAP trace-request engine (#508) + the OData perf probe + CDS Show-SQL (#509)
   // + ST05 SQL-trace control (#510). Split out a perf/trace module if it grows much further.

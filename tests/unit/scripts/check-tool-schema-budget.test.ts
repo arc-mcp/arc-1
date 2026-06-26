@@ -49,6 +49,30 @@ describe('check-tool-schema-budget', () => {
     });
   });
 
+  it('flags the hard wire-byte walls as WALL offenders (issue #520 client-safety guard)', () => {
+    const scenario: ToolSchemaScenario = {
+      name: 'tiny-wire-wall',
+      config: DEFAULT_CONFIG,
+      textSearchAvailable: true,
+      budget: {
+        // Token budgets generous so only the wire walls trip.
+        schemaTokenEstimate: 1_000_000,
+        descriptionTokenEstimate: 1_000_000,
+        descriptionCount: 1_000_000,
+        maxTotalWireBytes: 1,
+        maxPerToolWireBytes: 1,
+      },
+    };
+
+    const { measurements, offenders } = checkToolSchemaBudgets([scenario]);
+    const metrics = offenders.map((offender) => offender.metric);
+    expect(metrics).toContain('maxTotalWireBytes');
+    expect(metrics).toContain('maxPerToolWireBytes');
+    const report = formatToolSchemaBudgetReport(measurements, offenders);
+    expect(report).toContain('WALL');
+    expect(report).toContain('CLIENT-SAFETY WALLS');
+  });
+
   it('reports every metric that exceeds a scenario budget', () => {
     const scenario: ToolSchemaScenario = {
       name: 'tiny-budget',
@@ -70,6 +94,6 @@ describe('check-tool-schema-budget', () => {
       'descriptionCount',
     ]);
     expect(report).toContain('tiny-budget.schemaTokenEstimate');
-    expect(report).toContain('Trim tool descriptions/schema payload');
+    expect(report).toContain('trim tool descriptions/schema payload');
   });
 });

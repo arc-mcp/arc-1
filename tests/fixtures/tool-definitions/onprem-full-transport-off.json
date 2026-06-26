@@ -1,7 +1,7 @@
 [
   {
     "name": "SAPRead",
-    "description": "Read SAP ABAP objects. Use SAPRead when you need exact raw source, a specific method body, grep output, inactive drafts, revision history, or metadata. For \"what does this object do?\", object explanation, spec work, reviews, or pre-change orientation, prefer SAPContext first because it returns intent-level context before raw source. Types: PROG, CLAS, INTF, FUNC, FUGR (use expand_includes=true to get all include sources), INCL, DDLS, DCLS (CDS access controls), DDLX (CDS metadata extensions — UI annotations), BDEF, SRVD, SRVB (service bindings — returns structured binding info: OData version, publish status, service definition ref), SKTD/KTD (Knowledge Transfer Documents — Markdown documentation attached to KTD-capable ABAP objects like DDLS, BDEF, SRVD, SRVB, and packages; KTD is a friendly alias for SKTD), TABL (DDIC TABL — covers transparent tables like T000 AND DDIC structures like BAPIRET2; returns CDS-like source. ARC-1 auto-resolves the URL: tries /sap/bc/adt/ddic/tables/ first, falls back to /sap/bc/adt/ddic/structures/. Note: there is no separate STRU type — TABL is the canonical short type for both, mirroring TADIR R3TR TABL and abapGit conventions), VIEW, DOMA (DDIC domains — returns type info, value table, fixed values), DTEL (data elements — returns domain, labels, search help), TRAN (transaction codes — returns description, program, package), TABLE_CONTENTS (simple row preview — no filter or single-column filter; use TABLE_QUERY for multi-column WHERE), TABLE_QUERY (structured multi-column query on DDIC tables and CDS views via the freestyle endpoint — supports AND conditions, column selection; gated by allowDataPreview; use instead of TABLE_CONTENTS when filtering on multiple fields. Note: CDS views require SAP_BASIS 752+ — NW 7.50/7.51 rejects them with \"TABLE is invalid here\"), DEVC, SOBJ (BOR business objects — returns method catalog or full implementation), SYSTEM, COMPONENTS, MSAG (message classes — returns class metadata + messages array), TEXT_ELEMENTS, VARIANTS. For CLAS: omit include to get the full class source (definition + implementation combined). The include param is optional — use it only to read class-local sections: definitions (local types), implementations (local helper classes), macros, testclasses (ABAP Unit). For CLAS with method param: use method=\"*\" to list all methods with signatures and visibility, or method=\"method_name\" to read a single method implementation (95% fewer tokens than full source). For SOBJ: returns BOR method catalog; use method param to read a specific method implementation. BSP (deployed UI5/Fiori apps — list apps, browse files, read content; use name to browse app structure, include for subfolder or file), BSP_DEPLOY (query deployed UI5 apps via ABAP Repository OData Service — returns name, package, description). API_STATE (API release state — checks if an object is released for ABAP Cloud / S/4HANA Clean Core; returns contract states C0-C4, successor info; use objectType param for non-class objects). INACTIVE_OBJECTS (list all objects pending activation — no name param needed; use before SAPActivate batch_activate to see what needs activating). AUTH (Authorization Fields — returns check table, domain, conversion exit, org-level flags; on-prem only). FEATURE_TOGGLE (Feature Toggles — returns current toggle state per system from SAP switch framework; on-prem only). ENHO (Enhancement Implementations / BAdI — returns technology type, referenced enhancement object, and BAdI implementations with implementing classes; on-prem only). VERSIONS (list revision history of an object — returns JSON with object metadata and revisions [{id, author, timestamp, versionTitle?, transport?, uri}]; pass optional include for CLAS or group for FUNC; on-prem only and may return 404 for some DDIC types on non-S/4 backends). VERSION_SOURCE (fetch source at a specific revision URI from VERSIONS response; returns raw source text; on-prem only). Optional grep parameter: pass a case-insensitive regex to return only matching source lines (+context, with line numbers) instead of the full object — token-efficient search across source-bearing types; for CLAS, matches are annotated with the owning class/method. Optional version parameter (default \"active\"): set to \"inactive\" to read the user's unactivated draft, or \"auto\" for the developer view. Active reads include a note when an inactive draft exists.",
+    "description": "Read SAP ABAP objects — exact raw source, a method body, grep output, inactive drafts, revision history, or metadata. For \"what does this object do?\", explanations, spec work, reviews, or pre-change orientation, prefer SAPContext first (intent-level context before raw source). Types: PROG, CLAS, INTF, FUNC, FUGR (expand_includes=true for all include sources), INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD (KTD aliases SKTD), TABL (covers both transparent tables AND DDIC structures — no separate STRU type), VIEW, DOMA, DTEL, TRAN, TABLE_CONTENTS (single-column filter), TABLE_QUERY (multi-column WHERE via the freestyle endpoint; gated by allowDataPreview; CDS views need SAP_BASIS 752+), DEVC, SOBJ (BOR — method param reads one method), SYSTEM, COMPONENTS, MSAG, TEXT_ELEMENTS, VARIANTS, BSP, BSP_DEPLOY, API_STATE (contract states C0-C4; objectType for non-class), INACTIVE_OBJECTS (no name; pending-activation list), AUTH, FEATURE_TOGGLE, ENHO, VERSIONS, VERSION_SOURCE. AUTH/FEATURE_TOGGLE/ENHO/VERSIONS/VERSION_SOURCE are on-prem only. CLAS: omit include for the full source; include=definitions|implementations|macros|testclasses reads a local section; method=\"*\" lists all method signatures, method=\"NAME\" reads one body (95% fewer tokens). Full per-type detail: docs_page SAPRead. Optional grep: case-insensitive regex returning only matching source lines (+context, line numbers); for CLAS, matches are annotated with the owning class/method. Optional version parameter (default \"active\"): \"inactive\" reads the user's draft, \"auto\" the developer view. Active reads note when an inactive draft exists.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -185,7 +185,7 @@
   },
   {
     "name": "SAPSearch",
-    "description": "Search for ABAP objects, exact object-directory entries, or source code. Three modes:\n1. Object search (default): Search by name pattern with wildcards (* for any characters). Returns object type, name, package, description, and ADT URI. Use this to find classes, programs, function modules, tables, etc.\n2. TADIR lookup (searchType=\"tadir_lookup\"): Exact cross-package object lookup for one or more names via ADT repository quick search. Use this before create/reset workflows instead of long SAPQuery TADIR IN-lists.\n3. Source code search (searchType=\"source_code\"): Full-text search within ABAP source code across the system. Use this to find all objects containing a specific string (e.g., a method call, variable name, or class reference). Requires SAP_BASIS >= 7.51.\n\nTips: BOR business objects appear as SOBJ type in results. The uri field from results can be used directly with SAPNavigate for references. The objectType field from results can be passed directly to SAPRead/SAPWrite/SAPActivate (ARC-1 auto-normalizes slash suffixes like DDLS/DF, CLAS/OC, PROG/P).\n\nNote: Searches object names only (classes, tables, CDS views, etc.) — field/column names are not searchable here. To find fields by name, use SAPRead(type='DDLS', include='elements') for CDS views or SAPQuery against DD03L.",
+    "description": "Search for ABAP objects, exact object-directory entries, or source code. Modes:\n1. Object search (default): name pattern with wildcards (*); returns type, name, package, description, ADT URI.\n2. TADIR lookup (searchType=\"tadir_lookup\"): exact cross-package lookup of one or more names (prefer over long SAPQuery TADIR IN-lists).\n3. Source code search (searchType=\"source_code\"): full-text search across source (SAP_BASIS ≥ 7.51).\nTips: BOR objects appear as SOBJ; the uri field feeds SAPNavigate, objectType feeds SAPRead/SAPWrite/SAPActivate. Searches object NAMES only — for field names use SAPRead(type='DDLS', include='elements') or SAPQuery on DD03L.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -245,7 +245,7 @@
   },
   {
     "name": "SAPWrite",
-    "description": "MINIMAL PAYLOAD — send ONLY the fields your action+type needs; do NOT add unrelated optional fields. Sending empty strings, null, or placeholder values for fields that do not apply to your object type (e.g. typeKind/odataVersion/length/signExists on a CDS or class write) just adds noise — omit them entirely. Typical field sets: a source object (CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, TABL — plus PROG, INCL, FUNC on-prem) needs only {action, type, name, source}; delete needs only {action, type, name}; DOMA/DTEL/MSAG/SRVB need {action, type, name} plus that type's own DDIC fields; FUNC also needs group. Do NOT send `include` unless type=CLAS, and do NOT send DDIC/metadata fields (dataType, length, decimals, signExists, lowercase, typeKind, domainName, odataVersion, category, version, labels, …) on a source-object or delete call. Create or update ABAP source code and DDIC metadata. Handles lock/modify/unlock automatically. Supports PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD, TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Type codes are auto-normalized and case-insensitive (e.g., \"CLAS/OC\" → \"CLAS\"). For delete, only type and name are required (plus optional transport); other fields are ignored. Optional fields may be omitted entirely — do not send empty strings or null to \"skip\" a field; irrelevant ones are ignored. For CLAS update, pass include=\"definitions\"|\"implementations\"|\"macros\"|\"testclasses\" to update that local include natively; omit include to update source/main. TABL uses source-based writes via /source/main (define table syntax), similar to DDLS/BDEF/SRVD. TABL create: bare \"TABL\" or \"TABL/DT\" → transparent table (16-char name limit); \"TABL/DS\" → DDIC structure (30-char limit, accepts namespaces like /LEOWM/X). Update/delete/activate discover subtype via SAP search, so the slash form is optional there. DOMA/DTEL use metadata XML writes (not /source/main): provide DDIC fields like dataType, length, fixedValues, typeKind, labels, searchHelp. MSAG (message classes) use metadata XML writes: provide \"messages\" array with {number, shortText} entries. Create empty then update, or provide messages at creation. SRVB (service bindings) use metadata XML writes: provide serviceDefinition (SRVD name), odataVersion (\"V2\"/\"V4\"), optional category (0=UI, 1=Web API). bindingType accepts human-readable values like \"ODataV4-UI\" which are auto-normalized. SKTD/KTD (Knowledge Transfer Documents, Markdown docs attached to a KTD-capable ABAP object; KTD is a friendly alias for SKTD): create requires refObjectType (parent ADT type+subtype, e.g., \"DDLS/DF\", \"BDEF/BDO\", \"SRVD/SRV\", \"SRVB/SVB\", \"DEVC/K\"). Do not use CLAS/OC, INTF/OI, or PROG/P; use ABAP Doc for code objects. A KTD inherits the name of the object it documents — so \"name\" MUST equal the parent object name (one KTD per object; refObjectName defaults to name and cannot differ). Update takes Markdown in \"source\"; delete uses the ADT deletion framework (two-step check/delete). Follow creates/updates with SAPActivate(type=\"SKTD\", name=\"...\"). FUGR (function groups): create with package; serves as the parent container for FUNC. Delete the FUGR after deleting all its FMs. FUNC (function modules): require \"group\" parameter — the parent FUGR must exist (create it first via SAPWrite type=FUGR). Pass structured `parameters` array to manage FM signatures (IMPORTING/EXPORTING/CHANGING/TABLES/EXCEPTIONS/RAISING). Example: parameters=[{kind:\"importing\",name:\"IV_X\",type:\"STRING\",byValue:true},{kind:\"exporting\",name:\"EV_Y\",type:\"STRING\",byValue:true},{kind:\"raising\",name:\"CX_ROOT\"}]. Use SAPRead(type=FUNC, includeSignature=true) to read parameters back as structured JSON. SAPGUI-style *\"...IMPORTING...\"* parameter comment blocks in source are stripped before PUT as defense-in-depth (SAP rejects them with FUNC_ADT028); a warning is appended in that case. For edit_method: surgically replace a single method body in a CLAS without sending the full class source. Provide just the new method implementation code in \"source\" — 95% fewer tokens than full-class updates. For local handler classes inside a class include (RAP behavior pools, local helpers, test classes), pass the qualified specifier \"lhc_project~approve_project\" — ARC-1 routes the read+write to /includes/implementations automatically. Auto-detection prefixes: lhc_*/lcl_* → implementations, ltc_* → testclasses. Override with include=\"definitions\"|\"implementations\"|\"macros\"|\"testclasses\" for explicit control. Global-interface methods like \"zif_order~create\" continue to use /source/main. For batch_create: create and activate multiple objects in a single call — ideal for RAP stacks (TABL → DDLS → DCLS → BDEF → SRVD). Pass \"objects\" array with dependency order. For scaffold_rap_handlers: derive missing RAP behavior handler signatures from an interface BDEF and optionally create missing lhc_* skeletons plus inject declarations and empty implementation stubs into an existing behavior pool class. For generate_behavior_implementation: one-shot RAP behavior pool — auto-discover the bound BDEF via class metadata (rootEntityRef), scaffold every required handler (creating lhc_<alias> skeletons when missing), write under one lock, and (by default) activate. Reliable equivalent of Eclipse ADT's \"Generate Behavior Implementation\" Cmd+1 quickfix without the broken /sap/bc/adt/quickfixes/proposals/.../create_class_implementation server endpoint. Server-driven objects (ABAP Platform 2025 / SAP_BASIS 8.16+, discovery-gated): DESD (CDS Logical External Schema), DTSC (CDS Static Cache), CSNM (CSN Model), EVTB (RAP Event Binding), EVTO (RAP Event Object), COTA (Communication Target). For these, create/update/delete operate on the generic AFF blue:blueSource object — pass the AFF JSON in \"source\" (e.g. {\"formatVersion\":\"1\",\"header\":{...}}); create leaves the object inactive, so follow with SAPActivate. On pre-8.16 systems these types return a clean \"requires SAP_BASIS 8.16+\" error. Write access is restricted to packages: $TMP.",
+    "description": "MINIMAL PAYLOAD — send ONLY the fields your action+type needs; do NOT add unrelated optional fields. Sending empty strings, null, or placeholder values for fields that do not apply to your object type (e.g. typeKind/odataVersion/length/signExists on a CDS or class write) just adds noise — omit them entirely. Typical field sets: a source object (CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, TABL — plus PROG, INCL, FUNC on-prem) needs only {action, type, name, source}; delete needs only {action, type, name}; DOMA/DTEL/MSAG/SRVB need {action, type, name} plus that type's own DDIC fields; FUNC also needs group. Do NOT send `include` unless type=CLAS, and do NOT send DDIC/metadata fields (dataType, length, decimals, signExists, lowercase, typeKind, domainName, odataVersion, category, version, labels, …) on a source-object or delete call. Create or update ABAP source code and DDIC metadata. Handles lock/modify/unlock automatically. Supports PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD, TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Type codes are auto-normalized and case-insensitive (e.g., \"CLAS/OC\" → \"CLAS\"). For delete, only type and name are required (plus optional transport). Source objects (PROG/CLAS/INTF/DDLS/DCLS/DDLX/BDEF/SRVD/TABL/INCL) write via /source/main. CLAS update: pass include=definitions|implementations|macros|testclasses to write a local include; omit for source/main. TABL create: \"TABL\"/\"TABL/DT\" → transparent table (16-char name); \"TABL/DS\" → structure (30-char, namespaces OK); update/delete/activate auto-discover the subtype. Metadata-XML writes (not /source/main): DOMA/DTEL (dataType, length, fixedValues, typeKind, labels, searchHelp); MSAG (messages array of {number, shortText}); SRVB (serviceDefinition, odataVersion V2/V4, optional category 0=UI/1=Web API; bindingType like \"ODataV4-UI\" auto-normalized). SKTD/KTD (Markdown docs on a KTD-capable object; KTD aliases SKTD): create needs refObjectType (parent type+subtype, e.g. \"DDLS/DF\"); \"name\" MUST equal the parent name; update takes Markdown in source; then SAPActivate(type=\"SKTD\"). FUNC: require \"group\" (parent FUGR must exist — create it first); pass structured `parameters` for the signature (read back via SAPRead includeSignature=true). edit_method: replace one CLAS method body via source (95% fewer tokens than full-class). Local-class methods use the qualified specifier (e.g. \"lhc_project~approve_project\"); auto-routing: lhc_*/lcl_* → implementations, ltc_* → testclasses (override with include=); zif_*~* stays on /source/main. batch_create: create+activate multiple objects in dependency order via the \"objects\" array (RAP stacks TABL→DDLS→DCLS→BDEF→SRVD). scaffold_rap_handlers / generate_behavior_implementation: derive RAP behavior-pool handlers from the BDEF (the latter auto-discovers the BDEF via rootEntityRef and activates by default). Server-driven objects (SAP_BASIS 8.16+, discovery-gated): DESD, DTSC, CSNM, EVTB, EVTO, COTA — create/update/delete with AFF JSON in \"source\", then SAPActivate; pre-8.16 returns a clean \"requires 8.16+\" error. Full per-type field reference: docs_page SAPWrite.  Write access is restricted to packages: $TMP.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -265,7 +265,7 @@
             "scaffold_rap_handlers",
             "generate_behavior_implementation"
           ],
-          "description": "Write action. edit_method: surgically replace a single method body (requires type=CLAS, method, and source params). Class-section surgery actions (issue #303, type=CLAS only) target a global class without re-sending /source/main: edit_class_definition without include= replaces the global DEFINITION block (caller passes the new block via source; ARC-1 refuses if the diff would leave the class non-activatable — e.g. added concrete method without IMPL stub — and suggests add_method/delete_method instead); edit_class_definition with include= whole-replaces that class-local include (CCDEF/CCIMP/macros/testclasses) and auto-creates the include first if missing; add_method atomically inserts a METHODS clause AND empty METHOD/ENDMETHOD stub (caller passes the METHODS clause via method, optional visibility=public|protected|private, optional abstract=true to skip the stub); edit_method_signature replaces one method's METHODS clause via the source param (no IMPL changes); delete_method removes both the DEFINITION clause and METHOD/ENDMETHOD body atomically — WARNING: this is destructive (it discards the method body). To change a method's visibility/section, use change_method_visibility (NOT delete_method + add_method, which would discard the body). change_method_visibility moves a method between PUBLIC/PROTECTED/PRIVATE sections (requires method=NAME and visibility=target); it touches only the DEFINITION, so the IMPLEMENTATION body is preserved. add_method/edit_method_signature/delete_method/change_method_visibility operate on the global class /source/main only. batch_create: create and activate multiple objects in sequence (requires objects array). scaffold_rap_handlers: derive missing behavior-pool handler signatures from interface BDEF declarations and optionally inject declarations plus empty implementation stubs. generate_behavior_implementation: one-shot RAP behavior pool — auto-discover the bound BDEF via class rootEntityRef, scaffold every required handler (creating lhc_<alias> skeletons when missing), write under one lock, and optionally activate. The reliable equivalent of Eclipse ADT's \"Generate Behavior Implementation\" Cmd+1 quickfix."
+          "description": "Write action. create/update/delete: standard object writes. edit_method: replace one method body (type=CLAS, method, source). Class-section surgery (type=CLAS only): edit_class_definition without include= replaces the global DEFINITION block (refuses a diff that would leave the class non-activatable, e.g. a concrete method with no IMPL stub); with include= it whole-replaces a class-local include (CCDEF/CCIMP/macros/testclasses), auto-creating it. add_method inserts a METHODS clause + empty stub (visibility, abstract=true skips the stub); edit_method_signature replaces one METHODS clause (no IMPL change); delete_method removes the clause AND body — WARNING: destructive, discards the method body (to re-section a method use change_method_visibility, NOT delete+add); change_method_visibility moves a method between PUBLIC/PROTECTED/PRIVATE, preserves the body. add_method/edit_method_signature/delete_method/change_method_visibility act on /source/main only. batch_create: create+activate multiple objects (objects array). scaffold_rap_handlers / generate_behavior_implementation: derive RAP behavior-pool handlers from the BDEF (the latter the equivalent of Eclipse's \"Generate Behavior Implementation\")."
         },
         "type": {
           "type": [
@@ -315,7 +315,7 @@
             "string",
             "null"
           ],
-          "description": "ABAP source code. For create/update: the full source body. For edit_method: the new method body. For edit_class_definition without include=: ONLY the new global CLASS … DEFINITION … ENDCLASS. block (~10–80 lines for a typical class — no IMPLEMENTATION block needed). For edit_class_definition with include=: the FULL replacement body of that local include; for include=\"testclasses\" this usually means local CLASS ltc_* DEFINITION plus CLASS ltc_* IMPLEMENTATION. For edit_method_signature: ONLY the new METHODS clause for one method (~1–5 lines). For add_method/delete_method/change_method_visibility: not used — pass the new method clause, method name, or target section via `method`/`visibility` instead."
+          "description": "ABAP source code. create/update: full source body. edit_method: the new method body. edit_class_definition without include=: only the new global CLASS…DEFINITION…ENDCLASS block (no IMPLEMENTATION); with include=: the full replacement body of that include. edit_method_signature: only the new METHODS clause. Not used by add_method/delete_method/change_method_visibility (use `method`/`visibility`)."
         },
         "include": {
           "type": [
@@ -328,14 +328,14 @@
             "macros",
             "testclasses"
           ],
-          "description": "CLAS-ONLY. Do NOT send this field unless type=CLAS AND action is one of update / edit_method / edit_class_definition. OMIT it entirely for every other object type (PROG, INTF, INCL, FUNC, FUGR, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, TABL, DOMA, DTEL, MSAG) and for delete / batch_create / add_method / edit_method_signature / delete_method / change_method_visibility (those operate on the global class /source/main). When it does apply: target a class-local include instead of /source/main — definitions (CCDEF), implementations (CCIMP), macros, testclasses. For edit_method, ARC-1 auto-detects the include from the method specifier (lhc_*/lcl_* → implementations, ltc_* → testclasses), so you usually need not pass it; use update or edit_class_definition with include=testclasses to create a new local test class. Whole-include writes (update and edit_class_definition with include=) auto-create a missing include first, including fresh testclasses/CCAU. Include writes create an inactive draft; read with SAPRead version=\"inactive\" before activation. NOTE: edit_class_definition with include= skips the symmetry refuse-policy — cross-include validation is not performed; rely on SAPActivate to catch breaks."
+          "description": "CLAS-ONLY. Do NOT send unless type=CLAS AND action is update / edit_method / edit_class_definition. OMIT it entirely for every other type and for delete / batch_create / add_method / edit_method_signature / delete_method / change_method_visibility (those use /source/main). Targets a class-local include: definitions (CCDEF), implementations (CCIMP), macros, testclasses. edit_method auto-detects it from the method specifier (lhc_*/lcl_* → implementations, ltc_* → testclasses), so you rarely pass it; use include=testclasses to create a new local test class. Whole-include writes auto-create a missing include and produce an inactive draft (read with SAPRead version=\"inactive\" before activation)."
         },
         "method": {
           "type": [
             "string",
             "null"
           ],
-          "description": "For edit_method/edit_method_signature: method NAME (e.g., \"get_name\", \"zif_order~process\", \"lhc_project~approve_project\"). For delete_method and change_method_visibility: the method NAME. For add_method: the full METHODS clause as ABAP source (e.g. \"METHODS greet IMPORTING who TYPE string RETURNING VALUE(r) TYPE string.\"). edit_method auto-detects CCIMP from local-class prefix (lhc_*/lcl_* → implementations, ltc_* → testclasses); same auto-detection applies to the class-section surgery actions. When two local classes in the same CCIMP share a bare method name, the qualified <localclass>~<method> form is required to disambiguate."
+          "description": "edit_method/edit_method_signature/delete_method/change_method_visibility: the method NAME (e.g. \"get_name\", \"zif_order~process\", \"lhc_project~approve_project\"). add_method: the full METHODS clause as ABAP source. Local-class methods auto-route by prefix (lhc_*/lcl_* → implementations, ltc_* → testclasses); use the qualified <localclass>~<method> form when a bare name is ambiguous."
         },
         "visibility": {
           "type": [
@@ -361,14 +361,14 @@
             "string",
             "null"
           ],
-          "description": "For scaffold_rap_handlers action: interface BDEF name used to derive required handler signatures (e.g., ZI_TRAVELREQ). The BDEF is parsed to find every action/determination/validation/authorization that must exist in the behavior pool. For generate_behavior_implementation: optional override; default discovery reads the class metadata's rootEntityRef to locate the BDEF automatically."
+          "description": "For scaffold_rap_handlers: interface BDEF name whose actions/determinations/validations/authorizations define the required handlers (e.g. ZI_TRAVELREQ). For generate_behavior_implementation: optional override (default discovery reads the class rootEntityRef)."
         },
         "autoApply": {
           "type": [
             "boolean",
             "null"
           ],
-          "description": "For scaffold_rap_handlers: when true, missing METHODS signatures are inserted into matching lhc_* class definitions, empty METHOD stubs are inserted into matching implementation blocks where possible, and the class source is written back under a single lock. When false (default), returns a JSON report of required vs. missing signatures without modifying the class — use this first to preview, then re-run with autoApply=true to commit. (Not used by generate_behavior_implementation, which always applies; use dryRun=true there to preview.)"
+          "description": "For scaffold_rap_handlers: true inserts missing METHODS signatures + empty stubs and writes the class under one lock; false (default) returns a required-vs-missing report without modifying (preview, then re-run with autoApply=true). Not used by generate_behavior_implementation (use dryRun to preview there)."
         },
         "targetAlias": {
           "type": [
@@ -382,14 +382,14 @@
             "boolean",
             "null"
           ],
-          "description": "For generate_behavior_implementation: when true (default), runs SAPActivate on the class after writing. When false, only the source is written. Activation failures matching the well-known \"Local classes of CL_ABAP_BEHAVIOR_HANDLER…\" stale-active coupling do not throw — they return activation.success=false with a guided recovery hint so the source remains usable."
+          "description": "For generate_behavior_implementation: true (default) activates the class after writing; false writes source only. The known \"Local classes of CL_ABAP_BEHAVIOR_HANDLER…\" stale-active activation failure does not throw — it returns activation.success=false with a recovery hint."
         },
         "activateAtEnd": {
           "type": [
             "boolean",
             "null"
           ],
-          "description": "For action=\"batch_create\" only. Default false: per-object inline activation (each object is created → source written → activated, in order). When true: ARC-1 writes inactive drafts for every object then issues a single terminal activateBatch — SAP's activator sees the whole graph and resolves cross-references between siblings (e.g. composition-linked DDLS where the parent references a not-yet-active child). Use this for interdependent RAP stacks (TABL → DDLS → DCLS → BDEF → SRVD). Has no effect on other actions. Partial-failure semantics: a write-phase failure still breaks the loop; the terminal activateBatch only runs over the already-written subset."
+          "description": "For batch_create only. false (default): per-object inline activation in order. true: write all inactive drafts then one terminal activateBatch so SAP resolves cross-references between siblings — use for interdependent RAP stacks (TABL→DDLS→DCLS→BDEF→SRVD). A write-phase failure still breaks the loop; the terminal activate runs over the already-written subset."
         },
         "dryRun": {
           "type": [
@@ -650,7 +650,7 @@
             "array",
             "null"
           ],
-          "description": "FUNC: structured signature parameters. ARC-1 builds the IMPORTING/EXPORTING/CHANGING/TABLES/EXCEPTIONS/RAISING clause from this array and splices it into the FM source body. Example: [{kind: \"importing\", name: \"IV_INPUT\", type: \"STRING\", byValue: true, optional: true, default: \"'X'\"}, {kind: \"exporting\", name: \"EV_OUTPUT\", type: \"STRING\", byValue: true}, {kind: \"raising\", name: \"CX_ROOT\"}]. When omitted, the user-supplied source is PUT verbatim (backward compatible).",
+          "description": "FUNC: structured signature parameters. ARC-1 builds the IMPORTING/EXPORTING/CHANGING/TABLES/EXCEPTIONS/RAISING clause and splices it into the FM body. When omitted, the supplied source is PUT verbatim.",
           "items": {
             "type": "object",
             "properties": {
@@ -717,7 +717,7 @@
             "string",
             "null"
           ],
-          "description": "SRVB: binding type — accepts human-readable values like \"ODataV4-UI\", \"OData V2 - Web API\", \"ODATA_V4\" which are auto-normalized to SAP ADT values (type=ODATA, correct odataVersion + category)"
+          "description": "SRVB: binding type — human-readable values like \"ODataV4-UI\", \"OData V2 - Web API\" are auto-normalized (sets odataVersion + category)."
         },
         "odataVersion": {
           "type": [
@@ -753,28 +753,28 @@
             "boolean",
             "null"
           ],
-          "description": "Override server lint-before-write setting for this call. Set false to skip pre-write lint validation. Lint applies to ABAP types (PROG, CLAS, INTF, FUNC) and CDS views (DDLS). BDEF/SRVD/SRVB/DDLX/TABL are skipped by offline linter; RAP preflight may still catch deterministic issues for those types."
+          "description": "Override server lint-before-write for this call (false skips it). Lint covers PROG/CLAS/INTF/FUNC and DDLS; other types rely on RAP preflight."
         },
         "preflightBeforeWrite": {
           "type": [
             "boolean",
             "null"
           ],
-          "description": "Enable/disable deterministic RAP preflight checks for this call (default: true). Useful for TABL/BDEF/DDLX static rules (e.g., curr/quan semantics, invalid BDEF enums, unsupported DDLX annotation scope on on-prem 7.5x)."
+          "description": "Enable/disable deterministic RAP preflight checks (default true) — TABL/BDEF/DDLX static rules (curr/quan semantics, invalid BDEF enums, DDLX scope on 7.5x)."
         },
         "checkBeforeWrite": {
           "type": [
             "boolean",
             "null"
           ],
-          "description": "Override server check-before-write setting (default off). When true, SAPWrite sends the proposed source to /sap/bc/adt/checkruns with inline <chkrun:content> and appends any error/warning messages to the success response — the write is NOT blocked. Useful for single-file edits to see compile diagnostics without a separate SAPDiagnose call. Off by default because (a) it adds a round-trip per write and (b) intermediate writes during multi-file refactors will legitimately trip dependency errors that resolve once the whole sequence lands. Activation remains the definitive compile check."
+          "description": "Override server check-before-write (default off). When true, runs a SAP syntax check and appends diagnostics to the response — the write is NOT blocked. Off by default (adds a round-trip; intermediate refactor writes legitimately trip transient dependency errors). Activation remains the definitive check."
         },
         "refObjectType": {
           "type": [
             "string",
             "null"
           ],
-          "description": "SKTD/KTD create: ADT type+subtype of the parent object the KTD documents (e.g., \"DDLS/DF\", \"BDEF/BDO\", \"SRVD/SRV\", \"SRVB/SVB\", \"DEVC/K\"). Do not use CLAS/OC, INTF/OI, or PROG/P; use ABAP Doc for code objects. Required for SKTD/KTD create."
+          "description": "SKTD/KTD create (required): ADT type+subtype of the documented parent (e.g. \"DDLS/DF\", \"BDEF/BDO\", \"SRVD/SRV\", \"DEVC/K\"). Not CLAS/INTF/PROG (use ABAP Doc for code)."
         },
         "refObjectName": {
           "type": [
@@ -867,15 +867,13 @@
                 "type": [
                   "string",
                   "null"
-                ],
-                "description": "DOMA/DTEL: ABAP data type"
+                ]
               },
               "rowType": {
                 "type": [
                   "string",
                   "null"
-                ],
-                "description": "TTYP: row type (built-in ABAP type or DDIC structure/type name)"
+                ]
               },
               "rowTypeKind": {
                 "type": [
@@ -885,57 +883,49 @@
                 "enum": [
                   "builtin",
                   "structure"
-                ],
-                "description": "TTYP: row-type mode"
+                ]
               },
               "length": {
                 "type": [
                   "number",
                   "null"
-                ],
-                "description": "DOMA/DTEL: data type length"
+                ]
               },
               "decimals": {
                 "type": [
                   "number",
                   "null"
-                ],
-                "description": "DOMA/DTEL: decimal places"
+                ]
               },
               "outputLength": {
                 "type": [
                   "number",
                   "null"
-                ],
-                "description": "DOMA: output length"
+                ]
               },
               "conversionExit": {
                 "type": [
                   "string",
                   "null"
-                ],
-                "description": "DOMA: conversion exit"
+                ]
               },
               "signExists": {
                 "type": [
                   "boolean",
                   "null"
-                ],
-                "description": "DOMA: signed values allowed"
+                ]
               },
               "lowercase": {
                 "type": [
                   "boolean",
                   "null"
-                ],
-                "description": "DOMA: lowercase allowed"
+                ]
               },
               "fixedValues": {
                 "type": [
                   "array",
                   "null"
                 ],
-                "description": "DOMA: fixed value ranges",
                 "items": {
                   "type": "object",
                   "properties": {
@@ -964,8 +954,7 @@
                 "type": [
                   "string",
                   "null"
-                ],
-                "description": "DOMA: value table"
+                ]
               },
               "typeKind": {
                 "type": [
@@ -975,102 +964,87 @@
                 "enum": [
                   "domain",
                   "predefinedAbapType"
-                ],
-                "description": "DTEL: type mode"
+                ]
               },
               "typeName": {
                 "type": [
                   "string",
                   "null"
-                ],
-                "description": "DTEL: domain/type name reference"
+                ]
               },
               "domainName": {
                 "type": [
                   "string",
                   "null"
-                ],
-                "description": "DTEL: alias for typeName"
+                ]
               },
               "shortLabel": {
                 "type": [
                   "string",
                   "null"
-                ],
-                "description": "DTEL: short field label"
+                ]
               },
               "mediumLabel": {
                 "type": [
                   "string",
                   "null"
-                ],
-                "description": "DTEL: medium field label"
+                ]
               },
               "longLabel": {
                 "type": [
                   "string",
                   "null"
-                ],
-                "description": "DTEL: long field label"
+                ]
               },
               "headingLabel": {
                 "type": [
                   "string",
                   "null"
-                ],
-                "description": "DTEL: heading field label"
+                ]
               },
               "searchHelp": {
                 "type": [
                   "string",
                   "null"
-                ],
-                "description": "DTEL: search help"
+                ]
               },
               "searchHelpParameter": {
                 "type": [
                   "string",
                   "null"
-                ],
-                "description": "DTEL: search help parameter"
+                ]
               },
               "setGetParameter": {
                 "type": [
                   "string",
                   "null"
-                ],
-                "description": "DTEL: SET/GET parameter ID"
+                ]
               },
               "defaultComponentName": {
                 "type": [
                   "string",
                   "null"
-                ],
-                "description": "DTEL: default component name"
+                ]
               },
               "changeDocument": {
                 "type": [
                   "boolean",
                   "null"
-                ],
-                "description": "DTEL: change document flag"
+                ]
               },
               "messages": {
                 "type": [
                   "array",
                   "null"
                 ],
-                "description": "MSAG: message entries",
                 "items": {
                   "type": "object",
                   "properties": {
                     "number": {
-                      "type": "string",
-                      "description": "Message number (e.g., \"001\")"
+                      "type": "string"
                     },
                     "shortText": {
-                      "type": "string",
-                      "description": "Message short text"
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -1083,15 +1057,13 @@
                 "type": [
                   "string",
                   "null"
-                ],
-                "description": "SRVB: service definition (SRVD)"
+                ]
               },
               "bindingType": {
                 "type": [
                   "string",
                   "null"
-                ],
-                "description": "SRVB: binding type — accepts human-readable values like \"ODataV4-UI\" (auto-normalized)"
+                ]
               },
               "odataVersion": {
                 "type": [
@@ -1101,8 +1073,7 @@
                 "enum": [
                   "V2",
                   "V4"
-                ],
-                "description": "SRVB: OData protocol version (default: V2)"
+                ]
               },
               "category": {
                 "type": [
@@ -1112,15 +1083,13 @@
                 "enum": [
                   "0",
                   "1"
-                ],
-                "description": "SRVB: binding category (0=UI, 1=Web API)"
+                ]
               },
               "version": {
                 "type": [
                   "string",
                   "null"
-                ],
-                "description": "SRVB: service version number (default 0001)"
+                ]
               }
             },
             "required": [
@@ -1128,7 +1097,7 @@
               "name"
             ]
           },
-          "description": "For batch_create: ordered list of objects to create and activate. Each object needs type, name, and source (if applicable). Objects are created and activated in array order — put dependencies first (e.g., TABL before DDLS, BDEF after DDLS). Each item may include package and transport; item-level values override top-level package/transport. Example: [{type:\"TABL\",name:\"ZTRAVEL\",source:\"...\"},{type:\"DDLS\",name:\"ZI_TRAVEL\",source:\"...\"},{type:\"BDEF\",name:\"ZI_TRAVEL\",source:\"...\"},{type:\"SRVD\",name:\"ZSD_TRAVEL\",source:\"...\"}]"
+          "description": "For batch_create: ordered list of objects to create+activate (each needs type, name, and source if applicable). Created in array order — dependencies first (TABL before DDLS, BDEF after DDLS). Item-level package/transport override the top-level. Use activateAtEnd=true for interdependent stacks."
         }
       },
       "required": [
@@ -1142,7 +1111,7 @@
   },
   {
     "name": "SAPActivate",
-    "description": "Activate (publish) ABAP objects. Supports single object or batch activation.\nType codes are auto-normalized and case-insensitive (e.g., \"CLAS/OC\" or \"clas\" map to CLAS).\nALWAYS prefer batch activation when activating 2+ objects — pass \"objects\" array with {type, name} entries. Batch activation is more efficient (one SAP round-trip) and works for ANY combination of objects, not just dependent ones. It is required for RAP stacks where DDLS, BDEF, SRVD depend on each other, but equally useful for unrelated objects like multiple DTELs or DOMAs.\nFor publish_srvb/unpublish_srvb: publish or unpublish an OData service binding (SRVB) — makes the OData service available for consumption.",
+    "description": "Activate (publish) ABAP objects, single or batch. Type codes auto-normalized (e.g. \"CLAS/OC\" → CLAS). ALWAYS prefer batch activation for 2+ objects — pass an \"objects\" array of {type, name}: one round-trip, works for any mix (required for interdependent RAP stacks, useful for unrelated objects too). publish_srvb/unpublish_srvb: publish or unpublish an OData service binding (SRVB).",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1173,11 +1142,11 @@
             "odatav2",
             "odatav4"
           ],
-          "description": "OData service type for publish/unpublish endpoint routing. Auto-detected from SRVB metadata when omitted. Only needed if auto-detection fails."
+          "description": "OData service type for publish/unpublish routing. Auto-detected from SRVB metadata when omitted."
         },
         "preaudit": {
           "type": "boolean",
-          "description": "Request pre-activation audit from SAP (default: true). When true, SAP checks for issues before activating and returns warnings/errors. Set to false to skip pre-audit for faster activation when confident the code is correct."
+          "description": "Request pre-activation audit (default true) — SAP returns warnings/errors before activating. false skips it for speed."
         },
         "objects": {
           "type": "array",
@@ -1198,7 +1167,7 @@
               "name"
             ]
           },
-          "description": "Batch activation: array of objects to activate in one call. Use whenever activating 2+ objects. Works for any mix of types — e.g., [{type:\"DOMA\",name:\"Z_DOM\"},{type:\"DTEL\",name:\"Z_DEL\"}] or RAP stacks like [{type:\"DDLS\",name:\"ZI_TRAVEL\"},{type:\"BDEF\",name:\"ZI_TRAVEL\"},{type:\"SRVD\",name:\"ZSD_TRAVEL\"}]."
+          "description": "Batch activation: array of {type, name} to activate in one call. Use whenever activating 2+ objects (any mix of types)."
         }
       }
     },
@@ -1209,7 +1178,7 @@
   },
   {
     "name": "SAPNavigate",
-    "description": "Navigate code: find definitions, references (where-used), code completion, and class hierarchy. Use for \"go to definition\", \"where is this used?\", \"what does this class inherit?\", and auto-complete. For references: uses the full scope-based Where-Used API returning detailed results with line numbers, snippets, and package info. Optional objectType filter narrows results to a specific ADT type in slash format (e.g., CLAS/OC, PROG/P). Type+name params are auto-normalized (e.g., type=\"clas\" works). For hierarchy: returns superclass, implemented interfaces, and direct subclasses via SEOMETAREL. You can use type+name instead of uri (e.g., type=\"CLAS\", name=\"ZCL_ORDER\") for a where-used list without needing the full ADT URI.\n\nFor CDS entities (DDLS), prefer SAPContext(action=\"impact\") — it returns the same where-used data pre-classified into RAP buckets (projection views, BDEFs, SRVDs, access controls, metadata extensions, documentation, ABAP consumers), which answers \"what breaks if I change this view\" directly without manual bucketing.",
+    "description": "Navigate code: definitions, references (where-used), completion, class hierarchy. references uses the scope-based Where-Used API (line numbers, snippets, package); optional objectType filters by ADT slash type (e.g. CLAS/OC, PROG/P); pass type+name instead of uri. hierarchy returns superclass + interfaces + direct subclasses. For CDS (DDLS), prefer SAPContext(action=\"impact\") — the same where-used pre-classified into RAP buckets, answering \"what breaks if I change this view\".",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1262,7 +1231,7 @@
   },
   {
     "name": "SAPQuery",
-    "description": "Execute ABAP SQL queries against SAP tables. Returns structured data with column names and rows. Powerful for reverse-engineering: query metadata tables like DD02L (table catalog), DD03L (field catalog), SWOTLV (BOR method implementations), TADIR (object directory), TFDIR (function modules). If a table is not found, similar table names will be suggested automatically. Note: Uses the ADT freestyle SQL endpoint (same family as ADT SQL Console in Eclipse). ABAP SQL language supports JOINs and subqueries, but this endpoint parser can reject valid-looking statements on some backend versions (for example grammar errors, single-SELECT enforcement). ARC-1 automatically chunks simple long literal IN lists; if parsing still fails, simplify to one SELECT and split multi-table logic into staged single-table queries (SAP Note 3605050).\n\nCDS impact analysis: DO NOT query DDDDLSRC, ACMDCLSRC, DDLXSRC_SRC, or SRVDSRC_SRC to find CDS consumers — those text scans produce noise (substring matches, package group nodes, generated patterns). Use SAPContext(action=\"impact\", type=\"DDLS\", name=\"...\") instead — it uses SAP's where-used index and returns bucketed, filtered results (projection views, BDEFs, SRVDs, access controls, documentation, ABAP consumers).",
+    "description": "Execute ABAP SQL queries against SAP tables. Returns columns + rows. Good for reverse-engineering metadata tables (DD02L, DD03L, TADIR, TFDIR, SWOTLV). Unknown tables get name suggestions. Uses the ADT freestyle SQL endpoint; its parser can reject valid-looking statements on some releases — ARC-1 automatically chunks simple long literal IN lists; if parsing still fails, use one SELECT and stage multi-table logic (SAP Note 3605050). To find CDS consumers do NOT text-scan DDDDLSRC/ACMDCLSRC/DDLXSRC_SRC — use SAPContext(action=\"impact\", type=\"DDLS\") (where-used index, filtered buckets).",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1285,7 +1254,7 @@
   },
   {
     "name": "SAPLint",
-    "description": "Run local abaplint rules on ABAP and CDS source code. System-aware: auto-selects cloud or on-prem rules based on detected system type.\n\nActions:\n- \"lint\": Check source for issues. Returns errors and warnings. Works for ABAP (PROG, CLAS, INTF, FUNC) and CDS views (DDLS) — catches syntax errors, naming conventions, field order, legacy view patterns.\n- \"lint_and_fix\": Lint + auto-fix all fixable issues (keyword case, obsolete statements, etc.). Returns fixed source.\n- \"list_rules\": List all available rules with current config. No source needed.\n- \"format\": Pretty-print ABAP source via SAP's ADT formatter (uses the SAP system's global formatter settings). Requires source. Returns the formatted source.\n- \"get_formatter_settings\": Read the SAP system's global PrettyPrinter settings (indentation, keyword style). No params.\n- \"set_formatter_settings\": Update the SAP system's global PrettyPrinter settings. Requires indentation (bool) and/or style (keywordUpper|keywordLower|keywordAuto|none). Blocked in read-only mode.\n\nFor server-side checks (ATC, syntax check, unit tests), use SAPDiagnose instead.\nNote: lint/lint_and_fix/list_rules run locally; format/*_formatter_settings call the SAP system.",
+    "description": "Run local abaplint rules on ABAP/CDS source (auto-selects cloud or on-prem rules by system type). Actions:\n- \"lint\": check source (errors+warnings) for ABAP (PROG/CLAS/INTF/FUNC) and CDS (DDLS).\n- \"lint_and_fix\": lint + auto-fix fixable issues (keyword case, obsolete statements); returns fixed source.\n- \"list_rules\": list rules + current config (no source).\n- \"format\": pretty-print via SAP's ADT formatter (needs source).\n- \"get_formatter_settings\" / \"set_formatter_settings\": read/update the system's global PrettyPrinter (indentation bool, style keywordUpper|keywordLower|keywordAuto|none; set is blocked read-only).\nlint/lint_and_fix/list_rules run locally; format/*_formatter_settings call SAP. For ATC/syntax/unit tests use SAPDiagnose.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1339,7 +1308,7 @@
   },
   {
     "name": "SAPDiagnose",
-    "description": "Run diagnostics on ABAP objects and analyze runtime errors.\n\nActions:\n- \"syntax\": Syntax check an ABAP object. Requires name + type. Optional: version (\"active\" or \"inactive\", defaults to active). Optional: source — when supplied, SAP compiles the given content as if it lived at the object's URI (pre-write dry-run, nothing is written). Omit source to check what is stored.\n- \"unittest\": Run ABAP unit tests. Requires name + type.\n- \"atc\": Run ATC code quality checks. Requires name + type. Optional: variant.\n- \"cds_testcases\": Get SAP-suggested ABAP Unit test cases for a CDS entity (CDS Test Double Framework). Requires name (the CDS entity / DDLS source name; no type needed). Returns one test-method suggestion per testable semantic (whole view, calculated fields, CAST/JOIN/CASE) to scaffold a cl_cds_test_environment unit test. Read-only; SAP_BASIS 8.16+ (ABAP Platform 2025 / S/4HANA 2025) only.\n- \"object_state\": Compare active and inactive source versions. Requires name + type. For CLAS, also compares main, definitions, implementations, macros, and testclasses includes (up to 10 parallel reads per class; sequence calls when sweeping many classes). Returns ETags, byte lengths, hashes, and divergence flags.\n- \"quickfix\": Get SAP quick fix proposals for a specific source position. Requires name + type + source + line. Optional: column, sourceUri for exact ADT include/source targets.\n- \"apply_quickfix\": Apply one quick fix proposal and return text deltas (does not write source). Requires name + type + source + line + proposalUri + proposalUserContent. Optional: column, sourceUri, proposalAffectedObjects. proposalUserContent may be an empty string; pass it through exactly from quickfix.\n- \"dumps\": List or read ABAP short dumps (ST22). Without id: lists recent dumps (filter by user, maxResults). With id: returns focused chapter sections by default; set includeFullText=true to include the full formatted dump blob. Optional sections=[kap0,kap3,...] to request specific chapter IDs.\n- \"traces\": List or analyze ABAP profiler traces. Without id: lists recorded trace files. With id + analysis: returns trace analysis (hitlist = hot spots, statements = call tree, dbAccesses = database access statistics).\n- \"trace_start\": ARM an ABAP profiler trace so the NEXT matching execution is recorded — for debugging a slow OData/Gateway call or report. Defaults: trace the next HTTP/URL request by the connected user with SQL tracing on. Then reproduce the slow action and read it via action=\"traces\" with the returned id (analysis=\"dbAccesses\" shows which tables/joins dominate). Optional: traceUser, processType (any/http/dialog/batch/rfc; default http), objectType (default = the valid type for the process type, e.g. url for http), maxExecutions (default 1), expiresHours (default 24), sqlTrace (default true), aggregate (default true), description. Write scope (mutates server state).\n- \"trace_requests\": List armed (not-yet-consumed) trace requests for a user (default the connected user) — to confirm a request is armed or find a stale one to cancel.\n- \"trace_cancel\": Cancel an armed trace request by id (from trace_start or trace_requests). Write scope.\n\n- \"system_messages\": List SM02 system messages via ADT feed (filter by user, maxResults, from, to).\n- \"gateway_errors\": List SAP Gateway error log entries (/IWFND/ERROR_LOG, on-prem). For detail mode provide detailUrl (preferred) or id+errorType.\n- \"odata_perf\": Diagnose WHY a Fiori/OData request is slow. Requires url (the host-relative OData path from the app's Network tab). ARC-1 GETs it with ?sap-statistics=true and a wall-clock timer, then returns the server-side timing split (gwtotal, gwapp, gwappdb=DB time, gwfw=framework, icfauth=auth) plus a verdict routing you to the dominant cost (DB vs ABAP/SADL vs framework vs auth). Read-only GET; gated like data preview.\n- \"cds_sql\": Show the native SQL a CDS view compiles to (ADT \"Show SQL Create Statement\"). Requires name (the CDS DDL source / DDLS, e.g. \"I_CURRENCY\"). Returns the CREATE VIEW statement(s) so you can see the joins/scans behind a slow entity. Read-only; may be unavailable on older releases (e.g. NW 7.50).\n- \"sql_trace_state\": Read the current ST05 trace state (SQL/buffer/enqueue/RFC/HTTP/… on-off per app server + filters). Read-only.\n- \"set_sql_trace_state\": Arm or disarm the ST05 SQL trace. Requires sqlOn (true=arm, false=disarm); optional user filters the trace to one SAP user. Workflow: arm → reproduce the slow request → sql_trace_directory for the record link. Needs SAP_ALLOW_WRITES (mutates server trace state).\n- \"sql_trace_directory\": Return where the recorded SQL statements are read — SAP answers with the TMC \"SQL Trace Analysis\" deep-link (there is no ADT SQL-record API; open the URL in a browser, needs /sap/bc/stmc active). Read-only.\n\nQuickfix workflow: run syntax/ATC first to identify issues and line positions, then call quickfix to retrieve SAP-verified proposals, then apply_quickfix to get exact text deltas, and finally write the updated source via SAPWrite.",
+    "description": "Run diagnostics on ABAP objects and analyze runtime errors. Actions:\n- \"syntax\": syntax-check (name+type; optional version; optional source = pre-write dry-run, nothing written).\n- \"unittest\": run ABAP Unit tests (name+type).\n- \"atc\": run ATC checks (name+type; optional variant).\n- \"cds_testcases\": SAP-suggested ABAP Unit test cases for a CDS entity (name; read-only; SAP_BASIS 8.16+).\n- \"object_state\": compare active and inactive source versions (name+type; CLAS compares all includes). Returns ETags, hashes, divergence flags.\n- \"quickfix\": get quick-fix proposals at a position (name+type+source+line; optional column, sourceUri).\n- \"apply_quickfix\": apply one proposal, return text deltas, no write (name+type+source+line+proposalUri+proposalUserContent; pass proposalUserContent through exactly, may be empty).\n- \"dumps\": list/read ST22 short dumps (no id = list; id = read; includeFullText, sections).\n- \"traces\": list/analyze profiler traces (id+analysis: hitlist=hot spots, statements=call tree, dbAccesses=DB stats).\n- \"trace_start\": arm a profiler trace for the NEXT matching execution, then reproduce and read via \"traces\" (write scope; defaults: next HTTP request, SQL on; optional traceUser/processType/maxExecutions/expiresHours/sqlTrace/…).\n- \"trace_requests\": list armed trace requests. \"trace_cancel\": cancel one by id (write scope).\n- \"system_messages\": list SM02 messages. \"gateway_errors\": list /IWFND/ERROR_LOG (on-prem; detailUrl or id+errorType for detail).\n- \"odata_perf\": diagnose why an OData call is slow (url = host-relative path from the Network tab); returns the sap-statistics timing split (DB/ABAP/framework/auth) + a verdict. Read-only.\n- \"cds_sql\": show the native SQL a CDS view compiles to (name; read-only; may be absent on old releases).\n- \"sql_trace_state\" / \"set_sql_trace_state\" (sqlOn; write) / \"sql_trace_directory\": ST05 SQL-trace control.\nQuickfix workflow: syntax/ATC → quickfix → apply_quickfix → write via SAPWrite. Full action reference: docs_page SAPDiagnose.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1374,7 +1343,7 @@
         },
         "url": {
           "type": "string",
-          "description": "For action=\"odata_perf\": the host-relative OData path to probe, copied from the Fiori app's Network tab (e.g. \"/sap/opu/odata4/sap/.../Entity?$filter=...\" or \"/sap/opu/odata/sap/<SRV>/<EntitySet>?$top=20\"). Must be a path on the SAP system ARC-1 connects to — absolute URLs are rejected."
+          "description": "For odata_perf: the host-relative OData path to probe, from the Fiori app's Network tab (e.g. \"/sap/opu/odata4/sap/.../Entity?$filter=…\"). Must be a path on the connected system — absolute URLs are rejected."
         },
         "type": {
           "type": "string",
@@ -1562,7 +1531,7 @@
   },
   {
     "name": "SAPContext",
-    "description": "Primary tool for understanding ABAP objects before specs, reviews, explanations, or changes. Use SAPContext instead of SAPRead when the user asks what a class, interface, program, function module, or CDS view does. For action=\"deps\" it returns intent/context first: the object KTD when available, then compressed dependency contracts. Use SAPRead later only for exact source, method bodies, grep, drafts, revisions, or metadata.\n\nGet compressed dependency context or CDS blast-radius impact for an ABAP / CDS object.\n\nDecision rule — pick the action based on the user's question:\n- \"What breaks if I change <CDS view>?\" / \"Who consumes <I_*>?\" / \"Impact analysis on <DDLS>\" / \"Blast radius\" → action=\"impact\"\n- \"Which includes/appends extend <TABL>?\" → action=\"structure\", type=\"TABL\"\n- \"What does <object> do?\" / \"Explain <object>\" / \"Prepare a spec/change/review for <object>\" / \"Understand dependencies before editing <object>\" / \"What does X depend on?\" → action=\"deps\" (default)\n- \"Find all callers of <object>\" (cache-warmup required) → action=\"usages\"\n\naction=\"impact\" (CDS blast-radius, DDLS only): ALWAYS use this for CDS change-impact questions. Returns upstream AST dependencies plus downstream where-used results classified into RAP-aware buckets: projectionViews, bdefs, serviceDefinitions, serviceBindings, accessControls (DCLS), metadataExtensions (DDLX), abapConsumers, documentation (SKTD), tables, other. Also emits additive sibling-consistency diagnostics (consistencyHints + siblingExtensionAnalysis) when sibling DDLS variants in the same package show asymmetric metadata-extension coverage. DO NOT replicate this with SAPQuery against DDDDLSRC/ACMDCLSRC/DDLXSRC_SRC/SRVDSRC_SRC — those text scans produce noise (non-dependency matches, package group nodes) that this classifier already filters out. Optional includeIndirect=true widens to transitive consumers. Optional siblingCheck=false disables sibling analysis; siblingMaxCandidates controls fan-out (default 4, hard cap 10).\n\naction=\"structure\" (TABL only): Returns the DDIC include/append tree; appends are confirmed where-used candidates.\n\naction=\"deps\" (default): Returns the target object KTD first when one exists, then only the public API contracts (method signatures, interface definitions, type declarations) of all objects that the target depends on — NOT the full source code. The most token-efficient way to understand an object before editing. Instead of N separate SAPRead calls returning full source (~200 lines each), returns ONE response with KTD context plus compressed contracts (~15-30 lines each). Typical compression: 7-30x fewer tokens.\n\nWhat deps extracts per dependency:\n- Classes: CLASS DEFINITION with PUBLIC SECTION only (methods, types, constants). PROTECTED, PRIVATE and IMPLEMENTATION stripped.\n- Interfaces: Full interface definition (interfaces are already public contracts).\n- Function modules: FUNCTION signature block only (IMPORTING/EXPORTING parameters).\n- CDS views (DDLS): All data sources (tables, other CDS views), association targets, and compositions. Each dependency's full source is included (table definitions, CDS DDL). Essential for CDS unit test generation — provides the dependency graph and field catalogs needed for cl_cds_test_environment doubles.\n\nFiltering (deps): SAP standard objects (CL_ABAP_*, IF_ABAP_*, CX_SY_*) are excluded. Custom objects (Z*, Y*) are prioritized.\n\nUse SAPContext BEFORE writing code that modifies or extends existing objects. Use SAPRead after SAPContext when you need exact source or method-level detail.\n\nFor non-CDS reverse-lookup, use SAPNavigate(action=\"references\"). For CDS reverse-lookup, ALWAYS prefer action=\"impact\" over SAPNavigate — it returns the same where-used data pre-classified into RAP buckets.",
+    "description": "Primary tool for understanding ABAP/CDS objects before specs, reviews, explanations, or changes — use instead of SAPRead when the user asks what an object does. Returns intent first (the object KTD when available) then compressed dependency contracts. Use SAPRead after SAPContext for exact source/method bodies/grep/drafts.\n\nDecision rule — pick the action from the user's question:\n- \"What breaks if I change <CDS>?\" / \"Who consumes <I_*>?\" / \"Blast radius\" → action=\"impact\" (DDLS only).\n- \"Which includes/appends extend <TABL>?\" → action=\"structure\", type=\"TABL\".\n- \"What does <object> do?\" / \"Explain\" / \"deps before editing\" → action=\"deps\" (default).\n- \"Find all callers of <object>\" (needs cache warmup) → action=\"usages\".\n\nimpact (CDS blast-radius): upstream AST deps + downstream where-used, classified into RAP buckets (projectionViews, bdefs, serviceDefinitions, serviceBindings, accessControls, metadataExtensions, abapConsumers, documentation, tables, other) + sibling-consistency hints. Use this instead of text-scanning DDDDLSRC/ACMDCLSRC with SAPQuery (it filters the noise). Optional includeIndirect, siblingCheck, siblingMaxCandidates.\ndeps (default): target KTD + the public API contracts of its dependencies (not full source) — one compact response vs N SAPRead calls (7-30x fewer tokens); SAP standard objects filtered out. For CDS, includes dependency DDL/field catalogs for cl_cds_test_environment.\nstructure (TABL only): the DDIC include/append tree.\n\nUse SAPContext BEFORE editing existing objects. For non-CDS reverse-lookup use SAPNavigate(references); for CDS prefer impact. Full detail: docs_page SAPContext.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1635,7 +1604,7 @@
   },
   {
     "name": "SAPManage",
-    "description": "Probe and report SAP system capabilities. Use this BEFORE attempting operations that depend on optional features (abapGit, RAP/CDS, AMDP, HANA, UI5/Fiori, CTS transports, FLP customization). Also handles package (DEVC) lifecycle operations.\n\nActions:\n- \"features\": Get cached feature status from last probe (fast, no SAP round-trip). Returns which features are available, their mode (auto/on/off), and when they were last probed.\n- \"probe\": Re-probe the SAP system now (runs feature probes, auth checks, and ADT discovery refresh). Use this on first use or if you suspect feature availability has changed.\n- \"cache_stats\": Show object cache health and warmup state.\n- \"flp_list_catalogs\": List FLP business catalogs.\n- \"flp_list_groups\": List FLP groups.\n- \"flp_list_tiles\": List tiles in a catalog (requires \"catalogId\").\n- \"create_package\": Create a package (DEVC) via ADT packages API.\n- \"delete_package\": Delete an existing package.\n- \"flp_create_catalog\": Create a business catalog (requires \"domainId\", \"title\").\n- \"flp_create_group\": Create a group (requires \"groupId\", \"title\").\n- \"flp_create_tile\": Create a tile in a catalog (requires \"catalogId\", \"tile\").\n- \"flp_add_tile_to_group\": Add a catalog tile to a group (requires \"groupId\", \"catalogId\", \"tileInstanceId\").\n- \"flp_delete_catalog\": Delete a business catalog (requires \"catalogId\").\n- \"set_api_state\": Release (or revoke) an object's API release contract for ABAP Cloud / Clean Core (requires \"objectUri\", or \"name\" + \"objectType\"; \"apiState\" defaults to RELEASED, \"contract\" defaults to C1 — pass C0 for SRVD, C3 for classic views). The write counterpart of SAPRead(type=\"API_STATE\").\n\nReturns JSON with features, each having: id, available (bool), mode, message, and probedAt timestamp. Also returns systemType (\"btp\" or \"onprem\") for understanding available capabilities. \"available: false\" means do NOT attempt operations that depend on it.",
+    "description": "Probe and report SAP system capabilities. Use BEFORE operations that depend on optional features (abapGit, RAP/CDS, AMDP, HANA, UI5/Fiori, CTS transports, FLP). Also handles package (DEVC) lifecycle.\n\nActions:\n- \"features\": cached feature status (fast, no round-trip; id, available, mode, probedAt). \"probe\": re-probe now (feature probes + auth + discovery refresh). \"cache_stats\": object cache health.\n- \"create_package\" / \"delete_package\" / \"change_package\": DEVC lifecycle via ADT packages API.\n- FLP read: flp_list_catalogs, flp_list_groups, flp_list_tiles (catalogId). FLP write: flp_create_catalog, flp_create_group, flp_create_tile, flp_add_tile_to_group, flp_delete_catalog.\n- \"set_api_state\": release/revoke an object's API release contract (objectUri, or name+objectType; apiState defaults RELEASED, contract defaults C1 — C0 for SRVD, C3 for classic views). Write counterpart of SAPRead(type=\"API_STATE\").\n\nReturns features + systemType (\"onprem\"/\"btp\"); \"available: false\" means do NOT attempt dependent operations.",
     "inputSchema": {
       "type": "object",
       "properties": {
