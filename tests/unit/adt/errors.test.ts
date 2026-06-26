@@ -390,6 +390,17 @@ describe('AdtApiError', () => {
       expect(classification?.transaction).toBe('SM12');
     });
 
+    it('classifies the BTP data-preview 400 "No authorization to view data" distinctly (T-2/T-3)', () => {
+      // Live-captured on BTP 919 for both table preview and freestyle SQL on standard tables.
+      const xml = `<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework"><type id="ExceptionDataPreviewGeneral"/><message lang="EN">No authorization to view data</message><properties><entry key="T100KEY-ID">ADT_DATAPREVIEW_MSG</entry><entry key="T100KEY-NO">023</entry></properties></exc:exception>`;
+      const classification = classifySapDomainError(400, xml);
+      expect(classification?.category).toBe('data-view-not-authorized');
+      expect(classification?.hint).toMatch(/released CDS view|custom Z\* table/i);
+      // Must NOT be mistaken for a generic lock/auth case.
+      expect(classification?.category).not.toBe('lock-conflict');
+      expect(classification?.category).not.toBe('authorization');
+    });
+
     it('classifies lock conflicts from 403 with "currently editing" (SAP A4H pattern)', () => {
       const xml = `<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework">
   <exc:localizedMessage lang="EN">User MARIAN is currently editing ZARC1_TEST_REPORT</exc:localizedMessage>

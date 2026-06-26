@@ -124,7 +124,7 @@ src/
 │   ├── cds-impact.ts, rap-preflight.ts, rap-handlers.ts, rap-generate.ts  # CDS/RAP intelligence
 │   ├── class-structure.ts      # Class-section surgery splice + diff (#303)
 │   ├── server-driven.ts        # Server-driven objects (DESD/EVTB/… — 8.16 AFF JSON engine)
-│   ├── btp.ts, oauth.ts, cookies.ts  # BTP Destination/Connectivity, OAuth, cookie parsing
+│   ├── oauth.ts, cookies.ts    # BTP OAuth (browser/PKCE) + cookie parsing (Destination Service lives in server.ts + @arc-mcp/xsuaa-auth)
 │   ├── ui5-repository.ts, flp.ts    # UI5 ABAP Repository + FLP OData clients
 │   └── diagnostics.ts, codeintel.ts # ST22/traces + find-def/refs/where-used/completion
 ├── context/                    # deps.ts, cds-deps.ts, contract.ts, compressor.ts, method-surgery.ts, grep.ts
@@ -208,7 +208,7 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 | E2E test / fixture | `tests/e2e/`, `tests/e2e/fixtures.ts` + `tests/fixtures/abap/` + `tests/e2e/setup.ts` |
 | Source caching / ETag / inactive drafts / warmup | `src/cache/caching-layer.ts` + `src/cache/*`, `src/cache/inactive-list-cache.ts` + `src/handlers/read.ts`, `src/cache/warmup.ts` |
 | Integration / BTP / CRUD tests | `tests/integration/adt.integration.test.ts`, `btp-abap[.smoke].integration.test.ts`, `crud-harness.ts` + `crud.lifecycle.integration.test.ts` |
-| BTP auth / Destination Service | `src/adt/oauth.ts` + `src/server/server.ts` / `src/adt/btp.ts` |
+| BTP auth / Destination Service | `src/adt/oauth.ts` (browser OAuth) + `src/server/server.ts` (`buildAdtConfig` per-user destination) + `@arc-mcp/xsuaa-auth` dep |
 | AFF schema / validation | `src/aff/schemas/` + `src/aff/validator.ts` / `src/handlers/write/create.ts` (create/batch_create paths) |
 | CI coverage / reliability reporting | `scripts/ci/coverage-summary.mjs`, `scripts/ci/collect-test-reliability.mjs`, `.github/workflows/test.yml` |
 

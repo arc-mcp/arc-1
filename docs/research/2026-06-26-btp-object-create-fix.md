@@ -116,3 +116,24 @@ An adversarial Codex pass produced four findings; resolution:
   valid `abapLanguageVersion`, and create-body acceptance is live-verified for CLAS/INTF/DDLS/DTEL/DOMA/
   TTYP — but the DDIC **update** STs (DOMA/DTEL/TTYP/SRVB/MSAG) are not yet live-verified on BTP. Track
   as a follow-up; CLAS/INTF (the common path) use source-PUT, not this path.
+
+## Tier-1 cleanup (now live-disproven test assumptions + nits)
+
+Live re-run of the BTP suite surfaced three integration tests asserting the wrong thing; all fixed and
+re-verified against H01 (919):
+
+- **T-1 — FIXED.** `getProgram('RSHOWTIM')` was asserted to be unavailable; it is **fully readable**
+  (returns its `REPORT` source). Reframed to "classic PROG is readable, but creating a classic program
+  is refused" (the create is attempted against a writable package and must reject).
+- **T-2 / T-3 — FIXED + classified.** Standard-table preview and freestyle SQL were asserted as 403/500;
+  BTP actually returns **HTTP 400 `ExceptionDataPreviewGeneral` "No authorization to view data"**
+  (`ADT_DATAPREVIEW_MSG/023`; LONGTEXT cites auth object `S_ABPLNGVS` — the ABAP-language-version gate).
+  Tests now assert the 400 shape, and `classifySapDomainError` gains a distinct
+  `data-view-not-authorized` category + hint ("query a released CDS view / a custom Z\* table instead") —
+  a separate code path from G-4's `ExceptionResourceNoAccess`. Unit-tested.
+
+Three one-line nits: **G-6** AMDP probe path `/sap/bc/adt/debugger/amdp` → `/sap/bc/adt/amdp/debugger`
+(the former resolves to the generic debugger node → 403; discovery advertises `/amdp/debugger/main`).
+**G-7** `features.ts` comment claimed BTP reports release `"sap_btp"` — it reports a numeric SAP_BASIS
+(`919`). **G-8** `AGENTS.md` referenced a non-existent `src/adt/btp.ts` — the BTP Destination Service is
+`oauth.ts` + `server.ts` (`buildAdtConfig`) + the `@arc-mcp/xsuaa-auth` dep.

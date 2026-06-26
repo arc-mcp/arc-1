@@ -38,7 +38,8 @@ const PROBES: FeatureProbe[] = [
   { id: 'abapGit', endpoint: '/sap/bc/adt/abapgit/repos', description: 'abapGit integration' },
   { id: 'gcts', endpoint: '/sap/bc/cts_abapvcs/system', description: 'gCTS (git-enabled CTS)' },
   { id: 'rap', endpoint: '/sap/bc/adt/ddic/ddl/sources', description: 'RAP/CDS development' },
-  { id: 'amdp', endpoint: '/sap/bc/adt/debugger/amdp', description: 'AMDP debugging' },
+  // Path is /amdp/debugger, not /debugger/amdp (the latter resolves to the generic debugger node → 403). G-6.
+  { id: 'amdp', endpoint: '/sap/bc/adt/amdp/debugger', description: 'AMDP debugging' },
   // Probe /objects, not the bare node — the bare /…/ui5-bsp path has no handler → 404 → false-disables BSP.
   { id: 'ui5', endpoint: '/sap/bc/adt/filestore/ui5-bsp/objects', description: 'UI5/Fiori BSP' },
   { id: 'transport', endpoint: '/sap/bc/adt/cts/transportrequests', description: 'CTS transport management' },
@@ -188,7 +189,7 @@ export async function probeFeatures(
  * version, falling back to Cloud (the superset) for unknown releases.
  *
  * SAP_BASIS release examples: "700", "702", "740", "750", "757", "758", "816"
- * BTP ABAP Environment reports release like "sap_btp" or similar.
+ * The BTP ABAP Environment also reports a numeric SAP_BASIS (e.g. "919"), not "sap_btp". G-7.
  */
 export function mapSapReleaseToAbaplintVersion(release: string): Version {
   const r = release.replace(/\D/g, ''); // strip non-digits ("750" → "750", "7.57" → "757")
@@ -232,7 +233,7 @@ export const ABAPLINT_MAX_RELEASE = 758;
  * abaplint's `Cloud` target does not help either. Callers (pre-write lint) use this to
  * stop treating parse failures as blocking on such systems.
  *
- * Returns false when the release is unknown / non-numeric (e.g. BTP "sap_btp") — never
+ * Returns false when the release is unknown / non-numeric (a missing or unparseable value) — never
  * demote on missing data.
  */
 export function isBeyondAbaplintCeiling(release?: string): boolean {

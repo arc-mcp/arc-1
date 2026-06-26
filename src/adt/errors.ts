@@ -45,7 +45,8 @@ export interface SapErrorClassification {
     | 'icf-handler-not-bound'
     | 'icf-service-inactive'
     | 'bdef-base-not-extensible'
-    | 'include-not-initialized';
+    | 'include-not-initialized'
+    | 'data-view-not-authorized';
   hint: string;
   transaction?: string;
   details?: Record<string, string>;
@@ -560,6 +561,22 @@ export function classifySapDomainError(
     return {
       category: 'include-not-initialized',
       hint: 'This class-local include is not initialised yet (a fresh class has no testclasses/CCAU include until first write). Write to it via SAPWrite(action="update", type="CLAS", include="testclasses", source=…) — ARC-1 auto-creates the include before writing.',
+      details: typeId ? { exceptionType: typeId } : undefined,
+    };
+  }
+
+  // BTP / ABAP-Cloud data preview + freestyle SQL of SAP standard tables: HTTP 400
+  // ExceptionDataPreviewGeneral "No authorization to view data" (ADT_DATAPREVIEW_MSG/023; the
+  // LONGTEXT cites auth object S_ABPLNGVS — the ABAP language-version gate, not a missing data-read
+  // role). Distinct code path from a package/object 403 (ExceptionResourceNoAccess). Live-verified 919.
+  if (typeId === 'ExceptionDataPreviewGeneral' && /no authorization to view data/i.test(bodyRaw)) {
+    return {
+      category: 'data-view-not-authorized',
+      hint:
+        'On the ABAP Environment (ABAP Cloud), previewing SAP standard-table contents and running ' +
+        'freestyle SQL against standard tables is blocked by the cloud data-access model (authorization ' +
+        'object S_ABPLNGVS) — not a role you can grant. Query a released CDS view instead (SAPQuery ' +
+        'against a C1-released view), or read/preview a custom Z* table you own.',
       details: typeId ? { exceptionType: typeId } : undefined,
     };
   }

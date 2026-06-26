@@ -192,9 +192,42 @@ describeIf('BTP ABAP Environment Integration Tests', () => {
   // ─── BTP-Specific: Restricted ABAP ────────────────────────────
 
   describe('BTP restricted ABAP behavior', () => {
-    it('classic programs like RSHOWTIM are NOT available', async () => {
-      // BTP ABAP doesn't have classic SE38 programs
-      await expect(client.getProgram('RSHOWTIM')).rejects.toThrow(/403|404|not found|not available|not released/i);
+    it('classic PROG is READABLE, but creating a classic program is refused (T-1)', async () => {
+      // READ: standard classic reports ARE fully readable on the ABAP Environment (live-verified —
+      // RSHOWTIM returns its REPORT source). The earlier "NOT available" assertion was wrong.
+      const prog = await client.getProgram('RSHOWTIM');
+      expect(prog.source).toMatch(/\bREPORT\b|\bMESSAGE\b/i);
+
+      // WRITE: classic executable programs (PROG) are not part of ABAP Cloud — creation is refused.
+      // Needs a writable package to isolate the program-type refusal from the package-allowlist gate.
+      const pkg = process.env.TEST_BTP_PACKAGE;
+      if (pkg) {
+        const name = 'ZARC1_SMOKE_PROG';
+        const body = buildCreateXml(
+          'PROG',
+          name,
+          pkg,
+          'arc1 prog',
+          undefined,
+          'EN',
+          await client.getEffectiveUser(),
+          true,
+        );
+        await expect(
+          createObject(
+            client.http,
+            client.safety,
+            '/sap/bc/adt/programs/programs',
+            body,
+            createContentTypeForType('PROG'),
+            undefined,
+            undefined,
+            '919',
+            'btp',
+            name,
+          ),
+        ).rejects.toThrow();
+      }
     });
 
     it('classic function modules may not be available', async () => {
@@ -205,28 +238,23 @@ describeIf('BTP ABAP Environment Integration Tests', () => {
       expect(results).toBeInstanceOf(Array);
     });
 
-    it('table preview may be restricted on BTP', async () => {
-      // T000 table preview requires specific authorization on BTP
-      try {
-        const result = await client.getTableContents('T000', 5);
-        // If it works, verify structure
-        expect(result.columns).toContain('MANDT');
-      } catch (err) {
-        // Expected on BTP: table preview is often restricted
-        expectSapFailureClass(err, [403, 500], [/restricted/i, /not authorized/i]);
-      }
+    it('standard-table preview is blocked with the BTP data-view 400 (T-2)', async () => {
+      // BTP returns HTTP 400 ExceptionDataPreviewGeneral "No authorization to view data"
+      // (ADT_DATAPREVIEW_MSG/023; auth object S_ABPLNGVS) — NOT a 403/500. Live-verified 919.
+      const err = await client.getTableContents('T000', 5).then(
+        () => null,
+        (e) => e,
+      );
+      expectSapFailureClass(err, [400], [/No authorization to view data/i]);
     });
 
-    it('free SQL query is likely blocked on BTP', async () => {
-      try {
-        const result = await client.runQuery('SELECT * FROM T000', 5);
-        // If it works, verify result shape
-        expect(result).toBeTruthy();
-        expect(typeof result).toBe('string');
-      } catch (err) {
-        // Expected: BTP blocks free SQL execution
-        expectSapFailureClass(err, [403, 500], [/blocked/i, /not authorized/i, /restricted/i]);
-      }
+    it('freestyle SQL on standard tables is blocked with the BTP data-view 400 (T-3)', async () => {
+      // Same cloud data-access gate as table preview — 400, not the 403/500 the old test expected.
+      const err = await client.runQuery('SELECT * FROM T000', 5).then(
+        () => null,
+        (e) => e,
+      );
+      expectSapFailureClass(err, [400], [/No authorization to view data/i]);
     });
   });
 
