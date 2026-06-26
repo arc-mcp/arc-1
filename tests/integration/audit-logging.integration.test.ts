@@ -24,7 +24,7 @@ describe('Audit Logging Integration', () => {
   const events: AuditEvent[] = [];
   const captureSink = { write: (e: AuditEvent) => events.push(e) };
   const logFile = join(tmpdir(), `arc1-integ-audit-${Date.now()}.jsonl`);
-  let fileSink: FileSink;
+  let fileSink: FileSink | undefined;
 
   beforeAll(() => {
     requireSapCredentials();
@@ -35,7 +35,7 @@ describe('Audit Logging Integration', () => {
   });
 
   afterAll(async () => {
-    await fileSink.flush();
+    await fileSink?.flush();
     if (existsSync(logFile)) {
       unlinkSync(logFile);
     }
@@ -158,6 +158,10 @@ describe('Audit Logging Integration', () => {
   });
 
   it('writes all events to file sink as valid JSON lines', async () => {
+    if (!fileSink) {
+      throw new Error('File audit sink was not initialized');
+    }
+
     // Flush the file sink to write buffered events
     await fileSink.flush();
 

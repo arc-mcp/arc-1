@@ -796,14 +796,65 @@ describe('SAPManage / SAPContext handlers', () => {
       expect(result.content[0]?.text).toContain('name');
     });
 
-    it('returns Zod validation error for unsupported type', async () => {
+    it('returns a guardrail error for TABL without structure action', async () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPContext', {
         type: 'TABL',
         name: 'MARA',
       });
       expect(result.isError).toBe(true);
-      expect(result.content[0]?.text).toContain('Invalid arguments for SAPContext');
-      expect(result.content[0]?.text).toContain('CLAS');
+      expect(result.content[0]?.text).toContain('type TABL requires action="structure"');
+    });
+
+    it('returns TABL structure context through action="structure"', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string; body?: string }) => {
+        const urlStr = String(url);
+        const method = opts?.method ?? 'GET';
+        if (urlStr.includes('/sap/bc/adt/core/discovery')) {
+          return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+        }
+        if (method === 'POST' && urlStr.includes('/sap/bc/adt/repository/informationsystem/usageReferences/scope')) {
+          return Promise.resolve(
+            mockResponse(
+              200,
+              '<usageReferences:scopeResponse xmlns:usageReferences="http://www.sap.com/adt/ris/usageReferences"/>',
+            ),
+          );
+        }
+        if (method === 'POST' && urlStr.includes('/sap/bc/adt/repository/informationsystem/usageReferences')) {
+          return Promise.resolve(
+            mockResponse(
+              200,
+              '<usageReferences:usageReferenceResult xmlns:usageReferences="http://www.sap.com/adt/ris/usageReferences"><usageReferences:referencedObjects/></usageReferences:usageReferenceResult>',
+            ),
+          );
+        }
+        if (urlStr.includes('/sap/bc/adt/ddic/tables/ZBASE/source/main')) {
+          return Promise.resolve(mockResponse(404, 'Not Found', { 'x-csrf-token': 'T' }));
+        }
+        if (urlStr.includes('/sap/bc/adt/ddic/structures/ZBASE/source/main')) {
+          return Promise.resolve(
+            mockResponse(200, 'define structure zbase {\n  include zinc;\n}', { 'x-csrf-token': 'T' }),
+          );
+        }
+        if (urlStr.includes('/sap/bc/adt/ddic/tables/ZINC/source/main')) {
+          return Promise.resolve(mockResponse(404, 'Not Found', { 'x-csrf-token': 'T' }));
+        }
+        if (urlStr.includes('/sap/bc/adt/ddic/structures/ZINC/source/main')) {
+          return Promise.resolve(mockResponse(200, 'define structure zinc { field1 : abap.char(1); }'));
+        }
+        return Promise.resolve(mockResponse(500, `Unexpected URL ${urlStr}`));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPContext', {
+        action: 'structure',
+        type: 'TABL',
+        name: 'ZBASE',
+      });
+      const payload = JSON.parse(result.content[0]?.text ?? '{}');
+      expect(result.isError).toBeUndefined();
+      expect(payload.tree.children[0]).toMatchObject({ kind: 'include', structure: 'ZINC' });
+      expect(payload.includeExtensions).toBe(true);
     });
 
     it('dispatches successfully with provided source', async () => {

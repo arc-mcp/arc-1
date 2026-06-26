@@ -1668,6 +1668,15 @@ describe('SAPContextSchema', () => {
     expect(result.success).toBe(true);
     if (result.success) expect(result.data.includeKtd).toBe(false);
   });
+
+  it('accepts structure action for TABL', () => {
+    const result = SAPContextSchema.safeParse({
+      action: 'structure',
+      type: 'TABL',
+      name: 'ZSTRUCT',
+    });
+    expect(result.success).toBe(true);
+  });
 });
 
 describe('SAPContextSchemaBtp', () => {
@@ -1680,6 +1689,7 @@ describe('SAPContextSchemaBtp', () => {
     expect(SAPContextSchemaBtp.safeParse({ name: 'Z', type: 'CLAS' }).success).toBe(true);
     expect(SAPContextSchemaBtp.safeParse({ name: 'Z', type: 'DDLS' }).success).toBe(true);
     expect(SAPContextSchemaBtp.safeParse({ name: 'Z', type: 'DDLS', action: 'impact' }).success).toBe(true);
+    expect(SAPContextSchemaBtp.safeParse({ name: 'Z', type: 'TABL', action: 'structure' }).success).toBe(true);
     const siblingControls = SAPContextSchemaBtp.safeParse({
       name: 'Z',
       type: 'DDLS',
