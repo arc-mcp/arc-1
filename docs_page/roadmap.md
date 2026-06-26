@@ -1,6 +1,7 @@
 # ARC-1 Roadmap
 
-**Last Updated:** 2026-06-25 (**shipped the 2026-06-24 deep-scan gaps** — 8 PRs, each live-verified on a4h 758 (S/4HANA 2023) AND a4h-2025 816 (ABAP Platform 2025): **FEAT-63** pre-release inactive-objects check + **COMPAT-05** K/W/T fix [PR #501], **FEAT-64** unknown-column hint [PR #502], **FEAT-41** AUnit coverage [PR #503], **FEAT-65** TTYP read+create [PR #504], **FUGR structural-include write** (FEAT-18 sibling) [PR #505], **CDS API-release write** (FEAT-02 follow-up) `SAPManage set_api_state` [PR #506], **RAP behavior-extension create** (`extend behavior for`) [PR #507]. **SEC-14** implemented then DEFERRED [PR #500] (mandatory HTTP auth is the primary control). **FEAT-62** (TRAN write) confirmed a **HARD BLOCKER** — `/aps/iam/tran` absent on all three test systems. Earlier 2026-06-24 (competitor deep-scan: fr0ster v7.2.1 + sapcli + dassian-adt — new **SEC-14** (DNS-rebinding/Host-header), **FEAT-63** (pre-release inactive-objects check), **FEAT-64** (unknown-column self-correcting hint), **FEAT-65** (TTYP), **COMPAT-05** (verify ToC type-T creation); flagged CDS API-release-**write** as a dual-signal gap; reinforced FEAT-41/FEAT-62 with sapcli reference impls; see [`compare/`](../compare/)). Earlier 2026-05-29 (SAPRead `grep` — case-insensitive regex returning only matching source lines + context with line numbers, method-annotated for classes, literal fallback; token-efficient search over source-bearing types, complements #307 class-section surgery; issue #313). Earlier: ARC-1-native pre-write hint `arc1-tabl-draft-admin-include` — non-blocking warning when a TABL source uses bare `include sych_bdl_draft_admin_inc` instead of the SAP-canonical `"%admin"` named-include prefix; closes Run 6 micro-improvement #5 from the SEGW→RAP migration skill iteration log; earlier same day: SAPSearch tadir_lookup `source` modes for TADIR ghost detection + SAPWrite batch_create `activateAtEnd` for composition-linked DDLS / interdependent RAP graphs; earlier same day: RAP handler skeleton CCIMP-only fix)
+**Last Updated:** 2026-06-26
+
 **Project:** ARC-1 (ABAP Relay Connector) — MCP Server for SAP ABAP Systems
 **Repository:** https://github.com/arc-mcp/arc-1
 
@@ -71,7 +72,7 @@ SORT RULES for this table — DO NOT BREAK when adding rows:
 | [FEAT-26](#feat-26) | MCP Client Config Snippets | P2 | S | Features |
 | [FEAT-27](#feat-27) | Migration Analysis (ECC->S/4) | P2 | S | Features |
 | [FEAT-28](#feat-28) | SAP Compatibility Hardening | P2 | S | Features |
-| [FEAT-31](#feat-31) | Code Coverage from Unit Tests | P2 | S | Features |
+| ~~[FEAT-31](#feat-31)~~ | ~~Code Coverage from Unit Tests~~ — **✅ Resolved by FEAT-41 / PR #503**: `SAPDiagnose action=unittest` now supports `coverage:true` | P2 | S | Features |
 | [FEAT-32](#feat-32) | Table Pagination / Offset | P2 | XS | Features |
 | [FEAT-36](#feat-36) | Type Information (SAPNavigate) | P2 | S | Features |
 | ~~[FEAT-41](#feat-41)~~ | ~~ABAP Unit Test Coverage (statement-level)~~ — **✅ Completed 2026-06-25 (PR #503)**: statement/branch/procedure coverage, live-verified 758 + 816 | P2 | S | Features |
@@ -130,6 +131,8 @@ SORT RULES for this table — DO NOT BREAK when adding rows:
 
 | ID | Feature | Completed | Category |
 |----|---------|-----------|----------|
+| — | DDIC structure context — `SAPContext(action="structure", type="TABL")` returns recursive TABL structure include trees plus append/extension structures confirmed from where-used candidates (`extend type <base> with`). Implementation: `src/adt/structure-hierarchy.ts` + `src/handlers/context.ts`; covered by parser/handler/schema tests and a BAPIRET2 integration smoke. A4H 2025 where-used 400 fallback returns the include tree with a warning instead of timing out. | 2026-06-26 | Features |
+| — | 2026-06-24 deep-scan gap bundle — FEAT-63 pre-release inactive-objects check, FEAT-64 unknown-column hint, FEAT-41/FEAT-31 AUnit coverage, FEAT-65 TTYP read/create, FUGR structural-include write, CDS API-release write (`SAPManage set_api_state`), RAP behavior-extension create (`extend behavior for`), plus COMPAT-05 ToC advertise-text correction. Live-verified on 758 + 816 where applicable. | 2026-06-25 | Features/Compatibility |
 | — | Server-driven object (SDO) **write** — `SAPWrite action=create\|update\|delete` + `SAPActivate` for `DESD\|EVTB\|DTSC\|CSNM\|EVTO\|COTA` via the same generic AFF engine (`src/adt/server-driven.ts`): create POSTs a `<blue:blueSource>` metadata body (per-type `createType`; blues `v1`, or **`v2` for EVTO**), source is AFF JSON written via lock→PUT `…/source/main` (`application/json`)→unlock, then `SAPActivate` (generic activation endpoint). Discovery-gated (clean 8.16+ error otherwise), `allowWrites`-gated, `allowedPackages`-gated against the real package. Create leaves the object inactive. Per-type/release-adaptive gate (like the read path): live-verified on a4h-2025 (816) — all 6 types create, DESD full create→source→activate→read→delete round-trip; on a4h (758) **EVTB write also works** (cross-release) while the 816-only types return a clean "requires 8.16+" error; npl (7.50) gates all 6 cleanly (no crash). Plan: `docs/plans/completed/add-server-driven-object-write.md`. | 2026-06-05 | Features |
 | — | Server-driven object (SDO) read — `SAPRead type=DESD\|EVTB\|EVTO\|DTSC\|CSNM\|COTA` reads ABAP Platform 2025 (8.16) "server-driven" repository objects via one generic discovery-gated AFF engine (`src/adt/server-driven.ts`): metadata from `<blue:blueSource>` + AFF JSON source. Per-type/release-adaptive gate (EVTB also on S/4HANA 2023). 816 roadmap item #2 from the new-ADT-APIs research. Live-verified: a4h-2025 (816) reads DESD (CDS Logical External Schema) + EVTB (RAP Event Binding); a4h (758) reads EVTB, skips DESD. Write path shipped (see the SDO write row above). Plan: `docs/plans/completed/add-server-driven-object-read.md`. | 2026-06-05 | Features |
 | — | CDS test-case scaffolding — `SAPDiagnose action=cds_testcases` returns SAP-suggested ABAP Unit test cases for a CDS entity (CDS Test Double Framework): one suggestion per testable semantic (whole view / calculated field / CAST / JOIN) with a `testMethod` name, `description`, `semanticType`, optional `calculatedField`, plus a `cl_cds_test_environment` scaffolding `hint`. Read-only, discovery-gated to **SAP_BASIS 8.16+ (ABAP Platform 2025 / S/4HANA 2025)** — the first new-API capability mined from the 2025 ADT research. Live-verified: a4h-2025 (816) → 200, a4h (758) → clean skip. Plan: `docs/plans/completed/add-cds-test-cases-scaffolding.md`. | 2026-06-05 | Features |
@@ -236,10 +239,10 @@ SORT RULES for this table — DO NOT BREAK when adding rows:
 > - **SAPManage scope split** — read vs write sub-actions enforced via `SAPMANAGE_ACTION_SCOPES` in both standard and hyperfocused mode (PR #171). Read-only clients keep diagnostic manage actions.
 > - **DOC-05** — three new skills merged (`sap-clean-core-atc`, `sap-unused-code`, `sap-object-documenter`) broadening the workflow layer beyond RAP (PR #164).
 >
-> Open PRs in flight (not merged at 2026-04-23):
+> PRs that were open at the time (not merged at 2026-04-23; later status noted where the current repo has since changed):
 > - **PR [#179](https://github.com/arc-mcp/arc-1/pull/179)** (samibouge) — **BUG-01 / P0**: SAPActivate reported "Successfully activated" for an inactive class on NW 7.50. Five independent parser/handler bugs combined into a silent no-op. Fix adds `<ioc:inactiveObjects>` detection in `parseActivationResult`, `/activation/inactive` → `/activation/inactiveobjects` fallback for `getInactiveObjects`, flat-shape support in `parseInactiveObjects`, new `version: 'active' \| 'inactive'` parameter on `SAPDiagnose action=syntax`, and NW 7.50 `<chkrun:checkMessage>` shape in `parseSyntaxCheckResult`. Also surfaces a wider **FEAT-60** gap (see below): CLI shortcut coverage lags MCP tool schemas across at least 9 tools.
-> - **PR [#176](https://github.com/arc-mcp/arc-1/pull/176)** — CDS CRUD dependency guidance for DDLS update/activate/delete (handler-level workflow hints, not a new ADT capability). Uses FEAT-51 number; the 2026-04-23 completions in this roadmap use FEAT-55..58 to avoid renumbering collision with the in-flight PR.
-> - **PR [#173](https://github.com/arc-mcp/arc-1/pull/173)** — RAP on-prem authoring gap closure: deterministic RAP preflight for TABL/BDEF/DDLX/DDLS (`preflightBeforeWrite` toggle), new `SAPWrite action=scaffold_rap_handlers` with `dry-run`/`autoApply`, behavior-pool include scanning, per-object batch activation statuses. Will close the remaining RAP retry-failure class once merged.
+> - **PR [#176](https://github.com/arc-mcp/arc-1/pull/176)** — CDS CRUD dependency guidance for DDLS update/activate/delete (handler-level workflow hints, not a new ADT capability). Uses FEAT-51 number; the 2026-04-23 completions in this roadmap use FEAT-55..58 to avoid renumbering collision with the then-open PR. **Merged later**; current repo has the DDLS dependency guidance path.
+> - **PR [#173](https://github.com/arc-mcp/arc-1/pull/173)** — RAP on-prem authoring gap closure: deterministic RAP preflight for TABL/BDEF/DDLX/DDLS (`preflightBeforeWrite` toggle), new `SAPWrite action=scaffold_rap_handlers` with `dry-run`/`autoApply`, behavior-pool include scanning, per-object batch activation statuses. **Merged later**; current repo has `src/adt/rap-preflight.ts`, default-on `preflightBeforeWrite`, and the `scaffold_rap_handlers` path.
 > - **PR [#161](https://github.com/arc-mcp/arc-1/pull/161)** — BTP CF deployment diagram (`docs/btp-deployment.drawio`). Doc artifact only.
 > - **PR [#151](https://github.com/arc-mcp/arc-1/pull/151)** — SAPLint PrettyPrint + revision eval scenarios (test-only).
 >
@@ -321,7 +324,7 @@ These bugs affect real-world deployments and were confirmed by cross-project com
 20. ~~**FEAT-46** SRVB (Service Binding) Create (S)~~ — **completed 2026-04-14** (SAPWrite now supports SRVB create/update/delete + batch_create; create guidance points to activate + publish flow).
 21. ~~**FEAT-47** MSAG (Message Class) Read/Write (S)~~ — **completed 2026-04-14** (SAPRead type=MSAG + SAPWrite/SAPManage MSAG create/update/delete)
 22. ~~**FEAT-39** Transport Enhancements (S)~~ — **completed 2026-04-13** (K/W/T types; S/R deferred). sapcli has full CTS lifecycle.
-21. **FEAT-41** ABAP Unit Test Coverage (S) — statement-level coverage via `/runtime/traces/coverage/measurements/{id}` with paginated follow-up. sapcli + AWS Accelerator have this; sapcli now prints **branch + procedure** coverage (`942d70b`, 2026-04-24) — concrete reference impl. ARC-1 still hardcodes `coverage active="false"` (`devtools.ts:554`).
+21. ~~**FEAT-41** ABAP Unit Test Coverage (S)~~ — **completed 2026-06-25 (PR #503)**: `SAPDiagnose action="unittest"` with `coverage:true` returns statement/branch/procedure coverage, handles cross-release CLAS/OM variants, and degrades cleanly when the coverage endpoint is unavailable.
 22. **FEAT-42** ATC Output Formats (XS) — JUnit4, checkstyle, codeclimate formatters for CI/CD integration. sapcli has these.
 23. ~~**FEAT-43** DDIC Auth & Misc Read (S)~~ — **completed 2026-04-17** (SAPRead types `AUTH`, `FEATURE_TOGGLE` (formerly `FTG2`, renamed in audit Plan B / PR #224), `ENHO`; Authorization Fields endpoint: `/sap/bc/adt/aps/iam/auth/{name}`, namespace `http://www.sap.com/iam/auth`)
 24. ~~**FEAT-48** SKTD (Knowledge Transfer Documents) Read/Write (S)~~ — **✅ Completed 2026-04-16** (PR #134 merged). Unique to ARC-1. LLM-generated documentation for ABAP objects.
@@ -329,7 +332,7 @@ These bugs affect real-world deployments and were confirmed by cross-project com
 26. **SEC-05** Rate Limiting (S) — prevent runaway AI loops
 26b. ~~**SEC-14** DNS-rebinding / Host-header validation (S)~~ — **implemented then DEFERRED 2026-06-25** (PR #500, closed-deferred). Mandatory HTTP auth is the primary rebind control; Host validation only matters in the no-auth mode a real deploy shouldn't use, so it's parked to avoid the `ARC1_ALLOWED_HOSTS` setup surface. Decision record + resume guide: [docs/plans/sec-14-dns-rebinding-host-validation.md](../docs/plans/sec-14-dns-rebinding-host-validation.md).
 26. ~~**FEAT-20** Source Version / Revision History (S) — promoted to P1/Phase B and completed 2026-04-17~~
-27. **FEAT-31** Code Coverage from Unit Tests (S) — VSP has this (Apr 4). See also FEAT-41 for sapcli's approach.
+27. ~~**FEAT-31** Code Coverage from Unit Tests (S)~~ — **resolved by FEAT-41 / PR #503**: `SAPDiagnose action="unittest"` with `coverage:true` returns coverage metrics.
 28. ~~**FEAT-33** CDS Impact Analysis (S)~~ — **completed 2026-04-16** (`SAPContext(action="impact")` for DDLS upstream+downstream analysis)
 25. **FEAT-24** CompareSource / Diff (S) — **↑ Upgraded:** with FEAT-20 (revisions) + FEAT-49 (object transport history), transport-scoped code review now viable (fr0ster#30). Client-side diff of two revision sources — ADT has no server-side diff endpoint.
 26. **FEAT-26** MCP Client Config Snippets (S) — onboarding UX
@@ -345,7 +348,7 @@ These bugs affect real-world deployments and were confirmed by cross-project com
 36. **FEAT-30** ABAP Cleaner Integration (M) — optional Java-based code cleanup (see below)
 
 ### Phase E: New Capabilities from Competitor Sprint (P2-P3)
-33. **FEAT-31** Code Coverage from Unit Tests (S) — VSP added line-level coverage metrics
+33. ~~**FEAT-31** Code Coverage from Unit Tests (S)~~ — **resolved by FEAT-41 / PR #503**: coverage is now available through `SAPDiagnose action="unittest"`.
 34. **FEAT-32** Table Pagination / Offset (XS) — VSP added offset + columns_only to table contents
 35. ~~**FEAT-33** CDS Impact Analysis (S)~~ — **completed 2026-04-16** (RAP-aware downstream consumer classification)
 36. **FEAT-34** i18n Translation Management (M) — VSP added 7 translation tools
@@ -1110,14 +1113,14 @@ For FUGR (function groups), the same pattern applies with `objecttype=FUGR/P` an
 | **Effort** | S (1-2 days) |
 | **Risk** | Low |
 | **Usefulness** | Medium — test quality assessment |
-| **Status** | Not started |
+| **Status** | ✅ **Resolved by FEAT-41 (2026-06-25, PR #503)** — `SAPDiagnose action=unittest` supports `coverage:true` |
 | **Source** | [VSP eval](../compare/vibing-steampunk/evaluations/333f462-code-coverage.md) |
 
-**What:** Return line-level code coverage metrics from ABAP unit test runs. VSP added `GetCodeCoverage` (commit 333f462, Apr 4). ARC-1's SAPDiagnose runs unit tests but returns pass/fail only, not coverage data.
+**What:** Return code coverage metrics from ABAP Unit test runs. VSP added `GetCodeCoverage` (commit 333f462, Apr 4). ARC-1 now returns statement/branch/procedure coverage through `SAPDiagnose action=unittest` with `coverage:true`.
 
 **Why:** Coverage metrics help assess test quality and identify untested code paths.
 
-**Why not:** ADT's unit test endpoints return pass/fail results, not coverage metrics — coverage data lives in ABAP Unit runtime (RSTSTC) and is only accessible via ABAP, not ADT REST. Line-level coverage for a 500-line class generates 500+ lines of output, bloating the LLM context window. LLMs don't optimize based on coverage — humans do. Coverage analysis is better handled offline (run tests locally, generate report, share with team).
+**Resolution:** FEAT-41 implemented the ADT runtime-trace coverage measurement flow. ARC-1 summarizes aggregate coverage and `methodsBelowFull` instead of returning raw line-level output, which keeps the response usable for LLM-driven test work.
 
 ---
 
@@ -1436,17 +1439,17 @@ For FUGR (function groups), the same pattern applies with `objecttype=FUGR/P` an
 | **Status** | ✅ **Completed 2026-06-25 (PR #503)** — `SAPDiagnose unittest coverage:true` → statement/branch/procedure %; 2-step ADT flow; live-verified 758 + 816 |
 | **Source** | [sapcli comparison](../compare/09-sapcli.md), sapcli `sap/adt/aunit.py` |
 
-**What:** Fetch statement-level code coverage after running ABAP Unit tests. Uses `POST /sap/bc/adt/runtime/traces/coverage/measurements/{id}` with paginated `rel=next` follow-up for large result sets.
+**What:** Fetch statement, branch, and procedure coverage after running ABAP Unit tests. ARC-1 discovers the coverage measurement URI from the ABAP Unit response, then uses the ADT coverage measurement endpoint with paginated follow-up for large result sets.
 
-**Why:** Coverage data tells the LLM which lines are untested, enabling targeted test generation. sapcli and AWS Accelerator both have this. Currently ARC-1 runs tests but returns only pass/fail — no coverage metrics.
+**Why:** Coverage data tells the LLM which methods and lines are untested, enabling targeted test generation. sapcli and AWS Accelerator both have this; ARC-1 now returns coverage metrics when requested instead of only pass/fail test results.
 
-**Concern:** Coverage for a 500-line class generates 500+ lines of output. May need summarization (e.g., "85% covered, 12 uncovered lines: 45-48, 102-105, 200-204") rather than raw line-by-line data.
+**Concern:** Coverage for a large class can be noisy. ARC-1 returns summarized aggregate percentages plus a worst-first `methodsBelowFull` list rather than raw line-by-line output.
 
 **Implementation:**
-- Add `enableCoverage` parameter to `runUnitTests()` in `src/adt/devtools.ts`
-- Post coverage measurement request, parse response with pagination
-- Return summary + uncovered line ranges (not raw per-line data, to avoid context bloat)
-- Integrate into SAPDiagnose or SAPRead `run_tests` action
+- `SAPDiagnose action=unittest` accepts `coverage:true`
+- `runUnitTests({ coverage: true })` in `src/adt/devtools.ts` performs the two-step run -> coverage measurement flow
+- Parser returns aggregate statement/branch/procedure coverage plus `methodsBelowFull`, with `coverageNote` fallback when coverage is unavailable
+- Handler/tool/schema tests plus live 758/816 verification are covered by PR #503
 
 ---
 
@@ -2570,8 +2573,8 @@ The VS Code client-side issue — [microsoft/vscode#314715](https://github.com/m
 | OAuth Security | RFC 9700 compliance: state+PKCE, loopback binding, audience validation, stateless DCR and XSUAA callback-state proxy |
 | Hyperfocused Mode | Single `SAP` tool (~200 tokens) — competitive parity with VSP |
 | Method-Level Surgery | `edit_method` in SAPWrite, `list_methods`/`get_method` in SAPContext (95% token reduction) |
-| Runtime Diagnostics | SAPDiagnose — short dumps (ST22), ABAP profiler traces |
-| DDIC Completeness | Structures, domains, data elements, DDLX, transactions, BOR objects, T100 messages |
+| Runtime Diagnostics | SAPDiagnose — ST22 dumps, ABAP profiler traces, SM02 messages, IWFND gateway errors, ABAP Unit with coverage, OData `sap-statistics` perf, CDS Show-SQL, and ST05 trace state/directory |
+| DDIC Completeness | Structures/TABL (read/write plus `SAPContext` include+append hierarchy), TTYP, domains, data elements, DDLX, transactions, BOR objects, T100 messages |
 | RAP CRUD | DDLS, DDLX, BDEF, SRVD, SRVB write |
 | Context Compression | SAPContext with AST-based dependency extraction (7-30x reduction) |
 | Where-Used Analysis | Scope-based where-used in SAPNavigate (#38) |
@@ -2579,7 +2582,7 @@ The VS Code client-side issue — [microsoft/vscode#314715](https://github.com/m
 | Object Caching | SQLite + memory cache with on-demand + pre-warmer support (#31) |
 | LLM Search UX | Auto-transliteration, field-name hints, cache indicators |
 | HTTP Client | Native fetch + undici (replaced axios) (#35) |
-| Test Coverage | 3,474 unit + 262-test default integration profile + 141-test default E2E profile; BTP smoke/integration and slow SAP profiles are explicit/manual; coverage telemetry is informational |
+| Test Coverage | 4,101 passing unit tests (810 Vitest suites, local Node 22 run on 2026-06-26) + 279-test default integration profile; E2E/BTP/slow SAP profiles are CI/manual; coverage telemetry is informational |
 | Documentation | Architecture, auth guides, Docker guide, setup phases, security guide, RAP/common-use-case workflow skills |
 
 ---
@@ -2603,8 +2606,8 @@ The VS Code client-side issue — [microsoft/vscode#314715](https://github.com/m
 | Principal Propagation | SEC-01+SEC-02: Per-user ADT client via BTP Destination Service + Cloud Connector for on-premise SAP | Code complete (2026-03-27) |
 | Hyperfocused Mode | Single `SAP` tool (~200 tokens) — competitive parity with VSP | Complete (2026-04-01) |
 | Method-Level Surgery | `edit_method`, `list_methods`, `get_method` — 95% token reduction; PR-D (2026-05-10) extends `edit_method` to local handler classes inside CCDEF/CCIMP (`lhc_*`/`lcl_*`/`ltc_*` auto-routing + `<localclass>~<method>` qualified specifiers); class-section surgery (2026-05-27, issue #303) adds `edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method` — token-efficient edits to a global class's DEFINITION block without re-sending `/source/main`, backed by SAP's `objectstructure` endpoint, with client-side refuse-policy that points at `add_method`/`delete_method` when a diff would produce a non-activatable draft; `change_method_visibility` (2026-05-29, PR-author feedback) moves a method between sections while preserving the body | Complete (2026-04-01); PR-D 2026-05-10; class-section surgery 2026-05-27; change_method_visibility 2026-05-29 |
-| Runtime Diagnostics | SAPDiagnose — short dumps (ST22), ABAP profiler traces | Complete (2026-04-01) |
-| DDIC Completeness | FEAT-04: DOMA, DTEL, DDLX, TRAN, BOR, T100, variants (TABL covers transparent tables and DDIC structures since Model B) | Complete (2026-04-01) |
+| Runtime Diagnostics | SAPDiagnose — ST22 dumps, ABAP profiler traces, SM02 messages, IWFND gateway errors, ABAP Unit with coverage, OData `sap-statistics` perf, CDS Show-SQL, and ST05 trace state/directory | Complete (2026-04-01; expanded through 2026-06-25) |
+| DDIC Completeness | FEAT-04: DOMA, DTEL, DDLX, TRAN, BOR, T100, variants, TTYP, and TABL structure context (TABL covers transparent tables and DDIC structures since Model B; `SAPContext` adds include+append hierarchy in 2026-06) | Complete (2026-04-01; expanded through 2026-06-26) |
 | DDIC Domain/Data Element Write | FEAT-13: DOMA/DTEL create, update, delete, batch_create in SAPWrite | Complete (2026-04-12) |
 | RAP CRUD | DDLS/DDLX/BDEF/SRVD/SRVB write, batch activation | Complete (2026-04-14) |
 | Context Compression | SAPContext with AST-based dependency extraction (7-30x reduction) | Complete (2026-04-01) |
@@ -2677,6 +2680,18 @@ The VS Code client-side issue — [microsoft/vscode#314715](https://github.com/m
 - [SAP Help: Principal Propagation](https://help.sap.com/docs/connectivity/sap-btp-connectivity-cf/configuring-principal-propagation)
 - [SAP Help: S_DEVELOP Authorization Object](https://help.sap.com/docs/SAP_Solution_Manager/fd3c83ed48684640a18ac05c8ae4d016/4fa00d670cff44a5958237334a88af84.html)
 - [Microsoft: Copilot Studio Custom Connectors](https://learn.microsoft.com/en-us/microsoft-copilot-studio/advanced-connectors)
+
+---
+
+## Update History
+
+| Date | Update |
+|------|--------|
+| 2026-06-26 | DDIC structure context + docs audit. `SAPContext(action="structure", type="TABL")` now returns recursive DDIC include trees plus append/extension structures, with A4H 2025 where-used fallback. The roadmap and feature matrix ARC-1 column were re-audited against current repo facts: MCP OAuth/DCR, dry-run scope, RAP preflight, AUnit coverage, diagnostics/DDIC coverage, and test counts. |
+| 2026-06-25 | Shipped the 2026-06-24 deep-scan gaps in 8 PRs, each live-verified on a4h 758 (S/4HANA 2023) and a4h-2025 816 (ABAP Platform 2025): FEAT-63 pre-release inactive-objects check + COMPAT-05 K/W/T fix (PR #501), FEAT-64 unknown-column hint (PR #502), FEAT-41 AUnit coverage (PR #503), FEAT-65 TTYP read+create (PR #504), FUGR structural-include write (PR #505), CDS API-release write via `SAPManage set_api_state` (PR #506), and RAP behavior-extension create (PR #507). SEC-14 was implemented then deferred in PR #500 because mandatory HTTP auth is the primary control. FEAT-62 (TRAN write) remains hard-blocked because `/aps/iam/tran` is absent on all three test systems. |
+| 2026-06-24 | Competitor deep scan of fr0ster v7.2.1, sapcli, and dassian-adt found SEC-14, FEAT-63, FEAT-64, FEAT-65, COMPAT-05, and a dual-signal CDS API-release-write gap. It also reinforced FEAT-41 and FEAT-62 with sapcli reference implementations. See [`compare/`](../compare/). |
+| 2026-05-29 | Added SAPRead `grep`: case-insensitive regex over source-bearing types, returning matching lines with line numbers and context, class method annotations, and literal fallback. Complements issue #307 class-section surgery and closes issue #313. |
+| Earlier | Added the ARC-1-native pre-write hint `arc1-tabl-draft-admin-include`, SAPSearch `tadir_lookup` source modes for TADIR ghost detection, SAPWrite `batch_create activateAtEnd` for interdependent RAP graphs, and the RAP handler skeleton CCIMP-only fix. |
 
 ---
 

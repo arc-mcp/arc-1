@@ -2,7 +2,7 @@
 
 A comprehensive comparison of all SAP ADT/MCP projects against ARC-1.
 
-_Last updated: 2026-06-24 (deep fr0ster v7.2.1 + sapcli scan — net new: **SEC-14** DNS-rebinding gap + **CDS API-release-write** dual-signal; see the 2026-06-24 tracker rows below). Earlier — 2026-06-05. **New column — "SAP ABAP MCP"**: SAP's official `SAPSE.adt-vscode` bundled ABAP MCP server (headless Eclipse/Equinox + Anthropic MCP Java SDK 1.0.1; localhost Streamable-HTTP on port 2236, static bearer token; 14 built-in tools + dynamic backend "IDE Actions"; ABAP-Cloud / RAP-generation scope; disabled-by-default, part of Joule for Developers; GA Q2 2026, v1.0.0). Detailed teardown: [J4D/02-sap-abap-mcp-server-vscode.md](J4D/02-sap-abap-mcp-server-vscode.md). Earlier dated changelog prose has been trimmed for readability — see git history and per-project docs for the full change log._
+_Last updated: 2026-06-26._
 
 ## Legend
 - ✅ = Supported
@@ -46,7 +46,7 @@ _Last updated: 2026-06-24 (deep fr0ster v7.2.1 + sapcli scan — net new: **SEC-
 | XSUAA OAuth | ✅ | ✅ (BTP ABAP via Eclipse auth) | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ (Apr 2026) | ❌ |
 | BTP Service Key | ✅ | ✅ (ABAP Cloud project) | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
 | Principal Propagation | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ (X.509) | ✅ | ✅ | ❌ | ❌ |
-| MCP OAuth 2.0 per-user | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (Apr 2026) | ❌ |
+| MCP OAuth 2.0 per-user | ✅ (XSUAA OAuth proxy with auth-code/PKCE + stateless DCR; per-user SAP identity when paired with PP/Destination) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (Apr 2026) | ❌ |
 | SAML | ❌ | ✅ (reentrance ticket) | ✅ (v2.39.0+, PR #97) | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
 | X.509 Certificates | ❌ | ⚠️ (Eclipse-supported) | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Device Flow (OIDC) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
@@ -62,7 +62,7 @@ _Last updated: 2026-06-24 (deep fr0ster v7.2.1 + sapcli scan — net new: **SEC-
 | Package restrictions | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Block free SQL | ✅ | N/A (no free SQL) | ✅ | ❌ | ❌ | N/A | ❌ | ❌ | ❌ | ❌ |
 | Transport gating | ✅ | ⚠️ (human-in-the-loop selection) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Dry-run mode | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Dry-run mode | ⚠️ (RAP handler preview, `generate_behavior_implementation dryRun`, and syntax/check-before-write previews; no universal write dry-run) | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Audit logging | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ (CloudWatch) | ❌ | ❌ | ❌ | ❌ |
 | Input sanitization | ✅ (Zod) | ⚠️ (Eclipse client) | ✅ | ❌ | ⚠️ | ✅ (defusedxml) | ✅ (Zod) | ✅ (Zod) | ⚠️ | ⚠️ (argparse) |
 | MCP elicitation | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (10+ flows) | N/A |
@@ -109,7 +109,7 @@ Tier 2 (CycloneDX SBOM, Cosign image signing, OpenSSF Scorecard) and Tier 3 (Soc
 | Table contents | ✅ | ❌ | ✅ | ✅ | ⚠️ Z-service | ❌ | ✅ | N/A | ✅ | ✅ (freestyle SQL) |
 | Packages (DEVC) | ✅ | ⚠️ (list_destinations + LSP) | ✅ | ✅ | ✅ | ✅ | ✅ | N/A | ✅ | ✅ |
 | Metadata ext (DDLX) | ✅ | ⚠️ (LSP-side) | ❌ | ❌ | ❌ | ❌ | ✅ | N/A | ❌ | ❌ |
-| Structures | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | N/A | ❌ | ✅ |
+| Structures | ✅ (TABL structures + `SAPContext action=structure` include tree and append/extension discovery) | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | N/A | ❌ | ✅ |
 | Domains | ✅ | ❌ | ❌ | ✅ | ⚠️ | ❌ | ✅ | N/A | ❌ | ⚠️ (PR #149 in progress) |
 | Data elements | ✅ | ❌ | ❌ | ✅ | ⚠️ | ❌ | ✅ | N/A | ❌ | ✅ |
 | Enhancements (BAdI/ENHO) | ✅ (`GET /sap/bc/adt/enhancements/enhoxhb/{name}`) | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (on-prem only; `GET /sap/bc/adt/programs/programs/{name}/source/main/enhancements/elements` + `GET /sap/bc/adt/enhancements/enhsxsb/{spot}`) | N/A | ❌ | ✅ (BAdI/enhancement impl) |
@@ -147,7 +147,7 @@ Tier 2 (CycloneDX SBOM, Cosign image signing, OpenSSF Scorecard) and Tier 3 (Soc
 | Domain write (DOMA) | ✅ | ❌ (classic DDIC, out of scope) | ❌ | ✅ | ❌ | ❌ | ✅ | N/A | ❌ | ✅ (PR #149 merged) |
 | Data element write (DTEL) | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ✅ | N/A | ❌ | ✅ |
 | Multi-object batch creation | ✅ (item-level package/transport overrides) | ⚠️ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
-| Deterministic RAP preflight (TABL/BDEF/DDLX/DDLS static checks) | ⚠️ (in-flight PR [#173](https://github.com/arc-mcp/arc-1/pull/173) — `preflightBeforeWrite` toggle) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
+| Deterministic RAP preflight (TABL/BDEF/DDLX/DDLS static checks) | ✅ (`src/adt/rap-preflight.ts`, default-on `preflightBeforeWrite` with per-call override) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
 | RAP behavior-pool handler scaffolding | ✅ (`SAPWrite action=scaffold_rap_handlers` dry-run/autoApply, native CLAS include writes, auto-creates missing `lhc_*` skeletons in CCIMP only — both DEFINITION + IMPLEMENTATION blocks per SAP-canonical layout, verified against demo `BP_DEMO_RAP_STRICT`) | ✅ (abap_generators) | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
 | Generate Behavior Implementation (RAP one-shot) | ✅ (`SAPWrite action=generate_behavior_implementation` — auto-discover BDEF via rootEntityRef, scaffold all handlers in CCIMP, write under one lock, optionally activate; reliable equivalent of Eclipse ADT's Cmd+1 "Generate Behavior Implementation" quickfix without the broken server endpoint) | ✅ (abap_generators — native Joule skill) | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
 | AFF schema validation (pre-create) | ✅ | ⚠️ (AFF used internally) | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
@@ -180,6 +180,7 @@ Tier 2 (CycloneDX SBOM, Cosign image signing, OpenSSF Scorecard) and Tier 3 (Soc
 | CDS dependencies | ✅ | ⚠️ (LSP-side) | ✅ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
 | CDS impact analysis (upstream+downstream) | ✅ (`SAPContext action=impact`, RAP-aware buckets) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
 | CDS sibling DDLS/DDLX consistency | ✅ (PR #177 2026-04-22 — detects asymmetric metadata-extension coverage across sibling variants in same package) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
+| DDIC structure hierarchy (includes/appends) | ✅ (`SAPContext action=structure`, `type=TABL`: recursive includes plus append/extension structures, with A4H 2025 where-used fallback) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
 
 ## 8. Code Quality
 
@@ -233,7 +234,7 @@ Tier 2 (CycloneDX SBOM, Cosign image signing, OpenSSF Scorecard) and Tier 3 (Soc
 | Feature auto-detection | ✅ (8 probes + ADT discovery/MIME + standalone type-availability probe with multi-signal classifier, PR #163) | ✅ (Eclipse ADT discovery) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (ADT discovery/MIME) |
 | Caching (SQLite) | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | ETag source revalidation | ✅ (`If-None-Match`, active/inactive cache keys) | ⚠️ (Eclipse client) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| UI5/Fiori BSP | ❌ | ❌ | ⚠️ (3 read-only; 4 write tools disabled — ADT filestore returns 405) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (OData upload/download) |
+| UI5/Fiori BSP | ⚠️ (read-only: BSP list/browse/file read + `BSP_DEPLOY` metadata; no upload/write CRUD) | ❌ | ⚠️ (3 read-only; 4 write tools disabled — ADT filestore returns 405) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (OData upload/download) |
 | abapGit/gCTS | ✅ | ⚠️ (local sync via AFF planned, not abapGit) | ✅ | ✅ | ❌ | ❌ | ❌ | N/A | ✅ | ✅ (full gCTS + checkout/checkin) |
 | BTP Destination Service | ✅ | ❌ (local destinations file) | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
 | Cloud Connector proxy | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
@@ -266,7 +267,7 @@ Tier 2 (CycloneDX SBOM, Cosign image signing, OpenSSF Scorecard) and Tier 3 (Soc
 
 | Metric | ARC-1 | SAP ABAP MCP | vibing-steampunk | mcp-abap-abap-adt-api | mcp-abap-adt (mario) | AWS Accelerator | fr0ster | btp-odata-mcp | dassian-adt / abap-mcpb | sapcli |
 |--------|-------|---|-----------------|----------------------|---------------------|-----------------|---------|---------------|------------------------|--------|
-| Unit tests | 1315 | N/A (closed source) | 222 | 0 | 0 | 0 | Yes (Jest) | 0 | 163 | ~90 files (unittest) |
+| Unit tests | 4,101 passing (810 Vitest suites; local Node 22 run, 2026-06-26) | N/A (closed source) | 222 | 0 | 0 | 0 | Yes (Jest) | 0 | 163 | ~90 files (unittest) |
 | Integration tests | ✅ (on-prem CI + BTP scheduled smoke) | N/A | ✅ | ❌ | 13 (live SAP) | ❌ | ✅ | ❌ | ⚠️ scaffold | ✅ (shell scripts) |
 | CI/CD | ✅ (release-please + reliability telemetry) | N/A (SAP internal) | ✅ (GoReleaser) | ❌ | ❌ | ❌ | ⚠️ (Husky + lint-staged) | ❌ | ❌ | ✅ (GitHub Actions + codecov) |
 | Input validation | Zod v4 | Eclipse/Java | Custom | Untyped | Untyped | Pydantic | Zod v4 | Zod | Manual | argparse |
@@ -337,7 +338,7 @@ The following items were incorrectly marked in the previous version and have sin
 | sapcli activity | last scan 2026-04-12 (79★) | **2026-06-22 (91★)** | ~100 commits. BTP OAuth + auth_plugin protocol; abapCheckRun-before-save; **AUnit branch/procedure coverage**; MSAG CRUD; Transaction (TRAN) write; BDEF listinterfaces/extensions/adtTemplate; DDL API-release write; package `--package-type`/recordChanges. Details: [09-sapcli](09-sapcli.md). |
 | ARC-1 DNS-rebinding / Host-header validation | not tracked | ❌ **GAP → SEC-14 (P2)** | fr0ster v7.2.0 + MCP spec recommend a Host-header allowlist for HTTP/SSE. ARC-1 validates `Origin`/CORS + OAuth hosts but not `Host` (`src/server/http.ts`); matters for localhost / stdio-HTTP-bridge deploys. Fix = Express middleware + `ARC1_ALLOWED_HOSTS`. |
 | ARC-1 CDS API-release **write** (set C1 / apistate) | read-only (FEAT-02) | gap confirmed — **dual-signal** | Both sapcli (`874c3b3` apistate set) AND vibing-steampunk now *set* the release contract; ARC-1 only *reads* via `getApiReleaseState`. Rising clean-core relevance → extend FEAT-02. |
-| ARC-1 AUnit coverage (FEAT-31/41) | tracked, no ref impl | sapcli reference impl shipped | sapcli `942d70b` prints branch + procedure coverage; ARC-1 still hardcodes `coverage active="false"` (`devtools.ts:554`). Raises confidence on FEAT-41. |
+| ARC-1 AUnit coverage (FEAT-31/41) | tracked, no ref impl | **✅ PR #503** | `SAPDiagnose action=unittest` accepts `coverage:true` and returns statement/branch/procedure coverage; no longer a gap. |
 | ARC-1 TRAN write (FEAT-62) | tracked (research only) | sapcli reference impl merged | sapcli `d7a6f2d`/`df954a3` shipped the TRAN ADT mapper + create envelope — concrete reference for FEAT-62. |
 | vibing-steampunk | 295★ | **392★** | Quiet in-window (1 doc commit since v2.40.0); +97★. Boundary/dynamic-call analyzer already captured (doc 01); deliberate defer (roadmap 29n). |
 | dassian-adt | "no commits since Apr 14", 37★ | **active again** — 11 commits May–Jun, 5★ | **Was wrongly logged as dormant.** The private→public repo toggle (2026-06) reset GitHub's star count (33★→5★) — not a loss of interest. New gaps from the deep scan: **pre-release inactive-objects check** (High, S — primitive exists), **unknown-column self-correcting hint** (High), **TTYP create** (Med), **ToC bundling** (verify — advertise-vs-impl mismatch). Already-have: class-local include reads, transport/lock/write resilience, output cap+compress. Details: [07-dassian-adt](07-dassian-adt.md). |
@@ -425,3 +426,13 @@ The following items were incorrectly marked in the previous version and have sin
 
 **Not planned (intentional):**
 - ABAP debugger (WebSocket + ZADT_VSP), execute ABAP (security risk), Lua scripting (VSP-unique)
+
+---
+
+## Update History
+
+| Date | Update |
+|------|--------|
+| 2026-06-26 | ARC-1 column re-audited against the repo: added `SAPContext(action="structure", type="TABL")` include/append context, corrected UI5/Fiori BSP to partial read-only support, refreshed MCP OAuth/DCR, RAP preflight, dry-run scope, and test-count facts. |
+| 2026-06-24 | Deep fr0ster v7.2.1 + sapcli scan found the SEC-14 DNS-rebinding gap and a dual-signal CDS API-release-write gap. See the 2026-06-24 tracker rows above. |
+| 2026-06-05 | Added the "SAP ABAP MCP" column for SAP's official `SAPSE.adt-vscode` bundled ABAP MCP server: headless Eclipse/Equinox + Anthropic MCP Java SDK 1.0.1, localhost Streamable HTTP on port 2236, static bearer token, 14 built-in tools plus dynamic backend IDE Actions, ABAP Cloud/RAP-generation scope, disabled by default, part of Joule for Developers, GA Q2 2026. Detailed teardown: [J4D/02-sap-abap-mcp-server-vscode.md](J4D/02-sap-abap-mcp-server-vscode.md). |

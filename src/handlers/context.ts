@@ -15,6 +15,7 @@ import { findWhereUsed } from '../adt/codeintel.js';
 import { decodeKtdText } from '../adt/ddic-xml.js';
 import { AdtApiError, isNotFoundError } from '../adt/errors.js';
 import { mapSapReleaseToAbaplintVersion } from '../adt/features.js';
+import { buildStructureHierarchy } from '../adt/structure-hierarchy.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
 import { extractCdsDependencies } from '../context/cds-deps.js';
 import { compressCdsContext, compressContext } from '../context/compressor.js';
@@ -313,6 +314,15 @@ export async function handleSAPContext(
     return textResult(JSON.stringify(response, null, 2));
   }
 
+  if (action === 'structure') {
+    if (type !== 'TABL') {
+      return errorResult('SAPContext(action="structure") supports TABL only.');
+    }
+
+    const result = await buildStructureHierarchy(client, name);
+    return textResult(JSON.stringify(result, null, 2));
+  }
+
   // Get source — either provided or fetched from SAP
   let source: string;
   const shouldIncludeKtd = args.includeKtd !== false && !args.source && (action === '' || action === 'deps');
@@ -353,7 +363,11 @@ export async function handleSAPContext(
         return textResult(prependKtd(cdsResult.output, name, ktdMarkdown));
       }
       default:
-        return errorResult(`SAPContext supports types: CLAS, INTF, PROG, FUNC, DDLS. Got: ${type}`);
+        return errorResult(
+          type === 'TABL'
+            ? 'SAPContext type TABL requires action="structure".'
+            : `SAPContext supports types: CLAS, INTF, PROG, FUNC, DDLS. Got: ${type}`,
+        );
     }
   }
 

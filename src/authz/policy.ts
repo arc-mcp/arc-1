@@ -193,6 +193,7 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   'SAPContext.deps': { scope: 'read', opType: OperationType.Intelligence },
   'SAPContext.usages': { scope: 'read', opType: OperationType.Intelligence },
   'SAPContext.impact': { scope: 'read', opType: OperationType.Intelligence },
+  'SAPContext.structure': { scope: 'read', opType: OperationType.Intelligence },
 
   // ── SAPManage ────────────────────────────────────────────────────
   SAPManage: { scope: 'write', opType: OperationType.Update },

@@ -825,8 +825,8 @@ Returns the target object's KTD first when available, followed by only the publi
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `action` | string | No | `"deps"` (default), `"usages"`, or `"impact"` |
-| `type` | string | Yes (for deps), optional for impact | Object type: `CLAS`, `INTF`, `PROG`, `FUNC`, `DDLS` |
+| `action` | string | No | `"deps"` (default), `"usages"`, `"impact"`, or `"structure"` |
+| `type` | string | Yes (for deps/structure), optional for impact | Object type: `CLAS`, `INTF`, `PROG`, `FUNC`, `DDLS`, `TABL` |
 | `name` | string | Yes | Object name (e.g., `ZCL_ORDER`) |
 | `source` | string | No | Provide source directly instead of fetching from SAP |
 | `includeKtd` | boolean | No | Only for `action="deps"`. Defaults to `true`; prepends the object's KTD (`SKTD`/`KTD`) when one exists. Set `false` to skip the KTD lookup. Ignored when `source` is supplied. |
@@ -843,6 +843,7 @@ SAPContext(type="CLAS", name="ZCL_ORDER")
 SAPContext(type="CLAS", name="ZCL_ORDER", depth=2, maxDeps=10)
 SAPContext(type="INTF", name="ZIF_ORDER", source="<already fetched source>")
 SAPContext(action="deps", type="CLAS", name="ZCL_ORDER")
+SAPContext(action="structure", type="TABL", name="BAPIRET2")
 ```
 
 **Output format:**
@@ -879,6 +880,36 @@ If the object has no KTD or the backend returns 404/410 for the KTD document, AR
 ```
 
 The `[cached]` label here is for **dependency graph hits** (hash-keyed, naturally correct without server validation). It is distinct from `[cached:revalidated]` which appears on `SAPRead` source responses after SAP confirms freshness via `304 Not Modified`. See [Caching System → Response Indicators](caching.md#response-indicators) for details.
+
+### action="structure" — DDIC includes + append structures (TABL only)
+
+Returns a JSON tree for a DDIC structure or transparent table. ARC-1 parses embedded includes from the TABL source (`include <name>;`, named includes, and classic `.INCLUDE`) and resolves append/extension structures through ADT where-used. Append candidates are only returned after ARC-1 reads the candidate source and confirms it contains `extend type <base> with`; `.APPEND` is not parsed from the base source because ADT does not emit append structures there.
+
+**Example:**
+```json
+{
+  "name": "ZMCP_SHR_STRU",
+  "type": "TABL",
+  "includeExtensions": true,
+  "tree": {
+    "structure": "ZMCP_SHR_STRU",
+    "attribute": null,
+    "kind": "root",
+    "children": [
+      { "structure": "ZMCP_SHR_STRU_INC", "attribute": null, "kind": "include", "children": [] },
+      { "structure": "ZOK_S_APPEND", "attribute": null, "kind": "append", "children": [] }
+    ]
+  },
+  "summary": {
+    "totalNodes": 3,
+    "includes": 1,
+    "appends": 1,
+    "cyclic": 0,
+    "unresolved": 0,
+    "truncated": 0
+  }
+}
+```
 
 ### action="impact" — CDS upstream + downstream impact (DDLS only)
 

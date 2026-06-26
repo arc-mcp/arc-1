@@ -845,7 +845,7 @@ const siblingMaxCandidatesSchema = z.coerce
   });
 
 export const SAPContextSchema = z.object({
-  action: z.enum(['deps', 'usages', 'impact']).optional(),
+  action: z.enum(['deps', 'usages', 'impact', 'structure']).optional(),
   type: z.enum(SAPCONTEXT_TYPES_ONPREM).optional(),
   name: z.string(),
   source: z.string().optional(),
@@ -859,7 +859,7 @@ export const SAPContextSchema = z.object({
 });
 
 export const SAPContextSchemaBtp = z.object({
-  action: z.enum(['deps', 'usages', 'impact']).optional(),
+  action: z.enum(['deps', 'usages', 'impact', 'structure']).optional(),
   type: z.enum(SAPCONTEXT_TYPES_BTP).optional(),
   name: z.string(),
   source: z.string().optional(),

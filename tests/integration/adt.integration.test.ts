@@ -642,6 +642,29 @@ describe('ADT Integration Tests', () => {
       expect(resolvedUrl).toContain('/sap/bc/adt/ddic/structures/');
     });
 
+    it('returns DDIC structure hierarchy via SAPContext(action="structure")', async () => {
+      const { handleToolCall } = await import('../../src/handlers/dispatch.js');
+      const config = {
+        arc1Port: 8080,
+        arc1HttpAddr: '0.0.0.0:8080',
+        toolMode: 'standard',
+      } as unknown as Parameters<typeof handleToolCall>[1];
+
+      const result = await handleToolCall(client, config, 'SAPContext', {
+        action: 'structure',
+        type: 'TABL',
+        name: 'BAPIRET2',
+      });
+
+      expect(result.isError).toBeUndefined();
+      const text = result.content[0]?.type === 'text' ? result.content[0].text : '';
+      const hierarchy = JSON.parse(text);
+      expect(hierarchy.name).toBe('BAPIRET2');
+      expect(hierarchy.type).toBe('TABL');
+      expect(hierarchy.tree.structure).toBe('BAPIRET2');
+      expect(hierarchy.summary.totalNodes).toBeGreaterThanOrEqual(1);
+    });
+
     it('reads T000 via unified getTabl() — transparent table (URL release-dependent)', async () => {
       // T000 is a transparent table (DD02L-TABCLASS=TRANSP). On modern S/4HANA
       // releases the source is served from /sap/bc/adt/ddic/tables/T000; on

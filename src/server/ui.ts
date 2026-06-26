@@ -162,7 +162,7 @@ export function mountUiStaticRoutes(app: Express): void {
   }
   app.use('/ui', express.static(assetDir, { index: 'index.html', fallthrough: true }));
   app.get(/^\/ui\/(?!api(?:\/|$)).*$/, (_req, res) => {
-    res.sendFile(`${assetDir}/index.html`);
+    res.sendFile('index.html', { root: assetDir });
   });
 }
 

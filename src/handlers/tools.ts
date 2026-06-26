@@ -166,9 +166,11 @@ const SAPCONTEXT_DESC_ONPREM =
   'Get compressed dependency context or CDS blast-radius impact for an ABAP / CDS object.\n\n' +
   "Decision rule — pick the action based on the user's question:\n" +
   '- "What breaks if I change <CDS view>?" / "Who consumes <I_*>?" / "Impact analysis on <DDLS>" / "Blast radius" → action="impact"\n' +
+  '- "Which includes/appends extend <TABL>?" → action="structure", type="TABL"\n' +
   '- "What does <object> do?" / "Explain <object>" / "Prepare a spec/change/review for <object>" / "Understand dependencies before editing <object>" / "What does X depend on?" → action="deps" (default)\n' +
   '- "Find all callers of <object>" (cache-warmup required) → action="usages"\n\n' +
   'action="impact" (CDS blast-radius, DDLS only): ALWAYS use this for CDS change-impact questions. Returns upstream AST dependencies plus downstream where-used results classified into RAP-aware buckets: projectionViews, bdefs, serviceDefinitions, serviceBindings, accessControls (DCLS), metadataExtensions (DDLX), abapConsumers, documentation (SKTD), tables, other. Also emits additive sibling-consistency diagnostics (consistencyHints + siblingExtensionAnalysis) when sibling DDLS variants in the same package show asymmetric metadata-extension coverage. DO NOT replicate this with SAPQuery against DDDDLSRC/ACMDCLSRC/DDLXSRC_SRC/SRVDSRC_SRC — those text scans produce noise (non-dependency matches, package group nodes) that this classifier already filters out. Optional includeIndirect=true widens to transitive consumers. Optional siblingCheck=false disables sibling analysis; siblingMaxCandidates controls fan-out (default 4, hard cap 10).\n\n' +
+  'action="structure" (TABL only): Returns the DDIC include/append tree; appends are confirmed where-used candidates.\n\n' +
   'action="deps" (default): Returns the target object KTD first when one exists, then only the public API contracts (method signatures, interface definitions, type declarations) of all objects that the target depends on — NOT the full source code. The most token-efficient way to understand an object before editing. Instead of N separate SAPRead calls returning full source (~200 lines each), returns ONE response with KTD context plus compressed contracts (~15-30 lines each). Typical compression: 7-30x fewer tokens.\n\n' +
   'What deps extracts per dependency:\n' +
   '- Classes: CLASS DEFINITION with PUBLIC SECTION only (methods, types, constants). PROTECTED, PRIVATE and IMPLEMENTATION stripped.\n' +
@@ -187,8 +189,10 @@ const SAPCONTEXT_DESC_BTP =
   'Get compressed dependency context or CDS blast-radius impact for an ABAP / CDS object (BTP ABAP Environment).\n\n' +
   "Decision rule — pick the action based on the user's question:\n" +
   '- "What breaks if I change <CDS view>?" / "Who consumes <I_*>?" / "Impact analysis on <DDLS>" / "Blast radius" → action="impact"\n' +
+  '- "Which includes/appends extend <TABL>?" → action="structure", type="TABL"\n' +
   '- "What does <object> do?" / "Explain <object>" / "Prepare a spec/change/review for <object>" / "Understand dependencies before editing <object>" / "What does X depend on?" → action="deps" (default)\n\n' +
   'action="impact" (CDS blast-radius, DDLS only): ALWAYS use this for CDS change-impact questions. Returns upstream AST dependencies plus downstream where-used results classified into RAP-aware buckets: projectionViews, bdefs, serviceDefinitions, serviceBindings, accessControls (DCLS), metadataExtensions (DDLX), abapConsumers, documentation (SKTD), tables, other. Also emits additive sibling-consistency diagnostics (consistencyHints + siblingExtensionAnalysis) when sibling DDLS variants in the same package show asymmetric metadata-extension coverage. DO NOT replicate this with SAPQuery — the classifier already filters noise. Optional includeIndirect=true widens to transitive consumers. Optional siblingCheck=false disables sibling analysis; siblingMaxCandidates controls fan-out (default 4, hard cap 10).\n\n' +
+  'action="structure" (TABL only): Returns the DDIC include/append tree; appends are confirmed where-used candidates.\n\n' +
   'action="deps" (default): Returns the target object KTD first when one exists, then only the public API contracts (method signatures, interface definitions, type declarations) of all objects that the target depends on — NOT the full source code.\n\n' +
   'What deps extracts per dependency:\n' +
   '- Classes: CLASS DEFINITION with PUBLIC SECTION only (methods, types, constants).\n' +
@@ -1383,19 +1387,18 @@ export function getToolDefinitions(
       properties: {
         action: {
           type: 'string',
-          enum: ['impact', 'deps', 'usages'],
+          enum: ['impact', 'deps', 'usages', 'structure'],
           description:
             'Action:\n' +
             '"impact" = CDS blast-radius analysis (DDLS only). USE THIS for any question like "what breaks if I change <view>", "who consumes <I_*>", "impact analysis on <CDS>", "downstream of <view>". Returns upstream AST dependencies + downstream where-used classified into RAP buckets (projectionViews, bdefs, serviceDefinitions, serviceBindings, accessControls, metadataExtensions, abapConsumers, documentation, tables, other), plus additive sibling-consistency diagnostics (consistencyHints + siblingExtensionAnalysis) when related DDLS siblings show asymmetric DDLX coverage. ALWAYS prefer over SAPQuery against DDDDLSRC/ACMDCLSRC/DDLXSRC_SRC/SRVDSRC_SRC (those text-scans produce noise this classifier filters out). Non-DDLS input returns a guardrail error.\n' +
             '"deps" (default, can be omitted) = object understanding / forward dependency context — "what does <object> do?" or "what does <object> depend on?". Returns the object KTD when available plus public API contracts of dependencies.\n' +
-            '"usages" = reverse dependency lookup — "who calls <object>?". Requires cache warmup (--cache-warmup). Only "name" is needed. For CDS entities prefer action="impact" instead.',
+            '"usages" = reverse dependency lookup — "who calls <object>?". Requires cache warmup (--cache-warmup). Only "name" is needed. For CDS entities prefer action="impact" instead.\n' +
+            '"structure" = TABL includes/appends.',
         },
         type: {
           type: 'string',
           enum: btp ? SAPCONTEXT_TYPES_BTP : SAPCONTEXT_TYPES_ONPREM,
-          description:
-            'Object type. Required for action="deps" and action="usages". ' +
-            'Optional for action="impact" — defaults to DDLS (the only supported type for impact).',
+          description: 'Object type. Optional for action="impact" (defaults to DDLS); required otherwise.',
         },
         name: {
           type: 'string',

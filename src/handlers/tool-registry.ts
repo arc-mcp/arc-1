@@ -158,6 +158,7 @@ const SAPCONTEXT_TYPE_TABLE = [
   { type: 'PROG', btp: false },
   { type: 'FUNC', btp: false },
   { type: 'DDLS', btp: true },
+  { type: 'TABL', btp: true },
 ] as const;
 const sapContextTypes = deriveTypeArrays(SAPCONTEXT_TYPE_TABLE);
 /** SAPContext types on on-premise. */
