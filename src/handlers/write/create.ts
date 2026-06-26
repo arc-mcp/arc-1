@@ -42,6 +42,7 @@ import {
   getMetadataWriteProperties,
   isMetadataWriteType,
   mergePreWriteWarnings,
+  resolveWriteSystemType,
   runPreWriteLint,
   runRapPreflightValidation,
   SKTD_V2_CONTENT_TYPE,
@@ -461,7 +462,11 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
   // a generic objectReferences body returns 400 "System expected the element ...".
   const metadataProperties = getMetadataWriteProperties(args);
   const bdefExtensionBase = applyBdefBehaviorExtensionMetadata(type, source, metadataProperties);
-  const body = buildCreateXml(type, name, pkg, description, metadataProperties, config.language, config.username);
+  // BTP/Steampunk needs cloud-correct create XML (G-3) and a real responsible user (G-5).
+  const systemType = resolveWriteSystemType(config, client);
+  const cloud = systemType === 'btp';
+  const responsible = config.username || (await client.getEffectiveUser());
+  const body = buildCreateXml(type, name, pkg, description, metadataProperties, config.language, responsible, cloud);
 
   // Step 1: Create the object (metadata only)
   const createUrl = objectUrl.replace(/\/[^/]+$/, ''); // parent collection URL
@@ -481,6 +486,8 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
       effectiveTransport,
       needsPackageParam ? pkg : undefined,
       cachedFeatures?.abapRelease,
+      systemType,
+      name,
     );
   } catch (createErr) {
     if (createErr instanceof AdtApiError && (createErr.statusCode === 400 || createErr.statusCode === 409)) {
@@ -499,7 +506,14 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
     if (type === 'DTEL' && dtelNeedsPostCreateUpdate(metadataProperties)) {
       const ct = vendorContentTypeForType(type);
       await client.http.withStatefulSession(async (session) => {
-        const lock = await lockObject(session, client.safety, objectUrl, 'MODIFY', cachedFeatures?.abapRelease);
+        const lock = await lockObject(
+          session,
+          client.safety,
+          objectUrl,
+          'MODIFY',
+          cachedFeatures?.abapRelease,
+          systemType,
+        );
         const lockTransport = effectiveTransport ?? (lock.corrNr || undefined);
         try {
           await updateObject(session, client.safety, objectUrl, body, lock.lockHandle, ct, lockTransport);
@@ -512,7 +526,14 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
     if (type === 'MSAG' && Array.isArray(metadataProperties.messages) && metadataProperties.messages.length > 0) {
       const ct = vendorContentTypeForType(type);
       await client.http.withStatefulSession(async (session) => {
-        const lock = await lockObject(session, client.safety, objectUrl, 'MODIFY', cachedFeatures?.abapRelease);
+        const lock = await lockObject(
+          session,
+          client.safety,
+          objectUrl,
+          'MODIFY',
+          cachedFeatures?.abapRelease,
+          systemType,
+        );
         const lockTransport = effectiveTransport ?? (lock.corrNr || undefined);
         try {
           await updateObject(session, client.safety, objectUrl, body, lock.lockHandle, ct, lockTransport);
@@ -715,6 +736,12 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
   // terminal activateBatch when activateAtEnd=true. Order matches the input order.
   const writtenObjects: BatchActivationObject[] = [];
 
+  // BTP/Steampunk needs cloud-correct create XML (G-3) + a real responsible user (G-5);
+  // constant across the batch, so resolve once.
+  const systemType = resolveWriteSystemType(config, client);
+  const cloud = systemType === 'btp';
+  const responsible = config.username || (await client.getEffectiveUser());
+
   for (const plan of batchPlan) {
     const { obj, type: objType, name: objName, packageName: objPackage } = plan;
     const objTransport = plan.explicitTransport ?? autoTransportByPackage.get(objPackage);
@@ -843,7 +870,8 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
         objDescription,
         objMetadataProps,
         config.language,
-        config.username,
+        responsible,
+        cloud,
       );
       const contentType = createContentTypeForType(objType);
       const needsPackageParam =
@@ -858,6 +886,8 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
           objTransport,
           needsPackageParam ? objPackage : undefined,
           cachedFeatures?.abapRelease,
+          systemType,
+          objName,
         );
       } catch (createErr) {
         if (createErr instanceof AdtApiError && (createErr.statusCode === 400 || createErr.statusCode === 409)) {

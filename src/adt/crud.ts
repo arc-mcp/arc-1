@@ -27,6 +27,7 @@ export async function lockObject(
   objectUrl: string,
   accessMode = 'MODIFY',
   abapRelease?: string,
+  systemType?: string,
 ): Promise<LockResult> {
   if (accessMode === 'MODIFY') {
     checkOperation(safety, OperationType.Lock, 'LockObject');
@@ -40,7 +41,7 @@ export async function lockObject(
       Accept: 'application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result, application/*;q=0.8',
     });
   } catch (err) {
-    const conv = convertHtmlConflictToProperError(err, objectUrl, abapRelease);
+    const conv = convertHtmlConflictToProperError(err, objectUrl, { abapRelease, systemType, operation: 'lock' });
     if (conv) throw conv;
     throw err;
   }
@@ -95,6 +96,8 @@ export async function createObject(
   transport?: string,
   packageName?: string,
   abapRelease?: string,
+  systemType?: string,
+  objectName?: string,
 ): Promise<string> {
   checkOperation(safety, OperationType.Create, 'CreateObject');
 
@@ -113,7 +116,12 @@ export async function createObject(
   } catch (err) {
     // Reclassify lock/exists conflicts that arrive as HTML or via structured
     // exception type — same precedence as the lockObject path.
-    const conv = convertHtmlConflictToProperError(err, objectUrl, abapRelease);
+    const conv = convertHtmlConflictToProperError(err, objectUrl, {
+      abapRelease,
+      systemType,
+      operation: 'create',
+      objectName,
+    });
     if (conv) throw conv;
     const fallback = CONTENT_TYPE_FALLBACKS[contentType];
     if (fallback && isUnsupportedMediaTypeError(err)) {
@@ -367,21 +375,48 @@ function extractXmlValue(xml: string, tag: string): string {
 export function convertHtmlConflictToProperError(
   err: unknown,
   objectUrl: string,
-  abapRelease?: string,
+  opts: { abapRelease?: string; systemType?: string; operation?: 'lock' | 'create'; objectName?: string } = {},
 ): AdtApiError | undefined {
   if (!(err instanceof AdtApiError)) return undefined;
   const body = err.responseBody ?? '';
-  const name = objectUrl.split('/').pop() ?? objectUrl;
+  const cloud = opts.systemType === 'btp';
+  // On create, objectUrl is the collection (e.g. /oo/classes) — its last segment is "classes",
+  // not the object — so the caller passes the real name explicitly (G-4).
+  const name = opts.objectName ?? objectUrl.split('/').pop() ?? objectUrl;
 
   // Layer 1: structured exception type
   const typeId = extractExceptionType(body);
-  if (typeId === 'ExceptionResourceNoAccess' || typeId === 'ExceptionResourceLockedByAnotherUser') {
+
+  // ExceptionResourceNoAccess on a CREATE is an authorization/package denial, NOT a lock
+  // (SM12/SE80 don't exist on BTP). On BTP this most often means the target package isn't
+  // writable ($TMP and on-prem packages are rejected — objects must live in a cloud package). (G-4)
+  if (typeId === 'ExceptionResourceNoAccess' && opts.operation === 'create') {
+    // Structure packages (e.g. the default ZLOCAL on a fresh ABAP Environment) cannot hold
+    // development objects — a distinct, common BTP case worth its own hint (PAK 149, live-verified).
+    const isStructurePackage = /Structure packages cannot contain development objects/i.test(body);
     return new AdtApiError(
-      `Object ${name} is locked by another session. Close the editor (Eclipse, SE80) or release the lock in SM12, then retry.`,
-      409,
+      isStructurePackage
+        ? `Cannot create ${name}: the target package is a structure package and cannot contain development objects. ` +
+            `On the ABAP Environment, create a regular sub-package under it (e.g. under ZLOCAL) and target that, ` +
+            `then set SAP_ALLOWED_PACKAGES accordingly.`
+        : cloud
+          ? `Cannot create ${name}: no authorization, or the target package is not writable on the ABAP Environment. ` +
+            `On BTP, objects must live in a regular (non-structure) cloud package — $TMP, on-prem packages, and ` +
+            `structure packages are rejected. Set SAP_ALLOWED_PACKAGES to a writable cloud package and ensure your ` +
+            `developer role (e.g. SAP_BR_DEVELOPER) is assigned.`
+          : `Cannot create ${name}: insufficient authorization for the target package. ` +
+            `Verify your S_DEVELOP authorization and that the package allows this object type.`,
+      403,
       objectUrl,
       body,
     );
+  }
+
+  if (typeId === 'ExceptionResourceNoAccess' || typeId === 'ExceptionResourceLockedByAnotherUser') {
+    const releaseHint = cloud
+      ? 'Close the object in any open editor (e.g. Eclipse ADT) and retry.'
+      : 'Close the editor (Eclipse, SE80) or release the lock in SM12, then retry.';
+    return new AdtApiError(`Object ${name} is locked by another session. ${releaseHint}`, 409, objectUrl, body);
   }
 
   // Layer 2: HTML body marker, scoped by release
@@ -393,7 +428,7 @@ export function convertHtmlConflictToProperError(
   // lowercase-only) regresses #196's behavior on releases that emit any of the
   // other two. The "Logon Error Message" marker is itself emitted as written
   // (no localization on that string), so it can stay case-sensitive.
-  const release = parseReleaseNum(abapRelease);
+  const release = parseReleaseNum(opts.abapRelease);
   const fallbackEligible = release === 0 || release < 751;
   const looksLikeHtml = /<!doctype\s+html|<html[\s>]/i.test(body);
   const isHtml4xx =

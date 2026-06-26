@@ -673,6 +673,42 @@ describe('AdtClient', () => {
       expect(Array.isArray(parsed.collections)).toBe(true);
     });
 
+    it('getEffectiveUser returns the configured SAP_USER when set', async () => {
+      const client = createClient();
+      expect(await client.getEffectiveUser()).toBe('admin');
+    });
+
+    it('getEffectiveUser derives the user from the bearer JWT user_name when no SAP_USER (BTP, G-5)', async () => {
+      // BTP bearer auth has no SAP_USER — the ABAP user rides in the JWT user_name claim.
+      const payload = Buffer.from(JSON.stringify({ user_name: 'marian@zeis.de' })).toString('base64url');
+      const jwt = `h.${payload}.sig`;
+      const client = createClient({ username: '', bearerTokenProvider: async () => jwt });
+      expect(await client.getEffectiveUser()).toBe('marian@zeis.de');
+      const parsed = JSON.parse(await client.getSystemInfo());
+      expect(parsed.user).toBe('marian@zeis.de');
+    });
+
+    it('getEffectiveUser falls back to empty (not a crash) on an unparseable bearer token', async () => {
+      const client = createClient({ username: '', bearerTokenProvider: async () => 'not-a-jwt' });
+      expect(await client.getEffectiveUser()).toBe('');
+    });
+
+    it('getEffectiveUser retries after a transient token-provider failure (does not memoize empty)', async () => {
+      // A transient provider error must not pin the user to '' forever — a later call still resolves (Codex #3).
+      const payload = Buffer.from(JSON.stringify({ user_name: 'marian@zeis.de' })).toString('base64url');
+      let calls = 0;
+      const client = createClient({
+        username: '',
+        bearerTokenProvider: async () => {
+          calls += 1;
+          if (calls === 1) throw new Error('transient token failure');
+          return `h.${payload}.sig`;
+        },
+      });
+      expect(await client.getEffectiveUser()).toBe(''); // 1st call: provider throws → empty, NOT memoized
+      expect(await client.getEffectiveUser()).toBe('marian@zeis.de'); // retry resolves
+    });
+
     it('getMessages returns message class XML', async () => {
       const client = createClient();
       const messages = await client.getMessages('SY');

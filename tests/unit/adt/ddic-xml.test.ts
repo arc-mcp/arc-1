@@ -192,6 +192,12 @@ describe('ddic-xml builders', () => {
       expect(normalizeAdtResponsible()).toBe('DEVELOPER');
       expect(normalizeAdtResponsible('   ')).toBe('DEVELOPER');
     });
+
+    it('normalizeAdtResponsible keeps email-style cloud users case-sensitive (BTP)', () => {
+      // Classic SAP users are upper-case; cloud (BTP) users are case-sensitive emails — never upper-case them.
+      expect(normalizeAdtResponsible('marian@zeis.de')).toBe('marian@zeis.de');
+      expect(normalizeAdtResponsible('  Marian@Zeis.de ')).toBe('Marian@Zeis.de');
+    });
   });
 
   describe('buildDomainXml', () => {

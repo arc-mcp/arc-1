@@ -28,6 +28,7 @@ import {
   isMetadataWriteType,
   mergeMetadataWriteProperties,
   mergePreWriteWarnings,
+  resolveWriteSystemType,
   runPreWriteLint,
   runPreWriteSyntaxCheck,
   runRapPreflightValidation,
@@ -136,7 +137,19 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
     const mergedProps = await mergeMetadataWriteProperties(client, type, name, metadataProps);
     const description = String(args.description ?? mergedProps._description ?? name);
     const pkg = String(args.package ?? existingPackage ?? mergedProps._package ?? '$TMP');
-    const body = buildCreateXml(type, name, pkg, description, mergedProps, config.language, config.username);
+    // Keep the full-XML-replace body cloud-correct on BTP (G-3); resolve the user from the JWT (G-5).
+    const systemType = resolveWriteSystemType(config, client);
+    const responsible = config.username || (await client.getEffectiveUser());
+    const body = buildCreateXml(
+      type,
+      name,
+      pkg,
+      description,
+      mergedProps,
+      config.language,
+      responsible,
+      systemType === 'btp',
+    );
     await safeUpdateObject(
       client.http,
       client.safety,

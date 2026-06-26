@@ -295,6 +295,12 @@ export class AdtClient {
   readonly safety: SafetyConfig;
   /** The configured SAP username (from --user / SAP_USER) */
   readonly username: string;
+  /** Bearer-token provider (BTP). Kept so the effective ABAP user can be read from the JWT (G-5). */
+  private readonly bearerTokenProvider?: () => Promise<string>;
+  /** True when this client authenticates via a bearer token (⇒ BTP ABAP Environment). */
+  readonly usesBearerAuth: boolean;
+  /** Memoized JWT-derived user (resolved lazily by getEffectiveUser). */
+  private effectiveUser?: string;
   /** The configured SAP client number (from --client / SAP_CLIENT) */
   readonly sapClient: string;
   /** Per-client cache of resolved TABL URLs for **reads** (transparent table at
@@ -315,6 +321,8 @@ export class AdtClient {
     const config = { ...defaultAdtClientConfig(), ...options };
     this.safety = config.safety;
     this.username = config.username;
+    this.bearerTokenProvider = config.bearerTokenProvider;
+    this.usesBearerAuth = !!config.bearerTokenProvider;
     this.sapClient = config.client;
 
     const httpConfig: AdtHttpConfig = {
@@ -1437,11 +1445,31 @@ export class AdtClient {
 
   // ─── System Information ────────────────────────────────────────────
 
+  /**
+   * The ABAP user for this session. Returns the configured SAP_USER when set; otherwise
+   * (BTP bearer auth, where no SAP_USER exists) derives it from the JWT `user_name`/`email`
+   * claim. Read-only use of an already-trusted token claim — never used for auth or access
+   * control, only for display (SAPRead SYSTEM) and `adtcore:responsible` on create. See G-5.
+   */
+  async getEffectiveUser(): Promise<string> {
+    if (this.username) return this.username;
+    if (this.effectiveUser !== undefined) return this.effectiveUser;
+    if (!this.bearerTokenProvider) return (this.effectiveUser = '');
+    try {
+      const token = await this.bearerTokenProvider();
+      const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString());
+      return (this.effectiveUser = String(payload.user_name ?? payload.email ?? ''));
+    } catch {
+      // Transient token/decode failure — do NOT memoize, so a later call can still resolve the user.
+      return '';
+    }
+  }
+
   /** Get system info as structured JSON (user, system details from discovery XML) */
   async getSystemInfo(): Promise<string> {
     checkOperation(this.safety, OperationType.Read, 'GetSystemInfo');
     const resp = await this.http.get('/sap/bc/adt/core/discovery');
-    const info = parseSystemInfo(resp.body, this.username);
+    const info = parseSystemInfo(resp.body, await this.getEffectiveUser());
     return JSON.stringify(info, null, 2);
   }
 

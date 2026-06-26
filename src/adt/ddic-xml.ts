@@ -164,7 +164,10 @@ export function normalizeAdtLanguage(language?: string): string {
  * fixes that. Mirrors the `normalizeAdtLanguage` / issue #343 master-language pattern.
  */
 export function normalizeAdtResponsible(responsible?: string): string {
-  return (responsible ?? '').trim().toUpperCase() || 'DEVELOPER';
+  const r = (responsible ?? '').trim();
+  if (!r) return 'DEVELOPER';
+  // Cloud (BTP) users are email-style and case-sensitive; classic SAP users are upper-case.
+  return r.includes('@') ? r : r.toUpperCase();
 }
 
 function formatLength(value: number | string | undefined, width: number): string {

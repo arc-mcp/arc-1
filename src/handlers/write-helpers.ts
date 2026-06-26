@@ -32,7 +32,7 @@ import {
   supportsServerDrivenObject,
   updateServerDrivenObjectSource,
 } from '../adt/server-driven.js';
-import type { ResolvedFeatures } from '../adt/types.js';
+import type { ResolvedFeatures, SystemType } from '../adt/types.js';
 import { escapeXmlAttr } from '../adt/xml-parser.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
 import type { LintConfigOptions, RuleOverrides } from '../lint/config-builder.js';
@@ -302,7 +302,71 @@ export async function mergeMetadataWriteProperties(
  *   "System expected the element '{http://www.sap.com/adt/programs/programs}abapProgram'"
  */
 
+/**
+ * Resolve the system type for a write. Prefers the probed feature cache, then an explicit
+ * non-`auto` config, and finally falls back to `'btp'` for bearer-token auth (which is only
+ * ever the BTP ABAP Environment) when the startup probe hasn't resolved yet — so a create can
+ * never silently emit on-prem XML on the ABAP Environment if a write races/precedes the probe (G-3).
+ */
+export function resolveWriteSystemType(config: ServerConfig, client: AdtClient): SystemType | undefined {
+  const probed =
+    cachedFeatures?.systemType ?? (config.systemType !== 'auto' ? (config.systemType as SystemType) : undefined);
+  return probed ?? (client.usesBearerAuth ? 'btp' : undefined);
+}
+
+/**
+ * Build the create-XML body, applying BTP/Steampunk corrections when `cloud` is set.
+ *
+ * On the ABAP Environment the create body is ABAP-for-Cloud: it MUST carry
+ * `adtcore:abapLanguageVersion="cloudDevelopment"` and MUST NOT hardcode the on-prem
+ * `adtcore:masterSystem="H00"`, or SAP rejects it with HTTP 400 `ExceptionInvalidData`
+ * "error deserializing in CLASS_TRANSFORMATION". CLAS additionally needs explicit
+ * class attributes. The on-prem body is left byte-for-byte unchanged. Driven by
+ * systemType=btp. See docs/research/2026-06-26-btp-live-validation-and-gaps.md (G-3).
+ */
 export function buildCreateXml(
+  type: string,
+  name: string,
+  pkg: string,
+  description: string,
+  properties?: Record<string, unknown>,
+  language?: string,
+  responsible?: string,
+  cloud = false,
+): string {
+  const xml = buildCreateXmlBody(type, name, pkg, description, properties, language, responsible);
+  return cloud ? cloudifyCreateBody(xml, type) : xml;
+}
+
+/**
+ * Rewrite an on-prem create body into the Steampunk-correct form (G-3). The input is always
+ * an ARC-1-generated body, so the string anchors below are guaranteed where they apply.
+ *
+ * Live-verified on BTP SAP_BASIS 919: the cloud object-create simple transformations
+ * (CLASS_TRANSFORMATION, INTF_TRANSFORMATION, SBD_*, …) REJECT `adtcore:responsible` — when it
+ * is present the ST fails to deserialize at the first child element (HTTP 400 ExceptionInvalidData
+ * "error deserializing in <ST>"). Cloud assigns the object owner from the request JWT, so the
+ * create body must NOT carry a responsible. On-prem still needs it, so this strip is cloud-only.
+ */
+function cloudifyCreateBody(xml: string, type: string): string {
+  let out = xml
+    // On-prem master system is invalid on cloud — drop it (and its leading whitespace/newline).
+    .replace(/\s*adtcore:masterSystem="H00"/, '')
+    // Cloud assigns the owner from the JWT; an explicit responsible breaks the create ST.
+    .replace(/\s*adtcore:responsible="[^"]*"/, '')
+    // Every cloud object is ABAP for Cloud Development.
+    .replace(/(adtcore:masterLanguage="[^"]*")/, '$1 adtcore:abapLanguageVersion="cloudDevelopment"');
+  if (type === 'CLAS') {
+    // Cloud CLAS create schema requires explicit class attributes (live: GET cl_abap_random).
+    out = out.replace(
+      'adtcore:type="CLAS/OC"',
+      'adtcore:type="CLAS/OC" class:final="true" class:visibility="public" class:category="generalObjectType"',
+    );
+  }
+  return out;
+}
+
+function buildCreateXmlBody(
   type: string,
   name: string,
   pkg: string,

@@ -355,7 +355,8 @@ describe('CRUD Operations', () => {
         ).rejects.toMatchObject({ statusCode: 409 });
       });
 
-      it('reclassifies structured ExceptionResourceNoAccess regardless of release', async () => {
+      it('maps ExceptionResourceNoAccess on create to a 403 authorization/package denial, not a 409 lock (G-4)', async () => {
+        // On a CREATE this exception is a package/authorization denial, not a lock — SM12/SE80 don't apply.
         const xml =
           '<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework"><type id="ExceptionResourceNoAccess"/></exc:exception>';
         const http = mockHttpThatRejectsCreate(403, xml);
@@ -363,14 +364,62 @@ describe('CRUD Operations', () => {
           createObject(
             http,
             unrestrictedSafetyConfig(),
-            '/sap/bc/adt/ddic/ddl/sources',
+            '/sap/bc/adt/oo/classes',
             '<xml/>',
             'application/*',
             undefined,
             undefined,
             '758',
+            undefined,
+            'ZCL_X',
           ),
-        ).rejects.toMatchObject({ statusCode: 409 });
+        ).rejects.toMatchObject({
+          statusCode: 403,
+          message: expect.stringMatching(/Cannot create ZCL_X.*authorization/s),
+        });
+      });
+
+      it('gives a BTP-specific package hint for ExceptionResourceNoAccess on create when systemType=btp (G-4)', async () => {
+        const xml =
+          '<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework"><type id="ExceptionResourceNoAccess"/></exc:exception>';
+        const http = mockHttpThatRejectsCreate(403, xml);
+        await expect(
+          createObject(
+            http,
+            unrestrictedSafetyConfig(),
+            '/sap/bc/adt/oo/classes',
+            '<xml/>',
+            'application/*',
+            undefined,
+            undefined,
+            '919',
+            'btp',
+            'ZCL_X',
+          ),
+        ).rejects.toMatchObject({
+          statusCode: 403,
+          message: expect.stringMatching(/non-structure.*cloud package|SAP_ALLOWED_PACKAGES/s),
+        });
+      });
+
+      it('detects a structure package (PAK 149) and tells the user to use a regular sub-package (G-4)', async () => {
+        const xml =
+          '<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework"><type id="ExceptionResourceNoAccess"/><message lang="EN">Structure packages cannot contain development objects</message></exc:exception>';
+        const http = mockHttpThatRejectsCreate(403, xml);
+        await expect(
+          createObject(
+            http,
+            unrestrictedSafetyConfig(),
+            '/sap/bc/adt/oo/classes',
+            '<xml/>',
+            'application/*',
+            undefined,
+            undefined,
+            '919',
+            'btp',
+            'ZCL_X',
+          ),
+        ).rejects.toMatchObject({ statusCode: 403, message: expect.stringMatching(/structure package.*sub-package/s) });
       });
 
       it('does NOT reclassify when abapRelease>=751 and only HTML marker is present', async () => {
