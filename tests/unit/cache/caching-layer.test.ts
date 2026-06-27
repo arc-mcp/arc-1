@@ -463,4 +463,88 @@ describe('CachingLayer', () => {
       expect(stats.edgeCount).toBe(1);
     });
   });
+
+  // ─── Post-Activation Freshness Guard ─────────────────────────────────
+  // Regression for the "stale active read after SAPActivate" bug: on an eventually-consistent
+  // backend (BTP/Steampunk) the active /source/main can briefly still serve the pre-activation
+  // shell. markActivated() promotes the just-activated draft and the guard serves it without
+  // revalidating, so the next active read returns the real source WITHOUT force_refresh.
+  describe('post-activation freshness', () => {
+    const STALE = 'CLASS zcl_x. " empty pre-activation shell\nENDCLASS.';
+    const REAL = 'CLASS zcl_x.\n  METHOD hello.\n    r = `hi`.\n  ENDMETHOD.\nENDCLASS.';
+
+    it('serves the promoted draft as active without calling the (lagging) fetcher', async () => {
+      // Pre-activation read cached the empty shell with an etag.
+      cache.putSource('CLAS', 'ZCL_X', STALE, { version: 'active', etag: 'e0' });
+      // Activation promotes the captured draft.
+      layer.markActivated('CLAS', 'ZCL_X', REAL);
+
+      // A backend that still serves the stale shell on the post-activate read.
+      const laggingFetcher = vi
+        .fn()
+        .mockResolvedValue({ source: STALE, etag: 'e0', notModified: false, statusCode: 200 });
+
+      const result = await layer.getSource('CLAS', 'ZCL_X', laggingFetcher, { version: 'active' });
+      expect(result).toEqual({ source: REAL, hit: true, revalidated: false });
+      expect(laggingFetcher).not.toHaveBeenCalled();
+      // Inactive slot is dropped on promotion (the draft is now active).
+      expect(layer.getCachedSourceWithEtag('CLAS', 'ZCL_X', 'inactive')).toBeNull();
+    });
+
+    it('flags the object as recently activated (drives draft-note suppression)', () => {
+      expect(layer.wasRecentlyActivated('CLAS', 'ZCL_X')).toBe(false);
+      layer.markActivated('CLAS', 'ZCL_X', REAL);
+      expect(layer.wasRecentlyActivated('CLAS', 'ZCL_X')).toBe(true);
+      expect(layer.wasRecentlyActivated('CLAS', 'ZCL_OTHER')).toBe(false);
+      // Case-insensitive, like the source cache keys.
+      expect(layer.wasRecentlyActivated('clas', 'zcl_x')).toBe(true);
+    });
+
+    it('clears freshness on invalidate (write / force_refresh resets to backend truth)', async () => {
+      cache.putSource('CLAS', 'ZCL_X', STALE, { version: 'active', etag: 'e0' });
+      layer.markActivated('CLAS', 'ZCL_X', REAL);
+      layer.invalidate('CLAS', 'ZCL_X', 'all');
+
+      expect(layer.wasRecentlyActivated('CLAS', 'ZCL_X')).toBe(false);
+      const fetcher = vi.fn().mockResolvedValue({ source: REAL, etag: 'e1', notModified: false, statusCode: 200 });
+      const result = await layer.getSource('CLAS', 'ZCL_X', fetcher, { version: 'active' });
+      expect(fetcher).toHaveBeenCalledOnce();
+      expect(result.source).toBe(REAL);
+    });
+
+    it('without a promoted draft, suppresses the note but still fetches the active source', async () => {
+      layer.markActivated('CLAS', 'ZCL_Y'); // note-suppress only (no draft captured)
+      expect(layer.wasRecentlyActivated('CLAS', 'ZCL_Y')).toBe(true);
+
+      const fetcher = vi.fn().mockResolvedValue({ source: REAL, etag: 'e1', notModified: false, statusCode: 200 });
+      const result = await layer.getSource('CLAS', 'ZCL_Y', fetcher, { version: 'active' });
+      expect(fetcher).toHaveBeenCalledOnce();
+      expect(result.source).toBe(REAL);
+    });
+
+    it('only guards active reads, not inactive', async () => {
+      layer.markActivated('CLAS', 'ZCL_X', REAL);
+      const fetcher = vi.fn().mockResolvedValue({ source: 'draft', etag: 'e1', notModified: false, statusCode: 200 });
+      await layer.getSource('CLAS', 'ZCL_X', fetcher, { version: 'inactive' });
+      expect(fetcher).toHaveBeenCalledOnce();
+    });
+
+    it('expires after the freshness window so reads revalidate again', async () => {
+      vi.useFakeTimers();
+      try {
+        cache.putSource('CLAS', 'ZCL_X', REAL, { version: 'active' });
+        layer.markActivated('CLAS', 'ZCL_X', REAL);
+        expect(layer.wasRecentlyActivated('CLAS', 'ZCL_X')).toBe(true);
+
+        vi.advanceTimersByTime(120_001);
+        expect(layer.wasRecentlyActivated('CLAS', 'ZCL_X')).toBe(false);
+
+        const fetcher = vi.fn().mockResolvedValue({ source: REAL, etag: 'e1', notModified: false, statusCode: 200 });
+        await layer.getSource('CLAS', 'ZCL_X', fetcher, { version: 'active' });
+        expect(fetcher).toHaveBeenCalledOnce();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
 });

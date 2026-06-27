@@ -90,6 +90,15 @@ export async function resolveVersionAndDraftInfo(
     }
   }
 
+  // A just-activated object can briefly still appear in the (eventually-consistent) inactive
+  // worklist; don't surface a stale "unactivated draft" note (or resolve 'auto' to the now-gone
+  // inactive version) for it. Cleared by any subsequent write/force_refresh. See ACTIVATION_FRESH_MS.
+  // Skipped for per-user (principal-propagation) clients: the freshness flag is object-keyed, so
+  // honoring it cross-user could hide another user's genuine draft (inactive list is per-user keyed).
+  if (draft && !cacheSecurity.isPerUserClient && cachingLayer?.wasRecentlyActivated(type, name)) {
+    draft = undefined;
+  }
+
   if (requestedVersion === 'auto') {
     return { effectiveVersion: draft ? 'inactive' : 'active', draft };
   }
