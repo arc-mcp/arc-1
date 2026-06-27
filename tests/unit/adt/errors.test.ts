@@ -401,6 +401,28 @@ describe('AdtApiError', () => {
       expect(classification?.category).not.toBe('authorization');
     });
 
+    it('classifies the BTP package-create email-deserialize 400 (SPAK_ST_PACKAGES)', () => {
+      // Live-captured 919: an IAS email as adtcore:responsible breaks the package deserialize ST.
+      const xml = `<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework"><type id="ExceptionInvalidData"/><message lang="EN">An error occurred when deserializing in the simple transformation program SPAK_ST_PACKAGES</message><properties><entry key="T100KEY-ID"></entry><entry key="T100KEY-NO">001</entry></properties></exc:exception>`;
+      const c = classifySapDomainError(400, xml);
+      expect(c?.category).toBe('package-create-invalid');
+      expect(c?.hint).toMatch(/internal ABAP user|XUBNAME/i);
+      expect(c?.category).not.toBe('lock-conflict');
+    });
+
+    it('classifies the BTP package-create TR/458 not-a-valid-software-component 400', () => {
+      // Live-captured 919: naming ZLOCAL as a root SC instead of nesting under it.
+      const xml = `<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework"><type id="ExceptionResourceCreationFailure"/><message lang="EN">ZLOCAL is not a valid software component for package ZARC1_X</message><properties><entry key="T100KEY-ID">TR</entry><entry key="T100KEY-NO">458</entry></properties></exc:exception>`;
+      const c = classifySapDomainError(400, xml);
+      expect(c?.category).toBe('package-create-invalid');
+      expect(c?.hint).toMatch(/structure package|superPackage/i);
+    });
+
+    it('does not misclassify an unrelated exception as package-create-invalid (negative path)', () => {
+      const xml = `<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework"><type id="ExceptionSomethingElse"/><message lang="EN">whatever</message></exc:exception>`;
+      expect(classifySapDomainError(400, xml)?.category).not.toBe('package-create-invalid');
+    });
+
     it('classifies lock conflicts from 403 with "currently editing" (SAP A4H pattern)', () => {
       const xml = `<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework">
   <exc:localizedMessage lang="EN">User MARIAN is currently editing ZARC1_TEST_REPORT</exc:localizedMessage>

@@ -922,6 +922,7 @@ export const SAPManageSchema = z.object({
   description: z.string().optional(),
   superPackage: z.string().optional(),
   softwareComponent: z.string().optional(),
+  responsible: z.string().optional(),
   transportLayer: z.string().optional(),
   recordChanges: z.boolean().optional(),
   packageType: z.enum(['development', 'structure', 'main']).optional(),

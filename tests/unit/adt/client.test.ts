@@ -1540,6 +1540,32 @@ describe('AdtClient', () => {
     });
   });
 
+  describe('internal user cache (createdBy trick — BTP package responsible)', () => {
+    it('noteInternalUser caches a valid XUBNAME and getInternalUser returns it', () => {
+      const client = createClient();
+      expect(client.getInternalUser()).toBeUndefined();
+      client.noteInternalUser('CB9980000000');
+      expect(client.getInternalUser()).toBe('CB9980000000');
+    });
+
+    it('noteInternalUser ignores empty and email-shaped values (failure path)', () => {
+      const client = createClient();
+      client.noteInternalUser('');
+      client.noteInternalUser('   ');
+      client.noteInternalUser('marian@zeis.de'); // email is NOT a valid responsible on cloud
+      expect(client.getInternalUser()).toBeUndefined();
+      client.noteInternalUser('  CB9980000000  ');
+      expect(client.getInternalUser()).toBe('CB9980000000');
+    });
+
+    it('withSafety() clone preserves a cached internal user', () => {
+      const client = createClient();
+      client.noteInternalUser('CB9980000000');
+      const derived = client.withSafety(unrestrictedSafetyConfig());
+      expect(derived.getInternalUser()).toBe('CB9980000000');
+    });
+  });
+
   describe('withSafety', () => {
     it('returns a new client with the given safety config', () => {
       const client = createClient();

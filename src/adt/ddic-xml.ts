@@ -72,6 +72,12 @@ export interface PackageCreateParams {
   recordChanges?: boolean;
   /** ADT "person responsible" (logon user). Defaults to "DEVELOPER" when unset. */
   responsible?: string;
+  /**
+   * BTP ABAP Environment (cloud) create: nest under the structure `superPackage`, default the
+   * software component to ZLOCAL, set `recordChanges` false, and pass `responsible` (the internal
+   * ABAP user, e.g. CB9980000000) through verbatim. The handler sets this when systemType=btp.
+   */
+  cloud?: boolean;
 }
 
 export interface ServiceBindingCreateParams {
@@ -168,6 +174,17 @@ export function normalizeAdtResponsible(responsible?: string): string {
   if (!r) return 'DEVELOPER';
   // Cloud (BTP) users are email-style and case-sensitive; classic SAP users are upper-case.
   return r.includes('@') ? r : r.toUpperCase();
+}
+
+/**
+ * Cloud (BTP ABAP Environment) "person responsible" for package create. Unlike on-prem, the value
+ * MUST be a real internal ABAP user (XUBNAME, e.g. CB9980000000): an email is rejected by the
+ * SPAK_ST_PACKAGES deserializer (HTTP 400 ExceptionInvalidData), and "DEVELOPER" does not exist on
+ * cloud. So pass the value through verbatim (trimmed) with NO fallback — the handler resolves and
+ * validates the internal user before calling buildPackageXml({ cloud: true }).
+ */
+export function normalizeCloudResponsible(responsible?: string): string {
+  return (responsible ?? '').trim();
 }
 
 function formatLength(value: number | string | undefined, width: number): string {
@@ -487,14 +504,19 @@ export function buildDataElementXml(params: DataElementCreateParams): string {
 }
 
 export function buildPackageXml(params: PackageCreateParams): string {
+  const cloud = params.cloud === true;
   const packageType = params.packageType ?? 'development';
   const superPackage = params.superPackage ?? '';
-  const softwareComponent = params.softwareComponent?.trim() || 'LOCAL';
+  const softwareComponent = params.softwareComponent?.trim() || (cloud ? 'ZLOCAL' : 'LOCAL');
   const transportLayer = params.transportLayer?.trim() ?? '';
   const normalizedSoftwareComponent = softwareComponent.toUpperCase();
   const isLocalSoftwareComponent = normalizedSoftwareComponent === 'LOCAL';
-  const recordChanges = params.recordChanges ?? (!isLocalSoftwareComponent || transportLayer !== '');
-  const responsible = normalizeAdtResponsible(params.responsible);
+  // Cloud local packages (e.g. under ZLOCAL) are non-transportable → recordChanges defaults false;
+  // do NOT let the on-prem non-LOCAL heuristic flip it to true for the ZLOCAL cloud SC.
+  const recordChanges = params.recordChanges ?? (cloud ? false : !isLocalSoftwareComponent || transportLayer !== '');
+  const responsible = cloud
+    ? normalizeCloudResponsible(params.responsible)
+    : normalizeAdtResponsible(params.responsible);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <pak:package xmlns:pak="http://www.sap.com/adt/packages"

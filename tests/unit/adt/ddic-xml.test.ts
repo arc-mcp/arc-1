@@ -10,6 +10,7 @@ import {
   buildTableTypeXml,
   decodeKtdText,
   normalizeAdtResponsible,
+  normalizeCloudResponsible,
   normalizeSrvbBindingType,
   parseTableType,
   rewriteKtdText,
@@ -547,6 +548,43 @@ describe('ddic-xml builders', () => {
 
       expect(xml).toContain('Package &quot;A&amp;B&quot; &lt;test&gt; &apos;quote&apos;');
       expect(xml).toContain('<pak:superPackage adtcore:name="ZPARENT&amp;A"/>');
+    });
+
+    // --- BTP cloud package create (live-verified 2026-06-27, SAP_BASIS 919; see
+    // docs/research/2026-06-27-btp-package-create-solved.md) ---
+    it('cloud=true builds a BTP-correct body (verbatim responsible, ZLOCAL default SC, recordChanges false, nested)', () => {
+      const xml = buildPackageXml({
+        name: 'ZARC1_SUB',
+        description: 'Cloud sub-package',
+        superPackage: 'ZLOCAL',
+        responsible: 'CB9980000000',
+        cloud: true,
+      });
+      expect(xml).toContain('adtcore:responsible="CB9980000000"');
+      expect(xml).toContain('<pak:superPackage adtcore:name="ZLOCAL"/>');
+      expect(xml).toContain('<pak:softwareComponent pak:name="ZLOCAL"/>');
+      expect(xml).toContain('pak:recordChanges="false"');
+    });
+
+    it('cloud=true defaults the software component to ZLOCAL', () => {
+      const xml = buildPackageXml({ name: 'ZARC1_X', description: 'd', responsible: 'CB9980000000', cloud: true });
+      expect(xml).toContain('<pak:softwareComponent pak:name="ZLOCAL"/>');
+    });
+
+    it('normalizeCloudResponsible passes an internal user verbatim (no DEVELOPER, no upper-case mangle)', () => {
+      expect(normalizeCloudResponsible('CB9980000000')).toBe('CB9980000000');
+      expect(normalizeCloudResponsible('  CB9980000000  ')).toBe('CB9980000000');
+      expect(normalizeCloudResponsible()).toBe('');
+      expect(normalizeCloudResponsible('')).toBe('');
+      // shared on-prem helper is untouched (regression guard)
+      expect(normalizeAdtResponsible()).toBe('DEVELOPER');
+    });
+
+    it('on-prem body (cloud unset) keeps the legacy LOCAL default + recordChanges heuristic', () => {
+      const onprem = buildPackageXml({ name: 'ZPKG_OP', description: 'd', responsible: 'SRAHEMI' });
+      expect(onprem).toContain('adtcore:responsible="SRAHEMI"');
+      expect(onprem).toContain('<pak:softwareComponent pak:name="LOCAL"/>');
+      expect(onprem).toContain('pak:recordChanges="false"');
     });
   });
 

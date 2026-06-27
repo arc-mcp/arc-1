@@ -301,6 +301,11 @@ export class AdtClient {
   readonly usesBearerAuth: boolean;
   /** Memoized JWT-derived user (resolved lazily by getEffectiveUser). */
   private effectiveUser?: string;
+  /** Memoized internal ABAP user (XUBNAME, e.g. CB9980000000), resolved from the createdBy of a
+   *  cloud object this session created. Used as adtcore:responsible for BTP package create, where
+   *  the JWT email is rejected by SPAK_ST_PACKAGES and there is no whoami endpoint. Shared across
+   *  withSafety() clones (own-enumerable field, like the caches above — see issue #333). */
+  private internalUser?: string;
   /** The configured SAP client number (from --client / SAP_CLIENT) */
   readonly sapClient: string;
   /** Per-client cache of resolved TABL URLs for **reads** (transparent table at
@@ -1473,6 +1478,22 @@ export class AdtClient {
       // Transient token/decode failure — do NOT memoize, so a later call can still resolve the user.
       return '';
     }
+  }
+
+  /**
+   * The internal ABAP user (XUBNAME, e.g. CB9980000000) for this session. BTP has no whoami
+   * endpoint and the JWT carries only the IAS email (which the package deserializer rejects), so
+   * this is resolved from the `createdBy` of a cloud object the session created (see noteInternalUser).
+   * Returns undefined until that happens. Used as `adtcore:responsible` for BTP package create.
+   */
+  getInternalUser(): string | undefined {
+    return this.internalUser;
+  }
+
+  /** Cache the internal ABAP user. Ignores empty / email-shaped values (a valid XUBNAME has no '@'). */
+  noteInternalUser(user: string | undefined): void {
+    const u = (user ?? '').trim();
+    if (u && !u.includes('@')) this.internalUser = u;
   }
 
   /** Get system info as structured JSON (user, system details from discovery XML) */

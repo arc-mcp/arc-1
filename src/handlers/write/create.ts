@@ -499,6 +499,21 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
     throw createErr;
   }
 
+  // Resolve the session's internal ABAP user from the created object's createdBy and cache it
+  // (BTP has no whoami endpoint; the JWT carries only the IAS email, which the package deserializer
+  // rejects). Best-effort, once per session — used as adtcore:responsible for BTP package create.
+  // Tries the POST 201 body first (zero extra call), then a single GET. Never breaks the create.
+  if (cloud && !client.getInternalUser()) {
+    try {
+      const createdBy =
+        result.match(/adtcore:createdBy="([^"]*)"/)?.[1] ??
+        (await client.http.get(objectUrl)).body.match(/adtcore:createdBy="([^"]*)"/)?.[1];
+      client.noteInternalUser(createdBy);
+    } catch {
+      // opportunistic only — package create falls back to an explicit `responsible`
+    }
+  }
+
   if (isMetadataWriteType(type)) {
     // SAP's DTEL POST ignores labels, searchHelp, etc. — they require a follow-up PUT.
     // Use withStatefulSession directly (not safeUpdateObject) to keep the lock cycle

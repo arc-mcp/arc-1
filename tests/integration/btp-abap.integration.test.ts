@@ -27,6 +27,7 @@ import { config } from 'dotenv';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { AdtClient } from '../../src/adt/client.js';
 import { createObject, deleteObject, lockObject, unlockObject, updateSource } from '../../src/adt/crud.js';
+import { buildPackageXml } from '../../src/adt/ddic-xml.js';
 import { activate } from '../../src/adt/devtools.js';
 import { createBearerTokenProvider, loadServiceKeyFile } from '../../src/adt/oauth.js';
 import { unrestrictedSafetyConfig } from '../../src/adt/safety.js';
@@ -696,5 +697,123 @@ describeIf('BTP ABAP Environment Integration Tests', () => {
         expect(created).toBe(true);
       });
     }
+  });
+
+  // ─── BTP-Specific: package-create path (cloud-correct DEVC body) ──────────────
+  // The cloud package body differs from on-prem: responsible = the internal ABAP user (the IAS email
+  // is rejected by SPAK_ST_PACKAGES), nested under the structure superPackage, software component
+  // ZLOCAL, recordChanges false. Live-verified 919. See docs/research/2026-06-27-btp-package-create-solved.md.
+  describe('BTP package-create path', () => {
+    const structurePkg = process.env.TEST_BTP_STRUCTURE_PACKAGE || 'ZLOCAL';
+    const writablePkg = process.env.TEST_BTP_PACKAGE;
+
+    // Resolve the session's internal ABAP user (no whoami endpoint exists): prefer an explicit env
+    // (TEST_BTP_INTERNAL_USER), else the createdBy trick — create a throwaway class in an object-hosting
+    // package, read its createdBy, delete it.
+    async function resolveInternalUser(pkg: string): Promise<string> {
+      if (process.env.TEST_BTP_INTERNAL_USER) return process.env.TEST_BTP_INTERNAL_USER;
+      const name = generateUniqueName('ZCL_ARC1_WHO');
+      const url = `/sap/bc/adt/oo/classes/${name.toLowerCase()}`;
+      const body = buildCreateXml('CLAS', name, pkg, 'whoami', undefined, 'EN', '', true);
+      try {
+        await createObject(
+          client.http,
+          client.safety,
+          '/sap/bc/adt/oo/classes',
+          body,
+          createContentTypeForType('CLAS'),
+          undefined,
+          undefined,
+          '919',
+          'btp',
+          name,
+        );
+        return (await client.http.get(url)).body.match(/adtcore:createdBy="([^"]*)"/)?.[1] ?? '';
+      } finally {
+        try {
+          await client.http.withStatefulSession(async (s) => {
+            const lock = await lockObject(s, client.safety, url, 'MODIFY', '919', 'btp');
+            await deleteObject(s, client.safety, url, lock.lockHandle, lock.corrNr || undefined);
+          });
+        } catch {
+          // best-effort-cleanup
+        }
+      }
+    }
+
+    it('the IAS email as responsible is rejected by the package deserialize ST (SPAK_ST_PACKAGES) — root cause', async () => {
+      const email = await client.getEffectiveUser(); // the JWT email — NOT a valid XUBNAME
+      const name = generateUniqueName('ZARC1_PKGBAD');
+      const body = buildPackageXml({
+        name,
+        description: 'bad',
+        superPackage: structurePkg,
+        responsible: email,
+        cloud: true,
+      });
+      await expect(
+        createObject(
+          client.http,
+          client.safety,
+          '/sap/bc/adt/packages',
+          body,
+          'application/*',
+          undefined,
+          undefined,
+          '919',
+          'btp',
+          name,
+        ),
+      ).rejects.toThrow(/SPAK_ST_PACKAGES|deserializ/i);
+    });
+
+    // Full create→read(createdBy)→delete. Nests under the structure package (ZLOCAL is proven nestable).
+    // Needs the internal user: set TEST_BTP_INTERNAL_USER, or TEST_BTP_PACKAGE (an object-hosting package
+    // for the createdBy trick). Skipped otherwise.
+    const canResolveUser = !!(process.env.TEST_BTP_INTERNAL_USER || writablePkg);
+    (canResolveUser ? it : it.skip)('create → read(createdBy=internal user) → delete a cloud sub-package', async () => {
+      const internalUser = client.getInternalUser() || (await resolveInternalUser(writablePkg ?? ''));
+      expect(internalUser).toBeTruthy();
+      expect(internalUser).not.toContain('@');
+      const name = generateUniqueName('ZARC1_PKG');
+      const url = `/sap/bc/adt/packages/${name.toLowerCase()}`;
+      const body = buildPackageXml({
+        name,
+        description: 'ARC-1 BTP package lifecycle',
+        superPackage: structurePkg,
+        responsible: internalUser,
+        cloud: true,
+      });
+      let created = false;
+      try {
+        await createObject(
+          client.http,
+          client.safety,
+          '/sap/bc/adt/packages',
+          body,
+          'application/*',
+          undefined,
+          undefined,
+          '919',
+          'btp',
+          name,
+        );
+        created = true;
+        const read = (await client.http.get(url)).body;
+        expect(read).toContain(`adtcore:createdBy="${internalUser}"`);
+      } finally {
+        if (created) {
+          try {
+            await client.http.withStatefulSession(async (s) => {
+              const lock = await lockObject(s, client.safety, url, 'MODIFY', '919', 'btp');
+              await deleteObject(s, client.safety, url, lock.lockHandle, lock.corrNr || undefined);
+            });
+          } catch {
+            // best-effort-cleanup
+          }
+        }
+      }
+      expect(created).toBe(true);
+    });
   });
 });

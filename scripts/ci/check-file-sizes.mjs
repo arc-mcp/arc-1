@@ -40,7 +40,7 @@ const BUDGETS = {
   // The ADT client facade aggregates every read/write op; set_api_state (#506) + runQueryWithMetrics
   // (SAPQuery metrics) + getEffectiveUser (BTP JWT-derived user, G-5) + getSourceAtObjectUrl
   // (post-activation cache promotion) pushed it past the default. Keep tight headroom.
-  'src/adt/client.ts': 1600,
+  'src/adt/client.ts': 1620,
 };
 
 const DEFAULT_SRC = 1500;
