@@ -232,6 +232,21 @@ describe('buildBlueSourceXml', () => {
   it('throws AdtApiError for an unknown code', () => {
     expect(() => buildBlueSourceXml('NOPE', 'Z', '$TMP', 'd')).toThrow(AdtApiError);
   });
+  it('emits a cloud-safe create body for every type — no responsible/masterSystem/abapLanguageVersion (BTP)', () => {
+    // BTP/Steampunk create simple-transformations reject adtcore:responsible/masterSystem; the cloud
+    // assigns the owner from the JWT. SDO bodies carry none by construction (no cloudify needed) —
+    // live-verified that all six deserialize and reach package-assignment on BTP 919. Lock the contract
+    // so a refactor can't reintroduce a cloud-hostile attribute. See btp-abap.integration.test.ts.
+    const reg = SDO_REGISTRY as Record<string, { createType: string }>;
+    for (const code of Object.keys(reg)) {
+      const xml = buildBlueSourceXml(code, 'ZARC1_SDO', 'ZPKG', 'd');
+      expect(xml).not.toContain('adtcore:responsible');
+      expect(xml).not.toContain('adtcore:masterSystem');
+      expect(xml).not.toContain('abapLanguageVersion');
+      expect(xml).toContain(`adtcore:type="${reg[code].createType}"`);
+      expect(xml).toContain('<adtcore:packageRef adtcore:name="ZPKG"/>');
+    }
+  });
 });
 
 describe('createServerDrivenObject', () => {

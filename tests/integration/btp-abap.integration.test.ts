@@ -30,6 +30,12 @@ import { createObject, deleteObject, lockObject, unlockObject, updateSource } fr
 import { activate } from '../../src/adt/devtools.js';
 import { createBearerTokenProvider, loadServiceKeyFile } from '../../src/adt/oauth.js';
 import { unrestrictedSafetyConfig } from '../../src/adt/safety.js';
+import {
+  buildBlueSourceXml,
+  createServerDrivenObject,
+  SDO_REGISTRY,
+  serverDrivenObjectUrl,
+} from '../../src/adt/server-driven.js';
 import { buildCreateXml, createContentTypeForType } from '../../src/handlers/write-helpers.js';
 import { expectSapFailureClass } from '../helpers/expected-error.js';
 import { generateUniqueName } from './crud-harness.js';
@@ -679,6 +685,92 @@ describeIf('BTP ABAP Environment Integration Tests', () => {
             'btp',
             name,
           );
+          created = true;
+        } finally {
+          if (created) {
+            // best-effort-cleanup
+            try {
+              await client.http.withStatefulSession(async (session) => {
+                const lock = await lockObject(session, client.safety, objectUrl, 'MODIFY', '919', 'btp');
+                await deleteObject(session, client.safety, objectUrl, lock.lockHandle, lock.corrNr || undefined);
+              });
+            } catch {
+              // leave the object; a follow-up run reuses a fresh unique name
+            }
+          }
+        }
+        expect(created).toBe(true);
+      });
+    }
+  });
+
+  // ─── BTP-Specific: SDO (server-driven) object-create path ──────────────
+  //
+  // The six registered 8.16+ server-driven types (DESD/DTSC/CSNM/EVTB/EVTO/COTA) create via a minimal
+  // <blue:blueSource> body (buildBlueSourceXml) that — by construction — carries NO adtcore:responsible,
+  // masterSystem, or abapLanguageVersion, so it needs no cloudify. Live-verified on BTP 919: every type's
+  // body deserializes and reaches package-assignment (structure package → 409 "cannot contain development
+  // objects"; DTSC → 403 resource-auth). A wrong body would 400 at the create simple-transformation.
+  describe('BTP SDO object-create path (DESD/DTSC/CSNM/EVTB/EVTO/COTA)', () => {
+    const structurePkg = process.env.TEST_BTP_STRUCTURE_PACKAGE || 'ZLOCAL';
+    const writablePkg = process.env.TEST_BTP_PACKAGE;
+    const codes = Object.keys(SDO_REGISTRY);
+
+    for (const code of codes) {
+      it(`${code} cloud create body is accepted (deserializes past the create ST)`, async () => {
+        const name = generateUniqueName(`ZARC1_SDO_${code}`);
+        const objectUrl = serverDrivenObjectUrl(code, name);
+        // The blue body must carry no cloud-hostile attrs — the owner comes from the JWT on cloud.
+        const body = buildBlueSourceXml(code, name, structurePkg, `ARC-1 BTP ${code} body check`);
+        expect(body).not.toContain('adtcore:responsible');
+        expect(body).not.toContain('adtcore:masterSystem');
+        let created = false;
+        try {
+          await createServerDrivenObject(client.http, client.safety, code, name, {
+            package: structurePkg,
+            description: `ARC-1 BTP ${code} body check`,
+          });
+          // structurePkg happened to be writable — a successful create is itself proof; clean up in finally.
+          created = true;
+        } catch (err) {
+          // Decisive: the body deserialized — it did NOT fail at the create simple-transformation. A
+          // structure package then rejects it at package-assignment with a specific message (a status-only
+          // assert could false-green); DTSC instead returns a resource-authorization 403.
+          const msg = err instanceof Error ? err.message : String(err);
+          expect(msg).not.toMatch(/deserializ|transformation program|System expected the element/i);
+          expectSapFailureClass(
+            err,
+            [403, 409],
+            [/structure package/i, /cannot contain development objects/i, /authoriz/i],
+          );
+        } finally {
+          if (created) {
+            // best-effort-cleanup
+            try {
+              await client.http.withStatefulSession(async (session) => {
+                const lock = await lockObject(session, client.safety, objectUrl, 'MODIFY', '919', 'btp');
+                await deleteObject(session, client.safety, objectUrl, lock.lockHandle, lock.corrNr || undefined);
+              });
+            } catch {
+              // leave the object; a follow-up run reuses a fresh unique name
+            }
+          }
+        }
+      });
+    }
+
+    // Full create→delete needs a writable, regular (non-structure) cloud package via TEST_BTP_PACKAGE.
+    for (const code of codes) {
+      (writablePkg ? it : it.skip)(`${code} create → delete in a cloud package`, async () => {
+        const pkg = writablePkg as string;
+        const name = generateUniqueName(`ZARC1_SDO_${code}`);
+        const objectUrl = serverDrivenObjectUrl(code, name);
+        let created = false;
+        try {
+          await createServerDrivenObject(client.http, client.safety, code, name, {
+            package: pkg,
+            description: `ARC-1 BTP ${code} create`,
+          });
           created = true;
         } finally {
           if (created) {
