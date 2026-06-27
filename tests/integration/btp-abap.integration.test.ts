@@ -28,6 +28,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { AdtClient } from '../../src/adt/client.js';
 import { createObject, deleteObject, lockObject, unlockObject, updateSource } from '../../src/adt/crud.js';
 import { activate } from '../../src/adt/devtools.js';
+import { fetchDiscoveryDocument } from '../../src/adt/discovery.js';
 import { createBearerTokenProvider, loadServiceKeyFile } from '../../src/adt/oauth.js';
 import { unrestrictedSafetyConfig } from '../../src/adt/safety.js';
 import {
@@ -35,9 +36,11 @@ import {
   createServerDrivenObject,
   SDO_REGISTRY,
   serverDrivenObjectUrl,
+  supportsServerDrivenObject,
 } from '../../src/adt/server-driven.js';
 import { buildCreateXml, createContentTypeForType } from '../../src/handlers/write-helpers.js';
 import { expectSapFailureClass } from '../helpers/expected-error.js';
+import { requireOrSkip, SkipReason } from '../helpers/skip-policy.js';
 import { generateUniqueName } from './crud-harness.js';
 import { hasBtpCredentials } from './helpers.js';
 
@@ -716,8 +719,21 @@ describeIf('BTP ABAP Environment Integration Tests', () => {
     const writablePkg = process.env.TEST_BTP_PACKAGE;
     const codes = Object.keys(SDO_REGISTRY);
 
+    // Load ADT discovery so SDO availability is gated per type — these collections are 8.16+ and absent
+    // on older tenants (where an unconditional POST would 404/405, not the package-assignment we assert).
+    beforeAll(async () => {
+      const { map } = await fetchDiscoveryDocument(client.http);
+      client.http.setDiscoveryMap(map);
+    });
+
     for (const code of codes) {
-      it(`${code} cloud create body is accepted (deserializes past the create ST)`, async () => {
+      it(`${code} cloud create body is accepted (deserializes past the create ST)`, async (ctx) => {
+        // Skip a type this tenant doesn't advertise (pre-8.16); undefined (no discovery) → attempt anyway.
+        requireOrSkip(
+          ctx,
+          supportsServerDrivenObject(client.http, code) === false ? null : true,
+          SkipReason.BACKEND_UNSUPPORTED,
+        );
         const name = generateUniqueName(`ZARC1_SDO_${code}`);
         const objectUrl = serverDrivenObjectUrl(code, name);
         // The blue body must carry no cloud-hostile attrs — the owner comes from the JWT on cloud.
@@ -761,7 +777,12 @@ describeIf('BTP ABAP Environment Integration Tests', () => {
 
     // Full create→delete needs a writable, regular (non-structure) cloud package via TEST_BTP_PACKAGE.
     for (const code of codes) {
-      (writablePkg ? it : it.skip)(`${code} create → delete in a cloud package`, async () => {
+      (writablePkg ? it : it.skip)(`${code} create → delete in a cloud package`, async (ctx) => {
+        requireOrSkip(
+          ctx,
+          supportsServerDrivenObject(client.http, code) === false ? null : true,
+          SkipReason.BACKEND_UNSUPPORTED,
+        );
         const pkg = writablePkg as string;
         const name = generateUniqueName(`ZARC1_SDO_${code}`);
         const objectUrl = serverDrivenObjectUrl(code, name);

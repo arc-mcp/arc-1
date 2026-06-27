@@ -12,7 +12,7 @@
  * read test reaches SAP. Skipped entirely without BTP credentials.
  */
 import { config } from 'dotenv';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { AdtClient } from '../../src/adt/client.js';
 import { createBearerTokenProvider, loadServiceKeyFile } from '../../src/adt/oauth.js';
 import { type SafetyConfig, unrestrictedSafetyConfig } from '../../src/adt/safety.js';
@@ -51,7 +51,13 @@ const auth = (scopes: string[]) => ({
 const describeIf = hasBtpCredentials() ? describe : describe.skip;
 
 describeIf('BTP tool-level dispatch (handleToolCall)', { timeout: 60_000 }, () => {
-  const client = getBtpTestClient();
+  // Build the client in beforeAll, not in the describe body: Vitest still executes the describe
+  // callback during collection even when the suite is describe.skip (no BTP creds), and constructing
+  // the client there would call loadServiceKeyFile('') and fail collection instead of skipping.
+  let client: AdtClient;
+  beforeAll(() => {
+    client = getBtpTestClient();
+  });
 
   it('reads a released class through handleToolCall (dispatch + live BTP client)', async () => {
     const result = await handleToolCall(
