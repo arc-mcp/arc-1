@@ -26,11 +26,24 @@
 import { config } from 'dotenv';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { AdtClient } from '../../src/adt/client.js';
-import { createObject, deleteObject, lockObject, unlockObject, updateSource } from '../../src/adt/crud.js';
+import {
+  createObject,
+  deleteObject,
+  lockObject,
+  safeUpdateObject,
+  unlockObject,
+  updateSource,
+} from '../../src/adt/crud.js';
 import { activate } from '../../src/adt/devtools.js';
 import { createBearerTokenProvider, loadServiceKeyFile } from '../../src/adt/oauth.js';
 import { unrestrictedSafetyConfig } from '../../src/adt/safety.js';
-import { buildCreateXml, createContentTypeForType } from '../../src/handlers/write-helpers.js';
+import {
+  buildCreateXml,
+  createContentTypeForType,
+  getMetadataWriteProperties,
+  mergeMetadataWriteProperties,
+  vendorContentTypeForType,
+} from '../../src/handlers/write-helpers.js';
 import { expectSapFailureClass } from '../helpers/expected-error.js';
 import { generateUniqueName } from './crud-harness.js';
 import { hasBtpCredentials } from './helpers.js';
@@ -696,5 +709,101 @@ describeIf('BTP ABAP Environment Integration Tests', () => {
         expect(created).toBe(true);
       });
     }
+  });
+
+  // ─── BTP-Specific: SRVB update path (B3) ──────────────
+  // Service bindings have no /source/main — `update` is a full metadata-XML replace via the v2 content-type,
+  // merging provided fields over the existing binding (serviceDefinition/bindingType/version preserved when
+  // not re-supplied). Live-verified on H01 919: create → update(description) → re-point SRVD → delete.
+  // (#522/#529 follow-up; cloud body is the same one #529 proved for SRVB create, PUT with the v2 type.)
+  describe('BTP SRVB update path (B3)', () => {
+    const writablePkg = process.env.TEST_BTP_PACKAGE;
+    const base = '/sap/bc/adt/businessservices/bindings';
+    (writablePkg ? it : it.skip)(
+      'create → update(description; merge keeps SRVD) → re-point SRVD → delete',
+      async () => {
+        const pkg = writablePkg as string;
+        const name = generateUniqueName('ZSB_ARC1_UPD');
+        const objectUrl = `${base}/${name.toLowerCase()}`;
+        const user = await client.getEffectiveUser();
+        let created = false;
+        try {
+          const createBody = buildCreateXml(
+            'SRVB',
+            name,
+            pkg,
+            'SRVB B3 v1',
+            { serviceDefinition: 'ZSRVD_DUMMY', bindingType: 'ODATA V2 UI', category: '0' },
+            'EN',
+            user,
+            true,
+          );
+          await createObject(
+            client.http,
+            client.safety,
+            base,
+            createBody,
+            createContentTypeForType('SRVB', true),
+            undefined,
+            undefined,
+            '919',
+            'btp',
+            name,
+          );
+          created = true;
+
+          // update #1 — description only: no serviceDefinition supplied, so the merge must preserve it.
+          const merged1 = await mergeMetadataWriteProperties(client, 'SRVB', name, getMetadataWriteProperties({}));
+          expect(merged1.serviceDefinition).toBe('ZSRVD_DUMMY');
+          const body1 = buildCreateXml('SRVB', name, pkg, 'SRVB B3 UPDATED', merged1, 'EN', user, true);
+          expect(body1).not.toContain('adtcore:responsible');
+          expect(body1).toContain('adtcore:abapLanguageVersion="cloudDevelopment"');
+          await safeUpdateObject(
+            client.http,
+            client.safety,
+            objectUrl,
+            body1,
+            vendorContentTypeForType('SRVB'),
+            undefined,
+            '919',
+          );
+          const after1 = JSON.parse((await client.getSrvb(name)).source) as Record<string, unknown>;
+          expect(after1.description).toBe('SRVB B3 UPDATED');
+          expect(after1.serviceDefinition).toBe('ZSRVD_DUMMY'); // merge preserved the binding's SRVD
+
+          // update #2 — re-point the service definition.
+          const merged2 = await mergeMetadataWriteProperties(
+            client,
+            'SRVB',
+            name,
+            getMetadataWriteProperties({ serviceDefinition: 'ZSRVD_DUMMY2' }),
+          );
+          const body2 = buildCreateXml('SRVB', name, pkg, 'SRVB B3 UPDATED', merged2, 'EN', user, true);
+          await safeUpdateObject(
+            client.http,
+            client.safety,
+            objectUrl,
+            body2,
+            vendorContentTypeForType('SRVB'),
+            undefined,
+            '919',
+          );
+          const after2 = JSON.parse((await client.getSrvb(name)).source) as Record<string, unknown>;
+          expect(after2.serviceDefinition).toBe('ZSRVD_DUMMY2');
+        } finally {
+          if (created) {
+            // best-effort-cleanup
+            try {
+              await client.http.withStatefulSession(async (s) => {
+                const lock = await lockObject(s, client.safety, objectUrl, 'MODIFY', '919', 'btp');
+                await deleteObject(s, client.safety, objectUrl, lock.lockHandle, lock.corrNr || undefined);
+              });
+            } catch {
+              // leave the object; a follow-up run reuses a fresh unique name
+            }
+          }
+        }
+      },
+    );
   });
 });
