@@ -38,6 +38,8 @@ const DIFF_SUPPORTED_TYPES = [
 interface DiffOptions {
   include?: string;
   group?: string;
+  fromLabel?: string;
+  toLabel?: string;
 }
 
 /**
@@ -79,7 +81,9 @@ export async function getVersionDiff(
     resolveDiffSource(client, type, name, to, resolved, revList),
   ]);
 
-  return unifiedDiff(fromSrc, toSrc, `${name} (${from})`, `${name} (${to})`);
+  const fromDisplay = opts.fromLabel ?? from;
+  const toDisplay = opts.toLabel ?? to;
+  return unifiedDiff(fromSrc, toSrc, `${name} (${fromDisplay})`, `${name} (${toDisplay})`);
 }
 
 /** Resolve one diff ref to raw source text. */

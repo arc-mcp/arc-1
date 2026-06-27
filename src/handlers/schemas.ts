@@ -160,6 +160,10 @@ export const SAPReadSchema = z
     from: z.string().optional(),
     /** For action="diff": NEW side — defaults to "inactive". Same accepted values as from. */
     to: z.string().optional(),
+    /** For action="diff": optional display label for the OLD side. */
+    fromLabel: z.string().optional(),
+    /** For action="diff": optional display label for the NEW side. */
+    toLabel: z.string().optional(),
     include: z.string().optional(),
     group: z.string().optional(),
     method: z.string().optional(),
@@ -193,6 +197,10 @@ export const SAPReadSchemaBtp = z
     from: z.string().optional(),
     /** For action="diff": NEW side — defaults to "inactive". Same accepted values as from. */
     to: z.string().optional(),
+    /** For action="diff": optional display label for the OLD side. */
+    fromLabel: z.string().optional(),
+    /** For action="diff": optional display label for the NEW side. */
+    toLabel: z.string().optional(),
     include: z.string().optional(),
     group: z.string().optional(),
     method: z.string().optional(),

@@ -23,6 +23,8 @@ Use `SAPRead` when you need exact raw source, one method body, grep output, inac
 | `action` | string | No | `"diff"` — return a unified diff between two source versions on this system (only the hunks, not two full sources), using `from`/`to`. Source types only: `PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, BDEF, SRVD, DDLX, TABL` (CDS views are `DDLS`; classic DDIC `VIEW` is unsupported — it has no plain-text source). Note: SAP only snapshots a version on transport *release*, so `from`/`to` revision ids are sparse — `active` vs `inactive` (pending unactivated changes) is the most reliable use. |
 | `from` | string | No | For `action="diff"`: OLD side — `"active"` (default), `"inactive"`, a revision id (from a VERSIONS response), or a full `/sap/bc/adt/` revision URI. |
 | `to` | string | No | For `action="diff"`: NEW side — defaults to `"inactive"`. Same accepted values as `from`. |
+| `fromLabel` | string | No | For `action="diff"`: optional display label for the OLD side in the summary and patch header, e.g. `DNT-6-6: Validate discounts (DS7K900123)`. Does not affect source resolution. |
+| `toLabel` | string | No | For `action="diff"`: optional display label for the NEW side in the summary and patch header, e.g. `active` or `inactive draft`. Does not affect source resolution. |
 | `format` | string | No | Output format: `"text"` (default) or `"structured"` (CLAS only, see below) |
 | `include` | string | No | For CLAS: `main`, `testclasses`, `definitions`, `implementations`, `macros`. For DDLS: `elements` (extract CDS view elements). |
 | `method` | string | No | For CLAS: method name to read (e.g., `get_name`), or `*` to list all methods |
@@ -123,6 +125,7 @@ SAPRead(type="VERSIONS", name="ZCL_X", include="definitions") — list revisions
 SAPRead(type="VERSION_SOURCE", versionUri="/sap/bc/adt/programs/programs/ZARC1_TEST_REPORT/source/main/versions/20260410185851/00000/content") — fetch source at one revision
 SAPRead(type="CLAS", name="ZCL_ORDER", action="diff")                       — diff active vs your inactive draft (pending changes)
 SAPRead(type="CLAS", name="ZCL_ORDER", action="diff", from="00001", to="active") — diff a revision against the active version
+SAPRead(type="CLAS", name="ZCL_ORDER", action="diff", from="00001", to="active", fromLabel="DNT-6-6 (DS7K900123)", toLabel="active") — readable diff headers
 SAPRead(type="TRAN", name="SE38")                — transaction metadata
 SAPRead(type="SOBJ", name="BUS2032")             — list BOR object methods
 SAPRead(type="BSP")                              — list all BSP/UI5 apps

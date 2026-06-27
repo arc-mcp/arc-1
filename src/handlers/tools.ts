@@ -474,6 +474,16 @@ export function getToolDefinitions(
             description:
               'action="diff" NEW side (default "inactive" = pending unactivated changes). Same values as from.',
           },
+          fromLabel: {
+            type: 'string',
+            description:
+              'action="diff" optional display label for the OLD side in the summary and patch header, e.g. "DNT-6-6: Validate discounts (DS7K900123)". Does not affect source resolution.',
+          },
+          toLabel: {
+            type: 'string',
+            description:
+              'action="diff" optional display label for the NEW side in the summary and patch header, e.g. "active" or "inactive draft". Does not affect source resolution.',
+          },
           include: {
             type: 'string',
             description:

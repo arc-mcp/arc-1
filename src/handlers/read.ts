@@ -131,15 +131,23 @@ export async function handleSAPRead(
     if (!name) return errorResult('SAPRead action="diff" requires a "name".');
     const from = typeof args.from === 'string' && args.from ? args.from : 'active';
     const to = typeof args.to === 'string' && args.to ? args.to : 'inactive';
+    const fromLabel = typeof args.fromLabel === 'string' && args.fromLabel ? args.fromLabel : undefined;
+    const toLabel = typeof args.toLabel === 'string' && args.toLabel ? args.toLabel : undefined;
+    const fromDisplay = fromLabel ?? from;
+    const toDisplay = toLabel ?? to;
     try {
       const r = await getVersionDiff(client, type, name, from, to, {
         include: typeof args.include === 'string' ? args.include : undefined,
         group: typeof args.group === 'string' ? args.group : undefined,
+        fromLabel,
+        toLabel,
       });
       if (r.identical) {
-        return textResult(`No differences between ${from} and ${to} for ${type} ${name}.`);
+        return textResult(`No differences between ${fromDisplay} and ${toDisplay} for ${type} ${name}.`);
       }
-      return textResult(`Diff ${type} ${name}: ${from} → ${to}  (+${r.added} -${r.removed})\n\n${r.diff}`);
+      return textResult(
+        `Diff ${type} ${name}: ${fromDisplay} → ${toDisplay}  (+${r.added} -${r.removed})\n\n${r.diff}`,
+      );
     } catch (err) {
       if (isNotFoundError(err)) {
         return errorResult(

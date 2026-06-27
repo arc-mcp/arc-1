@@ -31,6 +31,34 @@ describe('SAPReadSchema', () => {
     if (result.success) expect(result.data.version).toBe('active');
   });
 
+  it('accepts diff display labels', () => {
+    const result = SAPReadSchema.safeParse({
+      type: 'CLAS',
+      name: 'ZCL_TEST',
+      action: 'diff',
+      from: '00001',
+      to: 'active',
+      fromLabel: 'DNT-6-6 (DS7K900123)',
+      toLabel: 'active',
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.fromLabel).toBe('DNT-6-6 (DS7K900123)');
+      expect(result.data.toLabel).toBe('active');
+    }
+
+    expect(
+      SAPReadSchemaBtp.safeParse({
+        type: 'CLAS',
+        name: 'ZCL_TEST',
+        action: 'diff',
+        fromLabel: 'inactive draft',
+        toLabel: 'active',
+      }).success,
+    ).toBe(true);
+  });
+
   it('accepts server-driven object types (DESD/EVTB/COTA — 816)', () => {
     expect(SAPReadSchema.safeParse({ type: 'DESD', name: 'DEMO_CDS_LOGICL_EXTERNL_SCHEMA' }).success).toBe(true);
     expect(SAPReadSchema.safeParse({ type: 'EVTB', name: 'S_BUSINESSPARTNER_CHANGE' }).success).toBe(true);

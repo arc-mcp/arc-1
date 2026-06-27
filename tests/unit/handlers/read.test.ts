@@ -2045,6 +2045,29 @@ ENDCLASS.`;
       expect((text.match(/METHOD a\./g) ?? []).length).toBe(1);
     });
 
+    it('uses custom display labels in the diff summary and patch headers', async () => {
+      mockFetch.mockImplementation((url: unknown) =>
+        Promise.resolve(mockResponse(200, String(url).includes('version=inactive') ? INACTIVE_SRC : ACTIVE_SRC)),
+      );
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'CLAS',
+        name: 'ZCL_X',
+        action: 'diff',
+        from: 'active',
+        to: 'inactive',
+        fromLabel: 'DNT-6-6 (DS7K900123)',
+        toLabel: 'inactive draft',
+      });
+
+      expect(result.isError).toBeUndefined();
+      const text = result.content[0]!.text;
+      expect(text).toContain('Diff CLAS ZCL_X: DNT-6-6 (DS7K900123) → inactive draft');
+      expect(text).toContain('--- ZCL_X (DNT-6-6 (DS7K900123))');
+      expect(text).toContain('+++ ZCL_X (inactive draft)');
+      expect(text).not.toContain('Diff CLAS ZCL_X: active → inactive');
+    });
+
     it('reports "No differences" when both sides are identical (e.g. no draft)', async () => {
       mockFetch.mockImplementation(() => Promise.resolve(mockResponse(200, ACTIVE_SRC)));
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
@@ -2054,6 +2077,25 @@ ENDCLASS.`;
       });
       expect(result.isError).toBeUndefined();
       expect(result.content[0]?.text).toBe('No differences between active and inactive for CLAS ZCL_X.');
+    });
+
+    it('uses custom display labels in the no-difference message', async () => {
+      mockFetch.mockImplementation(() => Promise.resolve(mockResponse(200, ACTIVE_SRC)));
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'CLAS',
+        name: 'ZCL_X',
+        action: 'diff',
+        from: 'active',
+        to: 'inactive',
+        fromLabel: 'released transport',
+        toLabel: 'current active',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toBe(
+        'No differences between released transport and current active for CLAS ZCL_X.',
+      );
     });
 
     it('resolves a bare revision id via the VERSIONS feed', async () => {
