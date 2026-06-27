@@ -106,6 +106,24 @@ describe('buildCreateXml — cloud mode (G-3)', () => {
       expect(xml).not.toContain('responsible');
       expect(xml).toContain('adtcore:abapLanguageVersion="cloudDevelopment"');
     });
+
+    it('SRVB cloud body preserves the serviceDefinition ref through cloudify (B3 — update reuses this body)', () => {
+      // SRVB update is a full metadata-XML replace that reuses this exact builder; cloudify must drop the
+      // owner attrs but keep the <srvb:serviceDefinition> ref intact, or an update would orphan the binding.
+      const xml = buildCreateXml(
+        'SRVB',
+        'ZSB_X',
+        'ZPKG',
+        'desc',
+        { serviceDefinition: 'ZSRVD_X' },
+        'EN',
+        'marian@zeis.de',
+        true,
+      );
+      expect(xml).toContain('adtcore:abapLanguageVersion="cloudDevelopment"');
+      expect(xml).not.toContain('adtcore:responsible');
+      expect(xml).toContain('ZSRVD_X');
+    });
   });
 });
 
@@ -178,5 +196,47 @@ describe('mergeMetadataWriteProperties — DOMA outputLength follows a length ch
       outputLength: 15,
     });
     expect(merged.outputLength).toBe(15);
+  });
+});
+
+describe('mergeMetadataWriteProperties — SRVB update preserves binding fields (B3)', () => {
+  // Shape mirrors parseServiceBinding()'s JSON summary (what client.getSrvb returns).
+  const stubClient = (existing: Record<string, unknown>) =>
+    ({ getSrvb: async () => ({ source: JSON.stringify(existing) }) }) as unknown as AdtClient;
+  const existing = {
+    description: 'Binding',
+    package: 'ZPKG',
+    serviceDefinition: 'ZSRVD_DUMMY',
+    bindingType: 'ODATA',
+    odataVersion: 'V2',
+    bindingCategory: 'UI',
+    serviceVersion: '0001',
+  };
+
+  it('a description-only update preserves serviceDefinition/bindingType/version/odataVersion from the existing binding', async () => {
+    const merged = await mergeMetadataWriteProperties(stubClient(existing), 'SRVB', 'ZSB', {});
+    expect(merged.serviceDefinition).toBe('ZSRVD_DUMMY');
+    expect(merged.bindingType).toBe('ODATA');
+    expect(merged.version).toBe('0001'); // mapped from existing.serviceVersion
+    expect(merged.odataVersion).toBe('V2');
+    expect(merged.category).toBe('0'); // 'UI' → '0'
+  });
+
+  it('re-points serviceDefinition when supplied, keeping the other fields', async () => {
+    const merged = await mergeMetadataWriteProperties(stubClient(existing), 'SRVB', 'ZSB', {
+      serviceDefinition: 'ZSRVD_NEW',
+    });
+    expect(merged.serviceDefinition).toBe('ZSRVD_NEW');
+    expect(merged.odataVersion).toBe('V2');
+  });
+
+  it('maps a "Web API" binding category back to "1"', async () => {
+    const merged = await mergeMetadataWriteProperties(
+      stubClient({ ...existing, bindingCategory: 'Web API' }),
+      'SRVB',
+      'ZSB',
+      {},
+    );
+    expect(merged.category).toBe('1');
   });
 });
