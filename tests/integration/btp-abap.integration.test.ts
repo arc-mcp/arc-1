@@ -564,4 +564,137 @@ describeIf('BTP ABAP Environment Integration Tests', () => {
       },
     );
   });
+
+  // ─── BTP-Specific: RAP object-create path (BDEF/SRVD/SRVB) ──────────────
+  //
+  // RAP create bodies are corrected by the same generic cloudify as CLAS/INTF (no adtcore:responsible,
+  // no masterSystem, +abapLanguageVersion="cloudDevelopment"). Live-verified on BTP 919: all three
+  // create (201) with their existing content types — no INTF-style override needed. A structure package
+  // rejects them at package-assignment with 409 "cannot contain development objects" (RAP surfaces
+  // ExceptionResourceLockConflict/409, unlike CLAS's ExceptionResourceNoAccess/403).
+  describe('BTP RAP object-create path (BDEF/SRVD/SRVB)', () => {
+    // needsPackage mirrors the handler (src/handlers/write/create.ts `needsPackageParam`): only BDEF
+    // (and TABL*) get the ?_package= query param; SRVD/SRVB carry the target solely via the body's
+    // packageRef. We exercise the same per-type path the product actually uses.
+    const RAP: {
+      type: string;
+      base: string;
+      prefix: string;
+      needsPackage: boolean;
+      props?: Record<string, unknown>;
+    }[] = [
+      { type: 'BDEF', base: '/sap/bc/adt/bo/behaviordefinitions', prefix: 'ZBD_ARC1_BTP', needsPackage: true },
+      { type: 'SRVD', base: '/sap/bc/adt/ddic/srvd/sources', prefix: 'ZSD_ARC1_BTP', needsPackage: false },
+      {
+        type: 'SRVB',
+        base: '/sap/bc/adt/businessservices/bindings',
+        prefix: 'ZSB_ARC1_BTP',
+        needsPackage: false,
+        props: { serviceDefinition: 'ZSRVD_DUMMY', bindingType: 'ODATA V2 UI', category: '0' },
+      },
+    ];
+    const structurePkg = process.env.TEST_BTP_STRUCTURE_PACKAGE || 'ZLOCAL';
+    const writablePkg = process.env.TEST_BTP_PACKAGE;
+
+    for (const r of RAP) {
+      it(`${r.type} cloud create body is accepted (deserializes past the create ST)`, async () => {
+        const name = generateUniqueName(r.prefix); // unique → never re-deletes a stale object before probing
+        const responsible = await client.getEffectiveUser();
+        const body = buildCreateXml(
+          r.type,
+          name,
+          structurePkg,
+          `ARC-1 BTP ${r.type} body check`,
+          r.props,
+          'EN',
+          responsible,
+          true,
+        );
+        // The cloud body must be ABAP-for-Cloud and carry no responsible (owner comes from the JWT).
+        expect(body).not.toContain('adtcore:responsible');
+        expect(body).toContain('adtcore:abapLanguageVersion="cloudDevelopment"');
+        const objectUrl = `${r.base}/${name.toLowerCase()}`;
+        let created = false;
+        try {
+          await createObject(
+            client.http,
+            client.safety,
+            r.base,
+            body,
+            createContentTypeForType(r.type, true),
+            undefined,
+            r.needsPackage ? structurePkg : undefined,
+            '919',
+            'btp',
+            name,
+          );
+          // structurePkg happened to be writable — a successful create is itself proof the body is
+          // accepted; clean up in finally.
+          created = true;
+        } catch (err) {
+          // Decisive: the cloud body deserialized — it did NOT fail at the create ST, the cloud
+          // language-version check, or content-type negotiation. A structure package then rejects it at
+          // package-assignment with a specific, unambiguous message (a status-only assert could false-green).
+          const msg = err instanceof Error ? err.message : String(err);
+          expect(msg).not.toMatch(/deserializ|transformation program|System expected the element/i);
+          expect(msg).not.toMatch(/language version|Unsupported Media Type|not acceptable/i);
+          expectSapFailureClass(err, [403, 409], [/structure package/i, /cannot contain development objects/i]);
+        } finally {
+          if (created) {
+            // best-effort-cleanup
+            try {
+              await client.http.withStatefulSession(async (session) => {
+                const lock = await lockObject(session, client.safety, objectUrl, 'MODIFY', '919', 'btp');
+                await deleteObject(session, client.safety, objectUrl, lock.lockHandle, lock.corrNr || undefined);
+              });
+            } catch {
+              // leave the object; a follow-up run reuses a fresh unique name
+            }
+          }
+        }
+      });
+    }
+
+    // Full create→delete needs a writable, regular (non-structure) cloud package via TEST_BTP_PACKAGE.
+    // (Activation is out of scope: an empty RAP shell can't activate on any system — it needs a real
+    // root entity + behavior source + service exposure, a RAP-scenario concern, not a create-body one.)
+    for (const r of RAP) {
+      (writablePkg ? it : it.skip)(`${r.type} create → delete in a cloud package`, async () => {
+        const pkg = writablePkg as string;
+        const name = generateUniqueName(r.prefix);
+        const objectUrl = `${r.base}/${name.toLowerCase()}`;
+        const responsible = await client.getEffectiveUser();
+        const body = buildCreateXml(r.type, name, pkg, `ARC-1 BTP ${r.type} create`, r.props, 'EN', responsible, true);
+        let created = false;
+        try {
+          await createObject(
+            client.http,
+            client.safety,
+            r.base,
+            body,
+            createContentTypeForType(r.type, true),
+            undefined,
+            r.needsPackage ? pkg : undefined,
+            '919',
+            'btp',
+            name,
+          );
+          created = true;
+        } finally {
+          if (created) {
+            // best-effort-cleanup
+            try {
+              await client.http.withStatefulSession(async (session) => {
+                const lock = await lockObject(session, client.safety, objectUrl, 'MODIFY', '919', 'btp');
+                await deleteObject(session, client.safety, objectUrl, lock.lockHandle, lock.corrNr || undefined);
+              });
+            } catch {
+              // leave the object; a follow-up run reuses a fresh unique name
+            }
+          }
+        }
+        expect(created).toBe(true);
+      });
+    }
+  });
 });

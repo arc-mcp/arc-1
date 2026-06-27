@@ -27,6 +27,13 @@ describe('buildCreateXml — cloud mode (G-3)', () => {
       expect(xml).not.toContain('abapLanguageVersion');
       expect(xml).not.toContain('class:final');
     });
+
+    it('BDEF (RAP) keeps masterSystem + responsible and omits the cloud attributes', () => {
+      const xml = buildCreateXml('BDEF', 'ZBD_X', 'ZPKG', 'desc', undefined, 'EN', 'MARIAN', false);
+      expect(xml).toContain('adtcore:masterSystem="H00"');
+      expect(xml).toContain('adtcore:responsible="MARIAN"');
+      expect(xml).not.toContain('abapLanguageVersion');
+    });
   });
 
   describe('cloud (cloud=true)', () => {
@@ -70,6 +77,35 @@ describe('buildCreateXml — cloud mode (G-3)', () => {
       expect(xml).not.toContain('responsible');
       expect(xml).toContain('adtcore:abapLanguageVersion="cloudDevelopment"');
     });
+
+    it('BDEF (RAP behavior definition) drops masterSystem + responsible and adds the cloud language version', () => {
+      const xml = buildCreateXml('BDEF', 'ZBD_X', 'ZPKG', 'desc', undefined, 'EN', 'marian@zeis.de', true);
+      expect(xml).not.toContain('masterSystem');
+      expect(xml).not.toContain('responsible');
+      expect(xml).toContain('adtcore:abapLanguageVersion="cloudDevelopment"');
+    });
+
+    it('SRVD (service definition) drops masterSystem + responsible and adds the cloud language version', () => {
+      const xml = buildCreateXml('SRVD', 'ZSRVD_X', 'ZPKG', 'desc', undefined, 'EN', 'marian@zeis.de', true);
+      expect(xml).not.toContain('masterSystem');
+      expect(xml).not.toContain('responsible');
+      expect(xml).toContain('adtcore:abapLanguageVersion="cloudDevelopment"');
+    });
+
+    it('SRVB (service binding) drops responsible and adds the cloud language version', () => {
+      const xml = buildCreateXml(
+        'SRVB',
+        'ZSB_X',
+        'ZPKG',
+        'desc',
+        { serviceDefinition: 'ZSRVD_X' },
+        'EN',
+        'marian@zeis.de',
+        true,
+      );
+      expect(xml).not.toContain('responsible');
+      expect(xml).toContain('adtcore:abapLanguageVersion="cloudDevelopment"');
+    });
   });
 });
 
@@ -109,6 +145,12 @@ describe('createContentTypeForType — cloud INTF content-type (review fix)', ()
 
   it('does not change CLAS (works with application/* on cloud)', () => {
     expect(createContentTypeForType('CLAS', true)).toBe('application/*');
+  });
+
+  it('needs no cloud override for RAP types (live-verified 919: BDEF/SRVD/SRVB create 201 as-is)', () => {
+    expect(createContentTypeForType('BDEF', true)).toBe('application/vnd.sap.adt.blues.v1+xml');
+    expect(createContentTypeForType('SRVD', true)).toBe('application/*');
+    expect(createContentTypeForType('SRVB', true)).toBe('application/*');
   });
 });
 
