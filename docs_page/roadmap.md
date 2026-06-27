@@ -1,6 +1,6 @@
 # ARC-1 Roadmap
 
-**Last Updated:** 2026-06-26
+**Last Updated:** 2026-06-27 (COMPAT-06 outbound `HTTP_PROXY` / `NO_PROXY` support researched and added as an open compatibility item)
 
 **Project:** ARC-1 (ABAP Relay Connector) — MCP Server for SAP ABAP Systems
 **Repository:** https://github.com/arc-mcp/arc-1
@@ -91,6 +91,7 @@ SORT RULES for this table — DO NOT BREAK when adding rows:
 | [OPS-02](#ops-02) | Health Check Enhancements | P2 | XS | Ops |
 | [DOC-03](#doc-03) | SAP Community Blog Post | P2 | S | Docs |
 | [COMPAT-04](#compat-04) | BTP transport omission in safeUpdateSource() — verify only | P2 | XS | Compatibility |
+| [COMPAT-06](#compat-06) | Outbound `HTTP_PROXY` / `NO_PROXY` support for SAP ADT traffic from ARC-1 | P2 | S | Compatibility |
 | [FEAT-05](#feat-05) | Code Refactoring (Rename, Extract) | P3 | L | Features |
 | [FEAT-07](#feat-07) | TLS/HTTPS for HTTP Streamable | P3 | S | Features |
 | ~~[FEAT-65](#feat-65)~~ | ~~TTYP (Table Type) read/write~~ — **✅ Completed 2026-06-25 (PR #504)**: read + create (built-in & structure rows; POST shell → follow-up PUT sets the real row type), live-verified 758 + 816 | P3 | M | Features |
@@ -294,6 +295,8 @@ These bugs affect real-world deployments and were confirmed by cross-project com
 - **BUG-01: SAPActivate phantom success + CLI/server alignment (NW 7.50)** (S) — **In flight via PR [#179](https://github.com/arc-mcp/arc-1/pull/179)** (samibouge, 2026-04-22). Five independent bugs produced a silent no-op that reported success for an inactive class. See the [BUG-01 detail block](#bug-01).
 
 - <a id="compat-04"></a>~~**COMPAT-04: BTP transport omission in safeUpdateSource()**~~ — **Likely NOT applicable to ARC-1.** fr0ster's bug was per-handler transport wiring (`UpdateInterface` missing what `UpdateClass` had). ARC-1's centralized `safeUpdateSource()` handles ALL types with `effectiveTransport = transport ?? (lock.corrNr || undefined)` — the pattern already correctly omits `corrNr` when undefined. **Verify** with BTP Cloud INTF update integration test. Source: fr0ster commit c2b8006 + issue #61. [Eval](../docs/compare/fr0ster/evaluations/c2b8006-dump-simplify-updateintf-fix.md)
+
+- <a id="compat-06"></a>**COMPAT-06: Outbound HTTP_PROXY / NO_PROXY support for SAP ADT traffic** (S) - ARC-1's ADT client should honor standard `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` env vars for non-BTP outbound SAP calls. This is mainly for local, Docker, CI, and self-hosted enterprise networks where direct SAP egress is blocked by a corporate forward proxy. Keep BTP Destination Service / Cloud Connector precedence, prefer undici `EnvHttpProxyAgent` / `ProxyAgent` over hand-rolled env parsing, avoid `CONNECT` for plain `http://` SAP targets where undici supports `proxyTunnel: false`, and preserve 204/205/304 response handling. Research: [docs/research/http-forward-proxy-env-support.md](../docs/research/http-forward-proxy-env-support.md). Plan: [docs/plans/http-forward-proxy-env-support.md](../docs/plans/http-forward-proxy-env-support.md).
 
 ### Phase B: Core Value Features (P1)
 7. ~~**FEAT-37** DCL (Access Control) Read/Write (S)~~ — **completed 2026-04-15**
