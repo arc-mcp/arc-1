@@ -37,4 +37,5 @@ diff contract in `docs/research/2026-06-15-version-diff-saved-read-action.md`.
 - Existing default behavior remains observable through current tests; new tests cover only the added
   label path.
 - Live SAP testing is not required for the label plumbing because no SAP request/response contract
-  changes and this checkout has no `.env` or `INFRASTRUCTURE.md` live-system recipe.
+  changes. A post-implementation read-only smoke was still run on A4H and recorded in
+  `docs/research/2026-06-27-version-diff-labels.md`.
