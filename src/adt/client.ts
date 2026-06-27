@@ -417,6 +417,16 @@ export class AdtClient {
     return this.fetchSource(`/sap/bc/adt/programs/programs/${encodeURIComponent(name)}/source/main`, opts);
   }
 
+  /** Read the `/source/main` body under an object's base ADT URL (version-aware).
+   *  Type-agnostic: the caller supplies the already-resolved object URL. Used by SAPActivate
+   *  to capture the inactive draft so it can be promoted to the active cache slot after a
+   *  successful activation (the active version equals the draft byte-for-byte for source
+   *  objects), sidestepping the backend's read-after-activate consistency lag. */
+  async getSourceAtObjectUrl(objectBaseUrl: string, opts?: SourceReadOptions): Promise<SourceReadResult> {
+    checkOperation(this.safety, OperationType.Read, 'GetSource');
+    return this.fetchSource(`${objectBaseUrl}/source/main`, opts);
+  }
+
   /** Get class source code (main include by default) */
   async getClass(name: string, include?: string, opts?: SourceReadOptions): Promise<SourceReadResult> {
     checkOperation(this.safety, OperationType.Read, 'GetClass');

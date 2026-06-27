@@ -27,6 +27,68 @@ import {
 
 // ─── SAPActivate Handler ─────────────────────────────────────────────
 
+/** Source-text object types whose active /source/main equals the inactive draft byte-for-byte
+ *  after activation, so the draft can be promoted into the active cache slot. DDIC/server-driven
+ *  and binding (SRVB) types are excluded — they round-trip differently and best-effort capture
+ *  would just fall back to plain invalidation anyway. */
+const ACTIVATE_PROMOTE_TYPES = new Set([
+  'CLAS',
+  'INTF',
+  'PROG',
+  'INCL',
+  'FUNC',
+  'DDLS',
+  'DCLS',
+  'BDEF',
+  'SRVD',
+  'DDLX',
+]);
+
+/** Best-effort: read the inactive draft (the about-to-be-active content) BEFORE activation, so it
+ *  can be promoted into the active cache after success. Reading the stable draft now — rather than
+ *  the post-activation active version — sidesteps the backend read-after-activate consistency lag.
+ *  Returns undefined on any failure or empty body (caller then falls back to plain invalidation). */
+async function captureDraftForPromotion(
+  client: AdtClient,
+  type: string,
+  objectUrl: string,
+): Promise<string | undefined> {
+  if (!ACTIVATE_PROMOTE_TYPES.has(type)) return undefined;
+  try {
+    const { source } = await client.getSourceAtObjectUrl(objectUrl, { version: 'inactive' });
+    return typeof source === 'string' && source.trim() !== '' ? source : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Update the cache after a successful activation: promote the captured draft into the active slot
+ *  when available, otherwise drop stale entries. Either way mark the object freshly-activated so the
+ *  next read isn't masked by the backend's read-after-activate lag (stale active source / sticky
+ *  "unactivated draft" note).
+ *
+ *  Under principal propagation the freshness guard + note-suppression are keyed by object (not by
+ *  user), so they must NOT be shared across identities — one user's activation would otherwise hide
+ *  another user's own draft. PP clients fall back to plain invalidation (the source-cache body is
+ *  already process-shared, but the active version is global so that stays correct). The lag-defeating
+ *  promotion applies to single-identity servers (stdio / shared service user / bearer token), which
+ *  is how the bug reproduces. */
+function applyActivationToCache(
+  cachingLayer: CachingLayer | undefined,
+  type: string,
+  name: string,
+  draft: string | undefined,
+  perUserClient: boolean,
+): void {
+  if (!cachingLayer) return;
+  if (perUserClient) {
+    cachingLayer.invalidate(type, name, 'all');
+    return;
+  }
+  if (draft === undefined) cachingLayer.invalidate(type, name, 'all');
+  cachingLayer.markActivated(type, name, draft);
+}
+
 export async function handleSAPActivate(
   client: AdtClient,
   args: Record<string, unknown>,
@@ -151,6 +213,9 @@ export async function handleSAPActivate(
   const type = normalizeObjectType(String(args.type ?? ''));
   const preaudit = args.preaudit !== undefined ? Boolean(args.preaudit) : undefined;
   const activateOpts = preaudit !== undefined ? { preaudit } : undefined;
+  // Post-activation cache promotion + freshness guard are object-keyed (not user-keyed); disable
+  // them for per-user (principal-propagation) clients. See applyActivationToCache.
+  const perUserClient = cacheSecurity.isPerUserClient;
 
   if (args.objects && Array.isArray(args.objects)) {
     const rawObjects = args.objects as Array<Record<string, unknown>>;
@@ -201,14 +266,20 @@ export async function handleSAPActivate(
       await enforceAllowedPackageForObjectUrl(client, o.url, `Activation of ${o.type} '${o.name}'`);
     }
 
+    // Capture each object's inactive draft before the batch flips them to active.
+    const drafts =
+      cachingLayer && !perUserClient
+        ? await Promise.all(objects.map((o) => captureDraftForPromotion(client, o.type, o.url)))
+        : [];
+
     const result = await activateBatch(client.http, client.safety, objects, activateOpts);
     const names = objects.map((o) => o.name).join(', ');
     const batchStatuses = buildBatchActivationStatuses(objects, result);
     const statusDetails = formatBatchActivationStatuses(batchStatuses);
 
     if (result.success) {
-      for (const object of objects) {
-        cachingLayer?.invalidate(object.type, object.name, 'all');
+      for (const [i, object] of objects.entries()) {
+        applyActivationToCache(cachingLayer, object.type, object.name, drafts[i], perUserClient);
       }
       invalidateInactiveList(cachingLayer, client, cacheSecurity);
       return textResult(`Successfully activated ${objects.length} objects: ${names}.${statusDetails}`);
@@ -281,10 +352,13 @@ export async function handleSAPActivate(
     isServerDrivenObjectType(type) ? serverDrivenBlueContentType(type) : undefined,
   );
 
+  // Capture the inactive draft before activation flips it to active (see captureDraftForPromotion).
+  const draft = cachingLayer && !perUserClient ? await captureDraftForPromotion(client, type, objectUrl) : undefined;
+
   const result = await activate(client.http, client.safety, objectUrl, { ...activateOpts, name });
 
   if (result.success) {
-    cachingLayer?.invalidate(type, name, 'all');
+    applyActivationToCache(cachingLayer, type, name, draft, perUserClient);
     invalidateInactiveList(cachingLayer, client, cacheSecurity);
     return textResult(`Successfully activated ${type} ${name}.${formatActivationMessages(result)}`);
   }

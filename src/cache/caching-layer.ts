@@ -63,9 +63,29 @@ export interface CacheActivityEntry {
   detail?: string;
 }
 
+/** How long after a successful activation the active source cache is treated as authoritative.
+ *  During this window the active read is served from the promoted draft WITHOUT revalidating
+ *  against SAP, and the "unactivated draft" note is suppressed — both defeat the backend's
+ *  read-after-activate consistency lag (observed on BTP/Steampunk) that otherwise serves a
+ *  stale/empty shell until force_refresh. Must comfortably exceed the inactive-list TTL (60s)
+ *  so a list re-fetched mid-lag cannot outlive it. Cleared early by any write/force_refresh
+ *  (which route through invalidate()). ponytail: fixed window; a backend that lags >2min would
+ *  need a real consistency signal instead. Residual gap: a non-invalidating mutator (SAPGit
+ *  pull / SAPTransport import) to the same object within the window is masked until it expires —
+ *  rare and gated; use force_refresh to see such an external change immediately. */
+const ACTIVATION_FRESH_MS = 120_000;
+
+interface ActivationFreshness {
+  until: number;
+  /** Whether a draft source was promoted into the active slot (vs. only note-suppression). */
+  promoted: boolean;
+}
+
 export class CachingLayer {
   readonly cache: Cache;
   readonly inactiveLists = new InactiveListCache();
+  /** (TYPE:NAME) → activation freshness, set by markActivated() after a successful SAPActivate. */
+  private readonly recentlyActivated = new Map<string, ActivationFreshness>();
   private warmupDone = false;
   private readonly activityEntries: CacheActivityEntry[] = [];
   private readonly activityCounts: Partial<Record<CacheActivityEvent, number>> = {};
@@ -101,6 +121,27 @@ export class CachingLayer {
     opts: { version?: 'active' | 'inactive' } = {},
   ): Promise<{ source: string; hit: boolean; revalidated: boolean }> {
     const version = opts.version ?? 'active';
+
+    // Post-activation consistency guard: right after a successful activation the active
+    // version equals the draft we promoted into cache, but the backend's active /source/main
+    // can briefly still serve the pre-activation (empty) shell. Serve the promoted source
+    // directly — no revalidation — until the freshness window expires. See ACTIVATION_FRESH_MS.
+    if (version === 'active' && this.isActivationFresh(objectType, objectName)) {
+      const promoted = this.cache.getSource(objectType, objectName, 'active');
+      if (promoted) {
+        this.recordActivity('source_hit', {
+          objectType,
+          objectName,
+          version,
+          hash: promoted.hash,
+          sourceLength: promoted.source.length,
+          etagPresent: !!promoted.etag,
+          detail: 'post-activation source (consistency guard)',
+        });
+        return { source: promoted.source, hit: true, revalidated: false };
+      }
+    }
+
     const cached = this.cache.getSource(objectType, objectName, version);
     if (!cached) {
       this.recordActivity('source_miss', {
@@ -275,7 +316,66 @@ export class CachingLayer {
     logger.debug(`[cache] invalidate ${objectType}:${objectName}:${version}`);
     const removed = this.countSourceEntries(objectType, objectName, version);
     this.cache.invalidateSource(objectType, objectName, version);
+    // Any explicit invalidation (write, delete, force_refresh) means "give me the truth" —
+    // drop the post-activation freshness guard so a fresh draft/read is never masked by it.
+    this.recentlyActivated.delete(activationKey(objectType, objectName));
     this.recordActivity('source_invalidate', { objectType, objectName, version, removed });
+  }
+
+  // ─── Post-Activation Freshness ────────────────────────────────────
+
+  /**
+   * Record a successful activation so the next active read returns the just-activated source
+   * without being clobbered by a lagging backend (see ACTIVATION_FRESH_MS).
+   *
+   * When `promotedSource` is provided it is written to the active slot (and the inactive draft
+   * dropped) — this is the authoritative content for source objects, whose active version equals
+   * the draft byte-for-byte. When omitted (draft unavailable / non-source type) only the
+   * "unactivated draft" note is suppressed; the active source falls back to a normal fetch.
+   */
+  markActivated(objectType: string, objectName: string, promotedSource?: string): void {
+    if (promotedSource !== undefined) {
+      this.cache.putSource(objectType, objectName, promotedSource, { version: 'active' });
+      this.cache.invalidateSource(objectType, objectName, 'inactive');
+    }
+    const now = Date.now();
+    // Opportunistic sweep so the map can't accumulate expired entries on a long-lived server
+    // (activations are infrequent, so the O(n) cost is negligible).
+    for (const [k, v] of this.recentlyActivated) {
+      if (now >= v.until) this.recentlyActivated.delete(k);
+    }
+    this.recentlyActivated.set(activationKey(objectType, objectName), {
+      until: now + ACTIVATION_FRESH_MS,
+      promoted: promotedSource !== undefined,
+    });
+    this.recordActivity('source_refresh', {
+      objectType,
+      objectName,
+      version: 'active',
+      sourceLength: promotedSource?.length,
+      detail: promotedSource !== undefined ? 'promoted activated draft' : 'activation (note-suppress only)',
+    });
+  }
+
+  /** Whether the object was activated within the freshness window (used to suppress the draft note). */
+  wasRecentlyActivated(objectType: string, objectName: string): boolean {
+    return this.activationFreshness(objectType, objectName) !== undefined;
+  }
+
+  /** Whether a promoted active source should be served without revalidation. */
+  private isActivationFresh(objectType: string, objectName: string): boolean {
+    return this.activationFreshness(objectType, objectName)?.promoted === true;
+  }
+
+  private activationFreshness(objectType: string, objectName: string): ActivationFreshness | undefined {
+    const key = activationKey(objectType, objectName);
+    const entry = this.recentlyActivated.get(key);
+    if (!entry) return undefined;
+    if (Date.now() >= entry.until) {
+      this.recentlyActivated.delete(key);
+      return undefined;
+    }
+    return entry;
   }
 
   // ─── Reverse Dependencies (Pre-warmer only) ───────────────────────
@@ -340,4 +440,9 @@ export class CachingLayer {
     }
     this.activityCounts[event] = (this.activityCounts[event] ?? 0) + 1;
   }
+}
+
+/** Key for the post-activation freshness map (version-independent: one entry per object). */
+function activationKey(objectType: string, objectName: string): string {
+  return `${objectType.toUpperCase()}:${objectName.toUpperCase()}`;
 }

@@ -263,6 +263,65 @@ describe('SAPRead handler', () => {
       expect(result.content[0]?.text).toContain('CLASS zcl_test');
     });
 
+    it('suppresses the draft note for a just-activated object (single-identity client)', async () => {
+      mockFetch.mockReset();
+      mockFetch
+        .mockResolvedValueOnce(
+          mockResponse(
+            200,
+            `<?xml version="1.0"?><ioc:inactiveObjects xmlns:ioc="http://www.sap.com/abapxml/inactiveCtsObjects" xmlns:adtcore="http://www.sap.com/adt/core"><ioc:entry><ioc:object ioc:user="admin" ioc:deleted="false"><ioc:ref adtcore:uri="/sap/bc/adt/oo/classes/zcl_test" adtcore:type="CLAS/OC" adtcore:name="ZCL_TEST"/></ioc:object></ioc:entry></ioc:inactiveObjects>`,
+          ),
+        )
+        .mockResolvedValueOnce(mockResponse(200, 'CLASS zcl_test DEFINITION. ENDCLASS.', { etag: 'e1' }));
+      const layer = new CachingLayer(new MemoryCache());
+      // Simulate a successful activation moments ago; the inactive worklist is still lagging.
+      layer.markActivated('CLAS', 'ZCL_TEST');
+
+      const result = await handleToolCall(
+        createClient(),
+        DEFAULT_CONFIG,
+        'SAPRead',
+        { type: 'CLAS', name: 'ZCL_TEST' },
+        undefined,
+        undefined,
+        layer,
+        false, // isPerUserClient — single-identity client
+      );
+
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).not.toContain('unactivated draft');
+      expect(result.content[0]?.text).toContain('CLASS zcl_test');
+    });
+
+    it('does NOT suppress another user draft note under principal propagation', async () => {
+      mockFetch.mockReset();
+      mockFetch
+        .mockResolvedValueOnce(
+          mockResponse(
+            200,
+            `<?xml version="1.0"?><ioc:inactiveObjects xmlns:ioc="http://www.sap.com/abapxml/inactiveCtsObjects" xmlns:adtcore="http://www.sap.com/adt/core"><ioc:entry><ioc:object ioc:user="admin" ioc:deleted="false"><ioc:ref adtcore:uri="/sap/bc/adt/oo/classes/zcl_test" adtcore:type="CLAS/OC" adtcore:name="ZCL_TEST"/></ioc:object></ioc:entry></ioc:inactiveObjects>`,
+          ),
+        )
+        .mockResolvedValueOnce(mockResponse(200, 'CLASS zcl_test DEFINITION. ENDCLASS.', { etag: 'e1' }));
+      const layer = new CachingLayer(new MemoryCache());
+      // Another identity activated ZCL_TEST; the object-keyed flag must NOT hide THIS user's draft.
+      layer.markActivated('CLAS', 'ZCL_TEST');
+
+      const result = await handleToolCall(
+        createClient(),
+        DEFAULT_CONFIG,
+        'SAPRead',
+        { type: 'CLAS', name: 'ZCL_TEST' },
+        undefined,
+        undefined,
+        layer,
+        true, // isPerUserClient — per-user (principal propagation) client
+      );
+
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('unactivated draft');
+    });
+
     it('continues active source reads when inactive object listing is unavailable', async () => {
       mockFetch.mockReset();
       mockFetch
