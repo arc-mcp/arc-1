@@ -499,10 +499,8 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
     throw createErr;
   }
 
-  // Resolve the session's internal ABAP user from the created object's createdBy and cache it
-  // (BTP has no whoami endpoint; the JWT carries only the IAS email, which the package deserializer
-  // rejects). Best-effort, once per session — used as adtcore:responsible for BTP package create.
-  // Tries the POST 201 body first (zero extra call), then a single GET. Never breaks the create.
+  // Cache the session's internal ABAP user (createdBy of this cloud create) for BTP package create —
+  // no whoami endpoint exists. Best-effort, once per session: try the 201 body, then one GET.
   if (cloud && !client.getInternalUser()) {
     try {
       const createdBy =

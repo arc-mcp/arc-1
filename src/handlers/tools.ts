@@ -1406,7 +1406,7 @@ export function getToolDefinitions(
         responsible: {
           type: 'string',
           description:
-            'BTP ABAP Environment only: internal ABAP user (XUBNAME, e.g. CB9980000000) used as the new package person-responsible. Auto-resolved from prior object creates when omitted; the IAS email is rejected by SAP.',
+            'BTP only: the internal ABAP user (XUBNAME, e.g. CB9980000000) for the new package person-responsible. Auto-resolved from prior object creates if omitted; the IAS email is rejected.',
         },
         transportLayer: {
           type: 'string',

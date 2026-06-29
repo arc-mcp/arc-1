@@ -72,11 +72,8 @@ export interface PackageCreateParams {
   recordChanges?: boolean;
   /** ADT "person responsible" (logon user). Defaults to "DEVELOPER" when unset. */
   responsible?: string;
-  /**
-   * BTP ABAP Environment (cloud) create: nest under the structure `superPackage`, default the
-   * software component to ZLOCAL, set `recordChanges` false, and pass `responsible` (the internal
-   * ABAP user, e.g. CB9980000000) through verbatim. The handler sets this when systemType=btp.
-   */
+  /** BTP cloud create: nest under the structure superPackage, SC defaults to ZLOCAL, recordChanges=false,
+   *  responsible passed verbatim (the internal ABAP user). Handler-set when systemType=btp. */
   cloud?: boolean;
 }
 
@@ -177,11 +174,9 @@ export function normalizeAdtResponsible(responsible?: string): string {
 }
 
 /**
- * Cloud (BTP ABAP Environment) "person responsible" for package create. Unlike on-prem, the value
- * MUST be a real internal ABAP user (XUBNAME, e.g. CB9980000000): an email is rejected by the
- * SPAK_ST_PACKAGES deserializer (HTTP 400 ExceptionInvalidData), and "DEVELOPER" does not exist on
- * cloud. So pass the value through verbatim (trimmed) with NO fallback — the handler resolves and
- * validates the internal user before calling buildPackageXml({ cloud: true }).
+ * Cloud package "responsible": must be a real internal ABAP user (XUBNAME) — an email or `DEVELOPER`
+ * is rejected by the SPAK_ST_PACKAGES deserializer — so pass it verbatim, no fallback (the handler
+ * resolves + validates it first).
  */
 export function normalizeCloudResponsible(responsible?: string): string {
   return (responsible ?? '').trim();

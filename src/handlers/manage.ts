@@ -125,30 +125,24 @@ export async function handleSAPManage(
         await checkPackage(client.safety, name, client.getPackageHierarchyResolver());
       }
 
-      // BTP ABAP Environment: the package body must nest under a structure package and carry the
-      // internal ABAP user as responsible (the IAS email is rejected by SPAK_ST_PACKAGES, and
-      // responsible cannot be omitted). Resolution: explicit `responsible` arg → cached internal
-      // user (from prior cloud object creates) → actionable error. NEVER falls back to
-      // getEffectiveUser() (which returns the email — the V1 400 root cause). Cloud packages also
-      // need NO STMS transport (local SC), so the transport pre-flight below is skipped for them.
-      // See docs/research/2026-06-27-btp-package-create-solved.md.
+      // BTP: responsible must be the internal ABAP user (never the email — getEffectiveUser is unused);
+      // resolve explicit arg → cached internal user → error. Cloud also skips the transport pre-flight
+      // below. Details: docs/research/2026-06-27-btp-package-create-solved.md.
       const systemType = resolveWriteSystemType(config, client);
       const cloud = systemType === 'btp';
       const responsible = cloud ? responsibleArg || client.getInternalUser() || '' : config.username;
       if (cloud) {
         if (!superPackage) {
           return errorResult(
-            'On the SAP BTP ABAP Environment, a new package must nest under a structure package: ' +
-              'pass superPackage (e.g. "ZLOCAL"). A root package create is rejected with TR/458 ' +
-              '("… is not a valid software component").',
+            'BTP packages must nest under a structure package: pass superPackage (e.g. "ZLOCAL"). ' +
+              'A root package create is rejected with TR/458 ("… is not a valid software component").',
           );
         }
         if (!responsible || responsible.includes('@')) {
           return errorResult(
-            'On the SAP BTP ABAP Environment, package creation needs your internal ABAP user ' +
-              '(XUBNAME, e.g. CB9980000000) as person-responsible — the IAS email is rejected by SAP. ' +
-              'Pass responsible="<your internal user>" (find it via SAPRead createdBy on an object you ' +
-              'created), or create any object first so ARC-1 can resolve it automatically.',
+            'BTP package create needs your internal ABAP user (XUBNAME, e.g. CB9980000000) as ' +
+              'person-responsible — the IAS email is rejected. Pass responsible="<internal user>" (from ' +
+              'SAPRead createdBy on an object you own), or create any object first to auto-resolve it.',
           );
         }
       }

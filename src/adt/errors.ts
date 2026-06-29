@@ -582,23 +582,21 @@ export function classifySapDomainError(
     };
   }
 
-  // BTP package create: the IAS email as adtcore:responsible is rejected by the package deserialize
-  // simple-transformation (HTTP 400 ExceptionInvalidData "... deserializing in ... SPAK_ST_PACKAGES").
-  // The responsible must be a valid internal ABAP user (XUBNAME). Live-verified 919.
+  // BTP package create: the IAS email as responsible fails the package deserialize ST (SPAK_ST_PACKAGES);
+  // it must be a valid internal ABAP user (XUBNAME). Live-verified 919.
   if (typeId === 'ExceptionInvalidData' && /SPAK_ST_PACKAGES/.test(bodyRaw)) {
     return {
       category: 'package-create-invalid',
       hint:
-        'The package create body was rejected by SAP — on the ABAP Environment the person-responsible ' +
-        'must be a valid internal ABAP user (XUBNAME, e.g. CB9980000000), not an IAS email. Omit ' +
-        '`responsible` so ARC-1 auto-resolves it from a prior object create, or pass the internal user.',
+        'Package create rejected: on the ABAP Environment the person-responsible must be a valid ' +
+        'internal ABAP user (XUBNAME, e.g. CB9980000000), not an IAS email. Omit `responsible` to ' +
+        'auto-resolve it, or pass the internal user.',
       details: { exceptionType: typeId },
     };
   }
 
-  // BTP package create: naming the software component (e.g. ZLOCAL) on a root package instead of
-  // nesting under the structure package → HTTP 400 ExceptionResourceCreationFailure "... is not a
-  // valid software component for package ..." (message TR/458). Live-verified 919.
+  // BTP package create: a root package (no structure superPackage) → HTTP 400
+  // ExceptionResourceCreationFailure "... is not a valid software component" (TR/458). Live-verified 919.
   if (typeId === 'ExceptionResourceCreationFailure' && /is not a valid software component/i.test(bodyRaw)) {
     return {
       category: 'package-create-invalid',
