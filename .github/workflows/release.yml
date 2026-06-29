@@ -291,7 +291,11 @@ jobs:
           exit-code: '1'
 
       - name: Upload Trivy SARIF
-        if: always()
+        # always() so a Trivy CVE gate failure (exit-code 1) still uploads findings,
+        # but only when the scan actually produced the SARIF — otherwise an upstream
+        # buildx/build failure (e.g. transient Docker Hub timeout) cascades into a
+        # confusing "Path does not exist: trivy-results.sarif" that masks the real error.
+        if: always() && steps.build.outcome == 'success'
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-results.sarif
