@@ -46,7 +46,7 @@ The simplest path for a single developer on a SAP system reachable from your lap
     instead.
 
 **Prefer to hand-edit JSON?** The classic `claude_desktop_config.json` path (and the read-only vs
-full-dev env blocks) is in the [Quickstart](quickstart.md#2-wire-it-into-claude-desktop).
+full-dev env blocks) is in the [Quickstart](quickstart.md#claude-desktop).
 
 ---
 
