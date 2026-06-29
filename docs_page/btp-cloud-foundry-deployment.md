@@ -639,6 +639,21 @@ Key differences from on-premise deployment:
 - Set `SAP_SYSTEM_TYPE=btp` for adapted tool descriptions
 - Do not set `SAP_BTP_SERVICE_KEY` on the CF app. Use the ABAP service key only to create/update the destination's OAuth client settings.
 
+## Multiple SAP systems — one front door
+
+ARC-1 is **one instance per SAP system** by design. If you deploy several (DEV / QA / PROD, or different
+releases), you don't have to configure N servers in every MCP client. [`arc-mcp-hub`](https://github.com/arc-mcp/mcp-hub)
+— a separate, open-source CF app deployed in the **same subaccount** — puts them behind **one URL and one
+login**, with path-scoped routes (`/dev/mcp`, `/qa/mcp`, …) so a client can't cross systems by accident.
+Each call still runs as the real user via principal propagation, and an optional `/all/mcp` endpoint
+exposes every system through a single tool set + a `system` parameter (one tool set, not N×).
+
+!!! tip "Setup, how it works, and troubleshooting are on a dedicated page"
+    See **[Multi-System Hub (mcp-hub)](multi-system-hub.md)** for the architecture, the per-backend grant
+    chain (destination → `granted-apps` → hub role-template → role collection), the `/all` endpoint, and a
+    troubleshooting table. The most common trap is an incomplete grant chain → the client connects but
+    shows **0 tools**.
+
 ## SAP Documentation References
 
 - [SAP BTP Cloud Foundry Environment](https://help.sap.com/docs/btp/sap-business-technology-platform/cloud-foundry-environment) — CF runtime overview
