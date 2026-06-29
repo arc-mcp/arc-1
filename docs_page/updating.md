@@ -78,7 +78,7 @@ See the full [Authorization & Roles](authorization.md) doc for the complete mode
 ## Before you update
 
 1. **Check the changelog** — review [CHANGELOG.md](https://github.com/arc-mcp/arc-1/blob/main/CHANGELOG.md) or the [Releases page](https://github.com/arc-mcp/arc-1/releases) for breaking changes.
-2. **Pin to a version** — in production, use exact version tags (for example `:0.9.22`), never `:latest`. Prevents surprise upgrades. <!-- x-release-please-version -->
+2. **Pin to a version** — in production, use exact version tags (for example `:0.9.23`), never `:latest`. Prevents surprise upgrades. <!-- x-release-please-version -->
 3. **Test first** — update a dev/staging instance before production. Verify MCP clients still connect and tools work as expected.
 4. **Read the startup auth line after upgrade** — a drift-free instance will log the same `auth: MCP=[...] SAP=[...]` summary before and after. If it's different, the upgrade changed something you didn't expect.
 
@@ -94,10 +94,10 @@ See the full [Authorization & Roles](authorization.md) doc for the complete mode
 npx arc-1@latest
 
 # Pinned
-npx arc-1@0.9.22
+npx arc-1@0.9.23
 
 # Global install
-npm install -g arc-1@0.9.22
+npm install -g arc-1@0.9.23
 ```
 <!-- x-release-please-end -->
 
@@ -111,7 +111,7 @@ If you pin in MCP client config, update the `args`:
 
 <!-- x-release-please-start-version -->
 ```json
-{ "command": "npx", "args": ["-y", "arc-1@0.9.22"] }
+{ "command": "npx", "args": ["-y", "arc-1@0.9.23"] }
 ```
 <!-- x-release-please-end -->
 
@@ -122,7 +122,7 @@ If you pin in MCP client config, update the `args`:
 <!-- x-release-please-start-version -->
 ```bash
 # 1. Pull the new image
-docker pull ghcr.io/arc-mcp/arc-1:0.9.22
+docker pull ghcr.io/arc-mcp/arc-1:0.9.23
 
 # 2. Stop & remove the running container
 docker stop arc1 && docker rm arc1
@@ -130,7 +130,7 @@ docker stop arc1 && docker rm arc1
 # 3. Start with the new image (same env vars / config)
 docker run -d --name arc1 -p 8080:8080 \
   --env-file .env \
-  ghcr.io/arc-mcp/arc-1:0.9.22
+  ghcr.io/arc-mcp/arc-1:0.9.23
 
 # 4. Verify
 docker logs arc1 | head -20
@@ -160,7 +160,7 @@ CF supports rolling updates natively — no manual stop/start.
 applications:
   - name: arc1-mcp-server
     docker:
-      image: ghcr.io/arc-mcp/arc-1:0.9.22   # ← update this
+      image: ghcr.io/arc-mcp/arc-1:0.9.23   # ← update this
 ```
 <!-- x-release-please-end -->
 

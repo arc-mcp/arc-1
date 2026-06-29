@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.9.23](https://github.com/arc-mcp/arc-1/compare/v0.9.22...v0.9.23) (2026-06-29)
+
+
+### Features
+
+* Add labels to source diffs ([#528](https://github.com/arc-mcp/arc-1/issues/528)) ([bd6e520](https://github.com/arc-mcp/arc-1/commit/bd6e5200609e271f2cb494959a70cdc2b94da923))
+* cloud-correct object create on BTP ABAP Environment (G-2..G-5) ([#522](https://github.com/arc-mcp/arc-1/issues/522)) ([515b91f](https://github.com/arc-mcp/arc-1/commit/515b91fdda50dae98253da414472a35ef8dd27cb))
+* create packages on the BTP ABAP Environment (cloud-correct DEVC body) ([#534](https://github.com/arc-mcp/arc-1/issues/534)) ([25a017b](https://github.com/arc-mcp/arc-1/commit/25a017bd3039caa6ae7f6e9719451b37f11da1eb))
+
+
+### Bug Fixes
+
+* serve just-activated source on next read without force_refresh ([#530](https://github.com/arc-mcp/arc-1/issues/530)) ([c7535d3](https://github.com/arc-mcp/arc-1/commit/c7535d3fe92a56040b2bf9a4d1df465e44c06dab))
+
+
+### Tests
+
+* **btp:** cover SDO create + tool-level dispatch on BTP; fix smoke read-restriction assertion ([#533](https://github.com/arc-mcp/arc-1/issues/533)) ([d124ead](https://github.com/arc-mcp/arc-1/commit/d124ead05059de3804e9ce2de6843c71aa12bae7))
+* **btp:** verify + cover SRVB update on the ABAP Environment (B3) ([#532](https://github.com/arc-mcp/arc-1/issues/532)) ([3a0b403](https://github.com/arc-mcp/arc-1/commit/3a0b4031cec65b64bbf3c18378c5988da249f7fc))
+* verify RAP-stack (BDEF/SRVD/SRVB) cloud create on BTP ([#529](https://github.com/arc-mcp/arc-1/issues/529)) ([8451372](https://github.com/arc-mcp/arc-1/commit/8451372dac388037c236f78f9e30c1648e9c5c54))
+
 ## [0.9.22](https://github.com/arc-mcp/arc-1/compare/v0.9.21...v0.9.22) (2026-06-26)
 
 
