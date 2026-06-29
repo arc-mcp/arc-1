@@ -1,6 +1,6 @@
 # Quickstart
 
-Get ARC-1 talking to your SAP system in five minutes. Zero install, Basic Auth, and your MCP client of choice — Claude Desktop or GitHub Copilot (VS Code / Eclipse).
+Get ARC-1 talking to your SAP system in five minutes. Zero install, Basic Auth, and a JSON config for your MCP client of choice — Claude Code or GitHub Copilot (VS Code / Eclipse). Using Claude Desktop? See [Install in Claude](install-in-claude.md).
 
 If this path doesn't match you — SSO-only SAP, Docker, BTP, a team server — skip straight to:
 
@@ -63,9 +63,9 @@ This is a local development workaround, not needed for normal deployments. Detai
 
 ARC-1 speaks stdio, so every client launches the same `npx arc-1@latest` subprocess — only the **config file and the top-level key differ**. Pick yours below; all three start read-only, and [enabling writes](#enabling-writes-sql-and-data-preview) covers the opt-in flags.
 
-=== "Claude Desktop"
+=== "Claude Code"
 
-    Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+    Create `.mcp.json` in your project root (commit it to share with your team) — or `~/.claude.json` for user scope. Claude Code uses the `mcpServers` shape:
 
     ```json
     {
@@ -84,10 +84,10 @@ ARC-1 speaks stdio, so every client launches the same `npx arc-1@latest` subproc
     }
     ```
 
-    Restart Claude Desktop; the SAP tools (`SAPRead`, `SAPSearch`, …) appear in the tool picker.
+    Or add it from the CLI: `claude mcp add sap --env SAP_URL=… --env SAP_USER=… --env SAP_PASSWORD=… --env SAP_CLIENT=100 -- npx -y arc-1@latest`. Keep secrets out of a committed `.mcp.json` — use user scope or shell env vars.
 
-    !!! tip "Other Claude surfaces"
-        Claude Code (plugin + skills), the one-click `.mcpb` bundle, claude.ai / Cowork custom connectors, and BTP-hosted servers each have their own install path. See **[Install in Claude](install-in-claude.md)**.
+    !!! tip "Want the SAP skills, or using Claude Desktop?"
+        The Claude Code **plugin** bundles this server **and** the 18 SAP skills (RAP, CDS, ABAP Unit, clean-core, UI5) in one install. For that — and for Claude Desktop (`.mcpb` or direct JSON) — see **[Install in Claude](install-in-claude.md)**.
 
 === "GitHub Copilot — VS Code"
 
@@ -175,7 +175,7 @@ Want just table preview + SQL while staying read-only? Add only `SAP_ALLOW_DATA_
 
 ## 3. Try a read
 
-In your MCP client (Claude, or Copilot in **Agent** mode), ask:
+In your MCP client (Claude Code, or Copilot in **Agent** mode), ask:
 
 > Using the SAP tools, show me the source of report `RSPO0041`.
 
