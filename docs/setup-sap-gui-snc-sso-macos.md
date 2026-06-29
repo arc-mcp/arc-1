@@ -329,12 +329,60 @@ ps eww "$(pgrep -f 'SAPGUI.*\.app/Contents/MacOS/SAPGUI')" | tr ' ' '\n' | grep 
   appliance's `sec` directory from the image, wiping the imported client cert (the same reason a
   swapped HTTPS server cert is lost on restart). After any container restart: re-run **C.3**
   (import `client.crt` into `SAPSNCS.pse`) — no instance restart needed. The **SU01 mapping
-  (C.4) is in the database and *does* persist.** For a permanent fix, add the `maintain_pk -a`
-  import to a container start hook.
+  (C.4) is in the database and *does* persist.** For a hands-off fix that re-imports automatically
+  after every restart, see **[Auto-restore trust after restart](#auto-restore-trust-after-restart)** below.
 - **Instance restart vs container restart:** use `sapcontrol … RestartInstance` for profile
   changes; it preserves the filesystem PSEs. A full container restart does not.
 - **Keep password logon as a fallback** (`snc/accept_insecure_gui=1` + the SU01 "allow password
   logon" flag) until you're confident, so a misconfigured SNC entry never locks you out.
+
+### Auto-restore trust after restart
+
+The trial appliance's entrypoint (a compiled binary) **rebuilds the `sec` dir empty on every boot**,
+so the client cert you imported in C.3 is gone after each restart, and the PSE itself can't be made
+to persist. The fix is a small **host-side** cron job (the host controls the container, so this
+survives both `docker restart` and host reboots, and touches nothing in the appliance image).
+
+On the Docker **host**, store the client cert and a self-heal script:
+
+```bash
+sudo mkdir -p /opt/snc-autotrust
+sudo cp client.crt /opt/snc-autotrust/client.crt        # the cert exported in Part B
+
+sudo tee /opt/snc-autotrust/sync.sh >/dev/null <<'SH'
+#!/bin/bash
+# Re-import the SNC client cert into the appliance whenever it's missing. Idempotent.
+set -u
+C=<container>                       # the appliance's docker container name
+SECDIR=/usr/sap/<SID>/D<NN>/sec
+EXE=/usr/sap/<SID>/D<NN>/exe
+PSE=$SECDIR/SAPSNCS.pse
+DN='<CLIENT_SNC_DN>'               # e.g. CN=DEVELOPER, OU=DEV, O=ACME, C=DE
+CRT=/opt/snc-autotrust/client.crt
+
+docker ps --format '{{.Names}}' | grep -qx "$C" || exit 0          # container up?
+docker exec "$C" test -f "$PSE" || exit 0                          # server PSE present?
+# already trusted?  (sapgenpse prints the listing to STDERR — capture it with 2>&1)
+docker exec "$C" bash -c "su - <sid>adm -c \"env SECUDIR=$SECDIR $EXE/sapgenpse maintain_pk -l -p $PSE\"" 2>&1 \
+  | grep -q "$DN" && exit 0
+docker cp "$CRT" "$C:/tmp/snc-client.crt"
+docker exec "$C" bash -c "chmod 644 /tmp/snc-client.crt; su - <sid>adm -c \"env SECUDIR=$SECDIR $EXE/sapgenpse maintain_pk -a /tmp/snc-client.crt -p $PSE\""
+SH
+sudo chmod +x /opt/snc-autotrust/sync.sh
+
+# run every 2 minutes (covers container restart + host reboot)
+( sudo crontab -l 2>/dev/null | grep -v snc-autotrust/sync.sh; \
+  echo '*/2 * * * * /opt/snc-autotrust/sync.sh >/dev/null 2>&1' ) | sudo crontab -
+```
+
+Notes, all learned the hard way:
+- **`<sid>adm`'s shell is `csh`** on the appliance → set `SECUDIR` with `env VAR=… cmd`, **not** the
+  bash-style `VAR=… cmd` (that throws `Command not found.`).
+- **`maintain_pk -a` refuses duplicates** ("PKList NOT changed"), so re-running is always safe.
+- After a restart the PKList is genuinely **empty**, so `maintain_pk -a` simply adds the cert — the
+  same call as C.3.
+- There's a ≤2-minute window after a restart before trust is back; shorten the interval or trigger
+  on a `docker events --filter event=start` watcher if you need it instant.
 
 ---
 
