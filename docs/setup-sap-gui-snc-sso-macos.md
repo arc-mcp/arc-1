@@ -269,6 +269,58 @@ Then relaunch via D.1.
 
 Double-click the connection → you're logged on as `<USER>` with **no password**. 🎉
 
+### D.4 — Permanent launcher (start from the Dock)
+
+Launching from a shell every time is tedious, and you **cannot** just bake the env into SAP GUI's
+own bundle: it is **adhoc + hardened-runtime** signed, so editing its `Info.plist` (`LSEnvironment`)
+or swapping its binary breaks the signature (→ "app is damaged"), and hardened runtime strips
+`DYLD_*` anyway. The clean, update-safe fix is a tiny **wrapper app** that sets the env and `exec`s
+the real binary. Create it once, then keep it in the Dock:
+
+```bash
+WRAP="$HOME/Applications/SAP GUI (SSO).app"
+mkdir -p "$WRAP/Contents/MacOS" "$WRAP/Contents/Resources"
+
+cat > "$WRAP/Contents/MacOS/run" <<'SH'
+#!/bin/bash
+export SNC_LIB="$HOME/sap/cryptolib/libsapcrypto.dylib"
+export SECUDIR="$HOME/sap/sec"
+export DYLD_LIBRARY_PATH="$HOME/sap/cryptolib"
+# pick whatever SAP GUI version is installed (survives updates)
+APP=$(ls -d "/Applications/SAP Clients/SAPGUI "*"/SAPGUI "*.app 2>/dev/null | tail -1)
+exec "$APP/Contents/MacOS/SAPGUI" "$@"
+SH
+chmod +x "$WRAP/Contents/MacOS/run"
+
+# optional: reuse the real SAP icon
+REALAPP=$(ls -d "/Applications/SAP Clients/SAPGUI "*"/SAPGUI "*.app | tail -1)
+ICON=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$REALAPP/Contents/Info.plist" 2>/dev/null)
+cp "$REALAPP/Contents/Resources/${ICON%.icns}.icns" "$WRAP/Contents/Resources/app.icns" 2>/dev/null
+
+cat > "$WRAP/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleName</key><string>SAP GUI (SSO)</string>
+  <key>CFBundleIdentifier</key><string>local.sapgui-sso</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleExecutable</key><string>run</string>
+  <key>CFBundleIconFile</key><string>app</string>
+</dict></plist>
+PLIST
+
+codesign --force --sign - "$WRAP"   # adhoc-sign so Gatekeeper doesn't block it
+xattr -cr "$WRAP"
+open "$WRAP"                         # then: right-click its Dock icon → Options → Keep in Dock
+```
+
+Pin **this** icon and remove the plain SAP GUI one, so you never launch the no-SNC variant by
+mistake. Verify the env actually reached the process:
+
+```bash
+ps eww "$(pgrep -f 'SAPGUI.*\.app/Contents/MacOS/SAPGUI')" | tr ' ' '\n' | grep -E 'SNC_LIB|SECUDIR'
+```
+
 ---
 
 ## Persistence & operations
@@ -319,7 +371,8 @@ Protect `~/sap/sec` (it is your identity) — `chmod 700 ~/sap/sec`.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `GSS-API … A2210223: Server does not trust my certificate path` (at `gss_init_sec_context`) | your client cert is **not** in the server's `SAPSNCS.pse` trust list — usually wiped when SNC activation regenerated the PSE | re-run **C.3** (`maintain_pk -a /tmp/client.crt …`) *after* SNC is up; takes effect immediately |
+| `GSS-API … A2210223: Server does not trust my certificate path` (at `gss_init_sec_context`) | **server** side — your client cert is **not** in the server's `SAPSNCS.pse` trust list — usually wiped when SNC activation regenerated the PSE | re-run **C.3** (`maintain_pk -a /tmp/client.crt …`) *after* SNC is up; takes effect immediately |
+| `GSS-API(maj): No credentials were supplied` (at `gss_init_sec_context`) | **client** side — SAP GUI can't open *your* PSE: it was launched **without `SECUDIR`** (from the Dock/Finder, or after a reboot), so it looked in the wrong sec dir. This is **not** caused by a server restart (that throws A2210223) | relaunch with the env (**D.1**) or via the permanent launcher (**D.4**); confirm the credential is intact with `seclogin -l -p SAPSNCSC.pse` (expect "1 readable SSO-Credentials") |
 | Double-click just shows the **password screen, no error** | SNC not actually enabled on the connection (wrong landscape attribute) | use **`sncop="9"` + `sncname=…`** (not `sncqop`/`sncon`); see D.2 |
 | **"Enable secure network communication" checkbox is greyed** | SAP GUI process has no `SNC_LIB`, or the connection route is invalid (red ✗) | launch via **D.1** (shell env incl. `DYLD_LIBRARY_PATH`); fix the route first |
 | `hostname '<backend>' unknown … getaddrinfo` | a SAProuter-internal backend name is being resolved by your Mac | route through the SAProuter: use the structured `server` + `routerid`, not a flat host |
