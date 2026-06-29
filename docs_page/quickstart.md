@@ -1,6 +1,6 @@
 # Quickstart
 
-Get ARC-1 talking to your SAP system in five minutes. Zero install, Basic Auth, Claude Desktop.
+Get ARC-1 talking to your SAP system in five minutes. Zero install, Basic Auth, and a JSON config for your MCP client of choice — Claude Code or GitHub Copilot (VS Code / Eclipse). Using Claude Desktop? See [Install in Claude](install-in-claude.md).
 
 If this path doesn't match you — SSO-only SAP, Docker, BTP, a team server — skip straight to:
 
@@ -59,32 +59,85 @@ This is a local development workaround, not needed for normal deployments. Detai
 
 ---
 
-## 2. Wire it into Claude Desktop
+## 2. Wire it into your MCP client
 
-Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows) and pick one of the two paths below.
+ARC-1 speaks stdio, so every client launches the same `npx arc-1@latest` subprocess — only the **config file and the top-level key differ**. Pick yours below; all three start read-only, and [enabling writes](#enabling-writes-sql-and-data-preview) covers the opt-in flags.
 
-### Path A — read and search only (safe defaults)
+=== "Claude Code"
 
-No extra config needed. The defaults give read-only access.
+    Create `.mcp.json` in your project root (commit it to share with your team) — or `~/.claude.json` for user scope. Claude Code uses the `mcpServers` shape:
 
-```json
-{
-  "mcpServers": {
-    "sap": {
-      "command": "npx",
-      "args": ["-y", "arc-1@latest"],
-      "env": {
-        "SAP_URL": "https://your-sap-host:44300",
-        "SAP_USER": "YOUR_USER",
-        "SAP_PASSWORD": "YOUR_PASS",
-        "SAP_CLIENT": "100"
+    ```json
+    {
+      "mcpServers": {
+        "sap": {
+          "command": "npx",
+          "args": ["-y", "arc-1@latest"],
+          "env": {
+            "SAP_URL": "https://your-sap-host:44300",
+            "SAP_USER": "YOUR_USER",
+            "SAP_PASSWORD": "YOUR_PASS",
+            "SAP_CLIENT": "100"
+          }
+        }
       }
     }
-  }
-}
-```
+    ```
 
-#### What you just got — read-only by default
+    Or add it from the CLI: `claude mcp add sap --env SAP_URL=… --env SAP_USER=… --env SAP_PASSWORD=… --env SAP_CLIENT=100 -- npx -y arc-1@latest`. Keep secrets out of a committed `.mcp.json` — use user scope or shell env vars.
+
+    !!! tip "Want the SAP skills, or using Claude Desktop?"
+        The Claude Code **plugin** bundles this server **and** the 18 SAP skills (RAP, CDS, ABAP Unit, clean-core, UI5) in one install. For that — and for Claude Desktop (`.mcpb` or direct JSON) — see **[Install in Claude](install-in-claude.md)**.
+
+=== "GitHub Copilot — VS Code"
+
+    Create `.vscode/mcp.json` in your workspace (or run **MCP: Open User Configuration** from the Command Palette for a global setup). VS Code uses `servers` — **not** `mcpServers`:
+
+    ```json
+    {
+      "servers": {
+        "sap": {
+          "type": "stdio",
+          "command": "npx",
+          "args": ["-y", "arc-1@latest"],
+          "env": {
+            "SAP_URL": "https://your-sap-host:44300",
+            "SAP_USER": "YOUR_USER",
+            "SAP_PASSWORD": "YOUR_PASS",
+            "SAP_CLIENT": "100"
+          }
+        }
+      }
+    }
+    ```
+
+    Open Copilot Chat, switch the mode selector to **Agent**, and the `SAP*` tools appear in the tools picker (🛠). Manage servers any time with **MCP: List Servers**.
+
+=== "GitHub Copilot — Eclipse"
+
+    Requires Eclipse 2024-03 or later with the latest **GitHub Copilot** plug-in. Click the **GitHub Copilot** status-bar icon → **Edit Preferences** → expand **GitHub Copilot** → **MCP**, paste the config, then **Apply and Close** — it takes effect immediately. Eclipse uses the same `servers` shape as VS Code:
+
+    ```json
+    {
+      "servers": {
+        "sap": {
+          "type": "stdio",
+          "command": "npx",
+          "args": ["-y", "arc-1@latest"],
+          "env": {
+            "SAP_URL": "https://your-sap-host:44300",
+            "SAP_USER": "YOUR_USER",
+            "SAP_PASSWORD": "YOUR_PASS",
+            "SAP_CLIENT": "100"
+          }
+        }
+      }
+    }
+    ```
+
+    Open Copilot Chat in **Agent** mode; the `SAP*` tools become available.
+
+### What you just got — read-only by default
 
 | Capability | Result |
 |---|---|
@@ -94,35 +147,21 @@ No extra config needed. The defaults give read-only access.
 | Transports / Git writes | Off |
 | Package scope | `$TMP` if you later enable writes |
 
-Want table preview + SQL added to the read-only setup? Add `"SAP_ALLOW_DATA_PREVIEW": "true"` and `"SAP_ALLOW_FREE_SQL": "true"` to the `env` block above.
+Those four are the minimum. Any ARC-1 setting can live in this `env` block — TLS, request language, caching, rate limits, authentication, and more. For every supported variable, with its default and precedence, see the **[Configuration Reference](configuration-reference.md)** (connection variables under [SAP connection](configuration-reference.md#sap-connection)).
 
-### Path B — full local development
+Cursor, Gemini CLI, Goose, and other stdio clients use the same shape — see [local-development.md](local-development.md#mcp-client-configuration).
 
-Same structure as Path A — only the `env` block changes. Use this only on a dev or sandbox system you are comfortable modifying.
+### Enabling writes, SQL, and data preview
+
+Everything above is read-only. Each capability is a separate positive opt-in — add only the flags you need to the **same `env` block**, on any client. For full local development on a dev/sandbox system you are comfortable modifying:
 
 ```json
-{
-  "mcpServers": {
-    "sap": {
-      "command": "npx",
-      "args": ["-y", "arc-1@latest"],
-      "env": {
-        "SAP_URL": "https://your-sap-host:44300",
-        "SAP_USER": "YOUR_USER",
-        "SAP_PASSWORD": "YOUR_PASS",
-        "SAP_CLIENT": "100",
-        "SAP_ALLOW_WRITES": "true",
-        "SAP_ALLOW_DATA_PREVIEW": "true",
-        "SAP_ALLOW_FREE_SQL": "true",
-        "SAP_ALLOW_TRANSPORT_WRITES": "true",
-        "SAP_ALLOWED_PACKAGES": "*"
-      }
-    }
-  }
-}
+"SAP_ALLOW_WRITES": "true",
+"SAP_ALLOW_DATA_PREVIEW": "true",
+"SAP_ALLOW_FREE_SQL": "true",
+"SAP_ALLOW_TRANSPORT_WRITES": "true",
+"SAP_ALLOWED_PACKAGES": "*"
 ```
-
-#### What you just got — writes, SQL, data, and transports
 
 | Capability | Result |
 |---|---|
@@ -132,21 +171,17 @@ Same structure as Path A — only the `env` block changes. Use this only on a de
 | Transports | On |
 | Package scope | `*` (all packages) |
 
-Need something in between? Enable only the flags you need — each capability is a separate positive opt-in. Full model in [authorization.md](authorization.md#capability-requirements).
-
-Restart Claude Desktop after updating the config. The SAP tools (`SAPRead`, `SAPSearch`, etc.) should appear in the tool picker.
-
-Other MCP clients (Claude Code, Cursor, VS Code Copilot, Gemini CLI, Goose): same shape, see [local-development.md](local-development.md#mcp-client-configuration).
+Want just table preview + SQL while staying read-only? Add only `SAP_ALLOW_DATA_PREVIEW` and `SAP_ALLOW_FREE_SQL`. Full model in [authorization.md](authorization.md#capability-requirements); each flag's default and precedence is in the [Configuration Reference](configuration-reference.md#authorization-and-safety).
 
 ---
 
 ## 3. Try a read
 
-In Claude Desktop, ask:
+In your MCP client (Claude Code, or Copilot in **Agent** mode), ask:
 
 > Using the SAP tools, show me the source of report `RSPO0041`.
 
-Claude should call `SAPRead` and return the ABAP source.
+The assistant should call `SAPRead` and return the ABAP source.
 
 ---
 

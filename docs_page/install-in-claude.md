@@ -6,7 +6,7 @@ Find your row, then jump to that section.
 
 | You use… | ARC-1 runs… | Install path | Skills included? |
 |---|---|---|---|
-| **Claude Desktop** | locally (`npx`, your machine) | [One-click `.mcpb` bundle](#claude-desktop-one-click-mcpb) | — |
+| **Claude Desktop** | locally (`npx`, your machine) | [One-click `.mcpb` — or hand-edit JSON](#claude-desktop-one-click-mcpb) | — |
 | **Claude Code** | locally (`npx`, your machine) | [Plugin](#claude-code-plugin-server-skills) (`/plugin install`) | ✅ all of them |
 | **claude.ai / Desktop / mobile / Cowork** | remotely (BTP Cloud Foundry) | [Custom connector](#remote-btp-cloud-foundry-custom-connector) (URL + OAuth) | — |
 | **Claude Code** | remotely (BTP Cloud Foundry) | [`claude mcp add --transport http`](#remote-btp-cloud-foundry-custom-connector) | add separately |
@@ -45,8 +45,31 @@ The simplest path for a single developer on a SAP system reachable from your lap
     or CI use, run the [Docker image](docker.md) or deploy to [BTP](btp-cloud-foundry-deployment.md)
     instead.
 
-**Prefer to hand-edit JSON?** The classic `claude_desktop_config.json` path (and the read-only vs
-full-dev env blocks) is in the [Quickstart](quickstart.md#2-wire-it-into-claude-desktop).
+### Or hand-edit the JSON directly
+
+Skip the bundle and edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or
+`%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+
+```json
+{
+  "mcpServers": {
+    "sap": {
+      "command": "npx",
+      "args": ["-y", "arc-1@latest"],
+      "env": {
+        "SAP_URL": "https://your-sap-host:44300",
+        "SAP_USER": "YOUR_USER",
+        "SAP_PASSWORD": "YOUR_PASS",
+        "SAP_CLIENT": "100"
+      }
+    }
+  }
+}
+```
+
+Read-only by default; restart Claude Desktop after editing. To enable writes, SQL, data preview, or
+transports, add the `SAP_ALLOW_*` flags to the `env` block — see
+[Enabling writes](quickstart.md#enabling-writes-sql-and-data-preview).
 
 ---
 

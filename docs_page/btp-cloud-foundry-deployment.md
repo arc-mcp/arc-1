@@ -458,6 +458,67 @@ cf restart arc1-mcp-server
 
 Then configure your MCP client to use the OAuth metadata exposed by ARC-1, as described in [XSUAA Setup](xsuaa-setup.md). If your subaccount trust is federated to Microsoft Entra ID, users may see a Microsoft login page; ARC-1 still validates XSUAA-issued tokens.
 
+### Connect a client
+
+Unlike a local install, nothing runs `npx` on your machine — every client points at the **same HTTPS endpoint** (your CF route + `/mcp`) and signs in through XSUAA. ARC-1 advertises Dynamic Client Registration (DCR), so DCR-capable clients — VS Code, Eclipse, Claude Code — need **only the URL**: they open a browser for the XSUAA login on first connect and cache the registration. There is no client id/secret to paste.
+
+Find your route with `cf app arc1-mcp-server`; it looks like:
+
+```text
+https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com/mcp
+```
+
+Below, `<your-arc1-route>/mcp` stands in for it.
+
+=== "GitHub Copilot — VS Code"
+
+    Create `.vscode/mcp.json` in your workspace (or run **MCP: Open User Configuration** from the Command Palette for a global setup). Note `type` is `http` here, not stdio:
+
+    ```json
+    {
+      "servers": {
+        "arc-1": {
+          "type": "http",
+          "url": "https://<your-arc1-route>/mcp"
+        }
+      }
+    }
+    ```
+
+    VS Code runs the OAuth/DCR handshake in a browser, then the `SAP*` tools appear in Copilot Chat **Agent** mode. (If your XSUAA setup blocks DCR, VS Code falls back to asking for a client ID/secret — see [XSUAA Setup](xsuaa-setup.md).)
+
+=== "GitHub Copilot — Eclipse"
+
+    Click the **GitHub Copilot** status-bar icon → **Edit Preferences** → expand **GitHub Copilot** → **MCP**, paste the config, then **Apply and Close**:
+
+    ```json
+    {
+      "servers": {
+        "arc-1": {
+          "type": "http",
+          "url": "https://<your-arc1-route>/mcp"
+        }
+      }
+    }
+    ```
+
+    Eclipse opens a browser for the XSUAA login and caches the DCR `client_id`. Eclipse does **not** silently re-register, so give it a non-expiring DCR client on the server (the `ARC1_OAUTH_DCR_TTL_SECONDS 0` set in [step 7](#7-configure-authentication-and-optional-fallback-keys) / post-deploy config):
+
+    ```bash
+    cf set-env arc1-mcp-server ARC1_OAUTH_DCR_TTL_SECONDS 0
+    cf restart arc1-mcp-server
+    ```
+
+    If a login later fails with `invalid_client`, the cached registration expired or the DCR signing secret rotated — delete Eclipse Copilot's MCP cache (`~/.config/github-copilot/copilot-eclipse.db`) and reconnect. Setting a stable [`ARC1_DCR_SIGNING_SECRET`](#7-configure-authentication-and-optional-fallback-keys) keeps registrations valid across redeploys.
+
+=== "Claude Code"
+
+    ```bash
+    claude mcp add --transport http arc-1 https://<your-arc1-route>/mcp
+    ```
+
+    Claude Code opens a browser for the XSUAA login. Add the ABAP [skills](skills.md) separately with `npx skills add arc-mcp/arc-1`. Other Claude surfaces (Desktop, claude.ai, Cowork) connect the same URL as a **custom connector** — see [Install in Claude](install-in-claude.md#remote-btp-cloud-foundry-custom-connector).
+
 ## Troubleshooting
 
 ### MTA deploy fails: "Lifecycle type cannot be changed from docker to buildpack"
@@ -577,6 +638,21 @@ Key differences from on-premise deployment:
 - `SAP_PP_ENABLED=true` is still used in ARC-1 to select the per-user destination path; the destination returns an ABAP bearer token instead of Cloud Connector PP headers
 - Set `SAP_SYSTEM_TYPE=btp` for adapted tool descriptions
 - Do not set `SAP_BTP_SERVICE_KEY` on the CF app. Use the ABAP service key only to create/update the destination's OAuth client settings.
+
+## Multiple SAP systems — one front door
+
+ARC-1 is **one instance per SAP system** by design. If you deploy several (DEV / QA / PROD, or different
+releases), you don't have to configure N servers in every MCP client. [`arc-mcp-hub`](https://github.com/arc-mcp/mcp-hub)
+— a separate, open-source CF app deployed in the **same subaccount** — puts them behind **one URL and one
+login**, with path-scoped routes (`/dev/mcp`, `/qa/mcp`, …) so a client can't cross systems by accident.
+Each call still runs as the real user via principal propagation, and an optional `/all/mcp` endpoint
+exposes every system through a single tool set + a `system` parameter (one tool set, not N×).
+
+!!! tip "Setup, how it works, and troubleshooting are on a dedicated page"
+    See **[Multi-System Hub (mcp-hub)](multi-system-hub.md)** for the architecture, the per-backend grant
+    chain (destination → `granted-apps` → hub role-template → role collection), the `/all` endpoint, and a
+    troubleshooting table. The most common trap is an incomplete grant chain → the client connects but
+    shows **0 tools**.
 
 ## SAP Documentation References
 

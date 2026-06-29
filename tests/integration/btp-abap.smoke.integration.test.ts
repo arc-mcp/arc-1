@@ -101,8 +101,13 @@ describeIf('BTP ABAP smoke', { timeout: 30_000 }, () => {
 
   // ─── BTP-Specific Behavior ─────────────────────────────────────
 
-  it('classic programs are not accessible on BTP', async () => {
-    // BTP ABAP should not have classic SE38 programs
-    await expect(client.getProgram('RSHOWTIM')).rejects.toThrow(/403|404|not found|not available/i);
+  it('classic programs are READABLE on BTP (read access; create is refused)', async () => {
+    // Standard classic reports are fully readable via ADT on the ABAP Environment (live-verified —
+    // RSHOWTIM returns its REPORT source). The earlier "not accessible" assertion was wrong: Clean
+    // Core restricts *consuming/modifying* classic objects, not reading their source. The
+    // write-is-refused half is covered by the full suite (btp-abap.integration.test.ts).
+    const { source } = await client.getProgram('RSHOWTIM');
+    expect(typeof source).toBe('string');
+    expect(source).toMatch(/\bREPORT\b|\bMESSAGE\b/i);
   });
 });
