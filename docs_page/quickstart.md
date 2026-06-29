@@ -63,81 +63,81 @@ This is a local development workaround, not needed for normal deployments. Detai
 
 ARC-1 speaks stdio, so every client launches the same `npx arc-1@latest` subprocess — only the **config file and the top-level key differ**. Pick yours below; all three start read-only, and [enabling writes](#enabling-writes-sql-and-data-preview) covers the opt-in flags.
 
-### Claude Desktop
+=== "Claude Desktop"
 
-Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+    Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
 
-```json
-{
-  "mcpServers": {
-    "sap": {
-      "command": "npx",
-      "args": ["-y", "arc-1@latest"],
-      "env": {
-        "SAP_URL": "https://your-sap-host:44300",
-        "SAP_USER": "YOUR_USER",
-        "SAP_PASSWORD": "YOUR_PASS",
-        "SAP_CLIENT": "100"
+    ```json
+    {
+      "mcpServers": {
+        "sap": {
+          "command": "npx",
+          "args": ["-y", "arc-1@latest"],
+          "env": {
+            "SAP_URL": "https://your-sap-host:44300",
+            "SAP_USER": "YOUR_USER",
+            "SAP_PASSWORD": "YOUR_PASS",
+            "SAP_CLIENT": "100"
+          }
+        }
       }
     }
-  }
-}
-```
+    ```
 
-Restart Claude Desktop; the SAP tools (`SAPRead`, `SAPSearch`, …) appear in the tool picker.
+    Restart Claude Desktop; the SAP tools (`SAPRead`, `SAPSearch`, …) appear in the tool picker.
 
-!!! tip "Other Claude surfaces"
-    Claude Code (plugin + skills), the one-click `.mcpb` bundle, claude.ai / Cowork custom connectors, and BTP-hosted servers each have their own install path. See **[Install in Claude](install-in-claude.md)**.
+    !!! tip "Other Claude surfaces"
+        Claude Code (plugin + skills), the one-click `.mcpb` bundle, claude.ai / Cowork custom connectors, and BTP-hosted servers each have their own install path. See **[Install in Claude](install-in-claude.md)**.
 
-### GitHub Copilot — VS Code
+=== "GitHub Copilot — VS Code"
 
-Create `.vscode/mcp.json` in your workspace (or run **MCP: Open User Configuration** from the Command Palette for a global setup). VS Code uses `servers` — **not** `mcpServers`:
+    Create `.vscode/mcp.json` in your workspace (or run **MCP: Open User Configuration** from the Command Palette for a global setup). VS Code uses `servers` — **not** `mcpServers`:
 
-```json
-{
-  "servers": {
-    "sap": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "arc-1@latest"],
-      "env": {
-        "SAP_URL": "https://your-sap-host:44300",
-        "SAP_USER": "YOUR_USER",
-        "SAP_PASSWORD": "YOUR_PASS",
-        "SAP_CLIENT": "100"
+    ```json
+    {
+      "servers": {
+        "sap": {
+          "type": "stdio",
+          "command": "npx",
+          "args": ["-y", "arc-1@latest"],
+          "env": {
+            "SAP_URL": "https://your-sap-host:44300",
+            "SAP_USER": "YOUR_USER",
+            "SAP_PASSWORD": "YOUR_PASS",
+            "SAP_CLIENT": "100"
+          }
+        }
       }
     }
-  }
-}
-```
+    ```
 
-Open Copilot Chat, switch the mode selector to **Agent**, and the `SAP*` tools appear in the tools picker (🛠). Manage servers any time with **MCP: List Servers**.
+    Open Copilot Chat, switch the mode selector to **Agent**, and the `SAP*` tools appear in the tools picker (🛠). Manage servers any time with **MCP: List Servers**.
 
-### GitHub Copilot — Eclipse
+=== "GitHub Copilot — Eclipse"
 
-Requires Eclipse 2024-03 or later with the latest **GitHub Copilot** plug-in. Click the **GitHub Copilot** status-bar icon → **Edit Preferences** → expand **GitHub Copilot** → **MCP**, paste the config, then **Apply and Close** — it takes effect immediately. Eclipse uses the same `servers` shape as VS Code:
+    Requires Eclipse 2024-03 or later with the latest **GitHub Copilot** plug-in. Click the **GitHub Copilot** status-bar icon → **Edit Preferences** → expand **GitHub Copilot** → **MCP**, paste the config, then **Apply and Close** — it takes effect immediately. Eclipse uses the same `servers` shape as VS Code:
 
-```json
-{
-  "servers": {
-    "sap": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "arc-1@latest"],
-      "env": {
-        "SAP_URL": "https://your-sap-host:44300",
-        "SAP_USER": "YOUR_USER",
-        "SAP_PASSWORD": "YOUR_PASS",
-        "SAP_CLIENT": "100"
+    ```json
+    {
+      "servers": {
+        "sap": {
+          "type": "stdio",
+          "command": "npx",
+          "args": ["-y", "arc-1@latest"],
+          "env": {
+            "SAP_URL": "https://your-sap-host:44300",
+            "SAP_USER": "YOUR_USER",
+            "SAP_PASSWORD": "YOUR_PASS",
+            "SAP_CLIENT": "100"
+          }
+        }
       }
     }
-  }
-}
-```
+    ```
 
-Open Copilot Chat in **Agent** mode; the `SAP*` tools become available.
+    Open Copilot Chat in **Agent** mode; the `SAP*` tools become available.
 
-#### What you just got — read-only by default
+### What you just got — read-only by default
 
 | Capability | Result |
 |---|---|
