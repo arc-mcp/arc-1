@@ -495,6 +495,7 @@ Click the **GitHub Copilot** status-bar icon → **Edit Preferences** → expand
 {
   "servers": {
     "arc-1": {
+      "type": "http",
       "url": "https://<your-arc1-route>/mcp"
     }
   }

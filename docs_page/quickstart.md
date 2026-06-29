@@ -121,6 +121,7 @@ Requires Eclipse 2024-03 or later with the latest **GitHub Copilot** plug-in. Cl
 {
   "servers": {
     "sap": {
+      "type": "stdio",
       "command": "npx",
       "args": ["-y", "arc-1@latest"],
       "env": {
