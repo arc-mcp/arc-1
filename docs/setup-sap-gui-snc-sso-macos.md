@@ -45,10 +45,13 @@ At connect time, SAP GUI presents your cert over SNC; the server validates it ag
 list and maps it to your user → you're in, no password.
 
 ```
-SAP GUI for Java ──DIAG over SNC (X.509)──▶ SAProuter ──▶ ABAP dispatcher (port 32<NN>)
-   client PSE  (CN=DEVELOPER…)                                server PSE (CN=A4H…)
+SAP GUI for Java ──DIAG over SNC (X.509)──▶ [SAProuter] ──▶ ABAP dispatcher (port 32<NN>)
+   client PSE (CN=<USER>…)                     optional         server PSE (CN=<SID>…)
         └──────── mutual trust + SU01 SNC-name → user mapping ────────┘
 ```
+
+A **local** Docker appliance needs no SAProuter — connect straight to `<host>:32<NN>`
+(e.g. `localhost:3200`). The router only appears when the appliance is remote.
 
 ---
 
@@ -128,6 +131,13 @@ Your **client SNC name** is `p:<CLIENT_SNC_DN>`.
 All commands run **inside the appliance container** as the `<sid>adm` user. The appliance already
 ships CommonCryptoLib (`<EXE>/libsapcrypto.so`), `sapgenpse`, and a server SNC PSE
 (`<SEC>/SAPSNCS.pse`, identity `<SERVER_SNC_DN>`).
+
+Confirm the appliance's **actual** SNC identity first (it can differ between trial versions) and
+use that exact Subject DN as `<SERVER_SNC_DN>` everywhere below:
+
+```bash
+SECUDIR=<SEC> <EXE>/sapgenpse get_my_name -p <SEC>/SAPSNCS.pse | grep -i Subject
+```
 
 ### C.1 — Add the SNC profile parameters
 
@@ -243,8 +253,9 @@ attributes:
 sncname="p:<SERVER_SNC_DN>" sncop="9"
 ```
 
-Keep the route structured (`server="<host>:32<NN>"` plus a `routerid` pointing at your
-`<Router>` entry). Then relaunch via D.1.
+Set the route with `server="<host>:32<NN>"` (a local appliance is just `localhost:3200`). **Only**
+if the appliance sits behind a SAProuter, also add a `routerid` pointing at a `<Router>` entry.
+Then relaunch via D.1.
 
 > ### ⚠️ The #2 gotcha: the right attribute is `sncop`, not `sncqop`/`sncon`
 > SAP GUI for Java enables SNC for a landscape service when **`sncop` > 0 *and* `sncname` is
