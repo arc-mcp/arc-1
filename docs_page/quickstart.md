@@ -147,6 +147,8 @@ ARC-1 speaks stdio, so every client launches the same `npx arc-1@latest` subproc
 | Transports / Git writes | Off |
 | Package scope | `$TMP` if you later enable writes |
 
+Those four are the minimum. Any ARC-1 setting can live in this `env` block — TLS, request language, caching, rate limits, authentication, and more. For every supported variable, with its default and precedence, see the **[Configuration Reference](configuration-reference.md)** (connection variables under [SAP connection](configuration-reference.md#sap-connection)).
+
 Cursor, Gemini CLI, Goose, and other stdio clients use the same shape — see [local-development.md](local-development.md#mcp-client-configuration).
 
 ### Enabling writes, SQL, and data preview
@@ -169,7 +171,7 @@ Everything above is read-only. Each capability is a separate positive opt-in —
 | Transports | On |
 | Package scope | `*` (all packages) |
 
-Want just table preview + SQL while staying read-only? Add only `SAP_ALLOW_DATA_PREVIEW` and `SAP_ALLOW_FREE_SQL`. Full model in [authorization.md](authorization.md#capability-requirements).
+Want just table preview + SQL while staying read-only? Add only `SAP_ALLOW_DATA_PREVIEW` and `SAP_ALLOW_FREE_SQL`. Full model in [authorization.md](authorization.md#capability-requirements); each flag's default and precedence is in the [Configuration Reference](configuration-reference.md#authorization-and-safety).
 
 ---
 
