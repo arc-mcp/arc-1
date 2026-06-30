@@ -43,6 +43,42 @@ function joinLines(lines: string[], eol: '\r\n' | '\n'): string {
   return lines.join(eol);
 }
 
+// ─── ABAP clause hygiene ───────────────────────────────────────────────
+
+/**
+ * Append the terminating `.` to a METHODS/CLASS-METHODS clause that lacks one
+ * (issue #536) — without it the spliced clause swallows the following source
+ * lines → SAP `OO_SOURCE_BASED038`. Inserts before any trailing `"` comment and
+ * skips a `"` inside a `'…'` literal. Not a syntax validator (abaplint owns
+ * that); full analysis in docs/research/issues/536-add-method-missing-period.md.
+ */
+export function ensureClauseTerminator(clause: string): string {
+  const trimmed = clause.trimEnd();
+  if (trimmed === '') return clause;
+  const nl = trimmed.lastIndexOf('\n');
+  const head = trimmed.slice(0, nl + 1); // '' for a single-line clause
+  const lastLine = trimmed.slice(nl + 1);
+  // Find the trailing line comment: the first `"` outside a `'…'` text literal.
+  // A single left-to-right scan, NOT a backtracking regex — a lazy-quantifier
+  // version was O(n²) on long interior whitespace (#536 review).
+  let inLiteral = false;
+  let commentAt = -1;
+  for (let i = 0; i < lastLine.length; i++) {
+    const ch = lastLine[i];
+    if (ch === "'") inLiteral = !inLiteral;
+    else if (ch === '"' && !inLiteral) {
+      commentAt = i;
+      break;
+    }
+  }
+  const beforeComment = commentAt === -1 ? lastLine : lastLine.slice(0, commentAt);
+  const code = beforeComment.trimEnd();
+  if (code === '' || code.endsWith('.')) return clause; // pure comment, or already terminated
+  const gap = beforeComment.slice(code.length); // whitespace before the comment, preserved
+  const comment = commentAt === -1 ? '' : lastLine.slice(commentAt);
+  return `${head}${code}.${gap}${comment}`;
+}
+
 // ─── Whole-line splice primitives ──────────────────────────────────────
 
 /**
@@ -102,7 +138,7 @@ export function spliceMethodSignature(source: string, method: MethodStructure, n
     throw new Error(`spliceMethodSignature: method ${method.name} has no definition range`);
   }
   const r = method.definition;
-  return spliceLines(source, r.sr, r.er, newSig);
+  return spliceLines(source, r.sr, r.er, ensureClauseTerminator(newSig));
 }
 
 // ─── insertMethodPair: atomic DEFINITION + IMPLEMENTATION add ──────────
@@ -146,8 +182,12 @@ export function insertMethodPair(source: string, structure: ClassStructure, opts
     );
   }
 
+  // Normalize the clause's terminating period up front (issue #536) so the
+  // inserted-line count below and the splice both see the same text.
+  const decl = ensureClauseTerminator(opts.decl);
+
   // Stage 1: insert METHODS clause in DEFINITION.
-  let next = insertBeforeLine(source, anchor.afterLine + 1, opts.decl);
+  let next = insertBeforeLine(source, anchor.afterLine + 1, decl);
 
   // Stage 2: insert IMPL stub (unless abstract). All IMPL line numbers shift by
   // the count of inserted decl lines, so we adjust the end-of-impl-block anchor.
@@ -156,7 +196,7 @@ export function insertMethodPair(source: string, structure: ClassStructure, opts
   // Without this, a caller-supplied `decl` with a trailing "\n" over-counts by one
   // and the stub lands AFTER the IMPLEMENTATION's ENDCLASS (invalid ABAP).
   if (!opts.isAbstract && structure.classImplementationBlock) {
-    const insertedCount = splitLines(opts.decl.replace(/\r?\n$/, '')).length;
+    const insertedCount = splitLines(decl.replace(/\r?\n$/, '')).length;
     const newImplEndLine = structure.classImplementationBlock.er + insertedCount;
     const indent = opts.implIndent ?? '  ';
     const stub = `${indent}METHOD ${opts.methodName.toLowerCase()}.\n${indent}ENDMETHOD.`;
