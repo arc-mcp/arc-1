@@ -121,9 +121,12 @@ jobs:
             exit 1
           fi
 
-      - name: Validate, pack, self-sign
+      - name: Validate and pack
         # Pin the MCPB CLI (not @latest) so the release is reproducible and a CLI change can't
         # silently alter the artifact — bump deliberately, like the SHA-pinned actions above.
+        # Do NOT `mcpb sign` — it appends a ~2.3KB MCPB_SIG_V1 block AFTER the ZIP EOCD record,
+        # which strict third-party MCPB/DXT hosts reject ("extra bytes at the end of the file").
+        # Claude Desktop installs the unsigned bundle fine and self-signing adds no real trust.
         env:
           MCPB: '@anthropic-ai/mcpb@2.1.2'
         run: |
@@ -131,9 +134,6 @@ jobs:
           VERSION="${VERSION#v}"
           npx --yes "$MCPB" validate mcpb-bundle/manifest.json
           npx --yes "$MCPB" pack mcpb-bundle "arc-1-${VERSION}.mcpb"
-          # Self-signed is best-effort integrity only; the Anthropic-curated directory signs its side.
-          npx --yes "$MCPB" sign "arc-1-${VERSION}.mcpb" --self-signed \
-            || echo "::warning::MCPB self-sign skipped — bundle is attached UNSIGNED"
 
       - name: Attach .mcpb to GitHub Release
         env:

@@ -11,7 +11,7 @@ This document describes how to publish ARC-1 to various MCP server registries, m
 | [Cline Marketplace](#3-cline-marketplace) | Manual | Ready | Cline VS Code extension marketplace |
 | [VS Code / GitHub Copilot](#4-vs-code--github-copilot) | Via MCP Registry | Automatic | VS Code Extensions `@mcp` gallery |
 | [Cursor Marketplace](#5-cursor-marketplace) | Manual | Ready | Cursor IDE built-in marketplace |
-| [Claude Desktop Extensions](#6-claude-desktop-extensions) | Yes (CI builds + validates + self-signs .mcpb) | Ready | Claude Desktop Extensions directory |
+| [Claude Desktop Extensions](#6-claude-desktop-extensions) | Yes (CI builds + validates + packs .mcpb) | Ready | Claude Desktop Extensions directory |
 | [Claude Code Plugin](#8-claude-code-plugin--marketplace) | Yes (repo is the marketplace) | Ready | `/plugin install` — MCP server + skills |
 
 ## Files in This Repository
@@ -221,8 +221,13 @@ cursor://anysphere.cursor-deeplink/mcp/install?name=arc-1&config=eyJjb21tYW5kIjo
 ### Building the MCPB Bundle
 
 **This is automated** — the `build-mcpb` job in `.github/workflows/release.yml` assembles, packs,
-self-signs, and attaches `arc-1-<version>.mcpb` to every GitHub Release. The steps below reproduce
+and attaches `arc-1-<version>.mcpb` to every GitHub Release. The steps below reproduce
 it locally for testing.
+
+> **Do not `mcpb sign` the bundle.** Signing appends an `MCPB_SIG_V1` block after the ZIP's
+> end-of-central-directory record; strict third-party MCPB/DXT hosts then reject it with
+> *"extra bytes at the end of the file"*. Claude Desktop installs the unsigned bundle fine and a
+> self-signed signature adds no real trust, so CI ships the bundle unsigned.
 
 ```bash
 # Build the project first
@@ -241,16 +246,15 @@ cp package.json package-lock.json mcpb-bundle/
 ( cd mcpb-bundle && npm ci --omit=dev --ignore-scripts )
 rm -rf mcpb-bundle/node_modules/better-sqlite3
 
-# Validate, then pack (+ optional self-sign)
+# Validate, then pack. Do NOT `mcpb sign` — see the note above (breaks strict third-party hosts).
 npx @anthropic-ai/mcpb validate mcpb-bundle/manifest.json
 npx @anthropic-ai/mcpb pack mcpb-bundle/ arc-1.mcpb
-npx @anthropic-ai/mcpb sign arc-1.mcpb --self-signed   # optional
 ```
 
 ### Distribution
 
 Users install by double-clicking the `.mcpb` file or dragging it into Claude Desktop → Settings →
-Extensions. CI builds, validates, and best-effort self-signs `arc-1-<version>.mcpb`, then attaches it to every GitHub Release automatically (the
+Extensions. CI builds, validates, and packs `arc-1-<version>.mcpb`, then attaches it to every GitHub Release automatically (the
 `build-mcpb` job — see [CI Automation](#ci-automation-implemented) below). User-facing install steps
 live in [docs_page/install-in-claude.md](../docs_page/install-in-claude.md).
 
@@ -258,7 +262,7 @@ live in [docs_page/install-in-claude.md](../docs_page/install-in-claude.md).
 
 The Claude Desktop Extensions Directory is currently Anthropic-curated with no public self-service submission. To get listed:
 
-1. Confirm the release carries the `.mcpb` (self-signed when the signer is available) and that tool annotations are emitted (both automated below)
+1. Confirm the release carries the `.mcpb` (packed unsigned for broad host compatibility) and that tool annotations are emitted (both automated below)
 2. Submit via the connector submission form at https://claude.com/partners/mcp
 3. Anthropic reviews for quality, security, and compatibility
 
@@ -290,7 +294,8 @@ requires them.
 
 The `build-mcpb` job in `.github/workflows/release.yml` runs on every release: it builds, assembles
 a **pure-JS** bundle (omitting the native `better-sqlite3` so one `.mcpb` runs on macOS / Windows /
-Linux — the server falls back to the in-memory cache), validates, packs, self-signs, and attaches
+Linux — the server falls back to the in-memory cache), validates, packs (unsigned — see the
+signing note under [Building the MCPB Bundle](#building-the-mcpb-bundle)), and attaches
 `arc-1-<version>.mcpb` to the GitHub Release via `gh release upload`. The manifest `version` is kept
 in sync with `package.json` by release-please (`extra-files` in `release-please-config.json`). No
 manual step is required.
@@ -369,7 +374,7 @@ Run `claude plugin validate` first; approved plugins are pinned into `anthropics
 - [ ] Submit Cline Marketplace issue (need 400x400 logo)
 - [ ] Submit Cursor Marketplace at cursor.com/marketplace/publish
 - [ ] Submit cursor.directory listing
-- [ ] Verify the release attached `arc-1-<version>.mcpb` (self-signed when the signer is available; build-mcpb job)
+- [ ] Verify the release attached `arc-1-<version>.mcpb` (packed unsigned for broad host compatibility; build-mcpb job)
 - [ ] Test the Claude Code plugin: `/plugin marketplace add arc-mcp/arc-1` → `/plugin install arc-1@arc-1`
 - [ ] Submit Claude Code plugin (claude.ai/admin-settings/directory/submissions/plugins/new or platform.claude.com/plugins/submit)
 - [ ] Submit Claude Desktop extension at claude.com/partners/mcp
