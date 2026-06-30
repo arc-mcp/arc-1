@@ -9,6 +9,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   diffMethodSets,
+  ensureClauseTerminator,
   extractMethodNameFromClause,
   findSectionAnchor,
   insertBeforeLine,
@@ -148,6 +149,64 @@ describe('spliceMethodSignature', () => {
     // The other method's signature should remain unchanged.
     expect(out).toContain('METHODS goodbye');
   });
+
+  it('auto-appends a missing terminating period (issue #536)', () => {
+    const newSig = '    METHODS hello IMPORTING name TYPE string RETURNING VALUE(result) TYPE string'; // no period
+    const out = spliceMethodSignature(PROBE_SOURCE, PROBE_STRUCTURE.methods[0]!, newSig);
+    expect(out).toContain('METHODS hello IMPORTING name TYPE string RETURNING VALUE(result) TYPE string.');
+  });
+});
+
+describe('ensureClauseTerminator (issue #536 — auto-append missing period)', () => {
+  it('appends a period when the clause lacks one', () => {
+    expect(ensureClauseTerminator('METHODS m IMPORTING x TYPE string')).toBe('METHODS m IMPORTING x TYPE string.');
+  });
+
+  it('is a no-op when the clause already ends with a period', () => {
+    expect(ensureClauseTerminator('METHODS m.')).toBe('METHODS m.');
+  });
+
+  it('ignores trailing whitespace / newline when testing termination', () => {
+    expect(ensureClauseTerminator('METHODS m.  \n')).toBe('METHODS m.  \n');
+    expect(ensureClauseTerminator('METHODS m\n')).toBe('METHODS m.');
+  });
+
+  it('appends on the last line of a multi-line clause', () => {
+    expect(ensureClauseTerminator('METHODS m\n  IMPORTING x TYPE string')).toBe(
+      'METHODS m\n  IMPORTING x TYPE string.',
+    );
+  });
+
+  it('inserts the period BEFORE a trailing line comment', () => {
+    expect(ensureClauseTerminator('METHODS m IMPORTING x TYPE string " note')).toBe(
+      'METHODS m IMPORTING x TYPE string. " note',
+    );
+  });
+
+  it('leaves an already-terminated clause that has a trailing comment untouched', () => {
+    expect(ensureClauseTerminator('METHODS m. " note')).toBe('METHODS m. " note');
+  });
+
+  it('leaves a blank clause untouched', () => {
+    expect(ensureClauseTerminator('   ')).toBe('   ');
+  });
+
+  it('appends AFTER a "-char inside a single-quoted literal, not inside it (#536 review)', () => {
+    // A `"` inside a '…' literal is NOT a comment; the period must land after it.
+    expect(ensureClauseTerminator(`METHODS foo IMPORTING iv_x TYPE c DEFAULT '"'`)).toBe(
+      `METHODS foo IMPORTING iv_x TYPE c DEFAULT '"'.`,
+    );
+  });
+
+  it('runs in linear time on a long interior whitespace run (no ReDoS — #536 review)', () => {
+    // The previous lazy-quantifier regex was O(n²) here (~3.7s at 100k spaces).
+    const clause = `METHODS foo IMPORTING iv${' '.repeat(100_000)}TYPE i`; // interior ws, no period
+    const t0 = performance.now();
+    const out = ensureClauseTerminator(clause);
+    const elapsed = performance.now() - t0;
+    expect(out.endsWith('TYPE i.')).toBe(true);
+    expect(elapsed).toBeLessThan(1000); // linear ≈ a few ms; quadratic regression ≈ thousands
+  });
 });
 
 describe('insertMethodPair', () => {
@@ -196,6 +255,19 @@ describe('insertMethodPair', () => {
         methodName: 'HELPER',
       }),
     ).toThrow(/PROTECTED SECTION/);
+  });
+
+  it('auto-appends the missing terminating period to the DEFINITION clause (issue #536)', () => {
+    const out = insertMethodPair(PROBE_SOURCE, PROBE_STRUCTURE, {
+      decl: '    METHODS greet RETURNING VALUE(r) TYPE string', // no period
+      visibility: 'public',
+      methodName: 'GREET',
+    });
+    expect(out).toContain('METHODS greet RETURNING VALUE(r) TYPE string.');
+    // The IMPL stub must still land INSIDE the IMPLEMENTATION block.
+    const stubIdx = out.search(/METHOD greet\./i);
+    expect(stubIdx).toBeGreaterThan(-1);
+    expect(stubIdx).toBeLessThan(out.lastIndexOf('ENDCLASS.'));
   });
 
   it('places the IMPL stub INSIDE the IMPLEMENTATION block even when decl has a trailing newline (off-by-one regression)', () => {
