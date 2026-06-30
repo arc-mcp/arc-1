@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.24](https://github.com/arc-mcp/arc-1/compare/v0.9.23...v0.9.24) (2026-06-30)
+
+
+### Bug Fixes
+
+* foolproof add_method — auto-append missing terminating period ([#536](https://github.com/arc-mcp/arc-1/issues/536)) ([#539](https://github.com/arc-mcp/arc-1/issues/539)) ([c525c04](https://github.com/arc-mcp/arc-1/commit/c525c04c7d19be1eeb0966ae79701c9c4cc894e9))
+* **mcpb:** ship the bundle unsigned so strict third-party hosts can install it ([#537](https://github.com/arc-mcp/arc-1/issues/537)) ([50a7948](https://github.com/arc-mcp/arc-1/commit/50a7948bc6f59bce9ba5aec515d6354afe867702))
+
 ## [0.9.23](https://github.com/arc-mcp/arc-1/compare/v0.9.22...v0.9.23) (2026-06-29)
 
 
