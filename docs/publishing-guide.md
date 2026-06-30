@@ -225,9 +225,12 @@ and attaches `arc-1-<version>.mcpb` to every GitHub Release. The steps below rep
 it locally for testing.
 
 > **Do not `mcpb sign` the bundle.** Signing appends an `MCPB_SIG_V1` block after the ZIP's
-> end-of-central-directory record; strict third-party MCPB/DXT hosts then reject it with
-> *"extra bytes at the end of the file"*. Claude Desktop installs the unsigned bundle fine and a
-> self-signed signature adds no real trust, so CI ships the bundle unsigned.
+> end-of-central-directory record; strict third-party MCPB/DXT hosts then reject the file with
+> *"Invalid comment length … extra bytes at the end of the file"*. The [official Claude build
+> flow](https://claude.com/docs/connectors/building/mcpb) is `mcpb init` → `mcpb pack` with **no
+> sign step** — Claude Desktop installs an unsigned bundle after an "Install Anyway" prompt, and a
+> self-signed signature adds no real trust (there is no key-management/Developer-Program analog),
+> so CI ships the bundle unsigned.
 
 ```bash
 # Build the project first

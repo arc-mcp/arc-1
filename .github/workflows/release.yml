@@ -126,7 +126,8 @@ jobs:
         # silently alter the artifact — bump deliberately, like the SHA-pinned actions above.
         # Do NOT `mcpb sign` — it appends a ~2.3KB MCPB_SIG_V1 block AFTER the ZIP EOCD record,
         # which strict third-party MCPB/DXT hosts reject ("extra bytes at the end of the file").
-        # Claude Desktop installs the unsigned bundle fine and self-signing adds no real trust.
+        # The official build flow is `mcpb init` → `mcpb pack` (no sign step); Claude Desktop installs
+        # unsigned bundles after an "Install Anyway" prompt and self-signing adds no real trust.
         env:
           MCPB: '@anthropic-ai/mcpb@2.1.2'
         run: |
