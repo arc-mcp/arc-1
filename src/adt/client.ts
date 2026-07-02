@@ -215,8 +215,8 @@ export function clampPreviewRows(requested: number | undefined, fallback = 100):
 
 /** Media type for a class's text symbols on the top-level ADT textelements service. Used as BOTH
  *  Content-Type and Accept on the write PUT (SAP returns 400 "Accept header missing" otherwise).
- *  ponytail: symbols only — a class has no selection screen, so its `source/selections` segment is
- *  always empty and un-writable (SAP 406); selection texts are a program concept (future follow-up). */
+ *  Symbols only — a class has no selection screen, so its `source/selections` segment is always
+ *  empty and un-writable (SAP 406); selection texts are a program concept (future follow-up). */
 const TEXT_SYMBOLS_CT = 'application/vnd.sap.adt.textelements.symbols.v1';
 
 const MAX_SEARCH_RESULTS = 1_000;
