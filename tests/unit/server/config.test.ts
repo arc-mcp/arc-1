@@ -740,9 +740,9 @@ describe('parseArgs', () => {
 
   // --- oauthDcrTtlSeconds ---
 
-  it('defaults oauthDcrTtlSeconds to 30 days', () => {
+  it('defaults oauthDcrTtlSeconds to 0 (never expire)', () => {
     const config = parseArgs([]);
-    expect(config.oauthDcrTtlSeconds).toBe(30 * 24 * 60 * 60);
+    expect(config.oauthDcrTtlSeconds).toBe(0);
   });
 
   it('parses --oauth-dcr-ttl-seconds flag', () => {
@@ -779,7 +779,7 @@ describe('parseArgs', () => {
 
   it('keeps default oauthDcrTtlSeconds when value is not parseable', () => {
     const config = parseArgs(['--oauth-dcr-ttl-seconds', 'notanumber']);
-    expect(config.oauthDcrTtlSeconds).toBe(30 * 24 * 60 * 60);
+    expect(config.oauthDcrTtlSeconds).toBe(0);
   });
 
   it('--oauth-dcr-ttl-seconds takes precedence over ARC1_OAUTH_DCR_TTL_SECONDS', () => {
@@ -1131,6 +1131,40 @@ describe('validateConfig', () => {
       ).not.toThrow();
       expect(stderrSpy).toHaveBeenCalledWith(
         expect.stringContaining('ARC1_DCR_SIGNING_SECRET is set but SAP_XSUAA_AUTH=false'),
+      );
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('warns to stderr (without throwing) when xsuaaAuth=true on HTTP transport but dcrSigningSecret is unset', () => {
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      expect(() =>
+        validateConfig({
+          ...DEFAULT_CONFIG,
+          transport: 'http-streamable',
+          xsuaaAuth: true,
+        }),
+      ).not.toThrow();
+      expect(stderrSpy).toHaveBeenCalledWith(
+        expect.stringContaining('SAP_XSUAA_AUTH=true without ARC1_DCR_SIGNING_SECRET'),
+      );
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('does not warn about a missing dcrSigningSecret on stdio transport (XSUAA inert; CLI runs validateConfig per command)', () => {
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      validateConfig({
+        ...DEFAULT_CONFIG,
+        transport: 'stdio',
+        xsuaaAuth: true,
+      });
+      expect(stderrSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining('SAP_XSUAA_AUTH=true without ARC1_DCR_SIGNING_SECRET'),
       );
     } finally {
       stderrSpy.mockRestore();

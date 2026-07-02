@@ -97,6 +97,12 @@ modules:
       SAP_LANGUAGE: EN
       SAP_INSECURE: "false"
       SAP_XSUAA_AUTH: "true"
+      # DCR client_id lifetime. "0" = never expire (a finite TTL only causes
+      # periodic invalid_client re-auth outages — some MCP clients don't
+      # recover). NOTE: ARC1_DCR_SIGNING_SECRET is deliberately NOT set here
+      # (module properties are rewritten on every cf deploy); set it once via
+      # cf set-env — see docs_page/xsuaa-setup.md "Stable DCR signing key".
+      ARC1_OAUTH_DCR_TTL_SECONDS: "0"
       # Destinations. The base values below are placeholders — every landscape
       # MUST override them via `mta-overrides.mtaext` (see the
       # `mta-overrides.mtaext.example` template in this repo) or via

@@ -58,7 +58,7 @@ Full per-option details (defaults, clamps, layer interactions): [docs_page/confi
 | `SAP_DENY_ACTIONS` | Per-action denial: `Tool`, `Tool.action`, `Tool.glob*` — see docs_page/authorization.md |
 | `ARC1_API_KEYS` | `key:profile` pairs (viewer…admin); profile ∩ server ceiling |
 | `SAP_OIDC_ISSUER` / `SAP_OIDC_AUDIENCE` | OIDC JWT validation |
-| `ARC1_OAUTH_DCR_TTL_SECONDS` | DCR client_id lifetime (default 30d; `0` = no expiry for clients that don't re-register) |
+| `ARC1_OAUTH_DCR_TTL_SECONDS` | DCR client_id lifetime (default `0` = no expiry; positive opts into expiry, clamped 60s–90d) |
 | `ARC1_DCR_SIGNING_SECRET` | Dedicated HMAC secret so `cf deploy` doesn't invalidate cached client_ids |
 | `ARC1_ALLOWED_ORIGINS` | CORS allowlist for browser MCP clients (empty = CORS off) |
 | `ARC1_PUBLIC_URL` | Advertised OAuth-metadata URL when behind a reverse proxy |

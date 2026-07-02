@@ -90,11 +90,10 @@ export interface ServerConfig {
 
   /**
    * Lifetime of an OAuth DCR registration (`client_id`) in seconds.
-   * Default: 30 days. Positive values are clamped to `[60s, 90d]`. Set to
-   * `0` (or any non-positive value) to disable expiration — recommended
-   * when MCP clients don't auto-re-register on `invalid_client` (e.g.
-   * Copilot CLI, Cursor) and a finite TTL would just produce periodic
-   * outages. Only consulted when XSUAA OAuth proxy mode is active. */
+   * Default: `0` = never expire (no per-client revocation exists at any TTL,
+   * so a finite TTL only causes periodic `invalid_client` re-auth outages).
+   * Positive values opt into expiry, clamped to `[60s, 90d]`. Only consulted
+   * when XSUAA OAuth proxy mode is active. */
   oauthDcrTtlSeconds: number;
 
   /**
@@ -252,7 +251,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
   systemType: 'auto',
   xsuaaAuth: false,
   allowHttpNoAuth: false,
-  oauthDcrTtlSeconds: 30 * 24 * 60 * 60, // 30 days; set to 0 to disable expiration
+  oauthDcrTtlSeconds: 0, // 0 = never expire; positive opts into expiry (clamped 60s..90d) — see field JSDoc
   btpOAuthCallbackPort: 0,
   ppEnabled: false,
   ppStrict: false,

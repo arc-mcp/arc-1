@@ -75,13 +75,12 @@ modules:
       # ARC1_PUBLIC_URL: "https://gateway.example.com/arc1"
 
       # ── OAuth Dynamic Client Registration (DCR) ──────────────────────
-      # Lifetime of an OAuth DCR `client_id` in seconds. Default: 30 days
-      # (matches typical OAuth refresh-token lifetimes). Positive values
-      # clamped to [60s, 90d]. Set to "0" to disable expiration entirely —
-      # recommended when your MCP clients (Copilot CLI, Cursor) don't
-      # auto-re-register on `invalid_client` and a finite TTL would just
-      # produce periodic outages without security gain.
-      # ARC1_OAUTH_DCR_TTL_SECONDS: "0"
+      # Lifetime of an OAuth DCR `client_id` in seconds. Default: "0" (never
+      # expire) — set in the base mta.yaml, because there is no per-client
+      # revocation at any TTL and some MCP clients (Eclipse Copilot, Copilot
+      # CLI) don't recover from `invalid_client`. Uncomment below ONLY to opt
+      # into a finite TTL; positive values are clamped to [60s, 90d].
+      # ARC1_OAUTH_DCR_TTL_SECONDS: "604800"   # e.g. 7 days
 
       # NOTE: ARC1_DCR_SIGNING_SECRET is intentionally NOT listed here.
       # The dedicated signing secret decouples DCR `client_id`s from the

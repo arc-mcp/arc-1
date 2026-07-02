@@ -164,13 +164,15 @@ cf restage arc1-mcp-server
 
 ```bash
 cf set-env arc1-mcp-server ARC1_DCR_SIGNING_SECRET "$(openssl rand -base64 48)"
-cf set-env arc1-mcp-server ARC1_OAUTH_DCR_TTL_SECONDS 0   # for clients that don't auto-re-register (Eclipse Copilot, Cursor)
 cf restage arc1-mcp-server
 ```
 
+`ARC1_OAUTH_DCR_TTL_SECONDS` already defaults to `0` (never expire) in the base `mta.yaml` — only `cf set-env` it if you want a finite TTL. The signing secret is the one manual step: it is intentionally **not** in `mta.yaml`, because a value in module properties is rewritten and its trust rotated on every `cf deploy`, which would defeat its purpose.
+
 Why it matters, plus how to recover a client that's already stuck: [Stable DCR signing key](xsuaa-setup.md#stable-dcr-signing-key-recommended).
 
-The base `mta.yaml` already configures these properties (override any of them via `mta-overrides.mtaext`):
+The base `mta.yaml` configures the properties below (override any of them via `mta-overrides.mtaext`):
+- `ARC1_OAUTH_DCR_TTL_SECONDS: "0"` — DCR `client_id`s never expire (avoids periodic re-auth outages)
 - `SAP_TRANSPORT: http-streamable` — HTTP transport for MCP
 - `SAP_BTP_DESTINATION` / `SAP_BTP_PP_DESTINATION` — placeholders, MUST be overridden
 - `SAP_PP_ENABLED: "true"` — per-user principal propagation
@@ -329,8 +331,8 @@ cf set-env arc1-mcp-server ARC1_API_KEYS "your-secure-api-key:admin"
 
 # Stable DCR signing secret — keeps MCP client logins valid across redeploys.
 # Without it the key derives from the XSUAA clientsecret, which cf deploy rotates → invalid_client.
+# (ARC1_OAUTH_DCR_TTL_SECONDS already defaults to "0"/never-expire in mta.yaml; only set it to opt into a finite TTL.)
 cf set-env arc1-mcp-server ARC1_DCR_SIGNING_SECRET "$(openssl rand -base64 48)"
-cf set-env arc1-mcp-server ARC1_OAUTH_DCR_TTL_SECONDS 0   # for clients that don't auto-re-register (Eclipse Copilot, Cursor)
 
 # Restart to apply
 cf restart arc1-mcp-server
@@ -502,14 +504,9 @@ Below, `<your-arc1-route>/mcp` stands in for it.
     }
     ```
 
-    Eclipse opens a browser for the XSUAA login and caches the DCR `client_id`. Eclipse does **not** silently re-register, so give it a non-expiring DCR client on the server (the `ARC1_OAUTH_DCR_TTL_SECONDS 0` set in [step 7](#7-configure-authentication-and-optional-fallback-keys) / post-deploy config):
+    Eclipse opens a browser for the XSUAA login and caches the DCR `client_id`. Eclipse does **not** silently re-register, but the base `mta.yaml` already gives it a non-expiring DCR client (`ARC1_OAUTH_DCR_TTL_SECONDS: "0"` is the default) — no extra configuration needed. If you overrode the TTL to a finite value, expect Eclipse to need a cache reset whenever a registration expires.
 
-    ```bash
-    cf set-env arc1-mcp-server ARC1_OAUTH_DCR_TTL_SECONDS 0
-    cf restart arc1-mcp-server
-    ```
-
-    If a login later fails with `invalid_client`, the cached registration expired or the DCR signing secret rotated — delete Eclipse Copilot's MCP cache (`~/.config/github-copilot/copilot-eclipse.db`) and reconnect. Setting a stable [`ARC1_DCR_SIGNING_SECRET`](#7-configure-authentication-and-optional-fallback-keys) keeps registrations valid across redeploys.
+    If a login later fails with `invalid_client`, the DCR signing secret rotated (or a finite-TTL registration expired) — delete Eclipse Copilot's MCP cache (`~/.config/github-copilot/copilot-eclipse.db`) and reconnect. Setting a stable [`ARC1_DCR_SIGNING_SECRET`](#7-configure-authentication-and-optional-fallback-keys) keeps registrations valid across redeploys.
 
 === "Claude Code"
 

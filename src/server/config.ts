@@ -496,13 +496,11 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
   config.xsuaaAuth = resolveBool('xsuaa-auth', 'SAP_XSUAA_AUTH', false, 'xsuaaAuth');
   config.allowHttpNoAuth = resolveBool('allow-http-no-auth', 'ARC1_ALLOW_HTTP_NO_AUTH', false, 'allowHttpNoAuth');
 
-  // OAuth DCR client_id lifetime. Default: 30 days (matches typical
-  // refresh-token lifetimes). Positive values are clamped to [60s, 90d] so
-  // a typo can't wipe every active connection. Setting `0` (or any
-  // non-positive value) disables expiration explicitly — recommended when
-  // MCP clients don't auto-re-register on `invalid_client` (Copilot CLI,
-  // Cursor); revocation in that mode goes through full key rotation
-  // (ARC1_DCR_SIGNING_SECRET re-set, or KDF_LABEL bump).
+  // OAuth DCR client_id lifetime. Default: 0 = never expire (no per-client
+  // revocation exists at any TTL, so a finite TTL only causes periodic
+  // invalid_client re-auth outages; revocation = full key rotation via
+  // ARC1_DCR_SIGNING_SECRET re-set or KDF_LABEL bump). Positive values are
+  // clamped to [60s, 90d] so a typo can't wipe every active connection.
   const dcrTtlRaw = getFlag('oauth-dcr-ttl-seconds') ?? process.env.ARC1_OAUTH_DCR_TTL_SECONDS;
   if (dcrTtlRaw !== undefined) {
     const parsed = Number.parseInt(dcrTtlRaw, 10);
@@ -788,6 +786,14 @@ export function validateConfig(config: ServerConfig): void {
   if (config.dcrSigningSecret && !config.xsuaaAuth) {
     console.error(
       '[warn] ARC1_DCR_SIGNING_SECRET is set but SAP_XSUAA_AUTH=false — the secret is unused. Unset it to reduce attack surface, or enable XSUAA OAuth proxy mode (SAP_XSUAA_AUTH=true).',
+    );
+  }
+
+  // Gated on HTTP transport: XSUAA/DCR is inert on stdio, and the CLI runs
+  // validateConfig per invocation — an ungated warn would spam every command.
+  if (config.transport === 'http-streamable' && config.xsuaaAuth && !config.dcrSigningSecret) {
+    console.error(
+      '[warn] SAP_XSUAA_AUTH=true without ARC1_DCR_SIGNING_SECRET — DCR client_ids are signed with the XSUAA clientsecret, so a redeploy that recreates the service binding (MTA cf deploy, rebind) invalidates every cached client_id and forces all VS Code/Copilot/Eclipse users to re-auth. Set a durable secret: cf set-env <app> ARC1_DCR_SIGNING_SECRET "$(openssl rand -base64 48)".',
     );
   }
 
