@@ -18,6 +18,7 @@
 
 import type { AdtClientConfig } from './config.js';
 import { defaultAdtClientConfig } from './config.js';
+import { lockObject, unlockObject } from './crud.js';
 import { parseTableType, type TableTypeInfo } from './ddic-xml.js';
 import { AdtApiError, AdtSafetyError, isNotFoundError } from './errors.js';
 import { AdtHttpClient, type AdtHttpConfig } from './http.js';
@@ -211,6 +212,12 @@ export function clampPreviewRows(requested: number | undefined, fallback = 100):
   if (requested === undefined || !Number.isFinite(requested) || requested < 1) return fallback;
   return Math.min(Math.floor(requested), MAX_TABLE_QUERY_ROWS);
 }
+
+/** Media type for a class's text symbols on the top-level ADT textelements service. Used as BOTH
+ *  Content-Type and Accept on the write PUT (SAP returns 400 "Accept header missing" otherwise).
+ *  ponytail: symbols only — a class has no selection screen, so its `source/selections` segment is
+ *  always empty and un-writable (SAP 406); selection texts are a program concept (future follow-up). */
+const TEXT_SYMBOLS_CT = 'application/vnd.sap.adt.textelements.symbols.v1';
 
 const MAX_SEARCH_RESULTS = 1_000;
 
@@ -1529,6 +1536,53 @@ export class AdtClient {
     checkOperation(this.safety, OperationType.Read, 'GetTextElements');
     const resp = await this.http.get(`/sap/bc/adt/programs/programs/${encodeURIComponent(program)}/textelements`);
     return resp.body;
+  }
+
+  /** Fail clean when the ADT textelements service is absent (SAP_BASIS < 7.51, e.g. NW 7.50 — the
+   *  whole collection is missing from discovery). Only blocks when discovery is loaded, so a
+   *  not-yet-populated map does not false-block 758/816; otherwise a real 404 surfaces. */
+  private assertClassTextElementsService(): void {
+    if (
+      this.http.hasDiscoveryData() &&
+      this.http.discoveryAcceptFor('/sap/bc/adt/textelements/classes') === undefined
+    ) {
+      throw new AdtApiError(
+        'Class text elements require the ADT textelements service (SAP_BASIS ≥ 7.51; not available on this system).',
+        404,
+        '/sap/bc/adt/textelements/classes',
+      );
+    }
+  }
+
+  /** Read a global class's text symbols. Returns the raw properties-style body
+   *  (`@MaxLength:NN` then `NNN=text`, blank-line separated). */
+  async getClassTextSymbols(name: string): Promise<string> {
+    checkOperation(this.safety, OperationType.Read, 'GetClassTextSymbols');
+    this.assertClassTextElementsService();
+    const resp = await this.http.get(`/sap/bc/adt/textelements/classes/${encodeURIComponent(name)}/source/symbols`, {
+      Accept: TEXT_SYMBOLS_CT,
+    });
+    return resp.body;
+  }
+
+  /** Write a global class's text symbols. Locks the textelements object (not the class), PUTs the
+   *  body with the symbols media type as BOTH Content-Type and Accept (SAP returns 400 "Accept header
+   *  missing" otherwise), then unlocks. Immediately active — no SAPActivate needed. */
+  async writeClassTextSymbols(name: string, source: string, transport?: string): Promise<void> {
+    checkOperation(this.safety, OperationType.Update, 'WriteClassTextSymbols');
+    this.assertClassTextElementsService();
+    const obj = `/sap/bc/adt/textelements/classes/${encodeURIComponent(name)}`;
+    await this.http.withStatefulSession(async (session) => {
+      const lock = await lockObject(session, this.safety, obj, 'MODIFY');
+      const corr = transport ?? (lock.corrNr || undefined);
+      try {
+        let url = `${obj}/source/symbols?lockHandle=${encodeURIComponent(lock.lockHandle)}`;
+        if (corr) url += `&corrNr=${encodeURIComponent(corr)}`;
+        await session.put(url, source, TEXT_SYMBOLS_CT, { Accept: TEXT_SYMBOLS_CT });
+      } finally {
+        await unlockObject(session, obj, lock.lockHandle);
+      }
+    });
   }
 
   /** Get program variants */

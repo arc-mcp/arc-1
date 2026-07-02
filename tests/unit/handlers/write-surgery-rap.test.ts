@@ -2083,4 +2083,77 @@ ENDCLASS.`.replace(/\n/g, '\r\n');
       expect(put?.url).not.toContain('/functions/groups/');
     });
   });
+
+  describe('SAPWrite edit_text_symbols (class text symbols)', () => {
+    const LOCK_BODY =
+      '<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><LOCK_HANDLE>H9</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL><MODIFICATION_SUPPORT>X</MODIFICATION_SUPPORT></DATA></asx:values></asx:abap>';
+
+    function mockTextPoolFlow() {
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL, init?: { method?: string }) => {
+        const u = String(url);
+        const m = (init?.method ?? 'GET').toUpperCase();
+        if (u.includes('_action=LOCK')) return Promise.resolve(mockResponse(200, LOCK_BODY, { 'x-csrf-token': 'T' }));
+        if (u.includes('_action=UNLOCK')) return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+        if (m === 'PUT') return Promise.resolve(mockResponse(200, '@MaxLength:10\r\n001=Hi', { 'x-csrf-token': 'T' }));
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+    }
+
+    // createClient() has allowedPackages=[] (unrestricted) → the package gate short-circuits without a
+    // metadata fetch, so the flow is just CSRF → lock → PUT → unlock.
+    const putCall = () =>
+      mockFetch.mock.calls.find(([, i]) => ((i as { method?: string })?.method ?? 'GET').toUpperCase() === 'PUT');
+
+    it('writes text symbols via the textelements service (lock → PUT symbols → unlock)', async () => {
+      mockTextPoolFlow();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'edit_text_symbols',
+        type: 'CLAS',
+        name: 'ZCL_FOO',
+        source: '@MaxLength:10\n001=Hi\n',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text ?? '').toContain('text symbols');
+      expect(String(putCall()?.[0])).toContain('/sap/bc/adt/textelements/classes/ZCL_FOO/source/symbols');
+    });
+
+    it('rejects edit_text_symbols when type is not CLAS', async () => {
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'edit_text_symbols',
+        type: 'PROG',
+        name: 'ZPROG',
+        source: '@MaxLength:10\n001=Hi\n',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text ?? '').toContain('type=CLAS');
+    });
+
+    it('rejects edit_text_symbols without source', async () => {
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'edit_text_symbols',
+        type: 'CLAS',
+        name: 'ZCL_FOO',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text ?? '').toContain('source is required');
+    });
+
+    it('tolerates over-populated payloads (irrelevant optional fields are ignored)', async () => {
+      mockTextPoolFlow();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'edit_text_symbols',
+        type: 'CLAS',
+        name: 'ZCL_FOO',
+        source: '@MaxLength:10\n001=Hi\n',
+        // GPT-style over-population: fields that do not apply to a text-pool write
+        odataVersion: 'V4',
+        include: '',
+        abstract: true,
+        method: '',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(String(putCall()?.[0])).toContain('/source/symbols');
+    });
+  });
 });

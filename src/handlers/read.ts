@@ -183,6 +183,14 @@ export async function handleSAPRead(
     return textResult(JSON.stringify(sdo, null, 2));
   }
 
+  // Class text symbols (Textelemente): include=text_symbols reads a class's maintained text symbols
+  // via the top-level textelements service. Text symbols have no active/inactive version, so bypass
+  // the version/draft/cache machinery below (like server-driven objects do).
+  if (type === 'CLAS' && (args.include as string | undefined)?.toLowerCase() === 'text_symbols') {
+    if (!name) return errorResult('SAPRead type=CLAS include=text_symbols requires a "name".');
+    return textResult(await client.getClassTextSymbols(name));
+  }
+
   if (args.force_refresh === true && cachingLayer && VERSIONED_SOURCE_READ_TYPES.has(type)) {
     invalidateInactiveList(cachingLayer, client, cacheSecurity);
     cachingLayer.invalidate(type, name, 'all');

@@ -32,15 +32,17 @@ const BUDGETS = {
   // tools.ts holds every tool's JSON schema. The #520 description trim (write-mode tools/list
   // 87→66 KB to clear the Copilot-for-Eclipse gateway limit) shrank it; lowered to match. The
   // CLIENT-SAFETY size guard is scripts/ci/check-tool-schema-budget.ts — trim there before raising this.
-  'src/handlers/tools.ts': 1700,
+  // +text-pool SAPWrite actions/description (edit_text_symbols/edit_selection_texts).
+  'src/handlers/tools.ts': 1710,
   'src/adt/xml-parser.ts': 1650,
   // diagnostics.ts gained the ABAP trace-request engine (#508) + the OData perf probe + CDS Show-SQL (#509)
   // + ST05 SQL-trace control (#510) + clientWait split. Split out a perf/trace module if it grows much further.
   'src/adt/diagnostics.ts': 1845,
   // The ADT client facade aggregates every read/write op; set_api_state (#506) + runQueryWithMetrics
   // (SAPQuery metrics) + getEffectiveUser (BTP JWT-derived user, G-5) + getSourceAtObjectUrl
-  // (post-activation cache promotion) pushed it past the default. Keep tight headroom.
-  'src/adt/client.ts': 1620,
+  // (post-activation cache promotion) + get/writeClassTextElements (class text pool) pushed it past
+  // the default. Keep tight headroom.
+  'src/adt/client.ts': 1680,
 };
 
 const DEFAULT_SRC = 1500;

@@ -86,6 +86,13 @@ describe('validateDenyActions', () => {
     expect(() => validateDenyActions(['SAPWrite.scaffold_rap_handlers'])).not.toThrow();
   });
 
+  it('accepts SAPWrite.edit_text_symbols (class text-pool write)', () => {
+    // Regression: this on-prem mutating action needs an ACTION_POLICY row so
+    // admins can deny it individually via SAP_DENY_ACTIONS.
+    expect(() => validateDenyActions(['SAPWrite.edit_text_symbols'])).not.toThrow();
+    expect(isActionDenied('SAPWrite', 'edit_text_symbols', ['SAPWrite.edit_text_symbols'])).toBe(true);
+  });
+
   it('accepts valid Tool.glob* patterns', () => {
     expect(() => validateDenyActions(['SAPManage.flp_*', 'SAPTransport.*'])).not.toThrow();
   });

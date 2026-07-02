@@ -90,6 +90,10 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   'SAPWrite.edit_method_signature': { scope: 'write', opType: OperationType.Update },
   'SAPWrite.delete_method': { scope: 'write', opType: OperationType.Update },
   'SAPWrite.change_method_visibility': { scope: 'write', opType: OperationType.Update },
+  // edit_text_symbols writes a class's text pool (textelements service). Explicit entry so admins can
+  // target it with SAP_DENY_ACTIONS (validateDenyActions derives valid patterns from ACTION_POLICY —
+  // without a row, "SAPWrite.edit_text_symbols" would be rejected at startup as matching no action).
+  'SAPWrite.edit_text_symbols': { scope: 'write', opType: OperationType.Update },
   'SAPWrite.batch_create': { scope: 'write', opType: OperationType.Create },
   // scaffold_rap_handlers updates an existing behavior-pool CLAS (writes method
   // declarations into one or more includes). It is a RAP-feature-specific

@@ -740,6 +740,42 @@ describe('SAPRead handler', () => {
       expect(result.isError).toBeUndefined();
     });
 
+    it('reads class text symbols (CLAS include=text_symbols) via the textelements service', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, '@MaxLength:10\r\n001=Hello', { 'x-csrf-token': 't' }));
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'CLAS',
+        name: 'ZCL_FOO',
+        include: 'text_symbols',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text ?? '').toContain('001=Hello');
+      expect(
+        mockFetch.mock.calls.some(([u]) => String(u).includes('/textelements/classes/ZCL_FOO/source/symbols')),
+      ).toBe(true);
+    });
+
+    it('rejects an unknown CLAS include (selection_texts — classes have no selection screen)', async () => {
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'CLAS',
+        name: 'ZCL_FOO',
+        include: 'selection_texts',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text ?? '').toContain('Invalid include value');
+    });
+
+    it('regression: CLAS read with no include still returns full class source', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(
+        mockResponse(200, 'CLASS zcl_foo DEFINITION PUBLIC.\nENDCLASS.', { 'x-csrf-token': 't' }),
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', { type: 'CLAS', name: 'ZCL_FOO' });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text ?? '').toContain('CLASS zcl_foo');
+      expect(mockFetch.mock.calls.some(([u]) => String(u).includes('/textelements/'))).toBe(false);
+    });
+
     it('reads variants (VARIANTS)', async () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
         type: 'VARIANTS',

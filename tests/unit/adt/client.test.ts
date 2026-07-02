@@ -728,6 +728,75 @@ describe('AdtClient', () => {
     });
   });
 
+  describe('class text symbols', () => {
+    const SYMBOLS_CT = 'application/vnd.sap.adt.textelements.symbols.v1';
+    const LOCK_BODY =
+      '<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><LOCK_HANDLE>H9</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL><MODIFICATION_SUPPORT>X</MODIFICATION_SUPPORT></DATA></asx:values></asx:abap>';
+
+    it('getClassTextSymbols hits the textelements service with the symbols media type', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, '@MaxLength:10\r\n001=Hello'));
+      const client = createClient();
+      const body = await client.getClassTextSymbols('ZCL_FOO');
+      expect(body).toBe('@MaxLength:10\r\n001=Hello');
+      expect(String(mockFetch.mock.calls[0]?.[0])).toContain('/sap/bc/adt/textelements/classes/ZCL_FOO/source/symbols');
+      expect(fetchHeaders(0).Accept).toBe(SYMBOLS_CT);
+    });
+
+    it('writeClassTextSymbols locks, PUTs with Content-Type AND Accept, then unlocks', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string, init?: RequestInit) => {
+        const u = String(url);
+        const m = (init?.method ?? 'GET').toUpperCase();
+        if (u.includes('_action=LOCK')) return Promise.resolve(mockResponse(200, LOCK_BODY));
+        if (u.includes('_action=UNLOCK')) return Promise.resolve(mockResponse(200, ''));
+        if (m === 'PUT') return Promise.resolve(mockResponse(200, '@MaxLength:10\r\n001=Hi'));
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+      const client = createClient();
+      await client.writeClassTextSymbols('ZCL_FOO', '@MaxLength:10\n001=Hi\n');
+      const calls = mockFetch.mock.calls as [string, RequestInit][];
+      const put = calls.find(([, i]) => (i?.method ?? 'GET').toUpperCase() === 'PUT');
+      expect(put).toBeDefined();
+      expect(String(put?.[0])).toContain('/sap/bc/adt/textelements/classes/ZCL_FOO/source/symbols');
+      expect(String(put?.[0])).toContain('lockHandle=H9');
+      const ph = put?.[1]?.headers as Record<string, string>;
+      expect(ph['Content-Type']).toBe(SYMBOLS_CT);
+      expect(ph.Accept).toBe(SYMBOLS_CT);
+      expect(calls.some(([u]) => String(u).includes('_action=LOCK'))).toBe(true);
+      expect(calls.some(([u]) => String(u).includes('_action=UNLOCK'))).toBe(true);
+    });
+
+    it('writeClassTextSymbols still unlocks when the PUT is rejected (406 malformed pool)', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string, init?: RequestInit) => {
+        const u = String(url);
+        const m = (init?.method ?? 'GET').toUpperCase();
+        if (u.includes('_action=LOCK')) return Promise.resolve(mockResponse(200, LOCK_BODY));
+        if (u.includes('_action=UNLOCK')) return Promise.resolve(mockResponse(200, ''));
+        if (m === 'PUT')
+          return Promise.resolve(
+            mockResponse(406, '<exc:exception><message>Text elements contain errors</message></exc:exception>'),
+          );
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+      const client = createClient();
+      await expect(client.writeClassTextSymbols('ZCL_FOO', 'bad')).rejects.toBeInstanceOf(AdtApiError);
+      const calls = mockFetch.mock.calls as [string, RequestInit][];
+      expect(calls.some(([u]) => String(u).includes('_action=UNLOCK'))).toBe(true);
+    });
+
+    it('fails clean when discovery is loaded but the textelements service is absent (NW 7.50)', async () => {
+      const client = createClient();
+      // Discovery loaded WITHOUT a textelements/classes collection → capability absent (NW 7.50).
+      client.http.setDiscoveryMap(new Map([['/sap/bc/adt/programs/programs', ['text/plain']]]));
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, 'should-not-be-requested'));
+      await expect(client.getClassTextSymbols('ZCL_FOO')).rejects.toThrow(/textelements service/i);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+  });
+
   describe('DDIC read operations', () => {
     it('getStructure returns source code', async () => {
       const client = createClient();

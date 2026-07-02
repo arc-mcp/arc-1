@@ -129,6 +129,59 @@ describe('CRUD lifecycle', () => {
     }
   }, 60_000);
 
+  it('class text symbols: create -> write symbol -> read back -> malformed 406 -> delete', async (ctx) => {
+    const name = generateUniqueName('ZARC1_TESY');
+    const lower = name.toLowerCase();
+    const objectUrl = `/sap/bc/adt/oo/classes/${lower}`;
+    const sourceUrl = `${objectUrl}/source/main`;
+    const classSource =
+      `CLASS ${lower} DEFINITION PUBLIC FINAL CREATE PUBLIC.\n  PUBLIC SECTION.\n` +
+      `    METHODS greet RETURNING VALUE(rv) TYPE string.\nENDCLASS.\n` +
+      `CLASS ${lower} IMPLEMENTATION.\n  METHOD greet.\n    rv = 'Hi'(001).\n  ENDMETHOD.\nENDCLASS.`;
+
+    try {
+      await createObject(
+        client.http,
+        client.safety,
+        '/sap/bc/adt/oo/classes',
+        buildCreateXml('CLAS', name, '$TMP', 'ARC-1 text-symbol lifecycle'),
+      );
+      registry.register(objectUrl, 'CLAS', name);
+      await safeUpdateSource(client.http, client.safety, objectUrl, sourceUrl, classSource);
+      expect((await activate(client.http, client.safety, objectUrl)).success).toBe(true);
+
+      // WRITE a text symbol, then READ it back via the textelements service.
+      await client.writeClassTextSymbols(name, '@MaxLength:20\n001=Hello\n');
+      expect(await client.getClassTextSymbols(name)).toContain('001=Hello');
+
+      // FAILURE PATH: a malformed body (one @MaxLength shared by two symbols) is rejected (406),
+      // and the earlier symbol stays intact.
+      try {
+        await client.writeClassTextSymbols(name, '@MaxLength:20\n001=A\n002=B\n');
+        throw new Error('expected malformed text-symbol write to be rejected');
+      } catch (err) {
+        expectSapFailureClass(err, [406], [/inconsisten|error/i]);
+      }
+      expect(await client.getClassTextSymbols(name)).toContain('001=Hello');
+
+      await deleteWithLock(objectUrl);
+      registry.remove(name);
+      await expect(client.getClass(name)).rejects.toThrow(/404|not found/i);
+    } catch (err) {
+      // NW 7.50 has no textelements service — skip rather than fail.
+      if (err instanceof AdtApiError && err.statusCode === 404 && /\/textelements\/classes\//.test(err.path)) {
+        requireOrSkip(
+          ctx,
+          undefined,
+          `${SkipReason.BACKEND_UNSUPPORTED}: ADT textelements service absent on this release`,
+        );
+      }
+      const skip = ddicSkipReason(err);
+      if (skip) requireOrSkip(ctx, undefined, skip);
+      throw err;
+    }
+  }, 60_000);
+
   it('DOMA CRUD lifecycle', async (ctx) => {
     const domainName = generateUniqueName('ZARC1_TDOM');
     const domainUrl = `/sap/bc/adt/ddic/domains/${domainName}`;

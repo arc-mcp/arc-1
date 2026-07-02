@@ -58,6 +58,9 @@ const looseOptionalBoolean = z
 // ─── SAPRead ────────────────────────────────────────────────────────
 
 const SAPREAD_CLAS_INCLUDES = ['main', 'testclasses', 'definitions', 'implementations', 'macros'] as const;
+// CLAS reads also accept `text_symbols` (routed to the textelements service, not a source include).
+// Kept separate from SAPREAD_CLAS_INCLUDES so VERSIONS (which shares that list) stays strict.
+const SAPREAD_CLAS_READ_INCLUDES = [...SAPREAD_CLAS_INCLUDES, 'text_symbols'] as const;
 const SAPREAD_DDLS_INCLUDES = ['elements'] as const;
 
 function validateSapReadInput(
@@ -71,13 +74,24 @@ function validateSapReadInput(
   if (input.include) {
     const include = input.include.toLowerCase();
     if (
-      (input.type === 'CLAS' || input.type === 'VERSIONS') &&
+      input.type === 'CLAS' &&
+      !SAPREAD_CLAS_READ_INCLUDES.includes(include as (typeof SAPREAD_CLAS_READ_INCLUDES)[number])
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['include'],
+        message: `Invalid include value "${input.include}" for type CLAS. Valid values: ${SAPREAD_CLAS_READ_INCLUDES.join(', ')}`,
+      });
+    }
+
+    if (
+      input.type === 'VERSIONS' &&
       !SAPREAD_CLAS_INCLUDES.includes(include as (typeof SAPREAD_CLAS_INCLUDES)[number])
     ) {
       ctx.addIssue({
         code: 'custom',
         path: ['include'],
-        message: `Invalid include value "${input.include}" for type ${input.type}. Valid values: ${SAPREAD_CLAS_INCLUDES.join(', ')}`,
+        message: `Invalid include value "${input.include}" for type VERSIONS. Valid values: ${SAPREAD_CLAS_INCLUDES.join(', ')}`,
       });
     }
 
@@ -477,6 +491,7 @@ export const SAPWriteSchema = z
       'batch_create',
       'scaffold_rap_handlers',
       'generate_behavior_implementation',
+      'edit_text_symbols',
     ]),
     type: z.enum(SAPWRITE_TYPES_ONPREM).optional(),
     name: z.string().optional(),

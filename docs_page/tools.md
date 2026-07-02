@@ -105,6 +105,7 @@ SAPRead(type="CLAS", name="ZCL_ORDER", format="structured")  — JSON with metad
 SAPRead(type="CLAS", name="ZCL_ORDER", method="*")           — list all methods
 SAPRead(type="CLAS", name="ZCL_ORDER", method="get_name")    — read a specific method
 SAPRead(type="CLAS", name="ZCL_ORDER", grep="select.*from")  — matching lines only, annotated by method
+SAPRead(type="CLAS", name="ZCL_ORDER", include="text_symbols") — maintained text pool (on-prem; see Class text symbols)
 SAPRead(type="PROG", name="ZTEST_REPORT", grep="WRITE")      — search source, returns matches + context
 SAPRead(type="DDLS", name="ZI_TRAVEL", include="elements")   — extract CDS view elements
 SAPRead(type="DCLS", name="ZI_TRAVEL_DCL")       — CDS access control source
@@ -236,7 +237,7 @@ Create or update ABAP source code. Handles lock/modify/unlock automatically.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `action` | string | Yes | `create`, `update`, `delete`, `edit_method`, `edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`, `batch_create`, `scaffold_rap_handlers`, or `generate_behavior_implementation`. The class-section surgery actions (`edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`) are token-efficient edits to a global class without re-sending `/source/main`. See [Class-section surgery](#class-section-surgery) below. |
+| `action` | string | Yes | `create`, `update`, `delete`, `edit_method`, `edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`, `batch_create`, `scaffold_rap_handlers`, `generate_behavior_implementation`, or `edit_text_symbols`. The class-section surgery actions (`edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`) are token-efficient edits to a global class without re-sending `/source/main`. See [Class-section surgery](#class-section-surgery) below. `edit_text_symbols` writes a global class's text pool — see [Class text symbols](#class-text-symbols). |
 | `type` | string | No | `PROG`, `CLAS`, `INTF`, `FUNC`, `FUGR`, `INCL`, `DDLS`, `DCLS`, `DDLX`, `BDEF`, `SRVD`, `SRVB`, `SKTD`/`KTD`, `TABL`, `TABL/DT`, `TABL/DS`, `DOMA`, `DTEL`, `MSAG` (for single object actions; availability is adapted for BTP vs. on-prem), plus the server-driven objects `DESD`/`EVTB`/`DTSC`/`CSNM`/`EVTO`/`COTA` on 8.16+ (see [Server-driven object writes](#server-driven-object-writes)). Slash/case aliases are auto-normalized (e.g., `CLAS/OC` or `clas` → `CLAS`; `KTD` → `SKTD`). |
 | `group` | string | No | For `FUNC`: parent function-group name. **Required for FUNC create** (the FUGR must already exist — create it first via `SAPWrite type=FUGR`). Auto-resolved via search for FUNC update/delete if omitted. Ignored for other types. |
 | `name` | string | No | Object name (for single object actions) |
@@ -580,6 +581,23 @@ Moves a method's METHODS clause from its current visibility section to a target 
 #### Cross-release notes
 
 Verified live on a4h (S/4HANA 2023, kernel 7.58) end-to-end. The underlying `/objectstructure` endpoint also works on NW 7.50 SP02 (reads verified); on that release methods are split across `CLAS/OO` (def) + `CLAS/OM` (impl) elements and merged by name in the parser. Writes on the un-patched NW 7.50 dev edition can trip [SAP Note 2727890](https://launchpad.support.sap.com/#/notes/2727890) "ADT: fix unstable adt lock handle" — a system-level bug affecting every ADT write, not specific to this feature; ARC-1 detects the 423 status and emits a hint.
+
+### Class text symbols
+
+Read and write a global class's **text symbols** (`Textsymbole` / class text elements — `'Text'(001)` literals) via the ADT textelements service.
+
+```
+SAPRead(type="CLAS", name="ZCL_ORDER", include="text_symbols")   — read the maintained text pool
+SAPWrite(action="edit_text_symbols", type="CLAS", name="ZCL_ORDER",
+         source="@MaxLength:20\n001=Order\n\n@MaxLength:30\n002=Order created\n")
+```
+
+- **Body format:** one `@MaxLength:NN` line per symbol, then `NNN=text`; symbols are blank-line separated. A shared/missing `@MaxLength` is rejected (`406 "Text elements contain errors"`).
+- **Immediately active** — no `SAPActivate` needed. Defining the referenced symbols is what clears the ATC finding *"Text symbol NNN not defined"* that a bare `'Text'(001)` literal otherwise leaves behind.
+- **On-prem only, discovery-gated.** The service is present on SAP_BASIS ≥ 7.51 (verified on 758 + 816) and absent on NW 7.50 — ARC-1 returns a clean "textelements service not available" error there.
+- **Scope:** text symbols only. Selection texts are a program selection-screen concept — a class has none, so `source/selections` is always empty and un-writable (SAP `406`); program/function-group text elements are a planned follow-up.
+
+Verified live end-to-end on a4h (758): create a `$TMP` class referencing `'Hi'(001)` → `edit_text_symbols` → read back → `SAPActivate` clean.
 
 ---
 

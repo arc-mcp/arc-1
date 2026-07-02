@@ -719,7 +719,7 @@ export function stripFmParamCommentBlock(source: string): { source: string; wasS
  * uppercase (TADIR convention). `batch_create` is excluded — its names live in
  * the `objects[]` items and are validated per item in the batch_create branch.
  */
-export const NAME_CASE_GUARD_ACTIONS = new Set(['create', 'update', 'edit_method', 'delete']);
+export const NAME_CASE_GUARD_ACTIONS = new Set(['create', 'update', 'edit_method', 'delete', 'edit_text_symbols']);
 
 /**
  * Enforce the `allowedPackages` ceiling for an EXISTING object addressed by its

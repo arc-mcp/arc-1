@@ -36,7 +36,7 @@ import {
 import type { SapWriteContext } from './write/context.js';
 import { writeActionBatchCreate, writeActionCreate } from './write/create.js';
 import { writeActionGenerateBehaviorImplementation, writeActionScaffoldRapHandlers } from './write/rap.js';
-import { writeActionDelete, writeActionUpdate } from './write/update-delete.js';
+import { writeActionDelete, writeActionEditTextSymbols, writeActionUpdate } from './write/update-delete.js';
 import {
   enforceAllowedPackageForObjectUrl,
   handleServerDrivenObjectWrite,
@@ -288,6 +288,10 @@ export async function handleSAPWrite(
       return writeActionDelete(ctx);
     case 'batch_create':
       return writeActionBatchCreate(ctx);
+
+    // Class text symbols (Textelemente) — write a global class's text pool (type=CLAS, on-prem).
+    case 'edit_text_symbols':
+      return writeActionEditTextSymbols(ctx);
     default:
       return errorResult(
         `Unknown SAPWrite action: ${action}. Supported: create, update, delete, edit_method, batch_create, scaffold_rap_handlers, generate_behavior_implementation`,

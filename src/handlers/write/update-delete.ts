@@ -296,3 +296,26 @@ export async function writeActionDelete(ctx: SapWriteContext): Promise<ToolResul
   invalidateWrittenObject();
   return textResult(`Deleted ${type} ${name}.`);
 }
+
+/** Write a global class's text symbols via the ADT textelements service. type=CLAS only. The body is
+ *  the properties-style pool (`@MaxLength:NN` per symbol, then `NNN=text`). Immediately active — no
+ *  SAPActivate. The client method locks the textelements object, PUTs, and unlocks; the package gate
+ *  here checks the class's real package (ctx.objectUrl is the /oo/classes/{n} URL). Not an
+ *  ABAP-source write → no lint. (Selection texts are a program selection-screen concept — a class has
+ *  none — so only text symbols are supported here.) */
+export async function writeActionEditTextSymbols(ctx: SapWriteContext): Promise<ToolResult> {
+  const { client, type, name, source, hasSource, transport, enforcePackageForExistingObject, invalidateWrittenObject } =
+    ctx;
+  if (type !== 'CLAS') {
+    return errorResult('action edit_text_symbols requires type=CLAS (global class text symbols).');
+  }
+  if (!hasSource) {
+    return errorResult(
+      'source is required for edit_text_symbols — the text-symbol body, e.g. "@MaxLength:20\\n001=Label\\n" (one @MaxLength per symbol, blank-line separated).',
+    );
+  }
+  await enforcePackageForExistingObject();
+  await client.writeClassTextSymbols(name, source, transport);
+  invalidateWrittenObject();
+  return textResult(`Updated text symbols for class ${name}.`);
+}
