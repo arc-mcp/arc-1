@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.9.25](https://github.com/arc-mcp/arc-1/compare/v0.9.24...v0.9.25) (2026-07-02)
+
+
+### Features
+
+* read + write class text symbols via ADT textelements service ([#541](https://github.com/arc-mcp/arc-1/issues/541)) ([f7ac732](https://github.com/arc-mcp/arc-1/commit/f7ac732575a357901b854358b7ac2f820f2a8955))
+
+
+### Bug Fixes
+
+* default DCR client_id TTL to never-expire and warn when the signing secret is missing ([#540](https://github.com/arc-mcp/arc-1/issues/540)) ([dd833b8](https://github.com/arc-mcp/arc-1/commit/dd833b8b343aed20d9f2f2493bdfce6a5571f0e6))
+
 ## [0.9.24](https://github.com/arc-mcp/arc-1/compare/v0.9.23...v0.9.24) (2026-06-30)
 
 
