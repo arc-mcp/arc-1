@@ -117,7 +117,7 @@
     "helmet": "^8.2.0",
     "jose": "^6.2.2",
     "rate-limiter-flexible": "^11.2.0",
-    "undici": "^8.5.0",
+    "undici": "^8.7.0",
     "zod": "^4.3.6"
   },
   "overrides": {
