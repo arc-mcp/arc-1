@@ -99,7 +99,7 @@
     "btp:build-deploy-ui-ext": "npm run btp:build-ui-ext && npm run btp:deploy-ui-ext"
   },
   "dependencies": {
-    "@abaplint/core": "^2.119.43",
+    "@abaplint/core": "^2.119.56",
     "@arc-mcp/xsuaa-auth": "^0.1.4",
     "@modelcontextprotocol/sdk": "^1.28.0",
     "@sap-cloud-sdk/connectivity": "^4.7.0",
