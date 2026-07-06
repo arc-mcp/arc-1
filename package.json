@@ -104,7 +104,7 @@
     "@modelcontextprotocol/sdk": "^1.28.0",
     "@sap-cloud-sdk/connectivity": "^4.7.0",
     "@sap/xsenv": "^6.2.1",
-    "@sap/xssec": "^4.13.0",
+    "@sap/xssec": "^4.13.1",
     "ajv": "^8.18.0",
     "better-sqlite3": "^12.11.1",
     "commander": "^15.0.0",
