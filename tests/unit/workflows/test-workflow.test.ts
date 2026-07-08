@@ -1,9 +1,26 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
-const WORKFLOW = readFileSync(join(import.meta.dirname, '../../../.github/workflows/test.yml'), 'utf8');
+const WORKFLOW_DIR = join(import.meta.dirname, '../../../.github/workflows');
+const WORKFLOW = readFileSync(join(WORKFLOW_DIR, 'test.yml'), 'utf8');
+const WORKFLOW_FILES = readdirSync(WORKFLOW_DIR)
+  .filter((file) => file.endsWith('.yml') || file.endsWith('.yaml'))
+  .sort();
+const UNTRUSTED_GITHUB_CONTEXTS = [
+  'github.event.pull_request.title',
+  'github.event.pull_request.body',
+  'github.event.pull_request.head.ref',
+  'github.event.pull_request.head.label',
+  'github.event.issue.title',
+  'github.event.issue.body',
+  'github.event.comment.body',
+  'github.event.discussion.title',
+  'github.event.discussion.body',
+  'github.event.head_commit.message',
+  'github.head_ref',
+] as const;
 
 type WorkflowStep = {
   env?: Record<string, unknown>;
@@ -30,6 +47,21 @@ function runScripts(): string[] {
   return Object.values(PARSED_WORKFLOW.jobs ?? {}).flatMap((job) => {
     if (!Array.isArray(job.steps)) return [];
     return job.steps.map((step) => step.run).filter((run): run is string => typeof run === 'string');
+  });
+}
+
+function allWorkflowRunScripts(): Array<{ file: string; jobName: string; stepIndex: number; script: string }> {
+  return WORKFLOW_FILES.flatMap((file) => {
+    const source = readFileSync(join(WORKFLOW_DIR, file), 'utf8');
+    const parsed = parse(source) as Workflow;
+
+    return Object.entries(parsed.jobs ?? {}).flatMap(([jobName, job]) => {
+      if (!Array.isArray(job.steps)) return [];
+      return job.steps.flatMap((step, stepIndex) => {
+        if (typeof step.run !== 'string') return [];
+        return [{ file, jobName, stepIndex, script: step.run }];
+      });
+    });
   });
 }
 
@@ -76,6 +108,16 @@ describe('test workflow gate behavior', () => {
     const gateJob = jobBlock('gate');
     expect(gateJob).toContain('PR_TITLE: $' + '{{ github.event.pull_request.title }}');
     expect(gateJob).toContain('echo "pr_title=$' + '{PR_TITLE}"');
+  });
+
+  it('does not interpolate untrusted GitHub event contexts directly into workflow shell scripts', () => {
+    const violations = allWorkflowRunScripts().flatMap(({ file, jobName, stepIndex, script }) =>
+      UNTRUSTED_GITHUB_CONTEXTS.filter((context) => script.includes(context)).map(
+        (context) => `${file}:${jobName}:steps[${stepIndex}]: ${context}`,
+      ),
+    );
+
+    expect(violations).toEqual([]);
   });
 
   it('serializes only SAP-heavy jobs repository-wide without cancellation', () => {
