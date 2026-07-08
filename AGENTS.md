@@ -20,6 +20,7 @@ Distributed as npm package (`arc-1`) and Docker image (`ghcr.io/arc-mcp/arc-1`).
 4. **BTP-native deployment** — Destination Service, Cloud Connector, XSUAA OAuth, BTP Audit Log; also Docker/npm/stdio.
 5. **Multi-client, vendor-neutral** — XSUAA OAuth + Entra ID OIDC + API key coexist; one instance serves Claude, Copilot Studio, VS Code, Gemini CLI, Cursor.
 6. **Safe defaults, opt-in power** — read-only by default; free SQL blocked; package allowlist defaults to `$TMP`; everything forbidden until the admin allows it.
+7. **One SAP system per instance** — ARC-1 exposes no `system`/destination selector and no cross-system routing; multi-system access is the [MCP hub](https://github.com/arc-mcp/mcp-hub)'s job, never ARC-1's. Binding one system per connection makes cross-environment (DEV→PROD) mistakes structurally impossible ([ADR-0005](docs/adr/0005-single-system-per-instance.md)).
 
 ## Build & Test
 
@@ -286,6 +287,7 @@ Every code change requires tests. Skip taxonomy: `docs/testing-skip-policy.md`.
 - **stdout is sacred** — MCP JSON-RPC only; all logging to stderr.
 - Never commit `.env`, `cookies.txt`, `.arc1.json`; sensitive fields are redacted in logs.
 - **Safety config is the server ceiling** — per-user scopes only restrict.
+- **One system per instance — never add multi-system to ARC-1** — no `system`/`target` tool param, no multiple destinations in one config, no cross-system routing. "Expose N systems from one instance" is out of scope *by decision* (the LLM routes wrong → writes to the wrong system; it tangles per-system safety ceilings). Decline and route the requester to the [MCP hub](https://github.com/arc-mcp/mcp-hub); see [ADR-0005](docs/adr/0005-single-system-per-instance.md).
 - **Per-user auth never inherits shared credentials** — `buildAdtConfig(..., { perUser: true })` strips username/password/cookies; any new Layer B field must respect the flag.
 - **All ADT endpoints have safety guards** — no unguarded `http.{get,post,put,delete}`.
 - **Cookie hot-reload**: `SAP_COOKIE_FILE` re-read on persistent 401; `SAP_COOKIE_STRING` cannot hot-reload.
