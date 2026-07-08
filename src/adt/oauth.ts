@@ -11,7 +11,7 @@
  * The resulting Bearer token is used with `Authorization: Bearer <token>`
  * on all ADT requests (replacing Basic Auth).
  *
- * Cross-platform: uses `open` (macOS), `xdg-open` (Linux), `start` (Windows).
+ * Cross-platform: uses `open` (macOS), `xdg-open` (Linux), `rundll32` (Windows).
  */
 
 import { createHash, randomBytes } from 'node:crypto';
@@ -245,7 +245,7 @@ const CSP_HEADER = "default-src 'none'";
 
 /**
  * Open a URL in the user's default browser.
- * Cross-platform: macOS (open), Linux (xdg-open), Windows (start).
+ * Cross-platform: macOS (open), Linux (xdg-open), Windows (rundll32).
  * Uses execFile() with argument arrays to prevent shell injection.
  */
 export async function openBrowser(url: string): Promise<void> {
@@ -268,7 +268,9 @@ export async function openBrowser(url: string): Promise<void> {
         execFile('open', [url], cb);
         break;
       case 'win32':
-        execFile('cmd', ['/c', 'start', '', url], cb);
+        // NOT `cmd /c start` — cmd re-parses `&` in the URL as a command separator and truncates
+        // it (issue #549). rundll32 takes the URL as one argv arg with no shell re-parse.
+        execFile('rundll32', ['url.dll,FileProtocolHandler', url], cb);
         break;
       default:
         execFile('xdg-open', [url], cb);

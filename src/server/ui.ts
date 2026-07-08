@@ -239,10 +239,16 @@ function parseBindAddr(addr: string): { host: string; port: number } {
 }
 
 function openInBrowser(url: string): void {
+  // win32: rundll32, NOT `cmd /c start` — cmd truncates URLs at `&` (issue #549).
   const command =
-    process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'cmd' : process.env.BROWSER || 'xdg-open';
-  const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
+    process.platform === 'darwin'
+      ? 'open'
+      : process.platform === 'win32'
+        ? 'rundll32'
+        : process.env.BROWSER || 'xdg-open';
+  const args = process.platform === 'win32' ? ['url.dll,FileProtocolHandler', url] : [url];
   const child = spawn(command, args, { detached: true, stdio: 'ignore' });
+  child.on('error', (err) => logger.warn('Could not open browser', { error: err.message, url }));
   child.unref();
 }
 
