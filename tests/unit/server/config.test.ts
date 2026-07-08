@@ -109,6 +109,25 @@ describe('parseArgs', () => {
     expect(config.minimalErrors).toBe(true);
   });
 
+  it('defaults minimal errors off for stdio transport', () => {
+    const config = parseArgs([]);
+    expect(config.transport).toBe('stdio');
+    expect(config.minimalErrors).toBe(false);
+  });
+
+  it('defaults minimal errors on for HTTP transport', () => {
+    const config = parseArgs(['--transport', 'http-streamable', '--api-keys', 'test-key:viewer']);
+    expect(config.transport).toBe('http-streamable');
+    expect(config.minimalErrors).toBe(true);
+  });
+
+  it('allows HTTP deployments to explicitly opt into detailed errors', () => {
+    process.env.ARC1_MINIMAL_ERRORS = 'false';
+    const config = parseArgs(['--transport', 'http-streamable', '--api-keys', 'test-key:viewer']);
+    expect(config.transport).toBe('http-streamable');
+    expect(config.minimalErrors).toBe(false);
+  });
+
   it('parses ARC1_SCHEMA_NULLABLE_OPTIONALS env var', () => {
     process.env.ARC1_SCHEMA_NULLABLE_OPTIONALS = 'on';
     const config = parseArgs([]);
@@ -130,6 +149,18 @@ describe('parseArgs', () => {
     process.env.ARC1_MINIMAL_ERRORS = 'false';
     const config = parseArgs(['--minimal-errors', 'true']);
     expect(config.minimalErrors).toBe(true);
+  });
+
+  it('--minimal-errors=false overrides the HTTP minimal-error default', () => {
+    const config = parseArgs([
+      '--transport',
+      'http-streamable',
+      '--api-keys',
+      'test-key:viewer',
+      '--minimal-errors',
+      'false',
+    ]);
+    expect(config.minimalErrors).toBe(false);
   });
 
   it('defaults ppStrict to true when principal propagation is enabled', () => {

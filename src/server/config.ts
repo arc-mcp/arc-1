@@ -682,7 +682,12 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
   ) as ServerConfig['logLevel'];
   const logFormat = resolveStr('log-format', 'ARC1_LOG_FORMAT', 'text', 'logFormat');
   config.logFormat = (logFormat === 'json' ? 'json' : 'text') as ServerConfig['logFormat'];
-  config.minimalErrors = resolveBool('minimal-errors', 'ARC1_MINIMAL_ERRORS', false, 'minimalErrors');
+  config.minimalErrors = resolveBool(
+    'minimal-errors',
+    'ARC1_MINIMAL_ERRORS',
+    config.transport === 'http-streamable',
+    'minimalErrors',
+  );
 
   // ── Misc ───────────────────────────────────────────────────────────
   config.verbose = resolveBool('verbose', 'SAP_VERBOSE', false, 'verbose');
