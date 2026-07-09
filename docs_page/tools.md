@@ -675,12 +675,13 @@ Execute ABAP SQL queries against SAP tables.
 | `maxRows` | number | No | Maximum rows (default 100) |
 
 **Important:** Uses the ADT freestyle SQL endpoint (`/sap/bc/adt/datapreview/freestyle`) with ABAP SQL syntax, NOT standard SQL:
+- Use `alias~field` for qualified fields (not `alias.field`; a dot ends the ABAP statement)
 - Use `ASCENDING`/`DESCENDING` (not `ASC`/`DESC`)
 - Use `maxRows` parameter (not `LIMIT`)
 - `GROUP BY`, `COUNT(*)`, `WHERE` all work
 - ABAP SQL aggregate rule applies: non-aggregated selected fields must be listed in `GROUP BY`
 
-ABAP SQL as a language supports JOINs and subqueries, but the freestyle endpoint parser can still reject valid-looking statements on some backend versions (for example grammar errors or single-SELECT enforcement). ARC-1 automatically chunks simple long literal `IN (...)` lists into smaller freestyle calls. If parsing still fails, simplify to one SELECT and split complex logic into staged queries.
+JOINs, aggregates, and subqueries are supported. For a plain projection `SELECT`, ARC-1 automatically chunks the longest literal `IN (...)` list—even when the query has several `IN` clauses—and merges the rows. Queries with `ORDER BY`, `GROUP BY`, `HAVING`, `DISTINCT`, `UNION`, or aggregates are sent whole because concatenating per-chunk results would change their semantics. If a backend rejects a long list in one of those queries, split the list manually, union the results, and re-sort client-side when needed.
 
 See: [SAPQuery Freestyle Capability Matrix](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-04-21-sapquery-freestyle-capability-matrix.md)
 

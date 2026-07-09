@@ -175,7 +175,7 @@ const SAPCONTEXT_DESC_BTP =
 
 const SAPQUERY_DESC_ONPREM =
   'Execute ABAP SQL queries against SAP tables. Returns columns + rows. Good for reverse-engineering metadata tables (DD02L, DD03L, TADIR, TFDIR, SWOTLV). Unknown tables get name suggestions. ' +
-  'Uses the ADT freestyle SQL endpoint; its parser can reject valid-looking statements on some releases — ARC-1 automatically chunks simple long literal IN lists; if parsing still fails, use one SELECT and stage multi-table logic (SAP Note 3605050). ' +
+  'Syntax = ABAP Open SQL, read-only, one SELECT per call: field access is alias~field (tilde, NOT alias.field — a dot reads as end-of-statement → error "only one SELECT is allowed"); sort with ORDER BY … ASCENDING/DESCENDING (the SQL abbreviations ASC/DESC are rejected). JOINs, GROUP BY, aggregates and subqueries all work; ARC-1 auto-chunks long literal IN-lists. ' +
   'To find CDS consumers do NOT text-scan DDDDLSRC/ACMDCLSRC/DDLXSRC_SRC — use SAPContext(action="impact", type="DDLS") (where-used index, filtered buckets).';
 
 const SAPQUERY_DESC_BTP =

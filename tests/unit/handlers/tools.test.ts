@@ -879,7 +879,12 @@ describe('Tool Definitions', () => {
       expect(sapQuery.description).toContain('DD02L');
       expect(sapQuery.description).toContain('TADIR');
       expect(sapQuery.description).toContain('reverse-engineering');
-      expect(sapQuery.description).toContain('automatically chunks simple long literal IN lists');
+      expect(sapQuery.description).toContain('auto-chunks long literal IN-lists');
+      expect(sapQuery.description).toContain('alias~field');
+      expect(sapQuery.description).toContain('ASCENDING/DESCENDING');
+      expect(sapQuery.description).toContain('JOINs');
+      expect(sapQuery.description).not.toContain('3605050');
+      expect(sapQuery.description).not.toContain('stage multi-table');
     });
 
     it('BTP SAPTransport description mentions gCTS', () => {

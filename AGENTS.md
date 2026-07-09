@@ -181,6 +181,7 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 | edit_method for CCDEF/CCIMP includes | `src/handlers/write/class-surgery.ts`, `src/handlers/schemas.ts` — auto-detect `lhc_*`/`lcl_*`→implementations, `ltc_*`→testclasses |
 | Class-section surgery (#303) | `src/adt/class-structure.ts`, `src/adt/client.ts`, `src/adt/xml-parser.ts`, `src/handlers/write/class-surgery.ts` — client-side refuse-diff before PUT |
 | SAPSearch tadir_lookup source variants | `src/handlers/search.ts`, `src/adt/client.ts`, `src/authz/policy.ts` — `db`/`both` escalate to sql scope |
+| SAPQuery freestyle SQL hints + IN-list chunking | `src/handlers/query.ts` — ABAP Open SQL uses `alias~field` + `ASCENDING`/`DESCENDING`; auto-chunk plain SELECTs only |
 | batch_create `activateAtEnd` | `src/handlers/write/create.ts` — prefer for interdependent objects (one activator pass) |
 | Hyperfocused mode | `src/handlers/hyperfocused.ts`, `src/handlers/tools.ts` |
 | ATC run (`SAPDiagnose action=atc`) | `src/adt/devtools.ts` (`runAtcCheck`) — three-step flow; variant MUST bind at worklist creation; ATC skips `$TMP` (details: dev-guide) |
