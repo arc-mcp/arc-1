@@ -265,6 +265,81 @@ describe('SAPManage / SAPContext handlers', () => {
       expect(executeCall).toBeDefined();
     });
 
+    it('change_package treats objectType as a literal ADT type when resolving objectUri', async () => {
+      const calls: Array<{ method: string; url: string }> = [];
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
+        calls.push({ method: opts?.method ?? 'GET', url: String(url) });
+        if (String(url).includes('quickSearch')) {
+          return Promise.resolve(
+            mockResponse(
+              200,
+              `<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">
+                <adtcore:objectReference adtcore:uri="/sap/bc/adt/oo/classes/zvictim" adtcore:type="CLAS/OC" adtcore:name="ZVICTIM" adtcore:packageName="$TMP"/>
+                <adtcore:objectReference adtcore:uri="/sap/bc/adt/ddic/ddl/sources/zvictim" adtcore:type="DDLS/DF" adtcore:name="ZVICTIM" adtcore:packageName="$TMP"/>
+              </adtcore:objectReferences>`,
+              { 'x-csrf-token': 'T' },
+            ),
+          );
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
+        action: 'change_package',
+        objectName: 'ZVICTIM',
+        objectType: '.*',
+        oldPackage: '$TMP',
+        newPackage: '$TMP',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('Could not find object "ZVICTIM" with type ".*"');
+      expect(calls.some((c) => c.method === 'POST' && c.url.includes('/refactorings'))).toBe(false);
+    });
+
+    it('change_package resolves objectUri from parsed ADT search results regardless of attribute order', async () => {
+      const calls: Array<{ method: string; url: string; body?: string }> = [];
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string; body?: string }) => {
+        calls.push({ method: opts?.method ?? 'GET', url: String(url), body: opts?.body });
+        if (String(url).includes('quickSearch')) {
+          return Promise.resolve(
+            mockResponse(
+              200,
+              `<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">
+                <adtcore:objectReference adtcore:type="DDLS/DF" adtcore:name="ZARC1_TEST" adtcore:packageName="$TMP" adtcore:uri="/sap/bc/adt/ddic/ddl/sources/zarc1_test"/>
+              </adtcore:objectReferences>`,
+              { 'x-csrf-token': 'T' },
+            ),
+          );
+        }
+        if (String(url).includes('step=preview')) {
+          return Promise.resolve(
+            mockResponse(
+              200,
+              '<generic:genericRefactoring xmlns:generic="http://www.sap.com/adt/refactoring/genericrefactoring"><generic:transport/></generic:genericRefactoring>',
+              { 'x-csrf-token': 'T' },
+            ),
+          );
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
+        action: 'change_package',
+        objectName: 'ZARC1_TEST',
+        objectType: 'DDLS/DF',
+        oldPackage: '$TMP',
+        newPackage: '$TMP',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('Moved ZARC1_TEST');
+      const previewCall = calls.find((c) => c.method === 'POST' && c.url.includes('step=preview'));
+      expect(previewCall?.body).toContain('/sap/bc/adt/ddic/ddl/sources/zarc1_test');
+    });
+
     it("change_package is blocked by the object's REAL package, not the caller-supplied oldPackage", async () => {
       // The caller lies: oldPackage="ZALLOWED" (in the allowlist) while the object
       // actually lives in ZSECRET. Authorization must gate the package resolved from

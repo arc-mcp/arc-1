@@ -20,6 +20,7 @@ import {
 import { changePackage } from '../adt/refactoring.js';
 import { checkOperation, checkPackage, OperationType } from '../adt/safety.js';
 import { getTransportInfo } from '../adt/transport.js';
+import { parseSearchResults } from '../adt/xml-parser.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
 import type { ServerConfig } from '../server/types.js';
 import { cachedFeatures, setCachedFeatures } from './feature-cache.js';
@@ -268,16 +269,17 @@ export async function handleSAPManage(
         const searchResp = await client.http.get(
           `/sap/bc/adt/repository/informationsystem/search?operation=quickSearch&query=${encodeURIComponent(objectName)}&maxResults=10`,
         );
-        const uriMatch = searchResp.body.match(
-          new RegExp(`adtcore:uri="([^"]*)"[^>]*adtcore:type="${objectType.replace('/', '\\/')}"`, 'i'),
+        const expectedType = objectType.toUpperCase();
+        const searchMatch = parseSearchResults(searchResp.body).find(
+          (ref) => ref.uri && ref.objectType.toUpperCase() === expectedType,
         );
-        if (!uriMatch?.[1]) {
+        if (!searchMatch?.uri) {
           return errorResult(
             `Could not find object "${objectName}" with type "${objectType}" via ADT search. ` +
               `Verify the object exists and the type is correct (e.g., CLAS/OC, DDLS/DF, PROG/P).`,
           );
         }
-        objectUri = uriMatch[1];
+        objectUri = searchMatch.uri;
       }
 
       // SECURITY: gate the object's REAL package (resolved from objectUri via ADT
