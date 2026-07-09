@@ -29,6 +29,7 @@ export const SCENARIOS: EvalScenario[] = [
     prompt: 'Use SAPQuery to find all development objects in package ZORDER. Return PGMID, OBJECT, and OBJ_NAME.',
     category: 'query',
     tags: ['single-step', 'basic', 'sql-validity'],
+    requireFullParameters: true,
     optimal: [
       {
         tool: 'SAPQuery',
@@ -57,6 +58,7 @@ export const SCENARIOS: EvalScenario[] = [
       'Use one SAPQuery call to list up to 20 transparent DDIC tables whose names start with Z, together with their English DD02T short text, sorted by table name descending.',
     category: 'query',
     tags: ['single-step', 'sql-validity', 'join', 'aliases'],
+    requireFullParameters: true,
     optimal: [
       {
         tool: 'SAPQuery',
@@ -89,6 +91,7 @@ export const SCENARIOS: EvalScenario[] = [
     prompt: 'Use SAPQuery to return at most five SAP clients from T000, with columns MANDT and MTEXT.',
     category: 'query',
     tags: ['single-step', 'sql-validity', 'row-limit'],
+    requireFullParameters: true,
     optimal: [
       {
         tool: 'SAPQuery',
@@ -109,6 +112,7 @@ export const SCENARIOS: EvalScenario[] = [
     prompt: 'Use SAPQuery to fetch PGMID, OBJECT, and OBJ_NAME from TADIR for the exact object name ZCL_ORDER_SERVICE.',
     category: 'query',
     tags: ['single-step', 'sql-validity', 'literals'],
+    requireFullParameters: true,
     optimal: [
       {
         tool: 'SAPQuery',
@@ -129,6 +133,7 @@ export const SCENARIOS: EvalScenario[] = [
       'Use SAPQuery to find English DD02T descriptions that are not null and contain the word order regardless of case.',
     category: 'query',
     tags: ['single-step', 'sql-validity', 'comparison', 'null'],
+    requireFullParameters: true,
     optimal: [
       {
         tool: 'SAPQuery',
@@ -153,6 +158,7 @@ export const SCENARIOS: EvalScenario[] = [
     prompt: 'Use SAPQuery to list T000 clients except client 000, sorted by MANDT ascending.',
     category: 'query',
     tags: ['single-step', 'sql-validity', 'comparison', 'sort'],
+    requireFullParameters: true,
     optimal: [
       {
         tool: 'SAPQuery',
@@ -173,6 +179,7 @@ export const SCENARIOS: EvalScenario[] = [
       'Use one SAPQuery call with a subquery to return TADIR OBJ_NAME values that also occur as DD02L TABNAME values.',
     category: 'query',
     tags: ['single-step', 'sql-validity', 'subquery', 'set-operator'],
+    requireFullParameters: true,
     optimal: [
       {
         tool: 'SAPQuery',

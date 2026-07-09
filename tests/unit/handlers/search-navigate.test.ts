@@ -767,7 +767,10 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
     it.each([
       "SELECT object_name FROM tadir WHERE object_name IN ('Z01', 'Z02', 'Z03', 'Z04', 'Z05', 'Z06', 'Z07', 'Z08', 'Z09') ORDER BY object_name",
       "SELECT object_type, COUNT(*) FROM tadir WHERE object_name IN ('Z01', 'Z02', 'Z03', 'Z04', 'Z05', 'Z06', 'Z07', 'Z08', 'Z09') GROUP BY object_type",
-    ])('does not chunk ordered or aggregate queries because merging would change semantics', async (sql) => {
+      "SELECT SINGLE object_name FROM tadir WHERE object_name IN ('Z01', 'Z02', 'Z03', 'Z04', 'Z05', 'Z06', 'Z07', 'Z08', 'Z09')",
+      "SELECT object_name FROM tadir WHERE object_name IN ('Z01', 'Z02', 'Z03', 'Z04', 'Z05', 'Z06', 'Z07', 'Z08', 'Z09') UP TO 1 ROWS",
+      "SELECT STRING_AGG( object_name, ',' ) FROM tadir WHERE object_name IN ('Z01', 'Z02', 'Z03', 'Z04', 'Z05', 'Z06', 'Z07', 'Z08', 'Z09')",
+    ])('does not chunk queries whose per-chunk results cannot be merged safely', async (sql) => {
       mockFetch.mockReset();
       mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
       mockFetch.mockResolvedValueOnce(mockResponse(200, dataPreviewXml('RESULT', ['1'])));

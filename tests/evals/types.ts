@@ -63,6 +63,9 @@ export interface EvalScenario {
   /** Tools that must NOT be called — if called, score is 0 */
   forbidden?: string[];
 
+  /** Require every expected parameter check to pass, regardless of the weighted overall score. */
+  requireFullParameters?: boolean;
+
   /**
    * Mock responses keyed by tool name.
    * When the LLM calls a tool, the harness returns the matching mock
@@ -105,7 +108,7 @@ export interface ScenarioScore {
   durationMs: number;
   /** Human-readable explanation of the score */
   explanation: string;
-  /** Whether it passed (overall >= threshold) */
+  /** Whether it passed the overall threshold and any scenario-specific parameter requirement */
   passed: boolean;
 }
 

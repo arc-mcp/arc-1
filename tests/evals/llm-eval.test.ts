@@ -303,7 +303,7 @@ describe(`LLM Eval — ${PROVIDER_NAME}/${MODEL} [${BACKEND}]`, () => {
           }
         }
 
-        expect(score.overallScore, score.explanation).toBeGreaterThanOrEqual(PASS_THRESHOLD);
+        expect(score.passed, score.explanation).toBe(true);
       },
       // 300s per scenario — LLM + real SAP latency. Cursor's first turn can
       // include MCP server startup + multi-call exploration, which exceeds

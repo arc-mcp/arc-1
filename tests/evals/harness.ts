@@ -13,7 +13,7 @@
  *   - Wrong tool / forbidden tool: 0.0
  */
 
-import { matchesExpectedToolCall, scoreExpectedToolCallParameters } from './expected-call.js';
+import { matchesExpectedToolCall, scenarioPasses, scoreExpectedToolCallParameters } from './expected-call.js';
 import type { LiveExecutor } from './live-backend.js';
 import type {
   EvalRunResult,
@@ -213,7 +213,7 @@ export async function runScenario(
     totalTokens,
     durationMs,
     explanation,
-    passed: overallScore >= passThreshold,
+    passed: scenarioPasses(scenario, overallScore, parameterScore, passThreshold),
   };
 }
 

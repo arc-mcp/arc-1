@@ -1,6 +1,6 @@
 /** Shared expected-tool-call matching for every eval provider. */
 
-import type { ExpectedToolCall, LLMToolCall } from './types.js';
+import type { EvalScenario, ExpectedToolCall, LLMToolCall } from './types.js';
 
 function sameExpectedValue(actual: unknown, expected: unknown): boolean {
   if (typeof actual === 'string' && typeof expected === 'string') {
@@ -43,4 +43,14 @@ export function scoreExpectedToolCallParameters(actual: LLMToolCall, expected: E
   const checks = parameterChecks(actual, expected);
   if (checks.length === 0) return 1;
   return checks.filter(Boolean).length / checks.length;
+}
+
+/** Apply the shared pass rule used by the in-process and CLI-backed eval providers. */
+export function scenarioPasses(
+  scenario: EvalScenario,
+  overallScore: number,
+  parameterScore: number,
+  passThreshold: number,
+): boolean {
+  return overallScore >= passThreshold && (!scenario.requireFullParameters || parameterScore === 1);
 }

@@ -22,12 +22,14 @@ function planSimpleInListChunking(
   if (maskedSql.includes(';')) return undefined;
   if (countSelectKeywords(maskedSql) !== 1) return undefined;
   if (
+    /\bSELECT\s+SINGLE\b/i.test(maskedSql) ||
+    /\bUP\s+TO\s+\d+\s+ROWS?\b/i.test(maskedSql) ||
     /\bGROUP\s+BY\b/i.test(maskedSql) ||
     /\bHAVING\b/i.test(maskedSql) ||
     /\bORDER\s+BY\b/i.test(maskedSql) ||
     /\bUNION\b/i.test(maskedSql) ||
     /\bDISTINCT\b/i.test(maskedSql) ||
-    /\b(?:COUNT|SUM|AVG|MIN|MAX)\s*\(/i.test(maskedSql)
+    /\b(?:COUNT|SUM|AVG|MIN|MAX|STRING_AGG)\s*\(/i.test(maskedSql)
   ) {
     return undefined;
   }
@@ -118,6 +120,39 @@ function parseSingleQuotedLiteralList(listText: string): string[] | undefined {
   return expectingValue && literals.length > 0 ? undefined : literals;
 }
 
+interface QuerySource {
+  table: string;
+  alias?: string;
+}
+
+function resolveUnknownColumnTable(sql: string, badColumn: string): string | undefined {
+  const maskedSql = maskSqlStringLiterals(sql);
+  const sources: QuerySource[] = [];
+
+  for (const match of maskedSql.matchAll(
+    /\b(?:FROM|JOIN)\s+["']?([A-Za-z0-9_/$]+)["']?(?:\s+AS\s+([A-Za-z_][A-Za-z0-9_]*))?/gi,
+  )) {
+    sources.push({ table: match[1]!, ...(match[2] ? { alias: match[2] } : {}) });
+  }
+
+  if (sources.length === 0) return undefined;
+
+  const escapedColumn = badColumn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const qualifiedColumn = new RegExp(`\\b([A-Za-z_][A-Za-z0-9_]*)~${escapedColumn}\\b`, 'gi');
+  const qualifiers = new Set([...maskedSql.matchAll(qualifiedColumn)].map((match) => match[1]!.toUpperCase()));
+
+  if (qualifiers.size === 1) {
+    const qualifier = [...qualifiers][0]!;
+    return sources.find(
+      (source) => source.alias?.toUpperCase() === qualifier || source.table.toUpperCase() === qualifier,
+    )?.table;
+  }
+
+  // With multiple sources, an unqualified or multiply-qualified bad column is ambiguous. Preserve
+  // SAP's original error rather than confidently listing columns from an unrelated table.
+  return qualifiers.size === 0 && sources.length === 1 ? sources[0]!.table : undefined;
+}
+
 async function runChunkedSapQuery(
   client: AdtClient,
   plan: SimpleInListChunkPlan,
@@ -197,8 +232,7 @@ export async function handleSAPQuery(client: AdtClient, args: Record<string, unk
       // Self-correct an unknown-column error by listing the table's real columns (best-effort).
       const badColumn = extractUnknownColumn(err);
       if (badColumn) {
-        const tableMatch = sql.match(/FROM\s+["']?([A-Za-z0-9_/$]+)["']?/i);
-        const table = tableMatch?.[1];
+        const table = resolveUnknownColumnTable(sql, badColumn);
         if (table && /^[A-Za-z0-9_/]+$/.test(table)) {
           try {
             const { columns } = await client.runQuery(`SELECT * FROM ${table}`, 1);

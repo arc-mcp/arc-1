@@ -28,7 +28,11 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { matchesExpectedToolCall as matches, scoreExpectedToolCallParameters as paramScore } from '../expected-call.js';
+import {
+  matchesExpectedToolCall as matches,
+  scoreExpectedToolCallParameters as paramScore,
+  scenarioPasses,
+} from '../expected-call.js';
 import type { EvalScenario, LLMToolCall, ScenarioScore } from '../types.js';
 
 export const DEFAULT_CLAUDE_CODE_MODEL = 'claude-haiku-4-5-20251001';
@@ -329,7 +333,7 @@ export async function runScenarioWithClaudeCode(
     totalTokens: run.totalTokens,
     durationMs: run.durationMs,
     explanation,
-    passed: overallScore >= options.passThreshold,
+    passed: scenarioPasses(scenario, overallScore, parameterScore, options.passThreshold),
   };
 }
 

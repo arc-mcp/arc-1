@@ -35,7 +35,11 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { matchesExpectedToolCall as matches, scoreExpectedToolCallParameters as paramScore } from '../expected-call.js';
+import {
+  matchesExpectedToolCall as matches,
+  scoreExpectedToolCallParameters as paramScore,
+  scenarioPasses,
+} from '../expected-call.js';
 import type { EvalScenario, LLMToolCall, ScenarioScore } from '../types.js';
 
 /**
@@ -306,7 +310,7 @@ export async function runScenarioWithCursor(
     totalTokens: run.totalTokens,
     durationMs: run.durationMs,
     explanation,
-    passed: overallScore >= options.passThreshold,
+    passed: scenarioPasses(scenario, overallScore, parameterScore, options.passThreshold),
   };
 }
 

@@ -204,6 +204,38 @@ describe('handleSAPQuery parser-error ordering', () => {
     expect(client.runQuery).toHaveBeenCalledWith('SELECT * FROM t000', 1);
   });
 
+  it('uses the qualified join alias to enrich an unknown column from the correct table', async () => {
+    const client = {
+      runQueryWithMetrics: vi.fn().mockRejectedValue(dataPreviewMessage004('Unknown column name "BOGUS".')),
+      runQuery: vi.fn().mockResolvedValue({ columns: ['TABNAME', 'DDLANGUAGE', 'DDTEXT'], rows: [] }),
+    } as unknown as AdtClient;
+
+    const result = await handleSAPQuery(client, {
+      sql: "SELECT t~bogus FROM dd02l AS b INNER JOIN dd02t AS t ON b~tabname = t~tabname WHERE b~tabname = 'T000'",
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toBe(
+      'Unknown column "BOGUS" on DD02T. Available columns: TABNAME, DDLANGUAGE, DDTEXT.',
+    );
+    expect(client.runQuery).toHaveBeenCalledWith('SELECT * FROM dd02t', 1);
+  });
+
+  it('preserves the SAP error for an unqualified unknown column across multiple sources', async () => {
+    const error = dataPreviewMessage004('Unknown column name "BOGUS".');
+    const client = {
+      runQueryWithMetrics: vi.fn().mockRejectedValue(error),
+      runQuery: vi.fn(),
+    } as unknown as AdtClient;
+
+    await expect(
+      handleSAPQuery(client, {
+        sql: 'SELECT bogus FROM dd02l AS b INNER JOIN dd02t AS t ON b~tabname = t~tabname',
+      }),
+    ).rejects.toBe(error);
+    expect(client.runQuery).not.toHaveBeenCalled();
+  });
+
   it('keeps an ambiguous message-004 error actionable without querying irrelevant metadata', async () => {
     const client = {
       runQueryWithMetrics: vi
