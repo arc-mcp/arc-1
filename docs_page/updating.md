@@ -219,7 +219,7 @@ cf restage arc1-mcp-server
 
 After this the signing key no longer tracks the rotating `clientsecret`, so no deploy invalidates client registrations. See [Stable DCR signing key](xsuaa-setup.md#stable-dcr-signing-key-recommended).
 
-Other restart side effects are benign: in-flight requests during the instance swap are retried by the client (a `--strategy rolling` push avoids even that), and the on-disk SQLite source cache is preserved and ETag-revalidated — no cold-cache penalty.
+Other restart side effects are benign: in-flight requests during the instance swap are retried by the client (a `--strategy rolling` push avoids even that). Deployments that explicitly use `ARC1_CACHE=sqlite` preserve and ETag-revalidate the on-disk source cache, so they avoid a cold-cache penalty.
 
 ---
 

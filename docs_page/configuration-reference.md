@@ -259,13 +259,13 @@ ARC-1 caches SAP source/metadata with ETag revalidation on every hit. See [cachi
 
 | Flag | Env var | Default | Effect |
 |---|---|---|---|
-| `--cache` | `ARC1_CACHE` | `auto` | `auto` picks `sqlite` for HTTP transport and `memory` for stdio. `memory` = in-process only, lost on restart. `sqlite` = persistent across restarts, shared across processes that point at the same file. `none` = disable caching entirely (every read hits SAP). |
-| `--cache-file` | `ARC1_CACHE_FILE` | `.arc1-cache.db` | SQLite file path when `ARC1_CACHE=sqlite` (or `auto` → sqlite). Created on first use. |
+| `--cache` | `ARC1_CACHE` | `auto` | `auto` uses the in-process memory cache for every transport. `memory` = in-process only, lost on restart. `sqlite` = persistent across restarts, shared across processes that point at the same file, and explicit opt-in because it stores source bodies at rest. `none` = disable caching entirely (every read hits SAP). |
+| `--cache-file` | `ARC1_CACHE_FILE` | `.arc1-cache.db` | SQLite file path when `ARC1_CACHE=sqlite`. Created on first use. |
 | `--cache-warmup` | `ARC1_CACHE_WARMUP` | `false` | When `true`, ARC-1 runs a TADIR scan on startup and bulk-fetches matching object sources into the cache. Speeds up first reads at the cost of a longer startup and more SAP load. |
 | `--cache-warmup-packages` | `ARC1_CACHE_WARMUP_PACKAGES` | (empty = all custom) | Comma-separated package filter for warmup (e.g. `Z*,Y*,/COMPANY/*`). Empty matches all custom packages found in TADIR. Ignored when `ARC1_CACHE_WARMUP=false`. |
 
 !!! warning "`ARC1_CACHE=sqlite` stores SAP source in cleartext at rest"
-    The SQLite cache holds full ABAP source unencrypted at `.arc1-cache.db`. ARC-1 creates and repairs the cache DB and file audit sink (`ARC1_LOG_FILE`) with owner-only file permissions (`0600`), but this is not encryption. For IP-sensitive landscapes use `ARC1_CACHE=memory` or `none`, or place persistent files on an encrypted volume with restricted access.
+    The default `ARC1_CACHE=auto` mode does not create a SQLite cache file. If you explicitly set `ARC1_CACHE=sqlite`, the cache holds full ABAP source unencrypted at `.arc1-cache.db`. ARC-1 creates and repairs the cache DB and file audit sink (`ARC1_LOG_FILE`) with owner-only file permissions (`0600`), but this is not encryption. For IP-sensitive landscapes keep `ARC1_CACHE=auto`/`memory` or `none`, or place persistent files on an encrypted volume with restricted access.
 
 ---
 

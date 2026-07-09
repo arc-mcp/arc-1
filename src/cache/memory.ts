@@ -1,7 +1,7 @@
 /**
  * In-memory cache implementation.
  *
- * Default cache backend for stdio transport — fast, ephemeral.
+ * Default cache backend for every transport — fast, ephemeral.
  * Data is lost when the process exits.
  * Thread-safe by default in Node.js (single-threaded event loop).
  */

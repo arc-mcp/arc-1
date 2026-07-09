@@ -14,12 +14,12 @@
  * - Writes invalidate the source cache for the written object.
  *
  * Three tiers:
- * - Tier 1 (stdio): MemoryCache, dies with process. Eliminates duplicate
- *   fetches within a session.
- * - Tier 2 (http-streamable): SqliteCache, persists. Multiple sessions
- *   share the warm cache.
- * - Tier 3 (Docker + warmup): SqliteCache pre-populated via TADIR scan.
- *   Enables reverse dependency lookup.
+ * - Tier 1 (default/auto): MemoryCache, dies with process. Eliminates
+ *   duplicate fetches within a session and avoids source-at-rest by default.
+ * - Tier 2 (explicit sqlite): SqliteCache, persists. Multiple sessions
+ *   share the warm cache when operators accept the source-at-rest posture.
+ * - Tier 3 (explicit sqlite + warmup): SqliteCache pre-populated via TADIR
+ *   scan. Enables reverse dependency lookup.
  */
 
 import type { AdtClient, SourceReadResult } from '../adt/client.js';

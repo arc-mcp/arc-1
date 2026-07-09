@@ -148,7 +148,7 @@ Legend: ✅ merged to `main` · 🟡 partial/accepted conditional risk · ⬜ op
 | R12 | Reverse-dep (`usages`) index served cross-user | Med | PP + warmup | ✅ merged | [#393](https://github.com/arc-mcp/arc-1/pull/393) |
 | R13 | PP destination cache may collapse to tenant-wide isolation | Med (cond.) | PP + OIDC | ✅ mitigated by `tenant-user` destination isolation | `@arc-mcp/xsuaa-auth` >=0.1.2 |
 | R14 | Detailed SAP errors recon oracle when explicitly enabled | Low | trusted debug / stdio / explicit opt-out | ✅ mitigated; HTTP defaults minimal | [#495](https://github.com/arc-mcp/arc-1/pull/495), [#552](https://github.com/arc-mcp/arc-1/pull/552) |
-| R15 | Cleartext SAP source at rest | Low/Med | disk cache | 🟡 private file perms merged; plaintext source remains accepted/operator-controlled | [#496](https://github.com/arc-mcp/arc-1/pull/496) |
+| R15 | Cleartext SAP source at rest | Low/Med when explicit | disk cache | ✅ default closed; explicit SQLite remains accepted/operator-controlled | [#496](https://github.com/arc-mcp/arc-1/pull/496) |
 | R16 | BTP service-key files not gitignored | Low/Med | repo hygiene | ✅ merged | [#395](https://github.com/arc-mcp/arc-1/pull/395) |
 | R17 | Hardening cluster | Low | mixed | 🟡 PR-title and ACTION_POLICY guard closed; API-key timing + `change_package` regex remain open | [#550](https://github.com/arc-mcp/arc-1/pull/550), `npm run validate:policy` |
 
@@ -422,16 +422,18 @@ the worst class of finding for the flagship multi-user-PP deployment, and a sing
 - **Effort:** M.
 
 **R15 — Cleartext SAP source at rest — Low/Med — disk cache** 📄
-- **Current status (2026-07-08):** file permissions are fixed by [#496](https://github.com/arc-mcp/arc-1/pull/496);
-  plaintext SQLite source remains the residual risk.
+- **Current status (2026-07-09):** file permissions are fixed by [#496](https://github.com/arc-mcp/arc-1/pull/496);
+  `ARC1_CACHE=auto` uses memory for every transport; plaintext SQLite source remains the residual
+  risk only when an operator explicitly sets `ARC1_CACHE=sqlite`.
 - **Where:** [`sqlite.ts:19`](../src/cache/sqlite.ts) (no `mode:0o600`),
   [`file.ts:47`](../src/server/sinks/file.ts).
-- **Mechanism:** the SQLite cache stores full ABAP source unencrypted. Before
+- **Mechanism:** the SQLite cache stores full ABAP source unencrypted when explicitly enabled. Before
   [#496](https://github.com/arc-mcp/arc-1/pull/496), cache DB and file sink creation also relied on
   default file permissions.
-- **Residual mitigation:** private file mode is shipped; use encrypted volumes or `ARC1_CACHE=none`
-  for IP-sensitive landscapes that cannot accept plaintext source in the service account's files.
-- **Effort:** posture decision / operator hardening.
+- **Residual mitigation:** private file mode is shipped and SQLite is explicit opt-in; use encrypted
+  volumes for persistent SQLite, or keep `ARC1_CACHE=auto`/`memory`/`none` for IP-sensitive
+  landscapes that cannot accept plaintext source in the service account's files.
+- **Effort:** implemented default-closed posture; explicit persistent cache remains operator hardening.
 
 **R7 — Silent `SAP_INSECURE` + path-encoding gaps — Low/Med — all** 📄
 - **Current status (2026-07-08):** closed by [#491](https://github.com/arc-mcp/arc-1/pull/491) and
@@ -471,13 +473,10 @@ Later hardening also closed R5, R7, R9-gCTS, R10, R14, and two R17 subitems.
 
 Suggested order for the remaining items:
 
-1. **R15 plaintext cache posture:** decide whether plaintext SAP source in SQLite disk cache is
-   accepted with private file mode plus encrypted volumes, or whether production guidance should
-   require `ARC1_CACHE=none` for IP-sensitive landscapes.
-2. **R17 low hardening remainder:** switch API-key comparison in the auth path to a length-checked
+1. **R17 low hardening remainder:** switch API-key comparison in the auth path to a length-checked
    timing-safe comparison if still owned by ARC-1 after auth-module delegation, and bound or literalize
    the `change_package` object-type regex construction.
-3. **R6 operational posture:** keep `SAP_PP_STRICT` default-closed for PP, and treat
+2. **R6 operational posture:** keep `SAP_PP_STRICT` default-closed for PP, and treat
    `SAP_PP_STRICT=false` as an explicit operator exception that should be documented per landscape
    when used.
 
@@ -545,5 +544,7 @@ re-materialize it there or regenerate from this section's description.
   R13, R14, R15, R17 (all Med/Low). These fixes shipped in **v0.9.14**.
 - **2026-07-08** — SEC-03 reconciliation against `origin/main` `4ed0dcf0`. Updated §1/§4/§6 to
   reflect merged fixes for R5/R6/R7/R9-gCTS/R10/R14 and the closed R17 PR-title/ACTION_POLICY
-  subitems. Kept R15 partial for plaintext SQLite source-at-rest and R17 partial for API-key timing
-  and `change_package` regex hardening.
+  subitems. Kept R17 partial for API-key timing and `change_package` regex hardening.
+- **2026-07-09** — R15 default-closed cache posture. `ARC1_CACHE=auto` now uses memory for every
+  transport, and SQLite persistence remains explicit opt-in with source-at-rest warnings and
+  encrypted-volume guidance.

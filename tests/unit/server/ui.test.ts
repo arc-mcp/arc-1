@@ -75,6 +75,40 @@ describe('UI API', () => {
     expect(res.body.transport.uiMode).toBe('off');
   });
 
+  it('does not report a cache file for auto mode', async () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      cacheMode: 'auto' as const,
+      cacheFile: '/tmp/arc1-cache.db',
+    };
+
+    const overview = await request(buildApp({ config })).get('/ui/api/overview');
+    const sanitized = await request(buildApp({ config })).get('/ui/api/config');
+
+    expect(overview.status).toBe(200);
+    expect(overview.body.cache.mode).toBe('auto');
+    expect(overview.body.cache).not.toHaveProperty('file');
+    expect(sanitized.status).toBe(200);
+    expect(sanitized.body.config.cache.mode).toBe('auto');
+    expect(sanitized.body.config.cache).not.toHaveProperty('file');
+  });
+
+  it('reports a cache file only for explicit SQLite mode', async () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      cacheMode: 'sqlite' as const,
+      cacheFile: '/tmp/arc1-cache.db',
+    };
+
+    const overview = await request(buildApp({ config })).get('/ui/api/overview');
+    const sanitized = await request(buildApp({ config })).get('/ui/api/config');
+
+    expect(overview.status).toBe(200);
+    expect(overview.body.cache.file).toBe('/tmp/arc1-cache.db');
+    expect(sanitized.status).toBe(200);
+    expect(sanitized.body.config.cache.file).toBe('/tmp/arc1-cache.db');
+  });
+
   it('sanitizes config secrets', async () => {
     const res = await request(
       buildApp({

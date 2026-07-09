@@ -2,8 +2,8 @@
  * Cache interface and types for ARC-1.
  *
  * Two implementations:
- * - MemoryCache: fast, ephemeral (default for stdio)
- * - SqliteCache: persistent, cross-session (default for http-streamable / Docker)
+ * - MemoryCache: fast, ephemeral (default/auto)
+ * - SqliteCache: persistent, cross-session (explicit opt-in; stores source bodies at rest)
  *
  * Cache stores five types of data:
  * - Nodes: ABAP objects (class, program, table, etc.) with metadata

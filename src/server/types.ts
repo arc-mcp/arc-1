@@ -173,7 +173,7 @@ export interface ServerConfig {
   checkBeforeWrite: boolean;
 
   // --- Cache ---
-  /** Cache mode: 'auto' (memory for stdio, sqlite for http-streamable), 'memory', 'sqlite', 'none' */
+  /** Cache mode: 'auto' (memory cache), 'memory', 'sqlite', 'none' */
   cacheMode: 'auto' | 'memory' | 'sqlite' | 'none';
   /** Path to SQLite cache file (default: .arc1-cache.db in working directory) */
   cacheFile: string;

@@ -19,7 +19,7 @@ see [Authorization & Roles](authorization.md).
 | MCP auth | HTTP mode supports API-key profiles, OIDC JWTs, and XSUAA OAuth proxy mode. Stdio relies on local process trust. |
 | SAP identity | Shared SAP credentials, BTP ABAP service-key OAuth, BTP Destination, or per-user principal propagation. |
 | Safety | Server opt-in flags form the ceiling. User scopes and SAP authorization can only restrict further. |
-| Cache | Memory cache for local stdio by default; SQLite for HTTP by default. Server-validated freshness via `If-None-Match` / `ETag` (no TTL). Optional startup warmup. See [Caching System](caching.md). |
+| Cache | Memory cache by default for every transport; SQLite persistence is explicit opt-in. Server-validated freshness via `If-None-Match` / `ETag` (no TTL). Optional startup warmup. See [Caching System](caching.md). |
 | Observability | Structured logs and audit events to stderr, optional file sink, and optional BTP Audit Log sink. |
 
 ## High-level architecture

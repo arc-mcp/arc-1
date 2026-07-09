@@ -15,13 +15,13 @@ The cache stores six types of data:
 - **Function group mappings** — which function module belongs to which function group.
 - **Inactive-objects list** — per-username session cache of pending drafts (in-memory only, 60s TTL with explicit invalidation on writes).
 
-The system operates in three tiers of increasing capability:
+The system operates in three tiers of increasing persistence:
 
 | Tier | Transport | Backend | Lifetime | Features |
 |------|-----------|---------|----------|----------|
-| 1 | stdio (Claude Desktop) | Memory | Single session | Dedup fetches within session, ETag revalidation |
-| 2 | http-streamable (server) | SQLite | Persists across sessions | Shared warm cache, ETag revalidation, draft awareness |
-| 3 | Docker + warmup | SQLite + pre-warmer | Persists + pre-indexed | Reverse dependency lookup, sub-second dep resolution |
+| 1 | any (`ARC1_CACHE=auto`) | Memory | Process lifetime | Dedup fetches within session, ETag revalidation, no source-at-rest |
+| 2 | any (`ARC1_CACHE=sqlite`) | SQLite | Persists across sessions | Shared warm cache, ETag revalidation, draft awareness |
+| 3 | any (`ARC1_CACHE=sqlite` + warmup) | SQLite + pre-warmer | Persists + pre-indexed | Reverse dependency lookup, sub-second dep resolution |
 
 ## Configuration
 
@@ -29,8 +29,8 @@ All cache settings follow the standard ARC-1 configuration priority: CLI flags >
 
 | Env Variable | CLI Flag | Values | Default | Description |
 |-------------|----------|--------|---------|-------------|
-| `ARC1_CACHE` | `--cache` | `auto`, `memory`, `sqlite`, `none` | `auto` | Cache backend selection. `auto` picks memory for stdio, SQLite for http-streamable. |
-| `ARC1_CACHE_FILE` | `--cache-file` | File path | `.arc1-cache.db` | Path to the SQLite database file. Relative paths resolve from the working directory. |
+| `ARC1_CACHE` | `--cache` | `auto`, `memory`, `sqlite`, `none` | `auto` | Cache backend selection. `auto` uses memory for every transport. `sqlite` is explicit opt-in because it stores source bodies at rest. |
+| `ARC1_CACHE_FILE` | `--cache-file` | File path | `.arc1-cache.db` | Path to the SQLite database file when `ARC1_CACHE=sqlite`. Relative paths resolve from the working directory. |
 | `ARC1_CACHE_WARMUP` | `--cache-warmup` | `true`, `false` | `false` | Run the pre-warmer on startup (enumerates TADIR, fetches all custom objects). |
 | `ARC1_CACHE_WARMUP_PACKAGES` | `--cache-warmup-packages` | Comma-separated patterns | (empty = all custom) | Package filter for warmup. Supports wildcards. |
 
@@ -39,7 +39,7 @@ All cache settings follow the standard ARC-1 configuration priority: CLI flags >
 When `ARC1_CACHE=auto` (the default):
 
 - **stdio transport** — uses in-memory cache. No files created, no persistence. The cache dies with the process.
-- **http-streamable transport** — uses SQLite. The database file is created at the path specified by `ARC1_CACHE_FILE`.
+- **http-streamable transport** — also uses in-memory cache. No SQLite database is created unless `ARC1_CACHE=sqlite` is set explicitly.
 
 To disable caching entirely, set `ARC1_CACHE=none`. (Disables source caching, dep-graph caching, and the inactive-list session cache.)
 
@@ -177,12 +177,12 @@ If the source-cache layer holds an entry for an object that has been deleted ext
 
 | Aspect | stdio (Claude Desktop) | http-streamable (server) | Docker + warmup |
 |--------|----------------------|------------------------|-----------------|
-| **Backend** | Memory | SQLite | SQLite |
-| **Persistence** | None (session-scoped) | Across restarts | Across restarts |
-| **Config needed** | None (zero config) | None (auto-detects) | `ARC1_CACHE_WARMUP=true` |
-| **First request** | Always cold | Warm after first session | Pre-warmed on startup |
+| **Backend** | Memory | Memory | SQLite |
+| **Persistence** | None (session-scoped) | None (process-scoped) | Across restarts |
+| **Config needed** | None (zero config) | None (zero config) | `ARC1_CACHE=sqlite` + `ARC1_CACHE_WARMUP=true` |
+| **First request** | Always cold | Cold after restart | Pre-warmed on startup |
 | **Reverse deps** | Not available | Not available | Available (`SAPContext(action="usages")`) |
-| **Multi-user** | N/A (single user) | Shared cache | Shared cache |
+| **Multi-user** | N/A (single user) | Shared in-process cache | Shared persistent cache |
 | **Inactive lists** | Per-user, in-memory | Per-user, in-memory (PP-aware) | Per-user, in-memory (PP-aware) |
 | **Typical setup** | `npx arc-1` | `arc-1 --transport http-streamable` | See Docker section below |
 
@@ -208,7 +208,7 @@ No configuration required. The memory cache eliminates duplicate fetches within 
 
 ### http-streamable (server)
 
-SQLite cache is selected automatically. The database persists across server restarts, so the second session benefits from the first session's fetches. With Principal Propagation, each user has their own inactive-list view; the source/dep-graph cache is shared because content is per-object, not per-user.
+The default cache is in-memory. It avoids writing SAP source to disk and still deduplicates repeated reads while the server process is running. With Principal Propagation, each user has their own inactive-list view; the source/dep-graph cache is shared in-process because content is per-object, not per-user.
 
 ```bash
 arc-1 --transport http-streamable \
@@ -217,9 +217,11 @@ arc-1 --transport http-streamable \
       --password secret
 ```
 
+For a persistent cache across restarts, set `ARC1_CACHE=sqlite` and place `ARC1_CACHE_FILE` on storage that matches your IP-handling requirements. SQLite stores full ABAP source bodies in cleartext.
+
 ### Docker with warmup
 
-Full-strength caching with pre-indexed dependency graph and reverse lookup support.
+Full-strength persistent caching with pre-indexed dependency graph and reverse lookup support. This mode is explicit opt-in because SQLite stores full ABAP source bodies in cleartext.
 
 ```bash
 docker run -d \
@@ -227,6 +229,7 @@ docker run -d \
   -e SAP_USER=developer \
   -e SAP_PASSWORD=secret \
   -e SAP_TRANSPORT=http-streamable \
+  -e ARC1_CACHE=sqlite \
   -e ARC1_CACHE_WARMUP=true \
   -e ARC1_CACHE_WARMUP_PACKAGES="Z*,Y*" \
   -v arc1-cache:/app/cache \
@@ -292,6 +295,7 @@ Alternatively, mount the SQLite database on a persistent volume so that restarts
 ```bash
 docker run -d --name arc1 \
   -v arc1-cache:/app/cache \
+  -e ARC1_CACHE=sqlite \
   -e ARC1_CACHE_FILE=/app/cache/arc1.db \
   -e ARC1_CACHE_WARMUP=true \
   -e ARC1_CACHE_WARMUP_PACKAGES="Z*" \

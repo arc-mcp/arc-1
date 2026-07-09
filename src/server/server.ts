@@ -824,14 +824,17 @@ export function createServer(
  * memory-cache or no-cache mode even when better-sqlite3 is not installed
  * (e.g. cross-platform deploys where native binaries were compiled elsewhere).
  */
-async function createCachingLayer(config: ServerConfig): Promise<CachingLayer | undefined> {
+export async function createCachingLayer(config: ServerConfig): Promise<CachingLayer | undefined> {
   const mode = config.cacheMode;
 
   if (mode === 'none') return undefined;
 
   let cache: Cache;
-  if (mode === 'sqlite' || (mode === 'auto' && config.transport === 'http-streamable')) {
-    // Persistent cache for http-streamable / Docker — load dynamically
+  if (mode === 'sqlite') {
+    logger.warn(
+      'ARC1_CACHE=sqlite stores SAP source in plaintext at rest; use ARC1_CACHE=memory/none or encrypted storage for IP-sensitive landscapes.',
+    );
+    // Persistent cache is explicit opt-in because SQLite stores full source bodies.
     try {
       const { SqliteCache } = await import('../cache/sqlite.js');
       cache = new SqliteCache(config.cacheFile);
@@ -842,7 +845,7 @@ async function createCachingLayer(config: ServerConfig): Promise<CachingLayer | 
       cache = new MemoryCache();
     }
   } else {
-    // Memory cache for stdio (default)
+    // Memory cache for auto/default and explicit memory mode. Avoids source-at-rest by default.
     cache = new MemoryCache();
   }
 

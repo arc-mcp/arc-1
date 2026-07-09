@@ -2,7 +2,7 @@
  * SQLite cache implementation using better-sqlite3.
  *
  * Persistent cache — survives process restarts.
- * Default backend for http-streamable transport and Docker deployments.
+ * Explicit opt-in backend for persistent cache across restarts.
  * Uses WAL mode for concurrent read performance.
  * better-sqlite3 is synchronous, which is actually faster than async
  * alternatives for single-process use (no Promise overhead).

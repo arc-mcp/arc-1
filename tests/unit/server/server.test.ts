@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { AdtApiError } from '../../../src/adt/errors.js';
 import { AdtHttpClient } from '../../../src/adt/http.js';
 import type { ResolvedFeatures } from '../../../src/adt/types.js';
+import { MemoryCache } from '../../../src/cache/memory.js';
 import { getToolRegistry } from '../../../src/handlers/dispatch.js';
 import { resetCachedFeatures, setCachedFeatures } from '../../../src/handlers/feature-cache.js';
 import { getToolDefinitions } from '../../../src/handlers/tools.js';
@@ -17,6 +18,7 @@ import { logger } from '../../../src/server/logger.js';
 import { registerPluginTool } from '../../../src/server/plugin-loader.js';
 import {
   buildAdtConfig,
+  createCachingLayer,
   createServer,
   filterToolsByAuthScope,
   formatStartupAuthPreflightToolError,
@@ -210,6 +212,49 @@ describe('MCP Server', () => {
       resolvedNullableOptionals: false,
     });
     infoSpy.mockRestore();
+  });
+});
+
+describe('createCachingLayer', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('uses memory cache for auto mode on http-streamable without creating a SQLite file', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'arc1-cache-auto-'));
+    const dbPath = join(dir, 'arc1-cache.db');
+    try {
+      const layer = await createCachingLayer({
+        ...DEFAULT_CONFIG,
+        cacheMode: 'auto',
+        transport: 'http-streamable',
+        cacheFile: dbPath,
+      });
+
+      expect(layer?.cache).toBeInstanceOf(MemoryCache);
+      expect(existsSync(dbPath)).toBe(false);
+      layer?.cache.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('warns when persistent SQLite cache is explicitly enabled', async () => {
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const dir = mkdtempSync(join(tmpdir(), 'arc1-cache-sqlite-'));
+    const dbPath = join(dir, 'arc1-cache.db');
+    try {
+      const layer = await createCachingLayer({
+        ...DEFAULT_CONFIG,
+        cacheMode: 'sqlite',
+        cacheFile: dbPath,
+      });
+
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('stores SAP source in plaintext at rest'));
+      layer?.cache.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
