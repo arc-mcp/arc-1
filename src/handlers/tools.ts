@@ -174,7 +174,7 @@ const SAPCONTEXT_DESC_BTP =
 // ─── SAPQuery ───────────────────────────────────────────────────────
 
 const SAPQUERY_DIALECT_GUIDE =
-  'ADT freestyle ABAP SQL: one read-only SELECT; use AS aliases, alias~field/alias~*, ASCENDING/DESCENDING, single-quoted inline literals (no @/:/? parameters), and maxRows (not TOP/LIMIT/OFFSET/FETCH). JOINs, GROUP BY, aggregates, UNION, and subqueries work; schema prefixes, CTEs, derived tables, window functions, FULL JOIN, INTERSECT/EXCEPT, comments, and semicolons do not. ARC-1 auto-chunks long literal IN-lists. ';
+  'ADT freestyle ABAP SQL: one read-only SELECT; use AS aliases, alias~field/alias~*, ASCENDING/DESCENDING, single-quoted inline literals (no @/:/? parameters), and maxRows (not TOP/LIMIT/OFFSET/FETCH). JOINs, GROUP BY, aggregates, UNION, and subqueries work; schema prefixes, CTEs, derived tables, window functions, FULL JOIN, INTERSECT/EXCEPT, comments, and semicolons do not. ARC-1 auto-chunks long literal IN-lists in plain projection SELECTs. ';
 
 const SAPQUERY_DESC_ONPREM =
   'Execute ABAP SQL queries against SAP tables. Returns columns + rows. Good for reverse-engineering metadata tables (DD02L, DD03L, TADIR, TFDIR, SWOTLV). Unknown tables get name suggestions. ' +

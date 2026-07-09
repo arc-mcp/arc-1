@@ -90,7 +90,7 @@ Release note: the exact wording of the over-long-literal error varies by backend
 1. **Two-tier token economy.** The tool description is re-sent every conversation (`tools/list`), so it carries only the highest-leverage rules that prevent first-attempt failures; detailed recovery lives in error hints that are emitted only when a query 400s. The description token ratchet (`scripts/ci/check-tool-schema-budget.ts`) has ample headroom and this change is ~token-neutral — it replaces a wrong sentence with a correct one of similar length; the budget test (`tests/unit/scripts/check-tool-schema-budget.test.ts`) confirms.
 2. **Correct the ORDER BY fact.** The freestyle parser rejects BOTH `ASC` and `DESC`; the fix is the ABAP keywords `ASCENDING`/`DESCENDING` (live-verified). Any text that says "ascending-only / sort client-side" is wrong and must be replaced.
 3. **JOINs are supported.** Never tell the LLM (in description, hint, or docs) that JOINs must be split. The historical "SAP Note 3605050 / staged single-table queries" advice is removed — Note 3605050 is about ABAP keywords in field names, unrelated to JOINs.
-4. **Chunking must preserve query semantics (Codex P1/P2).** `runChunkedSapQuery()` concatenates and row-caps chunk results with no global reduction/sort/dedup, so chunking is valid ONLY for a plain projection SELECT: bail (send whole) on `GROUP BY`/`HAVING`/`DISTINCT`/`UNION`/aggregate/`ORDER BY`. This guard also fixes a pre-existing latent bug in today's single-`IN` chunker (which chunks such queries and returns partial counts / per-chunk-sorted rows). Dedup the selected list's literals (order-preserving) before partitioning so a repeated literal across a chunk boundary can't duplicate rows. Chunk only a **literal** `IN`-list. Single-`IN` behavior for plain SELECTs stays byte-identical (regression-guarded). Consequence: an ordered/aggregated long-`IN` query (including the reporter's `… ORDER BY matnr, spras`) is NOT auto-chunked — the error hint (Task 2) guides the LLM to split and re-sort it.
+4. **Chunking must preserve query semantics (Codex P1/P2).** `runChunkedSapQuery()` concatenates and row-caps chunk results with no global reduction/sort/dedup, so chunking is valid ONLY for a plain projection SELECT: bail (send whole) on `SELECT SINGLE`, `UP TO n ROWS`, `GROUP BY`/`HAVING`/`DISTINCT`/`UNION`/aggregate/`ORDER BY`. This guard also fixes a pre-existing latent bug in today's single-`IN` chunker (which chunks such queries and returns partial counts / per-chunk-sorted rows). Dedup the selected list's literals (order-preserving) before partitioning so a repeated literal across a chunk boundary can't duplicate rows. Chunk only a **literal** `IN`-list. Single-`IN` behavior for plain SELECTs stays byte-identical (regression-guarded). Consequence: an ordered/aggregated long-`IN` query (including the reporter's `… ORDER BY matnr, spras`) is NOT auto-chunked — the error hint (Task 2) guides the LLM to split and re-sort it.
 5. **Scope boundaries.** No new env vars, config flags, tool params, or ADT endpoints. `SAPQuery`'s scope/safety gates and the `TABLE_QUERY`/`buildTableQuerySql` structured path are out of scope. Read behavior of every other tool is unchanged.
 
 ## Development Approach
@@ -185,8 +185,9 @@ while holding all other clauses constant.
 
 **Semantics guard (Codex P1 — also fixes a pre-existing bug).** `runChunkedSapQuery()` (same file) merely
 runs each chunk statement and concatenates the rows up to `maxRows` — it performs no global reduction,
-sort, or dedup. So chunking is only valid for a **plain projection SELECT**. A query that has `GROUP BY`,
-`HAVING`, `DISTINCT`, `UNION`, an aggregate (`COUNT(`/`SUM(`/`AVG(`/`MIN(`/`MAX(`), or `ORDER BY` would
+sort, or dedup. So chunking is only valid for a **plain projection SELECT**. A query that has `SELECT SINGLE`,
+`UP TO n ROWS`, `GROUP BY`, `HAVING`, `DISTINCT`, `UNION`, an aggregate
+(`COUNT(`/`SUM(`/`AVG(`/`MIN(`/`MAX(`/`STRING_AGG(`), or `ORDER BY` would
 return partial-per-chunk results (e.g. two partial `COUNT`s instead of one total, or rows sorted only
 within each chunk). The current single-`IN` chunker has this latent bug today; this task fixes it for both
 single- and multi-`IN` by adding the guard to the shared planner. Keep the existing `;`-guard and
@@ -194,8 +195,9 @@ single- and multi-`IN` by adding the guard to the shared planner. Keep the exist
 
 - [x] Add the semantics guard early in `planSimpleInListChunking()`, on the **masked** SQL (so a keyword
       inside a string literal can't trigger it): `return undefined` if `maskedSql` matches any of
-      `/\bGROUP\s+BY\b/i`, `/\bHAVING\b/i`, `/\bORDER\s+BY\b/i`, `/\bUNION\b/i`, `/\bDISTINCT\b/i`, or
-      `/\b(?:COUNT|SUM|AVG|MIN|MAX)\s*\(/i`. This applies to the single-`IN` path too — it is the pre-existing
+      `/\bSELECT\s+SINGLE\b/i`, `/\bUP\s+TO\s+\d+\s+ROWS?\b/i`, `/\bGROUP\s+BY\b/i`, `/\bHAVING\b/i`,
+      `/\bORDER\s+BY\b/i`, `/\bUNION\b/i`, `/\bDISTINCT\b/i`, or
+      `/\b(?:COUNT|SUM|AVG|MIN|MAX|STRING_AGG)\s*\(/i`. This applies to the single-`IN` path too — it is the pre-existing
       bug fix, not just a multi-`IN` gate.
 - [x] Replace the single-match logic with multi-match selection. For each `field IN (` match from
       `[...maskedSql.matchAll(/\b[A-Za-z_][A-Za-z0-9_~.]*\s+IN\s*\(/gi)]`:
@@ -266,7 +268,7 @@ release caveat (over-long-literal wording varies by backend) explicitly rather t
 ### Task 5: Final verification
 
 - [x] Run full test suite: `npm test` — all tests pass.
-- [x] Run typecheck: `npm run typecheck` — no errors introduced by this change (note: a pre-existing `src/server/server.ts` `samlAssertionAuthorization` error is unrelated to this plan; confirm the count/lines are unchanged, do not fix it here).
+- [x] Run typecheck: `npm run typecheck` — passes cleanly.
 - [x] Run lint: `npm run lint` — no errors.
 - [x] Grep guard: `grep -rn "3605050\|staged single-table\|split into staged\|ascending-only" src/` returns nothing (all wrong guidance removed from code).
 - [x] Confirm `git diff tests/fixtures/tool-definitions/` is limited to the SAPQuery description text.
