@@ -837,9 +837,9 @@ describe('destinationPpHint', () => {
 });
 
 describe('extractUnknownColumn / formatUnknownColumnHint (FEAT-64)', () => {
-  // Real data-preview error wire shape, live-captured on a4h 758 + a4h-2025 816 (EN AND DE). The
-  // offending column is the quoted token in T100KEY-V1; the prose is localized but the T100 id+number
-  // (ADT_DATAPREVIEW_MSG/004) is language-stable. Extraction is anchored on the id, not the prose.
+  // Real data-preview error wire shape, live-captured on a4h 758 + a4h-2025 816 (EN AND DE).
+  // ADT_DATAPREVIEW_MSG/004 is language-stable but is a generic parser bucket, not an
+  // unknown-column discriminator; the verified message form must match too.
   const dataPreviewErr = (msgNo: string, prose: string) =>
     new AdtApiError(
       'boom',
@@ -858,9 +858,25 @@ describe('extractUnknownColumn / formatUnknownColumnHint (FEAT-64)', () => {
     expect(extractUnknownColumn(unknownColErr('Unknown column name "My_Col/2".'))).toBe('My_Col/2');
   });
 
-  it('is LANGUAGE-INDEPENDENT — extracts the column from the localized DE message (regression for #502 review)', () => {
-    // Live DE shape (sap-language=DE): same id/number, German prose, column still quoted.
+  it('extracts the column from the live DE unknown-column message', () => {
     expect(extractUnknownColumn(unknownColErr('Unbekannter Spaltenname "NOSUCHCOL".'))).toBe('NOSUCHCOL');
+  });
+
+  it.each([
+    '"DESC" is not allowed here. "." is expected.',
+    '"DESC" ist hier nicht erlaubt. Es wurde ein "." erwartet.',
+    '"LIMIT" is invalid here (due to grammar).',
+    '"LIMIT" ist grammatikalisch hier nicht erlaubt.',
+    'The column name or association "TABNAME" is ambiguous, which means it occurs in multiple tables.',
+    'Der Spaltenname oder die Assoziation "TABNAME" ist zweideutig, d.h. kommt in mehreren Tabellen vor.',
+    'A Boolean expression was expected in "MANDT".',
+    'The variable "NULL" must be escaped using "@".',
+  ])('does not misclassify another live message-004 parser error: %s', (message) => {
+    expect(extractUnknownColumn(unknownColErr(message))).toBeNull();
+  });
+
+  it('fails closed for an unverified localized unknown-column message', () => {
+    expect(extractUnknownColumn(unknownColErr('Nombre de columna desconocido "NOSUCHCOL".'))).toBeNull();
   });
 
   it('does NOT fire on the missing-table error (same class, number 022)', () => {

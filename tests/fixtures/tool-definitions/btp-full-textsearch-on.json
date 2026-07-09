@@ -926,7 +926,7 @@
   },
   {
     "name": "SAPQuery",
-    "description": "Execute ABAP SQL queries (BTP ABAP Environment). Returns structured data with column names and rows. IMPORTANT: On BTP, only custom Z/Y tables and released CDS entities can be queried. SAP standard tables (MARA, VBAK, DD02L, DD03L, TADIR, etc.) are blocked. Use released CDS views instead: I_LANGUAGE, I_COUNTRY, I_CURRENCY, I_UnitOfMeasure, etc. If a table is not found, similar table names will be suggested automatically.",
+    "description": "Execute ABAP SQL queries (BTP ABAP Environment). Returns structured data with column names and rows. ADT freestyle ABAP SQL: one read-only SELECT; use AS aliases, alias~field/alias~*, ASCENDING/DESCENDING, single-quoted inline literals (no @/:/? parameters), and maxRows (not TOP/LIMIT/OFFSET/FETCH). JOINs, GROUP BY, aggregates, UNION, and subqueries work; schema prefixes, CTEs, derived tables, window functions, FULL JOIN, INTERSECT/EXCEPT, comments, and semicolons do not. ARC-1 auto-chunks long literal IN-lists. IMPORTANT: On BTP, only custom Z/Y tables and released CDS entities can be queried. SAP standard tables (MARA, VBAK, DD02L, DD03L, TADIR, etc.) are blocked. Use released CDS views instead: I_LANGUAGE, I_COUNTRY, I_CURRENCY, I_UnitOfMeasure, etc. If a table is not found, similar table names will be suggested automatically.",
     "inputSchema": {
       "type": "object",
       "properties": {

@@ -611,7 +611,6 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
         sql: 'SELECT a~field1, b~field2 FROM ztable1 AS a INNER JOIN ztable2 AS b ON a~id = b~id INTO TABLE @DATA(lt_result)',
       });
       expect(result.isError).toBe(true);
-      expect(result.content[0]?.text).toContain('ADT freestyle SQL parser rejected this query');
       expect(result.content[0]?.text).toContain('Remove ABAP target clauses');
       expect(result.content[0]?.text).toContain('maxRows parameter');
       expect(result.content[0]?.text).not.toContain('tilde'); // no dot present → no tilde hint
@@ -675,9 +674,8 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
         sql: 'SELECT * FROM ztable1; SELECT * FROM ztable2',
       });
       expect(result.isError).toBe(true);
-      expect(result.content[0]?.text).toContain('ADT freestyle SQL parser rejected this query');
-      expect(result.content[0]?.text).toContain('exactly one SELECT statement');
-      expect(result.content[0]?.text).toContain('Remove ABAP target clauses');
+      expect(result.content[0]?.text).toContain('exactly one SELECT');
+      expect(result.content[0]?.text).toContain('without a trailing semicolon');
       expect(result.content[0]?.text).not.toContain('SAP Note 3605050');
     });
 

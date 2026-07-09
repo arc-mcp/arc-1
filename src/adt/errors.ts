@@ -993,23 +993,25 @@ export function isSessionExpiredError(err: unknown): boolean {
 }
 
 /**
- * Extract the offending column from an "unknown column name" data-preview / freestyle error, else
- * null. Anchored on the LANGUAGE-STABLE T100 message id, not localized prose: the failure is class
- * `ADT_DATAPREVIEW_MSG` number `004` on every release/logon language (live-verified 7.58 + 8.16, EN
- * AND DE — under DE the prose is "Unbekannter Spaltenname"). The column is always the quoted token in
- * `T100KEY-V1` regardless of language. Missing-table is the same class but number `022`, so the number
- * guards against that false positive. (ADR-0002: anchor on the message id, never the prose.) Used to
- * self-correct unknown-column queries with the table's real column list (see `formatUnknownColumnHint`).
+ * Extract the offending column from a verified unknown-column data-preview error, else null.
+ *
+ * Live testing on 7.58/8.16 showed that `ADT_DATAPREVIEW_MSG` number `004` is a generic parser bucket:
+ * DESC/LIMIT grammar failures and ambiguous join columns use it too. The id+number remain a required
+ * structural gate, but are not sufficient to justify replacing SAP's message with an unknown-column
+ * hint. We additionally accept only the live-verified EN/DE unknown-column forms. Unknown languages
+ * deliberately fall back to SAP's original error rather than risk confidently wrong remediation.
  */
 export function extractUnknownColumn(err: unknown): string | null {
   if (!(err instanceof AdtApiError)) return null;
   const body = err.responseBody ?? '';
-  if (!body.includes('ADT_DATAPREVIEW_MSG') || !/<entry key="T100KEY-NO">0*4<\/entry>/.test(body)) {
+  const properties = AdtApiError.extractProperties(body);
+  if (properties['T100KEY-ID'] !== 'ADT_DATAPREVIEW_MSG' || !/^0*4$/.test(properties['T100KEY-NO'] ?? '')) {
     return null;
   }
-  const v1 = body.match(/<entry key="T100KEY-V1">([^<]*)<\/entry>/);
-  const col = v1?.[1]?.match(/"([A-Za-z0-9_/]+)"/);
-  return col ? col[1]! : null;
+
+  const message = properties['T100KEY-V1'] ?? '';
+  const unknownColumn = message.match(/^(?:Unknown column name|Unbekannter Spaltenname)\s+"([A-Za-z0-9_/$]+)"/i);
+  return unknownColumn?.[1] ?? null;
 }
 
 /** Render the self-correcting hint listing a table's actual columns. */

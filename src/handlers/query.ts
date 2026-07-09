@@ -5,70 +5,8 @@
 import type { AdtClient } from '../adt/client.js';
 import { AdtApiError, extractUnknownColumn, formatUnknownColumnHint } from '../adt/errors.js';
 import type { DataPreviewMeta } from '../adt/xml-parser.js';
-import { errorResult, hasSqlParserSignature, type ToolResult, textResult } from './shared.js';
-
-function classifySapQueryParserError(err: AdtApiError, sql: string, chunkingAttempted = false): string | undefined {
-  if (err.statusCode !== 400) return undefined;
-
-  const combined = `${err.message}\n${err.responseBody ?? ''}`;
-  const maskedSql = maskSqlStringLiterals(sql);
-
-  // The freestyle parser expects the ABAP direction keywords ASCENDING/DESCENDING, not SQL's ASC/DESC.
-  // Detect before the generic signature gate because "is not allowed here" is not a generic signature.
-  if (/\bORDER\s+BY\b[\s\S]*\b(?:ASC|DESC)\b/i.test(maskedSql) && /\bis not allowed here\b/i.test(combined)) {
-    return (
-      `${err.message}\n\nHint: Use the ABAP Open SQL sort keywords ASCENDING or DESCENDING, ` +
-      `not the SQL abbreviations ASC or DESC.`
-    );
-  }
-
-  // "The text literal … is longer than 255 characters" — some backends mis-parse a long IN-list as one
-  // unterminated literal (the message may show it running into the endpoint's internal "INTO TABLE" wrapper).
-  // Verified: the query shape itself is valid (executes on 758); this is a backend parser limit.
-  if (/longer than 255 characters/i.test(combined)) {
-    const automaticChunking = chunkingAttempted
-      ? 'ARC-1 already chunked the longest literal IN-list in this plain SELECT, but this backend rejected a chunk; reduce the batches further.'
-      : 'ARC-1 auto-chunks the longest literal IN-list of plain SELECTs, including queries with multiple IN-clauses. It sends ORDER BY, GROUP BY, DISTINCT, and aggregate queries whole to preserve semantics, so split those manually.';
-    return (
-      `${err.message}\n\nHint: A text literal was parsed as >255 chars — typically a long IN-list this backend ` +
-      `mis-read as one literal. Split the largest IN-list into smaller batches (~5–8 values each) and union the ` +
-      `results; re-sort client-side if the query is ordered. ${automaticChunking}`
-    );
-  }
-
-  if (!hasSqlParserSignature(combined)) return undefined;
-
-  // #1 real cause of "Only one SELECT statement is allowed": native-SQL dot field access
-  // (alias.field). The freestyle console parses ABAP Open SQL, which separates alias and
-  // field with a tilde; a '.' reads as the ABAP statement terminator, so SAP thinks a second
-  // statement began. Mask string literals first so a quoted dot can't false-match; the letter-
-  // after-dot requirement excludes numeric literals like 100.50. Live-verified on 758: JOIN +
-  // WHERE + ORDER BY all execute once dots become tildes (JOINs are NOT the problem).
-  const dot = maskedSql.match(/\b[A-Za-z_]\w*\.[A-Za-z_]\w*/);
-  if (dot) {
-    const fixed = dot[0].replace('.', '~');
-    return (
-      `${err.message}\n\nHint: Use a tilde for Open SQL field access, not a dot — write "${fixed}", ` +
-      `not "${dot[0]}". The freestyle console parses ABAP Open SQL, where "." ends the statement (hence ` +
-      `"only one SELECT is allowed"). Replace every "alias.field" with "alias~field"; JOINs, WHERE, and ORDER BY all work then.`
-    );
-  }
-
-  const hints = [
-    'ADT freestyle SQL parser rejected this query on this backend/version.',
-    'Submit exactly one SELECT statement (no semicolons, no multi-statement scripts).',
-    'Remove ABAP target clauses from SQL text (INTO, APPENDING, PACKAGE SIZE).',
-  ];
-
-  if (/\bINTO\b|\bAPPENDING\b|\bPACKAGE\s+SIZE\b/i.test(sql)) {
-    hints.push('Use the MCP maxRows parameter for row limits instead of ABAP target-table clauses.');
-  }
-
-  const chunkRetry = chunkingAttempted
-    ? '\nARC-1 already split the longest literal IN-list into smaller ADT freestyle queries; this backend still rejected one chunk. Reduce the query further or split the list into smaller batches.'
-    : '';
-  return `${err.message}\n\nHint: ${hints.join(' ')}${chunkRetry}`;
-}
+import { classifySapQueryParserError, maskSqlStringLiterals } from './query-errors.js';
+import { errorResult, type ToolResult, textResult } from './shared.js';
 
 const SAPQUERY_IN_LIST_CHUNK_SIZE = 8;
 
@@ -123,28 +61,6 @@ function planSimpleInListChunking(
   }
 
   return { statements };
-}
-
-function maskSqlStringLiterals(sql: string): string {
-  let masked = '';
-  let inString = false;
-
-  for (let i = 0; i < sql.length; i++) {
-    const ch = sql[i]!;
-    if (ch === "'") {
-      if (inString && sql[i + 1] === "'") {
-        masked += '  ';
-        i++;
-        continue;
-      }
-      inString = !inString;
-      masked += ' ';
-      continue;
-    }
-    masked += inString ? ' ' : ch;
-  }
-
-  return masked;
 }
 
 function countSelectKeywords(maskedSql: string): number {
@@ -272,6 +188,12 @@ export async function handleSAPQuery(client: AdtClient, args: Record<string, unk
       }
     }
     if (err instanceof AdtApiError) {
+      // Dialect mistakes must win over column enrichment. SAP reuses data-preview message 004
+      // for many grammar errors, so treating it as an unknown column first produces false advice
+      // such as `Unknown column "DESC"` and hides the actionable correction.
+      const parserHint = classifySapQueryParserError(err, sql, chunkingAttempted);
+      if (parserHint) return errorResult(parserHint);
+
       // Self-correct an unknown-column error by listing the table's real columns (best-effort).
       const badColumn = extractUnknownColumn(err);
       if (badColumn) {
@@ -286,8 +208,6 @@ export async function handleSAPQuery(client: AdtClient, args: Record<string, unk
           }
         }
       }
-      const parserHint = classifySapQueryParserError(err, sql, chunkingAttempted);
-      if (parserHint) return errorResult(parserHint);
     }
     throw err;
   }
