@@ -735,6 +735,7 @@ export const SAPDiagnoseSchema = z.object({
     'sql_trace_state',
     'set_sql_trace_state',
     'sql_trace_directory',
+    'authorization_trace',
   ]),
   name: z.string().optional(),
   url: z.string().optional(),
@@ -752,6 +753,7 @@ export const SAPDiagnoseSchema = z.object({
   detailUrl: z.string().optional(),
   errorType: z.string().optional(),
   user: z.string().optional(),
+  authObject: z.string().optional(),
   from: z.string().optional(),
   to: z.string().optional(),
   maxResults: z.coerce.number().optional(),
@@ -759,6 +761,7 @@ export const SAPDiagnoseSchema = z.object({
   includeFullText: looseOptionalBoolean,
   coverage: looseOptionalBoolean,
   sqlOn: looseOptionalBoolean,
+  onlyFailures: looseOptionalBoolean,
   analysis: z.enum(['hitlist', 'statements', 'dbAccesses']).optional(),
   // trace_start / trace_requests (arm a profiler trace, then read it back via action="traces")
   traceUser: z.string().optional(),

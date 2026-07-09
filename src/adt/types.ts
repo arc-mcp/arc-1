@@ -514,6 +514,34 @@ export interface TableField {
 
 // ─── Runtime Diagnostics Types ──────────────────────────────────────
 
+/** One authorization check recorded by the long-term STUSERTRACE trace. */
+export interface AuthTraceEntry {
+  user: string;
+  application: string;
+  authObject: string;
+  rc: number;
+  result: string;
+  /** Checked authorization field values, decoded through TOBJ when metadata is available. */
+  fields: Record<string, string>;
+  /** ABAP program and line in `PROGRAM:LINE` form, or empty when the trace omitted it. */
+  codeLocation: string;
+  /** UTC ISO-8601 timestamp derived from FIRSTCALL, or empty when it cannot be parsed. */
+  firstSeen: string;
+}
+
+/** Result returned by SAPDiagnose action=authorization_trace. */
+export interface AuthorizationTraceResult {
+  trace: string;
+  filters: {
+    user: string | null;
+    authObject: string | null;
+    onlyFailures: boolean;
+  };
+  count: number;
+  entries: AuthTraceEntry[];
+  note?: string;
+}
+
 /** Source version metadata captured by object_state diagnostics */
 export interface ObjectStateSourceVersion {
   /** Whether this source version was available at the ADT endpoint */

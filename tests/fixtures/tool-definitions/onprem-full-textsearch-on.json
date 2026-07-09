@@ -1032,7 +1032,7 @@
   },
   {
     "name": "SAPDiagnose",
-    "description": "Run diagnostics on ABAP objects and analyze runtime errors. Actions:\n- \"syntax\": syntax-check (name+type; optional version; optional source = pre-write dry-run, nothing written).\n- \"unittest\": run ABAP Unit tests (name+type).\n- \"atc\": run ATC checks (name+type; optional variant).\n- \"cds_testcases\": SAP-suggested ABAP Unit test cases for a CDS entity (name; read-only; SAP_BASIS 8.16+).\n- \"object_state\": compare active and inactive source versions without fetching both (name+type; CLAS compares all includes). Returns ETags, hashes, divergence flags.\n- \"quickfix\": get quick-fix proposals at a position (name+type+source+line; optional column, sourceUri).\n- \"apply_quickfix\": apply one proposal, return text deltas, no write (name+type+source+line+proposalUri+proposalUserContent; pass proposalUserContent through exactly, may be empty).\n- \"dumps\": list/read ST22 short dumps (no id = list; id = read; includeFullText, sections).\n- \"traces\": list/analyze profiler traces (id+analysis: hitlist=hot spots, statements=call tree, dbAccesses=DB stats).\n- \"trace_start\": arm a profiler trace for the NEXT matching execution, then reproduce and read via \"traces\" (write scope; defaults: next HTTP request, SQL on; optional traceUser/processType/maxExecutions/expiresHours/sqlTrace/…).\n- \"trace_requests\": list armed trace requests. \"trace_cancel\": cancel one by id (write scope).\n- \"system_messages\": list SM02 messages. \"gateway_errors\": list /IWFND/ERROR_LOG (on-prem; detailUrl or id+errorType for detail).\n- \"odata_perf\": diagnose why an OData call is slow (url = host-relative path from the Network tab); returns the sap-statistics timing split (DB/ABAP/framework/auth) + a verdict. Read-only; needs allowDataPreview.\n- \"cds_sql\": show the native SQL a CDS view compiles to (name; read-only; may be absent on old releases).\n- \"sql_trace_state\" / \"set_sql_trace_state\" (sqlOn; needs SAP_ALLOW_WRITES) / \"sql_trace_directory\": ST05 SQL-trace control.\nQuickfix workflow: syntax/ATC → quickfix → apply_quickfix → write via SAPWrite. Full action reference: docs_page SAPDiagnose.",
+    "description": "Run diagnostics on ABAP objects and analyze runtime errors. Actions:\n- \"syntax\": syntax-check (name+type; optional version; optional source = pre-write dry-run, nothing written).\n- \"unittest\": run ABAP Unit tests (name+type).\n- \"atc\": run ATC checks (name+type; optional variant).\n- \"cds_testcases\": SAP-suggested ABAP Unit test cases for a CDS entity (name; read-only; SAP_BASIS 8.16+).\n- \"object_state\": compare active and inactive source versions without fetching both (name+type; CLAS compares all includes). Returns ETags, hashes, divergence flags.\n- \"quickfix\": get quick-fix proposals at a position (name+type+source+line; optional column, sourceUri).\n- \"apply_quickfix\": apply one proposal, return text deltas, no write (name+type+source+line+proposalUri+proposalUserContent; pass proposalUserContent through exactly, may be empty).\n- \"dumps\": list/read ST22 short dumps (no id = list; id = read; includeFullText, sections).\n- \"traces\": list/analyze profiler traces (id+analysis: hitlist=hot spots, statements=call tree, dbAccesses=DB stats).\n- \"trace_start\": arm a profiler trace for the NEXT matching execution, then reproduce and read via \"traces\" (write scope; defaults: next HTTP request, SQL on; optional traceUser/processType/maxExecutions/expiresHours/sqlTrace/…).\n- \"trace_requests\": list armed trace requests. \"trace_cancel\": cancel one by id (write scope).\n- \"system_messages\": list SM02 messages. \"gateway_errors\": list /IWFND/ERROR_LOG (on-prem; detailUrl or id+errorType for detail).\n- \"odata_perf\": diagnose why an OData call is slow (url = host-relative path from the Network tab); returns the sap-statistics timing split (DB/ABAP/framework/auth) + a verdict. Read-only; needs allowDataPreview.\n- \"authorization_trace\": read the on-prem STUSERTRACE authorization trace from SUAUTHVALTRC (optional user/authObject/onlyFailures/maxResults). Read-only; needs SAP_ALLOW_DATA_PREVIEW. Example: {\"action\":\"authorization_trace\",\"user\":\"AUTH_TEST\",\"onlyFailures\":true}.\n- \"cds_sql\": show the native SQL a CDS view compiles to (name; read-only; may be absent on old releases).\n- \"sql_trace_state\" / \"set_sql_trace_state\" (sqlOn; needs SAP_ALLOW_WRITES) / \"sql_trace_directory\": ST05 SQL-trace control.\nQuickfix workflow: syntax/ATC → quickfix → apply_quickfix → write via SAPWrite. Full action reference: docs_page SAPDiagnose.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1057,7 +1057,8 @@
             "cds_sql",
             "sql_trace_state",
             "set_sql_trace_state",
-            "sql_trace_directory"
+            "sql_trace_directory",
+            "authorization_trace"
           ],
           "description": "Diagnostic action"
         },
@@ -1155,7 +1156,11 @@
         },
         "user": {
           "type": "string",
-          "description": "Filter dumps by SAP user (for dumps action)"
+          "description": "SAP-user filter for dumps, feeds, or authorization_trace."
+        },
+        "authObject": {
+          "type": "string",
+          "description": "Authorization object filter, e.g. S_TCODE."
         },
         "from": {
           "type": "string",
@@ -1167,7 +1172,7 @@
         },
         "maxResults": {
           "type": "number",
-          "description": "Maximum results to return for dumps/system_messages/gateway_errors (default 50, bounded to a safe cap)."
+          "description": "Maximum results for dumps/system_messages/gateway_errors (default 50) or authorization_trace (default 100); bounded to a safe cap."
         },
         "sections": {
           "type": "array",
@@ -1187,6 +1192,10 @@
         "sqlOn": {
           "type": "boolean",
           "description": "For action=\"set_sql_trace_state\": true to arm the ST05 SQL trace, false to disarm. Combine with user to filter the trace to one SAP user."
+        },
+        "onlyFailures": {
+          "type": "boolean",
+          "description": "For authorization_trace: return only denied checks (RC<>0), similar to the SU53 failure view."
         },
         "analysis": {
           "type": "string",

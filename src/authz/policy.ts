@@ -152,6 +152,7 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   'SAPDiagnose.quickfix': { scope: 'read', opType: OperationType.Read },
   'SAPDiagnose.apply_quickfix': { scope: 'write', opType: OperationType.Update },
   'SAPDiagnose.odata_perf': { scope: 'data', opType: OperationType.Query },
+  'SAPDiagnose.authorization_trace': { scope: 'data', opType: OperationType.Query },
   'SAPDiagnose.cds_sql': { scope: 'read', opType: OperationType.Read },
   'SAPDiagnose.sql_trace_state': { scope: 'read', opType: OperationType.Read },
   'SAPDiagnose.set_sql_trace_state': { scope: 'write', opType: OperationType.Update },

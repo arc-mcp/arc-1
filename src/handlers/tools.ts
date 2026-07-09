@@ -1107,6 +1107,7 @@ export function getToolDefinitions(
         '- "trace_requests": list armed trace requests. "trace_cancel": cancel one by id (write scope).\n' +
         '- "system_messages": list SM02 messages. "gateway_errors": list /IWFND/ERROR_LOG (on-prem; detailUrl or id+errorType for detail).\n' +
         '- "odata_perf": diagnose why an OData call is slow (url = host-relative path from the Network tab); returns the sap-statistics timing split (DB/ABAP/framework/auth) + a verdict. Read-only; needs allowDataPreview.\n' +
+        '- "authorization_trace": read the on-prem STUSERTRACE authorization trace from SUAUTHVALTRC (optional user/authObject/onlyFailures/maxResults). Read-only; needs SAP_ALLOW_DATA_PREVIEW. Example: {"action":"authorization_trace","user":"AUTH_TEST","onlyFailures":true}.\n' +
         '- "cds_sql": show the native SQL a CDS view compiles to (name; read-only; may be absent on old releases).\n' +
         '- "sql_trace_state" / "set_sql_trace_state" (sqlOn; needs SAP_ALLOW_WRITES) / "sql_trace_directory": ST05 SQL-trace control.\n' +
         'Quickfix workflow: syntax/ATC → quickfix → apply_quickfix → write via SAPWrite. Full action reference: docs_page SAPDiagnose.',
@@ -1135,6 +1136,7 @@ export function getToolDefinitions(
               'sql_trace_state',
               'set_sql_trace_state',
               'sql_trace_directory',
+              'authorization_trace',
             ],
             description: 'Diagnostic action',
           },
@@ -1216,7 +1218,8 @@ export function getToolDefinitions(
             description:
               'Gateway error type for gateway_errors detail by id (for example "Frontend Error"). Required when using id without detailUrl.',
           },
-          user: { type: 'string', description: 'Filter dumps by SAP user (for dumps action)' },
+          user: { type: 'string', description: 'SAP-user filter for dumps, feeds, or authorization_trace.' },
+          authObject: { type: 'string', description: 'Authorization object filter, e.g. S_TCODE.' },
           from: {
             type: 'string',
             description:
@@ -1230,7 +1233,7 @@ export function getToolDefinitions(
           maxResults: {
             type: 'number',
             description:
-              'Maximum results to return for dumps/system_messages/gateway_errors (default 50, bounded to a safe cap).',
+              'Maximum results for dumps/system_messages/gateway_errors (default 50) or authorization_trace (default 100); bounded to a safe cap.',
           },
           sections: {
             type: 'array',
@@ -1252,6 +1255,11 @@ export function getToolDefinitions(
             type: 'boolean',
             description:
               'For action="set_sql_trace_state": true to arm the ST05 SQL trace, false to disarm. Combine with user to filter the trace to one SAP user.',
+          },
+          onlyFailures: {
+            type: 'boolean',
+            description:
+              'For authorization_trace: return only denied checks (RC<>0), similar to the SU53 failure view.',
           },
           analysis: {
             type: 'string',

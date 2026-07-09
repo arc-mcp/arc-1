@@ -92,7 +92,7 @@ The 12 tools are designed from real LLM interaction feedback:
 | **SAPGit** | Git-based ABAP workflows across gCTS and abapGit (list/clone/pull/push/commit/branch/unlink) with backend auto-selection and safety gating (`--allow-git-writes`) |
 | **SAPContext** | Context-first object understanding (`action="deps"`): prepends the object's KTD when available and returns compressed dependency contracts. Also supports reverse dependency lookup (`action="usages"`) and CDS upstream/downstream impact analysis (`action="impact"` for DDLS) |
 | **SAPLint** | Local ABAP lint (system/release-aware presets, auto-fix, pre-write validation) + ADT PrettyPrint (server-side formatting) |
-| **SAPDiagnose** | Syntax check, ABAP Unit tests, ATC code quality, CDS test-case suggestions, active/inactive object-state comparison, generic ADT quickfix proposals/application deltas, gateway/system message diagnostics, short dumps, and profiler traces |
+| **SAPDiagnose** | Syntax check, ABAP Unit tests, ATC code quality, CDS test-case suggestions, active/inactive object-state comparison, generic ADT quickfix proposals/application deltas, gateway/system message diagnostics, short dumps, profiler traces, and the on-prem authorization trace (`SUAUTHVALTRC`, data-preview gated) |
 | **SAPManage** | Feature probing, cache statistics, package lifecycle/change-package operations, and FLP catalog/group/tile helpers |
 
 Tool definitions automatically adapt to the target system (BTP vs on-premise), removing unavailable types and adjusting descriptions so the LLM never attempts unsupported operations.

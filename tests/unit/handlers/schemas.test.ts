@@ -1374,6 +1374,24 @@ describe('SAPLintSchema', () => {
 });
 
 describe('SAPDiagnoseSchema', () => {
+  it('accepts authorization_trace filters without inverting stringified false', () => {
+    const result = SAPDiagnoseSchema.safeParse({
+      action: 'authorization_trace',
+      user: 'AUTH_TEST',
+      authObject: '',
+      onlyFailures: 'false',
+      maxResults: '5',
+      type: 'CLAS',
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.onlyFailures).toBe(false);
+      expect(result.data.maxResults).toBe(5);
+      expect(result.data.authObject).toBe('');
+    }
+  });
+
   it('accepts syntax check', () => {
     const result = SAPDiagnoseSchema.safeParse({ action: 'syntax', name: 'ZTEST', type: 'PROG' });
     expect(result.success).toBe(true);
