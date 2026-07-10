@@ -115,7 +115,7 @@ export interface ServerConfig {
 
   // --- Principal Propagation (per-user SAP auth) ---
   ppEnabled: boolean;
-  ppStrict: boolean; // If true, PP failure = error (no fallback to shared client)
+  ppStrict: boolean; // Explicit true also rejects non-JWT calls; JWT PP failures always fail closed
   /** True only when SAP_PP_STRICT / --pp-strict was explicitly provided. */
   ppStrictExplicit: boolean;
   /** Opt-in: allow shared cookie auth to coexist with PP (shared client only) */

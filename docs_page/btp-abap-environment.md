@@ -559,7 +559,7 @@ Auth and connectivity failures are expected with free-tier instances. Assertion 
 
 ### Cross-subaccount principal propagation fails
 
-**Symptom:** Tool calls fail with `Principal propagation failed (SAP_PP_STRICT=true): Destination Service auth token error … Token header claim [kid] references unknown signing key` (or `Unable to map issuer: No identity provider found for issuer …`). MCP login itself works; only the SAP call fails, and the audit log shows `auth_pp_created` with `success:false`.
+**Symptom:** Tool calls fail with `Principal propagation failed: Destination Service auth token error … Token header claim [kid] references unknown signing key` (or `Unable to map issuer: No identity provider found for issuer …`). MCP login itself works; only the SAP call fails, and the audit log shows `auth_pp_created` with `success:false`.
 
 **Cause:** ARC-1 (its XSUAA) and the ABAP Environment are in **different BTP subaccounts**. `OAuth2UserTokenExchange` exchanges the MCP user's token at the ABAP env's XSUAA, but XSUAA tokens are subaccount-scoped — the ABAP env's XSUAA does not trust a signing key issued by another subaccount.
 

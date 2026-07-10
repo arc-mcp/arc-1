@@ -548,9 +548,9 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     config.ppStrictExplicit = true;
     sources.ppStrict = { env: 'SAP_PP_STRICT' };
   } else {
-    // Principal propagation should fail closed on JWT propagation failures by default.
-    // Non-JWT API-key/stdio requests keep using the shared client unless strict mode
-    // is explicitly enabled with SAP_PP_STRICT=true / --pp-strict true.
+    // JWT principal-propagation failures always fail closed. The derived default keeps
+    // non-JWT API-key/stdio requests on the shared client unless strict mode is explicitly
+    // enabled with SAP_PP_STRICT=true / --pp-strict true.
     config.ppStrict = config.ppEnabled;
     config.ppStrictExplicit = false;
     sources.ppStrict = 'default';

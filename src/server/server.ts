@@ -723,9 +723,25 @@ export function createServer(
     let isPerUserClient = false;
     const token = extra.authInfo?.token;
     const isJwt = token && token.split('.').length === 3;
-    if (config.ppEnabled && btpConfig && isJwt) {
+    if (config.ppEnabled && isJwt) {
       const ppUser = (extra.authInfo?.extra?.userName ?? extra.authInfo?.clientId) as string | undefined;
       const ppDest = process.env.SAP_BTP_PP_DESTINATION ?? process.env.SAP_BTP_DESTINATION ?? '';
+      if (!btpConfig) {
+        const errMsg = 'BTP runtime configuration is unavailable for principal propagation';
+        logger.emitAudit({
+          timestamp: new Date().toISOString(),
+          level: 'error',
+          event: 'auth_pp_created',
+          user: ppUser,
+          destination: ppDest,
+          success: false,
+          errorMessage: errMsg,
+        });
+        return {
+          content: [{ type: 'text' as const, text: `Principal propagation failed: ${errMsg}` }],
+          isError: true,
+        } as Record<string, unknown>;
+      }
       try {
         client = await createPerUserClient(config, btpConfig, btpProxy, token, adtSemaphore);
         isPerUserClient = true;
@@ -748,20 +764,17 @@ export function createServer(
           success: false,
           errorMessage: errMsg,
         });
-        if (config.ppStrict) {
-          // Strict mode: PP failure is a hard error — never fall back to shared client.
-          // This ensures every request runs with the authenticated user's identity.
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: `Principal propagation failed (SAP_PP_STRICT=true): ${errMsg}`,
-              },
-            ],
-            isError: true,
-          } as Record<string, unknown>;
-        }
-        // Fall back to shared client (service account)
+        // A JWT-authenticated request must never change SAP identity after a PP error.
+        // Non-JWT API-key requests still use the shared client through the branch below.
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Principal propagation failed: ${errMsg}`,
+            },
+          ],
+          isError: true,
+        } as Record<string, unknown>;
       }
     } else if (config.ppStrictExplicit && config.ppStrict && config.ppEnabled && !isJwt) {
       // Strict mode with non-JWT token (e.g., API key) — reject

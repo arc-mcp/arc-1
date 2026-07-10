@@ -38,7 +38,7 @@ This works for:
 - Direct network access to SAP (no Cloud Connector needed)
 - Testing and demos
 
-**Important:** With `SAP_PP_ENABLED=true`, ARC-1 fails closed by default when per-user PP fails. Setting `SAP_PP_STRICT=false` explicitly restores the hardcoded-credential or destination-service-account fallback for JWT PP failures. Per-user sessions never inherit shared Basic/cookie credentials — cookies combined with `SAP_PP_ENABLED=true` fail fast at startup unless the `SAP_PP_ALLOW_SHARED_COOKIES=true` escape hatch is set (SEC-09). See [Coexistence Matrix](enterprise-auth.md#coexistence-matrix).
+**Important:** With `SAP_PP_ENABLED=true`, ARC-1 always fails closed when JWT principal propagation fails. `SAP_PP_STRICT=false` retains shared-client access only for API-key / non-JWT requests; it never changes a failed JWT request to a shared identity. Per-user sessions never inherit shared Basic/cookie credentials — cookies combined with `SAP_PP_ENABLED=true` fail fast at startup unless the `SAP_PP_ALLOW_SHARED_COOKIES=true` escape hatch is set (SEC-09). See [Coexistence Matrix](enterprise-auth.md#coexistence-matrix).
 
 ---
 
@@ -134,7 +134,7 @@ The recommended approach uses **two destinations** — one for the shared servic
 | **Password** | `<password>` |
 | `sap-client` | `001` |
 
-This destination is resolved at startup and used for API key auth, non-JWT requests, and explicit `SAP_PP_STRICT=false` fallback when JWT PP fails.
+This destination is resolved at startup and used for API key auth and other non-JWT requests.
 
 **Destination 2: `SAP_TRIAL_PP` (PrincipalPropagation — per-user)**
 
@@ -334,19 +334,18 @@ env:
   SAP_XSUAA_AUTH: "true"
 ```
 
-### Step 5: Graceful Fallback
+### Step 5: Mixed Authentication
 
 When `SAP_PP_ENABLED=true`:
 - If the user has a valid JWT (XSUAA/OIDC, 3 dot-separated parts) → per-user ADT client via `SAP_BTP_PP_DESTINATION`
-- If PP fails (destination error, missing user mapping, etc.) → returns an error by default
-- If PP fails and `SAP_PP_STRICT=false` is set explicitly → falls back to shared service account via `SAP_BTP_DESTINATION`
+- If PP fails (destination error, missing user mapping, etc.) → returns an error without changing SAP identity
 - If no JWT available (API key auth, stdio) → uses shared service account
 - API key tokens are detected as non-JWT and skip PP entirely (no wasted API calls)
 
 This means you can enable PP without breaking existing API key users while still failing closed for JWT requests whose per-user session cannot be created.
 
-!!! warning "The PP fallback is a privilege-escalation path"
-    `SAP_PP_STRICT=false` routes PP failures through the shared service account in `SAP_BTP_DESTINATION`. The action then executes with the technical user's authorizations and is audited in SAP as that technical user, not the real caller. Keep this setting only for deployments that intentionally allow failed per-user requests to fall back to shared-client access.
+!!! warning "JWT principal propagation always fails closed"
+    A failed JWT PP lookup never routes through the shared service account in `SAP_BTP_DESTINATION`. `SAP_PP_STRICT=true` additionally rejects API-key / non-JWT requests when the deployment must be JWT-only.
 
 ### How ARC-1 Resolves PP Destinations
 
