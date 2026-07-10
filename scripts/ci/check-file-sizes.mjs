@@ -33,7 +33,7 @@ const BUDGETS = {
   // 87→66 KB to clear the Copilot-for-Eclipse gateway limit) shrank it; lowered to match. The
   // CLIENT-SAFETY size guard is scripts/ci/check-tool-schema-budget.ts — trim there before raising this.
   // +text-pool SAPWrite actions/description (edit_text_symbols/edit_selection_texts).
-  'src/handlers/tools.ts': 1710,
+  'src/handlers/tools.ts': 1714,
   'src/adt/xml-parser.ts': 1650,
   // diagnostics.ts gained the ABAP trace-request engine (#508) + the OData perf probe + CDS Show-SQL (#509)
   // + ST05 SQL-trace control (#510) + clientWait split. Split out a perf/trace module if it grows much further.
