@@ -224,6 +224,69 @@ curl -sk -u "$A" "$B/sap/bc/adt/system/users"                         # user lis
   STUSERTRACE source verifies `S_ADMI_FCD` value `STUF` for changing filters and `STUR` for
   evaluation.
 
+## Follow-up: custom-code path live proof (2026-07-10)
+
+The table-backed core action and a temporary custom helper were tested side by side on both live
+on-prem trial systems. The helper was created in `$TMP`, executed through an actual ARC-1 code
+extension using `ctx.run.classRun`, and deleted from both systems after the proof.
+
+| System | Core `authorization_trace` | Custom kernel/SU53 helper |
+|---|---|---|
+| a4h 7.58, `auth/auth_user_trace=y` | One persisted `AUTH_TEST` denial: `S_TCODE`, `TCD=SU01`, RC 12, `LSUSEU11:53` | `TRACE_STATUS=X`; `SUSR_USER_SU53_READ` returned the same live SU53 denial, plus instance `vhcala4hci_A4H_00` and high-resolution timestamp |
+| a4h-2025 8.16, `auth/auth_user_trace=N` | Empty result with the new state-ambiguity warning and activation guidance | Empty trace status; no SU53 rows (and a structured "user does not exist" return for `AUTH_TEST`) |
+
+The standard APIs behind the proof are available on both 7.58 and 8.16:
+
+- `CL_SUSR_TOOLS_KERNEL=>AUTH_USER_TRACE_GET_STATUS( )` returns `X` (active without filter), `F`
+  (active with filter), blank (inactive), or `U` (unexpected). Its implementation calls the kernel
+  `AUTH_TRACE` operation and falls back to `C_SAPGPARAM auth/auth_user_trace` on old kernels.
+- `SUSR_USER_SU53_READ` is the API used by the modern `SU53` transaction. It reads the shared-memory
+  failed-check buffers, can fan out across all application servers, accepts user/time/result caps,
+  returns structured `USR07_EXT` rows, and performs SAP authorization checks when reading another
+  user. This is the missing live-buffer capability that no ADT endpoint exposes.
+
+### Recommended product shape: optional companion extension
+
+Do **not** put these unreleased kernel/function-module calls in ARC-1 core. Offer them as an
+on-prem-only extension with an explicitly installed ABAP companion:
+
+1. Customer installs an abapGit package or transport containing a read-only HTTP handler (for
+   example `/sap/bc/http/sap/zarc1_auth_diag`) and activates its SICF node.
+2. The handler validates/clamps `user`, `minutes`, and `maxResults`, calls
+   `AUTH_USER_TRACE_GET_STATUS` and `SUSR_USER_SU53_READ`, preserves the standard function module's
+   authorization result, and returns bounded JSON. It performs no trace-state or filter mutation.
+3. A reviewed TypeScript ARC-1 extension registers `Custom_AuthorizationDiagnostics` as
+   `availableOn:'onprem'`, `scope:'data'`, `OperationType.Query`, and calls the endpoint with
+   `ctx.http.get`. Principal propagation/shared SAP identity and the standard FM's user-group check
+   remain the final SAP-side authorization boundary.
+4. The installer documents the required SAP authorizations, SICF/Cloud Connector resource exposure,
+   release compatibility, removal procedure, and the fact that these are unreleased SAP internals
+   with upgrade risk.
+
+A console-class product (`IF_OO_ADT_CLASSRUN`) is not recommended even though the spike proved it
+works: `ctx.run.classRun` accepts only a class name, so it cannot safely carry per-call user/time
+filters, and enabling it requires `SAP_ALLOW_WRITES=true`, `SAP_ALLOW_PLUGIN_EXECUTE=true`, and a
+write-scoped tool. A read-only ICF GET keeps the runtime capability aligned with the diagnostic's
+actual risk and lets the extension retain the `data` scope used by the built-in trace read.
+
+Extension-v1 nuance: `ctx.http.get` is safety-checked as a normal read. Declaring `scope:'data'` /
+`OperationType.Query` enforces the MCP user scope and registration consistency, but it does **not**
+implicitly consult `SAP_ALLOW_DATA_PREVIEW`; that flag specifically gates ARC-1's generic table
+preview primitives. Loading the reviewed extension, exposing the custom SICF resource, and the SAP
+endpoint's own authorization check are therefore the explicit server/admin consent. If deployments
+need a second default-off ARC-1 ceiling for this endpoint, add a dedicated extension capability flag
+or the planned `ctx.data` facade before publishing it broadly rather than implying the existing data
+preview flag applies.
+
+The combined value proposition is now clear:
+
+- **Core action, no SAP install:** persisted long-term STUSERTRACE history, field decoding, code
+  location, and safe activation guidance.
+- **Optional installed extension:** live trace state + true recent SU53 failures across application
+  servers.
+- **Still separate future work:** mapping a missing object/value to assigned or candidate PFCG roles;
+  that needs controlled role/authorization analysis and should not be inferred from SU53 alone.
+
 Design notes the plan carries (evidenced, no further spike): **sort client-side by `FIRSTCALL DESC`**
 + cap — the ADT freestyle endpoint rejects `ORDER BY` on 7.50/7.51 so `buildTableQuerySql`
 (`client.ts:263`) omits it, and there's no server pagination → narrow with filters; reuse the gated
