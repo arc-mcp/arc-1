@@ -916,6 +916,12 @@ ENDCLASS.`;
         rc: 12,
         fields: { TCD: 'SU01' },
       });
+      expect(payload.traceState).toMatchObject({
+        status: 'unknown',
+        parameter: 'auth/auth_user_trace',
+      });
+      expect(payload.traceState.verify).toContain('RZ11');
+      expect(payload.traceState.activation).toBeUndefined();
       expect(runTableQuery).toHaveBeenNthCalledWith(
         1,
         'SUAUTHVALTRC',
@@ -972,8 +978,11 @@ ENDCLASS.`;
       expect(result.isError).toBeUndefined();
       const payload = JSON.parse(result.content[0]!.text);
       expect(payload.count).toBe(0);
-      expect(payload.note).toContain('auth/auth_user_trace');
+      expect(payload.note).toContain('activation guidance');
       expect(payload.note).toContain('widen the filters');
+      expect(payload.traceState.status).toBe('unknown');
+      expect(payload.traceState.warnings).toHaveLength(2);
+      expect(payload.traceState.activation.filteredSetup).toContain('STUSERTRACE');
     });
 
     function mockDumpDetailResponses(formattedText?: string): void {

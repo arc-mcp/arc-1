@@ -236,7 +236,17 @@ describe('E2E Diagnostics Tests', () => {
       const payload = JSON.parse(expectToolSuccess(result));
       expect(payload.trace).toContain('STUSERTRACE');
       expect(payload.filters).toEqual({ user: null, authObject: null, onlyFailures: false });
+      expect(payload.traceState).toMatchObject({
+        status: 'unknown',
+        parameter: 'auth/auth_user_trace',
+      });
+      expect(payload.traceState.verify).toContain('RZ11');
       expect(typeof payload.count).toBe('number');
+      if (payload.count === 0) {
+        expect(payload.traceState.activation.filteredSetup).toContain('STUSERTRACE');
+      } else {
+        expect(payload.traceState.activation).toBeUndefined();
+      }
       expect(Array.isArray(payload.entries)).toBe(true);
       expect(payload.count).toBe(payload.entries.length);
     });

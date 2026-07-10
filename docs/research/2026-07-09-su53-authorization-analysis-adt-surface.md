@@ -208,6 +208,21 @@ curl -sk -u "$A" "$B/sap/bc/adt/system/users"                         # user lis
   `system/{clients,components,information,landscape/servers,users}`; `abaptraces/parameters` is the
   profiler trace, not `auth/auth_user_trace`). → **drop `set_auth_trace_state`**; enabling the trace
   is an out-of-band admin action (RZ11/profile). The tool reads an existing trace and hints when off.
+- **No reliable ADT trace-state read (2026-07-10 follow-up):** `SUAUTHVALTRC` rows persist after
+  deactivation, so neither an empty nor a populated result proves the current state. The standard
+  STUSERTRACE program `RSUSR_SUAUTHVALTRC_DISPLAY` determines state through kernel-only methods
+  `CL_SUSR_TOOLS_KERNEL=>AUTH_USER_TRACE_GET_STATUS` / `...SET_FILTER`: `X` = active without filter,
+  `F` = active with filter, other = inactive. This is not exposed by ADT. Live `sapcontrol
+  ParameterValue auth/auth_user_trace` returned `y` on a4h 7.58 and `N` on a4h-2025 8.16, but
+  sapcontrol requires instance-administration access ARC-1 deployments do not have. Therefore the
+  action reports state as `unknown`, warns about the ambiguity, and tells admins to verify in RZ11.
+- **Activation guidance:** `auth/auth_user_trace` is dynamic. Use RZ11 for a temporary value (`N` =
+  inactive, `F` = STUSERTRACE-filtered, `Y` = unfiltered); for `F`, maintain at least one user,
+  application, or object filter in STUSERTRACE. In multi-instance systems, use RZ11's **Change on
+  All Servers** option when every application server must participate. Maintain `DEFAULT.PFL`
+  through the approved Basis profile workflow for a restart-persistent setting. Standard
+  STUSERTRACE source verifies `S_ADMI_FCD` value `STUF` for changing filters and `STUR` for
+  evaluation.
 
 Design notes the plan carries (evidenced, no further spike): **sort client-side by `FIRSTCALL DESC`**
 + cap — the ADT freestyle endpoint rejects `ORDER BY` on 7.50/7.51 so `buildTableQuerySql`

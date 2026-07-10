@@ -6,7 +6,7 @@
  */
 
 import { type AdtClient, clampPreviewRows } from './client.js';
-import type { AuthorizationTraceResult, AuthTraceEntry } from './types.js';
+import type { AuthorizationTraceResult, AuthorizationTraceState, AuthTraceEntry } from './types.js';
 
 const AUTH_TRACE_COLUMNS = [
   'USERNAME',
@@ -140,6 +140,44 @@ export interface GetAuthorizationTraceOptions {
   maxResults?: number;
 }
 
+function buildAuthorizationTraceState(hasEntries: boolean): AuthorizationTraceState {
+  const warnings = [
+    'ARC-1 cannot read the current STUSERTRACE kernel/profile state through ADT. Existing rows may be historical and do not prove that tracing is currently active.',
+  ];
+  if (!hasEntries) {
+    warnings.push(
+      'No entries matched. The trace may be inactive (N), active with filters (F) that do not match, active but not yet exercised, or the request filters may be too narrow.',
+    );
+  }
+
+  const activation = hasEntries
+    ? undefined
+    : {
+        values: {
+          N: 'Inactive.',
+          F: 'Active only for filters maintained in STUSERTRACE (recommended for targeted production diagnosis).',
+          Y: 'Active for all users and application types; broad collection.',
+        },
+        temporary:
+          'In RZ11, choose Change Value and set auth/auth_user_trace to F (targeted) or Y (all users/applications). Select Change on All Servers when every application-server instance must participate. A dynamic RZ11 change is lost after an instance restart.',
+        filteredSetup:
+          'For F, open STUSERTRACE, choose Change Filter, and add at least one target user/application/object filter; F without a filter records nothing. Then reproduce the denied operation and query again.',
+        persistent:
+          'For restart-persistent activation, have SAP Basis maintain auth/auth_user_trace=F (or Y) in DEFAULT.PFL through the approved profile-maintenance workflow (RZ10 or operating-system profile maintenance), then apply it through the normal restart process.',
+        authorizations:
+          'Changing STUSERTRACE filters requires S_ADMI_FCD value STUF; evaluating trace data requires S_ADMI_FCD value STUR.',
+      };
+
+  return {
+    status: 'unknown',
+    parameter: 'auth/auth_user_trace',
+    warnings,
+    verify:
+      'In SAP GUI, open RZ11 and display auth/auth_user_trace. STUSERTRACE also shows Inactive, Active (No filter), or Active with filter.',
+    ...(activation ? { activation } : {}),
+  };
+}
+
 /** Read and decode the on-prem STUSERTRACE authorization trace. */
 export async function getAuthorizationTrace(
   client: AdtClient,
@@ -180,12 +218,13 @@ export async function getAuthorizationTrace(
   const onlyFailures = opts.onlyFailures === true;
   const note =
     entries.length === 0
-      ? 'No authorization-trace entries matched. STUSERTRACE records checks only while auth/auth_user_trace is enabled; enable it out of band or widen the filters.'
+      ? 'No authorization-trace entries matched. Review traceState warnings and activation guidance, then reproduce the operation or widen the filters.'
       : `${entries.length} ${entries.length === 1 ? 'entry' : 'entries'}${onlyFailures ? ' (rc<>0)' : ''}. ` +
-        `STUSERTRACE records checks only while auth/auth_user_trace is enabled. Results are capped at ${maxResults}; narrow the filters when more entries may exist.`;
+        `Entries may be historical; verify the current trace state in RZ11. Results are capped at ${maxResults}; narrow the filters when more entries may exist.`;
 
   return {
     trace: 'STUSERTRACE (long-term user authorization trace, table SUAUTHVALTRC)',
+    traceState: buildAuthorizationTraceState(entries.length > 0),
     filters: {
       user: opts.user ?? null,
       authObject: opts.authObject ?? null,

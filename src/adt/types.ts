@@ -529,9 +529,31 @@ export interface AuthTraceEntry {
   firstSeen: string;
 }
 
+/** Activation status and out-of-band setup guidance for STUSERTRACE. */
+export interface AuthorizationTraceState {
+  /** ADT does not expose the current kernel/profile value, so ARC-1 cannot report active/inactive reliably. */
+  status: 'unknown';
+  parameter: 'auth/auth_user_trace';
+  warnings: string[];
+  verify: string;
+  /** Included when no rows match, where setup guidance is immediately actionable. */
+  activation?: {
+    values: {
+      N: string;
+      F: string;
+      Y: string;
+    };
+    temporary: string;
+    filteredSetup: string;
+    persistent: string;
+    authorizations: string;
+  };
+}
+
 /** Result returned by SAPDiagnose action=authorization_trace. */
 export interface AuthorizationTraceResult {
   trace: string;
+  traceState: AuthorizationTraceState;
   filters: {
     user: string | null;
     authObject: string | null;

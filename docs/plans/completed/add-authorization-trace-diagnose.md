@@ -1,5 +1,9 @@
 # Add Authorization-Trace Read (`SAPDiagnose action=authorization_trace`)
 
+> **2026-07-10 follow-up:** responses now expose an honest `traceState.status="unknown"` warning and
+> RZ11/RZ10 activation guidance. Persisted `SUAUTHVALTRC` rows cannot reveal the current dynamic
+> `auth/auth_user_trace` value, and the standard STUSERTRACE kernel status methods are not in ADT.
+
 ## Overview
 
 > **Implemented 2026-07-09.** The public exports remain available from `src/adt/diagnostics.ts`, but the new implementation lives in focused `src/adt/authorization-trace.ts` because `diagnostics.ts` was already at its enforced file-size ceiling. All validation and live-proof tasks completed, including the empty trace-off result on a4h-2025 (SAP_BASIS 816).

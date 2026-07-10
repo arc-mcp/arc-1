@@ -175,6 +175,13 @@ describe('authorization trace diagnostics', () => {
     expect(result.count).toBe(1);
     expect(result.entries[0]?.fields).toEqual({ TCD: 'SU01' });
     expect(result.filters).toEqual({ user: 'AUTH_TEST', authObject: 'S_TCODE', onlyFailures: true });
+    expect(result.traceState).toMatchObject({
+      status: 'unknown',
+      parameter: 'auth/auth_user_trace',
+    });
+    expect(result.traceState.warnings).toHaveLength(1);
+    expect(result.traceState.warnings[0]).toContain('historical');
+    expect(result.traceState.activation).toBeUndefined();
   });
 
   it('skips the TOBJ query and returns an actionable note when no rows match', async () => {
@@ -186,8 +193,15 @@ describe('authorization trace diagnostics', () => {
     expect(runTableQuery).toHaveBeenCalledTimes(1);
     expect(runTableQuery).toHaveBeenCalledWith('SUAUTHVALTRC', expect.objectContaining({ maxRows: 100 }));
     expect(result.count).toBe(0);
-    expect(result.note).toContain('auth/auth_user_trace');
+    expect(result.note).toContain('activation guidance');
     expect(result.note).toContain('widen the filters');
+    expect(result.traceState.status).toBe('unknown');
+    expect(result.traceState.warnings).toHaveLength(2);
+    expect(result.traceState.warnings[1]).toContain('inactive (N)');
+    expect(result.traceState.activation?.values.F).toContain('recommended');
+    expect(result.traceState.activation?.filteredSetup).toContain('F without a filter records nothing');
+    expect(result.traceState.activation?.persistent).toContain('DEFAULT.PFL');
+    expect(result.traceState.activation?.authorizations).toContain('STUF');
   });
 });
 
