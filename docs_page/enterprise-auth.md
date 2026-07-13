@@ -33,23 +33,23 @@ After starting, check the server's first INFO log line: `auth: MCP=[...] SAP=[..
 | **Team server** (role-based access) | API Keys (multi) | Basic Auth | [API Key Setup](api-key-setup.md) |
 | **Enterprise** (per-user identity) | OIDC / JWT | Basic Auth (shared user) | [OAuth / JWT Setup](oauth-jwt-setup.md) |
 | **Enterprise + SAP audit trail** | OIDC / JWT | Principal Propagation | [OAuth / JWT](oauth-jwt-setup.md) + [PP Setup](principal-propagation-setup.md) |
-| **BTP Cloud Foundry + on-prem SAP** | XSUAA OAuth | Strict Principal Propagation via Destination Service / Cloud Connector | [XSUAA Setup](xsuaa-setup.md) + [Destination Setup](btp-destination-setup.md) |
-| **BTP Cloud Foundry + BTP ABAP Environment** | XSUAA OAuth | Strict per-user destination (`OAuth2UserTokenExchange`) | [BTP ABAP Setup](btp-abap-environment.md) |
+| **BTP Cloud Foundry + on-prem SAP** | XSUAA OAuth | Principal Propagation via Destination Service / Cloud Connector | [XSUAA Setup](xsuaa-setup.md) + [Destination Setup](btp-destination-setup.md) |
+| **BTP Cloud Foundry + BTP ABAP Environment** | XSUAA OAuth | Per-user destination (`OAuth2UserTokenExchange`) | [BTP ABAP Setup](btp-abap-environment.md) |
 | **BTP ABAP Environment** (local) | None (stdio) | Service-key browser OAuth | [BTP ABAP Setup](btp-abap-environment.md) |
 
 ### Recommended: One SAP Identity Model per Instance
 
-For production, keep each ARC-1 instance on one SAP identity model:
+For production, the recommended baseline keeps each ARC-1 instance on one SAP identity model:
 
 - **Per-user instance:** XSUAA/OIDC JWT + `SAP_PP_ENABLED=true` + explicit `SAP_PP_STRICT=true`.
-  Do not configure `ARC1_API_KEYS`; every tool call should reach SAP as the propagated human user.
+  In this topology every tool call reaches SAP as the propagated human user.
 - **Automation/shared instance:** API keys + `SAP_PP_ENABLED=false` + a dedicated, least-privileged
   technical SAP user or destination. Give it its own safety ceiling, package allowlist, and route.
 
-PP and API keys can coexist for migration compatibility, but API-key calls deliberately bypass PP
-and run as the shared technical SAP identity. That mixed audit and authorization model is not the
-recommended production topology. If it is temporarily required, set `SAP_PP_STRICT=false`
-explicitly, document the exception, and plan the split.
+PP and API keys can also coexist in one fully supported instance. Set `SAP_PP_STRICT=false`
+explicitly; JWT calls use PP and API-key calls use the shared technical SAP identity. Separate
+instances remain the recommendation when clearer audit, authorization, operational ownership, and
+credential boundaries are preferred, but separation is not mandatory.
 
 ### What to Consider
 
@@ -453,8 +453,8 @@ export SAP_PP_STRICT=true
 **Fallback behavior:**
 - JWT PP failures always return an error, with no shared-client fallback
 - The recommended explicit `SAP_PP_STRICT=true` rejects API-key / non-JWT tool calls
-- Explicit `SAP_PP_STRICT=false` retains compatibility mixed mode but does not enable JWT fallback;
-  prefer a separate non-PP instance for API-key automation
+- Explicit `SAP_PP_STRICT=false` enables supported mixed mode but does not enable JWT fallback;
+  separate instances remain the recommendation, not a requirement
 
 See [Principal Propagation Setup](principal-propagation-setup.md) for the on-premise Cloud Connector setup, or [BTP ABAP Environment](btp-abap-environment.md#recommended-btp-deployment-with-a-per-user-destination) for the cloud-to-cloud `OAuth2UserTokenExchange` setup.
 
@@ -524,7 +524,7 @@ S_ADT_RES authorization, SSO-only system needing `SAP_DISABLE_SAML=true`).
 | — | `SAP_BTP_DESTINATION` | BTP Destination name (shared, or BTP ABAP per-user destination) |
 | — | `SAP_BTP_PP_DESTINATION` | BTP PP Destination name (per-user) |
 | `--pp-enabled` | `SAP_PP_ENABLED` | Enable ARC-1's per-user destination path |
-| `--pp-strict` | `SAP_PP_STRICT` | JWT PP errors always fail closed; explicit `true` gives the recommended PP-only topology by also rejecting non-JWT/API-key requests |
+| `--pp-strict` | `SAP_PP_STRICT` | JWT PP errors always fail closed; explicit `true` gives the recommended strict topology, while explicit `false` supports mixed PP/API-key operation |
 | `--pp-allow-shared-cookies` | `SAP_PP_ALLOW_SHARED_COOKIES` | Allow PP + cookie auth only for shared client (advanced escape hatch) |
 | `--disable-saml` | `SAP_DISABLE_SAML` | Disable SAML redirect via `X-SAP-SAML2` + `saml2=disabled` (advanced) |
 | `--insecure` | `SAP_INSECURE` | Skip TLS verification |
@@ -541,7 +541,7 @@ S_ADT_RES authorization, SSO-only system needing `SAP_DISABLE_SAML=true`).
 | Direct service-key bearer (BTP ABAP) only | ✅ | Local BTP ABAP Environment browser OAuth |
 | Destination only | ✅ | BTP Cloud Foundry, shared user |
 | Destination + PP with explicit `SAP_PP_STRICT=true` | ✅ recommended | Enterprise standard on BTP CF; JWT tool calls use one per-user SAP identity model |
-| Destination + PP + API keys with `SAP_PP_STRICT=false` | ⚠️ compatibility only | JWT calls are per-user while API-key calls use the shared technical identity; prefer separate instances |
+| Destination + PP + API keys with `SAP_PP_STRICT=false` | ✅ supported | JWT calls are per-user while API-key calls use the shared technical identity; separate instances are recommended for clearer boundaries |
 | PP + Cookie | ❌ fail-fast | Cookies would leak into per-user requests |
 | PP + Cookie + SAP_PP_ALLOW_SHARED_COOKIES=true | ⚠️ allowed with warning | Cookies stay on shared client only |
 | Bearer + Cookie | ❌ fail-fast | Two Layer B methods in conflict |
@@ -558,9 +558,10 @@ ARC-1 enforces these Layer B constraints at startup:
 4. `SAP_DISABLE_SAML=true` with `SAP_SYSTEM_TYPE=btp` emits a warning (startup continues).
 5. `ARC1_DCR_SIGNING_SECRET` set without `SAP_XSUAA_AUTH=true` emits a warning (startup continues, secret is unused — only consumed by the XSUAA OAuth proxy path).
 
-MCP client auth (API Key, OIDC, XSUAA) is technically independent from SAP auth. For production PP,
-combine JWT auth with explicit `SAP_PP_STRICT=true`; place API-key clients on a separate non-PP
-instance so one endpoint does not mix per-user and shared SAP identities.
+MCP client auth (API Key, OIDC, XSUAA) is technically independent from SAP auth. ARC-1 supports API
+keys and PP in one instance with explicit `SAP_PP_STRICT=false`; JWT calls use per-user SAP identity
+and API-key calls use the shared identity. Separate strict PP and API-key instances are recommended
+when one SAP identity model per endpoint is preferable.
 
 ### What's NOT Implemented
 

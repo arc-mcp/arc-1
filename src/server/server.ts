@@ -220,14 +220,14 @@ export function logAuthSummary(config: ServerConfig): void {
 
   if (mixedSapIdentity) {
     logger.warn(
-      'auth topology: PP and API-key calls use different SAP identities. Mixed mode is supported for compatibility ' +
-        'but is not recommended for production; set SAP_PP_STRICT=true and run API-key automation on a separate ' +
-        'non-PP ARC-1 instance.',
+      'auth topology: PP and API-key calls use different SAP identities. Mixed mode is supported. ' +
+        'Separate instances are recommended for clearer SAP identity and audit boundaries; set SAP_PP_STRICT=true ' +
+        'on the PP instance when using that topology.',
     );
   } else if (strictPpOnly && hasApiKeys) {
     logger.warn(
       'auth topology: ARC1_API_KEYS is configured but SAP_PP_STRICT=true rejects API-key MCP tool calls. ' +
-        'Remove the keys from this PP-only instance or move them to a separate non-PP ARC-1 instance.',
+        'Set SAP_PP_STRICT=false for supported mixed operation, or remove/move the keys for a strict PP topology.',
     );
   }
 }
@@ -736,7 +736,7 @@ export function createServer(
     // Principal propagation: create per-user ADT client if enabled and user JWT available.
     // The verifier marks API-key auth with an `api-key:<profile>` clientId. Check that
     // trusted provenance before the JWT shape so an API key containing two dots is not
-    // mistaken for a JWT and denied in compatibility mixed-auth PP deployments.
+    // mistaken for a JWT and denied in supported mixed-auth PP deployments.
     let client = defaultClient;
     let isPerUserClient = false;
     const token = extra.authInfo?.token;

@@ -194,7 +194,7 @@ describe('deployment templates', () => {
     expect(app?.env?.SAP_INSECURE).toBe('false');
   });
 
-  it('keeps the base BTP MTA on the recommended PP-only identity model', () => {
+  it('keeps the base BTP MTA on the recommended strict PP default', () => {
     const mta = readYaml('mta.yaml');
     const appModule = (mta.modules as Array<Record<string, any>>).find((entry) => entry.name === 'arc1-mcp-server');
 

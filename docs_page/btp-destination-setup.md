@@ -134,9 +134,9 @@ The recommended approach uses **two destinations** — one for the shared servic
 | **Password** | `<password>` |
 | `sap-client` | `001` |
 
-This destination is resolved at startup for system-level feature probing and cache warmup. It also
-serves API-key/non-JWT requests only in explicit compatibility mixed mode (`SAP_PP_STRICT=false`);
-the recommended strict PP instance does not expose it to MCP tool callers.
+This destination is resolved at startup for system-level feature probing and cache warmup. With
+explicit `SAP_PP_STRICT=false`, it also serves API-key/non-JWT requests in a supported mixed
+instance; the recommended strict PP topology does not expose it to MCP tool callers.
 
 **Destination 2: `SAP_TRIAL_PP` (PrincipalPropagation — per-user)**
 
@@ -338,14 +338,14 @@ env:
   SAP_XSUAA_AUTH: "true"
 ```
 
-### Step 5: Keep PP and API-Key Identities Separate (Recommended)
+### Step 5: Choose the PP/API-Key Topology
 
 Use the PP deployment for JWT-authenticated users only by setting `SAP_PP_STRICT=true` explicitly.
 If automation needs API keys, run a separate ARC-1 instance with `SAP_PP_ENABLED=false`, a dedicated
 least-privileged technical SAP user/destination, and its own safety ceiling. This keeps SAP audit
 identity, authorization, operational ownership, and credential blast radius consistent per endpoint.
 
-#### Compatibility: mixed authentication
+#### Supported alternative: mixed authentication
 
 When `SAP_PP_ENABLED=true`:
 - If the user has a valid JWT (XSUAA/OIDC, 3 dot-separated parts) → per-user ADT client via `SAP_BTP_PP_DESTINATION`
@@ -353,9 +353,9 @@ When `SAP_PP_ENABLED=true`:
 - If no JWT available (API key auth, stdio) → uses shared service account
 - API key tokens are detected as non-JWT and skip PP entirely (no wasted API calls)
 
-Mixed authentication remains supported for migrations: set `SAP_PP_STRICT=false` explicitly to keep
-existing API-key users on the shared client while JWT users use PP. It is not the recommended
-production topology because the same endpoint then has two SAP identities.
+Mixed authentication is supported: set `SAP_PP_STRICT=false` explicitly to keep API-key users on
+the shared client while JWT users use PP. Separate instances remain recommended when clearer SAP
+identity, audit, operational ownership, and credential boundaries are preferred.
 
 !!! warning "JWT principal propagation always fails closed"
     A failed JWT PP lookup never routes through the shared service account in `SAP_BTP_DESTINATION`. `SAP_PP_STRICT=true` additionally rejects API-key / non-JWT requests and is recommended for production PP instances.
@@ -577,7 +577,7 @@ ARC-1 uses two URL path prefixes. Add both as resources with **Path and all sub-
 | `SAP_BTP_DESTINATION` | BTP Destination name. For BasicAuth, this is the shared startup destination. For BTP ABAP `OAuth2UserTokenExchange`, this is usually the per-user destination used with `SAP_PP_ENABLED=true`. | *(none)* |
 | `SAP_BTP_PP_DESTINATION` | Optional per-user destination name. Use for on-prem PP when the shared startup destination and PP destination differ. For BTP ABAP `OAuth2UserTokenExchange`, `SAP_BTP_DESTINATION` alone is usually the per-user destination. | Falls back to `SAP_BTP_DESTINATION` |
 | `SAP_PP_ENABLED` / `--pp-enabled` | Enable ARC-1's per-user destination path: Cloud Connector PP for on-premise SAP, or `OAuth2UserTokenExchange` for BTP ABAP Environment. | `false` |
-| `SAP_PP_STRICT` / `--pp-strict` | Set explicitly to `true` for the recommended PP-only production topology. Explicit `false` enables compatibility mixed mode for API-key/non-JWT calls. | `true` when PP is enabled; base MTA sets explicit `true` |
+| `SAP_PP_STRICT` / `--pp-strict` | Set explicitly to `true` for the recommended strict topology. Explicit `false` enables supported mixed PP/API-key operation; API-key/non-JWT calls use the shared identity. | `true` when PP is enabled; base MTA sets explicit `true` |
 | `SAP_XSUAA_AUTH` / `--xsuaa-auth` | Enable XSUAA OAuth proxy | `false` |
 | `SAP_URL` / `--url` | Direct SAP URL (overridden by destination) | *(none)* |
 | `SAP_USER` / `--user` | Direct SAP user (overridden by destination/PP) | *(none)* |

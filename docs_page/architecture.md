@@ -280,10 +280,10 @@ flowchart TD
 ```
 
 With principal propagation enabled, JWT requests always fail closed if ARC-1 cannot
-build the per-user SAP client. API-key / non-JWT requests continue through the shared
-client in compatibility mode because they do not enter the JWT PP path. The recommended
-production topology sets `SAP_PP_STRICT=true` explicitly and keeps the PP instance JWT-only;
-API-key automation runs on a separate non-PP instance with a technical SAP identity.
+build the per-user SAP client. With explicit `SAP_PP_STRICT=false`, API-key / non-JWT
+requests continue through the shared client because they do not enter the JWT PP path.
+That mixed topology is supported. The recommended topology sets `SAP_PP_STRICT=true`
+and runs API-key automation on a separate non-PP instance with a technical SAP identity.
 
 ## Safety system
 

@@ -737,8 +737,8 @@ describe('logAuthSummary', () => {
     expect(infoSpy).toHaveBeenCalledWith(
       'auth: MCP=[api-keys,oidc] SAP=cookie+pp (mixed: JWT per-user, API keys shared)',
     );
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('not recommended for production'));
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('separate non-PP ARC-1 instance'));
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Mixed mode is supported'));
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Separate instances are recommended'));
   });
 
   it('warns when API keys are configured on an explicitly strict PP-only instance', () => {
@@ -757,7 +757,7 @@ describe('logAuthSummary', () => {
 
     expect(infoSpy).toHaveBeenCalledWith('auth: MCP=[api-keys,xsuaa] SAP=pp (per-user)');
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('rejects API-key MCP tool calls'));
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('separate non-PP ARC-1 instance'));
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('supported mixed operation'));
   });
 });
 

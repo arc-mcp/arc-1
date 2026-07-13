@@ -388,7 +388,7 @@ the worst class of finding for the flagship multi-user-PP deployment, and a sing
 - **Historical mechanism:** `SAP_PP_STRICT=false` let a failed JWT principal-propagation lookup
   continue through `defaultClient`, causing privilege escalation and SAP audit misattribution.
 - **Fix:** every JWT PP failure now returns an error before tool dispatch, regardless of
-  `SAP_PP_STRICT`. API-key/non-JWT requests retain mixed-auth compatibility because they skip JWT PP;
+  `SAP_PP_STRICT`. API-key/non-JWT requests retain mixed-auth support because they skip JWT PP;
   explicit `SAP_PP_STRICT=true` rejects those calls. The base BTP MTA is strict, production guidance
   recommends separate PP-only and non-PP API-key instances, and startup logs warn about mixed SAP
   identities.

@@ -31,9 +31,9 @@ For the full model, scope definitions, API-key profiles, and BTP role mapping, s
 | Enterprise + SAP audit trail | HTTP | OIDC / JWT + Principal Propagation | [OAuth / JWT](oauth-jwt-setup.md) + [PP Setup](principal-propagation-setup.md) |
 | BTP Cloud Foundry | HTTP | XSUAA OAuth | [XSUAA Setup](xsuaa-setup.md) |
 
-When XSUAA is enabled, the verifier can chain XSUAA, OIDC, and configured API keys. For a production
-PP instance, do not configure API keys and set `SAP_PP_STRICT=true` explicitly. If service-account
-automation needs API keys, give it a separate non-PP ARC-1 instance and technical SAP identity.
+When XSUAA is enabled, the verifier can chain XSUAA, OIDC, and configured API keys. Separate strict
+PP and API-key instances are the recommended topology. A single mixed instance is also supported:
+set `SAP_PP_STRICT=false` explicitly, so JWT calls use PP and API-key calls use the shared SAP identity.
 
 For the full decision guide and common combinations, see [Authentication Overview](enterprise-auth.md).
 
@@ -196,7 +196,7 @@ Scopes are assigned to BTP users via role templates and role collections in the 
 
 ### Principal Propagation
 
-When `SAP_PP_ENABLED=true`, each MCP user's JWT identity flows through to SAP via BTP Destination Service. For on-premise systems this routes through Connectivity Service + Cloud Connector principal propagation; for BTP ABAP Environment it uses a cloud-to-cloud destination such as `OAuth2UserTokenExchange`. SAP sees the real user identity for authorization checks and audit logging. JWT PP failures always fail closed. For production, set `SAP_PP_STRICT=true` explicitly, do not configure API keys on that instance, and run API-key automation on a separate non-PP instance with a least-privileged technical SAP identity.
+When `SAP_PP_ENABLED=true`, each MCP user's JWT identity flows through to SAP via BTP Destination Service. For on-premise systems this routes through Connectivity Service + Cloud Connector principal propagation; for BTP ABAP Environment it uses a cloud-to-cloud destination such as `OAuth2UserTokenExchange`. SAP sees the real user identity for authorization checks and audit logging. JWT PP failures always fail closed. Separate strict PP and API-key instances are recommended. With explicit `SAP_PP_STRICT=false`, one supported instance can accept both: JWT calls use PP and API-key calls use the shared technical SAP identity.
 
 ### Destination Service
 

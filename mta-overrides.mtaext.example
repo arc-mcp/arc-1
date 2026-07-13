@@ -38,9 +38,9 @@ modules:
       # Enable per-user principal propagation (default in mta.yaml: true)
       # SAP_PP_ENABLED: "true"
 
-      # The base MTA is PP-only (default: true): API-key/non-JWT tool calls are
-      # rejected. Prefer a separate non-PP instance for API-key automation.
-      # Set false only as a deliberate, temporary mixed-identity compatibility mode.
+      # The base MTA uses the recommended strict default: API-key/non-JWT tool
+      # calls are rejected. Set false for supported mixed PP/API-key operation;
+      # JWT calls use PP and API-key calls use the shared destination identity.
       # SAP_PP_STRICT: "false"
 
       # ── Safety / Authorization ───────────────────────────────────────

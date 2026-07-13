@@ -14,8 +14,9 @@ deployments.
   an MCP tool error for JWT requests instead of silently using the shared client.
 - API-key / non-JWT requests still use the shared client unless `SAP_PP_STRICT=true` is set explicitly.
 - The shipped BTP `mta.yaml` now sets `SAP_PP_STRICT=true`, making new and updated base-MTA
-  deployments PP-only by default. Before deploying, move API-key automation to a separate non-PP
-  instance. As a temporary compatibility exception, an override can set `SAP_PP_STRICT=false`.
+  deployments PP-only by default. Existing combined deployments can preserve supported mixed
+  operation by setting `SAP_PP_STRICT=false` explicitly before updating; separating API-key
+  automation into a non-PP instance remains the recommendation, not a requirement.
 
 The application still starts and `/health` remains successful when a runtime-only PP mapping is broken.
 Before rolling the version into production, make one JWT-authenticated SAP read in staging and verify
@@ -24,8 +25,8 @@ it now controls only whether mixed API-key / non-JWT access remains available.
 
 The recommended production topology is one SAP identity model per ARC-1 instance: strict PP with
 JWT/XSUAA for human users, and a separate non-PP instance with a least-privileged technical identity
-for API-key automation. Mixed mode is supported for migration compatibility, not recommended as the
-steady state.
+for API-key automation. Mixed mode remains fully supported when operators intentionally choose one
+instance for both identity models.
 
 ## v0.7 — Authorization Refactor (breaking change)
 

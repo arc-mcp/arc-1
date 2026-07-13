@@ -235,7 +235,7 @@ cf logs arc1-mcp-server --recent | grep -E "Principal propagation|per-user|BTP d
 - [ ] SAP certificate mapping (CERTRULE / VUSREXTID) configured
 - [ ] JWT-authenticated requests use per-user destination
 - [ ] SAP logs show per-user identity (not technical account)
-- [ ] `SAP_PP_STRICT=true` is explicit and API-key automation runs on a separate non-PP instance
+- [ ] Identity topology is explicit: recommended strict PP + separate API-key instance, or supported mixed mode with `SAP_PP_STRICT=false`
 
 ---
 

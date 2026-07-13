@@ -279,7 +279,7 @@ applications:
       SAP_BTP_DESTINATION: "SAP_TRIAL"         # BasicAuth (startup)
       SAP_BTP_PP_DESTINATION: "SAP_TRIAL_PP"   # PrincipalPropagation (per-user)
       SAP_PP_ENABLED: "true"
-      SAP_PP_STRICT: "true"                    # JWT-only; API keys belong on a separate instance
+      SAP_PP_STRICT: "true"                    # recommended strict default; set false for supported mixed mode
       SAP_XSUAA_AUTH: "true"
       # Safety: read-only by default. Widen one flag at a time per landscape (see the note below).
       SAP_ALLOW_WRITES: "false"
@@ -337,10 +337,11 @@ cf set-env arc1-mcp-server ARC1_DCR_SIGNING_SECRET "$(openssl rand -base64 48)"
 cf restart arc1-mcp-server
 ```
 
-Do not configure `ARC1_API_KEYS` on the production PP instance. If automation or break-glass
-operations require API keys, deploy a separate ARC-1 instance with `SAP_PP_ENABLED=false`, a
-least-privileged technical SAP identity, and its own safety ceiling. Mixed mode remains available
-for compatibility via explicit `SAP_PP_STRICT=false`, but is not the recommended topology.
+For the recommended topology, keep this PP instance strict and deploy API-key automation separately
+with `SAP_PP_ENABLED=false`, a least-privileged technical SAP identity, and its own safety ceiling.
+This separation is not mandatory. To run PP and API keys in one supported instance, configure
+`ARC1_API_KEYS` and set `SAP_PP_STRICT=false` explicitly; JWT calls use PP while API-key calls use
+the shared destination identity.
 
 See [Stable DCR signing key](xsuaa-setup.md#stable-dcr-signing-key-recommended) for why this matters and how to recover a client that's already stuck.
 
@@ -424,10 +425,10 @@ ARC-1 uses two BTP destinations for on-premise PP scenarios:
 
 | Destination | Auth Type | Used For | Config Var |
 |-------------|-----------|----------|------------|
-| Startup destination | BasicAuthentication | Feature probing and cache warmup | `SAP_BTP_DESTINATION` |
+| Startup destination | BasicAuthentication | Feature probing, cache warmup, and API-key calls in mixed mode | `SAP_BTP_DESTINATION` |
 | Per-user destination | PrincipalPropagation | Per-user requests with JWT | `SAP_BTP_PP_DESTINATION` |
 
-**Why two destinations?** A PrincipalPropagation destination has no User/Password. At startup (no user JWT available), the SDK's `getDestination()` would fail for PP destinations. The BasicAuth destination supports system-level startup operations. With the base MTA's explicit `SAP_PP_STRICT=true`, MCP tool callers cannot use it as a shared-identity fallback.
+**Why two destinations?** A PrincipalPropagation destination has no User/Password. At startup (no user JWT available), the SDK's `getDestination()` would fail for PP destinations. The BasicAuth destination supports system-level startup operations and, when `SAP_PP_STRICT=false`, API-key calls in a supported mixed instance. With the base MTA's explicit `SAP_PP_STRICT=true`, MCP tool callers cannot use it as a shared identity.
 
 The destinations may point to the same SAP system but can differ in:
 - Authentication type (BasicAuth vs PP)

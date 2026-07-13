@@ -352,7 +352,7 @@ Assign each MCP user a role collection that grants the ARC-1 scopes they need (e
 |---|---|
 | `SAP_BTP_DESTINATION` | Destination name with `Authentication=OAuth2UserTokenExchange` |
 | `SAP_PP_ENABLED=true` / `--pp-enabled` | Enables ARC-1's per-user destination path |
-| `SAP_PP_STRICT=true` / `--pp-strict` | Recommended for production per-user instances; rejects API-key / non-JWT tool calls. Use a separate non-PP instance for API-key automation. |
+| `SAP_PP_STRICT=true` / `--pp-strict` | Recommended strict topology; rejects API-key / non-JWT tool calls. Set explicit `false` to support PP and API keys in one instance, where API-key calls use the shared SAP identity. |
 | `SAP_XSUAA_AUTH=true` / `--xsuaa-auth` | MCP clients authenticate through XSUAA OAuth |
 | `SAP_SYSTEM_TYPE=btp` / `--system-type btp` | Expose the BTP-adapted tool definitions from startup |
 
