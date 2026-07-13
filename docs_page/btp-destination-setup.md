@@ -562,7 +562,7 @@ ARC-1 uses two URL path prefixes. Add both as resources with **Path and all sub-
 | `auth token error: User token validation failed` | BTP doesn't trust the IdP that issued the JWT | Add IdP to BTP Trust Configuration |
 | `SAP returns 403 on ADT call` | SAP user exists but lacks `S_DEVELOP` authorization | Grant via `PFCG` role assignment |
 | `CERTRULE mapping not found` | Cloud Connector sends cert but SAP can't map CN to user | Check `SM30` view `VUSREXTID` |
-| On-prem PP falls back to shared client | Destination auth type is still `BasicAuthentication` | Change to `PrincipalPropagation` in BTP Cockpit |
+| On-prem JWT request does not use the propagated SAP user | PP destination auth type is still `BasicAuthentication` | Change to `PrincipalPropagation` in BTP Cockpit |
 | `SAP_PP_ENABLED is true but btpConfig is null` | `VCAP_SERVICES` not available | Ensure the Destination service is bound. Connectivity service is required only for on-premise Cloud Connector PP. |
 | PP requests hit wrong SAP system | `CloudConnectorLocationId` mismatch between startup and PP destination | Set correct `CloudConnectorLocationId` on each destination in BTP Cockpit |
 | `jwt-bearer exchange: failed` with 401 | Connectivity Service doesn't trust the user's JWT issuer | Ensure IdP trust is configured in BTP subaccount |

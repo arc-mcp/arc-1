@@ -7,6 +7,7 @@
  * - http-streamable: for remote/containerized deployments
  */
 
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { BTPConfig, BTPProxyConfig, Destination, PerUserAuthTokens } from '@arc-mcp/xsuaa-auth/btp';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -49,6 +50,23 @@ export const VERSION = '0.9.25'; // x-release-please-version
 // runtime and invisible to CI — so warn once at serve time if the live list crosses the threshold.
 const TOOLS_LIST_SOFT_WARN_BYTES = 60_000;
 let warnedLargeToolsList = false;
+
+/**
+ * Resolve API-key provenance from the configured secret, not from AuthInfo.clientId.
+ * XSUAA/OIDC also populate clientId, so a claim such as `azp=api-key:viewer` must
+ * never make a JWT take the shared API-key path. This is a second, timing-safe
+ * provenance check after the upstream verifier has already authenticated the token.
+ */
+function configuredApiKeyProfile(config: ServerConfig, token: unknown): string | undefined {
+  if (typeof token !== 'string') return undefined;
+  for (const entry of config.apiKeys ?? []) {
+    const key = randomBytes(32);
+    const tokenDigest = createHmac('sha256', key).update(token, 'utf8').digest();
+    const configuredDigest = createHmac('sha256', key).update(entry.key, 'utf8').digest();
+    if (timingSafeEqual(tokenDigest, configuredDigest)) return entry.profile;
+  }
+  return undefined;
+}
 
 function warnIfToolsListTooLarge(tools: ToolDefinition[]): void {
   if (warnedLargeToolsList) return;
@@ -734,13 +752,13 @@ export function createServer(
     }
 
     // Principal propagation: create per-user ADT client if enabled and user JWT available.
-    // The verifier marks API-key auth with an `api-key:<profile>` clientId. Check that
-    // trusted provenance before the JWT shape so an API key containing two dots is not
-    // mistaken for a JWT and denied in supported mixed-auth PP deployments.
+    // Resolve API-key provenance from the configured secret before checking JWT shape,
+    // so dotted API keys remain supported without trusting the cross-verifier clientId field.
     let client = defaultClient;
     let isPerUserClient = false;
     const token = extra.authInfo?.token;
-    const isApiKey = extra.authInfo?.clientId?.startsWith('api-key:') === true;
+    const apiKeyProfile = configuredApiKeyProfile(config, token);
+    const isApiKey = apiKeyProfile !== undefined;
     const isJwt = !isApiKey && typeof token === 'string' && token.split('.').length === 3;
     if (config.ppEnabled && isJwt) {
       const ppUser = (extra.authInfo?.extra?.userName ?? extra.authInfo?.clientId) as string | undefined;
@@ -812,14 +830,13 @@ export function createServer(
     client.http.setDiscoveryMap(getCachedDiscovery());
 
     // Per-request safety: merge server ceiling with per-user policy.
-    //   - API-key path: clientId starts with "api-key:<profile>" — intersect server with profile's partial SafetyConfig.
+    //   - API-key path: authenticated configured key — intersect server with the key profile's partial SafetyConfig.
     //   - XSUAA/OIDC path: derive from scopes only (server ceiling, scopes can only tighten).
     // API-key intersection is stricter — profile can narrow allowedPackages / feature flags
     // that scopes alone cannot (scopes don't encode allowedPackages, etc.).
     let effectiveClient = client;
-    if (extra.authInfo?.clientId?.startsWith('api-key:')) {
-      const profileName = extra.authInfo.clientId.slice('api-key:'.length);
-      const profile = API_KEY_PROFILES[profileName];
+    if (apiKeyProfile) {
+      const profile = API_KEY_PROFILES[apiKeyProfile];
       if (profile) {
         const effectiveSafety = deriveUserSafetyFromProfile(client.safety, profile.safety);
         effectiveClient = client.withSafety(effectiveSafety);

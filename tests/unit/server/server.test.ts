@@ -308,6 +308,7 @@ describe('createServer request handlers', () => {
   it('rejects API-key calls in strict principal-propagation mode', async () => {
     const server = createServer({
       ...DEFAULT_CONFIG,
+      apiKeys: [{ key: 'plain-api-key', profile: 'admin' }],
       ppEnabled: true,
       ppStrict: true,
       ppStrictExplicit: true,
@@ -333,6 +334,7 @@ describe('createServer request handlers', () => {
   it('allows JWT-shaped API-key calls when PP fail-closed mode is only the derived default', async () => {
     const server = createServer({
       ...DEFAULT_CONFIG,
+      apiKeys: [{ key: 'key.part.value', profile: 'admin' }],
       ppEnabled: true,
       ppStrict: true,
       ppStrictExplicit: false,
@@ -359,6 +361,7 @@ describe('createServer request handlers', () => {
   it('allows JWT-shaped API-key calls when ppStrict is explicitly false', async () => {
     const server = createServer({
       ...DEFAULT_CONFIG,
+      apiKeys: [{ key: 'key.part.value', profile: 'admin' }],
       ppEnabled: true,
       ppStrict: false,
       ppStrictExplicit: true,
@@ -380,6 +383,33 @@ describe('createServer request handlers', () => {
     expect(result.content?.[0]?.text).not.toContain('Principal propagation requires a JWT token');
     expect(result.content?.[0]?.text).not.toContain('Principal propagation failed');
     expect(result.content?.[0]?.text).toContain('Invalid arguments');
+  });
+
+  it('does not infer API-key provenance from a colliding OIDC clientId', async () => {
+    const server = createServer({
+      ...DEFAULT_CONFIG,
+      apiKeys: [{ key: 'real-api-key', profile: 'viewer' }],
+      ppEnabled: true,
+      ppStrict: false,
+      ppStrictExplicit: true,
+    });
+    const handler = requestHandler(server, CallToolRequestSchema.shape.method.value);
+
+    const result = await handler(
+      { method: 'tools/call', params: { name: 'SAPRead', arguments: {} } },
+      {
+        authInfo: {
+          token: 'header.payload.signature',
+          clientId: 'api-key:viewer',
+          scopes: ['read'],
+          extra: { iss: 'https://issuer.example' },
+        },
+      },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content?.[0]?.text).toContain('BTP runtime configuration is unavailable');
+    expect(result.content?.[0]?.text).not.toContain('Invalid arguments');
   });
 
   it('fails closed on JWT principal-propagation errors even when ppStrict is false', async () => {
