@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.9.26](https://github.com/arc-mcp/arc-1/compare/v0.9.25...v0.9.26) (2026-07-13)
+
+
+### Features
+
+* add authorization trace diagnostics ([#560](https://github.com/arc-mcp/arc-1/issues/560)) ([b3d993f](https://github.com/arc-mcp/arc-1/commit/b3d993fe19c03e9656955b87501d74b30e6d54ad))
+
+
+### Bug Fixes
+
+* default minimal errors for HTTP ([#552](https://github.com/arc-mcp/arc-1/issues/552)) ([4ed0dcf](https://github.com/arc-mcp/arc-1/commit/4ed0dcf090d745f2469952490118e694159a61ff))
+* harden change_package object type matching ([#556](https://github.com/arc-mcp/arc-1/issues/556)) ([940b7c5](https://github.com/arc-mcp/arc-1/commit/940b7c5ff6d675a03ec280bfb1ff8bcdbf6ff885))
+* harden principal-propagation identity boundaries ([d458c66](https://github.com/arc-mcp/arc-1/commit/d458c66ba36a3580688f874dea758ed75a1271d5))
+* improve SAPQuery Open SQL guidance ([#559](https://github.com/arc-mcp/arc-1/issues/559)) ([636eb6c](https://github.com/arc-mcp/arc-1/commit/636eb6c731466ca39d6b18253cdf8ceab53e216a))
+* make sqlite source cache explicit opt-in ([#557](https://github.com/arc-mcp/arc-1/issues/557)) ([7864e89](https://github.com/arc-mcp/arc-1/commit/7864e8925a662c0be1024bbb89652c77cecb69b2))
+* open browser via rundll32 on Windows to preserve & in URLs ([#549](https://github.com/arc-mcp/arc-1/issues/549)) ([#555](https://github.com/arc-mcp/arc-1/issues/555)) ([dbf2123](https://github.com/arc-mcp/arc-1/commit/dbf2123cf4b536be63b777fad9a40d41a89ae82d))
+
 ## [0.9.25](https://github.com/arc-mcp/arc-1/compare/v0.9.24...v0.9.25) (2026-07-02)
 
 
