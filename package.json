@@ -1,149 +1,149 @@
 {
-    "name": "arc-1",
-    "version": "0.9.26",
-    "mcpName": "io.github.arc-mcp/arc-1",
-    "description": "ARC-1 — MCP Server for SAP ABAP Systems",
-    "author": "Marian Zeis",
-    "license": "MIT",
-    "repository": {
-        "type": "git",
-        "url": "https://github.com/arc-mcp/arc-1"
+  "name": "arc-1",
+  "version": "0.9.26",
+  "mcpName": "io.github.arc-mcp/arc-1",
+  "description": "ARC-1 — MCP Server for SAP ABAP Systems",
+  "author": "Marian Zeis",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/arc-mcp/arc-1"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22.19"
+  },
+  "bin": {
+    "arc-1": "./bin/arc1.js",
+    "arc1": "./bin/arc1.js",
+    "arc1-cli": "./bin/arc1-cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     },
-    "type": "module",
-    "engines": {
-        "node": ">=22.19"
+    "./public": {
+      "types": "./dist/public/index.d.ts",
+      "default": "./dist/public/index.js"
     },
-    "bin": {
-        "arc-1": "./bin/arc1.js",
-        "arc1": "./bin/arc1.js",
-        "arc1-cli": "./bin/arc1-cli.js"
+    "./public/testing": {
+      "types": "./dist/public/testing.d.ts",
+      "default": "./dist/public/testing.js"
     },
-    "main": "./dist/index.js",
-    "types": "./dist/index.d.ts",
-    "exports": {
-        ".": {
-            "types": "./dist/index.d.ts",
-            "default": "./dist/index.js"
-        },
-        "./public": {
-            "types": "./dist/public/index.d.ts",
-            "default": "./dist/public/index.js"
-        },
-        "./public/testing": {
-            "types": "./dist/public/testing.d.ts",
-            "default": "./dist/public/testing.js"
-        },
-        "./package.json": "./package.json"
-    },
-    "files": [
-        "dist",
-        "bin",
-        "README.md",
-        "LICENSE"
-    ],
-    "publishConfig": {
-        "access": "public"
-    },
-    "scripts": {
-        "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc && node -e \"const fs=require('fs');fs.cpSync('src/aff/schemas','dist/aff/schemas',{recursive:true});if(fs.existsSync('public/ui'))fs.cpSync('public/ui','dist/public/ui',{recursive:true})\"",
-        "dev": "tsx src/index.ts",
-        "dev:http": "npm run build && tsx src/index.ts --transport http-streamable",
-        "start": "node dist/index.js",
-        "start:docs": "python3 -m properdocs serve",
-        "setup:docs": "python3 -m venv .venv-docs && .venv-docs/bin/pip install -r requirements.txt",
-        "test": "vitest run",
-        "test:watch": "vitest",
-        "test:integration": "vitest run --config vitest.integration.config.ts",
-        "test:integration:slow": "vitest run --config vitest.integration.slow.config.ts",
-        "test:integration:btp": "vitest run --config vitest.integration.config.ts tests/integration/btp-abap.integration.test.ts",
-        "test:integration:btp:smoke": "vitest run --config vitest.integration.config.ts tests/integration/btp-abap.smoke.integration.test.ts",
-        "test:integration:crud": "vitest run --config vitest.integration.config.ts tests/integration/crud.lifecycle.integration.test.ts",
-        "test:authz:http": "node scripts/check-authz-http-profiles.mjs",
-        "test:npx-smoke": "npm run build && node scripts/ci/assert-npx-bin-smoke.mjs",
-        "test:integration:skip-summary": "vitest run --config vitest.integration.config.ts --reporter=verbose 2>&1 | node scripts/ci/summarize-skips.mjs",
-        "test:coverage": "vitest run --coverage",
-        "test:coverage-report": "node scripts/ci/coverage-summary.mjs",
-        "lint": "biome check .",
-        "lint:fix": "biome check --write .",
-        "format": "biome format --write .",
-        "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.scripts.json && tsc --noEmit -p tsconfig.tests.json",
-        "validate:policy": "tsx scripts/validate-action-policy.ts",
-        "check:sizes": "node scripts/ci/check-file-sizes.mjs && tsx scripts/ci/check-tool-schema-budget.ts",
-        "cli": "tsx src/cli.ts",
-        "extract-sap-cookies": "tsx src/extract-sap-cookies.ts",
-        "probe": "tsx scripts/probe-adt-types.ts",
-        "prepare": "husky || true",
-        "prepublishOnly": "npm run build",
-        "test:eval": "node scripts/run-evals.mjs",
-        "test:eval:live": "node scripts/run-evals.mjs --backend live",
-        "test:e2e": "npm run test:e2e:fixtures && vitest run --config tests/e2e/vitest.e2e.config.ts",
-        "test:e2e:slow": "npm run test:e2e:fixtures && vitest run --config tests/e2e/vitest.e2e.slow.config.ts",
-        "test:e2e:fixtures": "tsx tests/e2e/sync-fixtures.ts",
-        "test:e2e:fixtures:clean": "tsx tests/e2e/sync-fixtures.ts --clean",
-        "test:cleanup": "tsx scripts/test-janitor.ts",
-        "test:e2e:start": "bash scripts/e2e-start-local.sh",
-        "test:e2e:stop": "bash scripts/e2e-stop-local.sh",
-        "test:e2e:deploy": "bash scripts/e2e-deploy.sh",
-        "test:e2e:stop:remote": "bash scripts/e2e-stop.sh",
-        "test:e2e:full": "bash scripts/e2e-run-local.sh",
-        "test:e2e:skip-summary": "vitest run --config tests/e2e/vitest.e2e.config.ts --reporter=verbose 2>&1 | node scripts/ci/summarize-skips.mjs",
-        "test:reliability-report": "node scripts/ci/collect-test-reliability.mjs",
-        "test:runtime-report": "node scripts/ci/test-runtime-summary.mjs",
-        "test:assert-execution": "node scripts/ci/assert-required-test-execution.mjs",
-        "btp:validate": "npx mbt validate && npx mbt validate -e mta-overrides.mtaext.example && npx mbt validate -e mta-overrides.mtaext.example -e mta-ui-approuter.mtaext",
-        "btp:build": "npx mbt build",
-        "btp:build-ui-ext": "npx mbt build -e mta-ui-approuter.mtaext",
-        "btp:deploy": "node -e \"const v=require('./package.json').version;require('child_process').execSync('cf deploy mta_archives/arc1-mcp_'+v+'.mtar',{stdio:'inherit'})\"",
-        "btp:deploy-ext": "node -e \"const v=require('./package.json').version;require('child_process').execSync('cf deploy mta_archives/arc1-mcp_'+v+'.mtar -e mta-overrides.mtaext',{stdio:'inherit'})\"",
-        "btp:deploy-ui-ext": "node scripts/btp/prepare-ui-mtaext.mjs && node -e \"const v=require('./package.json').version;require('child_process').execSync('cf deploy mta_archives/arc1-mcp_'+v+'.mtar -e mta-ui-deploy.mtaext',{stdio:'inherit'})\"",
-        "btp:build-deploy": "npm run btp:build && npm run btp:deploy",
-        "btp:build-deploy-ext": "npm run btp:build && npm run btp:deploy-ext",
-        "btp:build-deploy-ui-ext": "npm run btp:build-ui-ext && npm run btp:deploy-ui-ext"
-    },
-    "dependencies": {
-        "@abaplint/core": "^2.119.65",
-        "@arc-mcp/xsuaa-auth": "^0.1.4",
-        "@modelcontextprotocol/sdk": "^1.28.0",
-        "@sap-cloud-sdk/connectivity": "^4.7.0",
-        "@sap/xsenv": "^6.2.1",
-        "@sap/xssec": "^4.13.1",
-        "ajv": "^8.18.0",
-        "better-sqlite3": "^12.11.1",
-        "commander": "^15.0.0",
-        "cors": "2.8.6",
-        "diff": "^9.0.0",
-        "dotenv": "^17.3.1",
-        "express": "^5.2.1",
-        "express-rate-limit": "^8.5.2",
-        "fast-xml-parser": "^5.10.0",
-        "helmet": "^8.3.0",
-        "jose": "^6.2.2",
-        "rate-limiter-flexible": "^11.2.0",
-        "undici": "^8.7.0",
-        "zod": "^4.3.6"
-    },
-    "overrides": {
-        "esbuild": "^0.28.1",
-        "form-data": "^4.0.6",
-        "vite": "^8.0.16"
-    },
-    "lint-staged": {
-        "*.{ts,js,json}": "biome check --write --no-errors-on-unmatched"
-    },
-    "devDependencies": {
-        "@biomejs/biome": "^2.5.3",
-        "@types/better-sqlite3": "^7.6.13",
-        "@types/cors": "^2.8.19",
-        "@types/express": "^5.0.6",
-        "@types/node": "^22.20.1",
-        "@types/supertest": "^7.2.0",
-        "@vitest/coverage-v8": "^4.1.10",
-        "husky": "^9.1.7",
-        "lint-staged": "^17.0.8",
-        "supertest": "^7.2.2",
-        "tsx": "^4.23.1",
-        "typescript": "~7.0.2",
-        "vitest": "^4.1.1",
-        "yaml": "^2.9.0"
-    }
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc && node -e \"const fs=require('fs');fs.cpSync('src/aff/schemas','dist/aff/schemas',{recursive:true});if(fs.existsSync('public/ui'))fs.cpSync('public/ui','dist/public/ui',{recursive:true})\"",
+    "dev": "tsx src/index.ts",
+    "dev:http": "npm run build && tsx src/index.ts --transport http-streamable",
+    "start": "node dist/index.js",
+    "start:docs": "python3 -m properdocs serve",
+    "setup:docs": "python3 -m venv .venv-docs && .venv-docs/bin/pip install -r requirements.txt",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:integration:slow": "vitest run --config vitest.integration.slow.config.ts",
+    "test:integration:btp": "vitest run --config vitest.integration.config.ts tests/integration/btp-abap.integration.test.ts",
+    "test:integration:btp:smoke": "vitest run --config vitest.integration.config.ts tests/integration/btp-abap.smoke.integration.test.ts",
+    "test:integration:crud": "vitest run --config vitest.integration.config.ts tests/integration/crud.lifecycle.integration.test.ts",
+    "test:authz:http": "node scripts/check-authz-http-profiles.mjs",
+    "test:npx-smoke": "npm run build && node scripts/ci/assert-npx-bin-smoke.mjs",
+    "test:integration:skip-summary": "vitest run --config vitest.integration.config.ts --reporter=verbose 2>&1 | node scripts/ci/summarize-skips.mjs",
+    "test:coverage": "vitest run --coverage",
+    "test:coverage-report": "node scripts/ci/coverage-summary.mjs",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.scripts.json && tsc --noEmit -p tsconfig.tests.json",
+    "validate:policy": "tsx scripts/validate-action-policy.ts",
+    "check:sizes": "node scripts/ci/check-file-sizes.mjs && tsx scripts/ci/check-tool-schema-budget.ts",
+    "cli": "tsx src/cli.ts",
+    "extract-sap-cookies": "tsx src/extract-sap-cookies.ts",
+    "probe": "tsx scripts/probe-adt-types.ts",
+    "prepare": "husky || true",
+    "prepublishOnly": "npm run build",
+    "test:eval": "node scripts/run-evals.mjs",
+    "test:eval:live": "node scripts/run-evals.mjs --backend live",
+    "test:e2e": "npm run test:e2e:fixtures && vitest run --config tests/e2e/vitest.e2e.config.ts",
+    "test:e2e:slow": "npm run test:e2e:fixtures && vitest run --config tests/e2e/vitest.e2e.slow.config.ts",
+    "test:e2e:fixtures": "tsx tests/e2e/sync-fixtures.ts",
+    "test:e2e:fixtures:clean": "tsx tests/e2e/sync-fixtures.ts --clean",
+    "test:cleanup": "tsx scripts/test-janitor.ts",
+    "test:e2e:start": "bash scripts/e2e-start-local.sh",
+    "test:e2e:stop": "bash scripts/e2e-stop-local.sh",
+    "test:e2e:deploy": "bash scripts/e2e-deploy.sh",
+    "test:e2e:stop:remote": "bash scripts/e2e-stop.sh",
+    "test:e2e:full": "bash scripts/e2e-run-local.sh",
+    "test:e2e:skip-summary": "vitest run --config tests/e2e/vitest.e2e.config.ts --reporter=verbose 2>&1 | node scripts/ci/summarize-skips.mjs",
+    "test:reliability-report": "node scripts/ci/collect-test-reliability.mjs",
+    "test:runtime-report": "node scripts/ci/test-runtime-summary.mjs",
+    "test:assert-execution": "node scripts/ci/assert-required-test-execution.mjs",
+    "btp:validate": "npx mbt validate && npx mbt validate -e mta-overrides.mtaext.example && npx mbt validate -e mta-overrides.mtaext.example -e mta-ui-approuter.mtaext",
+    "btp:build": "npx mbt build",
+    "btp:build-ui-ext": "npx mbt build -e mta-ui-approuter.mtaext",
+    "btp:deploy": "node -e \"const v=require('./package.json').version;require('child_process').execSync('cf deploy mta_archives/arc1-mcp_'+v+'.mtar',{stdio:'inherit'})\"",
+    "btp:deploy-ext": "node -e \"const v=require('./package.json').version;require('child_process').execSync('cf deploy mta_archives/arc1-mcp_'+v+'.mtar -e mta-overrides.mtaext',{stdio:'inherit'})\"",
+    "btp:deploy-ui-ext": "node scripts/btp/prepare-ui-mtaext.mjs && node -e \"const v=require('./package.json').version;require('child_process').execSync('cf deploy mta_archives/arc1-mcp_'+v+'.mtar -e mta-ui-deploy.mtaext',{stdio:'inherit'})\"",
+    "btp:build-deploy": "npm run btp:build && npm run btp:deploy",
+    "btp:build-deploy-ext": "npm run btp:build && npm run btp:deploy-ext",
+    "btp:build-deploy-ui-ext": "npm run btp:build-ui-ext && npm run btp:deploy-ui-ext"
+  },
+  "dependencies": {
+    "@abaplint/core": "^2.119.65",
+    "@arc-mcp/xsuaa-auth": "^0.1.4",
+    "@modelcontextprotocol/sdk": "^1.28.0",
+    "@sap-cloud-sdk/connectivity": "^4.7.0",
+    "@sap/xsenv": "^6.2.1",
+    "@sap/xssec": "^4.13.1",
+    "ajv": "^8.18.0",
+    "better-sqlite3": "^12.11.1",
+    "commander": "^15.0.0",
+    "cors": "2.8.6",
+    "diff": "^9.0.0",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
+    "fast-xml-parser": "^5.10.0",
+    "helmet": "^8.3.0",
+    "jose": "^6.2.2",
+    "rate-limiter-flexible": "^11.2.0",
+    "undici": "^8.7.0",
+    "zod": "^4.3.6"
+  },
+  "overrides": {
+    "esbuild": "^0.28.1",
+    "form-data": "^4.0.6",
+    "vite": "^8.0.16"
+  },
+  "lint-staged": {
+    "*.{ts,js,json}": "biome check --write --no-errors-on-unmatched"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.3",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.20.1",
+    "@types/supertest": "^7.2.0",
+    "@vitest/coverage-v8": "^4.1.10",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.8",
+    "supertest": "^7.2.2",
+    "tsx": "^4.23.1",
+    "typescript": "~7.0.2",
+    "vitest": "^4.1.1",
+    "yaml": "^2.9.0"
+  }
 }
