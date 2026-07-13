@@ -114,8 +114,8 @@ env:
   SAP_TRANSPORT: http-streamable
   SAP_XSUAA_AUTH: "true"                     # MCP clients authenticate via XSUAA OAuth
   SAP_PP_ENABLED: "true"                     # per-user principal propagation
+  SAP_PP_STRICT: "true"                      # recommended: keep this instance JWT-only
   SAP_BTP_PP_DESTINATION: <SYSTEM_ID>_SAML_ASSERTION
-  # SAP_PP_STRICT: "true"                    # optional: reject non-JWT / PP failures (no fallback)
 services:
   - arc1-xsuaa
   - arc1-destination

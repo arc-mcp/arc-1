@@ -257,7 +257,7 @@ server {
 - Rotate keys periodically
 - With multi-key, audit logs include the profile name (e.g. `api-key:viewer`) to identify which key was used
 - All API key users share the same SAP identity — no per-user SAP audit trail
-- For per-user SAP auth, use [OAuth / JWT](oauth-jwt-setup.md) + [Principal Propagation](principal-propagation-setup.md)
+- For per-user SAP auth, use [OAuth / JWT](oauth-jwt-setup.md) + [Principal Propagation](principal-propagation-setup.md) on a separate strict PP-only instance. Do not mix API-key and PP identity models on one production endpoint.
 
 ## Limitations
 

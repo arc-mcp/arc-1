@@ -305,6 +305,7 @@ Use `viewer` for read-only users, `developer` for `$TMP` sandbox writes, and `ad
 ```bash
 SAP_XSUAA_AUTH=true
 SAP_PP_ENABLED=true
+SAP_PP_STRICT=true
 SAP_ALLOW_WRITES=true
 SAP_ALLOW_TRANSPORT_WRITES=true
 SAP_ALLOWED_PACKAGES='Z*,$TMP'

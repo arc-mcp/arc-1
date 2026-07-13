@@ -719,9 +719,10 @@ describe('logAuthSummary', () => {
     expect(infoSpy).toHaveBeenCalledWith('auth: MCP=[oidc] SAP=pp (per-user)');
   });
 
-  it('logs combined api-keys+oidc MCP auth and cookie+pp SAP auth', () => {
+  it('labels and warns about mixed API-key and PP SAP identities', () => {
     delete process.env.SAP_BTP_DESTINATION;
     const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
 
     logAuthSummary({
       ...DEFAULT_CONFIG,
@@ -733,7 +734,30 @@ describe('logAuthSummary', () => {
       ppEnabled: true,
     });
 
-    expect(infoSpy).toHaveBeenCalledWith('auth: MCP=[api-keys,oidc] SAP=cookie+pp (per-user)');
+    expect(infoSpy).toHaveBeenCalledWith(
+      'auth: MCP=[api-keys,oidc] SAP=cookie+pp (mixed: JWT per-user, API keys shared)',
+    );
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('not recommended for production'));
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('separate non-PP ARC-1 instance'));
+  });
+
+  it('warns when API keys are configured on an explicitly strict PP-only instance', () => {
+    delete process.env.SAP_BTP_DESTINATION;
+    const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+
+    logAuthSummary({
+      ...DEFAULT_CONFIG,
+      apiKeys: [{ key: 'k', profile: 'viewer' }],
+      xsuaaAuth: true,
+      ppEnabled: true,
+      ppStrict: true,
+      ppStrictExplicit: true,
+    });
+
+    expect(infoSpy).toHaveBeenCalledWith('auth: MCP=[api-keys,xsuaa] SAP=pp (per-user)');
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('rejects API-key MCP tool calls'));
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('separate non-PP ARC-1 instance'));
   });
 });
 

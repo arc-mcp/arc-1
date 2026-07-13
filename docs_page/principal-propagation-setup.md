@@ -115,15 +115,20 @@ Verify these profile parameters (transaction `/nRZ10`):
 export SAP_BTP_DESTINATION=SAP_TRIAL
 export SAP_BTP_PP_DESTINATION=SAP_TRIAL_PP
 export SAP_PP_ENABLED=true
-# Optional JWT-only strict mode:
-# export SAP_PP_STRICT=true
+# Recommended production topology: accept only JWT-backed per-user tool calls.
+export SAP_PP_STRICT=true
 ```
 
 ### Behavior
 
 - **JWT request** → ARC-1 uses the per-user destination (`SAP_BTP_PP_DESTINATION`), passing the JWT as `X-User-Token`
 - **PP failure** → returns error, no fallback to a different SAP identity
-- **API key / non-JWT request** → uses shared destination unless `SAP_PP_STRICT=true` was set explicitly
+- **API key / non-JWT request** → rejected because `SAP_PP_STRICT=true` is explicit
+
+For automation that requires API keys, deploy a separate ARC-1 instance with `SAP_PP_ENABLED=false`
+and a least-privileged technical SAP identity. Mixed mode remains available for compatibility by
+setting `SAP_PP_STRICT=false`, but it gives one endpoint two SAP audit identities and is not the
+recommended production topology.
 
 ## Cloud targets: S/4HANA Public Cloud & BTP ABAP (no Cloud Connector)
 
@@ -152,14 +157,14 @@ identical to the BAS setup, plus ARC-1 configuration), see the dedicated guide:
 > Either way, keep `SAP_DISABLE_SAML` **unset/false** — never disable SAML on S/4HANA Public Cloud.
 
 !!! warning "JWT principal propagation always fails closed"
-    With `SAP_PP_ENABLED=true`, a JWT request never falls back to the shared service account after a PP error. `SAP_PP_STRICT=false` only retains shared-client access for API-key / non-JWT requests; it does not change the identity of a failed JWT request.
+    With `SAP_PP_ENABLED=true`, a JWT request never falls back to the shared service account after a PP error. `SAP_PP_STRICT=false` only retains shared-client access for API-key / non-JWT requests; it does not change the identity of a failed JWT request. Use that mixed mode only as a documented compatibility exception; prefer separate PP-only and API-key instances.
 
 ### All PP-related config
 
 | Flag | Env Var | Default | Description |
 |------|---------|---------|-------------|
 | `--pp-enabled` | `SAP_PP_ENABLED` | `false` | Enable principal propagation |
-| `--pp-strict` | `SAP_PP_STRICT` | `true` when PP is enabled | JWT PP errors always fail closed. Set explicitly to `true` when API-key / non-JWT requests should also be rejected. Explicit `false` retains mixed-auth shared-client access for non-JWT calls but never enables JWT fallback. |
+| `--pp-strict` | `SAP_PP_STRICT` | `true` when PP is enabled | JWT PP errors always fail closed. Set explicitly to `true` for the recommended PP-only production topology, which also rejects API-key / non-JWT tool calls. Explicit `false` retains compatibility mixed mode for non-JWT calls but never enables JWT fallback. |
 | `--pp-allow-shared-cookies` | `SAP_PP_ALLOW_SHARED_COOKIES` | `false` | Escape hatch — allow cookies to coexist with PP (cookies stay on shared client only) |
 | — | `SAP_BTP_DESTINATION` | — | Shared (fallback) destination name |
 | — | `SAP_BTP_PP_DESTINATION` | — | Per-user PP destination name |

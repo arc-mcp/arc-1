@@ -134,7 +134,9 @@ The recommended approach uses **two destinations** — one for the shared servic
 | **Password** | `<password>` |
 | `sap-client` | `001` |
 
-This destination is resolved at startup and used for API key auth and other non-JWT requests.
+This destination is resolved at startup for system-level feature probing and cache warmup. It also
+serves API-key/non-JWT requests only in explicit compatibility mixed mode (`SAP_PP_STRICT=false`);
+the recommended strict PP instance does not expose it to MCP tool callers.
 
 **Destination 2: `SAP_TRIAL_PP` (PrincipalPropagation — per-user)**
 
@@ -151,7 +153,7 @@ This destination is resolved at startup and used for API key auth and other non-
 
 This destination is used per-request when an authenticated user's JWT is available.
 
-> **Why two destinations?** A PrincipalPropagation destination has no User/Password. At startup, there is no user JWT — the SAP Cloud SDK's `getDestination()` would fail for PP destinations. The BasicAuth destination provides a fallback for system-level operations (feature probing, cache warmup) and API key users.
+> **Why two destinations?** A PrincipalPropagation destination has no User/Password. At startup, there is no user JWT — the SAP Cloud SDK's `getDestination()` would fail for PP destinations. The BasicAuth destination supports system-level startup operations (feature probing and cache warmup). In the recommended strict topology it is not available to MCP tool callers.
 
 > **Why port 50001 for PP?** The Cloud Connector needs an HTTPS system mapping with `X509_GENERAL` auth mode for PP. Port 50001 is the SAP HTTPS port. The HTTP mapping (50000) uses `NONE_RESTRICTED` auth which doesn't support PP.
 
@@ -320,6 +322,7 @@ Or via SAP GUI: Transaction **SMICM** → Administration → ICM → Soft Restar
 cf set-env arc1-mcp-server SAP_BTP_DESTINATION SAP_TRIAL        # BasicAuth (shared)
 cf set-env arc1-mcp-server SAP_BTP_PP_DESTINATION SAP_TRIAL_PP  # PP (per-user)
 cf set-env arc1-mcp-server SAP_PP_ENABLED true
+cf set-env arc1-mcp-server SAP_PP_STRICT true                    # recommended PP-only instance
 cf set-env arc1-mcp-server SAP_XSUAA_AUTH true
 cf restage arc1-mcp-server
 ```
@@ -331,10 +334,18 @@ env:
   SAP_BTP_DESTINATION: "SAP_TRIAL"
   SAP_BTP_PP_DESTINATION: "SAP_TRIAL_PP"
   SAP_PP_ENABLED: "true"
+  SAP_PP_STRICT: "true"
   SAP_XSUAA_AUTH: "true"
 ```
 
-### Step 5: Mixed Authentication
+### Step 5: Keep PP and API-Key Identities Separate (Recommended)
+
+Use the PP deployment for JWT-authenticated users only by setting `SAP_PP_STRICT=true` explicitly.
+If automation needs API keys, run a separate ARC-1 instance with `SAP_PP_ENABLED=false`, a dedicated
+least-privileged technical SAP user/destination, and its own safety ceiling. This keeps SAP audit
+identity, authorization, operational ownership, and credential blast radius consistent per endpoint.
+
+#### Compatibility: mixed authentication
 
 When `SAP_PP_ENABLED=true`:
 - If the user has a valid JWT (XSUAA/OIDC, 3 dot-separated parts) → per-user ADT client via `SAP_BTP_PP_DESTINATION`
@@ -342,10 +353,12 @@ When `SAP_PP_ENABLED=true`:
 - If no JWT available (API key auth, stdio) → uses shared service account
 - API key tokens are detected as non-JWT and skip PP entirely (no wasted API calls)
 
-This means you can enable PP without breaking existing API key users while still failing closed for JWT requests whose per-user session cannot be created.
+Mixed authentication remains supported for migrations: set `SAP_PP_STRICT=false` explicitly to keep
+existing API-key users on the shared client while JWT users use PP. It is not the recommended
+production topology because the same endpoint then has two SAP identities.
 
 !!! warning "JWT principal propagation always fails closed"
-    A failed JWT PP lookup never routes through the shared service account in `SAP_BTP_DESTINATION`. `SAP_PP_STRICT=true` additionally rejects API-key / non-JWT requests when the deployment must be JWT-only.
+    A failed JWT PP lookup never routes through the shared service account in `SAP_BTP_DESTINATION`. `SAP_PP_STRICT=true` additionally rejects API-key / non-JWT requests and is recommended for production PP instances.
 
 ### How ARC-1 Resolves PP Destinations
 
@@ -405,6 +418,7 @@ Create an HTTP destination in BTP Cockpit or through the Destination service:
 cf set-env arc1-mcp-server SAP_SYSTEM_TYPE btp
 cf set-env arc1-mcp-server SAP_BTP_DESTINATION ABAP_PP
 cf set-env arc1-mcp-server SAP_PP_ENABLED true
+cf set-env arc1-mcp-server SAP_PP_STRICT true
 cf set-env arc1-mcp-server SAP_XSUAA_AUTH true
 cf restage arc1-mcp-server
 ```
@@ -417,7 +431,7 @@ At request time, ARC-1 validates the MCP user's XSUAA JWT, asks the Destination 
 
 ### Prerequisites
 
-- ARC-1 deployed on BTP CF with `SAP_XSUAA_AUTH=true` and `SAP_PP_ENABLED=true`
+- ARC-1 deployed on BTP CF with `SAP_XSUAA_AUTH=true`, `SAP_PP_ENABLED=true`, and explicit `SAP_PP_STRICT=true`
 - XSUAA service instance with `xs-security.json` (see [XSUAA Setup](xsuaa-setup.md))
 - For on-premise SAP: BTP Destination set to `PrincipalPropagation`, plus Cloud Connector and SAP configured for PP (Steps 2-3 above)
 - For BTP ABAP Environment: BTP Destination set to `OAuth2UserTokenExchange` (Mode 4)
@@ -563,6 +577,7 @@ ARC-1 uses two URL path prefixes. Add both as resources with **Path and all sub-
 | `SAP_BTP_DESTINATION` | BTP Destination name. For BasicAuth, this is the shared startup destination. For BTP ABAP `OAuth2UserTokenExchange`, this is usually the per-user destination used with `SAP_PP_ENABLED=true`. | *(none)* |
 | `SAP_BTP_PP_DESTINATION` | Optional per-user destination name. Use for on-prem PP when the shared startup destination and PP destination differ. For BTP ABAP `OAuth2UserTokenExchange`, `SAP_BTP_DESTINATION` alone is usually the per-user destination. | Falls back to `SAP_BTP_DESTINATION` |
 | `SAP_PP_ENABLED` / `--pp-enabled` | Enable ARC-1's per-user destination path: Cloud Connector PP for on-premise SAP, or `OAuth2UserTokenExchange` for BTP ABAP Environment. | `false` |
+| `SAP_PP_STRICT` / `--pp-strict` | Set explicitly to `true` for the recommended PP-only production topology. Explicit `false` enables compatibility mixed mode for API-key/non-JWT calls. | `true` when PP is enabled; base MTA sets explicit `true` |
 | `SAP_XSUAA_AUTH` / `--xsuaa-auth` | Enable XSUAA OAuth proxy | `false` |
 | `SAP_URL` / `--url` | Direct SAP URL (overridden by destination) | *(none)* |
 | `SAP_USER` / `--user` | Direct SAP user (overridden by destination/PP) | *(none)* |

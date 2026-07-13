@@ -13,11 +13,19 @@ deployments.
 - Custom deployments with PP enabled but no Destination Service runtime configuration will now return
   an MCP tool error for JWT requests instead of silently using the shared client.
 - API-key / non-JWT requests still use the shared client unless `SAP_PP_STRICT=true` is set explicitly.
+- The shipped BTP `mta.yaml` now sets `SAP_PP_STRICT=true`, making new and updated base-MTA
+  deployments PP-only by default. Before deploying, move API-key automation to a separate non-PP
+  instance. As a temporary compatibility exception, an override can set `SAP_PP_STRICT=false`.
 
 The application still starts and `/health` remains successful when a runtime-only PP mapping is broken.
 Before rolling the version into production, make one JWT-authenticated SAP read in staging and verify
 that SAP records the expected human user. Do not use `SAP_PP_STRICT=false` as a JWT fallback switch;
 it now controls only whether mixed API-key / non-JWT access remains available.
+
+The recommended production topology is one SAP identity model per ARC-1 instance: strict PP with
+JWT/XSUAA for human users, and a separate non-PP instance with a least-privileged technical identity
+for API-key automation. Mixed mode is supported for migration compatibility, not recommended as the
+steady state.
 
 ## v0.7 — Authorization Refactor (breaking change)
 

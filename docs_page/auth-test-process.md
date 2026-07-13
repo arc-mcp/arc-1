@@ -214,7 +214,8 @@ npm test
 ```bash
 SAP_BTP_DESTINATION=SAP_TRIAL \
 SAP_BTP_PP_DESTINATION=SAP_TRIAL_PP \
-SAP_PP_ENABLED=true
+SAP_PP_ENABLED=true \
+SAP_PP_STRICT=true
 ```
 
 **2. Verify per-user identity in SAP:**
@@ -234,7 +235,7 @@ cf logs arc1-mcp-server --recent | grep -E "Principal propagation|per-user|BTP d
 - [ ] SAP certificate mapping (CERTRULE / VUSREXTID) configured
 - [ ] JWT-authenticated requests use per-user destination
 - [ ] SAP logs show per-user identity (not technical account)
-- [ ] Fallback behavior matches `SAP_PP_STRICT` setting
+- [ ] `SAP_PP_STRICT=true` is explicit and API-key automation runs on a separate non-PP instance
 
 ---
 

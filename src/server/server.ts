@@ -184,7 +184,8 @@ export function filterToolsByAuthScope(
 
 export function logAuthSummary(config: ServerConfig): void {
   const mcpMethods: string[] = [];
-  if (config.apiKeys?.length) mcpMethods.push('api-keys');
+  const hasApiKeys = !!config.apiKeys?.length;
+  if (hasApiKeys) mcpMethods.push('api-keys');
   if (config.oidcIssuer && config.oidcAudience) mcpMethods.push('oidc');
   if (config.xsuaaAuth) mcpMethods.push('xsuaa');
   if (mcpMethods.length === 0) mcpMethods.push('none');
@@ -211,9 +212,24 @@ export function logAuthSummary(config: ServerConfig): void {
     sapMethod = 'basic';
   }
 
-  const scope = config.ppEnabled ? 'per-user' : 'shared';
+  const strictPpOnly = config.ppEnabled && config.ppStrictExplicit && config.ppStrict;
+  const mixedSapIdentity = config.ppEnabled && hasApiKeys && !strictPpOnly;
+  const scope = mixedSapIdentity ? 'mixed: JWT per-user, API keys shared' : config.ppEnabled ? 'per-user' : 'shared';
   const samlSuffix = config.disableSaml2 ? ' disable-saml=on' : '';
   logger.info(`auth: MCP=[${mcpMethods.join(',')}] SAP=${sapMethod} (${scope})${samlSuffix}`);
+
+  if (mixedSapIdentity) {
+    logger.warn(
+      'auth topology: PP and API-key calls use different SAP identities. Mixed mode is supported for compatibility ' +
+        'but is not recommended for production; set SAP_PP_STRICT=true and run API-key automation on a separate ' +
+        'non-PP ARC-1 instance.',
+    );
+  } else if (strictPpOnly && hasApiKeys) {
+    logger.warn(
+      'auth topology: ARC1_API_KEYS is configured but SAP_PP_STRICT=true rejects API-key MCP tool calls. ' +
+        'Remove the keys from this PP-only instance or move them to a separate non-PP ARC-1 instance.',
+    );
+  }
 }
 
 /** Build the base ADT client config (without per-user auth) */
@@ -720,7 +736,7 @@ export function createServer(
     // Principal propagation: create per-user ADT client if enabled and user JWT available.
     // The verifier marks API-key auth with an `api-key:<profile>` clientId. Check that
     // trusted provenance before the JWT shape so an API key containing two dots is not
-    // mistaken for a JWT and denied in mixed-auth PP deployments.
+    // mistaken for a JWT and denied in compatibility mixed-auth PP deployments.
     let client = defaultClient;
     let isPerUserClient = false;
     const token = extra.authInfo?.token;

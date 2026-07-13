@@ -114,6 +114,9 @@ modules:
       # PrincipalPropagation destination for per-user requests (with JWT)
       SAP_BTP_PP_DESTINATION: your-pp-destination
       SAP_PP_ENABLED: "true"
+      # Recommended production topology: this PP instance accepts only JWT-backed
+      # per-user SAP calls. Run API-key automation on a separate non-PP instance.
+      SAP_PP_STRICT: "true"
       # Authorization / safety defaults. Keep the MTA conservative; widen per
       # landscape via `mta-overrides.mtaext` or `cf set-env` only when the
       # target system actually needs it.

@@ -38,8 +38,10 @@ modules:
       # Enable per-user principal propagation (default in mta.yaml: true)
       # SAP_PP_ENABLED: "true"
 
-      # PP failure = hard error, no fallback to shared client
-      # SAP_PP_STRICT: "true"
+      # The base MTA is PP-only (default: true): API-key/non-JWT tool calls are
+      # rejected. Prefer a separate non-PP instance for API-key automation.
+      # Set false only as a deliberate, temporary mixed-identity compatibility mode.
+      # SAP_PP_STRICT: "false"
 
       # ── Safety / Authorization ───────────────────────────────────────
       # Enable object mutations (create, update, delete)
