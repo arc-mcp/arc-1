@@ -753,6 +753,33 @@ describe('SAPWriteSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('exposes edit_unit only for on-prem PROG/INCL writes', () => {
+    const program = SAPWriteSchema.safeParse({
+      action: 'edit_unit',
+      type: 'PROG',
+      name: 'ZUNIT_TEST',
+      unit: 'PROCESS_ORDERS',
+      source: 'FORM process_orders.\nENDFORM.',
+    });
+    const include = SAPWriteSchema.safeParse({
+      action: 'edit_unit',
+      type: 'INCL',
+      name: 'ZUNIT_INCLUDE',
+      unit: 'STATUS_0100',
+      source: 'MODULE status_0100 OUTPUT.\nENDMODULE.',
+    });
+    const btp = SAPWriteSchemaBtp.safeParse({
+      action: 'edit_unit',
+      type: 'CLAS',
+      name: 'ZCL_TEST',
+      unit: 'PROCESS_ORDERS',
+      source: 'FORM process_orders.\nENDFORM.',
+    });
+    expect(program.success).toBe(true);
+    expect(include.success).toBe(true);
+    expect(btp.success).toBe(false);
+  });
+
   it('accepts preflightBeforeWrite override', () => {
     const result = SAPWriteSchema.safeParse({
       action: 'update',
@@ -1285,14 +1312,21 @@ describe('SAPActivateSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('preserves the parent group for structural include activation', () => {
+    const result = SAPActivateSchema.safeParse({ name: 'LZARC1TOP', type: 'INCL', group: 'ZARC1' });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.group).toBe('ZARC1');
+  });
+
   it('accepts batch activation', () => {
     const result = SAPActivateSchema.safeParse({
       objects: [
-        { type: 'DDLS', name: 'ZI_TRAVEL' },
+        { type: 'INCL', name: 'LZARC1TOP', group: 'ZARC1' },
         { type: 'BDEF', name: 'ZI_TRAVEL' },
       ],
     });
     expect(result.success).toBe(true);
+    if (result.success) expect(result.data.objects?.[0]?.group).toBe('ZARC1');
   });
 
   it('accepts empty input (all fields optional)', () => {

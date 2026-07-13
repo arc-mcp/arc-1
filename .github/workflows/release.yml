@@ -42,10 +42,12 @@ jobs:
           cache: 'npm'
 
       - name: Install npm 11.5+ (required for OIDC trusted publishing)
-        run: |
-          # Workaround for Node.js v22 bundled npm bug (https://github.com/npm/cli/issues/9151)
-          npm install --global npm@11.11.1
-          npm install --global npm@latest
+        # Pin a known-good 11.x: >=11.5 enables OIDC trusted publishing, and `npm ci` still
+        # builds the better-sqlite3 native binding. npm@latest is now 12.x, under which `npm ci`
+        # leaves better_sqlite3.node unbuilt -> the sqlite cache tests fail (blocked 0.9.26).
+        # Installing a pinned version (not the `latest` tag) also sidesteps the Node 22.22.x
+        # bundled-npm self-upgrade bug (https://github.com/npm/cli/issues/9151). Bump deliberately.
+        run: npm install --global npm@11.11.1
 
       - name: Install dependencies
         run: npm ci
