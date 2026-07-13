@@ -1,0 +1,5 @@
+# Docs tooling (ProperDocs / MkDocs) — used by .github/workflows/pages.yml and local `npm run start:docs`
+# Install: pip install -r requirements.txt   (or: pipx install properdocs && pipx inject properdocs mkdocs-material mkdocs-redirects)
+properdocs
+mkdocs-material>=9.5,<10
+mkdocs-redirects>=1.2,<2

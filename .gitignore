@@ -118,3 +118,6 @@ mcpb-bundle/
 # Python bytecode (scripts/assets/generate-icon.py)
 __pycache__/
 *.pyc
+
+# Docs
+site/

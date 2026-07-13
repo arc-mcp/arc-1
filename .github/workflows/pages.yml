@@ -9,6 +9,7 @@ on:
       - 'docs/overrides/**'
       - 'README.md'
       - 'properdocs.yml'
+      - 'requirements.txt'
   workflow_dispatch:
 
 permissions:
@@ -31,9 +32,10 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: '3.x'
+          cache: 'pip'
 
       - name: Install ProperDocs
-        run: pip install properdocs "mkdocs-material>=9.5,<10" "mkdocs-redirects>=1.2,<2"
+        run: pip install -r requirements.txt
 
       - name: Build docs
         run: properdocs build
