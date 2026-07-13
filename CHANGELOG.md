@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.27](https://github.com/arc-mcp/arc-1/compare/v0.9.26...v0.9.27) (2026-07-13)
+
+
+### Bug Fixes
+
+* pin release npm to 11.x so npm ci builds better-sqlite3 ([#568](https://github.com/arc-mcp/arc-1/issues/568)) ([d38eee2](https://github.com/arc-mcp/arc-1/commit/d38eee23f0e49f1931815091f4d6593bc9918bcf))
+
 ## [0.9.26](https://github.com/arc-mcp/arc-1/compare/v0.9.25...v0.9.26) (2026-07-13)
 
 
