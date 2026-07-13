@@ -7,7 +7,7 @@
  * - http-streamable: for remote/containerized deployments
  */
 
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { type ApiKeyEntry, createApiKeyVerifier, type Verifier } from '@arc-mcp/xsuaa-auth';
 import type { BTPConfig, BTPProxyConfig, Destination, PerUserAuthTokens } from '@arc-mcp/xsuaa-auth/btp';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -57,15 +57,23 @@ let warnedLargeToolsList = false;
  * never make a JWT take the shared API-key path. This is a second, timing-safe
  * provenance check after the upstream verifier has already authenticated the token.
  */
-function configuredApiKeyProfile(config: ServerConfig, token: unknown): string | undefined {
-  if (typeof token !== 'string') return undefined;
+function createConfiguredApiKeyVerifier(config: ServerConfig): Verifier | undefined {
+  const entries: ApiKeyEntry[] = [];
   for (const entry of config.apiKeys ?? []) {
-    const key = randomBytes(32);
-    const tokenDigest = createHmac('sha256', key).update(token, 'utf8').digest();
-    const configuredDigest = createHmac('sha256', key).update(entry.key, 'utf8').digest();
-    if (timingSafeEqual(tokenDigest, configuredDigest)) return entry.profile;
+    if (!API_KEY_PROFILES[entry.profile]) continue;
+    entries.push({ key: entry.key, clientId: `api-key:${entry.profile}` });
   }
-  return undefined;
+  return entries.length > 0 ? createApiKeyVerifier(entries) : undefined;
+}
+
+async function configuredApiKeyProfile(verifier: Verifier | undefined, token: unknown): Promise<string | undefined> {
+  if (!verifier || typeof token !== 'string') return undefined;
+  try {
+    const authInfo = await verifier(token);
+    return authInfo.clientId?.startsWith('api-key:') ? authInfo.clientId.slice('api-key:'.length) : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function warnIfToolsListTooLarge(tools: ToolDefinition[]): void {
@@ -659,6 +667,7 @@ export function createServer(
   mcpRateLimiter?: McpRateLimiter,
 ): Server {
   const server = new Server({ name: 'arc-1', version: VERSION }, { capabilities: { tools: {} } });
+  const apiKeyProvenanceVerifier = createConfiguredApiKeyVerifier(config);
 
   // Create default ADT client (shared, uses startup-time credentials or OAuth bearer).
   // Passes the shared server-wide semaphore so per-user PP clients (created at request
@@ -757,7 +766,7 @@ export function createServer(
     let client = defaultClient;
     let isPerUserClient = false;
     const token = extra.authInfo?.token;
-    const apiKeyProfile = configuredApiKeyProfile(config, token);
+    const apiKeyProfile = await configuredApiKeyProfile(apiKeyProvenanceVerifier, token);
     const isApiKey = apiKeyProfile !== undefined;
     const isJwt = !isApiKey && typeof token === 'string' && token.split('.').length === 3;
     if (config.ppEnabled && isJwt) {
