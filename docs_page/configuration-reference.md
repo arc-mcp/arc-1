@@ -78,7 +78,7 @@ Pick one primary method. Combining methods that conflict (e.g. basic + cookies +
 
 | Flag | Env var | Effect |
 |---|---|---|
-| `--user` | `SAP_USER` | Username sent in `Authorization: Basic` on every ADT request. With `SAP_PP_ENABLED=true`, this becomes the *fallback* technical user used only when per-user PP is unavailable. |
+| `--user` | `SAP_USER` | Username sent in `Authorization: Basic` on shared-client ADT requests. With `SAP_PP_ENABLED=true`, API-key / non-JWT requests may still use this technical user unless `SAP_PP_STRICT=true` was set explicitly. A failed JWT PP request never falls back to this identity. |
 | `--password` | `SAP_PASSWORD` | Password for the above. Redacted from all logs. |
 
 #### B2. Cookie auth (dev-only SSO bridge)

@@ -1,5 +1,24 @@
 # Updating ARC-1
 
+## v0.9.26 — JWT Principal Propagation Always Fails Closed
+
+ARC-1 no longer changes a JWT-authenticated request to the shared SAP technical identity when
+principal propagation fails. This closes an identity and audit-boundary gap in BTP Cloud Foundry
+deployments.
+
+### Who needs to act
+
+- Deployments with `SAP_PP_ENABLED=true` that set `SAP_PP_STRICT=false` to fall back after a JWT
+  destination, token-exchange, or user-mapping error must fix that PP configuration before updating.
+- Custom deployments with PP enabled but no Destination Service runtime configuration will now return
+  an MCP tool error for JWT requests instead of silently using the shared client.
+- API-key / non-JWT requests still use the shared client unless `SAP_PP_STRICT=true` is set explicitly.
+
+The application still starts and `/health` remains successful when a runtime-only PP mapping is broken.
+Before rolling the version into production, make one JWT-authenticated SAP read in staging and verify
+that SAP records the expected human user. Do not use `SAP_PP_STRICT=false` as a JWT fallback switch;
+it now controls only whether mixed API-key / non-JWT access remains available.
+
 ## v0.7 — Authorization Refactor (breaking change)
 
 ARC-1 v0.7 rewrites the authorization layer around a **single source of truth** (`ACTION_POLICY`) with **positive opt-in** safety flags and **per-user scopes** that work for BTP, OIDC, and API-key auth modes consistently. **This is breaking — old env vars will error at startup**, pointing you here.

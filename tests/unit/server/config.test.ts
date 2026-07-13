@@ -171,7 +171,7 @@ describe('parseArgs', () => {
     expect(config.ppStrictExplicit).toBe(false);
   });
 
-  it('allows explicit shared-client PP fallback with SAP_PP_STRICT=false', () => {
+  it('parses explicit mixed-auth mode with SAP_PP_STRICT=false', () => {
     process.env.SAP_PP_ENABLED = 'true';
     process.env.SAP_PP_STRICT = 'false';
     const config = parseArgs([]);

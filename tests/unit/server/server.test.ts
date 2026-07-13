@@ -330,7 +330,7 @@ describe('createServer request handlers', () => {
     expect(result.content?.[0]?.text).toContain('Principal propagation requires a JWT token');
   });
 
-  it('allows API-key calls when PP fail-closed mode is only the derived default', async () => {
+  it('allows JWT-shaped API-key calls when PP fail-closed mode is only the derived default', async () => {
     const server = createServer({
       ...DEFAULT_CONFIG,
       ppEnabled: true,
@@ -343,7 +343,7 @@ describe('createServer request handlers', () => {
       { method: 'tools/call', params: { name: 'SAPRead', arguments: {} } },
       {
         authInfo: {
-          token: 'plain-api-key',
+          token: 'key.part.value',
           clientId: 'api-key:admin',
           scopes: ['admin'],
           extra: {},
@@ -352,10 +352,11 @@ describe('createServer request handlers', () => {
     );
 
     expect(result.content?.[0]?.text).not.toContain('Principal propagation requires a JWT token');
+    expect(result.content?.[0]?.text).not.toContain('Principal propagation failed');
     expect(result.content?.[0]?.text).toContain('Invalid arguments');
   });
 
-  it('allows API-key calls when ppStrict is explicitly false', async () => {
+  it('allows JWT-shaped API-key calls when ppStrict is explicitly false', async () => {
     const server = createServer({
       ...DEFAULT_CONFIG,
       ppEnabled: true,
@@ -368,7 +369,7 @@ describe('createServer request handlers', () => {
       { method: 'tools/call', params: { name: 'SAPRead', arguments: {} } },
       {
         authInfo: {
-          token: 'plain-api-key',
+          token: 'key.part.value',
           clientId: 'api-key:admin',
           scopes: ['admin'],
           extra: {},
@@ -377,6 +378,7 @@ describe('createServer request handlers', () => {
     );
 
     expect(result.content?.[0]?.text).not.toContain('Principal propagation requires a JWT token');
+    expect(result.content?.[0]?.text).not.toContain('Principal propagation failed');
     expect(result.content?.[0]?.text).toContain('Invalid arguments');
   });
 

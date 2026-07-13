@@ -718,11 +718,14 @@ export function createServer(
     }
 
     // Principal propagation: create per-user ADT client if enabled and user JWT available.
-    // Only attempt PP when the token is a JWT (3 dot-separated parts), not a plain API key.
+    // The verifier marks API-key auth with an `api-key:<profile>` clientId. Check that
+    // trusted provenance before the JWT shape so an API key containing two dots is not
+    // mistaken for a JWT and denied in mixed-auth PP deployments.
     let client = defaultClient;
     let isPerUserClient = false;
     const token = extra.authInfo?.token;
-    const isJwt = token && token.split('.').length === 3;
+    const isApiKey = extra.authInfo?.clientId?.startsWith('api-key:') === true;
+    const isJwt = !isApiKey && typeof token === 'string' && token.split('.').length === 3;
     if (config.ppEnabled && isJwt) {
       const ppUser = (extra.authInfo?.extra?.userName ?? extra.authInfo?.clientId) as string | undefined;
       const ppDest = process.env.SAP_BTP_PP_DESTINATION ?? process.env.SAP_BTP_DESTINATION ?? '';
