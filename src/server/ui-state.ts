@@ -22,8 +22,6 @@ export interface UiOverview {
   cache: {
     mode: ServerConfig['cacheMode'];
     file?: string;
-    warmup: boolean;
-    warmupPackages: string;
   };
 }
 
@@ -48,8 +46,6 @@ export function buildUiOverview(config: ServerConfig, version: string, startedAt
     cache: {
       mode: config.cacheMode,
       file: config.cacheMode === 'sqlite' ? config.cacheFile : undefined,
-      warmup: config.cacheWarmup,
-      warmupPackages: config.cacheWarmupPackages,
     },
   };
 }
@@ -118,8 +114,6 @@ export function sanitizeConfigForUi(config: ServerConfig): Record<string, unknow
     cache: {
       mode: config.cacheMode,
       file: config.cacheMode === 'sqlite' ? config.cacheFile : undefined,
-      warmup: config.cacheWarmup,
-      warmupPackages: config.cacheWarmupPackages,
     },
     concurrency: {
       maxConcurrent: config.maxConcurrent,

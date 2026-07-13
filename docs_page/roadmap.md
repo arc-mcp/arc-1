@@ -2583,7 +2583,7 @@ The VS Code client-side issue — [microsoft/vscode#314715](https://github.com/m
 | Context Compression | SAPContext with AST-based dependency extraction (7-30x reduction) |
 | Where-Used Analysis | Scope-based where-used in SAPNavigate (#38) |
 | Class Hierarchy | SAPNavigate hierarchy action via SEOMETAREL SQL |
-| Object Caching | SQLite + memory cache with on-demand + pre-warmer support (#31) |
+| Object Caching | SQLite + memory cache with request-driven ETag revalidation (#31) |
 | LLM Search UX | Auto-transliteration, field-name hints, cache indicators |
 | HTTP Client | Native fetch + undici (replaced axios) (#35) |
 | Test Coverage | 4,101 passing unit tests (810 Vitest suites, local Node 22 run on 2026-06-26) + 279-test default integration profile; E2E/BTP/slow SAP profiles are CI/manual; coverage telemetry is informational |
@@ -2619,7 +2619,7 @@ The VS Code client-side issue — [microsoft/vscode#314715](https://github.com/m
 | BTP ABAP Environment | Local OAuth 2.0 browser login plus deployed per-user destination path | Complete (2026-04-01; destination guidance updated 2026-06) |
 | Where-Used Analysis | FEAT-01: Scope-based where-used in SAPNavigate | Complete (2026-04-04, PR #38) |
 | Enhanced Abaplint | System-aware cloud/on-prem presets, pre-write validation, auto-fix | Complete (2026-04-04, PR #37) |
-| Object Caching | SQLite + memory cache with on-demand + pre-warmer support | Complete (2026-04-04, PR #31) |
+| Object Caching | SQLite + memory cache with request-driven ETag revalidation | Complete (2026-04-04, PR #31; startup warmup retired 2026-07) |
 | HTTP Client Migration | Replaced axios with native fetch + undici | Complete (2026-04-04, PR #35) |
 | Two-Dimensional Auth | Scopes x roles x safety config, SEC-06 expanded | Complete (2026-04-07, PR #48) |
 | Zod v4 Validation | Runtime input validation for all MCP tool inputs | Complete (2026-04-08, PR #52) |

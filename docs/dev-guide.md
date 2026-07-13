@@ -106,7 +106,7 @@ duplicating it here proved to drift). The compact per-variable table stays in AG
 | Add/modify E2E fixture | `tests/e2e/fixtures.ts` (define object), `tests/fixtures/abap/` (source file), `tests/e2e/setup.ts` (sync logic) |
 | Modify source caching / ETag revalidation | `src/cache/caching-layer.ts`, `src/cache/cache.ts`, `src/cache/memory.ts`, `src/cache/sqlite.ts`, `src/adt/client.ts` |
 | Modify inactive-draft source awareness | `src/cache/inactive-list-cache.ts`, `src/handlers/read.ts`, `src/adt/client.ts`, `src/adt/xml-parser.ts`, `src/adt/types.ts` |
-| Add cache warmup feature | `src/cache/warmup.ts`, `src/server/server.ts` |
+| Change source caching | `src/cache/caching-layer.ts`, `src/cache/{cache,memory,sqlite}.ts`; preserve ETag revalidation |
 | Add integration test | `tests/integration/adt.integration.test.ts` |
 | Add BTP ABAP integration test | `tests/integration/btp-abap.integration.test.ts` |
 | Add BTP smoke test | `tests/integration/btp-abap.smoke.integration.test.ts` |

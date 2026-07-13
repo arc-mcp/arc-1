@@ -89,7 +89,7 @@ The first version should include these read-only views:
    - Existing aggregate cache stats plus backend/mode/file path when safe to show.
    - Cache inventory with pagination and filters: object type, name prefix/search, active/inactive version,
      package where known, cachedAt range.
-   - Node/edge summary counts and warmup availability.
+   - Source/dependency/API summary counts and sanitized request-driven cache activity.
    - Inactive-list cache stats only as aggregate counts by user bucket, never object lists across users.
 
 6. **Logs / Audit**
@@ -106,7 +106,7 @@ The first version should include these read-only views:
 
 - Editing ARC-1 configuration from the browser.
 - Mutating SAP objects, transports, Git repositories, packages, FLP content, or cache contents.
-- Triggering cache warmup or feature probes from the UI.
+- Triggering cache mutation or feature probes from the UI.
 - Full ABAP source browsing or source preview.
 - A multi-system landscape dashboard.
 - A custom auth/login system separate from ARC-1's existing HTTP auth model.
@@ -191,10 +191,8 @@ Proposed read-only API endpoints:
 | `GET /ui/api/config` | Sanitized grouped config plus source metadata. | Redact secret-bearing keys. |
 | `GET /ui/api/safety` | Safety ceiling and rate/concurrency settings. | Mirrors effective policy log fields. |
 | `GET /ui/api/features` | Cached feature-probe result or "not probed". | No auto-probe side effect. |
-| `GET /ui/api/cache/stats` | Cache stats plus warmup/inactive-list aggregate state. | Align with `SAPManage cache_stats`. |
+| `GET /ui/api/cache/stats` | Request-driven cache stats plus inactive-list aggregate state. | Align with `SAPManage cache_stats`. |
 | `GET /ui/api/cache/sources` | Paginated source-cache inventory. | Metadata only by default. |
-| `GET /ui/api/cache/nodes` | Warmup node summary or paginated metadata. | Aggregate-only under PP unless revalidated. |
-| `GET /ui/api/cache/edges` | Dependency-edge summary or paginated metadata. | Aggregate-only under PP unless revalidated. |
 | `GET /ui/api/logs` | Recent sanitized log/audit events. | Filter by level/event/requestId; bounded. |
 | `GET /ui/api/docs` | Static list of relevant docs links. | No filesystem browsing. |
 
@@ -220,9 +218,8 @@ The v1 implementation must explicitly handle these risks:
   secret, OAuth client secret, CSRF tokens, and Authorization headers must never be returned.
 - **ABAP source exposure:** cache inventory returns metadata only in v1. Source preview is a future feature and
   must require a separate opt-in, auth scope decision, and documentation that SQLite stores source in cleartext.
-- **Cross-user leakage under PP:** warmup nodes/edges and source caches may reflect shared-service-account
-  visibility. In PP mode, v1 should either aggregate these views or require per-user live checks before
-  exposing object-level details.
+- **Cross-user leakage under PP:** source metadata must not expose bodies or another user's authorization
+  state. Source hits are revalidated through the current per-user SAP client before content is served.
 - **Log leakage:** UI log ring buffer must sanitize before storing and omit raw bodies by default. Do not read
   raw file sink logs back into the UI in v1.
 - **Open HTTP mode:** if no Layer A auth is configured and the bind address is non-loopback, enabling UI should

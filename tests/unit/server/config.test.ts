@@ -41,6 +41,15 @@ describe('parseArgs', () => {
     expect(config.verbose).toBe(false);
   });
 
+  it.each(['ARC1_CACHE_WARMUP', 'ARC1_CACHE_WARMUP_PACKAGES'])('rejects retired env var %s', (name) => {
+    process.env[name] = 'false';
+    expect(() => parseArgs([])).toThrow(/cache warmup configuration/);
+  });
+
+  it.each(['--cache-warmup=false', '--cache-warmup-packages=Z*'])('rejects retired CLI flag %s', (flag) => {
+    expect(() => parseArgs([flag])).toThrow(/cache warmup configuration/);
+  });
+
   it('parses CLI flags (--flag value)', () => {
     const config = parseArgs(['--url', 'http://sap:8000', '--user', 'admin', '--password', 'secret']);
     expect(config.url).toBe('http://sap:8000');

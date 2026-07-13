@@ -19,6 +19,19 @@ function ktdEnvelope(markdown: string): string {
   return `<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd"><sktd:element><sktd:text>${base64}</sktd:text></sktd:element></sktd:docu>`;
 }
 
+function liveWhereUsedXml(name = 'ZCL_CALLER'): string {
+  return `<?xml version="1.0" encoding="utf-8"?>
+<usageReferences:usageReferenceResult xmlns:usageReferences="http://www.sap.com/adt/ris/usageReferences">
+  <usageReferences:referencedObjects>
+    <usageReferences:referencedObject uri="/sap/bc/adt/oo/classes/${name.toLowerCase()}" isResult="true">
+      <usageReferences:adtObject adtcore:name="${name}" adtcore:type="CLAS/OC" xmlns:adtcore="http://www.sap.com/adt/core">
+        <adtcore:packageRef adtcore:name="$TMP"/>
+      </usageReferences:adtObject>
+    </usageReferences:referencedObject>
+  </usageReferences:referencedObjects>
+</usageReferences:usageReferenceResult>`;
+}
+
 describe('SAPManage / SAPContext handlers', () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -1123,16 +1136,10 @@ ENDCLASS.`;
       expect(result.content[0]?.text).toContain('0 deps resolved');
     });
 
-    it('disables shared warmup usages under principal propagation', async () => {
-      const layer = new CachingLayer(new MemoryCache());
-      layer.setWarmupDone(true);
-      layer.cache.putEdge({
-        fromId: 'ZCL_SECRET',
-        toId: 'ZCL_TARGET',
-        edgeType: 'USES',
-        discoveredAt: new Date().toISOString(),
-        valid: true,
-      });
+    it('serves live usages under principal propagation without consulting the cache', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, liveWhereUsedXml()));
       const auth: AuthInfo = {
         token: 'jwt',
         clientId: 'oidc-client',
@@ -1148,14 +1155,57 @@ ENDCLASS.`;
         { action: 'usages', type: 'CLAS', name: 'ZCL_TARGET' },
         auth,
         undefined,
-        layer,
+        undefined,
         true,
       );
 
+      expect(result.isError).toBeUndefined();
+      const payload = JSON.parse(result.content[0]?.text ?? '{}');
+      expect(payload).toMatchObject({ name: 'ZCL_TARGET', usageCount: 1, source: 'live', fallbackUsed: false });
+      expect(payload.usages[0].name).toBe('ZCL_CALLER');
+    });
+
+    it('resolves a unique name-only usages request through ADT lookup', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          '<objectReferences><objectReference uri="/sap/bc/adt/oo/classes/zcl_target" type="CLAS/OC" name="ZCL_TARGET" packageName="$TMP"/></objectReferences>',
+        ),
+      );
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, liveWhereUsedXml('ZCL_UNIQUE_CALLER')));
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPContext', {
+        action: 'usages',
+        name: 'ZCL_TARGET',
+      });
+
+      expect(result.isError).toBeUndefined();
+      const payload = JSON.parse(result.content[0]?.text ?? '{}');
+      expect(payload.resolvedObject).toMatchObject({ type: 'CLAS', name: 'ZCL_TARGET' });
+      expect(payload.usages[0].name).toBe('ZCL_UNIQUE_CALLER');
+    });
+
+    it('returns bounded candidates for an ambiguous name-only usages request', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          '<objectReferences><objectReference uri="/sap/bc/adt/oo/classes/zsame" type="CLAS/OC" name="ZSAME"/><objectReference uri="/sap/bc/adt/programs/programs/zsame" type="PROG/P" name="ZSAME"/></objectReferences>',
+        ),
+      );
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPContext', {
+        action: 'usages',
+        name: 'ZSAME',
+      });
+
       expect(result.isError).toBe(true);
-      expect(result.content[0]?.text).toContain('shared warmup index');
-      expect(result.content[0]?.text).toContain('SAPNavigate');
-      expect(result.content[0]?.text).not.toContain('ZCL_SECRET');
+      const payload = JSON.parse(result.content[0]?.text ?? '{}');
+      expect(payload.error).toContain('ambiguous');
+      expect(payload.candidates).toHaveLength(2);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
     });
 
     it('keys inactive-list caching by authenticated user under principal propagation', async () => {

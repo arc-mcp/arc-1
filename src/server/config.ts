@@ -202,6 +202,17 @@ const LEGACY_CLI_FLAGS: Record<string, string> = {
   'api-key': LEGACY_ENV_VARS.ARC1_API_KEY,
 };
 
+const RETIRED_ENV_VARS: Record<string, string> = {
+  ARC1_CACHE_WARMUP: 'Cache warmup was removed. The normal request-driven cache remains available through ARC1_CACHE.',
+  ARC1_CACHE_WARMUP_PACKAGES:
+    'Cache warmup package filters were removed with cache warmup. Remove this environment variable.',
+};
+
+const RETIRED_CLI_FLAGS: Record<string, string> = {
+  'cache-warmup': RETIRED_ENV_VARS.ARC1_CACHE_WARMUP,
+  'cache-warmup-packages': RETIRED_ENV_VARS.ARC1_CACHE_WARMUP_PACKAGES,
+};
+
 /** Migration guard — throws a helpful error if any legacy identifier is set. */
 function detectLegacyConfig(args: string[]): void {
   const violations: string[] = [];
@@ -225,6 +236,25 @@ function detectLegacyConfig(args: string[]): void {
   }
 }
 
+function detectRetiredConfig(args: string[]): void {
+  const violations: string[] = [];
+  for (const env of Object.keys(RETIRED_ENV_VARS)) {
+    if (process.env[env] !== undefined) violations.push(`  ${env}: ${RETIRED_ENV_VARS[env]}`);
+  }
+  for (const flag of Object.keys(RETIRED_CLI_FLAGS)) {
+    if (args.some((arg) => arg === `--${flag}` || arg.startsWith(`--${flag}=`))) {
+      violations.push(`  --${flag}: ${RETIRED_CLI_FLAGS[flag]}`);
+    }
+  }
+  if (violations.length > 0) {
+    throw new Error(
+      `Removed ARC-1 cache warmup configuration detected:\n${violations.join('\n')}\n\n` +
+        'Use SAPContext(action="usages") or SAPNavigate(action="references") for live SAP-authorized lookup. ' +
+        'See docs_page/updating.md for migration details.',
+    );
+  }
+}
+
 /**
  * Parse CLI args + env into a `{ config, sources }` pair.
  * `sources` records where each field's value came from (default / env / flag / file).
@@ -232,6 +262,7 @@ function detectLegacyConfig(args: string[]): void {
  */
 export function resolveConfig(args: string[]): { config: ServerConfig; sources: Record<string, ConfigSource> } {
   detectLegacyConfig(args);
+  detectRetiredConfig(args);
 
   const config = { ...DEFAULT_CONFIG };
   const sources: Record<string, ConfigSource> = {};
@@ -610,13 +641,6 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     ['memory', 'sqlite', 'none'].includes(cacheMode) ? cacheMode : 'auto'
   ) as ServerConfig['cacheMode'];
   config.cacheFile = resolveStr('cache-file', 'ARC1_CACHE_FILE', '.arc1-cache.db', 'cacheFile');
-  config.cacheWarmup = resolveBool('cache-warmup', 'ARC1_CACHE_WARMUP', false, 'cacheWarmup');
-  config.cacheWarmupPackages = resolveStr(
-    'cache-warmup-packages',
-    'ARC1_CACHE_WARMUP_PACKAGES',
-    '',
-    'cacheWarmupPackages',
-  );
 
   // ── Concurrency ────────────────────────────────────────────────────
   const maxConcurrent = getFlag('max-concurrent') ?? process.env.ARC1_MAX_CONCURRENT;

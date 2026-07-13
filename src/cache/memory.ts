@@ -11,85 +11,18 @@ import type {
   CacheApi,
   CachedDepGraph,
   CachedSource,
-  CacheEdge,
   CacheListSourcesQuery,
   CacheListSourcesResult,
-  CacheNode,
   CacheSourceSummary,
   CacheStats,
 } from './cache.js';
 import { hashSource, sourceKey } from './cache.js';
 
 export class MemoryCache implements Cache {
-  private nodes = new Map<string, CacheNode>();
-  private edges = new Map<string, CacheEdge[]>();
-  private reverseEdges = new Map<string, CacheEdge[]>();
   private apis = new Map<string, CacheApi>();
   private sources = new Map<string, CachedSource>();
   private depGraphs = new Map<string, CachedDepGraph>();
   private funcGroups = new Map<string, string>();
-
-  // ─── Node Operations ──────────────────────────────────────────────
-
-  putNode(node: CacheNode): void {
-    this.nodes.set(node.id, { ...node });
-  }
-
-  getNode(id: string): CacheNode | null {
-    return this.nodes.get(id) ?? null;
-  }
-
-  getNodesByPackage(packageName: string): CacheNode[] {
-    const upper = packageName.toUpperCase();
-    const result: CacheNode[] = [];
-    for (const node of this.nodes.values()) {
-      if (node.packageName.toUpperCase() === upper) {
-        result.push(node);
-      }
-    }
-    return result;
-  }
-
-  invalidateNode(id: string): void {
-    const node = this.nodes.get(id);
-    if (node) {
-      node.valid = false;
-    }
-  }
-
-  // ─── Edge Operations ──────────────────────────────────────────────
-
-  putEdge(edge: CacheEdge): void {
-    const edgeCopy = { ...edge };
-    // Forward index
-    const fwd = this.edges.get(edge.fromId) ?? [];
-    // Replace existing edge with same (from, to, type) or add new
-    const fwdIdx = fwd.findIndex((e) => e.toId === edge.toId && e.edgeType === edge.edgeType);
-    if (fwdIdx >= 0) {
-      fwd[fwdIdx] = edgeCopy;
-    } else {
-      fwd.push(edgeCopy);
-    }
-    this.edges.set(edge.fromId, fwd);
-
-    // Reverse index
-    const rev = this.reverseEdges.get(edge.toId) ?? [];
-    const revIdx = rev.findIndex((e) => e.fromId === edge.fromId && e.edgeType === edge.edgeType);
-    if (revIdx >= 0) {
-      rev[revIdx] = edgeCopy;
-    } else {
-      rev.push(edgeCopy);
-    }
-    this.reverseEdges.set(edge.toId, rev);
-  }
-
-  getEdgesFrom(fromId: string): CacheEdge[] {
-    return this.edges.get(fromId) ?? [];
-  }
-
-  getEdgesTo(toId: string): CacheEdge[] {
-    return this.reverseEdges.get(toId) ?? [];
-  }
 
   // ─── API Operations ───────────────────────────────────────────────
 
@@ -184,9 +117,6 @@ export class MemoryCache implements Cache {
   // ─── Management ───────────────────────────────────────────────────
 
   clear(): void {
-    this.nodes.clear();
-    this.edges.clear();
-    this.reverseEdges.clear();
     this.apis.clear();
     this.sources.clear();
     this.depGraphs.clear();
@@ -194,21 +124,11 @@ export class MemoryCache implements Cache {
   }
 
   stats(): CacheStats {
-    let edgeCount = 0;
-    for (const edges of this.edges.values()) {
-      edgeCount += edges.length;
-    }
     return {
-      nodeCount: this.nodes.size,
-      edgeCount,
       apiCount: this.apis.size,
       sourceCount: this.sources.size,
       contractCount: this.depGraphs.size,
     };
-  }
-
-  transaction<T>(fn: () => T): T {
-    return fn();
   }
 
   close(): void {

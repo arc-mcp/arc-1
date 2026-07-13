@@ -6,7 +6,7 @@
  *  - SAPManage cache_stats returns valid structure
  *  - Repeated SAPRead calls for an ETag-capable fixture use conditional GET revalidation
  *  - SAPContext(deps) second call returns [cached] output
- *  - Warmup is off by default (warmupAvailable: false)
+ *  - SAPContext(usages) performs a live lookup without cache preloading
  */
 
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -42,9 +42,7 @@ describe('E2E Cache Tests', () => {
     // Required fields
     expect(stats).toHaveProperty('sourceCount');
     expect(stats).toHaveProperty('contractCount');
-    expect(stats).toHaveProperty('nodeCount');
-    expect(stats).toHaveProperty('edgeCount');
-    expect(stats).toHaveProperty('warmupAvailable');
+    expect(stats).toHaveProperty('apiCount');
     expect(stats).toHaveProperty('inactiveListCache');
 
     // All counts are non-negative integers
@@ -53,8 +51,9 @@ describe('E2E Cache Tests', () => {
     expect(typeof stats.contractCount).toBe('number');
     expect(stats.contractCount).toBeGreaterThanOrEqual(0);
 
-    // Warmup is disabled by default in e2e
-    expect(stats.warmupAvailable).toBe(false);
+    expect(stats).not.toHaveProperty('warmupAvailable');
+    expect(stats).not.toHaveProperty('nodeCount');
+    expect(stats).not.toHaveProperty('edgeCount');
 
     console.log(`    Cache stats: ${JSON.stringify(stats)}`);
   });
@@ -179,25 +178,19 @@ describe('E2E Cache Tests', () => {
     expect(out2).toContain('[cached]');
   });
 
-  // ── SAPContext usages — warmup required ───────────────────────
+  // ── SAPContext usages — live SAP lookup ──────────────────────
 
-  it('SAPContext usages — returns informative error when warmup not run', async () => {
+  it('SAPContext usages — works without cache preloading', async () => {
     const result = await callTool(client, 'SAPContext', {
       action: 'usages',
       type: 'CLAS',
-      name: 'CL_ABAP_CHAR_UTILITIES',
+      name: 'ZCL_ARC1_TEST',
     });
 
-    // Without warmup the handler returns errorResult with guidance — isError=true
-    expect(result.isError).toBe(true);
-    const text = result.content[0]?.text ?? '';
-
-    // Should explain warmup, not crash with a generic 500
-    expect(text.toLowerCase()).toMatch(/warmup|arc1_cache_warmup|cache.*warmup/);
-    // Should NOT leak internals
-    expect(text).not.toContain('<?xml');
-    expect(text).not.toMatch(/\.ts:\d+/);
-
-    console.log(`    Usages without warmup: ${text.slice(0, 120)}`);
+    const parsed = JSON.parse(expectToolSuccess(result));
+    expect(parsed.source).toBe('live');
+    expect(parsed.resolvedObject).toMatchObject({ type: 'CLAS', name: 'ZCL_ARC1_TEST' });
+    expect(parsed.usages).toBeInstanceOf(Array);
+    expect(parsed.usageCount).toBe(parsed.usages.length);
   });
 });

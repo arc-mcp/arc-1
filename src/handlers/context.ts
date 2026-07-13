@@ -24,6 +24,7 @@ import { type CacheSecurityContext, contextCacheForDependencyPayloads } from './
 import { cachedFeatures } from './feature-cache.js';
 import { normalizeObjectType, objectUrlForType } from './object-types.js';
 import { errorResult, type ToolResult, textResult } from './shared.js';
+import { lookupLiveUsages, resolveWhereUsedUri } from './where-used.js';
 
 // ─── SAPContext Handler ───────────────────────────────────────────────
 
@@ -56,36 +57,66 @@ export async function handleSAPContext(
   const maxDeps = Number.isFinite(rawMaxDeps) && rawMaxDeps >= 1 ? Math.min(Math.floor(rawMaxDeps), 100) : 20;
   const depth = Math.min(Math.max(Number(args.depth ?? 1), 1), 3);
 
-  // ─── Reverse dep lookup (pre-warmer only) ─────────────────────────
+  // ─── Live reverse dependency lookup ───────────────────────────────
   if (action === 'usages') {
     if (!name) return errorResult('"name" is required for usages action.');
-    if (cacheSecurity.isPerUserClient) {
-      return errorResult(
-        'SAPContext(action="usages") is disabled under principal propagation because it reads the shared warmup index. ' +
-          `Use SAPNavigate(action="references", type="${type || 'CLAS'}", name="${name}") for a live SAP-authorized lookup.`,
+
+    let resolvedUri: string | null;
+    let resolvedObject: { type: string; name: string; uri: string };
+
+    if (type) {
+      resolvedUri = await resolveWhereUsedUri(client, type, name);
+      if (!resolvedUri) {
+        return errorResult(
+          `Cannot resolve function group for "${name}". Provide the function's group or use SAPSearch to resolve the object.`,
+        );
+      }
+      resolvedObject = { type, name: name.toUpperCase(), uri: resolvedUri };
+    } else {
+      const lookup = await client.lookupObjects([name], { maxResults: 20 });
+      const exactMatches = (lookup[0]?.matches ?? []).filter(
+        (match) => match.objectName.toUpperCase() === name.toUpperCase() && match.uri.length > 0,
       );
+      const matches = [...new Map(exactMatches.map((match) => [match.uri, match])).values()];
+      if (matches.length === 0) {
+        return textResult(`No SAP repository object named "${name.toUpperCase()}" was found.`);
+      }
+      if (matches.length > 1) {
+        return errorResult(
+          JSON.stringify(
+            {
+              error: `Object name "${name.toUpperCase()}" is ambiguous. Retry with type.`,
+              candidates: matches.slice(0, 20).map((match) => ({
+                type: normalizeObjectType(match.objectType),
+                name: match.objectName,
+                uri: match.uri,
+              })),
+            },
+            null,
+            2,
+          ),
+        );
+      }
+      const match = matches[0]!;
+      resolvedUri = match.uri;
+      resolvedObject = { type: normalizeObjectType(match.objectType), name: match.objectName, uri: match.uri };
     }
-    if (!cachingLayer) {
-      return errorResult(
-        'Reverse dependency lookup requires object caching. Cache is disabled (ARC1_CACHE=none). ' +
-          'Enable caching and run cache warmup to use this feature.',
-      );
-    }
-    const usages = cachingLayer.getUsages(name);
-    if (usages === null) {
-      return errorResult(
-        `Reverse dependency lookup requires a pre-warmed cache. The cache warmup has not been run yet.\n\n` +
-          `To enable this feature:\n` +
-          `1. Start ARC-1 with --cache-warmup (or set ARC1_CACHE_WARMUP=true)\n` +
-          `2. Wait for the warmup to complete (indexes all custom objects)\n` +
-          `3. Then retry SAPContext(action="usages", name="${name}")\n\n` +
-          `Alternative: Use SAPNavigate(action="references", type="CLAS", name="${name}") for a live ADT lookup (slower, but works without warmup).`,
-      );
-    }
-    if (usages.length === 0) {
-      return textResult(`No objects found that depend on "${name}" in the cached index.`);
-    }
-    return textResult(JSON.stringify({ name, usageCount: usages.length, usages }, null, 2));
+
+    const lookup = await lookupLiveUsages(client, resolvedUri);
+    return textResult(
+      JSON.stringify(
+        {
+          name: name.toUpperCase(),
+          resolvedObject,
+          usageCount: lookup.results.length,
+          usages: lookup.results,
+          source: 'live',
+          fallbackUsed: lookup.fallbackUsed,
+        },
+        null,
+        2,
+      ),
+    );
   }
 
   if (!type || !name) {

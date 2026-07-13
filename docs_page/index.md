@@ -173,7 +173,7 @@ Full reference: **[tools.md](tools.md)**
 
 - **3,474 unit tests** run locally without SAP access (`npm test`)
 - **Default integration + E2E lanes** run against the A4H 2025 SAP target on internal PRs and manual dispatch in GitHub Actions
-- **Manual slow SAP profiles** cover expensive cache warmup, broad where-used, RAP full-stack, and recursive CTS release checks (`test:integration:slow`, `test:e2e:slow`, GitHub **SAP Slow Tests** workflow)
+- **Manual slow SAP profiles** cover broad where-used, RAP full-stack, and recursive CTS release checks (`test:integration:slow`, `test:e2e:slow`, GitHub **SAP Slow Tests** workflow)
 - **BTP tests** are local-only (`npm run test:integration:btp`, `npm run test:integration:btp:smoke`)
 - **Reliability telemetry + coverage** are collected as informational CI signals
 
@@ -217,7 +217,7 @@ For production, combine conservative tool exposure with real user identity, SAP-
 | [tools.md](tools.md) | Complete tool reference (12 intent-based tools) |
 | [mcp-usage.md](mcp-usage.md) | AI agent usage guide & workflow patterns |
 | [architecture.md](architecture.md) | System architecture with Mermaid diagrams |
-| [caching.md](caching.md) | Object caching — server-validated via `ETag`/`If-None-Match`, active/inactive source views, KTD source entries, pre-warmer, reverse dep lookup |
+| [caching.md](caching.md) | Request-driven object caching — server-validated via `ETag`/`If-None-Match`, active/inactive source views, dependency graphs, and live reverse-dependency lookup |
 | [security-guide.md](security-guide.md) | Security hardening checklist for production |
 | [cli-guide.md](cli-guide.md) | CLI commands and configuration |
 | [docker.md](docker.md) | Full Docker reference |

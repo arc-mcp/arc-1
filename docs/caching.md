@@ -59,7 +59,7 @@ Use `SAPRead(..., force_refresh=true)` to drop the cached active/inactive source
 - `[cached:revalidated]` means a source body came from cache after SAP returned `304`.
 - `[cached]` means a dependency graph came from the hash-keyed context cache.
 
-`ARC1_CACHE_WARMUP=true` pre-indexes custom objects at startup using a TADIR scan. Warmup enables reverse dependency queries such as `SAPContext(action="usages")`.
+`SAPContext(action="usages")` is intentionally not backed by a repository-wide cache. It performs a live SAP where-used lookup with the current caller's identity and works when caching is disabled.
 
 ## Invalidation
 

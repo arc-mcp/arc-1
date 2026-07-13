@@ -134,7 +134,7 @@ The recommended approach uses **two destinations** — one for the shared servic
 | **Password** | `<password>` |
 | `sap-client` | `001` |
 
-This destination is resolved at startup for system-level feature probing and cache warmup. With
+This destination is resolved at startup for system-level feature probing. With
 explicit `SAP_PP_STRICT=false`, it also serves API-key/non-JWT requests in a supported mixed
 instance; the recommended strict PP topology does not expose it to MCP tool callers.
 
@@ -153,7 +153,7 @@ instance; the recommended strict PP topology does not expose it to MCP tool call
 
 This destination is used per-request when an authenticated user's JWT is available.
 
-> **Why two destinations?** A PrincipalPropagation destination has no User/Password. At startup, there is no user JWT — the SAP Cloud SDK's `getDestination()` would fail for PP destinations. The BasicAuth destination supports system-level startup operations (feature probing and cache warmup). In the recommended strict topology it is not available to MCP tool callers.
+> **Why two destinations?** A PrincipalPropagation destination has no User/Password. At startup, there is no user JWT — the SAP Cloud SDK's `getDestination()` would fail for PP destinations. The BasicAuth destination supports system-level feature probing. In the recommended strict topology it is not available to MCP tool callers.
 
 > **Why port 50001 for PP?** The Cloud Connector needs an HTTPS system mapping with `X509_GENERAL` auth mode for PP. Port 50001 is the SAP HTTPS port. The HTTP mapping (50000) uses `NONE_RESTRICTED` auth which doesn't support PP.
 

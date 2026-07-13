@@ -21,7 +21,7 @@ description: ARC-1 — MCP Server for SAP ABAP Systems
 #
 # Two destinations are recommended for on-premise PP scenarios:
 #   1. BasicAuth destination (SAP_BTP_DESTINATION) — used at startup for
-#      feature probing and cache warmup. No JWT needed.
+#      feature probing. No JWT needed.
 #   2. PrincipalPropagation destination (SAP_BTP_PP_DESTINATION) — used at
 #      runtime for per-user requests. Requires user JWT.
 #
@@ -109,7 +109,7 @@ modules:
       # `cf set-env`. Deploying with the placeholders will fail at startup with
       # a "destination not found" error from BTP, which is the intended signal.
       #
-      # BasicAuth destination for startup (feature probing, cache warmup)
+      # BasicAuth destination for startup feature probing
       SAP_BTP_DESTINATION: your-basic-destination
       # PrincipalPropagation destination for per-user requests (with JWT)
       SAP_BTP_PP_DESTINATION: your-pp-destination

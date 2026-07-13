@@ -5,39 +5,14 @@
  * - MemoryCache: fast, ephemeral (default/auto)
  * - SqliteCache: persistent, cross-session (explicit opt-in; stores source bodies at rest)
  *
- * Cache stores five types of data:
- * - Nodes: ABAP objects (class, program, table, etc.) with metadata
- * - Edges: Dependencies between objects (calls, uses, implements)
+ * Cache stores four types of data:
  * - APIs: Released API objects (for clean core checks)
  * - Sources: Raw source code keyed by (type, name, version) with content hash
  * - Contracts: Compressed dependency contracts keyed by source hash
+ * - Function groups: Function-module to function-group mappings
  */
 
 import { createHash } from 'node:crypto';
-
-// ─── Graph Types (existing) ──────────────────────────────────────────
-
-/** Cached ABAP object */
-export interface CacheNode {
-  id: string;
-  objectType: string;
-  objectName: string;
-  packageName: string;
-  sourceHash?: string;
-  cachedAt: string;
-  valid: boolean;
-  metadata?: Record<string, unknown>;
-}
-
-/** Dependency edge between objects */
-export interface CacheEdge {
-  fromId: string;
-  toId: string;
-  edgeType: 'CALLS' | 'USES' | 'IMPLEMENTS' | 'INCLUDES';
-  source?: string;
-  discoveredAt: string;
-  valid: boolean;
-}
 
 /** Released API object */
 export interface CacheApi {
@@ -50,8 +25,6 @@ export interface CacheApi {
 
 /** Cache statistics */
 export interface CacheStats {
-  nodeCount: number;
-  edgeCount: number;
   apiCount: number;
   sourceCount: number;
   contractCount: number;
@@ -123,18 +96,6 @@ export interface CachedDepGraph {
 
 /** Cache interface — both MemoryCache and SqliteCache implement this */
 export interface Cache {
-  // Node operations (graph metadata)
-  putNode(node: CacheNode): void;
-  getNode(id: string): CacheNode | null;
-  getNodesByPackage(packageName: string): CacheNode[];
-  invalidateNode(id: string): void;
-
-  // Edge operations (dependency graph)
-  putEdge(edge: CacheEdge): void;
-  getEdgesFrom(fromId: string): CacheEdge[];
-  /** Reverse lookup: get all edges pointing TO this id */
-  getEdgesTo(toId: string): CacheEdge[];
-
   // API operations (released APIs for clean core)
   putApi(api: CacheApi): void;
   getApi(name: string, type: string): CacheApi | null;
@@ -161,7 +122,6 @@ export interface Cache {
   // Management
   clear(): void;
   stats(): CacheStats;
-  transaction<T>(fn: () => T): T;
   close(): void;
 }
 

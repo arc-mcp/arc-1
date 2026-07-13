@@ -15,7 +15,7 @@ The full grouped template with inline commentary is [`.env.example`](https://git
 3. [Authentication](#authentication) — Layer B (ARC-1 → SAP) and Layer A (MCP Client → ARC-1)
 4. [Authorization and safety](#authorization-and-safety) — what tool calls are allowed
 5. [Server runtime](#server-runtime) — transport, bind address, CORS, concurrency
-6. [Caching](#caching) — source cache, warmup
+6. [Caching](#caching) — request-driven source and dependency cache
 7. [Logging and observability](#logging-and-observability) — log file, level, format, HTTP debug
 8. [ABAP feature toggles](#abap-feature-toggles) — abapGit, gCTS, RAP, AMDP, UI5, HANA, FLP
 9. [Code-quality gates](#code-quality-gates) — pre-write lint/check, abaplint config, tool/schema mode
@@ -261,8 +261,6 @@ ARC-1 caches SAP source/metadata with ETag revalidation on every hit. See [cachi
 |---|---|---|---|
 | `--cache` | `ARC1_CACHE` | `auto` | `auto` uses the in-process memory cache for every transport. `memory` = in-process only, lost on restart. `sqlite` = persistent across restarts, shared across processes that point at the same file, and explicit opt-in because it stores source bodies at rest. `none` = disable caching entirely (every read hits SAP). |
 | `--cache-file` | `ARC1_CACHE_FILE` | `.arc1-cache.db` | SQLite file path when `ARC1_CACHE=sqlite`. Created on first use. |
-| `--cache-warmup` | `ARC1_CACHE_WARMUP` | `false` | When `true`, ARC-1 runs a TADIR scan on startup and bulk-fetches matching object sources into the cache. Speeds up first reads at the cost of a longer startup and more SAP load. |
-| `--cache-warmup-packages` | `ARC1_CACHE_WARMUP_PACKAGES` | (empty = all custom) | Comma-separated package filter for warmup (e.g. `Z*,Y*,/COMPANY/*`). Empty matches all custom packages found in TADIR. Ignored when `ARC1_CACHE_WARMUP=false`. |
 
 !!! warning "`ARC1_CACHE=sqlite` stores SAP source in cleartext at rest"
     The default `ARC1_CACHE=auto` mode does not create a SQLite cache file. If you explicitly set `ARC1_CACHE=sqlite`, the cache holds full ABAP source unencrypted at `.arc1-cache.db`. ARC-1 creates and repairs the cache DB and file audit sink (`ARC1_LOG_FILE`) with owner-only file permissions (`0600`), but this is not encryption. For IP-sensitive landscapes keep `ARC1_CACHE=auto`/`memory` or `none`, or place persistent files on an encrypted volume with restricted access.

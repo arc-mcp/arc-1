@@ -19,7 +19,7 @@ see [Authorization & Roles](authorization.md).
 | MCP auth | HTTP mode supports API-key profiles, OIDC JWTs, and XSUAA OAuth proxy mode. Stdio relies on local process trust. |
 | SAP identity | Shared SAP credentials, BTP ABAP service-key OAuth, BTP Destination, or per-user principal propagation. |
 | Safety | Server opt-in flags form the ceiling. User scopes and SAP authorization can only restrict further. |
-| Cache | Memory cache by default for every transport; SQLite persistence is explicit opt-in. Server-validated freshness via `If-None-Match` / `ETag` (no TTL). Optional startup warmup. See [Caching System](caching.md). |
+| Cache | Request-driven memory cache by default for every transport; SQLite persistence is explicit opt-in. Server-validated freshness via `If-None-Match` / `ETag` (no TTL). See [Caching System](caching.md). |
 | Observability | Structured logs and audit events to stderr, optional file sink, and optional BTP Audit Log sink. |
 
 ## High-level architecture
@@ -371,8 +371,8 @@ These services are cross-cutting rather than tied to one tool.
 
 | Service | Main files | What it does |
 | ------- | ---------- | ------------ |
-| Cache | `src/cache/*` | Stores source (per-version, with SAP `ETag`), dependency graphs (hash-keyed), dependency edges, node metadata, function-group mappings, and a per-username inactive-objects list. Source reads use `If-None-Match` so the SAP backend itself confirms freshness on every cache hit. |
-| Cache warmup | `src/cache/warmup.ts` | Pre-indexes custom objects so `SAPContext(action="usages")` can answer reverse dependency questions. Stores ETags so re-runs against unchanged systems are essentially free (304 responses). |
+| Cache | `src/cache/*` | Stores request-derived source (per-version, with SAP `ETag`), hash-keyed dependency graphs, released API metadata, function-group mappings, and a per-username inactive-objects list. Source reads use `If-None-Match` so SAP confirms freshness on every cache hit. |
+| Live where-used | `src/handlers/where-used.ts` | Resolves objects and queries SAP's current where-used index for `SAPNavigate(references)` and `SAPContext(usages)` with the current caller's identity. |
 | Feature probes | `src/adt/features.ts`, `src/probe/*` | Detects backend support and builds the ADT discovery map used for tool schemas and MIME negotiation. |
 | Context compression | `src/context/*` | Extracts public contracts, CDS dependencies, method-level slices, and compact dependency context. |
 | Lint | `src/lint/*` | Builds ABAP lint config and runs local lint/format/pre-write validation. |

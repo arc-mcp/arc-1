@@ -88,9 +88,13 @@ describe('UI API', () => {
     expect(overview.status).toBe(200);
     expect(overview.body.cache.mode).toBe('auto');
     expect(overview.body.cache).not.toHaveProperty('file');
+    expect(overview.body.cache).not.toHaveProperty('warmup');
+    expect(overview.body.cache).not.toHaveProperty('warmupPackages');
     expect(sanitized.status).toBe(200);
     expect(sanitized.body.config.cache.mode).toBe('auto');
     expect(sanitized.body.config.cache).not.toHaveProperty('file');
+    expect(sanitized.body.config.cache).not.toHaveProperty('warmup');
+    expect(sanitized.body.config.cache).not.toHaveProperty('warmupPackages');
   });
 
   it('reports a cache file only for explicit SQLite mode', async () => {
@@ -193,6 +197,10 @@ describe('UI API', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.backend).toMatchObject({ effective: 'memory', persistent: false, ephemeral: true });
+    expect(res.body).not.toHaveProperty('warmup');
+    expect(res.body).not.toHaveProperty('warmupAvailable');
+    expect(res.body.stats).not.toHaveProperty('nodeCount');
+    expect(res.body.stats).not.toHaveProperty('edgeCount');
     expect(res.body.sources).toMatchObject({
       total: 0,
       byType: {},

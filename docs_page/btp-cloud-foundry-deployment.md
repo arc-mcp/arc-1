@@ -108,7 +108,7 @@ modules:
       SAP_ALLOWED_PACKAGES: "Z*,Y*,$TMP"
 ```
 
-The full set of overridable properties is documented in [`mta-overrides.mtaext.example`](https://github.com/arc-mcp/arc-1/blob/main/mta-overrides.mtaext.example): destinations, all `SAP_ALLOW_*` safety flags, `SAP_DENY_ACTIONS`, `SAP_PP_STRICT`, `ARC1_PUBLIC_URL` (for reverse-proxy deployments), `ARC1_ALLOWED_ORIGINS` (CORS), `ARC1_UI`, `ARC1_TOOL_MODE`, cache warmup, and `ARC1_LOG_HTTP_DEBUG`. Any property left out of the override falls back to the `mta.yaml` value.
+The full set of overridable properties is documented in [`mta-overrides.mtaext.example`](https://github.com/arc-mcp/arc-1/blob/main/mta-overrides.mtaext.example): destinations, all `SAP_ALLOW_*` safety flags, `SAP_DENY_ACTIONS`, `SAP_PP_STRICT`, `ARC1_PUBLIC_URL` (for reverse-proxy deployments), `ARC1_ALLOWED_ORIGINS` (CORS), `ARC1_UI`, `ARC1_TOOL_MODE`, request-driven cache settings, and `ARC1_LOG_HTTP_DEBUG`. Any property left out of the override falls back to the `mta.yaml` value.
 
 See the [BTP Destination Setup Guide](btp-destination-setup.md) for creating the destinations themselves.
 
@@ -425,7 +425,7 @@ ARC-1 uses two BTP destinations for on-premise PP scenarios:
 
 | Destination | Auth Type | Used For | Config Var |
 |-------------|-----------|----------|------------|
-| Startup destination | BasicAuthentication | Feature probing, cache warmup, and API-key calls in mixed mode | `SAP_BTP_DESTINATION` |
+| Startup destination | BasicAuthentication | Feature probing and API-key calls in mixed mode | `SAP_BTP_DESTINATION` |
 | Per-user destination | PrincipalPropagation | Per-user requests with JWT | `SAP_BTP_PP_DESTINATION` |
 
 **Why two destinations?** A PrincipalPropagation destination has no User/Password. At startup (no user JWT available), the SDK's `getDestination()` would fail for PP destinations. The BasicAuth destination supports system-level startup operations and, when `SAP_PP_STRICT=false`, API-key calls in a supported mixed instance. With the base MTA's explicit `SAP_PP_STRICT=true`, MCP tool callers cannot use it as a shared identity.

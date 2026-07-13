@@ -73,12 +73,6 @@ export function createUiApiRouter(deps: UiServerDeps): express.Router {
         ephemeral: effectiveBackend === 'memory',
         file: effectiveBackend === 'sqlite' ? deps.config.cacheFile : undefined,
       },
-      warmup: {
-        configured: deps.config.cacheWarmup,
-        available: deps.cachingLayer.isWarmupAvailable,
-        packages: deps.config.cacheWarmupPackages,
-      },
-      warmupAvailable: deps.cachingLayer.isWarmupAvailable,
       stats: deps.cachingLayer.stats(),
       inactiveLists: deps.cachingLayer.inactiveLists.stats(),
       sources: summarizeCachedSources(deps.cachingLayer),
@@ -331,7 +325,6 @@ function safeRedactedCacheActivityDetail(
     case 'source_evict':
     case 'depgraph_hit':
     case 'depgraph_store':
-    case 'warmup_state':
       return item.detail;
     default:
       return undefined;

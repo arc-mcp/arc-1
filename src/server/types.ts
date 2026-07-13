@@ -177,10 +177,6 @@ export interface ServerConfig {
   cacheMode: 'auto' | 'memory' | 'sqlite' | 'none';
   /** Path to SQLite cache file (default: .arc1-cache.db in working directory) */
   cacheFile: string;
-  /** Enable cache warmup on startup (queries TADIR + fetches all custom objects) */
-  cacheWarmup: boolean;
-  /** Package filter for warmup (supports wildcards, e.g. "Z*,Y*,/COMPANY/*") */
-  cacheWarmupPackages: string;
 
   // --- Concurrency ---
   /** Maximum concurrent SAP HTTP requests, server-wide across all users (default: 10).
@@ -267,8 +263,6 @@ export const DEFAULT_CONFIG: ServerConfig = {
   checkBeforeWrite: false,
   cacheMode: 'auto',
   cacheFile: '.arc1-cache.db',
-  cacheWarmup: false,
-  cacheWarmupPackages: '',
   maxConcurrent: 10,
   authRateLimit: 20,
   rateLimit: 0, // Layer 2 disabled by default — operators opt in (see ADR-0004)

@@ -1077,36 +1077,7 @@ export async function createAndStartServer(
       mode: config.cacheMode,
       sources: stats.sourceCount,
       depGraphs: stats.contractCount,
-      edges: stats.edgeCount,
     });
-  }
-
-  // Run warmup if configured (before starting transport so it completes before serving)
-  if (config.cacheWarmup && cachingLayer && config.url) {
-    try {
-      const { runWarmup } = await import('../cache/warmup.js');
-      const warmupClient = new AdtClient(
-        buildAdtConfig(config, btpProxy, bearerTokenProvider, undefined, adtSemaphore),
-      );
-      const result = await runWarmup(
-        warmupClient,
-        cachingLayer,
-        config.cacheWarmupPackages || undefined,
-        config.systemType,
-      );
-      logger.info('Cache warmup completed', {
-        objects: result.totalObjects,
-        fetched: result.fetched,
-        skipped: result.skipped,
-        failed: result.failed,
-        edges: result.edgesCreated,
-        durationMs: result.durationMs,
-      });
-    } catch (err) {
-      logger.warn('Cache warmup failed — continuing without warm cache', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
   }
 
   // Run feature probe once at startup — shared across all requests (stdio and HTTP).

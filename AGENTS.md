@@ -73,7 +73,7 @@ Full per-option details (defaults, clamps, layer interactions): [docs_page/confi
 | `SAP_ALLOW_PLUGIN_RAW_WRITES` | Opt-in (default false): let plugin tools `ctx.http.post`/`put`/`delete` to **non-ADT** (OData/ICF) paths. ALSO needs `SAP_ALLOW_WRITES` + a `write`-scoped tool; `/sap/bc/adt/…` writes always refused |
 | `SAP_ABAPLINT_CONFIG` / `SAP_LINT_BEFORE_WRITE` | Custom abaplint config / pre-write lint (default true) |
 | `SAP_CHECK_BEFORE_WRITE` | SAP-side pre-write syntax check, non-blocking (default false) |
-| `ARC1_CACHE[_FILE]` / `ARC1_CACHE_WARMUP[_PACKAGES]` | Cache mode (auto/memory/sqlite/none) / TADIR pre-warm |
+| `ARC1_CACHE[_FILE]` | Request-driven cache mode (auto/memory/sqlite/none) / SQLite file path |
 | `ARC1_MAX_CONCURRENT` | Server-wide SAP request cap (default 10); size vs `rdisp/wp_no_dia` |
 | `ARC1_AUTH_RATE_LIMIT` / `ARC1_RATE_LIMIT` | Layer 1 per-IP OAuth cap (20/min) / Layer 2 per-user MCP cap (default 0 = off; ADR-0004) |
 | `SAP_BTP_DESTINATION` / `SAP_BTP_PP_DESTINATION` | BTP Destination names (PP = PrincipalPropagation type) |
@@ -129,7 +129,7 @@ src/
 │   ├── ui5-repository.ts, flp.ts    # UI5 ABAP Repository + FLP OData clients
 │   └── authorization-trace.ts, diagnostics.ts, codeintel.ts # auth/ST22 traces + code intelligence
 ├── context/                    # deps.ts, cds-deps.ts, contract.ts, compressor.ts, method-surgery.ts, grep.ts
-├── cache/                      # cache.ts, memory.ts, sqlite.ts, caching-layer.ts (ETag), inactive-list-cache.ts, warmup.ts
+├── cache/                      # cache.ts, memory.ts, sqlite.ts, caching-layer.ts (ETag), inactive-list-cache.ts
 ├── aff/                        # validator.ts (Ajv 2020-12) + bundled AFF schemas/
 ├── probe/                      # ADT type-availability probe (catalog, runner, fixtures)
 └── lint/                       # lint.ts (@abaplint/core), config-builder.ts, pre-write-hints.ts, presets/
@@ -210,7 +210,7 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 | `allowedPackages` pattern syntax | `src/adt/safety.ts`, `src/adt/package-hierarchy.ts`, `src/handlers/write-helpers.ts` (`enforceAllowedPackageForObjectUrl`, fail-closed) — details: dev-guide |
 | Feature probe / feature-gated write guard | `src/adt/features.ts` (`PROBES`) / `src/handlers/write/rap.ts` pattern |
 | E2E test / fixture | `tests/e2e/`, `tests/e2e/fixtures.ts` + `tests/fixtures/abap/` + `tests/e2e/setup.ts` |
-| Source caching / ETag / inactive drafts / warmup | `src/cache/caching-layer.ts` + `src/cache/*`, `src/cache/inactive-list-cache.ts` + `src/handlers/read.ts`, `src/cache/warmup.ts` |
+| Source caching / ETag / inactive drafts | `src/cache/caching-layer.ts` + `src/cache/*`, `src/cache/inactive-list-cache.ts` + `src/handlers/read.ts` |
 | Integration / BTP / CRUD tests | `tests/integration/adt.integration.test.ts`, `btp-abap[.smoke].integration.test.ts`, `crud-harness.ts` + `crud.lifecycle.integration.test.ts` |
 | BTP auth / Destination Service | `src/adt/oauth.ts` (browser OAuth) + `src/server/server.ts` (`buildAdtConfig` per-user destination) + `@arc-mcp/xsuaa-auth` dep |
 | AFF schema / validation | `src/aff/schemas/` + `src/aff/validator.ts` / `src/handlers/write/create.ts` (create/batch_create paths) |

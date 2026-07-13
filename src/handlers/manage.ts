@@ -462,7 +462,6 @@ export async function handleSAPManage(
         JSON.stringify(
           {
             enabled: true,
-            warmupAvailable: cachingLayer.isWarmupAvailable,
             ...stats,
             inactiveListCache: cachingLayer.inactiveLists.stats(),
           },

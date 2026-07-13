@@ -826,7 +826,7 @@ SAPContext has three modes controlled by the `action` parameter:
 **Quick decision rule:**
 - *"What breaks if I change `<CDS view>`?"* / *"Who consumes `I_*`?"* / *"Impact of `<DDLS>`"* → **`action="impact"`**
 - *"What does `<object>` do?"* / *"Explain `<object>`"* / spec, review, or dependency context before editing → **`action="deps"`** (default)
-- *"Who calls `<object>`?"* (requires cache warmup) → **`action="usages"`**
+- *"Who calls `<object>`?"* → **`action="usages"`** (live SAP where-used)
 
 > **Do not** hand-roll CDS impact analysis by querying `DDDDLSRC`, `ACMDCLSRC`, `DDLXSRC_SRC`, or `SRVDSRC_SRC` via `SAPQuery`. Those text-scans produce substring-match noise and package group nodes. `action="impact"` uses SAP's where-used index and returns deduplicated, RAP-classified results.
 
@@ -848,7 +848,7 @@ Returns the target object's KTD first when available, followed by only the publi
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `action` | string | No | `"deps"` (default), `"usages"`, `"impact"`, or `"structure"` |
-| `type` | string | Yes (for deps/structure), optional for impact | Object type: `CLAS`, `INTF`, `PROG`, `FUNC`, `DDLS`, `TABL` |
+| `type` | string | Yes (for deps/structure), optional for impact/usages | Object type: `CLAS`, `INTF`, `PROG`, `FUNC`, `DDLS`, `TABL` |
 | `name` | string | Yes | Object name (e.g., `ZCL_ORDER`) |
 | `source` | string | No | Provide source directly instead of fetching from SAP |
 | `includeKtd` | boolean | No | Only for `action="deps"`. Defaults to `true`; prepends the object's KTD (`SKTD`/`KTD`) when one exists. Set `false` to skip the KTD lookup. Ignored when `source` is supplied. |
@@ -994,9 +994,7 @@ Sibling analysis is best-effort and bounded. Any sibling-search or sibling where
 
 ### action="usages" — Reverse dependency lookup
 
-Returns all objects in the cached index that depend on the given object (i.e., "who calls/uses this?"). This is the inverse of `deps`.
-
-**Requires cache warmup** (`ARC1_CACHE_WARMUP=true`). Without warmup, the edge index is empty and the tool returns an error with setup instructions. As a live alternative, use `SAPNavigate(action="references")`.
+Queries SAP's live where-used index for objects that depend on the target (i.e., "who calls/uses this?"). The lookup uses the current caller's SAP identity and works with memory, SQLite, or no cache. `SAPNavigate(action="references")` uses the same live lookup but returns the navigation-oriented result directly.
 
 **Parameters:**
 
@@ -1004,26 +1002,33 @@ Returns all objects in the cached index that depend on the given object (i.e., "
 |-----------|------|----------|-------------|
 | `action` | string | Yes | `"usages"` |
 | `name` | string | Yes | Object name to look up (e.g., `ZCL_ORDER`, `ZIF_ORDER`) |
+| `type` | string | No | Object type. Recommended when known; otherwise ARC-1 performs exact-name resolution and continues only for one unambiguous match. |
 
 **Example:**
 ```
-SAPContext(action="usages", name="ZIF_ORDER")
+SAPContext(action="usages", type="INTF", name="ZIF_ORDER")
 ```
 
 **Output:**
 ```json
 {
   "name": "ZIF_ORDER",
+  "resolvedObject": {
+    "type": "INTF",
+    "name": "ZIF_ORDER",
+    "uri": "/sap/bc/adt/oo/interfaces/zif_order"
+  },
   "usageCount": 3,
   "usages": [
-    { "fromId": "ZCL_ORDER", "type": "CLAS", "relation": "IMPLEMENTS" },
-    { "fromId": "ZCL_ORDER_EXTENDED", "type": "CLAS", "relation": "IMPLEMENTS" },
-    { "fromId": "ZCL_ORDER_FACTORY", "type": "CLAS", "relation": "USES" }
-  ]
+    { "name": "ZCL_ORDER", "type": "CLAS/OC", "uri": "/sap/bc/adt/oo/classes/zcl_order" },
+    { "name": "ZCL_ORDER_EXTENDED", "type": "CLAS/OC", "uri": "/sap/bc/adt/oo/classes/zcl_order_extended" }
+  ],
+  "source": "live",
+  "fallbackUsed": false
 }
 ```
 
-**When warmup is not available:** Returns `isError: true` with step-by-step instructions to enable warmup, and suggests `SAPNavigate(action="references")` as a live fallback.
+If exact name resolution finds multiple object types, ARC-1 returns a bounded candidate list and asks for `type` instead of guessing.
 
 ---
 
@@ -1191,7 +1196,7 @@ Probe and report SAP system capabilities, inspect the object cache state, and ma
 **Actions:**
 - `probe` — Re-probe the SAP system now (feature probes + auth checks + ADT discovery refresh). Detects optional features.
 - `features` — Get cached feature status from last probe (fast, no SAP round-trip).
-- `cache_stats` — Return object cache statistics: cached sources, dep graphs, edges, warmup state, and the per-username inactive-list session cache (`inactiveListCache.userCount`, `inactiveListCache.totalEntries`).
+- `cache_stats` — Return request-driven cache statistics: cached sources, dependency graphs, released APIs, and the per-username inactive-list session cache (`inactiveListCache.userCount`, `inactiveListCache.totalEntries`).
 - `create_package` — Create a package (`DEVC`) via `/sap/bc/adt/packages`.
 - `delete_package` — Delete a package via lock/delete/unlock.
 - `change_package` — Move an existing object into a different package (DEVC reassignment).
@@ -1234,29 +1239,29 @@ Probe and report SAP system capabilities, inspect the object cache state, and ma
 ```json
 {
   "enabled": true,
-  "warmupAvailable": false,
   "sourceCount": 42,
   "contractCount": 38,
-  "edgeCount": 0,
-  "nodeCount": 42,
-  "apiCount": 0
+  "apiCount": 0,
+  "inactiveListCache": {
+    "userCount": 1,
+    "totalEntries": 3
+  }
 }
 ```
 
 | Field | Description |
 |-------|-------------|
 | `enabled` | Whether caching is active (`false` if `ARC1_CACHE=none`) |
-| `warmupAvailable` | Whether warmup has completed — required for `SAPContext(action="usages")` |
 | `sourceCount` | Cached source code entries (grows as objects are read) |
 | `contractCount` | Cached dependency graphs (grows as `SAPContext(deps)` is called) |
-| `edgeCount` | Dependency edges — non-zero only after warmup |
-| `nodeCount` | Object metadata entries — non-zero only after warmup |
+| `apiCount` | Released API metadata entries populated by requests |
+| `inactiveListCache` | Aggregate user/session draft-list cache counts |
 
 **Examples:**
 ```
 SAPManage(action="probe")       → discover system capabilities
 SAPManage(action="features")    → get cached results (no SAP call)
-SAPManage(action="cache_stats") → check cache state and warmup status
+SAPManage(action="cache_stats") → check request-driven cache state
 SAPManage(action="create_package", name="ZRAP_TRAVEL", description="RAP Travel Demo")
 SAPManage(action="create_package", name="ZRAP_TRAVEL", description="RAP Travel Demo", superPackage="ZRAP", softwareComponent="HOME", transportLayer="HOME", packageType="development", transport="K900123")
 SAPManage(action="delete_package", name="ZRAP_TRAVEL")

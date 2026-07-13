@@ -60,7 +60,7 @@ Deploy ARC-1 as a Cloud Foundry app on SAP BTP with full platform integration:
 - **Server-validated source caching** — every SAP object read is cached in memory (stdio) or SQLite (http-streamable). Repeated reads use `If-None-Match`/ETag conditional GET, so unchanged objects return from cache after SAP confirms `304 Not Modified`.
 - **Dependency graph caching** — `SAPContext` dep resolution keyed by source hash; unchanged objects skip all ADT calls on subsequent runs.
 - **KTD-aware context** — Knowledge Transfer Documents are cached as source entries and composed into `SAPContext(action="deps")` separately from the dependency graph, so cached dependency context can still include revalidated documentation.
-- **Pre-warmer** — start with `ARC1_CACHE_WARMUP=true` to pre-index all custom objects at startup, enabling reverse dependency lookup (`SAPContext(action="usages")`) and fast CDS impact workflows (`SAPContext(action="impact", type="DDLS")`).
+- **Live where-used** — `SAPContext(action="usages")` and CDS impact analysis query SAP's current repository index with the caller's identity; no startup repository scan is required.
 - **Active/inactive source views** — `SAPRead` accepts `version="active" | "inactive" | "auto"` and warns when the active source has an unactivated draft.
 - **Write invalidation** — when `SAPWrite` or `SAPActivate` mutates an object, both active and inactive source cache entries are dropped; next read revalidates or fetches fresh source.
 
@@ -71,7 +71,7 @@ See **[docs/caching.md](docs/caching.md)** for full documentation.
 - **3,474 unit tests** (`104` unit test files, mocked HTTP)
 - **262-test default integration profile** against live SAP systems, with explicit skip reasons when credentials or fixtures are missing
 - **141-test default E2E profile** that executes real MCP tool calls against a running ARC-1 server and live SAP system
-- **Manual slow SAP profiles** keep expensive cache warmup, broad where-used, RAP full-stack, and recursive CTS release coverage out of the PR path (`test:integration:slow`, `test:e2e:slow`, GitHub **SAP Slow Tests** workflow)
+- **Manual slow SAP profiles** keep broad where-used, RAP full-stack, and recursive CTS release coverage out of the PR path (`test:integration:slow`, `test:e2e:slow`, GitHub **SAP Slow Tests** workflow)
 - **CRUD lifecycle and BTP smoke lanes** included (`test:integration:crud`, `test:integration:btp:smoke`)
 - **CI matrix** on Node `22` and `24`; live SAP integration + E2E run on internal PRs and manual dispatch, with SAP jobs gated off for docs/chore PRs and external forks
 - **Reliability telemetry + coverage** published as informational CI signals (non-blocking)

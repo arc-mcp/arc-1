@@ -13,13 +13,11 @@
  * - Function group mappings are cached permanently (rarely change).
  * - Writes invalidate the source cache for the written object.
  *
- * Three tiers:
+ * Two tiers:
  * - Tier 1 (default/auto): MemoryCache, dies with process. Eliminates
  *   duplicate fetches within a session and avoids source-at-rest by default.
  * - Tier 2 (explicit sqlite): SqliteCache, persists. Multiple sessions
  *   share the warm cache when operators accept the source-at-rest posture.
- * - Tier 3 (explicit sqlite + warmup): SqliteCache pre-populated via TADIR
- *   scan. Enables reverse dependency lookup.
  */
 
 import type { AdtClient, SourceReadResult } from '../adt/client.js';
@@ -47,8 +45,7 @@ export type CacheActivityEvent =
   | 'depgraph_hit'
   | 'depgraph_store'
   | 'func_group_hit'
-  | 'func_group_store'
-  | 'warmup_state';
+  | 'func_group_store';
 
 export interface CacheActivityEntry {
   timestamp: string;
@@ -86,7 +83,6 @@ export class CachingLayer {
   readonly inactiveLists = new InactiveListCache();
   /** (TYPE:NAME) → activation freshness, set by markActivated() after a successful SAPActivate. */
   private readonly recentlyActivated = new Map<string, ActivationFreshness>();
-  private warmupDone = false;
   private readonly activityEntries: CacheActivityEntry[] = [];
   private readonly activityCounts: Partial<Record<CacheActivityEvent, number>> = {};
 
@@ -95,17 +91,6 @@ export class CachingLayer {
     private readonly maxActivityEntries = 200,
   ) {
     this.cache = cache;
-  }
-
-  /** Mark warmup as complete (enables reverse dep lookups) */
-  setWarmupDone(done: boolean): void {
-    this.warmupDone = done;
-    this.recordActivity('warmup_state', { detail: done ? 'warmup index available' : 'warmup index unavailable' });
-  }
-
-  /** Whether the warmup index is available */
-  get isWarmupAvailable(): boolean {
-    return this.warmupDone;
   }
 
   // ─── Source Fetching with Cache ────────────────────────────────────
@@ -376,19 +361,6 @@ export class CachingLayer {
       return undefined;
     }
     return entry;
-  }
-
-  // ─── Reverse Dependencies (Pre-warmer only) ───────────────────────
-
-  /**
-   * Find all objects that depend on the given object (reverse lookup).
-   * Only available when pre-warmer has populated the edge index.
-   * Returns null if warmup hasn't run (caller should show appropriate message).
-   */
-  getUsages(objectName: string): { fromId: string; edgeType: string }[] | null {
-    if (!this.warmupDone) return null;
-    const edges = this.cache.getEdgesTo(objectName.toUpperCase());
-    return edges.map((e) => ({ fromId: e.fromId, edgeType: e.edgeType }));
   }
 
   // ─── Stats ────────────────────────────────────────────────────────

@@ -28,7 +28,7 @@ modules:
   - name: arc1-mcp-server
     properties:
       # ── Destinations (REQUIRED override) ─────────────────────────────
-      # BasicAuth destination for startup (feature probing, cache warmup)
+      # BasicAuth destination for startup feature probing
       # SAP_BTP_DESTINATION: "my-basic-auth-destination"
 
       # PrincipalPropagation destination for per-user requests (with JWT)
@@ -122,14 +122,6 @@ modules:
       # Tool mode: "standard" (12 tools) or "hyperfocused" (1 universal
       # SAP tool, ~200 tokens — useful for token-tight clients).
       # ARC1_TOOL_MODE: "standard"
-
-      # ── Cache warmup ─────────────────────────────────────────────────
-      # Pre-warm the cache on startup via TADIR scan. Speeds up first-use
-      # latency at the cost of slower startup and a TADIR read at boot.
-      # ARC1_CACHE_WARMUP: "true"
-
-      # Filter packages for warmup, comma-separated, wildcards allowed.
-      # ARC1_CACHE_WARMUP_PACKAGES: "Z*,Y*"
 
       # ── Diagnostics ──────────────────────────────────────────────────
       # Attach full request/response bodies and headers to `http_request`

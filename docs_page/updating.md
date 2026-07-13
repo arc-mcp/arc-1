@@ -1,5 +1,13 @@
 # Updating ARC-1
 
+## Cache warmup removal
+
+ARC-1 no longer performs a startup TADIR scan or keeps repository-wide node/edge indexes. The normal request-driven memory/SQLite cache remains, and `SAPContext(action="usages")` now queries SAP's live where-used index with the current caller's identity.
+
+Before upgrading, remove `ARC1_CACHE_WARMUP`, `ARC1_CACHE_WARMUP_PACKAGES`, `--cache-warmup`, and `--cache-warmup-packages`. ARC-1 deliberately refuses to start when any retired setting is present, including `ARC1_CACHE_WARMUP=false`, so stale deployment configuration is visible instead of silently ignored.
+
+Existing SQLite files need no manual migration. On first open, ARC-1 drops the retired `nodes` and `edges` tables while preserving sources, dependency graphs, released API metadata, and function-group mappings.
+
 ## v0.9.26 — JWT Principal Propagation Always Fails Closed
 
 ARC-1 no longer changes a JWT-authenticated request to the shared SAP technical identity when
