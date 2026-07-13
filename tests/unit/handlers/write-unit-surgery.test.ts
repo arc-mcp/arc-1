@@ -7,11 +7,11 @@ const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 
 type FetchCall = { method: string; url: string; body?: string };
 
-function inactiveObjects(name: string, type: 'PROG' | 'INCL', hasDraft: boolean): string {
+function inactiveObjects(name: string, type: 'PROG' | 'INCL', hasDraft: boolean, adtTypeOverride?: string): string {
   if (!hasDraft) {
     return '<?xml version="1.0"?><ioc:inactiveObjects xmlns:ioc="http://www.sap.com/adt/inactiveObjects"/>';
   }
-  const adtType = type === 'PROG' ? 'PROG/P' : 'PROG/I';
+  const adtType = adtTypeOverride ?? (type === 'PROG' ? 'PROG/P' : 'PROG/I');
   return `<?xml version="1.0"?>
 <ioc:inactiveObjects xmlns:ioc="http://www.sap.com/adt/inactiveObjects" xmlns:adtcore="http://www.sap.com/adt/core">
   <ioc:entry><ioc:object><adtcore:objectReference adtcore:type="${adtType}" adtcore:name="${name}" adtcore:uri="/source"/></ioc:object></ioc:entry>
@@ -24,6 +24,7 @@ function mockEditUnitFlow(opts: {
   objectPath: string;
   activeSource: string;
   inactiveSource?: string;
+  inactiveAdtType?: string;
 }): FetchCall[] {
   const calls: FetchCall[] = [];
   mockFetch.mockReset();
@@ -35,9 +36,13 @@ function mockEditUnitFlow(opts: {
 
     if (method === 'GET' && parsed.pathname === '/sap/bc/adt/activation/inactiveobjects') {
       return Promise.resolve(
-        mockResponse(200, inactiveObjects(opts.name, opts.type, opts.inactiveSource !== undefined), {
-          'x-csrf-token': 'TOKEN',
-        }),
+        mockResponse(
+          200,
+          inactiveObjects(opts.name, opts.type, opts.inactiveSource !== undefined, opts.inactiveAdtType),
+          {
+            'x-csrf-token': 'TOKEN',
+          },
+        ),
       );
     }
     if (method === 'GET' && parsed.pathname === opts.objectPath) {
@@ -198,5 +203,34 @@ ENDFORM.`,
     const put = calls.find((call) => call.method === 'PUT');
     expect(put?.url).toContain(objectPath);
     expect(put?.body).toContain("SET PF-STATUS 'NEW'.");
+  });
+
+  it('splices into a FUGR/I inactive draft instead of overwriting it with active source', async () => {
+    const name = 'LZARC1TOP';
+    const group = 'ZARC1';
+    const objectPath = `/sap/bc/adt/functions/groups/${group.toLowerCase()}/includes/${name.toLowerCase()}`;
+    const calls = mockEditUnitFlow({
+      type: 'INCL',
+      name,
+      objectPath,
+      activeSource: "FORM first.\n  WRITE 'active'.\nENDFORM.\nFORM second.\nENDFORM.",
+      inactiveSource: "FORM first.\n  WRITE 'draft change'.\nENDFORM.\nFORM second.\nENDFORM.",
+      inactiveAdtType: 'FUGR/I',
+    });
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+      action: 'edit_unit',
+      type: 'INCL',
+      group,
+      name,
+      unit: 'second',
+      source: "FORM second.\n  WRITE 'second change'.\nENDFORM.",
+      lintBeforeWrite: false,
+    });
+    expect(result.isError).toBeUndefined();
+    expect(calls.some((call) => call.method === 'GET' && call.url.includes('version=inactive'))).toBe(true);
+    const put = calls.find((call) => call.method === 'PUT');
+    expect(put?.body).toContain("WRITE 'draft change'.");
+    expect(put?.body).toContain("WRITE 'second change'.");
+    expect(result.content[0]?.text).toContain('SAPActivate(type="INCL"');
   });
 });

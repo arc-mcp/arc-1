@@ -670,6 +670,7 @@ export const SAPActivateSchema = z.object({
   action: z.enum(['activate', 'publish_srvb', 'unpublish_srvb']).optional(),
   name: z.string().optional(),
   type: z.string().optional(),
+  group: z.string().optional(),
   version: z.string().optional(),
   service_type: z.enum(['odatav2', 'odatav4']).optional(),
   preaudit: looseOptionalBoolean,
@@ -678,6 +679,7 @@ export const SAPActivateSchema = z.object({
       z.object({
         type: z.string(),
         name: z.string(),
+        group: z.string().optional(),
       }),
     )
     .optional(),

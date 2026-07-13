@@ -1312,14 +1312,21 @@ describe('SAPActivateSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('preserves the parent group for structural include activation', () => {
+    const result = SAPActivateSchema.safeParse({ name: 'LZARC1TOP', type: 'INCL', group: 'ZARC1' });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.group).toBe('ZARC1');
+  });
+
   it('accepts batch activation', () => {
     const result = SAPActivateSchema.safeParse({
       objects: [
-        { type: 'DDLS', name: 'ZI_TRAVEL' },
+        { type: 'INCL', name: 'LZARC1TOP', group: 'ZARC1' },
         { type: 'BDEF', name: 'ZI_TRAVEL' },
       ],
     });
     expect(result.success).toBe(true);
+    if (result.success) expect(result.data.objects?.[0]?.group).toBe('ZARC1');
   });
 
   it('accepts empty input (all fields optional)', () => {

@@ -489,7 +489,7 @@ SAPWrite(action="generate_behavior_implementation", type="CLAS", name="ZBP_DM_PR
 
 [Issue #558](https://github.com/arc-mcp/arc-1/issues/558). On-prem `action="edit_unit"` replaces one named `FORM…ENDFORM` or `MODULE…ENDMODULE` block in a `PROG` or `INCL` without making the caller re-send the full program. ARC-1 reads the latest active or inactive-draft source directly from SAP, finds the block with abaplint's structure tree, validates that the replacement has the same kind and name, splices it, then uses the normal package gate and lock/modify/unlock write path.
 
-Pass the complete replacement block so multi-line FORM signatures and MODULE direction (`INPUT`/`OUTPUT`) remain explicit. The action is case-insensitive by unit name, preserves CRLF source files, leaves sibling units untouched, and does not auto-activate. Run `SAPActivate` afterwards. Function-group structural includes are supported with `type="INCL", group="<FUGR>"`.
+Pass the complete replacement block so multi-line FORM signatures and MODULE direction (`INPUT`/`OUTPUT`) remain explicit. The action is case-insensitive by unit name, preserves CRLF source files, leaves sibling units untouched, and does not auto-activate. Run `SAPActivate` afterwards. Function-group structural includes are supported with `type="INCL", group="<FUGR>"`; activate those with the same `type`, `name`, and `group` so ARC-1 addresses the structural include directly on every supported release.
 
 ```jsonc
 {
@@ -631,8 +631,9 @@ Activate (publish) ABAP objects. Supports single object or batch activation.
 |-----------|------|----------|-------------|
 | `name` | string | No | Object name (for single activation) |
 | `type` | string | No | Object type (`PROG`, `CLAS`, `DDLS`, `DDLX`, `BDEF`, `SRVD`, `SRVB`, etc.) |
+| `group` | string | No | Parent function group for `FUNC` or a function-group structural `INCL`. May also be set per batch item. |
 | `preaudit` | boolean | No | Request pre-activation audit from SAP (default: `true`). Set `false` to skip pre-audit for faster activation. |
-| `objects` | array | No | For batch: array of `{type, name}` objects to activate together |
+| `objects` | array | No | For batch: array of `{type, name, group?}` objects to activate together |
 
 Use batch activation for RAP stacks where objects depend on each other (DDLS, BDEF, SRVD, DDLX, SRVB must be activated together). Batch responses include per-object status (`active`, `warning`, `error`) with attached messages, so failed members can be retried selectively.
 
@@ -641,6 +642,7 @@ For failed `DDLS` activation, ARC-1 appends CDS dependency impact buckets and a 
 **Examples:**
 ```
 SAPActivate(type="CLAS", name="ZCL_ORDER")
+SAPActivate(type="INCL", name="LZFGTOP", group="ZFG")
 SAPActivate(objects=[{type:"DDLS",name:"ZI_TRAVEL"},{type:"BDEF",name:"ZI_TRAVEL"},{type:"SRVD",name:"ZSD_TRAVEL"}])
 ```
 

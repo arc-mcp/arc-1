@@ -56,8 +56,14 @@ const VERSIONED_SOURCE_READ_TYPES = new Set([
 
 function inactiveTypeMatches(readType: string, inactiveType: string): boolean {
   // Includes are exposed as canonical INCL to callers but ADT reports them as
-  // PROG/I in the inactive worklist. Normalize both sides instead of comparing
-  // only the slash prefix, which incorrectly classified include drafts as PROG.
+  // PROG/I in the inactive worklist. Function-group structural includes use
+  // FUGR/I instead (live-verified on NW 7.50 and SAP_BASIS 7.58). Keep that
+  // alias local to draft resolution: globally normalizing FUGR/I to INCL would
+  // misroute search hits for a function group's main source when no group is
+  // available to build the structural-include URL.
+  if (normalizeObjectType(readType) === 'INCL' && inactiveType.trim().toUpperCase() === 'FUGR/I') return true;
+  // Normalize both sides instead of comparing only the slash prefix, which
+  // incorrectly classified standalone include drafts as PROG.
   return normalizeObjectType(inactiveType) === normalizeObjectType(readType);
 }
 

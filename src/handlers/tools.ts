@@ -942,6 +942,10 @@ export function getToolDefinitions(
           },
           name: { type: 'string', description: 'Object name (for single activation or publish/unpublish)' },
           type: { type: 'string', description: 'Object type (PROG, CLAS, DDLS, DDLX, BDEF, SRVD, SRVB, etc.)' },
+          group: {
+            type: 'string',
+            description: 'Parent FUGR for FUNC or structural INCL.',
+          },
           version: { type: 'string', description: 'Service version for publish/unpublish (default: "0001")' },
           service_type: {
             type: 'string',
@@ -961,11 +965,11 @@ export function getToolDefinitions(
               properties: {
                 type: { type: 'string', description: 'Object type' },
                 name: { type: 'string', description: 'Object name' },
+                group: { type: 'string' },
               },
               required: ['type', 'name'],
             },
-            description:
-              'Batch activation: array of {type, name} to activate in one call. Use whenever activating 2+ objects (any mix of types).',
+            description: 'Batch items; use for 2+ objects.',
           },
         },
       },

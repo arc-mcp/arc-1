@@ -70,7 +70,12 @@ export async function writeActionEditUnit(ctx: SapWriteContext): Promise<ToolRes
   invalidateWrittenObject(type, name);
 
   const kind = spliced.unit?.kind ?? 'unit';
-  const message = `Successfully updated ${kind} "${unit}" in ${type} ${name}.`;
+  const group = String(args.group ?? '').trim();
+  const activationHint =
+    type === 'INCL' && group
+      ? ` Activate this structural include with SAPActivate(type="INCL", name="${name}", group="${group}").`
+      : '';
+  const message = `Successfully updated ${kind} "${unit}" in ${type} ${name}.${activationHint}`;
   const extras = [lint.warnings, checkNotes].filter(Boolean).join('\n\n');
   return extras ? textResult(`${message}\n\n${extras}`) : textResult(message);
 }

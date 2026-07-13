@@ -827,6 +827,10 @@
           "type": "string",
           "description": "Object type (PROG, CLAS, DDLS, DDLX, BDEF, SRVD, SRVB, etc.)"
         },
+        "group": {
+          "type": "string",
+          "description": "Parent FUGR for FUNC or structural INCL."
+        },
         "version": {
           "type": "string",
           "description": "Service version for publish/unpublish (default: \"0001\")"
@@ -855,6 +859,9 @@
               "name": {
                 "type": "string",
                 "description": "Object name"
+              },
+              "group": {
+                "type": "string"
               }
             },
             "required": [
@@ -862,7 +869,7 @@
               "name"
             ]
           },
-          "description": "Batch activation: array of {type, name} to activate in one call. Use whenever activating 2+ objects (any mix of types)."
+          "description": "Batch items; use for 2+ objects."
         }
       }
     },

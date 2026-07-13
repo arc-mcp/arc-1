@@ -31,6 +31,17 @@ describe('SAPActivate handler', () => {
       expect(result.content[0]?.text).toContain('Successfully activated PROG ZTEST');
     });
 
+    it('activates a function-group structural include through its parent-group URI', async () => {
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPActivate', {
+        type: 'INCL',
+        name: 'LZARC1TOP',
+        group: 'ZARC1',
+      });
+      expect(result.isError).toBeUndefined();
+      const activationCall = mockFetch.mock.calls.find((call) => String(call[0]).includes('/activation?'));
+      expect(String(activationCall?.[1]?.body)).toContain('/sap/bc/adt/functions/groups/zarc1/includes/lzarc1top');
+    });
+
     it('batch activates multiple objects', async () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPActivate', {
         objects: [
