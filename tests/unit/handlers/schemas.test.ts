@@ -753,6 +753,33 @@ describe('SAPWriteSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('exposes edit_unit only for on-prem PROG/INCL writes', () => {
+    const program = SAPWriteSchema.safeParse({
+      action: 'edit_unit',
+      type: 'PROG',
+      name: 'ZUNIT_TEST',
+      unit: 'PROCESS_ORDERS',
+      source: 'FORM process_orders.\nENDFORM.',
+    });
+    const include = SAPWriteSchema.safeParse({
+      action: 'edit_unit',
+      type: 'INCL',
+      name: 'ZUNIT_INCLUDE',
+      unit: 'STATUS_0100',
+      source: 'MODULE status_0100 OUTPUT.\nENDMODULE.',
+    });
+    const btp = SAPWriteSchemaBtp.safeParse({
+      action: 'edit_unit',
+      type: 'CLAS',
+      name: 'ZCL_TEST',
+      unit: 'PROCESS_ORDERS',
+      source: 'FORM process_orders.\nENDFORM.',
+    });
+    expect(program.success).toBe(true);
+    expect(include.success).toBe(true);
+    expect(btp.success).toBe(false);
+  });
+
   it('accepts preflightBeforeWrite override', () => {
     const result = SAPWriteSchema.safeParse({
       action: 'update',
