@@ -49,6 +49,7 @@
     "dev": "tsx src/index.ts",
     "dev:http": "npm run build && tsx src/index.ts --transport http-streamable",
     "start": "node dist/index.js",
+    "start:docs": "properdocs serve",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration": "vitest run --config vitest.integration.config.ts",

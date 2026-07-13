@@ -72,7 +72,7 @@ Search the codebase for similar patterns. If the feature extends an existing pat
 Every feature plan must account for the full artifact surface. Research what needs updating:
 
 **Published documentation site (`docs_page/`)**
-The user-facing docs live in `docs_page/` (this is the mkdocs `docs_dir` — see `mkdocs.yml`), **not** `docs/`. Read the ones that relate to the feature area. Key files include:
+The user-facing docs live in `docs_page/` (this is the properdocs `docs_dir` — see `properdocs.yml`), **not** `docs/`. Read the ones that relate to the feature area. Key files include:
 - `docs_page/tools.md` — tool reference (update if adding/changing tool operations or parameters)
 - `docs_page/authorization.md` — auth model (update if changing safety, scopes, or auth behavior)
 - `docs_page/security-guide.md` — security practices (update if changing security posture)

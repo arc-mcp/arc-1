@@ -187,7 +187,7 @@ If the feature changes tool behavior, update the tool description in `src/handle
 
 ### 5b. Update end-user documentation
 
-Check and update as needed (user-facing docs live in `docs_page/`, the mkdocs `docs_dir`):
+Check and update as needed (user-facing docs live in `docs_page/`, the properdocs `docs_dir`):
 - `docs_page/tools.md` — tool reference
 - `docs_page/mcp-usage.md` — agent workflow patterns
 - `README.md` — if feature is user-facing

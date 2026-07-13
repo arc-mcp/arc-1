@@ -8,7 +8,7 @@ on:
       - 'docs_page/**'
       - 'docs/overrides/**'
       - 'README.md'
-      - 'mkdocs.yml'
+      - 'properdocs.yml'
   workflow_dispatch:
 
 permissions:
@@ -32,11 +32,11 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: Install MkDocs
-        run: pip install "mkdocs-material>=9.5,<10" "mkdocs-redirects>=1.2,<2"
+      - name: Install ProperDocs
+        run: pip install properdocs "mkdocs-material>=9.5,<10" "mkdocs-redirects>=1.2,<2"
 
       - name: Build docs
-        run: mkdocs build
+        run: properdocs build
 
       - name: Upload pages artifact
         uses: actions/upload-pages-artifact@v5
