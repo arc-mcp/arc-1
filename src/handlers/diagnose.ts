@@ -16,6 +16,7 @@ import {
 import {
   createTraceRequest,
   deleteTraceRequest,
+  getAuthorizationTrace,
   getCdsCreateStatements,
   getDump,
   getGatewayErrorDetail,
@@ -33,6 +34,7 @@ import {
   probeODataPerformance,
   setSqlTraceState,
 } from '../adt/diagnostics.js';
+import { AdtApiError } from '../adt/errors.js';
 import type {
   DumpDetail,
   FixAffectedObject,
@@ -359,9 +361,29 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
       const dir = await getSqlTraceDirectory(client.http, client.safety);
       return textResult(JSON.stringify(dir, null, 2));
     }
+    case 'authorization_trace': {
+      const user = String(args.user ?? '').trim() || undefined;
+      const authObject = String(args.authObject ?? '').trim() || undefined;
+      const onlyFailures = args.onlyFailures === true || String(args.onlyFailures ?? '') === 'true';
+      const maxResults = args.maxResults === undefined ? undefined : Number(args.maxResults);
+
+      try {
+        const result = await getAuthorizationTrace(client, { user, authObject, onlyFailures, maxResults });
+        return textResult(JSON.stringify(result, null, 2));
+      } catch (err) {
+        if (err instanceof AdtApiError && /Cannot find '/i.test(err.message)) {
+          return errorResult(
+            'Authorization trace not available on this system. It reads the on-prem STUSERTRACE table ' +
+              "SUAUTHVALTRC (SAP_BASIS 7.40 SP16+); on ABAP Cloud/Steampunk use the 'Display " +
+              "Authorization Trace' Fiori app. Requires SAP_ALLOW_DATA_PREVIEW.",
+          );
+        }
+        throw err;
+      }
+    }
     default:
       return errorResult(
-        `Unknown SAPDiagnose action: ${action}. Supported: syntax, unittest, atc, cds_testcases, object_state, quickfix, apply_quickfix, dumps, traces, trace_start, trace_requests, trace_cancel, system_messages, gateway_errors, odata_perf, cds_sql, sql_trace_state, set_sql_trace_state, sql_trace_directory`,
+        `Unknown SAPDiagnose action: ${action}. Supported: syntax, unittest, atc, cds_testcases, object_state, quickfix, apply_quickfix, dumps, traces, trace_start, trace_requests, trace_cancel, system_messages, gateway_errors, odata_perf, cds_sql, sql_trace_state, set_sql_trace_state, sql_trace_directory, authorization_trace`,
       );
   }
 }

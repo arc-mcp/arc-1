@@ -845,7 +845,8 @@ describe('SAPManage / SAPContext handlers', () => {
       expect(result.isError).toBeUndefined();
       const postCall = mockFetch.mock.calls.find((call) => (call[1] as RequestInit)?.method === 'POST');
       expect(postCall).toBeDefined();
-      const payload = JSON.parse((postCall?.[1] as RequestInit).body as string);
+      if (!postCall) throw new Error('Expected a POST call');
+      const payload = JSON.parse((postCall[1] as RequestInit).body as string);
       const outer = JSON.parse(payload.configuration);
       const inner = JSON.parse(outer.tileConfiguration);
       expect(inner.semantic_object).toBe('ZSO');

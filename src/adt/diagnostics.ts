@@ -37,6 +37,8 @@ import type {
 } from './types.js';
 import { escapeXmlAttr, findDeepNodes, parseXml } from './xml-parser.js';
 
+export { decodeAuthTraceRows, getAuthorizationTrace, parseFirstCallTs } from './authorization-trace.js';
+
 // ─── Short Dumps ────────────────────────────────────────────────────
 
 const DEFAULT_DUMP_MAX_RESULTS = 50;

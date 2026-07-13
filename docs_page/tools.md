@@ -1108,13 +1108,13 @@ SAPLint(action="lint", source="...", rules={"line_length": {"severity": "Error",
 
 ## SAPDiagnose
 
-Server-side code analysis: syntax check, ABAP unit tests, ATC checks, CDS test-case scaffolding, active/inactive object state, short dumps (ST22), ABAP profiler traces, an OData performance probe (`sap-statistics`), and CDS Show-SQL.
+Server-side code analysis: syntax check, ABAP unit tests, ATC checks, CDS test-case scaffolding, active/inactive object state, short dumps (ST22), ABAP profiler traces, the on-prem STUSERTRACE authorization trace, an OData performance probe (`sap-statistics`), and CDS Show-SQL.
 
 **Parameters:**
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `action` | string | Yes | `syntax`, `unittest`, `atc`, `cds_testcases`, `object_state`, `quickfix`, `apply_quickfix`, `dumps`, `traces`, `odata_perf`, `cds_sql`, `sql_trace_state`, `set_sql_trace_state`, or `sql_trace_directory` |
+| `action` | string | Yes | `syntax`, `unittest`, `atc`, `cds_testcases`, `object_state`, `quickfix`, `apply_quickfix`, `dumps`, `traces`, `odata_perf`, `authorization_trace`, `cds_sql`, `sql_trace_state`, `set_sql_trace_state`, or `sql_trace_directory` |
 | `name` | string | No | Object name (required for syntax/unittest/atc/object_state/quickfix/apply_quickfix; the CDS entity / DDLS source name for `cds_testcases` and `cds_sql`) |
 | `url` | string | No | For `odata_perf`: the host-relative OData path to probe (from the Fiori app's Network tab), e.g. `/sap/opu/odata4/sap/.../Entity?$filter=...`. Must be a path on the SAP system ARC-1 connects to — absolute URLs are rejected. |
 | `type` | string | No | Object type: `PROG`, `CLAS`, `INTF`, `FUNC` (required for syntax/unittest/atc/object_state/quickfix/apply_quickfix) |
@@ -1125,8 +1125,10 @@ Server-side code analysis: syntax check, ABAP unit tests, ATC checks, CDS test-c
 | `proposalUri` | string | No | Quickfix proposal URI from `quickfix` response (required for `apply_quickfix`) |
 | `proposalUserContent` | string | No | Opaque proposal state from `quickfix` response (required for `apply_quickfix`) |
 | `id` | string | No | Dump ID (for dump detail) or Trace ID (for trace analysis) |
-| `user` | string | No | Filter dumps by user |
-| `maxResults` | number | No | Max dumps to return |
+| `user` | string | No | SAP-user filter for dumps, runtime feeds, or `authorization_trace` |
+| `authObject` | string | No | For `authorization_trace`: filter to one authorization object, for example `S_TCODE` |
+| `onlyFailures` | boolean | No | For `authorization_trace`: return only denied checks (`RC <> 0`) |
+| `maxResults` | number | No | Maximum results (default 50 for dumps/feeds, 100 for `authorization_trace`; safely capped) |
 | `variant` | string | No | ATC check variant name |
 | `sqlOn` | boolean | No | For `set_sql_trace_state`: `true` arms the ST05 SQL trace, `false` disarms it (combine with `user` to filter to one SAP user) |
 | `analysis` | string | No | For trace detail: `hitlist`, `statements`, or `dbAccesses` |
@@ -1143,6 +1145,7 @@ Server-side code analysis: syntax check, ABAP unit tests, ATC checks, CDS test-c
 - **`dumps`** — List short dumps (ST22). Without `id`: returns recent dumps (filterable by `user`, `maxResults`). With `id`: returns full dump detail including error type, exception, program, stack trace, and formatted output.
 - **`traces`** — List ABAP profiler traces. Without `id`: returns trace list. With `id` + `analysis`: returns trace analysis (`hitlist` = call hierarchy with hit counts and timings, `statements` = executed statements, `dbAccesses` = database access details).
 - **`odata_perf`** — Diagnose *why* a Fiori/OData request is slow. Pass `url` (the host-relative OData path from the app's Network tab); ARC-1 GETs it with `?sap-statistics=true` and a wall-clock timer, then returns the server-side timing split (`gwtotal`, `gwapp`, `gwappdb` = DB time, `gwfw`/`gwhub` = framework, `icfauth` = auth) plus a `verdict` routing you to the dominant cost (`db` → check the CDS query / `cds_sql` / ST05; `app` → ABAP profiler `traces`; `framework` → metadata/first-call; `auth` → ICF/DCL). Read-only GET; gated like data preview (`SAP_ALLOW_DATA_PREVIEW`). The OData service must be on the same SAP host ARC-1 connects to. Older releases (e.g. NW 7.50) may report only a `gwhub` total without a per-component split → the verdict says so rather than guessing.
+- **`authorization_trace`** — Read the long-term, on-prem **STUSERTRACE** trace from `SUAUTHVALTRC`, decode positional field values through `TOBJ`, and return the user, application, authorization object, result code, checked values, ABAP code location, and first-seen timestamp. Optional `user`, `authObject`, `onlyFailures`, and `maxResults` narrow the read; entries are sorted newest-first within the capped result set. Requires the `data` scope, `SAP_ALLOW_DATA_PREVIEW=true`, and SAP table-read authorization for `SUAUTHVALTRC` and `TOBJ`; it never needs free SQL. This is not SU53's live last-failure buffer: it contains only checks recorded while `auth/auth_user_trace` was enabled, and ARC-1 cannot toggle that profile parameter. Every response therefore reports `traceState.status="unknown"` and warns that persisted rows do not prove the trace is currently active; empty responses additionally include RZ11/profile activation guidance. Verify the current value in RZ11: `N` is inactive, `F` records only filters maintained in STUSERTRACE (recommended; at least one filter is required), and `Y` records all users/application types. A dynamic RZ11 change lasts until restart; select **Change on All Servers** when all application-server instances must participate, and maintain `DEFAULT.PFL` through the approved Basis profile workflow for a persistent setting. ABAP Cloud users should use the *Display Authorization Trace* Fiori app.
 - **`cds_sql`** — Show the native SQL a CDS view compiles to (ADT "Show SQL Create Statement"). Pass `name` (the CDS DDL source / DDLS, e.g. `I_CURRENCY`). Returns the `CREATE VIEW` statement(s) — the joins/scans behind a slow entity. Read-only. Verified on NW 7.50, S/4HANA 2023 (758), and ABAP Platform 2025 (816); on 7.50 the statement is a classic DB `VIEW`.
 - **`sql_trace_state`** — Read the current ST05 trace state (SQL/buffer/enqueue/RFC/HTTP/APC/AMC/auth on-off per application server, plus the active filter). Read-only.
 - **`set_sql_trace_state`** — Arm or disarm the ST05 SQL trace. Requires `sqlOn` (`true` = arm, `false` = disarm); optional `user` filters the trace to one SAP user. Mutates server trace state → needs `SAP_ALLOW_WRITES`. Workflow: arm → reproduce the slow request → `sql_trace_directory` for the record-viewer link.
@@ -1164,6 +1167,7 @@ SAPDiagnose(action="traces")
 SAPDiagnose(action="traces", id="TRACE123", analysis="hitlist")
 SAPDiagnose(action="traces", id="TRACE123", analysis="dbAccesses")
 SAPDiagnose(action="odata_perf", url="/sap/opu/odata4/sap/zui_mup/.../SerialNumbers?$filter=...")  — where did the time go (DB vs ABAP vs framework)
+SAPDiagnose(action="authorization_trace", user="AUTH_TEST", onlyFailures=true, maxResults=20) — denied STUSERTRACE checks (on-prem; data-preview gated)
 SAPDiagnose(action="cds_sql", name="I_CURRENCY")                    — the native SQL CREATE VIEW behind a CDS entity
 SAPDiagnose(action="sql_trace_state")                               — is the ST05 SQL trace on? for whom?
 SAPDiagnose(action="set_sql_trace_state", sqlOn=true, user="MARIAN") — arm the SQL trace for one user (needs SAP_ALLOW_WRITES)

@@ -878,6 +878,113 @@ ENDCLASS.`;
   });
 
   describe('SAPDiagnose runtime diagnostics', () => {
+    it('returns decoded authorization trace entries and wires filters', async () => {
+      const client = createClient();
+      const runTableQuery = vi
+        .spyOn(client, 'runTableQuery')
+        .mockResolvedValueOnce({
+          columns: [],
+          rows: [
+            {
+              USERNAME: 'AUTH_TEST',
+              NAME: '',
+              TYPE: 'TR',
+              OBJECT: 'S_TCODE',
+              RC: '12',
+              FIELD1: 'SU01',
+              ABAPPROG: 'LSUSEU11',
+              ABAPLINE: '53',
+              FIRSTCALL: '20260709211048',
+            },
+          ],
+        })
+        .mockResolvedValueOnce({ columns: [], rows: [{ OBJCT: 'S_TCODE', FIEL1: 'TCD' }] });
+
+      const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPDiagnose', {
+        action: 'authorization_trace',
+        user: 'AUTH_TEST',
+        authObject: 'S_TCODE',
+        onlyFailures: true,
+        maxResults: 5,
+      });
+
+      expect(result.isError).toBeUndefined();
+      const payload = JSON.parse(result.content[0]!.text);
+      expect(payload.entries[0]).toMatchObject({
+        user: 'AUTH_TEST',
+        authObject: 'S_TCODE',
+        rc: 12,
+        fields: { TCD: 'SU01' },
+      });
+      expect(payload.traceState).toMatchObject({
+        status: 'unknown',
+        parameter: 'auth/auth_user_trace',
+      });
+      expect(payload.traceState.verify).toContain('RZ11');
+      expect(payload.traceState.activation).toBeUndefined();
+      expect(runTableQuery).toHaveBeenNthCalledWith(
+        1,
+        'SUAUTHVALTRC',
+        expect.objectContaining({
+          where: [
+            { field: 'USERNAME', op: '=', value: 'AUTH_TEST' },
+            { field: 'OBJECT', op: '=', value: 'S_TCODE' },
+            { field: 'RC', op: '<>', value: '0' },
+          ],
+        }),
+      );
+    });
+
+    it('returns a focused not-available hint when SUAUTHVALTRC is absent', async () => {
+      const client = createClient();
+      vi.spyOn(client, 'runTableQuery').mockRejectedValue(
+        new AdtApiError("Cannot find 'SUAUTHVALTRC'", 400, '/sap/bc/adt/datapreview/freestyle'),
+      );
+
+      const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPDiagnose', {
+        action: 'authorization_trace',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('Authorization trace not available on this system');
+      expect(result.content[0]?.text).toContain('Display Authorization Trace');
+      expect(result.content[0]?.text).toContain('SAP_ALLOW_DATA_PREVIEW');
+    });
+
+    it('does not mask SAP authorization failures as backend unavailability', async () => {
+      const client = createClient();
+      vi.spyOn(client, 'runTableQuery').mockRejectedValue(
+        new AdtApiError('Forbidden', 403, '/sap/bc/adt/datapreview/freestyle'),
+      );
+
+      const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPDiagnose', {
+        action: 'authorization_trace',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('status 403');
+      expect(result.content[0]?.text).not.toContain('Authorization trace not available on this system');
+    });
+
+    it('returns the trace-state hint when no authorization rows match', async () => {
+      const client = createClient();
+      vi.spyOn(client, 'runTableQuery').mockResolvedValue({ columns: [], rows: [] });
+
+      const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPDiagnose', {
+        action: 'authorization_trace',
+        onlyFailures: true,
+      });
+
+      expect(result.isError).toBeUndefined();
+      const payload = JSON.parse(result.content[0]!.text);
+      expect(payload.count).toBe(0);
+      expect(payload.note).toContain('activation guidance');
+      expect(payload.note).toContain('widen the filters');
+      expect(payload.traceState.status).toBe('unknown');
+      expect(payload.traceState.warnings).toHaveLength(2);
+      expect(payload.traceState.activation.filteredSetup).toContain('STUSERTRACE');
+    });
+
     function mockDumpDetailResponses(formattedText?: string): void {
       const xml = `<?xml version="1.0"?>
 <dump:dump xmlns:dump="http://www.sap.com/adt/categories/dump" error="STRING_OFFSET_TOO_LARGE" author="DEVELOPER" exception="CX_SY_RANGE_OUT_OF_BOUNDS" terminatedProgram="SAPLSUSR_CERTRULE" datetime="2026-03-28T20:19:14Z">

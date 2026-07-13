@@ -13,7 +13,7 @@
 
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { SkipReason, skipTest } from '../helpers/skip-policy.js';
+import { requireOrSkip, SkipReason, skipTest } from '../helpers/skip-policy.js';
 import { callTool, connectClient, expectToolError, expectToolSuccess } from './helpers.js';
 
 function stripCachedMarker(text: string): string {
@@ -214,6 +214,63 @@ describe('E2E Diagnostics Tests', () => {
         expect(traces[0]).toHaveProperty('title');
         expect(traces[0]).toHaveProperty('timestamp');
         console.log(`    First trace: "${traces[0].title}" at ${traces[0].timestamp}`);
+      }
+    });
+  });
+
+  describe('SAPDiagnose authorization_trace', () => {
+    it('returns the long-term authorization trace response shape', async (ctx) => {
+      const result = await callTool(client, 'SAPDiagnose', {
+        action: 'authorization_trace',
+        maxResults: 5,
+      });
+
+      if (result.isError && /Authorization trace not available on this system/i.test(result.content?.[0]?.text ?? '')) {
+        requireOrSkip(
+          ctx,
+          undefined,
+          `${SkipReason.BACKEND_UNSUPPORTED}: SUAUTHVALTRC is not available on this backend`,
+        );
+      }
+
+      const payload = JSON.parse(expectToolSuccess(result));
+      expect(payload.trace).toContain('STUSERTRACE');
+      expect(payload.filters).toEqual({ user: null, authObject: null, onlyFailures: false });
+      expect(payload.traceState).toMatchObject({
+        status: 'unknown',
+        parameter: 'auth/auth_user_trace',
+      });
+      expect(payload.traceState.verify).toContain('RZ11');
+      expect(typeof payload.count).toBe('number');
+      if (payload.count === 0) {
+        expect(payload.traceState.activation.filteredSetup).toContain('STUSERTRACE');
+      } else {
+        expect(payload.traceState.activation).toBeUndefined();
+      }
+      expect(Array.isArray(payload.entries)).toBe(true);
+      expect(payload.count).toBe(payload.entries.length);
+    });
+
+    it('returns only denied checks when onlyFailures is enabled', async (ctx) => {
+      const result = await callTool(client, 'SAPDiagnose', {
+        action: 'authorization_trace',
+        onlyFailures: true,
+        maxResults: 5,
+      });
+
+      if (result.isError && /Authorization trace not available on this system/i.test(result.content?.[0]?.text ?? '')) {
+        requireOrSkip(
+          ctx,
+          undefined,
+          `${SkipReason.BACKEND_UNSUPPORTED}: SUAUTHVALTRC is not available on this backend`,
+        );
+      }
+
+      const payload = JSON.parse(expectToolSuccess(result));
+      expect(payload.filters.onlyFailures).toBe(true);
+      expect(payload.count).toBe(payload.entries.length);
+      for (const entry of payload.entries) {
+        expect(entry.rc).not.toBe(0);
       }
     });
   });
