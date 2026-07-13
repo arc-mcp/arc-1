@@ -52,18 +52,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Sole test gate for the release: release-please opens its PR with the default
+      # GITHUB_TOKEN, so test.yml never runs on it (GITHUB_TOKEN events don't trigger
+      # workflows) — nothing else tests the released commit. Do not remove.
+      # Coverage is dropped here: it's non-gating and no one reads it at publish time.
       - name: Run tests
         run: npm test
-
-      # Coverage — informational only, does not block release
-      - name: Run coverage (informational)
-        run: npm run test:coverage
-        continue-on-error: true
-
-      - name: Coverage summary
-        if: always()
-        run: node scripts/ci/coverage-summary.mjs
-        continue-on-error: true
 
       - name: Build
         run: npm run build
@@ -156,8 +150,12 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Install mcp-publisher
+        # Pin the release (not `latest/download`) so a new mcp-publisher can't silently
+        # change publish behavior mid-release. Bump deliberately, like the actions above.
+        env:
+          MCP_PUBLISHER_VERSION: v1.8.0
         run: |
-          curl -sL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+          curl -sL "https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
 
       - name: Authenticate to MCP Registry (GitHub OIDC)
         run: ./mcp-publisher login github-oidc
