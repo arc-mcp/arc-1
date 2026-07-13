@@ -361,7 +361,7 @@ describe('Cache Integration Tests', () => {
       expect(parsed.inactiveListCache).toBeTruthy();
     }, 15000);
 
-    it('stats omit retired warmup graph state', async () => {
+    it('stats omit retired repository graph state', async () => {
       const cl = new CachingLayer(new MemoryCache());
       const r = await handleToolCall(
         client,

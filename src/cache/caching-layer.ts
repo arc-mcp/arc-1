@@ -17,7 +17,7 @@
  * - Tier 1 (default/auto): MemoryCache, dies with process. Eliminates
  *   duplicate fetches within a session and avoids source-at-rest by default.
  * - Tier 2 (explicit sqlite): SqliteCache, persists. Multiple sessions
- *   share the warm cache when operators accept the source-at-rest posture.
+ *   share cached entries when operators accept the source-at-rest posture.
  */
 
 import type { AdtClient, SourceReadResult } from '../adt/client.js';

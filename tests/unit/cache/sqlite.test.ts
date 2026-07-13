@@ -176,8 +176,8 @@ describe('SqliteCache', () => {
     fs.unlinkSync(dbPath);
   });
 
-  it('retires warmup graph tables while preserving normal cache data', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'arc1-retire-warmup-'));
+  it('retires repository graph tables while preserving normal cache data', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'arc1-retire-graph-'));
     const dbPath = path.join(dir, 'cache.db');
     const source = 'CLASS zcl_keep DEFINITION. ENDCLASS.';
     const sourceHash = hashSource(source);

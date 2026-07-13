@@ -30,11 +30,11 @@ export class SqliteCache implements Cache {
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('synchronous = NORMAL');
     this.dropOldSourcesTableIfNeeded();
-    this.dropRetiredWarmupTables();
+    this.dropRetiredGraphTables();
     this.createTables();
   }
 
-  private dropRetiredWarmupTables(): void {
+  private dropRetiredGraphTables(): void {
     this.db.transaction(() => {
       this.db.exec('DROP TABLE IF EXISTS edges; DROP TABLE IF EXISTS nodes;');
     })();
