@@ -704,8 +704,8 @@ export function getToolDefinitions(
           group: {
             type: 'string',
             description:
-              'For FUNC: parent function-group name. Required for FUNC create (the FUGR must already exist — create it first via SAPWrite type=FUGR). Auto-resolved via search for FUNC update/delete if omitted. ' +
-              'For INCL: pass the parent function-group name to update an existing FUGR-scoped structural include (the global-data TOP include, a FORM-routine include, PBO/PAI) via action="update" — addresses /functions/groups/{group}/includes/{name}. A bare INCL with no group is a standalone program include. Create/delete of new structural includes is unsupported.',
+              'For FUNC: parent function-group name. Required for FUNC create (create the FUGR first). Auto-resolved via search for FUNC update/delete if omitted. ' +
+              'For INCL: pass the parent function-group name + action="update" to update an existing FUGR structural include (TOP/form-routine/PBO-PAI). A bare INCL with no group is a standalone program include; create/delete of new structural includes is unsupported.',
           },
           dataType: { type: 'string', description: 'DOMA/DTEL: ABAP data type (e.g., CHAR, NUMC, DEC)' },
           rowType: {
