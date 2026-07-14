@@ -704,8 +704,7 @@ export function getToolDefinitions(
           group: {
             type: 'string',
             description:
-              'For FUNC: parent function-group name. Required for create (create the FUGR first); auto-resolved for update/delete if omitted. ' +
-              'For INCL: parent function-group name + action="update", to update an existing FUGR structural include (TOP/form-routine/PBO-PAI). No group = standalone include; create/delete of structural includes unsupported.',
+              'FUNC: group name (required for create, else auto-resolved). INCL: group + action=update/edit_unit for a FUGR structural include; omit for standalone.',
           },
           dataType: { type: 'string', description: 'DOMA/DTEL: ABAP data type (e.g., CHAR, NUMC, DEC)' },
           rowType: {
@@ -1568,7 +1567,7 @@ export function getToolDefinitions(
           },
           group: {
             type: 'string',
-            description: 'check/history group: FUNC (auto), INCL (required).',
+            description: 'check/history: FUNC auto, INCL required.',
           },
           pgmid: {
             type: 'string',

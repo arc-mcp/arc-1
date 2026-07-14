@@ -30,13 +30,13 @@ const BUDGETS = {
   // submodules ride the default src budget; keep this tight so the dispatcher can't reabsorb them.
   'src/handlers/write.ts': 360,
   // tools.ts holds every tool's JSON schema. The #520 description trim (write-mode tools/list
-  // 87→66 KB to clear the Copilot-for-Eclipse gateway limit) shrank it; lowered to match. The
-  // CLIENT-SAFETY size guard is scripts/ci/check-tool-schema-budget.ts — trim there before raising this.
-  // +text-pool SAPWrite actions/description (edit_text_symbols/edit_selection_texts).
-  // +1 line: documented `group` for INCL (FUGR structural-include update) in the SAPWrite schema.
-  // +5 lines: `group` param on SAPActivate for FUGR structural-include activation.
-  // +4 lines: `group` param on SAPTransport check/history for FUGR structural includes.
-  'src/handlers/tools.ts': 1724,
+  // 87→66 KB to clear the Copilot-for-Eclipse gateway limit) shrank it; #571 moved the large
+  // SAPWrite description constants out to tool-descriptions.ts, shrinking it further — lowered
+  // to match. The CLIENT-SAFETY size guard is scripts/ci/check-tool-schema-budget.ts — trim there
+  // before raising this. +`group` for INCL (FUGR structural-include update) in the SAPWrite
+  // schema; +`group` param on SAPTransport check/history for FUGR structural includes (the
+  // SAPActivate equivalent shipped independently in #571).
+  'src/handlers/tools.ts': 1699,
   'src/adt/xml-parser.ts': 1650,
   // diagnostics.ts gained the ABAP trace-request engine (#508) + the OData perf probe + CDS Show-SQL (#509)
   // + ST05 SQL-trace control (#510) + clientWait split. Split out a perf/trace module if it grows much further.

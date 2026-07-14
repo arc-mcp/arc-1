@@ -387,7 +387,7 @@
         },
         "group": {
           "type": "string",
-          "description": "For FUNC: parent function-group name. Required for create (create the FUGR first); auto-resolved for update/delete if omitted. For INCL: parent function-group name + action=\"update\", to update an existing FUGR structural include (TOP/form-routine/PBO-PAI). No group = standalone include; create/delete of structural includes unsupported."
+          "description": "FUNC: group name (required for create, else auto-resolved). INCL: group + action=update/edit_unit for a FUGR structural include; omit for standalone."
         },
         "dataType": {
           "type": "string",
@@ -880,10 +880,6 @@
         "preaudit": {
           "type": "boolean",
           "description": "Request pre-activation audit (default true) — SAP returns warnings/errors before activating. false skips it for speed."
-        },
-        "group": {
-          "type": "string",
-          "description": "FUNC: group name (auto-resolved if omitted). INCL: required for a FUGR structural include. Ignored otherwise."
         },
         "objects": {
           "type": "array",
@@ -1594,7 +1590,7 @@
         },
         "group": {
           "type": "string",
-          "description": "check/history group: FUNC (auto), INCL (required)."
+          "description": "check/history: FUNC auto, INCL required."
         },
         "pgmid": {
           "type": "string",

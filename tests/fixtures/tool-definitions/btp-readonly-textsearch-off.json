@@ -862,7 +862,7 @@
         },
         "group": {
           "type": "string",
-          "description": "check/history group: FUNC (auto), INCL (required)."
+          "description": "check/history: FUNC auto, INCL required."
         },
         "pgmid": {
           "type": "string",
