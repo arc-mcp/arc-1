@@ -516,7 +516,8 @@ export const SAPWriteSchema = z
     package: z.string().optional(),
     transport: z.string().optional(),
     // Required for FUNC create (the parent function-group name); optional for FUNC
-    // update/delete (auto-resolved via search). Ignored for other types.
+    // update/delete (auto-resolved via search). Also used by INCL update to address a
+    // FUGR structural include (see tools.ts description) — ignored for all other types.
     group: z.string().optional(),
     dataType: z.string().optional(),
     rowType: z.string().optional(),
