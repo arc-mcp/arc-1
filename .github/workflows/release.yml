@@ -98,6 +98,7 @@ jobs:
           cp mcpb-manifest.json mcpb-bundle/manifest.json
           cp icon.png mcpb-bundle/
           cp -r dist mcpb-bundle/dist
+          cp -r skills mcpb-bundle/skills   # ship the ARC-1 agent skills inside the bundle
           cp package.json package-lock.json mcpb-bundle/
           ( cd mcpb-bundle && npm ci --omit=dev --ignore-scripts )
           rm -rf mcpb-bundle/node_modules/better-sqlite3
@@ -131,6 +132,9 @@ jobs:
           VERSION="${VERSION#v}"
           npx --yes "$MCPB" validate mcpb-bundle/manifest.json
           npx --yes "$MCPB" pack mcpb-bundle "arc-1-${VERSION}.mcpb"
+          # Guard: the bundled skills must survive packing (the manifest doesn't list them).
+          unzip -l "arc-1-${VERSION}.mcpb" | grep -q 'skills/generate-rap-service/SKILL.md' \
+            || { echo "::error::Packed MCPB is missing the bundled skills/"; exit 1; }
 
       - name: Attach .mcpb to GitHub Release
         env:

@@ -11,7 +11,7 @@ This document describes how to publish ARC-1 to various MCP server registries, m
 | [Cline Marketplace](#3-cline-marketplace) | Manual | Ready | Cline VS Code extension marketplace |
 | [VS Code / GitHub Copilot](#4-vs-code--github-copilot) | Via MCP Registry | Automatic | VS Code Extensions `@mcp` gallery |
 | [Cursor Marketplace](#5-cursor-marketplace) | Manual | Ready | Cursor IDE built-in marketplace |
-| [Claude Desktop Extensions](#6-claude-desktop-extensions) | Yes (CI builds + validates + packs .mcpb) | Ready | Claude Desktop Extensions directory |
+| [Claude Desktop Extensions](#6-claude-desktop-extensions) | Yes (CI builds + validates + packs .mcpb) | Ready | Claude Desktop Extensions directory — MCP server + bundled skills |
 | [Claude Code Plugin](#8-claude-code-plugin--marketplace) | Yes (repo is the marketplace) | Ready | `/plugin install` — MCP server + skills |
 
 ## Files in This Repository
@@ -241,6 +241,7 @@ mkdir -p mcpb-bundle
 cp mcpb-manifest.json mcpb-bundle/manifest.json
 cp icon.png mcpb-bundle/
 cp -r dist mcpb-bundle/dist
+cp -r skills mcpb-bundle/skills   # ship the ARC-1 agent skills inside the bundle
 cp package.json package-lock.json mcpb-bundle/
 
 # Install prod deps WITHOUT the native better-sqlite3, so the bundle is pure-JS and

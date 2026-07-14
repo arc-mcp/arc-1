@@ -19,8 +19,9 @@ namespaced as `/arc-1:<skill>` (e.g. `/arc-1:generate-rap-service`). Manage it w
 `/reload-plugins` after an update.
 
 > Already running the ARC-1 server another way (Claude Desktop MCPB, `claude mcp add`, or a BTP
-> custom connector)? Use the `skills` CLI below to add just the skills — the plugin is only needed
-> when you also want it to wire up the bundled MCP server.
+> custom connector)? The `.mcpb` bundle now ships these skills under `skills/`; to register them
+> with your agent, use the `skills` CLI below (or copy the folders into your agent's skills path).
+> The plugin is only needed when you also want it to wire up the bundled MCP server.
 
 ## Install the skills via the `skills` CLI (any agent)
 
