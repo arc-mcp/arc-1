@@ -633,6 +633,83 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toContain('"type" and "name" are required');
     });
+
+    // ─── FUGR structural include (INCL) group-routing gap (2026-07-14 finding) ───
+    // Without `group`, check/history silently resolved the wrong standalone
+    // /programs/includes/ URL for a FUGR-scoped include — the lookup then came back
+    // empty and misleadingly reported the object as local. Mirrors the SAPWrite/
+    // SAPActivate FEAT-18-sibling fix.
+    it('history resolves the group-scoped URI for a FUGR structural include (INCL) when group is provided', async () => {
+      mockFetch.mockResolvedValue(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'history',
+        type: 'INCL',
+        name: 'LZFUGR_TESTP01',
+        group: 'ZFUGR_TEST',
+      });
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0]?.text ?? '{}');
+      expect(parsed.object.uri).toBe('/sap/bc/adt/functions/groups/zfugr_test/includes/lzfugr_testp01');
+    });
+
+    it('history falls back to the standalone /programs/includes/ URI for INCL when no group is given', async () => {
+      mockFetch.mockResolvedValue(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'history',
+        type: 'INCL',
+        name: 'ZSTANDALONE_INCL',
+      });
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0]?.text ?? '{}');
+      expect(parsed.object.uri).toBe('/sap/bc/adt/programs/includes/ZSTANDALONE_INCL');
+    });
+
+    it('check resolves the group-scoped URI for a FUGR structural include (INCL) when group is provided', async () => {
+      mockFetch.mockResolvedValue(
+        mockResponse(
+          200,
+          '<asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0"><asx:values><DATA><DEVCLASS>ZFUGR_TEST_PKG</DEVCLASS><RECORDING>X</RECORDING></DATA></asx:values></asx:abap>',
+          { 'x-csrf-token': 'T' },
+        ),
+      );
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'check',
+        type: 'INCL',
+        name: 'LZFUGR_TESTP01',
+        group: 'ZFUGR_TEST',
+        package: 'ZFUGR_TEST_PKG',
+      });
+      expect(result.isError).toBeUndefined();
+      const checkCall = mockFetch.mock.calls.find((c) => String(c[0]).includes('/transportchecks'));
+      const checkBody = String((checkCall?.[1] as RequestInit)?.body ?? '');
+      expect(checkBody).toContain('/sap/bc/adt/functions/groups/zfugr_test/includes/lzfugr_testp01');
+    });
+
+    it('history resolves a FUNC via the group-scoped fmodules URI when group is provided', async () => {
+      mockFetch.mockResolvedValue(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'history',
+        type: 'FUNC',
+        name: 'Z_MY_FM',
+        group: 'ZFUGR_TEST',
+      });
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0]?.text ?? '{}');
+      expect(parsed.object.uri).toBe('/sap/bc/adt/functions/groups/zfugr_test/fmodules/z_my_fm');
+    });
+
+    it('history returns a clear error when FUNC group cannot be resolved', async () => {
+      mockFetch.mockResolvedValue(
+        mockResponse(200, '<?xml version="1.0"?><adtcore:objectReferences/>', { 'x-csrf-token': 'T' }),
+      );
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'history',
+        type: 'FUNC',
+        name: 'Z_UNRESOLVABLE_FM',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('Cannot resolve function group');
+    });
   });
 
   describe('transport error hints', () => {

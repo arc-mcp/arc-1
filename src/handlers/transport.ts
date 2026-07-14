@@ -123,6 +123,39 @@ function summarizeTransport(t: TransportRequest) {
   };
 }
 
+/**
+ * Resolve the object URL for check/history, group-aware for FUNC and FUGR-scoped INCL —
+ * mirrors the routing in write.ts/activate.ts (FEAT-18 sibling). Without this, `objectUrlForType`
+ * either throws for FUNC (objectBasePath's deliberate PR #223 guard) or, for INCL, silently
+ * resolves the wrong standalone /programs/includes/ path — the package/transport lookup then
+ * comes back empty and misleadingly reports the object as local (2026-07-14 finding).
+ */
+async function resolveTransportObjectUrl(
+  client: AdtClient,
+  type: string,
+  name: string,
+  group: string | undefined,
+): Promise<string> {
+  const trimmedGroup = String(group ?? '').trim();
+  if (type === 'FUNC') {
+    let g = trimmedGroup;
+    if (!g) {
+      const resolved = await client.resolveFunctionGroup(name);
+      if (!resolved) {
+        throw new Error(`Cannot resolve function group for FM "${name}". Provide the "group" parameter explicitly.`);
+      }
+      g = resolved;
+    }
+    const groupLc = encodeURIComponent(g.toLowerCase());
+    return `/sap/bc/adt/functions/groups/${groupLc}/fmodules/${encodeURIComponent(name.toLowerCase())}`;
+  }
+  if (type === 'INCL' && trimmedGroup) {
+    const groupLc = encodeURIComponent(trimmedGroup.toLowerCase());
+    return `/sap/bc/adt/functions/groups/${groupLc}/includes/${encodeURIComponent(name.toLowerCase())}`;
+  }
+  return objectUrlForType(type, name);
+}
+
 export async function handleSAPTransport(client: AdtClient, args: Record<string, unknown>): Promise<ToolResult> {
   const action = String(args.action ?? '');
 
@@ -391,7 +424,12 @@ export async function handleSAPTransport(client: AdtClient, args: Record<string,
       if (!objectType || !objectName) return errorResult('"type" and "name" are required for "check" action.');
       if (!pkg) return errorResult('"package" is required for "check" action.');
 
-      const objectUrl = objectUrlForType(objectType, objectName);
+      let objectUrl: string;
+      try {
+        objectUrl = await resolveTransportObjectUrl(client, objectType, objectName, args.group as string | undefined);
+      } catch (err) {
+        return errorResult(err instanceof Error ? err.message : String(err));
+      }
       const info = await getTransportInfo(client.http, client.safety, objectUrl, pkg, 'I');
 
       const summary = info.isLocal
@@ -423,7 +461,12 @@ export async function handleSAPTransport(client: AdtClient, args: Record<string,
         return errorResult('"type" and "name" are required for "history" action.');
       }
 
-      const objectUrl = objectUrlForType(objectType, objectName);
+      let objectUrl: string;
+      try {
+        objectUrl = await resolveTransportObjectUrl(client, objectType, objectName, args.group as string | undefined);
+      } catch (err) {
+        return errorResult(err instanceof Error ? err.message : String(err));
+      }
       const primary = await getObjectTransports(client.http, client.safety, objectUrl);
       let candidateTransports = primary.candidateTransports;
 

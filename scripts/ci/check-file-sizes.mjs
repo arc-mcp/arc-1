@@ -35,7 +35,8 @@ const BUDGETS = {
   // +text-pool SAPWrite actions/description (edit_text_symbols/edit_selection_texts).
   // +1 line: documented `group` for INCL (FUGR structural-include update) in the SAPWrite schema.
   // +5 lines: `group` param on SAPActivate for FUGR structural-include activation.
-  'src/handlers/tools.ts': 1720,
+  // +4 lines: `group` param on SAPTransport check/history for FUGR structural includes.
+  'src/handlers/tools.ts': 1724,
   'src/adt/xml-parser.ts': 1650,
   // diagnostics.ts gained the ABAP trace-request engine (#508) + the OData perf probe + CDS Show-SQL (#509)
   // + ST05 SQL-trace control (#510) + clientWait split. Split out a perf/trace module if it grows much further.

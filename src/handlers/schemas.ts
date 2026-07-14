@@ -807,6 +807,10 @@ export const SAPTransportSchema = z.object({
   user: z.string().optional(),
   status: z.string().optional(),
   type: z.string().optional(),
+  // For "check"/"history" against type=FUNC (auto-resolved via search if omitted) or type=INCL (a
+  // FUGR structural include — required, addresses the include's own group-scoped URI). Ignored
+  // for other types.
+  group: z.string().optional(),
   owner: z.string().optional(),
   // looseOptionalBoolean (not z.boolean()) so GPT/OpenAI clients sending stringified
   // "true"/"false" coerce instead of erroring at validation (CLAUDE.md boolean guidance).

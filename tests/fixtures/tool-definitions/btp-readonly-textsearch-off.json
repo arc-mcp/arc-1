@@ -860,6 +860,10 @@
           "type": "string",
           "description": "Object type for check/history/remove_object actions (PROG, CLAS, DDLS, etc.). Not used by create — the SAP backend infers transport type (K/W/T) from the package's TADIR route on the CreateCorrectionRequest endpoint."
         },
+        "group": {
+          "type": "string",
+          "description": "check/history group: FUNC (auto), INCL (required)."
+        },
         "pgmid": {
           "type": "string",
           "description": "Program ID for remove_object: \"R3TR\" (whole object) or \"LIMU\" (sub-object). Required — object type alone does not determine pgmid."

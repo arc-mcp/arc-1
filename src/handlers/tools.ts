@@ -704,8 +704,8 @@ export function getToolDefinitions(
           group: {
             type: 'string',
             description:
-              'For FUNC: parent function-group name. Required for FUNC create (create the FUGR first). Auto-resolved via search for FUNC update/delete if omitted. ' +
-              'For INCL: pass the parent function-group name + action="update" to update an existing FUGR structural include (TOP/form-routine/PBO-PAI). A bare INCL with no group is a standalone program include; create/delete of new structural includes is unsupported.',
+              'For FUNC: parent function-group name. Required for create (create the FUGR first); auto-resolved for update/delete if omitted. ' +
+              'For INCL: parent function-group name + action="update", to update an existing FUGR structural include (TOP/form-routine/PBO-PAI). No group = standalone include; create/delete of structural includes unsupported.',
           },
           dataType: { type: 'string', description: 'DOMA/DTEL: ABAP data type (e.g., CHAR, NUMC, DEC)' },
           rowType: {
@@ -1565,6 +1565,10 @@ export function getToolDefinitions(
             type: 'string',
             description:
               "Object type for check/history/remove_object actions (PROG, CLAS, DDLS, etc.). Not used by create — the SAP backend infers transport type (K/W/T) from the package's TADIR route on the CreateCorrectionRequest endpoint.",
+          },
+          group: {
+            type: 'string',
+            description: 'check/history group: FUNC (auto), INCL (required).',
           },
           pgmid: {
             type: 'string',
