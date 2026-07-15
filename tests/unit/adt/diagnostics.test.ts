@@ -1,11 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import type { AdtClient } from '../../../src/adt/client.js';
 import {
   clientWaitFrom,
   createTraceRequest,
+  decodeAuthTraceRows,
   decodeHtmlEntities,
   deleteTraceRequest,
+  getAuthorizationTrace,
   getCdsCreateStatements,
   getDump,
   getGatewayErrorDetail,
@@ -23,6 +26,7 @@ import {
   parseCdsCreateStatements,
   parseDumpDetail,
   parseDumpList,
+  parseFirstCallTs,
   parseGatewayErrorDetail,
   parseGatewayErrors,
   parseSapStatistics,
@@ -44,6 +48,162 @@ import type { AdtHttpClient } from '../../../src/adt/http.js';
 import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
 
 const FIXTURES_DIR = join(__dirname, '../../fixtures/xml');
+
+describe('authorization trace diagnostics', () => {
+  const authTestRow = {
+    USERNAME: 'AUTH_TEST',
+    NAME: '',
+    TYPE: 'TR',
+    OBJECT: 'S_TCODE',
+    RC: '12',
+    FIELD1: 'SU01',
+    ABAPPROG: 'LSUSEU11',
+    ABAPLINE: '53',
+    FIRSTCALL: '20260709211048',
+  };
+
+  it('decodes a real S_TCODE denial with its TOBJ field name', () => {
+    const entries = decodeAuthTraceRows([authTestRow], { S_TCODE: ['TCD'] }, { maxResults: 10 });
+
+    expect(entries).toEqual([
+      {
+        user: 'AUTH_TEST',
+        application: 'TR',
+        authObject: 'S_TCODE',
+        rc: 12,
+        result: 'No authorization',
+        fields: { TCD: 'SU01' },
+        codeLocation: 'LSUSEU11:53',
+        firstSeen: '2026-07-09T21:10:48.000Z',
+      },
+    ]);
+  });
+
+  it('decodes multi-field authorization objects and omits blank values', () => {
+    const entries = decodeAuthTraceRows(
+      [
+        {
+          ...authTestRow,
+          OBJECT: 'S_DEVELOP',
+          FIELD1: '$TMP',
+          FIELD2: 'DOMA',
+          FIELD3: 'ZX',
+          FIELD4: '',
+          FIELD5: '01',
+        },
+      ],
+      { S_DEVELOP: ['DEVCLASS', 'OBJTYPE', 'OBJNAME', 'P_GROUP', 'ACTVT'] },
+      { maxResults: 10 },
+    );
+
+    expect(entries[0]?.fields).toEqual({ DEVCLASS: '$TMP', OBJTYPE: 'DOMA', OBJNAME: 'ZX', ACTVT: '01' });
+  });
+
+  it('labels passed and unknown denied return codes', () => {
+    const entries = decodeAuthTraceRows(
+      [
+        { ...authTestRow, RC: '0' },
+        { ...authTestRow, RC: '8' },
+      ],
+      { S_TCODE: ['TCD'] },
+      { maxResults: 10 },
+    );
+
+    expect(entries.map((entry) => entry.result)).toEqual(['passed', 'denied (rc=8)']);
+  });
+
+  it('falls back to raw positional keys when TOBJ metadata is unavailable', () => {
+    const entries = decodeAuthTraceRows([authTestRow], {}, { maxResults: 10 });
+    expect(entries[0]?.fields).toEqual({ FIELD1: 'SU01' });
+  });
+
+  it('sorts newest first, puts malformed timestamps last, and applies the result cap', () => {
+    const entries = decodeAuthTraceRows(
+      [
+        { ...authTestRow, USERNAME: 'OLDER', FIRSTCALL: '20260101000000' },
+        { ...authTestRow, USERNAME: 'INVALID', FIRSTCALL: 'bad' },
+        { ...authTestRow, USERNAME: 'NEWER', FIRSTCALL: '20261231235959' },
+      ],
+      { S_TCODE: ['TCD'] },
+      { maxResults: 2 },
+    );
+
+    expect(entries.map((entry) => entry.user)).toEqual(['NEWER', 'OLDER']);
+  });
+
+  it('parses valid FIRSTCALL timestamps and rejects malformed calendar values', () => {
+    expect(parseFirstCallTs('20260709211048')).toBe('2026-07-09T21:10:48.000Z');
+    expect(parseFirstCallTs('20261309211048')).toBe('');
+    expect(parseFirstCallTs('20260709')).toBe('');
+    expect(parseFirstCallTs('not-a-timestamp')).toBe('');
+  });
+
+  it('builds gated trace and TOBJ queries from all filters', async () => {
+    const runTableQuery = vi
+      .fn()
+      .mockResolvedValueOnce({ columns: Object.keys(authTestRow), rows: [authTestRow] })
+      .mockResolvedValueOnce({ columns: ['OBJCT', 'FIEL1'], rows: [{ OBJCT: 'S_TCODE', FIEL1: 'TCD' }] });
+    const client = { runTableQuery } as unknown as AdtClient;
+
+    const result = await getAuthorizationTrace(client, {
+      user: 'AUTH_TEST',
+      authObject: 'S_TCODE',
+      onlyFailures: true,
+      maxResults: 5,
+    });
+
+    expect(runTableQuery).toHaveBeenNthCalledWith(
+      1,
+      'SUAUTHVALTRC',
+      expect.objectContaining({
+        maxRows: 5,
+        where: [
+          { field: 'USERNAME', op: '=', value: 'AUTH_TEST' },
+          { field: 'OBJECT', op: '=', value: 'S_TCODE' },
+          { field: 'RC', op: '<>', value: '0' },
+        ],
+      }),
+    );
+    expect(runTableQuery).toHaveBeenNthCalledWith(
+      2,
+      'TOBJ',
+      expect.objectContaining({
+        where: [{ field: 'OBJCT', op: 'IN', value: 'S_TCODE' }],
+        maxRows: 200,
+      }),
+    );
+    expect(result.count).toBe(1);
+    expect(result.entries[0]?.fields).toEqual({ TCD: 'SU01' });
+    expect(result.filters).toEqual({ user: 'AUTH_TEST', authObject: 'S_TCODE', onlyFailures: true });
+    expect(result.traceState).toMatchObject({
+      status: 'unknown',
+      parameter: 'auth/auth_user_trace',
+    });
+    expect(result.traceState.warnings).toHaveLength(1);
+    expect(result.traceState.warnings[0]).toContain('historical');
+    expect(result.traceState.activation).toBeUndefined();
+  });
+
+  it('skips the TOBJ query and returns an actionable note when no rows match', async () => {
+    const runTableQuery = vi.fn().mockResolvedValue({ columns: [], rows: [] });
+    const client = { runTableQuery } as unknown as AdtClient;
+
+    const result = await getAuthorizationTrace(client);
+
+    expect(runTableQuery).toHaveBeenCalledTimes(1);
+    expect(runTableQuery).toHaveBeenCalledWith('SUAUTHVALTRC', expect.objectContaining({ maxRows: 100 }));
+    expect(result.count).toBe(0);
+    expect(result.note).toContain('activation guidance');
+    expect(result.note).toContain('widen the filters');
+    expect(result.traceState.status).toBe('unknown');
+    expect(result.traceState.warnings).toHaveLength(2);
+    expect(result.traceState.warnings[1]).toContain('inactive (N)');
+    expect(result.traceState.activation?.values.F).toContain('recommended');
+    expect(result.traceState.activation?.filteredSetup).toContain('F without a filter records nothing');
+    expect(result.traceState.activation?.persistent).toContain('DEFAULT.PFL');
+    expect(result.traceState.activation?.authorizations).toContain('STUF');
+  });
+});
 
 function mockHttp(responseBody = ''): AdtHttpClient {
   return {

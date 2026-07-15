@@ -76,7 +76,10 @@ echo "-- Starting MCP server..."
 # Truncate old log
 > "${LOG_FILE}"
 
+# ARC1_MINIMAL_ERRORS=false: this trusted local harness asserts on detailed SAP error text
+# (object names, line numbers). #552 made http-streamable default to minimal errors; opt back in.
 SAP_TRANSPORT=http-streamable \
+ARC1_MINIMAL_ERRORS=false \
 ARC1_PORT="${MCP_PORT}" \
 ARC1_ALLOW_HTTP_NO_AUTH=true \
 SAP_INSECURE=true \

@@ -237,13 +237,14 @@ Create or update ABAP source code. Handles lock/modify/unlock automatically.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `action` | string | Yes | `create`, `update`, `delete`, `edit_method`, `edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`, `batch_create`, `scaffold_rap_handlers`, `generate_behavior_implementation`, or `edit_text_symbols`. The class-section surgery actions (`edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`) are token-efficient edits to a global class without re-sending `/source/main`. See [Class-section surgery](#class-section-surgery) below. `edit_text_symbols` writes a global class's text pool — see [Class text symbols](#class-text-symbols). |
+| `action` | string | Yes | `create`, `update`, `delete`, `edit_method`, `edit_unit` (on-prem), `edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`, `batch_create`, `scaffold_rap_handlers`, `generate_behavior_implementation`, or `edit_text_symbols`. `edit_unit` surgically replaces one FORM or MODULE in a PROG/INCL; see [Procedural unit surgery](#procedural-unit-surgery). The class-section surgery actions (`edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`) are token-efficient edits to a global class without re-sending `/source/main`. See [Class-section surgery](#class-section-surgery) below. `edit_text_symbols` writes a global class's text pool — see [Class text symbols](#class-text-symbols). |
 | `type` | string | No | `PROG`, `CLAS`, `INTF`, `FUNC`, `FUGR`, `INCL`, `DDLS`, `DCLS`, `DDLX`, `BDEF`, `SRVD`, `SRVB`, `SKTD`/`KTD`, `TABL`, `TABL/DT`, `TABL/DS`, `DOMA`, `DTEL`, `MSAG` (for single object actions; availability is adapted for BTP vs. on-prem), plus the server-driven objects `DESD`/`EVTB`/`DTSC`/`CSNM`/`EVTO`/`COTA` on 8.16+ (see [Server-driven object writes](#server-driven-object-writes)). Slash/case aliases are auto-normalized (e.g., `CLAS/OC` or `clas` → `CLAS`; `KTD` → `SKTD`). |
-| `group` | string | No | For `FUNC`: parent function-group name. **Required for FUNC create** (the FUGR must already exist — create it first via `SAPWrite type=FUGR`). Auto-resolved via search for FUNC update/delete if omitted. Ignored for other types. |
+| `group` | string | No | For `FUNC`: parent function-group name. **Required for FUNC create** (the FUGR must already exist — create it first via `SAPWrite type=FUGR`). Auto-resolved via search for FUNC update/delete if omitted. For `INCL`: addresses a structural include inside this function group; supported by `update` and `edit_unit`. Ignored for other types. |
 | `name` | string | No | Object name (for single object actions) |
-| `source` | string | No | ABAP source code. For `create`/`update`: full source body. For `edit_method`: new method body. For `edit_class_definition` without `include=`: ONLY the new global `CLASS … DEFINITION … ENDCLASS.` block (~10–80 lines instead of full class). For `edit_class_definition` with `include=`: the FULL replacement body of that class-local include; for `include="testclasses"` this normally includes both local `CLASS ltc_* DEFINITION` and `CLASS ltc_* IMPLEMENTATION`. For `edit_method_signature`: ONLY the new METHODS clause for one method (~1–5 lines). Not used by `add_method`/`delete_method`/`change_method_visibility` — pass the method clause/name and target visibility via `method`/`visibility` instead. |
+| `source` | string | No | ABAP source code. For `create`/`update`: full source body. For `edit_method`: new method body. For `edit_unit`: the complete replacement `FORM … ENDFORM.` or `MODULE … ENDMODULE.` block. For `edit_class_definition` without `include=`: ONLY the new global `CLASS … DEFINITION … ENDCLASS.` block (~10–80 lines instead of full class). For `edit_class_definition` with `include=`: the FULL replacement body of that class-local include; for `include="testclasses"` this normally includes both local `CLASS ltc_* DEFINITION` and `CLASS ltc_* IMPLEMENTATION`. For `edit_method_signature`: ONLY the new METHODS clause for one method (~1–5 lines). Not used by `add_method`/`delete_method`/`change_method_visibility` — pass the method clause/name and target visibility via `method`/`visibility` instead. |
 | `include` | string | No | For CLAS write actions `update`, `edit_method`, and `edit_class_definition`: write a class-local include (`definitions`, `implementations`, `macros`, or `testclasses`) instead of `/source/main`. Omit this parameter for main class source updates. `add_method`/`edit_method_signature`/`delete_method`/`change_method_visibility` operate on the global class `/source/main` only and reject `include=`. Include writes create an inactive draft; verify with `SAPRead(version="inactive")` until activation. NOTE: `edit_class_definition` with `include=` skips the symmetry refuse-policy (cross-include validation is not performed; rely on `SAPActivate` to catch breaks). **Auto-init:** whole-include writes (`update` and `edit_class_definition` with `include=`) create the target include automatically if it does not exist yet — notably `testclasses` (CCAU) on a freshly-created class. No separate init step or user-supplied lock handle is needed; the success message notes when ARC-1 initialized it. |
 | `method` | string | No | For `edit_method`/`edit_method_signature`/`delete_method`/`change_method_visibility`: method NAME (e.g., `"get_name"`, `"zif_order~process"`, `"lhc_project~approve_project"`). For `add_method`: the full METHODS CLAUSE as ABAP source (e.g., `"METHODS greet IMPORTING who TYPE string RETURNING VALUE(r) TYPE string."`). |
+| `unit` | string | No | For on-prem `edit_unit`: case-insensitive FORM or MODULE name (for example `"PROCESS_ORDERS"` or `"STATUS_0100"`). |
 | `visibility` | string | No | For `add_method`: target visibility section — `public` (default), `protected`, or `private`. For `change_method_visibility`: target visibility section (required). The section header must already exist in the DEFINITION block; if not, ARC-1 refuses with a hint to use `edit_class_definition` first. |
 | `abstract` | boolean | No | For `add_method`: when `true`, only the METHODS clause is inserted into DEFINITION — no `METHOD/ENDMETHOD` stub is added to IMPLEMENTATION. Default `false`. |
 | `bdefName` | string | No | For `scaffold_rap_handlers`: interface BDEF name used to derive required handler signatures. For `generate_behavior_implementation`: optional override; default discovery reads the class metadata's `<class:rootEntityRef>` to locate the BDEF automatically. |
@@ -484,6 +485,25 @@ SAPWrite(action="generate_behavior_implementation", type="CLAS", name="ZBP_DM_PR
 
 **Note:** Not available by default (read-only mode). Enable with `SAP_ALLOW_WRITES=true` / `--allow-writes=true`. Write access is restricted to package `$TMP` by default; to write to other packages, set `SAP_ALLOWED_PACKAGES='$TMP,Z*'` (quote in shell so `$TMP` isn't expanded).
 
+### Procedural unit surgery
+
+[Issue #558](https://github.com/arc-mcp/arc-1/issues/558). On-prem `action="edit_unit"` replaces one named `FORM…ENDFORM` or `MODULE…ENDMODULE` block in a `PROG` or `INCL` without making the caller re-send the full program. ARC-1 reads the latest active or inactive-draft source directly from SAP, finds the block with abaplint's structure tree, validates that the replacement has the same kind and name, splices it, then uses the normal package gate and lock/modify/unlock write path.
+
+Pass the complete replacement block so multi-line FORM signatures and MODULE direction (`INPUT`/`OUTPUT`) remain explicit. The action is case-insensitive by unit name, preserves CRLF source files, leaves sibling units untouched, and does not auto-activate. Run `SAPActivate` afterwards. Function-group structural includes are supported with `type="INCL", group="<FUGR>"`; activate those with the same `type`, `name`, and `group` so ARC-1 addresses the structural include directly on every supported release.
+
+```jsonc
+{
+  "action": "edit_unit",
+  "type": "PROG",
+  "name": "ZPROG_ORDERS",
+  "unit": "PROCESS_ORDERS",
+  "source": "FORM process_orders USING iv_force TYPE abap_bool.\n  \" new implementation\nENDFORM.",
+  "transport": "DEVK900001"
+}
+```
+
+Event blocks such as `START-OF-SELECTION` and `AT SELECTION-SCREEN` are intentionally unsupported: abaplint does not expose them as bounded structure nodes, so name-based replacement cannot provide the same safety guarantee. `FUNC` is also out of scope because each function module already has a dedicated `/source/main` resource containing only that function module.
+
 ### Class-section surgery
 
 [Issue #303](https://github.com/arc-mcp/arc-1/issues/303). Four token-efficient `SAPWrite` actions for editing a global ABAP class without re-sending the full `/source/main` body. All require `type=CLAS` and use SAP's existing `/sap/bc/adt/oo/classes/{name}/objectstructure` endpoint to locate the precise line ranges to splice — no client-side ABAP parsing of the existing source is needed.
@@ -611,8 +631,9 @@ Activate (publish) ABAP objects. Supports single object or batch activation.
 |-----------|------|----------|-------------|
 | `name` | string | No | Object name (for single activation) |
 | `type` | string | No | Object type (`PROG`, `CLAS`, `DDLS`, `DDLX`, `BDEF`, `SRVD`, `SRVB`, etc.) |
+| `group` | string | No | Parent function group for `FUNC` or a function-group structural `INCL`. May also be set per batch item. |
 | `preaudit` | boolean | No | Request pre-activation audit from SAP (default: `true`). Set `false` to skip pre-audit for faster activation. |
-| `objects` | array | No | For batch: array of `{type, name}` objects to activate together |
+| `objects` | array | No | For batch: array of `{type, name, group?}` objects to activate together |
 
 Use batch activation for RAP stacks where objects depend on each other (DDLS, BDEF, SRVD, DDLX, SRVB must be activated together). Batch responses include per-object status (`active`, `warning`, `error`) with attached messages, so failed members can be retried selectively.
 
@@ -621,6 +642,7 @@ For failed `DDLS` activation, ARC-1 appends CDS dependency impact buckets and a 
 **Examples:**
 ```
 SAPActivate(type="CLAS", name="ZCL_ORDER")
+SAPActivate(type="INCL", name="LZFGTOP", group="ZFG")
 SAPActivate(objects=[{type:"DDLS",name:"ZI_TRAVEL"},{type:"BDEF",name:"ZI_TRAVEL"},{type:"SRVD",name:"ZSD_TRAVEL"}])
 ```
 
@@ -675,12 +697,13 @@ Execute ABAP SQL queries against SAP tables.
 | `maxRows` | number | No | Maximum rows (default 100) |
 
 **Important:** Uses the ADT freestyle SQL endpoint (`/sap/bc/adt/datapreview/freestyle`) with ABAP SQL syntax, NOT standard SQL:
+- Use `alias~field` for qualified fields (not `alias.field`; a dot ends the ABAP statement)
 - Use `ASCENDING`/`DESCENDING` (not `ASC`/`DESC`)
 - Use `maxRows` parameter (not `LIMIT`)
 - `GROUP BY`, `COUNT(*)`, `WHERE` all work
 - ABAP SQL aggregate rule applies: non-aggregated selected fields must be listed in `GROUP BY`
 
-ABAP SQL as a language supports JOINs and subqueries, but the freestyle endpoint parser can still reject valid-looking statements on some backend versions (for example grammar errors or single-SELECT enforcement). ARC-1 automatically chunks simple long literal `IN (...)` lists into smaller freestyle calls. If parsing still fails, simplify to one SELECT and split complex logic into staged queries.
+JOINs, aggregates, and subqueries are supported. For a plain projection `SELECT`, ARC-1 automatically chunks the longest literal `IN (...)` list—even when the query has several `IN` clauses—and merges the rows. Queries with `ORDER BY`, `GROUP BY`, `HAVING`, `DISTINCT`, `UNION`, or aggregates are sent whole because concatenating per-chunk results would change their semantics. If a backend rejects a long list in one of those queries, split the list manually, union the results, and re-sort client-side when needed.
 
 See: [SAPQuery Freestyle Capability Matrix](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-04-21-sapquery-freestyle-capability-matrix.md)
 
@@ -825,7 +848,7 @@ SAPContext has three modes controlled by the `action` parameter:
 **Quick decision rule:**
 - *"What breaks if I change `<CDS view>`?"* / *"Who consumes `I_*`?"* / *"Impact of `<DDLS>`"* → **`action="impact"`**
 - *"What does `<object>` do?"* / *"Explain `<object>`"* / spec, review, or dependency context before editing → **`action="deps"`** (default)
-- *"Who calls `<object>`?"* (requires cache warmup) → **`action="usages"`**
+- *"Who calls `<object>`?"* → **`action="usages"`** (live SAP where-used)
 
 > **Do not** hand-roll CDS impact analysis by querying `DDDDLSRC`, `ACMDCLSRC`, `DDLXSRC_SRC`, or `SRVDSRC_SRC` via `SAPQuery`. Those text-scans produce substring-match noise and package group nodes. `action="impact"` uses SAP's where-used index and returns deduplicated, RAP-classified results.
 
@@ -847,7 +870,7 @@ Returns the target object's KTD first when available, followed by only the publi
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `action` | string | No | `"deps"` (default), `"usages"`, `"impact"`, or `"structure"` |
-| `type` | string | Yes (for deps/structure), optional for impact | Object type: `CLAS`, `INTF`, `PROG`, `FUNC`, `DDLS`, `TABL` |
+| `type` | string | Yes (for deps/structure), optional for impact/usages | Object type: `CLAS`, `INTF`, `PROG`, `FUNC`, `DDLS`, `TABL` |
 | `name` | string | Yes | Object name (e.g., `ZCL_ORDER`) |
 | `source` | string | No | Provide source directly instead of fetching from SAP |
 | `includeKtd` | boolean | No | Only for `action="deps"`. Defaults to `true`; prepends the object's KTD (`SKTD`/`KTD`) when one exists. Set `false` to skip the KTD lookup. Ignored when `source` is supplied. |
@@ -993,9 +1016,7 @@ Sibling analysis is best-effort and bounded. Any sibling-search or sibling where
 
 ### action="usages" — Reverse dependency lookup
 
-Returns all objects in the cached index that depend on the given object (i.e., "who calls/uses this?"). This is the inverse of `deps`.
-
-**Requires cache warmup** (`ARC1_CACHE_WARMUP=true`). Without warmup, the edge index is empty and the tool returns an error with setup instructions. As a live alternative, use `SAPNavigate(action="references")`.
+Queries SAP's live where-used index for objects that depend on the target (i.e., "who calls/uses this?"). The lookup uses the current caller's SAP identity and works with memory, SQLite, or no cache. `SAPNavigate(action="references")` uses the same live lookup but returns the navigation-oriented result directly.
 
 **Parameters:**
 
@@ -1003,26 +1024,33 @@ Returns all objects in the cached index that depend on the given object (i.e., "
 |-----------|------|----------|-------------|
 | `action` | string | Yes | `"usages"` |
 | `name` | string | Yes | Object name to look up (e.g., `ZCL_ORDER`, `ZIF_ORDER`) |
+| `type` | string | No | Object type. Recommended when known; otherwise ARC-1 performs exact-name resolution and continues only for one unambiguous match. |
 
 **Example:**
 ```
-SAPContext(action="usages", name="ZIF_ORDER")
+SAPContext(action="usages", type="INTF", name="ZIF_ORDER")
 ```
 
 **Output:**
 ```json
 {
   "name": "ZIF_ORDER",
+  "resolvedObject": {
+    "type": "INTF",
+    "name": "ZIF_ORDER",
+    "uri": "/sap/bc/adt/oo/interfaces/zif_order"
+  },
   "usageCount": 3,
   "usages": [
-    { "fromId": "ZCL_ORDER", "type": "CLAS", "relation": "IMPLEMENTS" },
-    { "fromId": "ZCL_ORDER_EXTENDED", "type": "CLAS", "relation": "IMPLEMENTS" },
-    { "fromId": "ZCL_ORDER_FACTORY", "type": "CLAS", "relation": "USES" }
-  ]
+    { "name": "ZCL_ORDER", "type": "CLAS/OC", "uri": "/sap/bc/adt/oo/classes/zcl_order" },
+    { "name": "ZCL_ORDER_EXTENDED", "type": "CLAS/OC", "uri": "/sap/bc/adt/oo/classes/zcl_order_extended" }
+  ],
+  "source": "live",
+  "fallbackUsed": false
 }
 ```
 
-**When warmup is not available:** Returns `isError: true` with step-by-step instructions to enable warmup, and suggests `SAPNavigate(action="references")` as a live fallback.
+If exact name resolution finds multiple object types, ARC-1 returns a bounded candidate list and asks for `type` instead of guessing.
 
 ---
 
@@ -1107,13 +1135,13 @@ SAPLint(action="lint", source="...", rules={"line_length": {"severity": "Error",
 
 ## SAPDiagnose
 
-Server-side code analysis: syntax check, ABAP unit tests, ATC checks, CDS test-case scaffolding, active/inactive object state, short dumps (ST22), ABAP profiler traces, an OData performance probe (`sap-statistics`), and CDS Show-SQL.
+Server-side code analysis: syntax check, ABAP unit tests, ATC checks, CDS test-case scaffolding, active/inactive object state, short dumps (ST22), ABAP profiler traces, the on-prem STUSERTRACE authorization trace, an OData performance probe (`sap-statistics`), and CDS Show-SQL.
 
 **Parameters:**
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `action` | string | Yes | `syntax`, `unittest`, `atc`, `cds_testcases`, `object_state`, `quickfix`, `apply_quickfix`, `dumps`, `traces`, `odata_perf`, `cds_sql`, `sql_trace_state`, `set_sql_trace_state`, or `sql_trace_directory` |
+| `action` | string | Yes | `syntax`, `unittest`, `atc`, `cds_testcases`, `object_state`, `quickfix`, `apply_quickfix`, `dumps`, `traces`, `odata_perf`, `authorization_trace`, `cds_sql`, `sql_trace_state`, `set_sql_trace_state`, or `sql_trace_directory` |
 | `name` | string | No | Object name (required for syntax/unittest/atc/object_state/quickfix/apply_quickfix; the CDS entity / DDLS source name for `cds_testcases` and `cds_sql`) |
 | `url` | string | No | For `odata_perf`: the host-relative OData path to probe (from the Fiori app's Network tab), e.g. `/sap/opu/odata4/sap/.../Entity?$filter=...`. Must be a path on the SAP system ARC-1 connects to — absolute URLs are rejected. |
 | `type` | string | No | Object type: `PROG`, `CLAS`, `INTF`, `FUNC` (required for syntax/unittest/atc/object_state/quickfix/apply_quickfix) |
@@ -1124,8 +1152,10 @@ Server-side code analysis: syntax check, ABAP unit tests, ATC checks, CDS test-c
 | `proposalUri` | string | No | Quickfix proposal URI from `quickfix` response (required for `apply_quickfix`) |
 | `proposalUserContent` | string | No | Opaque proposal state from `quickfix` response (required for `apply_quickfix`) |
 | `id` | string | No | Dump ID (for dump detail) or Trace ID (for trace analysis) |
-| `user` | string | No | Filter dumps by user |
-| `maxResults` | number | No | Max dumps to return |
+| `user` | string | No | SAP-user filter for dumps, runtime feeds, or `authorization_trace` |
+| `authObject` | string | No | For `authorization_trace`: filter to one authorization object, for example `S_TCODE` |
+| `onlyFailures` | boolean | No | For `authorization_trace`: return only denied checks (`RC <> 0`) |
+| `maxResults` | number | No | Maximum results (default 50 for dumps/feeds, 100 for `authorization_trace`; safely capped) |
 | `variant` | string | No | ATC check variant name |
 | `sqlOn` | boolean | No | For `set_sql_trace_state`: `true` arms the ST05 SQL trace, `false` disarms it (combine with `user` to filter to one SAP user) |
 | `analysis` | string | No | For trace detail: `hitlist`, `statements`, or `dbAccesses` |
@@ -1142,6 +1172,7 @@ Server-side code analysis: syntax check, ABAP unit tests, ATC checks, CDS test-c
 - **`dumps`** — List short dumps (ST22). Without `id`: returns recent dumps (filterable by `user`, `maxResults`). With `id`: returns full dump detail including error type, exception, program, stack trace, and formatted output.
 - **`traces`** — List ABAP profiler traces. Without `id`: returns trace list. With `id` + `analysis`: returns trace analysis (`hitlist` = call hierarchy with hit counts and timings, `statements` = executed statements, `dbAccesses` = database access details).
 - **`odata_perf`** — Diagnose *why* a Fiori/OData request is slow. Pass `url` (the host-relative OData path from the app's Network tab); ARC-1 GETs it with `?sap-statistics=true` and a wall-clock timer, then returns the server-side timing split (`gwtotal`, `gwapp`, `gwappdb` = DB time, `gwfw`/`gwhub` = framework, `icfauth` = auth) plus a `verdict` routing you to the dominant cost (`db` → check the CDS query / `cds_sql` / ST05; `app` → ABAP profiler `traces`; `framework` → metadata/first-call; `auth` → ICF/DCL). Read-only GET; gated like data preview (`SAP_ALLOW_DATA_PREVIEW`). The OData service must be on the same SAP host ARC-1 connects to. Older releases (e.g. NW 7.50) may report only a `gwhub` total without a per-component split → the verdict says so rather than guessing.
+- **`authorization_trace`** — Read the long-term, on-prem **STUSERTRACE** trace from `SUAUTHVALTRC`, decode positional field values through `TOBJ`, and return the user, application, authorization object, result code, checked values, ABAP code location, and first-seen timestamp. Optional `user`, `authObject`, `onlyFailures`, and `maxResults` narrow the read; entries are sorted newest-first within the capped result set. Requires the `data` scope, `SAP_ALLOW_DATA_PREVIEW=true`, and SAP table-read authorization for `SUAUTHVALTRC` and `TOBJ`; it never needs free SQL. This is not SU53's live last-failure buffer: it contains only checks recorded while `auth/auth_user_trace` was enabled, and ARC-1 cannot toggle that profile parameter. Every response therefore reports `traceState.status="unknown"` and warns that persisted rows do not prove the trace is currently active; empty responses additionally include RZ11/profile activation guidance. Verify the current value in RZ11: `N` is inactive, `F` records only filters maintained in STUSERTRACE (recommended; at least one filter is required), and `Y` records all users/application types. A dynamic RZ11 change lasts until restart; select **Change on All Servers** when all application-server instances must participate, and maintain `DEFAULT.PFL` through the approved Basis profile workflow for a persistent setting. ABAP Cloud users should use the *Display Authorization Trace* Fiori app.
 - **`cds_sql`** — Show the native SQL a CDS view compiles to (ADT "Show SQL Create Statement"). Pass `name` (the CDS DDL source / DDLS, e.g. `I_CURRENCY`). Returns the `CREATE VIEW` statement(s) — the joins/scans behind a slow entity. Read-only. Verified on NW 7.50, S/4HANA 2023 (758), and ABAP Platform 2025 (816); on 7.50 the statement is a classic DB `VIEW`.
 - **`sql_trace_state`** — Read the current ST05 trace state (SQL/buffer/enqueue/RFC/HTTP/APC/AMC/auth on-off per application server, plus the active filter). Read-only.
 - **`set_sql_trace_state`** — Arm or disarm the ST05 SQL trace. Requires `sqlOn` (`true` = arm, `false` = disarm); optional `user` filters the trace to one SAP user. Mutates server trace state → needs `SAP_ALLOW_WRITES`. Workflow: arm → reproduce the slow request → `sql_trace_directory` for the record-viewer link.
@@ -1163,6 +1194,7 @@ SAPDiagnose(action="traces")
 SAPDiagnose(action="traces", id="TRACE123", analysis="hitlist")
 SAPDiagnose(action="traces", id="TRACE123", analysis="dbAccesses")
 SAPDiagnose(action="odata_perf", url="/sap/opu/odata4/sap/zui_mup/.../SerialNumbers?$filter=...")  — where did the time go (DB vs ABAP vs framework)
+SAPDiagnose(action="authorization_trace", user="AUTH_TEST", onlyFailures=true, maxResults=20) — denied STUSERTRACE checks (on-prem; data-preview gated)
 SAPDiagnose(action="cds_sql", name="I_CURRENCY")                    — the native SQL CREATE VIEW behind a CDS entity
 SAPDiagnose(action="sql_trace_state")                               — is the ST05 SQL trace on? for whom?
 SAPDiagnose(action="set_sql_trace_state", sqlOn=true, user="MARIAN") — arm the SQL trace for one user (needs SAP_ALLOW_WRITES)
@@ -1186,7 +1218,7 @@ Probe and report SAP system capabilities, inspect the object cache state, and ma
 **Actions:**
 - `probe` — Re-probe the SAP system now (feature probes + auth checks + ADT discovery refresh). Detects optional features.
 - `features` — Get cached feature status from last probe (fast, no SAP round-trip).
-- `cache_stats` — Return object cache statistics: cached sources, dep graphs, edges, warmup state, and the per-username inactive-list session cache (`inactiveListCache.userCount`, `inactiveListCache.totalEntries`).
+- `cache_stats` — Return request-driven cache statistics: cached sources, dependency graphs, released APIs, and the per-username inactive-list session cache (`inactiveListCache.userCount`, `inactiveListCache.totalEntries`).
 - `create_package` — Create a package (`DEVC`) via `/sap/bc/adt/packages`.
 - `delete_package` — Delete a package via lock/delete/unlock.
 - `change_package` — Move an existing object into a different package (DEVC reassignment).
@@ -1229,29 +1261,29 @@ Probe and report SAP system capabilities, inspect the object cache state, and ma
 ```json
 {
   "enabled": true,
-  "warmupAvailable": false,
   "sourceCount": 42,
   "contractCount": 38,
-  "edgeCount": 0,
-  "nodeCount": 42,
-  "apiCount": 0
+  "apiCount": 0,
+  "inactiveListCache": {
+    "userCount": 1,
+    "totalEntries": 3
+  }
 }
 ```
 
 | Field | Description |
 |-------|-------------|
 | `enabled` | Whether caching is active (`false` if `ARC1_CACHE=none`) |
-| `warmupAvailable` | Whether warmup has completed — required for `SAPContext(action="usages")` |
 | `sourceCount` | Cached source code entries (grows as objects are read) |
 | `contractCount` | Cached dependency graphs (grows as `SAPContext(deps)` is called) |
-| `edgeCount` | Dependency edges — non-zero only after warmup |
-| `nodeCount` | Object metadata entries — non-zero only after warmup |
+| `apiCount` | Released API metadata entries populated by requests |
+| `inactiveListCache` | Aggregate user/session draft-list cache counts |
 
 **Examples:**
 ```
 SAPManage(action="probe")       → discover system capabilities
 SAPManage(action="features")    → get cached results (no SAP call)
-SAPManage(action="cache_stats") → check cache state and warmup status
+SAPManage(action="cache_stats") → check request-driven cache state
 SAPManage(action="create_package", name="ZRAP_TRAVEL", description="RAP Travel Demo")
 SAPManage(action="create_package", name="ZRAP_TRAVEL", description="RAP Travel Demo", superPackage="ZRAP", softwareComponent="HOME", transportLayer="HOME", packageType="development", transport="K900123")
 SAPManage(action="delete_package", name="ZRAP_TRAVEL")

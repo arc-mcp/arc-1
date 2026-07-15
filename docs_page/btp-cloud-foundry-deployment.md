@@ -108,7 +108,7 @@ modules:
       SAP_ALLOWED_PACKAGES: "Z*,Y*,$TMP"
 ```
 
-The full set of overridable properties is documented in [`mta-overrides.mtaext.example`](https://github.com/arc-mcp/arc-1/blob/main/mta-overrides.mtaext.example): destinations, all `SAP_ALLOW_*` safety flags, `SAP_DENY_ACTIONS`, `SAP_PP_STRICT`, `ARC1_PUBLIC_URL` (for reverse-proxy deployments), `ARC1_ALLOWED_ORIGINS` (CORS), `ARC1_UI`, `ARC1_TOOL_MODE`, cache warmup, and `ARC1_LOG_HTTP_DEBUG`. Any property left out of the override falls back to the `mta.yaml` value.
+The full set of overridable properties is documented in [`mta-overrides.mtaext.example`](https://github.com/arc-mcp/arc-1/blob/main/mta-overrides.mtaext.example): destinations, all `SAP_ALLOW_*` safety flags, `SAP_DENY_ACTIONS`, `SAP_PP_STRICT`, `ARC1_PUBLIC_URL` (for reverse-proxy deployments), `ARC1_ALLOWED_ORIGINS` (CORS), `ARC1_UI`, `ARC1_TOOL_MODE`, request-driven cache settings, and `ARC1_LOG_HTTP_DEBUG`. Any property left out of the override falls back to the `mta.yaml` value.
 
 See the [BTP Destination Setup Guide](btp-destination-setup.md) for creating the destinations themselves.
 
@@ -176,6 +176,7 @@ The base `mta.yaml` configures the properties below (override any of them via `m
 - `SAP_TRANSPORT: http-streamable` — HTTP transport for MCP
 - `SAP_BTP_DESTINATION` / `SAP_BTP_PP_DESTINATION` — placeholders, MUST be overridden
 - `SAP_PP_ENABLED: "true"` — per-user principal propagation
+- `SAP_PP_STRICT: "true"` — recommended PP-only topology; API-key/non-JWT tool calls are rejected
 - `SAP_XSUAA_AUTH: "true"` — XSUAA OAuth for MCP clients
 - `SAP_ALLOW_*: "false"` and `SAP_ALLOWED_PACKAGES: "$TMP"` — safe defaults; widen only as needed
 - `ARC1_UI: "off"` — experimental UI is not enabled by default. Set `ARC1_UI: "web"` in `mta-overrides.mtaext` or via `cf set-env` to mount the read-only console at `/ui`; HTTP UI mode requires XSUAA, OIDC, or an admin API key and every `/ui/*` request requires admin scope.
@@ -278,6 +279,7 @@ applications:
       SAP_BTP_DESTINATION: "SAP_TRIAL"         # BasicAuth (startup)
       SAP_BTP_PP_DESTINATION: "SAP_TRIAL_PP"   # PrincipalPropagation (per-user)
       SAP_PP_ENABLED: "true"
+      SAP_PP_STRICT: "true"                    # recommended strict default; set false for supported mixed mode
       SAP_XSUAA_AUTH: "true"
       # Safety: read-only by default. Widen one flag at a time per landscape (see the note below).
       SAP_ALLOW_WRITES: "false"
@@ -321,14 +323,11 @@ cf push
 # https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com
 ```
 
-### 7. Configure authentication and optional fallback keys
+### 7. Configure authentication and the stable DCR key
 
 **Never put secrets in manifest.yml.** Set them via `cf set-env`:
 
 ```bash
-# Optional API key for break-glass/admin testing
-cf set-env arc1-mcp-server ARC1_API_KEYS "your-secure-api-key:admin"
-
 # Stable DCR signing secret — keeps MCP client logins valid across redeploys.
 # Without it the key derives from the XSUAA clientsecret, which cf deploy rotates → invalid_client.
 # (ARC1_OAUTH_DCR_TTL_SECONDS already defaults to "0"/never-expire in mta.yaml; only set it to opt into a finite TTL.)
@@ -337,6 +336,12 @@ cf set-env arc1-mcp-server ARC1_DCR_SIGNING_SECRET "$(openssl rand -base64 48)"
 # Restart to apply
 cf restart arc1-mcp-server
 ```
+
+For the recommended topology, keep this PP instance strict and deploy API-key automation separately
+with `SAP_PP_ENABLED=false`, a least-privileged technical SAP identity, and its own safety ceiling.
+This separation is not mandatory. To run PP and API keys in one supported instance, configure
+`ARC1_API_KEYS` and set `SAP_PP_STRICT=false` explicitly; JWT calls use PP while API-key calls use
+the shared destination identity.
 
 See [Stable DCR signing key](xsuaa-setup.md#stable-dcr-signing-key-recommended) for why this matters and how to recover a client that's already stuck.
 
@@ -357,9 +362,7 @@ curl https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com/.well-known/oaut
 curl https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com/.well-known/oauth-authorization-server
 # → {"authorization_endpoint":"...","token_endpoint":"...","registration_endpoint":"...",...}
 
-# Test with Bearer token from your MCP client's XSUAA login flow,
-# or use the optional ARC1_API_KEYS fallback if you configured one and did
-# not explicitly set SAP_PP_STRICT=true.
+# Test with a Bearer token from your MCP client's XSUAA login flow.
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' \
@@ -422,10 +425,10 @@ ARC-1 uses two BTP destinations for on-premise PP scenarios:
 
 | Destination | Auth Type | Used For | Config Var |
 |-------------|-----------|----------|------------|
-| Startup destination | BasicAuthentication | Feature probing, cache warmup, API key users | `SAP_BTP_DESTINATION` |
+| Startup destination | BasicAuthentication | Feature probing and API-key calls in mixed mode | `SAP_BTP_DESTINATION` |
 | Per-user destination | PrincipalPropagation | Per-user requests with JWT | `SAP_BTP_PP_DESTINATION` |
 
-**Why two destinations?** A PrincipalPropagation destination has no User/Password. At startup (no user JWT available), the SDK's `getDestination()` would fail for PP destinations. The BasicAuth destination provides a fallback for system-level operations and API key users.
+**Why two destinations?** A PrincipalPropagation destination has no User/Password. At startup (no user JWT available), the SDK's `getDestination()` would fail for PP destinations. The BasicAuth destination supports system-level startup operations and, when `SAP_PP_STRICT=false`, API-key calls in a supported mixed instance. With the base MTA's explicit `SAP_PP_STRICT=true`, MCP tool callers cannot use it as a shared identity.
 
 The destinations may point to the same SAP system but can differ in:
 - Authentication type (BasicAuth vs PP)
@@ -595,6 +598,7 @@ applications:
       SAP_BTP_DESTINATION: "SAP_TRIAL"
       SAP_BTP_PP_DESTINATION: "SAP_TRIAL_PP"
       SAP_PP_ENABLED: "true"
+      SAP_PP_STRICT: "true"
       SAP_XSUAA_AUTH: "true"
       # read-only by default — widen per landscape
       SAP_ALLOW_WRITES: "false"

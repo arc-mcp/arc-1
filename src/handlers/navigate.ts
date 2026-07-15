@@ -4,20 +4,12 @@
  */
 
 import type { AdtClient } from '../adt/client.js';
-import {
-  findDefinition,
-  findInterfaceImplementersViaSeoMetaRel,
-  findReferences,
-  findWhereUsed,
-  getCompletion,
-  type ReferenceResult,
-  type WhereUsedResult,
-} from '../adt/codeintel.js';
+import { findDefinition, getCompletion } from '../adt/codeintel.js';
 import { AdtApiError } from '../adt/errors.js';
 import { isOperationAllowed, OperationType } from '../adt/safety.js';
 import type { ClassHierarchy } from '../adt/types.js';
-import { normalizeObjectType, objectUrlForType } from './object-types.js';
 import { errorResult, type ToolResult, textResult } from './shared.js';
+import { lookupLiveUsages, resolveWhereUsedUri } from './where-used.js';
 
 // ─── SAPNavigate Handler ─────────────────────────────────────────────
 
@@ -30,28 +22,12 @@ export async function handleSAPNavigate(client: AdtClient, args: Record<string, 
 
   // Allow symbolic type+name as alternative to uri for references
   if (!uri && args.type && args.name) {
-    const symType = normalizeObjectType(String(args.type));
     const symName = String(args.name);
-    if (symType === 'FUNC') {
-      // FUNC needs group to build URL — auto-resolve it
-      const group = await client.resolveFunctionGroup(symName);
-      if (group) {
-        uri = `/sap/bc/adt/functions/groups/${encodeURIComponent(group)}/fmodules/${encodeURIComponent(symName)}`;
-      } else {
-        return errorResult(
-          `Cannot resolve function group for "${symName}". Provide the full uri parameter, or use SAPSearch("${symName}") to find the ADT URI.`,
-        );
-      }
-    } else if (symType === 'TABL') {
-      // DDIC TABL: where-used and other navigate paths must use the canonical
-      // object URL — `/sap/bc/adt/ddic/tables/{name}` for transparent tables,
-      // `/sap/bc/adt/ddic/structures/{name}` for DDIC structures. NW 7.50
-      // returns 500 from usageReferences for /tables/ URLs even for transparent
-      // tables, so we always resolve before building. resolveTablObjectUrl
-      // caches on the AdtClient, so this is one HTTP probe per cold name.
-      uri = await client.resolveTablObjectUrl(symName);
-    } else {
-      uri = objectUrlForType(symType, symName);
+    uri = (await resolveWhereUsedUri(client, String(args.type), symName)) ?? '';
+    if (!uri) {
+      return errorResult(
+        `Cannot resolve function group for "${symName}". Provide the full uri parameter, or use SAPSearch("${symName}") to find the ADT URI.`,
+      );
     }
   }
 
@@ -73,78 +49,23 @@ export async function handleSAPNavigate(client: AdtClient, args: Record<string, 
       // objectType is passed to SAP's where-used scope API which expects slash format (CLAS/OC, PROG/P).
       // Do NOT normalize it — the slash suffix is semantically meaningful for the SAP filter.
       const objectType = args.objectType ? String(args.objectType) : undefined;
-      let results: WhereUsedResult[] | ReferenceResult[];
-      try {
-        results = await findWhereUsed(client.http, client.safety, uri, objectType);
-      } catch (err) {
-        // Only fall back for HTTP errors indicating the endpoint is not available (older SAP systems)
-        if (err instanceof AdtApiError && [404, 405, 415, 501].includes(err.statusCode)) {
-          results = await findReferences(client.http, client.safety, uri);
-          if (results.length === 0) {
-            return textResult('No references found.');
-          }
-          const json = JSON.stringify(results, null, 2);
-          if (objectType) {
-            return textResult(
-              JSON.stringify(
-                {
-                  note: `This SAP system does not support scope-based Where-Used. The objectType filter "${objectType}" was ignored — results below are unfiltered.`,
-                  results,
-                },
-                null,
-                2,
-              ),
-            );
-          }
-          return textResult(json);
-        } else {
-          throw err;
-        }
-      }
-
-      // Augment interface where-used with implementing classes from SEOMETAREL.
-      // SAP's scope-based usageReferences endpoint sometimes does NOT surface
-      // interface→implementing-class links — the implementations sit inside a
-      // `canHaveChildren="true"` Interface Section node, and the snippet
-      // expansion endpoint returns 404 on every release we've probed (NW 7.50,
-      // S/4HANA 2023). SEOMETAREL is the canonical OO-relation table and is
-      // always populated, so this augmentation makes references reliable for
-      // interfaces. Silently skipped when SQL/data access isn't available.
-      const intfMatch = uri.match(/\/sap\/bc\/adt\/oo\/interfaces\/([^/?]+)/i);
-      if (intfMatch && (!objectType || /^CLAS/i.test(objectType))) {
-        const interfaceName = decodeURIComponent(intfMatch[1]).toUpperCase();
-        const canFreeSQL = isOperationAllowed(client.safety, OperationType.FreeSQL);
-        const canQuery = isOperationAllowed(client.safety, OperationType.Query);
-        try {
-          let implementers: WhereUsedResult[] = [];
-          if (canFreeSQL) {
-            implementers = await findInterfaceImplementersViaSeoMetaRel(
-              (sql, max) => client.runQuery(sql, max),
-              interfaceName,
-            );
-          } else if (canQuery) {
-            implementers = await findInterfaceImplementersViaSeoMetaRel(
-              (_sql, max) =>
-                client.getTableContents('SEOMETAREL', max, `REFCLSNAME = '${interfaceName}' AND RELTYPE = '1'`),
-              interfaceName,
-            );
-          }
-          // Dedupe: don't add an implementer if SAP already returned it
-          const existingNames = new Set(
-            (results as WhereUsedResult[]).map((r) => r.name?.toUpperCase()).filter(Boolean),
-          );
-          const augmented = implementers.filter((r) => !existingNames.has(r.name.toUpperCase()));
-          if (augmented.length > 0) {
-            (results as WhereUsedResult[]).push(...augmented);
-          }
-        } catch {
-          // SEOMETAREL augmentation is best-effort; if SQL fails, fall back to
-          // whatever the where-used HTTP endpoint returned. Don't block the response.
-        }
-      }
+      const lookup = await lookupLiveUsages(client, uri, objectType);
+      const { results } = lookup;
 
       if (results.length === 0) {
         return textResult('No references found.');
+      }
+      if (lookup.ignoredObjectType) {
+        return textResult(
+          JSON.stringify(
+            {
+              note: `This SAP system does not support scope-based Where-Used. The objectType filter "${lookup.ignoredObjectType}" was ignored — results below are unfiltered.`,
+              results,
+            },
+            null,
+            2,
+          ),
+        );
       }
       return textResult(JSON.stringify(results, null, 2));
     }

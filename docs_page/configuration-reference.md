@@ -15,7 +15,7 @@ The full grouped template with inline commentary is [`.env.example`](https://git
 3. [Authentication](#authentication) — Layer B (ARC-1 → SAP) and Layer A (MCP Client → ARC-1)
 4. [Authorization and safety](#authorization-and-safety) — what tool calls are allowed
 5. [Server runtime](#server-runtime) — transport, bind address, CORS, concurrency
-6. [Caching](#caching) — source cache, warmup
+6. [Caching](#caching) — request-driven source and dependency cache
 7. [Logging and observability](#logging-and-observability) — log file, level, format, HTTP debug
 8. [ABAP feature toggles](#abap-feature-toggles) — abapGit, gCTS, RAP, AMDP, UI5, HANA, FLP
 9. [Code-quality gates](#code-quality-gates) — pre-write lint/check, abaplint config, tool/schema mode
@@ -78,7 +78,7 @@ Pick one primary method. Combining methods that conflict (e.g. basic + cookies +
 
 | Flag | Env var | Effect |
 |---|---|---|
-| `--user` | `SAP_USER` | Username sent in `Authorization: Basic` on every ADT request. With `SAP_PP_ENABLED=true`, this becomes the *fallback* technical user used only when per-user PP is unavailable. |
+| `--user` | `SAP_USER` | Username sent in `Authorization: Basic` on shared-client ADT requests. With `SAP_PP_ENABLED=true`, API-key / non-JWT requests may still use this technical user unless `SAP_PP_STRICT=true` was set explicitly. A failed JWT PP request never falls back to this identity. |
 | `--password` | `SAP_PASSWORD` | Password for the above. Redacted from all logs. |
 
 #### B2. Cookie auth (dev-only SSO bridge)
@@ -116,7 +116,7 @@ Full reference: [btp-destination-setup.md](btp-destination-setup.md) · [multi-d
 | Flag | Env var | Default | Effect |
 |---|---|---|---|
 | `--pp-enabled` | `SAP_PP_ENABLED` | `false` | Enables ARC-1's per-user destination path. For on-premise SAP this resolves a `PrincipalPropagation` destination through Connectivity Service and Cloud Connector. For BTP ABAP Environment this resolves an `OAuth2UserTokenExchange` destination and uses the returned ABAP bearer token. Without it, every SAP call uses the shared technical client. |
-| `--pp-strict` | `SAP_PP_STRICT` | `true` when PP is enabled | When JWT PP fails (token mapping missing, destination unavailable), the default is to return an error to the MCP caller — no shared-client fallback. Set explicitly to `false` only when you intentionally want fallback to the shared technical client. Set explicitly to `true` only when API-key / non-JWT requests should also be rejected. |
+| `--pp-strict` | `SAP_PP_STRICT` | `true` when PP is enabled | JWT PP failures always return an error and never change to the shared identity. Explicit `true` gives the recommended strict topology and rejects API-key / non-JWT tool calls. Explicit `false` enables supported mixed operation, in which API keys use the shared client; it never enables JWT fallback. Separate instances are recommended, not required. |
 | `--pp-allow-shared-cookies` | `SAP_PP_ALLOW_SHARED_COOKIES` | `false` | Escape hatch. Without it, setting `SAP_COOKIE_FILE`/`SAP_COOKIE_STRING` together with `SAP_PP_ENABLED=true` fails at startup (cookies belong to one user, PP wants per-user). With `true`, cookies stay on the shared client only and PP traffic runs cookie-free. |
 
 Full reference: [principal-propagation-setup.md](principal-propagation-setup.md).
@@ -261,13 +261,11 @@ ARC-1 caches SAP source/metadata with ETag revalidation on every hit. See [cachi
 
 | Flag | Env var | Default | Effect |
 |---|---|---|---|
-| `--cache` | `ARC1_CACHE` | `auto` | `auto` picks `sqlite` for HTTP transport and `memory` for stdio. `memory` = in-process only, lost on restart. `sqlite` = persistent across restarts, shared across processes that point at the same file. `none` = disable caching entirely (every read hits SAP). |
-| `--cache-file` | `ARC1_CACHE_FILE` | `.arc1-cache.db` | SQLite file path when `ARC1_CACHE=sqlite` (or `auto` → sqlite). Created on first use. |
-| `--cache-warmup` | `ARC1_CACHE_WARMUP` | `false` | When `true`, ARC-1 runs a TADIR scan on startup and bulk-fetches matching object sources into the cache. Speeds up first reads at the cost of a longer startup and more SAP load. |
-| `--cache-warmup-packages` | `ARC1_CACHE_WARMUP_PACKAGES` | (empty = all custom) | Comma-separated package filter for warmup (e.g. `Z*,Y*,/COMPANY/*`). Empty matches all custom packages found in TADIR. Ignored when `ARC1_CACHE_WARMUP=false`. |
+| `--cache` | `ARC1_CACHE` | `auto` | `auto` uses the in-process memory cache for every transport. `memory` = in-process only, lost on restart. `sqlite` = persistent across restarts, shared across processes that point at the same file, and explicit opt-in because it stores source bodies at rest. `none` = disable caching entirely (every read hits SAP). |
+| `--cache-file` | `ARC1_CACHE_FILE` | `.arc1-cache.db` | SQLite file path when `ARC1_CACHE=sqlite`. Created on first use. |
 
 !!! warning "`ARC1_CACHE=sqlite` stores SAP source in cleartext at rest"
-    The SQLite cache holds full ABAP source unencrypted at `.arc1-cache.db`. ARC-1 creates and repairs the cache DB and file audit sink (`ARC1_LOG_FILE`) with owner-only file permissions (`0600`), but this is not encryption. For IP-sensitive landscapes use `ARC1_CACHE=memory` or `none`, or place persistent files on an encrypted volume with restricted access.
+    The default `ARC1_CACHE=auto` mode does not create a SQLite cache file. If you explicitly set `ARC1_CACHE=sqlite`, the cache holds full ABAP source unencrypted at `.arc1-cache.db`. ARC-1 creates and repairs the cache DB and file audit sink (`ARC1_LOG_FILE`) with owner-only file permissions (`0600`), but this is not encryption. For IP-sensitive landscapes keep `ARC1_CACHE=auto`/`memory` or `none`, or place persistent files on an encrypted volume with restricted access.
 
 ---
 
@@ -280,7 +278,7 @@ All ARC-1 logging goes to **stderr** to keep stdout clean for MCP JSON-RPC. Neve
 | `--log-file` | `ARC1_LOG_FILE` | — | Path to an additional file sink. Stderr output is unchanged; the file gets the same stream. |
 | `--log-level` | `ARC1_LOG_LEVEL` | `info` | One of `debug` / `info` / `warn` / `error`. Filters every log line, including the audit stream's structured entries. |
 | `--log-format` | `ARC1_LOG_FORMAT` | `text` | `text` (human-readable) or `json` (one JSON object per line — for shipping to ELK / Loki / CF log aggregator). |
-| `--minimal-errors` | `ARC1_MINIMAL_ERRORS` | `false` | When `true`, client-facing tool errors hide SAP diagnostic details such as lock owners, transport IDs, T100 variables, and authorization object names. Server-side audit logs retain request correlation and status data; use SAP-native logs or a trusted admin retry for full diagnostics. |
+| `--minimal-errors` | `ARC1_MINIMAL_ERRORS` | `false` for stdio, `true` for HTTP | When `true`, client-facing tool errors hide SAP diagnostic details such as lock owners, transport IDs, T100 variables, and authorization object names. HTTP deployments default to minimal errors because they are commonly shared or remotely reachable; stdio keeps detailed local diagnostics. Server-side audit logs retain request correlation and status data; use SAP-native logs or a trusted admin retry for full diagnostics. Set `ARC1_MINIMAL_ERRORS=false` only for trusted debugging sessions. |
 | `--verbose` | `SAP_VERBOSE` | `false` | Alias for `--log-level=debug`. Slightly older flag, kept for compatibility. |
 | — | `ARC1_LOG_HTTP_DEBUG` | `false` | When `"true"`, captures HTTP request/response body fields and headers on `http_request` audit events. Sensitive headers (`Authorization`, `Cookie`, CSRF tokens) are redacted immediately; payload bodies are length-capped and centrally redacted before sink writes. **Do not enable in production** — it still increases log volume and records payload-size/timing metadata. **Boolean parsing inconsistency:** unlike other booleans, this one accepts only the literal string `"true"` — `"1"` does **not** work. |
 

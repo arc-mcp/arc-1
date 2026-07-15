@@ -20,6 +20,7 @@ Distributed as npm package (`arc-1`) and Docker image (`ghcr.io/arc-mcp/arc-1`).
 4. **BTP-native deployment** — Destination Service, Cloud Connector, XSUAA OAuth, BTP Audit Log; also Docker/npm/stdio.
 5. **Multi-client, vendor-neutral** — XSUAA OAuth + Entra ID OIDC + API key coexist; one instance serves Claude, Copilot Studio, VS Code, Gemini CLI, Cursor.
 6. **Safe defaults, opt-in power** — read-only by default; free SQL blocked; package allowlist defaults to `$TMP`; everything forbidden until the admin allows it.
+7. **One SAP system per instance** — ARC-1 exposes no `system`/destination selector and no cross-system routing; multi-system access is the [MCP hub](https://github.com/arc-mcp/mcp-hub)'s job, never ARC-1's. Binding one system per connection makes cross-environment (DEV→PROD) mistakes structurally impossible ([ADR-0005](docs/adr/0005-single-system-per-instance.md)).
 
 ## Build & Test
 
@@ -72,7 +73,7 @@ Full per-option details (defaults, clamps, layer interactions): [docs_page/confi
 | `SAP_ALLOW_PLUGIN_RAW_WRITES` | Opt-in (default false): let plugin tools `ctx.http.post`/`put`/`delete` to **non-ADT** (OData/ICF) paths. ALSO needs `SAP_ALLOW_WRITES` + a `write`-scoped tool; `/sap/bc/adt/…` writes always refused |
 | `SAP_ABAPLINT_CONFIG` / `SAP_LINT_BEFORE_WRITE` | Custom abaplint config / pre-write lint (default true) |
 | `SAP_CHECK_BEFORE_WRITE` | SAP-side pre-write syntax check, non-blocking (default false) |
-| `ARC1_CACHE[_FILE]` / `ARC1_CACHE_WARMUP[_PACKAGES]` | Cache mode (auto/memory/sqlite/none) / TADIR pre-warm |
+| `ARC1_CACHE[_FILE]` | Request-driven cache mode (auto/memory/sqlite/none) / SQLite file path |
 | `ARC1_MAX_CONCURRENT` | Server-wide SAP request cap (default 10); size vs `rdisp/wp_no_dia` |
 | `ARC1_AUTH_RATE_LIMIT` / `ARC1_RATE_LIMIT` | Layer 1 per-IP OAuth cap (20/min) / Layer 2 per-user MCP cap (default 0 = off; ADR-0004) |
 | `SAP_BTP_DESTINATION` / `SAP_BTP_PP_DESTINATION` | BTP Destination names (PP = PrincipalPropagation type) |
@@ -128,9 +129,9 @@ src/
 │   ├── server-driven.ts        # Server-driven objects (DESD/EVTB/… — 8.16 AFF JSON engine)
 │   ├── oauth.ts, cookies.ts    # BTP OAuth (browser/PKCE) + cookie parsing (Destination Service lives in server.ts + @arc-mcp/xsuaa-auth)
 │   ├── ui5-repository.ts, flp.ts    # UI5 ABAP Repository + FLP OData clients
-│   └── diagnostics.ts, codeintel.ts # ST22/traces + find-def/refs/where-used/completion
+│   └── authorization-trace.ts, diagnostics.ts, codeintel.ts # auth/ST22 traces + code intelligence
 ├── context/                    # deps.ts, cds-deps.ts, contract.ts, compressor.ts, method-surgery.ts, grep.ts
-├── cache/                      # cache.ts, memory.ts, sqlite.ts, caching-layer.ts (ETag), inactive-list-cache.ts, warmup.ts
+├── cache/                      # cache.ts, memory.ts, sqlite.ts, caching-layer.ts (ETag), inactive-list-cache.ts
 ├── aff/                        # validator.ts (Ajv 2020-12) + bundled AFF schemas/
 ├── probe/                      # ADT type-availability probe (catalog, runner, fixtures)
 └── lint/                       # lint.ts (@abaplint/core), config-builder.ts, pre-write-hints.ts, presets/
@@ -183,6 +184,7 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 | edit_method for CCDEF/CCIMP includes | `src/handlers/write/class-surgery.ts`, `src/handlers/schemas.ts` — auto-detect `lhc_*`/`lcl_*`→implementations, `ltc_*`→testclasses |
 | Class-section surgery (#303) | `src/adt/class-structure.ts`, `src/adt/client.ts`, `src/adt/xml-parser.ts`, `src/handlers/write/class-surgery.ts` — client-side refuse-diff before PUT |
 | SAPSearch tadir_lookup source variants | `src/handlers/search.ts`, `src/adt/client.ts`, `src/authz/policy.ts` — `db`/`both` escalate to sql scope |
+| SAPQuery freestyle SQL hints + IN-list chunking | `src/handlers/{query,query-errors}.ts` — ABAP Open SQL uses `alias~field` + `ASCENDING`/`DESCENDING`; auto-chunk plain SELECTs only |
 | batch_create `activateAtEnd` | `src/handlers/write/create.ts` — prefer for interdependent objects (one activator pass) |
 | Hyperfocused mode | `src/handlers/hyperfocused.ts`, `src/handlers/tools.ts` |
 | ATC run (`SAPDiagnose action=atc`) | `src/adt/devtools.ts` (`runAtcCheck`) — three-step flow; variant MUST bind at worklist creation; ATC skips `$TMP` (details: dev-guide) |
@@ -193,6 +195,7 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 | abaplint beyond its grammar ceiling (8xx) | `src/adt/features.ts` (`ABAPLINT_MAX_RELEASE`), `src/lint/config-builder.ts` — parser errors demoted to warnings when release > 758 |
 | Dependency / CDS-dep / contract / compressor | `src/context/{deps,cds-deps,contract,compressor}.ts` |
 | Runtime + source-state diagnostics | `src/adt/diagnostics.ts`, `src/handlers/diagnose.ts`, `{schemas,tools}.ts` |
+| Authorization trace (`SAPDiagnose authorization_trace`) | `src/adt/authorization-trace.ts` (`getAuthorizationTrace`/`decodeAuthTraceRows`), `diagnostics.ts` re-export, `diagnose.ts`, `{schemas,tools}.ts`, `policy.ts` — data scope + `SAP_ALLOW_DATA_PREVIEW`; on-prem `SUAUTHVALTRC` via `runTableQuery`, TOBJ decode, client-side sort; not SU53/STAUTHTRACE (details: `docs/research/2026-07-09-su53-authorization-analysis-adt-surface.md`) |
 | OData/SQL perf insight (`SAPDiagnose odata_perf`/`cds_sql`) + ICF-inactive guard | `src/adt/diagnostics.ts` (`probeODataPerformance`/`verdictFromStatistics`, `getCdsCreateStatements`/`parseCdsCreateStatements`), `diagnose.ts`, `{schemas,tools}.ts`, `policy.ts`, `errors.ts` (`icf-service-inactive` = 403 "Service cannot be reached" HTML) — odata_perf=data scope (host-relative path only, SSRF guard; `gwhub`→framework on 7.50); `cds_sql` POST createstatements + CSRF + `Accept: …ddl.createStatements+xml`; `statement` is an ARRAY_TAG (read `node.statement` as array). Verified 750/758/816 |
 | ST05 SQL-trace control (`SAPDiagnose sql_trace_state`/`set_sql_trace_state`/`sql_trace_directory`) | `src/adt/diagnostics.ts` (`getSqlTraceState`/`setSqlTraceState`/`getSqlTraceDirectory` + `parseSqlTraceState`/`parseSqlTraceDirectory`), `diagnose.ts`, `{schemas,tools}.ts`, `policy.ts` — `set`=write/Update GET→edit-raw-XML→PUT `/st05/trace/state` (CT `…perf.trace.state.v1+xml`, flips ALL instances); `sql_trace_directory` returns SAP's TMC deep-link (no ADT SQL-record API). ADT-native record reader = Cross Trace `/sap/bc/adt/crosstrace/*` (follow-up; present on 758, request types incl. OData V4). Verified 758 |
 | Audit logging / new audit event type | `src/server/audit.ts` (typed `*Event` union; emit via `logger.emitAudit`), `src/server/sinks/` |
@@ -210,7 +213,7 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 | `allowedPackages` pattern syntax | `src/adt/safety.ts`, `src/adt/package-hierarchy.ts`, `src/handlers/write-helpers.ts` (`enforceAllowedPackageForObjectUrl`, fail-closed) — details: dev-guide |
 | Feature probe / feature-gated write guard | `src/adt/features.ts` (`PROBES`) / `src/handlers/write/rap.ts` pattern |
 | E2E test / fixture | `tests/e2e/`, `tests/e2e/fixtures.ts` + `tests/fixtures/abap/` + `tests/e2e/setup.ts` |
-| Source caching / ETag / inactive drafts / warmup | `src/cache/caching-layer.ts` + `src/cache/*`, `src/cache/inactive-list-cache.ts` + `src/handlers/read.ts`, `src/cache/warmup.ts` |
+| Source caching / ETag / inactive drafts | `src/cache/caching-layer.ts` + `src/cache/*`, `src/cache/inactive-list-cache.ts` + `src/handlers/read.ts` |
 | Integration / BTP / CRUD tests | `tests/integration/adt.integration.test.ts`, `btp-abap[.smoke].integration.test.ts`, `crud-harness.ts` + `crud.lifecycle.integration.test.ts` |
 | BTP auth / Destination Service | `src/adt/oauth.ts` (browser OAuth) + `src/server/server.ts` (`buildAdtConfig` per-user destination) + `@arc-mcp/xsuaa-auth` dep |
 | AFF schema / validation | `src/aff/schemas/` + `src/aff/validator.ts` / `src/handlers/write/create.ts` (create/batch_create paths) |
@@ -289,6 +292,7 @@ Every code change requires tests. Skip taxonomy: `docs/testing-skip-policy.md`.
 - **stdout is sacred** — MCP JSON-RPC only; all logging to stderr.
 - Never commit `.env`, `cookies.txt`, `.arc1.json`; sensitive fields are redacted in logs.
 - **Safety config is the server ceiling** — per-user scopes only restrict.
+- **One system per instance — never add multi-system to ARC-1** — no `system`/`target` tool param, no multiple destinations in one config, no cross-system routing. "Expose N systems from one instance" is out of scope *by decision* (the LLM routes wrong → writes to the wrong system; it tangles per-system safety ceilings). Decline and route the requester to the [MCP hub](https://github.com/arc-mcp/mcp-hub); see [ADR-0005](docs/adr/0005-single-system-per-instance.md).
 - **Per-user auth never inherits shared credentials** — `buildAdtConfig(..., { perUser: true })` strips username/password/cookies; any new Layer B field must respect the flag.
 - **All ADT endpoints have safety guards** — no unguarded `http.{get,post,put,delete}`.
 - **Cookie hot-reload**: `SAP_COOKIE_FILE` re-read on persistent 401; `SAP_COOKIE_STRING` cannot hot-reload.

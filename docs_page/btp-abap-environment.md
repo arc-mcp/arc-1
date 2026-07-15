@@ -315,6 +315,7 @@ env:
   SAP_TRANSPORT: http-streamable
   SAP_XSUAA_AUTH: "true"      # MCP clients authenticate via XSUAA OAuth
   SAP_PP_ENABLED: "true"      # per-user principal propagation
+  SAP_PP_STRICT: "true"       # recommended: reject API-key/non-JWT tool calls
   SAP_BTP_DESTINATION: ABAP_PP
 services:
   - arc1-xsuaa
@@ -351,7 +352,7 @@ Assign each MCP user a role collection that grants the ARC-1 scopes they need (e
 |---|---|
 | `SAP_BTP_DESTINATION` | Destination name with `Authentication=OAuth2UserTokenExchange` |
 | `SAP_PP_ENABLED=true` / `--pp-enabled` | Enables ARC-1's per-user destination path |
-| `SAP_PP_STRICT=true` / `--pp-strict` | Optional JWT-only strict mode; rejects API-key / non-JWT calls as well as PP failures |
+| `SAP_PP_STRICT=true` / `--pp-strict` | Recommended strict topology; rejects API-key / non-JWT tool calls. Set explicit `false` to support PP and API keys in one instance, where API-key calls use the shared SAP identity. |
 | `SAP_XSUAA_AUTH=true` / `--xsuaa-auth` | MCP clients authenticate through XSUAA OAuth |
 | `SAP_SYSTEM_TYPE=btp` / `--system-type btp` | Expose the BTP-adapted tool definitions from startup |
 
@@ -559,7 +560,7 @@ Auth and connectivity failures are expected with free-tier instances. Assertion 
 
 ### Cross-subaccount principal propagation fails
 
-**Symptom:** Tool calls fail with `Principal propagation failed (SAP_PP_STRICT=true): Destination Service auth token error … Token header claim [kid] references unknown signing key` (or `Unable to map issuer: No identity provider found for issuer …`). MCP login itself works; only the SAP call fails, and the audit log shows `auth_pp_created` with `success:false`.
+**Symptom:** Tool calls fail with `Principal propagation failed: Destination Service auth token error … Token header claim [kid] references unknown signing key` (or `Unable to map issuer: No identity provider found for issuer …`). MCP login itself works; only the SAP call fails, and the audit log shows `auth_pp_created` with `success:false`.
 
 **Cause:** ARC-1 (its XSUAA) and the ABAP Environment are in **different BTP subaccounts**. `OAuth2UserTokenExchange` exchanges the MCP user's token at the ABAP env's XSUAA, but XSUAA tokens are subaccount-scoped — the ABAP env's XSUAA does not trust a signing key issued by another subaccount.
 

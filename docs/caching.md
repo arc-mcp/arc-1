@@ -4,17 +4,16 @@ ARC-1 caches source reads and dependency context to reduce repeated ADT work wit
 
 ## Cache Backends
 
-`ARC1_CACHE=auto` chooses the backend from the transport:
+`ARC1_CACHE=auto` uses the in-process memory backend for every transport:
 
 | Mode | Backend | Lifetime |
 |---|---|---|
-| `stdio` | Memory | Current process |
-| `http-streamable` | SQLite | Persistent file, default `.arc1-cache.db` |
+| `auto` | Memory | Current process |
 | `memory` | Memory | Current process |
 | `sqlite` | SQLite | `ARC1_CACHE_FILE` |
 | `none` | Disabled | No cache |
 
-SQLite cache files are rebuildable. If ARC-1 sees an old `sources` table without the current `version` or `etag` columns, it drops and recreates only that table.
+SQLite persistence is explicit opt-in because it stores source bodies at rest. Cache files are rebuildable. If ARC-1 sees an old `sources` table without the current `version` or `etag` columns, it drops and recreates only that table.
 
 ## Source Cache Freshness
 
@@ -60,7 +59,7 @@ Use `SAPRead(..., force_refresh=true)` to drop the cached active/inactive source
 - `[cached:revalidated]` means a source body came from cache after SAP returned `304`.
 - `[cached]` means a dependency graph came from the hash-keyed context cache.
 
-`ARC1_CACHE_WARMUP=true` pre-indexes custom objects at startup using a TADIR scan. Warmup enables reverse dependency queries such as `SAPContext(action="usages")`.
+`SAPContext(action="usages")` is intentionally not backed by a repository-wide cache. It performs a live SAP where-used lookup with the current caller's identity and works when caching is disabled.
 
 ## Invalidation
 

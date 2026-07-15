@@ -5,8 +5,8 @@
 #   manifest-onprem.yml  — on-premise SAP via Cloud Connector
 #   manifest-btp.yml     — BTP ABAP Environment (direct OAuth)
 #
-# Credentials are NOT stored here — set them via:
-#   cf set-env arc1-mcp-server ARC1_API_KEYS "<api-key>:viewer"
+# Credentials are NOT stored here. Set ARC1_API_KEYS via `cf set-env`; separate
+# API-key and strict PP instances are recommended, while mixed mode is supported.
 #
 # See docs/deployment-best-practices.md for architecture guidance.
 # See docs_page/btp-cloud-foundry-deployment.md for step-by-step BTP deployment.

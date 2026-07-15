@@ -362,65 +362,11 @@ describe('CachingLayer', () => {
     });
   });
 
-  // ─── Reverse Dep Lookup (Usages) ─────────────────────────────────────
-
-  describe('reverse dep lookup (getUsages)', () => {
-    it('returns null when warmup not done', () => {
-      expect(layer.getUsages('ZCL_TARGET')).toBeNull();
-    });
-
-    it('returns edges when warmup is done', () => {
-      // Populate edges via underlying cache
-      cache.putEdge({
-        fromId: 'ZCL_CALLER',
-        toId: 'ZCL_TARGET',
-        edgeType: 'CALLS',
-        discoveredAt: new Date().toISOString(),
-        valid: true,
-      });
-      cache.putEdge({
-        fromId: 'ZCL_USER',
-        toId: 'ZCL_TARGET',
-        edgeType: 'USES',
-        discoveredAt: new Date().toISOString(),
-        valid: true,
-      });
-
-      layer.setWarmupDone(true);
-
-      const usages = layer.getUsages('ZCL_TARGET');
-      expect(usages).not.toBeNull();
-      expect(usages).toHaveLength(2);
-      expect(usages).toEqual(
-        expect.arrayContaining([
-          { fromId: 'ZCL_CALLER', edgeType: 'CALLS' },
-          { fromId: 'ZCL_USER', edgeType: 'USES' },
-        ]),
-      );
-    });
-
-    it('returns empty array when warmup done but no edges exist', () => {
-      layer.setWarmupDone(true);
-      const usages = layer.getUsages('ZCL_NOBODY');
-      expect(usages).toEqual([]);
-    });
-
-    it('isWarmupAvailable reflects setWarmupDone state', () => {
-      expect(layer.isWarmupAvailable).toBe(false);
-      layer.setWarmupDone(true);
-      expect(layer.isWarmupAvailable).toBe(true);
-      layer.setWarmupDone(false);
-      expect(layer.isWarmupAvailable).toBe(false);
-    });
-  });
-
   // ─── Stats ───────────────────────────────────────────────────────────
 
   describe('stats', () => {
     it('reports empty stats on fresh cache', () => {
       const stats = layer.stats();
-      expect(stats.nodeCount).toBe(0);
-      expect(stats.edgeCount).toBe(0);
       expect(stats.apiCount).toBe(0);
       expect(stats.sourceCount).toBe(0);
       expect(stats.contractCount).toBe(0);
@@ -439,28 +385,9 @@ describe('CachingLayer', () => {
       // Add a dep graph
       layer.putDepGraph('source', 'ZCL_A', 'CLAS', []);
 
-      // Add nodes/edges via underlying cache
-      cache.putNode({
-        id: 'ZCL_A',
-        objectType: 'CLAS',
-        objectName: 'ZCL_A',
-        packageName: '$TMP',
-        cachedAt: new Date().toISOString(),
-        valid: true,
-      });
-      cache.putEdge({
-        fromId: 'ZCL_A',
-        toId: 'ZCL_B',
-        edgeType: 'CALLS',
-        discoveredAt: '',
-        valid: true,
-      });
-
       const stats = layer.stats();
       expect(stats.sourceCount).toBe(2);
       expect(stats.contractCount).toBe(1);
-      expect(stats.nodeCount).toBe(1);
-      expect(stats.edgeCount).toBe(1);
     });
   });
 

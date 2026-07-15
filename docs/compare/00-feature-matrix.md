@@ -2,7 +2,7 @@
 
 A comprehensive comparison of all SAP ADT/MCP projects against ARC-1.
 
-_Last updated: 2026-06-26._
+_Last updated: 2026-07-09._
 
 ## Legend
 - ✅ = Supported
@@ -223,6 +223,7 @@ Tier 2 (CycloneDX SBOM, Cosign image signing, OpenSSF Scorecard) and Tier 3 (Soc
 | SQL traces | ⚠️ (ST05 state control — arm/read via `SAPDiagnose sql_trace_state`/`set_sql_trace_state`; records via the TMC "SQL Trace Analysis" deep-link, ADT-native Cross Trace reader planned) | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
 | OData perf probe (sap-statistics) | ✅ (`SAPDiagnose action=odata_perf`, gw* timing split + routing verdict; verified 750/758/816) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
 | CDS Show-SQL (createstatements) | ✅ (`SAPDiagnose action=cds_sql`, native CREATE VIEW; verified 750/758/816) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
+| Authorization trace (SUAUTHVALTRC / STUSERTRACE) | ✅ (`SAPDiagnose action=authorization_trace`, on-prem, data-preview gated) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
 | ABAP debugger | ❌ | ⚠️ (Eclipse debugger, IDE-side, not MCP) | ✅ (8 tools) | ✅ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
 | AMDP/HANA debugger | ❌ | ⚠️ (Eclipse, IDE-side) | ✅ (7 tools) | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
 | Execute with profiling | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | N/A | ❌ | ❌ |

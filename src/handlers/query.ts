@@ -5,30 +5,8 @@
 import type { AdtClient } from '../adt/client.js';
 import { AdtApiError, extractUnknownColumn, formatUnknownColumnHint } from '../adt/errors.js';
 import type { DataPreviewMeta } from '../adt/xml-parser.js';
-import { errorResult, hasSqlParserSignature, type ToolResult, textResult } from './shared.js';
-
-function classifySapQueryParserError(err: AdtApiError, sql: string): string | undefined {
-  if (err.statusCode !== 400) return undefined;
-
-  const combined = `${err.message}\n${err.responseBody ?? ''}`;
-  if (!hasSqlParserSignature(combined)) return undefined;
-
-  const hints = [
-    'ADT freestyle SQL parser rejected this query on this backend/version.',
-    'Submit exactly one SELECT statement (no semicolons, no multi-statement scripts).',
-    'Remove ABAP target clauses from SQL text (INTO, APPENDING, PACKAGE SIZE).',
-  ];
-
-  if (/\bJOIN\b/i.test(sql)) {
-    hints.push('JOIN parsing can fail on some systems (SAP Note 3605050); split into staged single-table queries.');
-  }
-
-  if (/\bINTO\b|\bAPPENDING\b|\bPACKAGE\s+SIZE\b/i.test(sql)) {
-    hints.push('Use the MCP maxRows parameter for row limits instead of ABAP target-table clauses.');
-  }
-
-  return `${err.message}\n\nHint: ${hints.join(' ')}`;
-}
+import { classifySapQueryParserError, maskSqlStringLiterals } from './query-errors.js';
+import { errorResult, type ToolResult, textResult } from './shared.js';
 
 const SAPQUERY_IN_LIST_CHUNK_SIZE = 8;
 
@@ -43,53 +21,48 @@ function planSimpleInListChunking(
   const maskedSql = maskSqlStringLiterals(sql);
   if (maskedSql.includes(';')) return undefined;
   if (countSelectKeywords(maskedSql) !== 1) return undefined;
+  if (
+    /\bSELECT\s+SINGLE\b/i.test(maskedSql) ||
+    /\bUP\s+TO\s+\d+\s+ROWS?\b/i.test(maskedSql) ||
+    /\bGROUP\s+BY\b/i.test(maskedSql) ||
+    /\bHAVING\b/i.test(maskedSql) ||
+    /\bORDER\s+BY\b/i.test(maskedSql) ||
+    /\bUNION\b/i.test(maskedSql) ||
+    /\bDISTINCT\b/i.test(maskedSql) ||
+    /\b(?:COUNT|SUM|AVG|MIN|MAX|STRING_AGG)\s*\(/i.test(maskedSql)
+  ) {
+    return undefined;
+  }
 
   const matches = [...maskedSql.matchAll(/\b[A-Za-z_][A-Za-z0-9_~.]*\s+IN\s*\(/gi)];
-  if (matches.length !== 1) return undefined;
+  let winner: { openParen: number; closeParen: number; literals: string[] } | undefined;
 
-  const match = matches[0]!;
-  const matchText = match[0];
-  const fieldName = matchText.match(/^([A-Za-z_][A-Za-z0-9_~.]*)\s+IN\s*\(/i)?.[1];
-  if (!fieldName || fieldName.toUpperCase() === 'NOT') return undefined;
+  for (const match of matches) {
+    const matchText = match[0];
+    const fieldName = matchText.match(/^([A-Za-z_][A-Za-z0-9_~.]*)\s+IN\s*\(/i)?.[1];
+    if (!fieldName || fieldName.toUpperCase() === 'NOT') continue;
 
-  const matchStart = match.index ?? 0;
-  const openParen = matchStart + matchText.lastIndexOf('(');
-  const closeParen = findMatchingParen(maskedSql, openParen);
-  if (closeParen < 0) return undefined;
+    const matchStart = match.index ?? 0;
+    const openParen = matchStart + matchText.lastIndexOf('(');
+    const closeParen = findMatchingParen(maskedSql, openParen);
+    if (closeParen < 0) continue;
 
-  const literals = parseSingleQuotedLiteralList(sql.slice(openParen + 1, closeParen));
-  if (!literals || literals.length <= chunkSize) return undefined;
+    const parsed = parseSingleQuotedLiteralList(sql.slice(openParen + 1, closeParen));
+    if (!parsed || parsed.length === 0) continue;
+    const literals = [...new Set(parsed)];
+    if (!winner || literals.length > winner.literals.length) winner = { openParen, closeParen, literals };
+  }
 
-  const prefix = sql.slice(0, openParen + 1);
-  const suffix = sql.slice(closeParen);
+  if (!winner || winner.literals.length <= chunkSize) return undefined;
+
+  const prefix = sql.slice(0, winner.openParen + 1);
+  const suffix = sql.slice(winner.closeParen);
   const statements: string[] = [];
-  for (let i = 0; i < literals.length; i += chunkSize) {
-    statements.push(`${prefix}${literals.slice(i, i + chunkSize).join(', ')}${suffix}`);
+  for (let i = 0; i < winner.literals.length; i += chunkSize) {
+    statements.push(`${prefix}${winner.literals.slice(i, i + chunkSize).join(', ')}${suffix}`);
   }
 
   return { statements };
-}
-
-function maskSqlStringLiterals(sql: string): string {
-  let masked = '';
-  let inString = false;
-
-  for (let i = 0; i < sql.length; i++) {
-    const ch = sql[i]!;
-    if (ch === "'") {
-      if (inString && sql[i + 1] === "'") {
-        masked += '  ';
-        i++;
-        continue;
-      }
-      inString = !inString;
-      masked += ' ';
-      continue;
-    }
-    masked += inString ? ' ' : ch;
-  }
-
-  return masked;
 }
 
 function countSelectKeywords(maskedSql: string): number {
@@ -145,6 +118,39 @@ function parseSingleQuotedLiteralList(listText: string): string[] | undefined {
   }
 
   return expectingValue && literals.length > 0 ? undefined : literals;
+}
+
+interface QuerySource {
+  table: string;
+  alias?: string;
+}
+
+function resolveUnknownColumnTable(sql: string, badColumn: string): string | undefined {
+  const maskedSql = maskSqlStringLiterals(sql);
+  const sources: QuerySource[] = [];
+
+  for (const match of maskedSql.matchAll(
+    /\b(?:FROM|JOIN)\s+["']?([A-Za-z0-9_/$]+)["']?(?:\s+AS\s+([A-Za-z_][A-Za-z0-9_]*))?/gi,
+  )) {
+    sources.push({ table: match[1]!, ...(match[2] ? { alias: match[2] } : {}) });
+  }
+
+  if (sources.length === 0) return undefined;
+
+  const escapedColumn = badColumn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const qualifiedColumn = new RegExp(`\\b([A-Za-z_][A-Za-z0-9_]*)~${escapedColumn}\\b`, 'gi');
+  const qualifiers = new Set([...maskedSql.matchAll(qualifiedColumn)].map((match) => match[1]!.toUpperCase()));
+
+  if (qualifiers.size === 1) {
+    const qualifier = [...qualifiers][0]!;
+    return sources.find(
+      (source) => source.alias?.toUpperCase() === qualifier || source.table.toUpperCase() === qualifier,
+    )?.table;
+  }
+
+  // With multiple sources, an unqualified or multiply-qualified bad column is ambiguous. Preserve
+  // SAP's original error rather than confidently listing columns from an unrelated table.
+  return qualifiers.size === 0 && sources.length === 1 ? sources[0]!.table : undefined;
 }
 
 async function runChunkedSapQuery(
@@ -217,11 +223,16 @@ export async function handleSAPQuery(client: AdtClient, args: Record<string, unk
       }
     }
     if (err instanceof AdtApiError) {
+      // Dialect mistakes must win over column enrichment. SAP reuses data-preview message 004
+      // for many grammar errors, so treating it as an unknown column first produces false advice
+      // such as `Unknown column "DESC"` and hides the actionable correction.
+      const parserHint = classifySapQueryParserError(err, sql, chunkingAttempted);
+      if (parserHint) return errorResult(parserHint);
+
       // Self-correct an unknown-column error by listing the table's real columns (best-effort).
       const badColumn = extractUnknownColumn(err);
       if (badColumn) {
-        const tableMatch = sql.match(/FROM\s+["']?([A-Za-z0-9_/$]+)["']?/i);
-        const table = tableMatch?.[1];
+        const table = resolveUnknownColumnTable(sql, badColumn);
         if (table && /^[A-Za-z0-9_/]+$/.test(table)) {
           try {
             const { columns } = await client.runQuery(`SELECT * FROM ${table}`, 1);
@@ -231,12 +242,6 @@ export async function handleSAPQuery(client: AdtClient, args: Record<string, unk
           }
         }
       }
-      let parserHint = classifySapQueryParserError(err, sql);
-      if (parserHint && chunkingAttempted) {
-        parserHint +=
-          '\nARC-1 already split this simple long IN list into smaller ADT freestyle queries; this backend still rejected one chunk. Reduce the query further or use staged named-table previews.';
-      }
-      if (parserHint) return errorResult(parserHint);
     }
     throw err;
   }

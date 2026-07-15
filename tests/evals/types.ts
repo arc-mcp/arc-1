@@ -29,6 +29,12 @@ export interface ExpectedToolCall {
   requiredArgs?: Record<string, unknown>;
   /** Parameters that must be present (value doesn't matter) */
   requiredArgKeys?: string[];
+  /**
+   * Content checks for string arguments. Every required pattern must match and every forbidden
+   * pattern must not match. This lets evals score semantic syntax constraints without requiring
+   * one byte-identical SQL/source spelling.
+   */
+  argumentPatterns?: Record<string, { required?: RegExp[]; forbidden?: RegExp[] }>;
 }
 
 /**
@@ -56,6 +62,9 @@ export interface EvalScenario {
   acceptable?: ExpectedToolCall[];
   /** Tools that must NOT be called — if called, score is 0 */
   forbidden?: string[];
+
+  /** Require every expected parameter check to pass, regardless of the weighted overall score. */
+  requireFullParameters?: boolean;
 
   /**
    * Mock responses keyed by tool name.
@@ -99,7 +108,7 @@ export interface ScenarioScore {
   durationMs: number;
   /** Human-readable explanation of the score */
   explanation: string;
-  /** Whether it passed (overall >= threshold) */
+  /** Whether it passed the overall threshold and any scenario-specific parameter requirement */
   passed: boolean;
 }
 

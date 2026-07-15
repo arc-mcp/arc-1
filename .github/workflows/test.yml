@@ -52,9 +52,12 @@ jobs:
        !startsWith(github.event.pull_request.title, 'chore('))
     steps:
       - name: Tests will run
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
-          echo "event=${{ github.event_name }}"
-          echo "pr_title=${{ github.event.pull_request.title }}"
+          echo "event=${EVENT_NAME}"
+          echo "pr_title=${PR_TITLE}"
 
   test:
     runs-on: ubuntu-latest

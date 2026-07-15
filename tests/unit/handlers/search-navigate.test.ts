@@ -585,21 +585,83 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(parsed.rows).toHaveLength(2);
     });
 
-    it('returns parser hint with JOIN-specific addendum when a JOIN query fails with 400', async () => {
+    it('flags dot-notation (alias.field) as the cause of "only one SELECT" — the real fix is a tilde', async () => {
       mockFetch.mockReset();
-      // First call: CSRF token fetch (200)
       mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
-      // Second call: POST returns 400 (parser error)
+      // The exact SAP message for native-SQL dot field access (live-verified on 758).
+      mockFetch.mockResolvedValueOnce(mockResponse(400, 'Only one SELECT statement is allowed.'));
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPQuery', {
+        sql: 'SELECT b.trkorr, t.text FROM tmsbufreq AS b INNER JOIN tmsbuftxt AS t ON t.trkorr = b.trkorr ORDER BY b.trkorr',
+      });
+      expect(result.isError).toBe(true);
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('b~trkorr'); // suggests the tilde form of the first offending token
+      expect(text).toContain('tilde');
+      expect(text).toContain('JOINs, WHERE, and ORDER BY all work');
+      // JOINs are fine — must NOT resurrect the old, wrong "split into single-table queries" advice.
+      expect(text).not.toContain('SAP Note 3605050');
+      expect(text).not.toContain('single-table');
+    });
+
+    it('does not false-flag tilde JOIN with an INTO clause as dot-notation; gives the target-clause hint', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
       mockFetch.mockResolvedValueOnce(mockResponse(400, '"INTO" is invalid at this position'));
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPQuery', {
         sql: 'SELECT a~field1, b~field2 FROM ztable1 AS a INNER JOIN ztable2 AS b ON a~id = b~id INTO TABLE @DATA(lt_result)',
       });
       expect(result.isError).toBe(true);
-      expect(result.content[0]?.text).toContain('ADT freestyle SQL parser rejected this query');
-      expect(result.content[0]?.text).toContain('exactly one SELECT statement');
       expect(result.content[0]?.text).toContain('Remove ABAP target clauses');
-      expect(result.content[0]?.text).toContain('SAP Note 3605050');
-      expect(result.content[0]?.text).toContain('staged single-table queries');
+      expect(result.content[0]?.text).toContain('maxRows parameter');
+      expect(result.content[0]?.text).not.toContain('tilde'); // no dot present → no tilde hint
+      expect(result.content[0]?.text).not.toContain('3605050');
+      expect(result.content[0]?.text).not.toContain('single-table');
+    });
+
+    it.each(['ASC', 'DESC'])('explains ORDER BY … %s rejection with the ABAP sort keywords', async (direction) => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
+      mockFetch.mockResolvedValueOnce(mockResponse(400, `"${direction}" is not allowed here. "." is expected.`));
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPQuery', {
+        sql: `SELECT b~tabname FROM dd02l AS b ORDER BY b~tabname ${direction}`,
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('ASCENDING');
+      expect(result.content[0]?.text).toContain('DESCENDING');
+      expect(result.content[0]?.text).not.toContain('ascending-only');
+    });
+
+    it('does not mistake ASC text inside a string literal for an ORDER BY direction', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
+      mockFetch.mockResolvedValueOnce(mockResponse(400, 'Invalid query string. Only one SELECT statement is allowed'));
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPQuery', {
+        sql: "SELECT descr FROM zt WHERE descr = 'ASC TEST'",
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('ADT freestyle SQL parser rejected this query');
+      expect(result.content[0]?.text).not.toContain('ASCENDING');
+      expect(result.content[0]?.text).not.toContain('DESCENDING');
+    });
+
+    it('hints to split a long IN-list on the backend "longer than 255 characters" mis-parse', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
+      // SA1-style message: a long IN-list mis-read as one literal running into the INTO TABLE wrapper.
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          400,
+          'The text literal "\'0000000000 INTO TABL..." is longer than 255 characters. Check whether it ends correctly.',
+        ),
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPQuery', {
+        sql: "SELECT matnr, spras, maktx FROM makt WHERE spras IN ('D','E') AND matnr IN ('000000000000069575','000000000000101882','000000000000102927','000000000000125368','000000000000145057','000000000000198979','000000000000227271','000000000000246645','000000000000380774','000000000000380808') ORDER BY matnr, spras",
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('Split the largest IN-list');
+      expect(result.content[0]?.text).toContain('multiple IN-clauses');
+      expect(result.content[0]?.text).toContain('ORDER BY');
+      expect(result.content[0]?.text).toContain('preserve semantics');
     });
 
     it('returns parser hint for non-JOIN 400 parser signatures', async () => {
@@ -612,9 +674,8 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
         sql: 'SELECT * FROM ztable1; SELECT * FROM ztable2',
       });
       expect(result.isError).toBe(true);
-      expect(result.content[0]?.text).toContain('ADT freestyle SQL parser rejected this query');
-      expect(result.content[0]?.text).toContain('exactly one SELECT statement');
-      expect(result.content[0]?.text).toContain('Remove ABAP target clauses');
+      expect(result.content[0]?.text).toContain('exactly one SELECT');
+      expect(result.content[0]?.text).toContain('without a trailing semicolon');
       expect(result.content[0]?.text).not.toContain('SAP Note 3605050');
     });
 
@@ -657,10 +718,85 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(postCalls).toHaveLength(2);
       const firstBody = String(postCalls[0]?.[1].body);
       const secondBody = String(postCalls[1]?.[1].body);
-      expect(firstBody).toContain("'Z08'");
-      expect(firstBody).not.toContain("'Z09'");
-      expect(secondBody).toContain("'Z09'");
-      expect(secondBody).toContain("'Z10'");
+      expect([firstBody, secondBody]).toEqual([
+        "SELECT object_name FROM tadir WHERE object_name IN ('Z01', 'Z02', 'Z03', 'Z04', 'Z05', 'Z06', 'Z07', 'Z08')",
+        "SELECT object_name FROM tadir WHERE object_name IN ('Z09', 'Z10')",
+      ]);
+    });
+
+    it('chunks the longest literal IN-list while keeping other IN filters unchanged', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, dataPreviewXml('MATNR', ['M01', 'M02'])));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, dataPreviewXml('MATNR', ['M09', 'M10'])));
+      const sql =
+        "SELECT matnr FROM makt WHERE spras IN ('D', 'E') AND matnr IN ('M01', 'M02', 'M03', 'M04', 'M05', 'M06', 'M07', 'M08', 'M09', 'M10')";
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPQuery', { sql });
+
+      expect(result.isError).toBeUndefined();
+      const bodies = freestylePostCalls().map((call) => String(call[1].body));
+      expect(bodies).toHaveLength(2);
+      expect(bodies.every((body) => body.includes("spras IN ('D', 'E')"))).toBe(true);
+      expect(bodies[0]).toContain("matnr IN ('M01', 'M02', 'M03', 'M04', 'M05', 'M06', 'M07', 'M08')");
+      expect(bodies[0]).not.toContain("'M09'");
+      expect(bodies[1]).toContain("matnr IN ('M09', 'M10')");
+    });
+
+    it('selects the longer of two chunkable literal IN-lists', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, dataPreviewXml('OBJ_NAME', ['Z01'])));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, dataPreviewXml('OBJ_NAME', ['Z10'])));
+      const sql =
+        "SELECT object_name FROM tadir WHERE object_type IN ('A01', 'A02', 'A03', 'A04', 'A05', 'A06', 'A07', 'A08', 'A09') AND object_name IN ('Z01', 'Z02', 'Z03', 'Z04', 'Z05', 'Z06', 'Z07', 'Z08', 'Z09', 'Z10')";
+
+      await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPQuery', { sql });
+
+      const bodies = freestylePostCalls().map((call) => String(call[1].body));
+      expect(bodies).toHaveLength(2);
+      expect(
+        bodies.every((body) =>
+          body.includes("object_type IN ('A01', 'A02', 'A03', 'A04', 'A05', 'A06', 'A07', 'A08', 'A09')"),
+        ),
+      ).toBe(true);
+      expect(bodies[0]).toContain("object_name IN ('Z01', 'Z02', 'Z03', 'Z04', 'Z05', 'Z06', 'Z07', 'Z08')");
+      expect(bodies[1]).toContain("object_name IN ('Z09', 'Z10')");
+    });
+
+    it.each([
+      "SELECT object_name FROM tadir WHERE object_name IN ('Z01', 'Z02', 'Z03', 'Z04', 'Z05', 'Z06', 'Z07', 'Z08', 'Z09') ORDER BY object_name",
+      "SELECT object_type, COUNT(*) FROM tadir WHERE object_name IN ('Z01', 'Z02', 'Z03', 'Z04', 'Z05', 'Z06', 'Z07', 'Z08', 'Z09') GROUP BY object_type",
+      "SELECT SINGLE object_name FROM tadir WHERE object_name IN ('Z01', 'Z02', 'Z03', 'Z04', 'Z05', 'Z06', 'Z07', 'Z08', 'Z09')",
+      "SELECT object_name FROM tadir WHERE object_name IN ('Z01', 'Z02', 'Z03', 'Z04', 'Z05', 'Z06', 'Z07', 'Z08', 'Z09') UP TO 1 ROWS",
+      "SELECT STRING_AGG( object_name, ',' ) FROM tadir WHERE object_name IN ('Z01', 'Z02', 'Z03', 'Z04', 'Z05', 'Z06', 'Z07', 'Z08', 'Z09')",
+    ])('does not chunk queries whose per-chunk results cannot be merged safely', async (sql) => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, dataPreviewXml('RESULT', ['1'])));
+
+      await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPQuery', { sql });
+
+      const postCalls = freestylePostCalls();
+      expect(postCalls).toHaveLength(1);
+      expect(String(postCalls[0]?.[1].body)).toBe(sql);
+    });
+
+    it('deduplicates IN-list literals before splitting across chunks', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, dataPreviewXml('OBJ_NAME', ['Z01'])));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, dataPreviewXml('OBJ_NAME', ['Z09', 'Z10'])));
+      const sql =
+        "SELECT object_name FROM tadir WHERE object_name IN ('Z01', 'Z02', 'Z03', 'Z04', 'Z05', 'Z06', 'Z07', 'Z08', 'Z01', 'Z09', 'Z10')";
+
+      await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPQuery', { sql });
+
+      const bodies = freestylePostCalls().map((call) => String(call[1].body));
+      expect(bodies).toHaveLength(2);
+      expect(bodies.join(' ').match(/'Z01'/g) ?? []).toHaveLength(1);
+      expect(bodies[0]).toContain("'Z08'");
+      expect(bodies[1]).toContain("'Z09', 'Z10'");
     });
 
     it('stops chunked IN-list execution once maxRows is filled', async () => {
@@ -735,7 +871,7 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toContain('ADT freestyle SQL parser rejected this query');
-      expect(result.content[0]?.text).toContain('already split this simple long IN list');
+      expect(result.content[0]?.text).toContain('already split the longest literal IN-list');
     });
 
     it('is blocked when free SQL is disallowed', async () => {

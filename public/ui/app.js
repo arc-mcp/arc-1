@@ -169,13 +169,8 @@ function renderOverview(data) {
       'Cache',
       metricGrid([
         ['Mode', cache.mode || 'none', cache.mode === 'none' ? 'warn' : 'ok'],
-        ['Warmup', cache.warmup ? 'enabled' : 'disabled', cache.warmup ? 'ok' : ''],
-        ['Packages', cache.warmupPackages || 'default', 'info'],
       ]),
-      detailsList([
-        ['Cache file', cache.file || 'none'],
-        ['Warmup packages', cache.warmupPackages || 'default'],
-      ]),
+      detailsList([['Cache file', cache.file || 'none']]),
     ),
   );
 }
@@ -258,8 +253,6 @@ function renderConfig(data) {
         ['UI address', cfg.uiAddr],
         ['Open UI on startup', cfg.uiOpen],
         ['Cache file', cache.file],
-        ['Cache warmup', cache.warmup],
-        ['Cache warmup packages', cache.warmupPackages],
         ['Max concurrent SAP requests', cfg.concurrency?.maxConcurrent],
         ['Auth rate limit', cfg.rateLimiting?.authRateLimit],
         ['MCP rate limit', cfg.rateLimiting?.mcpRateLimit],
@@ -382,12 +375,9 @@ async function refreshCacheStats() {
       metricGrid([
         ['Backend', stats.backend?.effective || stats.mode, stats.backend?.persistent ? 'ok' : 'info'],
         ['Persistence', stats.backend?.persistent ? 'persistent' : 'ephemeral', stats.backend?.persistent ? 'ok' : 'info'],
-        ['Nodes', stats.stats.nodeCount, 'info'],
-        ['Edges', stats.stats.edgeCount, 'info'],
         ['APIs', stats.stats.apiCount, 'info'],
         ['Sources', stats.stats.sourceCount, stats.stats.sourceCount ? 'ok' : ''],
         ['Contracts', stats.stats.contractCount, stats.stats.contractCount ? 'ok' : ''],
-        ['Warmup', stats.warmup?.available ? 'available' : 'not available', stats.warmup?.available ? 'ok' : 'warn'],
         ['Invalidations', activityCounts.source_invalidate || 0, activityCounts.source_invalidate ? 'warn' : ''],
         ['Evictions', activityCounts.source_evict || 0, activityCounts.source_evict ? 'warn' : ''],
         ['Cache hits', activityCounts.source_hit || 0, activityCounts.source_hit ? 'ok' : ''],
@@ -406,8 +396,6 @@ async function refreshCacheStats() {
       detailsList([
         ['Mode', stats.mode],
         ['Cache file', stats.backend?.file || 'none'],
-        ['Warmup configured', stats.warmup?.configured ? 'yes' : 'no'],
-        ['Warmup packages', stats.warmup?.packages || 'all configured packages'],
         ['Inactive-list users', stats.inactiveLists?.userCount ?? 0],
         ['Inactive-list entries', stats.inactiveLists?.totalEntries ?? 0],
         ['Source inventory', sourceInventoryLabel(stats.sources)],
@@ -946,7 +934,6 @@ function cacheEventLabel(event) {
       depgraph_store: 'Dep graph store',
       func_group_hit: 'Function group hit',
       func_group_store: 'Function group store',
-      warmup_state: 'Warmup state',
     }[event] || event
   );
 }

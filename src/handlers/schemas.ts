@@ -483,6 +483,7 @@ export const SAPWriteSchema = z
       'update',
       'delete',
       'edit_method',
+      'edit_unit',
       'edit_class_definition',
       'add_method',
       'edit_method_signature',
@@ -501,6 +502,8 @@ export const SAPWriteSchema = z
       z.enum(CLASS_WRITE_INCLUDES).optional(),
     ),
     method: z.string().optional(),
+    /** For action="edit_unit": FORM or MODULE name to replace. */
+    unit: z.string().optional(),
     /**
      * Visibility section. For action="add_method": the section to insert into (default 'public').
      * For action="change_method_visibility": the TARGET section to move the method to (required).
@@ -667,6 +670,7 @@ export const SAPActivateSchema = z.object({
   action: z.enum(['activate', 'publish_srvb', 'unpublish_srvb']).optional(),
   name: z.string().optional(),
   type: z.string().optional(),
+  group: z.string().optional(),
   version: z.string().optional(),
   service_type: z.enum(['odatav2', 'odatav4']).optional(),
   preaudit: looseOptionalBoolean,
@@ -675,6 +679,7 @@ export const SAPActivateSchema = z.object({
       z.object({
         type: z.string(),
         name: z.string(),
+        group: z.string().optional(),
       }),
     )
     .optional(),
@@ -735,6 +740,7 @@ export const SAPDiagnoseSchema = z.object({
     'sql_trace_state',
     'set_sql_trace_state',
     'sql_trace_directory',
+    'authorization_trace',
   ]),
   name: z.string().optional(),
   url: z.string().optional(),
@@ -752,6 +758,7 @@ export const SAPDiagnoseSchema = z.object({
   detailUrl: z.string().optional(),
   errorType: z.string().optional(),
   user: z.string().optional(),
+  authObject: z.string().optional(),
   from: z.string().optional(),
   to: z.string().optional(),
   maxResults: z.coerce.number().optional(),
@@ -759,6 +766,7 @@ export const SAPDiagnoseSchema = z.object({
   includeFullText: looseOptionalBoolean,
   coverage: looseOptionalBoolean,
   sqlOn: looseOptionalBoolean,
+  onlyFailures: looseOptionalBoolean,
   analysis: z.enum(['hitlist', 'statements', 'dbAccesses']).optional(),
   // trace_start / trace_requests (arm a profiler trace, then read it back via action="traces")
   traceUser: z.string().optional(),

@@ -246,11 +246,14 @@ Per scenario:
   - 1.0 if the first tool call matches `optimal`
   - 0.5 if it matches `acceptable`
   - 0.0 if it matches `forbidden` or none of the above
-- **Parameters** (weight 0.4): fraction of `requiredArgs` / `requiredArgKeys`
-  satisfied. Case-insensitive on string values to tolerate ABAP-name
-  casing drift.
+- **Parameters** (weight 0.4): fraction of `requiredArgs`, `requiredArgKeys`, and
+  `argumentPatterns` checks satisfied. String argument patterns can require valid syntax while
+  forbidding known-bad dialect forms without demanding one byte-identical query. Exact string
+  values are case-insensitive to tolerate ABAP-name casing drift.
 - **Overall**: `0.6 * tool + 0.4 * params`.
-- **Passed**: `overall ≥ EVAL_PASS_THRESHOLD` (default 0.5).
+- **Passed**: `overall ≥ EVAL_PASS_THRESHOLD` (default 0.5), plus a perfect parameter score when the
+  scenario sets `requireFullParameters`. Use that flag when syntax or argument correctness is a hard
+  requirement rather than a quality signal.
 
 Aggregate results (per model/backend/run) go to
 `test-results/evals/<timestamp>-<provider>-<model>-<backend>.json`.

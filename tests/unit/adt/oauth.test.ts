@@ -565,14 +565,17 @@ describe('openBrowser', () => {
     expect(execFile).toHaveBeenCalledWith('open', ['https://example.com'], expect.any(Function));
   });
 
-  it('opens browser on Windows using execFile', async () => {
+  it('opens browser on Windows via rundll32, preserving & in the URL (issue #549)', async () => {
     const { execFile } = await import('node:child_process');
     const { platform } = await import('node:os');
     vi.mocked(platform).mockReturnValue('win32');
 
-    await openBrowser('https://example.com');
+    // A real authorize URL has multiple `&` query separators; `cmd /c start` truncated at the first.
+    const url = 'https://x.auth.example/oauth/authorize?response_type=code&client_id=sb-abc&state=xyz';
+    await openBrowser(url);
 
-    expect(execFile).toHaveBeenCalledWith('cmd', ['/c', 'start', '', 'https://example.com'], expect.any(Function));
+    // The whole URL — everything after the first `&` included — reaches the handler as ONE argv arg.
+    expect(execFile).toHaveBeenCalledWith('rundll32', ['url.dll,FileProtocolHandler', url], expect.any(Function));
   });
 
   it('opens browser on Linux using execFile', async () => {

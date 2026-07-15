@@ -46,7 +46,7 @@ SAP user session (per-user)
 
 Create a dual-destination setup in BTP Cockpit (Connectivity → Destinations):
 
-### Shared destination (fallback)
+### Shared destination (startup and mixed API-key calls)
 
 | Property | Value |
 |----------|-------|
@@ -115,16 +115,20 @@ Verify these profile parameters (transaction `/nRZ10`):
 export SAP_BTP_DESTINATION=SAP_TRIAL
 export SAP_BTP_PP_DESTINATION=SAP_TRIAL_PP
 export SAP_PP_ENABLED=true
-# Optional JWT-only strict mode:
-# export SAP_PP_STRICT=true
+# Recommended production topology: accept only JWT-backed per-user tool calls.
+export SAP_PP_STRICT=true
 ```
 
 ### Behavior
 
 - **JWT request** → ARC-1 uses the per-user destination (`SAP_BTP_PP_DESTINATION`), passing the JWT as `X-User-Token`
-- **PP failure + default strict mode** → returns error, no fallback
-- **PP failure + explicit `SAP_PP_STRICT=false`** → falls back to shared destination
-- **API key / non-JWT request** → uses shared destination unless `SAP_PP_STRICT=true` was set explicitly
+- **PP failure** → returns error, no fallback to a different SAP identity
+- **API key / non-JWT request** → rejected because `SAP_PP_STRICT=true` is explicit
+
+For automation that requires API keys, a separate ARC-1 instance with `SAP_PP_ENABLED=false` and a
+least-privileged technical SAP identity is recommended. It is not mandatory: set
+`SAP_PP_STRICT=false` for supported mixed operation, where JWT calls use PP and API-key calls use the
+shared SAP identity.
 
 ## Cloud targets: S/4HANA Public Cloud & BTP ABAP (no Cloud Connector)
 
@@ -152,20 +156,20 @@ identical to the BAS setup, plus ARC-1 configuration), see the dedicated guide:
 > `SAMLAssertion` reuses the SAML trust BAS already established, so it's usually the lower-config path.
 > Either way, keep `SAP_DISABLE_SAML` **unset/false** — never disable SAML on S/4HANA Public Cloud.
 
-!!! warning "Use `SAP_PP_STRICT=false` only for intentional mixed-mode fallback"
-    With `SAP_PP_ENABLED=true`, ARC-1 fails closed by default when per-user PP fails. Setting `SAP_PP_STRICT=false` restores the shared-service-account fallback for JWT PP failures: the request then runs with the technical user's authorizations and SAP audits the technical user, not the human. Keep this only for deployments that intentionally mix fallback shared-client access with PP.
+!!! warning "JWT principal propagation always fails closed"
+    With `SAP_PP_ENABLED=true`, a JWT request never falls back to the shared service account after a PP error. `SAP_PP_STRICT=false` enables supported shared-client access for API-key / non-JWT requests; it does not change the identity of a failed JWT request. Separate PP-only and API-key instances are recommended, not required.
 
 ### All PP-related config
 
 | Flag | Env Var | Default | Description |
 |------|---------|---------|-------------|
 | `--pp-enabled` | `SAP_PP_ENABLED` | `false` | Enable principal propagation |
-| `--pp-strict` | `SAP_PP_STRICT` | `true` when PP is enabled | Fail on JWT PP errors by default. Set explicitly to `false` only for shared-client fallback on PP failure. Set explicitly to `true` only when API-key / non-JWT requests should also be rejected. |
+| `--pp-strict` | `SAP_PP_STRICT` | `true` when PP is enabled | JWT PP errors always fail closed. Explicit `true` gives the recommended strict topology and rejects API-key / non-JWT tool calls. Explicit `false` enables supported mixed mode for non-JWT calls but never enables JWT fallback. |
 | `--pp-allow-shared-cookies` | `SAP_PP_ALLOW_SHARED_COOKIES` | `false` | Escape hatch — allow cookies to coexist with PP (cookies stay on shared client only) |
-| — | `SAP_BTP_DESTINATION` | — | Shared (fallback) destination name |
+| — | `SAP_BTP_DESTINATION` | — | Shared destination for startup work and API-key calls in mixed mode |
 | — | `SAP_BTP_PP_DESTINATION` | — | Per-user PP destination name |
 
-> **Auth safety (SEC-09):** ARC-1 fails fast at startup if `SAP_PP_ENABLED=true` is combined with `SAP_COOKIE_FILE` / `SAP_COOKIE_STRING` — per-user sessions must not inherit a shared cookie. Set `SAP_PP_ALLOW_SHARED_COOKIES=true` only if you accept that the cookie stays on the shared-fallback client. Per-user auth never inherits shared Basic/cookie credentials. See [Coexistence Matrix](enterprise-auth.md#coexistence-matrix).
+> **Auth safety (SEC-09):** ARC-1 fails fast at startup if `SAP_PP_ENABLED=true` is combined with `SAP_COOKIE_FILE` / `SAP_COOKIE_STRING` — per-user sessions must not inherit a shared cookie. Set `SAP_PP_ALLOW_SHARED_COOKIES=true` only if you accept that the cookie stays on the shared client used for API-key calls in mixed mode. Per-user auth never inherits shared Basic/cookie credentials. See [Coexistence Matrix](enterprise-auth.md#coexistence-matrix).
 
 ## Step 5: Test
 
@@ -180,7 +184,9 @@ identical to the BAS setup, plus ARC-1 configuration), see the dedicated guide:
 
 ## Troubleshooting
 
-### PP always falls back to shared user
+### JWT request unexpectedly uses a shared SAP user
+
+Current ARC-1 releases never route a failed JWT principal-propagation request through the shared client. If a request appears under the shared SAP user, first verify that the MCP client actually authenticated with a JWT rather than an API key in supported mixed mode.
 
 1. Verify `SAP_PP_ENABLED=true` is set
 2. Verify `SAP_BTP_PP_DESTINATION` authentication type is `PrincipalPropagation` in BTP Cockpit

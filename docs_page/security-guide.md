@@ -31,7 +31,9 @@ For the full model, scope definitions, API-key profiles, and BTP role mapping, s
 | Enterprise + SAP audit trail | HTTP | OIDC / JWT + Principal Propagation | [OAuth / JWT](oauth-jwt-setup.md) + [PP Setup](principal-propagation-setup.md) |
 | BTP Cloud Foundry | HTTP | XSUAA OAuth | [XSUAA Setup](xsuaa-setup.md) |
 
-When XSUAA is enabled, all three auth methods are active in a fallback chain: XSUAA first, then OIDC, then API key. This allows coexistence of BTP users, external IdP users, and service accounts.
+When XSUAA is enabled, the verifier can chain XSUAA, OIDC, and configured API keys. Separate strict
+PP and API-key instances are the recommended topology. A single mixed instance is also supported:
+set `SAP_PP_STRICT=false` explicitly, so JWT calls use PP and API-key calls use the shared SAP identity.
 
 For the full decision guide and common combinations, see [Authentication Overview](enterprise-auth.md).
 
@@ -120,7 +122,7 @@ Two ARC-1 capabilities can expose business data or execute ad-hoc SQL and requir
 | `SAP_ALLOW_TRANSPORT_WRITES`       | `false` unless CTS needed | Opt-in for transport mutations (`SAPTransport.create`/`release`/`delete`).                           |
 | `SAP_ALLOW_GIT_WRITES`             | `false` unless Git needed | Opt-in for abapGit/gCTS mutations (`clone`/`pull`/`push`/`commit`).                                 |
 | `SAP_DENY_ACTIONS`                 | Use for fine-grained blocks | E.g. `SAPWrite.delete,SAPManage.flp_*` — overrides scope + flag checks.                              |
-| `SAP_PP_STRICT`                    | `true` when PP is enabled | JWT PP failures fail closed by default. Explicit `true` also rejects API-key / non-JWT requests.      |
+| `SAP_PP_STRICT`                    | Explicit `true` for production PP | Keeps the PP instance JWT-only. JWT PP failures always fail closed; explicit `true` also rejects API-key / non-JWT requests. |
 
 ### API-key profiles (non-BTP multi-user)
 
@@ -194,7 +196,7 @@ Scopes are assigned to BTP users via role templates and role collections in the 
 
 ### Principal Propagation
 
-When `SAP_PP_ENABLED=true`, each MCP user's JWT identity flows through to SAP via BTP Destination Service. For on-premise systems this routes through Connectivity Service + Cloud Connector principal propagation; for BTP ABAP Environment it uses a cloud-to-cloud destination such as `OAuth2UserTokenExchange`. SAP sees the real user identity for authorization checks and audit logging. JWT PP failures fail closed by default. Set `SAP_PP_STRICT=true` explicitly only when production API-key / non-JWT requests should also be rejected.
+When `SAP_PP_ENABLED=true`, each MCP user's JWT identity flows through to SAP via BTP Destination Service. For on-premise systems this routes through Connectivity Service + Cloud Connector principal propagation; for BTP ABAP Environment it uses a cloud-to-cloud destination such as `OAuth2UserTokenExchange`. SAP sees the real user identity for authorization checks and audit logging. JWT PP failures always fail closed. Separate strict PP and API-key instances are recommended. With explicit `SAP_PP_STRICT=false`, one supported instance can accept both: JWT calls use PP and API-key calls use the shared technical SAP identity.
 
 ### Destination Service
 

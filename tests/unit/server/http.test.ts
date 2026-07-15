@@ -11,16 +11,16 @@ import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 // profiles to the right scopes/clientId and rejects unknown tokens — i.e. that
 // the adoption preserves ARC-1's observable api-key contract.
 describe('createStandardVerifier (api-key wiring)', () => {
-  it('accepts a viewer API key and returns read-only auth info', async () => {
+  it('accepts a JWT-shaped viewer API key and marks it as API-key auth', async () => {
     const verifier = await createStandardVerifier({
       ...DEFAULT_CONFIG,
-      apiKeys: [{ key: 'viewer-secret', profile: 'viewer' }],
+      apiKeys: [{ key: 'viewer.secret.value', profile: 'viewer' }],
     });
 
     const before = Math.floor(Date.now() / 1000);
-    const auth = await verifier('viewer-secret');
+    const auth = await verifier('viewer.secret.value');
 
-    expect(auth.token).toBe('viewer-secret');
+    expect(auth.token).toBe('viewer.secret.value');
     expect(auth.clientId).toBe('api-key:viewer');
     expect(auth.scopes).toEqual(['read']);
     expect(auth.expiresAt).toBeGreaterThanOrEqual(before + 365 * 24 * 60 * 60 - 1);

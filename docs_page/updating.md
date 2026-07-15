@@ -1,5 +1,41 @@
 # Updating ARC-1
 
+## Cache warmup removal
+
+ARC-1 no longer performs a startup TADIR scan or keeps repository-wide node/edge indexes. The normal request-driven memory/SQLite cache remains, and `SAPContext(action="usages")` now queries SAP's live where-used index with the current caller's identity.
+
+Before upgrading, remove `ARC1_CACHE_WARMUP`, `ARC1_CACHE_WARMUP_PACKAGES`, `--cache-warmup`, and `--cache-warmup-packages`. ARC-1 deliberately refuses to start when any retired setting is present, including `ARC1_CACHE_WARMUP=false`, so stale deployment configuration is visible instead of silently ignored.
+
+Existing SQLite files need no manual migration. On first open, ARC-1 drops the retired `nodes` and `edges` tables while preserving sources, dependency graphs, released API metadata, and function-group mappings.
+
+## v0.9.26 — JWT Principal Propagation Always Fails Closed
+
+ARC-1 no longer changes a JWT-authenticated request to the shared SAP technical identity when
+principal propagation fails. This closes an identity and audit-boundary gap in BTP Cloud Foundry
+deployments.
+
+### Who needs to act
+
+- Deployments with `SAP_PP_ENABLED=true` that set `SAP_PP_STRICT=false` to fall back after a JWT
+  destination, token-exchange, or user-mapping error must fix that PP configuration before updating.
+- Custom deployments with PP enabled but no Destination Service runtime configuration will now return
+  an MCP tool error for JWT requests instead of silently using the shared client.
+- API-key / non-JWT requests still use the shared client unless `SAP_PP_STRICT=true` is set explicitly.
+- The shipped BTP `mta.yaml` now sets `SAP_PP_STRICT=true`, making new and updated base-MTA
+  deployments PP-only by default. Existing combined deployments can preserve supported mixed
+  operation by setting `SAP_PP_STRICT=false` explicitly before updating; separating API-key
+  automation into a non-PP instance remains the recommendation, not a requirement.
+
+The application still starts and `/health` remains successful when a runtime-only PP mapping is broken.
+Before rolling the version into production, make one JWT-authenticated SAP read in staging and verify
+that SAP records the expected human user. Do not use `SAP_PP_STRICT=false` as a JWT fallback switch;
+it now controls only whether mixed API-key / non-JWT access remains available.
+
+The recommended production topology is one SAP identity model per ARC-1 instance: strict PP with
+JWT/XSUAA for human users, and a separate non-PP instance with a least-privileged technical identity
+for API-key automation. Mixed mode remains fully supported when operators intentionally choose one
+instance for both identity models.
+
 ## v0.7 — Authorization Refactor (breaking change)
 
 ARC-1 v0.7 rewrites the authorization layer around a **single source of truth** (`ACTION_POLICY`) with **positive opt-in** safety flags and **per-user scopes** that work for BTP, OIDC, and API-key auth modes consistently. **This is breaking — old env vars will error at startup**, pointing you here.
@@ -78,7 +114,7 @@ See the full [Authorization & Roles](authorization.md) doc for the complete mode
 ## Before you update
 
 1. **Check the changelog** — review [CHANGELOG.md](https://github.com/arc-mcp/arc-1/blob/main/CHANGELOG.md) or the [Releases page](https://github.com/arc-mcp/arc-1/releases) for breaking changes.
-2. **Pin to a version** — in production, use exact version tags (for example `:0.9.25`), never `:latest`. Prevents surprise upgrades. <!-- x-release-please-version -->
+2. **Pin to a version** — in production, use exact version tags (for example `:0.9.27`), never `:latest`. Prevents surprise upgrades. <!-- x-release-please-version -->
 3. **Test first** — update a dev/staging instance before production. Verify MCP clients still connect and tools work as expected.
 4. **Read the startup auth line after upgrade** — a drift-free instance will log the same `auth: MCP=[...] SAP=[...]` summary before and after. If it's different, the upgrade changed something you didn't expect.
 
@@ -94,10 +130,10 @@ See the full [Authorization & Roles](authorization.md) doc for the complete mode
 npx arc-1@latest
 
 # Pinned
-npx arc-1@0.9.25
+npx arc-1@0.9.27
 
 # Global install
-npm install -g arc-1@0.9.25
+npm install -g arc-1@0.9.27
 ```
 <!-- x-release-please-end -->
 
@@ -111,7 +147,7 @@ If you pin in MCP client config, update the `args`:
 
 <!-- x-release-please-start-version -->
 ```json
-{ "command": "npx", "args": ["-y", "arc-1@0.9.25"] }
+{ "command": "npx", "args": ["-y", "arc-1@0.9.27"] }
 ```
 <!-- x-release-please-end -->
 
@@ -122,7 +158,7 @@ If you pin in MCP client config, update the `args`:
 <!-- x-release-please-start-version -->
 ```bash
 # 1. Pull the new image
-docker pull ghcr.io/arc-mcp/arc-1:0.9.25
+docker pull ghcr.io/arc-mcp/arc-1:0.9.27
 
 # 2. Stop & remove the running container
 docker stop arc1 && docker rm arc1
@@ -130,7 +166,7 @@ docker stop arc1 && docker rm arc1
 # 3. Start with the new image (same env vars / config)
 docker run -d --name arc1 -p 8080:8080 \
   --env-file .env \
-  ghcr.io/arc-mcp/arc-1:0.9.25
+  ghcr.io/arc-mcp/arc-1:0.9.27
 
 # 4. Verify
 docker logs arc1 | head -20
@@ -160,7 +196,7 @@ CF supports rolling updates natively — no manual stop/start.
 applications:
   - name: arc1-mcp-server
     docker:
-      image: ghcr.io/arc-mcp/arc-1:0.9.25   # ← update this
+      image: ghcr.io/arc-mcp/arc-1:0.9.27   # ← update this
 ```
 <!-- x-release-please-end -->
 
@@ -219,7 +255,7 @@ cf restage arc1-mcp-server
 
 After this the signing key no longer tracks the rotating `clientsecret`, so no deploy invalidates client registrations. See [Stable DCR signing key](xsuaa-setup.md#stable-dcr-signing-key-recommended).
 
-Other restart side effects are benign: in-flight requests during the instance swap are retried by the client (a `--strategy rolling` push avoids even that), and the on-disk SQLite source cache is preserved and ETag-revalidated — no cold-cache penalty.
+Other restart side effects are benign: in-flight requests during the instance swap are retried by the client (a `--strategy rolling` push avoids even that). Deployments that explicitly use `ARC1_CACHE=sqlite` preserve and ETag-revalidate the on-disk source cache, so they avoid a cold-cache penalty.
 
 ---
 

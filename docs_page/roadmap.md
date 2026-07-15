@@ -2131,7 +2131,7 @@ The following features are tracked but not planned for near-term implementation.
 - Per-request ADT client creation in `src/server/server.ts` — `createPerUserClient()` creates a fresh ADT client for each authenticated user
 - `SAP-Connectivity-Authentication` header injection in `src/adt/http.ts` — carries SAML assertion to Cloud Connector
 - `SAP_PP_ENABLED=true` config flag — opt-in for principal propagation
-- Fail-closed PP default — if per-user lookup fails, return an error unless `SAP_PP_STRICT=false` explicitly allows shared-service-account fallback
+- Fail-closed PP boundary — if a per-user JWT lookup fails, return an error without changing to the shared service account
 - No basic auth when PP active — username/password cleared, user identity from SAML assertion only
 - 7 unit tests (5 BTP PP destination + 2 HTTP header injection)
 
@@ -2550,7 +2550,7 @@ The VS Code client-side issue — [microsoft/vscode#314715](https://github.com/m
 ---
 
 <!-- x-release-please-start-version -->
-## Current State (v0.9.25 — TypeScript)
+## Current State (v0.9.27 — TypeScript)
 <!-- x-release-please-end -->
 
 | Area | Status |
@@ -2577,13 +2577,13 @@ The VS Code client-side issue — [microsoft/vscode#314715](https://github.com/m
 | OAuth Security | RFC 9700 compliance: state+PKCE, loopback binding, audience validation, stateless DCR and XSUAA callback-state proxy |
 | Hyperfocused Mode | Single `SAP` tool (~200 tokens) — competitive parity with VSP |
 | Method-Level Surgery | `edit_method` in SAPWrite, `list_methods`/`get_method` in SAPContext (95% token reduction) |
-| Runtime Diagnostics | SAPDiagnose — ST22 dumps, ABAP profiler traces, SM02 messages, IWFND gateway errors, ABAP Unit with coverage, OData `sap-statistics` perf, CDS Show-SQL, and ST05 trace state/directory |
+| Runtime Diagnostics | SAPDiagnose — ST22 dumps, ABAP profiler traces, SM02 messages, IWFND gateway errors, ABAP Unit with coverage, OData `sap-statistics` perf, CDS Show-SQL, ST05 trace state/directory, and on-prem STUSERTRACE authorization trace (`SUAUTHVALTRC`) |
 | DDIC Completeness | Structures/TABL (read/write plus `SAPContext` include+append hierarchy), TTYP, domains, data elements, DDLX, transactions, BOR objects, T100 messages |
 | RAP CRUD | DDLS, DDLX, BDEF, SRVD, SRVB write |
 | Context Compression | SAPContext with AST-based dependency extraction (7-30x reduction) |
 | Where-Used Analysis | Scope-based where-used in SAPNavigate (#38) |
 | Class Hierarchy | SAPNavigate hierarchy action via SEOMETAREL SQL |
-| Object Caching | SQLite + memory cache with on-demand + pre-warmer support (#31) |
+| Object Caching | SQLite + memory cache with request-driven ETag revalidation (#31) |
 | LLM Search UX | Auto-transliteration, field-name hints, cache indicators |
 | HTTP Client | Native fetch + undici (replaced axios) (#35) |
 | Test Coverage | 4,101 passing unit tests (810 Vitest suites, local Node 22 run on 2026-06-26) + 279-test default integration profile; E2E/BTP/slow SAP profiles are CI/manual; coverage telemetry is informational |
@@ -2610,7 +2610,7 @@ The VS Code client-side issue — [microsoft/vscode#314715](https://github.com/m
 | Principal Propagation | SEC-01+SEC-02: Per-user ADT client via BTP Destination Service + Cloud Connector for on-premise SAP | Code complete (2026-03-27) |
 | Hyperfocused Mode | Single `SAP` tool (~200 tokens) — competitive parity with VSP | Complete (2026-04-01) |
 | Method-Level Surgery | `edit_method`, `list_methods`, `get_method` — 95% token reduction; PR-D (2026-05-10) extends `edit_method` to local handler classes inside CCDEF/CCIMP (`lhc_*`/`lcl_*`/`ltc_*` auto-routing + `<localclass>~<method>` qualified specifiers); class-section surgery (2026-05-27, issue #303) adds `edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method` — token-efficient edits to a global class's DEFINITION block without re-sending `/source/main`, backed by SAP's `objectstructure` endpoint, with client-side refuse-policy that points at `add_method`/`delete_method` when a diff would produce a non-activatable draft; `change_method_visibility` (2026-05-29, PR-author feedback) moves a method between sections while preserving the body | Complete (2026-04-01); PR-D 2026-05-10; class-section surgery 2026-05-27; change_method_visibility 2026-05-29 |
-| Runtime Diagnostics | SAPDiagnose — ST22 dumps, ABAP profiler traces, SM02 messages, IWFND gateway errors, ABAP Unit with coverage, OData `sap-statistics` perf, CDS Show-SQL, and ST05 trace state/directory | Complete (2026-04-01; expanded through 2026-06-25) |
+| Runtime Diagnostics | SAPDiagnose — ST22 dumps, ABAP profiler traces, SM02 messages, IWFND gateway errors, ABAP Unit with coverage, OData `sap-statistics` perf, CDS Show-SQL, ST05 trace state/directory, and on-prem STUSERTRACE authorization trace (`SUAUTHVALTRC`) | Complete (2026-04-01; expanded through 2026-07-09) |
 | DDIC Completeness | FEAT-04: DOMA, DTEL, DDLX, TRAN, BOR, T100, variants, TTYP, and TABL structure context (TABL covers transparent tables and DDIC structures since Model B; `SAPContext` adds include+append hierarchy in 2026-06) | Complete (2026-04-01; expanded through 2026-06-26) |
 | DDIC Domain/Data Element Write | FEAT-13: DOMA/DTEL create, update, delete, batch_create in SAPWrite | Complete (2026-04-12) |
 | RAP CRUD | DDLS/DDLX/BDEF/SRVD/SRVB write, batch activation | Complete (2026-04-14) |
@@ -2619,7 +2619,7 @@ The VS Code client-side issue — [microsoft/vscode#314715](https://github.com/m
 | BTP ABAP Environment | Local OAuth 2.0 browser login plus deployed per-user destination path | Complete (2026-04-01; destination guidance updated 2026-06) |
 | Where-Used Analysis | FEAT-01: Scope-based where-used in SAPNavigate | Complete (2026-04-04, PR #38) |
 | Enhanced Abaplint | System-aware cloud/on-prem presets, pre-write validation, auto-fix | Complete (2026-04-04, PR #37) |
-| Object Caching | SQLite + memory cache with on-demand + pre-warmer support | Complete (2026-04-04, PR #31) |
+| Object Caching | SQLite + memory cache with request-driven ETag revalidation | Complete (2026-04-04, PR #31; startup warmup retired 2026-07) |
 | HTTP Client Migration | Replaced axios with native fetch + undici | Complete (2026-04-04, PR #35) |
 | Two-Dimensional Auth | Scopes x roles x safety config, SEC-06 expanded | Complete (2026-04-07, PR #48) |
 | Zod v4 Validation | Runtime input validation for all MCP tool inputs | Complete (2026-04-08, PR #52) |

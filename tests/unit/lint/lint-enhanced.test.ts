@@ -171,7 +171,7 @@ ENDCLASS.`;
     it('returns Config with Cloud version for BTP', () => {
       const config = buildLintConfig({ systemType: 'btp' });
       expect(config).toBeInstanceOf(Config);
-      expect(config.get().syntax.version).toBe('Cloud');
+      expect(config.get().syntax.version).toEqual({ release: 'Newest', language: 'Cloud' });
     });
 
     it('returns Config with mapped version for on-prem release', () => {

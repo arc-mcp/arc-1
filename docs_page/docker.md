@@ -533,12 +533,12 @@ when a new `ghcr.io/arc-mcp/arc-1` image tag is published.
    warning. The bundled `manifest.yml` / `mta.yaml` ship `"false"`; keep that
    default on CA-signed landscapes.
 
-7. **The SQLite cache stores SAP source in cleartext.** In HTTP mode the cache
-   defaults to `sqlite` at `.arc1-cache.db` (full ABAP source, unencrypted), and a
-   mounted volume persists it. ARC-1 creates and repairs cache DB and file audit
-   sink files with owner-only permissions (`0600`), but this is not encryption. For
-   IP-sensitive landscapes set `ARC1_CACHE=memory` or `none`, or use an encrypted
-   volume.
+7. **The SQLite cache stores SAP source in cleartext.** The default `auto` cache is
+   in-memory, but explicitly setting `ARC1_CACHE=sqlite` creates `.arc1-cache.db`
+   with full ABAP source, unencrypted, and a mounted volume persists it. ARC-1
+   creates and repairs cache DB and file audit sink files with owner-only permissions
+   (`0600`), but this is not encryption. For IP-sensitive landscapes keep
+   `ARC1_CACHE=auto`/`memory` or `none`, or use an encrypted volume.
 
 ---
 

@@ -3,20 +3,9 @@ import os from 'node:os';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { CachedDepGraph, CacheNode } from '../../../src/cache/cache.js';
+import type { CachedDepGraph } from '../../../src/cache/cache.js';
 import { hashSource } from '../../../src/cache/cache.js';
 import { SqliteCache } from '../../../src/cache/sqlite.js';
-
-function makeNode(id: string, pkg = '$TMP'): CacheNode {
-  return {
-    id,
-    objectType: 'CLAS',
-    objectName: id,
-    packageName: pkg,
-    cachedAt: new Date().toISOString(),
-    valid: true,
-  };
-}
 
 function fileMode(filePath: string): number {
   return fs.statSync(filePath).mode & 0o777;
@@ -32,18 +21,6 @@ describe('SqliteCache', () => {
 
   afterEach(() => {
     cache.close();
-  });
-
-  it('stores and retrieves a node', () => {
-    cache.putNode(makeNode('ZCL_TEST'));
-    const node = cache.getNode('ZCL_TEST');
-    expect(node).not.toBeNull();
-    expect(node?.objectName).toBe('ZCL_TEST');
-    expect(node?.valid).toBe(true);
-  });
-
-  it('returns null for missing node', () => {
-    expect(cache.getNode('MISSING')).toBeNull();
   });
 
   it('creates file-backed cache databases with private file permissions', () => {
@@ -74,34 +51,6 @@ describe('SqliteCache', () => {
     }
   });
 
-  it('finds nodes by package (case-insensitive)', () => {
-    cache.putNode(makeNode('A', '$TMP'));
-    cache.putNode(makeNode('B', '$tmp'));
-    cache.putNode(makeNode('C', 'ZOTHER'));
-    const nodes = cache.getNodesByPackage('$TMP');
-    expect(nodes).toHaveLength(2);
-  });
-
-  it('invalidates a node', () => {
-    cache.putNode(makeNode('ZCL_TEST'));
-    cache.invalidateNode('ZCL_TEST');
-    const node = cache.getNode('ZCL_TEST');
-    expect(node?.valid).toBe(false);
-  });
-
-  it('stores and retrieves edges', () => {
-    cache.putEdge({
-      fromId: 'A',
-      toId: 'B',
-      edgeType: 'CALLS',
-      discoveredAt: new Date().toISOString(),
-      valid: true,
-    });
-    const edges = cache.getEdgesFrom('A');
-    expect(edges).toHaveLength(1);
-    expect(edges[0]?.toId).toBe('B');
-  });
-
   it('stores and retrieves API objects', () => {
     cache.putApi({
       name: 'CL_ABAP_REGEX',
@@ -115,26 +64,15 @@ describe('SqliteCache', () => {
   });
 
   it('clears all data', () => {
-    cache.putNode(makeNode('A'));
     cache.putApi({ name: 'X', type: 'CLAS', releaseState: 'released' });
     cache.clear();
-    expect(cache.stats().nodeCount).toBe(0);
     expect(cache.stats().apiCount).toBe(0);
   });
 
   it('returns correct stats', () => {
-    cache.putNode(makeNode('A'));
-    cache.putNode(makeNode('B'));
-    cache.putEdge({ fromId: 'A', toId: 'B', edgeType: 'USES', discoveredAt: '', valid: true });
+    cache.putApi({ name: 'X', type: 'CLAS', releaseState: 'released' });
     const stats = cache.stats();
-    expect(stats.nodeCount).toBe(2);
-    expect(stats.edgeCount).toBe(1);
-  });
-
-  it('stores metadata as JSON', () => {
-    cache.putNode({ ...makeNode('A'), metadata: { foo: 'bar', count: 42 } });
-    const node = cache.getNode('A');
-    expect(node?.metadata).toEqual({ foo: 'bar', count: 42 });
+    expect(stats.apiCount).toBe(1);
   });
 
   it('stores and retrieves source with active version by default', () => {
@@ -238,6 +176,57 @@ describe('SqliteCache', () => {
     fs.unlinkSync(dbPath);
   });
 
+  it('retires repository graph tables while preserving normal cache data', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'arc1-retire-graph-'));
+    const dbPath = path.join(dir, 'cache.db');
+    const source = 'CLASS zcl_keep DEFINITION. ENDCLASS.';
+    const sourceHash = hashSource(source);
+    const rawDb = new Database(dbPath);
+    rawDb.exec(`
+      CREATE TABLE nodes (id TEXT PRIMARY KEY, object_type TEXT, object_name TEXT, package_name TEXT, cached_at TEXT, valid INTEGER);
+      CREATE TABLE edges (from_id TEXT, to_id TEXT, edge_type TEXT, discovered_at TEXT, valid INTEGER, PRIMARY KEY (from_id, to_id, edge_type));
+      CREATE TABLE sources (cache_key TEXT PRIMARY KEY, object_type TEXT NOT NULL, object_name TEXT NOT NULL, version TEXT NOT NULL, source TEXT NOT NULL, hash TEXT NOT NULL, etag TEXT, cached_at TEXT NOT NULL);
+      CREATE TABLE dep_graphs (source_hash TEXT PRIMARY KEY, object_name TEXT NOT NULL, object_type TEXT NOT NULL, contracts TEXT NOT NULL, cached_at TEXT NOT NULL);
+    `);
+    rawDb
+      .prepare('INSERT INTO nodes VALUES (?, ?, ?, ?, ?, ?)')
+      .run('CLAS:ZCL_OLD', 'CLAS', 'ZCL_OLD', '$TMP', '2026-01-01', 1);
+    rawDb.prepare('INSERT INTO edges VALUES (?, ?, ?, ?, ?)').run('ZCL_OLD', 'ZCL_KEEP', 'USES', '2026-01-01', 1);
+    rawDb
+      .prepare('INSERT INTO sources VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run('CLAS:ZCL_KEEP:active', 'CLAS', 'ZCL_KEEP', 'active', source, sourceHash, 'etag-1', '2026-01-01');
+    rawDb
+      .prepare('INSERT INTO dep_graphs VALUES (?, ?, ?, ?, ?)')
+      .run(sourceHash, 'ZCL_KEEP', 'CLAS', '[]', '2026-01-01');
+    rawDb.close();
+
+    let migrated: SqliteCache | undefined;
+    let reopened: SqliteCache | undefined;
+    try {
+      migrated = new SqliteCache(dbPath);
+      expect(migrated.getSource('CLAS', 'ZCL_KEEP')?.source).toBe(source);
+      expect(migrated.getDepGraph(sourceHash)?.objectName).toBe('ZCL_KEEP');
+      const tables = (migrated as unknown as { db: Database.Database }).db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+        .all()
+        .map((row) => (row as { name: string }).name);
+      expect(tables).not.toContain('nodes');
+      expect(tables).not.toContain('edges');
+      migrated.close();
+      migrated = undefined;
+
+      reopened = new SqliteCache(dbPath);
+      expect(reopened.getSource('CLAS', 'ZCL_KEEP')?.etag).toBe('etag-1');
+      expect(reopened.getDepGraph(sourceHash)).not.toBeNull();
+      reopened.close();
+      reopened = undefined;
+    } finally {
+      migrated?.close();
+      reopened?.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('stores and retrieves a dependency graph', () => {
     const graph: CachedDepGraph = {
       sourceHash: 'abc123',
@@ -272,24 +261,7 @@ describe('SqliteCache', () => {
     expect(cache.getFuncGroup('Z_MY_FUNC')).toBe('Z_MY_GROUP');
   });
 
-  it('retrieves reverse edges with getEdgesTo', () => {
-    cache.putEdge({ fromId: 'A', toId: 'C', edgeType: 'CALLS', discoveredAt: '', valid: true });
-    cache.putEdge({ fromId: 'B', toId: 'C', edgeType: 'USES', discoveredAt: '', valid: true });
-    cache.putEdge({ fromId: 'A', toId: 'D', edgeType: 'CALLS', discoveredAt: '', valid: true });
-
-    const edges = cache.getEdgesTo('C');
-    expect(edges).toHaveLength(2);
-    expect(edges.map((e) => e.fromId).sort()).toEqual(['A', 'B']);
-  });
-
-  it('returns empty array for no reverse edges', () => {
-    expect(cache.getEdgesTo('MISSING')).toEqual([]);
-  });
-
   it('returns correct stats including sourceCount and contractCount', () => {
-    cache.putNode(makeNode('A'));
-    cache.putNode(makeNode('B'));
-    cache.putEdge({ fromId: 'A', toId: 'B', edgeType: 'USES', discoveredAt: '', valid: true });
     cache.putSource('CLAS', 'ZCL_A', 'source a');
     cache.putSource('PROG', 'ZTEST', 'source b');
     cache.putDepGraph({
@@ -300,25 +272,11 @@ describe('SqliteCache', () => {
       cachedAt: '',
     });
     const stats = cache.stats();
-    expect(stats.nodeCount).toBe(2);
-    expect(stats.edgeCount).toBe(1);
     expect(stats.sourceCount).toBe(2);
     expect(stats.contractCount).toBe(1);
   });
 
-  it('rolls back transaction writes when the callback throws', () => {
-    expect(() =>
-      cache.transaction(() => {
-        cache.putNode(makeNode('ROLLBACK'));
-        throw new Error('boom');
-      }),
-    ).toThrow('boom');
-
-    expect(cache.getNode('ROLLBACK')).toBeNull();
-  });
-
   it('clears all data including sources, dep graphs, and func groups', () => {
-    cache.putNode(makeNode('A'));
     cache.putApi({ name: 'X', type: 'CLAS', releaseState: 'released' });
     cache.putSource('CLAS', 'ZCL_A', 'source');
     cache.putDepGraph({
@@ -331,7 +289,6 @@ describe('SqliteCache', () => {
     cache.putFuncGroup('Z_FUNC', 'Z_GROUP');
     cache.clear();
 
-    expect(cache.stats().nodeCount).toBe(0);
     expect(cache.stats().apiCount).toBe(0);
     expect(cache.stats().sourceCount).toBe(0);
     expect(cache.stats().contractCount).toBe(0);

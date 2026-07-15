@@ -1,13 +1,36 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
 
 const WORKFLOW = readFileSync(join(import.meta.dirname, '../../../.github/workflows/test.yml'), 'utf8');
+
+type WorkflowStep = {
+  env?: Record<string, unknown>;
+  run?: unknown;
+};
+
+type WorkflowJob = {
+  steps?: WorkflowStep[];
+};
+
+type Workflow = {
+  jobs?: Record<string, WorkflowJob>;
+};
+
+const PARSED_WORKFLOW = parse(WORKFLOW) as Workflow;
 
 function jobBlock(jobName: string): string {
   const match = WORKFLOW.match(new RegExp(`\\n  ${jobName}:\\n([\\s\\S]*?)(?=\\n  [a-zA-Z0-9_-]+:\\n|\\n$)`));
   if (!match) throw new Error(`Job ${jobName} not found`);
   return match[1];
+}
+
+function runScripts(): string[] {
+  return Object.values(PARSED_WORKFLOW.jobs ?? {}).flatMap((job) => {
+    if (!Array.isArray(job.steps)) return [];
+    return job.steps.map((step) => step.run).filter((run): run is string => typeof run === 'string');
+  });
 }
 
 describe('test workflow gate behavior', () => {
@@ -40,6 +63,19 @@ describe('test workflow gate behavior', () => {
     expect(e2eJob).toContain("needs.gate.result == 'success'");
     expect(e2eJob).toContain("needs.test.result == 'success'");
     expect(e2eJob).toContain("needs.sap-run-guard.outputs.current == 'true'");
+  });
+
+  it('does not interpolate untrusted PR titles directly into shell scripts', () => {
+    const scripts = runScripts();
+
+    expect(scripts.length).toBeGreaterThan(0);
+    for (const script of scripts) {
+      expect(script).not.toContain('github.event.pull_request.title');
+    }
+
+    const gateJob = jobBlock('gate');
+    expect(gateJob).toContain('PR_TITLE: $' + '{{ github.event.pull_request.title }}');
+    expect(gateJob).toContain('echo "pr_title=$' + '{PR_TITLE}"');
   });
 
   it('serializes only SAP-heavy jobs repository-wide without cancellation', () => {

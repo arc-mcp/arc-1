@@ -35,6 +35,11 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import {
+  matchesExpectedToolCall as matches,
+  scoreExpectedToolCallParameters as paramScore,
+  scenarioPasses,
+} from '../expected-call.js';
 import type { EvalScenario, LLMToolCall, ScenarioScore } from '../types.js';
 
 /**
@@ -305,7 +310,7 @@ export async function runScenarioWithCursor(
     totalTokens: run.totalTokens,
     durationMs: run.durationMs,
     explanation,
-    passed: overallScore >= options.passThreshold,
+    passed: scenarioPasses(scenario, overallScore, parameterScore, options.passThreshold),
   };
 }
 
@@ -379,53 +384,6 @@ function scoreArcCalls(
     parameterScore: 0,
     explanation: `Wrong ARC-1 tool: ${first.name}(${JSON.stringify(first.arguments)}). Expected: ${scenario.optimal.map((e) => e.tool).join(' or ')}`,
   };
-}
-
-function matches(
-  actual: LLMToolCall,
-  expected: { tool: string; requiredArgs?: Record<string, unknown>; requiredArgKeys?: string[] },
-): boolean {
-  if (actual.name !== expected.tool) return false;
-  if (expected.requiredArgs) {
-    for (const [key, value] of Object.entries(expected.requiredArgs)) {
-      const actualValue = actual.arguments[key];
-      if (typeof value === 'string' && typeof actualValue === 'string') {
-        if (value.toUpperCase() !== actualValue.toUpperCase()) return false;
-      } else if (actualValue !== value) {
-        return false;
-      }
-    }
-  }
-  if (expected.requiredArgKeys) {
-    for (const key of expected.requiredArgKeys) {
-      if (!(key in actual.arguments)) return false;
-    }
-  }
-  return true;
-}
-
-function paramScore(
-  actual: LLMToolCall,
-  expected: { requiredArgs?: Record<string, unknown>; requiredArgKeys?: string[] },
-): number {
-  const checks: boolean[] = [];
-  if (expected.requiredArgs) {
-    for (const [key, value] of Object.entries(expected.requiredArgs)) {
-      const actualValue = actual.arguments[key];
-      if (typeof value === 'string' && typeof actualValue === 'string') {
-        checks.push(value.toUpperCase() === actualValue.toUpperCase());
-      } else {
-        checks.push(actualValue === value);
-      }
-    }
-  }
-  if (expected.requiredArgKeys) {
-    for (const key of expected.requiredArgKeys) {
-      checks.push(key in actual.arguments);
-    }
-  }
-  if (checks.length === 0) return 1.0;
-  return checks.filter(Boolean).length / checks.length;
 }
 
 /** Verify cursor-agent exists and the user is logged in. */

@@ -1726,7 +1726,10 @@ describe('AdtHttpClient', () => {
       await client.get('/sap/bc/adt/discovery');
 
       // Inspect the fetch call: the Cookie header must contain the reloaded value.
-      const headers = (mockFetch.mock.calls[0]?.[1] as RequestInit).headers as Record<string, string>;
+      const firstCall = mockFetch.mock.calls[0];
+      expect(firstCall).toBeDefined();
+      if (!firstCall) throw new Error('Expected a fetch call');
+      const headers = (firstCall[1] as RequestInit).headers as Record<string, string>;
       expect(headers.Cookie).toContain('MYSAPSSO2=fresh-value');
       // After reload, the cleared flag is reset.
       expect((client as any).cookiesCleared).toBe(false);
@@ -1949,7 +1952,10 @@ describe('AdtHttpClient', () => {
       client.markCookiesStale();
       await client.get('/sap/bc/adt/discovery');
 
-      const headers = (mockFetch.mock.calls[0]?.[1] as RequestInit).headers as Record<string, string>;
+      const firstCall = mockFetch.mock.calls[0];
+      expect(firstCall).toBeDefined();
+      if (!firstCall) throw new Error('Expected a fetch call');
+      const headers = (firstCall[1] as RequestInit).headers as Record<string, string>;
       // Only the fresh value from the file — no stale-config, no stale-jar.
       expect(headers.Cookie).toBe('MYSAPSSO2=fresh-from-file');
       expect(headers.Cookie).not.toContain('stale-config');

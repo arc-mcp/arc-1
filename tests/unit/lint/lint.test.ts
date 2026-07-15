@@ -218,14 +218,18 @@ define view ZI_TEST as select from ztable {
   });
 
   describe('validateBeforeWrite — 8xx releases beyond abaplint ceiling demote parse errors', () => {
-    // ABAP Platform 2025 (SAP_BASIS 816) introduces syntax abaplint's v758 grammar cannot
-    // parse (CDS `define table entity`, `READ TABLE ... WHERE`, ...). On such releases the
-    // parse error must NOT block the write — it is demoted to a non-blocking warning and
-    // SAP-side activation becomes the definitive syntax check. On supported releases (<=758)
-    // it still blocks, so genuine syntax errors are still caught pre-write.
-    const tableEntity = `define table entity ZTE_TEST {
-  key id : abap.int4;
-  name : abap.char(30);
+    // abaplint's grammar ceiling is v758 (ABAPLINT_MAX_RELEASE). On releases beyond it,
+    // abaplint may reject newer syntax it cannot yet parse (`READ TABLE ... WHERE`, RAP
+    // keywords, ...); those parse errors must NOT block the write — they are demoted to a
+    // non-blocking warning and SAP-side activation becomes the definitive syntax check. On
+    // supported releases (<=758) they still block, so genuine syntax errors are still caught
+    // pre-write. The demote is purely release-driven (see config-builder `parserSeverity`),
+    // so the CDS case is exercised with an invalid DDL snippet that abaplint reliably reports
+    // as a cds_parser_error regardless of grammar version (newer abaplint now parses valid
+    // constructs like `define table entity` that older grammars rejected).
+    const invalidCds = `define view entity ZTE_TEST as select from spfli {
+  key carrid,
+  connid :
 }`;
     const readTableWhere = `CLASS zcl_t DEFINITION PUBLIC.
   PUBLIC SECTION.
@@ -238,8 +242,8 @@ CLASS zcl_t IMPLEMENTATION.
   ENDMETHOD.
 ENDCLASS.`;
 
-    it('does NOT block a CDS table entity on release 816 (cds_parser_error demoted to warning)', () => {
-      const result = validateBeforeWrite(tableEntity, 'zte_test.ddls.asddls', {
+    it('does NOT block a CDS parse error on release 816 (cds_parser_error demoted to warning)', () => {
+      const result = validateBeforeWrite(invalidCds, 'zte_test.ddls.asddls', {
         abapRelease: '816',
         systemType: 'onprem',
       });
@@ -249,7 +253,7 @@ ENDCLASS.`;
     });
 
     it('still blocks a CDS parse error on a supported release (758)', () => {
-      const result = validateBeforeWrite(tableEntity, 'zte_test.ddls.asddls', {
+      const result = validateBeforeWrite(invalidCds, 'zte_test.ddls.asddls', {
         abapRelease: '758',
         systemType: 'onprem',
       });

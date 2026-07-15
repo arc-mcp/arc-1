@@ -12,7 +12,7 @@ describe('Config Builder', () => {
 
     it('uses Cloud version for BTP system type', () => {
       const config = buildLintConfig({ systemType: 'btp' });
-      expect(config.get().syntax.version).toBe('Cloud');
+      expect(config.get().syntax.version).toEqual({ release: 'Newest', language: 'Cloud' });
     });
 
     it('uses mapped version for on-prem with release', () => {

@@ -162,7 +162,7 @@ Suggestions that should become GitHub issues for the ARC-1 project:
 ### 3c. For the User (Workflow Improvements)
 
 Suggestions for the user's workflow:
-- "Consider enabling cache warmup for large codebases"
+- "Provide the object type for live usage lookups to avoid an extra resolution call"
 - "Use the explain-abap-code skill first to understand objects before modifying them"
 - "Provide object type when possible to avoid search round-trips"
 
@@ -290,7 +290,7 @@ Use this reference to assess whether the LLM used the right tools. This is a con
 
 ### Context & Navigation
 - `SAPContext action=deps` — dependency graph (preferred over manual reads)
-- `SAPContext action=usages` — reverse dependencies (needs cache warmup)
+- `SAPContext action=usages` — live reverse dependencies from SAP
 - `SAPNavigate action=definition` — go-to-definition (needs URI + line/col + source)
 - `SAPNavigate action=references` — where-used
 

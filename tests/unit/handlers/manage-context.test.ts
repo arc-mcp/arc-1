@@ -19,6 +19,19 @@ function ktdEnvelope(markdown: string): string {
   return `<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd"><sktd:element><sktd:text>${base64}</sktd:text></sktd:element></sktd:docu>`;
 }
 
+function liveWhereUsedXml(name = 'ZCL_CALLER'): string {
+  return `<?xml version="1.0" encoding="utf-8"?>
+<usageReferences:usageReferenceResult xmlns:usageReferences="http://www.sap.com/adt/ris/usageReferences">
+  <usageReferences:referencedObjects>
+    <usageReferences:referencedObject uri="/sap/bc/adt/oo/classes/${name.toLowerCase()}" isResult="true">
+      <usageReferences:adtObject adtcore:name="${name}" adtcore:type="CLAS/OC" xmlns:adtcore="http://www.sap.com/adt/core">
+        <adtcore:packageRef adtcore:name="$TMP"/>
+      </usageReferences:adtObject>
+    </usageReferences:referencedObject>
+  </usageReferences:referencedObjects>
+</usageReferences:usageReferenceResult>`;
+}
+
 describe('SAPManage / SAPContext handlers', () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -263,6 +276,81 @@ describe('SAPManage / SAPContext handlers', () => {
       expect(previewCall).toBeDefined();
       const executeCall = calls.find((c) => c.method === 'POST' && c.url.includes('step=execute'));
       expect(executeCall).toBeDefined();
+    });
+
+    it('change_package treats objectType as a literal ADT type when resolving objectUri', async () => {
+      const calls: Array<{ method: string; url: string }> = [];
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
+        calls.push({ method: opts?.method ?? 'GET', url: String(url) });
+        if (String(url).includes('quickSearch')) {
+          return Promise.resolve(
+            mockResponse(
+              200,
+              `<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">
+                <adtcore:objectReference adtcore:uri="/sap/bc/adt/oo/classes/zvictim" adtcore:type="CLAS/OC" adtcore:name="ZVICTIM" adtcore:packageName="$TMP"/>
+                <adtcore:objectReference adtcore:uri="/sap/bc/adt/ddic/ddl/sources/zvictim" adtcore:type="DDLS/DF" adtcore:name="ZVICTIM" adtcore:packageName="$TMP"/>
+              </adtcore:objectReferences>`,
+              { 'x-csrf-token': 'T' },
+            ),
+          );
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
+        action: 'change_package',
+        objectName: 'ZVICTIM',
+        objectType: '.*',
+        oldPackage: '$TMP',
+        newPackage: '$TMP',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('Could not find object "ZVICTIM" with type ".*"');
+      expect(calls.some((c) => c.method === 'POST' && c.url.includes('/refactorings'))).toBe(false);
+    });
+
+    it('change_package resolves objectUri from parsed ADT search results regardless of attribute order', async () => {
+      const calls: Array<{ method: string; url: string; body?: string }> = [];
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string; body?: string }) => {
+        calls.push({ method: opts?.method ?? 'GET', url: String(url), body: opts?.body });
+        if (String(url).includes('quickSearch')) {
+          return Promise.resolve(
+            mockResponse(
+              200,
+              `<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">
+                <adtcore:objectReference adtcore:type="DDLS/DF" adtcore:name="ZARC1_TEST" adtcore:packageName="$TMP" adtcore:uri="/sap/bc/adt/ddic/ddl/sources/zarc1_test"/>
+              </adtcore:objectReferences>`,
+              { 'x-csrf-token': 'T' },
+            ),
+          );
+        }
+        if (String(url).includes('step=preview')) {
+          return Promise.resolve(
+            mockResponse(
+              200,
+              '<generic:genericRefactoring xmlns:generic="http://www.sap.com/adt/refactoring/genericrefactoring"><generic:transport/></generic:genericRefactoring>',
+              { 'x-csrf-token': 'T' },
+            ),
+          );
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
+        action: 'change_package',
+        objectName: 'ZARC1_TEST',
+        objectType: 'DDLS/DF',
+        oldPackage: '$TMP',
+        newPackage: '$TMP',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('Moved ZARC1_TEST');
+      const previewCall = calls.find((c) => c.method === 'POST' && c.url.includes('step=preview'));
+      expect(previewCall?.body).toContain('/sap/bc/adt/ddic/ddl/sources/zarc1_test');
     });
 
     it("change_package is blocked by the object's REAL package, not the caller-supplied oldPackage", async () => {
@@ -770,7 +858,8 @@ describe('SAPManage / SAPContext handlers', () => {
       expect(result.isError).toBeUndefined();
       const postCall = mockFetch.mock.calls.find((call) => (call[1] as RequestInit)?.method === 'POST');
       expect(postCall).toBeDefined();
-      const payload = JSON.parse((postCall?.[1] as RequestInit).body as string);
+      if (!postCall) throw new Error('Expected a POST call');
+      const payload = JSON.parse((postCall[1] as RequestInit).body as string);
       const outer = JSON.parse(payload.configuration);
       const inner = JSON.parse(outer.tileConfiguration);
       expect(inner.semantic_object).toBe('ZSO');
@@ -1047,16 +1136,10 @@ ENDCLASS.`;
       expect(result.content[0]?.text).toContain('0 deps resolved');
     });
 
-    it('disables shared warmup usages under principal propagation', async () => {
-      const layer = new CachingLayer(new MemoryCache());
-      layer.setWarmupDone(true);
-      layer.cache.putEdge({
-        fromId: 'ZCL_SECRET',
-        toId: 'ZCL_TARGET',
-        edgeType: 'USES',
-        discoveredAt: new Date().toISOString(),
-        valid: true,
-      });
+    it('serves live usages under principal propagation without consulting the cache', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, liveWhereUsedXml()));
       const auth: AuthInfo = {
         token: 'jwt',
         clientId: 'oidc-client',
@@ -1072,14 +1155,57 @@ ENDCLASS.`;
         { action: 'usages', type: 'CLAS', name: 'ZCL_TARGET' },
         auth,
         undefined,
-        layer,
+        undefined,
         true,
       );
 
+      expect(result.isError).toBeUndefined();
+      const payload = JSON.parse(result.content[0]?.text ?? '{}');
+      expect(payload).toMatchObject({ name: 'ZCL_TARGET', usageCount: 1, source: 'live', fallbackUsed: false });
+      expect(payload.usages[0].name).toBe('ZCL_CALLER');
+    });
+
+    it('resolves a unique name-only usages request through ADT lookup', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          '<objectReferences><objectReference uri="/sap/bc/adt/oo/classes/zcl_target" type="CLAS/OC" name="ZCL_TARGET" packageName="$TMP"/></objectReferences>',
+        ),
+      );
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, liveWhereUsedXml('ZCL_UNIQUE_CALLER')));
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPContext', {
+        action: 'usages',
+        name: 'ZCL_TARGET',
+      });
+
+      expect(result.isError).toBeUndefined();
+      const payload = JSON.parse(result.content[0]?.text ?? '{}');
+      expect(payload.resolvedObject).toMatchObject({ type: 'CLAS', name: 'ZCL_TARGET' });
+      expect(payload.usages[0].name).toBe('ZCL_UNIQUE_CALLER');
+    });
+
+    it('returns bounded candidates for an ambiguous name-only usages request', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          '<objectReferences><objectReference uri="/sap/bc/adt/oo/classes/zsame" type="CLAS/OC" name="ZSAME"/><objectReference uri="/sap/bc/adt/programs/programs/zsame" type="PROG/P" name="ZSAME"/></objectReferences>',
+        ),
+      );
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPContext', {
+        action: 'usages',
+        name: 'ZSAME',
+      });
+
       expect(result.isError).toBe(true);
-      expect(result.content[0]?.text).toContain('shared warmup index');
-      expect(result.content[0]?.text).toContain('SAPNavigate');
-      expect(result.content[0]?.text).not.toContain('ZCL_SECRET');
+      const payload = JSON.parse(result.content[0]?.text ?? '{}');
+      expect(payload.error).toContain('ambiguous');
+      expect(payload.candidates).toHaveLength(2);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
     });
 
     it('keys inactive-list caching by authenticated user under principal propagation', async () => {

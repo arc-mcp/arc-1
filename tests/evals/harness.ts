@@ -13,11 +13,11 @@
  *   - Wrong tool / forbidden tool: 0.0
  */
 
+import { matchesExpectedToolCall, scenarioPasses, scoreExpectedToolCallParameters } from './expected-call.js';
 import type { LiveExecutor } from './live-backend.js';
 import type {
   EvalRunResult,
   EvalScenario,
-  ExpectedToolCall,
   LLMProvider,
   LLMToolCall,
   Message,
@@ -40,34 +40,6 @@ Be efficient — use the fewest tool calls necessary to accomplish the task.
 When you have enough information, respond with a text summary.`;
 
 // ─── Tool Call Scoring ──────────────────────────────────────────────
-
-/** Check if a tool call matches an expected tool call pattern */
-function matchesExpected(actual: LLMToolCall, expected: ExpectedToolCall): boolean {
-  // Tool name must match
-  if (actual.name !== expected.tool) return false;
-
-  // Check required argument values
-  if (expected.requiredArgs) {
-    for (const [key, value] of Object.entries(expected.requiredArgs)) {
-      const actualValue = actual.arguments[key];
-      // Case-insensitive string comparison for SAP object names
-      if (typeof value === 'string' && typeof actualValue === 'string') {
-        if (value.toUpperCase() !== actualValue.toUpperCase()) return false;
-      } else if (actualValue !== value) {
-        return false;
-      }
-    }
-  }
-
-  // Check required argument keys (must be present, value doesn't matter)
-  if (expected.requiredArgKeys) {
-    for (const key of expected.requiredArgKeys) {
-      if (!(key in actual.arguments)) return false;
-    }
-  }
-
-  return true;
-}
 
 /** Score the first tool call against optimal/acceptable/forbidden expectations */
 function scoreFirstToolCall(
@@ -95,9 +67,9 @@ function scoreFirstToolCall(
 
   // Check optimal match
   for (const expected of scenario.optimal) {
-    if (matchesExpected(firstCall, expected)) {
+    if (matchesExpectedToolCall(firstCall, expected)) {
       // Score parameters: check how many required args are correct
-      const paramScore = scoreParameters(firstCall, expected);
+      const paramScore = scoreExpectedToolCallParameters(firstCall, expected);
       return {
         toolSelectionScore: 1.0,
         parameterScore: paramScore,
@@ -109,7 +81,7 @@ function scoreFirstToolCall(
   // Check if tool name matches optimal but params are wrong
   for (const expected of scenario.optimal) {
     if (firstCall.name === expected.tool) {
-      const paramScore = scoreParameters(firstCall, expected);
+      const paramScore = scoreExpectedToolCallParameters(firstCall, expected);
       return {
         toolSelectionScore: 1.0,
         parameterScore: paramScore,
@@ -121,8 +93,8 @@ function scoreFirstToolCall(
   // Check acceptable alternatives
   if (scenario.acceptable) {
     for (const expected of scenario.acceptable) {
-      if (matchesExpected(firstCall, expected)) {
-        const paramScore = scoreParameters(firstCall, expected);
+      if (matchesExpectedToolCall(firstCall, expected)) {
+        const paramScore = scoreExpectedToolCallParameters(firstCall, expected);
         return {
           toolSelectionScore: 0.5,
           parameterScore: paramScore,
@@ -134,7 +106,7 @@ function scoreFirstToolCall(
     // Check if tool name matches acceptable but params wrong
     for (const expected of scenario.acceptable) {
       if (firstCall.name === expected.tool) {
-        const paramScore = scoreParameters(firstCall, expected);
+        const paramScore = scoreExpectedToolCallParameters(firstCall, expected);
         return {
           toolSelectionScore: 0.5,
           parameterScore: paramScore,
@@ -149,31 +121,6 @@ function scoreFirstToolCall(
     parameterScore: 0,
     explanation: `Wrong tool: ${firstCall.name}(${JSON.stringify(firstCall.arguments)}). Expected: ${scenario.optimal.map((e) => e.tool).join(' or ')}`,
   };
-}
-
-/** Score parameter correctness (0.0 to 1.0) */
-function scoreParameters(actual: LLMToolCall, expected: ExpectedToolCall): number {
-  const checks: boolean[] = [];
-
-  if (expected.requiredArgs) {
-    for (const [key, value] of Object.entries(expected.requiredArgs)) {
-      const actualValue = actual.arguments[key];
-      if (typeof value === 'string' && typeof actualValue === 'string') {
-        checks.push(value.toUpperCase() === actualValue.toUpperCase());
-      } else {
-        checks.push(actualValue === value);
-      }
-    }
-  }
-
-  if (expected.requiredArgKeys) {
-    for (const key of expected.requiredArgKeys) {
-      checks.push(key in actual.arguments);
-    }
-  }
-
-  if (checks.length === 0) return 1.0;
-  return checks.filter(Boolean).length / checks.length;
 }
 
 // ─── Eval Loop ──────────────────────────────────────────────────────
@@ -266,7 +213,7 @@ export async function runScenario(
     totalTokens,
     durationMs,
     explanation,
-    passed: overallScore >= passThreshold,
+    passed: scenarioPasses(scenario, overallScore, parameterScore, passThreshold),
   };
 }
 

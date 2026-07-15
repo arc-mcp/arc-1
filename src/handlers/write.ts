@@ -36,6 +36,7 @@ import {
 import type { SapWriteContext } from './write/context.js';
 import { writeActionBatchCreate, writeActionCreate } from './write/create.js';
 import { writeActionGenerateBehaviorImplementation, writeActionScaffoldRapHandlers } from './write/rap.js';
+import { writeActionEditUnit } from './write/unit-surgery.js';
 import { writeActionDelete, writeActionEditTextSymbols, writeActionUpdate } from './write/update-delete.js';
 import {
   enforceAllowedPackageForObjectUrl,
@@ -157,9 +158,9 @@ export async function handleSAPWrite(
     // Pass the resolved group through to buildCreateXml via args.group
     (args as Record<string, unknown>).group = group;
   } else if (type === 'INCL' && String(args.group ?? '').trim()) {
-    if (action !== 'update') {
+    if (action !== 'update' && action !== 'edit_unit') {
       return errorResult(
-        'SAPWrite type=INCL with group supports action="update" only; create/delete of FUGR structural includes is unsupported.',
+        'SAPWrite type=INCL with group supports action="update" or "edit_unit" only; create/delete of FUGR structural includes is unsupported.',
       );
     }
     // FUGR structural include update (LZ<grp>TOP global data, form/PBO/PAI includes): addressed by
@@ -263,6 +264,8 @@ export async function handleSAPWrite(
       return writeActionCreate(ctx);
     case 'edit_method':
       return writeActionEditMethod(ctx);
+    case 'edit_unit':
+      return writeActionEditUnit(ctx);
 
     // Class-section surgery actions (issue #303) — see write/class-surgery.ts.
     case 'edit_class_definition':
@@ -294,7 +297,7 @@ export async function handleSAPWrite(
       return writeActionEditTextSymbols(ctx);
     default:
       return errorResult(
-        `Unknown SAPWrite action: ${action}. Supported: create, update, delete, edit_method, batch_create, scaffold_rap_handlers, generate_behavior_implementation`,
+        `Unknown SAPWrite action: ${action}. Supported: create, update, delete, edit_method, edit_unit, batch_create, scaffold_rap_handlers, generate_behavior_implementation`,
       );
   }
 }

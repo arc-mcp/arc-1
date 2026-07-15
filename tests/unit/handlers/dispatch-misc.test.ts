@@ -19,6 +19,7 @@ const { normalizeObjectType, stripLlmEmptyValues, normalizeTypeArgsForValidation
   '../../../src/handlers/object-types.js'
 );
 const { warnCdsReservedKeywords } = await import('../../../src/handlers/cds-hints.js');
+const { parseArgs } = await import('../../../src/server/config.js');
 
 describe('tool dispatch & cross-cutting handler behavior', () => {
   beforeEach(() => {
@@ -1076,6 +1077,42 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
       expect(text).not.toContain('SECRETUSER');
       expect(text).not.toContain('DEVK900001');
       expect(text).not.toContain('Properties:');
+    });
+
+    it('hides SAP diagnostic details by default for HTTP transport errors', async () => {
+      const xmlResponse = `<?xml version="1.0" encoding="utf-8"?>
+<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework">
+  <exc:localizedMessage lang="EN">Object is locked by HTTPSECRETUSER</exc:localizedMessage>
+  <exc:properties>
+    <entry key="LOCK_USER">HTTPSECRETUSER</entry>
+    <entry key="TRANSPORT">DEVK900002</entry>
+  </exc:properties>
+</exc:exception>`;
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(423, xmlResponse, { 'x-csrf-token': 'T' }));
+
+      const previousMinimalErrors = process.env.ARC1_MINIMAL_ERRORS;
+      delete process.env.ARC1_MINIMAL_ERRORS;
+      try {
+        const httpConfig = parseArgs(['--transport', 'http-streamable', '--api-keys', 'test-key:viewer']);
+        expect(httpConfig.minimalErrors).toBe(true);
+
+        const result = await handleToolCall(createClient(), httpConfig, 'SAPRead', {
+          type: 'PROG',
+          name: 'ZTEST',
+        });
+
+        expect(result.isError).toBe(true);
+        const text = result.content[0]?.text ?? '';
+        expect(text).toContain('ADT API error: status 423');
+        expect(text).toContain('ARC1_MINIMAL_ERRORS=true');
+        expect(text).not.toContain('HTTPSECRETUSER');
+        expect(text).not.toContain('DEVK900002');
+        expect(text).not.toContain('Properties:');
+      } finally {
+        if (previousMinimalErrors === undefined) delete process.env.ARC1_MINIMAL_ERRORS;
+        else process.env.ARC1_MINIMAL_ERRORS = previousMinimalErrors;
+      }
     });
 
     it('includes DDIC diagnostics block when T100KEY entries are present', async () => {

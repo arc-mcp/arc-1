@@ -41,6 +41,15 @@ describe('parseArgs', () => {
     expect(config.verbose).toBe(false);
   });
 
+  it.each(['ARC1_CACHE_WARMUP', 'ARC1_CACHE_WARMUP_PACKAGES'])('rejects retired env var %s', (name) => {
+    process.env[name] = 'false';
+    expect(() => parseArgs([])).toThrow(/cache warmup configuration/);
+  });
+
+  it.each(['--cache-warmup=false', '--cache-warmup-packages=Z*'])('rejects retired CLI flag %s', (flag) => {
+    expect(() => parseArgs([flag])).toThrow(/cache warmup configuration/);
+  });
+
   it('parses CLI flags (--flag value)', () => {
     const config = parseArgs(['--url', 'http://sap:8000', '--user', 'admin', '--password', 'secret']);
     expect(config.url).toBe('http://sap:8000');
@@ -109,6 +118,25 @@ describe('parseArgs', () => {
     expect(config.minimalErrors).toBe(true);
   });
 
+  it('defaults minimal errors off for stdio transport', () => {
+    const config = parseArgs([]);
+    expect(config.transport).toBe('stdio');
+    expect(config.minimalErrors).toBe(false);
+  });
+
+  it('defaults minimal errors on for HTTP transport', () => {
+    const config = parseArgs(['--transport', 'http-streamable', '--api-keys', 'test-key:viewer']);
+    expect(config.transport).toBe('http-streamable');
+    expect(config.minimalErrors).toBe(true);
+  });
+
+  it('allows HTTP deployments to explicitly opt into detailed errors', () => {
+    process.env.ARC1_MINIMAL_ERRORS = 'false';
+    const config = parseArgs(['--transport', 'http-streamable', '--api-keys', 'test-key:viewer']);
+    expect(config.transport).toBe('http-streamable');
+    expect(config.minimalErrors).toBe(false);
+  });
+
   it('parses ARC1_SCHEMA_NULLABLE_OPTIONALS env var', () => {
     process.env.ARC1_SCHEMA_NULLABLE_OPTIONALS = 'on';
     const config = parseArgs([]);
@@ -132,6 +160,18 @@ describe('parseArgs', () => {
     expect(config.minimalErrors).toBe(true);
   });
 
+  it('--minimal-errors=false overrides the HTTP minimal-error default', () => {
+    const config = parseArgs([
+      '--transport',
+      'http-streamable',
+      '--api-keys',
+      'test-key:viewer',
+      '--minimal-errors',
+      'false',
+    ]);
+    expect(config.minimalErrors).toBe(false);
+  });
+
   it('defaults ppStrict to true when principal propagation is enabled', () => {
     process.env.SAP_PP_ENABLED = 'true';
     const config = parseArgs([]);
@@ -140,7 +180,7 @@ describe('parseArgs', () => {
     expect(config.ppStrictExplicit).toBe(false);
   });
 
-  it('allows explicit shared-client PP fallback with SAP_PP_STRICT=false', () => {
+  it('parses explicit mixed-auth mode with SAP_PP_STRICT=false', () => {
     process.env.SAP_PP_ENABLED = 'true';
     process.env.SAP_PP_STRICT = 'false';
     const config = parseArgs([]);

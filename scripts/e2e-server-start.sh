@@ -57,6 +57,7 @@ SAP_PASSWORD=$(cat "${DEPLOY_DIR}/.sap_password") \
 SAP_CLIENT="${SAP_CLIENT:-001}" \
 SAP_INSECURE=true \
 SAP_TRANSPORT=http-streamable \
+ARC1_MINIMAL_ERRORS=false \
 ARC1_ALLOW_HTTP_NO_AUTH=true \
 SAP_HTTP_ADDR="0.0.0.0:${MCP_PORT}" \
 SAP_VERBOSE=true \

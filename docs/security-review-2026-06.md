@@ -12,10 +12,10 @@ invariants and `security-model.md` §5 is authoritative for the current register
 | | |
 |---|---|
 | **Started** | 2026-06-09 |
-| **Last updated** | 2026-06-10 |
-| **Status** | Living — update §4 and §5 as findings move |
+| **Last updated** | 2026-07-10 |
+| **Status** | Historical narrative + living roadmap; current status is reconciled with `security-model.md` §5 |
 | **Findings** | 17 numbered (R1–R17) + 1 partial (R9 gCTS) |
-| **Shipped (merged to `main`)** | R8 [#387](https://github.com/arc-mcp/arc-1/pull/387) · R11 [#388](https://github.com/arc-mcp/arc-1/pull/388) · R9-abapGit [#389](https://github.com/arc-mcp/arc-1/pull/389) · R2 [#392](https://github.com/arc-mcp/arc-1/pull/392) · R1/R3/R12 [#393](https://github.com/arc-mcp/arc-1/pull/393) · R4 [#394](https://github.com/arc-mcp/arc-1/pull/394) · R16 [#395](https://github.com/arc-mcp/arc-1/pull/395). Deployment-docs [#391](https://github.com/arc-mcp/arc-1/pull/391) still open. **All High findings closed.** |
+| **Shipped (merged to `main`)** | R8 [#387](https://github.com/arc-mcp/arc-1/pull/387) · R11 [#388](https://github.com/arc-mcp/arc-1/pull/388) · R9-abapGit [#389](https://github.com/arc-mcp/arc-1/pull/389) · R2 [#392](https://github.com/arc-mcp/arc-1/pull/392) · R1/R3/R12 [#393](https://github.com/arc-mcp/arc-1/pull/393) · R4 [#394](https://github.com/arc-mcp/arc-1/pull/394) · R16 [#395](https://github.com/arc-mcp/arc-1/pull/395) · R6 [#488](https://github.com/arc-mcp/arc-1/pull/488) · R10 [#489](https://github.com/arc-mcp/arc-1/pull/489) · R9-gCTS [#490](https://github.com/arc-mcp/arc-1/pull/490) · R7 [#491](https://github.com/arc-mcp/arc-1/pull/491)/[#494](https://github.com/arc-mcp/arc-1/pull/494) · R5/R15 file perms [#493](https://github.com/arc-mcp/arc-1/pull/493)/[#496](https://github.com/arc-mcp/arc-1/pull/496) · R14 [#495](https://github.com/arc-mcp/arc-1/pull/495)/[#552](https://github.com/arc-mcp/arc-1/pull/552) · R17 PR-title [#550](https://github.com/arc-mcp/arc-1/pull/550). **All High findings closed.** |
 | **Related** | [`security-model.md`](security-model.md) · [`../docs_page/security-guide.md`](../docs_page/security-guide.md) · [`../SECURITY.md`](../SECURITY.md) |
 
 ---
@@ -46,15 +46,15 @@ Headline outcomes:
 - **One High, confirmed auth bypass.** The deep review's adversarial pass *broke* a control listed
   "already-strong": the XSUAA **redirect-URI allowlist** (R8). It was verified end-to-end,
   including a live regex test against the production globs, and is now fixed ([#387](https://github.com/arc-mcp/arc-1/pull/387)).
-- **Four PRs shipped:** R8 ([#387](https://github.com/arc-mcp/arc-1/pull/387)), R11
-  ([#388](https://github.com/arc-mcp/arc-1/pull/388)), R9-abapGit
-  ([#389](https://github.com/arc-mcp/arc-1/pull/389)), and a deployment-docs hardening pass
-  ([#391](https://github.com/arc-mcp/arc-1/pull/391)).
+- **Remediation continued after the initial wave.** The later hardening work closed
+  R5/R6/R7/R9-gCTS/R10/R14 and all four R17 subitems. R15 is default-closed because SQLite is
+  explicit opt-in; plaintext source in an explicitly enabled SQLite cache remains an accepted
+  operator-controlled posture.
 - **The rest of the challenge pass held.** DCR/state HMAC, SSRF containment, undici cross-origin
   credential-stripping, structured-SQL allowlisting, and XML escaping all survived refutation.
 
-What remains is a tractable, prioritized queue of confidentiality (cross-user, PP-only),
-availability (DoS), authorization, and info-leak findings — none a rewrite. See §6.
+No unaddressed implementation item remains in R1-R17. R15 retains an accepted, explicit opt-in
+plaintext-cache posture; see §6.7.
 
 ---
 
@@ -131,7 +131,7 @@ credential stripping, the `withSafety()` clone, structured-SQL allowlisting, and
 
 ## 4. Status dashboard
 
-Legend: ✅ merged to `main` · 🟡 partial · 📄 #391 = operator caveat in the (still-open) deployment-docs PR, code fix still open · ⬜ open.
+Legend: ✅ merged to `main` · 🟡 partial/accepted conditional risk · ⬜ open.
 
 | ID | Risk | Sev | Scope | Status | PR |
 |----|------|-----|-------|--------|----|
@@ -139,27 +139,27 @@ Legend: ✅ merged to `main` · 🟡 partial · 📄 #391 = operator caveat in t
 | R2 | grep ReDoS (event-loop DoS) | High | all HTTP | ✅ merged | [#392](https://github.com/arc-mcp/arc-1/pull/392) |
 | R3 | Inactive-draft list cross-user leak (`username=''`) | High/Med | PP only | ✅ merged | [#393](https://github.com/arc-mcp/arc-1/pull/393) |
 | R4 | SRVB publish/unpublish bypass package allowlist | Med | all | ✅ merged | [#394](https://github.com/arc-mcp/arc-1/pull/394) |
-| R5 | File/BTP audit sinks do zero redaction | Med | file/btp sink | ⬜ open | — |
-| R6 | Non-strict PP fallback → shared service account | Med | PP only | ⬜ open · 📄 #391 | — |
-| R7 | Silent `SAP_INSECURE` + path-encoding gaps | Low/Med | all | ⬜ open · 📄 #391 (TLS) | — |
+| R5 | File/BTP audit sinks do zero redaction | Med | file/btp sink | ✅ merged | [#493](https://github.com/arc-mcp/arc-1/pull/493), [#496](https://github.com/arc-mcp/arc-1/pull/496) |
+| R6 | Non-strict PP fallback → shared service account | Med | PP only | ✅ JWT PP failures always fail closed | [#488](https://github.com/arc-mcp/arc-1/pull/488) + final fallback removal |
+| R7 | Silent `SAP_INSECURE` + path-encoding gaps | Low/Med | all | ✅ merged | [#491](https://github.com/arc-mcp/arc-1/pull/491), [#494](https://github.com/arc-mcp/arc-1/pull/494) |
 | R8 | Redirect-URI allowlist bypass → OAuth code interception | **High** | XSUAA | ✅ merged | [#387](https://github.com/arc-mcp/arc-1/pull/387) |
-| R9 | gCTS/abapGit pull/push bypass package allowlist | Med | allowGitWrites | 🟡 abapGit merged; gCTS open | [#389](https://github.com/arc-mcp/arc-1/pull/389) |
-| R10 | `apply_quickfix` arbitrary authenticated POST (read scope) | Med | all | ⬜ open | — |
+| R9 | gCTS/abapGit pull/push bypass package allowlist | Med | allowGitWrites | ✅ merged | [#389](https://github.com/arc-mcp/arc-1/pull/389), [#490](https://github.com/arc-mcp/arc-1/pull/490) |
+| R10 | `apply_quickfix` arbitrary authenticated POST (read scope) | Med | all | ✅ merged | [#489](https://github.com/arc-mcp/arc-1/pull/489) |
 | R11 | Unbounded LLM counts → DoS | Med | all HTTP | ✅ merged | [#388](https://github.com/arc-mcp/arc-1/pull/388) |
 | R12 | Reverse-dep (`usages`) index served cross-user | Med | PP + warmup | ✅ merged | [#393](https://github.com/arc-mcp/arc-1/pull/393) |
-| R13 | PP destination cache may collapse to tenant-wide isolation | Med (cond.) | PP + OIDC | ⬜ open · 📄 #391 | — |
-| R14 | No minimal-error mode (recon oracle) | Low/Med | all | ⬜ open | — |
-| R15 | Cleartext SAP source at rest + default file perms | Low/Med | disk cache | ⬜ open · 📄 #391 | — |
+| R13 | PP destination cache may collapse to tenant-wide isolation | Med (cond.) | PP + OIDC | ✅ mitigated by `tenant-user` destination isolation | `@arc-mcp/xsuaa-auth` >=0.1.2 |
+| R14 | Detailed SAP errors recon oracle when explicitly enabled | Low | trusted debug / stdio / explicit opt-out | ✅ mitigated; HTTP defaults minimal | [#495](https://github.com/arc-mcp/arc-1/pull/495), [#552](https://github.com/arc-mcp/arc-1/pull/552) |
+| R15 | Cleartext SAP source at rest | Low/Med when explicit | disk cache | ✅ default closed; explicit SQLite remains accepted/operator-controlled | [#496](https://github.com/arc-mcp/arc-1/pull/496) |
 | R16 | BTP service-key files not gitignored | Low/Med | repo hygiene | ✅ merged | [#395](https://github.com/arc-mcp/arc-1/pull/395) |
-| R17 | Hardening cluster (4 low items) | Low | mixed | ⬜ open | — |
+| R17 | Hardening cluster | Low | mixed | ✅ all four subitems closed | [#550](https://github.com/arc-mcp/arc-1/pull/550), `npm run validate:policy`, `@arc-mcp/xsuaa-auth` >=0.1.4, [#556](https://github.com/arc-mcp/arc-1/pull/556) |
 
 ---
 
 ## 5. Completed & in-flight work
 
-All four PRs target `main` on the public `arc-mcp/arc-1` repo, are one focused commit each, and
-were verified locally (tests + typecheck for code PRs; `mkdocs build` for the docs PR). None are
-merged yet at time of writing.
+The original June PR writeups below are retained as the historical remediation record. For current
+status, use the dashboard in §4 and the authoritative register in [`security-model.md`](security-model.md)
+§5.
 
 ### PR [#387](https://github.com/arc-mcp/arc-1/pull/387) — R8 redirect-URI bypass (High)
 - **Branch / commit:** `claude/harden-redirect-uri-canonical` · `dbb018b2`
@@ -205,9 +205,8 @@ merged yet at time of writing.
   and the package can't be resolved; no-op when unrestricted.
 - **Test:** unit tests for `enforceRepoPackageAllowed` (no-op unrestricted; allow on match; refuse
   out-of-allowlist binding; fail-closed on unresolvable). Full unit suite 3570/3570, typecheck clean.
-- **🟡 Remaining:** scoped to **abapGit** (clean 1:1 repo→package). **gCTS `pull`/`commit` gating is
-  still open** — gCTS repos can span packages, so resolution needs the per-repo object list. Tracked
-  as a follow-up (see §6.3).
+- **Current status (2026-07-08):** the gCTS follow-up shipped in [#490](https://github.com/arc-mcp/arc-1/pull/490).
+  The historical note below was true for the original #389 scope, but R9 is now closed in §4.
 
 ### PR [#391](https://github.com/arc-mcp/arc-1/pull/391) — deployment-docs hardening (docs)
 - **Branch / commit:** `claude/docs-deployment-security-caveats` · `ca203e47` (9 files, +72/−11)
@@ -223,7 +222,9 @@ merged yet at time of writing.
   - **R13** — PP per-user token isolation depends on `user_id`/`user_uuid` (OIDC/Entra caveat).
   - **R15** — `ARC1_CACHE=sqlite` stores SAP source cleartext at rest.
   - **R16** — BTP service key is a full credential; `.gitignore` doesn't match `*service-key*.json`.
-  - **R5 (partial)** — hardening-checklist note that file/BTP sinks contain un-redacted source/error snippets.
+  - **R5 (historical partial)** — hardening-checklist note that file/BTP sinks contained un-redacted
+    source/error snippets before [#493](https://github.com/arc-mcp/arc-1/pull/493) and
+    [#496](https://github.com/arc-mcp/arc-1/pull/496).
   - Plus the prompt-injection / safety-ceiling-as-backstop framing in `deployment.md`, and a
     least-privilege role-collection note in `xsuaa-setup.md`.
 - **Verified:** `mkdocs build` succeeds, all changed pages render. Docs-only, no behavior change.
@@ -241,10 +242,9 @@ the test to add, and a rough effort (S = a few hours, M = a day, L = multi-day).
 > split — find the named symbol (e.g. `enrichWithSapDetails`, `change_package`) in the matching
 > `src/handlers/` module.
 
-> **Update (2026-06-11):** the original ⭐ next picks — **R1, R2, R3, R4, R12, R16** — are now
-> **merged** (along with R8/R9-abapGit/R11); see §4/§5 for current status. The entries below are
-> retained as the historical record of each finding. The still-open items are **R5, R6, R7,
-> R9-gCTS, R10, R13, R14, R15, R17** (all Med/Low). See §6.7 for the updated order.
+> **Update (2026-07-10):** the entries below are retained as historical finding writeups. Current
+> code has closed R5-R14 and R16-R17. R15 is default-closed; plaintext source remains only when an
+> operator explicitly enables the SQLite cache.
 
 ### 6.1 Cross-user isolation cluster (PP-only) — the highest-value confidentiality work
 
@@ -306,6 +306,8 @@ the worst class of finding for the flagship multi-user-PP deployment, and a sing
 - **Effort:** M.
 
 **R13 — PP destination cache may collapse to tenant-wide isolation — Med (conditional) — PP + OIDC** 📄
+- **Current status (2026-07-08):** mitigated by `@arc-mcp/xsuaa-auth` >=0.1.2, which pins
+  tenant-user destination isolation.
 - **Where:** [`btp.ts:331`](../src/adt/btp.ts) (`getDestination({useCache:true})`, no explicit
   `isolationStrategy`).
 - **Mechanism:** the SAP Cloud SDK isolates the cached destination/token per user only when the JWT
@@ -316,8 +318,8 @@ the worst class of finding for the flagship multi-user-PP deployment, and a sing
   claim (hard-fail in strict mode) before minting the per-user client.
 - **Test:** two JWTs with the same tenant but different `user_id` must not produce the same cache
   key; a token with no `user_id`/`user_uuid` is rejected for PP.
-- **Status:** operator caveat shipped in [#391](https://github.com/arc-mcp/arc-1/pull/391); code
-  fix open. Needs config-specific confirmation of the SDK default on this version.
+- **Status:** mitigated in the extracted auth module; keep the operator caveat for non-standard PP
+  deployments and future auth-module upgrades.
 - **Effort:** S–M.
 
 ### 6.2 Denial of service / unbounded input (all HTTP)
@@ -352,6 +354,7 @@ the worst class of finding for the flagship multi-user-PP deployment, and a sing
 - **Effort:** S–M. *(Quick sibling of the R9 work; reuses the same gate helper.)*
 
 **R10 — `apply_quickfix` = arbitrary authenticated POST under read scope — Med — all**
+- **Current status (2026-07-08):** closed by [#489](https://github.com/arc-mcp/arc-1/pull/489).
 - **Where:** [`devtools.ts:698`](../src/adt/devtools.ts) (`http.post(proposal.uri, body)`), policy
   [`policy.ts:124`](../src/authz/policy.ts) (`scope: read`), schema
   [`schemas.ts:819`](../src/handlers/schemas.ts) (`proposalUri: z.string().optional()`).
@@ -366,30 +369,37 @@ the worst class of finding for the flagship multi-user-PP deployment, and a sing
 - **Effort:** S.
 
 **R9 (gCTS) — finish the git pull/push gate — Med — allowGitWrites** 🟡
+- **Current status (2026-07-08):** closed by [#490](https://github.com/arc-mcp/arc-1/pull/490).
 - **Where:** gCTS `pullRepo` [`gcts.ts:206`](../src/adt/gcts.ts) and `commitRepo`; handler
   [`intent.ts:6936`](../src/handlers/).
-- **Remaining work:** the merged R9 ([#389](https://github.com/arc-mcp/arc-1/pull/389)) gated
-  abapGit only. gCTS repos can span multiple packages, so the gate needs the per-repo object/package
-  list (`listRepos` → match `rid` → gate `.package`, fail-closed under a restricted allowlist when
-  the package can't be resolved).
+- **Historical remaining work before [#490](https://github.com/arc-mcp/arc-1/pull/490):** the merged
+  R9 ([#389](https://github.com/arc-mcp/arc-1/pull/389)) gated abapGit only. gCTS repos can span
+  multiple packages, so the gate needed the per-repo object/package list (`listRepos` → match `rid`
+  → gate `.package`, fail-closed under a restricted allowlist when the package can't be resolved).
 - **Effort:** M.
 
 ### 6.4 Identity / fallback hardening
 
 **R6 — Non-strict PP fallback runs as the shared service account — Med — PP only** 📄
-- **Where:** [`server.ts:636`](../src/server/server.ts).
-- **Mechanism:** `SAP_PP_STRICT=false` (default) falls through to `defaultClient` on PP failure —
-  privilege escalation + wrong SAP-audit identity, inducible by forcing PP failure.
-- **Fix options:** make `SAP_PP_STRICT=true` the default for multi-user/HTTP mode; **or** when
-  falling back, downgrade the request to read-only and tag the tool-call audit
-  `identity=service-account-fallback`.
-- **Status:** operator caveat shipped in [#391](https://github.com/arc-mcp/arc-1/pull/391); code
-  default/behavior change open.
-- **Effort:** S (default flip) / M (downgrade-on-fallback).
+- **Current status (2026-07-10):** closed. Default fail-closed behavior shipped in
+  [#488](https://github.com/arc-mcp/arc-1/pull/488), and the remaining explicit JWT fallback has
+  been removed.
+- **Where:** [`server.ts`](../src/server/server.ts), [`server.test.ts`](../tests/unit/server/server.test.ts).
+- **Historical mechanism:** `SAP_PP_STRICT=false` let a failed JWT principal-propagation lookup
+  continue through `defaultClient`, causing privilege escalation and SAP audit misattribution.
+- **Fix:** every JWT PP failure now returns an error before tool dispatch, regardless of
+  `SAP_PP_STRICT`. API-key/non-JWT requests retain mixed-auth support because they skip JWT PP;
+  explicit `SAP_PP_STRICT=true` rejects those calls. The base BTP MTA is strict, production guidance
+  recommends separate PP-only and non-PP API-key instances, and startup logs warn about mixed SAP
+  identities.
+- **Validation:** the request-boundary regression test forces PP setup failure with
+  `ppStrict=false` and proves the request cannot reach normal tool validation through the shared client.
 
 ### 6.5 Info-leak & secrets-at-rest
 
 **R5 — File/BTP audit sinks do zero redaction — Med — file/btp sink** 📄
+- **Current status (2026-07-08):** closed by [#493](https://github.com/arc-mcp/arc-1/pull/493) and
+  private file mode from [#496](https://github.com/arc-mcp/arc-1/pull/496).
 - **Where:** [`sinks/file.ts:31`](../src/server/sinks/file.ts) (raw `JSON.stringify(event)`) vs
   [`sinks/stderr.ts`](../src/server/sinks/stderr.ts) (which redacts).
 - **Mechanism:** redaction lives only in `StderrSink`. Credentials don't leak (tool args are
@@ -399,7 +409,9 @@ the worst class of finding for the flagship multi-user-PP deployment, and a sing
   recurse into nested objects.
 - **Effort:** M.
 
-**R14 — No minimal-error mode (recon oracle) — Low/Med — all**
+**R14 — Detailed SAP errors recon oracle when explicitly enabled — Low — trusted debug / stdio / explicit opt-out**
+- **Current status (2026-07-08):** mitigated by [#495](https://github.com/arc-mcp/arc-1/pull/495);
+  HTTP now defaults to minimal errors via [#552](https://github.com/arc-mcp/arc-1/pull/552).
 - **Where:** [`errors.ts:308`](../src/adt/errors.ts) (`extractLockOwner`, `classifySapDomainError`),
   [`intent.ts:651`](../src/handlers/) (`enrichWithSapDetails`).
 - **Mechanism:** SAP error detail surfaced to the LLM/client includes another user's lock-owner
@@ -410,16 +422,23 @@ the worst class of finding for the flagship multi-user-PP deployment, and a sing
   audit sink.
 - **Effort:** M.
 
-**R15 — Cleartext SAP source at rest + default file perms — Low/Med — disk cache** 📄
+**R15 — Cleartext SAP source at rest — Low/Med — disk cache** 📄
+- **Current status (2026-07-09):** file permissions are fixed by [#496](https://github.com/arc-mcp/arc-1/pull/496);
+  `ARC1_CACHE=auto` uses memory for every transport; plaintext SQLite source remains the residual
+  risk only when an operator explicitly sets `ARC1_CACHE=sqlite`.
 - **Where:** [`sqlite.ts:19`](../src/cache/sqlite.ts) (no `mode:0o600`),
   [`file.ts:47`](../src/server/sinks/file.ts).
-- **Mechanism:** the SQLite cache stores full ABAP source unencrypted; cache DB + file sink created
-  with default (world-readable) perms. Extends R5 from credentials to SAP-IP confidentiality.
-- **Fix:** create both files with `mode:0o600` (chmod post-open for better-sqlite3); document
-  encrypted-volume / `ARC1_CACHE=none` for IP-sensitive landscapes (the doc half shipped in #391).
-- **Effort:** S.
+- **Mechanism:** the SQLite cache stores full ABAP source unencrypted when explicitly enabled. Before
+  [#496](https://github.com/arc-mcp/arc-1/pull/496), cache DB and file sink creation also relied on
+  default file permissions.
+- **Residual mitigation:** private file mode is shipped and SQLite is explicit opt-in; use encrypted
+  volumes for persistent SQLite, or keep `ARC1_CACHE=auto`/`memory`/`none` for IP-sensitive
+  landscapes that cannot accept plaintext source in the service account's files.
+- **Effort:** implemented default-closed posture; explicit persistent cache remains operator hardening.
 
 **R7 — Silent `SAP_INSECURE` + path-encoding gaps — Low/Med — all** 📄
+- **Current status (2026-07-08):** closed by [#491](https://github.com/arc-mcp/arc-1/pull/491) and
+  [#494](https://github.com/arc-mcp/arc-1/pull/494).
 - **Where:** [`http.ts:192`](../src/adt/http.ts) (insecure dispatcher, no warn),
   [`diagnostics.ts:324`](../src/adt/diagnostics.ts) (un-encoded `traceId`/`dumpId`).
 - **Mechanism:** `SAP_INSECURE` disables TLS verification with no startup warning; a few diagnostics
@@ -433,36 +452,25 @@ the worst class of finding for the flagship multi-user-PP deployment, and a sing
 ### 6.6 Low hardening cluster
 
 **R17 — four small items — Low — mixed**
-- **API-key docs/compare not constant-time** ([`http.ts:273`](../src/server/http.ts)): switch
-  `token === entry.key` to a length-checked `crypto.timingSafeEqual` helper (the DCR/state paths
-  already do). Inconsistent, marginal over a network.
-- **PR-title `${{ }}` into a `run:` shell** (`.github/workflows/test.yml`): move
-  `github.event.pull_request.title` into an `env:` var. Low blast radius today (read-only token, no
-  secrets in the `gate` job), but a latent foothold if the job ever gains secrets.
-- **Unknown action/type skips the scope check**: an action with no `ACTION_POLICY` entry isn't
-  scope-gated. Not reachable today, but a CI/lint guard asserting every dispatchable action has a
-  policy would prevent a future ungated handler.
-- **`change_package` compiles an unbounded `objectType` into a RegExp**
-  ([`intent.ts:6884`](../src/handlers/)): escape with a literal matcher or bound the
-  length. Impact bounded (matched only against SAP's own search response).
-- **Effort:** S total.
+- **Current status (2026-07-10):** closed.
+- **API-key comparison:** ARC-1 maps keys into `@arc-mcp/xsuaa-auth` >=0.1.4, whose verifier HMACs
+  both strings to fixed length and uses `crypto.timingSafeEqual`; wiring tests preserve ARC-1's
+  profile/scope behavior.
+- **PR-title shell interpolation:** [#550](https://github.com/arc-mcp/arc-1/pull/550) passes the
+  title through `PR_TITLE` in `env:` before the shell step.
+- **ACTION_POLICY completeness:** `npm run validate:policy` fails CI when schema actions and policy
+  entries drift or when a mutating operation is mapped to a read-family scope.
+- **`change_package` RegExp construction:** [#556](https://github.com/arc-mcp/arc-1/pull/556)
+  replaced dynamic matching with parsed ADT search results and literal object-type equality, with
+  hostile `objectType='.*'` and XML attribute-order regression tests.
 
 ### 6.7 Recommended remediation order
 
 The original top picks (R2, R1/R3/R12, R4, R16) shipped in
 [#392](https://github.com/arc-mcp/arc-1/pull/392)–[#395](https://github.com/arc-mcp/arc-1/pull/395).
-Suggested order for the remaining open items:
-
-1. **Authorization gaps:** **R10** — constrain `apply_quickfix`'s `proposalUri` to the
-   `/sap/bc/adt/quickfixes/` namespace (the one still-open arbitrary authenticated POST); and
-   **R9 gCTS** — extend the merged abapGit gate to gCTS `pull`/`commit`.
-2. **Info-leak:** **R5** (centralize redaction across all sinks), then **R14** (opt-in minimal-error
-   mode) and **R15** (`chmod 0600` on the cache DB + file sink).
-3. **Identity/fallback:** **R6** (default `SAP_PP_STRICT=true` for multi-user, or
-   downgrade-on-fallback) and **R13** (pin `isolationStrategy` + require a per-user claim).
-4. **Hardening:** **R7** (startup TLS-off warning + `encodeURIComponent` the trace/dump paths) and
-   the **R17** cluster (timing-safe API-key docs/compare, PR-title env-var, ACTION_POLICY completeness
-   guard, `change_package` regex bound).
+Later hardening also closed R5-R14 and R16-R17. There is no remaining implementation item in the
+R1-R17 register. R15's explicit SQLite mode remains an accepted operational choice: use encrypted
+storage when persistent source caching is enabled, or keep the default in-memory cache.
 
 ---
 
@@ -526,3 +534,11 @@ re-materialize it there or regenerate from this section's description.
   R16 ([#395](https://github.com/arc-mcp/arc-1/pull/395)) merged on top of R8/R9-abapGit/R11 —
   **all High findings closed.** Updated §1/§4/§6 status; open set is now R5, R6, R7, R9-gCTS, R10,
   R13, R14, R15, R17 (all Med/Low). These fixes shipped in **v0.9.14**.
+- **2026-07-08** — SEC-03 reconciliation against `origin/main` `4ed0dcf0`. Updated §1/§4/§6 to
+  reflect merged fixes for R5/R6/R7/R9-gCTS/R10/R14 and the closed R17 PR-title/ACTION_POLICY
+  subitems. Kept R17 partial for API-key timing and `change_package` regex hardening.
+- **2026-07-09** — R15 default-closed cache posture. `ARC1_CACHE=auto` now uses memory for every
+  transport, and SQLite persistence remains explicit opt-in with source-at-rest warnings and
+  encrypted-volume guidance.
+- **2026-07-10** — Closed R6 by removing the explicit JWT-to-shared-client fallback and closed R17
+  after verifying all four hardening controls on current `main`.

@@ -193,6 +193,14 @@ describe('deployment templates', () => {
     const app = (manifest.applications as Array<Record<string, any>>).find((entry) => entry.name === 'arc1-mcp-server');
     expect(app?.env?.SAP_INSECURE).toBe('false');
   });
+
+  it('keeps the base BTP MTA on the recommended strict PP default', () => {
+    const mta = readYaml('mta.yaml');
+    const appModule = (mta.modules as Array<Record<string, any>>).find((entry) => entry.name === 'arc1-mcp-server');
+
+    expect(appModule?.properties?.SAP_PP_ENABLED).toBe('true');
+    expect(appModule?.properties?.SAP_PP_STRICT).toBe('true');
+  });
 });
 
 describe('shipped skills have plugin-legal frontmatter', () => {

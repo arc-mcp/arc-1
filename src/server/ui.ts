@@ -73,12 +73,6 @@ export function createUiApiRouter(deps: UiServerDeps): express.Router {
         ephemeral: effectiveBackend === 'memory',
         file: effectiveBackend === 'sqlite' ? deps.config.cacheFile : undefined,
       },
-      warmup: {
-        configured: deps.config.cacheWarmup,
-        available: deps.cachingLayer.isWarmupAvailable,
-        packages: deps.config.cacheWarmupPackages,
-      },
-      warmupAvailable: deps.cachingLayer.isWarmupAvailable,
       stats: deps.cachingLayer.stats(),
       inactiveLists: deps.cachingLayer.inactiveLists.stats(),
       sources: summarizeCachedSources(deps.cachingLayer),
@@ -239,10 +233,16 @@ function parseBindAddr(addr: string): { host: string; port: number } {
 }
 
 function openInBrowser(url: string): void {
+  // win32: rundll32, NOT `cmd /c start` — cmd truncates URLs at `&` (issue #549).
   const command =
-    process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'cmd' : process.env.BROWSER || 'xdg-open';
-  const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
+    process.platform === 'darwin'
+      ? 'open'
+      : process.platform === 'win32'
+        ? 'rundll32'
+        : process.env.BROWSER || 'xdg-open';
+  const args = process.platform === 'win32' ? ['url.dll,FileProtocolHandler', url] : [url];
   const child = spawn(command, args, { detached: true, stdio: 'ignore' });
+  child.on('error', (err) => logger.warn('Could not open browser', { error: err.message, url }));
   child.unref();
 }
 
@@ -325,7 +325,6 @@ function safeRedactedCacheActivityDetail(
     case 'source_evict':
     case 'depgraph_hit':
     case 'depgraph_store':
-    case 'warmup_state':
       return item.detail;
     default:
       return undefined;

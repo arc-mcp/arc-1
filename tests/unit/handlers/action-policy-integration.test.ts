@@ -49,6 +49,13 @@ function writeAuth() {
   };
 }
 
+function dataAuth() {
+  return {
+    ...readAuth(),
+    scopes: ['read', 'data'],
+  };
+}
+
 function transportsAuth() {
   return {
     token: 'test',
@@ -68,6 +75,38 @@ function gitAuth() {
 }
 
 describe('ACTION_POLICY runtime integration — classification bug fixes', () => {
+  describe('SAPDiagnose.authorization_trace requires data scope', () => {
+    it('blocks a read-only user before querying SAP', async () => {
+      const result = await handleToolCall(
+        createClient(),
+        { ...DEFAULT_CONFIG, allowDataPreview: true },
+        'SAPDiagnose',
+        { action: 'authorization_trace' },
+        readAuth(),
+      );
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toMatch(/Insufficient scope: 'data'/);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('allows a data-scoped user to reach the implementation', async () => {
+      const client = createClient();
+      vi.spyOn(client, 'runTableQuery').mockResolvedValue({ columns: [], rows: [] });
+
+      const result = await handleToolCall(
+        client,
+        { ...DEFAULT_CONFIG, allowDataPreview: true },
+        'SAPDiagnose',
+        { action: 'authorization_trace' },
+        dataAuth(),
+      );
+
+      expect(result.content[0]?.text).not.toMatch(/Insufficient scope/);
+      expect(result.isError).toBeUndefined();
+    });
+  });
+
   describe('Bug fix #1: SAPLint.set_formatter_settings requires write scope', () => {
     it('read user is blocked with scope error mentioning write', async () => {
       const result = await handleToolCall(
@@ -335,6 +374,23 @@ describe('ACTION_POLICY runtime integration — hyperfocused delegates enforce c
 });
 
 describe('ACTION_POLICY runtime integration — type-level pruning in tool listing', () => {
+  it('prunes authorization_trace for read-only users and preserves it for data scope', () => {
+    const tools = getToolDefinitions({
+      ...DEFAULT_CONFIG,
+      allowDataPreview: true,
+    });
+    const readOnlyTools = filterToolsByAuthScope(tools, ['read']);
+    const dataTools = filterToolsByAuthScope(tools, ['read', 'data']);
+    const readOnlyActions = (
+      readOnlyTools.find((tool) => tool.name === 'SAPDiagnose')!.inputSchema as Record<string, any>
+    ).properties.action.enum as string[];
+    const dataActions = (dataTools.find((tool) => tool.name === 'SAPDiagnose')!.inputSchema as Record<string, any>)
+      .properties.action.enum as string[];
+
+    expect(readOnlyActions).not.toContain('authorization_trace');
+    expect(dataActions).toContain('authorization_trace');
+  });
+
   it('SAPRead TABLE_CONTENTS type is pruned when user lacks data scope', () => {
     const tools = getToolDefinitions({
       ...DEFAULT_CONFIG,

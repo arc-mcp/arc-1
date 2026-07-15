@@ -8,12 +8,10 @@
  * - Source cache miss/revalidation/invalidation (MemoryCache and SqliteCache)
  * - Dependency graph caching (second SAPContext call returns [cached])
  * - Cache stats reporting via SAPManage
- * - Warmup: one bounded smoke proves a stable package can mark the cache warm
- * - Usages (reverse deps): correct error message when warmup not run
+ * - Live usages lookup without cache configuration
  * - SQLite cache persistence across instances
  *
  * Run: npm run test:integration
- * Slow warmup coverage: npm run test:integration:slow
  */
 
 import * as fs from 'node:fs';
@@ -24,7 +22,6 @@ import type { AdtClient } from '../../src/adt/client.js';
 import { CachingLayer } from '../../src/cache/caching-layer.js';
 import { MemoryCache } from '../../src/cache/memory.js';
 import { SqliteCache } from '../../src/cache/sqlite.js';
-import { runWarmup } from '../../src/cache/warmup.js';
 import { handleToolCall } from '../../src/handlers/dispatch.js';
 import { DEFAULT_CONFIG } from '../../src/server/types.js';
 import { requireOrSkip, SkipReason } from '../helpers/skip-policy.js';
@@ -42,8 +39,6 @@ import { getTestClient, requireSapCredentials } from './helpers.js';
 const TEST_CLASS = 'ZCL_ARC1_TEST';
 /** Known Z class with dependencies — used for dep graph tests. S/4-only BOBF demo. */
 const TEST_CLASS_WITH_DEPS = 'ZCL_DEMO_D_CALC_AMOUNT';
-/** Package that contains the test classes with deps */
-const TEST_PACKAGE_WITH_DEPS = '$DEMO_SOI_DRAFT';
 
 function readTestClass(client: AdtClient) {
   return (ifNoneMatch?: string) => client.getClass(TEST_CLASS, undefined, { ifNoneMatch });
@@ -366,7 +361,7 @@ describe('Cache Integration Tests', () => {
       expect(parsed.inactiveListCache).toBeTruthy();
     }, 15000);
 
-    it('stats show warmupAvailable=false before warmup', async () => {
+    it('stats omit retired repository graph state', async () => {
       const cl = new CachingLayer(new MemoryCache());
       const r = await handleToolCall(
         client,
@@ -378,17 +373,18 @@ describe('Cache Integration Tests', () => {
         cl,
       );
       const parsed = JSON.parse(r.content[0]?.text ?? '{}');
-      expect(parsed.warmupAvailable).toBe(false);
+      expect(parsed).not.toHaveProperty('warmupAvailable');
+      expect(parsed).not.toHaveProperty('nodeCount');
+      expect(parsed).not.toHaveProperty('edgeCount');
       expect(parsed.inactiveListCache).toBeTruthy();
     }, 10000);
   });
 
-  // ─── Usages: Error Message Without Warmup ─────────────────────────
+  // ─── Live Usages ──────────────────────────────────────────────────
 
-  describe('SAPContext usages without warmup', () => {
-    it('returns informative error when warmup not run', async (ctx) => {
+  describe('SAPContext live usages', () => {
+    it('works without cache configuration', async (ctx) => {
       requireDepGraphFixture(ctx);
-      const cl = new CachingLayer(new MemoryCache()); // no warmup
 
       const r = await handleToolCall(
         client,
@@ -397,28 +393,12 @@ describe('Cache Integration Tests', () => {
         { action: 'usages', name: TEST_CLASS_WITH_DEPS, type: 'CLAS' },
         undefined,
         undefined,
-        cl,
       );
-      const text = r.content[0]?.text ?? '';
-      // Should explain what to do
-      expect(text.toLowerCase()).toMatch(/warmup|pre-warm|cache.*not.*available|not.*available.*cache/);
+      expect(r.isError).toBeUndefined();
+      const payload = JSON.parse(r.content[0]?.text ?? '{}');
+      expect(payload).toMatchObject({ name: TEST_CLASS_WITH_DEPS, source: 'live' });
+      expect(Array.isArray(payload.usages)).toBe(true);
     }, 10000);
-  });
-
-  // ─── Warmup ───────────────────────────────────────────────────────
-
-  describe('warmup', () => {
-    it('marks cache warm after one bounded stable-package warmup', async (ctx) => {
-      requireDepGraphFixture(ctx);
-      const cl = new CachingLayer(new MemoryCache());
-
-      const result = await runWarmup(client, cl, TEST_PACKAGE_WITH_DEPS);
-      if (result.totalObjects === 0) {
-        requireOrSkip(ctx, undefined, `No objects in ${TEST_PACKAGE_WITH_DEPS} — system has nothing stable to index`);
-      }
-      expect(cl.isWarmupAvailable).toBe(true);
-      expect(result.failed).toBe(0);
-    }, 120000);
   });
 
   // ─── Cache-Aware compressContext ─────────────────────────────────

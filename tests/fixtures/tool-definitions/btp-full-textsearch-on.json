@@ -827,6 +827,10 @@
           "type": "string",
           "description": "Object type (PROG, CLAS, DDLS, DDLX, BDEF, SRVD, SRVB, etc.)"
         },
+        "group": {
+          "type": "string",
+          "description": "Parent FUGR for FUNC or structural INCL."
+        },
         "version": {
           "type": "string",
           "description": "Service version for publish/unpublish (default: \"0001\")"
@@ -855,6 +859,9 @@
               "name": {
                 "type": "string",
                 "description": "Object name"
+              },
+              "group": {
+                "type": "string"
               }
             },
             "required": [
@@ -862,7 +869,7 @@
               "name"
             ]
           },
-          "description": "Batch activation: array of {type, name} to activate in one call. Use whenever activating 2+ objects (any mix of types)."
+          "description": "Batch items; use for 2+ objects."
         }
       }
     },
@@ -926,7 +933,7 @@
   },
   {
     "name": "SAPQuery",
-    "description": "Execute ABAP SQL queries (BTP ABAP Environment). Returns structured data with column names and rows. IMPORTANT: On BTP, only custom Z/Y tables and released CDS entities can be queried. SAP standard tables (MARA, VBAK, DD02L, DD03L, TADIR, etc.) are blocked. Use released CDS views instead: I_LANGUAGE, I_COUNTRY, I_CURRENCY, I_UnitOfMeasure, etc. If a table is not found, similar table names will be suggested automatically.",
+    "description": "Execute ABAP SQL queries (BTP ABAP Environment). Returns structured data with column names and rows. ADT freestyle ABAP SQL: one read-only SELECT; use AS aliases, alias~field/alias~*, ASCENDING/DESCENDING, single-quoted inline literals (no @/:/? parameters), and maxRows (not TOP/LIMIT/OFFSET/FETCH). JOINs, GROUP BY, aggregates, UNION, and subqueries work; schema prefixes, CTEs, derived tables, window functions, FULL JOIN, INTERSECT/EXCEPT, comments, and semicolons do not. ARC-1 auto-chunks long literal IN-lists in plain projection SELECTs. IMPORTANT: On BTP, only custom Z/Y tables and released CDS entities can be queried. SAP standard tables (MARA, VBAK, DD02L, DD03L, TADIR, etc.) are blocked. Use released CDS views instead: I_LANGUAGE, I_COUNTRY, I_CURRENCY, I_UnitOfMeasure, etc. If a table is not found, similar table names will be suggested automatically.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1003,7 +1010,7 @@
   },
   {
     "name": "SAPDiagnose",
-    "description": "Run diagnostics on ABAP objects and analyze runtime errors. Actions:\n- \"syntax\": syntax-check (name+type; optional version; optional source = pre-write dry-run, nothing written).\n- \"unittest\": run ABAP Unit tests (name+type).\n- \"atc\": run ATC checks (name+type; optional variant).\n- \"cds_testcases\": SAP-suggested ABAP Unit test cases for a CDS entity (name; read-only; SAP_BASIS 8.16+).\n- \"object_state\": compare active and inactive source versions without fetching both (name+type; CLAS compares all includes). Returns ETags, hashes, divergence flags.\n- \"quickfix\": get quick-fix proposals at a position (name+type+source+line; optional column, sourceUri).\n- \"apply_quickfix\": apply one proposal, return text deltas, no write (name+type+source+line+proposalUri+proposalUserContent; pass proposalUserContent through exactly, may be empty).\n- \"dumps\": list/read ST22 short dumps (no id = list; id = read; includeFullText, sections).\n- \"traces\": list/analyze profiler traces (id+analysis: hitlist=hot spots, statements=call tree, dbAccesses=DB stats).\n- \"trace_start\": arm a profiler trace for the NEXT matching execution, then reproduce and read via \"traces\" (write scope; defaults: next HTTP request, SQL on; optional traceUser/processType/maxExecutions/expiresHours/sqlTrace/…).\n- \"trace_requests\": list armed trace requests. \"trace_cancel\": cancel one by id (write scope).\n- \"system_messages\": list SM02 messages. \"gateway_errors\": list /IWFND/ERROR_LOG (on-prem; detailUrl or id+errorType for detail).\n- \"odata_perf\": diagnose why an OData call is slow (url = host-relative path from the Network tab); returns the sap-statistics timing split (DB/ABAP/framework/auth) + a verdict. Read-only; needs allowDataPreview.\n- \"cds_sql\": show the native SQL a CDS view compiles to (name; read-only; may be absent on old releases).\n- \"sql_trace_state\" / \"set_sql_trace_state\" (sqlOn; needs SAP_ALLOW_WRITES) / \"sql_trace_directory\": ST05 SQL-trace control.\nQuickfix workflow: syntax/ATC → quickfix → apply_quickfix → write via SAPWrite. Full action reference: docs_page SAPDiagnose.",
+    "description": "Run diagnostics on ABAP objects and analyze runtime errors. Actions:\n- \"syntax\": syntax-check (name+type; optional version; optional source = pre-write dry-run, nothing written).\n- \"unittest\": run ABAP Unit tests (name+type).\n- \"atc\": run ATC checks (name+type; optional variant).\n- \"cds_testcases\": SAP-suggested ABAP Unit test cases for a CDS entity (name; read-only; SAP_BASIS 8.16+).\n- \"object_state\": compare active and inactive source versions without fetching both (name+type; CLAS compares all includes). Returns ETags, hashes, divergence flags.\n- \"quickfix\": get quick-fix proposals at a position (name+type+source+line; optional column, sourceUri).\n- \"apply_quickfix\": apply one proposal, return text deltas, no write (name+type+source+line+proposalUri+proposalUserContent; pass proposalUserContent through exactly, may be empty).\n- \"dumps\": list/read ST22 short dumps (no id = list; id = read; includeFullText, sections).\n- \"traces\": list/analyze profiler traces (id+analysis: hitlist=hot spots, statements=call tree, dbAccesses=DB stats).\n- \"trace_start\": arm a profiler trace for the NEXT matching execution, then reproduce and read via \"traces\" (write scope; defaults: next HTTP request, SQL on; optional traceUser/processType/maxExecutions/expiresHours/sqlTrace/…).\n- \"trace_requests\": list armed trace requests. \"trace_cancel\": cancel one by id (write scope).\n- \"system_messages\": list SM02 messages. \"gateway_errors\": list /IWFND/ERROR_LOG (on-prem; detailUrl or id+errorType for detail).\n- \"odata_perf\": diagnose why an OData call is slow (url = host-relative path from the Network tab); returns the sap-statistics timing split (DB/ABAP/framework/auth) + a verdict. Read-only; needs allowDataPreview.\n- \"authorization_trace\": read the on-prem STUSERTRACE authorization trace from SUAUTHVALTRC (optional user/authObject/onlyFailures/maxResults). Read-only; needs SAP_ALLOW_DATA_PREVIEW. Example: {\"action\":\"authorization_trace\",\"user\":\"AUTH_TEST\",\"onlyFailures\":true}.\n- \"cds_sql\": show the native SQL a CDS view compiles to (name; read-only; may be absent on old releases).\n- \"sql_trace_state\" / \"set_sql_trace_state\" (sqlOn; needs SAP_ALLOW_WRITES) / \"sql_trace_directory\": ST05 SQL-trace control.\nQuickfix workflow: syntax/ATC → quickfix → apply_quickfix → write via SAPWrite. Full action reference: docs_page SAPDiagnose.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1028,7 +1035,8 @@
             "cds_sql",
             "sql_trace_state",
             "set_sql_trace_state",
-            "sql_trace_directory"
+            "sql_trace_directory",
+            "authorization_trace"
           ],
           "description": "Diagnostic action"
         },
@@ -1126,7 +1134,11 @@
         },
         "user": {
           "type": "string",
-          "description": "Filter dumps by SAP user (for dumps action)"
+          "description": "SAP-user filter for dumps, feeds, or authorization_trace."
+        },
+        "authObject": {
+          "type": "string",
+          "description": "Authorization object filter, e.g. S_TCODE."
         },
         "from": {
           "type": "string",
@@ -1138,7 +1150,7 @@
         },
         "maxResults": {
           "type": "number",
-          "description": "Maximum results to return for dumps/system_messages/gateway_errors (default 50, bounded to a safe cap)."
+          "description": "Maximum results for dumps/system_messages/gateway_errors (default 50) or authorization_trace (default 100); bounded to a safe cap."
         },
         "sections": {
           "type": "array",
@@ -1158,6 +1170,10 @@
         "sqlOn": {
           "type": "boolean",
           "description": "For action=\"set_sql_trace_state\": true to arm the ST05 SQL trace, false to disarm. Combine with user to filter the trace to one SAP user."
+        },
+        "onlyFailures": {
+          "type": "boolean",
+          "description": "For authorization_trace: return only denied checks (RC<>0), similar to the SU53 failure view."
         },
         "analysis": {
           "type": "string",
@@ -1226,7 +1242,7 @@
   },
   {
     "name": "SAPContext",
-    "description": "Primary tool for understanding ABAP/CDS objects before specs, reviews, explanations, or changes (BTP ABAP Environment) — use instead of SAPRead when the user asks what an object does. Returns intent first (object KTD when available) then compressed dependency contracts.\n\nDecision rule — pick the action from the user's question:\n- \"What breaks if I change <CDS>?\" / \"Who consumes <I_*>?\" / \"Blast radius\" → action=\"impact\" (DDLS only).\n- \"Which includes/appends extend <TABL>?\" → action=\"structure\", type=\"TABL\".\n- \"What does <object> do?\" / \"Explain\" / \"deps before editing\" → action=\"deps\" (default).\n\nimpact (CDS blast-radius): upstream AST deps + downstream where-used classified into RAP buckets (projectionViews, bdefs, serviceDefinitions, serviceBindings, accessControls, metadataExtensions, abapConsumers, documentation, tables, other) + sibling-consistency hints; filters the noise that text-scanning with SAPQuery produces. Optional includeIndirect, siblingCheck, siblingMaxCandidates.\ndeps (default): target KTD + the public API contracts of its dependencies (not full source). On BTP, released SAP objects (CL_ABAP_*/IF_ABAP_*) and custom Z/Y are included.\nstructure (TABL only): the DDIC include/append tree.\n\nUse SAPContext BEFORE editing existing objects; SAPRead afterwards for exact source. Full detail: docs_page SAPContext.",
+    "description": "Primary tool for understanding ABAP/CDS objects before specs, reviews, explanations, or changes (BTP ABAP Environment) — use instead of SAPRead when the user asks what an object does. Returns intent first (object KTD when available) then compressed dependency contracts.\n\nDecision rule — pick the action from the user's question:\n- \"What breaks if I change <CDS>?\" / \"Who consumes <I_*>?\" / \"Blast radius\" → action=\"impact\" (DDLS only).\n- \"Which includes/appends extend <TABL>?\" → action=\"structure\", type=\"TABL\".\n- \"What does <object> do?\" / \"Explain\" / \"deps before editing\" → action=\"deps\" (default).\n\n- \"Find all callers of <object>\" → action=\"usages\" (live SAP where-used lookup).\n\nimpact (CDS blast-radius): upstream AST deps + downstream where-used classified into RAP buckets (projectionViews, bdefs, serviceDefinitions, serviceBindings, accessControls, metadataExtensions, abapConsumers, documentation, tables, other) + sibling-consistency hints; filters the noise that text-scanning with SAPQuery produces. Optional includeIndirect, siblingCheck, siblingMaxCandidates.\ndeps (default): target KTD + the public API contracts of its dependencies (not full source). On BTP, released SAP objects (CL_ABAP_*/IF_ABAP_*) and custom Z/Y are included.\nstructure (TABL only): the DDIC include/append tree.\n\nUse SAPContext BEFORE editing existing objects; SAPRead afterwards for exact source. Full detail: docs_page SAPContext.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1238,7 +1254,7 @@
             "usages",
             "structure"
           ],
-          "description": "Action:\n\"impact\" = CDS blast-radius analysis (DDLS only). USE THIS for any question like \"what breaks if I change <view>\", \"who consumes <I_*>\", \"impact analysis on <CDS>\", \"downstream of <view>\". Returns upstream AST dependencies + downstream where-used classified into RAP buckets (projectionViews, bdefs, serviceDefinitions, serviceBindings, accessControls, metadataExtensions, abapConsumers, documentation, tables, other), plus additive sibling-consistency diagnostics (consistencyHints + siblingExtensionAnalysis) when related DDLS siblings show asymmetric DDLX coverage. ALWAYS prefer over SAPQuery against DDDDLSRC/ACMDCLSRC/DDLXSRC_SRC/SRVDSRC_SRC (those text-scans produce noise this classifier filters out). Non-DDLS input returns a guardrail error.\n\"deps\" (default, can be omitted) = object understanding / forward dependency context — \"what does <object> do?\" or \"what does <object> depend on?\". Returns the object KTD when available plus public API contracts of dependencies.\n\"usages\" = reverse dependency lookup — \"who calls <object>?\". Requires cache warmup (--cache-warmup). Only \"name\" is needed. For CDS entities prefer action=\"impact\" instead.\n\"structure\" = TABL includes/appends."
+          "description": "Action:\n\"impact\" = CDS blast-radius analysis (DDLS only). USE THIS for any question like \"what breaks if I change <view>\", \"who consumes <I_*>\", \"impact analysis on <CDS>\", \"downstream of <view>\". Returns upstream AST dependencies + downstream where-used classified into RAP buckets (projectionViews, bdefs, serviceDefinitions, serviceBindings, accessControls, metadataExtensions, abapConsumers, documentation, tables, other), plus additive sibling-consistency diagnostics (consistencyHints + siblingExtensionAnalysis) when related DDLS siblings show asymmetric DDLX coverage. ALWAYS prefer over SAPQuery against DDDDLSRC/ACMDCLSRC/DDLXSRC_SRC/SRVDSRC_SRC (those text-scans produce noise this classifier filters out). Non-DDLS input returns a guardrail error.\n\"deps\" (default, can be omitted) = object understanding / forward dependency context — \"what does <object> do?\" or \"what does <object> depend on?\". Returns the object KTD when available plus public API contracts of dependencies.\n\"usages\" = live SAP where-used lookup. Provide \"type\" when known; without it, the name must resolve uniquely. Prefer \"impact\" for CDS.\n\"structure\" = TABL includes/appends."
         },
         "type": {
           "type": "string",
@@ -1248,7 +1264,7 @@
             "DDLS",
             "TABL"
           ],
-          "description": "Object type. Optional for action=\"impact\" (defaults to DDLS); required otherwise."
+          "description": "Object type. Optional for action=\"impact\" (defaults to DDLS) or action=\"usages\"; required otherwise."
         },
         "name": {
           "type": "string",
@@ -1293,7 +1309,7 @@
   },
   {
     "name": "SAPManage",
-    "description": "Probe and report SAP system capabilities (BTP ABAP Environment). Returns feature status and system type. Also handles package (DEVC) lifecycle operations.\n\nActions:\n- \"features\": Get cached feature status from last probe.\n- \"probe\": Re-probe the SAP system now (feature probes + discovery refresh).\n- \"cache_stats\": Show object cache health and warmup state.\n- \"create_package\": Create a package (DEVC) via ADT packages API.\n- \"delete_package\": Delete an existing package.\n- FLP actions: flp_list_catalogs, flp_list_groups, flp_list_tiles, flp_create_catalog, flp_create_group, flp_create_tile, flp_add_tile_to_group, flp_delete_catalog.\n- \"set_api_state\": Release (or revoke) an object's API release contract for ABAP Cloud / Clean Core (requires \"objectUri\", or \"name\" + \"objectType\"; \"apiState\" defaults to RELEASED, \"contract\" defaults to C1 — pass C0 for SRVD, C3 for classic views). The write counterpart of SAPRead(type=\"API_STATE\").\n\nReturns JSON with features and systemType=\"btp\". On BTP, RAP/CDS and transports are always available. abapGit, AMDP, UI5/BSP, and FLP customization may not be available depending on the BTP ABAP configuration.",
+    "description": "Probe and report SAP system capabilities (BTP ABAP Environment). Returns feature status and system type. Also handles package (DEVC) lifecycle operations.\n\nActions:\n- \"features\": Get cached feature status from last probe.\n- \"probe\": Re-probe the SAP system now (feature probes + discovery refresh).\n- \"cache_stats\": Show request-driven object cache health.\n- \"create_package\": Create a package (DEVC) via ADT packages API.\n- \"delete_package\": Delete an existing package.\n- FLP actions: flp_list_catalogs, flp_list_groups, flp_list_tiles, flp_create_catalog, flp_create_group, flp_create_tile, flp_add_tile_to_group, flp_delete_catalog.\n- \"set_api_state\": Release (or revoke) an object's API release contract for ABAP Cloud / Clean Core (requires \"objectUri\", or \"name\" + \"objectType\"; \"apiState\" defaults to RELEASED, \"contract\" defaults to C1 — pass C0 for SRVD, C3 for classic views). The write counterpart of SAPRead(type=\"API_STATE\").\n\nReturns JSON with features and systemType=\"btp\". On BTP, RAP/CDS and transports are always available. abapGit, AMDP, UI5/BSP, and FLP customization may not be available depending on the BTP ABAP configuration.",
     "inputSchema": {
       "type": "object",
       "properties": {

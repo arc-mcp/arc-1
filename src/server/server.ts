@@ -7,6 +7,7 @@
  * - http-streamable: for remote/containerized deployments
  */
 
+import { type ApiKeyEntry, createApiKeyVerifier, type Verifier } from '@arc-mcp/xsuaa-auth';
 import type { BTPConfig, BTPProxyConfig, Destination, PerUserAuthTokens } from '@arc-mcp/xsuaa-auth/btp';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -41,7 +42,7 @@ import { startLocalUiServer, type UiServerDeps } from './ui.js';
 import { UiLogBufferSink } from './ui-log-buffer.js';
 
 /** ARC-1 version */
-export const VERSION = '0.9.25'; // x-release-please-version
+export const VERSION = '0.9.27'; // x-release-please-version
 
 // Soft warning for an unusually large served tools/list. It is re-sent on every conversation (a
 // recurring token + latency cost), and some MCP clients cap tool-list size. CI's
@@ -49,6 +50,31 @@ export const VERSION = '0.9.25'; // x-release-please-version
 // runtime and invisible to CI — so warn once at serve time if the live list crosses the threshold.
 const TOOLS_LIST_SOFT_WARN_BYTES = 60_000;
 let warnedLargeToolsList = false;
+
+/**
+ * Resolve API-key provenance from the configured secret, not from AuthInfo.clientId.
+ * XSUAA/OIDC also populate clientId, so a claim such as `azp=api-key:viewer` must
+ * never make a JWT take the shared API-key path. This is a second, timing-safe
+ * provenance check after the upstream verifier has already authenticated the token.
+ */
+function createConfiguredApiKeyVerifier(config: ServerConfig): Verifier | undefined {
+  const entries: ApiKeyEntry[] = [];
+  for (const entry of config.apiKeys ?? []) {
+    if (!API_KEY_PROFILES[entry.profile]) continue;
+    entries.push({ key: entry.key, clientId: `api-key:${entry.profile}` });
+  }
+  return entries.length > 0 ? createApiKeyVerifier(entries) : undefined;
+}
+
+async function configuredApiKeyProfile(verifier: Verifier | undefined, token: unknown): Promise<string | undefined> {
+  if (!verifier || typeof token !== 'string') return undefined;
+  try {
+    const authInfo = await verifier(token);
+    return authInfo.clientId?.startsWith('api-key:') ? authInfo.clientId.slice('api-key:'.length) : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 function warnIfToolsListTooLarge(tools: ToolDefinition[]): void {
   if (warnedLargeToolsList) return;
@@ -184,7 +210,8 @@ export function filterToolsByAuthScope(
 
 export function logAuthSummary(config: ServerConfig): void {
   const mcpMethods: string[] = [];
-  if (config.apiKeys?.length) mcpMethods.push('api-keys');
+  const hasApiKeys = !!config.apiKeys?.length;
+  if (hasApiKeys) mcpMethods.push('api-keys');
   if (config.oidcIssuer && config.oidcAudience) mcpMethods.push('oidc');
   if (config.xsuaaAuth) mcpMethods.push('xsuaa');
   if (mcpMethods.length === 0) mcpMethods.push('none');
@@ -211,9 +238,24 @@ export function logAuthSummary(config: ServerConfig): void {
     sapMethod = 'basic';
   }
 
-  const scope = config.ppEnabled ? 'per-user' : 'shared';
+  const strictPpOnly = config.ppEnabled && config.ppStrictExplicit && config.ppStrict;
+  const mixedSapIdentity = config.ppEnabled && hasApiKeys && !strictPpOnly;
+  const scope = mixedSapIdentity ? 'mixed: JWT per-user, API keys shared' : config.ppEnabled ? 'per-user' : 'shared';
   const samlSuffix = config.disableSaml2 ? ' disable-saml=on' : '';
   logger.info(`auth: MCP=[${mcpMethods.join(',')}] SAP=${sapMethod} (${scope})${samlSuffix}`);
+
+  if (mixedSapIdentity) {
+    logger.warn(
+      'auth topology: PP and API-key calls use different SAP identities. Mixed mode is supported. ' +
+        'Separate instances are recommended for clearer SAP identity and audit boundaries; set SAP_PP_STRICT=true ' +
+        'on the PP instance when using that topology.',
+    );
+  } else if (strictPpOnly && hasApiKeys) {
+    logger.warn(
+      'auth topology: ARC1_API_KEYS is configured but SAP_PP_STRICT=true rejects API-key MCP tool calls. ' +
+        'Set SAP_PP_STRICT=false for supported mixed operation, or remove/move the keys for a strict PP topology.',
+    );
+  }
 }
 
 /** Build the base ADT client config (without per-user auth) */
@@ -640,6 +682,7 @@ export function createServer(
   mcpRateLimiter?: McpRateLimiter,
 ): Server {
   const server = new Server({ name: 'arc-1', version: VERSION }, { capabilities: { tools: {} } });
+  const apiKeyProvenanceVerifier = createConfiguredApiKeyVerifier(config);
 
   // Create default ADT client (shared, uses startup-time credentials or OAuth bearer).
   // Passes the shared server-wide semaphore so per-user PP clients (created at request
@@ -733,14 +776,33 @@ export function createServer(
     }
 
     // Principal propagation: create per-user ADT client if enabled and user JWT available.
-    // Only attempt PP when the token is a JWT (3 dot-separated parts), not a plain API key.
+    // Resolve API-key provenance from the configured secret before checking JWT shape,
+    // so dotted API keys remain supported without trusting the cross-verifier clientId field.
     let client = defaultClient;
     let isPerUserClient = false;
     const token = extra.authInfo?.token;
-    const isJwt = token && token.split('.').length === 3;
-    if (config.ppEnabled && btpConfig && isJwt) {
+    const apiKeyProfile = await configuredApiKeyProfile(apiKeyProvenanceVerifier, token);
+    const isApiKey = apiKeyProfile !== undefined;
+    const isJwt = !isApiKey && typeof token === 'string' && token.split('.').length === 3;
+    if (config.ppEnabled && isJwt) {
       const ppUser = (extra.authInfo?.extra?.userName ?? extra.authInfo?.clientId) as string | undefined;
       const ppDest = resolvePpDestinationName(config) ?? '';
+      if (!btpConfig) {
+        const errMsg = 'BTP runtime configuration is unavailable for principal propagation';
+        logger.emitAudit({
+          timestamp: new Date().toISOString(),
+          level: 'error',
+          event: 'auth_pp_created',
+          user: ppUser,
+          destination: ppDest,
+          success: false,
+          errorMessage: errMsg,
+        });
+        return {
+          content: [{ type: 'text' as const, text: `Principal propagation failed: ${errMsg}` }],
+          isError: true,
+        } as Record<string, unknown>;
+      }
       try {
         client = await createPerUserClient(config, btpConfig, btpProxy, token, adtSemaphore);
         isPerUserClient = true;
@@ -763,20 +825,17 @@ export function createServer(
           success: false,
           errorMessage: errMsg,
         });
-        if (config.ppStrict) {
-          // Strict mode: PP failure is a hard error — never fall back to shared client.
-          // This ensures every request runs with the authenticated user's identity.
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: `Principal propagation failed (SAP_PP_STRICT=true): ${errMsg}`,
-              },
-            ],
-            isError: true,
-          } as Record<string, unknown>;
-        }
-        // Fall back to shared client (service account)
+        // A JWT-authenticated request must never change SAP identity after a PP error.
+        // Non-JWT API-key requests still use the shared client through the branch below.
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Principal propagation failed: ${errMsg}`,
+            },
+          ],
+          isError: true,
+        } as Record<string, unknown>;
       }
     } else if (config.ppStrictExplicit && config.ppStrict && config.ppEnabled && !isJwt) {
       // Strict mode with non-JWT token (e.g., API key) — reject
@@ -795,14 +854,13 @@ export function createServer(
     client.http.setDiscoveryMap(getCachedDiscovery(config.destinationName));
 
     // Per-request safety: merge server ceiling with per-user policy.
-    //   - API-key path: clientId starts with "api-key:<profile>" — intersect server with profile's partial SafetyConfig.
+    //   - API-key path: authenticated configured key — intersect server with the key profile's partial SafetyConfig.
     //   - XSUAA/OIDC path: derive from scopes only (server ceiling, scopes can only tighten).
     // API-key intersection is stricter — profile can narrow allowedPackages / feature flags
     // that scopes alone cannot (scopes don't encode allowedPackages, etc.).
     let effectiveClient = client;
-    if (extra.authInfo?.clientId?.startsWith('api-key:')) {
-      const profileName = extra.authInfo.clientId.slice('api-key:'.length);
-      const profile = API_KEY_PROFILES[profileName];
+    if (apiKeyProfile) {
+      const profile = API_KEY_PROFILES[apiKeyProfile];
       if (profile) {
         const effectiveSafety = deriveUserSafetyFromProfile(client.safety, profile.safety);
         effectiveClient = client.withSafety(effectiveSafety);
@@ -845,8 +903,11 @@ export async function createCachingLayer(config: ServerConfig): Promise<CachingL
   if (mode === 'none') return undefined;
 
   let cache: Cache;
-  if (mode === 'sqlite' || (mode === 'auto' && config.transport === 'http-streamable')) {
-    // Persistent cache for http-streamable / Docker — load dynamically
+  if (mode === 'sqlite') {
+    logger.warn(
+      'ARC1_CACHE=sqlite stores SAP source in plaintext at rest; use ARC1_CACHE=memory/none or encrypted storage for IP-sensitive landscapes.',
+    );
+    // Persistent cache is explicit opt-in because SQLite stores full source bodies.
     try {
       const { SqliteCache } = await import('../cache/sqlite.js');
       cache = new SqliteCache(config.cacheFile);
@@ -857,7 +918,7 @@ export async function createCachingLayer(config: ServerConfig): Promise<CachingL
       cache = new MemoryCache();
     }
   } else {
-    // Memory cache for stdio (default)
+    // Memory cache for auto/default and explicit memory mode. Avoids source-at-rest by default.
     cache = new MemoryCache();
   }
 
@@ -1104,39 +1165,7 @@ export async function createAndStartServer(
       mode: config.cacheMode,
       sources: stats.sourceCount,
       depGraphs: stats.contractCount,
-      edges: stats.edgeCount,
     });
-  }
-
-  // Run warmup if configured (before starting transport so it completes before serving)
-  if (config.cacheWarmup && registry) {
-    logger.warn('ARC1_CACHE_WARMUP is not supported in multi-destination mode yet — skipping warmup.');
-  }
-  if (config.cacheWarmup && cachingLayer && config.url) {
-    try {
-      const { runWarmup } = await import('../cache/warmup.js');
-      const warmupClient = new AdtClient(
-        buildAdtConfig(config, btpProxy, bearerTokenProvider, undefined, adtSemaphore),
-      );
-      const result = await runWarmup(
-        warmupClient,
-        cachingLayer,
-        config.cacheWarmupPackages || undefined,
-        config.systemType,
-      );
-      logger.info('Cache warmup completed', {
-        objects: result.totalObjects,
-        fetched: result.fetched,
-        skipped: result.skipped,
-        failed: result.failed,
-        edges: result.edgesCreated,
-        durationMs: result.durationMs,
-      });
-    } catch (err) {
-      logger.warn('Cache warmup failed — continuing without warm cache', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
   }
 
   // Run feature probe once at startup — shared across all requests (stdio and HTTP).

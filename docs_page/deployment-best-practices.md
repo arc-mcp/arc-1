@@ -159,8 +159,8 @@ When `SAP_SYSTEM_TYPE=btp` is set, tool definitions are adapted at server startu
 
 | Target | Auth | Config |
 |--------|------|--------|
-| On-premise SAP (via Cloud Connector) | Principal Propagation | `SAP_BTP_DESTINATION`, `SAP_PP_ENABLED=true` |
-| BTP ABAP Environment | Destination `OAuth2UserTokenExchange` | `SAP_BTP_DESTINATION`, `SAP_PP_ENABLED=true`, `SAP_SYSTEM_TYPE=btp` |
+| On-premise SAP (via Cloud Connector) | Principal Propagation | `SAP_BTP_DESTINATION`, `SAP_PP_ENABLED=true`, `SAP_PP_STRICT=true` |
+| BTP ABAP Environment | Destination `OAuth2UserTokenExchange` | `SAP_BTP_DESTINATION`, `SAP_PP_ENABLED=true`, `SAP_PP_STRICT=true`, `SAP_SYSTEM_TYPE=btp` |
 
 ### Configuration examples
 
@@ -203,6 +203,7 @@ applications:
     env:
       SAP_BTP_DESTINATION: SAP_ECC_DEV
       SAP_PP_ENABLED: true
+      SAP_PP_STRICT: true
       SAP_TRANSPORT: http-streamable
       SAP_XSUAA_AUTH: true
 ```
@@ -214,7 +215,7 @@ applications:
 1. **Use `SAP_ALLOW_WRITES=false` for production systems** — prevents object, transport, and Git mutations
 2. **Use `SAP_ALLOW_FREE_SQL=false` for sensitive systems** — blocks arbitrary SQL queries
 3. **Use `SAP_ALLOWED_PACKAGES=Z*,Y*,$TMP`** — restricts write operations to custom code packages (default is `$TMP` only — local objects)
-4. **Use `SAP_PP_ENABLED=true` for per-user deployments** — JWT principal-propagation failures fail closed by default; set `SAP_PP_STRICT=true` explicitly only when API-key / non-JWT calls must also be rejected
+4. **Choose the PP/API-key identity topology explicitly** — separate strict PP and least-privileged API-key instances are recommended; supported mixed instances set `SAP_PP_STRICT=false`
 5. **Deploy separate instances per system** — limits blast radius
 6. **Use XSUAA auth for deployed instances** — proper OAuth 2.0 with scopes (read/write/data/sql/transports/git/admin)
 7. **Set `SAP_SYSTEM_TYPE`** explicitly in production — ensures correct tool definitions from startup

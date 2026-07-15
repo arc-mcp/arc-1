@@ -199,7 +199,7 @@ export const SCENARIOS: EvalScenario[] = [
       },
     ],
     acceptable: [
-      // SAPContext action="usages" requires a pre-warmed cache but is a
+      // SAPContext action="usages" performs the same live SAP lookup and is a
       // reasonable answer for the consumer-question intent.
       { tool: 'SAPContext', requiredArgs: { action: 'usages', name: 'ZCL_BILLING' } },
     ],

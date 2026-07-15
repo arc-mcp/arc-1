@@ -123,6 +123,14 @@ describe('ACTION_POLICY matrix', () => {
     expect(hasRequiredScope(['read', 'write'], policy!.scope)).toBe(true);
   });
 
+  it('SAPDiagnose.authorization_trace requires data scope', () => {
+    const policy = getActionPolicy('SAPDiagnose', 'authorization_trace');
+    expect(policy?.scope).toBe('data');
+    expect(policy?.opType).toBe(OperationType.Query);
+    expect(hasRequiredScope(['read'], policy!.scope)).toBe(false);
+    expect(hasRequiredScope(['read', 'data'], policy!.scope)).toBe(true);
+  });
+
   it('hyperfocused mixed delegators are read-scoped; concrete sub-actions enforce mutations', () => {
     expect(getActionPolicy('SAP', 'transport')?.scope).toBe('read');
     expect(getActionPolicy('SAP', 'git')?.scope).toBe('read');
