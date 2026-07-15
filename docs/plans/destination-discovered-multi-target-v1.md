@@ -19,7 +19,11 @@ history and attribution.
 
 The deployment owner continues to define an instance-wide safety ceiling in `mta.yaml`/environment
 variables. Each exposed destination defines its own narrower client policy. Effective authorization
-is `instance ceiling ∩ destination policy ∩ caller XSUAA scopes ∩ SAP authorization`.
+is `instance ceiling ∩ destination policy ∩ target-bound XSUAA role grant ∩ SAP authorization`.
+The current instance-wide XSUAA scopes remain the functional grants for the legacy target. New
+static `target_*` profile scopes plus exact `(SID, client)` role attributes are projected into the
+ordinary ARC-1 scopes only for a matching discovered route, before tool listing, PP lookup, or
+dispatch.
 Destinations are read once at startup; changes require a CF app restart. Zero discovered targets is a
 healthy, deployable state so an administrator can deploy ARC-1 first and configure destinations
 afterward.
@@ -51,6 +55,11 @@ afterward.
 - `ARC1_MAX_CONCURRENT` is one process-wide SAP semaphore. There is no per-target semaphore, and the
   `/mcp` HTTP edge limit is derived from `ARC1_AUTH_RATE_LIMIT`. Sixty target routes must not create
   sixty independent per-IP buckets.
+- `xs-security.json` currently defines only instance-wide `read`, `write`, `data`, `sql`,
+  `transports`, `git`, and `admin` roles. In addition, the current
+  `@arc-mcp/xsuaa-auth` XSUAA verifier copies only verified scopes, username, and email into
+  `AuthInfo`; it does not expose `xs.user.attributes`. Target-aware authorization therefore needs a
+  small prerequisite package release plus new role templates in ARC-1.
 - `mta.yaml` currently contains active placeholder values for `SAP_BTP_DESTINATION` and
   `SAP_BTP_PP_DESTINATION`, deliberately causing startup to fail until they are overridden. That is
   incompatible with deploy-first/configure-destinations-later multi-target setup.
@@ -89,11 +98,29 @@ afterward.
 - No targets is not fatal: `/health` returns 200, the authenticated catalog returns an empty list,
   named MCP routes return generic 404, and startup logs a warning. A CF restart is required after
   adding, editing, or deleting destinations.
-- The authenticated `GET /` and `GET /targets` catalog requires the existing `read` scope. It lists
-  only target labels and MCP URLs and returns a generated VS Code/GitHub Copilot `.vscode/mcp.json`
-  sample. It never exposes destination names, SAP URLs, Cloud Connector IDs, credentials, policies,
-  or quarantined targets. Any read-role user can see the route inventory in v1; per-target catalog
-  ACLs and SaaS tenant filtering are explicitly beyond v1.
+- XSUAA remains one application-level OAuth provider for the process; ARC-1 does not create an XSUAA
+  instance, OAuth client, or scope per SAP target. `xs-security.json` adds five static target-profile
+  marker scopes and target-aware role templates alongside the unchanged legacy scopes/templates.
+  Role instances carry one or more exact target values in `SID:CLIENT` form, for example `A4H:100`;
+  there are no target wildcards in v1.
+- Each role profile has a distinct required attribute so XSUAA's flattened scope/attribute unions
+  cannot create a cross-product privilege escalation: `arc1_viewer_targets`,
+  `arc1_developer_targets`, `arc1_data_targets`, `arc1_sql_targets`, and
+  `arc1_admin_targets`. Each template also carries only its matching `target_viewer`,
+  `target_developer`, `target_data`, `target_sql`, or `target_admin` marker scope—not the legacy
+  functional scopes. A caller with Developer on `A4D:100` and Viewer on `PRD:100` receives write only
+  on A4D and read only on PRD, and neither target role silently authorizes legacy `/mcp`.
+- Every discovered named route requires a matching target-aware role even if only one target exists.
+  Missing/malformed target attributes fail closed before PP lookup. Existing global roles continue
+  to authorize the explicit legacy `/mcp` target and may authorize its exact named alias only when
+  the discovered entry matches the legacy destination connection fingerprint; they never authorize
+  unrelated discovered targets. Existing `MCPAdmin` is not an all-target wildcard.
+- The authenticated `GET /` and `GET /targets` catalog requires XSUAA authentication and either
+  legacy `read` or at least one target profile that projects to `read`. It lists only routes for which
+  the caller has effective target-level read access (including an exact verified legacy alias). It
+  returns target labels, MCP URLs, and a generated VS Code/GitHub Copilot `.vscode/mcp.json` sample.
+  It never exposes destination names, SAP URLs, Cloud Connector IDs, credentials, policies,
+  quarantined targets, or targets assigned only to other users.
 - The minimum target is read-only because all target capability properties default false:
 
   ```properties
@@ -141,6 +168,9 @@ afterward.
 | `src/server/types.ts` | Add explicit multi-target/rate-limit config and target runtime types without changing legacy defaults. |
 | `src/server/config.ts` | Parse and validate the v1 mode constraints and the new independent MCP HTTP rate limit. |
 | `src/cli-args.ts` | Add the MCP HTTP rate-limit CLI flag; multi-target itself remains BTP env/MTA-only. |
+| `xs-security.json` | Preserve legacy scopes/templates and add five static `target_*` marker scopes, required target-profile attributes, and `MCPTarget*` templates. |
+| `@arc-mcp/xsuaa-auth` (`src/xsuaa.ts`, `src/types.ts`, tests) | Prerequisite package PR: expose only explicitly allowlisted verified XSUAA user attributes in `AuthInfo`; no ARC-1 target policy belongs in the generic package. |
+| `src/authz/target-access.ts` | New exact target-claim parser and marker-scope/attribute profile projection used by routes and catalog. |
 | `src/server/destination-discovery.ts` | New startup-only subaccount destination enumeration, allowlisted projection, and secret-safe normalization. |
 | `src/server/destination-registry.ts` | Replace the #543 CSV/lazy registry with immutable target validation, conflict quarantine, policy intersection, runtime ownership, and catalog descriptors. |
 | `src/server/server.ts` | Wire optional legacy runtime plus discovered runtimes, strict PP client creation, connection fingerprint verification, nested semaphores, and per-target feature state. |
@@ -163,6 +193,7 @@ afterward.
 | `tests/unit/server/destination-discovery.test.ts` | Prove collection parsing, immediate sanitization, and Destination Service failure behavior. |
 | `tests/unit/server/destination-registry.test.ts` | Prove validation, defaults, policy intersection, duplicate quarantine, immutable snapshot, and zero-target startup. |
 | `tests/unit/server/http-destinations.test.ts` | Prove routing, auth catalog, PRM, generic failures, legacy coexistence, and shared limiter mounting. |
+| `tests/unit/authz/target-access.test.ts` | Prove exact claim parsing, mixed-role isolation, scope intersection, legacy compatibility, and fail-closed unattributed tokens. |
 | `tests/unit/server/{config,server,auth-rate-limit}.test.ts` | Prove mode constraints, PP drift failure, client pinning, nested concurrency, and limiter defaults. |
 | `tests/unit/handlers/feature-cache.test.ts` | Prove no feature/discovery bleed between target IDs or into legacy mode. |
 | `tests/integration/multi-target-btp.integration.test.ts` | Exercise real subaccount discovery and destination normalization with BTP service bindings. |
@@ -197,6 +228,21 @@ afterward.
 - Current source evidence: `lookupDestinationWithUserToken()` in `@arc-mcp/xsuaa-auth` pins Cloud SDK
   destination caching to `tenant-user`. Multi-target must keep that per-user lookup and add snapshot
   comparison; it must not cache or reuse another user's returned PP auth tokens.
+- SAP XSUAA role attributes are designed for instance/data-level authorization and appear in the
+  signed `xs.user.attributes` claim for user scenarios. `@sap/xssec` exposes them through the
+  verified security context's `getAttributes()` API. The generic auth package can therefore carry an
+  explicit allowlist without ARC-1 decoding an unverified JWT or copying arbitrary IdP claims.
+- XSUAA flattens the scopes and attributes contributed by all assigned roles into the access token.
+  A single `systems` attribute is unsafe: Developer(A4D) + Viewer(PRD) would produce global `write`
+  plus both system values. Reusing the legacy functional scopes in target templates is also unsafe
+  because a target Developer role would then unlock legacy `/mcp`. Distinct attributes paired with
+  distinct static `target_*` marker scopes preserve both the target/profile relationship and the
+  legacy/named-route boundary.
+- SAP permits adding new attributes and role templates to an XSUAA service descriptor but restricts
+  adding/changing attribute references on existing templates. V1 therefore leaves `MCPViewer`,
+  `MCPDeveloper`, `MCPDataViewer`, `MCPSqlUser`, and `MCPAdmin` unchanged and adds new
+  `MCPTarget*` templates. After that one deployment, administrators can create target roles and role
+  collections in BTP Cockpit/CLI without rebuilding ARC-1.
 - Current infrastructure provides on-premise A4H through Cloud Connector/PP. The routing feature does
   not add or change ADT endpoints, XML formats, or SAP-release-specific behavior; unit routing tests
   are release-invariant. Live v1 acceptance is on an on-premise PP target. NW 7.50 and ABAP 8.16 ADT
@@ -222,8 +268,10 @@ afterward.
    `/health` remain available. No fallback identity, target, route, policy, or client is selected.
 6. **Conflicts have no winner.** Duplicate destination names and duplicate `(SID, client)` routes
    quarantine all claimants. Array order, BTP precedence, and response order never decide exposure.
-7. **Four authorization layers.** Instance safety ceiling, destination opt-ins, caller scopes, and SAP
-   authorization all must allow an operation. Every layer restricts; none expands a previous layer.
+7. **Five authorization layers.** Instance safety ceiling, destination opt-ins, a signed `target_*`
+   profile scope, its exact target attribute, and SAP authorization all must allow an operation.
+   ARC-1 projects a matching profile into ordinary downstream functional scopes. Every layer
+   restricts; none expands a previous layer.
 8. **Destination booleans default deny.** An exposed destination with only the minimum properties is
    source-read-only. Data preview, SQL, writes, transport writes, and Git writes each require explicit
    target consent plus existing global gates.
@@ -238,9 +286,10 @@ afterward.
 12. **Bounded shared capacity.** All targets share one global semaphore and one per-user quota; a
     per-target semaphore adds fairness. HTTP edge limiting uses one process-wide bucket per IP across
     all MCP routes, preventing route multiplication from multiplying allowance.
-13. **No public inventory.** Health is public and contains no targets. Catalog is authenticated with
-    `read`; errors never enumerate. The catalog intentionally lists all configured public target
-    labels to read-role users in v1, while SAP PP remains the data authorization boundary.
+13. **No public or cross-user inventory.** Health is public and contains no targets. Catalog is
+    authenticated with `read`, filtered by exact target-role access, and errors never enumerate.
+    Principal propagation remains the backend authorization boundary but is not used as an ARC-1
+    route-discovery oracle.
 14. **Secret-minimal runtime.** Do not log, catalog, audit, serialize, or retain raw destination
     responses. Retain only the validated fields needed for routing, policy, proxying, and drift
     comparison; never fingerprint credentials or PP token values.
@@ -298,7 +347,7 @@ dedicated `$TMP` target with global and destination write consent; create, activ
 a unique object so activation proves correctness and cleanup is visible.
 
 Do not put live integration/E2E commands in the global validation list because they require BTP/SAP
-state. Run them in Task 9 and final verification. The implementation may remain a draft until the
+state. Run them in Task 10 and final verification. The implementation may remain a draft until the
 beta matrix passes and Wouter reviews the architecture delta.
 
 ## Validation Commands
@@ -420,7 +469,114 @@ candidates, then quarantine every conflict before exposing any route.
       order independence, mixed valid/invalid entries, all-invalid, and zero-target registries.
 - [ ] Run focused tests: `npm test -- tests/unit/server/destination-registry.test.ts`.
 
-### Task 4: Isolate target runtime state and verify principal-propagation destination drift
+### Task 4: Add target-bound XSUAA roles and verified attribute transport
+
+**External prerequisite PR in `arc-mcp/xsuaa-auth`:**
+- Modify: `src/xsuaa.ts`
+- Modify: `src/types.ts`
+- Modify: `src/facade.ts` if the public facade threads the new verifier option
+- Modify: `src/index.ts` only if a new public type must be exported
+- Modify: `tests/xsuaa.test.ts`
+- Modify: `tests/facade.test.ts` or the closest option-threading test
+- Modify: `README.md` and `SECURITY.md`
+
+**ARC-1 files:**
+- Modify: `xs-security.json`
+- Create: `src/authz/target-access.ts`
+- Modify: `src/authz/policy.ts` if shared scope constants/types move there
+- Modify: `src/server/http.ts`
+- Modify: `src/server/server.ts`
+- Modify: `package.json` and `package-lock.json` after the package release
+- Create: `tests/unit/authz/target-access.test.ts`
+- Modify: `tests/unit/server/http-destinations.test.ts`
+- Modify: `tests/unit/server/server.test.ts`
+
+Carry only verified, allowlisted XSUAA user attributes across the generic auth boundary, then bind
+the existing functional scopes to exact ARC-1 targets. Do not put SAP target parsing, role-profile
+semantics, or catalog policy into `@arc-mcp/xsuaa-auth`.
+
+#### `@arc-mcp/xsuaa-auth` prerequisite
+
+- [ ] Add an optional `userAttributeNames: readonly string[]` (final public name may follow package
+      conventions) to `createXsuaaTokenVerifier()` and thread it through the facade. The default is
+      empty and omits `extra.userAttributes`, so every existing consumer receives byte-for-byte
+      equivalent `AuthInfo` and no extra claims.
+- [ ] After `@sap/xssec` successfully creates the security context, read attributes only through
+      `securityContext.getAttributes()`. Copy only requested names into a typed
+      `AuthInfo.extra.userAttributes` record and normalize accepted scalar/array strings to immutable
+      string arrays. Do not decode the raw JWT again or trust a caller-supplied claim object.
+- [ ] When a consumer opts in, treat absent attributes as an empty record. Drop or reject malformed
+      non-string values under a documented fail-closed contract; never coerce objects/numbers to
+      target strings.
+- [ ] Never log attribute names and values together, role collections, raw claims, or tokens. Debug
+      output may contain only counts and presence booleans.
+- [ ] Test default compatibility, selected-name projection, unselected claim removal, scalar/array
+      normalization, malformed values, absent user attributes, signature/issuer failure, and PII/log
+      redaction. Include a test showing that API-key, OIDC, and client-credentials paths do not
+      accidentally acquire XSUAA user attributes.
+- [ ] Document that the package verifies and transports attributes but does not interpret them as
+      authorization. Release a compatible package version and update ARC-1 only after its package CI
+      and security tests pass.
+
+#### ARC-1 target roles and enforcement
+
+- [ ] Preserve all existing functional scopes and role templates unchanged. Add static marker scopes
+      `target_viewer`, `target_developer`, `target_data`, `target_sql`, and `target_admin`; these are
+      profile markers for named routes and are never accepted as legacy `/mcp` functional scopes.
+      Add required string attributes
+      `arc1_viewer_targets`, `arc1_developer_targets`, `arc1_data_targets`, `arc1_sql_targets`, and
+      `arc1_admin_targets` with `valueRequired=true`, plus parallel `MCPTargetViewer`,
+      `MCPTargetDeveloper`, `MCPTargetDataViewer`, `MCPTargetSqlUser`, and `MCPTargetAdmin` role
+      templates. Each template carries only its corresponding `target_*` marker scope and attribute;
+      it does not carry `read`, `write`, `data`, `sql`, `transports`, `git`, or `admin`.
+- [ ] Pass exactly those five attribute names to the XSUAA verifier. Do not expose arbitrary
+      `xs.user.attributes` through ARC-1's request context, plugins, audit events, or public extension
+      API.
+- [ ] Add the five `target_*` marker scopes to ARC-1's XSUAA accepted-scope list, OAuth metadata, and
+      DCR/authorization scope handling. Preserve existing legacy scope qualification and requests.
+      Test that a named-route OAuth flow actually requests/receives the marker scopes while an
+      existing `/mcp` client continues to work with only the legacy scopes.
+- [ ] Parse each attribute value as exact `SID:CLIENT` using
+      `^[A-Z][A-Z0-9]{2}:\d{3}$`. One role may contain multiple exact targets for teams that share
+      authorization. Reject/ignore malformed values with a redacted warning; do not support `*`,
+      globbing, prefixes, destination names, URLs, or environment labels in v1.
+- [ ] Activate a profile only when both its signed marker scope and its exact target attribute match.
+      Project active profiles to target-local functional scopes: Viewer=`read`;
+      Developer=`read,write,transports,git`; DataViewer=`data`; SqlUser=`data,sql`; Admin=all current
+      functional scopes. Union profiles that match the same exact target. A marker without its
+      attribute, or an attribute without its marker, grants nothing.
+- [ ] Perform target authorization immediately after authentication and exact route resolution, but
+      before Destination Service PP lookup, runtime creation, `tools/list`, or tool dispatch. Pass a
+      cloned `AuthInfo` containing only target-effective scopes downstream so existing scope checks,
+      schema pruning, `deriveUserSafety()`, plugins, and audits cannot accidentally observe global
+      scopes from another target.
+- [ ] Require target attributes for every destination-discovered named route, including a one-target
+      deployment. Missing attributes, unsupported token types, or no matching target profile return
+      the same generic 404 as an unknown target and must not trigger a PP lookup.
+- [ ] Keep global legacy roles valid for `/mcp`; ignore every `target_*` scope there. Legacy roles may
+      also authorize the named alias of that same explicit legacy destination only after destination
+      name and connection fingerprint match the discovered snapshot; SID/client similarity alone is
+      insufficient. Standard legacy scopes never authorize any other discovered target, and global
+      `MCPAdmin` is not an implicit all-target role. Conversely, a target role alone never authorizes
+      `/mcp`.
+- [ ] Filter `/` and `/targets` with the same target-access function. Require authentication and
+      either legacy `read` or at least one target profile that projects to `read`; include only routes
+      whose target-effective scopes contain `read`, and generate the VS Code sample only from that
+      filtered list. A token with marker scopes but no currently readable target receives 403 rather
+      than an unfiltered or misleading inventory.
+- [ ] Add the mandatory escalation regression: Developer(`A4D:100`) + Viewer(`PRD:100`) must yield
+      write on A4D and read-only on PRD. Also test reversed role order, multiple targets in one role,
+      profile union on one target, marker-without-attribute, attribute-without-marker,
+      malformed/absent attributes, target-role isolation from `/mcp`, global admin isolation from
+      named targets, legacy alias matching/mismatch, catalog filtering, and no unauthorized PP
+      lookup.
+- [ ] Document SAP's 16 KB XSUAA token limit and inspect a representative 60-target user token during
+      beta acceptance. Exact short target values should remain compact, but v1 must report token
+      issuance failures as identity configuration errors rather than weakening authorization.
+- [ ] Run focused ARC-1 tests:
+      `npm test -- tests/unit/authz/target-access.test.ts tests/unit/server/http-destinations.test.ts tests/unit/server/server.test.ts`.
+
+### Task 5: Isolate target runtime state and verify principal-propagation destination drift
 
 **Files:**
 - Modify: `src/server/server.ts`
@@ -464,7 +620,7 @@ per-user lookup may refresh credentials but may not silently change the target c
       client override, strict PP failure, and legacy feature-cache behavior.
 - [ ] Run focused tests: `npm test -- tests/unit/server/server.test.ts tests/unit/handlers/feature-cache.test.ts tests/unit/adt/http.test.ts`.
 
-### Task 5: Mount endpoint-pinned MCP routes, protected metadata, and an authenticated catalog
+### Task 6: Mount endpoint-pinned MCP routes, protected metadata, and an authenticated catalog
 
 **Files:**
 - Modify: `src/server/http.ts`
@@ -488,9 +644,16 @@ resource URL. Avoid a broad parameter route that can enumerate or reinterpret ar
       its `resource` value the exact public target URL. Ensure the named route's unauthenticated 401
       points to that PRM URL rather than root `/mcp` metadata.
 - [ ] Reuse the existing XSUAA authorization server/scopes; do not create one OAuth client/provider
-      per target. Preserve the path-prefix-aware `ARC1_PUBLIC_URL` behavior.
-- [ ] Add authenticated `GET /` and `GET /targets` handlers requiring `read`. JSON includes ARC-1
-      version, accepted target labels, exact MCP URLs, and a VS Code/GitHub Copilot sample with
+      per target. Apply Task 4's target authorization before the PP/server factory and preserve the
+      path-prefix-aware `ARC1_PUBLIC_URL` behavior.
+- [ ] Advertise legacy functional scopes on the legacy resource, the five `target_*` marker scopes on
+      discovered named resources, and their union only where shared authorization-server metadata
+      requires it. Verify DCR/authorization requests for a named resource include the marker scopes;
+      do not make users request or receive one scope per concrete destination.
+- [ ] Add authenticated `GET /` and `GET /targets` handlers requiring legacy `read` or at least one
+      target profile that projects to `read`, then filter the registry through Task 4's
+      target-effective check. JSON includes ARC-1 version, only the caller's accepted target labels
+      and exact MCP URLs, and a VS Code/GitHub Copilot sample with
       `{ "servers": { "arc1-A4H-100": { "type": "http", "url": ".../A4H/100/mcp" } } }`.
 - [ ] Return HTML from `/` only if it is a simple server-rendered representation of the same sanitized
       data; `/targets` remains the canonical JSON. Do not enable or depend on the optional ARC1 UI.
@@ -500,11 +663,12 @@ resource URL. Avoid a broad parameter route that can enumerate or reinterpret ar
       non-enumerating errors. Put details only in redacted request-correlated operator logs.
 - [ ] Add full Express tests for zero targets, one target, 60 targets, unknown SID/client, duplicate
       quarantine absence, `/mcp` absent/present, legacy/named coexistence, unauthenticated catalog
-      401, read-role catalog success, insufficient scope, sanitized JSON/HTML, exact PRM resource,
-      correct `WWW-Authenticate`, and path-prefix deployments.
+      401, target-read catalog filtering, another user's targets being absent, insufficient global
+      scope, sanitized JSON/HTML, exact PRM resource, correct `WWW-Authenticate`, and path-prefix
+      deployments.
 - [ ] Run focused tests: `npm test -- tests/unit/server/http-destinations.test.ts tests/unit/server/http.test.ts`.
 
-### Task 6: Add shared MCP edge limits and nested global/target concurrency
+### Task 7: Add shared MCP edge limits and nested global/target concurrency
 
 **Files:**
 - Modify: `src/server/auth-rate-limit.ts`
@@ -539,7 +703,7 @@ the property explicitly says target.
       the existing missing-rate-limiting query closed; document any necessary code shape in comments.
 - [ ] Run focused tests: `npm test -- tests/unit/server/auth-rate-limit.test.ts tests/unit/server/http-destinations.test.ts tests/unit/adt/http.test.ts`.
 
-### Task 7: Complete audit, error, and security boundaries for target routing
+### Task 8: Complete audit, error, and security boundaries for target routing
 
 **Files:**
 - Modify: `src/server/audit.ts`
@@ -576,7 +740,7 @@ users or sinks.
       accepted residual risks.
 - [ ] Run focused tests for dispatch, logger/audit sinks, and server PP behavior.
 
-### Task 8: Update deployment descriptors, ADRs, and end-user documentation
+### Task 9: Update deployment descriptors, ADRs, and end-user documentation
 
 **Files:**
 - Modify: `mta.yaml`
@@ -628,13 +792,22 @@ updated. Do not leave two contradictory supported configurations in published do
 - [ ] Document that destinations can be exported/imported through BTP Cockpit in Properties/YAML/JSON
       for templating, but exported files may contain secrets and must not be committed or pasted into
       logs/issues.
-- [ ] Document catalog access and include a sanitized `.vscode/mcp.json` example. Clarify that a read
-      role reveals route inventory and permits attempts against every route; the propagated SAP user
-      still needs authorization/mapping in each client. Per-target ARC-1 ACLs are beyond v1.
+- [ ] Document the unchanged legacy and new target-aware XSUAA templates, the five target attributes,
+      exact `SID:CLIENT` values, one-or-many targets per role, role/role-collection creation through
+      BTP Cockpit/CLI, assignment lifecycle, and the five-layer authorization intersection. Adding a
+      destination requires an ARC-1 restart and a role assignment before any user can see it, but no
+      MTAR rebuild after the target templates have been deployed once.
+- [ ] Document catalog access and include a sanitized `.vscode/mcp.json` example. Clarify that it lists
+      only targets carrying effective target-level `read`, while the propagated SAP user must still
+      be authorized/mapped in every listed client. Include the Developer(A4D) + Viewer(PRD) example
+      and explain why a single flattened `systems` attribute is forbidden.
+- [ ] Document the 16 KB XSUAA token limit, recommend grouping multiple exact targets into one role
+      only when the user population and role profile truly match, and provide a diagnostic for token
+      issuance failures. Do not introduce target wildcards merely to reduce claim size.
 - [ ] Document v1 exclusions: S/4HANA Public Cloud/SAMLAssertion, SaaS/subscriber discovery,
       instance/provider/cross-subaccount discovery, hot reload, cache, plugins, UI, ATC, ABAP Unit,
-      target-specific XSUAA roles/ACLs, and an aggregate endpoint. Credit Geert-Jan's offer for the
-      Public Cloud follow-up without promising a release.
+      API-key/OIDC/client-credentials access to discovered routes, target wildcards, and an aggregate
+      endpoint. Credit Geert-Jan's offer for the Public Cloud follow-up without promising a release.
 - [ ] Mark ADR-0005 `Superseded by ADR-0006`; preserve its original rationale as historical context.
       ADR-0006 must explain why endpoint-pinned target routes satisfy the anti-confused-deputy goal
       while tool parameters and runtime target switching remain forbidden.
@@ -647,7 +820,7 @@ updated. Do not leave two contradictory supported configurations in published do
       `SAP_BTP_DESTINATIONS`, `/mcp/:dest`, `/mcp/<name>`, default destination aliasing,
       `arc1.pp_destination`, suffixed target env vars, and absolute "never multi-system" language.
 
-### Task 9: Add real BTP integration and authenticated multi-target E2E acceptance
+### Task 10: Add real BTP integration and authenticated multi-target E2E acceptance
 
 **Files:**
 - Create: `tests/integration/multi-target-btp.integration.test.ts`
@@ -678,15 +851,23 @@ mocked Express handlers. The beta app must be separate from currently used ARC-1
       this suite is explicitly invoked.
 - [ ] E2E zero-target startup first: verify `/health` 200, `/targets` requires auth then returns empty,
       `/mcp` and named routes do not enumerate, and adding a destination has no effect before restart.
+- [ ] Create temporary target-aware XSUAA roles/collections for the test users without modifying the
+      legacy role templates. Cover one Viewer target, one Developer target, and—where two routes are
+      available—Developer(A4D/client) + Viewer(second target). Record only role names and target IDs,
+      never tokens or unrelated user attributes, and remove temporary assignments in cleanup.
 - [ ] Restart and verify valid targets appear only at `/<SID>/<CLIENT>/mcp`, catalog/VS Code sample
-      URLs are exact, `/mcp` remains absent without legacy config, PRM and 401 metadata match the
-      target resource, and malformed/conflicted targets remain absent.
+      URLs are exact and filtered per test user, `/mcp` remains absent without legacy config, PRM and
+      401 metadata match the target resource, and malformed/conflicted/unauthorized targets remain
+      absent.
 - [ ] With a mapped XSUAA user, connect through PP and run `tools/list`, `SAPRead SYSTEM`, and one
       source read on every available test target. Verify the reported SAP client/system matches the
       route and no request leaks to another target.
 - [ ] With an unmapped/unauthorized user or client, verify PP fails closed and never reaches a shared
       technical identity. Confirm login/auth failures are present in redacted CF/audit logs with
       request/target correlation and no assertion/token.
+- [ ] Prove target authorization runs before PP: a valid XSUAA user without the target attribute gets
+      the generic non-enumerating response and produces no Destination Service user-token lookup.
+      Prove the mixed Developer/Viewer user cannot list or call write actions on the Viewer target.
 - [ ] Exercise destination drift: change `sap-client` or URL after startup, prove the next per-user
       call is rejected, restart, then prove the new valid snapshot is used. Restore the destination in
       best-effort cleanup.
@@ -703,13 +884,13 @@ mocked Express handlers. The beta app must be separate from currently used ARC-1
 - [ ] Record only sanitized outcomes (target labels, counts, status, version, timestamps) in the PR;
       never attach destination exports, CF env, access tokens, PP assertions, or credentials.
 
-### Task 10: Final verification and plan completion
+### Task 11: Final verification and plan completion
 
 - [ ] Run full unit suite: `npm test` — all tests pass.
 - [ ] Run typecheck: `npm run typecheck` — no errors.
 - [ ] Run lint: `npm run lint` — no errors.
 - [ ] Run build: `npm run build` — no errors and MTA build inputs are present.
-- [ ] Run the integration and E2E commands from Task 9 against the separate beta CF app; attach only
+- [ ] Run the integration and E2E commands from Task 10 against the separate beta CF app; attach only
       sanitized pass/fail evidence to the draft PR.
 - [ ] Verify a current single-target legacy deployment from the same build still serves only `/mcp`,
       keeps its existing cache/UI/plugin/tool behavior, and does not call subaccount discovery.
@@ -719,8 +900,11 @@ mocked Express handlers. The beta app must be separate from currently used ARC-1
 - [ ] Verify duplicate destination names and duplicate routes expose none of the conflicting targets
       regardless of input order; external responses and catalog remain non-enumerating.
 - [ ] Verify the minimum destination is read-only; data, SQL, writes, transports, and Git require
-      their target opt-ins plus global ceiling/scopes/SAP authorization; missing package config keeps
-      `$TMP` behavior.
+      their target opt-ins plus target-bound role scopes, global ceiling, and SAP authorization;
+      missing package config keeps `$TMP` behavior.
+- [ ] Verify Developer(A4D) + Viewer(PRD) cannot write to PRD; global legacy roles and `MCPAdmin`
+      cannot access unrelated discovered targets; unattributed/API-key/OIDC/client-credentials tokens
+      cannot reach PP lookup; and the catalog never reveals another user's targets.
 - [ ] Verify every named route's PRM, `WWW-Authenticate`, catalog URL, and generated VS Code entry is
       exact under both root and `ARC1_PUBLIC_URL` path-prefix deployments.
 - [ ] Inspect logs/audit output for secrets and cross-target labels; confirm raw destination payloads,

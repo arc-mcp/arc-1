@@ -1,7 +1,9 @@
 # Evaluation: Multiple BTP Destinations in One ARC-1 Instance
 
 **Date:** 2026-07-02
-**Status:** Implemented (work items 1–5, 7 + PP per destination) — see `docs_page/multi-destination.md` for the user guide. Deferred: per-destination warmup (item 9), destination-scoped API keys (item 11), attribute-based XSUAA roles (item 12).
+**Status:** Prototype implemented (work items 1–5, 7 + PP per destination). The replacement v1
+architecture, including mandatory target-bound XSUAA roles, is specified in
+`docs/plans/destination-discovered-multi-target-v1.md`; this older evaluation remains historical.
 **Fork state:** `lemaiwo/arc-1` main = v0.4.4 (last synced ~2026-04-08)
 **Upstream state:** v0.9.24 (published 2026-07-01), repo moved to `arc-mcp/arc-1`
 
@@ -154,8 +156,8 @@ maintain. This is the pragmatic stopgap until Option A exists.
 | 8 | Decide concurrency scope: keep `ARC1_MAX_CONCURRENT` global (protects instance memory) but consider per-destination sub-limits so one slow system can't starve the others | `server/server.ts` | S |
 | 9 | Warmup per destination (`ARC1_CACHE_WARMUP_<DEST>`), sequential to bound startup cost | `cache/warmup.ts` | S |
 | 10 | stdio transport stays single-destination (multi-dest is an HTTP-deployment feature) | — | — |
-| 11 | Optional: destination-scoped API keys (`ARC1_API_KEYS="key:profile@S4D,S4Q"`) so a key can be limited to specific systems (see §6) | `server/config.ts`, `server/http.ts` | S |
-| 12 | Attribute-based XSUAA authorization: `systems` attribute in `xs-security.json`, runtime check `destination ∈ xs.user.attributes.systems` → role collections per system without redeploy (decided, see §6.3) | `xs-security.json`, auth layer | S–M |
+| 11 | Historical option: destination-scoped API keys. Superseded for v1—discovered routes require XSUAA user tokens; revisit after a target-bound key format is designed. | `server/config.ts`, `server/http.ts` | deferred |
+| 12 | Superseded by §6.3: distinct profile attributes + static `target_*` marker scopes, with allowlisted verified attribute transport from `@arc-mcp/xsuaa-auth`; mandatory for discovered routes. | `xs-security.json`, auth layer, auth package | M |
 
 Rough total: a focused ~1–2 week effort including tests, dominated by items 2–4.
 
@@ -254,65 +256,70 @@ defer unless a concrete need appears.
 ### 6.3 BTP roles per system
 
 Today the XSUAA scopes (`read`, `write`, `data`, `sql`, `transports`, `git`,
-`admin`) are instance-wide. Two ways to make BTP role collections per system:
+`admin`) are instance-wide. Static scope-per-destination definitions would work,
+but every new target would require an `xs-security.json` update and deployment.
+Target attributes allow administrators to create roles for new destinations without
+rebuilding ARC-1.
 
-1. **Scope-per-destination (static):** declare
-   `$XSAPPNAME.S4D.write`, `$XSAPPNAME.S4P.read`, … in `xs-security.json`
-   (generated from the destination list at deploy time), with role templates per
-   system. BTP admins then assign role collections like *ARC1 Developer (S4D)* /
-   *ARC1 Viewer (S4P)* per user in the cockpit. The endpoint for destination D
-   accepts `D.<scope>` (falling back to un-prefixed global scopes for
-   back-compat). Adding a system requires an `xs-security.json` update + redeploy.
-2. **Attribute-based (dynamic):** one set of role templates with an XSUAA
-   attribute `systems`; role collections carry attribute values (`S4D,S4Q`), the
-   JWT exposes them via `xs.user.attributes`, and the endpoint checks
-   `destination ∈ systems`. No redeploy when adding systems, slightly more code.
+One generic `systems` attribute is **not safe**. XSUAA flattens all scopes and
+attributes contributed by a user's roles. Developer(A4D) + Viewer(PRD) could become
+`scopes=[read,write,…]` plus `systems=[A4D,PRD]`; independently checking the global
+write scope and system membership would incorrectly permit PRD writes.
 
 Independent of both: with principal propagation the backend applies the **actual SAP
 roles of the end user per system**, so BTP role collections gate tool access while
 S_DEVELOP & co. remain the authoritative object-level authorization in each system.
 
-**Decision: attribute-based (option 2).** `xs-security.json` keeps the existing
-scopes and adds one attribute plus attribute-aware role templates:
+**Superseding decision: profile-bound target attributes and marker scopes.** Keep
+the existing legacy scopes/templates unchanged and add new `MCPTarget*` templates.
+Each profile references a different required attribute and a dedicated static marker
+scope; target templates do not reuse the legacy functional scopes because that would
+also authorize `/mcp`:
 
 ```jsonc
 {
-  "xsappname": "arc-1",
   "scopes": [
-    { "name": "$XSAPPNAME.read" }, { "name": "$XSAPPNAME.write" },
-    { "name": "$XSAPPNAME.data" }, { "name": "$XSAPPNAME.sql" },
-    { "name": "$XSAPPNAME.transports" }, { "name": "$XSAPPNAME.git" },
-    { "name": "$XSAPPNAME.admin" }
+    { "name": "$XSAPPNAME.target_viewer" },
+    { "name": "$XSAPPNAME.target_developer" },
+    { "name": "$XSAPPNAME.target_data" },
+    { "name": "$XSAPPNAME.target_sql" },
+    { "name": "$XSAPPNAME.target_admin" }
   ],
   "attributes": [
-    { "name": "systems", "valueType": "string", "valueRequired": false }
+    { "name": "arc1_viewer_targets", "valueType": "string", "valueRequired": true },
+    { "name": "arc1_developer_targets", "valueType": "string", "valueRequired": true },
+    { "name": "arc1_data_targets", "valueType": "string", "valueRequired": true },
+    { "name": "arc1_sql_targets", "valueType": "string", "valueRequired": true },
+    { "name": "arc1_admin_targets", "valueType": "string", "valueRequired": true }
   ],
   "role-templates": [
     {
-      "name": "Developer",
-      "scope-references": ["$XSAPPNAME.read", "$XSAPPNAME.write",
-                           "$XSAPPNAME.transports", "$XSAPPNAME.git"],
-      "attribute-references": ["systems"]
+      "name": "MCPTargetDeveloper",
+      "scope-references": ["$XSAPPNAME.target_developer"],
+      "attribute-references": ["arc1_developer_targets"]
     },
     {
-      "name": "Viewer",
-      "scope-references": ["$XSAPPNAME.read"],
-      "attribute-references": ["systems"]
+      "name": "MCPTargetViewer",
+      "scope-references": ["$XSAPPNAME.target_viewer"],
+      "attribute-references": ["arc1_viewer_targets"]
     }
   ]
 }
 ```
 
-In the BTP cockpit the admin creates role collections from these templates and fills
-the attribute per collection — e.g. *ARC1 Developer (DEV+QA)* with
-`systems = S4D,S4Q`, *ARC1 Viewer (all)* with `systems = *`. At runtime the endpoint
-for destination D grants access only when the JWT's `xs.user.attributes.systems`
-contains `D` or `*` (missing attribute = no destination access, fail closed). Adding
-a new system never requires a redeploy — just a new/updated role collection.
+The administrator creates roles such as *ARC1 A4D Developer* with
+`arc1_developer_targets=[A4D:100,A4D:200]` and *ARC1 PRD Viewer* with
+`arc1_viewer_targets=[PRD:100]`. ARC-1 requires the matching signed marker scope and
+attribute, then projects the profile into target-local functional scopes. This also
+prevents target roles from granting access to legacy `/mcp`. There are no target
+wildcards in v1. Missing/malformed attributes mean no access, and the authenticated
+catalog shows only targets carrying effective read access.
 
-Caveat: user attributes exist only on user tokens (authorization-code flow). Tokens
-from client-credentials flows and plain API keys carry no attributes — those callers
-are scoped via destination-scoped API keys (work item 11) instead.
+The current `@arc-mcp/xsuaa-auth` verifier does not yet carry `xs.user.attributes`.
+The v1 plan therefore includes a prerequisite package change that copies only
+explicitly allowlisted attributes from `@sap/xssec`'s verified security context into
+`AuthInfo`. Interpretation stays in ARC-1. API-key, raw OIDC, and client-credentials
+tokens have no target attributes and cannot access discovered routes in v1.
 
 ### 6.4 Configuring per-system guardrails
 
