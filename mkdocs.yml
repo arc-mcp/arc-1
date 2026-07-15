@@ -11,13 +11,16 @@ theme:
   name: material
   custom_dir: docs/overrides
   palette:
-    - scheme: default
+    # `media` = follow the OS light/dark setting on first visit; the toggle then pins a choice.
+    - media: '(prefers-color-scheme: light)'
+      scheme: default
       primary: deep orange
       accent: amber
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
-    - scheme: slate
+    - media: '(prefers-color-scheme: dark)'
+      scheme: slate
       primary: deep orange
       accent: amber
       toggle:
