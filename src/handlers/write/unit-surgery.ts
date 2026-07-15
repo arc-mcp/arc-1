@@ -3,7 +3,7 @@
 import { safeUpdateSource } from '../../adt/crud.js';
 import { mapSapReleaseToAbaplintVersion } from '../../adt/features.js';
 import { spliceUnit } from '../../context/unit-surgery.js';
-import { cachedFeatures } from '../feature-cache.js';
+import { getCachedFeatures } from '../feature-cache.js';
 import { resolveVersionAndDraftInfo } from '../read.js';
 import { errorResult, type ToolResult, textResult } from '../shared.js';
 import { runPreWriteLint, runPreWriteSyntaxCheck } from '../write-helpers.js';
@@ -48,6 +48,7 @@ export async function writeActionEditUnit(ctx: SapWriteContext): Promise<ToolRes
     cacheSecurity,
   );
   const currentSource = (await client.getSourceAtObjectUrl(objectUrl, { version: effectiveVersion })).source;
+  const cachedFeatures = getCachedFeatures();
   const abaplintVersion = cachedFeatures?.abapRelease
     ? mapSapReleaseToAbaplintVersion(cachedFeatures.abapRelease)
     : undefined;
