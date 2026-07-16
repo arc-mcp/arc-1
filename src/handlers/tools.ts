@@ -477,10 +477,16 @@ export function getToolDefinitions(
             maxLength: MAX_GREP_PATTERN_LENGTH,
             description:
               'Regex pattern (case-insensitive) to search within the object source. Returns only matching lines with 1-based line numbers and ±3 context lines, instead of the full source — token-efficient. ' +
-              'For CLAS, matches are annotated with the owning class/method; combine with include= to scope a section, but do NOT combine with method= (use grep to find, then method= to read). ' +
-              'Works for source-bearing types (CLAS, INTF, DDLS, DCLS, BDEF, SRVD, SRVB, SKTD/KTD, DDLX, TABL' +
-              (btp ? '' : ', PROG, FUNC, FUGR, INCL, VIEW') +
-              '). Falls back to a literal search when the pattern is not valid regex.',
+              'For CLAS, matches are annotated with the owning class/method; combine with include= to scope a section; do NOT combine with method=. ' +
+              'Falls back to a literal search when the pattern is not valid regex.',
+          },
+          lineStart: {
+            type: 'number',
+            description: 'Start line (1-based); pairs with lineEnd, not with grep/method.',
+          },
+          lineEnd: {
+            type: 'number',
+            description: 'End line (1-based); pairs with lineStart.',
           },
           ...(btp
             ? {}

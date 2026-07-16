@@ -178,6 +178,8 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 | Inactive syntax check / post-save check | `src/adt/devtools.ts`, `src/handlers/write-helpers.ts` (`tryPostSaveSyntaxCheck`) |
 | Method-level surgery | `src/context/method-surgery.ts` — `<localclass>~<method>` specifiers; ambiguous bare names error |
 | SAPRead `grep` (#313) | `src/context/grep.ts`, `src/handlers/read.ts` — rejects `grep`+`method` together |
+| SAPRead `lineStart`/`lineEnd` (raw line-range read) | `src/context/line-range.ts`, `src/handlers/read.ts` — mutually exclusive with `grep`/`method`; 1-based inclusive, `lineEnd` clamped not errored |
+| `edit_unit` (FORM/MODULE splice) / `edit_content` (content-anchored splice) | `src/context/{unit-surgery,content-splice}.ts`, `src/handlers/write/{unit-surgery,content-surgery}.ts`, `src/adt/crud.ts` (`safeUpdateSourceWithTransform`) — both fetch source INSIDE the SAP lock (not before it) via the shared primitive, closing a TOCTOU gap; conditional fetch reuses a cached `{source,etag}` on 304, splices fresh bytes on 200 (anchor match is the drift guard, not a separate error). `edit_content` 0-match-on-oldContent + unique newContent match → idempotent no-op (skips the PUT), not an error |
 | edit_method for CCDEF/CCIMP includes | `src/handlers/write/class-surgery.ts`, `src/handlers/schemas.ts` — auto-detect `lhc_*`/`lcl_*`→implementations, `ltc_*`→testclasses |
 | Class-section surgery (#303) | `src/adt/class-structure.ts`, `src/adt/client.ts`, `src/adt/xml-parser.ts`, `src/handlers/write/class-surgery.ts` — client-side refuse-diff before PUT |
 | SAPSearch tadir_lookup source variants | `src/handlers/search.ts`, `src/adt/client.ts`, `src/authz/policy.ts` — `db`/`both` escalate to sql scope |
