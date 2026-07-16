@@ -29,6 +29,7 @@ Use `SAPRead` when you need exact raw source, one method body, grep output, inac
 | `include` | string | No | For CLAS: `main`, `testclasses`, `definitions`, `implementations`, `macros`. For DDLS: `elements` (extract CDS view elements). |
 | `method` | string | No | For CLAS: method name to read (e.g., `get_name`), or `*` to list all methods |
 | `grep` | string | No | Case-insensitive regex; returns only matching source lines (+3 lines of context, with line numbers) instead of the full object — token-efficient search over source-bearing types (`PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, BDEF, SRVD, SRVB, SKTD/KTD, DDLX, TABL, VIEW`). For CLAS, matches are annotated with the owning class/method; combine with `include=` to scope a section, but not with `method=`. Falls back to a literal search when the pattern is not valid regex. |
+| `lineStart` / `lineEnd` | number | No | 1-based, inclusive raw line window (both required together) — returns only those source lines, numbered, instead of the full object. Same source-bearing types as `grep`; `lineEnd` is clamped to the last line rather than erroring. Mutually exclusive with `grep` and `method` (find a line with `grep` or an ATC finding first, then read around it with `lineStart`/`lineEnd`). |
 | `expand_includes` | boolean | No | For FUGR: expand include source inline |
 | `group` | string | No | For FUNC: function group name |
 | `versionUri` | string | No | For VERSION_SOURCE: revision URI from a VERSIONS response (`revisions[].uri`), must start with `/sap/bc/adt/` |
@@ -107,6 +108,7 @@ SAPRead(type="CLAS", name="ZCL_ORDER", method="get_name")    — read a specific
 SAPRead(type="CLAS", name="ZCL_ORDER", grep="select.*from")  — matching lines only, annotated by method
 SAPRead(type="CLAS", name="ZCL_ORDER", include="text_symbols") — maintained text pool (on-prem; see Class text symbols)
 SAPRead(type="PROG", name="ZTEST_REPORT", grep="WRITE")      — search source, returns matches + context
+SAPRead(type="PROG", name="ZTEST_REPORT", lineStart=40, lineEnd=55) — raw line window, e.g. around an ATC finding
 SAPRead(type="DDLS", name="ZI_TRAVEL", include="elements")   — extract CDS view elements
 SAPRead(type="DCLS", name="ZI_TRAVEL_DCL")       — CDS access control source
 SAPRead(type="DDLX", name="ZC_TRAVEL")          — metadata extension with UI annotations
