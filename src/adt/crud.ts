@@ -235,6 +235,69 @@ export async function safeUpdateSource(
   });
 }
 
+/** A cached {source, etag} pair, as returned by CachingLayer.getCachedSourceWithEtag. crud.ts
+ *  stays below handlers/cache in the dependency direction, so callers pass this in already
+ *  resolved rather than the primitive importing the caching layer itself. */
+export interface CachedSourceForTransform {
+  source: string;
+  etag?: string;
+}
+
+export type TransformOutcome = { source: string } | { skip: true } | { error: string };
+
+/**
+ * High-level: fetch the current source INSIDE the lock, transform it, and PUT the result —
+ * with guaranteed unlock. lock → fetch → transform → (put unless skipped) → unlock.
+ *
+ * This closes the TOCTOU gap `safeUpdateSource` callers otherwise have when they fetch source
+ * BEFORE acquiring the lock (splice in memory, then lock/PUT separately): nothing re-verifies the
+ * source hasn't drifted in between. Here the fetch happens after the lock, in the same stateful
+ * session as the PUT, so `transform` always sees the exact bytes about to be overwritten.
+ *
+ * `cachedSource` is an optional revalidation hint (from `CachingLayer.getCachedSourceWithEtag`):
+ * when given, the inside-lock fetch is conditional (`If-None-Match`) — a 304 means the cached
+ * body is still byte-identical to the live source, so `transform` runs against the cached copy
+ * without re-transferring it; a 200 means the source drifted since it was cached, so `transform`
+ * runs against the fresh body instead. Either way `transform` always sees genuinely current bytes;
+ * this only changes whether they're re-transferred over the wire. Omit `cachedSource` (or when
+ * there's no cache entry) to always fetch unconditionally.
+ *
+ * `transform` may return `{ skip: true }` to signal the desired state already holds (e.g. an
+ * idempotent no-op) — no PUT is issued, only lock/unlock happen.
+ */
+export async function safeUpdateSourceWithTransform(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  objectUrl: string,
+  sourceUrl: string,
+  transform: (currentSource: string) => Promise<TransformOutcome>,
+  transport?: string,
+  abapRelease?: string,
+  version?: 'active' | 'inactive',
+  cachedSource?: CachedSourceForTransform | null,
+): Promise<{ source: string } | { skipped: true } | { error: string }> {
+  return http.withStatefulSession(async (session) => {
+    const lock = await lockObject(session, safety, objectUrl, 'MODIFY', abapRelease);
+    try {
+      checkOperation(safety, OperationType.Read, 'GetSourceForTransform');
+      const url = version ? `${sourceUrl}${sourceUrl.includes('?') ? '&' : '?'}version=${version}` : sourceUrl;
+      const headers = cachedSource?.etag ? { 'If-None-Match': cachedSource.etag } : undefined;
+      const resp = await session.get(url, headers);
+      const currentSource = resp.statusCode === 304 && cachedSource ? cachedSource.source : resp.body;
+
+      const result = await transform(currentSource);
+      if ('error' in result) return result;
+      if ('skip' in result) return { skipped: true };
+
+      const effectiveTransport = transport ?? (lock.corrNr || undefined);
+      await updateSource(session, safety, sourceUrl, result.source, lock.lockHandle, effectiveTransport);
+      return result;
+    } finally {
+      await unlockObject(session, objectUrl, lock.lockHandle);
+    }
+  });
+}
+
 /**
  * Initialise (create) an empty class-local include (CCDEF/CCIMP/CCMAC/CCAU).
  *

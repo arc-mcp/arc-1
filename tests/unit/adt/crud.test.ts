@@ -7,6 +7,7 @@ import {
   safeUpdateClassInclude,
   safeUpdateObject,
   safeUpdateSource,
+  safeUpdateSourceWithTransform,
   unlockObject,
   updateObject,
   updateSource,
@@ -858,6 +859,185 @@ describe('CRUD Operations', () => {
       expect(postMock).toHaveBeenCalledTimes(2); // lock + unlock
       const unlockUrl = postMock.mock.calls[1]?.[0] as string;
       expect(unlockUrl).toContain('_action=UNLOCK');
+    });
+  });
+
+  // ─── safeUpdateSourceWithTransform ──────────────────────────────────
+
+  describe('safeUpdateSourceWithTransform', () => {
+    function mockSessionHttp(opts: { getBody?: string; getStatus?: number }): {
+      http: AdtHttpClient;
+      session: { get: ReturnType<typeof vi.fn>; post: ReturnType<typeof vi.fn>; put: ReturnType<typeof vi.fn> };
+    } {
+      const session = {
+        get: vi.fn().mockResolvedValue({
+          statusCode: opts.getStatus ?? 200,
+          headers: {},
+          body: opts.getBody ?? 'CURRENT SOURCE',
+        }),
+        post: vi.fn().mockImplementation(async (path: string) => {
+          if (path.includes('_action=LOCK')) return { statusCode: 200, headers: {}, body: LOCK_BODY };
+          return { statusCode: 200, headers: {}, body: '' }; // unlock
+        }),
+        put: vi.fn().mockResolvedValue({ statusCode: 200, headers: {}, body: '' }),
+      };
+      const http = {
+        withStatefulSession: vi.fn().mockImplementation(async (fn: (s: unknown) => Promise<unknown>) => fn(session)),
+      } as unknown as AdtHttpClient;
+      return { http, session };
+    }
+
+    it('locks → fetches (inside the lock) → transforms → PUTs → unlocks, in that order', async () => {
+      const { http, session } = mockSessionHttp({ getBody: 'OLD SOURCE' });
+      const order: string[] = [];
+      session.post.mockImplementation(async (path: string) => {
+        order.push(path.includes('_action=LOCK') ? 'lock' : 'unlock');
+        return path.includes('_action=LOCK')
+          ? { statusCode: 200, headers: {}, body: LOCK_BODY }
+          : { statusCode: 200, headers: {}, body: '' };
+      });
+      session.get.mockImplementation(async () => {
+        order.push('get');
+        return { statusCode: 200, headers: {}, body: 'OLD SOURCE' };
+      });
+      session.put.mockImplementation(async () => {
+        order.push('put');
+        return { statusCode: 200, headers: {}, body: '' };
+      });
+
+      const transform = vi.fn().mockImplementation(async (current: string) => ({ source: `${current}-NEW` }));
+      const result = await safeUpdateSourceWithTransform(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/programs/programs/ZTEST',
+        '/sap/bc/adt/programs/programs/ZTEST/source/main',
+        transform,
+      );
+
+      expect(order).toEqual(['lock', 'get', 'put', 'unlock']);
+      expect(transform).toHaveBeenCalledWith('OLD SOURCE');
+      expect(result).toEqual({ source: 'OLD SOURCE-NEW' });
+      expect(session.put).toHaveBeenCalledWith(
+        expect.stringContaining('/source/main'),
+        'OLD SOURCE-NEW',
+        expect.any(String),
+      );
+    });
+
+    it('transform-error path skips the PUT but still unlocks', async () => {
+      const { http, session } = mockSessionHttp({});
+      const result = await safeUpdateSourceWithTransform(
+        http,
+        unrestrictedSafetyConfig(),
+        '/obj',
+        '/obj/source/main',
+        async () => ({ error: 'anchor not found' }),
+      );
+      expect(result).toEqual({ error: 'anchor not found' });
+      expect(session.put).not.toHaveBeenCalled();
+      const unlock = session.post.mock.calls.find((c: unknown[]) => String(c[0]).includes('_action=UNLOCK'));
+      expect(unlock).toBeDefined();
+    });
+
+    it('skip outcome from transform is reported as skipped, without a PUT', async () => {
+      const { http, session } = mockSessionHttp({});
+      const result = await safeUpdateSourceWithTransform(
+        http,
+        unrestrictedSafetyConfig(),
+        '/obj',
+        '/obj/source/main',
+        async () => ({ skip: true }),
+      );
+      expect(result).toEqual({ skipped: true });
+      expect(session.put).not.toHaveBeenCalled();
+    });
+
+    it('appends ?version=inactive to the inside-lock fetch URL when version is given', async () => {
+      const { http, session } = mockSessionHttp({});
+      await safeUpdateSourceWithTransform(
+        http,
+        unrestrictedSafetyConfig(),
+        '/obj',
+        '/obj/source/main',
+        async (current) => ({ source: current }),
+        undefined,
+        undefined,
+        'inactive',
+      );
+      expect(session.get).toHaveBeenCalledWith(expect.stringContaining('/obj/source/main?version=inactive'), undefined);
+    });
+
+    it('passes If-None-Match when a cached source/etag is supplied', async () => {
+      const { http, session } = mockSessionHttp({});
+      await safeUpdateSourceWithTransform(
+        http,
+        unrestrictedSafetyConfig(),
+        '/obj',
+        '/obj/source/main',
+        async (current) => ({ source: current }),
+        undefined,
+        undefined,
+        undefined,
+        { source: 'CACHED', etag: 'W/"abc"' },
+      );
+      expect(session.get).toHaveBeenCalledWith('/obj/source/main', { 'If-None-Match': 'W/"abc"' });
+    });
+
+    it('a 304 response reuses the supplied cached source instead of the (empty) response body', async () => {
+      const { http } = mockSessionHttp({ getStatus: 304, getBody: '' });
+      const transform = vi.fn().mockImplementation(async (current: string) => ({ source: current }));
+      await safeUpdateSourceWithTransform(
+        http,
+        unrestrictedSafetyConfig(),
+        '/obj',
+        '/obj/source/main',
+        transform,
+        undefined,
+        undefined,
+        undefined,
+        { source: 'CACHED SOURCE', etag: 'W/"abc"' },
+      );
+      expect(transform).toHaveBeenCalledWith('CACHED SOURCE');
+    });
+
+    it('a 200 response (drift) transforms against the fresh body, not the stale cached copy', async () => {
+      const { http } = mockSessionHttp({ getStatus: 200, getBody: 'FRESH DRIFTED SOURCE' });
+      const transform = vi.fn().mockImplementation(async (current: string) => ({ source: current }));
+      await safeUpdateSourceWithTransform(
+        http,
+        unrestrictedSafetyConfig(),
+        '/obj',
+        '/obj/source/main',
+        transform,
+        undefined,
+        undefined,
+        undefined,
+        { source: 'STALE CACHED SOURCE', etag: 'W/"abc"' },
+      );
+      expect(transform).toHaveBeenCalledWith('FRESH DRIFTED SOURCE');
+    });
+
+    it('falls back to a plain unconditional GET when no cached source is given', async () => {
+      const { http, session } = mockSessionHttp({});
+      await safeUpdateSourceWithTransform(
+        http,
+        unrestrictedSafetyConfig(),
+        '/obj',
+        '/obj/source/main',
+        async (current) => ({ source: current }),
+      );
+      expect(session.get).toHaveBeenCalledWith('/obj/source/main', undefined);
+    });
+
+    it('unlocks even if the transform throws', async () => {
+      const { http, session } = mockSessionHttp({});
+      await expect(
+        safeUpdateSourceWithTransform(http, unrestrictedSafetyConfig(), '/obj', '/obj/source/main', async () => {
+          throw new Error('boom');
+        }),
+      ).rejects.toThrow('boom');
+      const unlock = session.post.mock.calls.find((c: unknown[]) => String(c[0]).includes('_action=UNLOCK'));
+      expect(unlock).toBeDefined();
     });
   });
 

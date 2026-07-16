@@ -492,6 +492,7 @@ export const SAPWriteSchema = z
       'delete',
       'edit_method',
       'edit_unit',
+      'edit_content',
       'edit_class_definition',
       'add_method',
       'edit_method_signature',
@@ -512,6 +513,14 @@ export const SAPWriteSchema = z
     method: z.string().optional(),
     /** For action="edit_unit": FORM or MODULE name to replace. */
     unit: z.string().optional(),
+    /** For action="edit_content": exact raw source text to replace (no line-number prefix). */
+    oldContent: z.string().optional(),
+    /** For action="edit_content": replacement text (""  deletes oldContent). */
+    newContent: z.string().optional(),
+    /** For action="edit_content": optional 1-based scope narrowing WHERE oldContent is searched (not what is replaced). Requires lineEnd. */
+    lineStart: z.coerce.number().int().optional(),
+    /** For action="edit_content": pairs with lineStart. */
+    lineEnd: z.coerce.number().int().optional(),
     /**
      * Visibility section. For action="add_method": the section to insert into (default 'public').
      * For action="change_method_visibility": the TARGET section to move the method to (required).
