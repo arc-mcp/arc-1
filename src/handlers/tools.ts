@@ -723,7 +723,7 @@ export function getToolDefinitions(
           group: {
             type: 'string',
             description:
-              'For FUNC: parent function-group name. Required for FUNC create (the FUGR must already exist — create it first via SAPWrite type=FUGR). Auto-resolved via search for FUNC update/delete if omitted.',
+              'For FUNC, and INCL when it is a FUGR structural include: parent function-group name. Required for FUNC create (FUGR must exist first). Auto-resolved via search if omitted.',
           },
           dataType: { type: 'string', description: 'DOMA/DTEL: ABAP data type (e.g., CHAR, NUMC, DEC)' },
           rowType: {
