@@ -86,7 +86,8 @@ const DDIC_SAVE_HINT_TYPES = new Set(['TABL', 'DDLS', 'DCLS', 'BDEF', 'SRVD', 'S
 function getWriteInfrastructureHint(err: AdtApiError, tool: string, args: Record<string, unknown>): string | undefined {
   if (tool !== 'SAPWrite') return undefined;
   const action = String(args.action ?? '').toLowerCase();
-  if (!['create', 'update', 'batch_create', 'edit_method', 'edit_unit', 'delete'].includes(action)) return undefined;
+  if (!['create', 'update', 'batch_create', 'edit_method', 'edit_unit', 'edit_content', 'delete'].includes(action))
+    return undefined;
 
   // These failures happen around ADT session management, often after SAP has
   // already accepted a mutation. They need cleanup guidance, not DDIC syntax hints.
@@ -197,7 +198,7 @@ function buildBaseErrorMessage(
     if (writeInfrastructureHint) {
       return `${enriched}\n\nHint: ${writeInfrastructureHint}`;
     }
-    // Save hint — applies to create/update/batch_create/edit_method/edit_unit, not delete.
+    // Save hint — applies to create/update/batch_create/edit_method/edit_unit/edit_content, not delete.
     // Delete failures on DDIC types have different remediation (dependency resolution, not annotation fixes).
     const action = String(args.action ?? '').toLowerCase();
     const isSaveAction =
@@ -206,7 +207,8 @@ function buildBaseErrorMessage(
       action === 'update' ||
       action === 'batch_create' ||
       action === 'edit_method' ||
-      action === 'edit_unit';
+      action === 'edit_unit' ||
+      action === 'edit_content';
     if ((err.statusCode === 400 || err.statusCode === 409) && DDIC_SAVE_HINT_TYPES.has(argType) && isSaveAction) {
       return (
         `${enriched}\n\nHint: DDIC save failed. Check the diagnostic details above for specific field or annotation errors. ` +
