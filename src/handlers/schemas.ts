@@ -207,6 +207,10 @@ export const SAPReadSchema = z
     group: z.string().optional(),
     method: z.string().optional(),
     grep: z.string().max(MAX_GREP_PATTERN_LENGTH).optional(),
+    /** 1-based, inclusive start line for a raw line-range read. Requires lineEnd; mutually exclusive with grep. */
+    lineStart: z.coerce.number().int().optional(),
+    /** 1-based, inclusive end line for a raw line-range read. Clamped to the source's last line. */
+    lineEnd: z.coerce.number().int().optional(),
     expand_includes: looseOptionalBoolean,
     format: z.enum(['text', 'structured']).optional(),
     // Keep omission observable: source handlers still default it to active, while DTEL
@@ -247,6 +251,10 @@ export const SAPReadSchemaBtp = z
     group: z.string().optional(),
     method: z.string().optional(),
     grep: z.string().max(MAX_GREP_PATTERN_LENGTH).optional(),
+    /** 1-based, inclusive start line for a raw line-range read. Requires lineEnd; mutually exclusive with grep. */
+    lineStart: z.coerce.number().int().optional(),
+    /** 1-based, inclusive end line for a raw line-range read. Clamped to the source's last line. */
+    lineEnd: z.coerce.number().int().optional(),
     format: z.enum(['text', 'structured']).optional(),
     // Keep this aligned with the on-prem schema; the handler owns the per-type default.
     version: z.enum(['active', 'inactive', 'auto']).optional(),
