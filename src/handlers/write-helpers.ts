@@ -724,6 +724,7 @@ export const NAME_CASE_GUARD_ACTIONS = new Set([
   'update',
   'edit_method',
   'edit_unit',
+  'edit_content',
   'delete',
   'edit_text_symbols',
 ]);

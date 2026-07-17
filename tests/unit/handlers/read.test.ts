@@ -235,6 +235,162 @@ describe('SAPRead handler', () => {
       });
     });
 
+    describe('lineStart/lineEnd', () => {
+      const PROG_SRC =
+        'REPORT zfoo.\nDATA lv TYPE i.\nlv = 1.\nlv = 2.\nlv = 3.\nSELECT * FROM mara INTO TABLE @lt.\nWRITE lv.';
+
+      it('PROG lineStart/lineEnd returns only that line window, not the whole source', async () => {
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValue(mockResponse(200, PROG_SRC, { 'x-csrf-token': 't' }));
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+          type: 'PROG',
+          name: 'ZFOO',
+          lineStart: 3,
+          lineEnd: 4,
+        });
+        expect(result.isError).toBeUndefined();
+        expect(result.content[0]?.text).toContain('Lines 3-4 of 7 total');
+        expect(result.content[0]?.text).toContain('lv = 1.');
+        expect(result.content[0]?.text).toContain('lv = 2.');
+        expect(result.content[0]?.text).not.toContain('REPORT zfoo');
+        expect(result.content[0]?.text).not.toContain('SELECT * FROM mara');
+      });
+
+      it('requires both lineStart and lineEnd', async () => {
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+          type: 'PROG',
+          name: 'ZFOO',
+          lineStart: 3,
+        });
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toContain('Both lineStart and lineEnd are required');
+      });
+
+      it('rejects lineStart/lineEnd combined with grep', async () => {
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+          type: 'PROG',
+          name: 'ZFOO',
+          lineStart: 1,
+          lineEnd: 2,
+          grep: 'x',
+        });
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toContain('Do not combine lineStart/lineEnd with grep');
+      });
+
+      it('an out-of-range lineStart returns an error, not the full source', async () => {
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValue(mockResponse(200, PROG_SRC, { 'x-csrf-token': 't' }));
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+          type: 'PROG',
+          name: 'ZFOO',
+          lineStart: 50,
+          lineEnd: 60,
+        });
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toContain('past the end of the source');
+      });
+
+      it('CLAS lineStart/lineEnd reads from the raw main section, annotated with the section label', async () => {
+        const clasSrc = [
+          'CLASS zcl_test DEFINITION PUBLIC.',
+          '  PUBLIC SECTION.',
+          '    METHODS read.',
+          'ENDCLASS.',
+          'CLASS zcl_test IMPLEMENTATION.',
+          '  METHOD read.',
+          '    SELECT * FROM mara INTO TABLE @lt.',
+          '  ENDMETHOD.',
+          'ENDCLASS.',
+        ].join('\n');
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValue(mockResponse(200, clasSrc, { 'x-csrf-token': 't' }));
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+          type: 'CLAS',
+          name: 'ZCL_TEST',
+          lineStart: 7,
+          lineEnd: 7,
+        });
+        expect(result.isError).toBeUndefined();
+        expect(result.content[0]?.text).toContain('section=main');
+        expect(result.content[0]?.text).toContain('SELECT * FROM mara');
+      });
+
+      it('CLAS lineStart/lineEnd + method returns a combine error', async () => {
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+          type: 'CLAS',
+          name: 'ZCL_TEST',
+          lineStart: 1,
+          lineEnd: 2,
+          method: 'read',
+        });
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toContain('Do not combine lineStart/lineEnd with method');
+      });
+
+      it('CLAS lineStart/lineEnd + include reads the raw section', async () => {
+        const testSrc = [
+          'CLASS ltcl_test DEFINITION FOR TESTING.',
+          '  PRIVATE SECTION.',
+          '    METHODS first_test FOR TESTING.',
+          'ENDCLASS.',
+          'CLASS ltcl_test IMPLEMENTATION.',
+          '  METHOD first_test.',
+          '    cl_abap_unit_assert=>assert_true( abap_true ).',
+          '  ENDMETHOD.',
+          'ENDCLASS.',
+        ].join('\n');
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValue(mockResponse(200, testSrc, { 'x-csrf-token': 't' }));
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+          type: 'CLAS',
+          name: 'ZCL_TEST',
+          lineStart: 7,
+          lineEnd: 7,
+          include: 'testclasses',
+        });
+        expect(result.isError).toBeUndefined();
+        expect(result.content[0]?.text).toContain('section=testclasses');
+        expect(result.content[0]?.text).toContain('assert_true');
+        const inclCall = mockFetch.mock.calls.find((c: any[]) => String(c[0]).includes('/includes/testclasses'));
+        expect(inclCall).toBeDefined();
+      });
+
+      it('works on a non-CLAS source type (BDEF)', async () => {
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValue(
+          mockResponse(200, 'define behavior for ZI_Foo\n{\n  create;\n  update;\n  delete;\n}', {
+            'x-csrf-token': 't',
+          }),
+        );
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+          type: 'BDEF',
+          name: 'ZI_FOO',
+          lineStart: 3,
+          lineEnd: 3,
+        });
+        expect(result.isError).toBeUndefined();
+        expect(result.content[0]?.text).toContain('create;');
+      });
+
+      it('works on a DDIC source type (TABL)', async () => {
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValue(
+          mockResponse(200, 'define structure zfoo {\n  field1 : abap.int4;\n  matnr : matnr;\n}', {
+            'x-csrf-token': 't',
+          }),
+        );
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+          type: 'TABL',
+          name: 'ZFOO',
+          lineStart: 3,
+          lineEnd: 3,
+        });
+        expect(result.isError).toBeUndefined();
+        expect(result.content[0]?.text).toContain('matnr');
+      });
+    });
+
     it('reads active version with draft warning when inactive list contains the object', async () => {
       mockFetch.mockReset();
       mockFetch

@@ -42,6 +42,87 @@ describe('SAPActivate handler', () => {
       expect(String(activationCall?.[1]?.body)).toContain('/sap/bc/adt/functions/groups/zarc1/includes/lzarc1top');
     });
 
+    it('auto-resolves the function group when activating a structural INCL without group', async () => {
+      mockFetch.mockImplementation((url: string | URL) => {
+        const pathname = new URL(String(url)).pathname;
+        if (pathname === '/sap/bc/adt/repository/informationsystem/search') {
+          return Promise.resolve(
+            mockResponse(
+              200,
+              `<?xml version="1.0"?><adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">` +
+                `<adtcore:objectReference adtcore:type="PROG/I" adtcore:name="LZARC1TOP" adtcore:packageName="ZARC1" ` +
+                `adtcore:uri="/sap/bc/adt/functions/groups/zarc1/includes/lzarc1top"/></adtcore:objectReferences>`,
+              { 'x-csrf-token': 'mock-csrf-token' },
+            ),
+          );
+        }
+        return Promise.resolve(
+          mockResponse(200, "REPORT zhello.\nWRITE: / 'Hello'.", { 'x-csrf-token': 'mock-csrf-token' }),
+        );
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPActivate', {
+        type: 'INCL',
+        name: 'LZARC1TOP',
+      });
+      expect(result.isError).toBeUndefined();
+      const activationCall = mockFetch.mock.calls.find((call) => String(call[0]).includes('/activation?'));
+      expect(String(activationCall?.[1]?.body)).toContain('/sap/bc/adt/functions/groups/zarc1/includes/lzarc1top');
+    });
+
+    it('falls back to the standalone INCL path when activation search finds no owning group', async () => {
+      mockFetch.mockImplementation((url: string | URL) => {
+        const pathname = new URL(String(url)).pathname;
+        if (pathname === '/sap/bc/adt/repository/informationsystem/search') {
+          return Promise.resolve(
+            mockResponse(
+              200,
+              '<?xml version="1.0"?><adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core"/>',
+              { 'x-csrf-token': 'mock-csrf-token' },
+            ),
+          );
+        }
+        return Promise.resolve(
+          mockResponse(200, "REPORT zhello.\nWRITE: / 'Hello'.", { 'x-csrf-token': 'mock-csrf-token' }),
+        );
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPActivate', {
+        type: 'INCL',
+        name: 'ZSTANDALONE_INCL',
+      });
+      expect(result.isError).toBeUndefined();
+      const activationCall = mockFetch.mock.calls.find((call) => String(call[0]).includes('/activation?'));
+      expect(String(activationCall?.[1]?.body)).toContain('/sap/bc/adt/programs/includes/ZSTANDALONE_INCL');
+    });
+
+    it('auto-resolves the function group for INCL entries in batch activation without group', async () => {
+      mockFetch.mockImplementation((url: string | URL) => {
+        const pathname = new URL(String(url)).pathname;
+        if (pathname === '/sap/bc/adt/repository/informationsystem/search') {
+          return Promise.resolve(
+            mockResponse(
+              200,
+              `<?xml version="1.0"?><adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">` +
+                `<adtcore:objectReference adtcore:type="PROG/I" adtcore:name="LZARC1TOP" adtcore:packageName="ZARC1" ` +
+                `adtcore:uri="/sap/bc/adt/functions/groups/zarc1/includes/lzarc1top"/></adtcore:objectReferences>`,
+              { 'x-csrf-token': 'mock-csrf-token' },
+            ),
+          );
+        }
+        return Promise.resolve(
+          mockResponse(200, "REPORT zhello.\nWRITE: / 'Hello'.", { 'x-csrf-token': 'mock-csrf-token' }),
+        );
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPActivate', {
+        objects: [{ type: 'INCL', name: 'LZARC1TOP' }],
+      });
+      expect(result.isError).toBeUndefined();
+      const activationCall = mockFetch.mock.calls.find((call) => String(call[0]).includes('/activation?'));
+      expect(String(activationCall?.[1]?.body)).toContain('/sap/bc/adt/functions/groups/zarc1/includes/lzarc1top');
+    });
+
     it('batch activates multiple objects', async () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPActivate', {
         objects: [

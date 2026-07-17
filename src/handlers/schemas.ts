@@ -182,6 +182,10 @@ export const SAPReadSchema = z
     group: z.string().optional(),
     method: z.string().optional(),
     grep: z.string().max(MAX_GREP_PATTERN_LENGTH).optional(),
+    /** 1-based, inclusive start line for a raw line-range read. Requires lineEnd; mutually exclusive with grep. */
+    lineStart: z.coerce.number().int().optional(),
+    /** 1-based, inclusive end line for a raw line-range read. Clamped to the source's last line. */
+    lineEnd: z.coerce.number().int().optional(),
     expand_includes: looseOptionalBoolean,
     format: z.enum(['text', 'structured']).optional(),
     version: z.enum(['active', 'inactive', 'auto']).optional().default('active'),
@@ -220,6 +224,10 @@ export const SAPReadSchemaBtp = z
     group: z.string().optional(),
     method: z.string().optional(),
     grep: z.string().max(MAX_GREP_PATTERN_LENGTH).optional(),
+    /** 1-based, inclusive start line for a raw line-range read. Requires lineEnd; mutually exclusive with grep. */
+    lineStart: z.coerce.number().int().optional(),
+    /** 1-based, inclusive end line for a raw line-range read. Clamped to the source's last line. */
+    lineEnd: z.coerce.number().int().optional(),
     format: z.enum(['text', 'structured']).optional(),
     version: z.enum(['active', 'inactive', 'auto']).optional().default('active'),
     force_refresh: looseOptionalBoolean,
@@ -489,6 +497,7 @@ export const SAPWriteSchema = z
       'delete',
       'edit_method',
       'edit_unit',
+      'edit_content',
       'edit_class_definition',
       'add_method',
       'edit_method_signature',
@@ -509,6 +518,14 @@ export const SAPWriteSchema = z
     method: z.string().optional(),
     /** For action="edit_unit": FORM or MODULE name to replace. */
     unit: z.string().optional(),
+    /** For action="edit_content": exact raw source text to replace (no line-number prefix). */
+    oldContent: z.string().optional(),
+    /** For action="edit_content": replacement text (""  deletes oldContent). */
+    newContent: z.string().optional(),
+    /** For action="edit_content": optional 1-based scope narrowing WHERE oldContent is searched (not what is replaced). Requires lineEnd. */
+    lineStart: z.coerce.number().int().optional(),
+    /** For action="edit_content": pairs with lineStart. */
+    lineEnd: z.coerce.number().int().optional(),
     /**
      * Visibility section. For action="add_method": the section to insert into (default 'public').
      * For action="change_method_visibility": the TARGET section to move the method to (required).

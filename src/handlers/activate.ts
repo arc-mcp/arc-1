@@ -252,10 +252,20 @@ export async function handleSAPActivate(
           }
           const groupLc = encodeURIComponent(group.toLowerCase());
           url = `/sap/bc/adt/functions/groups/${groupLc}/fmodules/${encodeURIComponent(objName.toLowerCase())}`;
-        } else if (objType === 'INCL' && String(o.group ?? args.group ?? '').trim()) {
-          const group = String(o.group ?? args.group).trim();
-          const groupLc = encodeURIComponent(group.toLowerCase());
-          url = `/sap/bc/adt/functions/groups/${groupLc}/includes/${encodeURIComponent(objName.toLowerCase())}`;
+        } else if (objType === 'INCL') {
+          let group = String(o.group ?? args.group ?? '').trim();
+          if (!group) {
+            const resolved = cachingLayer
+              ? await cachingLayer.resolveFuncGroup(client, objName)
+              : await client.resolveFunctionGroup(objName);
+            if (resolved) group = resolved;
+          }
+          if (group) {
+            const groupLc = encodeURIComponent(group.toLowerCase());
+            url = `/sap/bc/adt/functions/groups/${groupLc}/includes/${encodeURIComponent(objName.toLowerCase())}`;
+          } else {
+            url = objectUrlForType(objType, objName);
+          }
         } else {
           url = objectUrlForType(objType, objName);
         }
@@ -335,14 +345,28 @@ export async function handleSAPActivate(
     }
     const groupLc = encodeURIComponent(group.toLowerCase());
     objectUrl = `/sap/bc/adt/functions/groups/${groupLc}/fmodules/${encodeURIComponent(name.toLowerCase())}`;
-  } else if (type === 'INCL' && String(args.group ?? '').trim()) {
+  } else if (type === 'INCL') {
     // A function-group structural include must be activated through its FUGR
     // URI. Activating the standalone /programs/includes/ alias fails on NW
     // 7.50 ("Select a master program"), while activating the FUGR container
     // can report success without promoting the include on SAP_BASIS 7.58.
-    // The structural URI is portable across both releases.
-    const groupLc = encodeURIComponent(String(args.group).trim().toLowerCase());
-    objectUrl = `/sap/bc/adt/functions/groups/${groupLc}/includes/${encodeURIComponent(name.toLowerCase())}`;
+    // The structural URI is portable across both releases. Auto-resolve the
+    // group when omitted (mirrors FUNC above, and SAPWrite's INCL handling) —
+    // a null result means a genuinely standalone include, which falls through
+    // to the generic objectUrlForType path below.
+    let group = String(args.group ?? '').trim();
+    if (!group) {
+      const resolved = cachingLayer
+        ? await cachingLayer.resolveFuncGroup(client, name)
+        : await client.resolveFunctionGroup(name);
+      if (resolved) group = resolved;
+    }
+    if (group) {
+      const groupLc = encodeURIComponent(group.toLowerCase());
+      objectUrl = `/sap/bc/adt/functions/groups/${groupLc}/includes/${encodeURIComponent(name.toLowerCase())}`;
+    } else {
+      objectUrl = objectUrlForType(type, name);
+    }
   } else if (isServerDrivenObjectType(type)) {
     // Server-driven objects (8.16+): objectBasePath(<sdo>) throws, so route via the registry href.
     // Single-object activation only — SDO is not added to the batch resolver above (batch is
