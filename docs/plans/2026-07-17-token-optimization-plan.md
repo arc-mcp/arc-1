@@ -278,7 +278,15 @@ that proves the conflict is absent; a polluted `batch_create` still passes (item
 
 ---
 
-## P6 — Serialization hygiene (do LAST, only after P1)
+## P6 — Serialization hygiene — SHIPPED (PR 2)
+
+> **Status 2026-07-17: done.** One `toolJson()` helper; 86 sites across 11 handler modules via a
+> bounded codemod. Measured live on already-bounded results: where-used 11,856 → 8,781 (−26%),
+> transport 5,689 → 3,581 (−37%), DEVC 5,372 → 4,404 (−18%), search 2,922 → 2,472 (−15%).
+> **Field pruning rejected on measurement:** dropping empty strings adds only 7.6% over compaction
+> alone, and dropping `""`/`0`/`false` removes `isResult:false` (which separates a real where-used
+> hit from a structural tree node) and `line:0` (meaning "no line info") — absent ≠ false.
+> The "gate on an eval" caveat below stands: accuracy was reasoned about, not A/B tested.
 
 **Verified but small.** 77 `JSON.stringify(x, null, 2)` sites across `src/handlers/`.
 
