@@ -1,9 +1,11 @@
 # Evaluation: Multiple BTP Destinations in One ARC-1 Instance
 
 **Date:** 2026-07-02
-**Status:** Prototype implemented (work items 1–5, 7 + PP per destination). The replacement v1
-architecture, including mandatory target-bound XSUAA roles, is specified in
-`docs/plans/destination-discovered-multi-target-v1.md`; this older evaluation remains historical.
+**Status:** Historical PR #543 prototype evaluation. The replacement v1 architecture uses global
+XSUAA roles, destination-discovered SID/client routes, and a mutation-free ceiling; it is specified
+in `docs/plans/destination-discovered-multi-target-v1.md`. All CSV, destination-name route,
+target-bound-role, default-route, and write-policy details below are superseded and must not be used
+as implementation requirements.
 **Fork state:** `lemaiwo/arc-1` main = v0.4.4 (last synced ~2026-04-08)
 **Upstream state:** v0.9.24 (published 2026-07-01), repo moved to `arc-mcp/arc-1`
 

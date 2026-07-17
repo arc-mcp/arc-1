@@ -20,7 +20,10 @@ Distributed as npm package (`arc-1`) and Docker image (`ghcr.io/arc-mcp/arc-1`).
 4. **BTP-native deployment** — Destination Service, Cloud Connector, XSUAA OAuth, BTP Audit Log; also Docker/npm/stdio.
 5. **Multi-client, vendor-neutral** — XSUAA OAuth + Entra ID OIDC + API key coexist; one instance serves Claude, Copilot Studio, VS Code, Gemini CLI, Cursor.
 6. **Safe defaults, opt-in power** — read-only by default; free SQL blocked; package allowlist defaults to `$TMP`; everything forbidden until the admin allows it.
-7. **One SAP system per instance** — ARC-1 exposes no `system`/destination selector and no cross-system routing; multi-system access is the [MCP hub](https://github.com/arc-mcp/mcp-hub)'s job, never ARC-1's. Binding one system per connection makes cross-environment (DEV→PROD) mistakes structurally impossible ([ADR-0005](docs/adr/0005-single-system-per-instance.md)).
+7. **Single target by default; one reviewed read-only exception** — ADR-0005 remains the rule for
+   writable/general multi-system access. The proposed, default-off BTP mode in ADR-0006 may expose
+   explicit pinned/aggregate targets only under its mutation-free safety contract. Do not broaden it
+   to writes or another discovery/auth model without a new ADR/security review.
 
 ## Build & Test
 
@@ -76,8 +79,10 @@ Full per-option details (defaults, clamps, layer interactions): [docs_page/confi
 | `ARC1_CACHE[_FILE]` | Request-driven cache mode (auto/memory/sqlite/none) / SQLite file path |
 | `ARC1_MAX_CONCURRENT` | Server-wide SAP request cap (default 10); size vs `rdisp/wp_no_dia` |
 | `ARC1_AUTH_RATE_LIMIT` / `ARC1_RATE_LIMIT` | Layer 1 per-IP OAuth cap (20/min) / Layer 2 per-user MCP cap (default 0 = off; ADR-0004) |
+| `ARC1_MCP_HTTP_RATE_LIMIT` | Proposed ADR-0006 shared per-IP MCP cap: unset preserves the current derived cap, `0` opts out, positive replaces it on all MCP routes. |
 | `SAP_BTP_DESTINATION` / `SAP_BTP_PP_DESTINATION` | BTP Destination names (PP = PrincipalPropagation type) |
-| `SAP_BTP_DESTINATIONS` | Multi-destination mode: CSV allowlist → one MCP endpoint per name (`/mcp/<name>`); guardrails narrow per system via `arc1.*` destination properties + `SAP_*_<DEST>` env pins (never widen) |
+| `SAP_BTP_DESTINATIONS` | Unreleased PR #543 prototype only; scheduled for deletion by ADR-0006. Do not extend or document as a supported mode. |
+| `ARC1_MULTI_TARGET_ENDPOINTS` | Proposed ADR-0006 mode (not implemented yet): BTP subaccount discovery → mutation-free `/<SID>/<CLIENT>/mcp` plus `/multi/mcp`. |
 | `SAP_PP_ENABLED` / `SAP_PP_STRICT` / `SAP_PP_ALLOW_SHARED_COOKIES` | Principal propagation + strict mode + cookie-coexistence escape hatch |
 | `SAP_DISABLE_SAML` | Disable SAML redirect — never on BTP ABAP / S/4 Public Cloud |
 | `ARC1_PROFILE` | Safety profile shortcut (viewer…developer-sql) |
@@ -146,7 +151,7 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 
 | Task | Files (+ key gotcha) |
 |------|------|
-| Multi-destination mode (SAP_BTP_DESTINATIONS) | `src/server/destination-registry.ts` (allowlist, arc1.* policy narrowing, lazy runtimes), `src/server/server.ts` (createAndStartServer wiring), `src/server/http.ts` (`/mcp/:dest`), `src/handlers/feature-cache.ts` (destination-keyed) — guardrails are narrowing-only vs the env baseline; docs_page/multi-destination.md |
+| Multi-target ADR-0006 work | `docs/plans/destination-discovered-multi-target-v1.md` is normative; replace the unreleased `SAP_BTP_DESTINATIONS`/`/mcp/:dest` prototype in `src/server/{destination-registry,server,http}.ts`; keep the mode default-off and mutation-free. |
 | Add new read operation | `src/adt/client.ts`, `src/handlers/read.ts`, `src/handlers/tools.ts` (+ `src/adt/xml-parser.ts`, `src/adt/types.ts` for structured) |
 | Add ADT slash alias to `SLASH_TYPE_MAP` | `src/handlers/object-types.ts`, `tests/unit/handlers/slash-type-map.test.ts` — needs `docs/research/abap-types/types/<short>.md` evidence, verify live `<adtcore:type>` first (#218) |
 | SAPWrite TABL subtype routing (TABL/DT vs /DS, #285) | `src/handlers/object-types.ts`, `src/handlers/write-helpers.ts`, `src/handlers/write/create.ts`, `src/handlers/{schemas,tools}.ts` — reads collapse to bare `TABL` |
@@ -292,7 +297,12 @@ Every code change requires tests. Skip taxonomy: `docs/testing-skip-policy.md`.
 - **stdout is sacred** — MCP JSON-RPC only; all logging to stderr.
 - Never commit `.env`, `cookies.txt`, `.arc1.json`; sensitive fields are redacted in logs.
 - **Safety config is the server ceiling** — per-user scopes only restrict.
-- **One system per instance — never add multi-system to ARC-1** — no `system`/`target` tool param, no multiple destinations in one config, no cross-system routing. "Expose N systems from one instance" is out of scope *by decision* (the LLM routes wrong → writes to the wrong system; it tangles per-system safety ceilings). Decline and route the requester to the [MCP hub](https://github.com/arc-mcp/mcp-hub); see [ADR-0005](docs/adr/0005-single-system-per-instance.md).
+- **Multi-system boundary** — single target remains the default and all writable multi-system access
+  stays out of scope under ADR-0005. ADR-0006 is the only sanctioned in-process exception: proposed,
+  default-off, BTP/XSUAA/strict-PP, mutation-free pinned and aggregate endpoints. Follow its normative
+  plan exactly; do not add writes, target-specific roles, another auth/discovery model, or a hidden
+  compatibility mode. Route requirements outside that boundary to the
+  [MCP hub](https://github.com/arc-mcp/mcp-hub) or a new ADR/security review.
 - **Per-user auth never inherits shared credentials** — `buildAdtConfig(..., { perUser: true })` strips username/password/cookies; any new Layer B field must respect the flag.
 - **All ADT endpoints have safety guards** — no unguarded `http.{get,post,put,delete}`.
 - **Cookie hot-reload**: `SAP_COOKIE_FILE` re-read on persistent 401; `SAP_COOKIE_STRING` cannot hot-reload.

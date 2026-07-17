@@ -1,10 +1,11 @@
 # Multi-System Hub (mcp-hub)
 
-ARC-1 is **one instance per SAP system** — that is architectural (each instance authenticates against
-one system and propagates identity into it). When you run ARC-1 against several systems
-(DEV / QA / PROD, or 2023 / 2025 / NetWeaver), [`arc-mcp-hub`](https://github.com/arc-mcp/mcp-hub)
-puts all of them behind **one URL and one login**, with path-scoped routing so cross-system mistakes
-are structurally impossible.
+ARC-1 is **one instance per SAP system by default**, and this remains the recommended architecture for
+writes, target-specific visibility, and strong failure/security isolation. The proposed experimental
+[multi-target mode](multi-destination.md) is a mutation-free BTP exception for reducing instance
+sprawl. When you keep separate ARC-1 instances for DEV / QA / PROD or mixed releases,
+[`arc-mcp-hub`](https://github.com/arc-mcp/mcp-hub) puts them behind **one URL and one login**, with
+path-scoped routing so cross-system mistakes are structurally impossible.
 
 ```
                         one login
@@ -31,6 +32,8 @@ adds no shared service account and no LLM in the path.
 
 - You run **ARC-1 against several SAP systems** and want one endpoint host + one login instead of N
   separately-configured servers in every MCP client.
+- You need writes, target-specific pre-SAP visibility, or independent release/failure domains that
+  the experimental in-process multi-target mode deliberately does not provide.
 - You want **per-user SAP identity** preserved end-to-end (principal propagation), per system.
 - **Token efficiency** — with the optional [`/all` endpoint](#one-endpoint-for-every-system) the client
   sees a single tool set plus a `system` parameter, instead of N× the tool definitions. On a landscape

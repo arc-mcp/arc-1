@@ -223,6 +223,8 @@ For production, combine conservative tool exposure with real user identity, SAP-
 | [docker.md](docker.md) | Full Docker reference |
 | [btp-abap-environment.md](btp-abap-environment.md) | BTP ABAP Environment — local service-key OAuth and deployed per-user destination setup |
 | [btp-cloud-foundry-deployment.md](btp-cloud-foundry-deployment.md) | BTP Cloud Foundry deployment details |
+| [multi-destination.md](multi-destination.md) | Experimental multi-target endpoint model — pinned and aggregate routes |
+| [multi-target-administration.md](multi-target-administration.md) | Multi-target destination configuration, roles, diagnostics, restart, and security operations |
 | [sap-trial-setup.md](sap-trial-setup.md) | SAP BTP trial setup |
 | [roadmap.md](roadmap.md) | Planned features |
 | [blog-series.md](blog-series.md) | Long-form blog series — AI for ABAP development, ARC-1 design, BTP / Copilot Studio / Joule walkthroughs |

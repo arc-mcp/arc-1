@@ -1,0 +1,82 @@
+# ADR 0006 — Experimental Read-Only Multi-Target Endpoints
+
+**Status:** Proposed
+**Date:** 2026-07-17
+**Related:** [ADR-0005](0005-single-system-per-instance.md),
+[implementation plan](../plans/destination-discovered-multi-target-v1.md)
+**Qualifies:** ADR-0005 for the explicit, default-off v1 mode described here
+
+## Context
+
+Large SAP estates can contain 100 or more system/client targets. One ARC-1 CF application per client
+creates substantial deployment and operations overhead. PR #543 proved that multiple Destination
+Service runtimes can coexist in one process, but its destination-name routing and write-capable
+policy are not an acceptable public contract.
+
+ADR-0005 made single-system structural binding the rule because runtime target selection can direct
+writes—or confidential reads—to the wrong environment. That reasoning remains valid. This ADR
+accepts a narrow exception after removing mutations and making the remaining risk explicit.
+
+## Decision
+
+ARC-1 may expose experimental multi-target endpoints only when
+`ARC1_MULTI_TARGET_ENDPOINTS=true` and all requirements in the implementation plan are met:
+
+- BTP CF subaccount Destination discovery, XSUAA, on-premise Principal Propagation, and one immutable
+  startup snapshot;
+- a case-sensitive pinned endpoint `/<SID>/<CLIENT>/mcp` and an aggregate `/multi/mcp` endpoint;
+- no discovered bare `/mcp` alias and no destination name in a route or LLM-visible response;
+- global ARC-1 roles, with SAP Principal Propagation as the per-user/per-target authorization
+  boundary;
+- source/metadata reads by default, with data and SQL requiring instance, destination, XSUAA, and SAP
+  consent; and
+- a structural multi-target ceiling that forbids writes, activation, transport/Git mutations,
+  enqueue locks, SAPLint, ATC, and ABAP Unit regardless of administrator role or legacy config.
+
+Single-target mode remains the default and unchanged. A separately configured legacy `/mcp` runtime
+may coexist and retain its current policy. Strict PP is enforced per discovered runtime so legacy
+API-key/direct-OIDC behavior is not changed accidentally.
+
+The aggregate endpoint requires an explicit `target` on every SAP-contacting call. It has no default,
+remembered, or session target. `SAPTargets` supplies sanitized target IDs and descriptions when more
+than one target exists. Selected-target policy and SAP authorization are checked again on every call.
+
+## Accepted residual risk
+
+Removing writes eliminates the highest-impact cross-environment failure, but not target confusion.
+An LLM can still select the wrong authorized target and disclose source, table data, or SQL results
+from it while believing it queried another system.
+
+V1 mitigates—but cannot eliminate—this risk through explicit per-call target selection, pinned URLs,
+meaningful target descriptions, no session/default target, data/SQL off by default, runtime policy
+checks, strict per-user PP, and audit target correlation. Administrators must use pinned routes or
+separate ARC-1 instances for lookalike production/non-production systems where a wrong-target read is
+an unacceptable confidentiality incident.
+
+Global read users can see all accepted target IDs and attempt them. The catalog is configuration
+inventory, not entitlement inventory. Deploy separate ARC-1 instances when target visibility itself
+must be restricted before SAP is contacted.
+
+## Consequences
+
+- A 100-target deployment becomes operationally feasible without 100 CF applications.
+- All targets share one process, semaphore, rate-limit buckets, release lifecycle, and failure
+  domain. This is not equivalent to independent instances.
+- One pinned URL per target can multiply client OAuth/DCR flows; the aggregate endpoint is preferred
+  beyond a few user targets.
+- Data/SQL require especially careful target naming and environment separation.
+- Writes on any multi-target route require a new security review and ADR. They are not an incremental
+  flag or destination property for v1.
+- ADR-0005 continues to govern the default mode, writable access, and deployments requiring stronger
+  isolation. The MCP hub remains the alternative for independently deployed ARC-1 instances.
+
+## Rejected alternatives
+
+- **Keep PR #543's write-capable destination-name routes:** destination names are poor public
+  identities and a write-capable aggregate/shared process revives the confused-deputy risk.
+- **Target-specific XSUAA roles in v1:** dynamic SID/client roles add administration and schema
+  complexity without a reliable external entitlement source.
+- **Probe and cache per-user target availability:** access changes over time, failures can poison
+  shared state, and the cache would be incomplete after deployment.
+- **Browser HTML catalog without a session design:** bearer-only XSUAA auth cannot support normal
+  browser navigation safely; JSON `/targets` is sufficient for v1.

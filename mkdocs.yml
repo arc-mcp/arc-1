@@ -46,7 +46,8 @@ nav:
       - BTP Cloud Foundry: btp-cloud-foundry-deployment.md
       - BTP ABAP Environment: btp-abap-environment.md
       - S/4HANA Public Cloud: s4hana-public-cloud.md
-      - Multi-Destination Mode: multi-destination.md
+      - Multi-Target Endpoints: multi-destination.md
+      - Multi-Target Administration: multi-target-administration.md
       - Multi-System Hub (mcp-hub): multi-system-hub.md
       - Best Practices: deployment-best-practices.md
   - Auth & Permissions:

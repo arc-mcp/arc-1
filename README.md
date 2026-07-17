@@ -44,7 +44,9 @@ Built for organizations that need AI-assisted SAP development with guardrails. I
 Deploy ARC-1 as a Cloud Foundry app on SAP BTP with full platform integration:
 
 - **Destination Service** — connect to SAP systems via managed destinations
-- **Multi-destination mode** — one instance serving several SAP systems (`SAP_BTP_DESTINATIONS=S4D,S4Q,S4P` → `/mcp/S4D`, `/mcp/S4Q`, …), with per-system guardrails via `arc1.*` destination properties
+- **Experimental multi-target work** — a proposed default-off, mutation-free BTP mode discovers
+  destinations marked `arc1.enabled=true` and exposes pinned SID/client plus aggregate endpoints; it
+  is not available in a released build yet ([design](docs_page/multi-destination.md))
 - **Cloud Connector** — reach on-premise systems through the connectivity proxy
 - **Per-user destinations** — user identity forwarded end-to-end via X.509 certificates for on-premise SAP, or exchanged for an ABAP bearer token for BTP ABAP Environment
 - **XSUAA OAuth proxy** — MCP clients authenticate via standard OAuth, ARC-1 handles the BTP token exchange
