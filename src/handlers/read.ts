@@ -16,6 +16,7 @@ import { getVersionDiff } from '../adt/version-diff.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
 import { extractCdsElements } from '../context/cds-deps.js';
 import { grepSource } from '../context/grep.js';
+import { readLineRange } from '../context/line-range.js';
 import { extractMethod, formatMethodListing, listMethods } from '../context/method-surgery.js';
 import { logger } from '../server/logger.js';
 import { type CacheSecurityContext, inactiveListUserKey, invalidateInactiveList } from './cache-security.js';
@@ -243,9 +244,28 @@ export async function handleSAPRead(
     return g.invalidPattern ? errorResult(g.output) : textResult(g.output);
   };
 
+  /** When args.lineStart is set, return only that 1-based inclusive line window instead of full source. */
+  const lineRangeText = (source: string): ToolResult => {
+    const r = readLineRange(source, Number(args.lineStart), Number(args.lineEnd));
+    return r.invalidRange ? errorResult(r.output) : textResult(r.output);
+  };
+
   // Structured format is only supported for CLAS type
   if (args.format === 'structured' && type !== 'CLAS') {
     return errorResult('The "structured" format is only supported for CLAS type. Other types return text format.');
+  }
+
+  // lineStart/lineEnd is a raw-line-window narrowing mode, mutually exclusive with grep
+  // (both are competing narrowing modes; combining them is ambiguous about which wins).
+  if (args.lineStart !== undefined || args.lineEnd !== undefined) {
+    if (args.lineStart === undefined || args.lineEnd === undefined) {
+      return errorResult('Both lineStart and lineEnd are required when using a line-range read.');
+    }
+    if (args.grep) {
+      return errorResult(
+        'Do not combine lineStart/lineEnd with grep. Use grep to find code, then lineStart/lineEnd to read the surrounding raw lines.',
+      );
+    }
   }
 
   switch (type) {
@@ -254,6 +274,7 @@ export async function handleSAPRead(
         client.getProgram(name, { ifNoneMatch, version: effectiveVersion }),
       );
       if (args.grep) return grepText(source);
+      if (args.lineStart !== undefined) return lineRangeText(source);
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
     case 'CLAS': {
@@ -297,6 +318,39 @@ export async function handleSAPRead(
           ? errorResult(g.output)
           : textResult(`[${name} section=${rawSection ?? 'main'}]\n${g.output}`);
       }
+      // lineStart/lineEnd: return only that raw line window instead of full source.
+      if (args.lineStart !== undefined) {
+        if (args.method) {
+          return errorResult(
+            'Do not combine lineStart/lineEnd with method. Use lineStart/lineEnd for a raw line window, or method="<name>" for a full method read.',
+          );
+        }
+        const rawSection = args.include as string | undefined;
+        const section = rawSection && rawSection.toLowerCase() !== 'main' ? rawSection : undefined;
+        let clasSource: string;
+        if (section) {
+          try {
+            clasSource = (await client.getClassInclude(name, section, { version: effectiveVersion })).source;
+          } catch (err) {
+            if (isNotFoundError(err)) {
+              return textResult(
+                `Include "${section}" is not available for class ${name}. Run lineStart/lineEnd without include= to read from the full class source.`,
+              );
+            }
+            throw err;
+          }
+        } else {
+          clasSource = (
+            await cachedGet('CLAS', name, effectiveVersion, (ifNoneMatch) =>
+              client.getClass(name, undefined, { ifNoneMatch, version: effectiveVersion }),
+            )
+          ).source;
+        }
+        const r = readLineRange(clasSource, Number(args.lineStart), Number(args.lineEnd));
+        return r.invalidRange
+          ? errorResult(r.output)
+          : textResult(`[${name} section=${rawSection ?? 'main'}]\n${r.output}`);
+      }
       // Structured format: return JSON with metadata + decomposed source
       if (args.format === 'structured') {
         const structured = await client.getClassStructured(name);
@@ -338,6 +392,7 @@ export async function handleSAPRead(
         client.getInterface(name, { ifNoneMatch, version: effectiveVersion }),
       );
       if (args.grep) return grepText(source);
+      if (args.lineStart !== undefined) return lineRangeText(source);
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
     case 'FUNC': {
@@ -377,6 +432,7 @@ export async function handleSAPRead(
         return textResult(JSON.stringify(payload, null, 2));
       }
       if (args.grep) return grepText(source);
+      if (args.lineStart !== undefined) return lineRangeText(source);
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
     case 'FUGR': {
@@ -405,6 +461,7 @@ export async function handleSAPRead(
         client.getInclude(name, { ifNoneMatch, version: effectiveVersion }),
       );
       if (args.grep) return grepText(source);
+      if (args.lineStart !== undefined) return lineRangeText(source);
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
     case 'DDLS': {
@@ -426,6 +483,7 @@ export async function handleSAPRead(
         return cachedTextResult(extractCdsElements(ddlSource, name), false, false, versionWarning);
       }
       if (args.grep) return grepText(ddlSource);
+      if (args.lineStart !== undefined) return lineRangeText(ddlSource);
       return cachedTextResult(ddlSource, cacheHit, revalidated, versionWarning);
     }
     case 'DCLS': {
@@ -433,6 +491,7 @@ export async function handleSAPRead(
         client.getDcl(name, { ifNoneMatch, version: effectiveVersion }),
       );
       if (args.grep) return grepText(source);
+      if (args.lineStart !== undefined) return lineRangeText(source);
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
     case 'BDEF': {
@@ -440,6 +499,7 @@ export async function handleSAPRead(
         client.getBdef(name, { ifNoneMatch, version: effectiveVersion }),
       );
       if (args.grep) return grepText(source);
+      if (args.lineStart !== undefined) return lineRangeText(source);
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
     case 'SRVD': {
@@ -447,6 +507,7 @@ export async function handleSAPRead(
         client.getSrvd(name, { ifNoneMatch, version: effectiveVersion }),
       );
       if (args.grep) return grepText(source);
+      if (args.lineStart !== undefined) return lineRangeText(source);
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
     case 'DDLX': {
@@ -455,6 +516,7 @@ export async function handleSAPRead(
           client.getDdlx(name, { ifNoneMatch, version: effectiveVersion }),
         );
         if (args.grep) return grepText(source);
+        if (args.lineStart !== undefined) return lineRangeText(source);
         return cachedTextResult(source, cacheHit, revalidated, versionWarning);
       } catch (err) {
         if (isNotFoundError(err)) {
@@ -481,6 +543,7 @@ export async function handleSAPRead(
         );
         const markdown = decodeKtdText(source);
         if (args.grep) return grepText(markdown);
+        if (args.lineStart !== undefined) return lineRangeText(markdown);
         return cachedTextResult(markdown, cacheHit, revalidated, versionWarning);
       } catch (err) {
         if (isNotFoundError(err)) {
@@ -499,6 +562,7 @@ export async function handleSAPRead(
         client.getTabl(name, { ifNoneMatch, version: effectiveVersion }),
       );
       if (args.grep) return grepText(source);
+      if (args.lineStart !== undefined) return lineRangeText(source);
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
     case 'VIEW': {
@@ -506,6 +570,7 @@ export async function handleSAPRead(
         client.getView(name, { ifNoneMatch, version: effectiveVersion }),
       );
       if (args.grep) return grepText(source);
+      if (args.lineStart !== undefined) return lineRangeText(source);
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
     case 'DOMA': {
