@@ -495,7 +495,7 @@ export function getToolDefinitions(
             type: 'string',
             enum: ['text', 'structured'],
             description:
-              'Output format. "text" (default): raw source code. "structured" (CLAS only): JSON with metadata (description, language, category) + decomposed source (main, testclasses, definitions, implementations, macros). Useful when you need to understand class structure or separate test code from production code.',
+              'Output format. "text" (default): raw source. "structured" (CLAS only): JSON metadata + EVERY class include (main, testclasses, definitions, implementations, macros) — a superset of "text", so it always costs MORE (measured +10% to +1685%). Use only to split test from production code; otherwise method="*" / method="name" / grep=.',
           },
           version: {
             type: 'string',
@@ -1091,7 +1091,7 @@ export function getToolDefinitions(
         '- "trace_requests": list armed trace requests. "trace_cancel": cancel one by id (write scope).\n' +
         '- "system_messages": list SM02 messages. "gateway_errors": list /IWFND/ERROR_LOG (on-prem; detailUrl or id+errorType for detail).\n' +
         '- "odata_perf": diagnose why an OData call is slow (url = host-relative path from the Network tab); returns the sap-statistics timing split (DB/ABAP/framework/auth) + a verdict. Read-only; needs allowDataPreview.\n' +
-        '- "authorization_trace": read the on-prem STUSERTRACE authorization trace from SUAUTHVALTRC (optional user/authObject/onlyFailures/maxResults). Read-only; needs SAP_ALLOW_DATA_PREVIEW. Example: {"action":"authorization_trace","user":"AUTH_TEST","onlyFailures":true}.\n' +
+        '- "authorization_trace": read the on-prem STUSERTRACE authorization trace from SUAUTHVALTRC (optional user/authObject/onlyFailures/maxResults). Read-only; needs SAP_ALLOW_DATA_PREVIEW.\n' +
         '- "cds_sql": show the native SQL a CDS view compiles to (name; read-only; may be absent on old releases).\n' +
         '- "sql_trace_state" / "set_sql_trace_state" (sqlOn; needs SAP_ALLOW_WRITES) / "sql_trace_directory": ST05 SQL-trace control.\n' +
         'Quickfix workflow: syntax/ATC → quickfix → apply_quickfix → write via SAPWrite. Full action reference: docs_page SAPDiagnose.',
@@ -1591,7 +1591,11 @@ export function getToolDefinitions(
           summary: {
             type: 'boolean',
             description:
-              'For list only. Headers-only overview: omit each transport\'s (and task\'s) object lists, keeping id/description/owner/status/target plus an objectCount. Use it to scan many open transports cheaply, then action="get" the one you want in full.',
+              'For list only. DEFAULT true: headers-only — drops each transport\'s (and task\'s) object lists, keeping id/description/owner/status/target + objectCount; use action="get" for one in full. Pass false for full object lists (~5x larger).',
+          },
+          maxResults: {
+            type: 'number',
+            description: 'list: max transports (default 50, max 1000). "total" always reports the full backlog.',
           },
         },
         required: ['action'],

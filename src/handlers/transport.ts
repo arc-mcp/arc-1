@@ -3,7 +3,7 @@
  * layers).
  */
 
-import type { AdtClient } from '../adt/client.js';
+import { type AdtClient, clampSearchResults } from '../adt/client.js';
 import { AdtApiError } from '../adt/errors.js';
 import { checkTransport } from '../adt/safety.js';
 import {
@@ -28,6 +28,9 @@ import type { InactiveObject, ObjectTransportHistory, TransportReleaseReport, Tr
 import { logger } from '../server/logger.js';
 import { objectUrlForType } from './object-types.js';
 import { errorResult, type ToolResult, textResult } from './shared.js';
+
+/** Default page size for `list`. Object lists dominate the payload, so the backlog sets the cost. */
+const DEFAULT_TRANSPORT_RESULTS = 50;
 
 /**
  * Pre-release guard: find inactive objects that belong to `transportId`. Releasing a transport that
@@ -131,8 +134,35 @@ export async function handleSAPTransport(client: AdtClient, args: Record<string,
       const user = (args.user as string | undefined) || client.username;
       const status = (args.status as string | undefined) ?? 'D';
       const transports = await listTransports(client.http, client.safety, user, status === '*' ? undefined : status);
-      const payload = args.summary === true ? transports.map(summarizeTransport) : transports;
-      return textResult(JSON.stringify(payload, null, 2));
+      // ADT returns every matching request WITH its full object list, and there is no server-side
+      // limit on /cts/transportrequests. Live: 55 requests = 104 KB (~26k tokens). The cost is the
+      // per-request object lists, not the count — capping at 50 of 55 saved only 2%, while dropping
+      // object lists saves 4.7x. So `list` summarises by default (the list→get workflow this tool
+      // already documents); pass summary=false for the old full-object payload. maxResults stays as
+      // a backstop for a large backlog.
+      const limit = clampSearchResults(args.maxResults as number | undefined, DEFAULT_TRANSPORT_RESULTS);
+      const page = transports.slice(0, limit);
+      const truncated = transports.length > limit;
+      const payload = args.summary === false ? page : page.map(summarizeTransport);
+      return textResult(
+        JSON.stringify(
+          {
+            total: transports.length,
+            shown: page.length,
+            truncated,
+            ...(truncated
+              ? {
+                  hint:
+                    `Showing ${page.length} of ${transports.length} transports. Narrow with user/status, ` +
+                    `or raise maxResults (max 1000).`,
+                }
+              : {}),
+            transports: payload,
+          },
+          null,
+          2,
+        ),
+      );
     }
     case 'get': {
       const id = String(args.id ?? '');
