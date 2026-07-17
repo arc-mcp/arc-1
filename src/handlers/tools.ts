@@ -455,8 +455,8 @@ export function getToolDefinitions(
           include: {
             type: 'string',
             description:
-              'For CLAS: DO NOT use this to read the main class — omit include entirely to get the full class source (CLASS DEFINITION + CLASS IMPLEMENTATION). This parameter reads class-LOCAL auxiliary files only: definitions (local type definitions, NOT the main class definition), implementations (local helper class implementations), macros, testclasses (ABAP Unit). Comma-separated. Not all classes have these sections — missing ones return a note instead of an error. ' +
-              'For DDLS: use include="elements" to get a structured field list extracted from the CDS DDL source — shows key fields, aliases, associations, and expression types (calculated, case, cast). Useful for understanding CDS entity structure without parsing raw DDL. ' +
+              'For CLAS: DO NOT use this to read the main class — omit include entirely to get the full class source (CLASS DEFINITION + CLASS IMPLEMENTATION). This parameter reads class-LOCAL auxiliary files only: definitions (local type definitions, NOT the main class definition), implementations (local helper class implementations), macros, testclasses (ABAP Unit). Comma-separated. ' +
+              'For DDLS: use include="elements" for the CDS field catalog (key fields, aliases, associations, expression types) instead of raw DDL. ' +
               'For VERSIONS (CLAS): include selects the class include history to query (main, definitions, implementations, macros, testclasses).',
           },
           group: {
@@ -1006,7 +1006,7 @@ export function getToolDefinitions(
         },
         maxResults: {
           type: 'number',
-          description: 'references: max entries (default 100, max 1000). "total" always reports the unfiltered count.',
+          description: 'references: max entries (default 100, max 1000). "total" counts every match of the filter.',
         },
         line: { type: 'number', description: 'Line number (1-based)' },
         column: { type: 'number', description: 'Column number (1-based)' },
@@ -1087,11 +1087,11 @@ export function getToolDefinitions(
         '- "apply_quickfix": apply one proposal, return text deltas, no write (name+type+source+line+proposalUri+proposalUserContent; pass proposalUserContent through exactly, may be empty).\n' +
         '- "dumps": list/read ST22 short dumps (no id = list; id = read; includeFullText, sections).\n' +
         '- "traces": list/analyze profiler traces (id+analysis: hitlist=hot spots, statements=call tree, dbAccesses=DB stats).\n' +
-        '- "trace_start": arm a profiler trace for the NEXT matching execution, then reproduce and read via "traces" (write scope; defaults: next HTTP request, SQL on; optional traceUser/processType/maxExecutions/expiresHours/sqlTrace/…).\n' +
+        '- "trace_start": arm a profiler trace for the NEXT matching execution, then reproduce and read via "traces" (write scope; defaults: next HTTP request, SQL on).\n' +
         '- "trace_requests": list armed trace requests. "trace_cancel": cancel one by id (write scope).\n' +
         '- "system_messages": list SM02 messages. "gateway_errors": list /IWFND/ERROR_LOG (on-prem; detailUrl or id+errorType for detail).\n' +
         '- "odata_perf": diagnose why an OData call is slow (url = host-relative path from the Network tab); returns the sap-statistics timing split (DB/ABAP/framework/auth) + a verdict. Read-only; needs allowDataPreview.\n' +
-        '- "authorization_trace": read the on-prem STUSERTRACE authorization trace from SUAUTHVALTRC (optional user/authObject/onlyFailures/maxResults). Read-only; needs SAP_ALLOW_DATA_PREVIEW.\n' +
+        '- "authorization_trace": read the on-prem STUSERTRACE authorization trace from SUAUTHVALTRC Read-only; needs SAP_ALLOW_DATA_PREVIEW.\n' +
         '- "cds_sql": show the native SQL a CDS view compiles to (name; read-only; may be absent on old releases).\n' +
         '- "sql_trace_state" / "set_sql_trace_state" (sqlOn; needs SAP_ALLOW_WRITES) / "sql_trace_directory": ST05 SQL-trace control.\n' +
         'Quickfix workflow: syntax/ATC → quickfix → apply_quickfix → write via SAPWrite. Full action reference: docs_page SAPDiagnose.',
@@ -1702,6 +1702,12 @@ export function getToolDefinitions(
     const annotations = TOOL_ANNOTATIONS[tool.name];
     if (annotations) tool.annotations = { ...annotations };
   }
+
+  // Advertise the strictness the runtime enforces: the Zod schemas are `.strict()`, and JSON Schema
+  // means the opposite when `additionalProperties` is absent. Stamped centrally so a new tool cannot
+  // forget it, TOP-LEVEL ONLY — nested `objects[]` items stay lenient, matching `.strict()`, which
+  // does not cascade (batch_create relies on that; #360).
+  for (const tool of tools) (tool.inputSchema as Record<string, unknown>).additionalProperties = false;
 
   return tools;
 }

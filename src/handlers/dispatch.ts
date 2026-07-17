@@ -45,7 +45,7 @@ import { handleSAPQuery } from './query.js';
 import { handleSAPRead } from './read.js';
 import { getToolSchema } from './schemas.js';
 import { handleSAPSearch } from './search.js';
-import { errorResult, hasSqlParserSignature, type ToolResult } from './shared.js';
+import { errorResult, hasSqlParserSignature, type ToolResult, toolJson } from './shared.js';
 import { handleSAPTransport } from './transport.js';
 import { handleSAPWrite } from './write.js';
 import { formatZodError } from './zod-errors.js';
@@ -589,7 +589,7 @@ export async function handleToolCall(
         content: [
           {
             type: 'text' as const,
-            text: JSON.stringify({
+            text: toolJson({
               error: 'rate_limited',
               retryAfter,
               message: `Rate limit exceeded (${decision.limitPerMinute}/min per user). Retry after ${retryAfter} seconds.`,

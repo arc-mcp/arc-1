@@ -45,7 +45,7 @@ export async function handleSAPManage(
     case 'features': {
       if (!cachedFeatures) {
         return textResult(
-          JSON.stringify({ message: 'No features probed yet. Use action="probe" to probe the SAP system first.' }),
+          toolJson({ message: 'No features probed yet. Use action="probe" to probe the SAP system first.' }),
         );
       }
       return textResult(toolJson(cachedFeatures));
@@ -455,7 +455,7 @@ export async function handleSAPManage(
 
     case 'cache_stats': {
       if (!cachingLayer) {
-        return textResult(JSON.stringify({ enabled: false, message: 'Object cache is disabled (ARC1_CACHE=none).' }));
+        return textResult(toolJson({ enabled: false, message: 'Object cache is disabled (ARC1_CACHE=none).' }));
       }
       const stats = cachingLayer.stats();
       return textResult(

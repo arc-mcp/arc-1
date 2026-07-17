@@ -1224,6 +1224,19 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
         expect(parsed.total).toBe(1);
         expect(parsed.references[0].type).toBe('CLAS/OC');
       });
+
+      it('tolerates a padded objectType instead of silently matching nothing', async () => {
+        const parsed = await bulkRefs({ objectType: '  CLAS/OC  ', maxResults: 5 });
+        expect(parsed.total).toBe(1);
+        expect(parsed.references[0].name).toBe('ZCL_X');
+      });
+
+      it('treats a whitespace-only objectType as no filter', async () => {
+        // Otherwise it would filter on the empty type, match nothing, and read as "No references
+        // found" — a wrong answer dressed as an empty one.
+        const parsed = await bulkRefs({ objectType: '   ' });
+        expect(parsed.total).toBe(251);
+      });
     });
 
     it('returns error when neither uri nor type+name provided for references', async () => {

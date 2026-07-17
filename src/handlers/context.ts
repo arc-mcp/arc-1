@@ -5,12 +5,13 @@
 
 import {
   buildSiblingExtensionFinding,
+  type CdsImpactDownstream,
   classifyCdsImpact,
   deriveSiblingStem,
   isSiblingNameMatch,
   type SiblingExtensionCandidate,
 } from '../adt/cds-impact.js';
-import type { AdtClient, SourceReadResult } from '../adt/client.js';
+import { type AdtClient, clampSearchResults, type SourceReadResult } from '../adt/client.js';
 import { findWhereUsed } from '../adt/codeintel.js';
 import { decodeKtdText } from '../adt/ddic-xml.js';
 import { AdtApiError, isNotFoundError } from '../adt/errors.js';
@@ -30,6 +31,42 @@ import { lookupLiveUsages, resolveWhereUsedUri } from './where-used.js';
 
 const DEFAULT_SIBLING_MAX_CANDIDATES = 4;
 const HARD_MAX_SIBLING_MAX_CANDIDATES = 10;
+
+/** Per-bucket cap for action="impact". Applied per bucket, not across the whole result, so a
+ *  crowded `abapConsumers` cannot hide a single decisive `bdefs` entry. */
+const DEFAULT_IMPACT_BUCKET = 50;
+
+/** Bucket keys of CdsImpactDownstream (everything except `summary`). */
+const IMPACT_BUCKETS = [
+  'projectionViews',
+  'bdefs',
+  'serviceDefinitions',
+  'serviceBindings',
+  'accessControls',
+  'metadataExtensions',
+  'abapConsumers',
+  'tables',
+  'documentation',
+  'other',
+] as const;
+
+/** Slice every downstream bucket to `limit`, reporting which were cut. `summary` is untouched: it
+ *  is computed pre-slice and is what makes a capped answer honest about the real blast radius. */
+function boundImpactBuckets(
+  downstream: CdsImpactDownstream,
+  limit: number,
+): { boundedDownstream: CdsImpactDownstream; truncatedBuckets: string[] } {
+  const truncatedBuckets: string[] = [];
+  const boundedDownstream = { ...downstream };
+  for (const bucket of IMPACT_BUCKETS) {
+    const entries = downstream[bucket];
+    if (entries.length > limit) {
+      truncatedBuckets.push(`${bucket} (${entries.length})`);
+      boundedDownstream[bucket] = entries.slice(0, limit);
+    }
+  }
+  return { boundedDownstream, truncatedBuckets };
+}
 
 function parseSiblingMaxCandidates(value: unknown): number {
   const parsed = Number(value ?? DEFAULT_SIBLING_MAX_CANDIDATES);
@@ -327,16 +364,31 @@ export async function handleSAPContext(
     const upstreamCount =
       upstream.tables.length + upstream.views.length + upstream.associations.length + upstream.compositions.length;
 
+    // Bound each downstream bucket. A widely-consumed base view has a huge blast radius, and this
+    // path classifies the FULL where-used tree. `downstream.summary` is computed before slicing, so
+    // the reported total/direct/indirect stay honest — a truncated bucket must never shrink the
+    // blast radius a caller sees.
+    const impactLimit = clampSearchResults(args.maxResults as number | undefined, DEFAULT_IMPACT_BUCKET);
+    const { boundedDownstream, truncatedBuckets } = boundImpactBuckets(downstream, impactLimit);
+
     const response = {
       name,
       type: 'DDLS',
       upstream,
-      downstream,
+      downstream: boundedDownstream,
       summary: {
         upstreamCount,
         downstreamTotal: downstream.summary.total,
         downstreamDirect: downstream.summary.direct,
       },
+      ...(truncatedBuckets.length > 0
+        ? {
+            truncatedBuckets,
+            hint:
+              `Bucket(s) ${truncatedBuckets.join(', ')} were capped at ${impactLimit} entries each; ` +
+              `summary counts remain complete. Raise maxResults (max 1000) to see more.`,
+          }
+        : {}),
       ...(consistencyHints.length > 0 ? { consistencyHints } : {}),
       ...(siblingExtensionAnalysis ? { siblingExtensionAnalysis } : {}),
       ...(warnings.length > 0 ? { warnings } : {}),

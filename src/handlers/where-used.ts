@@ -25,10 +25,11 @@ export interface LiveUsageLookup {
   fallbackUsed: boolean;
 }
 
-/** Match a result's ADT type against a filter: "CLAS" matches "CLAS/OC", "CLAS/OC" matches exactly. */
+/** Match a result's ADT type against a filter: "CLAS" matches "CLAS/OC", "CLAS/OC" matches exactly.
+ *  Trimmed — a padded `" CLAS "` would otherwise match nothing and read as "no references found". */
 function matchesObjectType(resultType: string, filter: string): boolean {
-  const type = resultType.toUpperCase();
-  const wanted = filter.toUpperCase();
+  const type = resultType.trim().toUpperCase();
+  const wanted = filter.trim().toUpperCase();
   return type === wanted || type.startsWith(`${wanted}/`);
 }
 
@@ -83,7 +84,10 @@ export async function lookupLiveUsages(
     await augmentInterfaceImplementers(client, uri, objectType, results as WhereUsedResult[]);
   }
 
-  const filtered = objectType ? results.filter((result) => matchesObjectType(result.type, objectType)) : results;
+  // A whitespace-only filter means "no filter", not "match the empty type" — the latter would match
+  // nothing and surface as a bare "No references found".
+  const filter = objectType?.trim() ? objectType : undefined;
+  const filtered = filter ? results.filter((result) => matchesObjectType(result.type, filter)) : results;
   const limit = clampSearchResults(maxResults, DEFAULT_USAGE_RESULTS);
   return {
     results: filtered.slice(0, limit),

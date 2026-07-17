@@ -672,7 +672,8 @@ const SERVER_INSTRUCTIONS = [
   '- One method: SAPRead(type="CLAS", method="name"). Survey signatures: method="*".',
   '- Finding a string: SAPRead(grep="pattern") instead of reading the whole object.',
   '- Blast radius of a CDS change: SAPContext(action="impact").',
-  'List-returning actions are paged and report a true "total" — trust it over the page length.',
+  'Where-used, usages, impact and transport lists are paged: they report a complete "total"/summary',
+  'alongside a capped page — trust that count, not the page length. Other list actions are unpaged.',
   '',
   'One SAP system per instance: there is no system/destination selector, by design.',
 ].join('\n');
