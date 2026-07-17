@@ -278,6 +278,34 @@ that proves the conflict is absent; a polluted `batch_create` still passes (item
 
 ---
 
+## P6 — Serialization hygiene — SHIPPED, and the accuracy gate was finally run
+
+> **Accuracy eval, 2026-07-17 — no measurable cost.** Subject: GPT-5 via `codex exec`. Four real
+> ARC-1 payloads (where-used 25 refs, transport list 12, search 18, DEVC 20), 18 questions with
+> programmatic ground truth, identical questions/payload/order per arm — only whitespace differs.
+> Payload text embedded raw in the prompt, exactly as a tool result reaches a model (no Read tool,
+> which would re-format compact JSON and confound the arms).
+>
+> | arm | score |
+> |---|---|
+> | pretty | **18/18 (100%)** |
+> | compact | **18/18 (100%)** |
+> | | **+0.0pp** |
+>
+> Nine of the 18 required multi-record traversal — filter-and-count across 25 references, summing
+> `objectCount` across 12 transports, "the LAST object in the array" — i.e. exactly the cases where
+> indentation might plausibly help track structure. All correct in both arms.
+>
+> **Limitation, stated plainly: this is a ceiling effect.** Both arms scored 100%, so the eval has no
+> headroom and can only rule out a *large* effect, not a subtle one. To detect a few points of
+> degradation the questions would need to be hard enough that the pretty arm drops below 100%.
+>
+> **Two harness bugs worth remembering**, because the first run *looked* like a clean result:
+> it scored **0/18 vs 0/18** — a perfect "tie" that was really `codex exec` blocking on a non-TTY
+> stdin ("Reading additional input from stdin…") and answering nothing. `execFile` silently ignores
+> a `stdio` option, so closing stdin needs a real shell (`< /dev/null`). A broken eval and a null
+> result are indistinguishable from the summary line alone — check the parse rate before the score.
+
 ## P6 — Serialization hygiene — SHIPPED (PR 2)
 
 > **Status 2026-07-17: done.** One `toolJson()` helper; 86 sites across 11 handler modules via a
