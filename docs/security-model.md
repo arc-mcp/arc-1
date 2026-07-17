@@ -289,7 +289,40 @@ if the change is *in* one of them.
 
 ---
 
-## 8. References
+## 8. Cryptography and key handling
+
+ARC-1 uses only vetted primitives from Node's `node:crypto` and the platform TLS stack —
+**no hand-rolled cryptography, and no custom RNG for any security decision.**
+
+| Purpose | Primitive | Where |
+|---|---|---|
+| OAuth PKCE | **S256** — SHA-256 over a `randomBytes(32)` verifier | [`src/adt/oauth.ts`](../src/adt/oauth.ts) |
+| OAuth `state` / nonce | `randomBytes(32)` (base64url) | [`src/adt/oauth.ts`](../src/adt/oauth.ts) |
+| DCR `client_id` + auth `state` | HMAC (HKDF-derived, domain-separated key), constant-time verify | [`@arc-mcp/xsuaa-auth`](https://github.com/arc-mcp/xsuaa-auth) — see §7 |
+| JWT signature | asymmetric, verified vs kid-matched JWKS; `none` / HS↔RS confusion rejected | [`@arc-mcp/xsuaa-auth`](https://github.com/arc-mcp/xsuaa-auth), wired via [`src/server/http.ts`](../src/server/http.ts) |
+| Cache key / ETag / content hash | SHA-256 | [`src/cache/cache.ts`](../src/cache/cache.ts), [`src/adt/diagnostics.ts`](../src/adt/diagnostics.ts) |
+| Audit event id | `crypto.randomUUID()` | [`src/server/sinks/btp-auditlog.ts`](../src/server/sinks/btp-auditlog.ts) |
+| Transport | platform TLS; certificate validation **on by default** — `SAP_INSECURE` opt-out is logged as a warning | [`src/adt/http.ts`](../src/adt/http.ts) |
+
+**Key & secret handling.** Secrets (SAP credentials, XSUAA `clientsecret`, the DCR signing
+secret, BTP service-key fields) come only from env / service-key / destination config — never
+hardcoded — and are never persisted at rest in the cache DB or logs (invariant **I4**).
+Accidental hardcoded-credential regressions are caught in CI by Trivy filesystem secret
+scanning ([`.github/workflows/secret-scan.yml`](../.github/workflows/secret-scan.yml)), which
+fails the check and records SARIF on any structured-credential finding. That job is
+defense-in-depth — the **preventive** control is GitHub's native secret scanning + **push
+protection** (free on this public repo; enable both in Settings → Code security, and make the
+scan a *required* status check to block merges, since `main` is not branch-protected today).
+Trivy is reused from the image-CVE gate because gitleaks-action requires a paid license for
+organization repos; its rule-based detection covers structured credentials (API keys, tokens,
+cloud keys, PEM private keys) — [TruffleHog OSS](https://github.com/trufflesecurity/trufflehog)
+is the upgrade path if entropy-based detection or live-credential verification is later needed.
+The related "hidden interfaces" concern is bounded separately: the LLM-visible tool surface is
+frozen byte-for-byte by `tests/fixtures/tool-definitions/`.
+
+---
+
+## 9. References
 - Operator hardening: [`docs_page/security-guide.md`](../docs_page/security-guide.md)
 - Scopes, profiles, deny-actions: [`docs_page/authorization.md`](../docs_page/authorization.md)
 - Auth coexistence matrix: [`docs_page/enterprise-auth.md`](../docs_page/enterprise-auth.md)
