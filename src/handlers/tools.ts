@@ -704,7 +704,7 @@ export function getToolDefinitions(
           group: {
             type: 'string',
             description:
-              'For FUNC: parent function-group name. Required for FUNC create (the FUGR must already exist — create it first via SAPWrite type=FUGR). Auto-resolved via search for FUNC update/delete if omitted.',
+              'FUNC: group name (required for create, else auto-resolved). INCL: group + action=update/edit_unit for a FUGR structural include; omit for standalone.',
           },
           dataType: { type: 'string', description: 'DOMA/DTEL: ABAP data type (e.g., CHAR, NUMC, DEC)' },
           rowType: {
@@ -1564,6 +1564,10 @@ export function getToolDefinitions(
             type: 'string',
             description:
               "Object type for check/history/remove_object actions (PROG, CLAS, DDLS, etc.). Not used by create — the SAP backend infers transport type (K/W/T) from the package's TADIR route on the CreateCorrectionRequest endpoint.",
+          },
+          group: {
+            type: 'string',
+            description: 'check/history: FUNC auto, INCL required.',
           },
           pgmid: {
             type: 'string',

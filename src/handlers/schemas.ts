@@ -516,7 +516,8 @@ export const SAPWriteSchema = z
     package: z.string().optional(),
     transport: z.string().optional(),
     // Required for FUNC create (the parent function-group name); optional for FUNC
-    // update/delete (auto-resolved via search). Ignored for other types.
+    // update/delete (auto-resolved via search). Also used by INCL update to address a
+    // FUGR structural include (see tools.ts description) — ignored for all other types.
     group: z.string().optional(),
     dataType: z.string().optional(),
     rowType: z.string().optional(),
@@ -806,6 +807,10 @@ export const SAPTransportSchema = z.object({
   user: z.string().optional(),
   status: z.string().optional(),
   type: z.string().optional(),
+  // For "check"/"history" against type=FUNC (auto-resolved via search if omitted) or type=INCL (a
+  // FUGR structural include — required, addresses the include's own group-scoped URI). Ignored
+  // for other types.
+  group: z.string().optional(),
   owner: z.string().optional(),
   // looseOptionalBoolean (not z.boolean()) so GPT/OpenAI clients sending stringified
   // "true"/"false" coerce instead of erroring at validation (CLAUDE.md boolean guidance).

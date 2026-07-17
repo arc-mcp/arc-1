@@ -824,5 +824,47 @@ describe('SAPActivate handler', () => {
       expect(result.content[0]?.text).toContain('Warnings:');
       expect(result.content[0]?.text).toContain('Consider using CDS view entity');
     });
+
+    // ─── FUGR structural include activation (FEAT-18 sibling) ───
+    // Single-object group-routing is covered by 'activates a function-group structural include
+    // through its parent-group URI' above (#571). These cover the remaining cases: no-group
+    // fallback, batch, and the package-allowlist gate.
+    it('falls back to the standalone /programs/includes/ URI for INCL when no group is given', async () => {
+      await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPActivate', {
+        type: 'INCL',
+        name: 'ZSTANDALONE_INCL',
+      });
+      const lastCallOpts = mockFetch.mock.calls[mockFetch.mock.calls.length - 1]?.[1] as RequestInit;
+      expect(lastCallOpts.body).toContain('/sap/bc/adt/programs/includes/ZSTANDALONE_INCL');
+    });
+
+    it('batch activates a FUGR structural include (INCL) via the group-scoped URI', async () => {
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPActivate', {
+        objects: [{ type: 'INCL', name: 'LZFUGR_TESTP01', group: 'ZFUGR_TEST' }],
+      });
+      expect(result.isError).toBeUndefined();
+      const lastCallOpts = mockFetch.mock.calls[mockFetch.mock.calls.length - 1]?.[1] as RequestInit;
+      expect(lastCallOpts.body).toContain('/sap/bc/adt/functions/groups/zfugr_test/includes/lzfugr_testp01');
+    });
+
+    it('blocks INCL activation in a non-allowed package using the group-scoped package-resolution URL', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(
+        mockResponse(
+          200,
+          '<finclude:abapFunctionGroupInclude xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="LZFUGR_TESTP01"><adtcore:containerRef adtcore:name="ZFUGR_TEST" adtcore:packageName="ZRESTRICTED"/></finclude:abapFunctionGroupInclude>',
+          { 'x-csrf-token': 'T' },
+        ),
+      );
+      const result = await handleToolCall(restrictedTmpClient(), DEFAULT_CONFIG, 'SAPActivate', {
+        type: 'INCL',
+        name: 'LZFUGR_TESTP01',
+        group: 'ZFUGR_TEST',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('ZRESTRICTED');
+      expect(result.content[0]?.text).toContain('blocked');
+      expect(mockFetch.mock.calls.some((c) => String(c[0]).includes('/activation'))).toBe(false);
+    });
   });
 });

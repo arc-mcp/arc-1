@@ -2233,6 +2233,33 @@ describe('AdtClient', () => {
       expect(pkg).toBe('Z_GATED');
       expect(fetchHeaders(0).Accept).toBe('application/vnd.sap.adt.businessservices.servicebinding.v2+xml');
     });
+
+    it('resolves the package of a FUGR structural include (fincludes) via 406 negotiation retry', async () => {
+      // Live-captured (2026-07-14, object names anonymized): a FORM-routine include under a function
+      // group only renders under the functions.fincludes.v2+xml Accept; a generic GET 406s and names
+      // that type in the error body. resolveObjectPackage is called with no explicit Accept for this
+      // branch (write.ts INCL+group), so it must recover via the client's generic 406 negotiation
+      // retry, then extract the package from containerRef@packageName (the fincludes schema has no
+      // own packageRef).
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          406,
+          '<?xml version="1.0" encoding="utf-8"?><exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework"><namespace id="com.sap.adt"/><type id="ExceptionResourceNotAcceptable"/><message lang="EN">The message content is not acceptable. Accepted content types: application/vnd.sap.adt.functions.fincludes.v2+xml</message><localizedMessage lang="EN">The message content is not acceptable. Accepted content types: application/vnd.sap.adt.functions.fincludes.v2+xml</localizedMessage><properties><entry key="T100KEY-ID">SADT_RESOURCE</entry><entry key="T100KEY-NO">044</entry><entry key="T100KEY-V1">application/vnd.sap.adt.functions.fincludes.v2+xml</entry></properties></exc:exception>',
+        ),
+      );
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          '<?xml version="1.0" encoding="utf-8"?><finclude:abapFunctionGroupInclude abapsource:sourceUri="source/main" adtcore:name="LZFUGR_TESTP01" adtcore:type="FUGR/I" adtcore:version="active" adtcore:description="Include LZFUGR_TESTP01" adtcore:language="EN" xmlns:finclude="http://www.sap.com/adt/functions/fincludes" xmlns:abapsource="http://www.sap.com/adt/abapsource" xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:containerRef adtcore:uri="/sap/bc/adt/functions/groups/zfugr_test" adtcore:type="FUGR/F" adtcore:name="ZFUGR_TEST" adtcore:packageName="ZTEST_PKG"/></finclude:abapFunctionGroupInclude>',
+        ),
+      );
+      const client = createClient();
+      const pkg = await client.resolveObjectPackage('/sap/bc/adt/functions/groups/zfugr_test/includes/lzfugr_testp01');
+      expect(pkg).toBe('ZTEST_PKG');
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(fetchHeaders(1).Accept).toBe('application/vnd.sap.adt.functions.fincludes.v2+xml');
+    });
   });
 
   describe('getInactiveObjects', () => {
