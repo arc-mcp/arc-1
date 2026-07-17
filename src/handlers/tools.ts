@@ -399,16 +399,23 @@ function makeOptionalPropertiesNullable(node: unknown): unknown {
 
 // ─── Main Tool Definitions ──────────────────────────────────────────
 
+/** Advertise the strictness the runtime enforces — the Zod schemas are `.strict()`, and JSON Schema
+ *  means the opposite when `additionalProperties` is absent. Every return path goes through here.
+ *  TOP-LEVEL ONLY: nested `objects[]` items stay lenient, matching `.strict()` (batch_create; #360). */
+function withStrictSchemas(tools: ToolDefinition[]): ToolDefinition[] {
+  for (const tool of tools) (tool.inputSchema as Record<string, unknown>).additionalProperties = false;
+  return tools;
+}
+
 export function getToolDefinitions(
   config: ServerConfig,
   textSearchAvailable?: boolean,
   resolvedFeatures?: ResolvedFeatures,
   options: ToolDefinitionOptions = {},
 ): ToolDefinition[] {
-  // Hyperfocused mode: single universal SAP tool (~200 tokens)
-  if (config.toolMode === 'hyperfocused') {
-    return [getHyperfocusedToolDefinition(config, resolvedFeatures)];
-  }
+  // Hyperfocused mode: single universal SAP tool (~200 tokens).
+  if (config.toolMode === 'hyperfocused')
+    return withStrictSchemas([getHyperfocusedToolDefinition(config, resolvedFeatures)]);
 
   const btp = isBtpMode(config);
   const tools: ToolDefinition[] = [
@@ -1703,11 +1710,5 @@ export function getToolDefinitions(
     if (annotations) tool.annotations = { ...annotations };
   }
 
-  // Advertise the strictness the runtime enforces: the Zod schemas are `.strict()`, and JSON Schema
-  // means the opposite when `additionalProperties` is absent. Stamped centrally so a new tool cannot
-  // forget it, TOP-LEVEL ONLY — nested `objects[]` items stay lenient, matching `.strict()`, which
-  // does not cascade (batch_create relies on that; #360).
-  for (const tool of tools) (tool.inputSchema as Record<string, unknown>).additionalProperties = false;
-
-  return tools;
+  return withStrictSchemas(tools);
 }
