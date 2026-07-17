@@ -14,10 +14,10 @@
 #   mbt build
 #   cf deploy mta_archives/arc1-mcp_<version>.mtar -e mta-overrides.mtaext
 #
-# Any property left commented uses the `mta.yaml` value unchanged. The two
-# `SAP_BTP_*_DESTINATION` properties below are the only ones that have to
-# be set — the base `mta.yaml` ships with placeholder destination names so
-# deploying without an override fails fast at startup.
+# Any property left commented uses the `mta.yaml` value unchanged. The base
+# descriptor has no fake SAP destination: configure the legacy single-target
+# block below, or enable the experimental multi-target block and manage marked
+# destinations in the BTP Cockpit.
 #
 # IMPORTANT — an extension can only OVERRIDE a base property, never remove it.
 # To turn a base-enabled feature OFF you must write the explicit off-value here;
@@ -33,7 +33,7 @@ extends: arc1-mcp
 modules:
   - name: arc1-mcp-server
     properties:
-      # ── Destinations (REQUIRED override) ─────────────────────────────
+      # ── Legacy single-target /mcp (optional) ─────────────────────────
       # BasicAuth destination for startup feature probing
       # SAP_BTP_DESTINATION: "my-basic-auth-destination"
 
@@ -41,18 +41,28 @@ modules:
       # SAP_BTP_PP_DESTINATION: "my-pp-destination"
 
       # ── Principal propagation behaviour ──────────────────────────────
-      # Per-user principal propagation (default in mta.yaml: true). Uncomment
-      # the line below to run every SAP call as the shared destination identity
-      # instead. The base `SAP_PP_STRICT: "true"` can stay as it is — it only
-      # warns once PP is off.
+      # The base MTA keeps legacy JWT calls on PP by default. Set false only
+      # for an intentional shared-identity/API-key deployment.
       # SAP_PP_ENABLED: "false"
 
-      # The base MTA uses the recommended strict default: API-key/non-JWT tool
-      # calls are rejected. Set false for supported mixed PP/API-key operation;
+      # The base MTA also keeps strict PP enabled: API-key/non-JWT tool calls
+      # are rejected. Set false for supported mixed PP/API-key operation;
       # JWT calls use PP and API-key calls use the shared destination identity.
-      # Leaving this at the base "true" while adding ARC1_API_KEYS means those
-      # API-key clients are rejected on every tool call.
+      # Leaving this "true" while adding ARC1_API_KEYS means those API-key
+      # clients are rejected on every tool call.
       # SAP_PP_STRICT: "false"
+
+      # ── Experimental multi-target v1 (alternative or side-by-side) ──
+      # Discovers subaccount destinations marked arc1.enabled=true. The routes
+      # are strict-PP and mutation-free regardless of legacy /mcp settings.
+      # ARC1_MULTI_TARGET_ENDPOINTS: "true"
+      # ARC1_CACHE: none
+      # ARC1_TOOL_MODE: standard
+      # ARC1_UI: "off"
+      # ARC1_MAX_CONCURRENT: "10"
+      # ARC1_AUTH_RATE_LIMIT: "30"
+      # ARC1_MCP_HTTP_RATE_LIMIT: "1000"
+      # ARC1_RATE_LIMIT: "120"
 
       # ── Safety / Authorization ───────────────────────────────────────
       # Enable object mutations (create, update, delete)

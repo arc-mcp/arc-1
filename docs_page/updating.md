@@ -1,5 +1,21 @@
 # Updating ARC-1
 
+## Experimental destination-discovered multi-target migration
+
+The unreleased PR #543 prototype setting `SAP_BTP_DESTINATIONS` is intentionally rejected. Replace
+it with `ARC1_MULTI_TARGET_ENDPOINTS=true`, mark each eligible BTP subaccount destination with
+`arc1.enabled=true`, and provide the standard `sap-sysid` and `sap-client` destination properties.
+Routes are now `/<SID>/<CLIENT>/mcp` and `/multi/mcp`; destination-name routes and a discovered
+default `/mcp` alias do not exist. Per-destination data/SQL policy lives in `arc1.*` destination
+properties, not `SAP_*_<DEST>` environment variables. See
+[Multi-Target Administration](multi-target-administration.md).
+
+The base `mta.yaml` is now target-free: all legacy target settings and the experimental multi-target
+block are commented examples. Existing deployments remain compatible because ARC-1 still reads the
+same explicit environment variables or MTA extension values. Before updating a deployment that
+previously relied on active values from the repository template, copy those values into your own
+deployment-specific `.mtaext` or CF environment.
+
 ## Cache warmup removal
 
 ARC-1 no longer performs a startup TADIR scan or keeps repository-wide node/edge indexes. The normal request-driven memory/SQLite cache remains, and `SAPContext(action="usages")` now queries SAP's live where-used index with the current caller's identity.
@@ -21,10 +37,10 @@ deployments.
 - Custom deployments with PP enabled but no Destination Service runtime configuration will now return
   an MCP tool error for JWT requests instead of silently using the shared client.
 - API-key / non-JWT requests still use the shared client unless `SAP_PP_STRICT=true` is set explicitly.
-- The shipped BTP `mta.yaml` now sets `SAP_PP_STRICT=true`, making new and updated base-MTA
-  deployments PP-only by default. Existing combined deployments can preserve supported mixed
-  operation by setting `SAP_PP_STRICT=false` explicitly before updating; separating API-key
-  automation into a non-PP instance remains the recommendation, not a requirement.
+- The shipped BTP `mta.yaml` shows `SAP_PP_STRICT=true` in the commented strict-PP example. Existing
+  combined deployments can preserve supported mixed operation by setting `SAP_PP_STRICT=false`
+  explicitly; separating API-key automation into a non-PP instance remains the recommendation, not
+  a requirement.
 
 The application still starts and `/health` remains successful when a runtime-only PP mapping is broken.
 Before rolling the version into production, make one JWT-authenticated SAP read in staging and verify

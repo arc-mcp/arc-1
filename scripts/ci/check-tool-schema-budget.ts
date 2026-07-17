@@ -25,6 +25,12 @@
 import { pathToFileURL } from 'node:url';
 import type { FeatureStatus, ResolvedFeatures } from '../../src/adt/types.js';
 import { getToolDefinitions, type ToolDefinition } from '../../src/handlers/tools.js';
+import type { TargetDescriptor } from '../../src/server/destination-registry.js';
+import {
+  injectTargetSchema,
+  multiTargetToolDefinitions,
+  sapTargetsDefinition,
+} from '../../src/server/multi-target-tools.js';
 import { DEFAULT_CONFIG, type ServerConfig } from '../../src/server/types.js';
 
 const TOKEN_ESTIMATE_BYTES = 4;
@@ -65,6 +71,8 @@ export interface ToolSchemaScenario {
   config: ServerConfig;
   textSearchAvailable: boolean;
   resolvedFeatures?: ResolvedFeatures;
+  /** Fixed synthetic definitions for conditional runtime surfaces such as aggregate multi-target. */
+  definitions?: ToolDefinition[];
   budget: ToolSchemaBudget;
 }
 
@@ -105,6 +113,43 @@ const FULL_ACCESS_CONFIG: ServerConfig = {
 const WRITE_WIRE_WALL = 68_000;
 const READ_WIRE_WALL = 50_000;
 const PER_TOOL_WIRE_WALL = 21_000;
+
+function syntheticTarget(index: number): TargetDescriptor {
+  const sid = `A${index.toString(36).toUpperCase().padStart(2, '0')}`;
+  const client = String(index).padStart(3, '0');
+  return {
+    target: `${sid}/${client}`,
+    sid,
+    client,
+    description: `Synthetic target ${index}`,
+    language: 'EN',
+    destinationName: `SYNTHETIC_${index}`,
+    authentication: 'PrincipalPropagation',
+    proxyType: 'OnPremise',
+    hasCloudConnectorLocationId: false,
+    requestedPolicy: { allowDataPreview: false, allowFreeSQL: false },
+    effectivePolicy: { allowDataPreview: false, allowFreeSQL: false },
+    connectionFingerprint: `connection-${index}`,
+    fingerprint: `fingerprint-${index}`,
+  };
+}
+
+function aggregateDefinitions(targetCount: number): ToolDefinition[] {
+  const targets = Array.from({ length: targetCount }, (_, index) => syntheticTarget(index));
+  const tools = multiTargetToolDefinitions(getToolDefinitions(DEFAULT_CONFIG), DEFAULT_CONFIG).map((tool) =>
+    injectTargetSchema(tool, targets),
+  );
+  if (targetCount > 1) tools.push(sapTargetsDefinition());
+  return tools;
+}
+
+const MULTI_TARGET_BUDGET: ToolSchemaBudget = {
+  schemaTokenEstimate: 11_800,
+  descriptionTokenEstimate: 8_800,
+  descriptionCount: 175,
+  maxTotalWireBytes: READ_WIRE_WALL,
+  maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
+};
 
 export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
   {
@@ -162,6 +207,15 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       maxPerToolWireBytes: 4_000,
     },
   },
+  ...([16, 17, 256] as const).map(
+    (targetCount): ToolSchemaScenario => ({
+      name: `multi-target-aggregate-${targetCount}`,
+      config: DEFAULT_CONFIG,
+      textSearchAvailable: true,
+      definitions: aggregateDefinitions(targetCount),
+      budget: MULTI_TARGET_BUDGET,
+    }),
+  ),
 ];
 
 export function estimateTokens(bytes: number): number {
@@ -193,11 +247,13 @@ export function collectDescriptionStats(value: unknown): DescriptionStats {
 }
 
 export function measureToolDefinitions(scenario: ToolSchemaScenario): ToolSchemaMeasurement {
-  const definitions = getToolDefinitions(
-    scenario.config,
-    scenario.textSearchAvailable,
-    scenario.resolvedFeatures,
-  ) as ToolDefinition[];
+  const definitions =
+    scenario.definitions ??
+    (getToolDefinitions(
+      scenario.config,
+      scenario.textSearchAvailable,
+      scenario.resolvedFeatures,
+    ) as ToolDefinition[]);
   // Measure the exact shape the client receives from tools/list: { tools: [...] } (Codex review,
   // issue #520). The JSON-RPC envelope ({"jsonrpc","id","result"}) adds only ~40 bytes on top.
   const schemaBytes = Buffer.byteLength(JSON.stringify({ tools: definitions }), 'utf8');

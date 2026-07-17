@@ -28,9 +28,9 @@ import { logger } from './logger.js';
 /**
  * Optional knobs for `createAuthRateLimiter`.
  *
- * `skip` is the only one currently — used to layer two limiters on the same
- * route (`/authorize`) where one skips JSON-RPC bodies and the other only
- * applies to JSON-RPC bodies. See http.ts for the Copilot Studio rationale.
+ * `skip` lets one middleware mounted at the Express root count only the
+ * request classes assigned to its shared bucket. See http.ts for the MCP and
+ * Copilot Studio routing rationale.
  * Passing a `skip` function is preferred over building an outer conditional
  * dispatcher: CodeQL's `js/missing-rate-limiting` query only recognises
  * `app.use(path, rateLimit({...}))` patterns where the second argument is
@@ -46,8 +46,8 @@ export interface AuthRateLimiterOptions {
  * - allows `perMinute` requests per minute per IP (60_000 ms window),
  * - returns HTTP 429 with `Retry-After` and RFC 9331 `RateLimit-*` headers on hit,
  * - emits a typed `auth_rate_limited` audit event on every denial,
- * - honors an optional `skip` predicate so the same Express route can stack
- *   two limiters (one for OAuth bodies, one for Copilot Studio MCP JSON-RPC).
+ * - honors an optional `skip` predicate so a root-mounted limiter can share
+ *   one bucket across several endpoint styles.
  *
  * `endpoint` is used only for the audit event label and for diagnostic logs;
  * the path-based mount in Express is done by the caller.
@@ -121,4 +121,22 @@ export function isCopilotJsonRpc(req: Request): boolean {
   if (req.method !== 'POST') return false;
   const body = req.body as { jsonrpc?: unknown } | undefined;
   return body != null && Boolean(body.jsonrpc);
+}
+
+/**
+ * Return true for requests that consume ARC-1's single MCP-edge bucket.
+ *
+ * The path match is intentionally registry-independent: syntactically valid
+ * unknown target routes are rate-limited before authentication and route
+ * resolution, exactly like accepted targets. OAuth metadata and normal OAuth
+ * `/authorize` traffic remain outside this bucket.
+ */
+export function isMcpHttpTraffic(req: Request): boolean {
+  // Express string routes accept one or more trailing delimiters in the default
+  // non-strict mode. Normalize them here so an accepted alias cannot skip the
+  // root-mounted bucket before reaching `/mcp`, `/targets`, or `/authorize`.
+  const requestPath = req.path.length > 1 ? req.path.replace(/\/+$/, '') : req.path;
+  if (requestPath === '/mcp' || requestPath === '/multi/mcp' || requestPath === '/targets') return true;
+  if (/^\/[A-Z][A-Z0-9]{2}\/\d{3}\/mcp$/.test(requestPath)) return true;
+  return requestPath === '/authorize' && isCopilotJsonRpc(req);
 }

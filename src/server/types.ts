@@ -113,13 +113,13 @@ export interface ServerConfig {
   btpServiceKeyFile?: string; // Path to service key file
   btpOAuthCallbackPort: number; // Port for OAuth browser callback (0 = auto)
 
-  // --- Multi-destination mode (SAP_BTP_DESTINATIONS) ---
-  /** Destination allowlist parsed from SAP_BTP_DESTINATIONS (CSV). One MCP endpoint per name. */
-  btpDestinations?: string[];
-  /** Runtime-only: the destination this config instance is bound to (set by the registry, never parsed). */
+  // --- Experimental destination-discovered multi-target mode ---
+  /** Enable startup discovery plus pinned and aggregate multi-target endpoints. Default false. */
+  multiTargetEndpoints: boolean;
+  /** Runtime-only: internal Destination Service name for a discovered target. */
   destinationName?: string;
-  /** Runtime-only: PP destination override for this destination (`arc1.pp_destination` property). */
-  ppDestinationName?: string;
+  /** Runtime-only: public immutable SID/client target ID for a discovered target. */
+  targetId?: string;
 
   // --- Principal Propagation (per-user SAP auth) ---
   ppEnabled: boolean;
@@ -199,6 +199,11 @@ export interface ServerConfig {
    *  batch traffic. Set `0` to disable Layer 1 entirely. Default: 20.
    *  See docs_page/rate-limiting.md (Layer 1). */
   authRateLimit: number;
+  /** Optional explicit per-IP cap shared by every MCP HTTP route, including
+   *  pinned/aggregate multi-target routes and Copilot JSON-RPC on `/authorize`.
+   *  Undefined preserves the historical `max(authRateLimit * 30, 600)` derivation;
+   *  `0` explicitly disables only this MCP-edge limiter. */
+  mcpHttpRateLimit?: number;
   /** Per-user cap on MCP tool calls in requests per minute. Key = authInfo.userName
    *  ?? clientId ?? '__anon__'. Stdio (no user identity) is exempt. Returns an MCP
    *  tool error with `retryAfter` (not HTTP 429). Set `>0` to enable Layer 2.
@@ -257,6 +262,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
   allowHttpNoAuth: false,
   oauthDcrTtlSeconds: 0, // 0 = never expire; positive opts into expiry (clamped 60s..90d) — see field JSDoc
   btpOAuthCallbackPort: 0,
+  multiTargetEndpoints: false,
   ppEnabled: false,
   ppStrict: false,
   ppStrictExplicit: false,
@@ -273,6 +279,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
   cacheFile: '.arc1-cache.db',
   maxConcurrent: 10,
   authRateLimit: 20,
+  mcpHttpRateLimit: undefined,
   rateLimit: 0, // Layer 2 disabled by default — operators opt in (see ADR-0004)
   allowedOrigins: [],
   logLevel: 'info',

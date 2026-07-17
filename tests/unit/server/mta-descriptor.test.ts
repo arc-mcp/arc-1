@@ -8,9 +8,9 @@
  * mtaext is an operator's ONLY durable override.
  *
  * That makes every base-enabled property a stranding hazard: turning its partner off leaves
- * it behind in the merged descriptor. Shipping `SAP_PP_STRICT: "true"` next to
- * `SAP_PP_ENABLED: "true"` is exactly how a `SAP_PP_ENABLED: "false"` override once crashed
- * every CF instance at startup.
+ * it behind in the merged descriptor. The safe base therefore carries no active SAP target;
+ * legacy single-target PP is enabled as one complete environment-specific block, while
+ * discovered multi-target runtimes enforce strict PP internally.
  *
  * The other mta.yaml tests (tests/unit/plugin/plugin-manifest.test.ts) assert property
  * VALUES. These assert the descriptor BOOTS — base as shipped, and under the realistic
@@ -60,51 +60,80 @@ describe('shipped mta.yaml resolves through the config parser', () => {
 
   // The base descriptor legitimately warns about ARC1_DCR_SIGNING_SECRET — it is a
   // per-landscape secret that cannot live in a tracked descriptor (cf set-env supplies it).
-  const warnings = () => stderrSpy.mock.calls.flat().join(' ');
   const ppWarnings = () =>
     stderrSpy.mock.calls
       .flat()
       .filter((line: unknown) => String(line).includes('SAP_PP_'))
       .join(' ');
 
-  it('boots as shipped, with strict PP actually enforced', () => {
+  it('boots as shipped without inventing a legacy SAP target', () => {
     const config = resolveWithOverrides();
 
     expect(config.transport).toBe('http-streamable');
+    expect(process.env.SAP_BTP_DESTINATION).toBeUndefined();
+    expect(process.env.SAP_BTP_PP_DESTINATION).toBeUndefined();
     expect(config.ppEnabled).toBe(true);
-    // ppStrictExplicit is the load-bearing half: both enforcement sites in server.ts require
-    // it, so an unset SAP_PP_STRICT would derive ppStrict=true and enforce nothing. This is
-    // why mta.yaml keeps the redundant-looking explicit "true".
+    expect(config.ppStrict).toBe(true);
+    expect(config.ppStrictExplicit).toBe(true);
+    expect(config.multiTargetEndpoints).toBe(false);
+    expect(ppWarnings()).toBe('');
+  });
+
+  it('boots with an explicit complete legacy strict-PP block', () => {
+    const config = resolveWithOverrides({
+      SAP_BTP_DESTINATION: 'my-basic-destination',
+      SAP_BTP_PP_DESTINATION: 'my-pp-destination',
+      SAP_PP_ENABLED: 'true',
+      SAP_PP_STRICT: 'true',
+    });
+
+    expect(process.env.SAP_BTP_DESTINATION).toBe('my-basic-destination');
+    expect(process.env.SAP_BTP_PP_DESTINATION).toBe('my-pp-destination');
+    expect(config.ppEnabled).toBe(true);
     expect(config.ppStrict).toBe(true);
     expect(config.ppStrictExplicit).toBe(true);
     expect(ppWarnings()).toBe('');
   });
 
-  it('boots with PP turned off by an override, stranding the base SAP_PP_STRICT', () => {
-    const config = resolveWithOverrides({ SAP_PP_ENABLED: 'false' });
+  it('allows API-key-only legacy deployment without inheriting principal propagation', () => {
+    const config = resolveWithOverrides({
+      SAP_XSUAA_AUTH: 'false',
+      SAP_PP_ENABLED: 'false',
+      SAP_PP_STRICT: 'false',
+      ARC1_API_KEYS: 'k1:admin',
+    });
 
     expect(config.ppEnabled).toBe(false);
-    expect(warnings()).toContain('SAP_PP_STRICT=true has no effect');
-  });
-
-  it('warns when an override adds API keys while the base strict PP stays stranded', () => {
-    // XSUAA off + API keys passes validation (API keys satisfy hasHttpAuth) and logs a
-    // healthy `per-user` scope, while server.ts rejects every API-key call for lacking a JWT.
-    const config = resolveWithOverrides({ SAP_XSUAA_AUTH: 'false', ARC1_API_KEYS: 'k1:admin' });
-
-    expect(config.ppEnabled).toBe(true);
-    expect(warnings()).toContain('rejects every non-JWT call');
+    expect(config.ppStrict).toBe(false);
+    expect(ppWarnings()).toBe('');
   });
 
   it('boots for mixed PP/API-key operation, the documented SAP_PP_STRICT=false topology', () => {
     const config = resolveWithOverrides({
       SAP_XSUAA_AUTH: 'false',
+      SAP_BTP_DESTINATION: 'my-basic-destination',
+      SAP_BTP_PP_DESTINATION: 'my-pp-destination',
+      SAP_PP_ENABLED: 'true',
       SAP_PP_STRICT: 'false',
       ARC1_API_KEYS: 'k1:admin',
     });
 
     expect(config.ppStrict).toBe(false);
     expect(ppWarnings()).toBe('');
+  });
+
+  it('boots the complete conservative multi-target block without a legacy target', () => {
+    const config = resolveWithOverrides({
+      ARC1_MULTI_TARGET_ENDPOINTS: 'true',
+      ARC1_CACHE: 'none',
+      ARC1_TOOL_MODE: 'standard',
+      ARC1_UI: 'off',
+    });
+
+    expect(config.multiTargetEndpoints).toBe(true);
+    expect(config.ppEnabled).toBe(true);
+    expect(process.env.SAP_BTP_DESTINATION).toBeUndefined();
+    expect(config.cacheMode).toBe('none');
   });
 
   it('falls back to the basic destination when an override blanks the PP destination', () => {

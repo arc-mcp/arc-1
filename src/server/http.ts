@@ -34,6 +34,7 @@ import express from 'express';
 import helmet from 'helmet';
 import { expandScopes } from '../authz/policy.js';
 import { API_KEY_PROFILES } from './config.js';
+import type { DestinationRegistry, TargetDescriptor } from './destination-registry.js';
 import { authLibLogger, logger } from './logger.js';
 import { VERSION } from './server.js';
 import type { ServerConfig } from './types.js';
@@ -195,71 +196,119 @@ function createMcpHandler(serverFactory: () => McpServer) {
   };
 }
 
-// ─── Multi-destination routing (SAP_BTP_DESTINATIONS) ────────────────
+// ─── Destination-discovered multi-target routing ────────────────────
 
-/** Per-destination MCP routing: one endpoint per destination at /mcp/<name>. */
-export interface MultiDestinationRouting {
-  /** Destination allowlist — anything else on /mcp/:dest is a 404. */
-  names: string[];
-  /**
-   * Resolve the (lazily initialized) server factory for a destination.
-   * Returns undefined for unknown names; throws when initialization fails.
-   */
-  resolveFactory: (name: string) => Promise<(() => McpServer) | undefined>;
+export interface MultiTargetRouting {
+  registry: DestinationRegistry;
+  aggregateFactory: () => McpServer;
+  pinnedFactory: (target: TargetDescriptor) => () => McpServer;
 }
 
-/**
- * Create the Express handler for /mcp/:dest. Exported for unit testing.
- *
- * - Name not on the allowlist → 404 (deny by default).
- * - Destination initialization failure → 502 with the reason; the registry does
- *   not memoize failures, so a fixed destination recovers without a restart.
- */
-export function createDestinationMcpHandler(multi: MultiDestinationRouting) {
+export function createPinnedTargetMcpHandler(multi: MultiTargetRouting) {
   return async (req: Request, res: Response) => {
-    const name = String((req.params as Record<string, string>).dest ?? '');
-    if (!multi.names.includes(name)) {
-      res.status(404).json({
-        error: `Unknown destination. Configured destinations: ${multi.names.join(', ')}.`,
-      });
+    if (!multi.registry.available) {
+      res.status(503).json({ error: 'Multi-target registry unavailable' });
       return;
     }
-    let serverFactory: (() => McpServer) | undefined;
-    try {
-      serverFactory = await multi.resolveFactory(name);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      logger.error('Destination initialization failed', { destination: name, error: message });
-      res.status(502).json({
-        error: `Destination '${name}' failed to initialize: ${message}`,
-      });
+    const match = req.path.match(/^\/([A-Z][A-Z0-9]{2})\/(\d{3})\/mcp$/);
+    const target = match ? multi.registry.get(`${match[1]}/${match[2]}`) : undefined;
+    if (!target) {
+      res.status(404).json({ error: 'Not found' });
       return;
     }
-    if (!serverFactory) {
-      res.status(404).json({
-        error: `Unknown destination. Configured destinations: ${multi.names.join(', ')}.`,
-      });
-      return;
-    }
-    logger.debug('MCP handler invoked (destination)', {
-      destination: name,
+    logger.debug('MCP handler invoked (pinned target)', {
+      target: target.target,
       method: req.method,
       bodyMethod: req.body?.method,
       bodyId: req.body?.id,
     });
-    await serveMcpRequest(serverFactory, req, res);
+    await serveMcpRequest(multi.pinnedFactory(target), req, res);
   };
+}
+
+export function createAggregateMcpHandler(multi: MultiTargetRouting) {
+  return async (req: Request, res: Response) => {
+    if (!multi.registry.available) {
+      res.status(503).json({ error: 'Multi-target registry unavailable' });
+      return;
+    }
+    await serveMcpRequest(multi.aggregateFactory, req, res);
+  };
+}
+
+function clientExamples(name: string, endpoint: string): Record<string, unknown> {
+  const servers = { [name]: { type: 'http', url: endpoint } };
+  return {
+    vscode: { servers },
+    githubCopilot: { servers },
+  };
+}
+
+export function targetCatalog(
+  registry: DestinationRegistry,
+  publicBase: string,
+  admin: boolean,
+): Record<string, unknown> {
+  const aggregateEndpoint = `${publicBase}/multi/mcp`;
+  const targets = registry.targets.map((target) => {
+    const pinnedEndpoint = `${publicBase}/${target.target}/mcp`;
+    return {
+      target: target.target,
+      description: target.description,
+      pinnedEndpoint,
+      aggregateEndpoint,
+    };
+  });
+  const result: Record<string, unknown> = {
+    aggregateEndpoint,
+    targets,
+    clientConfig: {
+      aggregate: clientExamples('arc-1-multi', aggregateEndpoint),
+      pinned: Object.fromEntries(
+        registry.targets.map((target) => {
+          const endpoint = `${publicBase}/${target.target}/mcp`;
+          return [`${target.sid}-${target.client}`, clientExamples(`arc-1-${target.sid}-${target.client}`, endpoint)];
+        }),
+      ),
+    },
+  };
+  if (admin) {
+    result.admin = {
+      state: registry.failure ? 'error' : registry.counts.quarantined > 0 ? 'degraded' : 'ready',
+      source: 'btp-subaccount',
+      loadedAt: registry.loadedAt,
+      revision: registry.revision,
+      counts: registry.counts,
+      failure: registry.failure,
+      destinations: registry.diagnostics.map((entry) => ({
+        ...entry,
+        routes:
+          entry.target && entry.status === 'active'
+            ? {
+                pinned: `${publicBase}/${entry.target}/mcp`,
+                aggregate: aggregateEndpoint,
+              }
+            : undefined,
+      })),
+    };
+  }
+  return result;
+}
+
+export function resolveMcpHttpRateLimit(config: Pick<ServerConfig, 'authRateLimit' | 'mcpHttpRateLimit'>): number {
+  if (config.mcpHttpRateLimit !== undefined) return config.mcpHttpRateLimit;
+  return config.authRateLimit > 0 ? Math.max(config.authRateLimit * 30, 600) : 0;
 }
 
 /**
  * Start the HTTP Streamable server.
  */
 export async function startHttpServer(
-  serverFactory: () => McpServer,
+  serverFactory: (() => McpServer) | undefined,
   config: ServerConfig,
   xsuaaCredentials?: XsuaaCredentials,
   uiDeps?: UiServerDeps,
-  multiDestinations?: MultiDestinationRouting,
+  multiTargets?: MultiTargetRouting,
 ): Promise<void> {
   const [host, portStr] = config.httpAddr.split(':');
   const port = Number.parseInt(portStr || '8080', 10);
@@ -283,20 +332,32 @@ export async function startHttpServer(
   // express-rate-limit. The disabled path skips the mount entirely rather than going
   // through a noop indirection — this keeps the dataflow `rateLimit({...}) → app.use`
   // direct and makes CodeQL's `js/missing-rate-limiting` query close cleanly.
-  const { createAuthRateLimiter, isCopilotJsonRpc } = await import('./auth-rate-limit.js');
-  const rateLimitEnabled = config.authRateLimit > 0;
-  const mcpRatePerMinute = rateLimitEnabled ? Math.max(config.authRateLimit * 30, 600) : 0;
+  const { createAuthRateLimiter, isCopilotJsonRpc, isMcpHttpTraffic } = await import('./auth-rate-limit.js');
+  const authRateLimitEnabled = config.authRateLimit > 0;
+  const mcpRatePerMinute = resolveMcpHttpRateLimit(config);
+  const mcpRateLimitEnabled = mcpRatePerMinute > 0;
   logger.info('Auth rate limiting', {
     perMinute: config.authRateLimit,
     mcpPerMinute: mcpRatePerMinute,
-    endpoints: rateLimitEnabled ? ['/register', '/authorize', '/token', '/revoke', '/mcp'] : [],
-    disabled: !rateLimitEnabled,
+    endpoints: [
+      ...(authRateLimitEnabled ? ['/register', '/authorize', '/token', '/revoke'] : []),
+      ...(mcpRateLimitEnabled ? ['/mcp'] : []),
+    ],
+    disabled: !authRateLimitEnabled && !mcpRateLimitEnabled,
   });
 
   app.use(express.json());
   app.use(express.urlencoded({ extended: false }));
-  const mcpHandler = createMcpHandler(serverFactory);
-  const destMcpHandler = multiDestinations ? createDestinationMcpHandler(multiDestinations) : undefined;
+  if (mcpRateLimitEnabled) {
+    // One middleware instance means one MemoryStore and therefore one per-IP
+    // bucket across legacy, pinned, aggregate, catalog, and Copilot routes.
+    // Mount after body parsing so the Copilot JSON-RPC predicate can inspect
+    // `req.body`, but before every authentication and route handler.
+    app.use(createAuthRateLimiter('/mcp', mcpRatePerMinute, { skip: (req) => !isMcpHttpTraffic(req) }));
+  }
+  const mcpHandler = serverFactory ? createMcpHandler(serverFactory) : undefined;
+  const pinnedMcpHandler = multiTargets ? createPinnedTargetMcpHandler(multiTargets) : undefined;
+  const aggregateMcpHandler = multiTargets ? createAggregateMcpHandler(multiTargets) : undefined;
   const hasAdminApiKey = config.apiKeys?.some((entry) => entry.profile === 'admin') ?? false;
   if (uiDeps && !(hasAdminApiKey || config.oidcIssuer || (config.xsuaaAuth && xsuaaCredentials))) {
     throw new Error('ARC1_UI=web requires an admin API key, OIDC, or XSUAA HTTP authentication.');
@@ -321,7 +382,15 @@ export async function startHttpServer(
   // they're talking to the CORRECT process (not a zombie from a previous deploy).
   const startedAt = new Date().toISOString();
   app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', version: VERSION, startedAt, pid: process.pid });
+    res.json({
+      status: 'ok',
+      version: VERSION,
+      startedAt,
+      pid: process.pid,
+      ...(multiTargets
+        ? { components: { multiTarget: { status: multiTargets.registry.available ? 'ok' : 'error' } } }
+        : {}),
+    });
   });
 
   // ─── XSUAA OAuth Proxy Mode ──────────────────────────────
@@ -408,40 +477,25 @@ export async function startHttpServer(
     // rate-limited — they're cheap, cacheable, and legitimate clients hit them on
     // every reconnect. See docs_page/rate-limiting.md.
     //
-    // Every `app.use(path, …)` here receives a fresh `rateLimit({...})` middleware
+    // Every OAuth `app.use(path, …)` here receives a fresh `rateLimit({...})` middleware
     // DIRECTLY. No conditional dispatchers, no helper wrappers. CodeQL's
     // `js/missing-rate-limiting` query only recognises that exact pattern; going
     // through an inline arrow function with branch-based delegation makes it
     // re-open the alert (verified — see PR #276 review history).
     //
-    // Copilot Studio quirk: that client POSTs MCP JSON-RPC bodies to `/authorize`
-    // (see routing handler below). To stop those tool calls being choked at the
-    // low OAuth cap, we mount TWO limiters on `/authorize`:
-    //   1. OAuth cap, with `skip` returning true for Copilot JSON-RPC traffic.
-    //   2. /mcp cap, with `skip` returning true for everything BUT Copilot JSON-RPC.
-    // Each request hits one bucket — the OAuth bucket for real OAuth flows, the
-    // higher /mcp bucket for Copilot. The `isCopilotJsonRpc` predicate is shared
-    // with auth-rate-limit.ts so the two mounts can never drift.
-    //
-    // Trade-off: the /authorize-JSON-RPC bucket is a separate store from the
-    // direct /mcp bucket. An attacker alternating routes effectively gets
-    // `mcpCap + mcpCap = 2 × mcpCap`/min/IP. At default config that's still
-    // 1200/min, well below abuse thresholds. Sharing the store would require
-    // injecting a custom MemoryStore into both `rateLimit({...})` calls — not
-    // worth the complexity for a 2× headroom on an already loose cap.
-    if (rateLimitEnabled) {
+    // Copilot Studio JSON-RPC on `/authorize` skips the low OAuth bucket. The
+    // root-mounted MCP limiter above counts it in the same higher-cap bucket as
+    // every other MCP endpoint style.
+    if (authRateLimitEnabled) {
       app.use('/register', createAuthRateLimiter('/register', config.authRateLimit));
       // /authorize OAuth limiter — skips Copilot Studio MCP JSON-RPC traffic.
       app.use('/authorize', createAuthRateLimiter('/authorize', config.authRateLimit, { skip: isCopilotJsonRpc }));
-      // /authorize MCP limiter — only applies to Copilot Studio JSON-RPC; uses /mcp cap.
-      app.use('/authorize', createAuthRateLimiter('/mcp', mcpRatePerMinute, { skip: (req) => !isCopilotJsonRpc(req) }));
       app.use('/token', createAuthRateLimiter('/token', config.authRateLimit));
       app.use('/revoke', createAuthRateLimiter('/revoke', config.authRateLimit));
       // /oauth/callback is unauthenticated and does an HMAC verify per hit —
       // rate-limit it like the other OAuth endpoints to gate token-probing.
       app.use('/oauth/callback', createAuthRateLimiter('/oauth/callback', config.authRateLimit));
     }
-
     // ─── OAuth authorize normalization + Copilot Studio MCP workaround ──
     // Copilot Studio sends MCP JSON-RPC requests to /authorize instead of
     // /mcp after completing the OAuth flow. When we detect a JSON-RPC body
@@ -461,13 +515,18 @@ export async function startHttpServer(
           id: req.body.id,
           userAgent: req.headers['user-agent']?.slice(0, 60),
         });
-        // Run bearerAuth, then mcpHandler — skip the OAuth authorize handler
+        // Run bearerAuth, then the configured legacy endpoint or aggregate endpoint.
         bearerAuth(req, res, (err?: unknown) => {
           if (err) {
             next(err);
             return;
           }
-          mcpHandler(req, res);
+          const handler = mcpHandler ?? aggregateMcpHandler;
+          if (!handler) {
+            res.status(404).json({ error: 'Not found' });
+            return;
+          }
+          handler(req, res);
         });
         return;
       }
@@ -582,6 +641,28 @@ export async function startHttpServer(
       });
     }
 
+    // Registry-independent multi-target PRM routes must precede the SDK router.
+    // Syntactically valid unknown targets intentionally receive the same metadata as known ones.
+    if (multiTargets && pinnedMcpHandler && aggregateMcpHandler) {
+      app.get(/^\/\.well-known\/oauth-protected-resource\/multi\/mcp$/, (_req, res) => {
+        res.json({
+          resource: `${oauthFullBase}/multi/mcp`,
+          authorization_servers: [`${oauthFullBase}/`],
+          scopes_supported: scopesSupported,
+          resource_name: 'ARC-1 SAP MCP Server (multi-target)',
+        });
+      });
+      app.get(/^\/\.well-known\/oauth-protected-resource\/([A-Z][A-Z0-9]{2})\/(\d{3})\/mcp$/, (req, res) => {
+        const match = req.path.match(/^\/\.well-known\/oauth-protected-resource\/([A-Z][A-Z0-9]{2})\/(\d{3})\/mcp$/);
+        res.json({
+          resource: `${oauthFullBase}/${match?.[1]}/${match?.[2]}/mcp`,
+          authorization_servers: [`${oauthFullBase}/`],
+          scopes_supported: scopesSupported,
+          resource_name: 'ARC-1 SAP MCP Server (pinned target)',
+        });
+      });
+    }
+
     // Install MCP SDK auth router at root (OAuth endpoints + DCR).
     // For root-path deployments (no basePath) the SDK's metadata is correct
     // as-is and serves both well-known endpoints. For prefix deployments the
@@ -599,34 +680,30 @@ export async function startHttpServer(
       }),
     );
 
-    // Layer 1: rate-limit /mcp BEFORE bearer auth so anonymous probing is gated.
-    // Direct `app.use(path, rateLimit({...}))` mount — no helper indirection —
-    // so CodeQL's `js/missing-rate-limiting` query sees the dataflow cleanly.
-    if (rateLimitEnabled) {
-      app.use('/mcp', createAuthRateLimiter('/mcp', mcpRatePerMinute));
-    }
-    // Protected MCP endpoint with chained token verification
-    app.all('/mcp', bearerAuth, mcpHandler);
-    if (destMcpHandler && multiDestinations) {
-      // Per-destination endpoints share the instance-wide bearer auth; the
-      // destination's own guardrail ceiling applies inside the tool handlers.
-      app.all('/mcp/:dest', bearerAuth, destMcpHandler);
-      // PRM alias per destination so PRM-aware clients pointed at /mcp/<dest>
-      // discover the same authorization server as /mcp.
-      app.get('/.well-known/oauth-protected-resource/mcp/:dest', (req, res) => {
-        const name = String((req.params as Record<string, string>).dest ?? '');
-        if (!multiDestinations.names.includes(name)) {
-          res.status(404).json({ error: 'Unknown destination' });
-          return;
-        }
-        res.json({
-          resource: `${oauthFullBase}/mcp/${name}`,
-          authorization_servers: [`${oauthFullBase}/`],
-          scopes_supported: scopesSupported,
-          resource_name: 'ARC-1 SAP MCP Server',
-        });
+    if (multiTargets && pinnedMcpHandler && aggregateMcpHandler) {
+      // Dedicated XSUAA-only verifier. API keys and direct OIDC remain valid only for legacy /mcp.
+      const multiBearerAuth: express.RequestHandler = (req, res, next) => {
+        const resourcePath = req.path === '/targets' ? '/multi/mcp' : req.path;
+        const resourceMetadataUrl = `${oauthFullBase}/.well-known/oauth-protected-resource${resourcePath}`;
+        requireBearerAuth({
+          verifier: { verifyAccessToken: xsuaaVerifier },
+          requiredScopes: ['read'],
+          resourceMetadataUrl,
+        })(req, res, next);
+      };
+      app.get('/targets', multiBearerAuth, (req, res) => {
+        const auth = (req as Request & { auth?: { scopes?: string[] } }).auth;
+        const admin = auth?.scopes?.includes('admin') ?? false;
+        res.setHeader('Cache-Control', 'no-store');
+        res.setHeader('Vary', 'Authorization');
+        res.json(targetCatalog(multiTargets.registry, oauthFullBase, admin));
       });
+      app.all(/^\/multi\/mcp$/, multiBearerAuth, aggregateMcpHandler);
+      app.all(/^\/[A-Z][A-Z0-9]{2}\/\d{3}\/mcp$/, multiBearerAuth, pinnedMcpHandler);
     }
+
+    // Protected MCP endpoint with chained token verification
+    if (mcpHandler) app.all('/mcp', bearerAuth, mcpHandler);
 
     logger.info('XSUAA OAuth proxy enabled', {
       xsappname: xsuaaCredentials.xsappname,
@@ -637,13 +714,6 @@ export async function startHttpServer(
     // No JWKS pre-warm needed: the package's OIDC verifier lazy-imports jose and
     // memoizes the remote JWKS on the first verify (and retries on a transient
     // discovery failure instead of caching the rejection).
-
-    // Layer 1 on /mcp also applies outside XSUAA mode — API-key / OIDC / no-auth
-    // deployments get the same anonymous-probing protection. OAuth endpoints don't
-    // exist in non-XSUAA mode so only /mcp needs mounting here.
-    if (rateLimitEnabled) {
-      app.use('/mcp', createAuthRateLimiter('/mcp', mcpRatePerMinute));
-    }
 
     if (config.apiKeys || config.oidcIssuer) {
       // Use requireBearerAuth so that authInfo is populated on the MCP request context.
@@ -658,16 +728,10 @@ export async function startHttpServer(
         });
         mountUiRoutes(app, uiDeps, uiBearerAuth);
       }
-      app.all('/mcp', bearerAuth, mcpHandler);
-      if (destMcpHandler) {
-        app.all('/mcp/:dest', bearerAuth, destMcpHandler);
-      }
+      if (mcpHandler) app.all('/mcp', bearerAuth, mcpHandler);
     } else {
       // No auth configured — open access
-      app.all('/mcp', mcpHandler);
-      if (destMcpHandler) {
-        app.all('/mcp/:dest', destMcpHandler);
-      }
+      if (mcpHandler) app.all('/mcp', mcpHandler);
     }
   }
 
@@ -688,10 +752,8 @@ export async function startHttpServer(
     logger.info('ARC-1 HTTP server started', {
       addr: `${bindHost}:${port}`,
       health: `http://${bindHost}:${port}/health`,
-      mcp: `http://${bindHost}:${port}/mcp`,
-      destinations: multiDestinations
-        ? multiDestinations.names.map((n) => `http://${bindHost}:${port}/mcp/${n}`)
-        : undefined,
+      mcp: serverFactory ? `http://${bindHost}:${port}/mcp` : undefined,
+      multi: multiTargets ? `http://${bindHost}:${port}/multi/mcp` : undefined,
       ui: uiDeps ? `http://${bindHost}:${port}/ui/` : undefined,
       auth: authMode,
     });

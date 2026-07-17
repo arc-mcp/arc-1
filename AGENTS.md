@@ -78,11 +78,9 @@ Full per-option details (defaults, clamps, layer interactions): [docs_page/confi
 | `SAP_CHECK_BEFORE_WRITE` | SAP-side pre-write syntax check, non-blocking (default false) |
 | `ARC1_CACHE[_FILE]` | Request-driven cache mode (auto/memory/sqlite/none) / SQLite file path |
 | `ARC1_MAX_CONCURRENT` | Server-wide SAP request cap (default 10); size vs `rdisp/wp_no_dia` |
-| `ARC1_AUTH_RATE_LIMIT` / `ARC1_RATE_LIMIT` | Layer 1 per-IP OAuth cap (20/min) / Layer 2 per-user MCP cap (default 0 = off; ADR-0004) |
-| `ARC1_MCP_HTTP_RATE_LIMIT` | Proposed ADR-0006 shared per-IP MCP cap: unset preserves the current derived cap, `0` opts out, positive replaces it on all MCP routes. |
+| `ARC1_AUTH_RATE_LIMIT` / `ARC1_MCP_HTTP_RATE_LIMIT` / `ARC1_RATE_LIMIT` | Per-IP OAuth cap (20/min), optional shared MCP HTTP/IP override (unset derives `max(OAuth×30,600)`; 0 disables), and per-user MCP cap (default 0 = off; ADR-0004) |
 | `SAP_BTP_DESTINATION` / `SAP_BTP_PP_DESTINATION` | BTP Destination names (PP = PrincipalPropagation type) |
-| `SAP_BTP_DESTINATIONS` | Unreleased PR #543 prototype only; scheduled for deletion by ADR-0006. Do not extend or document as a supported mode. |
-| `ARC1_MULTI_TARGET_ENDPOINTS` | Proposed ADR-0006 mode (not implemented yet): BTP subaccount discovery → mutation-free `/<SID>/<CLIENT>/mcp` plus `/multi/mcp`. |
+| `ARC1_MULTI_TARGET_ENDPOINTS` | Experimental/default-off BTP CF mode: marked subaccount destinations → mutation-free `/<SID>/<CLIENT>/mcp` plus `/multi/mcp`; requires XSUAA, strict PP, cache none, standard tools, UI/plugins off. |
 | `SAP_PP_ENABLED` / `SAP_PP_STRICT` / `SAP_PP_ALLOW_SHARED_COOKIES` | Principal propagation + strict mode + cookie-coexistence escape hatch |
 | `SAP_DISABLE_SAML` | Disable SAML redirect — never on BTP ABAP / S/4 Public Cloud |
 | `ARC1_PROFILE` | Safety profile shortcut (viewer…developer-sql) |
@@ -99,8 +97,9 @@ src/
 ├── server/
 │   ├── server.ts               # MCP server setup, tool registration
 │   ├── config.ts, types.ts     # Config parser + ServerConfig defaults
-│   ├── http.ts                 # HTTP Streamable transport + auth chain + /mcp/<dest> routing
-│   ├── destination-registry.ts # Multi-destination mode: lazy per-destination runtimes + arc1.* guardrail narrowing
+│   ├── http.ts                 # HTTP auth + legacy, pinned, aggregate routes and protected target catalog
+│   ├── destination-discovery.ts, destination-registry.ts # Secret-safe snapshot + immutable targets
+│   ├── multi-target-runtime.ts, multi-target-tools.ts # Strict-PP configs + mutation-free schemas
 │   ├── logger.ts               # Structured logger (stderr only, never stdout)
 │   ├── audit.ts, sinks/        # Audit events + stderr/file/btp-auditlog sinks
 │   ├── context.ts, elicit.ts   # MCP context helpers, elicitation
@@ -151,7 +150,7 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 
 | Task | Files (+ key gotcha) |
 |------|------|
-| Multi-target ADR-0006 work | `docs/plans/destination-discovered-multi-target-v1.md` is normative; replace the unreleased `SAP_BTP_DESTINATIONS`/`/mcp/:dest` prototype in `src/server/{destination-registry,server,http}.ts`; keep the mode default-off and mutation-free. |
+| Multi-target ADR-0006 work | `docs/plans/destination-discovered-multi-target-v1.md` is normative; `src/server/{destination-discovery,destination-registry,multi-target-runtime,multi-target-tools,server,http}.ts`; keep default-off, strict-PP, cache-free, and mutation-free. |
 | Add new read operation | `src/adt/client.ts`, `src/handlers/read.ts`, `src/handlers/tools.ts` (+ `src/adt/xml-parser.ts`, `src/adt/types.ts` for structured) |
 | Add ADT slash alias to `SLASH_TYPE_MAP` | `src/handlers/object-types.ts`, `tests/unit/handlers/slash-type-map.test.ts` — needs `docs/research/abap-types/types/<short>.md` evidence, verify live `<adtcore:type>` first (#218) |
 | SAPWrite TABL subtype routing (TABL/DT vs /DS, #285) | `src/handlers/object-types.ts`, `src/handlers/write-helpers.ts`, `src/handlers/write/create.ts`, `src/handlers/{schemas,tools}.ts` — reads collapse to bare `TABL` |

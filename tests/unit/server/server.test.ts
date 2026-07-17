@@ -997,10 +997,9 @@ describe('resolvePpDestinationName', () => {
     expect(resolvePpDestinationName(DEFAULT_CONFIG)).toBe('S4_PP');
   });
 
-  it('multi-destination mode: arc1.pp_destination wins, then the destination itself — global env vars never leak in', () => {
+  it('discovered target runtime: its destination name wins and global env vars never leak in', () => {
     process.env.SAP_BTP_PP_DESTINATION = 'GLOBAL_PP';
     const cfg = { ...DEFAULT_CONFIG, destinationName: 'S4D' };
     expect(resolvePpDestinationName(cfg)).toBe('S4D');
-    expect(resolvePpDestinationName({ ...cfg, ppDestinationName: 'S4D_PP' })).toBe('S4D_PP');
   });
 });

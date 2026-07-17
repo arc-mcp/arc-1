@@ -219,7 +219,7 @@ For detailed setup instructions:
 
 ARC-1 ships three independent rate-limiting layers, each addressing a distinct threat:
 
-- **Layer 1 — HTTP edge** (per-IP, `express-rate-limit`). Mounted on `/register`, `/authorize`, `/token`, `/revoke`, and `/mcp` BEFORE auth middleware. Protects against OAuth brute-force and anonymous probing. Returns HTTP `429` with `Retry-After` + RFC 9331 headers. Closes CodeQL alert `js/missing-rate-limiting`. Single env var: `ARC1_AUTH_RATE_LIMIT` (default `20/min/IP`).
+- **Layer 1 — HTTP edge** (per-IP, `express-rate-limit`). OAuth endpoints use `ARC1_AUTH_RATE_LIMIT` (default `20/min/IP`). All MCP route styles share the MCP HTTP value: unset derives `max(OAuth × 30, 600)`, while `ARC1_MCP_HTTP_RATE_LIMIT` can replace it or explicitly disable it with `0`. Middleware runs before bearer auth and returns HTTP `429` with `Retry-After` + RFC 9331 headers.
 - **Layer 2 — Per-user MCP quota** (per-user token bucket, `rate-limiter-flexible`). Applied at the top of `handleToolCall`. Prevents one developer's runaway LLM from monopolizing the shared semaphore. Returns an MCP tool error with structured `retryAfter` (not HTTP 429) so the agent loop backs off correctly. Single env var: `ARC1_RATE_LIMIT` — **off by default**, multi-user deployments opt in (typical: `60/min/user`).
 - **Layer 3 — SAP-bound shared semaphore** (server-wide FIFO queue). One `Semaphore` for the whole process, shared across all `AdtClient` instances including per-user PP clients. Caps concurrent SAP HTTP requests at `ARC1_MAX_CONCURRENT` (default `10`) — true server-wide, not per-user. Honors `Retry-After` on `429`/`503` from SAP / BTP gateways (single retry, clamped to 60 s). Excess requests wait in queue; no rejection.
 

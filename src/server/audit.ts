@@ -20,6 +20,8 @@ export interface AuditEventBase {
   clientId?: string;
   /** Multi-destination mode: the BTP destination the request was bound to. */
   destination?: string;
+  /** Public immutable SID/client identifier for a multi-target request. */
+  target?: string;
 }
 
 /** MCP tool call started */
@@ -82,9 +84,20 @@ export interface AuthScopeDeniedEvent extends AuditEventBase {
 /** Per-user ADT client created via principal propagation */
 export interface AuthPPCreatedEvent extends AuditEventBase {
   event: 'auth_pp_created';
-  destination: string;
   success: boolean;
   errorMessage?: string;
+}
+
+/** Failure at a security-relevant multi-target stage. Successful calls use the normal terminal event only. */
+export interface MultiTargetStageFailedEvent extends AuditEventBase {
+  event:
+    | 'target_resolution_failed'
+    | 'pp_exchange_failed'
+    | 'sap_authentication_failed'
+    | 'sap_authorization_failed'
+    | 'target_policy_denied';
+  tool: string;
+  errorCode: string;
 }
 
 /** Safety system blocked an operation */
@@ -230,6 +243,7 @@ export type AuditEvent =
   | HttpCsrfFetchEvent
   | AuthScopeDeniedEvent
   | AuthPPCreatedEvent
+  | MultiTargetStageFailedEvent
   | SafetyBlockedEvent
   | ServerStartEvent
   | ElicitationSentEvent

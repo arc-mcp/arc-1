@@ -2,7 +2,7 @@
 
 ## Status
 
-- **State:** external-review blockers resolved; commit this documentation baseline before feature code
+- **State:** implemented and beta-validated; draft PR pending review
 - **Implementation branch:** `codex/multi-target-v1`
 - **Code ancestry:** PR #543 remains in the branch history so Wouter's tested multi-runtime work can
   be reused where it fits. The public contract described here replaces the prototype contract.
@@ -1119,30 +1119,30 @@ feature.
 
 ## Security Review Checklist
 
-- [ ] No unauthenticated target enumeration.
-- [ ] No destination name or connection details in read-user output.
-- [ ] No raw Destination Service object retained after projection.
-- [ ] No credentials/tokens/assertions/headers/query params/certs in logs, errors, health, catalogs,
+- [x] No unauthenticated target enumeration.
+- [x] No destination name or connection details in read-user output.
+- [x] No raw Destination Service object retained after projection.
+- [x] No credentials/tokens/assertions/headers/query params/certs in logs, errors, health, catalogs,
       audit, or revision material.
-- [ ] Unknown ARC configuration fails closed.
-- [ ] Duplicate/shadow conflicts have no implicit winner.
-- [ ] More than 256 enabled targets activates none.
-- [ ] Multi-target mutations are absent from schemas and rejected again at dispatch/safety layers.
-- [ ] Multi-target lock/enqueue operations are absent and rejected at the safety layer.
-- [ ] Data/SQL require instance, target, XSUAA, and SAP consent.
-- [ ] XSUAA auth is checked before route existence.
-- [ ] PP is strict and has no shared identity fallback.
-- [ ] Discovered configs are built fresh and cannot inherit credentials/cookies/bearer providers or
+- [x] Unknown ARC configuration fails closed.
+- [x] Duplicate/shadow conflicts have no implicit winner.
+- [x] More than 256 enabled targets activates none.
+- [x] Multi-target mutations are absent from schemas and rejected again at dispatch/safety layers.
+- [x] Multi-target lock/enqueue operations are absent and rejected at the safety layer.
+- [x] Data/SQL require instance, target, XSUAA, and SAP consent.
+- [x] XSUAA auth is checked before route existence.
+- [x] PP is strict and has no shared identity fallback.
+- [x] Discovered configs are built fresh and cannot inherit credentials/cookies/bearer providers or
       construct a default shared ADT client.
-- [ ] Route target and ADT client agree on `sap-client`.
-- [ ] Runtime destination drift fails closed until restart.
-- [ ] Unauthorized user failures cannot poison shared feature state.
-- [ ] Negative access results are never cached.
-- [ ] Read/admin catalog separation is test-covered.
-- [ ] Global semaphore/rate limit cannot be multiplied by target count.
-- [ ] RFC 9728 metadata and unauthenticated route behavior cannot reveal registry membership.
-- [ ] Raw discovery secrets are unreachable from the retained registry object graph.
-- [ ] Legacy `/mcp` compatibility is test-covered.
+- [x] Route target and ADT client agree on `sap-client`.
+- [x] Runtime destination drift fails closed until restart.
+- [x] Unauthorized user failures cannot poison shared feature state.
+- [x] Negative access results are never cached.
+- [x] Read/admin catalog separation is test-covered.
+- [x] Global semaphore/rate limit cannot be multiplied by target count.
+- [x] RFC 9728 metadata and unauthenticated route behavior cannot reveal registry membership.
+- [x] Raw discovery secrets are unreachable from the retained registry object graph.
+- [x] Legacy `/mcp` compatibility is test-covered.
 
 ## Deferred Beyond V1
 

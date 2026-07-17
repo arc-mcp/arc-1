@@ -206,6 +206,8 @@ const RETIRED_ENV_VARS: Record<string, string> = {
   ARC1_CACHE_WARMUP: 'Cache warmup was removed. The normal request-driven cache remains available through ARC1_CACHE.',
   ARC1_CACHE_WARMUP_PACKAGES:
     'Cache warmup package filters were removed with cache warmup. Remove this environment variable.',
+  SAP_BTP_DESTINATIONS:
+    'The unreleased multi-destination prototype was removed. Use ARC1_MULTI_TARGET_ENDPOINTS=true and mark subaccount destinations with arc1.enabled=true.',
 };
 
 const RETIRED_CLI_FLAGS: Record<string, string> = {
@@ -248,9 +250,7 @@ function detectRetiredConfig(args: string[]): void {
   }
   if (violations.length > 0) {
     throw new Error(
-      `Removed ARC-1 cache warmup configuration detected:\n${violations.join('\n')}\n\n` +
-        'Use SAPContext(action="usages") or SAPNavigate(action="references") for live SAP-authorized lookup. ' +
-        'See docs_page/updating.md for migration details.',
+      `Removed ARC-1 configuration detected:\n${violations.join('\n')}\n\nSee docs_page/updating.md for migration details.`,
     );
   }
 }
@@ -565,6 +565,12 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
   );
   const cbPort = resolveStr('btp-oauth-callback-port', 'SAP_BTP_OAUTH_CALLBACK_PORT', '0', 'btpOAuthCallbackPort');
   config.btpOAuthCallbackPort = Number.parseInt(cbPort, 10) || 0;
+  config.multiTargetEndpoints = resolveBool(
+    'multi-target-endpoints',
+    'ARC1_MULTI_TARGET_ENDPOINTS',
+    false,
+    'multiTargetEndpoints',
+  );
 
   // ── Principal Propagation ──────────────────────────────────────────
   config.ppEnabled = resolveBool('pp-enabled', 'SAP_PP_ENABLED', false, 'ppEnabled');
@@ -668,6 +674,21 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     sources.authRateLimit = 'default';
   }
 
+  const mcpHttpRateLimitRaw = process.env.ARC1_MCP_HTTP_RATE_LIMIT;
+  if (mcpHttpRateLimitRaw !== undefined) {
+    const parsed = Number.parseInt(mcpHttpRateLimitRaw, 10);
+    if (Number.isNaN(parsed) || parsed < 0 || String(parsed) !== mcpHttpRateLimitRaw.trim()) {
+      logger.warn(
+        `Invalid ARC1_MCP_HTTP_RATE_LIMIT='${mcpHttpRateLimitRaw}' — expected positive integer or 0. Using the derived MCP HTTP limit.`,
+      );
+    } else {
+      config.mcpHttpRateLimit = parsed;
+      sources.mcpHttpRateLimit = { env: 'ARC1_MCP_HTTP_RATE_LIMIT' };
+    }
+  } else {
+    sources.mcpHttpRateLimit = 'default';
+  }
+
   const rateLimitRaw = getFlag('rate-limit') ?? process.env.ARC1_RATE_LIMIT;
   if (rateLimitRaw !== undefined) {
     const parsed = Number.parseInt(rateLimitRaw, 10);
@@ -747,6 +768,45 @@ export function validateConfig(config: ServerConfig): void {
         `SAP does not pad the client number — write it with leading zeros, ` +
         `e.g. '010' for client 10 or '100' for client 100.`,
     );
+  }
+
+  if (config.multiTargetEndpoints) {
+    if (config.transport !== 'http-streamable') {
+      throw new Error('ARC1_MULTI_TARGET_ENDPOINTS=true requires SAP_TRANSPORT=http-streamable.');
+    }
+    if (!config.xsuaaAuth) {
+      throw new Error('ARC1_MULTI_TARGET_ENDPOINTS=true requires SAP_XSUAA_AUTH=true.');
+    }
+    if (config.cacheMode !== 'none') {
+      throw new Error('ARC1_MULTI_TARGET_ENDPOINTS=true requires ARC1_CACHE=none.');
+    }
+    if (config.toolMode !== 'standard') {
+      throw new Error('ARC1_MULTI_TARGET_ENDPOINTS=true requires ARC1_TOOL_MODE=standard.');
+    }
+    if (config.uiMode !== 'off') {
+      throw new Error('ARC1_MULTI_TARGET_ENDPOINTS=true requires ARC1_UI=off.');
+    }
+    if (config.plugins.length > 0) {
+      throw new Error('ARC1_MULTI_TARGET_ENDPOINTS=true does not support ARC1_PLUGINS in v1.');
+    }
+    if (config.cookieFile || config.cookieString || config.ppAllowSharedCookies) {
+      throw new Error(
+        'ARC1_MULTI_TARGET_ENDPOINTS=true does not support shared cookies or SAP_PP_ALLOW_SHARED_COOKIES.',
+      );
+    }
+    if (config.btpServiceKey || config.btpServiceKeyFile) {
+      throw new Error('ARC1_MULTI_TARGET_ENDPOINTS=true requires BTP CF service bindings, not a BTP service key.');
+    }
+    if (config.url || config.username || config.password) {
+      throw new Error(
+        'ARC1_MULTI_TARGET_ENDPOINTS=true does not support a direct SAP_URL/SAP_USER/SAP_PASSWORD connection. Use BTP destinations; configure an optional legacy /mcp through SAP_BTP_DESTINATION.',
+      );
+    }
+    if (config.rateLimit === 0) {
+      console.error(
+        '[warn] ARC1_RATE_LIMIT=0 leaves per-user MCP limiting disabled in multi-target mode. Set a value based on expected active users; 120/min is the recommended beta starting point.',
+      );
+    }
   }
 
   if (config.oidcIssuer && !config.oidcAudience) {

@@ -2,7 +2,11 @@
 
 ## One Instance Per SAP System
 
-ARC-1 follows the **one instance per SAP backend** pattern. Each ARC-1 deployment connects to exactly one SAP system. This is the same model used by Eclipse ADT, SAP Business Application Studio, and SAP GUI.
+ARC-1 follows the **one instance per SAP backend** pattern by default. This is the recommended model
+for writes and for hard security/capacity isolation, and matches Eclipse ADT, SAP Business
+Application Studio, and SAP GUI. A separate [experimental multi-target mode](multi-destination.md)
+offers mutation-free access to many BTP subaccount destinations when application sprawl is the
+larger operational risk.
 
 ### Why one-per-system?
 

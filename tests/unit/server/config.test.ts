@@ -43,11 +43,16 @@ describe('parseArgs', () => {
 
   it.each(['ARC1_CACHE_WARMUP', 'ARC1_CACHE_WARMUP_PACKAGES'])('rejects retired env var %s', (name) => {
     process.env[name] = 'false';
-    expect(() => parseArgs([])).toThrow(/cache warmup configuration/);
+    expect(() => parseArgs([])).toThrow(/Removed ARC-1 configuration/);
   });
 
   it.each(['--cache-warmup=false', '--cache-warmup-packages=Z*'])('rejects retired CLI flag %s', (flag) => {
-    expect(() => parseArgs([flag])).toThrow(/cache warmup configuration/);
+    expect(() => parseArgs([flag])).toThrow(/Removed ARC-1 configuration/);
+  });
+
+  it('rejects the unreleased SAP_BTP_DESTINATIONS prototype variable with a migration hint', () => {
+    process.env.SAP_BTP_DESTINATIONS = 'S4D,S4Q';
+    expect(() => parseArgs([])).toThrow(/ARC1_MULTI_TARGET_ENDPOINTS/);
   });
 
   it('parses CLI flags (--flag value)', () => {
@@ -738,6 +743,7 @@ describe('parseArgs', () => {
     // deployments opt in via ARC1_RATE_LIMIT>0. Layer 1 stays on at 20/min/IP.
     const config = parseArgs([]);
     expect(config.authRateLimit).toBe(20);
+    expect(config.mcpHttpRateLimit).toBeUndefined();
     expect(config.rateLimit).toBe(0);
   });
 
@@ -756,6 +762,18 @@ describe('parseArgs', () => {
     process.env.ARC1_AUTH_RATE_LIMIT = '0';
     const config = parseArgs([]);
     expect(config.authRateLimit).toBe(0);
+  });
+
+  it('parses an explicit shared MCP HTTP/IP rate limit including 0', () => {
+    process.env.ARC1_MCP_HTTP_RATE_LIMIT = '3000';
+    expect(parseArgs([]).mcpHttpRateLimit).toBe(3000);
+    process.env.ARC1_MCP_HTTP_RATE_LIMIT = '0';
+    expect(parseArgs([]).mcpHttpRateLimit).toBe(0);
+  });
+
+  it('keeps the derived MCP HTTP/IP limit when its override is invalid', () => {
+    process.env.ARC1_MCP_HTTP_RATE_LIMIT = '-1';
+    expect(parseArgs([]).mcpHttpRateLimit).toBeUndefined();
   });
 
   it('parses --rate-limit flag', () => {
@@ -1036,6 +1054,35 @@ describe('parseApiKeys', () => {
 // ─── validateConfig ─────────────────────────────────────────────────
 
 describe('validateConfig', () => {
+  const validMultiTargetConfig = {
+    ...DEFAULT_CONFIG,
+    multiTargetEndpoints: true,
+    transport: 'http-streamable' as const,
+    xsuaaAuth: true,
+    dcrSigningSecret: 'stable-test-secret',
+    cacheMode: 'none' as const,
+  };
+
+  it('accepts the conservative multi-target prerequisite set', () => {
+    expect(() => validateConfig(validMultiTargetConfig)).not.toThrow();
+  });
+
+  it.each([
+    [{ transport: 'stdio' as const }, /SAP_TRANSPORT=http-streamable/],
+    [{ xsuaaAuth: false }, /SAP_XSUAA_AUTH=true/],
+    [{ cacheMode: 'memory' as const }, /ARC1_CACHE=none/],
+    [{ toolMode: 'hyperfocused' as const }, /ARC1_TOOL_MODE=standard/],
+    [{ uiMode: 'web' as const }, /ARC1_UI=off/],
+    [{ plugins: ['/tmp/plugin.js'] }, /does not support ARC1_PLUGINS/],
+    [{ cookieString: 'cookie' }, /does not support shared cookies/],
+    [{ ppAllowSharedCookies: true }, /does not support shared cookies/],
+    [{ btpServiceKey: '{}' }, /not a BTP service key/],
+    [{ url: 'https://direct.example' }, /does not support a direct SAP_URL/],
+    [{ username: 'direct-user' }, /does not support a direct SAP_URL/],
+  ])('rejects an unsafe or incompatible multi-target prerequisite %#', (override, expected) => {
+    expect(() => validateConfig({ ...validMultiTargetConfig, ...override })).toThrow(expected);
+  });
+
   it('throws when oidcIssuer is set without oidcAudience', () => {
     expect(() =>
       validateConfig({

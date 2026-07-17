@@ -52,6 +52,8 @@ export const OPTYPE_SCOPE: Record<OperationTypeCode, Scope> = {
 
 /** The central policy matrix — all tools, all actions/types. */
 export const ACTION_POLICY: Record<string, ActionPolicy> = {
+  // Aggregate multi-target catalog (no SAP request).
+  SAPTargets: { scope: 'read', opType: OperationType.Read },
   // ── SAPRead ──────────────────────────────────────────────────────
   // Tool-level default — applies to all SAP object reads (PROG, CLAS, etc.)
   SAPRead: { scope: 'read', opType: OperationType.Read },

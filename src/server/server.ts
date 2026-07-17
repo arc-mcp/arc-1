@@ -33,8 +33,20 @@ import {
 import { getToolDefinitions, type ToolDefinition, type ToolDefinitionOptions } from '../handlers/tools.js';
 import { API_KEY_PROFILES } from './config.js';
 import { isActionDenied } from './deny-actions.js';
+import { canonicalDestinationUrl, opaqueDestinationValue } from './destination-discovery.js';
+import { DestinationRegistry, type TargetDescriptor, targetConnectionFingerprint } from './destination-registry.js';
 import { authLibLogger, initLogger, logger } from './logger.js';
 import { createMcpRateLimiter, type McpRateLimiter } from './mcp-rate-limit.js';
+import { ensureMultiTargetFeatureProbe, hasAuthorizationLimitedFeatureEvidence } from './multi-target-feature-state.js';
+import { buildAggregateConfig, buildMultiTargetConfig, validateTargetDrift } from './multi-target-runtime.js';
+import {
+  MULTI_TARGET_SERVER_INSTRUCTIONS,
+  type MultiTargetErrorBuilder,
+  type MultiTargetServerOptions,
+  prepareMultiTargetCall,
+  structuredToolError,
+} from './multi-target-server.js';
+import { injectTargetSchema, multiTargetToolDefinitions, sapTargetsDefinition } from './multi-target-tools.js';
 import { loadPlugins } from './plugin-loader.js';
 import { FileSink } from './sinks/file.js';
 import type { ServerConfig } from './types.js';
@@ -218,11 +230,13 @@ export function logAuthSummary(config: ServerConfig): void {
 
   const hasCookie = !!(config.cookieFile || config.cookieString);
   const hasBearer = !!(config.btpServiceKey || config.btpServiceKeyFile);
-  const hasDestination = !!process.env.SAP_BTP_DESTINATION || !!process.env.SAP_BTP_DESTINATIONS;
+  const hasDestination = !!process.env.SAP_BTP_DESTINATION;
   const hasBasic = !!(config.username && config.password);
 
   let sapMethod = 'none';
-  if (config.ppEnabled) {
+  if (config.multiTargetEndpoints) {
+    sapMethod = hasDestination ? 'destination+pp (legacy + multi-target)' : 'destination+pp (multi-target)';
+  } else if (config.ppEnabled) {
     if (hasDestination) sapMethod = 'destination+pp';
     else if (hasCookie) sapMethod = 'cookie+pp';
     else sapMethod = 'pp';
@@ -345,21 +359,10 @@ export function selectPerUserProxy(
  * The Cloud Connector uses this header to generate an X.509 cert
  * mapped to the SAP user via CERTRULE.
  */
-/**
- * Resolve the principal-propagation destination for a config.
- *
- * Multi-destination mode (config.destinationName set): the per-destination
- * `arc1.pp_destination` property wins, else the destination itself — the
- * global SAP_BTP_PP_DESTINATION env var deliberately does NOT apply, since it
- * names a destination for ONE system and would leak across endpoints.
- *
- * Single-destination mode: the historical dual-destination env chain —
- * SAP_BTP_PP_DESTINATION (PrincipalPropagation type, per-user runtime) with
- * SAP_BTP_DESTINATION (BasicAuth, shared client) as fallback.
- */
+/** Historical single-target dual-destination resolution. */
 export function resolvePpDestinationName(config: ServerConfig): string | undefined {
   if (config.destinationName) {
-    return config.ppDestinationName || config.destinationName;
+    return config.destinationName;
   }
   return process.env.SAP_BTP_PP_DESTINATION || process.env.SAP_BTP_DESTINATION;
 }
@@ -370,20 +373,33 @@ async function createPerUserClient(
   btpProxy: BTPProxyConfig | undefined,
   userJwt: string,
   adtSemaphore?: Semaphore,
+  multiTarget?: { target: TargetDescriptor; instanceConfig: ServerConfig },
 ): Promise<AdtClient> {
-  const { lookupDestinationWithUserToken } = await import('@arc-mcp/xsuaa-auth/btp');
+  const { createConnectivityProxy, lookupDestinationWithUserToken, lookupDestinationWithUserTokenUncached } =
+    await import('@arc-mcp/xsuaa-auth/btp');
   const destName = resolvePpDestinationName(config);
   if (!destName) {
     throw new Error('SAP_BTP_PP_DESTINATION or SAP_BTP_DESTINATION is required for principal propagation');
   }
 
-  const { destination, authTokens } = await lookupDestinationWithUserToken(btpConfig, destName, userJwt, authLibLogger);
+  const { destination, authTokens } = multiTarget
+    ? await lookupDestinationWithUserTokenUncached(btpConfig, destName, userJwt, authLibLogger)
+    : await lookupDestinationWithUserToken(btpConfig, destName, userJwt, authLibLogger);
 
-  const effectiveProxy = selectPerUserProxy(destination, btpProxy);
+  let resolvedUrl = destination.URL;
+  if (multiTarget) {
+    const drift = validateTargetDrift(destination, multiTarget.target, multiTarget.instanceConfig);
+    if (!drift.ok) throw new Error(`${drift.code}: ${drift.message}`);
+    resolvedUrl = drift.url;
+  }
+
+  const effectiveProxy = multiTarget
+    ? (createConnectivityProxy(btpConfig, destination.CloudConnectorLocationId, authLibLogger) ?? undefined)
+    : selectPerUserProxy(destination, btpProxy);
 
   const adtConfig = buildAdtConfig(config, effectiveProxy, undefined, { perUser: true }, adtSemaphore);
   // Override URL from destination (in case it differs from startup-resolved URL)
-  adtConfig.baseUrl = destination.URL;
+  adtConfig.baseUrl = resolvedUrl;
   // Set per-user auth for principal propagation.
   // Option 1 (Recommended): jwt-bearer exchanged token → Proxy-Authorization
   // Option 2 (Backward compat): SAML assertion → SAP-Connectivity-Authentication
@@ -467,6 +483,63 @@ export function applyPerUserAuthTokens(
  * source_code from users who might have authorization.  Without btpConfig, PP cannot
  * create per-user clients, so shared-client auth failures are definitive.
  */
+async function probeClientFeatures(config: ServerConfig, client: AdtClient, btpConfig?: BTPConfig): Promise<void> {
+  const { defaultFeatureConfig } = await import('../adt/config.js');
+  const { probeFeatures } = await import('../adt/features.js');
+  const fc = defaultFeatureConfig();
+  fc.hana = config.featureHana as 'auto' | 'on' | 'off';
+  fc.abapGit = config.featureAbapGit as 'auto' | 'on' | 'off';
+  fc.gcts = config.featureGcts as 'auto' | 'on' | 'off';
+  fc.rap = config.featureRap as 'auto' | 'on' | 'off';
+  fc.amdp = config.featureAmdp as 'auto' | 'on' | 'off';
+  fc.ui5 = config.featureUi5 as 'auto' | 'on' | 'off';
+  fc.transport = config.featureTransport as 'auto' | 'on' | 'off';
+  fc.ui5repo = config.featureUi5Repo as 'auto' | 'on' | 'off';
+  fc.flp = config.featureFlp as 'auto' | 'on' | 'off';
+  const features = await probeFeatures(client.http, fc, config.systemType);
+  if (config.ppEnabled && btpConfig && features.textSearch && !features.textSearch.available) {
+    const reason = features.textSearch.reason ?? '';
+    if (reason.includes('authorization') || reason.includes('401') || reason.includes('403')) {
+      features.textSearch = undefined;
+    }
+  }
+  if (config.targetId && hasAuthorizationLimitedFeatureEvidence(features)) {
+    throw new Error(
+      'Multi-target feature evidence remains unknown because one or more probes were authorization-limited.',
+    );
+  }
+  // Log authorization probe results
+  if (features.authProbe) {
+    const ap = features.authProbe;
+    if (ap.searchAccess) {
+      logger.info('Authorization probe: object search access is available');
+    } else {
+      logger.warn(`Authorization probe: object search access denied — ${ap.searchReason ?? 'unknown reason'}`);
+    }
+    if (ap.transportAccess) {
+      logger.info('Authorization probe: transport access is available');
+    } else {
+      logger.info(`Authorization probe: transport access is not available — ${ap.transportReason ?? 'unknown reason'}`);
+    }
+  }
+  const featureKey = config.targetId ?? config.destinationName;
+  setCachedFeatures(features, featureKey);
+  // Proactive warning: on SAP_BASIS < 7.51 the ADT REST handler does not honor the
+  // stateful-session header over HTTP, so object writes fail with 423 "invalid lock
+  // handle" until the abapfs_extensions enhancement is installed. Warn at startup —
+  // before the first cryptic 423 — but only when writes are enabled (issue #293).
+  if (shouldWarnPreStatefulRelease(config.allowWrites, features.abapRelease)) {
+    logger.warn(
+      `SAP_BASIS ${features.abapRelease} is below 7.51 and does not natively honor stateful ADT ` +
+        'HTTP sessions — object writes will fail with 423 "invalid lock handle" UNLESS the ' +
+        'abapfs_extensions enhancement is installed on the SAP system ' +
+        '(https://github.com/marcellourbani/abapfs_extensions). If writes already work, this is ' +
+        'installed and you can ignore this. See docs/sap-trial-setup.md (423 troubleshooting).',
+    );
+  }
+  setCachedDiscovery(features.discoveryMap ?? new Map(), featureKey);
+}
+
 export function runStartupProbe(
   config: ServerConfig,
   btpProxy?: BTPProxyConfig,
@@ -477,58 +550,9 @@ export function runStartupProbe(
   const client = new AdtClient(buildAdtConfig(config, btpProxy, bearerTokenProvider, undefined, adtSemaphore));
   return (async () => {
     try {
-      const { defaultFeatureConfig } = await import('../adt/config.js');
-      const { probeFeatures } = await import('../adt/features.js');
-      const fc = defaultFeatureConfig();
-      fc.hana = config.featureHana as 'auto' | 'on' | 'off';
-      fc.abapGit = config.featureAbapGit as 'auto' | 'on' | 'off';
-      fc.gcts = config.featureGcts as 'auto' | 'on' | 'off';
-      fc.rap = config.featureRap as 'auto' | 'on' | 'off';
-      fc.amdp = config.featureAmdp as 'auto' | 'on' | 'off';
-      fc.ui5 = config.featureUi5 as 'auto' | 'on' | 'off';
-      fc.transport = config.featureTransport as 'auto' | 'on' | 'off';
-      fc.ui5repo = config.featureUi5Repo as 'auto' | 'on' | 'off';
-      fc.flp = config.featureFlp as 'auto' | 'on' | 'off';
-      const features = await probeFeatures(client.http, fc, config.systemType);
-      if (config.ppEnabled && btpConfig && features.textSearch && !features.textSearch.available) {
-        const reason = features.textSearch.reason ?? '';
-        if (reason.includes('authorization') || reason.includes('401') || reason.includes('403')) {
-          features.textSearch = undefined;
-        }
-      }
-      // Log authorization probe results
-      if (features.authProbe) {
-        const ap = features.authProbe;
-        if (ap.searchAccess) {
-          logger.info('Authorization probe: object search access is available');
-        } else {
-          logger.warn(`Authorization probe: object search access denied — ${ap.searchReason ?? 'unknown reason'}`);
-        }
-        if (ap.transportAccess) {
-          logger.info('Authorization probe: transport access is available');
-        } else {
-          logger.info(
-            `Authorization probe: transport access is not available — ${ap.transportReason ?? 'unknown reason'}`,
-          );
-        }
-      }
-      setCachedFeatures(features, config.destinationName);
-      // Proactive warning: on SAP_BASIS < 7.51 the ADT REST handler does not honor the
-      // stateful-session header over HTTP, so object writes fail with 423 "invalid lock
-      // handle" until the abapfs_extensions enhancement is installed. Warn at startup —
-      // before the first cryptic 423 — but only when writes are enabled (issue #293).
-      if (shouldWarnPreStatefulRelease(config.allowWrites, features.abapRelease)) {
-        logger.warn(
-          `SAP_BASIS ${features.abapRelease} is below 7.51 and does not natively honor stateful ADT ` +
-            'HTTP sessions — object writes will fail with 423 "invalid lock handle" UNLESS the ' +
-            'abapfs_extensions enhancement is installed on the SAP system ' +
-            '(https://github.com/marcellourbani/abapfs_extensions). If writes already work, this is ' +
-            'installed and you can ignore this. See docs/sap-trial-setup.md (423 troubleshooting).',
-        );
-      }
-      setCachedDiscovery(features.discoveryMap ?? new Map(), config.destinationName);
+      await probeClientFeatures(config, client, btpConfig);
     } catch {
-      setCachedDiscovery(new Map(), config.destinationName);
+      setCachedDiscovery(new Map(), config.targetId ?? config.destinationName);
       // Probe failed (e.g., SAP system unreachable) — continue with default tool set
     }
   })();
@@ -703,17 +727,20 @@ export function createServer(
   startupAuthPreflightPromise?: Promise<StartupAuthPreflightResult>,
   adtSemaphore?: Semaphore,
   mcpRateLimiter?: McpRateLimiter,
+  multiTarget?: MultiTargetServerOptions,
 ): Server {
   const server = new Server(
     { name: 'arc-1', version: VERSION },
-    { capabilities: { tools: {} }, instructions: SERVER_INSTRUCTIONS },
+    { capabilities: { tools: {} }, instructions: multiTarget ? MULTI_TARGET_SERVER_INSTRUCTIONS : SERVER_INSTRUCTIONS },
   );
   const apiKeyProvenanceVerifier = createConfiguredApiKeyVerifier(config);
 
   // Create default ADT client (shared, uses startup-time credentials or OAuth bearer).
   // Passes the shared server-wide semaphore so per-user PP clients (created at request
   // time) share the same Layer 3 concurrency cap.
-  const defaultClient = new AdtClient(buildAdtConfig(config, btpProxy, bearerTokenProvider, undefined, adtSemaphore));
+  const defaultClient = multiTarget
+    ? undefined
+    : new AdtClient(buildAdtConfig(config, btpProxy, bearerTokenProvider, undefined, adtSemaphore));
 
   // Cookie-auth preflight propagation: when startup preflight returned a non-blocking
   // 401 in SAP_COOKIE_FILE mode, the throwaway preflight client marked itself stale —
@@ -730,10 +757,13 @@ export function createServer(
     // Wait for the startup probe (if provided), but with a timeout so a slow/unreachable
     // SAP system doesn't stall the MCP connection setup. If the probe doesn't finish in
     // time, fall back to the default tool set (textSearch unknown = show source_code).
-    if (startupProbePromise) {
+    if (startupProbePromise && !multiTarget) {
       await Promise.race([startupProbePromise, new Promise((resolve) => setTimeout(resolve, 10_000))]);
     }
-    const features = getCachedFeatures(config.destinationName);
+    const featureKey = config.targetId ?? config.destinationName;
+    // Multi-target schemas are immutable process contracts. User-backed feature probes may
+    // improve runtime errors, but must never rewrite another user's tools/list response.
+    const features = multiTarget ? undefined : getCachedFeatures(featureKey);
     const clientVersion = server.getClientVersion();
     if (config.schemaNullableOptionals === 'auto' && !schemaNullableAutoClientInfoLogged) {
       schemaNullableAutoClientInfoLogged = true;
@@ -744,6 +774,18 @@ export function createServer(
     }
     let tools = getConfiguredToolDefinitions(config, features?.textSearch?.available, features, clientVersion);
 
+    if (multiTarget) {
+      tools =
+        !multiTarget.registry.available ||
+        (multiTarget.mode === 'aggregate' && multiTarget.registry.targets.length === 0)
+          ? []
+          : multiTargetToolDefinitions(tools, config);
+      if (multiTarget.mode === 'aggregate' && tools.length > 0) {
+        tools = tools.map((tool) => injectTargetSchema(tool, multiTarget.registry.targets));
+        if (multiTarget.registry.targets.length > 1) tools.push(sapTargetsDefinition());
+      }
+    }
+
     // When authenticated, only show tools the user has scopes for
     if (extra.authInfo) {
       tools = filterToolsByAuthScope(tools, extra.authInfo.scopes, config.denyActions);
@@ -752,7 +794,7 @@ export function createServer(
     // FEAT-61: append plugin (Custom_*) tools, gated identically to built-ins (deny-list + scope +
     // `availableOn` system-type visibility). Hyperfocused mode is out of scope for plugins (spec §10),
     // so its single `SAP` tool is the only surface there.
-    if (config.toolMode !== 'hyperfocused') {
+    if (!multiTarget && config.toolMode !== 'hyperfocused') {
       const systemType = features?.systemType;
       for (const entry of getToolRegistry().list()) {
         if (entry.source !== 'plugin' || !entry.listing) continue;
@@ -777,9 +819,31 @@ export function createServer(
   // Register tool call handler — passes authInfo for scope enforcement + audit logging
   server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const toolName = request.params.name;
-    const args = (request.params.arguments ?? {}) as Record<string, unknown>;
+    const rawArgs = (request.params.arguments ?? {}) as Record<string, unknown>;
+    let args = rawArgs;
+    let activeConfig = config;
+    let selectedTarget: TargetDescriptor | undefined;
+    let multiTargetMcpRateLimitConsumed = false;
+    let multiError: MultiTargetErrorBuilder = (code, message, details = {}) =>
+      structuredToolError(code, message, details);
 
-    if (startupAuthPreflightPromise) {
+    if (multiTarget) {
+      const prepared = await prepareMultiTargetCall({
+        options: multiTarget,
+        toolName,
+        rawArgs,
+        authInfo: extra.authInfo,
+        mcpRateLimiter,
+      });
+      if (prepared.handled) return prepared.result;
+      args = prepared.args;
+      activeConfig = prepared.activeConfig;
+      selectedTarget = prepared.selectedTarget;
+      multiError = prepared.error;
+      multiTargetMcpRateLimitConsumed = prepared.mcpRateLimitConsumed;
+    }
+
+    if (startupAuthPreflightPromise && !multiTarget) {
       const startupAuth = await startupAuthPreflightPromise;
       if (startupAuth.blocking) {
         return {
@@ -796,7 +860,7 @@ export function createServer(
       // stale so its first call goes straight to the lazy reload path instead of repeating
       // the failure. Fires once per process; subsequent calls early-return.
       if (!preflightStalePropagated && startupAuth.status === 'inconclusive' && startupAuth.statusCode === 401) {
-        defaultClient.http.markCookiesStale();
+        defaultClient?.http.markCookiesStale();
         preflightStalePropagated = true;
       }
     }
@@ -810,9 +874,9 @@ export function createServer(
     const apiKeyProfile = await configuredApiKeyProfile(apiKeyProvenanceVerifier, token);
     const isApiKey = apiKeyProfile !== undefined;
     const isJwt = !isApiKey && typeof token === 'string' && token.split('.').length === 3;
-    if (config.ppEnabled && isJwt) {
+    if (activeConfig.ppEnabled && isJwt) {
       const ppUser = (extra.authInfo?.extra?.userName ?? extra.authInfo?.clientId) as string | undefined;
-      const ppDest = resolvePpDestinationName(config) ?? '';
+      const ppDest = resolvePpDestinationName(activeConfig) ?? '';
       if (!btpConfig) {
         const errMsg = 'BTP runtime configuration is unavailable for principal propagation';
         logger.emitAudit({
@@ -820,24 +884,43 @@ export function createServer(
           level: 'error',
           event: 'auth_pp_created',
           user: ppUser,
-          destination: ppDest,
+          destination: activeConfig.targetId ? undefined : ppDest,
+          target: activeConfig.targetId,
           success: false,
           errorMessage: errMsg,
         });
+        if (multiTarget) {
+          return multiError(
+            'PP_SETUP_FAILED',
+            `Principal propagation for ${selectedTarget?.target ?? 'the selected target'} cannot start because BTP runtime configuration is unavailable. Fix the service bindings, then try again now.`,
+            { retryable: true },
+            'pp_exchange_failed',
+          );
+        }
         return {
           content: [{ type: 'text' as const, text: `Principal propagation failed: ${errMsg}` }],
           isError: true,
         } as Record<string, unknown>;
       }
       try {
-        client = await createPerUserClient(config, btpConfig, btpProxy, token, adtSemaphore);
+        client = await createPerUserClient(
+          activeConfig,
+          btpConfig,
+          btpProxy,
+          token,
+          adtSemaphore,
+          selectedTarget
+            ? { target: selectedTarget, instanceConfig: multiTarget?.instanceConfig ?? config }
+            : undefined,
+        );
         isPerUserClient = true;
         logger.emitAudit({
           timestamp: new Date().toISOString(),
           level: 'info',
           event: 'auth_pp_created',
           user: ppUser,
-          destination: ppDest,
+          destination: activeConfig.targetId ? undefined : ppDest,
+          target: activeConfig.targetId,
           success: true,
         });
       } catch (err) {
@@ -847,24 +930,39 @@ export function createServer(
           level: 'error',
           event: 'auth_pp_created',
           user: ppUser,
-          destination: ppDest,
+          destination: activeConfig.targetId ? undefined : ppDest,
+          target: activeConfig.targetId,
           success: false,
           errorMessage: errMsg,
         });
         // A JWT-authenticated request must never change SAP identity after a PP error.
         // Non-JWT API-key requests still use the shared client through the branch below.
+        if (multiTarget) {
+          const changed = errMsg.startsWith('TARGET_CONFIG_CHANGED:');
+          return multiError(
+            changed ? 'TARGET_CONFIG_CHANGED' : 'PP_SETUP_FAILED',
+            changed
+              ? errMsg.replace(/^TARGET_CONFIG_CHANGED:\s*/, '')
+              : `Principal propagation for ${selectedTarget?.target ?? 'the selected target'} failed. Check the user mapping and destination/Cloud Connector setup, then ask the client to try again now.`,
+            { retryable: !changed },
+            changed ? undefined : 'pp_exchange_failed',
+          );
+        }
         return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Principal propagation failed: ${errMsg}`,
-            },
-          ],
+          content: [{ type: 'text' as const, text: `Principal propagation failed: ${errMsg}` }],
           isError: true,
         } as Record<string, unknown>;
       }
-    } else if (config.ppStrictExplicit && config.ppStrict && config.ppEnabled && !isJwt) {
+    } else if (activeConfig.ppStrictExplicit && activeConfig.ppStrict && activeConfig.ppEnabled && !isJwt) {
       // Strict mode with non-JWT token (e.g., API key) — reject
+      if (multiTarget) {
+        return multiError(
+          'PP_SETUP_FAILED',
+          'Multi-target routes require an XSUAA JWT for strict principal propagation. Sign in with XSUAA and try again.',
+          { retryable: true },
+          'pp_exchange_failed',
+        );
+      }
       return {
         content: [
           {
@@ -876,8 +974,34 @@ export function createServer(
       } as Record<string, unknown>;
     }
 
+    if (!client) {
+      return multiTarget
+        ? multiError(
+            'PP_SETUP_FAILED',
+            'A per-user SAP client could not be created. Fix principal propagation, then try again now.',
+            { retryable: true },
+            'pp_exchange_failed',
+          )
+        : structuredToolError('PP_SETUP_FAILED', 'A per-user SAP client could not be created.', { retryable: true });
+    }
+
+    if (multiTarget && btpConfig) {
+      try {
+        const targetKey = activeConfig.targetId;
+        await ensureMultiTargetFeatureProbe(
+          targetKey,
+          !!targetKey && !!getCachedFeatures(targetKey),
+          () => probeClientFeatures(activeConfig, client, btpConfig),
+          () => setCachedFeatures(undefined, targetKey),
+        );
+      } catch {
+        // Feature evidence stays unknown. The requested operation still gets one direct attempt.
+      }
+    }
+
     // Inject startup discovery MIME map (shared for default and per-user clients).
-    client.http.setDiscoveryMap(getCachedDiscovery(config.destinationName));
+    const featureKey = activeConfig.targetId ?? activeConfig.destinationName;
+    client.http.setDiscoveryMap(getCachedDiscovery(featureKey));
 
     // Per-request safety: merge server ceiling with per-user policy.
     //   - API-key path: authenticated configured key — intersect server with the key profile's partial SafetyConfig.
@@ -895,18 +1019,18 @@ export function createServer(
       const effectiveSafety = deriveUserSafety(client.safety, extra.authInfo.scopes);
       effectiveClient = client.withSafety(effectiveSafety);
     }
-    effectiveClient.http.setDiscoveryMap(getCachedDiscovery(config.destinationName));
+    effectiveClient.http.setDiscoveryMap(getCachedDiscovery(featureKey));
 
     const result = await handleToolCall(
       effectiveClient,
-      config,
+      activeConfig,
       toolName,
       args,
       extra.authInfo,
       server,
-      cachingLayer,
+      multiTarget ? undefined : cachingLayer,
       isPerUserClient,
-      mcpRateLimiter,
+      multiTargetMcpRateLimitConsumed ? undefined : mcpRateLimiter,
     );
     return { ...result } as Record<string, unknown>;
   });
@@ -1025,7 +1149,7 @@ export async function createAndStartServer(
     config.btpServiceKey ||
     config.btpServiceKeyFile ||
     process.env.SAP_BTP_DESTINATION ||
-    process.env.SAP_BTP_DESTINATIONS
+    config.multiTargetEndpoints
   );
   if (!config.url && !hasBtpConnection) {
     logger.warn(
@@ -1066,53 +1190,12 @@ export async function createAndStartServer(
     });
   }
 
-  // ─── Multi-destination mode (SAP_BTP_DESTINATIONS) ────────────────
-  // One MCP endpoint per destination (/mcp/<name>); bare /mcp = default destination.
-  // Parsed here (not in resolveConfig) to mirror how SAP_BTP_DESTINATION is env-only.
-  const { parseDestinationsList } = await import('./destination-registry.js');
-  config.btpDestinations = parseDestinationsList(process.env.SAP_BTP_DESTINATIONS);
-  if (config.btpDestinations) {
-    if (config.btpServiceKey || config.btpServiceKeyFile) {
-      throw new Error(
-        'SAP_BTP_DESTINATIONS is incompatible with SAP_BTP_SERVICE_KEY — service-key mode connects to a single BTP ABAP system.',
-      );
-    }
-    if (config.cookieFile || config.cookieString) {
-      throw new Error(
-        'SAP_BTP_DESTINATIONS is incompatible with SAP_COOKIE_FILE / SAP_COOKIE_STRING — cookies authenticate a single system.',
-      );
-    }
-    if (process.env.SAP_BTP_DESTINATION && !config.btpDestinations.includes(process.env.SAP_BTP_DESTINATION)) {
-      throw new Error(
-        `SAP_BTP_DESTINATION '${process.env.SAP_BTP_DESTINATION}' must be one of SAP_BTP_DESTINATIONS ` +
-          `(${config.btpDestinations.join(', ')}) — it selects the default destination served at /mcp.`,
-      );
-    }
-    if (config.url) {
-      logger.warn('SAP_URL is ignored in multi-destination mode — connections come from the BTP destinations.');
-    }
-  }
-
-  // Resolve BTP Destination if configured (overrides SAP_URL/USER/PASSWORD).
-  // Skipped in multi-destination mode — the registry resolves per destination, lazily.
+  // Resolve the optional legacy single destination. It remains independent from discovered targets.
   let btpProxy: BTPProxyConfig | undefined;
   let btpConfig: BTPConfig | undefined;
+  let legacyConnectionFingerprint: string | undefined;
   const btpDestination = process.env.SAP_BTP_DESTINATION;
-  if (config.btpDestinations) {
-    const { parseVCAPServices } = await import('@arc-mcp/xsuaa-auth/btp');
-    btpConfig = parseVCAPServices() ?? undefined;
-    if (!btpConfig) {
-      throw new Error(
-        'SAP_BTP_DESTINATIONS requires a Destination service binding (VCAP_SERVICES). ' +
-          'Bind a destination service instance (and a connectivity instance for on-premise destinations).',
-      );
-    }
-    logger.info('Multi-destination mode', {
-      destinations: config.btpDestinations,
-      default: btpDestination ?? config.btpDestinations[0],
-      ppEnabled: config.ppEnabled,
-    });
-  } else if (btpDestination) {
+  if (btpDestination) {
     const { resolveBTPDestination, parseVCAPServices } = await import('@arc-mcp/xsuaa-auth/btp');
     const resolved = await resolveBTPDestination(btpDestination, authLibLogger);
     config.url = resolved.url;
@@ -1120,6 +1203,16 @@ export async function createAndStartServer(
     config.password = resolved.password;
     config.client = resolved.client;
     btpProxy = resolved.proxy ?? undefined;
+    const canonicalLegacyUrl = canonicalDestinationUrl(resolved.url);
+    if (canonicalLegacyUrl) {
+      legacyConnectionFingerprint = targetConnectionFingerprint({
+        urlFingerprint: opaqueDestinationValue(canonicalLegacyUrl),
+        client: resolved.client,
+        cloudConnectorLocationIdFingerprint: resolved.proxy?.locationId
+          ? opaqueDestinationValue(resolved.proxy.locationId)
+          : undefined,
+      });
+    }
 
     // Keep btpConfig for per-user destination lookup (principal propagation)
     if (config.ppEnabled) {
@@ -1137,6 +1230,54 @@ export async function createAndStartServer(
       hasProxy: !!btpProxy,
       ppEnabled: config.ppEnabled,
     });
+  }
+
+  // Destination-discovered multi-target snapshot. Discovery failure degrades only the new routes.
+  let registry: DestinationRegistry | undefined;
+  if (config.multiTargetEndpoints) {
+    const { parseVCAPServices } = await import('@arc-mcp/xsuaa-auth/btp');
+    btpConfig ??= parseVCAPServices() ?? undefined;
+    if (
+      !btpConfig?.destinationUrl ||
+      !btpConfig.destinationClientId ||
+      !btpConfig.destinationSecret ||
+      !btpConfig.connectivityProxyHost ||
+      !btpConfig.connectivityClientId
+    ) {
+      throw new Error(
+        'ARC1_MULTI_TARGET_ENDPOINTS=true requires Destination and Connectivity service bindings in VCAP_SERVICES.',
+      );
+    }
+    try {
+      const { discoverDestinations } = await import('./destination-discovery.js');
+      registry = DestinationRegistry.fromDiscovery(await discoverDestinations(btpConfig), config);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Destination discovery failed.';
+      registry = DestinationRegistry.unavailable({ code: 'REGISTRY_DISCOVERY_ERROR', message });
+      logger.error('Multi-target destination discovery failed', { error: message });
+    }
+    logger.info('Multi-target registry loaded', {
+      available: registry.available,
+      targets: registry.targets.length,
+      quarantined: registry.diagnostics.filter((entry) => entry.status === 'quarantined').length,
+      disabled: registry.diagnostics.filter((entry) => entry.status === 'disabled').length,
+      revision: registry.revision,
+      failure: registry.failure?.code,
+    });
+    const duplicateLegacyTargets = registry.targets
+      .filter(
+        (target) =>
+          target.destinationName === btpDestination ||
+          target.destinationName === process.env.SAP_BTP_PP_DESTINATION ||
+          (!!legacyConnectionFingerprint && target.connectionFingerprint === legacyConnectionFingerprint),
+      )
+      .map((target) => target.target);
+    if (duplicateLegacyTargets.length > 0) {
+      logger.warn(
+        'The legacy /mcp connection is also exposed by discovered multi-target routes. Both remain active, but their policies can differ; verify that this duplicate exposure is intentional.',
+        { targets: duplicateLegacyTargets },
+      );
+    }
   }
 
   // ─── Layer 3: shared SAP-bound Semaphore (server-wide cap) ────────
@@ -1157,34 +1298,8 @@ export async function createAndStartServer(
     disabled: config.rateLimit === 0,
   });
 
-  // ─── Multi-destination registry ────────────────────────────────────
-  // Lazily resolves destinations on first request; the DEFAULT destination is
-  // initialized eagerly so startup fails fast when the primary system's
-  // destination is missing or misconfigured (same contract as single-dest mode).
-  let registry: import('./destination-registry.js').DestinationRegistry | undefined;
-  let defaultRuntime: import('./destination-registry.js').DestinationRuntime | undefined;
-  if (config.btpDestinations && btpConfig) {
-    const { DestinationRegistry } = await import('./destination-registry.js');
-    const vcap = btpConfig;
-    registry = new DestinationRegistry({
-      baseConfig: config,
-      btpConfig: vcap,
-      names: config.btpDestinations,
-      createCachingLayer,
-      runStartupAuthPreflight: (cfg, proxy) => runStartupAuthPreflight(cfg, proxy, undefined, adtSemaphore),
-      runStartupProbe: (cfg, proxy) => runStartupProbe(cfg, proxy, undefined, vcap, adtSemaphore),
-      onProbeBlocked: (name) => {
-        setCachedFeatures(undefined, name);
-        setCachedDiscovery(new Map(), name);
-      },
-    });
-    const defaultName = process.env.SAP_BTP_DESTINATION ?? config.btpDestinations[0];
-    defaultRuntime = await registry.getRuntime(defaultName);
-  }
-
   // ─── Cache Setup ───────────────────────────────────────────────────
-  // Multi-destination mode: caches are per-destination, owned by the registry runtimes.
-  const cachingLayer = registry ? undefined : await createCachingLayer(config);
+  const cachingLayer = await createCachingLayer(config);
   if (cachingLayer) {
     const stats = cachingLayer.stats();
     logger.info('Object cache enabled', {
@@ -1197,14 +1312,19 @@ export async function createAndStartServer(
   // Run feature probe once at startup — shared across all requests (stdio and HTTP).
   // First run startup auth preflight in shared mode. If it blocks (401/403), skip feature probe
   // to avoid firing many failing requests with invalid technical credentials.
-  // Multi-destination mode: the registry already owns per-destination preflight/probe;
-  // the default runtime's promises stand in for the global ones.
-  const startupAuthPreflightPromise = defaultRuntime
-    ? defaultRuntime.startupAuthPreflightPromise
-    : runStartupAuthPreflight(config, btpProxy, bearerTokenProvider, adtSemaphore);
-  const startupProbePromise = defaultRuntime
-    ? defaultRuntime.startupProbePromise
-    : (async () => {
+  const hasLegacyTarget = !!(config.url || btpDestination || bearerTokenProvider);
+  const shouldStartLegacy = !config.multiTargetEndpoints || hasLegacyTarget;
+  const startupAuthPreflightPromise = shouldStartLegacy
+    ? runStartupAuthPreflight(config, btpProxy, bearerTokenProvider, adtSemaphore)
+    : Promise.resolve<StartupAuthPreflightResult>({
+        status: 'skipped',
+        blocking: false,
+        endpoint: STARTUP_AUTH_ENDPOINT,
+        checkedAt: new Date().toISOString(),
+        reason: 'No legacy /mcp SAP target is configured.',
+      });
+  const startupProbePromise = shouldStartLegacy
+    ? (async () => {
         const authPreflight = await startupAuthPreflightPromise;
         if (authPreflight.blocking) {
           setCachedFeatures(undefined);
@@ -1212,47 +1332,59 @@ export async function createAndStartServer(
           return;
         }
         await runStartupProbe(config, btpProxy, bearerTokenProvider, btpConfig, adtSemaphore);
-      })();
+      })()
+    : Promise.resolve();
 
-  // In multi-destination mode the "main" server serves the DEFAULT destination
-  // (bare /mcp and the stdio transport — back-compat rules in
-  // docs/multi-destination-evaluation.md §6.5).
-  const serverConfig = defaultRuntime?.config ?? config;
-  const serverProxy = defaultRuntime ? defaultRuntime.btpProxy : btpProxy;
-  const serverCachingLayer = defaultRuntime ? defaultRuntime.cachingLayer : cachingLayer;
   const buildDefaultServer = () =>
     createServer(
-      serverConfig,
-      serverProxy,
+      config,
+      btpProxy,
       btpConfig,
       bearerTokenProvider,
-      serverCachingLayer,
+      cachingLayer,
       startupProbePromise,
       startupAuthPreflightPromise,
       adtSemaphore,
       mcpRateLimiter,
     );
-  const server = buildDefaultServer();
+  const aggregateConfig = registry ? buildAggregateConfig(config, registry.targets) : undefined;
+  const buildAggregateServer =
+    registry && aggregateConfig && btpConfig
+      ? () =>
+          createServer(
+            aggregateConfig,
+            undefined,
+            btpConfig,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            adtSemaphore,
+            mcpRateLimiter,
+            { mode: 'aggregate', registry, instanceConfig: config },
+          )
+      : undefined;
+  const serveLegacyEndpoint = shouldStartLegacy;
+  const server = serveLegacyEndpoint ? buildDefaultServer() : (buildAggregateServer?.() ?? buildDefaultServer());
 
   const uiDeps: UiServerDeps | undefined =
     config.uiMode !== 'off'
       ? {
-          config: serverConfig,
+          config,
           sources: effectiveSources,
           version: VERSION,
           startedAt,
-          cachingLayer: serverCachingLayer,
+          cachingLayer,
           logBuffer: uiLogBuffer,
-          getFeatures: () => getCachedFeatures(serverConfig.destinationName),
+          getFeatures: () => getCachedFeatures(),
         }
       : undefined;
 
   // Shutdown hook for SQLite cache cleanup (guard against double-close from multiple signals).
   // IMPORTANT: registering a SIGINT/SIGTERM listener suppresses Node's default exit behavior,
   // so we must call process.exit() explicitly after cleanup — otherwise Ctrl+C hangs the process.
-  if (cachingLayer || registry) {
+  if (cachingLayer) {
     let cacheClosed = false;
-    const registryRef = registry;
     const cleanup = (signal: string) => {
       if (cacheClosed) return;
       cacheClosed = true;
@@ -1260,13 +1392,6 @@ export async function createAndStartServer(
         cachingLayer?.cache.close();
       } catch {
         // Ignore close errors during shutdown
-      }
-      for (const runtime of registryRef?.resolvedRuntimes() ?? []) {
-        try {
-          runtime.cachingLayer?.cache.close();
-        } catch {
-          // Ignore close errors during shutdown
-        }
       }
       logger.info(`ARC-1 shutting down (${signal})`);
       process.exit(0);
@@ -1286,13 +1411,6 @@ export async function createAndStartServer(
   }
 
   if (config.transport === 'stdio') {
-    if (registry && config.btpDestinations && config.btpDestinations.length > 1) {
-      logger.warn(
-        'SAP_BTP_DESTINATIONS with stdio transport serves only the default destination — ' +
-          'per-destination endpoints (/mcp/<name>) require SAP_TRANSPORT=http-streamable.',
-        { serving: serverConfig.destinationName },
-      );
-    }
     if (uiDeps && config.uiMode === 'local') {
       await startLocalUiServer(uiDeps);
     }
@@ -1330,39 +1448,42 @@ export async function createAndStartServer(
         logger.error('Failed to load XSUAA credentials — XSUAA auth will not work', {
           error: err instanceof Error ? err.message : String(err),
         });
+        if (config.multiTargetEndpoints) {
+          throw new Error('ARC1_MULTI_TARGET_ENDPOINTS=true requires a valid bound XSUAA service.');
+        }
       }
     }
 
     const { startHttpServer } = await import('./http.js');
-    const registryRef = registry;
-    const multiDestinations =
-      registryRef && btpConfig
+    const multiTargets =
+      registry && btpConfig && buildAggregateServer
         ? {
-            names: registryRef.names,
-            resolveFactory: async (name: string) => {
-              const runtime = await registryRef.getRuntime(name);
-              if (!runtime) return undefined;
+            registry,
+            aggregateFactory: buildAggregateServer,
+            pinnedFactory: (target: TargetDescriptor) => {
+              const targetConfig = buildMultiTargetConfig(config, target);
               return () =>
                 createServer(
-                  runtime.config,
-                  runtime.btpProxy,
+                  targetConfig,
+                  undefined,
                   btpConfig,
                   undefined,
-                  runtime.cachingLayer,
-                  runtime.startupProbePromise,
-                  runtime.startupAuthPreflightPromise,
+                  undefined,
+                  undefined,
+                  undefined,
                   adtSemaphore,
                   mcpRateLimiter,
+                  { mode: 'pinned', registry, instanceConfig: config, target },
                 );
             },
           }
         : undefined;
     await startHttpServer(
-      buildDefaultServer,
+      serveLegacyEndpoint ? buildDefaultServer : undefined,
       config,
       xsuaaCredentials,
       config.uiMode === 'web' ? uiDeps : undefined,
-      multiDestinations,
+      multiTargets,
     );
   }
 

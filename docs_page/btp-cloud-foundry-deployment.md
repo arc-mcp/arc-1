@@ -78,7 +78,12 @@ MTA (Multi-Target Application) deployment bundles ARC-1 with its BTP service dep
 
 ### 1. Configure your landscape via `mta-overrides.mtaext`
 
-`mta.yaml` ships with placeholder destinations (`your-basic-destination` / `your-pp-destination`) and conservative safety defaults (writes off, free SQL off, package allowlist `$TMP`). Every landscape must override at least the two destination names — deploying `mta.yaml` as-is will fail with a "destination not found" error from BTP, which is the intended fail-fast signal.
+`mta.yaml` ships without an active fake destination and with conservative safety defaults (writes
+off, free SQL off, package allowlist `$TMP`). For a legacy single-target `/mcp`, set the destination
+names and PP flags in the landscape override. For experimental multi-target mode, uncomment the
+complete block in `mta.yaml`, build the MTAR, deploy once, then manage the marked destinations in the
+BTP Cockpit and restart the app. The base descriptor can start without a SAP target so destination
+setup does not have to race the CF deployment.
 
 ```bash
 # Clone the repo
@@ -103,6 +108,8 @@ modules:
     properties:
       SAP_BTP_DESTINATION: "my-sap-basic"
       SAP_BTP_PP_DESTINATION: "my-sap-pp"
+      SAP_PP_ENABLED: "true"
+      SAP_PP_STRICT: "true"
       # widen safety flags only when the landscape needs it
       SAP_ALLOW_WRITES: "true"
       SAP_ALLOWED_PACKAGES: "Z*,Y*,$TMP"
@@ -174,9 +181,9 @@ Why it matters, plus how to recover a client that's already stuck: [Stable DCR s
 The base `mta.yaml` configures the properties below (override any of them via `mta-overrides.mtaext`):
 - `ARC1_OAUTH_DCR_TTL_SECONDS: "0"` — DCR `client_id`s never expire (avoids periodic re-auth outages)
 - `SAP_TRANSPORT: http-streamable` — HTTP transport for MCP
-- `SAP_BTP_DESTINATION` / `SAP_BTP_PP_DESTINATION` — placeholders, MUST be overridden
-- `SAP_PP_ENABLED: "true"` — per-user principal propagation
-- `SAP_PP_STRICT: "true"` — recommended PP-only topology; API-key/non-JWT tool calls are rejected
+- no active `SAP_BTP_DESTINATION` / `SAP_BTP_PP_DESTINATION` placeholders — add them only for an intentional legacy `/mcp` target
+- `SAP_PP_ENABLED: "true"` and `SAP_PP_STRICT: "true"` — preserve strict per-user SAP identity for legacy targets across upgrades; explicitly set `SAP_PP_ENABLED: "false"` only for a shared-identity deployment
+- a commented experimental `ARC1_MULTI_TARGET_ENDPOINTS` block with cache/tool/rate prerequisites
 - `SAP_XSUAA_AUTH: "true"` — XSUAA OAuth for MCP clients
 - `SAP_ALLOW_*: "false"` and `SAP_ALLOWED_PACKAGES: "$TMP"` — safe defaults; widen only as needed
 - `ARC1_UI: "off"` — experimental UI is not enabled by default. Set `ARC1_UI: "web"` in `mta-overrides.mtaext` or via `cf set-env` to mount the read-only console at `/ui`; HTTP UI mode requires XSUAA, OIDC, or an admin API key and every `/ui/*` request requires admin scope.
@@ -642,8 +649,9 @@ Key differences from on-premise deployment:
 
 ## Multiple SAP systems — one front door
 
-ARC-1 is **one instance per SAP system** by design. If you deploy several (DEV / QA / PROD, or different
-releases), you don't have to configure N servers in every MCP client. [`arc-mcp-hub`](https://github.com/arc-mcp/mcp-hub)
+One ARC-1 instance per SAP system remains the production recommendation, especially for writes and
+hard isolation. If you deploy several (DEV / QA / PROD, or different releases), you don't have to
+configure N servers in every MCP client. [`arc-mcp-hub`](https://github.com/arc-mcp/mcp-hub)
 — a separate, open-source CF app deployed in the **same subaccount** — puts them behind **one URL and one
 login**, with path-scoped routes (`/dev/mcp`, `/qa/mcp`, …) so a client can't cross systems by accident.
 Each call still runs as the real user via principal propagation, and an optional `/all/mcp` endpoint
@@ -654,6 +662,12 @@ exposes every system through a single tool set + a `system` parameter (one tool 
     chain (destination → `granted-apps` → hub role-template → role collection), the `/all` endpoint, and a
     troubleshooting table. The most common trap is an incomplete grant chain → the client connects but
     shows **0 tools**.
+
+ARC-1 also has an experimental, default-off, mutation-free mode that discovers marked subaccount
+destinations inside one CF application. It is useful when tens or hundreds of read-only SAP clients
+make one app per client operationally expensive. See [Multi-Target Endpoints](multi-destination.md)
+and [Multi-Target Administration](multi-target-administration.md) for its strict PP, XSUAA, cache,
+authorization, and data/SQL limitations.
 
 ## SAP Documentation References
 

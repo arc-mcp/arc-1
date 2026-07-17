@@ -518,6 +518,43 @@ export function getToolRegistry(): ToolRegistry {
   return r;
 }
 
+export interface MultiTargetSapFailure {
+  code: 'SAP_SERVICE_INACTIVE' | 'SAP_AUTHENTICATION_FAILED' | 'SAP_AUTHORIZATION_DENIED';
+  event: 'sap_authentication_failed' | 'sap_authorization_failed';
+  message: string;
+}
+
+/** Convert only conclusive SAP responses into target-aware auth errors; ambiguous 403 stays authentication. */
+export function classifyMultiTargetSapError(
+  error: AdtApiError,
+  target: string,
+  toolName: string,
+): MultiTargetSapFailure | undefined {
+  const classification = classifySapDomainError(error.statusCode, error.responseBody, error.path);
+  if (classification?.category === 'icf-service-inactive') {
+    return {
+      code: 'SAP_SERVICE_INACTIVE',
+      event: 'sap_authentication_failed',
+      message: `An SAP service required by ${toolName} is inactive for target ${target}. Ask the SAP administrator to activate it, then try again now.`,
+    };
+  }
+  if (classification?.category === 'authorization') {
+    return {
+      code: 'SAP_AUTHORIZATION_DENIED',
+      event: 'sap_authorization_failed',
+      message: `SAP denied this operation for the propagated user on target ${target}. Grant the required SAP authorization, then try again now.`,
+    };
+  }
+  if (error.statusCode === 401 || error.statusCode === 403) {
+    return {
+      code: 'SAP_AUTHENTICATION_FAILED',
+      event: 'sap_authentication_failed',
+      message: `SAP authentication failed for target ${target} after principal propagation. Fix the user mapping, login, or PP setup, then try again now.`,
+    };
+  }
+  return undefined;
+}
+
 /**
  * Handle an MCP tool call.
  *
@@ -551,7 +588,8 @@ export async function handleToolCall(
     timestamp: new Date().toISOString(),
     level: 'info',
     event: 'tool_call_start',
-    destination: config.destinationName,
+    destination: config.targetId ? undefined : config.destinationName,
+    target: config.targetId,
     requestId: reqId,
     user,
     clientId,
@@ -709,7 +747,13 @@ export async function handleToolCall(
 
   // Run within request context so HTTP-level logs get the requestId
   return requestContext.run(
-    { requestId: reqId, user, tool: toolName, destination: config.destinationName },
+    {
+      requestId: reqId,
+      user,
+      tool: toolName,
+      destination: config.targetId ? undefined : config.destinationName,
+      target: config.targetId,
+    },
     async () => {
       try {
         const cacheSecurity = buildCacheSecurityContext(authInfo, isPerUserClient);
@@ -748,7 +792,8 @@ export async function handleToolCall(
           timestamp: new Date().toISOString(),
           level: result.isError ? 'error' : 'info',
           event: 'tool_call_end',
-          destination: config.destinationName,
+          destination: config.targetId ? undefined : config.destinationName,
+          target: config.targetId,
           requestId: reqId,
           user,
           clientId,
@@ -771,7 +816,8 @@ export async function handleToolCall(
           timestamp: new Date().toISOString(),
           level: 'error',
           event: 'tool_call_end',
-          destination: config.destinationName,
+          destination: config.targetId ? undefined : config.destinationName,
+          target: config.targetId,
           requestId: reqId,
           user,
           clientId,
@@ -782,6 +828,32 @@ export async function handleToolCall(
           errorClass: classifyError(err),
           errorMessage: message,
         });
+
+        if (config.targetId && err instanceof AdtApiError) {
+          const failure = classifyMultiTargetSapError(err, config.targetId, toolName);
+          if (failure) {
+            logger.emitAudit({
+              timestamp: new Date().toISOString(),
+              level: 'warn',
+              event: failure.event,
+              requestId: reqId,
+              user,
+              clientId,
+              target: config.targetId,
+              tool: toolName,
+              errorCode: failure.code,
+            });
+            return errorResult(
+              toolJson({
+                error: failure.code,
+                message: failure.message,
+                target: config.targetId,
+                requestId: reqId,
+                retryable: true,
+              }),
+            );
+          }
+        }
 
         return errorResult(formatErrorForLLM(err, message, toolName, args, config));
       }

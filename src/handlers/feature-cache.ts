@@ -5,8 +5,9 @@
  * process can serve multiple SAP systems (multi-destination mode). The default
  * key ('') is used in single-destination mode — the historical behavior.
  *
- * Readers usually omit the destination argument: it is resolved from the
- * request context (AsyncLocalStorage), which dispatch populates per tool call.
+ * Readers usually omit the key argument: it is resolved from the request
+ * context (AsyncLocalStorage), which dispatch populates per tool call. Public
+ * SID/client target IDs take precedence over legacy internal destination names.
  * Writers (the startup/first-request probe) pass the destination explicitly.
  */
 
@@ -18,13 +19,14 @@ interface FeatureStore {
   discovery: Map<string, string[]>;
 }
 
-/** Key for single-destination mode (no SAP_BTP_DESTINATIONS). */
+/** Key for legacy single-target mode. Multi-target feature state uses the public SID/client ID. */
 const DEFAULT_KEY = '';
 
 const stores = new Map<string, FeatureStore>();
 
 function storeFor(destination?: string): FeatureStore {
-  const key = destination ?? getCurrentContext()?.destination ?? DEFAULT_KEY;
+  const context = getCurrentContext();
+  const key = destination ?? context?.target ?? context?.destination ?? DEFAULT_KEY;
   let store = stores.get(key);
   if (!store) {
     store = { features: undefined, discovery: new Map() };

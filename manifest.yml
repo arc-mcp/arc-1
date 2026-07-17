@@ -55,8 +55,18 @@ applications:
       # ARC1_ALLOWED_ORIGINS: "https://your-ui.example.com"
       # Logging
       SAP_VERBOSE: "true"
+      # Experimental destination-discovered multi-target alternative:
+      # remove SAP_URL/SAP_CLIENT/SAP_BTP_DESTINATION above, bind XSUAA,
+      # mark subaccount PP destinations with arc1.enabled=true, then enable:
+      # ARC1_MULTI_TARGET_ENDPOINTS: "true"
+      # SAP_XSUAA_AUTH: "true"
+      # ARC1_CACHE: "none"
+      # ARC1_TOOL_MODE: "standard"
+      # ARC1_MAX_CONCURRENT: "10"
+      # ARC1_RATE_LIMIT: "120"
+      # See docs_page/multi-target-administration.md.
     services:
       - arc1-connectivity
       - arc1-destination
-      # - arc1-xsuaa       # Uncomment for XSUAA OAuth
+      # - arc1-xsuaa       # Required for experimental multi-target; optional otherwise
       # - arc1-auditlog    # Uncomment for BTP Audit Log

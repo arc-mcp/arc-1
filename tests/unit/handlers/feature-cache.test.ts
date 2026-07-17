@@ -46,6 +46,16 @@ describe('feature-cache (destination keyed)', () => {
     expect(noDest?.systemType).toBe('onprem');
   });
 
+  it('uses the public target context as the multi-target feature key', () => {
+    setCachedFeatures(features({ systemType: 'btp' }), 'A4H/100');
+    setCachedFeatures(features({ systemType: 'onprem' }), 'INTERNAL_DESTINATION');
+    const inRequest = requestContext.run(
+      { requestId: 'REQ-TARGET', target: 'A4H/100', destination: 'INTERNAL_DESTINATION' },
+      () => getCachedFeatures(),
+    );
+    expect(inRequest?.systemType).toBe('btp');
+  });
+
   it('keys the discovery map per destination with context fallback', () => {
     setCachedDiscovery(new Map([['/sap/bc/adt/ddic/tables', ['application/xml']]]), 'S4D');
     expect(isTablesEndpointAvailable('S4D')).toBe(true);

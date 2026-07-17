@@ -1,8 +1,44 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createDestinationMcpHandler } from '../../../src/server/http.js';
+import { canonicalDestinationUrl, opaqueDestinationValue } from '../../../src/server/destination-discovery.js';
+import { DestinationRegistry } from '../../../src/server/destination-registry.js';
+import {
+  createAggregateMcpHandler,
+  createPinnedTargetMcpHandler,
+  resolveMcpHttpRateLimit,
+  targetCatalog,
+} from '../../../src/server/http.js';
+import { DEFAULT_CONFIG } from '../../../src/server/types.js';
+
+function registry() {
+  const url = canonicalDestinationUrl('http://a4h.internal:50000') as string;
+  return DestinationRegistry.fromDiscovery(
+    {
+      subaccount: [
+        {
+          name: 'ARC1_A4H_100_PP',
+          type: 'HTTP',
+          urlState: 'valid',
+          urlFingerprint: opaqueDestinationValue(url),
+          authentication: 'PrincipalPropagation',
+          proxyType: 'OnPremise',
+          sapSysId: 'A4H',
+          sapClient: '100',
+          description: 'A4H dev',
+          hasCloudConnectorLocationId: false,
+          arcProperties: { 'arc1.enabled': 'true' },
+        },
+      ],
+      instanceNames: [],
+      scannedCount: 1,
+      unrelatedCount: 0,
+      arcAdjacentWithoutMarkerCount: 0,
+    },
+    DEFAULT_CONFIG,
+  );
+}
 
 function mockRes() {
-  const res = {
+  return {
     statusCode: 0,
     body: undefined as unknown,
     headersSent: false,
@@ -16,55 +52,77 @@ function mockRes() {
       return this;
     },
   };
-  return res;
 }
 
-function mockReq(dest: string) {
-  return { params: { dest }, method: 'POST', body: { jsonrpc: '2.0' }, headers: {} };
-}
-
-describe('createDestinationMcpHandler', () => {
-  const names = ['S4D', 'S4P'];
-
-  it('404s for a destination not on the allowlist and never resolves it', async () => {
-    const resolveFactory = vi.fn();
-    const handler = createDestinationMcpHandler({ names, resolveFactory });
-    const res = mockRes();
-    await handler(mockReq('OTHER') as never, res as never);
-    expect(res.statusCode).toBe(404);
-    expect(String((res.body as { error: string }).error)).toContain('S4D, S4P');
-    expect(resolveFactory).not.toHaveBeenCalled();
+describe('multi-target HTTP helpers', () => {
+  it('preserves the derived MCP edge cap and supports an explicit override or disable', () => {
+    expect(resolveMcpHttpRateLimit({ authRateLimit: 20 })).toBe(600);
+    expect(resolveMcpHttpRateLimit({ authRateLimit: 40 })).toBe(1200);
+    expect(resolveMcpHttpRateLimit({ authRateLimit: 0 })).toBe(0);
+    expect(resolveMcpHttpRateLimit({ authRateLimit: 40, mcpHttpRateLimit: 1000 })).toBe(1000);
+    expect(resolveMcpHttpRateLimit({ authRateLimit: 40, mcpHttpRateLimit: 0 })).toBe(0);
   });
 
-  it('502s with the reason when destination initialization fails', async () => {
-    const resolveFactory = vi.fn(async () => {
-      throw new Error('Destination Service returned HTTP 404');
+  it('returns a generic 404 for a valid but absent target without enumerating membership', async () => {
+    const pinnedFactory = vi.fn();
+    const handler = createPinnedTargetMcpHandler({
+      registry: registry(),
+      aggregateFactory: vi.fn() as never,
+      pinnedFactory,
     });
-    const handler = createDestinationMcpHandler({ names, resolveFactory });
     const res = mockRes();
-    await handler(mockReq('S4D') as never, res as never);
-    expect(resolveFactory).toHaveBeenCalledWith('S4D');
-    expect(res.statusCode).toBe(502);
-    expect(String((res.body as { error: string }).error)).toContain('failed to initialize');
-    expect(String((res.body as { error: string }).error)).toContain('404');
+    await handler({ path: '/A4H/200/mcp', method: 'POST', body: {}, headers: {} } as never, res as never);
+    expect(res.statusCode).toBe(404);
+    expect(res.body).toEqual({ error: 'Not found' });
+    expect(pinnedFactory).not.toHaveBeenCalled();
   });
 
-  it('resolves the factory for an allowlisted destination and serves the request', async () => {
-    // The factory's server.connect throwing a sentinel proves the request
-    // reached the MCP-serving path with THIS destination's server factory.
-    const sentinel = new Error('sentinel: connect reached');
+  it('serves an accepted pinned target', async () => {
     const serverFactory = vi.fn(() => ({
       connect: vi.fn(async () => {
-        throw sentinel;
+        throw new Error('sentinel: connect reached');
       }),
     }));
-    const resolveFactory = vi.fn(async () => serverFactory as never);
-    const handler = createDestinationMcpHandler({ names, resolveFactory });
+    const pinnedFactory = vi.fn(() => serverFactory as never);
+    const handler = createPinnedTargetMcpHandler({
+      registry: registry(),
+      aggregateFactory: vi.fn() as never,
+      pinnedFactory,
+    });
     const res = mockRes();
-    await handler(mockReq('S4P') as never, res as never);
-    expect(resolveFactory).toHaveBeenCalledWith('S4P');
-    expect(serverFactory).toHaveBeenCalledTimes(1);
-    // serveMcpRequest catches the sentinel and responds 500
+    await handler({ path: '/A4H/100/mcp', method: 'POST', body: {}, headers: {} } as never, res as never);
+    expect(pinnedFactory).toHaveBeenCalledWith(expect.objectContaining({ target: 'A4H/100' }));
     expect(res.statusCode).toBe(500);
+  });
+
+  it('returns 503 for pinned and aggregate routes when discovery is unavailable', async () => {
+    const unavailable = DestinationRegistry.unavailable({
+      code: 'REGISTRY_DISCOVERY_ERROR',
+      message: 'safe failure',
+    });
+    const multi = {
+      registry: unavailable,
+      aggregateFactory: vi.fn() as never,
+      pinnedFactory: vi.fn() as never,
+    };
+    for (const [handler, path] of [
+      [createPinnedTargetMcpHandler(multi), '/A4H/100/mcp'],
+      [createAggregateMcpHandler(multi), '/multi/mcp'],
+    ] as const) {
+      const res = mockRes();
+      await handler({ path, method: 'POST', body: {}, headers: {} } as never, res as never);
+      expect(res.statusCode).toBe(503);
+      expect(res.body).toEqual({ error: 'Multi-target registry unavailable' });
+    }
+  });
+
+  it('keeps read and admin catalog views separate and secret-free', () => {
+    const current = registry();
+    const read = targetCatalog(current, 'https://arc.example', false);
+    const admin = targetCatalog(current, 'https://arc.example', true);
+    expect(read).not.toHaveProperty('admin');
+    expect(admin).toHaveProperty('admin.destinations');
+    expect(read).toHaveProperty('targets.0.pinnedEndpoint', 'https://arc.example/A4H/100/mcp');
+    expect(JSON.stringify(admin)).not.toContain('a4h.internal');
   });
 });

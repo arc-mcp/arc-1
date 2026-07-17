@@ -13,8 +13,10 @@ export interface RequestContext {
   requestId: string;
   user?: string;
   tool?: string;
-  /** Multi-destination mode: name of the BTP destination this request is bound to. */
+  /** Legacy multi-destination/internal runtime key. Never expose it as a public target. */
   destination?: string;
+  /** Public immutable SID/client target for multi-target calls. */
+  target?: string;
 }
 
 export const requestContext = new AsyncLocalStorage<RequestContext>();

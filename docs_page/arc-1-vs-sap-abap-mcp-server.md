@@ -312,7 +312,7 @@ user being authorized.
 | Inline completion / form editors | ❌ | ✅ (in the IDE) |
 | Server-side AI model | ❌ (bring your own LLM) | ✅ Joule (licensed; model not publicly pinned) |
 | Rate limiting | ✅ (3 layers) | ❌ |
-| Multiple SAP systems in one server | ❌ (one system per instance) | ✅ (`destination` arg per tool) |
+| Multiple SAP targets in one server | 🧪 BTP CF read-only v1: pinned URLs or explicit `target`; single-target remains default | ✅ (`destination` arg per tool) |
 | Token efficiency (hyperfocused / context compression / method surgery) | ✅ | ❌ (verbose tool descriptions) |
 
 ⚠️ = available but indirectly / partially, or only inside the IDE.

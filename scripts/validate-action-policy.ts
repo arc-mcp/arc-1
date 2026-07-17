@@ -57,6 +57,11 @@ function extractToolActions(source: string): { tool: string; actions: string[] }
   // instead of regex-scanning schemas.ts, which no longer declares them inline.
   results.push({ tool: 'SAPRead', actions: [...SAPREAD_TYPES_ONPREM] });
 
+  // SAPTargets is a synthetic aggregate-only tool defined outside handlers/schemas.ts.
+  // Keep it in the same bidirectional policy validation so deleting its read policy
+  // or leaving a stale policy row still fails CI.
+  results.push({ tool: 'SAPTargets', actions: [] });
+
   return results;
 }
 

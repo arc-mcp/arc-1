@@ -28,7 +28,7 @@ Built for organizations that need AI-assisted SAP development with guardrails. I
 - **Writes restricted to `$TMP` when enabled** — only local/throwaway objects; writing to transportable packages requires explicit `--allowed-packages`
 - **HTTP security headers (helmet) on by default** — HSTS, CSP, X-Frame-Options, CORP, X-Content-Type-Options. COOP is deliberately not set so popup-based OAuth flows (Copilot Studio) keep working. No flag to disable.
 - **Opt-in CORS for browser MCP clients** — `ARC1_ALLOWED_ORIGINS` (comma-separated, exact match). Off by default; native MCP clients don't need it
-- **Layered rate limiting** — three layers out of the box: per-IP OAuth/`/mcp` edge (Layer 1, default 20/min/IP, **on**), per-user MCP quota (Layer 2, **off by default** — multi-user deployments opt in via `ARC1_RATE_LIMIT=60`), server-wide SAP-bound semaphore (Layer 3, default 10, **on**). Honors `Retry-After` on 429/503 from SAP / BTP gateways. Two operator env vars; per-endpoint OAuth ceilings are constants in code. Closes CodeQL alert `js/missing-rate-limiting`. See the [Rate Limiting Guide](https://docs.arc-1-mcp.com/rate-limiting/)
+- **Layered rate limiting** — three layers out of the box: per-IP OAuth and shared MCP HTTP edge limits (Layer 1; MCP inherits the historical derived cap unless `ARC1_MCP_HTTP_RATE_LIMIT` overrides it), per-user MCP quota (Layer 2, **off by default** — multi-user deployments opt in via `ARC1_RATE_LIMIT=60`), and a server-wide SAP-bound semaphore (Layer 3, default 10, **on**). Honors `Retry-After` on 429/503 from SAP / BTP gateways. See the [Rate Limiting Guide](https://docs.arc-1-mcp.com/rate-limiting/)
 - **Supply-chain security** — Dependabot (npm + GitHub Actions + Docker, weekly + same-day security advisories), `npm audit --audit-level=high` PR gate, GitHub Dependency Review on every PR, CodeQL SAST, Trivy container scanning (gating on release, advisory on dev), all third-party GitHub Actions pinned to commit SHA, [`SECURITY.md`](SECURITY.md) policy with severity-tiered SLAs. Image and npm package both ship with [provenance attestations](https://docs.npmjs.com/generating-provenance-statements). See the [security guide §13](https://docs.arc-1-mcp.com/security-guide/#13-dependency--supply-chain-security)
 
 ### Authentication
@@ -44,9 +44,9 @@ Built for organizations that need AI-assisted SAP development with guardrails. I
 Deploy ARC-1 as a Cloud Foundry app on SAP BTP with full platform integration:
 
 - **Destination Service** — connect to SAP systems via managed destinations
-- **Experimental multi-target work** — a proposed default-off, mutation-free BTP mode discovers
-  destinations marked `arc1.enabled=true` and exposes pinned SID/client plus aggregate endpoints; it
-  is not available in a released build yet ([design](docs_page/multi-destination.md))
+- **Experimental multi-target mode** — the unreleased, default-off, mutation-free BTP mode discovers
+  destinations marked `arc1.enabled=true` and exposes pinned SID/client plus aggregate endpoints
+  ([design](docs_page/multi-destination.md), [administration](docs_page/multi-target-administration.md))
 - **Cloud Connector** — reach on-premise systems through the connectivity proxy
 - **Per-user destinations** — user identity forwarded end-to-end via X.509 certificates for on-premise SAP, or exchanged for an ABAP bearer token for BTP ABAP Environment
 - **XSUAA OAuth proxy** — MCP clients authenticate via standard OAuth, ARC-1 handles the BTP token exchange

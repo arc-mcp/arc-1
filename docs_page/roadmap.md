@@ -2087,13 +2087,21 @@ The following features are tracked but not planned for near-term implementation.
 | **Effort** | L (1-2 weeks) |
 | **Risk** | Medium — significant architecture change |
 | **Usefulness** | Medium — needed for enterprises with multiple SAP systems |
-| **Status** | Not started |
+| **Status** | Experimental v1 implemented behind `ARC1_MULTI_TARGET_ENDPOINTS` |
 
-**What:** Support multiple SAP systems from a single ARC-1 instance. Each MCP request includes a `sap_system_id` parameter. ARC-1 routes to the appropriate system based on configuration.
+**What:** Support many BTP subaccount destinations from one ARC-1 instance. Every accepted target gets
+a pinned `/<SID>/<CLIENT>/mcp` route; `/multi/mcp` adds a required `target` argument to each
+SAP-contacting tool. Destinations are discovered at startup when they explicitly set
+`arc1.enabled=true`.
 
 **Why:** Enterprises have multiple SAP systems (DEV, QAS, PRD, sandboxes).
 
-**Why not:** Fundamentally changes the architecture — ARC-1 is a single-system gateway by design. Multi-system routing adds routing logic, session management per system, namespace separation, and tenant isolation complexity. If routing breaks, users from system A could theoretically access system B's data. Better handled at infrastructure level: run one ARC-1 per SAP system and use a load balancer or Kubernetes service mesh to route clients. This follows the 12-factor app pattern and keeps each instance simple and secure.
+**V1 boundary:** This is a default-off BTP/CF exception to the one-target recommendation, not a new
+general deployment default. It is XSUAA-only, strict-PP, mutation-free, cache-free, and supports
+source/metadata reads plus separately opted-in data preview and SQL. There are no per-target XSUAA
+roles; separate instances or the MCP hub remain the answer for writes, pre-SAP target ACLs, or hard
+failure/security isolation. See [ADR-0006](../docs/adr/0006-experimental-read-only-multi-target.md)
+and the [administrator guide](multi-target-administration.md).
 
 ---
 
