@@ -134,9 +134,9 @@ function syntheticTarget(index: number): TargetDescriptor {
   };
 }
 
-function aggregateDefinitions(targetCount: number): ToolDefinition[] {
+function aggregateDefinitions(targetCount: number, config: ServerConfig = DEFAULT_CONFIG): ToolDefinition[] {
   const targets = Array.from({ length: targetCount }, (_, index) => syntheticTarget(index));
-  const tools = multiTargetToolDefinitions(getToolDefinitions(DEFAULT_CONFIG), DEFAULT_CONFIG).map((tool) =>
+  const tools = multiTargetToolDefinitions(getToolDefinitions(config), config).map((tool) =>
     injectTargetSchema(tool, targets),
   );
   if (targetCount > 1) tools.push(sapTargetsDefinition());
@@ -216,6 +216,13 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       budget: MULTI_TARGET_BUDGET,
     }),
   ),
+  {
+    name: 'multi-target-aggregate-256-data-sql',
+    config: { ...DEFAULT_CONFIG, allowDataPreview: true, allowFreeSQL: true },
+    textSearchAvailable: true,
+    definitions: aggregateDefinitions(256, { ...DEFAULT_CONFIG, allowDataPreview: true, allowFreeSQL: true }),
+    budget: MULTI_TARGET_BUDGET,
+  },
 ];
 
 export function estimateTokens(bytes: number): number {

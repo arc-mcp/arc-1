@@ -92,10 +92,14 @@ describe('multi-target tool surface', () => {
     expect(multiTargetInvocationDecision('Custom_Read', {}, DEFAULT_CONFIG)).toBe('forbidden');
   });
 
-  it('defines SAPTargets as a strict, read-only, non-SAP catalog tool', () => {
+  it('points target discovery at SAPTargets and keeps its schema strict', () => {
+    const injected = injectTargetSchema(getToolDefinitions(DEFAULT_CONFIG)[0], [target(0)]);
+    expect(property(injected, 'target').description).toContain('Call SAPTargets');
     const definition = sapTargetsDefinition();
     expect(definition.name).toBe('SAPTargets');
     expect(definition.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false });
     expect(definition.inputSchema).toMatchObject({ additionalProperties: false });
+    expect(property(definition, 'query')).toMatchObject({ type: 'string', maxLength: 160 });
+    expect(property(definition, 'offset')).toMatchObject({ type: 'integer', minimum: 0, maximum: 1_000_000 });
   });
 });

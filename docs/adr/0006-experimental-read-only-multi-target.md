@@ -38,8 +38,17 @@ may coexist and retain its current policy. Strict PP is enforced per discovered 
 API-key/direct-OIDC behavior is not changed accidentally.
 
 The aggregate endpoint requires an explicit `target` on every SAP-contacting call. It has no default,
-remembered, or session target. `SAPTargets` supplies sanitized target IDs and descriptions when more
-than one target exists. Selected-target policy and SAP authorization are checked again on every call.
+remembered, or session target. `SAPTargets` supplies configured IDs and descriptions when multiple
+targets exist; admins also receive secret-safe registry state and exception diagnostics, including
+in zero/one/failure states, and can query matching active details. Admin diagnostics use bounded,
+deterministic paging with explicit truncation/next-offset metadata. `SAPTargets` is aggregate-only
+and never appears on pinned endpoints. Aggregate schemas use exact target enums through 16 targets
+and a SID/client pattern from 17 through 256; runtime membership remains authoritative.
+Selected-target policy and SAP authorization are checked again on every call.
+
+The aggregate MCP transport remains reachable during registry-wide discovery failure so an admin can
+call `SAPTargets`; other aggregate tools fail with a structured registry error, and pinned routes are
+unavailable until restart. No standalone HTTP target-catalog endpoint is exposed.
 
 ## Accepted residual risk
 
@@ -78,5 +87,5 @@ must be restricted before SAP is contacted.
   complexity without a reliable external entitlement source.
 - **Probe and cache per-user target availability:** access changes over time, failures can poison
   shared state, and the cache would be incomplete after deployment.
-- **Browser HTML catalog without a session design:** bearer-only XSUAA auth cannot support normal
-  browser navigation safely; JSON `/targets` is sufficient for v1.
+- **Separate HTTP/browser catalog:** it duplicates the MCP discovery surface and needs another auth,
+  rate-limit, and payload contract. V1 keeps one role-sensitive `SAPTargets` tool instead.

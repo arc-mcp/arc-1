@@ -134,14 +134,14 @@ export function isCopilotJsonRpc(req: Request): boolean {
 export function isMcpHttpTraffic(req: Request): boolean {
   // Express string routes accept one or more trailing delimiters in the default
   // non-strict mode. Normalize them here so an accepted alias cannot skip the
-  // root-mounted bucket before reaching `/mcp`, `/targets`, or `/authorize`.
+  // root-mounted bucket before reaching `/mcp` or `/authorize`.
   const requestPath = req.path.length > 1 ? req.path.replace(/\/+$/, '') : req.path;
   // Express string routes are case-insensitive by default. Normalize those
-  // aliases for the limiter too; otherwise `/MCP`, `/TARGETS`, or Copilot
+  // aliases for the limiter too; otherwise `/MCP` or Copilot
   // JSON-RPC on `/AUTHORIZE` can reach the same handler without consuming the
   // root edge bucket. The pinned-target regex stays deliberately uppercase.
   const staticPath = requestPath.toLowerCase();
-  if (staticPath === '/mcp' || staticPath === '/multi/mcp' || staticPath === '/targets') return true;
+  if (staticPath === '/mcp' || staticPath === '/multi/mcp') return true;
   if (/^\/[A-Z][A-Z0-9]{2}\/\d{3}\/mcp$/.test(requestPath)) return true;
   return staticPath === '/authorize' && isCopilotJsonRpc(req);
 }

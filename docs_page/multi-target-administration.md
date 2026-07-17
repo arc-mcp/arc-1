@@ -83,25 +83,23 @@ Uncomment the complete multi-target block under `modules[].properties`:
 properties:
   # Experimental destination-discovered multi-target mode
   ARC1_MULTI_TARGET_ENDPOINTS: "true"
-  SAP_TRANSPORT: http-streamable
-  SAP_XSUAA_AUTH: "true"
   ARC1_CACHE: none
-  ARC1_TOOL_MODE: standard
-  ARC1_UI: "off"
 
-  # Instance ceiling: source reads only by default
-  SAP_ALLOW_WRITES: "false"
-  SAP_ALLOW_DATA_PREVIEW: "false"
-  SAP_ALLOW_FREE_SQL: "false"
-  SAP_ALLOW_TRANSPORT_WRITES: "false"
-  SAP_ALLOW_GIT_WRITES: "false"
+  # Instance-wide maximum; every destination must separately opt in.
+  SAP_ALLOW_DATA_PREVIEW: "true"
+  SAP_ALLOW_FREE_SQL: "true"
 
-  # Recommended starting limits; adjust with Basis after load testing
-  ARC1_MAX_CONCURRENT: "10"
-  ARC1_RATE_LIMIT: "120"
+  # Non-default limits for 1–5 active beta users.
   ARC1_AUTH_RATE_LIMIT: "30"
   ARC1_MCP_HTTP_RATE_LIMIT: "1000"
+  ARC1_RATE_LIMIT: "120"
 ```
+
+The base MTA already sets HTTP transport, XSUAA authentication, UI off, and all mutation ceilings to
+false; standard tool mode and the concurrency limit of 10 are application defaults. Do not repeat
+those values in the extension. `ARC1_CACHE=none` is different: the global default is not `none`, and
+multi-target v1 refuses to start with another cache mode. The rate values above are optional starting
+overrides.
 
 The module must bind XSUAA, Destination, and Connectivity service instances. Do not configure a
 cookie, service key, direct `SAP_URL`, plugin path, web UI, or hyperfocused mode for the multi-target
@@ -139,7 +137,9 @@ properties:
 ```
 
 Then enable the same capability only on the destinations that need it. SQL remains subject to the
-existing SQL/data XSUAA scopes and SAP authorization.
+existing SQL/data XSUAA scopes and SAP authorization. Setting an instance value to `true` only raises
+the maximum: it does not turn that capability on for a destination whose matching `arc1.allow_*`
+property is absent or false. Setting the instance value to `false` blocks it for every target.
 
 Do not enable `SAP_ALLOW_WRITES` for the purpose of multi-target access. V1 removes mutation tools
 and actions from multi-target routes even if the legacy `/mcp` target uses writes. There is no
@@ -147,7 +147,7 @@ supported full-write destination configuration or write example for multi-target
 
 ## 2. Create one destination per system/client
 
-The minimum recommended destination is:
+The recommended read/data/SQL destination for this setup is:
 
 ```properties
 Name=ARC1_A4H_100_PP
@@ -159,11 +159,14 @@ sap-sysid=A4H
 sap-client=100
 Description=A4H development client 100
 arc1.enabled=true
+arc1.allow_data_preview=true
+arc1.allow_free_sql=true
 ```
 
 Rules:
 
-- `arc1.enabled=true` is the only required ARC-1-specific marker.
+- `arc1.enabled=true` is the only required ARC-1-specific marker. The two `arc1.allow_*` properties
+  shown here are recommended for a read/data/SQL target and may be omitted independently.
 - `sap-sysid` is the standard SAP property and must be exactly three uppercase alphanumeric
   characters, beginning with a letter. `A4H` is valid; `A-4`, `A_4`, and `a4h` are not.
 - `sap-client` is required and must contain exactly three digits. ARC-1 never assumes client 100.
@@ -242,19 +245,21 @@ cf restart <arc1-app-name>
 Then verify:
 
 1. `/health` reports the multi-target component as ready.
-2. Admin `/targets` shows the expected snapshot revision and target count.
+2. Admin `SAPTargets` shows the expected snapshot revision and target count.
 3. Every active app instance reports the same revision. To inspect one instance through the CF
-   router, send `X-CF-APP-INSTANCE: <app-guid>:<index>` with the authenticated `/targets` request.
+   router, send `X-CF-APP-INSTANCE: <app-guid>:<index>` with the authenticated aggregate MCP request
+   that calls `SAPTargets`.
 4. A read user can connect to a pinned or aggregate endpoint.
 
 No `mbt build`, new MTAR, or `cf deploy` is required for destination-only changes.
 
 Discovery or registry-wide configuration errors keep `/health` at 200 with
 `components.multiTarget.status="error"` so CF does not crash-loop the application and admin
-`/targets` stays available. A successfully built snapshot reports `ready`, including when it has
-zero active targets or individually quarantined destinations. The admin catalog alone reports
-`degraded` when entries are quarantined. Affected MCP routes return 503 after a registry-wide error
-until the configuration is fixed and the app is restarted.
+`SAPTargets` stays available through `/multi/mcp`. A successfully built snapshot reports `ready`,
+including when it has zero active targets or individually quarantined destinations. The admin
+catalog alone reports `degraded` when entries are quarantined. Pinned routes return 503 after a
+registry-wide error; other aggregate tools return a structured registry error until the
+configuration is fixed and the app is restarted.
 
 At request time ARC-1 resolves the PP destination again for the current user and compares its safe
 connection and ARC-1 policy fingerprint with the startup snapshot. The lookup bypasses the SDK cache,
@@ -270,10 +275,10 @@ XSUAA verifier, roles, scopes, and token claims do not change.
 
 | Access | Required effect |
 |---|---|
-| Viewer/read | Opens `/targets`, all accepted pinned endpoints, and `/multi/mcp`; permits source/metadata reads. |
+| Viewer/read | Opens all accepted pinned endpoints and `/multi/mcp`; permits source/metadata reads and `SAPTargets` when multiple targets are active. |
 | Data Viewer/data | Adds data-preview operations where both instance and destination allow them. |
 | SQL User/sql | Adds `SAPQuery` where both instance and destination allow it; use the existing role collection that composes read/data as required. |
-| Admin | Adds the expanded `/targets` diagnostic view; multi-target remains mutation-free. |
+| Admin | Adds expanded `SAPTargets` diagnostics, including at zero/one targets or registry failure; multi-target remains mutation-free. |
 
 The four checks remain independent:
 
@@ -293,7 +298,6 @@ Both endpoint styles exist whenever `ARC1_MULTI_TARGET_ENDPOINTS=true`:
 |---|---|
 | `https://<arc1-route>/A4H/100/mcp` | Target-pinned connection. Tools keep their normal schemas and cannot switch targets. |
 | `https://<arc1-route>/multi/mcp` | One connection for all targets. Each SAP-contacting tool call requires an explicit `target`. |
-| `https://<arc1-route>/targets` | Protected JSON catalog; expands for admin. |
 
 Bare `/mcp` is reserved for an explicitly configured legacy single target. ARC-1 never assigns it to
 the first or only discovered destination.
@@ -326,86 +330,46 @@ Create `.vscode/mcp.json`:
 }
 ```
 
-VS Code opens the normal XSUAA OAuth/DCR flow. The aggregate server exposes `SAPTargets` when more
-than one target is active, so the LLM can list target IDs and their descriptions before choosing one.
-`SAPTargets` does not report whether the current user is mapped or authorized in SAP.
+VS Code opens the normal XSUAA OAuth/DCR flow. Call `SAPTargets` on the aggregate connection to list
+IDs and descriptions. The catalog does not report whether the current user is mapped or authorized
+in SAP.
 
-## 6. Read and admin target views
+## 6. Read and admin `SAPTargets` views
 
-`/targets` requires at least the XSUAA read scope. Nothing in the target inventory is public. Public
-health and OAuth metadata remain generic and registry-independent. V1 does not add an HTML root:
-ordinary browser navigation cannot attach the bearer token, and a cookie/session login would add UI
-and CSRF scope.
-
-Responses set `Cache-Control: no-store` and `Vary: Authorization`.
+`SAPTargets` is an aggregate-only MCP tool protected by the existing read scope, MCP HTTP limiter,
+per-user tool limiter, deny actions, request IDs, and audit events. There is no separate `/targets`
+HTTP endpoint or public inventory. Readers see the tool when more than one target is active; admins
+see it at zero, one, or many targets and when discovery fails, so it remains the recovery surface.
+Pinned endpoints never expose this tool.
 
 ### Read user
 
-The JSON view contains only accepted public targets and connection information:
+With no arguments, the reader result contains only accepted public IDs and descriptions:
 
 ```json
-{
-  "aggregateEndpoint": "https://arc1.example/multi/mcp",
-  "targets": [
-    {
-      "target": "A4H/100",
-      "description": "A4H development client 100",
-      "pinnedEndpoint": "https://arc1.example/A4H/100/mcp",
-      "aggregateEndpoint": "https://arc1.example/multi/mcp"
-    }
-  ],
-  "clientConfig": {
-    "aggregate": {
-      "vscode": {
-        "servers": {
-          "arc-1-multi": {
-            "type": "http",
-            "url": "https://arc1.example/multi/mcp"
-          }
-        }
-      },
-      "githubCopilot": {
-        "servers": {
-          "arc-1-multi": {
-            "type": "http",
-            "url": "https://arc1.example/multi/mcp"
-          }
-        }
-      }
-    },
-    "pinned": {
-      "A4H-100": {
-        "vscode": {
-          "servers": {
-            "arc-1-A4H-100": {
-              "type": "http",
-              "url": "https://arc1.example/A4H/100/mcp"
-            }
-          }
-        },
-        "githubCopilot": {
-          "servers": {
-            "arc-1-A4H-100": {
-              "type": "http",
-              "url": "https://arc1.example/A4H/100/mcp"
-            }
-          }
-        }
-      }
-    }
-  }
-}
+[
+  { "target": "A4H/100", "description": "A4H development client 100" }
+]
 ```
 
-It does not expose destination names, SAP URLs, target policy, rejected entries, or SAP user state.
+Optional `query` is a case-insensitive filter over target ID and description. Descriptions are
+administrator-controlled labels, never model instructions. The result does not expose destination
+names, SAP URLs, target policy, rejected entries, or SAP user state.
 
 ### Admin user
 
-The same response adds an `admin` object. The example below shows one active destination; disabled,
-ignored, and quarantined ARC-related destinations use the same flat diagnostic shape:
+The admin response wraps the same public target list and adds registry state. Without `query`,
+`admin.destinations` pages through non-active ARC-related destinations and their reasons; public
+targets are active by definition. With `query`, it pages through matching diagnostics, including
+active destinations, and filters the public target list by the same query. A query can match target
+ID, description, destination name, status, reason code, or safe message. This avoids a very large
+MCP result in 100–256-target estates. The example below represents a query matching `A4H/100`.
 
 ```json
 {
+  "targets": [
+    { "target": "A4H/100", "description": "A4H development client 100" }
+  ],
   "admin": {
     "state": "ready",
     "source": "btp-subaccount",
@@ -422,6 +386,11 @@ ignored, and quarantined ARC-related destinations use the same flat diagnostic s
       "ignored": 0,
       "quarantined": 0
     },
+    "diagnosticMode": "matching",
+    "diagnosticOffset": 0,
+    "diagnosticTotal": 1,
+    "diagnosticReturned": 1,
+    "diagnosticsTruncated": false,
     "destinations": [
       {
         "destinationName": "ARC1_A4H_100_PP",
@@ -447,21 +416,24 @@ ignored, and quarantined ARC-related destinations use the same flat diagnostic s
           "allowDataPreview": false,
           "allowFreeSQL": false
         },
-        "limitedByInstance": false,
-        "routes": {
-          "pinned": "https://arc1.example/A4H/100/mcp",
-          "aggregate": "https://arc1.example/multi/mcp"
-        }
+        "limitedByInstance": false
       }
     ]
   }
 }
 ```
 
-The admin list includes every destination containing a property whose key starts with `arc1.`
-case-insensitively, including disabled, invalid, and quarantined entries. Supported keys must still
-use the exact lowercase spelling, so a wrong-case key is shown as an error rather than silently
-disappearing. The response does not list unrelated destination names.
+Admin diagnostics are deterministically paged at 50 rows. If `diagnosticNextOffset` is present,
+repeat the same `query` with `offset` set to that value. `offset` is admin-only, accepts integers
+from 0 through 1,000,000, and makes every matching configured destination reachable without one
+unbounded MCP result.
+
+Across the unfiltered admin diagnostic pages, the public active-target list plus the exception
+diagnostics account for every destination containing a property whose key starts with `arc1.`
+case-insensitively.
+Supported keys must still use the exact lowercase spelling, so a wrong-case key is shown as an error
+rather than silently disappearing. The response does not list unrelated destination names. Use
+`query` to retrieve the full safe diagnostic for a particular active target or destination.
 
 `arcAdjacent` counts destinations with `sap-sysid` or `sap-client` but no `arc1.*` key. Their names
 remain hidden; the count tells an administrator that a likely SAP destination may simply be missing
@@ -542,6 +514,12 @@ All targets share one `ARC1_MAX_CONCURRENT` semaphore. V1 does not reserve capac
 busy system can temporarily occupy the shared limit. Per-SID fairness is deferred until operational
 evidence justifies the added scheduler complexity.
 
+The MTA value is a process-wide upper bound on simultaneous SAP requests, not a per-target allowance.
+Ten targets do not receive ten slots each: all pinned, aggregate, and optional legacy calls compete
+for the same 10 default slots and excess calls wait. The destination count does not require a higher
+value by itself; active users and SAP dialog work-process capacity do. Every additional CF app
+instance creates another semaphore, so horizontal scaling multiplies the landscape-wide maximum.
+
 Starting recommendations:
 
 | Expected active users | OAuth/IP/min | MCP HTTP/IP/min | Per user/min | Global concurrent SAP requests |
@@ -579,7 +557,7 @@ scaled horizontally.
 - [ ] Data/SQL is enabled only where required, at both instance and destination layers.
 - [ ] No target contains write-related or unknown `arc1.*` keys.
 - [ ] Enabled target count is at most 256.
-- [ ] Admin `/targets` has no duplicate, shadow, invalid, or unexpected `limitedByInstance: true` diagnostic.
+- [ ] Admin `SAPTargets` has no duplicate, shadow, invalid, or unexpected `limitedByInstance: true` diagnostic.
 - [ ] All CF instances show the same registry revision.
 - [ ] Viewer, unmapped-user, SAP-unauthorized, and broken-PP cases were tested separately.
 - [ ] Logs and audit sinks contain no destination secrets or raw SAP response bodies.

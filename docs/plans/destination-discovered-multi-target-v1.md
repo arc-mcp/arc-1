@@ -67,14 +67,14 @@ propagation, remains the target-specific authorization boundary.
 | Writes | Impossible on multi-target routes in v1. Do not document or test a multi-target full-write configuration. |
 | Cache | `ARC1_CACHE=none` while the mode is enabled. |
 | Tool surface | Standard mode only; no hyperfocused alias, plugins, optional UI, SAPLint, ATC, or ABAP Unit on multi-target routes. |
-| Catalog | Protected JSON `/targets` requires global read and expands automatically for global admin. A browser HTML root is deferred because v1 has no cookie/session login. |
-| Target discovery tool | `SAPTargets` exists only on the aggregate server and only when more than one target is accepted. |
+| Catalog | No standalone HTTP catalog. Aggregate-only `SAPTargets` is read-scoped: readers see it only with more than one active target and receive compact target/description pairs; admins see it at zero, one, or many targets and during registry failure, with secret-safe diagnostics. Pinned endpoints never expose it. |
+| Target discovery | Aggregate schemas use exact target enums through 16 targets and a syntax pattern from 17–256; `SAPTargets` supplies IDs and descriptions without probing SAP user availability. |
 | User availability | Never guessed, probed in bulk, persisted, or negatively cached. A failed target call may be retried immediately. |
 | Destination changes | Take effect only after a normal CF app restart; no rebuild or MTAR redeployment. |
 | PP destination count | One PP destination per system/client in v1. A separate technical/design-time destination is deferred. |
 | Initial backend | On-premise + PP. S/4HANA Public Cloud/SAML assertion follows after v1 with dedicated testing. |
 | Deployment | Multiple CF app instances are supported and tested; `mta.yaml` stays at one instance by default. |
-| Health | Registry/configuration errors keep `/health` at 200 with an `error` component so protected admin diagnostics remain reachable; affected MCP routes return 503. Valid snapshots, including zero-target snapshots, report `ready`. |
+| Health | Registry/configuration errors keep `/health` at 200 with an `error` component. Pinned routes return 503, while authenticated aggregate MCP remains reachable so admins can call `SAPTargets`; other aggregate tool calls return a structured registry-unavailable error. Valid snapshots, including zero-target snapshots, report `ready`. |
 
 ## Existing Baseline and Compatibility
 
@@ -117,7 +117,7 @@ Compatibility rules:
    both remain usable. Log an operator warning because their policies can differ and the duplicate
    exposure is probably accidental.
 6. API-key and direct OIDC authentication remain unchanged for legacy `/mcp`, but do not authorize
-   `/targets`, pinned multi-target routes, or `/multi/mcp` in v1. Multi routes use an XSUAA-only
+   pinned multi-target routes or `/multi/mcp` in v1. Multi routes use an XSUAA-only
    verifier chain rather than inspecting a shared `AuthInfo` after authentication.
 
 ## Configuration Contract
@@ -344,10 +344,10 @@ Existing functional scopes continue to mean:
 
 | Scope/role | Multi-target effect |
 |---|---|
-| `read` / Viewer | Authenticate to the catalogs and all multi-target MCP routes; list all accepted target IDs; invoke source/metadata reads. |
+| `read` / Viewer | Authenticate to all multi-target MCP routes and invoke source/metadata reads. On the aggregate endpoint, `SAPTargets` is listed when more than one target is active and returns all accepted target IDs/descriptions. |
 | `data` / Data Viewer | Permit target data operations only when the selected target and instance both enable data preview. |
 | `sql` / SQL User | Permit `SAPQuery` only when the selected target and instance both enable free SQL. Existing role collections must still include/read-compose the needed read/data scopes. |
-| `admin` / Admin | Receive expanded `/targets` diagnostics. It does **not** bypass destination policy, SAP auth, or the v1 mutation prohibition. |
+| `admin` / Admin | Always receive aggregate `SAPTargets`, including at zero/one targets or registry failure, with expanded secret-safe diagnostics. It does **not** bypass destination policy, SAP auth, or the v1 mutation prohibition. |
 
 All accepted targets are visible to a global read user. This does not prove that the propagated SAP
 user is mapped or authorized in any target. V1 deliberately has no per-target ARC ACL because that
@@ -357,7 +357,7 @@ accepted.
 
 ### Route auth order
 
-For `/targets`, `/<SID>/<CLIENT>/mcp`, and `/multi/mcp`:
+For `/<SID>/<CLIENT>/mcp` and `/multi/mcp`:
 
 1. Validate XSUAA and require at least the global read scope before resolving whether a syntactically
    valid target exists.
@@ -369,6 +369,9 @@ For `/targets`, `/<SID>/<CLIENT>/mcp`, and `/multi/mcp`:
 
 This order prevents unauthenticated route enumeration. OAuth metadata, health, and standards-required
 discovery endpoints may remain public but must contain no target inventory.
+
+`SAPTargets` stops after XSUAA/read authentication and its tool-level scope, deny-action, rate-limit,
+and audit checks. It resolves no SAP target and performs no PP or backend request.
 
 Multi-target routes use an XSUAA-only bearer verifier. API-key and direct OIDC tokens fail as 401
 with the correct route-family protected-resource metadata challenge before registry membership is
@@ -441,18 +444,20 @@ refactor site.
 Schema strategy:
 
 - 0 accepted targets: keep the aggregate MCP endpoint alive, expose no SAP-contacting tools, and
-  return a controlled `NO_TARGETS_CONFIGURED` result where protocol handling requires it.
+  return a controlled `NO_TARGETS_CONFIGURED` result where protocol handling requires it. An admin
+  still sees `SAPTargets` for registry diagnostics.
 - 1 accepted target: inject a one-value enum.
 - 2–16 accepted targets: inject an exact enum into each `target` property.
 - 17–256 accepted targets: use a string with pattern
   `^[A-Z][A-Z0-9]{2}/[0-9]{3}$`; runtime membership remains authoritative.
-- The target field description tells the model to call `SAPTargets` to resolve IDs and descriptions.
+- The target field description tells the model to call `SAPTargets` when it needs configured IDs or
+  descriptions; listing a target does not prove that the current SAP user can access it.
 - Do not generate a capability-conditioned `oneOf` tree per target. It would multiply schemas and
   exceed client/tool payload budgets.
 
 The threshold is 16 because the current read-only surface is already close to the repository's
-50,000-byte wire wall. CI measures synthetic aggregate registries at 16, 17, and 256 targets; do not
-raise the existing wall to accommodate duplicated enums.
+50,000-byte wire wall. CI measures synthetic aggregate registries at 16, 17, and 256 targets, plus
+the 256-target data/SQL surface; do not raise the existing wall to accommodate duplicated enums.
 
 Target input normalization is separate from general LLM empty-value stripping:
 
@@ -474,39 +479,38 @@ schemas use the supported v1 read surface and policy gates; backend feature supp
 runtime. This avoids a low-privilege first caller changing another user's tool list and keeps MCP
 sessions stable.
 
-### `SAPTargets`
-
-`SAPTargets` is an aggregate-only, read-scoped discovery tool. Register it only when more than one
-target is accepted.
-
-- No input returns all targets, up to the 256 hard maximum.
-- Optional `query` filters case-insensitively over target ID and description.
-- Output contains only `{ target, description }`.
-- Do not return `read`, `data`, `sql`, policy, destination name, availability, SAP user state, or
-  admin diagnostics.
-- Its description must say that listing a target does not prove the current user's SAP access.
-
-Route `SAPTargets` through the same outer scope, rate-limit, request-ID, and audit pipeline as other
-tools, but mark it `requiresSapClient=false`; it performs zero PP or ADT calls and must not receive a
-fabricated client. Add its schema/policy entry and conditional tool registration explicitly to all
-schema-policy parity validators and fixed synthetic aggregate fixtures.
-
 Multi-target dispatch rejects the hidden hyperfocused `SAP` alias and any plugin/custom tool name,
 even if a client calls an unlisted tool directly.
 
-The model learns meaningful labels through `SAPTargets`; ordinary tool schemas do not embed up to 256
-descriptions. `SAPTargets` is unnecessary when there is only one target because its exact target enum
-is already self-describing enough.
+For 17–256 targets, the model obtains exact IDs and meaningful labels from `SAPTargets`; descriptions
+are deliberately not duplicated into every SAP-contacting tool schema. There is no standalone HTTP
+target catalog or browser HTML target page in v1. Copyable pinned and aggregate client-configuration
+templates remain in end-user documentation instead of being repeated in MCP tool output.
 
-### Authenticated catalog
+### `SAPTargets` catalog tool
 
-- `GET /targets` is the canonical authenticated JSON catalog and includes generated VS Code/GitHub
-  Copilot examples.
-- It requires XSUAA read and sets `Cache-Control: no-store` plus `Vary: Authorization`.
-- V1 does not mount a human HTML root: normal browser navigation cannot attach the required bearer
-  token and adding a cookie/session login would reintroduce UI and CSRF scope.
-- A read user sees only accepted public target data and connection examples.
-- An admin receives the expanded diagnostics described below from the same `/targets` URL.
+`SAPTargets` is aggregate-only and performs no PP, ADT, feature-probe, or SAP request. Pinned MCP
+servers never list or dispatch it.
+
+- A reader sees the tool only when more than one active target exists. No input returns every active
+  target as the compact array `[{ "target": "A4H/100", "description": "..." }]`.
+- An admin sees the tool at zero, one, or many active targets and when discovery or the 256-target
+  limit makes the registry unavailable. This keeps diagnostics reachable without a separate HTTP
+  endpoint.
+- Optional `query` is a case-insensitive string with maximum length 160. Admins may also pass an
+  integer `offset` from 0 through 1,000,000 to page safe diagnostics; reader calls reject `offset`.
+  The input schema rejects extra properties, and runtime validation mirrors both bounds.
+- Reader queries match only target ID and sanitized description. Admin queries may additionally
+  match destination name, status, reason code, and safe message.
+- Admin diagnostics are deterministically paged at 50 rows. Return offset, total, returned,
+  truncation, and next-offset metadata so the caller can continue or narrow `query`; never let a
+  broad query or an over-limit registry flood the model context.
+- The tool description states that configuration visibility is not proof of current-user SAP access.
+- Apply the ordinary read scope, `SAP_DENY_ACTIONS`, per-user MCP rate limit, request ID, and start/end
+  audit events. Audit only whether a query was supplied (and, if useful, its validated length); never
+  write the raw query text to audit or logs.
+- Direct calls obey the same role/count rules as `tools/list`; an unlisted direct call cannot bypass
+  scope, deny-action, or registry-state handling.
 
 ## Administrator Diagnostics Contract
 
@@ -515,34 +519,43 @@ setup and troubleshooting guide and must be kept synchronized with response type
 
 ### Read view
 
-For each accepted target, return only:
-
-- `target`;
-- sanitized `description`;
-- `pinnedEndpoint`;
-- `aggregateEndpoint`; and
-- generated client configuration using those public URLs.
-
-Never return a BTP destination name, SAP URL, policy detail, excluded destination, or reason code in
-the read view.
+Return only the compact array of accepted `{ target, description }` pairs, optionally narrowed by
+`query`. Never return a BTP destination name, SAP URL, endpoint/client configuration, policy detail,
+excluded destination, reason code, registry metadata, or per-user availability in the read view.
 
 ### Admin expansion
 
-If the same token has global admin, also return:
+If the token has global admin, return an envelope
+`{ "targets": [...], "admin": { ... } }`: `targets` is the same compact accepted-target list and
+`admin` contains:
 
 - registry state: `ready`, `degraded`, or `error`;
 - source: `btp-subaccount` (diagnostic label, not a configurable enum);
 - snapshot `loadedAt` and secret-free `revision`;
 - counts: scanned, unrelated, ARC-adjacent, ARC-related, enabled, active, disabled, ignored, and
   quarantined;
-- every **ARC-related** destination, meaning it contains at least one property whose key starts with
-  `arc1.` case-insensitively; only exact lowercase allowlisted keys are valid;
-- destination name, parseable target ID, sanitized description/fallback, and active routes;
+- the registry-level discovery/limit failure, when present; and
+- diagnostic mode plus offset/total/returned/truncated/next-offset metadata; and
+- exception diagnostics in `admin.destinations` by default: disabled, ignored, quarantined, or
+  otherwise non-active **ARC-related** destinations. ARC-related means the destination contains at
+  least one property whose key starts with `arc1.` case-insensitively; only exact lowercase
+  allowlisted keys are valid.
+
+When an admin supplies `query`, include matching active destination details as well as matching
+exceptions. A diagnostic may contain destination name, parseable target ID, sanitized
+description/fallback, and:
+
 - normalized safe fields: type, proxy type, authentication type, SID, client, language, and
   `hasCloudConnectorLocationId` boolean;
 - requested/effective data-preview and free-SQL values plus `limitedByInstance`;
-- status, warnings, deterministic reason codes, and safe messages; and
-- registry-level discovery/limit errors.
+- status, warnings, deterministic reason codes, and safe messages.
+
+Do not duplicate generated VS Code/GitHub Copilot configuration in `SAPTargets`; documentation shows
+the fixed URL templates. Keeping default admin output exception-focused prevents a healthy
+256-target estate from injecting a very large diagnostic response into the model context. Return at
+most 50 deterministic diagnostic rows in either mode; `diagnosticOffset`, `diagnosticTotal`,
+`diagnosticReturned`, `diagnosticsTruncated`, and `diagnosticNextOffset` make paging explicit. The
+admin can follow `diagnosticNextOffset` with the same query or narrow the query.
 
 Do not enumerate unrelated destination names. Do not return URL, user, password, client secret,
 token, SAML assertion, auth token, certificate, header/query parameters, raw destination objects,
@@ -606,11 +619,11 @@ Required classifications:
 
 | Code | Stage/meaning | Retry guidance |
 |---|---|---|
-| `TARGET_REQUIRED` | Aggregate call omitted `target` or supplied null/empty/whitespace. | Supply a target from `SAPTargets`. |
+| `TARGET_REQUIRED` | Aggregate call omitted `target` or supplied null/empty/whitespace. | Supply a target from the schema enum or call `SAPTargets`. |
 | `INVALID_TARGET` | Aggregate target is not valid `SID/CLIENT` syntax. | Correct the target value. |
-| `UNKNOWN_TARGET` | Target ID is syntactically valid but absent from the accepted snapshot. | Check `/targets`; restart after config changes. |
+| `UNKNOWN_TARGET` | Target ID is syntactically valid but absent from the accepted snapshot. | Call `SAPTargets`; restart after destination changes. |
 | `NO_TARGETS_CONFIGURED` | Multi mode is enabled with no accepted targets. | Configure a destination and restart. |
-| `MULTI_TARGET_REGISTRY_UNAVAILABLE` | Discovery/limit error prevented a usable registry. | Admin checks `/targets` and health. |
+| `MULTI_TARGET_REGISTRY_UNAVAILABLE` | Discovery/limit error prevented a usable registry. | Admin calls `SAPTargets` on `/multi/mcp` and checks health/logs. |
 | `TARGET_CONFIG_CHANGED` | Live PP lookup no longer matches startup fingerprint. | Restart ARC-1 after reviewing the destination. |
 | `TARGET_POLICY_DENIED` | Instance or destination did not enable data/SQL. | Administrator changes both required gates and restarts for destination changes. |
 | `PP_SETUP_FAILED` | Failure is proven to occur before ADT dispatch during Destination/Connectivity lookup or token exchange. | Fix BTP/Cloud Connector setup, then retry. |
@@ -719,21 +732,23 @@ Health needs component detail without target inventory:
 - Discovery succeeds with zero accepted targets: process is healthy; multi component is `ready`
   with zero targets.
 - Discovery fails or the 256 limit is exceeded: overall `/health` remains 200, the multi component
-  is `error`, and affected MCP routes return 503. This prevents the CF HTTP health
-  check from crash-looping the app and keeps admin diagnostics available.
+  is `error`, and pinned MCP routes return 503. This prevents the CF HTTP health check from
+  crash-looping the app.
 - Individual invalid/quarantined candidates do not make the process unhealthy if the snapshot itself
   was built; admin diagnostics and warning logs explain them.
-- Protected `/targets` remains available in every state so an admin can see the registry error. A
-  read user receives an empty accepted-target list, never the diagnostic details.
+- Authenticated aggregate MCP remains reachable in every registry state. An admin can list and call
+  `SAPTargets` to inspect the safe failure/exception diagnostics; other aggregate tool calls return
+  `MULTI_TARGET_REGISTRY_UNAVAILABLE`. A reader receives no diagnostic tool at zero/one targets or
+  registry failure.
 
 Destination changes are deliberately restart-bound:
 
 1. Export/clone/edit/import destinations in BTP Cockpit or CLI.
 2. Validate in Cockpit.
 3. Run a normal non-rolling `cf restart <app>`.
-4. Check `/health` and admin `/targets`.
-5. Query each app instance using the CF router's `X-CF-APP-INSTANCE: <app-guid>:<index>` header and
-   compare registry revisions if multiple instances disagree.
+4. Check `/health` and call `SAPTargets` with an admin token through `/multi/mcp`.
+5. Query each app instance by sending `X-CF-APP-INSTANCE: <app-guid>:<index>` on the authenticated
+   aggregate MCP request and compare registry revisions if multiple instances disagree.
 
 No MTAR rebuild or `cf deploy` is needed. DCR signing configuration must remain stable across
 instances/restarts as already documented. The MTA keeps one instance by default, but tests must prove
@@ -893,10 +908,10 @@ Work:
   aggregate routes; they are not byte-identical to the legacy full surface.
 - Add shallow aggregate `target` injection without duplicating handler Zod schemas.
 - Validate/strip target before normal dispatch.
-- Implement the 1–16 enum and 17–256 pattern behavior.
-- Implement `SAPTargets` with the exact minimal output and registration rule.
-- Route `SAPTargets` through scope/rate/request-ID/audit dispatch with `requiresSapClient=false` and
-  no PP/ADT client construction.
+- Implement exact target enums through 16 targets and the compact syntax pattern for 17–256.
+- Add aggregate-only `SAPTargets` with role/count-sensitive listing and dispatch: readers see it only
+  above one active target; admins see it at any count and during registry failure; pinned servers
+  never expose it.
 - Reject the hidden hyperfocused `SAP` alias and every `Custom_*`/non-allowlisted tool on multi
   routes even if a client invokes it without listing tools first.
 - Enforce selected-target policy again at call time.
@@ -926,24 +941,36 @@ Work:
   plus fixed aggregate metadata. The `resource` and `WWW-Authenticate` metadata URL must match the
   endpoint exactly and must not reveal membership.
 
-### 8. Add authenticated public and admin JSON catalog
+### 8. Add role-sensitive `SAPTargets` diagnostics
 
 Files:
 
-- `src/server/http.ts`
-- new response/view helper if needed, for example `src/server/target-catalog.ts`
-- `tests/unit/server/target-catalog.test.ts`
-- HTTP route tests
+- `src/server/multi-target-tools.ts`
+- `src/server/multi-target-server.ts`
+- `src/server/server.ts`
+- `src/authz/policy.ts`
+- `scripts/validate-action-policy.ts`
+- new response/view helper if needed, for example `src/server/multi-target-catalog.ts`
+- focused MCP tool and HTTP aggregate-route tests
 
 Work:
 
-- Implement protected JSON `/targets`. Do not mount an HTML root in v1 because header-bearer auth
-  gives normal browser navigation no safe login/session mechanism.
-- Generate absolute URLs from the validated public base URL/request context.
-- Generate a VS Code/GitHub Copilot MCP example.
-- Return only the public view to read users.
-- Expand the same response for admin with the exact safe diagnostic contract and reason codes.
-- Add `no-store`, `Vary: Authorization`, normal JSON encoding, and security headers.
+- Keep the aggregate MCP transport reachable through registry failure while pinned target routes
+  remain unavailable; non-catalog aggregate calls fail with the structured registry error.
+- Return only compact target/description pairs to readers and only when more than one active target
+  exists.
+- Always expose the tool to admins, including zero/one targets and unavailable registries. Default
+  admin output contains state/counts/failure plus exception diagnostics; a validated query may reveal
+  matching active safe details.
+- Page either admin diagnostic mode at 50 deterministic rows and report
+  offset/total/returned/truncated/next-offset metadata so broad queries and over-limit registries
+  remain context-safe without making later rows unreachable.
+- Define strict `{ query?: string(max 160), offset?: integer(0..1_000_000) }` input with no extra
+  properties; `offset` is admin-only. Never log or audit the raw query.
+- Route the tool through read-scope, deny-action, per-user rate-limit, request-ID, and audit handling,
+  but never construct a PP/ADT client or run feature probes.
+- Do not mount a standalone HTTP target catalog or generate per-target client configuration in tool
+  output. Keep fixed VS Code/GitHub Copilot examples in documentation.
 - Prove no secret/raw destination field can cross serialization.
 
 ### 9. Make PP/SAP errors retryable and conclusive
@@ -1002,8 +1029,8 @@ ADR requirements:
   required on every call, there is no default/session state, selected-target policy is rechecked,
   and mutations are structurally removed.
 - Accept explicitly that a wrong aggregate target can disclose data/SQL from the wrong authorized
-  system. Record mitigations: explicit target every call, `SAPTargets` labels, no remembered/default
-  target, runtime policy recheck, SQL/data off by default, and separate instances for lookalike
+  system. Record mitigations: explicit target every call, meaningful `SAPTargets` labels,
+  no remembered/default target, runtime policy recheck, SQL/data off by default, and separate instances for lookalike
   production/non-production systems requiring a stronger boundary.
 - Record that future writes require a separate security review/ADR and may change the aggregate
   design.
@@ -1016,8 +1043,9 @@ Documentation requirements:
   sample.
 - Document global roles, visibility, PP tradeoffs, restart/no-redeploy flow, 256 maximum, duplicate
   behavior, admin diagnostics, rates, pinned-URL OAuth/DCR multiplication, and all deferred features.
-- Update “12 tools” claims to explain that standard single-target mode remains 12 tools while the
-  aggregate multi server conditionally adds `SAPTargets`; retain the existing
+- Update “12 tools” claims to explain that standard single-target mode remains 12 tools while
+  multi-target v1 exposes its six permitted SAP-contacting tools plus conditional aggregate-only
+  `SAPTargets`; retain the existing
   `multi-destination.md` slug for link stability even though the feature is named multi-target.
 - Add explicit rows for `ARC1_MULTI_TARGET_ENDPOINTS` and `ARC1_MCP_HTTP_RATE_LIMIT` to both
   `docs_page/configuration-reference.md` and the `AGENTS.md` configuration table, including defaults,
@@ -1039,23 +1067,38 @@ Required automated cases:
 - only ARC-related destinations appear in admin diagnostics; unrelated names do not;
 - raw URLs, credentials, tokens, headers, certs, and location IDs are unreachable from retained
   discovery/registry object graphs and never serialize/log;
-- discovery failure keeps health 200, exposes safe admin diagnostics, and makes affected MCP routes
-  return 503 with or without legacy `/mcp`;
+- discovery failure keeps health 200, makes pinned routes return 503, keeps aggregate MCP reachable
+  for admin `SAPTargets`, and gives other aggregate calls a structured registry error, with or
+  without legacy `/mcp`;
 - legacy `/mcp` unchanged and never auto-assigned;
 - legacy and discovered duplicate fingerprint warning with both routes usable;
 - pinned schemas have no target argument and use the frozen multi read-only surface;
 - aggregate schemas have exactly one required target argument;
-- 1–16 enum and 17–256 pattern behavior, including target null/empty/lowercase/malformed/unknown;
+- exact enums at 1 and 16 targets plus the syntax pattern at 17 and 256, including target
+  null/empty/lowercase/malformed/unknown;
 - aggregate is mounted at 0/1 targets;
-- `SAPTargets` appears only at >1 and returns only target/description;
+- `SAPTargets` is absent from pinned servers, appears to aggregate readers only above one active
+  target, and appears to aggregate admins at 0/1/many targets and registry failure;
+- reader `SAPTargets` returns only compact target/description pairs; admin default output returns
+  state/counts/failure and exception diagnostics, while a validated query includes matching active
+  safe details;
+- admin diagnostics are deterministically paged at 50 with correct
+  offset/total/returned/truncated/next-offset metadata for both many exceptions and broad active
+  queries, and every page remains reachable;
+- `SAPTargets.query` rejects values above 160, `offset` rejects non-integers/out-of-range/read-user
+  use, extra properties fail, reader/admin filtering is case-insensitive, and raw query text never
+  reaches logs or audit;
+- direct `SAPTargets` calls preserve the same scope/count/role/deny rules, share the per-user rate
+  limiter/request ID/audit pipeline, and perform no PP, ADT, SAP, or feature-probe call;
 - no target/session memory and cross-call target switches are explicit;
 - global Viewer sees all accepted targets but SAP can deny a selected one;
 - data and SQL require instance + destination + scope + SAP auth;
 - no multi-target mutation or lock appears or dispatches, including for admin and a write-enabled
   legacy ceiling; every discovered SafetyConfig hardcodes writes/transport/Git false;
 - ATC, ABAP Unit, SAPLint, hidden `SAP`, and `Custom_*` are absent and direct invocation fails;
-- auth occurs before route resolution and public endpoints do not enumerate targets;
-- read/admin `/targets` views differ exactly as specified;
+- auth occurs before route resolution and public endpoints do not enumerate targets; no standalone
+  HTTP target-catalog route is mounted;
+- read/admin `SAPTargets` views differ exactly as specified and remain secret-safe;
 - uncached PP drift across connection/policy fields, SAP client pinning, lazy success-only feature
   probing, explicit unknown feature state, and no discovered default/shared client;
 - auth failures are not cached and can succeed on immediate retry;
@@ -1083,8 +1126,9 @@ destination credentials.
 
 Automate or document these acceptance cases:
 
-1. Mapped Viewer successfully lists targets and performs source/system reads on pinned and aggregate
-   routes.
+1. With more than one active target, a mapped Viewer successfully calls `SAPTargets` and performs
+   source/system reads on pinned and aggregate routes; an admin receives diagnostics at every target
+   count and registry failure.
 2. A valid XSUAA read user without SAP mapping produces the captured HTTP status/content-type/body
    signature and the conservative safe classification.
 3. A propagated SAP user that exists but lacks ADT authorization produces a captured structured SAP
@@ -1101,9 +1145,10 @@ Automate or document these acceptance cases:
 10. Two CF app instances expose the same routes/revision; one DCR client established through one
     instance completes MCP requests pinned via `X-CF-APP-INSTANCE` to the other instance.
 11. Seed unique sentinel strings in a test destination password, token-like property, URL, and
-    location ID, then assert those sentinels are absent from logs, audit sink, `/health`, `/targets`,
-    MCP errors, serialized discovery, and retained registry object graphs.
-12. VS Code/GitHub Copilot connects using both generated endpoint styles.
+    location ID, then assert those sentinels are absent from logs, audit sink, `/health`,
+    `SAPTargets`, MCP errors, serialized discovery, and retained registry object graphs. Also seed a
+    unique query sentinel and prove its raw value is absent from logs and audit events.
+12. VS Code/GitHub Copilot connects using both documented endpoint styles.
 
 Do not run multi-target write CRUD. ATC and ABAP Unit are not acceptance requirements for this
 feature.
@@ -1127,8 +1172,8 @@ feature.
 - [x] No unauthenticated target enumeration.
 - [x] No destination name or connection details in read-user output.
 - [x] No raw Destination Service object retained after projection.
-- [x] No credentials/tokens/assertions/headers/query params/certs in logs, errors, health, catalogs,
-      audit, or revision material.
+- [x] No credentials/tokens/assertions/headers/query params/certs in logs, errors, health,
+      `SAPTargets`, audit, or revision material; raw catalog queries are not logged or audited.
 - [x] Unknown ARC configuration fails closed.
 - [x] Duplicate/shadow conflicts have no implicit winner.
 - [x] More than 256 enabled targets activates none.
@@ -1143,7 +1188,7 @@ feature.
 - [x] Runtime destination drift fails closed until restart.
 - [x] Unauthorized user failures cannot poison shared feature state.
 - [x] Negative access results are never cached.
-- [x] Read/admin catalog separation is test-covered.
+- [x] Read/admin `SAPTargets` separation and zero/one/failure-state admin access are test-covered.
 - [x] Global semaphore/rate limit cannot be multiplied by target count.
 - [x] RFC 9728 metadata and unauthenticated route behavior cannot reveal registry membership.
 - [x] Raw discovery secrets are unreachable from the retained registry object graph.
@@ -1164,7 +1209,7 @@ feature.
   free-SQL/data gates;
 - cache modes other than none;
 - plugins, optional UI integration, hyperfocused mode, SAPLint, ATC, and ABAP Unit;
-- a browser HTML target page and cookie/session login;
+- a standalone HTTP/browser target catalog and cookie/session login;
 - dynamic destination refresh without restart; and
 - a write-safe aggregate routing model.
 
@@ -1174,7 +1219,7 @@ The implementation can start when this document and the administrator page agree
 
 - exact flag and destination property names;
 - routes and aggregate schema rules;
-- global XSUAA roles and catalog visibility;
+- global XSUAA roles and `SAPTargets` visibility;
 - the read-only/data/SQL policy intersection;
 - the 256-target fail-closed behavior;
 - admin safe fields and reason codes;

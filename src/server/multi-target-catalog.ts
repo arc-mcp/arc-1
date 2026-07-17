@@ -1,0 +1,116 @@
+/** Secret-safe reader and administrator views for the SAPTargets MCP tool. */
+
+import type { DestinationRegistry, TargetDescriptor, TargetDiagnostic } from './destination-registry.js';
+
+export const TARGET_CATALOG_DIAGNOSTIC_LIMIT = 50;
+export const TARGET_CATALOG_MAX_OFFSET = 1_000_000;
+
+function targetMatches(target: TargetDescriptor, query: string): boolean {
+  return !query || target.target.toLowerCase().includes(query) || target.description.toLowerCase().includes(query);
+}
+
+function diagnosticMatches(
+  entry: DestinationRegistry['diagnostics'][number],
+  query: string,
+  descriptions: ReadonlyMap<string, string>,
+): boolean {
+  if (!query) return true;
+  return [
+    entry.destinationName,
+    entry.target,
+    entry.status,
+    entry.code,
+    entry.message,
+    entry.target && descriptions.get(entry.target),
+  ]
+    .filter((value): value is string => typeof value === 'string')
+    .some((value) => value.toLowerCase().includes(query));
+}
+
+export interface TargetCatalogOptions {
+  admin: boolean;
+  query?: string;
+  offset?: number;
+}
+
+function safeDiagnostic(entry: TargetDiagnostic): Record<string, unknown> {
+  return {
+    destinationName: entry.destinationName,
+    target: entry.target,
+    status: entry.status,
+    code: entry.code,
+    message: entry.message,
+    description: entry.description,
+    type: entry.type,
+    authentication: entry.authentication,
+    proxyType: entry.proxyType,
+    sid: entry.sid,
+    client: entry.client,
+    language: entry.language,
+    hasCloudConnectorLocationId: entry.hasCloudConnectorLocationId,
+    arcConfig: entry.arcConfig,
+    requestedPolicy: entry.requestedPolicy,
+    effectivePolicy: entry.effectivePolicy,
+    limitedByInstance: entry.limitedByInstance,
+    warnings: entry.warnings,
+  };
+}
+
+/**
+ * Build the role-sensitive SAPTargets result.
+ *
+ * Readers retain the deliberately small `{target, description}[]` response. Admins additionally
+ * receive registry state and diagnostics. To keep the default result practical at 100–256 targets,
+ * the unfiltered admin view includes details only for non-active destinations; accepted targets in
+ * the public list are active by definition. Supplying `query` includes matching active diagnostics,
+ * and `offset` pages the deterministically sorted, bounded diagnostic result.
+ * Destination URLs, credentials, tokens, certificates, and raw Cloud Connector location IDs are not
+ * retained by DestinationRegistry and cannot enter this result.
+ */
+export function buildTargetCatalog(
+  registry: DestinationRegistry,
+  options: TargetCatalogOptions,
+): Record<string, unknown> | Array<{ target: string; description: string }> {
+  const query = options.query?.trim().toLowerCase() ?? '';
+  const targets = registry.targets.filter((target) => targetMatches(target, query));
+  if (!options.admin) {
+    return targets.map((target) => ({ target: target.target, description: target.description }));
+  }
+
+  const publicTargets = targets.map((target) => ({ target: target.target, description: target.description }));
+  const diagnosticOffset = options.offset ?? 0;
+  const descriptions = new Map(registry.targets.map((target) => [target.target, target.description]));
+  const matchingDiagnostics = registry.diagnostics
+    .filter((entry) => (query ? diagnosticMatches(entry, query, descriptions) : entry.status !== 'active'))
+    .sort((left, right) =>
+      `${left.destinationName}\0${left.target ?? ''}\0${left.code}`.localeCompare(
+        `${right.destinationName}\0${right.target ?? ''}\0${right.code}`,
+      ),
+    );
+  const diagnostics = matchingDiagnostics
+    .slice(diagnosticOffset, diagnosticOffset + TARGET_CATALOG_DIAGNOSTIC_LIMIT)
+    .map(safeDiagnostic);
+  const diagnosticNextOffset =
+    diagnosticOffset + diagnostics.length < matchingDiagnostics.length
+      ? diagnosticOffset + diagnostics.length
+      : undefined;
+
+  return {
+    targets: publicTargets,
+    admin: {
+      state: registry.failure ? 'error' : registry.counts.quarantined > 0 ? 'degraded' : 'ready',
+      source: 'btp-subaccount',
+      loadedAt: registry.loadedAt,
+      revision: registry.revision,
+      counts: registry.counts,
+      failure: registry.failure,
+      diagnosticMode: query ? 'matching' : 'exceptions',
+      diagnosticOffset,
+      diagnosticTotal: matchingDiagnostics.length,
+      diagnosticReturned: diagnostics.length,
+      diagnosticsTruncated: diagnosticOffset > 0 || diagnosticNextOffset !== undefined,
+      diagnosticNextOffset,
+      destinations: diagnostics,
+    },
+  };
+}

@@ -76,6 +76,9 @@ function main(): number {
   for (const { tool, actions } of toolActions) {
     // Tool-level key is OK as a fallback
     const toolLevel = ACTION_POLICY[tool];
+    if (actions.length === 0 && !toolLevel) {
+      errors.push(`Missing in ACTION_POLICY: ${tool} (tool has no action enum and needs a tool-level policy)`);
+    }
     for (const action of actions) {
       const specificKey = `${tool}.${action}`;
       coveredKeys.add(specificKey);

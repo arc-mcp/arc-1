@@ -69,7 +69,8 @@ a strong enough boundary.
 
 ## Target discovery
 
-ARC-1 reads BTP **subaccount** destinations once at process startup. The minimum target is:
+ARC-1 reads BTP **subaccount** destinations once at process startup. A recommended read/data/SQL
+target is:
 
 ```properties
 Name=ARC1_A4H_100_PP
@@ -81,11 +82,14 @@ sap-sysid=A4H
 sap-client=100
 Description=A4H development client 100
 arc1.enabled=true
+arc1.allow_data_preview=true
+arc1.allow_free_sql=true
 ```
 
 `sap-sysid` and `sap-client` produce the public ID `A4H/100`. The destination name stays internal.
 `Description` gives the user and LLM a meaningful label; missing descriptions warn and fall back to
-the public ID.
+the public ID. Only `arc1.enabled=true` is required by ARC-1; omit either `arc1.allow_*` property when
+that target should remain source-only or should not permit that capability.
 
 Supported target policy keys are intentionally small:
 
@@ -94,8 +98,10 @@ arc1.allow_data_preview=true
 arc1.allow_free_sql=true
 ```
 
-Missing values are false. These properties can only narrow/intersect the instance ceiling. Unknown
-`arc1.*` keys fail closed, and write-related target keys quarantine the destination.
+Missing values are false. These properties can only narrow/intersect the instance ceiling: an
+instance value of `true` makes a capability eligible but does not enable it on every target, while an
+instance value of `false` blocks it everywhere. Unknown `arc1.*` keys fail closed, and write-related
+target keys quarantine the destination.
 The two switches are independent: SQL does not automatically expose named table preview. There is
 no `arc1.config_version` in v1 because the strict key allowlist is the schema.
 
@@ -108,27 +114,18 @@ rules, admin diagnostics, rate sizing, and troubleshooting.
 The aggregate server adds one required top-level `target` to every SAP-contacting tool. It validates
 and removes the selector before the normal ARC-1 handler processes the remaining arguments.
 
-- Up to 16 targets use exact target enums in tool schemas.
-- From 17 through 256, schemas use the SID/client pattern and runtime membership is authoritative.
+- Up to 16 targets use exact target enums; from 17 through 256 schemas use the SID/client pattern.
 - Tool availability is the union of what at least one target can serve for the caller.
 - The selected target's policy and features are checked again on every call.
 - There is no “current target” in session state.
 
-When more than one target is active, the aggregate server also exposes `SAPTargets`. With no
-arguments it returns all configured targets; an optional query filters target IDs and descriptions.
-Its response is deliberately only:
-
-```json
-[
-  {
-    "target": "A4H/100",
-    "description": "A4H development client 100"
-  }
-]
-```
-
-It does not return `read`, `data`, `sql`, policy, destination name, or per-user availability. A
-listed target is configured, not proof that the current user is mapped or authorized in SAP.
+When more than one target is active, the aggregate server exposes `SAPTargets`. Readers receive only
+configured IDs and descriptions. Admins receive registry state plus non-active exception details by
+default, and can use `query` for matching active destination policy/configuration details. Admins see
+the tool even with zero/one targets or registry failure so diagnostics remain reachable. Pinned
+endpoints never expose `SAPTargets`. A listed target is configured, not proof that the current user
+is mapped or authorized in SAP. Admin diagnostics are deterministically paged at 50 rows; follow
+`diagnosticNextOffset` with the same query and the admin-only `offset` input to reach later rows.
 
 ## Authentication and visibility
 
@@ -137,18 +134,18 @@ system/client. An additive `@arc-mcp/xsuaa-auth` change supplies uncached Destin
 original properties, and startup list helpers; its XSUAA scopes, roles, and verifier model stay
 unchanged.
 
-- Global read opens all accepted multi-target URLs and the protected catalog.
+- Global read opens all accepted multi-target URLs and, when multiple targets are active, the compact
+  `SAPTargets` catalog.
 - Data/SQL scopes are additionally required for those operations.
-- Global admin expands `/targets` with secret-safe configuration diagnostics.
+- Global admin expands `SAPTargets` with secret-safe configuration diagnostics.
 - SAP authorizations still apply to the propagated user in the selected SAP client.
 
 ARC-1 cannot discover a user's true target access without contacting SAP. It therefore does not
 probe every system, store availability, or cache denials. A failed call can be retried immediately
 after Basis changes mapping or authorization.
 
-`/targets`, pinned endpoints, and `/multi/mcp` all require at least XSUAA read. Target inventory is
-never public. V1 has no HTML root because normal browser navigation cannot attach the required bearer
-token without adding a separate cookie/session login.
+Pinned endpoints and `/multi/mcp` require at least XSUAA read. Target inventory is available only
+through the scoped `SAPTargets` MCP tool and is never public.
 
 ## Startup and destination changes
 
@@ -170,10 +167,10 @@ If more than 256 targets are enabled, no discovered target is activated. This av
 “first 256” result.
 
 Registry discovery/configuration errors keep `/health` at 200 with an `error` multi component so CF
-does not crash-loop the app and admin `/targets` remains available. A valid snapshot reports
-`ready`, including zero-target and individually quarantined snapshots; quarantine details appear as
-`degraded` only in admin `/targets`. Affected MCP routes return 503 after a registry-wide error until
-the administrator fixes the issue and restarts.
+does not crash-loop the app and admin `SAPTargets` remains available on `/multi/mcp`. A valid snapshot
+reports `ready`, including zero-target and individually quarantined snapshots; quarantine details
+appear as `degraded` only in the admin tool response. Pinned routes return 503 after a registry-wide
+error; other aggregate tools return a structured registry error until restart.
 
 ## Client examples
 
@@ -203,9 +200,9 @@ Aggregate connection:
 }
 ```
 
-VS Code/GitHub Copilot uses the existing XSUAA OAuth/DCR flow. Authenticated `/targets` returns
-generated examples with the deployment's actual URL. Each pinned URL may trigger a separate
-OAuth/DCR flow, so prefer the aggregate endpoint when a user needs more than a few targets.
+VS Code/GitHub Copilot uses the existing XSUAA OAuth/DCR flow. Each pinned URL may trigger a separate
+OAuth/DCR flow, so prefer the aggregate endpoint when a user needs more than a few targets and call
+`SAPTargets` there to discover IDs and descriptions.
 
 ## Not in v1
 

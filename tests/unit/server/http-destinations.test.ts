@@ -7,7 +7,6 @@ import {
   MULTI_TARGET_SCOPES_SUPPORTED,
   multiTargetHealthStatus,
   resolveMcpHttpRateLimit,
-  targetCatalog,
 } from '../../../src/server/http.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 
@@ -127,34 +126,35 @@ describe('multi-target HTTP helpers', () => {
     expect(res.statusCode).toBe(500);
   });
 
-  it('returns 503 for pinned and aggregate routes when discovery is unavailable', async () => {
+  it('keeps aggregate diagnostics reachable but returns 503 for pinned routes when discovery is unavailable', async () => {
     const unavailable = DestinationRegistry.unavailable({
       code: 'REGISTRY_DISCOVERY_ERROR',
       message: 'safe failure',
     });
+    const aggregateFactory = vi.fn(() => ({
+      connect: vi.fn(async () => {
+        throw new Error('sentinel: aggregate diagnostics reached');
+      }),
+    }));
     const multi = {
       registry: unavailable,
-      aggregateFactory: vi.fn() as never,
+      aggregateFactory: aggregateFactory as never,
       pinnedFactory: vi.fn() as never,
     };
-    for (const [handler, path] of [
-      [createPinnedTargetMcpHandler(multi), '/A4H/100/mcp'],
-      [createAggregateMcpHandler(multi), '/multi/mcp'],
-    ] as const) {
-      const res = mockRes();
-      await handler({ path, method: 'POST', body: {}, headers: {} } as never, res as never);
-      expect(res.statusCode).toBe(503);
-      expect(res.body).toEqual({ error: 'Multi-target registry unavailable' });
-    }
-  });
+    const pinnedRes = mockRes();
+    await createPinnedTargetMcpHandler(multi)(
+      { path: '/A4H/100/mcp', method: 'POST', body: {}, headers: {} } as never,
+      pinnedRes as never,
+    );
+    expect(pinnedRes.statusCode).toBe(503);
+    expect(pinnedRes.body).toEqual({ error: 'Multi-target registry unavailable' });
 
-  it('keeps read and admin catalog views separate and secret-free', () => {
-    const current = registry();
-    const read = targetCatalog(current, 'https://arc.example', false);
-    const admin = targetCatalog(current, 'https://arc.example', true);
-    expect(read).not.toHaveProperty('admin');
-    expect(admin).toHaveProperty('admin.destinations');
-    expect(read).toHaveProperty('targets.0.pinnedEndpoint', 'https://arc.example/A4H/100/mcp');
-    expect(JSON.stringify(admin)).not.toContain('a4h.internal');
+    const aggregateRes = mockRes();
+    await createAggregateMcpHandler(multi)(
+      { path: '/multi/mcp', method: 'POST', body: {}, headers: {} } as never,
+      aggregateRes as never,
+    );
+    expect(aggregateFactory).toHaveBeenCalledOnce();
+    expect(aggregateRes.statusCode).toBe(500);
   });
 });

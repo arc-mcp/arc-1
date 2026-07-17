@@ -228,71 +228,11 @@ export function createPinnedTargetMcpHandler(multi: MultiTargetRouting) {
 
 export function createAggregateMcpHandler(multi: MultiTargetRouting) {
   return async (req: Request, res: Response) => {
-    if (!multi.registry.available) {
-      res.status(503).json({ error: 'Multi-target registry unavailable' });
-      return;
-    }
+    // Keep the aggregate MCP transport reachable when discovery fails so an
+    // administrator can call SAPTargets and inspect secret-safe diagnostics.
+    // Other tool calls return a structured registry-unavailable result.
     await serveMcpRequest(multi.aggregateFactory, req, res);
   };
-}
-
-function clientExamples(name: string, endpoint: string): Record<string, unknown> {
-  const servers = { [name]: { type: 'http', url: endpoint } };
-  return {
-    vscode: { servers },
-    githubCopilot: { servers },
-  };
-}
-
-export function targetCatalog(
-  registry: DestinationRegistry,
-  publicBase: string,
-  admin: boolean,
-): Record<string, unknown> {
-  const aggregateEndpoint = `${publicBase}/multi/mcp`;
-  const targets = registry.targets.map((target) => {
-    const pinnedEndpoint = `${publicBase}/${target.target}/mcp`;
-    return {
-      target: target.target,
-      description: target.description,
-      pinnedEndpoint,
-      aggregateEndpoint,
-    };
-  });
-  const result: Record<string, unknown> = {
-    aggregateEndpoint,
-    targets,
-    clientConfig: {
-      aggregate: clientExamples('arc-1-multi', aggregateEndpoint),
-      pinned: Object.fromEntries(
-        registry.targets.map((target) => {
-          const endpoint = `${publicBase}/${target.target}/mcp`;
-          return [`${target.sid}-${target.client}`, clientExamples(`arc-1-${target.sid}-${target.client}`, endpoint)];
-        }),
-      ),
-    },
-  };
-  if (admin) {
-    result.admin = {
-      state: registry.failure ? 'error' : registry.counts.quarantined > 0 ? 'degraded' : 'ready',
-      source: 'btp-subaccount',
-      loadedAt: registry.loadedAt,
-      revision: registry.revision,
-      counts: registry.counts,
-      failure: registry.failure,
-      destinations: registry.diagnostics.map((entry) => ({
-        ...entry,
-        routes:
-          entry.target && entry.status === 'active'
-            ? {
-                pinned: `${publicBase}/${entry.target}/mcp`,
-                aggregate: aggregateEndpoint,
-              }
-            : undefined,
-      })),
-    };
-  }
-  return result;
 }
 
 export function resolveMcpHttpRateLimit(config: Pick<ServerConfig, 'authRateLimit' | 'mcpHttpRateLimit'>): number {
@@ -361,7 +301,7 @@ export async function startHttpServer(
   app.use(express.urlencoded({ extended: false }));
   if (mcpRateLimitEnabled) {
     // One middleware instance means one MemoryStore and therefore one per-IP
-    // bucket across legacy, pinned, aggregate, catalog, and Copilot routes.
+    // bucket across legacy, pinned, aggregate, and Copilot routes.
     // Mount after body parsing so the Copilot JSON-RPC predicate can inspect
     // `req.body`, but before every authentication and route handler.
     app.use(createAuthRateLimiter('/mcp', mcpRatePerMinute, { skip: (req) => !isMcpHttpTraffic(req) }));
@@ -484,7 +424,7 @@ export async function startHttpServer(
             // advertise the aggregate PRM instead of a non-existent root PRM.
             const originalPath = req.originalUrl?.split('?', 1)[0] || req.path;
             const lowerPath = originalPath.toLowerCase();
-            const resourcePath = lowerPath === '/targets' || lowerPath === '/authorize' ? '/multi/mcp' : originalPath;
+            const resourcePath = lowerPath === '/authorize' ? '/multi/mcp' : originalPath;
             const multiResourceMetadataUrl = `${oauthFullBase}/.well-known/oauth-protected-resource${resourcePath}`;
             requireBearerAuth({
               verifier: { verifyAccessToken: xsuaaVerifier },
@@ -714,13 +654,6 @@ export async function startHttpServer(
     );
 
     if (multiTargets && pinnedMcpHandler && aggregateMcpHandler && multiBearerAuth) {
-      app.get('/targets', multiBearerAuth, (req, res) => {
-        const auth = (req as Request & { auth?: { scopes?: string[] } }).auth;
-        const admin = auth?.scopes?.includes('admin') ?? false;
-        res.setHeader('Cache-Control', 'no-store');
-        res.setHeader('Vary', 'Authorization');
-        res.json(targetCatalog(multiTargets.registry, oauthFullBase, admin));
-      });
       app.all(/^\/multi\/mcp$/, multiBearerAuth, aggregateMcpHandler);
       app.all(/^\/[A-Z][A-Z0-9]{2}\/\d{3}\/mcp$/, multiBearerAuth, pinnedMcpHandler);
     }

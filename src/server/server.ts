@@ -781,9 +781,10 @@ export function createServer(
         (multiTarget.mode === 'aggregate' && multiTarget.registry.targets.length === 0)
           ? []
           : multiTargetToolDefinitions(tools, config);
-      if (multiTarget.mode === 'aggregate' && tools.length > 0) {
-        tools = tools.map((tool) => injectTargetSchema(tool, multiTarget.registry.targets));
-        if (multiTarget.registry.targets.length > 1) tools.push(sapTargetsDefinition());
+      if (multiTarget.mode === 'aggregate') {
+        if (tools.length > 0) tools = tools.map((tool) => injectTargetSchema(tool, multiTarget.registry.targets));
+        const isAdmin = extra.authInfo ? hasRequiredScope(extra.authInfo.scopes, 'admin') : false;
+        if (multiTarget.registry.targets.length > 1 || isAdmin) tools.push(sapTargetsDefinition());
       }
     }
 

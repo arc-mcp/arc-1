@@ -143,27 +143,10 @@ describe('multi-target HTTP route authentication', () => {
     expect(malformed.status).toBe(404);
   });
 
-  it('protects the target catalog and separates read and admin responses', async () => {
-    const unauthenticated = await request(app).get('/targets');
-    expect(unauthenticated.status).toBe(401);
-    expect(unauthenticated.headers['www-authenticate']).toContain('/.well-known/oauth-protected-resource/multi/mcp');
-
-    const insufficient = await request(app).get('/targets').set('Authorization', 'Bearer data-token');
-    expect(insufficient.status).toBe(403);
-
-    const reader = await request(app).get('/targets').set('Authorization', 'Bearer read-token');
-    expect(reader.status).toBe(200);
-    expect(reader.headers['cache-control']).toBe('no-store');
-    expect(reader.headers.vary).toContain('Authorization');
-    expect(reader.body.targets).toHaveLength(1);
-    expect(reader.body.targets[0]).toMatchObject({ target: 'A4H/100', description: 'A4H development' });
-    expect(reader.body).not.toHaveProperty('admin');
-
-    const admin = await request(app).get('/targets').set('Authorization', 'Bearer admin-token');
-    expect(admin.status).toBe(200);
-    expect(admin.body).toHaveProperty('admin.destinations');
-    expect(admin.body.admin.destinations).toHaveLength(2);
-    expect(JSON.stringify(admin.body)).not.toContain('a4h.internal');
+  it('does not expose a separate HTTP target catalog', async () => {
+    expect((await request(app).get('/targets')).status).toBe(404);
+    expect((await request(app).get('/targets').set('Authorization', 'Bearer read-token')).status).toBe(404);
+    expect((await request(app).get('/TARGETS').set('Authorization', 'Bearer admin-token')).status).toBe(404);
   });
 
   it('keeps the multi-only Copilot /authorize fallback XSUAA-only', async () => {

@@ -57,9 +57,7 @@ modules:
       # are strict-PP and mutation-free regardless of legacy /mcp settings.
       # ARC1_MULTI_TARGET_ENDPOINTS: "true"
       # ARC1_CACHE: none
-      # ARC1_TOOL_MODE: standard
-      # ARC1_UI: "off"
-      # ARC1_MAX_CONCURRENT: "10"
+      # Non-default shared-service limits for 1–5 active beta users.
       # ARC1_AUTH_RATE_LIMIT: "30"
       # ARC1_MCP_HTTP_RATE_LIMIT: "1000"
       # ARC1_RATE_LIMIT: "120"

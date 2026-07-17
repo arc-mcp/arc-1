@@ -194,7 +194,6 @@ describe('/authorize JSON-RPC dispatch (Copilot Studio MCP fix via skip())', () 
     app.all('/mcp', (_req, res) => res.json({ ok: 'mcp' }));
     app.all('/A4H/100/mcp', (_req, res) => res.json({ ok: 'pinned' }));
     app.all('/multi/mcp', (_req, res) => res.json({ ok: 'aggregate' }));
-    app.all('/targets', (_req, res) => res.json({ ok: 'targets' }));
     return app;
   }
 
@@ -359,12 +358,12 @@ describe('/authorize JSON-RPC dispatch (Copilot Studio MCP fix via skip())', () 
     const srv = await withJsonServer(buildApp(2, 3));
     try {
       const results: { path: string; status: number }[] = [];
-      const sequence = ['/authorize', '/mcp', '/A4H/100/mcp', '/multi/mcp', '/targets'];
+      const sequence = ['/authorize', '/mcp', '/A4H/100/mcp', '/multi/mcp'];
       for (const path of sequence) {
         const r = await srv.post(path, { jsonrpc: '2.0', id: 1, method: 'tools/list' });
         results.push({ path, status: r.status });
       }
-      expect(results.map((r) => r.status)).toEqual([200, 200, 200, 429, 429]);
+      expect(results.map((r) => r.status)).toEqual([200, 200, 200, 429]);
     } finally {
       await srv.close();
     }
@@ -374,7 +373,7 @@ describe('/authorize JSON-RPC dispatch (Copilot Studio MCP fix via skip())', () 
     const srv = await withJsonServer(buildApp(2, 3));
     try {
       const results: number[] = [];
-      for (const path of ['/authorize/', '/mcp/', '/targets/', '/mcp']) {
+      for (const path of ['/authorize/', '/mcp/', '/multi/mcp/', '/mcp']) {
         const response = await srv.post(path, { jsonrpc: '2.0', id: 1, method: 'tools/list' });
         results.push(response.status);
       }
@@ -388,7 +387,7 @@ describe('/authorize JSON-RPC dispatch (Copilot Studio MCP fix via skip())', () 
     const srv = await withJsonServer(buildApp(2, 3));
     try {
       const results: number[] = [];
-      for (const path of ['/MCP', '/TARGETS', '/AUTHORIZE', '/mcp']) {
+      for (const path of ['/MCP', '/multi/mcp', '/AUTHORIZE', '/mcp']) {
         const response = await srv.post(path, { jsonrpc: '2.0', id: 1, method: 'tools/list' });
         results.push(response.status);
       }
@@ -457,9 +456,6 @@ describe('isMcpHttpTraffic', () => {
     '/MCP',
     '/multi/mcp',
     '/multi/mcp/',
-    '/targets',
-    '/targets/',
-    '/TARGETS',
     '/A4H/100/mcp',
     '/A4H/100/mcp/',
   ])(`matches %s`, (path) => {
@@ -472,6 +468,11 @@ describe('isMcpHttpTraffic', () => {
     expect(isMcpHttpTraffic(fakeReq('/AUTHORIZE', 'POST', { jsonrpc: '2.0' }))).toBe(true);
     expect(isMcpHttpTraffic(fakeReq('/authorize', 'POST', { client_id: 'x' }))).toBe(false);
     expect(isMcpHttpTraffic(fakeReq('/authorize/', 'POST', { client_id: 'x' }))).toBe(false);
+  });
+
+  it('does not classify the removed target catalog path as MCP traffic', () => {
+    expect(isMcpHttpTraffic(fakeReq('/targets'))).toBe(false);
+    expect(isMcpHttpTraffic(fakeReq('/TARGETS'))).toBe(false);
   });
 
   it.each([

@@ -23,7 +23,7 @@ Three layers gate this traffic, each addressing a distinct threat:
    ┌──────────────────────────────────────────────────────────┐
    │ Layer 1 — HTTP edge (per-IP)                             │
    │   OAuth: /register /authorize /token /revoke             │
-   │   MCP: /mcp, pinned, aggregate, /targets, Copilot path   │
+   │   MCP: /mcp, pinned, aggregate, Copilot path             │
    │   ARC1_AUTH_RATE_LIMIT + ARC1_MCP_HTTP_RATE_LIMIT        │
    └──────────────────────────────────────────────────────────┘
                               │
@@ -53,7 +53,7 @@ These are all the knobs you have. Set values via env vars, CLI flags, or `.env`.
 
 **What it caps.** Requests per minute, per source IP, to the OAuth endpoints (`/register`, `/authorize`, `/token`, `/revoke`). When `ARC1_MCP_HTTP_RATE_LIMIT` is unset, MCP HTTP traffic keeps its historical separately-derived cap (`max(value × 30, 600)/min/IP`).
 
-**Copilot Studio note.** Copilot Studio POSTs MCP JSON-RPC bodies to `/authorize` instead of `/mcp` (a documented quirk of that client). Those requests skip the low OAuth bucket and consume the same process-wide MCP bucket as legacy `/mcp`, pinned routes, `/multi/mcp`, and `/targets`. Normal OAuth `/authorize` requests continue to use the OAuth cap. Alternating endpoint styles therefore does not multiply an IP's effective MCP allowance.
+**Copilot Studio note.** Copilot Studio POSTs MCP JSON-RPC bodies to `/authorize` instead of `/mcp` (a documented quirk of that client). Those requests skip the low OAuth bucket and consume the same process-wide MCP bucket as legacy `/mcp`, pinned routes, and `/multi/mcp`. Normal OAuth `/authorize` requests continue to use the OAuth cap. Alternating endpoint styles therefore does not multiply an IP's effective MCP allowance.
 
 **What happens on hit.** HTTP `429 Too Many Requests` with `Retry-After` and RFC 9331 `RateLimit-Limit, remaining, reset` headers. Emits one `auth_rate_limited` audit event per denial.
 
@@ -67,7 +67,7 @@ These are all the knobs you have. Set values via env vars, CLI flags, or `.env`.
 ### `ARC1_MCP_HTTP_RATE_LIMIT` — Layer 1 MCP override (default unset)
 
 One process-wide per-IP bucket value is applied to legacy `/mcp`, every pinned and aggregate
-multi-target MCP route, `/targets`, and Copilot JSON-RPC sent to `/authorize`. Unset preserves
+multi-target MCP route, and Copilot JSON-RPC sent to `/authorize`. Unset preserves
 `max(ARC1_AUTH_RATE_LIMIT × 30, 600)`. Set a positive integer to replace that derived value. Set `0`
 to disable only the MCP HTTP-edge limiter; OAuth endpoints remain controlled independently by
 `ARC1_AUTH_RATE_LIMIT`.
@@ -76,7 +76,13 @@ to disable only the MCP HTTP-edge limiter; OAuth endpoints remain controlled ind
 
 **Layer 2 ships off by default.** It is the only layer that can fail user-visible work (the others either queue or return HTTP 429 to a consenting client). Single-user stdio deployments don't need it; multi-user PP / OIDC deployments turn it on explicitly with `ARC1_RATE_LIMIT=60` (or whatever quota suits the team — see the sizing presets below). See [ADR-0004](../docs/adr/0004-layered-rate-limiting.md) for the rationale.
 
-**What it caps when enabled.** MCP tool calls per minute, per authenticated user. Stdio mode (no `authInfo`) is exempt entirely — there's no user identity to key on, and stdio is single-user-by-design. Multi-target requests consume this quota after target/scope/policy validation but before the uncached per-user Destination lookup or any SAP feature probe; an over-quota request therefore performs no BTP or SAP work.
+**What it caps when enabled.** MCP tool calls per minute, per authenticated user. Stdio mode (no
+`authInfo`) is exempt entirely — there's no user identity to key on, and stdio is
+single-user-by-design. SAP-contacting multi-target requests consume this quota after
+target/scope/policy validation but before the uncached per-user Destination lookup or any SAP feature
+probe; an over-quota request therefore performs no BTP or SAP work. The aggregate-only `SAPTargets`
+catalog consumes the same per-user quota but performs no Principal Propagation, Destination lookup,
+or SAP request.
 
 **User-key derivation** walks identity claims most-specific-first so users sharing an OAuth `azp` (app id) never collapse into one bucket:
 

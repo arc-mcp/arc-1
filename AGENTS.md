@@ -97,9 +97,10 @@ src/
 ├── server/
 │   ├── server.ts               # MCP server setup, tool registration
 │   ├── config.ts, types.ts     # Config parser + ServerConfig defaults
-│   ├── http.ts                 # HTTP auth + legacy, pinned, aggregate routes and protected target catalog
+│   ├── http.ts                 # HTTP auth + legacy, pinned, and aggregate routes
 │   ├── destination-discovery.ts, destination-registry.ts # Secret-safe snapshot + immutable targets
 │   ├── multi-target-runtime.ts, multi-target-tools.ts # Strict-PP configs + mutation-free schemas
+│   ├── multi-target-catalog.ts # Role-sensitive, secret-safe SAPTargets result
 │   ├── logger.ts               # Structured logger (stderr only, never stdout)
 │   ├── audit.ts, sinks/        # Audit events + stderr/file/btp-auditlog sinks
 │   ├── context.ts, elicit.ts   # MCP context helpers, elicitation
@@ -150,7 +151,7 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 
 | Task | Files (+ key gotcha) |
 |------|------|
-| Multi-target ADR-0006 work | `docs/plans/destination-discovered-multi-target-v1.md` is normative; `src/server/{destination-discovery,destination-registry,multi-target-runtime,multi-target-tools,server,http}.ts`; keep default-off, strict-PP, cache-free, and mutation-free. |
+| Multi-target ADR-0006 work | `docs/plans/destination-discovered-multi-target-v1.md` is normative; `src/server/{destination-discovery,destination-registry,multi-target-runtime,multi-target-tools,multi-target-catalog,server,http}.ts`; keep default-off, strict-PP, cache-free, and mutation-free. `SAPTargets` is aggregate-only; do not add a separate HTTP catalog. |
 | Add new read operation | `src/adt/client.ts`, `src/handlers/read.ts`, `src/handlers/tools.ts` (+ `src/adt/xml-parser.ts`, `src/adt/types.ts` for structured) |
 | Add ADT slash alias to `SLASH_TYPE_MAP` | `src/handlers/object-types.ts`, `tests/unit/handlers/slash-type-map.test.ts` — needs `docs/research/abap-types/types/<short>.md` evidence, verify live `<adtcore:type>` first (#218) |
 | SAPWrite TABL subtype routing (TABL/DT vs /DS, #285) | `src/handlers/object-types.ts`, `src/handlers/write-helpers.ts`, `src/handlers/write/create.ts`, `src/handlers/{schemas,tools}.ts` — reads collapse to bare `TABL` |
