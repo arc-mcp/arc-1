@@ -46,28 +46,35 @@ export async function handleSAPNavigate(client: AdtClient, args: Record<string, 
       if (!uri) {
         return errorResult('Provide uri or type+name to find references.');
       }
-      // objectType is passed to SAP's where-used scope API which expects slash format (CLAS/OC, PROG/P).
-      // Do NOT normalize it — the slash suffix is semantically meaningful for the SAP filter.
+      // objectType keeps its slash format (CLAS/OC, PROG/P) — do NOT normalize; the suffix is
+      // semantically meaningful. Filtering happens client-side (SAP ignores objectTypeFilter).
       const objectType = args.objectType ? String(args.objectType) : undefined;
-      const lookup = await lookupLiveUsages(client, uri, objectType);
-      const { results } = lookup;
+      const maxResults = args.maxResults === undefined ? undefined : Number(args.maxResults);
+      const lookup = await lookupLiveUsages(client, uri, objectType, maxResults);
+      const { results, total, truncated } = lookup;
 
-      if (results.length === 0) {
+      if (total === 0) {
         return textResult('No references found.');
       }
-      if (lookup.ignoredObjectType) {
-        return textResult(
-          JSON.stringify(
-            {
-              note: `This SAP system does not support scope-based Where-Used. The objectType filter "${lookup.ignoredObjectType}" was ignored — results below are unfiltered.`,
-              results,
-            },
-            null,
-            2,
-          ),
-        );
-      }
-      return textResult(JSON.stringify(results, null, 2));
+      return textResult(
+        JSON.stringify(
+          {
+            total,
+            shown: results.length,
+            truncated,
+            ...(truncated
+              ? {
+                  hint:
+                    `Showing ${results.length} of ${total} references. Narrow with objectType ` +
+                    `(e.g. "CLAS/OC") or raise maxResults (max 1000).`,
+                }
+              : {}),
+            references: results,
+          },
+          null,
+          2,
+        ),
+      );
     }
     case 'completion': {
       const proposals = await getCompletion(client.http, client.safety, uri, line, column, source);

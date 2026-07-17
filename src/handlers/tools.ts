@@ -1002,7 +1002,11 @@ export function getToolDefinitions(
         objectType: {
           type: 'string',
           description:
-            'For references action: filter where-used results by ADT object type in slash format (e.g., PROG/P, CLAS/OC, FUGR/FF, INTF/OI). On systems supporting the scope endpoint, only returns references from objects of the specified type. On older systems, the filter is ignored and all references are returned with a note.',
+            'references: keep only results of this ADT type, slash format (CLAS/OC, PROG/P, FUGR/FF). A bare prefix ("CLAS") matches every subtype.',
+        },
+        maxResults: {
+          type: 'number',
+          description: 'references: max entries (default 100, max 1000). "total" always reports the unfiltered count.',
         },
         line: { type: 'number', description: 'Line number (1-based)' },
         column: { type: 'number', description: 'Column number (1-based)' },
@@ -1333,6 +1337,10 @@ export function getToolDefinitions(
                 description: 'Required for FUNC type. The function group containing the function module.',
               },
             }),
+        maxResults: {
+          type: 'number',
+          description: 'usages: max entries (default 100, max 1000). "usageCount" always reports the true total.',
+        },
         maxDeps: {
           type: 'number',
           description: 'Maximum dependencies to resolve (default 20). Lower = faster + fewer tokens.',
@@ -1526,8 +1534,8 @@ export function getToolDefinitions(
               'release_recursive: release all unreleased tasks first, then the transport itself. ' +
               'check: check if a transport is needed for a package/object (requires type, name, package). ' +
               'history: list transports referencing an object (reverse lookup; requires type, name; works without SAP_ALLOW_TRANSPORT_WRITES). ' +
-              "layers: list the transport layers this system offers (name + description + resolved target where any) — the valid values for create's transportLayer. Use this to discover a real value instead of guessing; works without SAP_ALLOW_TRANSPORT_WRITES. Uses the package value-help endpoint (NW 7.52+); older releases report it's unavailable. " +
-              "targets: list the valid transport targets (Transportziel / TR_TARGET) this system offers — the valid values for create's target. Use this to discover a real target (e.g. before create with target=). Uses the official ADT target value-help; available only on releases whose ADT stack supports explicit targets (NW 7.50/7.51 report it's unavailable). Read-only.",
+              "layers: list the transport layers this system offers (name + description + resolved target where any) — the valid values for create's transportLayer. Use this to discover a real value instead of guessing; works without SAP_ALLOW_TRANSPORT_WRITES. " +
+              "targets: list the valid transport targets (Transportziel / TR_TARGET) this system offers — the valid values for create's target. Use this to discover a real target (e.g. before create with target=). Read-only. Both report unavailability at runtime on releases that lack the value-help endpoint.",
           },
           id: {
             type: 'string',

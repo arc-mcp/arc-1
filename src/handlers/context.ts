@@ -102,13 +102,21 @@ export async function handleSAPContext(
       resolvedObject = { type: normalizeObjectType(match.objectType), name: match.objectName, uri: match.uri };
     }
 
-    const lookup = await lookupLiveUsages(client, resolvedUri);
+    const usageMax = args.maxResults === undefined ? undefined : Number(args.maxResults);
+    const lookup = await lookupLiveUsages(client, resolvedUri, undefined, usageMax);
     return textResult(
       JSON.stringify(
         {
           name: name.toUpperCase(),
           resolvedObject,
-          usageCount: lookup.results.length,
+          // usageCount is the TOTAL, not the page size — a truncated page must not under-report
+          // the blast radius of a change.
+          usageCount: lookup.total,
+          shown: lookup.results.length,
+          truncated: lookup.truncated,
+          ...(lookup.truncated
+            ? { hint: `Showing ${lookup.results.length} of ${lookup.total} usages. Raise maxResults (max 1000).` }
+            : {}),
           usages: lookup.results,
           source: 'live',
           fallbackUsed: lookup.fallbackUsed,

@@ -942,7 +942,11 @@
         },
         "objectType": {
           "type": "string",
-          "description": "For references action: filter where-used results by ADT object type in slash format (e.g., PROG/P, CLAS/OC, FUGR/FF, INTF/OI). On systems supporting the scope endpoint, only returns references from objects of the specified type. On older systems, the filter is ignored and all references are returned with a note."
+          "description": "references: keep only results of this ADT type, slash format (CLAS/OC, PROG/P, FUGR/FF). A bare prefix (\"CLAS\") matches every subtype."
+        },
+        "maxResults": {
+          "type": "number",
+          "description": "references: max entries (default 100, max 1000). \"total\" always reports the unfiltered count."
         },
         "line": {
           "type": "number",
@@ -1313,6 +1317,10 @@
         "group": {
           "type": "string",
           "description": "Required for FUNC type. The function group containing the function module."
+        },
+        "maxResults": {
+          "type": "number",
+          "description": "usages: max entries (default 100, max 1000). \"usageCount\" always reports the true total."
         },
         "maxDeps": {
           "type": "number",
