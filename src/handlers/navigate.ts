@@ -53,9 +53,8 @@ export async function handleSAPNavigate(client: AdtClient, args: Record<string, 
       const lookup = await lookupLiveUsages(client, uri, objectType, maxResults);
       const { results, total, truncated } = lookup;
 
-      if (total === 0) {
-        return textResult('No references found.');
-      }
+      // No early text return for the empty case: a consumer that parses the envelope would throw on
+      // "No references found.", and `total: 0` is the honest answer to "how many reference this?".
       return textResult(
         toolJson({
           total,

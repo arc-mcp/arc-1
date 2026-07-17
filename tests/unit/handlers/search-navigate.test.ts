@@ -1375,6 +1375,27 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(impl1.isResult).toBe(true);
     });
 
+    it('augments INTF implementers for a PADDED objectType, same as the trimmed value', async () => {
+      // Regression: the filter was trimmed at comparison time but the RAW objectType still reached
+      // augmentInterfaceImplementers, whose /^CLAS/i check rejects " CLAS/OC " — so augmentation was
+      // skipped and the implementers were dropped before the (trimmed) filter could keep them. The
+      // filter is now normalized once at the entry, so padding cannot change behaviour.
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, intfWhereUsedXmlSparse()));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, clsnameXml(['ZCL_IMPL1'])));
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPNavigate', {
+        action: 'references',
+        type: 'INTF',
+        name: 'ZIF_FOO',
+        objectType: '  CLAS/OC  ',
+      });
+      const parsed = JSON.parse(result.content[0]?.text as string);
+      expect(parsed.total).toBe(1);
+      expect(parsed.references[0].name).toBe('ZCL_IMPL1');
+    });
+
     it('dedupes — does not re-add an implementer SAP already returned', async () => {
       mockFetch.mockReset();
       // SAP's where-used DOES include ZCL_IMPL1 this time (e.g. on a system with a healthier index)
@@ -1442,8 +1463,13 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       // Augmentation skipped: only CSRF + where-used were fetched, no SEOMETAREL lookup.
       expect(mockFetch).toHaveBeenCalledTimes(2);
       // The sparse fixture holds only INTF/OI + a structural node, so a PROG/P filter keeps none.
-      // Previously these were returned unfiltered despite the caller asking for PROG/P.
-      expect(result.content[0]?.text).toBe('No references found.');
+      // Previously these were returned unfiltered despite the caller asking for PROG/P. The empty
+      // case still returns the envelope — a consumer parsing it must not hit a bare text string.
+      const parsed = JSON.parse(result.content[0]?.text as string);
+      expect(parsed.total).toBe(0);
+      expect(parsed.shown).toBe(0);
+      expect(parsed.truncated).toBe(false);
+      expect(parsed.references).toEqual([]);
     });
 
     it('does not augment for CLAS references (only INTF)', async () => {

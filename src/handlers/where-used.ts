@@ -69,10 +69,17 @@ export async function lookupLiveUsages(
   objectType?: string,
   maxResults?: number,
 ): Promise<LiveUsageLookup> {
+  // Normalize the filter ONCE, at the entry, and use only this value below. A whitespace-only filter
+  // means "no filter" (matching the empty type would match nothing and read as "No references
+  // found"). Trimming here rather than at the comparison is what keeps `" CLAS/OC "` behaving like
+  // `"CLAS/OC"` for augmentInterfaceImplementers too — its /^CLAS/i check would otherwise skip
+  // augmentation for a padded value and silently drop implementers the later filter cannot recover.
+  const filter = objectType?.trim() ? objectType.trim() : undefined;
+
   let results: LiveUsageResult[];
   let fallbackUsed = false;
   try {
-    results = await findWhereUsed(client.http, client.safety, uri, objectType);
+    results = await findWhereUsed(client.http, client.safety, uri, filter);
   } catch (err) {
     if (!(err instanceof AdtApiError) || ![404, 405, 415, 501].includes(err.statusCode)) throw err;
     results = await findReferences(client.http, client.safety, uri);
@@ -81,12 +88,9 @@ export async function lookupLiveUsages(
 
   // Kept outside the try: an augment failure must not be mistaken for a missing where-used endpoint.
   if (!fallbackUsed) {
-    await augmentInterfaceImplementers(client, uri, objectType, results as WhereUsedResult[]);
+    await augmentInterfaceImplementers(client, uri, filter, results as WhereUsedResult[]);
   }
 
-  // A whitespace-only filter means "no filter", not "match the empty type" — the latter would match
-  // nothing and surface as a bare "No references found".
-  const filter = objectType?.trim() ? objectType : undefined;
   const filtered = filter ? results.filter((result) => matchesObjectType(result.type, filter)) : results;
   const limit = clampSearchResults(maxResults, DEFAULT_USAGE_RESULTS);
   return {

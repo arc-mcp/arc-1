@@ -399,9 +399,9 @@ function makeOptionalPropertiesNullable(node: unknown): unknown {
 
 // ─── Main Tool Definitions ──────────────────────────────────────────
 
-/** Advertise the strictness the runtime enforces — the Zod schemas are `.strict()`, and JSON Schema
- *  means the opposite when `additionalProperties` is absent. Every return path goes through here.
- *  TOP-LEVEL ONLY: nested `objects[]` items stay lenient, matching `.strict()` (batch_create; #360). */
+/** Advertise the strictness the runtime enforces — the Zod schemas are `.strict()`, and JSON Schema means
+ *  the opposite when absent. Every return path goes through here. TOP-LEVEL ONLY: nested `objects[]`
+ *  items stay lenient, matching `.strict()`, which does not cascade (batch_create; #360). */
 function withStrictSchemas(tools: ToolDefinition[]): ToolDefinition[] {
   for (const tool of tools) (tool.inputSchema as Record<string, unknown>).additionalProperties = false;
   return tools;
@@ -1346,11 +1346,12 @@ export function getToolDefinitions(
             }),
         maxResults: {
           type: 'number',
-          description: 'usages: max entries (default 100, max 1000). "usageCount" always reports the true total.',
+          description:
+            'usages: max entries (default 100); impact: max per downstream bucket (default 50). Max 1000. "usageCount"/"summary" stay true totals, not page sizes.',
         },
         maxDeps: {
           type: 'number',
-          description: 'Maximum dependencies to resolve (default 20). Lower = faster + fewer tokens.',
+          description: 'Max dependencies to resolve (default 20). Lower = faster + fewer tokens.',
         },
         depth: {
           type: 'number',
@@ -1360,22 +1361,20 @@ export function getToolDefinitions(
         },
         includeIndirect: {
           type: 'boolean',
-          description:
-            'Only for action="impact". Include indirect (transitive) downstream where-used entries. Default false.',
+          description: 'impact: Include indirect (transitive) downstream where-used entries. Default false.',
         },
         siblingCheck: {
           type: 'boolean',
-          description:
-            'Only for action="impact". Enable sibling metadata-extension consistency analysis. Default true.',
+          description: 'impact: Enable sibling metadata-extension consistency analysis. Default true.',
         },
         siblingMaxCandidates: {
           type: 'number',
-          description: 'Only for action="impact". Maximum sibling DDLS candidates to compare. Default 4; hard cap 10.',
+          description: 'impact: Maximum sibling DDLS candidates to compare. Default 4; hard cap 10.',
         },
         includeKtd: {
           type: 'boolean',
           description:
-            'Only for action="deps". When true/default, prepend the object Knowledge Transfer Document (KTD/SKTD) when one exists. Set false to skip the KTD lookup.',
+            'deps: When true/default, prepend the object Knowledge Transfer Document (KTD/SKTD) when one exists. Set false to skip the KTD lookup.',
         },
       },
       required: ['name'],
