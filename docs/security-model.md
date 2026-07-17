@@ -317,8 +317,9 @@ Trivy is reused from the image-CVE gate because gitleaks-action requires a paid 
 organization repos; its rule-based detection covers structured credentials (API keys, tokens,
 cloud keys, PEM private keys) — [TruffleHog OSS](https://github.com/trufflesecurity/trufflehog)
 is the upgrade path if entropy-based detection or live-credential verification is later needed.
-The related "hidden interfaces" concern is bounded separately: the LLM-visible tool surface is
-frozen byte-for-byte by `tests/fixtures/tool-definitions/`.
+The related "hidden interfaces" concern is bounded separately: CodeQL SAST runs on every push
+(GitHub default setup — JS/TS, Actions, Python), and the LLM-visible tool surface is frozen
+byte-for-byte by `tests/fixtures/tool-definitions/`.
 
 ---
 
