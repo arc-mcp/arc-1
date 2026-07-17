@@ -64,7 +64,7 @@ describe('shipped mta.yaml resolves through the config parser', () => {
   const ppWarnings = () =>
     stderrSpy.mock.calls
       .flat()
-      .filter((line) => String(line).includes('SAP_PP_'))
+      .filter((line: unknown) => String(line).includes('SAP_PP_'))
       .join(' ');
 
   it('boots as shipped, with strict PP actually enforced', () => {
