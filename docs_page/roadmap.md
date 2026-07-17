@@ -1,6 +1,6 @@
 # ARC-1 Roadmap
 
-**Last Updated:** 2026-06-27 (COMPAT-06 outbound `HTTP_PROXY` / `NO_PROXY` support researched and added as an open compatibility item)
+**Last Updated:** 2026-07-17 (experimental read-only multi-target v1 and independent MCP HTTP edge-rate control documented)
 
 **Project:** ARC-1 (ABAP Relay Connector) — MCP Server for SAP ABAP Systems
 **Repository:** https://github.com/arc-mcp/arc-1
@@ -16,7 +16,7 @@
 
 Every other SAP MCP server today runs on the developer's local machine — unmanaged, unaudited, with whatever permissions the developer happens to have. There is no admin oversight, no token budget control, no audit trail, and no way to restrict what an LLM can do to an SAP system.
 
-**ARC-1 is different.** It is a **centralized, admin-controlled MCP gateway** deployed on BTP Cloud Foundry or a company server (Docker). One instance per SAP system, serving multiple users. The admin controls which tools are exposed, which packages can be touched, and whether writes are allowed — before any LLM request reaches SAP.
+**ARC-1 is different.** It is a **centralized, admin-controlled MCP gateway** deployed on BTP Cloud Foundry or a company server (Docker). One target per instance remains the default; the experimental BTP multi-target mode is a narrowly reviewed, read-only exception. The admin controls which tools are exposed, which packages can be touched, and whether writes are allowed — before any LLM request reaches SAP.
 
 ---
 
@@ -616,13 +616,13 @@ SAP confirmed GA of ABAP Cloud Extension for VS Code with built-in agentic AI po
 | **Usefulness** | High — fixes per-PP-user concurrency bug (100 users × `maxConcurrent` slots, not 10 total), prevents runaway AI loops, closes CodeQL alert `js/missing-rate-limiting` on `/authorize`. |
 | **Status** | **Completed — 2026-05-12** ([PR #276](https://github.com/arc-mcp/arc-1/pull/276)) |
 
-**What shipped:** Three independent layers, per-instance, in-memory, two operator-facing env vars total:
+**What shipped:** Three independent layers, per-instance and in-memory:
 
-- **Layer 1 (HTTP edge)** — `express-rate-limit` per-IP on `/register`, `/authorize`, `/token`, `/revoke`, `/mcp`. Configurable via `ARC1_AUTH_RATE_LIMIT` (default `20/min/IP`). `/mcp` gets `max(value × 30, 600)/min/IP`. On hit: HTTP `429` + `Retry-After` + RFC 9331 `RateLimit-*` headers + `auth_rate_limited` audit event.
-- **Layer 2 (Per-user MCP quota)** — `rate-limiter-flexible` token bucket inside `handleToolCall`, keyed on `authInfo.userName ?? clientId ?? '__anon__'`. Configurable via `ARC1_RATE_LIMIT` (default `60/min/user`). On hit: MCP tool error with structured `retryAfter` (NOT HTTP 429, so the agent loop backs off cleanly) + `mcp_rate_limited` audit event. Stdio mode exempt.
+- **Layer 1 (HTTP edge)** — `express-rate-limit` uses separate per-IP buckets for OAuth (`/register`, `/authorize`, `/token`, `/revoke`) and MCP HTTP traffic (`/mcp` plus multi-target routes). `ARC1_AUTH_RATE_LIMIT` controls OAuth (default `20/min/IP`). MCP uses `ARC1_MCP_HTTP_RATE_LIMIT` when explicitly set; otherwise it derives `max(OAuth × 30, 600)/min/IP`. Setting the OAuth limit to `0` does not disable MCP protection; only an explicit MCP value of `0` does. On hit: HTTP `429` + `Retry-After` + RFC 9331 `RateLimit-*` headers + `auth_rate_limited` audit event.
+- **Layer 2 (Per-user MCP quota)** — `rate-limiter-flexible` token bucket inside `handleToolCall`, keyed on `authInfo.userName ?? clientId ?? '__anon__'`. Configurable via `ARC1_RATE_LIMIT` (default `0`, disabled; multi-target deployments recommend starting at `120/min/user`). On hit: MCP tool error with structured `retryAfter` (NOT HTTP 429, so the agent loop backs off cleanly) + `mcp_rate_limited` audit event. Stdio mode exempt.
 - **Layer 3 (SAP-bound semaphore)** — promoted the existing `Semaphore` from per-`AdtClient` to ONE server-wide instance constructed in `createAndStartServer` and threaded through every `buildAdtConfig` call. `ARC1_MAX_CONCURRENT` (default `10`) is now a true server-wide cap regardless of stdio/HTTP or shared/PP auth. Honors `Retry-After` on both `429` and `503` (clamped to 60 s, single retry, audit records `source: header|fallback`).
 
-**Simplifications vs original SEC-05 proposal:** No `_BURST` env vars (the underlying limiters handle burst tolerance internally). Per-endpoint OAuth ceilings are constants in code, not env. No monitor mode for Layer 2 — defaults are conservative; flip to `0` to disable. No Redis-backed shared state (preserves stateless-deployment property from PR #212; multi-instance attackers cost `N × limit` — acceptable). Cost weighting per tool deferred to v2.
+**Simplifications vs original SEC-05 proposal:** No `_BURST` env vars (the underlying limiters handle burst tolerance internally). No monitor mode for Layer 2 — it is an explicit operator opt-in. No Redis-backed shared state (preserves stateless-deployment property from PR #212; multi-instance attackers cost `N × limit` — acceptable). Cost weighting per tool is deferred to v2.
 
 **Documentation:** Operator guide at [Rate Limiting Guide](rate-limiting.md). Design rationale: [ADR-0004](../docs/adr/0004-layered-rate-limiting.md).
 
@@ -2102,6 +2102,7 @@ source/metadata reads plus separately opted-in data preview and SQL. There are n
 roles; separate instances or the MCP hub remain the answer for writes, pre-SAP target ACLs, or hard
 failure/security isolation. See [ADR-0006](../docs/adr/0006-experimental-read-only-multi-target.md)
 and the [administrator guide](multi-target-administration.md).
+Start with the [multi-system setup runbook](multi-target-setup.md).
 
 ---
 

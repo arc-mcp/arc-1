@@ -88,6 +88,30 @@ describe('Audit Logging Integration', () => {
     expect((end as any).resultSize).toBeGreaterThan(0);
   });
 
+  it('uses a caller-supplied request ID for the complete tool audit trail', async () => {
+    const events: AuditEvent[] = [];
+    const captureSink = { write: (e: AuditEvent) => events.push(e) };
+    const { logger } = await import('../../../src/server/logger.js');
+    logger.addSink(captureSink);
+
+    await handleToolCall(
+      createClient(),
+      DEFAULT_CONFIG,
+      'SAPRead',
+      { type: 'PROG', name: 'ZHELLO' },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      'REQ-MULTI-TARGET',
+    );
+
+    const correlated = events.filter((event) => event.event === 'tool_call_start' || event.event === 'tool_call_end');
+    expect(correlated).toHaveLength(2);
+    expect(correlated.every((event) => event.requestId === 'REQ-MULTI-TARGET')).toBe(true);
+  });
+
   it('emits auth_scope_denied for insufficient scopes', async () => {
     const events: AuditEvent[] = [];
     const captureSink = { write: (e: AuditEvent) => events.push(e) };

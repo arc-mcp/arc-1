@@ -297,8 +297,19 @@ export function targetCatalog(
 
 export function resolveMcpHttpRateLimit(config: Pick<ServerConfig, 'authRateLimit' | 'mcpHttpRateLimit'>): number {
   if (config.mcpHttpRateLimit !== undefined) return config.mcpHttpRateLimit;
-  return config.authRateLimit > 0 ? Math.max(config.authRateLimit * 30, 600) : 0;
+  // OAuth and MCP traffic are separate edge buckets. Disabling only the OAuth
+  // bucket must not also remove MCP protection; ARC1_MCP_HTTP_RATE_LIMIT=0 is
+  // the explicit opt-out for MCP traffic.
+  return Math.max(config.authRateLimit * 30, 600);
 }
+
+export function multiTargetHealthStatus(registry: DestinationRegistry): 'ready' | 'error' {
+  // Zero targets and individually quarantined destinations are valid snapshots.
+  // Only a registry-wide failure makes multi-target routing unavailable.
+  return registry.available ? 'ready' : 'error';
+}
+
+export const MULTI_TARGET_SCOPES_SUPPORTED = Object.freeze(['read', 'data', 'sql', 'admin']);
 
 /**
  * Start the HTTP Streamable server.
@@ -322,10 +333,10 @@ export async function startHttpServer(
   applySecurityMiddleware(app, config.allowedOrigins);
 
   // ─── Layer 1: HTTP-edge rate limiter helper ──────────────────────────
-  // One operator-facing knob (`ARC1_AUTH_RATE_LIMIT`, default 20/min/IP) controls all
-  // OAuth endpoints uniformly. `/mcp` gets `max(value × 30, 600)/min/IP` so legitimate
-  // batched tool-call traffic isn't choked while pre-bearer-auth probing is still gated.
-  // Per-endpoint differentiation lives here, not in env, so the operator surface stays tiny.
+  // `ARC1_AUTH_RATE_LIMIT` (default 20/min/IP) controls OAuth endpoints uniformly.
+  // MCP traffic derives `max(value × 30, 600)/min/IP` unless the operator sets the
+  // independent `ARC1_MCP_HTTP_RATE_LIMIT`; this keeps pre-bearer probing gated even
+  // when OAuth limiting is delegated to an upstream proxy.
   // See docs_page/rate-limiting.md (Layer 1) and ADR-0004.
   //
   // Implementation note: the limiter is mounted DIRECTLY via createAuthRateLimiter →
@@ -388,7 +399,7 @@ export async function startHttpServer(
       startedAt,
       pid: process.pid,
       ...(multiTargets
-        ? { components: { multiTarget: { status: multiTargets.registry.available ? 'ok' : 'error' } } }
+        ? { components: { multiTarget: { status: multiTargetHealthStatus(multiTargets.registry) } } }
         : {}),
     });
   });
@@ -462,6 +473,26 @@ export async function startHttpServer(
       verifier: { verifyAccessToken: chainedVerifier },
       resourceMetadataUrl,
     });
+    // Multi-target routes accept XSUAA identities only. Define this once and
+    // reuse it for explicit routes and the multi-only Copilot `/authorize`
+    // fallback so the compatibility alias cannot fall back to API-key/OIDC.
+    const multiBearerAuth: express.RequestHandler | undefined =
+      multiTargets && pinnedMcpHandler && aggregateMcpHandler
+        ? (req, res, next) => {
+            // `app.use('/authorize', ...)` temporarily trims req.path to `/`.
+            // originalUrl preserves the public route, so the Copilot alias can
+            // advertise the aggregate PRM instead of a non-existent root PRM.
+            const originalPath = req.originalUrl?.split('?', 1)[0] || req.path;
+            const lowerPath = originalPath.toLowerCase();
+            const resourcePath = lowerPath === '/targets' || lowerPath === '/authorize' ? '/multi/mcp' : originalPath;
+            const multiResourceMetadataUrl = `${oauthFullBase}/.well-known/oauth-protected-resource${resourcePath}`;
+            requireBearerAuth({
+              verifier: { verifyAccessToken: xsuaaVerifier },
+              requiredScopes: ['read'],
+              resourceMetadataUrl: multiResourceMetadataUrl,
+            })(req, res, next);
+          }
+        : undefined;
     if (uiDeps) {
       const uiBearerAuth = requireBearerAuth({
         verifier: { verifyAccessToken: chainedVerifier },
@@ -515,8 +546,10 @@ export async function startHttpServer(
           id: req.body.id,
           userAgent: req.headers['user-agent']?.slice(0, 60),
         });
-        // Run bearerAuth, then the configured legacy endpoint or aggregate endpoint.
-        bearerAuth(req, res, (err?: unknown) => {
+        // Legacy /mcp keeps the configured chained verifier. A multi-only
+        // fallback uses the same XSUAA-only verifier as /multi/mcp.
+        const authorizeBearerAuth = mcpHandler ? bearerAuth : (multiBearerAuth ?? bearerAuth);
+        authorizeBearerAuth(req, res, (err?: unknown) => {
           if (err) {
             next(err);
             return;
@@ -648,7 +681,7 @@ export async function startHttpServer(
         res.json({
           resource: `${oauthFullBase}/multi/mcp`,
           authorization_servers: [`${oauthFullBase}/`],
-          scopes_supported: scopesSupported,
+          scopes_supported: MULTI_TARGET_SCOPES_SUPPORTED,
           resource_name: 'ARC-1 SAP MCP Server (multi-target)',
         });
       });
@@ -657,7 +690,7 @@ export async function startHttpServer(
         res.json({
           resource: `${oauthFullBase}/${match?.[1]}/${match?.[2]}/mcp`,
           authorization_servers: [`${oauthFullBase}/`],
-          scopes_supported: scopesSupported,
+          scopes_supported: MULTI_TARGET_SCOPES_SUPPORTED,
           resource_name: 'ARC-1 SAP MCP Server (pinned target)',
         });
       });
@@ -680,17 +713,7 @@ export async function startHttpServer(
       }),
     );
 
-    if (multiTargets && pinnedMcpHandler && aggregateMcpHandler) {
-      // Dedicated XSUAA-only verifier. API keys and direct OIDC remain valid only for legacy /mcp.
-      const multiBearerAuth: express.RequestHandler = (req, res, next) => {
-        const resourcePath = req.path === '/targets' ? '/multi/mcp' : req.path;
-        const resourceMetadataUrl = `${oauthFullBase}/.well-known/oauth-protected-resource${resourcePath}`;
-        requireBearerAuth({
-          verifier: { verifyAccessToken: xsuaaVerifier },
-          requiredScopes: ['read'],
-          resourceMetadataUrl,
-        })(req, res, next);
-      };
+    if (multiTargets && pinnedMcpHandler && aggregateMcpHandler && multiBearerAuth) {
       app.get('/targets', multiBearerAuth, (req, res) => {
         const auth = (req as Request & { auth?: { scopes?: string[] } }).auth;
         const admin = auth?.scopes?.includes('admin') ?? false;

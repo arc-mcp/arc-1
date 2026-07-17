@@ -195,8 +195,10 @@ export interface ServerConfig {
 
   // --- Rate limiting (Layer 1 + Layer 2) ---
   /** Per-IP cap on OAuth endpoints (`/register`, `/authorize`, `/token`, `/revoke`) in
-   *  requests per minute. `/mcp` gets `max(value × 30, 600)/min/IP` to absorb legitimate
-   *  batch traffic. Set `0` to disable Layer 1 entirely. Default: 20.
+   *  requests per minute. When the MCP override is unset, MCP traffic gets
+   *  `max(value × 30, 600)/min/IP` to absorb legitimate batch traffic. Set `0` to
+   *  disable only the OAuth bucket; disabling the MCP bucket requires an explicit
+   *  `mcpHttpRateLimit: 0`. Default: 20.
    *  See docs_page/rate-limiting.md (Layer 1). */
   authRateLimit: number;
   /** Optional explicit per-IP cap shared by every MCP HTTP route, including

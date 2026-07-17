@@ -41,8 +41,7 @@ export type TargetExclusionCode =
   | 'DUPLICATE_DESTINATION_NAME'
   | 'DUPLICATE_TARGET'
   | 'SHADOWED_BY_INSTANCE'
-  | 'TARGET_LIMIT_EXCEEDED'
-  | 'LIMITED_BY_INSTANCE';
+  | 'TARGET_LIMIT_EXCEEDED';
 
 export interface TargetPolicy {
   readonly allowDataPreview: boolean;

@@ -99,8 +99,9 @@ Missing values are false. These properties can only narrow/intersect the instanc
 The two switches are independent: SQL does not automatically expose named table preview. There is
 no `arc1.config_version` in v1 because the strict key allowlist is the schema.
 
-See [Multi-Target Administration](multi-target-administration.md) for the exact field validation,
-MTA block, templates, conflict rules, admin status, roles, restart workflow, and troubleshooting.
+Start with [Multi-System Setup](multi-target-setup.md), then use
+[Multi-Target Administration](multi-target-administration.md) for exact field validation, conflict
+rules, admin diagnostics, rate sizing, and troubleshooting.
 
 ## Aggregate tool behavior
 
@@ -168,9 +169,11 @@ administrator resolves the conflict.
 If more than 256 targets are enabled, no discovered target is activated. This avoids an unstable
 “first 256” result.
 
-Registry discovery/configuration errors keep `/health` at 200 with a degraded/error multi component
-so CF does not crash-loop the app and admin `/targets` remains available. Affected MCP routes return
-503 until the administrator fixes the issue and restarts.
+Registry discovery/configuration errors keep `/health` at 200 with an `error` multi component so CF
+does not crash-loop the app and admin `/targets` remains available. A valid snapshot reports
+`ready`, including zero-target and individually quarantined snapshots; quarantine details appear as
+`degraded` only in admin `/targets`. Affected MCP routes return 503 after a registry-wide error until
+the administrator fixes the issue and restarts.
 
 ## Client examples
 

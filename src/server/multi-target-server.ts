@@ -3,7 +3,6 @@
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import { getActionPolicy, hasRequiredScope } from '../authz/policy.js';
 import { toolJson } from '../handlers/shared.js';
-import { generateRequestId } from './context.js';
 import { isActionDenied } from './deny-actions.js';
 import type { DestinationRegistry, TargetDescriptor } from './destination-registry.js';
 import { logger } from './logger.js';
@@ -95,9 +94,9 @@ async function handleSapTargets(
   targets: readonly TargetDescriptor[],
   args: Record<string, unknown>,
   authInfo: AuthInfo | undefined,
+  requestId: string,
   mcpRateLimiter?: McpRateLimiter,
 ): Promise<Record<string, unknown>> {
-  const requestId = generateRequestId();
   const startedAt = Date.now();
   const user = resolveRateLimitUserKey(authInfo);
   logger.emitAudit({
@@ -232,11 +231,11 @@ export async function prepareMultiTargetCall(args: {
   options: MultiTargetServerOptions;
   toolName: string;
   rawArgs: Record<string, unknown>;
+  requestId: string;
   authInfo?: AuthInfo;
   mcpRateLimiter?: McpRateLimiter;
 }): Promise<PreparedMultiTargetCall> {
-  const { options, toolName, rawArgs, authInfo, mcpRateLimiter } = args;
-  const requestId = generateRequestId();
+  const { options, toolName, rawArgs, requestId, authInfo, mcpRateLimiter } = args;
   let selectedTarget: TargetDescriptor | undefined;
   const error = createErrorBuilder(toolName, authInfo, requestId, () => selectedTarget);
 
@@ -291,6 +290,16 @@ export async function prepareMultiTargetCall(args: {
       };
     }
     if (isActionDenied('SAPTargets', undefined, options.instanceConfig.denyActions)) {
+      logger.emitAudit({
+        timestamp: new Date().toISOString(),
+        level: 'warn',
+        event: 'safety_blocked',
+        requestId,
+        user: authInfo?.extra?.userName as string | undefined,
+        clientId: authInfo?.clientId,
+        operation: 'SAPTargets',
+        reason: 'Action denied by SAP_DENY_ACTIONS',
+      });
       return {
         handled: true,
         result: error('MULTI_TARGET_OPERATION_FORBIDDEN', 'This operation is disabled by the ARC-1 instance policy.'),
@@ -298,7 +307,7 @@ export async function prepareMultiTargetCall(args: {
     }
     return {
       handled: true,
-      result: await handleSapTargets(options.registry.targets, rawArgs, authInfo, mcpRateLimiter),
+      result: await handleSapTargets(options.registry.targets, rawArgs, authInfo, requestId, mcpRateLimiter),
     };
   }
 
@@ -337,6 +346,17 @@ export async function prepareMultiTargetCall(args: {
   const action = invocationPolicyKey(toolName, callArgs);
   const invocationDecision = multiTargetInvocationDecision(toolName, callArgs, activeConfig);
   if (invocationDecision === 'forbidden') {
+    logger.emitAudit({
+      timestamp: new Date().toISOString(),
+      level: 'warn',
+      event: 'safety_blocked',
+      requestId,
+      user: authInfo?.extra?.userName as string | undefined,
+      clientId: authInfo?.clientId,
+      target: selectedTarget.target,
+      operation: action ? `${toolName}.${action}` : toolName,
+      reason: 'Operation unavailable in read-only multi-target v1',
+    });
     return {
       handled: true,
       result: error(
@@ -368,6 +388,17 @@ export async function prepareMultiTargetCall(args: {
     };
   }
   if (isActionDenied(toolName, action, activeConfig.denyActions)) {
+    logger.emitAudit({
+      timestamp: new Date().toISOString(),
+      level: 'warn',
+      event: 'safety_blocked',
+      requestId,
+      user: authInfo?.extra?.userName as string | undefined,
+      clientId: authInfo?.clientId,
+      target: selectedTarget.target,
+      operation: action ? `${toolName}.${action}` : toolName,
+      reason: 'Action denied by SAP_DENY_ACTIONS',
+    });
     return {
       handled: true,
       result: error('MULTI_TARGET_OPERATION_FORBIDDEN', 'This operation is disabled by the ARC-1 instance policy.'),

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { AdtApiError } from '../../../src/adt/errors.js';
-import { classifyMultiTargetSapError } from '../../../src/handlers/dispatch.js';
+import { AdtApiError, AdtNetworkError } from '../../../src/adt/errors.js';
+import { classifyMultiTargetSapError, handleToolCall } from '../../../src/handlers/dispatch.js';
+import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 
 describe('multi-target SAP error contract', () => {
   it('treats a 401 as retryable SAP authentication failure', () => {
@@ -42,5 +43,59 @@ describe('multi-target SAP error contract', () => {
       'SAPSearch',
     );
     expect(result).toMatchObject({ code: 'SAP_SERVICE_INACTIVE', event: 'sap_authentication_failed' });
+  });
+
+  it('returns a target-aware retryable classification for network failures', () => {
+    const result = classifyMultiTargetSapError(new AdtNetworkError('connect ETIMEDOUT'), 'A4H/100', 'SAPRead');
+    expect(result).toMatchObject({ code: 'SAP_REQUEST_FAILED' });
+    expect(result?.event).toBeUndefined();
+    expect(result?.message).toContain('A4H/100');
+  });
+
+  it('returns a target-aware classification for SAP 5xx responses', () => {
+    const result = classifyMultiTargetSapError(
+      new AdtApiError('Internal Server Error', 503, '/sap/bc/adt/core/discovery', 'Internal Server Error'),
+      'A4H/100',
+      'SAPRead',
+    );
+    expect(result).toMatchObject({ code: 'SAP_REQUEST_FAILED' });
+    expect(result?.event).toBeUndefined();
+    expect(result?.message).toContain('A4H/100');
+  });
+
+  it.each([
+    ['network', new AdtNetworkError('secret-network-sentinel')],
+    [
+      'backend',
+      new AdtApiError('secret-backend-sentinel', 500, '/sap/bc/adt/core/discovery', 'secret-backend-body-sentinel'),
+    ],
+  ])('returns a safe structured envelope for a full %s dispatch failure', async (_kind, failure) => {
+    const client = {
+      getSystemInfo: async () => {
+        throw failure;
+      },
+    };
+    const result = await handleToolCall(
+      client as never,
+      { ...DEFAULT_CONFIG, targetId: 'A4H/100', minimalErrors: true },
+      'SAPRead',
+      { type: 'SYSTEM' },
+      undefined,
+      undefined,
+      undefined,
+      true,
+      undefined,
+      'REQ-STRUCTURED-FAILURE',
+    );
+    const payload = JSON.parse(result.content[0]?.text ?? '{}');
+    expect(payload).toMatchObject({
+      error: 'SAP_REQUEST_FAILED',
+      target: 'A4H/100',
+      requestId: 'REQ-STRUCTURED-FAILURE',
+      retryable: true,
+    });
+    expect(JSON.stringify(payload)).not.toContain('secret-network-sentinel');
+    expect(JSON.stringify(payload)).not.toContain('secret-backend-sentinel');
+    expect(JSON.stringify(payload)).not.toContain('secret-backend-body-sentinel');
   });
 });

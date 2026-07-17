@@ -156,6 +156,104 @@ describe('BTP Audit Log Sink', () => {
       expect(auditCall[0]).toContain('/configuration-changes');
     });
 
+    it('sends every multi-target failure stage with direct target attribution', async () => {
+      const sink = new BTPAuditLogSink(config);
+      const stages = [
+        'target_resolution_failed',
+        'pp_exchange_failed',
+        'sap_authentication_failed',
+        'sap_authorization_failed',
+        'target_policy_denied',
+      ] as const;
+      for (const event of stages) {
+        sink.write({
+          timestamp: '',
+          level: 'warn',
+          event,
+          target: 'A4H/100',
+          tool: 'SAPRead',
+          errorCode: 'VALIDATION_ERROR',
+        });
+      }
+      await sink.flush();
+
+      const auditCalls = fetchSpy.mock.calls.filter((call) => String(call[0]).includes('/audit-log/'));
+      expect(auditCalls).toHaveLength(stages.length);
+      for (const auditCall of auditCalls) {
+        expect(auditCall[0]).toContain('/security-events');
+        expect(String(auditCall[1]?.body)).toContain('A4H/100');
+        expect(String(auditCall[1]?.body)).toContain('VALIDATION_ERROR');
+      }
+    });
+
+    it('preserves target attribution across forwarded multi-target event families', async () => {
+      const sink = new BTPAuditLogSink(config);
+      const target = 'A4H/100';
+      const events: AuditEvent[] = [
+        {
+          timestamp: '',
+          level: 'info',
+          event: 'tool_call_start',
+          target,
+          tool: 'SAPRead',
+          args: {},
+        },
+        {
+          timestamp: '',
+          level: 'info',
+          event: 'tool_call_end',
+          target,
+          tool: 'SAPRead',
+          durationMs: 1,
+          status: 'success',
+        },
+        {
+          timestamp: '',
+          level: 'error',
+          event: 'auth_pp_created',
+          target,
+          success: false,
+          errorMessage: 'redacted upstream',
+        },
+        {
+          timestamp: '',
+          level: 'warn',
+          event: 'auth_scope_denied',
+          target,
+          tool: 'SAPQuery',
+          requiredScope: 'sql',
+          availableScopes: ['read'],
+        },
+        {
+          timestamp: '',
+          level: 'warn',
+          event: 'safety_blocked',
+          target,
+          operation: 'SAPWrite',
+          reason: 'read-only multi-target v1',
+        },
+        {
+          timestamp: '',
+          level: 'warn',
+          event: 'mcp_rate_limited',
+          target,
+          user: 'TEST_USER',
+          tool: 'SAPRead',
+          limitPerMinute: 120,
+          retryAfterMs: 500,
+        },
+      ];
+      for (const event of events) sink.write(event);
+      await sink.flush();
+
+      const auditCalls = fetchSpy.mock.calls.filter((call) => String(call[0]).includes('/audit-log/'));
+      expect(auditCalls).toHaveLength(events.length);
+      for (const auditCall of auditCalls) {
+        expect(String(auditCall[1]?.body)).toContain(target);
+        expect(String(auditCall[1]?.body)).not.toContain('undefined');
+      }
+    });
+
     it('does not send http_request events', async () => {
       const sink = new BTPAuditLogSink(config);
       const event: AuditEvent = {

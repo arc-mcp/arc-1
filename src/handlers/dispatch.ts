@@ -519,17 +519,23 @@ export function getToolRegistry(): ToolRegistry {
 }
 
 export interface MultiTargetSapFailure {
-  code: 'SAP_SERVICE_INACTIVE' | 'SAP_AUTHENTICATION_FAILED' | 'SAP_AUTHORIZATION_DENIED';
-  event: 'sap_authentication_failed' | 'sap_authorization_failed';
+  code: 'SAP_SERVICE_INACTIVE' | 'SAP_AUTHENTICATION_FAILED' | 'SAP_AUTHORIZATION_DENIED' | 'SAP_REQUEST_FAILED';
+  event?: 'sap_authentication_failed' | 'sap_authorization_failed';
   message: string;
 }
 
-/** Convert only conclusive SAP responses into target-aware auth errors; ambiguous 403 stays authentication. */
+/** Convert post-PP SAP failures into safe target-aware errors; ambiguous 403 stays authentication. */
 export function classifyMultiTargetSapError(
-  error: AdtApiError,
+  error: AdtApiError | AdtNetworkError,
   target: string,
   toolName: string,
 ): MultiTargetSapFailure | undefined {
+  if (error instanceof AdtNetworkError) {
+    return {
+      code: 'SAP_REQUEST_FAILED',
+      message: `ARC-1 could not reach SAP target ${target} while running ${toolName}. Check Cloud Connector and SAP availability, then try again now.`,
+    };
+  }
   const classification = classifySapDomainError(error.statusCode, error.responseBody, error.path);
   if (classification?.category === 'icf-service-inactive') {
     return {
@@ -550,6 +556,12 @@ export function classifyMultiTargetSapError(
       code: 'SAP_AUTHENTICATION_FAILED',
       event: 'sap_authentication_failed',
       message: `SAP authentication failed for target ${target} after principal propagation. Fix the user mapping, login, or PP setup, then try again now.`,
+    };
+  }
+  if (error.isServerError) {
+    return {
+      code: 'SAP_REQUEST_FAILED',
+      message: `SAP target ${target} returned a server error while running ${toolName}. Retry once; if it persists, check SAP health and short dumps.`,
     };
   }
   return undefined;
@@ -573,8 +585,9 @@ export async function handleToolCall(
   cachingLayer?: CachingLayer,
   isPerUserClient?: boolean,
   mcpRateLimiter?: McpRateLimiter,
+  requestId?: string,
 ): Promise<ToolResult> {
-  const reqId = generateRequestId();
+  const reqId = requestId ?? generateRequestId();
   const start = Date.now();
 
   // Build user context for audit logging
@@ -829,20 +842,22 @@ export async function handleToolCall(
           errorMessage: message,
         });
 
-        if (config.targetId && err instanceof AdtApiError) {
+        if (config.targetId && (err instanceof AdtApiError || err instanceof AdtNetworkError)) {
           const failure = classifyMultiTargetSapError(err, config.targetId, toolName);
           if (failure) {
-            logger.emitAudit({
-              timestamp: new Date().toISOString(),
-              level: 'warn',
-              event: failure.event,
-              requestId: reqId,
-              user,
-              clientId,
-              target: config.targetId,
-              tool: toolName,
-              errorCode: failure.code,
-            });
+            if (failure.event) {
+              logger.emitAudit({
+                timestamp: new Date().toISOString(),
+                level: 'warn',
+                event: failure.event,
+                requestId: reqId,
+                user,
+                clientId,
+                target: config.targetId,
+                tool: toolName,
+                errorCode: failure.code,
+              });
+            }
             return errorResult(
               toolJson({
                 error: failure.code,

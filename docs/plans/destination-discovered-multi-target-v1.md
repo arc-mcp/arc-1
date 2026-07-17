@@ -74,7 +74,7 @@ propagation, remains the target-specific authorization boundary.
 | PP destination count | One PP destination per system/client in v1. A separate technical/design-time destination is deferred. |
 | Initial backend | On-premise + PP. S/4HANA Public Cloud/SAML assertion follows after v1 with dedicated testing. |
 | Deployment | Multiple CF app instances are supported and tested; `mta.yaml` stays at one instance by default. |
-| Health | Registry/configuration errors keep `/health` at 200 with a degraded/error component so protected admin diagnostics remain reachable; affected MCP routes return 503. |
+| Health | Registry/configuration errors keep `/health` at 200 with an `error` component so protected admin diagnostics remain reachable; affected MCP routes return 503. Valid snapshots, including zero-target snapshots, report `ready`. |
 
 ## Existing Baseline and Compatibility
 
@@ -573,7 +573,10 @@ Reason-code vocabulary:
 | `SHADOWED_BY_INSTANCE` | Same name exists at service-instance level. |
 | `TARGET_LIMIT_EXCEEDED` | More than 256 entries are enabled; no discovered route is active. |
 | `REGISTRY_DISCOVERY_ERROR` | Destination discovery failed. |
-| `LIMITED_BY_INSTANCE` | Requested target capability is disabled by the instance ceiling; target can remain active. |
+
+Instance-policy narrowing is not a reason code: an accepted target keeps `ACTIVE` and exposes
+`limitedByInstance: true` in the admin diagnostic when requested data/SQL exceeds the instance
+ceiling.
 
 Admin output describes only the current CF process snapshot. In a multi-instance app, compare
 `revision` values while diagnosing a rolling update. Normal operation should use a non-rolling
@@ -592,7 +595,7 @@ content:
 
 ```json
 {
-  "code": "SAP_AUTHORIZATION_DENIED",
+  "error": "SAP_AUTHORIZATION_DENIED",
   "target": "A4H/100",
   "requestId": "...",
   "retryable": true
@@ -611,9 +614,10 @@ Required classifications:
 | `TARGET_CONFIG_CHANGED` | Live PP lookup no longer matches startup fingerprint. | Restart ARC-1 after reviewing the destination. |
 | `TARGET_POLICY_DENIED` | Instance or destination did not enable data/SQL. | Administrator changes both required gates and restarts for destination changes. |
 | `PP_SETUP_FAILED` | Failure is proven to occur before ADT dispatch during Destination/Connectivity lookup or token exchange. | Fix BTP/Cloud Connector setup, then retry. |
-| `SAP_AUTHENTICATION_FAILED` | Backend returned login/401 behavior after PP, including ambiguous post-PP Cloud Connector/SAP failures. Do not claim a specific missing-user cause. | Fix mapping/login/PP, then retry the same conversation. |
+| `SAP_AUTHENTICATION_FAILED` | Backend returned login/401 behavior or an ambiguous 403 after PP. Do not claim a specific missing-user cause. | Fix mapping/login/PP, then retry the same conversation. |
 | `SAP_AUTHORIZATION_DENIED` | Structured SAP 403/authorization refusal. | Grant the required SAP authorization, then retry. |
 | `SAP_SERVICE_INACTIVE` | SAP ICF/ADT service is inactive rather than a user authorization issue. | Activate/fix the service, then retry. |
+| `SAP_REQUEST_FAILED` | A post-PP network failure or SAP 5xx prevented the request without proving an authentication cause. | Check Cloud Connector/SAP health, then retry once. |
 
 Honor `ARC1_MINIMAL_ERRORS`. Never expose raw SAP HTML/bodies, destination properties, credentials,
 authorization headers, assertions, or internal stack traces. Text must remain conclusive for clients
@@ -715,7 +719,7 @@ Health needs component detail without target inventory:
 - Discovery succeeds with zero accepted targets: process is healthy; multi component is `ready`
   with zero targets.
 - Discovery fails or the 256 limit is exceeded: overall `/health` remains 200, the multi component
-  is `degraded` or `error`, and affected MCP routes return 503. This prevents the CF HTTP health
+  is `error`, and affected MCP routes return 503. This prevents the CF HTTP health
   check from crash-looping the app and keeps admin diagnostics available.
 - Individual invalid/quarantined candidates do not make the process unhealthy if the snapshot itself
   was built; admin diagnostics and warning logs explain them.
@@ -957,7 +961,8 @@ Work:
 
 - Separate XSUAA, target, PP exchange, SAP login, SAP authorization, and service-inactive stages.
 - Classify `PP_SETUP_FAILED` only when failure is proven before ADT dispatch. Default an ambiguous
-  post-PP 401/Cloud Connector response to `SAP_AUTHENTICATION_FAILED` and keep any body-marker
+  post-PP 401 response to `SAP_AUTHENTICATION_FAILED`, use `SAP_REQUEST_FAILED` for network/5xx,
+  and keep any body-marker
   heuristic release/signature-scoped under ADR-0002.
 - Add safe structured error content with code, target, request ID, and retryability.
 - Make PP-context hints stop recommending `SAP_USER`/`SAP_PASSWORD`.

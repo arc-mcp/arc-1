@@ -12,7 +12,9 @@ As an **admin**, you control what the AI can and cannot do via positive-opt-in f
 - Package allowlist restricts writes to `$TMP`, `Z*`, or any pattern
 - `SAP_DENY_ACTIONS` blocks individual actions (e.g. `SAPWrite.delete`) for admins who need a finer scalpel
 - Every tool call audited with user identity; per-user scopes (via XSUAA role collections, OIDC JWTs, or API-key profiles) tighten further
-- **Layered rate limiting** out of the box — per-IP OAuth edge, per-user MCP quota, server-wide SAP-bound semaphore with `Retry-After` honoring. See the [Rate Limiting Guide](rate-limiting.md).
+- **Layered rate limiting** out of the box — separate per-IP OAuth and MCP HTTP edge buckets,
+  optional per-user MCP quota, and a server-wide SAP-bound semaphore with `Retry-After` honoring.
+  See the [Rate Limiting Guide](rate-limiting.md).
 
 ## Quick Start
 
@@ -223,6 +225,7 @@ For production, combine conservative tool exposure with real user identity, SAP-
 | [docker.md](docker.md) | Full Docker reference |
 | [btp-abap-environment.md](btp-abap-environment.md) | BTP ABAP Environment — local service-key OAuth and deployed per-user destination setup |
 | [btp-cloud-foundry-deployment.md](btp-cloud-foundry-deployment.md) | BTP Cloud Foundry deployment details |
+| [multi-target-setup.md](multi-target-setup.md) | Build, deploy, configure, and verify experimental read-only multi-system mode |
 | [multi-destination.md](multi-destination.md) | Experimental multi-target endpoint model — pinned and aggregate routes |
 | [multi-target-administration.md](multi-target-administration.md) | Multi-target destination configuration, roles, diagnostics, restart, and security operations |
 | [sap-trial-setup.md](sap-trial-setup.md) | SAP BTP trial setup |

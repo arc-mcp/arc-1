@@ -19,7 +19,7 @@
 # block below, or enable the experimental multi-target block and manage marked
 # destinations in the BTP Cockpit.
 #
-# IMPORTANT — an extension can only OVERRIDE a base property, never remove it.
+# IMPORTANT — an extension can ADD or OVERRIDE a property, but never remove one.
 # To turn a base-enabled feature OFF you must write the explicit off-value here;
 # commenting the line out or deleting it just falls back to the `mta.yaml` value.
 # (`SAP_FOO: ~` fails the deploy, and `cf unset-env` is undone by the next

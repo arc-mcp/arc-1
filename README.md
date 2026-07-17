@@ -46,7 +46,8 @@ Deploy ARC-1 as a Cloud Foundry app on SAP BTP with full platform integration:
 - **Destination Service** — connect to SAP systems via managed destinations
 - **Experimental multi-target mode** — the unreleased, default-off, mutation-free BTP mode discovers
   destinations marked `arc1.enabled=true` and exposes pinned SID/client plus aggregate endpoints
-  ([design](docs_page/multi-destination.md), [administration](docs_page/multi-target-administration.md))
+  ([setup](docs_page/multi-target-setup.md), [design](docs_page/multi-destination.md),
+  [administration](docs_page/multi-target-administration.md))
 - **Cloud Connector** — reach on-premise systems through the connectivity proxy
 - **Per-user destinations** — user identity forwarded end-to-end via X.509 certificates for on-premise SAP, or exchanged for an ABAP bearer token for BTP ABAP Environment
 - **XSUAA OAuth proxy** — MCP clients authenticate via standard OAuth, ARC-1 handles the BTP token exchange
@@ -177,6 +178,7 @@ Full documentation is available at **[docs.arc-1-mcp.com](https://docs.arc-1-mcp
 | [Install in Claude](https://docs.arc-1-mcp.com/install-in-claude/) | Desktop `.mcpb`, Claude Code plugin (server + skills), and remote BTP connector |
 | [Local Development](https://docs.arc-1-mcp.com/local-development/) | Full local dev — all install methods, MCP client configs, SSO cookie extractor |
 | [Deployment](https://docs.arc-1-mcp.com/deployment/) | Multi-user deployment — Docker, BTP Cloud Foundry, BTP ABAP |
+| [Multi-System Setup](https://docs.arc-1-mcp.com/multi-target-setup/) | Experimental read-only BTP multi-target deployment, destinations, roles, and client configuration |
 | [Configuration](https://docs.arc-1-mcp.com/configuration-reference/) | Every flag and env var, one table |
 | [Updating](https://docs.arc-1-mcp.com/updating/) | Update procedures per install method |
 | [Enterprise Auth](https://docs.arc-1-mcp.com/enterprise-auth/) | Layer A / Layer B auth internals, coexistence matrix |

@@ -81,9 +81,10 @@ MTA (Multi-Target Application) deployment bundles ARC-1 with its BTP service dep
 `mta.yaml` ships without an active fake destination and with conservative safety defaults (writes
 off, free SQL off, package allowlist `$TMP`). For a legacy single-target `/mcp`, set the destination
 names and PP flags in the landscape override. For experimental multi-target mode, uncomment the
-complete block in `mta.yaml`, build the MTAR, deploy once, then manage the marked destinations in the
-BTP Cockpit and restart the app. The base descriptor can start without a SAP target so destination
-setup does not have to race the CF deployment.
+complete multi-target block in your `mta-overrides.mtaext`, build the MTAR, and deploy once. Then
+manage marked destinations in the BTP Cockpit and restart the app. The base descriptor can start
+without a SAP target so destination setup does not have to race the CF deployment. Follow the
+[Multi-System Setup](multi-target-setup.md) walkthrough for the exact sequence.
 
 ```bash
 # Clone the repo
@@ -666,7 +667,8 @@ exposes every system through a single tool set + a `system` parameter (one tool 
 ARC-1 also has an experimental, default-off, mutation-free mode that discovers marked subaccount
 destinations inside one CF application. It is useful when tens or hundreds of read-only SAP clients
 make one app per client operationally expensive. See [Multi-Target Endpoints](multi-destination.md)
-and [Multi-Target Administration](multi-target-administration.md) for its strict PP, XSUAA, cache,
+and [Multi-System Setup](multi-target-setup.md) plus
+[Multi-Target Administration](multi-target-administration.md) for its strict PP, XSUAA, cache,
 authorization, and data/SQL limitations.
 
 ## SAP Documentation References

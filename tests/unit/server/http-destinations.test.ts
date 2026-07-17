@@ -4,6 +4,8 @@ import { DestinationRegistry } from '../../../src/server/destination-registry.js
 import {
   createAggregateMcpHandler,
   createPinnedTargetMcpHandler,
+  MULTI_TARGET_SCOPES_SUPPORTED,
+  multiTargetHealthStatus,
   resolveMcpHttpRateLimit,
   targetCatalog,
 } from '../../../src/server/http.js';
@@ -55,12 +57,42 @@ function mockRes() {
 }
 
 describe('multi-target HTTP helpers', () => {
+  it('advertises only the scopes usable on read-only multi-target routes', () => {
+    expect(MULTI_TARGET_SCOPES_SUPPORTED).toEqual(['read', 'data', 'sql', 'admin']);
+    expect(MULTI_TARGET_SCOPES_SUPPORTED).not.toContain('write');
+    expect(MULTI_TARGET_SCOPES_SUPPORTED).not.toContain('transports');
+    expect(MULTI_TARGET_SCOPES_SUPPORTED).not.toContain('git');
+  });
+
   it('preserves the derived MCP edge cap and supports an explicit override or disable', () => {
     expect(resolveMcpHttpRateLimit({ authRateLimit: 20 })).toBe(600);
     expect(resolveMcpHttpRateLimit({ authRateLimit: 40 })).toBe(1200);
-    expect(resolveMcpHttpRateLimit({ authRateLimit: 0 })).toBe(0);
+    expect(resolveMcpHttpRateLimit({ authRateLimit: 0 })).toBe(600);
     expect(resolveMcpHttpRateLimit({ authRateLimit: 40, mcpHttpRateLimit: 1000 })).toBe(1000);
     expect(resolveMcpHttpRateLimit({ authRateLimit: 40, mcpHttpRateLimit: 0 })).toBe(0);
+  });
+
+  it('keeps valid empty or quarantined snapshots ready and reports registry-wide failure', () => {
+    expect(multiTargetHealthStatus(registry())).toBe('ready');
+    expect(
+      multiTargetHealthStatus(
+        DestinationRegistry.fromDiscovery(
+          {
+            subaccount: [],
+            instanceNames: [],
+            scannedCount: 0,
+            unrelatedCount: 0,
+            arcAdjacentWithoutMarkerCount: 0,
+          },
+          DEFAULT_CONFIG,
+        ),
+      ),
+    ).toBe('ready');
+    expect(
+      multiTargetHealthStatus(
+        DestinationRegistry.unavailable({ code: 'REGISTRY_DISCOVERY_ERROR', message: 'safe failure' }),
+      ),
+    ).toBe('error');
   });
 
   it('returns a generic 404 for a valid but absent target without enumerating membership', async () => {

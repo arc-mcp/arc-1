@@ -32,6 +32,7 @@ import {
 } from '../handlers/feature-cache.js';
 import { getToolDefinitions, type ToolDefinition, type ToolDefinitionOptions } from '../handlers/tools.js';
 import { API_KEY_PROFILES } from './config.js';
+import { generateRequestId } from './context.js';
 import { isActionDenied } from './deny-actions.js';
 import { canonicalDestinationUrl, opaqueDestinationValue } from './destination-discovery.js';
 import { DestinationRegistry, type TargetDescriptor, targetConnectionFingerprint } from './destination-registry.js';
@@ -818,6 +819,7 @@ export function createServer(
 
   // Register tool call handler — passes authInfo for scope enforcement + audit logging
   server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
+    const requestId = generateRequestId();
     const toolName = request.params.name;
     const rawArgs = (request.params.arguments ?? {}) as Record<string, unknown>;
     let args = rawArgs;
@@ -832,6 +834,7 @@ export function createServer(
         options: multiTarget,
         toolName,
         rawArgs,
+        requestId,
         authInfo: extra.authInfo,
         mcpRateLimiter,
       });
@@ -883,6 +886,7 @@ export function createServer(
           timestamp: new Date().toISOString(),
           level: 'error',
           event: 'auth_pp_created',
+          requestId,
           user: ppUser,
           destination: activeConfig.targetId ? undefined : ppDest,
           target: activeConfig.targetId,
@@ -918,6 +922,7 @@ export function createServer(
           timestamp: new Date().toISOString(),
           level: 'info',
           event: 'auth_pp_created',
+          requestId,
           user: ppUser,
           destination: activeConfig.targetId ? undefined : ppDest,
           target: activeConfig.targetId,
@@ -929,6 +934,7 @@ export function createServer(
           timestamp: new Date().toISOString(),
           level: 'error',
           event: 'auth_pp_created',
+          requestId,
           user: ppUser,
           destination: activeConfig.targetId ? undefined : ppDest,
           target: activeConfig.targetId,
@@ -1031,6 +1037,7 @@ export function createServer(
       multiTarget ? undefined : cachingLayer,
       isPerUserClient,
       multiTargetMcpRateLimitConsumed ? undefined : mcpRateLimiter,
+      requestId,
     );
     return { ...result } as Record<string, unknown>;
   });

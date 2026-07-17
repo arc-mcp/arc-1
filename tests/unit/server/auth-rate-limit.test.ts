@@ -384,6 +384,20 @@ describe('/authorize JSON-RPC dispatch (Copilot Studio MCP fix via skip())', () 
     }
   });
 
+  it('case-insensitive Express aliases consume the same shared MCP bucket', async () => {
+    const srv = await withJsonServer(buildApp(2, 3));
+    try {
+      const results: number[] = [];
+      for (const path of ['/MCP', '/TARGETS', '/AUTHORIZE', '/mcp']) {
+        const response = await srv.post(path, { jsonrpc: '2.0', id: 1, method: 'tools/list' });
+        results.push(response.status);
+      }
+      expect(results).toEqual([200, 200, 200, 429]);
+    } finally {
+      await srv.close();
+    }
+  });
+
   it('post() rejects with path + request index context when the server is closed (diagnosability)', async () => {
     // The former helper rejected bare on transport errors, producing context-free fast failures
     // like the one observed full-suite flake. A closed server now yields a named rejection (and
@@ -440,10 +454,12 @@ describe('isMcpHttpTraffic', () => {
   it.each([
     '/mcp',
     '/mcp/',
+    '/MCP',
     '/multi/mcp',
     '/multi/mcp/',
     '/targets',
     '/targets/',
+    '/TARGETS',
     '/A4H/100/mcp',
     '/A4H/100/mcp/',
   ])(`matches %s`, (path) => {
@@ -453,6 +469,7 @@ describe('isMcpHttpTraffic', () => {
   it('matches only Copilot JSON-RPC traffic on /authorize', () => {
     expect(isMcpHttpTraffic(fakeReq('/authorize', 'POST', { jsonrpc: '2.0' }))).toBe(true);
     expect(isMcpHttpTraffic(fakeReq('/authorize/', 'POST', { jsonrpc: '2.0' }))).toBe(true);
+    expect(isMcpHttpTraffic(fakeReq('/AUTHORIZE', 'POST', { jsonrpc: '2.0' }))).toBe(true);
     expect(isMcpHttpTraffic(fakeReq('/authorize', 'POST', { client_id: 'x' }))).toBe(false);
     expect(isMcpHttpTraffic(fakeReq('/authorize/', 'POST', { client_id: 'x' }))).toBe(false);
   });

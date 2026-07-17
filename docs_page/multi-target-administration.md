@@ -23,7 +23,10 @@ V1 is deliberately limited:
 - at most 256 enabled system/client targets.
 
 An existing single-target `/mcp` endpoint may run beside multi-target mode and retains its existing
-policy. The limitations on this page apply to the discovered pinned routes and `/multi/mcp`.
+write/package policy. The mutation-free ceiling applies only to discovered pinned routes and
+`/multi/mcp`. The startup constraints required to make one process safe—cache `none`, standard tool
+mode, UI off, no plugins, no shared cookies/direct credentials/service key—apply to the whole ARC-1
+application while multi-target mode is enabled, including a side-by-side legacy route.
 
 ## Administration model
 
@@ -67,8 +70,14 @@ unacceptable confidentiality incident.
 
 ## 1. Prepare the ARC-1 application
 
-Users build their MTAR from source. Keep the experimental block commented in the shared template and
-uncomment it in the deployment-specific copy when testing:
+Users build their MTAR from source. Keep the experimental block commented in the shared `mta.yaml`
+template and enable it in the deployment-specific `mta-overrides.mtaext` copy:
+
+```bash
+cp mta-overrides.mtaext.example mta-overrides.mtaext
+```
+
+Uncomment the complete multi-target block under `modules[].properties`:
 
 ```yaml
 properties:
@@ -240,9 +249,12 @@ Then verify:
 
 No `mbt build`, new MTAR, or `cf deploy` is required for destination-only changes.
 
-Discovery or registry configuration errors keep `/health` at 200 with a degraded/error multi-target
-component so CF does not crash-loop the application and admin `/targets` stays available. Affected
-MCP routes return 503 until the configuration is fixed and the app is restarted.
+Discovery or registry-wide configuration errors keep `/health` at 200 with
+`components.multiTarget.status="error"` so CF does not crash-loop the application and admin
+`/targets` stays available. A successfully built snapshot reports `ready`, including when it has
+zero active targets or individually quarantined destinations. The admin catalog alone reports
+`degraded` when entries are quarantined. Affected MCP routes return 503 after a registry-wide error
+until the configuration is fixed and the app is restarted.
 
 At request time ARC-1 resolves the PP destination again for the current user and compares its safe
 connection and ARC-1 policy fingerprint with the startup snapshot. The lookup bypasses the SDK cache,
@@ -338,15 +350,46 @@ The JSON view contains only accepted public targets and connection information:
     {
       "target": "A4H/100",
       "description": "A4H development client 100",
-      "pinnedEndpoint": "https://arc1.example/A4H/100/mcp"
+      "pinnedEndpoint": "https://arc1.example/A4H/100/mcp",
+      "aggregateEndpoint": "https://arc1.example/multi/mcp"
     }
   ],
   "clientConfig": {
-    "vscode": {
-      "servers": {
-        "arc-1-multi": {
-          "type": "http",
-          "url": "https://arc1.example/multi/mcp"
+    "aggregate": {
+      "vscode": {
+        "servers": {
+          "arc-1-multi": {
+            "type": "http",
+            "url": "https://arc1.example/multi/mcp"
+          }
+        }
+      },
+      "githubCopilot": {
+        "servers": {
+          "arc-1-multi": {
+            "type": "http",
+            "url": "https://arc1.example/multi/mcp"
+          }
+        }
+      }
+    },
+    "pinned": {
+      "A4H-100": {
+        "vscode": {
+          "servers": {
+            "arc-1-A4H-100": {
+              "type": "http",
+              "url": "https://arc1.example/A4H/100/mcp"
+            }
+          }
+        },
+        "githubCopilot": {
+          "servers": {
+            "arc-1-A4H-100": {
+              "type": "http",
+              "url": "https://arc1.example/A4H/100/mcp"
+            }
+          }
         }
       }
     }
@@ -358,52 +401,57 @@ It does not expose destination names, SAP URLs, target policy, rejected entries,
 
 ### Admin user
 
-The same response adds an `administration` object:
+The same response adds an `admin` object. The example below shows one active destination; disabled,
+ignored, and quarantined ARC-related destinations use the same flat diagnostic shape:
 
 ```json
 {
-  "administration": {
-    "registry": {
-      "state": "ready",
-      "source": "btp-subaccount",
-      "loadedAt": "2026-07-17T08:30:00.000Z",
-      "revision": "sha256:..."
-    },
+  "admin": {
+    "state": "ready",
+    "source": "btp-subaccount",
+    "loadedAt": "2026-07-17T08:30:00.000Z",
+    "revision": "677439333a3daf9ce7987c158020bb5c065efe9ed87ccff5ea74b588bb193dc8",
     "counts": {
-      "scanned": 18,
-      "unrelated": 14,
+      "scanned": 1,
+      "unrelated": 0,
       "arcAdjacent": 0,
-      "arcRelated": 4,
-      "enabled": 3,
-      "active": 2,
-      "disabled": 1,
+      "arcRelated": 1,
+      "enabled": 1,
+      "active": 1,
+      "disabled": 0,
       "ignored": 0,
-      "quarantined": 1
+      "quarantined": 0
     },
     "destinations": [
       {
-        "name": "ARC1_A4H_100_PP",
+        "destinationName": "ARC1_A4H_100_PP",
+        "type": "HTTP",
+        "authentication": "PrincipalPropagation",
+        "proxyType": "OnPremise",
+        "hasCloudConnectorLocationId": false,
+        "arcConfig": { "enabled": true },
+        "warnings": [],
         "target": "A4H/100",
         "description": "A4H development client 100",
+        "sid": "A4H",
+        "client": "100",
+        "language": "EN",
         "status": "active",
-        "included": true,
-        "reasonCodes": ["ACTIVE"],
-        "connection": {
-          "type": "HTTP",
-          "proxyType": "OnPremise",
-          "authentication": "PrincipalPropagation",
-          "sapSysid": "A4H",
-          "sapClient": "100",
-          "sapLanguage": "EN",
-          "hasCloudConnectorLocationId": false
+        "code": "ACTIVE",
+        "message": "Destination is active on pinned and aggregate multi-target routes.",
+        "requestedPolicy": {
+          "allowDataPreview": false,
+          "allowFreeSQL": false
         },
-        "policy": {
-          "dataPreview": { "requested": false, "effective": false },
-          "freeSql": { "requested": false, "effective": false },
-          "limitedByInstance": []
+        "effectivePolicy": {
+          "allowDataPreview": false,
+          "allowFreeSQL": false
         },
-        "routes": ["/A4H/100/mcp", "/multi/mcp"],
-        "warnings": []
+        "limitedByInstance": false,
+        "routes": {
+          "pinned": "https://arc1.example/A4H/100/mcp",
+          "aggregate": "https://arc1.example/multi/mcp"
+        }
       }
     ]
   }
@@ -457,7 +505,10 @@ normalized config, never credentials.
 | `SHADOWED_BY_INSTANCE` | Remove/rename the same-name service-instance destination or subaccount candidate. |
 | `TARGET_LIMIT_EXCEEDED` | Reduce enabled candidates to at most 256. No discovered target is activated while over the limit. |
 | `REGISTRY_DISCOVERY_ERROR` | Check Destination service binding/token/network health, then restart. |
-| `LIMITED_BY_INSTANCE` | Raise the instance data/SQL ceiling intentionally or remove the target request. The target can still serve source reads. |
+
+`LIMITED_BY_INSTANCE` is not a reason code. An otherwise active destination keeps `code: "ACTIVE"`
+and sets `limitedByInstance: true` when it requests data or SQL above the instance ceiling. Raise the
+instance ceiling intentionally or remove the destination request; source reads remain available.
 
 Unknown `arc1.*` keys fail closed so a typo cannot silently broaden policy. Duplicate routes and
 names quarantine all claimants; destination ordering never decides which system is served.
@@ -469,9 +520,10 @@ ARC-1 reports the stage without exposing raw SAP responses:
 | Error | Meaning |
 |---|---|
 | `PP_SETUP_FAILED` | Failure was proven during Destination/Connectivity lookup or token exchange before an ADT request. |
-| `SAP_AUTHENTICATION_FAILED` | SAP returned login/401 behavior after PP, or a post-PP Cloud Connector/SAP failure could not be attributed safely. It may be mapping, backend login, or PP configuration; ARC-1 does not claim that the user definitely does not exist. |
+| `SAP_AUTHENTICATION_FAILED` | SAP returned login/401 behavior or an ambiguous 403 after PP. It may be mapping, backend login, or PP configuration; ARC-1 does not claim that the user definitely does not exist. |
 | `SAP_AUTHORIZATION_DENIED` | SAP returned a structured authorization refusal for the propagated user. |
 | `SAP_SERVICE_INACTIVE` | The target ICF/ADT service is inactive or unreachable in that form, not merely a user role issue. |
+| `SAP_REQUEST_FAILED` | A post-PP network failure or SAP 5xx prevented the request without proving an authentication cause. Check Cloud Connector/SAP health and retry once. |
 | `TARGET_POLICY_DENIED` | Data/SQL is not enabled by every ARC-1 policy layer. |
 | `TARGET_CONFIG_CHANGED` | Destination no longer matches the startup snapshot; review it and restart. |
 
@@ -527,7 +579,7 @@ scaled horizontally.
 - [ ] Data/SQL is enabled only where required, at both instance and destination layers.
 - [ ] No target contains write-related or unknown `arc1.*` keys.
 - [ ] Enabled target count is at most 256.
-- [ ] Admin `/targets` has no duplicate, shadow, invalid, or unexpected `LIMITED_BY_INSTANCE` status.
+- [ ] Admin `/targets` has no duplicate, shadow, invalid, or unexpected `limitedByInstance: true` diagnostic.
 - [ ] All CF instances show the same registry revision.
 - [ ] Viewer, unmapped-user, SAP-unauthorized, and broken-PP cases were tested separately.
 - [ ] Logs and audit sinks contain no destination secrets or raw SAP response bodies.

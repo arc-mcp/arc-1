@@ -11,10 +11,10 @@
  *   accept that trade-off to preserve the stateless-deployment property from PR #212.
  *   IPv6 clients are keyed by /56 subnet (via express-rate-limit v8's `ipKeyGenerator`)
  *   so they can't bypass the cap by rotating addresses within their prefix.
- * - The operator-facing knob is a single per-minute baseline (`ARC1_AUTH_RATE_LIMIT`,
- *   default 20). Per-endpoint differentiation is done at the mount site in http.ts:
- *   OAuth endpoints all use the baseline; `/mcp` gets a higher cap to absorb
- *   legitimate batch tool-call traffic.
+ * - `ARC1_AUTH_RATE_LIMIT` (default 20) controls the OAuth baseline. The MCP
+ *   bucket derives a higher default in http.ts and has its own explicit
+ *   `ARC1_MCP_HTTP_RATE_LIMIT` override so disabling OAuth limiting cannot
+ *   silently remove pre-bearer MCP protection.
  * - On limit hit, emits a typed `auth_rate_limited` audit event BEFORE responding so
  *   the security event stream captures the denial regardless of response timing.
  * - Uses `standardHeaders: 'draft-7'` for RFC 9331 / draft-ietf-httpapi-ratelimit
@@ -136,7 +136,12 @@ export function isMcpHttpTraffic(req: Request): boolean {
   // non-strict mode. Normalize them here so an accepted alias cannot skip the
   // root-mounted bucket before reaching `/mcp`, `/targets`, or `/authorize`.
   const requestPath = req.path.length > 1 ? req.path.replace(/\/+$/, '') : req.path;
-  if (requestPath === '/mcp' || requestPath === '/multi/mcp' || requestPath === '/targets') return true;
+  // Express string routes are case-insensitive by default. Normalize those
+  // aliases for the limiter too; otherwise `/MCP`, `/TARGETS`, or Copilot
+  // JSON-RPC on `/AUTHORIZE` can reach the same handler without consuming the
+  // root edge bucket. The pinned-target regex stays deliberately uppercase.
+  const staticPath = requestPath.toLowerCase();
+  if (staticPath === '/mcp' || staticPath === '/multi/mcp' || staticPath === '/targets') return true;
   if (/^\/[A-Z][A-Z0-9]{2}\/\d{3}\/mcp$/.test(requestPath)) return true;
-  return requestPath === '/authorize' && isCopilotJsonRpc(req);
+  return staticPath === '/authorize' && isCopilotJsonRpc(req);
 }

@@ -1,7 +1,7 @@
 /** Per-target configuration construction and uncached Destination drift validation. */
 
 import type { Destination } from '@arc-mcp/xsuaa-auth/btp';
-import { opaqueDestinationValue } from './destination-discovery.js';
+import { canonicalDestinationUrl, opaqueDestinationValue } from './destination-discovery.js';
 import {
   sanitizeTargetDescription,
   type TargetDescriptor,
@@ -25,21 +25,6 @@ function parseBoolean(value: string | undefined): boolean | undefined {
   if (normalized === 'true') return true;
   if (normalized === 'false') return false;
   return undefined;
-}
-
-export function canonicalDestinationUrl(value: string): string | undefined {
-  try {
-    const url = new URL(value);
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') return undefined;
-    url.hash = '';
-    url.username = '';
-    url.password = '';
-    url.hostname = url.hostname.toLowerCase();
-    if (url.pathname !== '/') url.pathname = url.pathname.replace(/\/+$/, '');
-    return url.toString();
-  } catch {
-    return undefined;
-  }
 }
 
 /** Build from safe defaults plus an explicit instance allowlist; never copy legacy SAP credentials. */
