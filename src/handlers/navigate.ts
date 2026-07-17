@@ -8,7 +8,7 @@ import { findDefinition, getCompletion } from '../adt/codeintel.js';
 import { AdtApiError } from '../adt/errors.js';
 import { isOperationAllowed, OperationType } from '../adt/safety.js';
 import type { ClassHierarchy } from '../adt/types.js';
-import { errorResult, type ToolResult, textResult } from './shared.js';
+import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 import { lookupLiveUsages, resolveWhereUsedUri } from './where-used.js';
 
 // ─── SAPNavigate Handler ─────────────────────────────────────────────
@@ -40,7 +40,7 @@ export async function handleSAPNavigate(client: AdtClient, args: Record<string, 
       if (!result) {
         return textResult('No definition found at this position.');
       }
-      return textResult(JSON.stringify(result, null, 2));
+      return textResult(toolJson(result));
     }
     case 'references': {
       if (!uri) {
@@ -57,28 +57,24 @@ export async function handleSAPNavigate(client: AdtClient, args: Record<string, 
         return textResult('No references found.');
       }
       return textResult(
-        JSON.stringify(
-          {
-            total,
-            shown: results.length,
-            truncated,
-            ...(truncated
-              ? {
-                  hint:
-                    `Showing ${results.length} of ${total} references. Narrow with objectType ` +
-                    `(e.g. "CLAS/OC") or raise maxResults (max 1000).`,
-                }
-              : {}),
-            references: results,
-          },
-          null,
-          2,
-        ),
+        toolJson({
+          total,
+          shown: results.length,
+          truncated,
+          ...(truncated
+            ? {
+                hint:
+                  `Showing ${results.length} of ${total} references. Narrow with objectType ` +
+                  `(e.g. "CLAS/OC") or raise maxResults (max 1000).`,
+              }
+            : {}),
+          references: results,
+        }),
       );
     }
     case 'completion': {
       const proposals = await getCompletion(client.http, client.safety, uri, line, column, source);
-      return textResult(JSON.stringify(proposals, null, 2));
+      return textResult(toolJson(proposals));
     }
     case 'hierarchy': {
       const className = String(args.name ?? '').toUpperCase();
@@ -142,7 +138,7 @@ export async function handleSAPNavigate(client: AdtClient, args: Record<string, 
         }
 
         const result: ClassHierarchy = { className: safeName, superclass, interfaces, subclasses };
-        return textResult(JSON.stringify(result, null, 2));
+        return textResult(toolJson(result));
       } catch (err) {
         if (err instanceof AdtApiError && err.statusCode === 404) {
           return errorResult('Cannot query SEOMETAREL — table may not be accessible on this system.');

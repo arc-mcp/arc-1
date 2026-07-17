@@ -27,7 +27,7 @@ import {
 import type { InactiveObject, ObjectTransportHistory, TransportReleaseReport, TransportRequest } from '../adt/types.js';
 import { logger } from '../server/logger.js';
 import { objectUrlForType } from './object-types.js';
-import { errorResult, type ToolResult, textResult } from './shared.js';
+import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 
 /** Default page size for `list`. Object lists dominate the payload, so the backlog sets the cost. */
 const DEFAULT_TRANSPORT_RESULTS = 50;
@@ -145,23 +145,19 @@ export async function handleSAPTransport(client: AdtClient, args: Record<string,
       const truncated = transports.length > limit;
       const payload = args.summary === false ? page : page.map(summarizeTransport);
       return textResult(
-        JSON.stringify(
-          {
-            total: transports.length,
-            shown: page.length,
-            truncated,
-            ...(truncated
-              ? {
-                  hint:
-                    `Showing ${page.length} of ${transports.length} transports. Narrow with user/status, ` +
-                    `or raise maxResults (max 1000).`,
-                }
-              : {}),
-            transports: payload,
-          },
-          null,
-          2,
-        ),
+        toolJson({
+          total: transports.length,
+          shown: page.length,
+          truncated,
+          ...(truncated
+            ? {
+                hint:
+                  `Showing ${page.length} of ${transports.length} transports. Narrow with user/status, ` +
+                  `or raise maxResults (max 1000).`,
+              }
+            : {}),
+          transports: payload,
+        }),
       );
     }
     case 'get': {
@@ -169,7 +165,7 @@ export async function handleSAPTransport(client: AdtClient, args: Record<string,
       if (!id) return errorResult('Transport ID is required for "get" action.');
       const transport = await getTransport(client.http, client.safety, id);
       if (!transport) return textResult(`Transport ${id} not found.`);
-      return textResult(JSON.stringify(transport, null, 2));
+      return textResult(toolJson(transport));
     }
     case 'create': {
       const description = String(args.description ?? '');
@@ -296,7 +292,7 @@ export async function handleSAPTransport(client: AdtClient, args: Record<string,
           ? `${layers.length} transport layer(s); ${routed.length} carry a target. Pass one as transportLayer= on create.`
           : `${layers.length} transport layer(s), but none expose a consolidation target — created requests will be local on this system.`
         : 'No transport layers are defined on this system — every request will be local.';
-      return textResult(JSON.stringify({ transportLayers: layers, summary }, null, 2));
+      return textResult(toolJson({ transportLayers: layers, summary }));
     }
     case 'targets': {
       // Discovery: list valid values for create's `target` (Transportziel / TR_TARGET) via the
@@ -326,7 +322,7 @@ export async function handleSAPTransport(client: AdtClient, args: Record<string,
       const summary = targets.length
         ? `${targets.length} valid transport target(s). Pass one as target= on create.`
         : 'No transport targets are configured on this system (so created requests are local).';
-      return textResult(JSON.stringify({ transportTargets: targets, summary }, null, 2));
+      return textResult(toolJson({ transportTargets: targets, summary }));
     }
     case 'release': {
       const id = String(args.id ?? '');
@@ -431,19 +427,15 @@ export async function handleSAPTransport(client: AdtClient, args: Record<string,
           : `Package "${pkg}" does not require transport recording.`;
 
       return textResult(
-        JSON.stringify(
-          {
-            package: pkg,
-            transportRequired: !info.isLocal && info.recording,
-            isLocal: info.isLocal,
-            deliveryUnit: info.deliveryUnit,
-            existingTransports: info.existingTransports,
-            ...(info.lockedTransport ? { lockedTransport: info.lockedTransport } : {}),
-            summary,
-          },
-          null,
-          2,
-        ),
+        toolJson({
+          package: pkg,
+          transportRequired: !info.isLocal && info.recording,
+          isLocal: info.isLocal,
+          deliveryUnit: info.deliveryUnit,
+          existingTransports: info.existingTransports,
+          ...(info.lockedTransport ? { lockedTransport: info.lockedTransport } : {}),
+          summary,
+        }),
       );
     }
     case 'history': {
@@ -486,7 +478,7 @@ export async function handleSAPTransport(client: AdtClient, args: Record<string,
         summary,
       };
 
-      return textResult(JSON.stringify(history, null, 2));
+      return textResult(toolJson(history));
     }
     default:
       return errorResult(

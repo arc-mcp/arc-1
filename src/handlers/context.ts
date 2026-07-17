@@ -23,7 +23,7 @@ import { logger } from '../server/logger.js';
 import { type CacheSecurityContext, contextCacheForDependencyPayloads } from './cache-security.js';
 import { cachedFeatures } from './feature-cache.js';
 import { normalizeObjectType, objectUrlForType } from './object-types.js';
-import { errorResult, type ToolResult, textResult } from './shared.js';
+import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 import { lookupLiveUsages, resolveWhereUsedUri } from './where-used.js';
 
 // ─── SAPContext Handler ───────────────────────────────────────────────
@@ -83,18 +83,14 @@ export async function handleSAPContext(
       }
       if (matches.length > 1) {
         return errorResult(
-          JSON.stringify(
-            {
-              error: `Object name "${name.toUpperCase()}" is ambiguous. Retry with type.`,
-              candidates: matches.slice(0, 20).map((match) => ({
-                type: normalizeObjectType(match.objectType),
-                name: match.objectName,
-                uri: match.uri,
-              })),
-            },
-            null,
-            2,
-          ),
+          toolJson({
+            error: `Object name "${name.toUpperCase()}" is ambiguous. Retry with type.`,
+            candidates: matches.slice(0, 20).map((match) => ({
+              type: normalizeObjectType(match.objectType),
+              name: match.objectName,
+              uri: match.uri,
+            })),
+          }),
         );
       }
       const match = matches[0]!;
@@ -105,25 +101,21 @@ export async function handleSAPContext(
     const usageMax = args.maxResults === undefined ? undefined : Number(args.maxResults);
     const lookup = await lookupLiveUsages(client, resolvedUri, undefined, usageMax);
     return textResult(
-      JSON.stringify(
-        {
-          name: name.toUpperCase(),
-          resolvedObject,
-          // usageCount is the TOTAL, not the page size — a truncated page must not under-report
-          // the blast radius of a change.
-          usageCount: lookup.total,
-          shown: lookup.results.length,
-          truncated: lookup.truncated,
-          ...(lookup.truncated
-            ? { hint: `Showing ${lookup.results.length} of ${lookup.total} usages. Raise maxResults (max 1000).` }
-            : {}),
-          usages: lookup.results,
-          source: 'live',
-          fallbackUsed: lookup.fallbackUsed,
-        },
-        null,
-        2,
-      ),
+      toolJson({
+        name: name.toUpperCase(),
+        resolvedObject,
+        // usageCount is the TOTAL, not the page size — a truncated page must not under-report
+        // the blast radius of a change.
+        usageCount: lookup.total,
+        shown: lookup.results.length,
+        truncated: lookup.truncated,
+        ...(lookup.truncated
+          ? { hint: `Showing ${lookup.results.length} of ${lookup.total} usages. Raise maxResults (max 1000).` }
+          : {}),
+        usages: lookup.results,
+        source: 'live',
+        fallbackUsed: lookup.fallbackUsed,
+      }),
     );
   }
 
@@ -350,7 +342,7 @@ export async function handleSAPContext(
       ...(warnings.length > 0 ? { warnings } : {}),
     };
 
-    return textResult(JSON.stringify(response, null, 2));
+    return textResult(toolJson(response));
   }
 
   if (action === 'structure') {
@@ -359,7 +351,7 @@ export async function handleSAPContext(
     }
 
     const result = await buildStructureHierarchy(client, name);
-    return textResult(JSON.stringify(result, null, 2));
+    return textResult(toolJson(result));
   }
 
   // Get source — either provided or fetched from SAP

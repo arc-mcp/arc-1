@@ -21,7 +21,7 @@ import { logger } from '../server/logger.js';
 import { type CacheSecurityContext, inactiveListUserKey, invalidateInactiveList } from './cache-security.js';
 import { cachedFeatures, isBtpSystem } from './feature-cache.js';
 import { inferObjectType, normalizeObjectType, objectUrlForTypeRaw } from './object-types.js';
-import { errorResult, type ToolResult, textResult } from './shared.js';
+import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 
 const BTP_HINTS: Record<string, string> = {
   PROG: 'Executable programs (reports) are not available on BTP ABAP Environment. Use CLAS with IF_OO_ADT_CLASSRUN for console applications.',
@@ -189,7 +189,7 @@ export async function handleSAPRead(
       );
     }
     const sdo = await getServerDrivenObject(client.http, client.safety, type, name);
-    return textResult(JSON.stringify(sdo, null, 2));
+    return textResult(toolJson(sdo));
   }
 
   // Class text symbols (Textelemente): include=text_symbols reads a class's maintained text symbols
@@ -300,7 +300,7 @@ export async function handleSAPRead(
       // Structured format: return JSON with metadata + decomposed source
       if (args.format === 'structured') {
         const structured = await client.getClassStructured(name);
-        return textResult(JSON.stringify(structured, null, 2));
+        return textResult(toolJson(structured));
       }
       const methodParam = args.method as string | undefined;
       if (methodParam && !args.include) {
@@ -374,7 +374,7 @@ export async function handleSAPRead(
           source,
           signature: grouped,
         };
-        return textResult(JSON.stringify(payload, null, 2));
+        return textResult(toolJson(payload));
       }
       if (args.grep) return grepText(source);
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
@@ -398,7 +398,7 @@ export async function handleSAPRead(
         return textResult(parts.join('\n\n'));
       }
       const fg = await client.getFunctionGroup(name);
-      return textResult(JSON.stringify(fg, null, 2));
+      return textResult(toolJson(fg));
     }
     case 'INCL': {
       const { source, cacheHit, revalidated } = await cachedGet('INCL', name, effectiveVersion, (ifNoneMatch) =>
@@ -510,19 +510,19 @@ export async function handleSAPRead(
     }
     case 'DOMA': {
       const domain = await client.getDomain(name);
-      return textResult(JSON.stringify(domain, null, 2));
+      return textResult(toolJson(domain));
     }
     case 'DTEL': {
       const dtel = await client.getDataElement(name);
-      return textResult(JSON.stringify(dtel, null, 2));
+      return textResult(toolJson(dtel));
     }
     case 'TTYP': {
       const ttyp = await client.getTableType(name);
-      return textResult(JSON.stringify(ttyp, null, 2));
+      return textResult(toolJson(ttyp));
     }
     case 'AUTH': {
       const authField = await client.getAuthorizationField(name);
-      return textResult(JSON.stringify(authField, null, 2));
+      return textResult(toolJson(authField));
     }
     case 'FTG2':
     case 'FEATURE_TOGGLE': {
@@ -536,11 +536,11 @@ export async function handleSAPRead(
         });
       }
       const toggle = await client.getFeatureToggle(name);
-      return textResult(JSON.stringify(toggle, null, 2));
+      return textResult(toolJson(toggle));
     }
     case 'ENHO': {
       const enhancement = await client.getEnhancementImplementation(name);
-      return textResult(JSON.stringify(enhancement, null, 2));
+      return textResult(toolJson(enhancement));
     }
     case 'VERSIONS': {
       const include = typeof args.include === 'string' ? args.include : undefined;
@@ -561,7 +561,7 @@ export async function handleSAPRead(
 
       try {
         const revisions = await client.getRevisions(objectType, name, { include, group });
-        return textResult(JSON.stringify(revisions, null, 2));
+        return textResult(toolJson(revisions));
       } catch (err) {
         if (isNotFoundError(err)) {
           return textResult(
@@ -604,7 +604,7 @@ export async function handleSAPRead(
           // SQL failed (e.g., TSTC not found on BTP) — still return metadata
         }
       }
-      return textResult(JSON.stringify(tran, null, 2));
+      return textResult(toolJson(tran));
     }
     case 'API_STATE': {
       // Determine object type for URL construction — use explicit objectType, infer from name, or error
@@ -618,12 +618,12 @@ export async function handleSAPRead(
       // Use raw URI (no name encoding) — getApiReleaseState encodes the full URI as a single path segment
       const objectUri = objectUrlForTypeRaw(inferredType, name);
       const releaseState = await client.getApiReleaseState(objectUri);
-      return textResult(JSON.stringify(releaseState, null, 2));
+      return textResult(toolJson(releaseState));
     }
     case 'TABLE_CONTENTS': {
       const maxRows = Number(args.maxRows ?? 100);
       const data = await client.getTableContents(name, maxRows, args.sqlFilter as string | undefined);
-      return textResult(JSON.stringify(data, null, 2));
+      return textResult(toolJson(data));
     }
     case 'TABLE_QUERY': {
       const maxRows = Number(args.maxRows ?? 100);
@@ -633,7 +633,7 @@ export async function handleSAPRead(
         : undefined;
       try {
         const data = await client.runTableQuery(name, { columns, where, maxRows });
-        return textResult(JSON.stringify(data, null, 2));
+        return textResult(toolJson(data));
       } catch (err) {
         // Self-correct an unknown-column error (a bad entry in `columns`/`where`) by listing the
         // table's real columns (best-effort).
@@ -687,18 +687,18 @@ export async function handleSAPRead(
       if (methods.rows.length === 0) {
         return errorResult(`No BOR methods found for object type "${name}". Verify the BOR object type name.`);
       }
-      return textResult(JSON.stringify(methods, null, 2));
+      return textResult(toolJson(methods));
     }
     case 'DEVC': {
       const maxResults = args.maxResults != null ? Number(args.maxResults) : undefined;
       const contents = await client.getPackageContents(name, maxResults);
-      return textResult(JSON.stringify(contents, null, 2));
+      return textResult(toolJson(contents));
     }
     case 'SYSTEM':
       return textResult(await client.getSystemInfo());
     case 'COMPONENTS': {
       const components = await client.getInstalledComponents();
-      return textResult(JSON.stringify(components, null, 2));
+      return textResult(toolJson(components));
     }
     case 'MESSAGES':
     case 'MSAG': {
@@ -713,7 +713,7 @@ export async function handleSAPRead(
       }
       try {
         const mcInfo = await client.getMessageClassInfo(name);
-        return textResult(JSON.stringify(mcInfo, null, 2));
+        return textResult(toolJson(mcInfo));
       } catch {
         // Fall back to legacy endpoint if messageclass endpoint unavailable
         return textResult(await client.getMessages(name));
@@ -734,17 +734,17 @@ export async function handleSAPRead(
       if (!name) {
         // List all BSP apps (optional search via query param not used here since name is empty)
         const apps = await client.listBspApps();
-        return textResult(JSON.stringify(apps, null, 2));
+        return textResult(toolJson(apps));
       }
       if (!include) {
         // Browse root structure of the app
-        return textResult(JSON.stringify(await client.getBspAppStructure(name), null, 2));
+        return textResult(toolJson(await client.getBspAppStructure(name)));
       }
       // If include contains a dot, treat as file read; otherwise browse subfolder
       if (include.includes('.')) {
         return textResult(await client.getBspFileContent(name, include));
       }
-      return textResult(JSON.stringify(await client.getBspAppStructure(name, `/${include}`), null, 2));
+      return textResult(toolJson(await client.getBspAppStructure(name, `/${include}`)));
     }
     case 'BSP_DEPLOY': {
       if (cachedFeatures?.ui5repo && !cachedFeatures.ui5repo.available) {
@@ -760,11 +760,11 @@ export async function handleSAPRead(
       if (!info) {
         return textResult(`App "${name}" not found in ABAP Repository.`);
       }
-      return textResult(JSON.stringify(info, null, 2));
+      return textResult(toolJson(info));
     }
     case 'INACTIVE_OBJECTS': {
       const objects = await client.getInactiveObjects();
-      return textResult(JSON.stringify({ count: objects.length, objects }, null, 2));
+      return textResult(toolJson({ count: objects.length, objects }));
     }
     default:
       return errorResult(
