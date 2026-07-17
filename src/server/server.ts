@@ -357,7 +357,9 @@ async function createPerUserClient(
   // This enables a dual-destination approach:
   // - SAP_BTP_DESTINATION = BasicAuth destination (shared client, startup resolution)
   // - SAP_BTP_PP_DESTINATION = PrincipalPropagation destination (per-user, runtime)
-  const destName = process.env.SAP_BTP_PP_DESTINATION ?? process.env.SAP_BTP_DESTINATION;
+  // `||`, not `??`: blanking is the only way an mtaext can neutralize a base property, so
+  // an empty SAP_BTP_PP_DESTINATION must fall back instead of failing every PP request.
+  const destName = process.env.SAP_BTP_PP_DESTINATION || process.env.SAP_BTP_DESTINATION;
   if (!destName) {
     throw new Error('SAP_BTP_PP_DESTINATION or SAP_BTP_DESTINATION is required for principal propagation');
   }
@@ -771,7 +773,7 @@ export function createServer(
     const isJwt = !isApiKey && typeof token === 'string' && token.split('.').length === 3;
     if (config.ppEnabled && isJwt) {
       const ppUser = (extra.authInfo?.extra?.userName ?? extra.authInfo?.clientId) as string | undefined;
-      const ppDest = process.env.SAP_BTP_PP_DESTINATION ?? process.env.SAP_BTP_DESTINATION ?? '';
+      const ppDest = process.env.SAP_BTP_PP_DESTINATION || process.env.SAP_BTP_DESTINATION || '';
       if (!btpConfig) {
         const errMsg = 'BTP runtime configuration is unavailable for principal propagation';
         logger.emitAudit({

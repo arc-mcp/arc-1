@@ -768,6 +768,16 @@ export function validateConfig(config: ServerConfig): void {
     );
   }
 
+  // The mirror-image stranding: an mtaext that turns XSUAA off and adds API keys, but leaves
+  // the base SAP_PP_ENABLED/SAP_PP_STRICT stranded, passes validation (API keys satisfy
+  // hasHttpAuth) and logs a healthy `per-user` scope while server.ts rejects every API-key
+  // call for lacking a JWT. Loud at startup beats 100% of traffic failing silently.
+  if (config.ppEnabled && config.ppStrictExplicit && config.ppStrict && config.apiKeys?.length) {
+    console.error(
+      '[warn] SAP_PP_STRICT=true rejects every non-JWT call, so the configured ARC1_API_KEYS clients cannot call any tool. Set SAP_PP_STRICT=false for mixed PP/API-key operation, or SAP_PP_ENABLED=false to run fully shared.',
+    );
+  }
+
   const hasHttpAuth = !!(config.apiKeys?.length || config.oidcIssuer || config.xsuaaAuth);
   if (config.transport === 'http-streamable' && !hasHttpAuth && !config.allowHttpNoAuth) {
     throw new Error(
