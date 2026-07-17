@@ -8,7 +8,7 @@ import { findDefinition, getCompletion } from '../adt/codeintel.js';
 import { AdtApiError } from '../adt/errors.js';
 import { isOperationAllowed, OperationType } from '../adt/safety.js';
 import type { ClassHierarchy } from '../adt/types.js';
-import { errorResult, type ToolResult, textResult } from './shared.js';
+import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 import { lookupLiveUsages, resolveWhereUsedUri } from './where-used.js';
 
 // ─── SAPNavigate Handler ─────────────────────────────────────────────
@@ -40,38 +40,40 @@ export async function handleSAPNavigate(client: AdtClient, args: Record<string, 
       if (!result) {
         return textResult('No definition found at this position.');
       }
-      return textResult(JSON.stringify(result, null, 2));
+      return textResult(toolJson(result));
     }
     case 'references': {
       if (!uri) {
         return errorResult('Provide uri or type+name to find references.');
       }
-      // objectType is passed to SAP's where-used scope API which expects slash format (CLAS/OC, PROG/P).
-      // Do NOT normalize it — the slash suffix is semantically meaningful for the SAP filter.
+      // objectType keeps its slash format (CLAS/OC, PROG/P) — do NOT normalize; the suffix is
+      // semantically meaningful. Filtering happens client-side (SAP ignores objectTypeFilter).
       const objectType = args.objectType ? String(args.objectType) : undefined;
-      const lookup = await lookupLiveUsages(client, uri, objectType);
-      const { results } = lookup;
+      const maxResults = args.maxResults === undefined ? undefined : Number(args.maxResults);
+      const lookup = await lookupLiveUsages(client, uri, objectType, maxResults);
+      const { results, total, truncated } = lookup;
 
-      if (results.length === 0) {
-        return textResult('No references found.');
-      }
-      if (lookup.ignoredObjectType) {
-        return textResult(
-          JSON.stringify(
-            {
-              note: `This SAP system does not support scope-based Where-Used. The objectType filter "${lookup.ignoredObjectType}" was ignored — results below are unfiltered.`,
-              results,
-            },
-            null,
-            2,
-          ),
-        );
-      }
-      return textResult(JSON.stringify(results, null, 2));
+      // No early text return for the empty case: a consumer that parses the envelope would throw on
+      // "No references found.", and `total: 0` is the honest answer to "how many reference this?".
+      return textResult(
+        toolJson({
+          total,
+          shown: results.length,
+          truncated,
+          ...(truncated
+            ? {
+                hint:
+                  `Showing ${results.length} of ${total} references. Narrow with objectType ` +
+                  `(e.g. "CLAS/OC") or raise maxResults (max 1000).`,
+              }
+            : {}),
+          references: results,
+        }),
+      );
     }
     case 'completion': {
       const proposals = await getCompletion(client.http, client.safety, uri, line, column, source);
-      return textResult(JSON.stringify(proposals, null, 2));
+      return textResult(toolJson(proposals));
     }
     case 'hierarchy': {
       const className = String(args.name ?? '').toUpperCase();
@@ -135,7 +137,7 @@ export async function handleSAPNavigate(client: AdtClient, args: Record<string, 
         }
 
         const result: ClassHierarchy = { className: safeName, superclass, interfaces, subclasses };
-        return textResult(JSON.stringify(result, null, 2));
+        return textResult(toolJson(result));
       } catch (err) {
         if (err instanceof AdtApiError && err.statusCode === 404) {
           return errorResult('Cannot query SEOMETAREL — table may not be accessible on this system.');

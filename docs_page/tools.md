@@ -662,12 +662,23 @@ Navigate code: find definitions, references (where-used), code completion, and c
 | `uri` | string | No | Source URI of the object. Optional for `references` if `type`+`name` are provided. |
 | `type` | string | No | Object type (PROG, CLAS, INTF, FUNC, etc.) — alternative to `uri` for `references`. |
 | `name` | string | No | Object name — alternative to `uri` for `references`. |
-| `objectType` | string | No | For `references`: filter where-used results by ADT object type in slash format (e.g., PROG/P, CLAS/OC, FUGR/FF, INTF/OI). On systems supporting the scope endpoint, only returns references from objects of the specified type. On older systems, the filter is ignored and all references are returned with a note. |
+| `objectType` | string | No | For `references`: keep only results of this ADT type, slash format (`CLAS/OC`, `PROG/P`, `FUGR/FF`). A bare prefix (`CLAS`) matches every subtype. Applied client-side. |
+| `maxResults` | number | No | For `references`: max entries (default 100, max 1000). `total` counts every match of the filter. |
 | `line` | number | No | Line number (1-based) |
 | `column` | number | No | Column number (1-based) |
 | `source` | string | No | Current source code |
 
-**References action (Where-Used):** Uses the full scope-based Where-Used API, returning detailed results with line numbers, code snippets, and package info. Falls back to the simpler reference lookup on older SAP systems that don't support the scope endpoint.
+**References action (Where-Used):** Uses the full scope-based Where-Used API, returning detailed results with package info. Falls back to the simpler reference lookup on older SAP systems that don't support the scope endpoint.
+
+Returns a paged envelope — `{total, shown, truncated, hint?, references}` — because where-used is
+unbounded: `CL_ABAP_TYPEDESCR` has 6,644 references (~968K tokens, several times a context window).
+**`total` is the number of matches, not the page length**, so a capped page still reports the real
+blast radius.
+
+Paging and `objectType` filtering are both client-side, and deliberately so: SAP's
+`usageReferences` endpoint declares only `{?uri}` and ignores every limit or filter we can send
+(verified live across nine request variants, all byte-identical). The full set therefore still
+crosses the wire — this bounds what reaches the model, not what SAP computes.
 
 **Hierarchy action:** Returns the class inheritance chain via `SEOMETAREL`: superclass (or null), implemented interfaces, and direct subclasses. Requires `name` parameter (class name). It needs either table preview (`SAP_ALLOW_DATA_PREVIEW=true` + `data` scope) or freestyle SQL (`SAP_ALLOW_FREE_SQL=true` + `sql` scope). ARC-1 uses SQL when available and falls back to named table preview.
 
@@ -736,11 +747,11 @@ Manage CTS transport requests (SE09/SE10 equivalent): list, get details, create,
 | `pgmid` | string | No | Program ID for `remove_object`: `R3TR` (whole object) or `LIMU` (sub-object). Required for `remove_object` — the object type alone does not determine `pgmid`. |
 | `owner` | string | No | New owner SAP username (required for reassign) |
 | `recursive` | boolean | No | Apply recursively to child tasks (for delete/reassign). `release_recursive` always recurses. |
-| `summary` | boolean | No | For `list` only. Headers-only overview — omits each transport's (and task's) `objects[]`, keeping `id`/`description`/`owner`/`status`/`target` plus an `objectCount`. |
+| `summary` | boolean | No | For `list` only. **Default `true`** — headers-only: omits each transport's (and task's) `objects[]`, keeping `id`/`description`/`owner`/`status`/`target` plus an `objectCount`. Pass `false` for full object lists (~5x larger). |
 
 **Actions:**
 
-- **`list`** — List transport requests. Defaults to current user, modifiable (status D), all types (Workbench, Customizing, Transport of Copies). Pass `summary=true` for a headers-only overview that omits the (often large) object lists and keeps an `objectCount` per transport — scan many open transports cheaply, then `get` the one you want in full. (Live: on a busy box this cut a 94 KB / ~23.5K-token list to 20 KB / ~5K tokens.)
+- **`list`** — List transport requests. Defaults to current user, modifiable (status D), all types (Workbench, Customizing, Transport of Copies). Returns a paged envelope `{total, shown, truncated, transports}` — `total` is the full backlog, so a capped page still reports it. Summarised by default (object lists dropped, `objectCount` kept): scan cheaply, then `get` the one you want in full; pass `summary=false` for the object lists. Paged at `maxResults` (default 50, max 1000). Live: 55 requests went 104 KB / ~26K tokens → 23 KB / ~5.7K tokens.
 - **`get`** — Get transport details including tasks and objects.
 - **`create`** — Create a new transport request. Requires `description`. Optional `package` (defaults to `$TMP` — pass an explicit package to influence the transport route, which determines K/W/T type). Uses the ADT `CreateCorrectionRequest` endpoint (`POST /sap/bc/adt/cts/transports`); legacy NW 7.50 systems are supported.
 - **`release`** — Release a single transport or task.
@@ -1041,6 +1052,8 @@ SAPContext(action="usages", type="INTF", name="ZIF_ORDER")
     "uri": "/sap/bc/adt/oo/interfaces/zif_order"
   },
   "usageCount": 3,
+  "shown": 2,
+  "truncated": false,
   "usages": [
     { "name": "ZCL_ORDER", "type": "CLAS/OC", "uri": "/sap/bc/adt/oo/classes/zcl_order" },
     { "name": "ZCL_ORDER_EXTENDED", "type": "CLAS/OC", "uri": "/sap/bc/adt/oo/classes/zcl_order_extended" }
@@ -1049,6 +1062,13 @@ SAPContext(action="usages", type="INTF", name="ZIF_ORDER")
   "fallbackUsed": false
 }
 ```
+
+`usages` is paged (`maxResults`, default 100, max 1000) because a where-used lookup on a common
+object is unbounded — `CL_ABAP_TYPEDESCR` returns 6,644 references. **`usageCount` is the total
+match count, not the page length** (`shown` is the page): a capped page must never under-report the
+blast radius of a change. `SAPNavigate(action="references")` returns the same paged envelope under
+`references`, and `SAPContext(action="impact")` caps each downstream bucket while `summary` keeps
+the complete counts.
 
 If exact name resolution finds multiple object types, ARC-1 returns a bounded candidate list and asks for `type` instead of guessing.
 

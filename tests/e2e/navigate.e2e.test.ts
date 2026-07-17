@@ -74,7 +74,7 @@ describe('E2E SAPNavigate — Where-Used Analysis', () => {
         );
         return;
       }
-      const refs = JSON.parse(text);
+      const refs = JSON.parse(text).references;
       expect(refs.length).toBeGreaterThanOrEqual(1);
       // ZCL_ARC1_TEST implements this interface — must appear in results
       const classRef = refs.find((r: { name: string }) => r.name === 'ZCL_ARC1_TEST');
@@ -94,7 +94,7 @@ describe('E2E SAPNavigate — Where-Used Analysis', () => {
         skipTest(ctx, 'Where-used index empty for ZCL_ARC1_TEST on this system');
         return;
       }
-      const refs = JSON.parse(text);
+      const refs = JSON.parse(text).references;
       expect(Array.isArray(refs)).toBe(true);
       if (refs.length > 0) {
         expect(refs[0]).toHaveProperty('uri');
@@ -115,7 +115,7 @@ describe('E2E SAPNavigate — Where-Used Analysis', () => {
         skipTest(ctx, 'Where-used index empty for ZIF_ARC1_TEST on this system');
         return;
       }
-      const refs = JSON.parse(text);
+      const refs = JSON.parse(text).references;
       expect(refs.length).toBeGreaterThanOrEqual(1);
       const first = refs[0];
       // Scope-based API returns enriched fields
@@ -169,7 +169,7 @@ describe('E2E SAPNavigate — Where-Used Analysis', () => {
         name: 'CL_ABAP_CHAR_UTILITIES',
       });
       const text = expectToolSuccess(result);
-      const refs = JSON.parse(text);
+      const refs = JSON.parse(text).references;
       expect(refs.length).toBeGreaterThan(0);
       const first = refs[0];
       expect(first).toHaveProperty('uri');
@@ -190,7 +190,7 @@ describe('E2E SAPNavigate — Where-Used Analysis', () => {
         name: 'BUKRS',
       });
       const text = expectToolSuccessOrSkip(ctx, result);
-      const refs = JSON.parse(text);
+      const refs = JSON.parse(text).references;
       expect(refs.length).toBeGreaterThan(0);
       console.log(`    BUKRS domain has ${refs.length} references`);
     });
@@ -202,7 +202,7 @@ describe('E2E SAPNavigate — Where-Used Analysis', () => {
         name: 'BUKRS',
       });
       const text = expectToolSuccessOrSkip(ctx, result);
-      const refs = JSON.parse(text);
+      const refs = JSON.parse(text).references;
       expect(refs.length).toBeGreaterThan(0);
       console.log(`    BUKRS data element has ${refs.length} references`);
     });
@@ -219,7 +219,7 @@ describe('E2E SAPNavigate — Where-Used Analysis', () => {
         objectType: 'PROG/P',
       });
       const text = expectToolSuccess(result);
-      const refs = JSON.parse(text);
+      const refs = JSON.parse(text).references;
       // The objectTypeFilter is sent in the request body, but some SAP systems
       // ignore it and return all types. We just verify we got results back.
       if (Array.isArray(refs)) {

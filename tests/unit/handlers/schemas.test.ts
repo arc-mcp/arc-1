@@ -414,12 +414,13 @@ describe('SAPReadSchemaBtp', () => {
     expect(SAPReadSchemaBtp.safeParse({ type: 'ENHO' }).success).toBe(false);
   });
 
-  it('does not have expand_includes field', () => {
+  it('rejects expand_includes — the field is on-prem only', () => {
+    // The schema is strict, so an on-prem-only field is reported rather than silently dropped.
     const result = SAPReadSchemaBtp.safeParse({ type: 'CLAS', expand_includes: true });
-    // Should succeed — extra keys are ignored by default in z.object
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect('expand_includes' in result.data).toBe(false);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.code).toBe('unrecognized_keys');
+      expect((result.error.issues[0] as { keys?: string[] }).keys).toContain('expand_includes');
     }
   });
 });
@@ -1780,11 +1781,11 @@ describe('SAPContextSchemaBtp', () => {
     expect(siblingControls.success).toBe(true);
   });
 
-  it('does not have group field', () => {
+  it('rejects group — the field is on-prem only', () => {
     const result = SAPContextSchemaBtp.safeParse({ name: 'Z', group: 'TEST' });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect('group' in result.data).toBe(false);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.code).toBe('unrecognized_keys');
     }
   });
 });

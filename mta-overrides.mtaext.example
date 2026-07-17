@@ -18,6 +18,12 @@
 # `SAP_BTP_*_DESTINATION` properties below are the only ones that have to
 # be set — the base `mta.yaml` ships with placeholder destination names so
 # deploying without an override fails fast at startup.
+#
+# IMPORTANT — an extension can only OVERRIDE a base property, never remove it.
+# To turn a base-enabled feature OFF you must write the explicit off-value here;
+# commenting the line out or deleting it just falls back to the `mta.yaml` value.
+# (`SAP_FOO: ~` fails the deploy, and `cf unset-env` is undone by the next
+# `cf deploy` — an explicit value is the only durable override.)
 # ──────────────────────────────────────────────────────────────────────
 
 _schema-version: "3.1"
@@ -35,12 +41,17 @@ modules:
       # SAP_BTP_PP_DESTINATION: "my-pp-destination"
 
       # ── Principal propagation behaviour ──────────────────────────────
-      # Enable per-user principal propagation (default in mta.yaml: true)
-      # SAP_PP_ENABLED: "true"
+      # Per-user principal propagation (default in mta.yaml: true). Uncomment
+      # the line below to run every SAP call as the shared destination identity
+      # instead. The base `SAP_PP_STRICT: "true"` can stay as it is — it only
+      # warns once PP is off.
+      # SAP_PP_ENABLED: "false"
 
       # The base MTA uses the recommended strict default: API-key/non-JWT tool
       # calls are rejected. Set false for supported mixed PP/API-key operation;
       # JWT calls use PP and API-key calls use the shared destination identity.
+      # Leaving this at the base "true" while adding ARC1_API_KEYS means those
+      # API-key clients are rejected on every tool call.
       # SAP_PP_STRICT: "false"
 
       # ── Safety / Authorization ───────────────────────────────────────
@@ -140,10 +151,10 @@ modules:
       # SAP language
       # SAP_LANGUAGE: "EN"
 
-      # Skip TLS certificate verification (default in mta.yaml: true, for
-      # on-premise self-signed-cert landscapes). Override to "false" on
-      # landscapes with proper CA-signed certificates.
-      # SAP_INSECURE: "false"
+      # Skip TLS certificate verification (default in mta.yaml: false).
+      # Override to "true" only for on-premise landscapes with self-signed
+      # certificates that you cannot get into the trust store.
+      # SAP_INSECURE: "true"
 
     # ── Route host — pick your public URL (recommended) ──────────────
     # Base mta.yaml sets NO host, so the deploy service assigns a globally

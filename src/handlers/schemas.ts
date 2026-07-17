@@ -199,6 +199,7 @@ export const SAPReadSchema = z
     /** For TABLE_QUERY: structured WHERE conditions ANDed together. */
     where: z.array(TableQueryWhereItemSchema).optional(),
   })
+  .strict()
   .superRefine((input, ctx) => validateSapReadInput(input, ctx));
 
 export const SAPReadSchemaBtp = z
@@ -235,6 +236,7 @@ export const SAPReadSchemaBtp = z
     /** For TABLE_QUERY: structured WHERE conditions ANDed together. */
     where: z.array(TableQueryWhereItemSchema).optional(),
   })
+  .strict()
   .superRefine((input, ctx) => validateSapReadInput(input, ctx));
 
 // ─── SAPSearch ──────────────────────────────────────────────────────
@@ -257,6 +259,7 @@ export const SAPSearchSchema = z
           '"both" runs both and reports divergence via a splitBrain array (requires sql scope).',
       ),
   })
+  .strict()
   .superRefine((input, ctx) => {
     const searchType = input.searchType ?? 'object';
     if (searchType === 'tadir_lookup') {
@@ -322,10 +325,12 @@ export const SAPSearchSchemaNoSource = z
 
 // ─── SAPQuery ───────────────────────────────────────────────────────
 
-export const SAPQuerySchema = z.object({
-  sql: z.string(),
-  maxRows: z.coerce.number().optional(),
-});
+export const SAPQuerySchema = z
+  .object({
+    sql: z.string(),
+    maxRows: z.coerce.number().optional(),
+  })
+  .strict();
 
 // ─── SAPWrite ───────────────────────────────────────────────────────
 
@@ -574,6 +579,7 @@ export const SAPWriteSchema = z
     parameters: z.array(fmParameterSchema).optional(),
     objects: z.array(batchObjectSchemaOnprem).optional(),
   })
+  .strict()
   .superRefine((input, ctx) => validateSapWriteInput(input, ctx));
 
 export const SAPWriteSchemaBtp = z
@@ -662,52 +668,67 @@ export const SAPWriteSchemaBtp = z
     parameters: z.array(fmParameterSchema).optional(),
     objects: z.array(batchObjectSchemaBtp).optional(),
   })
+  .strict()
   .superRefine((input, ctx) => validateSapWriteInput(input, ctx));
 
 // ─── SAPActivate ────────────────────────────────────────────────────
 
-export const SAPActivateSchema = z.object({
-  action: z.enum(['activate', 'publish_srvb', 'unpublish_srvb']).optional(),
-  name: z.string().optional(),
-  type: z.string().optional(),
-  group: z.string().optional(),
-  version: z.string().optional(),
-  service_type: z.enum(['odatav2', 'odatav4']).optional(),
-  preaudit: looseOptionalBoolean,
-  objects: z
-    .array(
-      z.object({
-        type: z.string(),
-        name: z.string(),
-        group: z.string().optional(),
-      }),
-    )
-    .optional(),
-});
+export const SAPActivateSchema = z
+  .object({
+    action: z.enum(['activate', 'publish_srvb', 'unpublish_srvb']).optional(),
+    name: z.string().optional(),
+    type: z.string().optional(),
+    group: z.string().optional(),
+    version: z.string().optional(),
+    service_type: z.enum(['odatav2', 'odatav4']).optional(),
+    preaudit: looseOptionalBoolean,
+    objects: z
+      .array(
+        z.object({
+          type: z.string(),
+          name: z.string(),
+          group: z.string().optional(),
+        }),
+      )
+      .optional(),
+  })
+  .strict();
 
 // ─── SAPNavigate ────────────────────────────────────────────────────
 
-export const SAPNavigateSchema = z.object({
-  action: z.enum(['definition', 'references', 'completion', 'hierarchy']),
-  uri: z.string().optional(),
-  type: z.string().optional(),
-  name: z.string().optional(),
-  objectType: z.string().optional(),
-  line: z.coerce.number().optional(),
-  column: z.coerce.number().optional(),
-  source: z.string().optional(),
-});
+export const SAPNavigateSchema = z
+  .object({
+    action: z.enum(['definition', 'references', 'completion', 'hierarchy']),
+    uri: z.string().optional(),
+    type: z.string().optional(),
+    name: z.string().optional(),
+    objectType: z.string().optional(),
+    maxResults: z.coerce.number().optional(),
+    line: z.coerce.number().optional(),
+    column: z.coerce.number().optional(),
+    source: z.string().optional(),
+  })
+  .strict();
 
 // ─── SAPLint ────────────────────────────────────────────────────────
 
-export const SAPLintSchema = z.object({
-  action: z.enum(['lint', 'lint_and_fix', 'list_rules', 'format', 'get_formatter_settings', 'set_formatter_settings']),
-  source: z.string().optional(),
-  name: z.string().optional(),
-  indentation: looseOptionalBoolean,
-  style: z.enum(['keywordUpper', 'keywordLower', 'keywordAuto', 'none']).optional(),
-  rules: z.record(z.string(), z.any()).optional(),
-});
+export const SAPLintSchema = z
+  .object({
+    action: z.enum([
+      'lint',
+      'lint_and_fix',
+      'list_rules',
+      'format',
+      'get_formatter_settings',
+      'set_formatter_settings',
+    ]),
+    source: z.string().optional(),
+    name: z.string().optional(),
+    indentation: looseOptionalBoolean,
+    style: z.enum(['keywordUpper', 'keywordLower', 'keywordAuto', 'none']).optional(),
+    rules: z.record(z.string(), z.any()).optional(),
+  })
+  .strict();
 
 // ─── SAPDiagnose ────────────────────────────────────────────────────
 
@@ -719,149 +740,156 @@ const QuickfixAffectedObjectSchema = z.object({
   content: z.string().optional(),
 });
 
-export const SAPDiagnoseSchema = z.object({
-  action: z.enum([
-    'syntax',
-    'unittest',
-    'atc',
-    'cds_testcases',
-    'dumps',
-    'traces',
-    'trace_start',
-    'trace_requests',
-    'trace_cancel',
-    'system_messages',
-    'gateway_errors',
-    'object_state',
-    'quickfix',
-    'apply_quickfix',
-    'odata_perf',
-    'cds_sql',
-    'sql_trace_state',
-    'set_sql_trace_state',
-    'sql_trace_directory',
-    'authorization_trace',
-  ]),
-  name: z.string().optional(),
-  url: z.string().optional(),
-  type: z.string().optional(),
-  source: z.string().optional(),
-  sourceUri: z.string().optional(),
-  line: z.coerce.number().optional(),
-  column: z.coerce.number().optional(),
-  version: z.enum(['active', 'inactive']).optional(),
-  proposalUri: z.string().optional(),
-  proposalUserContent: z.string().optional(),
-  proposalAffectedObjects: z.array(QuickfixAffectedObjectSchema).optional(),
-  variant: z.string().optional(),
-  id: z.string().optional(),
-  detailUrl: z.string().optional(),
-  errorType: z.string().optional(),
-  user: z.string().optional(),
-  authObject: z.string().optional(),
-  from: z.string().optional(),
-  to: z.string().optional(),
-  maxResults: z.coerce.number().optional(),
-  sections: z.array(z.string()).optional(),
-  includeFullText: looseOptionalBoolean,
-  coverage: looseOptionalBoolean,
-  sqlOn: looseOptionalBoolean,
-  onlyFailures: looseOptionalBoolean,
-  analysis: z.enum(['hitlist', 'statements', 'dbAccesses']).optional(),
-  // trace_start / trace_requests (arm a profiler trace, then read it back via action="traces")
-  traceUser: z.string().optional(),
-  processType: z.enum(['any', 'http', 'dialog', 'batch', 'rfc']).optional(),
-  objectType: z.enum(['any', 'url', 'transaction', 'report', 'functionModule']).optional(),
-  maxExecutions: z.coerce.number().optional(),
-  expiresHours: z.coerce.number().optional(),
-  sqlTrace: looseOptionalBoolean,
-  aggregate: looseOptionalBoolean,
-  description: z.string().optional(),
-});
+export const SAPDiagnoseSchema = z
+  .object({
+    action: z.enum([
+      'syntax',
+      'unittest',
+      'atc',
+      'cds_testcases',
+      'dumps',
+      'traces',
+      'trace_start',
+      'trace_requests',
+      'trace_cancel',
+      'system_messages',
+      'gateway_errors',
+      'object_state',
+      'quickfix',
+      'apply_quickfix',
+      'odata_perf',
+      'cds_sql',
+      'sql_trace_state',
+      'set_sql_trace_state',
+      'sql_trace_directory',
+      'authorization_trace',
+    ]),
+    name: z.string().optional(),
+    url: z.string().optional(),
+    type: z.string().optional(),
+    source: z.string().optional(),
+    sourceUri: z.string().optional(),
+    line: z.coerce.number().optional(),
+    column: z.coerce.number().optional(),
+    version: z.enum(['active', 'inactive']).optional(),
+    proposalUri: z.string().optional(),
+    proposalUserContent: z.string().optional(),
+    proposalAffectedObjects: z.array(QuickfixAffectedObjectSchema).optional(),
+    variant: z.string().optional(),
+    id: z.string().optional(),
+    detailUrl: z.string().optional(),
+    errorType: z.string().optional(),
+    user: z.string().optional(),
+    authObject: z.string().optional(),
+    from: z.string().optional(),
+    to: z.string().optional(),
+    maxResults: z.coerce.number().optional(),
+    sections: z.array(z.string()).optional(),
+    includeFullText: looseOptionalBoolean,
+    coverage: looseOptionalBoolean,
+    sqlOn: looseOptionalBoolean,
+    onlyFailures: looseOptionalBoolean,
+    analysis: z.enum(['hitlist', 'statements', 'dbAccesses']).optional(),
+    // trace_start / trace_requests (arm a profiler trace, then read it back via action="traces")
+    traceUser: z.string().optional(),
+    processType: z.enum(['any', 'http', 'dialog', 'batch', 'rfc']).optional(),
+    objectType: z.enum(['any', 'url', 'transaction', 'report', 'functionModule']).optional(),
+    maxExecutions: z.coerce.number().optional(),
+    expiresHours: z.coerce.number().optional(),
+    sqlTrace: looseOptionalBoolean,
+    aggregate: looseOptionalBoolean,
+    description: z.string().optional(),
+  })
+  .strict();
 
 // ─── SAPTransport ───────────────────────────────────────────────────
 
-export const SAPTransportSchema = z.object({
-  action: z.enum([
-    'list',
-    'get',
-    'create',
-    'release',
-    'delete',
-    'remove_object',
-    'reassign',
-    'release_recursive',
-    'check',
-    'history',
-    'layers',
-    'targets',
-  ]),
-  id: z.string().optional(),
-  description: z.string().optional(),
-  name: z.string().optional(),
-  pgmid: z.string().optional(),
-  package: z.string().optional(),
-  target: z.string().optional(),
-  transportLayer: z.string().optional(),
-  user: z.string().optional(),
-  status: z.string().optional(),
-  type: z.string().optional(),
-  owner: z.string().optional(),
-  // looseOptionalBoolean (not z.boolean()) so GPT/OpenAI clients sending stringified
-  // "true"/"false" coerce instead of erroring at validation (CLAUDE.md boolean guidance).
-  recursive: looseOptionalBoolean,
-  removeLockedObjects: looseOptionalBoolean,
-  // For list: headers-only view — omit each transport's object lists (keep an objectCount).
-  summary: looseOptionalBoolean,
-});
+export const SAPTransportSchema = z
+  .object({
+    action: z.enum([
+      'list',
+      'get',
+      'create',
+      'release',
+      'delete',
+      'remove_object',
+      'reassign',
+      'release_recursive',
+      'check',
+      'history',
+      'layers',
+      'targets',
+    ]),
+    id: z.string().optional(),
+    description: z.string().optional(),
+    name: z.string().optional(),
+    pgmid: z.string().optional(),
+    package: z.string().optional(),
+    target: z.string().optional(),
+    transportLayer: z.string().optional(),
+    user: z.string().optional(),
+    status: z.string().optional(),
+    type: z.string().optional(),
+    owner: z.string().optional(),
+    // looseOptionalBoolean (not z.boolean()) so GPT/OpenAI clients sending stringified
+    // "true"/"false" coerce instead of erroring at validation (CLAUDE.md boolean guidance).
+    recursive: looseOptionalBoolean,
+    removeLockedObjects: looseOptionalBoolean,
+    // For list: headers-only view — omit each transport's object lists (keep an objectCount).
+    summary: looseOptionalBoolean,
+    maxResults: z.coerce.number().optional(),
+  })
+  .strict();
 
 // ─── SAPGit ─────────────────────────────────────────────────────────
 
-export const SAPGitSchema = z.object({
-  action: z.enum([
-    'list_repos',
-    'whoami',
-    'config',
-    'branches',
-    'external_info',
-    'history',
-    'objects',
-    'check',
-    'stage',
-    'clone',
-    'pull',
-    'push',
-    'commit',
-    'switch_branch',
-    'create_branch',
-    'unlink',
-  ]),
-  repoId: z.string().optional(),
-  url: z.string().optional(),
-  branch: z.string().optional(),
-  package: z.string().optional(),
-  transport: z.string().optional(),
-  commit: z.string().optional(),
-  message: z.string().optional(),
-  description: z.string().optional(),
-  objects: z
-    .array(
-      z.object({
-        type: z.string(),
-        name: z.string(),
-        package: z.string().optional(),
-        path: z.string().optional(),
-        state: z.string().optional(),
-        operation: z.string().optional(),
-      }),
-    )
-    .optional(),
-  user: z.string().optional(),
-  password: z.string().optional(),
-  token: z.string().optional(),
-  backend: z.enum(['gcts', 'abapgit']).optional(),
-  limit: z.coerce.number().optional(),
-});
+export const SAPGitSchema = z
+  .object({
+    action: z.enum([
+      'list_repos',
+      'whoami',
+      'config',
+      'branches',
+      'external_info',
+      'history',
+      'objects',
+      'check',
+      'stage',
+      'clone',
+      'pull',
+      'push',
+      'commit',
+      'switch_branch',
+      'create_branch',
+      'unlink',
+    ]),
+    repoId: z.string().optional(),
+    url: z.string().optional(),
+    branch: z.string().optional(),
+    package: z.string().optional(),
+    transport: z.string().optional(),
+    commit: z.string().optional(),
+    message: z.string().optional(),
+    description: z.string().optional(),
+    objects: z
+      .array(
+        z.object({
+          type: z.string(),
+          name: z.string(),
+          package: z.string().optional(),
+          path: z.string().optional(),
+          state: z.string().optional(),
+          operation: z.string().optional(),
+        }),
+      )
+      .optional(),
+    user: z.string().optional(),
+    password: z.string().optional(),
+    token: z.string().optional(),
+    backend: z.enum(['gcts', 'abapgit']).optional(),
+    limit: z.coerce.number().optional(),
+  })
+  .strict();
 
 // ─── SAPContext ─────────────────────────────────────────────────────
 
@@ -875,32 +903,38 @@ const siblingMaxCandidatesSchema = z.coerce
     return Math.min(Math.max(value, 1), SAPCONTEXT_SIBLING_MAX_CANDIDATES_CAP);
   });
 
-export const SAPContextSchema = z.object({
-  action: z.enum(['deps', 'usages', 'impact', 'structure']).optional(),
-  type: z.enum(SAPCONTEXT_TYPES_ONPREM).optional(),
-  name: z.string(),
-  source: z.string().optional(),
-  group: z.string().optional(),
-  maxDeps: z.coerce.number().optional(),
-  depth: z.coerce.number().min(1).max(3).optional(),
-  includeIndirect: z.boolean().optional(),
-  siblingCheck: z.boolean().optional(),
-  siblingMaxCandidates: siblingMaxCandidatesSchema,
-  includeKtd: looseOptionalBoolean,
-});
+export const SAPContextSchema = z
+  .object({
+    action: z.enum(['deps', 'usages', 'impact', 'structure']).optional(),
+    type: z.enum(SAPCONTEXT_TYPES_ONPREM).optional(),
+    name: z.string(),
+    source: z.string().optional(),
+    group: z.string().optional(),
+    maxResults: z.coerce.number().optional(),
+    maxDeps: z.coerce.number().optional(),
+    depth: z.coerce.number().min(1).max(3).optional(),
+    includeIndirect: z.boolean().optional(),
+    siblingCheck: z.boolean().optional(),
+    siblingMaxCandidates: siblingMaxCandidatesSchema,
+    includeKtd: looseOptionalBoolean,
+  })
+  .strict();
 
-export const SAPContextSchemaBtp = z.object({
-  action: z.enum(['deps', 'usages', 'impact', 'structure']).optional(),
-  type: z.enum(SAPCONTEXT_TYPES_BTP).optional(),
-  name: z.string(),
-  source: z.string().optional(),
-  maxDeps: z.coerce.number().optional(),
-  depth: z.coerce.number().min(1).max(3).optional(),
-  includeIndirect: z.boolean().optional(),
-  siblingCheck: z.boolean().optional(),
-  siblingMaxCandidates: siblingMaxCandidatesSchema,
-  includeKtd: looseOptionalBoolean,
-});
+export const SAPContextSchemaBtp = z
+  .object({
+    action: z.enum(['deps', 'usages', 'impact', 'structure']).optional(),
+    type: z.enum(SAPCONTEXT_TYPES_BTP).optional(),
+    name: z.string(),
+    source: z.string().optional(),
+    maxResults: z.coerce.number().optional(),
+    maxDeps: z.coerce.number().optional(),
+    depth: z.coerce.number().min(1).max(3).optional(),
+    includeIndirect: z.boolean().optional(),
+    siblingCheck: z.boolean().optional(),
+    siblingMaxCandidates: siblingMaxCandidatesSchema,
+    includeKtd: looseOptionalBoolean,
+  })
+  .strict();
 
 // ─── SAPManage ──────────────────────────────────────────────────────
 
@@ -915,56 +949,60 @@ const flpTileSchema = z.object({
   info: z.string().optional(),
 });
 
-export const SAPManageSchema = z.object({
-  action: z.enum([
-    'features',
-    'probe',
-    'cache_stats',
-    'create_package',
-    'delete_package',
-    'change_package',
-    'flp_list_catalogs',
-    'flp_list_groups',
-    'flp_list_tiles',
-    'flp_create_catalog',
-    'flp_create_group',
-    'flp_create_tile',
-    'flp_add_tile_to_group',
-    'flp_delete_catalog',
-    'set_api_state',
-  ]),
-  apiState: z.enum(['RELEASED', 'NOT_RELEASED']).optional(),
-  contract: z.enum(['C0', 'C1', 'C2', 'C3', 'C4']).optional(),
-  catalogId: z.string().optional(),
-  groupId: z.string().optional(),
-  title: z.string().optional(),
-  domainId: z.string().optional(),
-  tileInstanceId: z.string().optional(),
-  tile: flpTileSchema.optional(),
-  name: z.string().optional(),
-  description: z.string().optional(),
-  superPackage: z.string().optional(),
-  softwareComponent: z.string().optional(),
-  responsible: z.string().optional(),
-  transportLayer: z.string().optional(),
-  recordChanges: z.boolean().optional(),
-  packageType: z.enum(['development', 'structure', 'main']).optional(),
-  transport: z.string().optional(),
-  objectUri: z.string().optional(),
-  objectType: z.string().optional(),
-  objectName: z.string().optional(),
-  oldPackage: z.string().optional(),
-  newPackage: z.string().optional(),
-});
+export const SAPManageSchema = z
+  .object({
+    action: z.enum([
+      'features',
+      'probe',
+      'cache_stats',
+      'create_package',
+      'delete_package',
+      'change_package',
+      'flp_list_catalogs',
+      'flp_list_groups',
+      'flp_list_tiles',
+      'flp_create_catalog',
+      'flp_create_group',
+      'flp_create_tile',
+      'flp_add_tile_to_group',
+      'flp_delete_catalog',
+      'set_api_state',
+    ]),
+    apiState: z.enum(['RELEASED', 'NOT_RELEASED']).optional(),
+    contract: z.enum(['C0', 'C1', 'C2', 'C3', 'C4']).optional(),
+    catalogId: z.string().optional(),
+    groupId: z.string().optional(),
+    title: z.string().optional(),
+    domainId: z.string().optional(),
+    tileInstanceId: z.string().optional(),
+    tile: flpTileSchema.optional(),
+    name: z.string().optional(),
+    description: z.string().optional(),
+    superPackage: z.string().optional(),
+    softwareComponent: z.string().optional(),
+    responsible: z.string().optional(),
+    transportLayer: z.string().optional(),
+    recordChanges: z.boolean().optional(),
+    packageType: z.enum(['development', 'structure', 'main']).optional(),
+    transport: z.string().optional(),
+    objectUri: z.string().optional(),
+    objectType: z.string().optional(),
+    objectName: z.string().optional(),
+    oldPackage: z.string().optional(),
+    newPackage: z.string().optional(),
+  })
+  .strict();
 
 // ─── Hyperfocused SAP ───────────────────────────────────────────────
 
-export const SAPHyperfocusedSchema = z.object({
-  action: z.string(),
-  type: z.string().optional(),
-  name: z.string().optional(),
-  params: z.record(z.string(), z.any()).optional(),
-});
+export const SAPHyperfocusedSchema = z
+  .object({
+    action: z.string(),
+    type: z.string().optional(),
+    name: z.string().optional(),
+    params: z.record(z.string(), z.any()).optional(),
+  })
+  .strict();
 
 // ─── Schema Lookup ──────────────────────────────────────────────────
 

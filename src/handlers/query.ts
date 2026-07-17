@@ -6,7 +6,7 @@ import type { AdtClient } from '../adt/client.js';
 import { AdtApiError, extractUnknownColumn, formatUnknownColumnHint } from '../adt/errors.js';
 import type { DataPreviewMeta } from '../adt/xml-parser.js';
 import { classifySapQueryParserError, maskSqlStringLiterals } from './query-errors.js';
-import { errorResult, type ToolResult, textResult } from './shared.js';
+import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 
 const SAPQUERY_IN_LIST_CHUNK_SIZE = 8;
 
@@ -195,7 +195,7 @@ export async function handleSAPQuery(client: AdtClient, args: Record<string, unk
     out.rowsReturned = data.rows.length;
     out.columns = data.columns;
     out.rows = data.rows;
-    return textResult(JSON.stringify(out, null, 2));
+    return textResult(toolJson(out));
   } catch (err) {
     if (err instanceof AdtApiError && err.isNotFound) {
       // Try to extract table name from SQL and suggest similar names

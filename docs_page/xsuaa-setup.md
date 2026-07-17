@@ -106,6 +106,15 @@ cf logs arc1-mcp-server --recent | grep XSUAA
 4. Add your BTP user (email address)
 5. Save
 
+**Assign before you hand out the MCP URL.** The assignment creates the shadow user, so it works for users who have never logged in — use the **Users** tab above, or:
+
+```bash
+btp assign security/role-collection "ARC-1 Admin (<space>)" \
+  --subaccount <subaccount-id> --to-user <email> --of-idp <origin-key>
+```
+
+Order matters. If the user logs in first, that failed login leaves a cached XSUAA session behind, and every retry keeps returning `invalid_scope` after you grant the role — until they clear their browser cookies. A self-service rollout ("here's the URL, try it") produces that order by default, so it hits essentially every user once. See [`invalid_scope`](#insufficient-scope-invalid_scope) if you are already in that state.
+
 ## Step 4: Verify OAuth Discovery
 
 ```bash
@@ -372,7 +381,31 @@ Ensure the XSUAA service is bound: `cf services` should show `arc1-xsuaa` bound 
 ### "Insufficient scope" / "invalid_scope"
 The user doesn't have the required role collection assigned. Go to BTP Cockpit → Security → Role Collections and assign the appropriate collection to the user.
 
-**IdP matters:** If the subaccount has a custom IAS tenant (trust configuration shows `sap.custom`), role collections must be assigned with the correct IdP origin. Assigning via `sap.default` when the user logs in via `sap.custom` will result in `invalid_scope`.
+If the collection **is** already assigned and you still get `invalid_scope`, it is one of three things, in the order worth checking.
+
+**1. Stale XSUAA session cookie — the common one.** After an admin assigns a role collection, XSUAA keeps returning `invalid_scope` because the browser still holds an XSUAA SSO session created *before* the grant. XSUAA answers from that session's cached authorities and never re-reads role collections.
+
+Fix: delete the browser cookies for the XSUAA domain (`<identityzone>.authentication.<region>.hana.ondemand.com` — in Edge, `edge://settings/content/all` → search `authentication` → delete). Read the exact domain from the `url` field of the XSUAA binding: **Cockpit → Application → Service Bindings → arc1-xsuaa → Credentials**. No waiting period; the next login works immediately.
+
+Two things that do **not** work, both tried:
+
+- **`<xsuaa-url>/logout` is a dead end.** Without a `redirect` param it renders SAP's "Uh oh. Something went amiss." and does not reliably drop the session.
+- **Resetting the MCP client's token cache** (e.g. VS Code's MCP auth reset) changes nothing — the poisoned session lives in the browser, not the client.
+
+Diagnostic, in `cf logs <app-name> --recent`:
+
+```
+GET /authorize?...                         302
+GET /oauth/callback?error=invalid_scope    400   ← <200ms later
+```
+
+`/authorize` → `/oauth/callback?error=invalid_scope` in under ~200 ms with no IAS login form in between is a cached session, not a missing role collection — a genuine grant problem costs a full interactive login first. Corollary: if a retry never shows a login form, the cookie is still there.
+
+**2. Role collection with no roles.** Deleting and recreating an XSUAA service instance orphans its role collections — collections are subaccount-scoped and survive the instance, their roles do not. A later `cf deploy` will not re-link them, because the `role-collections` config in `mta.yaml` only creates collections whose names don't already exist.
+
+Check **Cockpit → Security → Role Collections → "ARC-1 Admin (<space>)" → Roles**: it must list role `MCPAdmin` with Application Identifier `arc1-mcp-<space>!t<idx>`. An empty **Roles** tab is the tell. Fix: delete the role collection in the cockpit, `cf deploy` again, re-assign.
+
+**3. Wrong IdP origin.** If the subaccount has a custom IAS tenant (trust configuration shows `sap.custom`), role collections must be assigned with the correct IdP origin. Assigning via `sap.default` when the user logs in via `sap.custom` will result in `invalid_scope`. Platform IdP users (origin `<tenant>-platform`) are for cockpit and CLI access only — a role collection assigned there does nothing for application logon.
 
 ### "Invalid client_id" (Copilot Studio)
 DCR registrations are in-memory and lost on restart. Switch to **Manual** OAuth mode (see above) to avoid this.

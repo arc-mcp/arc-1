@@ -1006,7 +1006,7 @@ export function buildApiReleasePutBody(getXml: string, contract: string, state: 
  * We extract the key fields into a JSON summary:
  * - name, description, OData version (V2/V4), binding type (UI/Web API)
  * - service definition reference, publish status, contract
- */
+ * Compact JSON — returned verbatim to the LLM as SAPRead(type="SRVB").source.*/
 export function parseServiceBinding(xml: string): string {
   const parsed = parseXml(xml);
   const sb = (parsed.serviceBinding ?? {}) as Record<string, unknown>;
@@ -1045,7 +1045,7 @@ export function parseServiceBinding(xml: string): string {
     changedBy: String(sb['@_changedBy'] ?? ''),
   };
 
-  return JSON.stringify(result, null, 2);
+  return JSON.stringify(result);
 }
 
 /**

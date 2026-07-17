@@ -399,16 +399,23 @@ function makeOptionalPropertiesNullable(node: unknown): unknown {
 
 // ─── Main Tool Definitions ──────────────────────────────────────────
 
+/** Advertise the strictness the runtime enforces — the Zod schemas are `.strict()`, and JSON Schema means
+ *  the opposite when absent. Every return path goes through here. TOP-LEVEL ONLY: nested `objects[]`
+ *  items stay lenient, matching `.strict()`, which does not cascade (batch_create; #360). */
+function withStrictSchemas(tools: ToolDefinition[]): ToolDefinition[] {
+  for (const tool of tools) (tool.inputSchema as Record<string, unknown>).additionalProperties = false;
+  return tools;
+}
+
 export function getToolDefinitions(
   config: ServerConfig,
   textSearchAvailable?: boolean,
   resolvedFeatures?: ResolvedFeatures,
   options: ToolDefinitionOptions = {},
 ): ToolDefinition[] {
-  // Hyperfocused mode: single universal SAP tool (~200 tokens)
-  if (config.toolMode === 'hyperfocused') {
-    return [getHyperfocusedToolDefinition(config, resolvedFeatures)];
-  }
+  // Hyperfocused mode: single universal SAP tool (~200 tokens).
+  if (config.toolMode === 'hyperfocused')
+    return withStrictSchemas([getHyperfocusedToolDefinition(config, resolvedFeatures)]);
 
   const btp = isBtpMode(config);
   const tools: ToolDefinition[] = [
@@ -455,8 +462,8 @@ export function getToolDefinitions(
           include: {
             type: 'string',
             description:
-              'For CLAS: DO NOT use this to read the main class — omit include entirely to get the full class source (CLASS DEFINITION + CLASS IMPLEMENTATION). This parameter reads class-LOCAL auxiliary files only: definitions (local type definitions, NOT the main class definition), implementations (local helper class implementations), macros, testclasses (ABAP Unit). Comma-separated. Not all classes have these sections — missing ones return a note instead of an error. ' +
-              'For DDLS: use include="elements" to get a structured field list extracted from the CDS DDL source — shows key fields, aliases, associations, and expression types (calculated, case, cast). Useful for understanding CDS entity structure without parsing raw DDL. ' +
+              'For CLAS: DO NOT use this to read the main class — omit include entirely to get the full class source (CLASS DEFINITION + CLASS IMPLEMENTATION). This parameter reads class-LOCAL auxiliary files only: definitions (local type definitions, NOT the main class definition), implementations (local helper class implementations), macros, testclasses (ABAP Unit). Comma-separated. ' +
+              'For DDLS: use include="elements" for the CDS field catalog (key fields, aliases, associations, expression types) instead of raw DDL. ' +
               'For VERSIONS (CLAS): include selects the class include history to query (main, definitions, implementations, macros, testclasses).',
           },
           group: {
@@ -495,7 +502,7 @@ export function getToolDefinitions(
             type: 'string',
             enum: ['text', 'structured'],
             description:
-              'Output format. "text" (default): raw source code. "structured" (CLAS only): JSON with metadata (description, language, category) + decomposed source (main, testclasses, definitions, implementations, macros). Useful when you need to understand class structure or separate test code from production code.',
+              'Output format. "text" (default): raw source. "structured" (CLAS only): JSON metadata + EVERY class include (main, testclasses, definitions, implementations, macros) — a superset of "text", so it always costs MORE (measured +10% to +1685%). Use only to split test from production code; otherwise method="*" / method="name" / grep=.',
           },
           version: {
             type: 'string',
@@ -1002,7 +1009,11 @@ export function getToolDefinitions(
         objectType: {
           type: 'string',
           description:
-            'For references action: filter where-used results by ADT object type in slash format (e.g., PROG/P, CLAS/OC, FUGR/FF, INTF/OI). On systems supporting the scope endpoint, only returns references from objects of the specified type. On older systems, the filter is ignored and all references are returned with a note.',
+            'references: keep only results of this ADT type, slash format (CLAS/OC, PROG/P, FUGR/FF). A bare prefix ("CLAS") matches every subtype.',
+        },
+        maxResults: {
+          type: 'number',
+          description: 'references: max entries (default 100, max 1000). "total" counts every match of the filter.',
         },
         line: { type: 'number', description: 'Line number (1-based)' },
         column: { type: 'number', description: 'Column number (1-based)' },
@@ -1083,11 +1094,11 @@ export function getToolDefinitions(
         '- "apply_quickfix": apply one proposal, return text deltas, no write (name+type+source+line+proposalUri+proposalUserContent; pass proposalUserContent through exactly, may be empty).\n' +
         '- "dumps": list/read ST22 short dumps (no id = list; id = read; includeFullText, sections).\n' +
         '- "traces": list/analyze profiler traces (id+analysis: hitlist=hot spots, statements=call tree, dbAccesses=DB stats).\n' +
-        '- "trace_start": arm a profiler trace for the NEXT matching execution, then reproduce and read via "traces" (write scope; defaults: next HTTP request, SQL on; optional traceUser/processType/maxExecutions/expiresHours/sqlTrace/…).\n' +
+        '- "trace_start": arm a profiler trace for the NEXT matching execution, then reproduce and read via "traces" (write scope; defaults: next HTTP request, SQL on).\n' +
         '- "trace_requests": list armed trace requests. "trace_cancel": cancel one by id (write scope).\n' +
         '- "system_messages": list SM02 messages. "gateway_errors": list /IWFND/ERROR_LOG (on-prem; detailUrl or id+errorType for detail).\n' +
         '- "odata_perf": diagnose why an OData call is slow (url = host-relative path from the Network tab); returns the sap-statistics timing split (DB/ABAP/framework/auth) + a verdict. Read-only; needs allowDataPreview.\n' +
-        '- "authorization_trace": read the on-prem STUSERTRACE authorization trace from SUAUTHVALTRC (optional user/authObject/onlyFailures/maxResults). Read-only; needs SAP_ALLOW_DATA_PREVIEW. Example: {"action":"authorization_trace","user":"AUTH_TEST","onlyFailures":true}.\n' +
+        '- "authorization_trace": read the on-prem STUSERTRACE authorization trace from SUAUTHVALTRC Read-only; needs SAP_ALLOW_DATA_PREVIEW.\n' +
         '- "cds_sql": show the native SQL a CDS view compiles to (name; read-only; may be absent on old releases).\n' +
         '- "sql_trace_state" / "set_sql_trace_state" (sqlOn; needs SAP_ALLOW_WRITES) / "sql_trace_directory": ST05 SQL-trace control.\n' +
         'Quickfix workflow: syntax/ATC → quickfix → apply_quickfix → write via SAPWrite. Full action reference: docs_page SAPDiagnose.',
@@ -1333,9 +1344,14 @@ export function getToolDefinitions(
                 description: 'Required for FUNC type. The function group containing the function module.',
               },
             }),
+        maxResults: {
+          type: 'number',
+          description:
+            'usages: max entries (default 100); impact: max per downstream bucket (default 50). Max 1000. "usageCount"/"summary" stay true totals, not page sizes.',
+        },
         maxDeps: {
           type: 'number',
-          description: 'Maximum dependencies to resolve (default 20). Lower = faster + fewer tokens.',
+          description: 'Max dependencies to resolve (default 20). Lower = faster + fewer tokens.',
         },
         depth: {
           type: 'number',
@@ -1345,22 +1361,20 @@ export function getToolDefinitions(
         },
         includeIndirect: {
           type: 'boolean',
-          description:
-            'Only for action="impact". Include indirect (transitive) downstream where-used entries. Default false.',
+          description: 'impact: Include indirect (transitive) downstream where-used entries. Default false.',
         },
         siblingCheck: {
           type: 'boolean',
-          description:
-            'Only for action="impact". Enable sibling metadata-extension consistency analysis. Default true.',
+          description: 'impact: Enable sibling metadata-extension consistency analysis. Default true.',
         },
         siblingMaxCandidates: {
           type: 'number',
-          description: 'Only for action="impact". Maximum sibling DDLS candidates to compare. Default 4; hard cap 10.',
+          description: 'impact: Maximum sibling DDLS candidates to compare. Default 4; hard cap 10.',
         },
         includeKtd: {
           type: 'boolean',
           description:
-            'Only for action="deps". When true/default, prepend the object Knowledge Transfer Document (KTD/SKTD) when one exists. Set false to skip the KTD lookup.',
+            'deps: When true/default, prepend the object Knowledge Transfer Document (KTD/SKTD) when one exists. Set false to skip the KTD lookup.',
         },
       },
       required: ['name'],
@@ -1526,8 +1540,8 @@ export function getToolDefinitions(
               'release_recursive: release all unreleased tasks first, then the transport itself. ' +
               'check: check if a transport is needed for a package/object (requires type, name, package). ' +
               'history: list transports referencing an object (reverse lookup; requires type, name; works without SAP_ALLOW_TRANSPORT_WRITES). ' +
-              "layers: list the transport layers this system offers (name + description + resolved target where any) — the valid values for create's transportLayer. Use this to discover a real value instead of guessing; works without SAP_ALLOW_TRANSPORT_WRITES. Uses the package value-help endpoint (NW 7.52+); older releases report it's unavailable. " +
-              "targets: list the valid transport targets (Transportziel / TR_TARGET) this system offers — the valid values for create's target. Use this to discover a real target (e.g. before create with target=). Uses the official ADT target value-help; available only on releases whose ADT stack supports explicit targets (NW 7.50/7.51 report it's unavailable). Read-only.",
+              "layers: list the transport layers this system offers (name + description + resolved target where any) — the valid values for create's transportLayer. Use this to discover a real value instead of guessing; works without SAP_ALLOW_TRANSPORT_WRITES. " +
+              "targets: list the valid transport targets (Transportziel / TR_TARGET) this system offers — the valid values for create's target. Use this to discover a real target (e.g. before create with target=). Read-only. Both report unavailability at runtime on releases that lack the value-help endpoint.",
           },
           id: {
             type: 'string',
@@ -1583,7 +1597,11 @@ export function getToolDefinitions(
           summary: {
             type: 'boolean',
             description:
-              'For list only. Headers-only overview: omit each transport\'s (and task\'s) object lists, keeping id/description/owner/status/target plus an objectCount. Use it to scan many open transports cheaply, then action="get" the one you want in full.',
+              'For list only. DEFAULT true: headers-only — drops each transport\'s (and task\'s) object lists, keeping id/description/owner/status/target + objectCount; use action="get" for one in full. Pass false for full object lists (~5x larger).',
+          },
+          maxResults: {
+            type: 'number',
+            description: 'list: max transports (default 50, max 1000). "total" always reports the full backlog.',
           },
         },
         required: ['action'],
@@ -1691,5 +1709,5 @@ export function getToolDefinitions(
     if (annotations) tool.annotations = { ...annotations };
   }
 
-  return tools;
+  return withStrictSchemas(tools);
 }
