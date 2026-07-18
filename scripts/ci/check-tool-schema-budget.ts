@@ -117,8 +117,11 @@ const PER_TOOL_WIRE_WALL = 21_000;
 function syntheticTarget(index: number): TargetDescriptor {
   const sid = `A${index.toString(36).toUpperCase().padStart(2, '0')}`;
   const client = String(index).padStart(3, '0');
+  // Exercise the worst-case <=16 enum size: an operator alias may use the full
+  // 32-character system segment even though the real SAP SID remains three characters.
+  const publicSystem = sid.padEnd(32, 'X');
   return {
-    target: `${sid}/${client}`,
+    target: `${publicSystem}/${client}`,
     sid,
     client,
     description: `Synthetic target ${index}`,

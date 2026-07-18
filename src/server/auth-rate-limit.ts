@@ -24,6 +24,7 @@
 import type { Request, RequestHandler, Response } from 'express';
 import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
 import { logger } from './logger.js';
+import { PINNED_MCP_PATH_PATTERN } from './multi-target-identity.js';
 
 /**
  * Optional knobs for `createAuthRateLimiter`.
@@ -142,6 +143,6 @@ export function isMcpHttpTraffic(req: Request): boolean {
   // root edge bucket. The pinned-target regex stays deliberately uppercase.
   const staticPath = requestPath.toLowerCase();
   if (staticPath === '/mcp' || staticPath === '/multi/mcp') return true;
-  if (/^\/[A-Z][A-Z0-9]{2}\/\d{3}\/mcp$/.test(requestPath)) return true;
+  if (PINNED_MCP_PATH_PATTERN.test(requestPath)) return true;
   return staticPath === '/authorize' && isCopilotJsonRpc(req);
 }

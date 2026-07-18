@@ -28,9 +28,22 @@ function registry() {
           hasCloudConnectorLocationId: false,
           arcProperties: { 'arc1.enabled': 'true' },
         },
+        {
+          name: 'ARC1_A4H_2025_100_PP',
+          type: 'HTTP',
+          urlState: 'valid',
+          urlFingerprint: opaqueDestinationValue(`${url}/2025`),
+          authentication: 'PrincipalPropagation',
+          proxyType: 'OnPremise',
+          sapSysId: 'A4H',
+          sapClient: '100',
+          description: 'A4H 2025',
+          hasCloudConnectorLocationId: false,
+          arcProperties: { 'arc1.enabled': 'true', 'arc1.target_alias': 'A4H-2025' },
+        },
       ],
       instanceNames: [],
-      scannedCount: 1,
+      scannedCount: 2,
       unrelatedCount: 0,
       arcAdjacentWithoutMarkerCount: 0,
     },
@@ -123,6 +136,28 @@ describe('multi-target HTTP helpers', () => {
     const res = mockRes();
     await handler({ path: '/A4H/100/mcp', method: 'POST', body: {}, headers: {} } as never, res as never);
     expect(createPinnedServer).toHaveBeenCalledWith(expect.objectContaining({ target: 'A4H/100' }));
+    expect(res.statusCode).toBe(500);
+  });
+
+  it('serves an accepted pinned target through its route alias', async () => {
+    const createPinnedServer = vi.fn(
+      () =>
+        ({
+          connect: vi.fn(async () => {
+            throw new Error('sentinel: connect reached');
+          }),
+        }) as never,
+    );
+    const handler = createPinnedTargetMcpHandler({
+      registry: registry(),
+      aggregateFactory: vi.fn() as never,
+      createPinnedServer,
+    });
+    const res = mockRes();
+    await handler({ path: '/A4H-2025/100/mcp', method: 'POST', body: {}, headers: {} } as never, res as never);
+    expect(createPinnedServer).toHaveBeenCalledWith(
+      expect.objectContaining({ target: 'A4H-2025/100', sid: 'A4H', client: '100' }),
+    );
     expect(res.statusCode).toBe(500);
   });
 

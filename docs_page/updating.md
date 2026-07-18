@@ -5,9 +5,10 @@
 The unreleased PR #543 prototype setting `SAP_BTP_DESTINATIONS` is intentionally rejected. Replace
 it with `ARC1_MULTI_TARGET_ENDPOINTS=true`, mark each eligible BTP subaccount destination with
 `arc1.enabled=true`, and provide the standard `sap-sysid` and `sap-client` destination properties.
-Routes are now `/<SID>/<CLIENT>/mcp` and `/multi/mcp`; destination-name routes and a discovered
-default `/mcp` alias do not exist. Per-destination data/SQL policy lives in `arc1.*` destination
-properties, not `SAP_*_<DEST>` environment variables. See
+Routes are now `/<SYSTEM-OR-ALIAS>/<CLIENT>/mcp` and `/multi/mcp`; destination-name routes and a
+discovered default `/mcp` alias do not exist. The optional `arc1.target_alias` distinguishes
+independent systems that reuse a real SID/client. Per-destination data/SQL policy lives in `arc1.*`
+destination properties, not `SAP_*_<DEST>` environment variables. See
 [Multi-System Setup](multi-target-setup.md), then
 [Multi-Target Administration](multi-target-administration.md) for diagnostics and operations.
 

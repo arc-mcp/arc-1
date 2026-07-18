@@ -40,9 +40,14 @@ use SAP's separate **Multi-Target Application** packaging terminology.
   tool mode; UI, plugins, shared cookies, writes, activation, transport/Git mutation, ATC, and ABAP
   Unit remain unavailable on multi-target routes.
 - `/mcp` is never assigned a discovered destination. An optional single-target `/mcp` is configured
-  independently and may coexist with pinned `/<SID>/<CLIENT>/mcp` and aggregate `/multi/mcp` routes.
-- The public target is immutable `SID/CLIENT`; destination names stay out of routes and reader
-  output. Secret-projected Admin `SAPTargets` diagnostics may expose the internal destination name.
+  independently and may coexist with pinned `/<PUBLIC-SYSTEM>/<CLIENT>/mcp` and aggregate
+  `/multi/mcp` routes.
+- The public target is immutable `SYSTEM-OR-ALIAS/CLIENT`. Without `arc1.target_alias`, the public
+  system segment is the real SID. An alias is allowed only to distinguish independent systems that
+  reuse a real SID/client; it never replaces the required real `sap-sysid` or `sap-client` used by
+  SAP. Exactly one public ID is mounted per destination, and duplicate checks use that ID.
+- Destination names stay out of routes and reader output. Secret-projected Admin `SAPTargets`
+  diagnostics may expose the internal destination name and real SID/client.
   Raw URLs, credentials, tokens, certificates, and Cloud Connector location IDs never enter the
   registry or `SAPTargets` output.
 - Effective access is the intersection of the structural v1 ceiling, instance ceiling, destination
@@ -53,7 +58,9 @@ use SAP's separate **Multi-Target Application** packaging terminology.
 ### Change these together
 
 - Destination properties/validation: `multi-target-destination-config.ts`,
-  `destination-discovery.ts`, `destination-registry.ts`, `multi-target-runtime.ts`, and their tests.
+  `multi-target-identity.ts`, `destination-discovery.ts`, `destination-registry.ts`,
+  `multi-target-runtime.ts`, and their tests. Target syntax, pinned route matchers, aggregate pattern,
+  and edge-rate matching must continue to share the identity module.
 - Tool/action surface: `multi-target-tools.ts`, `multi-target-server.ts`, `src/authz/policy.ts`,
   `src/handlers/dispatch.ts`, tool-definition budget checks, and focused policy/tool tests.
 - Routes/auth/metadata: `src/server/{http,server}.ts`, XSUAA scopes/roles, and

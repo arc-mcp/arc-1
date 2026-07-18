@@ -151,6 +151,7 @@ describe('multi-target runtime isolation', () => {
     ['location', { CloudConnectorLocationId: 'LOC_B' }],
     ['policy', { originalProperties: { 'arc1.allow_data_preview': 'false' } }],
     ['description', { originalProperties: { Description: 'A4H production' } }],
+    ['target alias', { originalProperties: { 'arc1.target_alias': 'A4H-2025' } }],
     ['unknown ARC key', { originalProperties: { 'arc1.typo': 'true' } }],
     ['wrong-case ARC key', { originalProperties: { 'ARC1.Enabled': 'true' } }],
   ])('rejects %s drift until restart', (_label, overrides) => {

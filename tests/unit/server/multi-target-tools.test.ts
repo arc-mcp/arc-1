@@ -72,16 +72,20 @@ describe('multi-target tool surface', () => {
   it.each([17, 256])('uses the compact pattern for %i targets', (count) => {
     const targets = Array.from({ length: count }, (_, index) => target(index));
     const injected = injectTargetSchema(getToolDefinitions(DEFAULT_CONFIG)[0], targets);
-    expect(property(injected, 'target')).toMatchObject({ pattern: '^[A-Z][A-Z0-9]{2}\\/[0-9]{3}$' });
+    expect(property(injected, 'target')).toMatchObject({
+      pattern: '^[A-Z][A-Z0-9-]{1,30}[A-Z0-9]\\/[0-9]{3}$',
+    });
     expect(property(injected, 'target')).not.toHaveProperty('enum');
   });
 
-  it('normalizes only the SID and rejects missing or malformed targets', () => {
+  it('normalizes the system segment and accepts a configured-alias shape', () => {
     expect(normalizeTarget(' a4h/100 ')).toEqual({ ok: true, target: 'A4H/100' });
+    expect(normalizeTarget(' a4h-2025/001 ')).toEqual({ ok: true, target: 'A4H-2025/001' });
     expect(normalizeTarget('')).toMatchObject({ ok: false, code: 'TARGET_REQUIRED' });
     expect(normalizeTarget(null)).toMatchObject({ ok: false, code: 'TARGET_REQUIRED' });
     expect(normalizeTarget('A4H/10')).toMatchObject({ ok: false, code: 'INVALID_TARGET' });
     expect(normalizeTarget('A4H/abc')).toMatchObject({ ok: false, code: 'INVALID_TARGET' });
+    expect(normalizeTarget('A4H_2025/001')).toMatchObject({ ok: false, code: 'INVALID_TARGET' });
   });
 
   it('distinguishes target policy denial from the v1 hard ceiling', () => {

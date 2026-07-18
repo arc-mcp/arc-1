@@ -57,8 +57,8 @@ propagation, remains the target-specific authorization boundary.
 | Activation | `ARC1_MULTI_TARGET_ENDPOINTS=true`; absent/false preserves current behavior. |
 | Discovery | One startup snapshot of BTP **subaccount** destinations; no provider, subscriber, cross-subaccount, or SaaS discovery. |
 | Candidate marker | `arc1.enabled=true` is the only required ARC-1-specific destination property. |
-| Target identity | Standard `sap-sysid` plus required `sap-client`; public ID is `SID/CLIENT`. |
-| Routes | Both `/<SID>/<CLIENT>/mcp` and `/multi/mcp`; no discovered bare `/mcp` alias. |
+| Target identity | Standard `sap-sysid` plus required `sap-client`; public ID is normally `SID/CLIENT`. Optional `arc1.target_alias` replaces only the public system segment when independent systems reuse a SID/client. |
+| Routes | Both `/<PUBLIC-SYSTEM>/<CLIENT>/mcp` and `/multi/mcp`; no discovered bare `/mcp` alias. |
 | Aggregate selection | Required top-level `target` on every SAP-contacting tool; no default, current, or session target. |
 | Maximum | 256 enabled candidates. More than 256 makes the discovered registry unavailable; ARC-1 never silently chooses a subset. |
 | Authentication | XSUAA only for multi-target endpoints in v1; strict per-user PP; no shared SAP identity fallback. |
@@ -190,12 +190,13 @@ An enabled v1 destination has this logical schema:
 | `Authentication` | yes | Exactly `PrincipalPropagation`. |
 | `sap-sysid` | yes | Standard SAP property; exactly `^[A-Z][A-Z0-9]{2}$`. Hyphen and underscore are invalid. |
 | `sap-client` | yes | Exactly three digits (`^\d{3}$`). There is no implicit client 100. |
-| `Description` | recommended | Single line, at most 160 characters. Missing/invalid values warn and fall back to `SID/CLIENT`. |
+| `Description` | recommended | Single line, at most 160 characters. Missing/invalid values warn and fall back to the resulting public target ID. |
 | `sap-language` | no | Optional SAP request language after existing validation; target value wins, otherwise inherit instance `SAP_LANGUAGE`. |
 | `CloudConnectorLocationId` | no | Used for lookup/fingerprint; admin output exposes only whether it is present. |
 | `arc1.enabled` | yes | Only required ARC-1 property. String boolean; trimmed, case-insensitive `true` enables and `false` disables. |
 | `arc1.allow_data_preview` | no | String boolean, default false. Can only narrow/intersect the instance ceiling. |
 | `arc1.allow_free_sql` | no | String boolean, default false. Can only narrow/intersect the instance ceiling. It does not automatically enable named data preview. |
+| `arc1.target_alias` | no | Public system segment only; `^[A-Z][A-Z0-9-]{1,30}[A-Z0-9]$`. It does not replace the real SID/client or create a second route. |
 
 Property names are case-sensitive. Boolean values accept trimmed case-insensitive `true` and
 `false`; every other value is invalid. The docs recommend lowercase values.
@@ -223,6 +224,12 @@ Treat `Description` as untrusted administrator-controlled display text: normaliz
 control characters, collapse line breaks, enforce the length limit, JSON-encode it normally, and
 never interpret it as an LLM instruction. It is visible to read users and the LLM only as a label.
 
+When independently installed systems reuse one real SID/client, assign an alias to at least one.
+For example, preserve `A4H/001` and add `A4H-2025/001`; both PP and ADT runtimes still use real
+`sap-sysid=A4H` and `sap-client=001`. Existing destinations without the property retain
+their exact `SID/CLIENT` identity. Adding, removing, or changing an alias requires restart and
+changes the pinned URL; one destination never receives both aliased and unaliased routes.
+
 ### Examples
 
 Minimum source-read target:
@@ -238,6 +245,23 @@ sap-client=100
 Description=A4H development client 100
 arc1.enabled=true
 ```
+
+Same-SID/client target with a distinct public route:
+
+```properties
+Name=ARC1_A4H_2025_001_PP
+Type=HTTP
+URL=http://a4h-2025-abap.internal:50000
+ProxyType=OnPremise
+Authentication=PrincipalPropagation
+sap-sysid=A4H
+sap-client=001
+Description=ABAP Platform 2025 test system (A4H client 001)
+arc1.enabled=true
+arc1.target_alias=A4H-2025
+```
+
+Its public target is `A4H-2025/001`; its real SAP identity remains `A4H/001`.
 
 Data preview and SQL target (still mutation-free):
 
@@ -286,7 +310,7 @@ scopes and SAP authorization.
 
 ### Conflict rules
 
-- Duplicate public target `(sap-sysid, sap-client)`: quarantine every claimant as
+- Duplicate resulting public target ID: quarantine every claimant as
   `DUPLICATE_TARGET`.
 - Duplicate destination name in the discovery input: quarantine every claimant as
   `DUPLICATE_DESTINATION_NAME`.
@@ -306,8 +330,8 @@ bypassed. Before building the user's ADT client, compare the result to the start
 - proxy type;
 - `sap-client`;
 - Cloud Connector location ID; and
-- target SID/client and language properties; and
-- all supported normalized `arc1.*` policy properties.
+- real SID/client and language properties; and
+- public target alias and all supported normalized `arc1.*` properties.
 
 Any mismatch rejects the call as `TARGET_CONFIG_CHANGED` and instructs the operator to restart. This
 also catches a newly created instance-level destination shadowing a subaccount target. Never refresh
@@ -357,7 +381,7 @@ accepted.
 
 ### Route auth order
 
-For `/<SID>/<CLIENT>/mcp` and `/multi/mcp`:
+For `/<PUBLIC-SYSTEM>/<CLIENT>/mcp` and `/multi/mcp`:
 
 1. Validate XSUAA and require at least the global read scope before resolving whether a syntactically
    valid target exists.
@@ -389,7 +413,7 @@ inferred from an unauthorized user's response.
 Use one snapshot-independent, case-sensitive syntactic matcher for:
 
 ```text
-/<SID>/<CLIENT>/mcp
+/<PUBLIC-SYSTEM>/<CLIENT>/mcp
 ```
 
 The matcher runs XSUAA authentication and the global read check before registry lookup. Do not mount
@@ -399,8 +423,9 @@ generic HTTP 404 without an accepted-target list. Syntactically invalid paths ma
 unauthenticated 404 because syntax is not inventory.
 
 Pinned URLs are canonical uppercase and case-sensitive. `/a4h/100/mcp` is not an alias for
-`/A4H/100/mcp`. Mount the case-sensitive pinned matcher before the existing lowercase `/mcp`
-middleware so the valid SAP SID `MCP` does not collide with the single-target endpoint.
+`/A4H/100/mcp`. The public system segment is either a three-character SID or a 3–32-character route
+alias containing uppercase letters, digits, and internal hyphens. Mount the case-sensitive pinned
+matcher before the existing lowercase `/mcp` middleware.
 
 Pinned endpoints keep ordinary argument shapes: no `target`, `system`, `client`, or destination
 argument is added. Their tool/action set is still the pruned multi-target read-only surface, not the
@@ -410,7 +435,7 @@ single-target full surface.
 
 RFC 9728 metadata must be registry-independent:
 
-- for every syntactically valid `/<SID>/<CLIENT>/mcp` resource, the corresponding public PRM URL
+- for every syntactically valid `/<PUBLIC-SYSTEM>/<CLIENT>/mcp` resource, the corresponding public PRM URL
   returns 200 whether or not the target exists;
 - `/multi/mcp` has its own fixed PRM resource;
 - the document echoes the canonical requested resource and shared XSUAA authorization server but
@@ -449,7 +474,7 @@ Schema strategy:
 - 1 accepted target: inject a one-value enum.
 - 2–16 accepted targets: inject an exact enum into each `target` property.
 - 17–256 accepted targets: use a string with pattern
-  `^[A-Z][A-Z0-9]{2}/[0-9]{3}$`; runtime membership remains authoritative.
+  `^[A-Z][A-Z0-9-]{1,30}[A-Z0-9]/[0-9]{3}$`; runtime membership remains authoritative.
 - The target field description tells the model to call `SAPTargets` when it needs configured IDs or
   descriptions; listing a target does not prove that the current SAP user can access it.
 - Do not generate a capability-conditioned `oneOf` tree per target. It would multiply schemas and
@@ -462,8 +487,8 @@ the 256-target data/SQL surface; do not raise the existing wall to accommodate d
 Target input normalization is separate from general LLM empty-value stripping:
 
 - null, empty, or whitespace-only input returns `TARGET_REQUIRED`;
-- trim input and uppercase only the SID segment before validation, so `a4h/100` resolves to the
-  canonical `A4H/100` target;
+- trim input and uppercase only the public system segment before validation, so `a4h-2025/001`
+  resolves to the canonical `A4H-2025/001` target;
 - malformed input returns `INVALID_TARGET`; and
 - a valid but absent target returns `UNKNOWN_TARGET`.
 
@@ -573,6 +598,7 @@ Reason-code vocabulary:
 | `MISSING_NAME` / `INVALID_NAME` | Destination name is absent or unusable. |
 | `MISSING_URL` / `INVALID_URL` | Required destination URL is absent or malformed. |
 | `MISSING_SYSID` / `INVALID_SYSID` | Standard `sap-sysid` is absent or invalid. |
+| `INVALID_TARGET_ALIAS` | Optional public system alias is malformed. |
 | `MISSING_CLIENT` / `INVALID_CLIENT` | `sap-client` is absent or invalid. |
 | `UNSUPPORTED_TYPE` | Destination is not HTTP. |
 | `UNSUPPORTED_PROXY` | Destination is not OnPremise. |
@@ -582,7 +608,7 @@ Reason-code vocabulary:
 | `UNKNOWN_ARC1_PROPERTY` | Enabled entry uses an unsupported `arc1.*` key. |
 | `INVALID_POLICY` | Data/SQL policy value is malformed. |
 | `UNSUPPORTED_V1_WRITE_CONFIG` | Enabled entry tries to configure a multi-target mutation. |
-| `DUPLICATE_TARGET` | More than one enabled entry claims the same SID/client. |
+| `DUPLICATE_TARGET` | More than one enabled entry claims the same resulting public target ID. |
 | `DUPLICATE_DESTINATION_NAME` | Discovery input contains the same name more than once. |
 | `SHADOWED_BY_INSTANCE` | Same name exists at service-instance level. |
 | `TARGET_LIMIT_EXCEEDED` | More than 256 entries are enabled; no discovered route is active. |
@@ -621,7 +647,7 @@ Required classifications:
 | Code | Stage/meaning | Retry guidance |
 |---|---|---|
 | `TARGET_REQUIRED` | Aggregate call omitted `target` or supplied null/empty/whitespace. | Supply a target from the schema enum or call `SAPTargets`. |
-| `INVALID_TARGET` | Aggregate target is not valid `SID/CLIENT` syntax. | Correct the target value. |
+| `INVALID_TARGET` | Aggregate target is not valid public-system/client syntax. | Correct the target value. |
 | `UNKNOWN_TARGET` | Target ID is syntactically valid but absent from the accepted snapshot. | Call `SAPTargets`; restart after destination changes. |
 | `NO_TARGETS_CONFIGURED` | Multi mode is enabled with no accepted targets. | Configure a destination and restart. |
 | `MULTI_TARGET_REGISTRY_UNAVAILABLE` | Discovery/limit error prevented a usable registry. | Admin calls `SAPTargets` on `/multi/mcp` and checks health/logs. |
@@ -1060,7 +1086,7 @@ Required automated cases:
 - mode off is byte/behavior compatible where snapshots apply;
 - startup with fixed synthetic registries of 0, 1, 2, 16, 17, and 256 accepted targets;
 - 257 enabled candidates disables the discovered registry without selecting a subset;
-- exact SID/client/description/boolean validation;
+- exact real SID/client, optional public alias, description, and boolean validation;
 - unknown ARC property and unsupported write config fail closed;
 - missing description warns and falls back;
 - duplicate target/name and instance shadow quarantine every claimant;
@@ -1175,10 +1201,10 @@ cannot synthesize safely:
    its transport/OAuth behavior differs from the aggregate result.
 4. Repeat the aggregate flow in Microsoft Copilot Studio, including popup consent, reconnect, and a
    tool call. Its hosted callback and popup behavior cannot be proven by CLI JSON-RPC.
-5. When the SAP Platform 2025 and 2023 systems share the same `sap-sysid`/`sap-client`, enable only
-   the 2023 destination and restart for its test, then enable only the 2025 destination and restart
-   for its test. Enable both only for the collision test, where v1 must quarantine both claimants
-   rather than invent a route ID. Restore the reviewed destination state and restart afterward.
+5. When SAP Platform 2025 and S/4HANA 2023 share the same real `sap-sysid`/`sap-client`, configure
+   a distinct public ID by aliasing one or both, enable both, restart, and prove pinned plus
+   aggregate `SYSTEM` reads reach the intended releases. Separately prove a duplicate-alias test
+   quarantines every claimant, then restore the reviewed destination state and restart.
 
 For every live case, record the app GUID/version, registry revision, CF instance index, user role,
 endpoint style, expected result, and actual result. Record the ARC-1 request ID when the request

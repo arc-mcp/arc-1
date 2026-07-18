@@ -118,7 +118,7 @@ export interface ServerConfig {
   multiTargetEndpoints: boolean;
   /** Runtime-only: internal Destination Service name for a discovered target. */
   destinationName?: string;
-  /** Runtime-only: public immutable SID/client target ID for a discovered target. */
+  /** Runtime-only: public immutable system-or-alias/client ID for a discovered target. */
   targetId?: string;
 
   // --- Principal Propagation (per-user SAP auth) ---

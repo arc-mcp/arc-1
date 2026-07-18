@@ -8,10 +8,10 @@ import {
   isWriteRelatedArcProperty,
   parseDestinationBoolean,
 } from './multi-target-destination-config.js';
+import { buildTargetId, SAP_SYSID_PATTERN, TARGET_SYSTEM_ALIAS_PATTERN } from './multi-target-identity.js';
 import type { ServerConfig } from './types.js';
 
-export const TARGET_ID_PATTERN = /^[A-Z][A-Z0-9]{2}\/[0-9]{3}$/;
-export const SAP_SYSID_PATTERN = /^[A-Z][A-Z0-9]{2}$/;
+export { TARGET_ID_PATTERN } from './multi-target-identity.js';
 export const MULTI_TARGET_MAX = 256;
 export const MULTI_TARGET_DENY_ACTIONS = Object.freeze(['SAPDiagnose.atc', 'SAPDiagnose.unittest']);
 
@@ -26,6 +26,7 @@ export type TargetExclusionCode =
   | 'INVALID_URL'
   | 'MISSING_SYSID'
   | 'INVALID_SYSID'
+  | 'INVALID_TARGET_ALIAS'
   | 'MISSING_CLIENT'
   | 'INVALID_CLIENT'
   | 'UNSUPPORTED_TYPE'
@@ -85,6 +86,7 @@ export interface TargetDiagnostic {
     enabled?: boolean;
     allowDataPreview?: boolean;
     allowFreeSQL?: boolean;
+    targetAlias?: string;
     unknownProperties?: readonly string[];
   }>;
 }
@@ -147,6 +149,7 @@ export function targetFingerprint(value: FingerprintInput): string {
     client: value.client,
     cloudConnectorLocationIdFingerprint: value.cloudConnectorLocationIdFingerprint ?? '',
     sid: value.sid,
+    target: value.target,
     language: value.language,
     allowDataPreview: value.requestedPolicy.allowDataPreview,
     allowFreeSQL: value.requestedPolicy.allowFreeSQL,
@@ -162,6 +165,9 @@ function immutableArcConfig(properties: Readonly<Record<string, string>>): Targe
     enabled: parseDestinationBoolean(properties['arc1.enabled']),
     allowDataPreview: parseDestinationBoolean(properties['arc1.allow_data_preview']),
     allowFreeSQL: parseDestinationBoolean(properties['arc1.allow_free_sql']),
+    ...(TARGET_SYSTEM_ALIAS_PATTERN.test(properties['arc1.target_alias'] ?? '')
+      ? { targetAlias: properties['arc1.target_alias'] }
+      : {}),
     ...(unknownProperties.length > 0 ? { unknownProperties: Object.freeze(unknownProperties) } : {}),
   });
 }
@@ -387,6 +393,17 @@ function evaluate(source: DiscoveredDestination, base: ServerConfig): CandidateE
       'sap-client must contain exactly three digits.',
     );
   }
+  const targetAlias = source.arcProperties['arc1.target_alias'];
+  if (targetAlias !== undefined && !TARGET_SYSTEM_ALIAS_PATTERN.test(targetAlias)) {
+    return excludedCandidate(
+      source,
+      diagnosticBase,
+      true,
+      'quarantined',
+      'INVALID_TARGET_ALIAS',
+      'arc1.target_alias must start with an uppercase letter and contain 3-32 uppercase letters, digits, or internal hyphens.',
+    );
+  }
   const language = source.sapLanguage?.trim().toUpperCase() || base.language;
   if (!/^[A-Z]{2}$/.test(language)) {
     return excludedCandidate(
@@ -399,7 +416,7 @@ function evaluate(source: DiscoveredDestination, base: ServerConfig): CandidateE
     );
   }
 
-  const targetId = `${source.sapSysId}/${source.sapClient}`;
+  const targetId = buildTargetId(source.sapSysId, source.sapClient, targetAlias);
   const description = sanitizeTargetDescription(source.description, targetId);
   const descriptionFallback = description === targetId && source.description !== targetId;
   const requestedPolicy = Object.freeze({
@@ -502,7 +519,7 @@ function conflictMessage(code: TargetExclusionCode): string {
     case 'DUPLICATE_DESTINATION_NAME':
       return 'More than one subaccount destination uses this destination name; every claimant is quarantined.';
     case 'DUPLICATE_TARGET':
-      return 'More than one destination claims this SID/client target; every claimant is quarantined.';
+      return 'More than one destination claims this public target ID; every claimant is quarantined.';
     case 'SHADOWED_BY_INSTANCE':
       return 'A service-instance destination has the same name and could shadow this subaccount destination.';
     default:

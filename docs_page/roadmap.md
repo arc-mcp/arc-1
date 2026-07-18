@@ -2090,9 +2090,10 @@ The following features are tracked but not planned for near-term implementation.
 | **Status** | Experimental v1 implemented behind `ARC1_MULTI_TARGET_ENDPOINTS` |
 
 **What:** Support many BTP subaccount destinations from one ARC-1 instance. Every accepted target gets
-a pinned `/<SID>/<CLIENT>/mcp` route; `/multi/mcp` adds a required `target` argument to each
+a pinned `/<SYSTEM-OR-ALIAS>/<CLIENT>/mcp` route; `/multi/mcp` adds a required `target` argument to each
 SAP-contacting tool. Destinations are discovered at startup when they explicitly set
-`arc1.enabled=true`.
+`arc1.enabled=true`. An optional public route alias handles independently installed systems that
+reuse one real SID/client without changing their SAP identity.
 
 **Why:** Enterprises have multiple SAP systems (DEV, QAS, PRD, sandboxes).
 

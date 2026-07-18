@@ -58,6 +58,7 @@ describe('discoverDestinations', () => {
                 'sap-client': '100',
                 Description: 'A4H dev',
                 'arc1.enabled': 'true',
+                'arc1.target_alias': 'A4H-2025',
                 'arc1.unknown_secret': 'SENTINEL_ARC_PROPERTY',
               },
             },
@@ -87,7 +88,12 @@ describe('discoverDestinations', () => {
 
     const result = await discoverDestinations(btpConfig);
     expect(result.subaccount).toEqual([
-      expect.objectContaining({ name: 'ARC1_A4H_100_PP', sapSysId: 'A4H', sapClient: '100' }),
+      expect.objectContaining({
+        name: 'ARC1_A4H_100_PP',
+        sapSysId: 'A4H',
+        sapClient: '100',
+        arcProperties: expect.objectContaining({ 'arc1.target_alias': 'A4H-2025' }),
+      }),
     ]);
     expect(result.instanceNames).toEqual(['INSTANCE_NAME']);
     expect(result.scannedCount).toBe(2);

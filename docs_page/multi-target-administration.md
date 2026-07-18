@@ -22,7 +22,7 @@ Responsibility is intentionally split across four administrators:
 | Owner | Controls | Security effect |
 |---|---|---|
 | ARC-1 deployment owner | ARC-1 application environment, usually deployed through MTA | Enables the mode and sets the application-wide maximum for data and SQL. |
-| BTP destination administrator | One subaccount destination per SID/client | Defines target identity, connection, label, and narrower data/SQL opt-ins. |
+| BTP destination administrator | One subaccount destination per SAP connection | Defines the real SID/client, optional public route alias, connection, label, and narrower data/SQL opt-ins. |
 | Identity administrator | Existing XSUAA role collections | Grants global read, data, SQL, or admin scope. There are no per-target roles in v1. |
 | SAP/Basis administrator | PP mapping and SAP authorizations | Determines whether the propagated user can access a selected SAP client and operation. |
 
@@ -99,7 +99,7 @@ single-target runtime.
     grant Admin merely for routine target discovery. Prefer a separate application if operators
     need diagnostics while ordinary users need a writable single-target endpoint.
 
-If a single-target destination is also discovered as a SID/client route, both endpoints remain
+If a single-target destination is also discovered as a public target route, both endpoints remain
 available and may have different effective policies. ARC-1 logs a warning because that duplication
 is usually unintentional.
 
@@ -115,12 +115,18 @@ active only when `arc1.enabled=true` and all connection/identity fields pass val
 Conflict handling is deterministic and fail closed:
 
 - duplicate destination names quarantine every enabled claimant; disabled or marker-missing entries remain non-active;
-- multiple enabled destinations claiming one SID/client quarantine every claimant;
+- multiple enabled destinations claiming one public target ID quarantine every claimant;
 - a subaccount candidate shadowed by a same-name instance destination is excluded; and
 - more than 256 enabled candidates activates none of them—ARC-1 never chooses a “first 256”.
 
 Invalid enabled destinations count toward the 256 ceiling. Destination ordering never selects a
 winner.
+
+When separate systems reuse a real SID/client, set `arc1.target_alias` on at least one so their
+public IDs differ—for example, preserve `A4H/001` and add `A4H-2025/001`. You may alias both for
+symmetry. Both descriptors retain real `sid: "A4H"` and `client: "001"`. Duplicate detection uses
+the public ID. An alias is model-visible routing metadata, not an authorization boundary; prefer an
+alias that starts with the real SID and a factual `Description`.
 
 <a id="3-restart-to-load-changes"></a>
 
@@ -136,7 +142,7 @@ cf restart <arc1-app-name>
 No new MTAR or `cf deploy` is required for destination-only changes.
 
 Before each SAP call, ARC-1 resolves the selected PP destination without the SDK cache and compares
-its safe connection and policy fingerprint with the startup snapshot. A mismatch returns
+its safe connection, public alias, and policy fingerprint with the startup snapshot. A mismatch returns
 `TARGET_CONFIG_CHANGED` until restart. Failed PP or SAP access is not cached, so mapping and
 authorization repairs can be retried immediately.
 
@@ -169,8 +175,10 @@ The complete field table and minimal/SQL examples are in
 [Destination configuration](multi-target-setup.md#destination-configuration). The operational rules
 are:
 
-- the only supported v1 keys are `arc1.enabled`, `arc1.allow_data_preview`, and
-  `arc1.allow_free_sql`;
+- the only supported v1 keys are `arc1.enabled`, `arc1.allow_data_preview`,
+  `arc1.allow_free_sql`, and optional `arc1.target_alias`;
+- `arc1.target_alias` changes only the public target/pinned route; real `sap-sysid` and `sap-client`
+  remain required for SAP and are visible to admins in diagnostics;
 - omitted data/SQL values are false and the two switches are independent;
 - unknown `arc1.*` keys and any write/package/transport/Git key quarantine an enabled destination;
 - `limitedByInstance: true` means a target requested data or SQL above the current instance ceiling;
@@ -219,6 +227,10 @@ response wraps the public target list and adds secret-projected registry state.
 Without `query`, diagnostics contain a bounded page of non-active ARC-related destinations and
 their exclusion reasons. With `query`, diagnostics also include matching active targets and can
 match target ID, active-target description, destination name, status, code, or safe message.
+
+When an active target uses an alias, a matching admin diagnostic correlates its public `target`
+with the real `sid` and `client`, and reports the validated value as `arcConfig.targetAlias`.
+Readers still receive only `target` and `description`.
 
 ```json
 {
@@ -303,6 +315,7 @@ support tickets.
 | `MISSING_NAME` / `INVALID_NAME` | Add or repair the destination name. |
 | `MISSING_URL` / `INVALID_URL` | Add a valid HTTP/HTTPS URL. |
 | `MISSING_SYSID` / `INVALID_SYSID` | Add/fix `sap-sysid` using the exact three-character format. |
+| `INVALID_TARGET_ALIAS` | Remove the alias or use 3–32 uppercase letters/digits with internal hyphens, starting with an uppercase letter and without the client suffix. |
 | `MISSING_CLIENT` / `INVALID_CLIENT` | Add/fix the three-digit `sap-client`. |
 | `UNSUPPORTED_TYPE` | Use an HTTP destination. |
 | `UNSUPPORTED_PROXY` | V1 requires `OnPremise`. |
@@ -311,7 +324,7 @@ support tickets.
 | `UNKNOWN_ARC1_PROPERTY` | Remove or correct the unsupported ARC-1 property. |
 | `INVALID_POLICY` | Set the data/SQL property to `true` or `false`. |
 | `UNSUPPORTED_V1_WRITE_CONFIG` | Remove write-related properties; writes are unavailable. |
-| `DUPLICATE_TARGET` | Give each SID/client exactly one enabled destination; every claimant is quarantined. |
+| `DUPLICATE_TARGET` | Give every enabled destination a unique public target ID. Systems sharing a real SID/client need an alias on one or both destinations; every duplicate claimant is quarantined. |
 | `DUPLICATE_DESTINATION_NAME` | Remove duplicate inputs; every enabled claimant is quarantined and all claimants remain non-routable. |
 | `SHADOWED_BY_INSTANCE` | Remove/rename the same-name instance destination or subaccount candidate. |
 | `TARGET_LIMIT_EXCEEDED` | Reduce enabled candidates to 256 or fewer and restart; none are active while over limit. |
@@ -371,7 +384,7 @@ tune from audit and latency evidence.
 - [ ] The feature is explicitly enabled and all multi-target routes remain mutation-free.
 - [ ] XSUAA, Destination, and Connectivity bindings are healthy.
 - [ ] Every target uses strict Principal Propagation; no shared SAP identity fallback exists.
-- [ ] Every target has a valid SID, client, factual description, and `arc1.enabled=true`.
+- [ ] Every target has a valid real SID, client, factual description, `arc1.enabled=true`, and a unique valid route alias when its SID/client is reused.
 - [ ] Data/SQL is approved and enabled only where required at both instance and target layers.
 - [ ] No target contains unknown or write-related `arc1.*` keys.
 - [ ] Enabled candidate count is 256 or fewer.

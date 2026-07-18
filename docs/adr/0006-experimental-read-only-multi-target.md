@@ -24,7 +24,9 @@ ARC-1 may expose experimental multi-target endpoints only when
 
 - BTP CF subaccount Destination discovery, XSUAA, on-premise Principal Propagation, and one immutable
   startup snapshot;
-- a case-sensitive pinned endpoint `/<SID>/<CLIENT>/mcp` and an aggregate `/multi/mcp` endpoint;
+- a case-sensitive pinned endpoint `/<PUBLIC-SYSTEM>/<CLIENT>/mcp` and an aggregate `/multi/mcp`
+  endpoint; the public system segment normally equals the real SID but may use the bounded optional
+  `arc1.target_alias` when independent systems reuse one SID/client;
 - no discovered bare `/mcp` alias and no destination name in a route or reader-visible response;
   secret-projected Admin `SAPTargets` diagnostics may expose the internal destination name;
 - global ARC-1 roles, with SAP Principal Propagation as the per-user/per-target authorization
@@ -44,8 +46,15 @@ targets exist; admins also receive secret-safe registry state and exception diag
 in zero/one/failure states, and can query matching active details. Admin diagnostics use bounded,
 deterministic paging with explicit truncation/next-offset metadata. `SAPTargets` is aggregate-only
 and never appears on pinned endpoints. Aggregate schemas use exact target enums through 16 targets
-and a SID/client pattern from 17 through 256; runtime membership remains authoritative.
+and a public-system/client pattern from 17 through 256; runtime membership remains authoritative.
 Selected-target policy and SAP authorization are checked again on every call.
+
+`sap-sysid` and `sap-client` remain required and truthful even when a route alias is used. The alias
+changes only the public target ID, pinned URL, cache/audit target key, and model selection value; it
+does not change Destination lookup, Principal Propagation, the SAP client, or authorization. One
+destination receives exactly one public ID. Duplicate quarantine operates on that resulting public
+ID, allowing two real `A4H/001` systems to coexist as, for example, `A4H/001` and
+`A4H-2025/001` without inventing a false SAP SID or changing an existing route.
 
 The aggregate MCP transport remains reachable during registry-wide discovery failure so an admin can
 call `SAPTargets`; other aggregate tools fail with a structured registry error, and pinned routes are

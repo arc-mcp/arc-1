@@ -67,6 +67,26 @@ describe('DestinationRegistry', () => {
     });
   });
 
+  it('uses an optional route alias without changing the real SAP SID or client', () => {
+    const registry = DestinationRegistry.fromDiscovery(
+      discovery([
+        destination({ name: 'A4H_2023' }),
+        destination({
+          name: 'A4H_2025',
+          description: 'ABAP Platform 2025',
+          arcProperties: { 'arc1.enabled': 'true', 'arc1.target_alias': 'A4H-2025' },
+        }),
+      ]),
+      DEFAULT_CONFIG,
+    );
+
+    expect(registry.targets.map((target) => target.target)).toEqual(['A4H-2025/100', 'A4H/100']);
+    expect(registry.targets[0]).toMatchObject({ sid: 'A4H', client: '100' });
+    expect(registry.diagnostics.find((entry) => entry.target === 'A4H-2025/100')?.arcConfig).toMatchObject({
+      targetAlias: 'A4H-2025',
+    });
+  });
+
   it('warns through fallback semantics for missing/invalid descriptions', () => {
     const targets = DestinationRegistry.fromDiscovery(
       discovery([
@@ -80,6 +100,9 @@ describe('DestinationRegistry', () => {
 
   it.each([
     [{ sapSysId: 'A-4' }, 'INVALID_SYSID'],
+    [{ arcProperties: { 'arc1.enabled': 'true', 'arc1.target_alias': 'a4h-2025' } }, 'INVALID_TARGET_ALIAS'],
+    [{ arcProperties: { 'arc1.enabled': 'true', 'arc1.target_alias': 'A4H_2025' } }, 'INVALID_TARGET_ALIAS'],
+    [{ arcProperties: { 'arc1.enabled': 'true', 'arc1.target_alias': 'A4H-2025-' } }, 'INVALID_TARGET_ALIAS'],
     [{ sapClient: '10' }, 'INVALID_CLIENT'],
     [{ type: 'RFC' }, 'UNSUPPORTED_TYPE'],
     [{ urlState: 'invalid', urlFingerprint: undefined }, 'INVALID_URL'],
@@ -112,6 +135,19 @@ describe('DestinationRegistry', () => {
   it('quarantines every duplicate target claimant', () => {
     const registry = DestinationRegistry.fromDiscovery(
       discovery([destination({ name: 'ONE' }), destination({ name: 'TWO' })]),
+      DEFAULT_CONFIG,
+    );
+    expect(registry.targets).toEqual([]);
+    expect(registry.diagnostics.map((entry) => entry.code)).toEqual(['DUPLICATE_TARGET', 'DUPLICATE_TARGET']);
+  });
+
+  it('quarantines duplicate public aliases even when the real SIDs differ', () => {
+    const alias = { 'arc1.enabled': 'true', 'arc1.target_alias': 'SHARED-TARGET' };
+    const registry = DestinationRegistry.fromDiscovery(
+      discovery([
+        destination({ name: 'ONE', arcProperties: alias }),
+        destination({ name: 'TWO', sapSysId: 'NPL', arcProperties: alias }),
+      ]),
       DEFAULT_CONFIG,
     );
     expect(registry.targets).toEqual([]);

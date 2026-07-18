@@ -75,8 +75,8 @@ export function projectMultiTargetDestination(destination: Destination): Discove
   const arcProperties: Record<string, string> = {};
   for (const [key, value] of Object.entries(properties)) {
     if (!key.toLowerCase().startsWith('arc1.')) continue;
-    // Only supported boolean values are needed by the parser. Unknown/wrong-case keys
-    // are retained for fail-closed diagnostics, but their untrusted values are discarded.
+    // Supported values are needed by the validator. Unknown/wrong-case keys are
+    // retained for fail-closed diagnostics, but their untrusted values are discarded.
     arcProperties[key] = isSupportedMultiTargetArcProperty(key)
       ? typeof value === 'string'
         ? value

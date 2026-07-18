@@ -20,7 +20,7 @@ destinations. Enabling the mode creates both endpoint styles:
 ```text
                          ┌─ /A4H/100/mcp ── A4H client 100
 MCP client ─ ARC-1/XSUAA ├─ /A4H/200/mcp ── A4H client 200
-                         ├─ /PRD/100/mcp ── PRD client 100
+                         ├─ /A4H-2025/001/mcp ─ A4H 2025 client 001 (route alias)
                          └─ /multi/mcp ───── explicit target on every call
                                       │
                                       └─ strict per-user Principal Propagation
@@ -202,7 +202,7 @@ are narrowed by configured instance/target policy and XSUAA scope where the sche
 
 The aggregate route adds a required top-level `target` to each SAP-contacting call. It never stores
 a default or current target. Up to 16 active targets appear as exact schema enums; from 17 through
-256 the schema uses the SID/client pattern and the model can call `SAPTargets` for valid IDs and
+256 the schema uses the target-ID pattern and the model can call `SAPTargets` for valid IDs and
 descriptions.
 
 The aggregate schema unions configured data/SQL policy, not live SAP feature availability. The
@@ -248,9 +248,15 @@ side-by-side single-target `/mcp` can write: `SAPWrite`, `SAPActivate`, `SAPTran
 | `sap-client` | Exactly three digits; ARC-1 never assumes client `100`. |
 | `Description` | Strongly recommended and at most 160 characters after normalization. ARC-1 replaces control characters and line breaks with spaces and collapses whitespace. Missing, empty-after-normalization, or overlong values warn and fall back to the target ID. |
 | `arc1.enabled` | Must be `true` for ARC-1 to accept the destination. |
+| `arc1.target_alias` | Optional public system segment for landscapes where different systems reuse the same real SID/client. It must start with an uppercase letter and use 3–32 uppercase letters/digits with internal `-`; for example `A4H-2025`. Do not include `/001`. |
 
-The public target ID is `<sap-sysid>/<sap-client>`, for example `A4H/100`, independent of the
-destination name. `sap-language` and `CloudConnectorLocationId` are optional standard properties.
+Without an alias, the public target ID is `<sap-sysid>/<sap-client>`, for example `A4H/100`.
+With `arc1.target_alias=A4H-2025`, it is `A4H-2025/<sap-client>`. The alias changes only the
+model-visible target ID and pinned URL: Principal Propagation and ADT still use the real
+`sap-sysid`, `sap-client`, URL, and destination name. A destination has exactly one public target ID;
+ARC-1 does not retain a second canonical route for an aliased destination.
+
+`sap-language` and `CloudConnectorLocationId` are optional standard properties.
 When `sap-language` is omitted or blank, the instance `SAP_LANGUAGE` is inherited; a valid
 two-letter value overrides it, while a nonblank invalid value quarantines the destination.
 
@@ -258,7 +264,37 @@ Descriptions are model-visible, untrusted labels. Keep them factual and short. D
 instructions, credentials, secrets, token-bearing links, or sensitive operational notes in them.
 
 Property names are case-sensitive. Supported boolean values may contain surrounding whitespace and
-are case-insensitive, but lowercase `true`/`false` is recommended.
+are case-insensitive, but lowercase `true`/`false` is recommended. A target alias is case-sensitive
+and must match exactly; ARC-1 does not trim or rewrite destination alias values.
+
+### Systems that reuse the same SID and client
+
+Independently installed SAP systems can have the same real SID and client. For example, an S/4HANA
+2023 trial and ABAP Platform 2025 trial may both be `A4H/001`. Give at least one system a distinct
+public alias while keeping both SAP identities truthful. This example preserves the existing 2023
+target and adds an alias only to 2025:
+
+```properties
+# 2023 destination
+sap-sysid=A4H
+sap-client=001
+Description=S/4HANA 2023 test system (A4H client 001)
+arc1.enabled=true
+```
+
+```properties
+# 2025 destination
+sap-sysid=A4H
+sap-client=001
+Description=ABAP Platform 2025 test system (A4H client 001)
+arc1.enabled=true
+arc1.target_alias=A4H-2025
+```
+
+These become `A4H/001` and `A4H-2025/001`. You may instead alias both systems as `A4H-2023` and
+`A4H-2025` when no existing route must stay stable. An alias is a selection label, not an ACL and
+not a claim that SAP has a different SID. Changing it requires an ARC-1 restart and client
+reconnection; the previous pinned URL then returns the same authenticated 404 as any unknown target.
 
 <a id="4-opt-individual-targets-into-data-or-sql"></a>
 
@@ -302,12 +338,13 @@ arc1.allow_data_preview=true
 arc1.allow_free_sql=true
 ```
 
-The two target switches are independent. Missing properties mean false. Only these three `arc1.*`
+The two target switches are independent. Missing properties mean false. Only these four `arc1.*`
 keys are supported in v1:
 
 - `arc1.enabled`
 - `arc1.allow_data_preview`
 - `arc1.allow_free_sql`
+- `arc1.target_alias` (optional public routing identity; not a capability switch)
 
 Unknown `arc1.*` properties fail closed. Write/package/transport/Git properties quarantine the
 destination because writes are not supported. There is no `arc1.config_version` property in v1.
@@ -462,7 +499,7 @@ unacceptable.
 |---|---|
 | The app does not stay started | Check `cf logs arc1-mcp-server --recent`. Missing mandatory service bindings or invalid instance configuration fails startup; zero discovered targets by itself does not. |
 | Health reports `error` | Call `SAPTargets` as admin through `/multi/mcp`; check service bindings and the 256-enabled-target limit. |
-| Target is missing | Confirm subaccount scope, exact `arc1.enabled=true`, SID/client format, conflicts, then restart. |
+| Target is missing | Confirm subaccount scope, exact `arc1.enabled=true`, real SID/client and optional alias format, conflicts, then restart. |
 | `SAPTargets` is missing | It is aggregate-only. Readers see it only with more than one active target; admins see it at zero/one/many and during registry failure. Check that the user signed in again after a role change and that `SAP_DENY_ACTIONS` does not deny `SAPTargets`. |
 | A Viewer sees no SAP tools | With zero active targets this is expected; fix discovery and restart. An Admin can still use `SAPTargets` for diagnostics. |
 | `PP_SETUP_FAILED` | Check the user's PP mapping, destination, and Cloud Connector; repair and retry without restart. |

@@ -4,8 +4,9 @@ import { isOperationAllowed, OperationType, type OperationTypeCode } from '../ad
 import { getActionPolicy, invocationPolicyKey } from '../authz/policy.js';
 import type { ToolDefinition } from '../handlers/tools.js';
 import type { TargetDescriptor } from './destination-registry.js';
-import { MULTI_TARGET_DENY_ACTIONS, TARGET_ID_PATTERN } from './destination-registry.js';
+import { MULTI_TARGET_DENY_ACTIONS } from './destination-registry.js';
 import { TARGET_CATALOG_MAX_OFFSET, TARGET_CATALOG_MAX_QUERY_LENGTH } from './multi-target-catalog.js';
+import { TARGET_ID_PATTERN } from './multi-target-identity.js';
 import type { ServerConfig } from './types.js';
 
 export const MULTI_TARGET_TOOLS = new Set([
@@ -85,7 +86,7 @@ function targetSchema(targets: readonly TargetDescriptor[]): Record<string, unkn
   const base = {
     type: 'string',
     description:
-      'Required SAP target in SID/CLIENT form. Call SAPTargets to list configured IDs and descriptions; listing a target does not prove your SAP user can access it.',
+      'Required SAP target ID. It is normally SID/CLIENT and may use an administrator-defined route alias when systems share a SID/client. Call SAPTargets for configured IDs and descriptions; listing a target does not prove your SAP user can access it.',
   };
   if (targets.length <= 16) return { ...base, enum: targets.map((target) => target.target) };
   return { ...base, pattern: TARGET_ID_PATTERN.source };
@@ -139,7 +140,7 @@ export type NormalizedTarget =
 
 export function normalizeTarget(value: unknown): NormalizedTarget {
   if (typeof value !== 'string' || value.trim() === '') {
-    return { ok: false, code: 'TARGET_REQUIRED', message: 'A target in SID/CLIENT form is required.' };
+    return { ok: false, code: 'TARGET_REQUIRED', message: 'A target ID from SAPTargets is required.' };
   }
   const trimmed = value.trim();
   const slash = trimmed.indexOf('/');
@@ -148,7 +149,7 @@ export function normalizeTarget(value: unknown): NormalizedTarget {
     return {
       ok: false,
       code: 'INVALID_TARGET',
-      message: 'Target must match SID/CLIENT, for example A4H/100.',
+      message: 'Target must match SID-or-alias/CLIENT, for example A4H/100 or A4H-2025/001.',
     };
   }
   return { ok: true, target: normalized };

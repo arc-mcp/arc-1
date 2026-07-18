@@ -2,13 +2,14 @@
  * Destination-property contract for multi-target v1.
  *
  * Keep this file deliberately small: discovery, startup validation, and runtime
- * drift checks must all agree on the exact same property names and boolean syntax.
+ * drift checks must all agree on the exact same property names and value syntax.
  */
 
 export const MULTI_TARGET_ARC_PROPERTIES = Object.freeze([
   'arc1.enabled',
   'arc1.allow_data_preview',
   'arc1.allow_free_sql',
+  'arc1.target_alias',
 ]);
 
 const SUPPORTED_ARC_PROPERTIES = new Set(MULTI_TARGET_ARC_PROPERTIES);

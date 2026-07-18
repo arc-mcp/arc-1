@@ -61,6 +61,19 @@ function registry() {
           arcProperties: { 'arc1.enabled': 'true' },
         },
         {
+          name: 'ARC1_A4H_2025_100_PP',
+          type: 'HTTP',
+          urlState: 'valid',
+          urlFingerprint: opaqueDestinationValue(`${url}/2025`),
+          authentication: 'PrincipalPropagation',
+          proxyType: 'OnPremise',
+          sapSysId: 'A4H',
+          sapClient: '100',
+          description: 'A4H 2025',
+          hasCloudConnectorLocationId: false,
+          arcProperties: { 'arc1.enabled': 'true', 'arc1.target_alias': 'A4H-2025' },
+        },
+        {
           name: 'ARC1_INVALID_PP',
           type: 'HTTP',
           urlState: 'valid',
@@ -75,7 +88,7 @@ function registry() {
         },
       ],
       instanceNames: [],
-      scannedCount: 2,
+      scannedCount: 3,
       unrelatedCount: 0,
       arcAdjacentWithoutMarkerCount: 0,
     },
@@ -127,20 +140,43 @@ describe('multi-target HTTP route authentication', () => {
 
   it('authenticates syntactically valid target routes before revealing route membership', async () => {
     const known = await request(app).post('/A4H/100/mcp');
+    const knownAlias = await request(app).post('/A4H-2025/100/mcp');
     const unknown = await request(app).post('/ZZZ/999/mcp');
+    const unknownAlias = await request(app).post('/ZZZ-2025/999/mcp');
 
     expect(known.status).toBe(401);
+    expect(knownAlias.status).toBe(401);
     expect(unknown.status).toBe(401);
+    expect(unknownAlias.status).toBe(401);
     expect(known.body).toEqual(unknown.body);
+    expect(knownAlias.body).toEqual(unknownAlias.body);
     expect(known.headers['www-authenticate']).toContain('/.well-known/oauth-protected-resource/A4H/100/mcp');
+    expect(knownAlias.headers['www-authenticate']).toContain('/.well-known/oauth-protected-resource/A4H-2025/100/mcp');
     expect(unknown.headers['www-authenticate']).toContain('/.well-known/oauth-protected-resource/ZZZ/999/mcp');
 
     const authenticatedUnknown = await request(app).post('/ZZZ/999/mcp').set('Authorization', 'Bearer read-token');
     expect(authenticatedUnknown.status).toBe(404);
     expect(authenticatedUnknown.body).toEqual({ error: 'Not found' });
 
+    const authenticatedUnknownAlias = await request(app)
+      .post('/ZZZ-2025/999/mcp')
+      .set('Authorization', 'Bearer read-token');
+    expect(authenticatedUnknownAlias.status).toBe(404);
+    expect(authenticatedUnknownAlias.body).toEqual({ error: 'Not found' });
+
     const malformed = await request(app).post('/a4h/100/mcp');
     expect(malformed.status).toBe(404);
+  });
+
+  it('serves registry-independent protected-resource metadata for alias routes', async () => {
+    const known = await request(app).get('/.well-known/oauth-protected-resource/A4H-2025/100/mcp');
+    const unknown = await request(app).get('/.well-known/oauth-protected-resource/ZZZ-2025/999/mcp');
+
+    expect(known.status).toBe(200);
+    expect(unknown.status).toBe(200);
+    expect(known.body.resource).toBe('http://127.0.0.1:0/A4H-2025/100/mcp');
+    expect(unknown.body.resource).toBe('http://127.0.0.1:0/ZZZ-2025/999/mcp');
+    expect({ ...known.body, resource: undefined }).toEqual({ ...unknown.body, resource: undefined });
   });
 
   it('does not expose a separate HTTP target catalog', async () => {

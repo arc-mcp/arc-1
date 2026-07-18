@@ -458,6 +458,8 @@ describe('isMcpHttpTraffic', () => {
     '/multi/mcp/',
     '/A4H/100/mcp',
     '/A4H/100/mcp/',
+    '/A4H-2025/001/mcp',
+    '/A4H-2025/001/mcp/',
   ])(`matches %s`, (path) => {
     expect(isMcpHttpTraffic(fakeReq(path))).toBe(true);
   });
@@ -479,7 +481,9 @@ describe('isMcpHttpTraffic', () => {
     '/health',
     '/.well-known/oauth-authorization-server',
     '/a4h/100/mcp',
-    '/ABCD/100/mcp',
+    '/AB/100/mcp',
+    '/A4H_2025/100/mcp',
+    '/A4H-2025-/100/mcp',
   ])(`does not match %s`, (path) => {
     expect(isMcpHttpTraffic(fakeReq(path))).toBe(false);
   });

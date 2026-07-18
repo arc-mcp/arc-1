@@ -36,6 +36,11 @@ import { expandScopes } from '../authz/policy.js';
 import { API_KEY_PROFILES } from './config.js';
 import type { DestinationRegistry, TargetDescriptor } from './destination-registry.js';
 import { authLibLogger, logger } from './logger.js';
+import {
+  PINNED_MCP_PATH_PATTERN,
+  PINNED_RESOURCE_METADATA_PATH_PATTERN,
+  targetFromPinnedMcpPath,
+} from './multi-target-identity.js';
 import { VERSION } from './server.js';
 import type { ServerConfig } from './types.js';
 import { mountUiRoutes, type UiServerDeps } from './ui.js';
@@ -210,8 +215,8 @@ export function createPinnedTargetMcpHandler(multi: MultiTargetRouting) {
       res.status(503).json({ error: 'Multi-target registry unavailable' });
       return;
     }
-    const match = req.path.match(/^\/([A-Z][A-Z0-9]{2})\/(\d{3})\/mcp$/);
-    const target = match ? multi.registry.get(`${match[1]}/${match[2]}`) : undefined;
+    const targetId = targetFromPinnedMcpPath(req.path);
+    const target = targetId ? multi.registry.get(targetId) : undefined;
     if (!target) {
       res.status(404).json({ error: 'Not found' });
       return;
@@ -625,8 +630,8 @@ export async function startHttpServer(
           resource_name: 'ARC-1 SAP MCP Server (multi-target)',
         });
       });
-      app.get(/^\/\.well-known\/oauth-protected-resource\/([A-Z][A-Z0-9]{2})\/(\d{3})\/mcp$/, (req, res) => {
-        const match = req.path.match(/^\/\.well-known\/oauth-protected-resource\/([A-Z][A-Z0-9]{2})\/(\d{3})\/mcp$/);
+      app.get(PINNED_RESOURCE_METADATA_PATH_PATTERN, (req, res) => {
+        const match = req.path.match(PINNED_RESOURCE_METADATA_PATH_PATTERN);
         res.json({
           resource: `${oauthFullBase}/${match?.[1]}/${match?.[2]}/mcp`,
           authorization_servers: [`${oauthFullBase}/`],
@@ -655,7 +660,7 @@ export async function startHttpServer(
 
     if (multiTargets && pinnedMcpHandler && aggregateMcpHandler && multiBearerAuth) {
       app.all(/^\/multi\/mcp$/, multiBearerAuth, aggregateMcpHandler);
-      app.all(/^\/[A-Z][A-Z0-9]{2}\/\d{3}\/mcp$/, multiBearerAuth, pinnedMcpHandler);
+      app.all(PINNED_MCP_PATH_PATTERN, multiBearerAuth, pinnedMcpHandler);
     }
 
     // Protected MCP endpoint with chained token verification
