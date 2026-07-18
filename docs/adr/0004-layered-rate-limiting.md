@@ -28,7 +28,7 @@ buckets; Layer 2 has its own authenticated-user quota.
 - `express-rate-limit` mounted at [src/server/http.ts](../../src/server/http.ts) before any auth middleware.
 - `ARC1_AUTH_RATE_LIMIT` (default `20/min/IP`) controls OAuth endpoints. `0` disables only the
   OAuth bucket.
-- `ARC1_MCP_HTTP_RATE_LIMIT` controls one shared bucket for legacy, pinned, aggregate, catalog, and
+- `ARC1_MCP_HTTP_RATE_LIMIT` controls one shared bucket for single-target, pinned, aggregate, and
   Copilot MCP traffic. When unset it derives `max(ARC1_AUTH_RATE_LIMIT × 30, 600)`; the 600 floor
   remains active even when OAuth limiting is disabled. `0` explicitly disables only the MCP bucket.
 - Per-route MCP differentiation stays in code, not separate environment variables, so switching

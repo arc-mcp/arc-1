@@ -31,11 +31,11 @@ ARC-1 may expose experimental multi-target endpoints only when
 - source/metadata reads by default, with data and SQL requiring instance, destination, XSUAA, and SAP
   consent; and
 - a structural multi-target ceiling that forbids writes, activation, transport/Git mutations,
-  enqueue locks, SAPLint, ATC, and ABAP Unit regardless of administrator role or legacy config.
+  enqueue locks, SAPLint, ATC, and ABAP Unit regardless of administrator role or single-target configuration.
 
-Single-target mode remains the default and unchanged. A separately configured legacy `/mcp` runtime
-may coexist and retain its current policy. Strict PP is enforced per discovered runtime so legacy
-API-key/direct-OIDC behavior is not changed accidentally.
+Single-target mode remains the default and unchanged. A separately configured single-target `/mcp`
+runtime may coexist and retain its current policy. Strict PP is enforced per discovered runtime so
+existing API-key/direct-OIDC behavior is not changed accidentally.
 
 The aggregate endpoint requires an explicit `target` on every SAP-contacting call. It has no default,
 remembered, or session target. `SAPTargets` supplies configured IDs and descriptions when multiple

@@ -27,7 +27,7 @@ function parseBoolean(value: string | undefined): boolean | undefined {
   return undefined;
 }
 
-/** Build from safe defaults plus an explicit instance allowlist; never copy legacy SAP credentials. */
+/** Build from safe defaults plus an explicit instance allowlist; never copy single-target SAP credentials. */
 export function buildMultiTargetConfig(base: ServerConfig, target: TargetDescriptor): ServerConfig {
   const safety = targetSafety(target);
   return {

@@ -19,7 +19,7 @@ interface FeatureStore {
   discovery: Map<string, string[]>;
 }
 
-/** Key for legacy single-target mode. Multi-target feature state uses the public SID/client ID. */
+/** Key for single-target mode. Multi-target feature state uses the public SID/client ID. */
 const DEFAULT_KEY = '';
 
 const stores = new Map<string, FeatureStore>();

@@ -72,8 +72,8 @@ application default supplies standard tool mode. `ARC1_CACHE=none` is mandatory 
 cache default is not valid for multi-target v1.
 
 For a multi-target-only deployment, leave `SAP_BTP_DESTINATION` and `SAP_BTP_PP_DESTINATION` unset.
-Configure them only for the deliberate side-by-side legacy route described in
-[Optional legacy `/mcp`](multi-target-administration.md#optional-legacy-mcp).
+Configure them only for the deliberate side-by-side single-target route described in
+[Optional single-target `/mcp`](multi-target-administration.md#optional-single-target-mcp).
 
 Before opening a shared beta to multiple users, choose a positive per-user limit using
 [Shared capacity and rate limits](multi-target-administration.md#shared-capacity-and-rate-limits).
@@ -191,10 +191,10 @@ them with `SAP_DENY_ACTIONS` and SAP authorization when the Viewer audience shou
 - pinned routes never expose it.
 
 There is no public `/targets` route. Bare `/mcp` is never assigned to the first or only discovered
-destination; it exists only when a legacy single target is configured explicitly.
+destination; it exists only when a single target is configured explicitly.
 
 The following are structurally unavailable on multi-target routes even if an admin token or a
-side-by-side legacy `/mcp` can write: `SAPWrite`, `SAPActivate`, `SAPTransport`, `SAPGit`,
+side-by-side single-target `/mcp` can write: `SAPWrite`, `SAPActivate`, `SAPTransport`, `SAPGit`,
 `SAPManage`, and `SAPLint`, including ATC and ABAP Unit.
 
 <a id="target-discovery"></a>
@@ -308,12 +308,12 @@ assignment does not create an SAP user or Principal Propagation mapping. `SAPTar
 configured targets, not the targets the current user can actually access; ARC-1 learns that only
 when the user makes a SAP call.
 
-!!! danger "Side-by-side legacy `/mcp`"
+!!! danger "Side-by-side single-target `/mcp`"
 
     `MCPAdmin` implies every ARC-1 scope. Multi-target routes remain mutation-free, but the same
-    token may allow write, transport, or Git operations on a write-enabled legacy `/mcp`. Grant
-    Admin only to trusted operators and prefer a separate ARC-1 application when a writable legacy
-    endpoint must coexist.
+    token may allow write, transport, or Git operations on a write-enabled single-target `/mcp`.
+    Grant Admin only to trusted operators and prefer a separate ARC-1 application when a writable
+    single-target endpoint must coexist.
 
 See [Authorization & Roles](authorization.md) and
 [Principal Propagation Setup](principal-propagation-setup.md) for the other authorization layers.

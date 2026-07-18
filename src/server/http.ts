@@ -301,7 +301,7 @@ export async function startHttpServer(
   app.use(express.urlencoded({ extended: false }));
   if (mcpRateLimitEnabled) {
     // One middleware instance means one MemoryStore and therefore one per-IP
-    // bucket across legacy, pinned, aggregate, and Copilot routes.
+    // bucket across single-target, pinned, aggregate, and Copilot routes.
     // Mount after body parsing so the Copilot JSON-RPC predicate can inspect
     // `req.body`, but before every authentication and route handler.
     app.use(createAuthRateLimiter('/mcp', mcpRatePerMinute, { skip: (req) => !isMcpHttpTraffic(req) }));
@@ -486,7 +486,7 @@ export async function startHttpServer(
           id: req.body.id,
           userAgent: req.headers['user-agent']?.slice(0, 60),
         });
-        // Legacy /mcp keeps the configured chained verifier. A multi-only
+        // Single-target /mcp keeps the configured chained verifier. A multi-only
         // fallback uses the same XSUAA-only verifier as /multi/mcp.
         const authorizeBearerAuth = mcpHandler ? bearerAuth : (multiBearerAuth ?? bearerAuth);
         authorizeBearerAuth(req, res, (err?: unknown) => {

@@ -104,11 +104,11 @@ modules:
       # cf set-env — see docs_page/xsuaa-setup.md "Stable DCR signing key".
       ARC1_OAUTH_DCR_TTL_SECONDS: "0"
       # No fake destination is active in the base descriptor. Configure these
-      # only when intentionally retaining a legacy single-target `/mcp` route:
+      # only when intentionally retaining a single-target `/mcp` route:
       # SAP_BTP_DESTINATION: my-basic-destination
       # SAP_BTP_PP_DESTINATION: my-pp-destination
       # Preserve the existing safe identity default across upgrades. With no
-      # legacy destination these settings are inert; a shared-identity legacy
+      # single-target destination these settings are inert; a shared-identity
       # deployment must opt out explicitly with SAP_PP_ENABLED: "false".
       SAP_PP_ENABLED: "true"
       SAP_PP_STRICT: "true"

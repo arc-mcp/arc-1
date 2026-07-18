@@ -236,7 +236,7 @@ export function logAuthSummary(config: ServerConfig): void {
 
   let sapMethod = 'none';
   if (config.multiTargetEndpoints) {
-    sapMethod = hasDestination ? 'destination+pp (legacy + multi-target)' : 'destination+pp (multi-target)';
+    sapMethod = hasDestination ? 'destination+pp (single-target + multi-target)' : 'destination+pp (multi-target)';
   } else if (config.ppEnabled) {
     if (hasDestination) sapMethod = 'destination+pp';
     else if (hasCookie) sapMethod = 'cookie+pp';
@@ -1198,10 +1198,10 @@ export async function createAndStartServer(
     });
   }
 
-  // Resolve the optional legacy single destination. It remains independent from discovered targets.
+  // Resolve the optional single-target destination. It remains independent from discovered targets.
   let btpProxy: BTPProxyConfig | undefined;
   let btpConfig: BTPConfig | undefined;
-  let legacyConnectionFingerprint: string | undefined;
+  let singleTargetConnectionFingerprint: string | undefined;
   const btpDestination = process.env.SAP_BTP_DESTINATION;
   if (btpDestination) {
     const { resolveBTPDestination, parseVCAPServices } = await import('@arc-mcp/xsuaa-auth/btp');
@@ -1211,10 +1211,10 @@ export async function createAndStartServer(
     config.password = resolved.password;
     config.client = resolved.client;
     btpProxy = resolved.proxy ?? undefined;
-    const canonicalLegacyUrl = canonicalDestinationUrl(resolved.url);
-    if (canonicalLegacyUrl) {
-      legacyConnectionFingerprint = targetConnectionFingerprint({
-        urlFingerprint: opaqueDestinationValue(canonicalLegacyUrl),
+    const canonicalSingleTargetUrl = canonicalDestinationUrl(resolved.url);
+    if (canonicalSingleTargetUrl) {
+      singleTargetConnectionFingerprint = targetConnectionFingerprint({
+        urlFingerprint: opaqueDestinationValue(canonicalSingleTargetUrl),
         client: resolved.client,
         cloudConnectorLocationIdFingerprint: resolved.proxy?.locationId
           ? opaqueDestinationValue(resolved.proxy.locationId)
@@ -1272,18 +1272,18 @@ export async function createAndStartServer(
       revision: registry.revision,
       failure: registry.failure?.code,
     });
-    const duplicateLegacyTargets = registry.targets
+    const duplicateSingleTargets = registry.targets
       .filter(
         (target) =>
           target.destinationName === btpDestination ||
           target.destinationName === process.env.SAP_BTP_PP_DESTINATION ||
-          (!!legacyConnectionFingerprint && target.connectionFingerprint === legacyConnectionFingerprint),
+          (!!singleTargetConnectionFingerprint && target.connectionFingerprint === singleTargetConnectionFingerprint),
       )
       .map((target) => target.target);
-    if (duplicateLegacyTargets.length > 0) {
+    if (duplicateSingleTargets.length > 0) {
       logger.warn(
-        'The legacy /mcp connection is also exposed by discovered multi-target routes. Both remain active, but their policies can differ; verify that this duplicate exposure is intentional.',
-        { targets: duplicateLegacyTargets },
+        'The single-target /mcp connection is also exposed by discovered multi-target routes. Both remain active, but their policies can differ; verify that this duplicate exposure is intentional.',
+        { targets: duplicateSingleTargets },
       );
     }
   }
@@ -1320,18 +1320,18 @@ export async function createAndStartServer(
   // Run feature probe once at startup — shared across all requests (stdio and HTTP).
   // First run startup auth preflight in shared mode. If it blocks (401/403), skip feature probe
   // to avoid firing many failing requests with invalid technical credentials.
-  const hasLegacyTarget = !!(config.url || btpDestination || bearerTokenProvider);
-  const shouldStartLegacy = !config.multiTargetEndpoints || hasLegacyTarget;
-  const startupAuthPreflightPromise = shouldStartLegacy
+  const hasSingleTarget = !!(config.url || btpDestination || bearerTokenProvider);
+  const shouldStartSingleTarget = !config.multiTargetEndpoints || hasSingleTarget;
+  const startupAuthPreflightPromise = shouldStartSingleTarget
     ? runStartupAuthPreflight(config, btpProxy, bearerTokenProvider, adtSemaphore)
     : Promise.resolve<StartupAuthPreflightResult>({
         status: 'skipped',
         blocking: false,
         endpoint: STARTUP_AUTH_ENDPOINT,
         checkedAt: new Date().toISOString(),
-        reason: 'No legacy /mcp SAP target is configured.',
+        reason: 'No single-target /mcp connection is configured.',
       });
-  const startupProbePromise = shouldStartLegacy
+  const startupProbePromise = shouldStartSingleTarget
     ? (async () => {
         const authPreflight = await startupAuthPreflightPromise;
         if (authPreflight.blocking) {
@@ -1372,8 +1372,8 @@ export async function createAndStartServer(
             { mode: 'aggregate', registry, instanceConfig: config },
           )
       : undefined;
-  const serveLegacyEndpoint = shouldStartLegacy;
-  const server = serveLegacyEndpoint ? buildDefaultServer() : (buildAggregateServer?.() ?? buildDefaultServer());
+  const serveSingleTargetEndpoint = shouldStartSingleTarget;
+  const server = serveSingleTargetEndpoint ? buildDefaultServer() : (buildAggregateServer?.() ?? buildDefaultServer());
 
   const uiDeps: UiServerDeps | undefined =
     config.uiMode !== 'off'
@@ -1487,7 +1487,7 @@ export async function createAndStartServer(
           }
         : undefined;
     await startHttpServer(
-      serveLegacyEndpoint ? buildDefaultServer : undefined,
+      serveSingleTargetEndpoint ? buildDefaultServer : undefined,
       config,
       xsuaaCredentials,
       config.uiMode === 'web' ? uiDeps : undefined,

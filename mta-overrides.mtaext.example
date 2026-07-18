@@ -15,7 +15,7 @@
 #   cf deploy mta_archives/arc1-mcp_<version>.mtar -e mta-overrides.mtaext
 #
 # Any property left commented uses the `mta.yaml` value unchanged. The base
-# descriptor has no fake SAP destination: configure the legacy single-target
+# descriptor has no fake SAP destination: configure the single-target
 # block below, or enable the experimental multi-target block and manage marked
 # destinations in the BTP Cockpit.
 #
@@ -33,7 +33,7 @@ extends: arc1-mcp
 modules:
   - name: arc1-mcp-server
     properties:
-      # ── Legacy single-target /mcp (optional) ─────────────────────────
+      # ── Single-target /mcp (optional) ────────────────────────────────
       # BasicAuth destination for startup feature probing
       # SAP_BTP_DESTINATION: "my-basic-auth-destination"
 
@@ -41,7 +41,7 @@ modules:
       # SAP_BTP_PP_DESTINATION: "my-pp-destination"
 
       # ── Principal propagation behaviour ──────────────────────────────
-      # The base MTA keeps legacy JWT calls on PP by default. Set false only
+      # The base MTA keeps single-target JWT calls on PP by default. Set false only
       # for an intentional shared-identity/API-key deployment.
       # SAP_PP_ENABLED: "false"
 
@@ -54,7 +54,7 @@ modules:
 
       # ── Experimental multi-target v1 (alternative or side-by-side) ──
       # Discovers subaccount destinations marked arc1.enabled=true. The routes
-      # are strict-PP and mutation-free regardless of legacy /mcp settings.
+      # are strict-PP and mutation-free regardless of single-target /mcp settings.
       # ARC1_MULTI_TARGET_ENDPOINTS: "true"
       # ARC1_CACHE: none
       # Non-default shared-service limits for 1–5 active beta users.

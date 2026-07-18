@@ -53,7 +53,7 @@ These are all the knobs you have. Set values via env vars, CLI flags, or `.env`.
 
 **What it caps.** Requests per minute, per source IP, to the OAuth endpoints (`/register`, `/authorize`, `/token`, `/revoke`). When `ARC1_MCP_HTTP_RATE_LIMIT` is unset, MCP HTTP traffic keeps its historical separately-derived cap (`max(value × 30, 600)/min/IP`).
 
-**Copilot Studio note.** Copilot Studio POSTs MCP JSON-RPC bodies to `/authorize` instead of `/mcp` (a documented quirk of that client). Those requests skip the low OAuth bucket and consume the same process-wide MCP bucket as legacy `/mcp`, pinned routes, and `/multi/mcp`. Normal OAuth `/authorize` requests continue to use the OAuth cap. Alternating endpoint styles therefore does not multiply an IP's effective MCP allowance.
+**Copilot Studio note.** Copilot Studio POSTs MCP JSON-RPC bodies to `/authorize` instead of `/mcp` (a documented quirk of that client). Those requests skip the low OAuth bucket and consume the same process-wide MCP bucket as single-target `/mcp`, pinned routes, and `/multi/mcp`. Normal OAuth `/authorize` requests continue to use the OAuth cap. Alternating endpoint styles therefore does not multiply an IP's effective MCP allowance.
 
 **What happens on hit.** HTTP `429 Too Many Requests` with `Retry-After` and RFC 9331 `RateLimit-Limit, remaining, reset` headers. Emits one `auth_rate_limited` audit event per denial.
 
@@ -66,7 +66,7 @@ These are all the knobs you have. Set values via env vars, CLI flags, or `.env`.
 
 ### `ARC1_MCP_HTTP_RATE_LIMIT` — Layer 1 MCP override (default unset)
 
-One process-wide per-IP bucket value is applied to legacy `/mcp`, every pinned and aggregate
+One process-wide per-IP bucket value is applied to single-target `/mcp`, every pinned and aggregate
 multi-target MCP route, and Copilot JSON-RPC sent to `/authorize`. Unset preserves
 `max(ARC1_AUTH_RATE_LIMIT × 30, 600)`. Set a positive integer to replace that derived value. Set `0`
 to disable only the MCP HTTP-edge limiter; OAuth endpoints remain controlled independently by

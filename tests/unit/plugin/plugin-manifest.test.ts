@@ -200,7 +200,7 @@ describe('deployment templates', () => {
 
     expect(appModule?.properties?.SAP_BTP_DESTINATION).toBeUndefined();
     expect(appModule?.properties?.SAP_BTP_PP_DESTINATION).toBeUndefined();
-    // These stay active so adding a legacy target during an upgrade cannot silently
+    // These stay active so adding a single target during an upgrade cannot silently
     // switch JWT callers to the shared BasicAuth identity. They are inert without a target.
     expect(appModule?.properties?.SAP_PP_ENABLED).toBe('true');
     expect(appModule?.properties?.SAP_PP_STRICT).toBe('true');

@@ -27,13 +27,13 @@ serve the same target in two ways:
   argument such as `A4H/100`.
 
 Both endpoint styles are enabled together with `ARC1_MULTI_TARGET_ENDPOINTS=true`. Bare `/mcp` is
-never assigned to a discovered target. An explicitly configured legacy single target may continue
-to use `/mcp` side by side with the discovered routes.
+never assigned to a discovered target. An explicitly configured single target may continue to use
+`/mcp` side by side with the discovered routes.
 
 Multi-target v1 is deliberately read-only at the mutation boundary. Source and metadata reads are
 available by default. Data preview and freestyle SQL require explicit consent in both the ARC-1
 instance and the selected destination. All mutation tools and actions remain unavailable on pinned
-and aggregate multi-target routes, even for `MCPAdmin` and even if the legacy `/mcp` target permits
+and aggregate multi-target routes, even for `MCPAdmin` and even if the single-target `/mcp` permits
 writes.
 
 The effective permission for a multi-target call is:
@@ -108,15 +108,15 @@ Compatibility rules:
 1. With `ARC1_MULTI_TARGET_ENDPOINTS` absent or false, startup, configuration, `/mcp`, tools, auth,
    cache, UI, plugins, and current tests behave exactly as they do today.
 2. Enabling multi-target adds routes; it does not repurpose `/mcp`.
-3. A separately configured legacy target can keep `/mcp`, including its current write behavior.
+3. A separately configured single target can keep `/mcp`, including its current write behavior.
    The multi-target read-only ceiling applies only to discovered pinned and aggregate routes.
 4. Process-wide multi-target prerequisites still apply while the flag is enabled: HTTP transport,
    XSUAA, cache off, standard tool mode, UI off, and no plugins. Strict PP is a per-runtime invariant
-   for discovered targets, not a process-wide legacy setting.
-5. If the legacy `/mcp` connection and a discovered target have the same connection fingerprint,
+   for discovered targets, not a process-wide setting.
+5. If the single-target `/mcp` connection and a discovered target have the same connection fingerprint,
    both remain usable. Log an operator warning because their policies can differ and the duplicate
    exposure is probably accidental.
-6. API-key and direct OIDC authentication remain unchanged for legacy `/mcp`, but do not authorize
+6. API-key and direct OIDC authentication remain unchanged for the single-target `/mcp`, but do not authorize
    pinned multi-target routes or `/multi/mcp` in v1. Multi routes use an XSUAA-only
    verifier chain rather than inspecting a shared `AuthInfo` after authentication.
 
@@ -147,10 +147,10 @@ When the flag is true, validate:
 - the runtime is BTP CF destination mode, not service-key, cookie, direct URL, or stdio mode; and
 - a request reaching a multi-target route authenticated by API key or direct OIDC is rejected.
 
-Every discovered runtime hardcodes `ppEnabled=true` and `ppStrict=true`, regardless of the legacy
+Every discovered runtime hardcodes `ppEnabled=true` and `ppStrict=true`, regardless of the existing
 `SAP_PP_ENABLED`/`SAP_PP_STRICT` values. Those existing env values continue to control only the
-optional legacy `/mcp` runtime. This per-runtime split is required to preserve API-key/direct-OIDC
-legacy behavior while giving multi routes strict PP with no shared fallback.
+optional single-target `/mcp` runtime. This per-runtime split is required to preserve current
+API-key/direct-OIDC behavior while giving multi routes strict PP with no shared fallback.
 
 Zero destinations is valid. The process must be deployable before the administrator creates the
 destinations.
@@ -164,7 +164,7 @@ The existing instance values remain the absolute ceiling:
 - `ARC1_MAX_CONCURRENT`, `ARC1_RATE_LIMIT`, and auth/HTTP rate limits; and
 - error, audit, CORS, and public-URL security settings.
 
-An optional legacy `/mcp` target continues to use the existing single-target variables, including
+An optional single-target `/mcp` continues to use the existing variables, including
 `SAP_BTP_DESTINATION` and, where configured, `SAP_BTP_PP_DESTINATION`. Discovered targets never
 inherit those destination names or their policy. They are compared only for the duplicate-connection
 warning described above.
@@ -175,7 +175,7 @@ once, create destinations, and restart the app.
 
 For a multi-only deployment, `SAP_BTP_DESTINATION` and `SAP_BTP_PP_DESTINATION` must be absent. The
 base MTA's current `your-basic-destination`/`your-pp-destination` placeholders are removed. Set those
-variables only when intentionally retaining a legacy `/mcp` target.
+variables only when intentionally retaining a single-target `/mcp`.
 
 ### Supported destination properties
 
@@ -209,8 +209,8 @@ secondary-destination, and arbitrary header/query configuration. In particular,
 `arc1.allow_git_writes` are not a hidden preview. An enabled candidate containing one of them is
 quarantined as `UNSUPPORTED_V1_WRITE_CONFIG`.
 
-This does not change the existing `$TMP` default or package gates on a separately configured legacy
-`/mcp` target. Package policy is simply irrelevant to multi-target v1 because mutations cannot be
+This does not change the existing `$TMP` default or package gates on a separately configured
+single-target `/mcp`. Package policy is simply irrelevant to multi-target v1 because mutations cannot be
 listed or dispatched there.
 
 An unknown `arc1.*` property on an enabled candidate quarantines it. This makes spelling mistakes
@@ -375,7 +375,7 @@ and audit checks. It resolves no SAP target and performs no PP or backend reques
 
 Multi-target routes use an XSUAA-only bearer verifier. API-key and direct OIDC tokens fail as 401
 with the correct route-family protected-resource metadata challenge before registry membership is
-checked. Legacy `/mcp` keeps the existing verifier chain and legacy PP/shared-client behavior.
+checked. The single-target `/mcp` keeps the existing verifier chain and PP/shared-client behavior.
 
 There is no technical/shared fallback when PP exchange, SAP login, mapping, or authorization fails.
 One PP destination per target is sufficient for v1. Document the tradeoffs: no technical-user startup
@@ -399,12 +399,12 @@ generic HTTP 404 without an accepted-target list. Syntactically invalid paths ma
 unauthenticated 404 because syntax is not inventory.
 
 Pinned URLs are canonical uppercase and case-sensitive. `/a4h/100/mcp` is not an alias for
-`/A4H/100/mcp`. Mount the case-sensitive pinned matcher before legacy lowercase `/mcp` middleware so
-the valid SAP SID `MCP` does not collide with the legacy endpoint.
+`/A4H/100/mcp`. Mount the case-sensitive pinned matcher before the existing lowercase `/mcp`
+middleware so the valid SAP SID `MCP` does not collide with the single-target endpoint.
 
 Pinned endpoints keep ordinary argument shapes: no `target`, `system`, `client`, or destination
 argument is added. Their tool/action set is still the pruned multi-target read-only surface, not the
-legacy full surface.
+single-target full surface.
 
 ### OAuth protected-resource metadata
 
@@ -689,7 +689,7 @@ stderr debug logs so one successful call does not create several billable BTP Au
 
 ## Concurrency and Rate Limits
 
-- `ARC1_MAX_CONCURRENT` remains one process-wide SAP request semaphore shared by all legacy, pinned,
+- `ARC1_MAX_CONCURRENT` remains one process-wide SAP request semaphore shared by all single-target, pinned,
   and aggregate requests.
 - Do not add `arc1.max_concurrent` or one semaphore per target in v1. A noisy target can consume the
   shared capacity; per-SID fairness is a follow-up if production evidence requires it.
@@ -794,9 +794,9 @@ Work:
 - Delete the unreleased prototype contract outright: `SAP_BTP_DESTINATIONS`, `/mcp/<destination>`,
   its PRM alias, destination-suffixed env overrides, write policy parser, destination-name cache
   files/keys, inherited client fallback, PP-destination fallback, and retry memoization.
-- Remove active fake legacy destination placeholders from `mta.yaml`. A multi-only deployment has
-  no `SAP_BTP_DESTINATION` or `SAP_BTP_PP_DESTINATION`; set them only for an intentional legacy
-  `/mcp` target.
+- Remove active fake single-target destination placeholders from `mta.yaml`. A multi-only deployment
+  has no `SAP_BTP_DESTINATION` or `SAP_BTP_PP_DESTINATION`; set them only for an intentional
+  single-target `/mcp`.
 - Add the commented MTA example with the conservative read-only ceiling and rate recommendations.
 
 ### 3. Implement secret-safe Destination Service discovery
@@ -859,13 +859,13 @@ Files:
 Work:
 
 - Reuse PR #543's runtime separation where safe.
-- Build every discovered config fresh from its sanitized descriptor. Never spread the legacy base
+- Build every discovered config fresh from its sanitized descriptor. Never spread the base single-target
   config; do not copy user/password, cookies, service keys, bearer providers, `SAP_INSECURE`, or
   `SAP_DISABLE_SAML`. Destination/Connectivity determines the discovered route's transport.
 - Build target runtimes eagerly from the immutable snapshot, but create no default/shared ADT client
   and run no technical SAP login or startup probe.
-- Hardcode strict PP per discovered runtime while leaving the optional legacy runtime's existing PP,
-  API-key, and direct-OIDC behavior unchanged.
+- Hardcode strict PP per discovered runtime while leaving the optional single-target runtime's
+  existing PP, API-key, and direct-OIDC behavior unchanged.
 - Resolve PP credentials with an uncached Destination lookup for every SAP-contacting request and
   verify all connection, target, language, and supported `arc1.*` fingerprint fields. Never cache a
   failed lookup or `authTokens[].error`; measure the added Destination Service latency/load in beta.
@@ -876,7 +876,7 @@ Work:
 - Carry an immutable target context per aggregate call; never mutate server-scoped config or client
   state while switching targets.
 - Share the one process-wide SAP semaphore.
-- Warn on legacy/discovered connection duplication without disabling either route.
+- Warn on single-target/discovered connection duplication without disabling either route.
 
 ### 6. Enforce the multi-target read-only surface
 
@@ -897,8 +897,8 @@ Work:
   validator invariant that built-in scope/opType mappings remain equivalent. Multi-target's safety
   hard cap additionally forbids `OperationType.Lock` because it creates a real SAP enqueue.
 - Construct every discovered `SafetyConfig` with `allowWrites=false`,
-  `allowTransportWrites=false`, and `allowGitWrites=false`, independently of legacy/global write
-  flags, and reject forbidden operations again at the ADT safety boundary.
+  `allowTransportWrites=false`, and `allowGitWrites=false`, independently of process-wide or
+  single-target write flags, and reject forbidden operations again at the ADT safety boundary.
 - Permit source/metadata reads and the explicitly dual-gated data/SQL operations.
 - Put effective `allowDataPreview` and `allowFreeSQL` into each target SafetyConfig so synthesized
   SQL/data paths such as `SAPSearch.tadir_lookup_db|both` and
@@ -906,7 +906,7 @@ Work:
 - Remove SAPLint from the multi surface. Hide `SAPDiagnose.atc|unittest` and inject a fixed
   multi-target denylist for those actions so a direct unlisted call is also rejected.
 - Pinned schemas gain no `target` argument, but use the same pruned multi-target read-only surface as
-  aggregate routes; they are not byte-identical to the legacy full surface.
+  aggregate routes; they are not byte-identical to the single-target full surface.
 - Add shallow aggregate `target` injection without duplicating handler Zod schemas.
 - Validate/strip target before normal dispatch.
 - Implement exact target enums through 16 targets and the compact syntax pattern for 17–256.
@@ -931,7 +931,7 @@ Files:
 Work:
 
 - Mount one case-sensitive syntactic pinned-route matcher plus `/multi/mcp` from one snapshot; put it
-  before case-insensitive legacy `/mcp` middleware.
+  before case-insensitive single-target `/mcp` middleware.
 - Never bind a discovered target to `/mcp`.
 - Run a dedicated XSUAA-only verifier and require read before registry membership lookup. An
   authenticated syntactically valid but absent pinned target receives a generic HTTP 404.
@@ -1046,8 +1046,7 @@ Documentation requirements:
   behavior, admin diagnostics, rates, pinned-URL OAuth/DCR multiplication, and all deferred features.
 - Update “12 tools” claims to explain that standard single-target mode remains 12 tools while
   multi-target v1 exposes its six permitted SAP-contacting tools plus conditional aggregate-only
-  `SAPTargets`. Keep the former `multi-destination.md` URL as a documentation redirect to the
-  consolidated setup page.
+  `SAPTargets`.
 - Add explicit rows for `ARC1_MULTI_TARGET_ENDPOINTS` and `ARC1_MCP_HTTP_RATE_LIMIT` to both
   `docs_page/configuration-reference.md` and the `AGENTS.md` configuration table, including defaults,
   mode restrictions, and the inherited-rate-limit migration behavior.
@@ -1070,9 +1069,9 @@ Required automated cases:
   discovery/registry object graphs and never serialize/log;
 - discovery failure keeps health 200, makes pinned routes return 503, keeps aggregate MCP reachable
   for admin `SAPTargets`, and gives other aggregate calls a structured registry error, with or
-  without legacy `/mcp`;
-- legacy `/mcp` unchanged and never auto-assigned;
-- legacy and discovered duplicate fingerprint warning with both routes usable;
+  without a single-target `/mcp`;
+- single-target `/mcp` unchanged and never auto-assigned;
+- single-target and discovered duplicate fingerprint warning with both routes usable;
 - pinned schemas have no target argument and use the frozen multi read-only surface;
 - aggregate schemas have exactly one required target argument;
 - exact enums at 1 and 16 targets plus the syntax pattern at 17 and 256, including target
@@ -1095,7 +1094,7 @@ Required automated cases:
 - global Viewer sees all accepted targets but SAP can deny a selected one;
 - data and SQL require instance + destination + scope + SAP auth;
 - no multi-target mutation or lock appears or dispatches, including for admin and a write-enabled
-  legacy ceiling; every discovered SafetyConfig hardcodes writes/transport/Git false;
+  single-target `/mcp`; every discovered SafetyConfig hardcodes writes/transport/Git false;
 - ATC, ABAP Unit, SAPLint, hidden `SAP`, and `Custom_*` are absent and direct invocation fails;
 - auth occurs before route resolution and public endpoints do not enumerate targets; no standalone
   HTTP target-catalog route is mounted;
@@ -1193,7 +1192,7 @@ feature.
 - [x] Global semaphore/rate limit cannot be multiplied by target count.
 - [x] RFC 9728 metadata and unauthenticated route behavior cannot reveal registry membership.
 - [x] Raw discovery secrets are unreachable from the retained registry object graph.
-- [x] Legacy `/mcp` compatibility is test-covered.
+- [x] Single-target `/mcp` compatibility is test-covered.
 
 ## Deferred Beyond V1
 

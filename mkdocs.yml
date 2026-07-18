@@ -105,7 +105,6 @@ plugins:
   - redirects:
       redirect_maps:
         phase4-btp-deployment.md: btp-cloud-foundry-deployment.md
-        multi-destination.md: multi-target-setup.md
 
 extra_javascript:
   - javascripts/posthog.js

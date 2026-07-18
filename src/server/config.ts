@@ -799,7 +799,7 @@ export function validateConfig(config: ServerConfig): void {
     }
     if (config.url || config.username || config.password) {
       throw new Error(
-        'ARC1_MULTI_TARGET_ENDPOINTS=true does not support a direct SAP_URL/SAP_USER/SAP_PASSWORD connection. Use BTP destinations; configure an optional legacy /mcp through SAP_BTP_DESTINATION.',
+        'ARC1_MULTI_TARGET_ENDPOINTS=true does not support a direct SAP_URL/SAP_USER/SAP_PASSWORD connection. Use BTP destinations; configure an optional single-target /mcp through SAP_BTP_DESTINATION.',
       );
     }
     if (config.rateLimit === 0) {

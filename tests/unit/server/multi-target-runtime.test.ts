@@ -73,13 +73,13 @@ function destination(overrides: Record<string, unknown> = {}): Destination {
 }
 
 describe('multi-target runtime isolation', () => {
-  it('builds from safe defaults without inheriting legacy credentials or write capability', () => {
+  it('builds from safe defaults without inheriting single-target credentials or write capability', () => {
     const config = buildMultiTargetConfig(
       {
         ...DEFAULT_CONFIG,
-        url: 'https://legacy.example',
-        username: 'legacy-user',
-        password: 'legacy-password',
+        url: 'https://single-target.example',
+        username: 'single-target-user',
+        password: 'single-target-password',
         cookieString: 'secret-cookie',
         insecure: true,
         disableSaml2: true,

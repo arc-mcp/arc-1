@@ -79,7 +79,7 @@ MTA (Multi-Target Application) deployment bundles ARC-1 with its BTP service dep
 ### 1. Configure your landscape via `mta-overrides.mtaext`
 
 `mta.yaml` ships without an active fake destination and with conservative safety defaults (writes
-off, free SQL off, package allowlist `$TMP`). For a legacy single-target `/mcp`, set the destination
+off, free SQL off, package allowlist `$TMP`). For a single-target `/mcp`, set the destination
 names and PP flags in the landscape override. For experimental multi-target mode, uncomment the
 complete multi-target block in your `mta-overrides.mtaext`, build the MTAR, and deploy once. Then
 manage marked destinations in the BTP Cockpit and restart the app. The base descriptor can start
@@ -182,8 +182,8 @@ Why it matters, plus how to recover a client that's already stuck: [Stable DCR s
 The base `mta.yaml` configures the properties below (override any of them via `mta-overrides.mtaext`):
 - `ARC1_OAUTH_DCR_TTL_SECONDS: "0"` — DCR `client_id`s never expire (avoids periodic re-auth outages)
 - `SAP_TRANSPORT: http-streamable` — HTTP transport for MCP
-- no active `SAP_BTP_DESTINATION` / `SAP_BTP_PP_DESTINATION` placeholders — add them only for an intentional legacy `/mcp` target
-- `SAP_PP_ENABLED: "true"` and `SAP_PP_STRICT: "true"` — preserve strict per-user SAP identity for legacy targets across upgrades; explicitly set `SAP_PP_ENABLED: "false"` only for a shared-identity deployment
+- no active `SAP_BTP_DESTINATION` / `SAP_BTP_PP_DESTINATION` placeholders — add them only for an intentional single-target `/mcp`
+- `SAP_PP_ENABLED: "true"` and `SAP_PP_STRICT: "true"` — preserve strict per-user SAP identity for single-target deployments across upgrades; explicitly set `SAP_PP_ENABLED: "false"` only for a shared-identity deployment
 - a commented experimental `ARC1_MULTI_TARGET_ENDPOINTS` block with cache/tool/rate prerequisites
 - `SAP_XSUAA_AUTH: "true"` — XSUAA OAuth for MCP clients
 - `SAP_ALLOW_*: "false"` and `SAP_ALLOWED_PACKAGES: "$TMP"` — safe defaults; widen only as needed

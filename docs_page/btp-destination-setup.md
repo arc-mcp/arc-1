@@ -105,7 +105,7 @@ Each authenticated MCP user gets their **own SAP identity**. SAP enforces `S_DEV
 
 !!! note "Multi-target v1 uses one destination, not the dual-destination pattern"
 
-    The dual-destination recommendation below applies to the legacy single-target `/mcp` runtime.
+    The dual-destination recommendation below applies to the single-target `/mcp` runtime.
     [Multi-system setup](multi-target-setup.md) uses exactly one subaccount
     `PrincipalPropagation` destination per SID/client. It has no shared technical-user startup
     destination and performs the first success-only feature probe through an authorized user's PP
@@ -125,7 +125,7 @@ MCP Client → XSUAA OAuth → ARC-1 → Destination Service (X-User-Token: <jwt
                               X.509 cert (CN=SAP_USERNAME) → CERTRULE → SAP user
 ```
 
-### Step 1: Create a Dual-Destination Setup for Legacy `/mcp`
+### Step 1: Create a Dual-Destination Setup for Single-Target `/mcp`
 
 The recommended approach uses **two destinations** — one for the shared service account and one for per-user PP:
 

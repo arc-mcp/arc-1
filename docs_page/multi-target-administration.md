@@ -75,33 +75,33 @@ When `ARC1_MULTI_TARGET_ENDPOINTS=true`, startup validation requires:
 - no direct `SAP_URL`, `SAP_USER`, or `SAP_PASSWORD` connection.
 
 Discovered runtimes always force strict per-user Principal Propagation. `SAP_PP_ENABLED` and
-`SAP_PP_STRICT` control only an optional legacy `/mcp` runtime; they do not enable or weaken a
+`SAP_PP_STRICT` control only an optional single-target `/mcp` runtime; they do not enable or weaken a
 discovered target.
 
 The process may start with zero targets. This supports deploy first, create destinations second,
 then restart.
 
-### Optional legacy `/mcp`
+### Optional single-target `/mcp`
 
 An explicitly configured `SAP_BTP_DESTINATION` and optional `SAP_BTP_PP_DESTINATION` may keep one
-legacy single target at bare `/mcp`. Discovered targets are never assigned there and do not inherit
-the legacy target's destination names or policy.
+single target at bare `/mcp`. Discovered targets are never assigned there and do not inherit the
+single target's destination names or policy.
 
-The legacy endpoint retains its normal configuration, including possible write/package behavior;
+The single-target endpoint retains its normal configuration, including possible write/package behavior;
 the discovered pinned and aggregate routes remain mutation-free. Process-wide multi-target startup
 constraints—cache none, standard tools, UI/plugins/cookies/direct credentials off—still affect the
-legacy runtime.
+single-target runtime.
 
 !!! danger "Use least privilege in side-by-side deployments"
 
     `MCPAdmin` implies all ARC-1 scopes. The token cannot write through multi-target routes, but it
-    may write, release transports, or operate Git through a write-enabled legacy `/mcp`. Do not
+    may write, release transports, or operate Git through a write-enabled single-target `/mcp`. Do not
     grant Admin merely for routine target discovery. Prefer a separate application if operators
-    need diagnostics while ordinary users need a writable legacy endpoint.
+    need diagnostics while ordinary users need a writable single-target endpoint.
 
-If a legacy destination is also discovered as a SID/client route, both endpoints remain available
-and may have different effective policies. ARC-1 logs a warning because that duplication is usually
-unintentional.
+If a single-target destination is also discovered as a SID/client route, both endpoints remain
+available and may have different effective policies. ARC-1 logs a warning because that duplication
+is usually unintentional.
 
 ### Discovery, conflicts, and the 256-target ceiling
 
@@ -348,7 +348,7 @@ logs each login attempt depends on SAP security configuration.
 
 ## Shared capacity and rate limits
 
-Every target and optional legacy route shares one `ARC1_MAX_CONCURRENT` semaphore per CF app
+Every target and optional single-target route shares one `ARC1_MAX_CONCURRENT` semaphore per CF app
 instance. The default 10 means ten concurrent SAP requests across the whole process—not ten per
 target. Destination count alone does not justify a higher value; expected active users and SAP
 dialog work-process capacity do. A busy target can temporarily occupy all slots.

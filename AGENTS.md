@@ -97,7 +97,7 @@ src/
 ├── server/
 │   ├── server.ts               # MCP server setup, tool registration
 │   ├── config.ts, types.ts     # Config parser + ServerConfig defaults
-│   ├── http.ts                 # HTTP auth + legacy, pinned, and aggregate routes
+│   ├── http.ts                 # HTTP auth + single-target, pinned, and aggregate routes
 │   ├── destination-discovery.ts, destination-registry.ts # Secret-safe snapshot + immutable targets
 │   ├── multi-target-runtime.ts, multi-target-tools.ts # Strict-PP configs + mutation-free schemas
 │   ├── multi-target-catalog.ts # Role-sensitive, secret-safe SAPTargets result

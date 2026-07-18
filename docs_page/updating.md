@@ -11,7 +11,7 @@ properties, not `SAP_*_<DEST>` environment variables. See
 [Multi-System Setup](multi-target-setup.md), then
 [Multi-Target Administration](multi-target-administration.md) for diagnostics and operations.
 
-The base `mta.yaml` is now target-free: all legacy target settings and the experimental multi-target
+The base `mta.yaml` is now target-free: all single-target settings and the experimental multi-target
 block are commented examples. Existing deployments remain compatible because ARC-1 still reads the
 same explicit environment variables or MTA extension values. Before updating a deployment that
 previously relied on active values from the repository template, copy those values into your own
