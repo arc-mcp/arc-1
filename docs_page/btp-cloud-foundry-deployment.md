@@ -48,9 +48,11 @@ Deploy ARC-1 on SAP BTP Cloud Foundry, connecting to an on-premise SAP system vi
 ## Prerequisites
 
 - SAP BTP subaccount with Cloud Foundry environment enabled
+- Entitlement and quota for XSUAA, Destination, and Connectivity service instances
 - Cloud Connector installed and connected to BTP subaccount
 - Cloud Connector configured with virtual host mapping to SAP on-premise system
-- `cf` CLI and `mbt` (MTA Build Tool) installed
+- Node.js 22.19 or later and npm
+- `cf` CLI, the CF MultiApps plugin used by `cf deploy`, and `mbt` (MTA Build Tool) installed
 - For Docker deployment: image pushed to a container registry (GHCR, Docker Hub, etc.)
 
 ## Deployment Method 1: MTA (Recommended)
@@ -80,11 +82,13 @@ MTA (Multi-Target Application) deployment bundles ARC-1 with its BTP service dep
 
 `mta.yaml` ships without an active fake destination and with conservative safety defaults (writes
 off, free SQL off, package allowlist `$TMP`). For a single-target `/mcp`, set the destination
-names and PP flags in the landscape override. For experimental multi-target mode, uncomment the
-complete multi-target block in your `mta-overrides.mtaext`, build the MTAR, and deploy once. Then
-manage marked destinations in the BTP Cockpit and restart the app. The base descriptor can start
-without a SAP target so destination setup does not have to race the CF deployment. Follow the
-[Multi-System Setup](multi-target-setup.md) walkthrough for the exact sequence.
+names and PP flags in the landscape override. For experimental multi-target mode, set the two
+mandatory properties `ARC1_MULTI_TARGET_ENDPOINTS="true"` and `ARC1_CACHE=none`, build the MTAR, and
+deploy once. Choose rate-limit values separately from the
+[multi-target shared-beta profile](rate-limiting.md#multi-target-shared-beta-btp-cf); they are tuning,
+not mode prerequisites. Then manage marked destinations in the BTP Cockpit and restart the app. The
+base descriptor can start without a SAP target so destination setup does not have to race the CF
+deployment. Follow the [Multi-System Setup](multi-target-setup.md) walkthrough for the exact sequence.
 
 ```bash
 # Clone the repo
@@ -111,10 +115,11 @@ modules:
       SAP_BTP_PP_DESTINATION: "my-sap-pp"
       SAP_PP_ENABLED: "true"
       SAP_PP_STRICT: "true"
-      # widen safety flags only when the landscape needs it
-      SAP_ALLOW_WRITES: "true"
-      SAP_ALLOWED_PACKAGES: "Z*,Y*,$TMP"
 ```
+
+This generic example remains read-only. Enable write ceilings only for an intentional single-target
+deployment after reviewing [Authorization](authorization.md); multi-target v1 is structurally
+mutation-free.
 
 The full set of overridable properties is documented in [`mta-overrides.mtaext.example`](https://github.com/arc-mcp/arc-1/blob/main/mta-overrides.mtaext.example): destinations, all `SAP_ALLOW_*` safety flags, `SAP_DENY_ACTIONS`, `SAP_PP_STRICT`, `ARC1_PUBLIC_URL` (for reverse-proxy deployments), `ARC1_ALLOWED_ORIGINS` (CORS), `ARC1_UI`, `ARC1_TOOL_MODE`, request-driven cache settings, and `ARC1_LOG_HTTP_DEBUG`. Any property left out of the override falls back to the `mta.yaml` value.
 
@@ -184,15 +189,17 @@ The base `mta.yaml` configures the properties below (override any of them via `m
 - `SAP_TRANSPORT: http-streamable` — HTTP transport for MCP
 - no active `SAP_BTP_DESTINATION` / `SAP_BTP_PP_DESTINATION` placeholders — add them only for an intentional single-target `/mcp`
 - `SAP_PP_ENABLED: "true"` and `SAP_PP_STRICT: "true"` — preserve strict per-user SAP identity for single-target deployments across upgrades; explicitly set `SAP_PP_ENABLED: "false"` only for a shared-identity deployment
-- a commented experimental `ARC1_MULTI_TARGET_ENDPOINTS` block with cache/tool/rate prerequisites
+- a commented experimental multi-target block: mode and `ARC1_CACHE=none` are mandatory; the
+  included rate values are shared-beta tuning examples, not prerequisites
 - `SAP_XSUAA_AUTH: "true"` — XSUAA OAuth for MCP clients
 - `SAP_ALLOW_*: "false"` and `SAP_ALLOWED_PACKAGES: "$TMP"` — safe defaults; widen only as needed
 - `ARC1_UI: "off"` — experimental UI is not enabled by default. Set `ARC1_UI: "web"` in `mta-overrides.mtaext` or via `cf set-env` to mount the read-only console at `/ui`; HTTP UI mode requires XSUAA, OIDC, or an admin API key and every `/ui/*` request requires admin scope.
 
-### 4. Verify a healthy startup
+### 4. Verify a healthy single-target startup
 
-After the app starts, the startup log tells you immediately whether ARC-1 reached SAP and the SAP user
-has the right authorizations — **before** you connect an MCP client:
+For a single-target deployment with `SAP_BTP_DESTINATION`, the startup log tells you immediately
+whether ARC-1 reached SAP and the technical SAP user has the right authorizations—**before** you
+connect an MCP client:
 
 ```bash
 cf logs arc1-mcp-server --recent
@@ -210,6 +217,12 @@ INFO: Authorization probe: transport access is available
 — they're logged at `debug`, not `warn`, and just mean those capabilities aren't installed. A clean
 startup has no `WARN` lines from probing. For the full annotated transcript, the green/red signals, and
 OAuth scope troubleshooting, see **[Log Analysis → What a Healthy Startup Looks Like](log-analysis.md#what-a-healthy-startup-looks-like)**.
+
+!!! note "Multi-target startup has no technical-user probe"
+    A multi-target-only deployment can start with zero discovered targets and does not emit these
+    single-target authorization-probe lines. Verify it through `/health`, then call `SAPTargets` as an
+    Admin on `/multi/mcp`, and finally make one Principal-Propagation-backed `SAPRead` call as a
+    Viewer. See [Multi-System Setup](multi-target-setup.md#quick-start).
 
 ---
 
@@ -427,9 +440,9 @@ ARC-1 auto-detects BTP Cloud Foundry via the `VCAP_APPLICATION` environment vari
 
 6. **Port:** CF sets the `PORT` environment variable (typically `8080`). ARC-1 defaults `ARC1_HTTP_ADDR` to `0.0.0.0:8080`.
 
-### Dual-Destination Pattern
+### Single-target dual-destination pattern
 
-ARC-1 uses two BTP destinations for on-premise PP scenarios:
+For a single-target on-premise Principal Propagation deployment, ARC-1 uses two BTP destinations:
 
 | Destination | Auth Type | Used For | Config Var |
 |-------------|-----------|----------|------------|
@@ -437,6 +450,10 @@ ARC-1 uses two BTP destinations for on-premise PP scenarios:
 | Per-user destination | PrincipalPropagation | Per-user requests with JWT | `SAP_BTP_PP_DESTINATION` |
 
 **Why two destinations?** A PrincipalPropagation destination has no User/Password. At startup (no user JWT available), the SDK's `getDestination()` would fail for PP destinations. The BasicAuth destination supports system-level startup operations and, when `SAP_PP_STRICT=false`, API-key calls in a supported mixed instance. With the base MTA's explicit `SAP_PP_STRICT=true`, MCP tool callers cannot use it as a shared identity.
+
+Experimental multi-target v1 instead uses exactly one Principal Propagation destination per
+SID/client, performs no technical-user startup probe, and does not require a BasicAuthentication
+partner. See [Multi-System Setup](multi-target-setup.md#3-create-one-destination-per-sidclient).
 
 The destinations may point to the same SAP system but can differ in:
 - Authentication type (BasicAuth vs PP)

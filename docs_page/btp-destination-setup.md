@@ -15,7 +15,9 @@ ARC-1 supports these destination-related ways to authenticate to SAP:
 | **BTP Destination (PP, on-premise)** | Each MCP user as their own SAP user | BTP Destination + Connectivity + Cloud Connector PP | Enterprise, per-user audit trail for on-premise SAP |
 | **BTP Destination (`OAuth2UserTokenExchange`)** | Each MCP user as their own BTP ABAP user | BTP Destination, `ProxyType=Internet` | BTP ABAP Environment, no Cloud Connector |
 
-All modes can coexist with any MCP client authentication (API key, OIDC, XSUAA), but per-user destinations need a real JWT. XSUAA is the BTP-native path.
+Single-target destination modes can coexist with MCP API-key, OIDC, or XSUAA authentication, but
+per-user destinations need a real JWT. XSUAA is the BTP-native path. Experimental multi-target routes
+are the exception: they require XSUAA and reject API keys and direct OIDC tokens.
 
 > **`OAuth2UserTokenExchange` requires ARC-1 and the BTP ABAP Environment to be in the *same* subaccount** (it's an XSUAA→XSUAA exchange within one identity zone). For ARC-1 and the ABAP env in *different* subaccounts, use `OAuth2SAMLBearerAssertion` + trust instead. See [BTP ABAP Environment → Cross-subaccount principal propagation](btp-abap-environment.md#cross-subaccount-principal-propagation-fails).
 
@@ -398,7 +400,10 @@ SAP documents two ways to propagate user identity through the Cloud Connector ([
 1. First, ARC-1 tries to get auth tokens from the SDK response (the Destination Service returns a `SAP-Connectivity-Authentication` header value for PP destinations).
 2. If the Destination Service returns **no auth tokens** (a known issue — the service sometimes omits them), ARC-1 falls back to a **jwt-bearer token exchange** with the Connectivity Service XSUAA, then uses **Option 2**: the original user JWT is sent as `SAP-Connectivity-Authentication`.
 
-This fallback is documented in the code at `src/adt/btp.ts` with detailed comments explaining why Option 2 was chosen over Option 1 (the Cloud Connector couldn't extract the principal from the exchanged token in testing).
+The ARC-1 mapping and fallback entry points are `createPerUserClient` and
+`applyPerUserAuthTokens` in `src/server/server.ts`; the Destination and Connectivity exchange helpers
+come from `@arc-mcp/xsuaa-auth/btp`. The nearby implementation comments document why Option 2 was
+chosen over Option 1 after Cloud Connector testing.
 
 ---
 

@@ -8,6 +8,7 @@
  *   SAP_ALLOW_FREE_SQL=true
  *   SAP_ALLOW_TRANSPORT_WRITES=true
  *   SAP_ALLOW_GIT_WRITES=false
+ *   SAP_FEATURE_ABAPGIT=on
  *   SAP_ALLOWED_PACKAGES='$TMP,Z*'
  *   ARC1_API_KEYS='viewer-key-local:viewer,sql-key-local:viewer-sql,dev-key-local:developer,admin-key-local:admin'
  *
@@ -16,8 +17,8 @@
 
 const mcpUrl = process.env.ARC1_AUTHZ_MCP_URL ?? process.env.E2E_MCP_URL ?? 'http://127.0.0.1:19081/mcp';
 
-const transportReadActions = ['list', 'get', 'check', 'history'];
-const transportWriteActions = ['create', 'release', 'delete', 'reassign', 'release_recursive'];
+const transportReadActions = ['list', 'get', 'check', 'history', 'layers', 'targets'];
+const transportWriteActions = ['create', 'release', 'delete', 'remove_object', 'reassign', 'release_recursive'];
 const gitReadActions = ['list_repos', 'whoami', 'config', 'branches', 'external_info', 'history', 'objects', 'check'];
 const gitWriteActions = ['stage', 'clone', 'pull', 'push', 'commit', 'switch_branch', 'create_branch', 'unlink'];
 

@@ -4,25 +4,15 @@ import type { DestinationRegistry, TargetDescriptor, TargetDiagnostic } from './
 
 export const TARGET_CATALOG_DIAGNOSTIC_LIMIT = 50;
 export const TARGET_CATALOG_MAX_OFFSET = 1_000_000;
+export const TARGET_CATALOG_MAX_QUERY_LENGTH = 160;
 
 function targetMatches(target: TargetDescriptor, query: string): boolean {
   return !query || target.target.toLowerCase().includes(query) || target.description.toLowerCase().includes(query);
 }
 
-function diagnosticMatches(
-  entry: DestinationRegistry['diagnostics'][number],
-  query: string,
-  descriptions: ReadonlyMap<string, string>,
-): boolean {
+function diagnosticMatches(entry: DestinationRegistry['diagnostics'][number], query: string): boolean {
   if (!query) return true;
-  return [
-    entry.destinationName,
-    entry.target,
-    entry.status,
-    entry.code,
-    entry.message,
-    entry.target && descriptions.get(entry.target),
-  ]
+  return [entry.destinationName, entry.target, entry.status, entry.code, entry.message, entry.description]
     .filter((value): value is string => typeof value === 'string')
     .some((value) => value.toLowerCase().includes(query));
 }
@@ -79,9 +69,8 @@ export function buildTargetCatalog(
 
   const publicTargets = targets.map((target) => ({ target: target.target, description: target.description }));
   const diagnosticOffset = options.offset ?? 0;
-  const descriptions = new Map(registry.targets.map((target) => [target.target, target.description]));
   const matchingDiagnostics = registry.diagnostics
-    .filter((entry) => (query ? diagnosticMatches(entry, query, descriptions) : entry.status !== 'active'))
+    .filter((entry) => (query ? diagnosticMatches(entry, query) : entry.status !== 'active'))
     .sort((left, right) =>
       `${left.destinationName}\0${left.target ?? ''}\0${left.code}`.localeCompare(
         `${right.destinationName}\0${right.target ?? ''}\0${right.code}`,

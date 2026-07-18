@@ -95,17 +95,17 @@ describe('multi-target HTTP helpers', () => {
   });
 
   it('returns a generic 404 for a valid but absent target without enumerating membership', async () => {
-    const pinnedFactory = vi.fn();
+    const createPinnedServer = vi.fn();
     const handler = createPinnedTargetMcpHandler({
       registry: registry(),
       aggregateFactory: vi.fn() as never,
-      pinnedFactory,
+      createPinnedServer,
     });
     const res = mockRes();
     await handler({ path: '/A4H/200/mcp', method: 'POST', body: {}, headers: {} } as never, res as never);
     expect(res.statusCode).toBe(404);
     expect(res.body).toEqual({ error: 'Not found' });
-    expect(pinnedFactory).not.toHaveBeenCalled();
+    expect(createPinnedServer).not.toHaveBeenCalled();
   });
 
   it('serves an accepted pinned target', async () => {
@@ -114,15 +114,15 @@ describe('multi-target HTTP helpers', () => {
         throw new Error('sentinel: connect reached');
       }),
     }));
-    const pinnedFactory = vi.fn(() => serverFactory as never);
+    const createPinnedServer = vi.fn(() => serverFactory() as never);
     const handler = createPinnedTargetMcpHandler({
       registry: registry(),
       aggregateFactory: vi.fn() as never,
-      pinnedFactory,
+      createPinnedServer,
     });
     const res = mockRes();
     await handler({ path: '/A4H/100/mcp', method: 'POST', body: {}, headers: {} } as never, res as never);
-    expect(pinnedFactory).toHaveBeenCalledWith(expect.objectContaining({ target: 'A4H/100' }));
+    expect(createPinnedServer).toHaveBeenCalledWith(expect.objectContaining({ target: 'A4H/100' }));
     expect(res.statusCode).toBe(500);
   });
 
@@ -139,7 +139,7 @@ describe('multi-target HTTP helpers', () => {
     const multi = {
       registry: unavailable,
       aggregateFactory: aggregateFactory as never,
-      pinnedFactory: vi.fn() as never,
+      createPinnedServer: vi.fn() as never,
     };
     const pinnedRes = mockRes();
     await createPinnedTargetMcpHandler(multi)(

@@ -25,7 +25,8 @@ ARC-1 may expose experimental multi-target endpoints only when
 - BTP CF subaccount Destination discovery, XSUAA, on-premise Principal Propagation, and one immutable
   startup snapshot;
 - a case-sensitive pinned endpoint `/<SID>/<CLIENT>/mcp` and an aggregate `/multi/mcp` endpoint;
-- no discovered bare `/mcp` alias and no destination name in a route or LLM-visible response;
+- no discovered bare `/mcp` alias and no destination name in a route or reader-visible response;
+  secret-projected Admin `SAPTargets` diagnostics may expose the internal destination name;
 - global ARC-1 roles, with SAP Principal Propagation as the per-user/per-target authorization
   boundary;
 - source/metadata reads by default, with data and SQL requiring instance, destination, XSUAA, and SAP

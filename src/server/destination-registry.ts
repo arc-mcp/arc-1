@@ -3,19 +3,17 @@
 import { createHash } from 'node:crypto';
 import type { SafetyConfig } from '../adt/safety.js';
 import type { DestinationDiscoveryResult, DiscoveredDestination } from './destination-discovery.js';
+import {
+  isSupportedMultiTargetArcProperty,
+  isWriteRelatedArcProperty,
+  parseDestinationBoolean,
+} from './multi-target-destination-config.js';
 import type { ServerConfig } from './types.js';
 
 export const TARGET_ID_PATTERN = /^[A-Z][A-Z0-9]{2}\/[0-9]{3}$/;
 export const SAP_SYSID_PATTERN = /^[A-Z][A-Z0-9]{2}$/;
 export const MULTI_TARGET_MAX = 256;
-
-const ALLOWED_ARC_PROPERTIES = new Set(['arc1.enabled', 'arc1.allow_data_preview', 'arc1.allow_free_sql']);
-const WRITE_PROPERTIES = new Set([
-  'arc1.allow_writes',
-  'arc1.allowed_packages',
-  'arc1.allow_transport_writes',
-  'arc1.allow_git_writes',
-]);
+export const MULTI_TARGET_DENY_ACTIONS = Object.freeze(['SAPDiagnose.atc', 'SAPDiagnose.unittest']);
 
 export type TargetExclusionCode =
   | 'ACTIVE'
@@ -108,14 +106,6 @@ export interface RegistryCounts {
   readonly quarantined: number;
 }
 
-function parseBoolean(value: string | undefined): boolean | undefined {
-  if (value === undefined) return undefined;
-  const normalized = value.trim().toLowerCase();
-  if (normalized === 'true') return true;
-  if (normalized === 'false') return false;
-  return undefined;
-}
-
 export function sanitizeTargetDescription(value: string | undefined, fallback: string): string {
   if (!value) return fallback;
   const withoutControls = Array.from(value.normalize('NFKC'), (character) => {
@@ -166,12 +156,12 @@ export function targetFingerprint(value: FingerprintInput): string {
 
 function immutableArcConfig(properties: Readonly<Record<string, string>>): TargetDiagnostic['arcConfig'] {
   const unknownProperties = Object.keys(properties)
-    .filter((key) => !ALLOWED_ARC_PROPERTIES.has(key))
+    .filter((key) => !isSupportedMultiTargetArcProperty(key))
     .sort();
   return Object.freeze({
-    enabled: parseBoolean(properties['arc1.enabled']),
-    allowDataPreview: parseBoolean(properties['arc1.allow_data_preview']),
-    allowFreeSQL: parseBoolean(properties['arc1.allow_free_sql']),
+    enabled: parseDestinationBoolean(properties['arc1.enabled']),
+    allowDataPreview: parseDestinationBoolean(properties['arc1.allow_data_preview']),
+    allowFreeSQL: parseDestinationBoolean(properties['arc1.allow_free_sql']),
     ...(unknownProperties.length > 0 ? { unknownProperties: Object.freeze(unknownProperties) } : {}),
   });
 }
@@ -181,6 +171,27 @@ interface CandidateEvaluation {
   readonly diagnostic: TargetDiagnostic;
   readonly target?: TargetDescriptor;
   readonly enabled: boolean;
+}
+
+type DiagnosticBase = Pick<
+  TargetDiagnostic,
+  'destinationName' | 'type' | 'authentication' | 'proxyType' | 'hasCloudConnectorLocationId' | 'arcConfig' | 'warnings'
+>;
+
+/** Finish one failed validation step while keeping evaluate() a linear checklist. */
+function excludedCandidate(
+  source: DiscoveredDestination,
+  diagnosticBase: DiagnosticBase,
+  enabled: boolean,
+  status: Exclude<TargetDiagnostic['status'], 'active'>,
+  code: Exclude<TargetExclusionCode, 'ACTIVE' | 'MISSING_DESCRIPTION'>,
+  message: string,
+): CandidateEvaluation {
+  return {
+    source,
+    enabled,
+    diagnostic: { ...diagnosticBase, status, code, message },
+  };
 }
 
 function evaluate(source: DiscoveredDestination, base: ServerConfig): CandidateEvaluation {
@@ -196,232 +207,196 @@ function evaluate(source: DiscoveredDestination, base: ServerConfig): CandidateE
   } as const;
 
   const enabledRaw = source.arcProperties['arc1.enabled'];
-  const enabled = parseBoolean(enabledRaw);
+  const enabled = parseDestinationBoolean(enabledRaw);
   if (enabledRaw === undefined) {
-    return {
+    return excludedCandidate(
       source,
-      enabled: false,
-      diagnostic: {
-        ...diagnosticBase,
-        status: 'ignored',
-        code: 'ARC1_ENABLED_MISSING',
-        message: 'ARC-1 marker arc1.enabled is missing.',
-      },
-    };
+      diagnosticBase,
+      false,
+      'ignored',
+      'ARC1_ENABLED_MISSING',
+      'ARC-1 marker arc1.enabled is missing.',
+    );
   }
   if (enabled === undefined) {
-    return {
+    return excludedCandidate(
       source,
-      enabled: false,
-      diagnostic: {
-        ...diagnosticBase,
-        status: 'quarantined',
-        code: 'ARC1_ENABLED_INVALID',
-        message: 'arc1.enabled must be true or false.',
-      },
-    };
+      diagnosticBase,
+      false,
+      'quarantined',
+      'ARC1_ENABLED_INVALID',
+      'arc1.enabled must be true or false.',
+    );
   }
   if (!enabled) {
-    return {
+    return excludedCandidate(
       source,
-      enabled: false,
-      diagnostic: {
-        ...diagnosticBase,
-        status: 'disabled',
-        code: 'ARC1_DISABLED',
-        message: 'ARC-1 target is explicitly disabled.',
-      },
-    };
+      diagnosticBase,
+      false,
+      'disabled',
+      'ARC1_DISABLED',
+      'ARC-1 target is explicitly disabled.',
+    );
   }
 
   for (const key of Object.keys(source.arcProperties)) {
-    if (WRITE_PROPERTIES.has(key)) {
-      return {
+    if (isWriteRelatedArcProperty(key)) {
+      return excludedCandidate(
         source,
-        enabled: true,
-        diagnostic: {
-          ...diagnosticBase,
-          status: 'quarantined',
-          code: 'UNSUPPORTED_V1_WRITE_CONFIG',
-          message: 'Write-related destination configuration is not supported in multi-target v1.',
-        },
-      };
+        diagnosticBase,
+        true,
+        'quarantined',
+        'UNSUPPORTED_V1_WRITE_CONFIG',
+        'Write-related destination configuration is not supported in multi-target v1.',
+      );
     }
-    if (!ALLOWED_ARC_PROPERTIES.has(key)) {
-      return {
+    if (!isSupportedMultiTargetArcProperty(key)) {
+      return excludedCandidate(
         source,
-        enabled: true,
-        diagnostic: {
-          ...diagnosticBase,
-          status: 'quarantined',
-          code: 'UNKNOWN_ARC1_PROPERTY',
-          message: `Unsupported ARC-1 destination property: ${key}`,
-        },
-      };
+        diagnosticBase,
+        true,
+        'quarantined',
+        'UNKNOWN_ARC1_PROPERTY',
+        `Unsupported ARC-1 destination property: ${key}`,
+      );
     }
   }
 
-  const dataRequested = parseBoolean(source.arcProperties['arc1.allow_data_preview']);
-  const sqlRequested = parseBoolean(source.arcProperties['arc1.allow_free_sql']);
+  const dataRequested = parseDestinationBoolean(source.arcProperties['arc1.allow_data_preview']);
+  const sqlRequested = parseDestinationBoolean(source.arcProperties['arc1.allow_free_sql']);
   if (
     (source.arcProperties['arc1.allow_data_preview'] !== undefined && dataRequested === undefined) ||
     (source.arcProperties['arc1.allow_free_sql'] !== undefined && sqlRequested === undefined)
   ) {
-    return {
+    return excludedCandidate(
       source,
-      enabled: true,
-      diagnostic: {
-        ...diagnosticBase,
-        status: 'quarantined',
-        code: 'INVALID_POLICY',
-        message: 'ARC-1 data and SQL policy values must be true or false.',
-      },
-    };
+      diagnosticBase,
+      true,
+      'quarantined',
+      'INVALID_POLICY',
+      'ARC-1 data and SQL policy values must be true or false.',
+    );
   }
   if (!source.name) {
-    return {
+    return excludedCandidate(
       source,
-      enabled: true,
-      diagnostic: {
-        ...diagnosticBase,
-        status: 'quarantined',
-        code: 'MISSING_NAME',
-        message: 'Destination name is required.',
-      },
-    };
+      diagnosticBase,
+      true,
+      'quarantined',
+      'MISSING_NAME',
+      'Destination name is required.',
+    );
   }
   if (!/^[A-Za-z0-9_.-]{1,200}$/.test(source.name)) {
-    return {
+    return excludedCandidate(
       source,
-      enabled: true,
-      diagnostic: {
-        ...diagnosticBase,
-        status: 'quarantined',
-        code: 'INVALID_NAME',
-        message: 'Destination name contains unsupported characters or is too long.',
-      },
-    };
+      diagnosticBase,
+      true,
+      'quarantined',
+      'INVALID_NAME',
+      'Destination name contains unsupported characters or is too long.',
+    );
   }
   if (source.type !== 'HTTP') {
-    return {
+    return excludedCandidate(
       source,
-      enabled: true,
-      diagnostic: {
-        ...diagnosticBase,
-        status: 'quarantined',
-        code: 'UNSUPPORTED_TYPE',
-        message: 'Destination Type must be HTTP.',
-      },
-    };
+      diagnosticBase,
+      true,
+      'quarantined',
+      'UNSUPPORTED_TYPE',
+      'Destination Type must be HTTP.',
+    );
   }
   if (source.urlState === 'missing') {
-    return {
+    return excludedCandidate(
       source,
-      enabled: true,
-      diagnostic: {
-        ...diagnosticBase,
-        status: 'quarantined',
-        code: 'MISSING_URL',
-        message: 'Destination URL is required.',
-      },
-    };
+      diagnosticBase,
+      true,
+      'quarantined',
+      'MISSING_URL',
+      'Destination URL is required.',
+    );
   }
   if (source.urlState !== 'valid' || !source.urlFingerprint) {
-    return {
+    return excludedCandidate(
       source,
-      enabled: true,
-      diagnostic: {
-        ...diagnosticBase,
-        status: 'quarantined',
-        code: 'INVALID_URL',
-        message: 'Destination URL must be a valid HTTP or HTTPS URL.',
-      },
-    };
+      diagnosticBase,
+      true,
+      'quarantined',
+      'INVALID_URL',
+      'Destination URL must be a valid HTTP or HTTPS URL.',
+    );
   }
   if (source.authentication !== 'PrincipalPropagation') {
-    return {
+    return excludedCandidate(
       source,
-      enabled: true,
-      diagnostic: {
-        ...diagnosticBase,
-        status: 'quarantined',
-        code: 'UNSUPPORTED_AUTH',
-        message: 'Destination Authentication must be PrincipalPropagation.',
-      },
-    };
+      diagnosticBase,
+      true,
+      'quarantined',
+      'UNSUPPORTED_AUTH',
+      'Destination Authentication must be PrincipalPropagation.',
+    );
   }
   if (source.proxyType !== 'OnPremise') {
-    return {
+    return excludedCandidate(
       source,
-      enabled: true,
-      diagnostic: {
-        ...diagnosticBase,
-        status: 'quarantined',
-        code: 'UNSUPPORTED_PROXY',
-        message: 'Destination ProxyType must be OnPremise.',
-      },
-    };
+      diagnosticBase,
+      true,
+      'quarantined',
+      'UNSUPPORTED_PROXY',
+      'Destination ProxyType must be OnPremise.',
+    );
   }
   if (!source.sapSysId) {
-    return {
+    return excludedCandidate(
       source,
-      enabled: true,
-      diagnostic: {
-        ...diagnosticBase,
-        status: 'quarantined',
-        code: 'MISSING_SYSID',
-        message: 'Destination property sap-sysid is required.',
-      },
-    };
+      diagnosticBase,
+      true,
+      'quarantined',
+      'MISSING_SYSID',
+      'Destination property sap-sysid is required.',
+    );
   }
   if (!SAP_SYSID_PATTERN.test(source.sapSysId)) {
-    return {
+    return excludedCandidate(
       source,
-      enabled: true,
-      diagnostic: {
-        ...diagnosticBase,
-        status: 'quarantined',
-        code: 'INVALID_SYSID',
-        message: 'sap-sysid must match three uppercase alphanumeric characters and start with a letter.',
-      },
-    };
+      diagnosticBase,
+      true,
+      'quarantined',
+      'INVALID_SYSID',
+      'sap-sysid must match three uppercase alphanumeric characters and start with a letter.',
+    );
   }
   if (!source.sapClient) {
-    return {
+    return excludedCandidate(
       source,
-      enabled: true,
-      diagnostic: {
-        ...diagnosticBase,
-        status: 'quarantined',
-        code: 'MISSING_CLIENT',
-        message: 'Destination property sap-client is required.',
-      },
-    };
+      diagnosticBase,
+      true,
+      'quarantined',
+      'MISSING_CLIENT',
+      'Destination property sap-client is required.',
+    );
   }
   if (!/^\d{3}$/.test(source.sapClient)) {
-    return {
+    return excludedCandidate(
       source,
-      enabled: true,
-      diagnostic: {
-        ...diagnosticBase,
-        status: 'quarantined',
-        code: 'INVALID_CLIENT',
-        message: 'sap-client must contain exactly three digits.',
-      },
-    };
+      diagnosticBase,
+      true,
+      'quarantined',
+      'INVALID_CLIENT',
+      'sap-client must contain exactly three digits.',
+    );
   }
   const language = source.sapLanguage?.trim().toUpperCase() || base.language;
   if (!/^[A-Z]{2}$/.test(language)) {
-    return {
+    return excludedCandidate(
       source,
-      enabled: true,
-      diagnostic: {
-        ...diagnosticBase,
-        status: 'quarantined',
-        code: 'INVALID_LANGUAGE',
-        message: 'sap-language must contain exactly two letters.',
-      },
-    };
+      diagnosticBase,
+      true,
+      'quarantined',
+      'INVALID_LANGUAGE',
+      'sap-language must contain exactly two letters.',
+    );
   }
 
   const targetId = `${source.sapSysId}/${source.sapClient}`;
@@ -484,6 +459,18 @@ function evaluate(source: DiscoveredDestination, base: ServerConfig): CandidateE
       warnings: Object.freeze(descriptionFallback ? ['MISSING_DESCRIPTION'] : []),
     },
   };
+}
+
+/**
+ * Validate one destination candidate for a runtime drift check.
+ *
+ * Registry-wide duplicate, shadow, and 256-target checks remain startup-only.
+ */
+export function evaluateStandaloneTargetDescriptor(
+  source: DiscoveredDestination,
+  base: ServerConfig,
+): TargetDescriptor | undefined {
+  return evaluate(source, base).target;
 }
 
 function registryRevision(diagnostics: readonly TargetDiagnostic[], targets: readonly TargetDescriptor[] = []): string {
@@ -670,15 +657,35 @@ export class DestinationRegistry {
   }
 }
 
-export function targetSafety(target: TargetDescriptor): SafetyConfig {
+/** Find deliberate-or-accidental overlap between bare /mcp and discovered routes. */
+export function duplicateSingleTargetIds(
+  registry: DestinationRegistry,
+  destinationNames: readonly (string | undefined)[],
+  connectionFingerprint?: string,
+): string[] {
+  const configuredNames = new Set(destinationNames.filter((name): name is string => !!name));
+  return registry.targets
+    .filter(
+      (target) =>
+        configuredNames.has(target.destinationName) ||
+        (!!connectionFingerprint && target.connectionFingerprint === connectionFingerprint),
+    )
+    .map((target) => target.target);
+}
+
+export function multiTargetSafety(policy: TargetPolicy): SafetyConfig {
   return {
     allowWrites: false,
-    allowDataPreview: target.effectivePolicy.allowDataPreview,
-    allowFreeSQL: target.effectivePolicy.allowFreeSQL,
+    allowDataPreview: policy.allowDataPreview,
+    allowFreeSQL: policy.allowFreeSQL,
     allowTransportWrites: false,
     allowGitWrites: false,
     allowedPackages: ['$TMP'],
     allowedTransports: [],
-    denyActions: ['SAPDiagnose.atc', 'SAPDiagnose.unittest'],
+    denyActions: [...MULTI_TARGET_DENY_ACTIONS],
   };
+}
+
+export function targetSafety(target: TargetDescriptor): SafetyConfig {
+  return multiTargetSafety(target.effectivePolicy);
 }

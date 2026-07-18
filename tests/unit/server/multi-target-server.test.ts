@@ -3,11 +3,12 @@ import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { describe, expect, it, vi } from 'vitest';
 import { canonicalDestinationUrl, opaqueDestinationValue } from '../../../src/server/destination-discovery.js';
-import { DestinationRegistry } from '../../../src/server/destination-registry.js';
+import { DestinationRegistry, duplicateSingleTargetIds } from '../../../src/server/destination-registry.js';
 import { logger } from '../../../src/server/logger.js';
 import { buildTargetCatalog, TARGET_CATALOG_DIAGNOSTIC_LIMIT } from '../../../src/server/multi-target-catalog.js';
 import { hasAuthorizationLimitedFeatureEvidence } from '../../../src/server/multi-target-feature-state.js';
-import { buildAggregateConfig, buildMultiTargetConfig } from '../../../src/server/multi-target-runtime.js';
+import { buildAggregateToolSurfaceConfig, buildMultiTargetConfig } from '../../../src/server/multi-target-runtime.js';
+import { parseSapTargetsArguments } from '../../../src/server/multi-target-server.js';
 import { createServer } from '../../../src/server/server.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 
@@ -91,6 +92,24 @@ function parseError(result: Record<string, any>) {
 }
 
 describe('multi-target MCP servers', () => {
+  it('parses the catalog arguments through one strict runtime contract', () => {
+    expect(parseSapTargetsArguments({ query: 'A4H', offset: 50 }, true)).toEqual({
+      ok: true,
+      value: { query: 'A4H', offset: 50 },
+    });
+    expect(parseSapTargetsArguments({ offset: 0 }, false)).toMatchObject({ ok: false });
+    expect(parseSapTargetsArguments({ extra: true }, true)).toMatchObject({ ok: false });
+    expect(parseSapTargetsArguments({ query: null, offset: null }, false)).toEqual({ ok: true, value: {} });
+    expect(parseSapTargetsArguments({ query: '   ', offset: null }, false)).toEqual({ ok: true, value: {} });
+  });
+
+  it('detects side-by-side single-target exposure by destination name or connection fingerprint', () => {
+    const current = registry(2);
+    expect(duplicateSingleTargetIds(current, ['DEST_0'])).toEqual(['A00/000']);
+    expect(duplicateSingleTargetIds(current, [], current.targets[1].connectionFingerprint)).toEqual(['A01/001']);
+    expect(duplicateSingleTargetIds(current, ['NOT_CONFIGURED'])).toEqual([]);
+  });
+
   it('keeps the unfiltered 256-target admin catalog compact', () => {
     const payload = buildTargetCatalog(registry(256), { admin: true });
     expect(payload).toMatchObject({
@@ -161,18 +180,9 @@ describe('multi-target MCP servers', () => {
 
   it('keeps a zero-target aggregate endpoint alive with no SAP tools', async () => {
     const current = registry(0);
-    const server = createServer(
-      buildAggregateConfig(DEFAULT_CONFIG, current.targets),
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      { mode: 'aggregate', registry: current, instanceConfig: DEFAULT_CONFIG },
-    );
+    const server = createServer(buildAggregateToolSurfaceConfig(DEFAULT_CONFIG, current.targets), {
+      multiTarget: { mode: 'aggregate', registry: current, instanceConfig: DEFAULT_CONFIG },
+    });
     const list = await requestHandler(server, ListToolsRequestSchema.shape.method.value)(
       { method: 'tools/list', params: {} },
       { authInfo: readAuth },
@@ -180,7 +190,7 @@ describe('multi-target MCP servers', () => {
     expect(list.tools).toEqual([]);
 
     const call = await requestHandler(server, CallToolRequestSchema.shape.method.value)(
-      { method: 'tools/call', params: { name: 'SAPRead', arguments: { type: 'SYSTEM', target: 'A00/000' } } },
+      { method: 'tools/call', params: { name: 'SAPRead', arguments: { type: 'system', target: 'A00/000' } } },
       { authInfo: readAuth },
     );
     expect(parseError(call)).toMatchObject({ error: 'NO_TARGETS_CONFIGURED', retryable: false });
@@ -202,18 +212,9 @@ describe('multi-target MCP servers', () => {
 
   it('uses an exact aggregate enum and reserves SAPTargets at one target for admins', async () => {
     const current = registry(1);
-    const server = createServer(
-      buildAggregateConfig(DEFAULT_CONFIG, current.targets),
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      { mode: 'aggregate', registry: current, instanceConfig: DEFAULT_CONFIG },
-    );
+    const server = createServer(buildAggregateToolSurfaceConfig(DEFAULT_CONFIG, current.targets), {
+      multiTarget: { mode: 'aggregate', registry: current, instanceConfig: DEFAULT_CONFIG },
+    });
     const result = await requestHandler(server, ListToolsRequestSchema.shape.method.value)(
       { method: 'tools/list', params: {} },
       { authInfo: readAuth },
@@ -239,18 +240,9 @@ describe('multi-target MCP servers', () => {
   it('keeps pinned schemas target-free', async () => {
     const current = registry(1);
     const target = current.targets[0];
-    const server = createServer(
-      buildMultiTargetConfig(DEFAULT_CONFIG, target),
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      { mode: 'pinned', registry: current, instanceConfig: DEFAULT_CONFIG, target },
-    );
+    const server = createServer(buildMultiTargetConfig(DEFAULT_CONFIG, target), {
+      multiTarget: { mode: 'pinned', registry: current, instanceConfig: DEFAULT_CONFIG, target },
+    });
     const result = await requestHandler(server, ListToolsRequestSchema.shape.method.value)(
       { method: 'tools/list', params: {} },
       { authInfo: readAuth },
@@ -267,19 +259,16 @@ describe('multi-target MCP servers', () => {
     const auditSpy = vi.spyOn(logger, 'emitAudit');
     const current = registry(2, { data: true, sql: true }, { includeInvalid: true });
     const server = createServer(
-      buildAggregateConfig({ ...DEFAULT_CONFIG, allowDataPreview: true, allowFreeSQL: true }, current.targets),
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
+      buildAggregateToolSurfaceConfig(
+        { ...DEFAULT_CONFIG, allowDataPreview: true, allowFreeSQL: true },
+        current.targets,
+      ),
       {
-        mode: 'aggregate',
-        registry: current,
-        instanceConfig: { ...DEFAULT_CONFIG, allowDataPreview: true, allowFreeSQL: true },
+        multiTarget: {
+          mode: 'aggregate',
+          registry: current,
+          instanceConfig: { ...DEFAULT_CONFIG, allowDataPreview: true, allowFreeSQL: true },
+        },
       },
     );
     const list = await requestHandler(server, ListToolsRequestSchema.shape.method.value)(
@@ -337,18 +326,9 @@ describe('multi-target MCP servers', () => {
   it('shows SAPQuery only when target consent, the instance ceiling, and user SQL scope all agree', async () => {
     const current = registry(2, { data: true, sql: true });
     const instanceConfig = { ...DEFAULT_CONFIG, allowDataPreview: true, allowFreeSQL: true };
-    const server = createServer(
-      buildAggregateConfig(instanceConfig, current.targets),
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      { mode: 'aggregate', registry: current, instanceConfig },
-    );
+    const server = createServer(buildAggregateToolSurfaceConfig(instanceConfig, current.targets), {
+      multiTarget: { mode: 'aggregate', registry: current, instanceConfig },
+    });
     const listTools = requestHandler(server, ListToolsRequestSchema.shape.method.value);
     const names = async (scopes: string[]) => {
       const result = await listTools({ method: 'tools/list', params: {} }, { authInfo: { ...readAuth, scopes } });
@@ -360,18 +340,9 @@ describe('multi-target MCP servers', () => {
     expect(await names(['admin'])).toContain('SAPQuery');
 
     const noTargetConsent = registry(2, { data: true, sql: false });
-    const ceilingOnly = createServer(
-      buildAggregateConfig(instanceConfig, noTargetConsent.targets),
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      { mode: 'aggregate', registry: noTargetConsent, instanceConfig },
-    );
+    const ceilingOnly = createServer(buildAggregateToolSurfaceConfig(instanceConfig, noTargetConsent.targets), {
+      multiTarget: { mode: 'aggregate', registry: noTargetConsent, instanceConfig },
+    });
     const withoutConsent = await requestHandler(ceilingOnly, ListToolsRequestSchema.shape.method.value)(
       { method: 'tools/list', params: {} },
       { authInfo: { ...readAuth, scopes: ['read', 'sql'] } },
@@ -381,18 +352,9 @@ describe('multi-target MCP servers', () => {
 
   it('keeps admin catalog diagnostics reachable when destination discovery fails', async () => {
     const current = DestinationRegistry.unavailable({ code: 'REGISTRY_DISCOVERY_ERROR', message: 'safe failure' });
-    const server = createServer(
-      buildAggregateConfig(DEFAULT_CONFIG, current.targets),
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      { mode: 'aggregate', registry: current, instanceConfig: DEFAULT_CONFIG },
-    );
+    const server = createServer(buildAggregateToolSurfaceConfig(DEFAULT_CONFIG, current.targets), {
+      multiTarget: { mode: 'aggregate', registry: current, instanceConfig: DEFAULT_CONFIG },
+    });
     const listTools = requestHandler(server, ListToolsRequestSchema.shape.method.value);
     expect((await listTools({ method: 'tools/list', params: {} }, { authInfo: readAuth })).tools).toEqual([]);
     expect(
@@ -416,18 +378,9 @@ describe('multi-target MCP servers', () => {
 
   it('validates SAPTargets arguments and fails closed without read scope', async () => {
     const current = registry(2);
-    const server = createServer(
-      buildAggregateConfig(DEFAULT_CONFIG, current.targets),
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      { mode: 'aggregate', registry: current, instanceConfig: DEFAULT_CONFIG },
-    );
+    const server = createServer(buildAggregateToolSurfaceConfig(DEFAULT_CONFIG, current.targets), {
+      multiTarget: { mode: 'aggregate', registry: current, instanceConfig: DEFAULT_CONFIG },
+    });
     const callTool = requestHandler(server, CallToolRequestSchema.shape.method.value);
     const missingAuth = await callTool({ method: 'tools/call', params: { name: 'SAPTargets', arguments: {} } }, {});
     expect(parseError(missingAuth)).toMatchObject({ error: 'INSUFFICIENT_SCOPE' });
@@ -435,7 +388,6 @@ describe('multi-target MCP servers', () => {
     for (const arguments_ of [
       { query: 42 },
       { query: 'x'.repeat(161) },
-      { query: ' '.repeat(161) },
       { offset: -1 },
       { offset: 1.5 },
       { offset: 1_000_001 },
@@ -460,18 +412,9 @@ describe('multi-target MCP servers', () => {
   it('hides and blocks SAPTargets when denied by the instance policy', async () => {
     const current = registry(2);
     const instanceConfig = { ...DEFAULT_CONFIG, denyActions: ['SAPTargets'] };
-    const server = createServer(
-      buildAggregateConfig(instanceConfig, current.targets),
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      { mode: 'aggregate', registry: current, instanceConfig },
-    );
+    const server = createServer(buildAggregateToolSurfaceConfig(instanceConfig, current.targets), {
+      multiTarget: { mode: 'aggregate', registry: current, instanceConfig },
+    });
     const listed = await requestHandler(server, ListToolsRequestSchema.shape.method.value)(
       { method: 'tools/list', params: {} },
       { authInfo: readAuth },
@@ -489,18 +432,10 @@ describe('multi-target MCP servers', () => {
     const limiter = {
       consume: vi.fn().mockResolvedValue({ allowed: false, retryAfterMs: 2_500, limitPerMinute: 120 }),
     };
-    const server = createServer(
-      buildAggregateConfig(DEFAULT_CONFIG, current.targets),
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      limiter,
-      { mode: 'aggregate', registry: current, instanceConfig: DEFAULT_CONFIG },
-    );
+    const server = createServer(buildAggregateToolSurfaceConfig(DEFAULT_CONFIG, current.targets), {
+      mcpRateLimiter: limiter,
+      multiTarget: { mode: 'aggregate', registry: current, instanceConfig: DEFAULT_CONFIG },
+    });
     const result = await requestHandler(server, CallToolRequestSchema.shape.method.value)(
       { method: 'tools/call', params: { name: 'SAPTargets', arguments: {} } },
       { authInfo: readAuth },
@@ -513,18 +448,9 @@ describe('multi-target MCP servers', () => {
   it('rejects hidden mutation tools and target policy before constructing PP', async () => {
     const auditSpy = vi.spyOn(logger, 'emitAudit');
     const current = registry(1);
-    const server = createServer(
-      buildAggregateConfig(DEFAULT_CONFIG, current.targets),
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      { mode: 'aggregate', registry: current, instanceConfig: DEFAULT_CONFIG },
-    );
+    const server = createServer(buildAggregateToolSurfaceConfig(DEFAULT_CONFIG, current.targets), {
+      multiTarget: { mode: 'aggregate', registry: current, instanceConfig: DEFAULT_CONFIG },
+    });
     const handler = requestHandler(server, CallToolRequestSchema.shape.method.value);
     const write = await handler(
       {
@@ -554,21 +480,12 @@ describe('multi-target MCP servers', () => {
   it('audits SAP_DENY_ACTIONS for an otherwise allowed target operation', async () => {
     const current = registry(1);
     const instanceConfig = { ...DEFAULT_CONFIG, denyActions: ['SAPRead.SYSTEM'] };
-    const server = createServer(
-      buildAggregateConfig(instanceConfig, current.targets),
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      { mode: 'aggregate', registry: current, instanceConfig },
-    );
+    const server = createServer(buildAggregateToolSurfaceConfig(instanceConfig, current.targets), {
+      multiTarget: { mode: 'aggregate', registry: current, instanceConfig },
+    });
     const auditSpy = vi.spyOn(logger, 'emitAudit');
     const result = await requestHandler(server, CallToolRequestSchema.shape.method.value)(
-      { method: 'tools/call', params: { name: 'SAPRead', arguments: { type: 'SYSTEM', target: 'A00/000' } } },
+      { method: 'tools/call', params: { name: 'SAPRead', arguments: { type: 'system', target: 'A00/000' } } },
       { authInfo: readAuth },
     );
     const payload = parseError(result);
@@ -588,18 +505,9 @@ describe('multi-target MCP servers', () => {
   it('checks functional XSUAA scope before target policy or PP', async () => {
     const current = registry(1, { data: true, sql: true });
     const instanceConfig = { ...DEFAULT_CONFIG, allowDataPreview: true, allowFreeSQL: true };
-    const server = createServer(
-      buildAggregateConfig(instanceConfig, current.targets),
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      { mode: 'aggregate', registry: current, instanceConfig },
-    );
+    const server = createServer(buildAggregateToolSurfaceConfig(instanceConfig, current.targets), {
+      multiTarget: { mode: 'aggregate', registry: current, instanceConfig },
+    });
     const result = await requestHandler(server, CallToolRequestSchema.shape.method.value)(
       { method: 'tools/call', params: { name: 'SAPQuery', arguments: { sql: 'SELECT *', target: 'A00/000' } } },
       { authInfo: readAuth },
@@ -612,18 +520,10 @@ describe('multi-target MCP servers', () => {
     const deniedLimiter = {
       consume: async () => ({ allowed: false as const, retryAfterMs: 12_000, limitPerMinute: 60 }),
     };
-    const deniedServer = createServer(
-      buildAggregateConfig(DEFAULT_CONFIG, current.targets),
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      deniedLimiter,
-      { mode: 'aggregate', registry: current, instanceConfig: DEFAULT_CONFIG },
-    );
+    const deniedServer = createServer(buildAggregateToolSurfaceConfig(DEFAULT_CONFIG, current.targets), {
+      mcpRateLimiter: deniedLimiter,
+      multiTarget: { mode: 'aggregate', registry: current, instanceConfig: DEFAULT_CONFIG },
+    });
     const denied = await requestHandler(deniedServer, CallToolRequestSchema.shape.method.value)(
       { method: 'tools/call', params: { name: 'SAPRead', arguments: { type: 'SYSTEM', target: 'A00/000' } } },
       { authInfo: readAuth },
@@ -643,18 +543,10 @@ describe('multi-target MCP servers', () => {
         return { allowed: true as const };
       },
     };
-    const allowedServer = createServer(
-      buildAggregateConfig(DEFAULT_CONFIG, current.targets),
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      allowedLimiter,
-      { mode: 'aggregate', registry: current, instanceConfig: DEFAULT_CONFIG },
-    );
+    const allowedServer = createServer(buildAggregateToolSurfaceConfig(DEFAULT_CONFIG, current.targets), {
+      mcpRateLimiter: allowedLimiter,
+      multiTarget: { mode: 'aggregate', registry: current, instanceConfig: DEFAULT_CONFIG },
+    });
     const allowed = await requestHandler(allowedServer, CallToolRequestSchema.shape.method.value)(
       { method: 'tools/call', params: { name: 'SAPRead', arguments: { type: 'SYSTEM', target: 'A00/000' } } },
       { authInfo: readAuth },

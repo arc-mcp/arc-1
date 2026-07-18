@@ -255,6 +255,27 @@ export function getActionPolicy(tool: string, action?: string): ActionPolicy | u
   return ACTION_POLICY[tool];
 }
 
+/**
+ * Derive the policy key from the arguments that a handler will dispatch.
+ *
+ * Callers should normalize untrusted MCP arguments first. Keeping the SAPSearch
+ * SQL special case here prevents listing, multi-target preflight, and normal
+ * dispatch from applying different policy rules to the same invocation.
+ */
+export function invocationPolicyKey(tool: string, args: Record<string, unknown>): string | undefined {
+  if (
+    tool === 'SAPSearch' &&
+    args.searchType === 'tadir_lookup' &&
+    typeof args.source === 'string' &&
+    ['db', 'both'].includes(args.source.toLowerCase())
+  ) {
+    return `tadir_lookup_${args.source.toLowerCase()}`;
+  }
+  const value = tool === 'SAPRead' ? args.type : args.action;
+  if (value === undefined || value === null || value === '') return undefined;
+  return tool === 'SAPRead' ? String(value).toUpperCase() : String(value);
+}
+
 /** Return all keys in the policy matrix (used by validator + consistency tests). */
 export function allPolicyKeys(): string[] {
   return Object.keys(ACTION_POLICY);

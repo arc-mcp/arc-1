@@ -1,10 +1,11 @@
 /** Stable read-only tool surface and target schema helpers for multi-target v1. */
 
 import { isOperationAllowed, OperationType, type OperationTypeCode } from '../adt/safety.js';
-import { getActionPolicy } from '../authz/policy.js';
+import { getActionPolicy, invocationPolicyKey } from '../authz/policy.js';
 import type { ToolDefinition } from '../handlers/tools.js';
 import type { TargetDescriptor } from './destination-registry.js';
-import { TARGET_ID_PATTERN } from './destination-registry.js';
+import { MULTI_TARGET_DENY_ACTIONS, TARGET_ID_PATTERN } from './destination-registry.js';
+import { TARGET_CATALOG_MAX_OFFSET, TARGET_CATALOG_MAX_QUERY_LENGTH } from './multi-target-catalog.js';
 import type { ServerConfig } from './types.js';
 
 export const MULTI_TARGET_TOOLS = new Set([
@@ -16,7 +17,7 @@ export const MULTI_TARGET_TOOLS = new Set([
   'SAPContext',
 ]);
 
-const FORBIDDEN_ACTIONS = new Set(['SAPDiagnose.atc', 'SAPDiagnose.unittest']);
+const FORBIDDEN_ACTIONS = new Set(MULTI_TARGET_DENY_ACTIONS);
 const ALLOWED_OPS = new Set<OperationTypeCode>([
   OperationType.Read,
   OperationType.Search,
@@ -24,18 +25,6 @@ const ALLOWED_OPS = new Set<OperationTypeCode>([
   OperationType.FreeSQL,
   OperationType.Intelligence,
 ]);
-
-export function invocationPolicyKey(toolName: string, args: Record<string, unknown>): string | undefined {
-  if (toolName === 'SAPRead') return String(args.type ?? '').toUpperCase() || undefined;
-  if (
-    toolName === 'SAPSearch' &&
-    String(args.searchType ?? '') === 'tadir_lookup' &&
-    ['db', 'both'].includes(String(args.source ?? '').toLowerCase())
-  ) {
-    return `tadir_lookup_${String(args.source).toLowerCase()}`;
-  }
-  return String(args.action ?? '') || undefined;
-}
 
 export function isMultiTargetInvocationAllowed(
   toolName: string,
@@ -127,14 +116,14 @@ export function sapTargetsDefinition(): ToolDefinition {
       properties: {
         query: {
           type: 'string',
-          maxLength: 160,
+          maxLength: TARGET_CATALOG_MAX_QUERY_LENGTH,
           description:
             'Optional case-insensitive filter over target IDs and descriptions; admin results also match destination name, status, code, and message.',
         },
         offset: {
           type: 'integer',
           minimum: 0,
-          maximum: 1_000_000,
+          maximum: TARGET_CATALOG_MAX_OFFSET,
           description:
             'Admin-only offset into the deterministically sorted diagnostic matches. Use diagnosticNextOffset to retrieve the next bounded page.',
         },

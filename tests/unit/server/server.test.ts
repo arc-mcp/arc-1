@@ -281,14 +281,8 @@ describe('createServer request handlers', () => {
   });
 
   it('blocks tool calls before SAP access when startup auth preflight failed', async () => {
-    const server = createServer(
-      DEFAULT_CONFIG,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      Promise.resolve({
+    const server = createServer(DEFAULT_CONFIG, {
+      startupAuthPreflightPromise: Promise.resolve({
         status: 'failed',
         blocking: true,
         endpoint: '/sap/bc/adt/core/discovery',
@@ -296,7 +290,7 @@ describe('createServer request handlers', () => {
         statusCode: 403,
         reason: 'Access forbidden (403) during startup auth preflight.',
       }),
-    );
+    });
     const handler = requestHandler(server, CallToolRequestSchema.shape.method.value);
 
     const result = await handler({ method: 'tools/call', params: { name: 'SAPRead', arguments: {} } }, {});
@@ -427,8 +421,7 @@ describe('createServer request handlers', () => {
           ppStrict: false,
           ppStrictExplicit: true,
         },
-        undefined,
-        {} as BTPConfig,
+        { btpConfig: {} as BTPConfig },
       );
       const handler = requestHandler(server, CallToolRequestSchema.shape.method.value);
 
@@ -491,7 +484,7 @@ describe('createServer request handlers', () => {
       statusCode: 401,
       reason: 'stale cookie file',
     });
-    const server = createServer(DEFAULT_CONFIG, undefined, undefined, undefined, undefined, undefined, startupAuth);
+    const server = createServer(DEFAULT_CONFIG, { startupAuthPreflightPromise: startupAuth });
     const handler = requestHandler(server, CallToolRequestSchema.shape.method.value);
 
     await handler({ method: 'tools/call', params: { name: 'UnknownTool', arguments: {} } }, {});

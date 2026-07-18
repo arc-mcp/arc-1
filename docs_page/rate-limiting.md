@@ -144,7 +144,7 @@ Copy-paste these into `.env` or your deployment env block.
 Defaults are fine. No action required. Layer 2 stays off — one user can't have a noisy neighbor problem with themselves, and Layer 3 already caps SAP load.
 ```bash
 # (no rate-limit env vars set — defaults apply)
-# ARC1_AUTH_RATE_LIMIT=20       Layer 1 ON (OAuth + /mcp per-IP)
+# ARC1_AUTH_RATE_LIMIT=20       Layer 1 OAuth ON (per-IP)
 # ARC1_MCP_HTTP_RATE_LIMIT=     MCP cap derived from OAuth setting
 # ARC1_RATE_LIMIT=0             Layer 2 OFF (per-user fairness — opt in below)
 # ARC1_MAX_CONCURRENT=10        Layer 3 ON (server-wide SAP semaphore)
@@ -168,6 +168,49 @@ ARC1_RATE_LIMIT=120        # 2/sec/user sustained
 # ARC1_AUTH_RATE_LIMIT=20  # default still fits
 ```
 
+<a id="multi-target-shared-beta-btp-cf"></a>
+
+### Multi-target shared beta (BTP CF)
+
+Multi-target routes share one SAP semaphore per ARC-1 process. Size concurrency against the most
+constrained SAP target that the process can reach—not against target count or expected users. For
+every SAP target, the safe fleet constraint is:
+
+```text
+sum(ARC1_MAX_CONCURRENT for every ARC-1 process that can reach the target)
+  <= floor(0.6 × target rdisp/wp_no_dia)
+```
+
+If every relevant process has the same cap, this becomes:
+
+```text
+ARC1_MAX_CONCURRENT
+  <= minimum across targets of
+     floor(0.6 × target rdisp/wp_no_dia / ARC-1 processes that can reach that target)
+```
+
+Count all processes from all ARC-1 deployments that can hit the backend, not only CF instances of
+the deployment being configured. Clients of multiple SAP clients on one SID may share the same
+dialog work-process pool; confirm that topology and the final budget with Basis. Start at the default
+`10` or lower and raise it only when the calculation, load tests, and SAP telemetry support the
+change. Split targets into separate deployments when substantially different backend capacities need
+different caps.
+
+These shared-beta rate values are starting points for corporate egress bursts and per-user fairness;
+they do not increase the SAP concurrency budget:
+
+| Expected active users | `ARC1_AUTH_RATE_LIMIT` | `ARC1_MCP_HTTP_RATE_LIMIT` | `ARC1_RATE_LIMIT` |
+|---:|---:|---:|---:|
+| 1–5 | 30 | 1,000 | 120 |
+| 6–20 | 60 | 3,000 | 120 |
+| 21–50 | 120 | 7,500 | 180 |
+| 51–100 | 240 | 20,000 | 180 |
+
+The OAuth value absorbs login and reconnect bursts from shared corporate egress. Each pinned URL may
+create another OAuth/DCR flow, so prefer aggregate mode when one user needs many targets. The MCP
+HTTP value is a coarse abuse ceiling; `ARC1_RATE_LIMIT` provides per-user fairness; concurrency is the
+backend protection. Tune all three from audit and latency evidence.
+
 ## 5. Audit events
 
 | Event | Layer | Meaning | What to do |
@@ -182,7 +225,11 @@ ARC1_RATE_LIMIT=120        # 2/sec/user sustained
 ## 6. Troubleshooting decision tree
 
 > *"My MCP client returns HTTP 429."*
-**Layer 1.** Check `auth_rate_limited` audit events. If the IP is yours, raise `ARC1_AUTH_RATE_LIMIT` or set to `0` if an upstream proxy handles it. If the IP is unknown, that's probably abuse — leave the limiter alone.
+**Layer 1.** Check the `endpoint` in the `auth_rate_limited` audit event. For OAuth endpoints such as
+`/register`, `/authorize`, or `/token`, tune `ARC1_AUTH_RATE_LIMIT`. For `/mcp`, a pinned route, or
+`/multi/mcp`, tune `ARC1_MCP_HTTP_RATE_LIMIT`. Set the relevant value to `0` only when an upstream
+proxy protects that same surface. If the IP is unknown, that is probably abuse—leave the limiter
+alone.
 
 > *"My MCP client returns a tool error with `\"error\":\"rate_limited\"`."*
 **Layer 2.** Check `mcp_rate_limited` audit events for the affected user. If they're doing legitimate batch work, raise `ARC1_RATE_LIMIT`. Don't increase it just because *any* `mcp_rate_limited` event fires — that's the limit doing its job during a retry storm.
@@ -203,7 +250,8 @@ No `Retry-After` header — gateway returned a bare 429. Same action as `source:
 
 | Layer | How to disable |
 |-------|----------------|
-| 1 | `ARC1_AUTH_RATE_LIMIT=0`. Use only when an upstream reverse proxy already rate-limits the OAuth surface. |
+| 1 OAuth | `ARC1_AUTH_RATE_LIMIT=0`. Use only when an upstream reverse proxy already rate-limits every OAuth endpoint. |
+| 1 MCP | `ARC1_MCP_HTTP_RATE_LIMIT=0`. Use only when an upstream reverse proxy already rate-limits every MCP route. Disabling OAuth limiting does not disable this bucket. |
 | 2 | `ARC1_RATE_LIMIT=0`. Use for single-user deployments or when the upstream client self-throttles. |
 | 3 | No on/off switch. Lower the cap to throttle harder; raise it to allow more. The cap exists to protect SAP from ARC-1, not the other way around — never set it disproportionately high. |
 

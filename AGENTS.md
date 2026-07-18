@@ -20,10 +20,10 @@ Distributed as npm package (`arc-1`) and Docker image (`ghcr.io/arc-mcp/arc-1`).
 4. **BTP-native deployment** — Destination Service, Cloud Connector, XSUAA OAuth, BTP Audit Log; also Docker/npm/stdio.
 5. **Multi-client, vendor-neutral** — XSUAA OAuth + Entra ID OIDC + API key coexist; one instance serves Claude, Copilot Studio, VS Code, Gemini CLI, Cursor.
 6. **Safe defaults, opt-in power** — read-only by default; free SQL blocked; package allowlist defaults to `$TMP`; everything forbidden until the admin allows it.
-7. **Single target by default; one reviewed read-only exception** — ADR-0005 remains the rule for
-   writable/general multi-system access. The proposed, default-off BTP mode in ADR-0006 may expose
-   explicit pinned/aggregate targets only under its mutation-free safety contract. Do not broaden it
-   to writes or another discovery/auth model without a new ADR/security review.
+7. **Single target by default; one experimental read-only BTP exception** — ADR-0005 remains the rule
+   for writable/general multi-system access. ADR-0006 permits only the default-off BTP CF mode with
+   explicit pinned/aggregate targets under its mutation-free safety contract. Do not broaden it to
+   writes or another discovery/auth model without a new ADR/security review.
 
 ## Build & Test
 
@@ -83,7 +83,6 @@ Full per-option details (defaults, clamps, layer interactions): [docs_page/confi
 | `ARC1_MULTI_TARGET_ENDPOINTS` | Experimental/default-off BTP CF mode: marked subaccount destinations → mutation-free `/<SID>/<CLIENT>/mcp` plus `/multi/mcp`; requires XSUAA, strict PP, cache none, standard tools, UI/plugins off. |
 | `SAP_PP_ENABLED` / `SAP_PP_STRICT` / `SAP_PP_ALLOW_SHARED_COOKIES` | Principal propagation + strict mode + cookie-coexistence escape hatch |
 | `SAP_DISABLE_SAML` | Disable SAML redirect — never on BTP ABAP / S/4 Public Cloud |
-| `ARC1_PROFILE` | Safety profile shortcut (viewer…developer-sql) |
 | `ARC1_MINIMAL_ERRORS` | Hide SAP diagnostic details from client-facing tool errors; keep request correlation for operators |
 | `ARC1_LOG_HTTP_DEBUG` | HTTP debug fields in audit; bodies are centrally redacted before sink writes |
 
@@ -99,8 +98,10 @@ src/
 │   ├── config.ts, types.ts     # Config parser + ServerConfig defaults
 │   ├── http.ts                 # HTTP auth + single-target, pinned, and aggregate routes
 │   ├── destination-discovery.ts, destination-registry.ts # Secret-safe snapshot + immutable targets
-│   ├── multi-target-runtime.ts, multi-target-tools.ts # Strict-PP configs + mutation-free schemas
-│   ├── multi-target-catalog.ts # Role-sensitive, secret-safe SAPTargets result
+│   ├── multi-target-destination-config.ts # Shared destination-property contract
+│   ├── multi-target-runtime.ts, multi-target-server.ts # Strict-PP runtime + request preparation
+│   ├── multi-target-tools.ts, multi-target-catalog.ts # Mutation-free schemas + SAPTargets result
+│   ├── multi-target-feature-state.ts # Per-target feature-probe flight coordination
 │   ├── logger.ts               # Structured logger (stderr only, never stdout)
 │   ├── audit.ts, sinks/        # Audit events + stderr/file/btp-auditlog sinks
 │   ├── context.ts, elicit.ts   # MCP context helpers, elicitation
@@ -115,7 +116,7 @@ src/
 │   ├── write-helpers.ts        # buildCreateXml, pre-write gates, server-driven write engine, package enforcement
 │   ├── cds-hints.ts            # CDS dependency/impact hints + reserved-keyword guard
 │   ├── tool-registry.ts        # SINGLE SOURCE of per-tool type tables ({type,btp} rows → derived ONPREM/BTP arrays)
-│   ├── feature-cache.ts        # cached ADT discovery + resolved features, keyed by destination (ALS fallback)
+│   ├── feature-cache.ts        # cached ADT discovery + features, keyed by target/destination (ALS fallback)
 │   ├── cache-security.ts       # per-user cache isolation under principal propagation
 │   ├── shared.ts               # ToolResult + textResult/errorResult
 │   ├── tools.ts                # Tool definitions (JSON Schema the LLM sees)
@@ -151,7 +152,7 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 
 | Task | Files (+ key gotcha) |
 |------|------|
-| Multi-target ADR-0006 work | `docs/plans/destination-discovered-multi-target-v1.md` is normative; `src/server/{destination-discovery,destination-registry,multi-target-runtime,multi-target-tools,multi-target-catalog,server,http}.ts`; keep default-off, strict-PP, cache-free, and mutation-free. `SAPTargets` is aggregate-only; do not add a separate HTTP catalog. |
+| Multi-target ADR-0006 work | Read `docs/adr/0006-experimental-read-only-multi-target.md`, then the normative `docs/plans/destination-discovered-multi-target-v1.md`, `docs_page/multi-target-setup.md`, and `docs_page/multi-target-administration.md`; code is `src/server/{destination-discovery,destination-registry,multi-target-*,server,http}.ts`, `src/authz/policy.ts`, and `src/handlers/{dispatch,feature-cache}.ts`; focused tests are `tests/unit/server/{destination-discovery,destination-registry,multi-target-*,http-destinations,http-multi-target-routes,mta-descriptor}.test.ts`, `tests/unit/authz/policy.test.ts`, and `tests/unit/handlers/multi-target-errors.test.ts`. Keep the ADR-0006 boundary intact; `SAPTargets` is aggregate-only and never a separate HTTP catalog. |
 | Add new read operation | `src/adt/client.ts`, `src/handlers/read.ts`, `src/handlers/tools.ts` (+ `src/adt/xml-parser.ts`, `src/adt/types.ts` for structured) |
 | Add ADT slash alias to `SLASH_TYPE_MAP` | `src/handlers/object-types.ts`, `tests/unit/handlers/slash-type-map.test.ts` — needs `docs/research/abap-types/types/<short>.md` evidence, verify live `<adtcore:type>` first (#218) |
 | SAPWrite TABL subtype routing (TABL/DT vs /DS, #285) | `src/handlers/object-types.ts`, `src/handlers/write-helpers.ts`, `src/handlers/write/create.ts`, `src/handlers/{schemas,tools}.ts` — reads collapse to bare `TABL` |
@@ -298,8 +299,8 @@ Every code change requires tests. Skip taxonomy: `docs/testing-skip-policy.md`.
 - Never commit `.env`, `cookies.txt`, `.arc1.json`; sensitive fields are redacted in logs.
 - **Safety config is the server ceiling** — per-user scopes only restrict.
 - **Multi-system boundary** — single target remains the default and all writable multi-system access
-  stays out of scope under ADR-0005. ADR-0006 is the only sanctioned in-process exception: proposed,
-  default-off, BTP/XSUAA/strict-PP, mutation-free pinned and aggregate endpoints. Follow its normative
+  stays out of scope under ADR-0005. ADR-0006 is the only sanctioned in-process exception:
+  experimental, default-off, BTP/XSUAA/strict-PP, mutation-free pinned and aggregate endpoints. Follow its normative
   plan exactly; do not add writes, target-specific roles, another auth/discovery model, or a hidden
   compatibility mode. Route requirements outside that boundary to the
   [MCP hub](https://github.com/arc-mcp/mcp-hub) or a new ADR/security review.

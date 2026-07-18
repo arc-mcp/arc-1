@@ -1120,11 +1120,17 @@ schema budget scenarios at 16, 17, and 256 targets; keep the existing 50,000-byt
 
 ### 12. BTP integration and E2E acceptance
 
-Create a separate beta CF app/route in the existing test subaccount. The local CF/BTP CLI login must
-be refreshed before the live run; never print service keys, `VCAP_SERVICES`, tokens, assertions, or
-destination credentials.
+Create the beta deployment in a dedicated CF space in the existing test subaccount. A different
+route alone is not isolation: the fixed MTA module and service names can otherwise update an
+existing deployment in the same space. The local CF/BTP CLI login must be refreshed before the live
+run; never print service keys, `VCAP_SERVICES`, tokens, assertions, or destination credentials.
 
-Automate or document these acceptance cases:
+#### Operator-driven tests that can be automated
+
+Once a real XSUAA user has completed the authorization-code flow, the test runner can keep the
+access token in memory and automate these cases through CF/BTP APIs and MCP JSON-RPC. A CF or BTP
+CLI token alone cannot replace this step: it is not the ARC-1 XSUAA user token and cannot prove
+Principal Propagation.
 
 1. With more than one active target, a mapped Viewer successfully calls `SAPTargets` and performs
    source/system reads on pinned and aggregate routes; an admin receives diagnostics at every target
@@ -1146,9 +1152,39 @@ Automate or document these acceptance cases:
     instance completes MCP requests pinned via `X-CF-APP-INSTANCE` to the other instance.
 11. Seed unique sentinel strings in a test destination password, token-like property, URL, and
     location ID, then assert those sentinels are absent from logs, audit sink, `/health`,
-    `SAPTargets`, MCP errors, serialized discovery, and retained registry object graphs. Also seed a
-    unique query sentinel and prove its raw value is absent from logs and audit events.
-12. VS Code/GitHub Copilot connects using both documented endpoint styles.
+    `SAPTargets`, MCP errors, and serialized discovery. Also seed a unique query sentinel and prove
+    its raw value is absent from logs and audit events. Verify absence from retained in-process
+    registry object graphs separately in an automated unit/integration test.
+12. Exercise zero, one, and many active targets; duplicate target/name, shadow, invalid destination,
+    and destination-disable cases; restore the reviewed destination state after every test.
+13. Prove valid-but-unknown, malformed, lowercase, bare `/mcp`, and `/targets` routes have the
+    documented authenticated and unauthenticated behavior.
+
+#### Human-assisted identity and client matrix
+
+These checks need either an interactive login or identities/clients the repository and CF/BTP CLIs
+cannot synthesize safely:
+
+1. Use separate users for Viewer, Data Viewer, Viewer + SQL, Admin, no ARC-1 role, no SAP mapping,
+   and SAP-mapped-without-ADT authorization. Do not test a lower role by adding it to an Admin user:
+   XSUAA scope union leaves that user an admin.
+2. In VS Code/GitHub Copilot, connect once to a pinned URL and once to `/multi/mcp`; verify tool
+   lists, `SAPTargets` visibility, target argument behavior, one read per target, reconnect, and
+   “try again now” after an access repair.
+3. Repeat the aggregate OAuth/tool/read flow in Cursor. A pinned Cursor connection is needed only if
+   its transport/OAuth behavior differs from the aggregate result.
+4. Repeat the aggregate flow in Microsoft Copilot Studio, including popup consent, reconnect, and a
+   tool call. Its hosted callback and popup behavior cannot be proven by CLI JSON-RPC.
+5. When the SAP Platform 2025 and 2023 systems share the same `sap-sysid`/`sap-client`, enable only
+   the 2023 destination and restart for its test, then enable only the 2025 destination and restart
+   for its test. Enable both only for the collision test, where v1 must quarantine both claimants
+   rather than invent a route ID. Restore the reviewed destination state and restart afterward.
+
+For every live case, record the app GUID/version, registry revision, CF instance index, user role,
+endpoint style, expected result, and actual result. Record the ARC-1 request ID when the request
+reaches MCP dispatch; for pre-auth HTTP responses, `/health`, protected-resource metadata, and route
+404s, record the HTTP status and available correlation evidence instead. Never record access/refresh
+tokens, assertions, destination exports, raw URLs, or credentials.
 
 Do not run multi-target write CRUD. ATC and ABAP Unit are not acceptance requirements for this
 feature.

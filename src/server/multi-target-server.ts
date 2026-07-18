@@ -1,16 +1,21 @@
 /** MCP-call preparation and the role-sensitive SAPTargets catalog for multi-target v1. */
 
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
-import { getActionPolicy, hasRequiredScope } from '../authz/policy.js';
+import { getActionPolicy, hasRequiredScope, invocationPolicyKey } from '../authz/policy.js';
+import { normalizeTypeArgsForValidation, stripLlmEmptyValues } from '../handlers/object-types.js';
 import { toolJson } from '../handlers/shared.js';
 import { isActionDenied } from './deny-actions.js';
 import type { DestinationRegistry, TargetDescriptor } from './destination-registry.js';
 import { logger } from './logger.js';
 import type { McpRateLimiter } from './mcp-rate-limit.js';
 import { resolveRateLimitUserKey } from './mcp-rate-limit.js';
-import { buildTargetCatalog, TARGET_CATALOG_MAX_OFFSET } from './multi-target-catalog.js';
+import {
+  buildTargetCatalog,
+  TARGET_CATALOG_MAX_OFFSET,
+  TARGET_CATALOG_MAX_QUERY_LENGTH,
+} from './multi-target-catalog.js';
 import { buildMultiTargetConfig } from './multi-target-runtime.js';
-import { invocationPolicyKey, multiTargetInvocationDecision, normalizeTarget } from './multi-target-tools.js';
+import { multiTargetInvocationDecision, normalizeTarget } from './multi-target-tools.js';
 import type { ServerConfig } from './types.js';
 
 export const MULTI_TARGET_SERVER_INSTRUCTIONS = [
@@ -102,8 +107,9 @@ async function handleSapTargets(
   const startedAt = Date.now();
   const user = resolveRateLimitUserKey(authInfo);
   const adminView = authInfo ? hasRequiredScope(authInfo.scopes, 'admin') : false;
-  const queryProvided = args.query !== undefined;
-  const offsetProvided = args.offset !== undefined;
+  const parsed = parseSapTargetsArguments(args, adminView);
+  const queryProvided = parsed.ok ? parsed.value.query !== undefined : args.query !== undefined;
+  const offsetProvided = parsed.ok ? parsed.value.offset !== undefined : args.offset !== undefined;
   logger.emitAudit({
     timestamp: new Date().toISOString(),
     level: 'info',
@@ -148,25 +154,7 @@ async function handleSapTargets(
     }
   }
 
-  const extraKeys = Object.keys(args).filter((key) => key !== 'query' && key !== 'offset');
-  let invalidMessage: string | undefined;
-  if (extraKeys.length > 0) invalidMessage = 'SAPTargets accepts only the optional query and offset arguments.';
-  else if (args.query !== undefined && typeof args.query !== 'string') {
-    invalidMessage = 'SAPTargets query must be a string.';
-  } else if (typeof args.query === 'string' && args.query.length > 160) {
-    invalidMessage = 'SAPTargets query must be at most 160 characters.';
-  } else if (
-    args.offset !== undefined &&
-    (typeof args.offset !== 'number' ||
-      !Number.isSafeInteger(args.offset) ||
-      args.offset < 0 ||
-      args.offset > TARGET_CATALOG_MAX_OFFSET)
-  ) {
-    invalidMessage = `SAPTargets offset must be an integer from 0 through ${TARGET_CATALOG_MAX_OFFSET}.`;
-  } else if (!adminView && args.offset !== undefined) {
-    invalidMessage = 'SAPTargets offset is available only with admin scope.';
-  }
-  if (invalidMessage) {
+  if (!parsed.ok) {
     logger.emitAudit({
       timestamp: new Date().toISOString(),
       level: 'warn',
@@ -179,16 +167,13 @@ async function handleSapTargets(
       status: 'error',
       errorClass: 'invalid_arguments',
     });
-    return structuredToolError('INVALID_ARGUMENTS', invalidMessage, { requestId, retryable: false });
+    return structuredToolError('INVALID_ARGUMENTS', parsed.message, { requestId, retryable: false });
   }
-
-  const query = typeof args.query === 'string' ? args.query : undefined;
-  const offset = typeof args.offset === 'number' ? args.offset : undefined;
 
   const payload = buildTargetCatalog(options.registry, {
     admin: adminView,
-    query,
-    offset,
+    query: parsed.value.query,
+    offset: parsed.value.offset,
   });
   const text = toolJson(payload);
   logger.emitAudit({
@@ -204,6 +189,49 @@ async function handleSapTargets(
     resultSize: text.length,
   });
   return { content: [{ type: 'text' as const, text }] };
+}
+
+type SapTargetsArguments = { query?: string; offset?: number };
+type ParsedSapTargetsArguments = { ok: true; value: SapTargetsArguments } | { ok: false; message: string };
+
+/** Runtime counterpart of the advertised SAPTargets JSON schema. */
+export function parseSapTargetsArguments(args: Record<string, unknown>, adminView: boolean): ParsedSapTargetsArguments {
+  const normalizedArgs = stripLlmEmptyValues(args);
+  const extraKeys = Object.keys(normalizedArgs).filter((key) => key !== 'query' && key !== 'offset');
+  if (extraKeys.length > 0) {
+    return { ok: false, message: 'SAPTargets accepts only the optional query and offset arguments.' };
+  }
+  if (normalizedArgs.query !== undefined && typeof normalizedArgs.query !== 'string') {
+    return { ok: false, message: 'SAPTargets query must be a string.' };
+  }
+  if (typeof normalizedArgs.query === 'string' && normalizedArgs.query.length > TARGET_CATALOG_MAX_QUERY_LENGTH) {
+    return {
+      ok: false,
+      message: `SAPTargets query must be at most ${TARGET_CATALOG_MAX_QUERY_LENGTH} characters.`,
+    };
+  }
+  if (
+    normalizedArgs.offset !== undefined &&
+    (typeof normalizedArgs.offset !== 'number' ||
+      !Number.isSafeInteger(normalizedArgs.offset) ||
+      normalizedArgs.offset < 0 ||
+      normalizedArgs.offset > TARGET_CATALOG_MAX_OFFSET)
+  ) {
+    return {
+      ok: false,
+      message: `SAPTargets offset must be an integer from 0 through ${TARGET_CATALOG_MAX_OFFSET}.`,
+    };
+  }
+  if (!adminView && normalizedArgs.offset !== undefined) {
+    return { ok: false, message: 'SAPTargets offset is available only with admin scope.' };
+  }
+  return {
+    ok: true,
+    value: {
+      query: typeof normalizedArgs.query === 'string' ? normalizedArgs.query : undefined,
+      offset: typeof normalizedArgs.offset === 'number' ? normalizedArgs.offset : undefined,
+    },
+  };
 }
 
 async function consumePreparedRateLimit(args: {
@@ -388,6 +416,9 @@ export async function prepareMultiTargetCall(args: {
     };
   }
 
+  // Use the same canonical arguments as the shared dispatch pipeline. This keeps
+  // the early policy/PP gate and the eventual handler decision identical.
+  callArgs = normalizeTypeArgsForValidation(toolName, callArgs);
   const activeConfig = buildMultiTargetConfig(options.instanceConfig, selectedTarget);
   const action = invocationPolicyKey(toolName, callArgs);
   const invocationDecision = multiTargetInvocationDecision(toolName, callArgs, activeConfig);

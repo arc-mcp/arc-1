@@ -22,7 +22,7 @@ import { AdtApiError, AdtNetworkError, AdtSafetyError, classifySapDomainError } 
  * Scope lookup and implication rules are defined in `src/authz/policy.ts` (ACTION_POLICY,
  * getActionPolicy, hasRequiredScope). This module routes through them.
  */
-import { getActionPolicy, hasRequiredScope as hasScopeHelper } from '../authz/policy.js';
+import { getActionPolicy, hasRequiredScope as hasScopeHelper, invocationPolicyKey } from '../authz/policy.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
 import { type RegistryEntry, type ToolDispatchContext, ToolRegistry } from '../registry/tool-registry.js';
 import { sanitizeArgs } from '../server/audit.js';
@@ -674,20 +674,7 @@ export async function handleToolCall(
   // reused for Zod validation below so canonicalization happens exactly once.
   // Runs BEFORE Zod validation so scope errors don't leak schema details to unauthorized callers.
   const normalizedArgs = normalizeTypeArgsForValidation(toolName, args);
-  const rawScopeKey = toolName === 'SAPRead' ? normalizedArgs.type : normalizedArgs.action;
-  let actionOrType: string | undefined =
-    rawScopeKey === undefined || rawScopeKey === null || rawScopeKey === '' ? undefined : String(rawScopeKey);
-  if (
-    toolName === 'SAPSearch' &&
-    typeof normalizedArgs.searchType === 'string' &&
-    normalizedArgs.searchType === 'tadir_lookup' &&
-    typeof normalizedArgs.source === 'string'
-  ) {
-    const src = normalizedArgs.source.toLowerCase();
-    if (src === 'db' || src === 'both') {
-      actionOrType = `tadir_lookup_${src}`;
-    }
-  }
+  const actionOrType = invocationPolicyKey(toolName, normalizedArgs);
   // Built-in policy from ACTION_POLICY; plugin (Custom_*) policy from the registry (FEAT-61).
   // Kept here (not inside getActionPolicy) so validate-action-policy.ts stays built-ins-only.
   const policy = getActionPolicy(toolName, actionOrType) ?? getToolRegistry().get(toolName)?.policy;

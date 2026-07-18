@@ -14,6 +14,81 @@ Lives in [docs_page/configuration-reference.md](../docs_page/configuration-refer
 CLI flags, clamps, layer interactions — the user-facing reference is the single verbose source;
 duplicating it here proved to drift). The compact per-variable table stays in AGENTS.md.
 
+## Experimental multi-target v1 — developer map
+
+Terminology: **ARC-1 multi-target** means multiple SAP system/client targets. `mta.yaml` and an MTAR
+use SAP's separate **Multi-Target Application** packaging terminology.
+
+### Read order and request flow
+
+1. Read [ADR-0006](adr/0006-experimental-read-only-multi-target.md) for the security boundary, then
+   the [normative implementation plan](plans/destination-discovered-multi-target-v1.md). The
+   [setup](../docs_page/multi-target-setup.md) and
+   [administration](../docs_page/multi-target-administration.md) guides are the user/operator contract.
+2. At startup, `src/server/destination-discovery.ts` projects subaccount destinations into a
+   secret-safe shape, `destination-registry.ts` validates them, and `server.ts`/`http.ts` create the
+   pinned and aggregate HTTP factories.
+3. An authenticated request selects a target from the pinned path or explicit aggregate `target`.
+   `multi-target-server.ts` performs the early policy/scope/rate checks; `server.ts` performs the
+   uncached strict-PP destination lookup and drift check; `dispatch.ts` runs the normal tool pipeline.
+4. `SAPTargets` is an aggregate-only MCP tool. Readers get the compact catalog when multiple targets
+   exist; admins get secret-safe registry diagnostics. There is no HTTP target-catalog endpoint.
+
+### Invariants
+
+- Default off; BTP CF only; XSUAA-only route auth; strict per-user PP; `ARC1_CACHE=none`; standard
+  tool mode; UI, plugins, shared cookies, writes, activation, transport/Git mutation, ATC, and ABAP
+  Unit remain unavailable on multi-target routes.
+- `/mcp` is never assigned a discovered destination. An optional single-target `/mcp` is configured
+  independently and may coexist with pinned `/<SID>/<CLIENT>/mcp` and aggregate `/multi/mcp` routes.
+- The public target is immutable `SID/CLIENT`; destination names stay out of routes and reader
+  output. Secret-projected Admin `SAPTargets` diagnostics may expose the internal destination name.
+  Raw URLs, credentials, tokens, certificates, and Cloud Connector location IDs never enter the
+  registry or `SAPTargets` output.
+- Effective access is the intersection of the structural v1 ceiling, instance ceiling, destination
+  policy, XSUAA scope, and the propagated user's SAP authorization. No layer may expand another.
+- Discovery is a startup snapshot. Destination changes require an app restart, and per-request drift
+  checks fail closed until that restart.
+
+### Change these together
+
+- Destination properties/validation: `multi-target-destination-config.ts`,
+  `destination-discovery.ts`, `destination-registry.ts`, `multi-target-runtime.ts`, and their tests.
+- Tool/action surface: `multi-target-tools.ts`, `multi-target-server.ts`, `src/authz/policy.ts`,
+  `src/handlers/dispatch.ts`, tool-definition budget checks, and focused policy/tool tests.
+- Routes/auth/metadata: `src/server/{http,server}.ts`, XSUAA scopes/roles, and
+  `http-multi-target-routes.test.ts` plus `multi-target-pp-retry.test.ts`.
+- Feature evidence: `multi-target-feature-state.ts`, `src/handlers/feature-cache.ts`, probe call sites,
+  and feature-cache/multi-target-server tests.
+- Catalog behavior: `multi-target-catalog.ts`, the `SAPTargets` definition/handler, both user guides,
+  and `multi-target-server.test.ts`.
+- Deployment prerequisites: `src/server/{config,types}.ts`, `mta.yaml`, its extension example, setup
+  docs, `config.test.ts`, `mta-descriptor.test.ts`, and `plugin-manifest.test.ts`.
+
+### Focused verification
+
+```bash
+npx vitest run \
+  tests/unit/server/destination-discovery.test.ts \
+  tests/unit/server/destination-registry.test.ts \
+  tests/unit/server/multi-target-destination-config.test.ts \
+  tests/unit/server/multi-target-runtime.test.ts \
+  tests/unit/server/multi-target-tools.test.ts \
+  tests/unit/server/multi-target-server.test.ts \
+  tests/unit/server/multi-target-pp-retry.test.ts \
+  tests/unit/server/http-destinations.test.ts \
+  tests/unit/server/http-multi-target-routes.test.ts \
+  tests/unit/handlers/multi-target-errors.test.ts \
+  tests/unit/authz/policy.test.ts
+
+npx vitest run \
+  tests/unit/server/config.test.ts \
+  tests/unit/server/mta-descriptor.test.ts \
+  tests/unit/plugin/plugin-manifest.test.ts
+
+npm run btp:validate
+```
+
 ## Key Files for Common Tasks — full reference
 
 | Task | Files |

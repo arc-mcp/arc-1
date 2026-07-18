@@ -21,7 +21,7 @@ Responsibility is intentionally split across four administrators:
 
 | Owner | Controls | Security effect |
 |---|---|---|
-| ARC-1 deployment owner | MTA/CF environment | Enables the mode and sets the instance-wide maximum for data and SQL. |
+| ARC-1 deployment owner | ARC-1 application environment, usually deployed through MTA | Enables the mode and sets the application-wide maximum for data and SQL. |
 | BTP destination administrator | One subaccount destination per SID/client | Defines target identity, connection, label, and narrower data/SQL opt-ins. |
 | Identity administrator | Existing XSUAA role collections | Grants global read, data, SQL, or admin scope. There are no per-target roles in v1. |
 | SAP/Basis administrator | PP mapping and SAP authorizations | Determines whether the propagated user can access a selected SAP client and operation. |
@@ -353,32 +353,16 @@ instance. The default 10 means ten concurrent SAP requests across the whole proc
 target. Destination count alone does not justify a higher value; expected active users and SAP
 dialog work-process capacity do. A busy target can temporarily occupy all slots.
 
-Each additional CF app instance creates another semaphore, so horizontal scaling multiplies the
-landscape-wide maximum. A conservative starting estimate is:
+Each additional CF process creates another semaphore, so horizontal scaling multiplies the possible
+load on a target. Size the fleet against the most constrained SAP target and include every ARC-1
+process that can reach it, including processes from other deployments. If substantially different
+SAP capacities require different caps, split those targets into separate ARC-1 deployments.
 
-```text
-ARC1_MAX_CONCURRENT ≈ floor(0.6 × rdisp/wp_no_dia / ARC1_CF_instance_count)
-```
-
-Confirm the value with Basis; clients of one SID commonly share the same dialog work-process pool.
-
-Starting points—not guarantees—for a shared beta are:
-
-| Expected active users | Per OAuth endpoint/IP/min | MCP HTTP/IP/min | Per user/min | Concurrent SAP requests per CF instance |
-|---:|---:|---:|---:|---:|
-| 1–5 | 30 | 1,000 | 120 | 10 |
-| 6–20 | 60 | 3,000 | 120 | 20 |
-| 21–50 | 120 | 7,500 | 180 | 40 |
-| 51–100 | 240 | 20,000 | 180 | 60 |
-
-The OAuth limit absorbs login/reconnect bursts from shared corporate egress. Each pinned URL may
-create another OAuth/DCR flow, so prefer aggregate mode when one user needs many targets. The MCP
-HTTP limit is a coarse abuse ceiling; concurrency is the backend protection.
-
-If `ARC1_MCP_HTTP_RATE_LIMIT` is unset, it derives as
-`max(ARC1_AUTH_RATE_LIMIT × 30, 600)`. Explicit `0` disables that layer. `ARC1_RATE_LIMIT` defaults
-to off; multi-target logs a warning when it is zero. Start with a positive per-user limit and tune
-from audit/latency evidence. See [Rate Limiting](rate-limiting.md) for all layers.
+The authoritative formula and shared-beta rate starting points are in
+[Multi-target shared beta (BTP CF)](rate-limiting.md#multi-target-shared-beta-btp-cf). Do not derive
+`ARC1_MAX_CONCURRENT` from user or destination count. `ARC1_RATE_LIMIT` defaults to off;
+multi-target logs a warning when it is zero, so start with the documented positive per-user limit and
+tune from audit and latency evidence.
 
 <a id="10-operational-checklist"></a>
 

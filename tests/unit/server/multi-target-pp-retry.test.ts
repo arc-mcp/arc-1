@@ -18,7 +18,7 @@ const { canonicalDestinationUrl, opaqueDestinationValue } = await import(
   '../../../src/server/destination-discovery.js'
 );
 const { DestinationRegistry } = await import('../../../src/server/destination-registry.js');
-const { buildAggregateConfig } = await import('../../../src/server/multi-target-runtime.js');
+const { buildAggregateToolSurfaceConfig } = await import('../../../src/server/multi-target-runtime.js');
 const { createServer } = await import('../../../src/server/server.js');
 const { DEFAULT_CONFIG } = await import('../../../src/server/types.js');
 
@@ -126,7 +126,7 @@ describe('multi-target principal-propagation retry', () => {
   it('does not retain a failed lookup and retries successfully on the next call to the same server', async () => {
     const current = registry();
     const instanceConfig = DEFAULT_CONFIG;
-    const aggregateConfig = buildAggregateConfig(instanceConfig, current.targets);
+    const aggregateConfig = buildAggregateToolSurfaceConfig(instanceConfig, current.targets);
     setCachedFeatures(featuresOff(), 'A4H/100');
     vi.spyOn(AdtClient.prototype, 'getSystemInfo').mockResolvedValue('{"sid":"A4H","client":"100"}');
     lookupDestinationWithUserTokenUncached
@@ -136,18 +136,10 @@ describe('multi-target principal-propagation retry', () => {
         authTokens: { sapConnectivityAuth: 'Bearer per-user-assertion' },
       });
 
-    const server = createServer(
-      aggregateConfig,
-      undefined,
-      BTP_CONFIG,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      { mode: 'aggregate', registry: current, instanceConfig },
-    );
+    const server = createServer(aggregateConfig, {
+      btpConfig: BTP_CONFIG,
+      multiTarget: { mode: 'aggregate', registry: current, instanceConfig },
+    });
     const call = requestHandler(server);
     const request = {
       method: 'tools/call',

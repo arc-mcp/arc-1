@@ -35,11 +35,21 @@ import { API_KEY_PROFILES } from './config.js';
 import { generateRequestId } from './context.js';
 import { isActionDenied } from './deny-actions.js';
 import { canonicalDestinationUrl, opaqueDestinationValue } from './destination-discovery.js';
-import { DestinationRegistry, type TargetDescriptor, targetConnectionFingerprint } from './destination-registry.js';
+import {
+  DestinationRegistry,
+  duplicateSingleTargetIds,
+  type TargetDescriptor,
+  targetConnectionFingerprint,
+} from './destination-registry.js';
 import { authLibLogger, initLogger, logger } from './logger.js';
 import { createMcpRateLimiter, type McpRateLimiter } from './mcp-rate-limit.js';
 import { ensureMultiTargetFeatureProbe, hasAuthorizationLimitedFeatureEvidence } from './multi-target-feature-state.js';
-import { buildAggregateConfig, buildMultiTargetConfig, validateTargetDrift } from './multi-target-runtime.js';
+import {
+  buildAggregateToolSurfaceConfig,
+  buildMultiTargetConfig,
+  TargetConfigChangedError,
+  validateTargetDrift,
+} from './multi-target-runtime.js';
 import {
   MULTI_TARGET_SERVER_INSTRUCTIONS,
   type MultiTargetErrorBuilder,
@@ -390,7 +400,7 @@ async function createPerUserClient(
   let resolvedUrl = destination.URL;
   if (multiTarget) {
     const drift = validateTargetDrift(destination, multiTarget.target, multiTarget.instanceConfig);
-    if (!drift.ok) throw new Error(`${drift.code}: ${drift.message}`);
+    if (!drift.ok) throw new TargetConfigChangedError(multiTarget.target.target, drift.message);
     resolvedUrl = drift.url;
   }
 
@@ -685,17 +695,6 @@ export function formatStartupAuthPreflightToolError(preflight: StartupAuthPrefli
   );
 }
 
-/**
- * Create the MCP server with registered tool handlers.
- * @param config Server configuration
- * @param btpProxy Optional BTP connectivity proxy config (resolved at startup)
- * @param btpConfig Optional BTP service config (for per-user destination lookup)
- * @param bearerTokenProvider Optional OAuth bearer token provider (BTP ABAP Environment)
- * @param cachingLayer Optional object cache layer
- * @param startupProbePromise Promise from runStartupProbe() — ListTools waits on this
- * @param startupAuthPreflightPromise Promise from runStartupAuthPreflight() — CallTool blocks on auth failure in shared mode
- */
-
 /** Sent in the MCP initialize response. Clients that defer tool loading (Claude Code enables tool
  *  search by default) use this to decide whether to look for ARC-1's tools at all, so it names the
  *  domain first. Keep under 2 KB — Claude Code truncates server instructions silently. */
@@ -718,18 +717,30 @@ const SERVER_INSTRUCTIONS = [
   'One SAP system per instance: there is no system/destination selector, by design.',
 ].join('\n');
 
-export function createServer(
-  config: ServerConfig,
-  btpProxy?: BTPProxyConfig,
-  btpConfig?: BTPConfig,
-  bearerTokenProvider?: () => Promise<string>,
-  cachingLayer?: CachingLayer,
-  startupProbePromise?: Promise<void>,
-  startupAuthPreflightPromise?: Promise<StartupAuthPreflightResult>,
-  adtSemaphore?: Semaphore,
-  mcpRateLimiter?: McpRateLimiter,
-  multiTarget?: MultiTargetServerOptions,
-): Server {
+export interface CreateServerOptions {
+  btpProxy?: BTPProxyConfig;
+  btpConfig?: BTPConfig;
+  bearerTokenProvider?: () => Promise<string>;
+  cachingLayer?: CachingLayer;
+  startupProbePromise?: Promise<void>;
+  startupAuthPreflightPromise?: Promise<StartupAuthPreflightResult>;
+  adtSemaphore?: Semaphore;
+  mcpRateLimiter?: McpRateLimiter;
+  multiTarget?: MultiTargetServerOptions;
+}
+
+export function createServer(config: ServerConfig, options: CreateServerOptions = {}): Server {
+  const {
+    btpProxy,
+    btpConfig,
+    bearerTokenProvider,
+    cachingLayer,
+    startupProbePromise,
+    startupAuthPreflightPromise,
+    adtSemaphore,
+    mcpRateLimiter,
+    multiTarget,
+  } = options;
   const server = new Server(
     { name: 'arc-1', version: VERSION },
     { capabilities: { tools: {} }, instructions: multiTarget ? MULTI_TARGET_SERVER_INSTRUCTIONS : SERVER_INSTRUCTIONS },
@@ -945,11 +956,11 @@ export function createServer(
         // A JWT-authenticated request must never change SAP identity after a PP error.
         // Non-JWT API-key requests still use the shared client through the branch below.
         if (multiTarget) {
-          const changed = errMsg.startsWith('TARGET_CONFIG_CHANGED:');
+          const changed = err instanceof TargetConfigChangedError;
           return multiError(
             changed ? 'TARGET_CONFIG_CHANGED' : 'PP_SETUP_FAILED',
             changed
-              ? errMsg.replace(/^TARGET_CONFIG_CHANGED:\s*/, '')
+              ? err.message
               : `Principal propagation for ${selectedTarget?.target ?? 'the selected target'} failed. Check the user mapping and destination/Cloud Connector setup, then ask the client to try again now.`,
             { retryable: !changed },
             changed ? undefined : 'pp_exchange_failed',
@@ -1272,14 +1283,11 @@ export async function createAndStartServer(
       revision: registry.revision,
       failure: registry.failure?.code,
     });
-    const duplicateSingleTargets = registry.targets
-      .filter(
-        (target) =>
-          target.destinationName === btpDestination ||
-          target.destinationName === process.env.SAP_BTP_PP_DESTINATION ||
-          (!!singleTargetConnectionFingerprint && target.connectionFingerprint === singleTargetConnectionFingerprint),
-      )
-      .map((target) => target.target);
+    const duplicateSingleTargets = duplicateSingleTargetIds(
+      registry,
+      [btpDestination, process.env.SAP_BTP_PP_DESTINATION],
+      singleTargetConnectionFingerprint,
+    );
     if (duplicateSingleTargets.length > 0) {
       logger.warn(
         'The single-target /mcp connection is also exposed by discovered multi-target routes. Both remain active, but their policies can differ; verify that this duplicate exposure is intentional.',
@@ -1344,8 +1352,7 @@ export async function createAndStartServer(
     : Promise.resolve();
 
   const buildDefaultServer = () =>
-    createServer(
-      config,
+    createServer(config, {
       btpProxy,
       btpConfig,
       bearerTokenProvider,
@@ -1354,23 +1361,17 @@ export async function createAndStartServer(
       startupAuthPreflightPromise,
       adtSemaphore,
       mcpRateLimiter,
-    );
-  const aggregateConfig = registry ? buildAggregateConfig(config, registry.targets) : undefined;
+    });
+  const aggregateConfig = registry ? buildAggregateToolSurfaceConfig(config, registry.targets) : undefined;
   const buildAggregateServer =
     registry && aggregateConfig && btpConfig
       ? () =>
-          createServer(
-            aggregateConfig,
-            undefined,
+          createServer(aggregateConfig, {
             btpConfig,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
             adtSemaphore,
             mcpRateLimiter,
-            { mode: 'aggregate', registry, instanceConfig: config },
-          )
+            multiTarget: { mode: 'aggregate', registry, instanceConfig: config },
+          })
       : undefined;
   const serveSingleTargetEndpoint = shouldStartSingleTarget;
   const server = serveSingleTargetEndpoint ? buildDefaultServer() : (buildAggregateServer?.() ?? buildDefaultServer());
@@ -1468,21 +1469,14 @@ export async function createAndStartServer(
         ? {
             registry,
             aggregateFactory: buildAggregateServer,
-            pinnedFactory: (target: TargetDescriptor) => {
+            createPinnedServer: (target: TargetDescriptor) => {
               const targetConfig = buildMultiTargetConfig(config, target);
-              return () =>
-                createServer(
-                  targetConfig,
-                  undefined,
-                  btpConfig,
-                  undefined,
-                  undefined,
-                  undefined,
-                  undefined,
-                  adtSemaphore,
-                  mcpRateLimiter,
-                  { mode: 'pinned', registry, instanceConfig: config, target },
-                );
+              return createServer(targetConfig, {
+                btpConfig,
+                adtSemaphore,
+                mcpRateLimiter,
+                multiTarget: { mode: 'pinned', registry, instanceConfig: config, target },
+              });
             },
           }
         : undefined;

@@ -4,7 +4,10 @@ version: 0.9.27 # x-release-please-version
 description: ARC-1 — MCP Server for SAP ABAP Systems
 
 # ──────────────────────────────────────────────────────────────────────
-# On-Premise SAP via Cloud Connector + XSUAA OAuth
+# SAP Multi-Target Application (MTA) deployment for ARC-1 on BTP Cloud Foundry
+#
+# "ARC-1 multi-target" below means multiple SAP system/client targets. It is
+# unrelated to SAP's Multi-Target Application packaging term used by this file.
 #
 # Deploys ARC-1 as a Node.js app with:
 #   - XSUAA for MCP client authentication (Claude Desktop, Cursor, etc.)
@@ -13,20 +16,24 @@ description: ARC-1 — MCP Server for SAP ABAP Systems
 #
 # Prerequisites:
 #   1. Cloud Connector configured with virtual host mapping
-#   2. BTP Destination pointing to the virtual host
+#   2. BTP Destination Service entries for the intended SAP connections
 #   3. Users assigned to ARC-1 role collections (see xs-security.json)
 #
 # Deploy:
-#   mbt build && cf deploy mta_archives/arc1-mcp_0.6.1.mtar
+#   npm run btp:build-deploy
 #
-# Two destinations are recommended for on-premise PP scenarios:
+# For an optional single-target `/mcp` using on-premise PP, two destinations
+# are recommended:
 #   1. BasicAuth destination (SAP_BTP_DESTINATION) — used at startup for
 #      feature probing. No JWT needed.
 #   2. PrincipalPropagation destination (SAP_BTP_PP_DESTINATION) — used at
 #      runtime for per-user requests. Requires user JWT.
+# ARC-1 multi-target routes do not use this pair: each discovered system/client
+# is represented by one PrincipalPropagation destination.
 #
-# When using SAP_BTP_DESTINATION, URL/client come from the destination.
-# Only set manually if NOT using the Destination Service:
+# For a single-target `/mcp` using SAP_BTP_DESTINATION, URL/client come from
+# that destination. Only set them manually when that single-target route does
+# not use the Destination Service:
 #   cf set-env arc1-mcp-server SAP_URL "http://a4h-abap:50000"
 #   cf set-env arc1-mcp-server SAP_CLIENT "001"
 #   cf restage arc1-mcp-server
@@ -107,25 +114,30 @@ modules:
       # only when intentionally retaining a single-target `/mcp` route:
       # SAP_BTP_DESTINATION: my-basic-destination
       # SAP_BTP_PP_DESTINATION: my-pp-destination
-      # Preserve the existing safe identity default across upgrades. With no
-      # single-target destination these settings are inert; a shared-identity
-      # deployment must opt out explicitly with SAP_PP_ENABLED: "false".
+      # Preserve the existing safe identity default for an optional
+      # single-target `/mcp`. With no single-target destination these settings
+      # are inert; discovered multi-target routes always force strict PP. A
+      # shared-identity single-target deployment must opt out explicitly with
+      # SAP_PP_ENABLED: "false".
       SAP_PP_ENABLED: "true"
       SAP_PP_STRICT: "true"
 
-      # Experimental destination-discovered multi-target v1. Users building an
-      # MTAR from source can uncomment this complete conservative block. Deploy
-      # once, add `arc1.enabled=true` subaccount destinations, then `cf restart`;
+      # Experimental destination-discovered ARC-1 multi-target v1. In this SAP
+      # MTA descriptor, the two lines below are the mandatory opt-in additions;
+      # the other prerequisites already use safe base values. Deploy once, add
+      # `arc1.enabled=true` subaccount destinations, then `cf restart`;
       # destination changes do not require another MTAR build/deploy.
       # ARC1_MULTI_TARGET_ENDPOINTS: "true"
       # ARC1_CACHE: none
-      # Non-default shared-service limits for a small beta deployment.
+      # Optional rate tuning for a small beta deployment; these values are not
+      # required to enable ARC-1 multi-target mode.
       # ARC1_AUTH_RATE_LIMIT: "30"
       # ARC1_MCP_HTTP_RATE_LIMIT: "1000"
       # ARC1_RATE_LIMIT: "120"
-      # Authorization / safety defaults. Keep the MTA conservative; widen per
-      # landscape via `mta-overrides.mtaext` or `cf set-env` only when the
-      # target system actually needs it.
+      # Authorization / safety defaults. Keep the SAP MTA descriptor
+      # conservative. Use `mta-overrides.mtaext` for durable landscape
+      # overrides. A direct `cf set-env` change is temporary and a later
+      # `cf deploy` reapplies this descriptor.
       SAP_ALLOW_WRITES: "false"
       SAP_ALLOW_DATA_PREVIEW: "false"
       SAP_ALLOW_FREE_SQL: "false"
@@ -154,7 +166,7 @@ modules:
       - name: arc1-application-logs
 
   # Optional browser entry point for the experimental read-only UI. It is
-  # excluded by default so the base MTA still deploys one CF app. Include it
+  # excluded by default so the base SAP MTA still deploys one CF app. Include it
   # with `mta-ui-approuter.mtaext`; the AppRouter performs interactive XSUAA login,
   # checks the admin scope, and forwards the user JWT to `/ui/*` on ARC-1.
   - name: arc1-ui-router

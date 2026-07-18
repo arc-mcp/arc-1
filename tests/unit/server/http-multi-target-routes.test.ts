@@ -116,7 +116,7 @@ describe('multi-target HTTP route authentication', () => {
       {
         registry: current,
         aggregateFactory: aggregateFactory as never,
-        pinnedFactory: vi.fn() as never,
+        createPinnedServer: vi.fn() as never,
       },
     );
   });

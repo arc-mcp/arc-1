@@ -245,7 +245,10 @@ ARC-1 also sets standard browser security headers (HSTS, CSP, X-Frame-Options, C
 
 ### Rate limiting
 
-Two operator-facing knobs cover all three rate-limiting layers ARC-1 ships (the third layer reuses `ARC1_MAX_CONCURRENT` above). Per-endpoint OAuth ceilings are constants in code, not env, to keep the operator surface tiny. See the [Rate Limiting Guide](rate-limiting.md) for threat model, sizing math, and audit-event reference.
+Three rate-limit knobs cover the OAuth HTTP edge, MCP HTTP edge, and per-user MCP quota.
+`ARC1_MAX_CONCURRENT` above is the separate SAP-bound concurrency control. See the
+[Rate Limiting Guide](rate-limiting.md) for the threat model, sizing math, shared multi-target profile,
+and audit-event reference.
 
 | Flag | Env var | Default | Effect |
 |---|---|---|---|

@@ -201,7 +201,7 @@ function createMcpHandler(serverFactory: () => McpServer) {
 export interface MultiTargetRouting {
   registry: DestinationRegistry;
   aggregateFactory: () => McpServer;
-  pinnedFactory: (target: TargetDescriptor) => () => McpServer;
+  createPinnedServer: (target: TargetDescriptor) => McpServer;
 }
 
 export function createPinnedTargetMcpHandler(multi: MultiTargetRouting) {
@@ -222,7 +222,7 @@ export function createPinnedTargetMcpHandler(multi: MultiTargetRouting) {
       bodyMethod: req.body?.method,
       bodyId: req.body?.id,
     });
-    await serveMcpRequest(multi.pinnedFactory(target), req, res);
+    await serveMcpRequest(() => multi.createPinnedServer(target), req, res);
   };
 }
 

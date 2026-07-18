@@ -9,8 +9,7 @@ import {
   listDestinationsAtLevel,
 } from '@arc-mcp/xsuaa-auth/btp';
 import { authLibLogger } from './logger.js';
-
-const SUPPORTED_ARC_PROPERTIES = new Set(['arc1.enabled', 'arc1.allow_data_preview', 'arc1.allow_free_sql']);
+import { isSupportedMultiTargetArcProperty } from './multi-target-destination-config.js';
 
 export interface DiscoveredDestination {
   readonly name: string;
@@ -70,7 +69,7 @@ export function canonicalDestinationUrl(value: string): string | undefined {
   }
 }
 
-function project(destination: Destination): DiscoveredDestination | undefined {
+export function projectMultiTargetDestination(destination: Destination): DiscoveredDestination | undefined {
   const properties = destination.originalProperties;
   if (!properties) return undefined;
   const arcProperties: Record<string, string> = {};
@@ -78,7 +77,7 @@ function project(destination: Destination): DiscoveredDestination | undefined {
     if (!key.toLowerCase().startsWith('arc1.')) continue;
     // Only supported boolean values are needed by the parser. Unknown/wrong-case keys
     // are retained for fail-closed diagnostics, but their untrusted values are discarded.
-    arcProperties[key] = SUPPORTED_ARC_PROPERTIES.has(key)
+    arcProperties[key] = isSupportedMultiTargetArcProperty(key)
       ? typeof value === 'string'
         ? value
         : String(value ?? '')
@@ -139,7 +138,9 @@ export async function discoverDestinations(btpConfig: BTPConfig): Promise<Destin
       listDestinationsAtLevel(btpConfig, 'subaccount', authLibLogger),
       listDestinationsAtLevel(btpConfig, 'instance', authLibLogger),
     ]);
-    const subaccount = subaccountRaw.map(project).filter((entry): entry is DiscoveredDestination => !!entry);
+    const subaccount = subaccountRaw
+      .map(projectMultiTargetDestination)
+      .filter((entry): entry is DiscoveredDestination => !!entry);
     const instanceNames = instanceRaw.map((entry) => entry.Name);
     const arcAdjacentWithoutMarkerCount = subaccountRaw.filter(adjacentWithoutMarker).length;
     const scannedCount = subaccountRaw.length;

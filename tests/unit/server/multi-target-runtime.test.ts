@@ -2,7 +2,12 @@ import type { Destination } from '@arc-mcp/xsuaa-auth/btp';
 import { describe, expect, it } from 'vitest';
 import { canonicalDestinationUrl, opaqueDestinationValue } from '../../../src/server/destination-discovery.js';
 import { DestinationRegistry } from '../../../src/server/destination-registry.js';
-import { buildMultiTargetConfig, validateTargetDrift } from '../../../src/server/multi-target-runtime.js';
+import {
+  buildAggregateToolSurfaceConfig,
+  buildMultiTargetConfig,
+  TargetConfigChangedError,
+  validateTargetDrift,
+} from '../../../src/server/multi-target-runtime.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 
 const rawUrl = 'http://a4h.internal:50000';
@@ -111,6 +116,28 @@ describe('multi-target runtime isolation', () => {
     });
     expect(config.cookieString).toBeUndefined();
     expect(config.btpServiceKey).toBeUndefined();
+  });
+
+  it('builds aggregate capability directly without inventing a target identity', () => {
+    const config = buildAggregateToolSurfaceConfig(
+      { ...DEFAULT_CONFIG, client: '321', language: 'DE', allowDataPreview: true },
+      [registryTarget()],
+    );
+
+    expect(config).toMatchObject({
+      client: '321',
+      language: 'DE',
+      allowWrites: false,
+      allowDataPreview: true,
+      allowFreeSQL: false,
+    });
+    expect(config.destinationName).toBeUndefined();
+    expect(config.targetId).toBeUndefined();
+  });
+
+  it('provides a typed configuration-change error for callers', () => {
+    const error = new TargetConfigChangedError('A4H/100', 'Restart ARC-1.');
+    expect(error).toMatchObject({ name: 'TargetConfigChangedError', code: 'TARGET_CONFIG_CHANGED', target: 'A4H/100' });
   });
 
   it('accepts an unchanged fresh destination and returns the canonical URL', () => {

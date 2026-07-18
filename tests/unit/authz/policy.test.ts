@@ -7,9 +7,17 @@ import {
   expandScopes,
   getActionPolicy,
   hasRequiredScope,
+  invocationPolicyKey,
 } from '../../../src/authz/policy.js';
 
 describe('ACTION_POLICY matrix', () => {
+  it('derives one canonical policy key for dispatch and multi-target preflight', () => {
+    expect(invocationPolicyKey('SAPRead', { type: 'table_contents' })).toBe('TABLE_CONTENTS');
+    expect(invocationPolicyKey('SAPSearch', { searchType: 'tadir_lookup', source: 'DB' })).toBe('tadir_lookup_db');
+    expect(invocationPolicyKey('SAPDiagnose', { action: 'atc' })).toBe('atc');
+    expect(invocationPolicyKey('SAPQuery', {})).toBeUndefined();
+  });
+
   it('includes tool-level defaults for every top-level tool', () => {
     const tools = [
       'SAPRead',
