@@ -161,6 +161,7 @@ describe('BTP Audit Log Sink', () => {
       const stages = [
         'target_resolution_failed',
         'pp_exchange_failed',
+        'cloud_connector_access_denied',
         'sap_authentication_failed',
         'sap_authorization_failed',
         'target_policy_denied',

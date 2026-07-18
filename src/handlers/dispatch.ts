@@ -519,9 +519,24 @@ export function getToolRegistry(): ToolRegistry {
 }
 
 export interface MultiTargetSapFailure {
-  code: 'SAP_SERVICE_INACTIVE' | 'SAP_AUTHENTICATION_FAILED' | 'SAP_AUTHORIZATION_DENIED' | 'SAP_REQUEST_FAILED';
-  event?: 'sap_authentication_failed' | 'sap_authorization_failed';
+  code:
+    | 'CLOUD_CONNECTOR_ACCESS_DENIED'
+    | 'SAP_SERVICE_INACTIVE'
+    | 'SAP_AUTHENTICATION_FAILED'
+    | 'SAP_AUTHORIZATION_DENIED'
+    | 'SAP_REQUEST_FAILED';
+  event?: 'cloud_connector_access_denied' | 'sap_authentication_failed' | 'sap_authorization_failed';
   message: string;
+}
+
+/** Match only the verified plain-text response from the BTP Connectivity proxy. */
+function isCloudConnectorAccessDenied(error: AdtApiError): boolean {
+  if (error.statusCode !== 403 || !error.path.startsWith('/sap/bc/adt')) return false;
+  const body = (error.responseBody ?? '').trim().toLowerCase();
+  return (
+    body.startsWith('access denied to system ') &&
+    body.includes('ensure to expose the system correctly in your cloud connector')
+  );
 }
 
 /** Convert post-PP SAP failures into safe target-aware errors; ambiguous 403 stays authentication. */
@@ -534,6 +549,13 @@ export function classifyMultiTargetSapError(
     return {
       code: 'SAP_REQUEST_FAILED',
       message: `ARC-1 could not reach SAP target ${target} while running ${toolName}. Check Cloud Connector and SAP availability, then try again now.`,
+    };
+  }
+  if (isCloudConnectorAccessDenied(error)) {
+    return {
+      code: 'CLOUD_CONNECTOR_ACCESS_DENIED',
+      event: 'cloud_connector_access_denied',
+      message: `Cloud Connector does not expose or allow target ${target}. Ask the BTP/Cloud Connector administrator to make the destination virtual host and port match an HTTPS/X509_GENERAL mapping and allow the required ADT paths, then try again now.`,
     };
   }
   const classification = classifySapDomainError(error.statusCode, error.responseBody, error.path);

@@ -47,8 +47,10 @@ You need:
   repository's `mta.yaml`;
 - Node.js 22.19 or later, npm, the CF CLI, the CF MultiApps plugin used by `cf deploy`, and `mbt`;
 - a CF CLI session targeted at the intended org and space;
-- an SAP Cloud Connector mapping for every on-premise target, including the required ADT resource
-  paths from the [Cloud Connector URL path reference](btp-destination-setup.md#cloud-connector-url-path-reference);
+- an SAP Cloud Connector mapping for every on-premise target whose virtual host and port exactly
+  match the destination, whose internal connection uses HTTPS with `X509_GENERAL`,
+  and which includes the required ADT resource paths from the
+  [Cloud Connector URL path reference](btp-destination-setup.md#cloud-connector-url-path-reference);
 - working [Principal Propagation](principal-propagation-setup.md) from XSUAA through Cloud Connector
   to every SAP client;
 - permission to build ARC-1 from source, deploy an MTAR, and manage subaccount destinations; and
@@ -121,7 +123,7 @@ destination per SID/client:
 ```properties
 Name=ARC1_A4H_100_PP
 Type=HTTP
-URL=https://a4h-abap.internal:50001
+URL=http://a4h-abap.internal:50001
 ProxyType=OnPremise
 Authentication=PrincipalPropagation
 sap-sysid=A4H
@@ -130,8 +132,14 @@ Description=A4H development client 100
 arc1.enabled=true
 ```
 
-Use the Cloud Connector virtual URL configured for your landscape. `arc1.enabled=true` is the only
-required ARC-1-specific destination property for source reads.
+The destination-facing and internal Cloud Connector connections are separate. For this v1 setup,
+use `http://<virtual-host>:<virtual-port>` in the BTP destination. In Cloud Connector, that exact
+virtual host and port must resolve to an **internal HTTPS mapping with X.509 (`X509_GENERAL`)**
+and the required ADT paths. The sample virtual port `50001` is only a convention; it need not equal
+the SAP backend port. Setting `Authentication=PrincipalPropagation` in the destination does not
+convert an HTTP/`NONE_RESTRICTED` Cloud Connector mapping into HTTPS/`X509_GENERAL`.
+
+`arc1.enabled=true` is the only required ARC-1-specific destination property for source reads.
 
 V1 needs only this Principal Propagation destination for each SID/client. It does not require a
 second BasicAuth/technical-user destination or run a technical-user startup probe. Feature evidence
@@ -241,7 +249,7 @@ side-by-side single-target `/mcp` can write: `SAPWrite`, `SAPActivate`, `SAPTran
 |---|---|
 | `Name` | Internal BTP identifier; 1–200 letters, digits, `_`, `.`, or `-`. It does not determine the MCP route. |
 | `Type` | Exactly `HTTP`. |
-| `URL` | Valid HTTP/HTTPS Cloud Connector virtual URL. It is never returned to readers or models. |
+| `URL` | Cloud Connector virtual URL. Use `http://<virtual-host>:<virtual-port>` for the documented v1 PP setup; the matching internal Cloud Connector connection must use HTTPS/`X509_GENERAL`. The URL is never returned to readers or models. |
 | `ProxyType` | Exactly `OnPremise`. |
 | `Authentication` | Exactly `PrincipalPropagation`. |
 | `sap-sysid` | Three uppercase alphanumeric characters, starting with a letter; for example `A4H`. |
@@ -327,7 +335,7 @@ Then opt in only the targets that need the capability:
 ```properties
 Name=ARC1_BWQ_200_PP
 Type=HTTP
-URL=https://bwq-abap.internal:50001
+URL=http://bwq-abap.internal:50001
 ProxyType=OnPremise
 Authentication=PrincipalPropagation
 sap-sysid=BWQ
@@ -503,6 +511,7 @@ unacceptable.
 | `SAPTargets` is missing | It is aggregate-only. Readers see it only with more than one active target; admins see it at zero/one/many and during registry failure. Check that the user signed in again after a role change and that `SAP_DENY_ACTIONS` does not deny `SAPTargets`. |
 | A Viewer sees no SAP tools | With zero active targets this is expected; fix discovery and restart. An Admin can still use `SAPTargets` for diagnostics. |
 | `PP_SETUP_FAILED` | Check the user's PP mapping, destination, and Cloud Connector; repair and retry without restart. |
+| `CLOUD_CONNECTOR_ACCESS_DENIED` | The Connectivity proxy could not expose or allow the target. Make the destination virtual host/port match an HTTPS/`X509_GENERAL` Cloud Connector mapping, allow the required ADT paths, and retry without restart. |
 | `SAP_AUTHENTICATION_FAILED` / `SAP_AUTHORIZATION_DENIED` | Check the propagated SAP user and client authorizations; repair and retry. |
 | `TARGET_CONFIG_CHANGED` | Review the destination change and restart ARC-1. |
 | Data/SQL action is absent or denied | Check the instance ceiling, target property, XSUAA role, and SAP authorization. |

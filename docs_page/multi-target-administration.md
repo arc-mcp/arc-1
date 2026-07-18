@@ -342,6 +342,7 @@ ARC-1 reports the proven failure stage without exposing raw SAP responses:
 | Error | Meaning and response |
 |---|---|
 | `PP_SETUP_FAILED` | Destination/Connectivity lookup or token exchange failed before ADT dispatch. Repair PP/Cloud Connector and retry immediately. |
+| `CLOUD_CONNECTOR_ACCESS_DENIED` | BTP Connectivity returned its specific Cloud Connector exposure denial before SAP handled the ADT request. Make the destination virtual host/port match an HTTPS/`X509_GENERAL` mapping, allow the required ADT paths, and retry. |
 | `SAP_AUTHENTICATION_FAILED` | SAP returned login/401 behavior or an ambiguous post-PP 403. It may be mapping, backend login, or PP configuration; ARC-1 does not claim that the user definitely does not exist. |
 | `SAP_AUTHORIZATION_DENIED` | SAP returned a structured authorization refusal for the propagated user. Repair the SAP role and retry. |
 | `SAP_SERVICE_INACTIVE` | The target ICF/ADT service is inactive or unreachable in that form, rather than merely a user-role issue. |
@@ -354,8 +355,8 @@ Basis fixes the mapping or authorization, the user can say “try again now” i
 A changed XSUAA role requires a new OAuth token/sign-in.
 
 HTTP middleware enforces XSUAA before tool dispatch. Audit events distinguish downstream target
-resolution, PP exchange, SAP authentication, SAP authorization, and execution. Whether SAP itself
-logs each login attempt depends on SAP security configuration.
+resolution, PP exchange, Cloud Connector exposure denial, SAP authentication, SAP authorization,
+and execution. Whether SAP itself logs each login attempt depends on SAP security configuration.
 
 <a id="9-size-the-shared-instance"></a>
 
@@ -384,6 +385,7 @@ tune from audit and latency evidence.
 - [ ] The feature is explicitly enabled and all multi-target routes remain mutation-free.
 - [ ] XSUAA, Destination, and Connectivity bindings are healthy.
 - [ ] Every target uses strict Principal Propagation; no shared SAP identity fallback exists.
+- [ ] Every destination virtual host/port exactly matches an HTTPS/`X509_GENERAL` Cloud Connector mapping with the required ADT paths allowed.
 - [ ] Every target has a valid real SID, client, factual description, `arc1.enabled=true`, and a unique valid route alias when its SID/client is reused.
 - [ ] Data/SQL is approved and enabled only where required at both instance and target layers.
 - [ ] No target contains unknown or write-related `arc1.*` keys.

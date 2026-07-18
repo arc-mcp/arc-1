@@ -237,7 +237,7 @@ Minimum source-read target:
 ```properties
 Name=ARC1_A4H_100_PP
 Type=HTTP
-URL=http://a4h-abap.internal:50000
+URL=http://a4h-abap.internal:50001
 ProxyType=OnPremise
 Authentication=PrincipalPropagation
 sap-sysid=A4H
@@ -251,7 +251,7 @@ Same-SID/client target with a distinct public route:
 ```properties
 Name=ARC1_A4H_2025_001_PP
 Type=HTTP
-URL=http://a4h-2025-abap.internal:50000
+URL=http://a4h-2025-abap.internal:50001
 ProxyType=OnPremise
 Authentication=PrincipalPropagation
 sap-sysid=A4H
@@ -268,7 +268,7 @@ Data preview and SQL target (still mutation-free):
 ```properties
 Name=ARC1_BWQ_200_PP
 Type=HTTP
-URL=http://bwq-abap.internal:50000
+URL=http://bwq-abap.internal:50001
 ProxyType=OnPremise
 Authentication=PrincipalPropagation
 sap-sysid=BWQ
@@ -282,6 +282,13 @@ arc1.allow_free_sql=true
 The second example is effective only when the instance also sets
 `SAP_ALLOW_DATA_PREVIEW=true` and `SAP_ALLOW_FREE_SQL=true`, and the user has the corresponding XSUAA
 scopes and SAP authorization.
+
+These examples intentionally use an HTTP destination URL with virtual port `50001`. The port is an
+illustrative convention, not a required backend port: the destination virtual host/port must exactly
+match a Cloud Connector mapping whose internal connection uses HTTPS with `X509_GENERAL` and allows
+the required ADT paths. The destination's
+`Authentication=PrincipalPropagation` property alone cannot upgrade an HTTP/`NONE_RESTRICTED`
+Cloud Connector mapping to HTTPS/`X509_GENERAL`.
 
 ## Discovery and Immutable Registry
 
@@ -654,6 +661,7 @@ Required classifications:
 | `TARGET_CONFIG_CHANGED` | Live PP lookup no longer matches startup fingerprint. | Restart ARC-1 after reviewing the destination. |
 | `TARGET_POLICY_DENIED` | Instance or destination did not enable data/SQL. | Administrator changes both required gates and restarts for destination changes. |
 | `PP_SETUP_FAILED` | Failure is proven to occur before ADT dispatch during Destination/Connectivity lookup or token exchange. | Fix BTP/Cloud Connector setup, then retry. |
+| `CLOUD_CONNECTOR_ACCESS_DENIED` | BTP Connectivity returned its verified Cloud Connector exposure-denial signature before SAP handled the ADT request. | Make the destination virtual host/port match an HTTPS/`X509_GENERAL` mapping, allow the required ADT paths, then retry. |
 | `SAP_AUTHENTICATION_FAILED` | Backend returned login/401 behavior or an ambiguous 403 after PP. Do not claim a specific missing-user cause. | Fix mapping/login/PP, then retry the same conversation. |
 | `SAP_AUTHORIZATION_DENIED` | Structured SAP 403/authorization refusal. | Grant the required SAP authorization, then retry. |
 | `SAP_SERVICE_INACTIVE` | SAP ICF/ADT service is inactive rather than a user authorization issue. | Activate/fix the service, then retry. |
@@ -667,16 +675,17 @@ Do not cache PP, SAP authentication, or SAP authorization failures—not globall
 session. A user can say “try again now” after Basis fixes mapping or permissions, and the next call
 must reach PP/SAP again. If XSUAA roles changed, the user needs a fresh token/sign-in.
 
-Set `retryable: true` for PP/SAP authentication, authorization, and service failures that can change
-externally. Set it false for unknown target, empty registry, target policy, and snapshot drift within
-the current process. “Retryable” permits a user-initiated retry after a fix; it must not cause an
-unbounded automatic retry loop.
+Set `retryable: true` for PP, Cloud Connector exposure, SAP authentication, authorization, and
+service failures that can change externally. Set it false for unknown target, empty registry, target
+policy, and snapshot drift within the current process. “Retryable” permits a user-initiated retry
+after a fix; it must not cause an unbounded automatic retry loop.
 
 Audit stages must distinguish:
 
 - ARC/XSUAA authentication;
 - target resolution;
 - PP destination exchange;
+- Cloud Connector exposure/access;
 - SAP authentication;
 - SAP authorization;
 - target policy; and
@@ -689,9 +698,10 @@ configuration and is not guaranteed by ARC-1.
 
 Add a public `target` field to the audit base event; never reuse or expose the internal BTP
 destination name. Emit one terminal MCP-call outcome plus stage-transition events only for failures
-(`target_resolution_failed`, `pp_exchange_failed`, `sap_authentication_failed`,
-`sap_authorization_failed`, and `target_policy_denied`). Keep successful stage detail in structured
-stderr debug logs so one successful call does not create several billable BTP Audit Log records.
+(`target_resolution_failed`, `pp_exchange_failed`, `cloud_connector_access_denied`,
+`sap_authentication_failed`, `sap_authorization_failed`, and `target_policy_denied`). Keep successful
+stage detail in structured stderr debug logs so one successful call does not create several billable
+BTP Audit Log records.
 
 ## Feature State, Cache, and User Availability
 
@@ -1016,8 +1026,9 @@ Work:
 - Separate XSUAA, target, PP exchange, SAP login, SAP authorization, and service-inactive stages.
 - Classify `PP_SETUP_FAILED` only when failure is proven before ADT dispatch. Default an ambiguous
   post-PP 401 response to `SAP_AUTHENTICATION_FAILED`, use `SAP_REQUEST_FAILED` for network/5xx,
-  and keep any body-marker
-  heuristic release/signature-scoped under ADR-0002.
+  classify only the verified plain-text BTP Connectivity exposure denial as
+  `CLOUD_CONNECTOR_ACCESS_DENIED`, and keep any body-marker heuristic narrow and signature-scoped
+  under ADR-0002.
 - Add safe structured error content with code, target, request ID, and retryability.
 - Make PP-context hints stop recommending `SAP_USER`/`SAP_PASSWORD`.
 - Ensure no negative auth/availability cache exists.
@@ -1166,6 +1177,7 @@ Principal Propagation.
 3. A propagated SAP user that exists but lacks ADT authorization produces a captured structured SAP
    403 classified as `SAP_AUTHORIZATION_DENIED`.
 4. A deliberately broken pre-ADT Destination/Connectivity lookup produces `PP_SETUP_FAILED`; a
+   missing or disallowed Cloud Connector exposure produces `CLOUD_CONNECTOR_ACCESS_DENIED`; and a
    post-PP ambiguous 401 defaults to `SAP_AUTHENTICATION_FAILED`.
 5. After Basis fixes mapping/authorization, retry in the same MCP session succeeds—proving no denial
    cache.
