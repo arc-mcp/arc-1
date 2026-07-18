@@ -36,6 +36,15 @@ ARC-1 may expose experimental multi-target endpoints only when
 - a structural multi-target ceiling that forbids writes, activation, transport/Git mutations,
   enqueue locks, SAPLint, ATC, and ABAP Unit regardless of administrator role or single-target configuration.
 
+Multi-target protected-resource metadata advertises only the mutation-free `read`, `data`, `sql`,
+and `admin` scopes. The initial unauthenticated challenge does not force `scope=read`, so general MCP
+clients can request that advertised set and XSUAA can reduce the grant to the authenticated user's
+assigned role collections. A validated token must still contain global read before ARC-1 resolves
+route membership. This eager scope negotiation is accepted for v1 because current MCP clients do not
+reliably implement step-up and the structural ceiling cannot mutate SAP. It must not be extended to
+write, transport, or Git scopes: any multi-target write design requires a new security review and
+must reconsider initial scope selection, consent, token privilege, and step-up support.
+
 Single-target mode remains the default and unchanged. A separately configured single-target `/mcp`
 runtime may coexist and retain its current policy. Strict PP is enforced per discovered runtime so
 existing API-key/direct-OIDC behavior is not changed accidentally.

@@ -39,6 +39,19 @@ multi-target v1 ceiling
 No layer can widen an earlier one. `MCPAdmin` cannot bypass SAP authorization or unlock mutations on
 multi-target routes.
 
+### OAuth grant behavior
+
+Multi-target protected-resource metadata advertises `read`, `data`, `sql`, and `admin`, and the
+initial 401 does not force one fixed scope. General MCP clients request that mutation-free set;
+XSUAA intersects it with the authenticated user's assigned role collections, and ARC-1 filters the
+tool/action surface from the resulting token. A validated token without global read still receives
+403 before route membership is resolved.
+
+This makes role changes visible after logout/reconnect in clients that do not support reliable MCP
+scope step-up. It also means a trusted Admin receives all assigned mutation-free scopes at initial
+login. Treat the token accordingly and keep its lifetime short. This model must be redesigned—not
+merely expanded—before any multi-target write, transport, or Git scope is introduced.
+
 A pinned route reduces accidental target switching, but it is not an ACL. A global read user can
 try every accepted pinned route. The aggregate route introduces an additional wrong-target risk: a
 model can select a different authorized system and read data or run SQL there. Keep data/SQL off
@@ -342,7 +355,7 @@ ARC-1 reports the proven failure stage without exposing raw SAP responses:
 | Error | Meaning and response |
 |---|---|
 | `PP_SETUP_FAILED` | Destination/Connectivity lookup or token exchange failed before ADT dispatch. Repair PP/Cloud Connector and retry immediately. |
-| `CLOUD_CONNECTOR_ACCESS_DENIED` | BTP Connectivity returned its specific Cloud Connector exposure denial before SAP handled the ADT request. Make the destination virtual host/port match an HTTPS/`X509_GENERAL` mapping, allow the required ADT paths, and retry. |
+| `CLOUD_CONNECTOR_ACCESS_DENIED` | BTP Connectivity returned its specific Cloud Connector exposure denial before SAP handled the ADT request. Make the destination virtual host/port match an HTTPS/`X509_RESTRICTED` mapping, allow the required ADT paths, and retry. |
 | `SAP_AUTHENTICATION_FAILED` | SAP returned login/401 behavior or an ambiguous post-PP 403. It may be mapping, backend login, or PP configuration; ARC-1 does not claim that the user definitely does not exist. |
 | `SAP_AUTHORIZATION_DENIED` | SAP returned a structured authorization refusal for the propagated user. Repair the SAP role and retry. |
 | `SAP_SERVICE_INACTIVE` | The target ICF/ADT service is inactive or unreachable in that form, rather than merely a user-role issue. |
@@ -385,7 +398,7 @@ tune from audit and latency evidence.
 - [ ] The feature is explicitly enabled and all multi-target routes remain mutation-free.
 - [ ] XSUAA, Destination, and Connectivity bindings are healthy.
 - [ ] Every target uses strict Principal Propagation; no shared SAP identity fallback exists.
-- [ ] Every destination virtual host/port exactly matches an HTTPS/`X509_GENERAL` Cloud Connector mapping with the required ADT paths allowed.
+- [ ] Every destination virtual host/port exactly matches an HTTPS/`X509_RESTRICTED` Cloud Connector mapping with the required ADT paths allowed.
 - [ ] Every target has a valid real SID, client, factual description, `arc1.enabled=true`, and a unique valid route alias when its SID/client is reused.
 - [ ] Data/SQL is approved and enabled only where required at both instance and target layers.
 - [ ] No target contains unknown or write-related `arc1.*` keys.

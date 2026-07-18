@@ -153,6 +153,12 @@ describe('multi-target HTTP route authentication', () => {
     expect(known.headers['www-authenticate']).toContain('/.well-known/oauth-protected-resource/A4H/100/mcp');
     expect(knownAlias.headers['www-authenticate']).toContain('/.well-known/oauth-protected-resource/A4H-2025/100/mcp');
     expect(unknown.headers['www-authenticate']).toContain('/.well-known/oauth-protected-resource/ZZZ/999/mcp');
+    expect(known.headers['www-authenticate']).not.toContain('scope=');
+
+    const authenticatedWithoutRead = await request(app).post('/ZZZ/999/mcp').set('Authorization', 'Bearer data-token');
+    expect(authenticatedWithoutRead.status).toBe(403);
+    expect(authenticatedWithoutRead.headers['www-authenticate']).toContain('error="insufficient_scope"');
+    expect(authenticatedWithoutRead.headers['www-authenticate']).toContain('scope="read"');
 
     const authenticatedUnknown = await request(app).post('/ZZZ/999/mcp').set('Authorization', 'Bearer read-token');
     expect(authenticatedUnknown.status).toBe(404);
@@ -177,6 +183,17 @@ describe('multi-target HTTP route authentication', () => {
     expect(known.body.resource).toBe('http://127.0.0.1:0/A4H-2025/100/mcp');
     expect(unknown.body.resource).toBe('http://127.0.0.1:0/ZZZ-2025/999/mcp');
     expect({ ...known.body, resource: undefined }).toEqual({ ...unknown.body, resource: undefined });
+  });
+
+  it('advertises all mutation-free scopes without forcing the initial grant to read only', async () => {
+    const aggregateMetadata = await request(app).get('/.well-known/oauth-protected-resource/multi/mcp');
+    expect(aggregateMetadata.status).toBe(200);
+    expect(aggregateMetadata.body.scopes_supported).toEqual(['read', 'data', 'sql', 'admin']);
+
+    const challenge = await request(app).post('/multi/mcp');
+    expect(challenge.status).toBe(401);
+    expect(challenge.headers['www-authenticate']).toContain('/.well-known/oauth-protected-resource/multi/mcp');
+    expect(challenge.headers['www-authenticate']).not.toContain('scope=');
   });
 
   it('does not expose a separate HTTP target catalog', async () => {

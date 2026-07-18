@@ -165,7 +165,7 @@ This destination is used per-request when an authenticated user's JWT is availab
 
 > **Why two destinations?** A PrincipalPropagation destination has no User/Password. At startup, there is no user JWT — the SAP Cloud SDK's `getDestination()` would fail for PP destinations. The BasicAuth destination supports system-level feature probing. In the recommended strict topology it is not available to MCP tool callers.
 
-> **Why port 50001 for PP?** The Cloud Connector needs an HTTPS system mapping with `X509_GENERAL` auth mode for PP. Port 50001 is the SAP HTTPS port. The HTTP mapping (50000) uses `NONE_RESTRICTED` auth which doesn't support PP.
+> **Why port 50001 for PP?** The Cloud Connector needs an HTTPS system mapping with X.509 auth for PP. Use `X509_RESTRICTED` so a missing user principal cannot fall back to the Cloud Connector system certificate. Port 50001 is the SAP HTTPS port. The HTTP mapping (50000) uses `NONE_RESTRICTED` auth, which does not support PP.
 
 #### Cloud Connector Location ID
 
@@ -227,14 +227,14 @@ Cloud Connector Admin UI → **Cloud to On-Premise → Access Control**:
    - **Internal Port**: `50001`
    - **Protocol**: `HTTPS`
    - **Back-end Type**: ABAP System
-   - **Authentication Mode**: `X509_GENERAL`
+   - **Authentication Mode**: `X509_RESTRICTED`
 2. Add resources (see [URL path reference](#cloud-connector-url-path-reference) below for the full list). For a quick start, add `/` with **Path and all sub-paths**. For production, use fine-grained paths.
 
 Or via CC REST API:
 ```bash
 curl -sk -u Administrator:<password> -X POST \
   -H "Content-Type: application/json" \
-  -d '{"virtualHost":"a4h-abap","virtualPort":50001,"localHost":"localhost","localPort":50001,"protocol":"HTTPS","backendType":"abapSys","authenticationMode":"X509_GENERAL","sid":"A4H","hostInHeader":"INTERNAL"}' \
+  -d '{"virtualHost":"a4h-abap","virtualPort":"50001","localHost":"localhost","localPort":"50001","protocol":"HTTPS","backendType":"abapSys","authenticationMode":"X509_RESTRICTED","sid":"A4H","hostInHeader":"INTERNAL"}' \
   "https://localhost:8443/api/v1/configuration/subaccounts/<region>/<subaccount>/systemMappings"
 ```
 

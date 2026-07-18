@@ -63,6 +63,7 @@ propagation, remains the target-specific authorization boundary.
 | Maximum | 256 enabled candidates. More than 256 makes the discovered registry unavailable; ARC-1 never silently chooses a subset. |
 | Authentication | XSUAA only for multi-target endpoints in v1; strict per-user PP; no shared SAP identity fallback. |
 | Authorization | Existing global scopes; no target-specific XSUAA or role-model change. A scoped additive `@arc-mcp/xsuaa-auth` BTP-destination API change is required for uncached PP lookup and original properties. |
+| OAuth scope negotiation | Route metadata advertises only `read`, `data`, `sql`, and `admin`. The initial 401 omits a fixed scope so general MCP clients request the advertised mutation-free set and XSUAA grants only the user's assigned subset. A validated token still needs `read` before route lookup. Reconsider this eager grant before any write-capable multi-target design. |
 | Target policy | Read by default; `arc1.allow_data_preview` and `arc1.allow_free_sql` are explicit per-target opt-ins. |
 | Writes | Impossible on multi-target routes in v1. Do not document or test a multi-target full-write configuration. |
 | Cache | `ARC1_CACHE=none` while the mode is enabled. |
@@ -285,10 +286,10 @@ scopes and SAP authorization.
 
 These examples intentionally use an HTTP destination URL with virtual port `50001`. The port is an
 illustrative convention, not a required backend port: the destination virtual host/port must exactly
-match a Cloud Connector mapping whose internal connection uses HTTPS with `X509_GENERAL` and allows
+match a Cloud Connector mapping whose internal connection uses HTTPS with `X509_RESTRICTED` and allows
 the required ADT paths. The destination's
 `Authentication=PrincipalPropagation` property alone cannot upgrade an HTTP/`NONE_RESTRICTED`
-Cloud Connector mapping to HTTPS/`X509_GENERAL`.
+Cloud Connector mapping to HTTPS/`X509_RESTRICTED`.
 
 ## Discovery and Immutable Registry
 
@@ -390,13 +391,16 @@ accepted.
 
 For `/<PUBLIC-SYSTEM>/<CLIENT>/mcp` and `/multi/mcp`:
 
-1. Validate XSUAA and require at least the global read scope before resolving whether a syntactically
-   valid target exists.
-2. Resolve the target/route from the immutable registry.
-3. Apply XSUAA functional scope pruning.
-4. Apply the instance and target policy intersection.
-5. Exchange the user's token through Destination/Connectivity PP.
-6. Let SAP enforce the user's system/client authorization.
+1. An unauthenticated request receives registry-independent protected-resource metadata and no fixed
+   scope in the 401 challenge. A general MCP client therefore requests the advertised mutation-free
+   `read data sql admin` set; XSUAA reduces the grant to the scopes assigned to the authenticated user.
+2. Validate the XSUAA token and require at least the global read scope before resolving whether a
+   syntactically valid target exists. A valid token without read receives a 403 read-scope challenge.
+3. Resolve the target/route from the immutable registry.
+4. Apply XSUAA functional scope pruning.
+5. Apply the instance and target policy intersection.
+6. Exchange the user's token through Destination/Connectivity PP.
+7. Let SAP enforce the user's system/client authorization.
 
 This order prevents unauthenticated route enumeration. OAuth metadata, health, and standards-required
 discovery endpoints may remain public but must contain no target inventory.
@@ -447,8 +451,18 @@ RFC 9728 metadata must be registry-independent:
 - `/multi/mcp` has its own fixed PRM resource;
 - the document echoes the canonical requested resource and shared XSUAA authorization server but
   never consults or exposes the registry; and
+- `scopes_supported` is exactly `read`, `data`, `sql`, and `admin`; the initial 401 challenge omits
+  `scope` so MCP's general-client fallback can request that set and XSUAA can issue only the user's
+  assigned subset; and
 - each 401 `WWW-Authenticate` challenge points to metadata whose `resource` exactly matches the MCP
   endpoint the client connected to.
+
+This is a deliberate interoperability tradeoff, not a precedent for eager write authorization.
+Tokens may contain every mutation-free scope assigned to the user from the initial login, increasing
+the impact of token theft relative to operation-specific step-up. Short token lifetime, XSUAA role
+assignment, the instance/destination/SAP gates, and the structural mutation prohibition bound that
+risk in v1. Before multi-target writes are considered, revisit the advertised scopes and require a
+new consent/step-up design rather than adding `write`, `transports`, or `git` to this list.
 
 Registered and unregistered-but-valid pinned PRM responses are byte-identical except for the echoed
 resource. Delete the prototype `/.well-known/oauth-protected-resource/mcp/:dest` membership check.
@@ -661,7 +675,7 @@ Required classifications:
 | `TARGET_CONFIG_CHANGED` | Live PP lookup no longer matches startup fingerprint. | Restart ARC-1 after reviewing the destination. |
 | `TARGET_POLICY_DENIED` | Instance or destination did not enable data/SQL. | Administrator changes both required gates and restarts for destination changes. |
 | `PP_SETUP_FAILED` | Failure is proven to occur before ADT dispatch during Destination/Connectivity lookup or token exchange. | Fix BTP/Cloud Connector setup, then retry. |
-| `CLOUD_CONNECTOR_ACCESS_DENIED` | BTP Connectivity returned its verified Cloud Connector exposure-denial signature before SAP handled the ADT request. | Make the destination virtual host/port match an HTTPS/`X509_GENERAL` mapping, allow the required ADT paths, then retry. |
+| `CLOUD_CONNECTOR_ACCESS_DENIED` | BTP Connectivity returned its verified Cloud Connector exposure-denial signature before SAP handled the ADT request. | Make the destination virtual host/port match an HTTPS/`X509_RESTRICTED` mapping, allow the required ADT paths, then retry. |
 | `SAP_AUTHENTICATION_FAILED` | Backend returned login/401 behavior or an ambiguous 403 after PP. Do not claim a specific missing-user cause. | Fix mapping/login/PP, then retry the same conversation. |
 | `SAP_AUTHORIZATION_DENIED` | Structured SAP 403/authorization refusal. | Grant the required SAP authorization, then retry. |
 | `SAP_SERVICE_INACTIVE` | SAP ICF/ADT service is inactive rather than a user authorization issue. | Activate/fix the service, then retry. |
@@ -969,8 +983,9 @@ Work:
 - Mount one case-sensitive syntactic pinned-route matcher plus `/multi/mcp` from one snapshot; put it
   before case-insensitive single-target `/mcp` middleware.
 - Never bind a discovered target to `/mcp`.
-- Run a dedicated XSUAA-only verifier and require read before registry membership lookup. An
-  authenticated syntactically valid but absent pinned target receives a generic HTTP 404.
+- Run a dedicated XSUAA-only verifier without a fixed scope in the initial 401, then require read
+  from the validated token before registry membership lookup. An authenticated syntactically valid
+  but absent pinned target receives a generic HTTP 404; a valid token without read receives 403.
 - Reuse one per-user and one per-IP MCP limiter across every route.
 - Keep OAuth rate limiting separate.
 - Make unknown/malformed paths generic to unauthenticated callers.
@@ -1135,6 +1150,9 @@ Required automated cases:
 - ATC, ABAP Unit, SAPLint, hidden `SAP`, and `Custom_*` are absent and direct invocation fails;
 - auth occurs before route resolution and public endpoints do not enumerate targets; no standalone
   HTTP target-catalog route is mounted;
+- initial multi-target 401 challenges omit `scope`, protected-resource metadata advertises exactly
+  `read data sql admin`, XSUAA role grants determine the returned subset, and a validated token
+  without read receives 403 before route resolution;
 - read/admin `SAPTargets` views differ exactly as specified and remain secret-safe;
 - uncached PP drift across connection/policy fields, SAP client pinning, lazy success-only feature
   probing, explicit unknown feature state, and no discovered default/shared client;

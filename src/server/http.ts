@@ -32,7 +32,7 @@ import cors from 'cors';
 import type { Request, Response } from 'express';
 import express from 'express';
 import helmet from 'helmet';
-import { expandScopes } from '../authz/policy.js';
+import { expandScopes, hasRequiredScope } from '../authz/policy.js';
 import { API_KEY_PROFILES } from './config.js';
 import type { DestinationRegistry, TargetDescriptor } from './destination-registry.js';
 import { authLibLogger, logger } from './logger.js';
@@ -431,11 +431,31 @@ export async function startHttpServer(
             const lowerPath = originalPath.toLowerCase();
             const resourcePath = lowerPath === '/authorize' ? '/multi/mcp' : originalPath;
             const multiResourceMetadataUrl = `${oauthFullBase}/.well-known/oauth-protected-resource${resourcePath}`;
-            requireBearerAuth({
+            const authenticate = requireBearerAuth({
               verifier: { verifyAccessToken: xsuaaVerifier },
-              requiredScopes: ['read'],
               resourceMetadataUrl: multiResourceMetadataUrl,
-            })(req, res, next);
+            });
+            authenticate(req, res, (error) => {
+              if (error) {
+                next(error);
+                return;
+              }
+              // Keep route membership behind the global read scope without putting
+              // `scope=read` in the initial 401 challenge. MCP clients can therefore
+              // request the four mutation-free scopes advertised by the route PRM;
+              // XSUAA still grants only the subset assigned to the authenticated user.
+              if (!req.auth || !hasRequiredScope(req.auth.scopes, 'read')) {
+                res
+                  .set(
+                    'WWW-Authenticate',
+                    `Bearer error="insufficient_scope", error_description="Insufficient scope", scope="read", resource_metadata="${multiResourceMetadataUrl}"`,
+                  )
+                  .status(403)
+                  .json({ error: 'insufficient_scope', error_description: 'Insufficient scope' });
+                return;
+              }
+              next();
+            });
           }
         : undefined;
     if (uiDeps) {
