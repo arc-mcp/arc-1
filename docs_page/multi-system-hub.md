@@ -1,8 +1,8 @@
 # Multi-System Hub (mcp-hub)
 
 ARC-1 is **one instance per SAP system by default**, and this remains the recommended architecture for
-writes, target-specific visibility, and strong failure/security isolation. The proposed experimental
-[multi-target mode](multi-destination.md) is a mutation-free BTP exception for reducing instance
+writes, target-specific visibility, and strong failure/security isolation. The experimental
+[multi-target mode](multi-target-setup.md) is a mutation-free BTP exception for reducing instance
 sprawl. When you keep separate ARC-1 instances for DEV / QA / PROD or mixed releases,
 [`arc-mcp-hub`](https://github.com/arc-mcp/mcp-hub) puts them behind **one URL and one login**, with
 path-scoped routing so cross-system mistakes are structurally impossible.

@@ -50,7 +50,6 @@ nav:
       - BTP ABAP Environment: btp-abap-environment.md
       - S/4HANA Public Cloud: s4hana-public-cloud.md
       - Multi-System Setup (Multi-Target): multi-target-setup.md
-      - Multi-Target Endpoints: multi-destination.md
       - Multi-Target Administration: multi-target-administration.md
       - Multi-System Hub (mcp-hub): multi-system-hub.md
       - Best Practices: deployment-best-practices.md
@@ -106,6 +105,7 @@ plugins:
   - redirects:
       redirect_maps:
         phase4-btp-deployment.md: btp-cloud-foundry-deployment.md
+        multi-destination.md: multi-target-setup.md
 
 extra_javascript:
   - javascripts/posthog.js

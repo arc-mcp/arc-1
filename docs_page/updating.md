@@ -8,7 +8,8 @@ it with `ARC1_MULTI_TARGET_ENDPOINTS=true`, mark each eligible BTP subaccount de
 Routes are now `/<SID>/<CLIENT>/mcp` and `/multi/mcp`; destination-name routes and a discovered
 default `/mcp` alias do not exist. Per-destination data/SQL policy lives in `arc1.*` destination
 properties, not `SAP_*_<DEST>` environment variables. See
-[Multi-Target Administration](multi-target-administration.md).
+[Multi-System Setup](multi-target-setup.md), then
+[Multi-Target Administration](multi-target-administration.md) for diagnostics and operations.
 
 The base `mta.yaml` is now target-free: all legacy target settings and the experimental multi-target
 block are commented examples. Existing deployments remain compatible because ARC-1 still reads the

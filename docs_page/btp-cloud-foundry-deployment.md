@@ -666,10 +666,9 @@ exposes every system through a single tool set + a `system` parameter (one tool 
 
 ARC-1 also has an experimental, default-off, mutation-free mode that discovers marked subaccount
 destinations inside one CF application. It is useful when tens or hundreds of read-only SAP clients
-make one app per client operationally expensive. See [Multi-Target Endpoints](multi-destination.md)
-and [Multi-System Setup](multi-target-setup.md) plus
+make one app per client operationally expensive. See [Multi-System Setup](multi-target-setup.md) and
 [Multi-Target Administration](multi-target-administration.md) for its strict PP, XSUAA, cache,
-authorization, and data/SQL limitations.
+authorization, diagnostics, and data/SQL limitations.
 
 ## SAP Documentation References
 

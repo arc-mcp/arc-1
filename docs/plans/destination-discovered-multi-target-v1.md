@@ -514,8 +514,9 @@ servers never list or dispatch it.
 
 ## Administrator Diagnostics Contract
 
-The new end-user/operator page is `docs_page/multi-target-administration.md`. It is the normative
-setup and troubleshooting guide and must be kept synchronized with response types and reason codes.
+`docs_page/multi-target-setup.md` is the normative deployment/configuration guide.
+`docs_page/multi-target-administration.md` is the normative operator/diagnostics contract and must
+be kept synchronized with response types and reason codes.
 
 ### Read view
 
@@ -1005,7 +1006,7 @@ Files:
 - `docs/adr/0006-experimental-read-only-multi-target.md`
 - `AGENTS.md`
 - `README.md`
-- `docs_page/multi-destination.md`
+- `docs_page/multi-target-setup.md`
 - `docs_page/multi-target-administration.md`
 - `docs_page/configuration-reference.md`
 - `docs_page/authorization.md`
@@ -1045,8 +1046,8 @@ Documentation requirements:
   behavior, admin diagnostics, rates, pinned-URL OAuth/DCR multiplication, and all deferred features.
 - Update “12 tools” claims to explain that standard single-target mode remains 12 tools while
   multi-target v1 exposes its six permitted SAP-contacting tools plus conditional aggregate-only
-  `SAPTargets`; retain the existing
-  `multi-destination.md` slug for link stability even though the feature is named multi-target.
+  `SAPTargets`. Keep the former `multi-destination.md` URL as a documentation redirect to the
+  consolidated setup page.
 - Add explicit rows for `ARC1_MULTI_TARGET_ENDPOINTS` and `ARC1_MCP_HTTP_RATE_LIMIT` to both
   `docs_page/configuration-reference.md` and the `AGENTS.md` configuration table, including defaults,
   mode restrictions, and the inherited-rate-limit migration behavior.
