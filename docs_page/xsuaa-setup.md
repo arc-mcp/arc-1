@@ -65,6 +65,15 @@ And 7 pre-defined role collections (defined in `mta.yaml`, assignable to users i
 > and `xsappname`: update the MCP client URL, re-assign users to the new
 > `ARC-1 … (<space>)` collections, and set `ARC1_DCR_SIGNING_SECRET` before the
 > redeploy so cached OAuth `client_id`s survive the `xsappname` change.
+>
+> Updating an existing XSUAA service with
+> `cf update-service arc1-xsuaa -c xs-security.json` updates the scopes and role
+> templates only. It does **not** create role collections declared in
+> `mta.yaml`. Run a full MTA deployment when adopting these collections, then
+> verify in **Security → Role Collections** that all seven collections exist and
+> contain the expected roles. This matters especially for older deployments:
+> seeing `MCPViewer`, `MCPDataViewer`, or `MCPSqlUser` under **Roles** does not
+> mean the corresponding assignable role collections already exist.
 
 **Want a restricted developer** (can write code but cannot transport or push to Git)? Define your own role template in `xs-security.json` with just `[read, write]` scopes, redeploy, and assign it — or use `SAP_DENY_ACTIONS` on the server.
 
