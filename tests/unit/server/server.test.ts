@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { BTPConfig } from '@arc-mcp/xsuaa-auth/btp';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
-import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
@@ -213,6 +213,65 @@ describe('MCP Server', () => {
       resolvedNullableOptionals: false,
     });
     infoSpy.mockRestore();
+  });
+
+  it('answers tools/list immediately without waiting for the startup probe', async () => {
+    // Regression test: some MCP clients (observed: Cline) cancel tools/list around ~5s,
+    // well under how long startup feature discovery can take against a real SAP system.
+    // See docs/research/2026-07-19-cline-tools-list-timeout.md.
+    const neverResolves = new Promise<void>(() => {});
+    const server = createServer(DEFAULT_CONFIG, undefined, undefined, undefined, undefined, neverResolves);
+    const handler = requestHandler(server, ListToolsRequestSchema.shape.method.value);
+
+    const result = await Promise.race([
+      handler({ method: 'tools/list', params: {} }, {}),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('tools/list did not answer promptly')), 200)),
+    ]);
+
+    expect((result as { tools: unknown[] }).tools.length).toBeGreaterThan(0);
+  });
+
+  it('declares tools.listChanged and notifies clients once the startup probe resolves', async () => {
+    let resolveProbe: () => void = () => {};
+    const startupProbePromise = new Promise<void>((resolve) => {
+      resolveProbe = resolve;
+    });
+    const sendSpy = vi.spyOn(Server.prototype, 'sendToolListChanged').mockResolvedValue(undefined);
+
+    const server = createServer(DEFAULT_CONFIG, undefined, undefined, undefined, undefined, startupProbePromise);
+    const capabilities = (server as unknown as { _capabilities: { tools?: { listChanged?: boolean } } })._capabilities;
+
+    expect(capabilities.tools).toEqual({ listChanged: true });
+    expect(sendSpy).not.toHaveBeenCalled();
+
+    resolveProbe();
+    await vi.waitFor(() => expect(sendSpy).toHaveBeenCalledTimes(1));
+
+    sendSpy.mockRestore();
+  });
+
+  it('does not crash when sendToolListChanged fails (e.g. not yet connected)', async () => {
+    let resolveProbe: () => void = () => {};
+    const startupProbePromise = new Promise<void>((resolve) => {
+      resolveProbe = resolve;
+    });
+    const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+    const debugSpy = vi.spyOn(logger, 'debug').mockImplementation(() => undefined);
+
+    // No transport connected: the real sendToolListChanged() throws 'Not connected'.
+    createServer(DEFAULT_CONFIG, undefined, undefined, undefined, undefined, startupProbePromise);
+    resolveProbe();
+
+    await vi.waitFor(() =>
+      expect(debugSpy).toHaveBeenCalledWith(
+        'Skipped tools/list_changed notification after startup probe',
+        expect.objectContaining({ error: expect.stringContaining('Not connected') }),
+      ),
+    );
+    expect(errorSpy).not.toHaveBeenCalled();
+
+    errorSpy.mockRestore();
+    debugSpy.mockRestore();
   });
 });
 

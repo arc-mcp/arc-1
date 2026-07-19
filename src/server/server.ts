@@ -693,7 +693,7 @@ export function createServer(
 ): Server {
   const server = new Server(
     { name: 'arc-1', version: VERSION },
-    { capabilities: { tools: {} }, instructions: SERVER_INSTRUCTIONS },
+    { capabilities: { tools: { listChanged: true } }, instructions: SERVER_INSTRUCTIONS },
   );
   const apiKeyProvenanceVerifier = createConfiguredApiKeyVerifier(config);
 
@@ -714,12 +714,12 @@ export function createServer(
 
   // Register tool listing — filtered by user's scopes when auth is active
   server.setRequestHandler(ListToolsRequestSchema, async (_request, extra) => {
-    // Wait for the startup probe (if provided), but with a timeout so a slow/unreachable
-    // SAP system doesn't stall the MCP connection setup. If the probe doesn't finish in
-    // time, fall back to the default tool set (textSearch unknown = show source_code).
-    if (startupProbePromise) {
-      await Promise.race([startupProbePromise, new Promise((resolve) => setTimeout(resolve, 10_000))]);
-    }
+    // Never block tools/list on the startup feature-discovery probe: some MCP clients
+    // (observed: Cline) cancel tools/list around ~5s, well under how long discovery can take
+    // against a real (non-localhost) SAP system. Answer immediately with whatever is cached
+    // right now (undefined on the very first call = default/on-prem-superset tool set), and
+    // rely on the tools/list_changed notification below to nudge clients to re-fetch once
+    // discovery actually finishes. See docs/research/2026-07-19-cline-tools-list-timeout.md.
     const features = getCachedFeatures();
     const clientVersion = server.getClientVersion();
     if (config.schemaNullableOptionals === 'auto' && !schemaNullableAutoClientInfoLogged) {
@@ -897,6 +897,23 @@ export function createServer(
     );
     return { ...result } as Record<string, unknown>;
   });
+
+  // Nudge already-connected clients to re-fetch tools/list once startup feature discovery
+  // finishes, so the discovery-adjusted list (BTP vs on-prem enums, SAPGit visibility, ...)
+  // still arrives — just later, instead of delaying the first tools/list response for it.
+  // Guarded: for HTTP, createServer() is called per-session via a factory (see
+  // createAndStartServer) and connect() may not have happened yet when this fires; a missed
+  // notification there is harmless because that session's own first tools/list will already
+  // reflect the (by-then-resolved) discovery state directly.
+  if (startupProbePromise) {
+    startupProbePromise
+      .then(() => server.sendToolListChanged())
+      .catch((err) => {
+        logger.debug('Skipped tools/list_changed notification after startup probe', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+  }
 
   return server;
 }
