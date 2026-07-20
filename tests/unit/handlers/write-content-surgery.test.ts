@@ -399,6 +399,108 @@ describe('SAPWrite edit_content', () => {
     expect(put?.body).toContain("VALUE ' '.");
   });
 
+  it('does not 304 off a flat-endpoint cache entry when writing a group-scoped FUGR structural INCL (A4)', async () => {
+    // Regression for issue A4: the source cache is keyed by (type, name, version), blind to which
+    // endpoint populated it. A prior plain SAPRead(type="INCL") (flat /programs/includes/ path)
+    // must NOT let its cached ETag be sent as If-None-Match against the group-scoped
+    // /functions/groups/{g}/includes/{name} endpoint edit_content actually writes to here — a
+    // cross-endpoint 304 would hand the transform stale, wrong-endpoint bytes.
+    const name = 'LZARC1TOP';
+    const group = 'ZARC1';
+    const objectPath = `/sap/bc/adt/functions/groups/${group.toLowerCase()}/includes/${name.toLowerCase()}`;
+    const staleFlatEtag = 'FLAT-ETAG-FROM-EARLIER-SAPREAD';
+    const staleFlatSource = "DATA: gv_flag TYPE abap_bool VALUE 'STALE'.";
+    const realCurrentSource = "DATA: gv_flag TYPE abap_bool VALUE 'X'.";
+
+    const layer = new CachingLayer(new MemoryCache());
+    // Simulate an earlier plain SAPRead(type="INCL") (no group) populating the cache via the flat
+    // endpoint — exactly what src/handlers/read.ts's INCL case always uses.
+    layer.cache.putSource('INCL', name, staleFlatSource, { version: 'active', etag: staleFlatEtag });
+
+    const calls: FetchCall[] = [];
+    mockFetch.mockReset();
+    mockFetch.mockImplementation(
+      (
+        url: string | URL,
+        request?: { method?: string; body?: string | Buffer | null; headers?: Record<string, string> },
+      ) => {
+        const method = request?.method ?? 'GET';
+        const urlString = String(url);
+        const parsed = new URL(urlString);
+        calls.push({ method, url: urlString, body: typeof request?.body === 'string' ? request.body : undefined });
+
+        if (method === 'GET' && parsed.pathname === '/sap/bc/adt/activation/inactiveobjects') {
+          return Promise.resolve(
+            mockResponse(
+              200,
+              '<?xml version="1.0"?><ioc:inactiveObjects xmlns:ioc="http://www.sap.com/adt/inactiveObjects"/>',
+              { 'x-csrf-token': 'TOKEN' },
+            ),
+          );
+        }
+        if (method === 'GET' && parsed.pathname === objectPath) {
+          return Promise.resolve(
+            mockResponse(
+              200,
+              '<abap:object xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:packageRef adtcore:name="$TMP"/></abap:object>',
+              { 'x-csrf-token': 'TOKEN' },
+            ),
+          );
+        }
+        if (method === 'GET' && parsed.pathname === `${objectPath}/source/main`) {
+          // A buggy implementation forwards the flat-cache ETag as If-None-Match against this
+          // group-scoped endpoint; SAP would legitimately 304 (same underlying object version),
+          // handing stale flat-endpoint bytes to transform. The fix must never send that header
+          // here, so this always returns the real current bytes.
+          if (request?.headers?.['If-None-Match'] === staleFlatEtag) {
+            return Promise.resolve(mockResponse(304, '', { 'x-csrf-token': 'TOKEN' }));
+          }
+          return Promise.resolve(mockResponse(200, realCurrentSource, { 'x-csrf-token': 'TOKEN' }));
+        }
+        if (method === 'POST' && parsed.pathname === objectPath && parsed.searchParams.get('_action') === 'LOCK') {
+          return Promise.resolve(
+            mockResponse(
+              200,
+              '<asx:abap><asx:values><DATA><LOCK_HANDLE>LH1</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL></DATA></asx:values></asx:abap>',
+              { 'x-csrf-token': 'TOKEN' },
+            ),
+          );
+        }
+        if (method === 'PUT' && parsed.pathname === `${objectPath}/source/main`) {
+          return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'TOKEN' }));
+        }
+        if (method === 'POST' && parsed.pathname === objectPath && parsed.searchParams.get('_action') === 'UNLOCK') {
+          return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'TOKEN' }));
+        }
+        return Promise.resolve(mockResponse(404, `Unexpected ${method} ${urlString}`, { 'x-csrf-token': 'TOKEN' }));
+      },
+    );
+
+    const result = await handleToolCall(
+      createClient(),
+      DEFAULT_CONFIG,
+      'SAPWrite',
+      {
+        action: 'edit_content',
+        type: 'INCL',
+        group,
+        name,
+        oldContent: "VALUE 'X'.",
+        newContent: "VALUE ' '.",
+        lintBeforeWrite: false,
+      },
+      undefined,
+      undefined,
+      layer,
+    );
+
+    expect(result.isError).toBeUndefined();
+    const sourceGet = calls.find((call) => call.method === 'GET' && call.url.includes(`${objectPath}/source/main`));
+    expect(sourceGet).toBeDefined();
+    const put = calls.find((call) => call.method === 'PUT');
+    expect(put?.body).toBe("DATA: gv_flag TYPE abap_bool VALUE ' '.");
+  });
+
   it('falls back to the standalone INCL path when search finds no owning function group', async () => {
     const name = 'ZSTANDALONE_INCL';
     const objectPath = `/sap/bc/adt/programs/includes/${name}`;

@@ -5,7 +5,7 @@ import { spliceContent } from '../../context/content-splice.js';
 import { cachedFeatures } from '../feature-cache.js';
 import { resolveVersionAndDraftInfo } from '../read.js';
 import { errorResult, type ToolResult, textResult } from '../shared.js';
-import { runPreWriteLint, runPreWriteSyntaxCheck } from '../write-helpers.js';
+import { isCacheConsistentSrcUrl, runPreWriteLint, runPreWriteSyntaxCheck } from '../write-helpers.js';
 import type { SapWriteContext } from './context.js';
 
 export async function writeActionEditContent(ctx: SapWriteContext): Promise<ToolResult> {
@@ -62,7 +62,10 @@ export async function writeActionEditContent(ctx: SapWriteContext): Promise<Tool
     cacheSecurity,
   );
   const cachedVersion = effectiveVersion === 'inactive' ? 'inactive' : 'active';
-  const cachedSource = cachingLayer?.getCachedSourceWithEtag(type, name, cachedVersion) ?? null;
+  const cachedSource =
+    cachingLayer && isCacheConsistentSrcUrl(type, name, srcUrl)
+      ? cachingLayer.getCachedSourceWithEtag(type, name, cachedVersion)
+      : null;
 
   let lintBlocked: ToolResult | undefined;
   let lintWarnings: string | undefined;
