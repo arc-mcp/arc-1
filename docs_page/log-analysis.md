@@ -47,8 +47,6 @@ The file sink always receives ALL events regardless of stderr level.
 | `auth_pp_created` | info/error | Per-user ADT client created via principal propagation |
 | `safety_blocked` | warn | Operation blocked by safety system |
 | `server_start` | info | ARC-1 server started |
-| `elicitation_sent` | info | Elicitation prompt sent to client |
-| `elicitation_response` | info | User response to elicitation |
 
 ## What a Healthy Startup Looks Like
 

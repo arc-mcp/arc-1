@@ -62,7 +62,7 @@ function categorize(event: AuditEvent): AuditCategory | null {
     case 'auth_pp_created':
       return event.level === 'error' ? 'security-events' : null;
 
-    // Don't send http_request, server_start, elicitation events to BTP audit log
+    // Don't send http_request, server_start, etc. to BTP audit log
     default:
       return null;
   }

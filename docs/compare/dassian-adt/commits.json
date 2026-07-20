@@ -143,8 +143,8 @@
           "type": "feat",
           "status": "evaluated",
           "priority": "low",
-          "decision": "already-implemented",
-          "relevance": "ARC-1 elicitation already more complete (src/server/elicit.ts)"
+          "decision": "not-planned",
+          "relevance": "Elicitation is not a core ARC-1 feature (config safety ceiling instead; plugin ctx.elicit only)"
         },
         {
           "sha": "k9l1m30",

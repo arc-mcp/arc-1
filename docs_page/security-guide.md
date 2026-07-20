@@ -246,7 +246,6 @@ ARC-1 emits structured audit events to all registered sinks. Three sink types ar
 | `http_request` | HTTP method, ADT path, status code, duration |
 | `http_csrf_fetch` | CSRF token fetch success/duration |
 | `scope_denied` | Scope check failure (tool, required scope, user scopes) |
-| `elicitation` | User confirmation prompts and responses |
 | `oauth_client_registered` | XSUAA only: a new DCR `client_id` was minted (`/register`). Includes id length and redirect-URI count. |
 | `oauth_client_lookup_failed` | XSUAA only: a `client_id` failed to resolve. `reason` ∈ {`unknown_prefix`, `malformed`, `bad_signature`, `invalid_payload`, `expired`}. Useful for spotting forgery / probing. |
 | `oauth_redirect_uri_registered` | XSUAA only: a redirect URI was added at `/authorize` time to the pre-registered XSUAA default client. |
