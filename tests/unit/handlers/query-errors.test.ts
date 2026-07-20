@@ -38,15 +38,14 @@ describe('classifySapQueryParserError', () => {
     expect(hint).toContain('WHERE/ORDER BY keys');
   });
 
-  it.each([
-    '@lv_client',
-    ':client',
-    '?',
-  ])('explains why the freestyle endpoint cannot resolve parameter syntax %s', (parameter) => {
-    const hint = hintFor(`SELECT mandt FROM t000 WHERE mandt = ${parameter}`);
-    expect(hint).toContain('no ABAP host-program or prepared-statement context');
-    expect(hint).toContain('single-quoted literal');
-  });
+  it.each(['@lv_client', ':client', '?'])(
+    'explains why the freestyle endpoint cannot resolve parameter syntax %s',
+    (parameter) => {
+      const hint = hintFor(`SELECT mandt FROM t000 WHERE mandt = ${parameter}`);
+      expect(hint).toContain('no ABAP host-program or prepared-statement context');
+      expect(hint).toContain('single-quoted literal');
+    },
+  );
 
   it('requires AS for table aliases', () => {
     const hint = hintFor('SELECT t~mandt FROM t000 t');
@@ -145,17 +144,17 @@ describe('classifySapQueryParserError', () => {
     expect(hint).toContain('RIGHT OUTER');
   });
 
-  it.each([
-    'ambiguous',
-    'zweideutig',
-  ])('preserves an actionable ambiguity diagnosis for localized marker %s', (marker) => {
-    const hint = hintFor(
-      'SELECT tabname FROM dd02l AS l INNER JOIN dd02t AS t ON l~tabname = t~tabname',
-      `The column TABNAME is ${marker}`,
-    );
-    expect(hint).toContain('more than one joined source');
-    expect(hint).toContain('alias~field');
-  });
+  it.each(['ambiguous', 'zweideutig'])(
+    'preserves an actionable ambiguity diagnosis for localized marker %s',
+    (marker) => {
+      const hint = hintFor(
+        'SELECT tabname FROM dd02l AS l INNER JOIN dd02t AS t ON l~tabname = t~tabname',
+        `The column TABNAME is ${marker}`,
+      );
+      expect(hint).toContain('more than one joined source');
+      expect(hint).toContain('alias~field');
+    },
+  );
 
   it('ignores dialect-looking text inside a single-quoted literal', () => {
     const hint = hintFor("SELECT mtext FROM t000 WHERE mtext = 'DESC LIMIT @x != NULL --'", 'invalid query string');
