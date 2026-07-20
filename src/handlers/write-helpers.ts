@@ -40,7 +40,7 @@ import { detectFilename, validateBeforeWrite } from '../lint/lint.js';
 import type { ServerConfig } from '../server/types.js';
 import { type CacheSecurityContext, invalidateInactiveList } from './cache-security.js';
 import { cachedFeatures } from './feature-cache.js';
-import { canonicalTablType, objectUrlForType } from './object-types.js';
+import { canonicalTablType, objectUrlForType, sourceUrlForType } from './object-types.js';
 import { errorResult, type ToolResult, textResult } from './shared.js';
 
 /**
@@ -87,6 +87,19 @@ const FUNCTION_MODULE_CONTENT_TYPE = 'application/vnd.sap.adt.functions.fmodules
 
 export function isMetadataWriteType(type: string): boolean {
   return type === 'DOMA' || type === 'DTEL' || type === 'MSAG' || type === 'SRVB' || type === 'TTYP';
+}
+
+/**
+ * Whether `srcUrl` is the flat, canonical source URL that a plain SAPRead — and therefore the
+ * source cache — would have used for this (type, name). The source cache is keyed only by
+ * (type, name, version), blind to which endpoint populated it (issue A4). A resolved FUGR
+ * structural INCL uses a *different*, group-scoped srcUrl than the flat one SAPRead(type="INCL")
+ * always reads — so an ETag cached from the flat path is not a safe revalidation hint against the
+ * group-scoped endpoint: a stale cross-endpoint 304 would hand transform() bytes read from the
+ * wrong URL. Only pass a cached ETag hint into safeUpdateSourceWithTransform when this returns true.
+ */
+export function isCacheConsistentSrcUrl(type: string, name: string, srcUrl: string): boolean {
+  return srcUrl === sourceUrlForType(type, name);
 }
 
 /** Types that require a specific vendor content type for creation (not application/*) */
@@ -724,6 +737,7 @@ export const NAME_CASE_GUARD_ACTIONS = new Set([
   'update',
   'edit_method',
   'edit_unit',
+  'edit_content',
   'delete',
   'edit_text_symbols',
 ]);

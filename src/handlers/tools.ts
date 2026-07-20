@@ -462,9 +462,7 @@ export function getToolDefinitions(
           include: {
             type: 'string',
             description:
-              'For CLAS: DO NOT use this to read the main class — omit include entirely to get the full class source (CLASS DEFINITION + CLASS IMPLEMENTATION). This parameter reads class-LOCAL auxiliary files only: definitions (local type definitions, NOT the main class definition), implementations (local helper class implementations), macros, testclasses (ABAP Unit). Comma-separated. ' +
-              'For DDLS: use include="elements" for the CDS field catalog (key fields, aliases, associations, expression types) instead of raw DDL. ' +
-              'For VERSIONS (CLAS): include selects the class include history to query (main, definitions, implementations, macros, testclasses).',
+              'For CLAS: DO NOT use this to read the main class — omit include entirely to get the full class source (CLASS DEFINITION + CLASS IMPLEMENTATION). This parameter reads class-LOCAL auxiliary files only: definitions (local type definitions, NOT the main class definition), implementations (local helper class implementations), macros, testclasses (ABAP Unit). Comma-separated. For DDLS: use include="elements" for the CDS field catalog (key fields, aliases, associations, expression types) instead of raw DDL. For VERSIONS (CLAS): include selects the class include history to query (main, definitions, implementations, macros, testclasses).',
           },
           group: {
             type: 'string',
@@ -474,8 +472,7 @@ export function getToolDefinitions(
           method: {
             type: 'string',
             description:
-              'For CLAS: method name to read a single method implementation (e.g., "get_name", "zif_order~process"). ' +
-              'Use "*" to list all methods with signatures and visibility. ' +
+              'For CLAS: method name to read a single method implementation (e.g., "get_name", "zif_order~process"). Use "*" to list all methods with signatures and visibility. ' +
               (btp ? '' : 'For SOBJ: BOR method name to read. If omitted, returns the full BOR method catalog. ') +
               'Not used with other types.',
           },
@@ -483,12 +480,10 @@ export function getToolDefinitions(
             type: 'string',
             maxLength: MAX_GREP_PATTERN_LENGTH,
             description:
-              'Regex pattern (case-insensitive) to search within the object source. Returns only matching lines with 1-based line numbers and ±3 context lines, instead of the full source — token-efficient. ' +
-              'For CLAS, matches are annotated with the owning class/method; combine with include= to scope a section, but do NOT combine with method= (use grep to find, then method= to read). ' +
-              'Works for source-bearing types (CLAS, INTF, DDLS, DCLS, BDEF, SRVD, SRVB, SKTD/KTD, DDLX, TABL' +
-              (btp ? '' : ', PROG, FUNC, FUGR, INCL, VIEW') +
-              '). Falls back to a literal search when the pattern is not valid regex.',
+              'Regex pattern (case-insensitive) to search within the object source. Returns only matching lines with 1-based line numbers and ±3 context lines, instead of the full source — token-efficient. For CLAS, matches are annotated with the owning class/method; combine with include= to scope a section; do NOT combine with method=. Falls back to a literal search when the pattern is not valid regex.',
           },
+          lineStart: { type: 'number', description: 'Start line (1-based); pairs with lineEnd, not with grep/method.' },
+          lineEnd: { type: 'number', description: 'End line (1-based); pairs with lineStart.' },
           ...(btp
             ? {}
             : {
@@ -597,7 +592,7 @@ export function getToolDefinitions(
               'update',
               'delete',
               'edit_method',
-              ...(btp ? [] : ['edit_unit']),
+              ...(btp ? [] : ['edit_unit', 'edit_content']),
               'edit_class_definition',
               'add_method',
               'edit_method_signature',
@@ -612,7 +607,10 @@ export function getToolDefinitions(
             ],
             description:
               'Write action. create/update/delete: standard object writes. edit_method: replace one method body (type=CLAS, method, source). ' +
-              (btp ? '' : 'edit_unit: replace a PROG/INCL FORM or MODULE (unit+source). ') +
+              (btp
+                ? ''
+                : 'edit_unit: replace a PROG/INCL FORM or MODULE (unit+source). ' +
+                  'edit_content: replace oldContent with newContent in PROG/INCL ("" deletes); no-ops if already applied. ') +
               'Class-section surgery (type=CLAS only): edit_class_definition without include= replaces the global DEFINITION block (refuses a diff that would leave the class non-activatable, e.g. a concrete method with no IMPL stub); with include= it whole-replaces a class-local include (CCDEF/CCIMP/macros/testclasses), auto-creating it. add_method inserts a METHODS clause + empty stub (visibility, abstract=true skips the stub); edit_method_signature replaces one METHODS clause (no IMPL change); delete_method removes the clause AND body — WARNING: destructive, discards the method body (to re-section a method use change_method_visibility, NOT delete+add); change_method_visibility moves a method between PUBLIC/PROTECTED/PRIVATE, preserves the body. add_method/edit_method_signature/delete_method/change_method_visibility act on /source/main only. batch_create: create+activate multiple objects (objects array). scaffold_rap_handlers / generate_behavior_implementation: derive RAP behavior-pool handlers from the BDEF (the latter the equivalent of Eclipse\'s "Generate Behavior Implementation").',
           },
           type: {
@@ -632,7 +630,7 @@ export function getToolDefinitions(
             type: 'string',
             description: btp
               ? 'ABAP source code. create/update: full source body. edit_method: the new method body. edit_class_definition without include=: only the new global CLASS…DEFINITION…ENDCLASS block (no IMPLEMENTATION); with include=: the full replacement body of that include. edit_method_signature: only the new METHODS clause. Not used by add_method/delete_method/change_method_visibility (use `method`/`visibility`).'
-              : 'ABAP source code. create/update: full source body. edit_method: the new method body. edit_unit: complete FORM or MODULE block. edit_class_definition without include=: only the new global CLASS…DEFINITION…ENDCLASS block (no IMPLEMENTATION); with include=: the full replacement body of that include. edit_method_signature: only the new METHODS clause. Not used by add_method/delete_method/change_method_visibility (use `method`/`visibility`).',
+              : 'ABAP source code. create/update: full source body. edit_method: the new method body. edit_unit: complete FORM or MODULE block. edit_class_definition without include=: only the new global CLASS…DEFINITION…ENDCLASS block (no IMPLEMENTATION); with include=: the full replacement body of that include. edit_method_signature: only the new METHODS clause. Not used by add_method/delete_method/change_method_visibility/edit_content (use `method`/`visibility`/oldContent+newContent).',
           },
           include: {
             type: 'string',
@@ -648,10 +646,11 @@ export function getToolDefinitions(
           ...(btp
             ? {}
             : {
-                unit: {
-                  type: 'string',
-                  description: 'edit_unit FORM/MODULE name in a PROG or INCL (case-insensitive).',
-                },
+                unit: { type: 'string', description: 'edit_unit FORM/MODULE name (case-insensitive).' },
+                oldContent: { type: 'string', description: 'Exact text to replace (no line prefix, plain SAPRead).' },
+                newContent: { type: 'string' },
+                lineStart: { type: 'integer', description: 'Search scope (not a replace range); pairs with lineEnd.' },
+                lineEnd: { type: 'integer' },
               }),
           visibility: {
             type: 'string',
@@ -711,7 +710,7 @@ export function getToolDefinitions(
           group: {
             type: 'string',
             description:
-              'For FUNC: parent function-group name. Required for FUNC create (the FUGR must already exist — create it first via SAPWrite type=FUGR). Auto-resolved via search for FUNC update/delete if omitted.',
+              'For FUNC, and INCL when it is a FUGR structural include: parent function-group name. Required for FUNC create (FUGR must exist first). Auto-resolved via search if omitted.',
           },
           dataType: { type: 'string', description: 'DOMA/DTEL: ABAP data type (e.g., CHAR, NUMC, DEC)' },
           rowType: {

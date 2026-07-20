@@ -29,6 +29,7 @@ Use `SAPRead` when you need exact raw source, one method body, grep output, inac
 | `include` | string | No | For CLAS: `main`, `testclasses`, `definitions`, `implementations`, `macros`. For DDLS: `elements` (extract CDS view elements). |
 | `method` | string | No | For CLAS: method name to read (e.g., `get_name`), or `*` to list all methods |
 | `grep` | string | No | Case-insensitive regex; returns only matching source lines (+3 lines of context, with line numbers) instead of the full object — token-efficient search over source-bearing types (`PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, BDEF, SRVD, SRVB, SKTD/KTD, DDLX, TABL, VIEW`). For CLAS, matches are annotated with the owning class/method; combine with `include=` to scope a section, but not with `method=`. Falls back to a literal search when the pattern is not valid regex. |
+| `lineStart` / `lineEnd` | number | No | 1-based, inclusive raw line window (both required together) — returns only those source lines, numbered, instead of the full object. Same source-bearing types as `grep`; `lineEnd` is clamped to the last line rather than erroring. Mutually exclusive with `grep` and `method` (find a line with `grep` or an ATC finding first, then read around it with `lineStart`/`lineEnd`). |
 | `expand_includes` | boolean | No | For FUGR: expand include source inline |
 | `group` | string | No | For FUNC: function group name |
 | `versionUri` | string | No | For VERSION_SOURCE: revision URI from a VERSIONS response (`revisions[].uri`), must start with `/sap/bc/adt/` |
@@ -107,6 +108,7 @@ SAPRead(type="CLAS", name="ZCL_ORDER", method="get_name")    — read a specific
 SAPRead(type="CLAS", name="ZCL_ORDER", grep="select.*from")  — matching lines only, annotated by method
 SAPRead(type="CLAS", name="ZCL_ORDER", include="text_symbols") — maintained text pool (on-prem; see Class text symbols)
 SAPRead(type="PROG", name="ZTEST_REPORT", grep="WRITE")      — search source, returns matches + context
+SAPRead(type="PROG", name="ZTEST_REPORT", lineStart=40, lineEnd=55) — raw line window, e.g. around an ATC finding
 SAPRead(type="DDLS", name="ZI_TRAVEL", include="elements")   — extract CDS view elements
 SAPRead(type="DCLS", name="ZI_TRAVEL_DCL")       — CDS access control source
 SAPRead(type="DDLX", name="ZC_TRAVEL")          — metadata extension with UI annotations
@@ -237,14 +239,17 @@ Create or update ABAP source code. Handles lock/modify/unlock automatically.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `action` | string | Yes | `create`, `update`, `delete`, `edit_method`, `edit_unit` (on-prem), `edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`, `batch_create`, `scaffold_rap_handlers`, `generate_behavior_implementation`, or `edit_text_symbols`. `edit_unit` surgically replaces one FORM or MODULE in a PROG/INCL; see [Procedural unit surgery](#procedural-unit-surgery). The class-section surgery actions (`edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`) are token-efficient edits to a global class without re-sending `/source/main`. See [Class-section surgery](#class-section-surgery) below. `edit_text_symbols` writes a global class's text pool — see [Class text symbols](#class-text-symbols). |
+| `action` | string | Yes | `create`, `update`, `delete`, `edit_method`, `edit_unit` (on-prem), `edit_content` (on-prem), `edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`, `batch_create`, `scaffold_rap_handlers`, `generate_behavior_implementation`, or `edit_text_symbols`. `edit_unit` surgically replaces one FORM or MODULE in a PROG/INCL; see [Procedural unit surgery](#procedural-unit-surgery). `edit_content` replaces one content-anchored match (`oldContent`/`newContent`) in a PROG/INCL without naming a FORM/MODULE; see [Content-anchored surgery](#content-anchored-surgery). The class-section surgery actions (`edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`) are token-efficient edits to a global class without re-sending `/source/main`. See [Class-section surgery](#class-section-surgery) below. `edit_text_symbols` writes a global class's text pool — see [Class text symbols](#class-text-symbols). |
 | `type` | string | No | `PROG`, `CLAS`, `INTF`, `FUNC`, `FUGR`, `INCL`, `DDLS`, `DCLS`, `DDLX`, `BDEF`, `SRVD`, `SRVB`, `SKTD`/`KTD`, `TABL`, `TABL/DT`, `TABL/DS`, `DOMA`, `DTEL`, `MSAG` (for single object actions; availability is adapted for BTP vs. on-prem), plus the server-driven objects `DESD`/`EVTB`/`DTSC`/`CSNM`/`EVTO`/`COTA` on 8.16+ (see [Server-driven object writes](#server-driven-object-writes)). Slash/case aliases are auto-normalized (e.g., `CLAS/OC` or `clas` → `CLAS`; `KTD` → `SKTD`). |
-| `group` | string | No | For `FUNC`: parent function-group name. **Required for FUNC create** (the FUGR must already exist — create it first via `SAPWrite type=FUGR`). Auto-resolved via search for FUNC update/delete if omitted. For `INCL`: addresses a structural include inside this function group; supported by `update` and `edit_unit`. Ignored for other types. |
+| `group` | string | No | For `FUNC`: parent function-group name. **Required for FUNC create** (the FUGR must already exist — create it first via `SAPWrite type=FUGR`). For `INCL`: addresses a structural include inside this function group; supported by `update`, `edit_unit`, and `edit_content` (create/delete of structural includes is unsupported). Auto-resolved via search if omitted, for FUNC update/delete and for INCL update/edit_unit/edit_content — a bare INCL name is tried against the search index first, and only falls back to the standalone `/programs/includes/` path when no owning function group is found. Ignored for other types. |
 | `name` | string | No | Object name (for single object actions) |
 | `source` | string | No | ABAP source code. For `create`/`update`: full source body. For `edit_method`: new method body. For `edit_unit`: the complete replacement `FORM … ENDFORM.` or `MODULE … ENDMODULE.` block. For `edit_class_definition` without `include=`: ONLY the new global `CLASS … DEFINITION … ENDCLASS.` block (~10–80 lines instead of full class). For `edit_class_definition` with `include=`: the FULL replacement body of that class-local include; for `include="testclasses"` this normally includes both local `CLASS ltc_* DEFINITION` and `CLASS ltc_* IMPLEMENTATION`. For `edit_method_signature`: ONLY the new METHODS clause for one method (~1–5 lines). Not used by `add_method`/`delete_method`/`change_method_visibility` — pass the method clause/name and target visibility via `method`/`visibility` instead. |
 | `include` | string | No | For CLAS write actions `update`, `edit_method`, and `edit_class_definition`: write a class-local include (`definitions`, `implementations`, `macros`, or `testclasses`) instead of `/source/main`. Omit this parameter for main class source updates. `add_method`/`edit_method_signature`/`delete_method`/`change_method_visibility` operate on the global class `/source/main` only and reject `include=`. Include writes create an inactive draft; verify with `SAPRead(version="inactive")` until activation. NOTE: `edit_class_definition` with `include=` skips the symmetry refuse-policy (cross-include validation is not performed; rely on `SAPActivate` to catch breaks). **Auto-init:** whole-include writes (`update` and `edit_class_definition` with `include=`) create the target include automatically if it does not exist yet — notably `testclasses` (CCAU) on a freshly-created class. No separate init step or user-supplied lock handle is needed; the success message notes when ARC-1 initialized it. |
 | `method` | string | No | For `edit_method`/`edit_method_signature`/`delete_method`/`change_method_visibility`: method NAME (e.g., `"get_name"`, `"zif_order~process"`, `"lhc_project~approve_project"`). For `add_method`: the full METHODS CLAUSE as ABAP source (e.g., `"METHODS greet IMPORTING who TYPE string RETURNING VALUE(r) TYPE string."`). |
 | `unit` | string | No | For on-prem `edit_unit`: case-insensitive FORM or MODULE name (for example `"PROCESS_ORDERS"` or `"STATUS_0100"`). |
+| `oldContent` | string | No | For on-prem `edit_content`: exact raw source text to replace — no line-number prefix (copy from a plain `SAPRead`, not from `grep`/`lineStart` output, both of which decorate lines with `NNN: `). Must match exactly once (whitespace/line-endings included) or the call errors. |
+| `newContent` | string | No | For on-prem `edit_content`: replacement text; pass `""` to delete `oldContent`. Re-running an already-applied replacement (where `oldContent` is gone and `newContent` is uniquely present) is a safe no-op rather than an error. |
+| `lineStart` / `lineEnd` | number | No | For on-prem `edit_content`: optional 1-based scope (both required together) narrowing WHERE `oldContent` is searched — this does **not** mean "replace these lines"; it only disambiguates a locally-unique `oldContent` snippet within a larger object. Different semantics from the same parameter names on `SAPRead`. |
 | `visibility` | string | No | For `add_method`: target visibility section — `public` (default), `protected`, or `private`. For `change_method_visibility`: target visibility section (required). The section header must already exist in the DEFINITION block; if not, ARC-1 refuses with a hint to use `edit_class_definition` first. |
 | `abstract` | boolean | No | For `add_method`: when `true`, only the METHODS clause is inserted into DEFINITION — no `METHOD/ENDMETHOD` stub is added to IMPLEMENTATION. Default `false`. |
 | `bdefName` | string | No | For `scaffold_rap_handlers`: interface BDEF name used to derive required handler signatures. For `generate_behavior_implementation`: optional override; default discovery reads the class metadata's `<class:rootEntityRef>` to locate the BDEF automatically. |
@@ -489,7 +494,7 @@ SAPWrite(action="generate_behavior_implementation", type="CLAS", name="ZBP_DM_PR
 
 [Issue #558](https://github.com/arc-mcp/arc-1/issues/558). On-prem `action="edit_unit"` replaces one named `FORM…ENDFORM` or `MODULE…ENDMODULE` block in a `PROG` or `INCL` without making the caller re-send the full program. ARC-1 reads the latest active or inactive-draft source directly from SAP, finds the block with abaplint's structure tree, validates that the replacement has the same kind and name, splices it, then uses the normal package gate and lock/modify/unlock write path.
 
-Pass the complete replacement block so multi-line FORM signatures and MODULE direction (`INPUT`/`OUTPUT`) remain explicit. The action is case-insensitive by unit name, preserves CRLF source files, leaves sibling units untouched, and does not auto-activate. Run `SAPActivate` afterwards. Function-group structural includes are supported with `type="INCL", group="<FUGR>"`; activate those with the same `type`, `name`, and `group` so ARC-1 addresses the structural include directly on every supported release.
+Pass the complete replacement block so multi-line FORM signatures and MODULE direction (`INPUT`/`OUTPUT`) remain explicit. The action is case-insensitive by unit name, preserves CRLF source files, leaves sibling units untouched, and does not auto-activate. Run `SAPActivate` afterwards. Function-group structural includes are supported with `type="INCL"`; pass `group="<FUGR>"` explicitly, or omit it and let ARC-1 auto-resolve the owning function group via search (falling back to the standalone include path if none is found). Activate with the same `type`, `name`, and `group` so ARC-1 addresses the structural include directly on every supported release.
 
 ```jsonc
 {
@@ -503,6 +508,26 @@ Pass the complete replacement block so multi-line FORM signatures and MODULE dir
 ```
 
 Event blocks such as `START-OF-SELECTION` and `AT SELECTION-SCREEN` are intentionally unsupported: abaplint does not expose them as bounded structure nodes, so name-based replacement cannot provide the same safety guarantee. `FUNC` is also out of scope because each function module already has a dedicated `/source/main` resource containing only that function module.
+
+### Content-anchored surgery
+
+On-prem `action="edit_content"` replaces one SNOTE-style content anchor (`oldContent`/`newContent`) in a `PROG` or `INCL`, for fixes smaller than a whole named FORM/MODULE — e.g. a one-line ATC remediation. `oldContent` must match exactly once in the searched scope (fail-closed: 0 matches errors naming the scope, >1 matches errors listing each match's line); `newContent` may be `""` to delete `oldContent`. Optional `lineStart`/`lineEnd` narrow WHERE the anchor is searched (not what gets replaced) — pair this with `SAPRead`'s own `lineStart`/`lineEnd` to keep `oldContent` a short, locally-unique snippet instead of a large decorated block. Function-group structural includes work the same as for `edit_unit`: pass `group="<FUGR>"`, or omit it and let ARC-1 auto-resolve the owning function group via search.
+
+Both `edit_content` and `edit_unit` fetch the current source **inside** the SAP lock (not before it), in the same stateful session as the write — closing a TOCTOU gap where source read before locking could drift before the PUT. When a cached copy of the source is available, the inside-lock fetch is conditional (`If-None-Match`): unchanged source reuses the cached bytes; changed source is refetched and spliced against the fresh bytes (the anchor match itself is the drift guard, not a separate error).
+
+Re-running `edit_content` with the same arguments after it already succeeded is a safe no-op (`oldContent` gone, `newContent` uniquely present) rather than an error — useful for retry-safe batch remediation loops. This idempotency check only fires when it can positively confirm the edit already holds; it does not attempt to guess for a deletion (`newContent=""`) or when `newContent` itself is ambiguous.
+
+```jsonc
+{
+  "action": "edit_content",
+  "type": "PROG",
+  "name": "ZPROG_ORDERS",
+  "oldContent": "IF sy-subrc <> 0.",
+  "newContent": "IF sy-subrc <> 0 AND sy-subrc <> 4.",
+  "lineStart": 120,
+  "lineEnd": 140
+}
+```
 
 ### Class-section surgery
 

@@ -1,12 +1,12 @@
 /** SAPWrite action for surgical FORM/MODULE replacement in PROG and INCL sources. */
 
-import { safeUpdateSource } from '../../adt/crud.js';
+import { safeUpdateSourceWithTransform } from '../../adt/crud.js';
 import { mapSapReleaseToAbaplintVersion } from '../../adt/features.js';
-import { spliceUnit } from '../../context/unit-surgery.js';
+import { type EditableUnitInfo, spliceUnit } from '../../context/unit-surgery.js';
 import { cachedFeatures } from '../feature-cache.js';
 import { resolveVersionAndDraftInfo } from '../read.js';
 import { errorResult, type ToolResult, textResult } from '../shared.js';
-import { runPreWriteLint, runPreWriteSyntaxCheck } from '../write-helpers.js';
+import { isCacheConsistentSrcUrl, runPreWriteLint, runPreWriteSyntaxCheck } from '../write-helpers.js';
 import type { SapWriteContext } from './context.js';
 
 export async function writeActionEditUnit(ctx: SapWriteContext): Promise<ToolResult> {
@@ -37,8 +37,8 @@ export async function writeActionEditUnit(ctx: SapWriteContext): Promise<ToolRes
   }
   await enforcePackageForExistingObject();
 
-  // Read the latest relevant bytes directly from SAP. If an inactive draft exists,
-  // splice into that draft so consecutive edit_unit calls do not overwrite each other.
+  // If an inactive draft exists, splice into that draft so consecutive edit_unit calls do not
+  // overwrite each other.
   const { effectiveVersion } = await resolveVersionAndDraftInfo(
     client,
     cachingLayer,
@@ -47,35 +47,58 @@ export async function writeActionEditUnit(ctx: SapWriteContext): Promise<ToolRes
     'auto',
     cacheSecurity,
   );
-  const currentSource = (await client.getSourceAtObjectUrl(objectUrl, { version: effectiveVersion })).source;
+  const cachedVersion = effectiveVersion === 'inactive' ? 'inactive' : 'active';
+  const cachedSource =
+    cachingLayer && isCacheConsistentSrcUrl(type, name, srcUrl)
+      ? cachingLayer.getCachedSourceWithEtag(type, name, cachedVersion)
+      : null;
   const abaplintVersion = cachedFeatures?.abapRelease
     ? mapSapReleaseToAbaplintVersion(cachedFeatures.abapRelease)
     : undefined;
-  const spliced = spliceUnit(currentSource, name, unit, source, abaplintVersion);
-  if (!spliced.success) return errorResult(spliced.error ?? `Failed to splice unit "${unit}" in ${name}.`);
 
-  const lint = runPreWriteLint(spliced.newSource, type, name, config, lintOverride);
-  if (lint.blocked) return lint.result!;
-  const checkNotes = await runPreWriteSyntaxCheck(client, type, spliced.newSource, objectUrl, config, checkOverride);
+  let lintBlocked: ToolResult | undefined;
+  let lintWarnings: string | undefined;
+  let checkNotes = '';
+  let splicedUnit: EditableUnitInfo | undefined;
 
-  await safeUpdateSource(
+  // Fetch the latest relevant bytes INSIDE the lock (not before it), so nothing can drift
+  // between the read and the write — closes the TOCTOU gap `safeUpdateSource` alone leaves open.
+  const outcome = await safeUpdateSourceWithTransform(
     client.http,
     client.safety,
     objectUrl,
     srcUrl,
-    spliced.newSource,
+    async (currentSource) => {
+      const spliced = spliceUnit(currentSource, name, unit, source, abaplintVersion);
+      if (!spliced.success) return { error: spliced.error ?? `Failed to splice unit "${unit}" in ${name}.` };
+      splicedUnit = spliced.unit;
+
+      const lint = runPreWriteLint(spliced.newSource, type, name, config, lintOverride);
+      if (lint.blocked) {
+        lintBlocked = lint.result;
+        return { error: '__lint_blocked__' };
+      }
+      lintWarnings = lint.warnings;
+      checkNotes = await runPreWriteSyntaxCheck(client, type, spliced.newSource, objectUrl, config, checkOverride);
+      return { source: spliced.newSource };
+    },
     transport,
     cachedFeatures?.abapRelease,
+    effectiveVersion === 'inactive' ? 'inactive' : undefined,
+    cachedSource,
   );
+
+  if ('error' in outcome) return lintBlocked ?? errorResult(outcome.error);
+
   invalidateWrittenObject(type, name);
 
-  const kind = spliced.unit?.kind ?? 'unit';
+  const kind = splicedUnit?.kind ?? 'unit';
   const group = String(args.group ?? '').trim();
   const activationHint =
     type === 'INCL' && group
       ? ` Activate this structural include with SAPActivate(type="INCL", name="${name}", group="${group}").`
       : '';
   const message = `Successfully updated ${kind} "${unit}" in ${type} ${name}.${activationHint}`;
-  const extras = [lint.warnings, checkNotes].filter(Boolean).join('\n\n');
+  const extras = [lintWarnings, checkNotes].filter(Boolean).join('\n\n');
   return extras ? textResult(`${message}\n\n${extras}`) : textResult(message);
 }

@@ -45,6 +45,19 @@ function mockEditUnitFlow(opts: {
         ),
       );
     }
+    if (method === 'GET' && parsed.pathname === '/sap/bc/adt/repository/informationsystem/search') {
+      // Standalone INCL (no `group` arg): the auto-resolve search finds no owning function
+      // group, so the write falls through to the plain /programs/includes/ path.
+      return Promise.resolve(
+        mockResponse(
+          200,
+          '<?xml version="1.0"?><adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core"/>',
+          {
+            'x-csrf-token': 'TOKEN',
+          },
+        ),
+      );
+    }
     if (method === 'GET' && parsed.pathname === opts.objectPath) {
       return Promise.resolve(
         mockResponse(
