@@ -27,12 +27,14 @@ theme:
         icon: material/brightness-4
         name: Switch to light mode
   features:
+    - navigation.tabs
     - navigation.sections
+    - navigation.path
     - navigation.top
     - navigation.instant
-    - navigation.expand
     - search.suggest
     - search.highlight
+    - toc.follow
     - content.code.copy
     - content.code.annotate
     - announce.dismiss
@@ -40,49 +42,59 @@ theme:
     repo: fontawesome/brands/github
 
 nav:
-  - Home: index.md
-  - Quickstart: quickstart.md
-  - Install in Claude: install-in-claude.md
-  - Deployment:
-      - Overview: deployment.md
+  - Get Started:
+      - Home: index.md
+      - Quickstart: quickstart.md
+      - Install in Claude: install-in-claude.md
+  - Deploy:
+      - Choose a Deployment: deployment.md
       - Docker: docker.md
-      - BTP Cloud Foundry Deployment: btp-cloud-foundry-deployment.md
-      - BTP Administration: btp-administration.md
-      - BTP ABAP Environment: btp-abap-environment.md
-      - S/4HANA Public Cloud: s4hana-public-cloud.md
-      - Multi-System Setup (Multi-Target): multi-target-setup.md
-      - Multi-Target Administration: multi-target-administration.md
+      - SAP BTP:
+          - Start Here: btp-overview.md
+          - Cloud Foundry Deployment: btp-cloud-foundry-deployment.md
+          - SAP Backends:
+              - BTP ABAP Environment: btp-abap-environment.md
+              - S/4HANA Public Cloud: s4hana-public-cloud.md
+          - Multi-System:
+              - Multi-Target Setup: multi-target-setup.md
       - Multi-System Hub (mcp-hub): multi-system-hub.md
-      - Best Practices: deployment-best-practices.md
-  - Auth & Permissions:
-      - Overview: enterprise-auth.md
+      - Deployment Best Practices: deployment-best-practices.md
+  - Security:
+      - Authentication Overview: enterprise-auth.md
       - Authorization & Roles: authorization.md
-      - API Key: api-key-setup.md
-      - OAuth / JWT: oauth-jwt-setup.md
-      - XSUAA Setup: xsuaa-setup.md
-      - Principal Propagation: principal-propagation-setup.md
-      - BTP Destination Reference: btp-destination-setup.md
-  - Using ARC-1:
-      - Tools Reference: tools.md
-      - Extensions (Custom Tools): extensions.md
+      - Production Security: security-guide.md
+      - MCP Authentication:
+          - XSUAA: xsuaa-setup.md
+          - OAuth / JWT: oauth-jwt-setup.md
+          - API Keys: api-key-setup.md
+      - SAP Identity & Connectivity:
+          - BTP Destination Reference: btp-destination-setup.md
+          - Principal Propagation: principal-propagation-setup.md
+  - Use ARC-1:
       - MCP Usage Guide: mcp-usage.md
+      - Tools Reference: tools.md
       - Skills: skills.md
+      - Extensions (Custom Tools): extensions.md
+      - CLI Guide: cli-guide.md
       - Blog Series: blog-series.md
-  - Reference:
-      - Configuration: configuration-reference.md
-      - Configuration Precedence: configuration-precedence.md
-      - vs SAP ABAP MCP Server: arc-1-vs-sap-abap-mcp-server.md
-      - Security: security-guide.md
+  - Operate:
+      - Operations Overview: operations.md
+      - SAP BTP:
+          - BTP Administration: btp-administration.md
+          - Multi-Target Administration: multi-target-administration.md
+      - Updating: updating.md
+      - Log Analysis: log-analysis.md
       - Rate Limiting: rate-limiting.md
       - Caching: caching.md
-      - Log Analysis: log-analysis.md
-      - Updating: updating.md
-  - Development:
+      - Authentication Test Process: auth-test-process.md
+  - Reference:
+      - Configuration Reference: configuration-reference.md
+      - Configuration Precedence: configuration-precedence.md
+      - vs SAP ABAP MCP Server: arc-1-vs-sap-abap-mcp-server.md
+  - Develop:
       - Local Development: local-development.md
       - Architecture: architecture.md
-      - CLI Guide: cli-guide.md
       - SAP Trial Setup: sap-trial-setup.md
-      - Auth Test Process: auth-test-process.md
       - Roadmap: roadmap.md
 
 markdown_extensions:
@@ -105,6 +117,7 @@ plugins:
   - search
   - redirects:
       redirect_maps:
+        multi-destination.md: multi-target-setup.md
         phase4-btp-deployment.md: btp-cloud-foundry-deployment.md
 
 extra_javascript:

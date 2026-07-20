@@ -225,9 +225,11 @@ For production, combine conservative tool exposure with real user identity, SAP-
 | [docker.md](docker.md) | Full Docker reference |
 | [btp-abap-environment.md](btp-abap-environment.md) | BTP ABAP Environment — local service-key OAuth and deployed per-user destination setup |
 | [btp-cloud-foundry-deployment.md](btp-cloud-foundry-deployment.md) | Canonical BTP Cloud Foundry MTA deployment and read-only acceptance runbook |
+| [btp-overview.md](btp-overview.md) | Start here for SAP BTP topology selection and the correct setup/documentation sequence |
 | [btp-administration.md](btp-administration.md) | BTP configuration ownership, roles, secrets, lifecycle, scaling, rollback, and handover |
 | [multi-target-setup.md](multi-target-setup.md) | Build, deploy, configure, and verify experimental read-only multi-system mode |
 | [multi-target-administration.md](multi-target-administration.md) | Multi-target diagnostics, registry lifecycle, capacity, and security operations |
+| [operations.md](operations.md) | Operational task map for BTP, Docker, updates, logging, limits, caching, auth testing, and incidents |
 | [multi-system-hub.md](multi-system-hub.md) | Separate-instance multi-system routing for writes and stronger isolation |
 | [sap-trial-setup.md](sap-trial-setup.md) | SAP BTP trial setup |
 | [roadmap.md](roadmap.md) | Planned features |

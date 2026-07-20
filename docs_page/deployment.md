@@ -100,6 +100,9 @@ The recommended deployment path for per-user SAP identity with on-premise SAP. X
 MCP user; Destination and Connectivity services plus Cloud Connector propagate that identity;
 SAP certificate mapping and authorization decide the final access.
 
+If you have not chosen between single-target, multi-target, BTP ABAP, or S/4HANA Public Cloud yet,
+start with the [SAP BTP documentation map](btp-overview.md).
+
 ### You'll need
 
 - BTP subaccount with a Cloud Foundry space

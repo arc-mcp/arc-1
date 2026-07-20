@@ -178,6 +178,7 @@ Full documentation is available at **[docs.arc-1-mcp.com](https://docs.arc-1-mcp
 | [Install in Claude](https://docs.arc-1-mcp.com/install-in-claude/) | Desktop `.mcpb`, Claude Code plugin (server + skills), and remote BTP connector |
 | [Local Development](https://docs.arc-1-mcp.com/local-development/) | Full local dev — all install methods, MCP client configs, SSO cookie extractor |
 | [Deployment](https://docs.arc-1-mcp.com/deployment/) | Multi-user deployment — Docker, BTP Cloud Foundry, BTP ABAP |
+| [SAP BTP: Start Here](https://docs.arc-1-mcp.com/btp-overview/) | Choose the BTP topology and follow the correct deployment, auth, destination, and operations guides |
 | [BTP Cloud Foundry](https://docs.arc-1-mcp.com/btp-cloud-foundry-deployment/) | MTA deployment, topology decision, role handoffs, and safe acceptance |
 | [BTP Administration](https://docs.arc-1-mcp.com/btp-administration/) | Changes, roles, secrets, scaling, upgrades, rollback, and customer handover |
 | [Multi-System Setup](https://docs.arc-1-mcp.com/multi-target-setup/) | Experimental read-only BTP multi-target deployment, destinations, roles, and client configuration |
