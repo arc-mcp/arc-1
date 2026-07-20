@@ -20,4 +20,12 @@ describe('security ignore patterns', () => {
 
     expect(ignoredPatterns('.dockerignore')).toContain('**/*service-key*.json');
   });
+
+  it('excludes generated output and deployment override descriptors from Cloud Foundry packages', () => {
+    const patterns = ignoredPatterns('.cfignore');
+
+    for (const pattern of ['coverage/', 'test-results/', 'mta_archives/', '*.mtaext*']) {
+      expect(patterns).toContain(pattern);
+    }
+  });
 });

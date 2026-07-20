@@ -15,6 +15,10 @@ compare/
 artifacts/
 site/
 public/
+coverage/
+test-results/
+mta_archives/
+*.mtaext*
 
 # Dev config
 .env
