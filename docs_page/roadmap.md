@@ -204,7 +204,7 @@ SORT RULES for this table — DO NOT BREAK when adding rows:
 | — | Runtime Diagnostics (SAPDiagnose) | 2026-04-01 | Features |
 | — | RAP CRUD (DDLS/DDLX/BDEF/SRVD) | 2026-04-01 | Features |
 | — | Context Compression (7-30x) | 2026-04-01 | Features |
-| — | MCP Elicitation | 2026-04-01 | Features |
+| — | Plugin elicitation capability (`ctx.elicit`) | 2026-04-01 | Features |
 | — | BTP ABAP Environment (OAuth 2.0) | 2026-04-01 | Features |
 | [SEC-01](#sec-01) | Principal Propagation (per-user SAP auth) | 2026-03-27 | Security |
 | [SEC-02](#sec-02) | BTP Cloud Connector PP | 2026-03-27 | Security |
@@ -2192,7 +2192,6 @@ The following features are tracked but not planned for near-term implementation.
 - `src/server/sinks/file.ts` — file sink for persistent audit trail
 - `src/server/sinks/btp-auditlog.ts` — BTP Audit Log Service sink (enterprise compliance)
 - User identity (userName, email, clientId) logged with every tool call
-- Elicitation events (confirmations, user choices) logged
 - Structured logger with text/JSON output and sensitive field redaction
 
 **References:**
@@ -2571,7 +2570,7 @@ The VS Code client-side issue — [microsoft/vscode#314715](https://github.com/m
 | XSUAA OAuth Proxy | MCP SDK ProxyOAuthServerProvider + @sap/xssec JWT validation |
 | Authorization Model | Layered model: server safety ceiling + user scopes/API-key profiles + SAP authorization |
 | Audit Logging | User identity in tool call logs, BTP Audit Log sink, file sink |
-| MCP Elicitation | Interactive parameter collection for destructive ops |
+| Plugin elicitation (`ctx.elicit`) | Opt-in interactive prompts for extension tools (core safety is the config ceiling) |
 | Dynamic Client Registration | /register endpoint for MCP clients (RFC 7591) |
 | Per-user SAP identity | Per-user ADT client via BTP Destination Service: Cloud Connector PP for on-premise SAP, `OAuth2UserTokenExchange` for BTP ABAP |
 | OAuth Security | RFC 9700 compliance: state+PKCE, loopback binding, audience validation, stateless DCR and XSUAA callback-state proxy |
@@ -2615,7 +2614,7 @@ The VS Code client-side issue — [microsoft/vscode#314715](https://github.com/m
 | DDIC Domain/Data Element Write | FEAT-13: DOMA/DTEL create, update, delete, batch_create in SAPWrite | Complete (2026-04-12) |
 | RAP CRUD | DDLS/DDLX/BDEF/SRVD/SRVB write, batch activation | Complete (2026-04-14) |
 | Context Compression | SAPContext with AST-based dependency extraction (7-30x reduction) | Complete (2026-04-01) |
-| MCP Elicitation | Interactive confirmations for destructive operations | Complete (2026-04-01) |
+| Plugin elicitation (`ctx.elicit`) | Opt-in interactive prompts available to extension tools; core tools use the config safety ceiling, not interactive confirmations | Complete (2026-04-01) |
 | BTP ABAP Environment | Local OAuth 2.0 browser login plus deployed per-user destination path | Complete (2026-04-01; destination guidance updated 2026-06) |
 | Where-Used Analysis | FEAT-01: Scope-based where-used in SAPNavigate | Complete (2026-04-04, PR #38) |
 | Enhanced Abaplint | System-aware cloud/on-prem presets, pre-write validation, auto-fix | Complete (2026-04-04, PR #37) |
@@ -2652,7 +2651,7 @@ The VS Code client-side issue — [microsoft/vscode#314715](https://github.com/m
 5. **Comprehensive safety system** — read-only, package filter, operation filter, transport guard, dry-run — additive to scopes
 6. **Multi-sink audit logging** — stderr + file + BTP Audit Log Service
 7. **Context compression + method-level surgery** — AST-based 7-30x + 95% method-level reduction
-8. **MCP elicitation** — interactive confirmations for destructive operations
+8. **Plugin elicitation (`ctx.elicit`)** — opt-in interactive prompts for extension tools (core safety is the config ceiling)
 9. **1,500+ automated tests** with CI on Node 22/24, integration/E2E reliability telemetry, and BTP smoke lane
 10. **First-party workflow skills** — researched RAP/common-use-case playbooks that exploit provider-contract guidance, impact/history/context tools, formatter alignment, SKTD docs, and Git context
 11. **npm + Docker + release-please** — most professional distribution pipeline

@@ -102,21 +102,6 @@ export interface ServerStartEvent extends AuditEventBase {
   pid?: number;
 }
 
-/** Elicitation sent to client */
-export interface ElicitationSentEvent extends AuditEventBase {
-  event: 'elicitation_sent';
-  tool: string;
-  message: string;
-  fields?: string[];
-}
-
-/** Elicitation response from client */
-export interface ElicitationResponseEvent extends AuditEventBase {
-  event: 'elicitation_response';
-  tool: string;
-  action: string;
-}
-
 /** Two-phase activation preaudit handshake completed.
  *
  *  ADT's activation endpoint sometimes responds to `preauditRequested=true` with an
@@ -230,8 +215,6 @@ export type AuditEvent =
   | AuthPPCreatedEvent
   | SafetyBlockedEvent
   | ServerStartEvent
-  | ElicitationSentEvent
-  | ElicitationResponseEvent
   | ActivationPreauditEvent
   | OAuthClientRegisteredEvent
   | OAuthClientLookupFailedEvent
