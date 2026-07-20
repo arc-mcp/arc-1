@@ -4,6 +4,18 @@ Use this page to choose the correct ARC-1 topology and documentation path before
 destinations, or role collections. It is a map, not a second deployment runbook. The canonical
 commands remain in [BTP Cloud Foundry Deployment](btp-cloud-foundry-deployment.md).
 
+!!! tip "Recommended starting path"
+
+    For most teams connecting ARC-1 to one or more on-premise SAP systems, start with a
+    **read-only BTP Cloud Foundry deployment using XSUAA and Principal Propagation**:
+
+    1. Follow the [BTP Cloud Foundry Deployment](btp-cloud-foundry-deployment.md) runbook.
+    2. Use [Principal Propagation](principal-propagation-setup.md) so SAP receives the real user.
+    3. Choose the normal `/mcp` setup for one system/client, or add
+       [Multi-Target Setup](multi-target-setup.md) for mutation-free access to several targets.
+
+    Start with the topology table below only when that recommendation does not fit your landscape.
+
 ## Choose the topology
 
 | Your SAP landscape | ARC-1 shape | SAP identity | Continue with |

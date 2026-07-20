@@ -40,21 +40,17 @@ theme:
     repo: fontawesome/brands/github
 
 nav:
-  - Get Started:
-      - Home: index.md
-      - Quickstart: quickstart.md
-      - Install in Claude: install-in-claude.md
+  - Home: index.md
+  - Quickstart: quickstart.md
+  - SAP BTP: btp-overview.md
+  - Install in Claude: install-in-claude.md
   - Deploy:
       - Choose a Deployment: deployment.md
       - Docker: docker.md
-      - SAP BTP:
-          - Start Here: btp-overview.md
-          - Cloud Foundry Deployment: btp-cloud-foundry-deployment.md
-          - SAP Backends:
-              - BTP ABAP Environment: btp-abap-environment.md
-              - S/4HANA Public Cloud: s4hana-public-cloud.md
-          - Multi-System:
-              - Multi-Target Setup: multi-target-setup.md
+      - BTP Cloud Foundry: btp-cloud-foundry-deployment.md
+      - BTP ABAP Environment: btp-abap-environment.md
+      - S/4HANA Public Cloud: s4hana-public-cloud.md
+      - Multi-Target Setup: multi-target-setup.md
       - Multi-System Hub (mcp-hub): multi-system-hub.md
       - Deployment Best Practices: deployment-best-practices.md
   - Security:
