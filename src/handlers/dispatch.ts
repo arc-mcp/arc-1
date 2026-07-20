@@ -525,7 +525,11 @@ export interface MultiTargetSapFailure {
     | 'SAP_AUTHENTICATION_FAILED'
     | 'SAP_AUTHORIZATION_DENIED'
     | 'SAP_REQUEST_FAILED';
-  event?: 'cloud_connector_access_denied' | 'sap_authentication_failed' | 'sap_authorization_failed';
+  event?:
+    | 'cloud_connector_access_denied'
+    | 'sap_service_unavailable'
+    | 'sap_authentication_failed'
+    | 'sap_authorization_failed';
   message: string;
   retryable?: boolean;
 }
@@ -559,16 +563,16 @@ export function classifyMultiTargetSapError(
       event: 'cloud_connector_access_denied',
       message:
         identity === 'shared'
-          ? `Cloud Connector does not expose or allow target ${target}. Ask the BTP/Cloud Connector administrator to make the destination virtual host and port match the reviewed Basic OnPremise mapping and allow the required ADT paths, then try again now.`
-          : `Cloud Connector does not expose or allow target ${target}. Ask the BTP/Cloud Connector administrator to make the destination virtual host and port match the Principal Propagation HTTPS/X.509 mapping and allow the required ADT paths, then try again now.`,
+          ? `Cloud Connector does not expose or allow target ${target}. Ask the BTP/Cloud Connector administrator to make the destination virtual host and port match the reviewed Basic OnPremise mapping and allow the required ADT paths. Do not retry automatically; retry only after the administrator confirms the repair.`
+          : `Cloud Connector does not expose or allow target ${target}. Ask the BTP/Cloud Connector administrator to make the destination virtual host and port match the Principal Propagation HTTPS/X.509 mapping and allow the required ADT paths. Do not retry automatically; retry only after the administrator confirms the repair.`,
     };
   }
   const classification = classifySapDomainError(error.statusCode, error.responseBody, error.path);
   if (classification?.category === 'icf-service-inactive') {
     return {
       code: 'SAP_SERVICE_INACTIVE',
-      event: 'sap_authentication_failed',
-      message: `An SAP service required by ${toolName} is inactive for target ${target}. Ask the SAP administrator to activate it, then try again now.`,
+      event: 'sap_service_unavailable',
+      message: `An SAP service required by ${toolName} is inactive for target ${target}. Ask the SAP administrator to activate it. Do not retry automatically; retry only after the administrator confirms the repair.`,
     };
   }
   if (classification?.category === 'authorization') {
@@ -596,7 +600,7 @@ export function classifyMultiTargetSapError(
   if (error.statusCode === 403) {
     return {
       code: 'SAP_REQUEST_FAILED',
-      message: `Target ${target} returned an unclassified forbidden response while running ${toolName}. ARC-1 did not treat it as a rejected shared credential generation. Check SAP service authorization and Cloud Connector configuration, then try again after repair.`,
+      message: `Target ${target} returned an unclassified forbidden response while running ${toolName}. ARC-1 did not treat it as a rejected shared credential generation. Ask an administrator to check SAP service authorization and Cloud Connector configuration. Do not retry automatically; retry only after the administrator confirms the repair.`,
       retryable: true,
     };
   }

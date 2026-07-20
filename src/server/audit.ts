@@ -104,6 +104,7 @@ export interface MultiTargetStageFailedEvent extends AuditEventBase {
     | 'pp_exchange_failed'
     | 'shared_auth_failed'
     | 'cloud_connector_access_denied'
+    | 'sap_service_unavailable'
     | 'sap_authentication_failed'
     | 'sap_authorization_failed'
     | 'target_policy_denied';

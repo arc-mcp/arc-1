@@ -815,6 +815,14 @@ export function validateConfig(config: ServerConfig): void {
     }
   }
 
+  // This opt-in is evaluated only by the multi-target runtime. Keep startup nonfatal so an
+  // administrator can stage the setting before enabling the feature, but make the no-op visible.
+  if (config.multiTargetAllowBasicAuth && !config.multiTargetEndpoints) {
+    console.error(
+      '[warn] ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH=true has no effect without ARC1_MULTI_TARGET_ENDPOINTS=true — ignoring the shared Basic opt-in.',
+    );
+  }
+
   if (config.oidcIssuer && !config.oidcAudience) {
     throw new Error(
       'SAP_OIDC_AUDIENCE is required when SAP_OIDC_ISSUER is set — ' +

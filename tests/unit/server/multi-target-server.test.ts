@@ -173,6 +173,18 @@ describe('multi-target MCP servers', () => {
     expect(Buffer.byteLength(JSON.stringify(payload), 'utf8')).toBeLessThan(20_000);
   });
 
+  it('counts an in-flight shared-auth check without reporting an administrator exception', () => {
+    const payload = buildTargetCatalog(
+      registry(1, { data: false, sql: false }, { authentication: 'BasicAuthentication' }),
+      {
+        admin: true,
+        runtimeAuth: () => ({ status: 'checking', checkedAt: '2026-07-20T12:34:56.000Z' }),
+      },
+    ) as Record<string, any>;
+
+    expect(payload.admin.sharedAuthentication).toEqual({ targets: 1, statusCounts: { checking: 1 } });
+  });
+
   it('keeps exceptional shared-auth health on the affected target', () => {
     const payload = buildTargetCatalog(
       registry(2, { data: false, sql: false }, { authentication: 'BasicAuthentication' }),

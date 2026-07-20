@@ -60,6 +60,7 @@ function categorize(event: AuditEvent): AuditCategory | null {
     case 'pp_exchange_failed':
     case 'shared_auth_failed':
     case 'cloud_connector_access_denied':
+    case 'sap_service_unavailable':
     case 'sap_authentication_failed':
     case 'sap_authorization_failed':
     case 'target_policy_denied':
@@ -281,6 +282,7 @@ export class BTPAuditLogSink implements LogSink {
       case 'pp_exchange_failed':
       case 'shared_auth_failed':
       case 'cloud_connector_access_denied':
+      case 'sap_service_unavailable':
       case 'sap_authentication_failed':
       case 'sap_authorization_failed':
       case 'target_policy_denied': {

@@ -53,6 +53,7 @@ describe('multi-target SAP error contract', () => {
     expect(result).toMatchObject({ code: 'SAP_REQUEST_FAILED', retryable: true });
     expect(result?.event).toBeUndefined();
     expect(result?.message).toContain('did not treat it as a rejected shared credential generation');
+    expect(result?.message).toContain('Do not retry automatically');
   });
 
   it('distinguishes the verified Cloud Connector exposure denial from SAP authentication', () => {
@@ -69,7 +70,8 @@ describe('multi-target SAP error contract', () => {
       event: 'cloud_connector_access_denied',
     });
     expect(result?.message).toContain('NPL/001');
-    expect(result?.message).toContain('try again now');
+    expect(result?.message).toContain('Do not retry automatically');
+    expect(result?.message).toContain('only after the administrator confirms the repair');
     expect(result?.message).not.toContain('npl.example.internal');
   });
 
@@ -125,7 +127,9 @@ describe('multi-target SAP error contract', () => {
       'A4H/100',
       'SAPSearch',
     );
-    expect(result).toMatchObject({ code: 'SAP_SERVICE_INACTIVE', event: 'sap_authentication_failed' });
+    expect(result).toMatchObject({ code: 'SAP_SERVICE_INACTIVE', event: 'sap_service_unavailable' });
+    expect(result?.message).toContain('Do not retry automatically');
+    expect(result?.message).toContain('only after the administrator confirms the repair');
   });
 
   it('returns a target-aware retryable classification for network failures', () => {
@@ -223,5 +227,51 @@ describe('multi-target SAP error contract', () => {
       }),
     );
     auditSpy.mockRestore();
+  });
+
+  it('audits an inactive SAP service as unavailable rather than an authentication failure', async () => {
+    const auditSpy = vi.spyOn(logger, 'emitAudit').mockImplementation(() => undefined);
+    const client = {
+      getSystemInfo: async () => {
+        throw new AdtApiError(
+          'Forbidden',
+          403,
+          '/sap/bc/adt/core/discovery',
+          '<html><head><title>Service cannot be reached</title></head><body>inactive</body></html>',
+        );
+      },
+    };
+
+    try {
+      const result = await handleToolCall(
+        client as never,
+        { ...DEFAULT_CONFIG, targetId: 'A4H/100', minimalErrors: true },
+        'SAPRead',
+        { type: 'SYSTEM' },
+        undefined,
+        undefined,
+        undefined,
+        true,
+        undefined,
+        'REQ-SERVICE-INACTIVE',
+      );
+      const payload = JSON.parse(result.content[0]?.text ?? '{}');
+      expect(payload).toMatchObject({
+        error: 'SAP_SERVICE_INACTIVE',
+        target: 'A4H/100',
+        requestId: 'REQ-SERVICE-INACTIVE',
+        retryable: true,
+      });
+      expect(auditSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: 'sap_service_unavailable',
+          target: 'A4H/100',
+          requestId: 'REQ-SERVICE-INACTIVE',
+          errorCode: 'SAP_SERVICE_INACTIVE',
+        }),
+      );
+    } finally {
+      auditSpy.mockRestore();
+    }
   });
 });

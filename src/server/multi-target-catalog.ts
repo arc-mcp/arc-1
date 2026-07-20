@@ -26,7 +26,9 @@ export interface TargetCatalogOptions {
   runtimeAuth?: (target: string) => { status: string; checkedAt?: string };
 }
 
-const NORMAL_SHARED_AUTH_STATES = new Set(['not_checked', 'healthy']);
+// `checking` is an ordinary in-flight canary, not an operator exception. Completed failures such
+// as `temporarily_unavailable` deliberately remain exceptional and visible to administrators.
+const NORMAL_SHARED_AUTH_STATES = new Set(['not_checked', 'checking', 'healthy']);
 
 function incrementStatus(counts: Record<string, number>, status: string): void {
   counts[status] = (counts[status] ?? 0) + 1;

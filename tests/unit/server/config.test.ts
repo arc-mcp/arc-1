@@ -42,11 +42,21 @@ describe('parseArgs', () => {
     expect(config.verbose).toBe(false);
   });
 
-  it('parses the default-off multi-target Basic authentication option', () => {
-    process.env.ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH = 'true';
-    const { config, sources } = resolveConfig([]);
-    expect(config.multiTargetAllowBasicAuth).toBe(true);
-    expect(sources.multiTargetAllowBasicAuth).toEqual({ env: 'ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH' });
+  it('parses the default-off multi-target Basic authentication option and warns when it is inert', () => {
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      process.env.ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH = 'true';
+      const { config, sources } = resolveConfig([]);
+      expect(config.multiTargetAllowBasicAuth).toBe(true);
+      expect(sources.multiTargetAllowBasicAuth).toEqual({ env: 'ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH' });
+      expect(stderrSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH=true has no effect without ARC1_MULTI_TARGET_ENDPOINTS=true',
+        ),
+      );
+    } finally {
+      stderrSpy.mockRestore();
+    }
   });
 
   it.each(['ARC1_CACHE_WARMUP', 'ARC1_CACHE_WARMUP_PACKAGES'])('rejects retired env var %s', (name) => {
