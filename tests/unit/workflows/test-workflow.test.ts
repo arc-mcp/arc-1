@@ -3,7 +3,12 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
-const WORKFLOW = readFileSync(join(import.meta.dirname, '../../../.github/workflows/test.yml'), 'utf8');
+// Normalize CRLF up front: on a checkout with core.autocrlf=true, this file is CRLF on disk even
+// though the git blob is LF, and jobBlock()'s regex assumes bare \n delimiters.
+const WORKFLOW = readFileSync(join(import.meta.dirname, '../../../.github/workflows/test.yml'), 'utf8').replaceAll(
+  '\r\n',
+  '\n',
+);
 
 type WorkflowStep = {
   env?: Record<string, unknown>;
