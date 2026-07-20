@@ -345,18 +345,18 @@
         },
         "unit": {
           "type": "string",
-          "description": "edit_unit FORM/MODULE name in a PROG or INCL (case-insensitive)."
+          "description": "edit_unit FORM/MODULE name (case-insensitive)."
         },
         "oldContent": {
           "type": "string",
-          "description": "Exact text to replace (no line-number prefix; from a plain SAPRead)."
+          "description": "Exact text to replace (no line prefix, plain SAPRead)."
         },
         "newContent": {
           "type": "string"
         },
         "lineStart": {
           "type": "integer",
-          "description": "Optional search scope (not a replace range); pairs with lineEnd."
+          "description": "Search scope (not a replace range); pairs with lineEnd."
         },
         "lineEnd": {
           "type": "integer"

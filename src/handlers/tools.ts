@@ -462,9 +462,7 @@ export function getToolDefinitions(
           include: {
             type: 'string',
             description:
-              'For CLAS: DO NOT use this to read the main class — omit include entirely to get the full class source (CLASS DEFINITION + CLASS IMPLEMENTATION). This parameter reads class-LOCAL auxiliary files only: definitions (local type definitions, NOT the main class definition), implementations (local helper class implementations), macros, testclasses (ABAP Unit). Comma-separated. ' +
-              'For DDLS: use include="elements" for the CDS field catalog (key fields, aliases, associations, expression types) instead of raw DDL. ' +
-              'For VERSIONS (CLAS): include selects the class include history to query (main, definitions, implementations, macros, testclasses).',
+              'For CLAS: DO NOT use this to read the main class — omit include entirely to get the full class source (CLASS DEFINITION + CLASS IMPLEMENTATION). This parameter reads class-LOCAL auxiliary files only: definitions (local type definitions, NOT the main class definition), implementations (local helper class implementations), macros, testclasses (ABAP Unit). Comma-separated. For DDLS: use include="elements" for the CDS field catalog (key fields, aliases, associations, expression types) instead of raw DDL. For VERSIONS (CLAS): include selects the class include history to query (main, definitions, implementations, macros, testclasses).',
           },
           group: {
             type: 'string',
@@ -474,8 +472,7 @@ export function getToolDefinitions(
           method: {
             type: 'string',
             description:
-              'For CLAS: method name to read a single method implementation (e.g., "get_name", "zif_order~process"). ' +
-              'Use "*" to list all methods with signatures and visibility. ' +
+              'For CLAS: method name to read a single method implementation (e.g., "get_name", "zif_order~process"). Use "*" to list all methods with signatures and visibility. ' +
               (btp ? '' : 'For SOBJ: BOR method name to read. If omitted, returns the full BOR method catalog. ') +
               'Not used with other types.',
           },
@@ -483,18 +480,10 @@ export function getToolDefinitions(
             type: 'string',
             maxLength: MAX_GREP_PATTERN_LENGTH,
             description:
-              'Regex pattern (case-insensitive) to search within the object source. Returns only matching lines with 1-based line numbers and ±3 context lines, instead of the full source — token-efficient. ' +
-              'For CLAS, matches are annotated with the owning class/method; combine with include= to scope a section; do NOT combine with method=. ' +
-              'Falls back to a literal search when the pattern is not valid regex.',
+              'Regex pattern (case-insensitive) to search within the object source. Returns only matching lines with 1-based line numbers and ±3 context lines, instead of the full source — token-efficient. For CLAS, matches are annotated with the owning class/method; combine with include= to scope a section; do NOT combine with method=. Falls back to a literal search when the pattern is not valid regex.',
           },
-          lineStart: {
-            type: 'number',
-            description: 'Start line (1-based); pairs with lineEnd, not with grep/method.',
-          },
-          lineEnd: {
-            type: 'number',
-            description: 'End line (1-based); pairs with lineStart.',
-          },
+          lineStart: { type: 'number', description: 'Start line (1-based); pairs with lineEnd, not with grep/method.' },
+          lineEnd: { type: 'number', description: 'End line (1-based); pairs with lineStart.' },
           ...(btp
             ? {}
             : {
@@ -657,19 +646,10 @@ export function getToolDefinitions(
           ...(btp
             ? {}
             : {
-                unit: {
-                  type: 'string',
-                  description: 'edit_unit FORM/MODULE name in a PROG or INCL (case-insensitive).',
-                },
-                oldContent: {
-                  type: 'string',
-                  description: 'Exact text to replace (no line-number prefix; from a plain SAPRead).',
-                },
+                unit: { type: 'string', description: 'edit_unit FORM/MODULE name (case-insensitive).' },
+                oldContent: { type: 'string', description: 'Exact text to replace (no line prefix, plain SAPRead).' },
                 newContent: { type: 'string' },
-                lineStart: {
-                  type: 'integer',
-                  description: 'Optional search scope (not a replace range); pairs with lineEnd.',
-                },
+                lineStart: { type: 'integer', description: 'Search scope (not a replace range); pairs with lineEnd.' },
                 lineEnd: { type: 'integer' },
               }),
           visibility: {
