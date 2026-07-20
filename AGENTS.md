@@ -295,6 +295,7 @@ Every code change requires tests. Skip taxonomy: `docs/testing-skip-policy.md`.
 - **Cookie hot-reload**: `SAP_COOKIE_FILE` re-read on persistent 401; `SAP_COOKIE_STRING` cannot hot-reload.
 - **Error types**: `AdtApiError` / `AdtSafetyError` / `AdtNetworkError`; `dispatch.ts` formats them with LLM-friendly hints.
 - **Stateful sessions** for lock→modify→unlock; CSRF auto-managed (`src/adt/http.ts`).
+- **ADT locks never cross an MCP round-trip** — `lock→modify→unlock` completes inside ONE synchronous tool call; never elicit inside a lock block, never expose writes as async MCP Tasks holding a lock ([ADR-0006](docs/adr/0006-mcp-legacy-era-until-triggers.md)).
 - **Tool schema three-file sync** — every property must exist in `tools.ts` (JSON Schema → visible to LLMs), `schemas.ts` (Zod), and the per-tool handler. `batch_create` item schemas are separate from the top-level schema — update both.
 - **MTA layout** — `mta.yaml` committed (safe defaults); `mta-overrides.mtaext` gitignored.
 

@@ -124,7 +124,11 @@ export function applySecurityMiddleware(app: express.Application, allowedOrigins
           callback(null, allowed.has(origin));
         },
         methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
-        allowedHeaders: ['Content-Type', 'Authorization', 'mcp-session-id'],
+        // mcp-protocol-version: sent by every SDK client on post-initialize requests (spec 2025-06-18+).
+        // last-event-id: sent on SSE reconnects (fetch-based, so preflighted). 2026-07-28 headers
+        // (Mcp-Method/Mcp-Name/Mcp-Param-*) deliberately absent — v2 clients default to legacy mode,
+        // and Mcp-Param-* is dynamically named (can't be allow-listed under credentials). ADR-0006.
+        allowedHeaders: ['Content-Type', 'Authorization', 'mcp-session-id', 'mcp-protocol-version', 'last-event-id'],
         exposedHeaders: ['mcp-session-id'],
         credentials: true,
       }),
@@ -155,8 +159,9 @@ export function applySecurityMiddleware(app: express.Application, allowedOrigins
 /**
  * Create an Express handler that processes MCP requests.
  * Each request gets a fresh Server + Transport pair.
+ * Exported for the era-contract regression tests (tests/unit/server/mcp-era-contract.test.ts).
  */
-function createMcpHandler(serverFactory: () => McpServer) {
+export function createMcpHandler(serverFactory: () => McpServer) {
   return async (req: Request, res: Response) => {
     logger.debug('MCP handler invoked', {
       method: req.method,
