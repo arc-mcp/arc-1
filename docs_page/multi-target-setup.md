@@ -288,24 +288,40 @@ guidance for choosing between them, are in
 
 1. Confirm `/health` contains `components.multiTarget.status: "ready"`.
 2. In the separate trusted Admin connection to `/multi/mcp`, call `SAPTargets` and confirm the target
-   is active with no duplicate or quarantine diagnostic. Skip this operator check only when no Admin
-   test identity is available; the Viewer read below remains mandatory.
+   is active with no duplicate or quarantine diagnostic. For PP-only acceptance, you may skip this
+   operator check when no Admin test identity is available; the Viewer read below remains mandatory.
+   Shared Basic acceptance requires the Admin check even when only one target is active.
 3. Call `SAPRead` with `type: "SYSTEM"` on a pinned connection, or with both `type: "SYSTEM"` and
    `target: "A4H/100"` on the aggregate connection.
 4. For PP, test an unmapped or unauthorized user and confirm ARC-1 returns a safe PP/auth error
-   rather than another user's SAP session. For Basic, confirm `SAPTargets` labels the target
-   `identity: "shared"` and that SAP reports the intended technical user.
+   rather than another user's SAP session. For Basic, use the Admin connection to confirm
+   `SAPTargets` labels the target `identity: "shared"`, then confirm the `SAPRead SYSTEM` result
+   reports the intended technical SAP user. A Viewer does not receive `SAPTargets` when only one
+   target is active.
 
 You are done when health is ready, the expected target is active, the reader sees the expected
 read-only tools, and the selected-identity `SAPRead` call succeeds.
 
 ### Roll back or disable shared Basic targets
 
-To disable the shared-identity exception without removing PP targets, remove or set
-`ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH=false`, apply the environment change, and restart the app.
+For an emergency disable without removing PP targets, override the running CF application and
+restart it:
+
+```bash
+cf set-env arc1-mcp-server ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH false
+cf restart arc1-mcp-server
+```
+
 Basic destinations are then quarantined as `BASIC_AUTH_DISABLED`; PP destinations keep working.
-Verify with Admin `SAPTargets` before rolling back code. For a code rollback, disable Basic and
-complete that restart first, then deploy the prior revision with a non-rolling stop/start strategy.
+Confirm the result with Admin `SAPTargets`. This CF override is temporary configuration drift: a
+later MTA deployment can restore the value from the deployment descriptor.
+
+For a durable disable, set `ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH: "false"` in the customer's protected
+`mta-overrides.mtaext`, validate that actual file with
+`npx mbt validate -e mta-overrides.mtaext`, then build and deploy it with the approved
+[non-rolling procedure](btp-administration.md#non-rolling-update-for-shared-basic). For a code
+rollback, complete the disable and verification first, then deploy the prior revision with the same
+non-rolling stop/start strategy.
 
 <a id="exact-v1-tool-surface"></a>
 <a id="v1-safety-boundary"></a>
@@ -573,9 +589,11 @@ ARC-1 loads one immutable destination snapshot at process startup.
 The complete common lifecycle—including role changes, DCR secret rotation, code upgrades, scaling,
 and rollback—is in [BTP Administration](btp-administration.md#change-and-restart-matrix).
 
-At request time ARC-1 resolves the selected PP destination again without the SDK cache. If its safe
+At request time ARC-1 resolves the selected destination again without the SDK cache. If its safe
 configuration no longer matches the startup snapshot, the call returns `TARGET_CONFIG_CHANGED`
-until restart.
+until restart. Basic `User` and `Password` values are deliberately excluded from this safe
+fingerprint and loaded on each request, which is why credential-only rotation does not require a
+restart.
 
 `/health` remains public and HTTP 200 so Cloud Foundry does not crash-loop the app. The relevant
 multi-target fields are:

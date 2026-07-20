@@ -2098,11 +2098,14 @@ reuse one real SID/client without changing their SAP identity.
 **Why:** Enterprises have multiple SAP systems (DEV, QAS, PRD, sandboxes).
 
 **V1 boundary:** This is a default-off BTP/CF exception to the one-target recommendation, not a new
-general deployment default. It is XSUAA-only, strict-PP, mutation-free, cache-free, and supports
-source/metadata reads plus separately opted-in data preview and SQL. There are no per-target XSUAA
-roles; separate instances or the MCP hub remain the answer for writes, pre-SAP target ACLs, or hard
-failure/security isolation. See [ADR-0006](../docs/adr/0006-experimental-read-only-multi-target.md)
-and the [administrator guide](multi-target-administration.md).
+general deployment default. It is XSUAA-only, mutation-free, cache-free, and supports source/metadata
+reads plus separately opted-in data preview and SQL. Principal Propagation remains recommended.
+[ADR-0007](../docs/adr/0007-shared-basic-identity-for-read-only-multi-target.md) permits only an
+explicit, default-off shared Basic identity under its mutation-free, one-instance controls and never
+as a PP fallback. There are no per-target XSUAA roles; separate instances or the MCP hub remain the
+answer for writes, pre-SAP target ACLs, or hard failure/security isolation. See
+[ADR-0006](../docs/adr/0006-experimental-read-only-multi-target.md) and the
+[administrator guide](multi-target-administration.md).
 Start with the [multi-system setup runbook](multi-target-setup.md).
 
 ---

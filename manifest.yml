@@ -1,14 +1,14 @@
 ---
 # Cloud Foundry deployment manifest for ARC-1 MCP server on SAP BTP.
 #
-# This is a TEMPLATE. Copy and customize per deployment scenario:
-#   manifest-onprem.yml  — on-premise SAP via Cloud Connector
-#   manifest-btp.yml     — BTP ABAP Environment (direct OAuth)
+# This is the shipped on-premise TEMPLATE. Copy it to a deployment-specific
+# filename such as manifest-onprem.yml before customizing it. For BTP ABAP
+# Environment (direct OAuth), start from the shipped manifest-btp-abap.yml.
 #
 # Credentials are NOT stored here. Set ARC1_API_KEYS via `cf set-env`; separate
 # API-key and strict PP instances are recommended, while mixed mode is supported.
 #
-# See docs/deployment-best-practices.md for architecture guidance.
+# See docs_page/deployment-best-practices.md for architecture guidance.
 # See docs_page/btp-cloud-foundry-deployment.md for step-by-step BTP deployment.
 
 # ──────────────────────────────────────────────────────────────────────

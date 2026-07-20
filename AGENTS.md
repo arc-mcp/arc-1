@@ -304,10 +304,12 @@ Every code change requires tests. Skip taxonomy: `docs/testing-skip-policy.md`.
 - Never commit `.env`, `cookies.txt`, `.arc1.json`; sensitive fields are redacted in logs.
 - **Safety config is the server ceiling** — per-user scopes only restrict.
 - **Multi-system boundary** — single target remains the default and all writable multi-system access
-  stays out of scope under ADR-0005. ADR-0006 is the only sanctioned in-process exception:
-  experimental, default-off, BTP/XSUAA/strict-PP, mutation-free pinned and aggregate endpoints. Follow its normative
-  plan exactly; do not add writes, target-specific roles, another auth/discovery model, or a hidden
-  compatibility mode. Route requirements outside that boundary to the
+  stays out of scope under ADR-0005. ADR-0006 is the sanctioned experimental, default-off, BTP/XSUAA,
+  mutation-free exception for pinned and aggregate endpoints. Principal Propagation remains recommended;
+  ADR-0007 permits only an explicit, default-off shared Basic identity under its mutation-free, one-instance
+  controls and never as a PP fallback. Follow both normative plans exactly; do not add writes,
+  target-specific roles, another discovery/auth model, or a hidden compatibility mode. Route requirements
+  outside those boundaries to the
   [MCP hub](https://github.com/arc-mcp/mcp-hub) or a new ADR/security review.
 - **Per-user auth never inherits shared credentials** — `buildAdtConfig(..., { perUser: true })` strips username/password/cookies; any new Layer B field must respect the flag.
 - **All ADT endpoints have safety guards** — no unguarded `http.{get,post,put,delete}`.

@@ -798,12 +798,15 @@ bodies. For Basic targets, SAP records the shared technical user; correlate it w
 events for human attribution. SAP-side login/security logging remains dependent on SAP system
 configuration and is not guaranteed by ARC-1.
 
-Add a public `target` field to the audit base event; never reuse or expose the internal BTP
-destination name. Emit one terminal MCP-call outcome plus stage-transition events only for failures
-(`target_resolution_failed`, `pp_exchange_failed`, `cloud_connector_access_denied`,
-`sap_authentication_failed`, `sap_authorization_failed`, and `target_policy_denied`). Keep successful
-stage detail in structured stderr debug logs so one successful call does not create several billable
-BTP Audit Log records.
+Add the public `target`, effective `identity`, and secret-safe internal `destination` name to the
+audit base event. The destination name is operator context and must never enter reader-facing tool
+results; never log destination properties, URLs, or credentials. Emit one terminal MCP-call outcome
+plus stage-transition events for failures (`target_resolution_failed`, `pp_exchange_failed`,
+`shared_auth_failed`, `cloud_connector_access_denied`, `sap_service_unavailable`,
+`sap_authentication_failed`, `sap_authorization_failed`, and `target_policy_denied`). The deliberate
+shared-Basic success exception is `auth_shared_created`, emitted only after its canary succeeds as
+specified by the shared-identity plan. Keep other successful stage detail in structured stderr debug
+logs so one successful call does not create several billable BTP Audit Log records.
 
 ## Feature State, Cache, and User Availability
 

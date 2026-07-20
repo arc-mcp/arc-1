@@ -4,7 +4,34 @@ Complete documentation for all MCP tools available in ARC-1.
 
 ARC-1 exposes **12 intent-based tools** designed for AI agents. Instead of 200+ individual tools (one per object type per operation), ARC-1 groups by *intent* with a `type` parameter for routing. This keeps the LLM's tool selection simple, with the schema payload guarded by CI budgets and a hyperfocused 1-tool mode for tight context windows.
 
+Experimental aggregate multi-target mode can add one catalog utility, `SAPTargets`. It is not one
+of the 12 core intent tools and is never exposed on `/mcp` or a pinned target route.
+
 **Error intelligence:** ARC-1 enriches many SAP ADT failures with concise, actionable hints (for example lock conflicts, enqueue issues, missing authorizations, and transport/corrNr problems). Hints can include SAP transaction references like `SM12` (locks), `SU53` (authorization), and `SE09` (transport checks) to speed up troubleshooting.
+
+---
+
+## SAPTargets (aggregate multi-target only)
+
+List the SAP targets that can be selected through `/multi/mcp`. The tool takes no `target` parameter
+and does not contact SAP. Listing a target proves only that ARC-1 accepted its configuration; it
+does not prove that the current user's SAP identity can access it.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `query` | string | No | Case-insensitive filter over target IDs and descriptions. Admin results also match destination name, status, code, and message. Maximum 160 characters. |
+| `offset` | integer | No | Admin-only diagnostic-page offset. Follow `diagnosticNextOffset` when the bounded result is truncated. |
+
+- A reader sees `SAPTargets` only when more than one target is active. Its compact response contains
+  target IDs, descriptions, and `identity` (`per-user` or `shared`).
+- An Admin sees it with zero, one, or many targets, including paged, secret-safe registry and
+  quarantine diagnostics. Destination URLs, credentials, tokens, certificates, and raw Cloud
+  Connector location IDs are never returned. It remains available when registry discovery fails.
+- It is never listed on `/<SYSTEM>/<CLIENT>/mcp`, an alias-pinned route, or the explicitly configured
+  single-target `/mcp` route.
+
+See [Multi-System Setup](multi-target-setup.md#target-catalog-tool) for the response shape, privacy
+boundary, and target-selection behavior.
 
 ---
 

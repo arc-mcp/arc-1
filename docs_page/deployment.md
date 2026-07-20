@@ -169,11 +169,11 @@ SAP auth is **OAuth2 via a BTP Destination with `OAuth2UserTokenExchange`**. The
 cf create-service xsuaa application arc1-xsuaa -c xs-security.json
 cf create-service destination lite arc1-destination
 # Create destination ABAP_PP with Authentication=OAuth2UserTokenExchange
-cf set-env arc1 SAP_SYSTEM_TYPE btp
-cf set-env arc1 SAP_XSUAA_AUTH true
-cf set-env arc1 SAP_PP_ENABLED true
-cf set-env arc1 SAP_PP_STRICT true
-cf set-env arc1 SAP_BTP_DESTINATION ABAP_PP
+cf set-env arc1-mcp-server SAP_SYSTEM_TYPE btp
+cf set-env arc1-mcp-server SAP_XSUAA_AUTH true
+cf set-env arc1-mcp-server SAP_PP_ENABLED true
+cf set-env arc1-mcp-server SAP_PP_STRICT true
+cf set-env arc1-mcp-server SAP_BTP_DESTINATION ABAP_PP
 ```
 
 **Full reference:** [btp-abap-environment.md](btp-abap-environment.md).

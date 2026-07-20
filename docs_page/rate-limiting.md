@@ -57,6 +57,11 @@ These are all the knobs you have. Set values via env vars, CLI flags, or `.env`.
 
 **What happens on hit.** HTTP `429 Too Many Requests` with `Retry-After` and RFC 9331 `RateLimit-Limit, remaining, reset` headers. Emits one `auth_rate_limited` audit event per denial.
 
+**Audit endpoint labels.** OAuth denials retain their specific endpoint label, such as `/register`,
+`/authorize`, or `/token`. The shared MCP bucket uses the fixed audit label `/mcp` for denials from
+single-target `/mcp`, pinned routes, `/multi/mcp`, and Copilot JSON-RPC sent to `/authorize`. The label
+identifies which rate-limit bucket fired; it is not the original MCP request path.
+
 **When to tune.**
 - Increase if you operate an automated security scanner or load test against the OAuth surface from one IP.
 - Set to `0` only if an upstream reverse proxy already rate-limits this surface.
@@ -226,10 +231,11 @@ backend protection. Tune all three from audit and latency evidence.
 
 > *"My MCP client returns HTTP 429."*
 **Layer 1.** Check the `endpoint` in the `auth_rate_limited` audit event. For OAuth endpoints such as
-`/register`, `/authorize`, or `/token`, tune `ARC1_AUTH_RATE_LIMIT`. For `/mcp`, a pinned route, or
-`/multi/mcp`, tune `ARC1_MCP_HTTP_RATE_LIMIT`. Set the relevant value to `0` only when an upstream
-proxy protects that same surface. If the IP is unknown, that is probably abuse—leave the limiter
-alone.
+`/register`, `/authorize`, or `/token`, tune `ARC1_AUTH_RATE_LIMIT`. An event with `endpoint="/mcp"`
+means the shared MCP bucket denied traffic from single-target `/mcp`, a pinned route, `/multi/mcp`, or
+Copilot JSON-RPC sent to `/authorize`; tune `ARC1_MCP_HTTP_RATE_LIMIT`. Set the relevant value to `0`
+only when an upstream proxy protects that same surface. If the IP is unknown, that is probably
+abuse—leave the limiter alone.
 
 > *"My MCP client returns a tool error with `\"error\":\"rate_limited\"`."*
 **Layer 2.** Check `mcp_rate_limited` audit events for the affected user. If they're doing legitimate batch work, raise `ARC1_RATE_LIMIT`. Don't increase it just because *any* `mcp_rate_limited` event fires — that's the limit doing its job during a retry storm.

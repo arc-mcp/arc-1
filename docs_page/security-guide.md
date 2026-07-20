@@ -239,32 +239,52 @@ For the full operator picture (threat model, sizing math against `rdisp/wp_no_di
 
 ## 9. Audit Logging
 
-ARC-1 emits structured audit events to all registered sinks. Three sink types are available:
+ARC-1 emits structured audit events through three sink types. Stderr and file sinks receive every
+event; the BTP Audit Log sink forwards the security/data categories described below.
 
 | Sink | Activation | Output |
 |------|-----------|--------|
 | **Stderr** | Always active | JSON lines to stderr |
 | **File** | Set `--log-file` / `ARC1_LOG_FILE` | JSON lines appended to a file |
-| **BTP Audit Log** | Auto-detected from `VCAP_SERVICES` (requires `auditlog` premium plan) | Events sent to BTP Audit Log Service v2 API |
+| **BTP Audit Log** | Auto-detected from `VCAP_SERVICES` (requires `auditlog` premium plan) | Categorized security and data events sent to BTP Audit Log Service v2 API |
 
 ### What Gets Logged
 
 | Event | Description |
 |-------|-------------|
-| `tool_call_start` | Tool name, arguments, user, client ID |
-| `tool_call_end` | Duration, success/error status, error class, result size |
-| `http_request` | HTTP method, ADT path, status code, duration |
-| `http_csrf_fetch` | CSRF token fetch success/duration |
-| `scope_denied` | Scope check failure (tool, required scope, user scopes) |
-| `elicitation` | User confirmation prompts and responses |
+| `tool_call_start` | Tool name and centrally redacted arguments. |
+| `tool_call_end` | Tool, duration, success/error status, error class, and result size/preview after central redaction. |
+| `http_request` | SAP HTTP method, ADT path, status, and duration. Optional debug bodies/headers are centrally redacted; authentication response bodies are never logged. |
+| `http_csrf_fetch` | CSRF-token fetch success and duration. |
+| `auth_scope_denied` | Tool, required scope, and caller's available scopes when authorization rejects a call. |
+| `auth_pp_created` | Success or failure while creating a per-user Principal Propagation ADT client. |
+| `auth_shared_created` | Successful shared technical-user authentication after the Basic canary. Includes tool and `identity: "shared"`. |
+| `target_resolution_failed` | Multi-target ID/registry resolution failed. Includes tool and safe `errorCode`. |
+| `pp_exchange_failed` | Per-user destination/token exchange failed before the SAP call. Includes tool and safe `errorCode`. |
+| `shared_auth_failed` | Shared Basic credential preparation or canary failed. Includes tool and safe `errorCode`. |
+| `cloud_connector_access_denied` | Cloud Connector did not expose or allow the selected target. Includes tool and safe `errorCode`. |
+| `sap_service_unavailable` | A required SAP/ICF service is inactive or unavailable. Includes tool and safe `errorCode`. |
+| `sap_authentication_failed` | SAP rejected the selected per-user or shared identity. Includes tool and safe `errorCode`. |
+| `sap_authorization_failed` | SAP authenticated the identity but denied the operation. Includes tool and safe `errorCode`. |
+| `target_policy_denied` | Instance/target policy denied a selected-target operation. Includes tool and safe `errorCode`. |
+| `safety_blocked` | Safety ceiling blocked an operation; includes the operation and safe reason. |
+| `server_start` | Server version, transport, write ceiling, configured target URL indicator, and process ID where available. |
+| `elicitation_sent` | Confirmation prompt sent to a capable MCP client; includes tool and field names. |
+| `elicitation_response` | Client's elicitation action for the tool. |
+| `activation_preaudit_completed` | Two-phase SAP activation preaudit result, reference count, and phase durations. |
 | `oauth_client_registered` | XSUAA only: a new DCR `client_id` was minted (`/register`). Includes id length and redirect-URI count. |
 | `oauth_client_lookup_failed` | XSUAA only: a `client_id` failed to resolve. `reason` ∈ {`unknown_prefix`, `malformed`, `bad_signature`, `invalid_payload`, `expired`}. Useful for spotting forgery / probing. |
 | `oauth_redirect_uri_registered` | XSUAA only: a redirect URI was added at `/authorize` time to the pre-registered XSUAA default client. |
+| `oauth_redirect_uri_rejected` | XSUAA only: an unapproved redirect URI was rejected at `/authorize`; useful for detecting interception attempts or bad client configuration. |
 | `cors_rejected` | A browser request was blocked because its `Origin` header is not in `ARC1_ALLOWED_ORIGINS`. Includes origin, method, path. Useful for spotting misconfigured browser clients or probing. |
 | `auth_rate_limited` | **Layer 1** rate-limit denial on OAuth or `/mcp` endpoint (per-IP). Includes endpoint, IP, `limitPerMinute`. See [Rate Limiting Guide](rate-limiting.md). |
 | `mcp_rate_limited` | **Layer 2** rate-limit denial on per-user MCP tool quota. Includes user, tool, `limitPerMinute`, `retryAfterMs`. The MCP client receives a tool error with `retryAfter` (not HTTP 429). |
 
-All events within a single MCP tool call share a `requestId` for correlation. Events include `user` and `clientId` fields when authentication is active.
+Every entry has `timestamp`, `level`, and `event`. Events within one MCP tool call share a
+`requestId`; authenticated calls add `user` and `clientId` when available. Selected multi-target
+calls also add `destination`, public `target`, and `identity` (`per-user` or `shared`). Destination
+credentials, bearer tokens, cookies, authorization headers, and other secret values are centrally
+redacted before any sink write.
 
 ### Retention
 

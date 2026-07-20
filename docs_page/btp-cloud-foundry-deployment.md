@@ -164,10 +164,15 @@ destinations with `arc1.enabled=true` and restart the application. Follow
 
 ### Multi-target with a shared Basic exception
 
-Add this only after the customer accepts shared SAP attribution, reusable destination credentials,
-SAP account-lock exposure, downtime for deployment, and no horizontal scaling:
+Use this complete extension profile instead of the PP-only profile, and only after the customer
+accepts shared SAP attribution, reusable destination credentials, SAP account-lock exposure,
+downtime for deployment, and no horizontal scaling:
 
 ```yaml
+_schema-version: "3.1"
+ID: arc1-mcp-overrides
+extends: arc1-mcp
+
 modules:
   - name: arc1-mcp-server
     parameters:
@@ -178,8 +183,9 @@ modules:
       ARC1_CACHE: none
 ```
 
-This permits Basic destinations; it never converts PP destinations or provides a fallback. Use a
-separate principal-type-None Cloud Connector mapping with internal HTTPS and a dedicated,
+This permits Basic destinations; it never converts PP destinations or provides a fallback. Every
+XSUAA user authorized to call a Basic target acts in SAP as that destination's same technical user.
+Use a separate principal-type-None Cloud Connector mapping with internal HTTPS and a dedicated,
 least-privileged technical SAP user. See
 [Shared Basic controls](multi-target-administration.md#basic-shared-identity-controls).
 
@@ -187,10 +193,13 @@ least-privileged technical SAP user. See
 
 ```bash
 npm run btp:validate
+npx mbt validate -e mta-overrides.mtaext
 npm run btp:build
 ```
 
-Expected result: MBT validates both descriptors and creates
+`npm run btp:validate` checks the repository's base and tracked example descriptors. The explicit
+`npx mbt validate -e` command checks the customer's actual protected override. Expected result:
+both checks succeed and MBT creates
 `mta_archives/arc1-mcp_<version>.mtar`.
 
 Before a customer deploy, inspect the archive in a protected workspace:
@@ -331,14 +340,17 @@ Configure the client with exactly one selected endpoint:
 Use the Viewer identity. After OAuth:
 
 1. confirm the expected mutation-free/read-only tool catalog;
-2. for aggregate mode, call `SAPTargets` and select the exact target;
+2. for aggregate mode with more than one active target, call `SAPTargets` and select the exact
+   target; an Admin connection can inspect `SAPTargets` with zero, one, or many targets;
 3. call `SAPRead` with `type: "SYSTEM"`;
 4. call `SAPRead` with `type: "COMPONENTS"`; and
 5. call `SAPSearch` for one known object.
 
 For PP, `SAPRead SYSTEM` must identify the human SAP user. A Destination Service success only proves
 one intermediate layer. SAP `401` usually points to certificate trust/mapping/logon; SAP `403` after
-successful login points to the propagated user's SAP authorization.
+successful login points to the propagated user's SAP authorization. For Basic, `SAPRead SYSTEM`
+must identify the destination's intended technical SAP user, while Admin `SAPTargets` must label the
+target `identity: "shared"`.
 
 As Admin on multi-target, call `SAPTargets` and review zero/one/many behavior, registry revision,
 quarantined/disabled entries, duplicate/shadow warnings, and instance policy narrowing. There is no

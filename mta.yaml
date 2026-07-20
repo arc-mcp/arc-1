@@ -175,6 +175,8 @@ modules:
       # Optional shared BasicAuthentication targets. Default false; PP remains
       # recommended. Enabling this requires parameters.instances: 1 (the base
       # descriptor already sets it) and a least-privileged technical SAP user.
+      # Every authorized XSUAA user then acts as that same SAP technical user
+      # for the Basic destination; SAP audit records do not preserve the human.
       # Basic User/Password rotation is hot; every other destination change
       # remains restart-bound.
       # ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH: "true"
