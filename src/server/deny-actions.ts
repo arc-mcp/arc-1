@@ -7,7 +7,8 @@
  * admins to be explicit about which tool they're blocking.
  *
  * Source: the env var / CLI value can be either:
- *   - A path (starts with `/`, `./`, `~/`, or `../`) → JSON array of strings from file
+ *   - A path (starts with `/`, `./`, `~/`, `../`, or a Windows drive letter like `C:\`) →
+ *     JSON array of strings from file
  *   - An inline comma-separated list
  *
  * Fails fast: any read error, JSON error, grammar violation, or unknown tool/action
@@ -21,9 +22,13 @@ import { resolve as resolvePath } from 'node:path';
 import { ACTION_POLICY } from '../authz/policy.js';
 
 const PATH_PREFIXES = ['/', './', '~/', '../'] as const;
+// Windows drive-letter absolute path (e.g. C:\deny.json or C:/deny.json). Detected by a fixed
+// regex rather than path.isAbsolute(), which is platform-dependent (posix rules don't recognize
+// drive letters, so it would only detect this on a Windows-hosted server).
+const WINDOWS_ABSOLUTE_PATH_RE = /^[a-zA-Z]:[\\/]/;
 
 function isPathLike(value: string): boolean {
-  return PATH_PREFIXES.some((prefix) => value.startsWith(prefix));
+  return WINDOWS_ABSOLUTE_PATH_RE.test(value) || PATH_PREFIXES.some((prefix) => value.startsWith(prefix));
 }
 
 function expandTilde(p: string): string {
