@@ -226,7 +226,7 @@ const ADMIN_AUTH: AuthInfo = { ...READ_AUTH, scopes: ['admin'] };
 const DISCOVERY_RESPONSE = {
   statusCode: 200,
   headers: { 'content-type': 'application/atomsvc+xml' },
-  body: '<app:service xmlns:app="urn:test"><app:workspace><app:collection href="/sap/bc/adt/oo/classes"/></app:workspace></app:service>',
+  body: '<app:service xmlns:app="http://www.w3.org/2007/app"><app:workspace><app:collection href="/sap/bc/adt/oo/classes"/></app:workspace></app:service>',
 };
 
 function toolRequest(mode: 'pinned' | 'aggregate') {
@@ -702,47 +702,66 @@ describe('multi-target shared Basic authentication', () => {
     expect(sharedAuthState.getHealth('A4H/100').status).toBe('healthy');
   });
 
-  it('blocks a 2xx HTML login response without starting the tool', async () => {
+  it.each([
+    [
+      'the empty prefixed AtomPub service returned by SAP_BASIS 758',
+      '<?xml version="1.0"?><app:service xmlns:app="http://www.w3.org/2007/app" xmlns:atom="http://www.w3.org/2005/Atom"/>',
+      'application/atomsvc+xml; charset=utf-8',
+    ],
+    ['an empty default-namespace AtomPub service', '<service xmlns="http://www.w3.org/2007/app"/>', 'application/xml'],
+    [
+      'an empty AtomPub workspace',
+      '<app:service xmlns:app="http://www.w3.org/2007/app"><app:workspace/></app:service>',
+      'text/xml',
+    ],
+    [
+      'an AtomPub extension child',
+      '<app:service xmlns:app="http://www.w3.org/2007/app"><ext:metadata xmlns:ext="urn:extension"/></app:service>',
+      '',
+    ],
+  ])('accepts %s as authenticated ADT core discovery', async (_label, body, contentType) => {
     const current = registry();
     const target = current.targets[0];
     const sharedAuthState = new MultiTargetSharedAuthState();
     lookupDestination.mockResolvedValue(BASE_DESTINATION);
-    const canary = vi.spyOn(AdtHttpClient.prototype, 'get').mockResolvedValue({
+    vi.spyOn(AdtHttpClient.prototype, 'get').mockResolvedValue({
       statusCode: 200,
-      headers: { 'content-type': 'text/html' },
-      body: '<html><body>System Logon</body></html>',
+      headers: contentType ? { 'content-type': contentType } : {},
+      body,
     });
-    const tool = vi.spyOn(AdtClient.prototype, 'getSystemInfo');
+    vi.spyOn(AdtClient.prototype, 'getSystemInfo').mockResolvedValue('{"sid":"A4H"}');
     const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
-    const call = requestHandler(server);
 
-    const first = await call(toolRequest('pinned'), { authInfo: READ_AUTH });
-    const second = await call(toolRequest('pinned'), { authInfo: READ_AUTH });
+    const result = await requestHandler(server)(toolRequest('pinned'), { authInfo: READ_AUTH });
 
-    expect(JSON.parse(first.content[0].text)).toMatchObject({ error: 'SAP_AUTHENTICATION_FAILED' });
-    expect(JSON.parse(second.content[0].text)).toMatchObject({ error: 'SAP_AUTHENTICATION_FAILED' });
-    expect(canary).toHaveBeenCalledOnce();
-    expect(tool).not.toHaveBeenCalled();
+    expect(result.isError).not.toBe(true);
+    expect(sharedAuthState.getHealth(target.target).status).toBe('healthy');
   });
 
   it.each([
     ['an empty body', '', { 'content-type': 'application/atomsvc+xml' }],
     ['JSON', '{"service":{"workspace":{}}}', { 'content-type': 'application/json' }],
-    [
-      'HTML containing service-like tags',
-      '<html><body><service><workspace/></service></body></html>',
-      { 'content-type': 'text/html' },
-    ],
+    ['a non-login HTML fragment', '<h4>Gateway diagnostic</h4>', { 'content-type': 'text/html' }],
     [
       'malformed XML',
       '<app:service xmlns:app="urn:test"><app:workspace></app:service>',
       { 'content-type': 'application/atomsvc+xml' },
     ],
     ['a wrong XML root', '<root><service><workspace/></service></root>', { 'content-type': 'application/xml' }],
-  ])('blocks %s as invalid ADT discovery evidence', async (_label, body, headers) => {
+    [
+      'a wrong service namespace',
+      '<app:service xmlns:app="urn:not-atom-pub"/>',
+      { 'content-type': 'application/atomsvc+xml' },
+    ],
+    [
+      'a fake XML media type',
+      '<app:service xmlns:app="http://www.w3.org/2007/app"/>',
+      { 'content-type': 'application/notxml' },
+    ],
+  ])('rejects %s as temporary invalid ADT discovery evidence', async (_label, body, headers) => {
     const current = registry();
     const target = current.targets[0];
     const sharedAuthState = new MultiTargetSharedAuthState();
@@ -754,15 +773,19 @@ describe('multi-target shared Basic authentication', () => {
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
 
-    const result = await requestHandler(server)(toolRequest('pinned'), { authInfo: READ_AUTH });
+    const call = requestHandler(server);
+    const first = await call(toolRequest('pinned'), { authInfo: READ_AUTH });
+    const second = await call(toolRequest('pinned'), { authInfo: READ_AUTH });
 
-    expect(JSON.parse(result.content[0].text)).toMatchObject({
-      error: 'SAP_AUTHENTICATION_FAILED',
+    expect(JSON.parse(first.content[0].text)).toMatchObject({
+      error: 'SAP_TARGET_TEMPORARILY_UNAVAILABLE',
       identity: 'shared',
-      retryable: false,
+      retryable: true,
     });
+    expect(JSON.parse(second.content[0].text)).toMatchObject({ error: 'SAP_TARGET_TEMPORARILY_UNAVAILABLE' });
+    expect(AdtHttpClient.prototype.get).toHaveBeenCalledTimes(2);
     expect(tool).not.toHaveBeenCalled();
-    expect(sharedAuthState.getHealth(target.target).status).toBe('authentication_failed');
+    expect(sharedAuthState.getHealth(target.target).status).toBe('temporarily_unavailable');
   });
 
   it('does not poison target health after an action-specific 403', async () => {

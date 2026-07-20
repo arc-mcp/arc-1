@@ -68,7 +68,11 @@ credential generation.
 All Basic-auth response paths use the same centralized authentication classifier. Client-facing
 errors and audit events contain a request ID, target, human XSUAA subject, shared-identity marker,
 and safe failure code, but no authorization header, credential, raw SAP login response, or HTML
-body. Successful feature evidence is cleared when the credential generation changes.
+body. The authentication canary accepts the namespace-correct AtomPub service root, including the
+valid empty service returned by SAP_BASIS 758. Only conclusive authentication or authorization
+evidence (401/login behavior or a structured ADT authorization 403) blocks a credential generation;
+an unrecognized non-login 2xx response fails closed but remains retryable.
+Successful feature evidence is cleared when the credential generation changes.
 
 ## Security and operating requirements
 

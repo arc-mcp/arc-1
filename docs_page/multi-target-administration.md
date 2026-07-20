@@ -446,7 +446,7 @@ ARC-1 reports the proven failure stage without exposing raw SAP responses:
 | `SAP_SERVICE_INACTIVE` | The target ICF/ADT service is inactive or unreachable in that form, rather than merely a user-role issue. |
 | `SAP_REQUEST_FAILED` | A post-resolution network error or SAP 5xx prevented the request without proving an auth failure. Check Cloud Connector/SAP health and retry once. |
 | `SAP_TARGET_BUSY` | The Basic target's bounded serialization queue is full or the wait timed out. Retry after the active request completes; split/load-isolate the target if persistent. |
-| `SAP_TARGET_TEMPORARILY_UNAVAILABLE` | The Basic canary had a network, timeout, 429, or SAP 5xx failure. The credential generation is not poisoned; retry later. |
+| `SAP_TARGET_TEMPORARILY_UNAVAILABLE` | The Basic canary had a network, timeout, 429, SAP 5xx, or unrecognized non-login 2xx response. The credential generation is not poisoned; check SAP/intermediary health, then retry. |
 | `TARGET_POLICY_DENIED` | Data/SQL is not enabled at every ARC-1 policy layer. |
 | `TARGET_CONFIG_CHANGED` | A non-secret destination field no longer matches the startup snapshot. Review it and restart. Basic `User`/`Password` rotation alone does not cause this error. |
 

@@ -21,9 +21,10 @@ import {
 import type { ServerConfig } from './types.js';
 
 const SHARED_BASIC_CANARY_ENDPOINT = '/sap/bc/adt/core/discovery';
+const ATOM_PUBLISHING_NAMESPACE = 'http://www.w3.org/2007/app';
 const discoveryParser = new XMLParser({
   ignoreAttributes: false,
-  removeNSPrefix: true,
+  removeNSPrefix: false,
   parseTagValue: false,
   trimValues: true,
 });
@@ -75,16 +76,30 @@ function validateCredentials(destination: Destination): { username: string; pass
 
 function isRecognizableAdtDiscovery(body: string, headers: Record<string, string>): boolean {
   const contentType = Object.entries(headers).find(([name]) => name.toLowerCase() === 'content-type')?.[1] ?? '';
+  const mediaType = contentType.split(';', 1)[0]?.trim().toLowerCase() ?? '';
   const trimmed = body.trim();
   if (!trimmed || /<!doctype\s+html|<html\b/i.test(trimmed)) return false;
-  if (contentType !== '' && !/(?:xml|atomsvc)/i.test(contentType)) return false;
+  if (mediaType !== '' && mediaType !== 'application/xml' && mediaType !== 'text/xml' && !mediaType.endsWith('+xml')) {
+    return false;
+  }
   if (XMLValidator.validate(trimmed) !== true) return false;
   try {
     const parsed = discoveryParser.parse(trimmed) as Record<string, unknown>;
-    const service = parsed.service;
+    const rootElements = Object.keys(parsed).filter((key) => !key.startsWith('?'));
+    if (rootElements.length !== 1) return false;
+    const rootName = rootElements[0];
+    const separator = rootName.indexOf(':');
+    const prefix = separator < 0 ? undefined : rootName.slice(0, separator);
+    const localName = separator < 0 ? rootName : rootName.slice(separator + 1);
+    if (localName !== 'service') return false;
+    const service = parsed[rootName];
     if (!service || typeof service !== 'object' || Array.isArray(service)) return false;
-    const workspace = (service as Record<string, unknown>).workspace;
-    return Array.isArray(workspace) ? workspace.length > 0 : !!workspace && typeof workspace === 'object';
+    const serviceRecord = service as Record<string, unknown>;
+    const namespace = serviceRecord[prefix ? `@_xmlns:${prefix}` : '@_xmlns'];
+    // SAP_BASIS 758 can return a valid, authenticated empty AtomPub service from
+    // /core/discovery. The namespace-qualified service root is the stable canary;
+    // workspace and extension children vary by release.
+    return namespace === ATOM_PUBLISHING_NAMESPACE;
   } catch {
     return false;
   }
@@ -204,12 +219,17 @@ export async function runSharedBasicCanary(client: AdtClient, lease: SharedAuthL
   try {
     const response = await client.http.get(SHARED_BASIC_CANARY_ENDPOINT, { Accept: 'application/atomsvc+xml' });
     if (!isRecognizableAdtDiscovery(response.body, response.headers)) {
-      lease.markAuthenticationFailed();
-      throw new SharedAuthBlockedError('authentication_failed');
+      lease.markTemporarilyUnavailable();
+      throw new SharedBasicSetupError(
+        'SAP_TARGET_TEMPORARILY_UNAVAILABLE',
+        'ARC-1 received an unrecognized response from the shared Basic authentication canary. Check SAP and intermediary health, then try again.',
+        true,
+      );
     }
     lease.markHealthy();
   } catch (error) {
     if (error instanceof SharedAuthBlockedError) throw error;
+    if (error instanceof SharedBasicSetupError) throw error;
     if (error instanceof AdtApiError && error.statusCode === 401) {
       lease.markAuthenticationFailed();
       throw new SharedAuthBlockedError('authentication_failed');

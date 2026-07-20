@@ -409,12 +409,13 @@ old/new/old Find sequence cannot re-admit an old password. The per-target wait q
 32 and acquisition times out after 30 seconds with `SAP_TARGET_BUSY`.
 
 A changed Basic credential generation clears successful feature evidence and performs one new
-authentication attempt. A successful request marks passive runtime health healthy. A conclusive
-401/login-page response marks the generation authentication-failed; a structured SAP ADT 403 marks
-authorization-failed. Transient network/5xx responses remain retryable and do not poison the
-credential generation. Every effective final or synthetic authentication response goes through one
-classifier, including HTML login detection. Never retry a Basic request automatically with another
-credential generation.
+authentication attempt. A successful request marks passive runtime health healthy. The canary
+accepts a namespace-correct AtomPub service root; SAP_BASIS 758 can return that valid service with
+no workspaces. A conclusive 401/login-page response marks the generation authentication-failed; a
+structured SAP ADT 403 marks authorization-failed. Transient network/5xx and unrecognized non-login
+2xx protocol responses remain retryable and do not poison the credential generation. Every
+effective final or synthetic authentication response goes through one classifier, including HTML
+login detection. Never retry a Basic request automatically with another credential generation.
 
 Every ADT client must be constructed with the snapshot client so `src/adt/http.ts` sends the same
 `sap-client` on every request. Do not share one mutable ADT client across targets. Shared stateless
@@ -759,7 +760,7 @@ Required classifications:
 | `SAP_SERVICE_INACTIVE` | SAP ICF/ADT service is inactive rather than a user authorization issue. | Activate/fix the service, then retry. |
 | `SAP_REQUEST_FAILED` | A post-resolution network failure or SAP 5xx prevented the request without proving an authentication cause. | Check Cloud Connector/SAP health, then retry once. |
 | `SAP_TARGET_BUSY` | Basic target's bounded serialization queue is full or its 30-second acquisition timed out. | Retry after the active shared-identity request completes. |
-| `SAP_TARGET_TEMPORARILY_UNAVAILABLE` | Basic canary had a network, timeout, 429, or SAP 5xx failure. | Retry later; the credential generation remains eligible. |
+| `SAP_TARGET_TEMPORARILY_UNAVAILABLE` | Basic canary had a network, timeout, 429, SAP 5xx, or unrecognized non-login 2xx protocol response. | Retry after checking SAP/intermediary health; the credential generation remains eligible. |
 
 Honor `ARC1_MINIMAL_ERRORS`. Never expose raw SAP HTML/bodies, destination properties, credentials,
 authorization headers, assertions, or internal stack traces. Text must remain conclusive for clients

@@ -547,6 +547,31 @@ describe('AdtHttpClient', () => {
       expect(mockFetch).toHaveBeenCalledOnce();
     });
 
+    it.each([
+      ['without Content-Type', {}],
+      ['with a misleading Content-Type', { 'content-type': 'application/octet-stream' }],
+    ])('turns a full login document %s into a synthetic 401', async (_label, headers) => {
+      const onUnauthorized = vi.fn();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '<html><body>System Logon</body></html>', headers));
+
+      const client = new AdtHttpClient({ ...getDefaultConfig(), retryUnauthorized: false, onUnauthorized });
+      await expect(client.get('/sap/bc/adt/core/discovery')).rejects.toMatchObject({ statusCode: 401 });
+
+      expect(onUnauthorized).toHaveBeenCalledOnce();
+      expect(mockFetch).toHaveBeenCalledOnce();
+    });
+
+    it('does not classify a UI5 HTML file with a binary media type as a login page', async () => {
+      const indexHtml = '<!doctype html><html><head><title>My UI5 App</title></head><body></body></html>';
+      mockFetch.mockResolvedValueOnce(mockResponse(200, indexHtml, { 'content-type': 'application/octet-stream' }));
+
+      const client = new AdtHttpClient(getDefaultConfig());
+      const response = await client.get('/sap/bc/adt/filestore/ui5-bsp/objects/ZAPP/content');
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body).toBe(indexHtml);
+    });
+
     it.each([401, 403])('suppresses HTTP %s response bodies from audit fields', async (statusCode) => {
       const { logger } = await import('../../../src/server/logger.js');
       const emitSpy = vi.spyOn(logger, 'emitAudit').mockImplementation(() => undefined);

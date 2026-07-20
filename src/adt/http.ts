@@ -886,10 +886,11 @@ export class AdtHttpClient {
   /** Handle response: throw on error status, return normalized response */
   private handleResponse(status: number, headers: Headers, body: string, path: string): AdtResponse {
     const contentType = headers.get('content-type')?.toLowerCase();
+    const isCoreDiscovery = path.split('?', 1)[0] === '/sap/bc/adt/core/discovery';
     if (
       status === 200 &&
       path.startsWith('/sap/bc/adt/') &&
-      contentType?.startsWith('text/html') &&
+      (contentType?.startsWith('text/html') || isCoreDiscovery) &&
       looksLikeLoginPage(body)
     ) {
       if (this.isCookieAuthMode()) {

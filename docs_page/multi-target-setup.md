@@ -644,7 +644,7 @@ unacceptable.
 | `SAP_AUTHENTICATION_FAILED` | PP: repair mapping/login and retry. Basic: ARC-1 blocks that credential generation to avoid account lockout; rotate the destination `User`/`Password`, then retry without restart. |
 | `SAP_AUTHORIZATION_DENIED` | PP: fix the propagated user's SAP role and retry. Basic canary: fix the technical user's least-privilege ADT role, then restart ARC-1 to clear the blocked generation, or rotate to a reviewed credential and retry hot. |
 | `SAP_TARGET_BUSY` | The Basic target's bounded request gate is busy; retry after the active call completes. Persistent occurrences indicate that a shared Basic target is unsuitable for this load. |
-| `SAP_TARGET_TEMPORARILY_UNAVAILABLE` | The Basic canary reached a transient network, timeout, rate, or SAP 5xx failure. Retry later; the credential generation was not blocked. |
+| `SAP_TARGET_TEMPORARILY_UNAVAILABLE` | The Basic canary reached a transient network, timeout, rate, SAP 5xx, or unrecognized non-login 2xx response. Check SAP/intermediary health and retry; the credential generation was not blocked. |
 | `TARGET_CONFIG_CHANGED` | Review the destination change and restart ARC-1. |
 | Data/SQL action is absent or denied | Check the instance ceiling, target property, XSUAA role, and SAP authorization. |
 
