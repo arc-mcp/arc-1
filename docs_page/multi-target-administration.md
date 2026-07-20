@@ -7,7 +7,9 @@
 
 This page is the operator reference for security boundaries, registry behavior, diagnostics,
 capacity, and incident handling. Follow [Multi-System Setup](multi-target-setup.md) first for the
-copy-paste deployment, destination, role, and MCP client configuration.
+copy-paste deployment, destination, role, and MCP client configuration. Common BTP configuration
+ownership, XSUAA collection lifecycle, DCR secrets, upgrades, scaling, rollback, logging, and
+customer handover live in [BTP Administration](btp-administration.md).
 
 <a id="administration-model"></a>
 <a id="4-configure-xsuaa-roles"></a>
@@ -17,13 +19,14 @@ copy-paste deployment, destination, role, and MCP client configuration.
 
 ## Operating model
 
-Responsibility is intentionally split across four administrators:
+Responsibility is intentionally split across administrators:
 
 | Owner | Controls | Security effect |
 |---|---|---|
 | ARC-1 deployment owner | ARC-1 application environment, usually deployed through MTA | Enables the mode and sets the application-wide maximum for data and SQL. |
 | BTP destination administrator | One subaccount destination per SAP connection | Defines the real SID/client, optional public route alias, connection, label, and narrower data/SQL opt-ins. |
 | Identity administrator | Existing XSUAA role collections | Grants global read, data, SQL, or admin scope. There are no per-target roles in v1. |
+| Cloud Connector administrator | Virtual mappings, principal mode, trust, and exposed paths | Carries the selected destination securely to the intended SAP backend. |
 | SAP/Basis administrator | PP mapping or shared technical user, plus SAP authorizations | Determines whether the selected per-user or shared SAP identity can access a client and operation. |
 
 A request succeeds only when all applicable layers permit it:
@@ -134,6 +137,11 @@ even when that single-target endpoint is configured and writable. Connect client
 ARC-1 reads one immutable snapshot of BTP **subaccount** destinations at startup. It also reads
 service-instance destination names only to detect same-name shadowing; instance destinations do not
 become targets.
+
+A CF space is not a hard destination-inventory boundary. If two ARC-1 populations must not share
+subaccount destination visibility, isolate them in separate subaccounts or another deliberate
+platform boundary. Same-name instance destinations are quarantined rather than allowed to override
+a subaccount target through normal Destination Service lookup precedence.
 
 Only destinations containing an `arc1.*` property enter detailed ARC-1 validation. A destination is
 active only when `arc1.enabled=true` and all connection/identity fields pass validation.

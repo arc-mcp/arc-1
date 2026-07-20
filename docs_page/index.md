@@ -224,7 +224,8 @@ For production, combine conservative tool exposure with real user identity, SAP-
 | [cli-guide.md](cli-guide.md) | CLI commands and configuration |
 | [docker.md](docker.md) | Full Docker reference |
 | [btp-abap-environment.md](btp-abap-environment.md) | BTP ABAP Environment — local service-key OAuth and deployed per-user destination setup |
-| [btp-cloud-foundry-deployment.md](btp-cloud-foundry-deployment.md) | BTP Cloud Foundry deployment details |
+| [btp-cloud-foundry-deployment.md](btp-cloud-foundry-deployment.md) | Canonical BTP Cloud Foundry MTA deployment and read-only acceptance runbook |
+| [btp-administration.md](btp-administration.md) | BTP configuration ownership, roles, secrets, lifecycle, scaling, rollback, and handover |
 | [multi-target-setup.md](multi-target-setup.md) | Build, deploy, configure, and verify experimental read-only multi-system mode |
 | [multi-target-administration.md](multi-target-administration.md) | Multi-target diagnostics, registry lifecycle, capacity, and security operations |
 | [multi-system-hub.md](multi-system-hub.md) | Separate-instance multi-system routing for writes and stronger isolation |

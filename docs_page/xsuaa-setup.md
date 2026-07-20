@@ -143,7 +143,27 @@ Expected response:
 }
 ```
 
+The example above is the single-target `/mcp` authorization surface. Select the endpoint before
+configuring a client:
+
+| Endpoint | Protected-resource scopes ARC-1 advertises | Notes |
+|---|---|---|
+| `/mcp` | `read`, `write`, `data`, `sql`, `transports`, `git`, `admin` | Actual grants and application ceilings still prune tools/actions |
+| `/<SYSTEM>/<CLIENT>/mcp` | `read`, `data`, `sql`, `admin` | Mutation-free pinned multi-target route |
+| `/multi/mcp` | `read`, `data`, `sql`, `admin` | Mutation-free aggregate route; SAP calls require `target` |
+
+XSUAA returns only scopes assigned to the user. Advertising the full mutation-free set does not
+grant Admin, data, or SQL. It lets OAuth clients request a usable token while role collections remain
+the authorization source. Multi-target routes never advertise mutation scopes and still require
+`read` before revealing whether a pinned target exists.
+
 ## Step 5: Configure MCP Clients
+
+Use `/mcp` for a single target, a pinned `/<SYSTEM>/<CLIENT>/mcp` URL for a target-bound
+conversation, or `/multi/mcp` when the model must select among several targets. Do not replace one
+with another merely to recover an OAuth error: endpoint selection is part of the security and tool
+contract. Multi-target client examples are also available in
+[Multi-System Setup](multi-target-setup.md#vs-code-and-github-copilot-configuration).
 
 ### Claude Desktop
 
@@ -186,7 +206,9 @@ The inspector will perform OAuth discovery and redirect to XSUAA login.
 
 ### Copilot Studio (Manual OAuth — recommended)
 
-Copilot Studio does not re-register via DCR after server restarts, so use **Manual** OAuth mode instead of Dynamic Discovery.
+Use **Manual** OAuth mode for the most predictable Copilot Studio interoperability. Ordinary ARC-1
+restarts do not lose stateless DCR registrations; Manual mode is preferred because it avoids an
+extra dynamic-registration round trip that some Copilot Studio configurations do not retry cleanly.
 
 1. In Copilot Studio, add an MCP server connection
 2. Select **Manual** OAuth type
@@ -196,7 +218,9 @@ Copilot Studio does not re-register via DCR after server restarts, so use **Manu
    - **Authorization URL:** `https://<app-route>/authorize`
    - **Token URL template:** `https://<app-route>/token`
    - **Refresh URL:** `https://<app-route>/token`
-   - **Scopes:** `read write` (ARC-1 auto-qualifies these with the XSUAA xsappname prefix)
+   - **Scopes:** for single-target development, request the approved scopes (for example
+     `read write`); for multi-target, request `read data sql admin` and let XSUAA return only the
+     scopes assigned to the signed-in user. ARC-1 auto-qualifies names with the XSUAA xsappname.
 4. Save — Copilot Studio generates a redirect URL
 5. ARC-1 automatically accepts the redirect URL (dynamic redirect URI registration for the XSUAA client)
 
@@ -242,7 +266,13 @@ ARC-1 logs the active signing source as `dcrSigningSource: 'override' | 'xsuaa'`
 
 ### Service-binding rotation
 
-The XSUAA `clientsecret` is the trust anchor for both upstream OAuth calls and the DCR signing key. Rotating the binding is the only way to force-revoke every outstanding DCR registration in one shot:
+The XSUAA `clientsecret` is always an upstream OAuth credential. It is also the DCR signing source
+only while `ARC1_DCR_SIGNING_SECRET` is unset. In that fallback configuration, rebinding XSUAA
+invalidates all DCR registrations. With the recommended dedicated signing secret, rebind/rotation
+does **not** revoke DCR clients; rotate `ARC1_DCR_SIGNING_SECRET` deliberately for global DCR
+revocation.
+
+To rotate the XSUAA binding:
 
 ```bash
 cf unbind-service arc1-mcp-server arc1-xsuaa
@@ -250,13 +280,19 @@ cf bind-service   arc1-mcp-server arc1-xsuaa
 cf restage        arc1-mcp-server
 ```
 
-After this sequence:
+After this sequence, the DCR effect depends on the active signing source:
 
-- Every previously-issued DCR `client_id` returns `400 invalid_client`.
-- In-flight refresh tokens fail because the local DCR `client_id` lookup at `/token` no longer resolves.
-- MCP clients silently re-register on next connect via `/register`.
+- With `dcrSigningSource: 'xsuaa'`, every previously issued DCR `client_id` becomes invalid because
+  the effective signing key changed. Clients must register again; cached access/refresh behavior is
+  client- and token-lifetime-dependent.
+- With `dcrSigningSource: 'override'`, local DCR registrations remain valid because the dedicated
+  signing key did not change. Upstream XSUAA credential rotation can still require a fresh OAuth
+  login, but it is not a DCR revocation event.
 
-This is the only operation that invalidates DCR state. Routine restarts (`cf restart`, `cf push` without rebind, cell moves) no longer disrupt clients.
+DCR state is globally invalidated whenever the **effective signing key** changes: rotate
+`ARC1_DCR_SIGNING_SECRET` in dedicated-key deployments, or rotate/rebind the XSUAA credentials while
+using the fallback. Routine restart, push without rebind, restage, and cell movement preserve DCR
+state while that key remains stable.
 
 ### Recovering a stuck client
 
@@ -417,7 +453,11 @@ Check **Cockpit → Security → Role Collections → "ARC-1 Admin (<space>)" �
 **3. Wrong IdP origin.** If the subaccount has a custom IAS tenant (trust configuration shows `sap.custom`), role collections must be assigned with the correct IdP origin. Assigning via `sap.default` when the user logs in via `sap.custom` will result in `invalid_scope`. Platform IdP users (origin `<tenant>-platform`) are for cockpit and CLI access only — a role collection assigned there does nothing for application logon.
 
 ### "Invalid client_id" (Copilot Studio)
-DCR registrations are in-memory and lost on restart. Switch to **Manual** OAuth mode (see above) to avoid this.
+DCR registrations are stateless and survive ordinary restart, push, restage, and scale-out while the
+signing key stays stable. Check the startup `dcrSigningSource`, restore the intended
+`ARC1_DCR_SIGNING_SECRET`, or re-register the client after an intentional key/binding rotation.
+Manual OAuth remains the more predictable Copilot Studio path because it avoids the dynamic
+registration round trip, not because ARC-1 stores registrations in memory.
 
 ### "Token validation failed: not a valid XSUAA, OIDC, or API key token" (Copilot Studio)
 Copilot Studio caches the access token from the initial sign-in. XSUAA tokens expire after 1 hour and Copilot Studio does not always refresh them automatically — the connector keeps sending the expired token, which ARC-1 correctly rejects.

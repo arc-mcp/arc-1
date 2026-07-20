@@ -55,16 +55,11 @@ applications:
       # ARC1_ALLOWED_ORIGINS: "https://your-ui.example.com"
       # Logging
       SAP_VERBOSE: "true"
-      # Experimental destination-discovered multi-target alternative:
-      # remove SAP_URL/SAP_CLIENT/SAP_BTP_DESTINATION above, bind XSUAA,
-      # mark subaccount PP destinations with arc1.enabled=true, then enable:
-      # ARC1_MULTI_TARGET_ENDPOINTS: "true"
-      # SAP_XSUAA_AUTH: "true"
-      # ARC1_CACHE: "none"
-      # ARC1_TOOL_MODE: "standard"
-      # ARC1_MAX_CONCURRENT: "10"
-      # ARC1_RATE_LIMIT: "120"
-      # See docs_page/multi-target-administration.md.
+      # Experimental destination-discovered multi-target is intentionally not
+      # configured in this generic single-target manifest. Use the reviewed MTA
+      # profile in docs_page/multi-target-setup.md; it also creates XSUAA role
+      # collections and documents the required Basic one-process/non-rolling
+      # operator procedure. A descriptor cannot prevent process overlap.
     services:
       - arc1-connectivity
       - arc1-destination

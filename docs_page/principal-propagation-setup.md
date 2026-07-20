@@ -1,13 +1,17 @@
 # Principal Propagation Setup
 
-Authenticate each MCP user to SAP with their own identity via BTP Destination Service and Cloud Connector. No shared SAP passwords. Full per-user audit trail.
+Authenticate each MCP user's SAP requests with their own identity via BTP Destination Service and
+Cloud Connector. Multi-target PP-only deployments need no shared SAP password. The current
+single-target `/mcp` topology additionally uses one least-privileged Basic destination for startup
+target resolution and feature discovery; authenticated tool calls remain PP-only and never fall back
+to that identity.
 
 ## When to Use
 
 - Enterprise environments requiring per-user SAP authorization
 - Compliance/audit requirements (who did what in SAP)
 - When different users should have different SAP permissions
-- Zero shared credentials architecture
+- Multi-target PP-only deployments where no shared startup identity is required
 
 ## Architecture
 
@@ -15,7 +19,7 @@ Authenticate each MCP user to SAP with their own identity via BTP Destination Se
 MCP Client (JWT)
   │
   ▼
-ARC-1 (/mcp)
+ARC-1 (/mcp or a multi-target route)
   │  validates JWT (OIDC or XSUAA)
   │  passes X-User-Token to Destination Service
   ▼
@@ -34,6 +38,10 @@ SAP ICM
 SAP user session (per-user)
 ```
 
+The diagram shows an authenticated tool request. For single-target `/mcp`, the separate Basic
+startup destination establishes URL/client configuration before an end-user JWT exists. It is not
+part of this request path and is never a fallback after PP failure.
+
 ## Prerequisites
 
 - JWT-based MCP auth working ([OIDC setup](oauth-jwt-setup.md) or [XSUAA setup](xsuaa-setup.md))
@@ -51,12 +59,12 @@ in this order:
 |------|-----------|-------------------|
 | 1 | Choose one stable Cloud Connector virtual host/port and one stable internal SAP DNS name/HTTPS port. | The SAP server certificate contains the internal DNS name in its DNS SANs. |
 | 2 | In Cloud Connector, configure the system certificate, CA certificate, identity-provider trust, and a subject pattern such as `CN=${email}`. | A sample certificate for a real user contains the expected subject and issuer. |
-| 3 | Add an HTTPS `X509_RESTRICTED` mapping and expose `/sap/bc/adt` with all sub-paths. | Cloud Connector's internal connection check succeeds. |
+| 3 | Add an HTTPS mapping with strict user-certificate propagation and expose `/sap/bc/adt` with all sub-paths. | Cloud Connector's internal connection check succeeds without system-certificate fallback. |
 | 4 | In SAP, trust the Cloud Connector system-certificate issuer and user-certificate CA in the active SSL Server Standard PSE. | The certificates remain present after an ICM or system restart. |
 | 5 | Enable the effective client-certificate and trusted-reverse-proxy profile settings supported by that SAP kernel. | ICM starts without unknown or inactive profile parameters. |
 | 6 | Maintain the user's exact propagated e-mail address in SU01. | The value exactly matches the e-mail claim, including spelling. |
 | 7 | In CERTRULE, map the sample certificate's Subject/CN to E-Mail and restrict the rule to the Cloud Connector CA issuer. | CERTRULE shows both **Certificate mapped with rule ...** and **Mapped email exists**, with the intended SAP user. |
-| 8 | Create the subaccount `PrincipalPropagation` destination and, for multi-target mode, add the ARC-1 properties. | The saved URL exactly matches the Cloud Connector virtual host/port and the client is explicit. |
+| 8 | Create the subaccount `PrincipalPropagation` destination and, for multi-target mode, add the ARC-1 properties. For single-target `/mcp`, also create its explicitly named least-privileged Basic startup destination. | The saved URL exactly matches the Cloud Connector virtual host/port and the client is explicit. |
 | 9 | Restart ARC-1 so it discovers the destination, then call `SAPRead SYSTEM`. | The response identifies the human SAP user rather than a technical user. |
 
 One Cloud Connector CA and subject pattern can serve several SAP systems. Each SAP system still needs
@@ -98,9 +106,12 @@ For [multi-target v1](multi-target-setup.md), also set `sap-sysid`, `Description
 `arc1.enabled=true`. One PP destination per system/client is sufficient; a Basic-auth technical-user
 destination is not required.
 
-The single-target `/mcp` runtime may additionally use `SAP_BTP_DESTINATION` with a technical user for
-deliberate mixed API-key/non-JWT operation. That is a separate identity path, not a PP prerequisite.
-Do not add it merely to make PP work.
+For the current single-target on-premise `/mcp` runtime, configure both
+`SAP_BTP_DESTINATION=<least-privileged-startup-destination>` and
+`SAP_BTP_PP_DESTINATION=<principal-propagation-destination>`. The startup destination supplies the
+URL/client and supports feature discovery before a JWT exists. With `SAP_PP_ENABLED=true` and
+`SAP_PP_STRICT=true`, authenticated tool calls use only the PP destination; a PP failure never falls
+back to the startup user. See [BTP Destination Reference](btp-destination-setup.md#per-user-pp-mcp).
 
 ## Step 2: Configure Cloud Connector
 
@@ -113,9 +124,11 @@ Do not add it merely to make PP work.
    real user. Use a claim that is present and stable in every accepted XSUAA user token.
 4. Add the system mapping whose virtual host/port exactly matches the BTP destination. The cloud-side
    URL may be HTTP, but the mapping's internal connection to SAP must be HTTPS.
-5. Select X.509 principal propagation and use `X509_RESTRICTED`. The restricted mode prevents Cloud
-   Connector from falling back to its system certificate when no user principal is available;
-   `X509_GENERAL` permits that fallback and is therefore not recommended for ARC-1 PP routes.
+5. Select strict X.509 user-certificate propagation without system-certificate fallback. On newer
+   Cloud Connector versions, select **X.509 Certificate** and do not allow the system certificate
+   for user logon. On older versions, select **X.509 Certificate (strict usage)**, sometimes
+   represented internally as `X509_RESTRICTED`. The general mode permits fallback to the system
+   certificate and is not appropriate for ARC-1 PP routes.
 6. Make the SAP HTTPS certificate valid for the mapping's internal host name. Prefer a DNS name that
    appears in the certificate's DNS SANs: some Cloud Connector hostname-validation paths do not
    accept an IP SAN when the internal host is an IP literal. Do not solve a name mismatch by disabling
@@ -212,9 +225,11 @@ export SAP_PP_ENABLED=true
 export SAP_PP_STRICT=true
 ```
 
-For multi-target v1, destination discovery replaces both destination-name variables. Keep
-`SAP_PP_ENABLED=true` and `SAP_PP_STRICT=true`, enable `ARC1_MULTI_TARGET_ENDPOINTS=true`, and mark
-each PP destination with `arc1.enabled=true`.
+For multi-target v1, destination discovery replaces both destination-name variables. Enable
+`ARC1_MULTI_TARGET_ENDPOINTS=true`, set `ARC1_CACHE=none`, and mark each PP destination with
+`arc1.enabled=true`. Discovered PP targets force strict per-user PP independently.
+`SAP_PP_ENABLED` and `SAP_PP_STRICT` govern only an optional side-by-side single-target `/mcp`; the
+safe values in the base MTA are inert when that endpoint is not configured.
 
 ### What Must Be Restarted?
 

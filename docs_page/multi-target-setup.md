@@ -1,5 +1,11 @@
 # Multi-System Setup (Multi-Target v1)
 
+If ARC-1 and its BTP services are not deployed yet, begin with
+[BTP Cloud Foundry Deployment](btp-cloud-foundry-deployment.md), then return here for the
+multi-target-specific override, destinations, endpoints, and acceptance test. Common role, secret,
+restart, upgrade, scaling, and handover procedures live in
+[BTP Administration](btp-administration.md).
+
 !!! warning "Experimental, default-off, and mutation-free"
 
     Multi-target v1 is available only for SAP BTP Cloud Foundry deployments built from source. It
@@ -56,6 +62,16 @@ per-user SAP authorization, human attribution inside SAP, or horizontal CF scali
 This path starts with the mutation-free Viewer role. It includes source/metadata access and permitted
 read-only diagnostics; data preview and freestyle SQL are separate opt-ins described later.
 
+The sequence crosses separate responsibilities:
+
+| Step | Typical owner |
+|---|---|
+| MTA override, deploy, route, restart | CF Space Developer |
+| PP trust/mapping and SAP authorization | Cloud Connector and SAP Basis/security administrators |
+| Subaccount destination | Destination Administrator |
+| Role collection and test user | User and Role Administrator |
+| MCP connection and safe-read acceptance | ARC-1 service owner/user |
+
 ### 1. Check the prerequisites
 
 You need:
@@ -68,7 +84,8 @@ You need:
 - an SAP Cloud Connector mapping for every on-premise target whose virtual host and port exactly
   match the destination and which includes the required ADT resource paths from the
   [Cloud Connector URL path reference](btp-destination-setup.md#cloud-connector-url-path-reference);
-- for PrincipalPropagation targets, an internal HTTPS mapping with `X509_RESTRICTED` and working
+- for PrincipalPropagation targets, an internal HTTPS mapping with strict user-certificate
+  propagation (often represented as `X509_RESTRICTED`) and working
   [Principal Propagation](principal-propagation-setup.md) through Cloud Connector to that SAP client;
 - for BasicAuthentication targets, a dedicated least-privileged SAP technical user, permission to
   store/rotate its credentials in the subaccount destination, a separate Cloud Connector mapping
@@ -134,7 +151,8 @@ npm run btp:build-deploy-ext
 
 For a Basic-enabled v1 deployment, do not use rolling, blue/green, or parallel app-process
 replacement: even a desired count of one can temporarily run two independent credential guards.
-Use a stop/start deployment strategy that keeps at most one process active, or first unset
+Use the [non-rolling update procedure](btp-administration.md#non-rolling-update-for-shared-basic)
+that keeps at most one process active, or first unset
 `ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH`, restart until Basic targets are quarantined, and only then use
 the normal deployment strategy. After deployment, verify `cf app arc1-mcp-server` reports `1/1`.
 
@@ -181,6 +199,10 @@ virtual host and port must resolve to an **internal HTTPS mapping with X.509 (`X
 and the required ADT paths. The sample virtual port `50001` is only a convention; it need not equal
 the SAP backend port. Setting `Authentication=PrincipalPropagation` in the destination does not
 convert an HTTP/`NONE_RESTRICTED` Cloud Connector mapping into HTTPS/`X509_RESTRICTED`.
+
+On newer Cloud Connector versions, choose X.509 user-certificate propagation and disable the
+system-certificate-for-logon fallback. Older versions may label this **X.509 Certificate (strict
+usage)** or represent it as `X509_RESTRICTED`.
 
 `arc1.enabled=true` is the only required ARC-1-specific destination property for source reads.
 Principal Propagation remains the recommended choice because SAP sees the human user.
@@ -547,6 +569,9 @@ ARC-1 loads one immutable destination snapshot at process startup.
 | Repair a shared Basic user's canary ADT authorization | Restart ARC-1, wait 15 minutes for the temporary block to expire, or rotate to a reviewed credential before retrying. If the change affects cached feature evidence, restart or rotate; waiting alone does not refresh that cache. |
 | Change an XSUAA role | Sign in again/reconnect to obtain a new token. |
 | Change the ARC-1 application ceiling through MTA/CF environment | Apply the environment/deployment change and restart or restage as required. |
+
+The complete common lifecycle—including role changes, DCR secret rotation, code upgrades, scaling,
+and rollback—is in [BTP Administration](btp-administration.md#change-and-restart-matrix).
 
 At request time ARC-1 resolves the selected PP destination again without the SDK cache. If its safe
 configuration no longer matches the startup snapshot, the call returns `TARGET_CONFIG_CHANGED`

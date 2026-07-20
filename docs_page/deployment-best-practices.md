@@ -14,7 +14,7 @@ larger operational risk.
 |---------|---------------|----------------------|
 | **Security** | Blast radius = one system | One breach = all systems |
 | **Auth** | Clean: one auth flow per instance | N destinations + N auth flows |
-| **Safety gates** | Per-system: `allowWrites`, `allowedPackages`, `denyActions` | Can't vary per backend |
+| **Safety gates** | Per-system: `allowWrites`, `allowedPackages`, `denyActions` | Multi-target writes are unavailable; data/SQL can narrow per destination but the instance remains the ceiling |
 | **Tool descriptions** | Tailored to system type (BTP vs on-premise) | Must be generic for all |
 | **Audit trail** | Clear per-system logs | Mixed across systems |
 | **Scaling** | Scale independently | Heavy-use system affects all |
@@ -244,7 +244,7 @@ If you deploy ARC-1 behind a reverse proxy (nginx, Envoy, etc.) outside of Cloud
 
 | File | Purpose | Customize? |
 |------|---------|-----------|
-| `mta.yaml` | MTA build descriptor — services, conservative `SAP_ALLOW_*` defaults, **placeholder destinations**. Tracked. Ships `SAP_INSECURE: "false"`; prefer `NODE_EXTRA_CA_CERTS` for internal CAs over disabling verification. | Rarely — use `.mtaext` for overrides |
+| `mta.yaml` | MTA build descriptor — services, conservative `SAP_ALLOW_*` defaults, and no active/fake destination. Tracked. Ships `SAP_INSECURE: "false"`; prefer `NODE_EXTRA_CA_CERTS` for internal CAs over disabling verification. | Rarely — use `.mtaext` for overrides |
 | `mta-overrides.mtaext.example` | Tracked template documenting every overridable property. | No — copy it to `mta-overrides.mtaext` (gitignored) and edit that |
 | `mta-overrides.mtaext` (or any `mta-*.mtaext`) | Per-landscape MTA extension (real destinations, safety flags). **Gitignored.** | Yes — uncomment and set values for your environment |
 | `manifest.yml` | CF deployment manifest (on-premise via Cloud Connector) | Yes — change `SAP_URL`, destination name, safety flags |

@@ -46,7 +46,8 @@ nav:
   - Deployment:
       - Overview: deployment.md
       - Docker: docker.md
-      - BTP Cloud Foundry: btp-cloud-foundry-deployment.md
+      - BTP Cloud Foundry Deployment: btp-cloud-foundry-deployment.md
+      - BTP Administration: btp-administration.md
       - BTP ABAP Environment: btp-abap-environment.md
       - S/4HANA Public Cloud: s4hana-public-cloud.md
       - Multi-System Setup (Multi-Target): multi-target-setup.md
@@ -60,7 +61,7 @@ nav:
       - OAuth / JWT: oauth-jwt-setup.md
       - XSUAA Setup: xsuaa-setup.md
       - Principal Propagation: principal-propagation-setup.md
-      - BTP Destination Setup: btp-destination-setup.md
+      - BTP Destination Reference: btp-destination-setup.md
   - Using ARC-1:
       - Tools Reference: tools.md
       - Extensions (Custom Tools): extensions.md
