@@ -218,4 +218,50 @@ describe('multi-target HTTP route authentication', () => {
     expect(xsuaa.status).not.toBe(401);
     expect(aggregateFactory).toHaveBeenCalledTimes(1);
   });
+
+  it('routes the side-by-side Copilot /authorize alias to the mutation-free aggregate server', async () => {
+    const singleFactory = vi.fn(() => ({
+      connect: vi.fn(async () => {
+        throw new Error('sentinel: single-target handler reached');
+      }),
+    }));
+    const current = registry();
+    await startHttpServer(
+      singleFactory as never,
+      {
+        ...DEFAULT_CONFIG,
+        transport: 'http-streamable',
+        httpAddr: '127.0.0.1:0',
+        xsuaaAuth: true,
+        multiTargetEndpoints: true,
+        apiKeys: [{ key: 'legacy-viewer-key', profile: 'viewer' }],
+        authRateLimit: 0,
+        mcpHttpRateLimit: 0,
+      },
+      XSUAA,
+      undefined,
+      {
+        registry: current,
+        aggregateFactory: aggregateFactory as never,
+        createPinnedServer: vi.fn() as never,
+      },
+    );
+
+    const apiKey = await request(app)
+      .post('/authorize')
+      .set('Authorization', 'Bearer legacy-viewer-key')
+      .send({ jsonrpc: '2.0', id: 3, method: 'tools/list' });
+    expect(apiKey.status).toBe(401);
+    expect(apiKey.headers['www-authenticate']).toContain('/.well-known/oauth-protected-resource/multi/mcp');
+    expect(singleFactory).not.toHaveBeenCalled();
+    expect(aggregateFactory).not.toHaveBeenCalled();
+
+    const xsuaa = await request(app)
+      .post('/authorize')
+      .set('Authorization', 'Bearer read-token')
+      .send({ jsonrpc: '2.0', id: 4, method: 'tools/list' });
+    expect(xsuaa.status).not.toBe(401);
+    expect(aggregateFactory).toHaveBeenCalledTimes(1);
+    expect(singleFactory).not.toHaveBeenCalled();
+  });
 });

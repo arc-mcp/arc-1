@@ -116,6 +116,8 @@ export interface ServerConfig {
   // --- Experimental destination-discovered multi-target mode ---
   /** Enable startup discovery plus pinned and aggregate multi-target endpoints. Default false. */
   multiTargetEndpoints: boolean;
+  /** Allow explicitly marked OnPremise BasicAuthentication targets in multi-target mode. Default false. */
+  multiTargetAllowBasicAuth: boolean;
   /** Runtime-only: internal Destination Service name for a discovered target. */
   destinationName?: string;
   /** Runtime-only: public immutable system-or-alias/client ID for a discovered target. */
@@ -265,6 +267,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
   oauthDcrTtlSeconds: 0, // 0 = never expire; positive opts into expiry (clamped 60s..90d) — see field JSDoc
   btpOAuthCallbackPort: 0,
   multiTargetEndpoints: false,
+  multiTargetAllowBasicAuth: false,
   ppEnabled: false,
   ppStrict: false,
   ppStrictExplicit: false,

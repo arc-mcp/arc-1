@@ -15,6 +15,25 @@ describe('multi-target SAP error contract', () => {
     expect(result?.message).toContain('try again now');
   });
 
+  it('describes shared Basic authentication failures without blaming the human caller', () => {
+    const result = classifyMultiTargetSapError(
+      new AdtApiError('Unauthorized', 401, '/sap/bc/adt/core/discovery', 'secret-auth-body'),
+      'A4H/100',
+      'SAPRead',
+      'shared',
+    );
+
+    expect(result).toMatchObject({
+      code: 'SAP_AUTHENTICATION_FAILED',
+      event: 'sap_authentication_failed',
+      retryable: false,
+    });
+    expect(result?.message).toContain('shared technical credentials');
+    expect(result?.message).toContain('15 minutes');
+    expect(result?.message).not.toContain('propagated user');
+    expect(result?.message).not.toContain('secret-auth-body');
+  });
+
   it('does not overclaim user authorization from an ambiguous 403', () => {
     const result = classifyMultiTargetSapError(
       new AdtApiError('Forbidden', 403, '/sap/bc/adt/core/discovery', 'Forbidden'),
@@ -22,6 +41,18 @@ describe('multi-target SAP error contract', () => {
       'SAPRead',
     );
     expect(result).toMatchObject({ code: 'SAP_AUTHENTICATION_FAILED', event: 'sap_authentication_failed' });
+  });
+
+  it('does not claim or cache shared credential rejection from an ambiguous 403', () => {
+    const result = classifyMultiTargetSapError(
+      new AdtApiError('Forbidden', 403, '/sap/bc/adt/core/discovery', 'Forbidden'),
+      'A4H/100',
+      'SAPRead',
+      'shared',
+    );
+    expect(result).toMatchObject({ code: 'SAP_REQUEST_FAILED', retryable: true });
+    expect(result?.event).toBeUndefined();
+    expect(result?.message).toContain('did not treat it as a rejected shared credential generation');
   });
 
   it('distinguishes the verified Cloud Connector exposure denial from SAP authentication', () => {
@@ -40,6 +71,21 @@ describe('multi-target SAP error contract', () => {
     expect(result?.message).toContain('NPL/001');
     expect(result?.message).toContain('try again now');
     expect(result?.message).not.toContain('npl.example.internal');
+  });
+
+  it('uses Basic-specific Cloud Connector remediation for a shared target', () => {
+    const body =
+      'Access denied to system npl.example.internal:80. In case this was a valid request, ' +
+      'ensure to expose the system correctly in your cloud connector.';
+    const result = classifyMultiTargetSapError(
+      new AdtApiError('Forbidden', 403, '/sap/bc/adt/core/discovery', body),
+      'NPL/001',
+      'SAPRead',
+      'shared',
+    );
+    expect(result).toMatchObject({ code: 'CLOUD_CONNECTOR_ACCESS_DENIED' });
+    expect(result?.message).toContain('Basic OnPremise mapping');
+    expect(result?.message).not.toContain('X.509');
   });
 
   it('does not classify a near-match or non-403 response as a Cloud Connector exposure denial', () => {

@@ -419,8 +419,8 @@ export async function startHttpServer(
       resourceMetadataUrl,
     });
     // Multi-target routes accept XSUAA identities only. Define this once and
-    // reuse it for explicit routes and the multi-only Copilot `/authorize`
-    // fallback so the compatibility alias cannot fall back to API-key/OIDC.
+    // reuse it for explicit routes and the Copilot `/authorize` compatibility
+    // alias so multi mode cannot fall back to API-key/OIDC or a single target.
     const multiBearerAuth: express.RequestHandler | undefined =
       multiTargets && pinnedMcpHandler && aggregateMcpHandler
         ? (req, res, next) => {
@@ -496,7 +496,7 @@ export async function startHttpServer(
     // Copilot Studio sends MCP JSON-RPC requests to /authorize instead of
     // /mcp after completing the OAuth flow. When we detect a JSON-RPC body
     // (has "jsonrpc" field) on POST /authorize, we bypass the OAuth handler
-    // and route directly to bearerAuth + mcpHandler.
+    // and route directly to the applicable bearer verifier + MCP handler.
     //
     // For normal OAuth requests, merge query params into body as fallback
     // (some clients send POST /authorize with params in query string).
@@ -511,15 +511,19 @@ export async function startHttpServer(
           id: req.body.id,
           userAgent: req.headers['user-agent']?.slice(0, 60),
         });
-        // Single-target /mcp keeps the configured chained verifier. A multi-only
-        // fallback uses the same XSUAA-only verifier as /multi/mcp.
-        const authorizeBearerAuth = mcpHandler ? bearerAuth : (multiBearerAuth ?? bearerAuth);
+        // The compatibility alias is necessarily target-ambiguous. Whenever
+        // multi-target mode is enabled, resolve it to the mutation-free
+        // aggregate route and its XSUAA-only verifier, even if a separately
+        // configured (and potentially writable) single-target /mcp coexists.
+        // Only a single-target-only deployment may use the chained verifier.
+        const useAggregateAlias = !!(aggregateMcpHandler && multiBearerAuth);
+        const authorizeBearerAuth = useAggregateAlias ? multiBearerAuth : bearerAuth;
         authorizeBearerAuth(req, res, (err?: unknown) => {
           if (err) {
             next(err);
             return;
           }
-          const handler = mcpHandler ?? aggregateMcpHandler;
+          const handler = useAggregateAlias ? aggregateMcpHandler : mcpHandler;
           if (!handler) {
             res.status(404).json({ error: 'Not found' });
             return;

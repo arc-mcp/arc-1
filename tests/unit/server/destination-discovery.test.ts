@@ -1,3 +1,4 @@
+import type { Destination } from '@arc-mcp/xsuaa-auth/btp';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const listDestinationsAtLevel = vi.fn();
@@ -6,7 +7,9 @@ vi.mock('@arc-mcp/xsuaa-auth/btp', async (importOriginal) => ({
   listDestinationsAtLevel,
 }));
 
-const { discoverDestinations } = await import('../../../src/server/destination-discovery.js');
+const { discoverDestinations, projectMultiTargetDestination } = await import(
+  '../../../src/server/destination-discovery.js'
+);
 
 function reachableStrings(value: unknown, seen = new Set<unknown>()): string[] {
   if (typeof value === 'string') return [value];
@@ -43,8 +46,9 @@ describe('discoverDestinations', () => {
               URL: 'http://a4h.internal:50000',
               Authentication: 'PrincipalPropagation',
               ProxyType: 'OnPremise',
-              User: '',
+              User: 'SENTINEL_USER',
               Password: 'SENTINEL_PASSWORD',
+              Preemptive: 'true',
               CloudConnectorLocationId: 'SENTINEL_LOCATION',
               'sap-client': '100',
               originalProperties: {
@@ -53,7 +57,9 @@ describe('discoverDestinations', () => {
                 URL: 'http://a4h.internal:50000',
                 Authentication: 'PrincipalPropagation',
                 ProxyType: 'OnPremise',
+                User: 'SENTINEL_USER',
                 Password: 'SENTINEL_PASSWORD',
+                Preemptive: 'true',
                 'sap-sysid': 'A4H',
                 'sap-client': '100',
                 Description: 'A4H dev',
@@ -92,6 +98,7 @@ describe('discoverDestinations', () => {
         name: 'ARC1_A4H_100_PP',
         sapSysId: 'A4H',
         sapClient: '100',
+        preemptive: 'true',
         arcProperties: expect.objectContaining({ 'arc1.target_alias': 'A4H-2025' }),
       }),
     ]);
@@ -101,6 +108,7 @@ describe('discoverDestinations', () => {
     expect(result.arcAdjacentWithoutMarkerCount).toBe(1);
     const serialized = JSON.stringify(result);
     expect(serialized).not.toContain('SENTINEL_PASSWORD');
+    expect(serialized).not.toContain('SENTINEL_USER');
     expect(serialized).not.toContain('INSTANCE_SECRET');
     expect(serialized).not.toContain('UNRELATED_SECRET');
     expect(serialized).not.toContain('must-not-survive');
@@ -109,8 +117,33 @@ describe('discoverDestinations', () => {
     expect(serialized).not.toContain('SENTINEL_ARC_PROPERTY');
     const reachable = reachableStrings(result);
     expect(reachable).not.toContain('SENTINEL_PASSWORD');
+    expect(reachable).not.toContain('SENTINEL_USER');
     expect(reachable).not.toContain('SENTINEL_LOCATION');
     expect(reachable).not.toContain('SENTINEL_ARC_PROPERTY');
     expect(reachable).not.toContain('http://a4h.internal:50000');
+    expect(Object.keys(result.subaccount[0])).not.toContain('User');
+    expect(Object.keys(result.subaccount[0])).not.toContain('Password');
+    expect(Object.keys(result.subaccount[0])).not.toContain('hasUser');
+    expect(Object.keys(result.subaccount[0])).not.toContain('hasPassword');
+  });
+
+  it('preserves explicit non-string Preemptive values for fail-closed registry validation', () => {
+    const projected = projectMultiTargetDestination({
+      Name: 'ARC1_BASIC',
+      Type: 'HTTP',
+      URL: 'https://sap.internal',
+      Authentication: 'BasicAuthentication',
+      ProxyType: 'OnPremise',
+      User: 'SENTINEL_USER',
+      Password: 'SENTINEL_PASSWORD',
+      originalProperties: {
+        'arc1.enabled': 'true',
+        Preemptive: false,
+      },
+    } as unknown as Destination);
+
+    expect(projected?.preemptive).toBe('false');
+    expect(JSON.stringify(projected)).not.toContain('SENTINEL_USER');
+    expect(JSON.stringify(projected)).not.toContain('SENTINEL_PASSWORD');
   });
 });

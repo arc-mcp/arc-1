@@ -21,7 +21,9 @@ use SAP's separate **Multi-Target Application** packaging terminology.
 
 ### Read order and request flow
 
-1. Read [ADR-0006](adr/0006-experimental-read-only-multi-target.md) for the security boundary, then
+1. Read [ADR-0006](adr/0006-experimental-read-only-multi-target.md) for the security boundary and
+   [ADR-0007](adr/0007-shared-basic-identity-for-read-only-multi-target.md) for the default-off
+   Basic shared-identity exception, then
    the [normative implementation plan](plans/destination-discovered-multi-target-v1.md). The
    [setup](../docs_page/multi-target-setup.md) and
    [administration](../docs_page/multi-target-administration.md) guides are the user/operator contract.
@@ -30,15 +32,18 @@ use SAP's separate **Multi-Target Application** packaging terminology.
    pinned and aggregate HTTP factories.
 3. An authenticated request selects a target from the pinned path or explicit aggregate `target`.
    `multi-target-server.ts` performs the early policy/scope/rate checks; `server.ts` performs the
-   uncached strict-PP destination lookup and drift check; `dispatch.ts` runs the normal tool pipeline.
-4. `SAPTargets` is an aggregate-only MCP tool. Readers get the compact catalog when multiple targets
-   exist; admins get secret-safe registry diagnostics. There is no HTTP target-catalog endpoint.
+   uncached selected-destination lookup and drift check; PP stays per-user, while Basic credentials
+   are bound behind `multi-target-shared-auth-state.ts`; `dispatch.ts` runs the normal tool pipeline.
+4. `SAPTargets` is an aggregate-only MCP tool. Readers get target/description/identity when multiple
+   targets exist; admins get secret-safe registry diagnostics and passive Basic runtime health.
+   There is no HTTP target-catalog endpoint and catalog reads never probe SAP.
 
 ### Invariants
 
-- Default off; BTP CF only; XSUAA-only route auth; strict per-user PP; `ARC1_CACHE=none`; standard
-  tool mode; UI, plugins, shared cookies, writes, activation, transport/Git mutation, ATC, and ABAP
-  Unit remain unavailable on multi-target routes.
+- Default off; BTP CF only; XSUAA-only route auth; `ARC1_CACHE=none`; standard tool mode; UI,
+  plugins, shared cookies, writes, activation, transport/Git mutation, ATC, and ABAP Unit remain
+  unavailable. PP targets are strict per-user. Basic is a separate default-off shared identity,
+  never fallback, and requires exactly one CF instance.
 - `/mcp` is never assigned a discovered destination. An optional single-target `/mcp` is configured
   independently and may coexist with pinned `/<PUBLIC-SYSTEM>/<CLIENT>/mcp` and aggregate
   `/multi/mcp` routes.
@@ -51,9 +56,12 @@ use SAP's separate **Multi-Target Application** packaging terminology.
   Raw URLs, credentials, tokens, certificates, and Cloud Connector location IDs never enter the
   registry or `SAPTargets` output.
 - Effective access is the intersection of the structural v1 ceiling, instance ceiling, destination
-  policy, XSUAA scope, and the propagated user's SAP authorization. No layer may expand another.
-- Discovery is a startup snapshot. Destination changes require an app restart, and per-request drift
-  checks fail closed until that restart.
+  policy, XSUAA scope, and the selected propagated/shared SAP identity's authorization. No layer may
+  expand another.
+- Discovery is a startup snapshot. Non-secret destination changes require an app restart, and
+  per-request drift checks fail closed until that restart. Basic User/Password rotates hot through
+  a process-wide per-target gate: HMAC generation only, bounded queue/timeout, bounded retained
+  rejected generations, one auth attempt, and no raw secret in retained/output state.
 
 ### Change these together
 
@@ -66,7 +74,11 @@ use SAP's separate **Multi-Target Application** packaging terminology.
 - Routes/auth/metadata: `src/server/{http,server}.ts`, XSUAA scopes/roles, and
   `http-multi-target-routes.test.ts` plus `multi-target-pp-retry.test.ts`.
 - Feature evidence: `multi-target-feature-state.ts`, `src/handlers/feature-cache.ts`, probe call sites,
-  and feature-cache/multi-target-server tests.
+  and feature-cache/multi-target-server tests. A Basic credential-generation change clears successful
+  evidence.
+- Shared Basic auth: `multi-target-shared-auth-state.ts`, selected-destination request preparation,
+  centralized final/synthetic 401 classification in ADT HTTP, catalog passive health, and focused
+  lockout/rotation/secret-leak tests. Construct one guard per process, never per MCP server/transport.
 - Catalog behavior: `multi-target-catalog.ts`, the `SAPTargets` definition/handler, both user guides,
   and `multi-target-server.test.ts`.
 - Deployment prerequisites: `src/server/{config,types}.ts`, `mta.yaml`, its extension example, setup
@@ -80,6 +92,8 @@ npx vitest run \
   tests/unit/server/destination-registry.test.ts \
   tests/unit/server/multi-target-destination-config.test.ts \
   tests/unit/server/multi-target-runtime.test.ts \
+  tests/unit/server/multi-target-basic-auth.test.ts \
+  tests/unit/server/multi-target-shared-auth-state.test.ts \
   tests/unit/server/multi-target-tools.test.ts \
   tests/unit/server/multi-target-server.test.ts \
   tests/unit/server/multi-target-pp-retry.test.ts \

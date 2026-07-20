@@ -54,9 +54,13 @@ modules:
 
       # ── Experimental multi-target v1 (alternative or side-by-side) ──
       # Discovers subaccount destinations marked arc1.enabled=true. The routes
-      # are strict-PP and mutation-free regardless of single-target /mcp settings.
+      # are mutation-free regardless of single-target /mcp settings.
       # ARC1_MULTI_TARGET_ENDPOINTS: "true"
       # ARC1_CACHE: none
+      # Optional shared BasicAuthentication targets. PP remains recommended.
+      # If enabled, keep arc1-mcp-server parameters.instances at exactly 1;
+      # the base mta.yaml already does so.
+      # ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH: "true"
       # Non-default shared-service limits for 1–5 active beta users.
       # ARC1_AUTH_RATE_LIMIT: "30"
       # ARC1_MCP_HTTP_RATE_LIMIT: "1000"

@@ -128,6 +128,7 @@ function syntheticTarget(index: number): TargetDescriptor {
     language: 'EN',
     destinationName: `SYNTHETIC_${index}`,
     authentication: 'PrincipalPropagation',
+    identity: 'per-user',
     proxyType: 'OnPremise',
     hasCloudConnectorLocationId: false,
     requestedPolicy: { allowDataPreview: false, allowFreeSQL: false },

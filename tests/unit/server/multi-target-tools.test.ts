@@ -21,6 +21,7 @@ function target(index: number): TargetDescriptor {
     language: 'EN',
     destinationName: `DEST_${index}`,
     authentication: 'PrincipalPropagation',
+    identity: 'per-user',
     proxyType: 'OnPremise',
     hasCloudConnectorLocationId: false,
     requestedPolicy: { allowDataPreview: false, allowFreeSQL: false },

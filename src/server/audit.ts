@@ -22,6 +22,8 @@ export interface AuditEventBase {
   destination?: string;
   /** Public immutable SID/client identifier for a multi-target request. */
   target?: string;
+  /** Effective SAP identity mode for a selected multi-target request. */
+  identity?: 'per-user' | 'shared';
 }
 
 /** MCP tool call started */
@@ -88,11 +90,19 @@ export interface AuthPPCreatedEvent extends AuditEventBase {
   errorMessage?: string;
 }
 
+/** Shared technical-user authentication succeeded after the Basic canary. */
+export interface AuthSharedCreatedEvent extends AuditEventBase {
+  event: 'auth_shared_created';
+  tool: string;
+  identity: 'shared';
+}
+
 /** Failure at a security-relevant multi-target stage. Successful calls use the normal terminal event only. */
 export interface MultiTargetStageFailedEvent extends AuditEventBase {
   event:
     | 'target_resolution_failed'
     | 'pp_exchange_failed'
+    | 'shared_auth_failed'
     | 'cloud_connector_access_denied'
     | 'sap_authentication_failed'
     | 'sap_authorization_failed'
@@ -244,6 +254,7 @@ export type AuditEvent =
   | HttpCsrfFetchEvent
   | AuthScopeDeniedEvent
   | AuthPPCreatedEvent
+  | AuthSharedCreatedEvent
   | MultiTargetStageFailedEvent
   | SafetyBlockedEvent
   | ServerStartEvent

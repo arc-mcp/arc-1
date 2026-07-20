@@ -571,6 +571,12 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     false,
     'multiTargetEndpoints',
   );
+  config.multiTargetAllowBasicAuth = resolveBool(
+    'multi-target-allow-basic-auth',
+    'ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH',
+    false,
+    'multiTargetAllowBasicAuth',
+  );
 
   // ── Principal Propagation ──────────────────────────────────────────
   config.ppEnabled = resolveBool('pp-enabled', 'SAP_PP_ENABLED', false, 'ppEnabled');

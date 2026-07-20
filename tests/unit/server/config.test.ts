@@ -38,7 +38,15 @@ describe('parseArgs', () => {
     expect(config.allowGitWrites).toBe(false);
     expect(config.denyActions).toEqual([]);
     expect(config.schemaNullableOptionals).toBe('auto');
+    expect(config.multiTargetAllowBasicAuth).toBe(false);
     expect(config.verbose).toBe(false);
+  });
+
+  it('parses the default-off multi-target Basic authentication option', () => {
+    process.env.ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH = 'true';
+    const { config, sources } = resolveConfig([]);
+    expect(config.multiTargetAllowBasicAuth).toBe(true);
+    expect(sources.multiTargetAllowBasicAuth).toEqual({ env: 'ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH' });
   });
 
   it.each(['ARC1_CACHE_WARMUP', 'ARC1_CACHE_WARMUP_PACKAGES'])('rejects retired env var %s', (name) => {

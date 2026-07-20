@@ -32,6 +32,8 @@ export type TargetExclusionCode =
   | 'UNSUPPORTED_TYPE'
   | 'UNSUPPORTED_PROXY'
   | 'UNSUPPORTED_AUTH'
+  | 'BASIC_AUTH_DISABLED'
+  | 'BASIC_PREEMPTIVE_DISABLED'
   | 'MISSING_DESCRIPTION'
   | 'INVALID_LANGUAGE'
   | 'UNKNOWN_ARC1_PROPERTY'
@@ -39,6 +41,7 @@ export type TargetExclusionCode =
   | 'UNSUPPORTED_V1_WRITE_CONFIG'
   | 'DUPLICATE_DESTINATION_NAME'
   | 'DUPLICATE_TARGET'
+  | 'DUPLICATE_BASIC_CONNECTION'
   | 'SHADOWED_BY_INSTANCE'
   | 'TARGET_LIMIT_EXCEEDED';
 
@@ -47,6 +50,9 @@ export interface TargetPolicy {
   readonly allowFreeSQL: boolean;
 }
 
+export type TargetAuthentication = 'PrincipalPropagation' | 'BasicAuthentication';
+export type TargetIdentity = 'per-user' | 'shared';
+
 export interface TargetDescriptor {
   readonly target: string;
   readonly sid: string;
@@ -54,7 +60,9 @@ export interface TargetDescriptor {
   readonly description: string;
   readonly language: string;
   readonly destinationName: string;
-  readonly authentication: 'PrincipalPropagation';
+  readonly authentication: TargetAuthentication;
+  /** Effective SAP identity mode, derived exclusively from authentication. */
+  readonly identity: TargetIdentity;
   readonly proxyType: 'OnPremise';
   readonly hasCloudConnectorLocationId: boolean;
   readonly requestedPolicy: TargetPolicy;
@@ -145,6 +153,7 @@ export function targetFingerprint(value: FingerprintInput): string {
     description: value.description,
     urlFingerprint: value.urlFingerprint,
     authentication: value.authentication,
+    identity: value.identity,
     proxyType: value.proxyType,
     client: value.client,
     cloudConnectorLocationIdFingerprint: value.cloudConnectorLocationIdFingerprint ?? '',
@@ -333,14 +342,42 @@ function evaluate(source: DiscoveredDestination, base: ServerConfig): CandidateE
       'Destination URL must be a valid HTTP or HTTPS URL.',
     );
   }
-  if (source.authentication !== 'PrincipalPropagation') {
+  let authentication: TargetAuthentication;
+  let identity: TargetIdentity;
+  if (source.authentication === 'PrincipalPropagation') {
+    authentication = 'PrincipalPropagation';
+    identity = 'per-user';
+  } else if (source.authentication === 'BasicAuthentication') {
+    if (!base.multiTargetAllowBasicAuth) {
+      return excludedCandidate(
+        source,
+        diagnosticBase,
+        true,
+        'quarantined',
+        'BASIC_AUTH_DISABLED',
+        'BasicAuthentication targets require ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH=true.',
+      );
+    }
+    if (source.preemptive !== undefined && parseDestinationBoolean(source.preemptive) !== true) {
+      return excludedCandidate(
+        source,
+        diagnosticBase,
+        true,
+        'quarantined',
+        'BASIC_PREEMPTIVE_DISABLED',
+        'BasicAuthentication destination Preemptive must be absent or true.',
+      );
+    }
+    authentication = 'BasicAuthentication';
+    identity = 'shared';
+  } else {
     return excludedCandidate(
       source,
       diagnosticBase,
       true,
       'quarantined',
       'UNSUPPORTED_AUTH',
-      'Destination Authentication must be PrincipalPropagation.',
+      'Destination Authentication must be PrincipalPropagation or an explicitly enabled BasicAuthentication.',
     );
   }
   if (source.proxyType !== 'OnPremise') {
@@ -434,7 +471,8 @@ function evaluate(source: DiscoveredDestination, base: ServerConfig): CandidateE
     description,
     language,
     destinationName: source.name,
-    authentication: 'PrincipalPropagation',
+    authentication,
+    identity,
     proxyType: 'OnPremise',
     hasCloudConnectorLocationId: source.hasCloudConnectorLocationId,
     requestedPolicy,
@@ -520,6 +558,8 @@ function conflictMessage(code: TargetExclusionCode): string {
       return 'More than one subaccount destination uses this destination name; every claimant is quarantined.';
     case 'DUPLICATE_TARGET':
       return 'More than one destination claims this public target ID; every claimant is quarantined.';
+    case 'DUPLICATE_BASIC_CONNECTION':
+      return 'More than one shared Basic destination claims the same physical SAP client; every claimant is quarantined to preserve the credential lockout guard.';
     case 'SHADOWED_BY_INSTANCE':
       return 'A service-instance destination has the same name and could shadow this subaccount destination.';
     default:
@@ -626,10 +666,17 @@ export class DestinationRegistry {
 
     const destinationCounts = new Map<string, number>();
     const targetCounts = new Map<string, number>();
+    const basicConnectionCounts = new Map<string, number>();
     const instanceNames = new Set(discovery.instanceNames);
     for (const entry of evaluated) {
       destinationCounts.set(entry.source.name, (destinationCounts.get(entry.source.name) ?? 0) + 1);
       if (entry.target) targetCounts.set(entry.target.target, (targetCounts.get(entry.target.target) ?? 0) + 1);
+      if (entry.target?.authentication === 'BasicAuthentication') {
+        basicConnectionCounts.set(
+          entry.target.connectionFingerprint,
+          (basicConnectionCounts.get(entry.target.connectionFingerprint) ?? 0) + 1,
+        );
+      }
     }
 
     const diagnostics: TargetDiagnostic[] = [];
@@ -639,6 +686,12 @@ export class DestinationRegistry {
       if ((destinationCounts.get(entry.source.name) ?? 0) > 1) conflict = 'DUPLICATE_DESTINATION_NAME';
       else if (instanceNames.has(entry.source.name)) conflict = 'SHADOWED_BY_INSTANCE';
       else if (entry.target && (targetCounts.get(entry.target.target) ?? 0) > 1) conflict = 'DUPLICATE_TARGET';
+      else if (
+        entry.target?.authentication === 'BasicAuthentication' &&
+        (basicConnectionCounts.get(entry.target.connectionFingerprint) ?? 0) > 1
+      ) {
+        conflict = 'DUPLICATE_BASIC_CONNECTION';
+      }
 
       if (conflict && entry.enabled) {
         diagnostics.push(
@@ -688,6 +741,19 @@ export function duplicateSingleTargetIds(
         (!!connectionFingerprint && target.connectionFingerprint === connectionFingerprint),
     )
     .map((target) => target.target);
+}
+
+/** Basic v1 must not expose one shared SAP credential path through guarded and unguarded routes. */
+export function sharedBasicSingleTargetConflicts(
+  registry: DestinationRegistry,
+  sharedBasicDestinationName: string | undefined,
+  connectionFingerprint: string | undefined,
+  singleTargetUsesSharedBasic: boolean,
+): string[] {
+  if (!singleTargetUsesSharedBasic) return [];
+  return duplicateSingleTargetIds(registry, [sharedBasicDestinationName], connectionFingerprint).filter(
+    (targetId) => registry.get(targetId)?.identity === 'shared',
+  );
 }
 
 export function multiTargetSafety(policy: TargetPolicy): SafetyConfig {

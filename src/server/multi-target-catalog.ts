@@ -3,6 +3,7 @@
 import type { DestinationRegistry, TargetDescriptor, TargetDiagnostic } from './destination-registry.js';
 
 export const TARGET_CATALOG_DIAGNOSTIC_LIMIT = 50;
+export const TARGET_CATALOG_SHARED_AUTH_EXCEPTION_LIMIT = 8;
 export const TARGET_CATALOG_MAX_OFFSET = 1_000_000;
 export const TARGET_CATALOG_MAX_QUERY_LENGTH = 160;
 
@@ -21,6 +22,14 @@ export interface TargetCatalogOptions {
   admin: boolean;
   query?: string;
   offset?: number;
+  /** Passive process-local health only; this callback must never probe SAP. */
+  runtimeAuth?: (target: string) => { status: string; checkedAt?: string };
+}
+
+const NORMAL_SHARED_AUTH_STATES = new Set(['not_checked', 'healthy']);
+
+function incrementStatus(counts: Record<string, number>, status: string): void {
+  counts[status] = (counts[status] ?? 0) + 1;
 }
 
 function safeDiagnostic(entry: TargetDiagnostic): Record<string, unknown> {
@@ -32,7 +41,6 @@ function safeDiagnostic(entry: TargetDiagnostic): Record<string, unknown> {
     message: entry.message,
     description: entry.description,
     type: entry.type,
-    authentication: entry.authentication,
     proxyType: entry.proxyType,
     sid: entry.sid,
     client: entry.client,
@@ -60,14 +68,38 @@ function safeDiagnostic(entry: TargetDiagnostic): Record<string, unknown> {
 export function buildTargetCatalog(
   registry: DestinationRegistry,
   options: TargetCatalogOptions,
-): Record<string, unknown> | Array<{ target: string; description: string }> {
+): Record<string, unknown> | Array<{ target: string; description: string; identity: TargetDescriptor['identity'] }> {
   const query = options.query?.trim().toLowerCase() ?? '';
   const targets = registry.targets.filter((target) => targetMatches(target, query));
   if (!options.admin) {
-    return targets.map((target) => ({ target: target.target, description: target.description }));
+    return targets.map((target) => ({
+      target: target.target,
+      description: target.description,
+      identity: target.identity,
+    }));
   }
 
-  const publicTargets = targets.map((target) => ({ target: target.target, description: target.description }));
+  const sharedAuthStatusCounts: Record<string, number> = {};
+  const sharedAuthExceptions: Array<{ target: string; status: string; checkedAt?: string }> = [];
+  let sharedAuthTargetCount = 0;
+  const publicTargets = targets.map((target) => {
+    const runtimeAuth =
+      target.authentication === 'BasicAuthentication' && options.runtimeAuth
+        ? options.runtimeAuth(target.target)
+        : undefined;
+    if (runtimeAuth) {
+      sharedAuthTargetCount += 1;
+      incrementStatus(sharedAuthStatusCounts, runtimeAuth.status);
+      if (!NORMAL_SHARED_AUTH_STATES.has(runtimeAuth.status)) {
+        sharedAuthExceptions.push({ target: target.target, ...runtimeAuth });
+      }
+    }
+    return {
+      target: target.target,
+      description: target.description,
+      identity: target.identity,
+    };
+  });
   const diagnosticOffset = options.offset ?? 0;
   const matchingDiagnostics = registry.diagnostics
     .filter((entry) => (query ? diagnosticMatches(entry, query) : entry.status !== 'active'))
@@ -83,6 +115,7 @@ export function buildTargetCatalog(
     diagnosticOffset + diagnostics.length < matchingDiagnostics.length
       ? diagnosticOffset + diagnostics.length
       : undefined;
+  sharedAuthExceptions.sort((left, right) => String(left.target).localeCompare(String(right.target)));
 
   return {
     targets: publicTargets,
@@ -92,6 +125,25 @@ export function buildTargetCatalog(
       loadedAt: registry.loadedAt,
       revision: registry.revision,
       counts: registry.counts,
+      ...(sharedAuthTargetCount > 0
+        ? {
+            sharedAuthentication: {
+              targets: sharedAuthTargetCount,
+              statusCounts: sharedAuthStatusCounts,
+              ...(sharedAuthExceptions.length > 0
+                ? {
+                    exceptionTotal: sharedAuthExceptions.length,
+                    exceptionReturned: Math.min(
+                      sharedAuthExceptions.length,
+                      TARGET_CATALOG_SHARED_AUTH_EXCEPTION_LIMIT,
+                    ),
+                    exceptionsTruncated: sharedAuthExceptions.length > TARGET_CATALOG_SHARED_AUTH_EXCEPTION_LIMIT,
+                    exceptions: sharedAuthExceptions.slice(0, TARGET_CATALOG_SHARED_AUTH_EXCEPTION_LIMIT),
+                  }
+                : {}),
+            },
+          }
+        : {}),
       failure: registry.failure,
       diagnosticMode: query ? 'matching' : 'exceptions',
       diagnosticOffset,

@@ -12,6 +12,8 @@ vi.mock('@arc-mcp/xsuaa-auth/btp', async (importOriginal) => ({
 }));
 
 const { AdtClient } = await import('../../../src/adt/client.js');
+const { AdtApiError } = await import('../../../src/adt/errors.js');
+const { AdtHttpClient } = await import('../../../src/adt/http.js');
 const { featuresOff } = await import('../handlers/handler-test-config.js');
 const { resetCachedFeatures, setCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
 const { canonicalDestinationUrl, opaqueDestinationValue } = await import(
@@ -164,5 +166,41 @@ describe('multi-target principal-propagation retry', () => {
       READ_AUTH.token,
       expect.anything(),
     );
+  });
+
+  it('does not cache authorization-limited feature evidence across per-user PP calls', async () => {
+    const current = registry();
+    const instanceConfig = DEFAULT_CONFIG;
+    const aggregateConfig = buildAggregateToolSurfaceConfig(instanceConfig, current.targets);
+    lookupDestinationWithUserTokenUncached.mockResolvedValue({
+      destination: DESTINATION,
+      authTokens: { sapConnectivityAuth: 'Bearer per-user-assertion' },
+    });
+    vi.spyOn(AdtClient.prototype, 'getSystemInfo').mockResolvedValue('{"sid":"A4H","client":"100"}');
+    let featureProbes = 0;
+    vi.spyOn(AdtHttpClient.prototype, 'get').mockImplementation(async (path) => {
+      if (path === '/sap/bc/adt/ddic/sysinfo/hanainfo') {
+        featureProbes += 1;
+        throw new AdtApiError('Forbidden', 403, path, 'Authorization denied');
+      }
+      return {
+        statusCode: 200,
+        headers: { 'content-type': 'application/atomsvc+xml' },
+        body: '<app:service xmlns:app="urn:test"><app:workspace/></app:service>',
+      };
+    });
+    const server = createServer(aggregateConfig, {
+      btpConfig: BTP_CONFIG,
+      multiTarget: { mode: 'aggregate', registry: current, instanceConfig },
+    });
+    const call = requestHandler(server);
+    const request = {
+      method: 'tools/call',
+      params: { name: 'SAPRead', arguments: { type: 'SYSTEM', target: 'A4H/100' } },
+    };
+
+    expect((await call(request, { authInfo: READ_AUTH })).isError).not.toBe(true);
+    expect((await call(request, { authInfo: READ_AUTH })).isError).not.toBe(true);
+    expect(featureProbes).toBe(2);
   });
 });

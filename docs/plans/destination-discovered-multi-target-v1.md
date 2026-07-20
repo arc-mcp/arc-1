@@ -2,14 +2,14 @@
 
 ## Status
 
-- **State:** implemented and beta-validated; draft PR pending review
+- **State:** PP core implemented and beta-validated; shared-Basic extension implemented, live acceptance pending
 - **Implementation branch:** `codex/multi-target-v1`
 - **Code ancestry:** PR #543 remains in the branch history so Wouter's tested multi-runtime work can
   be reused where it fits. The public contract described here replaces the prototype contract.
 - **Release model:** experimental and default-off on `main` after beta validation; no long-lived beta
   release branch is required.
-- **Target platform:** SAP BTP Cloud Foundry, subaccount destinations, XSUAA, on-premise
-  `PrincipalPropagation`
+- **Target platform:** SAP BTP Cloud Foundry, subaccount destinations, XSUAA, and on-premise
+  `PrincipalPropagation` or explicitly enabled `BasicAuthentication`
 - **Scale target:** 100 SAP system/client targets is a normal intended deployment; v1 supports at
   most 256 enabled targets.
 
@@ -42,13 +42,15 @@ The effective permission for a multi-target call is:
 instance safety ceiling
   ∩ destination target policy
   ∩ global XSUAA scopes
-  ∩ propagated SAP user authorization
+  ∩ selected SAP identity authorization (propagated user or shared technical user)
   ∩ multi-target v1 read-only hard ceiling
 ```
 
 There are no target-specific XSUAA roles or role attributes in v1. A user with the global read scope
-can see all accepted target identifiers and may attempt any of them. SAP, through principal
-propagation, remains the target-specific authorization boundary.
+can see all accepted target identifiers and may attempt any of them. A PrincipalPropagation target
+uses the propagated SAP user as the final target-specific authorization boundary. An explicitly
+enabled BasicAuthentication target instead uses one shared technical SAP identity for every
+authorized caller and therefore is not a per-user SAP authorization boundary.
 
 ## Locked Decisions
 
@@ -61,20 +63,20 @@ propagation, remains the target-specific authorization boundary.
 | Routes | Both `/<PUBLIC-SYSTEM>/<CLIENT>/mcp` and `/multi/mcp`; no discovered bare `/mcp` alias. |
 | Aggregate selection | Required top-level `target` on every SAP-contacting tool; no default, current, or session target. |
 | Maximum | 256 enabled candidates. More than 256 makes the discovered registry unavailable; ARC-1 never silently chooses a subset. |
-| Authentication | XSUAA only for multi-target endpoints in v1; strict per-user PP; no shared SAP identity fallback. |
+| Authentication | XSUAA only for multi-target endpoints. PrincipalPropagation is recommended and strict per target. `BasicAuthentication` is an explicit shared-identity exception requiring `ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH=true`; there is never fallback between identity modes. |
 | Authorization | Existing global scopes; no target-specific XSUAA or role-model change. A scoped additive `@arc-mcp/xsuaa-auth` BTP-destination API change is required for uncached PP lookup and original properties. |
 | OAuth scope negotiation | Route metadata advertises only `read`, `data`, `sql`, and `admin`. The initial 401 omits a fixed scope so general MCP clients request the advertised mutation-free set and XSUAA grants only the user's assigned subset. A validated token still needs `read` before route lookup. Reconsider this eager grant before any write-capable multi-target design. |
 | Target policy | Read by default; `arc1.allow_data_preview` and `arc1.allow_free_sql` are explicit per-target opt-ins. |
 | Writes | Impossible on multi-target routes in v1. Do not document or test a multi-target full-write configuration. |
 | Cache | `ARC1_CACHE=none` while the mode is enabled. |
 | Tool surface | Standard mode only; no hyperfocused alias, plugins, optional UI, SAPLint, ATC, or ABAP Unit on multi-target routes. |
-| Catalog | No standalone HTTP catalog. Aggregate-only `SAPTargets` is read-scoped: readers see it only with more than one active target and receive compact target/description pairs; admins see it at zero, one, or many targets and during registry failure, with secret-safe diagnostics. Pinned endpoints never expose it. |
+| Catalog | No standalone HTTP catalog. Aggregate-only `SAPTargets` is read-scoped: readers see it only with more than one active target and receive compact target/description/identity rows; admins see it at zero, one, or many targets and during registry failure, with secret-safe diagnostics and passive shared-auth health. Pinned endpoints never expose it. |
 | Target discovery | Aggregate schemas use exact target enums through 16 targets and a syntax pattern from 17–256; `SAPTargets` supplies IDs and descriptions without probing SAP user availability. |
 | User availability | Never guessed, probed in bulk, persisted, or negatively cached. A failed target call may be retried immediately. |
-| Destination changes | Take effect only after a normal CF app restart; no rebuild or MTAR redeployment. |
-| PP destination count | One PP destination per system/client in v1. A separate technical/design-time destination is deferred. |
-| Initial backend | On-premise + PP. S/4HANA Public Cloud/SAML assertion follows after v1 with dedicated testing. |
-| Deployment | Multiple CF app instances are supported and tested; `mta.yaml` stays at one instance by default. |
+| Destination changes | Non-secret fields take effect after a normal CF app restart; no rebuild or MTAR redeployment. Basic `User`/`Password` rotates on the next protected request without restart. |
+| Destination count | One selected destination per system/client in v1. A separate design-time/cache destination is deferred. |
+| Initial backend | On-premise + PP or explicit shared Basic. S/4HANA Public Cloud/SAML assertion follows after v1 with dedicated testing. |
+| Deployment | `mta.yaml` stays at one CF app instance. PP-only multi-target can retain the existing multi-instance behavior, but enabling Basic multi-target requires exactly one instance in v1 because credential-generation protection is process-local. |
 | Health | Registry/configuration errors keep `/health` at 200 with an `error` component. Pinned routes return 503, while authenticated aggregate MCP remains reachable so admins can call `SAPTargets`; other aggregate tool calls return a structured registry-unavailable error. Valid snapshots, including zero-target snapshots, report `ready`. |
 
 ## Existing Baseline and Compatibility
@@ -113,10 +115,12 @@ Compatibility rules:
    The multi-target read-only ceiling applies only to discovered pinned and aggregate routes.
 4. Process-wide multi-target prerequisites still apply while the flag is enabled: HTTP transport,
    XSUAA, cache off, standard tool mode, UI off, and no plugins. Strict PP is a per-runtime invariant
-   for discovered targets, not a process-wide setting.
-5. If the single-target `/mcp` connection and a discovered target have the same connection fingerprint,
-   both remain usable. Log an operator warning because their policies can differ and the duplicate
-   exposure is probably accidental.
+   for PrincipalPropagation targets. BasicAuthentication is accepted only under the separate
+   default-off instance ceiling and never as PP fallback.
+5. If a per-user/strict-PP single-target `/mcp` connection and a discovered target have the same
+   connection fingerprint, both remain usable with an operator warning because their policies can
+   differ. An actually shared Basic `/mcp` connection cannot overlap a discovered Basic route in v1;
+   startup fails rather than provide a second path around the credential guard.
 6. API-key and direct OIDC authentication remain unchanged for the single-target `/mcp`, but do not authorize
    pinned multi-target routes or `/multi/mcp` in v1. Multi routes use an XSUAA-only
    verifier chain rather than inspecting a shared `AuthInfo` after authentication.
@@ -125,10 +129,12 @@ Compatibility rules:
 
 ### Instance configuration
 
-Add one mode flag:
+Add the mode flag and an independent, default-off Basic-authentication ceiling:
 
 ```yaml
 ARC1_MULTI_TARGET_ENDPOINTS: "true"
+# Optional shared-identity exception; keep false/unset for PP-only deployments.
+ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH: "false"
 ```
 
 There is deliberately no discovery-scope enum: v1 can only search the bound subaccount. There is no
@@ -148,10 +154,16 @@ When the flag is true, validate:
 - the runtime is BTP CF destination mode, not service-key, cookie, direct URL, or stdio mode; and
 - a request reaching a multi-target route authenticated by API key or direct OIDC is rejected.
 
-Every discovered runtime hardcodes `ppEnabled=true` and `ppStrict=true`, regardless of the existing
-`SAP_PP_ENABLED`/`SAP_PP_STRICT` values. Those existing env values continue to control only the
-optional single-target `/mcp` runtime. This per-runtime split is required to preserve current
-API-key/direct-OIDC behavior while giving multi routes strict PP with no shared fallback.
+Every PrincipalPropagation runtime hardcodes `ppEnabled=true` and `ppStrict=true`, regardless of the
+existing `SAP_PP_ENABLED`/`SAP_PP_STRICT` values. A BasicAuthentication runtime hardcodes PP off and
+obtains only its selected destination's shared credentials. Those existing env values continue to
+control only the optional single-target `/mcp` runtime. This per-runtime split preserves current
+single-target behavior and prevents PP-to-Basic or Basic-to-PP fallback.
+
+`ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH` defaults to false. When true, an accepted Basic target makes
+the process a shared-identity deployment and v1 requires exactly one CF app instance. The guard is
+process-wide, not constructed per MCP transport/session. PP-only deployments are not changed by
+this option.
 
 Zero destinations is valid. The process must be deployable before the administrator creates the
 destinations.
@@ -188,7 +200,9 @@ An enabled v1 destination has this logical schema:
 | `Type` | yes | Exactly `HTTP`. |
 | `URL` | yes | Backend URL resolved through Destination Service. Secret-safe normalized fingerprint only; never returned. |
 | `ProxyType` | yes | Exactly `OnPremise`. |
-| `Authentication` | yes | Exactly `PrincipalPropagation`. |
+| `Authentication` | yes | `PrincipalPropagation`, or `BasicAuthentication` only when the instance ceiling is enabled. Identity is derived from this property and cannot be overridden by `arc1.*`. |
+| `User` / `Password` | Basic only | Required Destination Service secrets for `BasicAuthentication`. Read only from the uncached request-time Find result; never retained in the registry, catalog, revision, logs, audit, or errors. |
+| `Preemptive` | Basic only | Optional standard destination boolean. Absent or `true` is accepted; explicit `false` is quarantined. |
 | `sap-sysid` | yes | Standard SAP property; exactly `^[A-Z][A-Z0-9]{2}$`. Hyphen and underscore are invalid. |
 | `sap-client` | yes | Exactly three digits (`^\d{3}$`). There is no implicit client 100. |
 | `Description` | recommended | Single line, at most 160 characters. Missing/invalid values warn and fall back to the resulting public target ID. |
@@ -205,7 +219,7 @@ Property names are case-sensitive. Boolean values accept trimmed case-insensitiv
 There is no `arc1.config_version` in v1. The strict property allowlist is the schema, and there is no
 second destination schema to negotiate yet.
 
-The v1 allowlist intentionally excludes write, package, transport, Git, per-target concurrency,
+The v1 ARC-1 property allowlist intentionally excludes write, package, transport, Git, per-target concurrency,
 secondary-destination, and arbitrary header/query configuration. In particular,
 `arc1.allow_writes`, `arc1.allowed_packages`, `arc1.allow_transport_writes`, and
 `arc1.allow_git_writes` are not a hidden preview. An enabled candidate containing one of them is
@@ -247,6 +261,28 @@ Description=A4H development client 100
 arc1.enabled=true
 ```
 
+Shared Basic source-read target (explicit compatibility exception):
+
+```properties
+Name=ARC1_NPL_001_BASIC
+Type=HTTP
+URL=http://npl-abap.internal:50000
+ProxyType=OnPremise
+Authentication=BasicAuthentication
+User=ARC1_READER
+Password=<strong-generated-ASCII-password>
+Preemptive=true
+sap-sysid=NPL
+sap-client=001
+Description=Read-only NPL client 001 (shared technical identity)
+arc1.enabled=true
+```
+
+This target is accepted only with `ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH=true`. Every XSUAA-authorized
+caller reaches SAP as `ARC1_READER`. Use a dedicated communication/technical user with least
+privilege, never `SAP_ALL`; prefer one technical user per SAP client/security boundary. Usernames
+must not contain a colon or surrounding whitespace, and ASCII credentials are recommended.
+
 Same-SID/client target with a distinct public route:
 
 ```properties
@@ -284,12 +320,13 @@ The second example is effective only when the instance also sets
 `SAP_ALLOW_DATA_PREVIEW=true` and `SAP_ALLOW_FREE_SQL=true`, and the user has the corresponding XSUAA
 scopes and SAP authorization.
 
-These examples intentionally use an HTTP destination URL with virtual port `50001`. The port is an
+The PP examples intentionally use an HTTP destination URL with virtual port `50001`. The port is an
 illustrative convention, not a required backend port: the destination virtual host/port must exactly
 match a Cloud Connector mapping whose internal connection uses HTTPS with `X509_RESTRICTED` and allows
-the required ADT paths. The destination's
-`Authentication=PrincipalPropagation` property alone cannot upgrade an HTTP/`NONE_RESTRICTED`
-Cloud Connector mapping to HTTPS/`X509_RESTRICTED`.
+the required ADT paths. The destination's `Authentication=PrincipalPropagation` property alone
+cannot upgrade an HTTP/`NONE_RESTRICTED` Cloud Connector mapping to HTTPS/`X509_RESTRICTED`. The
+Basic target still requires a matching OnPremise Cloud Connector mapping and allowed ADT paths, but
+does not use the PP certificate/CERTRULE chain.
 
 ## Discovery and Immutable Registry
 
@@ -320,6 +357,8 @@ Cloud Connector mapping to HTTPS/`X509_RESTRICTED`.
 
 - Duplicate resulting public target ID: quarantine every claimant as
   `DUPLICATE_TARGET`.
+- Duplicate physical URL/client/Cloud Connector location among Basic targets: quarantine every
+  claimant as `DUPLICATE_BASIC_CONNECTION`; a public alias cannot duplicate the shared login path.
 - Duplicate destination name in the discovery input: quarantine every claimant as
   `DUPLICATE_DESTINATION_NAME`.
 - A subaccount destination whose name is also present at service-instance level: exclude it as
@@ -327,10 +366,11 @@ Cloud Connector mapping to HTTPS/`X509_RESTRICTED`.
   lookup from silently resolving a different object.
 - No conflict is broken by ordering, destination update time, or lexical name.
 
-### Runtime drift check
+### Runtime drift and shared-credential checks
 
-Per-user PP requires a fresh Destination Find lookup with the SAP Cloud SDK destination cache
-bypassed. Before building the user's ADT client, compare the result to the startup fingerprint:
+Every SAP-contacting call requires a fresh Destination Find lookup with the SAP Cloud SDK
+destination cache bypassed. Before building the ADT client, compare the result to the startup
+fingerprint:
 
 - destination name;
 - canonical URL;
@@ -357,14 +397,31 @@ The current `@arc-mcp/xsuaa-auth` lookup drops custom/original properties and al
 This does not change XSUAA scopes, roles, token claims, or the generic authorization model. The
 uncached lookup adds one Destination Service resolution to each SAP-contacting multi-target call;
 measure its latency and service load in beta before considering a success-only cache. Immediate
-drift detection and immediate retry after a PP fix take precedence in v1.
+drift detection, PP repair, and Basic credential rotation take precedence in v1.
+
+For BasicAuthentication, acquire one process-wide per-target gate before Destination Find and hold
+it through credential binding, the authentication canary/feature probe, and tool dispatch. Require
+non-empty `User` and `Password`, reject usernames containing a colon or surrounding whitespace, and
+derive a credential-generation identifier with a process-random HMAC key. Never retain plaintext
+credentials outside the request client. A failed generation is blocked without another SAP attempt;
+retain up to four recently blocked generations for 15 minutes so an eventually consistent
+old/new/old Find sequence cannot re-admit an old password. The per-target wait queue is bounded at
+32 and acquisition times out after 30 seconds with `SAP_TARGET_BUSY`.
+
+A changed Basic credential generation clears successful feature evidence and performs one new
+authentication attempt. A successful request marks passive runtime health healthy. A conclusive
+401/login-page response marks the generation authentication-failed; a structured SAP ADT 403 marks
+authorization-failed. Transient network/5xx responses remain retryable and do not poison the
+credential generation. Every effective final or synthetic authentication response goes through one
+classifier, including HTML login detection. Never retry a Basic request automatically with another
+credential generation.
 
 Every ADT client must be constructed with the snapshot client so `src/adt/http.ts` sends the same
 `sap-client` on every request. Do not share one mutable ADT client across targets. Shared stateless
 code is fine; authentication sessions, safety, feature state, cache state, and request context are
 target/user scoped as appropriate.
 
-## Authorization and Principal Propagation
+## Authorization and SAP identity
 
 ### XSUAA stays global
 
@@ -381,8 +438,8 @@ Existing functional scopes continue to mean:
 | `sql` / SQL User | Permit `SAPQuery` only when the selected target and instance both enable free SQL. Existing role collections must still include/read-compose the needed read/data scopes. |
 | `admin` / Admin | Always receive aggregate `SAPTargets`, including at zero/one targets or registry failure, with expanded secret-safe diagnostics. It does **not** bypass destination policy, SAP auth, or the v1 mutation prohibition. |
 
-All accepted targets are visible to a global read user. This does not prove that the propagated SAP
-user is mapped or authorized in any target. V1 deliberately has no per-target ARC ACL because that
+All accepted targets are visible to a global read user. This does not prove that the propagated or
+shared SAP user is mapped or authorized in any target. V1 deliberately has no per-target ARC ACL because that
 would require a reliable user-target entitlement source and a more complex XSUAA model. Administrators
 who need different target visibility must use separate ARC-1 instances until a later ACL design is
 accepted.
@@ -399,23 +456,33 @@ For `/<PUBLIC-SYSTEM>/<CLIENT>/mcp` and `/multi/mcp`:
 3. Resolve the target/route from the immutable registry.
 4. Apply XSUAA functional scope pruning.
 5. Apply the instance and target policy intersection.
-6. Exchange the user's token through Destination/Connectivity PP.
-7. Let SAP enforce the user's system/client authorization.
+6. Resolve the exact destination without cache. For PP, exchange the user's token through
+   Destination/Connectivity. For Basic, bind the shared destination credential generation inside
+   the process-wide target gate.
+7. Let SAP enforce the selected propagated or shared user's system/client authorization.
 
 This order prevents unauthenticated route enumeration. OAuth metadata, health, and standards-required
 discovery endpoints may remain public but must contain no target inventory.
 
 `SAPTargets` stops after XSUAA/read authentication and its tool-level scope, deny-action, rate-limit,
-and audit checks. It resolves no SAP target and performs no PP or backend request.
+and audit checks. It resolves no SAP target and performs no PP, Basic credential lookup, or backend
+request. Reader output identifies each target's `identity` as `per-user` or `shared`; admin output
+adds only passive secret-free runtime health for shared targets.
 
 Multi-target routes use an XSUAA-only bearer verifier. API-key and direct OIDC tokens fail as 401
 with the correct route-family protected-resource metadata challenge before registry membership is
 checked. The single-target `/mcp` keeps the existing verifier chain and PP/shared-client behavior.
+Copilot Studio's JSON-RPC-on-`/authorize` compatibility alias routes to the XSUAA-only aggregate
+server whenever multi-target mode is enabled, including a side-by-side deployment. It must never
+prefer a potentially writable single-target `/mcp`; only a single-target-only deployment may map
+the alias to `/mcp`.
 
-There is no technical/shared fallback when PP exchange, SAP login, mapping, or authorization fails.
-One PP destination per target is sufficient for v1. Document the tradeoffs: no technical-user startup
-probe, the first authorized user may pay feature-probe latency, and feature availability must never be
-inferred from an unauthorized user's response.
+There is no fallback when PP exchange, Basic login, SAP mapping, or authorization fails. One
+destination per target is sufficient for v1. PP is recommended because it retains per-user SAP
+identity. Basic is explicitly shared: every scoped XSUAA user reaches SAP as the destination's
+technical user, so human attribution requires ARC-1 audit correlation. No target uses a technical
+startup probe; the first authorized call may pay feature-probe/canary latency, and feature
+availability must never be inferred from an unauthorized user's response.
 
 ## Endpoint Contract
 
@@ -539,14 +606,18 @@ templates remain in end-user documentation instead of being repeated in MCP tool
 servers never list or dispatch it.
 
 - A reader sees the tool only when more than one active target exists. No input returns every active
-  target as the compact array `[{ "target": "A4H/100", "description": "..." }]`.
+  target as the compact array
+  `[{ "target": "A4H/100", "description": "...", "identity": "per-user" }]`.
 - An admin sees the tool at zero, one, or many active targets and when discovery or the 256-target
   limit makes the registry unavailable. This keeps diagnostics reachable without a separate HTTP
-  endpoint.
+  endpoint. Active rows reuse the same compact identity field and do not repeat the derivable
+  authentication type. Passive Basic health is summarized once under `admin.sharedAuthentication`;
+  at most 8 deterministic exception rows include target ID, state, and time, with explicit
+  total/returned/truncation metadata. An administrator narrows `query` to inspect a specific target.
 - Optional `query` is a case-insensitive string with maximum length 160. Admins may also pass an
   integer `offset` from 0 through 1,000,000 to page safe diagnostics; reader calls reject `offset`.
   The input schema rejects extra properties, and runtime validation mirrors both bounds.
-- Reader queries match only target ID and sanitized description. Admin queries may additionally
+- Reader queries match target ID and sanitized description. Admin queries may additionally
   match destination name, status, reason code, and safe message.
 - Admin diagnostics are deterministically paged at 50 rows. Return offset, total, returned,
   truncation, and next-offset metadata so the caller can continue or narrow `query`; never let a
@@ -566,7 +637,7 @@ be kept synchronized with response types and reason codes.
 
 ### Read view
 
-Return only the compact array of accepted `{ target, description }` pairs, optionally narrowed by
+Return only the compact array of accepted `{ target, description, identity }` triples, optionally narrowed by
 `query`. Never return a BTP destination name, SAP URL, endpoint/client configuration, policy detail,
 excluded destination, reason code, registry metadata, or per-user availability in the read view.
 
@@ -623,13 +694,16 @@ Reason-code vocabulary:
 | `MISSING_CLIENT` / `INVALID_CLIENT` | `sap-client` is absent or invalid. |
 | `UNSUPPORTED_TYPE` | Destination is not HTTP. |
 | `UNSUPPORTED_PROXY` | Destination is not OnPremise. |
-| `UNSUPPORTED_AUTH` | Destination is not PrincipalPropagation. |
+| `UNSUPPORTED_AUTH` | Destination authentication is neither PrincipalPropagation nor BasicAuthentication. |
+| `BASIC_AUTH_DISABLED` | BasicAuthentication was configured while the default-off instance ceiling is false. |
+| `BASIC_PREEMPTIVE_DISABLED` | Basic destination explicitly disables preemptive authentication. |
 | `MISSING_DESCRIPTION` | Non-fatal warning; public label falls back to target ID. |
 | `INVALID_LANGUAGE` | Optional `sap-language` is malformed. |
 | `UNKNOWN_ARC1_PROPERTY` | Enabled entry uses an unsupported `arc1.*` key. |
 | `INVALID_POLICY` | Data/SQL policy value is malformed. |
 | `UNSUPPORTED_V1_WRITE_CONFIG` | Enabled entry tries to configure a multi-target mutation. |
 | `DUPLICATE_TARGET` | More than one enabled entry claims the same resulting public target ID. |
+| `DUPLICATE_BASIC_CONNECTION` | More than one enabled Basic entry claims the same physical URL/client/Cloud Connector location. Every claimant is quarantined so aliases cannot bypass the shared credential guard. |
 | `DUPLICATE_DESTINATION_NAME` | Discovery input contains the same name more than once. |
 | `SHADOWED_BY_INSTANCE` | Same name exists at service-instance level. |
 | `TARGET_LIMIT_EXCEEDED` | More than 256 entries are enabled; no discovered route is active. |
@@ -639,9 +713,10 @@ Instance-policy narrowing is not a reason code: an accepted target keeps `ACTIVE
 `limitedByInstance: true` in the admin diagnostic when requested data/SQL exceeds the instance
 ceiling.
 
-Admin output describes only the current CF process snapshot. In a multi-instance app, compare
-`revision` values while diagnosing a rolling update. Normal operation should use a non-rolling
-`cf restart` after destination changes so every instance loads the same snapshot.
+Admin output describes only the current CF process snapshot. PP-only multi-instance deployments can
+compare `revision` values while diagnosing a rolling update. A Basic-enabled multi-target v1 app
+must have exactly one CF instance because its credential-generation guard and passive health are
+process-local. Normal configuration changes use `cf restart`.
 
 ## Error, Retry, and Audit Contract
 
@@ -672,22 +747,30 @@ Required classifications:
 | `UNKNOWN_TARGET` | Target ID is syntactically valid but absent from the accepted snapshot. | Call `SAPTargets`; restart after destination changes. |
 | `NO_TARGETS_CONFIGURED` | Multi mode is enabled with no accepted targets. | Configure a destination and restart. |
 | `MULTI_TARGET_REGISTRY_UNAVAILABLE` | Discovery/limit error prevented a usable registry. | Admin calls `SAPTargets` on `/multi/mcp` and checks health/logs. |
-| `TARGET_CONFIG_CHANGED` | Live PP lookup no longer matches startup fingerprint. | Restart ARC-1 after reviewing the destination. |
+| `TARGET_CONFIG_CHANGED` | Live lookup no longer matches the startup non-secret fingerprint. | Restart ARC-1 after reviewing the destination. Basic `User`/`Password` changes are excluded and rotate hot. |
 | `TARGET_POLICY_DENIED` | Instance or destination did not enable data/SQL. | Administrator changes both required gates and restarts for destination changes. |
+| `BASIC_CREDENTIALS_MISSING` | Authoritative request-time Basic destination has no usable User/Password. | Repair the destination and retry without restart. |
+| `BASIC_CREDENTIALS_INVALID` | Basic username contains `:` or surrounding whitespace. | Correct the destination and retry without restart. |
+| `DESTINATION_AUTH_SETUP_FAILED` | Request-time destination lookup or Basic client preparation failed before ADT. | Check Destination/Connectivity and retry only when transient or after repair. |
 | `PP_SETUP_FAILED` | Failure is proven to occur before ADT dispatch during Destination/Connectivity lookup or token exchange. | Fix BTP/Cloud Connector setup, then retry. |
-| `CLOUD_CONNECTOR_ACCESS_DENIED` | BTP Connectivity returned its verified Cloud Connector exposure-denial signature before SAP handled the ADT request. | Make the destination virtual host/port match an HTTPS/`X509_RESTRICTED` mapping, allow the required ADT paths, then retry. |
-| `SAP_AUTHENTICATION_FAILED` | Backend returned login/401 behavior or an ambiguous 403 after PP. Do not claim a specific missing-user cause. | Fix mapping/login/PP, then retry the same conversation. |
+| `CLOUD_CONNECTOR_ACCESS_DENIED` | BTP Connectivity returned its verified exposure-denial signature before SAP handled the ADT request. | PP: match the reviewed HTTPS/X.509 PP mapping. Basic: match the reviewed Basic OnPremise mapping; it does not require the PP identity certificate. Allow the required ADT paths, then retry. |
+| `SAP_AUTHENTICATION_FAILED` | Backend returned login/401 behavior. For PP, do not claim a specific missing-user cause. For Basic, the credential generation is blocked to protect the SAP account. | Fix PP/mapping or rotate the Basic destination credentials, then retry. |
 | `SAP_AUTHORIZATION_DENIED` | Structured SAP 403/authorization refusal. | Grant the required SAP authorization, then retry. |
 | `SAP_SERVICE_INACTIVE` | SAP ICF/ADT service is inactive rather than a user authorization issue. | Activate/fix the service, then retry. |
-| `SAP_REQUEST_FAILED` | A post-PP network failure or SAP 5xx prevented the request without proving an authentication cause. | Check Cloud Connector/SAP health, then retry once. |
+| `SAP_REQUEST_FAILED` | A post-resolution network failure or SAP 5xx prevented the request without proving an authentication cause. | Check Cloud Connector/SAP health, then retry once. |
+| `SAP_TARGET_BUSY` | Basic target's bounded serialization queue is full or its 30-second acquisition timed out. | Retry after the active shared-identity request completes. |
+| `SAP_TARGET_TEMPORARILY_UNAVAILABLE` | Basic canary had a network, timeout, 429, or SAP 5xx failure. | Retry later; the credential generation remains eligible. |
 
 Honor `ARC1_MINIMAL_ERRORS`. Never expose raw SAP HTML/bodies, destination properties, credentials,
 authorization headers, assertions, or internal stack traces. Text must remain conclusive for clients
 that ignore structured content.
 
-Do not cache PP, SAP authentication, or SAP authorization failures—not globally and not in an MCP
+Do not cache PP or per-user SAP authentication/authorization failures—not globally and not in an MCP
 session. A user can say “try again now” after Basis fixes mapping or permissions, and the next call
-must reach PP/SAP again. If XSUAA roles changed, the user needs a fresh token/sign-in.
+must reach PP/SAP again. Basic authentication/authorization failures are the lockout-protection
+exception: the rejected credential generation stays blocked until the destination credentials
+change, with bounded old-generation retention for Destination consistency. If XSUAA roles changed,
+the user needs a fresh token/sign-in.
 
 Set `retryable: true` for PP, Cloud Connector exposure, SAP authentication, authorization, and
 service failures that can change externally. Set it false for unknown target, empty registry, target
@@ -698,7 +781,9 @@ Audit stages must distinguish:
 
 - ARC/XSUAA authentication;
 - target resolution;
-- PP destination exchange;
+- destination resolution and selected identity mode;
+- PP exchange, where applicable;
+- Basic credential-generation state, where applicable, without the digest or credentials;
 - Cloud Connector exposure/access;
 - SAP authentication;
 - SAP authorization;
@@ -706,8 +791,10 @@ Audit stages must distinguish:
 - successful SAP execution.
 
 The existing `auth_pp_created` event proves only PP credential/session creation; it must not be
-reported as successful SAP login. Log target ID, safe user identity, request ID, stage, outcome, and
-safe error class. Never log secrets. SAP-side login/security logging remains dependent on SAP system
+reported as successful SAP login. Log target ID, safe human XSUAA identity, effective identity mode,
+request ID, stage, outcome, and safe error class. Never log secrets or raw authentication response
+bodies. For Basic targets, SAP records the shared technical user; correlate it with ARC-1 audit
+events for human attribution. SAP-side login/security logging remains dependent on SAP system
 configuration and is not guaranteed by ARC-1.
 
 Add a public `target` field to the audit base event; never reuse or expose the internal BTP
@@ -723,8 +810,10 @@ BTP Audit Log records.
   reason about across 100 targets.
 - Warmup no longer exists and is not part of this design.
 - Do not run startup feature probes or construct a shared/default ADT client for discovered targets.
-- On the first SAP-contacting call for a target, use that authorized caller's PP-backed client and a
-  per-target single-flight probe. Cache only a completed successful probe by immutable target ID.
+- On the first SAP-contacting call for a target, use that authorized caller's PP-backed client or
+  the selected Basic destination's request-local client and a per-target single-flight probe. Cache
+  only a completed successful probe by immutable target ID; clear it when a Basic credential
+  generation changes.
 - Feature state has an explicit `unknown` representation. A 401/403/PP failure leaves it unknown;
   never translate an authorization failure to `available:false` or cache it.
 - Do not probe all targets on startup or when `SAPTargets` is called.
@@ -751,7 +840,8 @@ BTP Audit Log records.
   When the new variable is unset, preserve today's derived value
   `max(ARC1_AUTH_RATE_LIMIT * 30, 600)`; `0` explicitly disables it; a positive value replaces the
   derivation. Once explicitly configured, `ARC1_AUTH_RATE_LIMIT` controls OAuth/auth endpoints only.
-- In-memory limits are per CF app instance. Multiple instances multiply total pressure on SAP.
+- In-memory limits are per CF app instance. PP-only multiple instances multiply total pressure on
+  SAP. Basic-enabled multi-target v1 is restricted to one CF instance.
 
 Document these starting points, then require load testing and Basis confirmation:
 
@@ -776,7 +866,7 @@ floor(0.6 × rdisp/wp_no_dia / ARC1_CF_instances)
 Use the smallest value across the backends that share the process. Raise it only with observed SAP
 capacity, response time, and queueing data.
 
-## Health, Restart, and Multi-Instance Behavior
+## Health, Restart, Rotation, and Instance Behavior
 
 Health needs component detail without target inventory:
 
@@ -792,25 +882,30 @@ Health needs component detail without target inventory:
   `MULTI_TARGET_REGISTRY_UNAVAILABLE`. A reader receives no diagnostic tool at zero/one targets or
   registry failure.
 
-Destination changes are deliberately restart-bound:
+Non-secret destination changes are deliberately restart-bound:
 
 1. Export/clone/edit/import destinations in BTP Cockpit or CLI.
 2. Validate in Cockpit.
-3. Run a normal non-rolling `cf restart <app>`.
+3. Run `cf restart <app>`.
 4. Check `/health` and call `SAPTargets` with an admin token through `/multi/mcp`.
-5. Query each app instance by sending `X-CF-APP-INSTANCE: <app-guid>:<index>` on the authenticated
-   aggregate MCP request and compare registry revisions if multiple instances disagree.
+5. For a PP-only scaled deployment, query each app instance with
+   `X-CF-APP-INSTANCE: <app-guid>:<index>` and compare revisions. Do not scale a Basic-enabled v1
+   deployment above one instance.
 
-No MTAR rebuild or `cf deploy` is needed. DCR signing configuration must remain stable across
-instances/restarts as already documented. The MTA keeps one instance by default, but tests must prove
-two instances can serve the same immutable config and auth clients.
+No MTAR rebuild or `cf deploy` is needed. A Basic destination's `User`/`Password` is the one
+exception: rotate it in Cockpit and the next request loads the new generation without restart. For
+zero downtime, atomically switch both fields to a second reviewed technical user and revoke the old
+user only after safe reads succeed. Same-user password rotation may have a short consistency/outage
+window because SAP normally cannot keep both passwords valid. DCR signing configuration must remain
+stable across restarts. The MTA keeps one instance by default, which is mandatory whenever Basic
+multi-target is enabled; deployment must also avoid rolling/blue-green overlap.
 
 ## Implementation Work Plan
 
 ### 1. Freeze and publish the architecture baseline before feature code
 
-- Add proposed ADR-0006 and qualify ADR-0005 plus the auto-loaded `AGENTS.md` rule so this
-  experimental read-only exception is not rejected as out of scope by future agents.
+- Add proposed ADR-0006, qualify ADR-0005, and add ADR-0007 for the explicit shared Basic identity
+  exception; reflect both boundaries in the auto-loaded `AGENTS.md` rule.
 - Update the old evaluation/hub pages that still describe target-bound XSUAA roles or one instance
   per system as the only permitted design.
 - Commit this plan, ADR, administration page, and documentation qualification before starting code
@@ -833,7 +928,8 @@ Files:
 
 Work:
 
-- Add `ARC1_MULTI_TARGET_ENDPOINTS` with default false.
+- Add `ARC1_MULTI_TARGET_ENDPOINTS` with default false and
+  `ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH` with a separate default false.
 - Add shared MCP HTTP/IP rate configuration. Unset preserves the existing derived cap; `0`
   explicitly disables it; a positive value replaces the derivation on all MCP routes and the
   Copilot JSON-RPC `/authorize` branch.
@@ -895,7 +991,7 @@ Work:
   discovery order produces the same revision.
 - Keep raw Destination Service objects out of registry memory.
 
-### 5. Build isolated target runtimes and PP clients
+### 5. Build isolated target runtimes and selected-identity clients
 
 Files:
 
@@ -914,15 +1010,20 @@ Work:
   `SAP_DISABLE_SAML`. Destination/Connectivity determines the discovered route's transport.
 - Build target runtimes eagerly from the immutable snapshot, but create no default/shared ADT client
   and run no technical SAP login or startup probe.
-- Hardcode strict PP per discovered runtime while leaving the optional single-target runtime's
-  existing PP, API-key, and direct-OIDC behavior unchanged.
-- Resolve PP credentials with an uncached Destination lookup for every SAP-contacting request and
-  verify all connection, target, language, and supported `arc1.*` fingerprint fields. Never cache a
-  failed lookup or `authTokens[].error`; measure the added Destination Service latency/load in beta.
+- Hardcode strict PP for PrincipalPropagation runtimes while leaving the optional single-target
+  runtime's existing PP, API-key, and direct-OIDC behavior unchanged. BasicAuthentication runtimes
+  are shared identity and never serve as PP fallback.
+- Resolve the exact destination without cache for every SAP-contacting request and verify all
+  non-secret connection, target, language, and supported `arc1.*` fingerprint fields. For Basic,
+  acquire the process-wide target gate before lookup, bind a HMAC credential generation, retain no
+  raw secret, use a bounded queue/timeout and old-generation blocklist, and hold the gate through
+  dispatch. Never cache a failed PP lookup or `authTokens[].error`; measure Destination Service
+  latency/load in beta.
 - Force the target client into every ADT client/request.
 - Keep feature state keyed by public immutable target ID.
 - Probe features lazily through the first authorized caller using a per-target single-flight. Cache
-  only successful target feature evidence and add an explicit unknown state for auth/PP failures.
+  only successful target feature evidence, clear it on Basic generation change, and add an explicit
+  unknown state for auth/PP failures.
 - Carry an immutable target context per aggregate call; never mutate server-scoped config or client
   state while switching targets.
 - Share the one process-wide SAP semaphore.
@@ -1009,8 +1110,8 @@ Work:
 
 - Keep the aggregate MCP transport reachable through registry failure while pinned target routes
   remain unavailable; non-catalog aggregate calls fail with the structured registry error.
-- Return only compact target/description pairs to readers and only when more than one active target
-  exists.
+- Return only compact target/description/identity rows to readers and only when more than one active
+  target exists.
 - Always expose the tool to admins, including zero/one targets and unavailable registries. Default
   admin output contains state/counts/failure plus exception diagnostics; a validated query may reveal
   matching active safe details.
@@ -1123,7 +1224,9 @@ Required automated cases:
   for admin `SAPTargets`, and gives other aggregate calls a structured registry error, with or
   without a single-target `/mcp`;
 - single-target `/mcp` unchanged and never auto-assigned;
-- single-target and discovered duplicate fingerprint warning with both routes usable;
+- strict-PP single-target and discovered duplicate fingerprint warning with both routes usable;
+- actually shared Basic bare-route overlap fails startup, and duplicate Basic physical claimants
+  are quarantined symmetrically;
 - pinned schemas have no target argument and use the frozen multi read-only surface;
 - aggregate schemas have exactly one required target argument;
 - exact enums at 1 and 16 targets plus the syntax pattern at 17 and 256, including target
@@ -1131,7 +1234,7 @@ Required automated cases:
 - aggregate is mounted at 0/1 targets;
 - `SAPTargets` is absent from pinned servers, appears to aggregate readers only above one active
   target, and appears to aggregate admins at 0/1/many targets and registry failure;
-- reader `SAPTargets` returns only compact target/description pairs; admin default output returns
+- reader `SAPTargets` returns only compact target/description/identity rows; admin default output returns
   state/counts/failure and exception diagnostics, while a validated query includes matching active
   safe details;
 - admin diagnostics are deterministically paged at 50 with correct
@@ -1185,7 +1288,7 @@ run; never print service keys, `VCAP_SERVICES`, tokens, assertions, or destinati
 Once a real XSUAA user has completed the authorization-code flow, the test runner can keep the
 access token in memory and automate these cases through CF/BTP APIs and MCP JSON-RPC. A CF or BTP
 CLI token alone cannot replace this step: it is not the ARC-1 XSUAA user token and cannot prove
-Principal Propagation.
+ARC-1 scopes or Principal Propagation.
 
 1. With more than one active target, a mapped Viewer successfully calls `SAPTargets` and performs
    source/system reads on pinned and aggregate routes; an admin receives diagnostics at every target
@@ -1204,8 +1307,10 @@ Principal Propagation.
 8. Data/SQL work only on a target with both instance and destination consent.
 9. Editing a destination without restart causes fingerprint drift rejection; restart loads the new
    revision.
-10. Two CF app instances expose the same routes/revision; one DCR client established through one
-    instance completes MCP requests pinned via `X-CF-APP-INSTANCE` to the other instance.
+10. PP-only: two CF app instances expose the same routes/revision and share DCR behavior. Basic:
+    the MTA descriptor and deployment procedure require exactly one non-rolling CF app instance,
+    and startup warns that the credential guard is process-local. Runtime cannot prove the CF scale,
+    so the operator also verifies `cf app` reports `1/1` before opening the service.
 11. Seed unique sentinel strings in a test destination password, token-like property, URL, and
     location ID, then assert those sentinels are absent from logs, audit sink, `/health`,
     `SAPTargets`, MCP errors, and serialized discovery. Also seed a unique query sentinel and prove
@@ -1215,6 +1320,13 @@ Principal Propagation.
     and destination-disable cases; restore the reviewed destination state after every test.
 13. Prove valid-but-unknown, malformed, lowercase, bare `/mcp`, and `/targets` routes have the
     documented authenticated and unauthenticated behavior.
+14. Basic: verify default-off quarantine, mixed PP/Basic targets, shared identity labeling, absent
+    or true Preemptive acceptance, explicit false rejection, missing/malformed credentials, one
+    successful canary, centralized 401/login-page classification, no automatic retry, queue
+    full/timeout behavior, and complete secret absence from registry/catalog/log/audit/error data.
+15. Rotate a Basic password without restart. Prove the next request uses the new generation, the
+    old generation stays blocked across an old/new/old Destination consistency sequence, successful
+    feature evidence is cleared, and transient SAP/network failure does not poison the generation.
 
 #### Human-assisted identity and client matrix
 
@@ -1273,13 +1385,18 @@ feature.
 - [x] Multi-target lock/enqueue operations are absent and rejected at the safety layer.
 - [x] Data/SQL require instance, target, XSUAA, and SAP consent.
 - [x] XSUAA auth is checked before route existence.
-- [x] PP is strict and has no shared identity fallback.
+- [x] PrincipalPropagation is strict and has no shared-identity fallback; BasicAuthentication is a
+      separate default-off target identity, never a fallback.
+- [x] Basic credentials are request-local, secret-free in all retained/output state, protected by a
+      process-wide bounded generation guard, and require exactly one non-rolling CF instance in v1.
 - [x] Discovered configs are built fresh and cannot inherit credentials/cookies/bearer providers or
       construct a default shared ADT client.
 - [x] Route target and ADT client agree on `sap-client`.
-- [x] Runtime destination drift fails closed until restart.
+- [x] Runtime non-secret destination drift fails closed until restart; only Basic User/Password
+      rotation is hot-loaded through the protected generation path.
 - [x] Unauthorized user failures cannot poison shared feature state.
-- [x] Negative access results are never cached.
+- [x] Per-user negative access results are never cached; rejected Basic credential generations are
+      blocked only for account-lockout protection with bounded retention.
 - [x] Read/admin `SAPTargets` separation and zero/one/failure-state admin access are test-covered.
 - [x] Global semaphore/rate limit cannot be multiplied by target count.
 - [x] RFC 9728 metadata and unauthenticated route behavior cannot reveal registry membership.

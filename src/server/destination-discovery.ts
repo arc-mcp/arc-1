@@ -22,6 +22,8 @@ export interface DiscoveredDestination {
   readonly sapClient?: string;
   readonly description?: string;
   readonly sapLanguage?: string;
+  /** Safe destination behavior setting. Credentials are deliberately never projected. */
+  readonly preemptive?: string;
   readonly hasCloudConnectorLocationId: boolean;
   readonly cloudConnectorLocationIdFingerprint?: string;
   readonly arcProperties: Readonly<Record<string, string>>;
@@ -48,6 +50,14 @@ export class DestinationDiscoveryError extends Error {
 function stringProperty(properties: Readonly<Record<string, unknown>>, key: string): string | undefined {
   const value = properties[key];
   return typeof value === 'string' ? value : undefined;
+}
+
+/** Preserve an explicitly supplied safe scalar so validation can fail closed on malformed values. */
+function projectedScalar(properties: Readonly<Record<string, unknown>>, key: string): string | undefined {
+  const value = properties[key];
+  if (value === undefined) return undefined;
+  if (typeof value === 'string' || typeof value === 'boolean' || typeof value === 'number') return String(value);
+  return '';
 }
 
 export function opaqueDestinationValue(value: string): string {
@@ -99,6 +109,7 @@ export function projectMultiTargetDestination(destination: Destination): Discove
     sapClient: destination['sap-client'] ?? stringProperty(properties, 'sap-client'),
     description: stringProperty(properties, 'Description'),
     sapLanguage: stringProperty(properties, 'sap-language'),
+    preemptive: projectedScalar(properties, 'Preemptive'),
     hasCloudConnectorLocationId: !!locationId,
     cloudConnectorLocationIdFingerprint: locationId ? opaqueDestinationValue(locationId) : undefined,
     arcProperties: Object.freeze(arcProperties),

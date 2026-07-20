@@ -133,6 +133,27 @@ describe('multi-target runtime isolation', () => {
     });
     expect(config.destinationName).toBeUndefined();
     expect(config.targetId).toBeUndefined();
+    expect(config).toMatchObject({ ppEnabled: true, ppStrict: true, disableSaml2: false });
+  });
+
+  it('switches only a selected Basic target to the shared non-PP runtime', () => {
+    const basicTarget = {
+      ...registryTarget(),
+      destinationName: 'ARC1_A4H_100_BASIC',
+      authentication: 'BasicAuthentication' as const,
+      identity: 'shared' as const,
+    };
+
+    const config = buildMultiTargetConfig(DEFAULT_CONFIG, basicTarget);
+
+    expect(config).toMatchObject({
+      ppEnabled: false,
+      ppStrict: false,
+      ppStrictExplicit: true,
+      ppAllowSharedCookies: false,
+      disableSaml2: true,
+      targetId: 'A4H/100',
+    });
   });
 
   it('provides a typed configuration-change error for callers', () => {

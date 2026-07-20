@@ -3,13 +3,17 @@ import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { describe, expect, it, vi } from 'vitest';
 import { canonicalDestinationUrl, opaqueDestinationValue } from '../../../src/server/destination-discovery.js';
-import { DestinationRegistry, duplicateSingleTargetIds } from '../../../src/server/destination-registry.js';
+import {
+  DestinationRegistry,
+  duplicateSingleTargetIds,
+  sharedBasicSingleTargetConflicts,
+} from '../../../src/server/destination-registry.js';
 import { logger } from '../../../src/server/logger.js';
 import { buildTargetCatalog, TARGET_CATALOG_DIAGNOSTIC_LIMIT } from '../../../src/server/multi-target-catalog.js';
 import { hasAuthorizationLimitedFeatureEvidence } from '../../../src/server/multi-target-feature-state.js';
 import { buildAggregateToolSurfaceConfig, buildMultiTargetConfig } from '../../../src/server/multi-target-runtime.js';
 import { parseSapTargetsArguments } from '../../../src/server/multi-target-server.js';
-import { createServer } from '../../../src/server/server.js';
+import { createServer, resolveSingleTargetOverlapState } from '../../../src/server/server.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 
 type RequestHandler = (
@@ -24,7 +28,11 @@ function requestHandler(server: Server, method: string): RequestHandler {
   return handler;
 }
 
-function registry(count: number, policy = { data: false, sql: false }, options: { includeInvalid?: boolean } = {}) {
+function registry(
+  count: number,
+  policy = { data: false, sql: false },
+  options: { includeInvalid?: boolean; authentication?: 'PrincipalPropagation' | 'BasicAuthentication' } = {},
+) {
   const canonicalUrl = canonicalDestinationUrl('http://sap.internal:50000') as string;
   const subaccount = Array.from({ length: count }, (_, index) => {
     const sid = `A${Math.floor(index / 10) % 10}${index % 10}`;
@@ -33,8 +41,8 @@ function registry(count: number, policy = { data: false, sql: false }, options: 
       name: `DEST_${index}`,
       type: 'HTTP',
       urlState: 'valid' as const,
-      urlFingerprint: opaqueDestinationValue(`${canonicalUrl}/${index}`),
-      authentication: 'PrincipalPropagation',
+      urlFingerprint: opaqueDestinationValue(`${canonicalUrl}${index}`),
+      authentication: options.authentication ?? 'PrincipalPropagation',
       proxyType: 'OnPremise',
       sapSysId: sid,
       sapClient: client,
@@ -74,7 +82,12 @@ function registry(count: number, policy = { data: false, sql: false }, options: 
       unrelatedCount: 0,
       arcAdjacentWithoutMarkerCount: 0,
     },
-    { ...DEFAULT_CONFIG, allowDataPreview: policy.data, allowFreeSQL: policy.sql },
+    {
+      ...DEFAULT_CONFIG,
+      allowDataPreview: policy.data,
+      allowFreeSQL: policy.sql,
+      multiTargetAllowBasicAuth: options.authentication === 'BasicAuthentication',
+    },
   );
 }
 
@@ -110,11 +123,102 @@ describe('multi-target MCP servers', () => {
     expect(duplicateSingleTargetIds(current, ['NOT_CONFIGURED'])).toEqual([]);
   });
 
+  it('refuses only shared Basic overlap between bare and multi-target routes', () => {
+    const basic = registry(2, undefined, { authentication: 'BasicAuthentication' });
+    expect(sharedBasicSingleTargetConflicts(basic, 'DEST_0', undefined, true)).toEqual(['A00/000']);
+    expect(sharedBasicSingleTargetConflicts(basic, 'DEST_0', undefined, false)).toEqual([]);
+    // A PP-only destination name is not part of the shared bare-/mcp identity.
+    // MTA extensions can leave this property configured after topology changes;
+    // it must not make an unrelated shared single-target connection fail startup.
+    expect(sharedBasicSingleTargetConflicts(basic, 'SINGLE_BASIC', undefined, true)).toEqual([]);
+
+    const direct = resolveSingleTargetOverlapState(
+      {
+        ...DEFAULT_CONFIG,
+        url: 'http://sap.internal:50000/0',
+        client: '000',
+        username: 'TECH_USER',
+        password: 'PASSWORD',
+      },
+      undefined,
+      false,
+    );
+    expect(
+      sharedBasicSingleTargetConflicts(basic, undefined, direct.connectionFingerprint, direct.usesSharedBasic),
+    ).toEqual(['A00/000']);
+
+    const pp = registry(1);
+    expect(sharedBasicSingleTargetConflicts(pp, 'DEST_0', undefined, true)).toEqual([]);
+  });
+
   it('keeps the unfiltered 256-target admin catalog compact', () => {
     const payload = buildTargetCatalog(registry(256), { admin: true });
     expect(payload).toMatchObject({
       admin: { diagnosticMode: 'exceptions', destinations: [] },
     });
+    expect(Buffer.byteLength(JSON.stringify(payload), 'utf8')).toBeLessThan(20_000);
+  });
+
+  it('summarizes normal shared-auth health and keeps the 256-target admin catalog compact', () => {
+    const payload = buildTargetCatalog(
+      registry(256, { data: false, sql: false }, { authentication: 'BasicAuthentication' }),
+      {
+        admin: true,
+        runtimeAuth: () => ({ status: 'healthy', checkedAt: '2026-07-20T12:34:56.000Z' }),
+      },
+    ) as Record<string, any>;
+
+    expect(payload.admin.sharedAuthentication).toEqual({ targets: 256, statusCounts: { healthy: 256 } });
+    expect(payload.targets.every((entry: Record<string, unknown>) => !('runtimeAuth' in entry))).toBe(true);
+    expect(Buffer.byteLength(JSON.stringify(payload), 'utf8')).toBeLessThan(20_000);
+  });
+
+  it('keeps exceptional shared-auth health on the affected target', () => {
+    const payload = buildTargetCatalog(
+      registry(2, { data: false, sql: false }, { authentication: 'BasicAuthentication' }),
+      {
+        admin: true,
+        runtimeAuth: (target) =>
+          target.endsWith('/001')
+            ? { status: 'authentication_failed', checkedAt: '2026-07-20T12:34:56.000Z' }
+            : { status: 'healthy', checkedAt: '2026-07-20T12:30:00.000Z' },
+      },
+    ) as Record<string, any>;
+
+    expect(payload.admin.sharedAuthentication).toEqual({
+      targets: 2,
+      statusCounts: { healthy: 1, authentication_failed: 1 },
+      exceptionTotal: 1,
+      exceptionReturned: 1,
+      exceptionsTruncated: false,
+      exceptions: [
+        {
+          target: 'A01/001',
+          status: 'authentication_failed',
+          checkedAt: '2026-07-20T12:34:56.000Z',
+        },
+      ],
+    });
+    expect(payload.targets.every((entry: Record<string, unknown>) => !('runtimeAuth' in entry))).toBe(true);
+  });
+
+  it('bounds 256 exceptional shared-auth states and keeps the admin catalog compact', () => {
+    const payload = buildTargetCatalog(
+      registry(256, { data: false, sql: false }, { authentication: 'BasicAuthentication' }),
+      {
+        admin: true,
+        runtimeAuth: () => ({ status: 'temporarily_unavailable', checkedAt: '2026-07-20T12:34:56.000Z' }),
+      },
+    ) as Record<string, any>;
+
+    expect(payload.admin.sharedAuthentication).toMatchObject({
+      targets: 256,
+      statusCounts: { temporarily_unavailable: 256 },
+      exceptionTotal: 256,
+      exceptionReturned: 8,
+      exceptionsTruncated: true,
+    });
+    expect(payload.admin.sharedAuthentication.exceptions).toHaveLength(8);
     expect(Buffer.byteLength(JSON.stringify(payload), 'utf8')).toBeLessThan(20_000);
   });
 
@@ -282,7 +386,9 @@ describe('multi-target MCP servers', () => {
       { method: 'tools/call', params: { name: 'SAPTargets', arguments: { query: 'target 1' } } },
       { authInfo: readAuth },
     );
-    expect(JSON.parse(reader.content[0].text)).toEqual([{ target: 'A01/001', description: 'SAP target 1' }]);
+    expect(JSON.parse(reader.content[0].text)).toEqual([
+      { target: 'A01/001', description: 'SAP target 1', identity: 'per-user' },
+    ]);
 
     const admin = await callTool(
       { method: 'tools/call', params: { name: 'SAPTargets', arguments: {} } },
@@ -291,8 +397,8 @@ describe('multi-target MCP servers', () => {
     const adminPayload = JSON.parse(admin.content[0].text);
     expect(adminPayload).toMatchObject({
       targets: [
-        { target: 'A00/000', description: 'SAP target 0' },
-        { target: 'A01/001', description: 'SAP target 1' },
+        { target: 'A00/000', description: 'SAP target 0', identity: 'per-user' },
+        { target: 'A01/001', description: 'SAP target 1', identity: 'per-user' },
       ],
       admin: {
         state: 'degraded',

@@ -65,6 +65,36 @@ describe('Logger', () => {
     expect(parsed.username).toBe('admin'); // Not sensitive
   });
 
+  it('suppresses SAP 401/403 response details in messages and nested debug context', () => {
+    const logger = new Logger('json', true);
+    const sentinel = 'SENTINEL_TECHNICAL_USER_AND_SECURITY_DETAIL';
+    logger.debug(`Read failed: ADT API error: status 401 at /sap/bc/adt/discovery: ${sentinel}`, {
+      error: `ADT API error: status 403 at /sap/bc/adt/repository/informationsystem: ${sentinel}`,
+      nested: { errors: [`ADT API error: status 403 at /sap/bc/adt/oo/classes: ${sentinel}`] },
+    });
+
+    const output = stderrSpy.mock.calls[0]?.[0] as string;
+    expect(output).not.toContain(sentinel);
+    const parsed = JSON.parse(output);
+    expect(parsed.message).toBe(
+      'Read failed: ADT API error: status 401 at /sap/bc/adt/discovery: [response details suppressed]',
+    );
+    expect(parsed.error).toBe(
+      'ADT API error: status 403 at /sap/bc/adt/repository/informationsystem: [response details suppressed]',
+    );
+    expect(parsed.nested.errors[0]).toBe(
+      'ADT API error: status 403 at /sap/bc/adt/oo/classes: [response details suppressed]',
+    );
+  });
+
+  it('keeps non-authentication ADT error details for diagnostics', () => {
+    const logger = new Logger('json', true);
+    logger.debug('request failed', { error: 'ADT API error: status 500 at /sap/bc/adt/test: useful detail' });
+
+    const output = stderrSpy.mock.calls[0]?.[0] as string;
+    expect(JSON.parse(output).error).toContain('useful detail');
+  });
+
   describe('Sink Architecture', () => {
     it('starts with stderr sink by default', () => {
       const logger = new Logger('text', false);

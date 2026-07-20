@@ -34,6 +34,13 @@ function baseDescriptorEnv(): Record<string, string> {
   return appModule?.properties as Record<string, string>;
 }
 
+function appModuleDescriptor(): Record<string, any> {
+  const mta = parse(readFileSync(join(ROOT, 'mta.yaml'), 'utf8')) as Record<string, any>;
+  const appModule = (mta.modules as Array<Record<string, any>>).find((module) => module.name === 'arc1-mcp-server');
+  expect(appModule, 'arc1-mcp-server module missing from mta.yaml').toBeDefined();
+  return appModule as Record<string, any>;
+}
+
 /** Base ∪ mtaext, the way multiapps-controller merges it: override wins, nothing is removed. */
 function resolveWithOverrides(overrides: Record<string, string> = {}) {
   for (const [key, value] of Object.entries({ ...baseDescriptorEnv(), ...overrides })) {
@@ -134,6 +141,52 @@ describe('shipped mta.yaml resolves through the config parser', () => {
     expect(config.ppEnabled).toBe(true);
     expect(process.env.SAP_BTP_DESTINATION).toBeUndefined();
     expect(config.cacheMode).toBe('none');
+  });
+
+  it('boots shared Basic multi-target only with its explicit opt-in and one shipped CF instance', () => {
+    const config = resolveWithOverrides({
+      ARC1_MULTI_TARGET_ENDPOINTS: 'true',
+      ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH: 'true',
+      ARC1_CACHE: 'none',
+      ARC1_TOOL_MODE: 'standard',
+      ARC1_UI: 'off',
+    });
+
+    expect(config.multiTargetEndpoints).toBe(true);
+    expect(config.multiTargetAllowBasicAuth).toBe(true);
+    expect(appModuleDescriptor().parameters?.instances).toBe(1);
+  });
+
+  it('excludes local agent credentials and generated documentation from the deployable module', () => {
+    const ignored = appModuleDescriptor()['build-parameters']?.ignore as string[] | undefined;
+
+    expect(ignored).toEqual(
+      expect.arrayContaining([
+        '.env.*',
+        '.npmrc',
+        '*service-key*.json',
+        '*.key',
+        '*.pem',
+        '*.p12',
+        '*.pfx',
+        '*.pse',
+        '*.jks',
+        '*.keystore',
+        '.codex/',
+        '.codex-tmp/',
+        '.cfignore',
+        '.cursorignore',
+        'artifacts/',
+        'btp/',
+        'docs_page/',
+        'site/',
+        'public/',
+        'Makefile_*.mta',
+        'mta.yaml',
+        'tsconfig*.json',
+        'xs-security.json',
+      ]),
+    );
   });
 
   it('falls back to the basic destination when an override blanks the PP destination', () => {

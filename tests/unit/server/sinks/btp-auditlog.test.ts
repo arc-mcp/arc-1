@@ -161,6 +161,7 @@ describe('BTP Audit Log Sink', () => {
       const stages = [
         'target_resolution_failed',
         'pp_exchange_failed',
+        'shared_auth_failed',
         'cloud_connector_access_denied',
         'sap_authentication_failed',
         'sap_authorization_failed',
@@ -196,6 +197,7 @@ describe('BTP Audit Log Sink', () => {
           level: 'info',
           event: 'tool_call_start',
           target,
+          identity: 'shared',
           tool: 'SAPRead',
           args: {},
         },
@@ -204,6 +206,7 @@ describe('BTP Audit Log Sink', () => {
           level: 'info',
           event: 'tool_call_end',
           target,
+          identity: 'shared',
           tool: 'SAPRead',
           durationMs: 1,
           status: 'success',
@@ -213,14 +216,25 @@ describe('BTP Audit Log Sink', () => {
           level: 'error',
           event: 'auth_pp_created',
           target,
+          identity: 'per-user',
           success: false,
           errorMessage: 'redacted upstream',
+        },
+        {
+          timestamp: '',
+          level: 'info',
+          event: 'auth_shared_created',
+          target,
+          user: 'TEST_USER',
+          tool: 'SAPRead',
+          identity: 'shared',
         },
         {
           timestamp: '',
           level: 'warn',
           event: 'auth_scope_denied',
           target,
+          identity: 'shared',
           tool: 'SAPQuery',
           requiredScope: 'sql',
           availableScopes: ['read'],
@@ -230,6 +244,7 @@ describe('BTP Audit Log Sink', () => {
           level: 'warn',
           event: 'safety_blocked',
           target,
+          identity: 'shared',
           operation: 'SAPWrite',
           reason: 'read-only multi-target v1',
         },
@@ -238,6 +253,7 @@ describe('BTP Audit Log Sink', () => {
           level: 'warn',
           event: 'mcp_rate_limited',
           target,
+          identity: 'shared',
           user: 'TEST_USER',
           tool: 'SAPRead',
           limitPerMinute: 120,
@@ -250,8 +266,10 @@ describe('BTP Audit Log Sink', () => {
       const auditCalls = fetchSpy.mock.calls.filter((call) => String(call[0]).includes('/audit-log/'));
       expect(auditCalls).toHaveLength(events.length);
       for (const auditCall of auditCalls) {
-        expect(String(auditCall[1]?.body)).toContain(target);
-        expect(String(auditCall[1]?.body)).not.toContain('undefined');
+        const body = String(auditCall[1]?.body);
+        expect(body).toContain(target);
+        expect(body).toContain('identity');
+        expect(body).not.toContain('undefined');
       }
     });
 

@@ -22,6 +22,10 @@ function buildReadOnlyRuntimeConfig(
   safety: ReturnType<typeof multiTargetSafety>,
   target?: TargetDescriptor,
 ): ServerConfig {
+  // The aggregate tool surface is intentionally authentication-neutral and keeps
+  // the existing strict-PP posture. Only a resolved Basic target switches the
+  // per-call SAP client to shared credentials.
+  const usesSharedBasicIdentity = target?.authentication === 'BasicAuthentication';
   return {
     ...DEFAULT_CONFIG,
     url: '',
@@ -49,11 +53,11 @@ function buildReadOnlyRuntimeConfig(
     systemType: 'onprem',
     xsuaaAuth: true,
     allowHttpNoAuth: false,
-    ppEnabled: true,
-    ppStrict: true,
+    ppEnabled: !usesSharedBasicIdentity,
+    ppStrict: !usesSharedBasicIdentity,
     ppStrictExplicit: true,
     ppAllowSharedCookies: false,
-    disableSaml2: false,
+    disableSaml2: usesSharedBasicIdentity,
     toolMode: 'standard',
     schemaNullableOptionals: base.schemaNullableOptionals,
     plugins: [],

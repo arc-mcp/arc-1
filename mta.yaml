@@ -29,7 +29,8 @@ description: ARC-1 — MCP Server for SAP ABAP Systems
 #   2. PrincipalPropagation destination (SAP_BTP_PP_DESTINATION) — used at
 #      runtime for per-user requests. Requires user JWT.
 # ARC-1 multi-target routes do not use this pair: each discovered system/client
-# is represented by one PrincipalPropagation destination.
+# is represented by one destination. PrincipalPropagation is recommended;
+# BasicAuthentication is a default-off, shared-identity read-only exception.
 #
 # For a single-target `/mcp` using SAP_BTP_DESTINATION, URL/client come from
 # that destination. Only set them manually when that single-target route does
@@ -80,10 +81,31 @@ modules:
       commands: []
       ignore:
         - .env
+        - .env.*
+        - .npmrc
+        - "*service-key*.json"
+        - "*.key"
+        - "*.pem"
+        - "*.p12"
+        - "*.pfx"
+        - "*.pse"
+        - "*.jks"
+        - "*.keystore"
         - .git/
+        - .claude-plugin/
+        - .cfignore
+        - .cursor-plugin/
+        - .cursorignore
+        - .dockerignore
+        - .gitignore
+        - .mcp.json.example
+        - .mcpbignore
+        - .worktreeinclude
         - src/
         - tests/
         - docs/
+        - docs_page/
+        - btp/
         - skills/
         - coverage/
         - test-results/
@@ -92,12 +114,33 @@ modules:
         - .husky/
         - .vscode/
         - .claude/
+        - .codex/
+        - .codex-tmp/
+        - artifacts/
+        - site/
+        - public/
         - mta_archives/
+        - Makefile_*.mta
         - mta-op-*/
         - node_modules/
         - scripts/
         - reports/
         - research/
+        - Dockerfile
+        - biome.json
+        - glama.json
+        - icon.png
+        - manifest*.yml
+        - mcp*.json
+        - mkdocs.yml
+        - mta.yaml
+        - mta-*.mtaext*
+        - release-please-config.json
+        - .release-please-manifest.json
+        - server.json
+        - tsconfig*.json
+        - vitest*.ts
+        - xs-security.json
     properties:
       SAP_TRANSPORT: http-streamable
       SAP_SYSTEM_TYPE: auto
@@ -116,9 +159,9 @@ modules:
       # SAP_BTP_PP_DESTINATION: my-pp-destination
       # Preserve the existing safe identity default for an optional
       # single-target `/mcp`. With no single-target destination these settings
-      # are inert; discovered multi-target routes always force strict PP. A
-      # shared-identity single-target deployment must opt out explicitly with
-      # SAP_PP_ENABLED: "false".
+      # are inert; discovered PrincipalPropagation targets always force strict
+      # PP. A shared-identity single-target deployment must opt out explicitly
+      # with SAP_PP_ENABLED: "false".
       SAP_PP_ENABLED: "true"
       SAP_PP_STRICT: "true"
 
@@ -129,6 +172,12 @@ modules:
       # destination changes do not require another MTAR build/deploy.
       # ARC1_MULTI_TARGET_ENDPOINTS: "true"
       # ARC1_CACHE: none
+      # Optional shared BasicAuthentication targets. Default false; PP remains
+      # recommended. Enabling this requires parameters.instances: 1 (the base
+      # descriptor already sets it) and a least-privileged technical SAP user.
+      # Basic User/Password rotation is hot; every other destination change
+      # remains restart-bound.
+      # ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH: "true"
       # Optional rate tuning for a small beta deployment; these values are not
       # required to enable ARC-1 multi-target mode.
       # ARC1_AUTH_RATE_LIMIT: "30"

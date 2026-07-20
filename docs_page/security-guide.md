@@ -198,6 +198,16 @@ Scopes are assigned to BTP users via role templates and role collections in the 
 
 When `SAP_PP_ENABLED=true`, each MCP user's JWT identity flows through to SAP via BTP Destination Service. For on-premise systems this routes through Connectivity Service + Cloud Connector principal propagation; for BTP ABAP Environment it uses a cloud-to-cloud destination such as `OAuth2UserTokenExchange`. SAP sees the real user identity for authorization checks and audit logging. JWT PP failures always fail closed. Separate strict PP and API-key instances are recommended. With explicit `SAP_PP_STRICT=false`, one supported instance can accept both: JWT calls use PP and API-key calls use the shared technical SAP identity.
 
+Experimental multi-target v1 recommends strict Principal Propagation per destination. It also has a
+separate, default-off `BasicAuthentication` exception for mutation-free on-premise targets. That
+exception requires `ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH=true`, an XSUAA-authenticated caller, one
+non-rolling CF process, a least-privileged technical SAP user, and a principal-type-None Cloud
+Connector mapping with internal HTTPS. SAP then sees only the shared technical user, so human
+attribution comes from ARC-1 audit records rather than SAP. It is never PP fallback and must not be
+used when per-user SAP authorization or horizontal scaling is required. See
+[ADR-0007](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0007-shared-basic-identity-for-read-only-multi-target.md)
+and [Multi-System Setup](multi-target-setup.md).
+
 ### Destination Service
 
 BTP Destination Service centralizes SAP connection details and credentials. ARC-1 resolves the destination at runtime. Use `SAP_BTP_DESTINATION` for shared-user destinations or the BTP ABAP `OAuth2UserTokenExchange` per-user destination. Use `SAP_BTP_PP_DESTINATION` when an on-premise shared startup destination and PrincipalPropagation destination must be separate.

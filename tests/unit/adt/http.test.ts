@@ -533,6 +533,43 @@ describe('AdtHttpClient', () => {
       });
     });
 
+    it('notifies exactly once when an HTML login page becomes a synthetic 401', async () => {
+      const onUnauthorized = vi.fn();
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(200, '<html><body>System Logon</body></html>', { 'content-type': 'text/html' }),
+      );
+
+      const client = new AdtHttpClient({ ...getDefaultConfig(), retryUnauthorized: false, onUnauthorized });
+      await expect(client.get('/sap/bc/adt/core/discovery')).rejects.toMatchObject({ statusCode: 401 });
+
+      expect(onUnauthorized).toHaveBeenCalledOnce();
+      expect(onUnauthorized).toHaveBeenCalledWith({ path: '/sap/bc/adt/core/discovery', statusCode: 401 });
+      expect(mockFetch).toHaveBeenCalledOnce();
+    });
+
+    it.each([401, 403])('suppresses HTTP %s response bodies from audit fields', async (statusCode) => {
+      const { logger } = await import('../../../src/server/logger.js');
+      const emitSpy = vi.spyOn(logger, 'emitAudit').mockImplementation(() => undefined);
+      const previousDebug = process.env.ARC1_LOG_HTTP_DEBUG;
+      process.env.ARC1_LOG_HTTP_DEBUG = 'true';
+      mockFetch.mockResolvedValueOnce(mockResponse(statusCode, 'SECRET_AUTH_RESPONSE_SENTINEL'));
+
+      const client = new AdtHttpClient({ ...getDefaultConfig(), retryUnauthorized: false });
+      await expect(client.get('/sap/bc/adt/core/discovery')).rejects.toThrow(AdtApiError);
+
+      const failure = emitSpy.mock.calls
+        .map((call) => call[0])
+        .find((event) => event.event === 'http_request' && event.statusCode === statusCode) as
+        | { errorBody?: string; responseBody?: string }
+        | undefined;
+      expect(failure?.errorBody).toBeUndefined();
+      expect(failure?.responseBody).toBe('[suppressed authentication response]');
+      expect(JSON.stringify(failure)).not.toContain('SECRET_AUTH_RESPONSE_SENTINEL');
+      if (previousDebug === undefined) delete process.env.ARC1_LOG_HTTP_DEBUG;
+      else process.env.ARC1_LOG_HTTP_DEBUG = previousDebug;
+      emitSpy.mockRestore();
+    });
+
     it('throws AdtApiError(401) when ADT path returns a DOCTYPE logon document', async () => {
       mockFetch.mockResolvedValueOnce(
         mockResponse(200, '<!DOCTYPE html>\n<html><head><title>System Logon</title></head></html>', {
@@ -1249,6 +1286,45 @@ describe('AdtHttpClient', () => {
   // ─── 401 Session Timeout Auto-Retry ────────────────────────────────
 
   describe('401 session timeout auto-retry', () => {
+    it('can disable the retry and emits one narrow final-401 callback', async () => {
+      const onUnauthorized = vi.fn();
+      mockFetch.mockResolvedValueOnce(mockResponse(401, 'Unauthorized'));
+
+      const client = new AdtHttpClient({ ...getDefaultConfig(), retryUnauthorized: false, onUnauthorized });
+      await expect(client.get('/path')).rejects.toThrow(AdtApiError);
+
+      expect(mockFetch).toHaveBeenCalledOnce();
+      expect(onUnauthorized).toHaveBeenCalledOnce();
+      expect(onUnauthorized).toHaveBeenCalledWith({ path: '/path', statusCode: 401 });
+    });
+
+    it('never treats a 401 body marker as a retryable DB-connection failure', async () => {
+      const onUnauthorized = vi.fn();
+      mockFetch.mockResolvedValueOnce(mockResponse(401, 'database connection is not open'));
+
+      const client = new AdtHttpClient({ ...getDefaultConfig(), retryUnauthorized: false, onUnauthorized });
+      await expect(client.get('/path')).rejects.toMatchObject({ statusCode: 401 });
+
+      expect(mockFetch).toHaveBeenCalledOnce();
+      expect(onUnauthorized).toHaveBeenCalledOnce();
+      expect(onUnauthorized).toHaveBeenCalledWith({ path: '/path', statusCode: 401 });
+    });
+
+    it('serializes retry-disabled requests and makes only one rejected SAP attempt', async () => {
+      const onUnauthorized = vi.fn();
+      mockFetch.mockResolvedValueOnce(mockResponse(401, 'Unauthorized'));
+
+      const client = new AdtHttpClient({ ...getDefaultConfig(), retryUnauthorized: false, onUnauthorized });
+      const results = await Promise.allSettled([client.get('/one'), client.get('/two'), client.get('/three')]);
+
+      expect(results.every((result) => result.status === 'rejected')).toBe(true);
+      expect(mockFetch).toHaveBeenCalledOnce();
+      expect(onUnauthorized).toHaveBeenCalledOnce();
+      expect(results.map((result) => (result.status === 'rejected' ? result.reason.statusCode : undefined))).toEqual([
+        401, 401, 401,
+      ]);
+    });
+
     it('retries GET on 401 after session reset', async () => {
       // GET → 401
       mockFetch.mockResolvedValueOnce(

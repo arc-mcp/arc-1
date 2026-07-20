@@ -19,7 +19,7 @@ import { AdtApiError } from '../adt/errors.js';
 import { shouldWarnPreStatefulRelease } from '../adt/release.js';
 import { deriveUserSafety, deriveUserSafetyFromProfile } from '../adt/safety.js';
 import { Semaphore } from '../adt/semaphore.js';
-import { getActionPolicy, hasRequiredScope } from '../authz/policy.js';
+import { hasRequiredScope } from '../authz/policy.js';
 import type { Cache } from '../cache/cache.js';
 import { CachingLayer } from '../cache/caching-layer.js';
 import { MemoryCache } from '../cache/memory.js';
@@ -30,7 +30,9 @@ import {
   setCachedDiscovery,
   setCachedFeatures,
 } from '../handlers/feature-cache.js';
+import type { ToolResult } from '../handlers/shared.js';
 import { getToolDefinitions, type ToolDefinition, type ToolDefinitionOptions } from '../handlers/tools.js';
+import { logAuthSummary } from './auth-summary.js';
 import { API_KEY_PROFILES } from './config.js';
 import { generateRequestId } from './context.js';
 import { isActionDenied } from './deny-actions.js';
@@ -38,11 +40,13 @@ import { canonicalDestinationUrl, opaqueDestinationValue } from './destination-d
 import {
   DestinationRegistry,
   duplicateSingleTargetIds,
+  sharedBasicSingleTargetConflicts,
   type TargetDescriptor,
   targetConnectionFingerprint,
 } from './destination-registry.js';
 import { authLibLogger, initLogger, logger } from './logger.js';
 import { createMcpRateLimiter, type McpRateLimiter } from './mcp-rate-limit.js';
+import { handleSharedBasicCall } from './multi-target-basic-auth.js';
 import { ensureMultiTargetFeatureProbe, hasAuthorizationLimitedFeatureEvidence } from './multi-target-feature-state.js';
 import {
   buildAggregateToolSurfaceConfig,
@@ -51,15 +55,17 @@ import {
   validateTargetDrift,
 } from './multi-target-runtime.js';
 import {
-  MULTI_TARGET_SERVER_INSTRUCTIONS,
+  buildMultiTargetServerInstructions,
   type MultiTargetErrorBuilder,
   type MultiTargetServerOptions,
   prepareMultiTargetCall,
   structuredToolError,
 } from './multi-target-server.js';
+import { MultiTargetSharedAuthState } from './multi-target-shared-auth-state.js';
 import { injectTargetSchema, multiTargetToolDefinitions, sapTargetsDefinition } from './multi-target-tools.js';
 import { loadPlugins } from './plugin-loader.js';
 import { FileSink } from './sinks/file.js';
+import { filterToolsByAuthScope } from './tool-auth.js';
 import type { ServerConfig } from './types.js';
 import { startLocalUiServer, type UiServerDeps } from './ui.js';
 import { UiLogBufferSink } from './ui-log-buffer.js';
@@ -138,149 +144,51 @@ export function getConfiguredToolDefinitions(
   return getToolDefinitions(config, textSearchAvailable, resolvedFeatures, getToolDefinitionOptions(config, client));
 }
 
+export { logAuthSummary } from './auth-summary.js';
+export { filterToolsByAuthScope } from './tool-auth.js';
+
+/** True only when bare /mcp can actually dispatch through resolved shared destination credentials. */
+export function canUseSharedSingleTargetCredentials(
+  config: Pick<ServerConfig, 'apiKeys' | 'ppEnabled' | 'ppStrict' | 'ppStrictExplicit'>,
+  username: string | undefined,
+  password: string | undefined,
+): boolean {
+  const nonJwtSharedCallAllowed = (config.apiKeys?.length ?? 0) > 0 && !(config.ppStrictExplicit && config.ppStrict);
+  return !!(username && password) && (!config.ppEnabled || nonJwtSharedCallAllowed);
+}
+
+export interface SingleTargetOverlapState {
+  readonly usesSharedBasic: boolean;
+  readonly connectionFingerprint?: string;
+}
+
 /**
- * Prune a tool's action OR type enum (or both) based on the user's scopes and
- * the server's denyActions list. Uses ACTION_POLICY as the single source of truth.
+ * Describe the final bare-/mcp SAP connection for multi-target overlap checks.
  *
- * - For action-bearing tools (SAPWrite, SAPManage, SAPLint, SAPTransport, SAPGit, ...):
- *   filter the `action` enum to entries the user can actually invoke.
- * - For SAPRead (which uses `type` not `action`): filter the `type` enum. The key one is
- *   TABLE_CONTENTS, which requires the `data` scope — a read-scoped user sees SAPRead
- *   without TABLE_CONTENTS in the type enum.
+ * This runs after service-key/destination resolution so legacy SAP_URL credentials
+ * and resolved BTP destinations follow the same physical-connection comparison.
  */
-function pruneToolByPolicy(tool: ToolDefinition, scopes: string[], denyActions: string[]): ToolDefinition {
-  const schema = tool.inputSchema as Record<string, unknown>;
-  const properties = (schema.properties as Record<string, unknown> | undefined) ?? {};
-
-  // Determine which enum this tool uses: SAPRead uses `type`; others use `action`.
-  const enumField = tool.name === 'SAPRead' ? 'type' : 'action';
-  const enumDef = (properties[enumField] as Record<string, unknown> | undefined) ?? {};
-  const enumValues = Array.isArray(enumDef.enum) ? enumDef.enum.map(String) : null;
-
-  if (!enumValues) return tool; // no pruning needed
-
-  const filtered = enumValues.filter((value) => {
-    const policy = getActionPolicy(tool.name, value);
-    if (!policy) return true; // unknown action/type — let it through and fail at runtime
-    if (!hasRequiredScope(scopes, policy.scope)) return false;
-    if (isActionDenied(tool.name, value, denyActions)) return false;
-    return true;
+export function resolveSingleTargetOverlapState(
+  config: Pick<
+    ServerConfig,
+    'apiKeys' | 'client' | 'password' | 'ppEnabled' | 'ppStrict' | 'ppStrictExplicit' | 'url' | 'username'
+  >,
+  proxy: Pick<BTPProxyConfig, 'locationId'> | undefined,
+  hasBearerTokenProvider: boolean,
+): SingleTargetOverlapState {
+  const canonicalUrl = canonicalDestinationUrl(config.url);
+  const connectionFingerprint = canonicalUrl
+    ? targetConnectionFingerprint({
+        urlFingerprint: opaqueDestinationValue(canonicalUrl),
+        client: config.client,
+        cloudConnectorLocationIdFingerprint: proxy?.locationId ? opaqueDestinationValue(proxy.locationId) : undefined,
+      })
+    : undefined;
+  return Object.freeze({
+    usesSharedBasic:
+      !hasBearerTokenProvider && canUseSharedSingleTargetCredentials(config, config.username, config.password),
+    ...(connectionFingerprint ? { connectionFingerprint } : {}),
   });
-
-  return {
-    ...tool,
-    inputSchema: {
-      ...schema,
-      properties: {
-        ...properties,
-        [enumField]: {
-          ...enumDef,
-          enum: filtered,
-        },
-      },
-    },
-  };
-}
-
-function hasNonEmptyActionOrTypeEnum(tool: ToolDefinition): boolean {
-  const schema = tool.inputSchema as Record<string, unknown>;
-  const properties = (schema.properties as Record<string, unknown> | undefined) ?? {};
-  const enumField = tool.name === 'SAPRead' ? 'type' : 'action';
-  const enumDef = (properties[enumField] as Record<string, unknown> | undefined) ?? {};
-  if (!Array.isArray(enumDef.enum)) return true;
-  return enumDef.enum.length > 0;
-}
-
-/**
- * Filter tools by user scope + server deny list.
- *
- * Tools are included when the user has the tool-level scope, OR when any action/type
- * in the tool has a scope the user satisfies (in which case the enum is pruned to
- * just those action/types). After pruning, tools with empty action/type enums are
- * removed entirely.
- */
-export function filterToolsByAuthScope(
-  tools: ToolDefinition[],
-  scopes: string[],
-  denyActions: string[] = [],
-): ToolDefinition[] {
-  return tools
-    .filter((tool) => {
-      // Tool-level visibility: if the whole tool is tool-level-denied, hide it.
-      if (isActionDenied(tool.name, undefined, denyActions)) return false;
-      // Must have scope for at least the tool-level default — otherwise no chance any action succeeds.
-      const toolPolicy = getActionPolicy(tool.name);
-      if (toolPolicy && !hasRequiredScope(scopes, toolPolicy.scope)) {
-        // Still allow if any specific action has a scope the user HAS (e.g., SAPManage default='write'
-        // but flp_list_* have scope='read' — a read user should see SAPManage with pruned actions).
-        const schema = tool.inputSchema as Record<string, unknown>;
-        const properties = (schema.properties as Record<string, unknown> | undefined) ?? {};
-        const enumField = tool.name === 'SAPRead' ? 'type' : 'action';
-        const enumDef = (properties[enumField] as Record<string, unknown> | undefined) ?? {};
-        const enumValues = Array.isArray(enumDef.enum) ? enumDef.enum.map(String) : null;
-        if (!enumValues) return false;
-        const anyAllowed = enumValues.some((v) => {
-          const p = getActionPolicy(tool.name, v);
-          return p && hasRequiredScope(scopes, p.scope) && !isActionDenied(tool.name, v, denyActions);
-        });
-        if (!anyAllowed) return false;
-      }
-      return true;
-    })
-    .map((tool) => pruneToolByPolicy(tool, scopes, denyActions))
-    .filter(hasNonEmptyActionOrTypeEnum);
-}
-
-export function logAuthSummary(config: ServerConfig): void {
-  const mcpMethods: string[] = [];
-  const hasApiKeys = !!config.apiKeys?.length;
-  if (hasApiKeys) mcpMethods.push('api-keys');
-  if (config.oidcIssuer && config.oidcAudience) mcpMethods.push('oidc');
-  if (config.xsuaaAuth) mcpMethods.push('xsuaa');
-  if (mcpMethods.length === 0) mcpMethods.push('none');
-
-  const hasCookie = !!(config.cookieFile || config.cookieString);
-  const hasBearer = !!(config.btpServiceKey || config.btpServiceKeyFile);
-  const hasDestination = !!process.env.SAP_BTP_DESTINATION;
-  const hasBasic = !!(config.username && config.password);
-
-  let sapMethod = 'none';
-  if (config.multiTargetEndpoints) {
-    sapMethod = hasDestination ? 'destination+pp (single-target + multi-target)' : 'destination+pp (multi-target)';
-  } else if (config.ppEnabled) {
-    if (hasDestination) sapMethod = 'destination+pp';
-    else if (hasCookie) sapMethod = 'cookie+pp';
-    else sapMethod = 'pp';
-  } else if (hasBearer) {
-    sapMethod = 'bearer';
-  } else if (hasDestination) {
-    sapMethod = 'destination';
-  } else if (hasBasic && hasCookie) {
-    sapMethod = 'basic+cookie';
-  } else if (hasCookie) {
-    sapMethod = 'cookie';
-  } else if (hasBasic) {
-    sapMethod = 'basic';
-  }
-
-  const strictPpOnly = config.ppEnabled && config.ppStrictExplicit && config.ppStrict;
-  const mixedSapIdentity = config.ppEnabled && hasApiKeys && !strictPpOnly;
-  const scope = mixedSapIdentity ? 'mixed: JWT per-user, API keys shared' : config.ppEnabled ? 'per-user' : 'shared';
-  const samlSuffix = config.disableSaml2 ? ' disable-saml=on' : '';
-  logger.info(`auth: MCP=[${mcpMethods.join(',')}] SAP=${sapMethod} (${scope})${samlSuffix}`);
-
-  if (mixedSapIdentity) {
-    logger.warn(
-      'auth topology: PP and API-key calls use different SAP identities. Mixed mode is supported. ' +
-        'Separate instances are recommended for clearer SAP identity and audit boundaries; set SAP_PP_STRICT=true ' +
-        'on the PP instance when using that topology.',
-    );
-  } else if (strictPpOnly && hasApiKeys) {
-    logger.warn(
-      'auth topology: ARC1_API_KEYS is configured but SAP_PP_STRICT=true rejects API-key MCP tool calls. ' +
-        'Set SAP_PP_STRICT=false for supported mixed operation, or remove/move the keys for a strict PP topology.',
-    );
-  }
 }
 
 /** Build the base ADT client config (without per-user auth) */
@@ -491,10 +399,16 @@ export function applyPerUserAuthTokens(
  * Returns a promise that resolves once probe results are stored in cachedFeatures.
  * In PP mode (when btpConfig is available for per-user client creation), auth failures
  * (401/403) on textSearch are treated as "unknown" so the tool schema doesn't hide
- * source_code from users who might have authorization.  Without btpConfig, PP cannot
- * create per-user clients, so shared-client auth failures are definitive.
+ * source_code from users who might have authorization. A shared Basic target is the narrow
+ * exception: every caller uses the same reviewed SAP identity, so authorization-limited
+ * evidence is definitive for that credential generation and may be cached.
  */
-async function probeClientFeatures(config: ServerConfig, client: AdtClient, btpConfig?: BTPConfig): Promise<void> {
+async function probeClientFeatures(
+  config: ServerConfig,
+  client: AdtClient,
+  btpConfig?: BTPConfig,
+  cacheAuthorizationLimitedEvidence = false,
+): Promise<void> {
   const { defaultFeatureConfig } = await import('../adt/config.js');
   const { probeFeatures } = await import('../adt/features.js');
   const fc = defaultFeatureConfig();
@@ -508,13 +422,19 @@ async function probeClientFeatures(config: ServerConfig, client: AdtClient, btpC
   fc.ui5repo = config.featureUi5Repo as 'auto' | 'on' | 'off';
   fc.flp = config.featureFlp as 'auto' | 'on' | 'off';
   const features = await probeFeatures(client.http, fc, config.systemType);
-  if (config.ppEnabled && btpConfig && features.textSearch && !features.textSearch.available) {
+  if (
+    !cacheAuthorizationLimitedEvidence &&
+    config.ppEnabled &&
+    btpConfig &&
+    features.textSearch &&
+    !features.textSearch.available
+  ) {
     const reason = features.textSearch.reason ?? '';
     if (reason.includes('authorization') || reason.includes('401') || reason.includes('403')) {
       features.textSearch = undefined;
     }
   }
-  if (config.targetId && hasAuthorizationLimitedFeatureEvidence(features)) {
+  if (config.targetId && !cacheAuthorizationLimitedEvidence && hasAuthorizationLimitedFeatureEvidence(features)) {
     throw new Error(
       'Multi-target feature evidence remains unknown because one or more probes were authorization-limited.',
     );
@@ -743,7 +663,10 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
   } = options;
   const server = new Server(
     { name: 'arc-1', version: VERSION },
-    { capabilities: { tools: {} }, instructions: multiTarget ? MULTI_TARGET_SERVER_INSTRUCTIONS : SERVER_INSTRUCTIONS },
+    {
+      capabilities: { tools: {} },
+      instructions: multiTarget ? buildMultiTargetServerInstructions(multiTarget) : SERVER_INSTRUCTIONS,
+    },
   );
   const apiKeyProvenanceVerifier = createConfiguredApiKeyVerifier(config);
 
@@ -889,6 +812,76 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
     const apiKeyProfile = await configuredApiKeyProfile(apiKeyProvenanceVerifier, token);
     const isApiKey = apiKeyProfile !== undefined;
     const isJwt = !isApiKey && typeof token === 'string' && token.split('.').length === 3;
+
+    const dispatchWithClient = async (
+      resolvedClient: AdtClient,
+      perUserClient: boolean,
+      postDispatchResult?: () => ToolResult | undefined,
+    ) => {
+      if (multiTarget && btpConfig) {
+        try {
+          const targetKey = activeConfig.targetId;
+          const cacheAuthorizationLimitedEvidence = selectedTarget?.authentication === 'BasicAuthentication';
+          await ensureMultiTargetFeatureProbe(
+            targetKey,
+            !!targetKey && !!getCachedFeatures(targetKey),
+            () => probeClientFeatures(activeConfig, resolvedClient, btpConfig, cacheAuthorizationLimitedEvidence),
+            () => setCachedFeatures(undefined, targetKey),
+          );
+        } catch {
+          // Feature evidence stays unknown. The requested operation still gets one direct attempt.
+        }
+      }
+
+      const featureKey = activeConfig.targetId ?? activeConfig.destinationName;
+      resolvedClient.http.setDiscoveryMap(getCachedDiscovery(featureKey));
+
+      let effectiveClient = resolvedClient;
+      if (apiKeyProfile) {
+        const profile = API_KEY_PROFILES[apiKeyProfile];
+        if (profile) {
+          const effectiveSafety = deriveUserSafetyFromProfile(resolvedClient.safety, profile.safety);
+          effectiveClient = resolvedClient.withSafety(effectiveSafety);
+        }
+      } else if (extra.authInfo?.scopes) {
+        const effectiveSafety = deriveUserSafety(resolvedClient.safety, extra.authInfo.scopes);
+        effectiveClient = resolvedClient.withSafety(effectiveSafety);
+      }
+      effectiveClient.http.setDiscoveryMap(getCachedDiscovery(featureKey));
+
+      const result = await handleToolCall(
+        effectiveClient,
+        activeConfig,
+        toolName,
+        args,
+        extra.authInfo,
+        server,
+        multiTarget ? undefined : cachingLayer,
+        perUserClient,
+        multiTargetMcpRateLimitConsumed ? undefined : mcpRateLimiter,
+        requestId,
+        postDispatchResult,
+      );
+      return { ...result } as Record<string, unknown>;
+    };
+
+    if (selectedTarget?.authentication === 'BasicAuthentication') {
+      return handleSharedBasicCall({
+        isJwt,
+        btpConfig,
+        sharedAuthState: multiTarget?.sharedAuthState,
+        instanceConfig: multiTarget?.instanceConfig ?? activeConfig,
+        target: selectedTarget,
+        requestId,
+        user: (extra.authInfo?.extra?.userName ?? extra.authInfo?.clientId) as string | undefined,
+        clientId: extra.authInfo?.clientId,
+        toolName,
+        multiError,
+        buildClientConfig: (proxy) => buildAdtConfig(activeConfig, proxy, undefined, undefined, adtSemaphore),
+        dispatch: (basicClient, postDispatchResult) => dispatchWithClient(basicClient, false, postDispatchResult),
+      });
+    }
+
     if (activeConfig.ppEnabled && isJwt) {
       const ppUser = (extra.authInfo?.extra?.userName ?? extra.authInfo?.clientId) as string | undefined;
       const ppDest = resolvePpDestinationName(activeConfig) ?? '';
@@ -902,6 +895,7 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
           user: ppUser,
           destination: activeConfig.targetId ? undefined : ppDest,
           target: activeConfig.targetId,
+          identity: activeConfig.targetId ? 'per-user' : undefined,
           success: false,
           errorMessage: errMsg,
         });
@@ -938,6 +932,7 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
           user: ppUser,
           destination: activeConfig.targetId ? undefined : ppDest,
           target: activeConfig.targetId,
+          identity: activeConfig.targetId ? 'per-user' : undefined,
           success: true,
         });
       } catch (err) {
@@ -950,6 +945,7 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
           user: ppUser,
           destination: activeConfig.targetId ? undefined : ppDest,
           target: activeConfig.targetId,
+          identity: activeConfig.targetId ? 'per-user' : undefined,
           success: false,
           errorMessage: errMsg,
         });
@@ -1003,55 +999,7 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
         : structuredToolError('PP_SETUP_FAILED', 'A per-user SAP client could not be created.', { retryable: true });
     }
 
-    if (multiTarget && btpConfig) {
-      try {
-        const targetKey = activeConfig.targetId;
-        await ensureMultiTargetFeatureProbe(
-          targetKey,
-          !!targetKey && !!getCachedFeatures(targetKey),
-          () => probeClientFeatures(activeConfig, client, btpConfig),
-          () => setCachedFeatures(undefined, targetKey),
-        );
-      } catch {
-        // Feature evidence stays unknown. The requested operation still gets one direct attempt.
-      }
-    }
-
-    // Inject startup discovery MIME map (shared for default and per-user clients).
-    const featureKey = activeConfig.targetId ?? activeConfig.destinationName;
-    client.http.setDiscoveryMap(getCachedDiscovery(featureKey));
-
-    // Per-request safety: merge server ceiling with per-user policy.
-    //   - API-key path: authenticated configured key — intersect server with the key profile's partial SafetyConfig.
-    //   - XSUAA/OIDC path: derive from scopes only (server ceiling, scopes can only tighten).
-    // API-key intersection is stricter — profile can narrow allowedPackages / feature flags
-    // that scopes alone cannot (scopes don't encode allowedPackages, etc.).
-    let effectiveClient = client;
-    if (apiKeyProfile) {
-      const profile = API_KEY_PROFILES[apiKeyProfile];
-      if (profile) {
-        const effectiveSafety = deriveUserSafetyFromProfile(client.safety, profile.safety);
-        effectiveClient = client.withSafety(effectiveSafety);
-      }
-    } else if (extra.authInfo?.scopes) {
-      const effectiveSafety = deriveUserSafety(client.safety, extra.authInfo.scopes);
-      effectiveClient = client.withSafety(effectiveSafety);
-    }
-    effectiveClient.http.setDiscoveryMap(getCachedDiscovery(featureKey));
-
-    const result = await handleToolCall(
-      effectiveClient,
-      activeConfig,
-      toolName,
-      args,
-      extra.authInfo,
-      server,
-      multiTarget ? undefined : cachingLayer,
-      isPerUserClient,
-      multiTargetMcpRateLimitConsumed ? undefined : mcpRateLimiter,
-      requestId,
-    );
-    return { ...result } as Record<string, unknown>;
+    return dispatchWithClient(client, isPerUserClient);
   });
 
   return server;
@@ -1212,7 +1160,6 @@ export async function createAndStartServer(
   // Resolve the optional single-target destination. It remains independent from discovered targets.
   let btpProxy: BTPProxyConfig | undefined;
   let btpConfig: BTPConfig | undefined;
-  let singleTargetConnectionFingerprint: string | undefined;
   const btpDestination = process.env.SAP_BTP_DESTINATION;
   if (btpDestination) {
     const { resolveBTPDestination, parseVCAPServices } = await import('@arc-mcp/xsuaa-auth/btp');
@@ -1222,16 +1169,6 @@ export async function createAndStartServer(
     config.password = resolved.password;
     config.client = resolved.client;
     btpProxy = resolved.proxy ?? undefined;
-    const canonicalSingleTargetUrl = canonicalDestinationUrl(resolved.url);
-    if (canonicalSingleTargetUrl) {
-      singleTargetConnectionFingerprint = targetConnectionFingerprint({
-        urlFingerprint: opaqueDestinationValue(canonicalSingleTargetUrl),
-        client: resolved.client,
-        cloudConnectorLocationIdFingerprint: resolved.proxy?.locationId
-          ? opaqueDestinationValue(resolved.proxy.locationId)
-          : undefined,
-      });
-    }
 
     // Keep btpConfig for per-user destination lookup (principal propagation)
     if (config.ppEnabled) {
@@ -1244,12 +1181,16 @@ export async function createAndStartServer(
 
     logger.info('BTP destination resolved', {
       destination: btpDestination,
-      url: resolved.url,
-      user: resolved.username,
+      hasUrl: !!resolved.url,
+      hasSharedCredentials: !!(resolved.username && resolved.password),
       hasProxy: !!btpProxy,
       ppEnabled: config.ppEnabled,
     });
   }
+
+  const singleTargetOverlap = resolveSingleTargetOverlapState(config, btpProxy, !!bearerTokenProvider);
+  const singleTargetConnectionFingerprint = singleTargetOverlap.connectionFingerprint;
+  const singleTargetUsesSharedBasic = singleTargetOverlap.usesSharedBasic;
 
   // Destination-discovered multi-target snapshot. Discovery failure degrades only the new routes.
   let registry: DestinationRegistry | undefined;
@@ -1288,13 +1229,38 @@ export async function createAndStartServer(
       [btpDestination, process.env.SAP_BTP_PP_DESTINATION],
       singleTargetConnectionFingerprint,
     );
+    const duplicateSharedBasicTargets = sharedBasicSingleTargetConflicts(
+      registry,
+      // Only SAP_BTP_DESTINATION can supply the bare /mcp shared credentials.
+      // SAP_BTP_PP_DESTINATION belongs exclusively to the JWT PP path and may
+      // legitimately name a discovered target without creating a shared-identity overlap.
+      btpDestination,
+      singleTargetConnectionFingerprint,
+      singleTargetUsesSharedBasic,
+    );
+    if (duplicateSharedBasicTargets.length > 0) {
+      throw new Error(
+        `A shared Basic SAP connection cannot be exposed through both /mcp and multi-target routes in v1 (${duplicateSharedBasicTargets.join(', ')}). Remove one exposure and restart ARC-1.`,
+      );
+    }
     if (duplicateSingleTargets.length > 0) {
       logger.warn(
         'The single-target /mcp connection is also exposed by discovered multi-target routes. Both remain active, but their policies can differ; verify that this duplicate exposure is intentional.',
         { targets: duplicateSingleTargets },
       );
     }
+    if (config.multiTargetAllowBasicAuth) {
+      logger.warn(
+        'Experimental multi-target Basic authentication is enabled: Basic targets use a shared SAP identity, ' +
+          'are visible to all read-scoped users, remain mutation-free, and require exactly one CF app instance.',
+      );
+    }
   }
+
+  // One process-wide guard shared by every fresh pinned and aggregate MCP Server.
+  // HTTP creates a Server per request, so constructing this inside createServer()
+  // would defeat lockout protection across requests and endpoint styles.
+  const sharedAuthState = config.multiTargetEndpoints ? new MultiTargetSharedAuthState() : undefined;
 
   // ─── Layer 3: shared SAP-bound Semaphore (server-wide cap) ────────
   // One Semaphore for the whole process. Threaded into the shared startup client AND
@@ -1370,7 +1336,7 @@ export async function createAndStartServer(
             btpConfig,
             adtSemaphore,
             mcpRateLimiter,
-            multiTarget: { mode: 'aggregate', registry, instanceConfig: config },
+            multiTarget: { mode: 'aggregate', registry, instanceConfig: config, sharedAuthState },
           })
       : undefined;
   const serveSingleTargetEndpoint = shouldStartSingleTarget;
@@ -1475,7 +1441,7 @@ export async function createAndStartServer(
                 btpConfig,
                 adtSemaphore,
                 mcpRateLimiter,
-                multiTarget: { mode: 'pinned', registry, instanceConfig: config, target },
+                multiTarget: { mode: 'pinned', registry, instanceConfig: config, target, sharedAuthState },
               });
             },
           }

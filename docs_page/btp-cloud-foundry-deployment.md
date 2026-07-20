@@ -451,9 +451,11 @@ For a single-target on-premise Principal Propagation deployment, ARC-1 uses two 
 
 **Why two destinations?** A PrincipalPropagation destination has no User/Password. At startup (no user JWT available), the SDK's `getDestination()` would fail for PP destinations. The BasicAuth destination supports system-level startup operations and, when `SAP_PP_STRICT=false`, API-key calls in a supported mixed instance. With the base MTA's explicit `SAP_PP_STRICT=true`, MCP tool callers cannot use it as a shared identity.
 
-Experimental multi-target v1 instead uses exactly one Principal Propagation destination per
-SID/client, performs no technical-user startup probe, and does not require a BasicAuthentication
-partner. See [Multi-System Setup](multi-target-setup.md#3-create-one-destination-per-sidclient).
+Experimental multi-target v1 instead uses exactly one destination per SID/client and performs no
+technical-user startup probe. PrincipalPropagation is recommended. A separately enabled
+BasicAuthentication destination is the shared-identity, mutation-free exception; neither mode
+requires a paired partner destination. See
+[Multi-System Setup](multi-target-setup.md#3-create-one-destination-per-sidclient).
 
 The destinations may point to the same SAP system but can differ in:
 - Authentication type (BasicAuth vs PP)
@@ -684,8 +686,9 @@ exposes every system through a single tool set + a `system` parameter (one tool 
 ARC-1 also has an experimental, default-off, mutation-free mode that discovers marked subaccount
 destinations inside one CF application. It is useful when tens or hundreds of read-only SAP clients
 make one app per client operationally expensive. See [Multi-System Setup](multi-target-setup.md) and
-[Multi-Target Administration](multi-target-administration.md) for its strict PP, XSUAA, cache,
-authorization, diagnostics, and data/SQL limitations.
+[Multi-Target Administration](multi-target-administration.md) for its recommended strict PP model,
+default-off shared-Basic exception, XSUAA, one-instance, cache, authorization, diagnostics, and
+data/SQL limitations.
 
 ## SAP Documentation References
 

@@ -527,6 +527,7 @@ export interface MultiTargetSapFailure {
     | 'SAP_REQUEST_FAILED';
   event?: 'cloud_connector_access_denied' | 'sap_authentication_failed' | 'sap_authorization_failed';
   message: string;
+  retryable?: boolean;
 }
 
 /** Match only the verified plain-text response from the BTP Connectivity proxy. */
@@ -544,6 +545,7 @@ export function classifyMultiTargetSapError(
   error: AdtApiError | AdtNetworkError,
   target: string,
   toolName: string,
+  identity: 'per-user' | 'shared' = 'per-user',
 ): MultiTargetSapFailure | undefined {
   if (error instanceof AdtNetworkError) {
     return {
@@ -555,7 +557,10 @@ export function classifyMultiTargetSapError(
     return {
       code: 'CLOUD_CONNECTOR_ACCESS_DENIED',
       event: 'cloud_connector_access_denied',
-      message: `Cloud Connector does not expose or allow target ${target}. Ask the BTP/Cloud Connector administrator to make the destination virtual host and port match an HTTPS/X509_GENERAL mapping and allow the required ADT paths, then try again now.`,
+      message:
+        identity === 'shared'
+          ? `Cloud Connector does not expose or allow target ${target}. Ask the BTP/Cloud Connector administrator to make the destination virtual host and port match the reviewed Basic OnPremise mapping and allow the required ADT paths, then try again now.`
+          : `Cloud Connector does not expose or allow target ${target}. Ask the BTP/Cloud Connector administrator to make the destination virtual host and port match the Principal Propagation HTTPS/X.509 mapping and allow the required ADT paths, then try again now.`,
     };
   }
   const classification = classifySapDomainError(error.statusCode, error.responseBody, error.path);
@@ -570,14 +575,29 @@ export function classifyMultiTargetSapError(
     return {
       code: 'SAP_AUTHORIZATION_DENIED',
       event: 'sap_authorization_failed',
-      message: `SAP denied this operation for the propagated user on target ${target}. Grant the required SAP authorization, then try again now.`,
+      message:
+        identity === 'shared'
+          ? `SAP denied this operation for the shared technical user on target ${target}. Ask an SAP administrator to grant only the required read authorization before trying again.`
+          : `SAP denied this operation for the propagated user on target ${target}. Grant the required SAP authorization, then try again now.`,
+      retryable: identity !== 'shared',
     };
   }
-  if (error.statusCode === 401 || error.statusCode === 403) {
+  if (error.statusCode === 401 || (error.statusCode === 403 && identity === 'per-user')) {
     return {
       code: 'SAP_AUTHENTICATION_FAILED',
       event: 'sap_authentication_failed',
-      message: `SAP authentication failed for target ${target} after principal propagation. Fix the user mapping, login, or PP setup, then try again now.`,
+      message:
+        identity === 'shared'
+          ? `SAP rejected the shared technical credentials for target ${target}. ARC-1 will not retry this credential generation for 15 minutes to reduce account-lockout risk. An administrator should update the destination User/Password; an unchanged credential may be attempted once again after the block expires or ARC-1 restarts.`
+          : `SAP authentication failed for target ${target} after principal propagation. Fix the user mapping, login, or PP setup, then try again now.`,
+      retryable: identity !== 'shared',
+    };
+  }
+  if (error.statusCode === 403) {
+    return {
+      code: 'SAP_REQUEST_FAILED',
+      message: `Target ${target} returned an unclassified forbidden response while running ${toolName}. ARC-1 did not treat it as a rejected shared credential generation. Check SAP service authorization and Cloud Connector configuration, then try again after repair.`,
+      retryable: true,
     };
   }
   if (error.isServerError) {
@@ -608,6 +628,8 @@ export async function handleToolCall(
   isPerUserClient?: boolean,
   mcpRateLimiter?: McpRateLimiter,
   requestId?: string,
+  /** Request-local guard that may replace a handler result before the terminal audit event. */
+  postDispatchResult?: () => ToolResult | undefined,
 ): Promise<ToolResult> {
   const reqId = requestId ?? generateRequestId();
   const start = Date.now();
@@ -615,6 +637,7 @@ export async function handleToolCall(
   // Build user context for audit logging
   const user = authInfo?.extra?.userName as string | undefined;
   const clientId = authInfo?.clientId;
+  const identity = config.targetId ? (config.ppEnabled ? 'per-user' : 'shared') : undefined;
   // For plugin (Custom_*) tools, tag every audit event with the contributing plugin (spec §9).
   const pluginName = getToolRegistry().get(toolName)?.pluginName;
 
@@ -625,6 +648,7 @@ export async function handleToolCall(
     event: 'tool_call_start',
     destination: config.targetId ? undefined : config.destinationName,
     target: config.targetId,
+    identity,
     requestId: reqId,
     user,
     clientId,
@@ -655,6 +679,8 @@ export async function handleToolCall(
         requestId: reqId,
         clientId,
         user: userKey,
+        target: config.targetId,
+        identity,
         tool: toolName,
         limitPerMinute: decision.limitPerMinute,
         retryAfterMs: decision.retryAfterMs,
@@ -710,6 +736,8 @@ export async function handleToolCall(
         requestId: reqId,
         user,
         clientId,
+        target: config.targetId,
+        identity,
         tool: toolName,
         requiredScope: policy.scope,
         availableScopes: authInfo.scopes,
@@ -733,6 +761,8 @@ export async function handleToolCall(
       requestId: reqId,
       user,
       clientId,
+      target: config.targetId,
+      identity,
       operation: `${toolName}${actionOrType ? `.${actionOrType}` : ''}`,
       reason: 'Action denied by SAP_DENY_ACTIONS',
     });
@@ -759,6 +789,8 @@ export async function handleToolCall(
         requestId: reqId,
         user,
         clientId,
+        target: config.targetId,
+        identity,
         operation: toolName,
         reason: 'Input validation failed',
       });
@@ -775,6 +807,7 @@ export async function handleToolCall(
       tool: toolName,
       destination: config.targetId ? undefined : config.destinationName,
       target: config.targetId,
+      identity,
     },
     async () => {
       try {
@@ -805,6 +838,9 @@ export async function handleToolCall(
           result = await entry.invoke(dispatchCtx);
         }
 
+        const guardedResult = postDispatchResult?.();
+        if (guardedResult) result = guardedResult;
+
         const durationMs = Date.now() - start;
         const fullText = result.content.map((c) => c.text).join('');
         const resultSize = fullText.length;
@@ -816,6 +852,7 @@ export async function handleToolCall(
           event: 'tool_call_end',
           destination: config.targetId ? undefined : config.destinationName,
           target: config.targetId,
+          identity,
           requestId: reqId,
           user,
           clientId,
@@ -832,6 +869,10 @@ export async function handleToolCall(
         return result;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
+        const auditErrorMessage =
+          err instanceof AdtApiError && (err.statusCode === 401 || err.statusCode === 403)
+            ? `SAP HTTP ${err.statusCode} authentication/authorization failure (response details suppressed)`
+            : message;
         const durationMs = Date.now() - start;
 
         logger.emitAudit({
@@ -840,6 +881,7 @@ export async function handleToolCall(
           event: 'tool_call_end',
           destination: config.targetId ? undefined : config.destinationName,
           target: config.targetId,
+          identity,
           requestId: reqId,
           user,
           clientId,
@@ -848,11 +890,16 @@ export async function handleToolCall(
           durationMs,
           status: 'error',
           errorClass: classifyError(err),
-          errorMessage: message,
+          errorMessage: auditErrorMessage,
         });
 
         if (config.targetId && (err instanceof AdtApiError || err instanceof AdtNetworkError)) {
-          const failure = classifyMultiTargetSapError(err, config.targetId, toolName);
+          const failure = classifyMultiTargetSapError(
+            err,
+            config.targetId,
+            toolName,
+            config.ppEnabled ? 'per-user' : 'shared',
+          );
           if (failure) {
             if (failure.event) {
               logger.emitAudit({
@@ -863,6 +910,7 @@ export async function handleToolCall(
                 user,
                 clientId,
                 target: config.targetId,
+                identity,
                 tool: toolName,
                 errorCode: failure.code,
               });
@@ -872,8 +920,9 @@ export async function handleToolCall(
                 error: failure.code,
                 message: failure.message,
                 target: config.targetId,
+                identity,
                 requestId: reqId,
-                retryable: true,
+                retryable: failure.retryable ?? true,
               }),
             );
           }

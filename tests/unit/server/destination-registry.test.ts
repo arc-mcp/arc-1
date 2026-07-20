@@ -57,6 +57,8 @@ describe('DestinationRegistry', () => {
       description: 'A4H development',
       requestedPolicy: { allowDataPreview: true, allowFreeSQL: true },
       effectivePolicy: { allowDataPreview: true, allowFreeSQL: false },
+      authentication: 'PrincipalPropagation',
+      identity: 'per-user',
     });
     expect(targetSafety(registry.targets[0])).toMatchObject({
       allowWrites: false,
@@ -106,7 +108,7 @@ describe('DestinationRegistry', () => {
     [{ sapClient: '10' }, 'INVALID_CLIENT'],
     [{ type: 'RFC' }, 'UNSUPPORTED_TYPE'],
     [{ urlState: 'invalid', urlFingerprint: undefined }, 'INVALID_URL'],
-    [{ authentication: 'BasicAuthentication' }, 'UNSUPPORTED_AUTH'],
+    [{ authentication: 'BasicAuthentication' }, 'BASIC_AUTH_DISABLED'],
     [{ proxyType: 'Internet' }, 'UNSUPPORTED_PROXY'],
     [{ sapLanguage: 'ENG' }, 'INVALID_LANGUAGE'],
     [{ arcProperties: { 'ARC1.Enabled': 'true' } }, 'ARC1_ENABLED_MISSING'],
@@ -121,6 +123,69 @@ describe('DestinationRegistry', () => {
     expect(registry.targets).toHaveLength(0);
     expect(registry.diagnostics[0]).toMatchObject({ code });
     expect(['ignored', 'quarantined']).toContain(registry.diagnostics[0].status);
+  });
+
+  it('accepts mixed PP and opt-in OnPremise Basic targets and derives identity', () => {
+    const registry = DestinationRegistry.fromDiscovery(
+      discovery([
+        destination(),
+        destination({
+          name: 'ARC1_A4H_200_BASIC',
+          sapClient: '200',
+          authentication: 'BasicAuthentication',
+          preemptive: ' true ',
+        }),
+      ]),
+      { ...DEFAULT_CONFIG, multiTargetAllowBasicAuth: true },
+    );
+
+    expect(registry.targets).toHaveLength(2);
+    expect(
+      registry.targets.map(({ target, authentication, identity }) => ({ target, authentication, identity })),
+    ).toEqual([
+      { target: 'A4H/100', authentication: 'PrincipalPropagation', identity: 'per-user' },
+      { target: 'A4H/200', authentication: 'BasicAuthentication', identity: 'shared' },
+    ]);
+  });
+
+  it.each([undefined, 'true', ' TRUE '])('accepts Basic Preemptive=%s', (preemptive) => {
+    const registry = DestinationRegistry.fromDiscovery(
+      discovery([destination({ authentication: 'BasicAuthentication', preemptive })]),
+      { ...DEFAULT_CONFIG, multiTargetAllowBasicAuth: true },
+    );
+    expect(registry.targets[0]).toMatchObject({ authentication: 'BasicAuthentication', identity: 'shared' });
+  });
+
+  it.each(['false', 'no', '', '1'])('quarantines Basic Preemptive=%j', (preemptive) => {
+    const registry = DestinationRegistry.fromDiscovery(
+      discovery([destination({ authentication: 'BasicAuthentication', preemptive })]),
+      { ...DEFAULT_CONFIG, multiTargetAllowBasicAuth: true },
+    );
+    expect(registry.targets).toEqual([]);
+    expect(registry.diagnostics[0]).toMatchObject({ code: 'BASIC_PREEMPTIVE_DISABLED' });
+  });
+
+  it('keeps Basic OnPremise-only after the instance opt-in', () => {
+    const registry = DestinationRegistry.fromDiscovery(
+      discovery([destination({ authentication: 'BasicAuthentication', proxyType: 'Internet' })]),
+      { ...DEFAULT_CONFIG, multiTargetAllowBasicAuth: true },
+    );
+    expect(registry.targets).toEqual([]);
+    expect(registry.diagnostics[0]).toMatchObject({ code: 'UNSUPPORTED_PROXY' });
+  });
+
+  it('does not let destination properties override derived identity', () => {
+    const registry = DestinationRegistry.fromDiscovery(
+      discovery([
+        destination({
+          authentication: 'BasicAuthentication',
+          arcProperties: { 'arc1.enabled': 'true', 'arc1.identity': 'per-user' },
+        }),
+      ]),
+      { ...DEFAULT_CONFIG, multiTargetAllowBasicAuth: true },
+    );
+    expect(registry.targets).toEqual([]);
+    expect(registry.diagnostics[0]).toMatchObject({ code: 'UNKNOWN_ARC1_PROPERTY' });
   });
 
   it('keeps explicitly disabled targets out without treating them as accepted', () => {
@@ -152,6 +217,30 @@ describe('DestinationRegistry', () => {
     );
     expect(registry.targets).toEqual([]);
     expect(registry.diagnostics.map((entry) => entry.code)).toEqual(['DUPLICATE_TARGET', 'DUPLICATE_TARGET']);
+  });
+
+  it('quarantines shared Basic aliases that claim the same physical SAP client', () => {
+    const registry = DestinationRegistry.fromDiscovery(
+      discovery([
+        destination({
+          name: 'BASIC_ONE',
+          authentication: 'BasicAuthentication',
+          arcProperties: { 'arc1.enabled': 'true', 'arc1.target_alias': 'A4H-ONE' },
+        }),
+        destination({
+          name: 'BASIC_TWO',
+          authentication: 'BasicAuthentication',
+          arcProperties: { 'arc1.enabled': 'true', 'arc1.target_alias': 'A4H-TWO' },
+        }),
+      ]),
+      { ...DEFAULT_CONFIG, multiTargetAllowBasicAuth: true },
+    );
+
+    expect(registry.targets).toEqual([]);
+    expect(registry.diagnostics.map((entry) => entry.code)).toEqual([
+      'DUPLICATE_BASIC_CONNECTION',
+      'DUPLICATE_BASIC_CONNECTION',
+    ]);
   });
 
   it('quarantines every duplicate destination-name claimant', () => {
@@ -198,5 +287,30 @@ describe('DestinationRegistry', () => {
     expect(JSON.stringify(registry)).not.toContain(sentinel);
     expect(JSON.stringify(registry)).not.toContain('a4h.internal');
     expect(Object.keys(registry.targets[0])).not.toContain('Password');
+  });
+
+  it('keeps Basic fingerprints and registry revisions independent of credential values', () => {
+    const withCredentials = (user: string, password: string) => {
+      const raw = destination({ authentication: 'BasicAuthentication' }) as DiscoveredDestination & {
+        User?: string;
+        Password?: string;
+      };
+      raw.User = user;
+      raw.Password = password;
+      return raw;
+    };
+    const first = DestinationRegistry.fromDiscovery(discovery([withCredentials('ONE', 'SENTINEL_ONE')]), {
+      ...DEFAULT_CONFIG,
+      multiTargetAllowBasicAuth: true,
+    });
+    const second = DestinationRegistry.fromDiscovery(discovery([withCredentials('TWO', 'SENTINEL_TWO')]), {
+      ...DEFAULT_CONFIG,
+      multiTargetAllowBasicAuth: true,
+    });
+
+    expect(first.targets[0].fingerprint).toBe(second.targets[0].fingerprint);
+    expect(first.revision).toBe(second.revision);
+    expect(JSON.stringify(first)).not.toContain('SENTINEL_ONE');
+    expect(JSON.stringify(second)).not.toContain('SENTINEL_TWO');
   });
 });

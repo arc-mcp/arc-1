@@ -351,6 +351,8 @@ export class AdtClient {
       bearerTokenProvider: config.bearerTokenProvider,
       samlAuthorization: config.samlAuthorization,
       disableSaml: config.disableSaml,
+      retryUnauthorized: config.retryUnauthorized,
+      onUnauthorized: config.onUnauthorized,
       // Prefer the shared server-wide semaphore when provided so all per-user PP clients
       // share one cap. Fall back to a private semaphore for stdio/tests when only maxConcurrent
       // is set. When neither is set, no concurrency cap applies.

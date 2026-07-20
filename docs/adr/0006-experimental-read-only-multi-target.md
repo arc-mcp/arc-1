@@ -5,6 +5,8 @@
 **Related:** [ADR-0005](0005-single-system-per-instance.md),
 [implementation plan](../plans/destination-discovered-multi-target-v1.md)
 **Qualifies:** ADR-0005 for the explicit, default-off v1 mode described here
+**Qualified by:** [ADR-0007](0007-shared-basic-identity-for-read-only-multi-target.md) for the
+explicit shared Basic-authentication exception
 
 ## Context
 
@@ -22,15 +24,17 @@ accepts a narrow exception after removing mutations and making the remaining ris
 ARC-1 may expose experimental multi-target endpoints only when
 `ARC1_MULTI_TARGET_ENDPOINTS=true` and all requirements in the implementation plan are met:
 
-- BTP CF subaccount Destination discovery, XSUAA, on-premise Principal Propagation, and one immutable
-  startup snapshot;
+- BTP CF subaccount Destination discovery, XSUAA, on-premise connectivity, and one immutable startup
+  snapshot; Principal Propagation is the recommended identity path, while ADR-0007 permits a
+  default-off shared Basic-authentication exception;
 - a case-sensitive pinned endpoint `/<PUBLIC-SYSTEM>/<CLIENT>/mcp` and an aggregate `/multi/mcp`
   endpoint; the public system segment normally equals the real SID but may use the bounded optional
   `arc1.target_alias` when independent systems reuse one SID/client;
 - no discovered bare `/mcp` alias and no destination name in a route or reader-visible response;
   secret-projected Admin `SAPTargets` diagnostics may expose the internal destination name;
-- global ARC-1 roles, with SAP Principal Propagation as the per-user/per-target authorization
-  boundary;
+- global ARC-1 roles; Principal Propagation keeps SAP authorization per user and target, while a
+  Basic target intentionally uses one shared SAP technical identity for every authorized ARC-1
+  caller;
 - source/metadata reads by default, with data and SQL requiring instance, destination, XSUAA, and SAP
   consent; and
 - a structural multi-target ceiling that forbids writes, activation, transport/Git mutations,
@@ -46,8 +50,10 @@ write, transport, or Git scopes: any multi-target write design requires a new se
 must reconsider initial scope selection, consent, token privilege, and step-up support.
 
 Single-target mode remains the default and unchanged. A separately configured single-target `/mcp`
-runtime may coexist and retain its current policy. Strict PP is enforced per discovered runtime so
-existing API-key/direct-OIDC behavior is not changed accidentally.
+runtime may coexist and retain its current policy. PrincipalPropagation targets enforce strict PP
+per discovered runtime so existing API-key/direct-OIDC behavior is not changed accidentally.
+BasicAuthentication targets are accepted only under ADR-0007's explicit deployment ceiling and
+never become a fallback for a failed PP target.
 
 The aggregate endpoint requires an explicit `target` on every SAP-contacting call. It has no default,
 remembered, or session target. `SAPTargets` supplies configured IDs and descriptions when multiple
@@ -77,7 +83,8 @@ from it while believing it queried another system.
 
 V1 mitigates—but cannot eliminate—this risk through explicit per-call target selection, pinned URLs,
 meaningful target descriptions, no session/default target, data/SQL off by default, runtime policy
-checks, strict per-user PP, and audit target correlation. Administrators must use pinned routes or
+checks, strict per-user PP where configured, explicit shared-identity labeling for Basic targets,
+and audit target correlation. Administrators must use pinned routes or
 separate ARC-1 instances for lookalike production/non-production systems where a wrong-target read is
 an unacceptable confidentiality incident.
 

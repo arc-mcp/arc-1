@@ -15,10 +15,13 @@ import { getToolRegistry } from '../../../src/handlers/dispatch.js';
 import { resetCachedFeatures, setCachedFeatures } from '../../../src/handlers/feature-cache.js';
 import { getToolDefinitions } from '../../../src/handlers/tools.js';
 import { defineTool } from '../../../src/public/index.js';
+import { opaqueDestinationValue } from '../../../src/server/destination-discovery.js';
+import { targetConnectionFingerprint } from '../../../src/server/destination-registry.js';
 import { logger } from '../../../src/server/logger.js';
 import { registerPluginTool } from '../../../src/server/plugin-loader.js';
 import {
   buildAdtConfig,
+  canUseSharedSingleTargetCredentials,
   createCachingLayer,
   createServer,
   filterToolsByAuthScope,
@@ -27,6 +30,7 @@ import {
   logAuthSummary,
   resolveNullableOptionals,
   resolvePpDestinationName,
+  resolveSingleTargetOverlapState,
   runStartupAuthPreflight,
   VERSION,
 } from '../../../src/server/server.js';
@@ -703,6 +707,82 @@ describe('buildAdtConfig', () => {
   });
 });
 
+describe('single-target shared credential reachability', () => {
+  it('distinguishes strict PP from an actually reachable shared /mcp client', () => {
+    expect(
+      canUseSharedSingleTargetCredentials(
+        { apiKeys: [{ key: 'k', profile: 'viewer' }], ppEnabled: true, ppStrict: true, ppStrictExplicit: true },
+        'TECH_USER',
+        'PASSWORD',
+      ),
+    ).toBe(false);
+    expect(
+      canUseSharedSingleTargetCredentials(
+        { apiKeys: [{ key: 'k', profile: 'viewer' }], ppEnabled: true, ppStrict: false, ppStrictExplicit: true },
+        'TECH_USER',
+        'PASSWORD',
+      ),
+    ).toBe(true);
+    expect(
+      canUseSharedSingleTargetCredentials(
+        { apiKeys: [], ppEnabled: false, ppStrict: false, ppStrictExplicit: false },
+        'TECH_USER',
+        'PASSWORD',
+      ),
+    ).toBe(true);
+    expect(
+      canUseSharedSingleTargetCredentials(
+        { apiKeys: [], ppEnabled: true, ppStrict: false, ppStrictExplicit: true },
+        'TECH_USER',
+        'PASSWORD',
+      ),
+    ).toBe(false);
+    expect(
+      canUseSharedSingleTargetCredentials(
+        { apiKeys: [], ppEnabled: false, ppStrict: false, ppStrictExplicit: false },
+        '',
+        'PASSWORD',
+      ),
+    ).toBe(false);
+  });
+
+  it('derives the bare /mcp overlap from direct SAP_URL credentials', () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      url: 'https://sap.internal:443/',
+      client: '100',
+      username: 'TECH_USER',
+      password: 'PASSWORD',
+    };
+
+    const overlap = resolveSingleTargetOverlapState(config, undefined, false);
+
+    expect(overlap).toEqual({
+      usesSharedBasic: true,
+      connectionFingerprint: targetConnectionFingerprint({
+        urlFingerprint: opaqueDestinationValue('https://sap.internal/'),
+        client: '100',
+      }),
+    });
+  });
+
+  it('does not classify a bearer-backed bare /mcp connection as shared Basic', () => {
+    const overlap = resolveSingleTargetOverlapState(
+      {
+        ...DEFAULT_CONFIG,
+        url: 'https://sap.internal',
+        username: 'STALE_USER',
+        password: 'STALE_PASSWORD',
+      },
+      undefined,
+      true,
+    );
+
+    expect(overlap.usesSharedBasic).toBe(false);
+    expect(overlap.connectionFingerprint).toBeDefined();
+  });
+});
+
 describe('logAuthSummary', () => {
   const savedDestination = process.env.SAP_BTP_DESTINATION;
 
@@ -782,6 +862,23 @@ describe('logAuthSummary', () => {
     expect(infoSpy).toHaveBeenCalledWith('auth: MCP=[api-keys,xsuaa] SAP=pp (per-user)');
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('rejects API-key MCP tool calls'));
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('supported mixed operation'));
+  });
+
+  it('labels a Basic-capable multi-target deployment with its per-target identity modes', () => {
+    delete process.env.SAP_BTP_DESTINATION;
+    const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+
+    logAuthSummary({
+      ...DEFAULT_CONFIG,
+      xsuaaAuth: true,
+      ppEnabled: true,
+      multiTargetEndpoints: true,
+      multiTargetAllowBasicAuth: true,
+    });
+
+    expect(infoSpy).toHaveBeenCalledWith(
+      'auth: MCP=[xsuaa] SAP=destination+pp/basic-shared (multi-target) (per-target: PP per-user or Basic shared)',
+    );
   });
 });
 
