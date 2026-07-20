@@ -9,7 +9,6 @@ docs_dir: docs_page
 
 theme:
   name: material
-  custom_dir: docs/overrides
   palette:
     # `media` = follow the OS light/dark setting on first visit; the toggle then pins a choice.
     - media: '(prefers-color-scheme: light)'
@@ -36,7 +35,6 @@ theme:
     - toc.follow
     - content.code.copy
     - content.code.annotate
-    - announce.dismiss
   icon:
     repo: fontawesome/brands/github
 
