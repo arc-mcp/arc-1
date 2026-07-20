@@ -1104,6 +1104,14 @@ The lint rules auto-configure based on the detected SAP system:
 - **BTP/Cloud**: `cloud_types` (Error), `strict_sql` (Error), `obsolete_statement` (Error) — enforces ABAP Cloud constraints
 - **On-premise**: `cloud_types` (disabled), `obsolete_statement` (Warning) — more relaxed, allows classic ABAP
 
+Detection can fail to run at all (no probe, no `SAP_SYSTEM_TYPE`/`SAP_ABAP_RELEASE` override) — `list_rules`
+reports how each value was resolved so a caller doesn't mistake a guess for a confirmed match. `presetSource`
+is `probe` (a live ADT probe classified the system), `config` (an explicit `SAP_SYSTEM_TYPE`/`--system-type`
+override, not a probe), or `default` (neither — the on-prem preset was assumed). When the ABAP release itself
+is unknown, `abapVersion`/`syntaxVersion` fall back to `v702` and `warnings` explains that findings on modern
+constructs (`DATA(...)`, `VALUE`, `NEW`, …) may be false positives from a version mismatch rather than real
+issues on the connected system.
+
 **Pre-Write Validation:**
 
 When `--lint-before-write` is enabled (default: true), SAPWrite automatically runs a strict subset of lint rules before writing to SAP. Parser errors and cloud violations block the write. Style issues (keyword case, indentation) never block writes.
@@ -1135,7 +1143,7 @@ Rules from the config file are merged on top of the auto-detected preset (cloud/
 
 - **`lint`** returns: `[{ rule, message, line, column, endLine, endColumn, severity }]`
 - **`lint_and_fix`** returns: `{ fixedSource, appliedFixes, fixedRules, remainingIssues }` — use `fixedSource` as the corrected code
-- **`list_rules`** returns: `{ preset, abapVersion, enabledRules, disabledRules, rules }` — shows active config
+- **`list_rules`** returns: `{ preset, presetSource, abapVersion, syntaxVersion, enabledRules, disabledRules, rules, disabledRuleNames, warnings }` — shows active config; `presetSource` is `probe`/`config`/`default`, `warnings` explains a `v702` fallback if the ABAP release couldn't be detected
 - **`format`** returns: plain text (formatted ABAP source)
 - **`get_formatter_settings`** returns: `{ indentation, style }`
 - **`set_formatter_settings`** returns: `{ indentation, style }` (effective merged settings)

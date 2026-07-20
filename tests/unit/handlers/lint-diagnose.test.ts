@@ -133,12 +133,71 @@ ENDCLASS.`;
       expect(result.isError).toBeUndefined();
       const parsed = JSON.parse(result.content[0]?.text);
       expect(parsed).toHaveProperty('preset');
+      expect(parsed).toHaveProperty('presetSource');
       expect(parsed).toHaveProperty('enabledRules');
       expect(parsed).toHaveProperty('disabledRules');
       expect(parsed).toHaveProperty('rules');
+      expect(parsed).toHaveProperty('warnings');
       expect(parsed.enabledRules).toBeGreaterThan(0);
       expect(parsed.disabledRules).toBeGreaterThan(0);
       expect(parsed.disabledRuleNames).toBeInstanceOf(Array);
+      expect(parsed.warnings).toBeInstanceOf(Array);
+    });
+
+    it('list_rules reports presetSource="default" when systemType was never detected', async () => {
+      resetCachedFeatures();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPLint', {
+        action: 'list_rules',
+      });
+      const parsed = JSON.parse(result.content[0]?.text);
+      expect(parsed.preset).toBe('onprem');
+      expect(parsed.presetSource).toBe('default');
+    });
+
+    it('list_rules reports presetSource="probe" when a probe supplied systemType', async () => {
+      setCachedFeatures({ ...featuresOff(), systemType: 'onprem' });
+      try {
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPLint', {
+          action: 'list_rules',
+        });
+        const parsed = JSON.parse(result.content[0]?.text);
+        expect(parsed.preset).toBe('onprem');
+        expect(parsed.presetSource).toBe('probe');
+      } finally {
+        resetCachedFeatures();
+      }
+    });
+
+    it('list_rules reports presetSource="config" when systemType comes from an explicit config override, not a probe', async () => {
+      resetCachedFeatures();
+      const onpremConfig = { ...DEFAULT_CONFIG, systemType: 'onprem' as const };
+      const result = await handleToolCall(createClient(), onpremConfig, 'SAPLint', {
+        action: 'list_rules',
+      });
+      const parsed = JSON.parse(result.content[0]?.text);
+      expect(parsed.preset).toBe('onprem');
+      expect(parsed.presetSource).toBe('config');
+    });
+
+    it('list_rules warns when abapRelease could not be detected', async () => {
+      resetCachedFeatures();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPLint', {
+        action: 'list_rules',
+      });
+      const parsed = JSON.parse(result.content[0]?.text);
+      expect(parsed.abapVersion).toBe('unknown');
+      expect(parsed.warnings.length).toBeGreaterThan(0);
+      expect(parsed.warnings[0]).toContain('v702');
+    });
+
+    it('list_rules has no warnings when abapRelease is known', async () => {
+      resetCachedFeatures();
+      const s4Config = { ...DEFAULT_CONFIG, systemType: 'onprem' as const, abapRelease: '758' };
+      const result = await handleToolCall(createClient(), s4Config, 'SAPLint', {
+        action: 'list_rules',
+      });
+      const parsed = JSON.parse(result.content[0]?.text);
+      expect(parsed.warnings).toEqual([]);
     });
 
     it('uses config.systemType=btp even without cached features (no probe)', async () => {

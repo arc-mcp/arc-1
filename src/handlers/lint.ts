@@ -52,15 +52,28 @@ export async function handleSAPLint(
       const disabled = rules.filter((r) => !r.enabled);
       const effectiveAbapRelease = configOptions.abapRelease ?? 'unknown';
       const syntax = lintConfig.get().syntax as { version?: string } | undefined;
+      const warnings: string[] = [];
+      if (!configOptions.abapRelease) {
+        warnings.push(
+          'ABAP release of the connected SAP system is unknown; linting against the default v702 ' +
+            'syntax version, which may not match this system. Modern constructs (DATA(...), VALUE, NEW, ' +
+            'FOR, COND, REDUCE, ...) will be reported as parser_error/downport findings even if they are ' +
+            'valid on the real system — treat those specific findings as possibly false positives ' +
+            'from a version mismatch, not confirmed issues. Set SAP_ABAP_RELEASE / --abap-release to the ' +
+            'target system release if known.',
+        );
+      }
       return textResult(
         toolJson({
           preset: configOptions.systemType === 'btp' ? 'cloud' : 'onprem',
+          presetSource: configOptions.systemTypeSource ?? 'default',
           abapVersion: effectiveAbapRelease,
           syntaxVersion: syntax?.version ?? 'unknown',
           enabledRules: enabled.length,
           disabledRules: disabled.length,
           rules: enabled,
           disabledRuleNames: disabled.map((r) => r.rule),
+          warnings,
         }),
       );
     }

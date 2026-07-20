@@ -54,8 +54,10 @@ import { errorResult, type ToolResult, textResult } from './shared.js';
 export function buildLintConfigOptions(config: ServerConfig, ruleOverrides?: RuleOverrides): LintConfigOptions {
   // Probe-detected system type is most accurate; fall back to CLI config
   const systemType = cachedFeatures?.systemType ?? (config.systemType !== 'auto' ? config.systemType : undefined);
+  const systemTypeSource = cachedFeatures?.systemType ? 'probe' : config.systemType !== 'auto' ? 'config' : 'default';
   return {
     systemType,
+    systemTypeSource,
     abapRelease: cachedFeatures?.abapRelease ?? config.abapRelease,
     configFile: config.abaplintConfig,
     ruleOverrides,
