@@ -44,7 +44,7 @@ import type {
 } from '../adt/types.js';
 import { isBtpSystem } from './feature-cache.js';
 import { classIncludeUrl, normalizeObjectType, objectUrlForType, sourceUrlForType } from './object-types.js';
-import { errorResult, type ToolResult, textResult } from './shared.js';
+import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 
 export async function handleSAPDiagnose(client: AdtClient, args: Record<string, unknown>): Promise<ToolResult> {
   const action = String(args.action ?? '');
@@ -65,26 +65,26 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
         objectUrl,
         Object.keys(opts).length > 0 ? opts : undefined,
       );
-      return textResult(JSON.stringify(result, null, 2));
+      return textResult(toolJson(result));
     }
     case 'unittest': {
       const objectUrl = objectUrlForType(type, name);
       const coverage = args.coverage === true;
       const result = await runUnitTests(client.http, client.safety, objectUrl, { coverage });
       // Default (no coverage) keeps the historical array output; coverage requested → {tests, coverage}.
-      if (!coverage) return textResult(JSON.stringify(result.tests, null, 2));
+      if (!coverage) return textResult(toolJson(result.tests));
       const out: Record<string, unknown> = { tests: result.tests };
       if (result.coverage) out.coverage = result.coverage;
       else
         out.coverageNote =
           'Coverage unavailable on this system (the coverage-measurement endpoint or measurement result was not available).';
-      return textResult(JSON.stringify(out, null, 2));
+      return textResult(toolJson(out));
     }
     case 'atc': {
       const objectUrl = objectUrlForType(type, name);
       const variant = args.variant as string | undefined;
       const result = await runAtcCheck(client.http, client.safety, objectUrl, variant);
-      return textResult(JSON.stringify(result, null, 2));
+      return textResult(toolJson(result));
     }
     case 'cds_testcases': {
       // SAP-suggested ABAP Unit test cases for a CDS entity (CDS Test Double Framework).
@@ -110,7 +110,7 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
           'then implement one FOR TESTING method per case (insert_test_data for the doubled sources, ' +
           'assert with cl_abap_unit_assert). AI testdata/testmethod generation is not exposed.',
       };
-      return textResult(JSON.stringify(payload, null, 2));
+      return textResult(toolJson(payload));
     }
     case 'object_state': {
       if (!name || !type) return errorResult('"name" and "type" are required for "object_state" action.');
@@ -126,7 +126,7 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
           : [{ section: 'main', uri: sourceUrlForType(type, name) }];
 
       const result = await getObjectState(client.http, client.safety, { type, name, sections });
-      return textResult(JSON.stringify(result, null, 2));
+      return textResult(toolJson(result));
     }
     case 'quickfix': {
       const source = args.source as string | undefined;
@@ -148,7 +148,7 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
         line,
         column,
       );
-      return textResult(JSON.stringify(proposals, null, 2));
+      return textResult(toolJson(proposals));
     }
     case 'apply_quickfix': {
       const source = args.source as string | undefined;
@@ -184,7 +184,7 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
         line,
         column,
       );
-      return textResult(JSON.stringify(deltas, null, 2));
+      return textResult(toolJson(deltas));
     }
     case 'dumps': {
       const id = args.id as string | undefined;
@@ -213,13 +213,13 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
         if (includeFullText) {
           payload.formattedText = detail.formattedText;
         }
-        return textResult(JSON.stringify(payload, null, 2));
+        return textResult(toolJson(payload));
       }
 
       const user = args.user as string | undefined;
       const maxResults = args.maxResults ? Number(args.maxResults) : undefined;
       const dumps = await listDumps(client.http, client.safety, { user, maxResults });
-      return textResult(JSON.stringify(dumps, null, 2));
+      return textResult(toolJson(dumps));
     }
     case 'traces': {
       const id = args.id as string | undefined;
@@ -229,15 +229,15 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
         switch (analysis) {
           case 'hitlist': {
             const hitlist = await getTraceHitlist(client.http, client.safety, id);
-            return textResult(JSON.stringify(hitlist, null, 2));
+            return textResult(toolJson(hitlist));
           }
           case 'statements': {
             const statements = await getTraceStatements(client.http, client.safety, id);
-            return textResult(JSON.stringify(statements, null, 2));
+            return textResult(toolJson(statements));
           }
           case 'dbAccesses': {
             const dbAccesses = await getTraceDbAccesses(client.http, client.safety, id);
-            return textResult(JSON.stringify(dbAccesses, null, 2));
+            return textResult(toolJson(dbAccesses));
           }
           default:
             return errorResult(`Unknown trace analysis type: ${analysis}. Supported: hitlist, statements, dbAccesses`);
@@ -245,7 +245,7 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
       }
       // List traces
       const traces = await listTraces(client.http, client.safety);
-      return textResult(JSON.stringify(traces, null, 2));
+      return textResult(toolJson(traces));
     }
     case 'trace_start': {
       const opts: TraceRequestCreateOptions = {};
@@ -259,27 +259,23 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
       if (args.description !== undefined) opts.description = String(args.description);
       const request = await createTraceRequest(client.http, client.safety, client.username, client.sapClient, opts);
       return textResult(
-        JSON.stringify(
-          {
-            armed: true,
-            request,
-            next: 'Reproduce the slow action (e.g. the OData call) as this user PROMPTLY — an http request captures the user\'s very next matching HTTP call, so avoid other ARC-1 calls in between (they would consume it). Then SAPDiagnose(action="traces") with no id to list recorded traces, find the new trace id, and read it with analysis="dbAccesses". Note: for an HTTP/OData trace, dbAccesses lists the tables the request touched but SAP returns no per-statement SQL text/timing here (hitlist/statements are usually empty); for the actual slow SQL + duration + plan use ST05 in SAP GUI. The profiler trace is richest for dialog/report/RFC traces of ABAP-side code.',
-          },
-          null,
-          2,
-        ),
+        toolJson({
+          armed: true,
+          request,
+          next: 'Reproduce the slow action (e.g. the OData call) as this user PROMPTLY — an http request captures the user\'s very next matching HTTP call, so avoid other ARC-1 calls in between (they would consume it). Then SAPDiagnose(action="traces") with no id to list recorded traces, find the new trace id, and read it with analysis="dbAccesses". Note: for an HTTP/OData trace, dbAccesses lists the tables the request touched but SAP returns no per-statement SQL text/timing here (hitlist/statements are usually empty); for the actual slow SQL + duration + plan use ST05 in SAP GUI. The profiler trace is richest for dialog/report/RFC traces of ABAP-side code.',
+        }),
       );
     }
     case 'trace_requests': {
       const user = (args.traceUser as string | undefined) ?? (args.user as string | undefined) ?? client.username;
       const requests = await listTraceRequests(client.http, client.safety, user);
-      return textResult(JSON.stringify(requests, null, 2));
+      return textResult(toolJson(requests));
     }
     case 'trace_cancel': {
       const id = args.id as string | undefined;
       if (!id) return errorResult('trace_cancel requires "id" (from trace_start or trace_requests).');
       await deleteTraceRequest(client.http, client.safety, id);
-      return textResult(JSON.stringify({ cancelled: true, id }, null, 2));
+      return textResult(toolJson({ cancelled: true, id }));
     }
     case 'system_messages': {
       const user = args.user as string | undefined;
@@ -287,7 +283,7 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
       const from = args.from as string | undefined;
       const to = args.to as string | undefined;
       const messages = await listSystemMessages(client.http, client.safety, { user, maxResults, from, to });
-      return textResult(JSON.stringify(messages, null, 2));
+      return textResult(toolJson(messages));
     }
     case 'gateway_errors': {
       if (isBtpSystem()) {
@@ -306,11 +302,11 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
 
       if (detailUrl || id) {
         const detail = await getGatewayErrorDetail(client.http, client.safety, { detailUrl, id, errorType });
-        return textResult(JSON.stringify(detail, null, 2));
+        return textResult(toolJson(detail));
       }
 
       const errors = await listGatewayErrors(client.http, client.safety, { user, maxResults, from, to });
-      return textResult(JSON.stringify(errors, null, 2));
+      return textResult(toolJson(errors));
     }
     case 'odata_perf': {
       const url = String(args.url ?? '').trim();
@@ -320,7 +316,7 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
         );
       }
       const perf = await probeODataPerformance(client.http, client.safety, url);
-      return textResult(JSON.stringify(perf, null, 2));
+      return textResult(toolJson(perf));
     }
     case 'cds_sql': {
       if (!name) {
@@ -329,11 +325,11 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
         );
       }
       const cdsSql = await getCdsCreateStatements(client.http, client.safety, name);
-      return textResult(JSON.stringify(cdsSql, null, 2));
+      return textResult(toolJson(cdsSql));
     }
     case 'sql_trace_state': {
       const states = await getSqlTraceState(client.http, client.safety);
-      return textResult(JSON.stringify(states, null, 2));
+      return textResult(toolJson(states));
     }
     case 'set_sql_trace_state': {
       if (args.sqlOn === undefined) {
@@ -345,21 +341,17 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
       const traceUser = args.user !== undefined ? String(args.user) : undefined;
       const states = await setSqlTraceState(client.http, client.safety, { sqlOn, traceUser });
       return textResult(
-        JSON.stringify(
-          {
-            states,
-            next: sqlOn
-              ? 'SQL trace armed. Reproduce the slow request, then call SAPDiagnose(action="sql_trace_directory") for the SQL Trace Analysis link, or read the generated SQL with SAPDiagnose(action="cds_sql").'
-              : 'SQL trace disarmed.',
-          },
-          null,
-          2,
-        ),
+        toolJson({
+          states,
+          next: sqlOn
+            ? 'SQL trace armed. Reproduce the slow request, then call SAPDiagnose(action="sql_trace_directory") for the SQL Trace Analysis link, or read the generated SQL with SAPDiagnose(action="cds_sql").'
+            : 'SQL trace disarmed.',
+        }),
       );
     }
     case 'sql_trace_directory': {
       const dir = await getSqlTraceDirectory(client.http, client.safety);
-      return textResult(JSON.stringify(dir, null, 2));
+      return textResult(toolJson(dir));
     }
     case 'authorization_trace': {
       const user = String(args.user ?? '').trim() || undefined;
@@ -369,7 +361,7 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
 
       try {
         const result = await getAuthorizationTrace(client, { user, authObject, onlyFailures, maxResults });
-        return textResult(JSON.stringify(result, null, 2));
+        return textResult(toolJson(result));
       } catch (err) {
         if (err instanceof AdtApiError && /Cannot find '/i.test(err.message)) {
           return errorResult(

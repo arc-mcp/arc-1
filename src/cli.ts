@@ -135,18 +135,21 @@ program
   .addOption(outputOption)
   .action(async (type: string, name: string, opts: { flat?: boolean; sourceVersion?: string; output: OutputMode }) => {
     const args: Record<string, unknown> = { type: type.toUpperCase(), name };
-    if (opts.flat) args.flat = true;
+    // `--flat` predates `format`; it means "raw source, not decomposed sections" = format:"text",
+    // which is already the default. It used to be sent as a phantom `flat` arg that no handler read
+    // and Zod silently stripped — now that the schemas are strict, send the real parameter.
+    if (opts.flat) args.format = 'text';
     if (opts.sourceVersion) args.version = opts.sourceVersion;
     process.exit(await runToolCall('SAPRead', args, opts.output));
   });
 
-// `source` kept as an alias of `read` with flat=true to preserve legacy CLI behavior.
+// `source` kept as an alias of `read --flat` to preserve legacy CLI behavior.
 program
   .command('source <type> <name>')
   .description('Alias of `read --flat` (legacy)')
   .addOption(outputOption)
   .action(async (type: string, name: string, opts: { output: OutputMode }) => {
-    process.exit(await runToolCall('SAPRead', { type: type.toUpperCase(), name, flat: true }, opts.output));
+    process.exit(await runToolCall('SAPRead', { type: type.toUpperCase(), name, format: 'text' }, opts.output));
   });
 
 program

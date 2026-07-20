@@ -35,7 +35,7 @@ import {
 } from '../adt/gcts.js';
 import { getActionPolicy } from '../authz/policy.js';
 import { cachedFeatures } from './feature-cache.js';
-import { errorResult, type ToolResult, textResult } from './shared.js';
+import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 
 // ─── SAPGit Handler ──────────────────────────────────────────────────
 
@@ -292,5 +292,5 @@ export async function handleSAPGit(
   }
 
   const payload = backend === 'gcts' || backend === 'abapgit' ? { backend, result } : result;
-  return textResult(JSON.stringify(payload, null, 2));
+  return textResult(toolJson(payload));
 }

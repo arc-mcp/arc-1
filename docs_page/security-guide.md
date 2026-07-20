@@ -246,7 +246,6 @@ ARC-1 emits structured audit events to all registered sinks. Three sink types ar
 | `http_request` | HTTP method, ADT path, status code, duration |
 | `http_csrf_fetch` | CSRF token fetch success/duration |
 | `scope_denied` | Scope check failure (tool, required scope, user scopes) |
-| `elicitation` | User confirmation prompts and responses |
 | `oauth_client_registered` | XSUAA only: a new DCR `client_id` was minted (`/register`). Includes id length and redirect-URI count. |
 | `oauth_client_lookup_failed` | XSUAA only: a `client_id` failed to resolve. `reason` ∈ {`unknown_prefix`, `malformed`, `bad_signature`, `invalid_payload`, `expired`}. Useful for spotting forgery / probing. |
 | `oauth_redirect_uri_registered` | XSUAA only: a redirect URI was added at `/authorize` time to the pre-registered XSUAA default client. |
@@ -338,7 +337,7 @@ Configuration rules:
 
 - **Comma-separated, exact match.** No wildcards (`*`, `https://*.example.com`) — they are silently rejected.
 - **Pairs with `credentials: true`.** ARC-1 sends `Access-Control-Allow-Origin: <reflected origin>` (never `*`) and `Access-Control-Allow-Credentials: true`. The wildcard form is incompatible with credentialed requests by browser policy.
-- **Allowed methods:** `GET`, `POST`, `DELETE`, `OPTIONS`. Allowed request headers: `Content-Type`, `Authorization`, `mcp-session-id`. Exposed response headers: `mcp-session-id`.
+- **Allowed methods:** `GET`, `POST`, `DELETE`, `OPTIONS`. Allowed request headers: `Content-Type`, `Authorization`, `mcp-session-id`, `mcp-protocol-version`, `last-event-id`. Exposed response headers: `mcp-session-id`. The 2026-07-28 modern-era headers (`Mcp-Method`/`Mcp-Name`/`Mcp-Param-*`) are deliberately absent — see [ADR-0006](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0006-mcp-legacy-era-until-triggers.md).
 - **Disallowed origins are silently dropped** by the browser, but ARC-1 emits a `cors_rejected` audit event server-side so misconfigured browser clients are observable. See [§9 Audit Logging](#what-gets-logged).
 - **Browser-based DCR clients** (rare) hitting `POST /register` or `POST /authorize` from a foreign origin must be in the allowlist for the same reason native browser fetches are. See [Stateless DCR](xsuaa-setup.md#stateless-dcr) for the OAuth flow.
 

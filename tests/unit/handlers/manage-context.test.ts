@@ -1165,6 +1165,44 @@ ENDCLASS.`;
       expect(payload.usages[0].name).toBe('ZCL_CALLER');
     });
 
+    it('reports usageCount as the TOTAL, not the returned page', async () => {
+      // The safety property behind bounding: "what breaks if I change this?" must not be answered
+      // with the page size. Under-reporting a blast radius is a wrong answer, not a terse one.
+      const rows = Array.from(
+        { length: 120 },
+        (_, i) => `<usageReferences:referencedObject uri="/sap/bc/adt/oo/classes/zcl_c${i}" isResult="true">
+      <usageReferences:adtObject adtcore:name="ZCL_C${i}" adtcore:type="CLAS/OC" xmlns:adtcore="http://www.sap.com/adt/core">
+        <adtcore:packageRef adtcore:name="$TMP"/>
+      </usageReferences:adtObject>
+    </usageReferences:referencedObject>`,
+      ).join('\n');
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          `<?xml version="1.0" encoding="utf-8"?>
+<usageReferences:usageReferenceResult xmlns:usageReferences="http://www.sap.com/adt/ris/usageReferences">
+  <usageReferences:referencedObjects>${rows}</usageReferences:referencedObjects>
+</usageReferences:usageReferenceResult>`,
+        ),
+      );
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPContext', {
+        action: 'usages',
+        type: 'CLAS',
+        name: 'ZCL_TARGET',
+        maxResults: 5,
+      });
+
+      const payload = JSON.parse(result.content[0]?.text ?? '{}');
+      expect(payload.usageCount).toBe(120);
+      expect(payload.shown).toBe(5);
+      expect(payload.truncated).toBe(true);
+      expect(payload.usages).toHaveLength(5);
+      expect(payload.hint).toContain('120');
+    });
+
     it('resolves a unique name-only usages request through ADT lookup', async () => {
       mockFetch.mockReset();
       mockFetch.mockResolvedValueOnce(
@@ -1380,6 +1418,55 @@ ENDCLASS.`;
       expect(parsed.downstream.projectionViews.map((item: { name: string }) => item.name)).toContain('ZI_ARC1_PROJ');
       expect(parsed.downstream.bdefs.map((item: { name: string }) => item.name)).toContain('ZI_ARC1_ROOT');
       expect(parsed.summary.downstreamTotal).toBeGreaterThanOrEqual(2);
+    });
+
+    it('bounds impact buckets while keeping the summary total complete', async () => {
+      // Regression: impact accepted maxResults and silently ignored it, classifying and returning
+      // the FULL where-used tree — the exact bug bounding exists to kill. The summary must stay
+      // complete: an under-reported blast radius is a wrong answer to "what breaks if I change this".
+      mockFetch.mockReset();
+      const rows = Array.from(
+        { length: 80 },
+        (
+          _,
+          i,
+        ) => `<usageReferences:referencedObject uri="/sap/bc/adt/ddic/ddl/sources/zi_p${i}" isResult="true" canHaveChildren="false" usageInformation="gradeDirect">
+      <usageReferences:adtObject adtcore:name="ZI_P${i}" adtcore:type="DDLS/DF" xmlns:adtcore="http://www.sap.com/adt/core"/>
+    </usageReferences:referencedObject>`,
+      ).join('\n');
+      const whereUsedXml = `<?xml version="1.0" encoding="utf-8"?>
+<usageReferences:usageReferenceResult xmlns:usageReferences="http://www.sap.com/adt/ris/usageReferences">
+  <usageReferences:referencedObjects>${rows}</usageReferences:referencedObjects>
+</usageReferences:usageReferenceResult>`;
+
+      mockFetch.mockImplementation((url: string | URL) => {
+        const urlStr = String(url);
+        if (urlStr.includes('/sap/bc/adt/ddic/ddl/sources/Z_MY_VIEW/source/main')) {
+          return Promise.resolve(
+            mockResponse(200, 'define view entity Z_MY_VIEW as select from zmytab { key zmytab.id }', {
+              'x-csrf-token': 'T',
+            }),
+          );
+        }
+        if (urlStr.includes('/repository/informationsystem/usageReferences?uri=')) {
+          return Promise.resolve(mockResponse(200, whereUsedXml, { 'x-csrf-token': 'T' }));
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPContext', {
+        action: 'impact',
+        type: 'DDLS',
+        name: 'Z_MY_VIEW',
+        siblingCheck: false,
+        maxResults: 10,
+      });
+
+      const parsed = JSON.parse(result.content[0]!.text);
+      expect(parsed.downstream.projectionViews).toHaveLength(10);
+      expect(parsed.summary.downstreamTotal).toBe(80);
+      expect(parsed.truncatedBuckets).toContain('projectionViews (80)');
+      expect(parsed.hint).toContain('summary counts remain complete');
     });
 
     it('returns guidance error when impact is requested for non-DDLS type', async () => {

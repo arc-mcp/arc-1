@@ -759,9 +759,22 @@ export function validateConfig(config: ServerConfig): void {
     throw new Error('SAP_OIDC_ISSUER is required when SAP_OIDC_AUDIENCE is set');
   }
 
+  // Inert, not dangerous — both strict-PP enforcement sites gate on ppEnabled. Warn instead
+  // of crashing: an mtaext cannot unset a base mta.yaml property, so an override that turns
+  // PP off strands SAP_PP_STRICT=true and a hard throw would brick the deployment.
   if (config.ppStrict && !config.ppEnabled) {
-    throw new Error(
-      'SAP_PP_STRICT=true requires SAP_PP_ENABLED=true — strict mode has no effect without principal propagation enabled',
+    console.error(
+      '[warn] SAP_PP_STRICT=true has no effect without SAP_PP_ENABLED=true — ignoring strict mode. Set SAP_PP_ENABLED=true if you meant to enable principal propagation.',
+    );
+  }
+
+  // The mirror-image stranding: an mtaext that turns XSUAA off and adds API keys, but leaves
+  // the base SAP_PP_ENABLED/SAP_PP_STRICT stranded, passes validation (API keys satisfy
+  // hasHttpAuth) and logs a healthy `per-user` scope while server.ts rejects every API-key
+  // call for lacking a JWT. Loud at startup beats 100% of traffic failing silently.
+  if (config.ppEnabled && config.ppStrictExplicit && config.ppStrict && config.apiKeys?.length) {
+    console.error(
+      '[warn] SAP_PP_STRICT=true rejects every non-JWT call, so the configured ARC1_API_KEYS clients cannot call any tool. Set SAP_PP_STRICT=false for mixed PP/API-key operation, or SAP_PP_ENABLED=false to run fully shared.',
     );
   }
 

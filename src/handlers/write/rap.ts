@@ -12,7 +12,7 @@ import {
 } from '../../adt/rap-handlers.js';
 import { cachedFeatures } from '../feature-cache.js';
 import { classIncludeUrl } from '../object-types.js';
-import { errorResult, type ToolResult, textResult } from '../shared.js';
+import { errorResult, type ToolResult, textResult, toolJson } from '../shared.js';
 import { mergePreWriteWarnings, type PreWriteLintResult, runPreWriteLint } from '../write-helpers.js';
 import type { SapWriteContext } from './context.js';
 
@@ -120,7 +120,7 @@ export async function writeActionScaffoldRapHandlers(ctx: SapWriteContext): Prom
   };
 
   if (!autoApply || (missing.length === 0 && missingImplementationStubs.length === 0)) {
-    return textResult(JSON.stringify({ ...summary, applied: false }, null, 2));
+    return textResult(toolJson({ ...summary, applied: false }));
   }
 
   // Pure RAP transformation planning lives in rap-handlers.ts. Keep this
@@ -142,23 +142,19 @@ export async function writeActionScaffoldRapHandlers(ctx: SapWriteContext): Prom
         ? `No source changes were applied because handler class skeleton(s) ${unresolvedHandlerClasses.join(', ')} were not found in main, definitions, or implementations. Create the local handler class skeleton(s) first (for example with the ADT quick fix "Create local handler class"), then rerun with autoApply=true.`
         : undefined;
     return textResult(
-      JSON.stringify(
-        {
-          ...summary,
-          applied: false,
-          hint: unresolvedHint,
-          applyResult: {
-            skeletons: scaffoldPlan.skeletons,
-            main: scaffoldPlan.signatures.main,
-            definitions: scaffoldPlan.signatures.definitions,
-            implementations: scaffoldPlan.signatures.implementations,
-            implementationStubs: scaffoldPlan.implementationStubs,
-            unresolved: scaffoldPlan.unresolved,
-          },
+      toolJson({
+        ...summary,
+        applied: false,
+        hint: unresolvedHint,
+        applyResult: {
+          skeletons: scaffoldPlan.skeletons,
+          main: scaffoldPlan.signatures.main,
+          definitions: scaffoldPlan.signatures.definitions,
+          implementations: scaffoldPlan.signatures.implementations,
+          implementationStubs: scaffoldPlan.implementationStubs,
+          unresolved: scaffoldPlan.unresolved,
         },
-        null,
-        2,
-      ),
+      }),
     );
   }
 
@@ -237,22 +233,18 @@ export async function writeActionScaffoldRapHandlers(ctx: SapWriteContext): Prom
     lintWarningsDefinitions?.warnings,
     lintWarningsImplementations?.warnings,
   );
-  const details = JSON.stringify(
-    {
-      ...summary,
-      applied: true,
-      applyResult: {
-        skeletons: scaffoldPlan.skeletons,
-        main: scaffoldPlan.signatures.main,
-        definitions: scaffoldPlan.signatures.definitions,
-        implementations: scaffoldPlan.signatures.implementations,
-        implementationStubs: scaffoldPlan.implementationStubs,
-        unresolved: scaffoldPlan.unresolved,
-      },
+  const details = toolJson({
+    ...summary,
+    applied: true,
+    applyResult: {
+      skeletons: scaffoldPlan.skeletons,
+      main: scaffoldPlan.signatures.main,
+      definitions: scaffoldPlan.signatures.definitions,
+      implementations: scaffoldPlan.signatures.implementations,
+      implementationStubs: scaffoldPlan.implementationStubs,
+      unresolved: scaffoldPlan.unresolved,
     },
-    null,
-    2,
-  );
+  });
   return warnings ? textResult(`${msg}\n\n${warnings}\n\n${details}`) : textResult(`${msg}\n\n${details}`);
 }
 
@@ -294,6 +286,6 @@ export async function writeActionGenerateBehaviorImplementation(ctx: SapWriteCon
   // `isRapGenerateResultSuccess` for the success/error contract (Codex review on PR #260, P1).
   // The structured JSON is preserved in both branches so the caller can still see what
   // was discovered, written, and what activation reported.
-  const json = JSON.stringify(result, null, 2);
+  const json = toolJson(result);
   return isRapGenerateResultSuccess(result) ? textResult(json) : errorResult(json);
 }

@@ -37,8 +37,9 @@ describe('E2E SAPTransport Tests', () => {
   const createdTransportablePrograms = new Set<string>();
 
   async function listArc1DraftTransportIds(): Promise<Set<string>> {
-    const result = await callTool(client, 'SAPTransport', { action: 'list', status: 'D' });
-    const transports = JSON.parse(expectToolSuccess(result)) as TransportListEntry[];
+    // maxResults=1000 so cleanup still sees every ARC-1 draft: `list` pages at 50 by default.
+    const result = await callTool(client, 'SAPTransport', { action: 'list', status: 'D', maxResults: 1000 });
+    const transports = (JSON.parse(expectToolSuccess(result)) as { transports: TransportListEntry[] }).transports;
     return new Set(
       transports
         .filter(isArc1TestTransport)
@@ -187,13 +188,17 @@ describe('E2E SAPTransport Tests', () => {
       });
       const text = expectToolSuccess(result);
 
-      // Response should be valid JSON array
-      const transports = JSON.parse(text);
-      expect(Array.isArray(transports)).toBe(true);
-      console.log(`    Listed ${transports.length} transports`);
-      if (transports.length > 0) {
-        // Verify structure of first entry
-        expect(transports[0]).toHaveProperty('id');
+      // Paged envelope: {total, shown, truncated, transports:[...]}. `total` is the full backlog,
+      // `transports` the capped page; summary mode is the default, so entries carry objectCount
+      // instead of object lists.
+      const payload = JSON.parse(text);
+      expect(Array.isArray(payload.transports)).toBe(true);
+      expect(payload.shown).toBe(payload.transports.length);
+      expect(payload.total).toBeGreaterThanOrEqual(payload.shown);
+      console.log(`    Listed ${payload.shown} of ${payload.total} transports`);
+      if (payload.transports.length > 0) {
+        expect(payload.transports[0]).toHaveProperty('id');
+        expect(payload.transports[0]).toHaveProperty('objectCount');
       }
     });
 

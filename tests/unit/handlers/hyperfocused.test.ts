@@ -196,4 +196,15 @@ describe('hyperfocused mode', () => {
       expect(tools.find((t) => t.name === 'SAPTransport')).toBeDefined();
     });
   });
+
+  it('advertises additionalProperties:false, matching the strict runtime schema', () => {
+    // Regression: hyperfocused returns early from getToolDefinitions, so it skipped the loop that
+    // stamps strictness — leaving the mode most likely to trigger a full-object dump advertising a
+    // permissive contract while SAPHyperfocusedSchema rejected unknown keys.
+    const tools = getToolDefinitions({ ...DEFAULT_CONFIG, toolMode: 'hyperfocused' }, true);
+    expect(tools).toHaveLength(1);
+    const tool = tools[0]!;
+    expect(tool.name).toBe('SAP');
+    expect((tool.inputSchema as Record<string, unknown>).additionalProperties).toBe(false);
+  });
 });

@@ -2056,18 +2056,21 @@ ENDCLASS.`.replace(/\n/g, '\r\n');
     it.each([
       ['form', 'LZMY_FGF01', 'FORM update_counter.\n  DATA lv_count TYPE i.\nENDFORM.'],
       ['module', 'LZMY_FGO01', 'MODULE status_0100 OUTPUT.\nENDMODULE.'],
-    ])('does not misclassify FUGR %s includes as class source during pre-write lint', async (_kind, includeName, source) => {
-      const calls = captureLockingFlow();
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
-        action: 'update',
-        type: 'INCL',
-        name: includeName,
-        group: 'ZMY_FG',
-        source,
-      });
-      expect(result.isError).toBeUndefined();
-      expect(calls.some((c) => c.method === 'PUT')).toBe(true);
-    });
+    ])(
+      'does not misclassify FUGR %s includes as class source during pre-write lint',
+      async (_kind, includeName, source) => {
+        const calls = captureLockingFlow();
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+          action: 'update',
+          type: 'INCL',
+          name: includeName,
+          group: 'ZMY_FG',
+          source,
+        });
+        expect(result.isError).toBeUndefined();
+        expect(calls.some((c) => c.method === 'PUT')).toBe(true);
+      },
+    );
 
     it('a bare INCL with no group stays a standalone /programs/includes/ include (no FUGR routing)', async () => {
       const calls = captureLockingFlow();

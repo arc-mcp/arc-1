@@ -1497,12 +1497,14 @@ export class AdtClient {
     if (u && !u.includes('@')) this.internalUser = u;
   }
 
-  /** Get system info as structured JSON (user, system details from discovery XML) */
+  /** Get system info as structured JSON (user, system details from discovery XML).
+   *  Compact: this string is returned verbatim to the LLM by SAPRead(type="SYSTEM"). Cannot use
+   *  handlers' toolJson() here — adt/ must not depend on handlers/. */
   async getSystemInfo(): Promise<string> {
     checkOperation(this.safety, OperationType.Read, 'GetSystemInfo');
     const resp = await this.http.get('/sap/bc/adt/core/discovery');
     const info = parseSystemInfo(resp.body, await this.getEffectiveUser());
-    return JSON.stringify(info, null, 2);
+    return JSON.stringify(info);
   }
 
   /** Get installed SAP components */

@@ -9,7 +9,7 @@ import { classifyTextSearchError } from '../adt/features.js';
 import type { AdtObjectLookupResult, AdtSearchResult } from '../adt/types.js';
 import { cachedFeatures } from './feature-cache.js';
 import { normalizeObjectType } from './object-types.js';
-import { errorResult, type ToolResult, textResult } from './shared.js';
+import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 
 // ─── Search Helpers ─────────────────────────────────────────────────
 
@@ -164,7 +164,7 @@ export async function handleSAPSearch(client: AdtClient, args: Record<string, un
     if (splitBrain.length > 0) payload.splitBrain = splitBrain;
     if (warnings.length > 0) payload.warnings = warnings;
 
-    return textResult(JSON.stringify(payload, null, 2));
+    return textResult(toolJson(payload));
   }
 
   if (searchType === 'source_code') {
@@ -179,7 +179,7 @@ export async function handleSAPSearch(client: AdtClient, args: Record<string, un
     const packageName = args.packageName as string | undefined;
     try {
       const results = await client.searchSource(rawQuery, maxResults, objectType, packageName);
-      return textResult(JSON.stringify(results, null, 2));
+      return textResult(toolJson(results));
     } catch (err) {
       if (err instanceof AdtApiError) {
         const permanentCodes = [401, 403, 404, 501];
@@ -215,7 +215,7 @@ export async function handleSAPSearch(client: AdtClient, args: Record<string, un
     }
     return textResult(hint);
   }
-  return textResult(transliterationNote + JSON.stringify(results, null, 2));
+  return textResult(transliterationNote + toolJson(results));
 }
 
 function extractLookupNames(query: string, rawNames: unknown): string[] {

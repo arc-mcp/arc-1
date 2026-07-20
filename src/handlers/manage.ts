@@ -25,7 +25,7 @@ import type { CachingLayer } from '../cache/caching-layer.js';
 import type { ServerConfig } from '../server/types.js';
 import { cachedFeatures, setCachedFeatures } from './feature-cache.js';
 import { inferObjectType, normalizeObjectType, objectUrlForTypeRaw } from './object-types.js';
-import { errorResult, type ToolResult, textResult } from './shared.js';
+import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 import { enforceAllowedPackageForObjectUrl, resolveWriteSystemType } from './write-helpers.js';
 
 // ─── SAPManage Handler ────────────────────────────────────────────────
@@ -45,10 +45,10 @@ export async function handleSAPManage(
     case 'features': {
       if (!cachedFeatures) {
         return textResult(
-          JSON.stringify({ message: 'No features probed yet. Use action="probe" to probe the SAP system first.' }),
+          toolJson({ message: 'No features probed yet. Use action="probe" to probe the SAP system first.' }),
         );
       }
-      return textResult(JSON.stringify(cachedFeatures, null, 2));
+      return textResult(toolJson(cachedFeatures));
     }
 
     case 'set_api_state': {
@@ -94,7 +94,7 @@ export async function handleSAPManage(
       const lead = result.changed
         ? `Set API release contract ${contract} of ${objectUri} to ${endState}`
         : `API release contract ${contract} of ${objectUri} is already ${endState} (no change)`;
-      return textResult(`${lead}${vis ? ` (visible in ${vis})` : ''}.\n\n${JSON.stringify(result, null, 2)}`);
+      return textResult(`${lead}${vis ? ` (visible in ${vis})` : ''}.\n\n${toolJson(result)}`);
     }
 
     case 'create_package': {
@@ -381,7 +381,7 @@ export async function handleSAPManage(
       if (!domainId) return errorResult('"domainId" is required for flp_create_catalog action.');
       if (!title) return errorResult('"title" is required for flp_create_catalog action.');
       const catalog = await createCatalog(client.http, client.safety, domainId, title);
-      return textResult(JSON.stringify(catalog, null, 2));
+      return textResult(toolJson(catalog));
     }
 
     case 'flp_create_group': {
@@ -393,7 +393,7 @@ export async function handleSAPManage(
       if (!groupId) return errorResult('"groupId" is required for flp_create_group action.');
       if (!title) return errorResult('"title" is required for flp_create_group action.');
       const group = await createGroup(client.http, client.safety, groupId, title);
-      return textResult(JSON.stringify(group, null, 2));
+      return textResult(toolJson(group));
     }
 
     case 'flp_create_tile': {
@@ -426,7 +426,7 @@ export async function handleSAPManage(
         subtitle: typeof tile.subtitle === 'string' ? tile.subtitle : undefined,
         info: typeof tile.info === 'string' ? tile.info : undefined,
       });
-      return textResult(JSON.stringify(tileInstance, null, 2));
+      return textResult(toolJson(tileInstance));
     }
 
     case 'flp_add_tile_to_group': {
@@ -440,7 +440,7 @@ export async function handleSAPManage(
       if (!catalogId) return errorResult('"catalogId" is required for flp_add_tile_to_group action.');
       if (!tileInstanceId) return errorResult('"tileInstanceId" is required for flp_add_tile_to_group action.');
       const result = await addTileToGroup(client.http, client.safety, groupId, catalogId, tileInstanceId);
-      return textResult(JSON.stringify(result, null, 2));
+      return textResult(toolJson(result));
     }
 
     case 'flp_delete_catalog': {
@@ -455,19 +455,15 @@ export async function handleSAPManage(
 
     case 'cache_stats': {
       if (!cachingLayer) {
-        return textResult(JSON.stringify({ enabled: false, message: 'Object cache is disabled (ARC1_CACHE=none).' }));
+        return textResult(toolJson({ enabled: false, message: 'Object cache is disabled (ARC1_CACHE=none).' }));
       }
       const stats = cachingLayer.stats();
       return textResult(
-        JSON.stringify(
-          {
-            enabled: true,
-            ...stats,
-            inactiveListCache: cachingLayer.inactiveLists.stats(),
-          },
-          null,
-          2,
-        ),
+        toolJson({
+          enabled: true,
+          ...stats,
+          inactiveListCache: cachingLayer.inactiveLists.stats(),
+        }),
       );
     }
 
@@ -505,7 +501,7 @@ export async function handleSAPManage(
         }
         setCachedFeatures(probed);
       }
-      return textResult(JSON.stringify(probed, null, 2));
+      return textResult(toolJson(probed));
     }
 
     default:

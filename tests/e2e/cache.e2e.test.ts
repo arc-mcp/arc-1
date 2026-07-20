@@ -191,6 +191,10 @@ describe('E2E Cache Tests', () => {
     expect(parsed.source).toBe('live');
     expect(parsed.resolvedObject).toMatchObject({ type: 'CLAS', name: 'ZCL_ARC1_TEST' });
     expect(parsed.usages).toBeInstanceOf(Array);
-    expect(parsed.usageCount).toBe(parsed.usages.length);
+    // usageCount is the TOTAL match count, not the page size — it only equals usages.length when
+    // the result was not truncated. `shown` is the page length.
+    expect(parsed.shown).toBe(parsed.usages.length);
+    expect(parsed.usageCount).toBeGreaterThanOrEqual(parsed.usages.length);
+    if (!parsed.truncated) expect(parsed.usageCount).toBe(parsed.usages.length);
   });
 });

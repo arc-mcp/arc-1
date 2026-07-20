@@ -101,6 +101,7 @@ SORT RULES for this table — DO NOT BREAK when adding rows:
 | [FEAT-61](#feat-61) | Tool Extension Points (custom tools on top of ARC-1) | P3 | M-L (phased) | Features |
 | [OPS-03](#ops-03) | Multi-System Routing | P3 | L | Ops |
 | [OPS-05](#ops-05) | SAP Cloud Logging (OpenTelemetry) observability — replace the deprecated Application Logging Service | P3 | M | Ops |
+| [FEAT-66](#feat-66) | Interactive destructive-op confirmation, rebuilt on MCP 2026-07-28 pull-based elicitation (`inputRequired` / MRTR) — revisit when the spec + SDK v2 ship. Replaces the removed fail-open `elicit.ts` helpers (PR #601) | P3 | S | Features |
 | ~~[COMPAT-01](#compat-01)~~ | ~~modificationSupport guard in lockObject()~~ | ~~P0~~ | ~~XS~~ | ~~Completed 2026-04-16~~ |
 | ~~[COMPAT-02](#compat-02)~~ | ~~CSRF HEAD→GET fallback (S/4HANA Public Cloud)~~ | ~~P0~~ | ~~XS~~ | ~~Completed 2026-04-16~~ |
 | ~~[COMPAT-03](#compat-03)~~ | ~~V4 SRVB publish endpoint bug~~ | ~~P0~~ | ~~XS~~ | ~~Completed 2026-04-15~~ |
@@ -204,7 +205,7 @@ SORT RULES for this table — DO NOT BREAK when adding rows:
 | — | Runtime Diagnostics (SAPDiagnose) | 2026-04-01 | Features |
 | — | RAP CRUD (DDLS/DDLX/BDEF/SRVD) | 2026-04-01 | Features |
 | — | Context Compression (7-30x) | 2026-04-01 | Features |
-| — | MCP Elicitation | 2026-04-01 | Features |
+| — | Plugin elicitation capability (`ctx.elicit`) | 2026-04-01 | Features |
 | — | BTP ABAP Environment (OAuth 2.0) | 2026-04-01 | Features |
 | [SEC-01](#sec-01) | Principal Propagation (per-user SAP auth) | 2026-03-27 | Security |
 | [SEC-02](#sec-02) | BTP Cloud Connector PP | 2026-03-27 | Security |
@@ -361,6 +362,7 @@ These bugs affect real-world deployments and were confirmed by cross-project com
 38. **FEAT-05** Code Refactoring (L) — rename, extract method *(change package completed 2026-04-15)*
 39. **FEAT-29** P3 Backlog — see [FEAT-29 table](#feat-29) for SSE, debugger, execute ABAP, call graph, UI5/BSP, RFC, embeddable server, lock registry, language attributes
 40. **FEAT-50** ADT Probe Fixture Coverage — contributor-driven; widen fixture coverage for [`classifyVerdict`](../src/probe/runner.ts) across SAP product lines (BTP ABAP, S/4 Cloud, plain NW, ECC EhP7, …)
+41. **FEAT-66** Interactive destructive-op confirmation on 2026-07-28 elicitation (S) — revisit with the SDK v2 migration; must be fail-closed and built on `inputRequired` (see [ADR-0006](../docs/adr/0006-mcp-legacy-era-until-triggers.md))
 
 ### Strategic Context: SAP Official ABAP MCP Server (Q2 2026)
 
@@ -2114,6 +2116,29 @@ The following features are tracked but not planned for near-term implementation.
 
 ---
 
+<a id="feat-66"></a>
+### FEAT-66: Interactive destructive-op confirmation (on MCP 2026-07-28 elicitation)
+| Field | Value |
+|-------|-------|
+| **Priority** | P3 |
+| **Effort** | S |
+| **Risk** | Medium — safety-adjacent UX; must not weaken the config ceiling |
+| **Status** | Not started — gated on SDK v2 stable + a client trigger ([ADR-0006](../docs/adr/0006-mcp-legacy-era-until-triggers.md)) |
+
+**What:** Optional interactive confirmation for destructive operations (delete, transport release), built on MCP 2026-07-28's pull-based elicitation (`inputRequired` / multi-round-trip), surfacing a human OK to the LLM client before the mutation runs.
+
+**Why:** A confirmation step is genuine UX value for irreversible ops and a capability some competitors (dassian-adt) expose. The former `src/server/elicit.ts` helpers (`confirmDestructive`/`selectOption`/`promptString`) were removed in PR #601 because they were never wired, **failed open** (returned "proceed" whenever the client lacked the elicitation capability or on any error), and targeted the `elicitInput` API that 2026-07-28 replaces.
+
+**Why not yet:** Blocked on the SDK v2 / 2026-07-28 migration (ADR-0006). Building it on the old `elicitInput` API now is throwaway work, and no target client needs it today.
+
+**Design constraints — do NOT repeat the removed helpers' mistakes:**
+- **Fail closed, not open.** If the client cannot elicit, block the op (or defer to the config gate) — never default to "proceed."
+- **Complement to the ceiling, not a replacement.** The server-side config ceiling (`allowWrites` / `allowedPackages` / `denyActions`) stays the primary control; elicitation is an extra human checkpoint, never the only one.
+- **Never inside a lock block.** Per the AGENTS.md invariant / ADR-0006, `lock→modify→unlock` stays one synchronous step — elicit *before* acquiring the lock, since MRTR ends and resumes the tool call.
+- Reuse the live plugin `ctx.elicit` plumbing (`src/server/plugin-loader.ts`) rather than reviving a parallel helper module.
+
+---
+
 ## Details: Completed
 
 <a id="sec-01"></a>
@@ -2192,7 +2217,6 @@ The following features are tracked but not planned for near-term implementation.
 - `src/server/sinks/file.ts` — file sink for persistent audit trail
 - `src/server/sinks/btp-auditlog.ts` — BTP Audit Log Service sink (enterprise compliance)
 - User identity (userName, email, clientId) logged with every tool call
-- Elicitation events (confirmations, user choices) logged
 - Structured logger with text/JSON output and sensitive field redaction
 
 **References:**
@@ -2571,7 +2595,7 @@ The VS Code client-side issue — [microsoft/vscode#314715](https://github.com/m
 | XSUAA OAuth Proxy | MCP SDK ProxyOAuthServerProvider + @sap/xssec JWT validation |
 | Authorization Model | Layered model: server safety ceiling + user scopes/API-key profiles + SAP authorization |
 | Audit Logging | User identity in tool call logs, BTP Audit Log sink, file sink |
-| MCP Elicitation | Interactive parameter collection for destructive ops |
+| Plugin elicitation (`ctx.elicit`) | Opt-in interactive prompts for extension tools (core safety is the config ceiling) |
 | Dynamic Client Registration | /register endpoint for MCP clients (RFC 7591) |
 | Per-user SAP identity | Per-user ADT client via BTP Destination Service: Cloud Connector PP for on-premise SAP, `OAuth2UserTokenExchange` for BTP ABAP |
 | OAuth Security | RFC 9700 compliance: state+PKCE, loopback binding, audience validation, stateless DCR and XSUAA callback-state proxy |
@@ -2615,7 +2639,7 @@ The VS Code client-side issue — [microsoft/vscode#314715](https://github.com/m
 | DDIC Domain/Data Element Write | FEAT-13: DOMA/DTEL create, update, delete, batch_create in SAPWrite | Complete (2026-04-12) |
 | RAP CRUD | DDLS/DDLX/BDEF/SRVD/SRVB write, batch activation | Complete (2026-04-14) |
 | Context Compression | SAPContext with AST-based dependency extraction (7-30x reduction) | Complete (2026-04-01) |
-| MCP Elicitation | Interactive confirmations for destructive operations | Complete (2026-04-01) |
+| Plugin elicitation (`ctx.elicit`) | Opt-in interactive prompts available to extension tools; core tools use the config safety ceiling, not interactive confirmations | Complete (2026-04-01) |
 | BTP ABAP Environment | Local OAuth 2.0 browser login plus deployed per-user destination path | Complete (2026-04-01; destination guidance updated 2026-06) |
 | Where-Used Analysis | FEAT-01: Scope-based where-used in SAPNavigate | Complete (2026-04-04, PR #38) |
 | Enhanced Abaplint | System-aware cloud/on-prem presets, pre-write validation, auto-fix | Complete (2026-04-04, PR #37) |
@@ -2652,7 +2676,7 @@ The VS Code client-side issue — [microsoft/vscode#314715](https://github.com/m
 5. **Comprehensive safety system** — read-only, package filter, operation filter, transport guard, dry-run — additive to scopes
 6. **Multi-sink audit logging** — stderr + file + BTP Audit Log Service
 7. **Context compression + method-level surgery** — AST-based 7-30x + 95% method-level reduction
-8. **MCP elicitation** — interactive confirmations for destructive operations
+8. **Plugin elicitation (`ctx.elicit`)** — opt-in interactive prompts for extension tools (core safety is the config ceiling)
 9. **1,500+ automated tests** with CI on Node 22/24, integration/E2E reliability telemetry, and BTP smoke lane
 10. **First-party workflow skills** — researched RAP/common-use-case playbooks that exploit provider-contract guidance, impact/history/context tools, formatter alignment, SKTD docs, and Git context
 11. **npm + Docker + release-please** — most professional distribution pipeline

@@ -206,6 +206,21 @@ describe('parseArgs', () => {
     expect(config.ppStrictExplicit).toBe(true);
   });
 
+  // An mtaext override turns PP off but cannot unset the base mta.yaml
+  // SAP_PP_STRICT=true — startup must not crash on the stranded no-op.
+  it('starts up when PP is disabled while SAP_PP_STRICT=true is left over', () => {
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      process.env.SAP_PP_ENABLED = 'false';
+      process.env.SAP_PP_STRICT = 'true';
+      const config = parseArgs([]);
+      expect(config.ppEnabled).toBe(false);
+      expect(stderrSpy.mock.calls.flat().join(' ')).toContain('SAP_PP_STRICT=true has no effect');
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
   it('defaults allowGitWrites to false without explicit configuration', () => {
     const config = parseArgs([]);
     expect(config.allowGitWrites).toBe(false);
@@ -1053,14 +1068,20 @@ describe('validateConfig', () => {
     expect(() => validateConfig({ ...DEFAULT_CONFIG })).not.toThrow();
   });
 
-  it('throws when ppStrict is true without ppEnabled', () => {
-    expect(() =>
-      validateConfig({
-        ...DEFAULT_CONFIG,
-        ppStrict: true,
-        ppEnabled: false,
-      }),
-    ).toThrow('SAP_PP_STRICT=true requires SAP_PP_ENABLED=true');
+  it('warns but does not throw when ppStrict is true without ppEnabled', () => {
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      expect(() =>
+        validateConfig({
+          ...DEFAULT_CONFIG,
+          ppStrict: true,
+          ppEnabled: false,
+        }),
+      ).not.toThrow();
+      expect(stderrSpy.mock.calls.flat().join(' ')).toContain('SAP_PP_STRICT=true has no effect');
+    } finally {
+      stderrSpy.mockRestore();
+    }
   });
 
   it('accepts ppStrict with ppEnabled', () => {

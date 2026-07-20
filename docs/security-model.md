@@ -289,7 +289,33 @@ if the change is *in* one of them.
 
 ---
 
-## 8. References
+## 8. Cryptography and key handling
+
+ARC-1 uses only vetted primitives from Node's `node:crypto` and the platform TLS stack —
+**no hand-rolled cryptography, and no custom RNG for any security decision.**
+
+| Purpose | Primitive | Where |
+|---|---|---|
+| OAuth PKCE | **S256** — SHA-256 over a `randomBytes(32)` verifier | [`src/adt/oauth.ts`](../src/adt/oauth.ts) |
+| OAuth `state` / nonce | `randomBytes(32)` (base64url) | [`src/adt/oauth.ts`](../src/adt/oauth.ts) |
+| DCR `client_id` + auth `state` | HMAC (HKDF-derived, domain-separated key), constant-time verify | [`@arc-mcp/xsuaa-auth`](https://github.com/arc-mcp/xsuaa-auth) — see §7 |
+| JWT signature | asymmetric, verified vs kid-matched JWKS; `none` / HS↔RS confusion rejected | [`@arc-mcp/xsuaa-auth`](https://github.com/arc-mcp/xsuaa-auth), wired via [`src/server/http.ts`](../src/server/http.ts) |
+| Cache key / ETag / content hash | SHA-256 | [`src/cache/cache.ts`](../src/cache/cache.ts), [`src/adt/diagnostics.ts`](../src/adt/diagnostics.ts) |
+| Audit event id | `crypto.randomUUID()` | [`src/server/sinks/btp-auditlog.ts`](../src/server/sinks/btp-auditlog.ts) |
+| Transport | platform TLS; certificate validation **on by default** — `SAP_INSECURE` opt-out is logged as a warning | [`src/adt/http.ts`](../src/adt/http.ts) |
+
+**Key & secret handling.** Secrets (SAP credentials, XSUAA `clientsecret`, the DCR signing
+secret, BTP service-key fields) come only from env / service-key / destination config — never
+hardcoded — and are never persisted at rest in the cache DB or logs (invariant **I4**).
+Accidental hardcoded-credential leaks are prevented by **GitHub secret scanning with push
+protection** (enabled on this repo): a matching secret is blocked at `git push`, and anything
+already committed raises a Security-tab alert. The related "hidden interfaces" concern is bounded
+separately: CodeQL SAST runs on every push (GitHub default setup — JS/TS, Actions, Python), and
+the LLM-visible tool surface is frozen byte-for-byte by `tests/fixtures/tool-definitions/`.
+
+---
+
+## 9. References
 - Operator hardening: [`docs_page/security-guide.md`](../docs_page/security-guide.md)
 - Scopes, profiles, deny-actions: [`docs_page/authorization.md`](../docs_page/authorization.md)
 - Auth coexistence matrix: [`docs_page/enterprise-auth.md`](../docs_page/enterprise-auth.md)
