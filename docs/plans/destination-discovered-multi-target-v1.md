@@ -1409,6 +1409,10 @@ feature.
 
 ## Deferred Beyond V1
 
+The proposed sequencing, security gates, acceptance matrix, and rollback rules for these items are
+tracked in the [multi-target v2 roadmap](multi-target-v2-roadmap.md). That roadmap is not normative
+until its individual ADRs and pull requests are accepted.
+
 - writes, activation, transport writes, and Git writes on multi-target routes;
 - any full-write destination sample;
 - target-specific ARC ACLs/XSUAA entitlements;

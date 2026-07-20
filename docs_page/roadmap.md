@@ -1,6 +1,6 @@
 # ARC-1 Roadmap
 
-**Last Updated:** 2026-07-17 (experimental read-only multi-target v1 and independent MCP HTTP edge-rate control documented)
+**Last Updated:** 2026-07-20 (multi-target v2 future-work roadmap linked)
 
 **Project:** ARC-1 (ABAP Relay Connector) — MCP Server for SAP ABAP Systems
 **Repository:** https://github.com/arc-mcp/arc-1
@@ -2107,6 +2107,10 @@ answer for writes, pre-SAP target ACLs, or hard failure/security isolation. See
 [ADR-0006](../docs/adr/0006-experimental-read-only-multi-target.md) and the
 [administrator guide](multi-target-administration.md).
 Start with the [multi-system setup runbook](multi-target-setup.md).
+Future work—including target-specific authorization, Principal Propagation-only pinned writes,
+read-only parity, fairness, caching, and controlled refresh—is sequenced in the
+[multi-target v2 roadmap](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/multi-target-v2-roadmap.md).
+It is a planning document, not part of the current v1 contract.
 
 ---
 
