@@ -101,6 +101,7 @@ SORT RULES for this table — DO NOT BREAK when adding rows:
 | [FEAT-61](#feat-61) | Tool Extension Points (custom tools on top of ARC-1) | P3 | M-L (phased) | Features |
 | [OPS-03](#ops-03) | Multi-System Routing | P3 | L | Ops |
 | [OPS-05](#ops-05) | SAP Cloud Logging (OpenTelemetry) observability — replace the deprecated Application Logging Service | P3 | M | Ops |
+| [FEAT-66](#feat-66) | Interactive destructive-op confirmation, rebuilt on MCP 2026-07-28 pull-based elicitation (`inputRequired` / MRTR) — revisit when the spec + SDK v2 ship. Replaces the removed fail-open `elicit.ts` helpers (PR #601) | P3 | S | Features |
 | ~~[COMPAT-01](#compat-01)~~ | ~~modificationSupport guard in lockObject()~~ | ~~P0~~ | ~~XS~~ | ~~Completed 2026-04-16~~ |
 | ~~[COMPAT-02](#compat-02)~~ | ~~CSRF HEAD→GET fallback (S/4HANA Public Cloud)~~ | ~~P0~~ | ~~XS~~ | ~~Completed 2026-04-16~~ |
 | ~~[COMPAT-03](#compat-03)~~ | ~~V4 SRVB publish endpoint bug~~ | ~~P0~~ | ~~XS~~ | ~~Completed 2026-04-15~~ |
@@ -361,6 +362,7 @@ These bugs affect real-world deployments and were confirmed by cross-project com
 38. **FEAT-05** Code Refactoring (L) — rename, extract method *(change package completed 2026-04-15)*
 39. **FEAT-29** P3 Backlog — see [FEAT-29 table](#feat-29) for SSE, debugger, execute ABAP, call graph, UI5/BSP, RFC, embeddable server, lock registry, language attributes
 40. **FEAT-50** ADT Probe Fixture Coverage — contributor-driven; widen fixture coverage for [`classifyVerdict`](../src/probe/runner.ts) across SAP product lines (BTP ABAP, S/4 Cloud, plain NW, ECC EhP7, …)
+41. **FEAT-66** Interactive destructive-op confirmation on 2026-07-28 elicitation (S) — revisit with the SDK v2 migration; must be fail-closed and built on `inputRequired` (see [ADR-0006](../docs/adr/0006-mcp-legacy-era-until-triggers.md))
 
 ### Strategic Context: SAP Official ABAP MCP Server (Q2 2026)
 
@@ -2111,6 +2113,29 @@ The following features are tracked but not planned for near-term implementation.
 **Why:** SAP removed the Application Logging Service from the list of Eligible Cloud Services on 2025-07-31 (SAP Note 3557260). ARC-1 already ships that service `active: false` and works on `cf logs` alone; Cloud Logging is the forward-looking managed stack for customers who want aggregation/dashboards.
 
 **Why not yet:** Larger than the off-by-default toggle already shipped — needs a Cloud Logging service binding, an OTLP exporter, and config plumbing. Tracked separately from the XSUAA→AMS authorization migration (a different deprecation often conflated with this one).
+
+---
+
+<a id="feat-66"></a>
+### FEAT-66: Interactive destructive-op confirmation (on MCP 2026-07-28 elicitation)
+| Field | Value |
+|-------|-------|
+| **Priority** | P3 |
+| **Effort** | S |
+| **Risk** | Medium — safety-adjacent UX; must not weaken the config ceiling |
+| **Status** | Not started — gated on SDK v2 stable + a client trigger ([ADR-0006](../docs/adr/0006-mcp-legacy-era-until-triggers.md)) |
+
+**What:** Optional interactive confirmation for destructive operations (delete, transport release), built on MCP 2026-07-28's pull-based elicitation (`inputRequired` / multi-round-trip), surfacing a human OK to the LLM client before the mutation runs.
+
+**Why:** A confirmation step is genuine UX value for irreversible ops and a capability some competitors (dassian-adt) expose. The former `src/server/elicit.ts` helpers (`confirmDestructive`/`selectOption`/`promptString`) were removed in PR #601 because they were never wired, **failed open** (returned "proceed" whenever the client lacked the elicitation capability or on any error), and targeted the `elicitInput` API that 2026-07-28 replaces.
+
+**Why not yet:** Blocked on the SDK v2 / 2026-07-28 migration (ADR-0006). Building it on the old `elicitInput` API now is throwaway work, and no target client needs it today.
+
+**Design constraints — do NOT repeat the removed helpers' mistakes:**
+- **Fail closed, not open.** If the client cannot elicit, block the op (or defer to the config gate) — never default to "proceed."
+- **Complement to the ceiling, not a replacement.** The server-side config ceiling (`allowWrites` / `allowedPackages` / `denyActions`) stays the primary control; elicitation is an extra human checkpoint, never the only one.
+- **Never inside a lock block.** Per the AGENTS.md invariant / ADR-0006, `lock→modify→unlock` stays one synchronous step — elicit *before* acquiring the lock, since MRTR ends and resumes the tool call.
+- Reuse the live plugin `ctx.elicit` plumbing (`src/server/plugin-loader.ts`) rather than reviving a parallel helper module.
 
 ---
 
