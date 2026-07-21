@@ -428,14 +428,13 @@ The user doesn't have the required role collection assigned. Go to BTP Cockpit �
 
 If the collection **is** already assigned and you still get `invalid_scope`, it is one of three things, in the order worth checking.
 
-**1. Stale XSUAA session cookie — the common one.** After an admin assigns a role collection, XSUAA keeps returning `invalid_scope` because the browser still holds an XSUAA SSO session created *before* the grant. XSUAA answers from that session's cached authorities and never re-reads role collections.
+**1. Stale XSUAA browser session — the common one.** After an administrator assigns a role collection, the browser can still hold the XSUAA SSO session created before the grant. The failed ARC-1 sign-in page therefore includes **Role assigned? Refresh access**. Use it after the role assignment, wait for the **Access refreshed** page, then return to the MCP client and connect or retry sign-in. A new identity-provider login may be required.
 
-Fix: delete the browser cookies for the XSUAA domain (`<identityzone>.authentication.<region>.hana.ondemand.com` — in Edge, `edge://settings/content/all` → search `authentication` → delete). Read the exact domain from the `url` field of the XSUAA binding: **Cockpit → Application → Service Bindings → arc1-xsuaa → Credentials**. No waiting period; the next login works immediately.
+The action calls XSUAA's documented `/logout.do` endpoint with ARC-1's bound `client_id` and a fixed, allowlisted ARC-1 return URL. Callback query parameters never select the logout host or redirect. Standard Cloud Foundry routes are covered by the `https://*.hana.ondemand.com/**` entry in `xs-security.json`; if `ARC1_PUBLIC_URL` uses a custom domain or path, add its `/oauth/logged-out` URL to `oauth2-configuration.redirect-uris` before deploying.
 
-Two things that do **not** work, both tried:
+The action clears the browser SSO session; it does not revoke access tokens already issued to other sessions. If an MCP client cached an old token, disconnect/reconnect it after refreshing access. On ARC-1 versions without the action, use a private browser window or delete cookies for the XSUAA domain (`<identityzone>.authentication.<region>.hana.ondemand.com`) and retry. Read the exact domain from the `url` field under **Cockpit → Application → Service Bindings → arc1-xsuaa → Credentials**.
 
-- **`<xsuaa-url>/logout` is a dead end.** Without a `redirect` param it renders SAP's "Uh oh. Something went amiss." and does not reliably drop the session.
-- **Resetting the MCP client's token cache** (e.g. VS Code's MCP auth reset) changes nothing — the poisoned session lives in the browser, not the client.
+Do not use a bare `<xsuaa-url>/logout` or `/logout.do` URL. XSUAA requires the application client and an allowlisted return URL for a reliable application logout.
 
 Diagnostic, in `cf logs <app-name> --recent`:
 

@@ -421,7 +421,7 @@ buildpack push does not create the seven MTA role collections for you.
 | Multi-target is ready with zero active targets | Call Admin `SAPTargets`; health is not SAP readiness |
 | Role collection missing/empty | Perform full MTA deploy, inspect roles, remove/recreate orphaned collection if needed, then reassign |
 | OAuth `invalid_client` after deploy | Restore the intended DCR signing key or re-register clients; do not invent a new key on every deploy |
-| OAuth `invalid_scope` after a grant | Obtain a fresh token; clear stale XSUAA browser session if login never reappears |
+| OAuth `invalid_scope` after a grant | On the failure page choose **Role assigned? Refresh access**, then reconnect the MCP client; verify the user's IdP origin if it persists |
 | SAP `401` through PP | Check generated user certificate, STRUST, trusted proxy, ICF logon, CERTRULE, and SU01 |
 | SAP `403` after PP login | Check the actual propagated user's SAP authorizations |
 | Destination change appears ignored | Restart every ARC-1 instance; only discovered multi-target Basic username/password fields are hot |

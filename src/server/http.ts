@@ -41,6 +41,12 @@ import {
   PINNED_RESOURCE_METADATA_PATH_PATTERN,
   targetFromPinnedMcpPath,
 } from './multi-target-identity.js';
+import {
+  buildXsuaaSessionRefreshUrl,
+  createOAuthLoggedOutHandler,
+  OAUTH_LOGGED_OUT_PATH,
+  withInvalidScopeSessionRecovery,
+} from './oauth-session-recovery.js';
 import { VERSION } from './server.js';
 import type { ServerConfig } from './types.js';
 import { mountUiRoutes, type UiServerDeps } from './ui.js';
@@ -377,6 +383,8 @@ export async function startHttpServer(
     // URL sent to XSUAA as redirect_uri; the Express route is mounted at the root
     // `/oauth/callback` below since the proxy strips the prefix before forwarding.
     const oauthCallbackUrl = `${oauthFullBase}/oauth/callback`;
+    const oauthLoggedOutUrl = `${oauthFullBase}${OAUTH_LOGGED_OUT_PATH}`;
+    const xsuaaSessionRefreshUrl = buildXsuaaSessionRefreshUrl(xsuaaCredentials, oauthLoggedOutUrl);
 
     // Create XSUAA provider + chained verifier.
     //
@@ -582,7 +590,14 @@ export async function startHttpServer(
     // XSUAA as oauthCallbackUrl. A strip-prefix proxy maps the public path
     // back to this root route. Handler is extracted (exported) so the
     // state-round-trip contract is unit-testable without a live XSUAA.
-    app.get('/oauth/callback', createOAuthCallbackHandler(stateCodec, clientStore, { logger: authLibLogger }));
+    app.get(OAUTH_LOGGED_OUT_PATH, createOAuthLoggedOutHandler());
+    app.get(
+      '/oauth/callback',
+      withInvalidScopeSessionRecovery(
+        createOAuthCallbackHandler(stateCodec, clientStore, { logger: authLibLogger }),
+        xsuaaSessionRefreshUrl,
+      ),
+    );
 
     // ─── Path-prefix-aware OAuth metadata override ────────────────
     // The MCP SDK's `mcpAuthRouter` builds endpoint URLs with
