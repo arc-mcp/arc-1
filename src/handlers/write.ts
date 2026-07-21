@@ -91,8 +91,8 @@ export async function handleSAPWrite(
     );
   }
 
-  // Server-driven objects (ABAP Platform 2025 / SAP_BASIS 8.16+): DESD, EVTB, DTSC, CSNM, EVTO, COTA
-  // share one AFF generic-object write contract (POST blue:blueSource metadata → PUT AFF JSON source
+  // Server-driven objects (mostly SAP_BASIS 8.16+): DESD, EVTB, DTSC, CSNM, EVTO, COTA, DSFD
+  // share one AFF generic-object write contract (POST blue:blueSource metadata → PUT source (JSON or DDL text per type)
   // → activate). They route through the dedicated engine instead of the per-type switch below —
   // objectBasePath(<sdo>) throws, so this MUST come before the objectUrl computation. Mirrors the
   // server-driven branch in handleSAPRead.

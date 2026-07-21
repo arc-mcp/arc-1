@@ -39,9 +39,10 @@
             "CSNM",
             "EVTB",
             "EVTO",
-            "COTA"
+            "COTA",
+            "DSFD"
           ],
-          "description": "Object type to read (BTP): CLAS, INTF, FUNC, FUGR, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL (transparent tables and DDIC structures), DOMA, DTEL, MSAG, TABLE_CONTENTS, TABLE_QUERY, DEVC, SYSTEM, COMPONENTS, BSP, BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS. Server-driven objects (8.16+ / ABAP Cloud, discovery-gated, return JSON metadata + AFF JSON source): DESD (CDS Logical External Schema), EVTB (RAP Event Binding), EVTO (RAP Event Object), DTSC (CDS Static Cache), CSNM (Core Schema Notation Model), COTA (Communication Target). Deprecated alias: MESSAGES (use MSAG)."
+          "description": "Object type to read (BTP): CLAS, INTF, FUNC, FUGR, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL (transparent tables and DDIC structures), DOMA, DTEL, MSAG, TABLE_CONTENTS, TABLE_QUERY, DEVC, SYSTEM, COMPONENTS, BSP, BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS. Server-driven objects (discovery-gated, mostly 8.16+; JSON metadata + AFF JSON source, except DTSC/DSFD whose source is DDL text): DESD (CDS Logical External Schema), EVTB (RAP Event Binding), EVTO (RAP Event Object), DTSC (CDS Static Cache), CSNM (Core Schema Notation Model), COTA (Communication Target), DSFD (CDS Scalar Function Definition). Deprecated alias: MESSAGES (use MSAG)."
         },
         "name": {
           "type": "string",

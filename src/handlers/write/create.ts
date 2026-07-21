@@ -15,6 +15,7 @@ import { activate, activateBatch } from '../../adt/devtools.js';
 import { AdtApiError } from '../../adt/errors.js';
 import { type FmParameter, spliceFmSignature } from '../../adt/fm-signature.js';
 import { checkPackage } from '../../adt/safety.js';
+import { isServerDrivenObjectType } from '../../adt/server-driven.js';
 import { getTransport, getTransportInfo } from '../../adt/transport.js';
 import { escapeXmlAttr } from '../../adt/xml-parser.js';
 import { validateAffHeader } from '../../aff/validator.js';
@@ -867,6 +868,19 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
           packageName: objPackage,
           status: 'failed',
           error: TTYP_WRITE_UNAVAILABLE_HINT,
+        });
+        break;
+      }
+      // Server-driven objects need the AFF engine (handleServerDrivenObjectWrite), which only runs on
+      // the single-object path. objectBasePath() has no SDO case and silently falls through to the
+      // PROG path, so without this guard a batched SDO would POST a program create body.
+      if (isServerDrivenObjectType(objType)) {
+        results.push({
+          type: objType,
+          name: objName,
+          packageName: objPackage,
+          status: 'failed',
+          error: `batch_create does not support server-driven object type ${objType}. Create it with a single SAPWrite(action="create", type="${objType}", name="${objName}") call.`,
         });
         break;
       }

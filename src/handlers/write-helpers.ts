@@ -29,6 +29,7 @@ import {
   deleteServerDrivenObject,
   serverDrivenBlueContentType,
   serverDrivenObjectUrl,
+  serverDrivenSourceFormat,
   supportsServerDrivenObject,
   updateServerDrivenObjectSource,
 } from '../adt/server-driven.js';
@@ -760,10 +761,11 @@ export async function enforceAllowedPackageForObjectUrl(
 
 /**
  * SAPWrite for server-driven objects (8.16+): create / update-source / delete via the generic AFF
- * blue:blueSource + JSON-source engine. Discovery-gated (clean 8.16 error otherwise), allowWrites-gated
+ * blue:blueSource + source engine. Discovery-gated (clean 8.16 error otherwise), allowWrites-gated
  * (through the engine's checkOperation), and allowedPackages-gated against the REAL package
  * (create gates the caller-supplied package like every create; update/delete resolve the object's true
- * package under the blues Accept). The `source` param carries the AFF JSON — parse-validated before the
+ * package under the blues Accept). The `source` param carries AFF JSON or DDL text per the type's
+ * registry sourceFormat — the JSON ones are parse-validated before the
  * PUT; ABAP-specific pre-write steps (lint, RAP preflight, CDS guard) do not apply. Create leaves the
  * object inactive — callers follow with SAPActivate (never auto-activated).
  */
@@ -793,21 +795,24 @@ export async function handleServerDrivenObjectWrite(
     invalidateInactiveList(cachingLayer, client, cacheSecurity);
   };
 
-  // SDO source is AFF JSON (not ABAP) — validate it parses before any PUT.
-  const validateSource = (): { ok: true; json: string } | { ok: false; result: ToolResult } => {
+  // SDO source is AFF JSON for most types but DDL text for others (DTSC, DSFD) — only parse-validate
+  // the JSON ones. Validating DDL text as JSON would reject every valid source.
+  const validateSource = (): { ok: true; source: string } | { ok: false; result: ToolResult } => {
     const src = String(args.source ?? '');
-    try {
-      JSON.parse(src);
-    } catch {
-      return {
-        ok: false,
-        result: errorResult(
-          `SAPWrite ${action} for ${type} ${name}: "source" must be valid AFF JSON ` +
-            '(e.g. {"formatVersion":"1","header":{"description":"…","originalLanguage":"en"}}).',
-        ),
-      };
+    if (serverDrivenSourceFormat(type) === 'json') {
+      try {
+        JSON.parse(src);
+      } catch {
+        return {
+          ok: false,
+          result: errorResult(
+            `SAPWrite ${action} for ${type} ${name}: "source" must be valid AFF JSON ` +
+              '(e.g. {"formatVersion":"1","header":{"description":"…","originalLanguage":"en"}}).',
+          ),
+        };
+      }
     }
-    return { ok: true, json: src };
+    return { ok: true, source: src };
   };
 
   const hasSourceArg = typeof args.source === 'string' && args.source.trim() !== '';
@@ -817,32 +822,36 @@ export async function handleServerDrivenObjectWrite(
       const pkg = String(args.package ?? '$TMP');
       await checkPackage(client.safety, pkg, client.getPackageHierarchyResolver());
       const description = String(args.description ?? name);
+      // Validate BEFORE the create POST — validating after would leave an inactive orphan on SAP
+      // that the caller never asked for and has to clean up by hand.
+      const validated = hasSourceArg ? validateSource() : undefined;
+      if (validated && !validated.ok) return validated.result;
       await createServerDrivenObject(client.http, client.safety, type, name, {
         package: pkg,
         description,
         transport,
       });
       let wroteSource = false;
-      if (hasSourceArg) {
-        const v = validateSource();
-        if (!v.ok) return v.result;
-        await updateServerDrivenObjectSource(client.http, client.safety, type, name, v.json, { transport });
+      if (validated?.ok) {
+        await updateServerDrivenObjectSource(client.http, client.safety, type, name, validated.source, { transport });
         wroteSource = true;
       }
       invalidate();
       return textResult(
-        `Created ${type} ${name} in package ${pkg}${wroteSource ? ' and wrote AFF JSON source' : ''}.\n` +
+        `Created ${type} ${name} in package ${pkg}${wroteSource ? ' and wrote source' : ''}.\n` +
           `Next step: SAPActivate(type="${type}", name="${name}").`,
       );
     }
     case 'update': {
       if (!hasSourceArg) {
-        return errorResult(`SAPWrite update for ${type} ${name} requires "source" (the AFF JSON body).`);
+        return errorResult(
+          `SAPWrite update for ${type} ${name} requires "source" (AFF JSON or DDL text, per the object type).`,
+        );
       }
       const v = validateSource();
       if (!v.ok) return v.result;
       await enforceAllowedPackageForObjectUrl(client, objUrl, `Operations on ${type} '${name}'`, blueAccept);
-      await updateServerDrivenObjectSource(client.http, client.safety, type, name, v.json, { transport });
+      await updateServerDrivenObjectSource(client.http, client.safety, type, name, v.source, { transport });
       invalidate();
       return textResult(`Updated source of ${type} ${name}.\nNext step: SAPActivate(type="${type}", name="${name}").`);
     }
@@ -855,7 +864,7 @@ export async function handleServerDrivenObjectWrite(
     default:
       return errorResult(
         `Action "${action}" is not supported for server-driven object type ${type}. ` +
-          'Supported: create, update, delete (source is AFF JSON) — then SAPActivate to activate.',
+          'Supported: create, update, delete — then SAPActivate to activate.',
       );
   }
 }

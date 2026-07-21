@@ -45,7 +45,7 @@ Use `SAPRead` when you need exact raw source, one method body, grep output, inac
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `type` | string | Yes | Object type (see below; includes `AUTH`, `FEATURE_TOGGLE`, `ENHO`, `VERSIONS`, `VERSION_SOURCE` on on-prem systems, and the server-driven objects `DESD`/`EVTB`/`EVTO`/`DTSC`/`CSNM`/`COTA` where the system advertises them — ABAP Platform 2025 / 8.16+, plus `EVTB` on S/4HANA 2023) |
+| `type` | string | Yes | Object type (see below; includes `AUTH`, `FEATURE_TOGGLE`, `ENHO`, `VERSIONS`, `VERSION_SOURCE` on on-prem systems, and the server-driven objects `DSFD`/`DESD`/`EVTB`/`EVTO`/`DTSC`/`CSNM`/`COTA` where the system advertises them — ABAP Platform 2025 / 8.16+, plus `EVTB` on S/4HANA 2023) |
 | `name` | string | No | Object name (e.g., `ZTEST_PROGRAM`, `ZCL_ORDER`, `MARA`) |
 | `action` | string | No | `"diff"` — return a unified diff between two source versions on this system (only the hunks, not two full sources), using `from`/`to`. Source types only: `PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, BDEF, SRVD, DDLX, TABL` (CDS views are `DDLS`; classic DDIC `VIEW` is unsupported — it has no plain-text source). Note: SAP only snapshots a version on transport *release*, so `from`/`to` revision ids are sparse — `active` vs `inactive` (pending unactivated changes) is the most reliable use. |
 | `from` | string | No | For `action="diff"`: OLD side — `"active"` (default), `"inactive"`, a revision id (from a VERSIONS response), or a full `/sap/bc/adt/` revision URI. |
@@ -95,9 +95,10 @@ Use `SAPRead` when you need exact raw source, one method body, grep output, inac
 | `DESD` | CDS Logical External Schema — **server-driven object** (generic AFF read). Returns JSON: parsed `blue:blueSource` metadata (name, type, description, package, language, version, …) + the AFF JSON source. SAP_BASIS 8.16+ (ABAP Platform 2025), discovery-gated. |
 | `EVTB` | RAP Event Binding — server-driven object. JSON metadata + AFF JSON source (`boName`, `boOperation`, `events[]`). Available on S/4HANA 2023 (758) **and** 8.16+. |
 | `EVTO` | RAP Event Object — server-driven object. 8.16+. |
-| `DTSC` | CDS Static Cache (table-entity buffer) — server-driven object. 8.16+. |
+| `DTSC` | CDS Static Cache (table-entity buffer) — server-driven object. JSON metadata + **DDL text** source (`define static cache …`). 8.16+. |
 | `CSNM` | Core Schema Notation Model (CSN) — server-driven object. 8.16+. |
 | `COTA` | Communication Target — server-driven object. 8.16+. |
+| `DSFD` | CDS Scalar Function Definition — server-driven object. JSON metadata + **DDL text** source (`define scalar function …`). Available on S/4HANA 2023 (758) and 8.16+. |
 | `TRAN` | Transaction metadata (structured JSON: code, description, program) |
 | `SOBJ` | BOR business object (list methods, or read specific method with `method` param) |
 | `BSP` | BSP/UI5 filestore (list apps, browse structure, read files via `name`+`include` path) |
@@ -265,7 +266,7 @@ Create or update ABAP source code. Handles lock/modify/unlock automatically.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `action` | string | Yes | `create`, `update`, `delete`, `edit_method`, `edit_unit` (on-prem), `edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`, `batch_create`, `scaffold_rap_handlers`, `generate_behavior_implementation`, or `edit_text_symbols`. `edit_unit` surgically replaces one FORM or MODULE in a PROG/INCL; see [Procedural unit surgery](#procedural-unit-surgery). The class-section surgery actions (`edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`) are token-efficient edits to a global class without re-sending `/source/main`. See [Class-section surgery](#class-section-surgery) below. `edit_text_symbols` writes a global class's text pool — see [Class text symbols](#class-text-symbols). |
-| `type` | string | No | `PROG`, `CLAS`, `INTF`, `FUNC`, `FUGR`, `INCL`, `DDLS`, `DCLS`, `DDLX`, `BDEF`, `SRVD`, `SRVB`, `SKTD`/`KTD`, `TABL`, `TABL/DT`, `TABL/DS`, `DOMA`, `DTEL`, `MSAG` (for single object actions; availability is adapted for BTP vs. on-prem), plus the server-driven objects `DESD`/`EVTB`/`DTSC`/`CSNM`/`EVTO`/`COTA` on 8.16+ (see [Server-driven object writes](#server-driven-object-writes)). Slash/case aliases are auto-normalized (e.g., `CLAS/OC` or `clas` → `CLAS`; `KTD` → `SKTD`). |
+| `type` | string | No | `PROG`, `CLAS`, `INTF`, `FUNC`, `FUGR`, `INCL`, `DDLS`, `DCLS`, `DDLX`, `BDEF`, `SRVD`, `SRVB`, `SKTD`/`KTD`, `TABL`, `TABL/DT`, `TABL/DS`, `DOMA`, `DTEL`, `MSAG` (for single object actions; availability is adapted for BTP vs. on-prem), plus the server-driven objects `DESD`/`EVTB`/`DTSC`/`CSNM`/`EVTO`/`COTA`/`DSFD` (see [Server-driven object writes](#server-driven-object-writes)). Slash/case aliases are auto-normalized (e.g., `CLAS/OC` or `clas` → `CLAS`; `KTD` → `SKTD`). |
 | `group` | string | No | For `FUNC`: parent function-group name. **Required for FUNC create** (the FUGR must already exist — create it first via `SAPWrite type=FUGR`). Auto-resolved via search for FUNC update/delete if omitted. For `INCL`: addresses a structural include inside this function group; supported by `update` and `edit_unit`. Ignored for other types. |
 | `name` | string | No | Object name (for single object actions) |
 | `source` | string | No | ABAP source code. For `create`/`update`: full source body. For `edit_method`: new method body. For `edit_unit`: the complete replacement `FORM … ENDFORM.` or `MODULE … ENDMODULE.` block. For `edit_class_definition` without `include=`: ONLY the new global `CLASS … DEFINITION … ENDCLASS.` block (~10–80 lines instead of full class). For `edit_class_definition` with `include=`: the FULL replacement body of that class-local include; for `include="testclasses"` this normally includes both local `CLASS ltc_* DEFINITION` and `CLASS ltc_* IMPLEMENTATION`. For `edit_method_signature`: ONLY the new METHODS clause for one method (~1–5 lines). Not used by `add_method`/`delete_method`/`change_method_visibility` — pass the method clause/name and target visibility via `method`/`visibility` instead. |
@@ -318,21 +319,22 @@ Create or update ABAP source code. Handles lock/modify/unlock automatically.
 
 #### Server-driven object writes
 
-`DESD`, `EVTB`, `DTSC`, `CSNM`, `EVTO`, and `COTA` are **server-driven objects** (ABAP Platform 2025 / SAP_BASIS 8.16+) — ~46 repository types that share one AFF generic-object contract. `SAPWrite` supports `create`, `update`, and `delete` for them; `SAPActivate` activates them:
+`DESD`, `EVTB`, `DTSC`, `CSNM`, `EVTO`, `COTA`, and `DSFD` are **server-driven objects** (mostly ABAP Platform 2025 / SAP_BASIS 8.16+) — ~46 repository types that share one AFF generic-object contract. `SAPWrite` supports `create`, `update`, and `delete` for them; `SAPActivate` activates them:
 
 - **`create`** posts a minimal `<blue:blueSource>` metadata body to the type's collection (e.g. `/sap/bc/adt/ddic/desd`), then — if `source` is supplied — writes it. The object is left **inactive**; follow with `SAPActivate(type=..., name=...)`.
-- **`source` is AFF JSON**, not ABAP — e.g. `{"formatVersion":"1","header":{"description":"…","originalLanguage":"en","abapLanguageVersion":"cloudDevelopment"}}`. It is parse-validated (clean error on malformed JSON) and written to `…/source/main` as `application/json`. ABAP-specific pre-write steps (lint, RAP preflight, CDS guard) do not apply.
-- **`update`** requires `source` (the new AFF JSON); **`delete`** uses the standard lock → delete flow. Both honor the `allowedPackages` ceiling against the object's real package.
-- **Availability is discovery-gated and per-type.** On systems that don't expose a type, write returns a clean `requires SAP_BASIS 8.16+` error. Most types need 8.16+, but `EVTB` (RAP Event Binding) also ships on S/4HANA 2023 (758) — its write path is live-verified there too (create/read/delete). NetWeaver 7.50 exposes none of them.
+- **`source` format is per-type.** Most types take **AFF JSON** — e.g. `{"formatVersion":"1","header":{"description":"…","originalLanguage":"en","abapLanguageVersion":"cloudDevelopment"}}` — parse-validated (clean error on malformed JSON) and written to `…/source/main` as `application/json`. `DTSC` and `DSFD` instead take **DDL text** (`define static cache …`, `define scalar function …`), written as `text/plain`; sending the wrong content type is a hard `415` from SAP, so the flavor is pinned per type in `SDO_REGISTRY`. ABAP-specific pre-write steps (lint, RAP preflight, CDS guard) do not apply.
+- **`update`** requires `source` (AFF JSON or DDL text, per the type); **`delete`** uses the standard lock → delete flow. Both honor the `allowedPackages` ceiling against the object's real package.
+- **Availability is discovery-gated and per-type.** On systems that don't expose a type, write returns a clean `requires SAP_BASIS 8.16+` error. Most types need 8.16+, but `EVTB` (RAP Event Binding) and `DSFD` (CDS Scalar Function Definition) also ship on S/4HANA 2023 (758) — both write paths are live-verified there (create/update/read/delete). NetWeaver 7.50 exposes none of them.
 
 | Type | Object | Notes |
 |------|--------|-------|
 | `DESD` | CDS Logical External Schema | Creates standalone — the reference round-trip type. |
 | `EVTB` | RAP Event Binding | Also on 758. |
 | `EVTO` | RAP Event Object | Create uses the blues **v2** content-type (the others use v1). |
-| `DTSC` | CDS Static Cache (table-entity buffer) | |
+| `DTSC` | CDS Static Cache (table-entity buffer) | Source is **DDL text**, not JSON. |
 | `CSNM` | Core Schema Notation Model (CSN) | |
 | `COTA` | Communication Target | |
+| `DSFD` | CDS Scalar Function Definition | Source is **DDL text**, not JSON. Also on 758. |
 
 Other actions (`edit_method`, surgery, `batch_create`, RAP scaffolding) are not supported for server-driven types and return a clear error.
 

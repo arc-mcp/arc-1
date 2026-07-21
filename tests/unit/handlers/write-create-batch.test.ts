@@ -24,7 +24,7 @@ describe('SAPWrite handler — create / batch_create', () => {
   });
 
   describe('SAPWrite server-driven objects (816)', () => {
-    type FetchCall = [string, { method?: string; body?: string }];
+    type FetchCall = [string, { method?: string; body?: string; headers?: Record<string, string> }];
     const callMatching = (method: string, pathname: string): FetchCall | undefined =>
       (mockFetch.mock.calls as FetchCall[]).find(([u, o]) => o?.method === method && new URL(u).pathname === pathname);
 
@@ -53,7 +53,7 @@ describe('SAPWrite handler — create / batch_create', () => {
         source: '{"formatVersion":"1","header":{"description":"x","originalLanguage":"en"}}',
       });
       expect(result.isError).toBeFalsy();
-      expect(result.content[0]?.text).toContain('wrote AFF JSON source');
+      expect(result.content[0]?.text).toContain('wrote source');
       expect(callMatching('PUT', '/sap/bc/adt/ddic/desd/ZARC1_SDO/source/main')).toBeDefined();
     });
 
@@ -77,6 +77,52 @@ describe('SAPWrite handler — create / batch_create', () => {
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toContain('valid AFF JSON');
       expect(callMatching('PUT', '/sap/bc/adt/ddic/desd/ZARC1_SDO/source/main')).toBeUndefined();
+    });
+
+    // Regression guard for the 2026-07-21 fix: the JSON.parse gate used to run for EVERY server-driven
+    // type, so a DTSC/DSFD DDL source was rejected client-side before any HTTP call — the write could
+    // never succeed. Only the AFF-JSON types are parse-validated now.
+    it('accepts DDL text for a text-source type (DTSC) instead of demanding JSON', async () => {
+      const ddl = 'define static cache ZARC1_SC on DEMO_CDS_CUBE_VIEW { sum( amount_sum ) } retention 60 s;';
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'update',
+        type: 'DTSC',
+        name: 'ZARC1_SC',
+        source: ddl,
+      });
+      expect(result.isError).toBeFalsy();
+      const put = callMatching('PUT', '/sap/bc/adt/ddic/dtsc/sources/ZARC1_SC/source/main');
+      expect(put).toBeDefined();
+      const headers = put?.[1].headers ?? {};
+      const contentType = Object.entries(headers).find(([k]) => k.toLowerCase() === 'content-type')?.[1];
+      expect(contentType).toContain('text/plain');
+    });
+
+    it('routes DSFD to its own collection and PUTs DDL text', async () => {
+      const ddl = 'define scalar function ZARC1_SF with parameters p : abap.int4 returns abap.int4;';
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'update',
+        type: 'DSFD',
+        name: 'ZARC1_SF',
+        source: ddl,
+      });
+      expect(result.isError).toBeFalsy();
+      const put = callMatching('PUT', '/sap/bc/adt/ddic/dsfd/sources/ZARC1_SF/source/main');
+      expect(put).toBeDefined();
+      const headers = put?.[1].headers ?? {};
+      expect(Object.entries(headers).find(([k]) => k.toLowerCase() === 'content-type')?.[1]).toContain('text/plain');
+    });
+
+    // objectBasePath() has no SDO case and silently falls through to the PROG path, so an
+    // unguarded batch_create would POST a program create body to /sap/bc/adt/programs/programs.
+    it('batch_create refuses server-driven types instead of POSTing them as programs', async () => {
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'batch_create',
+        package: '$TMP',
+        objects: [{ type: 'DSFD', name: 'ZARC1_SF', description: 'x' }],
+      });
+      expect(result.content[0]?.text).toContain('does not support server-driven object type DSFD');
+      expect(callMatching('POST', '/sap/bc/adt/programs/programs')).toBeUndefined();
     });
 
     it('delete locks then issues a DELETE on the SDO URL', async () => {

@@ -136,7 +136,7 @@ src/
 │   ├── gcts.ts, abapgit.ts     # Git backends | transport.ts: CTS management
 │   ├── cds-impact.ts, rap-preflight.ts, rap-handlers.ts, rap-generate.ts  # CDS/RAP intelligence
 │   ├── class-structure.ts      # Class-section surgery splice + diff (#303)
-│   ├── server-driven.ts        # Server-driven objects (DESD/EVTB/… — 8.16 AFF JSON engine)
+│   ├── server-driven.ts        # Server-driven objects (DESD/EVTB/DSFD/… — AFF engine)
 │   ├── oauth.ts, cookies.ts    # BTP OAuth (browser/PKCE) + cookie parsing (Destination Service lives in server.ts + @arc-mcp/xsuaa-auth)
 │   ├── ui5-repository.ts, flp.ts    # UI5 ABAP Repository + FLP OData clients
 │   └── authorization-trace.ts, diagnostics.ts, codeintel.ts # auth/ST22 traces + code intelligence
@@ -199,7 +199,7 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 | Hyperfocused mode | `src/handlers/hyperfocused.ts`, `src/handlers/tools.ts` |
 | ATC run (`SAPDiagnose action=atc`) | `src/adt/devtools.ts` (`runAtcCheck`) — three-step flow; variant MUST bind at worklist creation; ATC skips `$TMP` (details: dev-guide) |
 | CDS test-case suggestions (8.16+) | `src/adt/devtools.ts`, `src/handlers/diagnose.ts` — discovery-gated, read-only |
-| Server-driven objects read/write (DESD/EVTB/…) | `src/adt/server-driven.ts` (`SDO_TYPES` + `SDO_REGISTRY` — the SAPRead/SAPWrite table rows derive from the tuple), `src/handlers/read.ts` + `write.ts`/`write-helpers.ts` early branches — per-type/release-adaptive gates; EVTO=v2 content type (details: dev-guide) |
+| Server-driven objects read/write (DESD/EVTB/DSFD/…) | `src/adt/server-driven.ts` (`SDO_TYPES` + `SDO_REGISTRY` — the SAPRead/SAPWrite table rows derive from the tuple; `sourceFormat` is per-type: `text` for DTSC/DSFD, `json` for the rest — wrong one = hard 415), `src/handlers/read.ts` + `write.ts`/`write-helpers.ts` early branches — per-type/release-adaptive gates; EVTO=v2 content type (details: dev-guide) |
 | XML response parser / safety check | `src/adt/xml-parser.ts` / `src/adt/safety.ts` |
 | PrettyPrint / lint rules / pre-write hints | `src/handlers/lint.ts` + `src/adt/devtools.ts` / `src/lint/{lint,config-builder}.ts` + presets/ / `src/lint/pre-write-hints.ts` |
 | abaplint beyond its grammar ceiling (8xx) | `src/adt/features.ts` (`ABAPLINT_MAX_RELEASE`), `src/lint/config-builder.ts` — parser errors demoted to warnings when release > 758 |

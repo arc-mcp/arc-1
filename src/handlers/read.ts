@@ -177,7 +177,7 @@ export async function handleSAPRead(
   }
 
   // Server-driven objects (ABAP Platform 2025 / SAP_BASIS 8.16+): DESD, EVTB, DTSC, COTA, …
-  // share one AFF generic-object contract (blue:blueSource metadata + AFF JSON source), read
+  // share one AFF generic-object contract (blue:blueSource metadata + JSON or DDL-text source), read
   // via the discovery-gated generic engine instead of the per-type switch below. They bypass
   // the version/draft/cache machinery (no /source/main text; JSON output).
   if (isServerDrivenObjectType(type)) {

@@ -59,6 +59,10 @@ SORT RULES for this table — DO NOT BREAK when adding rows:
 | [BUG-01](#bug-01) | SAPActivate phantom success + CLI/server alignment (NW 7.50) — PR [#179](https://github.com/arc-mcp/arc-1/pull/179) open | P0 | S | Bugs |
 | [ARCH-01](#arch-01) | Discovery-driven endpoint routing — replaces hard-coded per-type URLs with ordered candidate-list against `/sap/bc/adt/discovery` (TABL already does this via `resolveTablObjectUrl`; extend to DOMA, DDLX, BDEF, SRVD, SRVB, ENHO). Plan: [docs/plans/2026-05-08-discovery-driven-endpoint-routing.md](../docs/plans/2026-05-08-discovery-driven-endpoint-routing.md) | P1 | M | Architecture |
 | [PR-ε](#pr-epsilon) | Remove static SAP_BASIS release gates and `isRelease750()` helper after ARCH-01 lands; consume `resolveSourceUrl` + `filterByDiscovery` at the call sites that are still hard-coded | P1 | S | Architecture |
+| [FEAT-67](#feat-67) | **DTDC (Dynamic Cache) read/write** — endpoint live on **758 and 816**, but NOT a registry row: type-specific `application/vnd.sap.adt.ddic.dtdc.v1+xml` and a `<dtdc:dtdcSource>` root, so it fails the `.includes('blues')` discovery gate, `parseBlueSource`, and `buildBlueSourceXml`. Needs the blues assumption generalized. Also exposes `ddic/dtdc/createstatements/{name}` (a "Show SQL" sibling of `cds_sql`) | P2 | S | Features |
+| [FEAT-68](#feat-68) | **ATC check-variant listing** — `/sap/bc/adt/atc/variants` returns 200 on 758 **and** 816 but is unconsumed, so an LLM must guess the `variant` string it passes to `SAPDiagnose action=atc`. Read-only, cheap | P2 | XS | Features |
+| [FEAT-69](#feat-69) | **Mass syntax check** — `syntaxCheck()` (`src/adt/devtools.ts`) already builds a list-shaped `chkrun:checkObjectList` but always emits exactly one `chkrun:checkObject`; making it N lets an agent check a whole package before activating | P2 | XS | Features |
+| [FEAT-70](#feat-70) | **Table technical settings** — TABL create ships with no delivery class / data class / size category / buffering (zero hits for `deliveryClass`/`sizeCategory` in `src/`). Completeness gap in a shipped feature; on SAP's own VS Code roadmap for Q4/2026 | P2 | M | Features |
 | [FEAT-18](#feat-18) | Function Group Bulk Fetch (read) — still open; its **sibling, FUGR structural-include WRITE, ✅ shipped 2026-06-25 (PR #505)** (`SAPWrite update type=INCL`+`group`, live-verified 758 + 816) | P1 | S | Features |
 | — | **RAP behavior-extension create** (`extend behavior for`) — ✅ **shipped 2026-06-25 (PR #507)**: `SAPWrite create type=BDEF` with extension source emits the `adtTemplate(base_bdef)`; live-verified 758 + 816 (new capability, no prior FEAT id) | P2 | M | Features |
 | — | **CDS API-release WRITE** (`SAPManage set_api_state`, FEAT-02 follow-up) — ✅ **shipped 2026-06-25 (PR #506)**: release/revoke a C1 contract; live-verified 758 + 816 | P2 | S | Features |
@@ -94,6 +98,9 @@ SORT RULES for this table — DO NOT BREAK when adding rows:
 | [COMPAT-06](#compat-06) | Outbound `HTTP_PROXY` / `NO_PROXY` support for SAP ADT traffic from ARC-1 | P2 | S | Compatibility |
 | [FEAT-05](#feat-05) | Code Refactoring (Rename, Extract) | P3 | L | Features |
 | [FEAT-07](#feat-07) | TLS/HTTPS for HTTP Streamable | P3 | S | Features |
+| — | ~~**SDO source format fix + DSFD**~~ — ✅ **shipped 2026-07-21**: server-driven source PUT content type is now per-registry-entry (`sourceFormat`), fixing `SAPWrite update type=DTSC` which SAP answered with a hard `415` on every system (the client-side `JSON.parse` gate also rejected DDL text before any HTTP call); adds `DSFD` (CDS Scalar Function Definition). Live-verified 758 + 816. Evidence: [docs/research/2026-07-21-sap-vscode-roadmap-dtdc-dsfd-probe.md](../docs/research/2026-07-21-sap-vscode-roadmap-dtdc-dsfd-probe.md) | P1 | S | Bugs/Features |
+| [FEAT-71](#feat-71) | **Dictionary activation log** — `/sap/bc/adt/activation/runs` is `405` POST-only on 758 + 816, so there is no simple GET log reader; needs its own research before costing. Activation failures are a top LLM failure mode | P3 | M | Features |
+| [FEAT-72](#feat-72) | **CDS entity indexes** — `/sap/bc/adt/ddic/db/indexes` + `/sap/bc/adt/ddic/extensionindexes` exist on 816 (`406`, need the right Accept). On SAP's VS Code roadmap for Q4/2026 | P3 | S | Features |
 | ~~[FEAT-65](#feat-65)~~ | ~~TTYP (Table Type) read/write~~ — **✅ Completed 2026-06-25 (PR #504)**: read + create (built-in & structure rows; POST shell → follow-up PUT sets the real row type), live-verified 758 + 816 | P3 | M | Features |
 | [FEAT-29](#feat-29) | P3 Backlog (14 items) | P3 | various | Features |
 | [FEAT-50](#feat-50) | ADT Probe Fixture Coverage (contributed fixtures) | P3 | XS-each | Diagnostics |
@@ -133,9 +140,10 @@ SORT RULES for this table — DO NOT BREAK when adding rows:
 
 | ID | Feature | Completed | Category |
 |----|---------|-----------|----------|
+| — | **SDO source format fix + DSFD** — server-driven source PUT content type is now per-registry-entry (`sourceFormat: 'json' \| 'text'`), driving both the PUT `Content-Type` and the client-side `JSON.parse` gate. Fixes `SAPWrite update type=DTSC`, which SAP answered with a hard `415` on every system (and which the JSON gate rejected client-side before that). Adds `DSFD` (CDS Scalar Function Definition), live on 758 + 816. `batch_create` now refuses server-driven types instead of silently POSTing them to the PROG endpoint. Live-verified 758 + 816. | 2026-07-21 | Bugs/Features |
 | — | DDIC structure context — `SAPContext(action="structure", type="TABL")` returns recursive TABL structure include trees plus append/extension structures confirmed from where-used candidates (`extend type <base> with`). Implementation: `src/adt/structure-hierarchy.ts` + `src/handlers/context.ts`; covered by parser/handler/schema tests and a BAPIRET2 integration smoke. A4H 2025 where-used 400 fallback returns the include tree with a warning instead of timing out. | 2026-06-26 | Features |
 | — | 2026-06-24 deep-scan gap bundle — FEAT-63 pre-release inactive-objects check, FEAT-64 unknown-column hint, FEAT-41/FEAT-31 AUnit coverage, FEAT-65 TTYP read/create, FUGR structural-include write, CDS API-release write (`SAPManage set_api_state`), RAP behavior-extension create (`extend behavior for`), plus COMPAT-05 ToC advertise-text correction. Live-verified on 758 + 816 where applicable. | 2026-06-25 | Features/Compatibility |
-| — | Server-driven object (SDO) **write** — `SAPWrite action=create\|update\|delete` + `SAPActivate` for `DESD\|EVTB\|DTSC\|CSNM\|EVTO\|COTA` via the same generic AFF engine (`src/adt/server-driven.ts`): create POSTs a `<blue:blueSource>` metadata body (per-type `createType`; blues `v1`, or **`v2` for EVTO**), source is AFF JSON written via lock→PUT `…/source/main` (`application/json`)→unlock, then `SAPActivate` (generic activation endpoint). Discovery-gated (clean 8.16+ error otherwise), `allowWrites`-gated, `allowedPackages`-gated against the real package. Create leaves the object inactive. Per-type/release-adaptive gate (like the read path): live-verified on a4h-2025 (816) — all 6 types create, DESD full create→source→activate→read→delete round-trip; on a4h (758) **EVTB write also works** (cross-release) while the 816-only types return a clean "requires 8.16+" error; npl (7.50) gates all 6 cleanly (no crash). Plan: `docs/plans/completed/2026-06-08-add-server-driven-object-write.md`. | 2026-06-05 | Features |
+| — | Server-driven object (SDO) **write** — `SAPWrite action=create\|update\|delete` + `SAPActivate` for `DESD\|EVTB\|DTSC\|CSNM\|EVTO\|COTA` via the same generic AFF engine (`src/adt/server-driven.ts`): create POSTs a `<blue:blueSource>` metadata body (per-type `createType`; blues `v1`, or **`v2` for EVTO**), source is written via lock→PUT `…/source/main`→unlock with the type's per-entry `sourceFormat` content type (AFF JSON for DESD/CSNM/EVTB/EVTO/COTA, DDL text for DTSC/DSFD — corrected 2026-07-21, see [the DTDC/DSFD probe dossier](../docs/research/2026-07-21-sap-vscode-roadmap-dtdc-dsfd-probe.md)), then `SAPActivate` (generic activation endpoint). Discovery-gated (clean 8.16+ error otherwise), `allowWrites`-gated, `allowedPackages`-gated against the real package. Create leaves the object inactive. Per-type/release-adaptive gate (like the read path): live-verified on a4h-2025 (816) — all 6 types create, DESD full create→source→activate→read→delete round-trip; on a4h (758) **EVTB write also works** (cross-release) while the 816-only types return a clean "requires 8.16+" error; npl (7.50) gates all 6 cleanly (no crash). Plan: `docs/plans/completed/2026-06-08-add-server-driven-object-write.md`. | 2026-06-05 | Features |
 | — | Server-driven object (SDO) read — `SAPRead type=DESD\|EVTB\|EVTO\|DTSC\|CSNM\|COTA` reads ABAP Platform 2025 (8.16) "server-driven" repository objects via one generic discovery-gated AFF engine (`src/adt/server-driven.ts`): metadata from `<blue:blueSource>` + AFF JSON source. Per-type/release-adaptive gate (EVTB also on S/4HANA 2023). 816 roadmap item #2 from the new-ADT-APIs research. Live-verified: a4h-2025 (816) reads DESD (CDS Logical External Schema) + EVTB (RAP Event Binding); a4h (758) reads EVTB, skips DESD. Write path shipped (see the SDO write row above). Plan: `docs/plans/completed/2026-06-05-add-server-driven-object-read.md`. | 2026-06-05 | Features |
 | — | CDS test-case scaffolding — `SAPDiagnose action=cds_testcases` returns SAP-suggested ABAP Unit test cases for a CDS entity (CDS Test Double Framework): one suggestion per testable semantic (whole view / calculated field / CAST / JOIN) with a `testMethod` name, `description`, `semanticType`, optional `calculatedField`, plus a `cl_cds_test_environment` scaffolding `hint`. Read-only, discovery-gated to **SAP_BASIS 8.16+ (ABAP Platform 2025 / S/4HANA 2025)** — the first new-API capability mined from the 2025 ADT research. Live-verified: a4h-2025 (816) → 200, a4h (758) → clean skip. Plan: `docs/plans/completed/2026-06-05-add-cds-test-cases-scaffolding.md`. | 2026-06-05 | Features |
 | [SEC-12](#sec-12) | XSUAA OAuth `state` Callback Proxy — fixes VS Code "State does not match" (XSUAA echoes literal `+`; signed base64url state token + `/oauth/callback` re-encodes). Removable only when XSUAA emits `%2B` (not vscode#314715). (PR #325) | 2026-06-01 | Security |
@@ -686,6 +694,66 @@ SAP confirmed GA of ABAP Cloud Extension for VS Code with built-in agentic AI po
 **Where:** ARC-1 already self-corrects unknown *tables* (`src/handlers/query.ts:180` suggests similar names via search) but not unknown columns. Add column enrichment in the `getTableContents`/`runTableQuery`/`runQuery` catch path (`src/adt/client.ts`) — fetch the table's component list (DD03L / structure read, already available) and append "valid columns: …". Best as a shared helper called from `query.ts`.
 
 ---
+
+<a id="feat-67"></a>
+### FEAT-67: DTDC (Dynamic Cache) Read/Write
+| Field | Value |
+|-------|-------|
+| **Priority** | P2 |
+| **Effort** | S |
+| **Risk** | Low |
+| **Usefulness** | Medium — on SAP's ADT-for-VS-Code roadmap for Q4/2026, and the endpoint is already live on 758 + 816. Pairs with the CDS/RAP work ARC-1 already does. |
+| **Status** | Open. **Not** a one-row `SDO_REGISTRY` addition: DTDC uses a type-specific `application/vnd.sap.adt.ddic.dtdc.v1+xml` and a `<dtdc:dtdcSource>` root, so it fails the `.includes('blues')` gate, `parseBlueSource`, and `buildBlueSourceXml`. Source is DDL text. Also exposes `ddic/dtdc/createstatements/{name}` (a "Show SQL" sibling of `cds_sql`). Live-probed 2026-07-21 on a4h 2023 (758) + a4h-2025 (816) — see [docs/research/2026-07-21-sap-vscode-roadmap-dtdc-dsfd-probe.md](../docs/research/2026-07-21-sap-vscode-roadmap-dtdc-dsfd-probe.md). |
+
+<a id="feat-68"></a>
+### FEAT-68: ATC Check-Variant Listing
+| Field | Value |
+|-------|-------|
+| **Priority** | P2 |
+| **Effort** | XS |
+| **Risk** | Low |
+| **Usefulness** | Medium-high — `SAPDiagnose action=atc` takes a free-string `variant` today, so an LLM must guess a valid name or fall back to the system default. |
+| **Status** | Open. `/sap/bc/adt/atc/variants` returns **200 on both 758 and 816** and is unconsumed. Read-only. Authoring CHKO/CHKC/CHKV objects is explicitly out of scope (Basis governance work, not LLM-driven). Live-probed 2026-07-21 on a4h 2023 (758) + a4h-2025 (816) — see [docs/research/2026-07-21-sap-vscode-roadmap-dtdc-dsfd-probe.md](../docs/research/2026-07-21-sap-vscode-roadmap-dtdc-dsfd-probe.md). |
+
+<a id="feat-69"></a>
+### FEAT-69: Mass Syntax Check
+| Field | Value |
+|-------|-------|
+| **Priority** | P2 |
+| **Effort** | XS |
+| **Risk** | Low |
+| **Usefulness** | Medium-high for agent loops — check a whole package before activating, instead of one object per round-trip. |
+| **Status** | Open. `syntaxCheck()` (`src/adt/devtools.ts`) already builds a list-shaped `<chkrun:checkObjectList>` but always emits exactly one `<chkrun:checkObject>`; `SAPDiagnose` takes scalar `name`+`type` with no `objects` array. `SAPActivate` already has a batch path to model it on. On SAP's ADT-for-Eclipse roadmap. |
+
+<a id="feat-70"></a>
+### FEAT-70: Table Technical Settings
+| Field | Value |
+|-------|-------|
+| **Priority** | P2 |
+| **Effort** | M |
+| **Risk** | Medium |
+| **Usefulness** | High — this is a completeness gap in a shipped feature, not a new one: TABL create currently produces tables with no delivery class, data class, size category, or buffering. |
+| **Status** | Open. Zero hits for `deliveryClass` / `sizeCategory` / `bufferingType` / `dataMaintenance` in `src/`. Technical settings are only reachable as free text inside the DDL source ARC-1 passes through verbatim. On SAP's ADT-for-VS-Code roadmap for Q4/2026. |
+
+<a id="feat-71"></a>
+### FEAT-71: Dictionary Activation Log
+| Field | Value |
+|-------|-------|
+| **Priority** | P3 |
+| **Effort** | M |
+| **Risk** | Medium |
+| **Usefulness** | Medium-high — activation failures are a top LLM failure mode, and ARC-1 activates constantly; a readable log would improve error feedback. |
+| **Status** | Open, **needs research first**. `/sap/bc/adt/activation/runs` is `405` POST-only on both systems, so there is no simple GET log reader — the earlier "cheap win" assessment was wrong. On SAP's ADT-for-VS-Code roadmap for Q4/2026. Live-probed 2026-07-21 on a4h 2023 (758) + a4h-2025 (816) — see [docs/research/2026-07-21-sap-vscode-roadmap-dtdc-dsfd-probe.md](../docs/research/2026-07-21-sap-vscode-roadmap-dtdc-dsfd-probe.md). |
+
+<a id="feat-72"></a>
+### FEAT-72: CDS Entity Indexes
+| Field | Value |
+|-------|-------|
+| **Priority** | P3 |
+| **Effort** | S |
+| **Risk** | Low |
+| **Usefulness** | Low-medium — on SAP's ADT-for-VS-Code roadmap for Q4/2026 (BTP + S/4HANA Cloud only). |
+| **Status** | Open. `/sap/bc/adt/ddic/db/indexes` and `/sap/bc/adt/ddic/extensionindexes` both exist on 816 but return `406` — the correct `Accept` has not been determined. Live-probed 2026-07-21 on a4h 2023 (758) + a4h-2025 (816) — see [docs/research/2026-07-21-sap-vscode-roadmap-dtdc-dsfd-probe.md](../docs/research/2026-07-21-sap-vscode-roadmap-dtdc-dsfd-probe.md). |
 
 <a id="feat-65"></a>
 ### FEAT-65: TTYP (Table Type) Read/Write
