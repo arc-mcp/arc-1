@@ -4,7 +4,6 @@ import { isOperationAllowed, OperationType, type OperationTypeCode } from '../ad
 import { getActionPolicy, invocationPolicyKey } from '../authz/policy.js';
 import type { ToolDefinition } from '../handlers/tools.js';
 import type { TargetDescriptor } from './destination-registry.js';
-import { MULTI_TARGET_DENY_ACTIONS } from './destination-registry.js';
 import { TARGET_CATALOG_MAX_OFFSET, TARGET_CATALOG_MAX_QUERY_LENGTH } from './multi-target-catalog.js';
 import { TARGET_ID_PATTERN } from './multi-target-identity.js';
 import type { ServerConfig } from './types.js';
@@ -14,17 +13,49 @@ export const MULTI_TARGET_TOOLS = new Set([
   'SAPSearch',
   'SAPQuery',
   'SAPNavigate',
+  'SAPLint',
   'SAPDiagnose',
+  'SAPTransport',
   'SAPContext',
 ]);
 
-const FORBIDDEN_ACTIONS = new Set(MULTI_TARGET_DENY_ACTIONS);
+// Mixed-action tools are deny-by-default. Adding an action to the general tool
+// must not silently broaden the reviewed multi-target surface.
+const MULTI_TARGET_ACTION_RULES = new Map<
+  string,
+  { actions: ReadonlySet<string>; omittedProperties: ReadonlySet<string> }
+>([
+  [
+    'SAPLint',
+    {
+      actions: new Set(['lint', 'lint_and_fix', 'list_rules']),
+      omittedProperties: new Set(['indentation', 'style']),
+    },
+  ],
+  [
+    'SAPTransport',
+    {
+      actions: new Set(['list', 'get', 'check', 'history']),
+      omittedProperties: new Set([
+        'description',
+        'pgmid',
+        'target',
+        'transportLayer',
+        'owner',
+        'recursive',
+        'removeLockedObjects',
+      ]),
+    },
+  ],
+]);
+
 const ALLOWED_OPS = new Set<OperationTypeCode>([
   OperationType.Read,
   OperationType.Search,
   OperationType.Query,
   OperationType.FreeSQL,
   OperationType.Intelligence,
+  OperationType.Test,
 ]);
 
 export function isMultiTargetInvocationAllowed(
@@ -42,7 +73,8 @@ export function multiTargetInvocationDecision(
 ): 'allowed' | 'target-policy-denied' | 'forbidden' {
   if (!MULTI_TARGET_TOOLS.has(toolName)) return 'forbidden';
   const action = invocationPolicyKey(toolName, args);
-  if (action && FORBIDDEN_ACTIONS.has(`${toolName}.${action.toLowerCase()}`)) return 'forbidden';
+  const actionRule = MULTI_TARGET_ACTION_RULES.get(toolName);
+  if (actionRule && (!action || !actionRule.actions.has(action.toLowerCase()))) return 'forbidden';
   const policy = getActionPolicy(toolName, action);
   if (!policy || !ALLOWED_OPS.has(policy.opType)) return 'forbidden';
   if (isOperationAllowed(config, policy.opType)) return 'allowed';
@@ -65,13 +97,17 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
     .map(String)
     .filter((value) => isMultiTargetInvocationAllowed(tool.name, { [field]: value }, config));
   if (values.length === 0) return undefined;
+  const actionRule = MULTI_TARGET_ACTION_RULES.get(tool.name);
+  const prunedProperties = actionRule
+    ? Object.fromEntries(Object.entries(properties).filter(([name]) => !actionRule.omittedProperties.has(name)))
+    : properties;
   return {
     ...tool,
     annotations: { ...tool.annotations, readOnlyHint: true, destructiveHint: false },
     inputSchema: {
       ...schema,
       properties: {
-        ...properties,
+        ...prunedProperties,
         [field]: { ...definition, enum: values },
       },
     },

@@ -339,12 +339,17 @@ describe('multi-target MCP servers', () => {
       'SAPRead',
       'SAPSearch',
       'SAPNavigate',
+      'SAPLint',
       'SAPDiagnose',
       'SAPContext',
+      'SAPTransport',
     ]);
     const read = result.tools.find((tool: { name: string }) => tool.name === 'SAPRead');
     expect(read.inputSchema.properties.target.enum).toEqual(['A00/000']);
     expect(read.inputSchema.required).toContain('target');
+    const transport = result.tools.find((tool: { name: string }) => tool.name === 'SAPTransport');
+    expect(transport.inputSchema.properties.target.enum).toEqual(['A00/000']);
+    expect(transport.inputSchema.required).toContain('target');
 
     const adminResult = await requestHandler(server, ListToolsRequestSchema.shape.method.value)(
       { method: 'tools/list', params: {} },

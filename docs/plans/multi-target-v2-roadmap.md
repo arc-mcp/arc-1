@@ -151,8 +151,8 @@ Every future PR must preserve these rules:
 | Additional SQL governance | Keep outside this roadmap; existing data/SQL gates remain the boundary. | Separate security enhancement |
 | Cache modes other than none | Add bounded, target/user-safe memory caching first; SQLite only after an explicit storage design. | v2 performance track |
 | Plugins, UI, and hyperfocused mode | Keep disabled until each can preserve target selection, policy, and audit invariants. Hyperfocused mode is not recommended for large landscapes. | Optional later track |
-| SAPLint | Add its mutation-free actions through an explicit action allowlist. | Read-only parity |
-| ATC and ABAP Unit | Treat as controlled execution, not ordinary reads. Add explicit opt-in and workload controls. | Later execution track |
+| SAP-backed SAPLint actions | V1 permits only offline `lint`, `lint_and_fix`, and `list_rules`; review `format` and `get_formatter_settings` separately and keep the mutating setter excluded. | Read-only parity |
+| ATC and ABAP Unit workload hardening | V1 permits both under the existing read scope and global controls. Add explicit opt-in/grants, cancellation, quotas, and workload controls before broader execution use. | Later execution track |
 | Browser target catalog/session UI | Keep `SAPTargets` as the authenticated catalog. No public/session catalog; rendering the same sanitized model behind Admin is optional research. | Optional later track |
 | Dynamic destination refresh | Add explicit preview/apply and atomic snapshot replacement; no automatic polling initially. | v2 operations track |
 | Write-safe aggregate routing | Requires a new ADR, client interaction evidence, and stronger wrong-target consent. | Research only |
@@ -420,8 +420,8 @@ action-level review:
 
 | Tool | Candidate v2 actions | Excluded until separate review |
 |------|----------------------|--------------------------------|
-| `SAPLint` | `lint`, `lint_and_fix`, `list_rules`, `format`, `get_formatter_settings` | `set_formatter_settings` |
-| `SAPTransport` | `list`, `get`, `check`, `history`, `layers`, `targets` | create, release, reassign, delete, remove-object actions |
+| `SAPLint` | V1 already has offline `lint`, `lint_and_fix`, and `list_rules`; v2 may review `format` and `get_formatter_settings` | `set_formatter_settings` |
+| `SAPTransport` | V1 already has `list`, `get`, `check`, and `history`; v2 may review `layers` and `targets` | create, release, reassign, delete, remove-object actions |
 | `SAPManage` | cached `features` initially; selected FLP reads only after data review | `probe` as ordinary Viewer work, `cache_stats` before cache exists, and package/API/FLP/global mutations |
 | `SAPGit` | `list_repos`, `whoami`, `config`, `branches`, `history`, `objects`, `check`, after backend/output review | `external_info` pending SSRF/credential review and every remote/credential-changing action |
 
@@ -434,10 +434,12 @@ load and changes shared feature state.
 
 ### 2. Controlled execution
 
-ATC and ABAP Unit are not simple reads even when they do not persist repository content. They
-consume SAP work processes, may create worklists/results, and can be expensive across 100 systems.
+V1 exposes ATC and ABAP Unit through the existing `read` scope and global rate/concurrency controls.
+They are not simple reads even when they do not persist repository content: they consume SAP work
+processes, may create worklists/results, and can be expensive across 100 systems.
 
-Add a separate, PP-only and pinned-route-only initial controlled-execution capability with:
+V2 should replace that compatibility-oriented baseline with a separate, PP-only and
+pinned-route-only controlled-execution capability with:
 
 - an instance opt-in and per-target opt-in;
 - a required explicit execution scope and exact target execution grant;
@@ -609,7 +611,7 @@ destinations, enable writes, or contact SAP with a technical fallback identity.
 | Git writes | Medium | Very high | Last mutation track |
 | Request-driven memory cache | Medium | Medium–high | Only after measurement |
 | Dynamic refresh | High operational value | Medium–high | After stable snapshot metrics |
-| Controlled ATC/Unit execution | Medium | Medium–high | Independent opt-in track |
+| Hardened ATC/Unit execution | Medium | Medium–high | Independent opt-in track |
 | Aggregate writes | Convenience | Very high | Research only |
 | Basic writes | Low | Critical | Reject |
 | SaaS/cross-subaccount | Potentially high | Very high | Separate program |
@@ -812,20 +814,21 @@ exposed.
 
 ### V2-06 — Add mutation-free tool parity
 
-**Goal:** add reviewed SAPLint, SAPTransport, SAPManage, and SAPGit read actions.
+**Goal:** extend the v1 offline-SAPLint/read-only-transport baseline with reviewed SAP-backed
+SAPLint, transport-topology, SAPManage, and SAPGit read actions.
 
 **Scheduling:** this can land directly after V2-00 and in parallel with V2-01–V2-05. It is not
 blocked by write authorization.
 
-**Work:** one action registry drives schemas, list pruning, call enforcement, and tests. Keep
-controlled execution and any state-changing action out. Add explicit instance/target opt-ins for
-sensitive transport/Git metadata.
+**Work:** retain v1's explicit action registry for schemas, list pruning, call enforcement, and
+tests. Keep additional controlled execution and every state-changing action out. Add explicit
+instance/target opt-ins for sensitive transport/Git metadata.
 
 **Acceptance:** every listed action is callable, every omitted action is rejected even by direct
 tool call, aggregate schemas remain safe across different target policies, and Basic/PP expose only
 explicitly opted-in ARC-level surfaces subject to SAP authorization.
 
-**Rollback:** per-tool rollout switches or one parity flag; existing six tools remain.
+**Rollback:** per-tool rollout switches or one parity flag; the v1 action allowlists remain.
 
 ### V2-07 — Add fair scheduling and metrics
 
@@ -982,14 +985,16 @@ desired-revision coordination and readiness across every instance.
 
 ### V2-14 — Add controlled execution
 
-**Goal:** add ATC, then ABAP Unit, on pinned PP routes behind independent workload controls.
+**Goal:** move the v1 ATC/ABAP Unit baseline behind independent workload controls and, after client
+compatibility review, restrict controlled execution to pinned PP routes.
 
 **Prerequisites:** V2-02B exact execution grants, V2-04 end-to-end cancellation, V2-07 weighted
 scheduling/quotas, and a per-target execution-policy addition with the same strict parser rules as
 V2-03.
 
 **Acceptance:** quotas, cancellation, timeout, result bounds, worklist cleanup, SAP authorization,
-and noisy-neighbor tests. Aggregate and Basic routes neither list nor dispatch execution.
+and noisy-neighbor tests. If aggregate and Basic execution is removed, document and test the
+migration/compatibility behavior before changing the v1 surface.
 
 **Rollback:** disable execution without changing read/write policy.
 

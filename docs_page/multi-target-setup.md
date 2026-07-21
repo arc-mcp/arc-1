@@ -11,8 +11,9 @@ restart, upgrade, scaling, and handover procedures live in
     Multi-target v1 is available only for SAP BTP Cloud Foundry deployments built from source. It
     serves on-premise SAP systems through XSUAA. Principal Propagation is recommended. A
     default-off BasicAuthentication option exists for read-only systems that must use a shared
-    technical identity. Writes, activation, transport/Git mutations, SAPLint, ATC, and ABAP Unit
-    are not available on multi-target routes.
+    technical identity. Writes, activation, and transport/Git mutations are unavailable. Offline
+    SAPLint, read-only transport inspection, ATC, and ABAP Unit are available; ATC and Unit execute
+    SAP workloads and are not passive metadata reads.
 
 One ARC-1 application can serve up to 256 SAP system/client targets discovered from BTP subaccount
 destinations. Enabling the mode creates both endpoint styles:
@@ -329,15 +330,22 @@ non-rolling stop/start strategy.
 
 ## What multi-target v1 exposes
 
-Both pinned and aggregate routes draw from the same six permitted SAP-contacting tools. Tool lists
-are narrowed by configured instance/target policy and XSUAA scope where the schema permits it:
+Both pinned and aggregate routes draw from the same set of up to eight permitted SAP-contacting
+tools. Tool lists are narrowed by configured instance/target policy and XSUAA scope where the schema
+permits it:
 
 - `SAPRead`
 - `SAPSearch`
 - `SAPQuery`
 - `SAPNavigate`
+- `SAPLint` (`lint`, `lint_and_fix`, and `list_rules` only; all run offline in ARC-1)
 - `SAPDiagnose`
 - `SAPContext`
+- `SAPTransport` (`list`, `get`, `check`, and `history` only)
+
+On the aggregate route, `SAPTransport.target` is the required SAP system/client selector. The
+single-target transport-creation field with the same name is omitted because `create` is not part of
+the multi-target surface.
 
 The aggregate route adds a required top-level `target` to each SAP-contacting call. It never stores
 a default or current target. Up to 16 active targets appear as exact schema enums; from 17 through
@@ -367,9 +375,16 @@ them with `SAP_DENY_ACTIONS` and SAP authorization when the Viewer audience shou
 There is no public `/targets` route. Bare `/mcp` is never assigned to the first or only discovered
 destination; it exists only when a single target is configured explicitly.
 
-The following are structurally unavailable on multi-target routes even if an admin token or a
-side-by-side single-target `/mcp` can write: `SAPWrite`, `SAPActivate`, `SAPTransport`, `SAPGit`,
-`SAPManage`, and `SAPLint`, including ATC and ABAP Unit.
+`SAPDiagnose.atc` and `SAPDiagnose.unittest` are available with the existing `read` scope, but they
+execute code-analysis/test workloads in SAP and may create transient worklists/results. SAP
+authorization, the process-wide concurrency cap, and per-user rate limits still apply. To keep them
+out of a customer deployment, set
+`SAP_DENY_ACTIONS=SAPDiagnose.atc,SAPDiagnose.unittest`.
+
+The following remain structurally unavailable on multi-target routes even if an admin token or a
+side-by-side single-target `/mcp` can write: `SAPWrite`, `SAPActivate`, `SAPGit`, `SAPManage`, every
+mutating `SAPTransport` action, and SAP-backed `SAPLint` formatter/settings actions. Direct calls to
+unlisted actions are rejected as well as omitted from tool schemas.
 
 <a id="target-discovery"></a>
 

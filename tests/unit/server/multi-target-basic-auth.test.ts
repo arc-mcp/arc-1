@@ -483,7 +483,8 @@ describe('multi-target shared Basic authentication', () => {
     expect(await names(['admin'])).toContain('SAPQuery');
     for (const scopes of [['read'], ['read', 'data'], ['read', 'data', 'sql'], ['admin']]) {
       const listed = await names(scopes);
-      expect(listed).not.toEqual(expect.arrayContaining(['SAPWrite', 'SAPActivate', 'SAPTransport', 'SAPGit']));
+      expect(listed).toEqual(expect.arrayContaining(['SAPLint', 'SAPTransport']));
+      expect(listed).not.toEqual(expect.arrayContaining(['SAPWrite', 'SAPActivate', 'SAPGit']));
     }
 
     const directWrite = await requestHandler(server)(
@@ -498,6 +499,24 @@ describe('multi-target shared Basic authentication', () => {
       target: 'A4H/100',
       identity: 'shared',
     });
+    for (const [name, action] of [
+      ['SAPLint', 'format'],
+      ['SAPTransport', 'create'],
+      ['SAPTransport', 'layers'],
+    ]) {
+      const directOmittedAction = await requestHandler(server)(
+        {
+          method: 'tools/call',
+          params: { name, arguments: { action, target: 'A4H/100' } },
+        },
+        { authInfo: ADMIN_AUTH },
+      );
+      expect(JSON.parse(directOmittedAction.content[0].text)).toMatchObject({
+        error: 'MULTI_TARGET_OPERATION_FORBIDDEN',
+        target: 'A4H/100',
+        identity: 'shared',
+      });
+    }
     expect(lookupDestination).not.toHaveBeenCalled();
   });
 

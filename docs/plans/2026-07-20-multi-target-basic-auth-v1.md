@@ -53,7 +53,7 @@ remain PP-only.
 | Caller access | Every XSUAA user with the global `read` scope can see and attempt every active Basic target, exactly as for PP target identifiers. Deploy separate ARC-1 applications when target populations differ. |
 | SAP identity | PP targets use a per-user identity. Basic targets use one shared technical identity from the selected destination. No PP-to-Basic or Basic-to-PP fallback is permitted. |
 | Authorization | XSUAA scope checks, instance safety, destination policy, SAP authorization, and the mutation-free ceiling all remain mandatory. Basic does not add a role or scope. |
-| Writes | Basic multi-target is read/data/SQL only. Writes, activation, transports, Git mutations, enqueue operations, SAPLint, ATC, and ABAP Unit remain structurally unavailable. |
+| Writes | Basic multi-target remains mutation-free. Writes, activation, transport/Git mutations, enqueue operations, and SAP-backed lint formatter/settings actions are structurally unavailable. The same explicit v1 additions as PP are available: offline SAPLint, read-only transport inspection, ATC, and ABAP Unit; ATC/Unit run as the shared technical user. |
 | Data and SQL | Existing four-layer consent remains unchanged: instance ceiling, destination opt-in, XSUAA scope, and SAP authorization. |
 | Credential rotation | Updating destination `User` or `Password` takes effect on a later request without app restart or redeployment. Other routing/configuration changes still require restart. |
 | Lockout control | A process-local credential guard serializes Basic calls per target, runs one non-retrying authentication canary before each eligible tool invocation, and blocks repeated attempts after an authentication failure. |
@@ -1068,5 +1068,6 @@ of the acceptance plan; those are tests, not unresolved architecture choices.
 - per-user availability caching;
 - SaaS/provider/subscriber discovery;
 - a secondary design-time destination;
-- multi-target writes, activation, transport/Git mutations, SAPLint, ATC, or ABAP Unit; and
+- multi-target writes, activation, transport/Git mutations, SAP-backed lint formatter/settings
+  actions, or dedicated ATC/ABAP Unit workload grants/quotas; and
 - allowing Basic shared identities on any future mutation-capable multi-target design.

@@ -28,7 +28,8 @@ export const MULTI_TARGET_SERVER_INSTRUCTIONS = [
   'SAPTargets identity=per-user means Principal Propagation; identity=shared means every caller uses',
   'the same destination technical user. Never infer per-user SAP access for a shared target.',
   'Data preview and SQL are available only where the instance, destination, user scope, and SAP all allow them.',
-  'Writes, activation, transport/Git mutations, SAPLint, ATC, and ABAP Unit are unavailable in multi-target v1.',
+  'Offline SAPLint, read-only transport inspection, ATC, and ABAP Unit are available; ATC and Unit execute SAP workloads.',
+  'Writes, activation, transport/Git mutations, and SAP-backed formatter actions are unavailable in multi-target v1.',
 ].join('\n');
 
 export function buildMultiTargetServerInstructions(options: MultiTargetServerOptions): string {
@@ -39,14 +40,16 @@ export function buildMultiTargetServerInstructions(options: MultiTargetServerOpt
       'Every call uses one shared technical SAP user from the BTP destination. SAP authorization and',
       'SAP-native attribution are not per caller; ARC-1 still audits the authenticated human caller.',
       'Data preview and SQL require instance, destination, XSUAA scope, and SAP authorization consent.',
-      'Writes, activation, transport/Git mutations, SAPLint, ATC, and ABAP Unit are unavailable.',
+      'Offline SAPLint, read-only transport inspection, ATC, and ABAP Unit are available; ATC and Unit run as the shared SAP user.',
+      'Writes, activation, transport/Git mutations, and SAP-backed formatter actions are unavailable.',
     ].join('\n');
   }
   return [
     `ARC-1 provides a read-only interface to SAP target ${options.target?.target ?? 'the configured target'}.`,
     'Principal Propagation sends each authenticated caller to SAP as their mapped SAP user.',
     'Data preview and SQL require instance, destination, XSUAA scope, and SAP authorization consent.',
-    'Writes, activation, transport/Git mutations, SAPLint, ATC, and ABAP Unit are unavailable.',
+    'Offline SAPLint, read-only transport inspection, ATC, and ABAP Unit are available; ATC and Unit execute SAP workloads.',
+    'Writes, activation, transport/Git mutations, and SAP-backed formatter actions are unavailable.',
   ].join('\n');
 }
 

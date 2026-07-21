@@ -759,6 +759,9 @@ SAPQuery(sql="SELECT * FROM mara WHERE matnr LIKE 'Z%'", maxRows=50)
 
 Manage CTS transport requests (SE09/SE10 equivalent): list, get details, create, release, delete, reassign owner, recursive release, check transport requirements, and object transport history (reverse lookup). `create` uses the ADT `CreateCorrectionRequest` endpoint, which works on both NetWeaver 7.50+ and S/4HANA.
 
+In multi-target v1, only the read-only `list`, `get`, `check`, and `history` actions are listed and
+accepted. Transport mutations and topology actions remain structurally unavailable.
+
 **Parameters:**
 
 | Parameter | Type | Required | Description |
@@ -1105,6 +1108,9 @@ If exact name resolution finds multiple object types, ARC-1 returns a bounded ca
 
 Run local abaplint rules on ABAP source code. System-aware: auto-selects cloud or on-prem rules based on detected system type. For server-side checks (ATC, syntax check, unit tests), use SAPDiagnose instead.
 
+In multi-target v1, only the offline `lint`, `lint_and_fix`, and `list_rules` actions are listed and
+accepted. `format` and formatter-settings actions contact or modify SAP and remain unavailable.
+
 **Parameters:**
 
 | Parameter | Type | Required | Description |
@@ -1183,6 +1189,10 @@ SAPLint(action="lint", source="...", rules={"line_length": {"severity": "Error",
 ## SAPDiagnose
 
 Server-side code analysis: syntax check, ABAP unit tests, ATC checks, CDS test-case scaffolding, active/inactive object state, short dumps (ST22), ABAP profiler traces, the on-prem STUSERTRACE authorization trace, an OData performance probe (`sap-statistics`), and CDS Show-SQL.
+
+Multi-target v1 includes `atc` and `unittest` under the existing `read` scope. They do not mutate
+repository objects, but they execute SAP workloads and may create transient worklists/results;
+administrators can disable them with `SAP_DENY_ACTIONS`.
 
 **Parameters:**
 

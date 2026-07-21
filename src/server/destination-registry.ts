@@ -13,7 +13,6 @@ import type { ServerConfig } from './types.js';
 
 export { TARGET_ID_PATTERN } from './multi-target-identity.js';
 export const MULTI_TARGET_MAX = 256;
-export const MULTI_TARGET_DENY_ACTIONS = Object.freeze(['SAPDiagnose.atc', 'SAPDiagnose.unittest']);
 
 export type TargetExclusionCode =
   | 'ACTIVE'
@@ -765,7 +764,7 @@ export function multiTargetSafety(policy: TargetPolicy): SafetyConfig {
     allowGitWrites: false,
     allowedPackages: ['$TMP'],
     allowedTransports: [],
-    denyActions: [...MULTI_TARGET_DENY_ACTIONS],
+    denyActions: [],
   };
 }
 

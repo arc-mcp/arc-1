@@ -38,7 +38,16 @@ ARC-1 may expose experimental multi-target endpoints only when
 - source/metadata reads by default, with data and SQL requiring instance, destination, XSUAA, and SAP
   consent; and
 - a structural multi-target ceiling that forbids writes, activation, transport/Git mutations,
-  enqueue locks, SAPLint, ATC, and ABAP Unit regardless of administrator role or single-target configuration.
+  enqueue locks, and SAP-backed formatter/settings actions regardless of administrator role or
+  single-target configuration. The reviewed mutation-free additions are offline
+  `SAPLint.lint|lint_and_fix|list_rules`, read-only
+  `SAPTransport.list|get|check|history`, and `SAPDiagnose.atc|unittest`.
+
+ATC and ABAP Unit are controlled executions rather than passive reads: they consume SAP work
+processes and may create transient worklists/results. They retain the existing `read` scope for
+single-target compatibility, remain bounded by the global semaphore and rate limits, require SAP
+authorization, and can be disabled instance-wide with `SAP_DENY_ACTIONS`. Their inclusion does not
+weaken the structural repository-mutation ceiling.
 
 Multi-target protected-resource metadata advertises only the mutation-free `read`, `data`, `sql`,
 and `admin` scopes. The initial unauthenticated challenge does not force `scope=read`, so general MCP

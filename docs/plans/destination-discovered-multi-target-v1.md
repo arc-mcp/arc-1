@@ -69,7 +69,7 @@ authorized caller and therefore is not a per-user SAP authorization boundary.
 | Target policy | Read by default; `arc1.allow_data_preview` and `arc1.allow_free_sql` are explicit per-target opt-ins. |
 | Writes | Impossible on multi-target routes in v1. Do not document or test a multi-target full-write configuration. |
 | Cache | `ARC1_CACHE=none` while the mode is enabled. |
-| Tool surface | Standard mode only; no hyperfocused alias, plugins, optional UI, SAPLint, ATC, or ABAP Unit on multi-target routes. |
+| Tool surface | Standard mode only; no hyperfocused alias, plugins, or optional UI. Explicit additions are offline `SAPLint.lint|lint_and_fix|list_rules`, read-only `SAPTransport.list|get|check|history`, and `SAPDiagnose.atc|unittest`; all other actions remain governed by the structural ceiling and explicit allowlists. |
 | Catalog | No standalone HTTP catalog. Aggregate-only `SAPTargets` is read-scoped: readers see it only with more than one active target and receive compact target/description/identity rows; admins see it at zero, one, or many targets and during registry failure, with secret-safe diagnostics and passive shared-auth health. Pinned endpoints never expose it. |
 | Target discovery | Aggregate schemas use exact target enums through 16 targets and a syntax pattern from 17–256; `SAPTargets` supplies IDs and descriptions without probing SAP user availability. |
 | User availability | Never guessed, probed in bulk, persisted, or negatively cached. A failed target call may be retried immediately. |
@@ -826,8 +826,11 @@ logs so one successful call does not create several billable BTP Audit Log recor
 - Do not store per-user target availability in memory, session state, disk, or an external system.
   It becomes stale when SAP access changes and does not survive deployment. A target list is a config
   inventory, not an entitlement inventory.
-- SAPLint, ATC, and ABAP Unit are not exposed on multi-target routes in v1. This is a
-  supported-surface choice, not an assertion that they can never work.
+- Offline `SAPLint.lint|lint_and_fix|list_rules`, read-only
+  `SAPTransport.list|get|check|history`, and `SAPDiagnose.atc|unittest` are exposed through
+  explicit action allowlists. ATC and ABAP Unit execute SAP workloads, retain the existing `read`
+  scope, and remain subject to SAP authorization, global concurrency/rate limits, and
+  `SAP_DENY_ACTIONS`.
 - The optional UI, plugins, and hyperfocused mode are disabled while multi mode is active.
 
 ## Concurrency and Rate Limits
@@ -1058,8 +1061,9 @@ Work:
 - Put effective `allowDataPreview` and `allowFreeSQL` into each target SafetyConfig so synthesized
   SQL/data paths such as `SAPSearch.tadir_lookup_db|both` and
   `SAPDiagnose.odata_perf|authorization_trace` cannot bypass target consent.
-- Remove SAPLint from the multi surface. Hide `SAPDiagnose.atc|unittest` and inject a fixed
-  multi-target denylist for those actions so a direct unlisted call is also rejected.
+- Add `SAPLint` and `SAPTransport` only through explicit action allowlists:
+  `lint|lint_and_fix|list_rules` and `list|get|check|history`. Permit
+  `SAPDiagnose.atc|unittest`; reject every omitted action at both list time and call time.
 - Pinned schemas gain no `target` argument, but use the same pruned multi-target read-only surface as
   aggregate routes; they are not byte-identical to the single-target full surface.
 - Add shallow aggregate `target` injection without duplicating handler Zod schemas.
@@ -1202,7 +1206,7 @@ Documentation requirements:
 - Document global roles, visibility, PP tradeoffs, restart/no-redeploy flow, 256 maximum, duplicate
   behavior, admin diagnostics, rates, pinned-URL OAuth/DCR multiplication, and all deferred features.
 - Update “12 tools” claims to explain that standard single-target mode remains 12 tools while
-  multi-target v1 exposes its six permitted SAP-contacting tools plus conditional aggregate-only
+  multi-target v1 exposes up to eight permitted SAP-contacting tools plus conditional aggregate-only
   `SAPTargets`.
 - Add explicit rows for `ARC1_MULTI_TARGET_ENDPOINTS` and `ARC1_MCP_HTTP_RATE_LIMIT` to both
   `docs_page/configuration-reference.md` and the `AGENTS.md` configuration table, including defaults,
@@ -1254,7 +1258,9 @@ Required automated cases:
 - data and SQL require instance + destination + scope + SAP auth;
 - no multi-target mutation or lock appears or dispatches, including for admin and a write-enabled
   single-target `/mcp`; every discovered SafetyConfig hardcodes writes/transport/Git false;
-- ATC, ABAP Unit, SAPLint, hidden `SAP`, and `Custom_*` are absent and direct invocation fails;
+- offline SAPLint, read-only transport inspection, ATC, and ABAP Unit appear and dispatch, while
+  every omitted `SAPLint`/`SAPTransport` action, hidden `SAP`, and `Custom_*` remains absent and a
+  direct invocation fails;
 - auth occurs before route resolution and public endpoints do not enumerate targets; no standalone
   HTTP target-catalog route is mounted;
 - initial multi-target 401 challenges omit `scope`, protected-resource metadata advertises exactly
@@ -1265,7 +1271,8 @@ Required automated cases:
   probing, explicit unknown feature state, and no discovered default/shared client;
 - auth failures are not cached and can succeed on immediate retry;
 - one global semaphore and shared rate buckets across all routes;
-- cache/UI/plugins/hyperfocused/SAPLint/ATC/unit-test constraints;
+- cache/UI/plugins/hyperfocused constraints and the exact lint/transport/ATC/unit-test action
+  allowlists;
 - stable registry revision across processes with identical safe config.
 
 Run at minimum:
@@ -1358,8 +1365,9 @@ reaches MCP dispatch; for pre-auth HTTP responses, `/health`, protected-resource
 404s, record the HTTP status and available correlation evidence instead. Never record access/refresh
 tokens, assertions, destination exports, raw URLs, or credentials.
 
-Do not run multi-target write CRUD. ATC and ABAP Unit are not acceptance requirements for this
-feature.
+Do not run multi-target write CRUD. Before customer rollout, smoke-test offline lint, read-only
+transport inspection, ATC, and ABAP Unit on one pinned PP target; repeat ATC/Unit on aggregate or
+shared Basic only where that identity mode is actually in scope and Basis has approved the load.
 
 ### 13. Review and rollout
 
@@ -1425,7 +1433,9 @@ until its individual ADRs and pull requests are accepted.
 - additional SQL parsing, statement allowlisting, or row-governance controls beyond the existing
   free-SQL/data gates;
 - cache modes other than none;
-- plugins, optional UI integration, hyperfocused mode, SAPLint, ATC, and ABAP Unit;
+- plugins, optional UI integration, and hyperfocused mode;
+- SAP-backed lint formatting/settings, transport topology (`layers`/`targets`), transport
+  mutations, and dedicated ATC/ABAP Unit workload grants/quotas beyond the v1 global controls;
 - a standalone HTTP/browser target catalog and cookie/session login;
 - dynamic destination refresh without restart; and
 - a write-safe aggregate routing model.

@@ -495,6 +495,15 @@ The authoritative formula and shared-beta rate starting points are in
 multi-target logs a warning when it is zero, so start with the documented positive per-user limit and
 tune from audit and latency evidence.
 
+ATC and ABAP Unit are available to the existing `read` role in multi-target mode for compatibility
+with single-target authorization. They are mutation-free at ARC-1's repository boundary but execute
+SAP workloads (ABAP Unit currently includes all risk levels and short, medium, and long durations).
+Review this with Basis before customer rollout. Use positive rate limits and an SAP-sized concurrency
+cap, or disable one or both with
+`SAP_DENY_ACTIONS=SAPDiagnose.atc,SAPDiagnose.unittest`. On a shared Basic target, the workload and
+SAP-native attribution belong to the destination technical user even though ARC-1 audits the human
+caller.
+
 <a id="10-operational-checklist"></a>
 
 ## Operational checklist
@@ -528,7 +537,9 @@ tune from audit and latency evidence.
 - SaaS subscriber/provider and cross-subaccount discovery;
 - S/4HANA Public Cloud/SAML assertion targets;
 - a second technical/design-time destination per target;
-- cache modes, plugins, optional UI, hyperfocused mode, SAPLint, ATC, and ABAP Unit;
+- cache modes, plugins, optional UI, and hyperfocused mode;
+- SAP-backed lint formatting/settings, transport topology (`layers`/`targets`), and every transport
+  mutation;
 - a browser HTML catalog or cookie/session login;
 - per-target concurrency reservations; and
 - live destination refresh without restart.

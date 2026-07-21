@@ -36,20 +36,31 @@ function property(tool: ToolDefinition, name: string): Record<string, unknown> {
 }
 
 describe('multi-target tool surface', () => {
-  it('keeps only the supported read-only core tools', () => {
+  it('keeps only the explicitly reviewed mutation-free tools and actions', () => {
     const tools = multiTargetToolDefinitions(getToolDefinitions(DEFAULT_CONFIG), DEFAULT_CONFIG);
     expect(tools.map((tool) => tool.name)).toEqual([
       'SAPRead',
       'SAPSearch',
       'SAPNavigate',
+      'SAPLint',
       'SAPDiagnose',
       'SAPContext',
+      'SAPTransport',
     ]);
     expect(tools.every((tool) => tool.annotations?.readOnlyHint)).toBe(true);
-    expect(tools.flatMap((tool) => (property(tool, 'action').enum as string[] | undefined) ?? [])).not.toContain('atc');
-    expect(tools.flatMap((tool) => (property(tool, 'action').enum as string[] | undefined) ?? [])).not.toContain(
-      'unittest',
-    );
+
+    const lint = tools.find((tool) => tool.name === 'SAPLint') as ToolDefinition;
+    expect(property(lint, 'action').enum).toEqual(['lint', 'lint_and_fix', 'list_rules']);
+    expect(lint.inputSchema.properties).not.toHaveProperty('indentation');
+    expect(lint.inputSchema.properties).not.toHaveProperty('style');
+
+    const diagnose = tools.find((tool) => tool.name === 'SAPDiagnose') as ToolDefinition;
+    expect(property(diagnose, 'action').enum).toEqual(expect.arrayContaining(['atc', 'unittest']));
+
+    const transport = tools.find((tool) => tool.name === 'SAPTransport') as ToolDefinition;
+    expect(property(transport, 'action').enum).toEqual(['list', 'get', 'check', 'history']);
+    expect(transport.inputSchema.properties).not.toHaveProperty('target');
+    expect(transport.inputSchema.properties).not.toHaveProperty('transportLayer');
   });
 
   it('adds data and SQL only when the effective target/union policy permits them', () => {
@@ -92,7 +103,13 @@ describe('multi-target tool surface', () => {
   it('distinguishes target policy denial from the v1 hard ceiling', () => {
     expect(multiTargetInvocationDecision('SAPQuery', {}, DEFAULT_CONFIG)).toBe('target-policy-denied');
     expect(multiTargetInvocationDecision('SAPWrite', { action: 'update' }, DEFAULT_CONFIG)).toBe('forbidden');
-    expect(multiTargetInvocationDecision('SAPDiagnose', { action: 'atc' }, DEFAULT_CONFIG)).toBe('forbidden');
+    expect(multiTargetInvocationDecision('SAPLint', { action: 'lint' }, DEFAULT_CONFIG)).toBe('allowed');
+    expect(multiTargetInvocationDecision('SAPLint', { action: 'format' }, DEFAULT_CONFIG)).toBe('forbidden');
+    expect(multiTargetInvocationDecision('SAPTransport', { action: 'list' }, DEFAULT_CONFIG)).toBe('allowed');
+    expect(multiTargetInvocationDecision('SAPTransport', { action: 'create' }, DEFAULT_CONFIG)).toBe('forbidden');
+    expect(multiTargetInvocationDecision('SAPTransport', { action: 'layers' }, DEFAULT_CONFIG)).toBe('forbidden');
+    expect(multiTargetInvocationDecision('SAPDiagnose', { action: 'atc' }, DEFAULT_CONFIG)).toBe('allowed');
+    expect(multiTargetInvocationDecision('SAPDiagnose', { action: 'unittest' }, DEFAULT_CONFIG)).toBe('allowed');
     expect(multiTargetInvocationDecision('SAP', { action: 'read' }, DEFAULT_CONFIG)).toBe('forbidden');
     expect(multiTargetInvocationDecision('Custom_Read', {}, DEFAULT_CONFIG)).toBe('forbidden');
   });
