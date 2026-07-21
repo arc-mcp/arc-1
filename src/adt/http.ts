@@ -991,23 +991,40 @@ export class AdtHttpClient {
         response = await this.doFetch(url, 'HEAD', headers);
       }
 
-      // S/4HANA Public Cloud compat: CL_ADT_WB_RES_APP returns 403 for HEAD.
-      // Retry with GET — GET also returns the CSRF token via X-CSRF-Token response header.
-      if (response.status === 403) {
+      // Preserve any session established by HEAD before deciding whether GET is needed.
+      // The fallback request must use the same SAP session as the eventual write.
+      this.storeCookies(response);
+
+      const headToken = response.headers.get('x-csrf-token');
+      const headSucceededWithoutToken = response.ok && (!headToken || headToken.toLowerCase() === 'required');
+
+      // Some systems reject HEAD with 403; others accept it but omit the token. In both
+      // cases retry with GET, which is the broadly supported CSRF bootstrap method and
+      // also exposes a real authentication failure instead of a misleading HTTP 200 error.
+      if (response.status === 403 || headSucceededWithoutToken) {
+        const fallbackCookieHeader = this.composeCookieHeader();
+        if (fallbackCookieHeader) {
+          headers.Cookie = fallbackCookieHeader;
+        } else {
+          delete headers.Cookie;
+        }
         logger.emitAudit({
           timestamp: new Date().toISOString(),
-          level: 'warn',
+          level: response.status === 403 ? 'warn' : 'debug',
           event: 'http_request',
           method: 'HEAD',
           path: '/sap/bc/adt/core/discovery',
-          statusCode: 403,
+          statusCode: response.status,
           durationMs: 0,
-          errorBody: 'CSRF HEAD returned 403 — retrying with GET (S/4HANA Public Cloud compat)',
+          errorBody:
+            response.status === 403
+              ? 'CSRF HEAD returned 403 — retrying with GET (S/4HANA Public Cloud compat)'
+              : 'CSRF HEAD returned no usable token — retrying with GET',
         });
         response = await this.doFetch(url, 'GET', headers);
       }
 
-      // Store cookies from CSRF response — critical for session correlation
+      // Store cookies from the final CSRF response — critical for session correlation.
       this.storeCookies(response);
 
       const token = response.headers.get('x-csrf-token');

@@ -238,6 +238,47 @@ describe('AdtHttpClient', () => {
       expect(fetchHeaders(2)['X-CSRF-Token']).toBe('TOKEN');
     });
 
+    it('retries CSRF fetch with GET when HEAD succeeds without a token', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', {}, ['SAP_SESSIONID=csrf-session; Path=/']));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'TOKEN' }));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok'));
+
+      const client = new AdtHttpClient(getDefaultConfig());
+      await client.post('/sap/bc/adt/checkruns', '<xml/>', 'application/xml');
+
+      expect(mockFetch).toHaveBeenCalledTimes(3);
+      expect(fetchOptions(0).method).toBe('HEAD');
+      expect(fetchOptions(1).method).toBe('GET');
+      expect(fetchHeaders(1).Cookie).toContain('SAP_SESSIONID=csrf-session');
+      expect(fetchHeaders(2)['X-CSRF-Token']).toBe('TOKEN');
+      expect(fetchHeaders(2).Cookie).toContain('SAP_SESSIONID=csrf-session');
+    });
+
+    it('surfaces a GET authentication failure when HEAD succeeds without a token', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(200, ''));
+      mockFetch.mockResolvedValueOnce(mockResponse(401, 'Unauthorized'));
+
+      const client = new AdtHttpClient(getDefaultConfig());
+      await expect(client.fetchCsrfToken()).rejects.toMatchObject({
+        statusCode: 401,
+      });
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(fetchOptions(0).method).toBe('HEAD');
+      expect(fetchOptions(1).method).toBe('GET');
+    });
+
+    it('retries CSRF fetch with GET when HEAD returns the Required marker', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'Required' }));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'TOKEN' }));
+
+      const client = new AdtHttpClient(getDefaultConfig());
+      await client.fetchCsrfToken();
+
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(fetchOptions(0).method).toBe('HEAD');
+      expect(fetchOptions(1).method).toBe('GET');
+    });
+
     it('throws when both HEAD and GET return 403', async () => {
       mockFetch.mockResolvedValueOnce(mockResponse(403, 'Forbidden'));
       mockFetch.mockResolvedValueOnce(mockResponse(403, 'Forbidden'));
@@ -649,6 +690,7 @@ describe('AdtHttpClient', () => {
     });
 
     it('throws AdtApiError when CSRF token is missing from response', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(200, ''));
       mockFetch.mockResolvedValueOnce(mockResponse(200, ''));
 
       const client = new AdtHttpClient(getDefaultConfig());
@@ -1584,6 +1626,26 @@ describe('AdtHttpClient', () => {
       // The ETag must survive the proxy reconstruction — that's what lets the
       // caching layer serve the cached source on a 304 revalidation.
       expect(resp.headers.etag).toBe('"abc"');
+    });
+
+    it('uses the CSRF GET fallback through the BTP proxy and surfaces its 401', async () => {
+      mockClientRequest.mockResolvedValueOnce(mockClientResponse(200, ''));
+      mockClientRequest.mockResolvedValueOnce(mockClientResponse(401, 'Unauthorized'));
+
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        btpProxy: {
+          host: 'proxy.example.com',
+          port: 20003,
+          protocol: 'http',
+          getProxyToken: async () => 'proxy-token',
+        },
+      });
+
+      await expect(client.fetchCsrfToken()).rejects.toMatchObject({ statusCode: 401 });
+      expect(mockClientRequest).toHaveBeenCalledTimes(2);
+      expect(mockClientRequest.mock.calls[0]?.[0]?.method).toBe('HEAD');
+      expect(mockClientRequest.mock.calls[1]?.[0]?.method).toBe('GET');
     });
   });
 
