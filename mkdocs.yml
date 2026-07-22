@@ -27,7 +27,6 @@ theme:
         name: Switch to light mode
   features:
     - navigation.path
-    - navigation.prune
     - navigation.top
     - navigation.instant
     - search.suggest
@@ -42,50 +41,49 @@ nav:
   - Home: index.md
   - Quickstart: quickstart.md
   - Install in Claude: install-in-claude.md
-  - SAP BTP: btp-overview.md
-  - Deploy:
-      - Choose a Deployment: deployment.md
-      - BTP Cloud Foundry: btp-cloud-foundry-deployment.md
+  - Deployment:
+      - Overview: deployment.md
+      - SAP BTP - Start Here: btp-overview.md
       - Docker: docker.md
-      - Multi-Target Setup: multi-target-setup.md
+      - BTP Cloud Foundry: btp-cloud-foundry-deployment.md
+      - BTP Administration: btp-administration.md
       - BTP ABAP Environment: btp-abap-environment.md
       - S/4HANA Public Cloud: s4hana-public-cloud.md
-      - Deployment Best Practices: deployment-best-practices.md
+      - Multi-System Setup (Multi-Target): multi-target-setup.md
+      - Multi-Target Administration: multi-target-administration.md
       - Multi-System Hub (mcp-hub): multi-system-hub.md
-  - Security:
-      - Authentication Overview: enterprise-auth.md
+      - Best Practices: deployment-best-practices.md
+  - Auth & Permissions:
+      - Overview: enterprise-auth.md
       - Authorization & Roles: authorization.md
-      - XSUAA: xsuaa-setup.md
-      - Principal Propagation: principal-propagation-setup.md
-      - BTP Destination Reference: btp-destination-setup.md
+      - API Key: api-key-setup.md
       - OAuth / JWT: oauth-jwt-setup.md
-      - API Keys: api-key-setup.md
-      - Production Security: security-guide.md
-  - Tools & Usage:
+      - XSUAA Setup: xsuaa-setup.md
+      - Principal Propagation: principal-propagation-setup.md
+      - BTP Destination Setup: btp-destination-setup.md
+  - Using ARC-1:
       - Tools Reference: tools.md
       - Extensions (Custom Tools): extensions.md
       - MCP Usage Guide: mcp-usage.md
       - Skills: skills.md
-      - CLI Guide: cli-guide.md
       - Blog Series: blog-series.md
-  - Develop:
-      - Local Development: local-development.md
-      - Architecture: architecture.md
-      - SAP Trial Setup: sap-trial-setup.md
-      - Roadmap: roadmap.md
   - Reference:
-      - Configuration Reference: configuration-reference.md
+      - Configuration: configuration-reference.md
       - Configuration Precedence: configuration-precedence.md
       - vs SAP ABAP MCP Server: arc-1-vs-sap-abap-mcp-server.md
-  - Operate:
-      - Operations Overview: operations.md
-      - BTP Administration: btp-administration.md
-      - Multi-Target Administration: multi-target-administration.md
+      - Security: security-guide.md
+      - Operations: operations.md
+      - Rate Limiting: rate-limiting.md
+      - Caching: caching.md
       - Log Analysis: log-analysis.md
       - Updating: updating.md
-      - Caching: caching.md
-      - Rate Limiting: rate-limiting.md
+  - Development:
+      - Local Development: local-development.md
+      - Architecture: architecture.md
+      - CLI Guide: cli-guide.md
+      - SAP Trial Setup: sap-trial-setup.md
       - Authentication Test Process: auth-test-process.md
+      - Roadmap: roadmap.md
 
 markdown_extensions:
   - admonition
