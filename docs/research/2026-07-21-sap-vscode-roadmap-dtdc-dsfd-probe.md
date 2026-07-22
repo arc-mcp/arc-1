@@ -36,8 +36,8 @@ Bare `GET` on the collection: `400` = exists/needs a name, `404` = absent.
 | `atc/variants` | **200** | **200** | ATC check-variant listing — returns data on both |
 | `atc/checkcategories` | 400 | 400 | Exists, unconsumed |
 | `activation/runs` | 405 | 405 | **POST-only action endpoint — not a GET-able activation log** |
-| `ddic/db/indexes` | 406 | 406 | Exists; needs the right `Accept` |
-| `ddic/extensionindexes` | 406 | 406 | Exists; needs the right `Accept` |
+| `ddic/db/indexes` | 406 | 406 | Exists — the `406` was my wrong `Accept`; discovery advertises **blues v1** (see §Three-system scan) |
+| `ddic/extensionindexes` | 406 | 406 | Same — advertises **blues v1** |
 
 `…/$schema` returned `406` for all three DDIC types (including the known-good DTSC), so the
 AFF JSON-Schema endpoint is not at `<collection>/$schema` for these — it is at the bare type root
@@ -158,6 +158,64 @@ Lesson for any future live write probe: acquire the lock inside a stateful sessi
 `finally`, exactly as `withStatefulSession` does — a bare-curl probe that bails on a non-2xx strands
 the enqueue lock.
 
+## Three-system scan + SAP/abap-file-formats cross-reference
+
+> Added 2026-07-21 (second pass), after the fix. Question asked: does this work on **all** systems,
+> or is it simply missing on 7.50? Answer: **missing, not broken.**
+
+[SAP/abap-file-formats](https://github.com/SAP/abap-file-formats) catalogues **100** object types
+(`dsfd`, `dtsc`, `dtdc`, `dtix`, `dsfi`, `dras`, `drty`, `chkc/chko/chkv`, `enhs`, … ). That repo is
+the *file-format* spec, not an ADT-endpoint list — a type having an AFF schema does not mean this
+system exposes it. The authoritative test is one discovery fetch per system, filtering for
+collections that advertise a `blues` accept type (exactly what the engine's `.includes('blues')`
+gate matches).
+
+| System | total collections | advertising `blues` |
+|---|---|---|
+| npl **7.50** | 214 | **8** |
+| a4h **758** | — | **43** |
+| a4h-2025 **816** | — | **68** |
+
+**7.50 verdict — absent, not broken.** The `blues` mechanism itself exists on 7.50 (8 collections,
+incl. `ddic/structures` and the Code Composer types), but **none of the seven registered SDO types
+appear at all** — DESD, DTSC, CSNM, EVTB, EVTO, COTA and DSFD are all missing from the 7.50
+discovery document. So DSFD is not a regression on 7.50; it is simply one more type that release
+does not ship. Verified through the built CLI against npl: every SDO read/create fails cleanly with
+a server `404` + hint and **no crash**, DSFD behaving identically to the pre-existing types.
+
+> Caveat on the gate message: in a single CLI call, discovery is not primed, so
+> `supportsServerDrivenObject` returns `undefined` (not `false`) and the request proceeds to a raw
+> ADT `404` instead of the friendlier "requires 8.16+" text. A long-running MCP server primes
+> discovery and gets the nicer message. Pre-existing behavior, unchanged by this work.
+>
+> Also note `npl` must be reached over **HTTPS** (`https://npl.marianzeis.de`, self-signed →
+> `SAP_INSECURE=true`); the HTTP URL 301-redirects and curl drops credentials across the redirect,
+> which silently yields an empty discovery document and a false "0 collections" reading.
+
+### Further drop-in SDO candidates found by the same scan
+
+Verified by reading a real instance under the advertised blues Accept:
+
+| Type | Collection | blues | Source flavor | 758 | 816 |
+|---|---|---|---|---|---|
+| **DRTY** (Type) | `ddic/drty/sources` | v1 | **DDL text** (`define type …`) | ✅ `blue:blueSource` | ✅ |
+| **DRAS** (Aspect) | `ddic/dras/sources` | v1 | **DDL text** (`@EndUserText.label: … define …`) | advertised, no instance | ✅ `blue:blueSource` |
+| **DSFI** (Scalar Function Impl. Ref.) | `ddic/dsfi` | v2 | AFF JSON | ⚠ metadata GET returned `exc:exception` — needs a per-release check | ✅ `blue:blueSource` |
+| **DTIX** (Table/Entity Index) | `ddic/db/indexes` | v1 | unknown | **no instance on either system** | **no instance** |
+
+DRTY and DRAS are the same DDL-text flavor this PR just made expressible — good evidence the
+`sourceFormat` split generalizes rather than being a two-type special case.
+
+**Deliberately NOT added to this PR.** Two reasons, one hard:
+
+1. **The LLM tool surface is at its ceiling.** `check:sizes` reports `standard-full-git` at
+   **67 986 / 68 000 bytes** — **14 bytes** of headroom against a wall documented as *"Ceilings, not
+   ratchets — trim the surface, don't raise."* Three more type codes across three enums plus
+   description prose breaches it immediately. Adding types now requires trimming the surface first;
+   that is its own change, not a rider on a bug fix.
+2. `createType` is **not** derivable — it is `EVTB/EVB`, `DSFD/SCF`, `DESD/TYP`. Each new type needs
+   its own live `$TMP` create probe, i.e. real verification work, not a guessed registry row.
+
 ## Revised recommendations
 
 | Item | Verdict | Effort |
@@ -169,5 +227,5 @@ the enqueue lock.
 | **DTDC** | Worth doing, but needs the blues-assumption generalization above | S |
 | **Table technical settings** | Completeness gap — TABL create ships with no delivery class / data class / size category / buffering | M |
 | **Dictionary activation log** | **Downgraded** — `activation/runs` is `405` POST-only, so there is no simple GET log reader; needs its own research | M |
-| CDS entity indexes | `ddic/db/indexes` + `ddic/extensionindexes` exist (406, need correct Accept) | S |
+| CDS entity indexes | Both advertise **blues v1** on 758 + 816 — likely drop-in, but **neither system holds a single instance**, so unverifiable here | S |
 | XSLT, CHKO/CHKC authoring | Skip — niche / Basis-governance work, not LLM-driven | — |

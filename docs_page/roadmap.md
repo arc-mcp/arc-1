@@ -99,8 +99,9 @@ SORT RULES for this table — DO NOT BREAK when adding rows:
 | [FEAT-05](#feat-05) | Code Refactoring (Rename, Extract) | P3 | L | Features |
 | [FEAT-07](#feat-07) | TLS/HTTPS for HTTP Streamable | P3 | S | Features |
 | — | ~~**SDO source format fix + DSFD**~~ — ✅ **shipped 2026-07-21**: server-driven source PUT content type is now per-registry-entry (`sourceFormat`), fixing `SAPWrite update type=DTSC` which SAP answered with a hard `415` on every system (the client-side `JSON.parse` gate also rejected DDL text before any HTTP call); adds `DSFD` (CDS Scalar Function Definition). Live-verified 758 + 816. Evidence: [docs/research/2026-07-21-sap-vscode-roadmap-dtdc-dsfd-probe.md](../docs/research/2026-07-21-sap-vscode-roadmap-dtdc-dsfd-probe.md) | P1 | S | Bugs/Features |
+| [FEAT-73](#feat-73) | **Additional drop-in SDO types (DRTY, DRAS, DSFI)** — a discovery scan for `blues`-advertising collections found 43 on 758 and 68 on 816; `ddic/drty/sources` (Type, DDL text) and `ddic/dras/sources` (Aspect, DDL text) read as `blue:blueSource` on both releases, `ddic/dsfi` (Scalar Function Implementation Reference, blues **v2**, AFF JSON) on 816. **Blocked on tool-surface budget**: `check:sizes` is at 67 986/68 000 bytes — trim the surface before adding types | P3 | S | Features |
 | [FEAT-71](#feat-71) | **Dictionary activation log** — `/sap/bc/adt/activation/runs` is `405` POST-only on 758 + 816, so there is no simple GET log reader; needs its own research before costing. Activation failures are a top LLM failure mode | P3 | M | Features |
-| [FEAT-72](#feat-72) | **CDS entity indexes** — `/sap/bc/adt/ddic/db/indexes` + `/sap/bc/adt/ddic/extensionindexes` exist on 816 (`406`, need the right Accept). On SAP's VS Code roadmap for Q4/2026 | P3 | S | Features |
+| [FEAT-72](#feat-72) | **CDS entity indexes** — `/sap/bc/adt/ddic/db/indexes` + `/sap/bc/adt/ddic/extensionindexes` advertise **blues v1** on 758 **and** 816, so likely drop-in SDO rows — but **neither test system holds a single instance**, so the contract cannot be verified here. On SAP's VS Code roadmap for Q4/2026 | P3 | S | Features |
 | ~~[FEAT-65](#feat-65)~~ | ~~TTYP (Table Type) read/write~~ — **✅ Completed 2026-06-25 (PR #504)**: read + create (built-in & structure rows; POST shell → follow-up PUT sets the real row type), live-verified 758 + 816 | P3 | M | Features |
 | [FEAT-29](#feat-29) | P3 Backlog (14 items) | P3 | various | Features |
 | [FEAT-50](#feat-50) | ADT Probe Fixture Coverage (contributed fixtures) | P3 | XS-each | Diagnostics |
@@ -735,6 +736,16 @@ SAP confirmed GA of ABAP Cloud Extension for VS Code with built-in agentic AI po
 | **Usefulness** | High — this is a completeness gap in a shipped feature, not a new one: TABL create currently produces tables with no delivery class, data class, size category, or buffering. |
 | **Status** | Open. Zero hits for `deliveryClass` / `sizeCategory` / `bufferingType` / `dataMaintenance` in `src/`. Technical settings are only reachable as free text inside the DDL source ARC-1 passes through verbatim. On SAP's ADT-for-VS-Code roadmap for Q4/2026. |
 
+<a id="feat-73"></a>
+### FEAT-73: Additional Drop-In Server-Driven Types (DRTY, DRAS, DSFI)
+| Field | Value |
+|-------|-------|
+| **Priority** | P3 |
+| **Effort** | S |
+| **Risk** | Low |
+| **Usefulness** | Medium — each is a one-row `SDO_REGISTRY` addition once the budget allows, and DRTY/DRAS are the same DDL-text flavor the 2026-07-21 `sourceFormat` fix made expressible. |
+| **Status** | Open, **blocked on the tool-schema budget** (`WRITE_WIRE_WALL` is a hard ceiling at 68 000 bytes; the surface sits at 67 986). Contracts read live: DRTY `define type …` (DDL text, blues v1, 758 + 816), DRAS `@EndUserText.label … define …` (DDL text, blues v1, instance seen on 816), DSFI (AFF JSON, blues v2, `blue:blueSource` on 816; the 758 metadata GET returned `exc:exception` and needs a per-release check). `createType` is NOT derivable (EVTB=`EVTB/EVB`, DSFD=`DSFD/SCF`) — each type needs its own live `$TMP` create probe. Evidence: [docs/research/2026-07-21-sap-vscode-roadmap-dtdc-dsfd-probe.md](../docs/research/2026-07-21-sap-vscode-roadmap-dtdc-dsfd-probe.md) |
+
 <a id="feat-71"></a>
 ### FEAT-71: Dictionary Activation Log
 | Field | Value |
@@ -753,7 +764,7 @@ SAP confirmed GA of ABAP Cloud Extension for VS Code with built-in agentic AI po
 | **Effort** | S |
 | **Risk** | Low |
 | **Usefulness** | Low-medium — on SAP's ADT-for-VS-Code roadmap for Q4/2026 (BTP + S/4HANA Cloud only). |
-| **Status** | Open. `/sap/bc/adt/ddic/db/indexes` and `/sap/bc/adt/ddic/extensionindexes` both exist on 816 but return `406` — the correct `Accept` has not been determined. Live-probed 2026-07-21 on a4h 2023 (758) + a4h-2025 (816) — see [docs/research/2026-07-21-sap-vscode-roadmap-dtdc-dsfd-probe.md](../docs/research/2026-07-21-sap-vscode-roadmap-dtdc-dsfd-probe.md). |
+| **Status** | Open. Both collections advertise **`application/vnd.sap.adt.blues.v1+xml`** on 758 and 816 (the earlier `406` was a wrong `Accept`, not an unsupported endpoint), so they look like plain `SDO_REGISTRY` rows. Blocker: **no DTIX instance exists on either test system**, so neither the metadata root nor the source flavor nor the `createType` can be confirmed — needs seed data before it can be built. Live-probed 2026-07-21 on a4h 2023 (758) + a4h-2025 (816) — see [docs/research/2026-07-21-sap-vscode-roadmap-dtdc-dsfd-probe.md](../docs/research/2026-07-21-sap-vscode-roadmap-dtdc-dsfd-probe.md). |
 
 <a id="feat-65"></a>
 ### FEAT-65: TTYP (Table Type) Read/Write
