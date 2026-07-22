@@ -390,6 +390,11 @@ Present it as `Authorization: Bearer …` on `/mcp`.
 x509 works too: create the key with `-c '{"credential-type":"x509"}'` and exchange against the
 `certurl` host over mTLS. No `credential-types` declaration is needed in `xs-security.json`.
 
+SAP's own walkthrough of this flow — same shape, with a generic "Business Logic Application" where
+ARC-1 sits — is [How grant-types keep your application secure, Exercise 3](https://community.sap.com/t5/technology-blog-posts-by-sap/how-grant-types-keep-your-application-secure-exercise-3/ba-p/13525513).
+Note that `grant-types` itself is absent from SAP's documented `oauth2-configuration` property table;
+it is real and broker-honored, just undocumented.
+
 !!! warning "What this does not enable"
     - **No headless technical user.** `client_credentials` stays off the allowlist deliberately —
       there is no way to mint an ARC-1 token with no human behind it.
