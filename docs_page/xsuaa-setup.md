@@ -339,6 +339,81 @@ cf update-service arc1-xsuaa -c xs-security.json
 cf restage arc1-mcp-server
 ```
 
+Existing bindings and service keys inherit `oauth2-configuration` changes — no rebind needed.
+
+## Calling ARC-1 from another BTP application
+
+The setup above covers a **human at an MCP client** (Claude, Cursor, Eclipse) logging in through the
+browser. A different case is another BTP application — an AI assistant backend, a CAP service, a
+Fiori app — that already has its users logged in via XSUAA and wants to call ARC-1 **as them**,
+without sending them through a second OAuth login.
+
+That is a `jwt-bearer` token exchange: the caller trades its user's JWT for one audienced to ARC-1.
+`xs-security.json` enables it:
+
+```json
+"grant-types": ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:jwt-bearer"]
+```
+
+**The exchange runs against ARC-1's own OAuth client**, so the grant belongs in ARC-1's descriptor —
+not the caller's. Create a service key on ARC-1's XSUAA instance and hand its credentials to the
+consumer:
+
+```bash
+cf create-service-key arc1-xsuaa consumer-key
+cf service-key arc1-xsuaa consumer-key       # → clientid, clientsecret, url
+```
+
+Issue a **separate key per consumer**. With the default `binding-secret` credential type each key
+carries its own secret, distinct from the running app's binding — so a consumer's key can be rotated
+or revoked without disturbing ARC-1 itself, and it never exposes the app's own credentials (which,
+unless you set `ARC1_DCR_SIGNING_SECRET`, also sign the DCR `client_id`s — see
+[Stable DCR signing key](#stable-dcr-signing-key-recommended)).
+
+Then either let the Destination service do it (no code — recommended):
+
+| Destination property | Value |
+|---|---|
+| `Authentication` | `OAuth2JWTBearer` |
+| `URL` | `https://<arc1-host>/mcp` |
+| `tokenServiceURL` | `<url from the service key>/oauth/token` |
+| `clientId` / `clientSecret` | from the service key |
+
+…or POST the exchange yourself:
+
+```http
+POST <xsuaa-url>/oauth/token
+Authorization: Basic <arc1-clientid>:<arc1-clientsecret>
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=<the user's JWT>
+```
+
+The returned token is audienced to `arc1-mcp!t…` and carries **only the scopes that user's ARC-1
+role collections grant** (Step 3) — the exchange propagates identity, it never widens authorization.
+Present it as `Authorization: Bearer …` on `/mcp`.
+
+x509 works too: create the key with `-c '{"credential-type":"x509"}'` and exchange against the
+`certurl` host over mTLS. No `credential-types` declaration is needed in `xs-security.json`.
+
+SAP's own walkthrough of this flow — same shape, with a generic "Business Logic Application" where
+ARC-1 sits — is [How grant-types keep your application secure, Exercise 3](https://community.sap.com/t5/technology-blog-posts-by-sap/how-grant-types-keep-your-application-secure-exercise-3/ba-p/13525513).
+Note that `grant-types` itself is absent from SAP's documented `oauth2-configuration` property table;
+it is real and broker-honored, just undocumented.
+
+!!! warning "What this does not enable"
+    - **No headless technical user.** `client_credentials` stays off the allowlist deliberately —
+      there is no way to mint an ARC-1 token with no human behind it.
+    - **Same subaccount only.** A caller in another subaccount fails with
+      `Unable to map issuer` ([#434](https://github.com/arc-mcp/arc-1/issues/434)) — the issuer is
+      not trusted there.
+    - **Users still need role collections.** An exchanged token for a user with no ARC-1 collection
+      authenticates but authorizes nothing.
+
+The [multi-system hub](multi-system-hub.md) uses a *different* wiring — the hub exchanges with its
+**own** client plus a `granted-apps` grant chain — because it fronts several backends. For a single
+consumer, the service-key route above is simpler and needs no grant chain.
+
 ## Configuration Reference
 
 | Variable | Description | Default |
