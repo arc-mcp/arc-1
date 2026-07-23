@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.9.28](https://github.com/arc-mcp/arc-1/compare/v0.9.27...v0.9.28) (2026-07-23)
+
+
+### Features
+
+* add experimental destination-discovered multi-target endpoints ([#579](https://github.com/arc-mcp/arc-1/issues/579)) ([5ec27fc](https://github.com/arc-mcp/arc-1/commit/5ec27fcb3f338b6755b96e41ac5cc6cfae759a68))
+* add procedural unit source surgery ([#571](https://github.com/arc-mcp/arc-1/issues/571)) ([b712616](https://github.com/arc-mcp/arc-1/commit/b7126169faadcbf70507a1c7f34c2b3d2ee4fbd3))
+* bound unbounded tool results, reject unknown params, compact JSON ([#583](https://github.com/arc-mcp/arc-1/issues/583)) ([5de5b96](https://github.com/arc-mcp/arc-1/commit/5de5b963ba1ea2ef447e60cacb3259fa4ec5d4e3))
+* remove cache warmup ([#573](https://github.com/arc-mcp/arc-1/issues/573)) ([525aca3](https://github.com/arc-mcp/arc-1/commit/525aca359f1e309ca2435bd8abe0673c286ca0ed))
+
+
+### Bug Fixes
+
+* **btp:** allow jwt-bearer exchange against ARC-1's XSUAA client ([#605](https://github.com/arc-mcp/arc-1/issues/605)) ([cc7ad92](https://github.com/arc-mcp/arc-1/commit/cc7ad92c4475e0c35dd4d5342947d9b82c99ad30))
+* don't crash startup on PP-off overrides, and harden the mta.yaml/mtaext stranding class ([#582](https://github.com/arc-mcp/arc-1/issues/582)) ([d7e2cb8](https://github.com/arc-mcp/arc-1/commit/d7e2cb81902d4205d74dfefc00e8db424390d013))
+* per-type source format for server-driven objects (DTSC write was 415) + add DSFD ([#604](https://github.com/arc-mcp/arc-1/issues/604)) ([543f633](https://github.com/arc-mcp/arc-1/commit/543f633752b06685e319e71442de77467b18787b))
+* **server:** MCP 2026-07-28 forward-compat — CORS protocol headers, era-contract tests, ADR-0006 ([#601](https://github.com/arc-mcp/arc-1/issues/601)) ([dd99c17](https://github.com/arc-mcp/arc-1/commit/dd99c172d042f0e35c284b42b56174c26235b55d))
+
 ## [0.9.27](https://github.com/arc-mcp/arc-1/compare/v0.9.26...v0.9.27) (2026-07-13)
 
 
