@@ -45,6 +45,9 @@ adds no shared service account and no LLM in the path.
   LLM-in-the-middle product. This hub is **deterministic routing only**.
 - **Backends in different subaccounts** → not supported in v1 (the token exchange maps the issuer within
   one subaccount only). See [Limits](#limits-v1).
+- **You accept per-client config of N servers** → skip the hub, register each ARC-1 directly in the
+  client, and give each a unique [`MCP_SERVER_NAME`](deployment-best-practices.md#example-enterprise-with-multiple-sap-systems)
+  so the client keeps them distinct instead of collapsing them into `arc-N` tool suffixes.
 
 ## How it works
 

@@ -249,6 +249,31 @@ describe('parseArgs', () => {
     expect(config.transport).toBe('stdio');
   });
 
+  it('defaults serverName to arc-1', () => {
+    const config = parseArgs([]);
+    expect(config.serverName).toBe('arc-1');
+  });
+
+  it('parses MCP_SERVER_NAME env var', () => {
+    process.env.MCP_SERVER_NAME = 'arc1-erp';
+    try {
+      const config = parseArgs([]);
+      expect(config.serverName).toBe('arc1-erp');
+    } finally {
+      delete process.env.MCP_SERVER_NAME;
+    }
+  });
+
+  it('parses --server-name flag over MCP_SERVER_NAME env', () => {
+    process.env.MCP_SERVER_NAME = 'arc1-erp';
+    try {
+      const config = parseArgs(['--server-name', 'arc1-bw']);
+      expect(config.serverName).toBe('arc1-bw');
+    } finally {
+      delete process.env.MCP_SERVER_NAME;
+    }
+  });
+
   it('parses --port flag and overrides httpAddr port', () => {
     const config = parseArgs(['--port', '9090']);
     expect(config.httpAddr).toBe('0.0.0.0:9090');

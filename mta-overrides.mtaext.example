@@ -40,6 +40,13 @@ modules:
       # PrincipalPropagation destination for per-user requests (with JWT)
       # SAP_BTP_PP_DESTINATION: "my-pp-destination"
 
+      # ── MCP server identity ──────────────────────────────────────────
+      # Server name advertised in the MCP initialize handshake (default arc-1).
+      # Set a unique name per instance when several ARC-1 deployments target
+      # different SAP systems, so MCP clients keep them distinct instead of
+      # collapsing them into dynamic arc-N tool suffixes.
+      # MCP_SERVER_NAME: "arc1-erp-dev"
+
       # ── Principal propagation behaviour ──────────────────────────────
       # Per-user principal propagation (default in mta.yaml: true). Uncomment
       # the line below to run every SAP call as the shared destination identity

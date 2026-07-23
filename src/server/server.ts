@@ -692,7 +692,7 @@ export function createServer(
   mcpRateLimiter?: McpRateLimiter,
 ): Server {
   const server = new Server(
-    { name: 'arc-1', version: VERSION },
+    { name: config.serverName, version: VERSION },
     { capabilities: { tools: {} }, instructions: SERVER_INSTRUCTIONS },
   );
   const apiKeyProvenanceVerifier = createConfiguredApiKeyVerifier(config);

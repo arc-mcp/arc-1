@@ -99,6 +99,8 @@ MCP client config for developers:
 
 The LLM sees separate tool sets from each server and picks the right one.
 
+> **Name each instance:** every ARC-1 advertises the server name `arc-1` in the MCP `initialize` handshake by default. Some MCP clients key servers by that advertised name (not the client-config label above) and, faced with several `arc-1`s, collapse them or append dynamic `arc-N` suffixes to tool names — so you can't tell which SAP system a tool targets. Set a unique [`MCP_SERVER_NAME`](configuration-reference.md#server-runtime) per instance (`arc1-ecc-dev`, `arc1-ecc-prod`, …) in each `.mtaext`. This is the direct-connect alternative to the [multi-system hub](multi-system-hub.md), which instead fronts every instance behind one URL and one login.
+
 ---
 
 ## System Type Detection

@@ -93,6 +93,11 @@ modules:
         - research/
     properties:
       SAP_TRANSPORT: http-streamable
+      # MCP server name advertised in the initialize handshake defaults to
+      # `arc-1` (not set here). When running several instances against different
+      # SAP systems, set a unique MCP_SERVER_NAME per landscape via
+      # `mta-overrides.mtaext` so MCP clients keep them distinct instead of
+      # collapsing them into dynamic arc-N tool suffixes.
       SAP_SYSTEM_TYPE: auto
       SAP_LANGUAGE: EN
       SAP_INSECURE: "false"
