@@ -269,8 +269,6 @@ event; the BTP Audit Log sink forwards the security/data categories described be
 | `target_policy_denied` | Instance/target policy denied a selected-target operation. Includes tool and safe `errorCode`. |
 | `safety_blocked` | Safety ceiling blocked an operation; includes the operation and safe reason. |
 | `server_start` | Server version, transport, write ceiling, configured target URL indicator, and process ID where available. |
-| `elicitation_sent` | Confirmation prompt sent to a capable MCP client; includes tool and field names. |
-| `elicitation_response` | Client's elicitation action for the tool. |
 | `activation_preaudit_completed` | Two-phase SAP activation preaudit result, reference count, and phase durations. |
 | `oauth_client_registered` | XSUAA only: a new DCR `client_id` was minted (`/register`). Includes id length and redirect-URI count. |
 | `oauth_client_lookup_failed` | XSUAA only: a `client_id` failed to resolve. `reason` ∈ {`unknown_prefix`, `malformed`, `bad_signature`, `invalid_payload`, `expired`}. Useful for spotting forgery / probing. |
@@ -368,7 +366,7 @@ Configuration rules:
 
 - **Comma-separated, exact match.** No wildcards (`*`, `https://*.example.com`) — they are silently rejected.
 - **Pairs with `credentials: true`.** ARC-1 sends `Access-Control-Allow-Origin: <reflected origin>` (never `*`) and `Access-Control-Allow-Credentials: true`. The wildcard form is incompatible with credentialed requests by browser policy.
-- **Allowed methods:** `GET`, `POST`, `DELETE`, `OPTIONS`. Allowed request headers: `Content-Type`, `Authorization`, `mcp-session-id`. Exposed response headers: `mcp-session-id`.
+- **Allowed methods:** `GET`, `POST`, `DELETE`, `OPTIONS`. Allowed request headers: `Content-Type`, `Authorization`, `mcp-session-id`, `mcp-protocol-version`, `last-event-id`. Exposed response headers: `mcp-session-id`. The 2026-07-28 modern-era headers (`Mcp-Method`/`Mcp-Name`/`Mcp-Param-*`) are deliberately absent — see [ADR-0006](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0006-mcp-legacy-era-until-triggers.md).
 - **Disallowed origins are silently dropped** by the browser, but ARC-1 emits a `cors_rejected` audit event server-side so misconfigured browser clients are observable. See [§9 Audit Logging](#what-gets-logged).
 - **Browser-based DCR clients** (rare) hitting `POST /register` or `POST /authorize` from a foreign origin must be in the allowlist for the same reason native browser fetches are. See [Stateless DCR](xsuaa-setup.md#stateless-dcr) for the OAuth flow.
 

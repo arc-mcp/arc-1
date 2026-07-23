@@ -77,7 +77,7 @@ function categorize(event: AuditEvent): AuditCategory | null {
     case 'auth_shared_created':
       return 'security-events';
 
-    // Don't send http_request, server_start, elicitation events to BTP audit log
+    // Don't send http_request, server_start, etc. to BTP audit log
     default:
       return null;
   }
