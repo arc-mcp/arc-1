@@ -4,8 +4,8 @@ import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const lookupDestination = vi.fn();
-const lookupDestinationWithUserTokenUncached = vi.fn();
+const resolveRuntimeSubaccountDestination = vi.fn();
+const resolveRuntimeSubaccountPpDestination = vi.fn();
 const createConnectivityProxy = vi.fn(() => ({
   host: 'proxy.internal',
   port: 20003,
@@ -15,8 +15,11 @@ const createConnectivityProxy = vi.fn(() => ({
 vi.mock('@arc-mcp/xsuaa-auth/btp', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@arc-mcp/xsuaa-auth/btp')>()),
   createConnectivityProxy,
-  lookupDestination,
-  lookupDestinationWithUserTokenUncached,
+}));
+vi.mock('../../../src/server/multi-target-destination-runtime.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../src/server/multi-target-destination-runtime.js')>()),
+  resolveRuntimeSubaccountDestination,
+  resolveRuntimeSubaccountPpDestination,
 }));
 
 const { AdtClient } = await import('../../../src/adt/client.js');
@@ -30,6 +33,7 @@ const { canonicalDestinationUrl, opaqueDestinationValue } = await import(
 );
 const { DestinationRegistry } = await import('../../../src/server/destination-registry.js');
 const { logger } = await import('../../../src/server/logger.js');
+const { RuntimeDestinationLevelError } = await import('../../../src/server/multi-target-destination-runtime.js');
 const { buildAggregateToolSurfaceConfig, buildMultiTargetConfig } = await import(
   '../../../src/server/multi-target-runtime.js'
 );
@@ -241,8 +245,8 @@ function toolRequest(mode: 'pinned' | 'aggregate') {
 
 describe('multi-target shared Basic authentication', () => {
   beforeEach(() => {
-    lookupDestination.mockReset();
-    lookupDestinationWithUserTokenUncached.mockReset();
+    resolveRuntimeSubaccountDestination.mockReset();
+    resolveRuntimeSubaccountPpDestination.mockReset();
     createConnectivityProxy.mockReset();
     createConnectivityProxy.mockReturnValue({
       host: 'proxy.internal',
@@ -263,7 +267,7 @@ describe('multi-target shared Basic authentication', () => {
     const target = current.targets[0];
     const sharedAuthState = new MultiTargetSharedAuthState();
     setCachedFeatures(featuresOff(), target.target);
-    lookupDestination.mockResolvedValue(BASE_DESTINATION);
+    resolveRuntimeSubaccountDestination.mockResolvedValue(BASE_DESTINATION);
     vi.spyOn(AdtClient.prototype, 'getSystemInfo').mockResolvedValue('{"sid":"A4H","client":"100"}');
 
     let releaseFirst!: () => void;
@@ -288,15 +292,15 @@ describe('multi-target shared Basic authentication', () => {
     });
 
     const first = requestHandler(pinned)(toolRequest('pinned'), { authInfo: READ_AUTH });
-    await vi.waitFor(() => expect(lookupDestination).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(resolveRuntimeSubaccountDestination).toHaveBeenCalledTimes(1));
     const second = requestHandler(aggregate)(toolRequest('aggregate'), { authInfo: READ_AUTH });
     await Promise.resolve();
-    expect(lookupDestination).toHaveBeenCalledTimes(1);
+    expect(resolveRuntimeSubaccountDestination).toHaveBeenCalledTimes(1);
 
     releaseFirst();
     const results = await Promise.all([first, second]);
     expect(results.every((result) => result.isError !== true)).toBe(true);
-    expect(lookupDestination).toHaveBeenCalledTimes(2);
+    expect(resolveRuntimeSubaccountDestination).toHaveBeenCalledTimes(2);
     expect(canaries).toBe(2);
     expect(sharedAuthState.getHealth('A4H/100').status).toBe('healthy');
   });
@@ -305,7 +309,7 @@ describe('multi-target shared Basic authentication', () => {
     const current = registry();
     const target = current.targets[0];
     const sharedAuthState = new MultiTargetSharedAuthState();
-    lookupDestination.mockResolvedValue(BASE_DESTINATION);
+    resolveRuntimeSubaccountDestination.mockResolvedValue(BASE_DESTINATION);
 
     await sharedAuthState.runExclusive(target.target, async (lease) => {
       const prepared = await prepareSharedBasicClient({
@@ -353,8 +357,8 @@ describe('multi-target shared Basic authentication', () => {
     const sharedAuthState = new MultiTargetSharedAuthState();
     setCachedFeatures(featuresOff(), 'A4H/100');
     setCachedFeatures(featuresOff(), 'B7H/100');
-    lookupDestination.mockResolvedValue(BASE_DESTINATION);
-    lookupDestinationWithUserTokenUncached.mockResolvedValue({
+    resolveRuntimeSubaccountDestination.mockResolvedValue(BASE_DESTINATION);
+    resolveRuntimeSubaccountPpDestination.mockResolvedValue({
       destination: PP_DESTINATION,
       authTokens: { sapConnectivityAuth: 'Bearer per-user-assertion' },
     });
@@ -375,7 +379,7 @@ describe('multi-target shared Basic authentication', () => {
     });
     const call = requestHandler(server);
     const basicCall = call(toolRequest('aggregate'), { authInfo: READ_AUTH });
-    await vi.waitFor(() => expect(lookupDestination).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(resolveRuntimeSubaccountDestination).toHaveBeenCalledOnce());
 
     const ppResult = await call(
       {
@@ -386,15 +390,14 @@ describe('multi-target shared Basic authentication', () => {
     );
 
     expect(ppResult.isError).not.toBe(true);
-    expect(lookupDestinationWithUserTokenUncached).toHaveBeenCalledOnce();
-    expect(lookupDestination).toHaveBeenCalledOnce();
+    expect(resolveRuntimeSubaccountPpDestination).toHaveBeenCalledOnce();
+    expect(resolveRuntimeSubaccountDestination).toHaveBeenCalledOnce();
     releaseBasic();
     expect((await basicCall).isError).not.toBe(true);
-    expect(lookupDestinationWithUserTokenUncached).toHaveBeenCalledWith(
+    expect(resolveRuntimeSubaccountPpDestination).toHaveBeenCalledWith(
       BTP_CONFIG,
       PP_DESTINATION.Name,
       READ_AUTH.token,
-      expect.anything(),
     );
   });
 
@@ -426,8 +429,8 @@ describe('multi-target shared Basic authentication', () => {
       identity: 'shared',
       retryable: false,
     });
-    expect(lookupDestination).not.toHaveBeenCalled();
-    expect(lookupDestinationWithUserTokenUncached).not.toHaveBeenCalled();
+    expect(resolveRuntimeSubaccountDestination).not.toHaveBeenCalled();
+    expect(resolveRuntimeSubaccountPpDestination).not.toHaveBeenCalled();
     expect(audit).toHaveBeenCalledWith(
       expect.objectContaining({
         event: 'shared_auth_failed',
@@ -451,8 +454,8 @@ describe('multi-target shared Basic authentication', () => {
       identity: 'shared',
       retryable: true,
     });
-    expect(lookupDestination).not.toHaveBeenCalled();
-    expect(lookupDestinationWithUserTokenUncached).not.toHaveBeenCalled();
+    expect(resolveRuntimeSubaccountDestination).not.toHaveBeenCalled();
+    expect(resolveRuntimeSubaccountPpDestination).not.toHaveBeenCalled();
   });
 
   it('applies the XSUAA role, instance ceiling, and Basic target policy before destination lookup', async () => {
@@ -517,7 +520,7 @@ describe('multi-target shared Basic authentication', () => {
         identity: 'shared',
       });
     }
-    expect(lookupDestination).not.toHaveBeenCalled();
+    expect(resolveRuntimeSubaccountDestination).not.toHaveBeenCalled();
   });
 
   it('returns SAP_TARGET_BUSY without contacting Destination Service for a full target queue', async () => {
@@ -525,7 +528,7 @@ describe('multi-target shared Basic authentication', () => {
     const target = current.targets[0];
     const sharedAuthState = new MultiTargetSharedAuthState();
     setCachedFeatures(featuresOff(), target.target);
-    lookupDestination.mockResolvedValue(BASE_DESTINATION);
+    resolveRuntimeSubaccountDestination.mockResolvedValue(BASE_DESTINATION);
     vi.spyOn(AdtClient.prototype, 'getSystemInfo').mockResolvedValue('{"sid":"A4H"}');
     let releaseFirst!: () => void;
     const firstBlocked = new Promise<void>((resolve) => {
@@ -543,7 +546,7 @@ describe('multi-target shared Basic authentication', () => {
     });
     const call = requestHandler(server);
     const calls = Array.from({ length: 34 }, () => call(toolRequest('pinned'), { authInfo: READ_AUTH }));
-    await vi.waitFor(() => expect(lookupDestination).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(resolveRuntimeSubaccountDestination).toHaveBeenCalledOnce());
 
     const overflow = await calls[33];
     expect(JSON.parse(overflow.content[0].text)).toMatchObject({
@@ -551,7 +554,7 @@ describe('multi-target shared Basic authentication', () => {
       identity: 'shared',
       retryable: true,
     });
-    expect(lookupDestination).toHaveBeenCalledOnce();
+    expect(resolveRuntimeSubaccountDestination).toHaveBeenCalledOnce();
 
     releaseFirst();
     const completed = await Promise.all(calls.slice(0, 33));
@@ -563,7 +566,7 @@ describe('multi-target shared Basic authentication', () => {
     const target = current.targets[0];
     const sharedAuthState = new MultiTargetSharedAuthState({ acquisitionTimeoutMs: 10 });
     setCachedFeatures(featuresOff(), target.target);
-    lookupDestination.mockResolvedValue(BASE_DESTINATION);
+    resolveRuntimeSubaccountDestination.mockResolvedValue(BASE_DESTINATION);
     vi.spyOn(AdtClient.prototype, 'getSystemInfo').mockResolvedValue('{"sid":"A4H"}');
     let releaseFirst!: () => void;
     const firstBlocked = new Promise<void>((resolve) => {
@@ -581,11 +584,11 @@ describe('multi-target shared Basic authentication', () => {
     });
     const call = requestHandler(server);
     const active = call(toolRequest('pinned'), { authInfo: READ_AUTH });
-    await vi.waitFor(() => expect(lookupDestination).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(resolveRuntimeSubaccountDestination).toHaveBeenCalledOnce());
     const queued = await call(toolRequest('pinned'), { authInfo: READ_AUTH });
 
     expect(JSON.parse(queued.content[0].text)).toMatchObject({ error: 'SAP_TARGET_BUSY', identity: 'shared' });
-    expect(lookupDestination).toHaveBeenCalledOnce();
+    expect(resolveRuntimeSubaccountDestination).toHaveBeenCalledOnce();
     expect(canaries).toBe(1);
     releaseFirst();
     expect((await active).isError).not.toBe(true);
@@ -595,7 +598,7 @@ describe('multi-target shared Basic authentication', () => {
     const current = registry();
     const target = current.targets[0];
     const sharedAuthState = new MultiTargetSharedAuthState();
-    lookupDestination.mockResolvedValue(BASE_DESTINATION);
+    resolveRuntimeSubaccountDestination.mockResolvedValue(BASE_DESTINATION);
     let releaseCanary!: () => void;
     const canaryBlocked = new Promise<void>((resolve) => {
       releaseCanary = resolve;
@@ -623,7 +626,7 @@ describe('multi-target shared Basic authentication', () => {
       'SAP_AUTHENTICATION_FAILED',
     ]);
     expect(canaries).toBe(1);
-    expect(lookupDestination).toHaveBeenCalledTimes(2);
+    expect(resolveRuntimeSubaccountDestination).toHaveBeenCalledTimes(2);
   });
 
   it('blocks a rejected credential generation and recovers after destination password rotation', async () => {
@@ -632,7 +635,7 @@ describe('multi-target shared Basic authentication', () => {
     const sharedAuthState = new MultiTargetSharedAuthState();
     setCachedFeatures(featuresOff(), target.target);
     let password = 'BAD_PASSWORD';
-    lookupDestination.mockImplementation(async () => ({ ...BASE_DESTINATION, Password: password }));
+    resolveRuntimeSubaccountDestination.mockImplementation(async () => ({ ...BASE_DESTINATION, Password: password }));
     vi.spyOn(AdtClient.prototype, 'getSystemInfo').mockResolvedValue('{"sid":"A4H"}');
     let canaries = 0;
     vi.spyOn(AdtHttpClient.prototype, 'get').mockImplementation(async (path) => {
@@ -671,7 +674,7 @@ describe('multi-target shared Basic authentication', () => {
     const target = current.targets[0];
     const sharedAuthState = new MultiTargetSharedAuthState();
     let password = 'FIRST_PASSWORD';
-    lookupDestination.mockImplementation(async () => ({ ...BASE_DESTINATION, Password: password }));
+    resolveRuntimeSubaccountDestination.mockImplementation(async () => ({ ...BASE_DESTINATION, Password: password }));
     vi.spyOn(AdtClient.prototype, 'getSystemInfo').mockResolvedValue('{"sid":"A4H"}');
     let featureProbes = 0;
     vi.spyOn(AdtHttpClient.prototype, 'get').mockImplementation(async (path) => {
@@ -701,7 +704,7 @@ describe('multi-target shared Basic authentication', () => {
     const target = current.targets[0];
     const sharedAuthState = new MultiTargetSharedAuthState();
     let password = '';
-    lookupDestination.mockImplementation(async () => ({ ...BASE_DESTINATION, Password: password }));
+    resolveRuntimeSubaccountDestination.mockImplementation(async () => ({ ...BASE_DESTINATION, Password: password }));
     vi.spyOn(AdtHttpClient.prototype, 'get').mockResolvedValue(DISCOVERY_RESPONSE);
     vi.spyOn(AdtClient.prototype, 'getSystemInfo').mockResolvedValue('{"sid":"A4H"}');
     const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
@@ -742,7 +745,7 @@ describe('multi-target shared Basic authentication', () => {
     const current = registry();
     const target = current.targets[0];
     const sharedAuthState = new MultiTargetSharedAuthState();
-    lookupDestination.mockResolvedValue(BASE_DESTINATION);
+    resolveRuntimeSubaccountDestination.mockResolvedValue(BASE_DESTINATION);
     vi.spyOn(AdtHttpClient.prototype, 'get').mockResolvedValue({
       statusCode: 200,
       headers: contentType ? { 'content-type': contentType } : {},
@@ -784,7 +787,7 @@ describe('multi-target shared Basic authentication', () => {
     const current = registry();
     const target = current.targets[0];
     const sharedAuthState = new MultiTargetSharedAuthState();
-    lookupDestination.mockResolvedValue(BASE_DESTINATION);
+    resolveRuntimeSubaccountDestination.mockResolvedValue(BASE_DESTINATION);
     vi.spyOn(AdtHttpClient.prototype, 'get').mockResolvedValue({ statusCode: 200, headers, body });
     const tool = vi.spyOn(AdtClient.prototype, 'getSystemInfo');
     const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
@@ -811,7 +814,7 @@ describe('multi-target shared Basic authentication', () => {
     const current = registry();
     const target = current.targets[0];
     const sharedAuthState = new MultiTargetSharedAuthState();
-    lookupDestination.mockResolvedValue(BASE_DESTINATION);
+    resolveRuntimeSubaccountDestination.mockResolvedValue(BASE_DESTINATION);
     vi.spyOn(AdtHttpClient.prototype, 'get').mockResolvedValue(DISCOVERY_RESPONSE);
     const authorizationBody =
       '<exc:exception><type id="ExceptionNotAuthorized"/>' +
@@ -838,7 +841,7 @@ describe('multi-target shared Basic authentication', () => {
     const current = registry();
     const target = current.targets[0];
     const sharedAuthState = new MultiTargetSharedAuthState();
-    lookupDestination.mockResolvedValue(BASE_DESTINATION);
+    resolveRuntimeSubaccountDestination.mockResolvedValue(BASE_DESTINATION);
     const authorizationBody =
       '<exc:exception><type id="ExceptionNotAuthorized"/>' +
       '<localizedMessage>Not authorized for S_ADT_RES</localizedMessage></exc:exception>';
@@ -869,7 +872,7 @@ describe('multi-target shared Basic authentication', () => {
     const current = registry();
     const target = current.targets[0];
     const sharedAuthState = new MultiTargetSharedAuthState();
-    lookupDestination.mockResolvedValue(BASE_DESTINATION);
+    resolveRuntimeSubaccountDestination.mockResolvedValue(BASE_DESTINATION);
     const connectivityBody =
       'Access denied to system a4h.internal:50000. Ensure to expose the system correctly in your Cloud Connector.';
     const canary = vi
@@ -901,7 +904,7 @@ describe('multi-target shared Basic authentication', () => {
     const current = registry();
     const target = current.targets[0];
     const sharedAuthState = new MultiTargetSharedAuthState();
-    lookupDestination.mockResolvedValue(BASE_DESTINATION);
+    resolveRuntimeSubaccountDestination.mockResolvedValue(BASE_DESTINATION);
     const canary = vi
       .spyOn(AdtHttpClient.prototype, 'get')
       .mockRejectedValue(new AdtApiError('Forbidden', 403, '/sap/bc/adt/core/discovery', body));
@@ -928,7 +931,7 @@ describe('multi-target shared Basic authentication', () => {
     const target = current.targets[0];
     const sharedAuthState = new MultiTargetSharedAuthState();
     setCachedFeatures(featuresOff(), target.target);
-    lookupDestination.mockResolvedValue(BASE_DESTINATION);
+    resolveRuntimeSubaccountDestination.mockResolvedValue(BASE_DESTINATION);
     let canaries = 0;
     vi.spyOn(AdtHttpClient.prototype, 'get').mockImplementation(async (path) => {
       if (path === '/sap/bc/adt/core/discovery') canaries += 1;
@@ -975,7 +978,10 @@ describe('multi-target shared Basic authentication', () => {
     const current = registry();
     const target = current.targets[0];
     const sharedAuthState = new MultiTargetSharedAuthState();
-    lookupDestination.mockResolvedValue({ ...BASE_DESTINATION, URL: 'http://changed.internal:50000' });
+    resolveRuntimeSubaccountDestination.mockResolvedValue({
+      ...BASE_DESTINATION,
+      URL: 'http://changed.internal:50000',
+    });
     const canary = vi.spyOn(AdtHttpClient.prototype, 'get');
     const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
       btpConfig: BTP_CONFIG,
@@ -1002,11 +1008,35 @@ describe('multi-target shared Basic authentication', () => {
     );
   });
 
+  it('rejects a Basic instance shadow introduced after startup', async () => {
+    const current = registry();
+    const target = current.targets[0];
+    const sharedAuthState = new MultiTargetSharedAuthState();
+    resolveRuntimeSubaccountDestination.mockRejectedValue(
+      new RuntimeDestinationLevelError('INSTANCE_DESTINATION_SHADOW', target.destinationName),
+    );
+    const canary = vi.spyOn(AdtHttpClient.prototype, 'get');
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+      btpConfig: BTP_CONFIG,
+      multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
+    });
+
+    const result = await requestHandler(server)(toolRequest('pinned'), { authInfo: READ_AUTH });
+
+    expect(JSON.parse(result.content[0].text)).toMatchObject({
+      error: 'TARGET_CONFIG_CHANGED',
+      target: 'A4H/100',
+      retryable: false,
+    });
+    expect(canary).not.toHaveBeenCalled();
+    expect(sharedAuthState.getHealth('A4H/100').status).toBe('configuration_invalid');
+  });
+
   it('marks Cloud Connector proxy construction failures as retryable setup failures', async () => {
     const current = registry();
     const target = current.targets[0];
     const sharedAuthState = new MultiTargetSharedAuthState();
-    lookupDestination.mockResolvedValue(BASE_DESTINATION);
+    resolveRuntimeSubaccountDestination.mockResolvedValue(BASE_DESTINATION);
     createConnectivityProxy.mockImplementationOnce(() => {
       throw new Error('SENTINEL_PROXY_FAILURE_DETAIL');
     });
@@ -1039,7 +1069,7 @@ describe('multi-target shared Basic authentication', () => {
     });
     setCachedFeatures(featuresOff(), target.target);
     setCachedDiscovery(new Map([['stale', ['application/xml']]]), target.target);
-    lookupDestination.mockResolvedValue({ ...BASE_DESTINATION, Password: 'ROTATED_PASSWORD' });
+    resolveRuntimeSubaccountDestination.mockResolvedValue({ ...BASE_DESTINATION, Password: 'ROTATED_PASSWORD' });
     createConnectivityProxy.mockImplementationOnce(() => {
       throw new Error('proxy temporarily unavailable');
     });
@@ -1064,7 +1094,7 @@ describe('multi-target shared Basic authentication', () => {
     const current = registry();
     const target = current.targets[0];
     const sharedAuthState = new MultiTargetSharedAuthState();
-    lookupDestination.mockResolvedValue({ ...BASE_DESTINATION, User: username });
+    resolveRuntimeSubaccountDestination.mockResolvedValue({ ...BASE_DESTINATION, User: username });
     const canary = vi.spyOn(AdtHttpClient.prototype, 'get');
     const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
       btpConfig: BTP_CONFIG,

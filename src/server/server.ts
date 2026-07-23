@@ -47,6 +47,10 @@ import {
 import { authLibLogger, initLogger, logger } from './logger.js';
 import { createMcpRateLimiter, type McpRateLimiter } from './mcp-rate-limit.js';
 import { handleSharedBasicCall } from './multi-target-basic-auth.js';
+import {
+  RuntimeDestinationLevelError,
+  resolveRuntimeSubaccountPpDestination,
+} from './multi-target-destination-runtime.js';
 import { ensureMultiTargetFeatureProbe, hasAuthorizationLimitedFeatureEvidence } from './multi-target-feature-state.js';
 import {
   buildAggregateToolSurfaceConfig,
@@ -294,16 +298,24 @@ async function createPerUserClient(
   adtSemaphore?: Semaphore,
   multiTarget?: { target: TargetDescriptor; instanceConfig: ServerConfig },
 ): Promise<AdtClient> {
-  const { createConnectivityProxy, lookupDestinationWithUserToken, lookupDestinationWithUserTokenUncached } =
-    await import('@arc-mcp/xsuaa-auth/btp');
+  const { createConnectivityProxy, lookupDestinationWithUserToken } = await import('@arc-mcp/xsuaa-auth/btp');
   const destName = resolvePpDestinationName(config);
   if (!destName) {
     throw new Error('SAP_BTP_PP_DESTINATION or SAP_BTP_DESTINATION is required for principal propagation');
   }
 
-  const { destination, authTokens } = multiTarget
-    ? await lookupDestinationWithUserTokenUncached(btpConfig, destName, userJwt, authLibLogger)
-    : await lookupDestinationWithUserToken(btpConfig, destName, userJwt, authLibLogger);
+  let destination: Destination;
+  let authTokens: PerUserAuthTokens;
+  try {
+    ({ destination, authTokens } = multiTarget
+      ? await resolveRuntimeSubaccountPpDestination(btpConfig, destName, userJwt)
+      : await lookupDestinationWithUserToken(btpConfig, destName, userJwt, authLibLogger));
+  } catch (error) {
+    if (multiTarget && error instanceof RuntimeDestinationLevelError) {
+      throw new TargetConfigChangedError(multiTarget.target.target, error.message);
+    }
+    throw error;
+  }
 
   let resolvedUrl = destination.URL;
   if (multiTarget) {

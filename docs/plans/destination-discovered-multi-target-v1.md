@@ -348,9 +348,10 @@ does not use the PP certificate/CERTRULE chain.
 9. Validate candidate connection fields, target ID, description, and policy.
 10. Detect all conflicts, quarantine every claimant, and never select a winner.
 11. Build all accepted runtimes and tool surfaces into one immutable process snapshot.
-12. Compute a deterministic registry revision by sorting ARC-related entries by destination name
-    and hashing fixed-field-order canonical JSON of safe normalized configuration. Exclude
-    `loadedAt`, response ordering, timestamps, credentials, and raw objects.
+12. Compute a deterministic registry revision by sorting the complete fixed-field-order canonical
+    records and hashing their safe normalized JSON. Destination name alone is not a total order when
+    malformed input contains duplicate names. Exclude `loadedAt`, response ordering, timestamps,
+    credentials, and raw objects.
 13. Mount the pinned and aggregate routes from the snapshot.
 
 ### Conflict rules
@@ -368,9 +369,11 @@ does not use the PP certificate/CERTRULE chain.
 
 ### Runtime drift and shared-credential checks
 
-Every SAP-contacting call requires a fresh Destination Find lookup with the SAP Cloud SDK
-destination cache bypassed. Before building the ADT client, compare the result to the startup
-fingerprint:
+Every SAP-contacting call performs a fresh, direct Destination Find request using the bound
+Destination service. ARC-1 accepts the result only when the response owner identifies a
+subaccount destination; an instance owner is `TARGET_CONFIG_CHANGED`, even when its safe fields
+match the startup target. This avoids the generic SDK's instance-over-subaccount and provider
+fallback selection. Before building the ADT client, compare the result to the startup fingerprint:
 
 - destination name;
 - canonical URL;
@@ -385,19 +388,18 @@ Any mismatch rejects the call as `TARGET_CONFIG_CHANGED` and instructs the opera
 also catches a newly created instance-level destination shadowing a subaccount target. Never refresh
 or mutate the snapshot in place.
 
-The current `@arc-mcp/xsuaa-auth` lookup drops custom/original properties and always sets
-`useCache:true`. V1 therefore requires a scoped additive package change that:
-
-- exposes original destination properties needed for the fingerprint;
-- offers an explicit uncached per-user lookup used only by multi-target runtimes;
-- never stores `authTokens[].error` or another failed PP result; and
-- exposes a narrow supported helper for startup destination collection/token acquisition, or a
-  package-owned level-specific list API, so ARC-1 does not deep-import private token code.
+For BasicAuthentication, the owner-confirmed Find response supplies the request-local credentials.
+For PrincipalPropagation, multi-target v1 validates the already authenticated user's JWT with the
+Connectivity service jwt-bearer exchange and sends the original JWT as
+`SAP-Connectivity-Authentication` (PP Option 2). It does not use a provider destination or an
+instance destination as fallback. A failed validation produces no usable PP credential and is not
+cached.
 
 This does not change XSUAA scopes, roles, token claims, or the generic authorization model. The
-uncached lookup adds one Destination Service resolution to each SAP-contacting multi-target call;
-measure its latency and service load in beta before considering a success-only cache. Immediate
-drift detection, PP repair, and Basic credential rotation take precedence in v1.
+uncached owner check adds Destination Service token acquisition and Find requests to each
+SAP-contacting multi-target call; PP also adds its Connectivity validation exchange. Measure
+latency and service load in beta before considering narrowly scoped service-token caching.
+Immediate drift detection, PP repair, and Basic credential rotation take precedence in v1.
 
 For BasicAuthentication, acquire one process-wide per-target gate before Destination Find and hold
 it through credential binding, the authentication canary/feature probe, and tool dispatch. Require
@@ -994,8 +996,8 @@ Work:
 - Compute requested/effective data and SQL policy from the global ceiling.
 - Quarantine unsupported write and unknown ARC properties.
 - Produce immutable public descriptors, admin descriptors, runtime fingerprints, and revision.
-- Canonicalize the revision with sorted destination names and fixed-field-order JSON; prove shuffled
-  discovery order produces the same revision.
+- Canonicalize the revision with a total sort over fixed-field-order safe records; prove shuffled
+  discovery order, including duplicate names, produces the same revision and diagnostics.
 - Keep raw Destination Service objects out of registry memory.
 
 ### 5. Build isolated target runtimes and selected-identity clients
@@ -1020,11 +1022,13 @@ Work:
 - Hardcode strict PP for PrincipalPropagation runtimes while leaving the optional single-target
   runtime's existing PP, API-key, and direct-OIDC behavior unchanged. BasicAuthentication runtimes
   are shared identity and never serve as PP fallback.
-- Resolve the exact destination without cache for every SAP-contacting request and verify all
-  non-secret connection, target, language, and supported `arc1.*` fingerprint fields. For Basic,
+- Resolve the exact destination without cache for every SAP-contacting request, require a
+  subaccount owner, and verify all non-secret connection, target, language, and supported `arc1.*`
+  fingerprint fields. For PP, validate the user JWT through the Connectivity service and use PP
+  Option 2 without provider or instance fallback. For Basic,
   acquire the process-wide target gate before lookup, bind a HMAC credential generation, retain no
   raw secret, use a bounded queue/timeout and old-generation blocklist, and hold the gate through
-  dispatch. Never cache a failed PP lookup or `authTokens[].error`; measure Destination Service
+  dispatch. Never cache a failed PP validation; measure Destination and Connectivity service
   latency/load in beta.
 - Force the target client into every ADT client/request.
 - Keep feature state keyed by public immutable target ID.

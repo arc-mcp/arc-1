@@ -4,11 +4,14 @@ import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const lookupDestinationWithUserTokenUncached = vi.fn();
+const resolveRuntimeSubaccountPpDestination = vi.fn();
 vi.mock('@arc-mcp/xsuaa-auth/btp', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@arc-mcp/xsuaa-auth/btp')>()),
   createConnectivityProxy: vi.fn(() => undefined),
-  lookupDestinationWithUserTokenUncached,
+}));
+vi.mock('../../../src/server/multi-target-destination-runtime.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../src/server/multi-target-destination-runtime.js')>()),
+  resolveRuntimeSubaccountPpDestination,
 }));
 
 const { AdtClient } = await import('../../../src/adt/client.js');
@@ -20,6 +23,7 @@ const { canonicalDestinationUrl, opaqueDestinationValue } = await import(
   '../../../src/server/destination-discovery.js'
 );
 const { DestinationRegistry } = await import('../../../src/server/destination-registry.js');
+const { RuntimeDestinationLevelError } = await import('../../../src/server/multi-target-destination-runtime.js');
 const { buildAggregateToolSurfaceConfig } = await import('../../../src/server/multi-target-runtime.js');
 const { createServer } = await import('../../../src/server/server.js');
 const { DEFAULT_CONFIG } = await import('../../../src/server/types.js');
@@ -116,7 +120,7 @@ const READ_AUTH: AuthInfo = {
 
 describe('multi-target principal-propagation retry', () => {
   beforeEach(() => {
-    lookupDestinationWithUserTokenUncached.mockReset();
+    resolveRuntimeSubaccountPpDestination.mockReset();
     resetCachedFeatures();
   });
 
@@ -131,7 +135,7 @@ describe('multi-target principal-propagation retry', () => {
     const aggregateConfig = buildAggregateToolSurfaceConfig(instanceConfig, current.targets);
     setCachedFeatures(featuresOff(), 'A4H/100');
     vi.spyOn(AdtClient.prototype, 'getSystemInfo').mockResolvedValue('{"sid":"A4H","client":"100"}');
-    lookupDestinationWithUserTokenUncached
+    resolveRuntimeSubaccountPpDestination
       .mockRejectedValueOnce(new Error('user mapping not available yet'))
       .mockResolvedValueOnce({
         destination: DESTINATION,
@@ -158,21 +162,47 @@ describe('multi-target principal-propagation retry', () => {
     const second = await call(request, { authInfo: READ_AUTH });
     expect(second.isError).not.toBe(true);
     expect(second.content[0].text).toBe('{"sid":"A4H","client":"100"}');
-    expect(lookupDestinationWithUserTokenUncached).toHaveBeenCalledTimes(2);
-    expect(lookupDestinationWithUserTokenUncached).toHaveBeenNthCalledWith(
+    expect(resolveRuntimeSubaccountPpDestination).toHaveBeenCalledTimes(2);
+    expect(resolveRuntimeSubaccountPpDestination).toHaveBeenNthCalledWith(
       2,
       BTP_CONFIG,
       DESTINATION.Name,
       READ_AUTH.token,
-      expect.anything(),
     );
+  });
+
+  it('reports an instance shadow introduced after startup as a non-retryable target change', async () => {
+    const current = registry();
+    const target = current.targets[0];
+    const instanceConfig = DEFAULT_CONFIG;
+    resolveRuntimeSubaccountPpDestination.mockRejectedValue(
+      new RuntimeDestinationLevelError('INSTANCE_DESTINATION_SHADOW', target.destinationName),
+    );
+    const server = createServer(buildAggregateToolSurfaceConfig(instanceConfig, current.targets), {
+      btpConfig: BTP_CONFIG,
+      multiTarget: { mode: 'aggregate', registry: current, instanceConfig },
+    });
+
+    const result = await requestHandler(server)(
+      {
+        method: 'tools/call',
+        params: { name: 'SAPRead', arguments: { type: 'SYSTEM', target: target.target } },
+      },
+      { authInfo: READ_AUTH },
+    );
+
+    expect(JSON.parse(result.content[0].text)).toMatchObject({
+      error: 'TARGET_CONFIG_CHANGED',
+      target: 'A4H/100',
+      retryable: false,
+    });
   });
 
   it('does not cache authorization-limited feature evidence across per-user PP calls', async () => {
     const current = registry();
     const instanceConfig = DEFAULT_CONFIG;
     const aggregateConfig = buildAggregateToolSurfaceConfig(instanceConfig, current.targets);
-    lookupDestinationWithUserTokenUncached.mockResolvedValue({
+    resolveRuntimeSubaccountPpDestination.mockResolvedValue({
       destination: DESTINATION,
       authTokens: { sapConnectivityAuth: 'Bearer per-user-assertion' },
     });

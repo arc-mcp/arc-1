@@ -10,6 +10,10 @@ import { setCachedDiscovery, setCachedFeatures } from '../handlers/feature-cache
 import type { ToolResult } from '../handlers/shared.js';
 import type { TargetDescriptor } from './destination-registry.js';
 import { authLibLogger, logger } from './logger.js';
+import {
+  RuntimeDestinationLevelError,
+  resolveRuntimeSubaccountDestination,
+} from './multi-target-destination-runtime.js';
 import { TargetConfigChangedError, validateTargetDrift } from './multi-target-runtime.js';
 import type { MultiTargetErrorBuilder } from './multi-target-server.js';
 import {
@@ -124,13 +128,16 @@ export interface PreparedSharedBasicClient {
 export async function prepareSharedBasicClient(
   options: PrepareSharedBasicClientOptions,
 ): Promise<PreparedSharedBasicClient> {
-  const { createConnectivityProxy, lookupDestination } = await import('@arc-mcp/xsuaa-auth/btp');
+  const { createConnectivityProxy } = await import('@arc-mcp/xsuaa-auth/btp');
   const { instanceConfig, btpConfig, target, lease } = options;
   let destination: Destination;
   try {
-    // Deliberately uncached direct Find. The process-wide target gate is already held.
-    destination = await lookupDestination(btpConfig, target.destinationName, authLibLogger);
-  } catch {
+    destination = await resolveRuntimeSubaccountDestination(btpConfig, target.destinationName);
+  } catch (error) {
+    if (error instanceof RuntimeDestinationLevelError) {
+      lease.markConfigurationInvalid();
+      throw new TargetConfigChangedError(target.target, error.message);
+    }
     lease.markLookupUnavailable();
     throw new SharedBasicSetupError(
       'DESTINATION_AUTH_SETUP_FAILED',

@@ -175,9 +175,12 @@ cf restart <arc1-app-name>
 
 No new MTAR or `cf deploy` is required for destination-only changes.
 
-Before each SAP call, ARC-1 resolves the selected destination without the SDK cache and compares its
-safe connection, public alias, and policy fingerprint with the startup snapshot. A mismatch returns
-`TARGET_CONFIG_CHANGED` until restart. Failed PP or per-user SAP access is not cached, so mapping and
+Before each SAP call, ARC-1 resolves the selected destination without a destination cache and
+requires the Destination Service response to identify a subaccount owner. An instance-level owner
+is rejected even when its safe configuration matches. ARC-1 then compares the safe connection,
+public alias, and policy fingerprint with the startup snapshot. A mismatch returns
+`TARGET_CONFIG_CHANGED` until restart. PP additionally validates the current user JWT with the
+Connectivity service on every call. Failed PP or per-user SAP access is not cached, so mapping and
 authorization repairs can be retried immediately.
 
 Basic `User`/`Password` values are intentionally excluded from that fingerprint. ARC-1 loads them

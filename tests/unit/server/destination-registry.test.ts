@@ -276,6 +276,33 @@ describe('DestinationRegistry', () => {
     expect(a.revision).toBe(b.revision);
   });
 
+  it('computes a stable revision and diagnostic order for duplicate destination names', () => {
+    const one = destination({ name: 'DUPLICATE', sapClient: '100' });
+    const two = destination({ name: 'DUPLICATE', sapClient: '200' });
+    const a = DestinationRegistry.fromDiscovery(discovery([one, two]), DEFAULT_CONFIG);
+    const b = DestinationRegistry.fromDiscovery(discovery([two, one]), DEFAULT_CONFIG);
+
+    expect(a.revision).toBe(b.revision);
+    expect(a.diagnostics).toEqual(b.diagnostics);
+    expect(a.diagnostics.map((entry) => entry.client)).toEqual(['100', '200']);
+  });
+
+  it('computes a stable failure revision above the target limit', () => {
+    const entries = Array.from({ length: MULTI_TARGET_MAX + 1 }, (_, index) =>
+      destination({
+        name: `LIMIT_${String(index).padStart(3, '0')}`,
+        sapSysId: `A${Math.floor(index / 10) % 10}${index % 10}`,
+        sapClient: String(index % 1000).padStart(3, '0'),
+      }),
+    );
+    const forward = DestinationRegistry.fromDiscovery(discovery(entries), DEFAULT_CONFIG);
+    const reverse = DestinationRegistry.fromDiscovery(discovery([...entries].reverse()), DEFAULT_CONFIG);
+
+    expect(forward.failure?.code).toBe('TARGET_LIMIT_EXCEEDED');
+    expect(forward.revision).toBe(reverse.revision);
+    expect(forward.diagnostics).toEqual(reverse.diagnostics);
+  });
+
   it('retains no secret fields or raw destination graph', () => {
     const sentinel = 'SENTINEL_SECRET_5de848';
     const raw = destination({

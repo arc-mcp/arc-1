@@ -547,8 +547,29 @@ function registryRevision(diagnostics: readonly TargetDiagnostic[], targets: rea
       warnings: entry.warnings,
       targetFingerprint: targetFingerprints.get(entry.destinationName) ?? '',
     }))
-    .sort((a, b) => a.destinationName.localeCompare(b.destinationName));
+    .map((entry) => ({ entry, sortKey: JSON.stringify(entry) }))
+    .sort((a, b) => a.sortKey.localeCompare(b.sortKey))
+    .map(({ entry }) => entry);
   return createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
+}
+
+function diagnosticSortKey(entry: TargetDiagnostic): string {
+  return JSON.stringify([
+    entry.destinationName,
+    entry.target ?? '',
+    entry.status,
+    entry.code ?? '',
+    entry.message,
+    entry.description ?? '',
+    entry.type ?? '',
+    entry.authentication ?? '',
+    entry.proxyType ?? '',
+    entry.hasCloudConnectorLocationId,
+    entry.arcConfig,
+    entry.requestedPolicy,
+    entry.effectivePolicy,
+    entry.warnings,
+  ]);
 }
 
 function conflictMessage(code: TargetExclusionCode): string {
@@ -650,6 +671,7 @@ export class DestinationRegistry {
             })
           : entry.diagnostic,
       );
+      diagnostics.sort((a, b) => diagnosticSortKey(a).localeCompare(diagnosticSortKey(b)));
       return new DestinationRegistry({
         targets: [],
         diagnostics,
@@ -707,7 +729,7 @@ export class DestinationRegistry {
       }
     }
     targets.sort((a, b) => a.target.localeCompare(b.target));
-    diagnostics.sort((a, b) => a.destinationName.localeCompare(b.destinationName));
+    diagnostics.sort((a, b) => diagnosticSortKey(a).localeCompare(diagnosticSortKey(b)));
     return new DestinationRegistry({
       targets,
       diagnostics,
