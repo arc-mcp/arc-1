@@ -455,7 +455,8 @@ it is real and broker-honored, just undocumented.
     - **Users still need role collections.** An exchanged token for a user with no ARC-1 collection
       authenticates but authorizes nothing.
 
-The [multi-system hub](multi-system-hub.md) uses a *different* wiring — the hub exchanges with its
+The external [`arc-mcp/mcp-hub`](https://github.com/arc-mcp/mcp-hub) project uses a *different*
+wiring — the hub exchanges with its
 **own** client plus a `granted-apps` grant chain — because it fronts several backends. For a single
 consumer, the service-key route above is simpler and needs no grant chain.
 

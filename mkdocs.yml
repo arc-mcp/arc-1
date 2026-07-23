@@ -54,7 +54,6 @@ nav:
       - Administration & Alternatives:
           - BTP Administration: btp-administration.md
           - Multi-Target Administration: multi-target-administration.md
-          - Multi-System Hub (mcp-hub): multi-system-hub.md
           - Best Practices: deployment-best-practices.md
   - Auth & Permissions:
       - Overview: enterprise-auth.md
@@ -113,6 +112,7 @@ plugins:
   - redirects:
       redirect_maps:
         multi-destination.md: multi-target-setup.md
+        multi-system-hub.md: btp-overview.md
         phase4-btp-deployment.md: btp-cloud-foundry-deployment.md
 
 extra_javascript:

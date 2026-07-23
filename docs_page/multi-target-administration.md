@@ -65,8 +65,8 @@ is unacceptable.
 
 ### When separate instances are safer
 
-Use one ARC-1 instance per target, optionally behind the
-[Multi-System Hub](multi-system-hub.md), when you need:
+Use one ARC-1 instance per target, optionally behind an external router such as
+[`arc-mcp/mcp-hub`](https://github.com/arc-mcp/mcp-hub), when you need:
 
 - writes, activation, transport mutation, or Git mutation;
 - target-specific visibility or authorization before SAP is contacted;

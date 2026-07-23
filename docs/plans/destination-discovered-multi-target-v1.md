@@ -1183,7 +1183,7 @@ Files:
 - `docs_page/principal-propagation-setup.md`
 - `docs_page/architecture.md`
 - `docs/multi-destination-evaluation.md`
-- `docs_page/multi-system-hub.md`
+- External `arc-mcp/mcp-hub` documentation: <https://github.com/arc-mcp/mcp-hub>
 - `docs_page/index.md`, `docs_page/roadmap.md`, `docs/compare/00-feature-matrix.md`
 - `mkdocs.yml`
 

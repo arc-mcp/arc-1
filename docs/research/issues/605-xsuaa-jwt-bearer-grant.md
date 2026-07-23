@@ -31,7 +31,7 @@ request.** Everything else follows from that. Which client that is depends on to
 | Topology | Authenticates at `/oauth/token` | Needs `jwt-bearer` in |
 |---|---|---|
 | MCP client (Claude / Cursor / Eclipse) → ARC-1 | the DCR client via ARC-1's OAuth proxy, `authorization_code` | nobody — works today |
-| [mcp-hub](../../../docs_page/multi-system-hub.md) → ARC-1 backend | the **hub's** client + `granted-apps` / `foreign-scope-references` chain | the **hub's** descriptor |
+| [`mcp-hub`](https://github.com/arc-mcp/mcp-hub) → ARC-1 backend | the **hub's** client + `granted-apps` / `foreign-scope-references` chain | the **hub's** descriptor |
 | **BTP app → ARC-1 via a service key of ARC-1's XSUAA** | **ARC-1's own client** | **ARC-1's descriptor** ← this change |
 
 Row 3 is the simplest shape: no `granted-apps` chain, and the returned token is already audienced to
