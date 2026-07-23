@@ -30,6 +30,38 @@ import type {
 import { DEFAULT_CONFIG } from './types.js';
 
 /**
+ * Look up the DCR signing secret from a bound user-provided service via
+ * `VCAP_SERVICES`. One shared user-provided service per deployment (any name)
+ * exposing a non-empty `signing-secret` credential supplies the value, so a
+ * stable, externally-managed secret survives MTA redeploys without being
+ * written into the deploy descriptor. Returns the value + service name for
+ * source attribution, or undefined when not bound.
+ */
+function readDcrSigningSecretFromVcap(): { value: string; service: string } | undefined {
+  const raw = process.env.VCAP_SERVICES;
+  if (!raw) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+  if (!parsed || typeof parsed !== 'object') return undefined;
+  for (const instances of Object.values(parsed as Record<string, unknown>)) {
+    if (!Array.isArray(instances)) continue;
+    for (const inst of instances) {
+      const creds = (inst as { credentials?: Record<string, unknown> })?.credentials;
+      const secret = creds?.['signing-secret'];
+      if (typeof secret === 'string' && secret.trim() !== '') {
+        const name = (inst as { name?: unknown }).name;
+        return { value: secret, service: typeof name === 'string' ? name : 'user-provided' };
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
  * Named API-key profiles — the safety config + scope set granted to a key
  * with that profile name. Used by multi-key auth (`ARC1_API_KEYS=key:profile`).
  *
@@ -555,6 +587,16 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
   // recreates the service binding) doesn't invalidate cached client_ids.
   // When omitted, the store falls back to the XSUAA `clientsecret`.
   config.dcrSigningSecret = resolveOptionalStr('dcr-signing-secret', 'ARC1_DCR_SIGNING_SECRET', 'dcrSigningSecret');
+  // Fallback: a bound user-provided service (VCAP_SERVICES) can supply the DCR
+  // signing secret so a stable, externally-managed value survives MTA
+  // redeploys without living in the descriptor. The flag/env above still win.
+  if (config.dcrSigningSecret === undefined) {
+    const fromVcap = readDcrSigningSecretFromVcap();
+    if (fromVcap) {
+      config.dcrSigningSecret = fromVcap.value;
+      sources.dcrSigningSecret = { service: fromVcap.service };
+    }
+  }
 
   // ── BTP ABAP Environment ───────────────────────────────────────────
   config.btpServiceKey = resolveOptionalStr('btp-service-key', 'SAP_BTP_SERVICE_KEY', 'btpServiceKey');

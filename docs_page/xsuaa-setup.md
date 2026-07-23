@@ -218,12 +218,38 @@ cf set-env arc1-mcp-server ARC1_DCR_SIGNING_SECRET "$SECRET"
 cf restage arc1-mcp-server
 ```
 
+**Alternative — bind a user-provided service (for IaC-managed secrets).** Instead of `cf set-env`, ARC-1 also reads the signing secret from a bound user-provided service exposing a non-empty `signing-secret` credential. When `ARC1_DCR_SIGNING_SECRET` (flag/env) is unset, ARC-1 scans `VCAP_SERVICES` and uses the first bound service whose credentials contain one. This suits Terraform/Vault-managed deployments where the secret is provisioned once and bound to the app, so it never lives in the deploy descriptor:
+
+```bash
+cf create-user-provided-service arc1-dcr-secret -p '{"signing-secret":"'"$(openssl rand -base64 48)"'"}'
+cf bind-service arc1-mcp-server arc1-dcr-secret
+cf restage arc1-mcp-server
+```
+
+Or provision it with Terraform (`cloudfoundry` provider) so the secret is generated once and kept in state, not in the deploy descriptor:
+
+```hcl
+resource "random_password" "arc1_dcr" {
+  length  = 48
+  special = false
+}
+
+resource "cloudfoundry_service_instance" "arc1_dcr_secret" {
+  name        = "arc1-dcr-secret"
+  type        = "user-provided"
+  space       = var.space_id
+  credentials = jsonencode({ "signing-secret" = random_password.arc1_dcr.result })
+}
+```
+
+Then bind `arc1-dcr-secret` to the app — via a `cloudfoundry_service_credential_binding`, or as an `existing-service` in `mta.yaml`.
+
 ARC-1 emits a `[warn]` to stderr if `ARC1_DCR_SIGNING_SECRET` is set without `SAP_XSUAA_AUTH=true` — the secret is only consumed by the XSUAA OAuth proxy path, so this surfaces a misconfiguration where the secret would otherwise be unused.
 
 Properties:
 - `cf set-env` env vars survive `cf deploy` (CF doesn't reset them, and MTA only touches env vars declared in `mta.yaml` properties)
 - Re-setting the value (`cf set-env` with a new secret + `cf restage`) is the explicit revocation knob — invalidates every `client_id` issued under the old secret
-- Falls back to the XSUAA `clientsecret` when unset, preserving the legacy behavior
+- Resolution precedence is flag > env > bound user-provided service (`signing-secret` credential) > XSUAA `clientsecret`, preserving the legacy behavior when none are set
 - Empty or whitespace-only values are treated as unset (with a `[warn]`), so a misconfigured env var won't crash startup
 - A signing secret shorter than 16 bytes (128 bits) triggers a soft warning at startup; use `openssl rand -base64 48` for the recommended ≥32 bytes
 

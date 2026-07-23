@@ -867,6 +867,55 @@ describe('parseArgs', () => {
     expect(config.dcrSigningSecret).toBe('flag-value');
   });
 
+  it('reads dcrSigningSecret from a bound user-provided service (VCAP_SERVICES)', () => {
+    process.env.VCAP_SERVICES = JSON.stringify({
+      'user-provided': [{ name: 'arc1-dcr-secret', credentials: { 'signing-secret': 'vcap-hmac-key' } }],
+    });
+    try {
+      const config = parseArgs([]);
+      expect(config.dcrSigningSecret).toBe('vcap-hmac-key');
+    } finally {
+      delete process.env.VCAP_SERVICES;
+    }
+  });
+
+  it('ARC1_DCR_SIGNING_SECRET env takes precedence over the bound service', () => {
+    process.env.ARC1_DCR_SIGNING_SECRET = 'env-value';
+    process.env.VCAP_SERVICES = JSON.stringify({
+      'user-provided': [{ name: 'arc1-dcr-secret', credentials: { 'signing-secret': 'vcap-value' } }],
+    });
+    try {
+      const config = parseArgs([]);
+      expect(config.dcrSigningSecret).toBe('env-value');
+    } finally {
+      delete process.env.VCAP_SERVICES;
+    }
+  });
+
+  it('ignores a bound service with an empty signing-secret credential', () => {
+    process.env.VCAP_SERVICES = JSON.stringify({
+      'user-provided': [{ name: 'arc1-dcr-secret', credentials: { 'signing-secret': '  ' } }],
+    });
+    try {
+      const config = parseArgs([]);
+      expect(config.dcrSigningSecret).toBeUndefined();
+    } finally {
+      delete process.env.VCAP_SERVICES;
+    }
+  });
+
+  it('attributes the dcrSigningSecret source to the bound service name', () => {
+    process.env.VCAP_SERVICES = JSON.stringify({
+      'user-provided': [{ name: 'arc1-dcr-secret', credentials: { 'signing-secret': 'vcap-hmac-key' } }],
+    });
+    try {
+      const { sources } = resolveConfig([]);
+      expect(sources.dcrSigningSecret).toEqual({ service: 'arc1-dcr-secret' });
+    } finally {
+      delete process.env.VCAP_SERVICES;
+    }
+  });
+
   // --- API_KEY_PROFILES ---
 
   it('API_KEY_PROFILES contains all 7 expected profiles', () => {

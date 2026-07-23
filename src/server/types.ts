@@ -21,7 +21,7 @@ export type FeatureToggle = 'auto' | 'on' | 'off';
 export type NullableOptionalsMode = 'auto' | 'on' | 'off';
 
 /** Per-field config source (used by resolveConfig + startup log + `config show`). */
-export type ConfigSource = 'default' | { env: string } | { flag: string } | { file: string };
+export type ConfigSource = 'default' | { env: string } | { flag: string } | { file: string } | { service: string };
 
 /** Server configuration — all fields needed to start ARC-1 */
 export interface ServerConfig {

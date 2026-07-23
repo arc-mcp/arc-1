@@ -307,6 +307,7 @@ function formatConfigSource(s: ConfigSource | undefined): string {
     if ('env' in s) return `env ${s.env}`;
     if ('flag' in s) return `flag ${s.flag}`;
     if ('file' in s) return `file ${s.file}`;
+    if ('service' in s) return `service ${s.service}`;
   }
   return 'unknown';
 }
