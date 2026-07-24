@@ -6,8 +6,10 @@
 import type { AdtClient } from '../adt/client.js';
 import {
   applyFixProposal,
+  getAtcSystemDefaultVariant,
   getCdsTestCases,
   getFixProposals,
+  listAtcVariants,
   runAtcCheck,
   runUnitTests,
   supportsCdsTestCases,
@@ -85,6 +87,27 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
       const variant = args.variant as string | undefined;
       const result = await runAtcCheck(client.http, client.safety, objectUrl, variant);
       return textResult(toolJson(result));
+    }
+    case 'atc_variants': {
+      // Discover which check variant to pass to action="atc": the system default (used when none is
+      // given) + the available variants. `variant` doubles as an optional name filter (default all).
+      // Trim/normalize so the echoed `filter` matches what listAtcVariants actually queries.
+      const filter = (args.variant as string | undefined)?.trim() || '*';
+      // The variant list is the core result; the system default is a best-effort annotation, so a
+      // missing/failing /atc/customizing (older or differently-configured system) must not sink the
+      // whole action — degrade to null default rather than erroring.
+      const [systemDefault, variants] = await Promise.all([
+        getAtcSystemDefaultVariant(client.http, client.safety).catch(() => undefined),
+        listAtcVariants(client.http, client.safety, filter),
+      ]);
+      return textResult(
+        toolJson({
+          systemDefault: systemDefault ?? null,
+          filter,
+          count: variants.length,
+          variants: variants.map((v) => ({ name: v.name, description: v.description })),
+        }),
+      );
     }
     case 'cds_testcases': {
       // SAP-suggested ABAP Unit test cases for a CDS entity (CDS Test Double Framework).
@@ -375,7 +398,7 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
     }
     default:
       return errorResult(
-        `Unknown SAPDiagnose action: ${action}. Supported: syntax, unittest, atc, cds_testcases, object_state, quickfix, apply_quickfix, dumps, traces, trace_start, trace_requests, trace_cancel, system_messages, gateway_errors, odata_perf, cds_sql, sql_trace_state, set_sql_trace_state, sql_trace_directory, authorization_trace`,
+        `Unknown SAPDiagnose action: ${action}. Supported: syntax, unittest, atc, atc_variants, cds_testcases, object_state, quickfix, apply_quickfix, dumps, traces, trace_start, trace_requests, trace_cancel, system_messages, gateway_errors, odata_perf, cds_sql, sql_trace_state, set_sql_trace_state, sql_trace_directory, authorization_trace`,
       );
   }
 }

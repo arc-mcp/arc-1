@@ -1188,6 +1188,61 @@ export function findDeepNodes(obj: unknown, key: string): Array<Record<string, u
   return [];
 }
 
+/** A parsed `nameditem:namedItem`: identifier (`name`), human text (`description`), optional structured `data`. */
+export interface NamedItem {
+  name: string;
+  description: string;
+  data: string;
+}
+
+/**
+ * Parse a `nameditem:namedItemList` value-help response. Shared by transport layers/targets and
+ * the ATC variant listing — any ADT endpoint that returns the generic named-item feed.
+ */
+export function parseNamedItems(xml: string): NamedItem[] {
+  const parsed = parseXml(xml);
+  // The parser wraps some leaf elements (e.g. `data`) in single-element arrays; unwrap.
+  const str = (v: unknown): string => {
+    const x = Array.isArray(v) ? v[0] : v;
+    return typeof x === 'string' ? x : typeof x === 'number' ? String(x) : '';
+  };
+  // Some items carry entity-encoded markup (e.g. "&lt;p&gt;Target: &lt;b&gt;DEV&lt;/b&gt;&lt;/p&gt;").
+  // The shared parser leaves entities encoded — decode, strip tags, collapse whitespace.
+  const clean = (v: unknown): string =>
+    str(v)
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'")
+      .replace(/&#39;/g, "'")
+      .replace(/&amp;/g, '&') // decode &amp; last so encoded entities aren't double-decoded
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  return findDeepNodes(parsed, 'namedItem').map((item) => {
+    const rec = item as Record<string, unknown>;
+    // `name` is an identifier passed back verbatim (only trim); `description`/`data` get cleaned.
+    return { name: str(rec.name).trim(), description: clean(rec.description), data: clean(rec.data) };
+  });
+}
+
+/**
+ * Read the system default ATC check variant from an `<atc:customizing>` response — the
+ * `<property name="systemCheckVariant" value="…"/>` entry. This is the variant ATC runs when
+ * `checkVariant` is empty. Returns undefined when the property is absent.
+ */
+export function parseAtcSystemCheckVariant(xml: string): string | undefined {
+  const parsed = parseXml(xml);
+  for (const prop of findDeepNodes(parsed, 'property')) {
+    if (prop['@_name'] === 'systemCheckVariant') {
+      const value = prop['@_value'];
+      return typeof value === 'string' && value ? value : undefined;
+    }
+  }
+  return undefined;
+}
+
 /**
  * Map ADT class category numeric codes to human-readable AFF enum strings.
  *
