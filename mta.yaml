@@ -143,11 +143,6 @@ modules:
         - xs-security.json
     properties:
       SAP_TRANSPORT: http-streamable
-      # MCP server name advertised in the initialize handshake defaults to
-      # `arc-1` (not set here). When running several instances against different
-      # SAP systems, set a unique ARC1_SERVER_NAME per landscape via
-      # `mta-overrides.mtaext` so clients can derive a target-specific tool
-      # prefix without numeric collision suffixes.
       SAP_SYSTEM_TYPE: auto
       SAP_LANGUAGE: EN
       SAP_INSECURE: "false"
