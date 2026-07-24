@@ -674,7 +674,7 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
     multiTarget,
   } = options;
   const server = new Server(
-    { name: 'arc-1', version: VERSION },
+    { name: config.serverName, version: VERSION },
     {
       capabilities: { tools: {} },
       instructions: multiTarget ? buildMultiTargetServerInstructions(multiTarget) : SERVER_INSTRUCTIONS,

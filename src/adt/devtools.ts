@@ -25,7 +25,15 @@ import type {
   UnitTestResult,
   UnitTestRunResult,
 } from './types.js';
-import { decodeXmlEntities, escapeXmlAttr, findDeepNodes, parseXml } from './xml-parser.js';
+import {
+  decodeXmlEntities,
+  escapeXmlAttr,
+  findDeepNodes,
+  type NamedItem,
+  parseAtcSystemCheckVariant,
+  parseNamedItems,
+  parseXml,
+} from './xml-parser.js';
 
 /** Run syntax check on an ABAP object.
  *
@@ -690,6 +698,34 @@ export function parseCoverageMeasurement(xml: string): CoverageSummary {
 
 function hasCoverageMetrics(summary: CoverageSummary): boolean {
   return Boolean(summary.statement || summary.branch || summary.procedure);
+}
+
+/**
+ * List the ATC check variants this system offers — the valid values for `runAtcCheck`'s `variant`.
+ * GETs the ADT named-item feed `/sap/bc/adt/atc/variants?name=<pattern>` (`*` = all). The `name`
+ * filter is a server-side prefix match, so an empty/omitted `name` returns an EMPTY list — always
+ * pass a pattern. Read-only. Live-verified on 758 (184 variants) + 816 (215).
+ */
+export async function listAtcVariants(http: AdtHttpClient, safety: SafetyConfig, filter = '*'): Promise<NamedItem[]> {
+  checkOperation(safety, OperationType.Read, 'ListAtcVariants');
+  const pattern = filter.trim() || '*';
+  const resp = await http.get(`/sap/bc/adt/atc/variants?name=${encodeURIComponent(pattern)}`, {
+    Accept: 'application/vnd.sap.adt.nameditems.v1+xml',
+  });
+  return parseNamedItems(resp.body).filter((item) => item.name);
+}
+
+/**
+ * Read the system default ATC check variant from `/sap/bc/adt/atc/customizing` — the variant ATC
+ * uses when none is passed. Returns undefined if the endpoint/property is absent. Read-only.
+ */
+export async function getAtcSystemDefaultVariant(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+): Promise<string | undefined> {
+  checkOperation(safety, OperationType.Read, 'GetAtcCustomizing');
+  const resp = await http.get('/sap/bc/adt/atc/customizing', { Accept: 'application/xml' });
+  return parseAtcSystemCheckVariant(resp.body);
 }
 
 /** Run ATC check on an object */

@@ -13,7 +13,7 @@ describe('parseArgs', () => {
   const savedEnv = { ...process.env };
 
   beforeEach(() => {
-    // Clear SAP_* and ARC1_* env vars for clean test state
+    // Clear supported ARC-1 env vars for clean test state.
     for (const key of Object.keys(process.env)) {
       if (key.startsWith('SAP_') || key.startsWith('TEST_SAP_') || key.startsWith('ARC1_')) {
         delete process.env[key];
@@ -270,6 +270,31 @@ describe('parseArgs', () => {
   it('defaults unknown transport to stdio', () => {
     const config = parseArgs(['--transport', 'invalid']);
     expect(config.transport).toBe('stdio');
+  });
+
+  it('defaults serverName to arc-1', () => {
+    const config = parseArgs([]);
+    expect(config.serverName).toBe('arc-1');
+  });
+
+  it('parses ARC1_SERVER_NAME env var', () => {
+    process.env.ARC1_SERVER_NAME = 'arc1-erp';
+    try {
+      const config = parseArgs([]);
+      expect(config.serverName).toBe('arc1-erp');
+    } finally {
+      delete process.env.ARC1_SERVER_NAME;
+    }
+  });
+
+  it('parses --server-name flag over ARC1_SERVER_NAME env', () => {
+    process.env.ARC1_SERVER_NAME = 'arc1-erp';
+    try {
+      const config = parseArgs(['--server-name', 'arc1-bw']);
+      expect(config.serverName).toBe('arc1-bw');
+    } finally {
+      delete process.env.ARC1_SERVER_NAME;
+    }
   });
 
   it('parses --port flag and overrides httpAddr port', () => {

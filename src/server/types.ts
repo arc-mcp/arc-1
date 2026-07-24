@@ -40,6 +40,7 @@ export interface ServerConfig {
   // --- MCP Transport ---
   transport: TransportType;
   httpAddr: string;
+  serverName: string;
 
   // --- Read-only Admin UI ---
   /** Read-only inspection UI: off (default), local sidecar server, or mounted web routes on the HTTP server. */
@@ -241,6 +242,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
   insecure: false,
   transport: 'stdio',
   httpAddr: '0.0.0.0:8080',
+  serverName: 'arc-1',
   uiMode: 'off',
   uiAddr: '127.0.0.1:8711',
   uiOpen: false,

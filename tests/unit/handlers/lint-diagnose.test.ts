@@ -1176,4 +1176,77 @@ ENDCLASS.`;
       }
     });
   });
+
+  describe('SAPDiagnose action=atc_variants (FEAT-68)', () => {
+    const VARIANTS = `<?xml version="1.0" encoding="utf-8"?><nameditem:namedItemList xmlns:nameditem="http://www.sap.com/adt/nameditem"><nameditem:totalItemCount>2</nameditem:totalItemCount><nameditem:namedItem><nameditem:name>ABAP_CLOUD_DEVELOPMENT_DEFAULT</nameditem:name><nameditem:description>Cloud default</nameditem:description><nameditem:data/></nameditem:namedItem><nameditem:namedItem><nameditem:name>ZABAP_CLOUD_DEVELOPMENT</nameditem:name><nameditem:description/><nameditem:data/></nameditem:namedItem></nameditem:namedItemList>`;
+    const CUSTOMIZING = `<?xml version="1.0" encoding="utf-8"?><atc:customizing xmlns:atc="http://www.sap.com/adt/atc"><properties><property name="systemCheckVariant" value="ZABAP_CLOUD_DEVELOPMENT"/></properties></atc:customizing>`;
+
+    it('returns the system default + the filtered variant list', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL) => {
+        const u = String(url);
+        if (u.includes('/atc/customizing')) return Promise.resolve(mockResponse(200, CUSTOMIZING));
+        if (u.includes('/atc/variants')) return Promise.resolve(mockResponse(200, VARIANTS));
+        return Promise.resolve(mockResponse(404, 'not found'));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPDiagnose', {
+        action: 'atc_variants',
+        variant: 'ABAP_CLOUD*',
+      });
+
+      expect(result.isError).toBeUndefined();
+      const payload = JSON.parse(result.content[0]?.text);
+      expect(payload.systemDefault).toBe('ZABAP_CLOUD_DEVELOPMENT');
+      expect(payload.filter).toBe('ABAP_CLOUD*');
+      expect(payload.count).toBe(2);
+      expect(payload.variants.map((v: { name: string }) => v.name)).toContain('ABAP_CLOUD_DEVELOPMENT_DEFAULT');
+
+      const urls = mockFetch.mock.calls.map((c) => String(c[0]));
+      expect(urls.some((u) => u.includes('/atc/variants?name=ABAP_CLOUD*'))).toBe(true);
+      expect(urls.some((u) => u.includes('/atc/customizing'))).toBe(true);
+    });
+
+    it('defaults the filter to all variants when none is given', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL) => {
+        const u = String(url);
+        if (u.includes('/atc/customizing')) return Promise.resolve(mockResponse(200, CUSTOMIZING));
+        return Promise.resolve(mockResponse(200, VARIANTS));
+      });
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPDiagnose', { action: 'atc_variants' });
+      const payload = JSON.parse(result.content[0]?.text);
+      expect(payload.filter).toBe('*');
+      const urls = mockFetch.mock.calls.map((c) => String(c[0]));
+      expect(urls.some((u) => u.includes('/atc/variants?name=*'))).toBe(true);
+    });
+
+    it('degrades to null default when /atc/customizing is absent (404) — list survives', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL) => {
+        const u = String(url);
+        if (u.includes('/atc/customizing')) return Promise.resolve(mockResponse(404, 'not found'));
+        return Promise.resolve(mockResponse(200, VARIANTS));
+      });
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPDiagnose', { action: 'atc_variants' });
+      expect(result.isError).toBeUndefined();
+      const payload = JSON.parse(result.content[0]?.text);
+      expect(payload.systemDefault).toBeNull();
+      expect(payload.count).toBe(2);
+    });
+
+    it('does NOT silently succeed when /atc/customizing fails with 403/500 — the error surfaces', async () => {
+      for (const status of [403, 500]) {
+        mockFetch.mockReset();
+        mockFetch.mockImplementation((url: string | URL) => {
+          const u = String(url);
+          if (u.includes('/atc/customizing')) return Promise.resolve(mockResponse(status, 'boom'));
+          return Promise.resolve(mockResponse(200, VARIANTS));
+        });
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPDiagnose', { action: 'atc_variants' });
+        // A real customizing failure (auth/5xx) must NOT masquerade as a successful null-default listing.
+        expect(result.isError).toBe(true);
+      }
+    });
+  });
 });

@@ -56,6 +56,7 @@ Full per-option details (defaults, clamps, layer interactions): [docs_page/confi
 | `SAP_INSECURE` | Skip TLS verification (default false) |
 | `SAP_TRANSPORT` | `stdio` (default) or `http-streamable` |
 | `ARC1_PORT` / `ARC1_HTTP_ADDR` | HTTP port (8080) / full bind address |
+| `ARC1_SERVER_NAME` / `--server-name` | Server name advertised in the MCP handshake (default `arc-1`); use a unique value per direct-connect instance |
 | `SAP_ALLOW_WRITES` | Enable mutations (default false); prerequisite for transport/git writes |
 | `SAP_ALLOW_DATA_PREVIEW` / `SAP_ALLOW_FREE_SQL` | TABLE_CONTENTS preview / freestyle SQL (default false) |
 | `SAP_ALLOW_TRANSPORT_WRITES` / `SAP_ALLOW_GIT_WRITES` | Transport / git mutations (each ALSO needs `SAP_ALLOW_WRITES`) |

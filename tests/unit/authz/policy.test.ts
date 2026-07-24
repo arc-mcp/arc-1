@@ -51,6 +51,12 @@ describe('ACTION_POLICY matrix', () => {
     expect(policy?.opType).toBe(OperationType.Read);
   });
 
+  it('SAPDiagnose.atc_variants requires only read scope', () => {
+    const policy = getActionPolicy('SAPDiagnose', 'atc_variants');
+    expect(policy?.scope).toBe('read');
+    expect(policy?.opType).toBe(OperationType.Read);
+  });
+
   it('CLASSIFICATION FIX: SAPLint.set_formatter_settings requires write scope', () => {
     const policy = getActionPolicy('SAPLint', 'set_formatter_settings');
     expect(policy?.scope).toBe('write');

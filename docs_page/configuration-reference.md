@@ -231,6 +231,7 @@ How ARC-1 itself listens for MCP traffic.
 | Flag | Env var | Default | Effect |
 |---|---|---|---|
 | `--transport` | `SAP_TRANSPORT` | `stdio` | `stdio` (subprocess over stdin/stdout) or `http-streamable` (long-lived HTTP server). The Docker image overrides this to `http-streamable` by default. |
+| `--server-name` | `ARC1_SERVER_NAME` | `arc-1` | Server name advertised in the MCP `initialize` handshake. Give each direct-connect instance a unique name when running several ARC-1 instances so clients can derive a target-specific tool prefix without numeric collision suffixes. |
 | `--http-addr` | `ARC1_HTTP_ADDR` / `SAP_HTTP_ADDR` | `0.0.0.0:8080` | Bind address for HTTP streamable. Use `127.0.0.1:3000` to restrict to localhost. `SAP_HTTP_ADDR` is the legacy fallback name. |
 | `--port` | `ARC1_PORT` | `8080` | Simpler alternative when only the port needs to change. Wins over `ARC1_HTTP_ADDR`'s port if both are set. Valid range `1–65535`. |
 | `--ui[=MODE]` | `ARC1_UI` | `off` | Experimental read-only browser console. `off` disables it. `local` starts a loopback sidecar UI at `ARC1_UI_ADDR` for stdio/Claude-style local use. `web` mounts `/ui` and `/ui/api/*` on the HTTP server and requires an admin API key, OIDC, or XSUAA auth. `true` maps to `local` for stdio and `web` for HTTP. |

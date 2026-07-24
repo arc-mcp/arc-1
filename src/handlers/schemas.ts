@@ -746,6 +746,7 @@ export const SAPDiagnoseSchema = z
       'syntax',
       'unittest',
       'atc',
+      'atc_variants',
       'cds_testcases',
       'dumps',
       'traces',

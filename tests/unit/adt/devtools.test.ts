@@ -6,9 +6,11 @@ import {
   activateBatch,
   applyFixProposal,
   extractCoverageMeasurementUri,
+  getAtcSystemDefaultVariant,
   getCdsTestCases,
   getFixProposals,
   getPrettyPrinterSettings,
+  listAtcVariants,
   parseActivationOutcome,
   parseActivationResult,
   parseCoverageMeasurement,
@@ -2308,6 +2310,43 @@ describe('DevTools', () => {
         discoveryAcceptFor: () => undefined,
       } as unknown as AdtHttpClient;
       expect(supportsCdsTestCases(http)).toBe(false);
+    });
+  });
+
+  describe('listAtcVariants + getAtcSystemDefaultVariant (FEAT-68)', () => {
+    // Real 816 shapes (trimmed): the named-item feed + the customizing properties.
+    const VARIANTS = `<?xml version="1.0" encoding="utf-8"?><nameditem:namedItemList xmlns:nameditem="http://www.sap.com/adt/nameditem"><nameditem:totalItemCount>2</nameditem:totalItemCount><nameditem:namedItem><nameditem:name>ABAP_CLOUD_DEVELOPMENT_DEFAULT</nameditem:name><nameditem:description>Cloud default</nameditem:description><nameditem:data/></nameditem:namedItem><nameditem:namedItem><nameditem:name>ZABAP_CLOUD_DEVELOPMENT</nameditem:name><nameditem:description/><nameditem:data/></nameditem:namedItem></nameditem:namedItemList>`;
+    const CUSTOMIZING = `<?xml version="1.0" encoding="utf-8"?><atc:customizing xmlns:atc="http://www.sap.com/adt/atc"><properties><property name="ciCheckFlavour" value="true"/><property name="systemCheckVariant" value="ZABAP_CLOUD_DEVELOPMENT"/></properties></atc:customizing>`;
+
+    it('lists variants via the named-item feed with an explicit name filter', async () => {
+      const http = mockHttp(VARIANTS);
+      const variants = await listAtcVariants(http, unrestrictedSafetyConfig(), 'ABAP_CLOUD*');
+      expect(http.get).toHaveBeenCalledWith(
+        '/sap/bc/adt/atc/variants?name=ABAP_CLOUD*',
+        expect.objectContaining({ Accept: 'application/vnd.sap.adt.nameditems.v1+xml' }),
+      );
+      expect(variants.map((v) => v.name)).toEqual(['ABAP_CLOUD_DEVELOPMENT_DEFAULT', 'ZABAP_CLOUD_DEVELOPMENT']);
+      expect(variants[0].description).toBe('Cloud default');
+    });
+
+    it('defaults an empty/blank filter to "*" (bare name= returns an empty list on SAP)', async () => {
+      const http = mockHttp(VARIANTS);
+      await listAtcVariants(http, unrestrictedSafetyConfig(), '  ');
+      expect(http.get).toHaveBeenCalledWith('/sap/bc/adt/atc/variants?name=*', expect.anything());
+    });
+
+    it('reads the system default check variant from customizing', async () => {
+      const http = mockHttp(CUSTOMIZING);
+      const def = await getAtcSystemDefaultVariant(http, unrestrictedSafetyConfig());
+      expect(http.get).toHaveBeenCalledWith('/sap/bc/adt/atc/customizing', expect.anything());
+      expect(def).toBe('ZABAP_CLOUD_DEVELOPMENT');
+    });
+
+    it('returns undefined when customizing lacks systemCheckVariant', async () => {
+      const http = mockHttp(
+        '<?xml version="1.0"?><atc:customizing xmlns:atc="http://www.sap.com/adt/atc"><properties/></atc:customizing>',
+      );
+      expect(await getAtcSystemDefaultVariant(http, unrestrictedSafetyConfig())).toBeUndefined();
     });
   });
 });

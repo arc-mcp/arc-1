@@ -7,6 +7,7 @@ import {
   escapeXmlAttr,
   findDeepNodes,
   parseApiReleaseState,
+  parseAtcSystemCheckVariant,
   parseAuthorizationField,
   parseBspAppList,
   parseBspFolderListing,
@@ -20,6 +21,7 @@ import {
   parseInactiveObjects,
   parseInstalledComponents,
   parseMessageClass,
+  parseNamedItems,
   parsePackageContents,
   parseRevisionFeed,
   parseSearchResults,
@@ -1648,5 +1650,39 @@ describe('XML Parser', () => {
       // appears via `&lt;` in error messages.
       expect(decodeXmlEntities('/foo?a=1&amp;b=2')).toBe('/foo?a=1&b=2');
     });
+  });
+});
+
+describe('parseNamedItems + parseAtcSystemCheckVariant (relocated / FEAT-68)', () => {
+  const VARIANTS = `<?xml version="1.0" encoding="utf-8"?><nameditem:namedItemList xmlns:nameditem="http://www.sap.com/adt/nameditem"><nameditem:totalItemCount>2</nameditem:totalItemCount><nameditem:namedItem><nameditem:name>ABAP_CLOUD_DEVELOPMENT_DEFAULT</nameditem:name><nameditem:description>Cloud default</nameditem:description><nameditem:data/></nameditem:namedItem><nameditem:namedItem><nameditem:name>ZABAP_CLOUD_DEVELOPMENT</nameditem:name><nameditem:description/><nameditem:data/></nameditem:namedItem></nameditem:namedItemList>`;
+
+  it('parses a nameditem list into {name, description}', () => {
+    const items = parseNamedItems(VARIANTS);
+    expect(items).toHaveLength(2);
+    expect(items[0]).toMatchObject({ name: 'ABAP_CLOUD_DEVELOPMENT_DEFAULT', description: 'Cloud default' });
+    expect(items[1].name).toBe('ZABAP_CLOUD_DEVELOPMENT');
+    expect(items[1].description).toBe('');
+  });
+
+  it('returns [] for an empty nameditem list', () => {
+    expect(
+      parseNamedItems(
+        '<nameditem:namedItemList xmlns:nameditem="http://www.sap.com/adt/nameditem"><nameditem:totalItemCount>0</nameditem:totalItemCount></nameditem:namedItemList>',
+      ),
+    ).toEqual([]);
+  });
+
+  it('reads systemCheckVariant from <atc:customizing>', () => {
+    const xml =
+      '<atc:customizing xmlns:atc="http://www.sap.com/adt/atc"><properties><property name="ciCheckFlavour" value="true"/><property name="systemCheckVariant" value="ZABAP_CLOUD_DEVELOPMENT"/></properties></atc:customizing>';
+    expect(parseAtcSystemCheckVariant(xml)).toBe('ZABAP_CLOUD_DEVELOPMENT');
+  });
+
+  it('returns undefined when systemCheckVariant is absent', () => {
+    expect(
+      parseAtcSystemCheckVariant(
+        '<atc:customizing xmlns:atc="http://www.sap.com/adt/atc"><properties/></atc:customizing>',
+      ),
+    ).toBeUndefined();
   });
 });

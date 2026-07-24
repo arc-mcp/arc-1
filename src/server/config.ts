@@ -390,6 +390,7 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     config.httpAddr = `${addrHost}:${parsedPort}`;
     sources.httpAddr = getFlag('port') !== undefined ? { flag: '--port' } : { env: 'ARC1_PORT' };
   }
+  config.serverName = resolveStr('server-name', 'ARC1_SERVER_NAME', DEFAULT_CONFIG.serverName, 'serverName');
 
   // ── Read-only Admin UI ────────────────────────────────────────────
   const uiFlag = getOptionalFlagValue('ui');

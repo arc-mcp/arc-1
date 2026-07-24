@@ -586,6 +586,7 @@ describe('Tool Definitions', () => {
     expect(actionEnum).toContain('syntax');
     expect(actionEnum).toContain('unittest');
     expect(actionEnum).toContain('atc');
+    expect(actionEnum).toContain('atc_variants');
     expect(actionEnum).toContain('cds_testcases');
     expect(actionEnum).toContain('quickfix');
     expect(actionEnum).toContain('apply_quickfix');
@@ -594,7 +595,7 @@ describe('Tool Definitions', () => {
     expect(actionEnum).toContain('traces');
     expect(actionEnum).toContain('system_messages');
     expect(actionEnum).toContain('gateway_errors');
-    expect(sapDiagnose.description).toContain('active and inactive source versions');
+    expect(sapDiagnose.description).toContain('active vs inactive source versions');
     expect(schema.properties.source).toBeDefined();
     expect(schema.properties.sourceUri).toBeDefined();
     expect(schema.properties.line).toBeDefined();
