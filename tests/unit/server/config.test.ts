@@ -15,12 +15,7 @@ describe('parseArgs', () => {
   beforeEach(() => {
     // Clear supported ARC-1 env vars for clean test state.
     for (const key of Object.keys(process.env)) {
-      if (
-        key.startsWith('SAP_') ||
-        key.startsWith('TEST_SAP_') ||
-        key.startsWith('ARC1_') ||
-        key === 'MCP_SERVER_NAME'
-      ) {
+      if (key.startsWith('SAP_') || key.startsWith('TEST_SAP_') || key.startsWith('ARC1_')) {
         delete process.env[key];
       }
     }
@@ -282,23 +277,23 @@ describe('parseArgs', () => {
     expect(config.serverName).toBe('arc-1');
   });
 
-  it('parses MCP_SERVER_NAME env var', () => {
-    process.env.MCP_SERVER_NAME = 'arc1-erp';
+  it('parses ARC1_SERVER_NAME env var', () => {
+    process.env.ARC1_SERVER_NAME = 'arc1-erp';
     try {
       const config = parseArgs([]);
       expect(config.serverName).toBe('arc1-erp');
     } finally {
-      delete process.env.MCP_SERVER_NAME;
+      delete process.env.ARC1_SERVER_NAME;
     }
   });
 
-  it('parses --server-name flag over MCP_SERVER_NAME env', () => {
-    process.env.MCP_SERVER_NAME = 'arc1-erp';
+  it('parses --server-name flag over ARC1_SERVER_NAME env', () => {
+    process.env.ARC1_SERVER_NAME = 'arc1-erp';
     try {
       const config = parseArgs(['--server-name', 'arc1-bw']);
       expect(config.serverName).toBe('arc1-bw');
     } finally {
-      delete process.env.MCP_SERVER_NAME;
+      delete process.env.ARC1_SERVER_NAME;
     }
   });
 
