@@ -2,6 +2,8 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { BTPConfig } from '@arc-mcp/xsuaa-auth/btp';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
@@ -49,9 +51,22 @@ function requestHandler(server: Server, method: string): RequestHandler {
 }
 
 describe('MCP Server', () => {
-  it('creates a server instance with correct name and version', () => {
-    const server = createServer(DEFAULT_CONFIG);
-    expect(server).toBeDefined();
+  it.each([
+    ['default', DEFAULT_CONFIG, 'arc-1'],
+    ['custom', { ...DEFAULT_CONFIG, serverName: 'arc1-erp-dev' }, 'arc1-erp-dev'],
+  ])('advertises the %s server name and version in the initialize handshake', async (_label, config, expectedName) => {
+    const server = createServer(config);
+    const client = new Client({ name: 'arc1-server-test', version: '1.0.0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+    try {
+      await server.connect(serverTransport);
+      await client.connect(clientTransport);
+      expect(client.getServerVersion()).toEqual({ name: expectedName, version: VERSION });
+    } finally {
+      await client.close();
+      await server.close();
+    }
   });
 
   it('has a valid version string', () => {

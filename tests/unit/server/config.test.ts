@@ -13,9 +13,14 @@ describe('parseArgs', () => {
   const savedEnv = { ...process.env };
 
   beforeEach(() => {
-    // Clear SAP_* and ARC1_* env vars for clean test state
+    // Clear supported ARC-1 env vars for clean test state.
     for (const key of Object.keys(process.env)) {
-      if (key.startsWith('SAP_') || key.startsWith('TEST_SAP_') || key.startsWith('ARC1_')) {
+      if (
+        key.startsWith('SAP_') ||
+        key.startsWith('TEST_SAP_') ||
+        key.startsWith('ARC1_') ||
+        key === 'MCP_SERVER_NAME'
+      ) {
         delete process.env[key];
       }
     }
