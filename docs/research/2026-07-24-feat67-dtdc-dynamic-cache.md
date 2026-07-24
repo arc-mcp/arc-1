@@ -1,6 +1,7 @@
 # FEAT-67 — DTDC (Dynamic Cache) read/write dossier
 
-> Live-verified 2026-07-24 on **a4h-2025 (816)** and discovery-checked on **a4h 2023 (758)**.
+> Live-verified 2026-07-24 on **a4h-2025 (816)** and **a4h 2023 (758)** — full create→update→activate→
+> read→delete round-trip through the built CLI on BOTH releases (implementation phase).
 > Independent repo corroboration from `~/DEV/mcp-abap-adt-fr0ster` discovery capture.
 > Builds directly on the server-driven-object (SDO) engine shipped in PR #604.
 
@@ -108,11 +109,11 @@ FEAT-67 branches cleanly from `origin/main` (which now has `sourceFormat` + DSFD
 ## Phase-1 exit gate — all YES
 - [x] Exact endpoint + verified response **content** live (metadata body, source, create 201, activate 200)
 - [x] Checked adt-ls + fr0ster + eclipse-adt (fr0ster discovery corroborates type/URLs; none implement it)
-- [x] Per-release: 758 + 816 both advertise + read; create/activate proven on 816
+- [x] Per-release: 758 + 816 both advertise + read; **create→activate→delete proven on BOTH** (built CLI, implementation phase)
 - [x] Every affected ARC-1 file listed
 - [x] Written here with cited evidence
 
 ## Open questions for the plan
 - Rename `blue*`→`metadata*` (honest) or keep names (small diff)? → recommend rename; it's bounded.
-- Confirm DTDC create on **758** (only read-verified there; create/activate proven on 816 only). Do it in Phase 3.
+- ~~Confirm DTDC create on 758~~ — **done**: create→update→activate→read→delete round-tripped live on 758 (and 816) through the built CLI during implementation; DESD regression-checked.
 - `createstatements` (Show SQL) — explicitly OUT of scope for this PR (POST-only, separate feature).

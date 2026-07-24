@@ -224,9 +224,83 @@ describe('SDO registry write metadata', () => {
     for (const code of ['DESD', 'CSNM', 'EVTB', 'EVTO', 'COTA'] as const) {
       expect(serverDrivenSourceContentType(code)).toBe('application/json');
     }
-    for (const code of ['DTSC', 'DSFD'] as const) {
+    for (const code of ['DTSC', 'DSFD', 'DTDC'] as const) {
       expect(serverDrivenSourceContentType(code)).toBe('text/plain');
     }
+  });
+});
+
+// DTDC is the first NON-blue server-driven type. These lock down that the generalized engine paths
+// use DTDC's own metadata format end-to-end and never fall back to blue:blueSource / blues content
+// types — the whole point of "generalize off blue-only".
+describe('DTDC engine paths (non-blue server-driven type)', () => {
+  const DTDC_META =
+    '<?xml version="1.0" encoding="utf-8"?><dtdc:dtdcSource adtcore:name="DEMO_DDIC_DYNAMIC_CACHE" adtcore:type="DTDC/DF" adtcore:description="Demo Dynamic Cache" xmlns:dtdc="http://www.sap.com/adt/ddic/dtdcsources" xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:packageRef adtcore:name="SABAP_DEMOS"/></dtdc:dtdcSource>';
+  const DTDC_SRC = 'define dynamic cache DEMO_DDIC_DYNAMIC_CACHE on demo_ddic_types { char1 }';
+
+  it('isServerDrivenObjectType(DTDC) is true', () => {
+    expect(isServerDrivenObjectType('DTDC')).toBe(true);
+  });
+
+  it('serverDrivenSourceContentType(DTDC) is text/plain (DDL source)', () => {
+    expect(serverDrivenSourceContentType('DTDC')).toBe('text/plain');
+  });
+
+  it('supportsServerDrivenObject: true when the DTDC collection advertises the dtdc accept', () => {
+    const http = {
+      hasDiscoveryData: () => true,
+      discoveryAcceptFor: (p: string) =>
+        p === '/sap/bc/adt/ddic/dtdc/sources' ? 'application/vnd.sap.adt.ddic.dtdc.v1+xml, text/html' : undefined,
+    } as unknown as AdtHttpClient;
+    expect(supportsServerDrivenObject(http, 'DTDC')).toBe(true);
+  });
+
+  it('supportsServerDrivenObject: false when the DTDC collection advertises only a non-dtdc accept', () => {
+    const http = {
+      hasDiscoveryData: () => true,
+      // e.g. a blues accept on the dtdc href would NOT match DTDC's discoveryMarker ('dtdc').
+      discoveryAcceptFor: (p: string) =>
+        p === '/sap/bc/adt/ddic/dtdc/sources' ? 'application/vnd.sap.adt.blues.v1+xml' : undefined,
+    } as unknown as AdtHttpClient;
+    expect(supportsServerDrivenObject(http, 'DTDC')).toBe(false);
+  });
+
+  it('getServerDrivenObject(DTDC) uses the dtdc Accept and parses <dtdc:dtdcSource> (DDL source kept raw)', async () => {
+    const http = mockHttp((p) => (p.endsWith('/source/main') ? { body: DTDC_SRC } : { body: DTDC_META }));
+    const r = await getServerDrivenObject(http, unrestrictedSafetyConfig(), 'DTDC', 'DEMO_DDIC_DYNAMIC_CACHE');
+    expect(r.type).toBe('DTDC/DF');
+    expect(r.package).toBe('SABAP_DEMOS');
+    expect(r.source).toBe(DTDC_SRC); // DDL text, not JSON-parsed
+    expect(http.get).toHaveBeenCalledWith(
+      '/sap/bc/adt/ddic/dtdc/sources/DEMO_DDIC_DYNAMIC_CACHE',
+      expect.objectContaining({ Accept: 'application/vnd.sap.adt.ddic.dtdc.v1+xml' }),
+    );
+  });
+
+  it('createServerDrivenObject(DTDC) POSTs the dtdc collection with the dtdc content-type + <dtdc:dtdcSource> body', async () => {
+    const { http, calls } = mockWriteHttp();
+    await createServerDrivenObject(http, unrestrictedSafetyConfig(), 'DTDC', 'ZDYN', {
+      package: '$TMP',
+      description: 'd',
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      method: 'POST',
+      path: '/sap/bc/adt/ddic/dtdc/sources',
+      contentType: 'application/vnd.sap.adt.ddic.dtdc.v1+xml',
+    });
+    expect(calls[0].body).toContain('<dtdc:dtdcSource');
+    expect(calls[0].body).toContain('adtcore:type="DTDC/DF"');
+    expect(calls[0].body).not.toContain('blue:blueSource');
+  });
+
+  it('updateServerDrivenObjectSource(DTDC) PUTs the DDL source as text/plain', async () => {
+    const { http, calls } = mockWriteHttp();
+    await updateServerDrivenObjectSource(http, unrestrictedSafetyConfig(), 'DTDC', 'ZDYN', DTDC_SRC);
+    const put = calls.find((c) => c.method === 'PUT')!;
+    expect(put.path).toContain('/sap/bc/adt/ddic/dtdc/sources/ZDYN/source/main');
+    expect(put.contentType).toBe('text/plain');
+    expect(put.body).toBe(DTDC_SRC);
   });
 });
 
@@ -286,7 +360,7 @@ describe('buildServerDrivenMetadataXml', () => {
 });
 
 describe('createServerDrivenObject', () => {
-  it('POSTs the collection href with the entry blues content-type and the blue body', async () => {
+  it('POSTs the collection href with the entry metadata content-type and the blue-family body', async () => {
     const { http, calls } = mockWriteHttp();
     await createServerDrivenObject(http, unrestrictedSafetyConfig(), 'DESD', 'ZD', {
       package: '$TMP',

@@ -184,8 +184,9 @@ export async function handleSAPRead(
     if (!name) return errorResult(`"name" is required for SAPRead type=${type}.`);
     if (supportsServerDrivenObject(client.http, type) === false) {
       return errorResult(
-        `SAPRead type=${type} (server-driven object) requires SAP_BASIS 8.16+ (ABAP Platform 2025 / S/4HANA 2025). ` +
-          'This system does not expose this object type.',
+        `SAPRead type=${type} (server-driven object): this system does not advertise ADT support for it. ` +
+          'These types are discovery-gated and depend on the SAP release / support package ' +
+          '(e.g. DTSC/CSNM/EVTO need ABAP Platform 2025 / SAP_BASIS 8.16+, while DTDC/DSFD/EVTB also ship on S/4HANA 2023 / 758).',
       );
     }
     const sdo = await getServerDrivenObject(client.http, client.safety, type, name);

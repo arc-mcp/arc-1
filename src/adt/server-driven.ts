@@ -1,25 +1,27 @@
 /**
- * Generic "server-driven object" (SDO) read/write path for ABAP Platform 2025 (SAP_BASIS 8.16+).
+ * Generic "server-driven object" (SDO) read/write path. Most SDO types need ABAP Platform 2025
+ * (SAP_BASIS 8.16+), but some (DTDC, DSFD, EVTB) also ship on S/4HANA 2023 (758) — availability is
+ * discovery-gated per type, never a hardcoded release.
  *
- * 816 introduced ~46 repository object types that all share ONE AFF generic-object contract:
+ * These repository object types share ONE AFF generic-object contract:
  *   - metadata: GET …/{name}   (Accept = per-type metadataContentType) → <blue:blueSource> or <dtdc:dtdcSource>
  *   - content : GET …/{name}/source/main                                                → AFF JSON *or* DDL text
  * Rather than per-type plumbing, this module exposes a curated registry of high-value types
  * and ONE generic engine, discovery-gated so pre-8.16 systems degrade cleanly.
  *
  * WRITE (create/update-source/delete) is supported and reuses the verified machinery:
- *   - CREATE = POST <collection-href>  (Content-Type = the type's blues.vN+xml) with a minimal
+ *   - CREATE = POST <collection-href>  (Content-Type = the type's metadataContentType) with a minimal
  *             metadata body (blue:blueSource / dtdc:dtdcSource; adtcore:type/name/description + packageRef) → 201.
  *   - SOURCE = lock (crud.ts) → PUT <url>/source/main?lockHandle=… → unlock. The Content-Type is
  *             per-type (registry `sourceFormat`): application/json for the AFF-JSON types,
- *             text/plain for the DDL-text ones (DTSC, DSFD). The wrong one is a hard 415.
+ *             text/plain for the DDL-text ones (DTSC, DSFD, DTDC). The wrong one is a hard 415.
  *   - DELETE = lock → http.delete(<url>?lockHandle=…) → unlock.
  *   - ACTIVATE is the generic devtools activate() against the object URL (callers use SAPActivate).
  * Create leaves the object inactive — callers follow with SAPActivate (never auto-activated).
  *
- * The create `adtcore:type` subtype is NOT uniformly "<code>/TYP" (EVTB uses EVTB/EVB) and the
- * blues content-type is NOT uniformly v1 (EVTO uses v2) — both are stored per registry entry,
- * verified live on a4h-2025 (816): DESD/DTSC/CSNM/EVTB/COTA create with blues.v1, EVTO with blues.v2.
+ * The create `adtcore:type` subtype is NOT uniformly "<code>/TYP" (EVTB=EVTB/EVB, DTDC=DTDC/DF) and
+ * the metadata content-type varies (blues v1, EVTO=blues v2, DTDC=ddic.dtdc.v1) — all stored per
+ * registry entry, verified live: the blue family on 816, DTDC create→activate on 758 + 816.
  */
 import { lockObject, unlockObject } from './crud.js';
 import { AdtApiError } from './errors.js';
@@ -114,8 +116,8 @@ export function serverDrivenSourceFormat(code: string): SdoSourceFormat {
 /**
  * The registered server-driven type codes, in registry (= LLM tool-surface) order. The SAPRead/
  * SAPWrite rows in src/handlers/tool-registry.ts derive from this tuple, so registering a type
- * here is the ONLY step needed to expose it — `btp: true` by construction (every SDO type is
- * 8.16+, and runtime availability is discovery-gated per system anyway).
+ * here is the ONLY step needed to expose it — `btp: true` by construction (runtime availability is
+ * discovery-gated per system, so a type absent on a release degrades cleanly).
  */
 export const SDO_TYPES = ['DESD', 'DTSC', 'CSNM', 'EVTB', 'EVTO', 'COTA', 'DSFD', 'DTDC'] as const;
 

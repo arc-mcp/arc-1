@@ -761,7 +761,7 @@ export async function enforceAllowedPackageForObjectUrl(
 
 /**
  * SAPWrite for server-driven objects: create / update-source / delete via the generic server-driven
- * metadata engine (blue:blueSource for most types, dtdc:dtdcSource for DTDC). Discovery-gated (clean 8.16 error otherwise), allowWrites-gated
+ * metadata engine (blue:blueSource for most types, dtdc:dtdcSource for DTDC). Discovery-gated (clean per-type/discovery error otherwise), allowWrites-gated
  * (through the engine's checkOperation), and allowedPackages-gated against the REAL package
  * (create gates the caller-supplied package like every create; update/delete resolve the object's true
  * package under the metadata Accept). The `source` param carries AFF JSON or DDL text per the type's
@@ -781,8 +781,9 @@ export async function handleServerDrivenObjectWrite(
   // Discovery gate — mirror handleSAPRead's server-driven branch.
   if (supportsServerDrivenObject(client.http, type) === false) {
     return errorResult(
-      `SAPWrite type=${type} (server-driven object) requires SAP_BASIS 8.16+ (ABAP Platform 2025 / S/4HANA 2025). ` +
-        'This system does not expose this object type.',
+      `SAPWrite type=${type} (server-driven object): this system does not advertise ADT support for it. ` +
+        'These types are discovery-gated and depend on the SAP release / support package ' +
+        '(e.g. DTSC/CSNM/EVTO need ABAP Platform 2025 / SAP_BASIS 8.16+, while DTDC/DSFD/EVTB also ship on S/4HANA 2023 / 758).',
     );
   }
 
