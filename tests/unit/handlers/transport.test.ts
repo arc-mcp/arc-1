@@ -91,6 +91,36 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
       expect(result.content[0]?.text).toContain('DEVK900001');
     });
 
+    it('release_recursive reports success when refreshed parent state resolves a failed report', async () => {
+      const draftXml = `<tm:root xmlns:tm="http://www.sap.com/cts/transports">
+        <tm:request tm:number="A4HK906307" tm:owner="DEV" tm:desc="Test" tm:status="D" tm:type="K"/>
+      </tm:root>`;
+      const releasedXml = draftXml.replace('tm:status="D"', 'tm:status="R"');
+      let parentReads = 0;
+      mockFetch.mockImplementation((url: unknown, init?: RequestInit) => {
+        const path = String(url);
+        if (path.includes('inactiveobjects')) return Promise.resolve(mockResponse(200, '', {}));
+        if (path.includes('newreleasejobs')) {
+          return Promise.resolve(mockResponse(200, loadFixture('transport-release-report-blocked.xml'), {}));
+        }
+        if (path.includes('/transportrequests/A4HK906307') && init?.method === 'GET') {
+          parentReads += 1;
+          return Promise.resolve(mockResponse(200, parentReads === 1 ? draftXml : releasedXml, {}));
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'release_recursive',
+        id: 'A4HK906307',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('Released (recursive): A4HK906307');
+      expect(result.content[0]?.text).toContain('refreshed request state confirmed status R');
+      expect(parentReads).toBe(2);
+    });
+
     // ─── Pre-release inactive-objects check (FEAT-63) ─────────────────
     // Rich inactive-objects shape (live-verified on a4h 758): object on task DEVK900002, whose
     // parent request is DEVK900001 → releasing DEVK900001 must be blocked.

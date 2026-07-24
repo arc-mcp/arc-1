@@ -929,6 +929,46 @@ describe('Transport Management', () => {
       // Returned reports are the authoritative parent release → clean.
       expect(result.reports.every((r) => r.released)).toBe(true);
     });
+
+    it('trusts refreshed parent status R when SAP returns a contradictory failed report', async () => {
+      const draftXml = `<tm:root xmlns:tm="http://www.sap.com/cts/transports">
+        <tm:request tm:number="DEVK900001" tm:owner="DEV" tm:desc="Test" tm:status="D" tm:type="K"/>
+      </tm:root>`;
+      const releasedXml = draftXml.replace('tm:status="D"', 'tm:status="R"');
+      const http = mockHttp();
+      (http.get as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: draftXml })
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: releasedXml });
+      (http.post as ReturnType<typeof vi.fn>).mockResolvedValue({
+        statusCode: 200,
+        headers: {},
+        body: loadFixture('transport-release-report-blocked.xml'),
+      });
+
+      const result = await releaseTransportRecursive(http, enabledSafety, 'DEVK900001');
+
+      expect(result.released).toContain('DEVK900001');
+      expect(result.reports.some((r) => !r.released)).toBe(true); // raw SAP report is preserved
+      expect(http.get).toHaveBeenCalledTimes(2);
+    });
+
+    it('keeps a failed parent report authoritative when refreshed state is not released', async () => {
+      const draftXml = `<tm:root xmlns:tm="http://www.sap.com/cts/transports">
+        <tm:request tm:number="DEVK900001" tm:owner="DEV" tm:desc="Test" tm:status="D" tm:type="K"/>
+      </tm:root>`;
+      const http = mockHttp(draftXml);
+      (http.post as ReturnType<typeof vi.fn>).mockResolvedValue({
+        statusCode: 200,
+        headers: {},
+        body: loadFixture('transport-release-report-blocked.xml'),
+      });
+
+      const result = await releaseTransportRecursive(http, enabledSafety, 'DEVK900001');
+
+      expect(result.released).not.toContain('DEVK900001');
+      expect(failedReleaseReports(result.reports)).toHaveLength(1);
+      expect(http.get).toHaveBeenCalledTimes(2);
+    });
   });
 
   // ─── Transport object parsing ─────────────────────────────────────

@@ -79,7 +79,8 @@ function formatReleaseReport(r: TransportReleaseReport): string {
  */
 function summarizeRelease(id: string, reports: TransportReleaseReport[], released?: string[]): ToolResult {
   const failed = failedReleaseReports(reports);
-  if (failed.length > 0) {
+  const reconciledAsReleased = failed.length > 0 && released?.includes(id) === true;
+  if (failed.length > 0 && !reconciledAsReleased) {
     const detail = failed.map(formatReleaseReport).join('\n');
     const partial = released && released.length > 0 ? `\nReleased before the block: ${released.join(', ')}.` : '';
     return errorResult(
@@ -90,6 +91,11 @@ function summarizeRelease(id: string, reports: TransportReleaseReport[], release
   const prefix = released
     ? `Released (recursive): ${released.length ? released.join(', ') : id}`
     : `Released transport request: ${id}`;
+  if (reconciledAsReleased) {
+    return textResult(
+      `${prefix}\nSAP returned a conflicting release-check report; the refreshed request state confirmed status R.`,
+    );
+  }
   const warnings = reports.flatMap((r) => r.messages);
   if (warnings.length > 0) {
     const list = warnings.map((m) => `  - ${m.severity}: ${m.text}${m.uri ? ` (${m.uri})` : ''}`).join('\n');

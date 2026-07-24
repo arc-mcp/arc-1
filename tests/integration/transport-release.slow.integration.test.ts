@@ -48,6 +48,10 @@ function isUnsupportedBackend(err: unknown): boolean {
   return false;
 }
 
+function isAlreadyReleased(err: unknown): boolean {
+  return err instanceof AdtApiError && err.statusCode === 400 && /already released/i.test(err.message);
+}
+
 describe('Transport Release Slow Integration Tests', () => {
   let client: AdtClient;
   const createdTransportIds = new Set<string>();
@@ -58,8 +62,15 @@ describe('Transport Release Slow Integration Tests', () => {
   }
 
   async function deleteTrackedTransport(id: string): Promise<void> {
-    await deleteTransport(client.http, client.safety, id, true);
-    createdTransportIds.delete(id);
+    try {
+      await deleteTransport(client.http, client.safety, id, true);
+    } catch (err) {
+      // Do not let cleanup mask the original assertion when SAP committed the release but returned a
+      // contradictory check report. Released requests are terminal and require no cleanup.
+      if (!isAlreadyReleased(err)) throw err;
+    } finally {
+      createdTransportIds.delete(id);
+    }
   }
 
   beforeAll(async () => {
@@ -93,12 +104,12 @@ describe('Transport Release Slow Integration Tests', () => {
       expect(id).toBeTruthy();
 
       const result = await releaseTransportRecursive(client.http, client.safety, id);
-      expect(result.released).toContain(id);
-      // #433: the release now surfaces the chkrun report — a clean release must carry a released:true report.
+      released = result.released.includes(id);
+      if (released) createdTransportIds.delete(id);
+      expect(released).toBe(true);
+      // Preserve SAP's raw report even when a fresh state read is needed to resolve a contradictory
+      // abortrelapifail response from an already-released parent.
       expect(result.reports.length).toBeGreaterThan(0);
-      expect(result.reports.every((r) => r.released)).toBe(true);
-      released = true;
-      createdTransportIds.delete(id);
 
       const transport = await getTransport(client.http, client.safety, id);
       if (transport) {

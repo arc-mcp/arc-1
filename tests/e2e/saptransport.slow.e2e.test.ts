@@ -59,7 +59,10 @@ describe('E2E SAPTransport Slow Release Tests', () => {
     } finally {
       if (id && !released && transportsEnabled) {
         const deleteResult = await callTool(client, 'SAPTransport', { action: 'delete', id, recursive: true });
-        expectToolSuccess(deleteResult);
+        const deleteText = deleteResult.content?.[0]?.text ?? '';
+        // A terminal request needs no cleanup. More importantly, do not replace the original release
+        // assertion with a secondary "already released" cleanup failure.
+        if (!(deleteResult.isError && /already released/i.test(deleteText))) expectToolSuccess(deleteResult);
       }
     }
   });

@@ -367,12 +367,12 @@ export async function releaseTransport(
 /**
  * Release a transport request recursively — tasks first, then the parent request.
  *
- * The **parent request release is authoritative**: SAP only releases a request once every task is
- * released, so its report (`reports`) is the real outcome. Task releases are best-effort — an empty or
- * "unclassified" task can't be released on its own (SAP returns HTTP 200 `abortrelapifail`, verified
- * live on a4h 758), but the parent release folds it in. So a failed *task* release is NOT fatal and the
- * task is simply not listed in `released`; only the parent report decides success. `released` lists the
- * ids that released cleanly.
+ * The parent request's **refreshed state** is authoritative when SAP contradicts itself: a4h 758 can
+ * return HTTP 200 with `abortrelapifail` for an empty/unclassified recursive release even though the
+ * parent has already reached terminal status `R`. Task releases are best-effort — the parent release
+ * folds them in. A failed *task* release is therefore not fatal, and a failed parent report is
+ * reconciled with one fresh request read before it is treated as blocked. `reports` remains the raw SAP
+ * response; `released` lists ids confirmed either by a clean report or terminal request state.
  */
 export async function releaseTransportRecursive(
   http: AdtHttpClient,
@@ -401,7 +401,20 @@ export async function releaseTransportRecursive(
   }
 
   const reports = await releaseTransport(http, safety, transportId);
-  if (failedReleaseReports(reports).length === 0) released.push(transportId);
+  if (failedReleaseReports(reports).length === 0) {
+    released.push(transportId);
+  } else {
+    // SAP can report abortrelapifail after it has already committed the recursive parent release.
+    // Reconcile that contradictory HTTP-200 body against the actual request state. If the read fails
+    // or the request is still modifiable, preserve the failed report as the authoritative outcome.
+    try {
+      const refreshed = await getTransport(http, safety, transportId);
+      if (refreshed?.status === 'R') released.push(transportId);
+    } catch {
+      // The caller will surface the original release report, which is more actionable than a
+      // best-effort reconciliation-read failure.
+    }
+  }
 
   return { released, reports };
 }
