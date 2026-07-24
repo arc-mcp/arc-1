@@ -22,7 +22,7 @@ import { extractCdsDependencies } from '../context/cds-deps.js';
 import { compressCdsContext, compressContext } from '../context/compressor.js';
 import { logger } from '../server/logger.js';
 import { type CacheSecurityContext, contextCacheForDependencyPayloads } from './cache-security.js';
-import { cachedFeatures } from './feature-cache.js';
+import { getCachedFeatures } from './feature-cache.js';
 import { normalizeObjectType, objectUrlForType } from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 import { lookupLiveUsages, resolveWhereUsedUri } from './where-used.js';
@@ -491,9 +491,8 @@ export async function handleSAPContext(
   }
 
   // Use detected ABAP version from probe if available, otherwise Cloud (superset)
-  const abaplintVersion = cachedFeatures?.abapRelease
-    ? mapSapReleaseToAbaplintVersion(cachedFeatures.abapRelease)
-    : undefined;
+  const probedAbapRelease = getCachedFeatures()?.abapRelease;
+  const abaplintVersion = probedAbapRelease ? mapSapReleaseToAbaplintVersion(probedAbapRelease) : undefined;
 
   const result = await compressContext(
     client,

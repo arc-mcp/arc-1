@@ -15,10 +15,13 @@ import { getToolRegistry } from '../../../src/handlers/dispatch.js';
 import { resetCachedFeatures, setCachedFeatures } from '../../../src/handlers/feature-cache.js';
 import { getToolDefinitions } from '../../../src/handlers/tools.js';
 import { defineTool } from '../../../src/public/index.js';
+import { opaqueDestinationValue } from '../../../src/server/destination-discovery.js';
+import { targetConnectionFingerprint } from '../../../src/server/destination-registry.js';
 import { logger } from '../../../src/server/logger.js';
 import { registerPluginTool } from '../../../src/server/plugin-loader.js';
 import {
   buildAdtConfig,
+  canUseSharedSingleTargetCredentials,
   createCachingLayer,
   createServer,
   filterToolsByAuthScope,
@@ -26,6 +29,8 @@ import {
   getConfiguredToolDefinitions,
   logAuthSummary,
   resolveNullableOptionals,
+  resolvePpDestinationName,
+  resolveSingleTargetOverlapState,
   runStartupAuthPreflight,
   VERSION,
 } from '../../../src/server/server.js';
@@ -280,14 +285,8 @@ describe('createServer request handlers', () => {
   });
 
   it('blocks tool calls before SAP access when startup auth preflight failed', async () => {
-    const server = createServer(
-      DEFAULT_CONFIG,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      Promise.resolve({
+    const server = createServer(DEFAULT_CONFIG, {
+      startupAuthPreflightPromise: Promise.resolve({
         status: 'failed',
         blocking: true,
         endpoint: '/sap/bc/adt/core/discovery',
@@ -295,7 +294,7 @@ describe('createServer request handlers', () => {
         statusCode: 403,
         reason: 'Access forbidden (403) during startup auth preflight.',
       }),
-    );
+    });
     const handler = requestHandler(server, CallToolRequestSchema.shape.method.value);
 
     const result = await handler({ method: 'tools/call', params: { name: 'SAPRead', arguments: {} } }, {});
@@ -426,8 +425,7 @@ describe('createServer request handlers', () => {
           ppStrict: false,
           ppStrictExplicit: true,
         },
-        undefined,
-        {} as BTPConfig,
+        { btpConfig: {} as BTPConfig },
       );
       const handler = requestHandler(server, CallToolRequestSchema.shape.method.value);
 
@@ -490,7 +488,7 @@ describe('createServer request handlers', () => {
       statusCode: 401,
       reason: 'stale cookie file',
     });
-    const server = createServer(DEFAULT_CONFIG, undefined, undefined, undefined, undefined, undefined, startupAuth);
+    const server = createServer(DEFAULT_CONFIG, { startupAuthPreflightPromise: startupAuth });
     const handler = requestHandler(server, CallToolRequestSchema.shape.method.value);
 
     await handler({ method: 'tools/call', params: { name: 'UnknownTool', arguments: {} } }, {});
@@ -709,6 +707,82 @@ describe('buildAdtConfig', () => {
   });
 });
 
+describe('single-target shared credential reachability', () => {
+  it('distinguishes strict PP from an actually reachable shared /mcp client', () => {
+    expect(
+      canUseSharedSingleTargetCredentials(
+        { apiKeys: [{ key: 'k', profile: 'viewer' }], ppEnabled: true, ppStrict: true, ppStrictExplicit: true },
+        'TECH_USER',
+        'PASSWORD',
+      ),
+    ).toBe(false);
+    expect(
+      canUseSharedSingleTargetCredentials(
+        { apiKeys: [{ key: 'k', profile: 'viewer' }], ppEnabled: true, ppStrict: false, ppStrictExplicit: true },
+        'TECH_USER',
+        'PASSWORD',
+      ),
+    ).toBe(true);
+    expect(
+      canUseSharedSingleTargetCredentials(
+        { apiKeys: [], ppEnabled: false, ppStrict: false, ppStrictExplicit: false },
+        'TECH_USER',
+        'PASSWORD',
+      ),
+    ).toBe(true);
+    expect(
+      canUseSharedSingleTargetCredentials(
+        { apiKeys: [], ppEnabled: true, ppStrict: false, ppStrictExplicit: true },
+        'TECH_USER',
+        'PASSWORD',
+      ),
+    ).toBe(false);
+    expect(
+      canUseSharedSingleTargetCredentials(
+        { apiKeys: [], ppEnabled: false, ppStrict: false, ppStrictExplicit: false },
+        '',
+        'PASSWORD',
+      ),
+    ).toBe(false);
+  });
+
+  it('derives the bare /mcp overlap from direct SAP_URL credentials', () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      url: 'https://sap.internal:443/',
+      client: '100',
+      username: 'TECH_USER',
+      password: 'PASSWORD',
+    };
+
+    const overlap = resolveSingleTargetOverlapState(config, undefined, false);
+
+    expect(overlap).toEqual({
+      usesSharedBasic: true,
+      connectionFingerprint: targetConnectionFingerprint({
+        urlFingerprint: opaqueDestinationValue('https://sap.internal/'),
+        client: '100',
+      }),
+    });
+  });
+
+  it('does not classify a bearer-backed bare /mcp connection as shared Basic', () => {
+    const overlap = resolveSingleTargetOverlapState(
+      {
+        ...DEFAULT_CONFIG,
+        url: 'https://sap.internal',
+        username: 'STALE_USER',
+        password: 'STALE_PASSWORD',
+      },
+      undefined,
+      true,
+    );
+
+    expect(overlap.usesSharedBasic).toBe(false);
+    expect(overlap.connectionFingerprint).toBeDefined();
+  });
+});
+
 describe('logAuthSummary', () => {
   const savedDestination = process.env.SAP_BTP_DESTINATION;
 
@@ -788,6 +862,23 @@ describe('logAuthSummary', () => {
     expect(infoSpy).toHaveBeenCalledWith('auth: MCP=[api-keys,xsuaa] SAP=pp (per-user)');
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('rejects API-key MCP tool calls'));
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('supported mixed operation'));
+  });
+
+  it('labels a Basic-capable multi-target deployment with its per-target identity modes', () => {
+    delete process.env.SAP_BTP_DESTINATION;
+    const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+
+    logAuthSummary({
+      ...DEFAULT_CONFIG,
+      xsuaaAuth: true,
+      ppEnabled: true,
+      multiTargetEndpoints: true,
+      multiTargetAllowBasicAuth: true,
+    });
+
+    expect(infoSpy).toHaveBeenCalledWith(
+      'auth: MCP=[xsuaa] SAP=destination+pp/basic-shared (multi-target) (per-target: PP per-user or Basic shared)',
+    );
   });
 });
 
@@ -979,5 +1070,26 @@ describe('startup auth preflight', () => {
     } finally {
       fixture.cleanup();
     }
+  });
+});
+
+describe('resolvePpDestinationName', () => {
+  afterEach(() => {
+    delete process.env.SAP_BTP_PP_DESTINATION;
+    delete process.env.SAP_BTP_DESTINATION;
+  });
+
+  it('single-destination mode: SAP_BTP_PP_DESTINATION wins, SAP_BTP_DESTINATION is the fallback', () => {
+    expect(resolvePpDestinationName(DEFAULT_CONFIG)).toBeUndefined();
+    process.env.SAP_BTP_DESTINATION = 'S4_SHARED';
+    expect(resolvePpDestinationName(DEFAULT_CONFIG)).toBe('S4_SHARED');
+    process.env.SAP_BTP_PP_DESTINATION = 'S4_PP';
+    expect(resolvePpDestinationName(DEFAULT_CONFIG)).toBe('S4_PP');
+  });
+
+  it('discovered target runtime: its destination name wins and global env vars never leak in', () => {
+    process.env.SAP_BTP_PP_DESTINATION = 'GLOBAL_PP';
+    const cfg = { ...DEFAULT_CONFIG, destinationName: 'S4D' };
+    expect(resolvePpDestinationName(cfg)).toBe('S4D');
   });
 });

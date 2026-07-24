@@ -19,7 +19,7 @@ import { grepSource } from '../context/grep.js';
 import { extractMethod, formatMethodListing, listMethods } from '../context/method-surgery.js';
 import { logger } from '../server/logger.js';
 import { type CacheSecurityContext, inactiveListUserKey, invalidateInactiveList } from './cache-security.js';
-import { cachedFeatures, isBtpSystem } from './feature-cache.js';
+import { getCachedFeatures, isBtpSystem } from './feature-cache.js';
 import { inferObjectType, normalizeObjectType, objectUrlForTypeRaw } from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 
@@ -177,7 +177,7 @@ export async function handleSAPRead(
   }
 
   // Server-driven objects (ABAP Platform 2025 / SAP_BASIS 8.16+): DESD, EVTB, DTSC, COTA, …
-  // share one AFF generic-object contract (blue:blueSource metadata + AFF JSON source), read
+  // share one AFF generic-object contract (blue:blueSource metadata + JSON or DDL-text source), read
   // via the discovery-gated generic engine instead of the per-type switch below. They bypass
   // the version/draft/cache machinery (no /source/main text; JSON output).
   if (isServerDrivenObjectType(type)) {
@@ -287,9 +287,8 @@ export async function handleSAPRead(
             )
           ).source;
         }
-        const abaplintVer = cachedFeatures?.abapRelease
-          ? mapSapReleaseToAbaplintVersion(cachedFeatures.abapRelease)
-          : undefined;
+        const probedAbapRelease = getCachedFeatures()?.abapRelease;
+        const abaplintVer = probedAbapRelease ? mapSapReleaseToAbaplintVersion(probedAbapRelease) : undefined;
         // MethodInfo is a structural superset of grepSource's MethodRange — pass through directly.
         const listing = listMethods(clasSource, name, abaplintVer);
         const g = grepSource(clasSource, String(args.grep), listing.success ? { methods: listing.methods } : undefined);
@@ -308,9 +307,8 @@ export async function handleSAPRead(
         const { source: fullSource } = await cachedGet('CLAS', name, effectiveVersion, (ifNoneMatch) =>
           client.getClass(name, undefined, { ifNoneMatch, version: effectiveVersion }),
         );
-        const abaplintVer = cachedFeatures?.abapRelease
-          ? mapSapReleaseToAbaplintVersion(cachedFeatures.abapRelease)
-          : undefined;
+        const probedAbapRelease = getCachedFeatures()?.abapRelease;
+        const abaplintVer = probedAbapRelease ? mapSapReleaseToAbaplintVersion(probedAbapRelease) : undefined;
         if (methodParam === '*') {
           const listing = listMethods(fullSource, name, abaplintVer);
           return textResult(formatMethodListing(listing));
@@ -724,7 +722,8 @@ export async function handleSAPRead(
     case 'VARIANTS':
       return textResult(await client.getVariants(name));
     case 'BSP': {
-      if (cachedFeatures?.ui5 && !cachedFeatures.ui5.available) {
+      const ui5Feature = getCachedFeatures()?.ui5;
+      if (ui5Feature && !ui5Feature.available) {
         return errorResult(
           'UI5/Fiori BSP Filestore is not available on this SAP system. Run SAPManage(action="probe") ' +
             'for the reason (often a missing S_ADT_RES authorization), or set SAP_FEATURE_UI5=on to force it on.',
@@ -747,7 +746,8 @@ export async function handleSAPRead(
       return textResult(toolJson(await client.getBspAppStructure(name, `/${include}`)));
     }
     case 'BSP_DEPLOY': {
-      if (cachedFeatures?.ui5repo && !cachedFeatures.ui5repo.available) {
+      const ui5repoFeature = getCachedFeatures()?.ui5repo;
+      if (ui5repoFeature && !ui5repoFeature.available) {
         return errorResult(
           'ABAP Repository OData Service is not available on this SAP system. Run SAPManage(action="probe") ' +
             'for the reason, or set SAP_FEATURE_UI5REPO=on to force it on.',

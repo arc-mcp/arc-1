@@ -1,10 +1,12 @@
 /**
  * Layer 2 — Per-user MCP tool-call rate limiter.
  *
- * Applied at the top of `handleToolCall` in `src/handlers/dispatch.ts`. Returns an MCP
- * tool error (NOT HTTP 429) on denial so the LLM client surfaces it as a tool failure
- * and the agent loop backs off correctly. Per-user token bucket keyed on the resolved
- * user identity (userName / clientId / __anon__).
+ * Applied at the top of `handleToolCall` in `src/handlers/dispatch.ts`. Multi-target
+ * requests consume the same limiter during request preparation, before uncached PP or
+ * SAP probe work, and then skip the dispatcher consume. Returns an MCP tool error (NOT
+ * HTTP 429) on denial so the LLM client surfaces it as a tool failure and the agent loop
+ * backs off correctly. Per-user token bucket keyed on the resolved user identity
+ * (userName / clientId / __anon__).
  *
  * Design choices:
  * - Per-instance, in-memory only. Multi-instance attackers cost `limit × instances` —

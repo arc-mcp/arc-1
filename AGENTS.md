@@ -15,12 +15,16 @@ Distributed as npm package (`arc-1`) and Docker image (`ghcr.io/arc-mcp/arc-1`).
 ## Design Principles
 
 1. **Centralized admin control** — managed service; server-wide safety ceiling (`allowWrites`, package allowlists, SQL/data/transport/Git gates, deny actions); every call audited; per-user scopes restrict, never expand.
-2. **Per-user SAP identity** — principal propagation maps each MCP user to their own SAP user (BTP Destination Service + Cloud Connector); SAP auth applies per user.
+2. **Per-user SAP identity by default** — principal propagation maps each MCP user to their own SAP user. ADR-0007 permits only an explicit mutation-free multi-target Basic exception, labeled shared and never used as PP fallback.
 3. **Token-efficient tools** — 12 intent tools vs 200+ endpoints, with schema payload guarded by CI budgets; hyperfocused mode = 1 tool (~200 tokens); method-level surgery + context compression keep mid-tier LLMs viable.
 4. **BTP-native deployment** — Destination Service, Cloud Connector, XSUAA OAuth, BTP Audit Log; also Docker/npm/stdio.
 5. **Multi-client, vendor-neutral** — XSUAA OAuth + Entra ID OIDC + API key coexist; one instance serves Claude, Copilot Studio, VS Code, Gemini CLI, Cursor.
 6. **Safe defaults, opt-in power** — read-only by default; free SQL blocked; package allowlist defaults to `$TMP`; everything forbidden until the admin allows it.
-7. **One SAP system per instance** — ARC-1 exposes no `system`/destination selector and no cross-system routing; multi-system access is the [MCP hub](https://github.com/arc-mcp/mcp-hub)'s job, never ARC-1's. Binding one system per connection makes cross-environment (DEV→PROD) mistakes structurally impossible ([ADR-0005](docs/adr/0005-single-system-per-instance.md)).
+7. **Single target by default; one experimental read-only BTP exception** — ADR-0005 remains the rule
+   for writable/general multi-system access. ADR-0006 permits only the default-off BTP CF mode with
+   explicit pinned/aggregate targets under its mutation-free safety contract. ADR-0007 permits the
+   default-off shared Basic identity only under its one-instance/lockout controls. Do not broaden
+   either exception to writes or another discovery/auth model without a new ADR/security review.
 
 ## Build & Test
 
@@ -75,11 +79,12 @@ Full per-option details (defaults, clamps, layer interactions): [docs_page/confi
 | `SAP_CHECK_BEFORE_WRITE` | SAP-side pre-write syntax check, non-blocking (default false) |
 | `ARC1_CACHE[_FILE]` | Request-driven cache mode (auto/memory/sqlite/none) / SQLite file path |
 | `ARC1_MAX_CONCURRENT` | Server-wide SAP request cap (default 10); size vs `rdisp/wp_no_dia` |
-| `ARC1_AUTH_RATE_LIMIT` / `ARC1_RATE_LIMIT` | Layer 1 per-IP OAuth cap (20/min) / Layer 2 per-user MCP cap (default 0 = off; ADR-0004) |
+| `ARC1_AUTH_RATE_LIMIT` / `ARC1_MCP_HTTP_RATE_LIMIT` / `ARC1_RATE_LIMIT` | Per-IP OAuth cap (20/min), optional shared MCP HTTP/IP override (unset derives `max(OAuth×30,600)`; 0 disables), and per-user MCP cap (default 0 = off; ADR-0004) |
 | `SAP_BTP_DESTINATION` / `SAP_BTP_PP_DESTINATION` | BTP Destination names (PP = PrincipalPropagation type) |
+| `ARC1_MULTI_TARGET_ENDPOINTS` | Experimental/default-off BTP CF mode: marked subaccount destinations → mutation-free `/<SYSTEM-OR-ALIAS>/<CLIENT>/mcp` plus `/multi/mcp`; requires XSUAA, cache none, standard tools, UI/plugins off; PP targets are strict. |
+| `ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH` | Default false. Permits shared BasicAuthentication targets in multi mode; never PP fallback, credentials stay request-local, and v1 requires exactly one CF instance. |
 | `SAP_PP_ENABLED` / `SAP_PP_STRICT` / `SAP_PP_ALLOW_SHARED_COOKIES` | Principal propagation + strict mode + cookie-coexistence escape hatch |
 | `SAP_DISABLE_SAML` | Disable SAML redirect — never on BTP ABAP / S/4 Public Cloud |
-| `ARC1_PROFILE` | Safety profile shortcut (viewer…developer-sql) |
 | `ARC1_MINIMAL_ERRORS` | Hide SAP diagnostic details from client-facing tool errors; keep request correlation for operators |
 | `ARC1_LOG_HTTP_DEBUG` | HTTP debug fields in audit; bodies are centrally redacted before sink writes |
 
@@ -93,7 +98,14 @@ src/
 ├── server/
 │   ├── server.ts               # MCP server setup, tool registration
 │   ├── config.ts, types.ts     # Config parser + ServerConfig defaults
-│   ├── http.ts                 # HTTP Streamable transport + auth chain
+│   ├── http.ts                 # HTTP auth + single-target, pinned, and aggregate routes
+│   ├── destination-discovery.ts, destination-registry.ts # Secret-safe snapshot + immutable targets
+│   ├── multi-target-destination-config.ts # Shared destination-property contract
+│   ├── multi-target-identity.ts # Public target IDs, route aliases, and shared HTTP matchers
+│   ├── multi-target-runtime.ts, multi-target-server.ts # Selected-identity runtime + request preparation
+│   ├── multi-target-tools.ts, multi-target-catalog.ts # Mutation-free schemas + SAPTargets result
+│   ├── multi-target-feature-state.ts # Per-target feature-probe flight coordination
+│   ├── multi-target-shared-auth-state.ts # Process-wide Basic generation/lockout guard
 │   ├── logger.ts               # Structured logger (stderr only, never stdout)
 │   ├── audit.ts, sinks/        # Audit events + stderr/file/btp-auditlog sinks
 │   ├── context.ts              # MCP context helpers
@@ -108,7 +120,7 @@ src/
 │   ├── write-helpers.ts        # buildCreateXml, pre-write gates, server-driven write engine, package enforcement
 │   ├── cds-hints.ts            # CDS dependency/impact hints + reserved-keyword guard
 │   ├── tool-registry.ts        # SINGLE SOURCE of per-tool type tables ({type,btp} rows → derived ONPREM/BTP arrays)
-│   ├── feature-cache.ts        # cached ADT discovery + resolved features (live bindings)
+│   ├── feature-cache.ts        # cached ADT discovery + features, keyed by target/destination (ALS fallback)
 │   ├── cache-security.ts       # per-user cache isolation under principal propagation
 │   ├── shared.ts               # ToolResult + textResult/errorResult
 │   ├── tools.ts                # Tool definitions (JSON Schema the LLM sees)
@@ -124,7 +136,7 @@ src/
 │   ├── gcts.ts, abapgit.ts     # Git backends | transport.ts: CTS management
 │   ├── cds-impact.ts, rap-preflight.ts, rap-handlers.ts, rap-generate.ts  # CDS/RAP intelligence
 │   ├── class-structure.ts      # Class-section surgery splice + diff (#303)
-│   ├── server-driven.ts        # Server-driven objects (DESD/EVTB/… — 8.16 AFF JSON engine)
+│   ├── server-driven.ts        # Server-driven objects (DESD/EVTB/DSFD/… — AFF engine)
 │   ├── oauth.ts, cookies.ts    # BTP OAuth (browser/PKCE) + cookie parsing (Destination Service lives in server.ts + @arc-mcp/xsuaa-auth)
 │   ├── ui5-repository.ts, flp.ts    # UI5 ABAP Repository + FLP OData clients
 │   └── authorization-trace.ts, diagnostics.ts, codeintel.ts # auth/ST22 traces + code intelligence
@@ -144,6 +156,7 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 
 | Task | Files (+ key gotcha) |
 |------|------|
+| Multi-target ADR-0006/0007 work | Read `docs/adr/0006-experimental-read-only-multi-target.md` and `docs/adr/0007-shared-basic-identity-for-read-only-multi-target.md`, then the normative `docs/plans/destination-discovered-multi-target-v1.md`, `docs_page/multi-target-setup.md`, and `docs_page/multi-target-administration.md`; code is `src/server/{destination-discovery,destination-registry,multi-target-*,server,http}.ts`, `src/authz/policy.ts`, and `src/handlers/{dispatch,feature-cache}.ts`; focused tests are `tests/unit/server/{destination-discovery,destination-registry,multi-target-*,http-destinations,http-multi-target-routes,mta-descriptor}.test.ts`, `tests/unit/authz/policy.test.ts`, and `tests/unit/handlers/multi-target-errors.test.ts`. Keep the mutation-free boundary and explicit lint/transport action allowlists; ATC/Unit are workload-producing reads. Basic is default-off/shared/one-instance and never PP fallback. `SAPTargets` is aggregate-only. Real `sap-sysid`/`sap-client` remain mandatory. |
 | Add new read operation | `src/adt/client.ts`, `src/handlers/read.ts`, `src/handlers/tools.ts` (+ `src/adt/xml-parser.ts`, `src/adt/types.ts` for structured) |
 | Add ADT slash alias to `SLASH_TYPE_MAP` | `src/handlers/object-types.ts`, `tests/unit/handlers/slash-type-map.test.ts` — needs `docs/research/abap-types/types/<short>.md` evidence, verify live `<adtcore:type>` first (#218) |
 | SAPWrite TABL subtype routing (TABL/DT vs /DS, #285) | `src/handlers/object-types.ts`, `src/handlers/write-helpers.ts`, `src/handlers/write/create.ts`, `src/handlers/{schemas,tools}.ts` — reads collapse to bare `TABL` |
@@ -186,7 +199,7 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 | Hyperfocused mode | `src/handlers/hyperfocused.ts`, `src/handlers/tools.ts` |
 | ATC run (`SAPDiagnose action=atc`) | `src/adt/devtools.ts` (`runAtcCheck`) — three-step flow; variant MUST bind at worklist creation; ATC skips `$TMP` (details: dev-guide) |
 | CDS test-case suggestions (8.16+) | `src/adt/devtools.ts`, `src/handlers/diagnose.ts` — discovery-gated, read-only |
-| Server-driven objects read/write (DESD/EVTB/…) | `src/adt/server-driven.ts` (`SDO_TYPES` + `SDO_REGISTRY` — the SAPRead/SAPWrite table rows derive from the tuple), `src/handlers/read.ts` + `write.ts`/`write-helpers.ts` early branches — per-type/release-adaptive gates; EVTO=v2 content type (details: dev-guide) |
+| Server-driven objects read/write (DESD/EVTB/DSFD/…) | `src/adt/server-driven.ts` (`SDO_TYPES` + `SDO_REGISTRY` — the SAPRead/SAPWrite table rows derive from the tuple; `sourceFormat` is per-type: `text` for DTSC/DSFD, `json` for the rest — wrong one = hard 415), `src/handlers/read.ts` + `write.ts`/`write-helpers.ts` early branches — per-type/release-adaptive gates; EVTO=v2 content type (details: dev-guide) |
 | XML response parser / safety check | `src/adt/xml-parser.ts` / `src/adt/safety.ts` |
 | PrettyPrint / lint rules / pre-write hints | `src/handlers/lint.ts` + `src/adt/devtools.ts` / `src/lint/{lint,config-builder}.ts` + presets/ / `src/lint/pre-write-hints.ts` |
 | abaplint beyond its grammar ceiling (8xx) | `src/adt/features.ts` (`ABAPLINT_MAX_RELEASE`), `src/lint/config-builder.ts` — parser errors demoted to warnings when release > 758 |
@@ -220,7 +233,7 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 
 1. **Transport** (`src/server/http.ts` or stdio; stdio has no auth).
 2. **Auth** (HTTP): XSUAA → OIDC JWT → API key → `AuthInfo { scopes, clientId?, userName? }`.
-3. **Per-user client** (`src/server/server.ts`): `ppEnabled` + JWT → per-user SAP session via Destination Service.
+3. **SAP client** (`src/server/server.ts`): normally `ppEnabled` + JWT → per-user SAP session; ADR-0007 multi-target Basic resolves one request-local shared credential behind the process guard.
 4. **`handleToolCall`** (`src/handlers/dispatch.ts`): arg normalization (`stripLlmEmptyValues`) → scope check (`ACTION_POLICY`) → Zod validation → per-tool handler → package check for writes. Source reads consult the inactive-list + ETag source cache.
 5. **ADT client** (`src/adt/{client,crud,devtools}.ts`): every endpoint behind `checkOperation(safety, …)`.
 6. **HTTP** (`src/adt/http.ts`): MIME negotiation, conditional GET, CSRF auto-refresh, 406/415 one-retry, cookie hot-reload, stateful lock→modify→unlock sessions.
@@ -233,6 +246,7 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 - **Safety ceiling** (`src/adt/safety.ts`, startup): `allow*` flags + `allowedPackages` + `allowedTransports` + `denyActions`. ALL ADT endpoints go through `checkOperation()`; `OperationType` is internal-only.
 - **Scopes** (`src/authz/policy.ts`): `read`/`write`/`data`/`sql`/`transports`/`git`/`admin` (`admin` ⊇ all, `write` ⊇ `read`, `sql` ⊇ `data`). `ACTION_POLICY` maps `(tool, action/type) → scope` — single source for runtime checks + tool-list pruning. Stdio skips scopes.
 - **Principal propagation**: JWT → per-user SAP session; ARC-1 scopes stay enforced as defense-in-depth.
+- **Multi-target Basic exception**: XSUAA identifies the human, but SAP sees one shared technical user. It is default-off, mutation-free, one-instance, request-local-secret, and process-guarded per ADR-0007.
 - **ADT POSTs that look like reads** (where-used, completion, syntax check, ATC, table preview, …): read-only SAP users need `S_ADT_RES` with `ACTVT=01 AND 02`.
 
 ## Code Patterns
@@ -289,7 +303,14 @@ Every code change requires tests. Skip taxonomy: `docs/testing-skip-policy.md`.
 - **stdout is sacred** — MCP JSON-RPC only; all logging to stderr.
 - Never commit `.env`, `cookies.txt`, `.arc1.json`; sensitive fields are redacted in logs.
 - **Safety config is the server ceiling** — per-user scopes only restrict.
-- **One system per instance — never add multi-system to ARC-1** — no `system`/`target` tool param, no multiple destinations in one config, no cross-system routing. "Expose N systems from one instance" is out of scope *by decision* (the LLM routes wrong → writes to the wrong system; it tangles per-system safety ceilings). Decline and route the requester to the [MCP hub](https://github.com/arc-mcp/mcp-hub); see [ADR-0005](docs/adr/0005-single-system-per-instance.md).
+- **Multi-system boundary** — single target remains the default and all writable multi-system access
+  stays out of scope under ADR-0005. ADR-0006 is the sanctioned experimental, default-off, BTP/XSUAA,
+  mutation-free exception for pinned and aggregate endpoints. Principal Propagation remains recommended;
+  ADR-0007 permits only an explicit, default-off shared Basic identity under its mutation-free, one-instance
+  controls and never as a PP fallback. Follow both normative plans exactly; do not add writes,
+  target-specific roles, another discovery/auth model, or a hidden compatibility mode. Route requirements
+  outside those boundaries to the
+  [MCP hub](https://github.com/arc-mcp/mcp-hub) or a new ADR/security review.
 - **Per-user auth never inherits shared credentials** — `buildAdtConfig(..., { perUser: true })` strips username/password/cookies; any new Layer B field must respect the flag.
 - **All ADT endpoints have safety guards** — no unguarded `http.{get,post,put,delete}`.
 - **Cookie hot-reload**: `SAP_COOKIE_FILE` re-read on persistent 401; `SAP_COOKIE_STRING` cannot hot-reload.

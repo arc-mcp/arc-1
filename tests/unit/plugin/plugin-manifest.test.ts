@@ -194,12 +194,21 @@ describe('deployment templates', () => {
     expect(app?.env?.SAP_INSECURE).toBe('false');
   });
 
-  it('keeps the base BTP MTA on the recommended strict PP default', () => {
+  it('keeps the base BTP MTA target-free, preserves strict PP, and documents multi-target opt-in', () => {
     const mta = readYaml('mta.yaml');
     const appModule = (mta.modules as Array<Record<string, any>>).find((entry) => entry.name === 'arc1-mcp-server');
 
+    expect(appModule?.properties?.SAP_BTP_DESTINATION).toBeUndefined();
+    expect(appModule?.properties?.SAP_BTP_PP_DESTINATION).toBeUndefined();
+    // These stay active so adding a single target during an upgrade cannot silently
+    // switch JWT callers to the shared BasicAuth identity. They are inert without a target.
     expect(appModule?.properties?.SAP_PP_ENABLED).toBe('true');
     expect(appModule?.properties?.SAP_PP_STRICT).toBe('true');
+    expect(appModule?.properties?.ARC1_MULTI_TARGET_ENDPOINTS).toBeUndefined();
+
+    const raw = readFileSync(join(ROOT, 'mta.yaml'), 'utf8');
+    expect(raw).toContain('# ARC1_MULTI_TARGET_ENDPOINTS: "true"');
+    expect(raw).toContain('# ARC1_CACHE: none');
   });
 });
 

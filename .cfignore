@@ -1,19 +1,37 @@
 # Claude Code worktrees and session data
 .claude/
+.codex/
+.codex-tmp/
 .git/
 
 # Source and tests — only dist/ is needed at runtime
 src/
 tests/
 docs/
+docs_page/
 scripts/
 skills/
 compare/
+artifacts/
+site/
+public/
+coverage/
+test-results/
+mta_archives/
+*.mtaext*
 
 # Dev config
 .env
 .env.*
+.npmrc
 *service-key*.json
+*.key
+*.pem
+*.p12
+*.pfx
+*.pse
+*.jks
+*.keystore
 .github/
 .husky/
 .cursor/
@@ -24,6 +42,7 @@ tsconfig.json
 vitest*.config.ts
 biome.json
 mta.yaml
+Makefile_*.mta
 release-please-config.json
 .release-please-manifest.json
 xs-security.json

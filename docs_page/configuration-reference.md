@@ -105,9 +105,11 @@ Full reference: [btp-abap-environment.md](btp-abap-environment.md).
 | Env var | Effect |
 |---|---|
 | `SAP_BTP_DESTINATION` | Name of the BTP Destination ARC-1 reads to obtain SAP URL + auth details. For BasicAuth destinations this creates the shared technical client. For BTP ABAP `OAuth2UserTokenExchange` destinations, this can also be the per-user destination used when `SAP_PP_ENABLED=true`. Bypasses `SAP_URL` / `SAP_USER` / `SAP_PASSWORD` — those are ignored when a destination is set. |
-| `SAP_BTP_PP_DESTINATION` | Optional separate per-user destination name. Use this for on-premise `PrincipalPropagation` when shared startup traffic and per-user traffic must route via different destinations. If unset, ARC-1 falls back to `SAP_BTP_DESTINATION`. |
+| `SAP_BTP_PP_DESTINATION` | Optional separate per-user destination name. Use this for on-premise `PrincipalPropagation` when shared startup traffic and per-user traffic must route via different destinations. If unset, ARC-1 falls back to `SAP_BTP_DESTINATION`. Applies only to the single-target `/mcp` route. |
+| `ARC1_MULTI_TARGET_ENDPOINTS` | Experimental, default `false`. When `true`, discovers subaccount destinations marked `arc1.enabled=true` and exposes mutation-free `/<SID>/<CLIENT>/mcp` plus `/multi/mcp`. The aggregate-only `SAPTargets` tool gives readers a compact identity-labeled catalog when more than one target is active and gives admins secret-projected exception/status diagnostics at zero, one, many, or registry failure; there is no standalone HTTP catalog. Requires BTP CF XSUAA/Destination/Connectivity bindings, HTTP transport, `ARC1_CACHE=none`, standard tool mode, and UI/plugins/cookies off. PrincipalPropagation targets force strict per-user PP. It never assigns a discovered target to `/mcp`. See [Multi-System Setup](multi-target-setup.md). |
+| `ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH` | Experimental, default `false`. Separate deployment ceiling permitting marked multi-target destinations with `Authentication=BasicAuthentication`. Such targets use one shared SAP technical identity for every scoped XSUAA caller, never serve as PP fallback, and require exactly one CF app instance in v1. Destination `User`/`Password` is resolved per request, omitted from all retained/output state, and may rotate without restart; other destination changes remain restart-bound. Prefer Principal Propagation whenever per-user SAP identity is required. |
 
-Full reference: [btp-destination-setup.md](btp-destination-setup.md).
+Full reference: [btp-destination-setup.md](btp-destination-setup.md) · [multi-target-setup.md](multi-target-setup.md).
 
 #### B5. Principal Propagation
 
@@ -245,11 +247,15 @@ ARC-1 also sets standard browser security headers (HSTS, CSP, X-Frame-Options, C
 
 ### Rate limiting
 
-Two operator-facing knobs cover all three rate-limiting layers ARC-1 ships (the third layer reuses `ARC1_MAX_CONCURRENT` above). Per-endpoint OAuth ceilings are constants in code, not env, to keep the operator surface tiny. See the [Rate Limiting Guide](rate-limiting.md) for threat model, sizing math, and audit-event reference.
+Three rate-limit knobs cover the OAuth HTTP edge, MCP HTTP edge, and per-user MCP quota.
+`ARC1_MAX_CONCURRENT` above is the separate SAP-bound concurrency control. See the
+[Rate Limiting Guide](rate-limiting.md) for the threat model, sizing math, shared multi-target profile,
+and audit-event reference.
 
 | Flag | Env var | Default | Effect |
 |---|---|---|---|
-| `--auth-rate-limit` | `ARC1_AUTH_RATE_LIMIT` | `20` | **Layer 1.** Per-IP cap on OAuth endpoints (`/register`, `/authorize`, `/token`, `/revoke`) in requests per minute. `/mcp` gets `max(value × 30, 600)/min/IP` to absorb legitimate MCP batch traffic. On hit: HTTP `429` + `Retry-After` + RFC 9331 `RateLimit-*` headers + `auth_rate_limited` audit event. Set `0` to disable Layer 1 (use only behind a rate-limiting reverse proxy). |
+| `--auth-rate-limit` | `ARC1_AUTH_RATE_LIMIT` | `20` | **Layer 1 OAuth.** Per-IP cap on `/register`, `/authorize`, `/token`, `/revoke`, and callback requests per minute. When `ARC1_MCP_HTTP_RATE_LIMIT` is unset, the MCP cap remains derived as `max(value × 30, 600)`. Set `0` to disable OAuth limiting (use only behind a rate-limiting reverse proxy). |
+| — | `ARC1_MCP_HTTP_RATE_LIMIT` | unset (derived) | **Layer 1 MCP.** One process-wide per-IP cap shared by single-target, pinned, aggregate, and Copilot JSON-RPC `/authorize` traffic. Unset preserves `max(ARC1_AUTH_RATE_LIMIT × 30, 600)`; `0` explicitly disables this MCP-edge limiter; a positive integer replaces the derivation. |
 | `--rate-limit` | `ARC1_RATE_LIMIT` | `0` (disabled) | **Layer 2.** Per-user cap on MCP tool calls in requests per minute. Default is **off** — Layer 2 ships disabled and operators with multi-user deployments opt in by setting a positive value (typical: `60` = 1 req/sec sustained per user). User key walks `userName → email → sub → preferred_username → clientId → '__anon__'` (`resolveRateLimitUserKey()`). Stdio mode (no user identity) is exempt. On hit: MCP tool error `{error:'rate_limited',retryAfter,message}` + `mcp_rate_limited` audit event — **not** HTTP 429 (preserves the agent loop's retry semantics). |
 
 ---

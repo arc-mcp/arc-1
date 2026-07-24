@@ -11,6 +11,7 @@ import {
   isServerDrivenObjectType,
   SDO_REGISTRY,
   serverDrivenObjectUrl,
+  serverDrivenSourceContentType,
   supportsServerDrivenObject,
   updateServerDrivenObjectSource,
 } from '../../../src/adt/server-driven.js';
@@ -191,7 +192,7 @@ describe('SDO registry write metadata', () => {
 
   it('EVTO uses blues v2; the others use v1 (verified live on 816)', () => {
     expect(SDO_REGISTRY.EVTO.blueContentType).toContain('v2');
-    for (const code of ['DESD', 'DTSC', 'CSNM', 'EVTB', 'COTA'] as const) {
+    for (const code of ['DESD', 'DTSC', 'CSNM', 'EVTB', 'COTA', 'DSFD'] as const) {
       expect(SDO_REGISTRY[code].blueContentType).toContain('v1');
     }
   });
@@ -199,6 +200,18 @@ describe('SDO registry write metadata', () => {
   it('createType is not uniformly /TYP (EVTB → EVTB/EVB)', () => {
     expect(SDO_REGISTRY.EVTB.createType).toBe('EVTB/EVB');
     expect(SDO_REGISTRY.DESD.createType).toBe('DESD/TYP');
+  });
+
+  // Regression guard for the 2026-07-21 fix: the source PUT content type used to be a single
+  // hardcoded 'application/json' for every type, which SAP answers with 415 for the DDL-text
+  // ones — DTSC write was dead on arrival. Content types live-verified per type on 816.
+  it('maps each type to the source content type SAP actually accepts (live-verified 816)', () => {
+    for (const code of ['DESD', 'CSNM', 'EVTB', 'EVTO', 'COTA'] as const) {
+      expect(serverDrivenSourceContentType(code)).toBe('application/json');
+    }
+    for (const code of ['DTSC', 'DSFD'] as const) {
+      expect(serverDrivenSourceContentType(code)).toBe('text/plain');
+    }
   });
 });
 
@@ -225,7 +238,7 @@ describe('buildBlueSourceXml', () => {
     // The create body deliberately omits masterLanguage: a4h-2025 (816) silently ignores it
     // (create with "DE" → object read back as the session language). Master language comes from
     // the sap-language request param (session = config.language), as with other source objects.
-    for (const code of ['DESD', 'DTSC', 'CSNM', 'EVTB', 'EVTO', 'COTA']) {
+    for (const code of ['DESD', 'DTSC', 'CSNM', 'EVTB', 'EVTO', 'COTA', 'DSFD']) {
       expect(buildBlueSourceXml(code, 'Z', '$TMP', 'd')).not.toContain('masterLanguage');
     }
   });
@@ -294,7 +307,7 @@ describe('createServerDrivenObject', () => {
 });
 
 describe('updateServerDrivenObjectSource', () => {
-  it('locks → PUTs /source/main as application/json → unlocks (in order)', async () => {
+  it('locks → PUTs /source/main as the type\u2019s source content type → unlocks (in order)', async () => {
     const { http, calls } = mockWriteHttp();
     await updateServerDrivenObjectSource(http, unrestrictedSafetyConfig(), 'DESD', 'ZD', '{"formatVersion":"1"}');
     const methods = calls.map((c) => `${c.method} ${c.path.split('?')[0]}`);
@@ -307,6 +320,16 @@ describe('updateServerDrivenObjectSource', () => {
     expect(put.contentType).toBe('application/json');
     expect(put.path).toContain('lockHandle=LH123');
     expect(put.body).toBe('{"formatVersion":"1"}');
+  });
+
+  it('PUTs a DDL-text type (DTSC) as text/plain, not application/json', async () => {
+    const { http, calls } = mockWriteHttp();
+    const ddl = 'define static cache ZC on DEMO_CDS_CUBE_VIEW { sum( amount_sum ) } retention 60 s;';
+    await updateServerDrivenObjectSource(http, unrestrictedSafetyConfig(), 'DTSC', 'ZC', ddl);
+    const put = calls.find((c) => c.method === 'PUT')!;
+    // application/json here is a hard 415 from SAP — live-verified on 816.
+    expect(put.contentType).toBe('text/plain');
+    expect(put.body).toBe(ddl);
   });
 
   it('still unlocks when the PUT throws', async () => {

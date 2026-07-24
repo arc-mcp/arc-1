@@ -1,97 +1,125 @@
 # BTP Cloud Foundry Deployment
 
-Deploy ARC-1 on SAP BTP Cloud Foundry, connecting to an on-premise SAP system via Cloud Connector and Destination Service. Two deployment methods are supported: **MTA** (recommended) and **Docker**.
+This is the canonical administrator runbook for deploying ARC-1 on SAP BTP Cloud Foundry. It uses
+the repository's SAP Multi-Target Application (MTA) descriptor so XSUAA, Destination, Connectivity,
+bindings, role collections, health checks, and safe defaults are deployed together.
 
-## When to Use
+The first acceptance target is deliberately read-only. Widen a single-target instance only after
+identity, authorization, audit, and rollback have been proven. ARC-1 multi-target routes remain
+mutation-free in v1 regardless of the single-target ceiling.
 
-- Organization uses SAP BTP
-- SAP system is on-premise, accessible via Cloud Connector
-- Want a cloud-hosted MCP server without managing infrastructure
-- Need per-user SAP identity via principal propagation (XSUAA + Cloud Connector)
-- Need SAP BTP-native OAuth for MCP clients through XSUAA
+!!! note "Two meanings of multi-target"
 
-## Architecture
+    An SAP **Multi-Target Application** is the `.mtar` deployment format built from `mta.yaml`.
+    ARC-1 **multi-target** is an experimental runtime mode serving several SAP system/client targets.
+    You use the MTA format for both single- and multi-target ARC-1 deployments.
 
+## 1. Choose the topology before configuring anything
+
+| Topology | Public MCP URL | SAP identity | Capabilities | Start here |
+|---|---|---|---|---|
+| One general SAP target | `/mcp` | Principal Propagation recommended; shared Basic is possible | Full ARC-1 feature set, still constrained by instance flags and roles | This page, then [Destination Reference](btp-destination-setup.md) |
+| Many SAP system/clients | `/<SYSTEM>/<CLIENT>/mcp` and `/multi/mcp` | PP recommended; optional shared Basic exception | Mutation-free v1: read/search/query/navigate/diagnose/context | This page, then [Multi-System Setup](multi-target-setup.md) |
+| One `/mcp` beside multi-target routes | All of the above | Configured independently | `/mcp` may be writable; multi routes never are | Read [side-by-side risks](multi-target-administration.md#optional-single-target-mcp) first |
+| BTP ABAP Environment | `/mcp` | `OAuth2UserTokenExchange` | Single target | [BTP ABAP Environment](btp-abap-environment.md) |
+| S/4HANA Public Cloud | `/mcp` | SAML/OAuth user exchange | Single target | [S/4HANA Public Cloud](s4hana-public-cloud.md) |
+
+Use separate ARC-1 applications when you need different mutation ceilings, hard target-inventory
+separation, different capacity limits, writable multi-system access, or separation between Admin
+diagnostics and a writable `/mcp`. For a customer beta or cutover, a separate CF space is safer than
+replacing an existing app in place: the shipped XSUAA application and role-collection names are
+space-qualified.
+
+Principal Propagation is the normal customer path because SAP receives the human identity. Shared
+Basic is a default-off compatibility exception: SAP sees a reusable technical user, and a
+multi-target app containing any Basic destination must run exactly one non-rolling CF process.
+
+## 2. Assign owners
+
+Deployment crosses several independent control planes. Confirm the handoffs before the change
+window.
+
+| Task | Typical owner |
+|---|---|
+| Entitlements and subaccount/space | BTP subaccount administrator |
+| MTA build, deploy, route, and bindings | CF Space Developer |
+| Destination fields and credentials | Destination Administrator |
+| XSUAA role collections and users/groups | User and Role Administrator |
+| Cloud Connector mapping and resources | Cloud Connector administrator |
+| STRUST, CERTRULE, ICM/SICF, SU01, SAP roles | SAP Basis/security |
+| MCP client and safe-read acceptance | ARC-1 service owner/user |
+
+The resources live at different levels:
+
+```text
+BTP global account
+└── subaccount
+    ├── trust and subaccount destinations
+    └── Cloud Foundry org
+        └── space
+            ├── ARC-1 application
+            └── XSUAA, Destination, Connectivity service instances
 ```
-┌──────────────────┐                    ┌─────────────────────────────────────────────────┐
-│  MCP Client      │     OAuth 2.0      │  SAP BTP Cloud Foundry                          │
-│  (Copilot Studio │ ──────────────────►│                                                 │
-│   / IDE / CLI)   │   XSUAA JWT        │  ┌─────────────────────────────────────────┐    │
-└──────────────────┘                    │  │  ARC-1 (Docker/Node.js app)             │    │
-        │                               │  │                                         │    │
-        │                               │  │  XSUAA verifier + OAuth metadata        │    │
-        │  ┌────────────────────┐       │  │  MCP Server (HTTP Streamable)           │    │
-        └─►│  XSUAA / BTP Trust │       │  │  ADT Client ─── via Connectivity ──►────│──┐ │
-           │  (SAP IAS/SAP ID   │       │  │                    Proxy                 │  │ │
-           │   or federated IdP)│       │  └─────────────────────────────────────────┘  │ │
-           └────────────────────┘       │                                               │ │
-                                        │                                               │ │
-                                        │  ┌──────────────┐  ┌──────────────────────┐  │ │
-                                        │  │ Destination   │  │ Connectivity Service │  │ │
-                                        │  │ Service       │  │ (Proxy)              │◄─┘ │
-                                        │  │ SAP_TRIAL     │  └──────────┬───────────┘    │
-                                        │  └──────────────┘             │                 │
-                                        └───────────────────────────────│─────────────────┘
-                                                                        │
-                                        ┌───────────────────────────────│─────────────────┐
-                                        │  Cloud Connector              │                  │
-                                        │  Virtual Host: a4h-abap:50000 │                  │
-                                        │  ◄─────────────────────────────                  │
-                                        └───────────────────────────────│─────────────────┘
-                                                                        │
-                                        ┌───────────────────────────────│─────────────────┐
-                                        │  On-Premise SAP ABAP System   ▼                  │
-                                        │  sap-host:50000  (ADT REST API)                  │
-                                        └─────────────────────────────────────────────────┘
-```
 
-## Prerequisites
+Multi-target discovery uses subaccount destinations. A different CF space in the same subaccount is
+not a hard destination-inventory boundary. Use separate subaccounts if that inventory itself must
+be isolated.
 
-- SAP BTP subaccount with Cloud Foundry environment enabled
-- Cloud Connector installed and connected to BTP subaccount
-- Cloud Connector configured with virtual host mapping to SAP on-premise system
-- `cf` CLI and `mbt` (MTA Build Tool) installed
-- For Docker deployment: image pushed to a container registry (GHCR, Docker Hub, etc.)
+## 3. Prepare the landscape
 
-## Deployment Method 1: MTA (Recommended)
+### Prerequisites
 
-MTA (Multi-Target Application) deployment bundles ARC-1 with its BTP service dependencies (XSUAA, Destination, Connectivity) into a single deployable archive. Services are created automatically.
+- Cloud Foundry is enabled in the intended BTP subaccount.
+- The subaccount has quota for XSUAA (`application`), Destination (`lite`), and Connectivity (`lite`).
+- Node.js 22.19 or later, npm, CF CLI, CF MultiApps plugin, and MBT are available.
+- The operator is logged in and targeted at the intended org and space.
+- For on-premise SAP, Cloud Connector is connected to this exact subaccount.
+- For PP, the SAP and Cloud Connector administrators can complete the
+  [Principal Propagation runbook](principal-propagation-setup.md).
+- A User and Role Administrator can inspect and assign the generated collections.
 
-!!! tip "No local dev environment? Deploy entirely from SAP Business Application Studio (BAS)"
-    You do **not** need a local toolchain to deploy ARC-1. SAP Business Application Studio ships with
-    `git`, the `cf` CLI, and `mbt` (MTA Build Tool) preinstalled — so a BTP admin can deploy and
-    configure ARC-1 without setting up a developer machine.
+SAP Business Application Studio can supply the CLI toolchain when an administrator cannot build on
+a local workstation. Use a controlled Dev Space, clone the reviewed revision, and follow the same
+commands below.
 
-    1. In the BTP Cockpit, open **Business Application Studio** and create a **Dev Space** (the *Full
-       Stack Cloud Application* type already has CF tools).
-    2. Open a terminal in the Dev Space and run the same steps as below:
-       ```bash
-       git clone https://github.com/arc-mcp/arc-1.git
-       cd arc-1
-       cp mta-overrides.mtaext.example mta-overrides.mtaext   # edit your destinations + flags
-       cf login -a <your-cf-api-endpoint>                     # target the org/space to deploy into
-       npm ci                                                 # mbt's before-all build needs deps
-       npm run btp:build-deploy-ext
-       ```
-    3. To redeploy a newer version later, just `git pull` in the same Dev Space and re-run
-       `npm run btp:build-deploy-ext`. Everything stays inside BTP — nothing is built or stored locally.
+### Preflight
 
-### 1. Configure your landscape via `mta-overrides.mtaext`
-
-`mta.yaml` ships with placeholder destinations (`your-basic-destination` / `your-pp-destination`) and conservative safety defaults (writes off, free SQL off, package allowlist `$TMP`). Every landscape must override at least the two destination names — deploying `mta.yaml` as-is will fail with a "destination not found" error from BTP, which is the intended fail-fast signal.
+Run these read-only checks in the operator shell:
 
 ```bash
-# Clone the repo
-git clone https://github.com/arc-mcp/arc-1.git
-cd arc-1
-
-# One-time per landscape — copy the template (it's tracked) to a real
-# overrides file (gitignored), and fill in your destinations + flags.
-cp mta-overrides.mtaext.example mta-overrides.mtaext
-$EDITOR mta-overrides.mtaext
+node --version
+npm --version
+cf version
+cf plugins | grep -E 'multiapps|MultiApps'
+mbt --version
+cf target
+cf services
 ```
 
-A minimal `mta-overrides.mtaext` looks like:
+Stop if `cf target` names the wrong API endpoint, org, or space. Record the selected values in the
+deployment ticket. Confirm entitlements in BTP Cockpit rather than discovering missing quota halfway
+through the deploy.
+
+## 4. Create the landscape extension
+
+`mta.yaml` owns versioned safe defaults and BTP resource topology. A customer-owned extension owns
+durable landscape-specific settings. Destinations own target-local connection and identity data.
+
+```bash
+git clone https://github.com/arc-mcp/arc-1.git
+cd arc-1
+git checkout <reviewed-tag-or-commit>
+npm ci
+cp mta-overrides.mtaext.example mta-overrides.mtaext
+```
+
+The real `mta-overrides.mtaext` is gitignored. Store the reviewed copy in the customer's protected
+configuration process. Never add secrets to it and never edit generated `mtad.yaml`.
+
+### Single-target read-only PP profile
+
+For an on-premise `/mcp`, the current runtime uses a Basic destination to resolve the startup target
+and a PP destination for every JWT-backed user request:
 
 ```yaml
 _schema-version: "3.1"
@@ -101,568 +129,307 @@ extends: arc1-mcp
 modules:
   - name: arc1-mcp-server
     properties:
-      SAP_BTP_DESTINATION: "my-sap-basic"
-      SAP_BTP_PP_DESTINATION: "my-sap-pp"
-      # widen safety flags only when the landscape needs it
-      SAP_ALLOW_WRITES: "true"
-      SAP_ALLOWED_PACKAGES: "Z*,Y*,$TMP"
+      SAP_BTP_DESTINATION: "A4H_100_STARTUP"
+      SAP_BTP_PP_DESTINATION: "A4H_100_PP"
+      SAP_PP_ENABLED: "true"
+      SAP_PP_STRICT: "true"
 ```
 
-The full set of overridable properties is documented in [`mta-overrides.mtaext.example`](https://github.com/arc-mcp/arc-1/blob/main/mta-overrides.mtaext.example): destinations, all `SAP_ALLOW_*` safety flags, `SAP_DENY_ACTIONS`, `SAP_PP_STRICT`, `ARC1_PUBLIC_URL` (for reverse-proxy deployments), `ARC1_ALLOWED_ORIGINS` (CORS), `ARC1_UI`, `ARC1_TOOL_MODE`, request-driven cache settings, and `ARC1_LOG_HTTP_DEBUG`. Any property left out of the override falls back to the `mta.yaml` value.
+The startup destination is not a PP fallback. In strict mode, authenticated tool calls use only the
+PP identity. Its technical user should still be least-privileged because startup feature discovery
+contacts SAP. Do not enable writes, data preview, SQL, transports, Git, or broad package patterns for
+initial acceptance.
 
-See the [BTP Destination Setup Guide](btp-destination-setup.md) for creating the destinations themselves.
+### Multi-target PP-only profile
 
-### 2. Build and Deploy
+```yaml
+_schema-version: "3.1"
+ID: arc1-mcp-overrides
+extends: arc1-mcp
+
+modules:
+  - name: arc1-mcp-server
+    properties:
+      ARC1_MULTI_TARGET_ENDPOINTS: "true"
+      ARC1_CACHE: none
+```
+
+The base descriptor already supplies HTTP transport, XSUAA, standard tools, UI/plugins off, no
+direct credentials, and mutation ceilings off. `SAP_PP_ENABLED`/`SAP_PP_STRICT` control only an
+optional `/mcp`; every discovered PP target is strict independently.
+
+Do not add destination names to this profile. After deployment, mark the intended subaccount
+destinations with `arc1.enabled=true` and restart the application. Follow
+[Multi-System Setup](multi-target-setup.md) for the destination contract and route examples.
+
+### Multi-target with a shared Basic exception
+
+Use this complete extension profile instead of the PP-only profile, and only after the customer
+accepts shared SAP attribution, reusable destination credentials, SAP account-lock exposure,
+downtime for deployment, and no horizontal scaling:
+
+```yaml
+_schema-version: "3.1"
+ID: arc1-mcp-overrides
+extends: arc1-mcp
+
+modules:
+  - name: arc1-mcp-server
+    parameters:
+      instances: 1
+    properties:
+      ARC1_MULTI_TARGET_ENDPOINTS: "true"
+      ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH: "true"
+      ARC1_CACHE: none
+```
+
+This permits Basic destinations; it never converts PP destinations or provides a fallback. Every
+XSUAA user authorized to call a Basic target acts in SAP as that destination's same technical user.
+Use a separate principal-type-None Cloud Connector mapping with internal HTTPS and a dedicated,
+least-privileged technical SAP user. See
+[Shared Basic controls](multi-target-administration.md#basic-shared-identity-controls).
+
+## 5. Validate, build, and inspect the MTAR
 
 ```bash
-# Build once, deploy with the extension applied:
-npm run btp:build-deploy-ext
-
-# Or in two steps:
+npm run btp:validate
+npx mbt validate -e mta-overrides.mtaext
 npm run btp:build
-cf deploy mta_archives/arc1-mcp_*.mtar -e mta-overrides.mtaext
 ```
 
-The `mta.yaml` creates three BTP services automatically, plus one optional service that is off by default:
+`npm run btp:validate` checks the repository's base and tracked example descriptors. The explicit
+`npx mbt validate -e` command checks the customer's actual protected override. Expected result:
+both checks succeed and MBT creates
+`mta_archives/arc1-mcp_<version>.mtar`.
 
-| Service | Instance Name | Plan | Purpose |
-|---------|--------------|------|---------|
-| XSUAA | `arc1-xsuaa` | `application` | MCP client OAuth authentication |
-| Destination | `arc1-destination` | `lite` | SAP system lookup |
-| Connectivity | `arc1-connectivity` | `lite` | Cloud Connector proxy |
-| Application Logs | `arc1-application-logs` | `lite` | **Optional, off by default** — CF log aggregation (Kibana). The service is **deprecated** (SAP Note 3557260; use SAP Cloud Logging instead), so ARC-1 ships it with `active: false`. `cf logs` works without it; re-enable via `mta-overrides.mtaext` only on subaccounts that still offer it (see below). |
-
-> **Application Logs is off by default.** SAP removed the Application Logging
-> Service from the list of Eligible Cloud Services on 2025-07-31. Binding it by
-> default would warn where it still exists and **fail the deploy** on newer
-> subaccounts where it doesn't. ARC-1 logs to stderr regardless — `cf logs`
-> and `cf logs --recent` work out of the box. To opt back in to managed
-> aggregation, set the resource `active: true` in your `mta-overrides.mtaext`
-> (the template shows the block). For new observability, prefer **SAP Cloud
-> Logging** (OpenTelemetry).
-
-> **Multiple landscapes from one repo.** The gitignore matches any
-> `mta-*.mtaext`, so you can keep `mta-ecc-dev.mtaext`,
-> `mta-ecc-prod.mtaext`, etc. side by side and pick one per deploy with
-> `-e mta-ecc-prod.mtaext`. None of those files are committed.
-
-### 3. Post-Deploy Configuration
-
-!!! note "Where do values come from on BTP CF?"
-    CF builds the app's environment from three sources: `manifest.yml` / `mta.yaml` `properties:` blocks, runtime overrides via `cf set-env`, and `VCAP_SERVICES` (injected from bound services like XSUAA and the Destination Service). There is **no `.env` file in the droplet** — values not present in those three places fall back to ARC-1's built-in defaults. Use `cf env <app>` to print the final resolved environment as the container sees it. Full per-mode breakdown: [Configuration Precedence](configuration-precedence.md).
-
-When using `SAP_BTP_DESTINATION`, the URL and credentials come from the BTP Destination — no `cf set-env` for `SAP_URL` or `SAP_CLIENT` is needed. Only set them if you're not using the Destination Service:
+Before a customer deploy, inspect the archive in a protected workspace:
 
 ```bash
-# Only needed if NOT using SAP_BTP_DESTINATION:
-cf set-env arc1-mcp-server SAP_URL "http://a4h-abap:50000"
-cf set-env arc1-mcp-server SAP_CLIENT "001"
-cf restage arc1-mcp-server
+unzip -l mta_archives/arc1-mcp_*.mtar | less
 ```
 
-**Set a stable DCR signing secret (XSUAA OAuth instances).** With `SAP_XSUAA_AUTH=true`, the DCR signing key defaults to the XSUAA `clientsecret`, which `cf deploy` rotates — invalidating every cached MCP `client_id` and forcing all users to re-register (`invalid_client`). Set a dedicated, stable secret so logins survive redeploys:
+The application payload must not contain `.env*`, `.npmrc`, service-key exports, customer
+`.mtaext` files, private keys, certificates, local MCP configuration, source tests, or operator
+artifacts. The MTA build has an explicit denylist and CI coverage for critical names; archive
+inspection is still a release gate because a future file type can evade a denylist.
+
+## 6. Deploy the MTA
+
+Run from the reviewed checkout as the CF Space Developer:
 
 ```bash
-cf set-env arc1-mcp-server ARC1_DCR_SIGNING_SECRET "$(openssl rand -base64 48)"
-cf restage arc1-mcp-server
+npm run btp:deploy-ext
 ```
 
-`ARC1_OAUTH_DCR_TTL_SECONDS` already defaults to `0` (never expire) in the base `mta.yaml` — only `cf set-env` it if you want a finite TTL. The signing secret is the one manual step: it is intentionally **not** in `mta.yaml`, because a value in module properties is rewritten and its trust rotated on every `cf deploy`, which would defeat its purpose.
-
-Why it matters, plus how to recover a client that's already stuck: [Stable DCR signing key](xsuaa-setup.md#stable-dcr-signing-key-recommended).
-
-The base `mta.yaml` configures the properties below (override any of them via `mta-overrides.mtaext`):
-- `ARC1_OAUTH_DCR_TTL_SECONDS: "0"` — DCR `client_id`s never expire (avoids periodic re-auth outages)
-- `SAP_TRANSPORT: http-streamable` — HTTP transport for MCP
-- `SAP_BTP_DESTINATION` / `SAP_BTP_PP_DESTINATION` — placeholders, MUST be overridden
-- `SAP_PP_ENABLED: "true"` — per-user principal propagation
-- `SAP_PP_STRICT: "true"` — recommended PP-only topology; API-key/non-JWT tool calls are rejected
-- `SAP_XSUAA_AUTH: "true"` — XSUAA OAuth for MCP clients
-- `SAP_ALLOW_*: "false"` and `SAP_ALLOWED_PACKAGES: "$TMP"` — safe defaults; widen only as needed
-- `ARC1_UI: "off"` — experimental UI is not enabled by default. Set `ARC1_UI: "web"` in `mta-overrides.mtaext` or via `cf set-env` to mount the read-only console at `/ui`; HTTP UI mode requires XSUAA, OIDC, or an admin API key and every `/ui/*` request requires admin scope.
-
-### 4. Verify a healthy startup
-
-After the app starts, the startup log tells you immediately whether ARC-1 reached SAP and the SAP user
-has the right authorizations — **before** you connect an MCP client:
+Or build and deploy together:
 
 ```bash
+npm run btp:build-deploy-ext
+```
+
+The deployment creates/updates:
+
+- `arc1-mcp-server`, one 512 MB process by default;
+- XSUAA with ARC-1 scopes, templates, and seven space-qualified role collections;
+- Destination and Connectivity service instances and bindings; and
+- a health check on `/health`.
+
+The base application can start with no SAP target. This is intentional: the deployment owner does
+not have to create a fake destination or race destination setup.
+
+Verify platform state:
+
+```bash
+cf app arc1-mcp-server
+cf services
 cf logs arc1-mcp-server --recent
 ```
 
-Look for the two green-light lines (you can also read these in the **Logs** tab of the app in the BTP
-Cockpit):
+Expected result: one healthy process, bound `arc1-xsuaa`, `arc1-destination`, and
+`arc1-connectivity` services, and no startup validation error. A multi-target registry with zero
+targets is healthy-but-unconfigured, not ready for users.
 
-```
-INFO: Authorization probe: object search access is available
-INFO: Authorization probe: transport access is available
-```
+## 7. Set the stable OAuth DCR key
 
-`404`/`400` probe lines for optional features (abapGit, AMDP, RAP, UI5, …) are **expected and harmless**
-— they're logged at `debug`, not `warn`, and just mean those capabilities aren't installed. A clean
-startup has no `WARN` lines from probing. For the full annotated transcript, the green/red signals, and
-OAuth scope troubleshooting, see **[Log Analysis → What a Healthy Startup Looks Like](log-analysis.md#what-a-healthy-startup-looks-like)**.
-
----
-
-## Deployment Method 2: Docker
-
-### 1. Create BTP Services
+Do this once in a protected operator shell:
 
 ```bash
-# Login to Cloud Foundry
-cf login -a https://api.cf.us10-001.hana.ondemand.com
-
-# Create XSUAA service instance (for MCP client OAuth)
-cf create-service xsuaa application arc1-xsuaa -c xs-security.json
-
-# Create Destination service instance
-cf create-service destination lite arc1-destination
-
-# Create Connectivity service instance
-cf create-service connectivity lite arc1-connectivity
-```
-
-### 2. Configure Cloud Connector
-
-In the SAP Cloud Connector admin UI:
-
-1. Add a **Subaccount** connection to your BTP subaccount
-2. Under **Cloud To On-Premise** → **Access Control**:
-   - Add mapping: **Virtual Host** `a4h-abap` port `50000` → **Internal Host** `sap-host` port `50000`
-   - Protocol: HTTP
-   - Add resource: Path prefix `/sap/bc/adt/` with all sub-paths
-
-### 3. Configure BTP Destination
-
-In BTP Cockpit → Connectivity → Destinations → **New Destination**:
-
-| Property | Value |
-|----------|-------|
-| Name | `SAP_TRIAL` |
-| Type | HTTP |
-| URL | `http://a4h-abap:50000` |
-| Proxy Type | OnPremise |
-| Authentication | BasicAuthentication |
-| User | `SAP_SERVICE_USER` |
-| Password | (service account password) |
-
-Additional Properties:
-
-| Property | Value |
-|----------|-------|
-| `sap-client` | `001` |
-| `sap-language` | `EN` |
-
-### 4. Create manifest.yml
-
-```yaml
----
-applications:
-  - name: arc1-mcp-server
-    docker:
-      image: ghcr.io/arc-mcp/arc-1:latest
-    instances: 1
-    memory: 256M
-    disk_quota: 512M
-    health-check-type: http
-    health-check-http-endpoint: /health
-    env:
-      # SAP connection (URL must match Cloud Connector virtual host mapping)
-      SAP_URL: "http://a4h-abap:50000"
-      SAP_CLIENT: "001"
-      SAP_LANGUAGE: "EN"
-      SAP_INSECURE: "false"                    # Keep TLS verification on when SAP_URL uses HTTPS
-      # MCP transport (CF sets PORT env var automatically)
-      SAP_TRANSPORT: "http-streamable"
-      # BTP Destination Service — dual-destination pattern
-      SAP_BTP_DESTINATION: "SAP_TRIAL"         # BasicAuth (startup)
-      SAP_BTP_PP_DESTINATION: "SAP_TRIAL_PP"   # PrincipalPropagation (per-user)
-      SAP_PP_ENABLED: "true"
-      SAP_PP_STRICT: "true"                    # recommended strict default; set false for supported mixed mode
-      SAP_XSUAA_AUTH: "true"
-      # Safety: read-only by default. Widen one flag at a time per landscape (see the note below).
-      SAP_ALLOW_WRITES: "false"
-      SAP_ALLOW_FREE_SQL: "false"
-    services:
-      - arc1-xsuaa
-      - arc1-connectivity
-      - arc1-destination
-```
-
-!!! danger "Read-only is the prompt-injection backstop — widen deliberately"
-    ARC-1 feeds SAP-resident content (source, comments, error text) to the LLM, which then issues the next tool calls under the user's identity — a poisoned ABAP comment is an attack vector. `SAP_ALLOW_WRITES=false` and a tight `SAP_ALLOWED_PACKAGES` are the controls that hold *regardless of what the model decides*. Enable writes / free SQL / `SAP_ALLOWED_PACKAGES=*` only when the landscape genuinely needs it.
-
-!!! warning "`SAP_INSECURE: \"true\"` disables SAP TLS verification"
-    The bundled templates ship `SAP_INSECURE: "false"`. Only set it `"true"` in isolated development when you deliberately accept any SAP certificate. For internal CAs, keep verification enabled and supply the CA via `NODE_EXTRA_CA_CERTS`.
-
-### 5. Build and Push Docker Image
-
-```bash
-# Build for Linux (required for CF)
-docker build --platform linux/amd64 \
-  -t ghcr.io/your-org/arc1:latest \
-  --build-arg VERSION=$(git describe --tags --always) \
-  --build-arg COMMIT=$(git rev-parse --short HEAD) \
-  .
-
-# Login to container registry
-echo $GHCR_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
-
-# Push
-docker push ghcr.io/your-org/arc1:latest
-```
-
-### 6. Deploy to Cloud Foundry
-
-```bash
-# Push the app (first time)
-cf push
-
-# The app URL will be (route host = arc1-mcp-<space>, unique per CF space):
-# https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com
-```
-
-### 7. Configure authentication and the stable DCR key
-
-**Never put secrets in manifest.yml.** Set them via `cf set-env`:
-
-```bash
-# Stable DCR signing secret — keeps MCP client logins valid across redeploys.
-# Without it the key derives from the XSUAA clientsecret, which cf deploy rotates → invalid_client.
-# (ARC1_OAUTH_DCR_TTL_SECONDS already defaults to "0"/never-expire in mta.yaml; only set it to opt into a finite TTL.)
 cf set-env arc1-mcp-server ARC1_DCR_SIGNING_SECRET "$(openssl rand -base64 48)"
-
-# Restart to apply
-cf restart arc1-mcp-server
-```
-
-For the recommended topology, keep this PP instance strict and deploy API-key automation separately
-with `SAP_PP_ENABLED=false`, a least-privileged technical SAP identity, and its own safety ceiling.
-This separation is not mandatory. To run PP and API keys in one supported instance, configure
-`ARC1_API_KEYS` and set `SAP_PP_STRICT=false` explicitly; JWT calls use PP while API-key calls use
-the shared destination identity.
-
-See [Stable DCR signing key](xsuaa-setup.md#stable-dcr-signing-key-recommended) for why this matters and how to recover a client that's already stuck.
-
-For normal BTP-native deployments, `SAP_XSUAA_AUTH=true` in the manifest/MTA properties is the MCP authentication path. XSUAA uses the subaccount trust setup, which may show SAP Cloud Identity Services, SAP ID service, or a federated corporate IdP depending on your BTP trust configuration. Generic OIDC (`SAP_OIDC_ISSUER` / `SAP_OIDC_AUDIENCE`) is still supported for non-BTP identity-provider setups, but it is not required for XSUAA deployments.
-
-### 8. Verify Deployment
-
-```bash
-# Health check
-curl https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com/health
-# → {"status":"ok"}
-
-# Check Protected Resource Metadata (OAuth discovery)
-curl https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com/.well-known/oauth-protected-resource/mcp
-# → {"resource":"https://arc1-mcp-<space>.cfapps.../mcp","scopes_supported":["read","write","data","sql","admin"],...}
-
-# Check Authorization Server Metadata
-curl https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com/.well-known/oauth-authorization-server
-# → {"authorization_endpoint":"...","token_endpoint":"...","registration_endpoint":"...",...}
-
-# Test with a Bearer token from your MCP client's XSUAA login flow.
-curl -X POST -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' \
-  https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com/mcp
-```
-
-## Security headers and CORS on BTP
-
-**Helmet is on by default — no config needed.** Every HTTP response from a CF-deployed ARC-1 carries HSTS, CSP, X-Frame-Options, CORP, X-Content-Type-Options, Referrer-Policy, and a handful of legacy hardening headers. Cross-Origin-Opener-Policy is intentionally NOT set so popup-based OAuth flows (Microsoft Copilot Studio) keep working — see [Security Guide §11](security-guide.md#http-security-headers-helmet) for the rationale. Verify on the live deployment:
-
-```bash
-curl -sI https://<your-app>.cfapps.<region>.hana.ondemand.com/health | \
-  grep -iE 'strict-transport|content-security|cross-origin|x-content-type|x-frame'
-```
-
-**CORS is off by default.** All four supported MCP clients — Claude Desktop, Cursor, VS Code Copilot, Copilot Studio — use native HTTP, not the browser fetch API, so they don't trigger CORS regardless of how you connect them. Only set `ARC1_ALLOWED_ORIGINS` if you have a browser UI calling `/mcp` directly:
-
-```bash
-cf set-env arc1-mcp-server ARC1_ALLOWED_ORIGINS "https://your-ui.example.com"
 cf restage arc1-mcp-server
 ```
 
-Origins are comma-separated and must match exactly (no wildcards), because CORS responses are sent with `credentials: true`. Disallowed origins emit a `cors_rejected` audit event for triage. Full reference: [Security Guide §11](security-guide.md#11-network-security).
+The dedicated key keeps stateless MCP client registrations valid when an XSUAA binding secret
+rotates during later MTA deployments. Never commit the value, put it in the extension/MTAR, paste it
+into support material, or expose unredacted `cf env` output. Store it in the customer's approved
+secret process. Rotating it intentionally revokes every cached DCR registration.
 
-**Read-only UI.** This is experimental and off by default. Direct ARC-1 backend access at `https://<arc1-app>/ui/` is protected with bearer auth, so a normal browser address-bar request returns `401`. For browser access, deploy the optional SAP AppRouter module shipped in this repo. AppRouter handles the interactive XSUAA login, checks the ARC-1 admin scope, and forwards the user JWT to ARC-1.
+See [BTP Administration](btp-administration.md#dcr-signing-secret) for lifecycle and limitations.
 
-```bash
-# One-time per landscape, after creating mta-overrides.mtaext as described above:
-npm run btp:build-deploy-ui-ext
+## 8. Verify role collections before assigning users
 
-# Find the browser-facing route:
-cf app arc1-ui-router
-```
+As User and Role Administrator:
 
-Open the `arc1-ui-router` route in the browser. `/` and `/ui/` both lead to the UI. The signed-in user must be assigned the `ARC-1 Admin (<space>)` role collection; non-admin users are blocked by AppRouter before the request reaches ARC-1.
+1. Open **BTP Cockpit → Security → Role Collections**.
+2. Find all seven collections for the CF space, for example `ARC-1 Viewer (dev)` through
+   `ARC-1 Admin (dev)`.
+3. Open each collection and confirm its **Roles** tab contains the expected current
+   `arc1-mcp-<space>!t...` application role.
+4. Assign `ARC-1 Viewer (<space>)` to the initial test user before their first login.
 
-The extension file [`mta-ui-approuter.mtaext`](../mta-ui-approuter.mtaext) does two things: sets `ARC1_UI=web` on `arc1-mcp-server`, and activates the otherwise-excluded `arc1-ui-router` module. `npm run btp:deploy-ui-ext` first writes an ignored `mta-ui-deploy.mtaext` by merging your local `mta-overrides.mtaext` with that UI activation, then deploys with the generated single extension descriptor. This keeps landscape-specific values (destinations, route host, `xsappname`) intact on CF deploy plugins that only apply one extension file reliably. The base `mta.yaml` keeps the AppRouter excluded from Cloud Foundry builds, so default deployments still create only the ARC-1 backend app.
+Do not stop after seeing the role templates under **Roles**. Older/recreated XSUAA deployments can
+have missing or orphaned collections. A collection with an empty **Roles** tab grants nothing. See
+[XSUAA role administration](xsuaa-setup.md#step-3-assign-role-collections) for repair and IdP-origin
+details.
 
-For stricter network privacy, map the AppRouter to an internal/private route or put it behind your corporate access layer. The v1 UI is read-only and does not expose cached source bodies.
+## 9. Configure SAP connectivity and destinations
 
-## How BTP Connectivity Works
+The deployment owner can hand off these stable values now:
 
-ARC-1 auto-detects BTP Cloud Foundry via the `VCAP_APPLICATION` environment variable:
+- BTP subaccount and CF org/space;
+- ARC-1 route from `cf app arc1-mcp-server`;
+- selected topology and client number(s);
+- Cloud Connector virtual host/port convention;
+- destination names for `/mcp`, or destination marker contract for multi-target; and
+- initial role collection and acceptance user.
 
-1. **Public URL auto-detection:** ARC-1 reads `application_uris` from `VCAP_APPLICATION` to construct the externally reachable URL (used for RFC 8414/9728 OAuth metadata). Override with `ARC1_PUBLIC_URL` when ARC-1 is reached through a reverse proxy on a different hostname or under a base-path prefix — e.g. `cf set-env arc1-mcp-server ARC1_PUBLIC_URL "https://gateway.example.com/arc1"`. Without the override, OAuth metadata points at the CF route and clients bypass the proxy.
+For on-premise PP, complete [Principal Propagation Setup](principal-propagation-setup.md). It is the
+only canonical Cloud Connector/SAP certificate procedure. Expose `/sap/bc/adt` and required
+subpaths, not `/`; preserve backend TLS verification; and prove issuer-restricted certificate
+mapping in CERTRULE before testing ARC-1.
 
-2. **Destination Service (startup):** When `SAP_BTP_DESTINATION` is set, ARC-1 calls the Destination Service REST API directly at startup to read SAP credentials (user, password, URL). This works with BasicAuth destinations without a user JWT.
+Then create the destinations using [BTP Destination Reference](btp-destination-setup.md):
 
-3. **Destination Service (per-user):** When `SAP_PP_ENABLED=true` and a user has a valid JWT, ARC-1 uses the [SAP Cloud SDK](https://sap.github.io/cloud-sdk/docs/js/features/connectivity/destinations) `getDestination()` to resolve `SAP_BTP_PP_DESTINATION` with the user's JWT. The SDK handles service token acquisition, `X-User-Token` header injection, and per-user destination caching.
+- single target: the explicitly named startup and PP destinations in the extension;
+- multi-target: one subaccount destination per SAP system/client, normally PP, with
+  `sap-sysid`, `sap-client`, `Description`, and `arc1.enabled=true`.
 
-4. **Connectivity Proxy:** On-premise HTTP calls are routed through BTP's connectivity proxy (`connectivityproxy.internal.cf...`) using the `Proxy-Authorization` header with a connectivity service OAuth token.
-
-5. **Cloud Connector Location ID:** When a destination has `CloudConnectorLocationId` set (needed when multiple Cloud Connectors connect to the same subaccount), ARC-1 sends the `SAP-Connectivity-SCC-Location_ID` header to route to the correct Cloud Connector instance. This is propagated correctly in both startup and per-user flows.
-
-6. **Port:** CF sets the `PORT` environment variable (typically `8080`). ARC-1 defaults `ARC1_HTTP_ADDR` to `0.0.0.0:8080`.
-
-### Dual-Destination Pattern
-
-ARC-1 uses two BTP destinations for on-premise PP scenarios:
-
-| Destination | Auth Type | Used For | Config Var |
-|-------------|-----------|----------|------------|
-| Startup destination | BasicAuthentication | Feature probing and API-key calls in mixed mode | `SAP_BTP_DESTINATION` |
-| Per-user destination | PrincipalPropagation | Per-user requests with JWT | `SAP_BTP_PP_DESTINATION` |
-
-**Why two destinations?** A PrincipalPropagation destination has no User/Password. At startup (no user JWT available), the SDK's `getDestination()` would fail for PP destinations. The BasicAuth destination supports system-level startup operations and, when `SAP_PP_STRICT=false`, API-key calls in a supported mixed instance. With the base MTA's explicit `SAP_PP_STRICT=true`, MCP tool callers cannot use it as a shared identity.
-
-The destinations may point to the same SAP system but can differ in:
-- Authentication type (BasicAuth vs PP)
-- Cloud Connector port (HTTP 50000 vs HTTPS 50001 for PP)
-- Cloud Connector Location ID (different SCC instances)
-
-## Updating the Deployment
+Restart after multi-target destination additions or non-secret changes:
 
 ```bash
-# Build and push new image
-docker build --platform linux/amd64 -t ghcr.io/your-org/arc1:latest .
-docker push ghcr.io/your-org/arc1:latest
-
-# Restart CF app to pull latest image
-# Option A: Simple restart (picks up new image if tag is :latest)
-cf push arc1-mcp-server --docker-image ghcr.io/your-org/arc1:latest -c "/usr/local/bin/arc1"
-
-# Option B: If only env vars changed
 cf restart arc1-mcp-server
 ```
 
-> **Note:** When the Docker image ENTRYPOINT changes, CF may cache the old start command. Use `-c "/usr/local/bin/arc1"` to explicitly set the start command.
+For a discovered multi-target Basic destination only, `User`/`Password` rotation is request-time and
+needs no restart. A single-target `SAP_BTP_DESTINATION` is resolved at startup, so credential changes
+require restarting every app instance. Every non-secret multi-target field belongs to the immutable
+startup registry.
 
-## Client OAuth on BTP
+## 10. Verify the service in layers
 
-For production BTP deployments, use XSUAA OAuth:
-
-```bash
-cf set-env arc1-mcp-server SAP_XSUAA_AUTH true
-cf restart arc1-mcp-server
-```
-
-Then configure your MCP client to use the OAuth metadata exposed by ARC-1, as described in [XSUAA Setup](xsuaa-setup.md). If your subaccount trust is federated to Microsoft Entra ID, users may see a Microsoft login page; ARC-1 still validates XSUAA-issued tokens.
-
-### Connect a client
-
-Unlike a local install, nothing runs `npx` on your machine — every client points at the **same HTTPS endpoint** (your CF route + `/mcp`) and signs in through XSUAA. ARC-1 advertises Dynamic Client Registration (DCR), so DCR-capable clients — VS Code, Eclipse, Claude Code — need **only the URL**: they open a browser for the XSUAA login on first connect and cache the registration. There is no client id/secret to paste.
-
-Find your route with `cf app arc1-mcp-server`; it looks like:
-
-```text
-https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com/mcp
-```
-
-Below, `<your-arc1-route>/mcp` stands in for it.
-
-=== "GitHub Copilot — VS Code"
-
-    Create `.vscode/mcp.json` in your workspace (or run **MCP: Open User Configuration** from the Command Palette for a global setup). Note `type` is `http` here, not stdio:
-
-    ```json
-    {
-      "servers": {
-        "arc-1": {
-          "type": "http",
-          "url": "https://<your-arc1-route>/mcp"
-        }
-      }
-    }
-    ```
-
-    VS Code runs the OAuth/DCR handshake in a browser, then the `SAP*` tools appear in Copilot Chat **Agent** mode. (If your XSUAA setup blocks DCR, VS Code falls back to asking for a client ID/secret — see [XSUAA Setup](xsuaa-setup.md).)
-
-=== "GitHub Copilot — Eclipse"
-
-    Click the **GitHub Copilot** status-bar icon → **Edit Preferences** → expand **GitHub Copilot** → **MCP**, paste the config, then **Apply and Close**:
-
-    ```json
-    {
-      "servers": {
-        "arc-1": {
-          "type": "http",
-          "url": "https://<your-arc1-route>/mcp"
-        }
-      }
-    }
-    ```
-
-    Eclipse opens a browser for the XSUAA login and caches the DCR `client_id`. Eclipse does **not** silently re-register, but the base `mta.yaml` already gives it a non-expiring DCR client (`ARC1_OAUTH_DCR_TTL_SECONDS: "0"` is the default) — no extra configuration needed. If you overrode the TTL to a finite value, expect Eclipse to need a cache reset whenever a registration expires.
-
-    If a login later fails with `invalid_client`, the DCR signing secret rotated (or a finite-TTL registration expired) — delete Eclipse Copilot's MCP cache (`~/.config/github-copilot/copilot-eclipse.db`) and reconnect. Setting a stable [`ARC1_DCR_SIGNING_SECRET`](#7-configure-authentication-and-optional-fallback-keys) keeps registrations valid across redeploys.
-
-=== "Claude Code"
-
-    ```bash
-    claude mcp add --transport http arc-1 https://<your-arc1-route>/mcp
-    ```
-
-    Claude Code opens a browser for the XSUAA login. Add the ABAP [skills](skills.md) separately with `npx skills add arc-mcp/arc-1`. Other Claude surfaces (Desktop, claude.ai, Cowork) connect the same URL as a **custom connector** — see [Install in Claude](install-in-claude.md#remote-btp-cloud-foundry-custom-connector).
-
-## Troubleshooting
-
-### MTA deploy fails: "Lifecycle type cannot be changed from docker to buildpack"
-
-If migrating from a Docker-based deployment to MTA (Node.js buildpack), CF cannot change the lifecycle type of an existing app. Delete the old Docker app first:
+### Process and OAuth metadata
 
 ```bash
-cf delete arc1-mcp-server -f -r
-# Then redeploy
-npm run btp:deploy
+ROUTE="https://<route-from-cf-app>"
+curl -fsS "$ROUTE/health" | jq .
+curl -fsS "$ROUTE/.well-known/oauth-authorization-server" | jq .
 ```
 
-### App crashes with "unable to find user arc1"
+`/health` only proves process health. It does not prove that a destination is active, a user can map
+through PP, or SAP authorizes ADT.
 
-The Docker image user doesn't match what CF cached. Fix with explicit command:
-```bash
-cf push arc1-mcp-server --docker-image ghcr.io/your-org/arc1:latest -c "/usr/local/bin/arc1"
-```
+### Sign in and perform a safe read
 
-### SAP returns 401 "Logon failed"
+Configure the client with exactly one selected endpoint:
 
-- Check that the BTP Destination credentials are correct
-- Verify Cloud Connector mapping is active and healthy
-- Check that the virtual host in `SAP_URL` matches the Cloud Connector mapping
+| Mode | URL |
+|---|---|
+| Single target | `https://<route>/mcp` |
+| Pinned target | `https://<route>/A4H/100/mcp` |
+| Aggregate multi-target | `https://<route>/multi/mcp` |
 
-### Health check fails
+Use the Viewer identity. After OAuth:
 
-- Verify the app started: `cf logs arc1-mcp-server --recent`
-- Check memory (256M is sufficient for ARC-1)
-- Verify health check endpoint: `cf app arc1-mcp-server` should show `health-check-http-endpoint: /health`
+1. confirm the expected mutation-free/read-only tool catalog;
+2. for aggregate mode with more than one active target, call `SAPTargets` and select the exact
+   target; an Admin connection can inspect `SAPTargets` with zero, one, or many targets;
+3. call `SAPRead` with `type: "SYSTEM"`;
+4. call `SAPRead` with `type: "COMPONENTS"`; and
+5. call `SAPSearch` for one known object.
 
-### "connection refused" to SAP
+For PP, `SAPRead SYSTEM` must identify the human SAP user. A Destination Service success only proves
+one intermediate layer. SAP `401` usually points to certificate trust/mapping/logon; SAP `403` after
+successful login points to the propagated user's SAP authorization. For Basic, `SAPRead SYSTEM`
+must identify the destination's intended technical SAP user, while Admin `SAPTargets` must label the
+target `identity: "shared"`.
 
-- Verify Cloud Connector is connected to the BTP subaccount
-- Check Cloud Connector access control allows `/sap/bc/adt/*` paths
-- Verify `SAP_URL` matches the virtual host configured in Cloud Connector
+As Admin on multi-target, call `SAPTargets` and review zero/one/many behavior, registry revision,
+quarantined/disabled entries, duplicate/shadow warnings, and instance policy narrowing. There is no
+public or standalone `/targets` endpoint.
+
+### Add capability only after acceptance
+
+For a single-target instance, widen the application ceiling in the reviewed `.mtaext`, redeploy,
+assign the least-privilege XSUAA collection, and retest the negative boundary. Data, SQL, writes,
+transports, Git, and package scope are independent decisions.
+
+For multi-target v1, only named data preview and SQL can be added. They require both application
+ceilings and target-local destination opt-ins. Writes, activation, transport/Git mutations, ATC,
+ABAP Unit, SAPLint, plugins, UI, and hyperfocused mode remain unavailable.
+
+## 11. Handover and ongoing operation
+
+Before customer users connect, complete the
+[pre-customer acceptance checklist](btp-administration.md#pre-customer-acceptance). Record:
+
+- the reviewed Git revision and `.mtaext` desired state;
+- exact route, org/space, services, mode, instance count, target ownership, and role assignments;
+- DCR-key backup/rotation owner without recording the value in the ticket;
+- SAP/Cloud Connector evidence and the first successful safe reads;
+- concurrency/rate decisions and monitoring owner; and
+- the prior MTAR and mode-appropriate rollback procedure.
+
+Use [BTP Administration](btp-administration.md) for change/restart decisions, upgrades, role
+lifecycle, scaling, logging, incidents, and rollback. Multi-target registry/status codes and Basic
+lockout behavior remain in [Multi-Target Administration](multi-target-administration.md).
+
+## Advanced deployment alternatives
+
+The MTA path above is the supported BTP administrator journey because it keeps application and BTP
+service topology together. Docker and direct buildpack deployment can be useful for a custom base
+image, corporate CA bundle, or an organization with its own CF release pipeline, but then that
+pipeline owns service creation, bindings, route, role collections, health checks, exact version
+pinning, secret exclusion, and mode-specific scaling. Do not copy a generic `/mcp` manifest into a
+multi-target deployment without reproducing every startup invariant.
+
+For a container pipeline, start from [Docker Deployment](docker.md). Pin an exact ARC-1 version, not
+`:latest`, and use a dedicated customer manifest rather than treating the repository MTA and a
+manifest as two simultaneous desired-state sources.
 
 ## Deploying Without Docker (Node.js Buildpack)
 
-The MTA deployment (Method 1) already uses the Node.js buildpack. If you need a simpler deployment without MTA tooling, you can use `cf push` with a manifest file:
-
-### 1. Prepare the Application
+The shipped MTA already deploys a Node.js buildpack module; it does not require Docker. If you mean a
+manual `cf push` without MTA, build the runtime first and provide the same services/properties in a
+customer-owned manifest:
 
 ```bash
-# Clone and build
-git clone https://github.com/arc-mcp/arc-1.git
-cd arc-1
 npm ci
 npm run build
+cf push -f <reviewed-customer-manifest.yml>
 ```
 
-### 2. Create BTP services manually
+This is an advanced alternative. Validate it against `mta.yaml`, `xs-security.json`, the selected
+single/multi startup contract, the MTAR secret exclusions, and the acceptance checklist. A raw
+buildpack push does not create the seven MTA role collections for you.
 
-```bash
-cf create-service xsuaa application arc1-xsuaa -c xs-security.json
-cf create-service destination lite arc1-destination
-cf create-service connectivity lite arc1-connectivity
-```
+## Troubleshooting deployment
 
-### 3. Create a CF-specific manifest
+| Symptom | Check |
+|---|---|
+| MTA lifecycle type cannot change | Existing app was deployed through another lifecycle; use a separate beta space or an approved migration/rollback plan |
+| App has no target but is healthy | Expected for target-free base; configure explicit `/mcp` destinations or marked multi destinations |
+| Multi-target startup exits | Check XSUAA, Destination, Connectivity bindings and required mode invariants (`ARC1_CACHE=none`, standard tools, UI/plugins off) |
+| Multi-target is ready with zero active targets | Call Admin `SAPTargets`; health is not SAP readiness |
+| Role collection missing/empty | Perform full MTA deploy, inspect roles, remove/recreate orphaned collection if needed, then reassign |
+| OAuth `invalid_client` after deploy | Restore the intended DCR signing key or re-register clients; do not invent a new key on every deploy |
+| OAuth `invalid_scope` after a grant | On the failure page choose **Role assigned? Refresh access**, then reconnect the MCP client; verify the user's IdP origin if it persists |
+| SAP `401` through PP | Check generated user certificate, STRUST, trusted proxy, ICF logon, CERTRULE, and SU01 |
+| SAP `403` after PP login | Check the actual propagated user's SAP authorizations |
+| Destination change appears ignored | Restart every ARC-1 instance; only discovered multi-target Basic username/password fields are hot |
 
-```yaml
-# manifest-nodejs.yml
-applications:
-  - name: arc1-mcp-server
-    buildpacks:
-      - nodejs_buildpack
-    instances: 1
-    memory: 256M
-    disk_quota: 512M
-    health-check-type: http
-    health-check-http-endpoint: /health
-    command: node dist/index.js
-    env:
-      SAP_TRANSPORT: "http-streamable"
-      SAP_SYSTEM_TYPE: "auto"
-      SAP_BTP_DESTINATION: "SAP_TRIAL"
-      SAP_BTP_PP_DESTINATION: "SAP_TRIAL_PP"
-      SAP_PP_ENABLED: "true"
-      SAP_PP_STRICT: "true"
-      SAP_XSUAA_AUTH: "true"
-      # read-only by default — widen per landscape
-      SAP_ALLOW_WRITES: "false"
-      SAP_ALLOW_FREE_SQL: "false"
-    services:
-      - arc1-xsuaa
-      - arc1-connectivity
-      - arc1-destination
-```
+## Official references
 
-### 4. Deploy
-
-```bash
-cf push -f manifest-nodejs.yml
-```
-
-**Notes:**
-- `better-sqlite3` native module is compiled during staging — may add 30-60s to deploy
-- You can modify source before pushing (custom tool descriptions, additional middleware, etc.)
-- Prefer MTA deployment for production — it bundles service creation and is reproducible
-
-### 5. Customization Examples
-
-**Custom CA certificates** — for on-premise SAP with self-signed certs:
-
-```bash
-# Set NODE_EXTRA_CA_CERTS to a bundled cert file
-cf set-env arc1-mcp-server NODE_EXTRA_CA_CERTS /home/vcap/app/certs/sap-ca.pem
-```
-
-## Deploying for BTP ABAP Environment
-
-For connecting to a BTP ABAP Environment (instead of on-premise), see the separate manifest template `manifest-btp-abap.yml` and the [BTP ABAP Environment guide](btp-abap-environment.md).
-
-Key differences from on-premise deployment:
-- No Cloud Connector or Connectivity Service needed
-- Auth is via a BTP Destination with `Authentication=OAuth2UserTokenExchange`
-- `SAP_PP_ENABLED=true` is still used in ARC-1 to select the per-user destination path; the destination returns an ABAP bearer token instead of Cloud Connector PP headers
-- Set `SAP_SYSTEM_TYPE=btp` for adapted tool descriptions
-- Do not set `SAP_BTP_SERVICE_KEY` on the CF app. Use the ABAP service key only to create/update the destination's OAuth client settings.
-
-## Multiple SAP systems — one front door
-
-ARC-1 is **one instance per SAP system** by design. If you deploy several (DEV / QA / PROD, or different
-releases), you don't have to configure N servers in every MCP client. [`arc-mcp-hub`](https://github.com/arc-mcp/mcp-hub)
-— a separate, open-source CF app deployed in the **same subaccount** — puts them behind **one URL and one
-login**, with path-scoped routes (`/dev/mcp`, `/qa/mcp`, …) so a client can't cross systems by accident.
-Each call still runs as the real user via principal propagation, and an optional `/all/mcp` endpoint
-exposes every system through a single tool set + a `system` parameter (one tool set, not N×).
-
-!!! tip "Setup, how it works, and troubleshooting are on a dedicated page"
-    See **[Multi-System Hub (mcp-hub)](multi-system-hub.md)** for the architecture, the per-backend grant
-    chain (destination → `granted-apps` → hub role-template → role collection), the `/all` endpoint, and a
-    troubleshooting table. The most common trap is an incomplete grant chain → the client connects but
-    shows **0 tools**.
-
-## SAP Documentation References
-
-- [SAP BTP Cloud Foundry Environment](https://help.sap.com/docs/btp/sap-business-technology-platform/cloud-foundry-environment) — CF runtime overview
-- [SAP Cloud Connector Installation](https://help.sap.com/docs/connectivity/sap-btp-connectivity-cf/installation) — Cloud Connector setup
-- [SAP Destination Service](https://help.sap.com/docs/connectivity/sap-btp-connectivity-cf/calling-destination-service-rest-api) — Destination lookup API
-- [SAP Cloud SDK — Destinations](https://sap.github.io/cloud-sdk/docs/js/features/connectivity/destinations) — SDK destination resolution
-- [SAP Cloud SDK — On-Premise Connectivity](https://sap.github.io/cloud-sdk/docs/js/features/connectivity/on-premise) — Cloud Connector proxy headers
-- [HTTP Proxy for On-Premise Connectivity](https://help.sap.com/docs/CP_CONNECTIVITY/b865ed651e414196b39f8922db2122c7/d872cfb4801c4b54896816df4b75c75d.html) — Proxy headers, Location ID
-- [Configure PP via User Exchange Token](https://help.sap.com/docs/CP_CONNECTIVITY/cca91383641e40ffbe03bdc78f00f681/39f538ad62e144c58c056ebc34bb6890.html) — Option 1 vs Option 2
-- [Destination Authentication Methods](https://help.sap.com/docs/btp/best-practices/destination-authentication-methods) — BTP Best Practices
-- [SAP BTP Docker Deployment](https://help.sap.com/docs/btp/sap-business-technology-platform/deploy-docker-images-in-cloud-foundry-environment) — Docker on CF
+- [SAP: Deploying Applications](https://help.sap.com/docs/btp/btp-admin-guide/deploying-applications)
+- [SAP: Defining MTA Extension Descriptors](https://help.sap.com/docs/btp/sap-business-technology-platform/defining-mta-extension-descriptors)
+- [SAP: Destination Service](https://help.sap.com/docs/connectivity/sap-btp-connectivity-cf/destination-service)
+- [SAP: Working with Role Collections](https://help.sap.com/docs/btp/sap-business-technology-platform/working-with-role-collections)
+- [Cloud Foundry: Start, Restart, and Restage](https://docs.cloudfoundry.org/devguide/deploy-apps/start-restart-restage.html)

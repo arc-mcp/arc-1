@@ -12,7 +12,9 @@ As an **admin**, you control what the AI can and cannot do via positive-opt-in f
 - Package allowlist restricts writes to `$TMP`, `Z*`, or any pattern
 - `SAP_DENY_ACTIONS` blocks individual actions (e.g. `SAPWrite.delete`) for admins who need a finer scalpel
 - Every tool call audited with user identity; per-user scopes (via XSUAA role collections, OIDC JWTs, or API-key profiles) tighten further
-- **Layered rate limiting** out of the box — per-IP OAuth edge, per-user MCP quota, server-wide SAP-bound semaphore with `Retry-After` honoring. See the [Rate Limiting Guide](rate-limiting.md).
+- **Layered rate limiting** out of the box — separate per-IP OAuth and MCP HTTP edge buckets,
+  optional per-user MCP quota, and a server-wide SAP-bound semaphore with `Retry-After` honoring.
+  See the [Rate Limiting Guide](rate-limiting.md).
 
 ## Quick Start
 
@@ -222,7 +224,12 @@ For production, combine conservative tool exposure with real user identity, SAP-
 | [cli-guide.md](cli-guide.md) | CLI commands and configuration |
 | [docker.md](docker.md) | Full Docker reference |
 | [btp-abap-environment.md](btp-abap-environment.md) | BTP ABAP Environment — local service-key OAuth and deployed per-user destination setup |
-| [btp-cloud-foundry-deployment.md](btp-cloud-foundry-deployment.md) | BTP Cloud Foundry deployment details |
+| [btp-cloud-foundry-deployment.md](btp-cloud-foundry-deployment.md) | Canonical BTP Cloud Foundry MTA deployment and read-only acceptance runbook |
+| [btp-overview.md](btp-overview.md) | Start here for SAP BTP topology selection and the correct setup/documentation sequence |
+| [btp-administration.md](btp-administration.md) | BTP configuration ownership, roles, secrets, lifecycle, scaling, rollback, and handover |
+| [multi-target-setup.md](multi-target-setup.md) | Build, deploy, configure, and verify experimental read-only multi-system mode |
+| [multi-target-administration.md](multi-target-administration.md) | Multi-target diagnostics, registry lifecycle, capacity, and security operations |
+| [operations.md](operations.md) | Operational task map for BTP, Docker, updates, logging, limits, caching, auth testing, and incidents |
 | [sap-trial-setup.md](sap-trial-setup.md) | SAP BTP trial setup |
 | [roadmap.md](roadmap.md) | Planned features |
 | [blog-series.md](blog-series.md) | Long-form blog series — AI for ABAP development, ARC-1 design, BTP / Copilot Studio / Joule walkthroughs |

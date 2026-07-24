@@ -1,5 +1,23 @@
 # Updating ARC-1
 
+## Experimental destination-discovered multi-target migration
+
+The unreleased PR #543 prototype setting `SAP_BTP_DESTINATIONS` is intentionally rejected. Replace
+it with `ARC1_MULTI_TARGET_ENDPOINTS=true`, mark each eligible BTP subaccount destination with
+`arc1.enabled=true`, and provide the standard `sap-sysid` and `sap-client` destination properties.
+Routes are now `/<SYSTEM-OR-ALIAS>/<CLIENT>/mcp` and `/multi/mcp`; destination-name routes and a
+discovered default `/mcp` alias do not exist. The optional `arc1.target_alias` distinguishes
+independent systems that reuse a real SID/client. Per-destination data/SQL policy lives in `arc1.*`
+destination properties, not `SAP_*_<DEST>` environment variables. See
+[Multi-System Setup](multi-target-setup.md), then
+[Multi-Target Administration](multi-target-administration.md) for diagnostics and operations.
+
+The base `mta.yaml` is now target-free: all single-target settings and the experimental multi-target
+block are commented examples. Existing deployments remain compatible because ARC-1 still reads the
+same explicit environment variables or MTA extension values. Before updating a deployment that
+previously relied on active values from the repository template, copy those values into your own
+deployment-specific `.mtaext` or CF environment.
+
 ## Cache warmup removal
 
 ARC-1 no longer performs a startup TADIR scan or keeps repository-wide node/edge indexes. The normal request-driven memory/SQLite cache remains, and `SAPContext(action="usages")` now queries SAP's live where-used index with the current caller's identity.
@@ -21,10 +39,10 @@ deployments.
 - Custom deployments with PP enabled but no Destination Service runtime configuration will now return
   an MCP tool error for JWT requests instead of silently using the shared client.
 - API-key / non-JWT requests still use the shared client unless `SAP_PP_STRICT=true` is set explicitly.
-- The shipped BTP `mta.yaml` now sets `SAP_PP_STRICT=true`, making new and updated base-MTA
-  deployments PP-only by default. Existing combined deployments can preserve supported mixed
-  operation by setting `SAP_PP_STRICT=false` explicitly before updating; separating API-key
-  automation into a non-PP instance remains the recommendation, not a requirement.
+- The shipped BTP `mta.yaml` shows `SAP_PP_STRICT=true` in the commented strict-PP example. Existing
+  combined deployments can preserve supported mixed operation by setting `SAP_PP_STRICT=false`
+  explicitly; separating API-key automation into a non-PP instance remains the recommendation, not
+  a requirement.
 
 The application still starts and `/health` remains successful when a runtime-only PP mapping is broken.
 Before rolling the version into production, make one JWT-authenticated SAP read in staging and verify
@@ -96,9 +114,9 @@ Users assigned to `ARC-1 Developer` role collection automatically gain transport
 #### BTP Cloud Foundry
 
 1. Update `xs-security.json` in your repo (already done in the ARC-1 v0.7 release).
-2. Redeploy the XSUAA service: `cf update-service arc1-xsuaa -c xs-security.json`.
-3. Users keep the same role-collection assignments — no BTP admin action needed unless you want to customize role templates.
-4. Redeploy the app: `npm run btp:build-deploy-ext` (or `mbt build && cf deploy mta_archives/arc1-mcp_*.mtar -e mta-overrides.mtaext`). If you don't have a `mta-overrides.mtaext` yet, copy it from the tracked `mta-overrides.mtaext.example` first; the base `mta.yaml` ships with placeholder destinations that fail fast on purpose.
+2. Redeploy the XSUAA service: `cf update-service arc1-xsuaa -c xs-security.json`. This updates scopes and role templates, but does not create role collections from `mta.yaml`.
+3. Run the full MTA deployment: `npm run btp:build-deploy-ext` (or `mbt build && cf deploy mta_archives/arc1-mcp_*.mtar -e mta-overrides.mtaext`). If you don't have a `mta-overrides.mtaext` yet, copy it from the tracked `mta-overrides.mtaext.example` first. The base `mta.yaml` is deliberately target-free; the extension preserves the existing single-target names or enables multi-target mode explicitly.
+4. In BTP Cockpit, verify that all seven `ARC-1 … (<space>)` role collections exist and contain roles. Existing assignments survive, but collections added after an older deployment are not created by `cf update-service` alone and must be assigned explicitly.
 5. Test with a developer user: `SAPTransport(action=check)` should succeed with a read-scoped user now; `SAPTransport(action=create)` should succeed for users in `ARC-1 Developer`.
 
 ### Debugging the new model
@@ -187,63 +205,78 @@ docker run -d --name arc1 -p 8080:8080 --env-file .env ghcr.io/arc-mcp/arc-1:0.6
 
 ## BTP Cloud Foundry
 
-CF supports rolling updates natively — no manual stop/start.
+Use the reviewed MTA and customer `.mtaext` described in
+[BTP Cloud Foundry Deployment](btp-cloud-foundry-deployment.md). Before deploying, classify the SAP
+identity mode; it determines whether process overlap is safe.
 
-### Step 1 — update image tag in `manifest.yml`
+| Mode | Update strategy |
+|---|---|
+| Single target | Rolling may be used when release notes and stateful-operation tests allow it |
+| Multi-target, PP only | Rolling may be used when old/new versions are compatible |
+| Multi-target with any shared Basic destination | **Non-rolling stop/deploy/start; exactly one process** |
+| Mixed multi-target PP + Basic | Basic restriction governs the entire application |
 
-<!-- x-release-please-start-version -->
-```yaml
-applications:
-  - name: arc1-mcp-server
-    docker:
-      image: ghcr.io/arc-mcp/arc-1:0.9.27   # ← update this
-```
-<!-- x-release-please-end -->
-
-### Step 2 — rolling push
+### Single-target or PP-only multi-target
 
 ```bash
-cf push arc1-mcp-server --strategy rolling
-```
-
-Starts a new instance with the new image, waits for health checks, then stops the old one. MCP clients see no interruption.
-
-### Step 3 — verify
-
-```bash
+git fetch origin
+git checkout <reviewed-tag-or-commit>
+npm ci
+npm run btp:validate
+npm run btp:build-deploy-ext
 cf app arc1-mcp-server
-cf logs arc1-mcp-server --recent | grep "auth:"
-curl -s https://arc1-mcp-<space>.cfapps.us10.hana.ondemand.com/mcp
+cf logs arc1-mcp-server --recent
 ```
 
-### Rollback
+An organization's release pipeline may use rolling/blue-green deployment for these modes after
+compatibility testing. Verify every process sees the same multi-target registry revision and include
+all processes in the SAP concurrency calculation.
+
+### Multi-target shared Basic
+
+The lockout/credential-generation guard is process-local. Rolling or blue-green replacement can
+temporarily run old and new processes together and is therefore not allowed, even when the desired
+instance count is one. Use a maintenance window:
 
 ```bash
-# Option 1 — re-push previous tag
-# Update manifest.yml back, then:
-cf push arc1-mcp-server --strategy rolling
-
-# Option 2 — previous droplet
-cf rollback arc1-mcp-server
+cf stop arc1-mcp-server
+git checkout <reviewed-tag-or-commit>
+npm ci
+npm run btp:validate
+npm run btp:build-deploy-ext
+cf scale arc1-mcp-server -i 1
+cf start arc1-mcp-server
+cf app arc1-mcp-server
 ```
 
-### BTP specifics
+The normal MTA deploy may already start the app. The final check must show exactly one desired and
+running process before clients reconnect. Do not pass a rolling strategy and do not use a blue-green
+MTA deployment for this mode.
 
-- **Destination Service / Cloud Connector:** infrastructure config, not part of the image. No action on version bump.
-- **XSUAA bindings:** persist across restages. No re-binding needed.
-- **New required env vars in the release?** Set before pushing:
-  ```bash
-  cf set-env arc1-mcp-server NEW_VAR value
-  cf push arc1-mcp-server --strategy rolling
-  ```
-- **Scaled > 1 instance (`cf scale -i 2`):** rolling update handles each instance sequentially.
+### Verification and rollback
+
+For every mode:
+
+1. confirm process health and the exact deployed version in startup logs;
+2. inspect all expected XSUAA role collections/roles after a security-descriptor change;
+3. obtain a fresh token when roles changed;
+4. for multi-target, inspect Admin `SAPTargets` and registry revision; and
+5. perform one Viewer `SAPRead SYSTEM` and verify the intended SAP identity.
+
+Keep the previous reviewed MTAR, `.mtaext`, and DCR signing secret available. Roll back through the
+same strategy as the update. Shared Basic rollback is also stop/deploy/start and must finish at one
+process. See [BTP Administration](btp-administration.md#deployment-and-scaling-by-identity-mode).
 
 ### Keeping MCP clients signed in across updates
 
 Updating the image is invisible to connected MCP clients **as long as the OAuth DCR signing key doesn't change** — they keep their cached `client_id` and reconnect on their own. How you deploy decides that:
 
-- **`cf push` with a new image tag (recommended):** reuses the existing XSUAA binding, so the `clientsecret` — and the DCR signing key derived from it — is unchanged. Cached `client_id`s stay valid; clients reconnect with no re-auth.
-- **MTA `cf deploy`, or `cf unbind`/`cf bind` of XSUAA:** recreates the binding and **rotates the `clientsecret`**, which by default rotates the DCR signing key and invalidates every cached `client_id`. Clients then hit `invalid_client` — most re-register automatically, but Eclipse Copilot and Cursor need a one-time manual reset (see [Recovering a stuck client](xsuaa-setup.md#recovering-a-stuck-client)).
+- **The signing key remains stable:** cached stateless DCR `client_id`s remain valid across restart,
+  push, restage, cell replacement, and scale-out.
+- **The signer falls back to XSUAA `clientsecret`:** an MTA redeploy/rebind that rotates that secret
+  also invalidates DCR clients.
+- **A dedicated `ARC1_DCR_SIGNING_SECRET` is configured:** XSUAA binding rotation no longer revokes
+  DCR clients. Rotate the dedicated key only for intentional global revocation.
 
 **To make even MTA redeploys seamless, set a stable DCR signing key once** (via `cf set-env`, which survives deploys):
 
@@ -255,7 +288,9 @@ cf restage arc1-mcp-server
 
 After this the signing key no longer tracks the rotating `clientsecret`, so no deploy invalidates client registrations. See [Stable DCR signing key](xsuaa-setup.md#stable-dcr-signing-key-recommended).
 
-Other restart side effects are benign: in-flight requests during the instance swap are retried by the client (a `--strategy rolling` push avoids even that). Deployments that explicitly use `ARC1_CACHE=sqlite` preserve and ETag-revalidate the on-disk source cache, so they avoid a cold-cache penalty.
+Do not put the key in the MTAR or customer extension, and do not paste unredacted `cf env` output in
+support material. Restart behavior and cache effects remain mode-specific; multi-target requires
+`ARC1_CACHE=none`.
 
 ---
 

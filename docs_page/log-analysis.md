@@ -37,16 +37,21 @@ The file sink always receives ALL events regardless of stderr level.
 
 ## Event Types
 
-| Event | Level | Description |
-|-------|-------|-------------|
-| `tool_call_start` | info | MCP tool call received |
-| `tool_call_end` | info/error | Tool call completed (with status, duration, error details) |
-| `http_request` | debug/warn | HTTP request to SAP ADT |
-| `http_csrf_fetch` | debug | CSRF token fetch |
-| `auth_scope_denied` | warn | Tool blocked by insufficient auth scope |
-| `auth_pp_created` | info/error | Per-user ADT client created via principal propagation |
-| `safety_blocked` | warn | Operation blocked by safety system |
-| `server_start` | info | ARC-1 server started |
+The exact event inventory and field contract is maintained in
+[Security Guide: What Gets Logged](security-guide.md#what-gets-logged). Important operator groups
+include:
+
+| Group | Events |
+|-------|--------|
+| Tool and SAP HTTP lifecycle | `tool_call_start`, `tool_call_end`, `http_request`, `http_csrf_fetch` |
+| Authorization and safety | `auth_scope_denied`, `safety_blocked`, `auth_rate_limited`, `mcp_rate_limited` |
+| Selected identity | `auth_pp_created`, `auth_shared_created` |
+| Multi-target failure stage | `target_resolution_failed`, `pp_exchange_failed`, `shared_auth_failed`, `cloud_connector_access_denied`, `sap_service_unavailable`, `sap_authentication_failed`, `sap_authorization_failed`, `target_policy_denied` |
+| Server/client protocol | `server_start`, OAuth/DCR, and CORS events |
+
+Within a selected multi-target call, use `requestId` to correlate events and `target`, `destination`,
+and `identity` to identify the selected route and identity model. Failure-stage events also carry a
+safe `errorCode`; they do not contain destination credentials or SAP response bodies.
 
 ## What a Healthy Startup Looks Like
 
@@ -145,6 +150,27 @@ jq 'select(.event == "tool_call_end" and .status == "error")' arc1-audit.jsonl
 jq -s '[.[] | select(.event == "tool_call_end" and .status == "error")] | group_by(.errorClass) | map({errorClass: .[0].errorClass, count: length})' arc1-audit.jsonl
 ```
 
+### Multi-Target Failures
+
+```bash
+# Every selected-target failure stage
+jq 'select(.event as $e | ["target_resolution_failed", "pp_exchange_failed", "shared_auth_failed", "cloud_connector_access_denied", "sap_service_unavailable", "sap_authentication_failed", "sap_authorization_failed", "target_policy_denied"] | index($e))' arc1-audit.jsonl
+
+# One public target across identity, policy, and SAP failure stages
+jq 'select(.target == "A4H/100" and .errorCode? != null)' arc1-audit.jsonl
+
+# Failure counts by safe error code
+jq -s '[.[] | select(.errorCode? != null) | .errorCode] | group_by(.) | map({errorCode: .[0], count: length}) | sort_by(-.count)' arc1-audit.jsonl
+
+# Successful shared-identity canaries, grouped by destination
+jq -s '[.[] | select(.event == "auth_shared_created")] | group_by(.destination) | map({destination: .[0].destination, successes: length})' arc1-audit.jsonl
+```
+
+`target` is the public SID/client or alias/client ID, while `destination` is the internal BTP
+destination name. `identity` distinguishes `per-user` Principal Propagation from a `shared` Basic
+technical user. Correlate the failure-stage event with the same `requestId`'s `tool_call_end`; do not
+expect raw SAP response bodies in these events.
+
 ### Bad/Wrong Tool Calls (for improving LLM feedback)
 
 ```bash
@@ -192,12 +218,18 @@ jq -s '[.[] | select(.event == "http_request")] | group_by(.requestId) | map({re
 # Failed HTTP requests (4xx/5xx)
 jq 'select(.event == "http_request" and .statusCode >= 400)' arc1-audit.jsonl
 
-# HTTP requests with redacted error-body placeholders
+# Non-authentication failures for which a redacted error-body placeholder was retained
 jq 'select(.event == "http_request" and .errorBody != null)' arc1-audit.jsonl
 
 # Most common ADT paths called
 jq -s '[.[] | select(.event == "http_request") | .path] | group_by(.) | map({path: .[0], count: length}) | sort_by(-.count) | .[:10]' arc1-audit.jsonl
 ```
+
+The `errorBody` query deliberately excludes SAP HTTP 401 and 403 responses. Those bodies can expose
+technical usernames, echoed login material, or SAP security details, so ARC-1 omits them even when
+`ARC1_LOG_HTTP_DEBUG=true`. Use the status code, selected-target failure event, `errorCode`, and
+`requestId` instead. Other error bodies are replaced with a length-only redacted placeholder before
+sink writes; their content is never present in the audit file.
 
 ### User Activity
 
@@ -211,9 +243,11 @@ jq 'select(.event == "tool_call_start" and .user == "john.doe@company.com")' arc
 
 ## BTP Audit Log Service
 
-When deployed on BTP with the Audit Log Service premium plan bound, ARC-1 automatically sends audit events to the BTP Audit Log Viewer. Events are categorized as:
+When deployed on BTP with the Audit Log Service premium plan bound, ARC-1 automatically forwards
+categorized security and tool-call events to the BTP Audit Log Viewer. Low-level HTTP, startup, and
+elicitation events remain in stderr/file logs. Forwarded events are categorized as:
 
-- **security-events**: auth failures, scope denials, safety blocks
+- **security-events**: auth/target/service failures, scope denials, safety blocks, shared-identity use
 - **data-accesses**: tool calls that read SAP data (SAPRead, SAPSearch, SAPQuery)
 - **data-modifications**: tool calls that write data (SAPWrite, SAPManage)
 - **configuration-changes**: transport and activation operations (SAPTransport, SAPActivate)

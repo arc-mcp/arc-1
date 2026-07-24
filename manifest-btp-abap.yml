@@ -16,8 +16,8 @@
 #   URL=<service-key url>, tokenServiceURL=<service-key uaa.url>/oauth/token,
 #   clientId=<service-key uaa.clientid>, clientSecret=<service-key uaa.clientsecret>
 #
-# See docs/btp-abap-environment.md for full setup guide.
-# See docs/deployment-best-practices.md for architecture guidance.
+# See docs_page/btp-abap-environment.md for full setup guide.
+# See docs_page/deployment-best-practices.md for architecture guidance.
 
 applications:
   - name: arc1-btp-abap

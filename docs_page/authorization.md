@@ -384,14 +384,14 @@ XSUAA caches the user's authorities in their browser session. When you change ro
 
 To force fresh scopes immediately:
 
-1. **Log out of XSUAA** in the same browser the MCP client uses:
-   `https://<your-xsuaa-tenant>.authentication.<region>.hana.ondemand.com/logout.do`
-2. **Log out of the IAS / business-users IdP** if you use one:
-   `https://<your-ias-tenant>.accounts.ondemand.com/logout`
-3. In your MCP client (Claude.ai, Cursor, MCP Inspector): **disconnect** the connector and **re-add** it - this triggers a fresh DCR + OAuth flow.
-4. Optional: complete the OAuth login in a fresh browser / private window to guarantee no SSO session is reused.
+1. If sign-in failed with `invalid_scope`, have an administrator assign the correct ARC-1 role collection under the identity provider used for login.
+2. On ARC-1's failure page, select **Role assigned? Refresh access**. ARC-1 sends the browser through XSUAA's logout endpoint with its bound client ID and a fixed, allowlisted return URL.
+3. After **Access refreshed** appears, return to the MCP client and disconnect/reconnect or retry sign-in. A new identity-provider login may be required.
+4. If the deployment predates this recovery action, retry in a private browser window or clear the XSUAA-domain cookies manually. See [XSUAA Setup → invalid_scope](xsuaa-setup.md#insufficient-scope-invalid_scope).
 
 After that, the new JWT will be issued from a fresh session and carry only the user's currently assigned scopes. You can verify by reading the JWT at [jwt.ms](https://jwt.ms) - the `scope` claim should match the role collection's scopes.
+
+The recovery action does not revoke access tokens already issued to other sessions. Do not construct a logout URL from request parameters or use an arbitrary redirect: XSUAA application logout requires an allowlisted redirect to prevent open redirects.
 
 ### "I have two `marian@example.com` users in BTP and only one shows the role I changed"
 
@@ -422,3 +422,5 @@ Assigning under only `sap.default` while logging in via the IAS tenant is the si
 - [Principal Propagation Setup](principal-propagation-setup.md) - per-user SAP identity
 - [Security Guide](security-guide.md) - production hardening
 - [Updating](updating.md) - migration from v0.6
+- [Cloud Foundry UAA: Session Management](https://docs.cloudfoundry.org/api/uaa/index.html#session-management) - `/logout.do` parameters and behavior
+- [SAP: Configure Redirect URLs for Browser Logout](https://help.sap.com/docs/btp/sap-business-technology-platform/configure-redirect-urls-for-browser-logout) - logout redirect allowlisting

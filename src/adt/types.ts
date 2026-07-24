@@ -336,7 +336,7 @@ export interface ServerDrivenObjectMetadata {
   createdAt?: string;
 }
 
-/** Result of getServerDrivenObject — metadata plus the AFF JSON source (parsed when JSON). */
+/** Result of getServerDrivenObject — metadata plus the source (AFF JSON, parsed when JSON; else DDL text). */
 export interface ServerDrivenObjectResult extends ServerDrivenObjectMetadata {
   source: unknown;
 }

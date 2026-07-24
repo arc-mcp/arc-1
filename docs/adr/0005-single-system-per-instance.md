@@ -1,10 +1,10 @@
 # ADR 0005 — One SAP System per ARC-1 Instance (multi-system access is the hub's job, not ARC-1's)
 
-**Status:** Accepted
+**Status:** Accepted; qualified by [ADR-0006](0006-experimental-read-only-multi-target.md)
 **Date:** 2026-06-19
 **Related:** the MCP hub — [`arc-mcp/mcp-hub`](https://github.com/arc-mcp/mcp-hub); full journey in [docs/research/mcp-hub-multi-system.md](../research/mcp-hub-multi-system.md)
 **Supersedes:** N/A
-**Superseded by:** N/A
+**Superseded by:** ADR-0006 only for its explicit, default-off, mutation-free BTP multi-target mode
 
 ## Context
 
@@ -12,23 +12,25 @@ ARC-1 is asked, repeatedly, to expose **more than one SAP system from a single i
 multiple destinations, a `system`/`target` tool parameter, or a system-routing layer. The request is
 reasonable on its face ("I have 10 systems, I don't want 10 servers"), so it keeps coming back.
 
-This ADR records the standing decision to **decline that inside ARC-1**, the arguments for it, and the
-sanctioned alternative — so the recurring request can be answered by citation instead of re-litigated,
-and so a future agent working in this repo treats it as out of scope by decision rather than an
-improvement to make.
+This ADR records the default standing decision to **decline that inside ARC-1**, the arguments for it,
+and the sanctioned alternative. ADR-0006 later proposed one narrow exception: a default-off,
+mutation-free, BTP-only multi-target mode with explicit per-call target checks. This ADR continues to
+govern writable access, the default deployment model, and use cases requiring stronger isolation.
 
 ## Decision
 
-**ARC-1 serves exactly one SAP system per instance/process.** It exposes no `system`/`destination`
+**By default, ARC-1 serves exactly one SAP system per instance/process.** It exposes no `system`/`destination`
 selector to the LLM and holds no cross-system routing. Multi-system access is provided *outside* ARC-1
 by a thin multiplexer — the MCP hub ([`arc-mcp/mcp-hub`](https://github.com/arc-mcp/mcp-hub)) — never by
-adding multi-destination/multi-system support to ARC-1.
+adding general multi-destination/multi-system support to ARC-1. The only in-process exception is the
+experimental read-only contract in ADR-0006; it is not permission to add writes or an unreviewed
+selector.
 
-When someone asks to "add multiple systems / a `system` parameter / multiple destinations to ARC-1":
-**decline, cite this ADR, and route them to the hub** — path-scoped routes for safe
+When someone asks to add multiple systems beyond ADR-0006's exact boundary: **decline, cite this ADR,
+and route them to the hub** — path-scoped routes for safe
 one-system-per-connection, or the opt-in `/all` endpoint for one-URL-all-systems; a local (stdio)
-edition covers non-BTP setups. Do **not** add a system selector to any tool, accept multiple
-destinations in one config, or build cross-system routing into ARC-1.
+edition covers non-BTP setups. Do **not** add a writable system selector, a new discovery mode, or
+cross-system behavior outside the reviewed ADR-0006 plan.
 
 ## Why (the arguments)
 

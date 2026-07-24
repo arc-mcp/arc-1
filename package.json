@@ -48,6 +48,7 @@
     "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc && node -e \"const fs=require('fs');fs.cpSync('src/aff/schemas','dist/aff/schemas',{recursive:true});if(fs.existsSync('public/ui'))fs.cpSync('public/ui','dist/public/ui',{recursive:true})\"",
     "dev": "tsx src/index.ts",
     "dev:http": "npm run build && tsx src/index.ts --transport http-streamable",
+    "docs:serve": "mkdocs serve --dev-addr 127.0.0.1:8000",
     "start": "node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -121,6 +122,7 @@
     "zod": "^4.3.6"
   },
   "overrides": {
+    "@hono/node-server": "2.0.10",
     "esbuild": "^0.28.1",
     "form-data": "^4.0.6",
     "vite": "^8.0.16"

@@ -15,6 +15,7 @@ import { activate, activateBatch } from '../../adt/devtools.js';
 import { AdtApiError } from '../../adt/errors.js';
 import { type FmParameter, spliceFmSignature } from '../../adt/fm-signature.js';
 import { checkPackage } from '../../adt/safety.js';
+import { isServerDrivenObjectType } from '../../adt/server-driven.js';
 import { getTransport, getTransportInfo } from '../../adt/transport.js';
 import { escapeXmlAttr } from '../../adt/xml-parser.js';
 import { validateAffHeader } from '../../aff/validator.js';
@@ -26,7 +27,7 @@ import {
 } from '../activate.js';
 import { invalidateInactiveList } from '../cache-security.js';
 import { guardCdsSyntax } from '../cds-hints.js';
-import { cachedFeatures, isTablesEndpointAvailable, isTableTypesEndpointAvailable } from '../feature-cache.js';
+import { getCachedFeatures, isTablesEndpointAvailable, isTableTypesEndpointAvailable } from '../feature-cache.js';
 import {
   normalizeObjectType,
   normalizeWriteObjectType,
@@ -91,7 +92,7 @@ async function putTtypMetadataAfterCreate(
 ): Promise<void> {
   try {
     await client.http.withStatefulSession(async (session) => {
-      const lock = await lockObject(session, client.safety, objectUrl, 'MODIFY', cachedFeatures?.abapRelease);
+      const lock = await lockObject(session, client.safety, objectUrl, 'MODIFY', getCachedFeatures()?.abapRelease);
       const lockTransport = transport ?? (lock.corrNr || undefined);
       try {
         await updateObject(session, client.safety, objectUrl, body, lock.lockHandle, contentType, lockTransport);
@@ -352,7 +353,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
   }
 
   // CDS pre-write validation: reject unsupported syntax early
-  const cdsGuard = guardCdsSyntax(type, source, cachedFeatures);
+  const cdsGuard = guardCdsSyntax(type, source, getCachedFeatures());
   if (cdsGuard) return cdsGuard;
 
   // RAP deterministic preflight validation (before object creation to avoid stubs)
@@ -360,7 +361,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
     source,
     type,
     name,
-    cachedFeatures,
+    getCachedFeatures(),
     config.systemType,
     preflightOverride,
   );
@@ -417,7 +418,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
         SKTD_V2_CONTENT_TYPE,
         effectiveTransport,
         undefined,
-        cachedFeatures?.abapRelease,
+        getCachedFeatures()?.abapRelease,
       );
     } catch (err) {
       if (isKtdCreateEndpointUnavailable(err)) {
@@ -444,7 +445,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
         body,
         SKTD_V2_CONTENT_TYPE,
         effectiveTransport,
-        cachedFeatures?.abapRelease,
+        getCachedFeatures()?.abapRelease,
       );
       invalidateWrittenObject(type, name);
       return textResult(
@@ -485,7 +486,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
       contentType,
       effectiveTransport,
       needsPackageParam ? pkg : undefined,
-      cachedFeatures?.abapRelease,
+      getCachedFeatures()?.abapRelease,
       systemType,
       name,
     );
@@ -524,7 +525,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
           client.safety,
           objectUrl,
           'MODIFY',
-          cachedFeatures?.abapRelease,
+          getCachedFeatures()?.abapRelease,
           systemType,
         );
         const lockTransport = effectiveTransport ?? (lock.corrNr || undefined);
@@ -544,7 +545,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
           client.safety,
           objectUrl,
           'MODIFY',
-          cachedFeatures?.abapRelease,
+          getCachedFeatures()?.abapRelease,
           systemType,
         );
         const lockTransport = effectiveTransport ?? (lock.corrNr || undefined);
@@ -623,7 +624,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
       srcUrl,
       createSource,
       effectiveTransport,
-      cachedFeatures?.abapRelease,
+      getCachedFeatures()?.abapRelease,
     );
     const bdefExtensionWarning = bdefExtensionBase
       ? await warnIfBdefExtensionUnconfirmed(client, name, bdefExtensionBase)
@@ -816,7 +817,7 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
           objSource,
           objType,
           objName,
-          cachedFeatures,
+          getCachedFeatures(),
           config.systemType,
           preflightOverride,
         );
@@ -870,6 +871,19 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
         });
         break;
       }
+      // Server-driven objects need the AFF engine (handleServerDrivenObjectWrite), which only runs on
+      // the single-object path. objectBasePath() has no SDO case and silently falls through to the
+      // PROG path, so without this guard a batched SDO would POST a program create body.
+      if (isServerDrivenObjectType(objType)) {
+        results.push({
+          type: objType,
+          name: objName,
+          packageName: objPackage,
+          status: 'failed',
+          error: `batch_create does not support server-driven object type ${objType}. Create it with a single SAPWrite(action="create", type="${objType}", name="${objName}") call.`,
+        });
+        break;
+      }
       const objUrl = objectUrlForType(objType, objName);
       const createUrl = objUrl.replace(/\/[^/]+$/, '');
       const objMetadataProps = getMetadataWriteProperties(obj);
@@ -898,7 +912,7 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
           contentType,
           objTransport,
           needsPackageParam ? objPackage : undefined,
-          cachedFeatures?.abapRelease,
+          getCachedFeatures()?.abapRelease,
           systemType,
           objName,
         );
@@ -915,7 +929,7 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
       // Step 1b: DTEL POST ignores labels — follow up with PUT on main session
       if (objType === 'DTEL' && dtelNeedsPostCreateUpdate(objMetadataProps)) {
         await client.http.withStatefulSession(async (session) => {
-          const lock = await lockObject(session, client.safety, objUrl, 'MODIFY', cachedFeatures?.abapRelease);
+          const lock = await lockObject(session, client.safety, objUrl, 'MODIFY', getCachedFeatures()?.abapRelease);
           const lockTransport = objTransport ?? (lock.corrNr || undefined);
           try {
             await updateObject(session, client.safety, objUrl, body, lock.lockHandle, contentType, lockTransport);
@@ -940,7 +954,7 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
           srcUrl,
           objSource,
           objTransport,
-          cachedFeatures?.abapRelease,
+          getCachedFeatures()?.abapRelease,
         );
       }
 

@@ -23,7 +23,7 @@ import { getTransportInfo } from '../adt/transport.js';
 import { parseSearchResults } from '../adt/xml-parser.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
 import type { ServerConfig } from '../server/types.js';
-import { cachedFeatures, setCachedFeatures } from './feature-cache.js';
+import { getCachedFeatures, setCachedFeatures } from './feature-cache.js';
 import { inferObjectType, normalizeObjectType, objectUrlForTypeRaw } from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 import { enforceAllowedPackageForObjectUrl, resolveWriteSystemType } from './write-helpers.js';
@@ -43,12 +43,12 @@ export async function handleSAPManage(
 
   switch (action) {
     case 'features': {
-      if (!cachedFeatures) {
+      if (!getCachedFeatures()) {
         return textResult(
           toolJson({ message: 'No features probed yet. Use action="probe" to probe the SAP system first.' }),
         );
       }
-      return textResult(toolJson(cachedFeatures));
+      return textResult(toolJson(getCachedFeatures()));
     }
 
     case 'set_api_state': {
@@ -206,7 +206,7 @@ export async function handleSAPManage(
         'application/*',
         effectiveTransport,
         undefined,
-        cachedFeatures?.abapRelease,
+        getCachedFeatures()?.abapRelease,
       );
       // Hierarchy changed: invalidate any cached subtree that could contain
       // the new package. Conservative: clear all (cheap; per-call cost is one BFS).
@@ -226,7 +226,7 @@ export async function handleSAPManage(
 
       const packageUrl = `/sap/bc/adt/packages/${encodeURIComponent(name)}`;
       await client.http.withStatefulSession(async (session) => {
-        const lock = await lockObject(session, client.safety, packageUrl, 'MODIFY', cachedFeatures?.abapRelease);
+        const lock = await lockObject(session, client.safety, packageUrl, 'MODIFY', getCachedFeatures()?.abapRelease);
         const effectiveTransport = transport || lock.corrNr || undefined;
         try {
           await deleteObject(session, client.safety, packageUrl, lock.lockHandle, effectiveTransport);
@@ -373,7 +373,7 @@ export async function handleSAPManage(
     }
 
     case 'flp_create_catalog': {
-      if (cachedFeatures?.flp && !cachedFeatures.flp.available) {
+      if (getCachedFeatures()?.flp?.available === false) {
         return errorResult(flpUnavailableMessage);
       }
       const domainId = String(args.domainId ?? '');
@@ -385,7 +385,7 @@ export async function handleSAPManage(
     }
 
     case 'flp_create_group': {
-      if (cachedFeatures?.flp && !cachedFeatures.flp.available) {
+      if (getCachedFeatures()?.flp?.available === false) {
         return errorResult(flpUnavailableMessage);
       }
       const groupId = String(args.groupId ?? '');
@@ -397,7 +397,7 @@ export async function handleSAPManage(
     }
 
     case 'flp_create_tile': {
-      if (cachedFeatures?.flp && !cachedFeatures.flp.available) {
+      if (getCachedFeatures()?.flp?.available === false) {
         return errorResult(flpUnavailableMessage);
       }
       const catalogId = String(args.catalogId ?? '');
@@ -430,7 +430,7 @@ export async function handleSAPManage(
     }
 
     case 'flp_add_tile_to_group': {
-      if (cachedFeatures?.flp && !cachedFeatures.flp.available) {
+      if (getCachedFeatures()?.flp?.available === false) {
         return errorResult(flpUnavailableMessage);
       }
       const groupId = String(args.groupId ?? '');
@@ -444,7 +444,7 @@ export async function handleSAPManage(
     }
 
     case 'flp_delete_catalog': {
-      if (cachedFeatures?.flp && !cachedFeatures.flp.available) {
+      if (getCachedFeatures()?.flp?.available === false) {
         return errorResult(flpUnavailableMessage);
       }
       const catalogId = String(args.catalogId ?? '');

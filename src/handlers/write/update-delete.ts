@@ -19,7 +19,7 @@ import {
   CDS_DEPENDENCY_SENSITIVE_TYPES,
   guardCdsSyntax,
 } from '../cds-hints.js';
-import { cachedFeatures } from '../feature-cache.js';
+import { getCachedFeatures } from '../feature-cache.js';
 import { CLASS_WRITE_INCLUDES, canonicalTablType, classIncludeUrl } from '../object-types.js';
 import { errorResult, type ToolResult, textResult } from '../shared.js';
 import {
@@ -98,7 +98,7 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
       classIncludeUrl(name, include),
       source,
       transport,
-      cachedFeatures?.abapRelease,
+      getCachedFeatures()?.abapRelease,
     );
     invalidateWrittenObject(type, name);
     const initNote = initialized ? ` (initialised the ${include} include first)` : '';
@@ -123,7 +123,7 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
       body,
       SKTD_V2_CONTENT_TYPE,
       transport,
-      cachedFeatures?.abapRelease,
+      getCachedFeatures()?.abapRelease,
     );
     invalidateWrittenObject(type, name);
     return textResult(`Successfully updated ${type} ${name}.`);
@@ -157,7 +157,7 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
       body,
       vendorContentTypeForType(type),
       transport,
-      cachedFeatures?.abapRelease,
+      getCachedFeatures()?.abapRelease,
     );
     invalidateWrittenObject(type, name);
     return textResult(`Successfully updated ${type} ${name}.`);
@@ -168,14 +168,14 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
     source,
     type,
     name,
-    cachedFeatures,
+    getCachedFeatures(),
     config.systemType,
     preflightOverride,
   );
   if (preflightWarnings.blocked) return preflightWarnings.result!;
 
   // CDS pre-write validation: reject unsupported syntax early
-  const cdsGuardUpdate = guardCdsSyntax(type, source, cachedFeatures);
+  const cdsGuardUpdate = guardCdsSyntax(type, source, getCachedFeatures());
   if (cdsGuardUpdate) return cdsGuardUpdate;
 
   // FUNC-source sanitization: strip SAPGUI-style parameter comment blocks.
@@ -241,7 +241,7 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
     srcUrl,
     effectiveSource,
     transport,
-    cachedFeatures?.abapRelease,
+    getCachedFeatures()?.abapRelease,
   );
   invalidateWrittenObject(type, name);
   const msg = `Successfully updated ${type} ${name}.`;
@@ -264,7 +264,7 @@ export async function writeActionDelete(ctx: SapWriteContext): Promise<ToolResul
   // Lock, delete, unlock pattern (works for all types including SKTD) — auto-propagate lock corrNr if no explicit transport
   try {
     await client.http.withStatefulSession(async (session) => {
-      const lock = await lockObject(session, client.safety, objectUrl, 'MODIFY', cachedFeatures?.abapRelease);
+      const lock = await lockObject(session, client.safety, objectUrl, 'MODIFY', getCachedFeatures()?.abapRelease);
       const effectiveTransport = transport ?? (lock.corrNr || undefined);
       try {
         await deleteObject(session, client.safety, objectUrl, lock.lockHandle, effectiveTransport);

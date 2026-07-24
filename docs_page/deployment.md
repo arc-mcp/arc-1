@@ -33,7 +33,8 @@ For single-developer setups on your own laptop, use [local-development.md](local
 | Answer | Path |
 |---|---|
 | Docker on any VM / container host | [Docker deployment](#docker-on-any-vm) |
-| BTP Cloud Foundry, on-prem SAP via Cloud Connector | [BTP CF with PP](#btp-cloud-foundry-with-principal-propagation) |
+| BTP Cloud Foundry, one on-prem SAP target | [BTP CF with PP](#btp-cloud-foundry-with-principal-propagation) |
+| BTP Cloud Foundry, many on-prem SAP system/clients | [Multi-System Setup](multi-target-setup.md) |
 | BTP Cloud Foundry, BTP ABAP backend | [BTP CF + BTP ABAP](#btp-cloud-foundry-btp-abap-environment) |
 | BTP Cloud Foundry, S/4HANA Public Cloud backend | [S/4HANA Public Cloud (PP via SAMLAssertion)](s4hana-public-cloud.md) |
 
@@ -95,7 +96,12 @@ For this shared-user mode, ARC-1 runs a startup auth preflight (`/sap/bc/adt/cor
 
 ## BTP Cloud Foundry with Principal Propagation
 
-The only deployment path that gives **true per-user SAP identity** with on-prem SAP. Each MCP user's JWT is exchanged for a SAML assertion via Cloud Connector → SAP sees the real user → S_DEVELOP / audit logs / change history all attribute to the human.
+The recommended deployment path for per-user SAP identity with on-premise SAP. XSUAA identifies the
+MCP user; Destination and Connectivity services plus Cloud Connector propagate that identity;
+SAP certificate mapping and authorization decide the final access.
+
+If you have not chosen between single-target, multi-target, BTP ABAP, or S/4HANA Public Cloud yet,
+start with the [SAP BTP documentation map](btp-overview.md).
 
 ### You'll need
 
@@ -122,15 +128,21 @@ MCP client (user JWT) → XSUAA validates → ARC-1 on CF
 
 ### Config
 
-```bash
-cf set-env arc1 SAP_BTP_DESTINATION MY_SAP_DESTINATION
-cf set-env arc1 SAP_BTP_PP_DESTINATION MY_SAP_PP_DESTINATION
-cf set-env arc1 SAP_PP_ENABLED true
-cf set-env arc1 SAP_PP_STRICT true
-cf set-env arc1 SAP_XSUAA_AUTH true
-cf set-env arc1 SAP_ALLOW_WRITES true && cf set-env arc1 SAP_ALLOW_TRANSPORT_WRITES true
-cf set-env arc1 SAP_ALLOWED_PACKAGES 'Z*'
+Use the repository MTA and a customer-owned extension rather than a sequence of untracked
+`cf set-env` commands:
+
+```yaml
+modules:
+  - name: arc1-mcp-server
+    properties:
+      SAP_BTP_DESTINATION: "MY_SAP_STARTUP"
+      SAP_BTP_PP_DESTINATION: "MY_SAP_PP"
+      SAP_PP_ENABLED: "true"
+      SAP_PP_STRICT: "true"
 ```
+
+This first deployment remains read-only. Prove PP identity and safe reads before enabling data, SQL,
+writes, transports, Git, or broader package patterns as separate approvals.
 
 !!! warning "Principal propagation fails closed by default"
     With `SAP_PP_ENABLED=true`, JWT principal-propagation failures return an error instead of falling back to the shared service account. Separate strict PP and API-key instances are recommended, but one mixed instance is supported with explicit `SAP_PP_STRICT=false`; API-key calls then use the shared SAP identity. See [Principal Propagation Setup](principal-propagation-setup.md).
@@ -142,9 +154,10 @@ INFO: auth: MCP=[xsuaa] SAP=pp (per-user)
 ```
 
 **Full references:**
-- [btp-cloud-foundry-deployment.md](btp-cloud-foundry-deployment.md) — MTA + Docker push, `manifest.yml`, service bindings, step-by-step
+- [btp-cloud-foundry-deployment.md](btp-cloud-foundry-deployment.md) — canonical MTA deployment, topology decision, verification, and handoff
+- [btp-administration.md](btp-administration.md) — roles, secrets, changes, scaling, upgrades, rollback, and customer acceptance
 - [principal-propagation-setup.md](principal-propagation-setup.md) — Cloud Connector config, destination types, certificate chain
-- [btp-destination-setup.md](btp-destination-setup.md) — destination configuration details
+- [btp-destination-setup.md](btp-destination-setup.md) — destination property and authentication-mode reference
 - [xsuaa-setup.md](xsuaa-setup.md) — `xs-security.json`, scopes, role collections
 
 ---
@@ -159,11 +172,11 @@ SAP auth is **OAuth2 via a BTP Destination with `OAuth2UserTokenExchange`**. The
 cf create-service xsuaa application arc1-xsuaa -c xs-security.json
 cf create-service destination lite arc1-destination
 # Create destination ABAP_PP with Authentication=OAuth2UserTokenExchange
-cf set-env arc1 SAP_SYSTEM_TYPE btp
-cf set-env arc1 SAP_XSUAA_AUTH true
-cf set-env arc1 SAP_PP_ENABLED true
-cf set-env arc1 SAP_PP_STRICT true
-cf set-env arc1 SAP_BTP_DESTINATION ABAP_PP
+cf set-env arc1-mcp-server SAP_SYSTEM_TYPE btp
+cf set-env arc1-mcp-server SAP_XSUAA_AUTH true
+cf set-env arc1-mcp-server SAP_PP_ENABLED true
+cf set-env arc1-mcp-server SAP_PP_STRICT true
+cf set-env arc1-mcp-server SAP_BTP_DESTINATION ABAP_PP
 ```
 
 **Full reference:** [btp-abap-environment.md](btp-abap-environment.md).

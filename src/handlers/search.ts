@@ -7,7 +7,7 @@ import type { AdtClient } from '../adt/client.js';
 import { AdtApiError } from '../adt/errors.js';
 import { classifyTextSearchError } from '../adt/features.js';
 import type { AdtObjectLookupResult, AdtSearchResult } from '../adt/types.js';
-import { cachedFeatures } from './feature-cache.js';
+import { getCachedFeatures } from './feature-cache.js';
 import { normalizeObjectType } from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 
@@ -169,9 +169,10 @@ export async function handleSAPSearch(client: AdtClient, args: Record<string, un
 
   if (searchType === 'source_code') {
     // Source code search: do NOT transliterate — source can contain umlauts in strings/comments
-    if (cachedFeatures?.textSearch && !cachedFeatures.textSearch.available) {
+    const textSearch = getCachedFeatures()?.textSearch;
+    if (textSearch && !textSearch.available) {
       return errorResult(
-        `Source code search is not available on this SAP system. ${cachedFeatures.textSearch.reason ?? ''}` +
+        `Source code search is not available on this SAP system. ${textSearch.reason ?? ''}` +
           `\nUse SAPSearch with searchType="object" to search by object name instead, or use SAPQuery to search metadata tables.`,
       );
     }

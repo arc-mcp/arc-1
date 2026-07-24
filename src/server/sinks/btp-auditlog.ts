@@ -20,6 +20,9 @@ import type {
   AuditEvent,
   AuthPPCreatedEvent,
   AuthScopeDeniedEvent,
+  AuthSharedCreatedEvent,
+  McpRateLimitedEvent,
+  MultiTargetStageFailedEvent,
   SafetyBlockedEvent,
   ToolCallEndEvent,
   ToolCallStartEvent,
@@ -53,6 +56,15 @@ function categorize(event: AuditEvent): AuditCategory | null {
   switch (event.event) {
     case 'auth_scope_denied':
     case 'safety_blocked':
+    case 'target_resolution_failed':
+    case 'pp_exchange_failed':
+    case 'shared_auth_failed':
+    case 'cloud_connector_access_denied':
+    case 'sap_service_unavailable':
+    case 'sap_authentication_failed':
+    case 'sap_authorization_failed':
+    case 'target_policy_denied':
+    case 'mcp_rate_limited':
       return 'security-events';
 
     case 'tool_call_start':
@@ -61,6 +73,9 @@ function categorize(event: AuditEvent): AuditCategory | null {
 
     case 'auth_pp_created':
       return event.level === 'error' ? 'security-events' : null;
+
+    case 'auth_shared_created':
+      return 'security-events';
 
     // Don't send http_request, server_start, etc. to BTP audit log
     default:
@@ -170,19 +185,22 @@ export class BTPAuditLogSink implements LogSink {
         const e = event as ToolCallStartEvent;
         const argsStr = JSON.stringify(e.args);
         const argsSummary = argsStr.length > 500 ? `${argsStr.slice(0, 500)}...` : argsStr;
+        const attrs = [
+          { name: 'action', new: 'invoke' },
+          { name: 'tool', new: e.tool },
+          { name: 'user', new: user },
+          { name: 'clientId', new: e.clientId ?? '' },
+          { name: 'args', new: argsSummary },
+        ];
+        if (e.target) attrs.push({ name: 'target', new: e.target });
+        if (e.identity) attrs.push({ name: 'identity', new: e.identity });
         return {
           ...base,
           object: {
             type: 'MCP Tool Call',
             id: { tool: e.tool, requestId: e.requestId ?? '' },
           },
-          attributes: [
-            { name: 'action', new: 'invoke' },
-            { name: 'tool', new: e.tool },
-            { name: 'user', new: user },
-            { name: 'clientId', new: e.clientId ?? '' },
-            { name: 'args', new: argsSummary },
-          ],
+          attributes: attrs,
         };
       }
 
@@ -203,6 +221,12 @@ export class BTPAuditLogSink implements LogSink {
         if (e.errorClass) {
           attrs.push({ name: 'errorClass', new: e.errorClass });
         }
+        if (e.target) {
+          attrs.push({ name: 'target', new: e.target });
+        }
+        if (e.identity) {
+          attrs.push({ name: 'identity', new: e.identity });
+        }
         return {
           ...base,
           object: {
@@ -215,25 +239,69 @@ export class BTPAuditLogSink implements LogSink {
 
       case 'auth_scope_denied': {
         const e = event as AuthScopeDeniedEvent;
+        const target = e.target ? ` Target: ${e.target}.` : '';
+        const identity = e.identity ? ` identity=${e.identity}.` : '';
         return {
           ...base,
-          data: `Access denied: user "${user}" lacks scope "${e.requiredScope}" for tool ${e.tool}. Available scopes: [${e.availableScopes.join(', ')}]`,
+          data: `Access denied: user "${user}" lacks scope "${e.requiredScope}" for tool ${e.tool}. Available scopes: [${e.availableScopes.join(', ')}].${target}${identity}`,
         };
       }
 
       case 'safety_blocked': {
         const e = event as SafetyBlockedEvent;
+        const target = e.target ? ` Target: ${e.target}.` : '';
+        const identity = e.identity ? ` identity=${e.identity}.` : '';
         return {
           ...base,
-          data: `Safety blocked: operation "${e.operation}" denied — ${e.reason}. User: ${user}`,
+          data: `Safety blocked: operation "${e.operation}" denied — ${e.reason}. User: ${user}.${target}${identity}`,
         };
       }
 
       case 'auth_pp_created': {
         const e = event as AuthPPCreatedEvent;
+        const route = e.target
+          ? `target "${e.target}"`
+          : e.destination
+            ? `destination "${e.destination}"`
+            : 'the configured SAP destination';
         return {
           ...base,
-          data: `Principal propagation ${e.success ? 'succeeded' : 'failed'} for user "${user}" via destination "${e.destination}"${e.errorMessage ? `: ${e.errorMessage}` : ''}`,
+          data: `Principal propagation ${e.success ? 'succeeded' : 'failed'} for user "${user}" via ${route}${e.errorMessage ? `: ${e.errorMessage}` : ''}${e.identity ? ` identity=${e.identity}.` : ''}`,
+        };
+      }
+
+      case 'auth_shared_created': {
+        const e = event as AuthSharedCreatedEvent;
+        return {
+          ...base,
+          data: `Shared technical SAP authentication succeeded for tool "${e.tool}". User: ${user}.${e.target ? ` Target: ${e.target}.` : ''} identity=shared.`,
+        };
+      }
+
+      case 'target_resolution_failed':
+      case 'pp_exchange_failed':
+      case 'shared_auth_failed':
+      case 'cloud_connector_access_denied':
+      case 'sap_service_unavailable':
+      case 'sap_authentication_failed':
+      case 'sap_authorization_failed':
+      case 'target_policy_denied': {
+        const e = event as MultiTargetStageFailedEvent;
+        const target = e.target ? ` Target: ${e.target}.` : '';
+        const identity = e.identity ? ` identity=${e.identity}.` : '';
+        return {
+          ...base,
+          data: `Multi-target stage "${e.event}" failed for tool "${e.tool}" with code "${e.errorCode}". User: ${user}.${target}${identity}`,
+        };
+      }
+
+      case 'mcp_rate_limited': {
+        const e = event as McpRateLimitedEvent;
+        const target = e.target ? ` Target: ${e.target}.` : '';
+        const identity = e.identity ? ` identity=${e.identity}.` : '';
+        return {
+          ...base,
+          data: `MCP rate limit blocked tool "${e.tool}" at ${e.limitPerMinute}/min; retry after ${e.retryAfterMs}ms. User: ${user}.${target}${identity}`,
         };
       }
 

@@ -65,6 +65,15 @@ And 7 pre-defined role collections (defined in `mta.yaml`, assignable to users i
 > and `xsappname`: update the MCP client URL, re-assign users to the new
 > `ARC-1 … (<space>)` collections, and set `ARC1_DCR_SIGNING_SECRET` before the
 > redeploy so cached OAuth `client_id`s survive the `xsappname` change.
+>
+> Updating an existing XSUAA service with
+> `cf update-service arc1-xsuaa -c xs-security.json` updates the scopes and role
+> templates only. It does **not** create role collections declared in
+> `mta.yaml`. Run a full MTA deployment when adopting these collections, then
+> verify in **Security → Role Collections** that all seven collections exist and
+> contain the expected roles. This matters especially for older deployments:
+> seeing `MCPViewer`, `MCPDataViewer`, or `MCPSqlUser` under **Roles** does not
+> mean the corresponding assignable role collections already exist.
 
 **Want a restricted developer** (can write code but cannot transport or push to Git)? Define your own role template in `xs-security.json` with just `[read, write]` scopes, redeploy, and assign it — or use `SAP_DENY_ACTIONS` on the server.
 
@@ -134,7 +143,27 @@ Expected response:
 }
 ```
 
+The example above is the single-target `/mcp` authorization surface. Select the endpoint before
+configuring a client:
+
+| Endpoint | Protected-resource scopes ARC-1 advertises | Notes |
+|---|---|---|
+| `/mcp` | `read`, `write`, `data`, `sql`, `transports`, `git`, `admin` | Actual grants and application ceilings still prune tools/actions |
+| `/<SYSTEM>/<CLIENT>/mcp` | `read`, `data`, `sql`, `admin` | Mutation-free pinned multi-target route |
+| `/multi/mcp` | `read`, `data`, `sql`, `admin` | Mutation-free aggregate route; SAP calls require `target` |
+
+XSUAA returns only scopes assigned to the user. Advertising the full mutation-free set does not
+grant Admin, data, or SQL. It lets OAuth clients request a usable token while role collections remain
+the authorization source. Multi-target routes never advertise mutation scopes and still require
+`read` before revealing whether a pinned target exists.
+
 ## Step 5: Configure MCP Clients
+
+Use `/mcp` for a single target, a pinned `/<SYSTEM>/<CLIENT>/mcp` URL for a target-bound
+conversation, or `/multi/mcp` when the model must select among several targets. Do not replace one
+with another merely to recover an OAuth error: endpoint selection is part of the security and tool
+contract. Multi-target client examples are also available in
+[Multi-System Setup](multi-target-setup.md#vs-code-and-github-copilot-configuration).
 
 ### Claude Desktop
 
@@ -177,7 +206,9 @@ The inspector will perform OAuth discovery and redirect to XSUAA login.
 
 ### Copilot Studio (Manual OAuth — recommended)
 
-Copilot Studio does not re-register via DCR after server restarts, so use **Manual** OAuth mode instead of Dynamic Discovery.
+Use **Manual** OAuth mode for the most predictable Copilot Studio interoperability. Ordinary ARC-1
+restarts do not lose stateless DCR registrations; Manual mode is preferred because it avoids an
+extra dynamic-registration round trip that some Copilot Studio configurations do not retry cleanly.
 
 1. In Copilot Studio, add an MCP server connection
 2. Select **Manual** OAuth type
@@ -187,7 +218,9 @@ Copilot Studio does not re-register via DCR after server restarts, so use **Manu
    - **Authorization URL:** `https://<app-route>/authorize`
    - **Token URL template:** `https://<app-route>/token`
    - **Refresh URL:** `https://<app-route>/token`
-   - **Scopes:** `read write` (ARC-1 auto-qualifies these with the XSUAA xsappname prefix)
+   - **Scopes:** for single-target development, request the approved scopes (for example
+     `read write`); for multi-target, request `read data sql admin` and let XSUAA return only the
+     scopes assigned to the signed-in user. ARC-1 auto-qualifies names with the XSUAA xsappname.
 4. Save — Copilot Studio generates a redirect URL
 5. ARC-1 automatically accepts the redirect URL (dynamic redirect URI registration for the XSUAA client)
 
@@ -233,7 +266,13 @@ ARC-1 logs the active signing source as `dcrSigningSource: 'override' | 'xsuaa'`
 
 ### Service-binding rotation
 
-The XSUAA `clientsecret` is the trust anchor for both upstream OAuth calls and the DCR signing key. Rotating the binding is the only way to force-revoke every outstanding DCR registration in one shot:
+The XSUAA `clientsecret` is always an upstream OAuth credential. It is also the DCR signing source
+only while `ARC1_DCR_SIGNING_SECRET` is unset. In that fallback configuration, rebinding XSUAA
+invalidates all DCR registrations. With the recommended dedicated signing secret, rebind/rotation
+does **not** revoke DCR clients; rotate `ARC1_DCR_SIGNING_SECRET` deliberately for global DCR
+revocation.
+
+To rotate the XSUAA binding:
 
 ```bash
 cf unbind-service arc1-mcp-server arc1-xsuaa
@@ -241,13 +280,19 @@ cf bind-service   arc1-mcp-server arc1-xsuaa
 cf restage        arc1-mcp-server
 ```
 
-After this sequence:
+After this sequence, the DCR effect depends on the active signing source:
 
-- Every previously-issued DCR `client_id` returns `400 invalid_client`.
-- In-flight refresh tokens fail because the local DCR `client_id` lookup at `/token` no longer resolves.
-- MCP clients silently re-register on next connect via `/register`.
+- With `dcrSigningSource: 'xsuaa'`, every previously issued DCR `client_id` becomes invalid because
+  the effective signing key changed. Clients must register again; cached access/refresh behavior is
+  client- and token-lifetime-dependent.
+- With `dcrSigningSource: 'override'`, local DCR registrations remain valid because the dedicated
+  signing key did not change. Upstream XSUAA credential rotation can still require a fresh OAuth
+  login, but it is not a DCR revocation event.
 
-This is the only operation that invalidates DCR state. Routine restarts (`cf restart`, `cf push` without rebind, cell moves) no longer disrupt clients.
+DCR state is globally invalidated whenever the **effective signing key** changes: rotate
+`ARC1_DCR_SIGNING_SECRET` in dedicated-key deployments, or rotate/rebind the XSUAA credentials while
+using the fallback. Routine restart, push without rebind, restage, and cell movement preserve DCR
+state while that key remains stable.
 
 ### Recovering a stuck client
 
@@ -410,7 +455,8 @@ it is real and broker-honored, just undocumented.
     - **Users still need role collections.** An exchanged token for a user with no ARC-1 collection
       authenticates but authorizes nothing.
 
-The [multi-system hub](multi-system-hub.md) uses a *different* wiring — the hub exchanges with its
+The external [`arc-mcp/mcp-hub`](https://github.com/arc-mcp/mcp-hub) project uses a *different*
+wiring — the hub exchanges with its
 **own** client plus a `granted-apps` grant chain — because it fronts several backends. For a single
 consumer, the service-key route above is simpler and needs no grant chain.
 
@@ -458,14 +504,13 @@ The user doesn't have the required role collection assigned. Go to BTP Cockpit �
 
 If the collection **is** already assigned and you still get `invalid_scope`, it is one of three things, in the order worth checking.
 
-**1. Stale XSUAA session cookie — the common one.** After an admin assigns a role collection, XSUAA keeps returning `invalid_scope` because the browser still holds an XSUAA SSO session created *before* the grant. XSUAA answers from that session's cached authorities and never re-reads role collections.
+**1. Stale XSUAA browser session — the common one.** After an administrator assigns a role collection, the browser can still hold the XSUAA SSO session created before the grant. The failed ARC-1 sign-in page therefore includes **Role assigned? Refresh access**. Use it after the role assignment, wait for the **Access refreshed** page, then return to the MCP client and connect or retry sign-in. A new identity-provider login may be required.
 
-Fix: delete the browser cookies for the XSUAA domain (`<identityzone>.authentication.<region>.hana.ondemand.com` — in Edge, `edge://settings/content/all` → search `authentication` → delete). Read the exact domain from the `url` field of the XSUAA binding: **Cockpit → Application → Service Bindings → arc1-xsuaa → Credentials**. No waiting period; the next login works immediately.
+The action calls XSUAA's documented `/logout.do` endpoint with ARC-1's bound `client_id` and a fixed, allowlisted ARC-1 return URL. Callback query parameters never select the logout host or redirect. Standard Cloud Foundry routes are covered by the `https://*.hana.ondemand.com/**` entry in `xs-security.json`; if `ARC1_PUBLIC_URL` uses a custom domain or path, add its `/oauth/logged-out` URL to `oauth2-configuration.redirect-uris` before deploying.
 
-Two things that do **not** work, both tried:
+The action clears the browser SSO session; it does not revoke access tokens already issued to other sessions. If an MCP client cached an old token, disconnect/reconnect it after refreshing access. On ARC-1 versions without the action, use a private browser window or delete cookies for the XSUAA domain (`<identityzone>.authentication.<region>.hana.ondemand.com`) and retry. Read the exact domain from the `url` field under **Cockpit → Application → Service Bindings → arc1-xsuaa → Credentials**.
 
-- **`<xsuaa-url>/logout` is a dead end.** Without a `redirect` param it renders SAP's "Uh oh. Something went amiss." and does not reliably drop the session.
-- **Resetting the MCP client's token cache** (e.g. VS Code's MCP auth reset) changes nothing — the poisoned session lives in the browser, not the client.
+Do not use a bare `<xsuaa-url>/logout` or `/logout.do` URL. XSUAA requires the application client and an allowlisted return URL for a reliable application logout.
 
 Diagnostic, in `cf logs <app-name> --recent`:
 
@@ -483,7 +528,11 @@ Check **Cockpit → Security → Role Collections → "ARC-1 Admin (<space>)" �
 **3. Wrong IdP origin.** If the subaccount has a custom IAS tenant (trust configuration shows `sap.custom`), role collections must be assigned with the correct IdP origin. Assigning via `sap.default` when the user logs in via `sap.custom` will result in `invalid_scope`. Platform IdP users (origin `<tenant>-platform`) are for cockpit and CLI access only — a role collection assigned there does nothing for application logon.
 
 ### "Invalid client_id" (Copilot Studio)
-DCR registrations are in-memory and lost on restart. Switch to **Manual** OAuth mode (see above) to avoid this.
+DCR registrations are stateless and survive ordinary restart, push, restage, and scale-out while the
+signing key stays stable. Check the startup `dcrSigningSource`, restore the intended
+`ARC1_DCR_SIGNING_SECRET`, or re-register the client after an intentional key/binding rotation.
+Manual OAuth remains the more predictable Copilot Studio path because it avoids the dynamic
+registration round trip, not because ARC-1 stores registrations in memory.
 
 ### "Token validation failed: not a valid XSUAA, OIDC, or API key token" (Copilot Studio)
 Copilot Studio caches the access token from the initial sign-in. XSUAA tokens expire after 1 hour and Copilot Studio does not always refresh them automatically — the connector keeps sending the expired token, which ARC-1 correctly rejects.

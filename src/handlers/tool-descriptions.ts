@@ -11,7 +11,7 @@ export const SAPWRITE_DESC_ONPREM =
   'edit_method: replace one CLAS method body via source (95% fewer tokens than full-class). Local-class methods use the qualified specifier (e.g. "lhc_project~approve_project"); auto-routing: lhc_*/lcl_* → implementations, ltc_* → testclasses (override with include=); zif_*~* stays on /source/main. ' +
   'edit_unit: replace one FORM/MODULE block in PROG/INCL using unit+source; group= supports FUGR includes. ' +
   'batch_create: create+activate multiple objects in dependency order via the "objects" array (RAP stacks TABL→DDLS→DCLS→BDEF→SRVD). scaffold_rap_handlers / generate_behavior_implementation: derive RAP behavior-pool handlers from the BDEF (the latter auto-discovers the BDEF via rootEntityRef and activates by default). ' +
-  'Server-driven objects (SAP_BASIS 8.16+, discovery-gated): DESD, DTSC, CSNM, EVTB, EVTO, COTA — create/update/delete with AFF JSON in "source", then SAPActivate; pre-8.16 returns a clean "requires 8.16+" error. ' +
+  'Server-driven objects (discovery-gated): DESD/CSNM/EVTB/EVTO/COTA take AFF JSON in "source"; DTSC/DSFD take DDL text — create/update/delete, then SAPActivate. ' +
   'edit_text_symbols (type=CLAS): write a global class\'s text symbols. Pass the body in "source" as per-symbol "@MaxLength:NN\\n{NNN}={text}\\n" (blank-line separated); immediately active, no SAPActivate. Read it back via SAPRead(type=CLAS, include=text_symbols). Requires the ADT textelements service (absent on NW 7.50). ' +
   'Full per-type field reference: docs_page SAPWrite. ';
 
@@ -23,7 +23,7 @@ export const SAPWRITE_DESC_BTP =
   'SKTD/KTD (Markdown docs on a KTD-capable object; KTD aliases SKTD): create needs refObjectType (e.g. "DDLS/DF"); "name" MUST equal the parent name; update takes Markdown in source; then SAPActivate(type="SKTD"). ' +
   'edit_method: replace one CLAS method body via source. Local-class methods use the qualified specifier (e.g. "lhc_project~approve_project"); auto-routing lhc_*/lcl_* → implementations, ltc_* → testclasses (override with include=). ' +
   'batch_create: create+activate multiple objects in dependency order (RAP stacks TABL→DDLS→DCLS→BDEF→SRVD). scaffold_rap_handlers / generate_behavior_implementation: derive RAP behavior-pool handlers from the BDEF (the latter auto-discovers via rootEntityRef and activates by default). ' +
-  'Server-driven objects (8.16+, discovery-gated): DESD, DTSC, CSNM, EVTB, EVTO, COTA — create/update/delete with AFF JSON in "source", then SAPActivate; pre-8.16 returns a clean "requires 8.16+" error. ' +
+  'Server-driven objects (discovery-gated): DESD/CSNM/EVTB/EVTO/COTA take AFF JSON in "source"; DTSC/DSFD take DDL text — create/update/delete, then SAPActivate. ' +
   'Full per-type field reference: docs_page SAPWrite. ';
 
 // Prepended to both SAPWrite descriptions. The schema lists every optional field for every

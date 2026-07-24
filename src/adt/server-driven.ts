@@ -3,15 +3,16 @@
  *
  * 816 introduced ~46 repository object types that all share ONE AFF generic-object contract:
  *   - metadata: GET …/{name}              (Accept application/vnd.sap.adt.blues.vN+xml) → <blue:blueSource>
- *   - content : GET …/{name}/source/main                                                → AFF JSON
+ *   - content : GET …/{name}/source/main                                                → AFF JSON *or* DDL text
  * Rather than per-type plumbing, this module exposes a curated registry of high-value types
  * and ONE generic engine, discovery-gated so pre-8.16 systems degrade cleanly.
  *
  * WRITE (create/update-source/delete) is supported and reuses the verified machinery:
  *   - CREATE = POST <collection-href>  (Content-Type = the type's blues.vN+xml) with a minimal
  *             <blue:blueSource> body (adtcore:type/name/description + packageRef) → 201.
- *   - SOURCE = lock (crud.ts) → PUT <url>/source/main?lockHandle=… (Content-Type application/json,
- *             the AFF JSON body) → unlock.
+ *   - SOURCE = lock (crud.ts) → PUT <url>/source/main?lockHandle=… → unlock. The Content-Type is
+ *             per-type (registry `sourceFormat`): application/json for the AFF-JSON types,
+ *             text/plain for the DDL-text ones (DTSC, DSFD). The wrong one is a hard 415.
  *   - DELETE = lock → http.delete(<url>?lockHandle=…) → unlock.
  *   - ACTIVATE is the generic devtools activate() against the object URL (callers use SAPActivate).
  * Create leaves the object inactive — callers follow with SAPActivate (never auto-activated).
@@ -44,12 +45,41 @@ export interface SdoRegistryEntry {
    * either via a `.includes('blues')` substring test, so it is version-agnostic.
    */
   blueContentType: string;
+  /**
+   * Source flavor — drives BOTH the client-side validation and the PUT Content-Type. NOT uniform:
+   * the AFF-JSON types 415 on text/plain, and the DDL-text types (DTSC, DSFD) 415 on
+   * application/json. Live-verified per type on 816.
+   */
+  sourceFormat: SdoSourceFormat;
 }
+
+/** AFF JSON body vs plain DDL text. Required per entry — a wrong guess is a hard 415 from SAP. */
+export type SdoSourceFormat = 'json' | 'text';
 
 const BLUES_V1 = 'application/vnd.sap.adt.blues.v1+xml';
 const BLUES_V2 = 'application/vnd.sap.adt.blues.v2+xml';
-/** AFF source is JSON for every server-driven type (read GET + write PUT). */
-const SDO_SOURCE_CONTENT_TYPE = 'application/json';
+
+/** Content-Type for the source PUT, derived from the type's declared source flavor. */
+export function serverDrivenSourceContentType(code: string): string {
+  const format = sdoEntry(code).sourceFormat;
+  switch (format) {
+    case 'json':
+      return 'application/json';
+    case 'text':
+      return 'text/plain';
+    default: {
+      // A new SdoSourceFormat must map to a content type here — falling through would only
+      // surface as a live 415. Exhaustiveness is a compile error, not a runtime surprise.
+      const unhandled: never = format;
+      throw new AdtApiError(`Unhandled server-driven source format "${String(unhandled)}".`, 500, '');
+    }
+  }
+}
+
+/** Declared source flavor for a registered type (drives the client-side JSON parse gate). */
+export function serverDrivenSourceFormat(code: string): SdoSourceFormat {
+  return sdoEntry(code).sourceFormat;
+}
 
 /**
  * The registered server-driven type codes, in registry (= LLM tool-surface) order. The SAPRead/
@@ -57,7 +87,7 @@ const SDO_SOURCE_CONTENT_TYPE = 'application/json';
  * here is the ONLY step needed to expose it — `btp: true` by construction (every SDO type is
  * 8.16+, and runtime availability is discovery-gated per system anyway).
  */
-export const SDO_TYPES = ['DESD', 'DTSC', 'CSNM', 'EVTB', 'EVTO', 'COTA'] as const;
+export const SDO_TYPES = ['DESD', 'DTSC', 'CSNM', 'EVTB', 'EVTO', 'COTA', 'DSFD'] as const;
 
 /** Curated registry of high-value 816 server-driven object types — keys are exactly SDO_TYPES. */
 export const SDO_REGISTRY = {
@@ -66,36 +96,49 @@ export const SDO_REGISTRY = {
     label: 'CDS Logical External Schema',
     createType: 'DESD/TYP',
     blueContentType: BLUES_V1,
+    sourceFormat: 'json',
   },
   DTSC: {
     href: '/sap/bc/adt/ddic/dtsc/sources',
     label: 'CDS Static Cache (table-entity buffer)',
     createType: 'DTSC/TYP',
     blueContentType: BLUES_V1,
+    sourceFormat: 'text',
   },
   CSNM: {
     href: '/sap/bc/adt/csn/csnm',
     label: 'Core Schema Notation Model (CSN)',
     createType: 'CSNM/TYP',
     blueContentType: BLUES_V1,
+    sourceFormat: 'json',
   },
   EVTB: {
     href: '/sap/bc/adt/businessservices/evtbevb',
     label: 'RAP Event Binding',
     createType: 'EVTB/EVB',
     blueContentType: BLUES_V1,
+    sourceFormat: 'json',
   },
   EVTO: {
     href: '/sap/bc/adt/businessservices/evtoevo',
     label: 'RAP Event Object',
     createType: 'EVTO/EVO',
     blueContentType: BLUES_V2,
+    sourceFormat: 'json',
   },
   COTA: {
     href: '/sap/bc/adt/conn/commtargets',
     label: 'Communication Target',
     createType: 'COTA/TYP',
     blueContentType: BLUES_V1,
+    sourceFormat: 'json',
+  },
+  DSFD: {
+    href: '/sap/bc/adt/ddic/dsfd/sources',
+    label: 'CDS Scalar Function Definition',
+    createType: 'DSFD/SCF',
+    blueContentType: BLUES_V1,
+    sourceFormat: 'text',
   },
 } satisfies Record<(typeof SDO_TYPES)[number], SdoRegistryEntry>;
 
@@ -143,7 +186,7 @@ export function supportsServerDrivenObject(http: AdtHttpClient, code: string): b
 }
 
 /**
- * Read a server-driven object: its `<blue:blueSource>` metadata + AFF JSON source.
+ * Read a server-driven object: its `<blue:blueSource>` metadata + source (AFF JSON or DDL text).
  * The source is JSON-parsed when possible (raw text otherwise). Throws AdtApiError 404 for a
  * nonexistent object. Gate availability with supportsServerDrivenObject() on unknown systems.
  */
@@ -215,16 +258,18 @@ export async function createServerDrivenObject(
 }
 
 /**
- * Write the AFF JSON source of a server-driven object: lock → PUT …/source/main (application/json)
- * → unlock (guaranteed via try-finally). Auto-propagates the lock's corrNr when no explicit
- * transport is supplied (same contract as crud.ts safeUpdateSource).
+ * Write the source of a server-driven object: lock → PUT …/source/main → unlock (guaranteed via
+ * try-finally). The Content-Type comes from the type's declared sourceFormat — AFF-JSON types take
+ * application/json, DDL-text types (DTSC, DSFD) take text/plain; sending the wrong one is a 415.
+ * Auto-propagates the lock's corrNr when no explicit transport is supplied (same contract as
+ * crud.ts safeUpdateSource).
  */
 export async function updateServerDrivenObjectSource(
   http: AdtHttpClient,
   safety: SafetyConfig,
   code: string,
   name: string,
-  sourceJson: string,
+  source: string,
   opts: ServerDrivenWriteOptions = {},
 ): Promise<void> {
   checkOperation(safety, OperationType.Update, 'UpdateServerDrivenObjectSource');
@@ -235,7 +280,7 @@ export async function updateServerDrivenObjectSource(
     try {
       const params = [`lockHandle=${encodeURIComponent(lock.lockHandle)}`];
       if (transport) params.push(`corrNr=${encodeURIComponent(transport)}`);
-      await session.put(`${objUrl}/source/main?${params.join('&')}`, sourceJson, SDO_SOURCE_CONTENT_TYPE);
+      await session.put(`${objUrl}/source/main?${params.join('&')}`, source, serverDrivenSourceContentType(code));
     } finally {
       await unlockObject(session, objUrl, lock.lockHandle);
     }

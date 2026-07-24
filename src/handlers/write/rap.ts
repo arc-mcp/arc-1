@@ -10,7 +10,7 @@ import {
   findMissingRapHandlerImplementationStubs,
   findMissingRapHandlerRequirements,
 } from '../../adt/rap-handlers.js';
-import { cachedFeatures } from '../feature-cache.js';
+import { getCachedFeatures } from '../feature-cache.js';
 import { classIncludeUrl } from '../object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from '../shared.js';
 import { mergePreWriteWarnings, type PreWriteLintResult, runPreWriteLint } from '../write-helpers.js';
@@ -185,7 +185,7 @@ export async function writeActionScaffoldRapHandlers(ctx: SapWriteContext): Prom
   // at the class object URL, and every include PUT carries the same lockHandle.
   // This mirrors how ADT-in-Eclipse saves a multi-include class in one commit.
   await client.http.withStatefulSession(async (session) => {
-    const lock = await lockObject(session, client.safety, objectUrl, 'MODIFY', cachedFeatures?.abapRelease);
+    const lock = await lockObject(session, client.safety, objectUrl, 'MODIFY', getCachedFeatures()?.abapRelease);
     const effectiveTransport = transport ?? (lock.corrNr || undefined);
     try {
       if (changed.main) {

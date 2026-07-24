@@ -20,7 +20,7 @@
  * context (session ID, tool name, duration).
  */
 
-import { type AuditEvent, redactAuditEvent } from './audit.js';
+import { type AuditEvent, type AuditEventBase, redactAuditEvent } from './audit.js';
 import { getCurrentContext } from './context.js';
 import { type LogFormat as SinkLogFormat, StderrSink } from './sinks/stderr.js';
 import type { LogSink } from './sinks/types.js';
@@ -85,16 +85,16 @@ export class Logger {
    */
   emitAudit(event: AuditEvent): void {
     let eventWithContext = event;
-    // Attach requestId from context if not already set
-    if (!event.requestId) {
-      const ctx = getCurrentContext();
-      if (ctx) {
-        eventWithContext = {
-          ...event,
-          requestId: ctx.requestId,
-          ...(!event.user && ctx.user ? { user: ctx.user } : {}),
-        };
-      }
+    // Attach missing request context without overriding explicit event fields.
+    const ctx = getCurrentContext();
+    if (ctx) {
+      eventWithContext = { ...event };
+      const base = eventWithContext as AuditEventBase;
+      if (!base.requestId) base.requestId = ctx.requestId;
+      if (!base.user && ctx.user) base.user = ctx.user;
+      if (!base.destination && ctx.destination) base.destination = ctx.destination;
+      if (!base.target && ctx.target) base.target = ctx.target;
+      if (!base.identity && ctx.identity) base.identity = ctx.identity;
     }
 
     const safeEvent = redactAuditEvent(eventWithContext);
@@ -116,23 +116,41 @@ export class Logger {
   private write(level: LogLevel, message: string, context?: LogContext): void {
     if (LEVEL_PRIORITY[level] < this.minLevel) return;
 
-    // Redact sensitive fields from context
+    // Redact sensitive fields and suppress SAP authentication response details everywhere,
+    // including ordinary debug context that does not pass through the audit redactor.
+    const safeMessage = suppressAdtAuthenticationResponse(message);
     const safeContext = context ? redactSensitive(context) : undefined;
 
     if (this.format === 'json') {
       const entry = {
         timestamp: new Date().toISOString(),
         level,
-        message,
+        message: safeMessage,
         ...safeContext,
       };
       process.stderr.write(`${JSON.stringify(entry)}\n`);
     } else {
       const ts = new Date().toISOString();
       const ctx = safeContext ? ` ${JSON.stringify(safeContext)}` : '';
-      process.stderr.write(`[${ts}] ${level.toUpperCase()}: ${message}${ctx}\n`);
+      process.stderr.write(`[${ts}] ${level.toUpperCase()}: ${safeMessage}${ctx}\n`);
     }
   }
+}
+
+/** Preserve the status and request path, but never log the response-derived 401/403 detail. */
+function suppressAdtAuthenticationResponse(value: string): string {
+  const marker = /ADT API error: status (?:401|403) at /;
+  const match = marker.exec(value);
+  if (!match || match.index === undefined) return value;
+
+  const prefixEnd = match.index + match[0].length;
+  const remainder = value.slice(prefixEnd);
+  const detailSeparator = remainder.indexOf(': ');
+  if (detailSeparator < 0) {
+    return `${value.slice(0, prefixEnd)}[response details suppressed]`;
+  }
+  const path = remainder.slice(0, detailSeparator);
+  return `${value.slice(0, prefixEnd)}${path}: [response details suppressed]`;
 }
 
 /** Redact known sensitive fields to prevent credential leakage in logs */
@@ -143,12 +161,33 @@ function redactSensitive(context: LogContext): LogContext {
   for (const [key, value] of Object.entries(context)) {
     if (sensitiveKeys.some((s) => key.toLowerCase().includes(s))) {
       result[key] = '[REDACTED]';
+    } else if (typeof value === 'string') {
+      result[key] = suppressAdtAuthenticationResponse(value);
+    } else if (Array.isArray(value)) {
+      result[key] = value.map((entry) =>
+        typeof entry === 'string'
+          ? suppressAdtAuthenticationResponse(entry)
+          : isPlainLogContext(entry)
+            ? redactSensitive(entry)
+            : entry,
+      );
+    } else if (isPlainLogContext(value)) {
+      result[key] = redactSensitive(value);
     } else {
       result[key] = value;
     }
   }
 
   return result;
+}
+
+function isPlainLogContext(value: unknown): value is LogContext {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.getPrototypeOf(value) === Object.prototype
+  );
 }
 
 /** Global logger instance — initialized during server startup */

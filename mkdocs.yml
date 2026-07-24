@@ -9,7 +9,6 @@ docs_dir: docs_page
 
 theme:
   name: material
-  custom_dir: docs/overrides
   palette:
     # `media` = follow the OS light/dark setting on first visit; the toggle then pins a choice.
     - media: '(prefers-color-scheme: light)'
@@ -27,15 +26,15 @@ theme:
         icon: material/brightness-4
         name: Switch to light mode
   features:
+    - navigation.path
     - navigation.sections
     - navigation.top
     - navigation.instant
-    - navigation.expand
     - search.suggest
     - search.highlight
+    - toc.follow
     - content.code.copy
     - content.code.annotate
-    - announce.dismiss
   icon:
     repo: fontawesome/brands/github
 
@@ -45,41 +44,52 @@ nav:
   - Install in Claude: install-in-claude.md
   - Deployment:
       - Overview: deployment.md
-      - Docker: docker.md
+      - SAP BTP - Start Here: btp-overview.md
       - BTP Cloud Foundry: btp-cloud-foundry-deployment.md
-      - BTP ABAP Environment: btp-abap-environment.md
-      - S/4HANA Public Cloud: s4hana-public-cloud.md
-      - Multi-System Hub (mcp-hub): multi-system-hub.md
-      - Best Practices: deployment-best-practices.md
+      - Docker: docker.md
+      - Multi-System Setup (Multi-Target): multi-target-setup.md
+      - Other SAP Environments:
+          - BTP ABAP Environment: btp-abap-environment.md
+          - S/4HANA Public Cloud: s4hana-public-cloud.md
+      - Administration & Alternatives:
+          - BTP Administration: btp-administration.md
+          - Multi-Target Administration: multi-target-administration.md
+          - Best Practices: deployment-best-practices.md
   - Auth & Permissions:
       - Overview: enterprise-auth.md
       - Authorization & Roles: authorization.md
-      - API Key: api-key-setup.md
-      - OAuth / JWT: oauth-jwt-setup.md
       - XSUAA Setup: xsuaa-setup.md
       - Principal Propagation: principal-propagation-setup.md
       - BTP Destination Setup: btp-destination-setup.md
+      - Other Authentication Methods:
+          - API Key: api-key-setup.md
+          - OAuth / JWT: oauth-jwt-setup.md
   - Using ARC-1:
       - Tools Reference: tools.md
       - Extensions (Custom Tools): extensions.md
       - MCP Usage Guide: mcp-usage.md
       - Skills: skills.md
-      - Blog Series: blog-series.md
+      - More:
+          - Blog Series: blog-series.md
   - Reference:
       - Configuration: configuration-reference.md
       - Configuration Precedence: configuration-precedence.md
       - vs SAP ABAP MCP Server: arc-1-vs-sap-abap-mcp-server.md
       - Security: security-guide.md
-      - Caching: caching.md
-      - Log Analysis: log-analysis.md
-      - Updating: updating.md
+      - Operations:
+          - Overview: operations.md
+          - Log Analysis: log-analysis.md
+          - Updating: updating.md
+          - Caching: caching.md
+          - Rate Limiting: rate-limiting.md
   - Development:
       - Local Development: local-development.md
       - Architecture: architecture.md
-      - CLI Guide: cli-guide.md
-      - SAP Trial Setup: sap-trial-setup.md
-      - Auth Test Process: auth-test-process.md
-      - Roadmap: roadmap.md
+      - More:
+          - CLI Guide: cli-guide.md
+          - SAP Trial Setup: sap-trial-setup.md
+          - Authentication Test Process: auth-test-process.md
+          - Roadmap: roadmap.md
 
 markdown_extensions:
   - admonition
@@ -101,6 +111,8 @@ plugins:
   - search
   - redirects:
       redirect_maps:
+        multi-destination.md: multi-target-setup.md
+        multi-system-hub.md: btp-overview.md
         phase4-btp-deployment.md: btp-cloud-foundry-deployment.md
 
 extra_javascript:

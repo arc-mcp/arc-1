@@ -161,6 +161,10 @@ export interface AdtHttpConfig {
   samlAuthorization?: string;
   /** Opt-in: disable SAML redirect via X-SAP-SAML2 header + saml2 query param */
   disableSaml?: boolean;
+  /** Retry one final 401 after resetting session state. Defaults to true. */
+  retryUnauthorized?: boolean;
+  /** Secret-free hook invoked for the final 401 returned to the caller. */
+  onUnauthorized?: (context: { path: string; statusCode: 401 }) => void;
   /** Optional concurrency limiter shared across requests */
   semaphore?: Semaphore;
 }
@@ -170,6 +174,11 @@ export interface AdtResponse {
   statusCode: number;
   headers: Record<string, string>;
   body: string;
+}
+
+interface AuthenticationAttemptState {
+  rejected: boolean;
+  tail: Promise<void>;
 }
 
 /**
@@ -199,8 +208,11 @@ export class AdtHttpClient {
   private dbRetryInProgress = false;
   /** Set after a 401 clears stale cookies — triggers file reload on the next request */
   private cookiesCleared = false;
-  constructor(config: AdtHttpConfig) {
+  /** Shared by stateful clones so one rejected Basic credential cannot fan out internally. */
+  private readonly authenticationAttemptState: AuthenticationAttemptState;
+  constructor(config: AdtHttpConfig, authenticationAttemptState?: AuthenticationAttemptState) {
     this.config = config;
+    this.authenticationAttemptState = authenticationAttemptState ?? { rejected: false, tail: Promise.resolve() };
 
     // Set up undici dispatcher for TLS configuration (non-proxy mode only).
     // Proxy requests use a dedicated Client connected to the connectivity proxy
@@ -275,7 +287,7 @@ export class AdtHttpClient {
       ...this.config,
       sessionType: 'stateful',
     };
-    const sessionClient = new AdtHttpClient(sessionConfig);
+    const sessionClient = new AdtHttpClient(sessionConfig, this.authenticationAttemptState);
     // Share CSRF token and cookies so we don't need to re-fetch
     sessionClient.csrfToken = this.csrfToken;
     sessionClient.cookieJar = new Map(this.cookieJar);
@@ -293,10 +305,40 @@ export class AdtHttpClient {
     extraHeaders?: Record<string, string>,
     options?: AdtRequestOptions,
   ): Promise<AdtResponse> {
-    if (this.config.semaphore) {
-      return this.config.semaphore.run(() => this.requestInner(method, path, body, contentType, extraHeaders, options));
+    const execute = () => {
+      if (this.config.semaphore) {
+        return this.config.semaphore.run(() =>
+          this.requestInner(method, path, body, contentType, extraHeaders, options),
+        );
+      }
+      return this.requestInner(method, path, body, contentType, extraHeaders, options);
+    };
+
+    // Shared Basic clients disable 401 retries. Serialize their internal HTTP fan-out as well:
+    // feature probes and compound handlers can otherwise start several requests with the same
+    // expired password before the first 401 is observed. Once rejected, later requests on this
+    // per-call client fail locally and never contact SAP.
+    if (this.config.retryUnauthorized === false) {
+      return this.runSerializedAuthenticationAttempt(path, execute);
     }
-    return this.requestInner(method, path, body, contentType, extraHeaders, options);
+    return execute();
+  }
+
+  private async runSerializedAuthenticationAttempt<T>(path: string, execute: () => Promise<T>): Promise<T> {
+    const previous = this.authenticationAttemptState.tail;
+    let release!: () => void;
+    this.authenticationAttemptState.tail = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      if (this.authenticationAttemptState.rejected) {
+        throw new AdtApiError('Shared Basic authentication was already rejected for this request.', 401, path);
+      }
+      return await execute();
+    } finally {
+      release();
+    }
   }
 
   /** Inner request method — CSRF, retries, content negotiation */
@@ -411,7 +453,7 @@ export class AdtHttpClient {
       // work process. If that WP has a broken HANA connection, every request fails
       // with "database connection is not open". Fix: clear the session to force
       // ICM to assign a different work process on retry.
-      if (this.isDbConnectionError(responseBody) && !this.dbRetryInProgress) {
+      if (response.status === 500 && this.isDbConnectionError(responseBody) && !this.dbRetryInProgress) {
         this.dbRetryInProgress = true;
         try {
           logger.emitAudit({
@@ -556,7 +598,7 @@ export class AdtHttpClient {
       // Uses per-request guard (not instance-level) so concurrent requests each get their own retry.
       // On success, reassigns response/responseBody and falls through to downstream handlers
       // (403 CSRF, 406/415 negotiation) so combined-failure recovery works.
-      if (response.status === 401 && !authRetried) {
+      if (response.status === 401 && !authRetried && this.config.retryUnauthorized !== false) {
         authRetried = true;
 
         logger.emitAudit({
@@ -774,6 +816,10 @@ export class AdtHttpClient {
         // stays 404-only for its callers (optional class includes etc.).
         const isProbeMiss = options?.probe === true;
         const isSuppressedNotFound = options?.suppressNotFoundLog === true && err.statusCode === 404;
+        // Authentication and authorization bodies can contain technical usernames,
+        // SAP security details, or echoed login material. They are never useful in
+        // the general audit stream and must stay out even when HTTP debug is enabled.
+        const suppressAuthBody = err.statusCode === 401 || err.statusCode === 403;
         const level = isProbeMiss || isSuppressedNotFound ? 'debug' : 'warn';
         logger.emitAudit({
           timestamp: new Date().toISOString(),
@@ -783,12 +829,14 @@ export class AdtHttpClient {
           path,
           statusCode: err.statusCode,
           durationMs,
-          errorBody: err.responseBody?.slice(0, 200),
+          errorBody: suppressAuthBody ? undefined : err.responseBody?.slice(0, 200),
           ...(process.env.ARC1_LOG_HTTP_DEBUG === 'true'
             ? {
                 requestHeaders: redactDebugHeaders(headers),
                 requestBody: truncateBody(body),
-                responseBody: truncateBody(err.responseBody),
+                responseBody: suppressAuthBody
+                  ? '[suppressed authentication response]'
+                  : truncateBody(err.responseBody),
               }
             : {}),
         });
@@ -824,18 +872,31 @@ export class AdtHttpClient {
     return matched;
   }
 
+  private notifyUnauthorized(path: string): void {
+    if (this.config.retryUnauthorized === false) {
+      this.authenticationAttemptState.rejected = true;
+    }
+    try {
+      this.config.onUnauthorized?.({ path, statusCode: 401 });
+    } catch {
+      // Authentication-state observers must never replace the SAP error.
+    }
+  }
+
   /** Handle response: throw on error status, return normalized response */
   private handleResponse(status: number, headers: Headers, body: string, path: string): AdtResponse {
     const contentType = headers.get('content-type')?.toLowerCase();
+    const isCoreDiscovery = path.split('?', 1)[0] === '/sap/bc/adt/core/discovery';
     if (
       status === 200 &&
       path.startsWith('/sap/bc/adt/') &&
-      contentType?.startsWith('text/html') &&
+      (contentType?.startsWith('text/html') || isCoreDiscovery) &&
       looksLikeLoginPage(body)
     ) {
       if (this.isCookieAuthMode()) {
         this.clearCookiesAndMark();
       }
+      this.notifyUnauthorized(path);
       throw new AdtApiError(
         'ADT call returned HTML login page — authentication required. If using cookies, they may have expired. If using Basic auth, credentials may be invalid or not authorized for ADT (S_ADT_RES missing). If on an SSO-only system, try SAP_DISABLE_SAML=true or see docs/enterprise-auth.md. Re-run arc-1 after fixing.',
         401,
@@ -845,6 +906,9 @@ export class AdtHttpClient {
     }
 
     if (status >= 400) {
+      if (status === 401) {
+        this.notifyUnauthorized(path);
+      }
       throw new AdtApiError(body.slice(0, 500), status, path, body);
     }
 
@@ -927,23 +991,40 @@ export class AdtHttpClient {
         response = await this.doFetch(url, 'HEAD', headers);
       }
 
-      // S/4HANA Public Cloud compat: CL_ADT_WB_RES_APP returns 403 for HEAD.
-      // Retry with GET — GET also returns the CSRF token via X-CSRF-Token response header.
-      if (response.status === 403) {
+      // Preserve any session established by HEAD before deciding whether GET is needed.
+      // The fallback request must use the same SAP session as the eventual write.
+      this.storeCookies(response);
+
+      const headToken = response.headers.get('x-csrf-token');
+      const headSucceededWithoutToken = response.ok && (!headToken || headToken.toLowerCase() === 'required');
+
+      // Some systems reject HEAD with 403; others accept it but omit the token. In both
+      // cases retry with GET, which is the broadly supported CSRF bootstrap method and
+      // also exposes a real authentication failure instead of a misleading HTTP 200 error.
+      if (response.status === 403 || headSucceededWithoutToken) {
+        const fallbackCookieHeader = this.composeCookieHeader();
+        if (fallbackCookieHeader) {
+          headers.Cookie = fallbackCookieHeader;
+        } else {
+          delete headers.Cookie;
+        }
         logger.emitAudit({
           timestamp: new Date().toISOString(),
-          level: 'warn',
+          level: response.status === 403 ? 'warn' : 'debug',
           event: 'http_request',
           method: 'HEAD',
           path: '/sap/bc/adt/core/discovery',
-          statusCode: 403,
+          statusCode: response.status,
           durationMs: 0,
-          errorBody: 'CSRF HEAD returned 403 — retrying with GET (S/4HANA Public Cloud compat)',
+          errorBody:
+            response.status === 403
+              ? 'CSRF HEAD returned 403 — retrying with GET (S/4HANA Public Cloud compat)'
+              : 'CSRF HEAD returned no usable token — retrying with GET',
         });
         response = await this.doFetch(url, 'GET', headers);
       }
 
-      // Store cookies from CSRF response — critical for session correlation
+      // Store cookies from the final CSRF response — critical for session correlation.
       this.storeCookies(response);
 
       const token = response.headers.get('x-csrf-token');
@@ -952,6 +1033,7 @@ export class AdtHttpClient {
           if (this.isCookieAuthMode()) {
             this.clearCookiesAndMark();
           }
+          this.notifyUnauthorized('/sap/bc/adt/core/discovery');
           throw new AdtApiError(
             `Authentication failed (401) using sap-client=${this.config.client ?? '100'}. Check SAP_CLIENT, SAP_USER, and SAP_PASSWORD.`,
             401,

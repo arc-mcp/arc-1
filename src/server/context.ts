@@ -13,6 +13,12 @@ export interface RequestContext {
   requestId: string;
   user?: string;
   tool?: string;
+  /** Legacy multi-destination/internal runtime key. Never expose it as a public target. */
+  destination?: string;
+  /** Public immutable SID/client target for multi-target calls. */
+  target?: string;
+  /** Effective SAP identity mode for the selected multi-target call. */
+  identity?: 'per-user' | 'shared';
 }
 
 export const requestContext = new AsyncLocalStorage<RequestContext>();
