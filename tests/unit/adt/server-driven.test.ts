@@ -4,7 +4,7 @@ import { AdtApiError, AdtSafetyError } from '../../../src/adt/errors.js';
 import type { AdtHttpClient } from '../../../src/adt/http.js';
 import { type SafetyConfig, unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
 import {
-  buildBlueSourceXml,
+  buildServerDrivenMetadataXml,
   createServerDrivenObject,
   deleteServerDrivenObject,
   getServerDrivenObject,
@@ -15,7 +15,7 @@ import {
   supportsServerDrivenObject,
   updateServerDrivenObjectSource,
 } from '../../../src/adt/server-driven.js';
-import { parseBlueSource } from '../../../src/adt/xml-parser.js';
+import { parseServerDrivenMetadata } from '../../../src/adt/xml-parser.js';
 
 const readOnlySafety = (): SafetyConfig => ({ ...unrestrictedSafetyConfig(), allowWrites: false });
 
@@ -65,9 +65,9 @@ function mockHttp(resolve: (path: string) => { statusCode?: number; body: string
   } as unknown as AdtHttpClient;
 }
 
-describe('parseBlueSource', () => {
+describe('parseServerDrivenMetadata', () => {
   it('parses DESD metadata (name/type/description/package/language)', () => {
-    const m = parseBlueSource(DESD_META);
+    const m = parseServerDrivenMetadata(DESD_META, 'blueSource');
     expect(m.name).toBe('DEMO_CDS_LOGICL_EXTERNL_SCHEMA');
     expect(m.type).toBe('DESD/TYP');
     expect(m.description).toBe('Demo CDS Logical External Schema');
@@ -79,14 +79,25 @@ describe('parseBlueSource', () => {
   });
 
   it('parses EVTB metadata (RAP event binding)', () => {
-    const m = parseBlueSource(EVTB_META);
+    const m = parseServerDrivenMetadata(EVTB_META, 'blueSource');
     expect(m.name).toBe('S_BUSINESSPARTNER_CHANGE');
     expect(m.type).toBe('EVTB/EVB');
     expect(m.package).toBe('MDC_BUPA_BO');
   });
 
+  it('parses DTDC metadata from the dtdc:dtdcSource root (non-blue format)', () => {
+    const DTDC_META =
+      '<?xml version="1.0" encoding="utf-8"?><dtdc:dtdcSource adtcore:responsible="SAP" adtcore:masterLanguage="EN" adtcore:abapLanguageVersion="cloudDevelopment" adtcore:name="DEMO_DDIC_DYNAMIC_CACHE" adtcore:type="DTDC/DF" adtcore:version="active" adtcore:description="Demo Dynamic Cache" xmlns:dtdc="http://www.sap.com/adt/ddic/dtdcsources" xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:packageRef adtcore:name="SABAP_DEMOS"/></dtdc:dtdcSource>';
+    const m = parseServerDrivenMetadata(DTDC_META, 'dtdcSource');
+    expect(m.name).toBe('DEMO_DDIC_DYNAMIC_CACHE');
+    expect(m.type).toBe('DTDC/DF');
+    expect(m.description).toBe('Demo Dynamic Cache');
+    expect(m.package).toBe('SABAP_DEMOS');
+    expect(m.abapLanguageVersion).toBe('cloudDevelopment');
+  });
+
   it('returns empty name/type for an unrelated root and omits empty optionals', () => {
-    const m = parseBlueSource('<other/>');
+    const m = parseServerDrivenMetadata('<other/>', 'blueSource');
     expect(m.name).toBe('');
     expect(m.type).toBe('');
     expect(m.package).toBeUndefined();
@@ -183,18 +194,22 @@ describe('getServerDrivenObject', () => {
 });
 
 describe('SDO registry write metadata', () => {
-  it('every entry carries a createType and a blues content-type', () => {
+  it('every entry carries a createType and a metadata content-type', () => {
     for (const e of Object.values(SDO_REGISTRY)) {
       expect(e.createType).toMatch(/^[A-Z]{4}\/[A-Z]+$/);
-      expect(e.blueContentType).toMatch(/^application\/vnd\.sap\.adt\.blues\.v[12]\+xml$/);
+      expect(e.metadataContentType).toMatch(/^application\/vnd\.sap\.adt\./);
     }
   });
 
-  it('EVTO uses blues v2; the others use v1 (verified live on 816)', () => {
-    expect(SDO_REGISTRY.EVTO.blueContentType).toContain('v2');
+  it('the blue family uses blues content types (EVTO v2, rest v1); DTDC uses its own (verified live)', () => {
+    expect(SDO_REGISTRY.EVTO.metadataContentType).toContain('blues.v2');
     for (const code of ['DESD', 'DTSC', 'CSNM', 'EVTB', 'COTA', 'DSFD'] as const) {
-      expect(SDO_REGISTRY[code].blueContentType).toContain('v1');
+      expect(SDO_REGISTRY[code].metadataContentType).toContain('blues.v1');
+      expect(SDO_REGISTRY[code].discoveryMarker).toBe('blues');
     }
+    expect(SDO_REGISTRY.DTDC.metadataContentType).toBe('application/vnd.sap.adt.ddic.dtdc.v1+xml');
+    expect(SDO_REGISTRY.DTDC.discoveryMarker).toBe('dtdc');
+    expect(SDO_REGISTRY.DTDC.metadataRootLocalName).toBe('dtdcSource');
   });
 
   it('createType is not uniformly /TYP (EVTB → EVTB/EVB)', () => {
@@ -225,9 +240,9 @@ describe('serverDrivenObjectUrl', () => {
   });
 });
 
-describe('buildBlueSourceXml', () => {
+describe('buildServerDrivenMetadataXml', () => {
   it('emits the per-type createType, packageRef, and escapes the description', () => {
-    const xml = buildBlueSourceXml('EVTB', 'ZEVT', '$TMP', 'A & B "x"');
+    const xml = buildServerDrivenMetadataXml('EVTB', 'ZEVT', '$TMP', 'A & B "x"');
     expect(xml).toContain('adtcore:type="EVTB/EVB"');
     expect(xml).toContain('adtcore:name="ZEVT"');
     expect(xml).toContain('adtcore:description="A &amp; B &quot;x&quot;"');
@@ -238,12 +253,20 @@ describe('buildBlueSourceXml', () => {
     // The create body deliberately omits masterLanguage: a4h-2025 (816) silently ignores it
     // (create with "DE" → object read back as the session language). Master language comes from
     // the sap-language request param (session = config.language), as with other source objects.
-    for (const code of ['DESD', 'DTSC', 'CSNM', 'EVTB', 'EVTO', 'COTA', 'DSFD']) {
-      expect(buildBlueSourceXml(code, 'Z', '$TMP', 'd')).not.toContain('masterLanguage');
+    for (const code of ['DESD', 'DTSC', 'CSNM', 'EVTB', 'EVTO', 'COTA', 'DSFD', 'DTDC']) {
+      expect(buildServerDrivenMetadataXml(code, 'Z', '$TMP', 'd')).not.toContain('masterLanguage');
     }
   });
   it('throws AdtApiError for an unknown code', () => {
-    expect(() => buildBlueSourceXml('NOPE', 'Z', '$TMP', 'd')).toThrow(AdtApiError);
+    expect(() => buildServerDrivenMetadataXml('NOPE', 'Z', '$TMP', 'd')).toThrow(AdtApiError);
+  });
+
+  it('emits the DTDC root element + namespace (not blue) for the non-blue type', () => {
+    const xml = buildServerDrivenMetadataXml('DTDC', 'ZDYN', '$TMP', 'd');
+    expect(xml).toContain('<dtdc:dtdcSource xmlns:dtdc="http://www.sap.com/adt/ddic/dtdcsources"');
+    expect(xml).toContain('adtcore:type="DTDC/DF"');
+    expect(xml).toContain('</dtdc:dtdcSource>');
+    expect(xml).not.toContain('blue:blueSource');
   });
   it('emits a cloud-safe create body for every type — no responsible/masterSystem/abapLanguageVersion (BTP)', () => {
     // BTP/Steampunk create simple-transformations reject adtcore:responsible/masterSystem; the cloud
@@ -252,7 +275,7 @@ describe('buildBlueSourceXml', () => {
     // so a refactor can't reintroduce a cloud-hostile attribute. See btp-abap.integration.test.ts.
     const reg = SDO_REGISTRY as Record<string, { createType: string }>;
     for (const code of Object.keys(reg)) {
-      const xml = buildBlueSourceXml(code, 'ZARC1_SDO', 'ZPKG', 'd');
+      const xml = buildServerDrivenMetadataXml(code, 'ZARC1_SDO', 'ZPKG', 'd');
       expect(xml).not.toContain('adtcore:responsible');
       expect(xml).not.toContain('adtcore:masterSystem');
       expect(xml).not.toContain('abapLanguageVersion');

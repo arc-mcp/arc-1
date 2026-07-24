@@ -40,7 +40,7 @@ import { fetchDiscoveryDocument } from '../../src/adt/discovery.js';
 import { createBearerTokenProvider, loadServiceKeyFile } from '../../src/adt/oauth.js';
 import { unrestrictedSafetyConfig } from '../../src/adt/safety.js';
 import {
-  buildBlueSourceXml,
+  buildServerDrivenMetadataXml,
   createServerDrivenObject,
   SDO_REGISTRY,
   serverDrivenObjectUrl,
@@ -841,12 +841,12 @@ describeIf('BTP ABAP Environment Integration Tests', () => {
 
   // ─── BTP-Specific: SDO (server-driven) object-create path ──────────────
   //
-  // The six registered 8.16+ server-driven types (DESD/DTSC/CSNM/EVTB/EVTO/COTA) create via a minimal
-  // <blue:blueSource> body (buildBlueSourceXml) that — by construction — carries NO adtcore:responsible,
+  // The registered 8.16+ server-driven types (DESD/DTSC/CSNM/EVTB/EVTO/COTA/DSFD/DTDC) create via a minimal
+  // <blue:blueSource> body (buildServerDrivenMetadataXml) that — by construction — carries NO adtcore:responsible,
   // masterSystem, or abapLanguageVersion, so it needs no cloudify. Live-verified on BTP 919: every type's
   // body deserializes and reaches package-assignment (structure package → 409 "cannot contain development
   // objects"; DTSC → 403 resource-auth). A wrong body would 400 at the create simple-transformation.
-  describe('BTP SDO object-create path (DESD/DTSC/CSNM/EVTB/EVTO/COTA)', () => {
+  describe('BTP SDO object-create path (DESD/DTSC/CSNM/EVTB/EVTO/COTA/DSFD/DTDC)', () => {
     const structurePkg = process.env.TEST_BTP_STRUCTURE_PACKAGE || 'ZLOCAL';
     const writablePkg = process.env.TEST_BTP_PACKAGE;
     const codes = Object.keys(SDO_REGISTRY);
@@ -869,7 +869,7 @@ describeIf('BTP ABAP Environment Integration Tests', () => {
         const name = generateUniqueName(`ZARC1_SDO_${code}`);
         const objectUrl = serverDrivenObjectUrl(code, name);
         // The blue body must carry no cloud-hostile attrs — the owner comes from the JWT on cloud.
-        const body = buildBlueSourceXml(code, name, structurePkg, `ARC-1 BTP ${code} body check`);
+        const body = buildServerDrivenMetadataXml(code, name, structurePkg, `ARC-1 BTP ${code} body check`);
         expect(body).not.toContain('adtcore:responsible');
         expect(body).not.toContain('adtcore:masterSystem');
         let created = false;

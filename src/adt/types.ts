@@ -318,7 +318,7 @@ export interface CdsTestCasesResult {
 /**
  * Metadata of a "server-driven object" (AFF generic object) — the ABAP Platform 2025
  * (SAP_BASIS 8.16+) contract shared by DESD, EVTB, DTSC, COTA, … Parsed from the
- * `<blue:blueSource>` document (GET …/{name}, Accept application/vnd.sap.adt.blues.v1+xml).
+ * `<blue:blueSource>/<dtdc:dtdcSource>` document (GET …/{name}, Accept application/vnd.sap.adt.blues.v1+xml).
  */
 export interface ServerDrivenObjectMetadata {
   name: string;

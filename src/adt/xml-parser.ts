@@ -1255,13 +1255,13 @@ export function parseClassMetadata(xml: string): ClassMetadata {
 }
 
 /**
- * Parse the `<blue:blueSource>` metadata of a server-driven (AFF generic) object — the
- * ABAP Platform 2025 (8.16+) contract shared by DESD, EVTB, DTSC, COTA, … (GET …/{name},
- * Accept application/vnd.sap.adt.blues.v1+xml). `removeNSPrefix` strips blue:/adtcore:, so the
- * root element <blue:blueSource> is keyed `blueSource`. Optional fields are omitted when empty.
+ * Parse the metadata of a server-driven (AFF generic) object — the contract shared by DESD, EVTB,
+ * DTSC, COTA, DSFD (root `<blue:blueSource>`) and DTDC (root `<dtdc:dtdcSource>`). `removeNSPrefix`
+ * strips the prefix, so the root is keyed by its local name (`rootLocalName`: `blueSource` /
+ * `dtdcSource`). The attribute shape is identical across formats. Optional fields omitted when empty.
  */
-export function parseBlueSource(xml: string): ServerDrivenObjectMetadata {
-  const root = (parseXml(xml).blueSource ?? {}) as Record<string, unknown>;
+export function parseServerDrivenMetadata(xml: string, rootLocalName: string): ServerDrivenObjectMetadata {
+  const root = (parseXml(xml)[rootLocalName] ?? {}) as Record<string, unknown>;
   const pkgRef = (root.packageRef ?? {}) as Record<string, unknown>;
   const str = (k: string): string => {
     const v = root[k];

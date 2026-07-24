@@ -12,7 +12,11 @@ import {
   unpublishServiceBinding,
 } from '../adt/devtools.js';
 import { AdtSafetyError } from '../adt/errors.js';
-import { isServerDrivenObjectType, serverDrivenBlueContentType, serverDrivenObjectUrl } from '../adt/server-driven.js';
+import {
+  isServerDrivenObjectType,
+  serverDrivenMetadataContentType,
+  serverDrivenObjectUrl,
+} from '../adt/server-driven.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
 import { type CacheSecurityContext, invalidateInactiveList } from './cache-security.js';
 import { buildCdsActivationDependencyHint } from './cds-hints.js';
@@ -361,7 +365,7 @@ export async function handleSAPActivate(
     client,
     objectUrl,
     `Activation of ${type} '${name}'`,
-    isServerDrivenObjectType(type) ? serverDrivenBlueContentType(type) : undefined,
+    isServerDrivenObjectType(type) ? serverDrivenMetadataContentType(type) : undefined,
   );
 
   // Capture the inactive draft before activation flips it to active (see captureDraftForPromotion).
