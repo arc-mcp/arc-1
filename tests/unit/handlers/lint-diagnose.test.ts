@@ -1221,7 +1221,7 @@ ENDCLASS.`;
       expect(urls.some((u) => u.includes('/atc/variants?name=*'))).toBe(true);
     });
 
-    it('still returns the variant list when /atc/customizing is unavailable', async () => {
+    it('degrades to null default when /atc/customizing is absent (404) — list survives', async () => {
       mockFetch.mockReset();
       mockFetch.mockImplementation((url: string | URL) => {
         const u = String(url);
@@ -1233,6 +1233,20 @@ ENDCLASS.`;
       const payload = JSON.parse(result.content[0]?.text);
       expect(payload.systemDefault).toBeNull();
       expect(payload.count).toBe(2);
+    });
+
+    it('does NOT silently succeed when /atc/customizing fails with 403/500 — the error surfaces', async () => {
+      for (const status of [403, 500]) {
+        mockFetch.mockReset();
+        mockFetch.mockImplementation((url: string | URL) => {
+          const u = String(url);
+          if (u.includes('/atc/customizing')) return Promise.resolve(mockResponse(status, 'boom'));
+          return Promise.resolve(mockResponse(200, VARIANTS));
+        });
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPDiagnose', { action: 'atc_variants' });
+        // A real customizing failure (auth/5xx) must NOT masquerade as a successful null-default listing.
+        expect(result.isError).toBe(true);
+      }
     });
   });
 });

@@ -700,7 +700,6 @@ function hasCoverageMetrics(summary: CoverageSummary): boolean {
   return Boolean(summary.statement || summary.branch || summary.procedure);
 }
 
-/** Run ATC check on an object */
 /**
  * List the ATC check variants this system offers — the valid values for `runAtcCheck`'s `variant`.
  * GETs the ADT named-item feed `/sap/bc/adt/atc/variants?name=<pattern>` (`*` = all). The `name`
@@ -729,6 +728,7 @@ export async function getAtcSystemDefaultVariant(
   return parseAtcSystemCheckVariant(resp.body);
 }
 
+/** Run ATC check on an object */
 export async function runAtcCheck(
   http: AdtHttpClient,
   safety: SafetyConfig,

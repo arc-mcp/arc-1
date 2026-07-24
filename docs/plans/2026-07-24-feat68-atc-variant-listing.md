@@ -9,14 +9,13 @@
 available variants (name + description). Closes the "LLM must guess the `variant` string" gap for
 `SAPDiagnose action=atc`. Read-only. Mirrors adt-ls's own `list_atc_variants` tool.
 
-Result shape (text, LLM-friendly):
+Input: reuses the existing `variant` param as the name filter (default `*` = all). Output: JSON via
+`toolJson`:
+```json
+{ "systemDefault": "ZABAP_CLOUD_DEVELOPMENT", "filter": "*", "count": 215,
+  "variants": [ { "name": "ABAP_CLOUD_DEVELOPMENT_3TIER", "description": "Variant 4 Cloud Development with 3 Tier Extensibility Model" }, … ] }
 ```
-System default check variant: ZABAP_CLOUD_DEVELOPMENT
-Available variants (215; filter "*"):
-  ABAP_CLOUD_DEVELOPMENT_3TIER — Variant 4 Cloud Development with 3 Tier Extensibility Model
-  ABAP_CLOUD_DEVELOPMENT_DEFAULT — …
-  …
-```
+The list is fetched with `Accept: application/vnd.sap.adt.nameditems.v1+xml`.
 
 ## Verified contract (from dossier)
 

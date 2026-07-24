@@ -55,8 +55,10 @@ value of surfacing it is **transparency**, not behavior change: the LLM can see/
 
 A dedicated read action, mirroring adt-ls's own `list_atc_variants` tool:
 
-`SAPDiagnose action=atc_variants[, filter="<pattern>"]` → `{ systemDefault: "ZABAP_CLOUD_DEVELOPMENT",
-variants: [{ name, description }] }`.
+`SAPDiagnose action=atc_variants` → JSON `{ systemDefault: "ZABAP_CLOUD_DEVELOPMENT", filter, count,
+variants: [{ name, description }] }`. **As shipped: the existing `variant` param doubles as the
+name filter** (default `*`) — no new `filter` property was added. The list uses
+`Accept: application/vnd.sap.adt.nameditems.v1+xml`.
 
 - Combines both endpoints: customizing (default) + variants list (filtered by `name`, default `*`).
 - Read-only → `data`? No — pure ADT read, `read` scope (same as `action=atc`'s reads). No new safety surface.
@@ -78,7 +80,7 @@ reactive). Keep the option open if budget is tight on main.
 | `src/adt/devtools.ts` | `listAtcVariants()` (GET `/atc/variants?name=`) + `getAtcSystemDefaultVariant()` (GET `/atc/customizing`) |
 | `src/adt/xml-parser.ts` | parse `<nameditem:namedItemList>` (name+description) and `<atc:customizing>` `systemCheckVariant` |
 | `src/handlers/diagnose.ts` | `action=atc_variants` case |
-| `src/handlers/schemas.ts`, `tools.ts` | new action enum value + optional `filter` param + description (3-file sync) |
+| `src/handlers/schemas.ts`, `tools.ts` | new action enum value + description (reuses existing `variant` param as the filter; 3-file sync) |
 | `src/authz/policy.ts` | `SAPDiagnose.atc_variants` → `read` scope |
 | `tests/unit/adt/devtools.test.ts` (or new), `tests/unit/handlers/diagnose*.test.ts` | parser + handler tests with the live fixture |
 | `tests/fixtures/tool-definitions/*.json` | regenerate (new action) |

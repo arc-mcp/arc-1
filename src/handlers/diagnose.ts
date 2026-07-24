@@ -93,11 +93,15 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
       // given) + the available variants. `variant` doubles as an optional name filter (default all).
       // Trim/normalize so the echoed `filter` matches what listAtcVariants actually queries.
       const filter = (args.variant as string | undefined)?.trim() || '*';
-      // The variant list is the core result; the system default is a best-effort annotation, so a
-      // missing/failing /atc/customizing (older or differently-configured system) must not sink the
-      // whole action — degrade to null default rather than erroring.
+      // The variant list is the core result; the system default is a best-effort annotation. Only
+      // swallow "endpoint absent / not negotiable" (404/406) — a system that simply doesn't expose
+      // /atc/customizing still gives a useful list. Auth (401/403), 5xx, and network failures are
+      // real problems and must surface, not masquerade as a null default (would hide a regression).
       const [systemDefault, variants] = await Promise.all([
-        getAtcSystemDefaultVariant(client.http, client.safety).catch(() => undefined),
+        getAtcSystemDefaultVariant(client.http, client.safety).catch((err) => {
+          if (err instanceof AdtApiError && (err.statusCode === 404 || err.statusCode === 406)) return undefined;
+          throw err;
+        }),
         listAtcVariants(client.http, client.safety, filter),
       ]);
       return textResult(
