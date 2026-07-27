@@ -55,7 +55,23 @@ describe('multi-target tool surface', () => {
     expect(lint.inputSchema.properties).not.toHaveProperty('style');
 
     const diagnose = tools.find((tool) => tool.name === 'SAPDiagnose') as ToolDefinition;
-    expect(property(diagnose, 'action').enum).toEqual(expect.arrayContaining(['atc', 'unittest']));
+    expect(property(diagnose, 'action').enum).toEqual([
+      'syntax',
+      'unittest',
+      'atc',
+      'atc_variants',
+      'cds_testcases',
+      'dumps',
+      'traces',
+      'trace_requests',
+      'system_messages',
+      'gateway_errors',
+      'object_state',
+      'quickfix',
+      'cds_sql',
+      'sql_trace_state',
+      'sql_trace_directory',
+    ]);
 
     const transport = tools.find((tool) => tool.name === 'SAPTransport') as ToolDefinition;
     expect(property(transport, 'action').enum).toEqual(['list', 'get', 'check', 'history']);
@@ -70,7 +86,25 @@ describe('multi-target tool surface', () => {
     const read = tools.find((tool) => tool.name === 'SAPRead') as ToolDefinition;
     expect(property(read, 'type').enum).toEqual(expect.arrayContaining(['TABLE_CONTENTS', 'TABLE_QUERY']));
     const diagnose = tools.find((tool) => tool.name === 'SAPDiagnose') as ToolDefinition;
-    expect(property(diagnose, 'action').enum).toEqual(expect.arrayContaining(['odata_perf', 'authorization_trace']));
+    expect(property(diagnose, 'action').enum).toEqual([
+      'syntax',
+      'unittest',
+      'atc',
+      'atc_variants',
+      'cds_testcases',
+      'dumps',
+      'traces',
+      'trace_requests',
+      'system_messages',
+      'gateway_errors',
+      'object_state',
+      'quickfix',
+      'odata_perf',
+      'cds_sql',
+      'sql_trace_state',
+      'sql_trace_directory',
+      'authorization_trace',
+    ]);
   });
 
   it.each([1, 16])('uses an exact target enum for %i targets', (count) => {
@@ -110,6 +144,17 @@ describe('multi-target tool surface', () => {
     expect(multiTargetInvocationDecision('SAPTransport', { action: 'layers' }, DEFAULT_CONFIG)).toBe('forbidden');
     expect(multiTargetInvocationDecision('SAPDiagnose', { action: 'atc' }, DEFAULT_CONFIG)).toBe('allowed');
     expect(multiTargetInvocationDecision('SAPDiagnose', { action: 'unittest' }, DEFAULT_CONFIG)).toBe('allowed');
+    expect(multiTargetInvocationDecision('SAPDiagnose', { action: 'trace_start' }, DEFAULT_CONFIG)).toBe('forbidden');
+    expect(multiTargetInvocationDecision('SAPDiagnose', { action: 'trace_cancel' }, DEFAULT_CONFIG)).toBe('forbidden');
+    expect(multiTargetInvocationDecision('SAPDiagnose', { action: 'apply_quickfix' }, DEFAULT_CONFIG)).toBe(
+      'forbidden',
+    );
+    expect(multiTargetInvocationDecision('SAPDiagnose', { action: 'set_sql_trace_state' }, DEFAULT_CONFIG)).toBe(
+      'forbidden',
+    );
+    expect(multiTargetInvocationDecision('SAPDiagnose', { action: 'future_read_action' }, DEFAULT_CONFIG)).toBe(
+      'forbidden',
+    );
     expect(multiTargetInvocationDecision('SAP', { action: 'read' }, DEFAULT_CONFIG)).toBe('forbidden');
     expect(multiTargetInvocationDecision('Custom_Read', {}, DEFAULT_CONFIG)).toBe('forbidden');
   });

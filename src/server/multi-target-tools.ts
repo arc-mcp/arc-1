@@ -47,6 +47,31 @@ const MULTI_TARGET_ACTION_RULES = new Map<
       ]),
     },
   ],
+  [
+    'SAPDiagnose',
+    {
+      actions: new Set([
+        'syntax',
+        'unittest',
+        'atc',
+        'atc_variants',
+        'cds_testcases',
+        'dumps',
+        'traces',
+        'trace_requests',
+        'system_messages',
+        'gateway_errors',
+        'object_state',
+        'quickfix',
+        'odata_perf',
+        'cds_sql',
+        'sql_trace_state',
+        'sql_trace_directory',
+        'authorization_trace',
+      ]),
+      omittedProperties: new Set(),
+    },
+  ],
 ]);
 
 const ALLOWED_OPS = new Set<OperationTypeCode>([
