@@ -64,7 +64,7 @@ Use `SAPRead` when you need exact raw source, one method body, grep output, inac
 | `objectType` | string | No | For API_STATE: SAP object type (CLAS, INTF, PROG, FUGR, etc.) — auto-detected from name if omitted |
 | `version` | string | No | Source version: `active` (default), `inactive`, or `auto`. Applies to source-bearing types (PROG, CLAS, INTF, FUNC, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, FUGR, SRVB, SKTD/KTD, TABL, VIEW). See [Active vs Inactive Source](#active-vs-inactive-source) below. |
 | `force_refresh` | boolean | No | For source reads: bypass the cached source AND the inactive-list cache before reading. Use when you know the object changed outside ARC-1 in a way conditional GET can't catch. |
-| `includeSignature` | boolean | No | For `FUNC` only. When `true`, response is JSON `{source, signature: {importing[], exporting[], changing[], tables[], exceptions[], raising[]}}` — each parameter parsed into `{kind, name, type, byValue?, default?, optional?}`. Default `false` (returns plain source body). Use this to introspect FM signatures programmatically. See [SAPWrite for FUNC](#sapwrite-for-func-create--update-with-structured-parameters) for the round-trip. |
+| `includeSignature` | boolean | No | For `FUNC` only. When `true`, response is JSON `{source, signature: {importing[], exporting[], changing[], tables[], exceptions[], raising[]}}` — each parameter parsed into `{kind, name, type, byValue?, default?, optional?}`. Default `false` (returns plain source body). Use this to introspect FM signatures programmatically. See [SAPWrite for FUNC](#sapwrite-for-func-create-update-with-structured-parameters) for the round-trip. |
 
 **Supported types:**
 
@@ -599,7 +599,7 @@ One range replacement on a method's declaration. The IMPLEMENTATION block is unt
 
 Drops both the METHODS clause and the METHOD…ENDMETHOD body in one PUT. ABSTRACT methods (no IMPL) have only the DEFINITION line removed.
 
-> ⚠️ **Destructive — discards the method body.** Do **not** use `delete_method` + `add_method` to change a method's visibility: that recreates an empty stub and loses the implementation. Use [`change_method_visibility`](#actionchange_method_visibility--move-a-method-between-sections-body-preserved) instead, which moves the declaration while leaving the body untouched.
+> ⚠️ **Destructive — discards the method body.** Do **not** use `delete_method` + `add_method` to change a method's visibility: that recreates an empty stub and loses the implementation. Use [`change_method_visibility`](#actionchange_method_visibility-move-a-method-between-sections-body-preserved) instead, which moves the declaration while leaving the body untouched.
 
 ```jsonc
 {
@@ -968,7 +968,7 @@ If the object has no KTD or the backend returns 404/410 for the KTD document, AR
 * === Dependency context for ZCL_ORDER (3 deps resolved) [cached] ===
 ```
 
-The `[cached]` label here is for **dependency graph hits** (hash-keyed, naturally correct without server validation). It is distinct from `[cached:revalidated]` which appears on `SAPRead` source responses after SAP confirms freshness via `304 Not Modified`. See [Caching System → Response Indicators](caching.md#response-indicators) for details.
+The `[cached]` label here is for **dependency graph hits** (hash-keyed, naturally correct without server validation). It is distinct from `[cached:revalidated]` which appears on `SAPRead` source responses after SAP confirms freshness via `304 Not Modified`. See [Caching System → Source freshness](caching.md#source-freshness) for details.
 
 ### action="structure" — DDIC includes + append structures (TABL only)
 

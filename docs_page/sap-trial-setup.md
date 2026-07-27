@@ -68,7 +68,7 @@ image and runs as a separate Java process inside the same container.
    - [Work Process Tuning](#work-process-tuning)
    - [User Access](#user-access)
    - [Unlocking the DEVELOPER User](#unlocking-the-developer-user)
-5. [HTTPS / Reverse Proxy Setup](#https--reverse-proxy-setup)
+5. [HTTPS / Reverse Proxy Setup](#https-reverse-proxy-setup)
 6. [Cloud Connector Setup](#cloud-connector-setup)
    - [Starting Cloud Connector](#starting-cloud-connector)
    - [Nginx HTTPS Proxy for CC Admin](#nginx-https-proxy-for-cc-admin)

@@ -235,7 +235,7 @@ ARC-1 ships three independent rate-limiting layers, each addressing a distinct t
 
 All three layers are per-instance and in-memory. Multi-instance attackers cost `N × limit` for Layers 1 + 2 — acceptable trade-off for the stateless-deployment property.
 
-For the full operator picture (threat model, sizing math against `rdisp/wp_no_dia`, troubleshooting decision tree, opt-out per layer), see the [Rate Limiting Guide](rate-limiting.md). Design rationale: [ADR-0004](../docs/adr/0004-layered-rate-limiting.md).
+For the full operator picture (threat model, sizing math against `rdisp/wp_no_dia`, troubleshooting decision tree, opt-out per layer), see the [Rate Limiting Guide](rate-limiting.md). Design rationale: [ADR-0004](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0004-layered-rate-limiting.md).
 
 ## 9. Audit Logging
 

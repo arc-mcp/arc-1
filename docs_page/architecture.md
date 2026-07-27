@@ -153,7 +153,7 @@ Three rate-limiting layers gate the request flow at different stages:
 - **Layer 2** runs at the top of `handleToolCall`, AFTER `authInfo` is available but BEFORE scope/Zod/safety checks. A per-user token bucket returns an MCP tool error (not HTTP 429) so the LLM agent loop backs off.
 - **Layer 3** is the server-wide `Semaphore` inside the ADT HTTP client — caps concurrent SAP requests across ALL users (shared + per-user PP). Honors `Retry-After` on `429`/`503` from SAP or BTP gateways.
 
-See the [Rate Limiting Guide](rate-limiting.md) and [ADR-0004](../docs/adr/0004-layered-rate-limiting.md).
+See the [Rate Limiting Guide](rate-limiting.md) and [ADR-0004](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0004-layered-rate-limiting.md).
 
 ## Tool listing flow
 
