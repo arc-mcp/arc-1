@@ -725,11 +725,22 @@ export async function startHttpServer(
       // This enables scope enforcement, per-request safety, and principal propagation.
       const { requireBearerAuth } = await import('@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js');
       const verifier = await createStandardVerifier(config);
-      const bearerAuth = requireBearerAuth({ verifier: { verifyAccessToken: verifier } });
+
+      // ─── RFC 9728 protected-resource metadata (OIDC mode) ─────────
+      // ARC-1 is a pure resource server here: it publishes WHERE the external
+      // IdP lives and mints no tokens. Skipped for api-key-only mode (no
+      // authorization server to advertise) and when the admin opted out.
+      const resourceMetadataUrl =
+        config.oidcIssuer && config.oidcDiscovery
+          ? await mountOidcResourceMetadata(app, config, bindHost, port)
+          : undefined;
+
+      const bearerAuth = requireBearerAuth({ verifier: { verifyAccessToken: verifier }, resourceMetadataUrl });
       if (uiDeps) {
         const uiBearerAuth = requireBearerAuth({
           verifier: { verifyAccessToken: verifier },
           requiredScopes: ['admin'],
+          resourceMetadataUrl,
         });
         mountUiRoutes(app, uiDeps, uiBearerAuth);
       }
@@ -823,6 +834,76 @@ function buildPackageOidcVerifier(
     ...(config.oidcClockTolerance != null ? { clockToleranceSec: config.oidcClockTolerance } : {}),
     logger: authLibLogger,
   });
+}
+
+// ─── OIDC Protected-Resource Metadata (RFC 9728) ────────────────────
+
+/**
+ * Build the RFC 9728 document ARC-1 publishes in OIDC mode.
+ *
+ * ARC-1 is only the resource server here: `authorization_servers` points at the
+ * external IdP, and clients discover its endpoints themselves (RFC 8414 with the
+ * OIDC-discovery fallbacks — Entra only answers the append form). `resource` is
+ * the canonical MCP endpoint URI; MCP clients reject a document whose `resource`
+ * is not same-origin with the server they called.
+ *
+ * `scopes_supported` is IdP-specific (`api://<client-id>/access_as_user` on Entra,
+ * arbitrary elsewhere) and cannot be derived from `SAP_OIDC_AUDIENCE` — it is
+ * omitted unless the admin sets `SAP_OIDC_SCOPES`.
+ */
+export function buildOidcResourceMetadata(
+  config: ServerConfig,
+  publicBase: string,
+): import('@modelcontextprotocol/sdk/shared/auth.js').OAuthProtectedResourceMetadata {
+  return {
+    resource: `${publicBase}/mcp`,
+    authorization_servers: [config.oidcIssuer as string],
+    bearer_methods_supported: ['header'],
+    resource_name: 'ARC-1 SAP MCP Server',
+    ...(config.oidcScopes?.length ? { scopes_supported: config.oidcScopes } : {}),
+  };
+}
+
+/**
+ * Mount the protected-resource metadata routes and return the URL that belongs in
+ * the `WWW-Authenticate` challenge. Caller gates on `oidcIssuer && oidcDiscovery`.
+ *
+ * URLs come from `getAppUrl()` (ARC1_PUBLIC_URL / VCAP), never from the request
+ * `Host` header, so a spoofed Host cannot redirect clients at an attacker's IdP.
+ * The SDK's `metadataHandler` supplies `cors()` + GET/OPTIONS-only, the same
+ * treatment the XSUAA branch's metadata gets — the document is public by design.
+ */
+export async function mountOidcResourceMetadata(
+  app: express.Application,
+  config: ServerConfig,
+  bindHost: string,
+  port: number,
+): Promise<string> {
+  const { metadataHandler } = await import('@modelcontextprotocol/sdk/server/auth/handlers/metadata.js');
+  const { getAppUrl } = await import('./app-url.js');
+  const parsed = new URL(getAppUrl() ?? `http://${bindHost}:${port}`);
+  const basePath = parsed.pathname.replace(/\/$/, ''); // '' for root, '/arc1' behind a prefix proxy
+  const publicBase = `${parsed.origin}${basePath}`;
+  const metadata = buildOidcResourceMetadata(config, publicBase);
+
+  // Order matters: '/.well-known/oauth-protected-resource' is a mount PREFIX, so
+  // it must come after the '/mcp' route or it would swallow it.
+  app.use('/.well-known/oauth-protected-resource/mcp', metadataHandler(metadata)); // RFC 9728 §3.1 path insertion
+  if (basePath) app.use(`/.well-known/oauth-protected-resource${basePath}/mcp`, metadataHandler(metadata));
+  // Root fallback (spec 2025-11-25 lists it; the SDK client probes sub-path → root).
+  // As a prefix mount it also answers unknown sub-paths — harmless: clients validate
+  // `resource` against the URL they called, and OIDC mode has no other MCP routes.
+  app.use('/.well-known/oauth-protected-resource', metadataHandler(metadata));
+
+  const resourceMetadataUrl = `${publicBase}/.well-known/oauth-protected-resource/mcp`;
+  // Key is `issuer`, not `authorizationServer` — the logger redacts any key
+  // containing "authorization", which would hide the one value operators need.
+  logger.info('OIDC protected-resource metadata enabled', {
+    resource: metadata.resource,
+    issuer: config.oidcIssuer,
+    scopesSupported: config.oidcScopes?.length ?? 0,
+  });
+  return resourceMetadataUrl;
 }
 
 // ─── Standard Mode Verifier ─────────────────────────────────────────

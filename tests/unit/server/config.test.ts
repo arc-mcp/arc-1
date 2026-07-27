@@ -1144,6 +1144,15 @@ describe('validateConfig', () => {
     ).toThrow('SAP_OIDC_ISSUER is required when SAP_OIDC_AUDIENCE is set');
   });
 
+  it('throws when oidcScopes is set without oidcIssuer — nothing would advertise them', () => {
+    expect(() =>
+      validateConfig({
+        ...DEFAULT_CONFIG,
+        oidcScopes: ['api://arc-1/access_as_user'],
+      }),
+    ).toThrow('SAP_OIDC_ISSUER is required when SAP_OIDC_SCOPES is set');
+  });
+
   it('accepts config with both oidcIssuer and oidcAudience', () => {
     expect(() =>
       validateConfig({
@@ -1352,6 +1361,25 @@ describe('validateConfig', () => {
   it('parseArgs fails with oidcIssuer but no oidcAudience', () => {
     process.env.SAP_OIDC_ISSUER = 'https://example.com';
     expect(() => parseArgs([])).toThrow('SAP_OIDC_AUDIENCE is required');
+  });
+
+  it('parses SAP_OIDC_SCOPES from comma or whitespace separated values, and defaults discovery on', () => {
+    process.env.SAP_OIDC_ISSUER = 'https://example.com';
+    process.env.SAP_OIDC_AUDIENCE = 'api://arc-1';
+    process.env.SAP_OIDC_SCOPES = 'api://arc-1/access_as_user, api://arc-1/read';
+    expect(parseArgs([]).oidcScopes).toEqual(['api://arc-1/access_as_user', 'api://arc-1/read']);
+    expect(parseArgs([]).oidcDiscovery).toBe(true);
+
+    process.env.SAP_OIDC_SCOPES = 'api://arc-1/access_as_user api://arc-1/read';
+    expect(parseArgs([]).oidcScopes).toEqual(['api://arc-1/access_as_user', 'api://arc-1/read']);
+  });
+
+  it('honors the SAP_OIDC_DISCOVERY opt-out (Entra AADSTS9010010 escape hatch)', () => {
+    process.env.SAP_OIDC_ISSUER = 'https://example.com';
+    process.env.SAP_OIDC_AUDIENCE = 'api://arc-1';
+    process.env.SAP_OIDC_DISCOVERY = 'false';
+    expect(parseArgs([]).oidcDiscovery).toBe(false);
+    expect(parseArgs(['--oidc-discovery', 'true']).oidcDiscovery).toBe(true);
   });
 
   it.each(['100', '000', '999', '010', '001'])('accepts the 3-digit client %s', (client) => {
