@@ -172,7 +172,7 @@ Open a browser, log into SAP, and write a Netscape-format cookie file usable as 
 arc1-cli extract-cookies --url https://host:44300 --output ~/.config/arc-1/cookies.txt
 ```
 
-When the running ARC-1 process is configured with `SAP_COOKIE_FILE` pointing to the same file, the next SAP call automatically reloads the fresh cookies — **no restart needed**. The reload is lazy: it fires on the next outgoing request after a persistent 401, so just re-extract and the next tool invocation picks up the new session.
+When the running ARC-1 process is configured with `SAP_COOKIE_FILE` pointing to the same file, the next SAP call automatically reloads the fresh cookies — **no restart needed**. The reload fires twice over: once inside the 401 retry, so a call already in flight when you re-extract can recover in place, and again on the next outgoing request after a persistent 401. Either way, just re-extract — no restart, and at worst the following tool invocation picks up the new session.
 
 `SAP_COOKIE_STRING` does not support hot-reload — that env var is read once at startup. Use `SAP_COOKIE_FILE` if you want the no-restart refresh path.
 

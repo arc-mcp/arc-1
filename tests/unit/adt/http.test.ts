@@ -1934,6 +1934,47 @@ describe('AdtHttpClient', () => {
       expect((client as any).cookiesCleared).toBe(false);
     });
 
+    it('cookieString-only: a session-timeout 401 still retries with the configured ticket', async () => {
+      // No file to re-read, so the pre-retry reload must not touch config.cookies —
+      // otherwise an ordinary work-process timeout (ticket still valid) becomes a
+      // permanent auth failure instead of the retry it exists to be.
+      mockFetch.mockResolvedValueOnce(mockResponse(401, 'Unauthorized'));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok'));
+
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        username: undefined,
+        password: undefined,
+        cookies: { MYSAPSSO2: 'still-valid' },
+        cookieString: 'MYSAPSSO2=still-valid',
+      });
+
+      await client.get('/sap/bc/adt/discovery');
+
+      expect(fetchHeaders(1).Cookie).toContain('MYSAPSSO2=still-valid');
+      expect((client as any).config.cookies).toEqual({ MYSAPSSO2: 'still-valid' });
+    });
+
+    it('cookieFile unreadable at retry time: the retry keeps the in-memory ticket', async () => {
+      // A file caught mid-rotation (truncate-then-write) or simply missing must
+      // leave config.cookies alone — reloadCookiesFromSource is safe-on-failure and
+      // the retry has to fall back to replaying the ticket it already has.
+      mockFetch.mockResolvedValueOnce(mockResponse(401, 'Unauthorized'));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok'));
+
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        username: undefined,
+        password: undefined,
+        cookies: { MYSAPSSO2: 'still-valid' },
+        cookieFile: '/tmp/arc1-cookie-file-that-does-not-exist.txt',
+      });
+
+      await client.get('/sap/bc/adt/discovery');
+
+      expect(fetchHeaders(1).Cookie).toContain('MYSAPSSO2=still-valid');
+    });
+
     it('warns and skips reload when only cookieString is configured (no cookieFile)', async () => {
       mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok'));
 
