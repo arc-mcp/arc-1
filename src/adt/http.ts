@@ -615,6 +615,24 @@ export class AdtHttpClient {
         // Clear session to force fresh authentication
         this.resetSession();
 
+        // Cookie auth: re-read the cookie file BEFORE the retry, not after.
+        //
+        // Cookie files are rotated out-of-band — by an operator re-running
+        // `arc1-cli extract-cookies`, or by a scheduled refresh job. Until now
+        // the reload only happened lazily on the NEXT request (see the
+        // `cookiesCleared` branch in the request preamble), so a rotated file
+        // could not rescue the call that observed the expiry: it failed, and
+        // only the following call picked up the fresh cookies. Reloading here
+        // lets the retry succeed against an already-refreshed file.
+        //
+        // When the file has NOT been refreshed this reloads the same dead
+        // cookies and the retry fails exactly as before — the persistent-401
+        // branch below still clears them and marks the client for reload.
+        if (this.isCookieAuthMode()) {
+          this.clearCookiesAndMark();
+          this.reloadCookiesFromSource();
+        }
+
         // Re-apply auth credentials
         this.applyAuthHeader(headers);
         if (this.config.bearerTokenProvider) {

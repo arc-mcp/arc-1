@@ -1900,6 +1900,40 @@ describe('AdtHttpClient', () => {
       expect((client as any).config.cookies).toEqual({ MYSAPSSO2: 'fresh-value' });
     });
 
+    it('reloads a rotated cookie file before the 401 retry, so the retry recovers in place', async () => {
+      const fs = require('node:fs');
+      tmpFile = writeNetscapeCookieFile({ MYSAPSSO2: 'dead-value' });
+
+      // First GET → 401. The cookie file is rotated out-of-band while that
+      // request is in flight (an operator re-running `arc1-cli extract-cookies`,
+      // or a scheduled refresh job). The retry must pick the rotated ticket up
+      // instead of replaying the dead one and spending the call.
+      mockFetch.mockImplementationOnce(() => {
+        fs.writeFileSync(
+          tmpFile,
+          '# Netscape HTTP Cookie File\nsap.example.com\tFALSE\t/\tFALSE\t0\tMYSAPSSO2\tfresh-value\n',
+        );
+        return Promise.resolve(mockResponse(401, 'Unauthorized'));
+      });
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok'));
+
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        username: undefined,
+        password: undefined,
+        cookies: { MYSAPSSO2: 'dead-value' },
+        cookieFile: tmpFile,
+      });
+
+      await client.get('/sap/bc/adt/discovery');
+
+      const retryHeaders = fetchHeaders(1);
+      expect(retryHeaders.Cookie).toContain('MYSAPSSO2=fresh-value');
+      expect(retryHeaders.Cookie).not.toContain('dead-value');
+      // Recovered within the same call — nothing left marked for a later reload.
+      expect((client as any).cookiesCleared).toBe(false);
+    });
+
     it('warns and skips reload when only cookieString is configured (no cookieFile)', async () => {
       mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok'));
 
