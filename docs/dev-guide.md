@@ -41,9 +41,10 @@ use SAP's separate **Multi-Target Application** packaging terminology.
 ### Invariants
 
 - Default off; BTP CF only; XSUAA-only route auth; `ARC1_CACHE=none`; standard tool mode; UI,
-  plugins, shared cookies, writes, activation, transport/Git mutation, ATC, and ABAP Unit remain
-  unavailable. PP targets are strict per-user. Basic is a separate default-off shared identity,
-  never fallback, and requires exactly one CF instance.
+  plugins, shared cookies, writes, activation, and transport/Git mutation remain unavailable. PP
+  targets are strict per-user. Basic is a separate default-off shared identity, never fallback, and
+  requires exactly one CF instance. ATC and ABAP Unit are available as workload-producing reads;
+  operators can disable them with `SAP_DENY_ACTIONS`.
 - `/mcp` is never assigned a discovered destination. An optional single-target `/mcp` is configured
   independently and may coexist with pinned `/<PUBLIC-SYSTEM>/<CLIENT>/mcp` and aggregate
   `/multi/mcp` routes.
