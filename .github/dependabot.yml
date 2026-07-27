@@ -1,6 +1,6 @@
 # Dependabot configuration for ARC-1.
 # Documented in docs/plans/2026-05-08-dependency-security-tier1-foundation.md (SEC-11).
-# Three ecosystems: npm (production code), github-actions (CI), docker (base image).
+# Three ecosystems: npm (root package + BTP AppRouter), github-actions (CI), docker (base image).
 # Schedule: weekly. Security advisories are handled separately by Dependabot's
 # security-updates feature (enabled in repo Settings → Advanced Security).
 
@@ -56,6 +56,24 @@ updates:
       # Bump @types/node major in the same PR that bumps engines.node.
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
+
+  # The optional BTP UI AppRouter has an independent package-lock.json. Keep it
+  # explicit so version and security updates cannot fall through the root-only scan.
+  - package-ecosystem: "npm"
+    directory: "/btp/approuter"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Berlin"
+    open-pull-requests-limit: 3
+    versioning-strategy: "increase"
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - "dependencies"
+    reviewers:
+      - "marianfoo"
 
   # ─── GitHub Actions ──────────────────────────────────────────────────────
   - package-ecosystem: "github-actions"

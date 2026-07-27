@@ -2,6 +2,21 @@ import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
 describe('BTP UI AppRouter config', () => {
+  it('pins patched transitive dependencies on an AppRouter-supported Node release', async () => {
+    const packageJson = JSON.parse(await readFile('btp/approuter/package.json', 'utf8')) as {
+      engines: { node: string };
+      overrides: Record<string, string>;
+    };
+    const packageLock = JSON.parse(await readFile('btp/approuter/package-lock.json', 'utf8')) as {
+      packages: Record<string, { version?: string }>;
+    };
+
+    expect(packageJson.engines.node).toBe('^22.0.0 || ^24.0.0');
+    expect(packageJson.overrides).toMatchObject({ axios: '1.18.0', 'body-parser': '2.3.0' });
+    expect(packageLock.packages['node_modules/axios']?.version).toBe('1.18.0');
+    expect(packageLock.packages['node_modules/body-parser']?.version).toBe('2.3.0');
+  });
+
   it('requires admin scope for all UI routes', async () => {
     const xsApp = JSON.parse(await readFile('btp/approuter/xs-app.json', 'utf8')) as {
       routes: Array<Record<string, unknown>>;

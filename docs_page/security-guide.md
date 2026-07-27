@@ -437,8 +437,8 @@ ARC-1 ships as an [npm package](https://www.npmjs.com/package/arc-1) and a [Dock
 
 | Control | Workflow | Severity gate |
 |---|---|---|
-| Dependabot — npm + GitHub Actions + Docker | `.github/dependabot.yml` | weekly + same-day security advisories |
-| `npm audit` PR gate | `.github/workflows/test.yml` (`Security audit (npm audit)` step) | fails on `high` / `critical` |
+| Dependabot — root npm + BTP AppRouter npm + GitHub Actions + Docker | `.github/dependabot.yml` | weekly + same-day security advisories |
+| `npm audit` PR gates | `.github/workflows/test.yml` (root + `btp/approuter`) | fail on `high` / `critical` |
 | GitHub Dependency Review (PR diff) | `.github/workflows/dependency-review.yml` | fails on `high`; license allow/deny lists |
 | CodeQL SAST (JavaScript/TypeScript) | GitHub Default Setup | findings on Security tab; PR check fails on `High or higher` |
 | Trivy container scan — dev push | `.github/workflows/docker.yml` | non-gating; SARIF uploaded to Security tab |

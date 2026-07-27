@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "engines": {
-    "node": ">=20"
+    "node": "^22.0.0 || ^24.0.0"
   },
   "scripts": {
     "start": "node node_modules/@sap/approuter/approuter.js"
@@ -12,6 +12,8 @@
     "@sap/approuter": "22.0.3"
   },
   "overrides": {
+    "axios": "1.18.0",
+    "body-parser": "2.3.0",
     "ws": "^8.17.1"
   }
 }
