@@ -1,5 +1,7 @@
 # ARC-1 — SAP ADT MCP Server
 
+[![MCP Toplist](https://mcptoplist.com/badge/pulsemcp%2Farc-1.svg)](https://mcptoplist.com/server/pulsemcp%2Farc-1)
+
 **ARC-1** (pronounced _arc one_ [ɑːrk wʌn]) — Enterprise-ready MCP server for SAP ABAP systems. Secure by default, deployable to BTP or on-premise, and hardened with large unit/integration/E2E test coverage.
 
 ARC-1 connects AI assistants (Claude, GitHub Copilot, Copilot Studio, and any MCP client) to SAP systems via the [ADT REST API](https://help.sap.com/docs/abap-cloud/abap-development-tools-user-guide/about-abap-development-tools). It ships as an [npm package](https://www.npmjs.com/package/arc-1) and [Docker image](https://github.com/arc-mcp/arc-1/pkgs/container/arc-1).
