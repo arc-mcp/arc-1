@@ -1174,6 +1174,27 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
       expect(result.content[0]?.text).toContain('Hint: DDIC save failed.');
     });
 
+    it('prefers the View Extend language-version hint over the generic DDIC save hint', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(
+        mockResponse(
+          400,
+          '<exc:exception><type id="ExceptionResourceSaveFailure"/><localizedMessage>Object type View Extend is not allowed in this system</localizedMessage></exc:exception>',
+          { 'x-csrf-token': 'T' },
+        ),
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'DDLS',
+        name: 'Z_EXT',
+      });
+      const text = result.content[0]?.text ?? '';
+
+      expect(result.isError).toBe(true);
+      expect(text).toContain('SAPWrite type="DDLS"');
+      expect(text).toContain('Standard ABAP package');
+      expect(text).not.toContain('DDIC save failed');
+    });
+
     it('adds a BDEF base-extensible hint for behavior extension create failures', async () => {
       mockFetch.mockReset();
       mockFetch.mockResolvedValue(

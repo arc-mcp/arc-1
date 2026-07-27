@@ -47,7 +47,8 @@ export interface SapErrorClassification {
     | 'bdef-base-not-extensible'
     | 'include-not-initialized'
     | 'data-view-not-authorized'
-    | 'package-create-invalid';
+    | 'package-create-invalid'
+    | 'ddls-view-extend-language-version';
   hint: string;
   transaction?: string;
   details?: Record<string, string>;
@@ -604,6 +605,27 @@ export function classifySapDomainError(
         'On the ABAP Environment a new package must nest under a structure package. Pass `superPackage` ' +
         '(e.g. "ZLOCAL") so the package is created inside it, rather than as a root package.',
       details: { exceptionType: typeId },
+    };
+  }
+
+  // DDLS legacy `extend view` in an incompatible ABAP-language-version package. Live-verified on
+  // SAP_BASIS 758: Standard ABAP accepts the same DDLS/DF source, while cloudDevelopment rejects
+  // it with this exact DDIC diagnostic. This is not a missing ARC-1 object subtype (#614).
+  const viewExtendProperties = statusCode === 400 ? AdtApiError.extractProperties(bodyRaw) : {};
+  const viewExtendMessageNumber = viewExtendProperties['T100KEY-NO'] ?? viewExtendProperties['T100KEY-MSGNO'];
+  const hasViewExtendT100 =
+    viewExtendMessageNumber === '006' && /^view extend$/i.test(viewExtendProperties['T100KEY-V1']?.trim() ?? '');
+  if (
+    statusCode === 400 &&
+    (hasViewExtendT100 || /object type\s+view extend\s+is not allowed in this system/i.test(bodyRaw))
+  ) {
+    return {
+      category: 'ddls-view-extend-language-version',
+      hint:
+        'Legacy CDS `extend view` already uses SAPWrite type="DDLS" (ADT DDLS/DF); SAP rejected it for the current ABAP Language Version. ' +
+        'In ADT, compare Properties → ABAP Language Version for the base view and custom extension, and place a legacy extension in a compatible Standard ABAP package. ' +
+        'Do not use a separate ARC-1 object type. If the base is a view entity, use `extend view entity` only when its release and extensibility contracts allow it.',
+      details: typeId ? { exceptionType: typeId } : undefined,
     };
   }
 

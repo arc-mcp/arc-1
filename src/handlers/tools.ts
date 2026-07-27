@@ -631,8 +631,8 @@ export function getToolDefinitions(
           source: {
             type: 'string',
             description: btp
-              ? 'ABAP source code. create/update: full source body. edit_method: the new method body. edit_class_definition without include=: only the new global CLASS…DEFINITION…ENDCLASS block (no IMPLEMENTATION); with include=: the full replacement body of that include. edit_method_signature: only the new METHODS clause. Not used by add_method/delete_method/change_method_visibility (use `method`/`visibility`).'
-              : 'ABAP source code. create/update: full source body. edit_method: the new method body. edit_unit: complete FORM or MODULE block. edit_class_definition without include=: only the new global CLASS…DEFINITION…ENDCLASS block (no IMPLEMENTATION); with include=: the full replacement body of that include. edit_method_signature: only the new METHODS clause. Not used by add_method/delete_method/change_method_visibility (use `method`/`visibility`).',
+              ? 'ABAP source. create/update: full body. DDLS: type=DDLS; Cloud permits eligible `extend view entity`, not legacy `extend view`. edit_method: body. edit_class_definition without include=: only global CLASS…DEFINITION…ENDCLASS block (no IMPLEMENTATION); with include=: full replacement include. edit_method_signature: only new METHODS clause. Not used by add_method/delete_method/change_method_visibility (use `method`/`visibility`).'
+              : 'Source. create/update: full body. DDLS: type=DDLS for `extend view`/`extend view entity`; legacy needs a Standard ABAP package. edit_method: body. edit_unit: complete FORM/MODULE. edit_class_definition without include=: only global CLASS…DEFINITION…ENDCLASS block (no IMPLEMENTATION); with include=: full replacement include. edit_method_signature: only METHODS clause. Not used by add_method/delete_method/change_method_visibility (use `method`/`visibility`).',
           },
           include: {
             type: 'string',

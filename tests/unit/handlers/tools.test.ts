@@ -288,6 +288,9 @@ describe('Tool Definitions', () => {
     expect(onPremSchema.properties.include.description).toContain('CLAS-ONLY');
     expect(onPremSchema.properties.include.description).toContain('change_method_visibility');
     expect(onPremSchema.properties.source.description).toContain('change_method_visibility');
+    expect(onPremSchema.properties.source.description).toContain('`extend view`');
+    expect(onPremSchema.properties.source.description).toContain('`extend view entity`');
+    expect(onPremSchema.properties.source.description).toContain('Standard ABAP package');
 
     const btpTools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true, systemType: 'btp' });
     const btpDescription = btpTools.find((t) => t.name === 'SAPWrite')!.description;
@@ -297,6 +300,8 @@ describe('Tool Definitions', () => {
       expect(btpTypeDescription).toContain(type);
     }
     expect(btpDescription).toContain('DCLS');
+    expect(btpSchema.properties.source.description).toContain('`extend view entity`');
+    expect(btpSchema.properties.source.description).toContain('not legacy `extend view`');
   });
 
   it('SAPWrite schema exposes class-section surgery actions (issue #303)', () => {
