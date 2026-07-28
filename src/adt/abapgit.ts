@@ -211,7 +211,7 @@ function buildRepoPayloadXml(params: {
   password?: string;
 }): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
-<abapgitrepo:repository xmlns:abapgitrepo="http://www.sap.com/adt/abapgit/repository">
+<abapgitrepo:repository xmlns:abapgitrepo="http://www.sap.com/adt/abapgit/repositories">
   <abapgitrepo:package>${escapeXmlAttr(params.package)}</abapgitrepo:package>
   <abapgitrepo:url>${escapeXmlAttr(params.url)}</abapgitrepo:url>
   ${params.branchName ? `<abapgitrepo:branchName>${escapeXmlAttr(params.branchName)}</abapgitrepo:branchName>` : ''}
@@ -380,7 +380,13 @@ export async function unlinkRepo(http: AdtHttpClient, safety: SafetyConfig, repo
   await requestAbapGit(path, () => http.delete(path, { Accept: REPO_V3 }));
 }
 
-export async function stageRepo(http: AdtHttpClient, safety: SafetyConfig, repo: AbapGitRepo): Promise<AbapGitStaging> {
+export async function stageRepo(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  repo: AbapGitRepo,
+  user?: string,
+  password?: string,
+): Promise<AbapGitStaging> {
   checkOperation(safety, OperationType.Update, 'AbapGitStageRepo');
   checkGit(safety, 'stage');
 
@@ -389,6 +395,7 @@ export async function stageRepo(http: AdtHttpClient, safety: SafetyConfig, repo:
     http.get(link.href, {
       Accept: REPO_STAGE_V1,
       'Content-Type': REPO_STAGE_V1,
+      ...authHeaders(user, password),
     }),
   );
 
@@ -405,6 +412,8 @@ export async function pushRepo(
   safety: SafetyConfig,
   repo: AbapGitRepo,
   staging: AbapGitStaging,
+  user?: string,
+  password?: string,
 ): Promise<void> {
   checkOperation(safety, OperationType.Update, 'AbapGitPushRepo');
   checkGit(safety, 'push');
@@ -414,6 +423,7 @@ export async function pushRepo(
   await requestAbapGit(link.href, () =>
     http.post(link.href, body, REPO_STAGE_V1, {
       Accept: REPO_STAGE_V1,
+      ...authHeaders(user, password),
     }),
   );
 }
@@ -422,6 +432,8 @@ export async function checkRepo(
   http: AdtHttpClient,
   safety: SafetyConfig,
   repo: AbapGitRepo,
+  user?: string,
+  password?: string,
 ): Promise<{ ok: boolean; message: string | null }> {
   checkOperation(safety, OperationType.Read, 'AbapGitCheckRepo');
 
@@ -431,7 +443,10 @@ export async function checkRepo(
   // info the LLM should see — normalise to {ok:false,message} rather than throwing.
   let resp: Awaited<ReturnType<AdtHttpClient['post']>>;
   try {
-    resp = await http.post(link.href, '', undefined, { Accept: REPO_V3 });
+    resp = await http.post(link.href, '', undefined, {
+      Accept: REPO_V3,
+      ...authHeaders(user, password),
+    });
   } catch (err) {
     if (err instanceof AdtApiError) {
       const parsed = classifyAbapgitError(err.responseBody ?? '');

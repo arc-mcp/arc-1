@@ -989,6 +989,26 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(parsed.result.objects[0].type).toBe('CLAS');
     });
 
+    it('maps an abapGit token to private-remote bridge credentials', async () => {
+      setCachedFeatures(featuresOff({ abapGit: true }));
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, abapGitReposXml));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, stagingXml));
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPGit', {
+        action: 'stage',
+        backend: 'abapgit',
+        repoId: '000000000001',
+        token: 'private-token',
+      });
+
+      expect(result.isError).toBeUndefined();
+      const stageCall = mockFetch.mock.calls.find(([url]) => String(url).includes('/stage'));
+      const headers = stageCall?.[1]?.headers as Record<string, string>;
+      expect(headers.Username).toBe('x-access-token');
+      expect(headers.Password).toBe(Buffer.from('private-token', 'utf-8').toString('base64'));
+    });
+
     it('surfaces AdtSafetyError from git write operations when allowGitWrites=false', async () => {
       setCachedFeatures(featuresOff({ gcts: true }));
       const client = new AdtClient({

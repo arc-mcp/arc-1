@@ -155,6 +155,8 @@ describe('abapGit client helpers', () => {
     expect(contentType).toBe('application/abapgit.adt.repo.v3+xml');
     expect(headers.Username).toBe('git-user');
     expect(headers.Password).toBe(Buffer.from('git-pass', 'utf-8').toString('base64'));
+    expect(body).toContain('xmlns:abapgitrepo="http://www.sap.com/adt/abapgit/repositories"');
+    expect(body).not.toContain('xmlns:abapgitrepo="http://www.sap.com/adt/abapgit/repository"');
     expect(body).toContain('<abapgitrepo:remoteUser>git-user</abapgitrepo:remoteUser>');
     expect(body).toContain('<abapgitrepo:remotePassword>git-pass</abapgitrepo:remotePassword>');
   });
@@ -193,11 +195,32 @@ describe('abapGit client helpers', () => {
     expect(staging.objects).toHaveLength(2);
   });
 
+  it('stageRepo forwards private-remote credentials as bridge headers', async () => {
+    const http = mockHttp(loadFixture('abapgit-staging.xml'));
+    await stageRepo(http, gitSafety, firstRepo(), 'git-user', 'git-pass');
+    const [, headers] = (http.get as ReturnType<typeof vi.fn>).mock.calls[0] as [string, Record<string, string>];
+    expect(headers.Username).toBe('git-user');
+    expect(headers.Password).toBe(Buffer.from('git-pass', 'utf-8').toString('base64'));
+  });
+
   it('checkRepo translates empty body to {ok:true}', async () => {
     const http = mockHttp('');
     const repo = firstRepo();
     const result = await checkRepo(http, gitSafety, repo);
     expect(result).toEqual({ ok: true, message: null });
+  });
+
+  it('checkRepo forwards private-remote credentials as bridge headers', async () => {
+    const http = mockHttp('');
+    await checkRepo(http, gitSafety, firstRepo(), 'git-user', 'git-pass');
+    const [, , , headers] = (http.post as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      string,
+      string | undefined,
+      Record<string, string>,
+    ];
+    expect(headers.Username).toBe('git-user');
+    expect(headers.Password).toBe(Buffer.from('git-pass', 'utf-8').toString('base64'));
   });
 
   it('checkRepo normalises bridge-namespace 5xx into {ok:false,message} instead of throwing', async () => {
@@ -263,6 +286,27 @@ describe('abapGit client helpers', () => {
     expect(url).toContain('/push');
     expect(body).toContain('abapgitrepo:objects');
     expect(body).toContain('type="CLAS"');
+  });
+
+  it('pushRepo forwards private-remote credentials as bridge headers', async () => {
+    const http = mockHttp('');
+    const repo = firstRepo();
+    await pushRepo(
+      http,
+      gitSafety,
+      repo,
+      { repoKey: repo.key, branchName: repo.branchName, objects: [] },
+      'git-user',
+      'git-pass',
+    );
+    const [, , , headers] = (http.post as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      string,
+      string | undefined,
+      Record<string, string>,
+    ];
+    expect(headers.Username).toBe('git-user');
+    expect(headers.Password).toBe(Buffer.from('git-pass', 'utf-8').toString('base64'));
   });
 
   it('switchBranch sets ?create=false and createBranch sets ?create=true', async () => {

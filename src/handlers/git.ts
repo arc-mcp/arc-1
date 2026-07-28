@@ -98,6 +98,8 @@ export async function handleSAPGit(
   const user = String(args.user ?? '').trim() || undefined;
   const password = String(args.password ?? '').trim() || undefined;
   const token = String(args.token ?? '').trim() || undefined;
+  const abapGitUser = user ?? (token ? 'x-access-token' : undefined);
+  const abapGitPassword = password ?? token;
   const limit = Number(args.limit ?? 20);
 
   const gctsOnlyActions = new Set(['whoami', 'config', 'branches', 'history', 'objects', 'commit']);
@@ -129,7 +131,7 @@ export async function handleSAPGit(
       break;
     case 'external_info':
       if (!url) return errorResult('SAPGit(action="external_info") requires url.');
-      result = await abapGitGetExternalInfo(client.http, client.safety, url, user, password);
+      result = await abapGitGetExternalInfo(client.http, client.safety, url, abapGitUser, abapGitPassword);
       break;
     case 'history':
       if (!repoId) return errorResult('SAPGit(action="history") requires repoId.');
@@ -142,13 +144,13 @@ export async function handleSAPGit(
     case 'check': {
       if (!repoId) return errorResult('SAPGit(action="check") requires repoId.');
       const repo = await loadAbapGitRepo(client, repoId);
-      result = await abapGitCheckRepo(client.http, client.safety, repo);
+      result = await abapGitCheckRepo(client.http, client.safety, repo, abapGitUser, abapGitPassword);
       break;
     }
     case 'stage': {
       if (!repoId) return errorResult('SAPGit(action="stage") requires repoId.');
       const repo = await loadAbapGitRepo(client, repoId);
-      result = await abapGitStageRepo(client.http, client.safety, repo);
+      result = await abapGitStageRepo(client.http, client.safety, repo, abapGitUser, abapGitPassword);
       break;
     }
     case 'clone':
@@ -174,8 +176,8 @@ export async function handleSAPGit(
             url,
             branchName: branch || undefined,
             transportRequest: String(args.transport ?? '').trim() || undefined,
-            user,
-            password,
+            user: abapGitUser,
+            password: abapGitPassword,
           },
           client.getPackageHierarchyResolver(),
         );
@@ -207,8 +209,8 @@ export async function handleSAPGit(
           ...(url ? { url } : {}),
           ...(branch ? { branchName: branch } : {}),
           transportRequest: String(args.transport ?? '').trim() || undefined,
-          user,
-          password,
+          user: abapGitUser,
+          password: abapGitPassword,
         });
       }
       break;
@@ -226,8 +228,8 @@ export async function handleSAPGit(
       const staging =
         Array.isArray(args.objects) && args.objects.length > 0
           ? { repoKey: repo.key, branchName: repo.branchName, objects: args.objects as Array<Record<string, unknown>> }
-          : await abapGitStageRepo(client.http, client.safety, repo);
-      await abapGitPushRepo(client.http, client.safety, repo, staging);
+          : await abapGitStageRepo(client.http, client.safety, repo, abapGitUser, abapGitPassword);
+      await abapGitPushRepo(client.http, client.safety, repo, staging, abapGitUser, abapGitPassword);
       result = { ok: true };
       break;
     }
