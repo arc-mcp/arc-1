@@ -323,6 +323,18 @@ export function normalizeTypeArgsForValidation(
  * Base path for an object type. Returns path prefix without trailing name segment.
  * Exported for tests (Plan A Task 4 — exhaustiveness guard regression test).
  */
+export function functionGroupObjectUrl(group: string): string {
+  const normalizedGroup = group.trim();
+  if (!normalizedGroup) {
+    throw new Error('functionGroupObjectUrl requires a function group.');
+  }
+  return `/sap/bc/adt/functions/groups/${encodeURIComponent(normalizedGroup.toLowerCase())}`;
+}
+
+export function functionModuleObjectUrl(group: string, name: string): string {
+  return `${functionGroupObjectUrl(group)}/fmodules/${encodeURIComponent(name.toLowerCase())}`;
+}
+
 export function objectBasePath(type: string): string {
   switch (type) {
     case 'PROG':

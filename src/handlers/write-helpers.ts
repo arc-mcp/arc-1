@@ -41,6 +41,7 @@ import { detectFilename, validateBeforeWrite } from '../lint/lint.js';
 import type { ServerConfig } from '../server/types.js';
 import { type CacheSecurityContext, invalidateInactiveList } from './cache-security.js';
 import { getCachedFeatures } from './feature-cache.js';
+import { isFunctionProcessingType, isFunctionUpdateTaskKind } from './function-processing.js';
 import { canonicalTablType, objectUrlForType } from './object-types.js';
 import { errorResult, type ToolResult, textResult } from './shared.js';
 
@@ -207,6 +208,10 @@ export function getMetadataWriteProperties(input: Record<string, unknown>): Reco
     // Function-module create needs the parent function-group name for the
     // <adtcore:containerRef> in the create payload (issue #250).
     group: input.group,
+    // Function-module execution semantics are creation metadata, not part of
+    // /source/main. Preserve the ADT wire values exactly.
+    processingType: input.processingType,
+    updateTaskKind: input.updateTaskKind,
   };
 
   return props;
@@ -676,9 +681,29 @@ function buildCreateXmlBody(
           'FUNC create requires "group" property — pass it via SAPWrite args (the parent function group must already exist).',
         );
       }
+      const processingType = properties?.processingType;
+      const updateTaskKind = properties?.updateTaskKind;
+      if (processingType !== undefined && !isFunctionProcessingType(processingType)) {
+        throw new Error(`Unsupported FUNC processingType "${String(processingType)}".`);
+      }
+      if (updateTaskKind !== undefined && !isFunctionUpdateTaskKind(updateTaskKind)) {
+        throw new Error(`Unsupported FUNC updateTaskKind "${String(updateTaskKind)}".`);
+      }
+      if (updateTaskKind !== undefined && processingType !== 'update') {
+        throw new Error('FUNC updateTaskKind requires processingType="update".');
+      }
+      if (processingType === 'update' && updateTaskKind === undefined) {
+        throw new Error('FUNC processingType="update" requires an explicit updateTaskKind.');
+      }
+      const processingAttributes =
+        processingType === undefined
+          ? ''
+          : ` fmodule:processingType="${escapeXmlAttr(processingType)}"${
+              updateTaskKind === undefined ? '' : ` fmodule:updateTaskKind="${escapeXmlAttr(updateTaskKind)}"`
+            }`;
       const groupLc = encodeURIComponent(group.toLowerCase());
       return `<?xml version="1.0" encoding="UTF-8"?>
-<fmodule:abapFunctionModule xmlns:fmodule="http://www.sap.com/adt/functions/fmodules" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:description="${escapeXmlAttr(description)}" adtcore:name="${escapeXmlAttr(name)}" adtcore:type="FUGR/FF">
+<fmodule:abapFunctionModule xmlns:fmodule="http://www.sap.com/adt/functions/fmodules" xmlns:adtcore="http://www.sap.com/adt/core"${processingAttributes} adtcore:description="${escapeXmlAttr(description)}" adtcore:name="${escapeXmlAttr(name)}" adtcore:type="FUGR/FF">
   <adtcore:containerRef adtcore:name="${escapeXmlAttr(group)}" adtcore:type="FUGR/F" adtcore:uri="/sap/bc/adt/functions/groups/${groupLc}"/>
 </fmodule:abapFunctionModule>`;
     }

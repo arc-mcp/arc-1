@@ -20,6 +20,7 @@
 import type { ResolvedFeatures } from '../adt/types.js';
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
 import type { ServerConfig } from '../server/types.js';
+import * as FuncProcessing from './function-processing.js';
 import { getHyperfocusedToolDefinition } from './hyperfocused.js';
 import { CLASS_WRITE_INCLUDES } from './object-types.js';
 import { SAPWRITE_DESC_BTP, SAPWRITE_DESC_ONPREM, SAPWRITE_MINIMAL_PAYLOAD_GUIDE } from './tool-descriptions.js';
@@ -87,12 +88,6 @@ const TOOL_ANNOTATIONS: Record<string, ToolAnnotations> = {
 function isBtpMode(config: ServerConfig): boolean {
   return config.systemType === 'btp';
 }
-
-// ─── SAPRead Types ──────────────────────────────────────────────────
-
-/** All SAPRead types available on on-premise */
-
-/** SAPRead types available on BTP ABAP Environment (no PROG, INCL, VIEW, TEXT_ELEMENTS, VARIANTS) */
 
 const SAPREAD_DESC_ONPREM =
   'Read SAP ABAP objects — exact raw source, a method body, grep output, inactive drafts, revision history, or metadata. For "what does this object do?", explanations, spec work, reviews, or pre-change orientation, prefer SAPContext first (intent-level context before raw source). ' +
@@ -611,9 +606,9 @@ export function getToolDefinitions(
               ...(btp ? [] : ['edit_text_symbols']),
             ],
             description:
-              'Write action. create/update/delete: standard object writes. edit_method: replace one method body (type=CLAS, method, source). ' +
-              (btp ? '' : 'edit_unit: replace a PROG/INCL FORM or MODULE (unit+source). ') +
-              'Class-section surgery (type=CLAS only): edit_class_definition without include= replaces the global DEFINITION block (refuses a diff that would leave the class non-activatable, e.g. a concrete method with no IMPL stub); with include= it whole-replaces a class-local include (CCDEF/CCIMP/macros/testclasses), auto-creating it. add_method inserts a METHODS clause + empty stub (visibility, abstract=true skips the stub); edit_method_signature replaces one METHODS clause (no IMPL change); delete_method removes the clause AND body — WARNING: destructive, discards the method body (to re-section a method use change_method_visibility, NOT delete+add); change_method_visibility moves a method between PUBLIC/PROTECTED/PRIVATE, preserves the body. add_method/edit_method_signature/delete_method/change_method_visibility act on /source/main only. batch_create: create+activate multiple objects (objects array). scaffold_rap_handlers / generate_behavior_implementation: derive RAP behavior-pool handlers from the BDEF (the latter the equivalent of Eclipse\'s "Generate Behavior Implementation").',
+              'Write action. create/update/delete: object writes; edit_method: replace one CLAS method body. ' +
+              (btp ? '' : 'edit_unit: replace a PROG/INCL FORM or MODULE. ') +
+              'Class surgery uses edit_class_definition/add_method/edit_method_signature; delete_method is destructive, while change_method_visibility preserves its body. batch_create keeps order; put dependencies first. scaffold_rap_handlers/generate_behavior_implementation derive behavior-pool handlers from a BDEF.',
           },
           type: {
             type: 'string',
@@ -713,6 +708,7 @@ export function getToolDefinitions(
             description:
               'For FUNC: parent function-group name. Required for FUNC create (the FUGR must already exist — create it first via SAPWrite type=FUGR). Auto-resolved via search for FUNC update/delete if omitted.',
           },
+          ...(btp ? {} : FuncProcessing.FUNCTION_PROCESSING_TOOL_PROPERTIES),
           dataType: { type: 'string', description: 'DOMA/DTEL: ABAP data type (e.g., CHAR, NUMC, DEC)' },
           rowType: {
             type: 'string',
@@ -871,6 +867,7 @@ export function getToolDefinitions(
                   type: 'string',
                   description: 'Object-specific transport request. Overrides top-level transport for this item.',
                 },
+                ...(btp ? {} : FuncProcessing.FUNCTION_MODULE_BATCH_TOOL_PROPERTIES),
                 // DDIC metadata fields (DOMA/DTEL/TTYP/MSAG/SRVB) mirror the top-level SAPWrite
                 // params 1:1 — descriptions omitted here to keep the tools/list payload small (#520).
                 dataType: { type: 'string' },

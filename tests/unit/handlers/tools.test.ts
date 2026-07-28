@@ -270,6 +270,26 @@ describe('Tool Definitions', () => {
     expect(item.required).toContain('name');
   });
 
+  it('SAPWrite schema exposes creation-time FUNC processing metadata on-prem only', () => {
+    const onPrem = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true }).find((t) => t.name === 'SAPWrite')!
+      .inputSchema as Record<string, any>;
+    expect(onPrem.properties.processingType.enum).toEqual(['normal', 'rfc', 'update']);
+    expect(onPrem.properties.updateTaskKind.enum).toEqual([
+      'startImmediate',
+      'immediateStartNoRestart',
+      'startDelayed',
+    ]);
+    expect(onPrem.properties.objects.items.properties.group).toBeDefined();
+    expect(onPrem.properties.objects.items.properties.processingType.enum).toEqual(['normal', 'rfc', 'update']);
+    expect(onPrem.properties.objects.items.properties.parameters.items.properties.kind.enum).toContain('importing');
+
+    const btp = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true, systemType: 'btp' }).find(
+      (t) => t.name === 'SAPWrite',
+    )!.inputSchema as Record<string, any>;
+    expect(btp.properties.processingType).toBeUndefined();
+    expect(btp.properties.updateTaskKind).toBeUndefined();
+  });
+
   it('SAPWrite type and include descriptions track the supported schema surface', () => {
     const onPremTools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true });
     const onPremSchema = onPremTools.find((t) => t.name === 'SAPWrite')!.inputSchema as Record<string, any>;

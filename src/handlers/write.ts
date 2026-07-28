@@ -18,6 +18,7 @@ import { type CacheSecurityContext, invalidateInactiveList } from './cache-secur
 import { isTablesEndpointAvailable, isTableTypesEndpointAvailable } from './feature-cache.js';
 import {
   canonicalTablType,
+  functionModuleObjectUrl,
   normalizeClassWriteInclude,
   normalizeWriteObjectType,
   objectUrlForType,
@@ -152,8 +153,7 @@ export async function handleSAPWrite(
       }
       group = resolved;
     }
-    const groupLc = encodeURIComponent(group.toLowerCase());
-    objectUrl = `/sap/bc/adt/functions/groups/${groupLc}/fmodules/${encodeURIComponent(name.toLowerCase())}`;
+    objectUrl = functionModuleObjectUrl(group, name);
     srcUrl = `${objectUrl}/source/main`;
     // Pass the resolved group through to buildCreateXml via args.group
     (args as Record<string, unknown>).group = group;

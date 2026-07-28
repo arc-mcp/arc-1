@@ -609,6 +609,101 @@ describe('SAPWriteSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('accepts explicit FUNC processing metadata for RFC and update modules', () => {
+    expect(
+      SAPWriteSchema.safeParse({
+        action: 'create',
+        type: 'FUNC',
+        name: 'Z_REMOTE',
+        group: 'Z_FG',
+        processingType: 'rfc',
+      }).success,
+    ).toBe(true);
+    expect(
+      SAPWriteSchema.safeParse({
+        action: 'batch_create',
+        objects: [
+          {
+            type: 'FUNC',
+            name: 'Z_UPDATE',
+            group: 'Z_FG',
+            processingType: 'update',
+            updateTaskKind: 'startImmediate',
+          },
+        ],
+      }).success,
+    ).toBe(true);
+  });
+
+  it('rejects invalid or inapplicable FUNC processing metadata before a write', () => {
+    expect(
+      SAPWriteSchema.safeParse({
+        action: 'create',
+        type: 'FUNC',
+        name: 'Z_UPDATE',
+        group: 'Z_FG',
+        processingType: 'update',
+      }).success,
+    ).toBe(false);
+    expect(
+      SAPWriteSchema.safeParse({
+        action: 'create',
+        type: 'FUNC',
+        name: 'Z_REMOTE',
+        group: 'Z_FG',
+        processingType: 'rfc',
+        updateTaskKind: 'startImmediate',
+      }).success,
+    ).toBe(false);
+    expect(
+      SAPWriteSchema.safeParse({
+        action: 'update',
+        type: 'FUNC',
+        name: 'Z_REMOTE',
+        group: 'Z_FG',
+        processingType: 'rfc',
+      }).success,
+    ).toBe(false);
+    expect(
+      SAPWriteSchema.safeParse({
+        action: 'create',
+        type: 'PROG',
+        name: 'Z_NOT_FUNC',
+        processingType: 'normal',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('applies FUNC processing validation inside batch objects', () => {
+    expect(
+      SAPWriteSchema.safeParse({
+        action: 'batch_create',
+        objects: [
+          {
+            type: 'FUNC',
+            name: 'Z_UPDATE',
+            group: 'Z_FG',
+            processingType: 'update',
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      SAPWriteSchema.safeParse({
+        action: 'batch_create',
+        objects: [
+          {
+            type: 'FUNC',
+            name: 'Z_REMOTE',
+            group: 'Z_FG',
+            processingType: 'rfc',
+            updateTaskKind: 'startImmediate',
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
   it('rejects FUNC parameters with invalid kind (issue #252)', () => {
     const result = SAPWriteSchema.safeParse({
       action: 'create',
