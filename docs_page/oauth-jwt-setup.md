@@ -330,6 +330,30 @@ Clients without such an override (Claude Desktop / Claude.ai connectors, `mcp-re
 configuration. IdPs that ignore unknown authorization parameters — the common case — are unaffected; keep the
 default.
 
+#### If you need Claude.ai / Claude Desktop connectors behind Entra today
+
+Entra-backed connectors also hit a separate, client-side failure — discovery and login succeed, then the
+authorization code is never exchanged
+([anthropics/claude-ai-mcp#506](https://github.com/anthropics/claude-ai-mcp/issues/506)). The workaround
+reported and independently confirmed in that thread is the **token-broker pattern**: run your own minimal
+OAuth 2.1 authorization server in front, federating to Entra privately as a confidential client. The
+connector only ever talks to your AS (static pre-registered client, no DCR, `/authorize` + `/token` at the
+host root), so neither the connector bug nor Entra's `resource`/DCR limitations apply.
+
+ARC-1 needs no change for this — it stays a pure resource server validating the Entra token your broker
+attaches. Two ARC-1-specific points if you go that route:
+
+- **Let the broker own discovery.** It is the authorization server the client must be sent to, so it serves
+  the protected-resource metadata; set `SAP_OIDC_DISCOVERY=false` on ARC-1 so a passed-through request can't
+  answer with a document pointing at Entra instead.
+- **Keep the user's identity.** The broker must obtain the Entra token through a user-facing flow. A
+  `client_credentials` shortcut collapses every MCP user into one identity — ARC-1's audit trail, per-user
+  scopes, and Destination principal propagation all key off the token's user, and all of them degrade to a
+  single shared user.
+
+Weigh it against what it is: an extra internet-facing component you build, operate, and secure, holding
+confidential-client credentials for your tenant.
+
 ## How It Works
 
 1. MCP client sends request without token

@@ -147,7 +147,17 @@ router does not apply.
 2. **Claude.ai custom connectors + Entra** have a separate, upstream-tracked failure:
    [anthropics/claude-ai-mcp#506](https://github.com/anthropics/claude-ai-mcp/issues/506) — discovery
    succeeds, the user authenticates, then the code is never exchanged at `/token`. Not something ARC-1
-   can fix.
+   can fix. **There is a working escape route**, raised by the reporter on PR #632 and verified against
+   the thread: the **token-broker pattern**
+   ([comment](https://github.com/anthropics/claude-ai-mcp/issues/506#issuecomment-4899697146), posted by
+   `@jvitti93` 2026-07-07, confirmed working by `@brinawebb` the same day) — your own minimal
+   OAuth 2.1 AS in front, federating to Entra privately as a confidential client, so the connector never
+   sees Entra. ARC-1 needs no change (it stays a resource server validating the Entra token the broker
+   attaches), but two ARC-1-specific conditions apply and are now in
+   `docs_page/oauth-jwt-setup.md`: the broker owns discovery (so ARC-1 should run with
+   `SAP_OIDC_DISCOVERY=false`), and the broker must federate the **user's** identity — a
+   `client_credentials` shortcut collapses every MCP user into one identity and silently guts per-user
+   scopes, the audit trail, and Destination principal propagation.
 3. Entra's v2.0 metadata omits `code_challenge_methods_supported` (measured on tenant, `organizations`,
    `common`). SDK 1.29.0 tolerates the absence; a client that follows the 2025-11-25 "MUST refuse" rule
    would not.
