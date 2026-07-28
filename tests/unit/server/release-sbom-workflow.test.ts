@@ -14,6 +14,7 @@ interface WorkflowStep {
 interface WorkflowJob {
   needs?: string | string[];
   if?: string;
+  'continue-on-error'?: boolean;
   permissions?: Record<string, string>;
   outputs?: Record<string, string>;
   steps: WorkflowStep[];
@@ -26,7 +27,7 @@ interface ReleaseWorkflow {
 const githubExpression = (expression: string): string => `\${{ ${expression} }}`;
 
 describe('release npm SBOM workflow', () => {
-  it('publishes from the immutable release tag after npm with least privilege', async () => {
+  it('publishes best-effort from the immutable release tag after npm with least privilege', async () => {
     const workflow = parse(await readFile('.github/workflows/release.yml', 'utf8')) as ReleaseWorkflow;
     const releaseJob = workflow.jobs['release-please'];
     const sbomJob = workflow.jobs['publish-npm-sbom'];
@@ -34,6 +35,7 @@ describe('release npm SBOM workflow', () => {
     expect(releaseJob.outputs?.version).toBe(githubExpression('steps.release.outputs.version'));
     expect(sbomJob.needs).toEqual(['release-please', 'publish-npm']);
     expect(sbomJob.if).toBe(githubExpression('needs.release-please.outputs.release_created'));
+    expect(sbomJob['continue-on-error']).toBe(true);
     expect(sbomJob.permissions).toEqual({ contents: 'write' });
 
     const checkout = sbomJob.steps.find((step) => step.uses === 'actions/checkout@v7');

@@ -446,7 +446,7 @@ ARC-1 ships as an [npm package](https://www.npmjs.com/package/arc-1) and a [Dock
 | Workflow-level `permissions: contents: read` | all workflows | minimum `GITHUB_TOKEN` scope |
 | Third-party action SHA pinning | `googleapis/release-please-action`, `docker/*`, `aquasecurity/trivy-action` | mitigates the `tj-actions/changed-files` 2024 supply-chain compromise class |
 | npm provenance | `.github/workflows/release.yml` (`npm publish --provenance`) | every release tarball is Sigstore-attested |
-| npm production SBOM | `.github/workflows/release.yml` (`npm sbom --package-lock-only --omit=dev`) | every GitHub Release carries a versioned CycloneDX JSON asset |
+| npm production SBOM | `.github/workflows/release.yml` (`npm sbom --package-lock-only --omit=dev`) | best-effort, non-gating CycloneDX JSON release asset |
 | `SECURITY.md` policy | repo root | private vulnerability reporting + severity-tiered response SLAs |
 
 ### GitHub-native security features (verified enabled)
@@ -510,6 +510,11 @@ The release SBOM describes the production npm graph resolved from the root `pack
 It does not inventory Alpine packages in the Docker image, the assembled MCPB contents, or
 dynamically loaded extensions. Those artifacts need their own build-output SBOMs; do not use the
 npm SBOM as evidence for their full contents.
+
+SBOM publication is deliberately **non-gating**. A generation, validation, or GitHub upload error
+remains visible in the `publish-npm-sbom` job, but `continue-on-error: true` prevents it from failing
+or blocking the npm, Docker, MCPB, or MCP Registry release. Maintainers can regenerate and attach a
+missing asset later.
 
 ### Reporting a vulnerability
 

@@ -7,7 +7,8 @@ This plan adds **supply-chain attestation** to ARC-1: machine-verifiable proof t
 > **Progress (2026-07-28):** the production npm dependency graph now ships as a versioned
 > CycloneDX GitHub Release asset. Its reviewed implementation is recorded in
 > [`docs/plans/completed/2026-07-28-release-npm-sbom-quick-win.md`](completed/2026-07-28-release-npm-sbom-quick-win.md).
-> Image/MCPB SBOM coverage, image signing/attestation, and Scorecard remain open in this plan.
+> The npm release asset is explicitly best-effort and non-gating. Image/MCPB SBOM coverage, image
+> signing/attestation, and Scorecard remain open in this plan.
 
 The plan adds three release-time attestations:
 1. **CycloneDX SBOM** — a complete inventory of every transitive dependency, generated per release and attached to both the GitHub Release and the Docker image (as an attestation).
@@ -66,7 +67,7 @@ Design decisions:
 2. **Image-attached attestations.** SBOM and provenance live alongside the image in OCI registry, not just on GitHub Releases. Air-gapped customers mirror once.
 3. **Reuse existing OIDC plumbing.** The release workflow already has `id-token: write` for npm provenance. Cosign keyless and SBOM attestations consume the same OIDC token. No new secrets.
 4. **Public Scorecard.** Score is a trust signal; hiding it defeats the purpose. If the score drops, fix the controls, don't suppress the badge.
-5. **Failures gate, but don't break debugging.** Sigstore/Rekor occasional outages happen. The release job tolerates a Sigstore *availability* failure (graceful degradation: ship the image without signature, alert the maintainer) but never tolerates a *verification* failure (signing succeeded but verification fails — bug, hard fail).
+5. **Failures gate, but don't break debugging.** Sigstore/Rekor occasional outages happen. The release job tolerates a Sigstore *availability* failure (graceful degradation: ship the image without signature, alert the maintainer) but never tolerates a *verification* failure (signing succeeded but verification fails — bug, hard fail). The npm release-asset quick win is an explicit exception: its whole job is non-gating so SBOM tooling or GitHub asset availability cannot break an otherwise valid release.
 
 ## Development Approach
 
@@ -87,7 +88,7 @@ This plan only touches release-time workflows; no source code changes. Per-task 
 
 Generate two artifact-specific SBOMs per release: one for the root production npm graph (built from `package-lock.json` via `npm sbom`) and one for the image (built from the layered filesystem). The npm half is complete; the image half remains open.
 
-- [x] Add an isolated `publish-npm-sbom` job after successful npm publication. It checks out the immutable release tag, pins npm to the same `11.11.1` used by `publish-npm`, and runs `npm sbom --package-lock-only --omit=dev --sbom-format=cyclonedx --sbom-type=application` without `npm ci`.
+- [x] Add an isolated, job-level `continue-on-error: true` `publish-npm-sbom` job after successful npm publication. It checks out the immutable release tag, pins npm to the same `11.11.1` used by `publish-npm`, and runs `npm sbom --package-lock-only --omit=dev --sbom-format=cyclonedx --sbom-type=application` without `npm ci`. An SBOM failure remains visible but cannot fail the release workflow.
 - [x] Validate Release Please/package/lock/SBOM version agreement plus the CycloneDX root metadata and non-empty graph before upload. Attach with the runner-provided `gh` CLI under a job-scoped `contents: write` token. Retries compare the GitHub asset SHA-256 and never use destructive `--clobber` replacement.
 - [x] Add `tests/unit/server/release-sbom-workflow.test.ts` to guard ordering, tag checkout, least privilege, exact npm flags, validation, and non-destructive upload behavior.
 - [ ] In the `publish-docker-merge` job (line 168-205), after the `Create manifest list and push` step (line 199-205), add a step `Generate image SBOM (CycloneDX)` using `anchore/sbom-action@<commit-SHA>`:

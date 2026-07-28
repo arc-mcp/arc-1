@@ -6,9 +6,10 @@
 
 ## Objective
 
-Publish `arc-1-<version>-sbom.cdx.json` on every GitHub Release. The document must be a
-valid CycloneDX application SBOM derived from the release commit's `package-lock.json`, contain
-only the npm production dependency tree, and match the release tag exactly.
+Attempt to publish `arc-1-<version>-sbom.cdx.json` on every GitHub Release. When produced, the
+document must be a valid CycloneDX application SBOM derived from the release commit's
+`package-lock.json`, contain only the npm production dependency tree, and match the release tag
+exactly. SBOM generation and upload are best-effort and must never fail the artifact release.
 
 This is deliberately smaller than the remaining Tier 2 attestation plan. It does **not** claim to
 inventory Alpine packages in the Docker image, the assembled MCPB contents, or dynamically loaded
@@ -44,6 +45,7 @@ extensions.
    - This keeps `contents: write` out of the npm OIDC publishing job.
    - The job is independently rerunnable if GitHub asset upload has a transient failure.
    - No `npm ci` is needed: `--package-lock-only` intentionally ignores `node_modules`.
+   - Job-level `continue-on-error: true` keeps all SBOM failures non-gating for the release.
 2. Check out the immutable release tag, not an implicit moving branch, and disable persisted Git
    credentials so the job's write token exists only in the upload step environment.
 3. Install the same pinned npm `11.11.1` used by package publication.
@@ -93,7 +95,8 @@ extensions.
 - The SBOM job starts only after npm publication succeeds and has only `contents: write` permission.
 - A malformed, empty, wrong-name, or wrong-version SBOM fails before upload.
 - A transient upload failure retries without deleting an existing asset; a conflicting asset fails
-  loudly.
+  loudly inside the non-gating SBOM job.
+- Any SBOM job failure leaves the overall release workflow able to succeed.
 - No package version is hardcoded in the workflow.
 - Documentation explicitly limits this SBOM to the production npm dependency graph.
 
