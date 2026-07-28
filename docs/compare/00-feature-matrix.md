@@ -74,7 +74,7 @@ _Last updated: 2026-07-17._
 
 ### 4.1 Supply-Chain Security (SEC-11, Tier 1)
 
-Where the rest of §4 covers *runtime* guardrails, this sub-table covers *build-time and distribution-time* guardrails — the controls that make the published npm package and Docker image trustworthy. Status for competitors is based on a 2026-05-08 inspection of their public `.github/`, `package.json`, and release-related workflow files; "—" means the project doesn't ship the relevant artifact (e.g. no Docker image to scan).
+Where the rest of §4 covers *runtime* guardrails, this sub-table covers *build-time and distribution-time* guardrails — the controls that make the published npm package and Docker image trustworthy. Status for competitors is based on a 2026-05-08 inspection of their public `.github/`, `package.json`, and release-related workflow files; "—" means the project doesn't ship the relevant artifact (e.g. no Docker image to scan). The SBOM row was added later and does not infer competitor status without a fresh audit.
 
 | Control | ARC-1 | SAP ABAP MCP | vibing-steampunk | mcp-abap-abap-adt-api | mcp-abap-adt (mario) | AWS Accelerator | fr0ster | btp-odata-mcp | dassian-adt / abap-mcpb | sapcli |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -86,10 +86,11 @@ Where the rest of §4 covers *runtime* guardrails, this sub-table covers *build-
 | Workflow `permissions:` minimum | ✅ | N/A (closed src) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Third-party action SHA pinning | ✅ | N/A (closed src) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | npm package provenance | ✅ | N/A (closed src) | N/A (Go) | ❌ | ❌ | N/A (Python) | ❌ | ❌ | ❌ | N/A (Python) |
+| CycloneDX release SBOM (npm production graph) | ✅ | not re-audited | not re-audited | not re-audited | not re-audited | not re-audited | not re-audited | not re-audited | not re-audited | not re-audited |
 | `SECURITY.md` policy | ✅ | N/A (closed src) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Private Vulnerability Reporting | ✅ | ⚠️ (SAP PSRT) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
-Tier 2 (CycloneDX SBOM, Cosign image signing, OpenSSF Scorecard) and Tier 3 (Socket.dev malicious-package detection, vulnerability triage runbook) are tracked in `docs/plans/` and will move into this matrix as they land.
+The npm-graph CycloneDX quick win is now shipped. Remaining Tier 2 work (image/MCPB SBOM coverage, Cosign image signing, OpenSSF Scorecard) and Tier 3 (Socket.dev malicious-package detection, vulnerability triage runbook) are tracked in `docs/plans/` and will move into this matrix as they land.
 
 ## 5. ABAP Read Operations
 

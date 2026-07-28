@@ -446,6 +446,7 @@ ARC-1 ships as an [npm package](https://www.npmjs.com/package/arc-1) and a [Dock
 | Workflow-level `permissions: contents: read` | all workflows | minimum `GITHUB_TOKEN` scope |
 | Third-party action SHA pinning | `googleapis/release-please-action`, `docker/*`, `aquasecurity/trivy-action` | mitigates the `tj-actions/changed-files` 2024 supply-chain compromise class |
 | npm provenance | `.github/workflows/release.yml` (`npm publish --provenance`) | every release tarball is Sigstore-attested |
+| npm production SBOM | `.github/workflows/release.yml` (`npm sbom --package-lock-only --omit=dev`) | every GitHub Release carries a versioned CycloneDX JSON asset |
 | `SECURITY.md` policy | repo root | private vulnerability reporting + severity-tiered response SLAs |
 
 ### GitHub-native security features (verified enabled)
@@ -478,19 +479,37 @@ npm install arc-1
 npm audit signatures arc-1
 # Expected: "audited <N> packages — verified <N> packages with Sigstore"
 
-# 2. npm package — confirm no known vulnerabilities at install time
+# 2. npm package — download and inspect the production dependency SBOM
+VERSION=<version>
+gh release download "v${VERSION}" \
+  --repo arc-mcp/arc-1 \
+  --pattern "arc-1-${VERSION}-sbom.cdx.json"
+jq -e --arg version "$VERSION" '
+  .bomFormat == "CycloneDX" and
+  .metadata.component.name == "arc-1" and
+  .metadata.component.version == $version and
+  .metadata.component.type == "application"
+' "arc-1-${VERSION}-sbom.cdx.json"
+# Expected: true
+
+# 3. npm package — confirm no known vulnerabilities at install time
 npm audit --audit-level=high
 # Expected: "found 0 vulnerabilities"
 
-# 3. Docker image — scan locally with the same scanner CI uses
+# 4. Docker image — scan locally with the same scanner CI uses
 trivy image ghcr.io/arc-mcp/arc-1:<version> \
   --severity HIGH,CRITICAL \
   --exit-code 1
 # Expected: exit 0, "No vulnerabilities found"
 
-# 4. View the full advisory history for the project
+# 5. View the full advisory history for the project
 open https://github.com/arc-mcp/arc-1/security/advisories
 ```
+
+The release SBOM describes the production npm graph resolved from the root `package-lock.json`.
+It does not inventory Alpine packages in the Docker image, the assembled MCPB contents, or
+dynamically loaded extensions. Those artifacts need their own build-output SBOMs; do not use the
+npm SBOM as evidence for their full contents.
 
 ### Reporting a vulnerability
 
@@ -500,5 +519,5 @@ See [`SECURITY.md`](https://github.com/arc-mcp/arc-1/blob/main/SECURITY.md). Pre
 
 This section corresponds to roadmap entry **SEC-11 (Tier 1: Foundation)**. Future tiers extend the chain:
 
-- **Tier 2 (Attestation)** — CycloneDX SBOM (npm + image), Cosign keyless image signing, OpenSSF Scorecard. Plan in [`docs/plans/2026-05-08-dependency-security-tier2-attestation.md`](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-05-08-dependency-security-tier2-attestation.md).
+- **Tier 2 (Attestation)** — the production npm CycloneDX release asset is complete. Image/MCPB SBOM coverage, Cosign keyless image signing, and OpenSSF Scorecard remain in [`docs/plans/2026-05-08-dependency-security-tier2-attestation.md`](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-05-08-dependency-security-tier2-attestation.md).
 - **Tier 3 (Active Defense)** — Socket.dev PR review, vulnerability triage runbook, formal non-adoption decisions for Renovate / Snyk / SLSA L3. Plan in [`docs/plans/2026-05-08-dependency-security-tier3-defense.md`](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-05-08-dependency-security-tier3-defense.md).

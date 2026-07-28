@@ -2530,9 +2530,10 @@ The four shipped MCP clients — Claude Desktop, Cursor, VS Code Copilot, Copilo
 - `README.md` — CodeQL + Test + Dependency Review badges; supply-chain security bullet
 - `CLAUDE.md` — Key Files rows for Dependabot config / audit & SAST gates / container scanning / action pinning / `SECURITY.md`
 
-**Follow-ups (not in this PR):**
+**Follow-ups:**
 
-- Tier 2: CycloneDX SBOM (npm + image), Cosign keyless image signing, OpenSSF Scorecard. Plan in [docs/plans/2026-05-08-dependency-security-tier2-attestation.md](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-05-08-dependency-security-tier2-attestation.md).
+- Tier 2 quick win: the production npm dependency graph now ships as a CycloneDX GitHub Release asset. Implementation record: [docs/plans/completed/2026-07-28-release-npm-sbom-quick-win.md](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/completed/2026-07-28-release-npm-sbom-quick-win.md).
+- Remaining Tier 2: image/MCPB SBOM coverage, Cosign keyless image signing, OpenSSF Scorecard. Plan in [docs/plans/2026-05-08-dependency-security-tier2-attestation.md](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-05-08-dependency-security-tier2-attestation.md).
 - Tier 3: Socket.dev PR review, internal vulnerability triage runbook, formal non-adoption decisions for Renovate / Snyk / SLSA L3. Plan in [docs/plans/2026-05-08-dependency-security-tier3-defense.md](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-05-08-dependency-security-tier3-defense.md).
 - 7 remaining HIGH CodeQL alerts (clear-text logging FPs in `src/cli.ts`, double-escaping in `src/adt/diagnostics.ts` + `src/adt/xml-parser.ts`, incomplete sanitization in `src/adt/diagnostics.ts`, missing rate-limiting on `/authorize` — the last maps to roadmap [SEC-05](#sec-05)). Triage in separate PRs.
 
