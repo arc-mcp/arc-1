@@ -4,11 +4,6 @@ on:
   push:
     branches: ['main']
   workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Image tag (default latest). Use e.g. pr-632 to publish a branch build for testers.'
-        required: false
-        default: 'latest'
 
 jobs:
   # Build Docker images natively per architecture (no QEMU emulation).
@@ -30,15 +25,6 @@ jobs:
             runner: ubuntu-24.04-arm
 
     steps:
-      # `latest` is what every unpinned `docker pull` gets. A dispatch from a
-      # feature branch that forgets the tag input would silently replace it with
-      # an unreleased build, so refuse before anything is pushed.
-      - name: Refuse to publish latest from a non-main ref
-        if: github.ref != 'refs/heads/main' && (inputs.tag == '' || inputs.tag == 'latest')
-        run: |
-          echo "::error::Dispatching from ${{ github.ref }} needs an explicit tag input (e.g. pr-632), not latest."
-          exit 1
-
       - uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
@@ -57,7 +43,7 @@ jobs:
         with:
           images: ghcr.io/arc-mcp/arc-1
           tags: |
-            type=raw,value=${{ inputs.tag || 'latest' }}
+            type=raw,value=latest
 
       - name: Build and push by digest
         id: build
@@ -138,7 +124,7 @@ jobs:
         with:
           images: ghcr.io/arc-mcp/arc-1
           tags: |
-            type=raw,value=${{ inputs.tag || 'latest' }}
+            type=raw,value=latest
 
       - name: Create manifest list and push
         working-directory: ${{ runner.temp }}/digests
