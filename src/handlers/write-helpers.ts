@@ -695,15 +695,13 @@ function buildCreateXmlBody(
       if (processingType === 'update' && updateTaskKind === undefined) {
         throw new Error('FUNC processingType="update" requires an explicit updateTaskKind.');
       }
-      const processingAttributes =
-        processingType === undefined
-          ? ''
-          : ` fmodule:processingType="${escapeXmlAttr(processingType)}"${
-              updateTaskKind === undefined ? '' : ` fmodule:updateTaskKind="${escapeXmlAttr(updateTaskKind)}"`
-            }`;
+      // The collection POST is deliberately free of processing attributes: SAP
+      // accepts them and still creates a `normal` shell (live-verified on 758),
+      // so sending them is inert on the releases we can test and unproven on the
+      // ones we cannot. The locked metadata PUT in write/create.ts persists them.
       const groupLc = encodeURIComponent(group.toLowerCase());
       return `<?xml version="1.0" encoding="UTF-8"?>
-<fmodule:abapFunctionModule xmlns:fmodule="http://www.sap.com/adt/functions/fmodules" xmlns:adtcore="http://www.sap.com/adt/core"${processingAttributes} adtcore:description="${escapeXmlAttr(description)}" adtcore:name="${escapeXmlAttr(name)}" adtcore:type="FUGR/FF">
+<fmodule:abapFunctionModule xmlns:fmodule="http://www.sap.com/adt/functions/fmodules" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:description="${escapeXmlAttr(description)}" adtcore:name="${escapeXmlAttr(name)}" adtcore:type="FUGR/FF">
   <adtcore:containerRef adtcore:name="${escapeXmlAttr(group)}" adtcore:type="FUGR/F" adtcore:uri="/sap/bc/adt/functions/groups/${groupLc}"/>
 </fmodule:abapFunctionModule>`;
     }

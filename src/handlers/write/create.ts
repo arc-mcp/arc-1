@@ -161,7 +161,7 @@ async function persistFunctionModuleProcessingMetadata(
 ): Promise<void> {
   try {
     const inactiveUrl = `${objectUrl}?version=inactive`;
-    const current = await client.http.get(inactiveUrl);
+    const current = await client.getObjectMetadata(inactiveUrl);
     const body = rewriteFunctionModuleProcessingMetadata(current.body, processingType, updateTaskKind);
     const responseContentType = getHeader(current.headers, 'content-type');
     const discoveredContentType = client.http.discoveryAcceptFor(objectUrl);
@@ -180,9 +180,9 @@ async function persistFunctionModuleProcessingMetadata(
       getCachedFeatures()?.abapRelease,
     );
 
-    // A 2xx response alone is insufficient evidence: some FUNC create/update
-    // handlers accept unknown attributes but silently retain `normal`.
-    const persisted = await client.http.get(inactiveUrl);
+    // A 2xx response alone is insufficient evidence: the collection POST accepts
+    // these attributes and still retains `normal` (live-verified on 758).
+    const persisted = await client.getObjectMetadata(inactiveUrl);
     const actualProcessingType = functionModuleAttribute(persisted.body, 'processingType');
     const actualUpdateTaskKind = functionModuleAttribute(persisted.body, 'updateTaskKind');
     if (

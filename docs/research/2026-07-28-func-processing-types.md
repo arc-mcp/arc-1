@@ -42,6 +42,19 @@ v3 media type on the POST and produced the same result. This ruled out content
 negotiation, source PUT, and activation as the cause: collection POST creates a
 normal shell and does not persist processing properties.
 
+That result was re-confirmed independently during review by POSTing
+`fmodule:processingType="rfc"` with no follow-up PUT; the inactive root came
+back as:
+
+```xml
+<fmodule:abapFunctionModule fmodule:releaseState="notReleased" fmodule:processingType="normal" …>
+```
+
+Because the attribute is inert on every release we can test and unproven on the
+ones we cannot, ARC-1 does **not** send it on the create POST at all. The create
+envelope is byte-identical to the pre-feature one, and the locked metadata PUT
+is the single place the processing kind is written.
+
 The working ADT lifecycle is:
 
 1. POST the function-module shell to the parent group's `fmodules` collection;
@@ -112,8 +125,35 @@ Remote-Enabled, both V1 update variants, and V2 update modules. Cleanup of the
 disposable graph passed as part of the same test. The SAP_BASIS 750 discovery
 and existing root metadata confirm the v2 representation and wire values, but
 the configured identity currently receives HTTP 403 on disposable
-function-group creation. The 750 mutation lifecycle therefore remains an
-explicit pre-merge/manual verification item rather than an inferred pass.
+function-group creation. Review re-ran the same lifecycle on 750 under a second,
+unrelated identity and got the identical `POST /sap/bc/adt/functions/groups →
+403`, which places the gap in system authorization rather than in this code path.
+The 750 mutation lifecycle therefore remains an explicit pre-merge/manual
+verification item rather than an inferred pass.
+
+### The ADT root is not the last word — TFDIR is
+
+ADT echoing an attribute it stored is weaker evidence than the ABAP runtime
+agreeing. After activation on 758, the dictionary itself was queried:
+
+```text
+SELECT funcname, fmode, utask FROM tfdir WHERE funcname LIKE 'Z…%'
+→ …_RFC     FMODE="R"  UTASK=""    (Remote-Enabled)
+→ …_UPDATE  FMODE=""   UTASK="2"   (V2 update)
+```
+
+`TFDIR-FMODE`/`TFDIR-UTASK` are what the ABAP runtime dispatches on, so the
+requested execution semantics survive the whole lifecycle, not just the
+metadata envelope.
+
+### Why the root-tag rewrite may use a plain regular expression
+
+`rewriteFunctionModuleProcessingMetadata` locates the root element with
+`<fmodule:abapFunctionModule\b[^>]*>`, which would truncate if an attribute value
+contained a raw `>`. A live probe with the description `A > B & C < D "q"` shows
+SAP escapes it on the way out (`A &gt; B &amp; C &lt; D &quot;q&quot;`), and
+`escapeXmlAttr` escapes it on the way in, so no reachable input produces a raw
+`>` inside the root tag.
 
 Unit tests separately cover invalid field combinations, unchanged omission
 behavior, structured parameters, SAPGUI comment stripping, canonical batch

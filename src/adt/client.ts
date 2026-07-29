@@ -21,7 +21,7 @@ import { defaultAdtClientConfig } from './config.js';
 import { lockObject, unlockObject } from './crud.js';
 import { parseTableType, type TableTypeInfo } from './ddic-xml.js';
 import { AdtApiError, AdtSafetyError, isNotFoundError } from './errors.js';
-import { AdtHttpClient, type AdtHttpConfig } from './http.js';
+import { AdtHttpClient, type AdtHttpConfig, type AdtResponse } from './http.js';
 import { AdtPackageHierarchyResolver, type PackageHierarchyResolver } from './package-hierarchy.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import { Semaphore } from './semaphore.js';
@@ -1632,6 +1632,16 @@ export class AdtClient {
       { Accept: 'application/xml', 'Content-Type': 'application/octet-stream' },
     );
     return resp.body;
+  }
+
+  /**
+   * Raw object-root metadata at an explicit ADT URL (may carry `?version=…`).
+   * Used by post-create metadata writes that must round-trip SAP's own envelope
+   * instead of reconstructing a release-sensitive one.
+   */
+  async getObjectMetadata(objectUrl: string): Promise<AdtResponse> {
+    checkOperation(this.safety, OperationType.Read, 'GetObjectMetadata');
+    return this.http.get(objectUrl);
   }
 
   /**

@@ -879,8 +879,9 @@ describe('SAPWrite handler — create / batch_create', () => {
         processingType: 'rfc',
       });
       expect(result.isError).toBeUndefined();
+      // The POST creates a bare shell — SAP ignores processing attributes there.
       const create = calls.find((c) => c.method === 'POST' && c.url.includes('/functions/groups/zarc1_fg/fmodules'));
-      expect(create?.body).toContain('fmodule:processingType="rfc"');
+      expect(create?.body).not.toContain('fmodule:processingType=');
       const metadataPut = calls.find(
         (c) =>
           c.method === 'PUT' && new URL(c.url).pathname.endsWith('/functions/groups/zarc1_fg/fmodules/z_arc1_remote'),
@@ -1670,9 +1671,19 @@ lv = CONV string( 1 ).`,
           String(call[0]).includes('/functions/groups/zarc1_fg/fmodules?') &&
           (call[1] as RequestInit | undefined)?.method === 'POST',
       );
+      // The batch POST creates a bare shell, exactly like the single-object path…
       const body = String((createCall?.[1] as RequestInit | undefined)?.body ?? '');
-      expect(body).toContain('fmodule:processingType="update"');
-      expect(body).toContain('fmodule:updateTaskKind="startImmediate"');
+      expect(body).not.toContain('fmodule:processingType=');
+      expect(body).not.toContain('fmodule:updateTaskKind=');
+      // …and the locked metadata PUT is what persists the kind.
+      const metadataPut = mockFetch.mock.calls.find(
+        (call) =>
+          (call[1] as RequestInit | undefined)?.method === 'PUT' &&
+          new URL(String(call[0])).pathname.endsWith('/functions/groups/zarc1_fg/fmodules/z_arc1_update'),
+      );
+      const putBody = String((metadataPut?.[1] as RequestInit | undefined)?.body ?? '');
+      expect(putBody).toContain('fmodule:processingType="update"');
+      expect(putBody).toContain('fmodule:updateTaskKind="startImmediate"');
     });
 
     it('resolves the inherited FUNC package instead of applying the top-level batch package', async () => {
@@ -2648,12 +2659,15 @@ lv = CONV string( 1 ).`,
       expect(xml).not.toContain('packageRef');
     });
 
-    it('emits explicit processing metadata for Remote-Enabled and update function modules', () => {
+    // SAP accepts these attributes on the collection POST and still creates a `normal`
+    // shell (live-verified on 758), so the create envelope must stay free of them —
+    // the locked metadata PUT is the only thing that persists the processing kind.
+    it('keeps inert processing attributes out of the FUNC create envelope', () => {
       const remote = buildCreateXml('FUNC', 'Z_REMOTE', '', 'Remote FM', {
         group: 'ZARC1_FG',
         processingType: 'rfc',
       });
-      expect(remote).toContain('fmodule:processingType="rfc"');
+      expect(remote).not.toContain('fmodule:processingType=');
       expect(remote).not.toContain('fmodule:updateTaskKind=');
 
       const update = buildCreateXml('FUNC', 'Z_UPDATE', '', 'V1 update FM', {
@@ -2661,8 +2675,10 @@ lv = CONV string( 1 ).`,
         processingType: 'update',
         updateTaskKind: 'startImmediate',
       });
-      expect(update).toContain('fmodule:processingType="update"');
-      expect(update).toContain('fmodule:updateTaskKind="startImmediate"');
+      expect(update).not.toContain('fmodule:processingType=');
+      expect(update).not.toContain('fmodule:updateTaskKind=');
+      // The combination guard still runs on the create path even though nothing is emitted.
+      expect(update).toContain('adtcore:name="Z_UPDATE"');
     });
 
     it('rejects impossible FUNC processing metadata combinations', () => {

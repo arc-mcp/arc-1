@@ -7,7 +7,8 @@ export const SAPWRITE_DESC_ONPREM =
   'TABL create: "TABL"/"TABL/DT" → transparent table (16-char name); "TABL/DS" → structure (30-char, namespaces OK); update/delete/activate auto-discover the subtype. ' +
   'Metadata-XML writes (not /source/main): DOMA/DTEL (dataType, length, fixedValues, typeKind, labels, searchHelp); MSAG (messages array of {number, shortText}); SRVB (serviceDefinition, odataVersion V2/V4, optional category 0=UI/1=Web API; bindingType like "ODataV4-UI" auto-normalized). ' +
   'SKTD/KTD (Markdown docs on a KTD-capable object; KTD aliases SKTD): create needs refObjectType (parent type+subtype, e.g. "DDLS/DF"); "name" MUST equal the parent name; update takes Markdown in source; then SAPActivate(type="SKTD"). ' +
-  'FUNC: require "group" (parent FUGR must exist — create it first); pass structured `parameters` for the signature (read back via SAPRead includeSignature=true). ' +
+  // "group"/FUGR-must-exist and processingType live on their own property descriptions — not repeated here.
+  'FUNC: needs "group"; pass structured `parameters` for the signature (read back via SAPRead includeSignature=true). ' +
   'edit_method: replace one CLAS method body via source (95% fewer tokens than full-class). Local-class methods use the qualified specifier (e.g. "lhc_project~approve_project"); auto-routing: lhc_*/lcl_* → implementations, ltc_* → testclasses (override with include=); zif_*~* stays on /source/main. ' +
   'edit_unit: replace one FORM/MODULE block in PROG/INCL using unit+source; group= supports FUGR includes. ' +
   'batch_create: create+activate multiple objects in dependency order via the "objects" array (RAP stacks TABL→DDLS→DCLS→BDEF→SRVD). scaffold_rap_handlers / generate_behavior_implementation: derive RAP behavior-pool handlers from the BDEF (the latter auto-discovers the BDEF via rootEntityRef and activates by default). ' +

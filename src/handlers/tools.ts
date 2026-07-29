@@ -605,10 +605,11 @@ export function getToolDefinitions(
               // of the BTP action enum so the zod↔json-schema parity check stays green.
               ...(btp ? [] : ['edit_text_symbols']),
             ],
+            // create/update/delete, edit_method, edit_unit, batch_create and the RAP scaffolds are
+            // already described in the tool description — restating them here just costs wire bytes.
+            // Class surgery is the part that is NOT covered there, so it gets the whole budget.
             description:
-              'Write action. create/update/delete: object writes; edit_method: replace one CLAS method body. ' +
-              (btp ? '' : 'edit_unit: replace a PROG/INCL FORM or MODULE. ') +
-              'Class surgery uses edit_class_definition/add_method/edit_method_signature; delete_method is destructive, while change_method_visibility preserves its body. batch_create keeps order; put dependencies first. scaffold_rap_handlers/generate_behavior_implementation derive behavior-pool handlers from a BDEF.',
+              'Write action. Class surgery (CLAS): edit_class_definition replaces the DEFINITION block (or a local include with include=) and refuses a diff that would leave the class non-activatable; add_method/edit_method_signature/change_method_visibility act on /source/main; delete_method is destructive — to re-section a method use change_method_visibility, which preserves the body. scaffold_rap_handlers/generate_behavior_implementation derive BDEF behavior-pool handlers.',
           },
           type: {
             type: 'string',
