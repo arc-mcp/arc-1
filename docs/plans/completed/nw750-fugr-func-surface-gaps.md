@@ -2,6 +2,23 @@
 
 ## Overview
 
+> **As-shipped correction (2026-07-29).** Tasks 1–3 below planned the FUNC
+> `processingType`/`updateTaskKind` **write**. While this plan was executing,
+> [PR #634](https://github.com/arc-mcp/arc-1/pull/634) landed the same feature on main
+> independently — same parameter names, same live-derived contract, and it additionally supports
+> FUNC inside `batch_create`, which Design Principle 8 below had ruled out. Those three tasks were
+> therefore **dropped, not shipped from this plan**; `src/handlers/function-processing.ts` +
+> `write/create.ts` are the write implementation. Task 4 (the `SAPRead` read-back) shipped and
+> complements #634, which exposes no read. Tasks 5–9 shipped as planned. The wire-budget note in
+> Design Principle 7 is also superseded: #634 raised `WRITE_WIRE_WALL` to 72 000, so this work
+> needed no budget change of its own.
+>
+> Two contract details the merge surfaced, both recorded in §6b of the dossier: #634's input enum
+> omits `collectiveRun` (which SAP does emit on existing modules, so the read side reports SAP's
+> value verbatim), and the fmodule resource's native version is release-dependent — 7.50 answers
+> `…fmodules.v2+xml`, 758 answers `v3` — so the read negotiates rather than pinning a version.
+
+
 Six gaps in ARC-1's function-group / function-module / DDIC surface, all found while auditing whether
 ARC-1 can install the open-rfc beta fixtures on NetWeaver 7.50. Two are real capability gaps (ADT
 supports the operation on 7.50, ARC-1 does not implement it); three are error-quality gaps where the

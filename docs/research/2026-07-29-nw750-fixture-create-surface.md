@@ -87,7 +87,12 @@ rfcScope, rfcVersion, basXMLEnabled, releaseState, releaseDate, global
 | same with `processingType="update" updateTaskKind="startImmediate"` | **200**, both persisted ✅ | **200**, both persisted ✅ |
 | survives `SAPActivate` | — | ✅ active version reads `rfc` / `update`+`startImmediate` |
 
-Both `…fmodules.v3+xml` and the unversioned `…fmodules+xml` Content-Type are accepted on 7.50.
+Both `…fmodules.v3+xml` and the unversioned `…fmodules+xml` Content-Type are accepted on 7.50 for the
+PUT. **But the resource's NATIVE version is release-dependent** — a plain GET (no explicit Accept)
+answers `…fmodules.v2+xml; charset=utf-8` on 7.50 and `…v3+xml` on 758, and returns the attributes
+either way. So a read should negotiate rather than pin a version; pinning v3 works only because SAP
+is lenient about the Accept. PR #634 reached the same conclusion for the write Content-Type and
+derives it from the response/discovery instead of hardcoding.
 
 So the property *is* settable over ADT on 7.50 — just not at create time, and ARC-1 never does it:
 
@@ -212,7 +217,8 @@ back on `SAPRead includeSignature=true` (#634 writes them but does not expose a 
 1. **FUNC `processingType` / `updateTaskKind`** — ✅ **shipped independently as PR #634** (see §6b).
    The remaining piece is the read side: surface the attributes on `SAPRead includeSignature=true`
    so the runbook's §9 verification can confirm what was written.
-   Content type `…functions.fmodules.v3+xml` (the unversioned type also works on 7.50).
+   The read must not pin a media version: 7.50 serves `…fmodules.v2+xml`, 758 serves `v3` (both
+   measured 2026-07-29). Let discovery negotiate.
 2. **FUGR structural-include create/delete** — lift the client-side refusal in `write.ts:160-165` and
    route create to `POST /functions/groups/{g}/includes` (CT `…functions.fincludes.v2+xml`, not the
    `/programs/includes` collection ARC-1 uses today). Works on 7.50 and 758; SAP maintains the main
@@ -245,8 +251,9 @@ Throwaway `$TMP` groups `ZZSPK750` / `ZZSPK758`, deleted and confirmed 404.
 
 A hand-built minimal envelope (root element + `containerRef` + the one attribute) is **rejected**:
 `400 ExceptionInvalidData` / *"Unexpected Case in Branch"*. The working contract is to GET the
-current representation (Accept `…fmodules.v3+xml`), edit attributes on the root element, and PUT the
-body back verbatim (atom links included, CT `…fmodules.v3+xml`) under a `MODIFY` lock.
+current representation, edit attributes on the root element, and PUT the body back verbatim (atom
+links included) under a `MODIFY` lock. Derive the Content-Type from the GET response rather than
+hardcoding a version — see the release note below.
 
 | Case | 7.50 | 758 |
 |---|---|---|
