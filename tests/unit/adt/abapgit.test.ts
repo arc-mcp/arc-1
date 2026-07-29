@@ -68,6 +68,32 @@ describe('abapGit client helpers', () => {
     expect(objects[1]).toMatchObject({ msgType: 'E', msgText: 'Object could not be activated' });
   });
 
+  it('parseAbapGitObjects also reads the pre-2020 v1 shape (namespace-less, obj_* fields)', () => {
+    const objects = parseAbapGitObjects(loadFixture('abapgit-objects-v1.xml'));
+    expect(objects).toHaveLength(1);
+    expect(objects[0]).toMatchObject({
+      type: 'CLAS',
+      name: 'ZCL_ARC1_TEST',
+      package: '$TMP',
+      status: 'Imported',
+      msgType: 'S',
+    });
+  });
+
+  it('parsers accept a well-formed empty response but fail closed on an unrecognised 200 body', () => {
+    // A correctly shaped "nothing happened" answer is a legitimate result, not a parse failure.
+    expect(parseAbapGitObjects('<?xml version="1.0"?><abapObjects:abapObjects xmlns:abapObjects="x"/>')).toEqual([]);
+    expect(
+      parseAbapGitStaging('<?xml version="1.0"?><abapgitstaging:abapgitstaging xmlns:abapgitstaging="x"/>').objects,
+    ).toEqual([]);
+
+    // Anything else must raise rather than report "cloned nothing" / "nothing to push".
+    expect(() => parseAbapGitObjects('')).toThrow(/unexpected clone\/pull response/);
+    expect(() => parseAbapGitObjects('<html><body>Logon screen</body></html>')).toThrow(/no <abapObjects> root/);
+    expect(() => parseAbapGitStaging('')).toThrow(/unexpected staging response/);
+    expect(() => parseAbapGitStaging(loadFixture('abapgit-objects.xml'))).toThrow(/no <abapgitstaging> root/);
+  });
+
   it('parseAbapGitStaging splits unstaged/ignored objects and reads the prefilled commit identity', () => {
     const staging = parseAbapGitStaging(loadFixture('abapgit-staging.xml'));
     expect(staging.objects).toHaveLength(2);
@@ -151,7 +177,7 @@ describe('abapGit client helpers', () => {
   });
 
   it('createRepo sends Username + base64 Password headers and remote credentials in XML body', async () => {
-    const http = mockHttp(loadFixture('abapgit-repos-v2.xml'));
+    const http = mockHttp(loadFixture('abapgit-objects.xml'));
     await createRepo(http, gitSafety, {
       package: '$TMP',
       url: 'https://github.com/example/repo.git',
@@ -375,7 +401,10 @@ describe('abapGit client helpers', () => {
     expect(created[0]?.name).toBe('ZCL_ARC1_TEST');
     for (const call of (http.post as ReturnType<typeof vi.fn>).mock.calls) {
       const headers = call[3] as Record<string, string>;
-      expect(headers.Accept).toContain('application/abapgit.adt.repo.object.v2+xml');
+      // Both renderings of the response, current first. repo.v3 is the request type and never renders.
+      expect(headers.Accept).toBe(
+        'application/abapgit.adt.repo.object.v2+xml, application/abapgit.adt.repo.object.v1+xml',
+      );
     }
   });
 

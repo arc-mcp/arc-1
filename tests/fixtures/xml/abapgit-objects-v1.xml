@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Pre-2020 clone/pull response shape: namespace-less, obj_* field names, served as
+     application/abapgit.adt.repo.object.v1+xml. abapGit/ADT_Backend commit ffb914a1 (2020-08-31,
+     "fixes (#61)") replaced it with the abapObjects/v2 shape, so both are in the wild — an
+     installation that never updated the add-on still answers with this one. -->
+<objects>
+  <object>
+    <obj_type>CLAS</obj_type>
+    <obj_name>ZCL_ARC1_TEST</obj_name>
+    <package>$TMP</package>
+    <obj_status>Imported</obj_status>
+    <msg_type>S</msg_type>
+    <msg_text>Object imported</msg_text>
+  </object>
+</objects>

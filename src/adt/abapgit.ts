@@ -23,14 +23,15 @@ import { escapeXmlAttr, findDeepNodes, parseXml } from './xml-parser.js';
 const ABAPGIT_BASE = '/sap/bc/adt/abapgit';
 const REPOS_V2 = 'application/abapgit.adt.repos.v2+xml';
 const REPO_V3 = 'application/abapgit.adt.repo.v3+xml';
+const REPO_OBJECT_V1 = 'application/abapgit.adt.repo.object.v1+xml';
 const REPO_OBJECT_V2 = 'application/abapgit.adt.repo.object.v2+xml';
 const REPO_STAGE_V1 = 'application/abapgit.adt.repo.stage.v1+xml';
 const EXTERNAL_INFO_REQUEST_V2 = 'application/abapgit.adt.repo.info.ext.request.v2+xml';
 const EXTERNAL_INFO_RESPONSE_V2 = 'application/abapgit.adt.repo.info.ext.response.v2+xml';
-// clone/pull answer with the deserialized object list (ZABAPGIT_ST_REPO_POST_RES → repo.object.v2).
-// The bridge 406s on an Accept it cannot render (live-verified on 758), so ask for that type and
-// keep repo.v3 in the list for older ADT_Backend installs.
-const REPO_OBJECT_ACCEPT = `${REPO_OBJECT_V2}, ${REPO_V3}`;
+// clone/pull answer with the deserialized object list (ZABAPGIT_ST_REPO_POST_RES). The bridge 406s on
+// an Accept it cannot render (live-verified on 758), and ADT_Backend ffb914a1 (2020-08-31) bumped that
+// response from repo.object.v1 to .v2 — so name both. repo.v3 is the REQUEST type; it never renders.
+const REPO_OBJECT_ACCEPT = `${REPO_OBJECT_V2}, ${REPO_OBJECT_V1}`;
 
 const NS_REPO = 'http://www.sap.com/adt/abapgit/repositories';
 const NS_STAGING = 'http://www.sap.com/adt/abapgit/staging';
@@ -191,18 +192,43 @@ export function parseAbapGitExternalInfo(xml: string): AbapGitExternalInfo {
 }
 
 /**
- * Parse a clone/pull response (`abapObjects:abapObjects` → `abapObject`, ZABAPGIT_ST_REPO_POST_RES).
- * Each entry reports what the bridge deserialized into the package, with abapGit's own status message.
+ * The first present root among `keys`, or undefined. An empty element (`<abapObjects/>`) parses to `''`,
+ * not an object — that is a legitimate "nothing happened" answer, so return an empty node for it.
+ */
+function rootNode(parsed: Record<string, unknown>, ...keys: string[]): Record<string, unknown> | undefined {
+  for (const key of keys) {
+    if (!(key in parsed)) continue;
+    const value = parsed[key];
+    return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+  }
+  return undefined;
+}
+
+/** An unrecognised 200 body must fail loudly — a silent empty parse is what hid the old wire bugs. */
+function unexpectedShape(what: string, expected: string, xml: string): Error {
+  return new Error(
+    `abapGit bridge returned an unexpected ${what} response: no <${expected}> root. ` +
+      `Check the installed abapGit ADT backend version. First 200 chars: ${xml.trim().slice(0, 200)}`,
+  );
+}
+
+/**
+ * Parse a clone/pull response (ZABAPGIT_ST_REPO_POST_RES): `abapObjects:abapObjects` → `abapObject`,
+ * or the pre-ffb914a1 (2020-08) `objects` → `object` with `obj_*` field names. Each entry reports what
+ * the bridge deserialized into the package, with abapGit's own status message.
  */
 export function parseAbapGitObjects(xml: string): AbapGitObject[] {
   const parsed = parseXml(xml);
-  return findDeepNodes(parsed, 'abapObject').map((node) => ({
-    type: field(node, 'type'),
-    name: field(node, 'name'),
+  const root = rootNode(parsed, 'abapObjects', 'objects');
+  if (!root) throw unexpectedShape('clone/pull', 'abapObjects', xml);
+
+  return [...childNodes(root, 'abapObject'), ...childNodes(root, 'object')].map((node) => ({
+    type: field(node, 'type', 'obj_type'),
+    name: field(node, 'name', 'obj_name'),
     package: field(node, 'package'),
-    status: field(node, 'status'),
-    msgType: field(node, 'msgType'),
-    msgText: field(node, 'msgText'),
+    status: field(node, 'status', 'obj_status'),
+    msgType: field(node, 'msgType', 'msg_type'),
+    msgText: field(node, 'msgText', 'msg_text'),
   }));
 }
 
@@ -230,7 +256,8 @@ function parseStagingObjects(root: Record<string, unknown>, wrapper: string): Ab
  */
 export function parseAbapGitStaging(xml: string): Pick<AbapGitStaging, 'objects' | 'ignored' | 'comment'> {
   const parsed = parseXml(xml);
-  const root = (parsed.abapgitstaging as Record<string, unknown>) ?? parsed;
+  const root = rootNode(parsed, 'abapgitstaging');
+  if (!root) throw unexpectedShape('staging', 'abapgitstaging', xml);
   const commentNode = childNodes(root, 'abapgit_comment')[0];
   const user = (key: string): AbapGitUser | undefined => {
     const node = childNodes(commentNode, key)[0];
