@@ -423,7 +423,7 @@ SAPWrite({ action: "update", type: "INCL", name: "LZARC1_FGF01", group: "ZARC1_F
 
 - The include **name must start with `L<GROUP>`** — SAP derives the include from its group and rejects anything else with an opaque `500 "Attributes for program … have not been saved"`, so ARC-1 refuses it up front.
 - **SAP maintains the main program itself**: creating an include appends its `INCLUDE` line, deleting one comments that line out. No main-program edit is needed.
-- The include (not the group) is the lock and package-resolution target; the group's package applies via the include's `containerRef`.
+- The include inherits the group's package — SAP ignores `package` here — so `allowedPackages` is checked against the **group's real package**, and a `package` argument that disagrees with it is refused. On update/delete the include itself is the lock and package-resolution target (its `containerRef` carries the group's package).
 - Omitting `group=` targets the standalone program-include collection instead, which still works for ordinary include names. An `L`-prefixed name there is refused with a pointer to `group=` — SAP reserves `L*` for function-group includes and answers with a 500, which would otherwise read as a transient error.
 
 Verified on NW 7.50 SP02 and S/4HANA 2023 (758) — the ADT contract is identical on both.
