@@ -12,6 +12,10 @@ with *ABAP Development Tools for VS Code* and *ADT for Eclipse*) so you can deci
     ARC-1 is stronger it says so; where the SAP server is stronger it says so just as plainly.
 
 !!! info "How the facts here were sourced — public vs. snapshot"
+    *Last reviewed 2026-07-29 — the SAP Marketplace version and SAP's "experimental / not intended for
+    productive use" status were re-verified today; the author's live snapshot below remains the original
+    2026-06-16 observation.*
+
     - **Public / primary sources** (strongest): SAP's Marketplace listing, the **SAP Help "Model
       Context Protocol Tools"** page (toolset + per-tool *Joule License* column), SAP Help
       *Enabling/Configuring ADT MCP Server*, SAP-samples (RAP130), SAP News, the
@@ -36,7 +40,7 @@ ABAP / SQL · git · transports · dumps**, that is ARC-1's design center. Many 
 | **What it is** | Independent MCP server translating AI tool calls into ADT REST calls | The *ADT MCP Server* SAP ships *inside* ADT for VS Code / Eclipse |
 | **Vendor / support** | Community open-source (MIT); no SAP support contract | SAP SE, first-party. The **extension is official/GA**, but SAP flags the **MCP server itself as experimental, "not intended for productive use"** |
 | **Where it runs** | BTP Cloud Foundry, Docker, npm/`npx`, or local stdio | A local HTTP server the IDE starts on `localhost` (default port **2234**) |
-| **Distribution** | npm · Docker · **`.mcpb` one-click bundle** · **Claude Code plugin (+18 skills)** · cross-agent skills CLI · BTP connector | Bundled in the SAP ADT extension (VS Code + Eclipse) |
+| **Distribution** | npm · Docker · **`.mcpb` one-click bundle** · **Claude Code plugin (+22 skills)** · cross-agent skills CLI · BTP connector | Bundled in the SAP ADT extension (VS Code + Eclipse) |
 | **Auth to the *server*** | XSUAA OAuth · OIDC JWT · API key · (stdio = none) | Auto-generated bearer token on `localhost` |
 | **Auth to *SAP*** | Per-user principal propagation, or shared service user | **Inherits the IDE's ADT destination** — RFC (SNC/SSO) on-prem, HTTP+OAuth cloud |
 | **Central governance** | Yes — safety ceiling, scopes, package allowlist, **rate limits**, central audit | None (local IDE settings + your SAP authorizations); **no rate limiting** |
@@ -110,12 +114,14 @@ ABAP / SQL · git · transports · dumps**, that is ARC-1's design center. Many 
     the same public API the Eclipse ADT client uses.
 
     - **Distribution — "and other stuff":** `npx`/global npm; **Docker**; a **`.mcpb` one-click bundle**
-      for Claude Desktop; a **Claude Code plugin** that bundles the server **and 18 SAP skills**
+      for Claude Desktop; a **Claude Code plugin** that bundles the server **and 22 SAP skills**
       (RAP, CDS, ABAP Unit, clean-core, UI5); a **cross-agent skills CLI** (`npx skills add` for Cursor,
       Copilot, Codex, Gemini CLI); and a **remote BTP CF connector** (URL + XSUAA OAuth). See
       [Install in Claude](install-in-claude.md).
-    - **Maturity:** the project **positions itself** as production-ready, write-capable, multi-user; open
-      source (MIT), community-maintained (no independent SLA claimed here).
+    - **Maturity:** now at its **1.0 release** — the first stable version, with a **semantic-versioning
+      stability commitment** from 1.0 onward (experimental, default-off features like multi-target are
+      excluded until promoted). The project **positions itself** as production-ready, write-capable,
+      multi-user; open source (MIT), community-maintained (no independent SLA claimed here).
     - **Design center:** a **centrally hosted, admin-governed, multi-tenant** proxy — one server, many
       AI users, each mapped to their own SAP identity, every call audited and policy-checked.
     - **Tool model:** **12 intent tools** with a `type`/`action` parameter (vs 200+ endpoint tools), plus
@@ -132,7 +138,8 @@ ABAP / SQL · git · transports · dumps**, that is ARC-1's design center. Many 
       runs as a **local HTTP server** at `http://localhost:<port>/mcp` (port **2234** in the tested
       Eclipse install; SAP-samples VS Code material references 2236; configurable 1024–65535), with an
       **auto-generated bearer token**.
-    - **Maturity / status:** the **extension is official and GA**, but SAP's own material states *"The ADT
+    - **Maturity / status:** the **extension is official and GA** and **actively developed** (VS Code
+      Marketplace **v1.1.1**, updated **2026-07-23**), but SAP's own material still states *"The ADT
       MCP Server is an experimental feature that may change at any time without notice. It is not
       intended for productive use."* It is **disabled by default** (Eclipse: *ABAP Development → MCP
       Server → Enable ADT MCP Server*; VS Code: `adt.mcpServer.enabled` / "Adt: Enable MCP Server").
@@ -412,7 +419,7 @@ matches it there:
     npx arc-1@latest --url https://your-sap-host:44300 --user YOUR_USER
     ```
 
-    Or one-click via the **`.mcpb`** bundle in Claude Desktop, or the **Claude Code plugin** (server + 18
+    Or one-click via the **`.mcpb`** bundle in Claude Desktop, or the **Claude Code plugin** (server + 22
     skills). **Effort: minutes** — as easy as the SAP server for a single developer.
 
 === "ARC-1 (the target architecture)"
@@ -473,7 +480,7 @@ adds reusable workflows on top. Beyond the two compared here, high-value additio
   ABAP, BTP, SAP Help, SAP Community). Great for grounding any agent in real documentation.
 - **SAP Notes MCP** — search/retrieve SAP Notes & KBAs.
 - **Official SAP dev-tooling MCP servers** — Fiori elements, CAP, UI5, UI5 Web Components, MDK (npm-distributed).
-- **Skills** — ARC-1 ships **18 SAP skills** (RAP, CDS, ABAP Unit, clean-core, UI5 modernization) usable
+- **Skills** — ARC-1 ships **22 SAP skills** (RAP, CDS, ABAP Unit, clean-core, UI5 modernization) usable
   across agents via `npx skills add`.
 
 A curated, regularly-updated catalog of SAP MCP servers, AI skills and Claude plugins lives at
@@ -549,7 +556,7 @@ Namespaces differ (`abap_*` vs `SAPRead`/`SAPWrite`/…) and an agent can hold s
 
 ### Public / primary sources
 
-- [ABAP Development Tools for VS Code — Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=SAPSE.adt-vscode) — official SAP SE extension: free, integrated AI/MCP, debugger, Unit, ATC, transports, RFC/HTTP connectivity, additional licence for certain Joule features.
+- [ABAP Development Tools for VS Code — Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=SAPSE.adt-vscode) — official SAP SE extension (**v1.1.1, updated 2026-07-23; 23,584 installs; 3★ from 36 reviews as of 2026-07-29**): free, integrated AI/MCP, debugger, Unit, ATC, transports, RFC/HTTP connectivity, additional licence for certain Joule features.
 - [SAP Help — Model Context Protocol Tools](https://help.sap.com/docs/ABAP_AI/c7f5ef43ab274d078baf22f995fd2161/243d050c1be846e788f38f8c23c45d3a.html) — **canonical toolset, exact tool IDs, and per-tool Joule License column** (source for §7.1 and §12).
 - [SAP Help — Configuring ADT MCP Server](https://help.sap.com/docs/ABAP_AI/c7f5ef43ab274d078baf22f995fd2161/ed94320814734d97801f51a5b6deb802.html) and [Enabling ADT MCP Server](https://help.sap.com/docs/ABAP_AI/c7f5ef43ab274d078baf22f995fd2161/6f6e72852b9746ffbe083d5a818fbbec.html) — URL `http://localhost:<port>/mcp`, port preference, auto-generated bearer token.
 - [SAP-samples — RAP130 Exercise 1: Enable the ADT MCP Server](https://github.com/SAP-samples/abap-platform-rap130/blob/main/exercises/ex01/README.md) — `adt.mcpServer.enabled`, Copilot Agent mode, and the **experimental / "not intended for productive use"** warning.
