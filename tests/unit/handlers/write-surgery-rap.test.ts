@@ -1981,7 +1981,31 @@ ENDCLASS.`.replace(/\n/g, '\r\n');
       // ADT supports this on 7.50 and 758 alike: POST /functions/groups/{g}/includes with
       // Content-Type …fincludes.v2+xml. No group lock, no _package — the include inherits the
       // group's package. Live-verified 2026-07-29 (dossier §8.2).
-      const calls = captureLockingFlow();
+      const calls: { method: string; url: string; contentType?: string; body?: string }[] = [];
+      mockFetch.mockImplementation(
+        (url: string | URL, opts?: { method?: string; headers?: Record<string, string>; body?: string }) => {
+          const method = opts?.method ?? 'GET';
+          const urlStr = String(url);
+          calls.push({
+            method,
+            url: urlStr,
+            contentType: opts?.headers?.['Content-Type'],
+            body: typeof opts?.body === 'string' ? opts.body : undefined,
+          });
+          // The include inherits the group's package — the create path resolves it to gate on the
+          // REAL package, so the group metadata must carry a packageRef.
+          if (method === 'GET' && urlStr.includes('/functions/groups/zmy_fg') && !urlStr.includes('/includes')) {
+            return Promise.resolve(
+              mockResponse(
+                200,
+                '<group:abapFunctionGroup xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="ZMY_FG"><adtcore:packageRef adtcore:name="$TMP"/></group:abapFunctionGroup>',
+                { 'x-csrf-token': 'T' },
+              ),
+            );
+          }
+          return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+        },
+      );
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
         action: 'create',
         type: 'INCL',
@@ -2028,6 +2052,40 @@ ENDCLASS.`.replace(/\n/g, '\r\n');
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toMatch(/pass group=/i);
       expect(calls.some((c) => c.url.includes('/sap/bc/adt/programs/includes'))).toBe(false);
+    });
+
+    it('gates a structural include against the GROUP package, not the caller-supplied one', async () => {
+      // The include inherits its package from the parent group — SAP ignores _package here — so
+      // gating on args.package would let a caller write into a disallowed package by claiming $TMP.
+      mockFetch.mockImplementation((url: string | URL) => {
+        const urlStr = String(url);
+        if (urlStr.includes('/functions/groups/zrestricted_fg') && !urlStr.includes('/includes')) {
+          return Promise.resolve(
+            mockResponse(
+              200,
+              '<group:abapFunctionGroup xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="ZRESTRICTED_FG"><adtcore:packageRef adtcore:name="ZFINANCE"/></group:abapFunctionGroup>',
+              { 'x-csrf-token': 'T' },
+            ),
+          );
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+      const restrictedClient = new AdtClient({
+        baseUrl: 'http://sap:8000',
+        username: 'admin',
+        password: 'secret',
+        safety: { ...unrestrictedSafetyConfig(), allowedPackages: ['$TMP'] },
+      });
+      const result = await handleToolCall(restrictedClient, DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'INCL',
+        name: 'LZRESTRICTED_FGF01',
+        group: 'ZRESTRICTED_FG',
+        package: '$TMP',
+        description: 'forms',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toMatch(/ZFINANCE/);
     });
 
     it('rejects an include name that does not start with L<GROUP> before any HTTP call', async () => {

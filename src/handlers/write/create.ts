@@ -214,18 +214,19 @@ async function resolveFunctionGroupCreatePackage(
   client: SapWriteContext['client'],
   group: string,
   requestedPackage: unknown,
+  childType: 'FUNC' | 'INCL' = 'FUNC',
 ): Promise<string> {
   const actualPackage = await client.resolveObjectPackage(functionGroupObjectUrl(group));
   if (!actualPackage) {
     throw new Error(
-      `FUNC create blocked: ARC-1 could not determine the parent function group "${group}" package from ADT metadata.`,
+      `${childType} create blocked: ARC-1 could not determine the parent function group "${group}" package from ADT metadata.`,
     );
   }
   const explicitPackage =
     requestedPackage === undefined || requestedPackage === null ? undefined : String(requestedPackage).trim();
   if (explicitPackage && explicitPackage.toUpperCase() !== actualPackage.toUpperCase()) {
     throw new Error(
-      `FUNC inherits package "${actualPackage}" from parent function group "${group}"; requested package "${explicitPackage}" does not match.`,
+      `${childType} inherits package "${actualPackage}" from parent function group "${group}"; requested package "${explicitPackage}" does not match.`,
     );
   }
   return actualPackage;
@@ -455,10 +456,14 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
     srcUrl,
     invalidateWrittenObject,
   } = ctx;
-  const pkg =
-    type === 'FUNC'
-      ? await resolveFunctionGroupCreatePackage(client, String(args.group ?? '').trim(), args.package)
-      : String(args.package ?? '$TMP');
+  // FUNC and FUGR structural includes both INHERIT the parent group's package — SAP ignores
+  // _package for them — so the allowlist must be checked against the group's real package.
+  // Gating on args.package here would let a caller write into a disallowed package by claiming $TMP.
+  const groupArg = String(args.group ?? '').trim();
+  const inheritsGroupPackage = type === 'FUNC' || (type === 'INCL' && groupArg !== '');
+  const pkg = inheritsGroupPackage
+    ? await resolveFunctionGroupCreatePackage(client, groupArg, args.package, type === 'INCL' ? 'INCL' : 'FUNC')
+    : String(args.package ?? '$TMP');
   await checkPackage(client.safety, pkg, client.getPackageHierarchyResolver());
   const description = String(args.description ?? name);
 
