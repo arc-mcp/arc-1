@@ -68,8 +68,17 @@ The working ADT lifecycle is:
 
 ARC-1 takes the metadata PUT media type from the GET response or ADT discovery.
 This selects v3 on the verified 758 system and v2 on a 750 discovery document,
-instead of hard-coding one release family. Omitting `processingType` preserves
-the previous create behavior and adds no metadata update round trip.
+instead of hard-coding one release family. Both backends return the header with a
+parameter (`…fmodules.v3+xml; charset=utf-8`), so the negotiated value is reduced
+to the bare media type before it is sent — on-prem backends reject parameterised
+vendor media types, which is the same reason `resolveObjectPackage` sends a bare
+`Accept`. Omitting `processingType` preserves the previous create behavior and
+adds no metadata update round trip.
+
+The readback that gates success reads the attributes from the **root element
+only**. The same document also carries an `<adtcore:containerRef>` child, so a
+whole-document scan could answer the fail-closed check from something that is not
+the function module's own metadata.
 
 This sequence also matches independent client implementations:
 
@@ -125,11 +134,37 @@ Remote-Enabled, both V1 update variants, and V2 update modules. Cleanup of the
 disposable graph passed as part of the same test. The SAP_BASIS 750 discovery
 and existing root metadata confirm the v2 representation and wire values, but
 the configured identity currently receives HTTP 403 on disposable
-function-group creation. Review re-ran the same lifecycle on 750 under a second,
-unrelated identity and got the identical `POST /sap/bc/adt/functions/groups →
-403`, which places the gap in system authorization rather than in this code path.
-The 750 mutation lifecycle therefore remains an explicit pre-merge/manual
-verification item rather than an inferred pass.
+function-group creation. Review reproduced it and read the server's own reason:
+
+```text
+403 at /sap/bc/adt/functions/groups — No development license for user DEVELOPER
+403 at /sap/bc/adt/programs/programs — No development license for user DEVELOPER
+```
+
+The identical message on a plain `PROG` create shows this is the ABAP
+development-license / developer-key (SSCR) check refusing **all** object creation
+on that system. It is neither authorization for FUGR/FUNC nor anything this code
+path controls, and it cannot be cleared over ADT — it needs a registered
+developer key for the user (or a valid development license) on NPL750. The 750
+mutation lifecycle therefore stays an explicit manual verification item rather
+than an inferred pass.
+
+### What 750 *can* be checked against: 372 live function-module roots
+
+Read access on 750 is unaffected, so the wire contract was verified against real
+SAP-shipped modules instead of being inferred from discovery:
+
+| Question | Result on SAP_BASIS 750 (372 roots sampled) |
+|---|---|
+| Root element prefix | `fmodule` on every root — the matcher's hard-coded prefix holds |
+| Representation | `application/vnd.sap.adt.functions.fmodules.v2+xml; charset=utf-8` on every response |
+| `processingType` values | `normal`, `rfc` observed |
+| `updateTaskKind` values | `startImmediate` (`SCD0/CHANGEDOCUMENT_EVENT_CREATE`) and `startDelayed` (`SCD4/CHANGEDOCUMENT_DELETE_V2`) observed |
+| Root tags truncated by the `[^>]*` matcher | 0 of 372 |
+
+So the attribute names, the case-sensitive values, the v2 representation, and the
+root-tag matcher are all confirmed on 750 from the backend itself. Only the
+mutation half of the lifecycle is unverified there.
 
 ### The ADT root is not the last word — TFDIR is
 
@@ -150,10 +185,18 @@ metadata envelope.
 
 `rewriteFunctionModuleProcessingMetadata` locates the root element with
 `<fmodule:abapFunctionModule\b[^>]*>`, which would truncate if an attribute value
-contained a raw `>`. A live probe with the description `A > B & C < D "q"` shows
-SAP escapes it on the way out (`A &gt; B &amp; C &lt; D &quot;q&quot;`), and
-`escapeXmlAttr` escapes it on the way in, so no reachable input produces a raw
-`>` inside the root tag.
+contained a raw `>`. Three independent checks say it cannot:
+
+- `escapeXmlAttr` escapes `>` on the way in.
+- A live probe with the description `A > B & C < D "q"` came back escaped
+  (`A &gt; B &amp; C &lt; D &quot;q&quot;`), so SAP escapes it on the way out.
+- None of the 372 sampled 750 roots truncated, and every one used the `fmodule`
+  prefix.
+
+The prefix stays hard-coded on purpose. The rewrite *writes* `fmodule:`-qualified
+attributes, so matching a different prefix would produce a silently wrong document
+instead of the current explicit "SAP did not return an abapFunctionModule
+envelope" failure.
 
 Unit tests separately cover invalid field combinations, unchanged omission
 behavior, structured parameters, SAPGUI comment stripping, canonical batch

@@ -967,7 +967,40 @@ describe('SAPWrite handler — create / batch_create', () => {
         (c) =>
           c.method === 'PUT' && new URL(c.url).pathname.endsWith('/functions/groups/zarc1_fg/fmodules/z_arc1_remote'),
       );
-      expect(metadataPut?.contentType).toBe('application/vnd.sap.adt.functions.fmodules.v2+xml; charset=utf-8');
+      // The version is taken from the backend, but the charset parameter is dropped:
+      // SAP returns "…v2+xml; charset=utf-8" and on-prem rejects parameterised
+      // vendor media types (same reason resolveObjectPackage sends a bare Accept).
+      expect(metadataPut?.contentType).toBe('application/vnd.sap.adt.functions.fmodules.v2+xml');
+    });
+
+    // The readback is the fail-closed gate, so it must answer from the function
+    // module's own root element — not from anything else in the same document.
+    it('verifies processing metadata against the root element, not the whole document', async () => {
+      // SAP keeps `normal` on the root; only a child element mentions rfc.
+      const rootNormalChildRfc =
+        '<fmodule:abapFunctionModule xmlns:fmodule="http://www.sap.com/adt/functions/fmodules" fmodule:processingType="normal">' +
+        '<adtcore:containerRef fmodule:processingType="rfc"/></fmodule:abapFunctionModule>';
+      captureFetch((call) => {
+        const pathname = new URL(call.url).pathname;
+        if (!pathname.endsWith('/functions/groups/zarc1_fg/fmodules/z_arc1_remote')) return undefined;
+        if (call.method === 'PUT') return mockResponse(200, '', { 'x-csrf-token': 'T' });
+        if (call.method === 'GET') {
+          return mockResponse(200, rootNormalChildRfc, {
+            'content-type': 'application/vnd.sap.adt.functions.fmodules.v3+xml',
+            'x-csrf-token': 'T',
+          });
+        }
+        return undefined;
+      });
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'FUNC',
+        name: 'Z_ARC1_REMOTE',
+        group: 'ZARC1_FG',
+        processingType: 'rfc',
+      });
+      expect(result.isError).toBe(true);
+      expect(String(result.content[0]?.text)).toContain('retained processingType="normal"');
     });
 
     it('fails closed when SAP accepts the metadata PUT but retains a normal shell', async () => {
