@@ -811,7 +811,6 @@ describe('AdtClient', () => {
       expect(String(mockFetch.mock.calls[0]?.[0])).toContain('/sap/bc/adt/functions/groups/zgrp/fmodules/z_fm');
       expect(fetchHeaders(0).Accept).toBe(FM_CT);
     });
-
   });
 
   describe('getFunctionGroup pre-7.52 fallback', () => {

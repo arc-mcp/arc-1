@@ -471,7 +471,6 @@ export function parseFunctionModuleProperties(xml: string): FunctionModuleProper
   return props;
 }
 
-
 /**
  * Parse ADT system discovery XML into structured info.
  *

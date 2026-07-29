@@ -1935,24 +1935,7 @@ ENDCLASS.`.replace(/\n/g, '\r\n');
   // Routing only — the full live lifecycle (create FUGR → update TOP include → activate →
   // read-back) is covered by the integration test, verified on a4h 758 + 816.
   describe('SAPWrite FUGR structural include update', () => {
-    function captureLockingFlow(): { method: string; url: string }[] {
-      const calls: { method: string; url: string }[] = [];
-      mockFetch.mockImplementation((url: string | URL, fetchOpts?: { method?: string }) => {
-        const method = fetchOpts?.method ?? 'GET';
-        const urlStr = String(url);
-        calls.push({ method, url: urlStr });
-        if (method === 'POST' && urlStr.includes('_action=LOCK')) {
-          return Promise.resolve(
-            mockResponse(200, '<DATA><LOCK_HANDLE>LH123</LOCK_HANDLE></DATA>', { 'x-csrf-token': 'T' }),
-          );
-        }
-        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
-      });
-      return calls;
-    }
-
-    /** Same as captureLockingFlow but also records Content-Type and request body. */
-    function captureLockingFlowWithHeaders(): { method: string; url: string; contentType?: string; body?: string }[] {
+    function captureLockingFlow(): { method: string; url: string; contentType?: string; body?: string }[] {
       const calls: { method: string; url: string; contentType?: string; body?: string }[] = [];
       mockFetch.mockImplementation(
         (url: string | URL, fetchOpts?: { method?: string; headers?: Record<string, string>; body?: string }) => {
@@ -1998,7 +1981,7 @@ ENDCLASS.`.replace(/\n/g, '\r\n');
       // ADT supports this on 7.50 and 758 alike: POST /functions/groups/{g}/includes with
       // Content-Type …fincludes.v2+xml. No group lock, no _package — the include inherits the
       // group's package. Live-verified 2026-07-29 (dossier §8.2).
-      const calls = captureLockingFlowWithHeaders();
+      const calls = captureLockingFlow();
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
         action: 'create',
         type: 'INCL',
@@ -2034,6 +2017,19 @@ ENDCLASS.`.replace(/\n/g, '\r\n');
       expect(calls.some((c) => c.url.includes('/sap/bc/adt/programs/includes'))).toBe(false);
     });
 
+    it('points a bare L-named INCL create at group= (SAP 500s there, and the generic 500 hint says "retry")', async () => {
+      const calls = captureLockingFlow();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'INCL',
+        name: 'LZMY_FGF01',
+        package: '$TMP',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toMatch(/pass group=/i);
+      expect(calls.some((c) => c.url.includes('/sap/bc/adt/programs/includes'))).toBe(false);
+    });
+
     it('rejects an include name that does not start with L<GROUP> before any HTTP call', async () => {
       // SAP derives the include from its group; anything else earns an opaque
       // 500 "Attributes for program X have not been saved".
@@ -2048,19 +2044,6 @@ ENDCLASS.`.replace(/\n/g, '\r\n');
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toContain('LZMY_FG');
       expect(calls).toHaveLength(0);
-    });
-
-    it('points a bare L-named INCL create at group= instead of the reserved program-include path', async () => {
-      const calls = captureLockingFlow();
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
-        action: 'create',
-        type: 'INCL',
-        name: 'LZMY_FGF01',
-        package: '$TMP',
-      });
-      expect(result.isError).toBe(true);
-      expect(result.content[0]?.text).toMatch(/reserves for function-group/i);
-      expect(calls.some((c) => c.url.includes('/sap/bc/adt/programs/includes'))).toBe(false);
     });
 
     it('fails closed cleanly when FUGR include metadata has no packageRef or packageName', async () => {

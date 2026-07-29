@@ -184,15 +184,11 @@ export async function handleSAPWrite(
     objectUrl = `/sap/bc/adt/functions/groups/${groupLc}/includes/${encodeURIComponent(name.toLowerCase())}`;
     srcUrl = `${objectUrl}/source/main`;
   } else if (type === 'INCL' && (action === 'create' || action === 'delete') && name.toUpperCase().startsWith('L')) {
-    // A bare INCL create/delete goes to /sap/bc/adt/programs/includes. That collection is fine for
-    // standalone program includes, but SAP reserves L* names for function-group includes and
-    // rejects them with an opaque 500 ("Program names L... are reserved for function group
-    // includes"). Point at group= instead of letting that surface. Non-L names fall through
-    // unchanged — standalone includes still work exactly as before.
+    // SAP rejects L* names on /programs/includes ("reserved for function group includes"), but as a
+    // 500 — and ARC-1's generic 500 hint says "often transient, retry in 10-30s", which loops an LLM
+    // on a permanent error. Name the fix instead. Non-L names fall through unchanged.
     return errorResult(
-      `"${name}" starts with L, which SAP reserves for function-group structural includes. ` +
-        'Pass the parent group to create or delete it: SAPWrite(type="INCL", group="<FUGR>", ' +
-        `name="${name}"). For a standalone program include, use a name that does not start with L.`,
+      `SAP reserves L* names for function-group includes — pass group=<FUGR> to create or delete ${name}.`,
     );
   } else {
     // Discovery gate: refuse transparent-table creates upfront on systems that
