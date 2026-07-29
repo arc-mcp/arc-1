@@ -33,7 +33,8 @@ const BUDGETS = {
   // 87→66 KB to clear the Copilot-for-Eclipse gateway limit) shrank it; lowered to match. The
   // CLIENT-SAFETY size guard is scripts/ci/check-tool-schema-budget.ts — trim there before raising this.
   // +text-pool SAPWrite actions/description (edit_text_symbols/edit_selection_texts).
-  'src/handlers/tools.ts': 1714,
+  // +per-action SAPWrite description (one line per action, incl. the destructive/refusing ones).
+  'src/handlers/tools.ts': 1725,
   // +shared parseNamedItems relocated here from transport.ts (now used by ATC variants too) +
   // parseAtcSystemCheckVariant (FEAT-68 ATC variant listing).
   'src/adt/xml-parser.ts': 1710,

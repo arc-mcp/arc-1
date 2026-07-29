@@ -94,6 +94,7 @@ describe('check-tool-schema-budget', () => {
       'descriptionCount',
     ]);
     expect(report).toContain('tiny-budget.schemaTokenEstimate');
-    expect(report).toContain('trim tool descriptions/schema payload');
+    // The remediation hint must lead with trimming — raising a wall is the exception, not the fix.
+    expect(report).toContain('Trim first');
   });
 });

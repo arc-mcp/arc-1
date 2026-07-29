@@ -605,11 +605,22 @@ export function getToolDefinitions(
               // of the BTP action enum so the zod↔json-schema parity check stays green.
               ...(btp ? [] : ['edit_text_symbols']),
             ],
-            // create/update/delete, edit_method, edit_unit, batch_create and the RAP scaffolds are
-            // already described in the tool description — restating them here just costs wire bytes.
-            // Class surgery is the part that is NOT covered there, so it gets the whole budget.
+            // This is where an LLM decides WHICH action to use, so every action gets a line —
+            // especially the destructive and refusing ones, whose behaviour is not guessable.
             description:
-              'Write action. Class surgery (CLAS): edit_class_definition replaces the DEFINITION block (or a local include with include=) and refuses a diff that would leave the class non-activatable; add_method/edit_method_signature/change_method_visibility act on /source/main; delete_method is destructive — to re-section a method use change_method_visibility, which preserves the body. scaffold_rap_handlers/generate_behavior_implementation derive BDEF behavior-pool handlers.',
+              'Write action. create/update/delete: whole-object writes (update replaces /source/main, or one class-local include when include= is set). ' +
+              'edit_method: replace a single method body — the token-cheap path for class edits. ' +
+              (btp ? '' : 'edit_unit: replace one FORM or MODULE block inside a PROG/INCL. ') +
+              'batch_create: create and activate many objects in one call; order is preserved, so list dependencies first. ' +
+              'Class surgery (CLAS, all on /source/main unless noted): edit_class_definition replaces the global DEFINITION block — or a class-local include when include= is set — and refuses a diff that would leave the class non-activatable; ' +
+              'add_method inserts a METHODS clause plus an empty IMPL stub (abstract=true skips the stub); ' +
+              'edit_method_signature rewrites one METHODS clause and leaves the body alone; ' +
+              'change_method_visibility moves a method to another section and preserves its body; ' +
+              'delete_method is destructive — it discards the body, so to re-section a method use change_method_visibility, never delete+add. ' +
+              'scaffold_rap_handlers / generate_behavior_implementation: derive behavior-pool handlers from a BDEF (the latter is the equivalent of Eclipse\'s "Generate Behavior Implementation").' +
+              (btp
+                ? ''
+                : " edit_text_symbols: write a global class's text symbols (immediately active, no SAPActivate)."),
           },
           type: {
             type: 'string',
