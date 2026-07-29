@@ -1064,6 +1064,25 @@ export interface ApiReleaseStateInfo {
   isAnyAssignmentPossible: boolean;
 }
 
+/** A function group's contents, from either objectstructure shape (7.52+ or the pre-7.52 fallback). */
+export interface FunctionGroupStructure {
+  name: string;
+  functions: string[];
+  includes: string[];
+}
+
+/**
+ * Processing attributes reported by the fmodule metadata resource. Values are reported
+ * verbatim — SAP emits kinds the create-input enum does not accept (e.g. collectiveRun on
+ * existing modules), so this is deliberately not typed to that union.
+ * Input validation lives in src/handlers/function-processing.ts.
+ */
+export interface FunctionModuleProperties {
+  processingType?: string;
+  updateTaskKind?: string;
+  releaseState?: string;
+}
+
 /** An object pending activation from /sap/bc/adt/activation/inactive */
 export interface InactiveObject {
   name: string;

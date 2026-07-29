@@ -38,6 +38,8 @@ import type {
   DomainInfo,
   EnhancementImplementationInfo,
   FeatureToggleInfo,
+  FunctionGroupStructure,
+  FunctionModuleProperties,
   InactiveObject,
   MessageClassInfo,
   RevisionListResult,
@@ -61,6 +63,8 @@ import {
   parseEnhancementImplementation,
   parseFeatureToggleStates,
   parseFunctionGroup,
+  parseFunctionGroupNodes,
+  parseFunctionModuleProperties,
   parseInactiveObjects,
   parseInstalledComponents,
   parseMessageClass,
@@ -218,6 +222,9 @@ export function clampPreviewRows(requested: number | undefined, fallback = 100):
  *  Symbols only — a class has no selection screen, so its `source/selections` segment is always
  *  empty and un-writable (SAP 406); selection texts are a program concept (future follow-up). */
 const TEXT_SYMBOLS_CT = 'application/vnd.sap.adt.textelements.symbols.v1';
+
+/** fmodule metadata resource. v3 is accepted on 7.50 and 758 alike (live-verified). */
+const FMODULE_V3_CONTENT_TYPE = 'application/vnd.sap.adt.functions.fmodules.v3+xml';
 
 const MAX_SEARCH_RESULTS = 1_000;
 
@@ -582,6 +589,23 @@ export class AdtClient {
     );
   }
 
+  /** ADT resource for a single function module. Both segments are lowercased (verified live). */
+  private functionModuleUrl(group: string, name: string): string {
+    return `/sap/bc/adt/functions/groups/${encodeURIComponent(group.toLowerCase())}/fmodules/${encodeURIComponent(
+      name.toLowerCase(),
+    )}`;
+  }
+
+  /**
+   * Read a function module's processing attributes (SE37 "Processing Type" + update-task kind).
+   * These live in the fmodule metadata document, NOT in /source/main where the signature lives.
+   */
+  async getFunctionModuleProperties(group: string, name: string): Promise<FunctionModuleProperties> {
+    checkOperation(this.safety, OperationType.Read, 'GetFunctionModuleProperties');
+    const resp = await this.http.get(this.functionModuleUrl(group, name), { Accept: FMODULE_V3_CONTENT_TYPE });
+    return parseFunctionModuleProperties(resp.body);
+  }
+
   /** Resolve function group for a function module via quickSearch */
   async resolveFunctionGroup(fmName: string): Promise<string | null> {
     const results = await this.searchObject(fmName, 10);
@@ -595,14 +619,29 @@ export class AdtClient {
   }
 
   /** Get function group structure (list of function modules + includes) */
-  async getFunctionGroup(name: string): Promise<{ name: string; functions: string[]; includes: string[] }> {
+  async getFunctionGroup(name: string): Promise<FunctionGroupStructure> {
     checkOperation(this.safety, OperationType.Read, 'GetFunctionGroup');
     // The function-module list lives in the objectstructure resource, NOT the plain
     // /functions/groups/<name> resource (which returns only metadata + atom links).
-    const resp = await this.http.get(`/sap/bc/adt/functions/groups/${encodeURIComponent(name)}/objectstructure`, {
-      Accept: 'application/vnd.sap.adt.objectstructure.v2+xml',
-    });
-    return parseFunctionGroup(resp.body);
+    const accept = 'application/vnd.sap.adt.objectstructure.v2+xml';
+    try {
+      const resp = await this.http.get(`/sap/bc/adt/functions/groups/${encodeURIComponent(name)}/objectstructure`, {
+        Accept: accept,
+      });
+      return parseFunctionGroup(resp.body);
+    } catch (err) {
+      // NW 7.50/7.51 don't ship the per-group objectstructure sub-resource (404 under every
+      // Accept), but the GENERIC repository resource works there and carries the same FF/I
+      // nodes in a flat projectexplorer shape. Note the LOWERCASE query params — objectName/
+      // objectType returns 400. Verified live on npl 7.50; §8.3 of the 2026-07-29 dossier.
+      if (!isNotFoundError(err)) throw err;
+      const fallback = await this.http.get(
+        `/sap/bc/adt/repository/objectstructure?objectname=${encodeURIComponent(name)}&objecttype=${encodeURIComponent('FUGR/F')}`,
+        { Accept: accept },
+      );
+      // The fallback payload does not carry the group name — pass it through.
+      return parseFunctionGroupNodes(fallback.body, name);
+    }
   }
 
   /** Get function group source code */

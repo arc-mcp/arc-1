@@ -27,7 +27,12 @@ import {
 } from '../activate.js';
 import { invalidateInactiveList } from '../cache-security.js';
 import { guardCdsSyntax } from '../cds-hints.js';
-import { getCachedFeatures, isTablesEndpointAvailable, isTableTypesEndpointAvailable } from '../feature-cache.js';
+import {
+  getCachedFeatures,
+  isDomainsEndpointAvailable,
+  isTablesEndpointAvailable,
+  isTableTypesEndpointAvailable,
+} from '../feature-cache.js';
 import type { FunctionProcessingType, FunctionUpdateTaskKind } from '../function-processing.js';
 import {
   functionGroupObjectUrl,
@@ -42,6 +47,7 @@ import { errorResult, type ToolResult, textResult } from '../shared.js';
 import {
   buildCreateXml,
   createContentTypeForType,
+  DOMA_WRITE_UNAVAILABLE_HINT,
   dtelNeedsPostCreateUpdate,
   getMetadataWriteProperties,
   isMetadataWriteType,
@@ -644,7 +650,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
   // DOMA/DTEL/BDEF require vendor-specific content types; all other types use
   // 'application/*' — the wildcard lets the SAP server resolve the correct
   // handler (matching how ADT Eclipse and abap-adt-api send requests).
-  const contentType = createContentTypeForType(type, cloud);
+  const contentType = createContentTypeForType(type, cloud, type === 'INCL' && String(args.group ?? '').trim() !== '');
   const needsPackageParam = type === 'BDEF' || type === 'TABL' || type === 'TABL/DT' || type === 'TABL/DS';
   let result: string;
   try {
@@ -1050,6 +1056,17 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
           packageName: objPackage,
           status: 'failed',
           error: TABL_DT_WRITE_UNAVAILABLE_HINT,
+        });
+        break;
+      }
+      // DOMA create needs /ddic/domains/ (absent wholesale on NW 7.50/7.51) — mirror the gate above.
+      if (objType === 'DOMA' && isDomainsEndpointAvailable() === false) {
+        results.push({
+          type: objType,
+          name: objName,
+          packageName: objPackage,
+          status: 'failed',
+          error: DOMA_WRITE_UNAVAILABLE_HINT,
         });
         break;
       }

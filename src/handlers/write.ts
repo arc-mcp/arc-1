@@ -15,7 +15,11 @@ import type { ClassStructure } from '../adt/types.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
 import type { ServerConfig } from '../server/types.js';
 import { type CacheSecurityContext, invalidateInactiveList } from './cache-security.js';
-import { isTablesEndpointAvailable, isTableTypesEndpointAvailable } from './feature-cache.js';
+import {
+  isDomainsEndpointAvailable,
+  isTablesEndpointAvailable,
+  isTableTypesEndpointAvailable,
+} from './feature-cache.js';
 import {
   canonicalTablType,
   functionModuleObjectUrl,
@@ -40,6 +44,7 @@ import { writeActionGenerateBehaviorImplementation, writeActionScaffoldRapHandle
 import { writeActionEditUnit } from './write/unit-surgery.js';
 import { writeActionDelete, writeActionEditTextSymbols, writeActionUpdate } from './write/update-delete.js';
 import {
+  DOMA_WRITE_UNAVAILABLE_HINT,
   enforceAllowedPackageForObjectUrl,
   handleServerDrivenObjectWrite,
   NAME_CASE_GUARD_ACTIONS,
@@ -158,18 +163,37 @@ export async function handleSAPWrite(
     // Pass the resolved group through to buildCreateXml via args.group
     (args as Record<string, unknown>).group = group;
   } else if (type === 'INCL' && String(args.group ?? '').trim()) {
-    if (action !== 'update' && action !== 'edit_unit') {
-      return errorResult(
-        'SAPWrite type=INCL with group supports action="update" or "edit_unit" only; create/delete of FUGR structural includes is unsupported.',
-      );
-    }
-    // FUGR structural include update (LZ<grp>TOP global data, form/PBO/PAI includes): addressed by
+    // FUGR structural include (LZ<grp>TOP global data, form/PBO/PAI/event includes): addressed by
     // type=INCL + group=<FUGR>. The include OBJECT is the lock + package-resolution target — its
     // containerRef carries the group's packageName, and locking the GROUP 423s the source PUT
     // (live-verified a4h 816 + 758). A bare INCL with no group stays a standalone /programs/includes/.
-    const groupLc = encodeURIComponent(String(args.group).trim().toLowerCase());
+    const group = String(args.group).trim();
+    if (action === 'create' || action === 'delete') {
+      // SAP derives the include's identity from the group: anything not named L<GROUP>… earns an
+      // opaque 500 "Attributes for program X have not been saved". Reject it with a usable message.
+      const expectedPrefix = `L${group.toUpperCase()}`;
+      if (!name.toUpperCase().startsWith(expectedPrefix)) {
+        return errorResult(
+          `FUGR structural include names must start with ${expectedPrefix} — got "${name}". ` +
+            `SAP derives the include from its function group (e.g. ${expectedPrefix}F01 for subroutines, ` +
+            `${expectedPrefix}O01 for PBO modules, ${expectedPrefix}T99 for unit tests).`,
+        );
+      }
+    }
+    const groupLc = encodeURIComponent(group.toLowerCase());
     objectUrl = `/sap/bc/adt/functions/groups/${groupLc}/includes/${encodeURIComponent(name.toLowerCase())}`;
     srcUrl = `${objectUrl}/source/main`;
+  } else if (type === 'INCL' && (action === 'create' || action === 'delete') && name.toUpperCase().startsWith('L')) {
+    // A bare INCL create/delete goes to /sap/bc/adt/programs/includes. That collection is fine for
+    // standalone program includes, but SAP reserves L* names for function-group includes and
+    // rejects them with an opaque 500 ("Program names L... are reserved for function group
+    // includes"). Point at group= instead of letting that surface. Non-L names fall through
+    // unchanged — standalone includes still work exactly as before.
+    return errorResult(
+      `"${name}" starts with L, which SAP reserves for function-group structural includes. ` +
+        'Pass the parent group to create or delete it: SAPWrite(type="INCL", group="<FUGR>", ' +
+        `name="${name}"). For a standalone program include, use a name that does not start with L.`,
+    );
   } else {
     // Discovery gate: refuse transparent-table creates upfront on systems that
     // don't expose /ddic/tables/ (NW 7.50/7.51). TABL/DS skips this — /structures/
@@ -182,6 +206,12 @@ export async function handleSAPWrite(
     // Discovery gate: TTYP (table type) create needs /ddic/tabletypes/, absent on NW 7.50 (FEAT-65).
     if (type === 'TTYP' && action === 'create' && isTableTypesEndpointAvailable() === false) {
       return errorResult(TTYP_WRITE_UNAVAILABLE_HINT);
+    }
+    // Discovery gate: DOMA create needs /ddic/domains/, absent wholesale on NW 7.50/7.51.
+    // Without this the caller gets a raw 404 plus a "not found — use SAPSearch" hint that
+    // contradicts the create it just asked for.
+    if (type === 'DOMA' && action === 'create' && isDomainsEndpointAvailable() === false) {
+      return errorResult(DOMA_WRITE_UNAVAILABLE_HINT);
     }
     objectUrl = objectUrlForType(type, name);
     srcUrl = sourceUrlForType(type, name);

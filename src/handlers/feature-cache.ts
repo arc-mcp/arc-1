@@ -79,6 +79,29 @@ export function isTableTypesEndpointAvailable(destination?: string): boolean | u
   return map.has('/sap/bc/adt/ddic/tabletypes');
 }
 
+/**
+ * True/false if the ADT /ddic/domains endpoint is advertised by discovery; undefined if not probed.
+ * Live-verified absent on NW 7.50 (404 + not in discovery, on both a dev-edition and a real
+ * ECC EhP8 7.50 SP31 system) and present on S/4 758 + ABAP 816.
+ */
+export function isDomainsEndpointAvailable(destination?: string): boolean | undefined {
+  const store = storeFor(destination);
+  const map = store.features?.discoveryMap ?? store.discovery;
+  if (!map || map.size === 0) return undefined;
+  return map.has('/sap/bc/adt/ddic/domains');
+}
+
+/**
+ * True/false if the ADT /packages endpoint is advertised by discovery; undefined if not probed.
+ * The whole resource is absent before 7.52 — even a GET of an existing package 404s there.
+ */
+export function isPackagesEndpointAvailable(destination?: string): boolean | undefined {
+  const store = storeFor(destination);
+  const map = store.features?.discoveryMap ?? store.discovery;
+  if (!map || map.size === 0) return undefined;
+  return map.has('/sap/bc/adt/packages');
+}
+
 /** True when the probed system is BTP ABAP Environment. */
 export function isBtpSystem(destination?: string): boolean {
   return storeFor(destination).features?.systemType === 'btp';

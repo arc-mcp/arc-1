@@ -87,6 +87,9 @@ const TABLETYPE_CONTENT_TYPE = 'application/vnd.sap.adt.tabletype.v1+xml';
 // (issue #250). FUGR uses the v3 group envelope; FUNC uses the unversioned fmodule envelope.
 const FUNCTION_GROUP_CONTENT_TYPE = 'application/vnd.sap.adt.functions.groups.v3+xml';
 const FUNCTION_MODULE_CONTENT_TYPE = 'application/vnd.sap.adt.functions.fmodules+xml';
+// FUGR structural include create. The unversioned type is refused by SAP with an explicit
+// "Supported Media Types: …fincludes.v2+xml" — verified on npl 7.50 and a4h 758.
+const FUNCTION_INCLUDE_CONTENT_TYPE = 'application/vnd.sap.adt.functions.fincludes.v2+xml';
 
 export function isMetadataWriteType(type: string): boolean {
   return type === 'DOMA' || type === 'DTEL' || type === 'MSAG' || type === 'SRVB' || type === 'TTYP';
@@ -107,7 +110,11 @@ function needsVendorContentType(type: string): boolean {
 }
 
 /** Content type used for create POST */
-export function createContentTypeForType(type: string, cloud = false): string {
+export function createContentTypeForType(type: string, cloud = false, fugrInclude = false): string {
+  // A FUGR structural include posts to the group's /includes collection, which accepts ONLY the
+  // versioned fincludes type (the unversioned one is refused with an explicit "Supported Media
+  // Types" message). A bare INCL keeps the wildcard so standalone program includes are unchanged.
+  if (type === 'INCL') return fugrInclude ? FUNCTION_INCLUDE_CONTENT_TYPE : 'application/*';
   // Cloud INTF create needs the v5 ST: `application/*` routes to an older ST that silently drops the
   // cloud abapLanguageVersion → HTTP 500 "ABAP language version  is not allowed in this software
   // component". On-prem INTF create keeps `application/*` (unchanged). Live-verified BTP 919.
@@ -433,7 +440,19 @@ function buildCreateXmlBody(
                     adtcore:masterSystem="H00"${responsibleAttr}>
   <adtcore:packageRef adtcore:name="${escapeXmlAttr(pkg)}"/>
 </intf:abapInterface>`;
-    case 'INCL':
+    case 'INCL': {
+      // With a parent group this is a FUGR STRUCTURAL include: a different collection
+      // (/functions/groups/{g}/includes), a different envelope, and Content-Type
+      // …fincludes.v2+xml. No packageRef — it inherits the group's package, and SAP maintains
+      // the main program's INCLUDE line itself. Live-verified npl 7.50 + a4h 758 (dossier §8.2).
+      const fugrGroup = String(properties?.group ?? '').trim();
+      if (fugrGroup) {
+        const fugrGroupLc = encodeURIComponent(fugrGroup.toLowerCase());
+        return `<?xml version="1.0" encoding="UTF-8"?>
+<finclude:abapFunctionGroupInclude xmlns:finclude="http://www.sap.com/adt/functions/fincludes" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:description="${escapeXmlAttr(description)}" adtcore:name="${escapeXmlAttr(name)}" adtcore:type="FUGR/I">
+  <adtcore:containerRef adtcore:name="${escapeXmlAttr(fugrGroup)}" adtcore:type="FUGR/F" adtcore:uri="/sap/bc/adt/functions/groups/${fugrGroupLc}"/>
+</finclude:abapFunctionGroupInclude>`;
+      }
       return `<?xml version="1.0" encoding="UTF-8"?>
 <include:abapInclude xmlns:include="http://www.sap.com/adt/programs/includes"
                      xmlns:adtcore="http://www.sap.com/adt/core"
@@ -444,6 +463,7 @@ function buildCreateXmlBody(
                      adtcore:masterSystem="H00"${responsibleAttr}>
   <adtcore:packageRef adtcore:name="${escapeXmlAttr(pkg)}"/>
 </include:abapInclude>`;
+    }
     case 'DDLS':
       return `<?xml version="1.0" encoding="UTF-8"?>
 <ddl:ddlSource xmlns:ddl="http://www.sap.com/adt/ddic/ddlsources"
@@ -1150,3 +1170,16 @@ export const TTYP_WRITE_UNAVAILABLE_HINT =
   'Table type (TTYP) writes are not available on this system ' +
   '(/sap/bc/adt/ddic/tabletypes/ is not exposed by ADT discovery — verified absent on NW 7.50). ' +
   'Use SE11 in SAPGUI, or connect ARC-1 to a system that exposes the table-type endpoint (S/4HANA 2023 / ABAP Platform 2025 verified).';
+
+// Domains have NO ADT resource before 7.52 — reads 404 too, so there is no partial support.
+export const DOMA_WRITE_UNAVAILABLE_HINT =
+  'Domain (DOMA) writes are not available on this system ' +
+  '(/sap/bc/adt/ddic/domains/ is not exposed — NW 7.50/7.51 ship no domain endpoint at all; ' +
+  'it arrived in NW 7.52). Use SE11 in SAPGUI, or connect ARC-1 to an SAP_BASIS >= 7.52 system. ' +
+  'Data elements that reference a domain cannot be created here either until the domain exists.';
+
+export const DEVC_WRITE_UNAVAILABLE_HINT =
+  'Package (DEVC) creation is not available on this system ' +
+  '(/sap/bc/adt/packages is not exposed — NW 7.50/7.51 ship no package endpoint at all; it ' +
+  'arrived in NW 7.52). Create the package in SE80/SE21 in SAPGUI, or connect ARC-1 to an ' +
+  'SAP_BASIS >= 7.52 system. This is not a SICF misconfiguration.';

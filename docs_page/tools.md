@@ -64,7 +64,7 @@ Use `SAPRead` when you need exact raw source, one method body, grep output, inac
 | `objectType` | string | No | For API_STATE: SAP object type (CLAS, INTF, PROG, FUGR, etc.) — auto-detected from name if omitted |
 | `version` | string | No | Source version: `active` (default), `inactive`, or `auto`. Applies to source-bearing types (PROG, CLAS, INTF, FUNC, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, FUGR, SRVB, SKTD/KTD, TABL, VIEW). See [Active vs Inactive Source](#active-vs-inactive-source) below. |
 | `force_refresh` | boolean | No | For source reads: bypass the cached source AND the inactive-list cache before reading. Use when you know the object changed outside ARC-1 in a way conditional GET can't catch. |
-| `includeSignature` | boolean | No | For `FUNC` only. When `true`, response is JSON `{source, signature: {importing[], exporting[], changing[], tables[], exceptions[], raising[]}}` — each parameter parsed into `{kind, name, type, byValue?, default?, optional?}`. Default `false` (returns plain source body). Use this to introspect FM signatures programmatically. See [SAPWrite for FUNC](#sapwrite-for-func-create-update-with-structured-parameters) for the round-trip. |
+| `includeSignature` | boolean | No | For `FUNC` only. When `true`, response is JSON `{source, signature: {importing[], exporting[], changing[], tables[], exceptions[], raising[]}, processingType?, updateTaskKind?}` — each parameter parsed into `{kind, name, type, byValue?, default?, optional?}`; `processingType` reports `normal`/`rfc`/`update` (a metadata read, so it may add `propertiesError` instead if that GET fails). Default `false` (returns plain source body). See [SAPWrite for FUNC](#sapwrite-for-func-create-update-with-structured-parameters) for the round-trip. |
 
 **Supported types:**
 
@@ -74,7 +74,7 @@ Use `SAPRead` when you need exact raw source, one method body, grep output, inac
 | `CLAS` | Class source |
 | `INTF` | Interface source |
 | `FUNC` | Function module source |
-| `FUGR` | Function group structure |
+| `FUGR` | Function group structure (function modules + includes). Uses `/functions/groups/{g}/objectstructure`, falling back to the generic `/repository/objectstructure` on releases that don't ship it (NW 7.50/7.51). |
 | `INCL` | Include source |
 | `DDLS` | CDS view source |
 | `DCLS` | CDS access control source (authorization rules for CDS views) |
@@ -403,11 +403,49 @@ Round-trip: `SAPRead({type: "FUNC", name: "Z_GREET", group: "ZARC1_FG", includeS
 
 Backward-compat: when `parameters` is omitted, the existing source-only PUT path runs unchanged. When `includeSignature` is omitted on read, the response is plain text source.
 
+##### Reading the processing type back
+
+`SAPRead(type="FUNC", …, includeSignature=true)` reports `processingType` and, for update modules,
+`updateTaskKind` alongside the parsed signature — so a caller that set one can verify it took effect.
+It is a metadata read, so a failure there adds `propertiesError` to the payload rather than breaking
+the signature read. See the create-side docs above for how the attributes are written.
+
+##### Function-group structural includes (`type="INCL"` with `group=`)
+
+`SAPWrite(type="INCL", group=<FUGR>)` creates, updates and deletes a function group's structural includes (`LZ<GROUP>TOP` global data, `F01` subroutines, `O01`/`I01` PBO/PAI modules, `T99` unit tests):
+
+```jsonc
+SAPWrite({ action: "create", type: "INCL", name: "LZARC1_FGF01", group: "ZARC1_FG",
+           description: "Subroutines", package: "$TMP" })
+SAPWrite({ action: "update", type: "INCL", name: "LZARC1_FGF01", group: "ZARC1_FG",
+           source: "FORM do_work.\nENDFORM.\n" })
+```
+
+- The include **name must start with `L<GROUP>`** — SAP derives the include from its group and rejects anything else with an opaque `500 "Attributes for program … have not been saved"`, so ARC-1 refuses it up front.
+- **SAP maintains the main program itself**: creating an include appends its `INCLUDE` line, deleting one comments that line out. No main-program edit is needed.
+- The include (not the group) is the lock and package-resolution target; the group's package applies via the include's `containerRef`.
+- Omitting `group=` targets the standalone program-include collection instead. That path still works for non-`L` names; an `L`-prefixed name is refused with a pointer to `group=`, because SAP reserves `L*` for function-group includes.
+
+Verified on NW 7.50 SP02 and S/4HANA 2023 (758) — the ADT contract is identical on both.
+
 **Robust to GPT/OpenAI optional-field "overpopulation" (issue #360).** GPT/OpenAI tool callers (especially under Structured Outputs / `strict` mode, the default for the Responses API) tend to over-populate optional fields — emitting `null` for every unused optional, blank strings, or stringified booleans like `"false"`. ARC-1 normalizes these before validation: `null` and empty/whitespace strings are treated as omitted (across every tool), and optional booleans accept real JSON booleans **and** `"true"/"false"/"1"/"0"/"yes"/"no"` (so `signExists="false"` is correctly stored as `false`, never inverted). Practical guidance for tool authors: **omit** optional fields you don't need rather than sending `""`/`null`; `include` is **CLAS-only** (for `update`/`edit_method`/`edit_class_definition`) and is ignored for other types/actions; `delete` needs only `type` and `name` (plus optional `transport`).
 
 **Mixed-case object names rejected on create.** SAP TADIR is uppercase on every release; mixed-case names cause silent corruption (e.g., a DDLS named `Zc_MyView` registers as `ZC_MYVIEW` in TADIR but the source body keeps mixed case, confusing every downstream tool). `SAPWrite(action="create"\|"batch_create")` rejects mixed-case names pre-flight with an actionable error. The source code *inside* the object can still use mixed case (e.g., `define view entity Zc_MyView`); only the TADIR object name needs to be uppercase.
 
 **BDEF creation:** Uses SAP's `blue:blueSource` XML format with content-type `application/vnd.sap.adt.blues.v1+xml`. BDEF objects are created with `type="BDEF"` and require a `source` parameter containing the behavior definition.
+
+**Release gates for pre-7.52 systems.** Several ADT resources simply do not exist before SAP_BASIS 7.52. Rather than surfacing a raw `404` (whose generic hint wrongly suggests the object "was not found"), ARC-1 refuses these up front with a release hint once discovery has been probed:
+
+| Operation | Missing resource | Fallback |
+|-----------|------------------|----------|
+| `SAPWrite create type="TABL"/"TABL/DT"` | `/sap/bc/adt/ddic/tables` | SE11. Writing the source through `/ddic/structures/` instead would flip `DD02L-TABCLASS` to `INTTAB` and corrupt the table |
+| `SAPWrite create type="DOMA"` | `/sap/bc/adt/ddic/domains` | SE11. Data elements that reference a domain are blocked with it |
+| `SAPWrite create type="TTYP"` | `/sap/bc/adt/ddic/tabletypes` | SE11 |
+| `SAPManage action="create_package"` | `/sap/bc/adt/packages` | SE80 / SE21 |
+
+Endpoint absence verified on two independent NW 7.50 systems (a dev edition and an ECC EhP8 7.50 SP31 production system); all four are present on S/4HANA 2023 (758) and ABAP Platform 2025 (816). Structures (`TABL/DS`), data elements, function groups, function modules and includes **do** work on 7.50 — note that DDIC structure source there uses `define type <name> { … }`, not `define structure`.
+
+The gates key off ADT discovery, so a session that never probed (for example a one-shot CLI call) is never blocked — it falls through to SAP's own error.
 
 **DDIC save diagnostics:** On `SAPWrite` save failures for DDIC/RAP artifacts (`TABL`, `DDLS`, `DCLS`, `BDEF`, `SRVD`, `SRVB`, `DDLX`, `DOMA`, `DTEL`), ARC-1 enriches errors with structured diagnostics:
 - T100 message identifiers/variables (e.g., `SBD_MESSAGES/007`, `V1..V4`)

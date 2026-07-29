@@ -23,10 +23,14 @@ import { getTransportInfo } from '../adt/transport.js';
 import { parseSearchResults } from '../adt/xml-parser.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
 import type { ServerConfig } from '../server/types.js';
-import { getCachedFeatures, setCachedFeatures } from './feature-cache.js';
+import { getCachedFeatures, isPackagesEndpointAvailable, setCachedFeatures } from './feature-cache.js';
 import { inferObjectType, normalizeObjectType, objectUrlForTypeRaw } from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
-import { enforceAllowedPackageForObjectUrl, resolveWriteSystemType } from './write-helpers.js';
+import {
+  DEVC_WRITE_UNAVAILABLE_HINT,
+  enforceAllowedPackageForObjectUrl,
+  resolveWriteSystemType,
+} from './write-helpers.js';
 
 // ─── SAPManage Handler ────────────────────────────────────────────────
 
@@ -109,6 +113,12 @@ export async function handleSAPManage(
 
       if (!name) return errorResult('"name" is required for create_package action.');
       if (!description) return errorResult('"description" is required for create_package action.');
+
+      // Discovery gate: /sap/bc/adt/packages is absent wholesale before 7.52. Without this the
+      // caller gets a raw 404 plus a SICF-misconfiguration hint that sends them down the wrong path.
+      if (isPackagesEndpointAvailable() === false) {
+        return errorResult(DEVC_WRITE_UNAVAILABLE_HINT);
+      }
 
       checkOperation(client.safety, OperationType.Create, 'CreatePackage');
 

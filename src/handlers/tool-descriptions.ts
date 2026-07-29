@@ -9,6 +9,7 @@ export const SAPWRITE_DESC_ONPREM =
   'SKTD/KTD (Markdown docs on a KTD-capable object; KTD aliases SKTD): create needs refObjectType (parent type+subtype, e.g. "DDLS/DF"); "name" MUST equal the parent name; update takes Markdown in source; then SAPActivate(type="SKTD"). ' +
   // "group"/FUGR-must-exist and processingType live on their own property descriptions — not repeated here.
   'FUNC: needs "group"; pass structured `parameters` for the signature (read back via SAPRead includeSignature=true). ' +
+  "INCL with group=: create/delete FUGR structural includes (name must start with L<GROUP>, e.g. LZFOOF01); SAP maintains the main program's INCLUDE line. " +
   'edit_method: replace one CLAS method body via source (95% fewer tokens than full-class). Local-class methods use the qualified specifier (e.g. "lhc_project~approve_project"); auto-routing: lhc_*/lcl_* → implementations, ltc_* → testclasses (override with include=); zif_*~* stays on /source/main. ' +
   'edit_unit: replace one FORM/MODULE block in PROG/INCL using unit+source; group= supports FUGR includes. ' +
   'batch_create: create+activate multiple objects in dependency order via the "objects" array (RAP stacks TABL→DDLS→DCLS→BDEF→SRVD). scaffold_rap_handlers / generate_behavior_implementation: derive RAP behavior-pool handlers from the BDEF (the latter auto-discovers the BDEF via rootEntityRef and activates by default). ' +

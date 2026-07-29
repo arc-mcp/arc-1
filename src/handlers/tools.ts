@@ -508,7 +508,7 @@ export function getToolDefinitions(
           includeSignature: {
             type: 'boolean',
             description:
-              'For FUNC type only. When true, response is JSON: {source, signature: {importing[], exporting[], changing[], tables[], exceptions[], raising[]}} — each parameter parsed into {kind, name, type, byValue?, default?, optional?}. Default false (returns plain source body). Use this to introspect FM parameter signatures programmatically without re-parsing ABAP.',
+              'For FUNC type only. When true, response is JSON: {source, signature: {importing[], exporting[], changing[], tables[], exceptions[], raising[]}, processingType?, updateTaskKind?} — each parameter parsed into {kind, name, type, byValue?, default?, optional?}; processingType reports rfc/update/normal. Default false (returns plain source body).',
           },
           force_refresh: {
             type: 'boolean',
