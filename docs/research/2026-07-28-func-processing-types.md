@@ -1,7 +1,7 @@
 # Function-module processing types over ADT
 
 **Date:** 2026-07-28
-**Status:** Implemented; lifecycle verified on SAP_BASIS 758, 750 mutation pending
+**Status:** Implemented; full lifecycle verified live on SAP_BASIS 758 (v3) and 750 (v2)
 **Scope:** On-premises `SAPWrite action="create" type="FUNC"`
 
 ## Why this change exists
@@ -129,29 +129,37 @@ the POST while retaining the normal shell. The integration contract therefore:
 8. removes all disposable objects.
 
 The complete create → locked metadata PUT → source PUT → activation → active
-readback lifecycle passed on SAP_BASIS 758 for implicit and explicit normal,
-Remote-Enabled, both V1 update variants, and V2 update modules. Cleanup of the
-disposable graph passed as part of the same test. The SAP_BASIS 750 discovery
-and existing root metadata confirm the v2 representation and wire values, but
-the configured identity currently receives HTTP 403 on disposable
-function-group creation. Review reproduced it and read the server's own reason:
+readback lifecycle passed on **SAP_BASIS 758 and SAP_BASIS 750** for implicit and
+explicit normal, Remote-Enabled, both V1 update variants, and V2 update modules.
+Cleanup of the disposable graph passed as part of the same test on both.
+
+The 750 run matters because it is the only exercise of the **v2** representation:
+the negotiation reads `…fmodules.v2+xml; charset=utf-8` off the GET, reduces it to
+the bare media type, and 750 accepts that on the locked PUT. A spot check on 750
+confirmed the state transition end to end — inactive root `processingType="rfc"`,
+activate, active root `processingType="rfc"`.
+
+> Reading `?version=active` **before** activating returns the pre-activation state
+> and shows `normal`. That is not a defect; the readback is only meaningful after
+> `SAPActivate`.
+
+Getting there took clearing a system-side block. Before it was fixed, every create
+on 750 failed with:
 
 ```text
 403 at /sap/bc/adt/functions/groups — No development license for user DEVELOPER
 403 at /sap/bc/adt/programs/programs — No development license for user DEVELOPER
 ```
 
-The identical message on a plain `PROG` create shows this is the ABAP
-development-license / developer-key (SSCR) check refusing **all** object creation
-on that system. It is neither authorization for FUGR/FUNC nor anything this code
-path controls, and it cannot be cleared over ADT — it needs a registered
-developer key for the user (or a valid development license) on NPL750. The 750
-mutation lifecycle therefore stays an explicit manual verification item rather
-than an inferred pass.
+The identical message on a plain `PROG` create identified it as the ABAP
+development-license / developer-key check refusing **all** object creation on that
+system, rather than authorization for FUGR/FUNC or anything this code path
+controls. Worth remembering the next time a 750 write test "fails": check the
+developer key before suspecting the code.
 
-### What 750 *can* be checked against: 372 live function-module roots
+### The 750 read contract, from 372 live function-module roots
 
-Read access on 750 is unaffected, so the wire contract was verified against real
+Independently of the mutation run, the wire contract was checked against real
 SAP-shipped modules instead of being inferred from discovery:
 
 | Question | Result on SAP_BASIS 750 (372 roots sampled) |
@@ -162,9 +170,9 @@ SAP-shipped modules instead of being inferred from discovery:
 | `updateTaskKind` values | `startImmediate` (`SCD0/CHANGEDOCUMENT_EVENT_CREATE`) and `startDelayed` (`SCD4/CHANGEDOCUMENT_DELETE_V2`) observed |
 | Root tags truncated by the `[^>]*` matcher | 0 of 372 |
 
-So the attribute names, the case-sensitive values, the v2 representation, and the
-root-tag matcher are all confirmed on 750 from the backend itself. Only the
-mutation half of the lifecycle is unverified there.
+The attribute names, the case-sensitive values, and the v2 representation are
+therefore confirmed on 750 from both directions: SAP's own objects read back, and
+ARC-1's writes round-tripped.
 
 ### The ADT root is not the last word — TFDIR is
 
