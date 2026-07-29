@@ -2249,7 +2249,10 @@ define role ZTEST_DCL {
       expect(dtelCreatePostBody()).toContain('adtcore:responsible="SRAHEMI"');
     });
 
-    it('falls back to DEVELOPER in the create_package POST body when username is unset', async () => {
+    // #636 — DEVC is the one type that cannot fall back to omitting the attribute:
+    // SPAK_ST_PACKAGES rejects an empty value AND validates that the user exists (live 758).
+    // So with no usable connection user, ask for one instead of inventing "DEVELOPER".
+    it('asks for an explicit responsible on create_package when the username is unset', async () => {
       mockFetch.mockReset();
       mockFetch.mockResolvedValue(mockResponse(200, '<xml>created</xml>', { 'x-csrf-token': 'T' }));
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
@@ -2257,8 +2260,40 @@ define role ZTEST_DCL {
         name: 'ZARC1_RESP_DEF',
         description: 'Responsible default test',
       });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('responsible=');
+      expect(result.content[0]?.text).not.toContain('DEVELOPER');
+    });
+
+    it('asks for an explicit responsible on create_package when the username is an email (PP)', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, '<xml>created</xml>', { 'x-csrf-token': 'T' }));
+      const result = await handleToolCall(
+        createClient(),
+        { ...DEFAULT_CONFIG, username: 'firstname.lastname@example.com' },
+        'SAPManage',
+        { action: 'create_package', name: 'ZARC1_RESP_PP', description: 'PP package test' },
+      );
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('principal propagation');
+    });
+
+    it('uses an explicit responsible on create_package even when the username is an email (PP)', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, '<xml>created</xml>', { 'x-csrf-token': 'T' }));
+      const result = await handleToolCall(
+        createClient(),
+        { ...DEFAULT_CONFIG, username: 'firstname.lastname@example.com' },
+        'SAPManage',
+        {
+          action: 'create_package',
+          name: 'ZARC1_RESP_PP2',
+          description: 'PP package test',
+          responsible: 'MARIAN',
+        },
+      );
       expect(result.isError).toBeUndefined();
-      expect(packageCreatePostBody()).toContain('adtcore:responsible="DEVELOPER"');
+      expect(packageCreatePostBody()).toContain('adtcore:responsible="MARIAN"');
     });
 
     // The metadata-UPDATE call site is full-XML-replace via buildCreateXml, so it

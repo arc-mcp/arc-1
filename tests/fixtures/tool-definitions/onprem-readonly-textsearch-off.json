@@ -711,7 +711,7 @@
         },
         "responsible": {
           "type": "string",
-          "description": "BTP only: the internal ABAP user (XUBNAME, e.g. CB9980000000) for the new package person-responsible. Auto-resolved from prior object creates if omitted; the IAS email is rejected."
+          "description": "Person-responsible: an existing ABAP user (XUBNAME, max 12 chars); an email is rejected. Defaults to the connection user; pass explicitly under principal propagation. BTP: auto-resolved from prior creates."
         },
         "transportLayer": {
           "type": "string",

@@ -1971,10 +1971,30 @@ lv = CONV string( 1 ).`,
         );
       });
 
-      it('defaults responsible to DEVELOPER when no responsible arg is passed', () => {
-        expect(buildCreateXml('PROG', 'ZHELLO', 'ZPACKAGE', 'Hello')).toContain('adtcore:responsible="DEVELOPER"');
-        expect(buildCreateXml('CLAS', 'ZCL', '$TMP', 'C', undefined, 'EN')).toContain(
-          'adtcore:responsible="DEVELOPER"',
+      it('omits responsible when no responsible arg is passed', () => {
+        expect(buildCreateXml('PROG', 'ZHELLO', 'ZPACKAGE', 'Hello')).not.toContain('adtcore:responsible');
+        expect(buildCreateXml('CLAS', 'ZCL', '$TMP', 'C', undefined, 'EN')).not.toContain('adtcore:responsible');
+      });
+
+      // #636 — the email-style principal under principal propagation overflows XUBNAME (CHAR12)
+      // and kills the create ST. Omit it so ADT assigns the logged-on (propagated) user instead.
+      it('omits an email-shaped responsible (principal propagation), across template families', () => {
+        const email = 'firstname.lastname@example.com';
+        for (const type of ['PROG', 'CLAS', 'INTF', 'INCL', 'DDLS', 'SRVD', 'DDLX']) {
+          expect(buildCreateXml(type, 'ZOBJ', '$TMP', 'd', undefined, 'EN', email)).not.toContain(
+            'adtcore:responsible',
+          );
+        }
+        // builder-delegating types (their XML comes from ddic-xml.ts, not the inline templates)
+        expect(buildCreateXml('DOMA', 'ZD', '$TMP', 'd', { dataType: 'CHAR', length: 10 }, 'EN', email)).not.toContain(
+          'adtcore:responsible',
+        );
+        expect(buildCreateXml('DTEL', 'ZE', '$TMP', 'd', {}, 'EN', email)).not.toContain('adtcore:responsible');
+      });
+
+      it('keeps a responsible at the CHAR12 boundary', () => {
+        expect(buildCreateXml('CLAS', 'ZCL', '$TMP', 'C', undefined, 'EN', 'ABCDEFGHIJKL')).toContain(
+          'adtcore:responsible="ABCDEFGHIJKL"',
         );
       });
 

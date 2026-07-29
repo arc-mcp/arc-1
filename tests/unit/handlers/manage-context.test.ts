@@ -9,6 +9,12 @@ import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
 import { CachingLayer } from '../../../src/cache/caching-layer.js';
 import { MemoryCache } from '../../../src/cache/memory.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
+
+// On-prem package create needs a person-responsible that is a real ABAP user: SPAK_ST_PACKAGES
+// rejects an empty one and validates existence (#636). Basic auth always supplies SAP_USER, so
+// these mechanics tests use a config that has one.
+const PKG_CONFIG = { ...DEFAULT_CONFIG, username: 'ADMIN' };
+
 import { mockResponse } from '../../helpers/mock-fetch.js';
 import { AdtClient, createClient, mockFetch } from './setup-undici-mock.js';
 
@@ -81,7 +87,7 @@ describe('SAPManage / SAPContext handlers', () => {
         return Promise.resolve(mockResponse(200, '<xml>created</xml>', { 'x-csrf-token': 'T' }));
       });
 
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
+      const result = await handleToolCall(createClient(), PKG_CONFIG, 'SAPManage', {
         action: 'create_package',
         name: 'ZPKG_TEST',
         description: 'Test package',
@@ -105,7 +111,7 @@ describe('SAPManage / SAPContext handlers', () => {
         return Promise.resolve(mockResponse(200, '<xml>created</xml>', { 'x-csrf-token': 'T' }));
       });
 
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
+      const result = await handleToolCall(createClient(), PKG_CONFIG, 'SAPManage', {
         action: 'create_package',
         name: 'ZPKG_TR',
         description: 'Transported package',
@@ -119,7 +125,7 @@ describe('SAPManage / SAPContext handlers', () => {
     });
 
     it('create_package returns error when name is missing', async () => {
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
+      const result = await handleToolCall(createClient(), PKG_CONFIG, 'SAPManage', {
         action: 'create_package',
         description: 'Missing name',
       });
@@ -660,7 +666,7 @@ describe('SAPManage / SAPContext handlers', () => {
         return Promise.resolve(mockResponse(200, '<xml/>', { 'x-csrf-token': 'T' }));
       });
 
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
+      const result = await handleToolCall(createClient(), PKG_CONFIG, 'SAPManage', {
         action: 'create_package',
         name: 'ZPKG_NEEDS_TR',
         description: 'Transport-required package',
@@ -681,7 +687,7 @@ describe('SAPManage / SAPContext handlers', () => {
         return Promise.resolve(mockResponse(200, '<xml>created</xml>', { 'x-csrf-token': 'T' }));
       });
 
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
+      const result = await handleToolCall(createClient(), PKG_CONFIG, 'SAPManage', {
         action: 'create_package',
         name: 'ZPKG_FULL',
         description: 'Full options package',
@@ -708,7 +714,7 @@ describe('SAPManage / SAPContext handlers', () => {
         return Promise.resolve(mockResponse(200, '<xml>created</xml>', { 'x-csrf-token': 'T' }));
       });
 
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
+      const result = await handleToolCall(createClient(), PKG_CONFIG, 'SAPManage', {
         action: 'create_package',
         name: 'ZPKG_NO_RECORD',
         description: 'No recording',
@@ -731,7 +737,7 @@ describe('SAPManage / SAPContext handlers', () => {
         return Promise.resolve(mockResponse(200, '<xml>created</xml>', { 'x-csrf-token': 'T' }));
       });
 
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
+      const result = await handleToolCall(createClient(), PKG_CONFIG, 'SAPManage', {
         action: 'create_package',
         name: 'ZPKG_ZLOCAL',
         description: 'ZLOCAL package',
