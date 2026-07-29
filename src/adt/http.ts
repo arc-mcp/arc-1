@@ -72,6 +72,7 @@ const HTTP_DEBUG_REDACT_HEADERS = new Set([
   'x-csrf-token',
   'sap-connectivity-authentication',
   'proxy-authorization',
+  'password', // abapGit bridge credential header (base64 is not encryption)
 ]);
 
 function redactDebugHeaders(headers: Record<string, string>): Record<string, string> {

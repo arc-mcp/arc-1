@@ -849,11 +849,11 @@ Git-based ABAP repository workflows with backend auto-selection: **gCTS** is pre
 | `package` | string | No | ABAP package (required for clone/create on package-bound backends) |
 | `transport` | string | No | Transport request (backend-dependent) |
 | `commit` | string | No | Commit SHA (for gCTS `pull` by commit) |
-| `message` | string | No | Commit message (for gCTS `commit`) |
-| `objects` | array | No | Commit/staging object list (`[{type,name,...}]`) |
-| `user` | string | No | Optional remote Git username |
-| `password` | string | No | Optional remote Git password |
-| `token` | string | No | Optional remote Git token (gCTS) |
+| `message` | string | Yes for `commit`/`push` | Commit message (gCTS `commit` and abapGit `push`) |
+| `objects` | array | No | Commit/staging object list (`[{type,name}]`). For abapGit `push` it selects which changed objects to commit; omit to push every local change |
+| `user` | string | No | Remote Git username |
+| `password` | string | No | Remote Git password |
+| `token` | string | No | Remote Git token. gCTS takes it as-is; abapGit sends it as basic auth with user `x-access-token` (GitHub convention) unless `user` is also given |
 | `limit` | number | No | Limit for history queries (gCTS) |
 
 **Backend support matrix:**
@@ -869,6 +869,16 @@ Git-based ABAP repository workflows with backend auto-selection: **gCTS** is pre
 - All write actions are blocked unless `--allow-git-writes` / `SAP_ALLOW_GIT_WRITES=true` is set.
 - Package-bound create/clone operations must pass the configured package allowlist.
 
+**abapGit private repositories:** pass `user` + `password`, or just `token`. ARC-1 forwards them to the
+bridge on every remote-touching call — `external_info`, `clone`, `pull`, `check`, `stage`, `push`,
+`switch_branch`, `create_branch` — as the `Username` / base64 `Password` headers the abapGit ADT backend
+reads. They are request-scoped: never stored, never logged (the `Password` header is redacted).
+
+**abapGit push** stages first, then commits the objects you select: ARC-1 calls the stage endpoint, keeps
+the objects (with their file lists) that match `objects`, and sends them back with your `message`. Author
+and committer come from the git user abapGit has stored for the repo, so no identity parameters are needed.
+A push with no matching local change is reported as a no-op instead of an empty commit.
+
 **Examples:**
 ```
 SAPGit(action="list_repos")
@@ -878,6 +888,9 @@ SAPGit(action="history", backend="gcts", repoId="ZARC1", limit=20)
 SAPGit(action="external_info", backend="abapgit", url="https://github.com/abapGit-tests/CLAS.git")
 SAPGit(action="switch_branch", repoId="000000000006", branch="main", backend="abapgit")
 SAPGit(action="clone", backend="abapgit", package="$TMP", url="https://github.com/org/repo.git")
+SAPGit(action="clone", backend="abapgit", package="$TMP", url="https://github.com/org/private.git", token="ghp_…")
+SAPGit(action="stage", backend="abapgit", repoId="000000000001")
+SAPGit(action="push", backend="abapgit", repoId="000000000001", message="Add order validation")
 ```
 
 ---

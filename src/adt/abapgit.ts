@@ -23,9 +23,18 @@ import { escapeXmlAttr, findDeepNodes, parseXml } from './xml-parser.js';
 const ABAPGIT_BASE = '/sap/bc/adt/abapgit';
 const REPOS_V2 = 'application/abapgit.adt.repos.v2+xml';
 const REPO_V3 = 'application/abapgit.adt.repo.v3+xml';
+const REPO_OBJECT_V2 = 'application/abapgit.adt.repo.object.v2+xml';
 const REPO_STAGE_V1 = 'application/abapgit.adt.repo.stage.v1+xml';
 const EXTERNAL_INFO_REQUEST_V2 = 'application/abapgit.adt.repo.info.ext.request.v2+xml';
 const EXTERNAL_INFO_RESPONSE_V2 = 'application/abapgit.adt.repo.info.ext.response.v2+xml';
+// clone/pull answer with the deserialized object list (ZABAPGIT_ST_REPO_POST_RES → repo.object.v2).
+// The bridge 406s on an Accept it cannot render (live-verified on 758), so ask for that type and
+// keep repo.v3 in the list for older ADT_Backend installs.
+const REPO_OBJECT_ACCEPT = `${REPO_OBJECT_V2}, ${REPO_V3}`;
+
+const NS_REPO = 'http://www.sap.com/adt/abapgit/repositories';
+const NS_STAGING = 'http://www.sap.com/adt/abapgit/staging';
+const NS_ADTCORE = 'http://www.sap.com/adt/core';
 
 function boolish(value: unknown): boolean | undefined {
   if (value === true || value === false) return value;
@@ -64,6 +73,18 @@ function authHeaders(user?: string, password?: string): Record<string, string> {
     Username: user,
     Password: encodePassword(password),
   };
+}
+
+/** Direct children of `node` under `key`, normalised to an array (fast-xml-parser collapses singletons). */
+function childNodes(node: Record<string, unknown> | undefined, key: string): Array<Record<string, unknown>> {
+  const val = node?.[key];
+  if (Array.isArray(val)) return val as Array<Record<string, unknown>>;
+  if (val && typeof val === 'object') return [val as Record<string, unknown>];
+  return [];
+}
+
+function attr(name: string, value: string | undefined): string {
+  return value ? ` ${name}="${escapeXmlAttr(value)}"` : '';
 }
 
 function absolutizeLink(href: string): string {
@@ -169,17 +190,61 @@ export function parseAbapGitExternalInfo(xml: string): AbapGitExternalInfo {
   };
 }
 
+/**
+ * Parse a clone/pull response (`abapObjects:abapObjects` → `abapObject`, ZABAPGIT_ST_REPO_POST_RES).
+ * Each entry reports what the bridge deserialized into the package, with abapGit's own status message.
+ */
 export function parseAbapGitObjects(xml: string): AbapGitObject[] {
   const parsed = parseXml(xml);
-  const objectNodes = findDeepNodes(parsed, 'object');
-  return objectNodes.map((node) => ({
+  return findDeepNodes(parsed, 'abapObject').map((node) => ({
     type: field(node, 'type'),
     name: field(node, 'name'),
-    package: field(node, 'package', 'packageName'),
-    path: field(node, 'path'),
-    state: field(node, 'state'),
-    operation: field(node, 'operation'),
+    package: field(node, 'package'),
+    status: field(node, 'status'),
+    msgType: field(node, 'msgType'),
+    msgText: field(node, 'msgText'),
   }));
+}
+
+function parseStagingObjects(root: Record<string, unknown>, wrapper: string): AbapGitStagingObject[] {
+  return childNodes(childNodes(root, wrapper)[0], 'abapgitobject').map((node) => ({
+    name: field(node, 'name'),
+    type: field(node, 'type'),
+    uri: field(node, 'uri'),
+    wbkey: field(node, 'wbkey'),
+    files: childNodes(node, 'abapgitfile').map((file) => ({
+      name: field(file, 'name') ?? '',
+      path: field(file, 'path'),
+      localState: field(file, 'localState'),
+      remoteState: field(file, 'remoteState'),
+    })),
+  }));
+}
+
+/**
+ * Parse a staging response (`abapgitstaging:abapgitstaging`, ZABAPGIT_ST_REPO_STAGE).
+ *
+ * Locally changed objects arrive under `unstaged_objects`; the client decides which of them to send
+ * back as `staged_objects` on push. The bridge pre-fills author/committer from abapGit's stored git
+ * user, so a push can round-trip them instead of asking the caller for an identity.
+ */
+export function parseAbapGitStaging(xml: string): Pick<AbapGitStaging, 'objects' | 'ignored' | 'comment'> {
+  const parsed = parseXml(xml);
+  const root = (parsed.abapgitstaging as Record<string, unknown>) ?? parsed;
+  const commentNode = childNodes(root, 'abapgit_comment')[0];
+  const user = (key: string): AbapGitUser | undefined => {
+    const node = childNodes(commentNode, key)[0];
+    if (!node) return undefined;
+    return { name: field(node, 'name'), email: field(node, 'email') };
+  };
+
+  return {
+    objects: parseStagingObjects(root, 'unstaged_objects'),
+    ignored: parseStagingObjects(root, 'ignored_objects'),
+    ...(commentNode
+      ? { comment: { comment: field(commentNode, 'comment'), author: user('author'), committer: user('committer') } }
+      : {}),
+  };
 }
 
 async function requestAbapGit(
@@ -211,7 +276,7 @@ function buildRepoPayloadXml(params: {
   password?: string;
 }): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
-<abapgitrepo:repository xmlns:abapgitrepo="http://www.sap.com/adt/abapgit/repositories">
+<abapgitrepo:repository xmlns:abapgitrepo="${NS_REPO}">
   <abapgitrepo:package>${escapeXmlAttr(params.package)}</abapgitrepo:package>
   <abapgitrepo:url>${escapeXmlAttr(params.url)}</abapgitrepo:url>
   ${params.branchName ? `<abapgitrepo:branchName>${escapeXmlAttr(params.branchName)}</abapgitrepo:branchName>` : ''}
@@ -230,27 +295,46 @@ function buildExternalInfoRequestXml(url: string, user?: string, password?: stri
 </abapgitexternalrepo:externalRepoInfoRequest>`;
 }
 
+/**
+ * Build a push payload (ZABAPGIT_ST_REPO_STAGE, root `abapgitstaging`).
+ *
+ * The objects to export go under `staged_objects`; the bridge only reads each object's reference and
+ * its files' name/path/localState, plus the comment. Element order follows the transformation.
+ */
 function buildStagingPayloadXml(staging: AbapGitStaging): string {
-  const objects = (staging.objects ?? [])
+  const stagedObjects = (staging.objects ?? [])
     .map((object) => {
-      const attrs = [
-        object.type ? `type="${escapeXmlAttr(object.type)}"` : '',
-        object.name ? `name="${escapeXmlAttr(object.name)}"` : '',
-        object.package ? `package="${escapeXmlAttr(object.package)}"` : '',
-        object.path ? `path="${escapeXmlAttr(object.path)}"` : '',
-        object.state ? `state="${escapeXmlAttr(object.state)}"` : '',
-        object.operation ? `operation="${escapeXmlAttr(object.operation)}"` : '',
-      ]
-        .filter(Boolean)
-        .join(' ');
-      return `  <abapgitrepo:object ${attrs}/>`;
+      const files = object.files
+        .map(
+          (file) =>
+            `      <abapgitstaging:abapgitfile${attr('abapgitstaging:name', file.name)}` +
+            `${attr('abapgitstaging:path', file.path)}${attr('abapgitstaging:localState', file.localState)}` +
+            `${attr('abapgitstaging:remoteState', file.remoteState)}/>`,
+        )
+        .join('\n');
+      return (
+        `    <abapgitstaging:abapgitobject${attr('adtcore:name', object.name)}${attr('adtcore:type', object.type)}` +
+        `${attr('adtcore:uri', object.uri)}${attr('abapgitstaging:wbkey', object.wbkey)}>\n${files}\n` +
+        `    </abapgitstaging:abapgitobject>`
+      );
     })
     .join('\n');
 
+  const staged = stagedObjects
+    ? `  <abapgitstaging:staged_objects>\n${stagedObjects}\n  </abapgitstaging:staged_objects>`
+    : '  <abapgitstaging:staged_objects/>';
+  const comment = staging.comment ?? {};
+
   return `<?xml version="1.0" encoding="UTF-8"?>
-<abapgitrepo:objects xmlns:abapgitrepo="http://www.sap.com/adt/abapgit/repository">
-${objects}
-</abapgitrepo:objects>`;
+<abapgitstaging:abapgitstaging xmlns:abapgitstaging="${NS_STAGING}" xmlns:adtcore="${NS_ADTCORE}">
+  <abapgitstaging:unstaged_objects/>
+${staged}
+  <abapgitstaging:ignored_objects/>
+  <abapgitstaging:abapgit_comment${attr('abapgitstaging:comment', comment.comment)}>
+    <abapgitstaging:author${attr('abapgitstaging:name', comment.author?.name)}${attr('abapgitstaging:email', comment.author?.email)}/>
+    <abapgitstaging:committer${attr('abapgitstaging:name', comment.committer?.name)}${attr('abapgitstaging:email', comment.committer?.email)}/>
+  </abapgitstaging:abapgit_comment>
+</abapgitstaging:abapgitstaging>`;
 }
 
 export async function listRepos(http: AdtHttpClient, safety: SafetyConfig): Promise<AbapGitRepo[]> {
@@ -293,7 +377,7 @@ export async function createRepo(
     password?: string;
   },
   resolver?: PackageHierarchyResolver | null,
-): Promise<AbapGitRepo[]> {
+): Promise<AbapGitObject[]> {
   checkOperation(safety, OperationType.Create, 'AbapGitCreateRepo');
   checkGit(safety, 'clone');
   await checkPackage(safety, params.package, resolver);
@@ -302,12 +386,12 @@ export async function createRepo(
   const body = buildRepoPayloadXml(params);
   const resp = await requestAbapGit(path, () =>
     http.post(path, body, REPO_V3, {
-      Accept: REPO_V3,
+      Accept: REPO_OBJECT_ACCEPT,
       ...authHeaders(params.user, params.password),
     }),
   );
 
-  return parseAbapGitRepos(resp.body);
+  return parseAbapGitObjects(resp.body);
 }
 
 /**
@@ -364,7 +448,7 @@ export async function pullRepo(
 
   const resp = await requestAbapGit(path, () =>
     http.post(path, body, REPO_V3, {
-      Accept: REPO_STAGE_V1,
+      Accept: REPO_OBJECT_ACCEPT,
       ...authHeaders(params.user, params.password),
     }),
   );
@@ -399,11 +483,10 @@ export async function stageRepo(
     }),
   );
 
-  const objects = parseAbapGitObjects(resp.body).map((object) => object as AbapGitStagingObject);
   return {
     repoKey: repo.key,
     branchName: repo.branchName,
-    objects,
+    ...parseAbapGitStaging(resp.body),
   };
 }
 
@@ -474,12 +557,15 @@ export async function switchBranch(
   repoId: string,
   branch: string,
   create = false,
+  user?: string,
+  password?: string,
 ): Promise<void> {
   checkOperation(safety, OperationType.Update, 'AbapGitSwitchBranch');
   checkGit(safety, create ? 'create_branch' : 'switch_branch');
 
   const path = `${ABAPGIT_BASE}/repos/${encodeURIComponent(repoId)}/branches/${encodeURIComponent(branch)}?create=${create ? 'true' : 'false'}`;
-  await requestAbapGit(path, () => http.post(path, '', undefined, { Accept: REPO_V3 }));
+  // Switching fetches from the remote, so a private repo needs the bridge credentials here too.
+  await requestAbapGit(path, () => http.post(path, '', undefined, { Accept: REPO_V3, ...authHeaders(user, password) }));
 }
 
 export async function createBranch(
@@ -487,6 +573,8 @@ export async function createBranch(
   safety: SafetyConfig,
   repoId: string,
   branch: string,
+  user?: string,
+  password?: string,
 ): Promise<void> {
-  await switchBranch(http, safety, repoId, branch, true);
+  await switchBranch(http, safety, repoId, branch, true, user, password);
 }

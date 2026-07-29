@@ -1626,13 +1626,13 @@ export function getToolDefinitions(
             type: 'string',
             enum: sapGitActions,
             description:
-              'Git action. Read: list_repos, whoami, config, branches, external_info, history, objects, check. ' +
-              'Write (requires SAP_ALLOW_WRITES=true and SAP_ALLOW_GIT_WRITES=true): clone, pull, push, commit, stage, switch_branch, create_branch, unlink.',
+              'Git action. The writes (clone, pull, push, commit, stage, switch_branch, create_branch, unlink) ' +
+              'need SAP_ALLOW_WRITES=true and SAP_ALLOW_GIT_WRITES=true; the rest are reads.',
           },
           backend: {
             type: 'string',
             enum: ['gcts', 'abapgit'],
-            description: 'Optional backend override. Omit to auto-select (gCTS preferred over abapGit).',
+            description: 'Backend override; omit to auto-select (gCTS preferred).',
           },
           repoId: {
             type: 'string',
@@ -1660,15 +1660,15 @@ export function getToolDefinitions(
           },
           message: {
             type: 'string',
-            description: 'Commit message for gCTS commit.',
+            description: 'Commit message (required for gCTS commit and abapGit push).',
           },
           description: {
             type: 'string',
-            description: 'Optional commit description for gCTS commit.',
+            description: 'Commit description (gCTS).',
           },
           objects: {
             type: 'array',
-            description: 'Optional object list for commit/push payloads.',
+            description: 'Object list for commit/push. For abapGit push it selects the changed objects to commit.',
             items: {
               type: 'object',
               properties: {
@@ -1684,15 +1684,15 @@ export function getToolDefinitions(
           },
           user: {
             type: 'string',
-            description: 'Optional remote repository username.',
+            description: 'Remote repository username.',
           },
           password: {
             type: 'string',
-            description: 'Optional remote repository password/token secret.',
+            description: 'Remote repository password/token secret.',
           },
           token: {
             type: 'string',
-            description: 'Optional remote repository access token.',
+            description: 'Remote repository access token. abapGit sends it as basic auth user "x-access-token".',
           },
           limit: {
             type: 'number',
