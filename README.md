@@ -135,6 +135,12 @@ With both flags at their defaults, ARC-1's data/sql rows are unreachable. Turnin
 
 ARC-1's strategy is to stay close to documented and discoverable ADT behavior, probe system capabilities before exposing tools, keep conservative security defaults (writes off, data preview off, free SQL off, package allowlist `$TMP`), and continuously review SAP's guidance as it evolves. This README is not a compliance decision for any specific customer landscape, but the default posture is intended to support normal governed development use rather than block it.
 
+## Versioning & Stability
+
+From `1.0` onward ARC-1 follows [semantic versioning](https://semver.org/): patch releases fix bugs, minor releases add backward-compatible capability, and breaking changes to the MCP tool surface, configuration, or auth contract bump the major version.
+
+**Experimental, default-off features are excluded from this guarantee until they are promoted** — they are clearly labeled and their surface may still change in a minor release. Today this covers the [multi-target BTP mode](docs_page/multi-target-setup.md) (ADR-0006 / ADR-0007): a mutation-free, read-only exception to the single-target default.
+
 ## Quick Start
 
 **Install in Claude** — pick your surface (full guide: [Install in Claude](https://docs.arc-1-mcp.com/install-in-claude/)):
