@@ -565,6 +565,19 @@ describe('XML Parser', () => {
       });
     });
 
+    it('accepts single-quoted attributes and mixed-case element names', () => {
+      const xml =
+        "<FMODULE:abapFunctionModule xmlns:fmodule='http://www.sap.com/adt/functions/fmodules' fmodule:processingType='rfc'/>";
+      expect(parseFunctionModuleProperties(xml).processingType).toBe('rfc');
+    });
+
+    it('ignores an fmodule attribute that appears outside the root element', () => {
+      const xml =
+        '<fmodule:abapFunctionModule xmlns:fmodule="http://www.sap.com/adt/functions/fmodules">' +
+        "<atom:link href='x' title='fmodule:processingType=\"rfc\"'/></fmodule:abapFunctionModule>";
+      expect(parseFunctionModuleProperties(xml).processingType).toBeUndefined();
+    });
+
     it('returns an empty object when the document carries none of the attributes', () => {
       const xml =
         '<fmodule:abapFunctionModule xmlns:fmodule="http://www.sap.com/adt/functions/fmodules" adtcore:name="Z_X"/>';

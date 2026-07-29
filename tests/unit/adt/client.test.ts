@@ -798,18 +798,19 @@ describe('AdtClient', () => {
   });
 
   describe('function module properties', () => {
-    const FM_CT = 'application/vnd.sap.adt.functions.fmodules.v3+xml';
     const fmDoc = (attrs: string) =>
       `<?xml version="1.0" encoding="utf-8"?><fmodule:abapFunctionModule${attrs} adtcore:name="Z_FM" adtcore:type="FUGR/FF" xmlns:fmodule="http://www.sap.com/adt/functions/fmodules" xmlns:adtcore="http://www.sap.com/adt/core"><atom:link href="source/main" xmlns:atom="http://www.w3.org/2005/Atom"/></fmodule:abapFunctionModule>`;
 
-    it('getFunctionModuleProperties reads the fmodule resource with the v3 media type', async () => {
+    it('getFunctionModuleProperties reads the lowercased fmodule resource, letting discovery pick the version', async () => {
+      // No hardcoded Accept: 7.50 serves …fmodules.v2+xml and 758 serves v3 (both live-verified),
+      // so pinning a version here would be an assumption rather than a contract.
       mockFetch.mockReset();
       mockFetch.mockResolvedValue(mockResponse(200, fmDoc(' fmodule:processingType="rfc"')));
       const client = createClient();
       const props = await client.getFunctionModuleProperties('ZGRP', 'Z_FM');
       expect(props.processingType).toBe('rfc');
       expect(String(mockFetch.mock.calls[0]?.[0])).toContain('/sap/bc/adt/functions/groups/zgrp/fmodules/z_fm');
-      expect(fetchHeaders(0).Accept).toBe(FM_CT);
+      expect(fetchHeaders(0).Accept).not.toMatch(/fmodules\.v\d/);
     });
   });
 

@@ -17,7 +17,7 @@ import { type FmParameter, spliceFmSignature } from '../../adt/fm-signature.js';
 import { checkPackage } from '../../adt/safety.js';
 import { isServerDrivenObjectType } from '../../adt/server-driven.js';
 import { getTransport, getTransportInfo } from '../../adt/transport.js';
-import { escapeXmlAttr } from '../../adt/xml-parser.js';
+import { escapeXmlAttr, parseFunctionModuleProperties } from '../../adt/xml-parser.js';
 import { validateAffHeader } from '../../aff/validator.js';
 import { logger } from '../../server/logger.js';
 import {
@@ -152,19 +152,6 @@ function rewriteFunctionModuleProcessingMetadata(
   return `${xml.slice(0, rootMatch.index)}${rewrittenRoot}${xml.slice(rootMatch.index + rootMatch[0].length)}`;
 }
 
-/**
- * Read a processing attribute off the ROOT element only. Scoping matters: this
- * is the fail-closed check, and the same document also carries an
- * `<adtcore:containerRef>` child, so a whole-document scan could answer from
- * something that is not the function module's own metadata.
- */
-function functionModuleAttribute(xml: string, name: 'processingType' | 'updateTaskKind'): string | undefined {
-  const root = /<fmodule:abapFunctionModule\b[^>]*>/i.exec(xml)?.[0];
-  if (!root) return undefined;
-  const match = new RegExp(`\\bfmodule:${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, 'i').exec(root);
-  return match?.[1] ?? match?.[2];
-}
-
 async function persistFunctionModuleProcessingMetadata(
   client: SapWriteContext['client'],
   objectUrl: string,
@@ -201,8 +188,8 @@ async function persistFunctionModuleProcessingMetadata(
     // A 2xx response alone is insufficient evidence: the collection POST accepts
     // these attributes and still retains `normal` (live-verified on 758).
     const persisted = await client.getObjectMetadata(inactiveUrl);
-    const actualProcessingType = functionModuleAttribute(persisted.body, 'processingType');
-    const actualUpdateTaskKind = functionModuleAttribute(persisted.body, 'updateTaskKind');
+    const { processingType: actualProcessingType, updateTaskKind: actualUpdateTaskKind } =
+      parseFunctionModuleProperties(persisted.body);
     if (
       actualProcessingType !== processingType ||
       (updateTaskKind === undefined ? actualUpdateTaskKind !== undefined : actualUpdateTaskKind !== updateTaskKind)

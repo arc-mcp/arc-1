@@ -459,8 +459,14 @@ export function parseFunctionGroupNodes(xml: string, groupName: string): Functio
  * docs/research/2026-07-29-nw750-fixture-create-surface.md §8.1.
  */
 export function parseFunctionModuleProperties(xml: string): FunctionModuleProperties {
-  const pick = (attr: string): string | undefined =>
-    new RegExp(`<fmodule:abapFunctionModule\\b[^>]*?\\bfmodule:${attr}="([^"]*)"`).exec(xml)?.[1];
+  // Scope to the root element first so an attribute elsewhere in the document can't match,
+  // and accept either quote style — SAP is not consistent across releases.
+  const root = /<fmodule:abapFunctionModule\b[^>]*>/i.exec(xml)?.[0];
+  const pick = (attr: string): string | undefined => {
+    if (!root) return undefined;
+    const m = new RegExp(`\\bfmodule:${attr}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, 'i').exec(root);
+    return m?.[1] ?? m?.[2];
+  };
   const props: FunctionModuleProperties = {};
   const processingType = pick('processingType');
   if (processingType) props.processingType = processingType;

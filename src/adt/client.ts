@@ -223,9 +223,6 @@ export function clampPreviewRows(requested: number | undefined, fallback = 100):
  *  empty and un-writable (SAP 406); selection texts are a program concept (future follow-up). */
 const TEXT_SYMBOLS_CT = 'application/vnd.sap.adt.textelements.symbols.v1';
 
-/** fmodule metadata resource. v3 is accepted on 7.50 and 758 alike (live-verified). */
-const FMODULE_V3_CONTENT_TYPE = 'application/vnd.sap.adt.functions.fmodules.v3+xml';
-
 const MAX_SEARCH_RESULTS = 1_000;
 
 /** Coerce a caller-supplied search-result limit into a safe positive integer in
@@ -589,21 +586,18 @@ export class AdtClient {
     );
   }
 
-  /** ADT resource for a single function module. Both segments are lowercased (verified live). */
-  private functionModuleUrl(group: string, name: string): string {
-    return `/sap/bc/adt/functions/groups/${encodeURIComponent(group.toLowerCase())}/fmodules/${encodeURIComponent(
-      name.toLowerCase(),
-    )}`;
-  }
-
   /**
    * Read a function module's processing attributes (SE37 "Processing Type" + update-task kind).
    * These live in the fmodule metadata document, NOT in /source/main where the signature lives.
+   *
+   * No explicit Accept: the resource's native version differs per release (7.50 serves
+   * …fmodules.v2+xml, 758 serves v3 — both live-verified), so discovery negotiation is correct
+   * where a hardcoded version would be an assumption.
    */
   async getFunctionModuleProperties(group: string, name: string): Promise<FunctionModuleProperties> {
     checkOperation(this.safety, OperationType.Read, 'GetFunctionModuleProperties');
-    const resp = await this.http.get(this.functionModuleUrl(group, name), { Accept: FMODULE_V3_CONTENT_TYPE });
-    return parseFunctionModuleProperties(resp.body);
+    const url = `/sap/bc/adt/functions/groups/${encodeURIComponent(group.toLowerCase())}/fmodules/${encodeURIComponent(name.toLowerCase())}`;
+    return parseFunctionModuleProperties((await this.http.get(url)).body);
   }
 
   /** Resolve function group for a function module via quickSearch */
