@@ -213,6 +213,21 @@ describe('SAPWrite handler — create / batch_create', () => {
       expect(activation).toBeDefined();
       expect(activation?.[1].body).toContain('/sap/bc/adt/ddic/desd/ZARC1_SDO');
     });
+
+    it('SAPActivate returns the release gate error when discovery shows the collection is absent', async () => {
+      const client = createClient();
+      (client.http as unknown as { hasDiscoveryData(): boolean }).hasDiscoveryData = () => true;
+      (client.http as unknown as { discoveryAcceptFor(p: string): string | undefined }).discoveryAcceptFor = () =>
+        undefined;
+      const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPActivate', {
+        action: 'activate',
+        type: 'DESD',
+        name: 'ZARC1_SDO',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('does not advertise ADT support');
+      expect(callMatching('POST', '/sap/bc/adt/activation')).toBeUndefined();
+    });
   });
 
   describe('SAPWrite package enforcement', () => {

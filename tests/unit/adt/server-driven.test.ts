@@ -7,6 +7,7 @@ import {
   buildServerDrivenMetadataXml,
   createServerDrivenObject,
   deleteServerDrivenObject,
+  ensureServerDrivenSupport,
   getServerDrivenObject,
   isServerDrivenObjectType,
   SDO_REGISTRY,
@@ -137,6 +138,73 @@ describe('SDO registry + gate', () => {
   });
 });
 
+/**
+ * The gate used to be consulted synchronously, so a cold discovery map (always, in the CLI) let the
+ * call through and surfaced a raw 404 with a misleading "verify the name exists" hint.
+ */
+describe('ensureServerDrivenSupport', () => {
+  /** `has` controls whether the served discovery doc advertises ddic/desd with the blues accept. */
+  function mockHttp(opts: { loaded: boolean; has?: boolean; getThrows?: boolean }) {
+    const doc =
+      '<?xml version="1.0"?><app:service xmlns:app="http://www.w3.org/2007/app" ' +
+      'xmlns:atom="http://www.w3.org/2005/Atom"><app:workspace><atom:title>W</atom:title>' +
+      (opts.has
+        ? '<app:collection href="/sap/bc/adt/ddic/desd"><atom:title>D</atom:title>' +
+          '<app:accept>application/vnd.sap.adt.blues.v1+xml</app:accept></app:collection>'
+        : '<app:collection href="/sap/bc/adt/programs/programs"><atom:title>P</atom:title>' +
+          '<app:accept>text/plain</app:accept></app:collection>') +
+      '</app:workspace></app:service>';
+    const get = vi.fn(async () => {
+      if (opts.getThrows) throw new AdtApiError('discovery forbidden', 403, '/sap/bc/adt/discovery');
+      return { statusCode: 200, headers: {}, body: doc };
+    });
+    return {
+      http: {
+        get,
+        hasDiscoveryData: () => opts.loaded,
+        discoveryAcceptFor: (path: string) =>
+          opts.loaded && path === '/sap/bc/adt/ddic/desd' ? 'application/vnd.sap.adt.blues.v1+xml' : undefined,
+        setDiscoveryMap: vi.fn(),
+      } as unknown as AdtHttpClient,
+      get,
+    };
+  }
+
+  it('uses the already-loaded map without fetching discovery', async () => {
+    const { http, get } = mockHttp({ loaded: true });
+    await expect(ensureServerDrivenSupport(http, unrestrictedSafetyConfig(), 'DESD')).resolves.toBe(true);
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it('fetches discovery when cold, then reports the type as unavailable on that release', async () => {
+    const { http, get } = mockHttp({ loaded: false, has: false });
+    await expect(ensureServerDrivenSupport(http, unrestrictedSafetyConfig(), 'DESD')).resolves.toBe(false);
+    expect(get).toHaveBeenCalledTimes(1);
+  });
+
+  it('fetches discovery when cold, then reports the type as available', async () => {
+    const { http } = mockHttp({ loaded: false, has: true });
+    await expect(ensureServerDrivenSupport(http, unrestrictedSafetyConfig(), 'DESD')).resolves.toBe(true);
+  });
+
+  it('never stores the fetched map — server.ts re-injects per call, and sharing it would leak per-user capabilities', async () => {
+    const { http } = mockHttp({ loaded: false, has: true });
+    await ensureServerDrivenSupport(http, unrestrictedSafetyConfig(), 'DESD');
+    expect(http.setDiscoveryMap).not.toHaveBeenCalled();
+  });
+
+  it('proceeds when discovery itself is unreachable — the gate is an error-message affordance, not a control', async () => {
+    const { http } = mockHttp({ loaded: false, getThrows: true });
+    await expect(ensureServerDrivenSupport(http, unrestrictedSafetyConfig(), 'DESD')).resolves.toBe(true);
+  });
+
+  it('rejects an unknown code without paying for a discovery round-trip', async () => {
+    const { http, get } = mockHttp({ loaded: false, has: true });
+    await expect(ensureServerDrivenSupport(http, unrestrictedSafetyConfig(), 'NOPE')).resolves.toBe(false);
+    expect(get).not.toHaveBeenCalled();
+  });
+});
+
 describe('getServerDrivenObject', () => {
   it('reads DESD metadata + JSON source via the two GETs', async () => {
     const http = mockHttp((p) => (p.endsWith('/source/main') ? { body: DESD_SRC } : { body: DESD_META }));
@@ -203,6 +271,7 @@ describe('SDO registry write metadata', () => {
 
   it('the blue family uses blues content types (EVTO v2, rest v1); DTDC uses its own (verified live)', () => {
     expect(SDO_REGISTRY.EVTO.metadataContentType).toContain('blues.v2');
+    expect(SDO_REGISTRY.UIAD.metadataContentType).toContain('blues.v2');
     for (const code of ['DESD', 'DTSC', 'CSNM', 'EVTB', 'COTA', 'DSFD'] as const) {
       expect(SDO_REGISTRY[code].metadataContentType).toContain('blues.v1');
       expect(SDO_REGISTRY[code].discoveryMarker).toBe('blues');
@@ -327,7 +396,7 @@ describe('buildServerDrivenMetadataXml', () => {
     // The create body deliberately omits masterLanguage: a4h-2025 (816) silently ignores it
     // (create with "DE" → object read back as the session language). Master language comes from
     // the sap-language request param (session = config.language), as with other source objects.
-    for (const code of ['DESD', 'DTSC', 'CSNM', 'EVTB', 'EVTO', 'COTA', 'DSFD', 'DTDC']) {
+    for (const code of ['DESD', 'DTSC', 'CSNM', 'EVTB', 'EVTO', 'COTA', 'DSFD', 'DTDC', 'UIAD']) {
       expect(buildServerDrivenMetadataXml(code, 'Z', '$TMP', 'd')).not.toContain('masterLanguage');
     }
   });

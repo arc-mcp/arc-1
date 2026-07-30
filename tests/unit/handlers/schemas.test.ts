@@ -66,7 +66,7 @@ describe('SAPReadSchema', () => {
   });
 
   it('SAPWrite accepts server-driven object types (create/update/delete — 816)', () => {
-    for (const t of ['DESD', 'DTSC', 'CSNM', 'EVTB', 'EVTO', 'COTA', 'DSFD', 'DTDC']) {
+    for (const t of ['DESD', 'DTSC', 'CSNM', 'EVTB', 'EVTO', 'COTA', 'DSFD', 'DTDC', 'UIAD']) {
       expect(SAPWRITE_TYPES_ONPREM).toContain(t);
       expect(SAPWRITE_TYPES_BTP).toContain(t);
       expect(SAPWriteSchema.safeParse({ action: 'create', type: t, name: 'ZARC1_SDO', package: '$TMP' }).success).toBe(

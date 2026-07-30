@@ -24,6 +24,7 @@
  * registry entry, verified live: the blue family on 816, DTDC create→activate on 758 + 816.
  */
 import { lockObject, unlockObject } from './crud.js';
+import { fetchDiscoveryDocument, resolveAcceptType } from './discovery.js';
 import { AdtApiError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
@@ -119,7 +120,7 @@ export function serverDrivenSourceFormat(code: string): SdoSourceFormat {
  * here is the ONLY step needed to expose it — `btp: true` by construction (runtime availability is
  * discovery-gated per system, so a type absent on a release degrades cleanly).
  */
-export const SDO_TYPES = ['DESD', 'DTSC', 'CSNM', 'EVTB', 'EVTO', 'COTA', 'DSFD', 'DTDC'] as const;
+export const SDO_TYPES = ['DESD', 'DTSC', 'CSNM', 'EVTB', 'EVTO', 'COTA', 'DSFD', 'DTDC', 'UIAD'] as const;
 
 /** Curated registry of high-value server-driven object types — keys are exactly SDO_TYPES. */
 export const SDO_REGISTRY = {
@@ -192,6 +193,19 @@ export const SDO_REGISTRY = {
     discoveryMarker: 'dtdc',
     sourceFormat: 'text',
   },
+  // Launchpad content: the LADI replaces the deprecated tile/target-mapping model and is the
+  // developer-owned unit on ABAP Cloud. blues.v2 (v1 -> 406, verified on 816).
+  // Read-only in practice on on-prem: create -> 400 'Editing of LADIs with ALV "Standard" not
+  // allowed in workbench tools' (LADI edits need the ABAP Cloud language version). SAP's refusal is
+  // clear and also covers read-only manifest-generated items, so no client-side guard.
+  UIAD: {
+    href: '/sap/bc/adt/fiori/uiad',
+    label: 'Launchpad App Descriptor Item (LADI)',
+    createType: 'UIAD/TYP',
+    metadataContentType: BLUES_V2,
+    ...BLUE_METADATA,
+    sourceFormat: 'json',
+  },
 } satisfies Record<(typeof SDO_TYPES)[number], SdoRegistryEntry>;
 
 // String-indexed view of the registry for the unknown-code lookups below (the satisfies-typed
@@ -236,6 +250,52 @@ export function supportsServerDrivenObject(http: AdtHttpClient, code: string): b
   if (!entry) return false;
   if (!http.hasDiscoveryData()) return undefined;
   return (http.discoveryAcceptFor(entry.href) ?? '').includes(entry.discoveryMarker);
+}
+
+/**
+ * Resolve SDO availability, fetching ADT discovery when it has not been loaded yet.
+ *
+ * The sync check returns `undefined` on a cold discovery map — which the CLI always is
+ * (`handleToolCall` runs without the startup probe). Callers that treated only an explicit `false`
+ * as "unavailable" therefore fell through to the request and surfaced a raw 404 with a "verify the
+ * name exists" hint, when in truth the object type does not exist on that release.
+ *
+ * `safety` is REQUIRED: fetchDiscoveryDocument issues an unguarded GET, and this runs inside a tool
+ * call, so it must pass the safety ceiling. Read is always permitted at that layer today, so this is
+ * a convention guard (and a real gate if a Read restriction is ever added), not an active control.
+ * The fetched map is used locally and deliberately NOT stored: server.ts re-injects the cached map
+ * before every tool call, and writing to the shared client would leak one user's capability view
+ * under the non-strict principal-propagation fallback.
+ *
+ * Still-unknown resolves to `true` (proceed): `hasDiscoveryData()` cannot tell "discovery
+ * unreachable" from "discovery empty", and failing closed would break every SDO read on a system
+ * where /sap/bc/adt/discovery is 403'd. This gate only improves the error message — the real
+ * controls are checkOperation and the package allowlist.
+ */
+export async function ensureServerDrivenSupport(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  code: string,
+): Promise<boolean> {
+  const known = supportsServerDrivenObject(http, code);
+  if (known !== undefined) return known;
+  const entry = REGISTRY_BY_CODE[code];
+  if (!entry) return false;
+  checkOperation(safety, OperationType.Read, 'FetchDiscovery');
+  const { map } = await fetchDiscoveryDocument(http); // never throws
+  // Empty map = discovery unreachable, NOT "collection absent" — those must not collapse together,
+  // or a 403'd discovery would block every SDO read. A populated map lacking the href IS unsupported.
+  if (map.size === 0) return true;
+  return (resolveAcceptType(map, entry.href) ?? '').includes(entry.discoveryMarker);
+}
+
+/** Shared "this release does not have this type" message for the three SDO entry points. */
+export function serverDrivenUnavailableMessage(tool: string, code: string): string {
+  return (
+    `${tool} type=${code} (server-driven object): this system does not advertise ADT support for it. ` +
+    'These types are discovery-gated and depend on the SAP release / support package ' +
+    '(e.g. DTSC/CSNM/EVTO/UIAD need ABAP Platform 2025 / SAP_BASIS 8.16+, while DTDC/DSFD/EVTB also ship on S/4HANA 2023 / 758).'
+  );
 }
 
 /**

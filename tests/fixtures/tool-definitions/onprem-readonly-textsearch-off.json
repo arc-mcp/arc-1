@@ -55,9 +55,10 @@
             "EVTO",
             "COTA",
             "DSFD",
-            "DTDC"
+            "DTDC",
+            "UIAD"
           ],
-          "description": "Object type to read (on-prem): PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL (transparent tables and DDIC structures), VIEW, DOMA, DTEL, MSAG, TRAN, TABLE_CONTENTS, TABLE_QUERY, DEVC, SOBJ, SYSTEM, COMPONENTS, TEXT_ELEMENTS, VARIANTS, BSP, BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS, AUTH, FEATURE_TOGGLE, ENHO, VERSIONS, VERSION_SOURCE. Server-driven objects (discovery-gated; XML metadata; source is AFF JSON, or DDL text for DTSC/DSFD/DTDC): DESD (Logical External Schema), EVTB (RAP Event Binding), EVTO (RAP Event Object), DTSC (Static Cache), CSNM (CSN Model), COTA (Communication Target), DSFD (Scalar Function Def), DTDC (Dynamic Cache). Deprecated aliases: MESSAGES (use MSAG), FTG2 (use FEATURE_TOGGLE)."
+          "description": "Object type to read (on-prem): PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL (transparent tables and DDIC structures), VIEW, DOMA, DTEL, MSAG, TRAN, TABLE_CONTENTS, TABLE_QUERY, DEVC, SOBJ, SYSTEM, COMPONENTS, TEXT_ELEMENTS, VARIANTS, BSP, BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS, AUTH, FEATURE_TOGGLE, ENHO, VERSIONS, VERSION_SOURCE. Server-driven objects (discovery-gated; XML metadata; source is AFF JSON, or DDL text for DTSC/DSFD/DTDC): DESD (Logical External Schema), EVTB (RAP Event Binding), EVTO (RAP Event Object), DTSC (Static Cache), CSNM (CSN Model), COTA (Communication Target), DSFD (Scalar Function Def), DTDC (Dynamic Cache), UIAD (Launchpad App Descriptor Item). Deprecated aliases: MESSAGES (use MSAG), FTG2 (use FEATURE_TOGGLE)."
         },
         "name": {
           "type": "string",
@@ -677,7 +678,7 @@
   },
   {
     "name": "SAPManage",
-    "description": "Probe and report SAP system capabilities. Use BEFORE operations that depend on optional features (abapGit, RAP/CDS, AMDP, HANA, UI5/Fiori, CTS transports, FLP). Also handles package (DEVC) lifecycle.\n\nActions:\n- \"features\": cached feature status (fast, no round-trip; id, available, mode, probedAt). \"probe\": re-probe now (feature probes + auth + discovery refresh). \"cache_stats\": object cache health.\n- \"create_package\" / \"delete_package\" / \"change_package\": DEVC lifecycle via ADT packages API.\n- FLP read: flp_list_catalogs, flp_list_groups, flp_list_tiles (catalogId). FLP write: flp_create_catalog, flp_create_group, flp_create_tile, flp_add_tile_to_group, flp_delete_catalog.\n- \"set_api_state\": release/revoke an object's API release contract (objectUri, or name+objectType; apiState defaults RELEASED, contract defaults C1 — C0 for SRVD, C3 for classic views). Write counterpart of SAPRead(type=\"API_STATE\").\n\nReturns features + systemType (\"onprem\"/\"btp\"); \"available: false\" means do NOT attempt dependent operations.",
+    "description": "Probe and report SAP system capabilities. Use BEFORE operations that depend on optional features (abapGit, RAP/CDS, AMDP, HANA, UI5/Fiori, CTS transports, FLP). Also handles package (DEVC) lifecycle.\n\nActions:\n- \"features\": cached feature status (fast, no round-trip; id, available, mode, probedAt). \"probe\": re-probe now (feature probes + auth + discovery refresh). \"cache_stats\": object cache health.\n- \"create_package\" / \"delete_package\" / \"change_package\": DEVC lifecycle via ADT packages API.\n- FLP read: flp_list_catalogs, flp_list_groups, flp_list_tiles (catalogId). FLP write: flp_create_catalog, flp_create_group, flp_create_tile, flp_add_tile_to_group, flp_delete_catalog. Classic designer tile/target-mapping model, deprecated since S/4HANA 2023; Work Zone exposure v2 needs LADIs (SAPRead type=UIAD).\n- \"set_api_state\": release/revoke an object's API release contract (objectUri, or name+objectType; apiState defaults RELEASED, contract defaults C1 — C0 for SRVD, C3 for classic views). Write counterpart of SAPRead(type=\"API_STATE\").\n\nReturns features + systemType (\"onprem\"/\"btp\"); \"available: false\" means do NOT attempt dependent operations.",
     "inputSchema": {
       "type": "object",
       "properties": {

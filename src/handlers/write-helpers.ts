@@ -28,10 +28,11 @@ import { checkPackage } from '../adt/safety.js';
 import {
   createServerDrivenObject,
   deleteServerDrivenObject,
+  ensureServerDrivenSupport,
   serverDrivenMetadataContentType,
   serverDrivenObjectUrl,
   serverDrivenSourceFormat,
-  supportsServerDrivenObject,
+  serverDrivenUnavailableMessage,
   updateServerDrivenObjectSource,
 } from '../adt/server-driven.js';
 import type { ResolvedFeatures, SystemType } from '../adt/types.js';
@@ -813,12 +814,8 @@ export async function handleServerDrivenObjectWrite(
   cacheSecurity: CacheSecurityContext,
 ): Promise<ToolResult> {
   // Discovery gate — mirror handleSAPRead's server-driven branch.
-  if (supportsServerDrivenObject(client.http, type) === false) {
-    return errorResult(
-      `SAPWrite type=${type} (server-driven object): this system does not advertise ADT support for it. ` +
-        'These types are discovery-gated and depend on the SAP release / support package ' +
-        '(e.g. DTSC/CSNM/EVTO need ABAP Platform 2025 / SAP_BASIS 8.16+, while DTDC/DSFD/EVTB also ship on S/4HANA 2023 / 758).',
-    );
+  if (!(await ensureServerDrivenSupport(client.http, client.safety, type))) {
+    return errorResult(serverDrivenUnavailableMessage('SAPWrite', type));
   }
 
   const transport = args.transport as string | undefined;
