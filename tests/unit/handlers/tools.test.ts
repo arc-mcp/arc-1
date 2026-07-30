@@ -219,7 +219,8 @@ describe('Tool Definitions', () => {
     const sapRead = tools.find((t) => t.name === 'SAPRead')!;
     const schema = sapRead.inputSchema as Record<string, any>;
     const typeEnum: string[] = schema.properties.type.enum;
-    for (const t of ['DESD', 'EVTB', 'EVTO', 'DTSC', 'CSNM', 'COTA', 'DSFD', 'DTDC']) expect(typeEnum).toContain(t);
+    for (const t of ['DESD', 'EVTB', 'EVTO', 'DTSC', 'CSNM', 'COTA', 'DSFD', 'DTDC', 'UIAD'])
+      expect(typeEnum).toContain(t);
     expect(schema.properties.type.description).toContain('Server-driven objects');
   });
 
@@ -228,7 +229,8 @@ describe('Tool Definitions', () => {
     const sapWrite = tools.find((t) => t.name === 'SAPWrite')!;
     const schema = sapWrite.inputSchema as Record<string, any>;
     const typeEnum: string[] = schema.properties.type.enum;
-    for (const t of ['DESD', 'EVTB', 'EVTO', 'DTSC', 'CSNM', 'COTA', 'DSFD', 'DTDC']) expect(typeEnum).toContain(t);
+    for (const t of ['DESD', 'EVTB', 'EVTO', 'DTSC', 'CSNM', 'COTA', 'DSFD', 'DTDC', 'UIAD'])
+      expect(typeEnum).toContain(t);
     expect(schema.properties.type.description).toContain('Server-driven objects');
   });
 

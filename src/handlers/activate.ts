@@ -227,7 +227,7 @@ export async function handleSAPActivate(
     const rawObjects = args.objects as Array<Record<string, unknown>>;
     // Server-driven types need the registry href — objectBasePath(<sdo>) has no case and its
     // default arm maps unknown non-slash types to the PROGRAM path, so an ungated batch entry
-    // silently activated /sap/bc/adt/programs/programs/<name>. Gate once per DISTINCT type
+    // silently addressed /sap/bc/adt/programs/programs/<name>. Gate once per DISTINCT type
     // (the resolver below runs per object, and the gate may fetch discovery).
     const batchSdoTypes = [
       ...new Set(
@@ -290,7 +290,14 @@ export async function handleSAPActivate(
     // activating ANY of them — one out-of-allowlist object aborts the whole batch
     // (no partial activation). Fail-closed; no-op when unrestricted. (security audit 2026-06)
     for (const o of objects) {
-      await enforceAllowedPackageForObjectUrl(client, o.url, `Activation of ${o.type} '${o.name}'`);
+      await enforceAllowedPackageForObjectUrl(
+        client,
+        o.url,
+        `Activation of ${o.type} '${o.name}'`,
+        // Mirror the single-object call: SDO metadata (and its packageRef) is negotiated with
+        // the type's own content type rather than relying on discovery-driven negotiation.
+        isServerDrivenObjectType(o.type) ? serverDrivenMetadataContentType(o.type) : undefined,
+      );
     }
 
     // Capture each object's inactive draft before the batch flips them to active.

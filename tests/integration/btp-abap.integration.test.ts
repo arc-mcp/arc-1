@@ -846,10 +846,13 @@ describeIf('BTP ABAP Environment Integration Tests', () => {
   // masterSystem, or abapLanguageVersion, so it needs no cloudify. Live-verified on BTP 919: every type's
   // body deserializes and reaches package-assignment (structure package → 409 "cannot contain development
   // objects"; DTSC → 403 resource-auth). A wrong body would 400 at the create simple-transformation.
-  describe('BTP SDO object-create path (DESD/DTSC/CSNM/EVTB/EVTO/COTA/DSFD/DTDC)', () => {
+  describe('BTP SDO object-create path (DESD/DTSC/CSNM/EVTB/EVTO/COTA/DSFD/DTDC — UIAD excluded)', () => {
     const structurePkg = process.env.TEST_BTP_STRUCTURE_PACKAGE || 'ZLOCAL';
     const writablePkg = process.env.TEST_BTP_PACKAGE;
-    const codes = Object.keys(SDO_REGISTRY);
+    // UIAD is excluded: SAP refuses LADI edits outside the ABAP Cloud language version
+    // (400 'Editing of LADIs with ALV "Standard" not allowed in workbench tools'), which is a
+    // different failure class than the 403/409 package outcomes this test asserts.
+    const codes = Object.keys(SDO_REGISTRY).filter((c) => c !== 'UIAD');
 
     // Load ADT discovery so SDO availability is gated per type — these collections are 8.16+ and absent
     // on older tenants (where an unconditional POST would 404/405, not the package-assignment we assert).

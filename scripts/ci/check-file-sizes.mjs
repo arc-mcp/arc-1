@@ -48,10 +48,6 @@ const BUDGETS = {
   // the default. Keep tight headroom.
   // + getFunctionModuleProperties and the getFunctionGroup pre-7.52 objectstructure fallback.
   'src/adt/client.ts': 1730,
-  // +regression coverage for batch SAPActivate routing server-driven types via the registry href
-  // (the objectBasePath default arm silently built a program URL). Small, deliberate bump over the
-  // 3000 test default; split the SAPWrite create/batch suites if it needs raising again.
-  'tests/unit/handlers/write-create-batch.test.ts': 3050,
 };
 
 const DEFAULT_SRC = 1500;
