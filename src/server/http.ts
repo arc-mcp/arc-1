@@ -34,6 +34,7 @@ import express from 'express';
 import helmet from 'helmet';
 import { expandScopes, hasRequiredScope } from '../authz/policy.js';
 import { API_KEY_PROFILES } from './config.js';
+import { generateRequestId, requestContext } from './context.js';
 import type { DestinationRegistry, TargetDescriptor } from './destination-registry.js';
 import { authLibLogger, logger } from './logger.js';
 import {
@@ -48,6 +49,7 @@ import {
   withInvalidScopeSessionRecovery,
 } from './oauth-session-recovery.js';
 import { VERSION } from './server.js';
+import { sanitizeClientAgent, validateTraceparent, validateTracestate } from './trace-context.js';
 import type { ServerConfig } from './types.js';
 import { mountUiRoutes, type UiServerDeps } from './ui.js';
 
@@ -185,7 +187,21 @@ async function serveMcpRequest(serverFactory: () => McpServer, req: Request, res
       sessionIdGenerator: undefined, // Stateless mode
     });
     await server.connect(transport);
-    await transport.handleRequest(req, res, req.body);
+    // Seed the request context from the HTTP edge: trace context to forward to SAP, and the
+    // calling agent. handleToolCall opens its own nested context for the tool call and inherits
+    // both — but events emitted before it (auth, multi-target prep) are covered only here.
+    // `User-Agent` is the only agent signal available on this transport: stateless mode means the
+    // per-request Server never saw `initialize`, so `getClientVersion()` is always undefined.
+    const traceparent = validateTraceparent(req.headers.traceparent);
+    await requestContext.run(
+      {
+        requestId: generateRequestId(),
+        traceparent,
+        tracestate: validateTracestate(req.headers.tracestate, traceparent),
+        clientAgent: sanitizeClientAgent(req.headers['user-agent']),
+      },
+      () => transport.handleRequest(req, res, req.body),
+    );
   } catch (err) {
     logger.error('MCP request error', { error: err instanceof Error ? err.message : String(err) });
     if (!res.headersSent) {

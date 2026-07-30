@@ -95,6 +95,8 @@ export class Logger {
       if (!base.destination && ctx.destination) base.destination = ctx.destination;
       if (!base.target && ctx.target) base.target = ctx.target;
       if (!base.identity && ctx.identity) base.identity = ctx.identity;
+      if (!base.clientAgent && ctx.clientAgent) base.clientAgent = ctx.clientAgent;
+      if (!base.traceparent && ctx.traceparent) base.traceparent = ctx.traceparent;
     }
 
     const safeEvent = redactAuditEvent(eventWithContext);

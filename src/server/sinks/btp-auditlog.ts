@@ -192,6 +192,8 @@ export class BTPAuditLogSink implements LogSink {
           { name: 'clientId', new: e.clientId ?? '' },
           { name: 'args', new: argsSummary },
         ];
+        // Which agent software acted, next to the registered client it acted under.
+        if (e.clientAgent) attrs.push({ name: 'clientAgent', new: e.clientAgent });
         if (e.target) attrs.push({ name: 'target', new: e.target });
         if (e.identity) attrs.push({ name: 'identity', new: e.identity });
         return {
@@ -220,6 +222,9 @@ export class BTPAuditLogSink implements LogSink {
         }
         if (e.errorClass) {
           attrs.push({ name: 'errorClass', new: e.errorClass });
+        }
+        if (e.clientAgent) {
+          attrs.push({ name: 'clientAgent', new: e.clientAgent });
         }
         if (e.target) {
           attrs.push({ name: 'target', new: e.target });

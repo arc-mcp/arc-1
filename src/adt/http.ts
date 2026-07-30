@@ -29,7 +29,9 @@
 
 import type { BTPProxyConfig } from '@arc-mcp/xsuaa-auth/btp';
 import { Agent, Client, type Dispatcher, fetch as undiciFetch } from 'undici';
+import { getCurrentContext } from '../server/context.js';
 import { logger } from '../server/logger.js';
+import { traceHeaders } from '../server/trace-context.js';
 import { resolveCookies } from './cookies.js';
 import { resolveAcceptType, resolveContentType } from './discovery.js';
 import { AdtApiError, AdtNetworkError } from './errors.js';
@@ -1265,14 +1267,20 @@ export class AdtHttpClient {
     headers: Record<string, string>,
     body?: string,
   ): Promise<Response> {
+    // Forward the caller's W3C trace context to SAP so one trace spans agent → ARC-1 → SAP.
+    // Empty unless the MCP client sent a valid `traceparent`; ARC-1 never originates a trace.
+    // Injected here because doFetch is the single outbound choke point (the proxy branch below
+    // spreads these headers too).
+    const outbound = { ...headers, ...traceHeaders(getCurrentContext()) };
+
     // BTP Connectivity proxy: use standard HTTP proxy protocol (not CONNECT)
     if (this.config.btpProxy) {
-      return this.doProxyRequest(url, method, headers, body);
+      return this.doProxyRequest(url, method, outbound, body);
     }
 
     return undiciFetch(url, {
       method,
-      headers,
+      headers: outbound,
       body,
       signal: AbortSignal.timeout(120_000),
       ...(this.dispatcher ? { dispatcher: this.dispatcher } : {}),

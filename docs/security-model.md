@@ -188,6 +188,16 @@ with a least-privileged technical SAP identity and its own safety ceiling. This 
 mandatory: mixed mode is supported with explicit `SAP_PP_STRICT=false`, but one endpoint then has both
 per-user and shared SAP audit identities.
 
+> **ARC-1 never proxies the caller's token to a SAP API.** Principal propagation exchanges the user
+> JWT for a scoped, user-context credential — `OAuth2UserTokenExchange` / `OAuth2JWTBearer`
+> (RFC 8693) or a SAML bearer assertion, minted by the BTP Destination Service. One path looks like
+> an exception and is not: `SAP-Connectivity-Authentication: Bearer <userJwt>`
+> ([`multi-target-destination-runtime.ts`](../src/server/multi-target-destination-runtime.ts))
+> hands the user JWT to the **Cloud Connector**, which validates it and mints a short-lived X.509
+> user certificate for the on-premise call. The recipient is the connectivity proxy performing the
+> exchange, not a downstream business API — the SAP-prescribed CC principal-propagation flow. The
+> credential that actually reaches SAP is never the caller's MCP token.
+
 ---
 
 ## 5. Residual-risk register
@@ -315,7 +325,32 @@ the LLM-visible tool surface is frozen byte-for-byte by `tests/fixtures/tool-def
 
 ---
 
-## 9. References
+## 9. External framework mapping — OWASP MCP Top 10
+
+Snapshot of the [OWASP MCP Top 10](https://github.com/OWASP/www-project-mcp-top-10) taken
+**2026-07-30**. It is an explicitly living document; re-check the identifiers before citing this
+table externally. The mapping exists so a reviewer can get from a framework item to the ARC-1
+control that answers it — the invariants in §3 remain the normative statement.
+
+| OWASP | Risk | ARC-1 control | Where |
+|---|---|---|---|
+| MCP01 | Token mismanagement & secret exposure | **I4** — secrets only from env/service-key/destination, never persisted or logged; central audit redaction; per-user config strips shared credentials (`buildAdtConfig({perUser:true})`) | [`logger.ts`](../src/server/logger.ts), [`audit.ts`](../src/server/audit.ts), [`server.ts`](../src/server/server.ts) |
+| MCP02 | Privilege escalation via scope creep | **I7** + **I1** — the safety ceiling is server-wide and user scopes only *restrict*; `allowedPackages` is re-checked against the object's **real** package, fail-closed | [`safety.ts`](../src/adt/safety.ts), [`policy.ts`](../src/authz/policy.ts), [`write-helpers.ts`](../src/handlers/write-helpers.ts) |
+| MCP03 | Tool poisoning | Tool surface is frozen byte-for-byte by `tests/fixtures/tool-definitions/` — a description or schema change requires a reviewed fixture diff. Plugin tools are namespaced `Custom_*` and load only from an admin-set local allowlist (**R18**) | [`tool-definitions-snapshot.test.ts`](../tests/unit/handlers/tool-definitions-snapshot.test.ts), [`plugin-loader.ts`](../src/server/plugin-loader.ts) |
+| MCP04 | Supply chain & dependency tampering | Dependabot + `dependency-review` + CodeQL + Trivy image scan; third-party Actions SHA-pinned; npm publish via OIDC trusted publishing; CycloneDX SBOM per release. Known gap: **Docker image provenance is unsigned** | [`.github/workflows/`](../.github/workflows/), [`docs_page/security-guide.md`](../docs_page/security-guide.md) |
+| MCP05 | Command injection & execution | **I6** — no shell execution anywhere on the tool path; every arg→sink is encoded (`encodeURIComponent` per path segment, `sanitizeIdentifier`/`quoteSqlLiteral`, `escapeXmlAttr`) | §6 checklist, [`safety.ts`](../src/adt/safety.ts) |
+| MCP06 | Prompt injection via contextual payloads | **Not solvable inside ARC-1** — SAP-resident content (source, comments, errors) reaches the model. The containment is the ceiling that survives a steered model: `allowedPackages`, `allowWrites`, `denyActions`, per-user SAP authorization. See §2 adversaries | §2, §3 **I7** |
+| MCP07 | Insufficient authentication & authorization | XSUAA → OIDC → API key at the edge; `ACTION_POLICY` scope check on every call; **I3** fail-closed (JWT PP failure never falls back to the shared identity); SAP-native `S_DEVELOP`/`S_ADT_RES` underneath | [`http.ts`](../src/server/http.ts), [`policy.ts`](../src/authz/policy.ts), [`dispatch.ts`](../src/handlers/dispatch.ts) |
+| MCP08 | Lack of audit and telemetry | Typed audit events for every tool call, HTTP call, auth decision and safety block, with `user`, `clientId`, `clientAgent`, `requestId` and forwarded `traceparent`; stderr / file (`0600`) / BTP Audit Log sinks | [`audit.ts`](../src/server/audit.ts), [`sinks/`](../src/server/sinks/), [`trace-context.ts`](../src/server/trace-context.ts) |
+| MCP09 | Shadow MCP servers | Deployment concern, not a code control. ARC-1's contribution: `ARC1_SERVER_NAME` makes each direct-connect instance identifiable in the handshake, and one-instance-per-SAP-system is the documented topology | [`docs_page/deployment-best-practices.md`](../docs_page/deployment-best-practices.md) |
+| MCP10 | Context injection & over-sharing | **I2** — anything cached is keyed by a verified unique identity or revalidated per user (regression classes R1, R3, R12); **I5** bounds result size so a tool call can't siphon a package wholesale | [`cache-security.ts`](../src/handlers/cache-security.ts), [`caching-layer.ts`](../src/cache/caching-layer.ts) |
+
+SAP's own guidance for third-party MCP servers is evaluated point-by-point in
+[`docs/research/2026-07-30-sap-architecture-center-mcp-alignment.md`](research/2026-07-30-sap-architecture-center-mcp-alignment.md).
+
+---
+
+## 10. References
 - Operator hardening: [`docs_page/security-guide.md`](../docs_page/security-guide.md)
 - Scopes, profiles, deny-actions: [`docs_page/authorization.md`](../docs_page/authorization.md)
 - Auth coexistence matrix: [`docs_page/enterprise-auth.md`](../docs_page/enterprise-auth.md)

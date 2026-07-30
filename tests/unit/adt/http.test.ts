@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdtApiError, AdtNetworkError } from '../../../src/adt/errors.js';
+import { requestContext } from '../../../src/server/context.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 
 // Mock undici's fetch and Client (used by AdtHttpClient.doFetch / doProxyRequest)
@@ -2198,6 +2199,58 @@ describe('AdtHttpClient', () => {
       expect(headers.Cookie).toBe('MYSAPSSO2=fresh-from-file');
       expect(headers.Cookie).not.toContain('stale-config');
       expect(headers.Cookie).not.toContain('stale-jar');
+    });
+  });
+
+  describe('W3C trace context propagation', () => {
+    const TRACEPARENT = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
+
+    it('forwards the caller trace context to SAP', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok'));
+      const client = new AdtHttpClient(getDefaultConfig());
+
+      await requestContext.run({ requestId: 'REQ-1', traceparent: TRACEPARENT, tracestate: 'rojo=1' }, () =>
+        client.get('/path'),
+      );
+
+      expect(fetchHeaders(0).traceparent).toBe(TRACEPARENT);
+      expect(fetchHeaders(0).tracestate).toBe('rojo=1');
+    });
+
+    it('sends no trace headers when the caller supplied none — ARC-1 never originates a trace', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok'));
+      const client = new AdtHttpClient(getDefaultConfig());
+
+      await requestContext.run({ requestId: 'REQ-2' }, () => client.get('/path'));
+
+      expect(fetchHeaders(0).traceparent).toBeUndefined();
+      expect(fetchHeaders(0).tracestate).toBeUndefined();
+    });
+
+    it('sends no trace headers outside a request context (CLI / startup probe)', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok'));
+      const client = new AdtHttpClient(getDefaultConfig());
+
+      await client.get('/path');
+
+      expect(fetchHeaders(0).traceparent).toBeUndefined();
+    });
+
+    it('forwards trace context through the Cloud Connector proxy branch too', async () => {
+      mockClientRequest.mockResolvedValueOnce(mockClientResponse(200, 'ok'));
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        btpProxy: {
+          host: 'proxy.example.com',
+          port: 20003,
+          protocol: 'http',
+          getProxyToken: async () => 'proxy-token',
+        },
+      });
+
+      await requestContext.run({ requestId: 'REQ-3', traceparent: TRACEPARENT }, () => client.get('/path'));
+
+      expect(clientRequestHeaders(0).traceparent).toBe(TRACEPARENT);
     });
   });
 });

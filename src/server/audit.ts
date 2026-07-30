@@ -24,6 +24,14 @@ export interface AuditEventBase {
   target?: string;
   /** Effective SAP identity mode for a selected multi-target request. */
   identity?: 'per-user' | 'shared';
+  /**
+   * Calling MCP client/agent — `clientInfo` name/version on stdio, HTTP `User-Agent` otherwise.
+   * Complements `clientId` (the registered OAuth client): which software acted, not just which
+   * registration it acted under. Caller-controlled, so treat as a hint, not an authorization input.
+   */
+  clientAgent?: string;
+  /** Inbound W3C `traceparent`, when the caller supplied a valid one. */
+  traceparent?: string;
 }
 
 /** MCP tool call started */
