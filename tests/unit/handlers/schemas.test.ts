@@ -30,14 +30,15 @@ describe('SAPReadSchema', () => {
     if (result.success) expect(result.data.version).toBe('active');
   });
 
-  it('accepts server-driven object types (DESD/EVTB/COTA — 816)', () => {
+  it('accepts server-driven object types (DESD/EVTB/COTA/UIAD — 816)', () => {
     expect(SAPReadSchema.safeParse({ type: 'DESD', name: 'DEMO_CDS_LOGICL_EXTERNL_SCHEMA' }).success).toBe(true);
     expect(SAPReadSchema.safeParse({ type: 'EVTB', name: 'S_BUSINESSPARTNER_CHANGE' }).success).toBe(true);
     expect(SAPReadSchema.safeParse({ type: 'COTA', name: 'X' }).success).toBe(true);
+    expect(SAPReadSchema.safeParse({ type: 'UIAD', name: '005056910BC71ED8A59822B86DC79E2D' }).success).toBe(true);
   });
 
   it('SAPWrite accepts server-driven object types (create/update/delete — 816)', () => {
-    for (const t of ['DESD', 'DTSC', 'CSNM', 'EVTB', 'EVTO', 'COTA']) {
+    for (const t of ['DESD', 'DTSC', 'CSNM', 'EVTB', 'EVTO', 'COTA', 'UIAD']) {
       expect(SAPWRITE_TYPES_ONPREM).toContain(t);
       expect(SAPWRITE_TYPES_BTP).toContain(t);
       expect(SAPWriteSchema.safeParse({ action: 'create', type: t, name: 'ZARC1_SDO', package: '$TMP' }).success).toBe(

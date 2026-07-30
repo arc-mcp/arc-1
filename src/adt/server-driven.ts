@@ -17,10 +17,11 @@
  * Create leaves the object inactive — callers follow with SAPActivate (never auto-activated).
  *
  * The create `adtcore:type` subtype is NOT uniformly "<code>/TYP" (EVTB uses EVTB/EVB) and the
- * blues content-type is NOT uniformly v1 (EVTO uses v2) — both are stored per registry entry,
+ * blues content-type is NOT uniformly v1 (EVTO and UIAD use v2) — both are stored per registry entry,
  * verified live on a4h-2025 (816): DESD/DTSC/CSNM/EVTB/COTA create with blues.v1, EVTO with blues.v2.
  */
 import { lockObject, unlockObject } from './crud.js';
+import { fetchDiscoveryDocument, resolveAcceptType } from './discovery.js';
 import { AdtApiError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
@@ -40,7 +41,7 @@ export interface SdoRegistryEntry {
   createType: string;
   /**
    * blues content-type for BOTH the metadata GET (Accept) and the create POST (Content-Type).
-   * NOT uniformly v1 — EVTO advertises/accepts v2. The supportsServerDrivenObject() gate matches
+   * NOT uniformly v1 — EVTO and UIAD advertise/accept v2. The supportsServerDrivenObject() gate matches
    * either via a `.includes('blues')` substring test, so it is version-agnostic.
    */
   blueContentType: string;
@@ -57,7 +58,7 @@ const SDO_SOURCE_CONTENT_TYPE = 'application/json';
  * here is the ONLY step needed to expose it — `btp: true` by construction (every SDO type is
  * 8.16+, and runtime availability is discovery-gated per system anyway).
  */
-export const SDO_TYPES = ['DESD', 'DTSC', 'CSNM', 'EVTB', 'EVTO', 'COTA'] as const;
+export const SDO_TYPES = ['DESD', 'DTSC', 'CSNM', 'EVTB', 'EVTO', 'COTA', 'UIAD'] as const;
 
 /** Curated registry of high-value 816 server-driven object types — keys are exactly SDO_TYPES. */
 export const SDO_REGISTRY = {
@@ -97,6 +98,17 @@ export const SDO_REGISTRY = {
     createType: 'COTA/TYP',
     blueContentType: BLUES_V1,
   },
+  // Launchpad content: the LADI replaces the deprecated tile/target-mapping model and is the
+  // developer-owned unit on ABAP Cloud. blues.v2 (v1 → 406, verified on 816).
+  // Read-only in practice on on-prem: create → 400 'Editing of LADIs with ALV "Standard" not
+  // allowed in workbench tools' (LADI edits need the ABAP Cloud language version). SAP's refusal is
+  // clear and also covers read-only manifest-generated items, so no client-side guard.
+  UIAD: {
+    href: '/sap/bc/adt/fiori/uiad',
+    label: 'Launchpad App Descriptor Item (LADI)',
+    createType: 'UIAD/TYP',
+    blueContentType: BLUES_V2,
+  },
 } satisfies Record<(typeof SDO_TYPES)[number], SdoRegistryEntry>;
 
 // String-indexed view of the registry for the unknown-code lookups below (the satisfies-typed
@@ -132,7 +144,7 @@ export function serverDrivenBlueContentType(code: string): string {
 /**
  * Capability gate — true iff ADT discovery advertises the type's collection with the
  * server-driven `blues` accept (present on 8.16+, absent on 7.5x / 758). Returns undefined
- * when discovery has not been loaded (caller may attempt and let a 404 surface). Mirrors
+ * when discovery has not been loaded — prefer ensureServerDrivenSupport, which resolves it. Mirrors
  * supportsExplicitTransportTarget() / supportsCdsTestCases(). Version-agnostic: matches v1 and v2.
  */
 export function supportsServerDrivenObject(http: AdtHttpClient, code: string): boolean | undefined {
@@ -140,6 +152,51 @@ export function supportsServerDrivenObject(http: AdtHttpClient, code: string): b
   if (!entry) return false;
   if (!http.hasDiscoveryData()) return undefined;
   return (http.discoveryAcceptFor(entry.href) ?? '').includes('blues');
+}
+
+/**
+ * Resolve SDO availability, fetching ADT discovery when it has not been loaded yet.
+ *
+ * The sync check returns `undefined` on a cold discovery map — which the CLI always is
+ * (`handleToolCall` runs without the startup probe). Callers that treated only an explicit `false`
+ * as "unavailable" therefore fell through to the request and surfaced a raw 404 with a "verify the
+ * name exists" hint, when in truth the object type does not exist on that release.
+ *
+ * `safety` is REQUIRED: fetchDiscoveryDocument issues an unguarded GET, and this runs inside a
+ * tool call, so it must pass the safety ceiling. Read is always permitted at that layer today, so this is a
+ * convention guard (and a real gate if a Read restriction is ever added), not an active control.
+ * The fetched map is used locally and deliberately NOT stored: server.ts re-injects the cached map
+ * before every tool call, and writing to the shared client would leak one user's capability view
+ * under the non-strict principal-propagation fallback.
+ *
+ * Still-unknown resolves to `true` (proceed): `hasDiscoveryData()` cannot tell "discovery
+ * unreachable" from "discovery empty", and failing closed would break every SDO read on a system
+ * where /sap/bc/adt/discovery is 403'd. This gate only improves the error message — the real
+ * controls are checkOperation and the package allowlist.
+ */
+export async function ensureServerDrivenSupport(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  code: string,
+): Promise<boolean> {
+  const known = supportsServerDrivenObject(http, code);
+  if (known !== undefined) return known;
+  const entry = REGISTRY_BY_CODE[code];
+  if (!entry) return false;
+  checkOperation(safety, OperationType.Read, 'FetchDiscovery');
+  const { map } = await fetchDiscoveryDocument(http); // never throws
+  // Empty map = discovery unreachable, NOT "collection absent" — those must not collapse together,
+  // or a 403'd discovery would block every SDO read. A populated map lacking the href IS pre-8.16.
+  if (map.size === 0) return true;
+  return (resolveAcceptType(map, entry.href) ?? '').includes('blues');
+}
+
+/** Shared "this release does not have this type" message for the three SDO entry points. */
+export function serverDrivenUnavailableMessage(tool: string, code: string): string {
+  return (
+    `${tool} type=${code} (server-driven object) requires SAP_BASIS 8.16+ (ABAP Platform 2025 / S/4HANA 2025). ` +
+    'This system does not expose this object type.'
+  );
 }
 
 /**
@@ -179,7 +236,7 @@ export async function getServerDrivenObject(
  * session language). The object's master language comes from the `sap-language` request param (the
  * session = `config.language` / SAP_LANGUAGE), as with other source-based objects (cf. #343). Emitting
  * it would be an ADT-ignored attribute that's only ever been create-tested on DESD — so the body here
- * is exactly the form proven to create all 6 registered types.
+ * is exactly the form proven to create DESD/DTSC/CSNM/EVTB/EVTO/COTA (not UIAD — see its entry).
  */
 export function buildBlueSourceXml(code: string, name: string, pkg: string, description: string): string {
   const entry = sdoEntry(code);
@@ -197,7 +254,8 @@ export interface ServerDrivenWriteOptions {
 /**
  * Create a server-driven object (metadata only — POST the <blue:blueSource> body to the collection
  * href with the type's blues content-type). Leaves the object INACTIVE; callers follow with source
- * write + activation. Returns the raw response body. Verified live: 201 for all 6 registered types.
+ * write + activation. Returns the raw response body. Verified live: 201 for DESD/DTSC/CSNM/EVTB/
+ * EVTO/COTA. NOT for UIAD — SAP refuses LADI edits outside ABAP Cloud (see the registry entry).
  */
 export async function createServerDrivenObject(
   http: AdtHttpClient,

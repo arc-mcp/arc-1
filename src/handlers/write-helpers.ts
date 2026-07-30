@@ -26,9 +26,10 @@ import { checkPackage } from '../adt/safety.js';
 import {
   createServerDrivenObject,
   deleteServerDrivenObject,
+  ensureServerDrivenSupport,
   serverDrivenBlueContentType,
   serverDrivenObjectUrl,
-  supportsServerDrivenObject,
+  serverDrivenUnavailableMessage,
   updateServerDrivenObjectSource,
 } from '../adt/server-driven.js';
 import type { ResolvedFeatures } from '../adt/types.js';
@@ -661,11 +662,8 @@ export async function handleServerDrivenObjectWrite(
   cacheSecurity: CacheSecurityContext,
 ): Promise<ToolResult> {
   // Discovery gate — mirror handleSAPRead's server-driven branch.
-  if (supportsServerDrivenObject(client.http, type) === false) {
-    return errorResult(
-      `SAPWrite type=${type} (server-driven object) requires SAP_BASIS 8.16+ (ABAP Platform 2025 / S/4HANA 2025). ` +
-        'This system does not expose this object type.',
-    );
+  if (!(await ensureServerDrivenSupport(client.http, client.safety, type))) {
+    return errorResult(serverDrivenUnavailableMessage('SAPWrite', type));
   }
 
   const transport = args.transport as string | undefined;

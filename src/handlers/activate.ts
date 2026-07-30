@@ -12,7 +12,13 @@ import {
   unpublishServiceBinding,
 } from '../adt/devtools.js';
 import { AdtSafetyError } from '../adt/errors.js';
-import { isServerDrivenObjectType, serverDrivenBlueContentType, serverDrivenObjectUrl } from '../adt/server-driven.js';
+import {
+  ensureServerDrivenSupport,
+  isServerDrivenObjectType,
+  serverDrivenBlueContentType,
+  serverDrivenObjectUrl,
+  serverDrivenUnavailableMessage,
+} from '../adt/server-driven.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
 import { type CacheSecurityContext, invalidateInactiveList } from './cache-security.js';
 import { buildCdsActivationDependencyHint } from './cds-hints.js';
@@ -264,6 +270,10 @@ export async function handleSAPActivate(
     // Server-driven objects (8.16+): objectBasePath(<sdo>) throws, so route via the registry href.
     // Single-object activation only — SDO is not added to the batch resolver above (batch is
     // RAP-stack-oriented). The generic activate() endpoint handles SDO (verified: activate(DESD) → ok).
+    // Gated like the SAPRead/SAPWrite branches so pre-8.16 systems get the release message.
+    if (!(await ensureServerDrivenSupport(client.http, client.safety, type))) {
+      return errorResult(serverDrivenUnavailableMessage('SAPActivate', type));
+    }
     objectUrl = serverDrivenObjectUrl(type, name);
   } else {
     objectUrl = objectUrlForType(type, name);

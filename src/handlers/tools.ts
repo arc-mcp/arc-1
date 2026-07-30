@@ -123,7 +123,7 @@ const SAPWRITE_DESC_ONPREM =
   'For batch_create: create and activate multiple objects in a single call — ideal for RAP stacks (TABL → DDLS → DCLS → BDEF → SRVD). Pass "objects" array with dependency order. ' +
   'For scaffold_rap_handlers: derive missing RAP behavior handler signatures from an interface BDEF and optionally create missing lhc_* skeletons plus inject declarations and empty implementation stubs into an existing behavior pool class. ' +
   'For generate_behavior_implementation: one-shot RAP behavior pool — auto-discover the bound BDEF via class metadata (rootEntityRef), scaffold every required handler (creating lhc_<alias> skeletons when missing), write under one lock, and (by default) activate. Reliable equivalent of Eclipse ADT\'s "Generate Behavior Implementation" Cmd+1 quickfix without the broken /sap/bc/adt/quickfixes/proposals/.../create_class_implementation server endpoint. ' +
-  'Server-driven objects (ABAP Platform 2025 / SAP_BASIS 8.16+, discovery-gated): DESD (CDS Logical External Schema), DTSC (CDS Static Cache), CSNM (CSN Model), EVTB (RAP Event Binding), EVTO (RAP Event Object), COTA (Communication Target). For these, create/update/delete operate on the generic AFF blue:blueSource object — pass the AFF JSON in "source" (e.g. {"formatVersion":"1","header":{...}}); create leaves the object inactive, so follow with SAPActivate. On pre-8.16 systems these types return a clean "requires SAP_BASIS 8.16+" error.';
+  'Server-driven objects (ABAP Platform 2025 / SAP_BASIS 8.16+, discovery-gated): DESD (CDS Logical External Schema), DTSC (CDS Static Cache), CSNM (CSN Model), EVTB (RAP Event Binding), EVTO (RAP Event Object), COTA (Communication Target), UIAD (Launchpad App Descriptor Item — read-only outside ABAP Cloud). For these, create/update/delete operate on the generic AFF blue:blueSource object — pass the AFF JSON in "source" (e.g. {"formatVersion":"1","header":{...}}); create leaves the object inactive, so follow with SAPActivate. On pre-8.16 systems these types return a clean "requires SAP_BASIS 8.16+" error.';
 
 const SAPWRITE_DESC_BTP =
   'Create or update ABAP source code and DDIC metadata (BTP ABAP Environment). Handles lock/modify/unlock automatically. Supports CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD, TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. ' +
@@ -144,7 +144,7 @@ const SAPWRITE_DESC_BTP =
   'For batch_create: create and activate multiple objects in a single call — ideal for RAP stacks (TABL → DDLS → DCLS → BDEF → SRVD). ' +
   'For scaffold_rap_handlers: derive missing RAP behavior handler signatures from an interface BDEF and optionally create missing lhc_* skeletons plus inject declarations and empty implementation stubs into an existing behavior pool class. ' +
   'For generate_behavior_implementation: one-shot RAP behavior pool — auto-discover the bound BDEF via class metadata (rootEntityRef), scaffold every required handler (creating lhc_<alias> skeletons when missing), write under one lock, and (by default) activate. ' +
-  'Server-driven objects (8.16+ / ABAP Cloud, discovery-gated): DESD, DTSC, CSNM, EVTB, EVTO, COTA — create/update/delete operate on the generic AFF blue:blueSource object (pass AFF JSON in "source"); create leaves the object inactive, so follow with SAPActivate. Pre-8.16 systems return a clean "requires SAP_BASIS 8.16+" error.';
+  'Server-driven objects (8.16+ / ABAP Cloud, discovery-gated): DESD, DTSC, CSNM, EVTB, EVTO, COTA, UIAD — create/update/delete operate on the generic AFF blue:blueSource object (pass AFF JSON in "source"); create leaves the object inactive, so follow with SAPActivate. Pre-8.16 systems return a clean "requires SAP_BASIS 8.16+" error.';
 
 // Prepended to both SAPWrite descriptions. The schema lists every optional field for every
 // object type/action, but each call uses only a small subset — GPT/OpenAI callers tend to
@@ -263,16 +263,18 @@ const SAPMANAGE_DESC_ONPREM =
   '- "probe": Re-probe the SAP system now (runs feature probes, auth checks, and ADT discovery refresh). ' +
   'Use this on first use or if you suspect feature availability has changed.\n' +
   '- "cache_stats": Show object cache health and warmup state.\n' +
-  '- "flp_list_catalogs": List FLP business catalogs.\n' +
+  '- "flp_list_catalogs": List FLP designer catalogs.\n' +
   '- "flp_list_groups": List FLP groups.\n' +
   '- "flp_list_tiles": List tiles in a catalog (requires "catalogId").\n' +
   '- "create_package": Create a package (DEVC) via ADT packages API.\n' +
   '- "delete_package": Delete an existing package.\n' +
-  '- "flp_create_catalog": Create a business catalog (requires "domainId", "title").\n' +
+  '- "flp_create_catalog": Create a designer catalog (requires "domainId", "title").\n' +
   '- "flp_create_group": Create a group (requires "groupId", "title").\n' +
   '- "flp_create_tile": Create a tile in a catalog (requires "catalogId", "tile").\n' +
   '- "flp_add_tile_to_group": Add a catalog tile to a group (requires "groupId", "catalogId", "tileInstanceId").\n' +
-  '- "flp_delete_catalog": Delete a business catalog (requires "catalogId").\n\n' +
+  '- "flp_delete_catalog": Delete a designer catalog (requires "catalogId").\n' +
+  'flp_* use the classic tile/target-mapping model, deprecated since S/4HANA 2023; Work Zone ' +
+  'exposure v2 needs LADIs instead (SAPRead type=UIAD).\n\n' +
   'Returns JSON with features, each having: id, available (bool), mode, message, and probedAt timestamp. ' +
   'Also returns systemType ("btp" or "onprem") for understanding available capabilities. ' +
   '"available: false" means do NOT attempt operations that depend on it.';
@@ -286,7 +288,8 @@ const SAPMANAGE_DESC_BTP =
   '- "cache_stats": Show object cache health and warmup state.\n' +
   '- "create_package": Create a package (DEVC) via ADT packages API.\n' +
   '- "delete_package": Delete an existing package.\n' +
-  '- FLP actions: flp_list_catalogs, flp_list_groups, flp_list_tiles, flp_create_catalog, flp_create_group, flp_create_tile, flp_add_tile_to_group, flp_delete_catalog.\n\n' +
+  '- FLP actions: flp_list_catalogs, flp_list_groups, flp_list_tiles, flp_create_catalog, flp_create_group, flp_create_tile, flp_add_tile_to_group, flp_delete_catalog. ' +
+  'These use the classic tile/target-mapping model, deprecated since S/4HANA 2023 (successor: SAPRead type=UIAD).\n\n' +
   'Returns JSON with features and systemType="btp". On BTP, RAP/CDS and transports are always available. ' +
   'abapGit, AMDP, UI5/BSP, and FLP customization may not be available depending on the BTP ABAP configuration.';
 
@@ -501,8 +504,8 @@ export function getToolDefinitions(
             type: 'string',
             enum: btp ? SAPREAD_TYPES_BTP : SAPREAD_TYPES_ONPREM,
             description: btp
-              ? 'Object type to read (BTP): CLAS, INTF, FUNC, FUGR, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL (transparent tables and DDIC structures), DOMA, DTEL, MSAG, TABLE_CONTENTS, TABLE_QUERY, DEVC, SYSTEM, COMPONENTS, BSP, BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS. Server-driven objects (8.16+ / ABAP Cloud, discovery-gated, return JSON metadata + AFF JSON source): DESD (CDS Logical External Schema), EVTB (RAP Event Binding), EVTO (RAP Event Object), DTSC (CDS Static Cache), CSNM (Core Schema Notation Model), COTA (Communication Target). Deprecated alias: MESSAGES (use MSAG).'
-              : 'Object type to read (on-prem): PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL (transparent tables and DDIC structures), VIEW, DOMA, DTEL, MSAG, TRAN, TABLE_CONTENTS, TABLE_QUERY, DEVC, SOBJ, SYSTEM, COMPONENTS, TEXT_ELEMENTS, VARIANTS, BSP, BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS, AUTH, FEATURE_TOGGLE, ENHO, VERSIONS, VERSION_SOURCE. Server-driven objects (ABAP Platform 2025 / SAP_BASIS 8.16+, discovery-gated, return JSON metadata + AFF JSON source): DESD (CDS Logical External Schema), EVTB (RAP Event Binding), EVTO (RAP Event Object), DTSC (CDS Static Cache), CSNM (Core Schema Notation Model), COTA (Communication Target). Deprecated aliases: MESSAGES (use MSAG), FTG2 (use FEATURE_TOGGLE).',
+              ? 'Object type to read (BTP): CLAS, INTF, FUNC, FUGR, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL (transparent tables and DDIC structures), DOMA, DTEL, MSAG, TABLE_CONTENTS, TABLE_QUERY, DEVC, SYSTEM, COMPONENTS, BSP, BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS. Server-driven objects (8.16+ / ABAP Cloud, discovery-gated, return JSON metadata + AFF JSON source): DESD (CDS Logical External Schema), EVTB (RAP Event Binding), EVTO (RAP Event Object), DTSC (CDS Static Cache), CSNM (Core Schema Notation Model), COTA (Communication Target), UIAD (Launchpad App Descriptor Item). Deprecated alias: MESSAGES (use MSAG).'
+              : 'Object type to read (on-prem): PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL (transparent tables and DDIC structures), VIEW, DOMA, DTEL, MSAG, TRAN, TABLE_CONTENTS, TABLE_QUERY, DEVC, SOBJ, SYSTEM, COMPONENTS, TEXT_ELEMENTS, VARIANTS, BSP, BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS, AUTH, FEATURE_TOGGLE, ENHO, VERSIONS, VERSION_SOURCE. Server-driven objects (ABAP Platform 2025 / SAP_BASIS 8.16+, discovery-gated, return JSON metadata + AFF JSON source): DESD (CDS Logical External Schema), EVTB (RAP Event Binding), EVTO (RAP Event Object), DTSC (CDS Static Cache), CSNM (Core Schema Notation Model), COTA (Communication Target), UIAD (Launchpad App Descriptor Item). Deprecated aliases: MESSAGES (use MSAG), FTG2 (use FEATURE_TOGGLE).',
           },
           name: { type: 'string', description: 'Object name (e.g., ZTEST_PROGRAM, ZCL_ORDER, MARA)' },
           action: {
@@ -675,8 +678,8 @@ export function getToolDefinitions(
             type: 'string',
             enum: btp ? SAPWRITE_TYPES_BTP : SAPWRITE_TYPES_ONPREM,
             description: btp
-              ? 'Object type (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on BTP: CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require type=CLAS. Server-driven objects (8.16+, discovery-gated): DESD, DTSC, CSNM, EVTB, EVTO, COTA — create/update/delete with AFF JSON in "source", then SAPActivate.'
-              : 'Object type (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on-prem: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require type=CLAS. Server-driven objects (8.16+, discovery-gated): DESD, DTSC, CSNM, EVTB, EVTO, COTA — create/update/delete with AFF JSON in "source", then SAPActivate.',
+              ? 'Object type (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on BTP: CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require type=CLAS. Server-driven objects (8.16+, discovery-gated): DESD, DTSC, CSNM, EVTB, EVTO, COTA, UIAD — create/update/delete with AFF JSON in "source", then SAPActivate.'
+              : 'Object type (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on-prem: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require type=CLAS. Server-driven objects (8.16+, discovery-gated): DESD, DTSC, CSNM, EVTB, EVTO, COTA, UIAD — create/update/delete with AFF JSON in "source", then SAPActivate.',
           },
           name: {
             type: 'string',

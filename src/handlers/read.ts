@@ -9,7 +9,12 @@ import { isNotFoundError } from '../adt/errors.js';
 import { mapSapReleaseToAbaplintVersion } from '../adt/features.js';
 import { type FmParameter, type FmParameterKind, parseFmSignature } from '../adt/fm-signature.js';
 import { isOperationAllowed, OperationType } from '../adt/safety.js';
-import { getServerDrivenObject, isServerDrivenObjectType, supportsServerDrivenObject } from '../adt/server-driven.js';
+import {
+  ensureServerDrivenSupport,
+  getServerDrivenObject,
+  isServerDrivenObjectType,
+  serverDrivenUnavailableMessage,
+} from '../adt/server-driven.js';
 import type { InactiveObject } from '../adt/types.js';
 import { getAppInfo } from '../adt/ui5-repository.js';
 import { getVersionDiff } from '../adt/version-diff.js';
@@ -156,11 +161,8 @@ export async function handleSAPRead(
   // the version/draft/cache machinery (no /source/main text; JSON output).
   if (isServerDrivenObjectType(type)) {
     if (!name) return errorResult(`"name" is required for SAPRead type=${type}.`);
-    if (supportsServerDrivenObject(client.http, type) === false) {
-      return errorResult(
-        `SAPRead type=${type} (server-driven object) requires SAP_BASIS 8.16+ (ABAP Platform 2025 / S/4HANA 2025). ` +
-          'This system does not expose this object type.',
-      );
+    if (!(await ensureServerDrivenSupport(client.http, client.safety, type))) {
+      return errorResult(serverDrivenUnavailableMessage('SAPRead', type));
     }
     const sdo = await getServerDrivenObject(client.http, client.safety, type, name);
     return textResult(JSON.stringify(sdo, null, 2));

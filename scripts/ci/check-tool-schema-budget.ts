@@ -98,8 +98,10 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     budget: {
       // schema +200 for SAPRead action="diff" (action/from/to params).
       // +400/+350 for context-first KTD guidance (KTD alias + SAPContext includeKtd).
+      // +0/+100 for the UIAD (LADI) server-driven type across the SAPRead/SAPWrite type lists plus
+      // the flp_* deprecation pointer. Restores ~90 tokens of description headroom.
       schemaTokenEstimate: 20_100,
-      descriptionTokenEstimate: 15_350,
+      descriptionTokenEstimate: 15_450,
       descriptionCount: 265,
     },
   },
@@ -113,8 +115,9 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // action description). Keeps ~110 tokens of headroom, matching the other scenarios.
       // Further +200/+150 for SAPRead action="diff" (action/from/to params + descriptions).
       // +450/+350 for context-first KTD guidance (KTD alias + SAPContext includeKtd).
+      // +0/+100 for the UIAD (LADI) server-driven type in the SAPRead/SAPWrite type lists.
       schemaTokenEstimate: 18_350,
-      descriptionTokenEstimate: 13_700,
+      descriptionTokenEstimate: 13_800,
       descriptionCount: 265,
     },
   },
