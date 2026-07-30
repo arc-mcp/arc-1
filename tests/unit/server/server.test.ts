@@ -6,7 +6,11 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+  ToolListChangedNotificationSchema,
+} from '@modelcontextprotocol/sdk/types.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { AdtApiError } from '../../../src/adt/errors.js';
@@ -71,6 +75,86 @@ describe('MCP Server', () => {
 
   it('has a valid version string', () => {
     expect(VERSION).toMatch(/^\d+\.\d+\.\d+/);
+  });
+
+  // tools/list must never wait on SAP. Clients cancel it on their own schedule (Cline at ~5s) and
+  // a probe against a real system can outlast that, which left the client with zero tools.
+  it('answers tools/list without waiting for the startup probe', async () => {
+    const neverResolves = new Promise<void>(() => {});
+    const server = createServer(DEFAULT_CONFIG, { startupProbePromise: neverResolves });
+    const handler = requestHandler(server, ListToolsRequestSchema.shape.method.value);
+
+    const result = await Promise.race([
+      handler({ method: 'tools/list', params: {} }, {}),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('tools/list blocked')), 250)),
+    ]);
+
+    // Unprobed answer is the superset — SAPGit included, not dropped while discovery is pending.
+    // tests/unit/handlers/tool-surface-superset.test.ts holds the general invariant.
+    expect((result.tools as { name: string }[]).map((t) => t.name)).toContain('SAPGit');
+  });
+
+  it('advertises listChanged and notifies the client once the startup probe resolves', async () => {
+    let resolveProbe: () => void = () => {};
+    const startupProbePromise = new Promise<void>((resolve) => {
+      resolveProbe = resolve;
+    });
+    const server = createServer(DEFAULT_CONFIG, { startupProbePromise });
+    const client = new Client({ name: 'arc1-listchanged-test', version: '1.0.0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    let notified = 0;
+
+    try {
+      client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
+        notified += 1;
+      });
+      await server.connect(serverTransport);
+      await client.connect(clientTransport);
+
+      expect(client.getServerCapabilities()?.tools).toEqual({ listChanged: true });
+      expect(notified).toBe(0);
+
+      resolveProbe();
+      await vi.waitFor(() => expect(notified).toBe(1));
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it('does not wire the notification on HTTP, where each request builds its own server', async () => {
+    let resolveProbe: () => void = () => {};
+    const startupProbePromise = new Promise<void>((resolve) => {
+      resolveProbe = resolve;
+    });
+    const server = createServer({ ...DEFAULT_CONFIG, transport: 'http-streamable' }, { startupProbePromise });
+    const sendSpy = vi.spyOn(server, 'sendToolListChanged');
+
+    resolveProbe();
+    await startupProbePromise;
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(sendSpy).not.toHaveBeenCalled();
+    sendSpy.mockRestore();
+  });
+
+  it('survives a probe that resolves before any client connected', async () => {
+    const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+    const debugSpy = vi.spyOn(logger, 'debug').mockImplementation(() => undefined);
+
+    // Never connected: the SDK's sendToolListChanged() rejects, and that must stay non-fatal.
+    createServer(DEFAULT_CONFIG, { startupProbePromise: Promise.resolve() });
+
+    await vi.waitFor(() =>
+      expect(debugSpy).toHaveBeenCalledWith(
+        'Skipped tools/list_changed notification after startup probe',
+        expect.objectContaining({ error: expect.any(String) }),
+      ),
+    );
+    expect(errorSpy).not.toHaveBeenCalled();
+
+    errorSpy.mockRestore();
+    debugSpy.mockRestore();
   });
 
   it('resolves schema nullable optionals off by default in auto mode', () => {

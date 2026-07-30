@@ -25,6 +25,7 @@ import { getHyperfocusedToolDefinition } from './hyperfocused.js';
 import { CLASS_WRITE_INCLUDES } from './object-types.js';
 import { SAPWRITE_DESC_BTP, SAPWRITE_DESC_ONPREM, SAPWRITE_MINIMAL_PAYLOAD_GUIDE } from './tool-descriptions.js';
 import {
+  isGitToolVisible,
   SAPCONTEXT_TYPES_BTP,
   SAPCONTEXT_TYPES_ONPREM,
   SAPREAD_TYPES_BTP,
@@ -1619,8 +1620,9 @@ export function getToolDefinitions(
     });
   }
 
-  // SAPGit — registered only when gCTS or abapGit backend is available
-  if (resolvedFeatures?.gcts?.available || resolvedFeatures?.abapGit?.available) {
+  // SAPGit — registered when a gCTS/abapGit backend is available, or not yet probed (see
+  // isGitToolVisible: unknown must stay visible or the tool is lost for the whole session).
+  if (isGitToolVisible(config, resolvedFeatures)) {
     const sapGitActions =
       config.allowWrites && config.allowGitWrites
         ? [...SAPGIT_ACTIONS_READ, ...SAPGIT_ACTIONS_WRITE]

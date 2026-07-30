@@ -676,7 +676,7 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
   const server = new Server(
     { name: config.serverName, version: VERSION },
     {
-      capabilities: { tools: {} },
+      capabilities: { tools: { listChanged: true } },
       instructions: multiTarget ? buildMultiTargetServerInstructions(multiTarget) : SERVER_INSTRUCTIONS,
     },
   );
@@ -701,12 +701,11 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
 
   // Register tool listing — filtered by user's scopes when auth is active
   server.setRequestHandler(ListToolsRequestSchema, async (_request, extra) => {
-    // Wait for the startup probe (if provided), but with a timeout so a slow/unreachable
-    // SAP system doesn't stall the MCP connection setup. If the probe doesn't finish in
-    // time, fall back to the default tool set (textSearch unknown = show source_code).
-    if (startupProbePromise && !multiTarget) {
-      await Promise.race([startupProbePromise, new Promise((resolve) => setTimeout(resolve, 10_000))]);
-    }
+    // Never wait for the startup probe here. tools/list is protocol handshake, not SAP work:
+    // clients cancel it on their own schedule (Cline at ~5s) and a probe against a real system
+    // can outlast that, which used to leave the client with zero tools. Answer from whatever is
+    // cached now — unknown features yield a SUPERSET of the probed surface, never a subset, so
+    // nothing is ever missing — and let tools/list_changed deliver the narrowed list below.
     const featureKey = config.targetId ?? config.destinationName;
     // Multi-target schemas are immutable process contracts. User-backed feature probes may
     // improve runtime errors, but must never rewrite another user's tools/list response.
@@ -1013,6 +1012,22 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
 
     return dispatchWithClient(client, isPerUserClient);
   });
+
+  // Discovery finished after we already answered tools/list with the unprobed superset — tell the
+  // client so it can re-fetch and drop what this system does not actually have. stdio only: the
+  // HTTP transport builds a fresh Server per request (see serveMcpRequest), so no instance outlives
+  // a request to deliver this, and none needs to — by then the probe is cached and the first
+  // tools/list of every request is already the narrowed list.
+  if (startupProbePromise && !multiTarget && config.transport === 'stdio') {
+    startupProbePromise
+      .then(() => server.sendToolListChanged())
+      .catch((err) => {
+        // Best-effort: a client that never connected (or disconnected) must not crash startup.
+        logger.debug('Skipped tools/list_changed notification after startup probe', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+  }
 
   return server;
 }

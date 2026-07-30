@@ -28,6 +28,8 @@
  */
 
 import { SDO_TYPES } from '../adt/server-driven.js';
+import type { ResolvedFeatures } from '../adt/types.js';
+import type { ServerConfig } from '../server/types.js';
 
 /**
  * Pull the on-prem (all rows) + BTP (btp:true rows) type arrays out of an `as const` type table.
@@ -165,6 +167,29 @@ const sapContextTypes = deriveTypeArrays(SAPCONTEXT_TYPE_TABLE);
 export const SAPCONTEXT_TYPES_ONPREM = sapContextTypes.onprem;
 /** SAPContext types on BTP. */
 export const SAPCONTEXT_TYPES_BTP = sapContextTypes.btp;
+
+// ─── Tool visibility ────────────────────────────────────────────────
+
+/**
+ * Should SAPGit appear in tools/list?
+ *
+ * Single source for standard AND hyperfocused mode — they had separate copies of this rule and
+ * only hyperfocused handled the unknown case, so standard mode dropped SAPGit entirely whenever
+ * tools/list answered before the startup probe finished.
+ *
+ * Probe not finished (`undefined`) must resolve to VISIBLE: config is the only signal we have, and
+ * a tool wrongly shown costs one failed call with a typed hint, while a tool wrongly hidden is
+ * unreachable for the whole session on clients that ignore tools/list_changed.
+ */
+export function isGitToolVisible(
+  config: Pick<ServerConfig, 'featureAbapGit' | 'featureGcts'>,
+  resolvedFeatures: Pick<ResolvedFeatures, 'gcts' | 'abapGit'> | undefined,
+): boolean {
+  if (resolvedFeatures === undefined) {
+    return config.featureAbapGit !== 'off' || config.featureGcts !== 'off';
+  }
+  return !!(resolvedFeatures.gcts?.available || resolvedFeatures.abapGit?.available);
+}
 
 // ─── Derived union types ────────────────────────────────────────────
 
