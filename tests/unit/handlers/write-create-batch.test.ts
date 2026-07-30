@@ -228,6 +228,42 @@ describe('SAPWrite handler — create / batch_create', () => {
       expect(result.content[0]?.text).toContain('does not advertise ADT support');
       expect(callMatching('POST', '/sap/bc/adt/activation')).toBeUndefined();
     });
+
+    it('batch SAPActivate routes a server-driven type through the registry URL, never the program path', async () => {
+      await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPActivate', {
+        action: 'activate',
+        objects: [{ type: 'DESD', name: 'ZARC1_SDO' }],
+      });
+      const activation = callMatching('POST', '/sap/bc/adt/activation');
+      expect(activation).toBeDefined();
+      // The bug: objectBasePath's default arm maps unknown non-slash types to the program path,
+      // so a batch entry silently activated /sap/bc/adt/programs/programs/ZARC1_SDO.
+      expect(activation?.[1].body).not.toContain('/sap/bc/adt/programs/programs/');
+      expect(activation?.[1].body).toContain('/sap/bc/adt/ddic/desd/ZARC1_SDO');
+    });
+
+    it('batch SAPActivate gates a server-driven type on discovery like the single-object path', async () => {
+      const client = createClient();
+      (client.http as unknown as { hasDiscoveryData(): boolean }).hasDiscoveryData = () => true;
+      (client.http as unknown as { discoveryAcceptFor(p: string): string | undefined }).discoveryAcceptFor = () =>
+        undefined;
+      const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPActivate', {
+        action: 'activate',
+        objects: [{ type: 'DESD', name: 'ZARC1_SDO' }],
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('does not advertise ADT support');
+      expect(callMatching('POST', '/sap/bc/adt/activation')).toBeUndefined();
+    });
+
+    it('batch SAPActivate still routes non-SDO types normally', async () => {
+      await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPActivate', {
+        action: 'activate',
+        objects: [{ type: 'PROG', name: 'ZARC1_PROG' }],
+      });
+      const activation = callMatching('POST', '/sap/bc/adt/activation');
+      expect(activation?.[1].body).toContain('/sap/bc/adt/programs/programs/ZARC1_PROG');
+    });
   });
 
   describe('SAPWrite package enforcement', () => {
