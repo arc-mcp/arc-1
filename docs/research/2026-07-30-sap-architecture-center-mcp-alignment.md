@@ -106,17 +106,19 @@ the [W3C spec](https://www.w3.org/TR/trace-context/) — lowercase hex shape, ve
 all-zero trace-id and parent-id rejected, version `00` held to exactly 55 characters while a higher
 version may append dash-delimited fields that are forwarded blind — and `tracestate` only when a
 valid `traceparent` accompanies it (the spec forbids it travelling alone), length-capped and
-charset-restricted to printable ASCII plus HTAB so CR/LF header injection is structurally impossible. `serveMcpRequest` captures it into the existing
-`AsyncLocalStorage` request context; `AdtHttpClient.doFetch` — the single outbound choke point,
-covering the Cloud Connector proxy branch too — re-emits it.
+charset-restricted to printable ASCII plus HTAB so CR/LF header injection is structurally impossible.
+`serveMcpRequest` captures it into the existing `AsyncLocalStorage` request context;
+`AdtHttpClient.doFetch` — the single outbound choke point, covering the Cloud Connector proxy branch
+too — re-emits it.
 
 ARC-1 forwards and **never originates**. The spec's rule for a non-participating pass-through service
 is to forward unchanged; only a system that owns spans may rewrite `parent-id`. Minting trace-ids no
 tracer knows about would be noise, and ARC-1's `requestId` already correlates its own logs.
 
-**Agent identity (#5, ARC-1 half).** `clientAgent` on every audit event and in the BTP Audit Log
-next to `clientId`. Resolution: MCP handshake `clientInfo` (`name/version`) → HTTP `User-Agent` →
-absent.
+**Agent identity (#5, ARC-1 half).** `clientAgent` on every audit event emitted during a tool call —
+`tool_call_start`/`tool_call_end`, the `http_request` events beneath them, and the pre-dispatch
+denials (`safety_blocked`, `auth_scope_denied`, `mcp_rate_limited`) — and in the BTP Audit Log next to
+`clientId`. Resolution: MCP handshake `clientInfo` (`name/version`) → HTTP `User-Agent` → absent.
 
 > **Why the fallback exists:** the HTTP transport is stateless — `serveMcpRequest` builds a fresh
 > `Server` per POST, and the SDK populates `_clientVersion` only from `initialize`, which arrives on
@@ -127,8 +129,12 @@ absent.
 > `clientAgent` is caller-controlled: sanitized, truncated to 200 chars, **audit-only, never sent to
 > SAP, and never an authorization input.**
 
-Both are unconditional — no new configuration. The trace headers carry nothing sensitive and are
-inert to ICM; a system that rejected them would fail loudly on the first call.
+Both are unconditional — no new configuration. Blast radius is small by construction: the trace
+headers appear **only when an MCP client sends a valid `traceparent`**, which few do today, so the
+default request shape to SAP is unchanged. Not yet live-verified with a real traceparent against a
+real system — ICM is expected to ignore unknown request headers, and the integration/e2e suites pass,
+but those exercise the no-trace-context path. A system that rejected the header would fail loudly on
+the first traced call; the fix would be a patch, not a config flag.
 
 ---
 
