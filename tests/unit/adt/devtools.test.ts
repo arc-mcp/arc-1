@@ -1341,6 +1341,58 @@ describe('DevTools', () => {
       );
       expect(results[0]?.duration).toBe(0.015);
     });
+
+    it('surfaces run-level alerts when the response has no testClass at all', async () => {
+      const xml = `<testResult>
+        <alert kind="error" severity="critical"><title>Object cannot be tested</title></alert>
+      </testResult>`;
+      const http = mockHttp(xml);
+      const { tests: results } = await runUnitTests(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/ZCL_TEST',
+      );
+      expect(results).toHaveLength(1);
+      expect(results[0]?.status).toBe('failed');
+      expect(results[0]?.testClass).toBe('(run)');
+      expect(results[0]?.testMethod).toBe('(alert)');
+      expect(results[0]?.message).toBe('Object cannot be tested');
+    });
+
+    it('surfaces a class-level alert when the testClass has no testMethod children', async () => {
+      const xml = `<testResult>
+        <testClass name="LTCL_TEST" uri="/sap/bc/adt/oo/classes/ZCL_TEST/includes/testclasses">
+          <alert kind="error"><title>CX_SY_ITAB_LINE_NOT_FOUND in class_setup</title></alert>
+        </testClass>
+      </testResult>`;
+      const http = mockHttp(xml);
+      const { tests: results } = await runUnitTests(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/ZCL_TEST',
+      );
+      expect(results).toHaveLength(1);
+      expect(results[0]?.status).toBe('failed');
+      expect(results[0]?.testClass).toBe('LTCL_TEST');
+      expect(results[0]?.program).toBe('ZCL_TEST');
+      expect(results[0]?.testMethod).toBe('(class-level alert)');
+      expect(results[0]?.message).toBe('CX_SY_ITAB_LINE_NOT_FOUND in class_setup');
+    });
+
+    it('reports an explicit reason when a testClass has neither methods nor alerts', async () => {
+      const xml = `<testResult>
+        <testClass name="LTCL_TEST" uri="/sap/bc/adt/oo/classes/ZCL_TEST/includes/testclasses"/>
+      </testResult>`;
+      const http = mockHttp(xml);
+      const { tests: results } = await runUnitTests(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/ZCL_TEST',
+      );
+      expect(results).toHaveLength(1);
+      expect(results[0]?.status).toBe('failed');
+      expect(results[0]?.message).toContain('aborted before discovery');
+    });
   });
 
   describe('AUnit coverage (FEAT-41)', () => {

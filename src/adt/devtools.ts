@@ -1083,10 +1083,39 @@ function parseSyntaxCheckResult(xml: string): SyntaxCheckResult {
   };
 }
 
+/** Extract the human-readable title from an AUnit alert node (string or #text object). */
+function alertTitle(alert: Record<string, unknown>): string | undefined {
+  const titleVal = alert.title;
+  if (titleVal == null) return undefined;
+  if (typeof titleVal === 'string') return titleVal;
+  if (typeof titleVal === 'object' && !Array.isArray(titleVal)) {
+    return String((titleVal as Record<string, unknown>)['#text'] ?? '');
+  }
+  return String(titleVal);
+}
+
 function parseUnitTestResults(xml: string): UnitTestResult[] {
   const results: UnitTestResult[] = [];
   const parsed = parseXml(xml);
   const testClasses = findDeepNodes(parsed, 'testClass');
+
+  // Program- or run-level alerts with no testClass at all (e.g. "cannot be tested", abort
+  // before discovery): without this, the run silently returns [] and the reason is lost.
+  if (testClasses.length === 0) {
+    const orphanAlerts = findDeepNodes(parsed, 'alert');
+    for (const alert of orphanAlerts) {
+      results.push({
+        program: '',
+        testClass: '(run)',
+        testMethod: '(alert)',
+        status: 'failed',
+        ...(alertTitle(alert as Record<string, unknown>)
+          ? { message: alertTitle(alert as Record<string, unknown>) }
+          : {}),
+      });
+    }
+    return results;
+  }
 
   for (const tc of testClasses) {
     const className = String(tc['@_name'] ?? '');
@@ -1108,24 +1137,29 @@ function parseUnitTestResults(xml: string): UnitTestResult[] {
     }
 
     const methods = findDeepNodes(tc, 'testMethod');
+
+    // Class-level abort (e.g. class_setup failure): the testClass node carries alerts but no
+    // testMethod children. Surface the alert instead of dropping the class from the result.
+    if (methods.length === 0) {
+      const classAlerts = findDeepNodes(tc, 'alert');
+      results.push({
+        program,
+        testClass: className,
+        testMethod: '(class-level alert)',
+        status: 'failed',
+        ...(classAlerts.length > 0 && alertTitle(classAlerts[0] as Record<string, unknown>)
+          ? { message: alertTitle(classAlerts[0] as Record<string, unknown>) }
+          : { message: 'test class returned no methods and no alert — aborted before discovery' }),
+      });
+      continue;
+    }
+
     for (const method of methods) {
       const methodName = String(method['@_name'] ?? '');
       const alerts = findDeepNodes(method, 'alert');
       const hasAlert = alerts.length > 0;
       // Extract message from first alert's title element
-      let message: string | undefined;
-      if (hasAlert) {
-        const titleVal = (alerts[0] as Record<string, unknown>).title;
-        if (titleVal != null) {
-          if (typeof titleVal === 'string') {
-            message = titleVal;
-          } else if (typeof titleVal === 'object' && !Array.isArray(titleVal)) {
-            message = String((titleVal as Record<string, unknown>)['#text'] ?? '');
-          } else {
-            message = String(titleVal);
-          }
-        }
-      }
+      const message = hasAlert ? alertTitle(alerts[0] as Record<string, unknown>) : undefined;
       // Extract duration from executionTime attribute (in seconds)
       const execTime = method['@_executionTime'];
       const duration = execTime ? Number(execTime) : undefined;
