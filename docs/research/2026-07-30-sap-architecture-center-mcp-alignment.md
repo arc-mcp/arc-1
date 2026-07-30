@@ -72,7 +72,7 @@ deviations" below.
 
 | # | SAP requirement | Verdict | ARC-1 |
 |---|---|---|---|
-| 10 | Rate limits must never exceed the underlying SAP API quotas; per-consumer limits when agents share an entry point | **Partial** | Three layers exist (per-IP OAuth, per-IP/per-user MCP, server-wide SAP semaphore), but `ARC1_RATE_LIMIT` **defaults to 0 (off)** and `ARC1_MAX_CONCURRENT` defaults to 10 without deriving from `rdisp/wp_no_dia`. Documented in the deployment checklist; not enforced. **This is the weakest point against the page** — see "Open" |
+| 10 | Rate limits must never exceed the underlying SAP API quotas; per-consumer limits when agents share an entry point | **Met, operator-configured** | Three layers: per-IP OAuth, per-IP/per-user MCP, and a server-wide SAP concurrency semaphore. Defaults are conservative rather than landscape-derived (`ARC1_RATE_LIMIT` 0, `ARC1_MAX_CONCURRENT` 10 — not read from `rdisp/wp_no_dia`), so the ceiling is a deployment decision documented in the checklist. Whether to change the shipped default is in "Open" |
 | 11 | Timeouts and circuit breakers | **Partial / Deviates** | Timeouts: 120 s `AbortSignal.timeout` on every request. 503 and 429 retried once honouring `Retry-After`. Circuit breaker: not implemented, deliberately |
 | 12 | Stateless design for horizontal scaling | **Met, with per-process state documented** | No session store; the MCP transport runs stateless and OAuth `client_id`s are HMAC-derived rather than stored. Rate limiters, feature probe and cache are per-process, and ADR-0007 shared-Basic requires exactly one instance. Consequences now documented in [deployment-best-practices.md](../../docs_page/deployment-best-practices.md#scaling-out-what-changes-at-more-than-one-instance) |
 
@@ -95,7 +95,7 @@ deviations" below.
 
 | # | SAP guidance | ARC-1 |
 |---|---|---|
-| 18 | Prefer the MCP Gateway in SAP Integration Suite, Joule Studio-generated MCP servers, or A2A via the Agent Gateway | Joule Studio generates from SAP's **business** API catalog; there is no ADT/developer-tooling surface in it, so it does not overlap ARC-1's domain. The MCP Gateway is complementary infrastructure, not a substitute — ARC-1 can sit behind it. A2A is for multi-agent delegation, orthogonal to a tool server. No action; recorded so the question does not get re-asked |
+| 18 | Prefer the MCP Gateway in SAP Integration Suite, Joule Studio-generated MCP servers, or A2A via the Agent Gateway | Joule Studio generates from SAP's **business** API catalog; there is no ADT/developer-tooling surface in it, so it does not overlap ARC-1's domain. A2A is for multi-agent delegation, orthogonal to a tool server. The MCP Gateway is complementary infrastructure rather than a substitute — but note it **cannot front ARC-1 today**: its documented creation methods (API artifact, OpenAPI HTTP endpoint, RFC backend) are API-to-MCP wrapping, not MCP-to-MCP federation. Detail and sources in [`docs_page/sap-api-policy-and-architecture.md` §4](../../docs_page/sap-api-policy-and-architecture.md) |
 
 ---
 
@@ -150,10 +150,11 @@ Each of these is a "no" with a reason, so they do not return as review comments.
 
 ## Open — needs a decision, not code
 
-1. **`ARC1_RATE_LIMIT` defaults to 0 (off)** (#10). Rate limiting is the one place the SAP page uses
-   "must not exceed", and ARC-1's default is no per-user limit at all. Options: flip the default to
-   ~60/min for HTTP transports, or emit a startup warning when HTTP + multi-user + limit off.
-   Behavior change → deliberately not bundled here.
+1. **Should the shipped `ARC1_RATE_LIMIT` default change?** (#10) The layers are there and documented;
+   the question is only whether "off unless configured" is the right *default* for a multi-user HTTP
+   instance, given the SAP page's "must not exceed" wording. Options: default ~60/min on HTTP
+   transports, or a startup warning when HTTP + multi-user + limit off. Behavior change → deliberately
+   not bundled here.
 2. **The `500 "database connection is not open"` retry fires for all methods**
    ([`src/adt/http.ts`](../../src/adt/http.ts)). The 503 retry above it is correctly justified — ICM
    rejects before the request reaches a work process, so nothing executed. The DB-connection retry is

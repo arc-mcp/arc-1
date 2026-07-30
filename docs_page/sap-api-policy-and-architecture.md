@@ -8,8 +8,10 @@ Where ARC-1 sits relative to SAP's published guidance for third-party MCP access
     third-party MCP servers — and closing the remaining distance is on our roadmap.
 
     That is a *different question* from whether the **SAP API Policy** clears your specific use of it.
-    ARC-1 drives **ADT REST endpoints** (`/sap/bc/adt/*`), which SAP has not published on the SAP
-    Business Accelerator Hub. Under [API Policy v.4.2026a](https://help.sap.com/doc/sap-api-policy/latest/en-US/API_Policy_latest.pdf)
+    ARC-1 drives **ADT REST endpoints** (`/sap/bc/adt/*`) — an interface third parties have built on for
+    over a decade, with SAP's own ADT SDK and SAP's own newest tooling on the same endpoints, but one
+    that is not listed on the SAP Business Accelerator Hub. Under
+    [API Policy v.4.2026a](https://help.sap.com/doc/sap-api-policy/latest/en-US/API_Policy_latest.pdf)
     §1.2 the duty to verify that an endpoint is a Published API sits **with the customer**.
 
     **Our recommendation: you can run ARC-1 at your own risk — and you should ask your SAP contact
@@ -41,50 +43,46 @@ ADT integrations.
 ## 2. SAP's recommended architecture, and ARC-1's place in it
 
 SAP's [Third-Party MCP Access to SAP Solutions](https://architecture.learning.sap.com/docs/ref-arch/137800)
-describes two third-party patterns and one SAP-managed alternative. ARC-1 occupies **both** third-party
-patterns depending on how you deploy it.
+describes two third-party patterns: an MCP server on a third-party platform (Pattern 1) and a custom
+MCP server on SAP BTP (Pattern 2). **ARC-1 can run as either — and the closer you are to Pattern 2,
+the closer you are to SAP's guidance.** That is the ranking we recommend:
 
 ```mermaid
-flowchart LR
-  subgraph agents[AI clients]
-    A1[Claude / Cursor / VS Code]
-    A2[Copilot Studio]
+flowchart TB
+  C["AI clients<br/>Claude · Cursor · VS Code · Copilot Studio"]
+
+  subgraph deploy["How to run ARC-1 — in order of preference"]
+    direction TB
+    R1["1 — Recommended: SAP BTP Cloud Foundry<br/>SAP's Pattern 2 · XSUAA OAuth · principal propagation<br/>Destination Service · Cloud Connector · BTP Audit Log"]
+    R2["2 — Alternative: your own server or container<br/>SAP's Pattern 1 · Docker / npm · you own platform + hardening"]
+    R3["3 — Testing only: local npx / stdio<br/>one developer, no auth layer, not for shared or production use"]
   end
 
-  subgraph today[Today — Patterns 1 and 2]
-    ARC[ARC-1<br/>12 intent tools<br/>XSUAA · PP · audit]
-  end
+  SAP[("SAP ABAP system<br/>ADT REST")]
 
-  subgraph sapmanaged[SAP-managed alternative]
-    GW[MCP Gateway<br/>SAP Integration Suite]
-    JS[Joule Studio<br/>semantic API catalog]
-  end
-
-  SAP[(SAP ABAP system<br/>ADT REST)]
-
-  A1 --> ARC
-  A2 --> ARC
-  ARC -->|RFC 8693 token exchange<br/>per-user SAP identity| SAP
-  A2 -.-> GW
-  GW -.->|published business APIs| SAP
-  JS -.-> GW
+  C --> R1
+  C --> R2
+  C --> R3
+  R1 -->|"RFC 8693 token exchange · per-user SAP identity"| SAP
+  R2 --> SAP
+  R3 --> SAP
 ```
 
-**What SAP's guidance asks of a third-party server, and how ARC-1 answers it** — condensed; the full
-point-by-point evaluation with verdicts, evidence and deliberate deviations is in the
-[alignment dossier](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-07-30-sap-architecture-center-mcp-alignment.md).
+**Why BTP Cloud Foundry is the recommendation.** It is the only deployment where the full set of
+controls SAP's guidance asks for is available at once: XSUAA OAuth at the edge, principal propagation
+so each user reaches SAP under their own identity, the Destination Service performing the RFC 8693
+token exchange, Cloud Connector for on-premise reachability, and the BTP Audit Log as an audit sink.
+Running on your own server is a legitimate Pattern 1 deployment, but platform hardening, credential
+lifecycle and TLS termination become yours. Local `npx`/stdio has no auth layer at all — it is a
+single-developer convenience for trying ARC-1 out, not a deployment.
 
-| SAP asks for | ARC-1 |
-|---|---|
-| Semantic enrichment, not raw API mirroring | 12 intent tools over 200+ ADT endpoints — the founding design principle |
-| Never proxy the caller's token downstream; exchange it (RFC 8693) | Principal propagation via the BTP Destination Service (`OAuth2UserTokenExchange` / `OAuth2JWTBearer` / SAML bearer). See [Principal Propagation](principal-propagation-setup.md) |
-| Authentication on every inbound and outbound connection | XSUAA → OIDC → API key inbound; SAP-native `S_DEVELOP` / `S_ADT_RES` outbound |
-| Scoped, least-privilege authorization | Seven scopes plus a server-wide safety ceiling that user scopes can only *restrict*. See [Authorization](authorization.md) |
-| Rate limits that respect SAP quotas | Three layers — **but the per-user layer is off by default**; see §3.4 |
-| Full audit of every tool call | Typed audit events with user, client, agent and trace correlation; stderr / file / BTP Audit Log sinks |
-| W3C trace context propagated to SAP | Forwarded verbatim on every outbound SAP call |
-| Stateless horizontal scaling | Stateless transport and HMAC-derived OAuth registrations; per-process state documented in [Best Practices](deployment-best-practices.md#scaling-out-what-changes-at-more-than-one-instance) |
-| OWASP MCP Top 10 | Mapped to ARC-1's security invariants in the [security model](https://github.com/arc-mcp/arc-1/blob/main/docs/security-model.md) |
+See [Deployment](deployment.md) and [BTP Cloud Foundry](btp-cloud-foundry-deployment.md) for the how.
+
+**How ARC-1 measures up against the rest of SAP's guidance** — token exchange, scoped authorization,
+audit, trace context, statelessness, OWASP MCP Top 10 — is evaluated point by point, with verdicts and
+the deviations argued rather than hidden, in the
+[alignment dossier](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-07-30-sap-architecture-center-mcp-alignment.md).
+Summary: met on the large majority, with the exceptions named there.
 
 SAP also states plainly that in **both** third-party patterns the operational and security
 responsibility for the platform, runtime, dependencies and credentials sits with the organization
@@ -110,17 +108,37 @@ each endpoint you use is a Published API.
 There is an explicit carve-out for **customer-developed ABAP interfaces in private cloud and
 on-premise deployments**.
 
-**For ARC-1 this is the central open question.** The ADT REST surface (`/sap/bc/adt/*`) is the protocol
-behind SAP's own ADT clients. It is **not published on the Business Accelerator Hub** as a third-party
-API contract. The carve-out above covers interfaces *you* build, not ADT itself. A minority of what
-ARC-1 touches is documented elsewhere (for example the UI5 ABAP Repository OData service and gCTS),
-but the dominant surface is ADT.
+**For ARC-1 this is the open question — but it is more nuanced than "undocumented API".** ADT is not a
+back door somebody discovered. Third parties building on ADT is a pattern **SAP itself created and
+invited**, and it has been in the open for over a decade:
 
-Worth weighing on the other side, without overstating it: SAP itself ships an ADT-backed MCP server
-inside ABAP Development Tools for VS Code and Eclipse (see the
-[comparison guide](arc-1-vs-sap-abap-mcp-server.md)). SAP using its own interface is not authorization
-for third parties to use it — but it does show ADT-driven MCP tooling is not against SAP's direction of
-travel. Only SAP can turn that into an answer.
+- **SAP published an ADT SDK.** In 2014 SAP released a
+  [software development kit for ABAP Development Tools](https://community.sap.com/t5/application-development-and-automation-blog-posts/creating-a-abap-in-eclipse-plug-in-using-the-adt-sdk/ba-p/13130846)
+  so third parties could extend ADT and build their own tooling on top of it — the first time SAP
+  opened its development environment this way. Commercial and community Eclipse plugins have shipped
+  on it since.
+- **A decade of third-party ADT clients.** [abapGit](https://abapgit.org)'s ADT bridge,
+  [`abap-adt-api`](https://github.com/marcellourbani/abap-adt-api) and the ABAP remote filesystem
+  extension for VS Code, [abaplint](https://abaplint.org), and a long tail of CI and quality tooling
+  all speak ADT. This is established, visible, widely-used practice — not a novel access pattern that
+  arrived with AI agents.
+- **SAP's own newest tooling uses the same endpoints.** ABAP Development Tools for VS Code — and the
+  ADT MCP Server bundled inside it — run on ADT (see the
+  [comparison guide](arc-1-vs-sap-abap-mcp-server.md)). SAP shipping an ADT-backed *MCP server* is a
+  strong signal about direction of travel.
+
+**Where the nuance ends.** The ADT SDK is an *Eclipse client extension* SDK — it lets your plugin use
+ADT's client-side APIs inside the IDE. It is not a publication of the ADT HTTP wire protocol as a
+third-party API contract, and `/sap/bc/adt/*` is still not listed on the Business Accelerator Hub. A
+tool that speaks the wire protocol directly — ARC-1, `abap-adt-api`, abapGit's bridge — is relying on
+an interface that is long-standing, SAP-enabled and widely used, but not formally *Published* in the
+§1.1 sense. The §1.2 on-premise carve-out covers interfaces *you* build, not ADT.
+
+So the honest position is neither "this is forbidden" nor "this is cleared". It is: **a well-established,
+SAP-enabled practice whose formal status under the current policy only SAP can confirm** — which is
+exactly why the recommendation is to ask them. A minority of what ARC-1 touches is documented
+separately (for example the UI5 ABAP Repository OData service and gCTS), but ADT is the dominant
+surface.
 
 ### 3.2 Agentic and generative AI access (§2.2.2)
 
@@ -159,10 +177,12 @@ ARC-1 is an intermediary, so this clause deserves a direct answer:
 Specific per-API rate limits, quotas and bulk-extraction limits live in the product documentation, and
 §2.2.1(c) prohibits use that risks system performance, stability or security.
 
-ARC-1 has three rate-limiting layers, but **the per-user tool-call limit (`ARC1_RATE_LIMIT`) is off by
-default**. On any shared instance, set it. See [Rate Limiting](rate-limiting.md) and the
-[Best Practices checklist](deployment-best-practices.md). If you are scaling out, note the limits are
-per-process — the effective ceiling multiplies by your instance count.
+ARC-1 ships rate limiting for exactly this: three layers — per-IP at the OAuth and MCP edge, per-user
+tool-call quotas, and a server-wide cap on concurrent SAP requests — so you can bound agent traffic to
+whatever your system tolerates. Configure them against your landscape's quotas; see
+[Rate Limiting](rate-limiting.md) for the layers and
+[Best Practices](deployment-best-practices.md) for recommended values and how they behave across
+multiple instances.
 
 ---
 
@@ -196,19 +216,27 @@ alignment target we are building toward.
 
 1. **Dev and test: go ahead.** Run ARC-1 against non-production systems at your own risk. This is where
    nearly all of its value is anyway — it is developer tooling.
-2. **Before production or a wider rollout, ask SAP.** Your account executive, Customer Success Partner
+2. **Start read-only — it is not a lesser mode.** With `SAP_ALLOW_WRITES=false` ARC-1 reads your system
+   and reasons about it, but changes nothing. That is often the *better* workflow, not a limitation:
+   ask the model to explain the object, find the bug, and **respond with the code fix**, then read the
+   diff and apply it yourself in ADT or your IDE. You get the full analytical value — full dependency
+   context, ATC findings, where-used, dumps, SQL insight — while every change to the system stays a
+   deliberate human action. Many teams never need to turn writes on. It also makes the conversation in
+   step 4 much simpler, because nothing is mutating anything.
+3. **Before production or a wider rollout, ask SAP.** Your account executive, Customer Success Partner
    or partner manager. Put the question in writing so you have the answer in writing.
-3. **Ask specifically.** Vague questions get vague answers. Useful ones:
+4. **Ask specifically.** Vague questions get vague answers. Useful ones:
     - Does our agreement permit third-party tooling to call ADT REST endpoints (`/sap/bc/adt/*`)?
       Does the answer differ between on-premise, private cloud and public cloud?
     - Does API Policy §2.2.2 permit AI-agent-driven access over those endpoints, and if so under which
       endorsed architecture?
     - Is the Architecture Center guidance for third-party MCP access the applicable pathway for us?
     - Are there rate limits or quotas we should configure against for this access pattern?
-4. **Deploy the recommended way regardless.** Principal propagation, `SAP_ALLOW_WRITES=false` unless you
-   need writes, a tight `SAP_ALLOWED_PACKAGES`, `ARC1_RATE_LIMIT` set, audit sink wired. It is the right
-   posture on the merits, and it is the configuration that makes the conversation above easy.
-5. **Re-check periodically.** SAP's API Policy has moved twice recently and drew formal pushback from
+5. **Deploy the recommended way regardless.** BTP Cloud Foundry with principal propagation, a tight
+   `SAP_ALLOWED_PACKAGES` if writes are on, rate limits configured, audit sink wired — the
+   [Best Practices checklist](deployment-best-practices.md) is the full list. It is the right posture on
+   the merits, and it is the configuration that makes the conversation above easy.
+6. **Re-check periodically.** SAP's API Policy has moved twice recently and drew formal pushback from
    DSAG; the Architecture Center MCP guidance is newer still. Assume this page ages.
 
 !!! note "If SAP tells you no"
@@ -230,12 +258,14 @@ alignment target we are building toward.
 - [Model Context Protocol in SAP Integration Suite](https://help.sap.com/docs/SAP_INTEGRATION_SUITE/9519789d5664487f8b9cd89eba514477/9eb9239c1b4c458198ca5234d191f8bd.html) — MCP Gateway documentation.
 - [SAP Business Accelerator Hub](https://api.sap.com/) — the register of Published APIs referenced by §1.1.
 
-**ARC-1 documents**
+- [Creating an ABAP in Eclipse plug-in using the ADT SDK](https://community.sap.com/t5/application-development-and-automation-blog-posts/creating-a-abap-in-eclipse-plug-in-using-the-adt-sdk/ba-p/13130846) — SAP Community, on the SDK SAP published for third-party ADT tooling (§3.1).
 
-- [SAP Architecture Center alignment dossier](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-07-30-sap-architecture-center-mcp-alignment.md) — the 18-point evaluation behind §2, including what we deliberately did *not* build.
+**ARC-1 documents** — this page covers policy and positioning only; the technical detail lives here:
+
+- [Alignment dossier](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-07-30-sap-architecture-center-mcp-alignment.md) — the point-by-point architecture evaluation behind §2, including what we deliberately did *not* build.
 - [Security model](https://github.com/arc-mcp/arc-1/blob/main/docs/security-model.md) — invariants, residual-risk register, OWASP MCP Top 10 mapping.
 - [ARC-1 vs. the SAP ABAP MCP Server](arc-1-vs-sap-abap-mcp-server.md) — including SAP's own ADT-backed MCP server.
-- [Security Guide](security-guide.md) · [Authorization](authorization.md) · [Principal Propagation](principal-propagation-setup.md) · [Rate Limiting](rate-limiting.md) · [Best Practices](deployment-best-practices.md)
+- [Deployment](deployment.md) · [Best Practices](deployment-best-practices.md) · [Authorization](authorization.md) · [Principal Propagation](principal-propagation-setup.md) · [Rate Limiting](rate-limiting.md) · [Security Guide](security-guide.md)
 
 **Context on the policy debate** (third-party reporting, not SAP positions)
 

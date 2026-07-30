@@ -450,25 +450,17 @@ matches it there:
 
 ## 13. A note on SAP's API policy (unsettled)
 
-Both products ultimately call SAP's **ADT REST endpoints** (`/sap/bc/adt/*`). A fair, honest summary:
+Both products ultimately call SAP's **ADT REST endpoints** (`/sap/bc/adt/*`). The short version: the
+official ADT MCP Server is unaffected — it is SAP's own first-party client of its own APIs. ARC-1, like
+[`abap-adt-api`](https://github.com/marcellourbani/abap-adt-api), abapGit and abaplint, uses those same
+endpoints, which are long-standing and SAP-enabled but not formally published as a third-party API
+contract. Treat third-party ADT-API use as **not-officially-confirmed** — fine for dev/test, worth a
+conversation with SAP before production.
 
-- **The official ADT MCP Server is unaffected** — it is SAP's own first-party client of its own APIs.
-- **ARC-1 (and other community tools** like [`abap-adt-api`](https://github.com/marcellourbani/abap-adt-api),
-  abapGit, abaplint) use the **same ADT endpoints**, which SAP has **not published as a released, stable,
-  third-party API contract** (they are the protocol behind the ADT client; see *"Joys and sorrows of the
-  ABAP Developer Tools API"*).
-- The prevailing understanding is that using these endpoints for development tooling is **acceptable**, but
-  there is **no official SAP statement** classifying third-party ADT-API consumption as supported, and
-  SAP's evolving [API Policy](https://community.sap.com/t5/technology-q-a/impacts-of-sap-api-policy-v4-2026-on-existing-customer-integrations/qaq-p/14381879)
-  governs released-vs-internal APIs. **Treat third-party ADT-API use as not-officially-confirmed** — likely
-  fine for dev/test, but watch SAP's guidance, especially for production scenarios.
-
-This is informational, not legal advice — confirm your own situation with SAP.
-
-**Full treatment:** [SAP API Policy & Architecture Alignment](sap-api-policy-and-architecture.md) —
-what API Policy v.4.2026a actually says clause by clause, where ARC-1 sits against SAP's reference
-architecture for third-party MCP access, what the MCP Gateway can and cannot do today, and the
-specific questions to put to your SAP contact.
+**→ [SAP API Policy & Architecture Alignment](sap-api-policy-and-architecture.md)** is the full
+treatment: what API Policy v.4.2026a says clause by clause, why the ADT question is more nuanced than
+"undocumented API", what the MCP Gateway can and cannot do today, and the specific questions to put to
+your SAP contact. Informational, not legal advice.
 
 ---
 
