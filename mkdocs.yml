@@ -74,6 +74,7 @@ nav:
   - Reference:
       - Configuration: configuration-reference.md
       - Configuration Precedence: configuration-precedence.md
+      - SAP API Policy & Architecture: sap-api-policy-and-architecture.md
       - vs SAP ABAP MCP Server: arc-1-vs-sap-abap-mcp-server.md
       - Security: security-guide.md
       - Operations:

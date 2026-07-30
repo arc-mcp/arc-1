@@ -42,7 +42,7 @@ Each ARC-1 instance serves **multiple users** via principal propagation (on-prem
 └──────────────┘      └──────────────────┘
 ```
 
-### Scaling out: what changes at `instances > 1`
+### Scaling out: what changes at more than one instance
 
 ARC-1 is stateless in the sense that matters for load balancing — **any instance can serve any
 request**, no sticky sessions, no session store (the MCP HTTP transport runs in stateless mode, and

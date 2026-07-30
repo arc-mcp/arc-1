@@ -6,6 +6,12 @@
 [Agentic AI & AI Agents](https://architecture.learning.sap.com/docs/ref-arch/98efa0)
 **Status:** evaluated; two gaps closed in this change, the rest classified below.
 
+> **Scope note.** This dossier answers *"is the architecture sound?"* — measurable, and mostly yes.
+> It does **not** answer *"is the use permitted?"* under the SAP API Policy, which turns on ADT being a
+> non-published API and on §2.2.2's endorsed-architecture requirement. That question, and the
+> recommendation to consult your SAP contact, live in
+> [`docs_page/sap-api-policy-and-architecture.md`](../../docs_page/sap-api-policy-and-architecture.md).
+
 ---
 
 ## What the page is
@@ -20,11 +26,9 @@ ARC-1 sits in **both** patterns the page names — Pattern 1 (external MCP serve
 platform: npm/Docker/stdio self-hosted) and Pattern 2 (custom MCP server on SAP BTP: the CF
 deployment). In both, the page places full operational and security responsibility on the deployer.
 
-Its sharpest technical claim is the one worth internalizing:
-
-> Connecting an MCP server directly to raw SAP transactional APIs without semantic enrichment leads
-> to poor entity discovery accuracy, excessive token consumption and, for write operations, a
-> significant risk of incorrect business transactions.
+Its sharpest technical claim is the one worth internalizing: wiring an MCP server straight onto raw
+SAP transactional APIs, with no semantic layer, degrades entity-discovery accuracy, burns tokens, and
+— on writes — risks producing incorrect business transactions.
 
 That is ARC-1's founding thesis (design principle 3), not a new requirement — 12 intent tools over
 200+ ADT endpoints, CI-budgeted schema payload, context compression.
@@ -70,7 +74,7 @@ deviations" below.
 |---|---|---|---|
 | 10 | Rate limits must never exceed the underlying SAP API quotas; per-consumer limits when agents share an entry point | **Partial** | Three layers exist (per-IP OAuth, per-IP/per-user MCP, server-wide SAP semaphore), but `ARC1_RATE_LIMIT` **defaults to 0 (off)** and `ARC1_MAX_CONCURRENT` defaults to 10 without deriving from `rdisp/wp_no_dia`. Documented in the deployment checklist; not enforced. **This is the weakest point against the page** — see "Open" |
 | 11 | Timeouts and circuit breakers | **Partial / Deviates** | Timeouts: 120 s `AbortSignal.timeout` on every request. 503 and 429 retried once honouring `Retry-After`. Circuit breaker: not implemented, deliberately |
-| 12 | Stateless design for horizontal scaling | **Met, with per-process state documented** | No session store; the MCP transport runs stateless and OAuth `client_id`s are HMAC-derived rather than stored. Rate limiters, feature probe and cache are per-process, and ADR-0007 shared-Basic requires exactly one instance. Consequences now documented in [deployment-best-practices.md](../../docs_page/deployment-best-practices.md#scaling-out-what-changes-at-instances--1) |
+| 12 | Stateless design for horizontal scaling | **Met, with per-process state documented** | No session store; the MCP transport runs stateless and OAuth `client_id`s are HMAC-derived rather than stored. Rate limiters, feature probe and cache are per-process, and ADR-0007 shared-Basic requires exactly one instance. Consequences now documented in [deployment-best-practices.md](../../docs_page/deployment-best-practices.md#scaling-out-what-changes-at-more-than-one-instance) |
 
 ### Observability
 

@@ -465,6 +465,11 @@ Both products ultimately call SAP's **ADT REST endpoints** (`/sap/bc/adt/*`). A 
 
 This is informational, not legal advice — confirm your own situation with SAP.
 
+**Full treatment:** [SAP API Policy & Architecture Alignment](sap-api-policy-and-architecture.md) —
+what API Policy v.4.2026a actually says clause by clause, where ARC-1 sits against SAP's reference
+architecture for third-party MCP access, what the MCP Gateway can and cannot do today, and the
+specific questions to put to your SAP contact.
+
 ---
 
 ## 14. It's not either/or — the composable MCP ecosystem
