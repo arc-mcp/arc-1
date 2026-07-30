@@ -100,7 +100,7 @@ All safety flags are **positive opt-ins** (default: `false` / restrictive). Enab
 
 ### SAP API Policy and data-access gates
 
-SAP's current [SAP API Policy](https://help.sap.com/doc/sap-api-policy/latest/en-US/API_Policy_latest.pdf) is v.4.2026a. It allows published/documented APIs for their documented purposes, while restricting unsupported internal APIs, misuse, unmanaged autonomous AI call patterns, and large-scale extraction outside endorsed paths. ARC-1 is designed as a governed development-tooling proxy around ADT behavior, not as a bulk data-extraction product. Operators should still validate their productive setup against SAP documentation, their SAP agreement, and internal governance.
+SAP's API Policy restricts large-scale extraction and ungoverned autonomous AI call patterns, which is part of why these two capabilities are gated. See **[SAP API Policy & Architecture Alignment](sap-api-policy-and-architecture.md)** for the clause-by-clause treatment and ARC-1's position; validate your productive setup against SAP documentation, your SAP agreement, and internal governance.
 
 Two ARC-1 capabilities can expose business data or execute ad-hoc SQL and require explicit env vars before they are reachable:
 

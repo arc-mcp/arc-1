@@ -112,11 +112,16 @@ on-premise deployments**.
 back door somebody discovered. Third parties building on ADT is a pattern **SAP itself created and
 invited**, and it has been in the open for over a decade:
 
-- **SAP published an ADT SDK.** In 2014 SAP released a
-  [software development kit for ABAP Development Tools](https://community.sap.com/t5/application-development-and-automation-blog-posts/creating-a-abap-in-eclipse-plug-in-using-the-adt-sdk/ba-p/13130846)
-  so third parties could extend ADT and build their own tooling on top of it — the first time SAP
-  opened its development environment this way. Commercial and community Eclipse plugins have shipped
-  on it since.
+- **SAP publishes an ADT SDK.** SAP ships an [ADT SDK](https://tools.hana.ondemand.com/#abap) on its
+  own tools site so third parties can extend ADT and build their own tooling on it —
+  [since 2014](https://community.sap.com/t5/application-development-and-automation-blog-posts/creating-a-abap-in-eclipse-plug-in-using-the-adt-sdk/ba-p/13130846),
+  the first time SAP opened its development environment this way. Commercial and community Eclipse
+  plugins have shipped on it since.
+- **SAP documented how ADT REST APIs are built and consumed.** SAP published a guide on
+  [creating and consuming RESTful APIs in ADT](https://www.sap.com/documents/2013/04/12289ce1-527c-0010-82c7-eda71af511fa.html),
+  and has described the ABAP language server direction as an
+  ["ADT SDK 2.0"](https://community.sap.com/t5/technology-blog-posts-by-sap/abap-development-tools-for-vs-code-everything-you-need-to-know/bc-p/14263439/highlight/true#M186133).
+  The REST layer is not a hidden implementation detail SAP has tried to keep closed.
 - **A decade of third-party ADT clients.** [abapGit](https://abapgit.org)'s ADT bridge,
   [`abap-adt-api`](https://github.com/marcellourbani/abap-adt-api) and the ABAP remote filesystem
   extension for VS Code, [abaplint](https://abaplint.org), and a long tail of CI and quality tooling

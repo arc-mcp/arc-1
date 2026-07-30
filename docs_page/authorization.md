@@ -57,7 +57,7 @@ Important details:
 
 ## SAP API Policy: data preview and free SQL are gated for a reason
 
-SAP's current [SAP API Policy](https://help.sap.com/doc/sap-api-policy/latest/en-US/API_Policy_latest.pdf) is v.4.2026a. It allows published/documented APIs for their documented purposes, while restricting unsupported internal APIs, misuse, unmanaged autonomous AI call patterns, and large-scale extraction outside endorsed paths. ARC-1 is designed as a governed development-tooling proxy around ADT behavior, not as a bulk data-extraction product. Operators should still validate productive use against SAP documentation, their SAP agreement, and internal governance.
+These two gates exist partly because SAP's API Policy restricts large-scale extraction and ungoverned autonomous AI call patterns — see **[SAP API Policy & Architecture Alignment](sap-api-policy-and-architecture.md)** for what the policy says and how ARC-1 is positioned against it. Operators should validate productive use against SAP documentation, their SAP agreement, and internal governance.
 
 ARC-1's defaults keep the highest-risk data paths disabled. Two server flags map directly onto capabilities that can expose business data or run ad-hoc SQL, and both default to off:
 
