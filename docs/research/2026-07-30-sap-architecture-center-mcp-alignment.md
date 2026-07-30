@@ -98,10 +98,11 @@ deviations" below.
 ## What changed in this PR
 
 **Trace context (#14).** `src/server/trace-context.ts` validates the inbound `traceparent` against
-the [W3C spec](https://www.w3.org/TR/trace-context/) — exact shape, lowercase hex, version `ff`
-rejected, all-zero trace-id and parent-id rejected — and `tracestate` only when a valid `traceparent`
-accompanies it (the spec forbids it travelling alone), length-capped and charset-restricted so CR/LF
-header injection is structurally impossible. `serveMcpRequest` captures it into the existing
+the [W3C spec](https://www.w3.org/TR/trace-context/) — lowercase hex shape, version `ff` rejected,
+all-zero trace-id and parent-id rejected, version `00` held to exactly 55 characters while a higher
+version may append dash-delimited fields that are forwarded blind — and `tracestate` only when a
+valid `traceparent` accompanies it (the spec forbids it travelling alone), length-capped and
+charset-restricted to printable ASCII plus HTAB so CR/LF header injection is structurally impossible. `serveMcpRequest` captures it into the existing
 `AsyncLocalStorage` request context; `AdtHttpClient.doFetch` — the single outbound choke point,
 covering the Cloud Connector proxy branch too — re-emits it.
 

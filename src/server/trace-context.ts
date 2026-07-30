@@ -12,15 +12,22 @@
  * they make header injection (CR/LF) structurally impossible.
  */
 
-/** `<2 hex version>-<32 hex trace-id>-<16 hex parent-id>-<2 hex flags>`, lowercase only. */
+/** `<2 hex version>-<32 hex trace-id>-<16 hex parent-id>-<2 hex flags>`, lowercase, exactly 55 chars. */
 const TRACEPARENT = /^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$/;
+/**
+ * A version above `00` may append further dash-delimited fields after the 55-char prefix, and the
+ * spec requires forwarding them. Version `00` is exactly 55 characters — anything longer is invalid
+ * there, so the version check below keeps that strict. The `[0-9a-f-]` remainder is a deliberately
+ * narrow superset of the (unspecified) future fields: wide enough to forward, still injection-proof.
+ */
+const TRACEPARENT_FUTURE = /^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}-[0-9a-f-]+$/;
 const ZERO_TRACE_ID = '0'.repeat(32);
 const ZERO_PARENT_ID = '0'.repeat(16);
 
 /** Spec cap; a receiver may drop anything larger. */
 const TRACESTATE_MAX = 512;
-/** Printable ASCII only — no CR/LF/control characters can reach an outbound header. */
-const TRACESTATE_CHARSET = /^[\x20-\x7e]+$/;
+/** Printable ASCII + HTAB (spec-legal optional whitespace) — no CR/LF can reach an outbound header. */
+const TRACESTATE_CHARSET = /^[\x20-\x7e\t]+$/;
 
 const CLIENT_AGENT_MAX = 200;
 
@@ -32,9 +39,12 @@ const CLIENT_AGENT_MAX = 200;
  * that doesn't trace has nothing to put there.
  */
 export function validateTraceparent(value: unknown): string | undefined {
-  if (typeof value !== 'string' || !TRACEPARENT.test(value)) return undefined;
+  if (typeof value !== 'string') return undefined;
   const [version, traceId, parentId] = value.split('-');
   if (version === 'ff') return undefined;
+  // Version 00 is exactly 55 characters; a higher version may carry extra fields we forward blind.
+  const shaped = TRACEPARENT.test(value) || (version !== '00' && TRACEPARENT_FUTURE.test(value));
+  if (!shaped) return undefined;
   if (traceId === ZERO_TRACE_ID || parentId === ZERO_PARENT_ID) return undefined;
   return value;
 }

@@ -703,6 +703,30 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
       }
     });
 
+    it('attributes blocked calls too — the events emitted before the request context opens', async () => {
+      // A denial is the event where "which agent did this" matters most, and these fire before
+      // requestContext.run, so they carry clientAgent explicitly rather than inheriting it.
+      const auditSpy = vi.spyOn(logger, 'emitAudit');
+      try {
+        const fakeServer = { getClientVersion: () => ({ name: 'claude-code', version: '1.2.3' }) };
+        await handleToolCall(
+          createClient(),
+          { ...DEFAULT_CONFIG, denyActions: ['SAPRead'] },
+          'SAPRead',
+          { type: 'PROG', name: 'ZPROG' },
+          undefined,
+          fakeServer as never,
+        );
+
+        const blocked = auditSpy.mock.calls
+          .map(([e]) => e as { event?: string; clientAgent?: string })
+          .find((e) => e.event === 'safety_blocked');
+        expect(blocked?.clientAgent).toBe('claude-code/1.2.3');
+      } finally {
+        auditSpy.mockRestore();
+      }
+    });
+
     it('prefers the handshake identity over the HTTP-edge fallback', async () => {
       const { requestContext } = await import('../../../src/server/context.js');
       const auditSpy = vi.spyOn(logger, 'emitAudit');

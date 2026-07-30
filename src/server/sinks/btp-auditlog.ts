@@ -173,6 +173,9 @@ export class BTPAuditLogSink implements LogSink {
 
   private buildPayload(event: AuditEvent): Record<string, unknown> {
     const user = event.user ?? '$USER';
+    // Security events carry free-text `data`, not attributes — append the calling agent there so a
+    // denial or lockout can be attributed to the software that triggered it, not just the user.
+    const agent = event.clientAgent ? ` Agent: ${event.clientAgent}.` : '';
     const base: Record<string, unknown> = {
       uuid: crypto.randomUUID(),
       user,
@@ -248,7 +251,7 @@ export class BTPAuditLogSink implements LogSink {
         const identity = e.identity ? ` identity=${e.identity}.` : '';
         return {
           ...base,
-          data: `Access denied: user "${user}" lacks scope "${e.requiredScope}" for tool ${e.tool}. Available scopes: [${e.availableScopes.join(', ')}].${target}${identity}`,
+          data: `Access denied: user "${user}" lacks scope "${e.requiredScope}" for tool ${e.tool}. Available scopes: [${e.availableScopes.join(', ')}].${target}${identity}${agent}`,
         };
       }
 
@@ -258,7 +261,7 @@ export class BTPAuditLogSink implements LogSink {
         const identity = e.identity ? ` identity=${e.identity}.` : '';
         return {
           ...base,
-          data: `Safety blocked: operation "${e.operation}" denied — ${e.reason}. User: ${user}.${target}${identity}`,
+          data: `Safety blocked: operation "${e.operation}" denied — ${e.reason}. User: ${user}.${target}${identity}${agent}`,
         };
       }
 
@@ -271,7 +274,7 @@ export class BTPAuditLogSink implements LogSink {
             : 'the configured SAP destination';
         return {
           ...base,
-          data: `Principal propagation ${e.success ? 'succeeded' : 'failed'} for user "${user}" via ${route}${e.errorMessage ? `: ${e.errorMessage}` : ''}${e.identity ? ` identity=${e.identity}.` : ''}`,
+          data: `Principal propagation ${e.success ? 'succeeded' : 'failed'} for user "${user}" via ${route}${e.errorMessage ? `: ${e.errorMessage}` : ''}${e.identity ? ` identity=${e.identity}.` : ''}${agent}`,
         };
       }
 
@@ -279,7 +282,7 @@ export class BTPAuditLogSink implements LogSink {
         const e = event as AuthSharedCreatedEvent;
         return {
           ...base,
-          data: `Shared technical SAP authentication succeeded for tool "${e.tool}". User: ${user}.${e.target ? ` Target: ${e.target}.` : ''} identity=shared.`,
+          data: `Shared technical SAP authentication succeeded for tool "${e.tool}". User: ${user}.${e.target ? ` Target: ${e.target}.` : ''} identity=shared.${agent}`,
         };
       }
 
@@ -296,7 +299,7 @@ export class BTPAuditLogSink implements LogSink {
         const identity = e.identity ? ` identity=${e.identity}.` : '';
         return {
           ...base,
-          data: `Multi-target stage "${e.event}" failed for tool "${e.tool}" with code "${e.errorCode}". User: ${user}.${target}${identity}`,
+          data: `Multi-target stage "${e.event}" failed for tool "${e.tool}" with code "${e.errorCode}". User: ${user}.${target}${identity}${agent}`,
         };
       }
 
@@ -306,7 +309,7 @@ export class BTPAuditLogSink implements LogSink {
         const identity = e.identity ? ` identity=${e.identity}.` : '';
         return {
           ...base,
-          data: `MCP rate limit blocked tool "${e.tool}" at ${e.limitPerMinute}/min; retry after ${e.retryAfterMs}ms. User: ${user}.${target}${identity}`,
+          data: `MCP rate limit blocked tool "${e.tool}" at ${e.limitPerMinute}/min; retry after ${e.retryAfterMs}ms. User: ${user}.${target}${identity}${agent}`,
         };
       }
 

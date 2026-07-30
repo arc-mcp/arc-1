@@ -24,6 +24,23 @@ describe('validateTraceparent', () => {
     expect(validateTraceparent(future)).toBe(future);
   });
 
+  it('forwards a higher version that appends fields after the 55-char prefix', () => {
+    // Spec: a version above 00 may carry extra dash-delimited fields; a pass-through forwards them.
+    const extended = '01-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01-ab12cd';
+    expect(validateTraceparent(extended)).toBe(extended);
+  });
+
+  it('rejects extra fields on version 00 (spec: exactly 55 characters)', () => {
+    expect(validateTraceparent(`${VALID}-ab12cd`)).toBeUndefined();
+  });
+
+  it('rejects a higher version whose appended field is not dash-delimited hex', () => {
+    expect(validateTraceparent('01-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01 evil')).toBeUndefined();
+    expect(
+      validateTraceparent('01-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01-\r\nX-Injected: evil'),
+    ).toBeUndefined();
+  });
+
   it.each([
     ['version ff (forbidden by spec)', 'ff-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01'],
     ['all-zero trace-id', '00-00000000000000000000000000000000-00f067aa0ba902b7-01'],
@@ -63,6 +80,10 @@ describe('validateTracestate', () => {
 
   it('rejects a value over the 512-char cap', () => {
     expect(validateTracestate(`a=${'x'.repeat(520)}`, VALID)).toBeUndefined();
+  });
+
+  it('accepts HTAB, which the spec allows as optional whitespace between members', () => {
+    expect(validateTracestate('rojo=1,\tcongo=2', VALID)).toBe('rojo=1,\tcongo=2');
   });
 
   it('rejects control characters', () => {
