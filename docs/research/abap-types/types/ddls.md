@@ -39,7 +39,20 @@ the Eclipse ADT plugin, the local probe catalog, and live-system fixtures.
   on DDLS metadata as `cloudDevelopment`) reproduced `[?/006] V1=View Extend: Object type View
   Extend is not allowed in this system`. The source PUT failed after the DDLS/DF shell create.
 - `extend view entity` saved in that Cloud package and reached the separate released-API and field-name
-  activation checks. The `/006` failure is therefore an ABAP language-version rule, not DDLS routing.
+  activation checks. This confirms a language-version restriction, not a separate DDLS subtype, but
+  does not establish that the reporter's Standard-ABAP failure has the same immediate cause.
+
+### Issue #614 reporter evidence (S/4HANA 2023 FPS01)
+- The reporter confirmed that both the target package and base object use Standard ABAP.
+- After creating the View Extend shell manually in ADT, ARC-1 can update its fields and activate it.
+  The remaining failure is therefore isolated to the initial create path on that system level, not
+  normal DDLS updates or activation.
+- [SAP Note 3567464](https://me.sap.com/notes/3567464/E), released after FPS01, describes this exact
+  DDLS006 symptom. It states that DDIC-based CDS extends require Standard ABAP and provides correction
+  instructions or a containing support package, including an improved DDLS011 diagnostic.
+- Without the reporter's Note/support-package status or a create trace, it is not proven whether the
+  remaining failure is an uncorrected SAP backend level or create metadata that FPS01 interprets
+  differently. Keep #614 open for that evidence.
 
 ### a4h (S/4HANA 2025)
 - SAP_BASIS 816 SP01: both extension forms created and activated through the same DDLS/DF path.
@@ -57,17 +70,20 @@ the Eclipse ADT plugin, the local probe catalog, and live-system fixtures.
 | `src/handlers/write-helpers.ts` `buildCreateXml` | `adtcore:type="DDLS/DF"` for every DDLS form | ✅ |
 | `src/handlers/read.ts` | `case 'DDLS'` | ✅ |
 | `src/lint/lint.ts` `detectFilename` | `DEFINE VIEW` and `EXTEND VIEW` → `.ddls.asddls` | ✅ (#614) |
-| `src/adt/errors.ts` | exact View Extend language-version diagnostic | ✅ (#614) |
+| `src/adt/errors.ts` | DDLS006 View Extend restriction diagnostic + SAP Note fallback | ✅ (#614) |
 
 ## Verdict
-- **Status**: correct routing; language-version and lint guidance fixed in #614
+- **Status**: correct routing; lint detection and DDLS006 guidance improved in #614
 - **Evidence**: verified from abap-file-formats + Eclipse + probe catalog, then live on SAP_BASIS 758 and 816
 - **Issue**: annotation-free `extend view entity` previously fell through to `.clas.abap` pre-write lint;
-  SAP's View Extend language-version error previously received only the generic DDIC-save hint
+  SAP's View Extend restriction previously received only the generic DDIC-save hint. The reporter's
+  Standard-ABAP FPS01 initial-create failure remains open pending backend/trace evidence.
 
 ## Recommendation
 - Keep `DDLS/DF` as the single alias; do not add a View Extend subtype.
 - Let SAP enforce the full language-version, base-extensibility, and released-API contracts. Classify
   the exact `/006` diagnostic instead of duplicating those evolving rules in a client-side preflight.
+- Do not treat the Cloud-package reproduction as the reporter's root cause. On Standard ABAP, check
+  SAP Note 3567464/support-package status before changing ARC-1's create metadata.
 - **Breaking change**: no
 - **Tests**: pin both extension filename forms, the SAP-domain hint, and the LLM-visible tool guidance.

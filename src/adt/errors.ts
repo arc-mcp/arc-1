@@ -48,7 +48,7 @@ export interface SapErrorClassification {
     | 'include-not-initialized'
     | 'data-view-not-authorized'
     | 'package-create-invalid'
-    | 'ddls-view-extend-language-version';
+    | 'ddls-view-extend-restriction';
   hint: string;
   transaction?: string;
   details?: Record<string, string>;
@@ -608,9 +608,11 @@ export function classifySapDomainError(
     };
   }
 
-  // DDLS legacy `extend view` in an incompatible ABAP-language-version package. Live-verified on
-  // SAP_BASIS 758: Standard ABAP accepts the same DDLS/DF source, while cloudDevelopment rejects
-  // it with this exact DDIC diagnostic. This is not a missing ARC-1 object subtype (#614).
+  // DDLS006 source-type restriction for legacy `extend view`. SAP Note 3567464 says DDIC-based CDS
+  // extends require Standard ABAP and improves this diagnostic on corrected systems. Live testing on
+  // SAP_BASIS 758 confirmed that cloudDevelopment rejects the source while Standard ABAP accepts it,
+  // but #614 also reports DDLS006 from an older FPS01 system whose package is already Standard ABAP.
+  // Keep the remediation broad enough for both cases; this is not a missing ARC-1 object subtype.
   const viewExtendProperties = statusCode === 400 ? AdtApiError.extractProperties(bodyRaw) : {};
   const viewExtendMessageNumber = viewExtendProperties['T100KEY-NO'] ?? viewExtendProperties['T100KEY-MSGNO'];
   const hasViewExtendT100 =
@@ -620,11 +622,11 @@ export function classifySapDomainError(
     (hasViewExtendT100 || /object type\s+view extend\s+is not allowed in this system/i.test(bodyRaw))
   ) {
     return {
-      category: 'ddls-view-extend-language-version',
+      category: 'ddls-view-extend-restriction',
       hint:
-        'Legacy CDS `extend view` already uses SAPWrite type="DDLS" (ADT DDLS/DF); SAP rejected it for the current ABAP Language Version. ' +
-        'In ADT, compare Properties → ABAP Language Version for the base view and custom extension, and place a legacy extension in a compatible Standard ABAP package. ' +
-        'Do not use a separate ARC-1 object type. If the base is a view entity, use `extend view entity` only when its release and extensibility contracts allow it.',
+        'Legacy CDS `extend view` already uses SAPWrite type="DDLS" (ADT DDLS/DF); SAP DDLS006 rejected the View Extend source type. ' +
+        'Verify that the target package and base object use Standard ABAP. If they already do, ask the Basis team whether SAP Note 3567464 or its containing support package is installed. ' +
+        'Do not use a separate ARC-1 object type; changing to `extend view entity` is valid only for a compatible view-entity base and is not a general workaround.',
       details: typeId ? { exceptionType: typeId } : undefined,
     };
   }

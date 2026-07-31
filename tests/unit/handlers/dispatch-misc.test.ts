@@ -1174,7 +1174,7 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
       expect(result.content[0]?.text).toContain('Hint: DDIC save failed.');
     });
 
-    it('prefers the View Extend language-version hint over the generic DDIC save hint', async () => {
+    it('prefers the View Extend restriction hint over the generic DDIC save hint', async () => {
       mockFetch.mockReset();
       mockFetch.mockResolvedValue(
         mockResponse(
@@ -1191,7 +1191,7 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
 
       expect(result.isError).toBe(true);
       expect(text).toContain('SAPWrite type="DDLS"');
-      expect(text).toContain('Standard ABAP package');
+      expect(text).toContain('SAP Note 3567464');
       expect(text).not.toContain('DDIC save failed');
     });
 

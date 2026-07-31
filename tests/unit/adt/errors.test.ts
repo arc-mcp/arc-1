@@ -679,7 +679,7 @@ describe('AdtApiError', () => {
       expect(classification?.hint).toContain('mapping ... corresponding extensible');
     });
 
-    it('classifies the DDLS View Extend language-version diagnostic', () => {
+    it('classifies the DDLS006 View Extend source-type restriction', () => {
       const classification = classifySapDomainError(
         400,
         `<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework">
@@ -690,11 +690,12 @@ describe('AdtApiError', () => {
         '/sap/bc/adt/ddic/ddl/sources/Z_EXT/source/main',
       );
 
-      expect(classification?.category).toBe('ddls-view-extend-language-version');
+      expect(classification?.category).toBe('ddls-view-extend-restriction');
       expect(classification?.details?.exceptionType).toBe('ExceptionResourceSaveFailure');
       expect(classification?.hint).toContain('type="DDLS"');
-      expect(classification?.hint).toContain('Standard ABAP package');
-      expect(classification?.hint).toContain('extend view entity');
+      expect(classification?.hint).toContain('Standard ABAP');
+      expect(classification?.hint).toContain('SAP Note 3567464');
+      expect(classification?.hint).toContain('not a general workaround');
     });
 
     it('classifies the structured View Extend T100 diagnostic independently of message language', () => {
@@ -703,10 +704,10 @@ describe('AdtApiError', () => {
         '<exc:exception><localizedMessage>DDL-Quelle konnte nicht gesichert werden</localizedMessage><properties><entry key="T100KEY-NO">006</entry><entry key="T100KEY-V1">View Extend</entry></properties></exc:exception>',
       );
 
-      expect(classification?.category).toBe('ddls-view-extend-language-version');
+      expect(classification?.category).toBe('ddls-view-extend-restriction');
     });
 
-    it('does not classify other object-type restrictions as a View Extend language-version error', () => {
+    it('does not classify other object-type restrictions as a View Extend restriction', () => {
       expect(classifySapDomainError(400, 'Object type Data Definition is not allowed in this system')).toBeUndefined();
     });
 
