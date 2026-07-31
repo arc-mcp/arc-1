@@ -1,5 +1,43 @@
 # Changelog
 
+## [1.0.0](https://github.com/arc-mcp/arc-1/compare/v0.9.27...v1.0.0) (2026-07-31)
+
+
+### Features
+
+* add experimental destination-discovered multi-target endpoints ([#579](https://github.com/arc-mcp/arc-1/issues/579)) ([5ec27fc](https://github.com/arc-mcp/arc-1/commit/5ec27fcb3f338b6755b96e41ac5cc6cfae759a68))
+* add procedural unit source surgery ([#571](https://github.com/arc-mcp/arc-1/issues/571)) ([b712616](https://github.com/arc-mcp/arc-1/commit/b7126169faadcbf70507a1c7f34c2b3d2ee4fbd3))
+* advertise configurable MCP server name per deployment ([#606](https://github.com/arc-mcp/arc-1/issues/606)) ([0374f83](https://github.com/arc-mcp/arc-1/commit/0374f83520cd35d31f4e8e90a177aac3303e916b))
+* bound unbounded tool results, reject unknown params, compact JSON ([#583](https://github.com/arc-mcp/arc-1/issues/583)) ([5de5b96](https://github.com/arc-mcp/arc-1/commit/5de5b963ba1ea2ef447e60cacb3259fa4ec5d4e3))
+* create Remote-Enabled and update-task function modules ([#634](https://github.com/arc-mcp/arc-1/issues/634)) ([91dc911](https://github.com/arc-mcp/arc-1/commit/91dc911f126bc83e914b857af3bdf0849b7d698c))
+* DTDC (Dynamic Cache) read/write — generalize the server-driven engine off blue-only ([#612](https://github.com/arc-mcp/arc-1/issues/612)) ([dea5d0f](https://github.com/arc-mcp/arc-1/commit/dea5d0ffcc5c1c0da425a19b8103ef684a296abb))
+* FUGR structural includes, NW 7.50 release gates, FUNC processing-type read-back ([#637](https://github.com/arc-mcp/arc-1/issues/637)) ([3811587](https://github.com/arc-mcp/arc-1/commit/3811587a2773c4ca01575a4ed4bf4bb27db0477f))
+* propagate W3C trace context to SAP and record calling-agent identity ([#641](https://github.com/arc-mcp/arc-1/issues/641)) ([a3d765a](https://github.com/arc-mcp/arc-1/commit/a3d765a1983736810550a05d06d6434a927693c8))
+* publish CycloneDX npm SBOM with releases ([#633](https://github.com/arc-mcp/arc-1/issues/633)) ([542f699](https://github.com/arc-mcp/arc-1/commit/542f69920444ffdc9e9e3dcab53802b5150bbb0d))
+* read Launchpad App Descriptor Items (UIAD) and gate SDO types on discovery ([#642](https://github.com/arc-mcp/arc-1/issues/642)) ([a0d3f5c](https://github.com/arc-mcp/arc-1/commit/a0d3f5c7369cc8f0184f6990ddec20cdfd0a693c))
+* remove cache warmup ([#573](https://github.com/arc-mcp/arc-1/issues/573)) ([525aca3](https://github.com/arc-mcp/arc-1/commit/525aca359f1e309ca2435bd8abe0673c286ca0ed))
+* SAPDiagnose action=atc_variants — list ATC check variants + system default (FEAT-68) ([#611](https://github.com/arc-mcp/arc-1/issues/611)) ([3b0bc93](https://github.com/arc-mcp/arc-1/commit/3b0bc936e7c65ed6b38f23d279b9046ed787247d))
+* serve RFC 9728 protected-resource metadata in OIDC mode ([#632](https://github.com/arc-mcp/arc-1/issues/632)) ([ee6922f](https://github.com/arc-mcp/arc-1/commit/ee6922fe198ffbbe88db00d8791e37e25f310931))
+
+
+### Bug Fixes
+
+* **abapgit:** match the ADT bridge wire contract and support private repos ([#635](https://github.com/arc-mcp/arc-1/issues/635)) ([c60da36](https://github.com/arc-mcp/arc-1/commit/c60da36f24bebf1ee83c09f54844b7fc5f915a10))
+* **btp:** allow jwt-bearer exchange against ARC-1's XSUAA client ([#605](https://github.com/arc-mcp/arc-1/issues/605)) ([cc7ad92](https://github.com/arc-mcp/arc-1/commit/cc7ad92c4475e0c35dd4d5342947d9b82c99ad30))
+* don't crash startup on PP-off overrides, and harden the mta.yaml/mtaext stranding class ([#582](https://github.com/arc-mcp/arc-1/issues/582)) ([d7e2cb8](https://github.com/arc-mcp/arc-1/commit/d7e2cb81902d4205d74dfefc00e8db424390d013))
+* harden multi-target behavior ([#628](https://github.com/arc-mcp/arc-1/issues/628)) ([879376d](https://github.com/arc-mcp/arc-1/commit/879376d976d85c8315221345ac4ebe80e8bb3c7c))
+* improve DDLS view-extension lint and diagnostics ([#627](https://github.com/arc-mcp/arc-1/issues/627)) ([871bb7e](https://github.com/arc-mcp/arc-1/commit/871bb7e72c28a194b7bf19e78cf271ea3afa748d))
+* lead SAPWrite with its purpose and complete the TTYP documentation ([#644](https://github.com/arc-mcp/arc-1/issues/644)) ([cef92d0](https://github.com/arc-mcp/arc-1/commit/cef92d0fadae015a2b37060feb3bfa2ea286fa05))
+* never block tools/list on startup feature discovery ([#639](https://github.com/arc-mcp/arc-1/issues/639)) ([c70390c](https://github.com/arc-mcp/arc-1/commit/c70390c3c1c7197c0b5712d28ab42a6dc69cbccf))
+* per-type source format for server-driven objects (DTSC write was 415) + add DSFD ([#604](https://github.com/arc-mcp/arc-1/issues/604)) ([543f633](https://github.com/arc-mcp/arc-1/commit/543f633752b06685e319e71442de77467b18787b))
+* propagate corrNr to the class-include init POST ([#645](https://github.com/arc-mcp/arc-1/issues/645)) ([#646](https://github.com/arc-mcp/arc-1/issues/646)) ([0adb40e](https://github.com/arc-mcp/arc-1/commit/0adb40e3b4d6ef1ffe364bfce3a62821bc20213b))
+* reconcile recursive transport release with terminal SAP state ([#613](https://github.com/arc-mcp/arc-1/issues/613)) ([002f24d](https://github.com/arc-mcp/arc-1/commit/002f24db29e64917d249399554144ae1ed05b1d6))
+* reload rotated cookie file before the 401 retry ([#631](https://github.com/arc-mcp/arc-1/issues/631)) ([8103452](https://github.com/arc-mcp/arc-1/commit/8103452f17d19fe680ea930aa3494f7be68632d1))
+* **security:** patch and monitor AppRouter dependencies ([#625](https://github.com/arc-mcp/arc-1/issues/625)) ([7a0a835](https://github.com/arc-mcp/arc-1/commit/7a0a835a6536add37af92f86496aec60c84de5ca))
+* **server:** MCP 2026-07-28 forward-compat — CORS protocol headers, era-contract tests, ADR-0006 ([#601](https://github.com/arc-mcp/arc-1/issues/601)) ([dd99c17](https://github.com/arc-mcp/arc-1/commit/dd99c172d042f0e35c284b42b56174c26235b55d))
+* walk the AUnit result structure so alerts, program name and skips survive ([#648](https://github.com/arc-mcp/arc-1/issues/648)) ([0025ec3](https://github.com/arc-mcp/arc-1/commit/0025ec318b0f157edd149263a0099e12f58f263c))
+* **write:** omit adtcore:responsible when it cannot be an on-prem user name ([#638](https://github.com/arc-mcp/arc-1/issues/638)) ([75bf274](https://github.com/arc-mcp/arc-1/commit/75bf274a0cc693b48c8ef9ad57fa8443ac469ce0))
+
 ## [0.9.27](https://github.com/arc-mcp/arc-1/compare/v0.9.26...v0.9.27) (2026-07-13)
 
 
