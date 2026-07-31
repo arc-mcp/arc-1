@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 /**
- * Routing benchmark — 100% discriminator coverage for the tool surface.
+ * Routing benchmark — coverage of the multi-valued action/type discriminators.
  *
  * The existing `tests/evals` scenarios are realistic but narrow (58 scenarios reaching 2/12
  * SAPTransport actions, 11/49 SAPRead types). Descriptions are the dominant tool-selection signal,
@@ -8,9 +8,14 @@
  * "clean" SAPTransport rewrite silently dropped the `target=`/`summary=` syntax.
  *
  * This is a cheaper instrument built for coverage rather than realism: ONE single-turn call per
- * enum value (no agentic loop, no mock responses), scoring only "did it route to the right tool and
- * the right action/type". That is precisely what descriptions are for, and 182 cases cover every
- * discriminator value on the full surface.
+ * enum value (no agentic loop, no mock responses), scoring the tool, the discriminator, and any
+ * other behaviour-selecting argument the prompt fixes.
+ *
+ * WHAT IT COVERS — 182 cases spanning every MULTI-VALUED `action`/`type` enum. It does NOT cover:
+ * singleton enums that still select behaviour (SAPRead action=diff), SAPSearch's `searchType` and
+ * `source` modes (object vs source vs TADIR lookup, adt/db/both), or behaviour-bearing arguments
+ * such as transport `target`/`summary`. Search-description regressions in particular would not be
+ * caught — there is one generic SAPSearch case. "100% discriminator coverage" was overclaimed.
  *
  * Anti-leak rule: a generated prompt containing the enum literal or the tool name is rejected. A
  * case that says "use action=release" tests string matching, not routing.
@@ -62,6 +67,16 @@ export interface RoutingCase {
   /** Discriminator that must match, e.g. { key: 'action', value: 'release' }. Absent = tool only. */
   key?: string;
   value?: string;
+  /**
+   * Every OTHER behaviour-selecting argument the prompt determines, checked in addition to
+   * `key`/`value`.
+   *
+   * Without this the oracle looked at one field: `SAPWrite.type.CLAS` ("Create a global class
+   * ZCL_PAYMENT_GATEWAY") scored a PASS for {action:"delete", type:"CLAS"} because it never
+   * inspected `action`. On a tool where destructive and constructive actions share a schema, a
+   * single-field oracle is worse than none.
+   */
+  expectedArgs?: Record<string, string>;
   /**
    * Set to the reason when a case's prompt does not actually ask for its expected answer, e.g.
    * SAPRead.type.TRAN whose prompt asks for the objects in transport A4HK900123 — SAPTransport is
@@ -263,14 +278,19 @@ function valueMatches(expected: string, actual: string): boolean {
 }
 
 /**
- * Validate a proposed call against the SAME Zod schema `dispatch.ts` runs, rather than a
- * hand-maintained requirement map.
+ * Validate a proposed call against the same Zod schema `dispatch.ts` runs.
  *
- * The map approach produced errors in both directions: SAPWrite(edit_method, name, method) passed
- * here while the handler rejects it for missing type/source, SAPTransport(remove_object, id) passed
- * without the required pgmid/type/name, and SAPActivate(activate, objects=[…]) FAILED even though
- * the batch form is valid. It also accepted invented enum aliases the schema refuses. Anything
- * short of the real contract re-introduces that whole class of defect.
+ * SCOPE — this is schema validation ONLY, and a pass does NOT mean the server would accept the
+ * call. Action-specific requirements live in the handlers, not the schemas, and Zod passes all of
+ * these: SAPLint({action:"lint"}) (handler needs `source`), SAPGit({action:"branches"}) (needs
+ * `repoId`), SAPTransport({action:"remove_object", id}) (needs pgmid/type/name), and SAPWrite
+ * edit_method without type/source. It also skips the argument normalization dispatch.ts applies
+ * before validating, so lowercase types and slash aliases like "CLAS/OC" can fail here though
+ * dispatch accepts them.
+ *
+ * Closing that gap needs a semantic contract shared by handlers and benchmark — see the follow-up
+ * noted in docs/plans/2026-07-30-tool-description-optimization-loop.md. Until then this catches
+ * schema-level errors and nothing more.
  */
 function schemaError(toolName: string, args: Record<string, unknown>): string | null {
   const schema = getToolSchema(toolName, false);
@@ -338,13 +358,18 @@ Which single tool would you call, with which arguments? Reply with ONLY a JSON o
 No prose, no markdown fence.`;
 
 
-/** Credentials must not be inherited by a child processing "delete"/"release"/"push" prompts. */
+/**
+ * Minimal allowlist, not a denylist. A prefix denylist has to enumerate every secret that exists
+ * now and every one added later — it left VCAP_SERVICES, TEST_BTP_ACCESS_TOKEN, NPL_*, GITHUB_TOKEN
+ * and the AWS variables in place. Only what the CLI needs to start is passed through.
+ */
 export function sanitizedEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const ALLOW = new Set([
+    'PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'TMPDIR', 'LANG', 'LC_ALL', 'TERM', 'TZ',
+    'NODE_OPTIONS', 'XDG_CONFIG_HOME', 'XDG_CACHE_HOME',
+  ]);
   const out: NodeJS.ProcessEnv = {};
-  for (const [k, v] of Object.entries(base)) {
-    if (/^(SAP_|ARC1_|TEST_SAP_|ANTHROPIC_|OLLAMA_)/.test(k)) continue;
-    out[k] = v;
-  }
+  for (const k of ALLOW) if (base[k] !== undefined) out[k] = base[k];
   return out;
 }
 
@@ -526,7 +551,15 @@ export async function runBench(tools: ToolDefinition[], cases: RoutingCase[], mo
         const invalid = schemaError(call.name, args);
         if (invalid) got += ` [rejected: ${invalid}]`;
 
-        const routedRight = call.name === c.tool && (!c.key || valueMatches(c.value ?? '', actual));
+        // Every pinned argument must match, not just the discriminator.
+        const wrongExtra = Object.entries(c.expectedArgs ?? {}).filter(
+          ([k, v]) => !valueMatches(v, String(args[k] ?? '')),
+        );
+        if (wrongExtra.length > 0) {
+          got += ` [wrong ${wrongExtra.map(([k, v]) => `${k}: want ${v}, got ${String(args[k] ?? '∅')}`).join('; ')}]`;
+        }
+        const routedRight =
+          call.name === c.tool && (!c.key || valueMatches(c.value ?? '', actual)) && wrongExtra.length === 0;
         if (routedRight) routed++;
         // `passed` means the server would have accepted this call; `routed` means only that the
         // tool and discriminator were right. Reporting both separates "picked wrong" from

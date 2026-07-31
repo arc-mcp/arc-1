@@ -443,210 +443,300 @@
     "prompt": "Create an executable report named ZSALES_REPORT that lists all customers with open sales orders.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "PROG"
+    "value": "PROG",
+    "expectedArgs": {
+      "action": "create"
+    }
   },
   {
     "id": "SAPWrite.type.CLAS",
     "prompt": "Create a global class ZCL_PAYMENT_GATEWAY to manage external payment provider integrations and error handling.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "CLAS"
+    "value": "CLAS",
+    "expectedArgs": {
+      "action": "create"
+    }
   },
   {
     "id": "SAPWrite.type.INTF",
     "prompt": "Create interface ZIF_ORDER_PROCESSING with method PROCESS_ORDER taking a table of orders and returning a boolean success flag.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "INTF"
+    "value": "INTF",
+    "expectedArgs": {
+      "action": "create"
+    }
   },
   {
     "id": "SAPWrite.type.FUNC",
     "prompt": "Create a function module ZFM_CALCULATE_TAX in package $TMP",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "FUNC"
+    "value": "FUNC",
+    "expectedArgs": {
+      "action": "create"
+    }
   },
   {
     "id": "SAPWrite.type.FUGR",
     "prompt": "Create function group ZSALES_ORDER to encapsulate sales order processing logic.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "FUGR"
+    "value": "FUGR",
+    "expectedArgs": {
+      "action": "create"
+    }
   },
   {
     "id": "SAPWrite.type.INCL",
     "prompt": "Create include LZORDER01 containing the logic to validate sales order items.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "INCL"
+    "value": "INCL",
+    "expectedArgs": {
+      "action": "create"
+    }
   },
   {
     "id": "SAPWrite.type.DDLS",
     "prompt": "Create a CDS view ZI_SalesOrderHeader exposing VBAK fields with an association to the customer table and a calculated total amount.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "DDLS"
+    "value": "DDLS",
+    "expectedArgs": {
+      "action": "create"
+    }
   },
   {
     "id": "SAPWrite.type.DCLS",
     "prompt": "Create a DCL access-control role for ZI_SalesOrder that restricts rows by company code.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "DCLS"
+    "value": "DCLS",
+    "expectedArgs": {
+      "action": "create"
+    }
   },
   {
     "id": "SAPWrite.type.DDLX",
     "prompt": "Create a metadata extension ZC_ORDER_EXT that adds @UI line-item annotations to ZC_ORDER.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "DDLX"
+    "value": "DDLX",
+    "expectedArgs": {
+      "action": "create"
+    }
   },
   {
     "id": "SAPWrite.type.BDEF",
     "prompt": "Create ZPROJECT_BEH to expose read and update capabilities for the ZI_PROJECT CDS view.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "BDEF"
+    "value": "BDEF",
+    "expectedArgs": {
+      "action": "create"
+    }
   },
   {
     "id": "SAPWrite.type.SRVD",
     "prompt": "Create service definition ZSD_ORDERS exposing the root entity from CDS view ZC_ORDER.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "SRVD"
+    "value": "SRVD",
+    "expectedArgs": {
+      "action": "create"
+    }
   },
   {
     "id": "SAPWrite.type.SRVB",
     "prompt": "Create the ZSRV_INVOICE service binding for CDS view ZC_INVOICE as an OData V4 Web API.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "SRVB"
+    "value": "SRVB",
+    "expectedArgs": {
+      "action": "create"
+    }
   },
   {
     "id": "SAPWrite.type.SKTD",
     "prompt": "Write the knowledge transfer document for CDS view ZI_SALES_ORDER with this Markdown.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "SKTD"
+    "value": "SKTD",
+    "expectedArgs": {
+      "action": "create"
+    }
   },
   {
     "id": "SAPWrite.type.KTD",
     "prompt": "Write knowledge transfer documentation for CDS view ZI_CUSTOMER with this Markdown.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "KTD"
+    "value": "KTD",
+    "expectedArgs": {
+      "action": "create"
+    }
   },
   {
     "id": "SAPWrite.type.TABL",
     "prompt": "Create a transparent table ZORDER_DATA with fields for order ID, customer reference, total value, and status in package $TMP.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "TABL"
+    "value": "TABL",
+    "expectedArgs": {
+      "action": "create"
+    }
   },
   {
     "id": "SAPWrite.type.TABL/DT",
     "prompt": "Create transparent table ZORDER_HDR with key field document_number and non-key fields creation_date, currency, and total_amount.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "TABL/DT"
+    "value": "TABL/DT",
+    "expectedArgs": {
+      "action": "create"
+    }
   },
   {
     "id": "SAPWrite.type.TABL/DS",
     "prompt": "Create structure ZST_ORDER_DATA with fields ID, NAME, and QUANTITY.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "TABL/DS"
+    "value": "TABL/DS",
+    "expectedArgs": {
+      "action": "create"
+    }
   },
   {
     "id": "SAPWrite.type.DOMA",
     "prompt": "Create domain ZD_ORDER_TYPE as character type with length 10 and add fixed values A=Active and I=Inactive.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "DOMA"
+    "value": "DOMA",
+    "expectedArgs": {
+      "action": "create"
+    }
   },
   {
     "id": "SAPWrite.type.DTEL",
     "prompt": "Create a data element Z_ORDER_ID with domain ZDOM_CHAR10.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "DTEL"
+    "value": "DTEL",
+    "expectedArgs": {
+      "action": "create"
+    }
   },
   {
     "id": "SAPWrite.type.MSAG",
     "prompt": "Create a message class ZLOGISTICS_MSG with error and warning codes for tracking delivery exceptions.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "MSAG"
+    "value": "MSAG",
+    "expectedArgs": {
+      "action": "create"
+    }
   },
   {
     "id": "SAPWrite.type.TTYP",
     "prompt": "Create a table type ZTY_INVOICE_LINES based on the structure of BSEG.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "TTYP"
+    "value": "TTYP",
+    "expectedArgs": {
+      "action": "create"
+    }
   },
   {
     "id": "SAPWrite.type.DESD",
     "prompt": "Create a logical external schema ZLES_SALES_EXPORT from this AFF JSON definition.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "DESD"
+    "value": "DESD",
+    "expectedArgs": {
+      "action": "create"
+    }
   },
   {
     "id": "SAPWrite.type.DTSC",
     "prompt": "Create a static cache definition ZDTSC_PRODUCT using this DDL text.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "DTSC"
+    "value": "DTSC",
+    "expectedArgs": {
+      "action": "create"
+    }
   },
   {
     "id": "SAPWrite.type.CSNM",
     "prompt": "Create a CSN model ZCSN_SALES from this AFF JSON payload.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "CSNM"
+    "value": "CSNM",
+    "expectedArgs": {
+      "action": "create"
+    }
   },
   {
     "id": "SAPWrite.type.EVTB",
     "prompt": "Create an event binding for the ZCL_ORDER class to handle the on_update event.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "EVTB"
+    "value": "EVTB",
+    "expectedArgs": {
+      "action": "create"
+    }
   },
   {
     "id": "SAPWrite.type.EVTO",
     "prompt": "Create event object ZEV_SALES_ORDER_CREATED with standard lifecycle events and persistence handling.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "EVTO"
+    "value": "EVTO",
+    "expectedArgs": {
+      "action": "create"
+    }
   },
   {
     "id": "SAPWrite.type.COTA",
     "prompt": "Create the server-driven object ZCO_SALES based on this AFF JSON payload.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "COTA"
+    "value": "COTA",
+    "expectedArgs": {
+      "action": "create"
+    }
   },
   {
     "id": "SAPWrite.type.DSFD",
     "prompt": "Create a scalar function definition ZSFD_NET_AMOUNT using this DDL text.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "DSFD"
+    "value": "DSFD",
+    "expectedArgs": {
+      "action": "create"
+    }
   },
   {
     "id": "SAPWrite.type.DTDC",
     "prompt": "Create a dynamic cache definition ZDTDC_ORDER_LOOKUP using this DDL text.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "DTDC"
+    "value": "DTDC",
+    "expectedArgs": {
+      "action": "create"
+    }
   },
   {
     "id": "SAPWrite.type.UIAD",
     "prompt": "Create the launchpad app descriptor item ZUIA_INVOICE_APP from this AFF JSON.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "UIAD"
+    "value": "UIAD",
+    "expectedArgs": {
+      "action": "create"
+    }
   },
   {
     "id": "SAPActivate.action.activate",

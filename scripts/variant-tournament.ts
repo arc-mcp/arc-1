@@ -9,7 +9,7 @@
  * Scoring is per-tool as well as overall, because the interesting failure is a variant that wins its
  * own cases by stealing a neighbour's: SAPWrite and SAPContext compete for the same requests, and a
  * louder SAPWrite can drag in reads. `--only` narrows to one tool's cases for fast iteration; drop
- * it for the full 181 before believing any result.
+ * it for the full corpus before believing any result.
  *
  *   npx tsx scripts/variant-tournament.ts --only SAPWrite experiments/*.json
  *   npx tsx scripts/variant-tournament.ts --model claude-haiku-4-5-20251001 experiments/winner.json

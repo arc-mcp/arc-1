@@ -1,181 +1,44 @@
 # Tool-description optimization loop
 
-**Goal:** shrink the `tools/list` payload (a recurring per-request token tax) across **100% of the
-surface**, without losing routing accuracy on mid-tier models. Targeted at the 1.0 release.
+> **Read this first.** Three review rounds found the benchmark's semantic oracle broken at
+> progressively deeper levels. The current state is honest about what it measures, but it is **not**
+> a validated gate. Everything below the "Open work" section is historical narrative, including
+> results that were later retracted.
 
-## Where we stand
+## Status
 
-`npm run check:sizes`:
+**Shipped to the tool surface** (documentation merit, no measured-improvement claim):
 
-| scenario | tools | wire | schema tokens | description tokens |
-|---|---|---|---|---|
-| `standard-default` (read-only) | 9 | 44,922 B | ~11.2k | ~8.3k |
-| `standard-full-git` | 12 | 69,177 B | ~17.3k | ~12.2k |
-| `hyperfocused-default` | 1 | 927 B | ~232 | ~102 |
+1. SAPWrite leads with its purpose instead of ~1,100 characters of payload hygiene.
+2. `TTYP` added to SAPRead's type inventory — a supported type that was undocumented.
+3. "rename" removed from the SAPWrite lead — no repository-object rename action exists.
 
-Descriptions are **~71% of the payload** (12.2k of 17.3k tokens on the full surface). That is the
-optimization target, already measured and CI-ratcheted by
-[check-tool-schema-budget.ts](scripts/ci/check-tool-schema-budget.ts).
+**Benchmark: usable for coverage and large regressions only.** Its detection floor is ~7 cases
+(measured: 153/149/153 on byte-identical input), which is larger than every delta this work
+produced. It does not certify that a passing call would be accepted by the server.
 
-## What the research says
+## Open work before this is a gate
 
-- **Descriptions are the dominant tool-selection signal.** Swapping two tools' descriptions can
-  invert their selection rates; name edits rarely re-rank stably. Trimming one is a real
-  intervention on routing, not cosmetic.
-- **"Looking is not picking."** Models attend to a description without incorporating it into the
-  decision. Lower information density helps the deciding detail actually register — so compression
-  is not purely a tax/accuracy tradeoff and can *improve* routing.
-- **Anthropic's own guidance pushes the other way**: describe the tool "to a new hire", make
-  implicit context explicit — specialized formats, niche terminology, resource relationships. And
-  their tool-writing advice came from exactly this method: "repeatedly optimizing our internal tool
-  implementations with Claude Code."
-- **Resolution:** the target is not *shortest*, it is *highest information per token*. Cut what the
-  JSON Schema already states (types, required, enum values); keep what a model cannot infer (SAP
-  formats like TR_TARGET `/TRG/` vs `C11`, refuse-diff rules, destructive warnings).
-- **Not a lever:** the 2026-07-28 spec's `ttlMs`/`cacheScope` on `tools/list` is HTTP-level caching.
-  It saves round trips, not the tokens a model processes per request.
-
-## There is no free lunch — measured, not assumed
-
-Before compressing semantically, all three deterministic ("provably redundant, safe anywhere")
-levers were measured on the real surface:
-
-| lever | opportunity |
-|---|---|
-| Tool description ↔ its own property descriptions (verbatim 4-gram overlap) | **~803 B** (1.6%) |
-| Identical property descriptions repeated across tools (a `$ref` candidate) | **11 B** (0.0%) |
-| Enum values re-listed in prose | 2,102 B of tool descs, but the surrounding prose carries meaning |
-
-**ARC-1's descriptions are already non-redundant.** There is no structural win to harvest, so every
-further byte is genuine semantic compression that trades information for size — and must be
-measured. This is why the loop is eval-gated rather than a formatter.
-
-## Coverage was the blocker — and scenario count lied
-
-The first loop run accepted a SAPTransport rewrite: −3,423 B (53% off that tool), full agentic suite
-holding at 86.2%. It looked clean. It had dropped `summary=true`, the
-`target=<system | system.client | /group/>` TR_TARGET syntax with the `/TRG/` vs `C11` distinction,
-and `create`'s `$TMP` inference — because SAPTransport's 8 scenarios exercise **2 of its 11
-actions**. Nothing calls `create`, `release`, `delete`, or `reassign`.
-
-Gating on enum coverage instead of scenario count showed the real picture: only SAPSearch, SAPLint
-and SAPQuery cleared the bar — **8% of the payload**. SAPWrite (20,972 B) sat at type 2/30, SAPRead
-(9,903 B) at type 11/49, SAPDiagnose at action 3/21.
-
-## Two instruments, because neither alone is enough
-
-| | [routing-bench.ts](scripts/routing-bench.ts) | `tests/evals` scenarios |
+| # | gap | why it matters |
 |---|---|---|
-| covers | **100% of action/type values** (182 cases) | 58 realistic prompts, a fraction of values |
-| shape | one single-turn call per case | full agentic loop, mock or live backend |
-| scores | correct tool + correct discriminator + required args present | tiered optimal/acceptable/forbidden |
-| catches | lost discrimination anywhere on the surface | multi-step and recovery behavior |
-| misses | multi-turn realism | anything its prompts never reach |
+| 1 | **Schema validation is not semantic validation.** `safeParse` passes `SAPLint({action:"lint"})`, `SAPGit({action:"branches"})`, `SAPTransport({action:"remove_object", id})` and `SAPWrite` edit_method without type/source — all rejected by their handlers. | A "pass" does not mean the call works. Needs a semantic contract shared by handlers and benchmark. |
+| 2 | **No dispatch normalization.** The bench skips the normalization `dispatch.ts` applies before validating, so lowercase types and `CLAS/OC` aliases can fail here though dispatch accepts them. | False failures. |
+| 3 | **Coverage is narrower than the name suggests.** Only multi-valued `action`/`type` enums. Singleton modes (`SAPRead action=diff`), `SAPSearch.searchType`/`source`, and transport `target`/`summary` are unmeasured — one generic SAPSearch case exists. | Search-description regressions would not be caught. |
+| 4 | **Some cases cannot be satisfied in one call.** `VERSION_SOURCE` needs a `versionUri` from a prior VERSIONS call; SAPLint/quickfix need raw source; `SAPGit.external_info` needs a URL; FUNC/INCL creates need the function group. | Multi-step work belongs in an agentic eval, not a forced single call. |
+| 5 | **The optimizer ignores the measured nondeterminism.** One baseline run, one candidate run — with a 4-case spread on identical input, it can accept a regression or reject an improvement on noise alone. Needs paired repeated runs with a non-inferiority rule, or refusal of nondeterministic backends. | Automatic optimization is unsafe today. |
 
-The bench is the **gate** (cheap enough to cover everything); the agentic suite is the **realism
-check** before shipping. Anthropic's guidance is explicit that realistic multi-step tasks matter —
-so the bench does not replace the scenarios, it makes the other 92% of the payload measurable.
+## What was fixed in the latest round
 
-### The anti-leak rule, and why the obvious version was wrong
+- **Multi-field oracle.** The scorer checked one discriminator, so `SAPWrite.type.CLAS` ("Create a
+  global class…") scored a PASS for `{action:"delete", type:"CLAS"}`. Every SAPWrite type case now
+  pins its implied action, with tests asserting no case pins an action contradicting its prompt.
+- **Environment allowlist** instead of a prefix denylist, which had left `VCAP_SERVICES`,
+  `TEST_BTP_ACCESS_TOKEN`, `NPL_*`, `GITHUB_TOKEN` and the AWS variables in place.
+- **`--readonly`** filters by reachable target IDs, not tool names (23 write-action cases were
+  surviving and dragging every comparison down by a constant).
+- **Overclaims removed** from module headers, the schema-budget comment, and this document.
 
-A generated prompt that hands over the answer tests string matching, not routing. The first filter
-rejected any prompt containing the tool name **or the literal enum value** — and promptly threw away
-`SAPActivate.activate`, `SAPLint.format`, and `SAPDiagnose.syntax`, because a natural request for
-those actions almost necessarily contains the word. Losing exactly the common paths is the opposite
-of coverage.
-
-What matters is **schema-shaped** leakage, not vocabulary overlap:
-
-| prompt | verdict |
-|---|---|
-| `Call it with action=release` | leak — schema-shaped |
-| `run the "activate" step on ZHELLO` | leak — quoted literal |
-| `run edit_method on ZCL_ORDER` | leak — technical identifier, never natural prose |
-| `Format this ABAP code properly` | **fine** — routing it to SAPLint over SAPWrite is a real decision |
-| `Show me the domain behind field BUKRS` | **fine** — `DOMA` must not fire on "domain" |
-
-So: technical identifiers (snake_case, UPPERCASE type codes) always leak; ordinary words leak only
-in `key=value` or quoted form. Unit-tested both directions.
-
-### First real baseline: the instrument works, and the descriptions do not
-
-`qwen3.5:27b` on the first 53 generated cases: **31/53 (58.5%)**. Not saturated — the gate has ample
-headroom to detect a regression, which is what makes it usable.
-
-The failures split into two piles, and separating them is mandatory before believing either:
-
-**Generator bug (case wrong, model right).** `SAPRead.type.VIEW` was generated as *"Show me the
-source code for ZCL_ORDER"* — a `ZCL_*` name means a class, so `type=CLAS` was the correct answer.
-SAP naming is itself a routing signal; a case whose object name contradicts its target type is
-unanswerable. The generator prompt now pins name shape to the target (`ZCL_*` class, `ZI_*` CDS
-view, `T001` table, `A4HK900123` transport …), and the first 53 cases were archived as tainted.
-
-**Real routing failure (case right, description not working).** Every SAPWrite case used an
-unambiguous write prompt, and 4 of 5 misrouted:
-
-| prompt | model chose |
-|---|---|
-| "Update class ZCL_ORDER to add a new method calculate_total" | `SAPContext(deps)` |
-| "Update the implementation of calculate_total in ZCL_ORDER" | `SAPRead` |
-| "Update the form calculate_totals in zreport01" | `SAPRead` |
-| "Create a local class ZCL_CALC_TAX with a static method…" | `SAPSearch` |
-
-**SAPWrite is the largest description on the surface (20,972 B — 30% of the payload) and it does not
-win its own requests.** That is "looking is not picking" in the wild, and it changes the objective
-for 1.0: this is not only a token-savings exercise. Compression guided by the bench may *improve*
-routing, and SAPWrite is where both the bytes and the failures are.
-
-Preliminary — n=5 for SAPWrite, one model, cases from the tainted batch (though the SAPWrite prompts
-themselves were sound). Confirm on the full 182 across two models before acting.
-
-### Why SAPWrite loses: it never enters the contest
-
-Comparing the first 240 characters of the four tools that compete for "change this object":
-
-| tool | opening |
-|---|---|
-| SAPRead | "Read SAP ABAP objects — exact raw source, a method body…" |
-| SAPSearch | "Search for ABAP objects…" |
-| SAPContext | "**Primary tool** for understanding ABAP/CDS objects before specs, reviews, explanations, **or changes** — use instead of SAPRead when…" |
-| SAPWrite | "MINIMAL PAYLOAD — send ONLY the fields your action+type needs; do NOT add unrelated optional fields…" |
-
-Two compounding causes, and neither is about length:
-
-1. **SAPWrite is the only tool whose opening never states what it does.** Its first ~1,100
-   characters are argument hygiene — call-time guidance occupying selection-time attention.
-   `SAPWRITE_MINIMAL_PAYLOAD_GUIDE` is prepended at `tools.ts:575`.
-2. **SAPContext actively claims the ground.** It calls itself "Primary tool", says "use instead of
-   SAPRead", and lists "or changes" among its uses. One tool campaigns for the request; the other
-   does not show up.
-
-Confirmed by the failure shape: every SAPWrite miss was a **wrong-tool** error, never a wrong-action
-one. Its `action` property description is well written and discriminative — the model just never
-gets to it.
-
-The fix is therefore two-sided: SAPWrite states its identity and its boundaries first, and
-SAPContext stops advertising itself for the change itself ("it explains, it never edits").
-
-### The instrument counted server errors as misroutes
-
-Before any of the results below can be read, a measurement bug has to be named: `runBench` scored a
-failed HTTP call as a failed route, and did not retry. In the first full baseline, **11 of the ~19
-visible SAPWrite failures were `error: fetch failed`** — ollama dropping connections under
-concurrency, recorded as routing verdicts.
-
-Two consequences:
-
-1. **The 60.2% baseline is an underestimate**, and SAPWrite's 11/44 is contaminated. Its real
-   routing accuracy is better than 25%; how much better needs a clean re-run.
-2. **The variant comparisons were uninterpretable.** Unscored cases land differently every run, so
-   that per-run randomness swamped whatever effect the wording had. The "positional theory is wrong"
-   conclusion below was drawn from a broken instrument — it is not established, merely unmeasured.
-
-Fix: retry with backoff, and exclude cases that never got an answer from the denominator rather than
-scoring them as misroutes. A run now prints `⚠ N unscored`, because a tournament with material
-unscored counts is not comparable across variants.
-
-The general lesson is the one the SAPTransport episode already taught in a different costume: a
-number that looks like a verdict is not a verdict until you check what produced it.
+---
 
 ## The measured detection floor — and what it means for every result here
 

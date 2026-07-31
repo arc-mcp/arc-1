@@ -3,7 +3,7 @@
  * A/B a description change against the routing benchmark.
  *
  * Takes an overlay of tool definitions (same shape the optimizer emits, or hand-written) and scores
- * it against the stock surface on the same 181 fixed cases. Reports per-tool deltas so you can see
+ * it against the stock surface on the same fixed corpus. Reports per-tool deltas so you can see
  * both the intended win AND whether the change stole calls from a neighbouring tool — a shorter or
  * louder SAPWrite pulls in requests that belong to SAPRead, and only the full case set shows that.
  *

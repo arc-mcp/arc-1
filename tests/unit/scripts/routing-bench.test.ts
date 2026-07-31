@@ -129,19 +129,70 @@ describe('claude CLI isolation', () => {
     expect(args.some((a) => a.length > 200)).toBe(false);
   });
 
-  it('strips SAP and provider credentials from the child environment', () => {
+  it('passes an allowlist, so secrets it has never heard of cannot leak', () => {
+    // A prefix denylist has to know every secret in advance; it previously left VCAP_SERVICES,
+    // GITHUB_TOKEN, AWS_* and NPL_* untouched.
     const env = sanitizedEnv({
       PATH: '/usr/bin',
+      HOME: '/home/x',
       SAP_PASSWORD: 'secret',
-      SAP_URL: 'https://prod.example',
       ARC1_API_KEYS: 'k:admin',
-      TEST_SAP_URL: 'https://test.example',
-      ANTHROPIC_API_KEY: 'sk-ant-x',
-      OLLAMA_BASE_URL: 'http://localhost:11434',
+      VCAP_SERVICES: '{"xsuaa":[…]}',
+      TEST_BTP_ACCESS_TOKEN: 'tok',
+      NPL_PASSWORD: 'p',
+      GITHUB_TOKEN: 'ghp_x',
+      AWS_SECRET_ACCESS_KEY: 'aws',
+      SOME_FUTURE_SECRET: 'x',
     });
     expect(env.PATH).toBe('/usr/bin');
-    for (const k of ['SAP_PASSWORD', 'SAP_URL', 'ARC1_API_KEYS', 'TEST_SAP_URL', 'ANTHROPIC_API_KEY']) {
+    expect(env.HOME).toBe('/home/x');
+    for (const k of [
+      'SAP_PASSWORD',
+      'ARC1_API_KEYS',
+      'VCAP_SERVICES',
+      'TEST_BTP_ACCESS_TOKEN',
+      'NPL_PASSWORD',
+      'GITHUB_TOKEN',
+      'AWS_SECRET_ACCESS_KEY',
+      'SOME_FUTURE_SECRET',
+    ]) {
       expect(env[k], `${k} leaked to child`).toBeUndefined();
+    }
+  });
+});
+
+/**
+ * The oracle checked a single discriminator, so on SAPWrite — where destructive and constructive
+ * actions share one schema — "Create a global class ZCL_PAYMENT_GATEWAY" scored a PASS for
+ * {action:"delete", type:"CLAS"}. Every behaviour-selecting argument the prompt fixes must be
+ * pinned, or the benchmark rewards the opposite of what was asked.
+ */
+describe('multi-field expectations', () => {
+  const cases = JSON.parse(readFileSync(CASES_PATH, 'utf8')) as Array<{
+    id: string;
+    tool: string;
+    key?: string;
+    prompt: string;
+    expectedArgs?: Record<string, string>;
+  }>;
+
+  it('pins the implied action on every SAPWrite type case', () => {
+    const unpinned = cases
+      .filter((c) => c.tool === 'SAPWrite' && c.key === 'type' && !c.expectedArgs?.action)
+      .map((c) => c.id);
+    expect(unpinned, `${unpinned.length} SAPWrite type case(s) do not pin an action`).toEqual([]);
+  });
+
+  it('never pins an action that contradicts the prompt verb', () => {
+    for (const c of cases.filter((x) => x.expectedArgs?.action === 'delete')) {
+      expect(/\b(delete|remove|drop)\b/i.test(c.prompt), `${c.id}: pinned delete but prompt is not destructive`).toBe(
+        true,
+      );
+    }
+    for (const c of cases.filter((x) => x.expectedArgs?.action === 'create')) {
+      expect(/\b(delete|remove|drop)\b/i.test(c.prompt), `${c.id}: pinned create but prompt reads destructive`).toBe(
+        false,
+      );
     }
   });
 });

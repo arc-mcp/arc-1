@@ -28,7 +28,7 @@ import { pathToFileURL } from 'node:url';
 import { config as loadDotenv } from 'dotenv';
 import { getToolDefinitions, type ToolDefinition } from '../src/handlers/tools.js';
 import { DEFAULT_CONFIG } from '../src/server/types.js';
-import { FULL_CONFIG, loadCases, type RoutingCase, runBench } from './routing-bench.js';
+import { enumTargets, FULL_CONFIG, loadCases, type RoutingCase, runBench } from './routing-bench.js';
 
 loadDotenv();
 
@@ -203,10 +203,13 @@ async function main(): Promise<void> {
   }
   const current = (): ToolDefinition[] => stock.map((t) => overrides[t.name] ?? t);
 
-  // --readonly removes write tools from the surface, so their cases can never pass and would drag
-  // every comparison down by a constant. Score only what the configured surface exposes.
-  const exposed = new Set(stock.map((t) => t.name));
-  const cases = loadCases().filter((c) => exposed.has(c.tool));
+  // --readonly removes write tools AND write actions, so filtering by tool name alone still leaves
+  // ~23 unreachable cases (SAPManage/SAPTransport/SAPGit write actions) dragging every comparison
+  // down by a constant. Filter against the exact targets the configured surface can route to.
+  const reachable = new Set(
+    enumTargets(stock).map((t) => (t.key ? `${t.tool.name}.${t.key}.${t.value}` : t.tool.name)),
+  );
+  const cases = loadCases().filter((c) => reachable.has(c.id));
   const casesFor = (name: string): RoutingCase[] => cases.filter((c) => c.tool === name);
   // Collapsing BenchResult to `.passed` hides unscored cases: with a backend returning 503 for
   // everything, every gate saw 0 and the loop still compared and wrote overlays. A run that did not

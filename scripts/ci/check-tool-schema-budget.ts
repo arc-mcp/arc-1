@@ -184,10 +184,10 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     resolvedFeatures: ALL_FEATURES_AVAILABLE,
     budget: {
       // Post-trim: full write surface ~66.3 KB / ~16.6k schema tokens / 250 descriptions.
-      // Raised 17_300 -> 17_500 for SAPWrite's opening line (it used to start with 1,100 chars of
-      // payload hygiene) plus SAPContext's read-only boundary. Description tokens stay under the
-      // original 12_400. Measured, not assumed: +3 cases on the 160-case routing benchmark against
-      // claude-haiku-4-5. 69.6 KB, still under the 72 KB wire wall.
+      // Raised 17_300 -> 17_500 for SAPWrite's opening line, which used to start with ~1,100
+      // characters of payload hygiene before saying what the tool does. Description tokens stay
+      // under the original 12_400. No measured-improvement claim: the routing benchmark's detection
+      // floor (~7 cases) is larger than any delta observed, so this rests on documentation merit.
       // See docs/plans/2026-07-30-tool-description-optimization-loop.md.
       schemaTokenEstimate: 17_500,
       descriptionTokenEstimate: 12_400,
