@@ -29,6 +29,7 @@ import {
   decodeXmlEntities,
   escapeXmlAttr,
   findDeepNodes,
+  getNestedArray,
   type NamedItem,
   parseAtcSystemCheckVariant,
   parseNamedItems,
@@ -1084,9 +1085,9 @@ function parseSyntaxCheckResult(xml: string): SyntaxCheckResult {
 }
 
 /** Extract the human-readable title from an AUnit alert node (string or #text object). */
-function alertTitle(alert: Record<string, unknown>): string | undefined {
+function alertTitle(alert: Record<string, unknown>): string {
   const titleVal = alert.title;
-  if (titleVal == null) return undefined;
+  if (titleVal == null) return '';
   if (typeof titleVal === 'string') return titleVal;
   if (typeof titleVal === 'object' && !Array.isArray(titleVal)) {
     return String((titleVal as Record<string, unknown>)['#text'] ?? '');
@@ -1094,88 +1095,115 @@ function alertTitle(alert: Record<string, unknown>): string | undefined {
   return String(titleVal);
 }
 
+/** Flatten `<details><detail text="…">`, which nests further on some releases. The nested texts
+ *  carry the payload ("Expected [2] Actual [1]"); the title alone is often generic. */
+function alertDetails(node: Record<string, unknown>): string[] {
+  const texts: string[] = [];
+  for (const detail of getNestedArray(node, 'details', 'detail')) {
+    const text = String(detail['@_text'] ?? '').trim();
+    if (text) texts.push(text);
+    texts.push(...alertDetails(detail));
+  }
+  return texts;
+}
+
+/** Title + details, entity-decoded (the shared parser runs with `processEntities: false`). */
+function alertMessage(alert: Record<string, unknown>): string | undefined {
+  const parts = [alertTitle(alert), ...alertDetails(alert)].filter(Boolean);
+  return parts.length > 0 ? decodeXmlEntities(parts.join(' — ')) : undefined;
+}
+
+/** `severity="tolerable"` means SAP declined to run the test ("risk level of test class exceeds
+ *  upper limit"), NOT that it failed — reporting those as failures sends the caller after a
+ *  phantom bug. Anything else (critical/fatal) is a real failure. */
+function alertStatus(alerts: Array<Record<string, unknown>>): 'failed' | 'skipped' {
+  return alerts.some((a) => a['@_severity'] !== 'tolerable') ? 'failed' : 'skipped';
+}
+
+/** One row for one alert that has no test method to hang off (run, program or class level). */
+function alertRow(
+  program: string,
+  testClass: string,
+  testMethod: string,
+  alert: Record<string, unknown>,
+): UnitTestResult {
+  const message = alertMessage(alert);
+  return { program, testClass, testMethod, status: alertStatus([alert]), ...(message ? { message } : {}) };
+}
+
+/**
+ * Parse an `abapunit/testruns` result.
+ *
+ * Walks the response structure — `runResult → program → testClasses → testClass → testMethods →
+ * testMethod`, each level carrying its own optional `alerts` — rather than searching the tree for
+ * `testMethod` nodes. Two reasons, both live-verified on 7.50 / 7.58 / 8.16:
+ *   - an alert at run, program or class level is the ONLY record of why a run produced no methods
+ *     (CLASS_SETUP dump, generation failure, risk level above the client ceiling);
+ *   - the program name must come from `<program adtcore:name>`, because the testClass URI it used
+ *     to be parsed from is release-dependent (7.50 `…/includes/testclasses#start=7,6`
+ *     vs 758/816 `…#testclass=LTCL_X`).
+ */
 function parseUnitTestResults(xml: string): UnitTestResult[] {
   const results: UnitTestResult[] = [];
-  const parsed = parseXml(xml);
-  const testClasses = findDeepNodes(parsed, 'testClass');
+  const runResult = (parseXml(xml).runResult ?? {}) as Record<string, unknown>;
 
-  // Program- or run-level alerts with no testClass at all (e.g. "cannot be tested", abort
-  // before discovery): without this, the run silently returns [] and the reason is lost.
-  if (testClasses.length === 0) {
-    const orphanAlerts = findDeepNodes(parsed, 'alert');
-    for (const alert of orphanAlerts) {
-      results.push({
-        program: '',
-        testClass: '(run)',
-        testMethod: '(alert)',
-        status: 'failed',
-        ...(alertTitle(alert as Record<string, unknown>)
-          ? { message: alertTitle(alert as Record<string, unknown>) }
-          : {}),
-      });
-    }
-    return results;
+  for (const alert of getNestedArray(runResult, 'alerts', 'alert')) {
+    results.push(alertRow('', '(run)', '(alert)', alert));
   }
 
-  for (const tc of testClasses) {
-    const className = String(tc['@_name'] ?? '');
-    const uri = String(tc['@_uri'] ?? '');
-    // Extract program name from URI:
-    //   classes: /sap/bc/adt/oo/classes/ZCL_TEST/...
-    //   programs: /sap/bc/adt/programs/programs/ZTEST/...  (note: "programs" appears twice)
-    const uriParts = uri.split('/');
-    let program = '';
-    for (let i = 0; i < uriParts.length - 1; i++) {
-      if (uriParts[i] === 'classes') {
-        program = uriParts[i + 1] ?? '';
-        break;
-      }
-      if (uriParts[i] === 'programs' && uriParts[i + 1] === 'programs' && i + 2 < uriParts.length) {
-        program = uriParts[i + 2] ?? '';
-        break;
-      }
+  for (const program of asNodeArray(runResult.program)) {
+    const programName = String(program['@_name'] ?? '');
+
+    for (const alert of getNestedArray(program, 'alerts', 'alert')) {
+      results.push(alertRow(programName, '(program)', '(alert)', alert));
     }
 
-    const methods = findDeepNodes(tc, 'testMethod');
+    for (const tc of getNestedArray(program, 'testClasses', 'testClass')) {
+      const className = String(tc['@_name'] ?? '');
+      const classAlerts = getNestedArray(tc, 'alerts', 'alert');
+      const methods = getNestedArray(tc, 'testMethods', 'testMethod');
 
-    // Class-level abort (e.g. class_setup failure): the testClass node carries alerts but no
-    // testMethod children. Surface the alert instead of dropping the class from the result.
-    if (methods.length === 0) {
-      const classAlerts = findDeepNodes(tc, 'alert');
-      results.push({
-        program,
-        testClass: className,
-        testMethod: '(class-level alert)',
-        status: 'failed',
-        ...(classAlerts.length > 0 && alertTitle(classAlerts[0] as Record<string, unknown>)
-          ? { message: alertTitle(classAlerts[0] as Record<string, unknown>) }
-          : { message: 'test class returned no methods and no alert — aborted before discovery' }),
-      });
-      continue;
-    }
+      // A class that aborted in CLASS_SETUP, or that SAP declined to run, reports alerts here and
+      // no methods at all — the shape that used to vanish from the result.
+      for (const alert of classAlerts) {
+        results.push(alertRow(programName, className, '(class-level alert)', alert));
+      }
 
-    for (const method of methods) {
-      const methodName = String(method['@_name'] ?? '');
-      const alerts = findDeepNodes(method, 'alert');
-      const hasAlert = alerts.length > 0;
-      // Extract message from first alert's title element
-      const message = hasAlert ? alertTitle(alerts[0] as Record<string, unknown>) : undefined;
-      // Extract duration from executionTime attribute (in seconds)
-      const execTime = method['@_executionTime'];
-      const duration = execTime ? Number(execTime) : undefined;
+      for (const method of methods) {
+        const alerts = getNestedArray(method, 'alerts', 'alert');
+        const message = alerts.length > 0 ? alertMessage(alerts[0] as Record<string, unknown>) : undefined;
+        const execTime = method['@_executionTime'];
+        const duration = execTime ? Number(execTime) : undefined;
 
-      results.push({
-        program,
-        testClass: className,
-        testMethod: methodName,
-        status: hasAlert ? 'failed' : 'passed',
-        ...(message ? { message } : {}),
-        ...(duration !== undefined && !Number.isNaN(duration) ? { duration } : {}),
-      });
+        results.push({
+          program: programName,
+          testClass: className,
+          testMethod: String(method['@_name'] ?? ''),
+          status: alerts.length > 0 ? alertStatus(alerts) : 'passed',
+          ...(message ? { message } : {}),
+          ...(duration !== undefined && !Number.isNaN(duration) ? { duration } : {}),
+        });
+      }
+
+      if (classAlerts.length === 0 && methods.length === 0) {
+        results.push({
+          program: programName,
+          testClass: className,
+          testMethod: '(class-level alert)',
+          status: 'skipped',
+          message: 'test class reported no test methods and no alert',
+        });
+      }
     }
   }
 
   return results;
+}
+
+/** One-or-many node → array (`program` is not an ARRAY_TAG, so a single one parses as an object). */
+function asNodeArray(value: unknown): Array<Record<string, unknown>> {
+  if (Array.isArray(value)) return value as Array<Record<string, unknown>>;
+  return value && typeof value === 'object' ? [value as Record<string, unknown>] : [];
 }
 
 function toNodeRecord(value: unknown): Record<string, unknown> | undefined {

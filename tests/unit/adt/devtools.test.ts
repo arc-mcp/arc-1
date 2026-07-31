@@ -1207,191 +1207,158 @@ describe('DevTools', () => {
   // ─── runUnitTests ──────────────────────────────────────────────────
 
   describe('runUnitTests', () => {
-    it('parses passing tests with class info', async () => {
-      const xml = `<testResult>
-        <testClass name="LTCL_TEST" uri="/sap/bc/adt/oo/classes/ZCL_TEST/includes/testclasses">
-          <testMethod name="test_success"></testMethod>
-        </testClass>
-      </testResult>`;
-      const http = mockHttp(xml);
-      const { tests: results } = await runUnitTests(
-        http,
-        unrestrictedSafetyConfig(),
-        '/sap/bc/adt/oo/classes/ZCL_TEST',
-      );
-      expect(results).toHaveLength(1);
-      expect(results[0]?.testMethod).toBe('test_success');
-      expect(results[0]?.status).toBe('passed');
-      expect(results[0]?.testClass).toBe('LTCL_TEST');
-      expect(results[0]?.program).toBe('ZCL_TEST');
+    // Captured `abapunit/testruns` responses (see tests/fixtures/xml). Hand-written AUnit XML used
+    // to hide two release-dependent traps — the `<alerts>`/`<testMethods>` wrappers and the
+    // testClass URI shape — so every parse assertion below runs against a real response.
+    const aunitFixtures = join(import.meta.dirname, '../../fixtures/xml');
+    const mixed816 = readFileSync(join(aunitFixtures, 'aunit-testrun-mixed-alerts.xml'), 'utf-8');
+    const programAlert758 = readFileSync(join(aunitFixtures, 'aunit-testrun-program-alert.xml'), 'utf-8');
+    const nw750 = readFileSync(join(aunitFixtures, 'aunit-testrun-nw750.xml'), 'utf-8');
+
+    const runFixture = async (xml: string) =>
+      (await runUnitTests(mockHttp(xml), unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_ARC1_AUNIT_PROBE'))
+        .tests;
+
+    it('parses passing and failing methods, worst detail included (real 8.16 response)', async () => {
+      const results = await runFixture(mixed816);
+      const passed = results.find((r) => r.testMethod === 'PASSES');
+      const failed = results.find((r) => r.testMethod === 'FAILS');
+      expect(passed).toMatchObject({ testClass: 'LTCL_OK', status: 'passed', duration: 0 });
+      expect(passed?.message).toBeUndefined();
+      expect(failed?.status).toBe('failed');
+      expect(failed?.duration).toBe(0.63);
+      // The title alone omits the values; the payload is in the nested <detail text="…">.
+      expect(failed?.message).toContain("Critical Assertion Error: 'one is not two'");
+      expect(failed?.message).toContain('Expected [2] Actual [1]');
     });
 
-    it('detects failing tests (with alerts)', async () => {
-      const xml = `<testResult>
-        <testClass name="LTCL_TEST" uri="/sap/bc/adt/oo/classes/ZCL_TEST/includes/testclasses">
-          <testMethod name="test_fail"><alert kind="failedAssertion"><title>Expected X got Y</title></alert></testMethod>
-        </testClass>
-      </testResult>`;
-      const http = mockHttp(xml);
-      const { tests: results } = await runUnitTests(
-        http,
-        unrestrictedSafetyConfig(),
-        '/sap/bc/adt/oo/classes/ZCL_TEST',
-      );
-      expect(results).toHaveLength(1);
-      expect(results[0]?.status).toBe('failed');
+    it('takes the program name from <program adtcore:name>, not the testClass URI', async () => {
+      // The testClass URI is `…/classes/zcl_arc1_aunit_probe#testclass=LTCL_OK` on 758/816 and
+      // `…/includes/testclasses#start=7,6` on 7.50 — neither yields a usable program name.
+      for (const xml of [mixed816, nw750]) {
+        const results = await runFixture(xml);
+        expect(results.length).toBeGreaterThan(0);
+        for (const row of results) expect(row.program).toBe('ZCL_ARC1_AUNIT_PROBE');
+      }
     });
 
-    it('handles empty results (no test methods)', async () => {
-      const http = mockHttp('<testResult/>');
-      const { tests: results } = await runUnitTests(
-        http,
-        unrestrictedSafetyConfig(),
-        '/sap/bc/adt/oo/classes/ZCL_TEST',
-      );
+    it('reports a CLASS_SETUP abort as failed with the cause (class has alerts, no methods)', async () => {
+      const results = await runFixture(mixed816);
+      const row = results.find((r) => r.testClass === 'LTCL_SETUP_FAIL');
+      expect(row).toMatchObject({ testMethod: '(class-level alert)', status: 'failed' });
+      expect(row?.message).toContain('CX_SY_ITAB_LINE_NOT_FOUND');
+      expect(row?.message).toContain('Test failed in CLASS_SETUP or CLASS_CONSTRUCTOR');
+      // Entities are decoded — the shared parser runs with processEntities: false.
+      expect(row?.message).toContain('<UNCAUGHT_EXCEPTION>');
+      expect(row?.message).not.toContain('&lt;');
+    });
+
+    it('reports a risk-level refusal as skipped, not failed (severity="tolerable")', async () => {
+      // SAP declined to run the class; calling that a failure sends the caller after a phantom bug.
+      for (const xml of [mixed816, nw750]) {
+        const row = (await runFixture(xml)).find((r) => r.testClass === 'LTCL_RISKY');
+        expect(row).toMatchObject({ testMethod: '(class-level alert)', status: 'skipped' });
+        expect(row?.message).toContain('risk level of test class exceeds upper limit');
+      }
+    });
+
+    it('surfaces a program-level alert when the run produced no test class at all', async () => {
+      // Generation failure: <program> carries <alerts> and no <testClasses>.
+      const results = await runFixture(programAlert758);
+      expect(results).toHaveLength(1);
+      expect(results[0]).toMatchObject({
+        program: 'ZCL_ARC1_AUNIT_PROBE',
+        testClass: '(program)',
+        testMethod: '(alert)',
+        status: 'failed',
+      });
+      expect(results[0]?.message).toContain('GENERATE for program');
+      expect(results[0]?.message).toContain('"ZCL_ARC1_AUNIT_HELPER" is unknown');
+    });
+
+    it('tolerates NW 7.50 empty <alerts/> and <testMethods/> elements', async () => {
+      // 7.50 emits the containers even when empty; they parse to '' rather than to a node.
+      const results = await runFixture(nw750);
+      expect(results.map((r) => `${r.testClass}.${r.testMethod}=${r.status}`)).toEqual([
+        'LTCL_OK.FAILS=failed',
+        'LTCL_OK.PASSES=passed',
+        'LTCL_RISKY.(class-level alert)=skipped',
+        'LTCL_SETUP_FAIL.(class-level alert)=failed',
+      ]);
+    });
+
+    it('returns [] for an empty run result (nothing testable — no tests, no alerts)', async () => {
+      // Live on 7.58: a table, a domain, a class without a test include and a nonexistent class all
+      // return exactly this. "No tests ran" must stay distinguishable from "the run failed".
+      const results = await runFixture('<?xml version="1.0" encoding="utf-8"?><aunit:runResult xmlns:aunit="x"/>');
       expect(results).toEqual([]);
     });
 
-    it('handles multiple test methods', async () => {
-      const xml = `<testResult>
-        <testClass name="LTCL_TEST" uri="/sap/bc/adt/oo/classes/ZCL_TEST/includes/testclasses">
-          <testMethod name="test_a"></testMethod>
-          <testMethod name="test_b"><alert kind="failedAssertion"><title>Assertion failed</title></alert></testMethod>
-          <testMethod name="test_c"></testMethod>
-        </testClass>
-      </testResult>`;
-      const http = mockHttp(xml);
-      const { tests: results } = await runUnitTests(
-        http,
-        unrestrictedSafetyConfig(),
-        '/sap/bc/adt/oo/classes/ZCL_TEST',
+    it('surfaces a run-level alert (7.50 carries an alerts slot above <program>)', async () => {
+      const results = await runFixture(
+        `<?xml version="1.0"?><aunit:runResult xmlns:aunit="x">
+           <alerts><alert kind="error" severity="critical"><title>Object cannot be tested</title></alert></alerts>
+         </aunit:runResult>`,
       );
-      expect(results).toHaveLength(3);
-      expect(results[0]?.status).toBe('passed');
-      expect(results[1]?.status).toBe('failed');
-      expect(results[2]?.status).toBe('passed');
+      expect(results).toEqual([
+        {
+          program: '',
+          testClass: '(run)',
+          testMethod: '(alert)',
+          status: 'failed',
+          message: 'Object cannot be tested',
+        },
+      ]);
     });
 
-    it('extracts alert message from title element', async () => {
-      const xml = `<testResult>
-        <testClass name="LTCL_TEST" uri="/sap/bc/adt/oo/classes/ZCL_TEST/includes/testclasses">
-          <testMethod name="test_fail">
-            <alert kind="failedAssertion"><title>Expected 42 got 0</title></alert>
-          </testMethod>
-        </testClass>
-      </testResult>`;
-      const http = mockHttp(xml);
-      const { tests: results } = await runUnitTests(
-        http,
-        unrestrictedSafetyConfig(),
-        '/sap/bc/adt/oo/classes/ZCL_TEST',
+    it('reports a test class that returned neither methods nor alerts', async () => {
+      const results = await runFixture(
+        `<?xml version="1.0"?><aunit:runResult xmlns:aunit="x">
+           <program adtcore:name="ZCL_X" xmlns:adtcore="y">
+             <testClasses><testClass adtcore:name="LTCL_EMPTY"/></testClasses>
+           </program>
+         </aunit:runResult>`,
       );
-      expect(results).toHaveLength(1);
-      expect(results[0]?.message).toBe('Expected 42 got 0');
+      expect(results).toEqual([
+        {
+          program: 'ZCL_X',
+          testClass: 'LTCL_EMPTY',
+          testMethod: '(class-level alert)',
+          status: 'skipped',
+          message: 'test class reported no test methods and no alert',
+        },
+      ]);
     });
 
-    it('parses multiple test classes in one response', async () => {
-      const xml = `<testResult>
-        <testClass name="LTCL_FIRST" uri="/sap/bc/adt/oo/classes/ZCL_TEST/includes/testclasses">
-          <testMethod name="test_one"></testMethod>
-        </testClass>
-        <testClass name="LTCL_SECOND" uri="/sap/bc/adt/oo/classes/ZCL_TEST/includes/testclasses">
-          <testMethod name="test_two"></testMethod>
-        </testClass>
-      </testResult>`;
-      const http = mockHttp(xml);
-      const { tests: results } = await runUnitTests(
-        http,
-        unrestrictedSafetyConfig(),
-        '/sap/bc/adt/oo/classes/ZCL_TEST',
+    it('parses multiple test classes and reads the alert title from a #text node', async () => {
+      const results = await runFixture(
+        `<?xml version="1.0"?><aunit:runResult xmlns:aunit="x">
+           <program adtcore:name="ZCL_X" xmlns:adtcore="y">
+             <testClasses>
+               <testClass adtcore:name="LTCL_FIRST">
+                 <testMethods><testMethod adtcore:name="test_one"/></testMethods>
+               </testClass>
+               <testClass adtcore:name="LTCL_SECOND">
+                 <testMethods>
+                   <testMethod adtcore:name="test_two">
+                     <alerts><alert kind="failedAssertion" severity="critical">
+                       <title lang="EN">Expected 42 got 0</title>
+                     </alert></alerts>
+                   </testMethod>
+                 </testMethods>
+               </testClass>
+             </testClasses>
+           </program>
+         </aunit:runResult>`,
       );
       expect(results).toHaveLength(2);
-      expect(results[0]?.testClass).toBe('LTCL_FIRST');
-      expect(results[0]?.testMethod).toBe('test_one');
-      expect(results[1]?.testClass).toBe('LTCL_SECOND');
-      expect(results[1]?.testMethod).toBe('test_two');
-    });
-
-    it('extracts program name from URI', async () => {
-      const xml = `<testResult>
-        <testClass name="LTCL_TEST" uri="/sap/bc/adt/oo/classes/ZCL_MY_CLASS/includes/testclasses">
-          <testMethod name="test_it"></testMethod>
-        </testClass>
-      </testResult>`;
-      const http = mockHttp(xml);
-      const { tests: results } = await runUnitTests(
-        http,
-        unrestrictedSafetyConfig(),
-        '/sap/bc/adt/oo/classes/ZCL_MY_CLASS',
-      );
-      expect(results[0]?.program).toBe('ZCL_MY_CLASS');
-    });
-
-    it('extracts duration from executionTime attribute', async () => {
-      const xml = `<testResult>
-        <testClass name="LTCL_TEST" uri="/sap/bc/adt/oo/classes/ZCL_TEST/includes/testclasses">
-          <testMethod name="test_fast" executionTime="0.015"></testMethod>
-        </testClass>
-      </testResult>`;
-      const http = mockHttp(xml);
-      const { tests: results } = await runUnitTests(
-        http,
-        unrestrictedSafetyConfig(),
-        '/sap/bc/adt/oo/classes/ZCL_TEST',
-      );
-      expect(results[0]?.duration).toBe(0.015);
-    });
-
-    it('surfaces run-level alerts when the response has no testClass at all', async () => {
-      const xml = `<testResult>
-        <alert kind="error" severity="critical"><title>Object cannot be tested</title></alert>
-      </testResult>`;
-      const http = mockHttp(xml);
-      const { tests: results } = await runUnitTests(
-        http,
-        unrestrictedSafetyConfig(),
-        '/sap/bc/adt/oo/classes/ZCL_TEST',
-      );
-      expect(results).toHaveLength(1);
-      expect(results[0]?.status).toBe('failed');
-      expect(results[0]?.testClass).toBe('(run)');
-      expect(results[0]?.testMethod).toBe('(alert)');
-      expect(results[0]?.message).toBe('Object cannot be tested');
-    });
-
-    it('surfaces a class-level alert when the testClass has no testMethod children', async () => {
-      const xml = `<testResult>
-        <testClass name="LTCL_TEST" uri="/sap/bc/adt/oo/classes/ZCL_TEST/includes/testclasses">
-          <alert kind="error"><title>CX_SY_ITAB_LINE_NOT_FOUND in class_setup</title></alert>
-        </testClass>
-      </testResult>`;
-      const http = mockHttp(xml);
-      const { tests: results } = await runUnitTests(
-        http,
-        unrestrictedSafetyConfig(),
-        '/sap/bc/adt/oo/classes/ZCL_TEST',
-      );
-      expect(results).toHaveLength(1);
-      expect(results[0]?.status).toBe('failed');
-      expect(results[0]?.testClass).toBe('LTCL_TEST');
-      expect(results[0]?.program).toBe('ZCL_TEST');
-      expect(results[0]?.testMethod).toBe('(class-level alert)');
-      expect(results[0]?.message).toBe('CX_SY_ITAB_LINE_NOT_FOUND in class_setup');
-    });
-
-    it('reports an explicit reason when a testClass has neither methods nor alerts', async () => {
-      const xml = `<testResult>
-        <testClass name="LTCL_TEST" uri="/sap/bc/adt/oo/classes/ZCL_TEST/includes/testclasses"/>
-      </testResult>`;
-      const http = mockHttp(xml);
-      const { tests: results } = await runUnitTests(
-        http,
-        unrestrictedSafetyConfig(),
-        '/sap/bc/adt/oo/classes/ZCL_TEST',
-      );
-      expect(results).toHaveLength(1);
-      expect(results[0]?.status).toBe('failed');
-      expect(results[0]?.message).toContain('aborted before discovery');
+      expect(results[0]).toMatchObject({ testClass: 'LTCL_FIRST', testMethod: 'test_one', status: 'passed' });
+      expect(results[1]).toMatchObject({
+        testClass: 'LTCL_SECOND',
+        testMethod: 'test_two',
+        status: 'failed',
+        message: 'Expected 42 got 0',
+      });
     });
   });
 

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<aunit:runResult xmlns:aunit="http://www.sap.com/adt/aunit">
+<program adtcore:uri="/sap/bc/adt/oo/classes/zcl_arc1_aunit_probe" adtcore:type="CLAS/OC" adtcore:name="ZCL_ARC1_AUNIT_PROBE" uriType="semantic" xmlns:adtcore="http://www.sap.com/adt/core">
+<alerts>
+<alert kind="warning" severity="critical">
+<title>GENERATE for program [ZCL_ARC1_AUNIT_PROBE==============CP] failed</title>
+<details>
+<detail text="Type &quot;ZCL_ARC1_AUNIT_HELPER&quot; is unknown."/>
+</details>
+<stack>
+<stackEntry adtcore:uri="/sap/bc/adt/oo/classes/zcl_arc1_aunit_probe/source/main#start=1,0" adtcore:type="CLAS/OC" adtcore:name="ZCL_ARC1_AUNIT_PROBE" adtcore:description="Include: &lt;ZCL_ARC1_AUNIT_PROBE==============CP&gt; Line: &lt;1&gt;"/>
+</stack>
+</alert>
+</alerts>
+</program>
+</aunit:runResult>
+HTTP=200

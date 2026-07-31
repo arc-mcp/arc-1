@@ -1216,8 +1216,13 @@ export function decodeXmlEntities(s: string): string {
     .replace(/&amp;/g, '&');
 }
 
-/** Safely get a nested array from parsed XML */
-function getNestedArray(obj: Record<string, unknown>, parent: string, child: string): Array<Record<string, unknown>> {
+/** Safely get a nested array from parsed XML.
+ *  Absent, empty (`<alerts/>` → `''` on 7.50) and single-node containers all collapse to an array. */
+export function getNestedArray(
+  obj: Record<string, unknown>,
+  parent: string,
+  child: string,
+): Array<Record<string, unknown>> {
   const parentObj = obj[parent] as Record<string, unknown> | undefined;
   if (!parentObj) return [];
   const arr = parentObj[child];
