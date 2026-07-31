@@ -1,6 +1,6 @@
 # ARC-1 Roadmap
 
-**Last Updated:** 2026-07-29 (1.0.0 prep — audit stale-open items, sort open items by priority then effort)
+**Last Updated:** 2026-07-31 (SEC-15 durable DCR signing-key lifecycle research)
 
 **Project:** ARC-1 (ABAP Relay Connector) — MCP Server for SAP ABAP Systems
 **Repository:** https://github.com/arc-mcp/arc-1
@@ -60,6 +60,7 @@ SORT RULES for this table — DO NOT BREAK when adding rows:
 | [DOC-01](#doc-01) | Copilot Studio Setup Guide | P1 | S | Docs |
 | [DOC-02](#doc-02) | Basis Admin Security Guide | P1 | S | Docs |
 | [ARCH-01](#arch-01) | Discovery-driven endpoint routing — replaces hard-coded per-type URLs with ordered candidate-list against `/sap/bc/adt/discovery` (TABL already does this via `resolveTablObjectUrl`; extend to DOMA, DDLX, BDEF, SRVD, SRVB, ENHO). Plan: [docs/plans/2026-05-08-discovery-driven-endpoint-routing.md](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-05-08-discovery-driven-endpoint-routing.md) | P1 | M | Architecture |
+| [SEC-15](#sec-15) | **Durable OAuth DCR signing-key lifecycle** — replace post-deploy `cf set-env` as the recommended BTP path with a deterministic provider/key-ring contract; evaluate exact named bindings, mounted secrets, managed storage, and a conditional MTA-generated UPS. Research and acceptance matrix: [2026-07-31-durable-dcr-signing-key-lifecycle.md](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-07-31-durable-dcr-signing-key-lifecycle.md); implementation trigger [PR #607](https://github.com/arc-mcp/arc-1/pull/607) is closed pending this decision | P1 | L | Security/Architecture |
 | [FEAT-69](#feat-69) | **Mass syntax check** — `syntaxCheck()` (`src/adt/devtools.ts`) already builds a list-shaped `chkrun:checkObjectList` but always emits exactly one `chkrun:checkObject`; making it N lets an agent check a whole package before activating | P2 | XS | Features |
 | [FEAT-21](#feat-21) | ABAP Documentation (F1 Help) | P2 | XS | Features |
 | [FEAT-32](#feat-32) | Table Pagination / Offset | P2 | XS | Features |
@@ -2443,6 +2444,58 @@ Based on independent security review against RFC 9700 ([2026-04-08-001-oauth-sec
 - `src/server/config.ts`, `src/server/types.ts`, `src/server/http.ts` — `oauthDcrTtlSeconds` config
 - `docs_page/xsuaa-setup.md` — Stateless DCR section, service-binding rotation procedure, audit-event reference
 - `docs_page/configuration-reference.md` — A4 XSUAA section: `--oauth-dcr-ttl-seconds`
+
+---
+
+<a id="sec-15"></a>
+### SEC-15: Durable OAuth DCR Signing-Key Lifecycle
+
+| Field | Value |
+|-------|-------|
+| **Priority** | P1 |
+| **Effort** | L (phased; excludes an optional stateful DCR registry) |
+| **Status** | Research complete; architecture and live CF lifecycle decision open |
+
+**Problem:** SEC-09 made registrations stateless and restart-resilient, but the signing key became
+the effective registration database. ARC-1 currently either derives it from the XSUAA binding
+secret or asks an administrator to set `ARC1_DCR_SIGNING_SECRET` after deployment. The former
+couples DCR continuity to binding replacement; the latter is a manual secret-delivery path that
+Cloud Foundry does not recommend for credentials. PR
+[#607](https://github.com/arc-mcp/arc-1/pull/607) proposed reading a key from any matching
+`VCAP_SERVICES` entry, but its first-match selection, blank-value precedence, and incomplete
+lifecycle contract made that trust anchor ambiguous.
+
+**Research and evidence:**
+
+- [Durable OAuth DCR signing-key lifecycle](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-07-31-durable-dcr-signing-key-lifecycle.md)
+  — full threat model, eight-option evaluation, decision matrix, provider/key-ring architecture,
+  live experiment plan, phased delivery, and acceptance criteria.
+- [PR #607 deep review](https://github.com/arc-mcp/arc-1/blob/main/docs/research/pull-requests/607-dcr-signing-secret-from-bound-service.md)
+  — exact diff/runtime findings and completed repository gates.
+- [PR #607](https://github.com/arc-mcp/arc-1/pull/607) — closed pending the broader architecture
+  decision; the exact named service-binding direction remains in scope.
+
+**Recommended direction:**
+
+1. Define a platform-neutral, startup-resolved key-provider/key-ring contract with safe source and
+   key-ID observability.
+2. Implement mounted-file support and exact named Cloud Foundry binding selection across all CF
+   credential-delivery modes; fail closed for a selected but broken provider.
+3. Use an externally owned existing service as the first BTP production profile; retain explicit
+   secret and XSUAA derivation only as observable compatibility paths.
+4. Treat an MTA-owned generated UPS as a conditional zero-touch profile. Ship it only after entropy,
+   in-place deploy, blue-green, scale, rollback, binding change, delete-services, and deployer-version
+   tests pass.
+5. Add key identifiers and a bounded previous-key verification window before claiming seamless
+   rotation or rolling migration.
+6. Keep SAP Credential Store and a stateful client registry optional until a customer requirement
+   justifies their runtime and operational cost.
+
+**Completion gate:** all acceptance criteria in the research document must pass. In particular,
+unrelated service bindings and array order must never select the key; every serving instance must
+report the same non-secret key IDs; explicit provider failure must not fall back silently; existing
+explicit-secret users need a tested migration; and documentation must distinguish ordinary deploys
+from the binding-recreation events that actually rotate XSUAA credentials.
 
 ---
 
