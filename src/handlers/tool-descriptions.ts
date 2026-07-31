@@ -3,10 +3,8 @@
 /**
  * Opening line for SAPWrite. The description used to begin with MINIMAL PAYLOAD — ~1,100 characters
  * of argument hygiene — so a model choosing a tool read a lecture about null values before learning
- * what the tool is for. Leading with purpose is correct documentation on its own terms; the
- * routing-benchmark numbers that once backed it were measured against a corpus later found to be
- * ~23% mislabeled and are WITHDRAWN. See
- * docs/plans/2026-07-30-tool-description-optimization-loop.md.
+ * what the tool is for. Leading with purpose is the documentation fix; no routing-accuracy claim is
+ * attached to it.
  *
  * Composed into the exported descriptions below rather than in tools.ts, which is line-budgeted.
  */

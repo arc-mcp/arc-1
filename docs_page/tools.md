@@ -84,6 +84,7 @@ Use `SAPRead` when you need exact raw source, one method body, grep output, inac
 | `SRVB` | Service binding (structured JSON: OData version, binding type, publish status) |
 | `SKTD` / `KTD` | Knowledge Transfer Document attached to an ABAP object. Returns Markdown decoded from the ADT XML envelope. `KTD` is a friendly alias; `SKTD` remains the canonical SAP object type. |
 | `TABL` | DDIC TABL — covers both transparent tables (T000-style) and DDIC structures (BAPIRET2-style). Returns CDS-like source. ARC-1 auto-resolves the URL: tries `/sap/bc/adt/ddic/tables/{name}` first, falls back to `/sap/bc/adt/ddic/structures/{name}` on 404. There is no separate `STRU` type — `TABL` is the canonical short type for both, mirroring TADIR `R3TR TABL` and abapGit conventions. |
+| `TTYP` | DDIC table type. Returns the row type, row-type kind and key definition. Written via `SAPWrite(type="TTYP")` — note the create POSTs a CHAR shell and a follow-up PUT sets the real row type. |
 | `VIEW` | DDIC view |
 | `DOMA` | Domain metadata (structured JSON: data type, length, fixed values, value table) |
 | `DTEL` | Data element metadata (structured JSON: type, labels, search help) |
