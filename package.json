@@ -98,7 +98,10 @@
     "btp:deploy-ui-ext": "node scripts/btp/prepare-ui-mtaext.mjs && node -e \"const v=require('./package.json').version;require('child_process').execSync('cf deploy mta_archives/arc1-mcp_'+v+'.mtar -e mta-ui-deploy.mtaext',{stdio:'inherit'})\"",
     "btp:build-deploy": "npm run btp:build && npm run btp:deploy",
     "btp:build-deploy-ext": "npm run btp:build && npm run btp:deploy-ext",
-    "btp:build-deploy-ui-ext": "npm run btp:build-ui-ext && npm run btp:deploy-ui-ext"
+    "btp:build-deploy-ui-ext": "npm run btp:build-ui-ext && npm run btp:deploy-ui-ext",
+    "optimize:descriptions": "tsx scripts/optimize-tool-descriptions.ts",
+    "routing:gen": "tsx scripts/routing-bench.ts gen",
+    "routing:run": "tsx scripts/routing-bench.ts run"
   },
   "dependencies": {
     "@abaplint/core": "^2.120.5",

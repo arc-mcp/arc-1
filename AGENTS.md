@@ -232,6 +232,7 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 | BTP auth / Destination Service | `src/adt/oauth.ts` (browser OAuth) + `src/server/server.ts` (`buildAdtConfig` per-user destination) + `@arc-mcp/xsuaa-auth` dep |
 | AFF schema / validation | `src/aff/schemas/` + `src/aff/validator.ts` / `src/handlers/write/create.ts` (create/batch_create paths) |
 | CI coverage / reliability reporting | `scripts/ci/coverage-summary.mjs`, `scripts/ci/collect-test-reliability.mjs`, `.github/workflows/test.yml` |
+| Shrink tool descriptions (token cost) | `scripts/routing-bench.ts` (`npm run routing:gen` / `routing:run`, 182 cases = 100% of action/type values) gates `scripts/optimize-tool-descriptions.ts` (`npm run optimize:descriptions`); plan + research in `docs/plans/2026-07-30-tool-description-optimization-loop.md`. Gate on ENUM coverage, never scenario count — SAPTransport's 8 agentic scenarios covered 2/11 actions and a "clean" rewrite silently dropped the `target=`/`summary=` syntax. Model floor is Haiku class (an 8B fails for reasons unrelated to wording). No deterministic wins remain (tool↔prop dup ~800B, cross-tool 11B), so every byte is a measured information tradeoff |
 
 ## Architecture: Request Flow
 

@@ -79,6 +79,10 @@ export function createOllamaProvider(model: string): LLMProvider {
         messages: toOpenAIMessages(messages),
         tools: tools.length > 0 ? tools : undefined,
         stream: false,
+        // Greedy + fixed seed: A/B-ing two tool descriptions is meaningless if the
+        // sampler alone flips a routing decision. Override via EVAL_TEMPERATURE.
+        temperature: Number(process.env.EVAL_TEMPERATURE ?? 0),
+        seed: Number(process.env.EVAL_SEED ?? 42),
       };
 
       const resp = await fetch(`${getOllamaBaseUrl()}/v1/chat/completions`, {
