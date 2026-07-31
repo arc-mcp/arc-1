@@ -198,7 +198,19 @@ async function main(): Promise<void> {
 
   const cases = loadCases();
   const casesFor = (name: string): RoutingCase[] => cases.filter((c) => c.tool === name);
-  const score = async (tools: ToolDefinition[], subset = cases) => (await runBench(tools, subset, MODEL)).passed;
+  // Collapsing BenchResult to `.passed` hides unscored cases: with a backend returning 503 for
+  // everything, every gate saw 0 and the loop still compared and wrote overlays. A run that did not
+  // score every case in its subset is not a measurement.
+  const score = async (tools: ToolDefinition[], subset = cases): Promise<number> => {
+    const r = await runBench(tools, subset, MODEL);
+    if (r.errors > 0 || r.total !== subset.length) {
+      throw new Error(
+        `${r.errors} of ${subset.length} case(s) never got a verdict — aborting rather than comparing ` +
+          `partial results. Fix the backend and re-run.`,
+      );
+    }
+    return r.passed;
+  };
 
   console.log(`model=${MODEL} rewriter=${REWRITER} rounds=${ROUNDS} cases=${cases.length}\n`);
 

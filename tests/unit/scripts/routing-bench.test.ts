@@ -6,7 +6,14 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { CASES_PATH, enumTargets, FULL_CONFIG, leaks } from '../../../scripts/routing-bench.js';
+import {
+  buildCliArgs,
+  CASES_PATH,
+  enumTargets,
+  FULL_CONFIG,
+  leaks,
+  sanitizedEnv,
+} from '../../../scripts/routing-bench.js';
 import { getToolDefinitions, type ToolDefinition } from '../../../src/handlers/tools.js';
 
 describe('leaks', () => {
@@ -76,15 +83,66 @@ describe('corpus coverage', () => {
   const expected = new Set(enumTargets(tools).map((t) => (t.key ? `${t.tool.name}.${t.key}.${t.value}` : t.tool.name)));
   const cases = JSON.parse(readFileSync(CASES_PATH, 'utf8')) as Array<{ id: string; quarantined?: string }>;
 
-  it('has a case for every enum target, with none left over', () => {
+  it('has a record for every enum target, with none left over', () => {
     const actual = new Set(cases.map((c) => c.id));
     expect([...expected].filter((id) => !actual.has(id))).toEqual([]);
     expect([...actual].filter((id) => !expected.has(id))).toEqual([]);
   });
 
+  it('reports how much of the surface is actually SCORED, not merely present', () => {
+    // Quarantined records keep parity green while contributing no coverage, so a candidate could
+    // delete guidance for them and no gate would notice. This asserts the documented gap rather
+    // than a target: raise it as cases are rewritten against the handlers.
+    const active = cases.filter((c) => !c.quarantined).map((c) => c.id);
+    const uncovered = [...expected].filter((id) => !active.includes(id));
+    expect(uncovered.length, `uncovered targets: ${uncovered.length}/${expected.size}`).toBe(42);
+  });
+
   it('states a reason for every quarantined case', () => {
     for (const c of cases.filter((x) => x.quarantined)) {
       expect(c.quarantined!.length, `${c.id} needs a reason`).toBeGreaterThan(15);
+    }
+  });
+});
+
+/**
+ * The CLI invocation is a safety boundary, not a convenience: the corpus contains "Delete the
+ * ZCL_PAYMENT_VALIDATOR class from the system", release, push and unlink prompts, and an earlier
+ * version ran them with the user's plugins, hooks and SAP-connected MCP servers live. Pin the flags
+ * and the environment scrub so neither can regress silently.
+ */
+describe('claude CLI isolation', () => {
+  const args = buildCliArgs('claude-haiku-4-5-20251001');
+
+  it('disables every customization surface that can execute', () => {
+    // A built-in denylist is not enough — hooks run outside tool permissions.
+    for (const flag of ['--safe-mode', '--disable-slash-commands', '--no-session-persistence', '--strict-mcp-config']) {
+      expect(args, `${flag} missing`).toContain(flag);
+    }
+    expect(args[args.indexOf('--mcp-config') + 1]).toBe('{"mcpServers":{}}');
+    expect(args[args.indexOf('--permission-mode') + 1]).toBe('plan');
+    expect(args).toContain('--tools');
+    expect(args[args.indexOf('--tools') + 1]).toBe('');
+  });
+
+  it('never passes the prompt as an argument', () => {
+    // --tools and --disallowedTools are variadic; a trailing prompt gets eaten as a tool name.
+    expect(args.some((a) => a.length > 200)).toBe(false);
+  });
+
+  it('strips SAP and provider credentials from the child environment', () => {
+    const env = sanitizedEnv({
+      PATH: '/usr/bin',
+      SAP_PASSWORD: 'secret',
+      SAP_URL: 'https://prod.example',
+      ARC1_API_KEYS: 'k:admin',
+      TEST_SAP_URL: 'https://test.example',
+      ANTHROPIC_API_KEY: 'sk-ant-x',
+      OLLAMA_BASE_URL: 'http://localhost:11434',
+    });
+    expect(env.PATH).toBe('/usr/bin');
+    for (const k of ['SAP_PASSWORD', 'SAP_URL', 'ARC1_API_KEYS', 'TEST_SAP_URL', 'ANTHROPIC_API_KEY']) {
+      expect(env[k], `${k} leaked to child`).toBeUndefined();
     }
   });
 });

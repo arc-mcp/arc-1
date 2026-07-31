@@ -182,7 +182,8 @@
     "prompt": "List all public methods and attributes for ZCL_SALES_ORDER.",
     "tool": "SAPRead",
     "key": "type",
-    "value": "COMPONENTS"
+    "value": "COMPONENTS",
+    "quarantined": "prompt asks for class methods/attributes; handler returns installed SAP software components (read.ts getInstalledComponents)"
   },
   {
     "id": "SAPRead.type.MSAG",
@@ -238,7 +239,8 @@
     "prompt": "Show me the authorization checks and required authority objects for class ZCL_ORDER.",
     "tool": "SAPRead",
     "key": "type",
-    "value": "AUTH"
+    "value": "AUTH",
+    "quarantined": "prompt asks for a class's authorization checks; handler reads authorization-FIELD metadata (read.ts getAuthorizationField)"
   },
   {
     "id": "SAPRead.type.FEATURE_TOGGLE",
@@ -436,7 +438,8 @@
     "prompt": "Generate behavior implementation for ZBDEF_ORDER.",
     "tool": "SAPWrite",
     "key": "action",
-    "value": "generate_behavior_implementation"
+    "value": "generate_behavior_implementation",
+    "quarantined": "prompt names a BDEF; the action requires type=CLAS and a behavior-pool class"
   },
   {
     "id": "SAPWrite.action.edit_text_symbols",
@@ -507,7 +510,8 @@
     "prompt": "Create the CDS extension ZC_ORDER_EXT to add a custom calculated field for the total order value.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "DDLX"
+    "value": "DDLX",
+    "quarantined": "prompt asks to add a calculated field (structural); DDLX is a metadata/annotation extension"
   },
   {
     "id": "SAPWrite.type.BDEF",
@@ -535,14 +539,16 @@
     "prompt": "Generate the knowledge transfer document for ZCL_ORDER.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "SKTD"
+    "value": "SKTD",
+    "quarantined": "prompt targets a class; the schema states CLAS/INTF/PROG are unsupported KTD parents"
   },
   {
     "id": "SAPWrite.type.KTD",
     "prompt": "Generate the knowledge transfer document for class ZCL_ORDER.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "KTD"
+    "value": "KTD",
+    "quarantined": "prompt targets a class; the schema states CLAS/INTF/PROG are unsupported KTD parents"
   },
   {
     "id": "SAPWrite.type.TABL",
@@ -899,7 +905,8 @@
     "prompt": "List all SQL trace files available in ST05.",
     "tool": "SAPDiagnose",
     "key": "action",
-    "value": "sql_trace_directory"
+    "value": "sql_trace_directory",
+    "quarantined": "prompt asks to list trace files; the action returns only a Technical Monitoring Cockpit link (no ADT record API)"
   },
   {
     "id": "SAPDiagnose.action.authorization_trace",
@@ -1041,7 +1048,8 @@
     "prompt": "Move package ZPKG_ORDER to parent package ZBASE.",
     "tool": "SAPManage",
     "key": "action",
-    "value": "change_package"
+    "value": "change_package",
+    "quarantined": "prompt reparents a package; the handler moves an OBJECT between packages and needs object type/name plus old/new package"
   },
   {
     "id": "SAPManage.action.flp_create_catalog",
@@ -1188,28 +1196,32 @@
     "prompt": "Check the backend status for package $TMP.",
     "tool": "SAPGit",
     "key": "action",
-    "value": "config"
+    "value": "config",
+    "quarantined": "prompt supplies a class/package name; handler requires repoId (and url/branch/commit message per action)"
   },
   {
     "id": "SAPGit.action.branches",
     "prompt": "List all branches in the ZPKG_LOGISTICS package.",
     "tool": "SAPGit",
     "key": "action",
-    "value": "branches"
+    "value": "branches",
+    "quarantined": "prompt supplies a class/package name; handler requires repoId (and url/branch/commit message per action)"
   },
   {
     "id": "SAPGit.action.external_info",
     "prompt": "Get remote repository details for package $TMP.",
     "tool": "SAPGit",
     "key": "action",
-    "value": "external_info"
+    "value": "external_info",
+    "quarantined": "prompt supplies a class/package name; handler requires repoId (and url/branch/commit message per action)"
   },
   {
     "id": "SAPGit.action.history",
     "prompt": "Show me the commit history for ZCL_ORDER.",
     "tool": "SAPGit",
     "key": "action",
-    "value": "history"
+    "value": "history",
+    "quarantined": "prompt supplies a class/package name; handler requires repoId (and url/branch/commit message per action)"
   },
   {
     "id": "SAPGit.action.objects",
@@ -1224,56 +1236,64 @@
     "prompt": "Check the git status of ZCL_ORDER to ensure no uncommitted changes exist before I proceed.",
     "tool": "SAPGit",
     "key": "action",
-    "value": "check"
+    "value": "check",
+    "quarantined": "prompt supplies a class/package name; handler requires repoId (and url/branch/commit message per action)"
   },
   {
     "id": "SAPGit.action.stage",
     "prompt": "Stage all pending modifications for class ZCL_ORDER.",
     "tool": "SAPGit",
     "key": "action",
-    "value": "stage"
+    "value": "stage",
+    "quarantined": "prompt supplies a class/package name; handler requires repoId (and url/branch/commit message per action)"
   },
   {
     "id": "SAPGit.action.clone",
     "prompt": "Clone the repository for package ZDEV_ORDER so I can work on class ZCL_ORDER.",
     "tool": "SAPGit",
     "key": "action",
-    "value": "clone"
+    "value": "clone",
+    "quarantined": "prompt supplies a class/package name; handler requires repoId (and url/branch/commit message per action)"
   },
   {
     "id": "SAPGit.action.pull",
     "prompt": "Pull the latest commits for package ZDEV01 from the remote repository.",
     "tool": "SAPGit",
     "key": "action",
-    "value": "pull"
+    "value": "pull",
+    "quarantined": "prompt supplies a class/package name; handler requires repoId (and url/branch/commit message per action)"
   },
   {
     "id": "SAPGit.action.push",
     "prompt": "Push the local changes for package ZDEV_SALES to the remote repository.",
     "tool": "SAPGit",
     "key": "action",
-    "value": "push"
+    "value": "push",
+    "quarantined": "prompt supplies a class/package name; handler requires repoId (and url/branch/commit message per action)"
   },
   {
     "id": "SAPGit.action.commit",
     "prompt": "Commit the updates to ZCL_ORDER_MANAGER.",
     "tool": "SAPGit",
     "key": "action",
-    "value": "commit"
+    "value": "commit",
+    "quarantined": "prompt supplies a class/package name; handler requires repoId (and url/branch/commit message per action)"
   },
   {
     "id": "SAPGit.action.switch_branch",
     "prompt": "Switch to the feature_order_fix branch so I can commit changes for package $TMP.",
     "tool": "SAPGit",
     "key": "action",
-    "value": "switch_branch"
+    "value": "switch_branch",
+    "quarantined": "prompt supplies a class/package name; handler requires repoId (and url/branch/commit message per action)"
   },
   {
     "id": "SAPGit.action.create_branch",
     "prompt": "Create a new branch for package ZDEV_PACKAGE.",
     "tool": "SAPGit",
     "key": "action",
-    "value": "create_branch"
+    "value": "create_branch",
+    "quarantined": "prompt supplies a class/package name; handler requires repoId (and url/branch/commit message per action)"
   },
   {
     "id": "SAPGit.action.unlink",
@@ -1288,6 +1308,7 @@
     "prompt": "Show me the selection parameters for program variant Z_BATCH_PROCESS.",
     "tool": "SAPRead",
     "key": "type",
-    "value": "VARIANTS"
+    "value": "VARIANTS",
+    "quarantined": "prompt names a variant; SAPRead(type=VARIANTS, name=\u2026) expects the PROGRAM name"
   }
 ]

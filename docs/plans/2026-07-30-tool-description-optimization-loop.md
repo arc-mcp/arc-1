@@ -177,6 +177,47 @@ unscored counts is not comparable across variants.
 The general lesson is the one the SAPTransport episode already taught in a different costume: a
 number that looks like a verdict is not a verdict until you check what produced it.
 
+## STATUS: all benchmark numbers are WITHDRAWN
+
+Two rounds of external review found the corpus unfit to measure with. A first audit quarantined 21
+of 182 cases; a second — prompted by review pointing at handler source rather than at my SAP
+knowledge — quarantined **21 more, for 42 of 182 (23%)**.
+
+The second pass is the important one. It failed because the first audit checked cases against what I
+believed the type codes meant, not against what the handlers do:
+
+| case | expected | what the handler actually does |
+|---|---|---|
+| `SAPRead.type.COMPONENTS` | class methods/attributes | `getInstalledComponents()` — installed SAP software components |
+| `SAPRead.type.AUTH` | a class's authorization checks | `getAuthorizationField()` — authorization-field metadata |
+| `SAPRead.type.VARIANTS` | a named variant | expects the PROGRAM name |
+| `SAPWrite.generate_behavior_implementation` | a BDEF | requires `type=CLAS` and a behavior-pool class |
+| `SAPManage.change_package` | reparent a package | moves an OBJECT between packages |
+| 12 of 14 `SAPGit` cases | class/package names | handlers require `repoId`, url, branch, commit message |
+
+**Consequences:**
+
+- Every reported number is void: 60.2%, 75.1%, 83.1%, and the +5/+3 deltas on SAPWrite.
+- The "SAPGit is weak (64%)" finding was almost pure artifact — 12 of its 14 cases were invalid.
+- Active coverage is now 140/182 targets, and `SAPGit` has 2 scored cases. The benchmark does not
+  currently deliver the "100% discriminator coverage" it was built for.
+
+**Before any number from this harness is quoted again:** rewrite the quarantined cases against the
+handler contracts, replace the presence-based required-argument map with validation against the
+runtime Zod schemas (a hand-written map produced both false passes and false failures), and re-run
+both arms with zero unscored cases.
+
+The shipped description changes now rest on documentation merit alone:
+
+1. **SAPWrite leads with its purpose** rather than ~1,100 characters of payload hygiene.
+2. **SAPContext states it is analysis-only** — it is read-only and previously advertised itself for
+   "changes".
+3. **`TTYP` added to SAPRead's inventory** — a supported type that was undocumented.
+4. **"rename" removed** from the SAPWrite lead: no repository-object rename action exists.
+
+The SAPRead disambiguation glosses were removed when they measured 33 → 33; that removal stands,
+since their justification was mislabeled cases either way.
+
 ## CORRECTION: earlier results were measured against a broken oracle
 
 Everything below the next heading was measured before an external review (Codex) found that the

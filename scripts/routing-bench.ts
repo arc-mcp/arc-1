@@ -246,13 +246,6 @@ const ACCEPTED_ALIASES: Record<string, string[]> = {
   FTG2: ['FEATURE_TOGGLE'],
   KTD: ['SKTD'],
   SKTD: ['KTD'],
-  // Readable aliases under evaluation (see the enum-token experiment). Harmless when the surface
-  // does not offer them — the model cannot answer a value that is not in the enum.
-  DCLS: ['access_control'],
-  DDLX: ['metadata_extension'],
-  TRAN: ['transaction_code'],
-  VIEW: ['ddic_view'],
-  TTYP: ['table_type'],
 };
 
 function valueMatches(expected: string, actual: string): boolean {
@@ -351,6 +344,36 @@ Which single tool would you call, with which arguments? Reply with ONLY a JSON o
 {"tool":"<name>","args":{...}}
 No prose, no markdown fence.`;
 
+
+/** Credentials must not be inherited by a child processing "delete"/"release"/"push" prompts. */
+export function sanitizedEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = {};
+  for (const [k, v] of Object.entries(base)) {
+    if (/^(SAP_|ARC1_|TEST_SAP_|ANTHROPIC_|OLLAMA_)/.test(k)) continue;
+    out[k] = v;
+  }
+  return out;
+}
+
+/** Exported so a unit test can pin the exact isolation flags — this is a safety boundary. */
+export function buildCliArgs(model: string): string[] {
+  return [
+    '-p',
+    '--model',
+    model,
+    '--safe-mode',
+    '--disable-slash-commands',
+    '--no-session-persistence',
+    '--mcp-config',
+    '{"mcpServers":{}}',
+    '--strict-mcp-config',
+    '--permission-mode',
+    'plan',
+    '--tools',
+    '',
+  ];
+}
+
 async function callViaCli(
   model: string,
   prompt: string,
@@ -360,43 +383,23 @@ async function callViaCli(
   const body = CLI_PROMPT.replace('{TOOLS}', toolText).replace('{PROMPT}', prompt);
 
   // ISOLATION IS MANDATORY, NOT HYGIENE. The corpus contains real destructive requests — "Delete
-  // the ZCL_PAYMENT_VALIDATOR class from the system", "Delete the ZDEMO_PACKAGE", release and push
-  // prompts. Run without isolation, `claude -p` inherits the user's plugins, hooks, built-in tools
-  // and every globally configured MCP server (which for an ARC-1 developer means SAP-connected
-  // ones), and a pre-approved tool could execute the request for real. `cwd` does not gate any of
-  // that. We only ever want the model's opinion as text, so every execution surface is off:
-  //   --strict-mcp-config with an empty config  → no MCP servers, global config ignored
-  //   --disallowedTools <all built-ins>         → no built-in tool may run
-  //   --permission-mode plan                    → refuses side effects even if one slipped through
+  // the ZCL_PAYMENT_VALIDATOR class from the system", release, push and unlink prompts. We only
+  // ever want the model's opinion as text, so nothing that can act may load.
   //
-  // The prompt goes over STDIN, not argv: --disallowedTools is variadic and silently swallowed a
-  // trailing prompt argument as another tool name, which scored all 160 cases as unscored.
-  const child = spawn(
-    'claude',
-    [
-      '-p',
-      '--model',
-      model,
-      '--mcp-config',
-      '{"mcpServers":{}}',
-      '--strict-mcp-config',
-      '--permission-mode',
-      'plan',
-      '--disallowedTools',
-      'Bash',
-      'Edit',
-      'Write',
-      'Read',
-      'Glob',
-      'Grep',
-      'WebFetch',
-      'WebSearch',
-      'Task',
-      'NotebookEdit',
-      'TodoWrite',
-    ],
-    { cwd: '/tmp', stdio: ['pipe', 'pipe', 'pipe'] },
-  );
+  // A built-in denylist is NOT sufficient: it leaves user CLAUDE.md, skills, plugins, hooks,
+  // commands and agents loaded, and hooks run outside the tool-permission path entirely. Use the
+  // CLI's own controls:
+  //   --safe-mode               disables user customizations (plugins, hooks, agents, CLAUDE.md)
+  //   --tools ''                empty tool set, rather than enumerating built-ins by hand
+  //   --disable-slash-commands  no skills
+  //   --no-session-persistence  no transcript written for a throwaway scoring call
+  //   --strict-mcp-config + {}  no MCP servers, global config ignored
+  //   --permission-mode plan    last-resort refusal of side effects
+  //
+  // The environment is scrubbed too: this script calls loadDotenv(), so SAP_*/ARC1_* credentials
+  // are in scope and must not reach a child that is being fed destructive prompts.
+  const args = buildCliArgs(model);
+  const child = spawn('claude', args, { cwd: '/tmp', stdio: ['pipe', 'pipe', 'pipe'], env: sanitizedEnv() });
   const stdout = await new Promise<string>((resolve, reject) => {
     let out = '';
     let err = '';
