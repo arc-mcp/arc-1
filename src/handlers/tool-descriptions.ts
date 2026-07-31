@@ -9,12 +9,13 @@
  * Composed into the exported descriptions below rather than in tools.ts, which is line-budgeted.
  */
 const SAPWRITE_LEAD =
-  'Change ABAP objects: create, update, delete, and targeted source edits. Use for any request to ' +
-  'write, add, change, fix, implement, refactor, or remove ABAP code or DDIC metadata. ' +
-  'Reading is SAPRead; searching is SAPSearch; dependency analysis is SAPContext. ';
+  'Change ABAP objects in the SAP system: create, update, delete, and targeted source edits. Use it ' +
+  'when the request is to PERSIST a change — write, add, implement, refactor, or remove ABAP code ' +
+  'or DDIC metadata. Reading is SAPRead; searching is SAPSearch; dependency analysis is SAPContext; ' +
+  'checking or formatting source without saving it is SAPLint or SAPDiagnose. ';
 
 const SAPWRITE_BODY_ONPREM =
-  'Create or update ABAP source code and DDIC metadata. Handles lock/modify/unlock automatically. Supports PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD, TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. ' +
+  'Create or update ABAP source code and DDIC metadata. Handles lock/modify/unlock automatically. Supports PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD, TABL, TABL/DT, TABL/DS, TTYP (rowType + optional rowTypeKind), DOMA, DTEL, MSAG. ' +
   'Type codes are auto-normalized and case-insensitive (e.g., "CLAS/OC" → "CLAS"). For delete, only type and name are required (plus optional transport). ' +
   'Source objects (PROG/CLAS/INTF/DDLS/DCLS/DDLX/BDEF/SRVD/TABL/INCL) write via /source/main. CLAS update: pass include=definitions|implementations|macros|testclasses to write a local include; omit for source/main. ' +
   'TABL create: "TABL"/"TABL/DT" → transparent table (16-char name); "TABL/DS" → structure (30-char, namespaces OK); update/delete/activate auto-discover the subtype. ' +
@@ -41,10 +42,10 @@ const SAPWRITE_BODY_BTP =
   'Server-driven objects (discovery-gated): DESD/CSNM/EVTB/EVTO/COTA/UIAD take AFF JSON in "source"; DTSC/DSFD/DTDC take DDL text — create/update/delete, then SAPActivate. ' +
   'Full per-type field reference: docs_page SAPWrite. ';
 
-// Appended to both SAPWrite descriptions (see the composition at the bottom). The schema lists
-// every optional field for every
-// object type/action, but each call uses only a small subset — GPT/OpenAI callers tend to
-// fill the rest with empty/null/placeholder values. Runtime normalization is the backstop.
+// Appended to both SAPWrite descriptions (see the composition at the bottom). The schema lists every
+// optional field for every object type/action, but each call uses only a small subset — GPT/OpenAI
+// callers tend to fill the rest with empty/null/placeholder values. Runtime normalization is the
+// backstop.
 const SAPWRITE_MINIMAL_PAYLOAD_GUIDE =
   'MINIMAL PAYLOAD — send ONLY the fields your action+type needs; do NOT add unrelated optional fields. ' +
   'Sending empty strings, null, or placeholder values for fields that do not apply to your object type ' +
