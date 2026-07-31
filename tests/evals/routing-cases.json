@@ -50,15 +50,14 @@
   },
   {
     "id": "SAPRead.type.DCLS",
-    "prompt": "Show me the source code for the CDS data source ZDS_SALES_DATA.",
+    "prompt": "Show me the DCL access-control role that restricts ZI_SALES_ORDER by company code.",
     "tool": "SAPRead",
     "key": "type",
-    "value": "DCLS",
-    "quarantined": "prompt asks for a \"CDS data source\" = DDLS, not access control"
+    "value": "DCLS"
   },
   {
     "id": "SAPRead.type.DDLX",
-    "prompt": "Show me the source code for ZC_SALES_EXT to verify the extension annotations.",
+    "prompt": "Show me the metadata extension ZC_SALES_EXT that annotates the UI facets.",
     "tool": "SAPRead",
     "key": "type",
     "value": "DDLX"
@@ -86,14 +85,14 @@
   },
   {
     "id": "SAPRead.type.SKTD",
-    "prompt": "Show me the content of knowledge transfer document ZKTD_SALES_ORDER_PROCESSING.",
+    "prompt": "Show me the knowledge transfer document attached to CDS view ZI_SALES_ORDER.",
     "tool": "SAPRead",
     "key": "type",
     "value": "SKTD"
   },
   {
     "id": "SAPRead.type.KTD",
-    "prompt": "Retrieve the knowledge transfer documentation for ZKTD_001.",
+    "prompt": "Retrieve the knowledge transfer documentation attached to CDS view ZI_CUSTOMER.",
     "tool": "SAPRead",
     "key": "type",
     "value": "KTD"
@@ -128,11 +127,10 @@
   },
   {
     "id": "SAPRead.type.TRAN",
-    "prompt": "Show me the objects in transport A4HK900123.",
+    "prompt": "Show me the definition of transaction code ZFI01, including the program it starts.",
     "tool": "SAPRead",
     "key": "type",
-    "value": "TRAN",
-    "quarantined": "prompt asks for objects in transport A4HK900123 = SAPTransport, not a transaction code"
+    "value": "TRAN"
   },
   {
     "id": "SAPRead.type.TTYP",
@@ -143,7 +141,7 @@
   },
   {
     "id": "SAPRead.type.TABLE_CONTENTS",
-    "prompt": "Show me all entries in T001.",
+    "prompt": "Show me the first 50 rows stored in table T001.",
     "tool": "SAPRead",
     "key": "type",
     "value": "TABLE_CONTENTS"
@@ -157,11 +155,10 @@
   },
   {
     "id": "SAPRead.type.DEVC",
-    "prompt": "Show me the transport request for development class ZHR_PAYROLL.",
+    "prompt": "List the objects contained in package ZHR_PAYROLL.",
     "tool": "SAPRead",
     "key": "type",
-    "value": "DEVC",
-    "quarantined": "prompt asks for the transport request of a package = SAPTransport"
+    "value": "DEVC"
   },
   {
     "id": "SAPRead.type.SOBJ",
@@ -179,11 +176,10 @@
   },
   {
     "id": "SAPRead.type.COMPONENTS",
-    "prompt": "List all public methods and attributes for ZCL_SALES_ORDER.",
+    "prompt": "Which SAP software packages are installed and at what support level?",
     "tool": "SAPRead",
     "key": "type",
-    "value": "COMPONENTS",
-    "quarantined": "prompt asks for class methods/attributes; handler returns installed SAP software components (read.ts getInstalledComponents)"
+    "value": "COMPONENTS"
   },
   {
     "id": "SAPRead.type.MSAG",
@@ -194,7 +190,7 @@
   },
   {
     "id": "SAPRead.type.MESSAGES",
-    "prompt": "Show me the text for message E001 in ZORDER_MSG.",
+    "prompt": "Show me message 001 inside message class ZORDER_MSG.",
     "tool": "SAPRead",
     "key": "type",
     "value": "MESSAGES"
@@ -236,11 +232,10 @@
   },
   {
     "id": "SAPRead.type.AUTH",
-    "prompt": "Show me the authorization checks and required authority objects for class ZCL_ORDER.",
+    "prompt": "Show me the authorization field definition for BUKRS.",
     "tool": "SAPRead",
     "key": "type",
-    "value": "AUTH",
-    "quarantined": "prompt asks for a class's authorization checks; handler reads authorization-FIELD metadata (read.ts getAuthorizationField)"
+    "value": "AUTH"
   },
   {
     "id": "SAPRead.type.FEATURE_TOGGLE",
@@ -251,7 +246,7 @@
   },
   {
     "id": "SAPRead.type.FTG2",
-    "prompt": "Check the activation state of feature switch ZFS_ORDER_APPROVAL.",
+    "prompt": "Check the activation state of feature toggle ZFTG_ORDER_APPROVAL.",
     "tool": "SAPRead",
     "key": "type",
     "value": "FTG2"
@@ -272,19 +267,17 @@
   },
   {
     "id": "SAPRead.type.VERSION_SOURCE",
-    "prompt": "Show me the implementation of method CALCULATE_TOTAL in ZCL_BILLING_DOCUMENT.",
+    "prompt": "Show me the source of ZCL_BILLING_DOCUMENT as it looked in version 3.",
     "tool": "SAPRead",
     "key": "type",
-    "value": "VERSION_SOURCE",
-    "quarantined": "prompt asks for a normal method body, no revision/version reference = CLAS"
+    "value": "VERSION_SOURCE"
   },
   {
     "id": "SAPRead.type.DESD",
-    "prompt": "Read the DDL text for ZRAP_DTSC_01.",
+    "prompt": "Show me the logical external schema definition ZLES_SALES_EXPORT.",
     "tool": "SAPRead",
     "key": "type",
-    "value": "DESD",
-    "quarantined": "prompt names ZRAP_DTSC_01, which is a DTSC"
+    "value": "DESD"
   },
   {
     "id": "SAPRead.type.DTSC",
@@ -323,19 +316,17 @@
   },
   {
     "id": "SAPRead.type.DSFD",
-    "prompt": "Show me the source code for ZC_CALC_TAX.",
+    "prompt": "Show me the scalar function definition ZSFD_CALC_TAX.",
     "tool": "SAPRead",
     "key": "type",
-    "value": "DSFD",
-    "quarantined": "prompt names ZC_CALC_TAX, indistinguishable from a CDS projection view"
+    "value": "DSFD"
   },
   {
     "id": "SAPRead.type.DTDC",
-    "prompt": "Show me the source for ZCL_CUSTOMER_CACHE.",
+    "prompt": "Show me the dynamic cache definition ZDTDC_ORDER_LOOKUP.",
     "tool": "SAPRead",
     "key": "type",
-    "value": "DTDC",
-    "quarantined": "prompt names ZCL_CUSTOMER_CACHE, which is a class"
+    "value": "DTDC"
   },
   {
     "id": "SAPRead.type.UIAD",
@@ -428,18 +419,17 @@
   },
   {
     "id": "SAPWrite.action.scaffold_rap_handlers",
-    "prompt": "Generate behavior implementation for BDEF ZBDEF_SALESORDER.",
+    "prompt": "Scaffold the RAP handler skeletons into behavior pool class ZBP_I_PROJECT.",
     "tool": "SAPWrite",
     "key": "action",
     "value": "scaffold_rap_handlers"
   },
   {
     "id": "SAPWrite.action.generate_behavior_implementation",
-    "prompt": "Generate behavior implementation for ZBDEF_ORDER.",
+    "prompt": "Fill in the empty handler methods of behavior pool class ZBP_I_SALESORDER.",
     "tool": "SAPWrite",
     "key": "action",
-    "value": "generate_behavior_implementation",
-    "quarantined": "prompt names a BDEF; the action requires type=CLAS and a behavior-pool class"
+    "value": "generate_behavior_implementation"
   },
   {
     "id": "SAPWrite.action.edit_text_symbols",
@@ -499,19 +489,17 @@
   },
   {
     "id": "SAPWrite.type.DCLS",
-    "prompt": "Create ZC_SalesOrder CDS view with fields for amount, currency, and tax calculation.",
+    "prompt": "Create a DCL access-control role for ZI_SalesOrder that restricts rows by company code.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "DCLS",
-    "quarantined": "prompt asks to create a CDS view = DDLS, not access control"
+    "value": "DCLS"
   },
   {
     "id": "SAPWrite.type.DDLX",
-    "prompt": "Create the CDS extension ZC_ORDER_EXT to add a custom calculated field for the total order value.",
+    "prompt": "Create a metadata extension ZC_ORDER_EXT that adds @UI line-item annotations to ZC_ORDER.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "DDLX",
-    "quarantined": "prompt asks to add a calculated field (structural); DDLX is a metadata/annotation extension"
+    "value": "DDLX"
   },
   {
     "id": "SAPWrite.type.BDEF",
@@ -536,19 +524,17 @@
   },
   {
     "id": "SAPWrite.type.SKTD",
-    "prompt": "Generate the knowledge transfer document for ZCL_ORDER.",
+    "prompt": "Write the knowledge transfer document for CDS view ZI_SALES_ORDER with this Markdown.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "SKTD",
-    "quarantined": "prompt targets a class; the schema states CLAS/INTF/PROG are unsupported KTD parents"
+    "value": "SKTD"
   },
   {
     "id": "SAPWrite.type.KTD",
-    "prompt": "Generate the knowledge transfer document for class ZCL_ORDER.",
+    "prompt": "Write knowledge transfer documentation for CDS view ZI_CUSTOMER with this Markdown.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "KTD",
-    "quarantined": "prompt targets a class; the schema states CLAS/INTF/PROG are unsupported KTD parents"
+    "value": "KTD"
   },
   {
     "id": "SAPWrite.type.TABL",
@@ -601,27 +587,24 @@
   },
   {
     "id": "SAPWrite.type.DESD",
-    "prompt": "Create a CDS view ZC_SalesOrderItem that includes a descriptive field for the product description.",
+    "prompt": "Create a logical external schema ZLES_SALES_EXPORT from this AFF JSON definition.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "DESD",
-    "quarantined": "prompt asks to create a CDS view = DDLS"
+    "value": "DESD"
   },
   {
     "id": "SAPWrite.type.DTSC",
-    "prompt": "Create a new CDS view ZI_SalesOrderHeader exposing sales order ID, material number, and total amount with standard metadata annotations.",
+    "prompt": "Create a static cache definition ZDTSC_PRODUCT using this DDL text.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "DTSC",
-    "quarantined": "prompt asks to create a CDS view = DDLS"
+    "value": "DTSC"
   },
   {
     "id": "SAPWrite.type.CSNM",
-    "prompt": "Create a CDS consumption view ZC_SALES_ORDERS exposing sales order headers and items from VBAK and VBAP with currency conversion.",
+    "prompt": "Create a CSN model ZCSN_SALES from this AFF JSON payload.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "CSNM",
-    "quarantined": "prompt asks to create a CDS consumption view = DDLS"
+    "value": "CSNM"
   },
   {
     "id": "SAPWrite.type.EVTB",
@@ -646,27 +629,24 @@
   },
   {
     "id": "SAPWrite.type.DSFD",
-    "prompt": "Create a CDS data foundation view named ZC_SalesOrderItem that exposes customer name, order date, and total amount by joining VBAK and KNA1 with standard RAP annotations.",
+    "prompt": "Create a scalar function definition ZSFD_NET_AMOUNT using this DDL text.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "DSFD",
-    "quarantined": "prompt asks to create a CDS data foundation view = DDLS"
+    "value": "DSFD"
   },
   {
     "id": "SAPWrite.type.DTDC",
-    "prompt": "Create a ZI_SalesOrderItems CDS view that exposes material number, description, and current stock quantity.",
+    "prompt": "Create a dynamic cache definition ZDTDC_ORDER_LOOKUP using this DDL text.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "DTDC",
-    "quarantined": "prompt asks to create a CDS view = DDLS"
+    "value": "DTDC"
   },
   {
     "id": "SAPWrite.type.UIAD",
-    "prompt": "Read the UI adaptation settings for the UIAD_ZSALES_DASHBOARD object.",
+    "prompt": "Create the launchpad app descriptor item ZUIA_INVOICE_APP from this AFF JSON.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "UIAD",
-    "quarantined": "prompt asks to READ settings; SAPWrite is the write tool"
+    "value": "UIAD"
   },
   {
     "id": "SAPActivate.action.activate",
@@ -691,11 +671,10 @@
   },
   {
     "id": "SAPNavigate.action.definition",
-    "prompt": "Display the ABAP source code for class ZCL_ORDER.",
+    "prompt": "From the call to GET_DATA in ZCL_ORDER, jump to where that method is defined.",
     "tool": "SAPNavigate",
     "key": "action",
-    "value": "definition",
-    "quarantined": "prompt asks to display class source = SAPRead"
+    "value": "definition"
   },
   {
     "id": "SAPNavigate.action.references",
@@ -720,9 +699,8 @@
   },
   {
     "id": "SAPQuery",
-    "prompt": "Show me the structure and fields for table T001.",
-    "tool": "SAPQuery",
-    "quarantined": "prompt asks for table structure/fields = SAPRead(type=TABL), not a data query"
+    "prompt": "Run a query returning the ten most recent rows of ZORDER_LOG ordered by created_at.",
+    "tool": "SAPQuery"
   },
   {
     "id": "SAPLint.action.lint",
@@ -887,11 +865,10 @@
   },
   {
     "id": "SAPDiagnose.action.sql_trace_state",
-    "prompt": "Enable SQL tracing to capture database calls for debugging a performance issue.",
+    "prompt": "Is the SQL trace currently switched on for this system?",
     "tool": "SAPDiagnose",
     "key": "action",
-    "value": "sql_trace_state",
-    "quarantined": "prompt asks to ENABLE tracing = set_sql_trace_state"
+    "value": "sql_trace_state"
   },
   {
     "id": "SAPDiagnose.action.set_sql_trace_state",
@@ -902,11 +879,10 @@
   },
   {
     "id": "SAPDiagnose.action.sql_trace_directory",
-    "prompt": "List all SQL trace files available in ST05.",
+    "prompt": "Give me the monitoring-cockpit link where the recorded SQL traces can be viewed.",
     "tool": "SAPDiagnose",
     "key": "action",
-    "value": "sql_trace_directory",
-    "quarantined": "prompt asks to list trace files; the action returns only a Technical Monitoring Cockpit link (no ADT record API)"
+    "value": "sql_trace_directory"
   },
   {
     "id": "SAPDiagnose.action.authorization_trace",
@@ -945,11 +921,10 @@
   },
   {
     "id": "SAPContext.type.CLAS",
-    "prompt": "What does ZCL_ORDER_PROCESSOR do and what are its key dependencies?",
+    "prompt": "Give me the compressed dependency contract for class ZCL_BILLING, not a full explanation.",
     "tool": "SAPContext",
     "key": "type",
-    "value": "CLAS",
-    "quarantined": "near-identical to SAPContext.action.deps (\"what does X do + dependencies\")"
+    "value": "CLAS"
   },
   {
     "id": "SAPContext.type.INTF",
@@ -981,11 +956,10 @@
   },
   {
     "id": "SAPContext.type.TABL",
-    "prompt": "Which append structures extend the MARA table?",
+    "prompt": "Give me the dependency contract for table ZORDER_HDR.",
     "tool": "SAPContext",
     "key": "type",
-    "value": "TABL",
-    "quarantined": "near-identical to SAPContext.action.structure (\"append structures for MARA\")"
+    "value": "TABL"
   },
   {
     "id": "SAPManage.action.features",
@@ -1045,11 +1019,10 @@
   },
   {
     "id": "SAPManage.action.change_package",
-    "prompt": "Move package ZPKG_ORDER to parent package ZBASE.",
+    "prompt": "Move class ZCL_ORDER out of package ZOLD_PKG into package ZNEW_PKG.",
     "tool": "SAPManage",
     "key": "action",
-    "value": "change_package",
-    "quarantined": "prompt reparents a package; the handler moves an OBJECT between packages and needs object type/name plus old/new package"
+    "value": "change_package"
   },
   {
     "id": "SAPManage.action.flp_create_catalog",
@@ -1193,122 +1166,107 @@
   },
   {
     "id": "SAPGit.action.config",
-    "prompt": "Check the backend status for package $TMP.",
+    "prompt": "Show the git backend configuration for repository ZFIN_REPO.",
     "tool": "SAPGit",
     "key": "action",
-    "value": "config",
-    "quarantined": "prompt supplies a class/package name; handler requires repoId (and url/branch/commit message per action)"
+    "value": "config"
   },
   {
     "id": "SAPGit.action.branches",
-    "prompt": "List all branches in the ZPKG_LOGISTICS package.",
+    "prompt": "List the branches of git repository ZFIN_REPO.",
     "tool": "SAPGit",
     "key": "action",
-    "value": "branches",
-    "quarantined": "prompt supplies a class/package name; handler requires repoId (and url/branch/commit message per action)"
+    "value": "branches"
   },
   {
     "id": "SAPGit.action.external_info",
-    "prompt": "Get remote repository details for package $TMP.",
+    "prompt": "Show the remote URL and status of git repository ZFIN_REPO.",
     "tool": "SAPGit",
     "key": "action",
-    "value": "external_info",
-    "quarantined": "prompt supplies a class/package name; handler requires repoId (and url/branch/commit message per action)"
+    "value": "external_info"
   },
   {
     "id": "SAPGit.action.history",
-    "prompt": "Show me the commit history for ZCL_ORDER.",
+    "prompt": "Show the commit history of git repository ZFIN_REPO.",
     "tool": "SAPGit",
     "key": "action",
-    "value": "history",
-    "quarantined": "prompt supplies a class/package name; handler requires repoId (and url/branch/commit message per action)"
+    "value": "history"
   },
   {
     "id": "SAPGit.action.objects",
-    "prompt": "List all ABAP classes defined in the ZCL_ORDER repository.",
+    "prompt": "List the objects tracked in git repository ZFIN_REPO.",
     "tool": "SAPGit",
     "key": "action",
-    "value": "objects",
-    "quarantined": "prompt names ZCL_ORDER as a repository; repos are package-scoped"
+    "value": "objects"
   },
   {
     "id": "SAPGit.action.check",
-    "prompt": "Check the git status of ZCL_ORDER to ensure no uncommitted changes exist before I proceed.",
+    "prompt": "Check repository ZFIN_REPO for uncommitted local changes.",
     "tool": "SAPGit",
     "key": "action",
-    "value": "check",
-    "quarantined": "prompt supplies a class/package name; handler requires repoId (and url/branch/commit message per action)"
+    "value": "check"
   },
   {
     "id": "SAPGit.action.stage",
-    "prompt": "Stage all pending modifications for class ZCL_ORDER.",
+    "prompt": "Stage the modified objects in repository ZFIN_REPO.",
     "tool": "SAPGit",
     "key": "action",
-    "value": "stage",
-    "quarantined": "prompt supplies a class/package name; handler requires repoId (and url/branch/commit message per action)"
+    "value": "stage"
   },
   {
     "id": "SAPGit.action.clone",
-    "prompt": "Clone the repository for package ZDEV_ORDER so I can work on class ZCL_ORDER.",
+    "prompt": "Clone https://github.com/acme/zdev-order.git into package ZDEV_ORDER.",
     "tool": "SAPGit",
     "key": "action",
-    "value": "clone",
-    "quarantined": "prompt supplies a class/package name; handler requires repoId (and url/branch/commit message per action)"
+    "value": "clone"
   },
   {
     "id": "SAPGit.action.pull",
-    "prompt": "Pull the latest commits for package ZDEV01 from the remote repository.",
+    "prompt": "Pull the latest commits into git repository ZDEV01_REPO.",
     "tool": "SAPGit",
     "key": "action",
-    "value": "pull",
-    "quarantined": "prompt supplies a class/package name; handler requires repoId (and url/branch/commit message per action)"
+    "value": "pull"
   },
   {
     "id": "SAPGit.action.push",
-    "prompt": "Push the local changes for package ZDEV_SALES to the remote repository.",
+    "prompt": "Push staged changes in repository ZDEV_SALES_REPO with the message \"add tax calc\".",
     "tool": "SAPGit",
     "key": "action",
-    "value": "push",
-    "quarantined": "prompt supplies a class/package name; handler requires repoId (and url/branch/commit message per action)"
+    "value": "push"
   },
   {
     "id": "SAPGit.action.commit",
-    "prompt": "Commit the updates to ZCL_ORDER_MANAGER.",
+    "prompt": "Commit the staged changes in repository ZFIN_REPO with the message \"fix rounding\".",
     "tool": "SAPGit",
     "key": "action",
-    "value": "commit",
-    "quarantined": "prompt supplies a class/package name; handler requires repoId (and url/branch/commit message per action)"
+    "value": "commit"
   },
   {
     "id": "SAPGit.action.switch_branch",
-    "prompt": "Switch to the feature_order_fix branch so I can commit changes for package $TMP.",
+    "prompt": "Switch repository ZFIN_REPO to the feature_order_fix branch.",
     "tool": "SAPGit",
     "key": "action",
-    "value": "switch_branch",
-    "quarantined": "prompt supplies a class/package name; handler requires repoId (and url/branch/commit message per action)"
+    "value": "switch_branch"
   },
   {
     "id": "SAPGit.action.create_branch",
-    "prompt": "Create a new branch for package ZDEV_PACKAGE.",
+    "prompt": "Create branch release_2026 in git repository ZFIN_REPO.",
     "tool": "SAPGit",
     "key": "action",
-    "value": "create_branch",
-    "quarantined": "prompt supplies a class/package name; handler requires repoId (and url/branch/commit message per action)"
+    "value": "create_branch"
   },
   {
     "id": "SAPGit.action.unlink",
-    "prompt": "Unlink ZCL_ORDER_MANAGER from the local repository to clean up the workspace.",
+    "prompt": "Unlink git repository ZFIN_REPO from this system.",
     "tool": "SAPGit",
     "key": "action",
-    "value": "unlink",
-    "quarantined": "prompt names a class; unlink operates on a package-linked repo"
+    "value": "unlink"
   },
   {
     "id": "SAPRead.type.VARIANTS",
-    "prompt": "Show me the selection parameters for program variant Z_BATCH_PROCESS.",
+    "prompt": "List the saved selection-screen presets for report ZSALES_REPORT.",
     "tool": "SAPRead",
     "key": "type",
-    "value": "VARIANTS",
-    "quarantined": "prompt names a variant; SAPRead(type=VARIANTS, name=\u2026) expects the PROGRAM name"
+    "value": "VARIANTS"
   }
 ]

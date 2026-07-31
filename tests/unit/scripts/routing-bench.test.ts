@@ -89,13 +89,12 @@ describe('corpus coverage', () => {
     expect([...actual].filter((id) => !expected.has(id))).toEqual([]);
   });
 
-  it('reports how much of the surface is actually SCORED, not merely present', () => {
-    // Quarantined records keep parity green while contributing no coverage, so a candidate could
-    // delete guidance for them and no gate would notice. This asserts the documented gap rather
-    // than a target: raise it as cases are rewritten against the handlers.
-    const active = cases.filter((c) => !c.quarantined).map((c) => c.id);
-    const uncovered = [...expected].filter((id) => !active.includes(id));
-    expect(uncovered.length, `uncovered targets: ${uncovered.length}/${expected.size}`).toBe(42);
+  it('SCORES every target — quarantined records do not count as coverage', () => {
+    // Parity on raw records would stay green while a quarantined case contributes nothing, letting
+    // a candidate delete guidance for it unnoticed. Coverage means SCORED coverage.
+    const active = new Set(cases.filter((c) => !c.quarantined).map((c) => c.id));
+    const uncovered = [...expected].filter((id) => !active.has(id));
+    expect(uncovered, `${uncovered.length} target(s) have no scored case`).toEqual([]);
   });
 
   it('states a reason for every quarantined case', () => {

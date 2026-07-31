@@ -22,12 +22,22 @@
  *
  *   npx tsx scripts/routing-bench.ts gen                 # write cases file
  *   npx tsx scripts/routing-bench.ts run --model qwen3.5:27b
+ *
+ * DETECTION FLOOR — measured, not assumed. Three runs on byte-identical input (claude-haiku-4-5,
+ * 182 cases) scored 153 / 149 / 153, and SAPWrite alone moved 33 / 30 / 34 with its description
+ * untouched. That is sd ~2.3 and a 4-case range, so a single-run difference below roughly SEVEN
+ * cases is indistinguishable from the sampler. `claude -p` exposes no temperature control, which is
+ * the likely source.
+ *
+ * Consequence: use this to catch LARGE regressions and to prove coverage, not to justify a small
+ * win. To resolve a 3-case effect, run each arm 5+ times and compare means — a single A/B cannot.
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { config as loadDotenv } from 'dotenv';
+import { getToolSchema } from '../src/handlers/schemas.js';
 import { getToolDefinitions, type ToolDefinition } from '../src/handlers/tools.js';
 import { DEFAULT_CONFIG, type ServerConfig } from '../src/server/types.js';
 
@@ -253,39 +263,22 @@ function valueMatches(expected: string, actual: string): boolean {
 }
 
 /**
- * Arguments the handlers require beyond the schema's top-level `required`.
+ * Validate a proposed call against the SAME Zod schema `dispatch.ts` runs, rather than a
+ * hand-maintained requirement map.
  *
- * JSON Schema `required` cannot express "type and name are needed when action=delete", so SAPWrite
- * declares only ["action"] and a bare {"action":"delete"} scored as a PASS here while
- * src/handlers/write.ts rejects it. Scoring a call the server would refuse as correct routing
- * overstates the surface, so the conditional requirements are listed explicitly.
+ * The map approach produced errors in both directions: SAPWrite(edit_method, name, method) passed
+ * here while the handler rejects it for missing type/source, SAPTransport(remove_object, id) passed
+ * without the required pgmid/type/name, and SAPActivate(activate, objects=[…]) FAILED even though
+ * the batch form is valid. It also accepted invented enum aliases the schema refuses. Anything
+ * short of the real contract re-introduces that whole class of defect.
  */
-const CONDITIONAL_REQUIRED: Record<string, Record<string, string[]>> = {
-  SAPWrite: {
-    create: ['type', 'name'],
-    update: ['type', 'name'],
-    delete: ['type', 'name'],
-    edit_method: ['name', 'method'],
-    edit_unit: ['name', 'unit'],
-    edit_class_definition: ['name'],
-    add_method: ['name'],
-    edit_method_signature: ['name'],
-    delete_method: ['name'],
-    change_method_visibility: ['name'],
-    batch_create: ['objects'],
-    edit_text_symbols: ['type', 'name'],
-  },
-  SAPTransport: { get: ['id'], release: ['id'], delete: ['id'], remove_object: ['id'], reassign: ['id'] },
-  SAPActivate: { activate: ['name'] },
-  SAPNavigate: { references: ['name'], definition: ['name'], hierarchy: ['name'] },
-};
-
-function missingRequired(tool: string, schema: { required?: string[] } | undefined, args: Record<string, unknown>): string[] {
-  const absent = (r: string) => args[r] === undefined || args[r] === '';
-  const base = (schema?.required ?? []).filter(absent);
-  const action = typeof args.action === 'string' ? args.action : undefined;
-  const extra = action ? (CONDITIONAL_REQUIRED[tool]?.[action] ?? []).filter(absent) : [];
-  return [...new Set([...base, ...extra])];
+function schemaError(toolName: string, args: Record<string, unknown>): string | null {
+  const schema = getToolSchema(toolName, false);
+  if (!schema) return null;
+  const parsed = schema.safeParse(args);
+  if (parsed.success) return null;
+  const first = (parsed.error as { issues?: Array<{ path: Array<string | number>; message: string }> }).issues?.[0];
+  return first ? `${first.path.join('.') || '(root)'}: ${first.message}` : 'invalid';
 }
 
 /** Transient local-server failures are common under load; only a verdict counts as a verdict. */
@@ -422,6 +415,13 @@ async function callViaCli(
       if (code === 0) resolve(out);
       else reject(new Error(`claude CLI exit ${code}: ${err.slice(0, 200)}`));
     });
+    // A child that exits before consuming stdin raises EPIPE on the write. Unhandled, that is an
+    // 'error' event on the socket and it takes down the whole run instead of failing one case —
+    // turn it into a normal rejection so withRetry() can do its job.
+    child.stdin.on('error', (e: NodeJS.ErrnoException) => {
+      clearTimeout(timer);
+      reject(new Error(`claude CLI stdin ${e.code ?? e.message}: ${err.slice(0, 200)}`));
+    });
     child.stdin.end(body);
   });
   const json = stdout.slice(stdout.indexOf('{'), stdout.lastIndexOf('}') + 1);
@@ -523,15 +523,15 @@ export async function runBench(tools: ToolDefinition[], cases: RoutingCase[], mo
         // right action but no longer supplying an argument the schema requires, which is a runtime
         // error rather than a misroute. Score required-arg presence too (presence, not value — the
         // generated prompt does not pin object names).
-        const schema = tools.find((t) => t.name === call.name)?.inputSchema as
-          | { required?: string[] }
-          | undefined;
-        const missing = missingRequired(call.name, schema, args);
-        if (missing.length > 0) got += ` missing:${missing.join(',')}`;
+        const invalid = schemaError(call.name, args);
+        if (invalid) got += ` [rejected: ${invalid}]`;
 
         const routedRight = call.name === c.tool && (!c.key || valueMatches(c.value ?? '', actual));
         if (routedRight) routed++;
-        if (routedRight && missing.length === 0) {
+        // `passed` means the server would have accepted this call; `routed` means only that the
+        // tool and discriminator were right. Reporting both separates "picked wrong" from
+        // "picked right but could not construct a usable call".
+        if (routedRight && !invalid) {
           passed++;
           return;
         }

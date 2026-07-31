@@ -19,6 +19,7 @@ import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { config as loadDotenv } from 'dotenv';
 import { getToolDefinitions, type ToolDefinition } from '../src/handlers/tools.js';
+import { descriptionsOnlyDiff } from './optimize-tool-descriptions.js';
 import { FULL_CONFIG, loadCases, type RoutingCase, runBench } from './routing-bench.js';
 
 loadDotenv();
@@ -57,6 +58,29 @@ export function diffTools(
     .sort((a, b) => a.after - a.before - (b.after - b.before));
 }
 
+
+/**
+ * An overlay is meant to change descriptions only. Applying one that also alters enums or
+ * properties silently turns a "description A/B" into a schema comparison, and the reader has no way
+ * to tell. Validate before scoring, not after publishing the number.
+ */
+export function assertDescriptionOnlyOverlay(
+  stock: ToolDefinition[],
+  overlay: Record<string, ToolDefinition>,
+): void {
+  for (const [name, patched] of Object.entries(overlay)) {
+    const base = stock.find((t) => t.name === name);
+    if (!base) throw new Error(`overlay names "${name}", which is not in the current surface`);
+    const drift = descriptionsOnlyDiff(base, patched);
+    if (drift) {
+      throw new Error(
+        `overlay for ${name} changes more than descriptions (${drift}) — not a description A/B. ` +
+          `Regenerate it against the current surface.`,
+      );
+    }
+  }
+}
+
 async function main(): Promise<void> {
   const overlayPath = flag('overlay');
   if (!overlayPath) throw new Error('--overlay <file.json> is required');
@@ -65,6 +89,7 @@ async function main(): Promise<void> {
 
   const stock = getToolDefinitions(FULL_CONFIG) as ToolDefinition[];
   const overlay = JSON.parse(readFileSync(overlayPath, 'utf8')) as Record<string, ToolDefinition>;
+  assertDescriptionOnlyOverlay(stock, overlay);
   const patched = stock.map((t) => overlay[t.name] ?? t);
 
   const all = loadCases();
@@ -106,8 +131,12 @@ async function main(): Promise<void> {
   if (fixed.length) console.log(`\nFIXED (${fixed.length}): ${fixed.slice(0, 25).join(', ')}`);
   if (broke.length) console.log(`\nBROKE (${broke.length}): ${broke.slice(0, 25).join(', ')}`);
 
-  // 181 cases means one case is 0.55pp. Treating small swings as signal is how noise gets shipped.
-  if (Math.abs(delta) <= 2) console.log('\n⚠ delta within noise (±2 cases) — not evidence either way.');
+  // Measured floor: 3 runs on identical input gave 153/149/153 (sd ~2.3). Anything under ~7 cases
+  // is indistinguishable from the sampler in a single run.
+  if (Math.abs(delta) < 7) {
+    console.log(`\n⚠ delta ${delta} is BELOW THE DETECTION FLOOR (~7 cases) — not evidence either way.`);
+    console.log('  Run each arm 5+ times and compare means if you need to resolve an effect this small.');
+  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

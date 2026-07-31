@@ -177,6 +177,49 @@ unscored counts is not comparable across variants.
 The general lesson is the one the SAPTransport episode already taught in a different costume: a
 number that looks like a verdict is not a verdict until you check what produced it.
 
+## The measured detection floor — and what it means for every result here
+
+Three runs of the benchmark on **byte-identical input** (claude-haiku-4-5, 182 cases):
+
+| | run 1 | run 2 | run 3 | spread |
+|---|---|---|---|---|
+| overall | 153 | 149 | 153 | **4** |
+| SAPWrite | 33 | 30 | 34 | **4** |
+| SAPContext | 6 | 6 | 4 | 2 |
+
+sd ≈ 2.3; a two-sample comparison needs roughly **7 cases** to clear 2σ. `claude -p` exposes no
+temperature control, which is the likely source.
+
+**Every delta measured in this work is smaller than that.** The "+5 on SAPWrite", the "+5 overall vs
+main", the "+3", the "−3 on SAPContext" — all inside the noise of a single run. They were reported
+as findings; they are not.
+
+The three "replications" of SAPWrite's +5 were also across three *different* corpora, so they never
+were independent confirmations of one magnitude. A consistent direction is not a measured effect.
+
+### What the harness is actually good for
+
+- **Coverage** — 182/182 discriminator values scored, which nothing else in the repo provides.
+- **Catching large regressions** — a description change that breaks a tool outright moves far more
+  than 7 cases (deleting SAPRead's descriptions cost 3 on a 48-case subset; a real break is bigger).
+- **Validity** — calls are scored against the same Zod schemas `dispatch.ts` runs, so a "pass" is a
+  call the server would accept.
+
+It is **not** an instrument for justifying a small win. To resolve a 3-case effect, run each arm 5+
+times and compare means; the runners now say so and flag anything under 7 cases as below the floor.
+
+### What ships, and on what basis
+
+| change | basis |
+|---|---|
+| SAPWrite leads with its purpose instead of ~1,100 chars of payload hygiene | **Documentation.** Directionally positive in every run, never resolvable. |
+| `TTYP` added to SAPRead's type inventory | **Documentation.** A supported type was undocumented. |
+| "rename" removed from the SAPWrite lead | **Correctness.** No repository-object rename action exists. |
+
+Reverted after measurement: the SAPRead disambiguation glosses (no effect, and justified by
+mislabeled cases) and the SAPContext edit (negative in every run, and its premise was a misreading —
+"before specs, reviews, explanations, or changes" already scopes "changes" under "before").
+
 ## STATUS: all benchmark numbers are WITHDRAWN
 
 Two rounds of external review found the corpus unfit to measure with. A first audit quarantined 21

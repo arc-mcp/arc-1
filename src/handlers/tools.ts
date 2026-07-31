@@ -107,7 +107,7 @@ const SAPREAD_DESC_BTP =
 // ─── SAPContext Types ───────────────────────────────────────────────
 
 const SAPCONTEXT_DESC_ONPREM =
-  'Primary tool for understanding an existing ABAP/CDS object — what it does, what it depends on, and what breaks if it changes. Use it for specs, reviews, explanations, and impact analysis before a change; prefer it over SAPRead when the user asks what an object does. Returns intent first (the object KTD when available) then compressed dependency contracts. Use SAPRead after SAPContext for exact source/method bodies/grep/drafts. Analysis only — making the change itself is SAPWrite.\n\n' +
+  'Primary tool for understanding ABAP/CDS objects before specs, reviews, explanations, or changes — use instead of SAPRead when the user asks what an object does. Returns intent first (the object KTD when available) then compressed dependency contracts. Use SAPRead after SAPContext for exact source/method bodies/grep/drafts.\n\n' +
   "Decision rule — pick the action from the user's question:\n" +
   '- "What breaks if I change <CDS>?" / "Who consumes <I_*>?" / "Blast radius" → action="impact" (DDLS only).\n' +
   '- "Which includes/appends extend <TABL>?" → action="structure", type="TABL".\n' +
@@ -119,7 +119,7 @@ const SAPCONTEXT_DESC_ONPREM =
   'Use SAPContext BEFORE editing existing objects. For non-CDS reverse-lookup use SAPNavigate(references); for CDS prefer impact. Full detail: docs_page SAPContext.';
 
 const SAPCONTEXT_DESC_BTP =
-  'Primary tool for understanding an existing ABAP/CDS object (BTP ABAP Environment) — what it does, what it depends on, and what breaks if it changes. Use it for specs, reviews, explanations, and impact analysis before a change; prefer it over SAPRead when the user asks what an object does. Returns intent first (object KTD when available) then compressed dependency contracts. Analysis only — making the change itself is SAPWrite.\n\n' +
+  'Primary tool for understanding ABAP/CDS objects before specs, reviews, explanations, or changes (BTP ABAP Environment) — use instead of SAPRead when the user asks what an object does. Returns intent first (object KTD when available) then compressed dependency contracts.\n\n' +
   "Decision rule — pick the action from the user's question:\n" +
   '- "What breaks if I change <CDS>?" / "Who consumes <I_*>?" / "Blast radius" → action="impact" (DDLS only).\n' +
   '- "Which includes/appends extend <TABL>?" → action="structure", type="TABL".\n' +

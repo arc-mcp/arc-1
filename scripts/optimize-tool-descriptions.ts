@@ -62,7 +62,14 @@ Generate the cases first:  npx tsx scripts/routing-bench.ts gen
 
 const MODEL = flag('model', 'qwen3.5:27b');
 const REWRITER = flag('rewriter', 'qwen3.6:35b-mlx');
-const ROUNDS = Number(flag('rounds', '2'));
+const ROUNDS = (() => {
+  // "nope" -> NaN skipped the loop after paying for a full baseline; Infinity never terminates.
+  const n = Number(flag('rounds', '2'));
+  if (!Number.isInteger(n) || n < 1 || n > 50) {
+    throw new Error(`--rounds must be an integer between 1 and 50, got "${flag('rounds', '2')}"`);
+  }
+  return n;
+})();
 // A NaN tolerance makes every `x < y - TOLERANCE` comparison false, silently disabling BOTH
 // regression gates and accepting every candidate.
 const TOLERANCE = (() => {
@@ -196,7 +203,10 @@ async function main(): Promise<void> {
   }
   const current = (): ToolDefinition[] => stock.map((t) => overrides[t.name] ?? t);
 
-  const cases = loadCases();
+  // --readonly removes write tools from the surface, so their cases can never pass and would drag
+  // every comparison down by a constant. Score only what the configured surface exposes.
+  const exposed = new Set(stock.map((t) => t.name));
+  const cases = loadCases().filter((c) => exposed.has(c.tool));
   const casesFor = (name: string): RoutingCase[] => cases.filter((c) => c.tool === name);
   // Collapsing BenchResult to `.passed` hides unscored cases: with a backend returning 503 for
   // everything, every gate saw 0 and the loop still compared and wrote overlays. A run that did not
@@ -264,7 +274,10 @@ async function main(): Promise<void> {
       }
 
       overrides[stockTool.name] = candidate;
-      best = Math.max(best, full);
+      // `best` must track the overlay that was actually written, not the high-water mark: with a
+      // nonzero --tolerance an accepted regression would otherwise leave the final report quoting a
+      // score the shipped overlay never achieved.
+      best = full;
       console.log(`  r${round} ${stockTool.name}: ACCEPT −${saved}B, routing ${full}/${cases.length}`);
       writeFileSync(OUT, JSON.stringify(overrides, null, 2));
       appendFileSync(

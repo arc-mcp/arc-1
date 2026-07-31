@@ -20,6 +20,7 @@ import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { config as loadDotenv } from 'dotenv';
 import { getToolDefinitions, type ToolDefinition } from '../src/handlers/tools.js';
+import { descriptionsOnlyDiff } from './optimize-tool-descriptions.js';
 import { FULL_CONFIG, loadCases, type RoutingCase, runBench } from './routing-bench.js';
 
 loadDotenv();
@@ -42,6 +43,29 @@ function tally(cases: RoutingCase[], failed: Set<string>): Map<string, number> {
   const m = new Map<string, number>();
   for (const c of cases) if (!failed.has(c.id)) m.set(c.tool, (m.get(c.tool) ?? 0) + 1);
   return m;
+}
+
+
+/**
+ * An overlay is meant to change descriptions only. Applying one that also alters enums or
+ * properties silently turns a "description A/B" into a schema comparison, and the reader has no way
+ * to tell. Validate before scoring, not after publishing the number.
+ */
+export function assertDescriptionOnlyOverlay(
+  stock: ToolDefinition[],
+  overlay: Record<string, ToolDefinition>,
+): void {
+  for (const [name, patched] of Object.entries(overlay)) {
+    const base = stock.find((t) => t.name === name);
+    if (!base) throw new Error(`overlay names "${name}", which is not in the current surface`);
+    const drift = descriptionsOnlyDiff(base, patched);
+    if (drift) {
+      throw new Error(
+        `overlay for ${name} changes more than descriptions (${drift}) — not a description A/B. ` +
+          `Regenerate it against the current surface.`,
+      );
+    }
+  }
 }
 
 async function main(): Promise<void> {
@@ -92,6 +116,14 @@ async function main(): Promise<void> {
   // known baseline can be supplied instead of re-measured. Per-tool deltas are unavailable then —
   // only the total — which is why this is for final validation, not iteration.
   const known = Number(flag('baseline', '0'));
+  if (known > 0 && (onlySet.size > 0 || sample > 0)) {
+    // A recorded baseline belongs to the case set it was measured on; pairing it with --only or
+    // --sample yields impossible rows like "133/37".
+    throw new Error('--baseline cannot be combined with --only or --sample (different case set).');
+  }
+  if (known > 0 && known > cases.length) {
+    throw new Error(`--baseline ${known} exceeds the ${cases.length} cases being scored.`);
+  }
   if (known > 0) {
     results.push({ name: '(stock, recorded)', passed: known, bytes: bytes(stock), failedIds: new Set(), perTool: new Map() });
     console.log(`  ${'(stock, recorded)'.padEnd(26)} ${String(known).padStart(3)}/${cases.length}`);
@@ -100,6 +132,7 @@ async function main(): Promise<void> {
   }
   for (const f of files) {
     const overlay = JSON.parse(readFileSync(f, 'utf8')) as Record<string, ToolDefinition>;
+    assertDescriptionOnlyOverlay(stock, overlay);
     await score(basename(f, '.json'), stock.map((t) => overlay[t.name] ?? t));
   }
 
@@ -111,21 +144,22 @@ async function main(): Promise<void> {
   for (const r of ranked) {
     const d = r.passed - base.passed;
     const per = tools.map((t) => `${t.replace('SAP', '')} ${r.perTool.get(t) ?? 0}`).join('  ');
-    const flagStr = r === base ? '  (baseline)' : Math.abs(d) <= 2 ? '  ~noise' : d > 0 ? '  ✓' : '  ✗';
+    // ~7 cases is the measured single-run detection floor (153/149/153 on identical input).
+    const flagStr = r === base ? '  (baseline)' : Math.abs(d) < 7 ? '  ~noise' : d > 0 ? '  ✓' : '  ✗';
     console.log(
       `${r.name.padEnd(26)} ${String(r.passed).padStart(3)}  ${(d >= 0 ? `+${d}` : String(d)).padStart(5)}  ${String(r.bytes - base.bytes).padStart(6)}   ${per}${flagStr}`,
     );
   }
 
   const best = ranked[0];
-  if (best !== base && best.passed - base.passed > 2) {
+  if (best !== base && best.passed - base.passed >= 7) {
     const fixed = [...base.failedIds].filter((id) => !best.failedIds.has(id));
     const broke = [...best.failedIds].filter((id) => !base.failedIds.has(id));
     console.log(`\nbest = ${best.name}`);
     if (fixed.length) console.log(`  FIXED (${fixed.length}): ${fixed.slice(0, 20).join(', ')}`);
     if (broke.length) console.log(`  BROKE (${broke.length}): ${broke.slice(0, 20).join(', ')}`);
   } else {
-    console.log('\nNo variant beats stock by more than noise (±2 cases).');
+    console.log('\nNo variant clears the ~7-case detection floor. Repeat each arm 5+ times to resolve smaller effects.');
   }
 }
 
