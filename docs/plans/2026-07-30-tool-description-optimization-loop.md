@@ -177,7 +177,41 @@ unscored counts is not comparable across variants.
 The general lesson is the one the SAPTransport episode already taught in a different costume: a
 number that looks like a verdict is not a verdict until you check what produced it.
 
-## Cross-model result: routing is not improvable by editing tool definitions
+## Applied changes and their measured effect
+
+Three edits shipped, verified on `claude-haiku-4-5` over the full 181 cases.
+
+**Overall 136/181 -> 140/181.** Per tool:
+
+| tool | before | after | |
+|---|---|---|---|
+| **SAPWrite** | 27/44 (61%) | **32/44 (73%)** | **+5, replicated in two runs** |
+| SAPDiagnose | 19/21 | 20/21 | +1 |
+| SAPGit | 11/16 | 12/16 | +1 |
+| SAPNavigate | 1/4 | 2/4 | +1 |
+| SAPContext | 8/10 | 6/10 | -2 (accepted, see below) |
+
+1. **SAPWrite leads with its purpose.** It used to open with ~1,100 characters of payload hygiene.
+   This is the one change that moved the number, and it moved it on the largest and worst tool.
+2. **SAPRead documents its look-alike codes.** `DCLS`/`DDLX`/`VIEW`/`TRAN` were bare tokens and
+   `TTYP` was undocumented entirely; each now says what the object IS.
+3. **SAPContext stops advertising itself for changes.** It is read-only.
+
+### Placement beat wording
+
+The first attempt at #3 put "to actually change an object use SAPWrite" early, and SAPContext fell
+**8/10 -> 4/10** — the model routed away from the tool on requests that belonged to it. Same fact,
+moved to a closing clause, recovers to 6/10. The residual -2 is inside the noise band at n=10 and is
+accepted for the factual correction.
+
+### This narrows the earlier conclusion
+
+The section below concluded from qwen3.5:27b that description text is not the routing lever. On
+Haiku a near-identical reorder is worth +5 on SAPWrite. The honest scope: **the ablation result is
+qwen-specific, and description edits DO move the model ARC-1 actually ships to.** What survives is
+that gains are small, specific, and require per-tool measurement — not that descriptions are inert.
+
+## Cross-model result: routing is not improvable by editing tool definitions (qwen3.5:27b)
 
 Two models, six interventions, one control. `qwen3.5:27b` (local, temp 0, seed 42) and
 `claude-haiku-4-5` (via the authenticated CLI).
