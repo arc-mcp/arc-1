@@ -243,11 +243,16 @@ export async function safeUpdateSource(
  * PUT fails with `HTTP 500 "…CCAU does not have any inactive version"`. SAP's
  * ADT contract is that the include must be created first.
  *
- * Live-verified mechanism (a4h S/4HANA 2023): inside a locked stateful session,
+ * Live-verified mechanism (7.50 / 758 / 816): inside a locked stateful session,
  * an empty `POST …/includes/{include}?lockHandle=<LH>` (no body, no content-type)
  * returns 201 and creates the include (SAP generates an empty skeleton). A bare
  * POST without the lock handle returns 423 ("Resource CLASS_INCLUDE … is not
  * locked"), so this MUST run with a valid lock on the parent class.
+ *
+ * `transport` is REQUIRED for a class in a transportable package: creating the include
+ * creates a new `LIMU CINC …CCAU` sub-object that CTS must record, and without a corrNr
+ * SAP 500s with "Object LIMU CINC … is already locked in request … of user …" instead of
+ * reusing the covering `R3TR CLAS` lock (#645). `$TMP` needs none.
  *
  * Caller contract: invoke inside `withStatefulSession`, holding the parent
  * class lock; pass that `lockHandle`.
@@ -257,11 +262,15 @@ export async function initClassInclude(
   safety: SafetyConfig,
   includeUrl: string,
   lockHandle: string,
+  transport?: string,
 ): Promise<void> {
   // Creating the include is a mutation — gated by allowWrites like every other
   // write (package gating already happened in the handler before this point).
   checkOperation(safety, OperationType.Create, 'InitClassInclude');
-  const url = `${includeUrl}?lockHandle=${encodeURIComponent(lockHandle)}`;
+  let url = `${includeUrl}?lockHandle=${encodeURIComponent(lockHandle)}`;
+  if (transport) {
+    url += `&corrNr=${encodeURIComponent(transport)}`;
+  }
   await http.post(url, '', undefined);
 }
 
@@ -308,7 +317,7 @@ export async function safeUpdateClassInclude(
         }
       }
       if (!exists) {
-        await initClassInclude(session, safety, includeUrl, lock.lockHandle);
+        await initClassInclude(session, safety, includeUrl, lock.lockHandle, effectiveTransport);
         initialized = true;
       }
       await updateSource(session, safety, includeUrl, source, lock.lockHandle, effectiveTransport);
