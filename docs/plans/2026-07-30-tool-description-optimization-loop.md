@@ -177,7 +177,65 @@ unscored counts is not comparable across variants.
 The general lesson is the one the SAPTransport episode already taught in a different costume: a
 number that looks like a verdict is not a verdict until you check what produced it.
 
-## The result: descriptions are not the routing lever (on this model)
+## Cross-model result: routing is not improvable by editing tool definitions
+
+Two models, six interventions, one control. `qwen3.5:27b` (local, temp 0, seed 42) and
+`claude-haiku-4-5` (via the authenticated CLI).
+
+**Baselines:** qwen 109/181 (60.2%) · Haiku **136/181 (75.1%)**
+
+| tool | qwen | Haiku |
+|---|---|---|
+| SAPManage / SAPTransport / SAPActivate / SAPSearch | 93–100% | **100%** |
+| SAPDiagnose | 81% | 90% |
+| SAPContext / SAPLint | 67–70% | 80–83% |
+| SAPRead | 56% | 71% |
+| SAPGit | 75% | 69% |
+| SAPWrite | 25% | 61% |
+| SAPNavigate | 25% | 25% |
+
+SAPWrite's alarming 25% was largely a small-model artifact — on Haiku it is 61%. But four failures
+reproduce **identically on both models**: `DCLS→DDLS`, `DDLX→DDLS`, `TRAN→SAPTransport`,
+`TABLE_CONTENTS→SAPQuery`.
+
+### Every intervention failed
+
+| # | intervention | model | result |
+|---|---|---|---|
+| 1 | SAPWrite: hygiene to the end + explicit identity line | qwen | 13 → 13 |
+| 2 | SAPWrite claims its ground + SAPContext drops "or changes" | qwen | 13 → 14 |
+| 3 | SAPWrite description 3,684 → 450 chars | qwen | 13 → 12 |
+| 4 | SAPRead: disambiguation glosses for every confused code | qwen | 27 → 28 |
+| 5 | **Control: SAPRead descriptions REMOVED (−7,657 B, 77%)** | qwen | **27 → 24** |
+| 6 | SAPRead: readable enum aliases (`DCLS`→`access_control`, …) | Haiku | 32 → 31 |
+
+Experiment 5 explains 1–4: deleting essentially all of a tool's descriptive text costs ~3 cases in
+48, so the prose was never carrying the routing signal. Experiment 6 then tested the obvious
+follow-on — that the enum *token* is the lever instead — and it is not either.
+
+**Nothing in the tool definition that can be edited measurably changes routing.**
+
+### Two caveats that limit how hard this can be pushed
+
+- **Run-to-run variance.** Stock SAPRead scored 34/48 and then 32/48 on identical inputs, because
+  `claude -p` exposes no temperature control. With ~2 cases of drift, only effects of roughly **5+
+  cases** were ever detectable. These are "no large effect" results, not "no effect".
+- **The bench scores one right answer.** `TABLE_CONTENTS→SAPQuery` is counted as a failure, but
+  reading table rows via SAPQuery is defensible; the agentic `tests/evals` suite has an
+  `acceptable` tier for exactly this and the routing bench does not. Some portion of the 25% gap is
+  bench strictness rather than defect. **Add an acceptable tier before treating 75% as a bug count.**
+
+### What this means for 1.0
+
+- **Do not spend 1.0 effort rewriting descriptions for quality.** Six attempts across two models and
+  two mechanisms (prose, enum tokens) produced nothing.
+- **Token reduction is the safe, worthwhile path** — the exact opposite of the initial assumption.
+  Removing 77% of a tool's text cost ~3/48. Gate it on this bench and proceed.
+- **If routing must improve**, the remaining lever is tool-boundary surgery, not wording: SAPRead
+  discriminates 49 types and SAPWrite 14 actions × 30 types from one schema. That is an API-shape
+  decision, and it should be prototyped behind this benchmark before 1.0 freezes the surface.
+
+## Earlier single-model analysis (superseded by the cross-model table above)
 
 Five experiments on the fixed instrument, `qwen3.5:27b`, temp 0, seed 42:
 

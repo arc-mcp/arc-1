@@ -226,6 +226,32 @@ export interface BenchResult {
   failures: Array<{ id: string; got: string }>;
 }
 
+/**
+ * Deprecated enum values whose canonical replacement is the BETTER answer.
+ *
+ * SAPRead's type description says "Deprecated aliases: MESSAGES (use MSAG), FTG2 (use
+ * FEATURE_TOGGLE)". A model that answers MSAG for a message-class request is doing the right thing,
+ * so scoring it as a miss penalises correct behaviour and understates the surface. Same for the
+ * SKTD/KTD pair, which the tool documents as aliases of each other.
+ */
+const ACCEPTED_ALIASES: Record<string, string[]> = {
+  MESSAGES: ['MSAG'],
+  FTG2: ['FEATURE_TOGGLE'],
+  KTD: ['SKTD'],
+  SKTD: ['KTD'],
+  // Readable aliases under evaluation (see the enum-token experiment). Harmless when the surface
+  // does not offer them — the model cannot answer a value that is not in the enum.
+  DCLS: ['access_control'],
+  DDLX: ['metadata_extension'],
+  TRAN: ['transaction_code'],
+  VIEW: ['ddic_view'],
+  TTYP: ['table_type'],
+};
+
+function valueMatches(expected: string, actual: string): boolean {
+  return actual === expected || (ACCEPTED_ALIASES[expected] ?? []).includes(actual);
+}
+
 /** Transient local-server failures are common under load; only a verdict counts as a verdict. */
 async function withRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
   let last: unknown;
@@ -252,13 +278,63 @@ function isAnthropic(model: string): boolean {
   return model.startsWith('claude-');
 }
 
+/**
+ * `cli:<model>` drives the authenticated `claude` CLI instead of the API — the only Claude path
+ * available without an ANTHROPIC_API_KEY.
+ *
+ * FIDELITY CAVEAT: this presents the tool schemas as text and asks which tool the model would call,
+ * rather than exercising native tool-use. It measures the description → selection mapping, which is
+ * exactly the question here, but it is not the same code path a real client uses. Treat it as a
+ * second data point, never as a replacement for the API or MCP result.
+ *
+ * (Attaching ARC-1 over `--mcp-config` would be faithful, but the CLI leaves the server `pending`
+ * and exposes zero tools in this environment, despite the server answering `initialize` in 0.44s.)
+ */
+function cliModel(model: string): string | null {
+  return model.startsWith('cli:') ? model.slice(4) : null;
+}
+
+const CLI_PROMPT = `You are connected to an SAP ABAP system via these MCP tools:
+
+{TOOLS}
+
+User request: {PROMPT}
+
+Which single tool would you call, with which arguments? Reply with ONLY a JSON object:
+{"tool":"<name>","args":{...}}
+No prose, no markdown fence.`;
+
+async function callViaCli(
+  model: string,
+  prompt: string,
+  toolText: string,
+): Promise<{ name: string; args: Record<string, unknown> } | null> {
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const run = promisify(execFile);
+  const body = CLI_PROMPT.replace('{TOOLS}', toolText).replace('{PROMPT}', prompt);
+  const { stdout } = await run('claude', ['-p', '--model', model, body], {
+    maxBuffer: 10 * 1024 * 1024,
+    timeout: 180_000,
+    cwd: '/tmp',
+  });
+  const json = stdout.slice(stdout.indexOf('{'), stdout.lastIndexOf('}') + 1);
+  if (!json) return null;
+  const parsed = JSON.parse(json) as { tool?: string; args?: Record<string, unknown> };
+  return parsed.tool ? { name: parsed.tool, args: parsed.args ?? {} } : null;
+}
+
 /** One scored call. Returns the chosen tool name and its arguments, or null if no tool was called. */
 async function callModel(
   model: string,
   prompt: string,
   openaiTools: unknown[],
   anthropicTools: unknown[],
+  toolText = '',
 ): Promise<{ name: string; args: Record<string, unknown> } | null> {
+  const cli = cliModel(model);
+  if (cli) return callViaCli(cli, prompt, toolText);
+
   if (isAnthropic(model)) {
     const key = process.env.ANTHROPIC_API_KEY;
     if (!key) throw new Error('ANTHROPIC_API_KEY is required for claude-* models (or run `claude login`).');
@@ -315,6 +391,10 @@ export async function runBench(tools: ToolDefinition[], cases: RoutingCase[], mo
     description: t.description,
     input_schema: t.inputSchema,
   }));
+  // Text rendering for the CLI backend — same content the API backends send, serialised as prose.
+  const toolText = tools
+    .map((t) => `## ${t.name}\n${t.description}\nSchema: ${JSON.stringify(t.inputSchema)}`)
+    .join('\n\n');
 
   let passed = 0;
   let routed = 0;
@@ -324,7 +404,7 @@ export async function runBench(tools: ToolDefinition[], cases: RoutingCase[], mo
   const scoreOne = async (c: RoutingCase): Promise<void> => {
     let got = '(no call)';
     try {
-      const call = await withRetry(() => callModel(model, c.prompt, openai, anthropic));
+      const call = await withRetry(() => callModel(model, c.prompt, openai, anthropic, toolText));
       if (call) {
         const args = call.args;
         const actual = c.key ? String(args[c.key] ?? '') : '';
@@ -340,7 +420,7 @@ export async function runBench(tools: ToolDefinition[], cases: RoutingCase[], mo
         const missing = (schema?.required ?? []).filter((r) => args[r] === undefined || args[r] === '');
         if (missing.length > 0) got += ` missing:${missing.join(',')}`;
 
-        const routedRight = call.name === c.tool && (!c.key || actual === c.value);
+        const routedRight = call.name === c.tool && (!c.key || valueMatches(c.value ?? '', actual));
         if (routedRight) routed++;
         if (routedRight && missing.length === 0) {
           passed++;
