@@ -100,7 +100,7 @@ All safety flags are **positive opt-ins** (default: `false` / restrictive). Enab
 
 ### SAP API Policy and data-access gates
 
-SAP's current [SAP API Policy](https://help.sap.com/doc/sap-api-policy/latest/en-US/API_Policy_latest.pdf) is v.4.2026a. It allows published/documented APIs for their documented purposes, while restricting unsupported internal APIs, misuse, unmanaged autonomous AI call patterns, and large-scale extraction outside endorsed paths. ARC-1 is designed as a governed development-tooling proxy around ADT behavior, not as a bulk data-extraction product. Operators should still validate their productive setup against SAP documentation, their SAP agreement, and internal governance.
+SAP's API Policy restricts large-scale extraction and ungoverned autonomous AI call patterns, which is part of why these two capabilities are gated. See **[SAP API Policy & Architecture Alignment](sap-api-policy-and-architecture.md)** for the clause-by-clause treatment and ARC-1's position; validate your productive setup against SAP documentation, your SAP agreement, and internal governance.
 
 Two ARC-1 capabilities can expose business data or execute ad-hoc SQL and require explicit env vars before they are reachable:
 
@@ -235,7 +235,7 @@ ARC-1 ships three independent rate-limiting layers, each addressing a distinct t
 
 All three layers are per-instance and in-memory. Multi-instance attackers cost `N × limit` for Layers 1 + 2 — acceptable trade-off for the stateless-deployment property.
 
-For the full operator picture (threat model, sizing math against `rdisp/wp_no_dia`, troubleshooting decision tree, opt-out per layer), see the [Rate Limiting Guide](rate-limiting.md). Design rationale: [ADR-0004](../docs/adr/0004-layered-rate-limiting.md).
+For the full operator picture (threat model, sizing math against `rdisp/wp_no_dia`, troubleshooting decision tree, opt-out per layer), see the [Rate Limiting Guide](rate-limiting.md). Design rationale: [ADR-0004](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0004-layered-rate-limiting.md).
 
 ## 9. Audit Logging
 
@@ -446,6 +446,7 @@ ARC-1 ships as an [npm package](https://www.npmjs.com/package/arc-1) and a [Dock
 | Workflow-level `permissions: contents: read` | all workflows | minimum `GITHUB_TOKEN` scope |
 | Third-party action SHA pinning | `googleapis/release-please-action`, `docker/*`, `aquasecurity/trivy-action` | mitigates the `tj-actions/changed-files` 2024 supply-chain compromise class |
 | npm provenance | `.github/workflows/release.yml` (`npm publish --provenance`) | every release tarball is Sigstore-attested |
+| npm production SBOM | `.github/workflows/release.yml` (`npm sbom --package-lock-only --omit=dev`) | best-effort, non-gating CycloneDX JSON release asset |
 | `SECURITY.md` policy | repo root | private vulnerability reporting + severity-tiered response SLAs |
 
 ### GitHub-native security features (verified enabled)
@@ -478,19 +479,42 @@ npm install arc-1
 npm audit signatures arc-1
 # Expected: "audited <N> packages — verified <N> packages with Sigstore"
 
-# 2. npm package — confirm no known vulnerabilities at install time
+# 2. npm package — download and inspect the production dependency SBOM
+VERSION=<version>
+gh release download "v${VERSION}" \
+  --repo arc-mcp/arc-1 \
+  --pattern "arc-1-${VERSION}-sbom.cdx.json"
+jq -e --arg version "$VERSION" '
+  .bomFormat == "CycloneDX" and
+  .metadata.component.name == "arc-1" and
+  .metadata.component.version == $version and
+  .metadata.component.type == "application"
+' "arc-1-${VERSION}-sbom.cdx.json"
+# Expected: true
+
+# 3. npm package — confirm no known vulnerabilities at install time
 npm audit --audit-level=high
 # Expected: "found 0 vulnerabilities"
 
-# 3. Docker image — scan locally with the same scanner CI uses
+# 4. Docker image — scan locally with the same scanner CI uses
 trivy image ghcr.io/arc-mcp/arc-1:<version> \
   --severity HIGH,CRITICAL \
   --exit-code 1
 # Expected: exit 0, "No vulnerabilities found"
 
-# 4. View the full advisory history for the project
+# 5. View the full advisory history for the project
 open https://github.com/arc-mcp/arc-1/security/advisories
 ```
+
+The release SBOM describes the production npm graph resolved from the root `package-lock.json`.
+It does not inventory Alpine packages in the Docker image, the assembled MCPB contents, or
+dynamically loaded extensions. Those artifacts need their own build-output SBOMs; do not use the
+npm SBOM as evidence for their full contents.
+
+SBOM publication is deliberately **non-gating**. A generation, validation, or GitHub upload error
+remains visible in the `publish-npm-sbom` job, but `continue-on-error: true` prevents it from failing
+or blocking the npm, Docker, MCPB, or MCP Registry release. Maintainers can regenerate and attach a
+missing asset later.
 
 ### Reporting a vulnerability
 
@@ -500,5 +524,5 @@ See [`SECURITY.md`](https://github.com/arc-mcp/arc-1/blob/main/SECURITY.md). Pre
 
 This section corresponds to roadmap entry **SEC-11 (Tier 1: Foundation)**. Future tiers extend the chain:
 
-- **Tier 2 (Attestation)** — CycloneDX SBOM (npm + image), Cosign keyless image signing, OpenSSF Scorecard. Plan in [`docs/plans/2026-05-08-dependency-security-tier2-attestation.md`](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-05-08-dependency-security-tier2-attestation.md).
+- **Tier 2 (Attestation)** — the production npm CycloneDX release asset is complete. Image/MCPB SBOM coverage, Cosign keyless image signing, and OpenSSF Scorecard remain in [`docs/plans/2026-05-08-dependency-security-tier2-attestation.md`](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-05-08-dependency-security-tier2-attestation.md).
 - **Tier 3 (Active Defense)** — Socket.dev PR review, vulnerability triage runbook, formal non-adoption decisions for Renovate / Snyk / SLSA L3. Plan in [`docs/plans/2026-05-08-dependency-security-tier3-defense.md`](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-05-08-dependency-security-tier3-defense.md).

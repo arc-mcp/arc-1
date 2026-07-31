@@ -153,6 +153,8 @@ Full reference: [api-key-setup.md](api-key-setup.md). The single-key `ARC1_API_K
 | `--oidc-issuer` | `SAP_OIDC_ISSUER` | — | OIDC issuer URL (e.g. Entra ID, Auth0). ARC-1 fetches JWKS from `{issuer}/.well-known/openid-configuration` and validates incoming JWTs against it. |
 | `--oidc-audience` | `SAP_OIDC_AUDIENCE` | — | Expected `aud` claim. Tokens whose `aud` doesn't match are rejected. |
 | `--oidc-clock-tolerance` | `SAP_OIDC_CLOCK_TOLERANCE` | `0` | Seconds of clock skew tolerated when checking `exp`/`nbf`/`iat`. Set 30–60 if your auth server and ARC-1 host clocks drift. |
+| `--oidc-discovery` | `SAP_OIDC_DISCOVERY` | `true` | Serve [RFC 9728](https://datatracker.ietf.org/doc/html/rfc9728) protected-resource metadata at `/.well-known/oauth-protected-resource[/mcp]` and point the `401` `WWW-Authenticate` challenge at it, so MCP clients discover your IdP automatically. **Set `false` for Microsoft Entra ID** if authorization then fails with `AADSTS9010010` / `AADSTS901002`: once metadata exists, MCP clients send the RFC 8707 `resource` parameter, which Entra v2.0 does not accept. Ignored in XSUAA mode (that mode publishes its own metadata) and in API-key-only mode (no authorization server to advertise). |
+| `--oidc-scopes` | `SAP_OIDC_SCOPES` | — | Scopes advertised as `scopes_supported` in the protected-resource metadata, comma or space separated (Entra: `api://<client-id>/access_as_user`). Clients request these at your IdP; omitted from the document when unset. These are **IdP scope names**, unrelated to ARC-1's `read`/`write`/… scopes. Requires `SAP_OIDC_ISSUER`. |
 
 Full reference: [oauth-jwt-setup.md](oauth-jwt-setup.md).
 
@@ -173,7 +175,7 @@ Full reference: [xsuaa-setup.md](xsuaa-setup.md).
 ARC-1 starts **fully restrictive**. Every capability below is a positive opt-in. Per-user scopes (from JWT or API-key profile) can only restrict further — they never expand beyond what these flags allow. This is the server ceiling.
 
 !!! warning "Data preview and free SQL need explicit governance"
-    SAP's current [SAP API Policy](https://help.sap.com/doc/sap-api-policy/latest/en-US/API_Policy_latest.pdf) allows documented API use for documented purposes, but adds controls around unsupported internal APIs, unmanaged autonomous AI call patterns, and large-scale extraction. `SAP_ALLOW_DATA_PREVIEW` and `SAP_ALLOW_FREE_SQL` expose higher-risk data paths, so they stay off by default and require explicit server opt-in for approved use cases. See [authorization.md](authorization.md#sap-api-policy-data-preview-and-free-sql-are-gated-for-a-reason).
+    `SAP_ALLOW_DATA_PREVIEW` and `SAP_ALLOW_FREE_SQL` expose higher-risk data paths, so they stay off by default and require explicit server opt-in for approved use cases — SAP's API Policy adds controls around large-scale extraction and ungoverned autonomous AI call patterns. See [authorization.md](authorization.md#sap-api-policy-data-preview-and-free-sql-are-gated-for-a-reason) and [SAP API Policy & Architecture Alignment](sap-api-policy-and-architecture.md).
 
 ### Capability flags
 

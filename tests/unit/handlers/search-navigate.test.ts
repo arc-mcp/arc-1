@@ -890,17 +890,31 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
   describe('SAPGit', () => {
     const gctsReposJson = '{"result":[{"rid":"ZARC1","url":"https://github.com/example/arc1.git"}]}';
     const abapGitReposXml = `<?xml version="1.0" encoding="utf-8"?>
-<abapgitrepo:repositories xmlns:abapgitrepo="http://www.sap.com/adt/abapgit/repository" xmlns:atom="http://www.w3.org/2005/Atom">
-  <abapgitrepo:repository abapgitrepo:key="000000000001" abapgitrepo:package="$TMP" abapgitrepo:url="https://github.com/example/repo.git" abapgitrepo:branchName="main">
+<abapgitrepo:repositories xmlns:abapgitrepo="http://www.sap.com/adt/abapgit/repositories" xmlns:atom="http://www.w3.org/2005/Atom">
+  <abapgitrepo:repository>
+    <abapgitrepo:key>000000000001</abapgitrepo:key>
+    <abapgitrepo:package>$TMP</abapgitrepo:package>
+    <abapgitrepo:url>https://github.com/example/repo.git</abapgitrepo:url>
+    <abapgitrepo:branchName>refs/heads/main</abapgitrepo:branchName>
     <atom:link rel="http://www.sap.com/adt/abapgit/relations/stage" href="/sap/bc/adt/abapgit/repos/000000000001/stage" type="stage_link"/>
     <atom:link rel="http://www.sap.com/adt/abapgit/relations/push" href="/sap/bc/adt/abapgit/repos/000000000001/push" type="push_link"/>
     <atom:link rel="http://www.sap.com/adt/abapgit/relations/check" href="/sap/bc/adt/abapgit/repos/000000000001/checks" type="check_link"/>
   </abapgitrepo:repository>
 </abapgitrepo:repositories>`;
     const stagingXml = `<?xml version="1.0" encoding="utf-8"?>
-<abapgitrepo:objects xmlns:abapgitrepo="http://www.sap.com/adt/abapgit/repository">
-  <abapgitrepo:object abapgitrepo:type="CLAS" abapgitrepo:name="ZCL_ARC1_TEST" abapgitrepo:operation="M"/>
-</abapgitrepo:objects>`;
+<abapgitstaging:abapgitstaging xmlns:abapgitstaging="http://www.sap.com/adt/abapgit/staging" xmlns:adtcore="http://www.sap.com/adt/core">
+  <abapgitstaging:unstaged_objects>
+    <abapgitstaging:abapgitobject adtcore:name="ZCL_ARC1_TEST" adtcore:type="CLAS/OC" abapgitstaging:wbkey="CLAS">
+      <abapgitstaging:abapgitfile abapgitstaging:name="zcl_arc1_test.clas.abap" abapgitstaging:path="/src/" abapgitstaging:localState="M"/>
+    </abapgitstaging:abapgitobject>
+  </abapgitstaging:unstaged_objects>
+  <abapgitstaging:staged_objects/>
+  <abapgitstaging:ignored_objects/>
+  <abapgitstaging:abapgit_comment abapgitstaging:comment="">
+    <abapgitstaging:author abapgitstaging:name="DEVELOPER" abapgitstaging:email="developer@example.com"/>
+    <abapgitstaging:committer abapgitstaging:name="DEVELOPER" abapgitstaging:email="developer@example.com"/>
+  </abapgitstaging:abapgit_comment>
+</abapgitstaging:abapgitstaging>`;
 
     function readAuth(): AuthInfo {
       return {
@@ -986,7 +1000,84 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(result.isError).toBeUndefined();
       const parsed = JSON.parse(result.content[0]!.text);
       expect(parsed.backend).toBe('abapgit');
-      expect(parsed.result.objects[0].type).toBe('CLAS');
+      expect(parsed.result.objects[0].name).toBe('ZCL_ARC1_TEST');
+      expect(parsed.result.objects[0].files[0].name).toBe('zcl_arc1_test.clas.abap');
+    });
+
+    it('push stages first, sends the selected objects with the commit message, and reports them', async () => {
+      setCachedFeatures(featuresOff({ abapGit: true }));
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, abapGitReposXml)); // loadAbapGitRepo
+      mockFetch.mockResolvedValueOnce(mockResponse(200, stagingXml, { 'x-csrf-token': 'T' })); // stage
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '')); // push
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPGit', {
+        action: 'push',
+        backend: 'abapgit',
+        repoId: '000000000001',
+        message: 'arc-1 commit',
+      });
+
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0]!.text);
+      expect(parsed.result.pushed).toEqual([{ name: 'ZCL_ARC1_TEST', type: 'CLAS/OC' }]);
+      const pushCall = mockFetch.mock.calls.find(([url]) => String(url).includes('/push'));
+      const body = String(pushCall?.[1]?.body);
+      expect(body).toContain('abapgitstaging:comment="arc-1 commit"');
+      expect(body).toContain('adtcore:name="ZCL_ARC1_TEST"');
+      expect(body).toContain('abapgitstaging:name="zcl_arc1_test.clas.abap"');
+    });
+
+    it('push without a message is rejected before any SAP call', async () => {
+      setCachedFeatures(featuresOff({ abapGit: true }));
+      mockFetch.mockReset();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPGit', {
+        action: 'push',
+        backend: 'abapgit',
+        repoId: '000000000001',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('requires message');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('push selects only the requested objects and no-ops when nothing matches', async () => {
+      setCachedFeatures(featuresOff({ abapGit: true }));
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, abapGitReposXml));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, stagingXml));
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPGit', {
+        action: 'push',
+        backend: 'abapgit',
+        repoId: '000000000001',
+        message: 'arc-1 commit',
+        objects: [{ type: 'CLAS', name: 'ZCL_SOMETHING_ELSE' }],
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(JSON.parse(result.content[0]!.text).result.pushed).toEqual([]);
+      expect(mockFetch.mock.calls.some(([url]) => String(url).includes('/push'))).toBe(false);
+    });
+
+    it('maps an abapGit token to private-remote bridge credentials', async () => {
+      setCachedFeatures(featuresOff({ abapGit: true }));
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, abapGitReposXml));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, stagingXml));
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPGit', {
+        action: 'stage',
+        backend: 'abapgit',
+        repoId: '000000000001',
+        token: 'private-token',
+      });
+
+      expect(result.isError).toBeUndefined();
+      const stageCall = mockFetch.mock.calls.find(([url]) => String(url).includes('/stage'));
+      const headers = stageCall?.[1]?.headers as Record<string, string>;
+      expect(headers.Username).toBe('x-access-token');
+      expect(headers.Password).toBe(Buffer.from('private-token', 'utf-8').toString('base64'));
     });
 
     it('surfaces AdtSafetyError from git write operations when allowGitWrites=false', async () => {

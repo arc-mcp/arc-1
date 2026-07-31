@@ -15,6 +15,7 @@
 
 import { z } from 'zod';
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
+import { FUNCTION_PROCESSING_TYPES, FUNCTION_UPDATE_TASK_KINDS } from './function-processing.js';
 import { CLASS_WRITE_INCLUDES } from './object-types.js';
 import {
   SAPCONTEXT_TYPES_BTP,
@@ -348,6 +349,9 @@ const messageClassMessageSchema = z.object({
   shortText: z.string(),
 });
 
+const functionProcessingTypeSchema = z.enum(FUNCTION_PROCESSING_TYPES);
+const functionUpdateTaskKindSchema = z.enum(FUNCTION_UPDATE_TASK_KINDS);
+
 /**
  * Actions that may target a CLAS local include (CCDEF/CCIMP/macros/testclasses).
  *
@@ -360,27 +364,76 @@ const messageClassMessageSchema = z.object({
 const SAPWRITE_INCLUDE_AWARE_ACTIONS = new Set(['update', 'edit_method', 'edit_class_definition']);
 
 function validateSapWriteInput(
-  input: { action: string; type?: string; include?: string },
+  input: {
+    action: string;
+    type?: string;
+    include?: string;
+    processingType?: string;
+    updateTaskKind?: string;
+  },
   ctx: { addIssue: (issue: { code: 'custom'; path: string[]; message: string }) => void },
 ): void {
   // Treat empty/whitespace include as "not provided" — some MCP clients serialize
   // an omitted optional string as "" and shouldn't trip the include validation.
-  if (!input.include || input.include.trim() === '') return;
+  if (input.include && input.include.trim() !== '') {
+    if (!SAPWRITE_INCLUDE_AWARE_ACTIONS.has(input.action)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['include'],
+        message:
+          'SAPWrite include is only supported for action in {update, edit_method, edit_class_definition}. add_method/edit_method_signature/delete_method operate on the global class /source/main only.',
+      });
+    }
 
-  if (!SAPWRITE_INCLUDE_AWARE_ACTIONS.has(input.action)) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['include'],
-      message:
-        'SAPWrite include is only supported for action in {update, edit_method, edit_class_definition}. add_method/edit_method_signature/delete_method operate on the global class /source/main only.',
-    });
+    if (input.type !== 'CLAS') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['include'],
+        message: 'SAPWrite include is only supported for type="CLAS".',
+      });
+    }
   }
 
-  if (input.type !== 'CLAS') {
+  validateFunctionProcessingInput(input, ctx);
+}
+
+function validateFunctionProcessingInput(
+  input: {
+    action?: string;
+    type?: string;
+    processingType?: string;
+    updateTaskKind?: string;
+  },
+  ctx: { addIssue: (issue: { code: 'custom'; path: string[]; message: string }) => void },
+): void {
+  if (input.processingType === undefined && input.updateTaskKind === undefined) return;
+
+  if (input.type !== 'FUNC') {
     ctx.addIssue({
       code: 'custom',
-      path: ['include'],
-      message: 'SAPWrite include is only supported for type="CLAS".',
+      path: ['processingType'],
+      message: 'processingType and updateTaskKind are only supported for type="FUNC".',
+    });
+  }
+  if (input.action !== undefined && input.action !== 'create') {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['processingType'],
+      message: 'Function-module processing metadata is creation-time only; use action="create".',
+    });
+  }
+  if (input.processingType !== 'update' && input.updateTaskKind !== undefined) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['updateTaskKind'],
+      message: 'updateTaskKind requires processingType="update".',
+    });
+  }
+  if (input.processingType === 'update' && input.updateTaskKind === undefined) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['updateTaskKind'],
+      message: 'processingType="update" requires an explicit updateTaskKind.',
     });
   }
 }
@@ -401,45 +454,52 @@ const fmParameterSchema = z.object({
   optional: looseOptionalBoolean,
 });
 
-const batchObjectSchemaOnprem = z.object({
-  type: z.enum(SAPWRITE_TYPES_ONPREM),
-  name: z.string(),
-  source: z.string().optional(),
-  description: z.string().optional(),
-  package: z.string().optional(),
-  transport: z.string().optional(),
-  dataType: z.string().optional(),
-  rowType: z.string().optional(),
-  rowTypeKind: z.enum(['builtin', 'structure']).optional(),
-  length: z.coerce.number().optional(),
-  decimals: z.coerce.number().optional(),
-  outputLength: z.coerce.number().optional(),
-  conversionExit: z.string().optional(),
-  signExists: looseOptionalBoolean,
-  lowercase: looseOptionalBoolean,
-  fixedValues: z.array(ddicFixedValueSchema).optional(),
-  valueTable: z.string().optional(),
-  typeKind: z.enum(['domain', 'predefinedAbapType']).optional(),
-  typeName: z.string().optional(),
-  domainName: z.string().optional(),
-  shortLabel: z.string().optional(),
-  mediumLabel: z.string().optional(),
-  longLabel: z.string().optional(),
-  headingLabel: z.string().optional(),
-  searchHelp: z.string().optional(),
-  searchHelpParameter: z.string().optional(),
-  setGetParameter: z.string().optional(),
-  defaultComponentName: z.string().optional(),
-  changeDocument: looseOptionalBoolean,
-  messages: z.array(messageClassMessageSchema).optional(),
-  serviceDefinition: z.string().optional(),
-  bindingType: z.string().optional(),
-  odataVersion: z.enum(['V2', 'V4']).optional(),
-  category: z.enum(['0', '1']).optional(),
-  version: z.string().optional(),
-  /** FUNC structured signature parameters (issue #252). */
-  parameters: z.array(fmParameterSchema).optional(),
-});
+const batchObjectSchemaOnprem = z
+  .object({
+    type: z.enum(SAPWRITE_TYPES_ONPREM),
+    name: z.string(),
+    source: z.string().optional(),
+    description: z.string().optional(),
+    package: z.string().optional(),
+    transport: z.string().optional(),
+    group: z.string().optional(),
+    dataType: z.string().optional(),
+    rowType: z.string().optional(),
+    rowTypeKind: z.enum(['builtin', 'structure']).optional(),
+    length: z.coerce.number().optional(),
+    decimals: z.coerce.number().optional(),
+    outputLength: z.coerce.number().optional(),
+    conversionExit: z.string().optional(),
+    signExists: looseOptionalBoolean,
+    lowercase: looseOptionalBoolean,
+    fixedValues: z.array(ddicFixedValueSchema).optional(),
+    valueTable: z.string().optional(),
+    typeKind: z.enum(['domain', 'predefinedAbapType']).optional(),
+    typeName: z.string().optional(),
+    domainName: z.string().optional(),
+    shortLabel: z.string().optional(),
+    mediumLabel: z.string().optional(),
+    longLabel: z.string().optional(),
+    headingLabel: z.string().optional(),
+    searchHelp: z.string().optional(),
+    searchHelpParameter: z.string().optional(),
+    setGetParameter: z.string().optional(),
+    defaultComponentName: z.string().optional(),
+    changeDocument: looseOptionalBoolean,
+    messages: z.array(messageClassMessageSchema).optional(),
+    serviceDefinition: z.string().optional(),
+    bindingType: z.string().optional(),
+    odataVersion: z.enum(['V2', 'V4']).optional(),
+    category: z.enum(['0', '1']).optional(),
+    version: z.string().optional(),
+    /** FUNC creation kind as represented by ADT. */
+    processingType: functionProcessingTypeSchema.optional(),
+    /** Required for processingType=update. */
+    updateTaskKind: functionUpdateTaskKindSchema.optional(),
+    /** FUNC structured signature parameters (issue #252). */
+    parameters: z.array(fmParameterSchema).optional(),
+  })
+  .superRefine((input, ctx) => validateFunctionProcessingInput(input, ctx));
 
 const batchObjectSchemaBtp = z.object({
   type: z.enum(SAPWRITE_TYPES_BTP),
@@ -523,6 +583,10 @@ export const SAPWriteSchema = z
     // Required for FUNC create (the parent function-group name); optional for FUNC
     // update/delete (auto-resolved via search). Ignored for other types.
     group: z.string().optional(),
+    /** FUNC creation kind as represented by ADT: normal, RFC-enabled, or update task. */
+    processingType: functionProcessingTypeSchema.optional(),
+    /** Required for processingType=update; maps to the ADT update-task mode. */
+    updateTaskKind: functionUpdateTaskKindSchema.optional(),
     dataType: z.string().optional(),
     rowType: z.string().optional(),
     rowTypeKind: z.enum(['builtin', 'structure']).optional(),

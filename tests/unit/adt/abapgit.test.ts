@@ -11,6 +11,7 @@ import {
   parseAbapGitExternalInfo,
   parseAbapGitObjects,
   parseAbapGitRepos,
+  parseAbapGitStaging,
   pullRepo,
   pushRepo,
   stageRepo,
@@ -60,11 +61,51 @@ describe('abapGit client helpers', () => {
     expect(info.branches.some((branch) => branch.name === 'main')).toBe(true);
   });
 
-  it('parseAbapGitObjects parses staging payload', () => {
-    const objects = parseAbapGitObjects(loadFixture('abapgit-staging.xml'));
+  it('parseAbapGitObjects parses a clone/pull response incl. abapGit status messages', () => {
+    const objects = parseAbapGitObjects(loadFixture('abapgit-objects.xml'));
     expect(objects).toHaveLength(2);
-    expect(objects[0]?.type).toBe('CLAS');
-    expect(objects[0]?.state).toBe('M');
+    expect(objects[0]).toMatchObject({ type: 'CLAS', name: 'ZCL_ARC1_TEST', package: '$TMP', status: 'Imported' });
+    expect(objects[1]).toMatchObject({ msgType: 'E', msgText: 'Object could not be activated' });
+  });
+
+  it('parseAbapGitObjects also reads the pre-2020 v1 shape (namespace-less, obj_* fields)', () => {
+    const objects = parseAbapGitObjects(loadFixture('abapgit-objects-v1.xml'));
+    expect(objects).toHaveLength(1);
+    expect(objects[0]).toMatchObject({
+      type: 'CLAS',
+      name: 'ZCL_ARC1_TEST',
+      package: '$TMP',
+      status: 'Imported',
+      msgType: 'S',
+    });
+  });
+
+  it('parsers accept a well-formed empty response but fail closed on an unrecognised 200 body', () => {
+    // A correctly shaped "nothing happened" answer is a legitimate result, not a parse failure.
+    expect(parseAbapGitObjects('<?xml version="1.0"?><abapObjects:abapObjects xmlns:abapObjects="x"/>')).toEqual([]);
+    expect(
+      parseAbapGitStaging('<?xml version="1.0"?><abapgitstaging:abapgitstaging xmlns:abapgitstaging="x"/>').objects,
+    ).toEqual([]);
+
+    // Anything else must raise rather than report "cloned nothing" / "nothing to push".
+    expect(() => parseAbapGitObjects('')).toThrow(/unexpected clone\/pull response/);
+    expect(() => parseAbapGitObjects('<html><body>Logon screen</body></html>')).toThrow(/no <abapObjects> root/);
+    expect(() => parseAbapGitStaging('')).toThrow(/unexpected staging response/);
+    expect(() => parseAbapGitStaging(loadFixture('abapgit-objects.xml'))).toThrow(/no <abapgitstaging> root/);
+  });
+
+  it('parseAbapGitStaging splits unstaged/ignored objects and reads the prefilled commit identity', () => {
+    const staging = parseAbapGitStaging(loadFixture('abapgit-staging.xml'));
+    expect(staging.objects).toHaveLength(2);
+    expect(staging.objects[0]).toMatchObject({ name: 'ZCL_ARC1_TEST', type: 'CLAS/OC', wbkey: 'CLAS' });
+    expect(staging.objects[0]?.files.map((file) => file.name)).toEqual([
+      'zcl_arc1_test.clas.abap',
+      'zcl_arc1_test.clas.xml',
+    ]);
+    expect(staging.objects[0]?.files[0]).toMatchObject({ path: '/src/', localState: 'M' });
+    expect(staging.objects[1]?.files).toHaveLength(1);
+    expect(staging.ignored).toHaveLength(1);
+    expect(staging.comment?.committer).toEqual({ name: 'DEVELOPER', email: 'developer@example.com' });
   });
 
   it('listRepos calls repos endpoint with v2 Accept header', async () => {
@@ -136,7 +177,7 @@ describe('abapGit client helpers', () => {
   });
 
   it('createRepo sends Username + base64 Password headers and remote credentials in XML body', async () => {
-    const http = mockHttp(loadFixture('abapgit-repos-v2.xml'));
+    const http = mockHttp(loadFixture('abapgit-objects.xml'));
     await createRepo(http, gitSafety, {
       package: '$TMP',
       url: 'https://github.com/example/repo.git',
@@ -155,6 +196,8 @@ describe('abapGit client helpers', () => {
     expect(contentType).toBe('application/abapgit.adt.repo.v3+xml');
     expect(headers.Username).toBe('git-user');
     expect(headers.Password).toBe(Buffer.from('git-pass', 'utf-8').toString('base64'));
+    expect(body).toContain('xmlns:abapgitrepo="http://www.sap.com/adt/abapgit/repositories"');
+    expect(body).not.toContain('xmlns:abapgitrepo="http://www.sap.com/adt/abapgit/repository"');
     expect(body).toContain('<abapgitrepo:remoteUser>git-user</abapgitrepo:remoteUser>');
     expect(body).toContain('<abapgitrepo:remotePassword>git-pass</abapgitrepo:remotePassword>');
   });
@@ -191,6 +234,15 @@ describe('abapGit client helpers', () => {
     const staging = await stageRepo(http, gitSafety, repo);
     expect(staging.repoKey).toBe(repo.key);
     expect(staging.objects).toHaveLength(2);
+    expect(staging.comment?.author?.name).toBe('DEVELOPER');
+  });
+
+  it('stageRepo forwards private-remote credentials as bridge headers', async () => {
+    const http = mockHttp(loadFixture('abapgit-staging.xml'));
+    await stageRepo(http, gitSafety, firstRepo(), 'git-user', 'git-pass');
+    const [, headers] = (http.get as ReturnType<typeof vi.fn>).mock.calls[0] as [string, Record<string, string>];
+    expect(headers.Username).toBe('git-user');
+    expect(headers.Password).toBe(Buffer.from('git-pass', 'utf-8').toString('base64'));
   });
 
   it('checkRepo translates empty body to {ok:true}', async () => {
@@ -198,6 +250,19 @@ describe('abapGit client helpers', () => {
     const repo = firstRepo();
     const result = await checkRepo(http, gitSafety, repo);
     expect(result).toEqual({ ok: true, message: null });
+  });
+
+  it('checkRepo forwards private-remote credentials as bridge headers', async () => {
+    const http = mockHttp('');
+    await checkRepo(http, gitSafety, firstRepo(), 'git-user', 'git-pass');
+    const [, , , headers] = (http.post as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      string,
+      string | undefined,
+      Record<string, string>,
+    ];
+    expect(headers.Username).toBe('git-user');
+    expect(headers.Password).toBe(Buffer.from('git-pass', 'utf-8').toString('base64'));
   });
 
   it('checkRepo normalises bridge-namespace 5xx into {ok:false,message} instead of throwing', async () => {
@@ -244,25 +309,67 @@ describe('abapGit client helpers', () => {
     await pushRepo(http, gitSafety, repoWithoutTypes, {
       repoKey: repoWithoutTypes.key,
       branchName: repoWithoutTypes.branchName,
-      objects: [{ type: 'CLAS', name: 'Z' }],
+      objects: [{ type: 'CLAS', name: 'Z', files: [] }],
     });
     const [url] = (http.post as ReturnType<typeof vi.fn>).mock.calls[0] as [string];
     expect(url).toBe('/sap/bc/adt/abapgit/repos/000000000006/push');
     expect(url).not.toContain('/checks');
   });
 
-  it('pushRepo posts serialized staging payload to push link', async () => {
+  it('pushRepo posts the staging payload shape the bridge deserializes (ZABAPGIT_ST_REPO_STAGE)', async () => {
     const http = mockHttp('');
     const repo = firstRepo();
+    const staged = parseAbapGitStaging(loadFixture('abapgit-staging.xml'));
     await pushRepo(http, gitSafety, repo, {
       repoKey: repo.key,
       branchName: repo.branchName,
-      objects: [{ type: 'CLAS', name: 'ZCL_ARC1_TEST', operation: 'M' }],
+      objects: staged.objects.slice(0, 1),
+      comment: { ...staged.comment, comment: 'arc-1 push' },
     });
     const [url, body] = (http.post as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
     expect(url).toContain('/push');
-    expect(body).toContain('abapgitrepo:objects');
-    expect(body).toContain('type="CLAS"');
+    expect(body).toContain(
+      '<abapgitstaging:abapgitstaging xmlns:abapgitstaging="http://www.sap.com/adt/abapgit/staging"',
+    );
+    expect(body).not.toContain('abapgitrepo:objects');
+    // Objects ride under staged_objects with adtcore refs + their files; the comment carries the identity.
+    expect(body).toContain('<abapgitstaging:staged_objects>');
+    expect(body).toContain('adtcore:name="ZCL_ARC1_TEST"');
+    expect(body).toContain('adtcore:type="CLAS/OC"');
+    expect(body).toContain('abapgitstaging:wbkey="CLAS"');
+    expect(body).toContain('abapgitstaging:name="zcl_arc1_test.clas.abap"');
+    expect(body).toContain('abapgitstaging:localState="M"');
+    expect(body).toContain('abapgitstaging:comment="arc-1 push"');
+    expect(body).toContain('<abapgitstaging:committer abapgitstaging:name="DEVELOPER"');
+  });
+
+  it('pushRepo emits an empty staged_objects element when nothing is selected', async () => {
+    const http = mockHttp('');
+    const repo = firstRepo();
+    await pushRepo(http, gitSafety, repo, { repoKey: repo.key, objects: [], comment: { comment: 'empty' } });
+    const [, body] = (http.post as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
+    expect(body).toContain('<abapgitstaging:staged_objects/>');
+  });
+
+  it('pushRepo forwards private-remote credentials as bridge headers', async () => {
+    const http = mockHttp('');
+    const repo = firstRepo();
+    await pushRepo(
+      http,
+      gitSafety,
+      repo,
+      { repoKey: repo.key, branchName: repo.branchName, objects: [], comment: { comment: 'c' } },
+      'git-user',
+      'git-pass',
+    );
+    const [, , , headers] = (http.post as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      string,
+      string | undefined,
+      Record<string, string>,
+    ];
+    expect(headers.Username).toBe('git-user');
+    expect(headers.Password).toBe(Buffer.from('git-pass', 'utf-8').toString('base64'));
   });
 
   it('switchBranch sets ?create=false and createBranch sets ?create=true', async () => {
@@ -272,6 +379,33 @@ describe('abapGit client helpers', () => {
     const urls = (http.post as ReturnType<typeof vi.fn>).mock.calls.map((call) => String(call[0]));
     expect(urls[0]).toContain('/branches/feature%2Ftest?create=false');
     expect(urls[1]).toContain('/branches/feature%2Fnew?create=true');
+  });
+
+  it('switchBranch/createBranch forward private-remote credentials (the bridge reads them too)', async () => {
+    const http = mockHttp();
+    await switchBranch(http, gitSafety, '000000000001', 'main', false, 'git-user', 'git-pass');
+    await createBranch(http, gitSafety, '000000000001', 'feature/new', 'git-user', 'git-pass');
+    const encoded = Buffer.from('git-pass', 'utf-8').toString('base64');
+    for (const call of (http.post as ReturnType<typeof vi.fn>).mock.calls) {
+      const headers = call[3] as Record<string, string>;
+      expect(headers.Username).toBe('git-user');
+      expect(headers.Password).toBe(encoded);
+    }
+  });
+
+  it('createRepo and pullRepo accept the object media type the bridge renders (406 guard)', async () => {
+    const http = mockHttp(loadFixture('abapgit-objects.xml'));
+    const created = await createRepo(http, gitSafety, { package: '$TMP', url: 'https://github.com/example/repo.git' });
+    await pullRepo(http, gitSafety, '000000000001', { package: '$TMP' });
+    expect(created).toHaveLength(2);
+    expect(created[0]?.name).toBe('ZCL_ARC1_TEST');
+    for (const call of (http.post as ReturnType<typeof vi.fn>).mock.calls) {
+      const headers = call[3] as Record<string, string>;
+      // Both renderings of the response, current first. repo.v3 is the request type and never renders.
+      expect(headers.Accept).toBe(
+        'application/abapgit.adt.repo.object.v2+xml, application/abapgit.adt.repo.object.v1+xml',
+      );
+    }
   });
 
   it('unlinkRepo uses encoded repository key', async () => {

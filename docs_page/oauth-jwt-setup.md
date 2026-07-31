@@ -181,10 +181,14 @@ VS Code supports MCP OAuth natively. Configure in `.vscode/mcp.json`:
 ```
 
 VS Code will:
-1. Discover the Protected Resource Metadata at `/.well-known/oauth-protected-resource`
-2. Find the Authorization Server (your IdP)
+1. Discover the Protected Resource Metadata at `/.well-known/oauth-protected-resource/mcp` (root path also served)
+2. Find the Authorization Server (your IdP) from `authorization_servers`
 3. Open browser for OAuth login
 4. Send Bearer tokens automatically
+
+The same discovery serves Claude Desktop / Claude.ai custom connectors and `mcp-remote`, which have no
+manual authorization-server override. Set `SAP_OIDC_SCOPES` so clients know which IdP scope to request —
+see [Auto-discovery](#auto-discovery-rfc-9728) below, including the Entra ID caveat.
 
 ### Microsoft Copilot Studio / Power Automate
 
@@ -275,6 +279,80 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' \
   https://your-arc1-server.example.com/mcp
 ```
+
+## Auto-discovery (RFC 9728)
+
+With `SAP_OIDC_ISSUER` set, ARC-1 publishes OAuth 2.0 Protected Resource Metadata — the mechanism MCP
+clients use to find your IdP without per-client configuration. ARC-1 stays a pure resource server: it
+advertises *where* the authorization server is and mints no tokens itself.
+
+```bash
+curl -s https://arc1.company.com/.well-known/oauth-protected-resource/mcp | jq .
+```
+```json
+{
+  "resource": "https://arc1.company.com/mcp",
+  "authorization_servers": ["https://login.microsoftonline.com/<tenant-id>/v2.0"],
+  "bearer_methods_supported": ["header"],
+  "resource_name": "ARC-1 SAP MCP Server",
+  "scopes_supported": ["api://<client-id>/access_as_user"]
+}
+```
+
+- The document is served at the RFC 9728 path-insertion URL (`…/oauth-protected-resource/mcp`), at the
+  root fallback, and — behind a base-path proxy — at the `ARC1_PUBLIC_URL` prefix. Every `401` on `/mcp`
+  carries `resource_metadata="…"` pointing at it.
+- URLs come from `ARC1_PUBLIC_URL` (or the CF route), never from the request `Host` header. Set
+  `ARC1_PUBLIC_URL` when ARC-1 sits behind a reverse proxy.
+- `scopes_supported` appears only when you set `SAP_OIDC_SCOPES`. Clients request exactly these scopes at
+  your IdP, so they must be **your IdP's** scope names — ARC-1 cannot derive them from `SAP_OIDC_AUDIENCE`.
+- ARC-1 does **not** serve `/.well-known/oauth-authorization-server`: it is not the authorization server.
+  Clients read your IdP's own metadata from the issuer (Entra answers at
+  `{issuer}/.well-known/openid-configuration`).
+
+### Microsoft Entra ID caveat — `AADSTS9010010`
+
+Once protected-resource metadata exists, MCP clients send the [RFC 8707](https://www.rfc-editor.org/rfc/rfc8707.html)
+`resource` parameter on `/authorize` and `/token` — the MCP spec requires it. **Entra ID v2.0 does not accept
+that parameter** and answers `AADSTS9010010: The resource parameter provided in the request doesn't match with
+the requested scopes` (or `AADSTS901002: The 'resource' request parameter is not supported`). Verified against a
+live tenant: the identical request without `resource` succeeds.
+
+If your Entra sign-in fails that way, turn discovery off:
+
+```bash
+SAP_OIDC_DISCOVERY=false
+```
+
+Clients then send no `resource` parameter, and the manual route works again: point the client at your IdP's
+metadata directly (Claude Code: `authServerMetadataUrl` → `https://login.microsoftonline.com/<tenant-id>/v2.0/.well-known/openid-configuration`).
+Clients without such an override (Claude Desktop / Claude.ai connectors, `mcp-remote`) cannot connect in that
+configuration. IdPs that ignore unknown authorization parameters — the common case — are unaffected; keep the
+default.
+
+#### If you need Claude.ai / Claude Desktop connectors behind Entra today
+
+Entra-backed connectors also hit a separate, client-side failure — discovery and login succeed, then the
+authorization code is never exchanged
+([anthropics/claude-ai-mcp#506](https://github.com/anthropics/claude-ai-mcp/issues/506)). The workaround
+reported and independently confirmed in that thread is the **token-broker pattern**: run your own minimal
+OAuth 2.1 authorization server in front, federating to Entra privately as a confidential client. The
+connector only ever talks to your AS (static pre-registered client, no DCR, `/authorize` + `/token` at the
+host root), so neither the connector bug nor Entra's `resource`/DCR limitations apply.
+
+ARC-1 needs no change for this — it stays a pure resource server validating the Entra token your broker
+attaches. Two ARC-1-specific points if you go that route:
+
+- **Let the broker own discovery.** It is the authorization server the client must be sent to, so it serves
+  the protected-resource metadata; set `SAP_OIDC_DISCOVERY=false` on ARC-1 so a passed-through request can't
+  answer with a document pointing at Entra instead.
+- **Keep the user's identity.** The broker must obtain the Entra token through a user-facing flow. A
+  `client_credentials` shortcut collapses every MCP user into one identity — ARC-1's audit trail, per-user
+  scopes, and Destination principal propagation all key off the token's user, and all of them degrade to a
+  single shared user.
+
+Weigh it against what it is: an extra internet-facing component you build, operate, and secure, holding
+confidential-client credentials for your tenant.
 
 ## How It Works
 

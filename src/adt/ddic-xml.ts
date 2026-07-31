@@ -28,7 +28,7 @@ export interface DomainCreateParams {
   valueTable?: string;
   /** ADT master/original language (2-char, e.g. "DE"). Defaults to "EN" when unset. */
   language?: string;
-  /** ADT "person responsible" (logon user). Defaults to "DEVELOPER" when unset. */
+  /** ADT "person responsible" (logon user). Omitted when it cannot be an on-prem user name (#636). */
   responsible?: string;
 }
 
@@ -53,7 +53,7 @@ export interface DataElementCreateParams {
   changeDocument?: boolean;
   /** ADT master/original language (2-char, e.g. "DE"). Defaults to "EN" when unset. */
   language?: string;
-  /** ADT "person responsible" (logon user). Defaults to "DEVELOPER" when unset. */
+  /** ADT "person responsible" (logon user). Omitted when it cannot be an on-prem user name (#636). */
   responsible?: string;
 }
 
@@ -70,7 +70,7 @@ export interface PackageCreateParams {
    * from transportability metadata and keeps literal LOCAL packages off.
    */
   recordChanges?: boolean;
-  /** ADT "person responsible" (logon user). Defaults to "DEVELOPER" when unset. */
+  /** ADT "person responsible" (logon user). Omitted when it cannot be an on-prem user name (#636). */
   responsible?: string;
   /** BTP cloud create: nest under the structure superPackage, SC defaults to ZLOCAL, recordChanges=false,
    *  responsible passed verbatim (the internal ABAP user). Handler-set when systemType=btp. */
@@ -88,7 +88,7 @@ export interface ServiceBindingCreateParams {
   odataVersion?: string;
   /** ADT master/original language (2-char, e.g. "DE"). Defaults to "EN" when unset. */
   language?: string;
-  /** ADT "person responsible" (logon user). Defaults to "DEVELOPER" when unset. */
+  /** ADT "person responsible" (logon user). Omitted when it cannot be an on-prem user name (#636). */
   responsible?: string;
 }
 
@@ -150,27 +150,43 @@ export function normalizeAdtLanguage(language?: string): string {
   return (language ?? '').trim().toUpperCase() || 'EN';
 }
 
+/** On-prem `adtcore:responsible` deserializes into `XUBNAME`, which is CHAR12. */
+const XUBNAME_MAX_LENGTH = 12;
+
 /**
- * Normalize the ADT "person responsible" to the form SAP expects: trimmed and
- * upper-case (on-prem `USR02-BNAME` is upper-case). Defaults to "DEVELOPER"
- * only as a last-resort fallback when no user is configured, preserving the
- * legacy hard-coded value for callers that pass nothing. In practice
- * `config.username` is empty only under cookie-file or OAuth service-key auth
- * (basic auth and principal propagation both supply a real user), so the
- * "DEVELOPER" fallback realistically applies only in those two modes.
+ * Normalize the ADT "person responsible" to the form SAP expects: trimmed and upper-case
+ * (on-prem `USR02-BNAME` is upper-case). Returns `''` when the value cannot be an on-prem user
+ * name, and callers then OMIT the attribute entirely.
  *
- * `adtcore:responsible` must name a user that exists on the target system. The
- * historical hard-coded literal "DEVELOPER" only exists on SAP's own demo
- * systems; on a real system the create fails with
- * `HTTP 400 [?/049] "Enter a valid user, not DEVELOPER, as the person responsible"`.
- * Threading the connection's logon user (ARC-1 passes it as `config.username`)
- * fixes that. Mirrors the `normalizeAdtLanguage` / issue #343 master-language pattern.
+ * Omission is the correct behavior, not a fallback: ADT assigns the logged-on user, which under
+ * principal propagation is exactly the propagated one (live: create without the attribute returns
+ * `adtcore:responsible="<logged-on user>"`). It is safe even for a value that would have been
+ * valid, since a real user is still the logged-on user.
+ *
+ * Why the guard exists (#636): under BTP principal propagation to an on-prem system the principal
+ * is an email, and anything over CHAR12 overflows the field — the create fails in the object's
+ * simple transformation before anything is written (400, e.g. `CLASS_TRANSFORMATION`; on 7.50 the
+ * clearer "Data loss occurred when converting …"). Live-verified across 11 create STs on
+ * 7.50 / 758 / 816 — see docs/research/issues/636-onprem-pp-responsible-char12-overflow.md.
+ *
+ * Note the length is what breaks, not the `@` — `A@B.DE` creates fine — but an email is never a
+ * useful on-prem responsible, so both are rejected. BTP is unaffected: `cloudifyCreateBody` strips
+ * the attribute on the cloud path, and cloud package create uses `normalizeCloudResponsible`.
  */
 export function normalizeAdtResponsible(responsible?: string): string {
   const r = (responsible ?? '').trim();
-  if (!r) return 'DEVELOPER';
-  // Cloud (BTP) users are email-style and case-sensitive; classic SAP users are upper-case.
-  return r.includes('@') ? r : r.toUpperCase();
+  if (!r || r.length > XUBNAME_MAX_LENGTH || r.includes('@')) return '';
+  return r.toUpperCase();
+}
+
+/**
+ * The ` adtcore:responsible="…"` attribute for inline interpolation into a create template, or
+ * `''` when it must be omitted (see above). The leading space belongs to the attribute so an
+ * omitted one leaves no stray whitespace behind.
+ */
+export function adtResponsibleAttr(responsible?: string): string {
+  const user = normalizeAdtResponsible(responsible);
+  return user ? ` adtcore:responsible="${escapeXmlAttr(user)}"` : '';
 }
 
 /**
@@ -208,7 +224,7 @@ function boolToXml(value: boolean | undefined): string {
 
 export function buildDomainXml(params: DomainCreateParams): string {
   const masterLanguage = normalizeAdtLanguage(params.language);
-  const responsible = normalizeAdtResponsible(params.responsible);
+  const responsibleAttr = adtResponsibleAttr(params.responsible);
   const fixedValues = params.fixedValues ?? [];
   const valueTable = params.valueTable?.trim();
   const fixValuesXml =
@@ -234,8 +250,7 @@ export function buildDomainXml(params: DomainCreateParams): string {
              adtcore:name="${escapeXmlAttr(params.name)}"
              adtcore:type="DOMA/DD"
              adtcore:masterLanguage="${masterLanguage}"
-             adtcore:masterSystem="H00"
-             adtcore:responsible="${escapeXmlAttr(responsible)}">
+             adtcore:masterSystem="H00"${responsibleAttr}>
   <adtcore:packageRef adtcore:name="${escapeXmlAttr(params.package)}"/>
   <doma:content>
     <doma:typeInformation>
@@ -303,7 +318,7 @@ export interface TableTypeCreateParams {
  */
 export function buildTableTypeXml(params: TableTypeCreateParams): string {
   const masterLanguage = normalizeAdtLanguage(params.language);
-  const responsible = normalizeAdtResponsible(params.responsible);
+  const responsibleAttr = adtResponsibleAttr(params.responsible);
   const rowType = params.rowType.trim().toUpperCase();
   // TTYP_BUILTIN_ROW_TYPES is a best-effort heuristic for AUTO-DETECTION ONLY (when the caller omits
   // rowTypeKind). It must not gate an EXPLICIT rowTypeKind: SAP adds built-in types over releases
@@ -334,8 +349,7 @@ export function buildTableTypeXml(params: TableTypeCreateParams): string {
                 adtcore:description="${escapeXmlAttr(params.description)}"
                 adtcore:name="${escapeXmlAttr(params.name)}"
                 adtcore:type="TTYP/DA"
-                adtcore:masterLanguage="${masterLanguage}"
-                adtcore:responsible="${escapeXmlAttr(responsible)}">
+                adtcore:masterLanguage="${masterLanguage}"${responsibleAttr}>
   <adtcore:packageRef adtcore:name="${escapeXmlAttr(params.package)}"/>
   <ttyp:rowType>${rowTypeXml}</ttyp:rowType>
   <ttyp:initialRowCount>00000</ttyp:initialRowCount>
@@ -450,7 +464,7 @@ export function buildMessageClassXml(params: MessageClassCreateParams): string {
 
 export function buildDataElementXml(params: DataElementCreateParams): string {
   const masterLanguage = normalizeAdtLanguage(params.language);
-  const responsible = normalizeAdtResponsible(params.responsible);
+  const responsibleAttr = adtResponsibleAttr(params.responsible);
   const typeKind = params.typeKind ?? (params.dataType ? 'predefinedAbapType' : 'domain');
   const shortLabel = params.shortLabel ?? '';
   const mediumLabel = params.mediumLabel ?? '';
@@ -465,8 +479,7 @@ export function buildDataElementXml(params: DataElementCreateParams): string {
             adtcore:name="${escapeXmlAttr(params.name)}"
             adtcore:type="DTEL/DE"
             adtcore:masterLanguage="${masterLanguage}"
-            adtcore:masterSystem="H00"
-            adtcore:responsible="${escapeXmlAttr(responsible)}">
+            adtcore:masterSystem="H00"${responsibleAttr}>
   <adtcore:packageRef adtcore:name="${escapeXmlAttr(params.package)}"/>
   <dtel:dataElement xmlns:dtel="http://www.sap.com/adt/dictionary/dataelements">
     <dtel:typeKind>${escapeXmlAttr(typeKind)}</dtel:typeKind>
@@ -509,9 +522,11 @@ export function buildPackageXml(params: PackageCreateParams): string {
   // Cloud local packages (e.g. under ZLOCAL) are non-transportable → recordChanges defaults false;
   // do NOT let the on-prem non-LOCAL heuristic flip it to true for the ZLOCAL cloud SC.
   const recordChanges = params.recordChanges ?? (cloud ? false : !isLocalSoftwareComponent || transportLayer !== '');
-  const responsible = cloud
-    ? normalizeCloudResponsible(params.responsible)
-    : normalizeAdtResponsible(params.responsible);
+  // Cloud keeps its verbatim internal-user contract (the handler validates it first); on-prem goes
+  // through the CHAR12 guard. Both carry the leading space — see adtResponsibleAttr.
+  const responsibleAttr = cloud
+    ? ` adtcore:responsible="${escapeXmlAttr(normalizeCloudResponsible(params.responsible))}"`
+    : adtResponsibleAttr(params.responsible);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <pak:package xmlns:pak="http://www.sap.com/adt/packages"
@@ -519,8 +534,7 @@ export function buildPackageXml(params: PackageCreateParams): string {
              adtcore:description="${escapeXmlAttr(params.description)}"
              adtcore:name="${escapeXmlAttr(params.name)}"
              adtcore:type="DEVC/K"
-             adtcore:version="active"
-             adtcore:responsible="${escapeXmlAttr(responsible)}">
+             adtcore:version="active"${responsibleAttr}>
   <adtcore:packageRef adtcore:name="${escapeXmlAttr(params.name)}"/>
   <pak:attributes pak:packageType="${escapeXmlAttr(packageType)}" pak:recordChanges="${boolToXml(recordChanges)}"/>
   <pak:superPackage adtcore:name="${escapeXmlAttr(superPackage)}"/>
@@ -544,7 +558,7 @@ export function buildServiceBindingXml(params: ServiceBindingCreateParams): stri
   const odataVersion = params.odataVersion?.trim().toUpperCase() || normalized.odataVersion;
   const serviceVersion = params.version?.trim() || '0001';
   const masterLanguage = normalizeAdtLanguage(params.language);
-  const responsible = normalizeAdtResponsible(params.responsible);
+  const responsibleAttr = adtResponsibleAttr(params.responsible);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <srvb:serviceBinding xmlns:srvb="http://www.sap.com/adt/ddic/ServiceBindings"
@@ -553,8 +567,7 @@ export function buildServiceBindingXml(params: ServiceBindingCreateParams): stri
                      adtcore:name="${escapeXmlAttr(params.name)}"
                      adtcore:type="SRVB/SVB"
                      adtcore:language="${masterLanguage}"
-                     adtcore:masterLanguage="${masterLanguage}"
-                     adtcore:responsible="${escapeXmlAttr(responsible)}">
+                     adtcore:masterLanguage="${masterLanguage}"${responsibleAttr}>
   <adtcore:packageRef adtcore:name="${escapeXmlAttr(params.package)}"/>
   <srvb:services srvb:name="${escapeXmlAttr(params.name)}">
     <srvb:content srvb:version="${escapeXmlAttr(serviceVersion)}">

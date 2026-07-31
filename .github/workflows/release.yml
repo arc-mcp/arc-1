@@ -13,6 +13,7 @@ jobs:
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
     steps:
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7  # v5
         id: release
@@ -64,6 +65,129 @@ jobs:
 
       - name: Publish to npm
         run: npm publish --provenance --access public
+
+  # Publish a production-dependency CycloneDX SBOM after the npm package succeeds.
+  # Keep this separate from publish-npm so the OIDC publishing job stays read-only
+  # and an asset-upload retry never repeats npm publication. This is best-effort:
+  # SBOM generation or upload failures must never fail the artifact release.
+  publish-npm-sbom:
+    needs: [release-please, publish-npm]
+    if: ${{ needs.release-please.outputs.release_created }}
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Generate from the immutable commit that Release Please tagged.
+          ref: ${{ needs.release-please.outputs.tag_name }}
+          # gh receives the write token explicitly only in the upload step.
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Install the release npm version
+        # Keep SBOM generation on the exact npm version used by publish-npm.
+        run: npm install --global npm@11.11.1
+
+      - name: Generate and validate npm SBOM (CycloneDX)
+        id: sbom
+        env:
+          RELEASE_VERSION: ${{ needs.release-please.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          LOCK_VERSION="$(node -p "require('./package-lock.json').packages[''].version")"
+          if [[ "$PACKAGE_VERSION" != "$RELEASE_VERSION" || "$LOCK_VERSION" != "$RELEASE_VERSION" ]]; then
+            echo "::error::Release version mismatch: output=$RELEASE_VERSION package=$PACKAGE_VERSION lock=$LOCK_VERSION"
+            exit 1
+          fi
+
+          SBOM_PATH="arc-1-${RELEASE_VERSION}-sbom.cdx.json"
+          npm sbom \
+            --package-lock-only \
+            --omit=dev \
+            --sbom-format=cyclonedx \
+            --sbom-type=application \
+            > "$SBOM_PATH"
+
+          if ! jq -e --arg version "$RELEASE_VERSION" '
+            .bomFormat == "CycloneDX" and
+            .specVersion == "1.5" and
+            (.serialNumber | startswith("urn:uuid:")) and
+            .metadata.component.name == "arc-1" and
+            .metadata.component.version == $version and
+            .metadata.component.type == "application" and
+            (.components | type) == "array" and
+            (.components | length) > 0 and
+            (.dependencies | type) == "array" and
+            (.dependencies | length) > 0
+          ' "$SBOM_PATH" >/dev/null; then
+            echo "::error::Generated SBOM failed release metadata or structure validation"
+            exit 1
+          fi
+
+          SBOM_DIGEST="sha256:$(sha256sum "$SBOM_PATH" | cut -d' ' -f1)"
+          {
+            echo "path=$SBOM_PATH"
+            echo "name=$SBOM_PATH"
+            echo "digest=$SBOM_DIGEST"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Attach npm SBOM to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.release-please.outputs.tag_name }}
+          ASSET_PATH: ${{ steps.sbom.outputs.path }}
+          ASSET_NAME: ${{ steps.sbom.outputs.name }}
+          LOCAL_DIGEST: ${{ steps.sbom.outputs.digest }}
+        run: |
+          set -euo pipefail
+
+          remote_digest() {
+            local response
+            if ! response="$(gh release view "$RELEASE_TAG" --json assets 2>/dev/null)"; then
+              return 0
+            fi
+            jq -r --arg name "$ASSET_NAME" \
+              '.assets[] | select(.name == $name) | .digest // empty' <<< "$response"
+          }
+
+          for attempt in 1 2 3; do
+            REMOTE_DIGEST="$(remote_digest)"
+            if [[ -n "$REMOTE_DIGEST" ]]; then
+              if [[ "$REMOTE_DIGEST" == "$LOCAL_DIGEST" ]]; then
+                echo "Release asset $ASSET_NAME already exists with the expected digest"
+                exit 0
+              fi
+              echo "::error::Release asset $ASSET_NAME already exists with a different digest"
+              exit 1
+            fi
+
+            if gh release upload "$RELEASE_TAG" "$ASSET_PATH"; then
+              exit 0
+            fi
+
+            # The server may have accepted the upload even if the client lost the response.
+            REMOTE_DIGEST="$(remote_digest)"
+            if [[ "$REMOTE_DIGEST" == "$LOCAL_DIGEST" ]]; then
+              echo "Release asset upload completed despite a transient client error"
+              exit 0
+            fi
+
+            if [[ "$attempt" != "3" ]]; then
+              echo "Release asset upload failed (attempt $attempt/3); retrying"
+              sleep $((attempt * 5))
+            fi
+          done
+
+          echo "::error::Failed to upload $ASSET_NAME after 3 attempts"
+          exit 1
 
   # Build the MCPB (.mcpb) bundle and attach it to the GitHub Release so users can
   # one-click install ARC-1 in Claude Desktop (Settings → Extensions, or double-click).

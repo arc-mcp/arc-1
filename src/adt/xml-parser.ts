@@ -30,6 +30,8 @@ import type {
   DomainInfo,
   EnhancementImplementationInfo,
   FeatureToggleInfo,
+  FunctionGroupStructure,
+  FunctionModuleProperties,
   InactiveObject,
   LineRange,
   MessageClassInfo,
@@ -399,7 +401,7 @@ export function parseSyntaxConfigurations(xml: string): Array<{ version: string;
  * are function modules, `FUGR/I` children are includes, `FUGR/PX` is the main
  * program. Verified live on a4h (see tests/fixtures/xml/function-group.xml).
  */
-export function parseFunctionGroup(xml: string): { name: string; functions: string[]; includes: string[] } {
+export function parseFunctionGroup(xml: string): FunctionGroupStructure {
   const parsed = parseXml(xml);
   // parseXml wraps elements in arrays, so the root <objectStructureElement> arrives as
   // a one-element array; its children are nested under the same (array) key.
@@ -414,6 +416,65 @@ export function parseFunctionGroup(xml: string): { name: string; functions: stri
     else if (type === 'FUGR/I') includes.push(childName);
   }
   return { name: String(root['@_name'] ?? ''), functions, includes };
+}
+
+/**
+ * Parse a function group's structure from the GENERIC repository objectstructure
+ * response (`/sap/bc/adt/repository/objectstructure?objectname=X&objecttype=FUGR/F`).
+ *
+ * This is the pre-7.52 fallback: `/functions/groups/<name>/objectstructure` 404s on
+ * NW 7.50 under every Accept, while the generic resource works there. The payload is a
+ * different shape — a FLAT list of `<projectexplorer:node>` elements with unprefixed
+ * lowercase attributes — so it needs its own parser rather than a tweak to
+ * `parseFunctionGroup`. Folder nodes carry an `objecttype` but no `objectname`, and real
+ * groups also emit FUGR/PD|PM|PO|PT|PU|PZ (dynpros, PBO/PAI modules, text elements) plus
+ * PROG/* nodes, so everything that is not FUGR/FF or FUGR/I is ignored.
+ *
+ * The group name is NOT in the response — callers pass it through.
+ * Verified live on npl 7.50 (see tests/fixtures/xml/function-group-projectexplorer.xml).
+ */
+export function parseFunctionGroupNodes(xml: string, groupName: string): FunctionGroupStructure {
+  const parsed = parseXml(xml);
+  const root = toRecordArray(parsed.objectstructure)[0] ?? {};
+  const functions: string[] = [];
+  const includes: string[] = [];
+  for (const node of toRecordArray(root.node)) {
+    // Folders are grouping headers ("Includes", "Function Modules") — they carry an
+    // objecttype but never an objectname, so the name check alone would not skip them.
+    if (String(node['@_isfolder'] ?? '') === 'true') continue;
+    const type = String(node['@_objecttype'] ?? '');
+    const nodeName = String(node['@_objectname'] ?? '');
+    if (!nodeName) continue;
+    if (type === 'FUGR/FF') functions.push(nodeName);
+    else if (type === 'FUGR/I') includes.push(nodeName);
+  }
+  return { name: groupName, functions, includes };
+}
+
+/**
+ * Attributes ARC-1 writes on a function module. SAP's fmodule resource rejects a
+ * hand-built partial envelope (`400 ExceptionInvalidData` / "Unexpected Case in Branch"),
+ * so the only working write is GET → mutate this document → PUT it back verbatim.
+ * Live-verified on npl 7.50 + a4h 758 — see
+ * docs/research/2026-07-29-nw750-fixture-create-surface.md §8.1.
+ */
+export function parseFunctionModuleProperties(xml: string): FunctionModuleProperties {
+  // Scope to the root element first so an attribute elsewhere in the document can't match,
+  // and accept either quote style — SAP is not consistent across releases.
+  const root = /<fmodule:abapFunctionModule\b[^>]*>/i.exec(xml)?.[0];
+  const pick = (attr: string): string | undefined => {
+    if (!root) return undefined;
+    const m = new RegExp(`\\bfmodule:${attr}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, 'i').exec(root);
+    return m?.[1] ?? m?.[2];
+  };
+  const props: FunctionModuleProperties = {};
+  const processingType = pick('processingType');
+  if (processingType) props.processingType = processingType;
+  const updateTaskKind = pick('updateTaskKind');
+  if (updateTaskKind) props.updateTaskKind = updateTaskKind;
+  const releaseState = pick('releaseState');
+  if (releaseState) props.releaseState = releaseState;
+  return props;
 }
 
 /**

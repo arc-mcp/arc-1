@@ -85,6 +85,15 @@ export interface ServerConfig {
   oidcAudience?: string;
   /** Clock tolerance in seconds for JWT exp/nbf validation (default: 0 — no tolerance) */
   oidcClockTolerance?: number;
+  /**
+   * Serve RFC 9728 protected-resource metadata in OIDC mode (default: true).
+   * Set false for IdPs that reject the RFC 8707 `resource` parameter MCP clients
+   * send once metadata exists — Microsoft Entra answers `AADSTS9010010`. */
+  oidcDiscovery: boolean;
+  /**
+   * Scopes advertised as `scopes_supported`. IdP-specific (Entra:
+   * `api://<client-id>/access_as_user`), so it cannot be derived; omitted when unset. */
+  oidcScopes?: string[];
   xsuaaAuth: boolean;
   /** Explicit unsafe opt-in for HTTP `/mcp` without API-key, OIDC, or XSUAA auth. */
   allowHttpNoAuth: boolean;
@@ -266,6 +275,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
   systemType: 'auto',
   xsuaaAuth: false,
   allowHttpNoAuth: false,
+  oidcDiscovery: true,
   oauthDcrTtlSeconds: 0, // 0 = never expire; positive opts into expiry (clamped 60s..90d) — see field JSDoc
   btpOAuthCallbackPort: 0,
   multiTargetEndpoints: false,

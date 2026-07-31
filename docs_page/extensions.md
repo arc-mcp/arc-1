@@ -26,7 +26,7 @@ Each row links to a worked, live-verified tool in the [sample repo](https://gith
 | **Drive a custom ABAP HTTP service** — e.g. translation management with [LISA](https://github.com/ClementRingot/LISA) | gated `ctx.http.post` to `/sap/bc/http/sap/<service>` | `Custom_ListLanguages` / `GetTranslation` / `SetTranslation` |
 | **Run ad-hoc ABAP** — execute a console class and return its output | `ctx.run.classRun` | `Custom_RunClass` |
 
-Writes and execution are **off by default** and opt-in per deployment (see [Security & roles](#security--roles-by-use-case)); ADT **object** writes (CLAS/DDLS/…) stay a v2 item.
+Writes and execution are **off by default** and opt-in per deployment (see [Security & roles](#security-roles-by-use-case)); ADT **object** writes (CLAS/DDLS/…) stay a v2 item.
 
 ---
 
@@ -253,7 +253,7 @@ distinct from the raw `ctx.http` write surface; ADT **object** writes still wait
       dependency is a full ARC-1 compromise. Commit a lockfile, keep dependencies minimal, `npm audit`,
       and prefer the **manifest tier** (no code, no deps) when one GET suffices.
     - **Bake into an immutable artifact.** Ship plugins inside the reviewed deploy image / app bits,
-      under the same change control as the rest of the server (see [Deploying](#deploying-extensions-btp-cloud-foundry--docker)).
+      under the same change control as the rest of the server (see [Deploying](#deploying-extensions-btp-cloud-foundry-docker)).
 
 This is the most important part. An extension tool **inherits ARC-1's full safety pipeline** — it is
 gated exactly like a built-in. Two layers must both pass: the **user's scope** (their MCP role/profile)

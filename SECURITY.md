@@ -4,14 +4,12 @@ ARC-1 is an enterprise MCP server for SAP ABAP systems, distributed as an [npm p
 
 ## Supported Versions
 
-Pre-1.0 (current state): only the latest published minor line receives security fixes.
+The latest published `1.x` minor line receives security fixes. Older minors are supported only until the next minor ships.
 
 | Version | Supported              |
 | ------- | ---------------------- |
-| 0.8.x   | :white_check_mark:     |
-| < 0.8   | :x: — please upgrade   |
-
-After 1.0, this table will reflect the documented support window for each major.
+| 1.x     | :white_check_mark:     |
+| < 1.0   | :x: — please upgrade   |
 
 ## Reporting a Vulnerability
 

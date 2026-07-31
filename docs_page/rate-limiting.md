@@ -47,7 +47,7 @@ Three layers gate this traffic, each addressing a distinct threat:
 
 These are all the knobs you have. Set values via env vars, CLI flags, or `.env`.
 
-**Defaults are deliberately asymmetric.** Layer 1 and Layer 3 are ON by default — Layer 1 because it closes a CodeQL HIGH alert and protects the OAuth surface from brute-force without affecting normal traffic, Layer 3 because it's the bug fix that started this whole feature (per-PP-user semaphore multiplication). **Layer 2 is OFF by default** because it's the only layer that can fail user-visible work (MCP tool errors), and single-user deployments don't need it. Operators with multi-user setups opt in by setting `ARC1_RATE_LIMIT>0`. See [ADR-0004](../docs/adr/0004-layered-rate-limiting.md).
+**Defaults are deliberately asymmetric.** Layer 1 and Layer 3 are ON by default — Layer 1 because it closes a CodeQL HIGH alert and protects the OAuth surface from brute-force without affecting normal traffic, Layer 3 because it's the bug fix that started this whole feature (per-PP-user semaphore multiplication). **Layer 2 is OFF by default** because it's the only layer that can fail user-visible work (MCP tool errors), and single-user deployments don't need it. Operators with multi-user setups opt in by setting `ARC1_RATE_LIMIT>0`. See [ADR-0004](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0004-layered-rate-limiting.md).
 
 ### `ARC1_AUTH_RATE_LIMIT` — Layer 1 (default `20`)
 
@@ -79,7 +79,7 @@ to disable only the MCP HTTP-edge limiter; OAuth endpoints remain controlled ind
 
 ### `ARC1_RATE_LIMIT` — Layer 2 (default `0` — DISABLED)
 
-**Layer 2 ships off by default.** It is the only layer that can fail user-visible work (the others either queue or return HTTP 429 to a consenting client). Single-user stdio deployments don't need it; multi-user PP / OIDC deployments turn it on explicitly with `ARC1_RATE_LIMIT=60` (or whatever quota suits the team — see the sizing presets below). See [ADR-0004](../docs/adr/0004-layered-rate-limiting.md) for the rationale.
+**Layer 2 ships off by default.** It is the only layer that can fail user-visible work (the others either queue or return HTTP 429 to a consenting client). Single-user stdio deployments don't need it; multi-user PP / OIDC deployments turn it on explicitly with `ARC1_RATE_LIMIT=60` (or whatever quota suits the team — see the sizing presets below). See [ADR-0004](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0004-layered-rate-limiting.md) for the rationale.
 
 **What it caps when enabled.** MCP tool calls per minute, per authenticated user. Stdio mode (no
 `authInfo`) is exempt entirely — there's no user identity to key on, and stdio is
@@ -269,7 +269,7 @@ All three layers use **per-instance, in-memory state** — no Redis, no shared s
 - **Layer 2**: effective ceiling is `N × ARC1_RATE_LIMIT` per user, **only when the load balancer is not sticky**. If sticky, each user is pinned to one instance and the per-instance cap is the effective cap.
 - **Layer 3**: each instance has its own cap. Size as `floor(target / N)` per instance using the sizing math.
 
-The rationale for per-instance is recorded in [ADR-0004](../docs/adr/0004-layered-rate-limiting.md) — per-instance preserves the stateless deployment property won by PR #212 (stateless DCR).
+The rationale for per-instance is recorded in [ADR-0004](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0004-layered-rate-limiting.md) — per-instance preserves the stateless deployment property won by PR #212 (stateless DCR).
 
 ## 9. Operational checklist
 
@@ -291,4 +291,4 @@ Layer 1 closes CodeQL alert `js/missing-rate-limiting` on `/authorize` (alert #1
 - [Configuration Reference](configuration-reference.md) — flat reference for every env var ARC-1 reads
 - [Security Guide](security-guide.md) — broader security model and the full audit-event list
 - [Architecture](architecture.md) — request flow and layer ordering
-- [ADR-0004 Layered Rate Limiting](../docs/adr/0004-layered-rate-limiting.md) — design rationale and rejected alternatives
+- [ADR-0004 Layered Rate Limiting](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0004-layered-rate-limiting.md) — design rationale and rejected alternatives

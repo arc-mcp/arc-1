@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  adtResponsibleAttr,
   buildDataElementXml,
   buildDomainXml,
   buildMessageClassXml,
@@ -123,19 +124,21 @@ describe('ddic-xml builders', () => {
   });
 
   // Sibling of issue #343, for adtcore:responsible: the created object's "person
-  // responsible" must name a real user on the target system. The legacy hard-coded
-  // "DEVELOPER" only exists on SAP demo systems — on a real system the create fails
-  // with HTTP 400 [?/049] "Enter a valid user, not DEVELOPER, as the person
-  // responsible". ARC-1 threads the connection's logon user (config.username) instead.
+  // responsible" must name a real user on the target system. ARC-1 threads the connection's
+  // logon user (config.username), and OMITS the attribute when that cannot be an on-prem user
+  // name — it deserializes into XUBNAME (CHAR12), so the email-style principal under principal
+  // propagation overflows the field and kills the create ST (#636). ADT then assigns the
+  // logged-on user, which under PP is the propagated one.
   describe('person responsible (adtcore:responsible)', () => {
     it('buildPackageXml emits the configured responsible', () => {
       const xml = buildPackageXml({ name: 'ZTEST', description: 'd', responsible: 'SRAHEMI' });
       expect(xml).toContain('adtcore:responsible="SRAHEMI"');
     });
 
-    it('buildPackageXml defaults responsible to DEVELOPER when unset', () => {
+    it('buildPackageXml omits responsible when unset (never the DEVELOPER demo literal)', () => {
       const xml = buildPackageXml({ name: 'ZTEST', description: 'd' });
-      expect(xml).toContain('adtcore:responsible="DEVELOPER"');
+      expect(xml).not.toContain('adtcore:responsible');
+      expect(xml).not.toContain('DEVELOPER');
     });
 
     it('buildDomainXml emits the configured responsible', () => {
@@ -166,16 +169,16 @@ describe('ddic-xml builders', () => {
       expect(xml).toContain('adtcore:responsible="SRAHEMI"');
     });
 
-    it('defaults responsible to DEVELOPER across DDIC builders when unset', () => {
-      expect(buildDomainXml({ name: 'ZD', description: 'd', package: '$TMP', dataType: 'CHAR', length: 1 })).toContain(
-        'adtcore:responsible="DEVELOPER"',
-      );
-      expect(buildDataElementXml({ name: 'ZE', description: 'd', package: '$TMP' })).toContain(
-        'adtcore:responsible="DEVELOPER"',
+    it('omits responsible across DDIC builders when unset', () => {
+      expect(
+        buildDomainXml({ name: 'ZD', description: 'd', package: '$TMP', dataType: 'CHAR', length: 1 }),
+      ).not.toContain('adtcore:responsible');
+      expect(buildDataElementXml({ name: 'ZE', description: 'd', package: '$TMP' })).not.toContain(
+        'adtcore:responsible',
       );
       expect(
         buildServiceBindingXml({ name: 'ZSB', description: 'd', package: '$TMP', serviceDefinition: 'ZSD' }),
-      ).toContain('adtcore:responsible="DEVELOPER"');
+      ).not.toContain('adtcore:responsible');
     });
 
     it('upper-cases a lower-case responsible', () => {
@@ -183,21 +186,37 @@ describe('ddic-xml builders', () => {
       expect(xml).toContain('adtcore:responsible="SRAHEMI"');
     });
 
-    it('treats a blank responsible as the DEVELOPER default', () => {
+    it('omits a blank responsible', () => {
       const xml = buildPackageXml({ name: 'ZTEST', description: 'd', responsible: '   ' });
-      expect(xml).toContain('adtcore:responsible="DEVELOPER"');
+      expect(xml).not.toContain('adtcore:responsible');
     });
 
-    it('normalizeAdtResponsible trims + upper-cases and defaults to DEVELOPER', () => {
+    it('normalizeAdtResponsible trims + upper-cases, and returns "" when unusable', () => {
       expect(normalizeAdtResponsible('  srahemi ')).toBe('SRAHEMI');
-      expect(normalizeAdtResponsible()).toBe('DEVELOPER');
-      expect(normalizeAdtResponsible('   ')).toBe('DEVELOPER');
+      expect(normalizeAdtResponsible()).toBe('');
+      expect(normalizeAdtResponsible('   ')).toBe('');
     });
 
-    it('normalizeAdtResponsible keeps email-style cloud users case-sensitive (BTP)', () => {
-      // Classic SAP users are upper-case; cloud (BTP) users are case-sensitive emails — never upper-case them.
-      expect(normalizeAdtResponsible('marian@zeis.de')).toBe('marian@zeis.de');
-      expect(normalizeAdtResponsible('  Marian@Zeis.de ')).toBe('Marian@Zeis.de');
+    // #636 — on-prem adtcore:responsible deserializes into XUBNAME (CHAR12). Live-verified on
+    // 7.50/758/816: 12 chars creates, 13 chars fails the create ST ("Data loss occurred when
+    // converting …" on 7.50). Under principal propagation the value is the XSUAA email.
+    it('normalizeAdtResponsible drops a value that cannot be an on-prem user name', () => {
+      expect(normalizeAdtResponsible('firstname.lastname@example.com')).toBe('');
+      expect(normalizeAdtResponsible('marian@zeis.de')).toBe('');
+      expect(normalizeAdtResponsible('ABCDEFGHIJKLM')).toBe(''); // 13 chars — over CHAR12
+      expect(normalizeAdtResponsible('A@B.DE')).toBe(''); // short, but still not a user name
+    });
+
+    it('normalizeAdtResponsible keeps a value exactly at the CHAR12 boundary', () => {
+      expect(normalizeAdtResponsible('ABCDEFGHIJKL')).toBe('ABCDEFGHIJKL'); // 12 chars — creates fine
+      expect(normalizeAdtResponsible('CB9980000000')).toBe('CB9980000000');
+    });
+
+    it('adtResponsibleAttr renders the attribute only when the user is usable', () => {
+      // leading space belongs to the attribute, so omitting it leaves no stray whitespace
+      expect(adtResponsibleAttr('srahemi')).toBe(' adtcore:responsible="SRAHEMI"');
+      expect(adtResponsibleAttr('firstname.lastname@example.com')).toBe('');
+      expect(adtResponsibleAttr()).toBe('');
     });
   });
 
@@ -576,8 +595,8 @@ describe('ddic-xml builders', () => {
       expect(normalizeCloudResponsible('  CB9980000000  ')).toBe('CB9980000000');
       expect(normalizeCloudResponsible()).toBe('');
       expect(normalizeCloudResponsible('')).toBe('');
-      // shared on-prem helper is untouched (regression guard)
-      expect(normalizeAdtResponsible()).toBe('DEVELOPER');
+      // shared on-prem helper is untouched (regression guard): it omits rather than inventing a user
+      expect(normalizeAdtResponsible()).toBe('');
     });
 
     it('on-prem body (cloud unset) keeps the legacy LOCAL default + recordChanges heuristic', () => {

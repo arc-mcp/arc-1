@@ -1,6 +1,6 @@
 # ADR 0007 — Shared Basic Identity for Read-Only Multi-Target
 
-**Status:** Proposed
+**Status:** Accepted — Experimental, default-off, and subject to the one-instance ceiling
 **Date:** 2026-07-20
 **Related:** [ADR-0006](0006-experimental-read-only-multi-target.md),
 [implementation plan](../plans/destination-discovered-multi-target-v1.md)

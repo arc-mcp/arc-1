@@ -23,9 +23,19 @@ import { escapeXmlAttr, findDeepNodes, parseXml } from './xml-parser.js';
 const ABAPGIT_BASE = '/sap/bc/adt/abapgit';
 const REPOS_V2 = 'application/abapgit.adt.repos.v2+xml';
 const REPO_V3 = 'application/abapgit.adt.repo.v3+xml';
+const REPO_OBJECT_V1 = 'application/abapgit.adt.repo.object.v1+xml';
+const REPO_OBJECT_V2 = 'application/abapgit.adt.repo.object.v2+xml';
 const REPO_STAGE_V1 = 'application/abapgit.adt.repo.stage.v1+xml';
 const EXTERNAL_INFO_REQUEST_V2 = 'application/abapgit.adt.repo.info.ext.request.v2+xml';
 const EXTERNAL_INFO_RESPONSE_V2 = 'application/abapgit.adt.repo.info.ext.response.v2+xml';
+// clone/pull answer with the deserialized object list (ZABAPGIT_ST_REPO_POST_RES). The bridge 406s on
+// an Accept it cannot render (live-verified on 758), and ADT_Backend ffb914a1 (2020-08-31) bumped that
+// response from repo.object.v1 to .v2 — so name both. repo.v3 is the REQUEST type; it never renders.
+const REPO_OBJECT_ACCEPT = `${REPO_OBJECT_V2}, ${REPO_OBJECT_V1}`;
+
+const NS_REPO = 'http://www.sap.com/adt/abapgit/repositories';
+const NS_STAGING = 'http://www.sap.com/adt/abapgit/staging';
+const NS_ADTCORE = 'http://www.sap.com/adt/core';
 
 function boolish(value: unknown): boolean | undefined {
   if (value === true || value === false) return value;
@@ -64,6 +74,18 @@ function authHeaders(user?: string, password?: string): Record<string, string> {
     Username: user,
     Password: encodePassword(password),
   };
+}
+
+/** Direct children of `node` under `key`, normalised to an array (fast-xml-parser collapses singletons). */
+function childNodes(node: Record<string, unknown> | undefined, key: string): Array<Record<string, unknown>> {
+  const val = node?.[key];
+  if (Array.isArray(val)) return val as Array<Record<string, unknown>>;
+  if (val && typeof val === 'object') return [val as Record<string, unknown>];
+  return [];
+}
+
+function attr(name: string, value: string | undefined): string {
+  return value ? ` ${name}="${escapeXmlAttr(value)}"` : '';
 }
 
 function absolutizeLink(href: string): string {
@@ -169,17 +191,87 @@ export function parseAbapGitExternalInfo(xml: string): AbapGitExternalInfo {
   };
 }
 
+/**
+ * The first present root among `keys`, or undefined. An empty element (`<abapObjects/>`) parses to `''`,
+ * not an object — that is a legitimate "nothing happened" answer, so return an empty node for it.
+ */
+function rootNode(parsed: Record<string, unknown>, ...keys: string[]): Record<string, unknown> | undefined {
+  for (const key of keys) {
+    if (!(key in parsed)) continue;
+    const value = parsed[key];
+    return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+  }
+  return undefined;
+}
+
+/** An unrecognised 200 body must fail loudly — a silent empty parse is what hid the old wire bugs. */
+function unexpectedShape(what: string, expected: string, xml: string): Error {
+  return new Error(
+    `abapGit bridge returned an unexpected ${what} response: no <${expected}> root. ` +
+      `Check the installed abapGit ADT backend version. First 200 chars: ${xml.trim().slice(0, 200)}`,
+  );
+}
+
+/**
+ * Parse a clone/pull response (ZABAPGIT_ST_REPO_POST_RES): `abapObjects:abapObjects` → `abapObject`,
+ * or the pre-ffb914a1 (2020-08) `objects` → `object` with `obj_*` field names. Each entry reports what
+ * the bridge deserialized into the package, with abapGit's own status message.
+ */
 export function parseAbapGitObjects(xml: string): AbapGitObject[] {
   const parsed = parseXml(xml);
-  const objectNodes = findDeepNodes(parsed, 'object');
-  return objectNodes.map((node) => ({
-    type: field(node, 'type'),
-    name: field(node, 'name'),
-    package: field(node, 'package', 'packageName'),
-    path: field(node, 'path'),
-    state: field(node, 'state'),
-    operation: field(node, 'operation'),
+  const root = rootNode(parsed, 'abapObjects', 'objects');
+  if (!root) throw unexpectedShape('clone/pull', 'abapObjects', xml);
+
+  return [...childNodes(root, 'abapObject'), ...childNodes(root, 'object')].map((node) => ({
+    type: field(node, 'type', 'obj_type'),
+    name: field(node, 'name', 'obj_name'),
+    package: field(node, 'package'),
+    status: field(node, 'status', 'obj_status'),
+    msgType: field(node, 'msgType', 'msg_type'),
+    msgText: field(node, 'msgText', 'msg_text'),
   }));
+}
+
+function parseStagingObjects(root: Record<string, unknown>, wrapper: string): AbapGitStagingObject[] {
+  return childNodes(childNodes(root, wrapper)[0], 'abapgitobject').map((node) => ({
+    name: field(node, 'name'),
+    type: field(node, 'type'),
+    uri: field(node, 'uri'),
+    wbkey: field(node, 'wbkey'),
+    files: childNodes(node, 'abapgitfile').map((file) => ({
+      name: field(file, 'name') ?? '',
+      path: field(file, 'path'),
+      localState: field(file, 'localState'),
+      remoteState: field(file, 'remoteState'),
+    })),
+  }));
+}
+
+/**
+ * Parse a staging response (`abapgitstaging:abapgitstaging`, ZABAPGIT_ST_REPO_STAGE).
+ *
+ * Locally changed objects arrive under `unstaged_objects`; the client decides which of them to send
+ * back as `staged_objects` on push. The bridge pre-fills author/committer from abapGit's stored git
+ * user, so a push can round-trip them instead of asking the caller for an identity.
+ */
+export function parseAbapGitStaging(xml: string): Pick<AbapGitStaging, 'objects' | 'ignored' | 'comment'> {
+  const parsed = parseXml(xml);
+  const root = rootNode(parsed, 'abapgitstaging');
+  if (!root) throw unexpectedShape('staging', 'abapgitstaging', xml);
+  const commentNode = childNodes(root, 'abapgit_comment')[0];
+  const user = (key: string): AbapGitUser | undefined => {
+    const node = childNodes(commentNode, key)[0];
+    if (!node) return undefined;
+    return { name: field(node, 'name'), email: field(node, 'email') };
+  };
+
+  return {
+    objects: parseStagingObjects(root, 'unstaged_objects'),
+    ignored: parseStagingObjects(root, 'ignored_objects'),
+    ...(commentNode
+      ? { comment: { comment: field(commentNode, 'comment'), author: user('author'), committer: user('committer') } }
+      : {}),
+  };
 }
 
 async function requestAbapGit(
@@ -211,7 +303,7 @@ function buildRepoPayloadXml(params: {
   password?: string;
 }): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
-<abapgitrepo:repository xmlns:abapgitrepo="http://www.sap.com/adt/abapgit/repository">
+<abapgitrepo:repository xmlns:abapgitrepo="${NS_REPO}">
   <abapgitrepo:package>${escapeXmlAttr(params.package)}</abapgitrepo:package>
   <abapgitrepo:url>${escapeXmlAttr(params.url)}</abapgitrepo:url>
   ${params.branchName ? `<abapgitrepo:branchName>${escapeXmlAttr(params.branchName)}</abapgitrepo:branchName>` : ''}
@@ -230,27 +322,46 @@ function buildExternalInfoRequestXml(url: string, user?: string, password?: stri
 </abapgitexternalrepo:externalRepoInfoRequest>`;
 }
 
+/**
+ * Build a push payload (ZABAPGIT_ST_REPO_STAGE, root `abapgitstaging`).
+ *
+ * The objects to export go under `staged_objects`; the bridge only reads each object's reference and
+ * its files' name/path/localState, plus the comment. Element order follows the transformation.
+ */
 function buildStagingPayloadXml(staging: AbapGitStaging): string {
-  const objects = (staging.objects ?? [])
+  const stagedObjects = (staging.objects ?? [])
     .map((object) => {
-      const attrs = [
-        object.type ? `type="${escapeXmlAttr(object.type)}"` : '',
-        object.name ? `name="${escapeXmlAttr(object.name)}"` : '',
-        object.package ? `package="${escapeXmlAttr(object.package)}"` : '',
-        object.path ? `path="${escapeXmlAttr(object.path)}"` : '',
-        object.state ? `state="${escapeXmlAttr(object.state)}"` : '',
-        object.operation ? `operation="${escapeXmlAttr(object.operation)}"` : '',
-      ]
-        .filter(Boolean)
-        .join(' ');
-      return `  <abapgitrepo:object ${attrs}/>`;
+      const files = object.files
+        .map(
+          (file) =>
+            `      <abapgitstaging:abapgitfile${attr('abapgitstaging:name', file.name)}` +
+            `${attr('abapgitstaging:path', file.path)}${attr('abapgitstaging:localState', file.localState)}` +
+            `${attr('abapgitstaging:remoteState', file.remoteState)}/>`,
+        )
+        .join('\n');
+      return (
+        `    <abapgitstaging:abapgitobject${attr('adtcore:name', object.name)}${attr('adtcore:type', object.type)}` +
+        `${attr('adtcore:uri', object.uri)}${attr('abapgitstaging:wbkey', object.wbkey)}>\n${files}\n` +
+        `    </abapgitstaging:abapgitobject>`
+      );
     })
     .join('\n');
 
+  const staged = stagedObjects
+    ? `  <abapgitstaging:staged_objects>\n${stagedObjects}\n  </abapgitstaging:staged_objects>`
+    : '  <abapgitstaging:staged_objects/>';
+  const comment = staging.comment ?? {};
+
   return `<?xml version="1.0" encoding="UTF-8"?>
-<abapgitrepo:objects xmlns:abapgitrepo="http://www.sap.com/adt/abapgit/repository">
-${objects}
-</abapgitrepo:objects>`;
+<abapgitstaging:abapgitstaging xmlns:abapgitstaging="${NS_STAGING}" xmlns:adtcore="${NS_ADTCORE}">
+  <abapgitstaging:unstaged_objects/>
+${staged}
+  <abapgitstaging:ignored_objects/>
+  <abapgitstaging:abapgit_comment${attr('abapgitstaging:comment', comment.comment)}>
+    <abapgitstaging:author${attr('abapgitstaging:name', comment.author?.name)}${attr('abapgitstaging:email', comment.author?.email)}/>
+    <abapgitstaging:committer${attr('abapgitstaging:name', comment.committer?.name)}${attr('abapgitstaging:email', comment.committer?.email)}/>
+  </abapgitstaging:abapgit_comment>
+</abapgitstaging:abapgitstaging>`;
 }
 
 export async function listRepos(http: AdtHttpClient, safety: SafetyConfig): Promise<AbapGitRepo[]> {
@@ -293,7 +404,7 @@ export async function createRepo(
     password?: string;
   },
   resolver?: PackageHierarchyResolver | null,
-): Promise<AbapGitRepo[]> {
+): Promise<AbapGitObject[]> {
   checkOperation(safety, OperationType.Create, 'AbapGitCreateRepo');
   checkGit(safety, 'clone');
   await checkPackage(safety, params.package, resolver);
@@ -302,12 +413,12 @@ export async function createRepo(
   const body = buildRepoPayloadXml(params);
   const resp = await requestAbapGit(path, () =>
     http.post(path, body, REPO_V3, {
-      Accept: REPO_V3,
+      Accept: REPO_OBJECT_ACCEPT,
       ...authHeaders(params.user, params.password),
     }),
   );
 
-  return parseAbapGitRepos(resp.body);
+  return parseAbapGitObjects(resp.body);
 }
 
 /**
@@ -364,7 +475,7 @@ export async function pullRepo(
 
   const resp = await requestAbapGit(path, () =>
     http.post(path, body, REPO_V3, {
-      Accept: REPO_STAGE_V1,
+      Accept: REPO_OBJECT_ACCEPT,
       ...authHeaders(params.user, params.password),
     }),
   );
@@ -380,7 +491,13 @@ export async function unlinkRepo(http: AdtHttpClient, safety: SafetyConfig, repo
   await requestAbapGit(path, () => http.delete(path, { Accept: REPO_V3 }));
 }
 
-export async function stageRepo(http: AdtHttpClient, safety: SafetyConfig, repo: AbapGitRepo): Promise<AbapGitStaging> {
+export async function stageRepo(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  repo: AbapGitRepo,
+  user?: string,
+  password?: string,
+): Promise<AbapGitStaging> {
   checkOperation(safety, OperationType.Update, 'AbapGitStageRepo');
   checkGit(safety, 'stage');
 
@@ -389,14 +506,14 @@ export async function stageRepo(http: AdtHttpClient, safety: SafetyConfig, repo:
     http.get(link.href, {
       Accept: REPO_STAGE_V1,
       'Content-Type': REPO_STAGE_V1,
+      ...authHeaders(user, password),
     }),
   );
 
-  const objects = parseAbapGitObjects(resp.body).map((object) => object as AbapGitStagingObject);
   return {
     repoKey: repo.key,
     branchName: repo.branchName,
-    objects,
+    ...parseAbapGitStaging(resp.body),
   };
 }
 
@@ -405,6 +522,8 @@ export async function pushRepo(
   safety: SafetyConfig,
   repo: AbapGitRepo,
   staging: AbapGitStaging,
+  user?: string,
+  password?: string,
 ): Promise<void> {
   checkOperation(safety, OperationType.Update, 'AbapGitPushRepo');
   checkGit(safety, 'push');
@@ -414,6 +533,7 @@ export async function pushRepo(
   await requestAbapGit(link.href, () =>
     http.post(link.href, body, REPO_STAGE_V1, {
       Accept: REPO_STAGE_V1,
+      ...authHeaders(user, password),
     }),
   );
 }
@@ -422,6 +542,8 @@ export async function checkRepo(
   http: AdtHttpClient,
   safety: SafetyConfig,
   repo: AbapGitRepo,
+  user?: string,
+  password?: string,
 ): Promise<{ ok: boolean; message: string | null }> {
   checkOperation(safety, OperationType.Read, 'AbapGitCheckRepo');
 
@@ -431,7 +553,10 @@ export async function checkRepo(
   // info the LLM should see — normalise to {ok:false,message} rather than throwing.
   let resp: Awaited<ReturnType<AdtHttpClient['post']>>;
   try {
-    resp = await http.post(link.href, '', undefined, { Accept: REPO_V3 });
+    resp = await http.post(link.href, '', undefined, {
+      Accept: REPO_V3,
+      ...authHeaders(user, password),
+    });
   } catch (err) {
     if (err instanceof AdtApiError) {
       const parsed = classifyAbapgitError(err.responseBody ?? '');
@@ -459,12 +584,15 @@ export async function switchBranch(
   repoId: string,
   branch: string,
   create = false,
+  user?: string,
+  password?: string,
 ): Promise<void> {
   checkOperation(safety, OperationType.Update, 'AbapGitSwitchBranch');
   checkGit(safety, create ? 'create_branch' : 'switch_branch');
 
   const path = `${ABAPGIT_BASE}/repos/${encodeURIComponent(repoId)}/branches/${encodeURIComponent(branch)}?create=${create ? 'true' : 'false'}`;
-  await requestAbapGit(path, () => http.post(path, '', undefined, { Accept: REPO_V3 }));
+  // Switching fetches from the remote, so a private repo needs the bridge credentials here too.
+  await requestAbapGit(path, () => http.post(path, '', undefined, { Accept: REPO_V3, ...authHeaders(user, password) }));
 }
 
 export async function createBranch(
@@ -472,6 +600,8 @@ export async function createBranch(
   safety: SafetyConfig,
   repoId: string,
   branch: string,
+  user?: string,
+  password?: string,
 ): Promise<void> {
-  await switchBranch(http, safety, repoId, branch, true);
+  await switchBranch(http, safety, repoId, branch, true, user, password);
 }

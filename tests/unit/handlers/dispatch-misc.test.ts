@@ -658,6 +658,97 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
       }
     });
 
+    // Agent attribution: dispatch RESOLVES the agent and stamps tool_call_start explicitly (the
+    // request context opens after that event, so on stdio there is nothing to inherit from).
+    // Later events pick it up via the context merge in Logger.emitAudit — covered in logger.test.ts.
+    function startEventAgent(calls: unknown[][]): string | undefined {
+      return calls
+        .map(([e]) => e as { event?: string; clientAgent?: string })
+        .find((e) => e.event === 'tool_call_start')?.clientAgent;
+    }
+
+    it('attributes the calling agent from the MCP handshake', async () => {
+      // stdio: the connection is persistent, so the SDK Server knows the client precisely.
+      const auditSpy = vi.spyOn(logger, 'emitAudit');
+      try {
+        const fakeServer = { getClientVersion: () => ({ name: 'claude-code', version: '1.2.3' }) };
+        await handleToolCall(
+          createClient(),
+          DEFAULT_CONFIG,
+          'SAPRead',
+          { type: 'PROG', name: 'ZPROG' },
+          undefined,
+          fakeServer as never,
+        );
+
+        expect(startEventAgent(auditSpy.mock.calls)).toBe('claude-code/1.2.3');
+      } finally {
+        auditSpy.mockRestore();
+      }
+    });
+
+    it('falls back to the agent captured at the HTTP edge', async () => {
+      // Stateless HTTP: the per-request Server never saw `initialize`, so getClientVersion() is
+      // undefined and the User-Agent seeded by serveMcpRequest is the only agent signal.
+      const { requestContext } = await import('../../../src/server/context.js');
+      const auditSpy = vi.spyOn(logger, 'emitAudit');
+      try {
+        await requestContext.run({ requestId: 'REQ-EDGE', clientAgent: 'vscode/1.107.0' }, () =>
+          handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', { type: 'PROG', name: 'ZPROG' }),
+        );
+
+        expect(startEventAgent(auditSpy.mock.calls)).toBe('vscode/1.107.0');
+      } finally {
+        auditSpy.mockRestore();
+      }
+    });
+
+    it('attributes blocked calls too — the events emitted before the request context opens', async () => {
+      // A denial is the event where "which agent did this" matters most, and these fire before
+      // requestContext.run, so they carry clientAgent explicitly rather than inheriting it.
+      const auditSpy = vi.spyOn(logger, 'emitAudit');
+      try {
+        const fakeServer = { getClientVersion: () => ({ name: 'claude-code', version: '1.2.3' }) };
+        await handleToolCall(
+          createClient(),
+          { ...DEFAULT_CONFIG, denyActions: ['SAPRead'] },
+          'SAPRead',
+          { type: 'PROG', name: 'ZPROG' },
+          undefined,
+          fakeServer as never,
+        );
+
+        const blocked = auditSpy.mock.calls
+          .map(([e]) => e as { event?: string; clientAgent?: string })
+          .find((e) => e.event === 'safety_blocked');
+        expect(blocked?.clientAgent).toBe('claude-code/1.2.3');
+      } finally {
+        auditSpy.mockRestore();
+      }
+    });
+
+    it('prefers the handshake identity over the HTTP-edge fallback', async () => {
+      const { requestContext } = await import('../../../src/server/context.js');
+      const auditSpy = vi.spyOn(logger, 'emitAudit');
+      try {
+        const fakeServer = { getClientVersion: () => ({ name: 'claude-code', version: '1.2.3' }) };
+        await requestContext.run({ requestId: 'REQ-EDGE', clientAgent: 'node' }, () =>
+          handleToolCall(
+            createClient(),
+            DEFAULT_CONFIG,
+            'SAPRead',
+            { type: 'PROG', name: 'ZPROG' },
+            undefined,
+            fakeServer as never,
+          ),
+        );
+
+        expect(startEventAgent(auditSpy.mock.calls)).toBe('claude-code/1.2.3');
+      } finally {
+        auditSpy.mockRestore();
+      }
+    });
+
     it('network errors include probe-first connectivity guidance', async () => {
       mockFetch.mockReset();
       mockFetch.mockRejectedValueOnce(new Error('connect ECONNREFUSED 127.0.0.1:8000'));

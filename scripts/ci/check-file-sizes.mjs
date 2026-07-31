@@ -33,10 +33,12 @@ const BUDGETS = {
   // 87→66 KB to clear the Copilot-for-Eclipse gateway limit) shrank it; lowered to match. The
   // CLIENT-SAFETY size guard is scripts/ci/check-tool-schema-budget.ts — trim there before raising this.
   // +text-pool SAPWrite actions/description (edit_text_symbols/edit_selection_texts).
-  'src/handlers/tools.ts': 1714,
+  // +per-action SAPWrite description (one line per action, incl. the destructive/refusing ones).
+  'src/handlers/tools.ts': 1725,
   // +shared parseNamedItems relocated here from transport.ts (now used by ATC variants too) +
-  // parseAtcSystemCheckVariant (FEAT-68 ATC variant listing).
-  'src/adt/xml-parser.ts': 1710,
+  // parseAtcSystemCheckVariant (FEAT-68 ATC variant listing) + parseFunctionModuleProperties and
+  // the pre-7.52 projectexplorer function-group parser.
+  'src/adt/xml-parser.ts': 1775,
   // diagnostics.ts gained the ABAP trace-request engine (#508) + the OData perf probe + CDS Show-SQL (#509)
   // + ST05 SQL-trace control (#510) + clientWait split. Split out a perf/trace module if it grows much further.
   'src/adt/diagnostics.ts': 1845,
@@ -44,7 +46,8 @@ const BUDGETS = {
   // (SAPQuery metrics) + getEffectiveUser (BTP JWT-derived user, G-5) + getSourceAtObjectUrl
   // (post-activation cache promotion) + get/writeClassTextElements (class text pool) pushed it past
   // the default. Keep tight headroom.
-  'src/adt/client.ts': 1680,
+  // + getFunctionModuleProperties and the getFunctionGroup pre-7.52 objectstructure fallback.
+  'src/adt/client.ts': 1730,
 };
 
 const DEFAULT_SRC = 1500;

@@ -55,9 +55,10 @@
             "EVTO",
             "COTA",
             "DSFD",
-            "DTDC"
+            "DTDC",
+            "UIAD"
           ],
-          "description": "Object type to read (on-prem): PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL (transparent tables and DDIC structures), VIEW, DOMA, DTEL, MSAG, TRAN, TABLE_CONTENTS, TABLE_QUERY, DEVC, SOBJ, SYSTEM, COMPONENTS, TEXT_ELEMENTS, VARIANTS, BSP, BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS, AUTH, FEATURE_TOGGLE, ENHO, VERSIONS, VERSION_SOURCE. Server-driven objects (discovery-gated; XML metadata; source is AFF JSON, or DDL text for DTSC/DSFD/DTDC): DESD (Logical External Schema), EVTB (RAP Event Binding), EVTO (RAP Event Object), DTSC (Static Cache), CSNM (CSN Model), COTA (Communication Target), DSFD (Scalar Function Def), DTDC (Dynamic Cache). Deprecated aliases: MESSAGES (use MSAG), FTG2 (use FEATURE_TOGGLE)."
+          "description": "Object type to read (on-prem): PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL (transparent tables and DDIC structures), VIEW, DOMA, DTEL, MSAG, TRAN, TABLE_CONTENTS, TABLE_QUERY, DEVC, SOBJ, SYSTEM, COMPONENTS, TEXT_ELEMENTS, VARIANTS, BSP, BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS, AUTH, FEATURE_TOGGLE, ENHO, VERSIONS, VERSION_SOURCE. Server-driven objects (discovery-gated; XML metadata; source is AFF JSON, or DDL text for DTSC/DSFD/DTDC): DESD (Logical External Schema), EVTB (RAP Event Binding), EVTO (RAP Event Object), DTSC (Static Cache), CSNM (CSN Model), COTA (Communication Target), DSFD (Scalar Function Def), DTDC (Dynamic Cache), UIAD (Launchpad App Descriptor Item). Deprecated aliases: MESSAGES (use MSAG), FTG2 (use FEATURE_TOGGLE)."
         },
         "name": {
           "type": "string",
@@ -126,7 +127,7 @@
         },
         "includeSignature": {
           "type": "boolean",
-          "description": "For FUNC type only. When true, response is JSON: {source, signature: {importing[], exporting[], changing[], tables[], exceptions[], raising[]}} — each parameter parsed into {kind, name, type, byValue?, default?, optional?}. Default false (returns plain source body). Use this to introspect FM parameter signatures programmatically without re-parsing ABAP."
+          "description": "For FUNC type only. When true, response is JSON: {source, signature: {importing[], exporting[], changing[], tables[], exceptions[], raising[]}, processingType?, updateTaskKind?} — each parameter parsed into {kind, name, type, byValue?, default?, optional?}; processingType reports rfc/update/normal. Default false (returns plain source body)."
         },
         "force_refresh": {
           "type": "boolean",
@@ -257,7 +258,7 @@
   },
   {
     "name": "SAPWrite",
-    "description": "MINIMAL PAYLOAD — send ONLY the fields your action+type needs; do NOT add unrelated optional fields. Sending empty strings, null, or placeholder values for fields that do not apply to your object type (e.g. typeKind/odataVersion/length/signExists on a CDS or class write) just adds noise — omit them entirely. Typical field sets: a source object (CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, TABL — plus PROG, INCL, FUNC on-prem) needs only {action, type, name, source}; delete needs only {action, type, name}; DOMA/DTEL/MSAG/SRVB need {action, type, name} plus that type's own DDIC fields; FUNC also needs group. Do NOT send `include` unless type=CLAS, and do NOT send DDIC/metadata fields (dataType, length, decimals, signExists, lowercase, typeKind, domainName, odataVersion, category, version, labels, …) on a source-object or delete call. Create or update ABAP source code and DDIC metadata. Handles lock/modify/unlock automatically. Supports PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD, TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Type codes are auto-normalized and case-insensitive (e.g., \"CLAS/OC\" → \"CLAS\"). For delete, only type and name are required (plus optional transport). Source objects (PROG/CLAS/INTF/DDLS/DCLS/DDLX/BDEF/SRVD/TABL/INCL) write via /source/main. CLAS update: pass include=definitions|implementations|macros|testclasses to write a local include; omit for source/main. TABL create: \"TABL\"/\"TABL/DT\" → transparent table (16-char name); \"TABL/DS\" → structure (30-char, namespaces OK); update/delete/activate auto-discover the subtype. Metadata-XML writes (not /source/main): DOMA/DTEL (dataType, length, fixedValues, typeKind, labels, searchHelp); MSAG (messages array of {number, shortText}); SRVB (serviceDefinition, odataVersion V2/V4, optional category 0=UI/1=Web API; bindingType like \"ODataV4-UI\" auto-normalized). SKTD/KTD (Markdown docs on a KTD-capable object; KTD aliases SKTD): create needs refObjectType (parent type+subtype, e.g. \"DDLS/DF\"); \"name\" MUST equal the parent name; update takes Markdown in source; then SAPActivate(type=\"SKTD\"). FUNC: require \"group\" (parent FUGR must exist — create it first); pass structured `parameters` for the signature (read back via SAPRead includeSignature=true). edit_method: replace one CLAS method body via source (95% fewer tokens than full-class). Local-class methods use the qualified specifier (e.g. \"lhc_project~approve_project\"); auto-routing: lhc_*/lcl_* → implementations, ltc_* → testclasses (override with include=); zif_*~* stays on /source/main. edit_unit: replace one FORM/MODULE block in PROG/INCL using unit+source; group= supports FUGR includes. batch_create: create+activate multiple objects in dependency order via the \"objects\" array (RAP stacks TABL→DDLS→DCLS→BDEF→SRVD). scaffold_rap_handlers / generate_behavior_implementation: derive RAP behavior-pool handlers from the BDEF (the latter auto-discovers the BDEF via rootEntityRef and activates by default). Server-driven objects (discovery-gated): DESD/CSNM/EVTB/EVTO/COTA take AFF JSON in \"source\"; DTSC/DSFD/DTDC take DDL text — create/update/delete, then SAPActivate. edit_text_symbols (type=CLAS): write a global class's text symbols. Pass the body in \"source\" as per-symbol \"@MaxLength:NN\\n{NNN}={text}\\n\" (blank-line separated); immediately active, no SAPActivate. Read it back via SAPRead(type=CLAS, include=text_symbols). Requires the ADT textelements service (absent on NW 7.50). Full per-type field reference: docs_page SAPWrite.  Write access is restricted to packages: ZARC1, Z*.",
+    "description": "MINIMAL PAYLOAD — send ONLY the fields your action+type needs; do NOT add unrelated optional fields. Sending empty strings, null, or placeholder values for fields that do not apply to your object type (e.g. typeKind/odataVersion/length/signExists on a CDS or class write) just adds noise — omit them entirely. Typical field sets: a source object (CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, TABL — plus PROG, INCL, FUNC on-prem) needs only {action, type, name, source}; delete needs only {action, type, name}; DOMA/DTEL/MSAG/SRVB need {action, type, name} plus that type's own DDIC fields; FUNC also needs group. Do NOT send `include` unless type=CLAS, and do NOT send DDIC/metadata fields (dataType, length, decimals, signExists, lowercase, typeKind, domainName, odataVersion, category, version, labels, …) on a source-object or delete call. Create or update ABAP source code and DDIC metadata. Handles lock/modify/unlock automatically. Supports PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD, TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Type codes are auto-normalized and case-insensitive (e.g., \"CLAS/OC\" → \"CLAS\"). For delete, only type and name are required (plus optional transport). Source objects (PROG/CLAS/INTF/DDLS/DCLS/DDLX/BDEF/SRVD/TABL/INCL) write via /source/main. CLAS update: pass include=definitions|implementations|macros|testclasses to write a local include; omit for source/main. TABL create: \"TABL\"/\"TABL/DT\" → transparent table (16-char name); \"TABL/DS\" → structure (30-char, namespaces OK); update/delete/activate auto-discover the subtype. Metadata-XML writes (not /source/main): DOMA/DTEL (dataType, length, fixedValues, typeKind, labels, searchHelp); MSAG (messages array of {number, shortText}); SRVB (serviceDefinition, odataVersion V2/V4, optional category 0=UI/1=Web API; bindingType like \"ODataV4-UI\" auto-normalized). SKTD/KTD (Markdown docs on a KTD-capable object; KTD aliases SKTD): create needs refObjectType (parent type+subtype, e.g. \"DDLS/DF\"); \"name\" MUST equal the parent name; update takes Markdown in source; then SAPActivate(type=\"SKTD\"). FUNC: needs \"group\"; pass structured `parameters` for the signature (read back via SAPRead includeSignature=true). INCL with group=: create/delete FUGR structural includes (name must start with L<GROUP>, e.g. LZFOOF01); SAP maintains the main program's INCLUDE line. edit_method: replace one CLAS method body via source (95% fewer tokens than full-class). Local-class methods use the qualified specifier (e.g. \"lhc_project~approve_project\"); auto-routing: lhc_*/lcl_* → implementations, ltc_* → testclasses (override with include=); zif_*~* stays on /source/main. edit_unit: replace one FORM/MODULE block in PROG/INCL using unit+source; group= supports FUGR includes. batch_create: create+activate multiple objects in dependency order via the \"objects\" array (RAP stacks TABL→DDLS→DCLS→BDEF→SRVD). scaffold_rap_handlers / generate_behavior_implementation: derive RAP behavior-pool handlers from the BDEF (the latter auto-discovers the BDEF via rootEntityRef and activates by default). Server-driven objects (discovery-gated): DESD/CSNM/EVTB/EVTO/COTA/UIAD take AFF JSON in \"source\"; DTSC/DSFD/DTDC take DDL text — create/update/delete, then SAPActivate. edit_text_symbols (type=CLAS): write a global class's text symbols. Pass the body in \"source\" as per-symbol \"@MaxLength:NN\\n{NNN}={text}\\n\" (blank-line separated); immediately active, no SAPActivate. Read it back via SAPRead(type=CLAS, include=text_symbols). Requires the ADT textelements service (absent on NW 7.50). Full per-type field reference: docs_page SAPWrite.  Write access is restricted to packages: ZARC1, Z*.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -279,7 +280,7 @@
             "generate_behavior_implementation",
             "edit_text_symbols"
           ],
-          "description": "Write action. create/update/delete: standard object writes. edit_method: replace one method body (type=CLAS, method, source). edit_unit: replace a PROG/INCL FORM or MODULE (unit+source). Class-section surgery (type=CLAS only): edit_class_definition without include= replaces the global DEFINITION block (refuses a diff that would leave the class non-activatable, e.g. a concrete method with no IMPL stub); with include= it whole-replaces a class-local include (CCDEF/CCIMP/macros/testclasses), auto-creating it. add_method inserts a METHODS clause + empty stub (visibility, abstract=true skips the stub); edit_method_signature replaces one METHODS clause (no IMPL change); delete_method removes the clause AND body — WARNING: destructive, discards the method body (to re-section a method use change_method_visibility, NOT delete+add); change_method_visibility moves a method between PUBLIC/PROTECTED/PRIVATE, preserves the body. add_method/edit_method_signature/delete_method/change_method_visibility act on /source/main only. batch_create: create+activate multiple objects (objects array). scaffold_rap_handlers / generate_behavior_implementation: derive RAP behavior-pool handlers from the BDEF (the latter the equivalent of Eclipse's \"Generate Behavior Implementation\")."
+          "description": "Write action. create/update/delete: whole-object writes (update replaces /source/main, or one class-local include when include= is set). edit_method: replace a single method body — the token-cheap path for class edits. edit_unit: replace one FORM or MODULE block inside a PROG/INCL. batch_create: create and activate many objects in one call; order is preserved, so list dependencies first. Class surgery (CLAS, all on /source/main unless noted): edit_class_definition replaces the global DEFINITION block — or a class-local include when include= is set — and refuses a diff that would leave the class non-activatable; add_method inserts a METHODS clause plus an empty IMPL stub (abstract=true skips the stub); edit_method_signature rewrites one METHODS clause and leaves the body alone; change_method_visibility moves a method to another section and preserves its body; delete_method is destructive — it discards the body, so to re-section a method use change_method_visibility, never delete+add. scaffold_rap_handlers / generate_behavior_implementation: derive behavior-pool handlers from a BDEF (the latter is the equivalent of Eclipse's \"Generate Behavior Implementation\"). edit_text_symbols: write a global class's text symbols (immediately active, no SAPActivate)."
         },
         "type": {
           "type": "string",
@@ -312,9 +313,10 @@
             "EVTO",
             "COTA",
             "DSFD",
-            "DTDC"
+            "DTDC",
+            "UIAD"
           ],
-          "description": "Object type (for create/update/delete/edit_method/edit_unit/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on-prem: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require CLAS. Server-driven objects (discovery-gated): DESD/CSNM/EVTB/EVTO/COTA take AFF JSON in \"source\"; DTSC/DSFD/DTDC take DDL text — create/update/delete, then SAPActivate."
+          "description": "Object type (for create/update/delete/edit_method/edit_unit/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on-prem: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require CLAS. Server-driven objects (discovery-gated): DESD/CSNM/EVTB/EVTO/COTA take AFF JSON in \"source\"; DTSC/DSFD/DTDC take DDL text — create/update/delete, then SAPActivate. UIAD is read-only outside ABAP Cloud."
         },
         "name": {
           "type": "string",
@@ -394,6 +396,24 @@
         "group": {
           "type": "string",
           "description": "For FUNC: parent function-group name. Required for FUNC create (the FUGR must already exist — create it first via SAPWrite type=FUGR). Auto-resolved via search for FUNC update/delete if omitted."
+        },
+        "processingType": {
+          "type": "string",
+          "enum": [
+            "normal",
+            "rfc",
+            "update"
+          ],
+          "description": "FUNC create: normal, Remote-Enabled (`rfc`), or update-task module."
+        },
+        "updateTaskKind": {
+          "type": "string",
+          "enum": [
+            "startImmediate",
+            "immediateStartNoRestart",
+            "startDelayed"
+          ],
+          "description": "FUNC create: required when processingType=`update`."
         },
         "dataType": {
           "type": "string",
@@ -669,7 +689,8 @@
                   "EVTO",
                   "COTA",
                   "DSFD",
-                  "DTDC"
+                  "DTDC",
+                  "UIAD"
                 ],
                 "description": "Object type (includes TABL for RAP stack bootstrapping)"
               },
@@ -692,6 +713,63 @@
               "transport": {
                 "type": "string",
                 "description": "Object-specific transport request. Overrides top-level transport for this item."
+              },
+              "group": {
+                "type": "string"
+              },
+              "processingType": {
+                "type": "string",
+                "enum": [
+                  "normal",
+                  "rfc",
+                  "update"
+                ]
+              },
+              "updateTaskKind": {
+                "type": "string",
+                "enum": [
+                  "startImmediate",
+                  "immediateStartNoRestart",
+                  "startDelayed"
+                ]
+              },
+              "parameters": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "importing",
+                        "exporting",
+                        "changing",
+                        "tables",
+                        "exceptions",
+                        "raising"
+                      ]
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    },
+                    "byValue": {
+                      "type": "boolean"
+                    },
+                    "default": {
+                      "type": "string"
+                    },
+                    "optional": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "name"
+                  ]
+                }
               },
               "dataType": {
                 "type": "string"
@@ -1373,7 +1451,7 @@
   },
   {
     "name": "SAPManage",
-    "description": "Probe and report SAP system capabilities. Use BEFORE operations that depend on optional features (abapGit, RAP/CDS, AMDP, HANA, UI5/Fiori, CTS transports, FLP). Also handles package (DEVC) lifecycle.\n\nActions:\n- \"features\": cached feature status (fast, no round-trip; id, available, mode, probedAt). \"probe\": re-probe now (feature probes + auth + discovery refresh). \"cache_stats\": object cache health.\n- \"create_package\" / \"delete_package\" / \"change_package\": DEVC lifecycle via ADT packages API.\n- FLP read: flp_list_catalogs, flp_list_groups, flp_list_tiles (catalogId). FLP write: flp_create_catalog, flp_create_group, flp_create_tile, flp_add_tile_to_group, flp_delete_catalog.\n- \"set_api_state\": release/revoke an object's API release contract (objectUri, or name+objectType; apiState defaults RELEASED, contract defaults C1 — C0 for SRVD, C3 for classic views). Write counterpart of SAPRead(type=\"API_STATE\").\n\nReturns features + systemType (\"onprem\"/\"btp\"); \"available: false\" means do NOT attempt dependent operations.",
+    "description": "Probe and report SAP system capabilities. Use BEFORE operations that depend on optional features (abapGit, RAP/CDS, AMDP, HANA, UI5/Fiori, CTS transports, FLP). Also handles package (DEVC) lifecycle.\n\nActions:\n- \"features\": cached feature status (fast, no round-trip; id, available, mode, probedAt). \"probe\": re-probe now (feature probes + auth + discovery refresh). \"cache_stats\": object cache health.\n- \"create_package\" / \"delete_package\" / \"change_package\": DEVC lifecycle via ADT packages API.\n- FLP read: flp_list_catalogs, flp_list_groups, flp_list_tiles (catalogId). FLP write: flp_create_catalog, flp_create_group, flp_create_tile, flp_add_tile_to_group, flp_delete_catalog. Classic designer tile/target-mapping model, deprecated since S/4HANA 2023; Work Zone exposure v2 needs LADIs (SAPRead type=UIAD).\n- \"set_api_state\": release/revoke an object's API release contract (objectUri, or name+objectType; apiState defaults RELEASED, contract defaults C1 — C0 for SRVD, C3 for classic views). Write counterpart of SAPRead(type=\"API_STATE\").\n\nReturns features + systemType (\"onprem\"/\"btp\"); \"available: false\" means do NOT attempt dependent operations.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1416,7 +1494,7 @@
         },
         "responsible": {
           "type": "string",
-          "description": "BTP only: the internal ABAP user (XUBNAME, e.g. CB9980000000) for the new package person-responsible. Auto-resolved from prior object creates if omitted; the IAS email is rejected."
+          "description": "Person-responsible: an existing ABAP user (XUBNAME, max 12 chars); an email is rejected. Defaults to the connection user; pass explicitly under principal propagation. BTP: auto-resolved from prior creates."
         },
         "transportLayer": {
           "type": "string",
@@ -1674,7 +1752,7 @@
             "create_branch",
             "unlink"
           ],
-          "description": "Git action. Read: list_repos, whoami, config, branches, external_info, history, objects, check. Write (requires SAP_ALLOW_WRITES=true and SAP_ALLOW_GIT_WRITES=true): clone, pull, push, commit, stage, switch_branch, create_branch, unlink."
+          "description": "Git action. The writes (clone, pull, push, commit, stage, switch_branch, create_branch, unlink) need SAP_ALLOW_WRITES=true and SAP_ALLOW_GIT_WRITES=true; the rest are reads."
         },
         "backend": {
           "type": "string",
@@ -1682,7 +1760,7 @@
             "gcts",
             "abapgit"
           ],
-          "description": "Optional backend override. Omit to auto-select (gCTS preferred over abapGit)."
+          "description": "Backend override; omit to auto-select (gCTS preferred)."
         },
         "repoId": {
           "type": "string",
@@ -1710,15 +1788,15 @@
         },
         "message": {
           "type": "string",
-          "description": "Commit message for gCTS commit."
+          "description": "Commit message (required for gCTS commit and abapGit push)."
         },
         "description": {
           "type": "string",
-          "description": "Optional commit description for gCTS commit."
+          "description": "Commit description (gCTS)."
         },
         "objects": {
           "type": "array",
-          "description": "Optional object list for commit/push payloads.",
+          "description": "Object list for commit/push. For abapGit push it selects the changed objects to commit.",
           "items": {
             "type": "object",
             "properties": {
@@ -1749,15 +1827,15 @@
         },
         "user": {
           "type": "string",
-          "description": "Optional remote repository username."
+          "description": "Remote repository username."
         },
         "password": {
           "type": "string",
-          "description": "Optional remote repository password/token secret."
+          "description": "Remote repository password/token secret."
         },
         "token": {
           "type": "string",
-          "description": "Optional remote repository access token."
+          "description": "Remote repository access token. abapGit sends it as basic auth user \"x-access-token\"."
         },
         "limit": {
           "type": "number",

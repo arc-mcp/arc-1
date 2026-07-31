@@ -13,9 +13,11 @@ import {
 } from '../adt/devtools.js';
 import { AdtSafetyError } from '../adt/errors.js';
 import {
+  ensureServerDrivenSupport,
   isServerDrivenObjectType,
   serverDrivenMetadataContentType,
   serverDrivenObjectUrl,
+  serverDrivenUnavailableMessage,
 } from '../adt/server-driven.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
 import { type CacheSecurityContext, invalidateInactiveList } from './cache-security.js';
@@ -223,6 +225,20 @@ export async function handleSAPActivate(
 
   if (args.objects && Array.isArray(args.objects)) {
     const rawObjects = args.objects as Array<Record<string, unknown>>;
+    // Server-driven types need the registry href — objectBasePath(<sdo>) has no case and its
+    // default arm maps unknown non-slash types to the PROGRAM path, so an ungated batch entry
+    // silently addressed /sap/bc/adt/programs/programs/<name>. Gate once per DISTINCT type
+    // (the resolver below runs per object, and the gate may fetch discovery).
+    const batchSdoTypes = [
+      ...new Set(
+        rawObjects.map((o) => normalizeObjectType(String(o.type ?? type))).filter((t) => isServerDrivenObjectType(t)),
+      ),
+    ];
+    for (const sdoType of batchSdoTypes) {
+      if (!(await ensureServerDrivenSupport(client.http, client.safety, sdoType))) {
+        return errorResult(serverDrivenUnavailableMessage('SAPActivate', sdoType));
+      }
+    }
     // Resolve URLs sequentially. For TABL we await the URL resolver so DDIC
     // structures (which live at /sap/bc/adt/ddic/structures/) are addressed
     // correctly; the resolver short-circuits on its in-memory cache.
@@ -260,6 +276,9 @@ export async function handleSAPActivate(
           const group = String(o.group ?? args.group).trim();
           const groupLc = encodeURIComponent(group.toLowerCase());
           url = `/sap/bc/adt/functions/groups/${groupLc}/includes/${encodeURIComponent(objName.toLowerCase())}`;
+        } else if (isServerDrivenObjectType(objType)) {
+          // Availability already gated per distinct type above.
+          url = serverDrivenObjectUrl(objType, objName);
         } else {
           url = objectUrlForType(objType, objName);
         }
@@ -271,7 +290,14 @@ export async function handleSAPActivate(
     // activating ANY of them — one out-of-allowlist object aborts the whole batch
     // (no partial activation). Fail-closed; no-op when unrestricted. (security audit 2026-06)
     for (const o of objects) {
-      await enforceAllowedPackageForObjectUrl(client, o.url, `Activation of ${o.type} '${o.name}'`);
+      await enforceAllowedPackageForObjectUrl(
+        client,
+        o.url,
+        `Activation of ${o.type} '${o.name}'`,
+        // Mirror the single-object call: SDO metadata (and its packageRef) is negotiated with
+        // the type's own content type rather than relying on discovery-driven negotiation.
+        isServerDrivenObjectType(o.type) ? serverDrivenMetadataContentType(o.type) : undefined,
+      );
     }
 
     // Capture each object's inactive draft before the batch flips them to active.
@@ -348,9 +374,14 @@ export async function handleSAPActivate(
     const groupLc = encodeURIComponent(String(args.group).trim().toLowerCase());
     objectUrl = `/sap/bc/adt/functions/groups/${groupLc}/includes/${encodeURIComponent(name.toLowerCase())}`;
   } else if (isServerDrivenObjectType(type)) {
-    // Server-driven objects (8.16+): objectBasePath(<sdo>) throws, so route via the registry href.
-    // Single-object activation only — SDO is not added to the batch resolver above (batch is
-    // RAP-stack-oriented). The generic activate() endpoint handles SDO (verified: activate(DESD) → ok).
+    // Server-driven objects: objectBasePath(<sdo>) has no case and its default arm would route to
+    // the program path, so use the registry href. The batch resolver above does the same (EVTB/EVTO
+    // are RAP objects, so they legitimately appear in a RAP-stack batch).
+    // The generic activate() endpoint handles SDO (verified: activate(DESD) → ok).
+    // Gated like the SAPRead/SAPWrite branches so unsupported releases get the release message.
+    if (!(await ensureServerDrivenSupport(client.http, client.safety, type))) {
+      return errorResult(serverDrivenUnavailableMessage('SAPActivate', type));
+    }
     objectUrl = serverDrivenObjectUrl(type, name);
   } else {
     objectUrl = objectUrlForType(type, name);

@@ -2,8 +2,7 @@
 
 ## Status
 
-- **State:** PP core implemented and beta-validated; shared-Basic extension implemented, live acceptance pending
-- **Implementation branch:** `codex/multi-target-v1`
+- **State:** implemented, merged to `main`, and beta-validated for Principal Propagation and shared Basic
 - **Code ancestry:** PR #543 remains in the branch history so Wouter's tested multi-runtime work can
   be reused where it fits. The public contract described here replaces the prototype contract.
 - **Release model:** experimental and default-off on `main` after beta validation; no long-lived beta
@@ -13,9 +12,9 @@
 - **Scale target:** 100 SAP system/client targets is a normal intended deployment; v1 supports at
   most 256 enabled targets.
 
-This document is the execution plan and normative v1 specification. When a code comment, the PR
-#543 prototype, ADR-0005, or older documentation disagrees with it, this document wins until the new
-ADR is accepted.
+This document is the normative v1 specification together with accepted ADR-0006 and ADR-0007. When
+a code comment, the PR #543 prototype, ADR-0005, or older documentation disagrees with this narrow
+experimental exception, this document and those ADRs win.
 
 ## Outcome
 
@@ -829,10 +828,10 @@ logs so one successful call does not create several billable BTP Audit Log recor
   It becomes stale when SAP access changes and does not survive deployment. A target list is a config
   inventory, not an entitlement inventory.
 - Offline `SAPLint.lint|lint_and_fix|list_rules`, read-only
-  `SAPTransport.list|get|check|history`, and `SAPDiagnose.atc|unittest` are exposed through
-  explicit action allowlists. ATC and ABAP Unit execute SAP workloads, retain the existing `read`
-  scope, and remain subject to SAP authorization, global concurrency/rate limits, and
-  `SAP_DENY_ACTIONS`.
+  `SAPTransport.list|get|check|history`, and the reviewed mutation-free `SAPDiagnose` actions are
+  exposed through explicit action allowlists. ATC and ABAP Unit execute SAP workloads, retain the
+  existing `read` scope, and remain subject to SAP authorization, global concurrency/rate limits,
+  and `SAP_DENY_ACTIONS`.
 - The optional UI, plugins, and hyperfocused mode are disabled while multi mode is active.
 
 ## Concurrency and Rate Limits
@@ -1066,8 +1065,12 @@ Work:
   SQL/data paths such as `SAPSearch.tadir_lookup_db|both` and
   `SAPDiagnose.odata_perf|authorization_trace` cannot bypass target consent.
 - Add `SAPLint` and `SAPTransport` only through explicit action allowlists:
-  `lint|lint_and_fix|list_rules` and `list|get|check|history`. Permit
-  `SAPDiagnose.atc|unittest`; reject every omitted action at both list time and call time.
+  `lint|lint_and_fix|list_rules` and `list|get|check|history`. Permit the following `SAPDiagnose`
+  actions through a separate exact allowlist: `syntax`, `unittest`, `atc`, `atc_variants`,
+  `cds_testcases`, `dumps`, `traces`, `trace_requests`, `system_messages`, `gateway_errors`,
+  `object_state`, `quickfix`, `odata_perf`, `cds_sql`, `sql_trace_state`, `sql_trace_directory`, and
+  `authorization_trace`. The existing data gates still control `odata_perf` and
+  `authorization_trace`. Reject every omitted action at both list time and call time.
 - Pinned schemas gain no `target` argument, but use the same pruned multi-target read-only surface as
   aggregate routes; they are not byte-identical to the single-target full surface.
 - Add shallow aggregate `target` injection without duplicating handler Zod schemas.

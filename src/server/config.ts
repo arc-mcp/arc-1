@@ -525,6 +525,18 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     const parsed = Number.parseInt(clockTolerance, 10);
     config.oidcClockTolerance = Number.isNaN(parsed) ? undefined : parsed;
   }
+  config.oidcDiscovery = resolveBool('oidc-discovery', 'SAP_OIDC_DISCOVERY', true, 'oidcDiscovery');
+  const oidcScopesRaw = getFlag('oidc-scopes') ?? process.env.SAP_OIDC_SCOPES;
+  if (oidcScopesRaw) {
+    // Comma or whitespace separated — OAuth scope strings are space-delimited on the wire.
+    config.oidcScopes = oidcScopesRaw
+      .split(/[,\s]+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    sources.oidcScopes = getFlag('oidc-scopes') !== undefined ? { flag: '--oidc-scopes' } : { env: 'SAP_OIDC_SCOPES' };
+  } else {
+    sources.oidcScopes = 'default';
+  }
   config.xsuaaAuth = resolveBool('xsuaa-auth', 'SAP_XSUAA_AUTH', false, 'xsuaaAuth');
   config.allowHttpNoAuth = resolveBool('allow-http-no-auth', 'ARC1_ALLOW_HTTP_NO_AUTH', false, 'allowHttpNoAuth');
 
@@ -832,6 +844,11 @@ export function validateConfig(config: ServerConfig): void {
   }
   if (config.oidcAudience && !config.oidcIssuer) {
     throw new Error('SAP_OIDC_ISSUER is required when SAP_OIDC_AUDIENCE is set');
+  }
+  if (config.oidcScopes?.length && !config.oidcIssuer) {
+    throw new Error(
+      'SAP_OIDC_ISSUER is required when SAP_OIDC_SCOPES is set — scopes are only advertised in OIDC mode',
+    );
   }
 
   // Inert, not dangerous — both strict-PP enforcement sites gate on ppEnabled. Warn instead

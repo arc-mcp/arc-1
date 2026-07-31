@@ -19,6 +19,12 @@ export interface RequestContext {
   target?: string;
   /** Effective SAP identity mode for the selected multi-target call. */
   identity?: 'per-user' | 'shared';
+  /** Validated inbound W3C `traceparent`, forwarded verbatim to SAP. See trace-context.ts. */
+  traceparent?: string;
+  /** Validated inbound W3C `tracestate`; only ever set alongside `traceparent`. */
+  tracestate?: string;
+  /** Calling MCP client/agent (`clientInfo` on stdio, `User-Agent` on HTTP). Audit-only. */
+  clientAgent?: string;
 }
 
 export const requestContext = new AsyncLocalStorage<RequestContext>();

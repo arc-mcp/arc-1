@@ -194,6 +194,13 @@ The most complete authentication model. Each MCP user's identity flows through t
 MCP Client ──XSUAA/OIDC JWT──► ARC-1 ──user token──► BTP Destination ──► SAP
 ```
 
+> **On-premise: creating packages under principal propagation.** The propagated identity is an
+> email, but an ABAP user name (`XUBNAME`) is only 12 characters. For every object type ARC-1
+> simply omits the "person responsible" from the create body and SAP assigns the propagated user
+> automatically. Package create is the one exception — SAP requires a real, existing user name
+> there — so pass it explicitly: `SAPManage(action="create_package", …, responsible="<your SAP
+> user name>")`. See [#636](https://github.com/arc-mcp/arc-1/issues/636).
+
 ### BTP Destination Service
 
 For BTP deployments connecting to SAP systems through centrally managed destinations. The Destination Service handles connection details, credentials, and optionally per-user token exchange / principal propagation.

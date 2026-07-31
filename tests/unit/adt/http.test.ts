@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdtApiError, AdtNetworkError } from '../../../src/adt/errors.js';
+import { requestContext } from '../../../src/server/context.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 
 // Mock undici's fetch and Client (used by AdtHttpClient.doFetch / doProxyRequest)
@@ -1900,6 +1901,81 @@ describe('AdtHttpClient', () => {
       expect((client as any).config.cookies).toEqual({ MYSAPSSO2: 'fresh-value' });
     });
 
+    it('reloads a rotated cookie file before the 401 retry, so the retry recovers in place', async () => {
+      const fs = require('node:fs');
+      tmpFile = writeNetscapeCookieFile({ MYSAPSSO2: 'dead-value' });
+
+      // First GET → 401. The cookie file is rotated out-of-band while that
+      // request is in flight (an operator re-running `arc1-cli extract-cookies`,
+      // or a scheduled refresh job). The retry must pick the rotated ticket up
+      // instead of replaying the dead one and spending the call.
+      mockFetch.mockImplementationOnce(() => {
+        fs.writeFileSync(
+          tmpFile,
+          '# Netscape HTTP Cookie File\nsap.example.com\tFALSE\t/\tFALSE\t0\tMYSAPSSO2\tfresh-value\n',
+        );
+        return Promise.resolve(mockResponse(401, 'Unauthorized'));
+      });
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok'));
+
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        username: undefined,
+        password: undefined,
+        cookies: { MYSAPSSO2: 'dead-value' },
+        cookieFile: tmpFile,
+      });
+
+      await client.get('/sap/bc/adt/discovery');
+
+      const retryHeaders = fetchHeaders(1);
+      expect(retryHeaders.Cookie).toContain('MYSAPSSO2=fresh-value');
+      expect(retryHeaders.Cookie).not.toContain('dead-value');
+      // Recovered within the same call — nothing left marked for a later reload.
+      expect((client as any).cookiesCleared).toBe(false);
+    });
+
+    it('cookieString-only: a session-timeout 401 still retries with the configured ticket', async () => {
+      // No file to re-read, so the pre-retry reload must not touch config.cookies —
+      // otherwise an ordinary work-process timeout (ticket still valid) becomes a
+      // permanent auth failure instead of the retry it exists to be.
+      mockFetch.mockResolvedValueOnce(mockResponse(401, 'Unauthorized'));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok'));
+
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        username: undefined,
+        password: undefined,
+        cookies: { MYSAPSSO2: 'still-valid' },
+        cookieString: 'MYSAPSSO2=still-valid',
+      });
+
+      await client.get('/sap/bc/adt/discovery');
+
+      expect(fetchHeaders(1).Cookie).toContain('MYSAPSSO2=still-valid');
+      expect((client as any).config.cookies).toEqual({ MYSAPSSO2: 'still-valid' });
+    });
+
+    it('cookieFile unreadable at retry time: the retry keeps the in-memory ticket', async () => {
+      // A file caught mid-rotation (truncate-then-write) or simply missing must
+      // leave config.cookies alone — reloadCookiesFromSource is safe-on-failure and
+      // the retry has to fall back to replaying the ticket it already has.
+      mockFetch.mockResolvedValueOnce(mockResponse(401, 'Unauthorized'));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok'));
+
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        username: undefined,
+        password: undefined,
+        cookies: { MYSAPSSO2: 'still-valid' },
+        cookieFile: '/tmp/arc1-cookie-file-that-does-not-exist.txt',
+      });
+
+      await client.get('/sap/bc/adt/discovery');
+
+      expect(fetchHeaders(1).Cookie).toContain('MYSAPSSO2=still-valid');
+    });
+
     it('warns and skips reload when only cookieString is configured (no cookieFile)', async () => {
       mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok'));
 
@@ -2123,6 +2199,58 @@ describe('AdtHttpClient', () => {
       expect(headers.Cookie).toBe('MYSAPSSO2=fresh-from-file');
       expect(headers.Cookie).not.toContain('stale-config');
       expect(headers.Cookie).not.toContain('stale-jar');
+    });
+  });
+
+  describe('W3C trace context propagation', () => {
+    const TRACEPARENT = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
+
+    it('forwards the caller trace context to SAP', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok'));
+      const client = new AdtHttpClient(getDefaultConfig());
+
+      await requestContext.run({ requestId: 'REQ-1', traceparent: TRACEPARENT, tracestate: 'rojo=1' }, () =>
+        client.get('/path'),
+      );
+
+      expect(fetchHeaders(0).traceparent).toBe(TRACEPARENT);
+      expect(fetchHeaders(0).tracestate).toBe('rojo=1');
+    });
+
+    it('sends no trace headers when the caller supplied none — ARC-1 never originates a trace', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok'));
+      const client = new AdtHttpClient(getDefaultConfig());
+
+      await requestContext.run({ requestId: 'REQ-2' }, () => client.get('/path'));
+
+      expect(fetchHeaders(0).traceparent).toBeUndefined();
+      expect(fetchHeaders(0).tracestate).toBeUndefined();
+    });
+
+    it('sends no trace headers outside a request context (CLI / startup probe)', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok'));
+      const client = new AdtHttpClient(getDefaultConfig());
+
+      await client.get('/path');
+
+      expect(fetchHeaders(0).traceparent).toBeUndefined();
+    });
+
+    it('forwards trace context through the Cloud Connector proxy branch too', async () => {
+      mockClientRequest.mockResolvedValueOnce(mockClientResponse(200, 'ok'));
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        btpProxy: {
+          host: 'proxy.example.com',
+          port: 20003,
+          protocol: 'http',
+          getProxyToken: async () => 'proxy-token',
+        },
+      });
+
+      await requestContext.run({ requestId: 'REQ-3', traceparent: TRACEPARENT }, () => client.get('/path'));
+
+      expect(clientRequestHeaders(0).traceparent).toBe(TRACEPARENT);
     });
   });
 });

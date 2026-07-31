@@ -45,7 +45,7 @@ Use `SAPRead` when you need exact raw source, one method body, grep output, inac
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `type` | string | Yes | Object type (see below; includes `AUTH`, `FEATURE_TOGGLE`, `ENHO`, `VERSIONS`, `VERSION_SOURCE` on on-prem systems, and the server-driven objects `DSFD`/`DESD`/`EVTB`/`EVTO`/`DTSC`/`CSNM`/`COTA` where the system advertises them — ABAP Platform 2025 / 8.16+, plus `EVTB` on S/4HANA 2023) |
+| `type` | string | Yes | Object type (see below; includes `AUTH`, `FEATURE_TOGGLE`, `ENHO`, `VERSIONS`, `VERSION_SOURCE` on on-prem systems, and the server-driven objects `DSFD`/`DESD`/`EVTB`/`EVTO`/`DTSC`/`CSNM`/`COTA`/`DTDC`/`UIAD` where the system advertises them — ABAP Platform 2025 / 8.16+, plus `EVTB` on S/4HANA 2023) |
 | `name` | string | No | Object name (e.g., `ZTEST_PROGRAM`, `ZCL_ORDER`, `MARA`) |
 | `action` | string | No | `"diff"` — return a unified diff between two source versions on this system (only the hunks, not two full sources), using `from`/`to`. Source types only: `PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, BDEF, SRVD, DDLX, TABL` (CDS views are `DDLS`; classic DDIC `VIEW` is unsupported — it has no plain-text source). Note: SAP only snapshots a version on transport *release*, so `from`/`to` revision ids are sparse — `active` vs `inactive` (pending unactivated changes) is the most reliable use. |
 | `from` | string | No | For `action="diff"`: OLD side — `"active"` (default), `"inactive"`, a revision id (from a VERSIONS response), or a full `/sap/bc/adt/` revision URI. |
@@ -64,7 +64,7 @@ Use `SAPRead` when you need exact raw source, one method body, grep output, inac
 | `objectType` | string | No | For API_STATE: SAP object type (CLAS, INTF, PROG, FUGR, etc.) — auto-detected from name if omitted |
 | `version` | string | No | Source version: `active` (default), `inactive`, or `auto`. Applies to source-bearing types (PROG, CLAS, INTF, FUNC, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, FUGR, SRVB, SKTD/KTD, TABL, VIEW). See [Active vs Inactive Source](#active-vs-inactive-source) below. |
 | `force_refresh` | boolean | No | For source reads: bypass the cached source AND the inactive-list cache before reading. Use when you know the object changed outside ARC-1 in a way conditional GET can't catch. |
-| `includeSignature` | boolean | No | For `FUNC` only. When `true`, response is JSON `{source, signature: {importing[], exporting[], changing[], tables[], exceptions[], raising[]}}` — each parameter parsed into `{kind, name, type, byValue?, default?, optional?}`. Default `false` (returns plain source body). Use this to introspect FM signatures programmatically. See [SAPWrite for FUNC](#sapwrite-for-func-create--update-with-structured-parameters) for the round-trip. |
+| `includeSignature` | boolean | No | For `FUNC` only. When `true`, response is JSON `{source, signature: {importing[], exporting[], changing[], tables[], exceptions[], raising[]}, processingType?, updateTaskKind?}` — each parameter parsed into `{kind, name, type, byValue?, default?, optional?}`; `processingType` reports `normal`/`rfc`/`update` (a metadata read, so it may add `propertiesError` instead if that GET fails). Default `false` (returns plain source body). See [SAPWrite for FUNC](#sapwrite-for-func-create-update-with-structured-parameters) for the round-trip. |
 
 **Supported types:**
 
@@ -74,7 +74,7 @@ Use `SAPRead` when you need exact raw source, one method body, grep output, inac
 | `CLAS` | Class source |
 | `INTF` | Interface source |
 | `FUNC` | Function module source |
-| `FUGR` | Function group structure |
+| `FUGR` | Function group structure (function modules + includes). Uses `/functions/groups/{g}/objectstructure`, falling back to the generic `/repository/objectstructure` on releases that don't ship it (NW 7.50/7.51). |
 | `INCL` | Include source |
 | `DDLS` | CDS view source |
 | `DCLS` | CDS access control source (authorization rules for CDS views) |
@@ -99,6 +99,7 @@ Use `SAPRead` when you need exact raw source, one method body, grep output, inac
 | `CSNM` | Core Schema Notation Model (CSN) — server-driven object. 8.16+. |
 | `COTA` | Communication Target — server-driven object. 8.16+. |
 | `DSFD` | CDS Scalar Function Definition — server-driven object. JSON metadata + **DDL text** source (`define scalar function …`). Available on S/4HANA 2023 (758) and 8.16+. |
+| `UIAD` | Launchpad App Descriptor Item (LADI) — server-driven object. SAP_BASIS 8.16+. The successor to the deprecated tile/target-mapping model and the unit SAP Build Work Zone content exposure v2 federates. AFF JSON source carries `generalInformation` (appType, catalogId, transaction), `navigation` (targetMappingId, semanticObject, action, form factors) and `tiles[]`. Find names via `SAPRead type=DEVC` on the owning package (listed as `UIAD/TYP` — pass the bare `UIAD`). |
 | `DTDC` | CDS Dynamic Cache — server-driven object with its OWN metadata format (`<dtdc:dtdcSource>`, not `blue:blueSource`). JSON metadata + **DDL text** source (`define dynamic cache …`). Available on S/4HANA 2023 (758) and 8.16+. |
 | `TRAN` | Transaction metadata (structured JSON: code, description, program) |
 | `SOBJ` | BOR business object (list methods, or read specific method with `method` param) |
@@ -267,8 +268,10 @@ Create or update ABAP source code. Handles lock/modify/unlock automatically.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `action` | string | Yes | `create`, `update`, `delete`, `edit_method`, `edit_unit` (on-prem), `edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`, `batch_create`, `scaffold_rap_handlers`, `generate_behavior_implementation`, or `edit_text_symbols`. `edit_unit` surgically replaces one FORM or MODULE in a PROG/INCL; see [Procedural unit surgery](#procedural-unit-surgery). The class-section surgery actions (`edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`) are token-efficient edits to a global class without re-sending `/source/main`. See [Class-section surgery](#class-section-surgery) below. `edit_text_symbols` writes a global class's text pool — see [Class text symbols](#class-text-symbols). |
-| `type` | string | No | `PROG`, `CLAS`, `INTF`, `FUNC`, `FUGR`, `INCL`, `DDLS`, `DCLS`, `DDLX`, `BDEF`, `SRVD`, `SRVB`, `SKTD`/`KTD`, `TABL`, `TABL/DT`, `TABL/DS`, `DOMA`, `DTEL`, `MSAG` (for single object actions; availability is adapted for BTP vs. on-prem), plus the server-driven objects `DESD`/`EVTB`/`DTSC`/`CSNM`/`EVTO`/`COTA`/`DSFD` (see [Server-driven object writes](#server-driven-object-writes)). Slash/case aliases are auto-normalized (e.g., `CLAS/OC` or `clas` → `CLAS`; `KTD` → `SKTD`). |
+| `type` | string | No | `PROG`, `CLAS`, `INTF`, `FUNC`, `FUGR`, `INCL`, `DDLS`, `DCLS`, `DDLX`, `BDEF`, `SRVD`, `SRVB`, `SKTD`/`KTD`, `TABL`, `TABL/DT`, `TABL/DS`, `DOMA`, `DTEL`, `MSAG` (for single object actions; availability is adapted for BTP vs. on-prem), plus the server-driven objects `DESD`/`EVTB`/`DTSC`/`CSNM`/`EVTO`/`COTA`/`DSFD`/`DTDC`/`UIAD` (see [Server-driven object writes](#server-driven-object-writes)). Slash/case aliases are auto-normalized (e.g., `CLAS/OC` or `clas` → `CLAS`; `KTD` → `SKTD`). |
 | `group` | string | No | For `FUNC`: parent function-group name. **Required for FUNC create** (the FUGR must already exist — create it first via `SAPWrite type=FUGR`). Auto-resolved via search for FUNC update/delete if omitted. For `INCL`: addresses a structural include inside this function group; supported by `update` and `edit_unit`. Ignored for other types. |
+| `processingType` | string | No | On-prem `FUNC` create only: `normal`, `rfc` (Remote-Enabled), or `update`. Omit it to preserve the legacy SAP-default behavior. |
+| `updateTaskKind` | string | No | Required when `processingType="update"`: `startImmediate` (V1 restartable), `immediateStartNoRestart` (V1 non-restartable), or `startDelayed` (V2). Rejected for normal/RFC modules. |
 | `name` | string | No | Object name (for single object actions) |
 | `source` | string | No | ABAP source code. For `create`/`update`: full source body. For `edit_method`: new method body. For `edit_unit`: the complete replacement `FORM … ENDFORM.` or `MODULE … ENDMODULE.` block. For `edit_class_definition` without `include=`: ONLY the new global `CLASS … DEFINITION … ENDCLASS.` block (~10–80 lines instead of full class). For `edit_class_definition` with `include=`: the FULL replacement body of that class-local include; for `include="testclasses"` this normally includes both local `CLASS ltc_* DEFINITION` and `CLASS ltc_* IMPLEMENTATION`. For `edit_method_signature`: ONLY the new METHODS clause for one method (~1–5 lines). Not used by `add_method`/`delete_method`/`change_method_visibility` — pass the method clause/name and target visibility via `method`/`visibility` instead. |
 | `include` | string | No | For CLAS write actions `update`, `edit_method`, and `edit_class_definition`: write a class-local include (`definitions`, `implementations`, `macros`, or `testclasses`) instead of `/source/main`. Omit this parameter for main class source updates. `add_method`/`edit_method_signature`/`delete_method`/`change_method_visibility` operate on the global class `/source/main` only and reject `include=`. Include writes create an inactive draft; verify with `SAPRead(version="inactive")` until activation. NOTE: `edit_class_definition` with `include=` skips the symmetry refuse-policy (cross-include validation is not performed; rely on `SAPActivate` to catch breaks). **Auto-init:** whole-include writes (`update` and `edit_class_definition` with `include=`) create the target include automatically if it does not exist yet — notably `testclasses` (CCAU) on a freshly-created class. No separate init step or user-supplied lock handle is needed; the success message notes when ARC-1 initialized it. |
@@ -320,7 +323,7 @@ Create or update ABAP source code. Handles lock/modify/unlock automatically.
 
 #### Server-driven object writes
 
-`DESD`, `EVTB`, `DTSC`, `CSNM`, `EVTO`, `COTA`, and `DSFD` are **server-driven objects** (mostly ABAP Platform 2025 / SAP_BASIS 8.16+) — ~46 repository types that share one AFF generic-object contract. `SAPWrite` supports `create`, `update`, and `delete` for them; `SAPActivate` activates them:
+`DESD`, `EVTB`, `DTSC`, `CSNM`, `EVTO`, `COTA`, `DSFD`, and `UIAD` are **server-driven objects** (mostly ABAP Platform 2025 / SAP_BASIS 8.16+) — ~46 repository types that share one AFF generic-object contract. `SAPWrite` supports `create`, `update`, and `delete` for them; `SAPActivate` activates them:
 
 - **`create`** posts a minimal `<blue:blueSource>` metadata body to the type's collection (e.g. `/sap/bc/adt/ddic/desd`), then — if `source` is supplied — writes it. The object is left **inactive**; follow with `SAPActivate(type=..., name=...)`.
 - **`source` format is per-type.** Most types take **AFF JSON** — e.g. `{"formatVersion":"1","header":{"description":"…","originalLanguage":"en","abapLanguageVersion":"cloudDevelopment"}}` — parse-validated (clean error on malformed JSON) and written to `…/source/main` as `application/json`. `DTSC` and `DSFD` instead take **DDL text** (`define static cache …`, `define scalar function …`), written as `text/plain`; sending the wrong content type is a hard `415` from SAP, so the flavor is pinned per type in `SDO_REGISTRY`. ABAP-specific pre-write steps (lint, RAP preflight, CDS guard) do not apply.
@@ -336,13 +339,18 @@ Create or update ABAP source code. Handles lock/modify/unlock automatically.
 | `CSNM` | Core Schema Notation Model (CSN) | |
 | `COTA` | Communication Target | |
 | `DSFD` | CDS Scalar Function Definition | Source is **DDL text**, not JSON. Also on 758. |
+| `UIAD` | Launchpad App Descriptor Item (LADI) | Registered, but **writes are refused by SAP outside ABAP Cloud**: `400 Editing of LADIs with ALV "Standard" not allowed in workbench tools` — LADI edits require the ABAP Cloud language version. Read-only in practice on-prem. |
 | `DTDC` | CDS Dynamic Cache | **Non-blue** metadata format (`<dtdc:dtdcSource>`). Source is **DDL text** (`define dynamic cache …`). Also on 758. |
 
 Other actions (`edit_method`, surgery, `batch_create`, RAP scaffolding) are not supported for server-driven types and return a clear error.
 
 **Function group (`FUGR`) create:** POSTs `<group:abapFunctionGroup … adtcore:type="FUGR/F">` to `/sap/bc/adt/functions/groups` with content type `application/vnd.sap.adt.functions.groups.v3+xml`. Provide `package` and (for non-`$TMP`) `transport`. Delete the FUGR only after all its function modules have been deleted.
 
-**Function module (`FUNC`) create / update / delete (issue [#250](https://github.com/arc-mcp/arc-1/issues/250)):** The parent FUGR must already exist — pass `group` explicitly on create (or auto-resolve via search on update/delete). Create POSTs `<fmodule:abapFunctionModule … adtcore:type="FUGR/FF">` with `<adtcore:containerRef>` to `/sap/bc/adt/functions/groups/{group}/fmodules`. The FM inherits its package from the parent FUGR — do not pass `package`. SAPGUI-style `*"…IMPORTING…"*` parameter comment blocks in source are auto-stripped before PUT as defense-in-depth (SAP rejects them with `FUNC_ADT028`) and a warning is appended in that case.
+**Function module (`FUNC`) create / update / delete (issue [#250](https://github.com/arc-mcp/arc-1/issues/250)):** The parent FUGR must already exist — pass `group` explicitly on create (or auto-resolve via search on update/delete). Create POSTs `<fmodule:abapFunctionModule … adtcore:type="FUGR/FF">` with `<adtcore:containerRef>` to `/sap/bc/adt/functions/groups/{group}/fmodules`. The FM inherits its package from the parent FUGR: omit `package`, or supply the exact inherited package as an assertion. ARC-1 resolves and safety-checks the real FUGR package before creating the contained module, and rejects an explicit mismatch. SAPGUI-style `*"…IMPORTING…"*` parameter comment blocks in source are auto-stripped before PUT as defense-in-depth (SAP rejects them with `FUNC_ADT028`) and a warning is appended in that case.
+
+Execution semantics are function-module metadata, not ABAP source. Set `processingType="rfc"` for a Remote-Enabled module. For update modules, set `processingType="update"` plus an explicit `updateTaskKind`; V1 "Start immediately" is `startImmediate`. ARC-1 rejects processing fields on updates and non-FUNC objects instead of silently ignoring them.
+
+SAP's collection POST creates a normal function-module shell even when it accepts processing attributes. For an explicit processing type, ARC-1 therefore reads the new inactive root, preserves the server-provided representation, applies a locked metadata PUT with the release-negotiated media type, and reads the root back before reporting success. If that post-create step fails, the error warns that a normal shell may remain and must be reviewed or deleted before retrying. When `processingType` is omitted, ARC-1 keeps the pre-existing create behavior without the extra metadata round trips.
 
 #### SAPWrite for FUNC: create / update with structured parameters
 
@@ -397,11 +405,49 @@ Round-trip: `SAPRead({type: "FUNC", name: "Z_GREET", group: "ZARC1_FG", includeS
 
 Backward-compat: when `parameters` is omitted, the existing source-only PUT path runs unchanged. When `includeSignature` is omitted on read, the response is plain text source.
 
+##### Reading the processing type back
+
+`SAPRead(type="FUNC", …, includeSignature=true)` reports `processingType` and, for update modules,
+`updateTaskKind` alongside the parsed signature — so a caller that set one can verify it took effect.
+It is a metadata read, so a failure there adds `propertiesError` to the payload rather than breaking
+the signature read. See the create-side docs above for how the attributes are written.
+
+##### Function-group structural includes (`type="INCL"` with `group=`)
+
+`SAPWrite(type="INCL", group=<FUGR>)` creates, updates and deletes a function group's structural includes (`LZ<GROUP>TOP` global data, `F01` subroutines, `O01`/`I01` PBO/PAI modules, `T99` unit tests):
+
+```jsonc
+SAPWrite({ action: "create", type: "INCL", name: "LZARC1_FGF01", group: "ZARC1_FG",
+           description: "Subroutines", package: "$TMP" })
+SAPWrite({ action: "update", type: "INCL", name: "LZARC1_FGF01", group: "ZARC1_FG",
+           source: "FORM do_work.\nENDFORM.\n" })
+```
+
+- The include **name must start with `L<GROUP>`** — SAP derives the include from its group and rejects anything else with an opaque `500 "Attributes for program … have not been saved"`, so ARC-1 refuses it up front.
+- **SAP maintains the main program itself**: creating an include appends its `INCLUDE` line, deleting one comments that line out. No main-program edit is needed.
+- The include inherits the group's package — SAP ignores `package` here — so `allowedPackages` is checked against the **group's real package**, and a `package` argument that disagrees with it is refused. On update/delete the include itself is the lock and package-resolution target (its `containerRef` carries the group's package).
+- Omitting `group=` targets the standalone program-include collection instead, which still works for ordinary include names. An `L`-prefixed name there is refused with a pointer to `group=` — SAP reserves `L*` for function-group includes and answers with a 500, which would otherwise read as a transient error.
+
+Verified on NW 7.50 SP02 and S/4HANA 2023 (758) — the ADT contract is identical on both.
+
 **Robust to GPT/OpenAI optional-field "overpopulation" (issue #360).** GPT/OpenAI tool callers (especially under Structured Outputs / `strict` mode, the default for the Responses API) tend to over-populate optional fields — emitting `null` for every unused optional, blank strings, or stringified booleans like `"false"`. ARC-1 normalizes these before validation: `null` and empty/whitespace strings are treated as omitted (across every tool), and optional booleans accept real JSON booleans **and** `"true"/"false"/"1"/"0"/"yes"/"no"` (so `signExists="false"` is correctly stored as `false`, never inverted). Practical guidance for tool authors: **omit** optional fields you don't need rather than sending `""`/`null`; `include` is **CLAS-only** (for `update`/`edit_method`/`edit_class_definition`) and is ignored for other types/actions; `delete` needs only `type` and `name` (plus optional `transport`).
 
 **Mixed-case object names rejected on create.** SAP TADIR is uppercase on every release; mixed-case names cause silent corruption (e.g., a DDLS named `Zc_MyView` registers as `ZC_MYVIEW` in TADIR but the source body keeps mixed case, confusing every downstream tool). `SAPWrite(action="create"\|"batch_create")` rejects mixed-case names pre-flight with an actionable error. The source code *inside* the object can still use mixed case (e.g., `define view entity Zc_MyView`); only the TADIR object name needs to be uppercase.
 
 **BDEF creation:** Uses SAP's `blue:blueSource` XML format with content-type `application/vnd.sap.adt.blues.v1+xml`. BDEF objects are created with `type="BDEF"` and require a `source` parameter containing the behavior definition.
+
+**Release gates for pre-7.52 systems.** Several ADT resources simply do not exist before SAP_BASIS 7.52. Rather than surfacing a raw `404` (whose generic hint wrongly suggests the object "was not found"), ARC-1 refuses these up front with a release hint once discovery has been probed:
+
+| Operation | Missing resource | Fallback |
+|-----------|------------------|----------|
+| `SAPWrite create type="TABL"/"TABL/DT"` | `/sap/bc/adt/ddic/tables` | SE11. Writing the source through `/ddic/structures/` instead would flip `DD02L-TABCLASS` to `INTTAB` and corrupt the table |
+| `SAPWrite create type="DOMA"` | `/sap/bc/adt/ddic/domains` | SE11. Data elements that reference a domain are blocked with it |
+| `SAPWrite create type="TTYP"` | `/sap/bc/adt/ddic/tabletypes` | SE11 |
+| `SAPManage action="create_package"` | `/sap/bc/adt/packages` | SE80 / SE21 |
+
+Endpoint absence verified on two independent NW 7.50 systems (a dev edition and an ECC EhP8 7.50 SP31 production system); all four are present on S/4HANA 2023 (758) and ABAP Platform 2025 (816). Structures (`TABL/DS`), data elements, function groups, function modules and includes **do** work on 7.50 — note that DDIC structure source there uses `define type <name> { … }`, not `define structure`.
+
+The gates key off ADT discovery, so a session that never probed (for example a one-shot CLI call) is never blocked — it falls through to SAP's own error.
 
 **DDIC save diagnostics:** On `SAPWrite` save failures for DDIC/RAP artifacts (`TABL`, `DDLS`, `DCLS`, `BDEF`, `SRVD`, `SRVB`, `DDLX`, `DOMA`, `DTEL`), ARC-1 enriches errors with structured diagnostics:
 - T100 message identifiers/variables (e.g., `SBD_MESSAGES/007`, `V1..V4`)
@@ -442,7 +488,7 @@ ARC-1 layers a small set of release-aware, RAP-convention hints on top of the ab
 
 **Batch creation:**
 
-`batch_create` creates and activates multiple objects in sequence via a single tool call. Objects are processed in array order — put dependencies first (e.g., domain before data element, TABL before DDLS, DCLS after DDLS, BDEF after CDS views). Each object in the array has: `type` (string, required), `name` (string, required), `source` (string, optional), `description` (string, optional), optional `package` and `transport` overrides, plus optional DOMA/DTEL metadata fields. Item-level `package` and `transport` override the top-level values for that object.
+`batch_create` creates and activates multiple objects in sequence via a single tool call. Objects are processed in array order — put dependencies first (e.g., domain before data element, TABL before DDLS, DCLS after DDLS, BDEF after CDS views). Each object in the array has: `type` (string, required), `name` (string, required), `source` (string, optional), `description` (string, optional), optional `package` and `transport` overrides, plus optional DOMA/DTEL metadata fields. A `FUNC` entry also accepts `group`, `processingType`, `updateTaskKind`, and structured `parameters`; `group` may instead be supplied once at the top level when all FUNC entries share it. Item-level `package` and `transport` override the top-level values for ordinary objects. A contained `FUNC` always inherits its FUGR package, so omit its package or use the exact inherited value as an assertion.
 
 If any object fails, processing stops and the response reports which objects succeeded and which failed. AFF metadata validation runs automatically for supported types (CLAS, INTF, PROG, DDLS, BDEF, SRVD, SRVB) — invalid metadata is rejected before hitting SAP.
 
@@ -599,7 +645,7 @@ One range replacement on a method's declaration. The IMPLEMENTATION block is unt
 
 Drops both the METHODS clause and the METHOD…ENDMETHOD body in one PUT. ABSTRACT methods (no IMPL) have only the DEFINITION line removed.
 
-> ⚠️ **Destructive — discards the method body.** Do **not** use `delete_method` + `add_method` to change a method's visibility: that recreates an empty stub and loses the implementation. Use [`change_method_visibility`](#actionchange_method_visibility--move-a-method-between-sections-body-preserved) instead, which moves the declaration while leaving the body untouched.
+> ⚠️ **Destructive — discards the method body.** Do **not** use `delete_method` + `add_method` to change a method's visibility: that recreates an empty stub and loses the implementation. Use [`change_method_visibility`](#actionchange_method_visibility-move-a-method-between-sections-body-preserved) instead, which moves the declaration while leaving the body untouched.
 
 ```jsonc
 {
@@ -849,11 +895,11 @@ Git-based ABAP repository workflows with backend auto-selection: **gCTS** is pre
 | `package` | string | No | ABAP package (required for clone/create on package-bound backends) |
 | `transport` | string | No | Transport request (backend-dependent) |
 | `commit` | string | No | Commit SHA (for gCTS `pull` by commit) |
-| `message` | string | No | Commit message (for gCTS `commit`) |
-| `objects` | array | No | Commit/staging object list (`[{type,name,...}]`) |
-| `user` | string | No | Optional remote Git username |
-| `password` | string | No | Optional remote Git password |
-| `token` | string | No | Optional remote Git token (gCTS) |
+| `message` | string | Yes for `commit`/`push` | Commit message (gCTS `commit` and abapGit `push`) |
+| `objects` | array | No | Commit/staging object list (`[{type,name}]`). For abapGit `push` it selects which changed objects to commit; omit to push every local change |
+| `user` | string | No | Remote Git username |
+| `password` | string | No | Remote Git password |
+| `token` | string | No | Remote Git token. gCTS takes it as-is; abapGit sends it as basic auth with user `x-access-token` (GitHub convention) unless `user` is also given |
 | `limit` | number | No | Limit for history queries (gCTS) |
 
 **Backend support matrix:**
@@ -869,6 +915,16 @@ Git-based ABAP repository workflows with backend auto-selection: **gCTS** is pre
 - All write actions are blocked unless `--allow-git-writes` / `SAP_ALLOW_GIT_WRITES=true` is set.
 - Package-bound create/clone operations must pass the configured package allowlist.
 
+**abapGit private repositories:** pass `user` + `password`, or just `token`. ARC-1 forwards them to the
+bridge on every remote-touching call — `external_info`, `clone`, `pull`, `check`, `stage`, `push`,
+`switch_branch`, `create_branch` — as the `Username` / base64 `Password` headers the abapGit ADT backend
+reads. They are request-scoped: never stored, never logged (the `Password` header is redacted).
+
+**abapGit push** stages first, then commits the objects you select: ARC-1 calls the stage endpoint, keeps
+the objects (with their file lists) that match `objects`, and sends them back with your `message`. Author
+and committer come from the git user abapGit has stored for the repo, so no identity parameters are needed.
+A push with no matching local change is reported as a no-op instead of an empty commit.
+
 **Examples:**
 ```
 SAPGit(action="list_repos")
@@ -878,6 +934,9 @@ SAPGit(action="history", backend="gcts", repoId="ZARC1", limit=20)
 SAPGit(action="external_info", backend="abapgit", url="https://github.com/abapGit-tests/CLAS.git")
 SAPGit(action="switch_branch", repoId="000000000006", branch="main", backend="abapgit")
 SAPGit(action="clone", backend="abapgit", package="$TMP", url="https://github.com/org/repo.git")
+SAPGit(action="clone", backend="abapgit", package="$TMP", url="https://github.com/org/private.git", token="ghp_…")
+SAPGit(action="stage", backend="abapgit", repoId="000000000001")
+SAPGit(action="push", backend="abapgit", repoId="000000000001", message="Add order validation")
 ```
 
 ---
@@ -968,7 +1027,7 @@ If the object has no KTD or the backend returns 404/410 for the KTD document, AR
 * === Dependency context for ZCL_ORDER (3 deps resolved) [cached] ===
 ```
 
-The `[cached]` label here is for **dependency graph hits** (hash-keyed, naturally correct without server validation). It is distinct from `[cached:revalidated]` which appears on `SAPRead` source responses after SAP confirms freshness via `304 Not Modified`. See [Caching System → Response Indicators](caching.md#response-indicators) for details.
+The `[cached]` label here is for **dependency graph hits** (hash-keyed, naturally correct without server validation). It is distinct from `[cached:revalidated]` which appears on `SAPRead` source responses after SAP confirms freshness via `304 Not Modified`. See [Caching System → Source freshness](caching.md#source-freshness) for details.
 
 ### action="structure" — DDIC includes + append structures (TABL only)
 
@@ -1284,14 +1343,14 @@ Probe and report SAP system capabilities, inspect the object cache state, and ma
 - `create_package` — Create a package (`DEVC`) via `/sap/bc/adt/packages`.
 - `delete_package` — Delete a package via lock/delete/unlock.
 - `change_package` — Move an existing object into a different package (DEVC reassignment).
-- `flp_list_catalogs` — List FLP business catalogs.
+- `flp_list_catalogs` — List FLP designer catalogs. The `flp_*` actions target the classic tile/target-mapping model, deprecated as of S/4HANA 2023 and not federated by Work Zone content exposure v2 — the successor is the Launchpad App Descriptor Item (`SAPRead type=UIAD`). Business catalogs are a separate model (`/UI2/FLPCM_CUST`) and are not managed here.
 - `flp_list_groups` — List FLP groups (`Pages`) from `/UI2/FLPD_CATALOG`.
 - `flp_list_tiles` — List tiles/target mappings in a catalog.
-- `flp_create_catalog` — Create an FLP business catalog.
+- `flp_create_catalog` — Create an FLP designer catalog.
 - `flp_create_group` — Create an FLP group.
 - `flp_create_tile` — Create a tile in an FLP catalog.
 - `flp_add_tile_to_group` — Assign a catalog tile instance into a group.
-- `flp_delete_catalog` — Delete an FLP business catalog.
+- `flp_delete_catalog` — Delete an FLP designer catalog.
 
 **Parameters:**
 

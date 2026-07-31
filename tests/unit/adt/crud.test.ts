@@ -23,17 +23,20 @@ const LOCK_BODY =
  * get/post/put spies, so include auto-init tests can make the include GET-probe
  * return 200 (exists) or throw 404 (missing) and assert the call sequence.
  */
-function mockHttpWithSession(opts: { includeGetStatus: number }): {
+function mockHttpWithSession(opts: { includeGetStatus: number; corrNr?: string }): {
   http: AdtHttpClient;
   session: { get: ReturnType<typeof vi.fn>; post: ReturnType<typeof vi.fn>; put: ReturnType<typeof vi.fn> };
 } {
+  // A class in a transportable package locks with a non-empty CORRNR; $TMP locks with an
+  // empty one. Default '' = the $TMP shape (what every pre-#645 test exercised).
+  const lockBody = opts.corrNr ? LOCK_BODY.replace('<CORRNR></CORRNR>', `<CORRNR>${opts.corrNr}</CORRNR>`) : LOCK_BODY;
   const session = {
     get: vi.fn().mockImplementation(async (path: string) => {
       if (opts.includeGetStatus === 200) return { statusCode: 200, headers: {}, body: 'existing include source' };
       throw new AdtApiError(`probe ${opts.includeGetStatus}`, opts.includeGetStatus, path, '');
     }),
     post: vi.fn().mockImplementation(async (path: string) => {
-      if (path.includes('_action=LOCK')) return { statusCode: 200, headers: {}, body: LOCK_BODY };
+      if (path.includes('_action=LOCK')) return { statusCode: 200, headers: {}, body: lockBody };
       if (path.includes('_action=UNLOCK')) return { statusCode: 200, headers: {}, body: '' };
       return { statusCode: 201, headers: {}, body: '' }; // include-init POST
     }),
@@ -993,12 +996,47 @@ describe('CRUD Operations', () => {
       expect(body).toBe('');
     });
 
+    it('initClassInclude appends corrNr when a transport is supplied', async () => {
+      const post = vi.fn().mockResolvedValue({ statusCode: 201, headers: {}, body: '' });
+      const http = { post } as unknown as AdtHttpClient;
+      await initClassInclude(http, unrestrictedSafetyConfig(), INCLUDE_URL, 'LH99', 'NPLK900085');
+      expect(String(post.mock.calls[0]?.[0])).toBe(`${INCLUDE_URL}?lockHandle=LH99&corrNr=NPLK900085`);
+    });
+
     it('initClassInclude is gated by allowWrites (Create operation)', async () => {
       const post = vi.fn();
       const http = { post } as unknown as AdtHttpClient;
       const readOnly = { ...unrestrictedSafetyConfig(), allowWrites: false };
       await expect(initClassInclude(http, readOnly, INCLUDE_URL, 'LH99')).rejects.toThrow(AdtSafetyError);
       expect(post).not.toHaveBeenCalled();
+    });
+
+    // ─── #645: the init POST must carry corrNr, or SAP 500s on a transportable package ──
+    // "Object LIMU CINC <CLASS>=…CCAU is already locked in request <REQ> of user <USER>".
+    // Reproduced live on 7.50/758/816; with corrNr the same POST returns 201.
+    const initPostUrl = (session: { post: ReturnType<typeof vi.fn> }): string =>
+      String(
+        session.post.mock.calls.find(
+          (c) => !String(c[0]).includes('_action=LOCK') && !String(c[0]).includes('_action=UNLOCK'),
+        )?.[0] ?? '',
+      );
+
+    it('init POST carries corrNr from the explicit transport argument', async () => {
+      const { http, session } = mockHttpWithSession({ includeGetStatus: 404 });
+      await safeUpdateClassInclude(http, unrestrictedSafetyConfig(), CLASS_URL, INCLUDE_URL, 'x', 'NPLK900085');
+      expect(initPostUrl(session)).toContain('corrNr=NPLK900085');
+    });
+
+    it('init POST falls back to the corrNr returned by the LOCK when no transport is passed', async () => {
+      const { http, session } = mockHttpWithSession({ includeGetStatus: 404, corrNr: 'A4HK906359' });
+      await safeUpdateClassInclude(http, unrestrictedSafetyConfig(), CLASS_URL, INCLUDE_URL, 'x');
+      expect(initPostUrl(session)).toContain('corrNr=A4HK906359');
+    });
+
+    it('$TMP (no transport, empty lock CORRNR): init POST URL is unchanged, no corrNr', async () => {
+      const { http, session } = mockHttpWithSession({ includeGetStatus: 404 });
+      await safeUpdateClassInclude(http, unrestrictedSafetyConfig(), CLASS_URL, INCLUDE_URL, 'x');
+      expect(initPostUrl(session)).toBe(`${INCLUDE_URL}?lockHandle=SESS_HANDLE`);
     });
   });
 });

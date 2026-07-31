@@ -12,6 +12,7 @@
 import type { ResolvedFeatures } from '../adt/types.js';
 import { getActionPolicy } from '../authz/policy.js';
 import type { ServerConfig } from '../server/types.js';
+import { isGitToolVisible } from './tool-registry.js';
 import type { ToolDefinition } from './tools.js';
 
 /** Map hyperfocused action to the real tool name */
@@ -88,10 +89,7 @@ export function getHyperfocusedToolDefinition(
   config: ServerConfig,
   resolvedFeatures?: ResolvedFeatures,
 ): ToolDefinition {
-  const gitAvailable =
-    resolvedFeatures !== undefined
-      ? !!(resolvedFeatures.gcts?.available || resolvedFeatures.abapGit?.available)
-      : config.featureAbapGit !== 'off' || config.featureGcts !== 'off';
+  const gitAvailable = isGitToolVisible(config, resolvedFeatures);
   // Mixed delegators stay visible when their read sub-actions are usable.
   // Mutating sub-actions are enforced downstream by the concrete tool policy.
   const readActions = [

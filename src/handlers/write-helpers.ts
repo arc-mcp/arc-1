@@ -8,6 +8,7 @@
 
 import type { AdtClient } from '../adt/client.js';
 import {
+  adtResponsibleAttr,
   buildDataElementXml,
   buildDomainXml,
   buildMessageClassXml,
@@ -27,10 +28,11 @@ import { checkPackage } from '../adt/safety.js';
 import {
   createServerDrivenObject,
   deleteServerDrivenObject,
+  ensureServerDrivenSupport,
   serverDrivenMetadataContentType,
   serverDrivenObjectUrl,
   serverDrivenSourceFormat,
-  supportsServerDrivenObject,
+  serverDrivenUnavailableMessage,
   updateServerDrivenObjectSource,
 } from '../adt/server-driven.js';
 import type { ResolvedFeatures, SystemType } from '../adt/types.js';
@@ -41,6 +43,7 @@ import { detectFilename, validateBeforeWrite } from '../lint/lint.js';
 import type { ServerConfig } from '../server/types.js';
 import { type CacheSecurityContext, invalidateInactiveList } from './cache-security.js';
 import { getCachedFeatures } from './feature-cache.js';
+import { isFunctionProcessingType, isFunctionUpdateTaskKind } from './function-processing.js';
 import { canonicalTablType, objectUrlForType } from './object-types.js';
 import { errorResult, type ToolResult, textResult } from './shared.js';
 
@@ -85,6 +88,9 @@ const TABLETYPE_CONTENT_TYPE = 'application/vnd.sap.adt.tabletype.v1+xml';
 // (issue #250). FUGR uses the v3 group envelope; FUNC uses the unversioned fmodule envelope.
 const FUNCTION_GROUP_CONTENT_TYPE = 'application/vnd.sap.adt.functions.groups.v3+xml';
 const FUNCTION_MODULE_CONTENT_TYPE = 'application/vnd.sap.adt.functions.fmodules+xml';
+// FUGR structural include create. The unversioned type is refused by SAP with an explicit
+// "Supported Media Types: …fincludes.v2+xml" — verified on npl 7.50 and a4h 758.
+const FUNCTION_INCLUDE_CONTENT_TYPE = 'application/vnd.sap.adt.functions.fincludes.v2+xml';
 
 export function isMetadataWriteType(type: string): boolean {
   return type === 'DOMA' || type === 'DTEL' || type === 'MSAG' || type === 'SRVB' || type === 'TTYP';
@@ -105,7 +111,11 @@ function needsVendorContentType(type: string): boolean {
 }
 
 /** Content type used for create POST */
-export function createContentTypeForType(type: string, cloud = false): string {
+export function createContentTypeForType(type: string, cloud = false, fugrInclude = false): string {
+  // A FUGR structural include posts to the group's /includes collection, which accepts ONLY the
+  // versioned fincludes type (the unversioned one is refused with an explicit "Supported Media
+  // Types" message). A bare INCL keeps the wildcard so standalone program includes are unchanged.
+  if (type === 'INCL') return fugrInclude ? FUNCTION_INCLUDE_CONTENT_TYPE : 'application/*';
   // Cloud INTF create needs the v5 ST: `application/*` routes to an older ST that silently drops the
   // cloud abapLanguageVersion → HTTP 500 "ABAP language version  is not allowed in this software
   // component". On-prem INTF create keeps `application/*` (unchanged). Live-verified BTP 919.
@@ -207,6 +217,10 @@ export function getMetadataWriteProperties(input: Record<string, unknown>): Reco
     // Function-module create needs the parent function-group name for the
     // <adtcore:containerRef> in the create payload (issue #250).
     group: input.group,
+    // Function-module execution semantics are creation metadata, not part of
+    // /source/main. Preserve the ADT wire values exactly.
+    processingType: input.processingType,
+    updateTaskKind: input.updateTaskKind,
   };
 
   return props;
@@ -387,12 +401,12 @@ function buildCreateXmlBody(
   // matches the sap-language URL param ARC-1 already sends. Defaults to "EN" when
   // unset, preserving legacy output. See issue #343.
   const masterLanguage = normalizeAdtLanguage(language);
-  // Person responsible for the created object. Derived from the configured logon
-  // user (passed by callers as config.username). The legacy hard-coded "DEVELOPER"
-  // only exists on SAP demo systems, so on a real system it fails with
-  // 400 [?/049] "Enter a valid user, not DEVELOPER, as the person responsible".
-  // Defaults to "DEVELOPER" only when no user is configured. Same threading as #343.
+  // Person responsible for the created object, from the configured logon user (config.username).
+  // Omitted when it cannot be an on-prem user name — notably the email-style principal under
+  // principal propagation, which overflows XUBNAME (CHAR12) and kills the create ST (#636).
+  // ADT then assigns the logged-on user, which under PP is the propagated one.
   const responsibleUser = normalizeAdtResponsible(responsible);
+  const responsibleAttr = adtResponsibleAttr(responsible);
   switch (type) {
     case 'PROG':
       return `<?xml version="1.0" encoding="UTF-8"?>
@@ -402,8 +416,7 @@ function buildCreateXmlBody(
                      adtcore:name="${escapeXmlAttr(name)}"
                      adtcore:type="PROG/P"
                      adtcore:masterLanguage="${masterLanguage}"
-                     adtcore:masterSystem="H00"
-                     adtcore:responsible="${escapeXmlAttr(responsibleUser)}">
+                     adtcore:masterSystem="H00"${responsibleAttr}>
   <adtcore:packageRef adtcore:name="${escapeXmlAttr(pkg)}"/>
 </program:abapProgram>`;
     case 'CLAS':
@@ -414,8 +427,7 @@ function buildCreateXmlBody(
                  adtcore:name="${escapeXmlAttr(name)}"
                  adtcore:type="CLAS/OC"
                  adtcore:masterLanguage="${masterLanguage}"
-                 adtcore:masterSystem="H00"
-                 adtcore:responsible="${escapeXmlAttr(responsibleUser)}">
+                 adtcore:masterSystem="H00"${responsibleAttr}>
   <adtcore:packageRef adtcore:name="${escapeXmlAttr(pkg)}"/>
 </class:abapClass>`;
     case 'INTF':
@@ -426,11 +438,22 @@ function buildCreateXmlBody(
                     adtcore:name="${escapeXmlAttr(name)}"
                     adtcore:type="INTF/OI"
                     adtcore:masterLanguage="${masterLanguage}"
-                    adtcore:masterSystem="H00"
-                    adtcore:responsible="${escapeXmlAttr(responsibleUser)}">
+                    adtcore:masterSystem="H00"${responsibleAttr}>
   <adtcore:packageRef adtcore:name="${escapeXmlAttr(pkg)}"/>
 </intf:abapInterface>`;
-    case 'INCL':
+    case 'INCL': {
+      // With a parent group this is a FUGR STRUCTURAL include: a different collection
+      // (/functions/groups/{g}/includes), a different envelope, and Content-Type
+      // …fincludes.v2+xml. No packageRef — it inherits the group's package, and SAP maintains
+      // the main program's INCLUDE line itself. Live-verified npl 7.50 + a4h 758 (dossier §8.2).
+      const fugrGroup = String(properties?.group ?? '').trim();
+      if (fugrGroup) {
+        const fugrGroupLc = encodeURIComponent(fugrGroup.toLowerCase());
+        return `<?xml version="1.0" encoding="UTF-8"?>
+<finclude:abapFunctionGroupInclude xmlns:finclude="http://www.sap.com/adt/functions/fincludes" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:description="${escapeXmlAttr(description)}" adtcore:name="${escapeXmlAttr(name)}" adtcore:type="FUGR/I">
+  <adtcore:containerRef adtcore:name="${escapeXmlAttr(fugrGroup)}" adtcore:type="FUGR/F" adtcore:uri="/sap/bc/adt/functions/groups/${fugrGroupLc}"/>
+</finclude:abapFunctionGroupInclude>`;
+      }
       return `<?xml version="1.0" encoding="UTF-8"?>
 <include:abapInclude xmlns:include="http://www.sap.com/adt/programs/includes"
                      xmlns:adtcore="http://www.sap.com/adt/core"
@@ -438,10 +461,10 @@ function buildCreateXmlBody(
                      adtcore:name="${escapeXmlAttr(name)}"
                      adtcore:type="PROG/I"
                      adtcore:masterLanguage="${masterLanguage}"
-                     adtcore:masterSystem="H00"
-                     adtcore:responsible="${escapeXmlAttr(responsibleUser)}">
+                     adtcore:masterSystem="H00"${responsibleAttr}>
   <adtcore:packageRef adtcore:name="${escapeXmlAttr(pkg)}"/>
 </include:abapInclude>`;
+    }
     case 'DDLS':
       return `<?xml version="1.0" encoding="UTF-8"?>
 <ddl:ddlSource xmlns:ddl="http://www.sap.com/adt/ddic/ddlsources"
@@ -450,8 +473,7 @@ function buildCreateXmlBody(
                adtcore:name="${escapeXmlAttr(name)}"
                adtcore:type="DDLS/DF"
                adtcore:masterLanguage="${masterLanguage}"
-               adtcore:masterSystem="H00"
-                 adtcore:responsible="${escapeXmlAttr(responsibleUser)}">
+               adtcore:masterSystem="H00"${responsibleAttr}>
   <adtcore:packageRef adtcore:name="${escapeXmlAttr(pkg)}"/>
 </ddl:ddlSource>`;
     case 'DCLS':
@@ -462,8 +484,7 @@ function buildCreateXmlBody(
                adtcore:name="${escapeXmlAttr(name)}"
                adtcore:type="DCLS/DL"
                adtcore:masterLanguage="${masterLanguage}"
-               adtcore:masterSystem="H00"
-               adtcore:responsible="${escapeXmlAttr(responsibleUser)}">
+               adtcore:masterSystem="H00"${responsibleAttr}>
   <adtcore:packageRef adtcore:name="${escapeXmlAttr(pkg)}"/>
 </dcl:dclSource>`;
     case 'TABL':
@@ -480,8 +501,7 @@ function buildCreateXmlBody(
                  adtcore:name="${escapeXmlAttr(name)}"
                  adtcore:type="${adtType}"
                  adtcore:masterLanguage="${masterLanguage}"
-                 adtcore:masterSystem="H00"
-                 adtcore:responsible="${escapeXmlAttr(responsibleUser)}">
+                 adtcore:masterSystem="H00"${responsibleAttr}>
   <adtcore:packageRef adtcore:name="${escapeXmlAttr(pkg)}"/>
 </blue:blueSource>`;
     }
@@ -506,8 +526,7 @@ function buildCreateXmlBody(
                  adtcore:name="${escapeXmlAttr(name)}"
                  adtcore:type="BDEF/BDO"
                  adtcore:masterLanguage="${masterLanguage}"
-                 adtcore:masterSystem="H00"
-                 adtcore:responsible="${escapeXmlAttr(responsibleUser)}">${extTemplate}
+                 adtcore:masterSystem="H00"${responsibleAttr}>${extTemplate}
   <adtcore:packageRef adtcore:name="${escapeXmlAttr(pkg)}"/>
 </blue:blueSource>`;
     }
@@ -519,8 +538,7 @@ function buildCreateXmlBody(
                  adtcore:name="${escapeXmlAttr(name)}"
                  adtcore:type="SRVD/SRV"
                  adtcore:masterLanguage="${masterLanguage}"
-                 adtcore:masterSystem="H00"
-                 adtcore:responsible="${escapeXmlAttr(responsibleUser)}"
+                 adtcore:masterSystem="H00"${responsibleAttr}
                  srvd:srvdSourceType="S">
   <adtcore:packageRef adtcore:name="${escapeXmlAttr(pkg)}"/>
 </srvd:srvdSource>`;
@@ -554,8 +572,7 @@ function buildCreateXmlBody(
                  adtcore:name="${escapeXmlAttr(name)}"
                  adtcore:type="DDLX/EX"
                  adtcore:masterLanguage="${masterLanguage}"
-                 adtcore:masterSystem="H00"
-                     adtcore:responsible="${escapeXmlAttr(responsibleUser)}">
+                 adtcore:masterSystem="H00"${responsibleAttr}>
   <adtcore:packageRef adtcore:name="${escapeXmlAttr(pkg)}"/>
 </ddlx:ddlxSource>`;
     case 'DOMA': {
@@ -676,6 +693,24 @@ function buildCreateXmlBody(
           'FUNC create requires "group" property — pass it via SAPWrite args (the parent function group must already exist).',
         );
       }
+      const processingType = properties?.processingType;
+      const updateTaskKind = properties?.updateTaskKind;
+      if (processingType !== undefined && !isFunctionProcessingType(processingType)) {
+        throw new Error(`Unsupported FUNC processingType "${String(processingType)}".`);
+      }
+      if (updateTaskKind !== undefined && !isFunctionUpdateTaskKind(updateTaskKind)) {
+        throw new Error(`Unsupported FUNC updateTaskKind "${String(updateTaskKind)}".`);
+      }
+      if (updateTaskKind !== undefined && processingType !== 'update') {
+        throw new Error('FUNC updateTaskKind requires processingType="update".');
+      }
+      if (processingType === 'update' && updateTaskKind === undefined) {
+        throw new Error('FUNC processingType="update" requires an explicit updateTaskKind.');
+      }
+      // The collection POST is deliberately free of processing attributes: SAP
+      // accepts them and still creates a `normal` shell (live-verified on 758),
+      // so sending them is inert on the releases we can test and unproven on the
+      // ones we cannot. The locked metadata PUT in write/create.ts persists them.
       const groupLc = encodeURIComponent(group.toLowerCase());
       return `<?xml version="1.0" encoding="UTF-8"?>
 <fmodule:abapFunctionModule xmlns:fmodule="http://www.sap.com/adt/functions/fmodules" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:description="${escapeXmlAttr(description)}" adtcore:name="${escapeXmlAttr(name)}" adtcore:type="FUGR/FF">
@@ -779,12 +814,8 @@ export async function handleServerDrivenObjectWrite(
   cacheSecurity: CacheSecurityContext,
 ): Promise<ToolResult> {
   // Discovery gate — mirror handleSAPRead's server-driven branch.
-  if (supportsServerDrivenObject(client.http, type) === false) {
-    return errorResult(
-      `SAPWrite type=${type} (server-driven object): this system does not advertise ADT support for it. ` +
-        'These types are discovery-gated and depend on the SAP release / support package ' +
-        '(e.g. DTSC/CSNM/EVTO need ABAP Platform 2025 / SAP_BASIS 8.16+, while DTDC/DSFD/EVTB also ship on S/4HANA 2023 / 758).',
-    );
+  if (!(await ensureServerDrivenSupport(client.http, client.safety, type))) {
+    return errorResult(serverDrivenUnavailableMessage('SAPWrite', type));
   }
 
   const transport = args.transport as string | undefined;
@@ -1136,3 +1167,16 @@ export const TTYP_WRITE_UNAVAILABLE_HINT =
   'Table type (TTYP) writes are not available on this system ' +
   '(/sap/bc/adt/ddic/tabletypes/ is not exposed by ADT discovery — verified absent on NW 7.50). ' +
   'Use SE11 in SAPGUI, or connect ARC-1 to a system that exposes the table-type endpoint (S/4HANA 2023 / ABAP Platform 2025 verified).';
+
+// Domains have NO ADT resource before 7.52 — reads 404 too, so there is no partial support.
+export const DOMA_WRITE_UNAVAILABLE_HINT =
+  'Domain (DOMA) writes are not available on this system ' +
+  '(/sap/bc/adt/ddic/domains/ is not exposed — NW 7.50/7.51 ship no domain endpoint at all; ' +
+  'it arrived in NW 7.52). Use SE11 in SAPGUI, or connect ARC-1 to an SAP_BASIS >= 7.52 system. ' +
+  'Data elements that reference a domain cannot be created here either until the domain exists.';
+
+export const DEVC_WRITE_UNAVAILABLE_HINT =
+  'Package (DEVC) creation is not available on this system ' +
+  '(/sap/bc/adt/packages is not exposed — NW 7.50/7.51 ship no package endpoint at all; it ' +
+  'arrived in NW 7.52). Create the package in SE80/SE21 in SAPGUI, or connect ARC-1 to an ' +
+  'SAP_BASIS >= 7.52 system. This is not a SICF misconfiguration.';

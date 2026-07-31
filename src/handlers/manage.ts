@@ -5,7 +5,7 @@
 
 import type { AdtClient } from '../adt/client.js';
 import { createObject, deleteObject, lockObject, unlockObject } from '../adt/crud.js';
-import { buildPackageXml, type PackageCreateParams } from '../adt/ddic-xml.js';
+import { buildPackageXml, normalizeAdtResponsible, type PackageCreateParams } from '../adt/ddic-xml.js';
 import { probeFeatures } from '../adt/features.js';
 import {
   addTileToGroup,
@@ -23,10 +23,14 @@ import { getTransportInfo } from '../adt/transport.js';
 import { parseSearchResults } from '../adt/xml-parser.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
 import type { ServerConfig } from '../server/types.js';
-import { getCachedFeatures, setCachedFeatures } from './feature-cache.js';
+import { getCachedFeatures, isPackagesEndpointAvailable, setCachedFeatures } from './feature-cache.js';
 import { inferObjectType, normalizeObjectType, objectUrlForTypeRaw } from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
-import { enforceAllowedPackageForObjectUrl, resolveWriteSystemType } from './write-helpers.js';
+import {
+  DEVC_WRITE_UNAVAILABLE_HINT,
+  enforceAllowedPackageForObjectUrl,
+  resolveWriteSystemType,
+} from './write-helpers.js';
 
 // ─── SAPManage Handler ────────────────────────────────────────────────
 
@@ -110,6 +114,12 @@ export async function handleSAPManage(
       if (!name) return errorResult('"name" is required for create_package action.');
       if (!description) return errorResult('"description" is required for create_package action.');
 
+      // Discovery gate: /sap/bc/adt/packages is absent wholesale before 7.52. Without this the
+      // caller gets a raw 404 plus a SICF-misconfiguration hint that sends them down the wrong path.
+      if (isPackagesEndpointAvailable() === false) {
+        return errorResult(DEVC_WRITE_UNAVAILABLE_HINT);
+      }
+
       checkOperation(client.safety, OperationType.Create, 'CreatePackage');
 
       // Package allowlist gate:
@@ -131,7 +141,13 @@ export async function handleSAPManage(
       // below. Details: docs/research/2026-06-27-btp-package-create-solved.md.
       const systemType = resolveWriteSystemType(config, client);
       const cloud = systemType === 'btp';
-      const responsible = cloud ? responsibleArg || client.getInternalUser() || '' : config.username;
+      // On-prem, unlike every other type, DEVC cannot fall back to omitting adtcore:responsible:
+      // SPAK_ST_PACKAGES rejects an empty value AND validates that the user exists ("Enter a valid
+      // user, not <x>, as the person responsible"). So an unusable logon user (the email-style
+      // principal under PP) must be replaced by an explicit responsible, not dropped (#636).
+      const responsible = cloud
+        ? responsibleArg || client.getInternalUser() || ''
+        : responsibleArg || normalizeAdtResponsible(config.username);
       if (cloud) {
         if (!superPackage) {
           return errorResult(
@@ -146,6 +162,14 @@ export async function handleSAPManage(
               'SAPRead createdBy on an object you own), or create any object first to auto-resolve it.',
           );
         }
+      } else if (!responsible) {
+        return errorResult(
+          'Package create needs a person-responsible that is a valid SAP user name (XUBNAME, max 12 ' +
+            'characters) — unlike other object types, SAP rejects an empty one here. ' +
+            `The connection user (${config.username || 'unset'}) cannot be used. ` +
+            'This is the normal case under principal propagation, where the identity is an email. ' +
+            'Pass responsible="<your SAP user name>".',
+        );
       }
 
       let effectiveTransport = transport || undefined;

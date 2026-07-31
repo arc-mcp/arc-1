@@ -219,7 +219,8 @@ describe('Tool Definitions', () => {
     const sapRead = tools.find((t) => t.name === 'SAPRead')!;
     const schema = sapRead.inputSchema as Record<string, any>;
     const typeEnum: string[] = schema.properties.type.enum;
-    for (const t of ['DESD', 'EVTB', 'EVTO', 'DTSC', 'CSNM', 'COTA', 'DSFD', 'DTDC']) expect(typeEnum).toContain(t);
+    for (const t of ['DESD', 'EVTB', 'EVTO', 'DTSC', 'CSNM', 'COTA', 'DSFD', 'DTDC', 'UIAD'])
+      expect(typeEnum).toContain(t);
     expect(schema.properties.type.description).toContain('Server-driven objects');
   });
 
@@ -228,7 +229,8 @@ describe('Tool Definitions', () => {
     const sapWrite = tools.find((t) => t.name === 'SAPWrite')!;
     const schema = sapWrite.inputSchema as Record<string, any>;
     const typeEnum: string[] = schema.properties.type.enum;
-    for (const t of ['DESD', 'EVTB', 'EVTO', 'DTSC', 'CSNM', 'COTA', 'DSFD', 'DTDC']) expect(typeEnum).toContain(t);
+    for (const t of ['DESD', 'EVTB', 'EVTO', 'DTSC', 'CSNM', 'COTA', 'DSFD', 'DTDC', 'UIAD'])
+      expect(typeEnum).toContain(t);
     expect(schema.properties.type.description).toContain('Server-driven objects');
   });
 
@@ -268,6 +270,26 @@ describe('Tool Definitions', () => {
     ]);
     expect(item.required).toContain('kind');
     expect(item.required).toContain('name');
+  });
+
+  it('SAPWrite schema exposes creation-time FUNC processing metadata on-prem only', () => {
+    const onPrem = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true }).find((t) => t.name === 'SAPWrite')!
+      .inputSchema as Record<string, any>;
+    expect(onPrem.properties.processingType.enum).toEqual(['normal', 'rfc', 'update']);
+    expect(onPrem.properties.updateTaskKind.enum).toEqual([
+      'startImmediate',
+      'immediateStartNoRestart',
+      'startDelayed',
+    ]);
+    expect(onPrem.properties.objects.items.properties.group).toBeDefined();
+    expect(onPrem.properties.objects.items.properties.processingType.enum).toEqual(['normal', 'rfc', 'update']);
+    expect(onPrem.properties.objects.items.properties.parameters.items.properties.kind.enum).toContain('importing');
+
+    const btp = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true, systemType: 'btp' }).find(
+      (t) => t.name === 'SAPWrite',
+    )!.inputSchema as Record<string, any>;
+    expect(btp.properties.processingType).toBeUndefined();
+    expect(btp.properties.updateTaskKind).toBeUndefined();
   });
 
   it('SAPWrite type and include descriptions track the supported schema surface', () => {

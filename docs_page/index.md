@@ -194,7 +194,7 @@ The three-layer model (server flag + user scope + SAP authorization) is describe
 
 ## SAP API Policy and data access
 
-SAP's current [SAP API Policy](https://help.sap.com/doc/sap-api-policy/latest/en-US/API_Policy_latest.pdf) is v.4.2026a. It allows published/documented APIs for their documented purposes, while restricting unsupported internal APIs, misuse, unmanaged autonomous AI call patterns, and large-scale extraction outside endorsed paths. ARC-1 is designed as a governed development-tooling proxy around ADT behavior, not as a bulk data-extraction product. For normal internal developer workflows, the project is intended to be generally usable with real user identity, SAP authorization, audit logging, rate controls, and customer-side governance.
+ARC-1 is a governed development-tooling proxy around ADT behavior, not a bulk data-extraction product — real user identity, SAP authorization, audit logging and rate controls throughout. Where that stands under SAP's API Policy, and what to ask your SAP contact before production, is covered in **[SAP API Policy & Architecture Alignment](sap-api-policy-and-architecture.md)**.
 
 ARC-1's defaults are intentionally conservative: no writes, no named table preview, no freestyle SQL, no transport mutations, no Git mutations. Two capabilities are especially sensitive and are **off by default** behind explicit opt-in env vars:
 

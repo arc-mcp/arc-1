@@ -20,10 +20,12 @@
 import type { ResolvedFeatures } from '../adt/types.js';
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
 import type { ServerConfig } from '../server/types.js';
+import * as FuncProcessing from './function-processing.js';
 import { getHyperfocusedToolDefinition } from './hyperfocused.js';
 import { CLASS_WRITE_INCLUDES } from './object-types.js';
 import { SAPWRITE_DESC_BTP, SAPWRITE_DESC_ONPREM, SAPWRITE_MINIMAL_PAYLOAD_GUIDE } from './tool-descriptions.js';
 import {
+  isGitToolVisible,
   SAPCONTEXT_TYPES_BTP,
   SAPCONTEXT_TYPES_ONPREM,
   SAPREAD_TYPES_BTP,
@@ -87,12 +89,6 @@ const TOOL_ANNOTATIONS: Record<string, ToolAnnotations> = {
 function isBtpMode(config: ServerConfig): boolean {
   return config.systemType === 'btp';
 }
-
-// ─── SAPRead Types ──────────────────────────────────────────────────
-
-/** All SAPRead types available on on-premise */
-
-/** SAPRead types available on BTP ABAP Environment (no PROG, INCL, VIEW, TEXT_ELEMENTS, VARIANTS) */
 
 const SAPREAD_DESC_ONPREM =
   'Read SAP ABAP objects — exact raw source, a method body, grep output, inactive drafts, revision history, or metadata. For "what does this object do?", explanations, spec work, reviews, or pre-change orientation, prefer SAPContext first (intent-level context before raw source). ' +
@@ -192,7 +188,7 @@ const SAPMANAGE_DESC_ONPREM =
   'Actions:\n' +
   '- "features": cached feature status (fast, no round-trip; id, available, mode, probedAt). "probe": re-probe now (feature probes + auth + discovery refresh). "cache_stats": object cache health.\n' +
   '- "create_package" / "delete_package" / "change_package": DEVC lifecycle via ADT packages API.\n' +
-  '- FLP read: flp_list_catalogs, flp_list_groups, flp_list_tiles (catalogId). FLP write: flp_create_catalog, flp_create_group, flp_create_tile, flp_add_tile_to_group, flp_delete_catalog.\n' +
+  '- FLP read: flp_list_catalogs, flp_list_groups, flp_list_tiles (catalogId). FLP write: flp_create_catalog, flp_create_group, flp_create_tile, flp_add_tile_to_group, flp_delete_catalog. Classic designer tile/target-mapping model, deprecated since S/4HANA 2023; Work Zone exposure v2 needs LADIs (SAPRead type=UIAD).\n' +
   '- "set_api_state": release/revoke an object\'s API release contract (objectUri, or name+objectType; apiState defaults RELEASED, contract defaults C1 — C0 for SRVD, C3 for classic views). Write counterpart of SAPRead(type="API_STATE").\n\n' +
   'Returns features + systemType ("onprem"/"btp"); "available: false" means do NOT attempt dependent operations.';
 
@@ -205,7 +201,7 @@ const SAPMANAGE_DESC_BTP =
   '- "cache_stats": Show request-driven object cache health.\n' +
   '- "create_package": Create a package (DEVC) via ADT packages API.\n' +
   '- "delete_package": Delete an existing package.\n' +
-  '- FLP actions: flp_list_catalogs, flp_list_groups, flp_list_tiles, flp_create_catalog, flp_create_group, flp_create_tile, flp_add_tile_to_group, flp_delete_catalog.\n' +
+  '- FLP actions: flp_list_catalogs, flp_list_groups, flp_list_tiles, flp_create_catalog, flp_create_group, flp_create_tile, flp_add_tile_to_group, flp_delete_catalog. Classic designer model, deprecated since S/4HANA 2023 (successor: SAPRead type=UIAD).\n' +
   '- "set_api_state": Release (or revoke) an object\'s API release contract for ABAP Cloud / Clean Core ' +
   '(requires "objectUri", or "name" + "objectType"; "apiState" defaults to RELEASED, "contract" defaults to C1 — pass C0 for SRVD, C3 for classic views). The write counterpart of SAPRead(type="API_STATE").\n\n' +
   'Returns JSON with features and systemType="btp". On BTP, RAP/CDS and transports are always available. ' +
@@ -429,8 +425,8 @@ export function getToolDefinitions(
             type: 'string',
             enum: btp ? SAPREAD_TYPES_BTP : SAPREAD_TYPES_ONPREM,
             description: btp
-              ? 'Object type to read (BTP): CLAS, INTF, FUNC, FUGR, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL (transparent tables and DDIC structures), DOMA, DTEL, MSAG, TABLE_CONTENTS, TABLE_QUERY, DEVC, SYSTEM, COMPONENTS, BSP, BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS. Server-driven objects (discovery-gated; XML metadata; source is AFF JSON, or DDL text for DTSC/DSFD/DTDC): DESD (Logical External Schema), EVTB (RAP Event Binding), EVTO (RAP Event Object), DTSC (Static Cache), CSNM (CSN Model), COTA (Communication Target), DSFD (Scalar Function Def), DTDC (Dynamic Cache). Deprecated alias: MESSAGES (use MSAG).'
-              : 'Object type to read (on-prem): PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL (transparent tables and DDIC structures), VIEW, DOMA, DTEL, MSAG, TRAN, TABLE_CONTENTS, TABLE_QUERY, DEVC, SOBJ, SYSTEM, COMPONENTS, TEXT_ELEMENTS, VARIANTS, BSP, BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS, AUTH, FEATURE_TOGGLE, ENHO, VERSIONS, VERSION_SOURCE. Server-driven objects (discovery-gated; XML metadata; source is AFF JSON, or DDL text for DTSC/DSFD/DTDC): DESD (Logical External Schema), EVTB (RAP Event Binding), EVTO (RAP Event Object), DTSC (Static Cache), CSNM (CSN Model), COTA (Communication Target), DSFD (Scalar Function Def), DTDC (Dynamic Cache). Deprecated aliases: MESSAGES (use MSAG), FTG2 (use FEATURE_TOGGLE).',
+              ? 'Object type to read (BTP): CLAS, INTF, FUNC, FUGR, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL (transparent tables and DDIC structures), DOMA, DTEL, MSAG, TABLE_CONTENTS, TABLE_QUERY, DEVC, SYSTEM, COMPONENTS, BSP, BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS. Server-driven objects (discovery-gated; XML metadata; source is AFF JSON, or DDL text for DTSC/DSFD/DTDC): DESD (Logical External Schema), EVTB (RAP Event Binding), EVTO (RAP Event Object), DTSC (Static Cache), CSNM (CSN Model), COTA (Communication Target), DSFD (Scalar Function Def), DTDC (Dynamic Cache), UIAD (Launchpad App Descriptor Item). Deprecated alias: MESSAGES (use MSAG).'
+              : 'Object type to read (on-prem): PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL (transparent tables and DDIC structures), VIEW, DOMA, DTEL, MSAG, TRAN, TABLE_CONTENTS, TABLE_QUERY, DEVC, SOBJ, SYSTEM, COMPONENTS, TEXT_ELEMENTS, VARIANTS, BSP, BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS, AUTH, FEATURE_TOGGLE, ENHO, VERSIONS, VERSION_SOURCE. Server-driven objects (discovery-gated; XML metadata; source is AFF JSON, or DDL text for DTSC/DSFD/DTDC): DESD (Logical External Schema), EVTB (RAP Event Binding), EVTO (RAP Event Object), DTSC (Static Cache), CSNM (CSN Model), COTA (Communication Target), DSFD (Scalar Function Def), DTDC (Dynamic Cache), UIAD (Launchpad App Descriptor Item). Deprecated aliases: MESSAGES (use MSAG), FTG2 (use FEATURE_TOGGLE).',
           },
           name: { type: 'string', description: 'Object name (e.g., ZTEST_PROGRAM, ZCL_ORDER, MARA)' },
           action: {
@@ -513,7 +509,7 @@ export function getToolDefinitions(
           includeSignature: {
             type: 'boolean',
             description:
-              'For FUNC type only. When true, response is JSON: {source, signature: {importing[], exporting[], changing[], tables[], exceptions[], raising[]}} — each parameter parsed into {kind, name, type, byValue?, default?, optional?}. Default false (returns plain source body). Use this to introspect FM parameter signatures programmatically without re-parsing ABAP.',
+              'For FUNC type only. When true, response is JSON: {source, signature: {importing[], exporting[], changing[], tables[], exceptions[], raising[]}, processingType?, updateTaskKind?} — each parameter parsed into {kind, name, type, byValue?, default?, optional?}; processingType reports rfc/update/normal. Default false (returns plain source body).',
           },
           force_refresh: {
             type: 'boolean',
@@ -610,17 +606,29 @@ export function getToolDefinitions(
               // of the BTP action enum so the zod↔json-schema parity check stays green.
               ...(btp ? [] : ['edit_text_symbols']),
             ],
+            // This is where an LLM decides WHICH action to use, so every action gets a line —
+            // especially the destructive and refusing ones, whose behaviour is not guessable.
             description:
-              'Write action. create/update/delete: standard object writes. edit_method: replace one method body (type=CLAS, method, source). ' +
-              (btp ? '' : 'edit_unit: replace a PROG/INCL FORM or MODULE (unit+source). ') +
-              'Class-section surgery (type=CLAS only): edit_class_definition without include= replaces the global DEFINITION block (refuses a diff that would leave the class non-activatable, e.g. a concrete method with no IMPL stub); with include= it whole-replaces a class-local include (CCDEF/CCIMP/macros/testclasses), auto-creating it. add_method inserts a METHODS clause + empty stub (visibility, abstract=true skips the stub); edit_method_signature replaces one METHODS clause (no IMPL change); delete_method removes the clause AND body — WARNING: destructive, discards the method body (to re-section a method use change_method_visibility, NOT delete+add); change_method_visibility moves a method between PUBLIC/PROTECTED/PRIVATE, preserves the body. add_method/edit_method_signature/delete_method/change_method_visibility act on /source/main only. batch_create: create+activate multiple objects (objects array). scaffold_rap_handlers / generate_behavior_implementation: derive RAP behavior-pool handlers from the BDEF (the latter the equivalent of Eclipse\'s "Generate Behavior Implementation").',
+              'Write action. create/update/delete: whole-object writes (update replaces /source/main, or one class-local include when include= is set). ' +
+              'edit_method: replace a single method body — the token-cheap path for class edits. ' +
+              (btp ? '' : 'edit_unit: replace one FORM or MODULE block inside a PROG/INCL. ') +
+              'batch_create: create and activate many objects in one call; order is preserved, so list dependencies first. ' +
+              'Class surgery (CLAS, all on /source/main unless noted): edit_class_definition replaces the global DEFINITION block — or a class-local include when include= is set — and refuses a diff that would leave the class non-activatable; ' +
+              'add_method inserts a METHODS clause plus an empty IMPL stub (abstract=true skips the stub); ' +
+              'edit_method_signature rewrites one METHODS clause and leaves the body alone; ' +
+              'change_method_visibility moves a method to another section and preserves its body; ' +
+              'delete_method is destructive — it discards the body, so to re-section a method use change_method_visibility, never delete+add. ' +
+              'scaffold_rap_handlers / generate_behavior_implementation: derive behavior-pool handlers from a BDEF (the latter is the equivalent of Eclipse\'s "Generate Behavior Implementation").' +
+              (btp
+                ? ''
+                : " edit_text_symbols: write a global class's text symbols (immediately active, no SAPActivate)."),
           },
           type: {
             type: 'string',
             enum: btp ? SAPWRITE_TYPES_BTP : SAPWRITE_TYPES_ONPREM,
             description: btp
-              ? 'Object type (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on BTP: CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require type=CLAS. Server-driven objects (discovery-gated): DESD/CSNM/EVTB/EVTO/COTA take AFF JSON in "source"; DTSC/DSFD/DTDC take DDL text — create/update/delete, then SAPActivate.'
-              : 'Object type (for create/update/delete/edit_method/edit_unit/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on-prem: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require CLAS. Server-driven objects (discovery-gated): DESD/CSNM/EVTB/EVTO/COTA take AFF JSON in "source"; DTSC/DSFD/DTDC take DDL text — create/update/delete, then SAPActivate.',
+              ? 'Object type (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on BTP: CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require type=CLAS. Server-driven objects (discovery-gated): DESD/CSNM/EVTB/EVTO/COTA/UIAD take AFF JSON in "source"; DTSC/DSFD/DTDC take DDL text — create/update/delete, then SAPActivate.'
+              : 'Object type (for create/update/delete/edit_method/edit_unit/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on-prem: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require CLAS. Server-driven objects (discovery-gated): DESD/CSNM/EVTB/EVTO/COTA take AFF JSON in "source"; DTSC/DSFD/DTDC take DDL text — create/update/delete, then SAPActivate. UIAD is read-only outside ABAP Cloud.',
           },
           name: {
             type: 'string',
@@ -713,6 +721,7 @@ export function getToolDefinitions(
             description:
               'For FUNC: parent function-group name. Required for FUNC create (the FUGR must already exist — create it first via SAPWrite type=FUGR). Auto-resolved via search for FUNC update/delete if omitted.',
           },
+          ...(btp ? {} : FuncProcessing.FUNCTION_PROCESSING_TOOL_PROPERTIES),
           dataType: { type: 'string', description: 'DOMA/DTEL: ABAP data type (e.g., CHAR, NUMC, DEC)' },
           rowType: {
             type: 'string',
@@ -871,6 +880,7 @@ export function getToolDefinitions(
                   type: 'string',
                   description: 'Object-specific transport request. Overrides top-level transport for this item.',
                 },
+                ...(btp ? {} : FuncProcessing.FUNCTION_MODULE_BATCH_TOOL_PROPERTIES),
                 // DDIC metadata fields (DOMA/DTEL/TTYP/MSAG/SRVB) mirror the top-level SAPWrite
                 // params 1:1 — descriptions omitted here to keep the tools/list payload small (#520).
                 dataType: { type: 'string' },
@@ -1418,7 +1428,7 @@ export function getToolDefinitions(
         responsible: {
           type: 'string',
           description:
-            'BTP only: the internal ABAP user (XUBNAME, e.g. CB9980000000) for the new package person-responsible. Auto-resolved from prior object creates if omitted; the IAS email is rejected.',
+            'Person-responsible: an existing ABAP user (XUBNAME, max 12 chars); an email is rejected. Defaults to the connection user; pass explicitly under principal propagation. BTP: auto-resolved from prior creates.',
         },
         transportLayer: {
           type: 'string',
@@ -1610,8 +1620,9 @@ export function getToolDefinitions(
     });
   }
 
-  // SAPGit — registered only when gCTS or abapGit backend is available
-  if (resolvedFeatures?.gcts?.available || resolvedFeatures?.abapGit?.available) {
+  // SAPGit — registered when a gCTS/abapGit backend is available, or not yet probed (see
+  // isGitToolVisible: unknown must stay visible or the tool is lost for the whole session).
+  if (isGitToolVisible(config, resolvedFeatures)) {
     const sapGitActions =
       config.allowWrites && config.allowGitWrites
         ? [...SAPGIT_ACTIONS_READ, ...SAPGIT_ACTIONS_WRITE]
@@ -1626,13 +1637,13 @@ export function getToolDefinitions(
             type: 'string',
             enum: sapGitActions,
             description:
-              'Git action. Read: list_repos, whoami, config, branches, external_info, history, objects, check. ' +
-              'Write (requires SAP_ALLOW_WRITES=true and SAP_ALLOW_GIT_WRITES=true): clone, pull, push, commit, stage, switch_branch, create_branch, unlink.',
+              'Git action. The writes (clone, pull, push, commit, stage, switch_branch, create_branch, unlink) ' +
+              'need SAP_ALLOW_WRITES=true and SAP_ALLOW_GIT_WRITES=true; the rest are reads.',
           },
           backend: {
             type: 'string',
             enum: ['gcts', 'abapgit'],
-            description: 'Optional backend override. Omit to auto-select (gCTS preferred over abapGit).',
+            description: 'Backend override; omit to auto-select (gCTS preferred).',
           },
           repoId: {
             type: 'string',
@@ -1660,15 +1671,15 @@ export function getToolDefinitions(
           },
           message: {
             type: 'string',
-            description: 'Commit message for gCTS commit.',
+            description: 'Commit message (required for gCTS commit and abapGit push).',
           },
           description: {
             type: 'string',
-            description: 'Optional commit description for gCTS commit.',
+            description: 'Commit description (gCTS).',
           },
           objects: {
             type: 'array',
-            description: 'Optional object list for commit/push payloads.',
+            description: 'Object list for commit/push. For abapGit push it selects the changed objects to commit.',
             items: {
               type: 'object',
               properties: {
@@ -1684,15 +1695,15 @@ export function getToolDefinitions(
           },
           user: {
             type: 'string',
-            description: 'Optional remote repository username.',
+            description: 'Remote repository username.',
           },
           password: {
             type: 'string',
-            description: 'Optional remote repository password/token secret.',
+            description: 'Remote repository password/token secret.',
           },
           token: {
             type: 'string',
-            description: 'Optional remote repository access token.',
+            description: 'Remote repository access token. abapGit sends it as basic auth user "x-access-token".',
           },
           limit: {
             type: 'number',

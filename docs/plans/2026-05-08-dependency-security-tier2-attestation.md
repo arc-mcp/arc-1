@@ -4,6 +4,12 @@
 
 This plan adds **supply-chain attestation** to ARC-1: machine-verifiable proof that an artifact (npm tarball or Docker image) was built from this repository, by this CI pipeline, at a specific commit. Tier 1 (`dependency-security-tier1-foundation.md`) closed the *what's in the artifact* question (no known vulnerabilities, no malicious deps in CI). Tier 2 closes the *what is the artifact* question — for enterprise customers running ARC-1 on regulated landscapes (banks, government, defense, pharma), procurement teams increasingly require SBOM + signature artifacts on every release. SAP partners and BTP enterprise customers specifically check for them during reviews.
 
+> **Progress (2026-07-28):** the production npm dependency graph now ships as a versioned
+> CycloneDX GitHub Release asset. Its reviewed implementation is recorded in
+> [`docs/plans/completed/2026-07-28-release-npm-sbom-quick-win.md`](completed/2026-07-28-release-npm-sbom-quick-win.md).
+> The npm release asset is explicitly best-effort and non-gating. Image/MCPB SBOM coverage, image
+> signing/attestation, and Scorecard remain open in this plan.
+
 The plan adds three release-time attestations:
 1. **CycloneDX SBOM** — a complete inventory of every transitive dependency, generated per release and attached to both the GitHub Release and the Docker image (as an attestation).
 2. **Cosign keyless image signing** — Sigstore OIDC-based signature on every published image tag, verifiable by `cosign verify` against the GitHub OIDC issuer. Customers running Kyverno / Gatekeeper / Connaisseur policies that require signed images can adopt ARC-1 without operational friction.
@@ -23,13 +29,13 @@ Design decisions:
 ### Current State
 
 - `.github/workflows/release.yml:66` runs `npm publish --provenance --access public`. npm provenance is **enabled** — every release tarball on npmjs.org carries a Sigstore-signed attestation pointing to this repo + commit + workflow. Verifiable via `npm audit signatures` after install.
-- No SBOM is generated or attached to releases. `npm sbom` (npm 10+) is available locally but not invoked in CI.
+- A production npm dependency SBOM is generated with pinned npm 11 from the release tag and attached as `arc-1-<version>-sbom.cdx.json`. It intentionally does not cover Docker OS packages, assembled MCPB contents, or extensions.
 - No Docker image signing. Images at `ghcr.io/arc-mcp/arc-1:<tag>` are published unsigned (the registry's transport-layer auth is the only attestation).
 - No OpenSSF Scorecard workflow. No score is computed or published. No badge.
 - The release workflow uses `npm publish --provenance --access public` with `permissions: id-token: write` (`release.yml:28-29`) — the OIDC plumbing for Sigstore is already configured. Cosign keyless signing reuses the same `id-token: write` permission.
 - `release.yml:155-156` exports per-arch image digests as workflow artifacts before merging into a multi-arch manifest in `publish-docker-merge`. The merge step is `release.yml:168-205` — the right place to sign the *manifest* (which is what `:vX.Y.Z` and `:latest` tags resolve to), not the per-arch images.
 - `Dockerfile` is a multi-stage Node 22 Alpine build. The image surface for SBOM purposes: `node:22-alpine` base + `apk add tini ca-certificates` + `node_modules` (post `npm prune --omit=dev`).
-- `docs_page/security-guide.md` does not currently discuss provenance, signing, or SBOM.
+- `docs_page/security-guide.md` documents npm provenance and the npm-graph release SBOM. Image signing and image/MCPB SBOM verification remain undocumented because those controls are not implemented yet.
 - `README.md` has no provenance/signing badge.
 - The roadmap last assigned ID is `SEC-11` (after Tier 1). This plan adds `SEC-12`.
 
@@ -61,7 +67,7 @@ Design decisions:
 2. **Image-attached attestations.** SBOM and provenance live alongside the image in OCI registry, not just on GitHub Releases. Air-gapped customers mirror once.
 3. **Reuse existing OIDC plumbing.** The release workflow already has `id-token: write` for npm provenance. Cosign keyless and SBOM attestations consume the same OIDC token. No new secrets.
 4. **Public Scorecard.** Score is a trust signal; hiding it defeats the purpose. If the score drops, fix the controls, don't suppress the badge.
-5. **Failures gate, but don't break debugging.** Sigstore/Rekor occasional outages happen. The release job tolerates a Sigstore *availability* failure (graceful degradation: ship the image without signature, alert the maintainer) but never tolerates a *verification* failure (signing succeeded but verification fails — bug, hard fail).
+5. **Failures gate, but don't break debugging.** Sigstore/Rekor occasional outages happen. The release job tolerates a Sigstore *availability* failure (graceful degradation: ship the image without signature, alert the maintainer) but never tolerates a *verification* failure (signing succeeded but verification fails — bug, hard fail). The npm release-asset quick win is an explicit exception: its whole job is non-gating so SBOM tooling or GitHub asset availability cannot break an otherwise valid release.
 
 ## Development Approach
 
@@ -80,16 +86,11 @@ This plan only touches release-time workflows; no source code changes. Per-task 
 **Files:**
 - Modify: `.github/workflows/release.yml`
 
-Generate two SBOMs per release: one for the npm tarball (built from `package-lock.json` via `npm sbom`) and one for the image (built from the layered filesystem via `anchore/syft-action`). Attach the npm SBOM to the GitHub Release as an asset. Attach the image SBOM as an OCI attestation in Task 3 (after Cosign is configured).
+Generate two artifact-specific SBOMs per release: one for the root production npm graph (built from `package-lock.json` via `npm sbom`) and one for the image (built from the layered filesystem). The npm half is complete; the image half remains open.
 
-- [ ] In `.github/workflows/release.yml`, locate the `publish-npm` job (line 23-66). After the `Build` step (line 62-63) and before `Publish to npm` (line 65-66), add a step `Generate npm package SBOM (CycloneDX)`:
-  - Run: `npm sbom --sbom-format=cyclonedx --sbom-set-version=$(jq -r .version package.json) > arc-1-${{ needs.release-please.outputs.tag_name }}-sbom.cdx.json` (the `$(jq …)` substitution captures the version that release-please bumped). On older npm: `npm sbom --sbom-format=cyclonedx > sbom.json` then rename — npm 11+ (already required for trusted publishing per `release.yml:40-44`) supports `--sbom-set-version`.
-  - Verify it's valid JSON: `jq -e . arc-1-*-sbom.cdx.json > /dev/null`.
-  - Capture the file path as a step output so the next step can attach it to the release.
-- [ ] After `Publish to npm`, add a step `Attach SBOM to GitHub Release`:
-  - Use `softprops/action-gh-release@<commit-SHA>` (third-party — pin to SHA per Tier 1 design principle 3).
-  - Inputs: `tag_name: ${{ needs.release-please.outputs.tag_name }}`, `files: arc-1-*-sbom.cdx.json`, `fail_on_unmatched_files: true`.
-  - The `release-please` action created the release earlier in the workflow; this step adds an asset to the existing release rather than creating a new one.
+- [x] Add an isolated, job-level `continue-on-error: true` `publish-npm-sbom` job after successful npm publication. It checks out the immutable release tag, pins npm to the same `11.11.1` used by `publish-npm`, and runs `npm sbom --package-lock-only --omit=dev --sbom-format=cyclonedx --sbom-type=application` without `npm ci`. An SBOM failure remains visible but cannot fail the release workflow.
+- [x] Validate Release Please/package/lock/SBOM version agreement plus the CycloneDX root metadata and non-empty graph before upload. Attach with the runner-provided `gh` CLI under a job-scoped `contents: write` token. Retries compare the GitHub asset SHA-256 and never use destructive `--clobber` replacement.
+- [x] Add `tests/unit/server/release-sbom-workflow.test.ts` to guard ordering, tag checkout, least privilege, exact npm flags, validation, and non-destructive upload behavior.
 - [ ] In the `publish-docker-merge` job (line 168-205), after the `Create manifest list and push` step (line 199-205), add a step `Generate image SBOM (CycloneDX)` using `anchore/sbom-action@<commit-SHA>`:
   - Inputs: `image: ghcr.io/arc-mcp/arc-1:${{ needs.release-please.outputs.tag_name }}`, `format: cyclonedx-json`, `output-file: arc-1-${{ needs.release-please.outputs.tag_name }}-image-sbom.cdx.json`, `upload-artifact: false` (uploaded as a release asset in the next step).
 - [ ] Add another step `Attach image SBOM to GitHub Release`:

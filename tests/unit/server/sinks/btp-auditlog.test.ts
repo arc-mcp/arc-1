@@ -105,6 +105,56 @@ describe('BTP Audit Log Sink', () => {
       expect(auditCall[0]).toContain('/security-events');
     });
 
+    it('attributes the calling agent on tool-call events', async () => {
+      const sink = new BTPAuditLogSink(config);
+      sink.write({
+        timestamp: '',
+        level: 'info',
+        event: 'tool_call_start',
+        tool: 'SAPRead',
+        clientId: 'arc1-abc',
+        clientAgent: 'claude-code/1.2.3',
+        args: {},
+      });
+      await sink.flush();
+
+      const body = JSON.parse(fetchSpy.mock.calls[1]![1]!.body as string);
+      expect(body.attributes).toContainEqual({ name: 'clientAgent', new: 'claude-code/1.2.3' });
+    });
+
+    it('attributes the calling agent on security events (free-text data, not attributes)', async () => {
+      const sink = new BTPAuditLogSink(config);
+      sink.write({
+        timestamp: '',
+        level: 'warn',
+        event: 'safety_blocked',
+        operation: 'SAPWrite',
+        reason: 'Action denied by SAP_DENY_ACTIONS',
+        user: 'DEV1',
+        clientAgent: 'cursor/0.44.1',
+      });
+      await sink.flush();
+
+      const body = JSON.parse(fetchSpy.mock.calls[1]![1]!.body as string);
+      expect(body.data).toContain('Agent: cursor/0.44.1.');
+    });
+
+    it('omits the agent suffix when no agent was resolved', async () => {
+      const sink = new BTPAuditLogSink(config);
+      sink.write({
+        timestamp: '',
+        level: 'warn',
+        event: 'safety_blocked',
+        operation: 'SAPWrite',
+        reason: 'blocked',
+        user: 'DEV1',
+      });
+      await sink.flush();
+
+      const body = JSON.parse(fetchSpy.mock.calls[1]![1]!.body as string);
+      expect(body.data).not.toContain('Agent:');
+    });
+
     it('sends data-accesses for read tool calls', async () => {
       const sink = new BTPAuditLogSink(config);
       const event: AuditEvent = {

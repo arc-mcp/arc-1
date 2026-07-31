@@ -213,23 +213,49 @@ export interface AbapGitExternalInfo {
   user?: AbapGitUser;
 }
 
+/** One deserialized object from a clone/pull response (`abapObjects:abapObject`). */
 export interface AbapGitObject {
   type?: string;
   name?: string;
   package?: string;
-  path?: string;
+  status?: string;
+  msgType?: string;
+  msgText?: string;
   [key: string]: unknown;
 }
 
-export interface AbapGitStagingObject extends AbapGitObject {
-  state?: string;
-  operation?: string;
+/** One file of a staged object (`abapgitstaging:abapgitfile`). */
+export interface AbapGitStagingFile {
+  name: string;
+  path?: string;
+  localState?: string;
+  remoteState?: string;
+}
+
+/** One object in a staging response (`abapgitstaging:abapgitobject`). */
+export interface AbapGitStagingObject {
+  name?: string;
+  type?: string;
+  uri?: string;
+  wbkey?: string;
+  files: AbapGitStagingFile[];
+}
+
+/** Commit metadata; the stage response pre-fills author/committer from abapGit's stored git user. */
+export interface AbapGitComment {
+  comment?: string;
+  author?: AbapGitUser;
+  committer?: AbapGitUser;
 }
 
 export interface AbapGitStaging {
   repoKey?: string;
   branchName?: string;
+  /** Locally changed objects — the push candidates (`unstaged_objects`). */
   objects: AbapGitStagingObject[];
+  /** Objects abapGit ignores (`ignored_objects`); reported, never pushed. */
+  ignored?: AbapGitStagingObject[];
+  comment?: AbapGitComment;
 }
 
 /** Authorization probe result from startup probing */
@@ -1036,6 +1062,25 @@ export interface ApiReleaseStateInfo {
   contracts: ApiReleaseContract[];
   isAnyContractReleased: boolean;
   isAnyAssignmentPossible: boolean;
+}
+
+/** A function group's contents, from either objectstructure shape (7.52+ or the pre-7.52 fallback). */
+export interface FunctionGroupStructure {
+  name: string;
+  functions: string[];
+  includes: string[];
+}
+
+/**
+ * Processing attributes reported by the fmodule metadata resource. Values are reported
+ * verbatim — SAP emits kinds the create-input enum does not accept (e.g. collectiveRun on
+ * existing modules), so this is deliberately not typed to that union.
+ * Input validation lives in src/handlers/function-processing.ts.
+ */
+export interface FunctionModuleProperties {
+  processingType?: string;
+  updateTaskKind?: string;
+  releaseState?: string;
 }
 
 /** An object pending activation from /sap/bc/adt/activation/inactive */

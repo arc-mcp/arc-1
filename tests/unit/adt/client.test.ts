@@ -797,6 +797,80 @@ describe('AdtClient', () => {
     });
   });
 
+  describe('function module properties', () => {
+    const fmDoc = (attrs: string) =>
+      `<?xml version="1.0" encoding="utf-8"?><fmodule:abapFunctionModule${attrs} adtcore:name="Z_FM" adtcore:type="FUGR/FF" xmlns:fmodule="http://www.sap.com/adt/functions/fmodules" xmlns:adtcore="http://www.sap.com/adt/core"><atom:link href="source/main" xmlns:atom="http://www.w3.org/2005/Atom"/></fmodule:abapFunctionModule>`;
+
+    it('getFunctionModuleProperties reads the lowercased fmodule resource, letting discovery pick the version', async () => {
+      // No hardcoded Accept: 7.50 serves …fmodules.v2+xml and 758 serves v3 (both live-verified),
+      // so pinning a version here would be an assumption rather than a contract.
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, fmDoc(' fmodule:processingType="rfc"')));
+      const client = createClient();
+      const props = await client.getFunctionModuleProperties('ZGRP', 'Z_FM');
+      expect(props.processingType).toBe('rfc');
+      expect(String(mockFetch.mock.calls[0]?.[0])).toContain('/sap/bc/adt/functions/groups/zgrp/fmodules/z_fm');
+      expect(fetchHeaders(0).Accept).not.toMatch(/fmodules\.v\d/);
+    });
+  });
+
+  describe('getFunctionGroup pre-7.52 fallback', () => {
+    const PRIMARY = '/objectstructure';
+    const OK_TREE =
+      '<objectStructureElement name="ZGRP" type="FUGR/F"><objectStructureElement name="Z_FM" type="FUGR/FF"/></objectStructureElement>';
+    const FALLBACK_NODES =
+      '<projectexplorer:objectstructure xmlns:projectexplorer="http://www.sap.com/adt/projectexplorer">' +
+      '<projectexplorer:node nodeid="1" isfolder="false" objecttype="FUGR/FF" objectname="Z_FM750"/>' +
+      '<projectexplorer:node nodeid="2" isfolder="false" objecttype="FUGR/I" objectname="LZGRPTOP"/>' +
+      '</projectexplorer:objectstructure>';
+
+    it('uses the per-group objectstructure and issues no fallback request when it succeeds', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, OK_TREE));
+      const client = createClient();
+      const fg = await client.getFunctionGroup('ZGRP');
+      expect(fg.functions).toEqual(['Z_FM']);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(String(mockFetch.mock.calls[0]?.[0])).toContain('/functions/groups/ZGRP/objectstructure');
+    });
+
+    it('falls back to the generic repository resource with LOWERCASE params on 404', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string) =>
+        Promise.resolve(
+          String(url).includes(`/functions/groups/ZGRP${PRIMARY}`)
+            ? mockResponse(404, '<exc:exception><message>does not exist</message></exc:exception>')
+            : mockResponse(200, FALLBACK_NODES),
+        ),
+      );
+      const client = createClient();
+      const fg = await client.getFunctionGroup('ZGRP');
+      expect(fg).toEqual({ name: 'ZGRP', functions: ['Z_FM750'], includes: ['LZGRPTOP'] });
+      const fallbackUrl = String((mockFetch.mock.calls as [string][])[1]?.[0]);
+      expect(fallbackUrl).toContain('/sap/bc/adt/repository/objectstructure');
+      expect(fallbackUrl).toContain('objectname=ZGRP');
+      expect(fallbackUrl).toContain(`objecttype=${encodeURIComponent('FUGR/F')}`);
+    });
+
+    it('propagates a non-404 error without attempting the fallback', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(403, '<exc:exception><message>forbidden</message></exc:exception>'));
+      const client = createClient();
+      await expect(client.getFunctionGroup('ZGRP')).rejects.toBeInstanceOf(AdtApiError);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('surfaces the error when both paths 404', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(
+        mockResponse(404, '<exc:exception><message>does not exist</message></exc:exception>'),
+      );
+      const client = createClient();
+      await expect(client.getFunctionGroup('ZGRP')).rejects.toBeInstanceOf(AdtApiError);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe('DDIC read operations', () => {
     it('getStructure returns source code', async () => {
       const client = createClient();

@@ -26,9 +26,10 @@ import { getActionPolicy, hasRequiredScope as hasScopeHelper, invocationPolicyKe
 import type { CachingLayer } from '../cache/caching-layer.js';
 import { type RegistryEntry, type ToolDispatchContext, ToolRegistry } from '../registry/tool-registry.js';
 import { sanitizeArgs } from '../server/audit.js';
-import { generateRequestId, requestContext } from '../server/context.js';
+import { generateRequestId, getCurrentContext, requestContext } from '../server/context.js';
 import { logger } from '../server/logger.js';
 import { type McpRateLimiter, resolveRateLimitUserKey } from '../server/mcp-rate-limit.js';
+import { formatClientInfo } from '../server/trace-context.js';
 import type { ServerConfig } from '../server/types.js';
 import { handleSAPActivate } from './activate.js';
 import { buildCacheSecurityContext } from './cache-security.js';
@@ -644,8 +645,14 @@ export async function handleToolCall(
   const identity = config.targetId ? (config.ppEnabled ? 'per-user' : 'shared') : undefined;
   // For plugin (Custom_*) tools, tag every audit event with the contributing plugin (spec §9).
   const pluginName = getToolRegistry().get(toolName)?.pluginName;
+  // Which agent acted, for audit attribution. The MCP handshake identifies the client precisely,
+  // but only on a persistent connection (stdio) — stateless HTTP builds a fresh Server per request
+  // that never saw `initialize`, so there we inherit the User-Agent captured at the HTTP edge.
+  const inherited = getCurrentContext();
+  const clientAgent = formatClientInfo(_server?.getClientVersion()) ?? inherited?.clientAgent;
 
-  // Emit tool_call_start audit event
+  // Emit tool_call_start audit event. clientAgent is explicit here because the request context
+  // below opens after this event — on stdio there is no outer context to inherit it from.
   logger.emitAudit({
     timestamp: new Date().toISOString(),
     level: 'info',
@@ -656,6 +663,7 @@ export async function handleToolCall(
     requestId: reqId,
     user,
     clientId,
+    clientAgent,
     tool: toolName,
     pluginName,
     args: sanitizeArgs(args),
@@ -682,6 +690,7 @@ export async function handleToolCall(
         event: 'mcp_rate_limited',
         requestId: reqId,
         clientId,
+        clientAgent,
         user: userKey,
         target: config.targetId,
         identity,
@@ -740,6 +749,7 @@ export async function handleToolCall(
         requestId: reqId,
         user,
         clientId,
+        clientAgent,
         target: config.targetId,
         identity,
         tool: toolName,
@@ -765,6 +775,7 @@ export async function handleToolCall(
       requestId: reqId,
       user,
       clientId,
+      clientAgent,
       target: config.targetId,
       identity,
       operation: `${toolName}${actionOrType ? `.${actionOrType}` : ''}`,
@@ -793,6 +804,7 @@ export async function handleToolCall(
         requestId: reqId,
         user,
         clientId,
+        clientAgent,
         target: config.targetId,
         identity,
         operation: toolName,
@@ -812,6 +824,10 @@ export async function handleToolCall(
       destination: config.targetId ? undefined : config.destinationName,
       target: config.targetId,
       identity,
+      clientAgent,
+      // Carried forward from the HTTP edge so the outbound SAP call keeps the caller's trace.
+      traceparent: inherited?.traceparent,
+      tracestate: inherited?.tracestate,
     },
     async () => {
       try {

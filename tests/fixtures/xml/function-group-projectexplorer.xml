@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Captured live 2026-07-29 from npl.marianzeis.de (NW 7.50 SP02):
+     GET /sap/bc/adt/repository/objectstructure?objectname=ZZFIXFG&objecttype=FUGR/F
+     Accept: application/vnd.sap.adt.objectstructure.v2+xml
+     NOTE the LOWERCASE query params — objectName/objectType returns 400.
+     This is the pre-7.52 fallback shape: flat <projectexplorer:node> elements with
+     unprefixed lowercase attributes, NOT the namespaced abapsource:objectStructureElement
+     tree that 7.52+ serves at /functions/groups/{g}/objectstructure.
+     Folder nodes (isfolder="true") carry an objecttype but no objectname.
+     Real SAP groups additionally emit FUGR/PD|PM|PO|PT|PU|PZ and PROG/* nodes
+     (observed live on SRFC and SUNI) — the parser must ignore everything that is
+     not FUGR/FF or FUGR/I. Real ADT response — do not hand-edit. -->
+<projectexplorer:objectstructure xmlns:projectexplorer="http://www.sap.com/adt/projectexplorer"><projectexplorer:node nodeid="000002" parentid="000001" childid="000003" nextid="000000" isfolder="true" description="Includes" objecttype="PROG/I"/><projectexplorer:node nodeid="000003" parentid="000002" childid="000000" nextid="000004" isfolder="false" description="LZZFIXFGTOP" objecttype="FUGR/I" objectname="LZZFIXFGTOP" isexpandable="false" objecturi="/sap/bc/adt/functions/groups/zzfixfg/includes/lzzfixfgtop" objectvituri="/sap/bc/adt/vit/wb/object_type/fugri/object_name/SAPLZZFIXFG%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20LZZFIXFGTOP"/><projectexplorer:node nodeid="000004" parentid="000002" childid="000000" nextid="000000" isfolder="false" description="LZZFIXFGUXX" objecttype="FUGR/I" objectname="LZZFIXFGUXX" isexpandable="false" objecturi="/sap/bc/adt/functions/groups/zzfixfg/includes/lzzfixfguxx" objectvituri="/sap/bc/adt/vit/wb/object_type/fugri/object_name/SAPLZZFIXFG%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20LZZFIXFGUXX"/><projectexplorer:node nodeid="000005" parentid="000001" childid="000006" nextid="000002" isfolder="true" description="Function Modules" objecttype="FUGR/FF"/><projectexplorer:node nodeid="000006" parentid="000005" childid="000000" nextid="000000" isfolder="false" description="Z_ZZFIXFG_PING" objecttype="FUGR/FF" objectname="Z_ZZFIXFG_PING" isexpandable="false" objecturi="/sap/bc/adt/functions/groups/zzfixfg/fmodules/z_zzfixfg_ping" objectvituri="/sap/bc/adt/vit/wb/object_type/fugrff/object_name/SAPLZZFIXFG%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20Z_ZZFIXFG_PING"/></projectexplorer:objectstructure>

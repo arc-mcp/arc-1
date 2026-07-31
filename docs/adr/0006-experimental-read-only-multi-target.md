@@ -1,6 +1,6 @@
 # ADR 0006 — Experimental Read-Only Multi-Target Endpoints
 
-**Status:** Proposed
+**Status:** Accepted — Experimental and default-off
 **Date:** 2026-07-17
 **Related:** [ADR-0005](0005-single-system-per-instance.md),
 [implementation plan](../plans/destination-discovered-multi-target-v1.md)
@@ -40,8 +40,10 @@ ARC-1 may expose experimental multi-target endpoints only when
 - a structural multi-target ceiling that forbids writes, activation, transport/Git mutations,
   enqueue locks, and SAP-backed formatter/settings actions regardless of administrator role or
   single-target configuration. The reviewed mutation-free additions are offline
-  `SAPLint.lint|lint_and_fix|list_rules`, read-only
-  `SAPTransport.list|get|check|history`, and `SAPDiagnose.atc|unittest`.
+  `SAPLint.lint|lint_and_fix|list_rules`, read-only `SAPTransport.list|get|check|history`, and the
+  explicit `SAPDiagnose` allowlist in the implementation plan. Diagnostic data actions retain the
+  normal destination/instance/XSUAA/SAP data gates; adding a general diagnostic action does not add
+  it to multi-target mode automatically.
 
 ATC and ABAP Unit are controlled executions rather than passive reads: they consume SAP work
 processes and may create transient worklists/results. They retain the existing `read` scope for

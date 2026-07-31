@@ -29,7 +29,9 @@
 
 import type { BTPProxyConfig } from '@arc-mcp/xsuaa-auth/btp';
 import { Agent, Client, type Dispatcher, fetch as undiciFetch } from 'undici';
+import { getCurrentContext } from '../server/context.js';
 import { logger } from '../server/logger.js';
+import { traceHeaders } from '../server/trace-context.js';
 import { resolveCookies } from './cookies.js';
 import { resolveAcceptType, resolveContentType } from './discovery.js';
 import { AdtApiError, AdtNetworkError } from './errors.js';
@@ -72,6 +74,7 @@ const HTTP_DEBUG_REDACT_HEADERS = new Set([
   'x-csrf-token',
   'sap-connectivity-authentication',
   'proxy-authorization',
+  'password', // abapGit bridge credential header (base64 is not encryption)
 ]);
 
 function redactDebugHeaders(headers: Record<string, string>): Record<string, string> {
@@ -614,6 +617,13 @@ export class AdtHttpClient {
 
         // Clear session to force fresh authentication
         this.resetSession();
+
+        // Pick up an out-of-band rotated cookie file so the call that observes the
+        // expiry can recover; the lazy `cookiesCleared` reload stays the fallback.
+        // `cookieFile`, not `isCookieAuthMode()` — cookieString has nothing to re-read,
+        // and reloadCookiesFromSource keeps config.cookies on a missing/empty file, so
+        // the retry still replays the ticket we have.
+        if (this.config.cookieFile) this.reloadCookiesFromSource();
 
         // Re-apply auth credentials
         this.applyAuthHeader(headers);
@@ -1257,14 +1267,20 @@ export class AdtHttpClient {
     headers: Record<string, string>,
     body?: string,
   ): Promise<Response> {
+    // Forward the caller's W3C trace context to SAP so one trace spans agent → ARC-1 → SAP.
+    // Empty unless the MCP client sent a valid `traceparent`; ARC-1 never originates a trace.
+    // Injected here because doFetch is the single outbound choke point (the proxy branch below
+    // spreads these headers too).
+    const outbound = { ...headers, ...traceHeaders(getCurrentContext()) };
+
     // BTP Connectivity proxy: use standard HTTP proxy protocol (not CONNECT)
     if (this.config.btpProxy) {
-      return this.doProxyRequest(url, method, headers, body);
+      return this.doProxyRequest(url, method, outbound, body);
     }
 
     return undiciFetch(url, {
       method,
-      headers,
+      headers: outbound,
       body,
       signal: AbortSignal.timeout(120_000),
       ...(this.dispatcher ? { dispatcher: this.dispatcher } : {}),

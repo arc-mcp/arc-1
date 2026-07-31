@@ -2,8 +2,7 @@
   "packages": {
     ".": {
       "release-type": "node",
-      "bump-minor-pre-major": true,
-      "bump-patch-for-minor-pre-major": true,
+      "release-as": "1.0.0",
       "include-component-in-tag": false,
       "extra-files": [
         {

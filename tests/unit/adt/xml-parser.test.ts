@@ -18,6 +18,8 @@ import {
   parseEnhancementImplementation,
   parseFeatureToggleStates,
   parseFunctionGroup,
+  parseFunctionGroupNodes,
+  parseFunctionModuleProperties,
   parseInactiveObjects,
   parseInstalledComponents,
   parseMessageClass,
@@ -496,6 +498,90 @@ describe('XML Parser', () => {
       const result = parseFunctionGroup(xml);
       expect(result.functions).toEqual(['Z_FUNC1', 'Z_FUNC2']);
       expect(result.includes).toEqual(['LZGROUPTOP']);
+    });
+  });
+
+  // ─── parseFunctionGroupNodes (pre-7.52 fallback shape) ─────────────
+
+  describe('parseFunctionGroupNodes', () => {
+    // Flat <projectexplorer:node> list from /sap/bc/adt/repository/objectstructure.
+    // Fixture captured live from npl 7.50 (ZZFIXFG: 1 FM, 2 includes) — see the header
+    // comment in the fixture for the exact request.
+    it('parses functions and includes from the real 7.50 projectexplorer fixture', () => {
+      const xml = loadFixture('function-group-projectexplorer.xml');
+      const result = parseFunctionGroupNodes(xml, 'ZZFIXFG');
+      expect(result.name).toBe('ZZFIXFG');
+      expect(result.functions).toEqual(['Z_ZZFIXFG_PING']);
+      expect(result.includes).toEqual(expect.arrayContaining(['LZZFIXFGTOP', 'LZZFIXFGUXX']));
+    });
+
+    it('skips folder nodes, which carry an objecttype but no objectname', () => {
+      const xml = loadFixture('function-group-projectexplorer.xml');
+      const result = parseFunctionGroupNodes(xml, 'ZZFIXFG');
+      // The fixture has "Includes" (PROG/I) and "Function Modules" (FUGR/FF) folder nodes.
+      expect(result.functions).not.toContain('');
+      expect(result.includes).not.toContain('');
+      expect(result.functions).toHaveLength(1);
+    });
+
+    it('ignores dynpro/module/text node types that real SAP groups emit', () => {
+      // Shape observed live on SRFC/SUNI (npl 7.50): FUGR/PD dynpros, FUGR/PM PBO modules,
+      // FUGR/PT text elements and PROG/* nodes sit alongside the FF/I nodes.
+      const xml = `<projectexplorer:objectstructure xmlns:projectexplorer="http://www.sap.com/adt/projectexplorer">
+        <projectexplorer:node nodeid="1" isfolder="false" objecttype="FUGR/FF" objectname="Z_KEEP"/>
+        <projectexplorer:node nodeid="2" isfolder="false" objecttype="FUGR/I" objectname="LZKEEPTOP"/>
+        <projectexplorer:node nodeid="3" isfolder="false" objecttype="FUGR/PD" objectname="0100"/>
+        <projectexplorer:node nodeid="4" isfolder="false" objecttype="FUGR/PM" objectname="STATUS_0100"/>
+        <projectexplorer:node nodeid="5" isfolder="false" objecttype="PROG/I" objectname="SOMEPROG"/>
+      </projectexplorer:objectstructure>`;
+      const result = parseFunctionGroupNodes(xml, 'ZKEEP');
+      expect(result.functions).toEqual(['Z_KEEP']);
+      expect(result.includes).toEqual(['LZKEEPTOP']);
+    });
+
+    it('returns empty arrays for a group with no nodes', () => {
+      const xml = '<projectexplorer:objectstructure xmlns:projectexplorer="http://www.sap.com/adt/projectexplorer"/>';
+      expect(parseFunctionGroupNodes(xml, 'ZEMPTY')).toEqual({ name: 'ZEMPTY', functions: [], includes: [] });
+    });
+  });
+
+  // ─── function module properties (processingType / updateTaskKind) ──
+
+  describe('parseFunctionModuleProperties', () => {
+    // Fixture captured live from a4h 758: RFC_PING, an RFC-enabled module.
+    it('parses processingType and releaseState from the real fixture', () => {
+      const props = parseFunctionModuleProperties(loadFixture('function-module-properties.xml'));
+      expect(props.processingType).toBe('rfc');
+      expect(props.releaseState).toBe('notReleased');
+      expect(props.updateTaskKind).toBeUndefined();
+    });
+
+    it('reads updateTaskKind when SAP reports one', () => {
+      const xml =
+        '<fmodule:abapFunctionModule xmlns:fmodule="http://www.sap.com/adt/functions/fmodules" fmodule:processingType="update" fmodule:updateTaskKind="collectiveRun"/>';
+      expect(parseFunctionModuleProperties(xml)).toEqual({
+        processingType: 'update',
+        updateTaskKind: 'collectiveRun',
+      });
+    });
+
+    it('accepts single-quoted attributes and mixed-case element names', () => {
+      const xml =
+        "<FMODULE:abapFunctionModule xmlns:fmodule='http://www.sap.com/adt/functions/fmodules' fmodule:processingType='rfc'/>";
+      expect(parseFunctionModuleProperties(xml).processingType).toBe('rfc');
+    });
+
+    it('ignores an fmodule attribute that appears outside the root element', () => {
+      const xml =
+        '<fmodule:abapFunctionModule xmlns:fmodule="http://www.sap.com/adt/functions/fmodules">' +
+        "<atom:link href='x' title='fmodule:processingType=\"rfc\"'/></fmodule:abapFunctionModule>";
+      expect(parseFunctionModuleProperties(xml).processingType).toBeUndefined();
+    });
+
+    it('returns an empty object when the document carries none of the attributes', () => {
+      const xml =
+        '<fmodule:abapFunctionModule xmlns:fmodule="http://www.sap.com/adt/functions/fmodules" adtcore:name="Z_X"/>';
+      expect(parseFunctionModuleProperties(xml)).toEqual({});
     });
   });
 

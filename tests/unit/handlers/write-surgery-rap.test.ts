@@ -1935,19 +1935,26 @@ ENDCLASS.`.replace(/\n/g, '\r\n');
   // Routing only — the full live lifecycle (create FUGR → update TOP include → activate →
   // read-back) is covered by the integration test, verified on a4h 758 + 816.
   describe('SAPWrite FUGR structural include update', () => {
-    function captureLockingFlow(): { method: string; url: string }[] {
-      const calls: { method: string; url: string }[] = [];
-      mockFetch.mockImplementation((url: string | URL, fetchOpts?: { method?: string }) => {
-        const method = fetchOpts?.method ?? 'GET';
-        const urlStr = String(url);
-        calls.push({ method, url: urlStr });
-        if (method === 'POST' && urlStr.includes('_action=LOCK')) {
-          return Promise.resolve(
-            mockResponse(200, '<DATA><LOCK_HANDLE>LH123</LOCK_HANDLE></DATA>', { 'x-csrf-token': 'T' }),
-          );
-        }
-        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
-      });
+    function captureLockingFlow(): { method: string; url: string; contentType?: string; body?: string }[] {
+      const calls: { method: string; url: string; contentType?: string; body?: string }[] = [];
+      mockFetch.mockImplementation(
+        (url: string | URL, fetchOpts?: { method?: string; headers?: Record<string, string>; body?: string }) => {
+          const method = fetchOpts?.method ?? 'GET';
+          const urlStr = String(url);
+          calls.push({
+            method,
+            url: urlStr,
+            contentType: fetchOpts?.headers?.['Content-Type'],
+            body: typeof fetchOpts?.body === 'string' ? fetchOpts.body : undefined,
+          });
+          if (method === 'POST' && urlStr.includes('_action=LOCK')) {
+            return Promise.resolve(
+              mockResponse(200, '<DATA><LOCK_HANDLE>LH123</LOCK_HANDLE></DATA>', { 'x-csrf-token': 'T' }),
+            );
+          }
+          return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+        },
+      );
       return calls;
     }
 
@@ -1970,31 +1977,131 @@ ENDCLASS.`.replace(/\n/g, '\r\n');
       expect(lock?.url).not.toContain('/source/main');
     });
 
-    it('rejects type=INCL + group create instead of creating a standalone program include', async () => {
-      const calls = captureLockingFlow();
+    it('creates a FUGR structural include on the group collection with the fincludes v2 type', async () => {
+      // ADT supports this on 7.50 and 758 alike: POST /functions/groups/{g}/includes with
+      // Content-Type …fincludes.v2+xml. No group lock, no _package — the include inherits the
+      // group's package. Live-verified 2026-07-29 (dossier §8.2).
+      const calls: { method: string; url: string; contentType?: string; body?: string }[] = [];
+      mockFetch.mockImplementation(
+        (url: string | URL, opts?: { method?: string; headers?: Record<string, string>; body?: string }) => {
+          const method = opts?.method ?? 'GET';
+          const urlStr = String(url);
+          calls.push({
+            method,
+            url: urlStr,
+            contentType: opts?.headers?.['Content-Type'],
+            body: typeof opts?.body === 'string' ? opts.body : undefined,
+          });
+          // The include inherits the group's package — the create path resolves it to gate on the
+          // REAL package, so the group metadata must carry a packageRef.
+          if (method === 'GET' && urlStr.includes('/functions/groups/zmy_fg') && !urlStr.includes('/includes')) {
+            return Promise.resolve(
+              mockResponse(
+                200,
+                '<group:abapFunctionGroup xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="ZMY_FG"><adtcore:packageRef adtcore:name="$TMP"/></group:abapFunctionGroup>',
+                { 'x-csrf-token': 'T' },
+              ),
+            );
+          }
+          return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+        },
+      );
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
         action: 'create',
         type: 'INCL',
-        name: 'LZMY_FGTOP',
+        name: 'LZMY_FGF01',
         group: 'ZMY_FG',
         package: '$TMP',
       });
-      expect(result.isError).toBe(true);
-      expect(result.content[0]?.text).toMatch(/update only|create\/delete.*unsupported/i);
+      expect(result.isError).toBeUndefined();
+      const post = calls.find((c) => c.method === 'POST' && c.url.includes('/includes'));
+      expect(post?.url).toContain('/sap/bc/adt/functions/groups/zmy_fg/includes');
+      expect(post?.url).not.toContain('_package=');
+      expect(post?.contentType).toBe('application/vnd.sap.adt.functions.fincludes.v2+xml');
+      expect(post?.body).toContain('finclude:abapFunctionGroupInclude');
+      expect(post?.body).toContain('adtcore:name="LZMY_FGF01"');
+      expect(post?.body).toContain('adtcore:uri="/sap/bc/adt/functions/groups/zmy_fg"');
       expect(calls.some((c) => c.url.includes('/sap/bc/adt/programs/includes'))).toBe(false);
     });
 
-    it('rejects type=INCL + group delete instead of deleting a standalone program include', async () => {
+    it('deletes a FUGR structural include by locking the include itself', async () => {
       const calls = captureLockingFlow();
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
         action: 'delete',
         type: 'INCL',
-        name: 'LZMY_FGTOP',
+        name: 'LZMY_FGF01',
         group: 'ZMY_FG',
       });
-      expect(result.isError).toBe(true);
-      expect(result.content[0]?.text).toMatch(/update only|create\/delete.*unsupported/i);
+      expect(result.isError).toBeUndefined();
+      const lock = calls.find((c) => c.method === 'POST' && c.url.includes('_action=LOCK'));
+      expect(lock?.url).toContain('/functions/groups/zmy_fg/includes/lzmy_fgf01');
+      const del = calls.find((c) => c.method === 'DELETE');
+      expect(del?.url).toContain('/functions/groups/zmy_fg/includes/lzmy_fgf01');
+      expect(del?.url).toContain('lockHandle=LH123');
       expect(calls.some((c) => c.url.includes('/sap/bc/adt/programs/includes'))).toBe(false);
+    });
+
+    it('points a bare L-named INCL create at group= (SAP 500s there, and the generic 500 hint says "retry")', async () => {
+      const calls = captureLockingFlow();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'INCL',
+        name: 'LZMY_FGF01',
+        package: '$TMP',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toMatch(/pass group=/i);
+      expect(calls.some((c) => c.url.includes('/sap/bc/adt/programs/includes'))).toBe(false);
+    });
+
+    it('gates a structural include against the GROUP package, not the caller-supplied one', async () => {
+      // The include inherits its package from the parent group — SAP ignores _package here — so
+      // gating on args.package would let a caller write into a disallowed package by claiming $TMP.
+      mockFetch.mockImplementation((url: string | URL) => {
+        const urlStr = String(url);
+        if (urlStr.includes('/functions/groups/zrestricted_fg') && !urlStr.includes('/includes')) {
+          return Promise.resolve(
+            mockResponse(
+              200,
+              '<group:abapFunctionGroup xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="ZRESTRICTED_FG"><adtcore:packageRef adtcore:name="ZFINANCE"/></group:abapFunctionGroup>',
+              { 'x-csrf-token': 'T' },
+            ),
+          );
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+      const restrictedClient = new AdtClient({
+        baseUrl: 'http://sap:8000',
+        username: 'admin',
+        password: 'secret',
+        safety: { ...unrestrictedSafetyConfig(), allowedPackages: ['$TMP'] },
+      });
+      const result = await handleToolCall(restrictedClient, DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'INCL',
+        name: 'LZRESTRICTED_FGF01',
+        group: 'ZRESTRICTED_FG',
+        package: '$TMP',
+        description: 'forms',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toMatch(/ZFINANCE/);
+    });
+
+    it('rejects an include name that does not start with L<GROUP> before any HTTP call', async () => {
+      // SAP derives the include from its group; anything else earns an opaque
+      // 500 "Attributes for program X have not been saved".
+      const calls = captureLockingFlow();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'INCL',
+        name: 'ZZ_ARBITRARY_INC',
+        group: 'ZMY_FG',
+        package: '$TMP',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('LZMY_FG');
+      expect(calls).toHaveLength(0);
     });
 
     it('fails closed cleanly when FUGR include metadata has no packageRef or packageName', async () => {

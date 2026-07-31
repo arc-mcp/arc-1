@@ -42,6 +42,57 @@ Each ARC-1 instance serves **multiple users** via principal propagation (on-prem
 └──────────────┘      └──────────────────┘
 ```
 
+### Scaling out: what changes at more than one instance
+
+ARC-1 is stateless in the sense that matters for load balancing — **any instance can serve any
+request**, no sticky sessions, no session store (the MCP HTTP transport runs in stateless mode, and
+OAuth `client_id`s are HMAC-derived rather than stored). The tracked `mta.yaml` pins `instances: 1`;
+raising it is safe, but four things are **per-process**, so they divide (or break) when you do:
+
+| Per-process state | Effect at N instances | What to do |
+|---|---|---|
+| `ARC1_RATE_LIMIT` (Layer 2, per-user) and `ARC1_MCP_HTTP_RATE_LIMIT` (per-IP) | Each instance counts independently → the effective limit is **N×** the configured value | Divide the configured value by N, or enforce the real ceiling at the router/API gateway |
+| `ARC1_MAX_CONCURRENT` (Layer 3 SAP semaphore) | Same — total concurrent SAP requests is **N×** the value | Size `N × ARC1_MAX_CONCURRENT` against `rdisp/wp_no_dia`, not the single-instance number |
+| Feature probe + source/ETag cache (`ARC1_CACHE=auto` → in-memory) | Cold per instance; a user's cache hit rate drops roughly 1/N, and each instance runs its own startup probe | Accept it, or use `ARC1_CACHE=sqlite` on a shared volume — but note that stores SAP source unencrypted at rest, so use an encrypted volume |
+| ADR-0007 shared-Basic multi-target guard | **Hard requirement: exactly one instance.** The generation/lockout guard that prevents a shared technical user from being locked out is process-local | Do not scale out. This mode is single-instance by contract |
+
+Scale **up** (memory/CPU per instance) before scaling out unless you have measured that one instance
+is the bottleneck — a single ARC-1 instance is almost always waiting on SAP, not on itself.
+
+### What to alert on
+
+ARC-1 emits structured audit events to stderr (and optionally a file or the BTP Audit Log); it does
+not alert. Wire these into your APM/log platform:
+
+| Signal | Event / field | Why |
+|---|---|---|
+| Error-rate spike | `tool_call_end` with `status: "error"`, grouped by `errorClass` | A backend or authorization regression shows up here before users report it |
+| Latency degradation | `tool_call_end.durationMs` p95, and `http_request.durationMs` for the SAP leg | Separates "ARC-1 is slow" from "SAP is slow" |
+| Authentication failures | `auth_pp_created` with `success: false`, `pp_exchange_failed`, `sap_authentication_failed` | A broken destination/trust config fails closed and silently until someone looks |
+| Authorization denials | `auth_scope_denied`, `safety_blocked`, `target_policy_denied` | A burst means a misconfigured client or a model probing beyond its scope |
+| Rate-limit saturation | `mcp_rate_limited` | A runaway agent loop; also the signal that your limit is too tight |
+| Attribution | `clientId` (registered OAuth client), `clientAgent` (client software), `user` on every event | Answers "which agent, acting for whom" — see [Trace context and agent attribution](#trace-context-and-agent-attribution) |
+
+### Trace context and agent attribution
+
+Aligned with the SAP Architecture Center guidance for
+[third-party MCP access](https://architecture.learning.sap.com/docs/ref-arch/137800):
+
+- **W3C trace context passes through.** A valid `traceparent` (and its `tracestate`) on an inbound
+  MCP request is forwarded verbatim on every outbound SAP call, so one trace spans agent → ARC-1 →
+  SAP. ARC-1 runs no tracer of its own, so per the [W3C spec](https://www.w3.org/TR/trace-context/)
+  it behaves as a non-participating pass-through: it never rewrites `parent-id` and **never
+  originates a trace** when the client sent none. Malformed values are dropped, not repaired.
+  ARC-1's own `requestId` correlates its logs either way. No configuration.
+- **`clientAgent` records the calling agent.** On stdio it is the MCP handshake `clientInfo`
+  (`name/version`); over HTTP the transport is stateless, so it is the `User-Agent` — best-effort,
+  caller-controlled, and never an authorization input. It sits next to `clientId` (the registered
+  OAuth client) on every audit event and in the BTP Audit Log.
+- **SAP still sees the human, not the agent.** Principal propagation exchanges the user token for a
+  scoped per-user SAP credential (RFC 8693 via the Destination Service), and ABAP has no claim slot
+  for an agent identity — so SAP-side logs (SM20, transport owner, `adtcore:changedBy`) attribute
+  the *user*. Agent attribution lives in ARC-1's audit trail; correlate on `requestId`/`traceparent`.
+
 ### Example: enterprise with multiple SAP systems
 
 Use one `mta.yaml` with different `.mtaext` files per landscape. The `.gitignore` matches any `mta-*.mtaext`, so per-landscape extension files (`mta-ecc-dev.mtaext`, `mta-ecc-prod.mtaext`, …) stay local — only the `mta-overrides.mtaext.example` template is tracked. Copy it once per landscape:

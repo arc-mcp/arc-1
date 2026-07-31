@@ -134,15 +134,17 @@ npx arc-1 --url http://your-sap:8000 \
 **2. Verify Protected Resource Metadata endpoint:**
 
 ```bash
-curl -s http://localhost:8080/.well-known/oauth-protected-resource | jq .
+curl -s http://localhost:8080/.well-known/oauth-protected-resource/mcp | jq .
 # Expected: JSON with "resource", "authorization_servers", "bearer_methods_supported"
+# (the root path /.well-known/oauth-protected-resource serves the same document;
+#  both are 404 when SAP_OIDC_DISCOVERY=false)
 ```
 
-**3. Verify request without token is rejected:**
+**3. Verify request without token is rejected, and points at the metadata:**
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/mcp
-# Expected: 401
+curl -s -o /dev/null -D - http://localhost:8080/mcp | grep -i "^HTTP/\|www-authenticate"
+# Expected: 401 + WWW-Authenticate: Bearer …, resource_metadata="http://localhost:8080/.well-known/oauth-protected-resource/mcp"
 ```
 
 **4. Get a real JWT from your IdP:**

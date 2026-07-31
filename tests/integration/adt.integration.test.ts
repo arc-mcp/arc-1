@@ -2361,6 +2361,20 @@ describe('ADT Integration Tests', () => {
       expect((r.source as Record<string, unknown>).header).toBeDefined();
     });
 
+    it('reads a UIAD (Launchpad App Descriptor Item) — the only /fiori/ type and a blues-v2 Accept', async (ctx) => {
+      await gateOrSkip(ctx, 'UIAD');
+      // LADI names are GUIDs, so discover one from the package rather than hardcoding an instance.
+      const pkg = await client.getPackageContents('SWDP_CONFIGURATION');
+      const ladi = pkg.find((o) => o.type === 'UIAD/TYP');
+      requireOrSkip(ctx, ladi, `${SkipReason.BACKEND_UNSUPPORTED}: no UIAD instance in SWDP_CONFIGURATION`);
+      const r = await getServerDrivenObject(client.http, unrestrictedSafetyConfig(), 'UIAD', ladi.name);
+      expect(r.type).toBe('UIAD/TYP');
+      const src = r.source as Record<string, unknown>;
+      // The fields that make a LADI the exposure-v2 unit: app type + catalog + intent.
+      expect(src.generalInformation).toBeDefined();
+      expect(src.navigation).toBeDefined();
+    });
+
     it('reads an EVTB (RAP Event Binding) with a populated events array', async (ctx) => {
       await gateOrSkip(ctx, 'EVTB');
       const r = await getServerDrivenObject(

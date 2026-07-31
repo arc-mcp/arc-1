@@ -9,8 +9,13 @@ import { extractUnknownColumn, formatUnknownColumnHint, isNotFoundError } from '
 import { mapSapReleaseToAbaplintVersion } from '../adt/features.js';
 import { type FmParameter, type FmParameterKind, parseFmSignature } from '../adt/fm-signature.js';
 import { isOperationAllowed, OperationType } from '../adt/safety.js';
-import { getServerDrivenObject, isServerDrivenObjectType, supportsServerDrivenObject } from '../adt/server-driven.js';
-import type { InactiveObject } from '../adt/types.js';
+import {
+  ensureServerDrivenSupport,
+  getServerDrivenObject,
+  isServerDrivenObjectType,
+  serverDrivenUnavailableMessage,
+} from '../adt/server-driven.js';
+import type { FunctionModuleProperties, InactiveObject } from '../adt/types.js';
 import { getAppInfo } from '../adt/ui5-repository.js';
 import { getVersionDiff } from '../adt/version-diff.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
@@ -182,12 +187,8 @@ export async function handleSAPRead(
   // the version/draft/cache machinery (no /source/main text; JSON output).
   if (isServerDrivenObjectType(type)) {
     if (!name) return errorResult(`"name" is required for SAPRead type=${type}.`);
-    if (supportsServerDrivenObject(client.http, type) === false) {
-      return errorResult(
-        `SAPRead type=${type} (server-driven object): this system does not advertise ADT support for it. ` +
-          'These types are discovery-gated and depend on the SAP release / support package ' +
-          '(e.g. DTSC/CSNM/EVTO need ABAP Platform 2025 / SAP_BASIS 8.16+, while DTDC/DSFD/EVTB also ship on S/4HANA 2023 / 758).',
-      );
+    if (!(await ensureServerDrivenSupport(client.http, client.safety, type))) {
+      return errorResult(serverDrivenUnavailableMessage('SAPRead', type));
     }
     const sdo = await getServerDrivenObject(client.http, client.safety, type, name);
     return textResult(toolJson(sdo));
@@ -369,9 +370,22 @@ export async function handleSAPRead(
           raising: [],
         };
         for (const p of parsed.params) grouped[p.kind].push(p);
+        // processingType/updateTaskKind live in the fmodule metadata document, not in the source —
+        // without them a caller can set RFC-enablement but never verify it. Best-effort: a metadata
+        // hiccup must not break signature reading, which callers already depend on.
+        let properties: FunctionModuleProperties | undefined;
+        let propertiesError: string | undefined;
+        try {
+          properties = await client.getFunctionModuleProperties(group, name);
+        } catch (err) {
+          propertiesError = err instanceof Error ? err.message : String(err);
+        }
         const payload = {
           source,
           signature: grouped,
+          ...(properties?.processingType ? { processingType: properties.processingType } : {}),
+          ...(properties?.updateTaskKind ? { updateTaskKind: properties.updateTaskKind } : {}),
+          ...(propertiesError ? { propertiesError } : {}),
         };
         return textResult(toolJson(payload));
       }

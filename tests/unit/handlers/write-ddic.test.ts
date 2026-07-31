@@ -1298,7 +1298,9 @@ describe('SAPWrite handler — DDIC writes', () => {
       }
     });
 
-    it('refuses TABL in batch_create when /tables/ is missing — other entries continue (issue #285)', async () => {
+    it('refuses DOMA create with a release hint when /ddic/domains is missing (NW 7.50/7.51)', async () => {
+      // Before this gate the caller got a raw 404 plus a "not found — use SAPSearch" hint, which
+      // contradicts the create it just asked for. Endpoint absence verified on two 7.50 systems.
       setCachedFeatures({
         ...featuresOff(),
         abapRelease: '750',
@@ -1308,12 +1310,130 @@ describe('SAPWrite handler — DDIC writes', () => {
       try {
         mockFetch.mockReset();
         mockFetch.mockResolvedValue(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+          action: 'create',
+          type: 'DOMA',
+          name: 'ZD_750',
+          package: '$TMP',
+          dataType: 'CHAR',
+          length: 1,
+        });
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toContain('/sap/bc/adt/ddic/domains/ is not exposed');
+        expect(result.content[0]?.text).toContain('7.52');
+        expect(mockFetch).not.toHaveBeenCalled();
+      } finally {
+        resetCachedFeatures();
+      }
+    });
+
+    it('allows DOMA create when discovery advertises /ddic/domains', async () => {
+      setCachedFeatures({
+        ...featuresOff(),
+        abapRelease: '758',
+        systemType: 'onprem',
+        discoveryMap: new Map<string, string[]>([['/sap/bc/adt/ddic/domains', ['application/*']]]),
+      });
+      try {
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValue(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+          action: 'create',
+          type: 'DOMA',
+          name: 'ZD_758',
+          package: '$TMP',
+          dataType: 'CHAR',
+          length: 1,
+        });
+        expect(result.isError).toBeUndefined();
+      } finally {
+        resetCachedFeatures();
+      }
+    });
+
+    it('does NOT gate DOMA create when discovery was never probed (stdio sessions)', async () => {
+      // isDomainsEndpointAvailable() returns undefined with no discovery — the gate must only
+      // fire on an explicit false, or a stdio session would start refusing every domain create.
+      resetCachedFeatures();
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'DOMA',
+        name: 'ZD_UNPROBED',
+        package: '$TMP',
+        dataType: 'CHAR',
+        length: 1,
+      });
+      expect(result.isError).toBeUndefined();
+    });
+
+    it('refuses create_package with a release hint when /packages is missing (NW 7.50/7.51)', async () => {
+      setCachedFeatures({
+        ...featuresOff(),
+        abapRelease: '750',
+        systemType: 'onprem',
+        discoveryMap: new Map<string, string[]>([['/sap/bc/adt/ddic/structures', ['application/*']]]),
+      });
+      try {
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValue(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
+          action: 'create_package',
+          name: 'ZPKG_750',
+          description: 'probe',
+        });
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toContain('/sap/bc/adt/packages is not exposed');
+        expect(result.content[0]?.text).toContain('not a SICF misconfiguration');
+        expect(mockFetch).not.toHaveBeenCalled();
+      } finally {
+        resetCachedFeatures();
+      }
+    });
+
+    it('refuses DOMA in batch_create with the same hint', async () => {
+      setCachedFeatures({
+        ...featuresOff(),
+        abapRelease: '750',
+        systemType: 'onprem',
+        discoveryMap: new Map<string, string[]>([['/sap/bc/adt/ddic/structures', ['application/*']]]),
+      });
+      try {
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValue(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
+        const result = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, lintBeforeWrite: false }, 'SAPWrite', {
+          action: 'batch_create',
+          package: '$TMP',
+          objects: [{ type: 'DOMA', name: 'ZD_BATCH_750', dataType: 'CHAR', length: 1 }],
+        });
+        expect(result.content[0]?.text).toContain('/sap/bc/adt/ddic/domains/ is not exposed');
+      } finally {
+        resetCachedFeatures();
+      }
+    });
+
+    it('refuses TABL in batch_create when /tables/ is missing — other entries continue (issue #285)', async () => {
+      setCachedFeatures({
+        ...featuresOff(),
+        abapRelease: '750',
+        systemType: 'onprem',
+        // /ddic/dataelements exists on 7.50; /ddic/domains does not (that entry would hit the
+        // DOMA gate instead of exercising the TABL one).
+        discoveryMap: new Map<string, string[]>([
+          ['/sap/bc/adt/ddic/structures', ['application/*']],
+          ['/sap/bc/adt/ddic/dataelements', ['application/*']],
+        ]),
+      });
+      try {
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValue(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
         const config = { ...DEFAULT_CONFIG, lintBeforeWrite: false };
         const result = await handleToolCall(createClient(), config, 'SAPWrite', {
           action: 'batch_create',
           package: '$TMP',
           objects: [
-            { type: 'DOMA', name: 'ZD_OK_750', dataType: 'CHAR', length: 1 },
+            { type: 'DTEL', name: 'ZD_OK_750', typeKind: 'predefinedAbapType', dataType: 'CHAR', length: 1 },
             {
               type: 'TABL',
               name: 'ZTABL_750_BATCH',
@@ -2249,7 +2369,10 @@ define role ZTEST_DCL {
       expect(dtelCreatePostBody()).toContain('adtcore:responsible="SRAHEMI"');
     });
 
-    it('falls back to DEVELOPER in the create_package POST body when username is unset', async () => {
+    // #636 — DEVC is the one type that cannot fall back to omitting the attribute:
+    // SPAK_ST_PACKAGES rejects an empty value AND validates that the user exists (live 758).
+    // So with no usable connection user, ask for one instead of inventing "DEVELOPER".
+    it('asks for an explicit responsible on create_package when the username is unset', async () => {
       mockFetch.mockReset();
       mockFetch.mockResolvedValue(mockResponse(200, '<xml>created</xml>', { 'x-csrf-token': 'T' }));
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
@@ -2257,8 +2380,40 @@ define role ZTEST_DCL {
         name: 'ZARC1_RESP_DEF',
         description: 'Responsible default test',
       });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('responsible=');
+      expect(result.content[0]?.text).not.toContain('DEVELOPER');
+    });
+
+    it('asks for an explicit responsible on create_package when the username is an email (PP)', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, '<xml>created</xml>', { 'x-csrf-token': 'T' }));
+      const result = await handleToolCall(
+        createClient(),
+        { ...DEFAULT_CONFIG, username: 'firstname.lastname@example.com' },
+        'SAPManage',
+        { action: 'create_package', name: 'ZARC1_RESP_PP', description: 'PP package test' },
+      );
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('principal propagation');
+    });
+
+    it('uses an explicit responsible on create_package even when the username is an email (PP)', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, '<xml>created</xml>', { 'x-csrf-token': 'T' }));
+      const result = await handleToolCall(
+        createClient(),
+        { ...DEFAULT_CONFIG, username: 'firstname.lastname@example.com' },
+        'SAPManage',
+        {
+          action: 'create_package',
+          name: 'ZARC1_RESP_PP2',
+          description: 'PP package test',
+          responsible: 'MARIAN',
+        },
+      );
       expect(result.isError).toBeUndefined();
-      expect(packageCreatePostBody()).toContain('adtcore:responsible="DEVELOPER"');
+      expect(packageCreatePostBody()).toContain('adtcore:responsible="MARIAN"');
     });
 
     // The metadata-UPDATE call site is full-XML-replace via buildCreateXml, so it

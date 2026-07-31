@@ -338,7 +338,7 @@ SAP shipped both the ABAP Language Server (ADT-LS) and the ABAP MCP Server bundl
 
 ### Legal / API-Policy posture
 
-- **API Policy v.4.2026a §1.2** explicitly authorises "custom-developed ABAP interfaces in private cloud and on-premise" — covers ARC-1's `/sap/bc/adt/*` use the same way it covers `marcellourbani/vscode_abap_remote_fs` and Eclipse ADT.
+- ~~**API Policy v.4.2026a §1.2** explicitly authorises "custom-developed ABAP interfaces in private cloud and on-premise" — covers ARC-1's `/sap/bc/adt/*` use the same way it covers `marcellourbani/vscode_abap_remote_fs` and Eclipse ADT.~~ **Corrected 2026-07-30 after reading the policy PDF directly:** that carve-out is an example of interfaces *the customer develops*, not a blanket authorisation for ADT. ADT is not on the SAP Business Accelerator Hub, and §1.2 puts the duty to verify Published-API status on the customer. The nuance that does hold — SAP's own ADT SDK, a decade of third-party ADT clients, SAP's own ADT-backed MCP server — is in [`docs_page/sap-api-policy-and-architecture.md` §3.1](../../docs_page/sap-api-policy-and-architecture.md).
 - **§2.2.2 introduces an "agentic AI" clause** prohibiting non-endorsed pathways for "(semi-)autonomous or generative AI systems that plan, select, or execute sequences of API calls." This is *new* and material — ARC-1 should document its position as a "customer-developed ABAP interface" with admin-controlled package/safety allowlists (which it already is), not as an unrestricted agentic gateway.
 - **§3 anti-circumvention** is a risk vector for any MCP server in general; ARC-1's safety ceiling + audit log + explicit deny-action grammar is the right defensive posture.
 

@@ -17,7 +17,7 @@ import { type FmParameter, spliceFmSignature } from '../../adt/fm-signature.js';
 import { checkPackage } from '../../adt/safety.js';
 import { isServerDrivenObjectType } from '../../adt/server-driven.js';
 import { getTransport, getTransportInfo } from '../../adt/transport.js';
-import { escapeXmlAttr } from '../../adt/xml-parser.js';
+import { escapeXmlAttr, parseFunctionModuleProperties } from '../../adt/xml-parser.js';
 import { validateAffHeader } from '../../aff/validator.js';
 import { logger } from '../../server/logger.js';
 import {
@@ -27,8 +27,16 @@ import {
 } from '../activate.js';
 import { invalidateInactiveList } from '../cache-security.js';
 import { guardCdsSyntax } from '../cds-hints.js';
-import { getCachedFeatures, isTablesEndpointAvailable, isTableTypesEndpointAvailable } from '../feature-cache.js';
 import {
+  getCachedFeatures,
+  isDomainsEndpointAvailable,
+  isTablesEndpointAvailable,
+  isTableTypesEndpointAvailable,
+} from '../feature-cache.js';
+import type { FunctionProcessingType, FunctionUpdateTaskKind } from '../function-processing.js';
+import {
+  functionGroupObjectUrl,
+  functionModuleObjectUrl,
   normalizeObjectType,
   normalizeWriteObjectType,
   objectBasePath,
@@ -39,6 +47,7 @@ import { errorResult, type ToolResult, textResult } from '../shared.js';
 import {
   buildCreateXml,
   createContentTypeForType,
+  DOMA_WRITE_UNAVAILABLE_HINT,
   dtelNeedsPostCreateUpdate,
   getMetadataWriteProperties,
   isMetadataWriteType,
@@ -55,6 +64,8 @@ import {
 } from '../write-helpers.js';
 import type { SapWriteContext } from './context.js';
 
+const FUNCTION_MODULE_MEDIA_TYPE = /^application\/vnd\.sap\.adt\.functions\.fmodules(?:\.v\d+)?\+xml\b/i;
+
 function normalizePackageOverride(rawPackage: unknown, fallback: string): string {
   if (rawPackage === undefined || rawPackage === null) {
     return fallback;
@@ -69,6 +80,156 @@ function normalizeTransportOverride(rawTransport: unknown): string | undefined {
   }
   const value = String(rawTransport).trim();
   return value || undefined;
+}
+
+function prepareFunctionModuleCreateSource(
+  name: string,
+  source: string | undefined,
+  parameters: FmParameter[] | undefined,
+): { shouldWrite: boolean; source: string; warnings: string[] } {
+  const shouldWrite = !!source || (parameters !== undefined && parameters.length > 0);
+  if (!shouldWrite) return { shouldWrite: false, source: '', warnings: [] };
+
+  let prepared = source ?? '';
+  const warnings: string[] = [];
+  if (parameters !== undefined) {
+    const baseSource =
+      !prepared || prepared.trim() === ''
+        ? `FUNCTION ${name}.\nENDFUNCTION.\n`
+        : /^\s*FUNCTION\s+/i.test(prepared)
+          ? prepared
+          : `FUNCTION ${name}.\n${prepared}\nENDFUNCTION.\n`;
+    try {
+      prepared = spliceFmSignature(baseSource, name, parameters);
+    } catch {
+      prepared = baseSource;
+      warnings.push(
+        'Could not splice structured parameters: source did not start with FUNCTION keyword. Used the supplied source verbatim.',
+      );
+    }
+  }
+
+  const stripped = stripFmParamCommentBlock(prepared);
+  if (stripped.wasStripped) {
+    warnings.push(
+      'Stripped *"…IMPORTING/EXPORTING…*" parameter comment blocks (pass `parameters` as a structured array instead).',
+    );
+  }
+  return { shouldWrite: true, source: stripped.source, warnings };
+}
+
+function getHeader(headers: Record<string, string>, name: string): string | undefined {
+  return Object.entries(headers).find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1];
+}
+
+/**
+ * Change only the processing attributes on the server-provided FUNC metadata
+ * envelope. SAP creates a normal function-module shell first; processing type
+ * is persisted by a subsequent locked metadata PUT (the same lifecycle used by
+ * the ADT Properties → Specific view).
+ */
+function rewriteFunctionModuleProcessingMetadata(
+  xml: string,
+  processingType: FunctionProcessingType,
+  updateTaskKind?: FunctionUpdateTaskKind,
+): string {
+  const rootMatch = /<fmodule:abapFunctionModule\b[^>]*>/i.exec(xml);
+  if (!rootMatch || rootMatch.index === undefined) {
+    throw new Error('FUNC processing metadata update failed: SAP did not return an abapFunctionModule envelope.');
+  }
+
+  const withoutProcessingAttributes = rootMatch[0]
+    .replace(/\s+fmodule:processingType\s*=\s*(?:"[^"]*"|'[^']*')/gi, '')
+    .replace(/\s+fmodule:updateTaskKind\s*=\s*(?:"[^"]*"|'[^']*')/gi, '');
+  const attributes = ` fmodule:processingType="${escapeXmlAttr(processingType)}"${
+    updateTaskKind === undefined ? '' : ` fmodule:updateTaskKind="${escapeXmlAttr(updateTaskKind)}"`
+  }`;
+  const rewrittenRoot = withoutProcessingAttributes.replace(
+    /<fmodule:abapFunctionModule/i,
+    (root) => `${root}${attributes}`,
+  );
+
+  return `${xml.slice(0, rootMatch.index)}${rewrittenRoot}${xml.slice(rootMatch.index + rootMatch[0].length)}`;
+}
+
+async function persistFunctionModuleProcessingMetadata(
+  client: SapWriteContext['client'],
+  objectUrl: string,
+  name: string,
+  processingType: FunctionProcessingType,
+  updateTaskKind: FunctionUpdateTaskKind | undefined,
+  transport: string | undefined,
+): Promise<void> {
+  try {
+    const inactiveUrl = `${objectUrl}?version=inactive`;
+    const current = await client.getObjectMetadata(inactiveUrl);
+    const body = rewriteFunctionModuleProcessingMetadata(current.body, processingType, updateTaskKind);
+    // Send the bare media type: SAP returns "…fmodules.v3+xml; charset=utf-8"
+    // (v2 on 750), and on-prem backends are known to reject vendor media types
+    // carrying parameters — same reason `resolveObjectPackage` strips them.
+    const responseContentType = getHeader(current.headers, 'content-type');
+    const discoveredContentType = client.http.discoveryAcceptFor(objectUrl);
+    const contentType =
+      [responseContentType, discoveredContentType]
+        .find((candidate): candidate is string => candidate !== undefined && FUNCTION_MODULE_MEDIA_TYPE.test(candidate))
+        ?.split(';')[0]
+        ?.trim() ?? vendorContentTypeForType('FUNC');
+
+    await safeUpdateObject(
+      client.http,
+      client.safety,
+      objectUrl,
+      body,
+      contentType,
+      transport,
+      getCachedFeatures()?.abapRelease,
+    );
+
+    // A 2xx response alone is insufficient evidence: the collection POST accepts
+    // these attributes and still retains `normal` (live-verified on 758).
+    const persisted = await client.getObjectMetadata(inactiveUrl);
+    const { processingType: actualProcessingType, updateTaskKind: actualUpdateTaskKind } =
+      parseFunctionModuleProperties(persisted.body);
+    if (
+      actualProcessingType !== processingType ||
+      (updateTaskKind === undefined ? actualUpdateTaskKind !== undefined : actualUpdateTaskKind !== updateTaskKind)
+    ) {
+      throw new Error(
+        `SAP retained processingType="${actualProcessingType ?? 'unknown'}"${
+          actualUpdateTaskKind === undefined ? '' : ` and updateTaskKind="${actualUpdateTaskKind}"`
+        }.`,
+      );
+    }
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    throw new Error(
+      `FUNC post-create processing update failed for ${name} after SAP accepted the create POST. ` +
+        `The object may remain as a normal function-module shell. Review it with SAPRead or delete it before retrying. ` +
+        detail,
+    );
+  }
+}
+
+async function resolveFunctionGroupCreatePackage(
+  client: SapWriteContext['client'],
+  group: string,
+  requestedPackage: unknown,
+  childType: 'FUNC' | 'INCL' = 'FUNC',
+): Promise<string> {
+  const actualPackage = await client.resolveObjectPackage(functionGroupObjectUrl(group));
+  if (!actualPackage) {
+    throw new Error(
+      `${childType} create blocked: ARC-1 could not determine the parent function group "${group}" package from ADT metadata.`,
+    );
+  }
+  const explicitPackage =
+    requestedPackage === undefined || requestedPackage === null ? undefined : String(requestedPackage).trim();
+  if (explicitPackage && explicitPackage.toUpperCase() !== actualPackage.toUpperCase()) {
+    throw new Error(
+      `${childType} inherits package "${actualPackage}" from parent function group "${group}"; requested package "${explicitPackage}" does not match.`,
+    );
+  }
+  return actualPackage;
 }
 
 function ttypPostCreateFailureMessage(name: string, cause: unknown): string {
@@ -295,7 +456,14 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
     srcUrl,
     invalidateWrittenObject,
   } = ctx;
-  const pkg = String(args.package ?? '$TMP');
+  // FUNC and FUGR structural includes both INHERIT the parent group's package — SAP ignores
+  // _package for them — so the allowlist must be checked against the group's real package.
+  // Gating on args.package here would let a caller write into a disallowed package by claiming $TMP.
+  const groupArg = String(args.group ?? '').trim();
+  const inheritsGroupPackage = type === 'FUNC' || (type === 'INCL' && groupArg !== '');
+  const pkg = inheritsGroupPackage
+    ? await resolveFunctionGroupCreatePackage(client, groupArg, args.package, type === 'INCL' ? 'INCL' : 'FUNC')
+    : String(args.package ?? '$TMP');
   await checkPackage(client.safety, pkg, client.getPackageHierarchyResolver());
   const description = String(args.description ?? name);
 
@@ -474,7 +642,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
   // DOMA/DTEL/BDEF require vendor-specific content types; all other types use
   // 'application/*' — the wildcard lets the SAP server resolve the correct
   // handler (matching how ADT Eclipse and abap-adt-api send requests).
-  const contentType = createContentTypeForType(type, cloud);
+  const contentType = createContentTypeForType(type, cloud, type === 'INCL' && String(args.group ?? '').trim() !== '');
   const needsPackageParam = type === 'BDEF' || type === 'TABL' || type === 'TABL/DT' || type === 'TABL/DS';
   let result: string;
   try {
@@ -511,6 +679,17 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
     } catch {
       // opportunistic only — package create falls back to an explicit `responsible`
     }
+  }
+
+  if (type === 'FUNC' && metadataProperties.processingType !== undefined) {
+    await persistFunctionModuleProcessingMetadata(
+      client,
+      objectUrl,
+      name,
+      metadataProperties.processingType as FunctionProcessingType,
+      metadataProperties.updateTaskKind as FunctionUpdateTaskKind | undefined,
+      effectiveTransport,
+    );
   }
 
   if (isMetadataWriteType(type)) {
@@ -574,40 +753,15 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
   // provided we must follow up with a source PUT even when `source` is
   // omitted (the array alone synthesizes a minimal FUNCTION/ENDFUNCTION
   // body containing the signature clause).
-  const funcParameters = type === 'FUNC' ? (args.parameters as FmParameter[] | undefined) : undefined;
-  const shouldWriteSource = !!source || (funcParameters !== undefined && funcParameters.length > 0);
+  const funcPreparation =
+    type === 'FUNC'
+      ? prepareFunctionModuleCreateSource(name, source, args.parameters as FmParameter[] | undefined)
+      : { shouldWrite: !!source, source: source ?? '', warnings: [] };
+  const shouldWriteSource = funcPreparation.shouldWrite;
   if (shouldWriteSource) {
-    // FUNC: build/splice the signature, then strip SAPGUI parameter comment
-    // blocks as defense-in-depth (see update path for rationale).
-    let createSource = source ?? '';
-    let fmParamStripWarning: string | undefined;
-    let fmParamMergeWarning: string | undefined;
-    if (type === 'FUNC') {
-      if (funcParameters !== undefined) {
-        let baseSource: string;
-        if (!createSource || createSource.trim() === '') {
-          baseSource = `FUNCTION ${name}.\nENDFUNCTION.\n`;
-        } else if (!/^\s*FUNCTION\s+/i.test(createSource)) {
-          // Body-only source — wrap so the splicer has a signature region.
-          baseSource = `FUNCTION ${name}.\n${createSource}\nENDFUNCTION.\n`;
-        } else {
-          baseSource = createSource;
-        }
-        try {
-          createSource = spliceFmSignature(baseSource, name, funcParameters);
-        } catch {
-          createSource = baseSource;
-          fmParamMergeWarning =
-            'Could not splice structured parameters: source did not start with FUNCTION keyword. Used the supplied source verbatim.';
-        }
-      }
-      const stripped = stripFmParamCommentBlock(createSource);
-      createSource = stripped.source;
-      if (stripped.wasStripped) {
-        fmParamStripWarning =
-          'Stripped *"…IMPORTING/EXPORTING…*" parameter comment blocks (pass `parameters` as a structured array instead).';
-      }
-    }
+    // FUNC processing metadata is paired with a source signature prepared above;
+    // other object types use their supplied source unchanged.
+    const createSource = funcPreparation.source;
 
     // Pre-write lint validation
     const lintWarnings = runPreWriteLint(createSource, type, name, config, lintOverride);
@@ -634,8 +788,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
     const warnings = mergePreWriteWarnings(
       preflightWarnings.warnings,
       lintWarnings.warnings,
-      fmParamStripWarning,
-      fmParamMergeWarning,
+      ...funcPreparation.warnings,
       bdefExtensionWarning,
     );
     return warnings ? textResult(`${msg}\n\n${warnings}`) : textResult(msg);
@@ -674,8 +827,38 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
     const objName = String(obj.name ?? '');
     const objPackage = normalizePackageOverride(obj.package, defaultPackage);
     const explicitTransport = normalizeTransportOverride(obj.transport) ?? transport;
-    return { obj, type: objType, name: objName, packageName: objPackage, explicitTransport };
+    const group = objType === 'FUNC' ? String(obj.group ?? args.group ?? '').trim() : undefined;
+    const objectUrl =
+      objType === 'FUNC' ? (group ? functionModuleObjectUrl(group, objName) : '') : objectUrlForType(objType, objName);
+    return { obj, type: objType, name: objName, packageName: objPackage, explicitTransport, group, objectUrl };
   });
+
+  const functionWithoutGroup = batchPlan.find((item) => item.type === 'FUNC' && !item.group);
+  if (functionWithoutGroup) {
+    return errorResult(
+      `FUNC ${functionWithoutGroup.name} in batch_create requires "group" on the object entry or top-level request.`,
+    );
+  }
+
+  // A FUNC is contained by its FUGR and inherits the parent's package. Resolve
+  // that package before any safety or transport check; trusting the batch's
+  // caller-supplied/default package would gate the wrong object boundary.
+  try {
+    for (const plan of batchPlan) {
+      if (plan.type === 'FUNC') {
+        plan.packageName = await resolveFunctionGroupCreatePackage(
+          client,
+          plan.group!,
+          // The top-level package is the default for ordinary batch entries,
+          // not a claim about a contained FUNC. Only an item-level package is
+          // explicit enough to assert the inherited FUGR package.
+          plan.obj.package,
+        );
+      }
+    }
+  } catch (err) {
+    return errorResult(err instanceof Error ? err.message : String(err));
+  }
 
   // Check every target package before starting any creates.
   // Resolver is shared across the loop so subtree BFS happens once even when
@@ -702,8 +885,7 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
   }
   for (const [pkg, plan] of firstPlanNeedingTransportByPackage) {
     try {
-      const firstUrl = objectUrlForType(plan.type, plan.name);
-      const transportInfo = await getTransportInfo(client.http, client.safety, firstUrl, pkg, 'I');
+      const transportInfo = await getTransportInfo(client.http, client.safety, plan.objectUrl, pkg, 'I');
       if (transportInfo.lockedTransport) {
         autoTransportByPackage.set(pkg, transportInfo.lockedTransport);
       } else if (!transportInfo.isLocal && transportInfo.recording) {
@@ -757,11 +939,20 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
   const responsible = config.username || (await client.getEffectiveUser());
 
   for (const plan of batchPlan) {
-    const { obj, type: objType, name: objName, packageName: objPackage } = plan;
+    const { obj, type: objType, name: objName, packageName: objPackage, objectUrl: objUrl } = plan;
     const objTransport = plan.explicitTransport ?? autoTransportByPackage.get(objPackage);
     const metadataObject = isMetadataWriteType(objType);
-    const objSource = obj.source ? String(obj.source) : undefined;
+    let objSource = obj.source ? String(obj.source) : undefined;
     const objDescription = String(obj.description ?? objName);
+    if (objType === 'FUNC') {
+      const prepared = prepareFunctionModuleCreateSource(
+        objName,
+        objSource,
+        obj.parameters as FmParameter[] | undefined,
+      );
+      objSource = prepared.shouldWrite ? prepared.source : undefined;
+      batchWarnings.push(...prepared.warnings.map((warning) => `${objType} ${objName}: ${warning}`));
+    }
 
     // Mixed-case object name rejection (matches the create-path check above).
     // Universal SAP convention — TADIR is uppercase on every release.
@@ -860,6 +1051,17 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
         });
         break;
       }
+      // DOMA create needs /ddic/domains/ (absent wholesale on NW 7.50/7.51) — mirror the gate above.
+      if (objType === 'DOMA' && isDomainsEndpointAvailable() === false) {
+        results.push({
+          type: objType,
+          name: objName,
+          packageName: objPackage,
+          status: 'failed',
+          error: DOMA_WRITE_UNAVAILABLE_HINT,
+        });
+        break;
+      }
       // TTYP create needs /ddic/tabletypes/ (absent on NW 7.50) — mirror the TABL/DT gate above.
       if (objType === 'TTYP' && isTableTypesEndpointAvailable() === false) {
         results.push({
@@ -884,9 +1086,11 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
         });
         break;
       }
-      const objUrl = objectUrlForType(objType, objName);
       const createUrl = objUrl.replace(/\/[^/]+$/, '');
       const objMetadataProps = getMetadataWriteProperties(obj);
+      if (objType === 'FUNC') {
+        objMetadataProps.group = plan.group;
+      }
       // Sets behaviorExtension + baseBdef on the metadata so buildCreateXml emits the adtTemplate;
       // the return value (used for the optional read-back warning) isn't needed in the batch path.
       applyBdefBehaviorExtensionMetadata(objType, objSource, objMetadataProps);
@@ -926,6 +1130,17 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
         throw createErr;
       }
 
+      if (objType === 'FUNC' && objMetadataProps.processingType !== undefined) {
+        await persistFunctionModuleProcessingMetadata(
+          client,
+          objUrl,
+          objName,
+          objMetadataProps.processingType as FunctionProcessingType,
+          objMetadataProps.updateTaskKind as FunctionUpdateTaskKind | undefined,
+          objTransport,
+        );
+      }
+
       // Step 1b: DTEL POST ignores labels — follow up with PUT on main session
       if (objType === 'DTEL' && dtelNeedsPostCreateUpdate(objMetadataProps)) {
         await client.http.withStatefulSession(async (session) => {
@@ -946,7 +1161,7 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
 
       // Step 2: Write source if provided
       if (!metadataObject && objSource) {
-        const srcUrl = sourceUrlForType(objType, objName);
+        const srcUrl = objType === 'FUNC' ? `${objUrl}/source/main` : sourceUrlForType(objType, objName);
         await safeUpdateSource(
           client.http,
           client.safety,
@@ -958,29 +1173,9 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
         );
       }
 
-      // Resolve the activation URL up front so both the inline path and the
-      // deferred terminal-activate path use the same URL. FUNC needs the parent
-      // function-group baked into the path (issue #250); objectUrlForType throws
-      // for FUNC so we mirror the FUNC-aware resolver from handleSAPActivate. For
-      // TABL we keep objUrl (already resolved to /tables/) — DDIC-structure FMs
-      // aren't a real concept and the create path doesn't expose one.
-      let activationUrl = objUrl;
-      if (objType === 'FUNC') {
-        let group = String(obj.group ?? args.group ?? '').trim();
-        if (!group) {
-          const resolved = cachingLayer
-            ? await cachingLayer.resolveFuncGroup(client, objName)
-            : await client.resolveFunctionGroup(objName);
-          if (!resolved) {
-            throw new Error(
-              `Cannot resolve function group for FM "${objName}" in batch_create activation step. Provide "group" on the FUNC entry.`,
-            );
-          }
-          group = resolved;
-        }
-        const groupLc = encodeURIComponent(group.toLowerCase());
-        activationUrl = `/sap/bc/adt/functions/groups/${groupLc}/fmodules/${encodeURIComponent(objName.toLowerCase())}`;
-      }
+      // objUrl is already subtype-aware (including parent-group routing for FUNC),
+      // so source and activation share one canonical address.
+      const activationUrl = objUrl;
 
       if (activateAtEnd) {
         // Step 3 deferred: track this object for the terminal activateBatch call.
