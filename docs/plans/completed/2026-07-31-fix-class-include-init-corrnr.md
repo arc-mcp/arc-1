@@ -1,5 +1,19 @@
 # Fix: propagate `corrNr` to the class-include init POST (issue #645)
 
+> **Completed 2026-07-31.** Execution notes / deviations:
+> - `npm run build` failed as anticipated on the pre-existing `@arc-mcp/xsuaa-auth` type drift, and
+>   the worktree's `node_modules` additionally could not *load* `dist/server/destination-discovery.js`
+>   (missing `DestinationServiceRequestError` export). Worked around by compiling with bare `tsc`
+>   (which emits despite type errors) and running the CLI from a throwaway copy of the main
+>   checkout's working `dist/` with only `adt/crud.js` swapped in. Removed afterwards.
+> - The "read the include back with `SAPRead version=inactive`" step was covered by the stronger
+>   `SAPActivate` check: the class carries a `FOR TESTING` method in the include, so a successful
+>   activation proves the include content landed and compiled.
+> - Pre-existing red on this branch, unrelated to this change and unchanged by it: 2 unit failures
+>   (`tests/unit/lint/config-builder.test.ts`, `tests/unit/lint/lint-enhanced.test.ts` — both
+>   "Cloud version for BTP"), 18 `typecheck` errors in `src/server/*`, and 3 biome format errors in
+>   `tests/unit/handlers/`. All confirmed present on a clean tree with this change stashed.
+
 ## Overview
 
 `SAPWrite(action="update", type="CLAS", include="testclasses", …)` fails with HTTP 500
@@ -153,7 +167,7 @@ user <USER>` instead of reusing the covering `R3TR CLAS` lock. Live-verified on 
 `corrNr` returns 201 on all three. Mirror `deleteObject()` in the same file — it already builds
 exactly this URL shape.
 
-- [ ] In `src/adt/crud.ts`, add a trailing optional `transport?: string` parameter to
+- [x] In `src/adt/crud.ts`, add a trailing optional `transport?: string` parameter to
       `initClassInclude()` and append the request when set. Keep the existing
       `checkOperation(safety, OperationType.Create, 'InitClassInclude')` guard as the first
       statement. Target shape (mirrors `deleteObject`):
@@ -164,33 +178,33 @@ exactly this URL shape.
       }
       await http.post(url, '', undefined);
 
-- [ ] In `safeUpdateClassInclude()` in the same file, pass the already-computed
+- [x] In `safeUpdateClassInclude()` in the same file, pass the already-computed
       `effectiveTransport` (i.e. `transport ?? (lock.corrNr || undefined)`) as the new fifth
       argument to `initClassInclude`. Do not recompute it and do not reorder the
       probe → init → PUT sequence.
-- [ ] Update the doc comment above `initClassInclude`. It currently says the empty-POST mechanism is
+- [x] Update the doc comment above `initClassInclude`. It currently says the empty-POST mechanism is
       "Live-verified (a4h S/4HANA 2023)" without qualification — that verification was done in
       `$TMP`. State that a transportable package additionally requires `corrNr`, or SAP 500s with
       "already locked in request" (issue #645).
-- [ ] In `tests/unit/adt/crud.test.ts`, give `mockHttpWithSession()` an optional `corrNr` in its
+- [x] In `tests/unit/adt/crud.test.ts`, give `mockHttpWithSession()` an optional `corrNr` in its
       `opts` (default `''`) and build the lock body from it, so the helper can emulate a class
       recorded in a request. Keep `LOCK_BODY` and the existing default behavior intact so the four
       existing tests in this `describe` block are unaffected.
-- [ ] Add unit tests (~3) to `describe('safeUpdateClassInclude — auto-init missing class includes')`:
+- [x] Add unit tests (~3) to `describe('safeUpdateClassInclude — auto-init missing class includes')`:
       (a) include missing + explicit `transport` argument → the init POST URL contains
       `corrNr=<that transport>`; (b) include missing + no `transport` argument but lock returns
       `corrNr: 'NPLK900085'` → the init POST URL contains `corrNr=NPLK900085`; (c) **negative /
       regression guard** — include missing, no `transport`, lock `CORRNR` empty (`$TMP`) → the init
       POST URL is exactly `` `${INCLUDE_URL}?lockHandle=SESS_HANDLE` `` with **no** `corrNr`
       substring.
-- [ ] Update the existing `it('initClassInclude POSTs an empty body to the include URL with the
+- [x] Update the existing `it('initClassInclude POSTs an empty body to the include URL with the
       lock handle')` test: it asserts the full URL with `toBe()`, so keep that as the no-transport
       case and add a with-transport assertion
       (`` `${INCLUDE_URL}?lockHandle=LH99&corrNr=NPLK900085` ``).
-- [ ] Verify the `initClassInclude is gated by allowWrites` test still passes — the safety check
+- [x] Verify the `initClassInclude is gated by allowWrites` test still passes — the safety check
       must remain the first statement, before any URL building.
-- [ ] Run `npm test` — all tests must pass.
-- [ ] Run `npm run typecheck` and `npm run lint` — no errors. (`npm run build` may fail with the
+- [x] Run `npm test` — all tests must pass.
+- [x] Run `npm run typecheck` and `npm run lint` — no errors. (`npm run build` may fail with the
       pre-existing `multi-target-destination-runtime.ts` / `server.ts` errors described in
       Development Approach; that is not caused by this task.)
 
@@ -213,11 +227,11 @@ Credentials and hosts are in `INFRASTRUCTURE.md`. **Requires live SAP access —
 unreachable, follow the INFRASTRUCTURE.md runbook (Docker stop/start, Cloud Connector) before
 concluding failure.**
 
-- [ ] Build the CLI (`npm run build`). If it fails **only** with the pre-existing
+- [x] Build the CLI (`npm run build`). If it fails **only** with the pre-existing
       `src/server/multi-target-destination-runtime.ts` / `src/server/server.ts` type errors noted in
       Development Approach, use the main checkout's prebuilt `dist/` at
       `/Users/marianzeis/DEV/arc-1/dist/cli.js` instead and say so in the notes.
-- [ ] On **npl (7.50)**, client `001`, user `DEVELOPER`: pick a transportable Z package (e.g.
+- [x] On **npl (7.50)**, client `001`, user `DEVELOPER`: pick a transportable Z package (e.g.
       `ZDEMO_BOPF` — confirmed transportable) and create a workbench request for it (ADT:
       `POST /sap/bc/adt/cts/transports` with a `CreateCorrectionRequest` body naming that package,
       or `SAPTransport action=create` with `SAP_ALLOW_TRANSPORT_WRITES=true`). Then run the
@@ -231,33 +245,33 @@ concluding failure.**
 
       Step 2 must now succeed. Confirm in the `[http_request]` log line that the POST URL carries
       **both** `lockHandle` and `corrNr`.
-- [ ] Repeat step 2 with the `transport` field **omitted** — it must still succeed, because
+- [x] Repeat step 2 with the `transport` field **omitted** — it must still succeed, because
       `effectiveTransport` falls back to the lock's `CORRNR`. This is the reporter's step 3.
-- [ ] Read the include back (`SAPRead` with `version="inactive"`) and confirm the ABAP source landed.
-- [ ] **Activate** the class (`SAPActivate`) — activation is the definitive correctness check for a
+- [x] Read the include back (`SAPRead` with `version="inactive"`) and confirm the ABAP source landed.
+- [x] **Activate** the class (`SAPActivate`) — activation is the definitive correctness check for a
       write feature, and it proves the include was recorded in the request properly.
-- [ ] Regression check on the same system: repeat the whole flow with a **`$TMP`** class and no
+- [x] Regression check on the same system: repeat the whole flow with a **`$TMP`** class and no
       transport. It must still succeed, and the init POST URL must carry `lockHandle` only.
-- [ ] Repeat the transportable-package flow on **a4h-2025 (816)**, client `001`, user `MARIAN`.
+- [x] Repeat the transportable-package flow on **a4h-2025 (816)**, client `001`, user `MARIAN`.
       Note: `ZCUSTOM_DEVELOPMENT` and `ZCLASSIC_DEVELOPMENT` are **structure packages** there and
       reject object creation with 403 "Structure packages cannot contain development objects" — use
       `Z_BADI_CHECK` or another leaf package.
-- [ ] Delete every class created during this task (lock → DELETE with `lockHandle`+`corrNr`) so the
+- [x] Delete every class created during this task (lock → DELETE with `lockHandle`+`corrNr`) so the
       systems are left clean. Do not commit any throwaway scripts.
-- [ ] Record the observed results (system, release, HTTP status per step) in the plan notes or the
+- [x] Record the observed results (system, release, HTTP status per step) in the plan notes or the
       PR body.
 
 ### Task 3: Final verification
 
-- [ ] Run full test suite: `npm test` — all tests pass
-- [ ] Run typecheck: `npm run typecheck` — no errors
-- [ ] Run lint: `npm run lint` — no errors
-- [ ] `grep -rn "initClassInclude" src/ tests/` — every call site passes a transport argument or is
+- [x] Run full test suite: `npm test` — all tests pass
+- [x] Run typecheck: `npm run typecheck` — no errors
+- [x] Run lint: `npm run lint` — no errors
+- [x] `grep -rn "initClassInclude" src/ tests/` — every call site passes a transport argument or is
       a deliberate no-transport test case; no caller left on the old 4-argument signature
-- [ ] Confirm no tool-definition fixture changed:
+- [x] Confirm no tool-definition fixture changed:
       `git status tests/fixtures/tool-definitions/` is clean (this change must not touch the
       LLM-visible surface)
-- [ ] Update `docs/research/issues/645-class-include-create-missing-corrnr.md`: flip Status to
+- [x] Update `docs/research/issues/645-class-include-create-missing-corrnr.md`: flip Status to
       "Fixed" and add the PR link
-- [ ] Move this plan to `docs/plans/completed/`, then fix any relative links inside it (completed
+- [x] Move this plan to `docs/plans/completed/`, then fix any relative links inside it (completed
       plans sit one directory deeper — `../` paths gain a level)

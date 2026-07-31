@@ -1,8 +1,9 @@
-# Issue #645 — `initClassInclude` POST omits `corrNr` → 500 "already locked in request" (CONFIRMED)
+# Issue #645 — `initClassInclude` POST omits `corrNr` → 500 "already locked in request" (FIXED)
 
-**Status:** Confirmed bug, root cause validated live 2026-07-31 on **all three** test systems —
-**NW 7.50**, **S/4HANA 2023 (758)**, **ABAP Platform 2025 (816)**. Reporter's diagnosis is correct;
-their *scope* is not.
+**Status:** **Fixed** — see the branch `claude/deep-issue-645-f616de`. Root cause validated live
+2026-07-31 on **all three** test systems (**NW 7.50**, **S/4HANA 2023 (758)**, **ABAP Platform 2025
+(816)**), fix re-verified end-to-end on 7.50 and 816 including activation. Reporter's diagnosis is
+correct; their *scope* is not.
 **Symptom:** `SAPWrite(action="update", type="CLAS", include="testclasses", …)` fails with
 `HTTP 500 … Object LIMU CINC <CLASS>==========CCAU is already locked in request <REQ> of user <USER>`
 whenever the class lives in a **transportable package** and is already recorded in a CTS request.
@@ -133,10 +134,25 @@ sites (`write/update-delete.ts:94`, `write/class-surgery.ts:154`, `write/class-s
   `src/server/multi-target-destination-runtime.ts` and `src/server/server.ts` (`@arc-mcp/xsuaa-auth`
   type drift), unrelated to this issue. Live validation used the main repo's prebuilt `dist/`.
 
-## Recommendation
+## Fix as shipped
 
-**Fix it.** Single-file surgical change with live-validated before/after and no schema impact —
-suitable for `/implement-feature` against this dossier.
+`initClassInclude` gained a trailing optional `transport?: string` and appends
+`&corrNr=<encoded>` when set (mirroring `deleteObject`); `safeUpdateClassInclude` passes the
+`effectiveTransport` it already computes. Three unit tests in
+`describe('safeUpdateClassInclude — auto-init missing class includes')` pin the explicit-transport,
+lock-derived-transport, and `$TMP`-unchanged-URL cases; the first two fail without the fix.
+
+Re-verified live 2026-07-31 through `arc1-cli` after the change:
+
+| Step | 7.50 (npl) | 816 (a4h-2025) |
+|---|---|---|
+| `create` CLAS in transportable pkg with `transport` | ✅ | ✅ |
+| `update … include="testclasses"` **with** `transport` (was 500) | ✅ | ✅ |
+| Same with `transport` **omitted** (lock `CORRNR` fallback — reporter step 3) | ✅ | — |
+| `SAPActivate` the class | ✅ | ✅ |
+| `$TMP` class, no transport anywhere (regression) | ✅ | — |
+
+All test objects deleted afterwards; both systems left clean.
 
 ## Drafted comment for GitHub issue #645
 
