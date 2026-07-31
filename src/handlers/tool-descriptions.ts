@@ -1,5 +1,18 @@
 /** Long SAPWrite descriptions kept separate from the schema builder's line-budgeted implementation. */
 
+/**
+ * Opening line for SAPWrite. It used to begin with MINIMAL PAYLOAD — ~1,100 characters of argument
+ * hygiene — so a model choosing a tool read a lecture about null values before learning what the
+ * tool is for. The routing benchmark could not measure a difference either way (see
+ * docs/plans/2026-07-30-tool-description-optimization-loop.md: description text turned out not to
+ * drive routing), but leading with the tool's purpose is correct documentation regardless, and the
+ * bench confirmed the reorder is not harmful.
+ */
+export const SAPWRITE_LEAD =
+  'Change ABAP objects: create, update, delete, and targeted source edits. Use for any request to ' +
+  'write, add, change, fix, implement, refactor, rename, or remove ABAP code or DDIC metadata. ' +
+  'Reading is SAPRead; searching is SAPSearch; dependency analysis is SAPContext. ';
+
 export const SAPWRITE_DESC_ONPREM =
   'Create or update ABAP source code and DDIC metadata. Handles lock/modify/unlock automatically. Supports PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD, TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. ' +
   'Type codes are auto-normalized and case-insensitive (e.g., "CLAS/OC" → "CLAS"). For delete, only type and name are required (plus optional transport). ' +
