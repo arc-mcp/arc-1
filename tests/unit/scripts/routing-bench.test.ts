@@ -4,8 +4,9 @@
  * score of whatever description is being judged. Test the filter, not the LLM.
  */
 
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { enumTargets, FULL_CONFIG, leaks } from '../../../scripts/routing-bench.js';
+import { CASES_PATH, enumTargets, FULL_CONFIG, leaks } from '../../../scripts/routing-bench.js';
 import { getToolDefinitions, type ToolDefinition } from '../../../src/handlers/tools.js';
 
 describe('leaks', () => {
@@ -62,5 +63,28 @@ describe('enumTargets', () => {
   it('ignores single-value enums that carry no routing weight', () => {
     // SAPRead.action has one value and is never passed explicitly; counting it would read as 0/1.
     expect(targets.some((t) => t.tool.name === 'SAPRead' && t.key === 'action')).toBe(false);
+  });
+});
+
+/**
+ * Coverage parity. Generation skips a case it cannot produce a leak-free prompt for and still exits
+ * 0, so the corpus silently drifts below the target list — it shipped missing SAPRead.type.VARIANTS
+ * without anything failing. The benchmark's whole claim is "every discriminator value", so assert it.
+ */
+describe('corpus coverage', () => {
+  const tools = getToolDefinitions(FULL_CONFIG) as ToolDefinition[];
+  const expected = new Set(enumTargets(tools).map((t) => (t.key ? `${t.tool.name}.${t.key}.${t.value}` : t.tool.name)));
+  const cases = JSON.parse(readFileSync(CASES_PATH, 'utf8')) as Array<{ id: string; quarantined?: string }>;
+
+  it('has a case for every enum target, with none left over', () => {
+    const actual = new Set(cases.map((c) => c.id));
+    expect([...expected].filter((id) => !actual.has(id))).toEqual([]);
+    expect([...actual].filter((id) => !expected.has(id))).toEqual([]);
+  });
+
+  it('states a reason for every quarantined case', () => {
+    for (const c of cases.filter((x) => x.quarantined)) {
+      expect(c.quarantined!.length, `${c.id} needs a reason`).toBeGreaterThan(15);
+    }
   });
 });

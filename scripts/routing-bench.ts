@@ -52,6 +52,13 @@ export interface RoutingCase {
   /** Discriminator that must match, e.g. { key: 'action', value: 'release' }. Absent = tool only. */
   key?: string;
   value?: string;
+  /**
+   * Set to the reason when a case's prompt does not actually ask for its expected answer, e.g.
+   * SAPRead.type.TRAN whose prompt asks for the objects in transport A4HK900123 — SAPTransport is
+   * the correct response, so scoring it as a TRAN miss penalises correct routing. Quarantined cases
+   * are kept (the prompt is evidence about the surface) but excluded from scoring.
+   */
+  quarantined?: string;
 }
 
 // ─── Case inventory ─────────────────────────────────────────────────
@@ -252,6 +259,42 @@ function valueMatches(expected: string, actual: string): boolean {
   return actual === expected || (ACCEPTED_ALIASES[expected] ?? []).includes(actual);
 }
 
+/**
+ * Arguments the handlers require beyond the schema's top-level `required`.
+ *
+ * JSON Schema `required` cannot express "type and name are needed when action=delete", so SAPWrite
+ * declares only ["action"] and a bare {"action":"delete"} scored as a PASS here while
+ * src/handlers/write.ts rejects it. Scoring a call the server would refuse as correct routing
+ * overstates the surface, so the conditional requirements are listed explicitly.
+ */
+const CONDITIONAL_REQUIRED: Record<string, Record<string, string[]>> = {
+  SAPWrite: {
+    create: ['type', 'name'],
+    update: ['type', 'name'],
+    delete: ['type', 'name'],
+    edit_method: ['name', 'method'],
+    edit_unit: ['name', 'unit'],
+    edit_class_definition: ['name'],
+    add_method: ['name'],
+    edit_method_signature: ['name'],
+    delete_method: ['name'],
+    change_method_visibility: ['name'],
+    batch_create: ['objects'],
+    edit_text_symbols: ['type', 'name'],
+  },
+  SAPTransport: { get: ['id'], release: ['id'], delete: ['id'], remove_object: ['id'], reassign: ['id'] },
+  SAPActivate: { activate: ['name'] },
+  SAPNavigate: { references: ['name'], definition: ['name'], hierarchy: ['name'] },
+};
+
+function missingRequired(tool: string, schema: { required?: string[] } | undefined, args: Record<string, unknown>): string[] {
+  const absent = (r: string) => args[r] === undefined || args[r] === '';
+  const base = (schema?.required ?? []).filter(absent);
+  const action = typeof args.action === 'string' ? args.action : undefined;
+  const extra = action ? (CONDITIONAL_REQUIRED[tool]?.[action] ?? []).filter(absent) : [];
+  return [...new Set([...base, ...extra])];
+}
+
 /** Transient local-server failures are common under load; only a verdict counts as a verdict. */
 async function withRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
   let last: unknown;
@@ -271,7 +314,11 @@ async function withRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
  * makes the whole thing impractical rather than merely slow. Ollama serves parallel requests
  * (OLLAMA_NUM_PARALLEL, default 4); going wider than the server's own limit just queues.
  */
-const CONCURRENCY = Number(process.env.BENCH_CONCURRENCY ?? 4);
+const CONCURRENCY = (() => {
+  const n = Number(process.env.BENCH_CONCURRENCY ?? 4);
+  // 0 spawns no workers and returns an apparently-complete zero-score run; NaN does the same.
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 4;
+})();
 
 /** A `claude-*` model id routes to the Anthropic Messages API; anything else to local ollama. */
 function isAnthropic(model: string): boolean {
@@ -309,14 +356,70 @@ async function callViaCli(
   prompt: string,
   toolText: string,
 ): Promise<{ name: string; args: Record<string, unknown> } | null> {
-  const { execFile } = await import('node:child_process');
-  const { promisify } = await import('node:util');
-  const run = promisify(execFile);
+  const { spawn } = await import('node:child_process');
   const body = CLI_PROMPT.replace('{TOOLS}', toolText).replace('{PROMPT}', prompt);
-  const { stdout } = await run('claude', ['-p', '--model', model, body], {
-    maxBuffer: 10 * 1024 * 1024,
-    timeout: 180_000,
-    cwd: '/tmp',
+
+  // ISOLATION IS MANDATORY, NOT HYGIENE. The corpus contains real destructive requests — "Delete
+  // the ZCL_PAYMENT_VALIDATOR class from the system", "Delete the ZDEMO_PACKAGE", release and push
+  // prompts. Run without isolation, `claude -p` inherits the user's plugins, hooks, built-in tools
+  // and every globally configured MCP server (which for an ARC-1 developer means SAP-connected
+  // ones), and a pre-approved tool could execute the request for real. `cwd` does not gate any of
+  // that. We only ever want the model's opinion as text, so every execution surface is off:
+  //   --strict-mcp-config with an empty config  → no MCP servers, global config ignored
+  //   --disallowedTools <all built-ins>         → no built-in tool may run
+  //   --permission-mode plan                    → refuses side effects even if one slipped through
+  //
+  // The prompt goes over STDIN, not argv: --disallowedTools is variadic and silently swallowed a
+  // trailing prompt argument as another tool name, which scored all 160 cases as unscored.
+  const child = spawn(
+    'claude',
+    [
+      '-p',
+      '--model',
+      model,
+      '--mcp-config',
+      '{"mcpServers":{}}',
+      '--strict-mcp-config',
+      '--permission-mode',
+      'plan',
+      '--disallowedTools',
+      'Bash',
+      'Edit',
+      'Write',
+      'Read',
+      'Glob',
+      'Grep',
+      'WebFetch',
+      'WebSearch',
+      'Task',
+      'NotebookEdit',
+      'TodoWrite',
+    ],
+    { cwd: '/tmp', stdio: ['pipe', 'pipe', 'pipe'] },
+  );
+  const stdout = await new Promise<string>((resolve, reject) => {
+    let out = '';
+    let err = '';
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      reject(new Error('claude CLI timed out after 180s'));
+    }, 180_000);
+    child.stdout.on('data', (d) => {
+      out += String(d);
+    });
+    child.stderr.on('data', (d) => {
+      err += String(d);
+    });
+    child.on('error', (e) => {
+      clearTimeout(timer);
+      reject(e);
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolve(out);
+      else reject(new Error(`claude CLI exit ${code}: ${err.slice(0, 200)}`));
+    });
+    child.stdin.end(body);
   });
   const json = stdout.slice(stdout.indexOf('{'), stdout.lastIndexOf('}') + 1);
   if (!json) return null;
@@ -373,6 +476,9 @@ async function callModel(
     }),
     signal: AbortSignal.timeout(300_000),
   });
+  // Without this, a JSON-bodied 429/500/503 parses to no tool_calls and scores as "(no call)" — a
+  // routing verdict, with errors=0 and no retry. Server trouble then silently deflates the result.
+  if (!resp.ok) throw new Error(`ollama ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
   const data = (await resp.json()) as {
     choices?: Array<{ message?: { tool_calls?: Array<{ function: { name: string; arguments: string } }> } }>;
   };
@@ -417,7 +523,7 @@ export async function runBench(tools: ToolDefinition[], cases: RoutingCase[], mo
         const schema = tools.find((t) => t.name === call.name)?.inputSchema as
           | { required?: string[] }
           | undefined;
-        const missing = (schema?.required ?? []).filter((r) => args[r] === undefined || args[r] === '');
+        const missing = missingRequired(call.name, schema, args);
         if (missing.length > 0) got += ` missing:${missing.join(',')}`;
 
         const routedRight = call.name === c.tool && (!c.key || valueMatches(c.value ?? '', actual));
@@ -458,9 +564,10 @@ export async function runBench(tools: ToolDefinition[], cases: RoutingCase[], mo
   return { passed, routed, total: cases.length - errors, errors, failures };
 }
 
-export function loadCases(path = CASES_PATH): RoutingCase[] {
+export function loadCases(path = CASES_PATH, includeQuarantined = false): RoutingCase[] {
   if (!existsSync(path)) throw new Error(`No routing cases at ${path}. Run: npx tsx scripts/routing-bench.ts gen`);
-  return JSON.parse(readFileSync(path, 'utf8')) as RoutingCase[];
+  const all = JSON.parse(readFileSync(path, 'utf8')) as RoutingCase[];
+  return includeQuarantined ? all : all.filter((c) => !c.quarantined);
 }
 
 // ─── CLI ────────────────────────────────────────────────────────────

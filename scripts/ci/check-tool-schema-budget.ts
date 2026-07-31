@@ -184,13 +184,13 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     resolvedFeatures: ALL_FEATURES_AVAILABLE,
     budget: {
       // Post-trim: full write surface ~66.3 KB / ~16.6k schema tokens / 250 descriptions.
-      // Raised 17_300 -> 17_700 / 12_400 -> 12_700 for the tool-description quality pass: SAPRead
-      // gained look-alike-code disambiguation (DCLS vs DDLS vs DDLX vs VIEW, TRAN vs a transport)
-      // and SAPContext gained an explicit read-only boundary. Both are guidance the routing
-      // benchmark showed models need and lack — deliberate spend, still well under the 72 KB wire
-      // wall (70.1 KB). See docs/plans/2026-07-30-tool-description-optimization-loop.md.
-      schemaTokenEstimate: 17_700,
-      descriptionTokenEstimate: 12_700,
+      // Raised 17_300 -> 17_500 for SAPWrite's opening line (it used to start with 1,100 chars of
+      // payload hygiene) plus SAPContext's read-only boundary. Description tokens stay under the
+      // original 12_400. Measured, not assumed: +3 cases on the 160-case routing benchmark against
+      // claude-haiku-4-5. 69.6 KB, still under the 72 KB wire wall.
+      // See docs/plans/2026-07-30-tool-description-optimization-loop.md.
+      schemaTokenEstimate: 17_500,
+      descriptionTokenEstimate: 12_400,
       descriptionCount: 265,
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,

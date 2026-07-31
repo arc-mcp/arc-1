@@ -63,9 +63,17 @@ Generate the cases first:  npx tsx scripts/routing-bench.ts gen
 const MODEL = flag('model', 'qwen3.5:27b');
 const REWRITER = flag('rewriter', 'qwen3.6:35b-mlx');
 const ROUNDS = Number(flag('rounds', '2'));
-const TOLERANCE = Number(flag('tolerance', '0'));
+// A NaN tolerance makes every `x < y - TOLERANCE` comparison false, silently disabling BOTH
+// regression gates and accepting every candidate.
+const TOLERANCE = (() => {
+  const n = Number(flag('tolerance', '0'));
+  if (!Number.isFinite(n) || n < 0) throw new Error(`--tolerance must be a non-negative number, got "${flag('tolerance', '0')}"`);
+  return n;
+})();
 const OUT = flag('out', 'test-results/desc-opt/overrides.json');
-const LOG = OUT.replace(/\.json$/, '.jsonl');
+// `.replace` leaves LOG === OUT whenever OUT does not end in lowercase `.json`, and the optimizer
+// then appends a JSONL record to the JSON overlay it just wrote, corrupting it.
+const LOG = OUT.endsWith('.json') ? `${OUT.slice(0, -5)}.jsonl` : `${OUT}.jsonl`;
 const OLLAMA = process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434';
 
 const bytes = (v: unknown): number => Buffer.byteLength(JSON.stringify(v), 'utf8');
@@ -171,6 +179,21 @@ async function main(): Promise<void> {
   const overrides: Record<string, ToolDefinition> = argv.includes('--resume')
     ? JSON.parse(readFileSync(OUT, 'utf8'))
     : {};
+
+  // A saved overlay holds COMPLETE tool definitions. If the surface has changed since it was
+  // written — an enum value added, a property renamed — resuming would silently reinstate the old
+  // shape and bypass the descriptions-only invariant the loop otherwise enforces on every rewrite.
+  for (const [name, saved] of Object.entries(overrides)) {
+    const current = stock.find((t) => t.name === name);
+    if (!current) throw new Error(`--resume: overlay has "${name}", which is not in the current surface.`);
+    const drift = descriptionsOnlyDiff(current, saved);
+    if (drift) {
+      throw new Error(
+        `--resume: overlay for ${name} differs from current stock beyond descriptions (${drift}). ` +
+          `It was written against an older surface — regenerate it rather than reinstating stale schema.`,
+      );
+    }
+  }
   const current = (): ToolDefinition[] => stock.map((t) => overrides[t.name] ?? t);
 
   const cases = loadCases();

@@ -177,6 +177,85 @@ unscored counts is not comparable across variants.
 The general lesson is the one the SAPTransport episode already taught in a different costume: a
 number that looks like a verdict is not a verdict until you check what produced it.
 
+## CORRECTION: earlier results were measured against a broken oracle
+
+Everything below the next heading was measured before an external review (Codex) found that the
+generated corpus contained objectively mislabeled cases. A full manual audit confirmed it and
+quarantined **21 of 182 cases (12%)**. Treat the older numbers as void.
+
+The two failures used as the centrepiece of the "genuine cross-model surface defect" claim were
+cases where **the model was right and the benchmark was wrong**:
+
+| case | prompt | why it was unwinnable |
+|---|---|---|
+| `SAPRead.type.TRAN` | "Show me the objects in transport A4HK900123" | that is SAPTransport, not a transaction code |
+| `SAPRead.type.DCLS` | "…the CDS data source ZDS_SALES_DATA" | a data source is DDLS, not access control |
+| `SAPWrite.type.{DESD,DTSC,CSNM,DSFD,DTDC,DCLS}` | all "Create a CDS view…" | that is DDLS; the generator did not understand server-driven types |
+| `SAPQuery` | "structure and fields for table T001" | that is `SAPRead(type=TABL)` |
+| `SAPContext.type.{CLAS,TABL}` | duplicates of `action.deps` / `action.structure` | at most one of each pair can pass |
+
+Two independent models agreeing on `DCLS→DDLS` was read as confirmation of a real defect. It was
+evidence the oracle was wrong. **Cross-model agreement against your expected answer should raise
+suspicion of the expectation first.**
+
+Quarantined cases are retained in the corpus with a `quarantined` reason and excluded from scoring —
+the prompt is still evidence about the surface, and deleting it hides the mistake.
+
+## Corrected results (clean 160-case corpus, isolated CLI, claude-haiku-4-5)
+
+The surface is in materially better shape than the contaminated runs suggested:
+
+| tool | contaminated | clean |
+|---|---|---|
+| SAPWrite | "61%" | **81%** (30/37) |
+| SAPRead | "71%" | **80%** (33/41) |
+| SAPManage / SAPTransport / SAPActivate | 93–100% | **100%** |
+| SAPDiagnose | 90% | 95% |
+| SAPContext | 80% | **50%** (4/8) — genuinely weak |
+| SAPGit | 69% | **64%** (9/14) — genuinely weak |
+| **overall** | 75.1% | **83.1%** (133/160) |
+
+"SAPWrite loses its own canonical requests" was substantially an artifact: SAPWrite carried 7 of the
+21 bad cases. The two tools that are genuinely weak — SAPContext and SAPGit — are ones no effort went
+into.
+
+### A/B of the shipped changes vs `main`
+
+HEAD 133/160 vs main's descriptions 130/160 (**+3**), built by materialising `main`'s actual handler
+sources rather than reconstructing them:
+
+| tool | main | HEAD | |
+|---|---|---|---|
+| SAPWrite | 27 | 30 | +3 — the reorder |
+| **SAPRead** | **33** | **33** | **zero — the disambiguation glosses did nothing** |
+| SAPContext | 5 | 4 | −1 |
+
+So of the three shipped edits:
+
+1. **SAPWrite leading with its purpose: kept.** +3 here, +5 on the contaminated corpus. Consistent in
+   direction across two corpora, though +3 is barely above the ±2 noise floor — call it weak
+   positive, not proven.
+2. **SAPRead disambiguation glosses: REMOVED.** Zero measured effect (33 → 33), and the failures that
+   motivated them were the mislabeled `DCLS`/`TRAN` cases. Both the evidence and the benefit
+   evaporated. Only the genuine gap is kept: `TTYP` is a supported type that was missing from the
+   inventory entirely.
+3. **SAPContext read-only boundary: kept** on factual grounds (it is analysis-only and previously
+   advertised itself for "changes"), at −1, inside noise at n=8.
+
+Removing the glosses put description tokens back under the original 12,400 budget; only SAPWrite's
+opening line needed a bump, 17,300 → 17,500.
+
+### Placement beat wording
+
+The first attempt at #3 put "to actually change an object use SAPWrite" early, and SAPContext fell
+8/10 → 4/10 on the contaminated corpus — the model routed away from the tool on requests that
+belonged to it. Same fact as a closing clause, and it recovered. Worth keeping as a design lesson
+even though its measurement corpus was flawed.
+
+---
+
+# Earlier analysis (VOID — measured against the broken oracle, retained for the method)
+
 ## Applied changes and their measured effect
 
 Three edits shipped, verified on `claude-haiku-4-5` over the full 181 cases.

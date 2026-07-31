@@ -53,7 +53,8 @@
     "prompt": "Show me the source code for the CDS data source ZDS_SALES_DATA.",
     "tool": "SAPRead",
     "key": "type",
-    "value": "DCLS"
+    "value": "DCLS",
+    "quarantined": "prompt asks for a \"CDS data source\" = DDLS, not access control"
   },
   {
     "id": "SAPRead.type.DDLX",
@@ -130,7 +131,8 @@
     "prompt": "Show me the objects in transport A4HK900123.",
     "tool": "SAPRead",
     "key": "type",
-    "value": "TRAN"
+    "value": "TRAN",
+    "quarantined": "prompt asks for objects in transport A4HK900123 = SAPTransport, not a transaction code"
   },
   {
     "id": "SAPRead.type.TTYP",
@@ -158,7 +160,8 @@
     "prompt": "Show me the transport request for development class ZHR_PAYROLL.",
     "tool": "SAPRead",
     "key": "type",
-    "value": "DEVC"
+    "value": "DEVC",
+    "quarantined": "prompt asks for the transport request of a package = SAPTransport"
   },
   {
     "id": "SAPRead.type.SOBJ",
@@ -270,14 +273,16 @@
     "prompt": "Show me the implementation of method CALCULATE_TOTAL in ZCL_BILLING_DOCUMENT.",
     "tool": "SAPRead",
     "key": "type",
-    "value": "VERSION_SOURCE"
+    "value": "VERSION_SOURCE",
+    "quarantined": "prompt asks for a normal method body, no revision/version reference = CLAS"
   },
   {
     "id": "SAPRead.type.DESD",
     "prompt": "Read the DDL text for ZRAP_DTSC_01.",
     "tool": "SAPRead",
     "key": "type",
-    "value": "DESD"
+    "value": "DESD",
+    "quarantined": "prompt names ZRAP_DTSC_01, which is a DTSC"
   },
   {
     "id": "SAPRead.type.DTSC",
@@ -319,14 +324,16 @@
     "prompt": "Show me the source code for ZC_CALC_TAX.",
     "tool": "SAPRead",
     "key": "type",
-    "value": "DSFD"
+    "value": "DSFD",
+    "quarantined": "prompt names ZC_CALC_TAX, indistinguishable from a CDS projection view"
   },
   {
     "id": "SAPRead.type.DTDC",
     "prompt": "Show me the source for ZCL_CUSTOMER_CACHE.",
     "tool": "SAPRead",
     "key": "type",
-    "value": "DTDC"
+    "value": "DTDC",
+    "quarantined": "prompt names ZCL_CUSTOMER_CACHE, which is a class"
   },
   {
     "id": "SAPRead.type.UIAD",
@@ -492,7 +499,8 @@
     "prompt": "Create ZC_SalesOrder CDS view with fields for amount, currency, and tax calculation.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "DCLS"
+    "value": "DCLS",
+    "quarantined": "prompt asks to create a CDS view = DDLS, not access control"
   },
   {
     "id": "SAPWrite.type.DDLX",
@@ -590,21 +598,24 @@
     "prompt": "Create a CDS view ZC_SalesOrderItem that includes a descriptive field for the product description.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "DESD"
+    "value": "DESD",
+    "quarantined": "prompt asks to create a CDS view = DDLS"
   },
   {
     "id": "SAPWrite.type.DTSC",
     "prompt": "Create a new CDS view ZI_SalesOrderHeader exposing sales order ID, material number, and total amount with standard metadata annotations.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "DTSC"
+    "value": "DTSC",
+    "quarantined": "prompt asks to create a CDS view = DDLS"
   },
   {
     "id": "SAPWrite.type.CSNM",
     "prompt": "Create a CDS consumption view ZC_SALES_ORDERS exposing sales order headers and items from VBAK and VBAP with currency conversion.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "CSNM"
+    "value": "CSNM",
+    "quarantined": "prompt asks to create a CDS consumption view = DDLS"
   },
   {
     "id": "SAPWrite.type.EVTB",
@@ -632,21 +643,24 @@
     "prompt": "Create a CDS data foundation view named ZC_SalesOrderItem that exposes customer name, order date, and total amount by joining VBAK and KNA1 with standard RAP annotations.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "DSFD"
+    "value": "DSFD",
+    "quarantined": "prompt asks to create a CDS data foundation view = DDLS"
   },
   {
     "id": "SAPWrite.type.DTDC",
     "prompt": "Create a ZI_SalesOrderItems CDS view that exposes material number, description, and current stock quantity.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "DTDC"
+    "value": "DTDC",
+    "quarantined": "prompt asks to create a CDS view = DDLS"
   },
   {
     "id": "SAPWrite.type.UIAD",
     "prompt": "Read the UI adaptation settings for the UIAD_ZSALES_DASHBOARD object.",
     "tool": "SAPWrite",
     "key": "type",
-    "value": "UIAD"
+    "value": "UIAD",
+    "quarantined": "prompt asks to READ settings; SAPWrite is the write tool"
   },
   {
     "id": "SAPActivate.action.activate",
@@ -674,7 +688,8 @@
     "prompt": "Display the ABAP source code for class ZCL_ORDER.",
     "tool": "SAPNavigate",
     "key": "action",
-    "value": "definition"
+    "value": "definition",
+    "quarantined": "prompt asks to display class source = SAPRead"
   },
   {
     "id": "SAPNavigate.action.references",
@@ -700,7 +715,8 @@
   {
     "id": "SAPQuery",
     "prompt": "Show me the structure and fields for table T001.",
-    "tool": "SAPQuery"
+    "tool": "SAPQuery",
+    "quarantined": "prompt asks for table structure/fields = SAPRead(type=TABL), not a data query"
   },
   {
     "id": "SAPLint.action.lint",
@@ -868,7 +884,8 @@
     "prompt": "Enable SQL tracing to capture database calls for debugging a performance issue.",
     "tool": "SAPDiagnose",
     "key": "action",
-    "value": "sql_trace_state"
+    "value": "sql_trace_state",
+    "quarantined": "prompt asks to ENABLE tracing = set_sql_trace_state"
   },
   {
     "id": "SAPDiagnose.action.set_sql_trace_state",
@@ -924,7 +941,8 @@
     "prompt": "What does ZCL_ORDER_PROCESSOR do and what are its key dependencies?",
     "tool": "SAPContext",
     "key": "type",
-    "value": "CLAS"
+    "value": "CLAS",
+    "quarantined": "near-identical to SAPContext.action.deps (\"what does X do + dependencies\")"
   },
   {
     "id": "SAPContext.type.INTF",
@@ -959,7 +977,8 @@
     "prompt": "Which append structures extend the MARA table?",
     "tool": "SAPContext",
     "key": "type",
-    "value": "TABL"
+    "value": "TABL",
+    "quarantined": "near-identical to SAPContext.action.structure (\"append structures for MARA\")"
   },
   {
     "id": "SAPManage.action.features",
@@ -1197,7 +1216,8 @@
     "prompt": "List all ABAP classes defined in the ZCL_ORDER repository.",
     "tool": "SAPGit",
     "key": "action",
-    "value": "objects"
+    "value": "objects",
+    "quarantined": "prompt names ZCL_ORDER as a repository; repos are package-scoped"
   },
   {
     "id": "SAPGit.action.check",
@@ -1260,6 +1280,14 @@
     "prompt": "Unlink ZCL_ORDER_MANAGER from the local repository to clean up the workspace.",
     "tool": "SAPGit",
     "key": "action",
-    "value": "unlink"
+    "value": "unlink",
+    "quarantined": "prompt names a class; unlink operates on a package-linked repo"
+  },
+  {
+    "id": "SAPRead.type.VARIANTS",
+    "prompt": "Show me the selection parameters for program variant Z_BATCH_PROCESS.",
+    "tool": "SAPRead",
+    "key": "type",
+    "value": "VARIANTS"
   }
 ]

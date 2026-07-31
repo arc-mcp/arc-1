@@ -76,8 +76,15 @@ async function main(): Promise<void> {
     results.push({ name, passed: r.passed, bytes: bytes(tools), failedIds: failed, perTool: tally(cases, failed) });
     // Unscored cases differ run to run, so any material count makes variants incomparable — the
     // first tournament was decided by server errors, not by wording.
-    const warn = r.errors > 0 ? `  ⚠ ${r.errors} unscored` : '';
-    console.log(`  ${name.padEnd(26)} ${String(r.passed).padStart(3)}/${r.total}${warn}`);
+    // A run with unscored cases has a different denominator, so its pass count cannot be compared
+    // with one that scored everything — that is how a broken candidate ties a healthy baseline.
+    if (r.errors > 0) {
+      throw new Error(
+        `${name}: ${r.errors} case(s) never got a verdict after retries — results are not comparable. ` +
+          `Fix the server/model and re-run rather than trusting this number.`,
+      );
+    }
+    console.log(`  ${name.padEnd(26)} ${String(r.passed).padStart(3)}/${r.total}`);
   };
 
   console.log('scoring…');

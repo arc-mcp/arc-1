@@ -76,6 +76,12 @@ async function main(): Promise<void> {
   console.log(`wire ${bytes({ tools: stock })} → ${bytes({ tools: patched })} bytes\n`);
 
   const [b, a] = [await runBench(stock, cases, model), await runBench(patched, cases, model)];
+  // Differing unscored sets mean differing denominators; the delta below would be meaningless.
+  if (b.errors > 0 || a.errors > 0) {
+    throw new Error(
+      `unscored cases (before=${b.errors}, after=${a.errors}) — not comparable. Fix the backend and re-run.`,
+    );
+  }
   const delta = a.passed - b.passed;
   const pp = ((delta / cases.length) * 100).toFixed(1);
 
