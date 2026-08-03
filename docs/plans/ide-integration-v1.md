@@ -172,6 +172,32 @@ an object is not in the workspace and therefore not openable.
 deployments simply keep the warning that roots would have suppressed — nothing breaks, and those
 deployments (Copilot Studio, browser clients) usually have no IDE anyway.
 
+## Known issue: ARC-1 writes appear to log the IDE out
+
+Observed four times on 2026-08-03, and more frequently as ARC-1 write volume rose: the ADT session in
+VS Code dies and every `abap:` operation fails. It surfaces misleadingly as
+`NoPermissions (FileSystemError): Method "createDirectory" not yet implemented`.
+
+Two code-level facts (certain):
+
+1. **Stateful-session cookies are discarded.** `withStatefulSession` (`src/adt/http.ts:296`) does
+   `sessionClient.cookieJar = new Map(this.cookieJar)` and never merges the jar back, so any cookie SAP
+   sets during lock→modify→unlock is lost when the clone goes out of scope.
+2. **The stateful context is never released.** No `X-sap-adt-sessiontype: stateless` request exists
+   anywhere in the codebase. Eclipse ADT and `abap-adt-api` both send one after unlocking.
+
+Hypothesis (fits the symptom, not yet proven): if SAP issues a fresh `SAP_SESSIONID` for the stateful
+interaction, ARC-1 orphans one session per write. SAP caps concurrent sessions per user
+(`rdisp/max_alt_modes`, commonly 6) and evicts the oldest when the cap is reached — the long-lived IDE
+session.
+
+**To verify** (one write, non-destructive on a `$TMP` object): run with `ARC1_LOG_HTTP_DEBUG=true` and
+check whether a `Set-Cookie` carrying a *different* `SAP_SESSIONID` appears inside the stateful block.
+
+**Proposed fix:** merge the clone's cookie jar back into the parent after `fn` resolves, and send a
+trailing `X-sap-adt-sessiontype: stateless` request to release the context. Both belong in
+`withStatefulSession` so every write path inherits them.
+
 ## Out of scope for v1
 
 - **Write journal** (`ARC1_WRITE_JOURNAL_DIR`) — deferred by decision. It is also the change with a real
