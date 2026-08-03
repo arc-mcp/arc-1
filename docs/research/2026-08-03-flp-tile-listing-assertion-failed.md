@@ -140,7 +140,41 @@ and sufficient; slash-bearing domain IDs (`/UI2/FLP_ADMIN`) work as `%2F`.
 | **adt-ls** (`~/DEV/arc-1-lsp`) | No references to PAGE_BUILDER / PageChipInstance / CATALOGPAGE. |
 | **`mcp-abap-adt`, `mcp-abap-adt-fr0ster`** | No FLP coverage at all. ARC-1 is alone in this area; no third-party implementation to compare against. |
 | **OData `$metadata`** (fetched live) | `Page` declares `NavigationProperty Name="PageChipInstances"` via association `Page_PageChipInstance` (`Page` 1 → `PageChipInstance` *). `PageChipInstance`'s key is `(pageId, instanceId)`. Confirms the association is the modelled access path. |
-| **SAP Notes** | Searched — **no Note covers this.** `PAGE_BUILDER_CUST PageChipInstances ASSERTION_FAILED` → 0 hits. A broader `Fiori launchpad catalog tiles ASSERTION_FAILED` → 10 hits, all a different failure: catalog *copy/create* in the FLP designer, e.g. Note **2711280** (`CA-FLP-ABA`, "HTTP 500 in `/sap/opu/odata/UI2/PAGE_BUILDER_CONF/CloneCatalog`: ASSERTION_FAILED"), whose cause is chips referencing a stale backend catalog and whose fix is to replicate that catalog — a data condition on a different service and endpoint. Consistent with the diagnosis: our assert is not an SAP defect (identical on 7.50 / 758 / 816), so there is nothing for SAP to correct — the accessor is navigation-only by design. |
+| **SAP Notes** | **No Note covers this** — see the search log below. The `CA-FLP-ABA` Notes that *do* describe an `ASSERTION_FAILED` are corrected program errors in other operations, and Note **3472049** independently corroborates the design. |
+
+### SAP Notes search log
+
+Six queries, five angles (service name, class name, component + symptom, SAP's internal property names,
+generic OData-filter phrasing). Nothing matches; the last query degenerated into unrelated components
+(HANA SQL, Datasphere, Billing), which is the exhaustion signal.
+
+| Query | Result |
+|---|---|
+| `PAGE_BUILDER_CUST PageChipInstances ASSERTION_FAILED` | 0 hits |
+| `/UI2/CL_EDM_DA_V06_USAGE ASSERT condition violated` | 0 hits |
+| `PAGE_BUILDER_CUST short dump` | 4 hits, none related (Fiori setup task lists, an OData namespace-node dump) |
+| `CA-FLP-ABA ASSERTION_FAILED runtime error` | 15 hits — the three in-component ones are 2711280, 3075736 and two App-Manager dumps; none is a read of chip instances |
+| `Fiori launchpad catalog tiles ASSERTION_FAILED` | 10 hits; only the top 3 are `CA-FLP-ABA` (2711280, 3149589, 2625256), all catalog *copy/create*. The remaining 7 are unrelated components (Screen Personas, Focused Build, Gateway 404) |
+| `GADGET_ID BASE_CHIP_ID chip filter` | 2 hits, neither about filtering |
+
+The two `CA-FLP-ABA` asserts read in full are both **genuine program errors that SAP corrected**, in
+different operations:
+
+- **2711280** — `PAGE_BUILDER_CONF/CloneCatalog` returns HTTP 500 `ASSERTION_FAILED` when copying a
+  catalog whose chips reference a stale backend catalog. A data condition on a different service and
+  endpoint; the resolution is to replicate the referenced catalog.
+- **3075736** — `ASSERTION_FAILED` during backend-catalog replication when the backend catalog no
+  longer exists. Shipped as a correction/support package.
+
+That pattern is the point: SAP *does* correct real asserts in this component. There is no correction for
+filtering `PageChipInstances` because there is no defect to correct — and the behavior is byte-identical
+on 7.50, 758 and 816, i.e. unchanged across a decade of support packages.
+
+**Corroboration from SAP's own vocabulary:** Note **3472049** (`CA-FLP-ABA`, 2024) is titled
+"Significant Performance Improvements **EDM routed read requests** (allCatalogs, PageSets, ..)". It
+reworks the `/UI2/CL_EDM_*` read path behind the Launchpad Designer and App Finder — and every request
+it names is a read reached *through a parent entity*. SAP calls these reads "routed"; the routing is the
+navigation, which is exactly what `get_entityset` reading `previous_entity_keytab` implements.
 
 ## Affected ARC-1 code
 
