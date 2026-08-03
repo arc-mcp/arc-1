@@ -17,9 +17,9 @@ jobs:
     steps:
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7  # v5
         id: release
-        # No release-type here — the action reads release-please-config.json,
-        # which sets bump-minor-pre-major: true so breaking changes only bump
-        # the minor version while the package is pre-1.0.0.
+        # No release-type here — the action reads release-please-config.json.
+        # From 1.0 the pre-major bump flags are gone, so semver applies normally:
+        # feat→minor, fix→patch, breaking→major.
 
   # npm publishes independently of the Docker CVE gate — a HIGH/CRITICAL finding
   # blocks the Docker image but not the npm package. (The scheduled security-scan.yml
