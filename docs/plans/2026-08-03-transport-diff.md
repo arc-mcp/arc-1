@@ -102,6 +102,26 @@ number instead lets a high-numbered undated revision outrank a genuinely newer d
 breaks comparator transitivity, so the result depends on input order. Found by running the tool
 live — no fixture suggested it.
 
+**F12 — DDLS and DCLS hang their versions feed off the OBJECT, not off `/source/main`.**
+Probed across every type in `revisionsUrlFor` on a4h:
+
+| Type | `…/source/main/versions` | `…/versions` |
+|---|---|---|
+| PROG, INTF, INCL, FUNC, BDEF, SRVD | ✅ | 404 |
+| CLAS (`…/includes/{inc}/versions`) | ✅ | — |
+| **DDLS, DCLS** | **404** | **✅** |
+
+Not a guessable pattern — `ddic/srvd/sources` uses the long form while `ddic/ddl/sources` and
+`acm/dcl/sources` use the short one. ARC-1 used the long form for all three, so **every CDS view and
+access control in a transport reported `baseline-unavailable`**, and revision-id diffs for those
+types never worked. Pre-existing bug, fixed here.
+
+**F13 — `99999` is the INACTIVE draft, and it is not a baseline.** SAP's `Revision` constructor maps
+`00000` → "Active" and `99999` → "Inactive". A CDS view created but not yet activated has *only* a
+`99999` entry. Either pseudo-version may legitimately be the **current** side of a review — that is
+the change being shipped — but neither is ever a transported predecessor, and the fallback must not
+select one as `current` when a real snapshot exists.
+
 **F11 — while a transport is open, its objects' ACTIVE entry carries the transport link.**
 `CERTRULE_DYNP`'s `00000` names `A4HK900110` (status D). So an unreleased transport needs **no
 special case**: the active revision matches on the normal path and the walk back lands on the last
@@ -308,3 +328,27 @@ Baseline status:
 
 Cross-system diff; metadata serializers for DOMA/DTEL/MSAG/SRVB; FUGR include expansion (needs the
 `L<group>*` ownership rule and its own evidence pass — tracked separately); an opaque cursor.
+
+---
+
+## 7. Live verification matrix (2026-08-03)
+
+Two purpose-built transports on a4h, covering create → release → modify-subset → release.
+
+**A4HK906369** — creates `INTF ZIF_ARC1_TD_SHAPE`, `CLAS ZCL_ARC1_TD_CALC` (with a CCIMP local
+class), `PROG ZARC1_TD_REPORT`, `DDLS ZARC1_TD_VIEW`, `DOMA ZARC1_TD_DOM`.
+**A4HK906371** — modifies only the class main, the class CCIMP, and the program.
+
+| Case | Expected | Observed |
+|---|---|---|
+| Created objects, transport open | `exact-transport` / `no-prior-snapshot` | ✅ (matched on the **task** id for 4 of 5 — the request-only match would have failed) |
+| Created objects, transport released | `exact-transport` / `no-prior-snapshot` | ✅ |
+| Modified class main | `prior-revision` 00001 → 00002, the one changed line | ✅ |
+| **Modified class CCIMP** | own `prior-revision` pair, the local-class line | ✅ — the multi-include claim, proven |
+| Untouched class includes | listed, no diff | ✅ `not changed by this transport` |
+| Untouched objects (INTF/DDLS/DOMA) | absent from transport B | ✅ |
+| Metadata type (DOMA) | inventory, not an error | ✅ |
+| CDS view | real diff | ✅ **after F12** — reported `baseline-unavailable` before |
+| Unactivated CDS view | current = `99999` draft | ✅ **after F13** |
+
+Both bugs were found by running the tool against real transports; neither was visible from fixtures.

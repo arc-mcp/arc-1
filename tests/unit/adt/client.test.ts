@@ -630,6 +630,31 @@ describe('AdtClient', () => {
       expect(urls.some((u) => u.includes('/oo/interfaces/ZIF_TEST/source/main/versions'))).toBe(true);
     });
 
+    // DDLS/DCLS hang the feed off the object, not off /source/main — live-probed on a4h (758),
+    // where the /source/main/versions form 404s for both. Their DDIC sibling SRVD does NOT.
+    it('uses the object-level revisions endpoint for DDLS', async () => {
+      const client = createClient();
+      await client.getRevisions('DDLS', 'Z_VIEW');
+      const urls = mockFetch.mock.calls.map((c: any[]) => String(c[0]));
+      expect(urls.some((u) => u.includes('/ddic/ddl/sources/Z_VIEW/versions?'))).toBe(true);
+    });
+
+    it('uses the object-level revisions endpoint for DCLS', async () => {
+      const client = createClient();
+      await client.getRevisions('DCLS', 'Z_ACCESS');
+      const urls = mockFetch.mock.calls.map((c: any[]) => String(c[0]));
+      expect(urls.some((u) => u.includes('/acm/dcl/sources/Z_ACCESS/versions?'))).toBe(true);
+    });
+
+    it('keeps the source/main revisions endpoint for SRVD and BDEF', async () => {
+      const client = createClient();
+      await client.getRevisions('SRVD', 'Z_SRVD');
+      await client.getRevisions('BDEF', 'Z_BDEF');
+      const urls = mockFetch.mock.calls.map((c: any[]) => String(c[0]));
+      expect(urls.some((u) => u.includes('/ddic/srvd/sources/Z_SRVD/source/main/versions'))).toBe(true);
+      expect(urls.some((u) => u.includes('/bo/behaviordefinitions/Z_BDEF/source/main/versions'))).toBe(true);
+    });
+
     it('throws descriptive error for FUNC revisions without group', async () => {
       const client = createClient();
       await expect(client.getRevisions('FUNC', 'Z_MY_FUNC')).rejects.toThrow(/Function group is required/i);

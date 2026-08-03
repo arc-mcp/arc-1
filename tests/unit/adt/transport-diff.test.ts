@@ -146,6 +146,27 @@ describe('selectTransportRevisionPair', () => {
     }
   });
 
+  it('never uses an inactive draft (99999) as the baseline', () => {
+    // Live: a CDS view created but not yet activated has only a 99999 entry. SAP maps 99999 to
+    // "Inactive" and 00000 to "Active" — either can be the current side, neither is a baseline.
+    const feed = [
+      rev('99999', '2026-08-03T21:35:57Z', 'A4HK906370'),
+      rev('00000', '2026-08-03T21:30:00Z', 'A4HK906370'),
+      rev('00004', '2026-07-01T09:00:00Z', 'A4HK906111'),
+    ];
+    const pair = selectTransportRevisionPair(feed, ['A4HK906370']);
+    expect(pair.current?.id).toBe('99999');
+    expect(pair.previous?.id).toBe('00004');
+    expect(pair.skipped.map((s) => s.revision.id)).toEqual(['00000']);
+  });
+
+  it('does not fall back onto an inactive draft when no revision names the transport', () => {
+    const feed = [rev('99999', '2026-08-03T21:35:57Z'), rev('00003', '2026-07-01T09:00:00Z', 'A4HK906111')];
+    const pair = selectTransportRevisionPair(feed, ['A4HK909999']);
+    expect(pair.selectionMethod).toBe('latest-revision-fallback');
+    expect(pair.current?.id).toBe('00003');
+  });
+
   it('matches a task id as well as the request id', () => {
     const feed = [rev('00002', '2026-06-23T11:23:41Z', 'A4HK906292'), rev('00001', '2026-06-01T09:00:00Z')];
     const pair = selectTransportRevisionPair(feed, ['A4HK906291', 'A4HK906292']);

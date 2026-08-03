@@ -1010,10 +1010,14 @@ export class AdtClient {
       }
       case 'INCL':
         return `/sap/bc/adt/programs/includes/${encodedName}/source/main/versions`;
+      // DDLS/DCLS hang their version feed off the OBJECT, not off /source/main — unlike every
+      // other source type here, including their DDIC sibling SRVD. Live-probed on a4h (758):
+      // /ddic/ddl/sources/{n}/source/main/versions and /acm/dcl/sources/{n}/source/main/versions
+      // both 404; the short form serves the feed. Not a guessable pattern — verify before changing.
       case 'DDLS':
-        return `/sap/bc/adt/ddic/ddl/sources/${encodedName}/source/main/versions`;
+        return `/sap/bc/adt/ddic/ddl/sources/${encodedName}/versions`;
       case 'DCLS':
-        return `/sap/bc/adt/acm/dcl/sources/${encodedName}/source/main/versions`;
+        return `/sap/bc/adt/acm/dcl/sources/${encodedName}/versions`;
       case 'BDEF':
         return `/sap/bc/adt/bo/behaviordefinitions/${encodedName}/source/main/versions`;
       case 'SRVD':

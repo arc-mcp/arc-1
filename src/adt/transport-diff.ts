@@ -50,8 +50,14 @@ export interface TransportRevisionPair {
   skipped: SkippedRevision[];
 }
 
-/** SAP's `IRevision` maps backend version `00000` to "Active" — it is the work state, not a snapshot. */
+/**
+ * The two pseudo-versions SAP's `IRevision` maps to UI text rather than a number: `00000` is the
+ * ACTIVE work state and `99999` the INACTIVE draft. Either can legitimately be the *current* side
+ * of a review — that is the change being shipped — but neither is ever a transported baseline.
+ */
 const ACTIVE_VERSION = '00000';
+const INACTIVE_VERSION = '99999';
+const WORK_STATE_VERSIONS = new Set([ACTIVE_VERSION, INACTIVE_VERSION]);
 
 /**
  * The 5-digit ADT version number of a revision.
@@ -124,9 +130,9 @@ export function selectTransportRevisionPair(
   let selectionMethod: RevisionSelectionMethod = 'exact-transport';
 
   if (currentIndex === -1) {
-    // No revision names this transport. Prefer the newest real snapshot over the active
-    // work state, so the diff is still between two transported versions.
-    currentIndex = sorted.findIndex((r) => revisionNumber(r) !== ACTIVE_VERSION);
+    // No revision names this transport. Prefer the newest real snapshot over a work state,
+    // so the diff is still between two transported versions.
+    currentIndex = sorted.findIndex((r) => !WORK_STATE_VERSIONS.has(revisionNumber(r)));
     selectionMethod = 'latest-revision-fallback';
   }
   if (currentIndex === -1) {
@@ -138,8 +144,10 @@ export function selectTransportRevisionPair(
   let previousIndex = currentIndex + 1;
   while (previousIndex < sorted.length) {
     const candidate = sorted[previousIndex];
-    if (revisionNumber(candidate) === ACTIVE_VERSION) {
-      skipped.push({ revision: candidate, reason: 'active work state (version 00000), not a transported predecessor' });
+    const num = revisionNumber(candidate);
+    if (WORK_STATE_VERSIONS.has(num)) {
+      const kind = num === ACTIVE_VERSION ? 'active work state' : 'inactive draft';
+      skipped.push({ revision: candidate, reason: `${kind} (version ${num}), not a transported predecessor` });
     } else if (belongsToTransport(candidate)) {
       skipped.push({ revision: candidate, reason: 'belongs to the same transport — baseline must predate it' });
     } else {
