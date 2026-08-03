@@ -5,6 +5,13 @@ For what each release *means* (impact, upgrade actions, config and tool-surface 
 annotated [release notes](https://docs.arc-1-mcp.com/release-notes/)
 ([source](docs_page/release-notes.md)).
 
+## [1.0.2](https://github.com/arc-mcp/arc-1/compare/v1.0.1...v1.0.2) (2026-08-03)
+
+
+### Bug Fixes
+
+* restore the release gate that ran publish jobs on every push ([#669](https://github.com/arc-mcp/arc-1/issues/669)) ([d6d56f4](https://github.com/arc-mcp/arc-1/commit/d6d56f4bda62d810ca2aacff7f6c45213df5483f))
+
 ## [1.0.1](https://github.com/arc-mcp/arc-1/compare/v1.0.0...v1.0.1) (2026-08-03)
 
 
