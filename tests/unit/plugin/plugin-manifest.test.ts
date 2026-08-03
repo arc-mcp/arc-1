@@ -124,6 +124,7 @@ describe('config surface parity (plugin ↔ mcpb)', () => {
     'ARC1_UI',
     'ARC1_UI_OPEN',
     'ARC1_UI_ADDR',
+    'ARC1_IDE_LINKS',
   ];
 
   const surfaces: Record<string, { env: Record<string, string>; cfg: Record<string, Record<string, unknown>> }> = {

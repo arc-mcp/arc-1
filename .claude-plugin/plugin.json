@@ -75,13 +75,13 @@
     "sap_allow_data_preview": {
       "type": "boolean",
       "title": "Allow Table Data Preview",
-      "description": "Allow SAPRead(type=TABLE_CONTENTS) and SAPQuery table preview. Can expose application data — review your data-governance rules.",
+      "description": "Allow SAPRead(type=TABLE_CONTENTS) and SAPQuery table preview. Can expose application data \u2014 review your data-governance rules.",
       "default": false
     },
     "sap_allow_free_sql": {
       "type": "boolean",
       "title": "Allow Freestyle SQL",
-      "description": "Allow read-only ad-hoc ABAP SQL via SAPQuery. Can expose application data — review your data-governance rules.",
+      "description": "Allow read-only ad-hoc ABAP SQL via SAPQuery. Can expose application data \u2014 review your data-governance rules.",
       "default": false
     },
     "sap_allow_transport_writes": {
@@ -113,6 +113,13 @@
       "title": "UI Loopback Address",
       "description": "Loopback bind address for the local read-only UI.",
       "default": "127.0.0.1:8711"
+    },
+    "arc1_ide_links": {
+      "type": "string",
+      "title": "IDE Links",
+      "description": "Append a clickable IDE link to results about one object. auto | off | vscode | eclipse | a template using {type} {name} {package} {uri} {sid} {client}. Claude Desktop has no IDE of its own, so set 'vscode' or an adt:// template to choose where links should open.",
+      "default": "auto",
+      "required": false
     }
   },
   "mcpServers": {
@@ -137,7 +144,8 @@
         "SAP_ALLOW_GIT_WRITES": "${user_config.sap_allow_git_writes}",
         "ARC1_UI": "${user_config.arc1_ui}",
         "ARC1_UI_OPEN": "${user_config.arc1_ui_open}",
-        "ARC1_UI_ADDR": "${user_config.arc1_ui_addr}"
+        "ARC1_UI_ADDR": "${user_config.arc1_ui_addr}",
+        "ARC1_IDE_LINKS": "${user_config.arc1_ide_links}"
       }
     }
   }
