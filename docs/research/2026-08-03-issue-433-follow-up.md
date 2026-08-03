@@ -38,6 +38,39 @@ This PR-sized implementation deliberately covers parser correctness, create/modi
 bounded candidate output, and the inaccurate request-kind documentation. The other P2/P3 proposals
 remain separate because their safety and cross-system contracts are not prerequisites for this fix.
 
+### Transport-review semantics follow-up
+
+The corrected candidate parser exposed a user-facing ambiguity in the legacy
+`SAPTransport(action="history")` contract. The standard ADT endpoints do not provide complete object
+transport history:
+
+- `GET {objectUrl}/transports` returns the current parent request lock, at most one request;
+- `POST /cts/transportchecks` returns modifiable requests the object could be assigned to;
+- those candidate requests do not contain the object and are not history/conflict evidence;
+- complete membership history requires E071/E070 access, as already recorded under FEAT-49.
+
+This distinction matters more after the parser fix because real candidate lists are now visible. A
+transport-review or overview skill that treats them as prior transports can manufacture false
+import-order conflicts.
+
+A read-only 758 manifest spike also found 299 CTS entries across 58 visible draft requests and 32
+distinct `pgmid/type/wbtype` shapes. Alongside direct `R3TR/CLAS`, `R3TR/DDLS`, and similar entries,
+the payload contained `LIMU/METH`, `LIMU/REPS`, `LANG/DTEL`, packages, and metadata-only types. The
+transport-reference endpoint successfully resolved representative entries to canonical ADT URIs:
+
+| CTS entry | Resolved ADT collection |
+|---|---|
+| `R3TR/CLAS` | `/sap/bc/adt/oo/classes/...` |
+| `LIMU/METH` | owning `/sap/bc/adt/oo/classes/...` |
+| `LIMU/REPS` | `/sap/bc/adt/programs/includes/...` |
+| `LANG/DTEL` | `/sap/bc/adt/ddic/dataelements/...` |
+
+That endpoint is useful for a future first-class transport-diff aggregator, but it is not currently
+exposed as an MCP action. The shipped skills must therefore diff only safely resolved direct
+repository objects, fold subobjects only when the parent is unambiguous, and label unresolved
+coverage instead of guessing. A separate transport-level diff should add canonical URI resolution,
+deduplication, snapshot-confidence labels, structured aggregation, and output bounds.
+
 ## Current implementation status
 
 ### Release reports are already implemented

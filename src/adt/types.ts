@@ -505,14 +505,14 @@ export interface TransportReleaseReport {
   messages: TransportReleaseMessage[];
 }
 
-/** Result of looking up transports related to a given ABAP object. */
+/** Current CTS lock/assignment status for an ABAP object (legacy action name: history). */
 export interface ObjectTransportHistory {
   object: { type: string; name: string; uri: string };
   /** Transport currently holding a lock on this object (if any). */
   lockedTransport?: string;
-  /** All transports the object is referenced from (active + queued). Empty when none. */
+  /** Current parent request holding the object lock; contains at most one entry. */
   relatedTransports: Array<{ id: string; description: string; owner: string; status: string }>;
-  /** Transports the object could be added to (from transportchecks fallback). */
+  /** Requests the object could be assigned to; these do not imply object membership or history. */
   candidateTransports: Array<{ id: string; description: string; owner: string }>;
   /** Total candidate count before output bounding. */
   candidateTotal?: number;

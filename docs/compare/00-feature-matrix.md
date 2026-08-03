@@ -207,7 +207,7 @@ The npm-graph CycloneDX quick win is now shipped. Remaining Tier 2 work (image/M
 | Recursive release | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ✅ (recursive) |
 | Delete transport | ✅ (recursive) | ❌ | ❌ | ❌ | ��� | ❌ | ❌ | N/A | ❌ | ✅ |
 | Transport contents | ⚠️ (forward lookup: `SAPTransport get`) | ⚠️ (abap_transport-get) | ❌ | ✅ | ❌ | ❌ | ❌ | N/A | ✅ | ✅ (-rrr objects) |
-| Object → transport reverse lookup | ✅ (history action) | ❌ | ❌ | ⚠️ (URI resolve only) | ❌ | ❌ | ❌ | N/A | ⚠️ (URI resolve only) | ❌ |
+| Current object transport lock / assignment candidates | ✅ (`history` legacy action name; not complete history) | ❌ | ❌ | ⚠️ (URI resolve only) | ❌ | ❌ | ❌ | N/A | ⚠️ (URI resolve only) | ❌ |
 | Transport assign | ✅ (reassign owner) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ✅ | ✅ (reassign owner) |
 | Transport gating | ✅ | ⚠️ (human-in-the-loop selection) | ✅ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
 | Inactive objects list | ✅ (rich user/deleted/transport metadata + flat fallback) | ⚠️ (IDE-side) | ✅ | ��� | ❌ | ❌ | ✅ | N/A | ❌ | ✅ |

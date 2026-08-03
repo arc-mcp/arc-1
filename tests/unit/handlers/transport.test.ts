@@ -606,7 +606,7 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
       expect(parsedCapped.total).toBe(120);
     });
 
-    it('history returns object transport data as JSON', async () => {
+    it('history returns the current object lock as JSON', async () => {
       // Real /transports response shape: com.sap.adt.lock.result2 with flat
       // CORRNR/CORRUSER/CORRTEXT on DATA. CORRNR is already the parent
       // K-request (SAP resolves task→parent automatically).
@@ -645,7 +645,7 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
       expect(parsed.summary).toBe('Object ZCL_TEST is locked in transport A4HK900123 by DEVELOPER.');
     });
 
-    it('history falls back to transportchecks when /transports is empty', async () => {
+    it('history falls back to assignment candidates when /transports has no current lock', async () => {
       const objectStructure = `<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">
         <adtcore:packageRef adtcore:name="Z_MY_PKG"/>
       </adtcore:objectReferences>`;
@@ -690,6 +690,37 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
       expect(parsed.candidateTransports).toHaveLength(1);
       expect(parsed.candidateTransports[0]?.id).toBe('A4HK900500');
       expect(parsed.summary).toContain('available for assignment');
+    });
+
+    it('history reports no current status without guessing that the object is local', async () => {
+      const objectStructure = `<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">
+        <adtcore:packageRef adtcore:name="$TMP"/>
+      </adtcore:objectReferences>`;
+      const calls: string[] = [];
+      mockFetch.mockImplementation((url: string) => {
+        const target = String(url);
+        calls.push(target);
+        if (target.includes('/sap/bc/adt/oo/classes/ZCL_TEST/transports')) {
+          return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+        }
+        if (target.includes('/sap/bc/adt/oo/classes/ZCL_TEST')) {
+          return Promise.resolve(mockResponse(200, objectStructure, { 'x-csrf-token': 'T' }));
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'history',
+        type: 'CLAS',
+        name: 'ZCL_TEST',
+      });
+
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0]?.text ?? '{}');
+      expect(parsed.relatedTransports).toEqual([]);
+      expect(parsed.candidateTransports).toEqual([]);
+      expect(parsed.summary).toBe('Object ZCL_TEST has no current lock or assignment candidates.');
+      expect(calls.some((url) => url.includes('/cts/transportchecks'))).toBe(false);
     });
 
     it('check defaults to create, returns live-shape candidates, and bounds the response', async () => {

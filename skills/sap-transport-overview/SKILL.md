@@ -1,6 +1,6 @@
 ---
 name: sap-transport-overview
-description: System-wide inventory of open transport requests — every modifiable request across all users, who owns it, how big it is, and what's risky (objects locked in two requests, $TMP leftovers, stale or empty requests). Headers-only and cheap; NO source diffs. Use when asked "what transports are open in the system", "show all open transports", "transport backlog", "what is everyone working on", "basis transport overview", "which requests are ready to release", or "find import-order conflicts".
+description: System-wide inventory of open transport requests — every visible modifiable request, who owns it, how big it is, and supported risk signals such as empty/local requests, explicit locks, and confirmed manifest overlaps. Headers-only and cheap; NO source diffs. Use when asked "what transports are open in the system", "show all open transports", "transport backlog", "what is everyone working on", "basis transport overview", "which requests are ready to release", or "find import-order conflicts".
 ---
 
 # SAP Transport Overview (system-wide)
@@ -33,7 +33,9 @@ Optional narrowing — apply if given, else default to the whole system:
 
 - **Owner / user** — one developer's open requests.
 - **Status** — `D` (default), `R` (released), `*` (all).
-- **Age / package / description filter** — e.g. "older than 30 days", "in package ZSALES", "matching 'migration'".
+- **Description / size / target filter** — e.g. "matching 'migration'", "more than 20 entries", or
+  "without a target". The current transport payload has no age or object-package field, so do not
+  offer age/package filtering without a separate authoritative data source.
 
 **Scope guard:** the system-wide list can be hundreds of requests. Always start with `summary=true`.
 If it's still large, aggregate (counts per owner, top-N by `objectCount`) and offer to filter — never
@@ -56,20 +58,31 @@ For requests the user flags (or the suspicious ones from Step 3), pull the full 
 SAPTransport(action="get", id="<id>")
 ```
 
-This lists the objects (type/name/locked) — the *contents*, not the source. Only `get` the handful in
-focus; do not `get` the whole system.
+This lists CTS entries (`pgmid`, `type`, `name`, `wbtype`, `locked`) — the *contents*, not source or
+package metadata. Only `get` the handful in focus; do not `get` the whole system.
 
 ## Step 3: Risk / health flags (the basis value)
 
 These are what an overview is *for*. Derive from the data already gathered:
 
-- **Import-order conflict** — the same object in **two or more open requests**. The classic cause of
-  transport-sequence breakage. To check one object across requests: `SAPTransport(action="history", type="<type>", name="<name>")`. To find them in a working set, `get` the in-scope requests and intersect their object lists.
-- **`$TMP` / local objects** — won't transport; flag requests that carry them.
+- **Confirmed exact overlap** — after explicitly expanding the in-scope requests, the same exact CTS
+  key (`pgmid`, `type`, `name`) occurs in two manifests. This can create import-order risk. Raw-key
+  intersection is conservative: it can miss conceptual overlaps represented once as `R3TR` and once
+  as `LIMU`/language subobjects, so label the result "exact CTS-key overlap", not exhaustive conflict
+  detection.
 - **Empty requests** (`objectCount` 0) — cleanup candidates (delete or release).
-- **Stale** — long-open requests (old `changedAt`); ageing backlog.
-- **Locked objects** (`locked: true` from `get`) — block other developers; may need release or unlock.
+- **Explicitly locked objects** (`locked: true` from `get`) — may block other developers. On older
+  releases `tm:lock_status` can be absent, so `locked: false` does not prove that an entry is unlocked.
 - **No target** (`target` empty) — a *local* request that cannot be transported onward (often a mistake for work meant to ship).
+
+`SAPTransport(action="history", type=…, name=…)` is **current assignment status**, despite the legacy
+action name: `relatedTransports` contains at most the current lock request, while
+`candidateTransports` are requests the object could be assigned to. Candidates do not contain the
+object and are not conflict/history evidence. Full historical membership requires E071/E070 access;
+the standard ADT endpoints used here do not provide it.
+
+Do not infer `$TMP` from a transport manifest: CTS entries do not expose package, and local-package
+objects normally are not transport contents. Resolve package separately before making such a claim.
 
 ## Step 4: Report
 
@@ -79,7 +92,7 @@ These are what an overview is *for*. Derive from the data already gathered:
 ## By owner
 | Owner | Requests | Objects | Notable |
 |---|---|---|---|
-| MARIAN | 6 | 41 | 1 empty, 1 stale (>60d) |
+| MARIAN | 6 | 41 | 1 empty, 1 local request |
 | ANNA   | 2 | 8  | |
 
 ## Register
@@ -89,9 +102,9 @@ These are what an overview is *for*. Derive from the data already gathered:
 | A4HK900200 | ANNA   | Pricing fix     | 3  | C11   | ⚠ ZCL_PRICE also in A4HK900123 |
 
 ## Needs attention
-- ⚠ ZCL_PRICE is in 2 open requests (A4HK900123, A4HK900200) → import-order conflict; sequence or consolidate.
+- ⚠ Exact CTS key R3TR/CLAS/ZCL_PRICE is in 2 expanded requests (A4HK900123, A4HK900200) → possible import-order conflict; sequence or consolidate.
 - ⚠ A4HK900155 (MARIAN) is empty → delete or release.
-- ⚠ A4HK900090 open since <date> (>60d) → stale; confirm still needed.
+- ⚠ A4HK900123 has no target → local request; confirm it is not intended for downstream import.
 ```
 
 Write to disk only if asked; otherwise return inline.
@@ -102,8 +115,9 @@ Write to disk only if asked; otherwise return inline.
 |---|---|---|
 | `list` returns very many requests | Busy system | Keep `summary=true`; aggregate per owner + top-N by size; offer to filter |
 | `user="*"` returns only my requests | Backend ignored the unfiltered query / scope limits | Confirm the SAP user may see others' requests (`S_TRANSPRT`); some systems restrict cross-user listing |
-| `history`/`get` slow across many requests | Expanding too much | Only expand the flagged/in-focus requests, never the whole system |
-| Need released history too | Default is `D` only | Re-run with `status="R"` or `status="*"` |
+| `get` slow across many requests | Expanding too much | Only expand the flagged/in-focus requests, never the whole system |
+| `history` returns many candidates | Candidates are assignment choices, not containing requests | Do not use them as history/overlap evidence; compare explicitly expanded manifests |
+| Need released requests too | Default is `D` only | Re-run `list` with `status="R"` or `status="*"` |
 
 ## When to use this skill
 
@@ -114,11 +128,13 @@ Write to disk only if asked; otherwise return inline.
 ## When NOT to use this skill
 
 - **What exactly changed in a request** (source diffs) → [sap-transport-review](../sap-transport-review/SKILL.md).
-- **One object's history** ("which transports touched ZCL_X") → `SAPTransport(action="history", type=…, name=…)` directly.
+- **One object's complete history** ("which transports touched ZCL_X") → not available from the
+  standard ADT history action; use an authorized E071/E070 data workflow or an external CTS report.
+- **One object's current lock/assignment status** → `SAPTransport(action="history", type=…, name=…)`.
 - **Cross-system** (is DEV ahead of QAS) → out of scope: ARC-1 binds one system per instance; run the CLI against each system and compare.
 
 ## Follow-up Options
 
 - "Review the actual changes in one of these?" → [sap-transport-review](../sap-transport-review/SKILL.md).
 - "Release the ready ones?" → `SAPTransport(action="release")` / `release_recursive`.
-- "Clean up the empty/stale ones?" → `SAPTransport(action="delete")`.
+- "Clean up the empty ones?" → `SAPTransport(action="delete")`.

@@ -669,8 +669,7 @@ export async function getTransportInfo(
 }
 
 /**
- * List transport requests related to an ABAP object via the per-object
- * `/transports` endpoint.
+ * Read the current transport lock for an ABAP object via its `/transports` endpoint.
  *
  * The endpoint returns a `com.sap.adt.lock.result2` payload with flat
  * `<DATA><CORRNR>…<CORRUSER>…<CORRTEXT>…</DATA>` when the object is

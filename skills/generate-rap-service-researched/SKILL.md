@@ -941,7 +941,7 @@ Offer follow-up actions based on the plan:
 8. **Create DOMA/DTEL** (if not done in Phase 4) for proper reusable typing
 9. **Release transport** (if transportable package) → use `SAPTransport(action="release_recursive", transport="<TR>")` to release tasks and parent in one step
 10. **Attach generated documentation** (optional) → use `SAPWrite(action="create", type="SKTD", refObjectType="SRVD", name="<service_doc_name>", source="<architecture_summary_markdown>")`
-11. **Review transport + revision context on later iterations** → use `SAPTransport(action="history", objectType="SRVD", objectName="ZSD_<ENTITY>")` and `SAPRead(type="VERSIONS", name="ZSD_<ENTITY>", objectType="SRVD")`
+11. **Review current assignment + revision context on later iterations** → use `SAPTransport(action="history", type="SRVD", name="ZSD_<ENTITY>")` for the current lock/assignment status and `SAPRead(type="VERSIONS", name="ZSD_<ENTITY>", objectType="SRVD")` for actual revision history. Candidate requests from `history` are assignment choices, not historical membership.
 12. **If the package is repo-managed** → use `SAPGit` (`list_repos`, `objects`, `history`) before changing naming or branch conventions
 ```
 

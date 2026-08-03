@@ -438,7 +438,7 @@ References: [ABAP Development Tools for VS Code marketplace page](https://market
 
 - `SAPContext(action="impact")` for RAP/CDS reuse and dependency analysis
 - `SAPRead(type="VERSIONS")` / `SAPRead(type="VERSION_SOURCE")` for safer edits of existing RAP stacks
-- `SAPTransport(action="history")` for object-to-transport traceability
+- `SAPTransport(action="history")` for current object lock/assignment status (legacy name; candidates are not complete history)
 - `SAPLint(action="format" | "get_formatter_settings")` for SAP-native formatting
 - `SAPRead` / `SAPWrite` for `SKTD` so RAP artifacts can carry attached Markdown documentation
 - `SAPGit` for abapGit / gCTS-aware package workflows when available

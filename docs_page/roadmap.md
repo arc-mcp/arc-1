@@ -105,7 +105,7 @@ SORT RULES for this table — DO NOT BREAK when adding rows:
 | — | ~~**SDO source format fix + DSFD**~~ — ✅ **shipped 2026-07-21**: server-driven source PUT content type is now per-registry-entry (`sourceFormat`), fixing `SAPWrite update type=DTSC` which SAP answered with a hard `415` on every system (the client-side `JSON.parse` gate also rejected DDL text before any HTTP call); adds `DSFD` (CDS Scalar Function Definition). Live-verified 758 + 816. Evidence: [docs/research/2026-07-21-sap-vscode-roadmap-dtdc-dsfd-probe.md](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-07-21-sap-vscode-roadmap-dtdc-dsfd-probe.md) | P1 | S | Bugs/Features |
 | ~~[FEAT-10](#feat-10)~~ | ~~PrettyPrint (Code Formatting)~~ | ~~P1~~ | ~~XS~~ | ~~Completed 2026-04-17~~ |
 | ~~[FEAT-20](#feat-20)~~ | ~~Source Version / Revision History~~ | ~~P1~~ | ~~S~~ | ~~Completed 2026-04-17~~ |
-| ~~[FEAT-49](#feat-49)~~ | ~~Object Transport History (Reverse Lookup)~~ | ~~P1~~ | ~~S~~ | ~~Completed 2026-04-17~~ |
+| ~~[FEAT-49](#feat-49)~~ | ~~Current Object Transport Status (legacy `history` action)~~ | ~~P1~~ | ~~S~~ | ~~Completed 2026-04-17~~ |
 | ~~[DOC-04](#doc-04)~~ | ~~RAP & Common ABAP Workflow Skill Pack Refresh~~ | ~~P1~~ | ~~S~~ | ~~Completed 2026-04-18~~ |
 | ~~[FEAT-67](#feat-67)~~ | ~~**DTDC (Dynamic Cache) read/write**~~ — ✅ **shipped 2026-07-24**: generalized the SDO engine off the blue-only assumption (per-entry metadata root/ns/marker); `SAPRead`/`SAPWrite`/`SAPActivate type=DTDC`. Live-verified create→activate→delete on 758 + 816 | P2 | S | Features |
 | ~~[FEAT-68](#feat-68)~~ | ~~**ATC check-variant listing**~~ — ✅ **shipped 2026-07-24**: `SAPDiagnose action=atc_variants` lists variants + the system default. Live-verified 758 + 816 | P2 | XS | Features |
@@ -182,7 +182,7 @@ SORT RULES for this table — DO NOT BREAK when adding rows:
 | [FEAT-22](#feat-22) | gCTS/abapGit Integration (`SAPGit` tool + `--allow-git-writes` safety gate) | 2026-04-18 | Features |
 | SEC-09 | Auth Safety & Configurability (cookie→PP leak fix, applyAuthHeader guard, fail-fast validation, auth summary log, SAML disable opt-in, HTML login detection) | 2026-04-17 | Security |
 | [FEAT-20](#feat-20) | Source Version / Revision History | 2026-04-17 | Features |
-| [FEAT-49](#feat-49) | Object Transport History (Reverse Lookup) | 2026-04-17 | Features |
+| [FEAT-49](#feat-49) | Current Object Transport Status (legacy `history` action) | 2026-04-17 | Features |
 | [FEAT-10](#feat-10) | PrettyPrint (Code Formatting) | 2026-04-17 | Features |
 | [FEAT-43](#feat-43) | DDIC Auth & Misc Read (Authorization Fields, Feature Toggles, Enhancement Implementations) | 2026-04-17 | Features |
 | [FEAT-33](#feat-33) | CDS Impact Analysis | 2026-04-16 | Features |
@@ -247,7 +247,7 @@ SORT RULES for this table — DO NOT BREAK when adding rows:
 >
 > **2026-04-14 priority re-evaluation:** dassian-adt's explosive growth (0→32 stars, 25→53 tools, OAuth/XSUAA, multi-system in 2 weeks) and SAP's confirmed Q2 2026 GA for official ABAP MCP Server increase urgency on fix proposals (FEAT-12↑P1), error intelligence (FEAT-16↑P1), and pretty print (FEAT-10↑P1, completed 2026-04-17). SAP Joule entering the space makes ARC-1's enterprise-grade safety/auth differentiation even more important.
 >
-> **2026-04-16 additions:** Cross-project competitor analysis (VSP, fr0ster, dassian-adt deep dive) identified COMPAT-01..03 plus verify item COMPAT-04. Follow-up confirmed COMPAT-03 had already been fixed in PR #130 (commit `9b0601c`, completed 2026-04-15). COMPAT-01 and COMPAT-02 were fixed in this follow-up (completed 2026-04-16). FR0ster reached v6.1.0 (35 stars). VSP confirmed modificationSupport guard as root cause of recurring 423 lock errors and surfaced S/4HANA Public Cloud CSRF HEAD incompatibility (#104). PR #134 (SKTD) merged 2026-04-16 — ARC-1-unique Knowledge Transfer Document support now live. Enhancement (BAdI) ADT endpoints confirmed from fr0ster analysis. GetProgFullCode confirmed on-prem only via nodestructure API. Added **FEAT-49** (Object Transport History) at P1 — reverse lookup ("which transports contain this object?") is the missing link for transport-scoped code review (fr0ster#30). Enriched **FEAT-20** (revisions) with concrete ADT endpoint details; upgraded **FEAT-24** (diff) rationale — the trio (FEAT-49→FEAT-20→FEAT-24) enables the full code review workflow no competitor has end-to-end. Overview table re-sorted by actual priority (P0→P1→P2→P3).
+> **2026-04-16 additions:** Cross-project competitor analysis (VSP, fr0ster, dassian-adt deep dive) identified COMPAT-01..03 plus verify item COMPAT-04. Follow-up confirmed COMPAT-03 had already been fixed in PR #130 (commit `9b0601c`, completed 2026-04-15). COMPAT-01 and COMPAT-02 were fixed in this follow-up (completed 2026-04-16). FR0ster reached v6.1.0 (35 stars). VSP confirmed modificationSupport guard as root cause of recurring 423 lock errors and surfaced S/4HANA Public Cloud CSRF HEAD incompatibility (#104). PR #134 (SKTD) merged 2026-04-16 — ARC-1-unique Knowledge Transfer Document support now live. Enhancement (BAdI) ADT endpoints confirmed from fr0ster analysis. GetProgFullCode confirmed on-prem only via nodestructure API. Added **FEAT-49** at P1, originally scoped as object transport history; live endpoint research established that standard ADT exposes only the current lock plus assignment candidates, while complete history needs E071/E070 access. Enriched **FEAT-20** (revisions) with concrete ADT endpoint details and upgraded **FEAT-24** (diff) rationale. Overview table re-sorted by actual priority (P0→P1→P2→P3).
 >
 > **2026-04-23 additions:** Four merged items plus re-evaluation driven by open PR review and competitor scan:
 > - **FEAT-55** — SM02 system messages + /IWFND/ERROR_LOG gateway errors wired into `SAPDiagnose` (PR #174). Matrix section 10 updated — ARC-1 no longer has any diagnostic feed that only fr0ster exposes.
@@ -274,14 +274,14 @@ SORT RULES for this table — DO NOT BREAK when adding rows:
 >
 > Priority re-eval (competitor-driven, 2026-04-23):
 > - **FEAT-18** (Function Group Bulk Fetch) — still P1. The `npm run probe` (FEAT-56) and SQLite cache mitigate the round-trip cost; revisit if evals show LLMs hit 20+ FM groups repeatedly. Not downgrading yet — dassian's confirmed parallel fetch pattern means the gap is visible to users comparing tools.
-> - **FEAT-24** (CompareSource/Diff) — **promote P2 → P1**. With FEAT-20 (VERSIONS) + FEAT-49 (object transport history) both shipped, diff is now the last missing piece of the code-review workflow no competitor has end-to-end. Target revision-to-revision client-side diff first; transport-scoped diff is the follow-up.
+> - **FEAT-24** (CompareSource/Diff) — **promote P2 → P1**. FEAT-20 supplies revision sources and FEAT-49 supplies current assignment context; target revision-to-revision client-side diff first. A transport-scoped diff still needs manifest normalization and honest snapshot-coverage labels.
 > - **FEAT-34** (i18n Translation Management) — **hold at P2 but de-emphasize**. VSP added 7 translation tools in early April but has been quiet since 2026-04-15. Not blocking adoption signals for ARC-1; revisit if a specific customer ask lands.
 > - **FEAT-07** (TLS/HTTPS) — stays P3. BTP CF + reverse proxy patterns are still the answer.
 >
 > Already-implemented sanity check (2026-04-23):
 > - `SAPContext(action="impact")` already handles DDLS/DDLX upstream+downstream (FEAT-33, 2026-04-16) plus sibling DDLS/DDLX consistency (FEAT-57, 2026-04-22).
 > - `SAPRead(type="VERSIONS" | "VERSION_SOURCE")` (FEAT-20, 2026-04-17) is live on on-prem; BTP exposure intentionally deferred.
-> - `SAPTransport(action="history")` (FEAT-49, 2026-04-17) is live with `transportchecks` fallback.
+> - `SAPTransport(action="history")` (FEAT-49, 2026-04-17) is live with a `transportchecks` fallback. The action name is legacy: output is current lock/assignment status, not complete history.
 > - `SAPDiagnose` now covers dumps + traces + system_messages + gateway_errors + quickfix + apply_quickfix (FEAT-55, 2026-04-21). SQL trace (FEAT-09) is the only fr0ster-v5 diagnostic still missing.
 > - `SAPGit` (FEAT-22, 2026-04-18) auto-selects gCTS→abapGit with a `--allow-git-writes` safety gate; VSP's gCTS lead is closed for the prioritized workflow set.
 > - **OData/SQL performance insight** (2026-06-25): `SAPDiagnose action=odata_perf` (probe an OData URL with `?sap-statistics=true` → server-side gw* timing split + routing verdict) + `action=cds_sql` (CDS Show-SQL via `ddic/ddl/createstatements`) + an ICF-inactive activation guard (`icf-service-inactive`). Verified live on 7.50 / 758 / 816. Answers "why is this Fiori/OData request slow" without SAP GUI; SQL-trace control (FEAT-09 / ST05) is the next step.
@@ -327,7 +327,7 @@ These bugs affect real-world deployments and were confirmed by cross-project com
 15. **FEAT-18** Function Group Bulk Fetch (S) — token/round-trip savings. dassian-adt has parallel fetch (objectstructure + Promise.all pattern confirmed).
 16. ~~**FEAT-10** PrettyPrint (XS)~~ — **completed 2026-04-17** (`SAPLint` actions: `format`, `get_formatter_settings`, `set_formatter_settings`).
 17. ~~**FEAT-20** Source Version / Revision History (S)~~ — **completed 2026-04-17.** Added on-prem `SAPRead(type="VERSIONS")` (Atom revision feed parsed to JSON) and `SAPRead(type="VERSION_SOURCE")` (revision source fetch by opaque `versionUri`). BTP exposure intentionally deferred pending endpoint verification.
-18. ~~**FEAT-49** Object Transport History / Reverse Lookup (S)~~ — **completed 2026-04-17.** Implemented as `SAPTransport(action="history")` using per-object `GET {objectUrl}/transports` endpoint with `transportchecks` fallback for candidate transports.
+18. ~~**FEAT-49** Current Object Transport Status (S)~~ — **completed 2026-04-17.** Implemented under the compatibility action name `SAPTransport(action="history")` using per-object `GET {objectUrl}/transports` for the current lock plus a `transportchecks` fallback for assignment candidates. It is not complete history.
 19. **DOC-01** Copilot Studio Setup Guide (S) — critical for enterprise adoption
 20. **DOC-02** Basis Admin Security Guide (S) — admin audience needs clear guidance
 21. ~~**DOC-04** RAP & Common ABAP Workflow Skill Pack Refresh (S)~~ — **completed 2026-04-18.** Refreshed first-party RAP skills to use provider-contract guidance, `SAPContext(action="impact")`, revision/history reads, formatter settings, SKTD docs, and `SAPGit`; updated `skills/README.md` and `docs_page/skills.md` to document the new workflow layer.
@@ -924,9 +924,9 @@ Note: The `/enhancements/elements` endpoint is **on-prem only** (SAP BTP ABAP Cl
 | **Usefulness** | High — version comparison, rollback context, transport-scoped code review |
 | **Status** | Completed (2026-04-17) |
 | **Source** | [abap-adt-api eval](https://github.com/arc-mcp/arc-1/blob/main/docs/compare/abap-adt-api/evaluations/d3c6940-source-versions.md), [VSP eval](https://github.com/arc-mcp/arc-1/blob/main/docs/compare/vibing-steampunk/evaluations/dd06202-version-history.md), [fr0ster#30](https://github.com/fr0ster/mcp-abap-adt/issues/30) |
-| **Related** | FEAT-49 (object transport history), FEAT-24 (diff) — together these three enable transport-scoped code review |
+| **Related** | FEAT-49 (current object transport status), FEAT-24 (diff) |
 
-**What:** List revision history of ABAP objects and retrieve source at a specific revision. Combined with FEAT-49 (object→transport lookup) and FEAT-24 (diff), enables the full code review workflow requested in fr0ster#30: "check only the code modified in the last Transport Request."
+**What:** List revision history of ABAP objects and retrieve source at a specific revision. Combined with an explicitly selected transport manifest and FEAT-24 (diff), this supports transport review where SAP exposes an unambiguous released snapshot or pending draft. FEAT-49 contributes current lock/assignment context but does not identify complete historical membership.
 
 **Completed notes (2026-04-17):**
 - Added on-prem SAPRead types: `VERSIONS` (revision feed as JSON) and `VERSION_SOURCE` (raw source by opaque revision URI).
@@ -962,7 +962,7 @@ Note: The `/enhancements/elements` endpoint is **on-prem only** (SAP BTP ABAP Cl
 - `src/handlers/schemas.ts`/`src/handlers/tools.ts`: on-prem schema/tool enums extended; BTP intentionally unchanged.
 - Tests: new unit fixtures and parser/client/handler tests, integration coverage, and e2e coverage (`tests/e2e/revisions.e2e.test.ts`).
 
-**Why:** Version history is essential for code review and understanding change context. Combined with FEAT-49 and FEAT-24, enables a complete transport-scoped code review workflow — the #1 request from fr0ster#30. Three competitors already have this (dassian-adt `abap_revisions`, VSP 3 version tools, abap-adt-api `sourceVersions`/`loadSourceVersion`).
+**Why:** Version history is essential for code review and understanding change context. Together with a selected manifest and FEAT-24, it enables snapshot-aware transport review without pretending an open request always has an exact pre-change revision. Three competitors already have revision reads (dassian-adt `abap_revisions`, VSP 3 version tools, abap-adt-api `sourceVersions`/`loadSourceVersion`).
 
 **Why not:** ADT's version management endpoints may not exist in all SAP releases (notably older ECC systems). Modern ABAP shops use abapGit or gCTS for version control, making SAP's internal versioning redundant. LLMs rarely need historical source ("show me the version from 2 weeks ago") — they work with current source. However, the transport-scoped review use case (fr0ster#30) is compelling and well-defined.
 
@@ -1051,30 +1051,27 @@ For FUGR (function groups), the same pattern applies with `objecttype=FUGR/P` an
 | **Priority** | P2 ↑ |
 | **Effort** | S (1-2 days) |
 | **Risk** | Low |
-| **Usefulness** | High (with FEAT-20 + FEAT-49) — transport-scoped code review |
-| **Status** | Not started |
+| **Usefulness** | High — token-efficient revision and pending-draft comparison |
+| **Status** | Completed (2026-06-15, PR #445) |
 | **Source** | VSP, [fr0ster#30](https://github.com/fr0ster/mcp-abap-adt/issues/30) |
 | **Depends on** | FEAT-20 (revision history — provides version URIs to diff against) |
-| **Related** | FEAT-49 (object transport history — identifies *which* transport to diff) |
+| **Related** | FEAT-49 (current lock/assignment context; not complete history) |
 
-**What:** Diff two versions of ABAP source (active vs inactive, current vs transport revision, or between two transport revisions). VSP has `CompareVersions`. The full workflow from fr0ster#30:
-1. `FEAT-49` — find transports for an object ("which transport last changed ZCL_MY_CLASS?")
-2. `FEAT-20` — get revision list, find the version URI for that transport
-3. `FEAT-24` — diff the transport version against current source
+**What:** Diff two versions of one ABAP source object: active vs inactive, revision vs active, or two explicit revisions. A transport review composes this primitive with `SAPTransport get` for a selected request and `VERSIONS` for snapshot selection. Open transports often have no pre-request snapshot, so active→inactive covers only pending source and must not be presented as every change already activated in that request.
 
 **ADT API finding:** ADT has **no server-side diff endpoint**. All competitors (VSP, abap-adt-api) compute diffs client-side by fetching both version sources and generating a unified diff. VSP's `CompareVersions()` fetches `GetRevisionSource(version1_uri)` and `GetRevisionSource(version2_uri)` (or current source), then generates unified diff text with added/removed line counts.
 
-**Implementation plan:**
-- Add `SAPDiagnose action=diff` or `SAPRead type=DIFF` — accepts `name`, `type`, `version1` (URI or "active"/"inactive"), `version2` (URI or "current")
-- Fetch both sources (via FEAT-20's `getRevisionSource`), compute unified diff client-side
-- No external diff library needed — a simple line-by-line diff algorithm suffices for LLM consumption (LLMs parse unified diff format natively)
-- Safety: `checkOperation(Read)` — read-only operation
+**Implementation (delivered):**
+- `SAPRead(action="diff", type, name, from, to)` accepts `active`, `inactive`, revision ids, or full ADT revision URIs.
+- `src/adt/version-diff.ts` resolves both sources; `src/adt/source-diff.ts` generates unified hunks and added/removed counts with normalized line endings.
+- The operation is read-only and returns only the patch instead of two full sources.
+- Transport-level CTS-entry normalization, structured aggregation, and output bounds remain a separate follow-up.
 
-**Why:** With FEAT-20 (revision history) and FEAT-49 (object transport history) in place, diff becomes the final piece of the transport-scoped code review workflow. This is the #1 feature request across competitors (fr0ster#30). Unlike standalone diff, the trio (FEAT-49→FEAT-20→FEAT-24) enables a concrete, high-value use case: AI code review of transport changes.
+**Why:** Computing the unified diff in ARC-1 saves significant tokens and makes pending/revision review practical. Exact transport-scoped review additionally requires a selected manifest, CTS-entry normalization, and an unambiguous snapshot pair; FEAT-49 alone cannot supply historical membership.
 
 **Why not:** LLMs are excellent at diffing code — the user can fetch two sources via `SAPRead` and ask the LLM to compare them. A diff utility is a client concern, not a server concern. However, having the MCP server compute the diff saves significant tokens (sending only changed lines vs. two full source files) and reduces round-trip complexity from 3 tool calls to 1.
 
-**Competitive update (2026-04-16):** VSP has `CompareVersions` (client-side diff of revision sources). fr0ster#30 requests this as `GetDiff` but has not implemented it. No competitor has the full trio (object→transport lookup + revision + diff) as a cohesive workflow.
+**Competitive update (2026-04-16):** VSP has `CompareVersions` (client-side diff of revision sources). fr0ster#30 requests this as `GetDiff`. ARC-1 now has the single-object primitive; a first-class transport-level aggregator remains follow-up work.
 
 ---
 
@@ -1758,25 +1755,25 @@ For FUGR (function groups), the same pattern applies with `objecttype=FUGR/P` an
 ---
 
 <a id="feat-49"></a>
-### FEAT-49: Object Transport History (Reverse Lookup)
+### FEAT-49: Current Object Transport Status (legacy `history` action)
 | Field | Value |
 |-------|-------|
 | **Priority** | P1 |
 | **Effort** | S (1-2 days) |
 | **Risk** | Low |
-| **Usefulness** | High — enables transport-scoped code review, change tracking |
+| **Usefulness** | Medium — current lock ownership and assignment guidance |
 | **Status** | Completed (2026-04-17) |
 | **Source** | [fr0ster#30](https://github.com/fr0ster/mcp-abap-adt/issues/30) |
-| **Related** | FEAT-20 (revision history), FEAT-24 (diff) — together these three enable transport-scoped code review |
+| **Related** | FEAT-20 (revision history), FEAT-24 (diff), transport-level manifest normalization (follow-up) |
 
-**What:** Given an ABAP object (type + name), find all transport requests that contain it. This is the "reverse lookup" — ARC-1 already supports `SAPTransport(action="get")` to see objects inside a transport, but not the other direction ("which transports touched `ZCL_MY_CLASS`?"). This is step 1 of the fr0ster#30 workflow: identify the relevant transport before fetching versioned source or computing diffs.
+**What:** Given an ABAP object (`type` + `name`), report its current parent request lock when present and the requests available for assignment when unlocked. The shipped action remains named `history` for compatibility, but standard ADT does not return complete historical membership. Use `SAPTransport get` when the request id is already known; use an authorized E071/E070 workflow when complete history is genuinely required.
 
 **ADT endpoints (verified 2026-04-17 on A4H):**
 
-1. **Per-object transport endpoint (implemented, preferred):**
+1. **Per-object current-lock endpoint (implemented, preferred):**
    - `GET {objectUrl}/transports`
    - Discovered from object structure links: `rel="http://www.sap.com/adt/relations/transport"`
-   - Returns `dataname=com.sap.adt.lock.result2` payload (`LOCKS` + `TRANSPORTS`)
+   - Returns `dataname=com.sap.adt.lock.result2`; ARC-1 reads the current parent `CORRNR`
    - For `$TMP`/untracked objects, returns 200 with empty body (normal outcome)
 
 2. **`transportReference` endpoint (not suitable for history payload):**
@@ -1786,8 +1783,8 @@ For FUGR (function groups), the same pattern applies with `objecttype=FUGR/P` an
 
 3. **`transportchecks` endpoint (implemented fallback):**
    - `POST /sap/bc/adt/cts/transportchecks`
-   - Used when `/transports` returns no related transports
-   - Surfaces candidate transports and lock context after package auto-resolution from object structure
+   - Used when `/transports` returns no current lock
+   - Surfaces assignment candidates and lock context after package auto-resolution from object structure; candidates do not contain the object
 
 4. **SQL-based E071 query (complete history, deferred):**
    - `SELECT TRKORR FROM E071 WHERE PGMID = 'R3TR' AND OBJECT = '{type}' AND OBJ_NAME = '{name}'`
@@ -1797,8 +1794,8 @@ For FUGR (function groups), the same pattern applies with `objecttype=FUGR/P` an
    - Requires `SAP_ALLOW_FREE_SQL=true` or data preview access to E071/E070
 
 **Implementation summary (completed):**
-- Added `SAPTransport(action="history", type, name)` in `handleSAPTransport`.
-- Added `getObjectTransports()` in `src/adt/transport.ts` using `GET {objectUrl}/transports`.
+- Added the compatibility action `SAPTransport(action="history", type, name)` in `handleSAPTransport`; its documented contract is current lock/assignment status.
+- Added `getObjectTransports()` in `src/adt/transport.ts` using `GET {objectUrl}/transports` for the current lock.
 - Reused existing `parseTransportInfo()` for `lock.result2` payload parsing.
 - Added fallback to `transportchecks` when primary response is empty (package auto-resolved from object metadata).
 - Added unit, integration, and E2E coverage plus docs/tool-schema updates.

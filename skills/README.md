@@ -185,7 +185,7 @@ Both skills produce the same RAP artifact stack. The difference is how they get 
 - `SAPRead(type="VERSIONS")` and `SAPRead(type="VERSION_SOURCE")` for pattern mining and safer edits of existing RAP stacks
 - `SAPSearch(searchType="tadir_lookup", source="both")` for one-shot existence checks against both released and inactive variants, with a `splitBrain` warning when an object exists only in one source — used by `migrate-segw-to-rap` Phase 6a (ARC-1 v0.9.5+ / PR #270)
 - `SAPWrite(action="batch_create", activateAtEnd: true)` for atomic CDS-composition activation — replaces per-file + manual terminal activation in `migrate-segw-to-rap` Step 2 (ARC-1 v0.9.5+ / PR #270)
-- `SAPTransport(action="history")` for object-to-transport traceability during later iterations
+- `SAPTransport(action="history")` for current object lock/assignment status during later iterations (legacy name; candidates are not complete history)
 - `SAPRead(action="diff", from=…, to=…)` for server-side single-system version diffs (active↔inactive, or revision↔active) returning only hunks — powers `sap-transport-review` (ARC-1 PR #445)
 - `SAPTransport(action="list", summary=true)` for a headers-only transport overview (omits `objects[]`, keeps `objectCount`) — cheap scan before drilling in, also used by `sap-transport-review` (ARC-1 PR #448)
 - `SAPLint(action="format" | "get_formatter_settings")` for SAP-native keyword case and indentation

@@ -103,6 +103,17 @@ describe('Tool Definitions', () => {
     expect(sapTransport.description).toContain('always a Workbench (K) request');
   });
 
+  it('SAPTransport documents history as current assignment status, not complete history', () => {
+    const tools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: false, allowTransportWrites: false });
+    const sapTransport = tools.find((tool) => tool.name === 'SAPTransport')!;
+    const schema = sapTransport.inputSchema as Record<string, any>;
+
+    expect(sapTransport.description).toContain('current object lock plus assignment candidates');
+    expect(sapTransport.description).toContain('not complete transport history');
+    expect(schema.properties.action.description).toContain('not complete transport history');
+    expect(schema.properties.maxResults.description).toContain('assignment candidates');
+  });
+
   it('SAPTransport includes write actions only when both write gates are enabled', () => {
     const tools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true, allowTransportWrites: true });
     const sapTransport = tools.find((t) => t.name === 'SAPTransport')!;

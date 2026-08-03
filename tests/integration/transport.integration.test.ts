@@ -406,7 +406,7 @@ describe('Transport Integration Tests', () => {
 
   // ─── getObjectTransports ───────────────────────────────────────
 
-  describe('getObjectTransports (object → transports reverse lookup)', () => {
+  describe('getObjectTransports (current object lock lookup)', () => {
     it('$TMP fixture object returns no related transports', async (ctx) => {
       try {
         const result = await getObjectTransports(client.http, client.safety, '/sap/bc/adt/oo/classes/zcl_arc1_test');

@@ -22,7 +22,7 @@ about **delta** — what moved between two points in time — for code review, h
 
 | You are… | Scope | What the skill does |
 |---|---|---|
-| **Reviewing a transport** (senior dev / approver) | one transport id | Diff every diffable object **+ impact + ATC by default** — risk-focused. The chat / whole-transport twin of Eclipse ADT 3.6's "Object Changes" tab (same per-object diffs, **same coverage boundary**). |
+| **Reviewing a transport** (senior dev / approver) | one transport id | Diff every safely resolved source object, label the version coverage, and add impact/quality checks only when requested or risk-triggered. The chat / whole-transport twin of Eclipse ADT 3.6's "Object Changes" tab (same source-diff coverage boundary). |
 | **Checking your own recent work** (dev) | your modifiable transports | "What have I changed since my last release?" — diff each object's last-released version → current. Light: skip impact/ATC unless asked. |
 
 For a **system-wide inventory of every open transport** (basis: who has what open, how big, conflicts —
@@ -34,10 +34,11 @@ For a **system-wide inventory of every open transport** (basis: who has what ope
 |---|---|---|
 | Transport scope | current user, modifiable (`status="D"`) | The work in progress, not released history |
 | Overview first | `summary=true` when listing | Cheap scan before pulling any object list in full |
-| Diff direction (in-flight) | `from="active"`, `to="inactive"` | "What I'm about to activate" — the reliable diff (no snapshot needed) |
+| Diff direction (in-flight) | `from="active"`, `to="inactive"` | Exact for pending, unactivated source only; it does not reconstruct changes already activated in an open request |
 | Diffable types | PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, BDEF, SRVD, DDLX, TABL | The plain-text source types `action="diff"` supports |
 | Object-diff cap | ~40 | Above that, summarize counts and ask which to expand |
-| Impact / ATC | **ON** in transport-review mode; off in the quick "what did I change" pass | A reviewer needs "what breaks / quality"; a dev glancing at their own drafts doesn't |
+| Impact | On for changed CDS/RAP objects in a risk-focused review; otherwise opt-in | Focus the extra reads where dependency risk exists |
+| ATC | Opt-in (`+atc`) or clearly risk-triggered; bounded to changed objects | ATC is workload-producing and must not fan out silently across a large request |
 
 ## Input
 
@@ -62,9 +63,26 @@ worse than no review.
 - **Pending changes / package** → enumerate the objects the user touched (the transport's object list,
   or the objects in the named package). No transport id needed for the diff itself.
 
-## Step 2: Classify the objects
+## Step 2: Normalize CTS entries, then classify
 
-Split the object list into:
+`SAPTransport get` returns **CTS identities**, not guaranteed `SAPRead` inputs. Each entry has
+`pgmid`, CTS `type`, `name`, and `wbtype`; real transports may also contain subobjects such as
+`LIMU/METH`, `LIMU/REPS`, language entries, and package/metadata entries.
+
+Before diffing:
+
+1. Flatten `tasks[].objects[]`, but keep the task id and original CTS key for the report.
+2. Treat supported `R3TR` entries (`R3TR/CLAS`, `R3TR/DDLS`, …) as direct repository objects and
+   deduplicate exact repeats.
+3. Never pass `pgmid` (`LIMU`, `LANG`), a CTS subtype (`METH`, `REPS`), or `wbtype` (`CLAS/OM`,
+   `PROG/I`, …) to `SAPRead(type=…)`.
+4. Fold a subobject into a direct parent entry only when the parent is unambiguous. If the response
+   exposes only the subobject, report it as `parent resolution unavailable` rather than guessing a
+   class/include name. This is a coverage limitation, not evidence that nothing changed.
+5. Count both raw CTS entries and unique resolved repository objects; do not present entry count as
+   a unique-object count.
+
+Then split the resolved repository objects into:
 
 - **Diffable** (source types above) → these get a real diff in Step 3.
 - **Metadata-only** (SRVB, G4BA, SUSH, DOMA, DTEL, MSAG, VIEW, ENHO, AUTH, DEVC, server-driven, …) →
@@ -86,27 +104,34 @@ Choose the sides by what the user is reviewing:
 
 | Intent | from → to | Notes |
 |---|---|---|
-| **In-flight** ("what I'm about to activate/release") | `active` → `inactive` | The reliable diff. No draft → "no pending changes" (clean). |
-| **Since my last release** (dev's recent work) | `<last released revision id>` → `active` (or `inactive` if still draft) | "What changed after my last request." Last-released revision = newest `VERSIONS` entry carrying a transport title; captures both activated-since-release and pending edits. |
-| **Released transport** ("what did this TR change") | `<pre-transport revision id>` → `active` | Get ids from `SAPRead(type="VERSIONS", name=…)`; SAP only snapshots on **release**. |
+| **Pending draft** ("what I'm about to activate") | `active` → `inactive` | Exact pending-source diff. No draft means "no pending source", not "the open transport made no changes". |
+| **Since the latest released snapshot** | `<latest released revision id>` → `active` (or `inactive` if still draft) | Captures all changes since that release; it may combine multiple open requests and must be labelled that way. Confirm revision ordering/timestamps rather than assuming feed order. |
+| **Released transport** ("what did this TR change") | `<revision immediately before TR>` → `<revision tagged with TR>` | Compare the transport's own released snapshot, not today's `active` source. If the matching snapshot/predecessor is ambiguous or absent, report the baseline gap. |
 | **Specific revisions** | `<id\|uri>` → `<id\|uri\|active>` | From a VERSIONS response. |
 
 **Snapshot-sparsity reality (important):** ABAP cuts a version snapshot only when a transport is
 *released*. So for an open/unreleased transport, objects usually have just the active version (+ maybe
 an inactive draft) — there is no "before" revision to diff against. Handle it honestly:
 
-1. For each object, `SAPRead(type="VERSIONS", name=…, objectType=…)`. If ≥2 revisions exist, diff the
-   pre-change revision → `active`.
-2. If only 1 revision (the common case for unreleased work), fall back to `active` → `inactive` (shows
-   the pending edit) and label it "pending (unactivated)".
-3. If active == inactive and only 1 revision, report "no diff available (object created in this
-   transport, or no prior snapshot)" — for a brand-new object, note it's an **add**, not a change.
+1. For each resolved object, query `SAPRead(type="VERSIONS", name=…, objectType=…)` where supported.
+2. For a released request, locate the revision tagged with that request and its immediate predecessor.
+   If either cannot be established, do not substitute current `active` source for an old transport.
+3. For an open request, use `active` → `inactive` only for the pending portion. A prior released
+   revision → `active` comparison is useful, but label it "since released snapshot" because it can
+   include other open requests.
+4. If there is no inactive delta and no trustworthy pair of snapshots, report `baseline unavailable`.
+   Do not call it an add unless independent object metadata proves creation in this request.
+
+The report must state its **coverage**: `pending draft`, `released snapshot`, `since released
+snapshot (may span requests)`, or `baseline unavailable`.
 
 ## Step 4 (optional): impact + quality — only when asked or the change is risky
 
 - **Impact** (a changed `DDLS`/`BDEF`/`SRVD` can break consumers): `SAPContext(action="impact", type="DDLS", name="<view>")` → projection views, BDEFs, service defs/bindings, ABAP consumers that depend on it.
-- **Quality**: `SAPDiagnose(action="atc", ...)` per changed object → new ATC findings the change introduces; or `SAPLint(action="lint", name=…)` for a fast local pass.
-- **Pre-release validity**: for unactivated work, `SAPActivate` (or `SAPDiagnose action="syntax"`) confirms the draft even compiles before you stake a release on it.
+- **Quality**: when the user requests `+atc`, or risk justifies it, run `SAPDiagnose(action="atc", ...)`
+  only for the bounded changed set. Use `SAPLint(action="lint", name=…)` for a cheaper local pass.
+- **Pre-release validity**: use the read-only `SAPDiagnose action="syntax"` check for unactivated work.
+  `SAPActivate` mutates system state; run it only when the user explicitly asks to activate.
 
 ## Step 5: Write the report
 
@@ -115,15 +140,17 @@ an inactive draft) — there is no "before" revision to diff against. Handle it 
 
 _<owner> · <status> · <description>_
 
+_Coverage: <pending draft | released snapshot | since released snapshot | baseline unavailable>_
+
 ## Summary
 
 | Object | Type | Change | +/− | Flags |
 |---|---|---|---|---|
 | ZCL_ORDER | CLAS | changed | +12 −3 | |
 | ZI_ORDER  | DDLS | changed | +4 −0  | impacts 3 consumers |
-| ZNEW_REPORT | PROG | added  | —      | new in this transport |
+| ZNEW_REPORT | PROG | unknown | —     | baseline unavailable |
 | ZSTATUS   | DOMA | changed | —      | metadata — no source diff |
-| ZHELPER   | PROG | $TMP   | —      | ⚠ local — will NOT transport |
+| <CTS subobject> | LIMU/METH | unresolved | — | parent resolution unavailable |
 
 ## Diffs
 
@@ -134,9 +161,9 @@ _<owner> · <status> · <description>_
 …one block per diffable object…
 
 ## Risk flags
-- ⚠ ZHELPER is in $TMP — it will not travel with this transport.
 - ⚠ ZI_ORDER (DDLS) has 3 downstream consumers — re-activation order matters (see impact).
-- ⚠ ZCL_BP locked in 2 transports — possible import-sequence conflict.
+- ⚠ ZCL_BP appears in two explicitly expanded request manifests; current lock holder is A4HK900123.
+- ⚠ A4HK900123 has no target — this is a local request and cannot be imported onward.
 
 ## Verdict
 <2–3 lines: what this change set does, what to review first, what's risky / not yet activated.>
@@ -149,9 +176,10 @@ Write to disk (default `docs/reviews/transport-<id>-<date>.md`) only if asked; o
 | Error | Cause | Fix |
 |---|---|---|
 | `action="diff"` → "not supported for type X" | Metadata type (DOMA/DTEL/MSAG/SRVB/VIEW/…) | Expected — list it as "metadata — no source diff", don't diff |
-| "No differences between active and inactive" | No unactivated draft for that object | Report "no pending changes"; it's already activated |
+| "No differences between active and inactive" | No unactivated draft for that object | Report "no pending source"; do not infer that the open request made no activated changes |
 | "Revision-id diff is not available for type X" | FUGR/DDLX have no revisions feed | Use `active`/`inactive` or a full `/sap/bc/adt/` URI instead of a bare id |
-| VERSIONS returns 1 revision | Snapshot only cut on release (sparsity) | Fall back to active→inactive; label new objects as adds |
+| VERSIONS returns 1 revision | Snapshot only cut on release (sparsity) | Use active→inactive only for a real pending draft; otherwise report `baseline unavailable` |
+| Transport entry is `LIMU/*`, `LANG/*`, or only has a slash `wbtype` | CTS identity is not a `SAPRead` type | Fold into an unambiguous parent entry or report `parent resolution unavailable`; never guess |
 | Transport `get` 404 | Wrong id / already deleted | Re-list with `summary=true` and confirm the id |
 | >40 objects in scope | Review too large to read | Show the `+/-` table, ask which task/objects to expand |
 

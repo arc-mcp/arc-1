@@ -221,3 +221,34 @@ Validation completed on 2026-08-03:
 The final review retained every deferred item above as deferred. In particular, this change does
 not implement release overrides, request deduplication, readiness guarantees, transport-of-copies
 creation, or parallel CTS mutation.
+
+### Follow-up review: transport skills and status semantics
+
+After the initial implementation, review of the first-party transport skills found that they used
+the legacy `history` name as if the action returned complete request membership. The follow-up slice
+therefore also:
+
+- documents `relatedTransports` as the current lock request (at most one) and
+  `candidateTransports` as assignment choices, never history evidence;
+- removes unsupported `$TMP`, age, and negative-lock inferences from the transport overview;
+- makes the transport-review skill distinguish raw CTS entries from `SAPRead` object types and label
+  unresolved `LIMU`/`LANG` subobject coverage;
+- corrects released/open snapshot selection guidance and requires explicit coverage labels;
+- makes ATC opt-in or risk-triggered and keeps activation explicit because both are outside a
+  passive review;
+- corrects dependent first-party skill, tool-schema, API, roadmap, and feature-matrix wording;
+- adds regression assertions for public tool wording and for the no-current-status response.
+
+The future first-class transport-level diff remains separate: it needs CTS-reference URI
+normalization, deduplication, structured aggregation, and bounded patch output. Adding that feature
+to this correctness PR would mix a new public action with the parser fix and documentation repair.
+
+Follow-up validation on 2026-08-03:
+
+- focused handler/tool/schema-snapshot suite: 168 passed; six intentional tool fixtures updated;
+- full unit suite: 4,867 passed across 168 files;
+- read-only live 758 current-lock integration: passed (the remaining 18 tests were excluded by the
+  focused name filter);
+- lint, typecheck, build, strict MkDocs build, file-size ratchet, and every tool-schema budget passed;
+- manual diff review confirmed no new CTS mutation, authorization change, package inference, or
+  accidental inclusion of the local untracked `system-info.md` file.

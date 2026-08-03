@@ -1,5 +1,5 @@
 /**
- * SAPTransport handler — CTS transport management (create, release, list, history, targets,
+ * SAPTransport handler — CTS transport management (create, release, list, current object status, targets,
  * layers).
  */
 
@@ -511,7 +511,7 @@ export async function handleSAPTransport(client: AdtClient, args: Record<string,
         ? `Object ${objectName} is locked in transport ${primary.lockedTransport}${lockOwner ? ` by ${lockOwner}` : ''}.`
         : candidateTotal > 0
           ? `Object ${objectName} has no active lock; ${candidateTotal} transport(s) available for assignment.`
-          : `Object ${objectName} has no related or candidate transports (likely $TMP / local object).`;
+          : `Object ${objectName} has no current lock or assignment candidates.`;
 
       const history: ObjectTransportHistory = {
         object: { type: objectType, name: objectName, uri: objectUrl },

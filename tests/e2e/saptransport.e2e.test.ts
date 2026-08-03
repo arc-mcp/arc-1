@@ -410,7 +410,7 @@ describe('E2E SAPTransport Tests', () => {
     });
   });
 
-  // ── SAPTransport history (reverse lookup) ──────────────────────
+  // ── SAPTransport history (legacy name: current object status) ──
 
   describe('SAPTransport history action', () => {
     it('returns valid JSON for an existing class fixture', async (ctx) => {

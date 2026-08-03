@@ -167,10 +167,11 @@ Create `docs/custom-code/<package>/README.md` with the overview table (linking t
 - **Style:** Modern | Classic | Mixed | n/a
 - **Purpose:** <one-sentence summary>
 - **Last change:** <SAPRead VERSIONS — most recent timestamp + user>
-- **Transports:** <SAPTransport action="history" — last 3 TR numbers>
+- **Current transport:** <SAPTransport action="history" — current lock request, or "unlocked"; candidates are assignment choices, not history>
 ```
 
-The "Last change" + "Transports" lines come for free from ARC-1's version/transport APIs and anchor the doc in time.
+The "Last change" + "Current transport" lines come from ARC-1's revision and current-assignment APIs.
+Complete transport history is not available from the legacy `history` action.
 
 ## Step 6: Write to Disk + Report
 
