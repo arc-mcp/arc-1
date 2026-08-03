@@ -57,8 +57,17 @@ jobs:
       # GITHUB_TOKEN, so test.yml never runs on it (GITHUB_TOKEN events don't trigger
       # workflows) — nothing else tests the released commit. Do not remove.
       # Coverage is dropped here: it's non-gating and no one reads it at publish time.
+      #
+      # release-notes.test.ts is excluded for the same reason link-release-notes is
+      # continue-on-error: documentation polish must never fail an artifact release. It
+      # asserts CHANGELOG ⊆ docs_page/release-notes.md, and the CHANGELOG only gains the
+      # new version when the release PR merges — so an unannotated release fails HERE,
+      # after the tag, GitHub Release, Docker image and .mcpb have all shipped, and
+      # strands npm alone (v1.0.1). The gate still runs on every normal PR via test.yml,
+      # where a missing entry blocks a merge instead of half a release. The exclusion is
+      # pinned by a test in that same file, so renaming it cannot silently restore this.
       - name: Run tests
-        run: npm test
+        run: npm test -- --exclude 'tests/unit/server/release-notes.test.ts'
 
       - name: Build
         run: npm run build

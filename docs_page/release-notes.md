@@ -26,6 +26,20 @@ until they are promoted.
     line — nobody runs them today, and the one part that still matters when jumping from an ancient version
     is the **v0.7.0 authorization break**, which is spelled out in full at the bottom of this page.
 
+## 1.0.1 — three total-outage fixes (2026-08-03)
+
+A pure bugfix release, and every entry in it was failing *100% of the time* for the users it touched, not
+intermittently: `SAPWrite` rejected every call from schema-filling LLM clients, `ARC1_PLUGINS` crashed ARC-1
+on startup on Windows, and FLP tile listing produced an ABAP short dump on every catalog. Upgrade if you use
+any of the three; the transport change is a contract correction with no action attached.
+
+| Change | What it means | Action |
+|---|---|---|
+| Drop inapplicable FUNC processing metadata instead of rejecting the write ([#665](https://github.com/arc-mcp/arc-1/pull/665)) | **Regression in 1.0.0.** `1.0.0` added `processingType`/`updateTaskKind` as enum-only optionals with no `null` form, plus a validator that rejects them for any non-`FUNC` type. Clients that must emit a value for *every* advertised schema property (OpenAI/GPT strict mode, and the MCP clients emulating it) therefore fabricate `normal`/`startImmediate` — and **every** `SAPWrite` call died at input validation, whatever the object type, including genuine `FUNC` creates. ARC-1 now drops metadata the write cannot use instead of failing the write, the same way it already handles a stray `include`. | `none` — on `1.0.0`, `ARC1_SCHEMA_NULLABLE_OPTIONALS=on` is the workaround |
+| Load extension plugins on Windows ([#662](https://github.com/arc-mcp/arc-1/pull/662)) | `ARC1_PLUGINS` aborted startup before the MCP handshake on Windows. The world-writable (`S_IWOTH`) permission check ran unconditionally, but Windows reports a synthetic `0666` mode, so every valid plugin looked world-writable. Both POSIX ownership checks are now gated behind `process.getuid`; Windows requires an absolute, stat-able path and relies on Windows ACLs. | `none` |
+| Read FLP tiles through the Pages association instead of a `$filter` ([#663](https://github.com/arc-mcp/arc-1/pull/663)) | `SAPManage action=flp_list_tiles` caused an `ASSERTION_FAILED` short dump in SAP on every call, on every catalog and release — and ARC-1 then told the LLM it was an SAP defect. `PageChipInstances` is navigation-only under `Pages`, and *any* `$filter` on it asserts. It is now read through the association, the same shape SAP's own page-builder service uses. The misleading `backendError` wrapper is gone. | `none` |
+| Correct CTS transport checks ([#659](https://github.com/arc-mcp/arc-1/pull/659)) | `SAPTransport check` now parses the real ADT response — live candidate requests and object locks (with parent owner and task IDs) — surfaces SAP result flags, and fails closed on fatal diagnostics returned with HTTP 200. Adds `operation=create|modify` (default `create`) and distinguishes `transportRequired` from `transportAssignmentRequired`. Corrects the documented contract: `CreateCorrectionRequest` always creates a Workbench (K) request; package and layer affect route and target, not the request kind. | `none` |
+
 ## 1.0.0 — semver commitment, experimental multi-target, bounded tool results (2026-07-31)
 
 The version number is the headline: from `1.0` ARC-1 follows semantic versioning, so breaking changes to the

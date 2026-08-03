@@ -1,4 +1,6 @@
 import { readFile } from 'node:fs/promises';
+import { relative, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
@@ -13,6 +15,10 @@ import { parse } from 'yaml';
 
 const CHANGELOG_PATH = 'CHANGELOG.md';
 const NOTES_PATH = 'docs_page/release-notes.md';
+
+/** This file's own repo-relative path — derived, not hard-coded, so a rename breaks the
+ *  workflow-exclusion assertion below instead of silently disarming it. */
+const SELF_PATH = relative(process.cwd(), fileURLToPath(import.meta.url)).replaceAll(sep, '/');
 
 /** Same helper as release-sbom-workflow.test.ts — a GitHub expression is not a JS template. */
 const githubExpression = (expression: string): string => `\${{ ${expression} }}`;
@@ -53,6 +59,21 @@ describe('annotated release notes', () => {
     // release-please inserts new entries below any prose that precedes the first version heading,
     // so this pointer survives every release (googleapis/release-please src/updaters/changelog.ts).
     expect(changelog.slice(0, changelog.indexOf('## ['))).toContain('release-notes');
+  });
+
+  // Same principle as link-release-notes being continue-on-error: documentation polish must never
+  // fail an artifact release. The annotation gate above can only fail AFTER the release PR merges
+  // (that merge is what adds the version to CHANGELOG.md), i.e. once the tag, GitHub Release, Docker
+  // image and .mcpb have already shipped — leaving npm stranded alone (v1.0.1). It therefore runs on
+  // the PR gate, not in publish-npm. This pins the exclusion so renaming this file cannot silently
+  // put the trap back.
+  it('stay out of the npm publish gate', async () => {
+    const workflow = parse(await readFile('.github/workflows/release.yml', 'utf8')) as {
+      jobs: Record<string, { steps?: { name?: string; run?: string }[] }>;
+    };
+
+    const testStep = workflow.jobs['publish-npm']?.steps?.find((step) => step.name === 'Run tests');
+    expect(testStep?.run).toContain(`--exclude '${SELF_PATH}'`);
   });
 
   it('link the published notes from the GitHub Release, best-effort', async () => {
