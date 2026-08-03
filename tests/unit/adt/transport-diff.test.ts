@@ -1,0 +1,247 @@
+/**
+ * Transport-diff selection + rollup.
+ *
+ * The ordering, blank-transport and LIMU-name cases are not hypothetical — each mirrors a
+ * shape captured live from a4h (S/4HANA 2023, SAP_BASIS 758) on 2026-08-03. See
+ * docs/plans/2026-08-03-transport-diff.md §1 for the raw evidence.
+ */
+import { describe, expect, it } from 'vitest';
+import {
+  baselineStatusFor,
+  revisionNumber,
+  rollupTransportObjects,
+  selectTransportRevisionPair,
+} from '../../../src/adt/transport-diff.js';
+import type { RevisionInfo, TransportObject } from '../../../src/adt/types.js';
+
+const rev = (id: string, timestamp: string, transport?: string): RevisionInfo => ({
+  id,
+  author: 'MARIAN',
+  timestamp,
+  uri: `/sap/bc/adt/oo/classes/zcl_x/includes/main/versions/20260623112341/${id}/content`,
+  ...(transport ? { transport } : {}),
+});
+
+/** The live a4h feed for ZCL_ARC1_DEMO_CALC, in the order ADT returned it. */
+const A4H_CLASS_FEED = [
+  rev('00002', '2026-06-23T11:23:41Z', 'A4HK906291'),
+  rev('00000', '2026-06-23T11:22:09Z'),
+  rev('00001', '2026-06-23T09:34:43Z', 'A4HK906289'),
+];
+
+const obj = (o: Partial<TransportObject>): TransportObject => ({
+  pgmid: 'R3TR',
+  type: 'PROG',
+  name: 'Z_X',
+  wbtype: '',
+  description: '',
+  locked: false,
+  position: '000001',
+  ...o,
+});
+
+describe('revisionNumber', () => {
+  it('reads a bare 5-digit atom id', () => {
+    expect(revisionNumber(rev('00042', '2026-01-01T00:00:00Z'))).toBe('00042');
+  });
+
+  it('falls back to the version segment of the content uri', () => {
+    const r: RevisionInfo = {
+      id: 'urn:sap:adt:version:7',
+      author: '',
+      timestamp: '2026-01-01T00:00:00Z',
+      uri: '/sap/bc/adt/programs/programs/z_x/source/main/versions/20260623093443/00007/content',
+    };
+    expect(revisionNumber(r)).toBe('00007');
+  });
+});
+
+describe('selectTransportRevisionPair', () => {
+  it('picks the revision written under the transport', () => {
+    const pair = selectTransportRevisionPair(A4H_CLASS_FEED, ['A4HK906291']);
+    expect(pair.selectionMethod).toBe('exact-transport');
+    expect(pair.current?.id).toBe('00002');
+  });
+
+  it('skips the active work state when walking back (live a4h feed order 00002, 00000, 00001)', () => {
+    const pair = selectTransportRevisionPair(A4H_CLASS_FEED, ['A4HK906291']);
+    expect(pair.previous?.id).toBe('00001');
+    expect(pair.skipped).toHaveLength(1);
+    expect(pair.skipped[0].revision.id).toBe('00000');
+    expect(pair.skipped[0].reason).toMatch(/active work state/);
+  });
+
+  it('never selects the active revision as current when a real snapshot exists', () => {
+    const pair = selectTransportRevisionPair(A4H_CLASS_FEED, ['SOMETHING_ELSE']);
+    expect(pair.selectionMethod).toBe('latest-revision-fallback');
+    expect(pair.current?.id).toBe('00002');
+  });
+
+  it('reports active-only-fallback when the feed holds nothing but the work state', () => {
+    const pair = selectTransportRevisionPair([rev('00000', '2026-04-18T18:42:16Z')], ['A4HK906291']);
+    expect(pair.selectionMethod).toBe('active-only-fallback');
+    expect(pair.current?.id).toBe('00000');
+    expect(pair.previous).toBeNull();
+  });
+
+  it('handles an empty feed', () => {
+    const pair = selectTransportRevisionPair([], ['A4HK906291']);
+    expect(pair).toMatchObject({ current: null, previous: null, selectionMethod: 'no-revisions' });
+  });
+
+  it('accepts a predecessor with a blank transport (VRSD rows with no korrnum exist)', () => {
+    const feed = [
+      rev('00002', '2026-06-23T11:23:41Z', 'A4HK906291'),
+      rev('00001', '2026-06-01T09:00:00Z'), // released, but no CTS id recorded
+    ];
+    const pair = selectTransportRevisionPair(feed, ['A4HK906291']);
+    expect(pair.previous?.id).toBe('00001');
+    expect(pair.skipped).toHaveLength(0);
+  });
+
+  it('skips same-transport siblings so two saves still diff against the pre-transport state', () => {
+    const feed = [
+      rev('00003', '2026-06-23T12:00:00Z', 'A4HK906291'),
+      rev('00002', '2026-06-23T11:00:00Z', 'A4HK906291'),
+      rev('00001', '2026-06-01T09:00:00Z', 'A4HK906289'),
+    ];
+    const pair = selectTransportRevisionPair(feed, ['A4HK906291']);
+    expect(pair.current?.id).toBe('00003');
+    expect(pair.previous?.id).toBe('00001');
+    expect(pair.skipped.map((s) => s.revision.id)).toEqual(['00002']);
+    expect(pair.skipped[0].reason).toMatch(/same transport/);
+  });
+
+  it('breaks equal timestamps on the version number, not feed order', () => {
+    const ts = '2026-06-23T11:00:00Z';
+    const feed = [rev('00001', ts, 'A4HK906289'), rev('00003', ts, 'A4HK906291'), rev('00002', ts, 'A4HK906289')];
+    const pair = selectTransportRevisionPair(feed, ['A4HK906291']);
+    expect(pair.current?.id).toBe('00003');
+    expect(pair.previous?.id).toBe('00002');
+  });
+
+  it('sorts a revision with no timestamp as oldest, never ahead of a dated one', () => {
+    // Live shape (CERTRULE_DYNP on a4h): version 00001 carries no <atom:updated> at all.
+    // Comparing it on the version number would make it outrank the newer, dated 00002.
+    const feed = [
+      rev('00000', '2026-03-28T19:43:17Z', 'A4HK900110'),
+      rev('00002', '2026-03-28T19:42:52Z', 'A4HK900111'),
+      { id: '00001', author: '', timestamp: '', uri: '/sap/bc/adt/x/versions/1/00001/content' } as RevisionInfo,
+    ];
+    const pair = selectTransportRevisionPair(feed, ['A4HK900110']);
+    expect(pair.current?.id).toBe('00000');
+    expect(pair.previous?.id).toBe('00002');
+  });
+
+  it('is order-independent for the undated case', () => {
+    const undated = { id: '00001', author: '', timestamp: '', uri: '/sap/bc/adt/x/versions/1/00001/content' };
+    const a = rev('00000', '2026-03-28T19:43:17Z', 'A4HK900110');
+    const b = rev('00002', '2026-03-28T19:42:52Z', 'A4HK900111');
+    for (const feed of [
+      [a, b, undated],
+      [undated, a, b],
+      [b, undated, a],
+    ] as RevisionInfo[][]) {
+      expect(selectTransportRevisionPair(feed, ['A4HK900110']).previous?.id).toBe('00002');
+    }
+  });
+
+  it('matches a task id as well as the request id', () => {
+    const feed = [rev('00002', '2026-06-23T11:23:41Z', 'A4HK906292'), rev('00001', '2026-06-01T09:00:00Z')];
+    const pair = selectTransportRevisionPair(feed, ['A4HK906291', 'A4HK906292']);
+    expect(pair.selectionMethod).toBe('exact-transport');
+    expect(pair.current?.id).toBe('00002');
+  });
+
+  it('ignores a blank transport id on the current side when matching', () => {
+    const pair = selectTransportRevisionPair([rev('00001', '2026-06-01T09:00:00Z')], ['']);
+    expect(pair.selectionMethod).toBe('latest-revision-fallback');
+  });
+});
+
+describe('baselineStatusFor', () => {
+  it('reports a real diff', () => {
+    expect(baselineStatusFor(selectTransportRevisionPair(A4H_CLASS_FEED, ['A4HK906291']))).toBe('prior-revision');
+  });
+
+  it('confirms creation only when the current revision was matched to the transport', () => {
+    const feed = [rev('00001', '2026-06-23T09:34:43Z', 'A4HK906289'), rev('00000', '2026-06-23T09:34:04Z')];
+    expect(baselineStatusFor(selectTransportRevisionPair(feed, ['A4HK906289']))).toBe('no-prior-snapshot');
+  });
+
+  it('calls a missing baseline ambiguous when the current revision was only guessed', () => {
+    const feed = [rev('00001', '2026-06-23T09:34:43Z', 'A4HK900001'), rev('00000', '2026-06-23T09:34:04Z')];
+    expect(baselineStatusFor(selectTransportRevisionPair(feed, ['A4HK906289']))).toBe('baseline-ambiguous');
+  });
+
+  it('reports baseline-unavailable for an empty feed', () => {
+    expect(baselineStatusFor(selectTransportRevisionPair([], ['A4HK906289']))).toBe('baseline-unavailable');
+  });
+});
+
+describe('rollupTransportObjects', () => {
+  it('drops CORR release-comment entries', () => {
+    const out = rollupTransportObjects([
+      { id: 'T1', objects: [obj({ pgmid: 'CORR', type: 'RELE', name: 'A4HK906292 20260623 112341 MARIAN' })] },
+    ]);
+    expect(out).toHaveLength(0);
+  });
+
+  it('rolls a space-padded LIMU METH entry up to its class', () => {
+    const out = rollupTransportObjects([
+      {
+        id: 'A4HK906292',
+        objects: [
+          obj({ pgmid: 'LIMU', type: 'METH', name: 'ZCL_ARC1_DEMO_CALC            SUBTRACT', wbtype: 'CLAS/OM' }),
+        ],
+      },
+    ]);
+    expect(out).toEqual([
+      expect.objectContaining({ pgmid: 'R3TR', type: 'CLAS', name: 'ZCL_ARC1_DEMO_CALC', taskIds: ['A4HK906292'] }),
+    ]);
+  });
+
+  it('rolls an =-padded LIMU CINC entry up to its class', () => {
+    const out = rollupTransportObjects([
+      { id: 'T1', objects: [obj({ pgmid: 'LIMU', type: 'CINC', name: 'ZCL_ARC1_DEMO_CALC============CCIMP' })] },
+    ]);
+    expect(out[0]).toMatchObject({ type: 'CLAS', name: 'ZCL_ARC1_DEMO_CALC' });
+  });
+
+  it('rolls the class pool report up to its class', () => {
+    const out = rollupTransportObjects([
+      {
+        id: 'T1',
+        objects: [obj({ pgmid: 'LIMU', type: 'REPT', name: 'ZCL_ARC1_DEMO_CALC============CP', wbtype: 'CLAS/OC' })],
+      },
+    ]);
+    expect(out[0]).toMatchObject({ type: 'CLAS', name: 'ZCL_ARC1_DEMO_CALC' });
+  });
+
+  it('rolls a LIMU REPS entry up to its program', () => {
+    const out = rollupTransportObjects([
+      { id: 'T1', objects: [obj({ pgmid: 'LIMU', type: 'REPS', name: 'Z_REPORT' })] },
+    ]);
+    expect(out[0]).toMatchObject({ pgmid: 'R3TR', type: 'PROG', name: 'Z_REPORT' });
+  });
+
+  it('collapses the same object across two tasks and keeps both task ids', () => {
+    const method = obj({ pgmid: 'LIMU', type: 'METH', name: 'ZCL_X                         ADD', wbtype: 'CLAS/OM' });
+    const out = rollupTransportObjects([
+      { id: 'T1', objects: [method] },
+      { id: 'T2', objects: [method] },
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0].taskIds).toEqual(['T1', 'T2']);
+    expect(out[0].components).toHaveLength(2);
+  });
+
+  it('passes R3TR objects through untouched', () => {
+    const out = rollupTransportObjects([{ id: 'T1', objects: [obj({ type: 'DDLS', name: 'Z_VIEW' })] }]);
+    expect(out[0]).toMatchObject({ pgmid: 'R3TR', type: 'DDLS', name: 'Z_VIEW' });
+  });
+
+  it('skips entries with no usable name', () => {
+    expect(rollupTransportObjects([{ id: 'T1', objects: [obj({ name: '' })] }])).toHaveLength(0);
+  });
+});

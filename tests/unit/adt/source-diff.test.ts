@@ -47,3 +47,26 @@ describe('unifiedDiff', () => {
     expect(r.diff).toContain('ZCL_X (inactive)');
   });
 });
+
+describe('unifiedDiff — ignoreCosmetics (review diffs)', () => {
+  it('is off by default, so SAPRead action="diff" stays byte-exact like SAP', () => {
+    expect(unifiedDiff('a  \n', 'a\n', 'old', 'new').identical).toBe(false);
+  });
+
+  it('hides a trailing-whitespace-only change', () => {
+    const r = unifiedDiff('WRITE x.  \nWRITE y.\n', 'WRITE x.\nWRITE y.\n', 'old', 'new', 3, true);
+    expect(r.identical).toBe(true);
+    expect(r.diff).toBe('');
+  });
+
+  it('hides a missing trailing newline', () => {
+    expect(unifiedDiff('WRITE x.', 'WRITE x.\n', 'old', 'new', 3, true).identical).toBe(true);
+  });
+
+  it('still reports a real change when cosmetics are ignored', () => {
+    const r = unifiedDiff('WRITE x.  \n', 'WRITE z.\n', 'old', 'new', 3, true);
+    expect(r.identical).toBe(false);
+    expect(r.added).toBe(1);
+    expect(r.removed).toBe(1);
+  });
+});

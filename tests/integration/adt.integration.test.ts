@@ -2957,3 +2957,42 @@ describe('SAPManage set_api_state (API release write)', () => {
     }
   }, 90_000);
 });
+
+/**
+ * Golden case on a4h: A4HK906291 lists one LIMU METH for ZCL_ARC1_DEMO_CALC, whose main
+ * include feed is 00002 (this transport), 00000 (active), 00001 — in that order. The review
+ * must roll the method up to its class and diff 00001 -> 00002, skipping the active entry.
+ */
+describe('SAPTransport diff (integration)', () => {
+  const client = getTestClient();
+  const TRANSPORT = process.env.TEST_TRANSPORT_DIFF_ID ?? 'A4HK906291';
+
+  it('rolls LIMU entries up to their class and reports the revision pair', async (ctx) => {
+    const { handleToolCall } = await import('../../src/handlers/dispatch.js');
+    const config = {
+      arc1Port: 8080,
+      arc1HttpAddr: '0.0.0.0:8080',
+      toolMode: 'standard',
+    } as unknown as Parameters<typeof handleToolCall>[1];
+
+    const result = await handleToolCall(client, config, 'SAPTransport', { action: 'diff', id: TRANSPORT });
+    const text = result.content[0]?.text ?? '';
+    requireOrSkip(ctx, text.startsWith('{') || undefined, `${SkipReason.NO_FIXTURE} (transport ${TRANSPORT})`);
+
+    type Part = { part: string; selectionMethod: string; baselineStatus: string; from: string | null };
+    const payload = JSON.parse(text) as {
+      comparison: string;
+      objects: Array<{ type: string; name: string; parts: Part[] }>;
+    };
+
+    expect(payload.comparison).toBe('transport-correction-to-immediate-previous');
+    // The transport lists a method, never a class — the rollup is what makes this reviewable.
+    const clas = payload.objects.find((o) => o.type === 'CLAS');
+    expect(clas?.name).not.toMatch(/\s|=/);
+
+    const main = clas?.parts.find((p) => p.part === 'main');
+    expect(main?.selectionMethod).toBe('exact-transport');
+    expect(main?.baselineStatus).toBe('prior-revision');
+    expect(main?.from).toBeTruthy();
+  }, 90_000);
+});

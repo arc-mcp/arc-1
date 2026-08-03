@@ -188,8 +188,12 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // characters of payload hygiene before saying what the tool does, plus TTYP in the SAPRead
       // inventory. Description tokens stay under the original 12_400, and the wire payload is
       // 69.4 KB against the 72 KB wall.
-      schemaTokenEstimate: 17_500,
-      descriptionTokenEstimate: 12_400,
+      // Raised 17_500 -> 17_700 / 12_400 -> 12_550 for SAPTransport action="diff" (+2 paging
+      // properties). The description spends its tokens on the baselineStatus rule — without it an
+      // LLM reports a missing baseline as "newly created", which is the exact misreading this
+      // action exists to prevent. Only the on-prem write scenario moved; BTP stayed under budget.
+      schemaTokenEstimate: 17_700,
+      descriptionTokenEstimate: 12_550,
       descriptionCount: 265,
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,

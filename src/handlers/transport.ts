@@ -24,6 +24,7 @@ import {
   removeObjectFromTransport,
   supportsExplicitTransportTarget,
 } from '../adt/transport.js';
+import { diffTransportObject, rollupTransportObjects } from '../adt/transport-diff.js';
 import type { InactiveObject, ObjectTransportHistory, TransportReleaseReport, TransportRequest } from '../adt/types.js';
 import { logger } from '../server/logger.js';
 import { objectUrlForType } from './object-types.js';
@@ -32,6 +33,9 @@ import { errorResult, type ToolResult, textResult, toolJson } from './shared.js'
 /** Default page size for `list`. Object lists dominate the payload, so the backlog sets the cost. */
 const DEFAULT_TRANSPORT_RESULTS = 50;
 const DEFAULT_TRANSPORT_CHECK_RESULTS = 10;
+/** `diff` page size. Cap matches SAP's own transport-diff tool (pageSize max 40) so results compare. */
+const DEFAULT_DIFF_OBJECTS = 20;
+const MAX_DIFF_OBJECTS = 40;
 
 /**
  * Pre-release guard: find inactive objects that belong to `transportId`. Releasing a transport that
@@ -173,6 +177,50 @@ export async function handleSAPTransport(client: AdtClient, args: Record<string,
       const transport = await getTransport(client.http, client.safety, id);
       if (!transport) return textResult(`Transport ${id} not found.`);
       return textResult(toolJson(transport));
+    }
+    case 'diff': {
+      const id = String(args.id ?? '');
+      if (!id) return errorResult('Transport ID is required for "diff" action.');
+      const transport = await getTransport(client.http, client.safety, id);
+      if (!transport) return textResult(`Transport ${id} not found.`);
+
+      const objects = rollupTransportObjects(transport.tasks);
+      const offset = Math.max(0, Number(args.offset ?? 0) || 0);
+      const limit = Math.min(
+        Math.max(1, Number(args.limit ?? DEFAULT_DIFF_OBJECTS) || DEFAULT_DIFF_OBJECTS),
+        MAX_DIFF_OBJECTS,
+      );
+      const page = objects.slice(offset, offset + limit);
+
+      // Match the request AND its tasks: version records reference the request on the systems
+      // verified so far, but matching both can only add correct matches, never remove one.
+      const transportIds = new Set<string>([transport.id, ...transport.tasks.map((t) => t.id)].filter(Boolean));
+
+      const diffs = [];
+      for (const object of page) {
+        diffs.push(await diffTransportObject(client, object, transportIds));
+      }
+
+      return textResult(
+        toolJson({
+          transport: {
+            id: transport.id,
+            description: transport.description,
+            owner: transport.owner,
+            status: transport.status,
+          },
+          // One model for released and open transports alike: while a transport is open its
+          // objects are locked, so the active revision carries its id and matches the same way.
+          comparison: 'transport-correction-to-immediate-previous',
+          totalObjects: objects.length,
+          offset,
+          shown: page.length,
+          ...(offset + page.length < objects.length
+            ? { hint: `Showing ${page.length} of ${objects.length}. Next page: offset=${offset + page.length}.` }
+            : {}),
+          objects: diffs,
+        }),
+      );
     }
     case 'create': {
       const description = String(args.description ?? '');

@@ -88,7 +88,7 @@ describe('Tool Definitions', () => {
     const tools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true, allowTransportWrites: false });
     const sapTransport = tools.find((t) => t.name === 'SAPTransport')!;
     const actionEnum = (sapTransport.inputSchema as Record<string, any>).properties.action.enum as string[];
-    expect(actionEnum).toEqual(['list', 'get', 'check', 'history', 'layers', 'targets']);
+    expect(actionEnum).toEqual(['list', 'get', 'diff', 'check', 'history', 'layers', 'targets']);
   });
 
   it('SAPTransport exposes create/modify checks and documents Workbench-only request creation', () => {

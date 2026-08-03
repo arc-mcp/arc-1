@@ -814,6 +814,113 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
     });
   });
 
+  /**
+   * `diff` over the live a4h shapes: a released transport whose only real entry is a LIMU
+   * METH, and a class whose versions feed returns 00002, 00000, 00001 in that order.
+   */
+  describe('SAPTransport diff', () => {
+    function diffClient(): InstanceType<typeof AdtClient> {
+      return new AdtClient({
+        baseUrl: 'http://sap:8000',
+        username: 'admin',
+        password: 'secret',
+        safety: unrestrictedSafetyConfig(),
+      });
+    }
+
+    /** Route the transport read, the five class version feeds, and the revision sources. */
+    function mockDiffBackend(sources: Record<string, string> = {}) {
+      mockFetch.mockImplementation((url: string) => {
+        const u = String(url);
+        if (u.includes('/cts/transportrequests/')) {
+          return Promise.resolve(mockResponse(200, loadFixture('transport-released-a4h-758.xml')));
+        }
+        // Order matters: a revision's content URI also contains "/includes/main/versions".
+        const content = u.match(/\/versions\/\d+\/(\d{5})\/content/);
+        if (content) {
+          const num = content[1];
+          return Promise.resolve(mockResponse(200, sources[num] ?? `CLASS zcl_x DEFINITION.\n" v${num}\nENDCLASS.\n`));
+        }
+        if (u.includes('/includes/main/versions')) {
+          return Promise.resolve(mockResponse(200, loadFixture('versions-clas-a4h-758.xml')));
+        }
+        // Any other include's feed (definitions/implementations/…) does not exist for this class.
+        return Promise.resolve(mockResponse(404, 'No suitable resource found'));
+      });
+    }
+
+    it('requires an id', async () => {
+      const result = await handleToolCall(diffClient(), DEFAULT_CONFIG, 'SAPTransport', { action: 'diff' });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('Transport ID is required');
+    });
+
+    it('rolls the LIMU METH entry up to one class and diffs 00001 -> 00002', async () => {
+      mockDiffBackend();
+      const result = await handleToolCall(diffClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'diff',
+        id: 'A4HK906291',
+      });
+      expect(result.isError).toBeUndefined();
+      const payload = JSON.parse(result.content[0]?.text ?? '{}');
+      expect(payload.totalObjects).toBe(1);
+      expect(payload.objects[0]).toMatchObject({ type: 'CLAS', name: 'ZCL_ARC1_DEMO_CALC' });
+      const main = payload.objects[0].parts.find((p: { part: string }) => p.part === 'main');
+      expect(main).toMatchObject({
+        selectionMethod: 'exact-transport',
+        baselineStatus: 'prior-revision',
+        from: '00001 (A4HK906289)',
+        to: '00002 (A4HK906291)',
+      });
+      expect(main.diff).toContain('v00001');
+      expect(main.diff).toContain('v00002');
+    });
+
+    it('reports the comparison model and transport header', async () => {
+      mockDiffBackend();
+      const result = await handleToolCall(diffClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'diff',
+        id: 'A4HK906291',
+      });
+      const payload = JSON.parse(result.content[0]?.text ?? '{}');
+      expect(payload.comparison).toBe('transport-correction-to-immediate-previous');
+      expect(payload.transport).toMatchObject({ id: 'A4HK906291', status: 'R' });
+    });
+
+    it('says so when the two selected revisions carry identical source', async () => {
+      mockDiffBackend({ '00001': 'SAME\n', '00002': 'SAME\n' });
+      const result = await handleToolCall(diffClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'diff',
+        id: 'A4HK906291',
+      });
+      const payload = JSON.parse(result.content[0]?.text ?? '{}');
+      const main = payload.objects[0].parts.find((p: { part: string }) => p.part === 'main');
+      expect(main.diff).toBe('');
+      expect(main.note).toMatch(/no source change/);
+    });
+
+    it('clamps limit to the SAP-compatible ceiling of 40', async () => {
+      mockDiffBackend();
+      const result = await handleToolCall(diffClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'diff',
+        id: 'A4HK906291',
+        limit: 5000,
+      });
+      const payload = JSON.parse(result.content[0]?.text ?? '{}');
+      expect(payload.shown).toBe(1);
+      expect(payload.offset).toBe(0);
+    });
+
+    it('reports an unknown transport instead of throwing', async () => {
+      mockFetch.mockResolvedValue(mockResponse(200, loadFixture('transport-released-a4h-758.xml')));
+      const result = await handleToolCall(diffClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'diff',
+        id: 'A4HK999999',
+      });
+      expect(result.content[0]?.text).toContain('not found');
+    });
+  });
+
   describe('transport error hints', () => {
     it('corrNr-missing error includes transport hint', async () => {
       mockFetch.mockReset();

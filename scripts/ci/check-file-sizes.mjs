@@ -34,11 +34,14 @@ const BUDGETS = {
   // CLIENT-SAFETY size guard is scripts/ci/check-tool-schema-budget.ts — trim there before raising this.
   // +text-pool SAPWrite actions/description (edit_text_symbols/edit_selection_texts).
   // +per-action SAPWrite description (one line per action, incl. the destructive/refusing ones).
-  'src/handlers/tools.ts': 1725,
+  // +3 for SAPTransport action="diff" (action list + offset/limit properties).
+  'src/handlers/tools.ts': 1730,
   // +shared parseNamedItems relocated here from transport.ts (now used by ATC variants too) +
   // parseAtcSystemCheckVariant (FEAT-68 ATC variant listing) + parseFunctionModuleProperties and
   // the pre-7.52 projectexplorer function-group parser.
-  'src/adt/xml-parser.ts': 1775,
+  // +17 for revisionTransportId: the versions feed carries the CTS id in adtcore:name on a
+  // .../transport/request link, not in the link title (docs/plans/2026-08-03-transport-diff.md).
+  'src/adt/xml-parser.ts': 1795,
   // diagnostics.ts gained the ABAP trace-request engine (#508) + the OData perf probe + CDS Show-SQL (#509)
   // + ST05 SQL-trace control (#510) + clientWait split. Split out a perf/trace module if it grows much further.
   'src/adt/diagnostics.ts': 1845,

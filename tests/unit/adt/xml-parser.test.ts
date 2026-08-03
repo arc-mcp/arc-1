@@ -1604,10 +1604,49 @@ describe('XML Parser', () => {
       expect(result.revisions[0]?.uri).toContain('/versions/20260410185851/00000/content');
     });
 
-    it('maps optional transport from the transport relation link', () => {
+    it('maps optional transport from the legacy transports relation link', () => {
+      // Hand-written fixture using rel=".../relations/transports" with no adtcore:name — the
+      // shape ARC-1 originally assumed. Kept as the back-compat case; the live shape is below.
       const result = parseRevisionFeed(loadFixture('revision-feed-prog.xml'));
       expect(result.revisions[0]?.transport).toBe('A4HK900123');
       expect(result.revisions[1]?.transport).toBeUndefined();
+    });
+
+    // Captured live from a4h (S/4HANA 2023, SAP_BASIS 758) on 2026-08-03. The real feed uses
+    // rel=".../relations/transport/request" and carries the id in adtcore:name — atom:title is
+    // the transport DESCRIPTION. Parsing the legacy rel alone yielded no transport at all.
+    it('maps the transport from the live transport/request link via adtcore:name', () => {
+      const result = parseRevisionFeed(loadFixture('versions-clas-a4h-758.xml'));
+      expect(result.object).toEqual({ name: 'ZCL_ARC1_DEMO_CALC', type: 'CLAS' });
+      expect(result.revisions.map((r) => [r.id, r.transport])).toEqual([
+        ['00002', 'A4HK906291'],
+        ['00000', undefined],
+        ['00001', 'A4HK906289'],
+      ]);
+    });
+
+    it('does not mistake the transport description for the transport id', () => {
+      const result = parseRevisionFeed(loadFixture('versions-clas-a4h-758.xml'));
+      expect(result.revisions[0]?.versionTitle).toBe('test review');
+      expect(result.revisions[0]?.transport).toBe('A4HK906291');
+    });
+
+    it('parses a live PROG feed', () => {
+      const result = parseRevisionFeed(loadFixture('versions-prog-a4h-758.xml'));
+      expect(result.object).toEqual({ name: 'ZARC1_DEMO_REPORT', type: 'REPS' });
+      expect(result.revisions[0]?.transport).toBe('A4HK906289');
+    });
+
+    it('parses an object whose only revision is the active work state', () => {
+      const result = parseRevisionFeed(loadFixture('versions-active-only-a4h-758.xml'));
+      expect(result.revisions).toHaveLength(1);
+      expect(result.revisions[0]?.id).toBe('00000');
+      expect(result.revisions[0]?.transport).toBeUndefined();
+    });
+
+    it('recovers the transport id from the href when adtcore:name is absent', () => {
+      const xml = `<?xml version="1.0"?><atom:feed xmlns:atom="http://www.w3.org/2005/Atom"><atom:title>Version List of Z (REPS)</atom:title><atom:entry><atom:id>00001</atom:id><atom:content src="/sap/bc/adt/x/versions/1/00001/content"/><atom:link rel="http://www.sap.com/adt/relations/transport/request" href="/sap/bc/adt/cts/transportrequests/A4HK909999"/></atom:entry></atom:feed>`;
+      expect(parseRevisionFeed(xml).revisions[0]?.transport).toBe('A4HK909999');
     });
 
     it('parses CLAS main include feed and keeps opaque version URI', () => {

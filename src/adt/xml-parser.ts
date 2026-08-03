@@ -1512,6 +1512,30 @@ export function parseInactiveObjects(xml: string): InactiveObject[] {
   return flatResults;
 }
 
+const TRANSPORT_RELS = new Set([
+  'http://www.sap.com/adt/relations/transport/request', // live shape (a4h 758)
+  'http://www.sap.com/adt/relations/transports', // legacy — kept for older releases
+]);
+
+/**
+ * CTS request id of a revision: the `adtcore:name` on its transport link. NOT `@_title`,
+ * which carries the transport DESCRIPTION. Falls back to the href tail when a release
+ * omits the name. Evidence: docs/plans/2026-08-03-transport-diff.md §1.
+ */
+function revisionTransportId(links: Record<string, unknown>[]): string {
+  for (const link of links) {
+    if (!TRANSPORT_RELS.has(String(link['@_rel'] ?? ''))) continue;
+    const name = String(link['@_name'] ?? '').trim();
+    if (name) return name;
+    const tail = String(link['@_href'] ?? '')
+      .split('/')
+      .pop()
+      ?.split('?')[0];
+    if (tail) return decodeURIComponent(tail);
+  }
+  return '';
+}
+
 /** Parse source revision history feed from /source/main/versions */
 export function parseRevisionFeed(xml: string): RevisionListResult {
   const empty: RevisionListResult = {
@@ -1536,10 +1560,7 @@ export function parseRevisionFeed(xml: string): RevisionListResult {
       const authorNode = toRecordArray(entry.author)[0] ?? {};
       const contentNode = toRecordArray(entry.content)[0] ?? {};
       const links = toRecordArray(entry.link);
-      const transportLink = links.find(
-        (link) => String(link['@_rel'] ?? '') === 'http://www.sap.com/adt/relations/transports',
-      );
-      const transport = String(transportLink?.['@_title'] ?? transportLink?.['@_version'] ?? '');
+      const transport = revisionTransportId(links);
       const versionTitle = String(entry.title ?? '');
 
       revisions.push({

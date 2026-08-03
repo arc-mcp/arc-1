@@ -26,11 +26,28 @@ function normalizeNewlines(text: string): string {
 }
 
 /**
+ * Drop trailing blanks and settle the final newline.
+ *
+ * Review-only (opt-in): the ABAP pretty-printer and a save round-trip can flip trailing
+ * spaces across a whole include, which renders as a full-file rewrite in a transport
+ * review. SAP's own diff compares lines with plain `String.equals` and shows that noise;
+ * `SAPRead action="diff"` keeps SAP's byte-exact behaviour by default.
+ */
+function normalizeCosmetics(text: string): string {
+  const trimmed = text.replace(/[ \t]+$/gm, '');
+  if (!trimmed) return '';
+  return trimmed.endsWith('\n') ? trimmed : `${trimmed}\n`;
+}
+
+/**
  * Produce a unified diff between two source strings.
  *
  * Line endings are normalized before comparison (SAP can return CRLF). When the
  * normalized sources are equal, returns `identical: true` with an empty diff —
  * callers should render "no differences" rather than an empty patch.
+ *
+ * `ignoreCosmetics` additionally drops trailing blanks and normalizes the final newline —
+ * opt-in, for review diffs (see `normalizeCosmetics`).
  */
 export function unifiedDiff(
   oldText: string,
@@ -38,9 +55,12 @@ export function unifiedDiff(
   oldLabel: string,
   newLabel: string,
   context = 3,
+  ignoreCosmetics = false,
 ): UnifiedDiffResult {
-  const a = normalizeNewlines(oldText);
-  const b = normalizeNewlines(newText);
+  const prep = (text: string) =>
+    ignoreCosmetics ? normalizeCosmetics(normalizeNewlines(text)) : normalizeNewlines(text);
+  const a = prep(oldText);
+  const b = prep(newText);
   if (a === b) {
     return { identical: true, diff: '', added: 0, removed: 0 };
   }

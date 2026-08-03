@@ -167,6 +167,8 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   SAPTransport: { scope: 'read', opType: OperationType.Read, featureGate: 'transport' },
   'SAPTransport.list': { scope: 'read', opType: OperationType.Read, featureGate: 'transport' },
   'SAPTransport.get': { scope: 'read', opType: OperationType.Read, featureGate: 'transport' },
+  // diff reads the transport plus each object's revision feed and sources — all reads.
+  'SAPTransport.diff': { scope: 'read', opType: OperationType.Read, featureGate: 'transport' },
   'SAPTransport.check': { scope: 'read', opType: OperationType.Read, featureGate: 'transport' },
   'SAPTransport.history': { scope: 'read', opType: OperationType.Read, featureGate: 'transport' },
   'SAPTransport.layers': { scope: 'read', opType: OperationType.Read, featureGate: 'transport' },

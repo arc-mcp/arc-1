@@ -874,6 +874,7 @@ export const SAPTransportSchema = z
     action: z.enum([
       'list',
       'get',
+      'diff',
       'create',
       'release',
       'delete',
@@ -904,6 +905,9 @@ export const SAPTransportSchema = z
     // For list: headers-only view — omit each transport's object lists (keep an objectCount).
     summary: looseOptionalBoolean,
     maxResults: z.coerce.number().optional(),
+    // For diff: object-level paging (cap 40, matching SAP's own transport-diff pageSize ceiling).
+    offset: z.coerce.number().optional(),
+    limit: z.coerce.number().optional(),
   })
   .strict();
 
