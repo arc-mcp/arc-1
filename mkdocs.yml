@@ -72,6 +72,7 @@ nav:
       - More:
           - Blog Series: blog-series.md
   - Reference:
+      - Release Notes: release-notes.md
       - Configuration: configuration-reference.md
       - Configuration Precedence: configuration-precedence.md
       - SAP API Policy & Architecture: sap-api-policy-and-architecture.md

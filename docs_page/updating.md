@@ -131,7 +131,7 @@ See the full [Authorization & Roles](authorization.md) doc for the complete mode
 
 ## Before you update
 
-1. **Check the changelog** — review [CHANGELOG.md](https://github.com/arc-mcp/arc-1/blob/main/CHANGELOG.md) or the [Releases page](https://github.com/arc-mcp/arc-1/releases) for breaking changes.
+1. **Check what changed** — start with the annotated [Release Notes](release-notes.md): every release with its impact and the action it needs (usually none). The raw [CHANGELOG.md](https://github.com/arc-mcp/arc-1/blob/main/CHANGELOG.md) and the [Releases page](https://github.com/arc-mcp/arc-1/releases) list every merged PR.
 2. **Pin to a version** — in production, use exact version tags (for example `:1.0.0`), never `:latest`. Prevents surprise upgrades. <!-- x-release-please-version -->
 3. **Test first** — update a dev/staging instance before production. Verify MCP clients still connect and tools work as expected.
 4. **Read the startup auth line after upgrade** — a drift-free instance will log the same `auth: MCP=[...] SAP=[...]` summary before and after. If it's different, the upgrade changed something you didn't expect.

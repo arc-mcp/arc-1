@@ -141,6 +141,8 @@ From `1.0` onward ARC-1 follows [semantic versioning](https://semver.org/): patc
 
 **Experimental, default-off features are excluded from this guarantee until they are promoted** — they are clearly labeled and their surface may still change in a minor release. Today this covers the [multi-target BTP mode](docs_page/multi-target-setup.md) (ADR-0006 / ADR-0007): a mutation-free, read-only exception to the single-target default.
 
+What changed per release: the annotated [Release Notes](https://docs.arc-1-mcp.com/release-notes/) give each release its impact and upgrade action; [CHANGELOG.md](CHANGELOG.md) lists every merged PR.
+
 ## Quick Start
 
 **Install in Claude** — pick your surface (full guide: [Install in Claude](https://docs.arc-1-mcp.com/install-in-claude/)):
