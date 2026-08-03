@@ -3,6 +3,13 @@ name: Release
 on:
   push:
     branches: [main]
+  # Escape hatch for a release whose publish-npm job failed (v1.0.1: the release-notes
+  # gate, since excluded). Re-running the original run cannot fix it — a re-run replays
+  # the triggering commit, and the release tag points at that same pre-fix state. main,
+  # however, still carries the stuck version in package.json plus whatever fixed the
+  # failure, so publishing main IS publishing that version. Only publish-npm honours
+  # this trigger; the tag, GitHub Release, Docker images and .mcpb already shipped.
+  workflow_dispatch:
 
 jobs:
   release-please:
@@ -27,7 +34,10 @@ jobs:
   # place, so the two artifacts rarely diverge.)
   publish-npm:
     needs: release-please
-    if: ${{ needs.release-please.outputs.release_created }}
+    # The manual arm is the republish hatch documented on workflow_dispatch above. It
+    # publishes main as-is; npm rejects a duplicate version, so a stray dispatch is a
+    # no-op rather than a way to overwrite a published release.
+    if: ${{ needs.release-please.outputs.release_created || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
