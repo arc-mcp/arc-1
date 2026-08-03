@@ -302,6 +302,10 @@ curl -s https://arc1.company.com/.well-known/oauth-protected-resource/mcp | jq .
 - The document is served at the RFC 9728 path-insertion URL (`…/oauth-protected-resource/mcp`), at the
   root fallback, and — behind a base-path proxy — at the `ARC1_PUBLIC_URL` prefix. Every `401` on `/mcp`
   carries `resource_metadata="…"` pointing at it.
+- With a base-path proxy, also route the host-root `/.well-known/oauth-protected-resource*` path to ARC-1:
+  SDK clients may insert the well-known path before the public base path (for example,
+  `https://gateway.example.com/.well-known/oauth-protected-resource/arc1/mcp`). If that route does not
+  reach ARC-1, the gateway returns its own `404`/`502` before ARC-1 can serve the prefix-aware document.
 - URLs come from `ARC1_PUBLIC_URL` (or the CF route), never from the request `Host` header. Set
   `ARC1_PUBLIC_URL` when ARC-1 sits behind a reverse proxy.
 - `scopes_supported` appears only when you set `SAP_OIDC_SCOPES`. Clients request exactly these scopes at
