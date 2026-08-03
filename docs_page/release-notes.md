@@ -66,7 +66,7 @@ upgrade action: cache warmup is gone, and ARC-1 refuses to start if its retired 
 | Patch and monitor AppRouter dependencies ([#625](https://github.com/arc-mcp/arc-1/pull/625)) | The BTP AppRouter's own `package.json` is now patched and covered by Dependabot and CI, closing a gap where it sat outside the monitored dependency graph. | `none` |
 | Lead SAPWrite with its purpose; complete the TTYP documentation ([#644](https://github.com/arc-mcp/arc-1/pull/644)) | Tool-description wording only — reorders `SAPWrite`'s description to lead with purpose and fills the `TTYP` gaps in the [Tools Reference](tools.md). | `none` |
 
-**Upgrade notes**
+**Upgrade notes** — checklist form in [Updating → v1.0](updating.md#v10-upgrading-from-09x).
 
 - **Cache warmup is removed.** Delete `ARC1_CACHE_WARMUP`, `ARC1_CACHE_WARMUP_PACKAGES`, `--cache-warmup` and `--cache-warmup-packages` from your configuration before upgrading. ARC-1 **deliberately refuses to start** while any of them is present — including `ARC1_CACHE_WARMUP=false` — so stale deployment config is visible rather than silently ignored. The same guard covers `SAP_BTP_DESTINATIONS` from the removed multi-destination prototype. Existing SQLite cache files need no manual migration: the retired `nodes`/`edges` tables are dropped on first open, preserving sources, dependency graphs, released-API metadata, and function-group mappings.
 - **Unknown tool parameters are now rejected.** A client sending a parameter that is not in a tool's schema gets a validation error instead of a silently-stripped key and a wrong-but-successful result. Applies to the top-level tool schemas; `batch_create` item schemas stay lenient.

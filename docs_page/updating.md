@@ -1,6 +1,26 @@
 # Updating ARC-1
 
-## Experimental destination-discovered multi-target migration
+## v1.0 — upgrading from 0.9.x
+
+From `1.0` ARC-1 follows [semantic versioning](https://semver.org/): a breaking change to the MCP tool
+surface, configuration, or the auth contract requires a major bump. Experimental default-off features are
+excluded until they are promoted — today that is only
+[multi-target mode](multi-target-setup.md).
+
+Four things to check. Per-change context for the whole release is in the
+[Release Notes](release-notes.md#100-semver-commitment-experimental-multi-target-bounded-tool-results-2026-07-31).
+
+| What changed | Who is affected | Action |
+|---|---|---|
+| **Retired settings abort startup** | anyone who configured cache warmup or the unreleased multi-destination prototype | Remove `ARC1_CACHE_WARMUP`, `ARC1_CACHE_WARMUP_PACKAGES`, `--cache-warmup`, `--cache-warmup-packages` and `SAP_BTP_DESTINATIONS` — details in [Cache warmup removal](#v10-cache-warmup-removal) and [multi-target migration](#v10-experimental-destination-discovered-multi-target-migration) below. Setting them to `false` is not enough; the value is not read, the presence is |
+| **Unknown tool parameters are rejected** | MCP clients and agent frameworks that send extra keys | A parameter outside a tool's schema now returns a validation error instead of being silently stripped. If a custom client injects its own keys into tool arguments, stop doing that before upgrading — previously the call succeeded while quietly ignoring them |
+| **`SAPTransport(action="list")` returns headers only** | anything that reads the object list out of `list` | Pass `summary=false` to restore the previous full response |
+| **The XSUAA descriptor gained a jwt-bearer grant** | BTP Cloud Foundry, and only if you want app-to-app propagation | `cf update-service arc1-mcp-xsuaa -c xs-security.json` (or an MTA redeploy). Existing bindings inherit it without rebinding, and every existing login path keeps working untouched |
+
+Nothing else in 1.0 needs an action: the tool surface grew (procedural unit surgery, FUNC processing types,
+new server-driven types, `atc_variants`), and the rest is fixes.
+
+## v1.0 — Experimental destination-discovered multi-target migration
 
 The unreleased PR #543 prototype setting `SAP_BTP_DESTINATIONS` is intentionally rejected. Replace
 it with `ARC1_MULTI_TARGET_ENDPOINTS=true`, mark each eligible BTP subaccount destination with
@@ -18,7 +38,7 @@ same explicit environment variables or MTA extension values. Before updating a d
 previously relied on active values from the repository template, copy those values into your own
 deployment-specific `.mtaext` or CF environment.
 
-## Cache warmup removal
+## v1.0 — Cache warmup removal
 
 ARC-1 no longer performs a startup TADIR scan or keeps repository-wide node/edge indexes. The normal request-driven memory/SQLite cache remains, and `SAPContext(action="usages")` now queries SAP's live where-used index with the current caller's identity.
 
