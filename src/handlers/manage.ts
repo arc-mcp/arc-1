@@ -6,6 +6,7 @@
 import type { AdtClient } from '../adt/client.js';
 import { createObject, deleteObject, lockObject, unlockObject } from '../adt/crud.js';
 import { buildPackageXml, normalizeAdtResponsible, type PackageCreateParams } from '../adt/ddic-xml.js';
+import { AdtApiError } from '../adt/errors.js';
 import { probeFeatures } from '../adt/features.js';
 import {
   addTileToGroup,
@@ -13,6 +14,7 @@ import {
   createGroup,
   createTile,
   deleteCatalog,
+  FLP_TILE_PAGE_SIZE,
   listCatalogs,
   listGroups,
   listTiles,
@@ -381,13 +383,24 @@ export async function handleSAPManage(
     case 'flp_list_tiles': {
       const catalogId = String(args.catalogId ?? '');
       if (!catalogId) return errorResult('"catalogId" is required for flp_list_tiles action.');
-      const result = await listTiles(client.http, client.safety, catalogId);
-      if (result.backendError) {
-        return textResult(`⚠ Backend error for catalog "${catalogId}": ${result.backendError}\n\nReturned 0 tiles.`);
+      // SAP answers an unknown catalog with a 404 on the Page; dispatch's generic 404 hint would
+      // tell the LLM to SAPSearch for an empty name, so name the catalog here instead.
+      let tiles: Awaited<ReturnType<typeof listTiles>>;
+      try {
+        tiles = await listTiles(client.http, client.safety, catalogId);
+      } catch (err) {
+        if (err instanceof AdtApiError && err.statusCode === 404) {
+          return errorResult(
+            `FLP catalog "${catalogId}" not found. Use SAPManage action="flp_list_catalogs" to list available catalogs.`,
+          );
+        }
+        throw err;
       }
+      const truncated =
+        tiles.length === FLP_TILE_PAGE_SIZE ? ` (capped at ${FLP_TILE_PAGE_SIZE} — may be truncated)` : '';
       const lines = [
-        `${result.tiles.length} tiles in catalog "${catalogId}". Columns: instanceId | title | chipId | semanticObject | semanticAction`,
-        ...result.tiles.map((t) => {
+        `${tiles.length} tiles${truncated} in catalog "${catalogId}". Columns: instanceId | title | chipId | semanticObject | semanticAction`,
+        ...tiles.map((t) => {
           const so = (t.configuration as Record<string, unknown> | null)?.semantic_object ?? '';
           const sa = (t.configuration as Record<string, unknown> | null)?.semantic_action ?? '';
           return `${t.instanceId} | ${t.title || '(no title)'} | ${t.chipId} | ${so} | ${sa}`;

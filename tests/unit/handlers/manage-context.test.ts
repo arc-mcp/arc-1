@@ -5,6 +5,7 @@
  */
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { FLP_TILE_PAGE_SIZE } from '../../../src/adt/flp.js';
 import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
 import { CachingLayer } from '../../../src/cache/caching-layer.js';
 import { MemoryCache } from '../../../src/cache/memory.js';
@@ -790,6 +791,93 @@ describe('SAPManage / SAPContext handlers', () => {
       });
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toContain('"catalogId" is required');
+    });
+
+    it('flp_list_tiles reads the Page association without a $filter', async () => {
+      mockFetch.mockReset();
+      const urls: string[] = [];
+      mockFetch.mockImplementation((url: string | URL) => {
+        urls.push(String(url));
+        return Promise.resolve(
+          mockResponse(
+            200,
+            JSON.stringify({
+              d: {
+                results: [
+                  {
+                    pageId: 'X-SAP-UI2-CATALOGPAGE:ZCAT',
+                    instanceId: 'TILE1',
+                    chipId: 'X-SAP-UI2-CHIP:/UI2/STATIC_APPLAUNCHER',
+                    title: 'My Tile',
+                    configuration: '{"tileConfiguration":"{\\"semantic_object\\":\\"ZSO\\"}"}',
+                  },
+                ],
+              },
+            }),
+            { 'x-csrf-token': 'T' },
+          ),
+        );
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
+        action: 'flp_list_tiles',
+        catalogId: 'ZCAT',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]!.text).toContain('1 tiles in catalog "ZCAT"');
+      expect(result.content[0]!.text).toContain('TILE1 | My Tile');
+      const tileUrl = urls.find((u) => u.includes('PageChipInstances'));
+      // A $filter here short-dumps the backend (/UI2/CL_EDM_DA_V06_USAGE asserts).
+      expect(tileUrl).not.toContain('filter');
+      expect(tileUrl).toContain("/Pages('X-SAP-UI2-CATALOGPAGE%3AZCAT')/PageChipInstances");
+    });
+
+    it('flp_list_tiles names the catalog when SAP reports it missing', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(
+        mockResponse(404, JSON.stringify({ error: { message: { value: 'Resource Page not found' } } }), {
+          'x-csrf-token': 'T',
+        }),
+      );
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
+        action: 'flp_list_tiles',
+        catalogId: 'ZNOPE',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]!.text).toContain('FLP catalog "ZNOPE" not found');
+      expect(result.content[0]!.text).toContain('flp_list_catalogs');
+    });
+
+    it('flp_list_tiles flags a listing that hits the row cap', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(
+        mockResponse(
+          200,
+          JSON.stringify({
+            d: {
+              results: Array.from({ length: FLP_TILE_PAGE_SIZE }, (_, i) => ({
+                pageId: 'X-SAP-UI2-CATALOGPAGE:ZBIG',
+                instanceId: `TILE${i}`,
+                chipId: 'X-SAP-UI2-CHIP:/UI2/STATIC_APPLAUNCHER',
+                title: `Tile ${i}`,
+                configuration: '',
+              })),
+            },
+          }),
+          { 'x-csrf-token': 'T' },
+        ),
+      );
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
+        action: 'flp_list_tiles',
+        catalogId: 'ZBIG',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]!.text).toContain(`capped at ${FLP_TILE_PAGE_SIZE} — may be truncated`);
     });
 
     it('flp_create_catalog is blocked in read-only safety mode', async () => {

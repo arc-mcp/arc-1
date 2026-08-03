@@ -206,25 +206,19 @@ describe('ADT Integration Tests', () => {
       }
     }, 60000);
 
-    it('lists tiles for a catalog (returns array, may be empty)', async (ctx) => {
+    it('lists every tile of a catalog without dumping the backend', async (ctx) => {
       requireOrSkip(ctx, serviceAvailable, SkipReason.BACKEND_UNSUPPORTED);
       const catalogs = await listCatalogs(client.http, unrestrictedSafetyConfig());
-      const catalogWithPrefix = catalogs.find((c) => c.id.startsWith('X-SAP-UI2-CATALOGPAGE:'));
-      requireOrSkip(ctx, catalogWithPrefix, SkipReason.NO_FIXTURE);
-      // Use full ID to verify normalization handles it correctly. On older
-      // releases the PageChipInstances OData service can ABAP-dump (500) for
-      // some catalogs — that's a backend bug, not an ARC-1 bug, skip cleanly.
-      try {
-        const result = await listTiles(client.http, unrestrictedSafetyConfig(), catalogWithPrefix.id);
-        expect(Array.isArray(result.tiles)).toBe(true);
-      } catch (err) {
-        expectSapFailureClass(err, [500], [/ASSERT condition/i, /RABAX/i, /Internal Server Error/i]);
-        requireOrSkip(
-          ctx,
-          undefined,
-          `${SkipReason.BACKEND_UNSUPPORTED}: PageChipInstances service unstable on this release`,
-        );
-      }
+      // Prefer a catalog that actually has tiles so the count assertion has teeth.
+      const populated = catalogs.find((c) => c.id.startsWith('X-SAP-UI2-CATALOGPAGE:') && Number(c.chipCount) > 0);
+      requireOrSkip(ctx, populated, SkipReason.NO_FIXTURE);
+
+      // Full ID on purpose — verifies prefix normalization AND key encoding.
+      // No dump-tolerant catch here: a 500 means ARC-1 sent a $filter to
+      // PageChipInstances again (/UI2/CL_EDM_DA_V06_USAGE asserts), and this
+      // test exists to fail loudly if it does.
+      const tiles = await listTiles(client.http, unrestrictedSafetyConfig(), populated.id);
+      expect(tiles.length).toBe(Number(populated.chipCount));
     }, 60000);
 
     it('CRUD lifecycle — create and delete catalog', async (ctx) => {

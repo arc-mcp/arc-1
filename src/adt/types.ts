@@ -1021,13 +1021,6 @@ export interface FlpTileInstance {
   configuration: Record<string, unknown> | null;
 }
 
-/** FLP tile listing result — includes backend error flag for ASSERTION_FAILED */
-export interface FlpTileResult {
-  tiles: FlpTileInstance[];
-  /** Set when backend returned ASSERTION_FAILED instead of data */
-  backendError?: string;
-}
-
 /** Transaction code metadata */
 export interface TransactionInfo {
   code: string;

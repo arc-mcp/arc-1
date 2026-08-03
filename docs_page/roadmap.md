@@ -1512,7 +1512,7 @@ For FUGR (function groups), the same pattern applies with `objecttype=FUGR/P` an
 - SAPManage actions: `flp_list_catalogs`, `flp_list_groups`, `flp_list_tiles`, `flp_create_catalog`, `flp_create_group`, `flp_create_tile`, `flp_add_tile_to_group`, `flp_delete_catalog`
 - Feature-gated via `featureFlp` config (auto-probed at startup)
 - Write ops use `OperationType.Workflow` — blocked unless `SAP_ALLOW_WRITES=true`
-- Graceful ASSERTION_FAILED handling for problematic catalogs
+- Tiles read via `Pages('<pageId>')/PageChipInstances` — a `$filter` on `pageId` short-dumps the backend
 
 ---
 

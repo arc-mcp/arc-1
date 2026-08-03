@@ -112,13 +112,33 @@ describe('FLP OData client', () => {
         ]),
       );
 
-      const result = await listTiles(http, unrestrictedSafetyConfig(), 'MY_CATALOG');
+      const tiles = await listTiles(http, unrestrictedSafetyConfig(), 'MY_CATALOG');
 
-      expect(result.tiles).toHaveLength(1);
-      expect(result.tiles[0]?.configuration).toMatchObject({
+      expect(tiles).toHaveLength(1);
+      expect(tiles[0]?.configuration).toMatchObject({
         semantic_object: 'DataAgingObjectGroup',
         display_title_text: 'Manage Data Aging Groups',
       });
+    });
+
+    it('listTiles reads via the Page association and never filters on pageId', async () => {
+      const http = mockHttp(odataCollection([]));
+
+      await listTiles(http, unrestrictedSafetyConfig(), 'MY_CATALOG');
+
+      const url = vi.mocked(http.get).mock.calls[0]![0] as string;
+      // A $filter on pageId short-dumps the backend (/UI2/CL_EDM_DA_V06_USAGE asserts).
+      expect(url).not.toContain('$filter');
+      expect(url).toContain("/Pages('X-SAP-UI2-CATALOGPAGE%3AMY_CATALOG')/PageChipInstances?");
+    });
+
+    it('listTiles encodes slashes in the catalog key', async () => {
+      const http = mockHttp(odataCollection([]));
+
+      await listTiles(http, unrestrictedSafetyConfig(), '/UI2/FLP_ADMIN');
+
+      const url = vi.mocked(http.get).mock.calls[0]![0] as string;
+      expect(url).toContain("/Pages('X-SAP-UI2-CATALOGPAGE%3A%2FUI2%2FFLP_ADMIN')/PageChipInstances?");
     });
 
     it('listTiles handles malformed configuration gracefully', async () => {
@@ -134,19 +154,9 @@ describe('FLP OData client', () => {
         ]),
       );
 
-      const result = await listTiles(http, unrestrictedSafetyConfig(), 'MY_CATALOG');
+      const tiles = await listTiles(http, unrestrictedSafetyConfig(), 'MY_CATALOG');
 
-      expect(result.tiles[0]?.configuration).toBeNull();
-    });
-
-    it('listTiles handles ASSERTION_FAILED error gracefully', async () => {
-      const http = mockHttp();
-      vi.mocked(http.get).mockRejectedValue(new AdtApiError('ASSERTION_FAILED', 500, '/test', 'ASSERTION_FAILED'));
-
-      const result = await listTiles(http, unrestrictedSafetyConfig(), 'BROKEN_CATALOG');
-
-      expect(result.tiles).toEqual([]);
-      expect(result.backendError).toContain('ASSERTION_FAILED');
+      expect(tiles[0]?.configuration).toBeNull();
     });
   });
 
@@ -301,8 +311,8 @@ describe('FLP OData client', () => {
       await listTiles(http, unrestrictedSafetyConfig(), 'X-SAP-UI2-CATALOGPAGE:MY_CATALOG');
 
       const calledUrl = vi.mocked(http.get).mock.calls[0]![0] as string;
-      expect(calledUrl).toContain("'X-SAP-UI2-CATALOGPAGE:MY_CATALOG'");
-      expect(calledUrl).not.toContain('X-SAP-UI2-CATALOGPAGE:X-SAP-UI2-CATALOGPAGE');
+      expect(calledUrl).toContain("'X-SAP-UI2-CATALOGPAGE%3AMY_CATALOG'");
+      expect(calledUrl).not.toContain('CATALOGPAGE%3AX-SAP-UI2-CATALOGPAGE');
     });
 
     it('createTile accepts full catalog ID and strips prefix', async () => {
