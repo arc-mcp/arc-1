@@ -140,7 +140,7 @@ and sufficient; slash-bearing domain IDs (`/UI2/FLP_ADMIN`) work as `%2F`.
 | **adt-ls** (`~/DEV/arc-1-lsp`) | No references to PAGE_BUILDER / PageChipInstance / CATALOGPAGE. |
 | **`mcp-abap-adt`, `mcp-abap-adt-fr0ster`** | No FLP coverage at all. ARC-1 is alone in this area; no third-party implementation to compare against. |
 | **OData `$metadata`** (fetched live) | `Page` declares `NavigationProperty Name="PageChipInstances"` via association `Page_PageChipInstance` (`Page` 1 → `PageChipInstance` *). `PageChipInstance`'s key is `(pageId, instanceId)`. Confirms the association is the modelled access path. |
-| **SAP Notes** | Not checked — the `sap-notes` MCP search backend was unavailable (Playwright browser missing). Not blocking: the ABAP source is stronger evidence than a Note, and the behavior is identical on 7.50 / 758 / 816, i.e. SAP has not "corrected" it because it is not a defect — the accessor is navigation-only by design. |
+| **SAP Notes** | Searched — **no Note covers this.** `PAGE_BUILDER_CUST PageChipInstances ASSERTION_FAILED` → 0 hits. A broader `Fiori launchpad catalog tiles ASSERTION_FAILED` → 10 hits, all a different failure: catalog *copy/create* in the FLP designer, e.g. Note **2711280** (`CA-FLP-ABA`, "HTTP 500 in `/sap/opu/odata/UI2/PAGE_BUILDER_CONF/CloneCatalog`: ASSERTION_FAILED"), whose cause is chips referencing a stale backend catalog and whose fix is to replicate that catalog — a data condition on a different service and endpoint. Consistent with the diagnosis: our assert is not an SAP defect (identical on 7.50 / 758 / 816), so there is nothing for SAP to correct — the accessor is navigation-only by design. |
 
 ## Affected ARC-1 code
 
