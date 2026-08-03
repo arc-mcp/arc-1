@@ -7,8 +7,13 @@ on:
   # gate, since excluded). Re-running the original run cannot fix it — a re-run replays
   # the triggering commit, and the release tag points at that same pre-fix state. main,
   # however, still carries the stuck version in package.json plus whatever fixed the
-  # failure, so publishing main IS publishing that version. Only publish-npm honours
-  # this trigger; the tag, GitHub Release, Docker images and .mcpb already shipped.
+  # failure, so publishing main IS publishing that version.
+  #
+  # It drives the whole npm chain — publish-npm, then publish-npm-sbom and
+  # publish-mcp-registry, which are downstream of it and were skipped along with it.
+  # build-mcpb and publish-docker* stay push-only: they don't depend on npm and had
+  # already shipped. Every step in the chain no-ops on an already-published artifact,
+  # so the hatch is safe to fire more than once.
   workflow_dispatch:
 
 jobs:
@@ -19,8 +24,12 @@ jobs:
       pull-requests: write
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
-      tag_name: ${{ steps.release.outputs.tag_name }}
-      version: ${{ steps.release.outputs.version }}
+      # On the republish hatch release-please creates nothing, so these fall back to the
+      # version main already carries — which IS the stuck release's version.
+      tag_name: ${{ steps.release.outputs.tag_name || steps.republish.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version || steps.republish.outputs.version }}
+      # Single gate for the npm chain: a real release, or a manual republish.
+      publish: ${{ steps.release.outputs.release_created || github.event_name == 'workflow_dispatch' }}
     steps:
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7  # v5
         id: release
@@ -28,16 +37,27 @@ jobs:
         # From 1.0 the pre-major bump flags are gone, so semver applies normally:
         # feat→minor, fix→patch, breaking→major.
 
+      - uses: actions/checkout@v7
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        with:
+          persist-credentials: false
+
+      - name: Resolve the republish target
+        id: republish
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag_name=v$version" >> "$GITHUB_OUTPUT"
+
   # npm publishes independently of the Docker CVE gate — a HIGH/CRITICAL finding
   # blocks the Docker image but not the npm package. (The scheduled security-scan.yml
   # gate-preview is what keeps base-image CVEs from reaching a release in the first
   # place, so the two artifacts rarely diverge.)
   publish-npm:
     needs: release-please
-    # The manual arm is the republish hatch documented on workflow_dispatch above. It
-    # publishes main as-is; npm rejects a duplicate version, so a stray dispatch is a
-    # no-op rather than a way to overwrite a published release.
-    if: ${{ needs.release-please.outputs.release_created || github.event_name == 'workflow_dispatch' }}
+    if: ${{ needs.release-please.outputs.publish }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -83,7 +103,18 @@ jobs:
         run: npm run build
 
       - name: Publish to npm
-        run: npm publish --provenance --access public
+        # Skip-if-present rather than let npm's duplicate-version 403 fail the run: the
+        # republish hatch exists to un-stick a partial release, and the jobs downstream
+        # of this one gate on its success. A stray dispatch is still a no-op — this only
+        # ever skips a version that is already on the registry, never overwrites one.
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./package.json').version")"
+          if npm view "arc-1@${VERSION}" version >/dev/null 2>&1; then
+            echo "arc-1@${VERSION} is already published — nothing to do"
+            exit 0
+          fi
+          npm publish --provenance --access public
 
   # Point the GitHub Release at the annotated release notes (docs_page/release-notes.md), which
   # add the context release-please cannot: what each change means and whether it needs an action.
@@ -122,7 +153,7 @@ jobs:
   # SBOM generation or upload failures must never fail the artifact release.
   publish-npm-sbom:
     needs: [release-please, publish-npm]
-    if: ${{ needs.release-please.outputs.release_created }}
+    if: ${{ needs.release-please.outputs.publish }}
     runs-on: ubuntu-latest
     continue-on-error: true
     permissions:
@@ -316,6 +347,15 @@ jobs:
   # and other MCP clients that consume the registry API.
   publish-mcp-registry:
     needs: [release-please, publish-npm, publish-docker-merge]
+    # always() so a SKIPPED publish-docker-merge doesn't skip this too — that is the
+    # republish-hatch shape, where the images already shipped in the original run. A
+    # FAILED merge still blocks: the step below probes GHCR anyway and omits the OCI
+    # package when it isn't pullable, but a failed merge means something is wrong that
+    # the probe's 30s of retries shouldn't paper over.
+    if: >-
+      ${{ always() && needs.release-please.outputs.publish
+      && needs.publish-npm.result == 'success'
+      && needs.publish-docker-merge.result != 'failure' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
