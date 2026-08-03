@@ -238,7 +238,7 @@ Outcome: zero external behaviour change, but the codebase is now extension-shape
 
 Add `ARC1_PLUGINS=/path/to/plugin.js[,/path/to/another.js]`. At startup, after Phase 1's registry is populated with built-ins, the loader does:
 
-1. For each path: refuse to load if the file is not absolute, not readable, world-writable, or not owned by the same user as the ARC-1 process. (Mirrors `ssh` `IdentityFile` permission checks.)
+1. For each path: refuse to load if the file is not absolute or not readable; on POSIX, also refuse world-writable files or files not owned by the ARC-1 process user. (Mirrors `ssh` `IdentityFile` permission checks where POSIX mode/uid semantics exist; Windows relies on ACLs.)
 2. `await import(pathToFileURL(path).href)` — uses Node's ESM dynamic import.
 3. Validate the default export is `{ apiVersion: 1, name, tools: Tool[] }`.
 4. For every `tool` in the plugin: assert a corresponding `ACTION_POLICY` entry, assert the tool name is unique, assert the name is in the `Custom_*` or `X_*` namespace (so built-in names cannot be shadowed), register it.

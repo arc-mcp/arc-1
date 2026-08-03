@@ -330,8 +330,8 @@ whole problem. Three ways, with trade-offs:
 | Strategy | How | Upside | Downside |
 |---|---|---|---|
 | **Derived Docker image** *(recommended)* | `FROM ghcr.io/arc-mcp/arc-1`, `COPY --chown` the plugin's `dist/`, set `ENV ARC1_PLUGINS=…` | self-contained + version-pinned with ARC-1; one immutable artifact through your image review/supply chain; identical local / CF‑Docker / k8s | rebuild + repush to change a plugin; needs a registry; **must `--chown`** (see gotcha) |
-| **Buildpack co-deploy** *(matches the committed `mta.yaml`, `nodejs_buildpack`)* | put the plugin's built `dist/` in the pushed app bits (e.g. `plugins/<name>/`), set `ARC1_PLUGINS=/home/vcap/app/plugins/<name>/dist/index.js` | no image build; plain `cf push` / `mta build`; bits are `vcap`-owned so the owner check passes | the plugin rides ARC-1's deploy bits (coupled); rebuild the bits to change it |
-| **Volume service (NFS)** | mount a CF volume, point `ARC1_PLUGINS` at it | swap a plugin without rebuilding the image/bits | plugin lives **outside** the audited artifact (trust gap); the mount's uid/permissions must satisfy the loader's owner + not‑world‑writable checks; still needs a restart |
+| **Buildpack co-deploy** *(matches the committed `mta.yaml`, `nodejs_buildpack`)* | put the plugin's built `dist/` in the pushed app bits (e.g. `plugins/<name>/`), set `ARC1_PLUGINS=/home/vcap/app/plugins/<name>/dist/index.js` | no image build; plain `cf push` / `mta build`; bits are `vcap`-owned so the POSIX owner check passes | the plugin rides ARC-1's deploy bits (coupled); rebuild the bits to change it |
+| **Volume service (NFS)** | mount a CF volume, point `ARC1_PLUGINS` at it | swap a plugin without rebuilding the image/bits | plugin lives **outside** the audited artifact (trust gap); on POSIX, the mount's uid/permissions must satisfy the loader's owner + not‑world‑writable checks; still needs a restart |
 
 ### Derived Docker image — the recipe
 
@@ -344,13 +344,15 @@ ENV ARC1_PLUGINS=/home/arc1/plugins/myext/dist/index.js
 ```
 Then `cf push my-arc1 --docker-image <registry>/my-arc1:<tag>` (or k8s / local `docker run`).
 
-### The owner / permission gotcha (bites on Docker)
+### The POSIX owner / permission gotcha (bites on Docker)
 
-The loader **refuses** a plugin file that is **not owned by the server process user** or is
+On POSIX, the loader **refuses** a plugin file that is **not owned by the server process user** or is
 **world-writable** — defense-in-depth against a tampered drop-in. ARC-1's image runs as `arc1`, but a
 plain `COPY` lands files as **root** → `"Plugin … is not owned by the server user — refusing to load"`.
-Fix: **`COPY --chown=arc1:arc1`**, and never `chmod 777` a plugin. On the buildpack the bits are
-already `vcap`-owned, so this is a non-issue there.
+Fix: **`COPY --chown=arc1:arc1`**, and never `chmod 777` a plugin. On the buildpack the bits are already
+`vcap`-owned, so this is a non-issue there. Windows does not expose POSIX owner/group/other semantics to
+Node, so ARC-1 relies on Windows ACLs; allow only the service identity and trusted administrators to modify
+the plugin path.
 
 ### Cross-cutting
 

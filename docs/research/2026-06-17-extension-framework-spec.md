@@ -223,7 +223,7 @@ A plugin is loaded from a **local path** the admin lists in `ARC1_PLUGINS` (CSV)
 | `/abs/…/Custom_Foo.tool.json` | **manifest plugin** | the manifest interpreter (§8) → a synthetic tool. **No JS.** The pure-declarative #332 case. |
 | `/abs/…/plugin-dir` | **directory** | resolves the dir's `package.json#main` (code), which may reference `*.tool.json` via `manifests[]` (paths relative to the plugin) |
 
-At startup, per entry: assert absolute + readable + not world-writable + same owner as the process; load by kind; validate shape + `apiVersion`; register each tool into the registry; **fail-fast** (refuse to start) on any malformed plugin or name collision. Runs after built-ins are registered. Stdio + HTTP both supported.
+At startup, per entry: assert absolute + readable; on POSIX, also require not world-writable + same owner as the process (Windows relies on ACLs); load by kind; validate shape + `apiVersion`; register each tool into the registry; **fail-fast** (refuse to start) on any malformed plugin or name collision. Runs after built-ins are registered. Stdio + HTTP both supported.
 
 **Deferred (v2+):** npm peer-package discovery (`ARC1_PLUGINS=arc1-plugin-foo`, resolved from `node_modules`, CAP-style); directory auto-scan. Explicit paths are preferred for auditability (research §3.4).
 
