@@ -5,6 +5,16 @@ For what each release *means* (impact, upgrade actions, config and tool-surface 
 annotated [release notes](https://docs.arc-1-mcp.com/release-notes/)
 ([source](docs_page/release-notes.md)).
 
+## [1.0.1](https://github.com/arc-mcp/arc-1/compare/v1.0.0...v1.0.1) (2026-08-03)
+
+
+### Bug Fixes
+
+* correct CTS transport checks ([#659](https://github.com/arc-mcp/arc-1/issues/659)) ([70bce30](https://github.com/arc-mcp/arc-1/commit/70bce302b9fb2b61d030e1354802633d59ab5be7))
+* drop inapplicable FUNC processing metadata instead of rejecting the write ([#665](https://github.com/arc-mcp/arc-1/issues/665)) ([9f1ecbb](https://github.com/arc-mcp/arc-1/commit/9f1ecbbb4545542fe11d9a211bf2e63654d0bf72))
+* load extension plugins on Windows ([#662](https://github.com/arc-mcp/arc-1/issues/662)) ([83bf1c5](https://github.com/arc-mcp/arc-1/commit/83bf1c5f48ce283539be4bd4c23a39949a1ebb07))
+* read FLP tiles through the Pages association instead of a $filter ([#663](https://github.com/arc-mcp/arc-1/issues/663)) ([7a1dee3](https://github.com/arc-mcp/arc-1/commit/7a1dee34d357a902be004190888133673184f51e))
+
 ## [1.0.0](https://github.com/arc-mcp/arc-1/compare/v0.9.27...v1.0.0) (2026-07-31)
 
 

@@ -2727,7 +2727,7 @@ The VS Code client-side issue — [microsoft/vscode#314715](https://github.com/m
 ---
 
 <!-- x-release-please-start-version -->
-## Current State (v1.0.0 — TypeScript)
+## Current State (v1.0.1 — TypeScript)
 <!-- x-release-please-end -->
 
 | Area | Status |
