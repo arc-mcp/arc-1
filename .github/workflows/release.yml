@@ -86,7 +86,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          BODY="$(gh release view "$RELEASE_TAG" --json body --jq .body)"
+          # `// ""` matters: a release with no body is JSON null, and `--jq .body` would
+          # print the literal string "null" straight into the notes.
+          BODY="$(gh release view "$RELEASE_TAG" --json body --jq '.body // ""')"
           if [[ "$BODY" == *"$NOTES_URL"* ]]; then
             echo "Release body already links the annotated notes"
             exit 0
