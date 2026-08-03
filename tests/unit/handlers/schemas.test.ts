@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MAX_GREP_PATTERN_LENGTH } from '../../../src/context/grep.js';
+import { normalizeTypeArgsForValidation } from '../../../src/handlers/object-types.js';
 import {
   getToolSchema,
   SAPActivateSchema,
@@ -672,6 +673,35 @@ describe('SAPWriteSchema', () => {
         processingType: 'normal',
       }).success,
     ).toBe(false);
+  });
+
+  // Issue #664: the schema-level rejections above are defense-in-depth. A real call goes through
+  // normalizeTypeArgsForValidation first, which drops metadata the write cannot use — otherwise a
+  // strict-mode client (which must emit a value for every advertised property, and has no `null` to
+  // emit since #526) blocks every non-FUNC write with a fabricated `normal`/`startImmediate`.
+  it('accepts a write whose inapplicable FUNC metadata was normalized away first', () => {
+    const polluted = {
+      action: 'create',
+      type: 'PROG',
+      name: 'ZPLU_HELLO_WORLD',
+      package: '$TMP',
+      source: 'REPORT zplu_hello_world.',
+      processingType: 'normal',
+      updateTaskKind: 'startImmediate',
+    };
+    expect(SAPWriteSchema.safeParse(polluted).success).toBe(false);
+    expect(SAPWriteSchema.safeParse(normalizeTypeArgsForValidation('SAPWrite', { ...polluted })).success).toBe(true);
+  });
+
+  it('still rejects a normalized FUNC create that asks for update without a task kind', () => {
+    const args = normalizeTypeArgsForValidation('SAPWrite', {
+      action: 'create',
+      type: 'FUNC',
+      name: 'Z_UPDATE',
+      group: 'Z_FG',
+      processingType: 'update',
+    });
+    expect(SAPWriteSchema.safeParse(args).success).toBe(false);
   });
 
   it('applies FUNC processing validation inside batch objects', () => {

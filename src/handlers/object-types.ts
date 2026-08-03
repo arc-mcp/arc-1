@@ -219,6 +219,29 @@ export function stripLlmEmptyValues(args: Record<string, unknown>): Record<strin
   return cleaned;
 }
 
+/**
+ * Drop FUNC-only processing metadata that cannot apply to this write (issue #664).
+ *
+ * `processingType`/`updateTaskKind` are enum-only optionals with no `null` in their advertised
+ * type (the portable default since #526), so a strict-mode caller — which must emit a value for
+ * every schema property — has to invent an enum member (`normal`/`startImmediate`). That is not
+ * `null` or `""`, so `stripLlmEmptyValues` cannot see it, and the schema's superRefine then
+ * hard-rejects the whole call. Same fix as the inapplicable-`include` drop below: normalize the
+ * unusable field away instead of failing the write the caller actually asked for.
+ *
+ * `processingType="update"` with no `updateTaskKind` is deliberately NOT repaired here — SAP needs
+ * an explicit update-task kind and ARC-1 must not guess one, so that error survives.
+ */
+function dropInapplicableFunctionProcessing(obj: Record<string, unknown>, funcCreate: boolean): void {
+  if (!funcCreate) {
+    delete obj.processingType;
+    delete obj.updateTaskKind;
+    return;
+  }
+  // updateTaskKind is meaningless unless the module is an update-task module.
+  if (obj.processingType !== 'update') delete obj.updateTaskKind;
+}
+
 /** Normalize type fields before schema validation so slash/case aliases are accepted.
  *  Also strips GPT/OpenAI pollution (null + empty strings) via stripLlmEmptyValues so the
  *  same normalization runs for every tool — standard, hyperfocused, and the CLI all route
@@ -250,18 +273,21 @@ export function normalizeTypeArgsForValidation(
       const includeApplies =
         normType === 'CLAS' && (action === 'update' || action === 'edit_method' || action === 'edit_class_definition');
       if (!includeApplies) delete cleaned.include;
+      dropInapplicableFunctionProcessing(cleaned, normType === 'FUNC' && action === 'create');
       return {
         ...cleaned,
         type: normType,
         objects: Array.isArray(cleaned.objects)
-          ? cleaned.objects.map((obj) =>
-              typeof obj === 'object' && obj !== null
-                ? {
-                    ...obj,
-                    type: normalizeWriteObjectType(String((obj as Record<string, unknown>).type ?? '')),
-                  }
-                : obj,
-            )
+          ? cleaned.objects.map((obj) => {
+              if (typeof obj !== 'object' || obj === null) return obj;
+              const item = {
+                ...(obj as Record<string, unknown>),
+                type: normalizeWriteObjectType(String((obj as Record<string, unknown>).type ?? '')),
+              };
+              // `objects[]` only ever creates (batch_create), so FUNC alone decides applicability.
+              dropInapplicableFunctionProcessing(item, item.type === 'FUNC');
+              return item;
+            })
           : cleaned.objects,
       };
     }

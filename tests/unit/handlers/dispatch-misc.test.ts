@@ -1626,3 +1626,97 @@ describe('normalizeTypeArgsForValidation include-drop + strip wiring (issue #360
     expect('version' in read).toBe(false);
   });
 });
+
+describe('normalizeTypeArgsForValidation FUNC processing-metadata drop (issue #664)', () => {
+  it('drops fabricated processing metadata on a non-FUNC create', () => {
+    const out = normalizeTypeArgsForValidation('SAPWrite', {
+      action: 'create',
+      type: 'PROG',
+      name: 'ZPLU_HELLO_WORLD',
+      source: 'REPORT zplu_hello_world.',
+      processingType: 'normal',
+      updateTaskKind: 'startImmediate',
+    });
+    expect('processingType' in out).toBe(false);
+    expect('updateTaskKind' in out).toBe(false);
+    expect(out.type).toBe('PROG');
+  });
+
+  it('drops processing metadata on a FUNC write that is not a create', () => {
+    const out = normalizeTypeArgsForValidation('SAPWrite', {
+      action: 'update',
+      type: 'FUNC',
+      name: 'Z_FM',
+      group: 'Z_FG',
+      source: 'x',
+      processingType: 'rfc',
+    });
+    expect('processingType' in out).toBe(false);
+  });
+
+  it('keeps genuine FUNC create metadata (applicability follows the NORMALIZED type)', () => {
+    const rfc = normalizeTypeArgsForValidation('SAPWrite', {
+      action: 'create',
+      type: 'FUGR/FF', // ADT slash form for a function module → normalizes to FUNC
+      name: 'Z_FM',
+      group: 'Z_FG',
+      processingType: 'rfc',
+    });
+    expect(rfc.type).toBe('FUNC');
+    expect(rfc.processingType).toBe('rfc');
+    const upd = normalizeTypeArgsForValidation('SAPWrite', {
+      action: 'create',
+      type: 'FUNC',
+      name: 'Z_FM',
+      group: 'Z_FG',
+      processingType: 'update',
+      updateTaskKind: 'startDelayed',
+    });
+    expect(upd.processingType).toBe('update');
+    expect(upd.updateTaskKind).toBe('startDelayed');
+  });
+
+  it('drops an orphan updateTaskKind on a genuine FUNC create', () => {
+    const out = normalizeTypeArgsForValidation('SAPWrite', {
+      action: 'create',
+      type: 'FUNC',
+      name: 'Z_FM',
+      group: 'Z_FG',
+      processingType: 'rfc',
+      updateTaskKind: 'startImmediate',
+    });
+    expect(out.processingType).toBe('rfc');
+    expect('updateTaskKind' in out).toBe(false);
+  });
+
+  it('applies the same drop per batch_create item, by item type', () => {
+    const out = normalizeTypeArgsForValidation('SAPWrite', {
+      action: 'batch_create',
+      objects: [
+        { type: 'PROG', name: 'Z_P', source: 'x', processingType: 'normal', updateTaskKind: 'startImmediate' },
+        { type: 'FUNC', name: 'Z_FM', group: 'Z_FG', processingType: 'rfc', updateTaskKind: 'startImmediate' },
+        { type: 'FUNC', name: 'Z_FM2', group: 'Z_FG', processingType: 'update', updateTaskKind: 'startDelayed' },
+      ],
+    });
+    const [prog, rfc, upd] = out.objects as Record<string, unknown>[];
+    expect('processingType' in prog).toBe(false);
+    expect('updateTaskKind' in prog).toBe(false);
+    expect(rfc.processingType).toBe('rfc');
+    expect('updateTaskKind' in rfc).toBe(false);
+    expect(upd.processingType).toBe('update');
+    expect(upd.updateTaskKind).toBe('startDelayed');
+  });
+
+  it('does not mutate the caller-supplied args or batch items', () => {
+    const input = {
+      action: 'create',
+      type: 'PROG',
+      name: 'Z_P',
+      processingType: 'normal',
+      objects: [{ type: 'PROG', name: 'Z_Q', processingType: 'normal' }],
+    };
+    normalizeTypeArgsForValidation('SAPWrite', input);
+    expect(input.processingType).toBe('normal');
+    expect(input.objects[0].processingType).toBe('normal');
+  });
+});
