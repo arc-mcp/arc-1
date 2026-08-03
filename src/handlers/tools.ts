@@ -1523,9 +1523,7 @@ export function getToolDefinitions(
     },
   });
 
-  // Transport tools — always registered when the feature is available.
-  // Read actions (list/get/check/history) work with read scope.
-  // Write actions (create/release/delete/...) require 'transports' scope + allowTransportWrites=true.
+  // Transport reads stay available; writes also require transports scope + allowTransportWrites.
   if (config.featureTransport !== 'off') {
     const sapTransportActions =
       config.allowWrites && config.allowTransportWrites
@@ -1549,7 +1547,7 @@ export function getToolDefinitions(
               'remove_object: remove one object from a request, keeping the request — needs the full key pgmid+type+name. ' +
               'reassign: change transport owner (use recursive=true for tasks too). ' +
               'release_recursive: release all unreleased tasks first, then the transport itself. ' +
-              'check: check if a transport is needed for a package/object (requires type, name, package). ' +
+              'check: check create/modify transport needs for a package/object (requires type, name, package; operation defaults to create). ' +
               'history: list transports referencing an object (reverse lookup; requires type, name; works without SAP_ALLOW_TRANSPORT_WRITES). ' +
               "layers: list the transport layers this system offers (name + description + resolved target where any) — the valid values for create's transportLayer. Use this to discover a real value instead of guessing; works without SAP_ALLOW_TRANSPORT_WRITES. " +
               "targets: list the valid transport targets (Transportziel / TR_TARGET) this system offers — the valid values for create's target. Use this to discover a real target (e.g. before create with target=). Read-only. Both report unavailability at runtime on releases that lack the value-help endpoint.",
@@ -1564,7 +1562,7 @@ export function getToolDefinitions(
           package: {
             type: 'string',
             description:
-              "Package name. For create: optional — defaults to $TMP, pass an explicit package to influence the transport route (SAP infers K/W/T from the package's TADIR route). For check: required.",
+              'Package name. For create: optional — defaults to $TMP; an explicit package influences the route/target, while the request remains Workbench type K. For check: required.',
           },
           target: {
             type: 'string',
@@ -1576,11 +1574,7 @@ export function getToolDefinitions(
             description:
               'Transport layer for create (optional, advanced). Sent as the ?transportLayer= query param to override which consolidation route — and therefore which target — SAP resolves. OMIT IT by default: SAP resolves the target from the package automatically, which is correct for almost all cases. Never invent a value — if you need a specific layer, obtain it from action="layers" or from the user. Only effective when that layer has a classic STMS consolidation route; otherwise the request is local regardless.',
           },
-          user: {
-            type: 'string',
-            description:
-              'SAP username to filter by (for list). Defaults to the current SAP user. Use "*" to list all users.',
-          },
+          user: { type: 'string', description: 'SAP user for list (default: current user; "*" means all users).' },
           status: {
             type: 'string',
             description: 'Transport status filter (for list). D=modifiable (default), R=released, "*"=all statuses.',
@@ -1588,7 +1582,12 @@ export function getToolDefinitions(
           type: {
             type: 'string',
             description:
-              "Object type for check/history/remove_object actions (PROG, CLAS, DDLS, etc.). Not used by create — the SAP backend infers transport type (K/W/T) from the package's TADIR route on the CreateCorrectionRequest endpoint.",
+              'Object type for check/history/remove_object actions (PROG, CLAS, DDLS, etc.). Not used by create, which creates a Workbench (K) request.',
+          },
+          operation: {
+            type: 'string',
+            enum: ['create', 'modify'],
+            description: 'Check mode: create (default) or modify.',
           },
           pgmid: {
             type: 'string',
@@ -1612,7 +1611,8 @@ export function getToolDefinitions(
           },
           maxResults: {
             type: 'number',
-            description: 'list: max transports (default 50, max 1000). "total" always reports the full backlog.',
+            description:
+              'Maximum list rows or check/history candidates (defaults: list/history 50, check 10; max 1000).',
           },
         },
         required: ['action'],

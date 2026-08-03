@@ -1212,6 +1212,27 @@ describe('Transport Management', () => {
       });
     });
 
+    it('parses every candidate from the live REQUESTS/CTS_REQUEST/REQ_HEADER shape', async () => {
+      const http = mockHttp(loadFixture('transport-check-candidates.xml'));
+      const info = await getTransportInfo(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/zcl_arc1_sample',
+        'ZARC1_SAMPLE',
+      );
+
+      expect(info.operation).toBe('I');
+      expect(info.result).toBe('S');
+      expect(info.correctionFlag).toBe(true);
+      expect(info.existingRequestOnly).toBe(false);
+      expect(info.existingTransports).toEqual([
+        { id: 'DEVK900101', description: 'First candidate', owner: 'DEVELOPER' },
+        { id: 'DEVK900102', description: 'Second candidate', owner: 'DEVELOPER' },
+      ]);
+      expect(info.lockedTasks).toEqual([]);
+      expect(info.messages).toEqual([]);
+    });
+
     it('parses locked transport from response', async () => {
       const xml = `<asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0">
         <asx:values><DATA>
@@ -1234,6 +1255,53 @@ describe('Transport Management', () => {
         'Z_MY_PKG',
       );
       expect(info.lockedTransport).toBe('A4HK900999');
+    });
+
+    it('parses the live lock-holder parent, owner, and child-task shape', async () => {
+      const http = mockHttp(loadFixture('transport-check-locked.xml'));
+      const info = await getTransportInfo(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/interfaces/zif_arc1_sample',
+        'ZARC1_SAMPLE',
+        '',
+      );
+
+      expect(info.recording).toBe(false);
+      expect(info.operation).toBe('');
+      expect(info.lockedTransport).toBe('DEVK900201');
+      expect(info.lockedTransportOwner).toBe('DEVELOPER');
+      expect(info.lockedTasks).toEqual(['DEVK900202']);
+      expect(info.existingTransports).toEqual([]);
+    });
+
+    it('returns warning diagnostics and rejects fatal HTTP-200 diagnostics', async () => {
+      const response = (severity: string, text: string) => `<asx:abap xmlns:asx="http://www.sap.com/abapxml">
+        <asx:values><DATA>
+          <RESULT>${severity === 'W' ? 'S' : 'E'}</RESULT>
+          <RECORDING/><DLVUNIT>HOME</DLVUNIT><DEVCLASS>ZARC1_SAMPLE</DEVCLASS>
+          <MESSAGES><CTS_MESSAGE><SEVERITY>${severity}</SEVERITY><ARBGB>TK</ARBGB><MSGNR>103</MSGNR><TEXT>${text}</TEXT></CTS_MESSAGE></MESSAGES>
+        </DATA></asx:values>
+      </asx:abap>`;
+
+      const warning = await getTransportInfo(
+        mockHttp(response('W', 'Review the package')),
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/zcl_test',
+        'ZARC1_SAMPLE',
+      );
+      expect(warning.messages).toEqual([
+        { severity: 'W', text: 'Review the package', messageClass: 'TK', number: '103' },
+      ]);
+
+      await expect(
+        getTransportInfo(
+          mockHttp(response('E', 'This syntax cannot be used for an object name')),
+          unrestrictedSafetyConfig(),
+          '/sap/bc/adt/oo/classes/zcl_test',
+          'ZARC1_SAMPLE',
+        ),
+      ).rejects.toThrow('SAP transport check failed: This syntax cannot be used for an object name');
     });
 
     it('does not require allowTransportWrites for read-only transport info', async () => {
@@ -1259,6 +1327,17 @@ describe('Transport Management', () => {
       await getTransportInfo(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/zcl_test', '$TMP');
       const body = (http.post as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as string;
       expect(body).toContain('<OPERATION>I</OPERATION>');
+    });
+
+    it('sends an empty operation for modify checks', async () => {
+      const xml = `<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA>
+        <RECORDING/><DLVUNIT>LOCAL</DLVUNIT><DEVCLASS>$TMP</DEVCLASS>
+      </DATA></asx:values></asx:abap>`;
+      const http = mockHttp(xml);
+      await getTransportInfo(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/zcl_test', '$TMP', '');
+      const body = (http.post as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as string;
+      expect(body).toContain('<OPERATION></OPERATION>');
+      expect(body).not.toContain('<OPERATION>I</OPERATION>');
     });
 
     it('handles empty transport list', async () => {

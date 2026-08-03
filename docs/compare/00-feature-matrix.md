@@ -202,7 +202,7 @@ The npm-graph CycloneDX quick win is now shipped. Remaining Tier 2 work (image/M
 | Feature | ARC-1 | SAP ABAP MCP | vibing-steampunk | mcp-abap-abap-adt-api | mcp-abap-adt (mario) | AWS Accelerator | fr0ster | btp-odata-mcp | dassian-adt / abap-mcpb | sapcli |
 |---------|-------|---|-----------------|----------------------|---------------------|-----------------|---------|---------------|------------------------|--------|
 | List transports | ✅ | ✅ (abap_transport-get) | ✅ | ✅ | ❌ | ✅ | ✅ | N/A | ✅ | ✅ (-r/-rr/-rrr detail) |
-| Create transport | ✅ (K/W/T) | ✅ (abap_transport-create) | ✅ | ✅ | ❌ | ❌ | ✅ | N/A | ✅ | ✅ (5 types: K/W/T/S/R) |
+| Create transport | ✅ (Workbench K) | ✅ (abap_transport-create) | ✅ | ✅ | ❌ | ❌ | ✅ | N/A | ✅ | ✅ (5 types: K/W/T/S/R) |
 | Release transport | ✅ | ❌ (IDE human-in-the-loop) | ✅ | ✅ | ❌ | ❌ | ❌ | N/A | ✅ | ✅ (recursive) |
 | Recursive release | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ✅ (recursive) |
 | Delete transport | ✅ (recursive) | ❌ | ❌ | ❌ | ��� | ❌ | ❌ | N/A | ❌ | ✅ |

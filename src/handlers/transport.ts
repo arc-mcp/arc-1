@@ -31,6 +31,7 @@ import { errorResult, type ToolResult, textResult, toolJson } from './shared.js'
 
 /** Default page size for `list`. Object lists dominate the payload, so the backlog sets the cost. */
 const DEFAULT_TRANSPORT_RESULTS = 50;
+const DEFAULT_TRANSPORT_CHECK_RESULTS = 10;
 
 /**
  * Pre-release guard: find inactive objects that belong to `transportId`. Releasing a transport that
@@ -424,22 +425,54 @@ export async function handleSAPTransport(client: AdtClient, args: Record<string,
       if (!pkg) return errorResult('"package" is required for "check" action.');
 
       const objectUrl = objectUrlForType(objectType, objectName);
-      const info = await getTransportInfo(client.http, client.safety, objectUrl, pkg, 'I');
+      const operation = args.operation === 'modify' ? 'modify' : 'create';
+      const info = await getTransportInfo(
+        client.http,
+        client.safety,
+        objectUrl,
+        pkg,
+        operation === 'create' ? 'I' : '',
+      );
+      const transportRequired = !info.isLocal && (info.recording || Boolean(info.lockedTransport));
+      const transportAssignmentRequired = !info.isLocal && info.recording && !info.lockedTransport;
+      const candidateLimit = clampSearchResults(args.maxResults as number | undefined, DEFAULT_TRANSPORT_CHECK_RESULTS);
+      const existingTransportTotal = info.existingTransports.length;
+      const existingTransports = info.existingTransports.slice(0, candidateLimit);
+      const existingTransportsTruncated = existingTransportTotal > existingTransports.length;
+      const operationNoun = operation === 'create' ? 'creation' : 'modification';
 
-      const summary = info.isLocal
-        ? `Package "${pkg}" is local — no transport required.`
-        : info.recording
-          ? `Package "${pkg}" requires a transport for object creation.`
-          : `Package "${pkg}" does not require transport recording.`;
+      const summary = info.lockedTransport
+        ? `Object ${objectType} ${objectName} is already locked in transport ${info.lockedTransport}${
+            info.lockedTransportOwner ? ` (owned by ${info.lockedTransportOwner})` : ''
+          }; no new assignment is required for ${operationNoun}.`
+        : info.isLocal
+          ? `Package "${pkg}" is local — no transport required for ${operationNoun}.`
+          : info.recording
+            ? `Package "${pkg}" requires a transport assignment for object ${operationNoun}.`
+            : `SAP did not require transport recording for object ${operationNoun} in package "${pkg}".`;
 
       return textResult(
         toolJson({
+          operation,
           package: pkg,
-          transportRequired: !info.isLocal && info.recording,
+          transportRequired,
+          transportAssignmentRequired,
           isLocal: info.isLocal,
           deliveryUnit: info.deliveryUnit,
-          existingTransports: info.existingTransports,
+          result: info.result,
+          correctionFlag: info.correctionFlag,
+          existingRequestOnly: info.existingRequestOnly,
+          messages: info.messages,
+          existingTransportTotal,
+          existingTransportsShown: existingTransports.length,
+          existingTransports,
+          existingTransportsTruncated,
+          ...(existingTransportsTruncated
+            ? { hint: `Showing ${existingTransports.length} of ${existingTransportTotal} candidate transports.` }
+            : {}),
           ...(info.lockedTransport ? { lockedTransport: info.lockedTransport } : {}),
+          ...(info.lockedTransportOwner ? { lockedTransportOwner: info.lockedTransportOwner } : {}),
+          ...(info.lockedTasks.length > 0 ? { lockedTasks: info.lockedTasks } : {}),
           summary,
         }),
       );
@@ -470,17 +503,23 @@ export async function handleSAPTransport(client: AdtClient, args: Record<string,
       }
 
       const lockOwner = primary.relatedTransports[0]?.owner;
+      const candidateTotal = candidateTransports.length;
+      const candidateLimit = clampSearchResults(args.maxResults as number | undefined, DEFAULT_TRANSPORT_RESULTS);
+      const boundedCandidates = candidateTransports.slice(0, candidateLimit);
+      const candidateTruncated = candidateTotal > boundedCandidates.length;
       const summary = primary.lockedTransport
         ? `Object ${objectName} is locked in transport ${primary.lockedTransport}${lockOwner ? ` by ${lockOwner}` : ''}.`
-        : candidateTransports.length > 0
-          ? `Object ${objectName} has no active lock; ${candidateTransports.length} transport(s) available for assignment.`
+        : candidateTotal > 0
+          ? `Object ${objectName} has no active lock; ${candidateTotal} transport(s) available for assignment.`
           : `Object ${objectName} has no related or candidate transports (likely $TMP / local object).`;
 
       const history: ObjectTransportHistory = {
         object: { type: objectType, name: objectName, uri: objectUrl },
         ...(primary.lockedTransport ? { lockedTransport: primary.lockedTransport } : {}),
         relatedTransports: primary.relatedTransports,
-        candidateTransports,
+        candidateTransports: boundedCandidates,
+        candidateTotal,
+        candidateTruncated,
         summary,
       };
 

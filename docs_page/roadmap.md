@@ -196,7 +196,7 @@ SORT RULES for this table — DO NOT BREAK when adding rows:
 | — | RAP DDIC save diagnostics (structured errors + inactive syntax check) | 2026-04-14 | Features |
 | — | Abaplint type-gating + per-call lintBeforeWrite | 2026-04-14 | Features |
 | [FEAT-46](#feat-46) | SRVB (Service Binding) Create | 2026-04-14 | Features |
-| [FEAT-39](#feat-39) | Transport Enhancements (K/W/T types; S/R deferred) | 2026-04-13 | Features |
+| [FEAT-39](#feat-39) | Transport lifecycle enhancements (Workbench K create; other request kinds deferred) | 2026-04-13 | Features |
 | — | RAP Write Guard (feature-aware) | 2026-04-13 | Features |
 | [FEAT-13](#feat-13) | DDIC Domain/Data Element Write | 2026-04-12 | Features |
 | [FEAT-08](#feat-08) | Content-Type 415/406 Auto-Retry | 2026-04-12 | Features |
@@ -343,7 +343,7 @@ These bugs affect real-world deployments and were confirmed by cross-project com
 ### Phase D: ADT Feature Parity (P2) — Larger Items
 20. ~~**FEAT-46** SRVB (Service Binding) Create (S)~~ — **completed 2026-04-14** (SAPWrite now supports SRVB create/update/delete + batch_create; create guidance points to activate + publish flow).
 21. ~~**FEAT-47** MSAG (Message Class) Read/Write (S)~~ — **completed 2026-04-14** (SAPRead type=MSAG + SAPWrite/SAPManage MSAG create/update/delete)
-22. ~~**FEAT-39** Transport Enhancements (S)~~ — **completed 2026-04-13** (K/W/T types; S/R deferred). sapcli has full CTS lifecycle.
+22. ~~**FEAT-39** Transport Enhancements (S)~~ — **completed 2026-04-13** (lifecycle operations; Workbench K create). sapcli has full CTS lifecycle.
 21. ~~**FEAT-41** ABAP Unit Test Coverage (S)~~ — **completed 2026-06-25 (PR #503)**: `SAPDiagnose action="unittest"` with `coverage:true` returns statement/branch/procedure coverage, handles cross-release CLAS/OM variants, and degrades cleanly when the coverage endpoint is unavailable.
 22. **FEAT-42** ATC Output Formats (XS) — JUnit4, checkstyle, codeclimate formatters for CI/CD integration. sapcli has these.
 23. ~~**FEAT-43** DDIC Auth & Misc Read (S)~~ — **completed 2026-04-17** (SAPRead types `AUTH`, `FEATURE_TOGGLE` (formerly `FTG2`, renamed in audit Plan B / PR #224), `ENHO`; Authorization Fields endpoint: `/sap/bc/adt/aps/iam/auth/{name}`, namespace `http://www.sap.com/iam/auth`)
@@ -1480,12 +1480,12 @@ For FUGR (function groups), the same pattern applies with `objecttype=FUGR/P` an
 | **Status** | ✅ Completed |
 | **Source** | [sapcli comparison](https://github.com/arc-mcp/arc-1/blob/main/docs/compare/09-sapcli.md) |
 
-**What:** Extend SAPTransport with: delete transport/task, reassign owner, transport type selection (K/W/T), recursive release, and transport contents parsing. Subsumes FEAT-19.
+**What:** Extend SAPTransport with delete transport/task, reassign owner, recursive release, and transport contents parsing. `CreateCorrectionRequest` creates Workbench (K) requests; other request kinds need separate endpoints and remain deferred. Subsumes FEAT-19.
 
 **Implemented:**
 - `deleteTransport()` with recursive flag (deletes unreleased tasks first)
 - `reassignTransport()` with recursive flag (reassigns unreleased tasks first)
-- `createTransport()` now accepts transport type parameter: K (Workbench), W (Customizing), T (Transport of Copies)
+- `createTransport()` creates Workbench (K) requests; package/layer inputs influence route and target, not request kind
 - `releaseTransportRecursive()` as new action (releases tasks before parent)
 - Transport object parsing (`tm:abap_object`) in GET responses
 - Fixed Accept header bugs in `getTransport()` and `releaseTransport()`

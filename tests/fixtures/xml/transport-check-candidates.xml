@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<asx:abap version="1.0" xmlns:asx="http://www.sap.com/abapxml">
+  <asx:values>
+    <DATA>
+      <PGMID>R3TR</PGMID>
+      <OBJECT>CLAS</OBJECT>
+      <OBJECTNAME>ZCL_ARC1_SAMPLE</OBJECTNAME>
+      <OPERATION>I</OPERATION>
+      <DEVCLASS>ZARC1_SAMPLE</DEVCLASS>
+      <KORRFLAG>X</KORRFLAG>
+      <DLVUNIT>HOME</DLVUNIT>
+      <RESULT>S</RESULT>
+      <RECORDING>X</RECORDING>
+      <EXISTING_REQ_ONLY/>
+      <MESSAGES/>
+      <REQUESTS>
+        <CTS_REQUEST>
+          <REQ_HEADER>
+            <TRKORR>DEVK900101</TRKORR>
+            <TRFUNCTION>K</TRFUNCTION>
+            <TRSTATUS>D</TRSTATUS>
+            <AS4USER>DEVELOPER</AS4USER>
+            <AS4TEXT>First candidate</AS4TEXT>
+          </REQ_HEADER>
+          <REQ_ATTRS/>
+          <TASK_HEADERS/>
+        </CTS_REQUEST>
+        <CTS_REQUEST>
+          <REQ_HEADER>
+            <TRKORR>DEVK900102</TRKORR>
+            <TRFUNCTION>K</TRFUNCTION>
+            <TRSTATUS>D</TRSTATUS>
+            <AS4USER>DEVELOPER</AS4USER>
+            <AS4TEXT>Second candidate</AS4TEXT>
+          </REQ_HEADER>
+          <REQ_ATTRS/>
+          <TASK_HEADERS/>
+        </CTS_REQUEST>
+      </REQUESTS>
+      <LOCKS/>
+      <TADIRDEVC>ZARC1_SAMPLE</TADIRDEVC>
+      <URI>/sap/bc/adt/oo/classes/zcl_arc1_sample</URI>
+    </DATA>
+  </asx:values>
+</asx:abap>

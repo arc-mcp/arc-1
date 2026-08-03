@@ -841,7 +841,7 @@
             "layers",
             "targets"
           ],
-          "description": "list: show transports (defaults to current user, modifiable only). Pass summary=true for a headers-only overview that omits each transport's object lists (keeps an objectCount) — far cheaper when many transports are open. get: fetch transport details including tasks and objects. create: create a new transport request (description required). To target another system, pass target=<system | system.client | /group/> (the Transportziel / TR_TARGET, e.g. \"/TRG/\" or \"C11\"; the group and system.client forms require extended transport control to be active). Otherwise omit target and pass an optional package to let SAP infer the route (defaults to $TMP). The response reports the resolved transport target; an empty target means a LOCAL request (cannot be transported onward). release: release a single transport or task. delete: delete a transport (use recursive=true to delete tasks first; removeLockedObjects=true to strip locked objects that otherwise block deletion with \"...contains locked objects\"). remove_object: remove one object from a request, keeping the request — needs the full key pgmid+type+name. reassign: change transport owner (use recursive=true for tasks too). release_recursive: release all unreleased tasks first, then the transport itself. check: check if a transport is needed for a package/object (requires type, name, package). history: list transports referencing an object (reverse lookup; requires type, name; works without SAP_ALLOW_TRANSPORT_WRITES). layers: list the transport layers this system offers (name + description + resolved target where any) — the valid values for create's transportLayer. Use this to discover a real value instead of guessing; works without SAP_ALLOW_TRANSPORT_WRITES. targets: list the valid transport targets (Transportziel / TR_TARGET) this system offers — the valid values for create's target. Use this to discover a real target (e.g. before create with target=). Read-only. Both report unavailability at runtime on releases that lack the value-help endpoint."
+          "description": "list: show transports (defaults to current user, modifiable only). Pass summary=true for a headers-only overview that omits each transport's object lists (keeps an objectCount) — far cheaper when many transports are open. get: fetch transport details including tasks and objects. create: create a new transport request (description required). To target another system, pass target=<system | system.client | /group/> (the Transportziel / TR_TARGET, e.g. \"/TRG/\" or \"C11\"; the group and system.client forms require extended transport control to be active). Otherwise omit target and pass an optional package to let SAP infer the route (defaults to $TMP). The response reports the resolved transport target; an empty target means a LOCAL request (cannot be transported onward). release: release a single transport or task. delete: delete a transport (use recursive=true to delete tasks first; removeLockedObjects=true to strip locked objects that otherwise block deletion with \"...contains locked objects\"). remove_object: remove one object from a request, keeping the request — needs the full key pgmid+type+name. reassign: change transport owner (use recursive=true for tasks too). release_recursive: release all unreleased tasks first, then the transport itself. check: check create/modify transport needs for a package/object (requires type, name, package; operation defaults to create). history: list transports referencing an object (reverse lookup; requires type, name; works without SAP_ALLOW_TRANSPORT_WRITES). layers: list the transport layers this system offers (name + description + resolved target where any) — the valid values for create's transportLayer. Use this to discover a real value instead of guessing; works without SAP_ALLOW_TRANSPORT_WRITES. targets: list the valid transport targets (Transportziel / TR_TARGET) this system offers — the valid values for create's target. Use this to discover a real target (e.g. before create with target=). Read-only. Both report unavailability at runtime on releases that lack the value-help endpoint."
         },
         "id": {
           "type": "string",
@@ -857,7 +857,7 @@
         },
         "package": {
           "type": "string",
-          "description": "Package name. For create: optional — defaults to $TMP, pass an explicit package to influence the transport route (SAP infers K/W/T from the package's TADIR route). For check: required."
+          "description": "Package name. For create: optional — defaults to $TMP; an explicit package influences the route/target, while the request remains Workbench type K. For check: required."
         },
         "target": {
           "type": "string",
@@ -869,7 +869,7 @@
         },
         "user": {
           "type": "string",
-          "description": "SAP username to filter by (for list). Defaults to the current SAP user. Use \"*\" to list all users."
+          "description": "SAP user for list (default: current user; \"*\" means all users)."
         },
         "status": {
           "type": "string",
@@ -877,7 +877,15 @@
         },
         "type": {
           "type": "string",
-          "description": "Object type for check/history/remove_object actions (PROG, CLAS, DDLS, etc.). Not used by create — the SAP backend infers transport type (K/W/T) from the package's TADIR route on the CreateCorrectionRequest endpoint."
+          "description": "Object type for check/history/remove_object actions (PROG, CLAS, DDLS, etc.). Not used by create, which creates a Workbench (K) request."
+        },
+        "operation": {
+          "type": "string",
+          "enum": [
+            "create",
+            "modify"
+          ],
+          "description": "Check mode: create (default) or modify."
         },
         "pgmid": {
           "type": "string",
@@ -901,7 +909,7 @@
         },
         "maxResults": {
           "type": "number",
-          "description": "list: max transports (default 50, max 1000). \"total\" always reports the full backlog."
+          "description": "Maximum list rows or check/history candidates (defaults: list/history 50, check 10; max 1000)."
         }
       },
       "required": [

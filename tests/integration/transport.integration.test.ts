@@ -30,6 +30,7 @@ import {
   deleteTransport,
   getObjectTransports,
   getTransport,
+  getTransportInfo,
   inactiveObjectsForTransport,
   listTransportLayers,
   listTransports,
@@ -245,6 +246,26 @@ describe('Transport Integration Tests', () => {
       } catch (err) {
         expectSapFailureClass(err, [404], [/not found/i]);
       }
+    });
+  });
+
+  // ─── getTransportInfo (read-only pre-flight) ────────────────────
+
+  describe('getTransportInfo', () => {
+    it('accepts and echoes create and modify operations without mutating CTS', async () => {
+      const objectUrl = '/sap/bc/adt/oo/classes/zcl_arc1_transport_check';
+
+      const createInfo = await getTransportInfo(client.http, client.safety, objectUrl, '$TMP', 'I');
+      const modifyInfo = await getTransportInfo(client.http, client.safety, objectUrl, '$TMP', '');
+
+      expect(createInfo.operation).toBe('I');
+      expect(modifyInfo.operation).toBe('');
+      expect(createInfo.isLocal).toBe(true);
+      expect(modifyInfo.isLocal).toBe(true);
+      expect(createInfo.recording).toBe(false);
+      expect(modifyInfo.recording).toBe(false);
+      expect(createInfo.existingTransports).toEqual([]);
+      expect(modifyInfo.existingTransports).toEqual([]);
     });
   });
 

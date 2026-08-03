@@ -514,6 +514,10 @@ export interface ObjectTransportHistory {
   relatedTransports: Array<{ id: string; description: string; owner: string; status: string }>;
   /** Transports the object could be added to (from transportchecks fallback). */
   candidateTransports: Array<{ id: string; description: string; owner: string }>;
+  /** Total candidate count before output bounding. */
+  candidateTotal?: number;
+  /** True when candidateTransports is a bounded prefix of candidateTotal. */
+  candidateTruncated?: boolean;
   /** Human-readable summary used by SAPTransport response. */
   summary: string;
 }

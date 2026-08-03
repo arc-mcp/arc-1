@@ -1711,6 +1711,36 @@ describe('SAPTransportSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('accepts create/modify transport-check operations and rejects unknown operations', () => {
+    expect(
+      SAPTransportSchema.safeParse({
+        action: 'check',
+        type: 'CLAS',
+        name: 'ZCL_X',
+        package: 'ZPKG',
+        operation: 'create',
+      }).success,
+    ).toBe(true);
+    expect(
+      SAPTransportSchema.safeParse({
+        action: 'check',
+        type: 'CLAS',
+        name: 'ZCL_X',
+        package: 'ZPKG',
+        operation: 'modify',
+      }).success,
+    ).toBe(true);
+    expect(
+      SAPTransportSchema.safeParse({
+        action: 'check',
+        type: 'CLAS',
+        name: 'ZCL_X',
+        package: 'ZPKG',
+        operation: 'delete',
+      }).success,
+    ).toBe(false);
+  });
+
   it('coerces stringified booleans for delete flags (GPT/OpenAI client robustness)', () => {
     const result = SAPTransportSchema.safeParse({
       action: 'delete',

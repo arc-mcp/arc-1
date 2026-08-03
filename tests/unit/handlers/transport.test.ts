@@ -692,6 +692,88 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
       expect(parsed.summary).toContain('available for assignment');
     });
 
+    it('check defaults to create, returns live-shape candidates, and bounds the response', async () => {
+      const candidateRows = Array.from(
+        { length: 12 },
+        (_, i) => `<CTS_REQUEST><REQ_HEADER>
+          <TRKORR>DEVK9${String(10000 + i)}</TRKORR>
+          <AS4TEXT>Candidate ${i + 1}</AS4TEXT>
+          <AS4USER>DEVELOPER</AS4USER>
+        </REQ_HEADER><REQ_ATTRS/><TASK_HEADERS/></CTS_REQUEST>`,
+      ).join('');
+      const response = `<asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0">
+        <asx:values><DATA>
+          <DEVCLASS>ZARC1_SAMPLE</DEVCLASS><DLVUNIT>HOME</DLVUNIT><RESULT>S</RESULT>
+          <RECORDING>X</RECORDING><REQUESTS>${candidateRows}</REQUESTS><LOCKS/><MESSAGES/>
+        </DATA></asx:values>
+      </asx:abap>`;
+      mockFetch.mockResolvedValue(mockResponse(200, response, { 'x-csrf-token': 'T' }));
+
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'check',
+        type: 'CLAS',
+        name: 'ZCL_ARC1_SAMPLE',
+        package: 'ZARC1_SAMPLE',
+      });
+
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0]!.text);
+      expect(parsed.operation).toBe('create');
+      expect(parsed.transportRequired).toBe(true);
+      expect(parsed.transportAssignmentRequired).toBe(true);
+      expect(parsed.existingTransportTotal).toBe(12);
+      expect(parsed.existingTransportsShown).toBe(10);
+      expect(parsed.existingTransports).toHaveLength(10);
+      expect(parsed.existingTransportsTruncated).toBe(true);
+      const postCall = mockFetch.mock.calls.find((call) => call[1]?.method === 'POST');
+      const body = String(postCall?.[1]?.body ?? '');
+      expect(body).toContain('<OPERATION>I</OPERATION>');
+    });
+
+    it('check maps modify to an empty ADT operation', async () => {
+      mockFetch.mockResolvedValue(
+        mockResponse(200, loadFixture('transport-check-candidates.xml'), { 'x-csrf-token': 'T' }),
+      );
+
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'check',
+        operation: 'modify',
+        type: 'CLAS',
+        name: 'ZCL_ARC1_SAMPLE',
+        package: 'ZARC1_SAMPLE',
+      });
+
+      const parsed = JSON.parse(result.content[0]!.text);
+      expect(parsed.operation).toBe('modify');
+      expect(parsed.summary).toContain('modification');
+      const postCall = mockFetch.mock.calls.find((call) => call[1]?.method === 'POST');
+      const body = String(postCall?.[1]?.body ?? '');
+      expect(body).toContain('<OPERATION></OPERATION>');
+    });
+
+    it('check treats a live-shape object lock as assigned even when RECORDING is empty', async () => {
+      mockFetch.mockResolvedValue(
+        mockResponse(200, loadFixture('transport-check-locked.xml'), { 'x-csrf-token': 'T' }),
+      );
+
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'check',
+        operation: 'modify',
+        type: 'INTF',
+        name: 'ZIF_ARC1_SAMPLE',
+        package: 'ZARC1_SAMPLE',
+      });
+
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0]!.text);
+      expect(parsed.transportRequired).toBe(true);
+      expect(parsed.transportAssignmentRequired).toBe(false);
+      expect(parsed.lockedTransport).toBe('DEVK900201');
+      expect(parsed.lockedTransportOwner).toBe('DEVELOPER');
+      expect(parsed.lockedTasks).toEqual(['DEVK900202']);
+      expect(parsed.summary).toContain('already locked');
+    });
+
     it('history requires type and name', async () => {
       const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
         action: 'history',

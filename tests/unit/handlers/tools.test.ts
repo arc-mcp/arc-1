@@ -91,6 +91,18 @@ describe('Tool Definitions', () => {
     expect(actionEnum).toEqual(['list', 'get', 'check', 'history', 'layers', 'targets']);
   });
 
+  it('SAPTransport exposes create/modify checks and documents Workbench-only request creation', () => {
+    const tools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true, allowTransportWrites: true });
+    const sapTransport = tools.find((tool) => tool.name === 'SAPTransport')!;
+    const schema = sapTransport.inputSchema as Record<string, any>;
+
+    expect(schema.properties.operation.enum).toEqual(['create', 'modify']);
+    expect(schema.properties.operation.description).toContain('default');
+    expect(schema.properties.package.description).toContain('Workbench type K');
+    expect(schema.properties.type.description).toContain('Workbench (K)');
+    expect(sapTransport.description).toContain('always a Workbench (K) request');
+  });
+
   it('SAPTransport includes write actions only when both write gates are enabled', () => {
     const tools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true, allowTransportWrites: true });
     const sapTransport = tools.find((t) => t.name === 'SAPTransport')!;

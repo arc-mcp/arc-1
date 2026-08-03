@@ -118,8 +118,9 @@ export async function getTransport(
  * requires DEVCLASS in the body (HTTP 500 "Specify a package" if empty), but
  * `$TMP` works on every release tested and produces a normal type-K Workbench
  * transport with empty target — functionally equivalent to a SE10 "no-package"
- * request. Pass an explicit package to influence the transport route; SAP infers
- * K/W/T from the package's TADIR route, not from the request body.
+ * request. Pass an explicit package to influence the transport route/target. The
+ * endpoint still creates a Workbench (K) request; it does not select W/T from the
+ * package.
  *
  * `transportLayer` is optional. The endpoint does NOT accept a target in the body —
  * the only way to influence the target on this `CreateCorrectionRequest` schema is
@@ -593,10 +594,24 @@ export interface TransportInfo {
   deliveryUnit: string;
   /** Package name */
   devclass: string;
+  /** SAP's echoed operation: `I` for create/insert, empty for modify. */
+  operation: string;
+  /** SAP transport-check result code (normally `S`). */
+  result: string;
+  /** Whether SAP returned `KORRFLAG=X` (informational; not reliable as the sole requirement signal). */
+  correctionFlag: boolean;
+  /** Whether SAP requires selection from an existing request (`EXISTING_REQ_ONLY=X`). */
+  existingRequestOnly: boolean;
+  /** Diagnostics returned inside the HTTP-200 transport-check response. */
+  messages: Array<{ severity: string; text: string; messageClass: string; number: string }>;
   /** Available existing transports the object could be added to */
   existingTransports: Array<{ id: string; description: string; owner: string }>;
   /** If the object is already locked in a transport */
   lockedTransport?: string;
+  /** Owner of the parent request holding the object lock. */
+  lockedTransportOwner?: string;
+  /** Tasks below the parent request holding the object lock. */
+  lockedTasks: string[];
 }
 
 /**
@@ -615,7 +630,7 @@ export async function getTransportInfo(
   safety: SafetyConfig,
   objectUrl: string,
   devclass: string,
-  operation = 'I',
+  operation: 'I' | '' = 'I',
 ): Promise<TransportInfo> {
   // Transport info is a read operation — doesn't require allowTransportWrites.
   checkOperation(safety, OperationType.Read, 'TransportInfo');
@@ -638,7 +653,19 @@ export async function getTransportInfo(
     { Accept: 'application/vnd.sap.as+xml' },
   );
 
-  return parseTransportInfo(resp.body);
+  const info = parseTransportInfo(resp.body);
+  const fatalMessages = info.messages.filter((message) =>
+    ['E', 'A', 'X'].includes(message.severity.trim().toUpperCase()),
+  );
+  if (fatalMessages.length > 0) {
+    const detail = fatalMessages
+      .slice(0, 5)
+      .map((message) => message.text || `${message.messageClass} ${message.number}`.trim())
+      .filter(Boolean)
+      .join('; ');
+    throw new Error(`SAP transport check failed${detail ? `: ${detail}` : ''}`);
+  }
+  return info;
 }
 
 /**
@@ -722,30 +749,84 @@ function parseTransportInfo(xml: string): TransportInfo {
   const isLocal = String(findDeepValue(parsed, 'DLVUNIT') ?? '') === 'LOCAL';
   const deliveryUnit = String(findDeepValue(parsed, 'DLVUNIT') ?? '');
   const devclass = String(findDeepValue(parsed, 'DEVCLASS') ?? '');
+  const operation = String(findDeepValue(parsed, 'OPERATION') ?? '');
+  const result = String(findDeepValue(parsed, 'RESULT') ?? '');
+  const correctionFlag = String(findDeepValue(parsed, 'KORRFLAG') ?? '') === 'X';
+  const existingRequestOnly = String(findDeepValue(parsed, 'EXISTING_REQ_ONLY') ?? '') === 'X';
 
-  // Extract locked transport from LOCKS/HEADER
-  const locks = findDeepNodes(parsed, 'LOCKS');
+  const messageContainer = findDeepNodes(parsed, 'MESSAGES')[0];
+  const messageNodes = messageContainer ? findDeepNodes(messageContainer, 'CTS_MESSAGE') : [];
+  const messages = messageNodes.map((message) => ({
+    severity: String(message.SEVERITY ?? ''),
+    text: String(message.TEXT ?? ''),
+    messageClass: String(message.ARBGB ?? ''),
+    number: String(message.MSGNR ?? ''),
+  }));
+
+  // Live 7.50/7.58/8.16 shape:
+  // LOCKS/CTS_OBJECT_LOCK/LOCK_HOLDER/REQ_HEADER + TASK_HEADERS/CTS_TASK_HEADER.
+  // Keep LOCKS/HEADER below as a compatibility fallback for older recorded fixtures.
+  const lockContainer = findDeepNodes(parsed, 'LOCKS')[0];
   let lockedTransport: string | undefined;
-  if (locks.length > 0) {
-    const headers = findDeepNodes(locks[0], 'HEADER');
-    if (headers.length > 0) {
-      const trkorr = String((headers[0] as Record<string, unknown>).TRKORR ?? '');
-      if (trkorr) lockedTransport = trkorr;
+  let lockedTransportOwner: string | undefined;
+  const lockedTasks: string[] = [];
+  if (lockContainer) {
+    const objectLocks = findDeepNodes(lockContainer, 'CTS_OBJECT_LOCK');
+    for (const objectLock of objectLocks) {
+      const holder = findDeepNodes(objectLock, 'LOCK_HOLDER')[0];
+      if (!holder) continue;
+      const header = findDeepNodes(holder, 'REQ_HEADER')[0];
+      const trkorr = String(header?.TRKORR ?? '').trim();
+      if (trkorr && !lockedTransport) {
+        lockedTransport = trkorr;
+        const owner = String(header?.AS4USER ?? '').trim();
+        if (owner) lockedTransportOwner = owner;
+      }
+      for (const task of findDeepNodes(holder, 'CTS_TASK_HEADER')) {
+        const taskId = String(task.TRKORR ?? '').trim();
+        if (taskId && !lockedTasks.includes(taskId)) lockedTasks.push(taskId);
+      }
+    }
+
+    if (!lockedTransport) {
+      const legacyHeader = findDeepNodes(lockContainer, 'HEADER')[0];
+      const trkorr = String(legacyHeader?.TRKORR ?? '').trim();
+      if (trkorr) {
+        lockedTransport = trkorr;
+        const owner = String(legacyHeader?.AS4USER ?? '').trim();
+        if (owner) lockedTransportOwner = owner;
+      }
     }
   }
 
-  // Extract available transports
-  const transportNodes = findDeepNodes(parsed, 'TRANSPORTS');
+  // Live shape: REQUESTS contains 0..N CTS_REQUEST nodes, each with its own REQ_HEADER.
+  // Iterate CTS_REQUEST explicitly: findDeepNodes() deliberately returns the first matching
+  // branch and would otherwise lose all but the first header.
   const existingTransports: TransportInfo['existingTransports'] = [];
-  if (transportNodes.length > 0) {
-    // TRANSPORTS contains an array of transport header elements
-    const headers = findDeepNodes(transportNodes[0], 'headers');
-    for (const h of headers) {
-      const rec = h as Record<string, unknown>;
-      const id = String(rec.TRKORR ?? '');
-      const description = String(rec.AS4TEXT ?? '');
-      const owner = String(rec.AS4USER ?? '');
-      if (id) existingTransports.push({ id, description, owner });
+  const addHeader = (header: Record<string, unknown> | undefined): void => {
+    if (!header) return;
+    const id = String(header.TRKORR ?? '').trim();
+    if (!id || existingTransports.some((transport) => transport.id === id)) return;
+    existingTransports.push({
+      id,
+      description: String(header.AS4TEXT ?? ''),
+      owner: String(header.AS4USER ?? ''),
+    });
+  };
+
+  const requestContainer = findDeepNodes(parsed, 'REQUESTS')[0];
+  if (requestContainer) {
+    for (const request of findDeepNodes(requestContainer, 'CTS_REQUEST')) {
+      addHeader(findDeepNodes(request, 'REQ_HEADER')[0]);
+    }
+  }
+
+  // Compatibility fallback for the simplified/legacy shape ARC-1 supported before the live
+  // contract was captured. It is intentionally secondary so lock headers never become candidates.
+  if (existingTransports.length === 0) {
+    const legacyTransports = findDeepNodes(parsed, 'TRANSPORTS')[0];
+    if (legacyTransports) {
+      for (const header of findDeepNodes(legacyTransports, 'headers')) addHeader(header);
     }
   }
 
@@ -754,8 +835,15 @@ function parseTransportInfo(xml: string): TransportInfo {
     isLocal,
     deliveryUnit,
     devclass,
+    operation,
+    result,
+    correctionFlag,
+    existingRequestOnly,
+    messages,
     existingTransports,
+    lockedTasks,
     ...(lockedTransport ? { lockedTransport } : {}),
+    ...(lockedTransportOwner ? { lockedTransportOwner } : {}),
   };
 }
 

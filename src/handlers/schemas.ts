@@ -895,6 +895,7 @@ export const SAPTransportSchema = z
     user: z.string().optional(),
     status: z.string().optional(),
     type: z.string().optional(),
+    operation: z.enum(['create', 'modify']).optional(),
     owner: z.string().optional(),
     // looseOptionalBoolean (not z.boolean()) so GPT/OpenAI clients sending stringified
     // "true"/"false" coerce instead of erroring at validation (CLAUDE.md boolean guidance).
