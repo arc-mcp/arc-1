@@ -103,7 +103,7 @@
   "dependencies": {
     "@abaplint/core": "^2.120.5",
     "@arc-mcp/xsuaa-auth": "^1.0.1",
-    "@modelcontextprotocol/sdk": "^1.28.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@sap-cloud-sdk/connectivity": "^4.8.0",
     "@sap/xsenv": "^6.2.1",
     "@sap/xssec": "^4.13.3",
