@@ -26,6 +26,19 @@ until they are promoted.
     line — nobody runs them today, and the one part that still matters when jumping from an ancient version
     is the **v0.7.0 authorization break**, which is spelled out in full at the bottom of this page.
 
+## 1.0.2 — completes the 1.0.1 release (2026-08-03)
+
+**No product change: the package contents are identical to 1.0.1.** 1.0.1's own release pipeline stopped
+part-way — npm eventually published, but the CycloneDX SBOM never got attached to the GitHub Release and
+the MCP Registry still advertised 1.0.0. 1.0.2 exists to ship those, and to fix the release-workflow
+regression that caused the second half of that mess. If you are already on 1.0.1 there is nothing to gain
+by upgrading beyond consistency; if you are on 1.0.0, [read 1.0.1](#101--three-total-outage-fixes-2026-08-03)
+— all of it is here.
+
+| Change | What it means | Action |
+|---|---|---|
+| Restore the release gate that ran publish jobs on every push ([#669](https://github.com/arc-mcp/arc-1/pull/669)) | CI only. A gate added while un-sticking 1.0.1 routed the version through a job *output*, and job outputs are strings — so the falsey value became the string `"false"`, which GitHub's `if:` treats as **true**. Every ordinary push to main then ran the npm/SBOM/registry chain with an empty version. Reverted to the per-job conditions, where the expression is evaluated as a real boolean. | `none` |
+
 ## 1.0.1 — three total-outage fixes (2026-08-03)
 
 A pure bugfix release, and every entry in it was failing *100% of the time* for the users it touched, not

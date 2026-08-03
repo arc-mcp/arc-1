@@ -32,16 +32,9 @@ describe('release npm SBOM workflow', () => {
     const releaseJob = workflow.jobs['release-please'];
     const sbomJob = workflow.jobs['publish-npm-sbom'];
 
-    // release-please's own output first; the republish-hatch fallback only fills in when a
-    // manual dispatch re-publishes a release that release-please already cut.
-    expect(releaseJob.outputs?.version).toBe(
-      githubExpression('steps.release.outputs.version || steps.republish.outputs.version'),
-    );
+    expect(releaseJob.outputs?.version).toBe(githubExpression('steps.release.outputs.version'));
     expect(sbomJob.needs).toEqual(['release-please', 'publish-npm']);
-    // The SBOM describes what npm published, so it must ride exactly the same gate — pinned
-    // as one shared expression so the two can never drift into publishing without an SBOM.
-    expect(sbomJob.if).toBe(githubExpression('needs.release-please.outputs.publish'));
-    expect(workflow.jobs['publish-npm'].if).toBe(sbomJob.if);
+    expect(sbomJob.if).toBe(githubExpression('needs.release-please.outputs.release_created'));
     expect(sbomJob['continue-on-error']).toBe(true);
     expect(sbomJob.permissions).toEqual({ contents: 'write' });
 
