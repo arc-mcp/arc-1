@@ -86,6 +86,7 @@ Full per-option details (defaults, clamps, layer interactions): [docs_page/confi
 | `ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH` | Default false. Permits shared BasicAuthentication targets in multi mode; never PP fallback, credentials stay request-local, and v1 requires exactly one CF instance. |
 | `SAP_PP_ENABLED` / `SAP_PP_STRICT` / `SAP_PP_ALLOW_SHARED_COOKIES` | Principal propagation + strict mode + cookie-coexistence escape hatch |
 | `SAP_DISABLE_SAML` | Disable SAML redirect — never on BTP ABAP / S/4 Public Cloud |
+| `ARC1_IDE_LINKS` | Append an IDE deep link to single-object tool results: `off`/`auto`/`vscode`/`eclipse`/template (`{type} {name} {package} {uri} {sid} {client}`). `auto` derives from the calling client and emits nothing for clients with no IDE. Link rides in its OWN content block — never concatenated onto a JSON payload |
 | `ARC1_MINIMAL_ERRORS` | Hide SAP diagnostic details from client-facing tool errors; keep request correlation for operators |
 | `ARC1_LOG_HTTP_DEBUG` | HTTP debug fields in audit; bodies are centrally redacted before sink writes |
 

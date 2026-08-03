@@ -753,6 +753,8 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     'minimalErrors',
   );
 
+  config.ideLinks = resolveStr('ide-links', 'ARC1_IDE_LINKS', 'auto', 'ideLinks').trim() || 'auto';
+
   // ── Misc ───────────────────────────────────────────────────────────
   config.verbose = resolveBool('verbose', 'SAP_VERBOSE', false, 'verbose');
   if (config.verbose) config.logLevel = 'debug';

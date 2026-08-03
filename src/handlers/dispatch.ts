@@ -27,6 +27,7 @@ import type { CachingLayer } from '../cache/caching-layer.js';
 import { type RegistryEntry, type ToolDispatchContext, ToolRegistry } from '../registry/tool-registry.js';
 import { sanitizeArgs } from '../server/audit.js';
 import { generateRequestId, getCurrentContext, requestContext } from '../server/context.js';
+import { buildIdeLink, formatIdeLink, objectIdentity, resolveTemplate } from '../server/ide-links.js';
 import { logger } from '../server/logger.js';
 import { type McpRateLimiter, resolveRateLimitUserKey } from '../server/mcp-rate-limit.js';
 import { formatClientInfo } from '../server/trace-context.js';
@@ -41,7 +42,12 @@ import { expandHyperfocusedArgs } from './hyperfocused.js';
 import { handleSAPLint } from './lint.js';
 import { handleSAPManage } from './manage.js';
 import { handleSAPNavigate } from './navigate.js';
-import { canonicalTablType, normalizeObjectType, normalizeTypeArgsForValidation } from './object-types.js';
+import {
+  canonicalTablType,
+  normalizeObjectType,
+  normalizeTypeArgsForValidation,
+  objectBasePath,
+} from './object-types.js';
 import { handleSAPQuery } from './query.js';
 import { handleSAPRead } from './read.js';
 import { getToolSchema } from './schemas.js';
@@ -632,6 +638,60 @@ export function classifyMultiTargetSapError(
  *   all tools are allowed (backward compatibility).
  * @param server - MCP Server instance for elicitation support.
  */
+
+/**
+ * Append an IDE deep link to a successful, single-object tool result (`ARC1_IDE_LINKS`).
+ *
+ * Deliberately narrow: successes only (an error should stay an error, not gain a link), and only
+ * when the args identify exactly one object. Never throws — a link is a nicety and must not be able
+ * to fail a tool call.
+ */
+function appendIdeLink(
+  result: ToolResult,
+  toolName: string,
+  args: Record<string, unknown>,
+  config: ServerConfig,
+  clientAgent: string | undefined,
+): ToolResult {
+  try {
+    if (result.isError) return result;
+    const template = resolveTemplate(config.ideLinks, clientAgent);
+    if (!template) return result;
+    const identity = objectIdentity(args);
+    if (!identity) return result;
+
+    // objectBasePath throws for types with no single addressable path (FUNC needs its group).
+    // That must only cost the {uri} placeholder, not the whole link.
+    let uri: string | undefined;
+    try {
+      uri = `${objectBasePath(identity.type)}${identity.name.toLowerCase()}`;
+    } catch {
+      uri = undefined;
+    }
+
+    const link = buildIdeLink(template, {
+      type: identity.type,
+      name: identity.name,
+      package: typeof args.package === 'string' ? args.package : undefined,
+      uri,
+      // No dedicated SID on ServerConfig — the ADT destination name is the closest equivalent.
+      sid: config.targetId ?? config.destinationName,
+      client: config.client,
+    });
+    if (!link) return result;
+
+    // A SEPARATE content block, never concatenated onto the payload: most tool results are JSON,
+    // and appending prose to them makes them unparseable for any client that reads them as JSON.
+    return {
+      ...result,
+      content: [...result.content, { type: 'text' as const, text: formatIdeLink(link, identity.name) }],
+    };
+  } catch (err) {
+    logger.debug('ide link suppressed', { tool: toolName, error: err instanceof Error ? err.message : String(err) });
+    return result;
+  }
+}
+
 export async function handleToolCall(
   client: AdtClient,
   config: ServerConfig,
@@ -870,6 +930,8 @@ export async function handleToolCall(
 
         const guardedResult = postDispatchResult?.();
         if (guardedResult) result = guardedResult;
+
+        result = appendIdeLink(result, toolName, args, config, clientAgent);
 
         const durationMs = Date.now() - start;
         const fullText = result.content.map((c) => c.text).join('');

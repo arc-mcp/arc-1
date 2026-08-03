@@ -151,6 +151,15 @@ export interface ServerConfig {
   logFormat: 'text' | 'json';
   /** Hide SAP response details from client-facing tool errors while retaining server-side correlation data. */
   minimalErrors: boolean;
+  /** Append an IDE deep link to tool results that name one object:
+   *  `off` | `auto` (derive from the calling client) | `vscode` | `eclipse` | a custom template
+   *  using `{type} {name} {package} {uri} {sid} {client}`.
+   *
+   *  `eclipse` needs a system id, which only exists on BTP/multi-target setups today
+   *  (`destinationName`/`targetId`). On a plain on-prem connection, supply it in a template
+   *  instead: `ARC1_IDE_LINKS='adt://A4H{uri}?sap-client=001'`. Once ARC-1 reads MCP roots it can
+   *  take the ADT project name from the IDE (`abap:/repotree-v1/A4H2023`) and fill `{sid}` itself. */
+  ideLinks: string;
 
   // --- Tool Mode ---
   /** Tool mode: 'standard' (12 intent tools, SAPGit feature-gated) or 'hyperfocused' (1 universal SAP tool, ~200 tokens) */
@@ -302,5 +311,6 @@ export const DEFAULT_CONFIG: ServerConfig = {
   logLevel: 'info',
   logFormat: 'text',
   minimalErrors: false,
+  ideLinks: 'auto',
   verbose: false,
 };
