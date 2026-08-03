@@ -155,6 +155,26 @@ update-task kind and ARC-1 must not guess one.
 dropped instead of an error. Accepted: the metadata is creation-time only in ADT, the write itself is
 what the user asked for, and it is the identical trade already made for `include`.
 
+### Independent review (Codex, 2026-08-03)
+
+No Critical or High findings. Explicitly cleared: no legitimate FUNC data loss (applicability reads the
+*normalized* type, valid `rfc` and `update`+kind pairs are retained), `objects[]` handling, caller-arg
+mutation/aliasing, and scope derivation (`invocationPolicyKey` reads only `action`, which the drop never
+touches — no request moves into a weaker scope or deny-action key).
+
+One **Medium**, accepted as designed: the drop cannot distinguish fabricated from deliberate input, so
+it bypasses the schema's "creation-time only" and task-kind-dependency errors. Rejecting instead would
+re-break the reported bug for FUNC updates, and the payload carries no signal that separates the two
+cases — which is exactly why #360 chose drop-over-reject for `include`. Of the three examples raised,
+only *deliberate* `processingType` on a FUNC **update** loses meaning; a fabricated `updateTaskKind`
+alongside a real `rfc` and a garbage enum value on a non-FUNC write are inapplicable at any value.
+
+Test gaps it raised were closed where they guard behavior that actually changed — three end-to-end
+`handleToolCall` cases in `tests/unit/handlers/write-create-batch.test.ts` (polluted PROG create,
+asserting nothing reaches the SAP payload; mixed polluted `batch_create`; batch FUNC `update` with no
+kind still refused). Not added: scope/`SAP_DENY_ACTIONS` enforcement with metadata present, and enum
+validation on inapplicable writes — the drop provably changes neither.
+
 ## Follow-ups / out of scope
 
 - Any future mutually-constrained optional enum pair on `SAPWrite` needs the same drop rule at the
