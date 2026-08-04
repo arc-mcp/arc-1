@@ -896,6 +896,19 @@ function parseTransportList(xml: string): TransportRequest[] {
       };
     });
 
+    // Request-level <tm:abap_object> children. findDeepNodes stops at the first record that
+    // owns the key, so on the request node this returns ONLY its direct children — task
+    // objects and the <tm:all_objects> mirror are not pulled in.
+    const requestObjects: TransportObject[] = findDeepNodes(req, 'abap_object').map((o) => ({
+      pgmid: String(o['@_pgmid'] ?? ''),
+      type: String(o['@_type'] ?? ''),
+      name: String(o['@_name'] ?? ''),
+      wbtype: String(o['@_wbtype'] ?? ''),
+      description: String(o['@_obj_desc'] ?? o['@_obj_info'] ?? ''),
+      locked: String(o['@_lock_status'] ?? '') === 'X',
+      position: String(o['@_position'] ?? '000000'),
+    }));
+
     return {
       id: String(req['@_number'] ?? ''),
       description: String(req['@_desc'] ?? ''),
@@ -905,6 +918,7 @@ function parseTransportList(xml: string): TransportRequest[] {
       target: String(req['@_target'] ?? ''),
       targetDesc: String(req['@_target_desc'] ?? ''),
       tasks,
+      ...(requestObjects.length ? { requestObjects } : {}),
     };
   });
 }

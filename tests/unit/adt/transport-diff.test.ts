@@ -336,28 +336,31 @@ describe('classIncludesFor — the transport states which includes it touched', 
   });
 
   it('diffs only the implementations include for a CCIMP entry', () => {
-    expect(classIncludesFor(clas([{ pgmid: 'LIMU', type: 'CINC', name: cinc('ZCL_X', 'CCIMP'), wbtype: '' }]))).toEqual(
-      ['implementations'],
+    const selection = classIncludesFor(
+      clas([{ pgmid: 'LIMU', type: 'CINC', name: cinc('ZCL_X', 'CCIMP'), wbtype: '' }]),
     );
+    expect(selection.includes).toEqual(['implementations']);
+    // Derived from CTS, so every selected part really was changed — suppression must not apply.
+    expect(selection.fromComponents).toBe(true);
   });
 
   it('maps each class-pool suffix to its include', () => {
-    expect(
-      classIncludesFor(
-        clas([
-          { pgmid: 'LIMU', type: 'CINC', name: cinc('ZCL_X', 'CCDEF'), wbtype: '' },
-          { pgmid: 'LIMU', type: 'CINC', name: cinc('ZCL_X', 'CCAU'), wbtype: '' },
-          { pgmid: 'LIMU', type: 'CINC', name: cinc('ZCL_X', 'CCMAC'), wbtype: '' },
-        ]),
-      ).sort(),
-    ).toEqual(['definitions', 'macros', 'testclasses']);
+    const selection = classIncludesFor(
+      clas([
+        { pgmid: 'LIMU', type: 'CINC', name: cinc('ZCL_X', 'CCDEF'), wbtype: '' },
+        { pgmid: 'LIMU', type: 'CINC', name: cinc('ZCL_X', 'CCAU'), wbtype: '' },
+        { pgmid: 'LIMU', type: 'CINC', name: cinc('ZCL_X', 'CCMAC'), wbtype: '' },
+      ]),
+    );
+    expect(selection.includes.sort()).toEqual(['definitions', 'macros', 'testclasses']);
+    expect(selection.fromComponents).toBe(true);
   });
 
   it('maps a method to the main source', () => {
     expect(
       classIncludesFor(
         clas([{ pgmid: 'LIMU', type: 'METH', name: 'ZCL_X                         ADD', wbtype: 'CLAS/OM' }]),
-      ),
+      ).includes,
     ).toEqual(['main']);
   });
 
@@ -366,36 +369,32 @@ describe('classIncludesFor — the transport states which includes it touched', 
     // '=' at all and splitting on it silently resolved the include to `main`.
     const name = 'ZCL_ABCDEFGHIJKLMNOPQRSTUVWXYZ'; // exactly 30 chars
     expect(name).toHaveLength(30);
-    expect(classIncludesFor(clas([{ pgmid: 'LIMU', type: 'CINC', name: `${name}CCIMP`, wbtype: '' }]))).toEqual([
-      'implementations',
-    ]);
+    expect(
+      classIncludesFor(clas([{ pgmid: 'LIMU', type: 'CINC', name: `${name}CCIMP`, wbtype: '' }])).includes,
+    ).toEqual(['implementations']);
   });
 
   it('resolves a namespaced class include', () => {
     expect(
-      classIncludesFor(clas([{ pgmid: 'LIMU', type: 'CINC', name: cinc('/NS/ZCL_X', 'CCAU'), wbtype: '' }])),
+      classIncludesFor(clas([{ pgmid: 'LIMU', type: 'CINC', name: cinc('/NS/ZCL_X', 'CCAU'), wbtype: '' }])).includes,
     ).toEqual(['testclasses']);
   });
 
   it('falls back to all five when the transport carries a whole-class entry', () => {
-    expect(classIncludesFor(clas([{ pgmid: 'R3TR', type: 'CLAS', name: 'ZCL_X', wbtype: 'CLAS/OC' }]))).toEqual([
-      'main',
-      'definitions',
-      'implementations',
-      'macros',
-      'testclasses',
-    ]);
+    expect(
+      classIncludesFor(clas([{ pgmid: 'R3TR', type: 'CLAS', name: 'ZCL_X', wbtype: 'CLAS/OC' }])).includes,
+    ).toEqual(['main', 'definitions', 'implementations', 'macros', 'testclasses']);
   });
 
   it('covers both when a class carries a method and a local-class include', () => {
-    expect(
-      classIncludesFor(
-        clas([
-          { pgmid: 'LIMU', type: 'METH', name: meth('ZCL_X', 'ADD'), wbtype: 'CLAS/OM' },
-          { pgmid: 'LIMU', type: 'CINC', name: cinc('ZCL_X', 'CCIMP'), wbtype: '' },
-        ]),
-      ).sort(),
-    ).toEqual(['implementations', 'main']);
+    const selection = classIncludesFor(
+      clas([
+        { pgmid: 'LIMU', type: 'METH', name: meth('ZCL_X', 'ADD'), wbtype: 'CLAS/OM' },
+        { pgmid: 'LIMU', type: 'CINC', name: cinc('ZCL_X', 'CCIMP'), wbtype: '' },
+      ]),
+    );
+    expect(selection.includes.sort()).toEqual(['implementations', 'main']);
+    expect(selection.fromComponents).toBe(true);
   });
 });
 
@@ -457,5 +456,27 @@ describe('baselineStatusFor — creation needs positive evidence', () => {
     const feed = [rev('00001', '2026-06-23T09:34:43Z', 'A4HK906289'), rev('00000', '2026-06-23T09:34:04Z')];
     const pair = { current: feed[0], previous: null, selectionMethod: 'exact-transport' as const, skipped: [] };
     expect(baselineStatusFor(pair, feed)).toBe('no-prior-snapshot');
+  });
+});
+
+describe('rollup — FUGR/FF is a function module, not function-group source', () => {
+  it('keeps LIMU FUNC on the supported FUNC path', () => {
+    // SLASH_TYPE_MAP maps FUGR/FF -> FUNC ("a function module, not the function group").
+    // Matching the bare FUGR/ prefix would send every changed function module to inventory.
+    const out = rollupTransportObjects([
+      { id: 'T1', objects: [obj({ pgmid: 'LIMU', type: 'FUNC', name: 'Z_ARC1_FM', wbtype: 'FUGR/FF' })] },
+    ]);
+    expect(out[0]).toMatchObject({ type: 'FUNC', name: 'Z_ARC1_FM' });
+  });
+
+  it('still treats the group container and its includes as inventory', () => {
+    for (const wbtype of ['FUGR/I', 'FUGR/PX', 'FUGR/F']) {
+      const out = rollupTransportObjects([
+        { id: 'T1', objects: [obj({ pgmid: 'LIMU', type: 'REPS', name: 'LZFGU01', wbtype })] },
+      ]);
+      expect(out[0].type).not.toBe('PROG');
+      expect(out[0].type).not.toBe('INCL');
+      expect(out[0].type).not.toBe('FUNC');
+    }
   });
 });

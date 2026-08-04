@@ -1829,3 +1829,15 @@ describe('parseNamedItems + parseAtcSystemCheckVariant (relocated / FEAT-68)', (
     ).toBeUndefined();
   });
 });
+
+describe('parseRevisionFeed — legacy attribute fallbacks', () => {
+  it('recovers a CTS id carried in the legacy @_version attribute', () => {
+    const xml = `<?xml version="1.0"?><atom:feed xmlns:atom="http://www.w3.org/2005/Atom"><atom:title>Version List of Z (REPS)</atom:title><atom:entry><atom:id>00001</atom:id><atom:content src="/sap/bc/adt/x/versions/1/00001/content"/><atom:link rel="http://www.sap.com/adt/relations/transports" href="/sap/bc/adt/cts/ui" version="A4HK909991"/></atom:entry></atom:feed>`;
+    expect(parseRevisionFeed(xml).revisions[0]?.transport).toBe('A4HK909991');
+  });
+
+  it('does not accept a description in @_version as a transport id', () => {
+    const xml = `<?xml version="1.0"?><atom:feed xmlns:atom="http://www.w3.org/2005/Atom"><atom:title>Version List of Z (REPS)</atom:title><atom:entry><atom:id>00001</atom:id><atom:content src="/sap/bc/adt/x/versions/1/00001/content"/><atom:link rel="http://www.sap.com/adt/relations/transports" href="/sap/bc/adt/cts/ui" version="some description"/></atom:entry></atom:feed>`;
+    expect(parseRevisionFeed(xml).revisions[0]?.transport).toBeUndefined();
+  });
+});

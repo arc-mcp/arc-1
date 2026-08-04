@@ -435,6 +435,12 @@ export interface TransportRequest {
   /** Human-readable target description (e.g. "Local Change Requests" when target is empty). */
   targetDesc?: string;
   tasks: TransportTask[];
+  /**
+   * Objects recorded directly on the REQUEST rather than under a task — the shape a transport
+   * of copies uses. Kept separate from `tasks` so existing task-oriented callers
+   * (`deleteTransport`'s `removeLockedObjects`) are unaffected.
+   */
+  requestObjects?: TransportObject[];
 }
 
 /** A valid transport target (Transportziel / TR_TARGET) — a value for SAPTransport.create's `target`. */

@@ -271,13 +271,18 @@ function isIncludeWbtype(wbtype: string): boolean {
 }
 
 /**
- * A FUNCTION-GROUP include (`FUGR/I`, live-verified on 7.50 and 7.58 — see
- * `src/handlers/read.ts`). It is neither a program nor a standalone include: its source lives
- * under `/functions/groups/{group}/includes/{name}`, which has no revisions feed here, so it
- * must be reported as inventory rather than silently 404'd against `/programs/programs/`.
+ * A FUNCTION-GROUP *source* entry: the group container (`FUGR/F`), its main program
+ * (`FUGR/PX`) or a structural include (`FUGR/I`, live-verified on 7.50 and 7.58 — see
+ * `src/handlers/read.ts`). These live under `/functions/groups/{group}/...`, which has no
+ * revisions feed here, so they are reported as inventory rather than 404'd elsewhere.
+ *
+ * `FUGR/FF` is deliberately EXCLUDED: it is a function MODULE (`LIMU FUNC`), which
+ * `SLASH_TYPE_MAP` maps to the fully supported `FUNC` type. Matching the bare `FUGR/`
+ * prefix would send every changed function module to inventory instead of diffing it.
  */
-function isFunctionGroupInclude(wbtype: string): boolean {
-  return wbtype.toUpperCase().startsWith('FUGR/');
+function isFunctionGroupSource(wbtype: string): boolean {
+  const wb = wbtype.toUpperCase();
+  return wb.startsWith('FUGR/') && !wb.startsWith('FUGR/FF');
 }
 
 /** Marker type for a function-group part, so `diffTransportObject` can explain it. */
@@ -313,7 +318,7 @@ export function rollupTransportObjects(
         logicalPgmid = 'R3TR';
         type = 'CLAS';
         name = owner;
-      } else if (isFunctionGroupInclude(wbtype)) {
+      } else if (isFunctionGroupSource(wbtype)) {
         // FUGR sources are not addressable via the program/include endpoints — keep the entry
         // visible as inventory instead of routing it somewhere that 404s.
         logicalPgmid = 'R3TR';
@@ -369,13 +374,13 @@ const CLASS_POOL_INCLUDES: Record<string, string> = {
  * changed include as unchanged, and it drops ~4/5 of the SAP round trips for a typical class.
  * A bare `R3TR CLAS` entry carries no component detail, so fall back to all five.
  */
-export function classIncludesFor(object: LogicalTransportObject): string[] {
+export function classIncludesFor(object: LogicalTransportObject): { includes: string[]; fromComponents: boolean } {
   const includes = new Set<string>();
   for (const c of object.components) {
     // A whole-class R3TR entry is exactly the case where CTS records NO component detail
     // (`R3TR CLAS X` and `LIMU <sub> X` are mutually exclusive per request — measured across
     // ~640k LIMU rows on 758, zero counterexamples), so fall back to every include.
-    if (c.pgmid !== 'LIMU') return [...CLASS_REVISION_INCLUDES];
+    if (c.pgmid !== 'LIMU') return { includes: [...CLASS_REVISION_INCLUDES], fromComponents: false };
     // The suffix starts at a FIXED offset: CTS pads the class name into a 30-char field. It
     // pads with '=' only when the name is shorter — 6.6% of live CINC rows are 30-char names
     // with no padding at all, where splitting on '=' returns the whole string and silently
@@ -384,7 +389,9 @@ export function classIncludesFor(object: LogicalTransportObject): string[] {
     const suffix = c.name.slice(30).trim().toUpperCase();
     includes.add(CLASS_POOL_INCLUDES[suffix] ?? 'main');
   }
-  return includes.size ? [...includes] : [...CLASS_REVISION_INCLUDES];
+  return includes.size
+    ? { includes: [...includes], fromComponents: true }
+    : { includes: [...CLASS_REVISION_INCLUDES], fromComponents: false };
 }
 
 /**
@@ -574,7 +581,8 @@ export async function diffTransportObject(
 
   // Parts are independent reads; http.ts funnels every request through the shared Semaphore
   // (ARC1_MAX_CONCURRENT), so fanning out here is bounded without extra bookkeeping.
-  const wanted = type === 'CLAS' ? classIncludesFor(object) : ['main'];
+  const selection = type === 'CLAS' ? classIncludesFor(object) : { includes: ['main'], fromComponents: true };
+  const wanted = selection.includes;
   const settled = await Promise.all(
     wanted.map(async (part) => {
       try {
@@ -596,21 +604,23 @@ export async function diffTransportObject(
       inventoryReason: `no readable source for ${wanted.join(', ')} — the object or its includes could not be found`,
     };
   }
-  return { ...head, parts: suppressUntouchedParts(parts) };
+  return { ...head, parts: selection.fromComponents ? parts : suppressUntouchedParts(parts) };
 }
 
 /**
  * Blank the DIFF of parts this transport did not touch, keeping the row for coverage.
  *
- * `classIncludesFor` already narrows the part list from the transport's own components, so
- * this only bites on the whole-class (`R3TR CLAS`) shape, where CTS records no component
- * detail and all five includes are probed speculatively. Without it those four untouched
- * includes render SAP's boilerplate headers as fresh additions — four noise blocks around one
- * real change (observed live on ZCL_ARC1_DEMO_CALC / A4HK906291).
+ * ONLY valid for a SPECULATIVE part list. When the includes came from the transport's own
+ * components, every selected part was named by CTS and therefore WAS changed — suppressing
+ * one because its revision happens to carry no CTS id (a live-verified shape) would erase a
+ * real diff and report it clean. The caller enforces that; this function assumes the parts
+ * were probed blindly.
  *
- * Two guards keep it from lying: suppress only when a sibling part DID match the transport
- * (so attribution demonstrably works for this object), and NEVER touch a row whose read
- * failed — a failure must not be relabelled as "unchanged".
+ * Without it, the whole-class (`R3TR CLAS`) shape renders SAP's boilerplate headers in the
+ * four untouched includes as fresh additions — noise around one real change.
+ *
+ * Two further guards: suppress only when a sibling part DID match the transport (so
+ * attribution demonstrably works for this object), and NEVER touch a row whose read failed.
  */
 function suppressUntouchedParts(parts: TransportPartDiff[]): TransportPartDiff[] {
   if (!parts.some((p) => p.selectionMethod === 'exact-transport')) return parts;

@@ -1034,6 +1034,28 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
       expect(names).toEqual(['ZPROG_A', 'ZPROG_B', 'ZPROG_C']);
     });
 
+    it('reviews objects recorded on the request itself, not only under a task', async () => {
+      // A transport of copies stores abap_object directly under <tm:request>; reviewing only
+      // tasks returned an empty change set indistinguishable from "nothing changed".
+      const xml =
+        `<?xml version="1.0" encoding="utf-8"?><tm:root xmlns:tm="http://www.sap.com/cts/adt/tm">` +
+        `<tm:request tm:number="A4HK906291" tm:desc="copies" tm:owner="MARIAN" tm:status="R" tm:type="T">` +
+        `<tm:abap_object tm:pgmid="R3TR" tm:type="PROG" tm:name="ZREQ_LEVEL" tm:wbtype="PROG/P"/>` +
+        `</tm:request></tm:root>`;
+      mockFetch.mockImplementation((u: string) =>
+        String(u).includes('/cts/transportrequests/')
+          ? Promise.resolve(mockResponse(200, xml))
+          : Promise.resolve(mockResponse(404, 'No suitable resource found')),
+      );
+      const result = await handleToolCall(diffClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'diff',
+        id: 'A4HK906291',
+      });
+      const payload = JSON.parse(result.content[0]?.text ?? '{}');
+      expect(payload.totalObjects).toBe(1);
+      expect(payload.objects[0]).toMatchObject({ type: 'PROG', name: 'ZREQ_LEVEL' });
+    });
+
     it('reports an unknown transport instead of throwing', async () => {
       mockFetch.mockResolvedValue(mockResponse(200, loadFixture('transport-released-a4h-758.xml')));
       const result = await handleToolCall(diffClient(), DEFAULT_CONFIG, 'SAPTransport', {

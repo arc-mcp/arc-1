@@ -189,7 +189,13 @@ export async function handleSAPTransport(
       const transport = await getTransport(client.http, client.safety, id);
       if (!transport) return textResult(`Transport ${id} not found.`);
 
-      const objects = rollupTransportObjects(transport.tasks);
+      // A transport of copies records its objects on the REQUEST, not under a task, so
+      // reviewing only `tasks` returns an empty change set. Merge both; the rollup dedupes on
+      // pgmid:type:name, so an object present in each appears once.
+      const objects = rollupTransportObjects([
+        ...transport.tasks,
+        ...(transport.requestObjects?.length ? [{ id: transport.id, objects: transport.requestObjects }] : []),
+      ]);
       const offset = Math.max(0, Number(args.offset ?? 0) || 0);
       const limit = Math.min(
         clampSearchResults(args.limit as number | undefined, DEFAULT_DIFF_OBJECTS),
@@ -231,11 +237,7 @@ export async function handleSAPTransport(
           shown: page.length,
           // parseTransportList only harvests objects nested under <tm:task>; a request whose
           // objects sit at request level would otherwise read as "nothing changed".
-          ...(objects.length === 0
-            ? {
-                note: 'No task-level objects found. Some request shapes (e.g. transports of copies) carry their objects at request level, which this view does not read — inspect with action="get" before concluding the transport is empty.',
-              }
-            : {}),
+          ...(objects.length === 0 ? { note: 'This transport records no reviewable objects.' } : {}),
           ...(offset + page.length < objects.length
             ? { hint: `Showing ${page.length} of ${objects.length}. Next page: offset=${offset + page.length}.` }
             : {}),

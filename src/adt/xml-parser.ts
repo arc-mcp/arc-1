@@ -1552,10 +1552,14 @@ function revisionTransportId(links: Record<string, unknown>[]): string {
       .trim()
       .toUpperCase();
     if (CTS_ID_RE.test(tail)) return tail;
-    const title = String(link['@_title'] ?? '')
-      .trim()
-      .toUpperCase();
-    if (CTS_ID_RE.test(title)) return title;
+    // `@_title`/`@_version` are last resorts for older releases that put the id there; both
+    // go through the shape guard, so a description can never be mistaken for a transport.
+    for (const attr of ['@_title', '@_version'] as const) {
+      const value = String(link[attr] ?? '')
+        .trim()
+        .toUpperCase();
+      if (CTS_ID_RE.test(value)) return value;
+    }
   }
   return '';
 }
