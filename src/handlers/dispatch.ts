@@ -497,7 +497,7 @@ export function getToolRegistry(): ToolRegistry {
   reg('SAPNavigate', (ctx) => handleSAPNavigate(ctx.client, ctx.args));
   reg('SAPLint', (ctx) => handleSAPLint(ctx.client, ctx.args, ctx.config));
   reg('SAPDiagnose', (ctx) => handleSAPDiagnose(ctx.client, ctx.args));
-  reg('SAPTransport', (ctx) => handleSAPTransport(ctx.client, ctx.args));
+  reg('SAPTransport', (ctx) => handleSAPTransport(ctx.client, ctx.args, ctx.config));
   reg('SAPGit', (ctx) => handleSAPGit(ctx.client, ctx.args, ctx.authInfo));
   reg('SAPContext', (ctx) => handleSAPContext(ctx.client, ctx.args, ctx.cache, ctx.cacheSecurity));
   reg('SAPManage', (ctx) => handleSAPManage(ctx.client, ctx.config, ctx.args, ctx.cache, ctx.isPerUserClient));

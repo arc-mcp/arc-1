@@ -911,6 +911,91 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
       expect(payload.offset).toBe(0);
     });
 
+    it('keeps a failed part visible as baseline-unavailable, never as "not changed"', async () => {
+      // A class whose main feed matches the transport but whose CCIMP feed 500s. The failure
+      // must not be relabelled — a review that hides a read error is worse than a noisy one.
+      mockFetch.mockImplementation((url: string) => {
+        const u = String(url);
+        if (u.includes('/cts/transportrequests/')) {
+          return Promise.resolve(mockResponse(200, loadFixture('transport-released-a4h-758.xml')));
+        }
+        const content = u.match(/\/versions\/\d+\/(\d{5})\/content/);
+        if (content) return Promise.resolve(mockResponse(200, `v${content[1]}\n`));
+        if (u.includes('/includes/implementations/versions')) {
+          return Promise.resolve(mockResponse(500, 'Internal error: object ZCL_X does not exist'));
+        }
+        if (u.includes('/includes/main/versions')) {
+          return Promise.resolve(mockResponse(200, loadFixture('versions-clas-a4h-758.xml')));
+        }
+        return Promise.resolve(mockResponse(404, 'No suitable resource found'));
+      });
+      const result = await handleToolCall(diffClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'diff',
+        id: 'A4HK906291',
+      });
+      const payload = JSON.parse(result.content[0]?.text ?? '{}');
+      const parts = payload.objects[0].parts as Array<{ part: string; baselineStatus: string; note?: string }>;
+      const impl = parts.find((p) => p.part === 'implementations');
+      // The transport's LIMU entry is a METH, so only `main` is in scope; if a future change
+      // widens the part set, the failure must still surface as unavailable rather than clean.
+      if (impl) {
+        expect(impl.baselineStatus).toBe('baseline-unavailable');
+        expect(impl.note).not.toMatch(/not changed/);
+      }
+      expect(parts.find((p) => p.part === 'main')?.baselineStatus).toBe('prior-revision');
+    });
+
+    it('withholds SAP diagnostics from result notes under minimalErrors', async () => {
+      mockFetch.mockImplementation((url: string) => {
+        const u = String(url);
+        if (u.includes('/cts/transportrequests/')) {
+          return Promise.resolve(mockResponse(200, loadFixture('transport-released-a4h-758.xml')));
+        }
+        return Promise.resolve(mockResponse(403, 'User MARIAN lacks S_ADT_RES for /sap/bc/adt/oo/classes'));
+      });
+      const result = await handleToolCall(diffClient(), { ...DEFAULT_CONFIG, minimalErrors: true }, 'SAPTransport', {
+        action: 'diff',
+        id: 'A4HK906291',
+      });
+      const payload = JSON.parse(result.content[0]?.text ?? '{}');
+      const note = payload.objects[0].parts[0].note as string;
+      // The transport header still carries its own owner/description — only the SAP
+      // diagnostic and the ADT path must be withheld.
+      expect(note).not.toContain('S_ADT_RES');
+      expect(note).not.toContain('MARIAN');
+      expect(note).not.toContain('/sap/bc/adt/');
+      expect(note).toContain('status 403');
+    });
+
+    it('includes the SAP diagnostic in result notes when minimalErrors is off', async () => {
+      mockFetch.mockImplementation((url: string) => {
+        const u = String(url);
+        if (u.includes('/cts/transportrequests/')) {
+          return Promise.resolve(mockResponse(200, loadFixture('transport-released-a4h-758.xml')));
+        }
+        return Promise.resolve(mockResponse(403, 'User lacks S_ADT_RES'));
+      });
+      const result = await handleToolCall(diffClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'diff',
+        id: 'A4HK906291',
+      });
+      const payload = JSON.parse(result.content[0]?.text ?? '{}');
+      expect(payload.objects[0].parts[0].note).toContain('S_ADT_RES');
+    });
+
+    it('pages with offset and reports the next page', async () => {
+      mockDiffBackend();
+      const result = await handleToolCall(diffClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'diff',
+        id: 'A4HK906291',
+        offset: 5,
+      });
+      const payload = JSON.parse(result.content[0]?.text ?? '{}');
+      expect(payload.offset).toBe(5);
+      expect(payload.shown).toBe(0);
+      expect(payload.totalObjects).toBe(1);
+    });
+
     it('reports an unknown transport instead of throwing', async () => {
       mockFetch.mockResolvedValue(mockResponse(200, loadFixture('transport-released-a4h-758.xml')));
       const result = await handleToolCall(diffClient(), DEFAULT_CONFIG, 'SAPTransport', {

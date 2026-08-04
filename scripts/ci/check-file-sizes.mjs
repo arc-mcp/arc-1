@@ -39,9 +39,12 @@ const BUDGETS = {
   // +shared parseNamedItems relocated here from transport.ts (now used by ATC variants too) +
   // parseAtcSystemCheckVariant (FEAT-68 ATC variant listing) + parseFunctionModuleProperties and
   // the pre-7.52 projectexplorer function-group parser.
-  // +17 for revisionTransportId: the versions feed carries the CTS id in adtcore:name on a
-  // .../transport/request link, not in the link title (docs/plans/2026-08-03-transport-diff.md).
-  'src/adt/xml-parser.ts': 1795,
+  // +38 for revisionTransportId: the versions feed carries the CTS id in adtcore:name on a
+  // .../transport/request link, not in the link title. The extra lines over the first estimate
+  // are the CTS-id shape guard and the safe percent-decode — an unvalidated href tail returned
+  // "reference" as a transport id, and a malformed escape threw away the whole feed
+  // (docs/plans/2026-08-03-transport-diff.md).
+  'src/adt/xml-parser.ts': 1820,
   // diagnostics.ts gained the ABAP trace-request engine (#508) + the OData perf probe + CDS Show-SQL (#509)
   // + ST05 SQL-trace control (#510) + clientWait split. Split out a perf/trace module if it grows much further.
   'src/adt/diagnostics.ts': 1845,

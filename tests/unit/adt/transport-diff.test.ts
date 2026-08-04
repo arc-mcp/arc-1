@@ -8,6 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   baselineStatusFor,
+  classIncludesFor,
   revisionNumber,
   rollupTransportObjects,
   selectTransportRevisionPair,
@@ -264,5 +265,128 @@ describe('rollupTransportObjects', () => {
 
   it('skips entries with no usable name', () => {
     expect(rollupTransportObjects([{ id: 'T1', objects: [obj({ name: '' })] }])).toHaveLength(0);
+  });
+});
+
+describe('rollup — REPT is ambiguous between class pool and program text pool', () => {
+  it('keeps a program text pool on the program (not a phantom class)', () => {
+    const out = rollupTransportObjects([
+      {
+        id: 'T1',
+        objects: [
+          obj({ pgmid: 'LIMU', type: 'REPS', name: 'ZARC1_DEMO_REPORT', wbtype: 'PROG/P' }),
+          obj({ pgmid: 'LIMU', type: 'REPT', name: 'ZARC1_DEMO_REPORT', wbtype: 'PROG/P' }),
+        ],
+      },
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ pgmid: 'R3TR', type: 'PROG', name: 'ZARC1_DEMO_REPORT' });
+  });
+
+  it('still rolls the =-padded class pool report up to its class', () => {
+    const out = rollupTransportObjects([
+      { id: 'T1', objects: [obj({ pgmid: 'LIMU', type: 'REPT', name: 'ZCL_X============CP', wbtype: 'CLAS/OC' })] },
+    ]);
+    expect(out[0]).toMatchObject({ type: 'CLAS', name: 'ZCL_X' });
+  });
+
+  it('rolls a =-padded REPT up to its class even without a CLAS wbtype', () => {
+    const out = rollupTransportObjects([
+      { id: 'T1', objects: [obj({ pgmid: 'LIMU', type: 'REPT', name: 'ZCL_X============CP', wbtype: '' })] },
+    ]);
+    expect(out[0]).toMatchObject({ type: 'CLAS', name: 'ZCL_X' });
+  });
+});
+
+describe('rollup — includes are not programs', () => {
+  it('types a LIMU REPS include as INCL, so its revisions resolve', () => {
+    const out = rollupTransportObjects([
+      { id: 'T1', objects: [obj({ pgmid: 'LIMU', type: 'REPS', name: 'LZFOOU01', wbtype: 'PROG/I' })] },
+    ]);
+    expect(out[0]).toMatchObject({ pgmid: 'R3TR', type: 'INCL', name: 'LZFOOU01' });
+  });
+
+  it('types an R3TR PROG entry with wbtype PROG/I as INCL', () => {
+    const out = rollupTransportObjects([
+      { id: 'T1', objects: [obj({ pgmid: 'R3TR', type: 'PROG', name: 'Z_INCLUDE', wbtype: 'PROG/I' })] },
+    ]);
+    expect(out[0]).toMatchObject({ type: 'INCL', name: 'Z_INCLUDE' });
+  });
+
+  it('leaves a real program as PROG', () => {
+    const out = rollupTransportObjects([
+      { id: 'T1', objects: [obj({ pgmid: 'R3TR', type: 'PROG', name: 'Z_REPORT', wbtype: 'PROG/P' })] },
+    ]);
+    expect(out[0]).toMatchObject({ type: 'PROG', name: 'Z_REPORT' });
+  });
+});
+
+describe('classIncludesFor — the transport states which includes it touched', () => {
+  const clas = (components: Array<{ pgmid: string; type: string; name: string; wbtype: string }>) => ({
+    pgmid: 'R3TR',
+    type: 'CLAS',
+    name: 'ZCL_X',
+    description: '',
+    taskIds: ['T1'],
+    components: components.map((c) => ({ ...c, taskId: 'T1' })),
+  });
+
+  it('diffs only the implementations include for a CCIMP entry', () => {
+    expect(
+      classIncludesFor(clas([{ pgmid: 'LIMU', type: 'CINC', name: 'ZCL_X============CCIMP', wbtype: '' }])),
+    ).toEqual(['implementations']);
+  });
+
+  it('maps each class-pool suffix to its include', () => {
+    expect(
+      classIncludesFor(
+        clas([
+          { pgmid: 'LIMU', type: 'CINC', name: 'ZCL_X============CCDEF', wbtype: '' },
+          { pgmid: 'LIMU', type: 'CINC', name: 'ZCL_X============CCAU', wbtype: '' },
+          { pgmid: 'LIMU', type: 'CINC', name: 'ZCL_X============CCMAC', wbtype: '' },
+        ]),
+      ).sort(),
+    ).toEqual(['definitions', 'macros', 'testclasses']);
+  });
+
+  it('maps a method to the main source', () => {
+    expect(
+      classIncludesFor(
+        clas([{ pgmid: 'LIMU', type: 'METH', name: 'ZCL_X                         ADD', wbtype: 'CLAS/OM' }]),
+      ),
+    ).toEqual(['main']);
+  });
+
+  it('falls back to all five when the transport carries a whole-class entry', () => {
+    expect(classIncludesFor(clas([{ pgmid: 'R3TR', type: 'CLAS', name: 'ZCL_X', wbtype: 'CLAS/OC' }]))).toEqual([
+      'main',
+      'definitions',
+      'implementations',
+      'macros',
+      'testclasses',
+    ]);
+  });
+
+  it('covers both when a class carries a method and a local-class include', () => {
+    expect(
+      classIncludesFor(
+        clas([
+          { pgmid: 'LIMU', type: 'METH', name: 'ZCL_X                         ADD', wbtype: 'CLAS/OM' },
+          { pgmid: 'LIMU', type: 'CINC', name: 'ZCL_X============CCIMP', wbtype: '' },
+        ]),
+      ).sort(),
+    ).toEqual(['implementations', 'main']);
+  });
+});
+
+describe('baselineStatusFor — evidence level is visible', () => {
+  it('marks a predecessor found under a fallback selection as unverified', () => {
+    const feed = [
+      rev('00003', '2026-06-23T12:00:00Z', 'A4HK900001'),
+      rev('00002', '2026-06-01T09:00:00Z', 'A4HK900000'),
+    ];
+    const pair = selectTransportRevisionPair(feed, ['A4HK906291']);
+    expect(pair.selectionMethod).toBe('latest-revision-fallback');
+    expect(baselineStatusFor(pair)).toBe('prior-revision-unverified');
   });
 });

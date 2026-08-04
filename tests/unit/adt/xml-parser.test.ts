@@ -1644,6 +1644,24 @@ describe('XML Parser', () => {
       expect(result.revisions[0]?.transport).toBeUndefined();
     });
 
+    it('rejects an href tail that is not a CTS id (ADT emits .../transportrequests/reference?...)', () => {
+      const xml = `<?xml version="1.0"?><atom:feed xmlns:atom="http://www.w3.org/2005/Atom"><atom:title>Version List of Z (REPS)</atom:title><atom:entry><atom:id>00001</atom:id><atom:content src="/sap/bc/adt/x/versions/1/00001/content"/><atom:link rel="http://www.sap.com/adt/relations/transport/request" href="/sap/bc/adt/cts/transportrequests/reference?obj_name=Z"/></atom:entry></atom:feed>`;
+      // Returning 'reference' here would make every revision look like the same transport.
+      expect(parseRevisionFeed(xml).revisions[0]?.transport).toBeUndefined();
+    });
+
+    it('falls back to the link title when it carries a CTS id', () => {
+      const xml = `<?xml version="1.0"?><atom:feed xmlns:atom="http://www.w3.org/2005/Atom"><atom:title>Version List of Z (REPS)</atom:title><atom:entry><atom:id>00001</atom:id><atom:content src="/sap/bc/adt/x/versions/1/00001/content"/><atom:link rel="http://www.sap.com/adt/relations/transports" href="/sap/bc/adt/cts/ui" title="A4HK909999"/></atom:entry></atom:feed>`;
+      expect(parseRevisionFeed(xml).revisions[0]?.transport).toBe('A4HK909999');
+    });
+
+    it('survives a malformed percent escape instead of discarding the whole feed', () => {
+      const xml = `<?xml version="1.0"?><atom:feed xmlns:atom="http://www.w3.org/2005/Atom"><atom:title>Version List of Z (REPS)</atom:title><atom:entry><atom:id>00001</atom:id><atom:content src="/sap/bc/adt/x/versions/1/00001/content"/><atom:link rel="http://www.sap.com/adt/relations/transport/request" href="/sap/bc/adt/cts/transportrequests/A4H%K1"/></atom:entry></atom:feed>`;
+      const result = parseRevisionFeed(xml);
+      expect(result.revisions).toHaveLength(1);
+      expect(result.revisions[0]?.id).toBe('00001');
+    });
+
     it('recovers the transport id from the href when adtcore:name is absent', () => {
       const xml = `<?xml version="1.0"?><atom:feed xmlns:atom="http://www.w3.org/2005/Atom"><atom:title>Version List of Z (REPS)</atom:title><atom:entry><atom:id>00001</atom:id><atom:content src="/sap/bc/adt/x/versions/1/00001/content"/><atom:link rel="http://www.sap.com/adt/relations/transport/request" href="/sap/bc/adt/cts/transportrequests/A4HK909999"/></atom:entry></atom:feed>`;
       expect(parseRevisionFeed(xml).revisions[0]?.transport).toBe('A4HK909999');

@@ -70,3 +70,28 @@ describe('unifiedDiff — ignoreCosmetics (review diffs)', () => {
     expect(r.removed).toBe(1);
   });
 });
+
+describe('unifiedDiff — counting', () => {
+  it('counts deleted lines that themselves start with -- (ABAP/CDS comment marker)', () => {
+    const before = '-- Interface view for X\n-- second comment\ndefine view entity Z as select from t { key a }\n';
+    const after = 'define view entity Z as select from t { key a }\n';
+    const r = unifiedDiff(before, after, 'old', 'new');
+    expect(r.removed).toBe(2);
+    expect(r.added).toBe(0);
+  });
+
+  it('counts added lines that themselves start with ++', () => {
+    const r = unifiedDiff('a\n', 'a\n++weird\n', 'old', 'new');
+    expect(r.added).toBe(1);
+  });
+
+  it('flags a whitespace-only change instead of calling it identical', () => {
+    const r = unifiedDiff('WRITE x.  \n', 'WRITE x.\n', 'o', 'n', 3, true);
+    expect(r.identical).toBe(true);
+    expect(r.cosmeticOnly).toBe(true);
+  });
+
+  it('does not flag cosmeticOnly when the sources are truly equal', () => {
+    expect(unifiedDiff('SAME\n', 'SAME\n', 'o', 'n', 3, true).cosmeticOnly).toBeUndefined();
+  });
+});

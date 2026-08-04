@@ -301,6 +301,51 @@ export function buildTableQuerySql(
   return sql;
 }
 
+/** The five source includes a class keeps its revisions under. */
+export const CLASS_REVISION_INCLUDES = ['main', 'definitions', 'implementations', 'macros', 'testclasses'] as const;
+
+/**
+ * Versions-feed URL per object type — the single source for BOTH the URL and the set of
+ * revision-capable types (`REVISION_TYPES` below derives from these keys). A new type is one
+ * row here; nothing else needs updating, so the two cannot drift apart
+ * (AGENTS.md Playbook §3, "make invariants true by construction").
+ *
+ * The suffix is NOT uniform: DDLS/DCLS hang the feed off the OBJECT while their DDIC sibling
+ * SRVD uses `/source/main`. Live-probed on a4h (758) — verify against a system before adding.
+ */
+const REVISION_URL_BUILDERS: Record<
+  string,
+  (encodedName: string, opts: { include?: string; group?: string }, rawName: string) => string
+> = {
+  PROG: (n) => `/sap/bc/adt/programs/programs/${n}/source/main/versions`,
+  CLAS: (n, opts) => {
+    const include =
+      String(opts.include ?? 'main')
+        .trim()
+        .toLowerCase() || 'main';
+    if (!(CLASS_REVISION_INCLUDES as readonly string[]).includes(include)) {
+      throw new Error(
+        `Invalid include "${opts.include ?? ''}" for CLAS revisions. Valid values: ${CLASS_REVISION_INCLUDES.join(', ')}.`,
+      );
+    }
+    return `/sap/bc/adt/oo/classes/${n}/includes/${include}/versions`;
+  },
+  INTF: (n) => `/sap/bc/adt/oo/interfaces/${n}/source/main/versions`,
+  FUNC: (n, opts, rawName) => {
+    const group = String(opts.group ?? '').trim();
+    if (!group) throw new Error(`Function group is required for FUNC revisions of "${rawName}".`);
+    return `/sap/bc/adt/functions/groups/${encodeURIComponent(group)}/fmodules/${n}/source/main/versions`;
+  },
+  INCL: (n) => `/sap/bc/adt/programs/includes/${n}/source/main/versions`,
+  DDLS: (n) => `/sap/bc/adt/ddic/ddl/sources/${n}/versions`,
+  DCLS: (n) => `/sap/bc/adt/acm/dcl/sources/${n}/versions`,
+  BDEF: (n) => `/sap/bc/adt/bo/behaviordefinitions/${n}/source/main/versions`,
+  SRVD: (n) => `/sap/bc/adt/ddic/srvd/sources/${n}/source/main/versions`,
+};
+
+/** Types with an addressable revisions feed — derived, never hand-maintained. */
+export const REVISION_TYPES: ReadonlySet<string> = new Set(Object.keys(REVISION_URL_BUILDERS));
+
 export class AdtClient {
   readonly http: AdtHttpClient;
   readonly safety: SafetyConfig;
@@ -980,51 +1025,9 @@ export class AdtClient {
   // ─── Source Revision / Version History ──────────────────────────
 
   private revisionsUrlFor(type: string, name: string, opts: { include?: string; group?: string }): string {
-    const normalizedType = String(type).trim().toUpperCase();
-    const encodedName = encodeURIComponent(name);
-    const include =
-      String(opts.include ?? 'main')
-        .trim()
-        .toLowerCase() || 'main';
-
-    switch (normalizedType) {
-      case 'PROG':
-        return `/sap/bc/adt/programs/programs/${encodedName}/source/main/versions`;
-      case 'CLAS': {
-        const validIncludes = new Set(['main', 'definitions', 'implementations', 'macros', 'testclasses']);
-        if (!validIncludes.has(include)) {
-          throw new Error(
-            `Invalid include "${opts.include ?? ''}" for CLAS revisions. Valid values: main, definitions, implementations, macros, testclasses.`,
-          );
-        }
-        return `/sap/bc/adt/oo/classes/${encodedName}/includes/${include}/versions`;
-      }
-      case 'INTF':
-        return `/sap/bc/adt/oo/interfaces/${encodedName}/source/main/versions`;
-      case 'FUNC': {
-        const group = String(opts.group ?? '').trim();
-        if (!group) {
-          throw new Error(`Function group is required for FUNC revisions of "${name}".`);
-        }
-        return `/sap/bc/adt/functions/groups/${encodeURIComponent(group)}/fmodules/${encodedName}/source/main/versions`;
-      }
-      case 'INCL':
-        return `/sap/bc/adt/programs/includes/${encodedName}/source/main/versions`;
-      // DDLS/DCLS hang their version feed off the OBJECT, not off /source/main — unlike every
-      // other source type here, including their DDIC sibling SRVD. Live-probed on a4h (758):
-      // /ddic/ddl/sources/{n}/source/main/versions and /acm/dcl/sources/{n}/source/main/versions
-      // both 404; the short form serves the feed. Not a guessable pattern — verify before changing.
-      case 'DDLS':
-        return `/sap/bc/adt/ddic/ddl/sources/${encodedName}/versions`;
-      case 'DCLS':
-        return `/sap/bc/adt/acm/dcl/sources/${encodedName}/versions`;
-      case 'BDEF':
-        return `/sap/bc/adt/bo/behaviordefinitions/${encodedName}/source/main/versions`;
-      case 'SRVD':
-        return `/sap/bc/adt/ddic/srvd/sources/${encodedName}/source/main/versions`;
-      default:
-        throw new Error(`Unsupported object type "${type}" for revisions.`);
-    }
+    const build = REVISION_URL_BUILDERS[String(type).trim().toUpperCase()];
+    if (!build) throw new Error(`Unsupported object type "${type}" for revisions.`);
+    return build(encodeURIComponent(name), opts, name);
   }
 
   /** List available source revisions for an ABAP object. */

@@ -27,6 +27,7 @@ import {
 import { diffTransportObject, rollupTransportObjects } from '../adt/transport-diff.js';
 import type { InactiveObject, ObjectTransportHistory, TransportReleaseReport, TransportRequest } from '../adt/types.js';
 import { logger } from '../server/logger.js';
+import type { ServerConfig } from '../server/types.js';
 import { objectUrlForType } from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 
@@ -137,7 +138,11 @@ function summarizeTransport(t: TransportRequest) {
   };
 }
 
-export async function handleSAPTransport(client: AdtClient, args: Record<string, unknown>): Promise<ToolResult> {
+export async function handleSAPTransport(
+  client: AdtClient,
+  args: Record<string, unknown>,
+  config?: ServerConfig,
+): Promise<ToolResult> {
   const action = String(args.action ?? '');
 
   switch (action) {
@@ -187,19 +192,24 @@ export async function handleSAPTransport(client: AdtClient, args: Record<string,
       const objects = rollupTransportObjects(transport.tasks);
       const offset = Math.max(0, Number(args.offset ?? 0) || 0);
       const limit = Math.min(
-        Math.max(1, Number(args.limit ?? DEFAULT_DIFF_OBJECTS) || DEFAULT_DIFF_OBJECTS),
+        clampSearchResults(args.limit as number | undefined, DEFAULT_DIFF_OBJECTS),
         MAX_DIFF_OBJECTS,
       );
+      // Stable order across pages: the transport is re-read per call, and SAP does not promise
+      // a fixed task/object sequence, so an unsorted slice could skip or repeat an object.
+      objects.sort((a, b) => `${a.type}:${a.name}`.localeCompare(`${b.type}:${b.name}`));
       const page = objects.slice(offset, offset + limit);
 
       // Match the request AND its tasks: version records reference the request on the systems
       // verified so far, but matching both can only add correct matches, never remove one.
       const transportIds = new Set<string>([transport.id, ...transport.tasks.map((t) => t.id)].filter(Boolean));
 
-      const diffs = [];
-      for (const object of page) {
-        diffs.push(await diffTransportObject(client, object, transportIds));
-      }
+      // Objects are independent reads; http.ts caps real concurrency via the shared Semaphore.
+      const diffs = await Promise.all(
+        page.map((object) =>
+          diffTransportObject(client, object, transportIds, { minimalErrors: config?.minimalErrors }),
+        ),
+      );
 
       return textResult(
         toolJson({
@@ -215,6 +225,13 @@ export async function handleSAPTransport(client: AdtClient, args: Record<string,
           totalObjects: objects.length,
           offset,
           shown: page.length,
+          // parseTransportList only harvests objects nested under <tm:task>; a request whose
+          // objects sit at request level would otherwise read as "nothing changed".
+          ...(objects.length === 0
+            ? {
+                note: 'No task-level objects found. Some request shapes (e.g. transports of copies) carry their objects at request level, which this view does not read — inspect with action="get" before concluding the transport is empty.',
+              }
+            : {}),
           ...(offset + page.length < objects.length
             ? { hint: `Showing ${page.length} of ${objects.length}. Next page: offset=${offset + page.length}.` }
             : {}),
