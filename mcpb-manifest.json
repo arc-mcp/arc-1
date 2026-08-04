@@ -77,7 +77,7 @@
     },
     {
       "name": "SAPGit",
-      "description": "Version control for ABAP via gCTS or abapGit (status, clone, pull, commit, push) \u2014 available when a Git backend is present"
+      "description": "Version control for ABAP via gCTS or abapGit (status, clone, pull, commit, push) — available when a Git backend is present"
     },
     {
       "name": "SAPContext",
@@ -174,14 +174,14 @@
     "sap_allow_data_preview": {
       "type": "boolean",
       "title": "Allow Table Data Preview",
-      "description": "Allow SAPRead(type=TABLE_CONTENTS) and SAPQuery table preview. Can expose application data \u2014 review your data-governance rules.",
+      "description": "Allow SAPRead(type=TABLE_CONTENTS) and SAPQuery table preview. Can expose application data — review your data-governance rules.",
       "default": false,
       "required": false
     },
     "sap_allow_free_sql": {
       "type": "boolean",
       "title": "Allow Freestyle SQL",
-      "description": "Allow read-only ad-hoc ABAP SQL via SAPQuery. Can expose application data \u2014 review your data-governance rules.",
+      "description": "Allow read-only ad-hoc ABAP SQL via SAPQuery. Can expose application data — review your data-governance rules.",
       "default": false,
       "required": false
     },
