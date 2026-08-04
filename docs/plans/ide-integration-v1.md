@@ -209,42 +209,48 @@ reliable path exists. The template escape hatch remains for anyone who wants to 
 full knowledge of the trade-offs — ARC-1 just does not own that brittleness. A prototype redirect page
 lives at `arc1-abap-bridge/redirect/index.html` for reference.
 
-## Session hygiene on writes — hypothesis disproven, real fix shipped
+## The IDE logouts — SOLVED: the ABAP debugger, not ARC-1
 
-Observed four times on 2026-08-03: the ADT session in VS Code dies and every `abap:` operation fails,
-surfacing misleadingly as `NoPermissions (FileSystemError): Method "createDirectory" not yet implemented`.
+Repeated "Disconnected from destination A4H2023", surfacing misleadingly as
+`NoPermissions (FileSystemError): Method "createDirectory" not yet implemented`.
 
-**The original hypothesis was wrong.** It assumed SAP issues a fresh `SAP_SESSIONID` for a stateful
-request, so that discarding the clone's cookie jar orphaned one session per write. Probed directly
-against a4h (read-only, three GETs on `/sap/bc/adt/discovery`):
+**Cause, from the ADT Communication Log** (`adt.enableCommunicationLog: true` → Output → *ADT
+Communication Log*):
 
-| Request | New session cookie |
-|---|---|
-| plain GET | yes — the initial session |
-| GET with `X-sap-adt-sessiontype: stateful` | **none — cookie reused** |
-| GET with `X-sap-adt-sessiontype: stateless` | none — cookie reused |
+```
+16:22:23  POST 504  60220ms  ../debugger/listeners?debuggingMode=user&requestUser=MARIAN…
+16:22:24  GET  200    151ms  ../debugger/listeners…
+16:23:24  POST 504  60075ms  ../debugger/listeners…
+16:23:26  GET  200    119ms  /sap/public/bc/icf/logoff     ← the LS logs ITSELF out
+```
 
-So there is no per-write session orphaning, and that mechanism cannot explain the logouts.
+The ADT debugger long-polls `POST ../debugger/listeners`. The poll is killed at **60 s** (durations
+60220 ms and 60075 ms — a textbook 60-second `proxy_read_timeout` in the nginx fronting a4h for TLS),
+and after the second consecutive 504 the language server calls `/sap/public/bc/icf/logoff` and
+terminates the session. `adt.debugger.enableDebugger` defaults to **true**, so this runs unprompted.
 
-**What was genuinely wrong, and is now fixed** (`withStatefulSession`):
+**Control experiment.** A plain SAP session with no IDE and no debugger, polled every 5 minutes with
+cookie-only auth (`arc1-abap-bridge/session-monitor.mjs`): **alive at 175 minutes**. The IDE session
+died in ~2 minutes. That rules out an idle/absolute timeout, the per-user mode cap, and ARC-1.
 
-1. **The stateful context was never released.** A stateful ADT session persists until explicitly ended —
-   omitting the header on later requests does *not* end it. ARC-1 sent `stateful` and never followed with
-   `stateless`, so its session stayed stateful and held an ABAP mode until timeout. Eclipse ADT and
-   `abap-adt-api` both send the release. Now sent as a best-effort `HEAD /sap/bc/adt/core/discovery`
-   in a `finally`, so it also runs when the write throws and can never mask the caller's error.
-2. **A rotated session cookie was lost.** The clone's jar was discarded, so if SAP ever rotates the
-   session id mid-block the parent keeps using a dead one and the next request silently starts a new
-   session. Not observed on 7.58, but the window is real; the jar and CSRF token are now merged back.
+**Fixes**, in preference order:
 
-Verified live: create → update → delete of a `$TMP` program, all three stateful cycles clean.
+1. **Raise the reverse-proxy read timeout** for the ADT paths — `proxy_read_timeout 600s;` — so the
+   debugger's long poll survives. Keeps the debugger working. This is the real fix.
+2. **`"adt.debugger.enableDebugger": false`** (requires an IDE restart) — instant relief, at the cost of
+   ABAP debugging in VS Code.
 
-**The logouts remain unexplained.** Remaining candidates, cheapest first: an idle/absolute timeout on the
-ADT language server's reentrance-ticket session (most likely, and nothing to do with ARC-1); the per-user
-mode cap (`rdisp/max_alt_modes`, commonly 6) with ARC-1 + the LS + SAP GUI all logged on as the same user;
-or the bridge's parallel `readDirectory` load on the LS. To identify it, record the interval between
-logon and logout — a consistent ~30/60 minutes points to a timeout, correlation with write bursts points
-to load.
+Two earlier hypotheses were wrong and are recorded so nobody re-derives them: (a) that stateful writes
+orphaned a SAP session per write — disproven, SAP reuses the session cookie for a stateful request;
+(b) that an idle timeout was expiring the session — disproven by the 175-minute control.
+
+### Still worth having: the stateful-session release
+
+Independent of the logouts, `withStatefulSession` had two genuine defects, now fixed. A stateful ADT
+session persists until explicitly ended — dropping the header does *not* end it — so ARC-1's session
+stayed stateful and held an ABAP mode until timeout; it now sends the release in a `finally`, so it runs
+on the throw path too and can never mask a caller's error. And a session cookie rotated mid-block was
+discarded with the clone, leaving the parent on a dead id; the jar and CSRF token are now merged back.
 
 ## Out of scope for v1
 
