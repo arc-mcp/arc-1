@@ -80,6 +80,10 @@ The beta has manual PP tool evidence on S/4HANA 2023 and 2025, PP setup evidence
 multi-client setup on the 2023 system, and multiple XSUAA roles. It is still an experimental
 contract until the live evidence and customer acceptance matrix below are complete.
 
+Target-specific mutation-free visibility is now specified separately in
+[XSUAA target authorization](xsuaa-target-authorization.md). It may be implemented before writes and
+must not be mistaken for the capability-bound grants required by a future write release.
+
 ### Evidence carried forward from the v1 beta
 
 This is useful evidence, but much of it was collected manually and must become repeatable before it
@@ -213,11 +217,11 @@ explicit functional consent. The recommended contract is to preserve verified ra
 `AuthInfo` and require an explicitly granted raw `write`, `transports`, or `git` scope plus
 the exact target grant. An Admin token without that raw functional scope remains diagnostic.
 
-The first v2 write release does not need to make read visibility target-specific. Existing global
-read/data/SQL roles plus per-user SAP authorization can remain the read boundary. A later
-target-specific read grant is useful only when a customer must hide targets before contacting SAP;
-if added, `SAPTargets` must filter to authoritative grants rather than probing SAP or remembering
-prior successes/failures.
+Target-specific mutation-free visibility is optional and default-off, but customers may now add it
+before writes by following [XSUAA target authorization](xsuaa-target-authorization.md). It filters
+`SAPTargets` and every target-derived route/schema surface from an authoritative XSUAA role
+attribute; it never probes SAP or remembers prior successes/failures. Its generic read target list
+must not authorize future writes, which still require capability-bound grants.
 
 The authorization design must also decide what an exact grant is bound to. Renaming an alias or
 changing a destination's physical identity must not silently transfer a capability to an unrelated
@@ -716,6 +720,12 @@ behavior, rename/repoint behavior, and failure semantics. If none is viable, do 
 in-process multi-target writes; retain separate instances/hub routing.
 
 **Rollback:** research/prototype only.
+
+The mutation-free read-visibility subset of this research has selected XSUAA role attributes and is
+specified in [XSUAA target authorization](xsuaa-target-authorization.md). Its remaining live token
+union/size tests are explicit acceptance gates. V2-02A remains open for capability-bound write,
+transport, Git, and controlled-execution grants; a generic `arc1_targets` list cannot safely satisfy
+that requirement.
 
 ### V2-02B — Add exact target grants
 
