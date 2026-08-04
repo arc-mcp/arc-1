@@ -27,7 +27,14 @@ import type { CachingLayer } from '../cache/caching-layer.js';
 import { type RegistryEntry, type ToolDispatchContext, ToolRegistry } from '../registry/tool-registry.js';
 import { sanitizeArgs } from '../server/audit.js';
 import { generateRequestId, getCurrentContext, requestContext } from '../server/context.js';
-import { buildIdeLink, formatIdeLink, objectIdentity, resolveTemplate } from '../server/ide-links.js';
+import {
+  abapDestinationsFromRoots,
+  buildIdeLink,
+  formatIdeLink,
+  objectIdentity,
+  resolveTemplate,
+} from '../server/ide-links.js';
+import { getIdeRoots } from '../server/ide-roots.js';
 import { logger } from '../server/logger.js';
 import { type McpRateLimiter, resolveRateLimitUserKey } from '../server/mcp-rate-limit.js';
 import { formatClientInfo } from '../server/trace-context.js';
@@ -652,10 +659,15 @@ function appendIdeLink(
   args: Record<string, unknown>,
   config: ServerConfig,
   clientAgent: string | undefined,
+  ide: { roots: Array<{ uri?: string }>; known: boolean },
 ): ToolResult {
   try {
     if (result.isError) return result;
-    const template = resolveTemplate(config.ideLinks, clientAgent);
+    const destinations = abapDestinationsFromRoots(ide.roots);
+    const template = resolveTemplate(config.ideLinks, clientAgent, {
+      known: ide.known,
+      hasAbapFolder: destinations.length > 0,
+    });
     if (!template) return result;
     const identity = objectIdentity(args);
     if (!identity) return result;
@@ -674,8 +686,9 @@ function appendIdeLink(
       name: identity.name,
       package: typeof args.package === 'string' ? args.package : undefined,
       uri,
-      // No dedicated SID on ServerConfig — the ADT destination name is the closest equivalent.
-      sid: config.targetId ?? config.destinationName,
+      // Prefer the destination the IDE actually has open — on a plain on-prem connection it is
+      // the only place a system id exists at all. Falls back to the configured destination.
+      sid: destinations[0] ?? config.targetId ?? config.destinationName,
       client: config.client,
     });
     if (!link) return result;
@@ -931,7 +944,7 @@ export async function handleToolCall(
         const guardedResult = postDispatchResult?.();
         if (guardedResult) result = guardedResult;
 
-        result = appendIdeLink(result, toolName, args, config, clientAgent);
+        result = appendIdeLink(result, toolName, args, config, clientAgent, await getIdeRoots(_server));
 
         const durationMs = Date.now() - start;
         const fullText = result.content.map((c) => c.text).join('');

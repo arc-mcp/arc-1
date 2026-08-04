@@ -290,12 +290,24 @@ is too much to build speculatively.
 - Security line: `clientAgent` is client-controlled. Fine for choosing a link format, never for anything
   security-relevant.
 
-**T2. Roots-derived destination awareness.**
+**T2. Roots-derived destination awareness.** ✅ **DONE**
 - Files: `src/server/server.ts` (call `server.listRoots()` once per session, cache, refresh on
   `notifications/roots/list_changed`), consumed where links are emitted.
 - Measured: VS Code returns `[{name:"UI5con_2026",uri:"file:///…"},{name:"A4H2023",uri:"abap:/repotree-v1/A4H2023"}]`.
 - Strictly additive: roots changes what ARC-1 *knows*, never what it *does*. Impossible on HTTP
   (`src/server/http.ts:193` builds a per-request `Server`), so every feature must work without it.
+
+Shipped as `src/server/ide-roots.ts` (cached per session, capability-gated, 2s timeout, never throws)
+plus `abapDestinationsFromRoots` in `ide-links.ts`. Two behaviours it buys:
+
+1. **Links are gated on a real ABAP folder, not the client's name.** `auto` previously keyed on "is this
+   VS Code", so a VS Code user *without* the bridge or without a package in the workspace got a link that
+   could not resolve. An `abap:` root proves the extension is live and a package is open. When roots are
+   unavailable (HTTP, or a client without the capability) it falls back to the client name, so nothing
+   regresses.
+2. **`{sid}` comes from the IDE.** `abap:/repotree-v1/A4H2023` → `A4H2023`, which is the only place a
+   system id exists at all on a plain on-prem connection — `destinationName`/`targetId` are BTP/multi-target
+   only. That makes `eclipse` links work without a hand-written template.
 
 **T3. `package` on results.** Free on writes (`resolveObjectPackage` already runs when `allowedPackages`
 is restricted); opt-in on reads (`includePackage: true`) because it costs an extra ADT GET.

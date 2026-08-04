@@ -316,29 +316,15 @@ export class AdtHttpClient {
   }
 
   /**
-   * Drop the stateful ABAP session context. Transport hygiene, not an ADT operation — same class
-   * as `fetchCsrfToken`, and deliberately silent: a failure here must never surface to a caller
-   * whose write already succeeded.
+   * Drop the stateful ABAP session context. Transport hygiene, not an ADT operation — deliberately
+   * silent: a failure here must never surface to a caller whose write already succeeded.
    */
   private async releaseStatefulSession(): Promise<void> {
     if (this.config.sessionType !== 'stateful') return;
     try {
-      const headers: Record<string, string> = {
-        'X-sap-adt-sessiontype': 'stateless',
-        Accept: '*/*',
-      };
-      if (this.config.disableSaml) headers['X-SAP-SAML2'] = 'disabled';
-      this.applyAuthHeader(headers);
-      if (this.config.bearerTokenProvider) {
-        headers.Authorization = `Bearer ${await this.config.bearerTokenProvider()}`;
-      }
-      if (this.config.sapConnectivityAuth && !this.config.ppProxyAuth) {
-        headers['SAP-Connectivity-Authentication'] = this.config.sapConnectivityAuth;
-      }
-      const cookieHeader = this.composeCookieHeader();
-      if (cookieHeader) headers.Cookie = cookieHeader;
-      const response = await this.doFetch(this.buildUrl('/sap/bc/adt/core/discovery'), 'HEAD', headers);
-      this.storeCookies(response);
+      // Flip the clone to stateless so the normal request path emits the release header for us.
+      this.config.sessionType = 'stateless';
+      await this.head('/sap/bc/adt/core/discovery');
     } catch {
       // Deliberately swallowed — see the doc comment.
     }
@@ -436,8 +422,9 @@ export class AdtHttpClient {
       headers['X-SAP-SAML2'] = 'disabled';
     }
 
-    if (this.config.sessionType === 'stateful') {
-      headers['X-sap-adt-sessiontype'] = 'stateful';
+    // Both directions matter: `stateful` opens the ABAP session context, `stateless` releases it.
+    if (this.config.sessionType) {
+      headers['X-sap-adt-sessiontype'] = this.config.sessionType;
     }
 
     if (contentType) {

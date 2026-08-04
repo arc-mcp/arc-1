@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  abapDestinationsFromRoots,
   buildIdeLink,
   ECLIPSE_TEMPLATE,
   formatIdeLink,
@@ -98,5 +99,58 @@ describe('formatIdeLink', () => {
     // producing `endmethod.Open ZCL_X …` without this.
     const line = formatIdeLink('vscode://x', 'ZCL_X');
     expect(line).toBe('\nOpen ZCL_X in your IDE: vscode://x');
+  });
+});
+
+describe('abapDestinationsFromRoots', () => {
+  // Exactly what VS Code 1.131 returned from roots/list, measured 2026-08-03.
+  const VSCODE_ROOTS = [
+    { name: 'UI5con_2026', uri: 'file:///Users/marianzeis/DEV/UI5con_2026' },
+    { name: 'A4H2023', uri: 'abap:/repotree-v1/A4H2023' },
+  ];
+
+  it('extracts the ADT destination from an abap: root', () => {
+    expect(abapDestinationsFromRoots(VSCODE_ROOTS)).toEqual(['A4H2023']);
+  });
+
+  it('ignores file: roots and returns nothing when no ABAP folder is open', () => {
+    expect(abapDestinationsFromRoots([{ uri: 'file:///tmp/x' }])).toEqual([]);
+    expect(abapDestinationsFromRoots([])).toEqual([]);
+    expect(abapDestinationsFromRoots(undefined)).toEqual([]);
+  });
+
+  it('handles a deeper package root, the abap:// form, and deduplicates', () => {
+    expect(
+      abapDestinationsFromRoots([
+        { uri: 'abap:/repotree-v1/A4H2023/System%20Library/ZARC1_DEMO' },
+        { uri: 'abap://repotree-v1/A4H2023' },
+      ]),
+    ).toEqual(['A4H2023']);
+  });
+});
+
+describe('resolveTemplate with IDE roots', () => {
+  const KNOWN_WITH_ABAP = { known: true, hasAbapFolder: true };
+  const KNOWN_NO_ABAP = { known: true, hasAbapFolder: false };
+  const UNKNOWN = { known: false, hasAbapFolder: false };
+
+  it('emits a link when the IDE actually has an ABAP folder open', () => {
+    expect(resolveTemplate('auto', VS_CODE, KNOWN_WITH_ABAP)).toBe(VSCODE_TEMPLATE);
+  });
+
+  it('emits NOTHING in VS Code when no ABAP folder is open — the link would be dead', () => {
+    // The flaw roots fixes: the client name says "VS Code", but without the ABAP extension and a
+    // package in the workspace there is nothing that can open a vscode://…/open?name= link.
+    expect(resolveTemplate('auto', VS_CODE, KNOWN_NO_ABAP)).toBeUndefined();
+  });
+
+  it('falls back to the client name when roots are unavailable (HTTP transport)', () => {
+    expect(resolveTemplate('auto', VS_CODE, UNKNOWN)).toBe(VSCODE_TEMPLATE);
+    expect(resolveTemplate('auto', CLAUDE_DESKTOP, UNKNOWN)).toBeUndefined();
+  });
+
+  it('an explicit mode still overrides everything, roots included', () => {
+    expect(resolveTemplate('vscode', CLAUDE_DESKTOP, KNOWN_NO_ABAP)).toBe(VSCODE_TEMPLATE);
+    expect(resolveTemplate('off', VS_CODE, KNOWN_WITH_ABAP)).toBeUndefined();
   });
 });

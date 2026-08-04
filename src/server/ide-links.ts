@@ -44,15 +44,25 @@ export interface IdeLinkFields {
  * `auto` deliberately emits nothing for an unrecognised client: a chat client with no IDE has
  * nothing to open, and a wrong guess is worse than no link.
  */
-export function resolveTemplate(mode: string | undefined, clientAgent: string | undefined): string | undefined {
+export function resolveTemplate(
+  mode: string | undefined,
+  clientAgent: string | undefined,
+  ide?: { hasAbapFolder: boolean; known: boolean },
+): string | undefined {
   const configured = (mode ?? 'auto').trim();
   if (!configured || configured === 'off') return undefined;
   if (configured === 'vscode') return VSCODE_TEMPLATE;
   if (configured === 'eclipse') return ECLIPSE_TEMPLATE;
   if (configured !== 'auto') return configured; // explicit template wins, always
 
+  // When the client told us its roots, believe them over its name. An `abap:` root proves SAP's
+  // ABAP extension is live and a package is open — i.e. something can actually open the link.
+  // Its absence means a link would be dead, even in VS Code.
+  if (ide?.known) return ide.hasAbapFolder ? VSCODE_TEMPLATE : undefined;
+
   const agent = (clientAgent ?? '').toLowerCase();
   if (!agent) return undefined;
+  // No roots to go on (HTTP transport, or a client without the capability): fall back to the name.
   // Forks (Cursor, Windsurf, …) usually keep the upstream name, hence a substring match.
   if (agent.includes('visual studio code') || agent.includes('vscode')) return VSCODE_TEMPLATE;
   return undefined;
@@ -92,6 +102,33 @@ export function buildIdeLink(template: string, fields: IdeLinkFields): string | 
   if (missing) return undefined;
   // Drop an empty trailing `&package=` so the link stays tidy.
   return link.replace(/&package=(?=&|$)/, '');
+}
+
+/**
+ * ADT destinations the IDE has open, derived from the MCP roots the client reported.
+ *
+ * VS Code hands its workspace folders to MCP servers as roots, and — measured — it does NOT filter
+ * by scheme, so an ABAP package folder arrives verbatim:
+ *   `abap:/repotree-v1/A4H2023` → destination `A4H2023`
+ * The second path segment is the destination, matching how `sapse.adt-vscode` itself reads it
+ * (`path.split('/')[2]`).
+ *
+ * An `abap:` root proves three things at once: SAP's ABAP extension is active, a package is open,
+ * and which system it is. That is a far better signal than the client's self-reported name.
+ * @param roots
+ */
+export function abapDestinationsFromRoots(roots: ReadonlyArray<{ uri?: string }> | undefined): string[] {
+  if (!roots) return [];
+  const found: string[] = [];
+  for (const root of roots) {
+    const uri = root?.uri;
+    if (typeof uri !== 'string' || !uri.toLowerCase().startsWith('abap:')) continue;
+    // abap:/repotree-v1/<DEST>/... — tolerate abap:// too.
+    const segments = uri.slice('abap:'.length).replace(/^\/+/, '').split('/');
+    const destination = segments[1];
+    if (destination) found.push(decodeURIComponent(destination));
+  }
+  return [...new Set(found)];
 }
 
 /**
