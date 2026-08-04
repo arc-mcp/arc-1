@@ -810,17 +810,40 @@ SAPQuery(sql="SELECT * FROM mara WHERE matnr LIKE 'Z%'", maxRows=50)
 
 ## SAPTransport
 
-Manage CTS transport requests (SE09/SE10 equivalent): list, get details, create, release, delete, reassign owner, recursive release, check transport requirements, and inspect an object's current lock/assignment status. The legacy action name for that status lookup is `history`, but it is not complete transport history. `create` uses the ADT `CreateCorrectionRequest` endpoint, which works on both NetWeaver 7.50+ and S/4HANA.
+Manage CTS transport requests (SE09/SE10 equivalent): list, get details, **diff (review what a transport changed)**, create, release, delete, reassign owner, recursive release, check transport requirements, and inspect an object's current lock/assignment status. The legacy action name for that status lookup is `history`, but it is not complete transport history. `create` uses the ADT `CreateCorrectionRequest` endpoint, which works on both NetWeaver 7.50+ and S/4HANA.
 
 In multi-target v1, only the read-only `list`, `get`, `check`, and `history` actions are listed and
-accepted. Transport mutations and topology actions remain structurally unavailable.
+accepted. Transport mutations and topology actions remain structurally unavailable; `diff` is also
+excluded there because it fans out many source reads per call.
+
+### `action="diff"` — reviewing what a transport changed
+
+Returns, per object, a unified diff between the revision written under the transport and the one
+immediately before it. LIMU entries (methods, class includes) are rolled up to their owning class,
+and a class is diffed across the includes the transport actually touched.
+
+Every part carries the evidence behind its diff — read `baselineStatus` before summarising:
+
+| `baselineStatus` | Meaning |
+|---|---|
+| `prior-revision` | The diff is what this transport changed. |
+| `prior-revision-unverified` | A predecessor exists, but the "after" side was only guessed — it may belong to another change. |
+| `no-prior-snapshot` | Created in this transport. |
+| `baseline-ambiguous` | No usable baseline. An all-additions block is **not** proof of creation. |
+| `baseline-unavailable` | The read failed. Never report this as unchanged. |
+
+Objects with no source revision feed (domains, data elements, function-group sources, …) are returned
+with an `inventoryReason` instead of parts: they are in scope, just not diffable. Long diffs are
+truncated per part with `diffTruncated: true`; `added`/`removed` still reflect the full change.
 
 **Parameters:**
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `action` | string | Yes | `list`, `get`, `create`, `release`, `delete`, `remove_object`, `reassign`, `release_recursive`, `check`, or `history` |
-| `id` | string | No | Transport request ID, e.g. `A4HK900123` (for get/release/delete/remove_object/reassign/release_recursive) |
+| `action` | string | Yes | `list`, `get`, `diff`, `create`, `release`, `delete`, `remove_object`, `reassign`, `release_recursive`, `check`, or `history` |
+| `id` | string | No | Transport request ID, e.g. `A4HK900123` (for get/diff/release/delete/remove_object/reassign/release_recursive) |
+| `offset` | number | No | For `diff`: index of the first object to diff (default 0). Page with `limit`. |
+| `limit` | number | No | For `diff`: objects per call (default 20, max 40 — the same ceiling SAP's own transport-diff tool uses). |
 | `description` | string | No | Transport description text (required for create) |
 | `name` | string | No | Object name (for check/history/remove_object actions, e.g. `ZCL_ORDER`) |
 | `package` | string | No | Package name. For `create`: optional — defaults to `$TMP`; an explicit package influences the route/target while the request remains Workbench type K. For `check`: required. |

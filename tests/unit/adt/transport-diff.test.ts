@@ -322,6 +322,10 @@ describe('rollup — includes are not programs', () => {
 });
 
 describe('classIncludesFor — the transport states which includes it touched', () => {
+  /** Real CTS shape: the class name is padded into a 30-char field with '=', then the suffix. */
+  const cinc = (clas: string, suffix: string) => `${clas.padEnd(30, '=')}${suffix}`;
+  /** Real CTS shape for a method: class name padded to 30 with SPACES, then the method. */
+  const meth = (clas: string, method: string) => `${clas.padEnd(30, ' ')}${method}`;
   const clas = (components: Array<{ pgmid: string; type: string; name: string; wbtype: string }>) => ({
     pgmid: 'R3TR',
     type: 'CLAS',
@@ -332,18 +336,18 @@ describe('classIncludesFor — the transport states which includes it touched', 
   });
 
   it('diffs only the implementations include for a CCIMP entry', () => {
-    expect(
-      classIncludesFor(clas([{ pgmid: 'LIMU', type: 'CINC', name: 'ZCL_X============CCIMP', wbtype: '' }])),
-    ).toEqual(['implementations']);
+    expect(classIncludesFor(clas([{ pgmid: 'LIMU', type: 'CINC', name: cinc('ZCL_X', 'CCIMP'), wbtype: '' }]))).toEqual(
+      ['implementations'],
+    );
   });
 
   it('maps each class-pool suffix to its include', () => {
     expect(
       classIncludesFor(
         clas([
-          { pgmid: 'LIMU', type: 'CINC', name: 'ZCL_X============CCDEF', wbtype: '' },
-          { pgmid: 'LIMU', type: 'CINC', name: 'ZCL_X============CCAU', wbtype: '' },
-          { pgmid: 'LIMU', type: 'CINC', name: 'ZCL_X============CCMAC', wbtype: '' },
+          { pgmid: 'LIMU', type: 'CINC', name: cinc('ZCL_X', 'CCDEF'), wbtype: '' },
+          { pgmid: 'LIMU', type: 'CINC', name: cinc('ZCL_X', 'CCAU'), wbtype: '' },
+          { pgmid: 'LIMU', type: 'CINC', name: cinc('ZCL_X', 'CCMAC'), wbtype: '' },
         ]),
       ).sort(),
     ).toEqual(['definitions', 'macros', 'testclasses']);
@@ -355,6 +359,22 @@ describe('classIncludesFor — the transport states which includes it touched', 
         clas([{ pgmid: 'LIMU', type: 'METH', name: 'ZCL_X                         ADD', wbtype: 'CLAS/OM' }]),
       ),
     ).toEqual(['main']);
+  });
+
+  it('resolves the include for a 30-char class name, which CTS does NOT pad', () => {
+    // 6.6% of live CINC rows: the class name fills the whole 30-char field, so there is no
+    // '=' at all and splitting on it silently resolved the include to `main`.
+    const name = 'ZCL_ABCDEFGHIJKLMNOPQRSTUVWXYZ'; // exactly 30 chars
+    expect(name).toHaveLength(30);
+    expect(classIncludesFor(clas([{ pgmid: 'LIMU', type: 'CINC', name: `${name}CCIMP`, wbtype: '' }]))).toEqual([
+      'implementations',
+    ]);
+  });
+
+  it('resolves a namespaced class include', () => {
+    expect(
+      classIncludesFor(clas([{ pgmid: 'LIMU', type: 'CINC', name: cinc('/NS/ZCL_X', 'CCAU'), wbtype: '' }])),
+    ).toEqual(['testclasses']);
   });
 
   it('falls back to all five when the transport carries a whole-class entry', () => {
@@ -371,8 +391,8 @@ describe('classIncludesFor — the transport states which includes it touched', 
     expect(
       classIncludesFor(
         clas([
-          { pgmid: 'LIMU', type: 'METH', name: 'ZCL_X                         ADD', wbtype: 'CLAS/OM' },
-          { pgmid: 'LIMU', type: 'CINC', name: 'ZCL_X============CCIMP', wbtype: '' },
+          { pgmid: 'LIMU', type: 'METH', name: meth('ZCL_X', 'ADD'), wbtype: 'CLAS/OM' },
+          { pgmid: 'LIMU', type: 'CINC', name: cinc('ZCL_X', 'CCIMP'), wbtype: '' },
         ]),
       ).sort(),
     ).toEqual(['implementations', 'main']);
@@ -388,5 +408,54 @@ describe('baselineStatusFor — evidence level is visible', () => {
     const pair = selectTransportRevisionPair(feed, ['A4HK906291']);
     expect(pair.selectionMethod).toBe('latest-revision-fallback');
     expect(baselineStatusFor(pair)).toBe('prior-revision-unverified');
+  });
+});
+
+describe('rollup — function-group sources are inventory, not programs', () => {
+  it('does not route a FUGR/I include to the program endpoint', () => {
+    // Live-verified wbtype (7.50 + 7.58). /programs/programs/LZ..U01 404s, so typing it PROG
+    // produced a baseline-unavailable row for every FUGR include in every FUGR transport.
+    const out = rollupTransportObjects([
+      { id: 'T1', objects: [obj({ pgmid: 'LIMU', type: 'REPS', name: 'LZARC1_FGU01', wbtype: 'FUGR/I' })] },
+    ]);
+    expect(out[0].type).not.toBe('PROG');
+    expect(out[0].type).not.toBe('INCL');
+  });
+
+  it('also captures the FUGR main program shape', () => {
+    const out = rollupTransportObjects([
+      { id: 'T1', objects: [obj({ pgmid: 'LIMU', type: 'REPS', name: 'SAPLZARC1_FG', wbtype: 'FUGR/PX' })] },
+    ]);
+    expect(out[0].type).not.toBe('PROG');
+  });
+});
+
+describe('baselineStatusFor — creation needs positive evidence', () => {
+  const feedWithOlder = [
+    rev('00003', '2026-06-23T12:00:00Z', 'A4HK906291'),
+    rev('00001', '2026-01-01T09:00:00Z', 'A4HK900001'),
+  ];
+
+  it('does not claim creation when an older revision exists but was not reached', () => {
+    // Simulates the undated-current shape: the pair walk finds no predecessor, but the feed
+    // plainly holds an older version, so the object cannot have been created here.
+    const pair = {
+      current: feedWithOlder[0],
+      previous: null,
+      selectionMethod: 'exact-transport' as const,
+      skipped: [],
+    };
+    expect(baselineStatusFor(pair, feedWithOlder)).toBe('baseline-ambiguous');
+  });
+
+  it('still reports creation when nothing older exists', () => {
+    const feed = [rev('00001', '2026-06-23T09:34:43Z', 'A4HK906289'), rev('00000', '2026-06-23T09:34:04Z')];
+    expect(baselineStatusFor(selectTransportRevisionPair(feed, ['A4HK906289']), feed)).toBe('no-prior-snapshot');
+  });
+
+  it('ignores work-state rows when looking for something older', () => {
+    const feed = [rev('00001', '2026-06-23T09:34:43Z', 'A4HK906289'), rev('00000', '2026-06-23T09:34:04Z')];
+    const pair = { current: feed[0], previous: null, selectionMethod: 'exact-transport' as const, skipped: [] };
+    expect(baselineStatusFor(pair, feed)).toBe('no-prior-snapshot');
   });
 });

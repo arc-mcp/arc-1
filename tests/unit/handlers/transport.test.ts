@@ -911,23 +911,19 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
       expect(payload.offset).toBe(0);
     });
 
+    /** A transport fixture whose class entry is a CINC, so `implementations` is really selected. */
+    function ccimpTransportXml(): string {
+      return loadFixture('transport-released-a4h-758.xml').replace(
+        /tm:pgmid="LIMU" tm:type="METH" tm:name="[^"]*"/g,
+        `tm:pgmid="LIMU" tm:type="CINC" tm:name="${'ZCL_ARC1_DEMO_CALC'.padEnd(30, '=')}CCIMP"`,
+      );
+    }
+
     it('keeps a failed part visible as baseline-unavailable, never as "not changed"', async () => {
-      // A class whose main feed matches the transport but whose CCIMP feed 500s. The failure
-      // must not be relabelled — a review that hides a read error is worse than a noisy one.
       mockFetch.mockImplementation((url: string) => {
         const u = String(url);
-        if (u.includes('/cts/transportrequests/')) {
-          return Promise.resolve(mockResponse(200, loadFixture('transport-released-a4h-758.xml')));
-        }
-        const content = u.match(/\/versions\/\d+\/(\d{5})\/content/);
-        if (content) return Promise.resolve(mockResponse(200, `v${content[1]}\n`));
-        if (u.includes('/includes/implementations/versions')) {
-          return Promise.resolve(mockResponse(500, 'Internal error: object ZCL_X does not exist'));
-        }
-        if (u.includes('/includes/main/versions')) {
-          return Promise.resolve(mockResponse(200, loadFixture('versions-clas-a4h-758.xml')));
-        }
-        return Promise.resolve(mockResponse(404, 'No suitable resource found'));
+        if (u.includes('/cts/transportrequests/')) return Promise.resolve(mockResponse(200, ccimpTransportXml()));
+        return Promise.resolve(mockResponse(500, 'Internal error: object ZCL_X does not exist'));
       });
       const result = await handleToolCall(diffClient(), DEFAULT_CONFIG, 'SAPTransport', {
         action: 'diff',
@@ -935,14 +931,28 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
       });
       const payload = JSON.parse(result.content[0]?.text ?? '{}');
       const parts = payload.objects[0].parts as Array<{ part: string; baselineStatus: string; note?: string }>;
-      const impl = parts.find((p) => p.part === 'implementations');
-      // The transport's LIMU entry is a METH, so only `main` is in scope; if a future change
-      // widens the part set, the failure must still surface as unavailable rather than clean.
-      if (impl) {
-        expect(impl.baselineStatus).toBe('baseline-unavailable');
-        expect(impl.note).not.toMatch(/not changed/);
-      }
-      expect(parts.find((p) => p.part === 'main')?.baselineStatus).toBe('prior-revision');
+      // The CINC entry must select `implementations` — if it selected `main` the 30-char/suffix
+      // parsing regressed and this test would silently stop covering the failure path.
+      expect(parts.map((p) => p.part)).toEqual(['implementations']);
+      expect(parts[0].baselineStatus).toBe('baseline-unavailable');
+      expect(parts[0].note).not.toMatch(/not changed/);
+      expect(parts[0].note).toMatch(/revision history unavailable/);
+    });
+
+    it('reports an inventory reason rather than an empty object when every part 404s', async () => {
+      mockFetch.mockImplementation((url: string) => {
+        const u = String(url);
+        if (u.includes('/cts/transportrequests/')) return Promise.resolve(mockResponse(200, ccimpTransportXml()));
+        return Promise.resolve(mockResponse(404, 'No suitable resource found'));
+      });
+      const result = await handleToolCall(diffClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'diff',
+        id: 'A4HK906291',
+      });
+      const payload = JSON.parse(result.content[0]?.text ?? '{}');
+      expect(payload.objects[0].parts).toEqual([]);
+      // Without this the object is indistinguishable from "nothing changed".
+      expect(payload.objects[0].inventoryReason).toMatch(/no readable source/);
     });
 
     it('withholds SAP diagnostics from result notes under minimalErrors', async () => {
@@ -983,17 +993,45 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
       expect(payload.objects[0].parts[0].note).toContain('S_ADT_RES');
     });
 
-    it('pages with offset and reports the next page', async () => {
-      mockDiffBackend();
-      const result = await handleToolCall(diffClient(), DEFAULT_CONFIG, 'SAPTransport', {
-        action: 'diff',
-        id: 'A4HK906291',
-        offset: 5,
-      });
-      const payload = JSON.parse(result.content[0]?.text ?? '{}');
-      expect(payload.offset).toBe(5);
-      expect(payload.shown).toBe(0);
-      expect(payload.totalObjects).toBe(1);
+    it('pages deterministically with offset and reports the next page', async () => {
+      // Three objects in deliberately non-alphabetical document order, so slice() and the sort
+      // key are both exercised: unsorted paging would partition them differently.
+      const objects = ['ZPROG_C', 'ZPROG_A', 'ZPROG_B']
+        .map((n) => `<tm:abap_object tm:pgmid="R3TR" tm:type="PROG" tm:name="${n}" tm:wbtype="PROG/P"/>`)
+        .join('');
+      const xml =
+        `<?xml version="1.0" encoding="utf-8"?><tm:root xmlns:tm="http://www.sap.com/cts/adt/tm">` +
+        `<tm:request tm:number="A4HK906291" tm:desc="paging" tm:owner="MARIAN" tm:status="R" tm:type="K">` +
+        `<tm:task tm:number="A4HK906292" tm:owner="MARIAN" tm:status="R">${objects}</tm:task>` +
+        `</tm:request></tm:root>`;
+      mockFetch.mockImplementation((u: string) =>
+        String(u).includes('/cts/transportrequests/')
+          ? Promise.resolve(mockResponse(200, xml))
+          : Promise.resolve(mockResponse(404, 'No suitable resource found')),
+      );
+      const page = async (offset: number, limit: number) =>
+        JSON.parse(
+          (
+            await handleToolCall(diffClient(), DEFAULT_CONFIG, 'SAPTransport', {
+              action: 'diff',
+              id: 'A4HK906291',
+              offset,
+              limit,
+            })
+          ).content[0]?.text ?? '{}',
+        );
+
+      const first = await page(0, 2);
+      expect(first.totalObjects).toBe(3);
+      expect(first.shown).toBe(2);
+      expect(first.hint).toContain('offset=2');
+      const second = await page(2, 2);
+      expect(second.shown).toBe(1);
+      expect(second.hint).toBeUndefined();
+
+      // The two pages partition the set with no gap and no repeat, in sorted order.
+      const names = [...first.objects, ...second.objects].map((o: { name: string }) => o.name);
+      expect(names).toEqual(['ZPROG_A', 'ZPROG_B', 'ZPROG_C']);
     });
 
     it('reports an unknown transport instead of throwing', async () => {

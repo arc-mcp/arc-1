@@ -1520,7 +1520,7 @@ const TRANSPORT_RELS = new Set([
 /** CTS request/task id: 3-char system + K/T/… + 6 alphanumerics, e.g. A4HK906291. */
 const CTS_ID_RE = /^[A-Z0-9]{3}[A-Z][A-Z0-9]{6}$/;
 
-/** Decode a URI component, returning '' rather than throwing on a malformed `%` escape. */
+/** Decode a URI component, returning the raw value rather than throwing on a malformed `%` escape. */
 function safeDecode(value: string): string {
   try {
     return decodeURIComponent(value);

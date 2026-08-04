@@ -198,11 +198,22 @@ export function selectTransportRevisionPair(
  * no predecessor. A missing predecessor under a fallback selection is ambiguous — it may
  * simply mean the object's history was never snapshotted.
  */
-export function baselineStatusFor(pair: TransportRevisionPair): BaselineStatus {
+export function baselineStatusFor(pair: TransportRevisionPair, allRevisions: RevisionInfo[] = []): BaselineStatus {
   if (!pair.current) return 'baseline-unavailable';
   const matched = pair.selectionMethod === 'exact-transport';
   if (pair.previous) return matched ? 'prior-revision' : 'prior-revision-unverified';
-  return matched ? 'no-prior-snapshot' : 'baseline-ambiguous';
+  if (!matched) return 'baseline-ambiguous';
+  // "Matched with no predecessor" normally means created here — but for an OPEN transport the
+  // active row carries the transport link, so `matched` is trivially true, and SAP only writes
+  // versions on release. If any revision has a strictly lower version number, the object plainly
+  // pre-existed and the walk-back simply failed to reach it (e.g. the transport's own revision
+  // is undated and sorts last). Creation is asserted only when nothing older exists.
+  const currentNum = Number(revisionNumber(pair.current));
+  const hasOlder = allRevisions.some((r) => {
+    const raw = revisionNumber(r);
+    return /^\d+$/.test(raw) && !WORK_STATE_VERSIONS.has(raw) && Number(raw) < currentNum;
+  });
+  return hasOlder ? 'baseline-ambiguous' : 'no-prior-snapshot';
 }
 
 // ─── Logical object rollup ──────────────────────────────────────────
@@ -260,6 +271,19 @@ function isIncludeWbtype(wbtype: string): boolean {
 }
 
 /**
+ * A FUNCTION-GROUP include (`FUGR/I`, live-verified on 7.50 and 7.58 — see
+ * `src/handlers/read.ts`). It is neither a program nor a standalone include: its source lives
+ * under `/functions/groups/{group}/includes/{name}`, which has no revisions feed here, so it
+ * must be reported as inventory rather than silently 404'd against `/programs/programs/`.
+ */
+function isFunctionGroupInclude(wbtype: string): boolean {
+  return wbtype.toUpperCase().startsWith('FUGR/');
+}
+
+/** Marker type for a function-group part, so `diffTransportObject` can explain it. */
+const FUGR_INCLUDE_TYPE = 'FUGR_INCLUDE';
+
+/**
  * Collapse a transport's raw entries into reviewable objects.
  *
  * `parseTransportList` already yields task-level entries only, so request-level and
@@ -289,6 +313,11 @@ export function rollupTransportObjects(
         logicalPgmid = 'R3TR';
         type = 'CLAS';
         name = owner;
+      } else if (isFunctionGroupInclude(wbtype)) {
+        // FUGR sources are not addressable via the program/include endpoints — keep the entry
+        // visible as inventory instead of routing it somewhere that 404s.
+        logicalPgmid = 'R3TR';
+        type = FUGR_INCLUDE_TYPE;
       } else if (pgmid === 'LIMU' && PROGRAM_COMPONENT_TYPES.has(rawType)) {
         logicalPgmid = 'R3TR';
         type = isIncludeWbtype(wbtype) ? 'INCL' : 'PROG';
@@ -343,11 +372,36 @@ const CLASS_POOL_INCLUDES: Record<string, string> = {
 export function classIncludesFor(object: LogicalTransportObject): string[] {
   const includes = new Set<string>();
   for (const c of object.components) {
+    // A whole-class R3TR entry is exactly the case where CTS records NO component detail
+    // (`R3TR CLAS X` and `LIMU <sub> X` are mutually exclusive per request — measured across
+    // ~640k LIMU rows on 758, zero counterexamples), so fall back to every include.
     if (c.pgmid !== 'LIMU') return [...CLASS_REVISION_INCLUDES];
-    const suffix = c.name.toUpperCase().split('=').pop() ?? '';
+    // The suffix starts at a FIXED offset: CTS pads the class name into a 30-char field. It
+    // pads with '=' only when the name is shorter — 6.6% of live CINC rows are 30-char names
+    // with no padding at all, where splitting on '=' returns the whole string and silently
+    // resolves to `main`. Positions 31+ hold only CCAU/CCIMP/CCDEF/CCMAC (census-verified);
+    // for METH/CLSD/CPUB/CPRI/CPRO they hold a method name or '', which correctly means main.
+    const suffix = c.name.slice(30).trim().toUpperCase();
     includes.add(CLASS_POOL_INCLUDES[suffix] ?? 'main');
   }
   return includes.size ? [...includes] : [...CLASS_REVISION_INCLUDES];
+}
+
+/**
+ * Per-part diff cap. A created object renders its ENTIRE source as an addition, so a page of
+ * 20 such objects is otherwise unbounded — `MAX_DIFF_OBJECTS` limits the object count, never
+ * the bytes. `added`/`removed` are counted before truncation, so the totals stay honest.
+ */
+const MAX_DIFF_LINES = 400;
+
+/** Trim a unified diff to `MAX_DIFF_LINES` body lines, keeping the header. */
+function capDiff(diff: string): { diff: string; truncated: boolean } {
+  const lines = diff.split('\n');
+  if (lines.length <= MAX_DIFF_LINES) return { diff, truncated: false };
+  return {
+    diff: `${lines.slice(0, MAX_DIFF_LINES).join('\n')}\n… diff truncated at ${MAX_DIFF_LINES} lines`,
+    truncated: true,
+  };
 }
 
 export interface TransportPartDiff {
@@ -359,6 +413,8 @@ export interface TransportPartDiff {
   added: number;
   removed: number;
   diff: string;
+  /** The hunks were trimmed; `added`/`removed` still reflect the full change. */
+  diffTruncated?: boolean;
   note?: string;
 }
 
@@ -377,14 +433,25 @@ function revisionLabel(revision: RevisionInfo): string {
   return revision.transport ? `${num} (${revision.transport})` : num;
 }
 
-/** Build the "we could not read this" part row. Message text is sanitized by the caller. */
-function unavailablePart(part: string, note: string): TransportPartDiff {
+/**
+ * Build the "we could not read this" part row. Message text is sanitized by the caller.
+ *
+ * `resolved` carries whatever evidence was already established. A failure AFTER pair selection
+ * (a flaky source GET) must keep its `selectionMethod`/`from`/`to` — claiming "no revisions"
+ * for an object whose pair WAS identified is a false signal in the field a reviewer uses to
+ * judge evidence quality.
+ */
+function unavailablePart(
+  part: string,
+  note: string,
+  resolved?: Pick<TransportPartDiff, 'selectionMethod' | 'from' | 'to'>,
+): TransportPartDiff {
   return {
     part,
     baselineStatus: 'baseline-unavailable',
-    selectionMethod: 'no-revisions',
-    from: null,
-    to: null,
+    selectionMethod: resolved?.selectionMethod ?? 'no-revisions',
+    from: resolved?.from ?? null,
+    to: resolved?.to ?? null,
     added: 0,
     removed: 0,
     diff: '',
@@ -419,7 +486,7 @@ async function diffPart(
   const pair = selectTransportRevisionPair(revisions, transportIds);
   const base = {
     part,
-    baselineStatus: baselineStatusFor(pair),
+    baselineStatus: baselineStatusFor(pair, revisions),
     selectionMethod: pair.selectionMethod,
     from: pair.previous ? revisionLabel(pair.previous) : null,
     to: pair.current ? revisionLabel(pair.current) : null,
@@ -439,17 +506,25 @@ async function diffPart(
       pair.previous ? client.getRevisionSource(pair.previous.uri) : Promise.resolve(''),
     ]);
   } catch (err) {
-    return unavailablePart(part, `source read failed: ${describeError(err, opts.minimalErrors)}`);
+    return unavailablePart(part, `source read failed: ${describeError(err, opts.minimalErrors)}`, base);
   }
 
   const result = unifiedDiff(before, after, `${name} (${base.from ?? 'none'})`, `${name} (${base.to})`, 3, true);
+  const capped = capDiff(result.diff);
   const note = result.cosmeticOnly
     ? 'whitespace-only change (trailing blanks / final newline)'
     : result.identical
       ? 'no source change between the selected revisions'
       : undefined;
 
-  return { ...base, added: result.added, removed: result.removed, diff: result.diff, ...(note ? { note } : {}) };
+  return {
+    ...base,
+    added: result.added,
+    removed: result.removed,
+    diff: capped.diff,
+    ...(capped.truncated ? { diffTruncated: true } : {}),
+    ...(note ? { note } : {}),
+  };
 }
 
 /** Diff every source part of one logical object. Never throws — failures become visible rows. */
@@ -461,6 +536,15 @@ export async function diffTransportObject(
 ): Promise<TransportObjectDiff> {
   const { type, name, taskIds } = object;
   const head = { type, name, taskIds };
+
+  if (type === FUGR_INCLUDE_TYPE) {
+    return {
+      ...head,
+      parts: [],
+      inventoryReason:
+        'function-group source (wbtype FUGR/*) — in scope, but its includes live under /functions/groups and have no revisions feed here',
+    };
+  }
 
   if (!REVISION_TYPES.has(type)) {
     return {
@@ -501,5 +585,38 @@ export async function diffTransportObject(
       }
     }),
   );
-  return { ...head, parts: settled.filter((p): p is TransportPartDiff => p !== null) };
+  const parts = settled.filter((p): p is TransportPartDiff => p !== null);
+  // Every selected part turned out not to exist. Dropping them all would emit an object with
+  // no rows and no reason — indistinguishable from "nothing changed", which is the one thing
+  // this tool must never say by accident.
+  if (!parts.length) {
+    return {
+      ...head,
+      parts: [],
+      inventoryReason: `no readable source for ${wanted.join(', ')} — the object or its includes could not be found`,
+    };
+  }
+  return { ...head, parts: suppressUntouchedParts(parts) };
+}
+
+/**
+ * Blank the DIFF of parts this transport did not touch, keeping the row for coverage.
+ *
+ * `classIncludesFor` already narrows the part list from the transport's own components, so
+ * this only bites on the whole-class (`R3TR CLAS`) shape, where CTS records no component
+ * detail and all five includes are probed speculatively. Without it those four untouched
+ * includes render SAP's boilerplate headers as fresh additions — four noise blocks around one
+ * real change (observed live on ZCL_ARC1_DEMO_CALC / A4HK906291).
+ *
+ * Two guards keep it from lying: suppress only when a sibling part DID match the transport
+ * (so attribution demonstrably works for this object), and NEVER touch a row whose read
+ * failed — a failure must not be relabelled as "unchanged".
+ */
+function suppressUntouchedParts(parts: TransportPartDiff[]): TransportPartDiff[] {
+  if (!parts.some((p) => p.selectionMethod === 'exact-transport')) return parts;
+  return parts.map((p) =>
+    p.selectionMethod === 'exact-transport' || p.baselineStatus === 'baseline-unavailable'
+      ? p
+      : { ...p, added: 0, removed: 0, diff: '', note: 'not changed by this transport' },
+  );
 }

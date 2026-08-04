@@ -86,7 +86,7 @@ Use this table to answer: "what must be true before this action can run?" For HT
 | Class hierarchy (`SAPNavigate.hierarchy`) | `data` or `sql` plus `read` | `SAP_ALLOW_DATA_PREVIEW=true` or `SAP_ALLOW_FREE_SQL=true` | Reads `SEOMETAREL` via table preview or SQL |
 | Lint / local format / diagnostics | `read` | Nothing | Unit tests can execute code but do not mutate repository objects |
 | Update SAP PrettyPrinter settings | `write` | `SAP_ALLOW_WRITES=true` | `SAPLint.set_formatter_settings` mutates global formatter settings |
-| Read transport info | `read` | Nothing | `SAPTransport.list`, `get`, `check`, `history` |
+| Read transport info | `read` | Nothing | `SAPTransport.list`, `get`, `diff`, `check`, `history` |
 | Read Git info | `read` | Nothing | `SAPGit.list_repos`, `history`, `objects`, etc. when Git feature exists |
 | Preview named table contents | `data` | `SAP_ALLOW_DATA_PREVIEW=true` | `sql` implies `data` |
 | Authorization trace (`SUAUTHVALTRC`) | `data` | `SAP_ALLOW_DATA_PREVIEW=true` | `SAPDiagnose action=authorization_trace`; on-prem STUSERTRACE read only |

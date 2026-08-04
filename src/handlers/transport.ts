@@ -24,7 +24,7 @@ import {
   removeObjectFromTransport,
   supportsExplicitTransportTarget,
 } from '../adt/transport.js';
-import { diffTransportObject, rollupTransportObjects } from '../adt/transport-diff.js';
+import { diffTransportObject, type LogicalTransportObject, rollupTransportObjects } from '../adt/transport-diff.js';
 import type { InactiveObject, ObjectTransportHistory, TransportReleaseReport, TransportRequest } from '../adt/types.js';
 import { logger } from '../server/logger.js';
 import type { ServerConfig } from '../server/types.js';
@@ -141,7 +141,7 @@ function summarizeTransport(t: TransportRequest) {
 export async function handleSAPTransport(
   client: AdtClient,
   args: Record<string, unknown>,
-  config?: ServerConfig,
+  config: ServerConfig,
 ): Promise<ToolResult> {
   const action = String(args.action ?? '');
 
@@ -197,7 +197,11 @@ export async function handleSAPTransport(
       );
       // Stable order across pages: the transport is re-read per call, and SAP does not promise
       // a fixed task/object sequence, so an unsorted slice could skip or repeat an object.
-      objects.sort((a, b) => `${a.type}:${a.name}`.localeCompare(`${b.type}:${b.name}`));
+      // Plain code-point comparison, NOT localeCompare — collation is ICU/locale dependent
+      // (da-DK sorts "AA" after "Z"), so two instances behind a load balancer would page
+      // differently. The key mirrors the rollup key so entries can never compare equal.
+      const sortKey = (o: LogicalTransportObject) => `${o.pgmid}:${o.type}:${o.name}`;
+      objects.sort((a, b) => (sortKey(a) < sortKey(b) ? -1 : sortKey(a) > sortKey(b) ? 1 : 0));
       const page = objects.slice(offset, offset + limit);
 
       // Match the request AND its tasks: version records reference the request on the systems
@@ -207,7 +211,7 @@ export async function handleSAPTransport(
       // Objects are independent reads; http.ts caps real concurrency via the shared Semaphore.
       const diffs = await Promise.all(
         page.map((object) =>
-          diffTransportObject(client, object, transportIds, { minimalErrors: config?.minimalErrors }),
+          diffTransportObject(client, object, transportIds, { minimalErrors: config.minimalErrors }),
         ),
       );
 

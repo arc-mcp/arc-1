@@ -498,7 +498,7 @@ export class AdtClient {
       return this.fetchSource(`/sap/bc/adt/oo/classes/${encodedName}/source/main`, opts);
     }
 
-    const validIncludes = new Set(['main', 'definitions', 'implementations', 'macros', 'testclasses']);
+    const validIncludes = new Set<string>(CLASS_REVISION_INCLUDES);
     const includes = include
       .split(',')
       .map((s) => s.trim().toLowerCase())
@@ -507,9 +507,7 @@ export class AdtClient {
     const parts: string[] = [];
     for (const inc of includes) {
       if (!validIncludes.has(inc)) {
-        parts.push(
-          `=== ${inc} ===\n[Unknown include "${inc}". Valid: main, definitions, implementations, macros, testclasses]`,
-        );
+        parts.push(`=== ${inc} ===\n[Unknown include "${inc}". Valid: ${CLASS_REVISION_INCLUDES.join(', ')}]`);
         continue;
       }
 

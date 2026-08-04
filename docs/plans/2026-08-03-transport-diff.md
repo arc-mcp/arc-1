@@ -158,11 +158,14 @@ a fallback guess. SAP's output schema has no equivalent field.
 
 | status | meaning | condition |
 |---|---|---|
-| `prior-revision` | real diff against the immediately preceding revision | current + previous resolved |
-| `no-prior-snapshot` | **created in this transport** | `exact-transport` **and** no predecessor |
-| `baseline-ambiguous` | no predecessor, but the current revision was not matched to the transport | fallback selection and no predecessor |
+| `prior-revision` | real diff against the immediately preceding revision | `exact-transport` + previous resolved |
+| `prior-revision-unverified` | a predecessor exists, but the "after" side was only guessed — the diff may belong to another change | fallback selection + previous resolved |
+| `no-prior-snapshot` | **created in this transport** | `exact-transport`, no predecessor, **and** no older revision anywhere in the feed |
+| `baseline-ambiguous` | no usable baseline: either the current revision was not matched, or an older revision exists that the walk did not reach | — |
 | `baseline-unavailable` | no revision feed, or the feed read failed | — |
-| `not-supported` | type has no diffable source | metadata types |
+
+A type with no diffable source is NOT a `BaselineStatus`; it is reported as `inventoryReason` on the
+object, so it stays visible in the review without pretending to be a failed diff.
 
 Creation is asserted only on positive evidence (PoC rule; SAP does not distinguish these at all).
 
@@ -187,14 +190,26 @@ revision carries the transport link and matches on the normal path (F11). The br
 the general algorithm produces the same pair with *better* evidence (`exact-transport` rather than a
 fallback label). Fewer code paths, one comparison model.
 
-### 2.4b Untouched class includes
+### 2.4b Which class includes to diff
 
-A class has five includes; a transport usually changes one. The untouched ones have no revision
-naming the transport, so pair selection falls back to their newest snapshot and renders SAP's
-boilerplate header comments as a fresh addition — four noise blocks around one real change (observed
-live). Rule: if a sibling part matched the transport exactly, attribution works for this object, so
-non-matching parts really are untouched — keep them listed for coverage, drop the diff. If *nothing*
-matched, the fallback diffs are the only evidence there is; keep them, flagged ambiguous.
+CTS states it directly, so read it rather than inferring: a `LIMU CINC <class padded to 30>CCIMP`
+entry names the include, `METH`/`CPUB`/`CPRI`/`CPRO`/`CLSD` mean the main source. The suffix starts
+at a FIXED offset 30 — CTS pads with `=` only when the name is shorter, and 6.6% of live CINC rows
+are 30-character names with no padding at all, where splitting on `=` silently resolves to `main`.
+
+A bare `R3TR CLAS` entry carries no component detail, so it falls back to all five includes. That is
+correct by construction: `R3TR CLAS X` and any `LIMU <sub> X` are **mutually exclusive per request**
+— measured across ~640k LIMU rows on 758, zero counterexamples — so an `R3TR CLAS` entry is exactly
+the case where CTS deliberately records nothing finer. Corollary: a transport carrying `LIMU METH`
+and no `CINC` is positive evidence that the include was not saved into that request.
+
+For that fallback shape only, the four untouched includes would render SAP's boilerplate headers as
+fresh additions. `suppressUntouchedParts` blanks their diff while keeping the row for coverage — but
+only when a sibling part matched the transport exactly, and never for a row whose read failed.
+
+Known limit: `LIMU CINC` and `LIMU METH` are distinct CTS keys with distinct locks, so a class's
+include can legitimately live in a *different* request. That is inherent to transport-scoped review,
+not a defect here.
 
 ### 2.5 CLAS expansion
 
