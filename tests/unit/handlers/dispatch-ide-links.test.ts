@@ -33,7 +33,7 @@ describe('IDE links (ARC1_IDE_LINKS)', () => {
     // The payload block must not be touched — this is what keeps JSON results parseable.
     expect(result.content[0]?.text).toBe(SOURCE);
     expect(result.content[1]?.text).toBe(
-      'Open ZHELLO in your IDE: vscode://marianfoo.arc1-abap-bridge/open?name=ZHELLO',
+      '\nOpen ZHELLO in your IDE: vscode://marianfoo.arc1-abap-bridge/open?name=ZHELLO',
     );
   });
 

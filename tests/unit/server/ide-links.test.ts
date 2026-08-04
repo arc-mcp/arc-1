@@ -93,9 +93,10 @@ describe('objectIdentity', () => {
 });
 
 describe('formatIdeLink', () => {
-  it('is a single short line with no leading whitespace — it is its own content block', () => {
+  it('leads with a newline so clients that concatenate blocks stay readable', () => {
+    // Measured: ARC-1's CLI and Claude Desktop both join content blocks with no separator,
+    // producing `endmethod.Open ZCL_X …` without this.
     const line = formatIdeLink('vscode://x', 'ZCL_X');
-    expect(line).toBe('Open ZCL_X in your IDE: vscode://x');
-    expect(line.split('\n')).toHaveLength(1);
+    expect(line).toBe('\nOpen ZCL_X in your IDE: vscode://x');
   });
 });

@@ -110,8 +110,12 @@ export function objectIdentity(args: Record<string, unknown>): { type: string; n
 /**
  * The link line. Emitted as its OWN MCP content block, never concatenated onto the payload:
  * most tool results are JSON, and appending prose to them makes the JSON unparseable.
+ *
+ * The leading newline is for clients that render content blocks by joining them with no
+ * separator (ARC-1's own CLI and Claude Desktop both do) — without it the result reads
+ * `endmethod.Open ZCL_X in your IDE: …`. Block-aware clients are unaffected.
  * Kept to one short line — it rides along on every single-object call.
  */
 export function formatIdeLink(link: string, name: string): string {
-  return `Open ${name} in your IDE: ${link}`;
+  return `\nOpen ${name} in your IDE: ${link}`;
 }
