@@ -192,6 +192,32 @@ describe('Transport Management', () => {
       expect(transport?.id).toBe('A4HK900100');
     });
 
+    it('does not copy task objects onto the request', async () => {
+      // parseTransportList must read the request's DIRECT abap_object children. A recursive
+      // search descends into <tm:task> whenever the request has none of its own, which would
+      // duplicate task objects onto the request and stamp them with the request id.
+      const xml = `<tm:root xmlns:tm="http://www.sap.com/cts/transports">
+        <tm:request tm:number="A4HK900100" tm:owner="DEV" tm:desc="d" tm:status="D" tm:type="K">
+          <tm:task tm:number="A4HK900101" tm:owner="DEV" tm:status="D">
+            <tm:abap_object tm:pgmid="R3TR" tm:type="PROG" tm:name="Z_ONLY_IN_TASK" tm:wbtype="PROG/P"/>
+          </tm:task>
+        </tm:request>
+      </tm:root>`;
+      const transport = await getTransport(mockHttp(xml), enabledSafety, 'A4HK900100');
+      expect(transport?.tasks[0]?.objects.map((o) => o.name)).toEqual(['Z_ONLY_IN_TASK']);
+      expect(transport?.requestObjects).toBeUndefined();
+    });
+
+    it('surfaces objects recorded directly on the request (transport of copies)', async () => {
+      const xml = `<tm:root xmlns:tm="http://www.sap.com/cts/transports">
+        <tm:request tm:number="A4HK900100" tm:owner="DEV" tm:desc="d" tm:status="D" tm:type="T">
+          <tm:abap_object tm:pgmid="R3TR" tm:type="PROG" tm:name="Z_ON_REQUEST" tm:wbtype="PROG/P"/>
+        </tm:request>
+      </tm:root>`;
+      const transport = await getTransport(mockHttp(xml), enabledSafety, 'A4HK900100');
+      expect(transport?.requestObjects?.map((o) => o.name)).toEqual(['Z_ON_REQUEST']);
+    });
+
     it('returns null when transport not found (Issue #26)', async () => {
       const http = mockHttp('<tm:root xmlns:tm="http://www.sap.com/cts/transports"/>');
       const transport = await getTransport(http, enabledSafety, 'NONEXISTENT');

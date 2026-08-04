@@ -1056,6 +1056,30 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
       expect(payload.objects[0]).toMatchObject({ type: 'PROG', name: 'ZREQ_LEVEL' });
     });
 
+    it('does not let the request-level mirror add the request id to taskIds', async () => {
+      // A released workbench request mirrors its task objects at request level; adding those
+      // again would stamp the object with the request id and read as an extra task.
+      const objectXml = `<tm:abap_object tm:pgmid="R3TR" tm:type="PROG" tm:name="ZMIRRORED" tm:wbtype="PROG/P"/>`;
+      const xml =
+        `<?xml version="1.0" encoding="utf-8"?><tm:root xmlns:tm="http://www.sap.com/cts/adt/tm">` +
+        `<tm:request tm:number="A4HK906291" tm:desc="mirror" tm:owner="MARIAN" tm:status="R" tm:type="K">` +
+        objectXml +
+        `<tm:task tm:number="A4HK906292" tm:owner="MARIAN" tm:status="R">${objectXml}</tm:task>` +
+        `</tm:request></tm:root>`;
+      mockFetch.mockImplementation((u: string) =>
+        String(u).includes('/cts/transportrequests/')
+          ? Promise.resolve(mockResponse(200, xml))
+          : Promise.resolve(mockResponse(404, 'No suitable resource found')),
+      );
+      const result = await handleToolCall(diffClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'diff',
+        id: 'A4HK906291',
+      });
+      const payload = JSON.parse(result.content[0]?.text ?? '{}');
+      expect(payload.totalObjects).toBe(1);
+      expect(payload.objects[0].taskIds).toEqual(['A4HK906292']);
+    });
+
     it('reports an unknown transport instead of throwing', async () => {
       mockFetch.mockResolvedValue(mockResponse(200, loadFixture('transport-released-a4h-758.xml')));
       const result = await handleToolCall(diffClient(), DEFAULT_CONFIG, 'SAPTransport', {

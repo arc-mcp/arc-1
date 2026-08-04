@@ -896,18 +896,26 @@ function parseTransportList(xml: string): TransportRequest[] {
       };
     });
 
-    // Request-level <tm:abap_object> children. findDeepNodes stops at the first record that
-    // owns the key, so on the request node this returns ONLY its direct children — task
-    // objects and the <tm:all_objects> mirror are not pulled in.
-    const requestObjects: TransportObject[] = findDeepNodes(req, 'abap_object').map((o) => ({
-      pgmid: String(o['@_pgmid'] ?? ''),
-      type: String(o['@_type'] ?? ''),
-      name: String(o['@_name'] ?? ''),
-      wbtype: String(o['@_wbtype'] ?? ''),
-      description: String(o['@_obj_desc'] ?? o['@_obj_info'] ?? ''),
-      locked: String(o['@_lock_status'] ?? '') === 'X',
-      position: String(o['@_position'] ?? '000000'),
-    }));
+    // Request-level <tm:abap_object> children, read STRUCTURALLY.
+    //
+    // findDeepNodes must not be used here: it only stops early when the key is a DIRECT
+    // property, and on the common shape (objects only under tasks) it recurses into <tm:task>
+    // and returns the first task's objects — which would duplicate them onto the request and
+    // stamp them with the request id instead of their task's.
+    const directObjects = req.abap_object;
+    const requestObjects: TransportObject[] = (
+      Array.isArray(directObjects) ? directObjects : directObjects ? [directObjects] : []
+    )
+      .filter((o): o is Record<string, unknown> => !!o && typeof o === 'object')
+      .map((o) => ({
+        pgmid: String(o['@_pgmid'] ?? ''),
+        type: String(o['@_type'] ?? ''),
+        name: String(o['@_name'] ?? ''),
+        wbtype: String(o['@_wbtype'] ?? ''),
+        description: String(o['@_obj_desc'] ?? o['@_obj_info'] ?? ''),
+        locked: String(o['@_lock_status'] ?? '') === 'X',
+        position: String(o['@_position'] ?? '000000'),
+      }));
 
     return {
       id: String(req['@_number'] ?? ''),

@@ -190,11 +190,18 @@ export async function handleSAPTransport(
       if (!transport) return textResult(`Transport ${id} not found.`);
 
       // A transport of copies records its objects on the REQUEST, not under a task, so
-      // reviewing only `tasks` returns an empty change set. Merge both; the rollup dedupes on
-      // pgmid:type:name, so an object present in each appears once.
+      // reviewing only `tasks` returns an empty change set. A released workbench request also
+      // MIRRORS its task objects at request level — add only the entries no task already
+      // carries, otherwise the request id lands in `taskIds` and reads as an extra task.
+      const taskObjectKeys = new Set(
+        transport.tasks.flatMap((t) => t.objects.map((o) => `${o.pgmid}:${o.type}:${o.name}`.toUpperCase())),
+      );
+      const requestOnly = (transport.requestObjects ?? []).filter(
+        (o) => !taskObjectKeys.has(`${o.pgmid}:${o.type}:${o.name}`.toUpperCase()),
+      );
       const objects = rollupTransportObjects([
         ...transport.tasks,
-        ...(transport.requestObjects?.length ? [{ id: transport.id, objects: transport.requestObjects }] : []),
+        ...(requestOnly.length ? [{ id: transport.id, objects: requestOnly }] : []),
       ]);
       const offset = Math.max(0, Number(args.offset ?? 0) || 0);
       const limit = Math.min(
