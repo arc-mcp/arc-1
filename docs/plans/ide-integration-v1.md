@@ -172,6 +172,27 @@ an object is not in the workspace and therefore not openable.
 deployments simply keep the warning that roots would have suppressed — nothing breaks, and those
 deployments (Copilot Studio, browser clients) usually have no IDE anyway.
 
+### Measured: Claude Desktop renders `vscode://` links but will not open them
+
+Live test, 2026-08-03. With `ARC1_IDE_LINKS=vscode`, Claude Desktop renders the link as a normal blue
+"Open in IDE" hyperlink — and **clicking does nothing**. The scheme itself is fine: `open
+"vscode://marianfoo.arc1-abap-bridge/open?name=ZCL_ARC1_TASK_SERVICE"` from a shell returns 0 and fronts
+VS Code, and the identical link works from VS Code's own chat. Claude Desktop only hands `http`/`https`
+to the OS.
+
+Consequences:
+
+- **`auto` emitting nothing for `claude-ai` is now evidence-based, not caution.** A link there would
+  render and silently fail — worse than no link.
+- **Setting `vscode` explicitly in Claude Desktop is a trap**, and the `user_config` description said to
+  do exactly that. Corrected: the link is copy-paste only there.
+- Expect the same for `adt://` from Claude Desktop, for the same reason. Untested but it is the same
+  class of scheme.
+
+If the Desktop→IDE jump is wanted later, the vehicle has to be `http`: a loopback listener in the bridge
+(`http://127.0.0.1:<port>/open?name=…`) that performs the navigation in-process. Claude Desktop will open
+an http link, and the bridge is already the component that knows how to resolve and open an object.
+
 ## Known issue: ARC-1 writes appear to log the IDE out
 
 Observed four times on 2026-08-03, and more frequently as ARC-1 write volume rose: the ADT session in

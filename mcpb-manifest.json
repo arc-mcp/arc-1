@@ -223,7 +223,7 @@
     "arc1_ide_links": {
       "type": "string",
       "title": "IDE Links",
-      "description": "Append a clickable IDE link to results about one object. auto | off | vscode | eclipse | a template using {type} {name} {package} {uri} {sid} {client}. Claude Desktop has no IDE of its own, so set 'vscode' or an adt:// template to choose where links should open.",
+      "description": "Append a clickable IDE link to results about one object. auto | off | vscode | eclipse | a template using {type} {name} {package} {uri} {sid} {client}. NOTE: Claude Desktop renders vscode:// and adt:// links but will not open them (it only hands http/https to the OS), so a link set here is copy-paste only. 'auto' correctly emits nothing in Claude Desktop.",
       "default": "auto",
       "required": false
     }
