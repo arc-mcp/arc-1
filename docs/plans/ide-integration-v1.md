@@ -209,31 +209,42 @@ reliable path exists. The template escape hatch remains for anyone who wants to 
 full knowledge of the trade-offs — ARC-1 just does not own that brittleness. A prototype redirect page
 lives at `arc1-abap-bridge/redirect/index.html` for reference.
 
-## Known issue: ARC-1 writes appear to log the IDE out
+## Session hygiene on writes — hypothesis disproven, real fix shipped
 
-Observed four times on 2026-08-03, and more frequently as ARC-1 write volume rose: the ADT session in
-VS Code dies and every `abap:` operation fails. It surfaces misleadingly as
-`NoPermissions (FileSystemError): Method "createDirectory" not yet implemented`.
+Observed four times on 2026-08-03: the ADT session in VS Code dies and every `abap:` operation fails,
+surfacing misleadingly as `NoPermissions (FileSystemError): Method "createDirectory" not yet implemented`.
 
-Two code-level facts (certain):
+**The original hypothesis was wrong.** It assumed SAP issues a fresh `SAP_SESSIONID` for a stateful
+request, so that discarding the clone's cookie jar orphaned one session per write. Probed directly
+against a4h (read-only, three GETs on `/sap/bc/adt/discovery`):
 
-1. **Stateful-session cookies are discarded.** `withStatefulSession` (`src/adt/http.ts:296`) does
-   `sessionClient.cookieJar = new Map(this.cookieJar)` and never merges the jar back, so any cookie SAP
-   sets during lock→modify→unlock is lost when the clone goes out of scope.
-2. **The stateful context is never released.** No `X-sap-adt-sessiontype: stateless` request exists
-   anywhere in the codebase. Eclipse ADT and `abap-adt-api` both send one after unlocking.
+| Request | New session cookie |
+|---|---|
+| plain GET | yes — the initial session |
+| GET with `X-sap-adt-sessiontype: stateful` | **none — cookie reused** |
+| GET with `X-sap-adt-sessiontype: stateless` | none — cookie reused |
 
-Hypothesis (fits the symptom, not yet proven): if SAP issues a fresh `SAP_SESSIONID` for the stateful
-interaction, ARC-1 orphans one session per write. SAP caps concurrent sessions per user
-(`rdisp/max_alt_modes`, commonly 6) and evicts the oldest when the cap is reached — the long-lived IDE
-session.
+So there is no per-write session orphaning, and that mechanism cannot explain the logouts.
 
-**To verify** (one write, non-destructive on a `$TMP` object): run with `ARC1_LOG_HTTP_DEBUG=true` and
-check whether a `Set-Cookie` carrying a *different* `SAP_SESSIONID` appears inside the stateful block.
+**What was genuinely wrong, and is now fixed** (`withStatefulSession`):
 
-**Proposed fix:** merge the clone's cookie jar back into the parent after `fn` resolves, and send a
-trailing `X-sap-adt-sessiontype: stateless` request to release the context. Both belong in
-`withStatefulSession` so every write path inherits them.
+1. **The stateful context was never released.** A stateful ADT session persists until explicitly ended —
+   omitting the header on later requests does *not* end it. ARC-1 sent `stateful` and never followed with
+   `stateless`, so its session stayed stateful and held an ABAP mode until timeout. Eclipse ADT and
+   `abap-adt-api` both send the release. Now sent as a best-effort `HEAD /sap/bc/adt/core/discovery`
+   in a `finally`, so it also runs when the write throws and can never mask the caller's error.
+2. **A rotated session cookie was lost.** The clone's jar was discarded, so if SAP ever rotates the
+   session id mid-block the parent keeps using a dead one and the next request silently starts a new
+   session. Not observed on 7.58, but the window is real; the jar and CSRF token are now merged back.
+
+Verified live: create → update → delete of a `$TMP` program, all three stateful cycles clean.
+
+**The logouts remain unexplained.** Remaining candidates, cheapest first: an idle/absolute timeout on the
+ADT language server's reentrance-ticket session (most likely, and nothing to do with ARC-1); the per-user
+mode cap (`rdisp/max_alt_modes`, commonly 6) with ARC-1 + the LS + SAP GUI all logged on as the same user;
+or the bridge's parallel `readDirectory` load on the LS. To identify it, record the interval between
+logon and logout — a consistent ~30/60 minutes points to a timeout, correlation with write bursts points
+to load.
 
 ## Out of scope for v1
 

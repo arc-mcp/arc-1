@@ -296,7 +296,52 @@ export class AdtHttpClient {
     sessionClient.cookieJar = new Map(this.cookieJar);
     sessionClient.discoveryMap = this.discoveryMap;
     sessionClient.negotiatedHeaders = new Map(this.negotiatedHeaders);
-    return fn(sessionClient);
+    try {
+      return await fn(sessionClient);
+    } finally {
+      // Tell SAP the ABAP session context can go. A stateful ADT session persists until it is
+      // explicitly released — omitting the header on later requests does NOT end it — so without
+      // this the session stays stateful and holds a mode until it times out. Eclipse ADT and
+      // abap-adt-api both send this. Best-effort: never let cleanup fail a completed write.
+      await sessionClient.releaseStatefulSession();
+      // Adopt any cookie SAP rotated during the block. Previously the clone's jar was discarded,
+      // so a rotated session id was lost and the next parent request would start a fresh session,
+      // orphaning the old one. (Not observed on 7.58 — SAP reuses the cookie — but the window is
+      // real and the merge is free.)
+      for (const [name, value] of sessionClient.cookieJar) {
+        this.cookieJar.set(name, value);
+      }
+      this.csrfToken = sessionClient.csrfToken;
+    }
+  }
+
+  /**
+   * Drop the stateful ABAP session context. Transport hygiene, not an ADT operation — same class
+   * as `fetchCsrfToken`, and deliberately silent: a failure here must never surface to a caller
+   * whose write already succeeded.
+   */
+  private async releaseStatefulSession(): Promise<void> {
+    if (this.config.sessionType !== 'stateful') return;
+    try {
+      const headers: Record<string, string> = {
+        'X-sap-adt-sessiontype': 'stateless',
+        Accept: '*/*',
+      };
+      if (this.config.disableSaml) headers['X-SAP-SAML2'] = 'disabled';
+      this.applyAuthHeader(headers);
+      if (this.config.bearerTokenProvider) {
+        headers.Authorization = `Bearer ${await this.config.bearerTokenProvider()}`;
+      }
+      if (this.config.sapConnectivityAuth && !this.config.ppProxyAuth) {
+        headers['SAP-Connectivity-Authentication'] = this.config.sapConnectivityAuth;
+      }
+      const cookieHeader = this.composeCookieHeader();
+      if (cookieHeader) headers.Cookie = cookieHeader;
+      const response = await this.doFetch(this.buildUrl('/sap/bc/adt/core/discovery'), 'HEAD', headers);
+      this.storeCookies(response);
+    } catch {
+      // Deliberately swallowed — see the doc comment.
+    }
   }
 
   /** Core request method — wraps requestInner with optional concurrency limiter */

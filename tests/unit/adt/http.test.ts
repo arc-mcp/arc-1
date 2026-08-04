@@ -840,9 +840,56 @@ describe('AdtHttpClient', () => {
         await session.post('/lock', '<xml/>');
       });
 
-      // The POST from session client should have stateful header
-      const lastCallHeaders = fetchHeaders(mockFetch.mock.calls.length - 1);
-      expect(lastCallHeaders['X-sap-adt-sessiontype']).toBe('stateful');
+      // Assert on the POST itself, not "the last call" — the last call is now the session
+      // release, which is deliberately stateless.
+      const lockCall = mockFetch.mock.calls.findIndex((c) => String(c[0]).includes('/lock'));
+      expect(lockCall).toBeGreaterThanOrEqual(0);
+      expect(fetchHeaders(lockCall)['X-sap-adt-sessiontype']).toBe('stateful');
+    });
+
+    it('releases the stateful session when the block finishes', async () => {
+      mockFetch.mockResolvedValue(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+
+      const client = new AdtHttpClient(getDefaultConfig());
+      (client as any).csrfToken = 'T';
+      await client.withStatefulSession(async (session) => {
+        await session.post('/lock', '<xml/>');
+      });
+
+      // A stateful ADT session persists until explicitly released — dropping the header on later
+      // requests does NOT end it, so without this the session holds a mode until it times out.
+      const last = mockFetch.mock.calls.length - 1;
+      expect(fetchHeaders(last)['X-sap-adt-sessiontype']).toBe('stateless');
+      expect(fetchOptions(last).method).toBe('HEAD');
+    });
+
+    it('releases the session even when the block throws, and never masks the error', async () => {
+      mockFetch.mockResolvedValue(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+
+      const client = new AdtHttpClient(getDefaultConfig());
+      (client as any).csrfToken = 'T';
+      await expect(
+        client.withStatefulSession(async () => {
+          throw new Error('write blew up');
+        }),
+      ).rejects.toThrow('write blew up');
+
+      const last = mockFetch.mock.calls.length - 1;
+      expect(fetchHeaders(last)['X-sap-adt-sessiontype']).toBe('stateless');
+    });
+
+    it('adopts a session cookie rotated during the stateful block', async () => {
+      const client = new AdtHttpClient(getDefaultConfig());
+      (client as any).csrfToken = 'T';
+      (client as any).cookieJar = new Map([['SAP_SESSIONID_A4H_001', 'OLD']]);
+
+      await client.withStatefulSession(async (session) => {
+        // Simulate SAP rotating the session id mid-block.
+        (session as any).cookieJar.set('SAP_SESSIONID_A4H_001', 'ROTATED');
+      });
+
+      // Previously the clone's jar was discarded, so the parent kept using a dead session id.
+      expect((client as any).cookieJar.get('SAP_SESSIONID_A4H_001')).toBe('ROTATED');
     });
 
     it('session client shares CSRF token with parent', async () => {
