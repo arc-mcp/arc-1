@@ -189,9 +189,25 @@ Consequences:
 - Expect the same for `adt://` from Claude Desktop, for the same reason. Untested but it is the same
   class of scheme.
 
-If the Desktop→IDE jump is wanted later, the vehicle has to be `http`: a loopback listener in the bridge
-(`http://127.0.0.1:<port>/open?name=…`) that performs the navigation in-process. Claude Desktop will open
-an http link, and the bridge is already the component that knows how to resolve and open an object.
+Two workarounds were prototyped and **both rejected**:
+
+1. **Loopback listener in the bridge.** For ARC-1 to emit a correct URL it must know the port at emit
+   time, so the port has to be fixed and guessable — and a fixed, unauthenticated local endpoint that
+   performs actions is reachable by any web page you visit (CORS blocks reading the response, not the
+   side effect). A random port plus a token published in `~/.arc1/bridge.json` closes that hole, but it
+   is a listener in the editor plus a secrets file to save a copy-paste.
+2. **Hosted `http` page that bounces to `vscode://`.** Verified working: a browser *will* hand a custom
+   scheme to the OS from page JS, with no confirmation prompt. Putting the object in the URL **fragment**
+   keeps it off the server entirely. But the chain is Desktop link policy → default browser → host
+   reachable → not proxy-blocked → browser hands off → fragment survives every hop → VS Code running →
+   bridge installed. Eight links, seven outside our control, and it fails *after* the click rather than
+   by simply not being clickable. The fragment was already lost once during testing (macOS `open` strips
+   it from a `file://` URL), producing a silent empty-name link.
+
+**Decision: neither ships.** `auto` emitting nothing in Claude Desktop is the correct behaviour because no
+reliable path exists. The template escape hatch remains for anyone who wants to wire up a redirect with
+full knowledge of the trade-offs — ARC-1 just does not own that brittleness. A prototype redirect page
+lives at `arc1-abap-bridge/redirect/index.html` for reference.
 
 ## Known issue: ARC-1 writes appear to log the IDE out
 
