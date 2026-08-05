@@ -74,7 +74,6 @@
   "oauth2-configuration": {
     "redirect-uris": [
       "http://localhost:*/**",
-      "https://*.hana.ondemand.com/**",
       "https://*.applicationstudio.cloud.sap/**",
       "https://claude.ai/api/mcp/auth_callback",
       "https://callback.mistral.ai/v1/integrations_auth/oauth2_callback",
