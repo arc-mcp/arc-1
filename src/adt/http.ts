@@ -391,10 +391,6 @@ export class AdtHttpClient {
       headers['X-SAP-SAML2'] = 'disabled';
     }
 
-    if (isModifyingMethod(method)) {
-      headers['X-CSRF-Token'] = this.csrfToken;
-    }
-
     if (this.config.sessionType === 'stateful') {
       headers['X-sap-adt-sessiontype'] = 'stateful';
     }
@@ -414,6 +410,13 @@ export class AdtHttpClient {
     // re-read the cookie file before this request.
     if (this.cookiesCleared && this.isCookieAuthMode()) {
       this.reloadCookiesFromSource();
+    }
+
+    // Read the CSRF token together with the cookie header below — SAP binds the token to the
+    // session cookie, and a concurrent fetchCsrfToken() can replace both across the bearer
+    // await above; a torn pair 403s. The retry paths below already read them adjacently.
+    if (isModifyingMethod(method)) {
+      headers['X-CSRF-Token'] = this.csrfToken;
     }
 
     // Build cookie header from config cookies + cookie jar, with the jar winning

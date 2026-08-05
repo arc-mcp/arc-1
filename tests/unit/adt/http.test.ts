@@ -368,6 +368,58 @@ describe('AdtHttpClient', () => {
       await client.get('/path');
       // csrfToken should still be empty — so next POST will fetch
     });
+
+    it('sends a token and session cookie from the same fetch when concurrent requests refresh both', async () => {
+      // SAP binds the CSRF token to the session cookie; a torn pair is a 403. With a
+      // bearerTokenProvider awaiting mid-build, a second request's CSRF fetch can swap
+      // both fields between the two reads. Park request A there and let B overwrite them.
+      let releaseA!: () => void;
+      const aReleased = new Promise<void>((resolve) => {
+        releaseA = resolve;
+      });
+      let aParked!: () => void;
+      const aIsParked = new Promise<void>((resolve) => {
+        aParked = resolve;
+      });
+
+      let discoveryCalls = 0;
+      const posts: Array<{ token?: string; cookie?: string }> = [];
+      mockFetch.mockImplementation(async (url: string, init: RequestInit) => {
+        const headers = (init.headers ?? {}) as Record<string, string>;
+        if (url.includes('/core/discovery')) {
+          const nth = ++discoveryCalls;
+          // Second (cold) fetch lands while A is parked, replacing token + cookie.
+          if (nth === 2) await aIsParked;
+          return mockResponse(200, '', { 'x-csrf-token': `TOKEN-S${nth}` }, [`SAP_SESSIONID_A4H_001=S${nth}; Path=/`]);
+        }
+        posts.push({ token: headers['X-CSRF-Token'], cookie: headers.Cookie });
+        if (posts.length === 1) releaseA(); // B is on the wire — let A finish building
+        return mockResponse(200, 'ok');
+      });
+
+      let parked = false;
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        bearerTokenProvider: async () => {
+          // fetchCsrfToken() calls this too, before any discovery — park only the
+          // in-request call that sits between the token read and the cookie read.
+          if (!parked && discoveryCalls > 0) {
+            parked = true;
+            aParked();
+            await aReleased;
+          }
+          return 'bearer';
+        },
+      });
+
+      await Promise.all([client.post('/path', '<xml/>'), client.post('/path', '<xml/>')]);
+
+      expect(posts).toHaveLength(2);
+      for (const sent of posts) {
+        const session = /SAP_SESSIONID_A4H_001=(S\d)/.exec(sent.cookie ?? '')?.[1];
+        expect(sent.token).toBe(`TOKEN-${session}`);
+      }
+    });
   });
 
   // ─── Cookie Jar ────────────────────────────────────────────────────
