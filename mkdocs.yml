@@ -50,6 +50,7 @@ nav:
       - Multi-System Setup (Multi-Target): multi-target-setup.md
       - Other SAP Environments:
           - BTP ABAP Environment: btp-abap-environment.md
+          - BTP ABAP Prerequisites (SAP side): btp-abap-prerequisites.md
           - S/4HANA Public Cloud: s4hana-public-cloud.md
       - Administration & Alternatives:
           - BTP Administration: btp-administration.md
