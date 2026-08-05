@@ -41,6 +41,13 @@ function appModuleDescriptor(): Record<string, any> {
   return appModule as Record<string, any>;
 }
 
+function xsuaaResourceDescriptor(): Record<string, any> {
+  const mta = parse(readFileSync(join(ROOT, 'mta.yaml'), 'utf8')) as Record<string, any>;
+  const xsuaa = (mta.resources as Array<Record<string, any>>).find((resource) => resource.name === 'arc1-xsuaa');
+  expect(xsuaa, 'arc1-xsuaa resource missing from mta.yaml').toBeDefined();
+  return xsuaa as Record<string, any>;
+}
+
 /** Base ∪ mtaext, the way multiapps-controller merges it: override wins, nothing is removed. */
 function resolveWithOverrides(overrides: Record<string, string> = {}) {
   for (const [key, value] of Object.entries({ ...baseDescriptorEnv(), ...overrides })) {
@@ -186,6 +193,19 @@ describe('shipped mta.yaml resolves through the config parser', () => {
         'tsconfig*.json',
         'xs-security.json',
       ]),
+    );
+  });
+
+  it('scopes XSUAA upstream callbacks to the deployment-owned app route', () => {
+    const xsuaa = xsuaaResourceDescriptor();
+    const redirectUris = xsuaa.parameters?.config?.['oauth2-configuration']?.['redirect-uris'];
+    const fileConfig = JSON.parse(readFileSync(join(ROOT, 'xs-security.json'), 'utf8')) as Record<string, any>;
+
+    expect(redirectUris).toEqual(['http://localhost:*/**', '~{arc1-mcp-api/url}/**']);
+    expect(xsuaa.requires).toEqual([{ name: 'arc1-mcp-api' }]);
+    expect(fileConfig['oauth2-configuration']['redirect-uris']).toEqual(['http://localhost:*/**']);
+    expect(JSON.stringify({ redirectUris, fileConfig })).not.toMatch(
+      /\*\.(?:hana\.ondemand\.com|applicationstudio\.cloud\.sap)/,
     );
   });
 

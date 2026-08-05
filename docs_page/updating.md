@@ -1,5 +1,15 @@
 # Updating ARC-1
 
+!!! warning "BTP/XSUAA upgrade action"
+    After upgrading an existing BTP Cloud Foundry deployment, run one full MTA redeploy so XSUAA
+    replaces the shared-platform redirect wildcards with this deployment's exact ARC-1 route.
+    Existing bindings, tokens, DCR client IDs, roles, and assignments remain valid. Manual/non-MTA
+    deployments and installations with a custom `ARC1_PUBLIC_URL` must first add that exact public
+    route to a landscape-specific XSUAA configuration—do not apply the raw `xs-security.json` to an
+    MTA-managed service. The optional AppRouter now uses the stable
+    `arc1-ui-${space-guid}` host, so existing UI deployments should verify their URL after redeploying.
+    See [XSUAA setup](xsuaa-setup.md#step-1-create-xsuaa-service-instance).
+
 ## v1.0 — upgrading from 0.9.x
 
 From `1.0` ARC-1 follows [semantic versioning](https://semver.org/): a breaking change to the MCP tool
@@ -15,7 +25,7 @@ Four things to check. Per-change context for the whole release is in the
 | **Retired settings abort startup** | anyone who configured cache warmup or the unreleased multi-destination prototype | Remove `ARC1_CACHE_WARMUP`, `ARC1_CACHE_WARMUP_PACKAGES`, `--cache-warmup`, `--cache-warmup-packages` and `SAP_BTP_DESTINATIONS` — details in [Cache warmup removal](#v10-cache-warmup-removal) and [multi-target migration](#v10-experimental-destination-discovered-multi-target-migration) below. Setting them to `false` is not enough; the value is not read, the presence is |
 | **Unknown tool parameters are rejected** | MCP clients and agent frameworks that send extra keys | A parameter outside a tool's schema now returns a validation error instead of being silently stripped. If a custom client injects its own keys into tool arguments, stop doing that before upgrading — previously the call succeeded while quietly ignoring them |
 | **`SAPTransport(action="list")` returns headers only** | anything that reads the object list out of `list` | Pass `summary=false` to restore the previous full response |
-| **The XSUAA descriptor gained a jwt-bearer grant** | BTP Cloud Foundry, and only if you want app-to-app propagation | `cf update-service arc1-mcp-xsuaa -c xs-security.json` (or an MTA redeploy). Existing bindings inherit it without rebinding, and every existing login path keeps working untouched |
+| **The XSUAA descriptor gained a jwt-bearer grant** | BTP Cloud Foundry, and only if you want app-to-app propagation | Redeploy the MTA, or for a manual deployment update with the route-specific `xs-security.landscape.json`. Existing bindings inherit it without rebinding. |
 
 Nothing else in 1.0 needs an action: the tool surface grew (procedural unit surgery, FUNC processing types,
 new server-driven types, `atc_variants`), and the rest is fixes.
@@ -115,7 +125,7 @@ Added two new scopes: `transports`, `git`. `admin` now **implies all other scope
 `MCPDeveloper` role template now bundles `[read, write, transports, git]`. Re-deploy `xs-security.json` to your XSUAA service:
 
 ```bash
-cf update-service arc1-xsuaa -c xs-security.json
+cf update-service arc1-xsuaa -c xs-security.landscape.json
 ```
 
 Users assigned to `ARC-1 Developer` role collection automatically gain transport and git write capability. If you want "developer without CTS/Git", create your own role template referencing just `[read, write]`.
@@ -134,7 +144,7 @@ Users assigned to `ARC-1 Developer` role collection automatically gain transport
 #### BTP Cloud Foundry
 
 1. Update `xs-security.json` in your repo (already done in the ARC-1 v0.7 release).
-2. Redeploy the XSUAA service: `cf update-service arc1-xsuaa -c xs-security.json`. This updates scopes and role templates, but does not create role collections from `mta.yaml`.
+2. For an MTA-managed instance, skip a raw service update: the next full MTA deployment applies the scopes, roles, and exact callback route together. For a manually managed instance, update with the route-specific `xs-security.landscape.json`. A service update does not create role collections from `mta.yaml`.
 3. Run the full MTA deployment: `npm run btp:build-deploy-ext` (or `mbt build && cf deploy mta_archives/arc1-mcp_*.mtar -e mta-overrides.mtaext`). If you don't have a `mta-overrides.mtaext` yet, copy it from the tracked `mta-overrides.mtaext.example` first. The base `mta.yaml` is deliberately target-free; the extension preserves the existing single-target names or enables multi-target mode explicitly.
 4. In BTP Cockpit, verify that all seven `ARC-1 … (<space>)` role collections exist and contain roles. Existing assignments survive, but collections added after an older deployment are not created by `cf update-service` alone and must be assigned explicitly.
 5. Test with a developer user: `SAPTransport(action=check)` should succeed with a read-scoped user now; `SAPTransport(action=create)` should succeed for users in `ARC-1 Developer`.

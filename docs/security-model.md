@@ -277,9 +277,12 @@ if the change is *in* one of them.
   verified constant-time; state HMAC-signed + TTL'd; auth-code interception defended by
   registered-`redirect_uri` re-check. The redirect-glob matcher now matches a canonical form
   rebuilt from parsed URL components (fixed in [#387](https://github.com/arc-mcp/arc-1/pull/387);
-  R8), so `\`/`#`/`?` can no longer relocate the parsed host past a wildcard.
-  [`src/server/stateless-client-store.ts`](../src/server/stateless-client-store.ts),
-  [`src/server/oauth-state.ts`](../src/server/oauth-state.ts).
+  R8), so `\`/`#`/`?` can no longer relocate the parsed host past a wildcard. XSUAA's upstream
+  callback list is separately restricted to deployment-owned ARC-1/AppRouter routes; the runtime
+  manual-client list contains only fixed client hosts and native callbacks, with no shared CF/BAS
+  platform wildcard. DCR clients remain exact-bound in their signed client ids.
+  [`src/server/http.ts`](../src/server/http.ts),
+  [`src/server/oauth-redirect-policy.ts`](../src/server/oauth-redirect-policy.ts).
 - **SSRF** — the SAP host is admin-fixed (config / service key / destination); no tool arg reaches
   the host or scheme; `encodeURIComponent` + fixed `/sap/bc/adt/` prefix prevent authority
   relocation. [`src/adt/http.ts`](../src/adt/http.ts).

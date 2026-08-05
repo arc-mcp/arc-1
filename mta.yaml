@@ -255,6 +255,20 @@ resources:
         # xsappname must be unique per SUBACCOUNT — derive it from the space so
         # the same mtar can be deployed into multiple spaces side by side.
         xsappname: arc1-mcp-${space}
+        # XSUAA sees only ARC-1's callback proxy, never the MCP client's final
+        # redirect URI. Keep this upstream list deployment-owned. Manual client
+        # callbacks are independently allowlisted in src/server/oauth-redirect-policy.ts;
+        # DCR callbacks are exact-bound in their signed client_id.
+        oauth2-configuration:
+          redirect-uris:
+            - http://localhost:*/**
+            - ~{arc1-mcp-api/url}/**
+          grant-types:
+            - authorization_code
+            - refresh_token
+            - urn:ietf:params:oauth:grant-type:jwt-bearer
+          token-validity: 3600
+          refresh-token-validity: 2592000
         # Role-collection names are also subaccount-scoped. They live here (not
         # in xs-security.json) because `${space}` is only resolved in descriptor
         # values, not inside the path-referenced JSON. Defining the array here
@@ -293,6 +307,8 @@ resources:
             description: "Full ARC-1 administrative access (admin implies all scopes)"
             role-template-references:
               - "$XSAPPNAME.MCPAdmin"
+    requires:
+      - name: arc1-mcp-api
 
   - name: arc1-destination
     type: org.cloudfoundry.managed-service

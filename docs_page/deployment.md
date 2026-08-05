@@ -168,8 +168,11 @@ ARC-1 deployed on CF, backend is a BTP ABAP (Steampunk) system. No Cloud Connect
 
 SAP auth is **OAuth2 via a BTP Destination with `OAuth2UserTokenExchange`**. The ABAP service key is used to create the destination's OAuth client settings, but it is not mounted into ARC-1 and ARC-1 does not run the local browser flow. Per request, XSUAA authenticates the MCP user, the Destination service exchanges that user token for an ABAP-context bearer token, and SAP sees the real ABAP user.
 
+For a manual non-MTA deployment, first create the route-specific XSUAA file described in
+[XSUAA setup](xsuaa-setup.md#step-1-create-xsuaa-service-instance).
+
 ```bash
-cf create-service xsuaa application arc1-xsuaa -c xs-security.json
+cf create-service xsuaa application arc1-xsuaa -c xs-security.landscape.json
 cf create-service destination lite arc1-destination
 # Create destination ABAP_PP with Authentication=OAuth2UserTokenExchange
 cf set-env arc1-mcp-server SAP_SYSTEM_TYPE btp
