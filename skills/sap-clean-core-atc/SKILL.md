@@ -20,6 +20,12 @@ This is different from [migrate-custom-code](../migrate-custom-code/SKILL.md): t
 
 Source: [SAP/abap-atc-cr-cv-s4hc](https://github.com/SAP/abap-atc-cr-cv-s4hc) — SAP's official machine-readable release state list.
 
+These are the **extensibility** levels (SAP Note 3578329) — which SAP APIs your code calls. SAP
+defines a *separate* A–D scale for **integration** technologies in Note 3690029 (RFC, IDoc, SEGW
+OData, file transfer …), which "complements, but does not overlap with" this one. Same letters,
+different axis: never merge the two into one score. For the integration axis use the Integration
+Interfaces section of [sap-migration-dossier](../sap-migration-dossier/SKILL.md).
+
 ## Smart Defaults (apply silently, do NOT ask)
 
 | Setting | Default | Rationale |
