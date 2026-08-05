@@ -209,7 +209,7 @@ reliable path exists. The template escape hatch remains for anyone who wants to 
 full knowledge of the trade-offs — ARC-1 just does not own that brittleness. A prototype redirect page
 lives at `arc1-abap-bridge/redirect/index.html` for reference.
 
-## The IDE logouts — SOLVED: the ABAP debugger, not ARC-1
+## The IDE logouts — probable cause: the ABAP debugger, not ARC-1
 
 Repeated "Disconnected from destination A4H2023", surfacing misleadingly as
 `NoPermissions (FileSystemError): Method "createDirectory" not yet implemented`.
@@ -225,9 +225,14 @@ Communication Log*):
 ```
 
 The ADT debugger long-polls `POST ../debugger/listeners`. The poll is killed at **60 s** (durations
-60220 ms and 60075 ms — a textbook 60-second `proxy_read_timeout` in the nginx fronting a4h for TLS),
-and after the second consecutive 504 the language server calls `/sap/public/bc/icf/logoff` and
-terminates the session. `adt.debugger.enableDebugger` defaults to **true**, so this runs unprompted.
+60220 ms and 60075 ms — a textbook 60-second `proxy_read_timeout` in the nginx fronting a4h for TLS).
+`adt.debugger.enableDebugger` defaults to **true**, so this runs whether or not you ever debug.
+
+**What is proven vs inferred.** The 504s are certain and wrong on their own terms — a long poll designed
+to hang open should not die every 60 s. That the *logoff* is caused by them is **not** proven: it is one
+sample, and `/sap/public/bc/icf/logoff` is also exactly what a clean IDE shutdown emits, so the 1.7 s gap
+is equally consistent with the window being closed at 16:23:26. Confirmed only if the disconnects stop
+now that the timeout is raised.
 
 **Control experiment.** A plain SAP session with no IDE and no debugger, polled every 5 minutes with
 cookie-only auth (`arc1-abap-bridge/session-monitor.mjs`): **alive at 175 minutes**. The IDE session
@@ -235,8 +240,11 @@ died in ~2 minutes. That rules out an idle/absolute timeout, the per-user mode c
 
 **Fixes**, in preference order:
 
-1. **Raise the reverse-proxy read timeout** for the ADT paths — `proxy_read_timeout 600s;` — so the
-   debugger's long poll survives. Keeps the debugger working. This is the real fix.
+1. **Raise the reverse-proxy read timeout** so the debugger's long poll survives. Keeps the debugger
+   working. Applied 2026-08-05 on the host serving all three test systems, as a single http-level
+   `/etc/nginx/conf.d/sap-proxy-timeout.conf` (`proxy_read_timeout`/`proxy_send_timeout 3600s`) — the
+   three SAP vhosts are the only things that proxy, and revert is `rm` plus a reload. Nothing had set a
+   timeout before, so every vhost sat on nginx's 60 s default.
 2. **`"adt.debugger.enableDebugger": false`** (requires an IDE restart) — instant relief, at the cost of
    ABAP debugging in VS Code.
 
