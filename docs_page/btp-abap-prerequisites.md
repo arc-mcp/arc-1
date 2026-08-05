@@ -20,8 +20,10 @@ straight to the [ARC-1 setup](btp-abap-environment.md).
 
 ## 1. Provision the instance
 
-Follow SAP's [Getting Started with a Customer Account in the ABAP Environment](https://help.sap.com/docs/btp/sap-business-technology-platform/getting-started-with-customer-account-in-abap-environment).
-The instance parameters (cockpit JSON or `cf create-service abap <plan> <name> -c params.json`) are:
+Follow SAP's [Getting Started with a Customer Account in the ABAP Environment](https://help.sap.com/docs/btp/sap-business-technology-platform/getting-started-with-customer-account-in-abap-environment),
+or the tutorial [Get an Account on SAP BTP to Try Out Free Tier Service Plans](https://developers.sap.com/tutorials/btp-free-tier-account..html)
+if you still need the account itself. The instance parameters (cockpit JSON or
+`cf create-service abap <plan> <name> -c params.json`) are:
 
 ```json
 {
@@ -43,7 +45,11 @@ The instance parameters (cockpit JSON or `cf create-service abap <plan> <name> -
     **stopped every night** and must be restarted manually from the **Landscape Portal** (scheduled
     start/stop is not available on this plan) — a stopped system looks to ARC-1 like a connectivity
     failure (`ECONNREFUSED` / timeouts), not an auth problem. Current
-    limits: [Service Plans and Metering](https://help.sap.com/docs/btp/sap-business-technology-platform/service-plans-and-metering-for-sap-btp-abap-environment).
+    limits: [Service Plans and Metering for SAP BTP ABAP environment](https://help.sap.com/docs/btp/sap-business-technology-platform/commercial-information).
+
+No customer account at all? SAP's trial track ends at the same place: mission
+[SAP BTP ABAP Environment: Create a Trial User](https://developers.sap.com/mission.abap-env-trial-user.html)
+· [Create an SAP BTP ABAP Environment Trial User](https://developers.sap.com/tutorials/abap-environment-trial-onboarding..html).
 
 ## 2. Run the booster
 
@@ -69,6 +75,8 @@ needs the **`SAP_BR_DEVELOPER`** business role:
 
 SAP Help: [Assigning the ABAP Developer User to the ABAP Developer Role](https://help.sap.com/docs/btp/sap-business-technology-platform/assigning-abap-developer-user-to-abap-developer-role)
 · [Required Business Roles](https://help.sap.com/docs/sap-btp-abap-environment/abap-environment/required-business-roles).
+For more than a handful of developers, provision them from the identity provider instead of by hand:
+[Provision Users into your SAP BTP ABAP Environment](https://developers.sap.com/tutorials/abap-environment-ips..html).
 
 Without it, ADT and ARC-1 both fail with *"You have not been successfully logged on. Make sure the
 developer role is assigned to the user."*
@@ -108,8 +116,26 @@ or as the OAuth client of a [per-user destination](btp-abap-environment.md#recom
 Before touching ARC-1, connect Eclipse ADT to the system and open one object. It exercises exactly
 the same login and authorization path, and it separates "SAP not ready" from "ARC-1 misconfigured".
 
+Tutorials: [Download the Eclipse IDE and add the ABAP Development Tools (ADT) Plugin](https://developers.sap.com/tutorials/abap-install-adt..html)
+→ [Create an ABAP Cloud Project](https://developers.sap.com/tutorials/abap-environment-create-abap-cloud-project..html)
+(browser logon, or **Use a Service Key** with the key from step 4 — the same key ARC-1 uses).
+
 SAP Help: [Getting Started as a Developer in the ABAP Environment](https://help.sap.com/docs/btp/sap-business-technology-platform/getting-started-as-developer-in-abap-environment-dev)
 · [Connect to the ABAP System](https://help.sap.com/docs/btp/sap-business-technology-platform/connect-to-abap-system).
+
+## Optional: a development package for writes
+
+ARC-1 only needs this if you enable writes. `$TMP` does not exist in the ABAP Environment; the
+software component **`ZLOCAL`** plays that role, and its `ZLOCAL` *structure* package cannot hold
+development objects — you create a development sub-package under it. The SAP tutorial
+[Create Your First ABAP Console Application](https://developers.sap.com/tutorials/abap-environment-console-application..html)
+walks through exactly that step (right-click `ZLOCAL` → **New > ABAP Package**, package type
+*Development*), and ARC-1 can do it itself with `SAPManage(action="create_package")` — see
+[Writing objects on BTP](btp-abap-environment.md#writing-objects-on-btp).
+
+Background: SAP Help [Software Components](https://help.sap.com/docs/sap-btp-abap-environment/abap-environment/software-components)
+· [Manage Software Components](https://help.sap.com/docs/btp/sap-business-technology-platform/manage-software-components)
+(a transportable component instead of local `ZLOCAL`).
 
 ## Troubleshooting (SAP side)
 

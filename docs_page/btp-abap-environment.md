@@ -222,7 +222,7 @@ is the default) and the first `tools/list` may still advertise on-premise types.
 | `SAPContext` | CLAS, INTF, DDLS, TABL — `action="impact"` for CDS blast radius. |
 | `SAPSearch` / `SAPNavigate` | Work; scope is released SAP objects plus custom Z/Y objects. Classic programs and includes are not searchable. |
 | `SAPQuery` | Freestyle SQL needs `SAP_ALLOW_FREE_SQL=true` (table/CDS previews need `SAP_ALLOW_DATA_PREVIEW=true`). Custom tables and released CDS entities (`I_LANGUAGE`, `I_COUNTRY`, …) work; SAP standard tables (`MARA`, `TADIR`, `DD02L`, …) are blocked — the error suggests CDS views. |
-| `SAPTransport` | Works, but `release` triggers a gCTS Git push, not a TMS export. |
+| `SAPTransport` | Works, but `release` triggers a gCTS Git push, not a TMS export — the software-component model, see the tutorial [Transport a Software Component Between two Systems](https://developers.sap.com/tutorials/abap-environment-gcts..html). |
 | `SAPActivate` / `SAPLint` | Unchanged (`SAPLint` runs client-side). |
 | `SAPDiagnose` | ATC works and uses the system's default check variant (`ABAP_CLOUD_DEVELOPMENT_DEFAULT`) unless you pass `variant`. |
 | `SAPManage` | `probe` reports `systemType: "btp"`. |
@@ -245,9 +245,11 @@ the on-premise `adtcore:masterSystem` / `adtcore:responsible` and adds
 Two prerequisites:
 
 1. **Enable writes** — `SAP_ALLOW_WRITES=true`.
-2. **Target a real development package.** `$TMP` does not exist on BTP, and the booster-provided
-   `ZLOCAL` is a *structure* package that cannot contain development objects. Create a development
-   sub-package under `ZLOCAL` (ARC-1 `SAPManage create_package`, or ADT), then allow it:
+2. **Target a real development package.** `$TMP` does not exist on BTP — the software component
+   `ZLOCAL` plays that role, and its `ZLOCAL` *structure* package cannot contain development objects.
+   Create a development sub-package under it with ARC-1 (`SAPManage create_package`) or in ADT
+   ([tutorial](https://developers.sap.com/tutorials/abap-environment-console-application..html), step
+   "Create ABAP package"), then allow it:
 
    ```bash
    SAP_ALLOW_WRITES=true
@@ -322,7 +324,7 @@ same subaccount → `OAuth2UserTokenExchange`, different subaccounts → `SAMLAs
    `OAuth2SAMLBearerAssertion`) and register the source subaccount's Destination service as a trusted
    IdP in the ABAP environment's subaccount — see
    [OAuth SAML Bearer Assertion Authentication](https://help.sap.com/docs/connectivity/sap-btp-connectivity-cf/oauth-saml-bearer-assertion-authentication)
-   and [Setting up Trust Between Systems](https://help.sap.com/docs/connectivity/sap-btp-connectivity-cf/setting-up-trust-between-systems-for-saml-bearer-assertion-flows).
+   and [User Propagation via SAML 2.0 Bearer Assertion Flow](https://help.sap.com/docs/connectivity/sap-btp-connectivity-cf/user-propagation-via-saml-2-0-bearer-assertion-flow).
    ARC-1 needs no change — it consumes both the assertion and the bearer token the Destination
    service returns (this is the same code path S/4HANA Public Cloud uses, verified there rather than
    on the ABAP Environment).
