@@ -304,7 +304,7 @@ If you deploy ARC-1 behind a reverse proxy (nginx, Envoy, etc.) outside of Cloud
 | `manifest-btp-abap.yml` | CF deployment manifest (BTP ABAP via per-user destination) | Yes — set the destination name and safety flags; do not mount the ABAP service key into ARC-1 |
 | `Dockerfile` | Multi-stage Alpine build, all env vars documented | Rarely — use env vars for config |
 | `.env.example` | Template for local `.env` file | Yes — copy to `.env` and fill in |
-| `xs-security.json` | XSUAA scopes, roles, redirect URIs | Yes — add redirect URIs for your MCP clients |
+| `xs-security.json` | XSUAA scopes, roles, and localhost development callback | Manual deployments: copy it to a landscape-specific file and add only ARC-1's exact public proxy route. MTA injects that route automatically; MCP client callbacks are enforced separately at runtime/DCR. |
 | `bin/arc1.js` | npm global CLI entry point | No |
 
 ## Deploying Without Docker

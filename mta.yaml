@@ -255,21 +255,14 @@ resources:
         # xsappname must be unique per SUBACCOUNT — derive it from the space so
         # the same mtar can be deployed into multiple spaces side by side.
         xsappname: arc1-mcp-${space}
-        # Scope the OAuth redirect to THIS deployment's route (${default-url})
-        # instead of the broad `*.hana.ondemand.com` domain wildcard. Arrays
-        # replace, so the full list is re-stated here; add the AppRouter's own
-        # route when the optional UI (mta-ui-approuter.mtaext) is activated.
+        # XSUAA sees only ARC-1's callback proxy, never the MCP client's final
+        # redirect URI. Keep this upstream list deployment-owned. Manual client
+        # callbacks are independently allowlisted in src/server/oauth-redirect-policy.ts;
+        # DCR callbacks are exact-bound in their signed client_id.
         oauth2-configuration:
           redirect-uris:
             - http://localhost:*/**
             - ~{arc1-mcp-api/url}/**
-            - https://*.applicationstudio.cloud.sap/**
-            - https://claude.ai/api/mcp/auth_callback
-            - https://callback.mistral.ai/v1/integrations_auth/oauth2_callback
-            - cursor://anysphere.cursor-retrieval/**
-            - cursor://anysphere.cursor-mcp/**
-            - vscode://vscode.microsoft-authentication/**
-            - https://global.consent.azure-apim.net/redirect/**
           grant-types:
             - authorization_code
             - refresh_token

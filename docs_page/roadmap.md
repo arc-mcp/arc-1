@@ -2613,7 +2613,7 @@ Verified empirically against live XSUAA with an [8-scenario spectrum reproducer]
 - New `/oauth/callback` route decodes the token and 302-redirects to the client, re-emitting the original `state` via `URL.searchParams` (encodes `+` as `%2B`). Invalid / expired / forged tokens → `400` (no open redirect — the redirect target lives inside the verified token). Rate-limited like the other OAuth endpoints.
 - `exchangeAuthorizationCode()` sends the same `/oauth/callback` so the token-exchange `redirect_uri` matches authorize.
 
-Transparent to every client shape (native loopback, browser redirect, browser popup); each now gets its exact original `state` back. No `xs-security.json` change needed — the callback matches the existing `https://*.hana.ondemand.com/**` / `http://localhost:*/**` wildcards.
+Transparent to every client shape (native loopback, browser redirect, browser popup); each now gets its exact original `state` back. The later deployment hardening replaced the shared CF wildcard with the exact deployment-owned ARC-1 callback route; localhost remains available for local development.
 
 **Removal condition (when this workaround can be deleted):** ONLY when **XSUAA stops emitting a literal `+`** (emits `%2B`) for `state`. That is the actual root-cause defect; no public SAP Note tracks it as of 2026-06. Re-run the issue #214 spectrum reproducer against the target tenant to check.
 

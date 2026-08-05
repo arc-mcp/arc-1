@@ -261,8 +261,11 @@ SAP documents `OAuth2UserTokenExchange` for applications that need to call anoth
 
 ARC-1 needs an XSUAA instance (for MCP-client login) and a Destination service instance. No Connectivity service is needed, because there is no Cloud Connector.
 
+For a manual non-MTA deployment, first create the route-specific XSUAA file described in
+[XSUAA setup](xsuaa-setup.md#step-1-create-xsuaa-service-instance).
+
 ```bash
-cf create-service xsuaa application arc1-xsuaa -c xs-security.json
+cf create-service xsuaa application arc1-xsuaa -c xs-security.landscape.json
 cf create-service destination lite arc1-destination
 ```
 

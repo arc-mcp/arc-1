@@ -72,16 +72,7 @@
     }
   ],
   "oauth2-configuration": {
-    "redirect-uris": [
-      "http://localhost:*/**",
-      "https://*.applicationstudio.cloud.sap/**",
-      "https://claude.ai/api/mcp/auth_callback",
-      "https://callback.mistral.ai/v1/integrations_auth/oauth2_callback",
-      "cursor://anysphere.cursor-retrieval/**",
-      "cursor://anysphere.cursor-mcp/**",
-      "vscode://vscode.microsoft-authentication/**",
-      "https://global.consent.azure-apim.net/redirect/**"
-    ],
+    "redirect-uris": ["http://localhost:*/**"],
     "grant-types": ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:jwt-bearer"],
     "token-validity": 3600,
     "refresh-token-validity": 2592000
