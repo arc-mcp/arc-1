@@ -71,14 +71,10 @@ service instance (`cf create-service destination lite arc1-destination -c dest.j
 }}}
 ```
 
-| Property | Value |
-|---|---|
-| **Type** | `HTTP` |
-| **URL** | service key `url` — the **`.abap.`** API host, never the `.abap-web.` Fiori host |
-| **Proxy Type** | `Internet` (no Cloud Connector) |
-| **Authentication** | `OAuth2UserTokenExchange` |
-| **Token Service URL** | `<uaa.url>/oauth/token` |
-| **Client ID / Secret** | service key `uaa.clientid` / `uaa.clientsecret` |
+`URL` is the service key's `url` — the **`.abap.`** API host, never the `.abap-web.` Fiori host.
+`ProxyType: Internet` is what keeps ARC-1 off the Cloud Connector proxy. In the cockpit the same
+fields appear as *Token Service URL*, *Client ID* and *Client Secret*
+([property reference](https://help.sap.com/docs/connectivity/sap-btp-connectivity-cf/oauth-user-token-exchange-authentication)).
 
 !!! warning "`OAuth2UserTokenExchange` requires the same subaccount"
     It is an XSUAA→XSUAA exchange *inside one identity zone*: ARC-1 and the ABAP Environment must sit
@@ -147,56 +143,36 @@ or the CLI flags `--btp-service-key-file` / `--btp-service-key`.
 
 ### MCP client configuration
 
-=== "Claude Desktop / Claude Code"
+Two env vars in the client's stdio server entry — the rest of the file follows your client's normal
+format ([Install in Claude](install-in-claude.md), [Local Development](local-development.md#mcp-client-configuration)):
 
-    ```json
-    {
-      "mcpServers": {
-        "arc-1-btp": {
-          "command": "npx",
-          "args": ["-y", "arc-1"],
-          "env": {
-            "SAP_BTP_SERVICE_KEY_FILE": "/path/to/service-key.json",
-            "SAP_SYSTEM_TYPE": "btp"
-          }
-        }
+```json
+{
+  "mcpServers": {
+    "arc-1-btp": {
+      "command": "npx",
+      "args": ["-y", "arc-1"],
+      "env": {
+        "SAP_BTP_SERVICE_KEY_FILE": "/path/to/service-key.json",
+        "SAP_SYSTEM_TYPE": "btp"
       }
     }
-    ```
-
-=== "VS Code (Copilot Chat)"
-
-    ```json
-    {
-      "servers": {
-        "arc-1-btp": {
-          "command": "arc1",
-          "env": {
-            "SAP_BTP_SERVICE_KEY_FILE": "${userHome}/.config/arc-1/btp-service-key.json",
-            "SAP_SYSTEM_TYPE": "btp"
-          }
-        }
-      }
-    }
-    ```
+  }
+}
+```
 
 Docker works the same way (`-e SAP_BTP_SERVICE_KEY_FILE=…` with the key mounted), but only for a local
 interactive run where your browser can reach the container's callback port.
 
 ### First login
 
-1. Make any tool call in your MCP client (e.g. "search for ABAP classes").
-2. A browser window opens on the BTP login page — authenticate (IAS, SAP ID service, Entra ID, …).
-3. The browser shows "Authentication Successful"; the tool call completes.
-4. Later calls reuse the cached token. When the ~12 h access token expires, ARC-1 refreshes it
-   silently; only an expired refresh token triggers another browser login.
-
-Under the hood: ARC-1 reads `url` + `uaa` from the service key, starts a callback listener bound to
-`localhost` (port from `SAP_BTP_OAUTH_CALLBACK_PORT`, auto by default), runs the Authorization Code
-flow with PKCE and a `state` check, then sends `Authorization: Bearer <token>` on every ADT call.
-CSRF and cookie handling are identical to on-premise. If no browser can be opened (macOS `open`,
-Linux `xdg-open`, Windows `start`), the authorization URL is logged to stderr — usable only if that
-browser can still reach the loopback callback.
+Make any tool call; a browser opens on the BTP login page (IAS, SAP ID service, Entra ID, …), and the
+call completes once you authenticate. ARC-1 runs the Authorization Code flow with PKCE and a `state`
+check against a callback listener bound to `localhost` (`SAP_BTP_OAUTH_CALLBACK_PORT`, auto by
+default), then sends `Authorization: Bearer <token>` on every ADT call — CSRF and cookies behave as
+on-premise. The ~12 h access token is refreshed silently; only an expired refresh token means another
+browser login. When no browser can be launched, the authorization URL goes to stderr — usable only if
+that browser can still reach the loopback callback, which rules out most remote hosts.
 
 ### Smoke test
 
@@ -245,11 +221,10 @@ the on-premise `adtcore:masterSystem` / `adtcore:responsible` and adds
 Two prerequisites:
 
 1. **Enable writes** — `SAP_ALLOW_WRITES=true`.
-2. **Target a real development package.** `$TMP` does not exist on BTP — the software component
-   `ZLOCAL` plays that role, and its `ZLOCAL` *structure* package cannot contain development objects.
-   Create a development sub-package under it with ARC-1 (`SAPManage create_package`) or in ADT
-   ([tutorial](https://developers.sap.com/tutorials/abap-environment-console-application..html), step
-   "Create ABAP package"), then allow it:
+2. **Target a real development package** — not `$TMP` (does not exist here) and not the structure
+   package `ZLOCAL`. Create a development sub-package under `ZLOCAL`
+   ([prerequisites, step 6](btp-abap-prerequisites.md#6-a-development-package-writes-only)), then
+   allow it:
 
    ```bash
    SAP_ALLOW_WRITES=true
@@ -267,15 +242,16 @@ Two prerequisites:
 
 ## Constraints vs On-Premise
 
-| Area | Constraint |
-|---|---|
-| ABAP language | Restricted "ABAP for Cloud Development" |
-| APIs | Only C1-released objects are accessible |
-| Tooling | ADT only — no SAP GUI |
-| Packages | Customer namespaces (`Z*`/`Y*`) only |
-| Transports | gCTS / software components instead of classic TMS |
-| Table preview | Off by default; `SAP_ALLOW_DATA_PREVIEW=true` and the backend may still restrict standard tables |
-| Free SQL | `SAP_ALLOW_FREE_SQL=true` required; custom tables and released CDS views are the practical targets |
+The system is **ABAP Cloud**: restricted "ABAP for Cloud Development", only C1-released APIs, ADT only
+(no SAP GUI), `Z`/`Y` namespaces, and gCTS software components instead of classic TMS — SAP's
+[ABAP Cloud Development Model](https://help.sap.com/docs/abap-cloud/abap-cloud/abap-cloud-in-nutshell)
+is the reference. What that changes for ARC-1:
+
+- Types the platform has no concept of are removed from the tool schemas — see
+  [What to expect](#what-to-expect-on-btp-abap).
+- Data access stays behind the usual opt-ins (`SAP_ALLOW_DATA_PREVIEW`, `SAP_ALLOW_FREE_SQL`), and the
+  backend blocks SAP standard tables even when you enable them.
+- `SAPTransport release` is a Git push, so transport-shaped workflows behave differently.
 
 ## Configuration Reference
 
@@ -365,6 +341,6 @@ Free-tier instances are stopped automatically; restart from the Landscape Portal
 - [SAP-Side Prerequisites](btp-abap-prerequisites.md) — provisioning, booster, developer role, service key
 - [BTP Cloud Foundry Deployment](btp-cloud-foundry-deployment.md) · [BTP Destination Setup](btp-destination-setup.md) · [Principal Propagation](principal-propagation-setup.md)
 - [S/4HANA Public Cloud](s4hana-public-cloud.md) — the sibling ABAP Cloud setup (`SAMLAssertion`)
-- SAP: [OAuth User Token Exchange Authentication](https://help.sap.com/docs/connectivity/sap-btp-connectivity-cf/oauth-user-token-exchange-authentication) · [Destination Authentication Methods](https://help.sap.com/docs/btp/btp-admin-guide/destination-authentication-methods) · [Routing via Destination](https://help.sap.com/docs/ABAP_ENVIRONMENT/250515df61b74848810389e964f8c367/97d7a02cd6fd4f579fd96f41ee0d0c1d.html)
+- SAP: [OAuth User Token Exchange Authentication](https://help.sap.com/docs/connectivity/sap-btp-connectivity-cf/oauth-user-token-exchange-authentication) · [Routing via Destination](https://help.sap.com/docs/ABAP_ENVIRONMENT/250515df61b74848810389e964f8c367/97d7a02cd6fd4f579fd96f41ee0d0c1d.html)
 - Testing ARC-1 against a BTP ABAP system (contributors): [Authentication Test Process](auth-test-process.md#btp-abap-environment-service-key)
 - Design background: [BTP ABAP Environment connectivity report](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/completed/2026-04-01-btp-abap-environment-connectivity.md)
