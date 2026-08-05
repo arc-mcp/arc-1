@@ -413,6 +413,11 @@ export interface FixDelta {
 export interface SyntaxCheckResult {
   hasErrors: boolean;
   messages: SyntaxMessage[];
+  /** False when SAP refused to check (`chkrun:status="notProcessed"`, e.g. the object does not exist
+   *  yet) — an empty `messages` then means "nothing was checked", NOT "clean". */
+  checked: boolean;
+  /** SAP's `chkrun:statusText`, e.g. "Resource CLASS ZCL_X does not exist." */
+  statusText?: string;
 }
 
 export interface SyntaxMessage {

@@ -1098,7 +1098,8 @@ export async function runPreWriteSyntaxCheck(
 
   try {
     const result = await syntaxCheck(client.http, client.safety, objectUrl, { content: source, version: 'active' });
-    if (result.messages.length === 0) return '';
+    // Object not created yet → SAP checked nothing. Silent: pre-write on a create is the normal case.
+    if (!result.checked || result.messages.length === 0) return '';
 
     const errors = result.messages.filter((m) => m.severity === 'error');
     const warnings = result.messages.filter((m) => m.severity === 'warning');
@@ -1131,7 +1132,7 @@ export async function inactiveSyntaxDiagnostic(client: AdtClient, type: string, 
     const checkResult = await syntaxCheck(client.http, client.safety, objectUrlForType(type, name), {
       version: 'inactive',
     });
-    if (!checkResult.hasErrors) return '';
+    if (!checkResult.checked || !checkResult.hasErrors) return '';
 
     const errors = checkResult.messages.filter((msg) => msg.severity === 'error');
     if (errors.length === 0) return '';

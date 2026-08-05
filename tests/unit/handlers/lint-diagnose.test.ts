@@ -343,6 +343,37 @@ ENDCLASS.`;
     });
   });
 
+  describe('SAPDiagnose syntax', () => {
+    it('never reports clean when the object does not exist (SAP checked nothing)', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL) => {
+        if (String(url).includes('/checkruns')) {
+          return Promise.resolve(
+            mockResponse(
+              200,
+              `<?xml version="1.0" encoding="utf-8"?><chkrun:checkRunReports xmlns:chkrun="http://www.sap.com/adt/checkrun"><chkrun:checkReport chkrun:reporter="abapCheckRun" chkrun:status="notProcessed" chkrun:statusText="Resource CLASS ZCL_DOES_NOT_EXIST does not exist."/></chkrun:checkRunReports>`,
+            ),
+          );
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 't' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPDiagnose', {
+        action: 'syntax',
+        type: 'CLAS',
+        name: 'ZCL_DOES_NOT_EXIST',
+        source: 'CLASS zcl_x DEFINITION.\nENDCLASS.\nCLASS zcl_x IMPLEMENTATION.\nrv = 42 +.\nENDCLASS.',
+      });
+
+      expect(result.isError).toBeUndefined();
+      const payload = JSON.parse(result.content[0]?.text);
+      expect(payload.checked).toBe(false);
+      expect(payload.hasErrors).toBe(true);
+      expect(payload.messages[0].text).toContain('does not exist');
+      expect(payload.messages[0].text).toContain('Not checked');
+    });
+  });
+
   describe('SAPDiagnose object_state', () => {
     it('compares CLAS main and include active/inactive versions', async () => {
       mockFetch.mockReset();

@@ -67,6 +67,24 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
         objectUrl,
         Object.keys(opts).length > 0 ? opts : undefined,
       );
+      // Fail closed: SAP checked nothing (object does not exist yet) → never report "clean", or
+      // callers read hasErrors:false as "SAP will accept this source".
+      if (!result.checked) {
+        return textResult(
+          toolJson({
+            ...result,
+            hasErrors: true,
+            messages: [
+              {
+                severity: 'error',
+                text: `Not checked — ${(result.statusText || 'SAP did not process this check').replace(/\.$/, '')}. The source was NOT validated; create the object first (SAPWrite action="create"), then re-run the syntax check.`,
+                line: 0,
+                column: 0,
+              },
+            ],
+          }),
+        );
+      }
       return textResult(toolJson(result));
     }
     case 'unittest': {

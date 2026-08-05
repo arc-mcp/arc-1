@@ -198,6 +198,28 @@ describe('DevTools', () => {
         expect(result.messages.find((m) => m.text === 'New shape error')?.line).toBe(22);
       });
     });
+
+    // Live-verified on a4h (2026-08-05): SAP answers 200 with an empty, notProcessed report for an
+    // object that does not exist — must never read as "checked, clean".
+    it('reports checked:false when SAP did not process the check (object does not exist)', async () => {
+      const xml = `<?xml version="1.0" encoding="utf-8"?><chkrun:checkRunReports xmlns:chkrun="http://www.sap.com/adt/checkrun"><chkrun:checkReport chkrun:reporter="abapCheckRun" chkrun:triggeringUri="/sap/bc/adt/oo/classes/zcl_nope" chkrun:status="notProcessed" chkrun:statusText="Resource CLASS ZCL_NOPE does not exist."/></chkrun:checkRunReports>`;
+      const http = mockHttp(xml);
+      const result = await syntaxCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/zcl_nope', {
+        content: 'CLASS zcl_nope DEFINITION. rv = 42 +.',
+      });
+      expect(result.checked).toBe(false);
+      expect(result.statusText).toBe('Resource CLASS ZCL_NOPE does not exist.');
+      expect(result.messages).toHaveLength(0);
+    });
+
+    it('reports checked:true for a processed report', async () => {
+      const xml = `<?xml version="1.0" encoding="utf-8"?><chkrun:checkRunReports xmlns:chkrun="http://www.sap.com/adt/checkrun"><chkrun:checkReport chkrun:reporter="abapCheckRun" chkrun:status="processed" chkrun:statusText="Object ZTEST has been checked"/></chkrun:checkRunReports>`;
+      const http = mockHttp(xml);
+      const result = await syntaxCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/programs/programs/ZTEST');
+      expect(result.checked).toBe(true);
+      expect(result.hasErrors).toBe(false);
+      expect(result.statusText).toBeUndefined();
+    });
   });
 
   // ─── prettyPrint ──────────────────────────────────────────────────

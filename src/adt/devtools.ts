@@ -1078,9 +1078,17 @@ function parseSyntaxCheckResult(xml: string): SyntaxCheckResult {
     };
   });
 
+  // SAP reports refusal to check via <chkrun:checkReport chkrun:status="notProcessed"
+  // chkrun:statusText="Resource CLASS ZCL_X does not exist."/> — with zero messages, which would
+  // otherwise read as "clean". Legacy <msg> shapes carry no report → treat as checked.
+  const reports = findDeepNodes(parsed, 'checkReport');
+  const unprocessed = reports.find((r) => r['@_status'] && String(r['@_status']) !== 'processed');
+
   return {
     hasErrors: messages.some((m) => m.severity === 'error'),
     messages,
+    checked: !unprocessed,
+    ...(unprocessed ? { statusText: decodeXmlEntities(String(unprocessed['@_statusText'] ?? '')) } : {}),
   };
 }
 
