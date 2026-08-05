@@ -1,5 +1,15 @@
 # Updating ARC-1
 
+!!! warning "BTP/XSUAA upgrade action"
+    After upgrading an existing BTP Cloud Foundry deployment, run one full MTA redeploy so XSUAA
+    replaces the shared-platform redirect wildcards with this deployment's exact ARC-1 route.
+    Existing bindings, tokens, DCR client IDs, roles, and assignments remain valid. Manual/non-MTA
+    deployments and installations with a custom `ARC1_PUBLIC_URL` must first add that exact public
+    route to a landscape-specific XSUAA configuration—do not apply the raw `xs-security.json` to an
+    MTA-managed service. The optional AppRouter now uses the stable
+    `arc1-ui-${space-guid}` host, so existing UI deployments should verify their URL after redeploying.
+    See [XSUAA setup](xsuaa-setup.md#step-1-create-xsuaa-service-instance).
+
 ## v1.0 — upgrading from 0.9.x
 
 From `1.0` ARC-1 follows [semantic versioning](https://semver.org/): a breaking change to the MCP tool
