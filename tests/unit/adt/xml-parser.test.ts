@@ -1452,6 +1452,102 @@ describe('XML Parser', () => {
   // ─── parseSourceSearchResults ─────────────────────────────────────────
 
   describe('parseSourceSearchResults', () => {
+    // Shape captured from a live on-premise system (SAP_BASIS 816). Object names
+    // and the highlighted term are anonymised; the structure is verbatim.
+    const liveTextSearchXml = `<?xml version="1.0" encoding="utf-8"?>
+<textsearch:textSearchResult numberOfResults="2" totalNumberOfResults="-1" queryTimeMillis="0" xmlns:textsearch="http://www.sap.com/adt/ris/textsearch">
+<textsearch:textSearchObjects>
+<textsearch:textSearchObject uri="/sap/bc/adt/repository/proxyurimappings?id=sris.objectType&amp;content=objectType%3aCLASI%2cobjectName%3aZCL_DEMO%3d%3d%3d%3d%3d%3d%3d%3d%3dCCAU" parentUri="/sap/bc/adt/repository/proxyurimappings?id=sris.objectType&amp;content=objectType%3aCLASOC%2cobjectName%3aZCL_DEMO" isResult="false">
+<textsearch:adtMainObject adtcore:name="Test Classes" adtcore:type="CLAS/I" adtcore:description="Include" xmlns:adtcore="http://www.sap.com/adt/core"/>
+<textsearch:textLines>
+<textsearch:textLine uri="/sap/bc/adt/repository/proxyurimappings?id=sedi.include&amp;content=ZCL_DEMO%3d%3d%3d%3d%3d%3d%3d%3d%3dCCAU%23start%3d51%2c0%3bend%3d51%2c0">
+<textsearch:content>... &lt;b&gt;lv_flag&lt;/b&gt; = lv_ok ).
+...</textsearch:content>
+</textsearch:textLine>
+<textsearch:textLine uri="/sap/bc/adt/repository/proxyurimappings?id=sedi.include&amp;content=ZCL_DEMO%3d%3d%3d%3d%3d%3d%3d%3d%3dCCAU%23start%3d150%2c0%3bend%3d150%2c0">
+<textsearch:content>... &lt;b&gt;lv_flag&lt;/b&gt; = abap_true....</textsearch:content>
+</textsearch:textLine>
+</textsearch:textLines>
+</textsearch:textSearchObject>
+<textsearch:textSearchObject uri="/sap/bc/adt/repository/proxyurimappings?id=sris.objectType&amp;content=objectType%3aPROGP%2cobjectName%3aZDEMO_REPORT" parentUri="/sap/bc/adt/repository/proxyurimappings?id=sris.objectType&amp;content=objectType%3aDEVCK%2cobjectName%3a%24TMP" isResult="true">
+<textsearch:adtMainObject adtcore:name="ZDEMO_REPORT" adtcore:type="PROG/P" adtcore:description="Demo report" xmlns:adtcore="http://www.sap.com/adt/core"/>
+<textsearch:textLines>
+<textsearch:textLine uri="/sap/bc/adt/repository/proxyurimappings?id=sedi.program&amp;content=ZDEMO_REPORT%23start%3d7%2c0%3bend%3d7%2c0">
+<textsearch:content>... DATA(&lt;b&gt;lv_flag&lt;/b&gt;) = abap_false....</textsearch:content>
+</textsearch:textLine>
+</textsearch:textLines>
+</textsearch:textSearchObject>
+<textsearch:textSearchObject uri="/sap/bc/adt/repository/proxyurimappings?id=sris.objectType&amp;content=objectType%3aCLASOC%2cobjectName%3aZCL_DEMO" parentUri="/sap/bc/adt/repository/proxyurimappings?id=sris.objectType&amp;content=objectType%3aDEVCK%2cobjectName%3a%24TMP" isResult="false">
+<textsearch:adtMainObject adtcore:name="ZCL_DEMO" adtcore:type="CLAS/OC" adtcore:description="Demo class" xmlns:adtcore="http://www.sap.com/adt/core"/>
+</textsearch:textSearchObject>
+<textsearch:textSearchObject uri="/sap/bc/adt/repository/proxyurimappings?id=sris.objectType&amp;content=objectType%3aDEVCK%2cobjectName%3a%24TMP" isResult="false">
+<textsearch:adtMainObject adtcore:name="$TMP" adtcore:type="DEVC/K" adtcore:description="Local objects" xmlns:adtcore="http://www.sap.com/adt/core"/>
+</textsearch:textSearchObject>
+</textsearch:textSearchObjects>
+</textsearch:textSearchResult>`;
+
+    it('parses the live textsearch format, decoding object names and line numbers', () => {
+      const results = parseSourceSearchResults(liveTextSearchXml);
+
+      // The owning class and the $TMP package come back as textLine-less tree
+      // nodes and are dropped; only the two objects with hits survive.
+      expect(results).toHaveLength(2);
+
+      // The '=' padding of the class include is stripped, and the type comes
+      // from adtMainObject so the caller can still tell it is an include.
+      expect(results[0]?.objectName).toBe('ZCL_DEMO');
+      expect(results[0]?.objectType).toBe('CLAS/I');
+      expect(results[0]?.matches).toHaveLength(2);
+      expect(results[0]?.matches[0]).toEqual({ line: 51, snippet: '... lv_flag = lv_ok ). ...' });
+      expect(results[0]?.matches[1]?.line).toBe(150);
+
+      expect(results[1]?.objectName).toBe('ZDEMO_REPORT');
+      expect(results[1]?.objectType).toBe('PROG/P');
+      expect(results[1]?.matches[0]).toEqual({ line: 7, snippet: '... DATA(lv_flag) = abap_false....' });
+    });
+
+    it('names top-level hits after the object, not the package in parentUri', () => {
+      // Regression: preferring parentUri reported every top-level object as the
+      // name of its package, because parentUri is the tree parent — the owning
+      // class for an include, but the package for a top-level object.
+      const results = parseSourceSearchResults(liveTextSearchXml);
+      expect(results.map((r) => r.objectName)).not.toContain('$TMP');
+    });
+
+    it('decodes XML entities in the result uri', () => {
+      const results = parseSourceSearchResults(liveTextSearchXml);
+      expect(results[0]?.uri).toContain('&content=');
+      expect(results[0]?.uri).not.toContain('&amp;');
+    });
+
+    it('reads the line number from the position: form used by non-source editors', () => {
+      // XSLT hits carry ",position:25" instead of a "#start=25,0" fragment.
+      const xml = `<?xml version="1.0" encoding="utf-8"?>
+<textsearch:textSearchResult numberOfResults="1" totalNumberOfResults="-1" queryTimeMillis="0" xmlns:textsearch="http://www.sap.com/adt/ris/textsearch">
+<textsearch:textSearchObjects>
+<textsearch:textSearchObject uri="/sap/bc/adt/repository/proxyurimappings?id=sris.objectType&amp;content=objectType%3aXSLTVT%2cobjectName%3aZDEMO_XSLT" isResult="true">
+<textsearch:adtMainObject adtcore:name="ZDEMO_XSLT" adtcore:type="XSLT/VT" xmlns:adtcore="http://www.sap.com/adt/core"/>
+<textsearch:textLines>
+<textsearch:textLine uri="/sap/bc/adt/repository/proxyurimappings?id=sris.objectType&amp;content=objectType%3aXSLTVT%2cobjectName%3aZDEMO_XSLT%2cposition%3a25">
+<textsearch:content>... &lt;tt:value ref="&lt;b&gt;LV_FLAG&lt;/b&gt;"/&gt; ...</textsearch:content>
+</textsearch:textLine>
+</textsearch:textLines>
+</textsearch:textSearchObject>
+</textsearch:textSearchObjects>
+</textsearch:textSearchResult>`;
+      const results = parseSourceSearchResults(xml);
+      expect(results[0]?.objectName).toBe('ZDEMO_XSLT');
+      expect(results[0]?.matches[0]?.line).toBe(25);
+    });
+
+    it('returns an empty array for an empty live textsearch result', () => {
+      const xml = `<?xml version="1.0" encoding="utf-8"?>
+<textsearch:textSearchResult numberOfResults="0" totalNumberOfResults="0" queryTimeMillis="0" xmlns:textsearch="http://www.sap.com/adt/ris/textsearch">
+<textsearch:textSearchObjects/>
+</textsearch:textSearchResult>`;
+      expect(parseSourceSearchResults(xml)).toEqual([]);
+    });
+
     it('extracts textSearchResult matches with line and snippet', () => {
       const xml = `<?xml version="1.0" encoding="utf-8"?>
 <adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core" xmlns:txt="http://www.sap.com/adt/textsearch">

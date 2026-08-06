@@ -350,24 +350,26 @@ export function detectSystemType(
 /**
  * Probe text search (source_code) availability with a real request.
  *
- * Unlike HEAD-based feature probes, this does a real GET with a query
- * to detect auth, SICF, and framework errors that HEAD doesn't surface.
+ * Unlike HEAD-based feature probes, this does a real GET to detect auth,
+ * SICF, and framework errors that HEAD doesn't surface.
+ *
+ * It hits the dedicated `textsearch/support` sub-resource rather than running
+ * an actual search: it answers the same question, costs no repository scan
+ * (measured ~300 ms vs. seconds for a real query), and cannot be mistaken for
+ * a search that legitimately found nothing. The `db` parameter is part of the
+ * advertised template and is required — `support` without it returns 404.
  */
 export async function probeTextSearch(client: AdtHttpClient): Promise<{ available: boolean; reason?: string }> {
   try {
-    await client.get(
-      '/sap/bc/adt/repository/informationsystem/textSearch?searchString=SY-SUBRC&maxResults=1',
-      undefined,
-      {
-        probe: true,
-      },
-    );
+    await client.get('/sap/bc/adt/repository/informationsystem/textsearch/support?db=', undefined, {
+      probe: true,
+    });
     return { available: true };
   } catch (err: unknown) {
     if (err && typeof err === 'object' && 'statusCode' in err) {
       return classifyTextSearchError((err as { statusCode: number }).statusCode);
     }
-    return { available: false, reason: 'Network error — cannot reach the textSearch endpoint.' };
+    return { available: false, reason: 'Network error — cannot reach the textsearch endpoint.' };
   }
 }
 
@@ -383,7 +385,9 @@ export function classifyTextSearchError(statusCode: number): { available: boolea
       return {
         available: false,
         reason:
-          'textSearch ICF service not activated — activate /sap/bc/adt/repository/informationsystem/textSearch in SICF.',
+          'The textsearch endpoint is not available on this system — ADT answered "No suitable resource found". ' +
+          'This is the generic reply for any URI the ADT handler does not map, so confirm the collection is ' +
+          'missing from /sap/bc/adt/discovery before asking Basis to activate anything in SICF.',
       };
     case 500:
       return { available: false, reason: 'Search framework error (component BC-DWB-AIE) — check SAP Note 3605050.' };

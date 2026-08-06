@@ -83,6 +83,8 @@ const ARRAY_TAGS = new Set([
   'proposal',
   'referencedObject',
   'textSearchResult',
+  'textSearchObject',
+  'textLine',
   'testClass',
   'testMethod',
   'alert',
@@ -603,15 +605,105 @@ function normalizeDiscoveryPath(href: string): string | undefined {
   return path;
 }
 
+/** Pull `objectName` out of an ADT proxy-URI mapping.
+ *
+ *  Text-search results do not carry the object name as an attribute; it is
+ *  URL-encoded inside the `content` query parameter, e.g.
+ *  `…?id=sris.objectType&content=objectType%3aCLASI%2cobjectName%3aZCL_FOO%3d%3d%3dCCAU`.
+ *  Class includes are padded to 30 characters with `=` and given a 4-character
+ *  suffix (CCAU, CCIMP, …); the padding is dropped so the caller sees the
+ *  enclosing class it recognises rather than `ZCL_FOO=========CCAU`. */
+function parseProxyUriObjectName(uri: string): string {
+  if (!uri) return '';
+  const content = /[?&]content=([^&]*)/.exec(uri.replace(/&amp;/g, '&'));
+  if (!content) return '';
+  let decoded = content[1];
+  try {
+    decoded = decodeURIComponent(decoded);
+  } catch {
+    // Malformed percent-encoding — fall through with the raw value.
+  }
+  const named = /objectName:([^,#]+)/i.exec(decoded);
+  const raw = named ? named[1] : decoded.split('#')[0];
+  return raw.replace(/=+.*$/, '').trim();
+}
+
+/** Pull the 1-based line number out of a textLine proxy URI.
+ *
+ *  Two encodings occur, depending on the editor the hit maps to: source-backed
+ *  objects carry an `#start=51,0;end=51,0` fragment, while others (XSLT, for
+ *  one) carry a `,position:25` segment instead. Returns 0 when neither is
+ *  present, which keeps the snippet usable even without a line number. */
+function parseTextLineNumber(uri: string): number {
+  if (!uri) return 0;
+  let decoded = uri.replace(/&amp;/g, '&');
+  try {
+    decoded = decodeURIComponent(decoded);
+  } catch {
+    // Malformed percent-encoding — fall through with the raw value.
+  }
+  const match = /#start=(\d+)/.exec(decoded) ?? /\bposition:(\d+)/.exec(decoded);
+  return match ? Number(match[1]) : 0;
+}
+
+/** Strip the `<b>` markers ADT wraps around the hit and collapse the surrounding
+ *  whitespace, which arrives with the server's own line breaks and ellipses. */
+function cleanTextSearchSnippet(raw: unknown): string {
+  return decodeXmlEntities(String(raw ?? ''))
+    .replace(/<\/?b>/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 /**
  * Parse ADT source/text search results.
  *
- * The textSearch endpoint returns results as either XML with objectReference elements
- * containing match details, or an Atom-like feed. We handle both formats.
+ * The live `informationsystem/textsearch` endpoint answers with a
+ * `textsearch:textSearchResult` document:
+ *
+ *   <textsearch:textSearchObject uri="…objectName%3aZCL_FOO…" parentUri="…" isResult="false">
+ *     <textsearch:adtMainObject adtcore:name="Test Classes" adtcore:type="CLAS/I"/>
+ *     <textsearch:textLines>
+ *       <textsearch:textLine uri="…CCAU%23start%3d51%2c0%3bend%3d51%2c0">
+ *         <textsearch:content>… &lt;b&gt;hit&lt;/b&gt; = lv_ok ).…</textsearch:content>
+ *
+ * Neither the object name nor the line number is an attribute — both are
+ * URL-encoded inside proxy-URI mappings and have to be decoded out. The
+ * objectReference and Atom shapes are kept as fallbacks for other releases.
  */
 export function parseSourceSearchResults(xml: string): SourceSearchResult[] {
   const parsed = parseXml(xml);
   const results: SourceSearchResult[] = [];
+
+  // Live textsearch format
+  const searchObjects = findDeepNodes(parsed, 'textSearchObject');
+  if (searchObjects.length > 0) {
+    for (const obj of searchObjects) {
+      const matches = findDeepNodes(obj, 'textLine').map((line) => ({
+        line: parseTextLineNumber(String(line['@_uri'] ?? '')),
+        snippet: cleanTextSearchSnippet(line.content),
+      }));
+
+      // The response is a tree: alongside the objects that actually contain the
+      // text it carries their ancestors (owning class, package) as nodes with no
+      // textLines. Those are navigation scaffolding rather than search hits, and
+      // they do not count against the server's paging window either.
+      if (matches.length === 0) continue;
+
+      const uri = decodeXmlEntities(String(obj['@_uri'] ?? ''));
+      const mainObject = (obj.adtMainObject ?? {}) as Record<string, unknown>;
+      results.push({
+        objectType: String(mainObject['@_type'] ?? ''),
+        // Deliberately not parentUri: for a class include that is the class, but
+        // for a top-level object it is the package — which would report every
+        // program in $TMP as "$TMP".
+        objectName: parseProxyUriObjectName(uri) || String(mainObject['@_name'] ?? ''),
+        uri,
+        matches,
+      });
+    }
+    return results;
+  }
 
   // Try objectReferences format (similar to quickSearch)
   const refs = getNestedArray(parsed, 'objectReferences', 'objectReference');

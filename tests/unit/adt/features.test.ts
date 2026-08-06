@@ -889,6 +889,17 @@ describe('Feature Detection', () => {
       expect(result.reason).toBeUndefined();
     });
 
+    it('probes the support sub-resource instead of running a real search', async () => {
+      const client = mockClient(200);
+      await probeTextSearch(client);
+      // `db` is part of the advertised template and required: support without it is a 404.
+      expect(client.get).toHaveBeenCalledWith(
+        '/sap/bc/adt/repository/informationsystem/textsearch/support?db=',
+        undefined,
+        { probe: true },
+      );
+    });
+
     it('returns auth error for thrown 401', async () => {
       const result = await probeTextSearch(mockClientThrows(401));
       expect(result.available).toBe(false);
@@ -902,11 +913,14 @@ describe('Feature Detection', () => {
       expect(result.reason).toContain('authorization');
     });
 
-    it('returns SICF activation hint for thrown 404', async () => {
+    it('reports an unmapped endpoint for thrown 404 without blaming SICF outright', async () => {
       const result = await probeTextSearch(mockClientThrows(404));
       expect(result.available).toBe(false);
-      expect(result.reason).toContain('SICF');
-      expect(result.reason).toContain('textSearch');
+      expect(result.reason).toContain('textsearch');
+      expect(result.reason).toContain('discovery');
+      // 404 is ADT's generic reply for any unmapped URI, so the hint must not
+      // assert an inactive ICF node as the cause.
+      expect(result.reason).not.toMatch(/not activated/i);
     });
 
     it('returns framework error for thrown 500', async () => {

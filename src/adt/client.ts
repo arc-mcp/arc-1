@@ -234,6 +234,17 @@ export function clampSearchResults(requested: number | undefined, fallback: numb
   return Math.min(Math.floor(requested), MAX_SEARCH_RESULTS);
 }
 
+/** Reduce an ADT object type to the short form the text-search filter expects.
+ *
+ *  `/informationsystem/textsearch/objecttypes` advertises each supported type as a
+ *  named item whose `name` is the short form (`CLAS`) and whose `data` is the slash
+ *  form (`CLAS/OC`). The filter matches on the short form only: passing `CLAS/OC`
+ *  is accepted with HTTP 200 but silently yields zero results. Callers normalize
+ *  types to the slash form for every other endpoint, so collapse it here. */
+export function toTextSearchObjectType(objectType: string): string {
+  return String(objectType).trim().toUpperCase().split('/')[0];
+}
+
 /** Floor + clamp a caller-supplied result limit to [1, 1000] before it is interpolated into an
  *  ADT search/listing URL query param (`maxResults=`, `rowNumber=`). Non-finite input — NaN from a
  *  coerced non-numeric, or undefined — falls back to the caller's default, so no float or
@@ -1315,7 +1326,23 @@ export class AdtClient {
     });
   }
 
-  /** Search within ABAP source code (full-text search) */
+  /**
+   * Search within ABAP source code (full-text search).
+   *
+   * The endpoint and its parameters are taken from the ADT discovery document,
+   * which advertises the collection as:
+   *
+   *   /sap/bc/adt/repository/informationsystem/textsearch
+   *     {?searchString,searchFromIndex,searchToIndex,getAllResults}
+   *     {&packageName*}{&userName*}{&objectName*}{&objectType*}
+   *
+   * Two details matter and are easy to get wrong:
+   * - the path segment is lowercase `textsearch`; `textSearch` returns 404
+   *   ("No suitable resource found"), which looks like an inactive ICF node;
+   * - there is no `maxResults` parameter — paging is 1-based via
+   *   `searchFromIndex`/`searchToIndex`. Omitting them makes the server scan
+   *   the whole repository and the request hangs.
+   */
   async searchSource(
     pattern: string,
     maxResults = 50,
@@ -1324,10 +1351,16 @@ export class AdtClient {
   ): Promise<SourceSearchResult[]> {
     checkOperation(this.safety, OperationType.Search, 'SearchSource');
     const limit = clampSearchResults(maxResults, 50);
-    let url = `/sap/bc/adt/repository/informationsystem/textSearch?searchString=${encodeURIComponent(pattern)}&maxResults=${limit}`;
-    if (objectType) url += `&objectType=${encodeURIComponent(objectType)}`;
-    if (packageName) url += `&packageName=${encodeURIComponent(packageName)}`;
-    const resp = await this.http.get(url);
+    const params = new URLSearchParams({
+      searchString: pattern,
+      searchFromIndex: '1',
+      searchToIndex: String(limit),
+    });
+    if (objectType) params.set('objectType', toTextSearchObjectType(objectType));
+    if (packageName) params.set('packageName', packageName);
+    const resp = await this.http.get(
+      `/sap/bc/adt/repository/informationsystem/textsearch?${params.toString()}`,
+    );
     return parseSourceSearchResults(resp.body);
   }
 

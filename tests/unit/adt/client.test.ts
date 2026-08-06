@@ -1930,12 +1930,39 @@ describe('AdtClient', () => {
       expect(String(mockFetch.mock.calls[0]?.[0] ?? '')).toContain('maxResults=1000');
     });
 
-    it('searchSource clamps an oversized maxResults in the query string', async () => {
+    it('searchSource clamps an oversized limit into the paging window', async () => {
       mockFetch.mockReset();
       mockFetch.mockResolvedValue(mockResponse(200, '<empty/>'));
       const client = createClient();
       await client.searchSource('foo', 999_999);
-      expect(String(mockFetch.mock.calls[0]?.[0] ?? '')).toContain('maxResults=1000');
+      // textsearch has no maxResults parameter — the limit becomes the 1-based paging window.
+      const url = String(mockFetch.mock.calls[0]?.[0] ?? '');
+      expect(url).toContain('searchFromIndex=1');
+      expect(url).toContain('searchToIndex=1000');
+      expect(url).not.toContain('maxResults=');
+    });
+
+    it('searchSource targets the lowercase textsearch collection', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, '<empty/>'));
+      const client = createClient();
+      await client.searchSource('foo');
+      // `textSearch` (camelCase) is answered with 404 "No suitable resource found".
+      expect(String(mockFetch.mock.calls[0]?.[0] ?? '')).toContain(
+        '/sap/bc/adt/repository/informationsystem/textsearch?',
+      );
+    });
+
+    it('searchSource sends the short object type the filter matches on', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, '<empty/>'));
+      const client = createClient();
+      await client.searchSource('foo', 10, 'CLAS/OC', 'ZDEMO_PKG');
+      // The slash form is accepted with HTTP 200 but silently returns zero results.
+      const url = String(mockFetch.mock.calls[0]?.[0] ?? '');
+      expect(url).toContain('objectType=CLAS');
+      expect(url).not.toContain('CLAS%2FOC');
+      expect(url).toContain('packageName=ZDEMO_PKG');
     });
 
     it('getTableContents (TABLE_CONTENTS) clamps rowNumber to <= 10000 and NaN to the default', async () => {
