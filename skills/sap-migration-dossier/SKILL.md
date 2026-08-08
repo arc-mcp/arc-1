@@ -78,14 +78,26 @@ the dossier has no business reading.
 | RFC-enabled custom FMs | `TFDIR`, `where` `FMODE = 'R'` + scope filter (see below) | `FUNCNAME, PNAME` |
 | Custom IDoc basic types | `EDBAS`, scope filter on `IDOCTYP` | `IDOCTYP, RELEASED` |
 | IDoc → port binding | `EDP13` (outbound partner profiles) | `MESTYP, IDOCTYP, RCVPOR` |
-| Port type per port | which `EDIPO*` table holds the port: `EDIPOA` = tRFC, `EDIPOXH` = XML/HTTP, `EDIPOD`/`EDIPOF` = file | `PORT` (+ `LOGDES` on `EDIPOA`/`EDIPOXH`) |
-| Outbound destinations | `RFCDES` — `RFCTYPE` `3` = ABAP RFC, `H` = HTTP, `T` = TCP/IP | `RFCDEST, RFCTYPE` **only** |
+| Port type per port | `EDIPORT` — the summary table for every port type; `PORTTYP` is domain `EDI_PORTYP` | `PORT, PORTTYP` |
+| Destination behind an XML-HTTP port | `EDIPOXH` (`LOGDES` names the destination) | `PORT, LOGDES` |
+| Outbound destinations | `RFCDES` — see the `RFCTYPE` codes below | `RFCDEST, RFCTYPE` **only** |
 | Release contract state | `SAPRead(type="API_STATE", name="<obj>", objectType="<type>")` | — |
 
 Never select `RFCDES.RFCOPTIONS` or `RFCOPTION1`…`RFCOPTIONV`. Those hold the packed connection
 string including logon data; the dossier needs the destination name and type and nothing else.
 
 The `OBJECT IN (…)` list is `IWPR IWSV IWSG IWMO SRVD SRVB EVTB EVTO IDOC SICF HTTP`.
+
+**Code tables** (read from the system's own domains, not hard-coded assumptions):
+
+| `EDIPORT.PORTTYP` (domain `EDI_PORTYP`) | `RFCDES.RFCTYPE` |
+|---|---|
+| `0` CPI-C · `1` transactional RFC · `2` SAPcomm | `3` RFC to ABAP system (TCP/IP) · `W` RFC via WebSockets |
+| `3` File · `6` XML File | `H` HTTP to **ABAP system** · `G` HTTP to **external server** |
+| `4` Internet · `5` ABAP programming interface · `7` XML HTTP | `T` external program · `I` same-database · `L` reference · `A` application |
+
+Do not treat `H` as the only HTTP destination — outbound integrations to non-SAP endpoints are
+type `G`, which is exactly the case that matters most here.
 
 **One query per prefix.** `TABLE_QUERY` ANDs every `where` entry, so two `LIKE` conditions on the
 same field match nothing — run `Z%`, `Y%` and each namespace separately and union client-side.
@@ -94,7 +106,10 @@ truncated, not counted as complete. The type census is a count over the rows you
 
 **Scoping TFDIR.** A function module's name does not encode its package, so `FUNCNAME LIKE` only
 works for a *name-prefix* scope. For a package dossier, resolve the package's `FUGR` objects first
-and match `TFDIR.PNAME` (`SAPL<group>`) against them before checking `FMODE`.
+and match `TFDIR.PNAME` against them before checking `FMODE`. Build that program name correctly:
+the namespace comes **first**, so function group `/NS/FOO` has main program `/NS/SAPLFOO` — not
+`SAPL/NS/FOO`. Only a non-namespaced group `ZFOO` gives `SAPLZFOO`. Getting this backwards silently
+returns zero rows for every namespaced group.
 
 Only if the user chose **deep evidence** and free SQL is enabled, `SAPQuery` can do the census in one
 grouped statement: `SELECT object, COUNT( * ) AS cnt FROM tadir WHERE pgmid = 'R3TR' AND obj_name
@@ -128,8 +143,8 @@ data products — out of ARC-1's reach, so list those as evidence gaps rather th
 | Web services via SOA Manager | **A** | not ADT-visible — confirm in SOAMANAGER |
 | OData via SAP Gateway Service Builder (SEGW) | **B** | TADIR `IWPR` `IWSV` `IWSG` `IWMO` |
 | BAPI via RFC; RFC (CPI-C); WebSocket RFC | **B** | `TFDIR.FMODE = 'R'`; `RFCDES.RFCTYPE = '3'` |
-| IDoc via HTTPS | **B** | `EDP13` → port in `EDIPOXH` **plus** TLS confirmed on its destination |
-| IDoc via RFC | **C** | `EDP13` → port in `EDIPOA` |
+| IDoc via HTTPS | **B** | `EDP13` → `EDIPORT.PORTTYP = 7` **plus** TLS confirmed on its destination |
+| IDoc via RFC | **C** | `EDP13` → `EDIPORT.PORTTYP = 1` |
 | ABAP proxy via XI | **C** | **not covered here** — no ADT evidence; check SPROXY / SXMB config |
 | Flat file | **D** | `SAPSearch(searchType="source_code")` for `OPEN DATASET` |
 | FTP | **D** | `source_code` search for `FTP_CONNECT` / `FTP_COMMAND` |
@@ -137,17 +152,18 @@ data products — out of ARC-1's reach, so list those as evidence gaps rather th
 | RFC (ODP) | **Forbidden** | prohibited by the API policy (SAP Note 3255746) — flag on sight |
 
 **IDoc levels need the port, and the port needs the partner profile.** `EDBAS` lists basic types and
-the `EDIPO*` tables list ports, but neither links them — the outbound partner profile (`EDP13`)
-carries the `RCVPOR` that binds a message/basic type to its receiver port. Then resolve that port's
-*type* by which table defines it: `EDIPOA` (tRFC → Level C) or `EDIPOXH` (XML/HTTP). Do not read
-`EDIPO.PORTTYP` — verified empty on a live system that had a working port. Without the full
-`EDP13` → port-table join, report IDocs as **B/C indeterminate**; never count them into a level.
+`EDIPORT` lists ports, but neither links them — the outbound partner profile (`EDP13`) carries the
+`RCVPOR` that binds a message/basic type to its receiver port. Read the type from
+`EDIPORT.PORTTYP`, not from `EDIPO.PORTTYP` (verified empty on a live system that had a working
+port) and not by guessing which `EDIPO*` table holds the row — `EDIPOF` is the ABAP programming
+interface, not a file port. Without the full `EDP13` → `EDIPORT` join, report IDocs as **B/C
+indeterminate**; never count them into a level.
 
-An `EDIPOXH` port proves XML-over-HTTP, **not HTTPS**. The port only names a destination
-(`EDIPOXH.LOGDES`); TLS is configured on that destination, and its SSL setting lives inside the
-`RFCDES` connection blob this skill refuses to read. So treat XML-HTTP ports as *candidate* Level B
-and ask the user to confirm SSL in SM59 for that destination — do not infer TLS from the port, and
-do not parse `RFCOPTIONS` to find out.
+`PORTTYP = 7` proves XML-over-HTTP, **not HTTPS**. The port only names a destination
+(`EDIPOXH.LOGDES`); TLS is configured on that destination — commonly an `RFCTYPE = 'G'` entry — and
+its SSL setting lives inside the `RFCDES` connection blob this skill refuses to read. So treat
+XML-HTTP ports as *candidate* Level B and ask the user to confirm SSL in SM59 for that destination.
+Do not infer TLS from the port, and do not parse `RFCOPTIONS` to find out.
 
 `source_code` search needs SAP_BASIS 7.51+. On older ECC systems it is unavailable, so a clean
 Level-D result there means "not searched", not "not present" — record it as an evidence gap.
@@ -157,8 +173,14 @@ Report the level as SAP's default for that technology, not as a verdict on the i
 
 ### Output
 
-Add to the report: the **integration-technology level distribution** (count per level), the
-modernization candidates ranked B→A and C→B, and any Forbidden hit first. Do not label the
+**Count interfaces, not artifacts.** One integration is usually several objects: a RAP service is an
+`SRVD` *and* an `SRVB`; an IDoc scenario is a basic type *and* a partner profile *and* a port; an
+RFC interface is a function module *and* possibly a destination. Collapse each into one **interface
+record** — `{ id, technology, level, evidence[] }` — and let the level distribution count those
+records. Report raw artifact counts separately and label them as such; never add the two together.
+
+Then add: the **integration-technology level distribution** (count of interface records per level),
+the modernization candidates ranked B→A and C→B, and any Forbidden hit first. Do not label the
 distribution an upgrade-stability metric — Note 3690029 deliberately excludes upgrade stability from
 the level model because it depends on the underlying ABAP object's release state. Report that
 separately from `API_STATE` and the Business Accelerator Hub. The common finding is SEGW/Gateway V2
@@ -240,9 +262,15 @@ REMOVE | KEEP | ADAPT | COVERED_BY_STANDARD | UNDETERMINED
 Keep these separate from the decision:
 
 ```
-cleanCoreLevel: A | B | C | D | unknown
+extensibilityLevel: A | B | C | D | unknown   # Note 3578329 — which SAP APIs the code calls
+integrationLevel:   A | B | C | D | FORBIDDEN | indeterminate   # Note 3690029 — interface technology
 usageStatus: USED | LIKELY_UNUSED | UNUSED | INDETERMINATE
 ```
+
+The two levels are independent axes and must never be merged into a single `cleanCoreLevel`. Most
+cards carry only one of them: code objects get `extensibilityLevel`, interface records get
+`integrationLevel`. `indeterminate` is the correct value for an IDoc whose port could not be
+resolved — do not round it to B or C.
 
 Final reviewed reports must exclude `ai_draft` cards unless explicitly labeled as drafts.
 

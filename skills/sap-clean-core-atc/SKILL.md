@@ -98,7 +98,9 @@ sap_get_object_details(object_type="<type>", object_name="<name>", system_type="
 ```
 
 This returns:
-- `cleanCoreLevel` — A, B, C, or D
+- `cleanCoreLevel` — A, B, C, or D. This is the **extensibility** axis (Note 3578329); when feeding a
+  `sap-migration-dossier` card, map it to `extensibilityLevel` so it cannot be confused with an
+  integration level
 - `state` — released | deprecated | classicAPI | stable | notToBeReleased | noAPI
 - `complianceStatus` — `compliant` | `non_compliant` vs. the target level
 - `successorObjects` — replacement recommendations if deprecated
