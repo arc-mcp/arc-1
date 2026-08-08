@@ -25,6 +25,7 @@ import { AdtHttpClient, type AdtHttpConfig, type AdtResponse } from './http.js';
 import { AdtPackageHierarchyResolver, type PackageHierarchyResolver } from './package-hierarchy.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import { Semaphore } from './semaphore.js';
+import { clampSearchResults, searchSource as executeSourceSearch, toTextSearchObjectType } from './text-search.js';
 import type {
   AdtObjectLookupResult,
   AdtSearchResult,
@@ -71,12 +72,13 @@ import {
   parseRevisionFeed,
   parseSearchResults,
   parseServiceBinding,
-  parseSourceSearchResults,
   parseSubpackageNodestructure,
   parseSystemInfo,
   parseTableContents,
   parseTransactionMetadata,
 } from './xml-parser.js';
+
+export { clampSearchResults, toTextSearchObjectType };
 
 export interface SourceReadResult {
   source: string;
@@ -222,33 +224,6 @@ export function clampPreviewRows(requested: number | undefined, fallback = 100):
  *  Symbols only — a class has no selection screen, so its `source/selections` segment is always
  *  empty and un-writable (SAP 406); selection texts are a program concept (future follow-up). */
 const TEXT_SYMBOLS_CT = 'application/vnd.sap.adt.textelements.symbols.v1';
-
-const MAX_SEARCH_RESULTS = 1_000;
-
-/** Coerce a caller-supplied search-result limit into a safe positive integer in
- *  [1, MAX_SEARCH_RESULTS]. NaN / non-finite / non-positive / undefined fall back to the
- *  caller's default — prevents an unbounded `maxResults` from buffering a huge result set
- *  on the shared event loop. */
-export function clampSearchResults(requested: number | undefined, fallback: number): number {
-  if (requested === undefined || !Number.isFinite(requested) || requested < 1) return fallback;
-  return Math.min(Math.floor(requested), MAX_SEARCH_RESULTS);
-}
-
-/** Reduce an ADT object type to the short form the text-search filter expects.
- *
- *  `/informationsystem/textsearch/objecttypes` advertises each supported type as a
- *  named item whose `name` is the short form (`CLAS`) and whose `data` is the slash
- *  form (`CLAS/OC`). The filter matches on the short form only: passing `CLAS/OC`
- *  is accepted with HTTP 200 but silently yields zero results. Callers normalize
- *  types to the slash form for every other endpoint, so collapse it here.
- *
- *  Function modules are the one live-advertised exception to prefix truncation:
- *  `FUGR/F` maps to `FUGR`, while `FUGR/FF` maps to `FUNC`. */
-export function toTextSearchObjectType(objectType: string): string {
-  const normalized = String(objectType).trim().toUpperCase();
-  if (normalized === 'FUGR/FF') return 'FUNC';
-  return normalized.split('/')[0];
-}
 
 /** Floor + clamp a caller-supplied result limit to [1, 1000] before it is interpolated into an
  *  ADT search/listing URL query param (`maxResults=`, `rowNumber=`). Non-finite input — NaN from a
@@ -1331,40 +1306,14 @@ export class AdtClient {
     });
   }
 
-  /**
-   * Search within ABAP source code (full-text search).
-   *
-   * The endpoint and its parameters are taken from the ADT discovery document,
-   * which advertises the collection as:
-   *
-   *   /sap/bc/adt/repository/informationsystem/textsearch
-   *     {?searchString,searchFromIndex,searchToIndex,getAllResults}
-   *     {&packageName*}{&userName*}{&objectName*}{&objectType*}
-   *
-   * Two details matter and are easy to get wrong:
-   * - the path segment is lowercase `textsearch`; `textSearch` returns 404
-   *   ("No suitable resource found"), which looks like an inactive ICF node;
-   * - there is no `maxResults` parameter — paging is 1-based via
-   *   `searchFromIndex`/`searchToIndex`. Omitting them makes the server scan
-   *   the whole repository and the request hangs.
-   */
+  /** Search within ABAP source code through the bounded ADT text-search contract. */
   async searchSource(
     pattern: string,
     maxResults = 50,
     objectType?: string,
     packageName?: string,
   ): Promise<SourceSearchResult[]> {
-    checkOperation(this.safety, OperationType.Search, 'SearchSource');
-    const limit = clampSearchResults(maxResults, 50);
-    const params = new URLSearchParams({
-      searchString: pattern,
-      searchFromIndex: '1',
-      searchToIndex: String(limit),
-    });
-    if (objectType) params.set('objectType', toTextSearchObjectType(objectType));
-    if (packageName) params.set('packageName', packageName);
-    const resp = await this.http.get(`/sap/bc/adt/repository/informationsystem/textsearch?${params.toString()}`);
-    return parseSourceSearchResults(resp.body);
+    return executeSourceSearch(this.http, this.safety, pattern, maxResults, objectType, packageName);
   }
 
   // ─── Package Operations ────────────────────────────────────────────

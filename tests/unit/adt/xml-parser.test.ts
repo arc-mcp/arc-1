@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { parseSourceSearchResults } from '../../../src/adt/text-search.js';
 import {
   buildApiReleasePutBody,
   decodeXmlEntities,
@@ -28,7 +29,6 @@ import {
   parseRevisionFeed,
   parseSearchResults,
   parseServiceBinding,
-  parseSourceSearchResults,
   parseSubpackageNodestructure,
   parseSyntaxConfigurations,
   parseSystemInfo,
