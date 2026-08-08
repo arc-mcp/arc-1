@@ -68,20 +68,33 @@ entirely if the user declined deep evidence.
 
 ### Evidence (all read-only)
 
-Default to `SAPRead(type="TABLE_QUERY")` — `data` scope, structured `where`, no user-written SQL:
+Default to `SAPRead(type="TABLE_QUERY")` — `data` scope, structured `where`, no user-written SQL.
+**Always pass `columns`**: omitting it emits `SELECT *`, which on configuration tables pulls fields
+the dossier has no business reading.
 
-| Ask | Call |
-|---|---|
-| Interface objects in scope | `TABLE_QUERY` on `TADIR`, `where` `PGMID = R3TR`, `OBJECT IN ('IWPR','IWSV','IWSG','IWMO','SRVD','SRVB','EVTB','EVTO','IDOC','SICF','HTTP')`, plus the scope filter |
-| RFC-enabled custom FMs | `TABLE_QUERY` on `TFDIR`, `where` `FMODE = 'R'` + scope filter on `FUNCNAME` |
-| Custom IDoc basic types | `TABLE_QUERY` on `EDBAS`, scope filter on `IDOCTYP` |
-| IDoc → port binding (see below) | `TABLE_QUERY` on `EDP13` (outbound partner profiles: `MESTYP`, `IDOCTYP`, `RCVPOR`) |
-| Port type per port | which `EDIPO*` table holds the port: `EDIPOA` = transactional RFC (`LOGDES` = destination), `EDIPOXH` = XML/HTTP, `EDIPOD`/`EDIPOF` = file |
-| Outbound destinations | `TABLE_QUERY` on `RFCDES` — `RFCTYPE` `3` = ABAP RFC, `H` = HTTP, `T` = TCP/IP |
-| Release contract state | `SAPRead(type="API_STATE", name="<obj>", objectType="<type>")` |
+| Ask | Call | `columns` |
+|---|---|---|
+| Interface objects in scope | `TADIR`, `where` `PGMID = R3TR` + `OBJECT IN (…)` + scope filter | `OBJECT, OBJ_NAME, DEVCLASS` |
+| RFC-enabled custom FMs | `TFDIR`, `where` `FMODE = 'R'` + scope filter (see below) | `FUNCNAME, PNAME` |
+| Custom IDoc basic types | `EDBAS`, scope filter on `IDOCTYP` | `IDOCTYP, RELEASED` |
+| IDoc → port binding | `EDP13` (outbound partner profiles) | `MESTYP, IDOCTYP, RCVPOR` |
+| Port type per port | which `EDIPO*` table holds the port: `EDIPOA` = tRFC, `EDIPOXH` = XML/HTTP, `EDIPOD`/`EDIPOF` = file | `PORT` (+ `LOGDES` on `EDIPOA`/`EDIPOXH`) |
+| Outbound destinations | `RFCDES` — `RFCTYPE` `3` = ABAP RFC, `H` = HTTP, `T` = TCP/IP | `RFCDEST, RFCTYPE` **only** |
+| Release contract state | `SAPRead(type="API_STATE", name="<obj>", objectType="<type>")` | — |
 
-`LIKE` and `IN` are both supported; results are capped at 10,000 rows. The type census is a count
-over the `TADIR` rows you already fetched — count client-side.
+Never select `RFCDES.RFCOPTIONS` or `RFCOPTION1`…`RFCOPTIONV`. Those hold the packed connection
+string including logon data; the dossier needs the destination name and type and nothing else.
+
+The `OBJECT IN (…)` list is `IWPR IWSV IWSG IWMO SRVD SRVB EVTB EVTO IDOC SICF HTTP`.
+
+**One query per prefix.** `TABLE_QUERY` ANDs every `where` entry, so two `LIKE` conditions on the
+same field match nothing — run `Z%`, `Y%` and each namespace separately and union client-side.
+Results are capped at 10,000 rows: a partition returning **exactly** 10,000 must be reported as
+truncated, not counted as complete. The type census is a count over the rows you fetched.
+
+**Scoping TFDIR.** A function module's name does not encode its package, so `FUNCNAME LIKE` only
+works for a *name-prefix* scope. For a package dossier, resolve the package's `FUGR` objects first
+and match `TFDIR.PNAME` (`SAPL<group>`) against them before checking `FMODE`.
 
 Only if the user chose **deep evidence** and free SQL is enabled, `SAPQuery` can do the census in one
 grouped statement: `SELECT object, COUNT( * ) AS cnt FROM tadir WHERE pgmid = 'R3TR' AND obj_name
@@ -91,12 +104,16 @@ This is an optimization, never a requirement.
 The two gates are independent and **neither implies the other** — `SAPQuery` needs `sql` scope and
 `SAP_ALLOW_FREE_SQL` (the tool is not even registered without it); `TABLE_QUERY` needs `data` scope
 and `SAP_ALLOW_DATA_PREVIEW`. Instances exist with free SQL on and data preview off, and vice versa.
-If neither is available, fall back to `SAPSearch(searchType="tadir_lookup", source="db")` for the
-object types and mark RFC/IDoc/destination coverage as an evidence gap — do not guess.
 
-One gotcha: `SAPRead(type="DEVC")` omits legacy SEGW types, so use TADIR or `tadir_lookup` for those.
-And supported contracts are per object type (an `SRVD` exposes C0 only), so never report a single
-system-wide "share at C2".
+If neither is available there is no table-based fallback: `tadir_lookup` does not help, because
+`source="db"`/`"both"` escalate to `sql` scope themselves and it resolves *exact names* rather than
+discovering objects by type. Do this instead — `SAPRead(type="DEVC")` for each package in scope and
+an ordinary `SAPSearch` object search per type, both best-effort — then mark the TADIR census,
+legacy SEGW types, and all RFC/IDoc/destination coverage as unavailable. Do not guess.
+
+One gotcha: `SAPRead(type="DEVC")` omits legacy SEGW types, so use TADIR for those (or
+`tadir_lookup`, which needs `sql` scope and exact names). And supported contracts are per object
+type (an `SRVD` exposes C0 only), so never report a single system-wide "share at C2".
 
 ### Levels (SAP Note 3690029)
 
@@ -111,8 +128,9 @@ data products — out of ARC-1's reach, so list those as evidence gaps rather th
 | Web services via SOA Manager | **A** | not ADT-visible — confirm in SOAMANAGER |
 | OData via SAP Gateway Service Builder (SEGW) | **B** | TADIR `IWPR` `IWSV` `IWSG` `IWMO` |
 | BAPI via RFC; RFC (CPI-C); WebSocket RFC | **B** | `TFDIR.FMODE = 'R'`; `RFCDES.RFCTYPE = '3'` |
-| IDoc via HTTPS | **B** | `EDP13` → port found in `EDIPOXH` |
-| IDoc via RFC; ABAP proxy via XI | **C** | `EDP13` → port found in `EDIPOA` |
+| IDoc via HTTPS | **B** | `EDP13` → port in `EDIPOXH` **plus** TLS confirmed on its destination |
+| IDoc via RFC | **C** | `EDP13` → port in `EDIPOA` |
+| ABAP proxy via XI | **C** | **not covered here** — no ADT evidence; check SPROXY / SXMB config |
 | Flat file | **D** | `SAPSearch(searchType="source_code")` for `OPEN DATASET` |
 | FTP | **D** | `source_code` search for `FTP_CONNECT` / `FTP_COMMAND` |
 | SFTP, JDBC/ODBC | **D** | **not ABAP-detectable** — external tooling; ask, do not infer |
@@ -121,9 +139,15 @@ data products — out of ARC-1's reach, so list those as evidence gaps rather th
 **IDoc levels need the port, and the port needs the partner profile.** `EDBAS` lists basic types and
 the `EDIPO*` tables list ports, but neither links them — the outbound partner profile (`EDP13`)
 carries the `RCVPOR` that binds a message/basic type to its receiver port. Then resolve that port's
-*type* by which table defines it: `EDIPOA` (tRFC, so Level C) or `EDIPOXH` (XML/HTTP, so Level B).
-Do not read `EDIPO.PORTTYP` — verified empty on a live system that had a working port. Without the
-full `EDP13` → port-table join, report IDocs as **B/C indeterminate**; never count them into a level.
+*type* by which table defines it: `EDIPOA` (tRFC → Level C) or `EDIPOXH` (XML/HTTP). Do not read
+`EDIPO.PORTTYP` — verified empty on a live system that had a working port. Without the full
+`EDP13` → port-table join, report IDocs as **B/C indeterminate**; never count them into a level.
+
+An `EDIPOXH` port proves XML-over-HTTP, **not HTTPS**. The port only names a destination
+(`EDIPOXH.LOGDES`); TLS is configured on that destination, and its SSL setting lives inside the
+`RFCDES` connection blob this skill refuses to read. So treat XML-HTTP ports as *candidate* Level B
+and ask the user to confirm SSL in SM59 for that destination — do not infer TLS from the port, and
+do not parse `RFCOPTIONS` to find out.
 
 `source_code` search needs SAP_BASIS 7.51+. On older ECC systems it is unavailable, so a clean
 Level-D result there means "not searched", not "not present" — record it as an evidence gap.
