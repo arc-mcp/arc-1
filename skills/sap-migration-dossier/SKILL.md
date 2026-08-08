@@ -54,24 +54,49 @@ This is a **different axis** from `sap-clean-core-atc`. That skill rates *extens
 3690029, how systems talk to this one). Same A–D letters, different axis — SAP's own wording is that
 the integration note "complements, but does not overlap with" the extensibility guidance.
 
+### Scope first
+
+Reuse the scope resolved in the Default Path — do not hard-code `Z%`. Build the name filter from
+what the user actually asked for: their prefixes (`Z*`, `Y*`), registered namespaces (`/NS/*`), the
+object list, or `TADIR.DEVCLASS` for a package. A `Z%`-only filter silently drops `Y*` and every
+namespaced object.
+
+The `EDIPO*` tables (IDoc ports), `EDP13` (partner profiles) and `RFCDES` (destinations) are
+**system-wide configuration** — they have no package or namespace to scope by. Ask before reading
+them, report them as landscape context rather than as part of the scoped inventory, and skip them
+entirely if the user declined deep evidence.
+
 ### Evidence (all read-only)
+
+Default to `SAPRead(type="TABLE_QUERY")` — `data` scope, structured `where`, no user-written SQL:
 
 | Ask | Call |
 |---|---|
-| What interface objects exist | `SAPQuery`: `SELECT object, COUNT( * ) AS cnt FROM tadir WHERE pgmid = 'R3TR' AND obj_name LIKE 'Z%' GROUP BY object ORDER BY cnt DESCENDING` |
-| Names + package per type | same, filtered to `IWPR IWSV IWSG IWMO SRVD SRVB EVTB EVTO IDOC SICF HTTP` |
-| RFC-enabled custom FMs | `SAPQuery`: `SELECT funcname, pname FROM tfdir WHERE fmode = 'R' AND funcname LIKE 'Z%'` |
-| Custom IDoc basic types | `SAPQuery`: `SELECT idoctyp, released FROM edbas WHERE idoctyp LIKE 'Z%'` |
-| IDoc port type (decides B vs C) | `SAPQuery`: `SELECT port, porttyp FROM edipo` |
-| Outbound destinations | `SAPQuery`: `SELECT rfcdest, rfctype FROM rfcdes` — `3` = ABAP RFC, `H` = HTTP, `T` = TCP/IP |
+| Interface objects in scope | `TABLE_QUERY` on `TADIR`, `where` `PGMID = R3TR`, `OBJECT IN ('IWPR','IWSV','IWSG','IWMO','SRVD','SRVB','EVTB','EVTO','IDOC','SICF','HTTP')`, plus the scope filter |
+| RFC-enabled custom FMs | `TABLE_QUERY` on `TFDIR`, `where` `FMODE = 'R'` + scope filter on `FUNCNAME` |
+| Custom IDoc basic types | `TABLE_QUERY` on `EDBAS`, scope filter on `IDOCTYP` |
+| IDoc → port binding (see below) | `TABLE_QUERY` on `EDP13` (outbound partner profiles: `MESTYP`, `IDOCTYP`, `RCVPOR`) |
+| Port type per port | which `EDIPO*` table holds the port: `EDIPOA` = transactional RFC (`LOGDES` = destination), `EDIPOXH` = XML/HTTP, `EDIPOD`/`EDIPOF` = file |
+| Outbound destinations | `TABLE_QUERY` on `RFCDES` — `RFCTYPE` `3` = ABAP RFC, `H` = HTTP, `T` = TCP/IP |
 | Release contract state | `SAPRead(type="API_STATE", name="<obj>", objectType="<type>")` |
 
-Two gotchas: `SAPRead(type="DEVC")` omits legacy SEGW types, so use TADIR or
-`SAPSearch(searchType="tadir_lookup", source="db")` for those. And the supported contracts are
-per object type (an `SRVD` exposes C0 only), so never report a single system-wide "share at C2".
+`LIKE` and `IN` are both supported; results are capped at 10,000 rows. The type census is a count
+over the `TADIR` rows you already fetched — count client-side.
 
-Table reads need `data` scope plus `SAP_ALLOW_DATA_PREVIEW` (or free SQL). Without them, run the
-TADIR census alone and mark RFC/IDoc/destination coverage as an evidence gap — do not guess.
+Only if the user chose **deep evidence** and free SQL is enabled, `SAPQuery` can do the census in one
+grouped statement: `SELECT object, COUNT( * ) AS cnt FROM tadir WHERE pgmid = 'R3TR' AND obj_name
+LIKE 'Z%' GROUP BY object ORDER BY cnt DESCENDING` — substituting the resolved scope for `'Z%'`.
+This is an optimization, never a requirement.
+
+The two gates are independent and **neither implies the other** — `SAPQuery` needs `sql` scope and
+`SAP_ALLOW_FREE_SQL` (the tool is not even registered without it); `TABLE_QUERY` needs `data` scope
+and `SAP_ALLOW_DATA_PREVIEW`. Instances exist with free SQL on and data preview off, and vice versa.
+If neither is available, fall back to `SAPSearch(searchType="tadir_lookup", source="db")` for the
+object types and mark RFC/IDoc/destination coverage as an evidence gap — do not guess.
+
+One gotcha: `SAPRead(type="DEVC")` omits legacy SEGW types, so use TADIR or `tadir_lookup` for those.
+And supported contracts are per object type (an `SRVD` exposes C0 only), so never report a single
+system-wide "share at C2".
 
 ### Levels (SAP Note 3690029)
 
@@ -86,18 +111,33 @@ data products — out of ARC-1's reach, so list those as evidence gaps rather th
 | Web services via SOA Manager | **A** | not ADT-visible — confirm in SOAMANAGER |
 | OData via SAP Gateway Service Builder (SEGW) | **B** | TADIR `IWPR` `IWSV` `IWSG` `IWMO` |
 | BAPI via RFC; RFC (CPI-C); WebSocket RFC | **B** | `TFDIR.FMODE = 'R'`; `RFCDES.RFCTYPE = '3'` |
-| IDoc via HTTPS | **B** | `EDBAS` + `EDIPO` port type |
-| IDoc via RFC; ABAP proxy via XI | **C** | `EDBAS` + RFC port |
-| Flat file, FTP, SFTP, JDBC/ODBC | **D** | `SAPSearch(searchType="source_code")` for `OPEN DATASET`, `FTP_` |
+| IDoc via HTTPS | **B** | `EDP13` → port found in `EDIPOXH` |
+| IDoc via RFC; ABAP proxy via XI | **C** | `EDP13` → port found in `EDIPOA` |
+| Flat file | **D** | `SAPSearch(searchType="source_code")` for `OPEN DATASET` |
+| FTP | **D** | `source_code` search for `FTP_CONNECT` / `FTP_COMMAND` |
+| SFTP, JDBC/ODBC | **D** | **not ABAP-detectable** — external tooling; ask, do not infer |
 | RFC (ODP) | **Forbidden** | prohibited by the API policy (SAP Note 3255746) — flag on sight |
+
+**IDoc levels need the port, and the port needs the partner profile.** `EDBAS` lists basic types and
+the `EDIPO*` tables list ports, but neither links them — the outbound partner profile (`EDP13`)
+carries the `RCVPOR` that binds a message/basic type to its receiver port. Then resolve that port's
+*type* by which table defines it: `EDIPOA` (tRFC, so Level C) or `EDIPOXH` (XML/HTTP, so Level B).
+Do not read `EDIPO.PORTTYP` — verified empty on a live system that had a working port. Without the
+full `EDP13` → port-table join, report IDocs as **B/C indeterminate**; never count them into a level.
+
+`source_code` search needs SAP_BASIS 7.51+. On older ECC systems it is unavailable, so a clean
+Level-D result there means "not searched", not "not present" — record it as an evidence gap.
 
 The note rates the *technology*, and says the level for a given scenario is use-case dependent.
 Report the level as SAP's default for that technology, not as a verdict on the interface.
 
 ### Output
 
-Add to the report: a count per level (this is SAP's "upgrade stability" KPI), the modernization
-candidates ranked B→A and C→B, and any Forbidden hit first. The common finding is SEGW/Gateway V2
+Add to the report: the **integration-technology level distribution** (count per level), the
+modernization candidates ranked B→A and C→B, and any Forbidden hit first. Do not label the
+distribution an upgrade-stability metric — Note 3690029 deliberately excludes upgrade stability from
+the level model because it depends on the underlying ABAP object's release state. Report that
+separately from `API_STATE` and the Business Accelerator Hub. The common finding is SEGW/Gateway V2
 (**B**) alongside RAP V4 (**A**) — hand those to `migrate-segw-to-rap`. The other standard move is
 IDoc via RFC (**C**) → RAP business events (**A**).
 
