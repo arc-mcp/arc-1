@@ -875,8 +875,8 @@ describe('Feature Detection', () => {
       return { get: vi.fn().mockResolvedValue({ statusCode, body: '' }) } as unknown as AdtHttpClient;
     }
 
-    function mockClientThrows(statusCode: number): AdtHttpClient {
-      return { get: vi.fn().mockRejectedValue({ statusCode }) } as unknown as AdtHttpClient;
+    function mockClientThrows(statusCode: number, responseBody?: string): AdtHttpClient {
+      return { get: vi.fn().mockRejectedValue({ statusCode, responseBody }) } as unknown as AdtHttpClient;
     }
 
     function mockClientNetworkError(): AdtHttpClient {
@@ -892,7 +892,7 @@ describe('Feature Detection', () => {
     it('probes the support sub-resource instead of running a real search', async () => {
       const client = mockClient(200);
       await probeTextSearch(client);
-      // `db` is part of the advertised template and required: support without it is a 404.
+      // `db` is part of the advertised support template; an empty value selects source search.
       expect(client.get).toHaveBeenCalledWith(
         '/sap/bc/adt/repository/informationsystem/textsearch/support?db=',
         undefined,
@@ -911,6 +911,22 @@ describe('Feature Detection', () => {
       const result = await probeTextSearch(mockClientThrows(403));
       expect(result.available).toBe(false);
       expect(result.reason).toContain('authorization');
+    });
+
+    it('reports SAP SADT_REST 020 as backend-unsupported rather than an authorization failure', async () => {
+      const responseBody = `<?xml version="1.0" encoding="utf-8"?>
+<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework">
+  <exc:localizedMessage>The action is not supported</exc:localizedMessage>
+  <exc:properties>
+    <exc:entry key="T100KEY-ID">SADT_REST</exc:entry>
+    <exc:entry key="T100KEY-NO">020</exc:entry>
+  </exc:properties>
+</exc:exception>`;
+      const result = await probeTextSearch(mockClientThrows(403, responseBody));
+      expect(result.available).toBe(false);
+      expect(result.reason).toContain('not supported by this SAP backend');
+      expect(result.reason).not.toContain('authorization');
+      expect(result.reason).not.toContain('S_ADT_RES');
     });
 
     it('reports an unmapped endpoint for thrown 404 without blaming SICF outright', async () => {

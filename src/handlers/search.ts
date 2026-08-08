@@ -185,7 +185,7 @@ export async function handleSAPSearch(client: AdtClient, args: Record<string, un
       if (err instanceof AdtApiError) {
         const permanentCodes = [401, 403, 404, 501];
         if (permanentCodes.includes(err.statusCode)) {
-          const classified = classifyTextSearchError(err.statusCode);
+          const classified = classifyTextSearchError(err.statusCode, err.responseBody);
           return errorResult(
             `Source code search is not available on this SAP system. ${classified.reason ?? ''}` +
               `\nUse SAPSearch with searchType="object" to search by object name instead, or use SAPQuery to search metadata tables.`,

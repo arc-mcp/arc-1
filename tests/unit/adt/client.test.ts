@@ -12,7 +12,7 @@ vi.mock('undici', async (importOriginal) => {
   return { ...actual, fetch: mockFetch };
 });
 
-const { AdtClient, clampSearchResults } = await import('../../../src/adt/client.js');
+const { AdtClient, clampSearchResults, toTextSearchObjectType } = await import('../../../src/adt/client.js');
 
 const fixturesDir = join(import.meta.dirname, '../../fixtures/xml');
 const loadFixture = (name: string) => readFileSync(join(fixturesDir, name), 'utf-8');
@@ -1963,6 +1963,19 @@ describe('AdtClient', () => {
       expect(url).toContain('objectType=CLAS');
       expect(url).not.toContain('CLAS%2FOC');
       expect(url).toContain('packageName=ZDEMO_PKG');
+    });
+
+    it('maps the live-advertised function group and function module types to distinct filters', async () => {
+      expect(toTextSearchObjectType('FUGR/F')).toBe('FUGR');
+      expect(toTextSearchObjectType('FUGR/FF')).toBe('FUNC');
+
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, '<empty/>'));
+      const client = createClient();
+      await client.searchSource('foo', 10, 'FUGR/FF');
+      const url = String(mockFetch.mock.calls[0]?.[0] ?? '');
+      expect(url).toContain('objectType=FUNC');
+      expect(url).not.toContain('objectType=FUGR');
     });
 
     it('getTableContents (TABLE_CONTENTS) clamps rowNumber to <= 10000 and NaN to the default', async () => {

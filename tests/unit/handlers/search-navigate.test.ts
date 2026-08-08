@@ -484,7 +484,7 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
     it('returns helpful error when source search is not available', async () => {
       mockFetch.mockReset();
       mockFetch.mockRejectedValueOnce(
-        new AdtApiError('Not found', 404, '/sap/bc/adt/repository/informationsystem/textSearch'),
+        new AdtApiError('Not found', 404, '/sap/bc/adt/repository/informationsystem/textsearch'),
       );
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPSearch', {
         query: 'test_pattern',
@@ -500,7 +500,7 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
         textSearch: {
           available: false,
           reason:
-            'textSearch ICF service not activated — activate /sap/bc/adt/repository/informationsystem/textSearch in SICF.',
+            'The textsearch endpoint is not available on this system — confirm it is missing from /sap/bc/adt/discovery before asking Basis to activate anything in SICF.',
         },
       });
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPSearch', {
@@ -510,6 +510,31 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toContain('SICF');
       expect(result.content[0]?.text).toContain('not available');
+    });
+
+    it('reports the live SADT_REST 020 response as backend-unsupported rather than missing authorization', async () => {
+      resetCachedFeatures();
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          403,
+          `<?xml version="1.0" encoding="utf-8"?>
+<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework">
+  <exc:localizedMessage>The action is not supported</exc:localizedMessage>
+  <exc:properties>
+    <exc:entry key="T100KEY-ID">SADT_REST</exc:entry>
+    <exc:entry key="T100KEY-NO">020</exc:entry>
+  </exc:properties>
+</exc:exception>`,
+        ),
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPSearch', {
+        query: 'test_pattern',
+        searchType: 'source_code',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('not supported by this SAP backend');
+      expect(result.content[0]?.text).not.toContain('S_ADT_RES');
     });
 
     it('searches normally when textSearch probe says available', async () => {

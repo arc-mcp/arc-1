@@ -7,7 +7,7 @@
 
 | Item | Detail |
 |------|--------|
-| **ICF path** | `...` → `adt` → **`repository`** → **`informationsystem`** → **`search`** (quick search); **`textSearch`** (source search); **`nodestructure`** (package tree — often POST). |
+| **ADT paths** | `...` → `adt` → **`repository`** → **`informationsystem`** → **`search`** (quick search); lowercase **`textsearch`** (source search); **`nodestructure`** (package tree — often POST). The source-search collection must be confirmed through `/sap/bc/adt/discovery`; a 404 from an unmapped URI does not by itself prove an inactive dedicated SICF node. |
 | **Typical packages** | **`SRIS_ADT`** (Repository Information System ADT — e.g. **`CL_RIS_ADT_SOURCE_HANDLER`**, usage-reference stack), **`SEU_ADT`** (project explorer / node structure resources such as **`CL_SEU_ADT_RES_REPO_STRUCTURE`**, **`CL_SEU_ADT_RES_OBJ_STRUCTURE`**), **`SWB_ADT_*`**. |
 | **Typical classes** | Search + text search: RIS ADT handlers; **nodestructure**: SEU ADT “repository structure” resources. |
 | **Related components** | Basis search framework **BC-DWB-AIE** (SAP Notes for text search errors). |
@@ -45,12 +45,15 @@
 
 ---
 
-## B. `GET .../repository/informationsystem/textSearch?searchString=...&maxResults=...[&objectType=][&packageName=]`
+## B. `GET .../repository/informationsystem/textsearch?searchString=...&searchFromIndex=1&searchToIndex=...[&objectType=][&packageName=]`
 
 ### SAP system
 
-- **ICF:** `textSearch` node must be active (error message in `features.ts` references SICF path).
-- **Auth:** Often stricter; 403 classified in `classifyTextSearchError`.
+- **Discovery:** the collection is lowercase `textsearch`; camel-case `textSearch` is unmapped and
+  returns 404 `No suitable resource found` on 7.58/8.16.
+- **Auth/support:** a generic 401/403 can be authorization-related, but the support resource also
+  returns 403 `SADT_REST 020` when source search is disabled. Classify the response body, not status
+  alone.
 - **SAP Note:** 3605050 mentioned for 500-class search framework errors.
 
 ### Contract
@@ -58,24 +61,32 @@
 | Item | Value |
 |------|--------|
 | Method | `GET` |
-| Query | `searchString`, `maxResults`; optional `objectType`, `packageName` |
+| Query | `searchString`, 1-based `searchFromIndex`/`searchToIndex`; optional repeatable `packageName`, `userName`, `objectName`, `objectType`; optional `getAllResults`. There is no `maxResults` parameter. |
+| Response | `textSearchResult` tree: `textSearchObjects/textSearchObject`, `adtMainObject`, and `textLines/textLine/content`. Object names and line positions are encoded in proxy URIs. |
 
 ### ARC-1
 
 - `searchSource` — `Search`, `'SearchSource'`.
+- The endpoint's type filter uses the named-item catalog's short `name` (`CLAS`, `FUNC`), not its
+  slash-form `data` (`CLAS/OC`, `FUGR/FF`).
 - **406/415:** **Yes**
 
 ### Tests
 
-- **Integration:** search tests; **probeTextSearch** at startup.
+- **Unit:** request shape, paging, catalog type mapping, live-format XML parser, and support probe.
+- **Live:** negative paths verified on 7.50/7.58/8.16. The maintained 7.58/8.16 systems currently
+  report backend source search disabled, so a positive integration run remains environment-dependent.
 
 ### Alternatives
 
-- Basis **&lt; 7.51** may return **501** — handled in `classifyTextSearchError`.
+- Basis **7.50** may not advertise the collection and returns 404.
+- Newer systems may advertise the resource family while the backend feature remains disabled
+  (`SADT_REST 020` from support; `SRIS_SEARCH 006` from an attempted search).
 
 ### Verdict
 
-**OK** when service active; failures are **environment/config**, not client URL shape.
+**OK** after the lowercase endpoint/paging/parser correction. Availability is system-dependent and
+must be probed without conflating backend-disabled and authorization responses.
 
 ---
 

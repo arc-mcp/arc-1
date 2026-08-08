@@ -240,9 +240,14 @@ export function clampSearchResults(requested: number | undefined, fallback: numb
  *  named item whose `name` is the short form (`CLAS`) and whose `data` is the slash
  *  form (`CLAS/OC`). The filter matches on the short form only: passing `CLAS/OC`
  *  is accepted with HTTP 200 but silently yields zero results. Callers normalize
- *  types to the slash form for every other endpoint, so collapse it here. */
+ *  types to the slash form for every other endpoint, so collapse it here.
+ *
+ *  Function modules are the one live-advertised exception to prefix truncation:
+ *  `FUGR/F` maps to `FUGR`, while `FUGR/FF` maps to `FUNC`. */
 export function toTextSearchObjectType(objectType: string): string {
-  return String(objectType).trim().toUpperCase().split('/')[0];
+  const normalized = String(objectType).trim().toUpperCase();
+  if (normalized === 'FUGR/FF') return 'FUNC';
+  return normalized.split('/')[0];
 }
 
 /** Floor + clamp a caller-supplied result limit to [1, 1000] before it is interpolated into an
@@ -1358,9 +1363,7 @@ export class AdtClient {
     });
     if (objectType) params.set('objectType', toTextSearchObjectType(objectType));
     if (packageName) params.set('packageName', packageName);
-    const resp = await this.http.get(
-      `/sap/bc/adt/repository/informationsystem/textsearch?${params.toString()}`,
-    );
+    const resp = await this.http.get(`/sap/bc/adt/repository/informationsystem/textsearch?${params.toString()}`);
     return parseSourceSearchResults(resp.body);
   }
 

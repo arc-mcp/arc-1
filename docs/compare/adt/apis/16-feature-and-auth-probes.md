@@ -15,7 +15,7 @@ Probes call **the same ICF services** as the real features (no separate probe co
 | 63 | `/sap/bc/adt/debugger/amdp` | Debugger ADT — **`SWDA_DEBUGGER_ADT`** / similar; ICF `debugger`. |
 | 64 | `/sap/bc/adt/filestore/ui5-bsp` | [`12-ui5-bsp-filestore.md`](12-ui5-bsp-filestore.md). |
 | 65, 68 | `/sap/bc/adt/cts/transportrequests` | [`14-cts-transports.md`](14-cts-transports.md). |
-| 66 | `.../textSearch?...` | [`08-repository-search-and-package.md`](08-repository-search-and-package.md). |
+| 66 | `.../textsearch/support?db=` | [`08-repository-search-and-package.md`](08-repository-search-and-package.md). |
 | 67 | `.../search?...` | [`08-repository-search-and-package.md`](08-repository-search-and-package.md). |
 
 **Non-ADT probe:** `GET /sap/opu/odata/UI5/ABAP_REPOSITORY_SRV` — **IWFND / Gateway** service, not `/sap/bc/adt/`.
@@ -47,13 +47,16 @@ Probes call **the same ICF services** as the real features (no separate probe co
 | 63 | `/sap/bc/adt/debugger/amdp` | `amdp` |
 | 64 | `/sap/bc/adt/filestore/ui5-bsp` | `ui5` |
 | 65 | `/sap/bc/adt/cts/transportrequests` | `transport` |
-| 66 | `.../textSearch?searchString=SY-SUBRC&maxResults=1` | `textSearch` capability |
+| 66 | `.../textsearch/support?db=` | Source-search capability; avoids running a repository scan |
 | 67 | `.../search?operation=quickSearch&query=CL_ABAP_*&maxResults=1` | Auth probe — search |
 | 68 | `.../cts/transportrequests?user=__PROBE__` | Auth probe — transport |
 
 ### SAP system (auth / availability)
 
-- Same ICF + auth as the **real** endpoints; **404** → feature “not available” in auto mode.
+- Same auth/session as the **real** endpoints; **404** means the support resource is unmapped, but
+  is not by itself proof that a dedicated SICF node is inactive.
+- The support resource can return **403 `SADT_REST 020`** for a backend-disabled feature. This is
+  “unsupported,” not a missing `S_ADT_RES` authorization; genuine auth failures remain distinct.
 - **PP:** Probes run as **configured** SAP session (PP or shared).
 - **ABAP code location:** see **§ SAP ABAP-side** at the top of this file (and linked area reports).
 
