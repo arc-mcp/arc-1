@@ -227,6 +227,18 @@ describe('Tool Definitions', () => {
     expect(names).toContain('SAPQuery');
   });
 
+  it('documents TABLE_QUERY IN values as raw values that ARC-1 quotes', () => {
+    const sapRead = getToolDefinitions(DEFAULT_CONFIG).find((t) => t.name === 'SAPRead')!;
+    const schema = sapRead.inputSchema as Record<string, any>;
+    const whereDescription = schema.properties.where.description as string;
+
+    expect(whereDescription).toContain('bare comma-separated values');
+    expect(whereDescription).toContain('do NOT quote them');
+    expect(whereDescription).toContain('ARC-1 quotes and escapes values');
+    expect(whereDescription).toContain('"261,262"');
+    expect(whereDescription).not.toContain('single-quoted literals');
+  });
+
   it('describes SAPRead sqlFilter as condition-only expression', () => {
     const tools = getToolDefinitions(DEFAULT_CONFIG);
     const sapRead = tools.find((t) => t.name === 'SAPRead')!;

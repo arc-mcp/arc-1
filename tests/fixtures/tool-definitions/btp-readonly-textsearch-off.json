@@ -144,7 +144,7 @@
         },
         "where": {
           "type": "array",
-          "description": "For TABLE_QUERY: structured WHERE conditions, ANDed together. Each item: {field, op, value?}. Allowed ops: =, !=, <>, <, <=, >, >=, LIKE, NOT LIKE, IN, NOT IN, IS NULL, IS NOT NULL. For IN/NOT IN: value must be a comma-separated list of single-quoted literals, e.g. \"'261','262'\". Subqueries are not allowed. Example: [{\"field\":\"MATNR\",\"op\":\"=\",\"value\":\"300006888\"},{\"field\":\"BUDAT_MKPF\",\"op\":\">=\",\"value\":\"20250101\"}].",
+          "description": "For TABLE_QUERY: structured WHERE conditions, ANDed together. Each item: {field, op, value?}. Allowed ops: =, !=, <>, <, <=, >, >=, LIKE, NOT LIKE, IN, NOT IN, IS NULL, IS NOT NULL. For IN/NOT IN: use bare comma-separated values; do NOT quote them. ARC-1 quotes and escapes values, e.g. \"261,262\". No subqueries. Example: [{\"field\":\"MATNR\",\"op\":\"=\",\"value\":\"300006888\"},{\"field\":\"BUDAT_MKPF\",\"op\":\">=\",\"value\":\"20250101\"}].",
           "items": {
             "type": "object",
             "properties": {
