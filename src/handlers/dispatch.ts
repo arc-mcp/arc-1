@@ -146,6 +146,13 @@ function buildBaseErrorMessage(
     }
 
     if (err.isNotFound) {
+      if (err.resourceKnownToExist) {
+        return (
+          `${enriched}\n\n` +
+          'Hint: ARC-1 confirmed this object still existed after SAP rejected DELETE, so this 404 does not mean the object was absent. ' +
+          "SAP's delete handler rejected the operation. Check the SAP error and any follow-up guidance, resolve dependencies or active-version state if applicable, then retry."
+        );
+      }
       const diagnosticsHint = buildDiagnosticsNotFoundHint(tool, args);
       if (diagnosticsHint) {
         return `${enriched}\n\nHint: ${diagnosticsHint}`;

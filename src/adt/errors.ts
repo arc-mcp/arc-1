@@ -76,6 +76,14 @@ export class AdtApiError extends AdtError {
    */
   extraHint?: string;
 
+  /**
+   * Handler-owned lifecycle evidence that the resource was confirmed by metadata
+   * resolution as well as the stateful mutation sequence. Lets generic formatting
+   * avoid misclassifying an operation failure as an absent object without teaching
+   * it the handler's request sequence.
+   */
+  resourceKnownToExist?: boolean;
+
   constructor(
     message: string,
     public readonly statusCode: number,

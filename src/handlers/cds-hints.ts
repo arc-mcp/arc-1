@@ -396,7 +396,7 @@ export function guardCdsSyntax(
   if (type !== 'DDLS' || !source) return undefined;
 
   // Guard: "define table entity" requires ABAP Cloud (BTP) or SAP_BASIS >= 757
-  if (/\bdefine\s+table\s+(entity|function)\b/i.test(source)) {
+  if (/\bdefine\s+table\s+entity\b/i.test(source)) {
     const release = features?.abapRelease;
     const isBtp = features?.systemType === 'btp';
     if (!isBtp && release) {
