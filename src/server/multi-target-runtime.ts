@@ -31,6 +31,7 @@ function buildReadOnlyRuntimeConfig(
     url: '',
     client: target?.client ?? base.client,
     language: target?.language ?? base.language,
+    gzipDataPreviewBody: base.gzipDataPreviewBody,
     transport: 'http-streamable',
     httpAddr: base.httpAddr,
     allowWrites: safety.allowWrites,

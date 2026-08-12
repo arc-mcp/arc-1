@@ -27,6 +27,7 @@
  *    No external HTTP dependencies — undici ships with Node.js 22+.
  */
 
+import { gzipSync } from 'node:zlib';
 import type { BTPProxyConfig } from '@arc-mcp/xsuaa-auth/btp';
 import { Agent, Client, type Dispatcher, fetch as undiciFetch } from 'undici';
 import { getCurrentContext } from '../server/context.js';
@@ -67,6 +68,7 @@ export interface AdtRequestOptions {
  * activation preaudit response sizes — not for production.
  */
 const HTTP_DEBUG_BODY_LIMIT = 65536;
+const GZIP_DATA_PREVIEW_PATHS = new Set(['/sap/bc/adt/datapreview/freestyle', '/sap/bc/adt/datapreview/ddic']);
 const HTTP_DEBUG_REDACT_HEADERS = new Set([
   'authorization',
   'cookie',
@@ -97,6 +99,17 @@ function truncateBody(body: string | undefined): string | undefined {
   if (body === undefined) return undefined;
   if (body.length <= HTTP_DEBUG_BODY_LIMIT) return body;
   return `${body.slice(0, HTTP_DEBUG_BODY_LIMIT)}\n…[truncated ${body.length - HTTP_DEBUG_BODY_LIMIT} chars]`;
+}
+
+function isExactDataPreviewPath(path: string): boolean {
+  return GZIP_DATA_PREVIEW_PATHS.has(path.split(/[?#]/, 1)[0] ?? '');
+}
+
+function setCanonicalContentEncoding(headers: Record<string, string>, value: string): void {
+  for (const key of Object.keys(headers)) {
+    if (key.toLowerCase() === 'content-encoding') delete headers[key];
+  }
+  headers['Content-Encoding'] = value;
 }
 
 /** Build the optional debug-only audit fields (empty object when not enabled). */
@@ -131,6 +144,8 @@ export interface AdtHttpConfig {
   client?: string;
   language?: string;
   insecure?: boolean;
+  /** Gzip non-empty data-preview POST bodies for approved WAF compatibility. */
+  gzipDataPreviewBody?: boolean;
   cookies?: Record<string, string>;
   /** Path to cookie file — enables hot-reload on stale auth */
   cookieFile?: string;
@@ -399,6 +414,17 @@ export class AdtHttpClient {
       headers['Content-Type'] = contentType;
     }
 
+    const gzipDataPreviewBody =
+      this.config.gzipDataPreviewBody === true &&
+      method === 'POST' &&
+      typeof body === 'string' &&
+      body.length > 0 &&
+      isExactDataPreviewPath(path);
+    const wireBody: string | Buffer | undefined = gzipDataPreviewBody ? gzipSync(Buffer.from(body, 'utf8')) : body;
+    if (gzipDataPreviewBody) {
+      setCanonicalContentEncoding(headers, 'gzip');
+    }
+
     // Auth: Bearer token (BTP ABAP) or Basic Auth (on-premise)
     this.applyAuthHeader(headers);
     if (this.config.bearerTokenProvider) {
@@ -448,7 +474,7 @@ export class AdtHttpClient {
     let retried429 = false;
 
     try {
-      let response = await this.doFetch(url, method, headers, body);
+      let response = await this.doFetch(url, method, headers, wireBody);
       let responseBody = await response.text();
 
       // Persist any Set-Cookie headers from the response
@@ -493,7 +519,7 @@ export class AdtHttpClient {
             delete headers.Cookie;
           }
 
-          const retryResp = await this.doFetch(url, method, headers, body);
+          const retryResp = await this.doFetch(url, method, headers, wireBody);
           const retryBody = await retryResp.text();
           this.storeCookies(retryResp);
           const retryResult = this.handleResponse(retryResp.status, retryResp.headers, retryBody, path);
@@ -538,7 +564,7 @@ export class AdtHttpClient {
 
         await new Promise((resolve) => setTimeout(resolve, jitterMs));
 
-        const retryResp = await this.doFetch(url, method, headers, body);
+        const retryResp = await this.doFetch(url, method, headers, wireBody);
         const retryBody = await retryResp.text();
         this.storeCookies(retryResp);
 
@@ -582,7 +608,7 @@ export class AdtHttpClient {
 
         await new Promise((resolve) => setTimeout(resolve, jitterMs));
 
-        const retryResp = await this.doFetch(url, method, headers, body);
+        const retryResp = await this.doFetch(url, method, headers, wireBody);
         const retryBody = await retryResp.text();
         this.storeCookies(retryResp);
 
@@ -649,7 +675,7 @@ export class AdtHttpClient {
           delete headers.Cookie;
         }
 
-        response = await this.doFetch(url, method, headers, body);
+        response = await this.doFetch(url, method, headers, wireBody);
         responseBody = await response.text();
         this.storeCookies(response);
 
@@ -685,7 +711,7 @@ export class AdtHttpClient {
         if (csrfRefreshedCookieHeader) {
           headers.Cookie = csrfRefreshedCookieHeader;
         }
-        const retryResponse = await this.doFetch(url, method, headers, body);
+        const retryResponse = await this.doFetch(url, method, headers, wireBody);
         const retryBody = await retryResponse.text();
         this.storeCookies(retryResponse);
         const result = this.handleResponse(retryResponse.status, retryResponse.headers, retryBody, path);
@@ -760,7 +786,7 @@ export class AdtHttpClient {
             errorBody: `Content negotiation ${response.status} — retrying with fallback headers`,
           });
 
-          const retryResp = await this.doFetch(url, method, fallbackHeaders, body);
+          const retryResp = await this.doFetch(url, method, fallbackHeaders, wireBody);
           const retryBody = await retryResp.text();
           this.storeCookies(retryResp);
 
@@ -1268,7 +1294,7 @@ export class AdtHttpClient {
     url: string,
     method: string,
     headers: Record<string, string>,
-    body?: string,
+    body?: string | Buffer,
   ): Promise<Response> {
     // Forward the caller's W3C trace context to SAP so one trace spans agent → ARC-1 → SAP.
     // Empty unless the MCP client sent a valid `traceparent`; ARC-1 never originates a trace.
@@ -1311,7 +1337,7 @@ export class AdtHttpClient {
     url: string,
     method: string,
     headers: Record<string, string>,
-    body?: string,
+    body?: string | Buffer,
   ): Promise<Response> {
     const proxy = this.config.btpProxy!;
     const proxyOrigin = `${proxy.protocol}://${proxy.host}:${proxy.port}`;

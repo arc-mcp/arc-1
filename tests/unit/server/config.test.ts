@@ -30,6 +30,7 @@ describe('parseArgs', () => {
     expect(config.url).toBe('');
     expect(config.client).toBe('100');
     expect(config.language).toBe('EN');
+    expect(config.gzipDataPreviewBody).toBe(false);
     expect(config.transport).toBe('stdio');
     expect(config.allowWrites).toBe(false);
     expect(config.allowFreeSQL).toBe(false);
@@ -122,6 +123,18 @@ describe('parseArgs', () => {
     const config = parseArgs([]);
     expect(config.allowWrites).toBe(true);
     expect(config.allowFreeSQL).toBe(true);
+  });
+
+  it('parses SAP_GZIP_DATAPREVIEW_BODY and lets the CLI override it', () => {
+    process.env.SAP_GZIP_DATAPREVIEW_BODY = 'true';
+
+    const fromEnv = resolveConfig([]);
+    expect(fromEnv.config.gzipDataPreviewBody).toBe(true);
+    expect(fromEnv.sources.gzipDataPreviewBody).toEqual({ env: 'SAP_GZIP_DATAPREVIEW_BODY' });
+
+    const fromCli = resolveConfig(['--gzip-datapreview-body', 'false']);
+    expect(fromCli.config.gzipDataPreviewBody).toBe(false);
+    expect(fromCli.sources.gzipDataPreviewBody).toEqual({ flag: '--gzip-datapreview-body' });
   });
 
   it('parses --allow-git-writes flag', () => {
@@ -1014,6 +1027,7 @@ describe('parseArgs', () => {
   it('resolveConfig returns per-field sources (default when unset)', () => {
     const { sources } = resolveConfig([]);
     expect(sources.allowWrites).toBe('default');
+    expect(sources.gzipDataPreviewBody).toBe('default');
     expect(sources.allowedPackages).toBe('default');
     expect(sources.schemaNullableOptionals).toBe('default');
   });

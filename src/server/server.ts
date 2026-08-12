@@ -214,6 +214,7 @@ export function buildAdtConfig(
     client: config.client,
     language: config.language,
     insecure: config.insecure,
+    gzipDataPreviewBody: config.gzipDataPreviewBody,
     disableSaml: config.disableSaml2,
     btpProxy,
     bearerTokenProvider,

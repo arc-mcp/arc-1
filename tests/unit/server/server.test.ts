@@ -767,6 +767,20 @@ describe('buildAdtConfig', () => {
     expect(cfg.disableSaml).toBe(true);
   });
 
+  it('propagates gzipDataPreviewBody into ADT config', () => {
+    const enabled = buildAdtConfig({
+      ...DEFAULT_CONFIG,
+      gzipDataPreviewBody: true,
+    });
+    const disabled = buildAdtConfig({
+      ...DEFAULT_CONFIG,
+      gzipDataPreviewBody: false,
+    });
+
+    expect(enabled.gzipDataPreviewBody).toBe(true);
+    expect(disabled.gzipDataPreviewBody).toBe(false);
+  });
+
   it('passes cookieFile and cookieString through to shared ADT config', () => {
     const fixture = writeCookieFixture('.example.com\tTRUE\t/\tFALSE\t0\tSAP_SESSIONID\txyz789\n');
     const cfg = buildAdtConfig({

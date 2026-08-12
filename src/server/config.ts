@@ -360,6 +360,12 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
   config.client = resolveStr('client', 'SAP_CLIENT', '100', 'client');
   config.language = resolveStr('language', 'SAP_LANGUAGE', 'EN', 'language');
   config.insecure = resolveBool('insecure', 'SAP_INSECURE', false, 'insecure');
+  config.gzipDataPreviewBody = resolveBool(
+    'gzip-datapreview-body',
+    'SAP_GZIP_DATAPREVIEW_BODY',
+    false,
+    'gzipDataPreviewBody',
+  );
 
   // ── Cookie Auth ────────────────────────────────────────────────────
   config.cookieFile = resolveOptionalStr('cookie-file', 'SAP_COOKIE_FILE', 'cookieFile');
