@@ -260,7 +260,6 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
 export async function writeActionDelete(ctx: SapWriteContext): Promise<ToolResult> {
   const { client, type, name, transport, objectUrl, invalidateWrittenObject, enforcePackageForExistingObject } = ctx;
   await enforcePackageForExistingObject();
-  let resourceKnownToExist = false;
   let lockSucceeded = false;
 
   // Lock, delete, unlock pattern (works for all types including SKTD) — auto-propagate lock corrNr if no explicit transport
@@ -287,17 +286,20 @@ export async function writeActionDelete(ctx: SapWriteContext): Promise<ToolResul
     if (err instanceof AdtApiError && err.isNotFound && lockSucceeded) {
       try {
         await client.getObjectMetadata(objectUrl);
-        resourceKnownToExist = true;
-      } catch {
-        // No independent existence evidence — retain normal 404 classification.
+        err.resourceExistenceAfterDelete = 'exists';
+      } catch (probeErr) {
+        // Only a 404 from the follow-up probe establishes absence. Authorization,
+        // transport, and server failures leave existence unknown and must not turn
+        // the original DELETE response into a definite "object not found" claim.
+        err.resourceExistenceAfterDelete =
+          probeErr instanceof AdtApiError && probeErr.isNotFound ? 'absent' : 'unknown';
       }
     }
-    if (err instanceof AdtApiError && lockSucceeded && resourceKnownToExist) {
-      err.resourceKnownToExist = true;
-    }
     if (err instanceof AdtApiError && CDS_DEPENDENCY_SENSITIVE_TYPES.has(canonicalTablType(type))) {
-      const confirmedPostLockNotFound = Boolean(err.isNotFound && err.resourceKnownToExist);
-      const detectedDependency = isDeleteDependencyError(err) && (!err.isNotFound || confirmedPostLockNotFound);
+      const confirmedPostLockNotFound = Boolean(err.isNotFound && err.resourceExistenceAfterDelete === 'exists');
+      const inconclusivePostLockNotFound = Boolean(err.isNotFound && err.resourceExistenceAfterDelete === 'unknown');
+      const detectedDependency =
+        isDeleteDependencyError(err) && (!err.isNotFound || confirmedPostLockNotFound || inconclusivePostLockNotFound);
       const inferredDdlsDependency = canonicalTablType(type) === 'DDLS' && confirmedPostLockNotFound;
       if (detectedDependency || inferredDdlsDependency) {
         const hint = await buildCdsDeleteDependencyHint(client, type, name, objectUrl);

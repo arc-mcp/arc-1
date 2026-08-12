@@ -18,10 +18,11 @@ tests disproved:
 3. NW 7.50 overloads HTTP 404 for a DDLS delete rejected because an active DDLS consumer still
    exists. ARC-1's dependency detector recognizes the English text but misses the German text, and
    the dispatcher then unconditionally says the object was not found. Use independent metadata
-   resolution after the failed mutation as language-independent existence evidence, mark the error
-   `resourceKnownToExist`, use a confirmed post-lock DDLS 404 as a dependency signal, and suppress
-   the generic not-found hint whenever that evidence is present. A post-fix live review found that
-   7.50 can return a lock handle for an absent DDLS, so lock success alone is deliberately not used.
+   resolution after the failed mutation as language-independent existence evidence and record a
+   tri-state result (`exists`, `absent`, or `unknown`). Use a confirmed post-lock DDLS 404 as a
+   dependency signal, suppress the generic not-found hint when existence is confirmed, and report
+   uncertainty when the follow-up probe itself fails. A post-fix live review found that 7.50 can
+   return a lock handle for an absent DDLS, so lock success alone is deliberately not used.
 
 The reporter's proposed underlying cause for delete — the table function's HANA runtime object or
 its AMDP implementation — is not the cause. Deleting an active table function while its active AMDP
@@ -226,10 +227,10 @@ This falsified the first draft's assumption that LOCK success alone proves exist
 stack. The refined design requires independent object metadata evidence as well:
 
 - every post-lock 404 triggers a follow-up metadata read, independent of package-gate settings;
-- only a successful post-failure metadata read plus the failed mutation sequence sets
-  `resourceKnownToExist`;
-- 404 phrase-based dependency matching is also ignored without that confirmation;
-- if metadata is 404/unavailable, the normal not-found classification remains.
+- a successful post-failure metadata read records `exists`;
+- only a metadata-probe 404 records `absent` and suppresses 404 phrase-based dependency matching;
+- any other metadata-probe failure records `unknown`, avoids a false missing-object claim, and
+  preserves message-based dependency enrichment without inferring a localized DDLS dependency.
 
 The reported dependent-DDLS object remains distinguishable: it was readable before the attempt and
 remained readable after the 404.
@@ -274,6 +275,8 @@ The robust signal is structural, not linguistic:
 - LOCK alone is not proof on 7.50 because an absent DDLS can receive a handle;
 - a 404 from DELETE after LOCK plus successful post-failure metadata confirmation is a
   delete-handler failure and must not be described as object absence;
+- a non-404 failure from the follow-up probe is inconclusive and must not be converted into an
+  absent-object claim; existing structured/message dependency evidence remains valid on that path;
 - for DDLS, the live-verified post-lock 404 should trigger existing where-used enrichment even when
   the localized response text is unknown;
 - other object types should still suppress the false absence claim, but should not be labeled as a
@@ -289,25 +292,26 @@ The robust signal is structural, not linguistic:
      object is created;
    - record a per-item failure and stop consistently with the existing RAP/lint branches.
 3. `src/adt/errors.ts`
-   - add an optional handler-owned `resourceKnownToExist` fact to `AdtApiError`, analogous to
-     `extraHint` but used for classification rather than appended prose.
+   - add an optional handler-owned `resourceExistenceAfterDelete` state to `AdtApiError`, analogous
+     to `extraHint` but used for classification rather than appended prose.
 4. `src/handlers/write/update-delete.ts`
    - track whether LOCK succeeded;
    - confirm existence with a metadata read after every post-lock 404;
-   - mark the error `resourceKnownToExist` only when metadata and lifecycle evidence agree;
+   - record `exists`, `absent`, or `unknown` from the follow-up metadata probe;
    - treat a confirmed post-lock DDLS 404 as a dependency signal independent of localized message
      text, and reuse `buildCdsDeleteDependencyHint()`; retain the existing detector for other
      sensitive types and non-404 errors, but require the same confirmation for its 404 matches.
 5. `src/handlers/dispatch.ts`
-   - when a 404 is marked `resourceKnownToExist`, explain that ARC-1 confirmed the object still
-     existed after SAP rejected DELETE and do not emit the missing-object hint;
+   - distinguish confirmed existence, confirmed absence, and an inconclusive metadata probe;
+   - never emit the missing-object hint when the probe is inconclusive;
    - allow `extraHint` to remain the final, detailed remediation block.
 6. Focused tests:
    - `tests/unit/handlers/cds-write-guard.test.ts`: table functions pass the 750 guard on single
      create/update and batch; table entities remain blocked on 750, including batch;
    - `tests/unit/handlers/transport.test.ts`: German post-lock DDLS 404 receives dependency guidance
      without a missing-object hint; a pre-lock 404 retains normal not-found guidance; a non-CDS
-     post-lock delete 404 receives the generic delete-handler explanation.
+     post-lock delete 404 receives the generic delete-handler explanation; an English dependency
+     404 whose metadata probe fails non-404 retains remediation without claiming absence.
 
 No tool schema or public parameter changes are needed, so `tools.ts`, `schemas.ts`, and frozen tool
 definition fixtures stay unchanged.
@@ -319,8 +323,8 @@ the combined file exceeded the repository's 3,000-line size ratchet. The budget 
 
 Local validation after the final review:
 
-- focused handler suite: 226 tests passed;
-- full unit suite: 171 files and 4,991 tests passed;
+- focused handler suite: 227 tests passed;
+- full unit suite: 171 files and 4,992 tests passed;
 - `npm run typecheck`, `npm run lint`, `npm run build`, and `npm run check:sizes` passed;
 - lint reported only the repository's pre-existing Biome 2.5.5 schema / 2.5.7 CLI notices.
 

@@ -77,12 +77,12 @@ export class AdtApiError extends AdtError {
   extraHint?: string;
 
   /**
-   * Handler-owned lifecycle evidence that the resource was confirmed by metadata
-   * resolution as well as the stateful mutation sequence. Lets generic formatting
-   * avoid misclassifying an operation failure as an absent object without teaching
-   * it the handler's request sequence.
+   * Handler-owned result of the metadata probe after a failed post-lock DELETE.
+   * Only a probe 404 proves absence; other probe failures are explicitly unknown.
+   * Lets generic formatting avoid claiming an object is absent without teaching it
+   * the handler's request sequence.
    */
-  resourceKnownToExist?: boolean;
+  resourceExistenceAfterDelete?: 'exists' | 'absent' | 'unknown';
 
   constructor(
     message: string,

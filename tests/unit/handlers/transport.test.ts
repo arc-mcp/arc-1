@@ -1897,6 +1897,46 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
       expect(text).not.toContain('Delete dependency follow-up');
     });
 
+    it('preserves message-based dependency guidance when the post-delete metadata probe is inconclusive', async () => {
+      const lockBody =
+        '<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><LOCK_HANDLE>DLH1</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL></DATA></asx:values></asx:abap>';
+      let deleteAttempted = false;
+      let metadataReadAfterDelete = false;
+
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
+        const method = (opts?.method ?? 'GET').toUpperCase();
+        const parsed = new URL(String(url));
+        if (method === 'POST' && parsed.searchParams.get('_action') === 'LOCK') {
+          return Promise.resolve(mockResponse(200, lockBody, { 'x-csrf-token': 'T' }));
+        }
+        if (method === 'DELETE') {
+          deleteAttempted = true;
+          return Promise.resolve(mockResponse(404, 'DDL source ZI_ROOT could not be deleted'));
+        }
+        if (deleteAttempted && method === 'GET' && parsed.pathname === '/sap/bc/adt/ddic/ddl/sources/ZI_ROOT') {
+          metadataReadAfterDelete = true;
+          return Promise.resolve(mockResponse(403, 'Metadata probe forbidden'));
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'delete',
+        type: 'DDLS',
+        name: 'ZI_ROOT',
+      });
+
+      expect(result.isError).toBe(true);
+      const text = result.content[0]!.text;
+      expect(metadataReadAfterDelete).toBe(true);
+      expect(text).toContain('could not be deleted');
+      expect(text).toContain('could not determine whether the object still exists');
+      expect(text).toContain('Delete dependency follow-up for DDLS ZI_ROOT');
+      expect(text).not.toContain('Object "ZI_ROOT" (type DDLS) was not found');
+      expect(text).not.toContain('confirmed this object still existed after SAP rejected DELETE');
+    });
+
     it('does not claim a non-CDS object is missing when DELETE returns 404 after lock', async () => {
       const lockBody =
         '<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><LOCK_HANDLE>PLH1</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL></DATA></asx:values></asx:abap>';

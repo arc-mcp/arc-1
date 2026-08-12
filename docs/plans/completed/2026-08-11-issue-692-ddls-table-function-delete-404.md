@@ -1,12 +1,13 @@
 # Plan — #692: allow DDLS table functions on 7.50 and classify post-lock delete 404s correctly
 
 **Evidence base:**
-[`docs/research/issues/692-ddls-table-function-guard-delete-404.md`](../research/issues/692-ddls-table-function-guard-delete-404.md)
+[`docs/research/issues/692-ddls-table-function-guard-delete-404.md`](../../research/issues/692-ddls-table-function-guard-delete-404.md)
 — live-verified 2026-08-11 on NW 7.50 SP02 (`SAP_BASIS 750`) and S/4HANA 2023
 (`SAP_BASIS 758`).
 
-**Status:** implemented and validated; amended during live review after 7.50 exposed a phantom-lock
-edge case.
+**Status:** completed and validated; amended during live review after 7.50 exposed a phantom-lock
+edge case and during PR review to preserve truthful diagnostics when the confirmation probe itself
+fails.
 
 ## Goal
 
@@ -46,18 +47,21 @@ the guard covers only syntax that the live 7.50 system genuinely cannot accept.
 
 ### 2. Carry operation-stage evidence on the typed ADT error
 
-`AdtApiError` will gain an optional handler-owned `resourceKnownToExist` fact. This is classification
-metadata, not user-facing prose. The delete handler will set it only when a metadata read after the
-failure confirms the object and the successfully locked delete sequence threw an `AdtApiError`.
-Every post-lock 404 gets that follow-up read before classification; the extra request exists only on
-the error path and closes any race with earlier package metadata resolution.
+`AdtApiError` will gain an optional handler-owned `resourceExistenceAfterDelete` state. This is
+classification metadata, not user-facing prose. After a successfully locked DELETE returns 404,
+the delete handler records `exists` when the follow-up metadata read succeeds, `absent` only when
+that probe also returns 404, and `unknown` for any other probe failure. Every post-lock 404 gets
+that follow-up read before classification; the extra request exists only on the error path and
+closes any race with earlier package metadata resolution.
 
 This preserves the distinction the HTTP status alone loses:
 
 - a failure while resolving or locking the object can still mean it is absent;
 - a 7.50 lock handle alone does not prove a DDLS exists;
 - a DELETE 404 plus independent successful post-failure metadata resolution cannot truthfully be
-  described as absence.
+  described as absence;
+- a non-404 failure from the confirmation probe establishes neither existence nor absence, so the
+  formatter must report uncertainty rather than falling back to a missing-object claim.
 
 ### 3. Make dependency enrichment language-independent
 
@@ -65,14 +69,14 @@ For DDLS, either the existing structured/message detector or a post-lock 404 wil
 `buildCdsDeleteDependencyHint()`. The existing detector remains useful for non-404 DDIC error 039
 responses and for other dependency-sensitive types. Restricting the new structural inference to
 the live-verified DDLS handler avoids labeling unrelated post-lock 404s as dependency failures. It
-still covers localized DDLS text without growing a fragile list of translations. Any 404 branch,
-including the existing English phrase matcher, requires the same independent existence
-confirmation so a phantom lock cannot add contradictory dependency guidance to a real not-found
-result.
+still covers localized DDLS text without growing a fragile list of translations. A follow-up probe
+404 suppresses the existing English phrase matcher so a phantom lock cannot add contradictory
+dependency guidance to a real not-found result. If that probe instead fails inconclusively, the
+message-based matcher remains useful but structural DDLS inference is withheld.
 
-The dispatcher will check `resourceKnownToExist` before its generic not-found branch. It will retain
-the SAP message and explain that SAP's delete handler rejected the operation after a successful
-lock. Handler-provided dependency remediation stays last through `extraHint`.
+The dispatcher will check `resourceExistenceAfterDelete` before its generic not-found branch. It
+will distinguish confirmed existence, confirmed absence, and an inconclusive follow-up probe.
+Handler-provided dependency remediation stays last through `extraHint`.
 
 ## Tasks
 
@@ -84,12 +88,13 @@ lock. Handler-provided dependency remediation stays last through `extraHint`.
 
 ### 2. Preserve successful-lock evidence
 
-- `src/adt/errors.ts`: add and document `resourceKnownToExist?: boolean` on `AdtApiError`.
+- `src/adt/errors.ts`: add and document the tri-state `resourceExistenceAfterDelete` fact on
+  `AdtApiError`.
 - `src/handlers/write/update-delete.ts`: combine a post-failure metadata read with lock-stage
-  evidence, annotate only confirmed ADT failures, and enrich confirmed DDLS post-lock 404s
-  independent of response language.
-- `src/handlers/dispatch.ts`: suppress the absent-object hint for marked 404s and emit a truthful
-  delete-handler hint instead.
+  evidence, record `exists`/`absent`/`unknown`, and enrich confirmed DDLS post-lock 404s independent
+  of response language while retaining message-based evidence when the probe is inconclusive.
+- `src/handlers/dispatch.ts`: render confirmed existence and inconclusive probes truthfully instead
+  of falling through to the absent-object hint.
 
 ### 3. Add focused regression coverage
 
@@ -103,6 +108,8 @@ lock. Handler-provided dependency remediation stays last through `extraHint`.
   - a genuine pre-lock 404 keeps the normal missing-object hint;
   - a 7.50-style phantom DDLS lock followed by DELETE 404 and metadata 404 still keeps the
     missing-object hint;
+  - a message-based dependency 404 followed by an inconclusive metadata probe keeps dependency
+    remediation but does not claim either confirmed existence or absence;
   - a non-CDS 404 after a successful lock gets the generic delete-handler explanation rather than
     a dependency claim or missing-object hint.
 
@@ -126,19 +133,21 @@ the dispatcher ordering. The review rejected three tempting but weaker changes:
 - treating every DDLS 404 as a dependency failure would misclassify genuine missing objects;
 - adding a user override would broaden writes without solving the guard's incorrect syntax match.
 
-The combined metadata/lifecycle fact is the narrowest reusable boundary: it is produced only by the
-handler that knows both the existence lookup and the mutation stage, while the generic formatter
-consumes it without learning CRUD internals. The review narrowed structural dependency inference
-from all dependency-sensitive types to DDLS, the only handler behavior established by the live
-trace. A first post-fix live pass then disproved lock-only evidence, so the implementation was
-tightened to require metadata confirmation as well. No schema, tool-definition fixture, ADT path,
-or authorization change is required. Final validation also moved the cohesive CDS guard suite out
-of `write-create-batch.test.ts` rather than raising that file's 3,000-line CI budget.
+The tri-state metadata/lifecycle fact is the narrowest reusable boundary: it is produced only by
+the handler that knows both the existence lookup and the mutation stage, while the generic
+formatter consumes it without learning CRUD internals. The review narrowed structural dependency
+inference from all dependency-sensitive types to DDLS, the only handler behavior established by
+the live trace. A first post-fix live pass then disproved lock-only evidence, so the implementation
+was tightened to require metadata confirmation as well. No schema, tool-definition fixture, ADT
+path, or authorization change is required. Final validation also moved the cohesive CDS guard suite
+out of `write-create-batch.test.ts` rather than raising that file's 3,000-line CI budget. PR review
+then closed the remaining degraded path: a non-404 confirmation-probe failure now remains
+explicitly unknown and preserves existing message-based dependency remediation.
 
 ## Validation results
 
-- Focused handler tests: 226 passed.
-- Full unit suite: 171 files / 4,991 tests passed.
+- Focused handler tests: 227 passed.
+- Full unit suite: 171 files / 4,992 tests passed.
 - Typecheck, Biome, build, file-size ratchet, and tool-schema budgets passed. Biome emitted only the
   existing configuration-version/deprecation notices.
 - NW 7.50 (`SAP_BASIS 750`): single table-function create/update/activate/read passed; batch table
