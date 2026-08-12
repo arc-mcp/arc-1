@@ -497,6 +497,7 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
 
       expect(result.isError).toBe(true);
       expect(text).toMatch(/possible upstream WAF|possible.*body inspection/i);
+      expect(text).toContain('rejected CSRF/session pair');
       expect(text).toContain('gateway logs');
       expect(text).toContain('scoped WAF rule exclusion');
       expect(text).toContain('SAP_GZIP_DATAPREVIEW_BODY');
@@ -516,6 +517,9 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
 
       expect(result.isError).toBe(true);
       expect(text).toMatch(/possible upstream WAF|possible.*body inspection/i);
+      expect(text).toContain('request ID');
+      expect(text).toContain('gateway logs');
+      expect(text).toContain('rejected CSRF/session pair');
       expect(text).toContain('SAP_GZIP_DATAPREVIEW_BODY');
       expect(text).not.toContain('403 Forbidden');
       expect(text).not.toContain('SAP_PASSWORD');

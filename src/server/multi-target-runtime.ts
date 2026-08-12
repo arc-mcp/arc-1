@@ -31,6 +31,7 @@ function buildReadOnlyRuntimeConfig(
     url: '',
     client: target?.client ?? base.client,
     language: target?.language ?? base.language,
+    // Transport representation is a global server policy, unlike per-target TLS trust (`insecure`).
     gzipDataPreviewBody: base.gzipDataPreviewBody,
     transport: 'http-streamable',
     httpAddr: base.httpAddr,

@@ -420,6 +420,7 @@ export class AdtHttpClient {
       typeof body === 'string' &&
       body.length > 0 &&
       isExactDataPreviewPath(path);
+    // Keep `body` as the logical plaintext for debug audit fields; only `wireBody` is sent.
     const wireBody: string | Buffer | undefined = gzipDataPreviewBody ? gzipSync(Buffer.from(body, 'utf8')) : body;
     if (gzipDataPreviewBody) {
       setCanonicalContentEncoding(headers, 'gzip');

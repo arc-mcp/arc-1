@@ -234,7 +234,10 @@ Implemented in the source tree (never by editing `dist/`):
 - A bare/generic 403 on the freestyle path, or on a DDIC request that actually carries an
   `sqlFilter`, now produces cautious possible-WAF guidance in detailed and minimal-error modes. A
   bodyless, unfiltered DDIC request, structured SAP XML authorization faults, and other
-  paths/statuses retain their existing classification.
+  paths/statuses retain their existing classification. The hint preserves request-correlation
+  guidance and names a rejected CSRF/session pair as another possible source of a generic 403.
+- Startup policy logs expose the resolved gzip state and its configuration source, and warn when
+  both data-preview gates make the enabled option unreachable.
 - Operator documentation puts gateway audit evidence and a scoped rule exclusion before the gzip
   compatibility fallback and calls out the inspection trade-off.
 
@@ -245,7 +248,7 @@ Final automated checks:
 | Focused config/runtime tests | pass |
 | Focused HTTP transport tests | pass |
 | Focused dispatch/error tests | pass |
-| Full `npm test` | 170 files, 5,006 tests passed |
+| Full `npm test` | 171 files, 5,016 tests passed |
 | `npm run typecheck` | pass |
 | `npm run lint` | pass (two pre-existing Biome config migration notices only) |
 | `npm run build` | pass |

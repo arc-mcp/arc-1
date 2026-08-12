@@ -103,12 +103,15 @@ function isPossibleDataPreviewWafBlock(err: AdtApiError, tool: string, args: Rec
 }
 
 function formatPossibleDataPreviewWafBlock(err: AdtApiError, minimalErrors: boolean): string {
-  const prefix = minimalErrors ? 'ADT API error: status 403.' : err.message;
+  const prefix = minimalErrors
+    ? 'ADT API error: status 403. Use the request ID to correlate server-side audit and gateway logs.'
+    : err.message;
   return (
     `${prefix}\n\nHint: This bare 403 on an ADT data-preview endpoint is a possible upstream WAF/body inspection ` +
-    'block, not proof of an SAP authorization failure. Compare an unfiltered TABLE_CONTENTS call and inspect ' +
-    'gateway logs for the matched rule. Prefer a scoped WAF rule exclusion. If the security owner approves ' +
-    'sending these request bodies as compressed content, set SAP_GZIP_DATAPREVIEW_BODY=true as a compatibility fallback.'
+    'block or a rejected CSRF/session pair, not proof of an SAP authorization failure. Compare an unfiltered ' +
+    'TABLE_CONTENTS call and inspect gateway logs for the matched rule. Prefer a scoped WAF rule exclusion. If ' +
+    'the security owner approves sending these request bodies as compressed content, set ' +
+    'SAP_GZIP_DATAPREVIEW_BODY=true as a compatibility fallback.'
   );
 }
 
