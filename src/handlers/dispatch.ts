@@ -153,7 +153,8 @@ function buildBaseErrorMessage(
         );
       }
       if (err.resourceExistenceAfterDelete === 'unknown') {
-        return `${enriched}\n\nHint: SAP returned 404 after DELETE, but ARC-1 could not determine whether the object still exists because the follow-up metadata check failed.`;
+        const name = String(args.name ?? '');
+        return `${enriched}\n\nHint: SAP returned 404 after DELETE, but ARC-1 could not determine whether the object still exists because the follow-up metadata check failed. Use SAPSearch with query "${name}" to verify the current object state before retrying DELETE.`;
       }
       const diagnosticsHint = buildDiagnosticsNotFoundHint(tool, args);
       if (diagnosticsHint) {

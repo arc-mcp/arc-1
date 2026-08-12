@@ -75,7 +75,8 @@ dependency guidance to a real not-found result. If that probe instead fails inco
 message-based matcher remains useful but structural DDLS inference is withheld.
 
 The dispatcher will check `resourceExistenceAfterDelete` before its generic not-found branch. It
-will distinguish confirmed existence, confirmed absence, and an inconclusive follow-up probe.
+will distinguish confirmed existence, confirmed absence, and an inconclusive follow-up probe. An
+inconclusive result directs the caller to verify the current state with `SAPSearch` before retrying.
 Handler-provided dependency remediation stays last through `extraHint`.
 
 ## Tasks
@@ -146,8 +147,8 @@ explicitly unknown and preserves existing message-based dependency remediation.
 
 ## Validation results
 
-- Focused handler tests: 227 passed.
-- Full unit suite: 171 files / 4,992 tests passed.
+- Focused handler tests: 228 passed.
+- Full unit suite: 171 files / 4,993 tests passed.
 - Typecheck, Biome, build, file-size ratchet, and tool-schema budgets passed. Biome emitted only the
   existing configuration-version/deprecation notices.
 - NW 7.50 (`SAP_BASIS 750`): single table-function create/update/activate/read passed; batch table

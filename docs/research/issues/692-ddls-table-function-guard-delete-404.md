@@ -311,7 +311,8 @@ The robust signal is structural, not linguistic:
    - `tests/unit/handlers/transport.test.ts`: German post-lock DDLS 404 receives dependency guidance
      without a missing-object hint; a pre-lock 404 retains normal not-found guidance; a non-CDS
      post-lock delete 404 receives the generic delete-handler explanation; an English dependency
-     404 whose metadata probe fails non-404 retains remediation without claiming absence.
+     404 whose metadata probe fails non-404 retains remediation without claiming absence; a
+     non-CDS inconclusive probe directs the caller to verify current state with `SAPSearch`.
 
 No tool schema or public parameter changes are needed, so `tools.ts`, `schemas.ts`, and frozen tool
 definition fixtures stay unchanged.
@@ -323,8 +324,8 @@ the combined file exceeded the repository's 3,000-line size ratchet. The budget 
 
 Local validation after the final review:
 
-- focused handler suite: 227 tests passed;
-- full unit suite: 171 files and 4,992 tests passed;
+- focused handler suite: 228 tests passed;
+- full unit suite: 171 files and 4,993 tests passed;
 - `npm run typecheck`, `npm run lint`, `npm run build`, and `npm run check:sizes` passed;
 - lint reported only the repository's pre-existing Biome 2.5.5 schema / 2.5.7 CLI notices.
 
