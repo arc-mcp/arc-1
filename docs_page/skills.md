@@ -6,10 +6,12 @@ This page is the published index for those files. The canonical copies stay in `
 
 See the full source catalog in [`skills/README.md`](https://github.com/arc-mcp/arc-1/blob/main/skills/README.md).
 
-!!! tip "Fastest path for Claude Code"
-    Install the [Claude Code plugin](install-in-claude.md#claude-code-plugin-server-skills) — it
-    bundles the ARC-1 MCP server **and** every skill below in one step (`/plugin install
-    arc-1@arc-1`). The per-assistant copy instructions below are for other tools and manual setups.
+!!! tip "Install the server and skills together"
+    Install the portable [Agent Plugin](agent-plugin.md) for Copilot, VS Code, Cursor, Codex, and
+    other compatible clients. Claude Code users can install its
+    [native plugin](install-in-claude.md#claude-code-plugin-server-skills), which adds a secure
+    configuration prompt. The per-assistant copy instructions below remain useful when ARC-1 is
+    already connected separately.
 
 ## What Skills Are
 
@@ -53,6 +55,7 @@ The CLI knows Copilot-compatible paths such as `.agents/skills/<name>/` and `~/.
 
 Choose the integration style that matches your assistant:
 
+- **Agent Plugins 1.0 clients**: install the [ARC-1 Agent Plugin](agent-plugin.md) for the server and all skills in one package
 - **Claude Code**: install the [plugin](install-in-claude.md#claude-code-plugin-server-skills) (recommended — server + skills), run `npx skills add arc-mcp/arc-1`, or copy a skill folder into `.claude/skills/<name>/`
 - **GitHub Copilot in VS Code / CLI / cloud agent**: install into `.agents/skills/<name>/`, `.github/skills/<name>/`, or `~/.copilot/skills/<name>/`
 - **GitHub Copilot in Eclipse**: install into `.agents/skills/<name>/`, `.github/skills/<name>/`, or `~/.copilot/skills/<name>/` in a normal local Eclipse project; use **Enable Skills** and the `/skill:<name>` slash menu

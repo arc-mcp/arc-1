@@ -145,6 +145,19 @@ What changed per release: the annotated [Release Notes](https://docs.arc-1-mcp.c
 
 ## Quick Start
 
+**Install as an Agent Plugin** — one portable install for the MCP server and all 22 SAP skills in
+GitHub Copilot, VS Code, Cursor, Codex, and other compatible clients:
+
+```bash
+copilot plugin marketplace add arc-mcp/arc-1
+copilot plugin install arc-1@arc-1
+```
+
+Agent Plugins 1.0 does not define secret prompts, so create the ARC-1 `.env` in the installed
+plugin's persistent data directory before connecting to SAP. See the
+**[Agent Plugin guide](https://docs.arc-1-mcp.com/agent-plugin/)** for client-specific installation,
+safe configuration, and verification.
+
 **Install in Claude** — pick your surface (full guide: [Install in Claude](https://docs.arc-1-mcp.com/install-in-claude/)):
 
 - **Claude Desktop** — download the latest `arc-1-*.mcpb` from [Releases](https://github.com/arc-mcp/arc-1/releases) and double-click it (or Settings → Extensions). Claude prompts for your SAP connection. (The `.mcpb` is attached to releases automatically; if the newest one doesn't have it yet, see [Install in Claude](https://docs.arc-1-mcp.com/install-in-claude/).)
@@ -186,6 +199,7 @@ Full documentation is available at **[docs.arc-1-mcp.com](https://docs.arc-1-mcp
 | Guide | Description |
 |-------|-------------|
 | [Quickstart](https://docs.arc-1-mcp.com/quickstart/) | 5-minute npx + Claude Desktop setup |
+| [Agent Plugin](https://docs.arc-1-mcp.com/agent-plugin/) | Portable server + all skills for Copilot, VS Code, Cursor, Codex, and compatible clients |
 | [Install in Claude](https://docs.arc-1-mcp.com/install-in-claude/) | Desktop `.mcpb`, Claude Code plugin (server + skills), and remote BTP connector |
 | [Local Development](https://docs.arc-1-mcp.com/local-development/) | Full local dev — all install methods, MCP client configs, SSO cookie extractor |
 | [Deployment](https://docs.arc-1-mcp.com/deployment/) | Multi-user deployment — Docker, BTP Cloud Foundry, BTP ABAP |

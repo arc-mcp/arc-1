@@ -4,6 +4,21 @@ Best-practice agent skills for common SAP development workflows with ARC-1.
 
 Each skill is a directory containing a `SKILL.md` file with YAML frontmatter — the format used by [Anthropic Agent Skills](https://code.claude.com/docs/en/skills) and consumed by the [`vercel-labs/skills`](https://github.com/vercel-labs/skills) CLI. Agents discover them by `description` and load them on demand.
 
+## Install as an Agent Plugin (MCP server + all skills)
+
+The repository root is an [Agent Plugins 1.0](https://agent-plugins.org/) package for GitHub
+Copilot, VS Code, Cursor, Codex, and other compatible clients. For Copilot CLI:
+
+```bash
+copilot plugin marketplace add arc-mcp/arc-1
+copilot plugin install arc-1@arc-1
+```
+
+This installs the ARC-1 MCP server and every skill below. The portable specification does not
+define secret prompts, so the SAP connection belongs in `.env` under the client-managed
+`${PLUGIN_DATA}` working directory. Follow the
+[Agent Plugin guide](https://docs.arc-1-mcp.com/agent-plugin/) to locate and configure it safely.
+
 ## Install as a Claude Code plugin (MCP server + all skills in one step)
 
 For **Claude Code**, the whole toolchain ships as a single plugin — the ARC-1 **MCP server** *and* every skill below — from a marketplace hosted in this repo:

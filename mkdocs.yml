@@ -41,6 +41,7 @@ theme:
 nav:
   - Home: index.md
   - Quickstart: quickstart.md
+  - Agent Plugin: agent-plugin.md
   - Install in Claude: install-in-claude.md
   - Deployment:
       - Overview: deployment.md

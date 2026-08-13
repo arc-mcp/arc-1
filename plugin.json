@@ -1,0 +1,14 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "arc-1",
+  "version": "1.0.2",
+  "description": "SAP ABAP development with the ARC-1 MCP server and portable skills for RAP, CDS, testing, migration, clean core, and UI5. Read-only by default.",
+  "author": {
+    "name": "Marian Zeis",
+    "url": "https://github.com/marianfoo"
+  },
+  "homepage": "https://docs.arc-1-mcp.com/agent-plugin/",
+  "repository": "https://github.com/arc-mcp/arc-1",
+  "license": "MIT",
+  "keywords": ["sap", "abap", "adt", "mcp", "agent-plugins", "s4hana", "btp", "rap", "cds", "fiori"]
+}

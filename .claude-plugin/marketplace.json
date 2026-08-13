@@ -5,13 +5,13 @@
     "name": "Marian Zeis"
   },
   "metadata": {
-    "description": "ARC-1 — SAP ABAP development tools for Claude Code (MCP server + SAP skills)."
+    "description": "ARC-1 — SAP ABAP development tools for AI coding agents (MCP server + SAP skills)."
   },
   "plugins": [
     {
       "name": "arc-1",
       "source": "./",
-      "description": "SAP ABAP development for Claude Code: the ARC-1 MCP server (read/write/search/activate/lint/diagnose ABAP via ADT) plus best-practice skills for RAP, CDS, ABAP Unit, clean-core, and UI5 modernization. Read-only by default.",
+      "description": "SAP ABAP development for AI coding agents: the ARC-1 MCP server (read/write/search/activate/lint/diagnose ABAP via ADT) plus best-practice skills for RAP, CDS, ABAP Unit, clean-core, and UI5 modernization. Read-only by default.",
       "author": {
         "name": "Marian Zeis"
       },
