@@ -55,6 +55,69 @@ https://github.com/arc-mcp/arc-1
 In Cursor, install the repository as an Agent Plugin from **Customize**, a team marketplace, or the
 [documented local plugin directory](https://cursor.com/docs/plugins#test-plugins-locally).
 
+## Test A Checkout Locally
+
+Use a local checkout to validate a branch before installing a published version. Neither setup
+stores SAP credentials in the checkout.
+
+### VS Code
+
+Add the checkout to user or workspace settings, then run **Developer: Reload Window**:
+
+```json
+{
+  "chat.plugins.enabled": true,
+  "chat.pluginLocations": {
+    "/absolute/path/to/arc-1": true
+  }
+}
+```
+
+Open **Chat: Open Customizations** → **Plugins** and **MCP: List Servers**. Verify that:
+
+- ARC-1 appears as an Agent Plugin with the version from root `plugin.json`.
+- The plugin contributes all 22 skills and one MCP server named `arc-1`.
+- The server source is the plugin and its launch is `npx -y arc-1@latest`.
+
+### Cursor
+
+Register the checkout in Cursor's documented local-plugin directory, then restart Cursor or run
+**Developer: Reload Window**:
+
+```bash
+mkdir -p ~/.cursor/plugins/local
+ln -s /absolute/path/to/arc-1 ~/.cursor/plugins/local/arc-1
+```
+
+Do not replace an existing `~/.cursor/plugins/local/arc-1` path without inspecting it first. Open
+**Customize** → **Plugins**, **Skills**, and **MCP Servers** and verify the same version, 22 skills,
+and `arc-1` server.
+
+### What To Expect
+
+The MCP server can complete its handshake without a `.env`; at that stage ARC-1 exposes only the
+tools allowed by its safe defaults. Missing-SAP-configuration messages are expected until
+`${PLUGIN_DATA}/.env` is configured. This separates three failure classes:
+
+1. If ARC-1 is absent from **Plugins**, check the local path, root `plugin.json`, plugin enablement,
+   and whether the window was reloaded.
+2. If skills appear but the MCP server does not, check that Node.js and `npx` are on the IDE's
+   executable path, then inspect the MCP output for schema or process-launch errors.
+3. If the MCP server is running but SAP calls fail, plugin loading succeeded; troubleshoot the
+   `${PLUGIN_DATA}/.env`, network/TLS, authentication, and SAP authorization separately.
+
+Temporarily disable any manually configured ARC-1 MCP server while testing. An existing server with
+the same ID can shadow the plugin server, while a differently named server can expose duplicate
+ARC-1 tools and make the test result ambiguous. The first `arc-1@latest` startup may also take a few
+seconds while npm resolves the package.
+
+After testing, remove the `chat.pluginLocations` entry and local Cursor symlink if they are no
+longer needed:
+
+```bash
+unlink ~/.cursor/plugins/local/arc-1
+```
+
 ## Configure The Portable MCP Server
 
 Agent Plugins 1.0 does not define a portable password prompt, OAuth declaration, or credential
