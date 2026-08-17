@@ -23,7 +23,6 @@ function toolSection(markdown: string, toolName: string): string | undefined {
 
 function normalizeTableCell(cell: string): string {
   return cell
-    .replace(/<[^>]+>/g, '')
     .replace(/[`*]/g, '')
     .replace(/\\([|`*_])/g, '$1')
     .trim();
