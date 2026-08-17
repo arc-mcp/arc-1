@@ -255,7 +255,8 @@ describe('Tool Definitions', () => {
     const sapRead = getToolDefinitions(DEFAULT_CONFIG).find((t) => t.name === 'SAPRead')!;
     const description = (sapRead.inputSchema as Record<string, any>).properties.versionUri.description as string;
 
-    expect(description).toContain('canonical host-relative /sap/bc/adt/ URI');
+    expect(description).toContain('canonical source/revision URI');
+    expect(description).toContain('unrelated ADT endpoints');
     expect(description).toContain('traversal');
     expect(description).toContain('fragments');
   });

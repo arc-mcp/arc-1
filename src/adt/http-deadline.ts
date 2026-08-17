@@ -1,3 +1,4 @@
+import { setTimeout as sleep } from 'node:timers/promises';
 import { AdtNetworkError } from './errors.js';
 
 export interface RequestDeadlineOptions {
@@ -107,16 +108,10 @@ export async function sleepWithinRequestBudget(delayMs: number, options?: Reques
     return;
   }
   const signal = requestSignal(options);
-  await new Promise<void>((resolve, reject) => {
-    const onAbort = () => {
-      clearTimeout(timer);
-      reject(signal.reason ?? requestTimeoutError());
-    };
-    const timer = setTimeout(() => {
-      signal.removeEventListener('abort', onAbort);
-      resolve();
-    }, delayMs);
-    signal.addEventListener('abort', onAbort, { once: true });
-    if (signal.aborted) onAbort();
-  });
+  try {
+    await sleep(delayMs, undefined, { signal });
+  } catch (error) {
+    if (signal.aborted) throw signal.reason ?? requestTimeoutError();
+    throw error;
+  }
 }

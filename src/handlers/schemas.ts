@@ -14,7 +14,7 @@
  */
 
 import { z } from 'zod';
-import { isCanonicalHostRelativeAdtPath } from '../adt/path-safety.js';
+import { canonicalRevisionSourcePath, isCanonicalHostRelativeAdtPath } from '../adt/path-safety.js';
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
 import { FUNCTION_PROCESSING_TYPES, FUNCTION_UPDATE_TASK_KINDS } from './function-processing.js';
 import { CLASS_WRITE_INCLUDES } from './object-types.js';
@@ -116,11 +116,12 @@ function validateSapReadInput(
       });
       return;
     }
-    if (!isCanonicalHostRelativeAdtPath(versionUri)) {
+    if (!canonicalRevisionSourcePath(versionUri)) {
       ctx.addIssue({
         code: 'custom',
         path: ['versionUri'],
-        message: 'VERSION_SOURCE versionUri must be a canonical host-relative path under /sap/bc/adt/.',
+        message:
+          'VERSION_SOURCE versionUri must be a canonical source URI under /sap/bc/adt/ from a VERSIONS response.',
       });
     }
   }

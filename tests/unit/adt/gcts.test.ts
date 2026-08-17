@@ -3,10 +3,8 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { AdtApiError, AdtSafetyError } from '../../../src/adt/errors.js';
 import {
-  cloneRepo,
-  commitRepo,
-  createBranch,
-  deleteRepo,
+  enforceGctsMutationQuarantine,
+  GCTS_QUARANTINED_MUTATIONS,
   getCommitHistory,
   getConfig,
   getSystemInfo,
@@ -15,12 +13,11 @@ import {
   listBranches,
   listRepoObjects,
   listRepos,
-  pullRepo,
   redactGctsValue,
-  switchBranch,
 } from '../../../src/adt/gcts.js';
 import type { AdtHttpClient } from '../../../src/adt/http.js';
 import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
+import { getActionPolicy } from '../../../src/authz/policy.js';
 
 const fixturesDir = join(import.meta.dirname, '../../fixtures/json');
 const loadFixture = (name: string) => readFileSync(join(fixturesDir, name), 'utf-8');
@@ -100,8 +97,10 @@ describe('gCTS client helpers', () => {
     const second = 'gcts-key-second-sentinel';
     const nested = 'gcts-key-nested-sentinel';
     const dynamic = 'gcts-dynamic-key-sentinel';
+    const authorization = 'gcts-opaque-authorization-sentinel';
     const escapedLabelSentinel = 'Q7z9!';
     const result = redactGctsValue({
+      Authorization: authorization,
       [`Authorization: Bearer ${first}`]: 1,
       [`https://git-user:${first}@example.com`]: 2,
       [`https://git-user:${second}@example.com`]: 3,
@@ -121,9 +120,10 @@ describe('gCTS client helpers', () => {
     expect(serialized).not.toContain(second);
     expect(serialized).not.toContain(nested);
     expect(serialized).not.toContain(dynamic);
+    expect(serialized).not.toContain(authorization);
     expect(serialized).not.toContain(escapedLabelSentinel);
     expect(Object.keys(result).every((key) => key.length <= 4_096)).toBe(true);
-    expect(Object.values(result)).toEqual(expect.arrayContaining([1, 2, 3, 4]));
+    expect(Object.values(result)).toEqual(expect.arrayContaining(['[REDACTED]', 2, 3, 4]));
   });
 
   it('does not include an invalid JSON response prefix in the surfaced error', async () => {
@@ -185,38 +185,28 @@ describe('gCTS client helpers', () => {
     expect(result[0]?.type).toBe('CLAS');
   });
 
-  it('cloneRepo is blocked by the ordinary write ceiling before quarantine', async () => {
-    const http = mockHttp(loadFixture('gcts-repository.json'));
-    const safety = { ...unrestrictedSafetyConfig(), allowGitWrites: false };
-    await expect(
-      cloneRepo(http, safety, { url: 'https://github.com/example/arc1.git', package: '$TMP' }),
-    ).rejects.toThrow(AdtSafetyError);
-    expect(http.post).not.toHaveBeenCalled();
+  it('applies the ordinary write ceiling before the mutation quarantine', () => {
+    const writesBlocked = { ...unrestrictedSafetyConfig(), allowWrites: false, allowGitWrites: true };
+    expect(() => enforceGctsMutationQuarantine(writesBlocked, 'clone')).toThrow(AdtSafetyError);
+    expect(() => enforceGctsMutationQuarantine(writesBlocked, 'clone')).toThrow(/allowWrites=false/);
+
+    const gitBlocked = { ...unrestrictedSafetyConfig(), allowGitWrites: false };
+    expect(() => enforceGctsMutationQuarantine(gitBlocked, 'clone')).toThrow(/allowGitWrites=false/);
   });
 
-  it.each([
-    ['clone', (http: AdtHttpClient) => cloneRepo(http, gitSafety, { url: 'https://example.com/repo.git' })],
-    ['pull', (http: AdtHttpClient) => pullRepo(http, gitSafety, 'ZARC1')],
-    ['commit', (http: AdtHttpClient) => commitRepo(http, gitSafety, 'ZARC1', { message: 'test' })],
-    ['create_branch', (http: AdtHttpClient) => createBranch(http, gitSafety, 'ZARC1', { branch: 'feature' })],
-    ['switch_branch', (http: AdtHttpClient) => switchBranch(http, gitSafety, 'ZARC1', 'feature')],
-    ['unlink', (http: AdtHttpClient) => deleteRepo(http, gitSafety, 'ZARC1')],
-  ])('quarantines gCTS %s before every HTTP method', async (_action, invoke) => {
-    const http = mockHttp(loadFixture('gcts-repository.json'));
-    await expect(invoke(http)).rejects.toThrow(/VCS_NO_IMPORT/);
-    expect(http.get).not.toHaveBeenCalled();
-    expect(http.post).not.toHaveBeenCalled();
-    expect(http.put).not.toHaveBeenCalled();
-    expect(http.delete).not.toHaveBeenCalled();
+  it('keeps every quarantined action aligned with ACTION_POLICY', () => {
+    for (const [action, [opType]] of Object.entries(GCTS_QUARANTINED_MUTATIONS)) {
+      expect(getActionPolicy('SAPGit', action)).toMatchObject({ scope: 'git', opType });
+      expect(() => enforceGctsMutationQuarantine(gitSafety, action)).toThrow(/VCS_NO_IMPORT/);
+    }
+    expect(() => enforceGctsMutationQuarantine(gitSafety, 'config')).not.toThrow();
   });
 
-  it('does not treat legacy allowedPackages=[] or explicit * as authorization for a gCTS mutation', async () => {
+  it('does not treat legacy allowedPackages=[] or explicit * as authorization for a gCTS mutation', () => {
     for (const allowedPackages of [[], ['*']]) {
-      const http = mockHttp();
-      await expect(
-        cloneRepo(http, { ...gitSafety, allowedPackages }, { url: 'https://example.com/repo.git' }),
-      ).rejects.toThrow(/gCTS mutations are unavailable/);
-      expect(http.post).not.toHaveBeenCalled();
+      expect(() => enforceGctsMutationQuarantine({ ...gitSafety, allowedPackages }, 'clone')).toThrow(
+        /gCTS mutations are unavailable/,
+      );
     }
   });
 

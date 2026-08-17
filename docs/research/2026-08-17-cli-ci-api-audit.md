@@ -622,9 +622,9 @@ receipt:
 Focused post-fix security reviews returned GO for their reviewed hashes and automated adversarial
 scopes. They performed no live SAP/Git mutation.
 
-## 10. Final frozen-tree receipt
+## 10. Pre-simplification frozen-tree receipt
 
-The final post-documentation tree passed:
+The post-documentation tree before the later deletion-first simplification passed:
 
 - 5,217 unit tests across 176 files;
 - all three TypeScript typechecks;
@@ -650,3 +650,29 @@ mode returned `isError`. Deletion then produced active 404, no inactive-worklist
 `R3TR/PROG` TADIR row. No new transport or Git mutation was sent during this final rerun. With the
 documented deferred work and historical exact-ID gaps retained above, the implementation and final
 review verdict is **GO**.
+
+## 11. Ponytail simplification receipt
+
+A final deletion-first review removed 389 implementation/test lines from the reviewed PR commit,
+including 360 production lines. The 49-line evidence/documentation addition leaves the complete
+working-tree change at net -336. The main reductions were one canonical AUnit parser/model, one-pass
+authoritative ATC parsing, explicit transport-release phases, removal of unreachable gCTS mutation
+wrappers, one final Git output sanitizer, one bounded audit traversal, and co-located CLI report/JSON
+plumbing.
+
+The review did not remove controls backed by live or adversarial evidence. In particular, the 758
+mixed-risk AUnit source audit, bounded redaction, HTTP deadlines, strict abapGit response/postcondition
+handling, gCTS mutation quarantine, and exact CTS convergence remain. gCTS and audit sanitizers were
+not merged: their output and trust-boundary contracts differ enough that a parameterized common
+abstraction would be larger and harder to review.
+
+The review also found that VERSION_SOURCE's generic `/sap/bc/adt/` check still authorized unrelated
+same-host ADT reads. The final implementation accepts only known source/revision shapes, permits raw
+encoded namespace slashes in object-name segments, and rejects nested encodings, encoded revision-ID
+separators, queries, traversal, and unrelated endpoints before dispatch.
+
+The simplified final tree passed 5,215 tests across 176 files, all TypeScript typechecks, full Biome
+lint, file and schema budgets, authorization-policy validation, strict MkDocs, documentation/schema
+parity, built and packed npm smoke, and `git diff --check`. An independent focused cross-review passed
+603/603 security/transport/path tests and returned GO. No additional SAP or Git mutation was sent for
+this code-only simplification pass.

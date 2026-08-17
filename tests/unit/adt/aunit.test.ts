@@ -462,7 +462,7 @@ describe('public ABAP Unit API', () => {
       post: vi.fn().mockResolvedValue({ statusCode: 201, headers: { location }, body: '' }),
     });
     await expect(runPublicAunit(http, unrestrictedSafetyConfig(), 'CLAS', 'ZCL_DEMO')).rejects.toThrow(
-      /unsafe result path|outside/,
+      /canonical host-relative ADT path/,
     );
   });
 

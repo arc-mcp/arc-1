@@ -318,7 +318,7 @@ Options:
 
 | Option | Meaning |
 |---|---|
-| `--from <version>` | Old side: `active`, `inactive`, revision id, or canonical host-relative `/sap/bc/adt/` revision URI; default `active`. Absolute URLs, traversal/dot segments, non-canonical encodings, fragments, and controls are rejected. |
+| `--from <version>` | Old side: `active`, `inactive`, revision id, or canonical source/revision URI returned by VERSIONS; default `active`. Unrelated ADT endpoints, absolute URLs, traversal/dot segments, queries, fragments, and ambiguous encodings are rejected. |
 | `--to <version>` | New side; default `inactive`. |
 | `--from-label`, `--to-label` | Display labels only; they do not change resolution. |
 | `--include <name>` | Class include to compare. |

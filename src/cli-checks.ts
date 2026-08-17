@@ -1,6 +1,5 @@
 /** Pure CI result evaluation and report formatting for direct CLI commands. */
 
-import { writeFile } from 'node:fs/promises';
 import type { AunitOutcome, AunitSourceSelectionEvidence, AunitSummary } from './adt/aunit.js';
 import type { AtcRunResult } from './adt/devtools.js';
 import type { CoverageMetric, CoverageSummary } from './adt/types.js';
@@ -423,25 +422,6 @@ export function formatLintText(issues: LintResult[]): string {
   return issues
     .map((issue) => `${issue.line}:${issue.column} [${issue.severity}] ${issue.rule}: ${issue.message}`)
     .join('\n');
-}
-
-/** Awaited file output ensures reports are fully closed before a non-zero process exit is returned. */
-export async function writeReport(content: string, reportFile: string): Promise<void> {
-  await writeFile(reportFile, content.endsWith('\n') ? content : `${content}\n`, 'utf8');
-}
-
-export function parseToolJson<T>(text: string): T {
-  try {
-    return JSON.parse(text) as T;
-  } catch (error) {
-    throw new Error(`Tool returned a non-JSON CI result: ${error instanceof Error ? error.message : String(error)}`);
-  }
-}
-
-export function firstToolText(content: Array<{ type: string; text?: string }>): string {
-  const block = content.find((entry) => entry.type === 'text' && typeof entry.text === 'string');
-  if (!block?.text) throw new Error('Tool returned no text result for the CI command.');
-  return block.text;
 }
 
 export function assertPercent(value: string, optionName: string): number {

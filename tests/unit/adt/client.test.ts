@@ -702,6 +702,32 @@ describe('AdtClient', () => {
       expect(calledUrl).toContain('/versions/20260410185851/00000/content');
       expect(fetchHeaders(0).Accept).toBe('text/plain');
     });
+
+    it('rejects unrelated same-host ADT endpoints before HTTP dispatch', async () => {
+      mockFetch.mockClear();
+      const client = createClient();
+      await expect(client.getRevisionSource('/sap/bc/adt/runtime/dumps')).rejects.toThrow(/VERSIONS response/);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('accepts an encoded namespace in a revision object segment', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, 'CLASS /arc/cl_demo DEFINITION.'));
+      const client = createClient();
+      const path = '/sap/bc/adt/oo/classes/%2FARC%2FCL_DEMO/includes/main/versions/1/00000/content';
+      await expect(client.getRevisionSource(path)).resolves.toContain('/arc/cl_demo');
+      expect(String(mockFetch.mock.calls[0]?.[0] ?? '')).toContain('%2FARC%2FCL_DEMO');
+    });
+
+    it.each([
+      '/sap/bc/adt/oo/classes/%252FARC%252FCL_DEMO/includes/main/versions/1/00000/content',
+      '/sap/bc/adt/oo/classes/ZCL_DEMO/includes/main/versions/1%2F00000%2Fcontent',
+    ])('rejects ambiguous encoded separators in revision source path %s', async (path) => {
+      mockFetch.mockClear();
+      const client = createClient();
+      await expect(client.getRevisionSource(path)).rejects.toThrow(/VERSIONS response/);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
   });
 
   describe('system information', () => {

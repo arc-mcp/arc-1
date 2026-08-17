@@ -4,14 +4,7 @@ import { AdtApiError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { isCanonicalHostRelativeAdtPath } from './path-safety.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
-import {
-  escapeXmlAttr,
-  findDeepNodes,
-  type NamedItem,
-  parseAtcSystemCheckVariant,
-  parseNamedItems,
-  parseXml,
-} from './xml-parser.js';
+import { escapeXmlAttr, type NamedItem, parseAtcSystemCheckVariant, parseNamedItems, parseXml } from './xml-parser.js';
 
 export interface AtcFinding {
   priority: number;
@@ -135,32 +128,50 @@ function isValidProcessedObject(object: Record<string, unknown>): boolean {
   return uri.length > 0 && isCanonicalHostRelativeAdtPath(uri) && type.length > 0 && name.length > 0;
 }
 
-function parseAtcFindings(xml: string): AtcFinding[] {
-  const parsed = parseXml(xml);
-  return findDeepNodes(parsed, 'finding').map((finding) => {
-    const rawUri = String(finding['@_location'] ?? finding['@_uri'] ?? '');
-    let line = 0;
-    const startIdx = rawUri.indexOf('#start=');
-    if (startIdx !== -1) {
-      const firstNum = Number.parseInt(rawUri.slice(startIdx + '#start='.length).split(',')[0]!, 10);
-      if (!Number.isNaN(firstNum)) line = firstNum;
-    }
+function parseAtcFinding(finding: Record<string, unknown>): AtcFinding {
+  const rawUri = String(finding['@_location'] ?? finding['@_uri'] ?? '');
+  let line = 0;
+  const startIdx = rawUri.indexOf('#start=');
+  if (startIdx !== -1) {
+    const firstNum = Number.parseInt(rawUri.slice(startIdx + '#start='.length).split(',')[0]!, 10);
+    if (!Number.isNaN(firstNum)) line = firstNum;
+  }
 
-    const quickfixInfoRaw = finding['@_quickfixInfo'];
-    const quickfixNode = nodeRecord(finding.quickfixes);
-    const quickfixKinds = ['manual', 'automatic', 'pseudo'];
-    return {
-      priority: Number(String(finding['@_priority'] ?? '')),
-      checkTitle: String(finding['@_checkTitle'] ?? ''),
-      messageTitle: String(finding['@_messageTitle'] ?? ''),
-      uri: rawUri,
-      line,
-      ...(quickfixInfoRaw == null ? {} : { quickfixInfo: String(quickfixInfoRaw) }),
-      hasQuickfix: quickfixKinds.some(
-        (kind) => String(quickfixNode?.[`@_${kind}`] ?? 'false').toLowerCase() === 'true',
-      ),
-    };
-  });
+  const quickfixInfoRaw = finding['@_quickfixInfo'];
+  const quickfixNode = nodeRecord(finding.quickfixes);
+  const quickfixKinds = ['manual', 'automatic', 'pseudo'];
+  return {
+    priority: Number(String(finding['@_priority'] ?? '')),
+    checkTitle: String(finding['@_checkTitle'] ?? ''),
+    messageTitle: String(finding['@_messageTitle'] ?? ''),
+    uri: rawUri,
+    line,
+    ...(quickfixInfoRaw == null ? {} : { quickfixInfo: String(quickfixInfoRaw) }),
+    hasQuickfix: quickfixKinds.some((kind) => String(quickfixNode?.[`@_${kind}`] ?? 'false').toLowerCase() === 'true'),
+  };
+}
+
+function parseAtcFindings(root: Record<string, unknown>, objectRows: Record<string, unknown>[]): AtcFinding[] {
+  const objectFindings = objectRows.flatMap((object) =>
+    nodeRecords(object.findings).flatMap((container) => nodeRecords(container.finding)),
+  );
+  // Root-level findings are retained for older/minimal response shapes, but arbitrary nested
+  // metadata is never searched as worklist evidence.
+  return [...objectFindings, ...nodeRecords(root.finding)].map(parseAtcFinding);
+}
+
+function parseAtcInfos(root: Record<string, unknown>): string[] {
+  return nodeRecords(root.infos)
+    .flatMap((container) => nodeValues(container.info))
+    .map((value) => {
+      const node = nodeRecord(value);
+      if (!node) return String(value ?? '').trim();
+      const attribute = ['message', 'text', 'description', 'title']
+        .map((key) => node[`@_${key}`])
+        .find((entry) => entry != null);
+      return String(attribute ?? node['#text'] ?? '').trim();
+    })
+    .filter(Boolean);
 }
 
 function parseAtcRunResult(
@@ -172,16 +183,16 @@ function parseAtcRunResult(
   const rootNodes = nodeRecords(parsed.worklist);
   const rootShapeIsValid = rawRootNodes.length === 1 && rootNodes.length === 1;
   const root = rootShapeIsValid ? rootNodes[0]! : {};
-  const findings = parseAtcFindings(xml);
   const completenessRaw = root['@_objectSetIsComplete'];
   const objectSetIsComplete = completenessRaw == null ? null : String(completenessRaw).trim().toLowerCase() === 'true';
-  const truncated = findings.length >= context.maximumVerdicts;
   const rawObjectContainers = nodeValues(root.objects);
   const objectContainers = nodeRecords(root.objects);
   const objectContainerShapeIsValid = rawObjectContainers.length === 1 && objectContainers.length === 1;
   const rawObjectValue = objectContainerShapeIsValid ? objectContainers[0]!.object : undefined;
   const rawObjectRows = nodeValues(rawObjectValue);
   const objectRows = nodeRecords(rawObjectValue);
+  const findings = parseAtcFindings(root, objectRows);
+  const truncated = findings.length >= context.maximumVerdicts;
   const validObjectRows = objectRows.filter(isValidProcessedObject);
   const processedObjectCount = validObjectRows.length;
   const malformedObjectCount = rawObjectRows.length - validObjectRows.length;
@@ -215,14 +226,7 @@ function parseAtcRunResult(
   if (invalidPriorityCount > 0) {
     incompleteReasons.push(`${invalidPriorityCount} ATC finding(s) had a missing or malformed priority.`);
   }
-  const infos = findDeepNodes(parsed, 'info')
-    .map((node) => {
-      const attribute = ['message', 'text', 'description', 'title']
-        .map((key) => node[`@_${key}`])
-        .find((value) => value != null);
-      return String(attribute ?? node['#text'] ?? '').trim();
-    })
-    .filter(Boolean);
+  const infos = parseAtcInfos(root);
 
   return {
     findings,

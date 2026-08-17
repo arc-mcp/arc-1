@@ -532,7 +532,7 @@ export function getToolDefinitions(
           versionUri: {
             type: 'string',
             description:
-              'VERSION_SOURCE: canonical host-relative /sap/bc/adt/ URI from VERSIONS .revisions[].uri; rejects absolute URLs, traversal, fragments.',
+              'VERSION_SOURCE: canonical source/revision URI from VERSIONS .revisions[].uri; rejects unrelated ADT endpoints, absolute URLs, traversal, queries, and fragments.',
           },
           columns: {
             type: 'array',

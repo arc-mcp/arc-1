@@ -6,11 +6,9 @@
 
 import { AdtApiError, AdtSafetyError, classifyGctsError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
-import type { PackageHierarchyResolver } from './package-hierarchy.js';
 import { checkGit, checkOperation, OperationType, type OperationTypeCode, type SafetyConfig } from './safety.js';
 import type {
   GctsBranch,
-  GctsCloneResult,
   GctsCommit,
   GctsConfig,
   GctsObject,
@@ -42,6 +40,7 @@ const GIT_SECRET_FRAGMENTS = [
   'authpwd',
   'authuser',
   'authtoken',
+  'authorization',
   'apikey',
   'api_key',
   'credential',
@@ -58,40 +57,6 @@ const GIT_SECRET_FRAGMENTS = [
   'jsessionid',
   'sapsessionid',
 ];
-
-interface GctsConfigEntry {
-  key: string;
-  value: string;
-}
-
-export interface GctsCloneParams {
-  rid?: string;
-  name?: string;
-  role?: string;
-  type?: string;
-  vSID?: string;
-  url: string;
-  package?: string;
-  privateFlag?: boolean;
-  config?: GctsConfigEntry[];
-  user?: string;
-  password?: string;
-  token?: string;
-}
-
-export interface GctsCommitParams {
-  message?: string;
-  description?: string;
-  objects?: GctsObject[];
-}
-
-export interface GctsCreateBranchParams {
-  branch: string;
-  isSymbolic?: boolean;
-  isPeeled?: boolean;
-  type?: string;
-  package?: string;
-}
 
 function parseJson<T>(body: string): T {
   if (!body.trim()) throw new Error('gCTS returned an empty response where JSON was required.');
@@ -311,8 +276,23 @@ function requireObjectWrapper<T>(payload: unknown, wrapper: string, operation: s
   throw new Error(`gCTS ${operation} returned an unexpected response shape; expected {${wrapper}:{...}}.`);
 }
 
-function blockGctsMutation(safety: SafetyConfig, op: OperationTypeCode, operation: string, action: string): never {
-  checkOperation(safety, op, operation);
+export const GCTS_QUARANTINED_MUTATIONS = {
+  clone: [OperationType.Create, 'GctsCloneRepo'],
+  pull: [OperationType.Update, 'GctsPullRepo'],
+  commit: [OperationType.Update, 'GctsCommitRepo'],
+  create_branch: [OperationType.Create, 'GctsCreateBranch'],
+  switch_branch: [OperationType.Update, 'GctsSwitchBranch'],
+  unlink: [OperationType.Delete, 'GctsDeleteRepo'],
+} as const satisfies Record<string, readonly [OperationTypeCode, string]>;
+
+export type GctsQuarantinedMutation = keyof typeof GCTS_QUARANTINED_MUTATIONS;
+
+/** Fail closed before dispatch while gCTS mutations lack transactional postconditions. */
+export function enforceGctsMutationQuarantine(safety: SafetyConfig, action: string): void {
+  const mutation = GCTS_QUARANTINED_MUTATIONS[action as GctsQuarantinedMutation];
+  if (!mutation) return;
+  const [opType, operation] = mutation;
+  checkOperation(safety, opType, operation);
   checkGit(safety, action);
   throw new AdtSafetyError(`${operation}: ${GCTS_MUTATION_QUARANTINE}`);
 }
@@ -412,38 +392,6 @@ export async function listRepos(http: AdtHttpClient, safety: SafetyConfig): Prom
   throw new Error('gCTS repository list returned an unexpected response shape.');
 }
 
-/** Clone/link a repository in gCTS. */
-export async function cloneRepo(
-  _http: AdtHttpClient,
-  safety: SafetyConfig,
-  _params: GctsCloneParams,
-  _resolver?: PackageHierarchyResolver | null,
-): Promise<GctsCloneResult> {
-  return blockGctsMutation(safety, OperationType.Create, 'GctsCloneRepo', 'clone');
-}
-
-/** Pull latest changes or a specific commit. */
-export async function pullRepo(
-  _http: AdtHttpClient,
-  safety: SafetyConfig,
-  _repoId: string,
-  _commit?: string,
-  _resolver?: PackageHierarchyResolver | null,
-): Promise<Record<string, unknown>> {
-  return blockGctsMutation(safety, OperationType.Update, 'GctsPullRepo', 'pull');
-}
-
-/** Commit staged gCTS changes. */
-export async function commitRepo(
-  _http: AdtHttpClient,
-  safety: SafetyConfig,
-  _repoId: string,
-  _params: GctsCommitParams,
-  _resolver?: PackageHierarchyResolver | null,
-): Promise<Record<string, unknown>> {
-  return blockGctsMutation(safety, OperationType.Update, 'GctsCommitRepo', 'commit');
-}
-
 /** List branches for a repository. */
 export async function listBranches(http: AdtHttpClient, safety: SafetyConfig, repoId: string): Promise<GctsBranch[]> {
   checkOperation(safety, OperationType.Read, 'GctsListBranches');
@@ -451,28 +399,6 @@ export async function listBranches(http: AdtHttpClient, safety: SafetyConfig, re
   const resp = await requestGcts(path, () => http.get(path, JSON_HEADERS));
   const parsed = parseJson<unknown>(resp.body);
   return redactGctsValue(requireArrayWrapper<GctsBranch>(parsed, 'branches', 'branches'));
-}
-
-/** Create a branch in gCTS. */
-export async function createBranch(
-  _http: AdtHttpClient,
-  safety: SafetyConfig,
-  _repoId: string,
-  _params: GctsCreateBranchParams,
-  _resolver?: PackageHierarchyResolver | null,
-): Promise<Record<string, unknown>> {
-  return blockGctsMutation(safety, OperationType.Update, 'GctsCreateBranch', 'create_branch');
-}
-
-/** Switch branch in gCTS. */
-export async function switchBranch(
-  _http: AdtHttpClient,
-  safety: SafetyConfig,
-  _repoId: string,
-  _branch: string,
-  _resolver?: PackageHierarchyResolver | null,
-): Promise<Record<string, unknown>> {
-  return blockGctsMutation(safety, OperationType.Update, 'GctsSwitchBranch', 'switch_branch');
 }
 
 /** Commit history for a repository. */
@@ -522,9 +448,4 @@ export async function getTransportHistory(
   const path = `${GCTS_BASE}/repository/history/${encodeURIComponent(repoId)}`;
   const resp = await requestGcts(path, () => http.get(path, JSON_HEADERS));
   return redactGctsValue(parseJson<Record<string, unknown>>(resp.body));
-}
-
-/** Unlink/delete a gCTS repository. */
-export async function deleteRepo(_http: AdtHttpClient, safety: SafetyConfig, _repoId: string): Promise<void> {
-  blockGctsMutation(safety, OperationType.Delete, 'GctsDeleteRepo', 'unlink');
 }

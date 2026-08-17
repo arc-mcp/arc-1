@@ -98,6 +98,9 @@ describe('Audit Events', () => {
 
       const bodyAliasEvent = { ...event, args: { response_body: sentinel } };
       expect(JSON.stringify(redactAuditEvent(bodyAliasEvent))).not.toContain(sentinel);
+      expect(sanitizeArgs({ response_body: 'ordinary tool argument' })).toEqual({
+        response_body: 'ordinary tool argument',
+      });
 
       const keySentinel = 'audit-property-key-sentinel';
       const dynamic = { [`password_${keySentinel}`]: true, rows: [{ [`token_${keySentinel}`]: true }] };

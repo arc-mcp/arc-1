@@ -3,7 +3,7 @@
  * state, ATC, unit tests, CDS test cases.
  */
 
-import type { AunitRunResult } from '../adt/aunit.js';
+import type { AunitAlert, AunitRunResult } from '../adt/aunit.js';
 import {
   AunitIncompleteError,
   appendAunitJunitDiagnostic,
@@ -54,6 +54,7 @@ import type {
   TracedObjectType,
   TracedProcessType,
   TraceRequestCreateOptions,
+  UnitTestResult,
 } from '../adt/types.js';
 import { isBtpSystem } from './feature-cache.js';
 import { classIncludeUrl, normalizeObjectType, objectUrlForType, sourceUrlForType } from './object-types.js';
@@ -229,18 +230,83 @@ async function verifyAunitSourceSnapshot(
   return before;
 }
 
-async function reconcileAunitWithSource(
-  client: AdtClient,
-  type: string,
-  name: string,
-  result: AunitRunResult,
-  sourceTree?: AunitSourceTree,
-): Promise<AunitRunResult> {
-  const evidence = sourceTree ?? (await readAunitSourceTree(client, type, name));
+function reconcileAunitWithSource(result: AunitRunResult, evidence: AunitSourceTree): AunitRunResult {
   return reconcileAunitSourceDeclarations(result, evidence.source, {
     complete: evidence.complete,
     ...(evidence.incompleteReason ? { incompleteReason: evidence.incompleteReason } : {}),
   });
+}
+
+function legacyAlertStatus(alerts: AunitAlert[]): 'failed' | 'skipped' {
+  return alerts.some((alert) => alert.severity !== 'tolerable') ? 'failed' : 'skipped';
+}
+
+function legacyAlertRow(alert: AunitAlert, testClass: string, testMethod: string): UnitTestResult {
+  return {
+    program: alert.program ?? '',
+    testClass,
+    testMethod,
+    status: legacyAlertStatus([alert]),
+    ...(alert.message ? { message: alert.message } : {}),
+  };
+}
+
+/** Compatibility adapter kept at the SAPDiagnose legacy-output boundary. */
+export function toLegacyAunitResults(result: AunitRunResult): UnitTestResult[] {
+  const rows: UnitTestResult[] = result.alerts
+    .filter((alert) => alert.scope === 'run')
+    .map((alert) => legacyAlertRow(alert, '(run)', '(alert)'));
+  const programs = new Set<string>();
+  for (const test of result.tests) programs.add(test.program);
+  for (const alert of result.alerts) {
+    if (alert.scope !== 'run') programs.add(alert.program ?? '');
+  }
+
+  for (const program of programs) {
+    rows.push(
+      ...result.alerts
+        .filter((alert) => alert.scope === 'program' && (alert.program ?? '') === program)
+        .map((alert) => legacyAlertRow(alert, '(program)', '(alert)')),
+    );
+    const classes = new Set<string>();
+    for (const test of result.tests) {
+      if (test.program === program) classes.add(test.testClass);
+    }
+    for (const alert of result.alerts) {
+      if (alert.scope === 'class' && (alert.program ?? '') === program) classes.add(alert.testClass ?? '');
+    }
+    for (const testClass of classes) {
+      const classAlerts = result.alerts.filter(
+        (alert) =>
+          alert.scope === 'class' && (alert.program ?? '') === program && (alert.testClass ?? '') === testClass,
+      );
+      const hasReportedClassAlert = classAlerts.some((alert) => alert.kind !== 'emptyClass');
+      for (const alert of classAlerts) {
+        if (alert.kind === 'emptyClass' && hasReportedClassAlert) continue;
+        rows.push(
+          legacyAlertRow(
+            alert.kind === 'emptyClass'
+              ? { ...alert, message: 'test class reported no test methods and no alert' }
+              : alert,
+            testClass,
+            '(class-level alert)',
+          ),
+        );
+      }
+      for (const test of result.tests) {
+        if (test.program !== program || test.testClass !== testClass) continue;
+        rows.push({
+          program,
+          testClass,
+          testMethod: test.testMethod,
+          status: test.alerts.length > 0 ? legacyAlertStatus(test.alerts) : 'passed',
+          ...(test.alerts[0]?.message ? { message: test.alerts[0].message } : {}),
+          ...(test.durationMs !== undefined ? { duration: test.durationMs / 1000 } : {}),
+        });
+      }
+    }
+  }
+  return rows;
 }
 
 export async function handleSAPDiagnose(client: AdtClient, args: Record<string, unknown>): Promise<ToolResult> {
@@ -311,13 +377,7 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
           }
           const legacyEvidence = await runUnitTests(client.http, client.safety, objectUrl);
           const stableSourceTree = await verifyAunitSourceSnapshot(client, type, name, sourceTree);
-          const legacy = await reconcileAunitWithSource(
-            client,
-            type,
-            name,
-            legacyEvidence.structured,
-            stableSourceTree,
-          );
+          const legacy = reconcileAunitWithSource(legacyEvidence, stableSourceTree);
           let outcome = native.summary.outcome;
           let incompleteReason: string | undefined;
           // Native JUnit omits run/class alerts, including harmless-selection refusals. Reconcile
@@ -396,7 +456,7 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
       const sourceTree = await readAunitSourceTree(client, type, name);
       const result = await runUnitTests(client.http, client.safety, objectUrl, { coverage });
       const stableSourceTree = await verifyAunitSourceSnapshot(client, type, name, sourceTree);
-      const structured = await reconcileAunitWithSource(client, type, name, result.structured, stableSourceTree);
+      const structured = reconcileAunitWithSource(result, stableSourceTree);
       if (resultFormat === 'structured') return textResult(toolJson(structured));
       if (resultFormat === 'junit') {
         return textResult(
@@ -418,9 +478,10 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
         return errorResult(toolJson(structured));
       }
       // Default (no coverage) keeps the historical array output; coverage requested → {tests, coverage}.
-      if (!coverage) return textResult(toolJson(result.tests));
-      const out: Record<string, unknown> = { tests: result.tests };
-      if (result.coverage) out.coverage = result.coverage;
+      const tests = toLegacyAunitResults(structured);
+      if (!coverage) return textResult(toolJson(tests));
+      const out: Record<string, unknown> = { tests };
+      if (structured.coverage) out.coverage = structured.coverage;
       else
         out.coverageNote =
           'Coverage unavailable on this system (the coverage-measurement endpoint or measurement result was not available).';

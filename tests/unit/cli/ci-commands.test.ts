@@ -385,6 +385,17 @@ describe('dedicated ATC, diff, and lint commands', () => {
     expect(output).not.toHaveBeenCalledWith(expect.stringContaining('undefined'));
   });
 
+  it('refuses malformed or absent CI tool JSON', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    expect(await main(['atc', 'PROG', 'ZTEST'], dependencies('not JSON'))).toBe(1);
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('non-JSON CI result'));
+
+    const absent = dependencies(null);
+    absent.dispatchToolCall.mockResolvedValue({ content: [] });
+    expect(await main(['atc', 'PROG', 'ZTEST'], absent)).toBe(1);
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('no text result'));
+  });
+
   it('maps dispatcher errors to exit 1 rather than a CI assertion code', async () => {
     const deps = dependencies('SAP authentication failed');
     deps.dispatchToolCall.mockResolvedValue({

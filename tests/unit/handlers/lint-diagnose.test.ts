@@ -14,11 +14,24 @@ import { createClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 const { resetCachedFeatures, setCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
-const { parseNativeJunitSummary } = await import('../../../src/adt/aunit.js');
+const { parseAunitRunResult, parseNativeJunitSummary } = await import('../../../src/adt/aunit.js');
+const { toLegacyAunitResults } = await import('../../../src/handlers/diagnose.js');
 
 const WRITE_CONFIG = { ...DEFAULT_CONFIG, allowWrites: true };
 const AUNIT_TESTRUN_WITH_COVERAGE = readFileSync(
   new URL('../../fixtures/xml/aunit-testrun-with-coverage.xml', import.meta.url),
+  'utf-8',
+);
+const AUNIT_CAPTURED_MIXED = readFileSync(
+  new URL('../../fixtures/xml/aunit-testrun-mixed-alerts.xml', import.meta.url),
+  'utf-8',
+);
+const AUNIT_CAPTURED_NW750 = readFileSync(
+  new URL('../../fixtures/xml/aunit-testrun-nw750.xml', import.meta.url),
+  'utf-8',
+);
+const AUNIT_CAPTURED_PROGRAM_ALERT = readFileSync(
+  new URL('../../fixtures/xml/aunit-testrun-program-alert.xml', import.meta.url),
   'utf-8',
 );
 const AUNIT_MIXED_RISK = `
@@ -891,6 +904,55 @@ ENDCLASS.`;
       });
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toContain('Invalid arguments for SAPDiagnose');
+    });
+  });
+
+  describe('SAPDiagnose legacy AUnit compatibility', () => {
+    it.each([
+      { label: '8.16', xml: AUNIT_CAPTURED_MIXED, durations: [0.63, 0] },
+      { label: '7.50', xml: AUNIT_CAPTURED_NW750, durations: [0.05, 0] },
+    ])('preserves every captured $label legacy row and second-based duration', ({ xml, durations }) => {
+      const rows = toLegacyAunitResults(parseAunitRunResult(xml));
+
+      expect(
+        rows.map(({ testClass, testMethod, status, duration }) => ({ testClass, testMethod, status, duration })),
+      ).toEqual([
+        { testClass: 'LTCL_OK', testMethod: 'FAILS', status: 'failed', duration: durations[0] },
+        { testClass: 'LTCL_OK', testMethod: 'PASSES', status: 'passed', duration: durations[1] },
+        { testClass: 'LTCL_RISKY', testMethod: '(class-level alert)', status: 'skipped', duration: undefined },
+        { testClass: 'LTCL_SETUP_FAIL', testMethod: '(class-level alert)', status: 'failed', duration: undefined },
+      ]);
+      expect(rows.every((row) => row.program === 'ZCL_ARC1_AUNIT_PROBE')).toBe(true);
+      expect(rows[0]?.message).toContain('Expected [2] Actual [1]');
+      expect(rows[2]?.message).toContain('risk level of test class exceeds upper limit');
+      expect(rows[3]?.message).toContain('CX_SY_ITAB_LINE_NOT_FOUND');
+    });
+
+    it('preserves captured program alerts and the historical empty-class row', () => {
+      expect(toLegacyAunitResults(parseAunitRunResult(AUNIT_CAPTURED_PROGRAM_ALERT))).toEqual([
+        expect.objectContaining({
+          program: 'ZCL_ARC1_AUNIT_PROBE',
+          testClass: '(program)',
+          testMethod: '(alert)',
+          status: 'failed',
+          message: expect.stringContaining('"ZCL_ARC1_AUNIT_HELPER" is unknown'),
+        }),
+      ]);
+      expect(
+        toLegacyAunitResults(
+          parseAunitRunResult(
+            '<runResult><program name="ZCL_X"><testClasses><testClass name="LTCL_EMPTY"/></testClasses></program></runResult>',
+          ),
+        ),
+      ).toEqual([
+        {
+          program: 'ZCL_X',
+          testClass: 'LTCL_EMPTY',
+          testMethod: '(class-level alert)',
+          status: 'skipped',
+          message: 'test class reported no test methods and no alert',
+        },
+      ]);
     });
   });
 

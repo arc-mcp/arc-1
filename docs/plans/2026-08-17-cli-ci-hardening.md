@@ -625,11 +625,38 @@ remediated with adversarial tests, and the focused post-fix security shards retu
 reviewed hashes/scopes. They did not perform live SAP or Git mutations.
 
 The previously recorded 5,116-test/175-file run is therefore intermediate evidence, not the completed
-tree's final receipt. The frozen-tree rerun passed 5,217 tests across 176 files after an older handler
-test was corrected to assert the new accepted-but-unverified abapGit push result. Typecheck, Biome,
+tree's final receipt. The pre-simplification frozen-tree rerun passed 5,217 tests across 176 files after
+an older handler test was corrected to assert the new accepted-but-unverified abapGit push result. Typecheck, Biome,
 file/schema budgets, policy validation, strict docs, docs/schema parity, built/packed smoke, and
 `git diff --check` all passed. The final A4H/758 rerun repeated TABLE_QUERY, pass/fail/no-tests AUnit,
 coverage, ATC, diff, Git reads/quarantine, canonical-path rejection, restrictive recursive-release
 rejection, and the disposable mixed-risk lifecycle with active/inactive/TADIR cleanup evidence. The
 companion audit records the exact results and explicit live-test/ledger gaps. Final plan verdict:
 **GO**.
+
+## 14. Ponytail simplification and final freeze
+
+The implementation received a deletion-first review using the Ponytail method after the security
+fixes landed. Relative to the reviewed PR commit, the pass removed 389 implementation/test lines,
+including 360 production lines. The evidence/documentation update adds 49 lines, leaving the complete
+working-tree change at net -336. It replaced the duplicate ABAP Unit XML model with one canonical
+result plus a legacy adapter, parsed ATC XML once, reduced transport convergence to explicit
+task/pre-parent/poll phases, deleted six unreachable gCTS mutation wrappers, consolidated Git output
+and audit traversal,
+and removed small CLI/report helpers whose only use was adjacent to their caller.
+
+The review deliberately retained the larger controls that close reproduced failures: the ABAP Unit
+source-selection lexer and stable-source recheck, authoritative ATC completeness evidence, bounded
+audit/Git redaction, HTTP deadline propagation, strict abapGit mutation postconditions, gCTS mutation
+quarantine, and CTS terminal-state reconciliation. Similar-looking gCTS and audit sanitizers remain
+separate because their key, config-row, payload-body, URL, size, and collision contracts differ; a
+configurable shared abstraction would make those security boundaries harder to audit.
+
+The same review tightened VERSION_SOURCE from a generic same-host ADT GET to known source/revision
+endpoint shapes while retaining raw encoded slashes for namespaced ABAP object names. Double-encoded
+slashes, encoded separators in revision IDs, traversal, queries, and unrelated ADT endpoints are
+rejected before HTTP.
+
+The final simplified tree passed 5,215 tests across 176 files, all three TypeScript typechecks, full
+Biome lint, file/schema budgets, policy validation, strict documentation, built and packed npm smoke,
+documentation/schema parity, and `git diff --check`. Independent Ponytail cross-review returned GO.

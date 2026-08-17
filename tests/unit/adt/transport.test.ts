@@ -920,6 +920,25 @@ describe('Transport Management', () => {
       expect(postCalls[1]?.[0] as string).toContain('DEVK900001');
     });
 
+    it('advances immediately from an observed O task to the remaining D task phase', async () => {
+      const http = mockHttp();
+      const sleep = vi.fn(async () => {});
+      (http.get as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: transportTree('D', ['O', 'D']) })
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: transportTree('D', ['R', 'D']) })
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: transportTree('D', ['R', 'R']) })
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: transportTree('R', ['R', 'R']) });
+
+      const result = await releaseTransportRecursive(http, enabledSafety, 'DEVK900001', { sleep });
+      const postedIds = (http.post as ReturnType<typeof vi.fn>).mock.calls.map((call) => String(call[0]));
+
+      expect(result.outcome).toBe('released');
+      expect(postedIds).toHaveLength(2);
+      expect(postedIds[0]).toContain('DEVK900001T2');
+      expect(postedIds[1]).toContain('DEVK900001');
+      expect(sleep).not.toHaveBeenCalled();
+    });
+
     it('returns list of all released IDs in order', async () => {
       const http = mockHttp();
       (http.get as ReturnType<typeof vi.fn>)

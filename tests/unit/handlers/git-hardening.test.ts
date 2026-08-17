@@ -66,19 +66,22 @@ describe('SAPGit hardening', () => {
 
   it('quarantines every gCTS mutation before HTTP even with legacy unrestricted packages', async () => {
     setCachedFeatures(featuresOff({ gcts: true }));
-    for (const args of [
-      { action: 'clone', backend: 'gcts', url: 'https://example.com/repo.git' },
-      { action: 'pull', backend: 'gcts', repoId: 'R' },
-      { action: 'commit', backend: 'gcts', repoId: 'R' },
-      { action: 'switch_branch', backend: 'gcts', repoId: 'R', branch: 'main' },
-      { action: 'create_branch', backend: 'gcts', repoId: 'R', branch: 'feature' },
-      { action: 'unlink', backend: 'gcts', repoId: 'R' },
-    ]) {
-      const fixture = client('{}');
-      await expect(handleSAPGit(fixture.client, args)).rejects.toThrow(/VCS_NO_IMPORT/);
-      expect(fixture.http.get).not.toHaveBeenCalled();
-      expect(fixture.http.post).not.toHaveBeenCalled();
-      expect(fixture.http.delete).not.toHaveBeenCalled();
+    for (const allowedPackages of [[], ['*']]) {
+      for (const args of [
+        { action: 'clone', backend: 'gcts', url: 'https://example.com/repo.git' },
+        { action: 'pull', backend: 'gcts', repoId: 'R' },
+        { action: 'commit', backend: 'gcts', repoId: 'R' },
+        { action: 'switch_branch', backend: 'gcts', repoId: 'R', branch: 'main' },
+        { action: 'create_branch', backend: 'gcts', repoId: 'R', branch: 'feature' },
+        { action: 'unlink', backend: 'gcts', repoId: 'R' },
+      ]) {
+        const fixture = client('{}', allowedPackages);
+        await expect(handleSAPGit(fixture.client, args)).rejects.toThrow(/VCS_NO_IMPORT/);
+        expect(fixture.http.get).not.toHaveBeenCalled();
+        expect(fixture.http.post).not.toHaveBeenCalled();
+        expect(fixture.http.put).not.toHaveBeenCalled();
+        expect(fixture.http.delete).not.toHaveBeenCalled();
+      }
     }
   });
 
@@ -149,7 +152,7 @@ describe('SAPGit hardening', () => {
     expect(result.isError).toBeUndefined();
   });
 
-  it('applies the whole-subtree gate to every abapGit repository mutation before mutation HTTP', async () => {
+  it('applies the whole-subtree gate at every abapGit mutation sink before mutation HTTP', async () => {
     setCachedFeatures(featuresOff({ abapGit: true }));
     const actions = [
       { action: 'clone', backend: 'abapgit', package: '$TMP', url: 'https://example.com/repo.git' },
@@ -166,6 +169,7 @@ describe('SAPGit hardening', () => {
       expect(fixture.http.post).not.toHaveBeenCalled();
       expect(fixture.http.put).not.toHaveBeenCalled();
       expect(fixture.http.delete).not.toHaveBeenCalled();
+      expect(fixture.http.get).toHaveBeenCalledTimes(args.action === 'clone' ? 0 : 1);
     }
   });
 
@@ -174,7 +178,7 @@ describe('SAPGit hardening', () => {
     const fixture = client('{}');
     (fixture.http.get as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
       response(
-        '{"config":[{"key":"CLIENT_VCS_AUTH_PWD","value":"config-secret"},{"key":"CLIENT_VCS_URI","value":"https://user:url-secret@example.com/r?token=query-secret"}]}',
+        '{"config":[{"key":"CLIENT_VCS_AUTH_PWD","value":"config-secret"},{"key":"CLIENT_VCS_URI","value":"https://user:url-secret@example.com/r?token=query-secret","Authorization":"opaque-authorization-secret"}]}',
       ),
     );
     const result = await handleSAPGit(fixture.client, { action: 'config', backend: 'gcts' });
@@ -182,6 +186,7 @@ describe('SAPGit hardening', () => {
     expect(result.content[0]!.text).not.toContain('config-secret');
     expect(result.content[0]!.text).not.toContain('url-secret');
     expect(result.content[0]!.text).not.toContain('query-secret');
+    expect(result.content[0]!.text).not.toContain('opaque-authorization-secret');
   });
 
   it('returns push acceptance as incomplete/error when remote completion cannot be verified', async () => {

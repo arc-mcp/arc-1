@@ -6,6 +6,7 @@
  */
 
 import { readFileSync } from 'node:fs';
+import { writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { Command, CommanderError, Option } from 'commander';
 import { config as loadDotEnv } from 'dotenv';
@@ -23,19 +24,16 @@ import {
   evaluateAunit,
   evaluateDiff,
   evaluateLint,
-  firstToolText,
   formatAtcText,
   formatAunitText,
   formatLintText,
   type LintFailureThreshold,
   lintToCheckstyle,
-  parseToolJson,
   type StructuredDiffResult,
-  writeReport,
 } from './cli-checks.js';
 import { getToolRegistry, handleToolCall } from './handlers/dispatch.js';
 import { setCachedDiscovery, setCachedFeatures } from './handlers/feature-cache.js';
-import type { ToolResult } from './handlers/shared.js';
+import { errorResult, type ToolResult } from './handlers/shared.js';
 import type { LintResult } from './lint/lint.js';
 import { sanitizeArgs } from './server/audit.js';
 import { assertNoRemovedCliFlags, CLI_CONFIG_OPTION_SPECS, resolveConfig } from './server/config.js';
@@ -87,7 +85,6 @@ export interface CliExecutionState {
 
 interface DirectContext {
   client: AdtClient;
-  config: ServerConfig;
   cachingLayer?: CachingLayer;
 }
 
@@ -182,10 +179,6 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-function errorToolResult(message: string): ToolResult {
-  return { content: [{ type: 'text', text: message }], isError: true };
-}
-
 function renderToolResult(result: ToolResult, mode: OutputMode): CliExitCode {
   if (mode === 'json') {
     console.log(JSON.stringify(result, null, 2));
@@ -199,6 +192,16 @@ function renderToolResult(result: ToolResult, mode: OutputMode): CliExitCode {
 }
 
 type CiJsonOutcome<T> = { ok: true; value: T } | { ok: false };
+
+function parseCiToolResult<T>(result: ToolResult): T {
+  const text = result.content.find((entry) => entry.type === 'text' && typeof entry.text === 'string')?.text;
+  if (!text) throw new Error('Tool returned no text result for the CI command.');
+  try {
+    return JSON.parse(text) as T;
+  } catch (error) {
+    throw new Error(`Tool returned a non-JSON CI result: ${errorMessage(error)}`);
+  }
+}
 
 async function executeCiJson<T>(
   runtime: CliRuntime,
@@ -218,7 +221,7 @@ async function executeCiJson<T>(
     return { ok: false };
   }
   try {
-    return { ok: true, value: parseToolJson<T>(firstToolText(outcome.result.content)) };
+    return { ok: true, value: parseCiToolResult<T>(outcome.result) };
   } catch (error) {
     console.error(errorMessage(error));
     runtime.state.exitCode = 1;
@@ -228,8 +231,9 @@ async function executeCiJson<T>(
 
 async function emitCiReport(content: string, reportFile: string | undefined): Promise<boolean> {
   try {
-    if (reportFile && reportFile !== '-') await writeReport(content, reportFile);
-    else console.log(content);
+    if (reportFile && reportFile !== '-') {
+      await writeFile(reportFile, content.endsWith('\n') ? content : `${content}\n`, 'utf8');
+    } else console.log(content);
     return true;
   } catch (error) {
     console.error(`Could not write CI report: ${errorMessage(error)}`);
@@ -336,7 +340,7 @@ function createRuntime(argv: readonly string[], state: CliExecutionState, overri
       }
       const client = deps.createClient(buildAdtConfig(config) as AdtClientConfig);
       const cachingLayer = await deps.createCache(config);
-      return { client, config, cachingLayer };
+      return { client, cachingLayer };
     })();
     return runtimeState.directContext;
   };
@@ -788,7 +792,7 @@ export async function executeCliToolCall(
     const preflight = await runtime.deps.authPreflight(config, direct.client);
     if (preflight.blocking) {
       auditBlockedDirectPreflight(config, toolName, args, preflightStartedAt);
-      return { kind: 'tool', result: errorToolResult(formatStartupAuthPreflightToolError(preflight)) };
+      return { kind: 'tool', result: errorResult(formatStartupAuthPreflightToolError(preflight)) };
     }
 
     if (config.url && !shouldSkipFeatureProbe(toolName, args)) {
@@ -819,7 +823,7 @@ export async function executeCliToolCall(
     );
     return { kind: 'tool', result };
   } catch (err) {
-    return { kind: 'tool', result: errorToolResult(errorMessage(err)) };
+    return { kind: 'tool', result: errorResult(errorMessage(err)) };
   }
 }
 

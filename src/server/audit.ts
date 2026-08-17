@@ -346,6 +346,8 @@ interface RedactionState {
   seen: WeakSet<object>;
 }
 
+type RedactionMode = 'audit-event' | 'tool-args';
+
 function normalizeSafeUnicodeEscapes(value: string): string {
   return value.replace(/\\+u([0-9a-f]{4})/gi, (encoded, hex: string) => {
     const decoded = String.fromCharCode(Number.parseInt(hex, 16));
@@ -498,11 +500,11 @@ function redactPayloadValue(value: unknown): string {
   return '[REDACTED]';
 }
 
-function redactValue(key: string, value: unknown, state: RedactionState, depth: number): unknown {
+function redactValue(key: string, value: unknown, state: RedactionState, depth: number, mode: RedactionMode): unknown {
   if (depth > MAX_REDACTION_DEPTH || state.remainingEntries <= 0) return REDACTION_LIMIT_MARKER;
   state.remainingEntries -= 1;
   if (isSensitiveKey(key)) return '[REDACTED]';
-  if (PAYLOAD_BODY_KEYS.has(canonicalKey(key))) {
+  if (mode === 'audit-event' && PAYLOAD_BODY_KEYS.has(canonicalKey(key))) {
     if (value == null) return value;
     return redactPayloadValue(value);
   }
@@ -519,7 +521,7 @@ function redactValue(key: string, value: unknown, state: RedactionState, depth: 
         result.push(REDACTION_LIMIT_MARKER);
         break;
       }
-      result.push(redactValue(key, entry, state, depth + 1));
+      result.push(redactValue(key, entry, state, depth + 1, mode));
     }
     return result;
   }
@@ -532,7 +534,7 @@ function redactValue(key: string, value: unknown, state: RedactionState, depth: 
         setAuditEntry(result, '__truncated__', REDACTION_LIMIT_MARKER);
         break;
       }
-      setAuditEntry(result, entryKey, redactValue(entryKey, entryValue, state, depth + 1));
+      setAuditEntry(result, entryKey, redactValue(entryKey, entryValue, state, depth + 1, mode));
     }
     return result;
   }
@@ -541,50 +543,22 @@ function redactValue(key: string, value: unknown, state: RedactionState, depth: 
 
 /** Redact sensitive or high-volume SAP payload fields before any audit sink sees them. */
 export function redactAuditEvent(event: AuditEvent): AuditEvent {
-  return redactValue('', event, { remainingEntries: MAX_REDACTION_ENTRIES, seen: new WeakSet() }, 0) as AuditEvent;
-}
-
-function sanitizeArgValue(key: string, value: unknown, state: RedactionState, depth: number): unknown {
-  if (depth > MAX_REDACTION_DEPTH || state.remainingEntries <= 0) return REDACTION_LIMIT_MARKER;
-  state.remainingEntries -= 1;
-  if (isSensitiveKey(key)) return '[REDACTED]';
-  if (typeof value === 'string') {
-    const sanitized = isUrlKey(key) ? sanitizeUrl(value) : sanitizeText(value);
-    return boundAuditString(sanitized, value.length);
-  }
-  if (Array.isArray(value)) {
-    if (state.seen.has(value)) return REDACTION_LIMIT_MARKER;
-    state.seen.add(value);
-    const result: unknown[] = [];
-    for (const entry of value) {
-      if (state.remainingEntries <= 0) {
-        result.push(REDACTION_LIMIT_MARKER);
-        break;
-      }
-      result.push(sanitizeArgValue(key, entry, state, depth + 1));
-    }
-    return result;
-  }
-  if (value && typeof value === 'object') {
-    if (state.seen.has(value)) return REDACTION_LIMIT_MARKER;
-    state.seen.add(value);
-    const result: Record<string, unknown> = {};
-    for (const [entryKey, entryValue] of Object.entries(value as Record<string, unknown>)) {
-      if (state.remainingEntries <= 0) {
-        setAuditEntry(result, '__truncated__', REDACTION_LIMIT_MARKER);
-        break;
-      }
-      setAuditEntry(result, entryKey, sanitizeArgValue(entryKey, entryValue, state, depth + 1));
-    }
-    return result;
-  }
-  return value;
+  return redactValue(
+    '',
+    event,
+    { remainingEntries: MAX_REDACTION_ENTRIES, seen: new WeakSet() },
+    0,
+    'audit-event',
+  ) as AuditEvent;
 }
 
 /** Sanitize tool call arguments before the pre-dispatch audit event is emitted. */
 export function sanitizeArgs(args: Record<string, unknown>): Record<string, unknown> {
-  return sanitizeArgValue('', args, { remainingEntries: MAX_REDACTION_ENTRIES, seen: new WeakSet() }, 0) as Record<
-    string,
-    unknown
-  >;
+  return redactValue(
+    '',
+    args,
+    { remainingEntries: MAX_REDACTION_ENTRIES, seen: new WeakSet() },
+    0,
+    'tool-args',
+  ) as Record<string, unknown>;
 }

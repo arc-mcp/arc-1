@@ -1,7 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { AtcRunResult } from '../../../src/adt/devtools.js';
 import type { AunitCiResult, StructuredDiffResult } from '../../../src/cli-checks.js';
 import {
@@ -12,21 +9,12 @@ import {
   evaluateAunit,
   evaluateDiff,
   evaluateLint,
-  firstToolText,
   formatAtcText,
   formatAunitText,
   formatLintText,
   lintToCheckstyle,
-  parseToolJson,
-  writeReport,
 } from '../../../src/cli-checks.js';
 import type { LintResult } from '../../../src/lint/lint.js';
-
-const temporaryDirectories: string[] = [];
-
-afterEach(async () => {
-  await Promise.all(temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })));
-});
 
 function aunit(overrides: Partial<AunitCiResult> = {}): AunitCiResult {
   return {
@@ -329,24 +317,7 @@ describe('ATC, lint, and diff CI policy', () => {
   });
 });
 
-describe('CI report plumbing', () => {
-  it('awaits report-file output and terminates it with a newline', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'arc1-cli-checks-'));
-    temporaryDirectories.push(directory);
-    const target = join(directory, 'report.xml');
-
-    await writeReport('<testsuites/>', target);
-
-    expect(await readFile(target, 'utf8')).toBe('<testsuites/>\n');
-  });
-
-  it('extracts tool JSON and rejects malformed or absent result text', () => {
-    expect(parseToolJson<{ ok: boolean }>(' {"ok":true} ')).toEqual({ ok: true });
-    expect(() => parseToolJson('not JSON')).toThrow(/non-JSON CI result/);
-    expect(firstToolText([{ type: 'text', text: '{"ok":true}' }])).toBe('{"ok":true}');
-    expect(() => firstToolText([{ type: 'image' }])).toThrow(/no text result/);
-  });
-
+describe('CI usage input', () => {
   it('validates percentages and ATC priority as usage input', () => {
     expect(assertPercent('80.5', '--min-statement')).toBe(80.5);
     expect(() => assertPercent('-1', '--min-statement')).toThrow(/between 0 and 100/);

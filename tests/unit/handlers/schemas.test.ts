@@ -346,6 +346,21 @@ describe('SAPReadSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('accepts a namespaced object URI emitted by VERSIONS', () => {
+    expect(
+      SAPReadSchema.safeParse({
+        type: 'VERSION_SOURCE',
+        versionUri: '/sap/bc/adt/oo/classes/%2FARC%2FCL_DEMO/includes/main/versions/1/00000/content',
+      }).success,
+    ).toBe(true);
+  });
+
+  it('rejects unrelated same-host ADT endpoints for VERSION_SOURCE', () => {
+    expect(SAPReadSchema.safeParse({ type: 'VERSION_SOURCE', versionUri: '/sap/bc/adt/runtime/dumps' }).success).toBe(
+      false,
+    );
+  });
+
   it('rejects VERSION_SOURCE when versionUri is missing', () => {
     const result = SAPReadSchema.safeParse({ type: 'VERSION_SOURCE' });
     expect(result.success).toBe(false);
@@ -372,6 +387,8 @@ describe('SAPReadSchema', () => {
     '/sap/bc/adt/programs/source#fragment',
     '/sap/bc/adt/programs/source\u0000suffix',
     '//evil.example/sap/bc/adt/source',
+    '/sap/bc/adt/oo/classes/%252FARC%252FCL_DEMO/includes/main/versions/1/00000/content',
+    '/sap/bc/adt/oo/classes/ZCL_DEMO/includes/main/versions/1%2F00000%2Fcontent',
   ])('rejects ambiguous or traversal-capable VERSION_SOURCE URI %j', (versionUri) => {
     expect(SAPReadSchema.safeParse({ type: 'VERSION_SOURCE', versionUri }).success).toBe(false);
   });

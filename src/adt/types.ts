@@ -177,13 +177,6 @@ export interface GctsObject {
   [key: string]: unknown;
 }
 
-export interface GctsCloneResult {
-  rid?: string;
-  result?: string;
-  message?: string;
-  [key: string]: unknown;
-}
-
 export interface AbapGitLink {
   rel: string;
   href: string;
@@ -318,12 +311,6 @@ export interface CoverageSummary {
   /** Methods below 100% statement coverage, worst-first (the actionable "test next" subset the
    *  object aggregate hides). Present only when the measurement carries per-method nodes. */
   methodsBelowFull?: MethodCoverage[];
-}
-
-/** Result of a unit-test run: the test outcomes plus optional coverage (when requested + available). */
-export interface UnitTestRunResult {
-  tests: UnitTestResult[];
-  coverage?: CoverageSummary;
 }
 
 /**

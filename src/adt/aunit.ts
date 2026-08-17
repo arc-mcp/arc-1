@@ -2,6 +2,7 @@
 
 import { AdtApiError, AdtNetworkError } from './errors.js';
 import type { AdtHttpClient, AdtRequestOptions } from './http.js';
+import { assertCanonicalHostRelativeAdtPath } from './path-safety.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import type { CoverageSummary } from './types.js';
 import { decodeXmlEntities, escapeXmlAttr, findDeepNodes, getNestedArray, parseXml } from './xml-parser.js';
@@ -1020,18 +1021,6 @@ async function withinPublicAunitDeadline<T>(
   }
 }
 
-function validatedAunitPath(raw: string, prefix: string): string {
-  const value = raw.trim();
-  if (!value.startsWith('/') || value.startsWith('//') || value.includes('\\') || value.split('/').includes('..')) {
-    throw new Error(`ABAP Unit API returned an unsafe result path: ${value || '(empty)'}`);
-  }
-  const parsed = new URL(value, 'https://arc1.invalid');
-  if (parsed.origin !== 'https://arc1.invalid' || !parsed.pathname.startsWith(prefix)) {
-    throw new Error(`ABAP Unit API returned a path outside ${prefix}: ${value}`);
-  }
-  return `${parsed.pathname}${parsed.search}`;
-}
-
 function runStatus(xml: string): { status: string; resultPath?: string } {
   const parsed = parseXml(xml);
   const progress = findDeepNodes(parsed, 'progress')[0];
@@ -1043,7 +1032,9 @@ function runStatus(xml: string): { status: string; resultPath?: string } {
   });
   return {
     status,
-    ...(link?.['@_href'] ? { resultPath: validatedAunitPath(String(link['@_href']), PUBLIC_RESULTS) } : {}),
+    ...(link?.['@_href']
+      ? { resultPath: assertCanonicalHostRelativeAdtPath(String(link['@_href']), PUBLIC_RESULTS) }
+      : {}),
   };
 }
 
@@ -1100,7 +1091,7 @@ export async function runPublicAunit(
   );
   const location = created.headers.location ?? created.headers.Location;
   if (!location) throw new Error('ABAP Unit public API created a run without a Location header.');
-  const runPath = validatedAunitPath(location, PUBLIC_RUNS);
+  const runPath = assertCanonicalHostRelativeAdtPath(location, PUBLIC_RUNS);
 
   let delayMs = 100;
   let resultPath: string | undefined;

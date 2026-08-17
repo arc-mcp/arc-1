@@ -3,7 +3,18 @@
 export const ADT_ROOT_PATH = '/sap/bc/adt/';
 
 const VALIDATION_ORIGIN = 'https://arc1.invalid';
-const ENCODED_SEPARATOR = /%(?:2f|5c)/i;
+const ENCODED_SLASH = /%2f/i;
+const ENCODED_BACKSLASH = /%5c/i;
+
+const REVISION_SOURCE_BASES = [
+  /^\/sap\/bc\/adt\/programs\/(?:programs|includes)\/[^/]+\/source\/main$/i,
+  /^\/sap\/bc\/adt\/oo\/classes\/[^/]+\/(?:source\/main|includes\/(?:main|definitions|implementations|macros|testclasses))$/i,
+  /^\/sap\/bc\/adt\/oo\/interfaces\/[^/]+\/source\/main$/i,
+  /^\/sap\/bc\/adt\/functions\/groups\/[^/]+\/fmodules\/[^/]+\/source\/main$/i,
+  /^\/sap\/bc\/adt\/(?:ddic\/ddl|acm\/dcl)\/sources\/[^/]+$/i,
+  /^\/sap\/bc\/adt\/bo\/behaviordefinitions\/[^/]+\/source\/main$/i,
+  /^\/sap\/bc\/adt\/ddic\/srvd\/sources\/[^/]+\/source\/main$/i,
+];
 
 function hasControlCharacter(value: string): boolean {
   for (let index = 0; index < value.length; index += 1) {
@@ -15,10 +26,14 @@ function hasControlCharacter(value: string): boolean {
 
 /**
  * Return a canonical host-relative ADT path, or `null` when URL parsing/proxy decoding could change
- * its authority or path hierarchy. Query strings are retained, but only the raw query delimiter is
- * accepted; fragments, encoded separators, dot segments, controls, and nested encodings are not.
+ * its authority or path hierarchy. Query strings are retained, but fragments, encoded backslashes,
+ * dot segments, controls, and ambiguous nested encodings are not.
  */
-export function canonicalHostRelativeAdtPath(rawPath: string, requiredPrefix = ADT_ROOT_PATH): string | null {
+export function canonicalHostRelativeAdtPath(
+  rawPath: string,
+  requiredPrefix = ADT_ROOT_PATH,
+  options: { allowRawEncodedSlash?: boolean } = {},
+): string | null {
   if (!rawPath || rawPath !== rawPath.trim() || !rawPath.startsWith('/') || rawPath.startsWith('//')) return null;
   if (hasControlCharacter(rawPath) || rawPath.includes('\\') || rawPath.includes('#')) return null;
 
@@ -37,7 +52,8 @@ export function canonicalHostRelativeAdtPath(rawPath: string, requiredPrefix = A
       decodedPathname.includes('\\') ||
       decodedPathname.includes('#') ||
       decodedPathname.includes('?') ||
-      ENCODED_SEPARATOR.test(decodedPathname) ||
+      ENCODED_BACKSLASH.test(decodedPathname) ||
+      ((!options.allowRawEncodedSlash || depth > 0) && ENCODED_SLASH.test(decodedPathname)) ||
       decodedPathname.split('/').some((segment) => segment === '.' || segment === '..')
     ) {
       return null;
@@ -67,6 +83,18 @@ export function canonicalHostRelativeAdtPath(rawPath: string, requiredPrefix = A
 
 export function isCanonicalHostRelativeAdtPath(rawPath: string, requiredPrefix = ADT_ROOT_PATH): boolean {
   return canonicalHostRelativeAdtPath(rawPath, requiredPrefix) !== null;
+}
+
+/** Source paths emitted by a VERSIONS feed; excludes unrelated same-host ADT endpoints. */
+export function canonicalRevisionSourcePath(rawPath: string): string | null {
+  const canonical = canonicalHostRelativeAdtPath(rawPath, ADT_ROOT_PATH, { allowRawEncodedSlash: true });
+  if (!canonical || canonical.includes('?')) return null;
+
+  const versionsIndex = canonical.indexOf('/versions/');
+  const base = versionsIndex < 0 ? canonical : canonical.slice(0, versionsIndex);
+  if (!REVISION_SOURCE_BASES.some((pattern) => pattern.test(base))) return null;
+  if (versionsIndex < 0) return base.includes('/source/') || base.includes('/includes/') ? canonical : null;
+  return /^\/versions\/[^/%]+(?:\/\d{5}\/content)?$/i.test(canonical.slice(versionsIndex)) ? canonical : null;
 }
 
 /** Assert without echoing the attacker-controlled path into logs or client errors. */

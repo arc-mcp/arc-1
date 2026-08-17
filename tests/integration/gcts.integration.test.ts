@@ -2,15 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { AdtClient } from '../../src/adt/client.js';
 import { defaultFeatureConfig } from '../../src/adt/config.js';
 import { probeFeatures } from '../../src/adt/features.js';
-import {
-  cloneRepo,
-  getConfig,
-  getSystemInfo,
-  getTransportHistory,
-  getUserInfo,
-  listRepos,
-} from '../../src/adt/gcts.js';
-import { unrestrictedSafetyConfig } from '../../src/adt/safety.js';
+import { getConfig, getSystemInfo, getTransportHistory, getUserInfo, listRepos } from '../../src/adt/gcts.js';
 import { expectSapFailureClass } from '../helpers/expected-error.js';
 import { requireOrSkip, SkipReason } from '../helpers/skip-policy.js';
 import { getTestClient, requireSapCredentials } from './helpers.js';
@@ -60,27 +52,6 @@ describe('gCTS integration', () => {
     requireOrSkip(ctx, gctsAvailable ? true : undefined, SkipReason.BACKEND_UNSUPPORTED);
     const repos = await listRepos(client.http, client.safety);
     expect(Array.isArray(repos)).toBe(true);
-  });
-
-  it('clone operations are blocked when allowGitWrites is disabled', async (ctx) => {
-    requireOrSkip(ctx, gctsAvailable ? true : undefined, SkipReason.BACKEND_UNSUPPORTED);
-    const noGitSafety = { ...unrestrictedSafetyConfig(), allowGitWrites: false };
-    await expect(
-      cloneRepo(client.http, noGitSafety, {
-        url: 'https://github.com/example/repo.git',
-        package: '$TMP',
-      }),
-    ).rejects.toThrow(/Git write 'clone' is blocked: allowGitWrites=false/);
-  });
-
-  it('clone operations remain quarantined before HTTP when all ordinary Git gates are enabled', async (ctx) => {
-    requireOrSkip(ctx, gctsAvailable ? true : undefined, SkipReason.BACKEND_UNSUPPORTED);
-    await expect(
-      cloneRepo(client.http, unrestrictedSafetyConfig(), {
-        url: 'https://github.com/example/repo.git',
-        package: '$TMP',
-      }),
-    ).rejects.toThrow(/VCS_NO_IMPORT.*No gCTS mutation was sent/);
   });
 
   it('getTransportHistory for unknown repo returns expected backend error class', async (ctx) => {

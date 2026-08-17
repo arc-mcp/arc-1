@@ -1234,158 +1234,31 @@ describe('DevTools', () => {
   // ─── runUnitTests ──────────────────────────────────────────────────
 
   describe('runUnitTests', () => {
-    // Captured `abapunit/testruns` responses (see tests/fixtures/xml). Hand-written AUnit XML used
-    // to hide two release-dependent traps — the `<alerts>`/`<testMethods>` wrappers and the
-    // testClass URI shape — so every parse assertion below runs against a real response.
     const aunitFixtures = join(import.meta.dirname, '../../fixtures/xml');
     const mixed816 = readFileSync(join(aunitFixtures, 'aunit-testrun-mixed-alerts.xml'), 'utf-8');
-    const programAlert758 = readFileSync(join(aunitFixtures, 'aunit-testrun-program-alert.xml'), 'utf-8');
-    const nw750 = readFileSync(join(aunitFixtures, 'aunit-testrun-nw750.xml'), 'utf-8');
+    it('returns the canonical AUnit result without a parallel legacy parse tree', async () => {
+      const result = await runUnitTests(
+        mockHttp(mixed816),
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/ZCL_ARC1_AUNIT_PROBE',
+      );
 
-    const runFixture = async (xml: string) =>
-      (await runUnitTests(mockHttp(xml), unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_ARC1_AUNIT_PROBE'))
-        .tests;
-
-    it('parses passing and failing methods, worst detail included (real 8.16 response)', async () => {
-      const results = await runFixture(mixed816);
-      const passed = results.find((r) => r.testMethod === 'PASSES');
-      const failed = results.find((r) => r.testMethod === 'FAILS');
-      expect(passed).toMatchObject({ testClass: 'LTCL_OK', status: 'passed', duration: 0 });
-      expect(passed?.message).toBeUndefined();
-      expect(failed?.status).toBe('failed');
-      expect(failed?.duration).toBe(0.63);
-      // The title alone omits the values; the payload is in the nested <detail text="…">.
-      expect(failed?.message).toContain("Critical Assertion Error: 'one is not two'");
-      expect(failed?.message).toContain('Expected [2] Actual [1]');
-    });
-
-    it('takes the program name from <program adtcore:name>, not the testClass URI', async () => {
-      // The testClass URI is `…/classes/zcl_arc1_aunit_probe#testclass=LTCL_OK` on 758/816 and
-      // `…/includes/testclasses#start=7,6` on 7.50 — neither yields a usable program name.
-      for (const xml of [mixed816, nw750]) {
-        const results = await runFixture(xml);
-        expect(results.length).toBeGreaterThan(0);
-        for (const row of results) expect(row.program).toBe('ZCL_ARC1_AUNIT_PROBE');
-      }
-    });
-
-    it('reports a CLASS_SETUP abort as failed with the cause (class has alerts, no methods)', async () => {
-      const results = await runFixture(mixed816);
-      const row = results.find((r) => r.testClass === 'LTCL_SETUP_FAIL');
-      expect(row).toMatchObject({ testMethod: '(class-level alert)', status: 'failed' });
-      expect(row?.message).toContain('CX_SY_ITAB_LINE_NOT_FOUND');
-      expect(row?.message).toContain('Test failed in CLASS_SETUP or CLASS_CONSTRUCTOR');
-      // Entities are decoded — the shared parser runs with processEntities: false.
-      expect(row?.message).toContain('<UNCAUGHT_EXCEPTION>');
-      expect(row?.message).not.toContain('&lt;');
-    });
-
-    it('reports a risk-level refusal as skipped, not failed (severity="tolerable")', async () => {
-      // SAP declined to run the class; calling that a failure sends the caller after a phantom bug.
-      for (const xml of [mixed816, nw750]) {
-        const row = (await runFixture(xml)).find((r) => r.testClass === 'LTCL_RISKY');
-        expect(row).toMatchObject({ testMethod: '(class-level alert)', status: 'skipped' });
-        expect(row?.message).toContain('risk level of test class exceeds upper limit');
-      }
-    });
-
-    it('surfaces a program-level alert when the run produced no test class at all', async () => {
-      // Generation failure: <program> carries <alerts> and no <testClasses>.
-      const results = await runFixture(programAlert758);
-      expect(results).toHaveLength(1);
-      expect(results[0]).toMatchObject({
+      expect(result).toMatchObject({
+        outcome: 'failed',
+        selection: { maxRisk: 'harmless' },
+        summary: { tests: 2, passed: 1, failures: 1, errors: 1, skipped: 0 },
+      });
+      expect(result.tests.find((test) => test.testMethod === 'FAILS')).toMatchObject({
         program: 'ZCL_ARC1_AUNIT_PROBE',
-        testClass: '(program)',
-        testMethod: '(alert)',
         status: 'failed',
+        durationMs: 630,
       });
-      expect(results[0]?.message).toContain('GENERATE for program');
-      expect(results[0]?.message).toContain('"ZCL_ARC1_AUNIT_HELPER" is unknown');
-    });
-
-    it('tolerates NW 7.50 empty <alerts/> and <testMethods/> elements', async () => {
-      // 7.50 emits the containers even when empty; they parse to '' rather than to a node.
-      const results = await runFixture(nw750);
-      expect(results.map((r) => `${r.testClass}.${r.testMethod}=${r.status}`)).toEqual([
-        'LTCL_OK.FAILS=failed',
-        'LTCL_OK.PASSES=passed',
-        'LTCL_RISKY.(class-level alert)=skipped',
-        'LTCL_SETUP_FAIL.(class-level alert)=failed',
-      ]);
-    });
-
-    it('returns [] for an empty run result (nothing testable — no tests, no alerts)', async () => {
-      // Live on 7.58: a table, a domain, a class without a test include and a nonexistent class all
-      // return exactly this. "No tests ran" must stay distinguishable from "the run failed".
-      const results = await runFixture('<?xml version="1.0" encoding="utf-8"?><aunit:runResult xmlns:aunit="x"/>');
-      expect(results).toEqual([]);
-    });
-
-    it('surfaces a run-level alert (7.50 carries an alerts slot above <program>)', async () => {
-      const results = await runFixture(
-        `<?xml version="1.0"?><aunit:runResult xmlns:aunit="x">
-           <alerts><alert kind="error" severity="critical"><title>Object cannot be tested</title></alert></alerts>
-         </aunit:runResult>`,
+      expect(result.alerts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ scope: 'class', testClass: 'LTCL_RISKY', severity: 'tolerable' }),
+          expect.objectContaining({ scope: 'class', testClass: 'LTCL_SETUP_FAIL', severity: 'critical' }),
+        ]),
       );
-      expect(results).toEqual([
-        {
-          program: '',
-          testClass: '(run)',
-          testMethod: '(alert)',
-          status: 'failed',
-          message: 'Object cannot be tested',
-        },
-      ]);
-    });
-
-    it('reports a test class that returned neither methods nor alerts', async () => {
-      const results = await runFixture(
-        `<?xml version="1.0"?><aunit:runResult xmlns:aunit="x">
-           <program adtcore:name="ZCL_X" xmlns:adtcore="y">
-             <testClasses><testClass adtcore:name="LTCL_EMPTY"/></testClasses>
-           </program>
-         </aunit:runResult>`,
-      );
-      expect(results).toEqual([
-        {
-          program: 'ZCL_X',
-          testClass: 'LTCL_EMPTY',
-          testMethod: '(class-level alert)',
-          status: 'skipped',
-          message: 'test class reported no test methods and no alert',
-        },
-      ]);
-    });
-
-    it('parses multiple test classes and reads the alert title from a #text node', async () => {
-      const results = await runFixture(
-        `<?xml version="1.0"?><aunit:runResult xmlns:aunit="x">
-           <program adtcore:name="ZCL_X" xmlns:adtcore="y">
-             <testClasses>
-               <testClass adtcore:name="LTCL_FIRST">
-                 <testMethods><testMethod adtcore:name="test_one"/></testMethods>
-               </testClass>
-               <testClass adtcore:name="LTCL_SECOND">
-                 <testMethods>
-                   <testMethod adtcore:name="test_two">
-                     <alerts><alert kind="failedAssertion" severity="critical">
-                       <title lang="EN">Expected 42 got 0</title>
-                     </alert></alerts>
-                   </testMethod>
-                 </testMethods>
-               </testClass>
-             </testClasses>
-           </program>
-         </aunit:runResult>`,
-      );
-      expect(results).toHaveLength(2);
-      expect(results[0]).toMatchObject({ testClass: 'LTCL_FIRST', testMethod: 'test_one', status: 'passed' });
-      expect(results[1]).toMatchObject({
-        testClass: 'LTCL_SECOND',
-        testMethod: 'test_two',
-        status: 'failed',
-        message: 'Expected 42 got 0',
-      });
     });
   });
 
@@ -1420,7 +1293,7 @@ describe('DevTools', () => {
         coverage: true,
       });
       expect(http.post).toHaveBeenCalledTimes(1);
-      expect(result.structured.coverageUnavailableReason).toBe('measurement_not_reported');
+      expect(result.coverageUnavailableReason).toBe('measurement_not_reported');
     });
 
     it('parseCoverageMeasurement returns the statement/branch/procedure aggregate (real fixture)', () => {
@@ -1558,7 +1431,7 @@ describe('DevTools', () => {
       });
       expect(result.tests.length).toBeGreaterThan(0);
       expect(result.coverage).toBeUndefined();
-      expect(result.structured.coverageUnavailableReason).toBe('request_failed');
+      expect(result.coverageUnavailableReason).toBe('request_failed');
     });
 
     it('runUnitTests degrades gracefully when coverage XML contains no valid aggregate', async () => {
@@ -1578,7 +1451,7 @@ describe('DevTools', () => {
       });
       expect(result.tests.length).toBeGreaterThan(0);
       expect(result.coverage).toBeUndefined();
-      expect(result.structured.coverageUnavailableReason).toBe('no_valid_metrics');
+      expect(result.coverageUnavailableReason).toBe('no_valid_metrics');
     });
 
     it('runUnitTests without coverage makes only the one testruns call', async () => {
@@ -1598,12 +1471,12 @@ describe('DevTools', () => {
 
       const requestBody = vi.mocked(http.post).mock.calls[0]?.[1];
       expect(requestBody).toContain('<testRiskLevels harmless="true" dangerous="false" critical="false"/>');
-      expect(result.structured).toMatchObject({
+      expect(result).toMatchObject({
         outcome: 'failed',
         selection: { maxRisk: 'harmless' },
         summary: { tests: 2, failures: 1, errors: 1, skipped: 0 },
       });
-      expect(result.structured.alerts.some((alert) => alert.testClass === 'LTCL_RISKY')).toBe(true);
+      expect(result.alerts.some((alert) => alert.testClass === 'LTCL_RISKY')).toBe(true);
     });
   });
 
@@ -2218,6 +2091,26 @@ describe('DevTools', () => {
           usedObjectSet: '99999999999999999999999999999999',
         },
       });
+    });
+
+    it('collects findings from every authoritative worklist object branch', async () => {
+      const body = `<worklist id="WL-MULTI" objectSetIsComplete="true"><objects>
+        <object uri="/sap/bc/adt/programs/programs/ZFIRST" type="PROG" name="ZFIRST"><findings>
+          <finding priority="1" checkTitle="First" messageTitle="First finding" uri="/sap/bc/adt/programs/programs/ZFIRST#start=3,0"/>
+        </findings></object>
+        <object uri="/sap/bc/adt/programs/programs/ZSECOND" type="PROG" name="ZSECOND"><findings>
+          <finding priority="2" checkTitle="Second" messageTitle="Second finding" uri="/sap/bc/adt/programs/programs/ZSECOND#start=7,0"/>
+        </findings></object>
+      </objects></worklist>`;
+      const http = {
+        ...mockHttp('WL-MULTI'),
+        get: vi.fn().mockResolvedValue({ statusCode: 200, headers: {}, body }),
+      } as unknown as AdtHttpClient;
+
+      const result = await runAtcCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/programs/programs/ZFIRST');
+
+      expect(result).toMatchObject({ complete: true, processedObjectCount: 2, findingCount: 2 });
+      expect(result.findings.map((finding) => finding.messageTitle)).toEqual(['First finding', 'Second finding']);
     });
 
     it.each([
