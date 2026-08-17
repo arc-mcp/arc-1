@@ -912,7 +912,9 @@ export const SAPDiagnoseSchema = z
     action: z.enum([
       'syntax',
       'unittest',
+      'unittest_ci',
       'atc',
+      'atc_ci',
       'atc_variants',
       'cds_testcases',
       'dumps',
@@ -971,6 +973,23 @@ export const SAPDiagnoseSchema = z
     sqlTrace: looseOptionalBoolean,
     aggregate: looseOptionalBoolean,
     description: z.string().optional(),
+    packages: z.array(z.string()).optional(),
+    packageTrees: z.array(z.string()).optional(),
+    softwareComponents: z.array(z.string()).optional(),
+    configuration: z.string().optional(),
+    failOnSeverity: z.enum(['error', 'warning', 'info']).optional(),
+    title: z.string().optional(),
+    context: z.string().optional(),
+    ownTests: looseOptionalBoolean,
+    foreignTests: looseOptionalBoolean,
+    harmless: looseOptionalBoolean,
+    dangerous: looseOptionalBoolean,
+    critical: looseOptionalBoolean,
+    short: looseOptionalBoolean,
+    medium: looseOptionalBoolean,
+    long: looseOptionalBoolean,
+    measurements: z.string().optional(),
+    evaluateResults: looseOptionalBoolean,
   })
   .strict()
   .superRefine((input, ctx) => {
@@ -1004,11 +1023,18 @@ export const SAPDiagnoseSchema = z
         message: 'SAPDiagnose includeSubpackages is only supported for action="unittest" with type="DEVC".',
       });
     }
-    if (input.timeoutSeconds !== undefined && input.action !== 'unittest' && input.action !== 'atc') {
+    if (
+      input.timeoutSeconds !== undefined &&
+      input.action !== 'unittest' &&
+      input.action !== 'atc' &&
+      input.action !== 'unittest_ci' &&
+      input.action !== 'atc_ci'
+    ) {
       ctx.addIssue({
         code: 'custom',
         path: ['timeoutSeconds'],
-        message: 'SAPDiagnose timeoutSeconds is only supported for action="unittest" or action="atc".',
+        message:
+          'SAPDiagnose timeoutSeconds is only supported for action="unittest", "atc", "unittest_ci", or "atc_ci".',
       });
     }
     if (input.resultFormat !== undefined) {

@@ -272,6 +272,8 @@ export class AdtClient {
   private readonly maxDataPreviewResponseBytes: number;
   /** Shared process-wide data admission guard (private fallback outside server-managed clients). */
   private readonly dataResultSemaphore: Semaphore;
+  /** Configured SAP origin (`SAP_URL`) — used for same-origin Location checks on CI APIs. */
+  readonly baseUrl: string;
   /** Per-client cache of resolved TABL URLs for **reads** (transparent table at
    *  /tables/, structure at /structures/). Populated by getTabl() via the
    *  /tables/→/structures/ 404 fallback. */
@@ -295,6 +297,7 @@ export class AdtClient {
     this.sapClient = config.client;
     this.maxDataPreviewResponseBytes = config.maxDataPreviewResponseBytes;
     this.dataResultSemaphore = config.dataResultSemaphore ?? new Semaphore(config.maxConcurrentDataResults);
+    this.baseUrl = config.baseUrl;
 
     const httpConfig: AdtHttpConfig = {
       baseUrl: config.baseUrl,

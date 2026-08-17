@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<atc:run xmlns:atc="http://www.sap.com/adt/atc" xmlns:atom="http://www.w3.org/2005/Atom" status="Completed">
+  <atom:link href="/sap/bc/adt/api/atc/results/atc-result-1" rel="http://www.sap.com/adt/relations/atc/result" type="application/vnd.sap.atc.checkstyle.v1+xml"/>
+</atc:run>

@@ -58,7 +58,9 @@ const MULTI_TARGET_ACTION_RULES = new Map<
       actions: new Set([
         'syntax',
         'unittest',
+        'unittest_ci',
         'atc',
+        'atc_ci',
         'atc_variants',
         'cds_testcases',
         'dumps',

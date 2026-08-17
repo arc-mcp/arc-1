@@ -59,7 +59,9 @@ describe('multi-target tool surface', () => {
     expect(property(diagnose, 'action').enum).toEqual([
       'syntax',
       'unittest',
+      'unittest_ci',
       'atc',
+      'atc_ci',
       'atc_variants',
       'cds_testcases',
       'dumps',
@@ -91,7 +93,9 @@ describe('multi-target tool surface', () => {
     expect(property(diagnose, 'action').enum).toEqual([
       'syntax',
       'unittest',
+      'unittest_ci',
       'atc',
+      'atc_ci',
       'atc_variants',
       'cds_testcases',
       'dumps',
@@ -164,7 +168,9 @@ describe('multi-target tool surface', () => {
     expect(multiTargetInvocationDecision('SAPTransport', { action: 'create' }, DEFAULT_CONFIG)).toBe('forbidden');
     expect(multiTargetInvocationDecision('SAPTransport', { action: 'layers' }, DEFAULT_CONFIG)).toBe('forbidden');
     expect(multiTargetInvocationDecision('SAPDiagnose', { action: 'atc' }, DEFAULT_CONFIG)).toBe('allowed');
+    expect(multiTargetInvocationDecision('SAPDiagnose', { action: 'atc_ci' }, DEFAULT_CONFIG)).toBe('allowed');
     expect(multiTargetInvocationDecision('SAPDiagnose', { action: 'unittest' }, DEFAULT_CONFIG)).toBe('allowed');
+    expect(multiTargetInvocationDecision('SAPDiagnose', { action: 'unittest_ci' }, DEFAULT_CONFIG)).toBe('allowed');
     expect(multiTargetInvocationDecision('SAPDiagnose', { action: 'trace_start' }, DEFAULT_CONFIG)).toBe('forbidden');
     expect(multiTargetInvocationDecision('SAPDiagnose', { action: 'trace_cancel' }, DEFAULT_CONFIG)).toBe('forbidden');
     expect(multiTargetInvocationDecision('SAPDiagnose', { action: 'apply_quickfix' }, DEFAULT_CONFIG)).toBe(

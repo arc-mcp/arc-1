@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites title="ARC-1 AUnit run" system="ABC" client="100" executedBy="COMM_USER" time="0.123" timestamp="2026-08-17T12:00:00Z" failures="1" errors="1" skipped="1" asserts="4" tests="4">
+  <testsuite name="ZCL_CI_AUNIT_SAMPLE" tests="4" failures="1" errors="1" skipped="1" time="0.123">
+    <testcase classname="ZCL_CI_AUNIT_SAMPLE" name="PASSES" time="0.01"/>
+    <testcase classname="ZCL_CI_AUNIT_SAMPLE" name="FAILS" time="0.02">
+      <failure message="Expected 1 but was 2" type="cx_aunit_unex_assert">Assertion failed</failure>
+    </testcase>
+    <testcase classname="ZCL_CI_AUNIT_SAMPLE" name="ERRORS" time="0.03">
+      <error message="CX_SY_ZERODIVIDE" type="cx_sy_zerodivide">Division by zero</error>
+    </testcase>
+    <testcase classname="ZCL_CI_AUNIT_SAMPLE" name="SKIPPED" time="0.00">
+      <skipped message="Not executed"/>
+    </testcase>
+  </testsuite>
+</testsuites>
