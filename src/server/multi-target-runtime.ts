@@ -31,7 +31,8 @@ function buildReadOnlyRuntimeConfig(
     url: '',
     client: target?.client ?? base.client,
     language: target?.language ?? base.language,
-    // Transport representation is a global server policy, unlike per-target TLS trust (`insecure`).
+    // Wire representation only — safe to inherit. `insecure` deliberately is NOT:
+    // multi-target never disables TLS verification, per-target or otherwise.
     gzipDataPreviewBody: base.gzipDataPreviewBody,
     transport: 'http-streamable',
     httpAddr: base.httpAddr,
