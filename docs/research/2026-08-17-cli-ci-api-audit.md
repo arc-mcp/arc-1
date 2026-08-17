@@ -654,7 +654,7 @@ review verdict is **GO**.
 ## 11. Ponytail simplification receipt
 
 A final deletion-first review removed 389 implementation/test lines from the reviewed PR commit,
-including 360 production lines. The 49-line evidence/documentation addition leaves the complete
+including 360 production lines. The 53-line evidence/documentation addition leaves the complete
 working-tree change at net -336. The main reductions were one canonical AUnit parser/model, one-pass
 authoritative ATC parsing, explicit transport-release phases, removal of unreachable gCTS mutation
 wrappers, one final Git output sanitizer, one bounded audit traversal, and co-located CLI report/JSON

@@ -638,7 +638,7 @@ companion audit records the exact results and explicit live-test/ledger gaps. Fi
 
 The implementation received a deletion-first review using the Ponytail method after the security
 fixes landed. Relative to the reviewed PR commit, the pass removed 389 implementation/test lines,
-including 360 production lines. The evidence/documentation update adds 49 lines, leaving the complete
+including 360 production lines. The evidence/documentation update adds 53 lines, leaving the complete
 working-tree change at net -336. It replaced the duplicate ABAP Unit XML model with one canonical
 result plus a legacy adapter, parsed ATC XML once, reduced transport convergence to explicit
 task/pre-parent/poll phases, deleted six unreachable gCTS mutation wrappers, consolidated Git output
