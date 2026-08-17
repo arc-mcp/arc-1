@@ -362,6 +362,20 @@ describe('SAPReadSchema', () => {
     }
   });
 
+  it.each([
+    '/sap/bc/adt/../../../sap/opu/odata/sap/ZSECRET',
+    '/sap/bc/adt/%2e%2e/%2e%2e/sap/opu/odata/sap/ZSECRET',
+    '/sap/bc/adt/%252e%252e/%252e%252e/sap/opu/odata/sap/ZSECRET',
+    '/sap/bc/adt/programs/%2f..%2fadmin',
+    '/sap/bc/adt/programs/%5c..%5cadmin',
+    '/sap/bc/adt\\..\\sap\\opu\\odata',
+    '/sap/bc/adt/programs/source#fragment',
+    '/sap/bc/adt/programs/source\u0000suffix',
+    '//evil.example/sap/bc/adt/source',
+  ])('rejects ambiguous or traversal-capable VERSION_SOURCE URI %j', (versionUri) => {
+    expect(SAPReadSchema.safeParse({ type: 'VERSION_SOURCE', versionUri }).success).toBe(false);
+  });
+
   it('accepts format field with valid values', () => {
     expect(SAPReadSchema.safeParse({ type: 'CLAS', name: 'ZCL_TEST', format: 'text' }).success).toBe(true);
     expect(SAPReadSchema.safeParse({ type: 'CLAS', name: 'ZCL_TEST', format: 'structured' }).success).toBe(true);
@@ -1534,6 +1548,32 @@ describe('SAPLintSchema', () => {
 });
 
 describe('SAPDiagnoseSchema', () => {
+  it.each(['legacy', 'structured', 'junit'] as const)('accepts unittest resultFormat=%s', (resultFormat) => {
+    expect(SAPDiagnoseSchema.safeParse({ action: 'unittest', resultFormat }).success).toBe(true);
+  });
+
+  it.each(['legacy', 'structured'] as const)('accepts atc resultFormat=%s', (resultFormat) => {
+    expect(SAPDiagnoseSchema.safeParse({ action: 'atc', resultFormat }).success).toBe(true);
+  });
+
+  it('rejects junit for atc with an action-specific diagnostic', () => {
+    const result = SAPDiagnoseSchema.safeParse({ action: 'atc', resultFormat: 'junit' });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.path).toEqual(['resultFormat']);
+      expect(result.error.issues[0]?.message).toContain('only supported for action="unittest"');
+    }
+  });
+
+  it('rejects resultFormat for unrelated diagnostic actions', () => {
+    const result = SAPDiagnoseSchema.safeParse({ action: 'syntax', resultFormat: 'legacy' });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.path).toEqual(['resultFormat']);
+      expect(result.error.issues[0]?.message).toContain('only supported for action="unittest" or action="atc"');
+    }
+  });
+
   it('accepts authorization_trace filters without inverting stringified false', () => {
     const result = SAPDiagnoseSchema.safeParse({
       action: 'authorization_trace',
@@ -1619,6 +1659,20 @@ describe('SAPDiagnoseSchema', () => {
         errorType: 'Frontend Error',
       }).success,
     ).toBe(true);
+  });
+
+  it.each([
+    '/sap/bc/adt/../../../sap/opu/odata/sap/ZSECRET',
+    '/sap/bc/adt/%2e%2e/%2e%2e/sap/opu/odata/sap/ZSECRET',
+    '/sap/bc/adt/%252e%252e/%252e%252e/sap/opu/odata/sap/ZSECRET',
+    '/sap/bc/adt/gw/errorlog/%2fadmin',
+    '/sap/bc/adt/gw/errorlog/%5cadmin',
+    '/sap/bc/adt\\..\\sap\\opu\\odata',
+    '/sap/bc/adt/gw/errorlog/ABC#fragment',
+    'https://a4h.example/sap/bc/adt/gw/errorlog/FrontendError/ABC123',
+    'adt://A4H/sap/bc/adt/gw/errorlog/FrontendError/ABC123',
+  ])('rejects ambiguous or non-host-relative gateway detail URL %j', (detailUrl) => {
+    expect(SAPDiagnoseSchema.safeParse({ action: 'gateway_errors', detailUrl }).success).toBe(false);
   });
 
   it('accepts quickfix with source position fields', () => {

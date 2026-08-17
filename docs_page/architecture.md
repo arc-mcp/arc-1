@@ -218,7 +218,7 @@ Standard mode groups many ADT endpoints into 12 intent-based tools.
 | `SAPDiagnose` | Syntax, unit tests, ATC, quick fixes, dumps, traces, gateway errors, system messages. | Diagnostic reads can still execute backend checks. |
 | `SAPManage` | Feature probe, cache stats, packages, package moves, FLP catalog/group/tile actions. | Read actions stay visible in read-only mode. |
 | `SAPTransport` | CTS list/get/check/history and mutations. | Write actions require transport write opt-in. |
-| `SAPGit` | gCTS and abapGit read/write operations. | Feature-gated by detected backend support. |
+| `SAPGit` | gCTS/abapGit reads and gated abapGit workflows; gCTS mutations are quarantined, and unverifiable accepted abapGit mutations return incomplete. | Feature-gated by detected backend support. |
 
 Hyperfocused mode maps one `SAP` action to the same underlying handlers:
 

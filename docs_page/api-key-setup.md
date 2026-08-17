@@ -111,10 +111,14 @@ Profiles are fixed names built into ARC-1. `ARC1_API_KEYS` selects one profile p
 | Key | Profile | Can Do | Cannot Do |
 |-----|---------|--------|-----------|
 | `$VIEWER_KEY` | `viewer` | Read source, search, navigate, lint, diagnose | Write, data preview, SQL, transports, git |
-| `$DEV_KEY` | `developer` | All of viewer + write source in `$TMP` + transport mutations + git mutations if server flags allow them | Data preview, freestyle SQL, writes outside `$TMP` |
+| `$DEV_KEY` | `developer` | All of viewer + write source in `$TMP` + transport mutations + gated abapGit workflows/egress if server flags allow them | Data preview, freestyle SQL, writes outside `$TMP`; gCTS mutations remain quarantined |
 | `$SQL_KEY` | `developer-sql` | All of developer + data preview + freestyle SQL | Writes outside `$TMP` (server ceiling still applies) |
 
 Important: `developer`, `developer-data`, and `developer-sql` API-key profiles are intentionally capped to `$TMP`. There is no `developer-z` profile and no `key:developer:Z*` syntax. If a key must write to `Z*` packages, use a tightly scoped `admin` key with `SAP_ALLOWED_PACKAGES='Z*,$TMP'`, or use OIDC/XSUAA for per-user authorization.
+
+Some accepted abapGit push/branch operations return error/incomplete because the bridge exposes no
+authoritative postcondition. Inspect repository/remote state before retrying; an API-key profile does
+not weaken that fail-closed contract.
 
 ### 3. Test Per-Key Access
 

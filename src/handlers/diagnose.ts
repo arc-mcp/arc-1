@@ -3,7 +3,18 @@
  * state, ATC, unit tests, CDS test cases.
  */
 
-import type { AdtClient } from '../adt/client.js';
+import type { AunitRunResult } from '../adt/aunit.js';
+import {
+  AunitIncompleteError,
+  appendAunitJunitDiagnostic,
+  aunitIncompleteToJunit,
+  aunitResultToJunit,
+  findStaticAbapIncludes,
+  probePublicAunit,
+  reconcileAunitSourceDeclarations,
+  runPublicAunit,
+} from '../adt/aunit.js';
+import type { AdtClient, SourceReadResult } from '../adt/client.js';
 import {
   applyFixProposal,
   getAtcSystemDefaultVariant,
@@ -48,6 +59,190 @@ import { isBtpSystem } from './feature-cache.js';
 import { classIncludeUrl, normalizeObjectType, objectUrlForType, sourceUrlForType } from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 
+const AUNIT_SOURCE_MAX_BLOCKS = 80;
+const AUNIT_SOURCE_MAX_DEPTH = 5;
+
+interface AunitSourceTree {
+  source: string;
+  complete: boolean;
+  incompleteReason?: string;
+  blocks: AunitSourceBlock[];
+}
+
+interface AunitSourceBlock {
+  id: string;
+  status: 'present' | 'absent';
+  source: string;
+  etag?: string;
+}
+
+function presentAunitSourceBlock(id: string, result: SourceReadResult): AunitSourceBlock {
+  return {
+    id,
+    status: 'present',
+    source: result.source,
+    ...(result.etag ? { etag: result.etag } : {}),
+  };
+}
+
+async function readAunitSourceTree(client: AdtClient, type: string, name: string): Promise<AunitSourceTree> {
+  let initialBlocks: AunitSourceBlock[];
+  try {
+    if (type === 'CLAS') {
+      const main = await client.getClass(name, undefined, { version: 'active' });
+      let testBlock: AunitSourceBlock;
+      try {
+        testBlock = presentAunitSourceBlock(
+          `CLAS:${name.toUpperCase()}:testclasses`,
+          await client.getClassInclude(name, 'testclasses', { version: 'active' }),
+        );
+      } catch (error) {
+        if (!(error instanceof AdtApiError) || error.statusCode !== 404) throw error;
+        testBlock = {
+          id: `CLAS:${name.toUpperCase()}:testclasses`,
+          status: 'absent',
+          source: '',
+        };
+      }
+      // Global test classes declare FOR TESTING in main. Production classes normally keep local
+      // test declarations in the optional testclasses include; a 404 there is a verified absence.
+      initialBlocks = [presentAunitSourceBlock(`CLAS:${name.toUpperCase()}:main`, main), testBlock];
+    } else if (type === 'PROG') {
+      initialBlocks = [
+        presentAunitSourceBlock(
+          `PROG:${name.toUpperCase()}:main`,
+          await client.getProgram(name, { version: 'active' }),
+        ),
+      ];
+    } else {
+      return {
+        source: '',
+        complete: false,
+        incompleteReason: 'Source-selection verification is currently supported only for CLAS and PROG test runs.',
+        blocks: [],
+      };
+    }
+  } catch {
+    return {
+      source: '',
+      complete: false,
+      incompleteReason: 'The source containing ABAP Unit class declarations could not be read from SAP.',
+      blocks: [],
+    };
+  }
+
+  const blocks = [...initialBlocks];
+  const seen = new Set<string>();
+  let frontier: Array<{ source: string; depth: number }> = initialBlocks
+    .filter((block) => block.status === 'present')
+    .map((block) => ({ source: block.source, depth: 0 }));
+  let complete = true;
+  let incompleteReason: string | undefined;
+
+  while (frontier.length > 0) {
+    const pending: Array<{ name: string; depth: number }> = [];
+    for (const block of frontier) {
+      const includes = findStaticAbapIncludes(block.source);
+      if (block.depth >= AUNIT_SOURCE_MAX_DEPTH && includes.some((include) => !seen.has(include))) {
+        complete = false;
+        incompleteReason = 'The ABAP INCLUDE graph exceeded the source-audit depth limit.';
+        continue;
+      }
+      for (const include of includes) {
+        if (seen.has(include)) continue;
+        seen.add(include);
+        if (blocks.length + pending.length >= AUNIT_SOURCE_MAX_BLOCKS) {
+          complete = false;
+          incompleteReason = 'The ABAP INCLUDE graph exceeded the source-audit block limit.';
+          continue;
+        }
+        pending.push({ name: include, depth: block.depth + 1 });
+      }
+    }
+    if (pending.length === 0) break;
+
+    const fetched = await Promise.allSettled(
+      pending.map(({ name: include }) => client.getInclude(include, { version: 'active' })),
+    );
+    const next: Array<{ source: string; depth: number }> = [];
+    for (let index = 0; index < fetched.length; index += 1) {
+      const response = fetched[index]!;
+      if (response.status === 'rejected') {
+        complete = false;
+        incompleteReason = 'One or more static ABAP INCLUDE sources could not be read from SAP.';
+        continue;
+      }
+      blocks.push(presentAunitSourceBlock(`INCL:${pending[index]!.name}`, response.value));
+      next.push({ source: response.value.source, depth: pending[index]!.depth });
+    }
+    frontier = next;
+  }
+
+  return {
+    source: blocks
+      .filter((block) => block.status === 'present')
+      .map((block) => block.source)
+      .join('\n'),
+    complete,
+    ...(incompleteReason ? { incompleteReason } : {}),
+    blocks,
+  };
+}
+
+function sameAunitSourceSnapshot(before: AunitSourceTree, after: AunitSourceTree): boolean {
+  if (before.blocks.length !== after.blocks.length) return false;
+  return before.blocks.every((block, index) => {
+    const later = after.blocks[index];
+    return (
+      later !== undefined &&
+      later.id === block.id &&
+      later.status === block.status &&
+      later.source === block.source &&
+      later.etag === block.etag
+    );
+  });
+}
+
+async function verifyAunitSourceSnapshot(
+  client: AdtClient,
+  type: string,
+  name: string,
+  before: AunitSourceTree,
+): Promise<AunitSourceTree> {
+  if (!before.complete) return before;
+  const after = await readAunitSourceTree(client, type, name);
+  if (!after.complete) {
+    return {
+      ...before,
+      complete: false,
+      incompleteReason:
+        after.incompleteReason ?? 'The active ABAP source tree could not be re-read after the ABAP Unit run.',
+    };
+  }
+  if (!sameAunitSourceSnapshot(before, after)) {
+    return {
+      ...before,
+      complete: false,
+      incompleteReason: 'The active ABAP source tree changed while ABAP Unit evidence was being collected.',
+    };
+  }
+  return before;
+}
+
+async function reconcileAunitWithSource(
+  client: AdtClient,
+  type: string,
+  name: string,
+  result: AunitRunResult,
+  sourceTree?: AunitSourceTree,
+): Promise<AunitRunResult> {
+  const evidence = sourceTree ?? (await readAunitSourceTree(client, type, name));
+  return reconcileAunitSourceDeclarations(result, evidence.source, {
+    complete: evidence.complete,
+    ...(evidence.incompleteReason ? { incompleteReason: evidence.incompleteReason } : {}),
+  });
+}
+
 export async function handleSAPDiagnose(client: AdtClient, args: Record<string, unknown>): Promise<ToolResult> {
   const action = String(args.action ?? '');
   const name = String(args.name ?? '');
@@ -90,7 +285,138 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
     case 'unittest': {
       const objectUrl = objectUrlForType(type, name);
       const coverage = args.coverage === true;
+      const resultFormat = String(args.resultFormat ?? 'legacy');
+
+      if (resultFormat === 'junit' && !coverage) {
+        const publicAvailable = await probePublicAunit(client.http, client.safety);
+        if (publicAvailable) {
+          const sourceTree = await readAunitSourceTree(client, type, name);
+          let native: Awaited<ReturnType<typeof runPublicAunit>>;
+          try {
+            native = await runPublicAunit(client.http, client.safety, type, name);
+          } catch (error) {
+            if (!(error instanceof AunitIncompleteError)) throw error;
+            const message = error.message;
+            return textResult(
+              toolJson({
+                protocol: 'public-api',
+                outcome: 'incomplete',
+                summary: { tests: 0, passed: 0, failures: 0, errors: 0, skipped: 0, warnings: 0 },
+                coverageEvidence: 'not_requested',
+                incompleteReason: 'timeout',
+                junit: aunitIncompleteToJunit(message, `${type} ${name}`),
+                ...error.evidence,
+              }),
+            );
+          }
+          const legacyEvidence = await runUnitTests(client.http, client.safety, objectUrl);
+          const stableSourceTree = await verifyAunitSourceSnapshot(client, type, name, sourceTree);
+          const legacy = await reconcileAunitWithSource(
+            client,
+            type,
+            name,
+            legacyEvidence.structured,
+            stableSourceTree,
+          );
+          let outcome = native.summary.outcome;
+          let incompleteReason: string | undefined;
+          // Native JUnit omits run/class alerts, including harmless-selection refusals. Reconcile
+          // every public run with one harmless legacy run; disagreement is evidence, never green.
+          if (native.summary.failures > 0 || native.summary.errors > 0 || legacy.outcome === 'failed') {
+            outcome = 'failed';
+          } else if (native.summary.tests !== legacy.summary.tests) {
+            outcome = 'incomplete';
+            incompleteReason = 'native_legacy_result_mismatch';
+          } else if (
+            legacy.outcome === 'incomplete' ||
+            (native.summary.tests > 0 && native.summary.skipped === native.summary.tests)
+          ) {
+            outcome = 'incomplete';
+            incompleteReason =
+              legacy.sourceSelectionEvidence?.status === 'unavailable'
+                ? 'source_selection_unavailable'
+                : (legacy.sourceSelectionEvidence?.omittedNonHarmlessTestClasses.length ?? 0) > 0
+                  ? 'source_declared_non_harmless_omitted'
+                  : legacy.outcome === 'incomplete'
+                    ? 'harmless_selection_incomplete'
+                    : 'all_tests_skipped';
+          } else if (native.summary.tests === 0 && legacy.outcome === 'no_tests') {
+            outcome = 'no_tests';
+          } else {
+            outcome = 'passed';
+          }
+          const summary = {
+            tests: native.summary.tests,
+            passed: Math.max(
+              0,
+              native.summary.tests - native.summary.failures - native.summary.errors - native.summary.skipped,
+            ),
+            failures: native.summary.failures,
+            errors: native.summary.errors,
+            skipped: native.summary.skipped,
+            warnings: legacy.summary.warnings,
+          };
+          let junit = native.junit;
+          if (
+            (outcome === 'failed' || outcome === 'incomplete') &&
+            (outcome !== native.summary.outcome || incompleteReason !== undefined)
+          ) {
+            const diagnosticMessage =
+              outcome === 'failed'
+                ? 'ARC-1 reconciliation found failure or error evidence in the harmless legacy ABAP Unit result that SAP native JUnit did not represent.'
+                : `ARC-1 reconciliation could not verify a complete harmless ABAP Unit run (${incompleteReason ?? 'incomplete legacy evidence'}).`;
+            junit = appendAunitJunitDiagnostic(native.junit, native.summary, outcome, diagnosticMessage);
+          }
+          return textResult(
+            toolJson({
+              protocol: native.protocol,
+              outcome,
+              summary,
+              coverageEvidence: 'not_requested',
+              ...(incompleteReason ? { incompleteReason } : {}),
+              selectionEvidence: {
+                outcome: legacy.outcome,
+                summary: legacy.summary,
+                alerts: legacy.alerts,
+              },
+              sourceSelectionEvidence: legacy.sourceSelectionEvidence,
+              junit,
+              runPath: native.runPath,
+              resultPath: native.resultPath,
+              polls: native.polls,
+              elapsedMs: native.elapsedMs,
+            }),
+          );
+        }
+      }
+
+      // SAP 7.58 can silently omit dangerous/critical classes from harmless-only legacy results.
+      // Audit a stable active-source snapshot for every format, including the compatibility array
+      // and coverage object, so the generic tool path cannot report a partial run as green.
+      const sourceTree = await readAunitSourceTree(client, type, name);
       const result = await runUnitTests(client.http, client.safety, objectUrl, { coverage });
+      const stableSourceTree = await verifyAunitSourceSnapshot(client, type, name, sourceTree);
+      const structured = await reconcileAunitWithSource(client, type, name, result.structured, stableSourceTree);
+      if (resultFormat === 'structured') return textResult(toolJson(structured));
+      if (resultFormat === 'junit') {
+        return textResult(
+          toolJson({
+            protocol: 'legacy-generated',
+            outcome: structured.outcome,
+            summary: structured.summary,
+            coverage: structured.coverage,
+            coverageEvidence: structured.coverageEvidence,
+            sourceSelectionEvidence: structured.sourceSelectionEvidence,
+            junit: aunitResultToJunit(structured, `${type} ${name}`),
+          }),
+        );
+      }
+      const sourceSelectionUnsafe =
+        structured.sourceSelectionEvidence?.status !== 'verified' ||
+        (structured.sourceSelectionEvidence?.omittedTestClasses.length ?? 0) > 0;
+      if (structured.outcome === 'incomplete' || sourceSelectionUnsafe) {
+        return errorResult(toolJson(structured));
+      }
       // Default (no coverage) keeps the historical array output; coverage requested → {tests, coverage}.
       if (!coverage) return textResult(toolJson(result.tests));
       const out: Record<string, unknown> = { tests: result.tests };
@@ -104,7 +430,11 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
       const objectUrl = objectUrlForType(type, name);
       const variant = args.variant as string | undefined;
       const result = await runAtcCheck(client.http, client.safety, objectUrl, variant);
-      return textResult(toolJson(result));
+      if (args.resultFormat === 'structured') return textResult(toolJson(result));
+      // Keep the successful legacy `{findings}` shape, but never discard completeness failures:
+      // a generic tool/CLI call must not turn malformed or missing worklist evidence into a clean run.
+      if (!result.complete) return errorResult(toolJson(result));
+      return textResult(toolJson({ findings: result.findings }));
     }
     case 'atc_variants': {
       // Discover which check variant to pass to action="atc": the system default (used when none is

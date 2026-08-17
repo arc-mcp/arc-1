@@ -23,6 +23,7 @@ import { parseTableType, type TableTypeInfo } from './ddic-xml.js';
 import { AdtApiError, AdtSafetyError, isNotFoundError } from './errors.js';
 import { AdtHttpClient, type AdtHttpConfig, type AdtResponse } from './http.js';
 import { AdtPackageHierarchyResolver, type PackageHierarchyResolver } from './package-hierarchy.js';
+import { assertCanonicalHostRelativeAdtPath } from './path-safety.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import { Semaphore } from './semaphore.js';
 import { clampSearchResults, searchSource as executeSourceSearch, toTextSearchObjectType } from './text-search.js';
@@ -1034,10 +1035,8 @@ export class AdtClient {
   /** Read source content for a specific revision URI from the revisions feed. */
   async getRevisionSource(versionUri: string): Promise<string> {
     checkOperation(this.safety, OperationType.Read, 'GetRevisionSource');
-    if (!versionUri.startsWith('/sap/bc/adt/')) {
-      throw new Error('versionUri must be an ADT path starting with /sap/bc/adt/');
-    }
-    const resp = await this.http.get(versionUri, { Accept: 'text/plain' });
+    const canonicalUri = assertCanonicalHostRelativeAdtPath(versionUri);
+    const resp = await this.http.get(canonicalUri, { Accept: 'text/plain' });
     return resp.body;
   }
 

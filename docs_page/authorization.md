@@ -95,7 +95,7 @@ Use this table to answer: "what must be true before this action can run?" For HT
 | Activate objects | `write` | `SAP_ALLOW_WRITES=true` | Activation is a mutation |
 | Package / FLP mutations | `write` | `SAP_ALLOW_WRITES=true` | FLP list actions are reads; FLP create/delete actions are writes |
 | Create / release / delete transports | `write` + `transports` | `SAP_ALLOW_WRITES=true` + `SAP_ALLOW_TRANSPORT_WRITES=true` | `SAP_ALLOWED_TRANSPORTS` can further restrict CTS IDs |
-| Git clone / pull / push / commit | `write` + `git` | `SAP_ALLOW_WRITES=true` + `SAP_ALLOW_GIT_WRITES=true` | Requires backend gCTS/abapGit feature availability |
+| Gated abapGit mutation / SAP-side Git egress | `write` + `git` | `SAP_ALLOW_WRITES=true` + `SAP_ALLOW_GIT_WRITES=true` | Package-bound actions also need subtree authorization. Accepted push/branch operations can return incomplete; inspect before retrying. Every gCTS mutation is currently quarantined before HTTP. |
 
 Why transport and Git rows list `write` plus the specialized scope: ARC-1's safety layer turns off all mutations for users without `write`. The specialized `transports` / `git` scopes decide who may use those write families after general write permission exists.
 
@@ -145,7 +145,7 @@ Seven scopes exist:
 | `data` | Named table preview | - |
 | `sql` | Freestyle SQL | `data` |
 | `transports` | CTS transport mutations | - |
-| `git` | abapGit/gCTS mutations | - |
+| `git` | Gated abapGit mutations, SAP-side Git egress, and the reserved authorization boundary for currently quarantined gCTS mutations | - |
 | `admin` | All ARC-1 scopes | all other scopes |
 
 Assigning only `transports` or only `git` is not useful for mutations because transport/Git writes also need `write`. The shipped `developer` profiles and BTP `MCPDeveloper` role include `write`, `transports`, and `git` together.

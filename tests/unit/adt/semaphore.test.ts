@@ -55,6 +55,29 @@ describe('Semaphore', () => {
     expect(order).toEqual([1, 2]);
   });
 
+  it('removes an aborted waiter without granting it a slot later', async () => {
+    const sem = new Semaphore(1);
+    const controller = new AbortController();
+    let cancelledRan = false;
+
+    await sem.acquire();
+    const cancelled = sem.run(async () => {
+      cancelledRan = true;
+    }, controller.signal);
+    const next = sem.acquire();
+    expect(sem.waiting).toBe(2);
+
+    controller.abort(new DOMException('deadline', 'TimeoutError'));
+    await expect(cancelled).rejects.toThrow('deadline');
+    expect(sem.waiting).toBe(1);
+
+    sem.release();
+    await next;
+    expect(cancelledRan).toBe(false);
+    expect(sem.inflight).toBe(1);
+    sem.release();
+  });
+
   it('run() executes fn and releases on success', async () => {
     const sem = new Semaphore(1);
     const result = await sem.run(async () => {

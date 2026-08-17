@@ -16,8 +16,9 @@
  * See also: docs/plans/2026-05-08-codeql-alerts-clear-text-logging-triage.md
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { main } from '../../../src/cli.js';
 import { resolveConfig } from '../../../src/server/config.js';
 import type { ConfigSource, ServerConfig } from '../../../src/server/types.js';
 
@@ -61,6 +62,7 @@ describe('clear-text-logging regression (CodeQL alerts #9, #10, #11)', () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     process.env = { ...savedEnv };
   });
 
@@ -130,6 +132,24 @@ describe('clear-text-logging regression (CodeQL alerts #9, #10, #11)', () => {
     // resolveConfig either throws OR clamps the bogus number — both are fine
     // for this test. If it threw, the error message must not contain the key.
     expect(errorMessage).not.toContain(TEST_API_KEY);
+  });
+
+  it.each([
+    ['flag', ['--api-keys', TEST_API_KEY, 'config', 'show'], undefined],
+    ['environment', ['config', 'show'], `${TEST_API_KEY}:${TEST_API_KEY_2}`],
+  ])('malformed API key from %s is absent from the common CLI error sink', async (_source, argv, envValue) => {
+    if (envValue) process.env.ARC1_API_KEYS = envValue;
+    const errors: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      errors.push(args.map(String).join(' '));
+    });
+
+    expect(await main(argv)).toBe(2);
+
+    const rendered = errors.join('\n');
+    expect(rendered).toContain('Invalid API key entry at position 1');
+    expect(rendered).not.toContain(TEST_API_KEY);
+    expect(rendered).not.toContain(TEST_API_KEY_2);
   });
 
   it('CodeQL #9: resolveConfig success with api-keys does not log them as a side-effect', () => {

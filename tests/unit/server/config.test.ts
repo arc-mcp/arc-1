@@ -1067,15 +1067,32 @@ describe('parseApiKeys', () => {
   });
 
   it('throws on missing colon separator', () => {
-    expect(() => parseApiKeys('keyonly')).toThrow(/expected 'key:profile' format/);
+    expect(() => parseApiKeys('keyonly')).toThrow(/entry at position 1.*'key:profile' format/);
   });
 
   it('throws on empty key', () => {
-    expect(() => parseApiKeys(':viewer')).toThrow(/key cannot be empty/);
+    expect(() => parseApiKeys(':viewer')).toThrow(/entry at position 1.*non-empty key/);
   });
 
   it('throws on invalid profile name', () => {
-    expect(() => parseApiKeys('mykey:nonexistent')).toThrow(/Invalid profile 'nonexistent'/);
+    expect(() => parseApiKeys('mykey:nonexistent')).toThrow(/entry at position 1.*Valid profiles:/);
+  });
+
+  it.each([
+    ['first-secret-key', 1, ['first-secret-key']],
+    ['valid-key:viewer,second-secret-key', 2, ['valid-key', 'second-secret-key']],
+    ['third-secret-key:secret-profile-name', 1, ['third-secret-key', 'secret-profile-name']],
+  ])('never includes caller material in an invalid entry error for %s', (raw, position, sentinels) => {
+    let message = '';
+    try {
+      parseApiKeys(raw);
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(message).toContain(`entry at position ${position}`);
+    expect(message).toContain("'key:profile' format");
+    for (const sentinel of sentinels) expect(message).not.toContain(sentinel);
   });
 
   it('throws on empty string', () => {

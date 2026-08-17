@@ -5,8 +5,8 @@
  * Safety checks are applied at every entry point.
  */
 
-import { AdtApiError } from './errors.js';
-import type { AdtHttpClient } from './http.js';
+import { AdtApiError, AdtNetworkError, AdtSafetyError } from './errors.js';
+import type { AdtHttpClient, AdtRequestOptions } from './http.js';
 import { checkOperation, checkTransport, OperationType, type SafetyConfig } from './safety.js';
 import type {
   InactiveObject,
@@ -48,6 +48,71 @@ export const CTS_CONTENT_TYPE_ORGANIZER = 'application/vnd.sap.adt.transportorga
 
 /** XML namespace for CTS ADT transport manager payloads */
 export const CTS_NAMESPACE_TM = 'http://www.sap.com/cts/adt/tm';
+
+const DEFAULT_RELEASE_TIMEOUT_MS = 30_000;
+const DEFAULT_RELEASE_INITIAL_DELAY_MS = 250;
+const DEFAULT_RELEASE_MAX_DELAY_MS = 2_000;
+
+export type TransportReleaseOutcome = 'released' | 'blocked' | 'timeout' | 'unknown';
+
+/** One request/task whose terminal CTS state is part of a release postcondition. */
+export interface TransportReleaseNodeState {
+  id: string;
+  kind: 'request' | 'task';
+  parentId?: string;
+  initialStatus: string;
+  lastStatus: string;
+  confirmedReleased: boolean;
+}
+
+/** Raw SAP release report(s) retained per submitted request/task. */
+export interface TransportReleaseSubmission {
+  id: string;
+  reports: TransportReleaseReport[];
+  /** A submission can have committed remotely even when its HTTP response failed; retain that uncertainty. */
+  error?: string;
+}
+
+/**
+ * Terminal verification result for a CTS release.
+ *
+ * `verified=true` means every frozen request/task was observed with status `R` in one fresh CTS
+ * snapshot. A clean `newreleasejobs` response alone is never sufficient.
+ */
+export interface TransportReleaseResult {
+  requestedId: string;
+  recursive: boolean;
+  outcome: TransportReleaseOutcome;
+  verified: boolean;
+  /** Frozen ids actually observed in terminal status R (tasks first in recursive mode for compatibility). */
+  released: string[];
+  intended: TransportReleaseNodeState[];
+  submissions: TransportReleaseSubmission[];
+  /** Backward-compatible view: raw report(s) for the requested id (the parent in recursive mode). */
+  reports: TransportReleaseReport[];
+  /** Number of post-submission CTS state reads. The initial discovery read is not counted. */
+  polls: number;
+  elapsedMs: number;
+  lastReadError?: string;
+  /** Submitted ids whose report said failure even though CTS ultimately confirmed status R. */
+  reportConflicts?: string[];
+  /** Child tasks that appeared after the recursive release snapshot and invalidated exact-set verification. */
+  unexpectedChildren?: string[];
+}
+
+/** Internal convergence controls; injectable clock/sleep keep unit tests deterministic. */
+export interface TransportReleaseWaitOptions {
+  /** Relative verification budget. Defaults to 30 seconds. */
+  timeoutMs?: number;
+  /** Absolute deadline in the same clock domain as `now` (epoch milliseconds by default). */
+  deadline?: number;
+  initialDelayMs?: number;
+  maxDelayMs?: number;
+  now?: () => number;
+  sleep?: (milliseconds: number) => Promise<void>;
+  /** Stops sleeps and is forwarded through every CTS state/read release request. */
+  signal?: AbortSignal;
+}
 
 /** List transport requests for a user, optionally filtered by status (client-side) */
 export async function listTransports(
@@ -353,6 +418,7 @@ export async function releaseTransport(
   http: AdtHttpClient,
   safety: SafetyConfig,
   transportId: string,
+  requestOptions?: AdtRequestOptions,
 ): Promise<TransportReleaseReport[]> {
   checkTransport(safety, transportId, 'ReleaseTransport', true);
 
@@ -361,63 +427,543 @@ export async function releaseTransport(
     undefined,
     undefined,
     { Accept: CTS_CONTENT_TYPE_ORGANIZER },
+    requestOptions,
   );
   return parseReleaseReports(resp.body);
 }
 
+/** Collect every node with a local XML name, rather than stopping at the first matching branch. */
+function collectAllNamedNodes(value: unknown, name: string, output: Record<string, unknown>[] = []) {
+  if (!value || typeof value !== 'object') return output;
+  if (Array.isArray(value)) {
+    for (const entry of value) collectAllNamedNodes(entry, name, output);
+    return output;
+  }
+
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    if (key === name) {
+      const candidates = Array.isArray(child) ? child : [child];
+      for (const candidate of candidates) {
+        if (candidate && typeof candidate === 'object') output.push(candidate as Record<string, unknown>);
+      }
+    }
+    collectAllNamedNodes(child, name, output);
+  }
+  return output;
+}
+
 /**
- * Release a transport request recursively — tasks first, then the parent request.
+ * Flatten a transport-organizer document into request/task state rows.
  *
- * The parent request's **refreshed state** is authoritative when SAP contradicts itself: a4h 758 can
- * return HTTP 200 with `abortrelapifail` for an empty/unclassified recursive release even though the
- * parent has already reached terminal status `R`. Task releases are best-effort — the parent release
- * folds them in. A failed *task* release is therefore not fatal, and a failed parent report is
- * reconciled with one fresh request read before it is treated as blocked. `reports` remains the raw SAP
- * response; `released` lists ids confirmed either by a clean report or terminal request state.
+ * Unlike `parseTransportList`, this deliberately supports a standalone `<tm:task>` response and a
+ * task lookup whose response contains the parent request tree. That makes it safe to verify either
+ * kind of id after `newreleasejobs`.
+ */
+export function parseTransportNodeStates(xml: string): TransportReleaseNodeState[] {
+  const parsed = parseXml(xml);
+  const states = new Map<string, TransportReleaseNodeState>();
+
+  const parentIdFrom = (value: unknown): string => {
+    const raw = String(value ?? '')
+      .trim()
+      .replace(/\/+$/, '');
+    return raw.slice(raw.lastIndexOf('/') + 1);
+  };
+
+  const add = (node: Record<string, unknown>, kind: 'request' | 'task', structuralParent?: string) => {
+    const id = String(node['@_number'] ?? '').trim();
+    if (!id) return;
+    const key = id.toUpperCase();
+    const status = String(node['@_status'] ?? '');
+    const parentId = parentIdFrom(structuralParent ?? node['@_parent']);
+    const previous = states.get(key);
+    states.set(key, {
+      id,
+      kind,
+      ...(parentId ? { parentId } : previous?.parentId ? { parentId: previous.parentId } : {}),
+      initialStatus: status || previous?.initialStatus || '',
+      lastStatus: status || previous?.lastStatus || '',
+      confirmedReleased: (status || previous?.lastStatus) === 'R',
+    });
+  };
+
+  for (const request of collectAllNamedNodes(parsed, 'request')) {
+    const requestId = String(request['@_number'] ?? '').trim();
+    add(request, 'request');
+    for (const task of collectAllNamedNodes(request, 'task')) add(task, 'task', requestId);
+  }
+
+  // Also catches a standalone task root. Nested tasks are de-duplicated by id.
+  for (const task of collectAllNamedNodes(parsed, 'task')) add(task, 'task');
+  return [...states.values()];
+}
+
+async function readTransportNodeStates(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  lookupId: string,
+  requestOptions?: AdtRequestOptions,
+): Promise<TransportReleaseNodeState[]> {
+  checkTransport(safety, lookupId, 'GetTransportReleaseState', false);
+  const resp = await http.get(
+    `/sap/bc/adt/cts/transportrequests/${encodeURIComponent(lookupId)}`,
+    {
+      Accept: CTS_CONTENT_TYPE_ORGANIZER,
+    },
+    requestOptions,
+  );
+  return parseTransportNodeStates(resp.body);
+}
+
+function transportIdsEqual(left: string | undefined, right: string): boolean {
+  return (left ?? '').toUpperCase() === right.toUpperCase();
+}
+
+function releaseErrorText(err: unknown): string {
+  // A convergence error is returned as normal tool-result evidence, so dispatch's
+  // AdtApiError/minimal-error formatter never sees it. Never copy a response-derived
+  // SAP message or ADT path into that result: 401/403 bodies in particular can carry
+  // technical users, authorization objects, or echoed login material.
+  if (err instanceof AdtApiError) return `SAP CTS request failed with HTTP ${err.statusCode}.`;
+  if (err instanceof AdtNetworkError) return 'SAP CTS network request failed.';
+
+  const message = err instanceof Error ? err.message : String(err);
+  return message.length <= 300 ? message : `${message.slice(0, 300)}…`;
+}
+
+/** Fail closed when the transport allowlist cannot authorize a concurrently changing CTS subtree. */
+export function checkRecursiveTransportReleaseScope(safety: SafetyConfig): void {
+  const explicitlyUnrestricted =
+    safety.allowedTransports.length === 0 || safety.allowedTransports.some((entry) => entry.trim() === '*');
+  if (explicitlyUnrestricted) return;
+
+  throw new AdtSafetyError(
+    'Recursive transport release is blocked by a restrictive allowedTransports policy. ' +
+      'SAP can fold a child task attached concurrently into the parent release, so exact/prefix allowlists ' +
+      'cannot authorize the complete live subtree atomically. Use an empty legacy allowlist or explicit "*" ' +
+      'only when every current and concurrently attached child of the request is authorized.',
+  );
+}
+
+function isTerminalReleaseReadError(err: unknown): boolean {
+  return err instanceof AdtApiError && [400, 401, 403, 404].includes(err.statusCode);
+}
+
+function numericOption(value: number | undefined, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : fallback;
+}
+
+async function waitForReleasePoll(milliseconds: number, options: TransportReleaseWaitOptions): Promise<void> {
+  if (milliseconds <= 0 || options.signal?.aborted) return;
+  if (options.sleep) {
+    await options.sleep(milliseconds);
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(done, milliseconds);
+    const signal = options.signal;
+    signal?.addEventListener('abort', done, { once: true });
+
+    function done() {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', done);
+      resolve();
+    }
+  });
+}
+
+function buildReleaseResult(
+  requestedId: string,
+  recursive: boolean,
+  outcome: TransportReleaseOutcome,
+  intended: TransportReleaseNodeState[],
+  submissions: TransportReleaseSubmission[],
+  polls: number,
+  elapsedMs: number,
+  lastReadError?: string,
+  unexpectedChildren: string[] = [],
+): TransportReleaseResult {
+  const released = (
+    recursive
+      ? [...intended.filter((node) => node.kind === 'task'), ...intended.filter((node) => node.kind === 'request')]
+      : intended
+  )
+    .filter((node) => node.confirmedReleased)
+    .map((node) => node.id);
+  const reports = submissions.find((submission) => transportIdsEqual(submission.id, requestedId))?.reports ?? [];
+  const reportConflicts = submissions
+    .filter(
+      (submission) =>
+        failedReleaseReports(submission.reports).length > 0 &&
+        intended.some((node) => transportIdsEqual(node.id, submission.id) && node.confirmedReleased),
+    )
+    .map((submission) => submission.id);
+
+  return {
+    requestedId,
+    recursive,
+    outcome,
+    verified: outcome === 'released',
+    released,
+    intended: intended.map((node) => ({ ...node })),
+    submissions: submissions.map((submission) => ({ ...submission, reports: [...submission.reports] })),
+    reports,
+    polls,
+    elapsedMs,
+    ...(lastReadError ? { lastReadError } : {}),
+    ...(reportConflicts.length > 0 ? { reportConflicts } : {}),
+    ...(unexpectedChildren.length > 0 ? { unexpectedChildren: [...unexpectedChildren] } : {}),
+  };
+}
+
+async function releaseTransportWithConvergence(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  transportId: string,
+  recursive: boolean,
+  options: TransportReleaseWaitOptions,
+): Promise<TransportReleaseResult> {
+  const operation = recursive ? 'ReleaseTransportRecursive' : 'ReleaseTransport';
+  // Keep the mutation ceiling ahead of the discovery read for direct callers as well as the handler.
+  checkTransport(safety, transportId, operation, true);
+  if (recursive) checkRecursiveTransportReleaseScope(safety);
+
+  const now = options.now ?? Date.now;
+  const startedAt = now();
+  const timeoutMs = numericOption(options.timeoutMs, DEFAULT_RELEASE_TIMEOUT_MS);
+  const relativeDeadline = startedAt + timeoutMs;
+  const deadline =
+    typeof options.deadline === 'number' && Number.isFinite(options.deadline)
+      ? Math.min(relativeDeadline, options.deadline)
+      : relativeDeadline;
+  const elapsed = () => Math.max(0, now() - startedAt);
+
+  let discovered: TransportReleaseNodeState[];
+  try {
+    discovered = await readTransportNodeStates(http, safety, transportId, {
+      deadline,
+      signal: options.signal,
+    });
+  } catch (err) {
+    return buildReleaseResult(transportId, recursive, 'unknown', [], [], 0, elapsed(), releaseErrorText(err));
+  }
+
+  const requested = discovered.find((node) => transportIdsEqual(node.id, transportId));
+  if (!requested) {
+    return buildReleaseResult(
+      transportId,
+      recursive,
+      'unknown',
+      [],
+      [],
+      0,
+      elapsed(),
+      `Transport '${transportId}' was not present in the CTS state response.`,
+    );
+  }
+  if (recursive && requested.kind !== 'request') {
+    return buildReleaseResult(
+      transportId,
+      recursive,
+      'unknown',
+      [requested],
+      [],
+      0,
+      elapsed(),
+      `Recursive release requires a parent request, but '${transportId}' is a task.`,
+    );
+  }
+
+  // Freeze the exact original tree. Children appearing later belong to another concurrent change and
+  // must not silently broaden this release attempt.
+  const frozen = recursive
+    ? [requested, ...discovered.filter((node) => node.kind === 'task' && transportIdsEqual(node.parentId, transportId))]
+    : [requested];
+  const intended = frozen.map((node) => ({ ...node }));
+
+  // Fail before the first irreversible POST if any intended id is outside the transport ceiling.
+  for (const node of intended) checkTransport(safety, node.id, operation, true);
+
+  const initiallyUnknown = intended.filter((node) => !['D', 'O', 'R'].includes(node.lastStatus));
+  if (initiallyUnknown.length > 0) {
+    return buildReleaseResult(
+      transportId,
+      recursive,
+      'unknown',
+      intended,
+      [],
+      0,
+      elapsed(),
+      `CTS returned an unknown initial status for: ${initiallyUnknown
+        .map((node) => `${node.id}=${node.lastStatus || '(missing)'}`)
+        .join(', ')}.`,
+    );
+  }
+
+  if (intended.every((node) => node.confirmedReleased)) {
+    return buildReleaseResult(transportId, recursive, 'released', intended, [], 0, elapsed());
+  }
+
+  if (options.signal?.aborted || now() >= deadline) {
+    return buildReleaseResult(
+      transportId,
+      recursive,
+      'unknown',
+      intended,
+      [],
+      0,
+      elapsed(),
+      options.signal?.aborted
+        ? 'Transport release verification was aborted before submission.'
+        : 'Transport release deadline expired before submission.',
+    );
+  }
+
+  const submissions: TransportReleaseSubmission[] = [];
+  const requestedState = intended.find((node) => transportIdsEqual(node.id, requested.id))!;
+  const taskSubmissionOrder = recursive ? intended.filter((node) => node.kind === 'task') : [];
+  const requestedKey = requestedState.id.toUpperCase();
+  const frozenTaskKeys = new Set(taskSubmissionOrder.map((node) => node.id.toUpperCase()));
+  // An exception after POST may mean "committed but the response was lost". Never retry the same
+  // release in this invocation; freeze the attempt and reconcile the exact CTS tree instead.
+  const attempted = new Set<string>();
+  let recursiveTasksSubmitted = !recursive;
+  let parentReadyAfterFreshSnapshot = !recursive;
+  let submissionFailed = false;
+  let polls = 0;
+  let lastReadError: string | undefined;
+  let missingIds: string[] = [];
+  let unexpectedChildren: string[] = [];
+  const maxDelayMs = numericOption(options.maxDelayMs, DEFAULT_RELEASE_MAX_DELAY_MS);
+  let delayMs = Math.min(numericOption(options.initialDelayMs, DEFAULT_RELEASE_INITIAL_DELAY_MS), maxDelayMs);
+  const lookupId = recursive ? requested.id : transportId;
+
+  const submissionFailureDetail = (): string | undefined => {
+    const failed = submissions.filter((submission) => submission.error);
+    if (failed.length === 0) return undefined;
+    return `Release submission returned an error for ${failed
+      .map((submission) => `${submission.id}: ${submission.error}`)
+      .join('; ')}. The submission outcome is uncertain; use the returned CTS state before retrying.`;
+  };
+
+  const finishWithoutTerminalRelease = (): TransportReleaseResult => {
+    const hasFailedReport = submissions.some((submission) => failedReleaseReports(submission.reports).length > 0);
+    const unknownStatuses = intended.filter((node) => !['D', 'O', 'R'].includes(node.lastStatus));
+    const submissionFailure = submissionFailureDetail();
+    const outcome: TransportReleaseOutcome =
+      submissionFailure ||
+      lastReadError ||
+      missingIds.length > 0 ||
+      unexpectedChildren.length > 0 ||
+      unknownStatuses.length > 0
+        ? 'unknown'
+        : hasFailedReport
+          ? 'blocked'
+          : 'timeout';
+    const stateDetail =
+      lastReadError ??
+      (missingIds.length > 0
+        ? `CTS state omitted intended id(s): ${missingIds.join(', ')}.`
+        : unknownStatuses.length > 0
+          ? `CTS returned unknown status(es): ${unknownStatuses
+              .map((node) => `${node.id}=${node.lastStatus || '(missing)'}`)
+              .join(', ')}.`
+          : undefined);
+    const detail = [submissionFailure, stateDetail].filter(Boolean).join(' ') || undefined;
+    return buildReleaseResult(
+      transportId,
+      recursive,
+      outcome,
+      intended,
+      submissions,
+      polls,
+      elapsed(),
+      detail,
+      unexpectedChildren,
+    );
+  };
+
+  while (true) {
+    if (options.signal?.aborted) {
+      const detail = [submissionFailureDetail(), 'Transport release verification was aborted.']
+        .filter(Boolean)
+        .join(' ');
+      return buildReleaseResult(transportId, recursive, 'unknown', intended, submissions, polls, elapsed(), detail);
+    }
+    // Do not start a fresh SAP round-trip after sleeping to the deadline. The last successful
+    // snapshot already proves a timeout/block; an intentionally expired HTTP call would blur it
+    // into an unknown network outcome.
+    if (polls > 0 && now() >= deadline) return finishWithoutTerminalRelease();
+
+    // `O` means CTS already has a release job in progress. Poll it before submitting any remaining
+    // D node (especially a recursive parent) and never issue a duplicate POST for that node.
+    const hasInFlightNode = intended.some((node) => node.lastStatus === 'O' && !node.confirmedReleased);
+    if (!submissionFailed && !hasInFlightNode) {
+      if (recursive && !recursiveTasksSubmitted) {
+        for (const node of taskSubmissionOrder) {
+          const key = node.id.toUpperCase();
+          if (node.confirmedReleased || attempted.has(key)) continue;
+          if (node.lastStatus !== 'D') break;
+          attempted.add(key);
+          try {
+            const reports = await releaseTransport(http, safety, node.id, {
+              deadline,
+              signal: options.signal,
+            });
+            submissions.push({ id: node.id, reports });
+          } catch (err) {
+            submissions.push({ id: node.id, reports: [], error: releaseErrorText(err) });
+            submissionFailed = true;
+            break;
+          }
+        }
+        recursiveTasksSubmitted = true;
+      } else if (parentReadyAfterFreshSnapshot && !requestedState.confirmedReleased && !attempted.has(requestedKey)) {
+        // In recursive mode this branch is reachable only after a coherent parent-tree GET found no
+        // non-frozen child. SAP exposes no compare-and-release primitive, so another CTS actor can still
+        // attach a task in the tiny GET→POST gap. Every readback rejects unexpected children to avoid a
+        // false exact-set success; restrictive allowlists are refused above because they need an atomic
+        // authorization guarantee the backend cannot provide.
+        parentReadyAfterFreshSnapshot = false;
+        if (requestedState.lastStatus === 'D') {
+          attempted.add(requestedKey);
+          try {
+            const reports = await releaseTransport(http, safety, requestedState.id, {
+              deadline,
+              signal: options.signal,
+            });
+            submissions.push({ id: requestedState.id, reports });
+          } catch (err) {
+            submissions.push({ id: requestedState.id, reports: [], error: releaseErrorText(err) });
+            submissionFailed = true;
+          }
+        }
+      }
+    }
+
+    try {
+      const latest = await readTransportNodeStates(http, safety, lookupId, {
+        deadline,
+        signal: options.signal,
+      });
+      polls += 1;
+      lastReadError = undefined;
+      const latestById = new Map(latest.map((node) => [node.id.toUpperCase(), node]));
+      unexpectedChildren = recursive
+        ? latest
+            .filter(
+              (node) =>
+                node.kind === 'task' &&
+                transportIdsEqual(node.parentId, requested.id) &&
+                !frozenTaskKeys.has(node.id.toUpperCase()),
+            )
+            .map((node) => node.id)
+            .sort()
+        : [];
+      missingIds = [];
+      for (const node of intended) {
+        const observed = latestById.get(node.id.toUpperCase());
+        if (!observed) {
+          node.lastStatus = '';
+          node.confirmedReleased = false;
+          missingIds.push(node.id);
+          continue;
+        }
+        node.lastStatus = observed.lastStatus;
+        node.confirmedReleased = observed.lastStatus === 'R';
+      }
+
+      if (unexpectedChildren.length > 0) {
+        const parentWasSubmitted = attempted.has(requestedKey);
+        const detail = parentWasSubmitted
+          ? `CTS added non-frozen child task(s) during recursive release: ${unexpectedChildren.join(', ')}. ` +
+            'Exact-set terminal verification was refused.'
+          : `CTS added non-frozen child task(s) before parent release: ${unexpectedChildren.join(', ')}. ` +
+            'The parent release was not submitted.';
+        return buildReleaseResult(
+          transportId,
+          recursive,
+          'unknown',
+          intended,
+          submissions,
+          polls,
+          elapsed(),
+          detail,
+          unexpectedChildren,
+        );
+      }
+
+      if (intended.every((node) => node.confirmedReleased)) {
+        return buildReleaseResult(transportId, recursive, 'released', intended, submissions, polls, elapsed());
+      }
+
+      if (
+        recursive &&
+        recursiveTasksSubmitted &&
+        !submissionFailed &&
+        !attempted.has(requestedKey) &&
+        requestedState.lastStatus === 'D' &&
+        missingIds.length === 0 &&
+        intended
+          .filter((node) => node.kind === 'task')
+          .every((node) => node.lastStatus === 'D' || node.lastStatus === 'R')
+      ) {
+        // This successful coherent snapshot is the mandatory pre-parent tree check.
+        parentReadyAfterFreshSnapshot = true;
+      }
+    } catch (err) {
+      polls += 1;
+      lastReadError = releaseErrorText(err);
+      if (isTerminalReleaseReadError(err)) {
+        const detail = [submissionFailureDetail(), lastReadError].filter(Boolean).join(' ');
+        return buildReleaseResult(transportId, recursive, 'unknown', intended, submissions, polls, elapsed(), detail);
+      }
+    }
+
+    if (options.signal?.aborted) continue;
+    if (now() >= deadline) return finishWithoutTerminalRelease();
+
+    // An initial O node may just have reached R, unblocking the task phase; a fresh recursive
+    // snapshot may also have authorized the parent phase. Advance immediately in either case.
+    const readySingle =
+      !recursive &&
+      intended.some((node) => node.lastStatus === 'D' && !attempted.has(node.id.toUpperCase())) &&
+      !intended.some((node) => node.lastStatus === 'O');
+    const readyRecursiveTasks =
+      recursive && !recursiveTasksSubmitted && !intended.some((node) => node.lastStatus === 'O');
+    if (!submissionFailed && (readySingle || readyRecursiveTasks || parentReadyAfterFreshSnapshot)) continue;
+
+    const remainingMs = Math.max(0, deadline - now());
+    await waitForReleasePoll(Math.min(delayMs, remainingMs), options);
+    delayMs = Math.min(maxDelayMs, Math.max(delayMs === 0 ? 1 : delayMs, delayMs * 2));
+  }
+}
+
+/** Release one request/task and return only after its exact CTS state is observed as R. */
+export async function releaseTransportAndWait(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  transportId: string,
+  options: TransportReleaseWaitOptions = {},
+): Promise<TransportReleaseResult> {
+  return releaseTransportWithConvergence(http, safety, transportId, false, options);
+}
+
+/**
+ * Release a parent request recursively — tasks first, then the parent — and wait until the frozen
+ * parent/task set is observed as R. Raw failed reports are preserved but final CTS state is authoritative.
+ * SAP has no atomic compare-tree-and-release operation: exact/prefix transport allowlists are therefore
+ * refused, and any non-frozen child observed by the mandatory pre-parent snapshot or readback makes the
+ * result unverified. The fresh snapshot narrows, but cannot eliminate, the backend's GET-to-POST race.
  */
 export async function releaseTransportRecursive(
   http: AdtHttpClient,
   safety: SafetyConfig,
   transportId: string,
-): Promise<{ released: string[]; reports: TransportReleaseReport[] }> {
-  checkTransport(safety, transportId, 'ReleaseTransportRecursive', true);
-
-  const transport = await getTransport(http, safety, transportId);
-  const released: string[] = [];
-
-  if (transport) {
-    for (const task of transport.tasks) {
-      if (task.status !== 'R') {
-        checkTransport(safety, task.id, 'ReleaseTransportRecursive', true);
-        const taskReports = await releaseTransport(http, safety, task.id);
-        // Don't abort on a benign task failure; don't list a task that didn't actually release.
-        if (failedReleaseReports(taskReports).length === 0) released.push(task.id);
-      }
-    }
-
-    // Skip parent if already released (idempotent/retry-safe)
-    if (transport.status === 'R') {
-      return { released, reports: [] };
-    }
-  }
-
-  const reports = await releaseTransport(http, safety, transportId);
-  if (failedReleaseReports(reports).length === 0) {
-    released.push(transportId);
-  } else {
-    // SAP can report abortrelapifail after it has already committed the recursive parent release.
-    // Reconcile that contradictory HTTP-200 body against the actual request state. If the read fails
-    // or the request is still modifiable, preserve the failed report as the authoritative outcome.
-    try {
-      const refreshed = await getTransport(http, safety, transportId);
-      if (refreshed?.status === 'R') released.push(transportId);
-    } catch {
-      // The caller will surface the original release report, which is more actionable than a
-      // best-effort reconciliation-read failure.
-    }
-  }
-
-  return { released, reports };
+  options: TransportReleaseWaitOptions = {},
+): Promise<TransportReleaseResult> {
+  return releaseTransportWithConvergence(http, safety, transportId, true, options);
 }
 
 /**

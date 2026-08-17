@@ -1019,6 +1019,119 @@ describe('AdtHttpClient', () => {
       const client = new AdtHttpClient(getDefaultConfig());
       await expect(client.get('/path')).rejects.toThrow(AdtNetworkError);
     });
+
+    it('refuses a pre-aborted caller signal without contacting SAP', async () => {
+      const controller = new AbortController();
+      controller.abort(new DOMException('caller cancelled', 'AbortError'));
+
+      const client = new AdtHttpClient(getDefaultConfig());
+      await expect(client.get('/path', undefined, { signal: controller.signal })).rejects.toThrow(AdtNetworkError);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('refuses an expired absolute deadline without contacting SAP', async () => {
+      const client = new AdtHttpClient(getDefaultConfig());
+      await expect(client.get('/path', undefined, { deadline: Date.now() - 1 })).rejects.toThrow(
+        /deadline was exceeded/i,
+      );
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('composes caller cancellation with the built-in fetch timeout', async () => {
+      const controller = new AbortController();
+      mockFetch.mockImplementationOnce(
+        (_url: string, init: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            const signal = init.signal as AbortSignal;
+            signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+          }),
+      );
+
+      const client = new AdtHttpClient(getDefaultConfig());
+      const pending = client.get('/path', undefined, { signal: controller.signal });
+      controller.abort(new DOMException('cancelled by poll owner', 'AbortError'));
+
+      await expect(pending).rejects.toThrow(AdtNetworkError);
+      expect(fetchOptions(0).signal).toBeDefined();
+    });
+
+    it('does not start a 503 retry after the caller deadline expires during backoff', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(503, 'busy', { 'retry-after': '5' }));
+
+      const client = new AdtHttpClient(getDefaultConfig());
+      await expect(client.get('/path', undefined, { deadline: Date.now() + 20 })).rejects.toThrow(AdtNetworkError);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('applies the same deadline to the CSRF bootstrap of a write', async () => {
+      const client = new AdtHttpClient(getDefaultConfig());
+      await expect(
+        client.post('/path', '<xml/>', 'application/xml', undefined, { deadline: Date.now() - 1 }),
+      ).rejects.toThrow(AdtNetworkError);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('returns at the deadline while a bearer-token provider is still pending', async () => {
+      let rejectProvider!: (error: Error) => void;
+      const providerResult = new Promise<string>((_resolve, reject) => {
+        rejectProvider = reject;
+      });
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        bearerTokenProvider: () => providerResult,
+      });
+
+      await expect(client.get('/path', undefined, { deadline: Date.now() + 20 })).rejects.toThrow(AdtNetworkError);
+      expect(mockFetch).not.toHaveBeenCalled();
+
+      // The abandoned provider remains rejection-handled after the caller has returned.
+      rejectProvider(new Error('late provider rejection'));
+      await new Promise((resolve) => setImmediate(resolve));
+    });
+
+    it('honors caller cancellation while a bearer-token provider is still pending', async () => {
+      const controller = new AbortController();
+      let rejectProvider!: (error: Error) => void;
+      const providerResult = new Promise<string>((_resolve, reject) => {
+        rejectProvider = reject;
+      });
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        bearerTokenProvider: () => providerResult,
+      });
+
+      const pending = client.get('/path', undefined, { signal: controller.signal });
+      controller.abort(new DOMException('cancelled by caller', 'AbortError'));
+
+      await expect(pending).rejects.toThrow(AdtNetworkError);
+      expect(mockFetch).not.toHaveBeenCalled();
+
+      rejectProvider(new Error('late provider rejection'));
+      await new Promise((resolve) => setImmediate(resolve));
+    });
+
+    it('returns at the deadline while waiting for the shared-auth serial turn', async () => {
+      let resolveFirst!: (response: Response) => void;
+      mockFetch
+        .mockImplementationOnce(
+          () =>
+            new Promise<Response>((resolve) => {
+              resolveFirst = resolve;
+            }),
+        )
+        .mockResolvedValueOnce(mockResponse(200, 'third'));
+      const client = new AdtHttpClient({ ...getDefaultConfig(), retryUnauthorized: false });
+
+      const first = client.get('/first');
+      await vi.waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1));
+      await expect(client.get('/second', undefined, { deadline: Date.now() + 20 })).rejects.toThrow(AdtNetworkError);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+
+      resolveFirst(mockResponse(200, 'first'));
+      await expect(first).resolves.toMatchObject({ statusCode: 200 });
+      await expect(client.get('/third')).resolves.toMatchObject({ body: 'third' });
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
   });
 
   // ─── Principal Propagation ─────────────────────────────────────────
@@ -1700,6 +1813,28 @@ describe('AdtHttpClient', () => {
       expect(mockClientRequest.mock.calls[0]?.[0]?.method).toBe('HEAD');
       expect(mockClientRequest.mock.calls[1]?.[0]?.method).toBe('GET');
     });
+
+    it('returns at the deadline while the connectivity proxy token is pending', async () => {
+      let rejectProvider!: (error: Error) => void;
+      const providerResult = new Promise<string>((_resolve, reject) => {
+        rejectProvider = reject;
+      });
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        btpProxy: {
+          host: 'proxy.example.com',
+          port: 20003,
+          protocol: 'http',
+          getProxyToken: () => providerResult,
+        },
+      });
+
+      await expect(client.get('/path', undefined, { deadline: Date.now() + 20 })).rejects.toThrow(AdtNetworkError);
+      expect(mockClientRequest).not.toHaveBeenCalled();
+
+      rejectProvider(new Error('late proxy-token rejection'));
+      await new Promise((resolve) => setImmediate(resolve));
+    });
   });
 
   // ─── 503 Retry ──────────────────────────────────────────────────────
@@ -1866,6 +2001,22 @@ describe('AdtHttpClient', () => {
       await Promise.all([client.get('/path1'), client.get('/path2'), client.get('/path3')]);
 
       expect(maxConcurrent).toBe(1);
+    });
+
+    it('cancels a queued deadline waiter so it never contacts SAP later', async () => {
+      const { Semaphore } = await import('../../../src/adt/semaphore.js');
+      const sem = new Semaphore(1);
+      await sem.acquire();
+      const client = new AdtHttpClient({ ...getDefaultConfig(), semaphore: sem });
+
+      await expect(client.get('/queued', undefined, { deadline: Date.now() + 20 })).rejects.toThrow(AdtNetworkError);
+      expect(sem.waiting).toBe(0);
+      expect(mockFetch).not.toHaveBeenCalled();
+
+      sem.release();
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(sem.inflight).toBe(0);
     });
   });
 

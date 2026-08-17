@@ -118,7 +118,10 @@ Added two new scopes: `transports`, `git`. `admin` now **implies all other scope
 cf update-service arc1-xsuaa -c xs-security.json
 ```
 
-Users assigned to `ARC-1 Developer` role collection automatically gain transport and git write capability. If you want "developer without CTS/Git", create your own role template referencing just `[read, write]`.
+Users assigned to `ARC-1 Developer` role collection automatically gain transport scope and the gated
+abapGit mutation/egress scope when the matching server flags are enabled. gCTS mutations remain
+quarantined before HTTP, and unverifiable accepted abapGit actions return error/incomplete. If you
+want "developer without CTS/Git", create your own role template referencing just `[read, write]`.
 
 ### Migration steps
 

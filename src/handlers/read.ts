@@ -165,6 +165,23 @@ export async function handleSAPRead(
         fromLabel,
         toLabel,
       });
+      if (args.format === 'structured') {
+        return textResult(
+          toolJson({
+            type,
+            name,
+            from,
+            to,
+            fromLabel: fromDisplay,
+            toLabel: toDisplay,
+            identical: r.identical,
+            hasDifferences: !r.identical,
+            added: r.added,
+            removed: r.removed,
+            diff: r.diff,
+          }),
+        );
+      }
       if (r.identical) {
         return textResult(`No differences between ${fromDisplay} and ${toDisplay} for ${type} ${name}.`);
       }

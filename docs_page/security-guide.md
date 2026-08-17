@@ -120,7 +120,7 @@ Two ARC-1 capabilities can expose business data or execute ad-hoc SQL and requir
 | `SAP_ALLOW_DATA_PREVIEW`           | `false` unless table preview is required | Blocks named table content preview.                                              |
 | `SAP_ALLOWED_PACKAGES`             | `$TMP` or `Z*,Y*,$TMP` | Restricts writes to custom-code packages. Prefix wildcards (`Z*`), exact matches, and DEVCLASS subtree rules (`ZFOO/**` — `ZFOO` plus every transitive sub-package) are all supported; subtree resolution is fail-closed on SAP errors. Reads are never package-gated. |
 | `SAP_ALLOW_TRANSPORT_WRITES`       | `false` unless CTS needed | Opt-in for transport mutations (`SAPTransport.create`/`release`/`delete`).                           |
-| `SAP_ALLOW_GIT_WRITES`             | `false` unless Git needed | Opt-in for abapGit/gCTS mutations (`clone`/`pull`/`push`/`commit`).                                 |
+| `SAP_ALLOW_GIT_WRITES`             | `false` unless Git needed | Opt-in for gated abapGit mutations and SAP-side Git egress. It does not enable gCTS mutations, which remain quarantined before HTTP; accepted abapGit mutations without an authoritative postcondition return incomplete. |
 | `SAP_DENY_ACTIONS`                 | Use for fine-grained blocks | E.g. `SAPWrite.delete,SAPManage.flp_*` — overrides scope + flag checks.                              |
 | `SAP_PP_STRICT`                    | Explicit `true` for production PP | Keeps the PP instance JWT-only. JWT PP failures always fail closed; explicit `true` also rejects API-key / non-JWT requests. |
 

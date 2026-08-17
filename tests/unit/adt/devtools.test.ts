@@ -27,6 +27,11 @@ import { AdtApiError, AdtSafetyError } from '../../../src/adt/errors.js';
 import type { AdtHttpClient } from '../../../src/adt/http.js';
 import { defaultSafetyConfig, unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
 
+const AUNIT_MIXED = readFileSync(
+  join(import.meta.dirname, '../../fixtures/xml/aunit-testrun-mixed-alerts.xml'),
+  'utf-8',
+);
+
 function mockHttp(responseBody = ''): AdtHttpClient {
   return {
     get: vi.fn().mockResolvedValue({ statusCode: 200, headers: {}, body: responseBody }),
@@ -1394,6 +1399,30 @@ describe('DevTools', () => {
       expect(extractCoverageMeasurementUri('<testResult/>')).toBeNull();
     });
 
+    it.each([
+      '/sap/bc/adt/admin/trigger?x=/coverage/measurements/EVIL',
+      '/sap/bc/adt/runtime/traces/coverage/measurements/SAFE/../../admin/trigger',
+      '/sap/bc/adt/runtime/traces/coverage/measurements/%2e%2e%2fadmin',
+      '/sap/bc/adt/runtime/traces/coverage/measurements/%252e%252e%252fadmin',
+      '/sap/bc/adt/runtime/traces/coverage/measurements/ID%5c..%5cadmin',
+      '/sap/bc/adt/runtime/traces/coverage/measurements/ID?redirect=/sap/bc/adt/admin',
+      '/sap/bc/adt/runtime/traces/coverage/measurements/ID#fragment',
+      'https://evil.example/sap/bc/adt/runtime/traces/coverage/measurements/ID',
+    ])('rejects non-canonical coverage measurement URI %j', (uri) => {
+      expect(extractCoverageMeasurementUri(`<runResult><coverage uri="${uri}"/></runResult>`)).toBeNull();
+    });
+
+    it('never follows a coverage URI that merely contains the expected marker', async () => {
+      const maliciousRun =
+        '<runResult><coverage uri="/sap/bc/adt/admin/trigger?x=/coverage/measurements/EVIL"/></runResult>';
+      const http = mockHttp(maliciousRun);
+      const result = await runUnitTests(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_TEST', {
+        coverage: true,
+      });
+      expect(http.post).toHaveBeenCalledTimes(1);
+      expect(result.structured.coverageUnavailableReason).toBe('measurement_not_reported');
+    });
+
     it('parseCoverageMeasurement returns the statement/branch/procedure aggregate (real fixture)', () => {
       const cov = parseCoverageMeasurement(coverageMeasurement);
       expect(cov.statement).toEqual({ executed: 30, total: 49, percent: 61.22 });
@@ -1529,6 +1558,7 @@ describe('DevTools', () => {
       });
       expect(result.tests.length).toBeGreaterThan(0);
       expect(result.coverage).toBeUndefined();
+      expect(result.structured.coverageUnavailableReason).toBe('request_failed');
     });
 
     it('runUnitTests degrades gracefully when coverage XML contains no valid aggregate', async () => {
@@ -1548,6 +1578,7 @@ describe('DevTools', () => {
       });
       expect(result.tests.length).toBeGreaterThan(0);
       expect(result.coverage).toBeUndefined();
+      expect(result.structured.coverageUnavailableReason).toBe('no_valid_metrics');
     });
 
     it('runUnitTests without coverage makes only the one testruns call', async () => {
@@ -1555,6 +1586,24 @@ describe('DevTools', () => {
       const result = await runUnitTests(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_ABAPGIT_HASH');
       expect(result.coverage).toBeUndefined();
       expect(http.post).toHaveBeenCalledTimes(1);
+    });
+
+    it('runs only harmless tests and exposes corrected structured evidence', async () => {
+      const http = mockHttp(AUNIT_MIXED);
+      const result = await runUnitTests(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/ZCL_ARC1_AUNIT_PROBE',
+      );
+
+      const requestBody = vi.mocked(http.post).mock.calls[0]?.[1];
+      expect(requestBody).toContain('<testRiskLevels harmless="true" dangerous="false" critical="false"/>');
+      expect(result.structured).toMatchObject({
+        outcome: 'failed',
+        selection: { maxRisk: 'harmless' },
+        summary: { tests: 2, failures: 1, errors: 1, skipped: 0 },
+      });
+      expect(result.structured.alerts.some((alert) => alert.testClass === 'LTCL_RISKY')).toBe(true);
     });
   });
 
@@ -2155,6 +2204,110 @@ describe('DevTools', () => {
       expect(result.findings[0]?.line).toBe(86);
       expect(result.findings[0]?.quickfixInfo).toContain('atc:');
       expect(result.findings[0]?.hasQuickfix).toBe(false);
+      expect(result).toMatchObject({
+        worklistId: '1E814DFAAE5E1FE197E6112F5FDC38A2',
+        maximumVerdicts: 100,
+        findingCount: 1,
+        processedObjectCount: 1,
+        objectSetIsComplete: true,
+        truncated: false,
+        complete: true,
+        incompleteReasons: [],
+        worklist: {
+          id: '1E814DFAAE5E1FE197E6112F5FDC38A2',
+          usedObjectSet: '99999999999999999999999999999999',
+        },
+      });
+    });
+
+    it.each([
+      {
+        label: 'missing body worklist id',
+        body: '<worklist objectSetIsComplete="true"><objects><object uri="/sap/bc/adt/programs/programs/ZTEST" type="PROG" name="ZTEST"/></objects></worklist>',
+        reason: /did not provide the created worklist id/i,
+      },
+      {
+        label: 'mismatched body worklist id',
+        body: '<worklist id="WL-OTHER" objectSetIsComplete="true"><objects><object uri="/sap/bc/adt/programs/programs/ZTEST" type="PROG" name="ZTEST"/></objects></worklist>',
+        reason: /does not match the created worklist id/i,
+      },
+      {
+        label: 'nested fake and malformed schema object rows',
+        body: '<worklist id="WL-EVIDENCE" objectSetIsComplete="true"><metadata><object uri="/sap/bc/adt/programs/programs/ZFAKE" type="PROG" name="ZFAKE"/></metadata><objects><object uri="" type="PROG" name="ZTEST"/></objects></worklist>',
+        reason: /malformed processed ATC object/i,
+      },
+      {
+        label: 'valid row mixed with a malformed text-only sibling',
+        body: '<worklist id="WL-EVIDENCE" objectSetIsComplete="true"><objects><object uri="/sap/bc/adt/programs/programs/ZTEST" type="PROG" name="ZTEST"/><object>not structured evidence</object></objects></worklist>',
+        reason: /malformed processed ATC object/i,
+      },
+    ])('marks $label incomplete instead of synthesizing clean evidence', async ({ body, reason }) => {
+      const http = {
+        ...mockHttp('WL-EVIDENCE'),
+        get: vi.fn().mockResolvedValue({ statusCode: 200, headers: {}, body }),
+      } as unknown as AdtHttpClient;
+
+      const result = await runAtcCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/programs/programs/ZTEST');
+      expect(result.complete).toBe(false);
+      expect(result.incompleteReasons.join(' ')).toMatch(reason);
+      if (!body.includes('id="WL-EVIDENCE"')) expect(result.worklist.id).not.toBe('WL-EVIDENCE');
+      if (body.includes('<metadata>')) expect(result.processedObjectCount).toBe(0);
+    });
+
+    it('does not call a cap-sized or unproven ATC result complete', async () => {
+      const findings = Array.from(
+        { length: 100 },
+        (_, index) =>
+          `<finding priority="2" checkTitle="Check" messageTitle="Finding ${index}" uri="/sap/bc/adt/programs/programs/ZTEST#start=${index + 1},0"/>`,
+      ).join('');
+      const http = {
+        ...mockHttp('WL-CAP'),
+        get: vi.fn().mockResolvedValue({
+          statusCode: 200,
+          headers: {},
+          body: `<worklist objectSetIsComplete="true">${findings}</worklist>`,
+        }),
+      } as unknown as AdtHttpClient;
+
+      const result = await runAtcCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/programs/programs/ZTEST');
+      expect(result).toMatchObject({ findingCount: 100, objectSetIsComplete: true, truncated: true, complete: false });
+      expect(result.incompleteReasons.join(' ')).toMatch(/100-verdict response cap/);
+
+      const noEvidence = {
+        ...mockHttp('WL-UNKNOWN'),
+        get: vi.fn().mockResolvedValue({ statusCode: 200, headers: {}, body: '<worklist/>' }),
+      } as unknown as AdtHttpClient;
+      const unknown = await runAtcCheck(noEvidence, unrestrictedSafetyConfig(), '/sap/bc/adt/programs/programs/ZTEST');
+      expect(unknown).toMatchObject({ objectSetIsComplete: null, truncated: false, complete: false });
+      expect(unknown.incompleteReasons.join(' ')).toMatch(/did not provide/);
+
+      const zeroProcessed = {
+        ...mockHttp('WL-ZERO'),
+        get: vi.fn().mockResolvedValue({
+          statusCode: 200,
+          headers: {},
+          body: '<worklist objectSetIsComplete="true"/>',
+        }),
+      } as unknown as AdtHttpClient;
+      const empty = await runAtcCheck(zeroProcessed, unrestrictedSafetyConfig(), '/sap/bc/adt/programs/programs/ZTEST');
+      expect(empty).toMatchObject({ objectSetIsComplete: true, processedObjectCount: 0, complete: false });
+      expect(empty.incompleteReasons.join(' ')).toMatch(/did not report any processed/i);
+
+      const malformedPriority = {
+        ...mockHttp('WL-BAD-PRIORITY'),
+        get: vi.fn().mockResolvedValue({
+          statusCode: 200,
+          headers: {},
+          body: '<worklist objectSetIsComplete="true"><objects><object><findings><finding priority="oops" checkTitle="Check" messageTitle="Finding"/></findings></object></objects></worklist>',
+        }),
+      } as unknown as AdtHttpClient;
+      const malformed = await runAtcCheck(
+        malformedPriority,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/programs/programs/ZTEST',
+      );
+      expect(malformed.complete).toBe(false);
+      expect(malformed.incompleteReasons.join(' ')).toMatch(/malformed priority/i);
     });
 
     it('extracts URI and line from #start= fragment', async () => {

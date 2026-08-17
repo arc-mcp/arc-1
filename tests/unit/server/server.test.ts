@@ -14,6 +14,7 @@ import {
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { AdtApiError } from '../../../src/adt/errors.js';
+import * as adtFeatures from '../../../src/adt/features.js';
 import { AdtHttpClient } from '../../../src/adt/http.js';
 import type { ResolvedFeatures } from '../../../src/adt/types.js';
 import { MemoryCache } from '../../../src/cache/memory.js';
@@ -34,10 +35,12 @@ import {
   formatStartupAuthPreflightToolError,
   getConfiguredToolDefinitions,
   logAuthSummary,
+  probeClientFeatures,
   resolveNullableOptionals,
   resolvePpDestinationName,
   resolveSingleTargetOverlapState,
   runStartupAuthPreflight,
+  runStartupAuthPreflightWithClient,
   VERSION,
 } from '../../../src/server/server.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
@@ -1044,6 +1047,24 @@ describe('startup auth preflight', () => {
     expect(result.statusCode).toBe(401);
   });
 
+  it('can run on an existing client so direct callers retain its auth state', async () => {
+    const get = vi.fn(async () => '<discovery/>');
+    const client = { http: { get } } as unknown as import('../../../src/adt/client.js').AdtClient;
+
+    const result = await runStartupAuthPreflightWithClient(
+      {
+        ...DEFAULT_CONFIG,
+        ppEnabled: false,
+        url: 'http://sap.example.com:8000',
+      },
+      client,
+    );
+
+    expect(result.status).toBe('ok');
+    expect(get).toHaveBeenCalledOnce();
+    expect(get).toHaveBeenCalledWith('/sap/bc/adt/core/discovery');
+  });
+
   it('returns inconclusive and non-blocking on non-auth failures', async () => {
     vi.spyOn(AdtHttpClient.prototype, 'get').mockRejectedValue(new Error('connect ECONNREFUSED'));
 
@@ -1169,6 +1190,24 @@ describe('startup auth preflight', () => {
     } finally {
       fixture.cleanup();
     }
+  });
+});
+
+describe('direct client feature bootstrap', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('installs discovery evidence on the exact client that was probed', async () => {
+    const discoveryMap = new Map([['/sap/bc/adt/programs/programs', ['application/vnd.sap.adt.programs.v2+xml']]]);
+    vi.spyOn(adtFeatures, 'probeFeatures').mockResolvedValue({ discoveryMap } as ResolvedFeatures);
+    const setDiscoveryMap = vi.fn();
+    const client = { http: { setDiscoveryMap } } as unknown as import('../../../src/adt/client.js').AdtClient;
+
+    await probeClientFeatures(DEFAULT_CONFIG, client);
+
+    expect(setDiscoveryMap).toHaveBeenCalledOnce();
+    expect(setDiscoveryMap).toHaveBeenCalledWith(discoveryMap);
   });
 });
 

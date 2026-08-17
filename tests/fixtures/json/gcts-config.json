@@ -1,26 +1,19 @@
-[
-  {
-    "ckey": "CLIENT_VCS_URI",
-    "ctype": "string",
-    "datatype": "CHAR",
-    "defaultValue": "",
-    "description": "Git registry URL",
-    "category": "registry"
-  },
-  {
-    "ckey": "CLIENT_VCS_AUTH_USER",
-    "ctype": "string",
-    "datatype": "CHAR",
-    "defaultValue": "",
-    "description": "Registry username",
-    "category": "registry"
-  },
-  {
-    "ckey": "CLIENT_VCS_AUTH_PWD",
-    "ctype": "string",
-    "datatype": "CHAR",
-    "defaultValue": "",
-    "description": "Registry password",
-    "category": "registry"
-  }
-]
+{
+  "config": [
+    {
+      "key": "CLIENT_VCS_URI",
+      "value": "https://github.com/example/arc1.git",
+      "category": "registry"
+    },
+    {
+      "key": "CLIENT_VCS_AUTH_USER",
+      "value": "git-user",
+      "category": "registry"
+    },
+    {
+      "key": "CLIENT_VCS_AUTH_PWD",
+      "value": "sentinel-password",
+      "category": "registry"
+    }
+  ]
+}

@@ -2174,6 +2174,44 @@ ENDCLASS.`;
       expect(result.content[0]?.text).toBe('No differences between active and inactive for CLAS ZCL_X.');
     });
 
+    it('offers an opt-in structured diff result without changing the default text contract', async () => {
+      mockFetch.mockImplementation((url: unknown) =>
+        Promise.resolve(mockResponse(200, String(url).includes('version=inactive') ? INACTIVE_SRC : ACTIVE_SRC)),
+      );
+      const changed = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'CLAS',
+        name: 'ZCL_X',
+        action: 'diff',
+        format: 'structured',
+      });
+
+      expect(JSON.parse(changed.content[0]?.text ?? '{}')).toMatchObject({
+        type: 'CLAS',
+        name: 'ZCL_X',
+        from: 'active',
+        to: 'inactive',
+        identical: false,
+        hasDifferences: true,
+        added: 2,
+        removed: 0,
+      });
+
+      mockFetch.mockImplementation(() => Promise.resolve(mockResponse(200, ACTIVE_SRC)));
+      const identical = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'CLAS',
+        name: 'ZCL_X',
+        action: 'diff',
+        format: 'structured',
+      });
+      expect(JSON.parse(identical.content[0]?.text ?? '{}')).toMatchObject({
+        identical: true,
+        hasDifferences: false,
+        added: 0,
+        removed: 0,
+        diff: '',
+      });
+    });
+
     it('uses custom display labels in the no-difference message', async () => {
       mockFetch.mockImplementation(() => Promise.resolve(mockResponse(200, ACTIVE_SRC)));
 

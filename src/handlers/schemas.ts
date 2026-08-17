@@ -14,6 +14,7 @@
  */
 
 import { z } from 'zod';
+import { isCanonicalHostRelativeAdtPath } from '../adt/path-safety.js';
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
 import { FUNCTION_PROCESSING_TYPES, FUNCTION_UPDATE_TASK_KINDS } from './function-processing.js';
 import { CLASS_WRITE_INCLUDES } from './object-types.js';
@@ -115,11 +116,11 @@ function validateSapReadInput(
       });
       return;
     }
-    if (!versionUri.startsWith('/sap/bc/adt/')) {
+    if (!isCanonicalHostRelativeAdtPath(versionUri)) {
       ctx.addIssue({
         code: 'custom',
         path: ['versionUri'],
-        message: 'VERSION_SOURCE versionUri must start with /sap/bc/adt/.',
+        message: 'VERSION_SOURCE versionUri must be a canonical host-relative path under /sap/bc/adt/.',
       });
     }
   }
@@ -852,6 +853,7 @@ export const SAPDiagnoseSchema = z
     sections: z.array(z.string()).optional(),
     includeFullText: looseOptionalBoolean,
     coverage: looseOptionalBoolean,
+    resultFormat: z.enum(['legacy', 'structured', 'junit']).optional(),
     sqlOn: looseOptionalBoolean,
     onlyFailures: looseOptionalBoolean,
     analysis: z.enum(['hitlist', 'statements', 'dbAccesses']).optional(),
@@ -865,7 +867,37 @@ export const SAPDiagnoseSchema = z
     aggregate: looseOptionalBoolean,
     description: z.string().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((input, ctx) => {
+    if (input.resultFormat !== undefined) {
+      if (input.action === 'atc' && input.resultFormat === 'junit') {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['resultFormat'],
+          message:
+            'SAPDiagnose action="atc" resultFormat must be "legacy" or "structured"; "junit" is only supported for action="unittest".',
+        });
+      } else if (input.action !== 'atc' && input.action !== 'unittest') {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['resultFormat'],
+          message: 'SAPDiagnose resultFormat is only supported for action="unittest" or action="atc".',
+        });
+      }
+    }
+
+    if (
+      input.action === 'gateway_errors' &&
+      input.detailUrl !== undefined &&
+      !isCanonicalHostRelativeAdtPath(input.detailUrl, '/sap/bc/adt/gw/errorlog/')
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['detailUrl'],
+        message: 'gateway_errors detailUrl must be a canonical host-relative gateway-error ADT path.',
+      });
+    }
+  });
 
 // ─── SAPTransport ───────────────────────────────────────────────────
 
@@ -905,6 +937,7 @@ export const SAPTransportSchema = z
     // For list: headers-only view — omit each transport's object lists (keep an objectCount).
     summary: looseOptionalBoolean,
     maxResults: z.coerce.number().optional(),
+    resultFormat: z.enum(['legacy', 'structured']).optional(),
     // For diff: object-level paging (cap 40, matching SAP's own transport-diff pageSize ceiling).
     offset: z.coerce.number().optional(),
     limit: z.coerce.number().optional(),

@@ -44,8 +44,15 @@ describe('gCTS integration', () => {
     requireOrSkip(ctx, gctsAvailable ? true : undefined, SkipReason.BACKEND_UNSUPPORTED);
     const config = await getConfig(client.http, client.safety);
     expect(Array.isArray(config)).toBe(true);
-    if (config.length > 0) {
-      expect(config.some((entry) => typeof entry.ckey === 'string' && entry.ckey.length > 0)).toBe(true);
+    expect(config.length).toBeGreaterThan(0);
+    expect(
+      config.some((entry) => [entry.key, entry.ckey].some((key) => typeof key === 'string' && key.length > 0)),
+    ).toBe(true);
+    for (const entry of config) {
+      const key = String(entry.key ?? entry.ckey ?? '').toUpperCase();
+      if (key.includes('AUTH_USER') || key.includes('AUTH_PWD') || key.includes('AUTH_TOKEN')) {
+        expect(entry.value).toBe('[REDACTED]');
+      }
     }
   });
 
@@ -64,6 +71,16 @@ describe('gCTS integration', () => {
         package: '$TMP',
       }),
     ).rejects.toThrow(/Git write 'clone' is blocked: allowGitWrites=false/);
+  });
+
+  it('clone operations remain quarantined before HTTP when all ordinary Git gates are enabled', async (ctx) => {
+    requireOrSkip(ctx, gctsAvailable ? true : undefined, SkipReason.BACKEND_UNSUPPORTED);
+    await expect(
+      cloneRepo(client.http, unrestrictedSafetyConfig(), {
+        url: 'https://github.com/example/repo.git',
+        package: '$TMP',
+      }),
+    ).rejects.toThrow(/VCS_NO_IMPORT.*No gCTS mutation was sent/);
   });
 
   it('getTransportHistory for unknown repo returns expected backend error class', async (ctx) => {

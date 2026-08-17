@@ -19,8 +19,18 @@ const mcpUrl = process.env.ARC1_AUTHZ_MCP_URL ?? process.env.E2E_MCP_URL ?? 'htt
 
 const transportReadActions = ['list', 'get', 'check', 'history', 'layers', 'targets'];
 const transportWriteActions = ['create', 'release', 'delete', 'remove_object', 'reassign', 'release_recursive'];
-const gitReadActions = ['list_repos', 'whoami', 'config', 'branches', 'external_info', 'history', 'objects', 'check'];
-const gitWriteActions = ['stage', 'clone', 'pull', 'push', 'commit', 'switch_branch', 'create_branch', 'unlink'];
+const gitReadActions = ['list_repos', 'whoami', 'config', 'branches', 'history', 'objects', 'check'];
+const gitWriteActions = [
+  'external_info',
+  'stage',
+  'clone',
+  'pull',
+  'push',
+  'commit',
+  'switch_branch',
+  'create_branch',
+  'unlink',
+];
 
 const profiles = [
   {

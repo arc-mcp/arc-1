@@ -1,18 +1,20 @@
 {
-  "result": [
+  "commits": [
     {
-      "commit": "1f2e3d4c",
+      "id": "1f2e3d4c",
       "author": "Developer",
-      "email": "developer@example.com",
+      "authorMail": "developer@example.com",
       "date": "2026-04-17T10:20:30Z",
-      "message": "Initial import"
+      "message": "Initial import",
+      "description": "Initial import of package"
     },
     {
-      "commit": "2a3b4c5d",
+      "id": "2a3b4c5d",
       "author": "Developer",
-      "email": "developer@example.com",
+      "authorMail": "developer@example.com",
       "date": "2026-04-18T12:00:00Z",
-      "message": "Adjust class implementation"
+      "message": "Adjust class implementation",
+      "description": "Implementation update"
     }
   ]
 }

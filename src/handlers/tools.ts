@@ -230,29 +230,22 @@ const SAPMANAGE_ACTIONS_WRITE = [
 const SAPTRANSPORT_ACTIONS_READ = ['list', 'get', 'diff', 'check', 'history', 'layers', 'targets'];
 const SAPTRANSPORT_ACTIONS_WRITE = ['create', 'release', 'delete', 'remove_object', 'reassign', 'release_recursive'];
 
-const SAPGIT_ACTIONS_READ = [
-  'list_repos',
-  'whoami',
-  'config',
-  'branches',
+const SAPGIT_ACTIONS_READ = ['list_repos', 'whoami', 'config', 'branches', 'history', 'objects', 'check'];
+const SAPGIT_ACTIONS_WRITE = [
   'external_info',
-  'history',
-  'objects',
-  'check',
+  'stage',
+  'clone',
+  'pull',
+  'push',
+  'commit',
+  'switch_branch',
+  'create_branch',
+  'unlink',
 ];
-const SAPGIT_ACTIONS_WRITE = ['stage', 'clone', 'pull', 'push', 'commit', 'switch_branch', 'create_branch', 'unlink'];
 
-// ─── SAPGit ─────────────────────────────────────────────────────────
-
-const SAPGIT_DESC_ONPREM =
-  'Git-based ABAP repository workflows with backend auto-selection: gCTS is preferred when available, otherwise abapGit bridge is used. ' +
-  'Actions: list_repos (both), whoami/config/branches/history/objects (gCTS only), external_info/check/stage/push (abapGit only), clone/pull/commit/switch_branch/create_branch/unlink (backend-specific implementation). ' +
-  'Use backend="gcts" or backend="abapgit" to force a backend. Write actions require SAP_ALLOW_WRITES=true, SAP_ALLOW_GIT_WRITES=true, git scope, and package allowlist compliance.';
-
-const SAPGIT_DESC_BTP =
-  'Git-based ABAP repository workflows for BTP ABAP and S/4 systems. Backend auto-selection prefers gCTS and falls back to abapGit bridge when gCTS is unavailable. ' +
-  'Actions: list_repos (both), whoami/config/branches/history/objects (gCTS only), external_info/check/stage/push (abapGit only), clone/pull/commit/switch_branch/create_branch/unlink (backend-specific implementation). ' +
-  'Use backend="gcts" or backend="abapgit" to force a backend. Write actions require SAP_ALLOW_WRITES=true, SAP_ALLOW_GIT_WRITES=true, git scope, and package allowlist compliance.';
+const SAPGIT_DESC =
+  'Git reads and gated abapGit workflows. gCTS mutations are quarantined. ' +
+  'abapGit mutations need write/Git gates and allowedPackages ROOT/** or *; clone/pull evidence is unverified. external_info is gated HTTPS SAP egress.';
 
 // ─── SAPSearch Builder ─────────────────────────────────────────────
 
@@ -498,7 +491,7 @@ export function getToolDefinitions(
             type: 'string',
             enum: ['text', 'structured'],
             description:
-              'Output format. "text" (default): raw source. "structured" (CLAS only): JSON metadata + EVERY class include (main, testclasses, definitions, implementations, macros) — a superset of "text", so it always costs MORE (measured +10% to +1685%). Use only to split test from production code; otherwise method="*" / method="name" / grep=.',
+              'Output format. For action="diff", "structured" returns JSON {hasDifferences, identical, added, removed, diff, version labels}; default remains the human-readable patch. For ordinary reads, "text" (default) is raw source; "structured" (CLAS only) returns JSON metadata + EVERY class include — a superset of "text", so it always costs MORE (measured +10% to +1685%). Use only to split test from production code; otherwise method="*" / method="name" / grep=.',
           },
           version: {
             type: 'string',
@@ -518,7 +511,8 @@ export function getToolDefinitions(
           },
           maxRows: {
             type: 'number',
-            description: 'For TABLE_CONTENTS and TABLE_QUERY: max rows to return (default 100)',
+            description:
+              'Row cap (default 100). On 758, TABLE_CONTENTS returns N+1; use TABLE_QUERY or cap client-side.',
           },
           maxResults: {
             type: 'number',
@@ -528,7 +522,7 @@ export function getToolDefinitions(
           sqlFilter: {
             type: 'string',
             description:
-              'For TABLE_CONTENTS: condition expression only (no WHERE, no SELECT), e.g. "MANDT = \'100\'" or "MATNR LIKE \'Z%\'".',
+              'TABLE_CONTENTS condition expression only (no WHERE, no SELECT); broken on 758 (SAP expects SELECT). Use TABLE_QUERY where.',
           },
           objectType: {
             type: 'string',
@@ -538,7 +532,7 @@ export function getToolDefinitions(
           versionUri: {
             type: 'string',
             description:
-              'For VERSION_SOURCE: URI of a specific revision from SAPRead(type="VERSIONS") response (.revisions[].uri). Must start with /sap/bc/adt/.',
+              'VERSION_SOURCE: canonical host-relative /sap/bc/adt/ URI from VERSIONS .revisions[].uri; rejects absolute URLs, traversal, fragments.',
           },
           columns: {
             type: 'array',
@@ -550,7 +544,7 @@ export function getToolDefinitions(
             type: 'array',
             description:
               'For TABLE_QUERY: structured WHERE conditions, ANDed together. Each item: {field, op, value?}. ' +
-              'Allowed ops: =, !=, <>, <, <=, >, >=, LIKE, NOT LIKE, IN, NOT IN, IS NULL, IS NOT NULL. ' +
+              'Ops: =, <>, <, <=, >, >=, LIKE, NOT LIKE, IN, NOT IN, IS NULL, IS NOT NULL; use <> because 758 rejects !=. ' +
               'For IN/NOT IN: use bare comma-separated values; do NOT quote them. ARC-1 quotes and escapes values, e.g. "261,262". No subqueries. ' +
               'Example: [{"field":"MATNR","op":"=","value":"300006888"},{"field":"BUDAT_MKPF","op":">=","value":"20250101"}].',
             items: {
@@ -1140,7 +1134,6 @@ export function getToolDefinitions(
               'sql_trace_directory',
               'authorization_trace',
             ],
-            description: 'Diagnostic action',
           },
           name: {
             type: 'string',
@@ -1213,7 +1206,7 @@ export function getToolDefinitions(
           detailUrl: {
             type: 'string',
             description:
-              'ADT detail URL for gateway_errors detail mode (preferred over id+errorType). Accepts absolute or /sap/bc/adt/... path.',
+              'Canonical host-relative /sap/bc/adt/gw/errorlog/... path for detail mode; absolute URLs are rejected.',
           },
           errorType: {
             type: 'string',
@@ -1252,6 +1245,11 @@ export function getToolDefinitions(
             type: 'boolean',
             description:
               'For action="unittest": also return statement/branch/procedure coverage for the object, plus methodsBelowFull — the methods below 100% statement coverage, worst first (what to test next) — in one extra round-trip. If the coverage endpoint or measurement is unavailable, returns the tests without coverage. Default false.',
+          },
+          resultFormat: {
+            type: 'string',
+            enum: ['legacy', 'structured', 'junit'],
+            description: 'unittest: legacy|structured|junit. atc: legacy|structured. Rejected for other actions.',
           },
           sqlOn: {
             type: 'boolean',
@@ -1617,6 +1615,12 @@ export function getToolDefinitions(
             description:
               'Maximum list rows or check/history assignment candidates (defaults: list/history 50, check 10; max 1000).',
           },
+          resultFormat: {
+            type: 'string',
+            enum: ['legacy', 'structured'],
+            description:
+              'release/release_recursive: legacy text (default), or structured JSON with terminal statuses, polls, and SAP reports.',
+          },
         },
         required: ['action'],
       },
@@ -1632,16 +1636,13 @@ export function getToolDefinitions(
         : SAPGIT_ACTIONS_READ;
     tools.push({
       name: 'SAPGit',
-      description: btp ? SAPGIT_DESC_BTP : SAPGIT_DESC_ONPREM,
+      description: SAPGIT_DESC,
       inputSchema: {
         type: 'object',
         properties: {
           action: {
             type: 'string',
             enum: sapGitActions,
-            description:
-              'Git action. The writes (clone, pull, push, commit, stage, switch_branch, create_branch, unlink) ' +
-              'need SAP_ALLOW_WRITES=true and SAP_ALLOW_GIT_WRITES=true; the rest are reads.',
           },
           backend: {
             type: 'string',
@@ -1650,11 +1651,10 @@ export function getToolDefinitions(
           },
           repoId: {
             type: 'string',
-            description: 'Repository ID/key for repo-specific actions.',
           },
           url: {
             type: 'string',
-            description: 'Remote Git URL (required for clone and abapGit external_info).',
+            description: 'HTTPS remote for clone/external_info; embedded credentials are rejected.',
           },
           branch: {
             type: 'string',
@@ -1662,7 +1662,8 @@ export function getToolDefinitions(
           },
           package: {
             type: 'string',
-            description: 'ABAP package for clone/create operations (checked against allowedPackages).',
+            description:
+              'abapGit clone package. Mutations require an allowedPackages ROOT/** or * grant; not gCTS evidence.',
           },
           transport: {
             type: 'string',

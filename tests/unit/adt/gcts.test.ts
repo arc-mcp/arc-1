@@ -16,6 +16,7 @@ import {
   listRepoObjects,
   listRepos,
   pullRepo,
+  redactGctsValue,
   switchBranch,
 } from '../../../src/adt/gcts.js';
 import type { AdtHttpClient } from '../../../src/adt/http.js';
@@ -53,11 +54,97 @@ describe('gCTS client helpers', () => {
     expect(result.user.scope?.system?.[0]?.scope).toBe('config');
   });
 
-  it('parses /config payload (array shape)', async () => {
+  it('parses and redacts the live {config:[...]} payload', async () => {
     const http = mockHttp(loadFixture('gcts-config.json'));
     const result = await getConfig(http, gitSafety);
     expect(result.length).toBeGreaterThan(0);
-    expect(result.some((entry) => entry.ckey === 'CLIENT_VCS_URI')).toBe(true);
+    expect(result.some((entry) => entry.key === 'CLIENT_VCS_URI')).toBe(true);
+    expect(result.find((entry) => entry.key === 'CLIENT_VCS_AUTH_USER')?.value).toBe('[REDACTED]');
+    expect(result.find((entry) => entry.key === 'CLIENT_VCS_AUTH_PWD')?.value).toBe('[REDACTED]');
+    expect(JSON.stringify(result)).not.toContain('sentinel-password');
+  });
+
+  it('redacts malformed URL assignments, encoded query keys, and fragment credentials', () => {
+    const sentinel = 'gcts-redaction-sentinel';
+    const result = redactGctsValue({
+      url: `token=${sentinel}`,
+      remoteUrl:
+        `https://example.com/repo;token=${sentinel}` +
+        `?ref=main;to%6ben=${sentinel}&token:${sentinel}&sessionid=${sentinel}` +
+        `&cookie=${sentinel}#access_token=${sentinel}`,
+      config: [{ ckey: 'CLIENT_VCS_AUTH_TOKEN', example: sentinel }],
+    });
+    expect(JSON.stringify(result)).not.toContain(sentinel);
+    expect(result.remoteUrl).toContain('ref=main');
+    expect(result.config[0]?.example).toBe('[REDACTED]');
+  });
+
+  it('bounds recursive response redaction before deeply nested JSON can overflow the stack', () => {
+    let nested: unknown = 'leaf';
+    for (let index = 0; index < 2_000; index += 1) nested = { nested };
+    expect(JSON.stringify(redactGctsValue(nested))).toContain('redaction budget exceeded');
+  });
+
+  it('redacts then bounds oversized Git URL values', () => {
+    const sentinel = 'gcts-long-url-sentinel';
+    const result = redactGctsValue({
+      url: `https://git-user:${sentinel}@example.com/${'A'.repeat(60_000)}?token=${sentinel}`,
+    });
+    expect(result.url).not.toContain(sentinel);
+    expect(result.url).toContain('[truncated');
+    expect(result.url.length).toBeLessThan(4_096);
+  });
+
+  it('sanitizes, bounds, and collision-safely preserves attacker-controlled response keys', () => {
+    const first = 'gcts-key-first-sentinel';
+    const second = 'gcts-key-second-sentinel';
+    const nested = 'gcts-key-nested-sentinel';
+    const dynamic = 'gcts-dynamic-key-sentinel';
+    const escapedLabelSentinel = 'Q7z9!';
+    const result = redactGctsValue({
+      [`Authorization: Bearer ${first}`]: 1,
+      [`https://git-user:${first}@example.com`]: 2,
+      [`https://git-user:${second}@example.com`]: 3,
+      [`field-${'K'.repeat(60_000)}`]: 4,
+      [`password_${dynamic}`]: true,
+      [`passw\\u006frd_${escapedLabelSentinel}`]: true,
+      rows: [
+        {
+          [`CLIENT_VCS_AUTH_TOKEN=${nested}`]: true,
+          [`CLIENT_VCS_AUTH_TOKEN_${dynamic}`]: true,
+          [`to\\u006ben_${escapedLabelSentinel}`]: true,
+        },
+      ],
+    });
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain(first);
+    expect(serialized).not.toContain(second);
+    expect(serialized).not.toContain(nested);
+    expect(serialized).not.toContain(dynamic);
+    expect(serialized).not.toContain(escapedLabelSentinel);
+    expect(Object.keys(result).every((key) => key.length <= 4_096)).toBe(true);
+    expect(Object.values(result)).toEqual(expect.arrayContaining([1, 2, 3, 4]));
+  });
+
+  it('does not include an invalid JSON response prefix in the surfaced error', async () => {
+    const sentinel = 'SUPER_SECRET_INVALID_JSON';
+    try {
+      await getConfig(mockHttp(sentinel), gitSafety);
+      expect.fail('Expected invalid gCTS JSON to throw');
+    } catch (err) {
+      expect(String(err)).toContain('gCTS returned invalid JSON');
+      expect(String(err)).not.toContain(sentinel);
+      expect(String(err)).not.toContain(sentinel.slice(0, 10));
+    }
+  });
+
+  it('rejects unknown non-empty read wrappers instead of returning a false-green []', async () => {
+    await expect(getSystemInfo(mockHttp('{"result":[]}'), gitSafety)).rejects.toThrow(/expected \{result/);
+    await expect(getUserInfo(mockHttp('{"user":[]}'), gitSafety)).rejects.toThrow(/expected \{user/);
+    await expect(getConfig(mockHttp('{"result":[]}'), gitSafety)).rejects.toThrow(/expected \{config/);
+    await expect(listBranches(mockHttp('{"result":[]}'), gitSafety, 'ZARC1')).rejects.toThrow(/expected \{branches/);
+    await expect(getCommitHistory(mockHttp('{"result":[]}'), gitSafety, 'ZARC1')).rejects.toThrow(/expected \{commits/);
+    await expect(listRepos(mockHttp('{"mystery":[]}'), gitSafety)).rejects.toThrow(/unexpected response shape/);
   });
 
   it('listRepos tolerates empty object response', async () => {
@@ -84,7 +171,11 @@ describe('gCTS client helpers', () => {
     const http = mockHttp(loadFixture('gcts-commit-history.json'));
     const result = await getCommitHistory(http, gitSafety, 'ZARC1', 10);
     expect(result).toHaveLength(2);
+    expect(result[0]?.id).toBe('1f2e3d4c');
     expect(result[0]?.commit).toBe('1f2e3d4c');
+    expect(result[0]?.authorMail).toBe('developer@example.com');
+    expect(result[0]?.email).toBe('developer@example.com');
+    expect(result[0]?.description).toBe('Initial import of package');
   });
 
   it('listRepoObjects parses objects payload', async () => {
@@ -94,138 +185,114 @@ describe('gCTS client helpers', () => {
     expect(result[0]?.type).toBe('CLAS');
   });
 
-  it('cloneRepo is blocked when allowGitWrites=false', async () => {
+  it('cloneRepo is blocked by the ordinary write ceiling before quarantine', async () => {
     const http = mockHttp(loadFixture('gcts-repository.json'));
     const safety = { ...unrestrictedSafetyConfig(), allowGitWrites: false };
     await expect(
       cloneRepo(http, safety, { url: 'https://github.com/example/arc1.git', package: '$TMP' }),
     ).rejects.toThrow(AdtSafetyError);
-  });
-
-  it('cloneRepo enforces package allowlist', async () => {
-    const http = mockHttp(loadFixture('gcts-repository.json'));
-    const safety = { ...gitSafety, allowedPackages: ['$TMP'] };
-    await expect(
-      cloneRepo(http, safety, { url: 'https://github.com/example/arc1.git', package: 'ZBLOCKED' }),
-    ).rejects.toThrow(AdtSafetyError);
-  });
-
-  it('cloneRepo requires explicit package when allowedPackages is set', async () => {
-    const http = mockHttp(loadFixture('gcts-repository.json'));
-    const safety = { ...gitSafety, allowedPackages: ['$TMP'] };
-    await expect(cloneRepo(http, safety, { url: 'https://github.com/example/arc1.git' })).rejects.toThrow(
-      AdtSafetyError,
-    );
     expect(http.post).not.toHaveBeenCalled();
   });
 
-  it('cloneRepo allows missing package when no allowlist configured', async () => {
+  it.each([
+    ['clone', (http: AdtHttpClient) => cloneRepo(http, gitSafety, { url: 'https://example.com/repo.git' })],
+    ['pull', (http: AdtHttpClient) => pullRepo(http, gitSafety, 'ZARC1')],
+    ['commit', (http: AdtHttpClient) => commitRepo(http, gitSafety, 'ZARC1', { message: 'test' })],
+    ['create_branch', (http: AdtHttpClient) => createBranch(http, gitSafety, 'ZARC1', { branch: 'feature' })],
+    ['switch_branch', (http: AdtHttpClient) => switchBranch(http, gitSafety, 'ZARC1', 'feature')],
+    ['unlink', (http: AdtHttpClient) => deleteRepo(http, gitSafety, 'ZARC1')],
+  ])('quarantines gCTS %s before every HTTP method', async (_action, invoke) => {
     const http = mockHttp(loadFixture('gcts-repository.json'));
-    const safety = { ...gitSafety, allowedPackages: [] };
-    await expect(cloneRepo(http, safety, { url: 'https://github.com/example/arc1.git' })).resolves.toBeDefined();
-  });
-
-  it('cloneRepo injects per-request repo credentials into config entries', async () => {
-    const http = mockHttp(loadFixture('gcts-repository.json'));
-    await cloneRepo(http, gitSafety, {
-      url: 'https://github.com/example/arc1.git',
-      package: '$TMP',
-      user: 'git-user',
-      password: 'git-pass',
-      token: 'git-token',
-    });
-
-    expect(http.post).toHaveBeenCalledTimes(1);
-    const [, body] = (http.post as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
-    const parsed = JSON.parse(body) as { config?: Array<{ key: string; value: string }> };
-    expect(parsed.config).toEqual(
-      expect.arrayContaining([
-        { key: 'CLIENT_VCS_AUTH_USER', value: 'git-user' },
-        { key: 'CLIENT_VCS_AUTH_PWD', value: 'git-pass' },
-        { key: 'CLIENT_VCS_AUTH_TOKEN', value: 'git-token' },
-      ]),
-    );
-  });
-
-  it('pullRepo enforces existing repository package allowlist before posting', async () => {
-    const http = mockHttp(loadFixture('gcts-repository.json'));
-    const safety = { ...gitSafety, allowedPackages: ['$TMP'] };
-
-    await expect(pullRepo(http, safety, 'ZARC1')).rejects.toThrow(AdtSafetyError);
-    expect(http.get).toHaveBeenCalledWith(
-      '/sap/bc/cts_abapvcs/repository',
-      expect.objectContaining({ Accept: 'application/json' }),
-    );
+    await expect(invoke(http)).rejects.toThrow(/VCS_NO_IMPORT/);
+    expect(http.get).not.toHaveBeenCalled();
     expect(http.post).not.toHaveBeenCalled();
+    expect(http.put).not.toHaveBeenCalled();
+    expect(http.delete).not.toHaveBeenCalled();
   });
 
-  it('pullRepo allows existing repository package that matches the allowlist', async () => {
-    const http = mockHttp(loadFixture('gcts-repository.json'));
-    const safety = { ...gitSafety, allowedPackages: ['ZARC1'] };
+  it('does not treat legacy allowedPackages=[] or explicit * as authorization for a gCTS mutation', async () => {
+    for (const allowedPackages of [[], ['*']]) {
+      const http = mockHttp();
+      await expect(
+        cloneRepo(http, { ...gitSafety, allowedPackages }, { url: 'https://example.com/repo.git' }),
+      ).rejects.toThrow(/gCTS mutations are unavailable/);
+      expect(http.post).not.toHaveBeenCalled();
+    }
+  });
 
-    await expect(pullRepo(http, safety, 'ZARC1')).resolves.toBeDefined();
-    expect(http.post).toHaveBeenCalledTimes(1);
-    expect((http.post as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]).toContain(
-      '/sap/bc/cts_abapvcs/repository/ZARC1/pullByCommit',
+  it('surfaces ERROR logs on read responses and redacts credential values', async () => {
+    const bearer = 'gcts-bearer-sentinel';
+    const basic = 'gcts-basic-sentinel';
+    const assignment = 'gcts-assignment-sentinel';
+    const cookie = 'gcts-cookie-sentinel';
+    const standalone = 'gcts-standalone-sentinel';
+    const unicodeKey = 'gcts-unicode-key-sentinel';
+    const http = mockHttp(
+      JSON.stringify({
+        log: [
+          {
+            severity: 'ERROR',
+            message:
+              `Remote Authorization: Bearer ${bearer}; Authorization=Basic \\"${basic}\\"; ` +
+              `Cookie: SAP_SESSIONID_A4H_001=${cookie}; Set-Cookie: JSESSIONID=${cookie}; ` +
+              `Bearer ${standalone}; ` +
+              `{\\"to\\u006ben\\":\\"${unicodeKey}\\"}; ` +
+              `CLIENT_VCS_AUTH_PWD=${assignment}; ` +
+              'failed https://user:secret@example.com/x?token=sentinel pwd=plain-error-sentinel',
+          },
+        ],
+      }),
     );
+    await expect(getConfig(http, gitSafety)).rejects.toThrow(AdtApiError);
+    try {
+      await getConfig(http, gitSafety);
+    } catch (err) {
+      expect(String(err)).not.toContain('secret');
+      expect(String(err)).not.toContain('sentinel');
+      expect(err).toBeInstanceOf(AdtApiError);
+      expect((err as AdtApiError).responseBody).not.toContain('secret');
+      expect((err as AdtApiError).responseBody).not.toContain('sentinel');
+      expect((err as AdtApiError).responseBody).not.toContain('plain-error-sentinel');
+      expect(String(err)).not.toContain(bearer);
+      expect(String(err)).not.toContain(basic);
+      expect(String(err)).not.toContain(assignment);
+      expect(String(err)).not.toContain(cookie);
+      expect(String(err)).not.toContain(standalone);
+      expect(String(err)).not.toContain(unicodeKey);
+      expect((err as AdtApiError).responseBody).not.toContain(bearer);
+      expect((err as AdtApiError).responseBody).not.toContain(basic);
+      expect((err as AdtApiError).responseBody).not.toContain(assignment);
+      expect((err as AdtApiError).responseBody).not.toContain(cookie);
+      expect((err as AdtApiError).responseBody).not.toContain(standalone);
+      expect((err as AdtApiError).responseBody).not.toContain(unicodeKey);
+    }
   });
 
-  it('pullRepo fails closed when repository package metadata is unavailable', async () => {
-    const http = mockHttp('{"result":[{"rid":"ZARC1","name":"ZARC1"}]}');
-    const safety = { ...gitSafety, allowedPackages: ['ZARC1'] };
-
-    await expect(pullRepo(http, safety, 'ZARC1')).rejects.toThrow(/could not resolve package/);
-    expect(http.post).not.toHaveBeenCalled();
-  });
-
-  it('commitRepo enforces existing repository package allowlist before posting', async () => {
-    const http = mockHttp(loadFixture('gcts-repository.json'));
-    const safety = { ...gitSafety, allowedPackages: ['$TMP'] };
-
-    await expect(commitRepo(http, safety, 'ZARC1', { message: 'test' })).rejects.toThrow(AdtSafetyError);
-    expect(http.post).not.toHaveBeenCalled();
-  });
-
-  it('commitRepo allows existing repository package that matches the allowlist', async () => {
-    const http = mockHttp(loadFixture('gcts-repository.json'));
-    const safety = { ...gitSafety, allowedPackages: ['ZARC1'] };
-
-    await expect(commitRepo(http, safety, 'ZARC1', { message: 'test' })).resolves.toBeDefined();
-    expect(http.post).toHaveBeenCalledTimes(1);
-    expect((http.post as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]).toContain(
-      '/sap/bc/cts_abapvcs/repository/ZARC1/commit',
+  it('redacts credentials in slash-escaped URLs from malformed HTTP error JSON', async () => {
+    const sentinel = 'gcts-escaped-url-sentinel';
+    const pathSentinel = 'gcts-error-path-sentinel';
+    const assignmentSentinel = 'gcts-invalid-json-assignment-sentinel';
+    const unicodeKeySentinel = 'gcts-invalid-unicode-key-sentinel';
+    const body = `{"CLIENT_VCS_AUTH_TOKEN":"${assignmentSentinel}","to\\u006ben":"${unicodeKeySentinel}","exception":"failed https:\\/\\/git-user:${sentinel}@example.com/r?token=${sentinel}" BROKEN`;
+    const http = mockHttp();
+    (http.get as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new AdtApiError(body.slice(0, 500), 500, `/sap/bc/cts_abapvcs/config?api_key=${pathSentinel}`, body),
     );
-  });
 
-  it('switchBranch enforces existing repository package allowlist before posting', async () => {
-    const http = mockHttp(loadFixture('gcts-repository.json'));
-    const safety = { ...gitSafety, allowedPackages: ['$TMP'] };
-
-    await expect(switchBranch(http, safety, 'ZARC1', 'feature')).rejects.toThrow(AdtSafetyError);
-    expect(http.post).not.toHaveBeenCalled();
-  });
-
-  it('switchBranch allows existing repository package that matches the allowlist', async () => {
-    const http = mockHttp(loadFixture('gcts-repository.json'));
-    const safety = { ...gitSafety, allowedPackages: ['ZARC1'] };
-
-    await expect(switchBranch(http, safety, 'ZARC1', 'feature')).resolves.toBeDefined();
-    expect(http.post).toHaveBeenCalledTimes(1);
-    expect((http.post as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]).toContain(
-      '/sap/bc/cts_abapvcs/repository/ZARC1/checkout/feature',
-    );
-  });
-
-  it('pullRepo surfaces 200/log ERROR payload as AdtApiError', async () => {
-    const http = mockHttp(loadFixture('gcts-log-error.json'));
-    await expect(pullRepo(http, gitSafety, 'ZARC1')).rejects.toThrow(AdtApiError);
-    await expect(pullRepo(http, gitSafety, 'ZARC1')).rejects.toThrow(/Remote pull failed/);
-  });
-
-  it('commitRepo surfaces 200/log ERROR payload as AdtApiError', async () => {
-    const http = mockHttp(loadFixture('gcts-log-error.json'));
-    await expect(commitRepo(http, gitSafety, 'ZARC1', { message: 'test' })).rejects.toThrow(AdtApiError);
-    await expect(commitRepo(http, gitSafety, 'ZARC1', { message: 'test' })).rejects.toThrow(/Remote pull failed/);
+    try {
+      await getConfig(http, gitSafety);
+      expect.fail('Expected malformed gCTS error to throw');
+    } catch (err) {
+      expect(String(err)).not.toContain(sentinel);
+      expect(String(err)).not.toContain(pathSentinel);
+      expect(String(err)).not.toContain(assignmentSentinel);
+      expect(String(err)).not.toContain(unicodeKeySentinel);
+      expect((err as AdtApiError).path).not.toContain(pathSentinel);
+      expect((err as AdtApiError).responseBody).not.toContain(sentinel);
+      expect((err as AdtApiError).responseBody).not.toContain(assignmentSentinel);
+      expect((err as AdtApiError).responseBody).not.toContain(unicodeKeySentinel);
+      expect(String(err)).not.toContain(body.slice(0, 40));
+    }
   });
 
   it('getTransportHistory maps gCTS exception payload from AdtApiError response body', async () => {
@@ -246,18 +313,5 @@ describe('gCTS client helpers', () => {
       expect(err).toBeInstanceOf(AdtApiError);
       expect((err as Error).message).toContain('No relation between system and repository');
     }
-  });
-
-  it('passes encoded URL segments to create/switch/delete operations', async () => {
-    const http = mockHttp('{}');
-    await createBranch(http, gitSafety, 'Z AR C1', { branch: 'feature/new' });
-    await switchBranch(http, gitSafety, 'Z AR C1', 'feature/new');
-    await deleteRepo(http, gitSafety, 'Z AR C1');
-
-    const postCalls = (http.post as ReturnType<typeof vi.fn>).mock.calls.map((call) => String(call[0]));
-    const deleteCalls = (http.delete as ReturnType<typeof vi.fn>).mock.calls.map((call) => String(call[0]));
-    expect(postCalls.some((url) => url.includes('/repository/Z%20AR%20C1/branches'))).toBe(true);
-    expect(postCalls.some((url) => url.includes('/repository/Z%20AR%20C1/checkout/feature%2Fnew'))).toBe(true);
-    expect(deleteCalls[0]).toContain('/repository/Z%20AR%20C1');
   });
 });

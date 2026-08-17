@@ -27,13 +27,50 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
   });
 
   describe('SAPTransport handler routing', () => {
-    function createTransportClient(): InstanceType<typeof AdtClient> {
+    function createTransportClient(
+      safety = { ...unrestrictedSafetyConfig(), allowTransportWrites: true },
+    ): InstanceType<typeof AdtClient> {
       return new AdtClient({
         baseUrl: 'http://sap:8000',
         username: 'admin',
         password: 'secret',
-        safety: { ...unrestrictedSafetyConfig(), allowTransportWrites: true },
+        safety,
       });
+    }
+
+    const transportStateXml = (id: string, status: 'D' | 'R') =>
+      `<tm:root xmlns:tm="http://www.sap.com/cts/transports"><tm:request tm:number="${id}" tm:owner="DEV" tm:desc="Test" tm:status="${status}" tm:type="K"/></tm:root>`;
+
+    function installReleaseMock(options: {
+      id: string;
+      reportBody?: string;
+      inactiveStatus?: number;
+      inactiveBody?: string;
+      finalStatus?: 'D' | 'R';
+      failReadAfterPost?: boolean;
+    }) {
+      let stateReads = 0;
+      let submitted = false;
+      mockFetch.mockImplementation((url: unknown, init?: RequestInit) => {
+        const path = String(url);
+        if (path.includes('inactiveobjects')) {
+          return Promise.resolve(
+            mockResponse(options.inactiveStatus ?? 200, options.inactiveBody ?? inactiveXmlOther, {}),
+          );
+        }
+        if (path.includes('newreleasejobs')) {
+          submitted = true;
+          return Promise.resolve(mockResponse(200, options.reportBody ?? '', {}));
+        }
+        if (path.includes(`/transportrequests/${options.id}`) && init?.method === 'GET') {
+          stateReads += 1;
+          if (submitted && options.failReadAfterPost) return Promise.resolve(mockResponse(404, 'gone', {}));
+          const status = submitted ? (options.finalStatus ?? 'R') : 'D';
+          return Promise.resolve(mockResponse(200, transportStateXml(options.id, status), {}));
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+      return { stateReads: () => stateReads };
     }
 
     it('delete action calls deleteTransport with correct ID', async () => {
@@ -75,20 +112,31 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
     });
 
     it('release_recursive action calls releaseTransportRecursive', async () => {
-      const transportXml = `<tm:root xmlns:tm="http://www.sap.com/cts/transports">
-        <tm:request tm:number="DEVK900001" tm:owner="DEV" tm:desc="Test" tm:status="D" tm:type="K"/>
-      </tm:root>`;
-      mockFetch
-        .mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'T' })) // CSRF
-        .mockResolvedValueOnce(mockResponse(200, transportXml, {})) // getTransport
-        .mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'T' })) // CSRF
-        .mockResolvedValue(mockResponse(200, '', {})); // release
+      installReleaseMock({ id: 'DEVK900001' });
       const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
         action: 'release_recursive',
         id: 'DEVK900001',
       });
       expect(result.isError).toBeUndefined();
-      expect(result.content[0]?.text).toContain('DEVK900001');
+      expect(result.content[0]?.text).toContain('Released (recursive): DEVK900001');
+      expect(result.content[0]?.text).not.toContain('Verification:');
+    });
+
+    it('release_recursive rejects a restrictive transport allowlist before diagnostic or CTS reads', async () => {
+      const result = await handleToolCall(
+        createTransportClient({
+          ...unrestrictedSafetyConfig(),
+          allowTransportWrites: true,
+          allowedTransports: ['DEVK900001'],
+        }),
+        DEFAULT_CONFIG,
+        'SAPTransport',
+        { action: 'release_recursive', id: 'DEVK900001' },
+      );
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('restrictive allowedTransports policy');
+      expect(mockFetch).not.toHaveBeenCalled();
     });
 
     it('release_recursive reports success when refreshed parent state resolves a failed report', async () => {
@@ -105,7 +153,7 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
         }
         if (path.includes('/transportrequests/A4HK906307') && init?.method === 'GET') {
           parentReads += 1;
-          return Promise.resolve(mockResponse(200, parentReads === 1 ? draftXml : releasedXml, {}));
+          return Promise.resolve(mockResponse(200, parentReads < 3 ? draftXml : releasedXml, {}));
         }
         return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
       });
@@ -118,7 +166,53 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
       expect(result.isError).toBeUndefined();
       expect(result.content[0]?.text).toContain('Released (recursive): A4HK906307');
       expect(result.content[0]?.text).toContain('refreshed request state confirmed status R');
-      expect(parentReads).toBe(2);
+      expect(parentReads).toBe(3);
+    });
+
+    it('release_recursive reports an unexpected pre-parent child and never submits the parent', async () => {
+      const initialTree = `<tm:root xmlns:tm="http://www.sap.com/cts/transports">
+        <tm:request tm:number="DEVK900001" tm:owner="DEV" tm:status="D" tm:type="K">
+          <tm:task tm:number="DEVK900001T1" tm:owner="DEV" tm:status="D"/>
+        </tm:request>
+      </tm:root>`;
+      const racedTree = initialTree
+        .replace(
+          'tm:number="DEVK900001T1" tm:owner="DEV" tm:status="D"',
+          'tm:number="DEVK900001T1" tm:owner="DEV" tm:status="R"',
+        )
+        .replace('</tm:request>', '<tm:task tm:number="DEVK900001T2" tm:owner="OTHER" tm:status="D"/></tm:request>');
+      let parentReads = 0;
+      const releasePosts: string[] = [];
+      mockFetch.mockImplementation((url: unknown, init?: RequestInit) => {
+        const path = String(url);
+        if (path.includes('inactiveobjects')) return Promise.resolve(mockResponse(200, '', {}));
+        if (path.includes('newreleasejobs')) {
+          releasePosts.push(path);
+          return Promise.resolve(mockResponse(200, '', {}));
+        }
+        if (path.includes('/transportrequests/DEVK900001') && init?.method === 'GET') {
+          parentReads += 1;
+          return Promise.resolve(mockResponse(200, parentReads === 1 ? initialTree : racedTree, {}));
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'release_recursive',
+        id: 'DEVK900001',
+        resultFormat: 'structured',
+      });
+      const payload = JSON.parse(result.content[0]?.text ?? '{}');
+
+      expect(result.isError).toBe(true);
+      expect(payload).toMatchObject({
+        outcome: 'unknown',
+        verified: false,
+        unexpectedChildren: ['DEVK900001T2'],
+      });
+      expect(payload.message).toContain('parent release was not submitted');
+      expect(releasePosts).toHaveLength(1);
+      expect(releasePosts[0]).toContain('/DEVK900001T1/newreleasejobs');
     });
 
     // ─── Pre-release inactive-objects check (FEAT-63) ─────────────────
@@ -158,13 +252,7 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
 
     it('release: proceeds when the inactive-objects probe fails (graceful degradation)', async () => {
       const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
-      mockFetch.mockImplementation((url: unknown) =>
-        Promise.resolve(
-          String(url).includes('inactiveobjects')
-            ? mockResponse(500, 'boom', {})
-            : mockResponse(200, '', { 'x-csrf-token': 'T' }),
-        ),
-      );
+      installReleaseMock({ id: 'DEVK900001', inactiveStatus: 500, inactiveBody: 'boom' });
       const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
         action: 'release',
         id: 'DEVK900001',
@@ -176,13 +264,7 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
     });
 
     it('release: proceeds when inactive objects belong to a different transport', async () => {
-      mockFetch.mockImplementation((url: unknown) =>
-        Promise.resolve(
-          String(url).includes('inactiveobjects')
-            ? mockResponse(200, inactiveXmlOther, {})
-            : mockResponse(200, '', { 'x-csrf-token': 'T' }),
-        ),
-      );
+      installReleaseMock({ id: 'DEVK900001', inactiveBody: inactiveXmlOther });
       const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
         action: 'release',
         id: 'DEVK900001',
@@ -224,36 +306,119 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
 
     // ─── Release check report (issue #433 item 1) ─────────────────────
     // inactiveXmlOther belongs to DEVK999999, so it never blocks the A4HK90630x releases below.
-    const releaseMock = (reportBody: string) => (url: unknown) =>
-      Promise.resolve(
-        String(url).includes('newreleasejobs')
-          ? mockResponse(200, reportBody, {})
-          : String(url).includes('inactiveobjects')
-            ? mockResponse(200, inactiveXmlOther, {})
-            : mockResponse(200, '', { 'x-csrf-token': 'T' }),
-      );
-
     it('release: confirms success when the check report says released', async () => {
-      mockFetch.mockImplementation(releaseMock(loadFixture('transport-release-report-success.xml')));
+      installReleaseMock({
+        id: 'A4HK906303',
+        reportBody: loadFixture('transport-release-report-success.xml'),
+      });
       const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
         action: 'release',
         id: 'A4HK906303',
       });
       expect(result.isError).toBeUndefined();
       expect(result.content[0]?.text).toContain('Released transport request: A4HK906303');
+      expect(result.content[0]?.text).not.toContain('Verification:');
+    });
+
+    it('release: returns terminal evidence only when resultFormat=structured is requested', async () => {
+      installReleaseMock({
+        id: 'A4HK906303',
+        reportBody: loadFixture('transport-release-report-success.xml'),
+      });
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'release',
+        id: 'A4HK906303',
+        resultFormat: 'structured',
+      });
+
+      expect(result.isError).toBeUndefined();
+      const payload = JSON.parse(result.content[0]?.text ?? '{}');
+      expect(payload).toMatchObject({
+        requestedId: 'A4HK906303',
+        outcome: 'released',
+        verified: true,
+        intendedIds: ['A4HK906303'],
+      });
+      expect(payload.statuses).toEqual([
+        expect.objectContaining({ id: 'A4HK906303', lastStatus: 'R', confirmedReleased: true }),
+      ]);
+      expect(Array.isArray(payload.reports)).toBe(true);
     });
 
     it('release: reports a BLOCKED release even though SAP returned HTTP 200', async () => {
-      mockFetch.mockImplementation(releaseMock(loadFixture('transport-release-report-blocked.xml')));
+      vi.useFakeTimers();
+      installReleaseMock({
+        id: 'A4HK906307',
+        reportBody: loadFixture('transport-release-report-blocked.xml'),
+        finalStatus: 'D',
+      });
+      try {
+        const pending = handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+          action: 'release',
+          id: 'A4HK906307',
+        });
+        await vi.runAllTimersAsync();
+        const result = await pending;
+        // The core fix: a status≠released report surfaces as an error, not a false success.
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toContain('was NOT released');
+        expect(result.content[0]?.text).toContain('aborted'); // handler wording for the HTTP-200-but-failed case
+        expect(result.content[0]?.text).toContain('unclassified'); // the real finding's shortText
+        expect(result.content[0]?.text).not.toContain('Verification:');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('release: reports unknown final state without falsely claiming the transport stayed unreleased', async () => {
+      installReleaseMock({
+        id: 'A4HK906307',
+        reportBody: loadFixture('transport-release-report-blocked.xml'),
+        failReadAfterPost: true,
+      });
+
       const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
         action: 'release',
         id: 'A4HK906307',
       });
-      // The core fix: a status≠released report surfaces as an error, not a false success.
+
       expect(result.isError).toBe(true);
-      expect(result.content[0]?.text).toContain('was NOT released');
-      expect(result.content[0]?.text).toContain('aborted'); // handler wording for the HTTP-200-but-failed case
-      expect(result.content[0]?.text).toContain('unclassified'); // the real finding's shortText
+      expect(result.content[0]?.text).toContain('could not be verified');
+      expect(result.content[0]?.text).toContain('final CTS state is unknown');
+      expect(result.content[0]?.text).not.toContain('was NOT released');
+      expect(result.content[0]?.text).not.toContain('Verification:');
+    });
+
+    it('release: keeps response-derived SAP diagnostics out of convergence results', async () => {
+      mockFetch.mockImplementation((url: unknown, init?: RequestInit) => {
+        const path = String(url);
+        if (path.includes('inactiveobjects')) return Promise.resolve(mockResponse(200, '', {}));
+        if (path.includes('/transportrequests/A4HK906307') && init?.method === 'GET') {
+          return Promise.resolve(
+            mockResponse(
+              403,
+              'User MARIAN lacks S_ADT_RES at /sap/bc/adt/cts/transportrequests; password=TOPSECRET',
+              {},
+            ),
+          );
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(
+        createTransportClient(),
+        { ...DEFAULT_CONFIG, minimalErrors: true },
+        'SAPTransport',
+        { action: 'release', id: 'A4HK906307' },
+      );
+      const text = result.content[0]?.text ?? '';
+
+      expect(result.isError).toBe(true);
+      expect(text).toContain('SAP CTS request failed with HTTP 403.');
+      expect(text).not.toContain('MARIAN');
+      expect(text).not.toContain('S_ADT_RES');
+      expect(text).not.toContain('TOPSECRET');
+      expect(text).not.toContain('/sap/bc/adt/');
     });
 
     it('create with package passes DEVCLASS through', async () => {

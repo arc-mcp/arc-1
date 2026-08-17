@@ -119,7 +119,11 @@ export interface GctsSystemInfo {
 }
 
 export interface GctsConfig {
-  ckey: string;
+  /** Live gCTS key/value configuration fields. */
+  key?: string;
+  value?: string;
+  /** Older configuration-schema field retained for compatible consumers. */
+  ckey?: string;
   ctype?: string;
   datatype?: string;
   defaultValue?: string;
@@ -150,11 +154,18 @@ export interface GctsBranch {
 }
 
 export interface GctsCommit {
+  /** Live gCTS commit identifier (`commits[].id`). */
+  id?: string;
+  /** Backward-compatible alias populated from `id`. */
   commit?: string;
   author?: string;
+  /** Live gCTS author mail field (`commits[].authorMail`). */
+  authorMail?: string;
+  /** Backward-compatible alias populated from `authorMail`. */
   email?: string;
   date?: string;
   message?: string;
+  description?: string;
   [key: string]: unknown;
 }
 

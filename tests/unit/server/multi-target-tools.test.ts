@@ -77,6 +77,7 @@ describe('multi-target tool surface', () => {
     expect(property(transport, 'action').enum).toEqual(['list', 'get', 'check', 'history']);
     expect(transport.inputSchema.properties).not.toHaveProperty('target');
     expect(transport.inputSchema.properties).not.toHaveProperty('transportLayer');
+    expect(transport.inputSchema.properties).not.toHaveProperty('resultFormat');
   });
 
   it('adds data and SQL only when the effective target/union policy permits them', () => {

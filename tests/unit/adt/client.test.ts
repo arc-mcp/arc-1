@@ -672,6 +672,22 @@ describe('AdtClient', () => {
       await expect(client.getRevisionSource('https://evil.example/foo')).rejects.toThrow(/\/sap\/bc\/adt\//);
     });
 
+    it.each([
+      '/sap/bc/adt/../../../sap/opu/odata/sap/ZSECRET',
+      '/sap/bc/adt/%2e%2e/%2e%2e/sap/opu/odata/sap/ZSECRET',
+      '/sap/bc/adt/%252e%252e/%252e%252e/sap/opu/odata/sap/ZSECRET',
+      '/sap/bc/adt/programs/%2f..%2fadmin',
+      '/sap/bc/adt/programs/%5c..%5cadmin',
+      '/sap/bc/adt\\..\\sap\\opu\\odata',
+      '/sap/bc/adt/programs/source#fragment',
+      '/sap/bc/adt/programs/source\u0000suffix',
+    ])('rejects unsafe revision URI %j before HTTP dispatch', async (versionUri) => {
+      mockFetch.mockClear();
+      const client = createClient();
+      await expect(client.getRevisionSource(versionUri)).rejects.toThrow(/canonical host-relative ADT path/i);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
     it('returns plain source text for valid revision URI', async () => {
       mockFetch.mockReset();
       mockFetch.mockResolvedValue(

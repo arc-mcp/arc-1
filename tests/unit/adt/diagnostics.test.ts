@@ -820,6 +820,25 @@ describe('Runtime Diagnostics', () => {
       });
     });
 
+    it.each([
+      '/sap/bc/adt/../../../sap/opu/odata/sap/ZSECRET',
+      '/sap/bc/adt/%2e%2e/%2e%2e/sap/opu/odata/sap/ZSECRET',
+      '/sap/bc/adt/%252e%252e/%252e%252e/sap/opu/odata/sap/ZSECRET',
+      '/sap/bc/adt/gw/errorlog/%2fadmin',
+      '/sap/bc/adt/gw/errorlog/%5cadmin',
+      '/sap/bc/adt\\..\\sap\\opu\\odata',
+      '/sap/bc/adt/gw/errorlog/ABC#fragment',
+      '/sap/bc/adt/gw/errorlog/ABC\u0000suffix',
+      'https://a4h.example/sap/bc/adt/gw/errorlog/FrontendError/ABC123',
+      'adt://A4H/sap/bc/adt/gw/errorlog/FrontendError/ABC123',
+    ])('rejects unsafe gateway detail URL %j before HTTP dispatch', async (detailUrl) => {
+      const http = mockHttp('');
+      await expect(getGatewayErrorDetail(http, unrestrictedSafetyConfig(), { detailUrl })).rejects.toThrow(
+        /canonical host-relative ADT path/i,
+      );
+      expect(http.get).not.toHaveBeenCalled();
+    });
+
     it('builds detail URL from errorType + id (normalizes display form "Frontend Error" to URL form "FrontendError")', async () => {
       const xml = `<errorlog:errorEntry xmlns:errorlog="http://www.sap.com/adt/gateway/errorlog"/>`;
       const http = mockHttp(xml);

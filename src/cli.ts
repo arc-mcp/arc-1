@@ -1,319 +1,192 @@
 /**
- * ARC-1 CLI — command-line interface for SAP ADT operations.
+ * ARC-1 command-line interface.
  *
- * Exposed via the `arc1-cli` bin (separate from `arc1`, which is the MCP server entry).
- *
- * Two layers:
- *   - `arc1-cli serve`                  Start the MCP server (same as `arc1`).
- *   - `arc1-cli call <tool> [...]`      Call any of the 12 MCP tools directly.
- *   - `arc1-cli tools [<tool>]`         List tools / show a tool's JSON schema.
- *   - Shortcuts: `read`, `source` (alias), `activate`, `syntax`, `sql`, `lint`,
- *     `search`, `extract-cookies`, `version` — one-liners over `call` or helpers
- *     for common operations.
- *
- * The `call` command bypasses the MCP transport but reuses the same dispatch
- * path (`handleToolCall` in src/handlers/dispatch.ts), so Zod validation,
- * safety gates (`SAP_READ_ONLY`, `SAP_ALLOWED_PACKAGES`, ...), and audit
- * logging all apply exactly as they do under `arc1 serve` stdio mode.
+ * Direct calls reuse the MCP dispatcher, validation, safety policy, audit
+ * pipeline, startup authentication check, and target-local feature evidence.
  */
 
 import { readFileSync } from 'node:fs';
-import { Command, Option } from 'commander';
-import { config } from 'dotenv';
+import { pathToFileURL } from 'node:url';
+import { Command, CommanderError, Option } from 'commander';
+import { config as loadDotEnv } from 'dotenv';
 import { AdtClient } from './adt/client.js';
 import type { AdtClientConfig } from './adt/config.js';
+import type { AtcRunResult } from './adt/devtools.js';
+import type { CachingLayer } from './cache/caching-layer.js';
 import { buildArgs, type OutputMode } from './cli-args.js';
+import {
+  type AunitCiResult,
+  assertAtcPriority,
+  assertPercent,
+  atcToCheckstyle,
+  evaluateAtc,
+  evaluateAunit,
+  evaluateDiff,
+  evaluateLint,
+  firstToolText,
+  formatAtcText,
+  formatAunitText,
+  formatLintText,
+  type LintFailureThreshold,
+  lintToCheckstyle,
+  parseToolJson,
+  type StructuredDiffResult,
+  writeReport,
+} from './cli-checks.js';
 import { getToolRegistry, handleToolCall } from './handlers/dispatch.js';
+import { setCachedDiscovery, setCachedFeatures } from './handlers/feature-cache.js';
 import type { ToolResult } from './handlers/shared.js';
-import { detectFilename, lintAbapSource } from './lint/lint.js';
-import { parseArgs, resolveConfig } from './server/config.js';
-import { initLogger } from './server/logger.js';
+import type { LintResult } from './lint/lint.js';
+import { sanitizeArgs } from './server/audit.js';
+import { assertNoRemovedCliFlags, CLI_CONFIG_OPTION_SPECS, resolveConfig } from './server/config.js';
+import { generateRequestId } from './server/context.js';
+import { initLogger, logger } from './server/logger.js';
 import { loadPlugins } from './server/plugin-loader.js';
-import { buildAdtConfig, getConfiguredToolDefinitions, VERSION } from './server/server.js';
+import {
+  buildAdtConfig,
+  createCachingLayer,
+  formatStartupAuthPreflightToolError,
+  getConfiguredToolDefinitions,
+  probeClientFeatures,
+  runStartupAuthPreflightWithClient,
+  VERSION,
+} from './server/server.js';
+import { FileSink } from './server/sinks/file.js';
 import type { ConfigSource, ServerConfig } from './server/types.js';
 
-// Load .env without printing dotenv tips to stdout.
-config({ quiet: true });
+loadDotEnv({ quiet: true });
 
-const program = new Command();
+export type CliExitCode = 0 | 1 | 2 | 3;
 
-program
-  .name('arc1')
-  .description('ARC-1 — MCP Server for SAP ABAP Systems')
-  .version(VERSION)
-  .allowUnknownOption(true)
-  .allowExcessArguments(true);
+type ResolvedConfig = ReturnType<typeof resolveConfig>;
 
-// Server mode (default)
-program
-  .command('serve', { isDefault: true })
-  .description('Start MCP server (default)')
-  .allowUnknownOption(true)
-  .allowExcessArguments(true)
-  .action(async () => {
-    // Dynamic import to avoid loading MCP SDK for CLI-only usage
+export interface CliDependencies {
+  resolveConfiguration?: typeof resolveConfig;
+  createClient?: (config: Partial<AdtClientConfig>) => AdtClient;
+  createCache?: (config: ServerConfig) => Promise<CachingLayer | undefined>;
+  dispatchToolCall?: typeof handleToolCall;
+  probeFeatures?: typeof probeClientFeatures;
+  authPreflight?: typeof runStartupAuthPreflightWithClient;
+  startServer?: (config: ServerConfig, sources: Record<string, ConfigSource>) => Promise<unknown>;
+  flushLogger?: () => Promise<void>;
+  runCookieExtractor?: (args: string[]) => Promise<void>;
+}
+
+export interface CreateCliProgramOptions {
+  argv?: readonly string[];
+  dependencies?: CliDependencies;
+  /** Internal execution state. Supplying it is useful for focused tests. */
+  state?: CliExecutionState;
+}
+
+export interface CliExecutionState {
+  exitCode: CliExitCode;
+  /** Successful `serve` keeps logger sinks alive for the long-running process. */
+  longLivedServerStarted?: boolean;
+}
+
+interface DirectContext {
+  client: AdtClient;
+  config: ServerConfig;
+  cachingLayer?: CachingLayer;
+}
+
+interface RuntimeState extends CliExecutionState {
+  resolvedConfig?: ResolvedConfig;
+  directContext?: Promise<DirectContext>;
+  pluginsLoaded?: Promise<void>;
+}
+
+export type CliToolCallOutcome =
+  | { kind: 'tool'; result: ToolResult }
+  | { kind: 'usage'; message: string; knownTools?: string[] };
+
+export interface CliRuntime {
+  state: CliExecutionState;
+  deps: Required<CliDependencies>;
+  getResolvedConfig: () => ResolvedConfig;
+  getDirectContext: () => Promise<DirectContext>;
+  loadConfiguredPlugins: (config: ServerConfig) => Promise<void>;
+  dispose: () => Promise<void>;
+}
+
+interface UnitTestCommandOptions {
+  coverage?: boolean;
+  minStatement?: string;
+  minBranch?: string;
+  minProcedure?: string;
+  format: 'text' | 'json' | 'junit';
+  reportFile?: string;
+  allowEmpty?: boolean;
+  failOnSkipped?: boolean;
+}
+
+interface AtcCommandOptions {
+  variant?: string;
+  maxPriority: string;
+  format: 'text' | 'json' | 'checkstyle';
+  reportFile?: string;
+}
+
+interface LintCommandOptions {
+  format: 'text' | 'json' | 'checkstyle';
+  reportFile?: string;
+  failOn: LintFailureThreshold;
+}
+
+interface DiffCommandOptions {
+  from: string;
+  to: string;
+  fromLabel?: string;
+  toLabel?: string;
+  include?: string;
+  group?: string;
+  check?: boolean;
+  failOnDiff?: boolean;
+  format: 'text' | 'json';
+  reportFile?: string;
+}
+
+const defaultDependencies: Required<CliDependencies> = {
+  resolveConfiguration: resolveConfig,
+  createClient: (config) => new AdtClient(config),
+  createCache: createCachingLayer,
+  dispatchToolCall: handleToolCall,
+  probeFeatures: probeClientFeatures,
+  authPreflight: runStartupAuthPreflightWithClient,
+  startServer: async (config, sources) => {
     const { createAndStartServer } = await import('./server/server.js');
-    const serverConfig = parseArgs(process.argv.slice(2));
-    await createAndStartServer(serverConfig);
-  });
-
-// ─── Direct tool invocation ────────────────────────────────────────────
-
-const outputOption = new Option('--output <mode>', 'Output mode').choices(['text', 'json']).default('text');
+    await createAndStartServer(config, sources);
+  },
+  flushLogger: () => logger.flush(),
+  runCookieExtractor: async (args) => {
+    const { run } = await import('./extract-sap-cookies.js');
+    await run(args);
+  },
+};
 
 function collect(value: string, previous: string[]): string[] {
   return [...previous, value];
 }
 
-program
-  .command('call <tool>')
-  .description('Call any MCP tool directly (e.g. SAPRead, SAPWrite, SAPGit...)')
-  .option('--arg <key=value>', 'Tool argument; repeatable. Values are coerced: true/false/number/JSON.', collect, [])
-  .option('--json <source>', 'JSON args: inline object, path to a file, or "-" for stdin')
-  .addOption(outputOption)
-  .action(async (tool: string, opts: { arg: string[]; json?: string; output: OutputMode }) => {
-    try {
-      const args = buildArgs(opts);
-      const code = await runToolCall(tool, args, opts.output);
-      process.exit(code);
-    } catch (err) {
-      // codeql[js/clear-text-logging]: false-positive (alert #9). err.message
-      // comes from runToolCall failures (resolveCliContext config-parse
-      // errors, "Unknown tool", buildArgs validation) — none interpolate
-      // api-key material. Pinned by tests/unit/cli/clear-text-logging-regression.test.ts.
-      console.error(err instanceof Error ? err.message : String(err));
-      process.exit(2);
-    }
-  });
-
-program
-  .command('tools [tool]')
-  .description('List MCP tools, or show the JSON input schema for a specific tool')
-  .action(async (tool: string | undefined) => {
-    const { config: serverConfig } = resolveCliContext();
-    // FEAT-61: load plugins so `tools` discovery matches `call` invocation (both see Custom_* tools).
-    if (serverConfig.plugins?.length) {
-      await loadPlugins(serverConfig.plugins, getToolRegistry());
-    }
-    const pluginDefs = getToolRegistry()
-      .list()
-      .flatMap((e) =>
-        e.source === 'plugin' && e.listing
-          ? [{ name: e.name, description: e.listing.description, inputSchema: e.listing.inputSchema }]
-          : [],
-      );
-    const defs = [...getConfiguredToolDefinitions(serverConfig), ...pluginDefs];
-    if (!tool) {
-      for (const def of defs) {
-        const firstLine = def.description.split('\n')[0].trim();
-        console.log(`${def.name.padEnd(14)} ${firstLine}`);
-      }
-      return;
-    }
-    const match = defs.find((d) => d.name.toLowerCase() === tool.toLowerCase());
-    if (!match) {
-      console.error(`Unknown tool: ${tool}`);
-      console.error(`Available: ${defs.map((d) => d.name).join(', ')}`);
-      process.exit(2);
-    }
-    console.log(match.description);
-    console.log('');
-    console.log('Input schema:');
-    console.log(JSON.stringify(match.inputSchema, null, 2));
-  });
-
-// ─── Ergonomic shortcuts (thin wrappers over `call`) ───────────────────
-
-program
-  .command('read <type> <name>')
-  .description('Read an ABAP object via SAPRead (PROG, CLAS, INTF, DDLS, TABL, DOMA, DTEL, ...)')
-  .option('--flat', 'Return flat source for CLAS/INTF (instead of structured sections)')
-  .option(
-    '--source-version <version>',
-    'Source version: active (default) | inactive | auto. "auto" returns the user\'s draft if any, else active.',
-  )
-  .addOption(outputOption)
-  .action(async (type: string, name: string, opts: { flat?: boolean; sourceVersion?: string; output: OutputMode }) => {
-    const args: Record<string, unknown> = { type: type.toUpperCase(), name };
-    // `--flat` predates `format`; it means "raw source, not decomposed sections" = format:"text",
-    // which is already the default. It used to be sent as a phantom `flat` arg that no handler read
-    // and Zod silently stripped — now that the schemas are strict, send the real parameter.
-    if (opts.flat) args.format = 'text';
-    if (opts.sourceVersion) args.version = opts.sourceVersion;
-    process.exit(await runToolCall('SAPRead', args, opts.output));
-  });
-
-// `source` kept as an alias of `read --flat` to preserve legacy CLI behavior.
-program
-  .command('source <type> <name>')
-  .description('Alias of `read --flat` (legacy)')
-  .addOption(outputOption)
-  .action(async (type: string, name: string, opts: { output: OutputMode }) => {
-    process.exit(await runToolCall('SAPRead', { type: type.toUpperCase(), name, format: 'text' }, opts.output));
-  });
-
-program
-  .command('activate <type> <name>')
-  .description('Activate an ADT object (SAPActivate) — e.g. `activate CLAS ZCL_FOO`')
-  .addOption(outputOption)
-  .action(async (type: string, name: string, opts: { output: OutputMode }) => {
-    process.exit(await runToolCall('SAPActivate', { action: 'activate', type: type.toUpperCase(), name }, opts.output));
-  });
-
-program
-  .command('syntax <type> <name>')
-  .description('Remote syntax check on an ABAP object (SAPDiagnose syntax)')
-  .addOption(outputOption)
-  .action(async (type: string, name: string, opts: { output: OutputMode }) => {
-    process.exit(await runToolCall('SAPDiagnose', { action: 'syntax', type: type.toUpperCase(), name }, opts.output));
-  });
-
-program
-  .command('sql <query>')
-  .description('Execute an OpenSQL query (SAPQuery; requires SAP_ALLOW_FREE_SQL=true)')
-  .addOption(outputOption)
-  .action(async (query: string, opts: { output: OutputMode }) => {
-    // SAPQuerySchema is { sql, maxRows } — no `action`, and the query field is `sql` (not `query`).
-    process.exit(await runToolCall('SAPQuery', { sql: query }, opts.output));
-  });
-
-// ─── Legacy / local-only commands ──────────────────────────────────────
-
-program
-  .command('search <query>')
-  .description('Search for ABAP objects (SAPSearch)')
-  .option('--max <number>', 'Maximum results', '50')
-  .addOption(outputOption)
-  .action(async (query: string, opts: { max: string; output: OutputMode }) => {
-    // SAPSearchSchema has no `action` field (object search is the default searchType); pass query + maxResults.
-    process.exit(await runToolCall('SAPSearch', { query, maxResults: Number(opts.max) }, opts.output));
-  });
-
-program
-  .command('extract-cookies [args...]')
-  .description('Launch a browser, log into SAP, and write a Netscape cookie file. Pass --help for options.')
-  .allowUnknownOption(true)
-  .helpOption(false)
-  .action(async () => {
-    const idx = process.argv.indexOf('extract-cookies');
-    const forwarded = idx >= 0 ? process.argv.slice(idx + 1) : [];
-    const { run } = await import('./extract-sap-cookies.js');
-    try {
-      await run(forwarded);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      process.stderr.write(`${message}\n`);
-      process.exit(1);
-    }
-  });
-
-program
-  .command('lint <file>')
-  .description('Lint a local ABAP source file (offline; no SAP connection)')
-  .action((file: string) => {
-    const source = readFileSync(file, 'utf-8');
-    const filename = detectFilename(source, file.replace(/\.abap$/, ''));
-    const issues = lintAbapSource(source, filename);
-    if (issues.length === 0) {
-      console.log('No issues found.');
-      return;
-    }
-    for (const issue of issues) {
-      console.log(`${issue.line}:${issue.column} [${issue.severity}] ${issue.rule}: ${issue.message}`);
-    }
-    process.exit(issues.some((i) => i.severity === 'error') ? 1 : 0);
-  });
-
-program
-  .command('version')
-  .description('Show ARC-1 version')
-  .action(() => {
-    console.log(`ARC-1 v${VERSION}`);
-  });
-
-// Config show command — dumps resolved effective policy + source attribution
-const configCmd = program.command('config').description('Configuration inspection');
-configCmd
-  .command('show')
-  .description('Show the resolved effective safety config with per-field source attribution')
-  .option('--format <fmt>', 'Output format: table or json', 'table')
-  .allowUnknownOption(true)
-  .allowExcessArguments(true)
-  .action((opts: { format: string }) => {
-    try {
-      const { config: serverConfig, sources } = resolveConfig(process.argv.slice(3));
-      const fmt = opts.format === 'json' ? 'json' : 'table';
-      if (fmt === 'json') {
-        const out = {
-          effectivePolicy: {
-            allowWrites: serverConfig.allowWrites,
-            allowDataPreview: serverConfig.allowDataPreview,
-            allowFreeSQL: serverConfig.allowFreeSQL,
-            allowTransportWrites: serverConfig.allowTransportWrites,
-            allowGitWrites: serverConfig.allowGitWrites,
-            allowedPackages: serverConfig.allowedPackages,
-            allowedTransports: serverConfig.allowedTransports,
-            denyActions: serverConfig.denyActions,
-          },
-          sources,
-        };
-        // codeql[js/clear-text-logging]: false-positive (alert #10). `out` is
-        // constructed explicitly with only the `allow*` policy flags and
-        // `sources` (field-source attributions like `'env SAP_URL'`). Neither
-        // `apiKeys` / `apiKeysRaw` nor `oauthDcrTtlSeconds` appear in `out`.
-        // Pinned by tests/unit/cli/clear-text-logging-regression.test.ts.
-        console.log(JSON.stringify(out, null, 2));
-      } else {
-        console.log('ARC-1 effective authorization policy');
-        console.log('────────────────────────────────────');
-        const fields = [
-          ['allowWrites', serverConfig.allowWrites],
-          ['allowDataPreview', serverConfig.allowDataPreview],
-          ['allowFreeSQL', serverConfig.allowFreeSQL],
-          ['allowTransportWrites', serverConfig.allowTransportWrites],
-          ['allowGitWrites', serverConfig.allowGitWrites],
-          ['allowedPackages', JSON.stringify(serverConfig.allowedPackages)],
-          ['allowedTransports', JSON.stringify(serverConfig.allowedTransports)],
-        ] as const;
-        for (const [name, value] of fields) {
-          const src = formatConfigSource(sources[name]);
-          console.log(`  ${name.padEnd(22)} = ${String(value).padEnd(30)} [${src}]`);
-        }
-        console.log('\nDeny actions:');
-        if (serverConfig.denyActions.length === 0) {
-          console.log(`  (none) [${formatConfigSource(sources.denyActions)}]`);
-        } else {
-          const src = formatConfigSource(sources.denyActions);
-          for (const pattern of serverConfig.denyActions) {
-            console.log(`  ${pattern} [${src}]`);
-          }
-        }
-      }
-      process.exit(0);
-    } catch (err) {
-      // codeql[js/clear-text-logging]: false-positive (alert #11). err.message
-      // comes from resolveConfig() parser failures — config-validation errors
-      // like "invalid --api-keys format", not the credential VALUE itself.
-      // Pinned by tests/unit/cli/clear-text-logging-regression.test.ts.
-      console.error(`Error: ${(err as Error).message}`);
-      process.exit(1);
-    }
-  });
-
-function formatConfigSource(s: ConfigSource | undefined): string {
-  if (s === undefined) return 'default';
-  if (s === 'default') return 'default';
-  if (typeof s === 'object') {
-    if ('env' in s) return `env ${s.env}`;
-    if ('flag' in s) return `flag ${s.flag}`;
-    if ('file' in s) return `file ${s.file}`;
-  }
-  return 'unknown';
+function addOutputOption(command: Command): Command {
+  return command.addOption(new Option('--output <mode>', 'Output mode').choices(['text', 'json']).default('text'));
 }
 
-// ─── Helpers ───────────────────────────────────────────────────────────
+function configArgv(argv: readonly string[]): string[] {
+  const separator = argv.indexOf('--');
+  return [...(separator < 0 ? argv : argv.slice(0, separator))];
+}
 
-function renderToolResult(result: ToolResult, mode: OutputMode): number {
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+function errorToolResult(message: string): ToolResult {
+  return { content: [{ type: 'text', text: message }], isError: true };
+}
+
+function renderToolResult(result: ToolResult, mode: OutputMode): CliExitCode {
   if (mode === 'json') {
     console.log(JSON.stringify(result, null, 2));
   } else {
@@ -325,36 +198,679 @@ function renderToolResult(result: ToolResult, mode: OutputMode): number {
   return result.isError ? 1 : 0;
 }
 
-function resolveCliContext(): { client: AdtClient; config: ServerConfig } {
-  const serverConfig = parseArgs([]);
-  initLogger(serverConfig.logFormat, serverConfig.verbose);
-  const adtConfig = buildAdtConfig(serverConfig) as AdtClientConfig;
-  const client = new AdtClient(adtConfig);
-  return { client, config: serverConfig };
-}
+type CiJsonOutcome<T> = { ok: true; value: T } | { ok: false };
 
-async function runToolCall(toolName: string, args: Record<string, unknown>, outputMode: OutputMode): Promise<number> {
-  const { client, config: serverConfig } = resolveCliContext();
-  // FEAT-61: load extension plugins so `arc1-cli call Custom_*` reaches the same registry the server uses.
-  if (serverConfig.plugins?.length) {
-    await loadPlugins(serverConfig.plugins, getToolRegistry());
+async function executeCiJson<T>(
+  runtime: CliRuntime,
+  toolName: string,
+  args: Record<string, unknown>,
+  options?: { localOnly?: boolean },
+): Promise<CiJsonOutcome<T>> {
+  const outcome = await executeCliToolCall(runtime, toolName, args, options);
+  if (outcome.kind === 'usage') {
+    console.error(outcome.message);
+    if (outcome.knownTools) console.error(`Known tools: ${outcome.knownTools.join(', ')}`);
+    runtime.state.exitCode = 2;
+    return { ok: false };
   }
-  const available = new Set(getConfiguredToolDefinitions(serverConfig).map((t) => t.name));
-  for (const e of getToolRegistry().list()) {
-    if (e.source === 'plugin') available.add(e.name);
-  }
-  if (!available.has(toolName)) {
-    console.error(`Unknown tool: ${toolName}`);
-    console.error(`Available tools: ${[...available].join(', ')}`);
-    return 2;
+  if (outcome.result.isError) {
+    runtime.state.exitCode = renderToolResult(outcome.result, 'text');
+    return { ok: false };
   }
   try {
-    const result = await handleToolCall(client, serverConfig, toolName, args);
-    return renderToolResult(result, outputMode);
-  } catch (err) {
-    console.error(err instanceof Error ? err.message : String(err));
-    return 1;
+    return { ok: true, value: parseToolJson<T>(firstToolText(outcome.result.content)) };
+  } catch (error) {
+    console.error(errorMessage(error));
+    runtime.state.exitCode = 1;
+    return { ok: false };
   }
 }
 
-program.parse();
+async function emitCiReport(content: string, reportFile: string | undefined): Promise<boolean> {
+  try {
+    if (reportFile && reportFile !== '-') await writeReport(content, reportFile);
+    else console.log(content);
+    return true;
+  } catch (error) {
+    console.error(`Could not write CI report: ${errorMessage(error)}`);
+    return false;
+  }
+}
+
+function formatConfigSource(source: ConfigSource | undefined): string {
+  if (source === undefined || source === 'default') return 'default';
+  if (typeof source === 'object') {
+    if ('env' in source) return `env ${source.env}`;
+    if ('flag' in source) return `flag ${source.flag}`;
+    if ('file' in source) return `file ${source.file}`;
+  }
+  return 'unknown';
+}
+
+function directModeError(config: ServerConfig): string | undefined {
+  if (config.multiTargetEndpoints) {
+    return 'Direct CLI calls do not support ARC1_MULTI_TARGET_ENDPOINTS. Use the MCP server endpoint for multi-target routing.';
+  }
+  if (config.ppEnabled) {
+    return 'Direct CLI calls do not support principal propagation. Use the MCP HTTP server so the caller JWT can be propagated.';
+  }
+  if (
+    config.btpServiceKey ||
+    config.btpServiceKeyFile ||
+    process.env.SAP_BTP_DESTINATION ||
+    process.env.SAP_BTP_PP_DESTINATION
+  ) {
+    return (
+      'Direct CLI calls currently support a single SAP_URL target with Basic or cookie authentication only. ' +
+      'BTP service-key and Destination Service bootstrap is available through the MCP server.'
+    );
+  }
+  return undefined;
+}
+
+function shouldSkipFeatureProbe(toolName: string, args: Record<string, unknown>): boolean {
+  return toolName === 'SAPManage' && String(args.action ?? '').toLowerCase() === 'probe';
+}
+
+function isLocalOnlyCall(toolName: string, args: Record<string, unknown>): boolean {
+  const action = String(args.action ?? '').toLowerCase();
+  return toolName === 'SAPManage' && action === 'cache_stats';
+}
+
+function isDisabledWriteTool(toolName: string, config: ServerConfig): boolean {
+  return !config.allowWrites && (toolName === 'SAPWrite' || toolName === 'SAPActivate');
+}
+
+function auditBlockedDirectPreflight(
+  config: ServerConfig,
+  toolName: string,
+  args: Record<string, unknown>,
+  startedAt: number,
+): void {
+  const requestId = generateRequestId();
+  const pluginName = getToolRegistry().get(toolName)?.pluginName;
+  logger.emitAudit({
+    timestamp: new Date(startedAt).toISOString(),
+    level: 'info',
+    event: 'tool_call_start',
+    destination: config.destinationName,
+    requestId,
+    tool: toolName,
+    pluginName,
+    args: sanitizeArgs(args),
+  });
+  logger.emitAudit({
+    timestamp: new Date().toISOString(),
+    level: 'error',
+    event: 'tool_call_end',
+    destination: config.destinationName,
+    requestId,
+    tool: toolName,
+    pluginName,
+    durationMs: Date.now() - startedAt,
+    status: 'error',
+    errorClass: 'StartupAuthPreflightError',
+    errorMessage:
+      'Shared SAP authentication preflight blocked this direct CLI call (HTTP authentication/authorization response details suppressed).',
+  });
+}
+
+function createRuntime(argv: readonly string[], state: CliExecutionState, overrides: CliDependencies): CliRuntime {
+  const runtimeState = state as RuntimeState;
+  const deps = { ...defaultDependencies, ...overrides };
+
+  const getResolvedConfig = (): ResolvedConfig => {
+    if (!runtimeState.resolvedConfig) {
+      runtimeState.resolvedConfig = deps.resolveConfiguration(configArgv(argv));
+      const serverConfig = runtimeState.resolvedConfig.config;
+      initLogger(serverConfig.logFormat, serverConfig.verbose);
+    }
+    return runtimeState.resolvedConfig;
+  };
+
+  const getDirectContext = (): Promise<DirectContext> => {
+    runtimeState.directContext ??= (async () => {
+      const { config } = getResolvedConfig();
+      if (config.logFile) {
+        logger.addSink(new FileSink(config.logFile));
+      }
+      const client = deps.createClient(buildAdtConfig(config) as AdtClientConfig);
+      const cachingLayer = await deps.createCache(config);
+      return { client, config, cachingLayer };
+    })();
+    return runtimeState.directContext;
+  };
+
+  const loadConfiguredPlugins = async (config: ServerConfig): Promise<void> => {
+    if (!runtimeState.pluginsLoaded) {
+      runtimeState.pluginsLoaded = config.plugins?.length
+        ? loadPlugins(config.plugins, getToolRegistry()).then(() => undefined)
+        : Promise.resolve();
+    }
+    await runtimeState.pluginsLoaded;
+  };
+
+  const dispose = async (): Promise<void> => {
+    if (!runtimeState.directContext) return;
+    try {
+      const context = await runtimeState.directContext;
+      context.cachingLayer?.cache.close();
+    } catch {
+      // Context construction failed, so there is no successfully opened cache to close.
+    }
+  };
+
+  return { state: runtimeState, deps, getResolvedConfig, getDirectContext, loadConfiguredPlugins, dispose };
+}
+
+/** Build a fresh Commander program. Importing this module never parses argv or exits. */
+export function createCliProgram(options: CreateCliProgramOptions = {}): Command {
+  const argv = options.argv ?? [];
+  const executionState = options.state ?? { exitCode: 0 };
+  const runtime = createRuntime(argv, executionState, options.dependencies ?? {});
+  const program = new Command();
+
+  program
+    .name('arc1')
+    .description('ARC-1 — MCP Server and CLI for SAP ABAP Systems')
+    .version(VERSION)
+    .exitOverride()
+    .allowUnknownOption(false)
+    .allowExcessArguments(false);
+
+  for (const spec of CLI_CONFIG_OPTION_SPECS) {
+    const value = spec.valueOptional ? `[${spec.valueName}]` : `<${spec.valueName}>`;
+    program.addOption(new Option(`--${spec.name} ${value}`, spec.description));
+  }
+
+  program
+    .command('serve', { isDefault: true })
+    .description('Start the MCP server (default when no subcommand is supplied)')
+    .allowUnknownOption(false)
+    .allowExcessArguments(false)
+    .action(async () => {
+      const { config, sources } = runtime.getResolvedConfig();
+      await runtime.deps.startServer(config, sources);
+      runtime.state.longLivedServerStarted = true;
+    });
+
+  addOutputOption(
+    program
+      .command('call <tool>')
+      .description('Call an MCP tool directly')
+      .option('--arg <key=value>', 'Tool argument; repeatable', collect, [])
+      .option('--json <source>', 'JSON args: inline object, file path, or "-" for stdin'),
+  ).action(async (tool: string, opts: { arg: string[]; json?: string; output: OutputMode }) => {
+    const args = buildArgs(opts);
+    runtime.state.exitCode = await runToolCall(runtime, tool, args, opts.output);
+  });
+
+  program
+    .command('tools [tool]')
+    .description("List advertised MCP tools, or show one tool's JSON input schema")
+    .action(async (tool: string | undefined) => {
+      const { config } = runtime.getResolvedConfig();
+      await runtime.loadConfiguredPlugins(config);
+      const pluginDefs = getToolRegistry()
+        .list()
+        .flatMap((entry) =>
+          entry.source === 'plugin' && entry.listing
+            ? [
+                {
+                  name: entry.name,
+                  description: entry.listing.description,
+                  inputSchema: entry.listing.inputSchema,
+                },
+              ]
+            : [],
+        );
+      const definitions = [...getConfiguredToolDefinitions(config), ...pluginDefs];
+      if (!tool) {
+        for (const definition of definitions) {
+          console.log(`${definition.name.padEnd(14)} ${definition.description.split('\n')[0].trim()}`);
+        }
+        return;
+      }
+      const match = definitions.find((definition) => definition.name.toLowerCase() === tool.toLowerCase());
+      if (!match) {
+        console.error(`Unknown or non-advertised tool: ${tool}`);
+        console.error(`Advertised tools: ${definitions.map((definition) => definition.name).join(', ')}`);
+        runtime.state.exitCode = 2;
+        return;
+      }
+      console.log(match.description);
+      console.log('\nInput schema:');
+      console.log(JSON.stringify(match.inputSchema, null, 2));
+    });
+
+  addOutputOption(
+    program
+      .command('read <type> <name>')
+      .description('Read an ABAP object via SAPRead')
+      .option('--flat', 'Return flat source for CLAS/INTF')
+      .option('--source-version <version>', 'Source version: active, inactive, or auto'),
+  ).action(async (type: string, name: string, opts: { flat?: boolean; sourceVersion?: string; output: OutputMode }) => {
+    const args: Record<string, unknown> = { type: type.toUpperCase(), name };
+    if (opts.flat) args.format = 'text';
+    if (opts.sourceVersion) args.version = opts.sourceVersion;
+    runtime.state.exitCode = await runToolCall(runtime, 'SAPRead', args, opts.output);
+  });
+
+  addOutputOption(program.command('source <type> <name>').description('Alias of `read --flat` (legacy)')).action(
+    async (type: string, name: string, opts: { output: OutputMode }) => {
+      runtime.state.exitCode = await runToolCall(
+        runtime,
+        'SAPRead',
+        { type: type.toUpperCase(), name, format: 'text' },
+        opts.output,
+      );
+    },
+  );
+
+  addOutputOption(program.command('activate <type> <name>').description('Activate an ADT object')).action(
+    async (type: string, name: string, opts: { output: OutputMode }) => {
+      runtime.state.exitCode = await runToolCall(
+        runtime,
+        'SAPActivate',
+        { action: 'activate', type: type.toUpperCase(), name },
+        opts.output,
+      );
+    },
+  );
+
+  addOutputOption(program.command('syntax <type> <name>').description('Run a remote syntax check')).action(
+    async (type: string, name: string, opts: { output: OutputMode }) => {
+      runtime.state.exitCode = await runToolCall(
+        runtime,
+        'SAPDiagnose',
+        { action: 'syntax', type: type.toUpperCase(), name },
+        opts.output,
+      );
+    },
+  );
+
+  addOutputOption(program.command('sql <query>').description('Execute an OpenSQL query through SAPQuery')).action(
+    async (query: string, opts: { output: OutputMode }) => {
+      runtime.state.exitCode = await runToolCall(runtime, 'SAPQuery', { sql: query }, opts.output);
+    },
+  );
+
+  addOutputOption(
+    program
+      .command('search <query>')
+      .description('Search for ABAP objects')
+      .option('--max <number>', 'Maximum results', '50'),
+  ).action(async (query: string, opts: { max: string; output: OutputMode }) => {
+    runtime.state.exitCode = await runToolCall(
+      runtime,
+      'SAPSearch',
+      { query, maxResults: Number(opts.max) },
+      opts.output,
+    );
+  });
+
+  program
+    .command('unittest <type> <name>')
+    .description('Run harmless-only ABAP Unit tests with deterministic CI exit semantics')
+    .option('--coverage', 'Collect statement, branch, and procedure coverage')
+    .option('--min-statement <percent>', 'Minimum statement coverage percentage')
+    .option('--min-branch <percent>', 'Minimum branch coverage percentage')
+    .option('--min-procedure <percent>', 'Minimum procedure coverage percentage')
+    .addOption(new Option('--format <format>', 'Report format').choices(['text', 'json', 'junit']).default('text'))
+    .option('--report-file <path>', 'Write the report to a file; use "-" for stdout')
+    .option('--allow-empty', 'Allow only a sound no-tests result to pass')
+    .option('--fail-on-skipped', 'Fail when any executed method is skipped')
+    .action(async (type: string, name: string, opts: UnitTestCommandOptions) => {
+      const coverage = {
+        ...(opts.minStatement !== undefined ? { statement: assertPercent(opts.minStatement, '--min-statement') } : {}),
+        ...(opts.minBranch !== undefined ? { branch: assertPercent(opts.minBranch, '--min-branch') } : {}),
+        ...(opts.minProcedure !== undefined ? { procedure: assertPercent(opts.minProcedure, '--min-procedure') } : {}),
+      };
+      const coverageRequested = opts.coverage === true || Object.keys(coverage).length > 0;
+      const outcome = await executeCiJson<AunitCiResult>(runtime, 'SAPDiagnose', {
+        action: 'unittest',
+        type: type.toUpperCase(),
+        name,
+        coverage: coverageRequested,
+        resultFormat: opts.format === 'junit' ? 'junit' : 'structured',
+      });
+      if (!outcome.ok) return;
+
+      const report =
+        opts.format === 'json'
+          ? JSON.stringify(outcome.value, null, 2)
+          : opts.format === 'junit'
+            ? outcome.value.junit
+            : formatAunitText(outcome.value);
+      if (typeof report !== 'string' || !report) {
+        console.error('ABAP Unit did not return the requested JUnit report.');
+        runtime.state.exitCode = 1;
+        return;
+      }
+      if (!(await emitCiReport(report, opts.reportFile))) {
+        runtime.state.exitCode = 1;
+        return;
+      }
+      runtime.state.exitCode = evaluateAunit(outcome.value, {
+        allowEmpty: opts.allowEmpty,
+        failOnSkipped: opts.failOnSkipped,
+        requireCoverage: opts.coverage === true,
+        coverage,
+      });
+    });
+
+  program
+    .command('atc <type> <name>')
+    .description('Run ATC with completeness evidence and CI thresholds')
+    .option('--variant <name>', 'ATC check variant; omit for the system default')
+    .option('--max-priority <priority>', 'Fail on findings with priority <= N (1=error, 2=warning, 3=info)', '1')
+    .addOption(new Option('--format <format>', 'Report format').choices(['text', 'json', 'checkstyle']).default('text'))
+    .option('--report-file <path>', 'Write the report to a file; use "-" for stdout')
+    .action(async (type: string, name: string, opts: AtcCommandOptions) => {
+      const maxPriority = assertAtcPriority(opts.maxPriority);
+      const outcome = await executeCiJson<AtcRunResult>(runtime, 'SAPDiagnose', {
+        action: 'atc',
+        type: type.toUpperCase(),
+        name,
+        ...(opts.variant ? { variant: opts.variant } : {}),
+        resultFormat: 'structured',
+      });
+      if (!outcome.ok) return;
+      const report =
+        opts.format === 'json'
+          ? JSON.stringify(outcome.value, null, 2)
+          : opts.format === 'checkstyle'
+            ? atcToCheckstyle(outcome.value)
+            : formatAtcText(outcome.value);
+      if (!(await emitCiReport(report, opts.reportFile))) {
+        runtime.state.exitCode = 1;
+        return;
+      }
+      runtime.state.exitCode = evaluateAtc(outcome.value, maxPriority);
+    });
+
+  program
+    .command('diff <type> <name>')
+    .description('Compare two SAP source versions with optional CI failure on differences')
+    .option('--from <version>', 'Old side: active, inactive, revision id, or revision URI', 'active')
+    .option('--to <version>', 'New side: active, inactive, revision id, or revision URI', 'inactive')
+    .option('--from-label <label>', 'Display label for the old side')
+    .option('--to-label <label>', 'Display label for the new side')
+    .option('--include <include>', 'Class include to compare')
+    .option('--group <group>', 'Function group for FUNC revisions')
+    .option('--check', 'Exit 1 when differences exist')
+    .option('--fail-on-diff', 'Alias for --check')
+    .addOption(new Option('--format <format>', 'Report format').choices(['text', 'json']).default('text'))
+    .option('--report-file <path>', 'Write the report to a file; use "-" for stdout')
+    .action(async (type: string, name: string, opts: DiffCommandOptions) => {
+      const outcome = await executeCiJson<StructuredDiffResult>(runtime, 'SAPRead', {
+        action: 'diff',
+        type: type.toUpperCase(),
+        name,
+        from: opts.from,
+        to: opts.to,
+        format: 'structured',
+        ...(opts.fromLabel ? { fromLabel: opts.fromLabel } : {}),
+        ...(opts.toLabel ? { toLabel: opts.toLabel } : {}),
+        ...(opts.include ? { include: opts.include } : {}),
+        ...(opts.group ? { group: opts.group } : {}),
+      });
+      if (!outcome.ok) return;
+      const report =
+        opts.format === 'json'
+          ? JSON.stringify(outcome.value, null, 2)
+          : outcome.value.identical
+            ? `No differences between ${outcome.value.fromLabel} and ${outcome.value.toLabel} for ${outcome.value.type} ${outcome.value.name}.`
+            : `Diff ${outcome.value.type} ${outcome.value.name}: ${outcome.value.fromLabel} → ${outcome.value.toLabel}  (+${outcome.value.added} -${outcome.value.removed})\n\n${outcome.value.diff}`;
+      if (!(await emitCiReport(report, opts.reportFile))) {
+        runtime.state.exitCode = 1;
+        return;
+      }
+      runtime.state.exitCode = evaluateDiff(outcome.value, opts.check === true || opts.failOnDiff === true);
+    });
+
+  program
+    .command('extract-cookies [args...]')
+    .description('Launch a browser and write a Netscape SAP cookie file')
+    .allowUnknownOption(true)
+    .allowExcessArguments(true)
+    .helpOption(false)
+    .action(async () => {
+      const index = argv.indexOf('extract-cookies');
+      const forwarded = index < 0 ? [] : [...argv.slice(index + 1)];
+      try {
+        await runtime.deps.runCookieExtractor(forwarded);
+      } catch (err) {
+        process.stderr.write(`${errorMessage(err)}\n`);
+        runtime.state.exitCode = 1;
+      }
+    });
+
+  program
+    .command('lint <file>')
+    .description('Lint a local ABAP source file with CI reports')
+    .addOption(new Option('--format <format>', 'Report format').choices(['text', 'json', 'checkstyle']).default('text'))
+    .option('--report-file <path>', 'Write the report to a file; use "-" for stdout')
+    .addOption(
+      new Option('--fail-on <severity>', 'Failure threshold')
+        .choices(['error', 'warning', 'info', 'none'])
+        .default('error'),
+    )
+    .action(async (file: string, opts: LintCommandOptions) => {
+      const source = readFileSync(file, 'utf-8');
+      const outcome = await executeCiJson<LintResult[]>(
+        runtime,
+        'SAPLint',
+        {
+          action: 'lint',
+          source,
+          name: file.replace(/\.abap$/, ''),
+        },
+        { localOnly: true },
+      );
+      if (!outcome.ok) return;
+      const lintExitCode = evaluateLint(outcome.value, opts.failOn);
+      if (lintExitCode === 3) {
+        console.error('SAPLint returned malformed or incomplete structured evidence; no report was emitted.');
+        runtime.state.exitCode = 3;
+        return;
+      }
+      const report =
+        opts.format === 'json'
+          ? JSON.stringify(outcome.value, null, 2)
+          : opts.format === 'checkstyle'
+            ? lintToCheckstyle(outcome.value, file)
+            : formatLintText(outcome.value);
+      if (!(await emitCiReport(report, opts.reportFile))) {
+        runtime.state.exitCode = 1;
+        return;
+      }
+      runtime.state.exitCode = lintExitCode;
+    });
+
+  program
+    .command('version')
+    .description('Show ARC-1 version')
+    .action(() => console.log(`ARC-1 v${VERSION}`));
+
+  const configCommand = program.command('config').description('Configuration inspection');
+  configCommand
+    .command('show')
+    .description('Show the resolved effective safety policy with source attribution')
+    .addOption(new Option('--format <format>', 'Output format').choices(['table', 'json']).default('table'))
+    .action((opts: { format: 'table' | 'json' }) => {
+      const { config, sources } = runtime.getResolvedConfig();
+      if (opts.format === 'json') {
+        console.log(
+          JSON.stringify(
+            {
+              effectivePolicy: {
+                allowWrites: config.allowWrites,
+                allowDataPreview: config.allowDataPreview,
+                allowFreeSQL: config.allowFreeSQL,
+                allowTransportWrites: config.allowTransportWrites,
+                allowGitWrites: config.allowGitWrites,
+                allowedPackages: config.allowedPackages,
+                allowedTransports: config.allowedTransports,
+                denyActions: config.denyActions,
+              },
+              sources,
+            },
+            null,
+            2,
+          ),
+        );
+        return;
+      }
+
+      console.log('ARC-1 effective authorization policy');
+      console.log('────────────────────────────────────');
+      const fields = [
+        ['allowWrites', config.allowWrites],
+        ['allowDataPreview', config.allowDataPreview],
+        ['allowFreeSQL', config.allowFreeSQL],
+        ['allowTransportWrites', config.allowTransportWrites],
+        ['allowGitWrites', config.allowGitWrites],
+        ['allowedPackages', JSON.stringify(config.allowedPackages)],
+        ['allowedTransports', JSON.stringify(config.allowedTransports)],
+      ] as const;
+      for (const [name, value] of fields) {
+        console.log(`  ${name.padEnd(22)} = ${String(value).padEnd(30)} [${formatConfigSource(sources[name])}]`);
+      }
+      console.log('\nDeny actions:');
+      if (config.denyActions.length === 0) {
+        console.log(`  (none) [${formatConfigSource(sources.denyActions)}]`);
+      } else {
+        for (const pattern of config.denyActions) {
+          console.log(`  ${pattern} [${formatConfigSource(sources.denyActions)}]`);
+        }
+      }
+    });
+
+  Object.defineProperty(program, '__arc1Dispose', { value: runtime.dispose });
+  Object.defineProperty(program, '__arc1Flush', { value: runtime.deps.flushLogger });
+  return program;
+}
+
+/**
+ * Execute a configured direct tool call and return the unrendered MCP result.
+ * Dedicated CI commands reuse this to apply domain-specific exit/report policy
+ * while retaining the normal dispatcher, validation, safety, and audit path.
+ */
+export async function executeCliToolCall(
+  runtime: CliRuntime,
+  toolName: string,
+  args: Record<string, unknown>,
+  options: { localOnly?: boolean } = {},
+): Promise<CliToolCallOutcome> {
+  const { config } = runtime.getResolvedConfig();
+  const localOnly = options.localOnly === true || isLocalOnlyCall(toolName, args);
+  await runtime.loadConfiguredPlugins(config);
+
+  if (!getToolRegistry().get(toolName)) {
+    return {
+      kind: 'usage',
+      message: `Unknown tool: ${toolName}`,
+      knownTools: getToolRegistry()
+        .list()
+        .map((entry) => entry.name),
+    };
+  }
+
+  if (!isDisabledWriteTool(toolName, config) && !localOnly) {
+    const unsupported = directModeError(config);
+    if (unsupported) return { kind: 'usage', message: unsupported };
+  }
+
+  const direct = await runtime.getDirectContext();
+  if (!localOnly && !isDisabledWriteTool(toolName, config)) {
+    const preflightStartedAt = Date.now();
+    const preflight = await runtime.deps.authPreflight(config, direct.client);
+    if (preflight.blocking) {
+      auditBlockedDirectPreflight(config, toolName, args, preflightStartedAt);
+      return { kind: 'tool', result: errorToolResult(formatStartupAuthPreflightToolError(preflight)) };
+    }
+
+    if (config.url && !shouldSkipFeatureProbe(toolName, args)) {
+      try {
+        await runtime.deps.probeFeatures(config, direct.client);
+      } catch (err) {
+        const featureKey = config.targetId ?? config.destinationName;
+        const emptyDiscovery = new Map<string, string[]>();
+        setCachedFeatures(undefined, featureKey);
+        setCachedDiscovery(emptyDiscovery, featureKey);
+        direct.client.http.setDiscoveryMap(emptyDiscovery);
+        logger.debug('Direct CLI feature probe failed; continuing with unknown feature evidence', {
+          error: errorMessage(err),
+        });
+      }
+    }
+  }
+
+  try {
+    const result = await runtime.deps.dispatchToolCall(
+      direct.client,
+      config,
+      toolName,
+      args,
+      undefined,
+      undefined,
+      direct.cachingLayer,
+    );
+    return { kind: 'tool', result };
+  } catch (err) {
+    return { kind: 'tool', result: errorToolResult(errorMessage(err)) };
+  }
+}
+
+async function runToolCall(
+  runtime: CliRuntime,
+  toolName: string,
+  args: Record<string, unknown>,
+  outputMode: OutputMode,
+): Promise<CliExitCode> {
+  const outcome = await executeCliToolCall(runtime, toolName, args);
+  if (outcome.kind === 'usage') {
+    console.error(outcome.message);
+    if (outcome.knownTools) console.error(`Known tools: ${outcome.knownTools.join(', ')}`);
+    return 2;
+  }
+  return renderToolResult(outcome.result, outputMode);
+}
+
+type CliProgramWithLifecycle = Command & {
+  __arc1Dispose?: () => Promise<void>;
+  __arc1Flush?: () => Promise<void>;
+};
+
+/** Parse one CLI invocation and return a deterministic process exit code. */
+export async function main(
+  argv: readonly string[] = process.argv.slice(2),
+  dependencies: CliDependencies = {},
+): Promise<number> {
+  const state: CliExecutionState = { exitCode: 0 };
+  const program = createCliProgram({ argv, dependencies, state }) as CliProgramWithLifecycle;
+  try {
+    assertNoRemovedCliFlags(configArgv(argv));
+    await program.parseAsync([...argv], { from: 'user' });
+    return state.exitCode;
+  } catch (err) {
+    if (err instanceof CommanderError) {
+      return err.exitCode === 0 ? 0 : 2;
+    }
+    // Configuration/argument preparation failures are usage errors. Tool and
+    // SAP failures are converted to ToolResult/exit 1 inside their action.
+    console.error(errorMessage(err));
+    return 2;
+  } finally {
+    await program.__arc1Dispose?.();
+    if (!state.longLivedServerStarted) {
+      await (program.__arc1Flush?.() ?? logger.flush());
+    }
+  }
+}
+
+// Keep `npm run cli -- ...` working without making imports execute a command.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  process.exitCode = await main(process.argv.slice(2));
+}

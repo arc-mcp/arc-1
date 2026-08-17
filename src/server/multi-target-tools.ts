@@ -44,6 +44,7 @@ const MULTI_TARGET_ACTION_RULES = new Map<
         'owner',
         'recursive',
         'removeLockedObjects',
+        'resultFormat',
         // `diff` is not in the multi-target action set, so its paging params would only
         // nudge the model toward an action this surface refuses.
         'offset',

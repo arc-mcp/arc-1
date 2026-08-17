@@ -173,7 +173,8 @@ Full reference: **[tools.md](tools.md)**
 
 ## Testing & CI
 
-- **3,474 unit tests** run locally without SAP access (`npm test`)
+- **Thousands of unit tests** run locally without SAP access (`npm test`); exact frozen-tree counts belong
+  in release/PR evidence rather than this long-lived landing page.
 - **Default integration + E2E lanes** run against the A4H 2025 SAP target on internal PRs and manual dispatch in GitHub Actions
 - **Manual slow SAP profiles** cover broad where-used, RAP full-stack, and recursive CTS release checks (`test:integration:slow`, `test:e2e:slow`, GitHub **SAP Slow Tests** workflow)
 - **BTP tests** are local-only (`npm run test:integration:btp`, `npm run test:integration:btp:smoke`)
@@ -188,7 +189,10 @@ Every capability is a separate positive opt-in flag:
 - **Nothing**: read / search / navigate / lint / diagnose work out of the box.
 - `SAP_ALLOW_DATA_PREVIEW=true` + `SAP_ALLOW_FREE_SQL=true`: enable named table preview and freestyle SQL.
 - `SAP_ALLOW_WRITES=true` + `SAP_ALLOWED_PACKAGES='$TMP,Z*'`: enable object writes to `$TMP` and `Z*` packages.
-- Add `SAP_ALLOW_TRANSPORT_WRITES=true` for CTS transport mutations, `SAP_ALLOW_GIT_WRITES=true` for abapGit / gCTS pushes.
+- Add `SAP_ALLOW_TRANSPORT_WRITES=true` for CTS transport mutations. Add
+  `SAP_ALLOW_GIT_WRITES=true` for gated abapGit mutations and SAP-side Git egress; gCTS reads are
+  available, but every gCTS mutation remains quarantined before HTTP. Some accepted abapGit actions
+  return error/incomplete when no authoritative postcondition exists—inspect state before retrying.
 
 The three-layer model (server flag + user scope + SAP authorization) is described in [authorization.md](authorization.md). Full flag reference: [configuration-reference.md](configuration-reference.md).
 

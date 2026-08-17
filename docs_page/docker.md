@@ -329,12 +329,12 @@ USER arc1
 
 #### HTTP/HTTPS proxy
 
-arc1 respects standard `HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY` environment variables. Pass them via `-e`:
-
-```bash
--e HTTPS_PROXY=http://proxy.corp.example:3128
--e NO_PROXY=localhost,127.0.0.1,internal-sap.corp
-```
+Direct ADT traffic does **not yet** honor the standard `HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY`
+environment variables; setting them on the container does not route ARC-1's SAP requests. Track
+[COMPAT-06](roadmap.md#compat-06) for native support. BTP Destination Service / Cloud Connector is a
+different, platform-managed connectivity path. Until COMPAT-06 lands, provide network routing outside
+ARC-1 (for example through the deployment platform) rather than assuming these environment variables
+are active.
 
 #### Connecting to a SAP system on the same Docker host
 

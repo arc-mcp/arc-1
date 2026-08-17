@@ -9,8 +9,10 @@
  */
 
 import { logger } from '../server/logger.js';
+import { type AunitRunResult, parseAunitRunResult, withAunitCoverage } from './aunit.js';
 import { AdtApiError, AdtSafetyError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
+import { canonicalHostRelativeAdtPath } from './path-safety.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import type {
   CdsTestCase,
@@ -25,16 +27,15 @@ import type {
   UnitTestResult,
   UnitTestRunResult,
 } from './types.js';
-import {
-  decodeXmlEntities,
-  escapeXmlAttr,
-  findDeepNodes,
-  getNestedArray,
-  type NamedItem,
-  parseAtcSystemCheckVariant,
-  parseNamedItems,
-  parseXml,
-} from './xml-parser.js';
+import { decodeXmlEntities, escapeXmlAttr, findDeepNodes, getNestedArray, parseXml } from './xml-parser.js';
+
+export {
+  type AtcFinding,
+  type AtcRunResult,
+  getAtcSystemDefaultVariant,
+  listAtcVariants,
+  runAtcCheck,
+} from './atc.js';
 
 /** Run syntax check on an ABAP object.
  *
@@ -553,12 +554,17 @@ export async function unpublishServiceBinding(
 }
 
 /** Run ABAP unit tests for an object */
+export interface DetailedUnitTestRunResult extends UnitTestRunResult {
+  /** Corrected CI model: only executed methods are tests; other alerts stay separate. */
+  structured: AunitRunResult;
+}
+
 export async function runUnitTests(
   http: AdtHttpClient,
   safety: SafetyConfig,
   objectUrl: string,
   opts: { coverage?: boolean } = {},
-): Promise<UnitTestRunResult> {
+): Promise<DetailedUnitTestRunResult> {
   checkOperation(safety, OperationType.Test, 'RunUnitTests');
 
   const body = `<?xml version="1.0" encoding="UTF-8"?>
@@ -569,7 +575,7 @@ export async function runUnitTests(
   <options>
     <uriType value="semantic"/>
     <testDeterminationStrategy sameProgram="true" assignedTests="false" publicApi="false"/>
-    <testRiskLevels harmless="true" dangerous="true" critical="true"/>
+    <testRiskLevels harmless="true" dangerous="false" critical="false"/>
     <testDurations short="true" medium="true" long="true"/>
   </options>
   <adtcore:objectSets xmlns:adtcore="http://www.sap.com/adt/core">
@@ -591,31 +597,44 @@ export async function runUnitTests(
   );
 
   const tests = parseUnitTestResults(resp.body);
-  if (!opts.coverage) return { tests };
+  const structured = parseAunitRunResult(resp.body);
+  if (!opts.coverage) return { tests, structured };
 
   // Coverage is a second step: the run result references a coverage measurement, which we POST
   // (with the same object set) to retrieve the statement/branch/procedure aggregate. The endpoint is
   // live-verified on 7.50 + 758 + 816 (2026-06-25); the best-effort fallback (missing URI / fetch
   // failure / no valid metrics → return tests with no coverage) is defensive for unknown systems.
   const measurementUri = extractCoverageMeasurementUri(resp.body);
-  if (!measurementUri) return { tests };
+  if (!measurementUri) {
+    return {
+      tests,
+      structured: withAunitCoverage(structured, undefined, 'measurement_not_reported'),
+    };
+  }
   try {
     const coverageQuery = `<?xml version="1.0" encoding="UTF-8"?>
 <cov:query xmlns:cov="http://www.sap.com/adt/cov"><adtcore:objectSets xmlns:adtcore="http://www.sap.com/adt/core"><objectSet kind="inclusive"><adtcore:objectReferences><adtcore:objectReference adtcore:uri="${escapeXmlAttr(objectUrl)}"/></adtcore:objectReferences></objectSet></adtcore:objectSets></cov:query>`;
     const measResp = await http.post(measurementUri, coverageQuery, 'application/xml', { Accept: 'application/xml' });
     const coverage = parseCoverageMeasurement(measResp.body);
-    return hasCoverageMetrics(coverage) ? { tests, coverage } : { tests };
+    return hasCoverageMetrics(coverage)
+      ? { tests, coverage, structured: withAunitCoverage(structured, coverage) }
+      : { tests, structured: withAunitCoverage(structured, undefined, 'no_valid_metrics') };
   } catch {
-    return { tests };
+    return { tests, structured: withAunitCoverage(structured, undefined, 'request_failed') };
   }
 }
 
 /** Extract the coverage-measurement URI from an abapunit testruns result run with coverage="true". */
 export function extractCoverageMeasurementUri(testrunsXml: string): string | null {
   const parsed = parseXml(testrunsXml);
+  const measurementPrefix = '/sap/bc/adt/runtime/traces/coverage/measurements/';
   for (const node of findDeepNodes(parsed, 'coverage')) {
     const uri = (node as Record<string, unknown>)['@_uri'];
-    if (typeof uri === 'string' && uri.includes('/coverage/measurements/')) return uri;
+    if (typeof uri !== 'string') continue;
+    const canonical = canonicalHostRelativeAdtPath(uri, measurementPrefix);
+    if (!canonical || canonical.includes('?')) continue;
+    const measurementId = canonical.slice(measurementPrefix.length);
+    if (/^[A-Za-z0-9_-]+$/.test(measurementId)) return canonical;
   }
   return null;
 }
@@ -699,85 +718,6 @@ export function parseCoverageMeasurement(xml: string): CoverageSummary {
 
 function hasCoverageMetrics(summary: CoverageSummary): boolean {
   return Boolean(summary.statement || summary.branch || summary.procedure);
-}
-
-/**
- * List the ATC check variants this system offers — the valid values for `runAtcCheck`'s `variant`.
- * GETs the ADT named-item feed `/sap/bc/adt/atc/variants?name=<pattern>` (`*` = all). The `name`
- * filter is a server-side prefix match, so an empty/omitted `name` returns an EMPTY list — always
- * pass a pattern. Read-only. Live-verified on 758 (184 variants) + 816 (215).
- */
-export async function listAtcVariants(http: AdtHttpClient, safety: SafetyConfig, filter = '*'): Promise<NamedItem[]> {
-  checkOperation(safety, OperationType.Read, 'ListAtcVariants');
-  const pattern = filter.trim() || '*';
-  const resp = await http.get(`/sap/bc/adt/atc/variants?name=${encodeURIComponent(pattern)}`, {
-    Accept: 'application/vnd.sap.adt.nameditems.v1+xml',
-  });
-  return parseNamedItems(resp.body).filter((item) => item.name);
-}
-
-/**
- * Read the system default ATC check variant from `/sap/bc/adt/atc/customizing` — the variant ATC
- * uses when none is passed. Returns undefined if the endpoint/property is absent. Read-only.
- */
-export async function getAtcSystemDefaultVariant(
-  http: AdtHttpClient,
-  safety: SafetyConfig,
-): Promise<string | undefined> {
-  checkOperation(safety, OperationType.Read, 'GetAtcCustomizing');
-  const resp = await http.get('/sap/bc/adt/atc/customizing', { Accept: 'application/xml' });
-  return parseAtcSystemCheckVariant(resp.body);
-}
-
-/** Run ATC check on an object */
-export async function runAtcCheck(
-  http: AdtHttpClient,
-  safety: SafetyConfig,
-  objectUrl: string,
-  variant?: string,
-): Promise<{ findings: AtcFinding[] }> {
-  checkOperation(safety, OperationType.Read, 'RunATCCheck');
-
-  // ATC is a three-step flow. The checks that actually run are selected by the *check
-  // variant bound to a worklist* — not by the run request. The previous implementation
-  // skipped worklist creation and POSTed straight to `/runs?worklistId=1`, so ATC executed
-  // no checks and always returned zero findings (and the `variant` argument was silently
-  // ignored — it only toggled `maximumVerdicts`). Verified live on A4H (S/4HANA 2023):
-  // a variant-bound worklist yields findings; the bare `worklistId=1` path does not.
-
-  // Step 1 — create a worklist bound to the check variant. Omitting `checkVariant` uses the
-  // system's configured default check variant (live-verified to produce findings). The
-  // response body is the plain-text worklist id.
-  const worklistPath = variant
-    ? `/sap/bc/adt/atc/worklists?checkVariant=${encodeURIComponent(variant)}`
-    : '/sap/bc/adt/atc/worklists';
-  const worklistResp = await http.post(worklistPath, '', 'application/xml', { Accept: 'text/plain' });
-  const worklistId = worklistResp.body.trim();
-  if (!worklistId) {
-    throw new AdtApiError('ATC worklist creation returned no worklist id; cannot run ATC checks.', 500, worklistPath);
-  }
-
-  // Step 2 — run the selected checks for the object set into that worklist.
-  const runBody = `<?xml version="1.0" encoding="UTF-8"?>
-<atc:run xmlns:atc="http://www.sap.com/adt/atc" maximumVerdicts="100">
-  <objectSets xmlns:adtcore="http://www.sap.com/adt/core">
-    <objectSet kind="inclusive">
-      <adtcore:objectReferences>
-        <adtcore:objectReference adtcore:uri="${escapeXmlAttr(objectUrl)}"/>
-      </adtcore:objectReferences>
-    </objectSet>
-  </objectSets>
-</atc:run>`;
-  await http.post(`/sap/bc/adt/atc/runs?worklistId=${encodeURIComponent(worklistId)}`, runBody, 'application/xml', {
-    Accept: 'application/xml',
-  });
-
-  // Step 3 — read the populated worklist with its findings.
-  const resultResp = await http.get(`/sap/bc/adt/atc/worklists/${encodeURIComponent(worklistId)}`, {
-    Accept: 'application/atc.worklist.v1+xml',
-  });
-
-  return { findings: parseAtcFindings(resultResp.body) };
 }
 
 /**
@@ -903,16 +843,6 @@ export async function applyFixProposal(
 }
 
 // ─── Parsers ────────────────────────────────────────────────────────
-
-export interface AtcFinding {
-  priority: number;
-  checkTitle: string;
-  messageTitle: string;
-  uri: string;
-  line: number;
-  quickfixInfo?: string;
-  hasQuickfix?: boolean;
-}
 
 /** Discriminated outcome from parsing an activation response. */
 export type ActivationOutcome =
@@ -1406,44 +1336,6 @@ function parseFixDeltas(xml: string): FixDelta[] {
   }
 
   return nodes.map(parseFixDeltaNode);
-}
-
-function parseAtcFindings(xml: string): AtcFinding[] {
-  const parsed = parseXml(xml);
-  const nodes = findDeepNodes(parsed, 'finding');
-
-  return nodes.map((f) => {
-    // Real ATC findings carry TWO uri-ish attributes: `adtcore:uri` (a findings-catalog
-    // URI with no source position) and `atcfinding:location` (the source URI with the
-    // `#start=line,col` fragment). Prefer `location` so the source line is extracted and
-    // the returned uri points at the actual code position. Hand-written fixtures that only
-    // set `uri="...#start=..."` still work via the fallback.
-    const rawUri = String(f['@_location'] ?? f['@_uri'] ?? '');
-    let line = 0;
-    const startIdx = rawUri.indexOf('#start=');
-    if (startIdx !== -1) {
-      const fragment = rawUri.slice(startIdx + '#start='.length);
-      const firstNum = Number.parseInt(fragment.split(',')[0]!, 10);
-      if (!Number.isNaN(firstNum)) line = firstNum;
-    }
-
-    const quickfixInfoRaw = f['@_quickfixInfo'];
-    const quickfixInfo = quickfixInfoRaw == null ? undefined : String(quickfixInfoRaw);
-    const quickfixNode = toNodeRecord(f.quickfixes);
-    const manual = String(quickfixNode?.['@_manual'] ?? 'false').toLowerCase() === 'true';
-    const automatic = String(quickfixNode?.['@_automatic'] ?? 'false').toLowerCase() === 'true';
-    const pseudo = String(quickfixNode?.['@_pseudo'] ?? 'false').toLowerCase() === 'true';
-
-    return {
-      priority: Number.parseInt(String(f['@_priority'] ?? '0'), 10),
-      checkTitle: String(f['@_checkTitle'] ?? ''),
-      messageTitle: String(f['@_messageTitle'] ?? ''),
-      uri: rawUri,
-      line,
-      quickfixInfo,
-      hasQuickfix: manual || automatic || pseudo,
-    };
-  });
 }
 
 /** Read the text content of a CDS test-case child element (string leaf or {#text} node). */

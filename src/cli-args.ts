@@ -1,7 +1,7 @@
 /**
  * Pure argument-parsing helpers for the `arc1 call` command.
- * Split out from cli.ts so tests can import without side effects
- * (cli.ts invokes commander's `program.parse()` on import).
+ * Split out for focused tests and reuse. `src/cli.ts` is also import-safe:
+ * parsing only starts when its exported `main()` is called.
  */
 
 import { readFileSync } from 'node:fs';
