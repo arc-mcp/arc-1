@@ -637,9 +637,9 @@ companion audit records the exact results and explicit live-test/ledger gaps. Fi
 ## 14. Ponytail simplification and final freeze
 
 The implementation received a deletion-first review using the Ponytail method after the security
-fixes landed. Relative to the reviewed PR commit, the pass removed 389 implementation/test lines,
+fixes landed. Relative to the reviewed PR commit, the pass removed 390 implementation/test lines,
 including 360 production lines. The evidence/documentation update adds 53 lines, leaving the complete
-working-tree change at net -336. It replaced the duplicate ABAP Unit XML model with one canonical
+working-tree change at net -337. It replaced the duplicate ABAP Unit XML model with one canonical
 result plus a legacy adapter, parsed ATC XML once, reduced transport convergence to explicit
 task/pre-parent/poll phases, deleted six unreachable gCTS mutation wrappers, consolidated Git output
 and audit traversal,
