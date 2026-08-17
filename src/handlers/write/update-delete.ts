@@ -260,11 +260,13 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
 export async function writeActionDelete(ctx: SapWriteContext): Promise<ToolResult> {
   const { client, type, name, transport, objectUrl, invalidateWrittenObject, enforcePackageForExistingObject } = ctx;
   await enforcePackageForExistingObject();
+  let lockSucceeded = false;
 
   // Lock, delete, unlock pattern (works for all types including SKTD) — auto-propagate lock corrNr if no explicit transport
   try {
     await client.http.withStatefulSession(async (session) => {
       const lock = await lockObject(session, client.safety, objectUrl, 'MODIFY', getCachedFeatures()?.abapRelease);
+      lockSucceeded = true;
       const effectiveTransport = transport ?? (lock.corrNr || undefined);
       try {
         await deleteObject(session, client.safety, objectUrl, lock.lockHandle, effectiveTransport);
@@ -277,18 +279,37 @@ export async function writeActionDelete(ctx: SapWriteContext): Promise<ToolResul
       }
     });
   } catch (err) {
-    if (
-      err instanceof AdtApiError &&
-      CDS_DEPENDENCY_SENSITIVE_TYPES.has(canonicalTablType(type)) &&
-      isDeleteDependencyError(err)
-    ) {
-      const hint = await buildCdsDeleteDependencyHint(client, type, name, objectUrl);
-      if (hint) {
-        // Attach via extraHint so the LLM-facing formatter renders it after
-        // DDIC diagnostics ("what happened → diagnostics → how to fix").
-        // Mutating err.message would surface the hint before diagnostics and
-        // leak into any other consumer of the same error instance.
-        err.extraHint = hint;
+    // NW 7.50 can issue a lock handle for an absent DDLS, so LOCK alone is not
+    // proof of existence. Confirm with a metadata read after the failed DELETE
+    // before overriding generic 404 semantics. This also closes the race between
+    // the package-gate metadata read and the mutation sequence.
+    if (err instanceof AdtApiError && err.isNotFound && lockSucceeded) {
+      try {
+        await client.getObjectMetadata(objectUrl);
+        err.resourceExistenceAfterDelete = 'exists';
+      } catch (probeErr) {
+        // Only a 404 from the follow-up probe establishes absence. Authorization,
+        // transport, and server failures leave existence unknown and must not turn
+        // the original DELETE response into a definite "object not found" claim.
+        err.resourceExistenceAfterDelete =
+          probeErr instanceof AdtApiError && probeErr.isNotFound ? 'absent' : 'unknown';
+      }
+    }
+    if (err instanceof AdtApiError && CDS_DEPENDENCY_SENSITIVE_TYPES.has(canonicalTablType(type))) {
+      const confirmedPostLockNotFound = Boolean(err.isNotFound && err.resourceExistenceAfterDelete === 'exists');
+      const inconclusivePostLockNotFound = Boolean(err.isNotFound && err.resourceExistenceAfterDelete === 'unknown');
+      const detectedDependency =
+        isDeleteDependencyError(err) && (!err.isNotFound || confirmedPostLockNotFound || inconclusivePostLockNotFound);
+      const inferredDdlsDependency = canonicalTablType(type) === 'DDLS' && confirmedPostLockNotFound;
+      if (detectedDependency || inferredDdlsDependency) {
+        const hint = await buildCdsDeleteDependencyHint(client, type, name, objectUrl);
+        if (hint) {
+          // Attach via extraHint so the LLM-facing formatter renders it after
+          // DDIC diagnostics ("what happened → diagnostics → how to fix").
+          // Mutating err.message would surface the hint before diagnostics and
+          // leak into any other consumer of the same error instance.
+          err.extraHint = hint;
+        }
       }
     }
     throw err;

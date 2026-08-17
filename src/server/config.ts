@@ -50,6 +50,11 @@ export const CLI_CONFIG_OPTION_SPECS: readonly CliConfigOptionSpec[] = [
   { name: 'client', valueName: 'client', description: 'SAP client' },
   { name: 'language', valueName: 'language', description: 'SAP logon and object master language' },
   { name: 'insecure', valueName: 'boolean', description: 'Disable SAP TLS verification (true/false)' },
+  {
+    name: 'gzip-datapreview-body',
+    valueName: 'boolean',
+    description: 'Gzip data-preview POST bodies for WAF compatibility (true/false)',
+  },
   { name: 'cookie-file', valueName: 'path', description: 'Netscape-format SAP cookie file' },
   { name: 'cookie-string', valueName: 'cookies', description: 'SAP Cookie header value' },
   { name: 'transport', valueName: 'transport', description: 'MCP transport: stdio or http-streamable' },
@@ -502,6 +507,12 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
   config.client = resolveStr('client', 'SAP_CLIENT', '100', 'client');
   config.language = resolveStr('language', 'SAP_LANGUAGE', 'EN', 'language');
   config.insecure = resolveBool('insecure', 'SAP_INSECURE', false, 'insecure');
+  config.gzipDataPreviewBody = resolveBool(
+    'gzip-datapreview-body',
+    'SAP_GZIP_DATAPREVIEW_BODY',
+    false,
+    'gzipDataPreviewBody',
+  );
 
   // ── Cookie Auth ────────────────────────────────────────────────────
   config.cookieFile = resolveOptionalStr('cookie-file', 'SAP_COOKIE_FILE', 'cookieFile');

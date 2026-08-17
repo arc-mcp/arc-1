@@ -76,6 +76,14 @@ export class AdtApiError extends AdtError {
    */
   extraHint?: string;
 
+  /**
+   * Handler-owned result of the metadata probe after a failed post-lock DELETE.
+   * Only a probe 404 proves absence; other probe failures are explicitly unknown.
+   * Lets generic formatting avoid claiming an object is absent without teaching it
+   * the handler's request sequence.
+   */
+  resourceExistenceAfterDelete?: 'exists' | 'absent' | 'unknown';
+
   constructor(
     message: string,
     public readonly statusCode: number,

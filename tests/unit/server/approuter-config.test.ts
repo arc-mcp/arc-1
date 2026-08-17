@@ -15,6 +15,9 @@ describe('BTP UI AppRouter config', () => {
     expect(packageJson.overrides).toMatchObject({ axios: '1.18.0', 'body-parser': '2.3.0' });
     expect(packageLock.packages['node_modules/axios']?.version).toBe('1.18.0');
     expect(packageLock.packages['node_modules/body-parser']?.version).toBe('2.3.0');
+    // AppRouter pins its own patched ws (>= 7.5.10); never override it to a different major.
+    expect(packageJson.overrides.ws).toBeUndefined();
+    expect(packageLock.packages['node_modules/@sap/approuter/node_modules/ws']?.version).toBe('7.5.11');
   });
 
   it('requires admin scope for all UI routes', async () => {

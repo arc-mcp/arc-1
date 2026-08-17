@@ -476,6 +476,108 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toContain('SAP_CLIENT');
     });
+
+    it.each([
+      [
+        '/sap/bc/adt/datapreview/freestyle?rowNumber=10',
+        'SAPQuery',
+        { sql: "SELECT MANDT FROM T000 WHERE MANDT = '001'" },
+      ],
+      [
+        '/sap/bc/adt/datapreview/ddic?rowNumber=10&ddicEntityName=T000',
+        'SAPRead',
+        { type: 'TABLE_CONTENTS', name: 'T000', sqlFilter: "MANDT = '001'" },
+      ],
+    ])('gives cautious WAF guidance for a bare data-preview 403 at %s', async (path, tool, args) => {
+      mockFetch.mockReset();
+      mockFetch.mockRejectedValueOnce(new AdtApiError('Forbidden', 403, path, 'Forbidden'));
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, tool, args);
+      const text = result.content[0]?.text ?? '';
+
+      expect(result.isError).toBe(true);
+      expect(text).toMatch(/possible upstream WAF|possible.*body inspection/i);
+      expect(text).toContain('rejected CSRF/session pair');
+      expect(text).toContain('gateway logs');
+      expect(text).toContain('scoped WAF rule exclusion');
+      expect(text).toContain('SAP_GZIP_DATAPREVIEW_BODY');
+      expect(text).not.toContain('SAP_PASSWORD');
+    });
+
+    it('keeps the cautious WAF guidance in minimal-error mode without exposing the response body', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockRejectedValueOnce(
+        new AdtApiError('403 Forbidden', 403, '/sap/bc/adt/datapreview/freestyle?rowNumber=10', '403 Forbidden'),
+      );
+
+      const result = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, minimalErrors: true }, 'SAPQuery', {
+        sql: "SELECT MANDT FROM T000 WHERE MANDT = '001'",
+      });
+      const text = result.content[0]?.text ?? '';
+
+      expect(result.isError).toBe(true);
+      expect(text).toMatch(/possible upstream WAF|possible.*body inspection/i);
+      expect(text).toContain('request ID');
+      expect(text).toContain('gateway logs');
+      expect(text).toContain('rejected CSRF/session pair');
+      expect(text).toContain('SAP_GZIP_DATAPREVIEW_BODY');
+      expect(text).not.toContain('403 Forbidden');
+      expect(text).not.toContain('SAP_PASSWORD');
+    });
+
+    it('does not label a structured SAP authorization fault on data preview as a WAF', async () => {
+      const xml =
+        '<exc:exception><type id="ExceptionNotAuthorized"/><localizedMessage>No authorization for S_TABU_NAM</localizedMessage></exc:exception>';
+      mockFetch.mockReset();
+      mockFetch.mockRejectedValueOnce(
+        new AdtApiError('Forbidden', 403, '/sap/bc/adt/datapreview/freestyle?rowNumber=10', xml),
+      );
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPQuery', {
+        sql: "SELECT MANDT FROM T000 WHERE MANDT = '001'",
+      });
+      const text = result.content[0]?.text ?? '';
+
+      expect(text).toContain('SU53');
+      expect(text).not.toContain('WAF');
+      expect(text).not.toContain('SAP_GZIP_DATAPREVIEW_BODY');
+    });
+
+    it('keeps normal authorization guidance for an unfiltered, bodyless DDIC preview 403', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockRejectedValueOnce(
+        new AdtApiError('Forbidden', 403, '/sap/bc/adt/datapreview/ddic?rowNumber=10&ddicEntityName=T000', 'Forbidden'),
+      );
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'TABLE_CONTENTS',
+        name: 'T000',
+      });
+      const text = result.content[0]?.text ?? '';
+
+      expect(text).toContain('Authorization error');
+      expect(text).not.toContain('WAF');
+      expect(text).not.toContain('SAP_GZIP_DATAPREVIEW_BODY');
+    });
+
+    it.each([
+      [403, '/sap/bc/adt/programs/programs/ZTEST/source/main'],
+      [403, '/sap/bc/adt/datapreview/freestyle-extra'],
+      [404, '/sap/bc/adt/datapreview/freestyle'],
+      [500, '/sap/bc/adt/datapreview/freestyle'],
+    ])('does not add WAF guidance for status %s at %s', async (status, path) => {
+      mockFetch.mockReset();
+      mockFetch.mockRejectedValueOnce(new AdtApiError('Forbidden', status, path, 'Forbidden'));
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'PROG',
+        name: 'ZTEST',
+      });
+      const text = result.content[0]?.text ?? '';
+
+      expect(text).not.toContain('WAF');
+      expect(text).not.toContain('SAP_GZIP_DATAPREVIEW_BODY');
+    });
   });
 
   describe('SAP domain error classification hints', () => {

@@ -20,6 +20,7 @@ export function logEffectivePolicy(config: ServerConfig, sources: Record<string,
     allowFreeSQL: config.allowFreeSQL,
     allowTransportWrites: config.allowTransportWrites,
     allowGitWrites: config.allowGitWrites,
+    gzipDataPreviewBody: config.gzipDataPreviewBody,
     allowedPackages: config.allowedPackages,
     allowedTransports: config.allowedTransports,
     denyActionsCount: config.denyActions.length,
@@ -35,7 +36,7 @@ export function logEffectivePolicy(config: ServerConfig, sources: Record<string,
     `effective safety: writes=${yn(config.allowWrites)} data=${yn(config.allowDataPreview)} ` +
     `sql=${yn(config.allowFreeSQL)} packages=[${config.allowedPackages.join(',')}] ` +
     `transports=${yn(config.allowTransportWrites)} git=${yn(config.allowGitWrites)} ` +
-    `denyActions=${config.denyActions.length}`;
+    `gzipDataPreview=${yn(config.gzipDataPreviewBody)} denyActions=${config.denyActions.length}`;
   logger.info(line);
 
   // Per-field source attribution — debug-level detail for "where did this value come from?"
@@ -54,6 +55,7 @@ export function logEffectivePolicy(config: ServerConfig, sources: Record<string,
     'allowFreeSQL',
     'allowTransportWrites',
     'allowGitWrites',
+    'gzipDataPreviewBody',
     'allowedPackages',
     'allowedTransports',
     'denyActions',
@@ -72,7 +74,8 @@ export function logEffectivePolicy(config: ServerConfig, sources: Record<string,
  *   1. allowTransportWrites=true + allowWrites=false — transport mutations blocked anyway.
  *   2. allowGitWrites=true + allowWrites=false — same for git.
  *   3. allowedPackages is non-default but allowWrites=false — restriction is unreachable.
- *   4. denyActions entry already gated by a server flag (informational only).
+ *   4. gzipDataPreviewBody=true while both data-preview gates are false — encoding is unreachable.
+ *   5. denyActions entry already gated by a server flag (informational only).
  */
 export function detectContradictions(config: ServerConfig): string[] {
   const warnings: string[] = [];
@@ -83,6 +86,12 @@ export function detectContradictions(config: ServerConfig): string[] {
 
   if (config.allowGitWrites && !config.allowWrites) {
     warnings.push('allowGitWrites=true has no effect when allowWrites=false; git writes will be blocked.');
+  }
+
+  if (config.gzipDataPreviewBody && !config.allowDataPreview && !config.allowFreeSQL) {
+    warnings.push(
+      'gzipDataPreviewBody=true has no effect when allowDataPreview=false and allowFreeSQL=false; no data-preview request body can reach the transport.',
+    );
   }
 
   // Default allowedPackages is ['$TMP']. Anything else is a configured restriction

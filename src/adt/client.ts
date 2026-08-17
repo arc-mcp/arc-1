@@ -383,6 +383,7 @@ export class AdtClient {
       client: config.client,
       language: config.language,
       insecure: config.insecure,
+      gzipDataPreviewBody: config.gzipDataPreviewBody,
       cookies: config.cookies,
       cookieFile: config.cookieFile,
       cookieString: config.cookieString,

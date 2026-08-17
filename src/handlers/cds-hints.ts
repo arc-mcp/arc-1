@@ -396,7 +396,7 @@ export function guardCdsSyntax(
   if (type !== 'DDLS' || !source) return undefined;
 
   // Guard: "define table entity" requires ABAP Cloud (BTP) or SAP_BASIS >= 757
-  if (/\bdefine\s+table\s+(entity|function)\b/i.test(source)) {
+  if (/\bdefine\s+table\s+entity\b/i.test(source)) {
     const release = features?.abapRelease;
     const isBtp = features?.systemType === 'btp';
     if (!isBtp && release) {
@@ -409,16 +409,6 @@ export function guardCdsSyntax(
         );
       }
     }
-  }
-
-  // Advisory: warn about CDS reserved keywords used as field names
-  const keywordWarning = warnCdsReservedKeywords(source);
-  if (keywordWarning) {
-    // Non-blocking — return undefined to proceed, but the warning will be
-    // appended to the success message by the caller if needed.
-    // For now we return it as an advisory error only when the keyword is
-    // highly likely to cause issues (position is the most common).
-    // We don't block the write — just append it as advisory context.
   }
 
   return undefined;

@@ -31,6 +31,9 @@ function buildReadOnlyRuntimeConfig(
     url: '',
     client: target?.client ?? base.client,
     language: target?.language ?? base.language,
+    // Wire representation only — safe to inherit. `insecure` deliberately is NOT:
+    // multi-target never disables TLS verification, per-target or otherwise.
+    gzipDataPreviewBody: base.gzipDataPreviewBody,
     transport: 'http-streamable',
     httpAddr: base.httpAddr,
     allowWrites: safety.allowWrites,

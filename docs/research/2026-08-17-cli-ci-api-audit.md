@@ -676,3 +676,8 @@ lint, file and schema budgets, authorization-policy validation, strict MkDocs, d
 parity, built and packed npm smoke, and `git diff --check`. An independent focused cross-review passed
 603/603 security/transport/path tests and returned GO. No additional SAP or Git mutation was sent for
 this code-only simplification pass.
+
+The subsequent current-`main` integration combined its opt-in data-preview gzip body with this PR's
+deadline propagation as `wireBody, options` on every send and retry. The strict registry also gained
+the new gzip CLI flag. The integrated tree passed 5,246 tests across 177 files, with `http.ts` at
+1,494 lines after isolating the 20-line wire-body transformation.

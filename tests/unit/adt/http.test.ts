@@ -1,3 +1,4 @@
+import { gunzipSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdtApiError, AdtNetworkError } from '../../../src/adt/errors.js';
 import { requestContext } from '../../../src/server/context.js';
@@ -47,6 +48,10 @@ function fetchHeaders(callIndex = 0): Record<string, string> {
   return (fetchOptions(callIndex).headers as Record<string, string>) ?? {};
 }
 
+function fetchBody(callIndex = 0): unknown {
+  return fetchOptions(callIndex).body;
+}
+
 /** Helper to create a mock undici Client response (for proxy tests) */
 function mockClientResponse(statusCode: number, body: string, headers: Record<string, string> = {}) {
   return {
@@ -64,6 +69,10 @@ function clientRequestHeaders(callIndex = 0): Record<string, string> {
 /** Helper to get the path from a Client.request call */
 function clientRequestPath(callIndex = 0): string {
   return mockClientRequest.mock.calls[callIndex]?.[0]?.path ?? '';
+}
+
+function clientRequestBody(callIndex = 0): unknown {
+  return mockClientRequest.mock.calls[callIndex]?.[0]?.body;
 }
 
 describe('AdtHttpClient', () => {
@@ -419,6 +428,117 @@ describe('AdtHttpClient', () => {
         const session = /SAP_SESSIONID_A4H_001=(S\d)/.exec(sent.cookie ?? '')?.[1];
         expect(sent.token).toBe(`TOKEN-${session}`);
       }
+    });
+  });
+
+  describe('data-preview request gzip compatibility', () => {
+    const sql = "SELECT MTEXT FROM T000 WHERE MTEXT = 'München'";
+
+    function clientWithToken(config: AdtHttpConfig): InstanceType<typeof AdtHttpClient> {
+      const client = new AdtHttpClient(config);
+      (client as unknown as { csrfToken: string }).csrfToken = 'TOKEN';
+      return client;
+    }
+
+    it('keeps data-preview bodies plain by default', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok'));
+
+      const client = clientWithToken(getDefaultConfig());
+      await client.post('/sap/bc/adt/datapreview/freestyle?rowNumber=10', sql, 'text/plain');
+
+      expect(fetchBody(0)).toBe(sql);
+      expect(fetchHeaders(0)['Content-Encoding']).toBeUndefined();
+    });
+
+    it('gzip-encodes an exact freestyle POST and preserves UTF-8 text', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok'));
+
+      const client = clientWithToken({ ...getDefaultConfig(), gzipDataPreviewBody: true });
+      await client.post('/sap/bc/adt/datapreview/freestyle?rowNumber=10', sql, 'text/plain', {
+        'content-encoding': 'br',
+      });
+
+      const body = fetchBody(0);
+      expect(Buffer.isBuffer(body)).toBe(true);
+      expect(gunzipSync(body as Buffer).toString('utf8')).toBe(sql);
+      expect(fetchHeaders(0)['Content-Encoding']).toBe('gzip');
+      expect(fetchHeaders(0)['content-encoding']).toBeUndefined();
+    });
+
+    it('gzip-encodes a filtered DDIC data-preview POST', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok'));
+
+      const client = clientWithToken({ ...getDefaultConfig(), gzipDataPreviewBody: true });
+      await client.post('/sap/bc/adt/datapreview/ddic?rowNumber=10&ddicEntityName=T000', "MANDT = '001'", 'text/plain');
+
+      const body = fetchBody(0);
+      expect(Buffer.isBuffer(body)).toBe(true);
+      expect(gunzipSync(body as Buffer).toString('utf8')).toBe("MANDT = '001'");
+      expect(fetchHeaders(0)['Content-Encoding']).toBe('gzip');
+    });
+
+    it.each([
+      ['empty DDIC body', '/sap/bc/adt/datapreview/ddic?rowNumber=10', ''],
+      ['metadata child', '/sap/bc/adt/datapreview/freestyle/metadata', sql],
+      ['look-alike suffix', '/sap/bc/adt/datapreview/freestyle-extra', sql],
+      ['unrelated POST', '/sap/bc/adt/repository/informationsystem/search', sql],
+    ])('does not gzip %s', async (_label, path, body) => {
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok'));
+
+      const client = clientWithToken({ ...getDefaultConfig(), gzipDataPreviewBody: true });
+      await client.post(path, body, 'text/plain');
+
+      expect(fetchBody(0)).toBe(body);
+      expect(fetchHeaders(0)['Content-Encoding']).toBeUndefined();
+    });
+
+    it('does not add content encoding to an exact data-preview GET', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok'));
+
+      const client = new AdtHttpClient({ ...getDefaultConfig(), gzipDataPreviewBody: true });
+      await client.get('/sap/bc/adt/datapreview/freestyle');
+
+      expect(fetchHeaders(0)['Content-Encoding']).toBeUndefined();
+      expect(fetchBody(0)).toBeUndefined();
+    });
+
+    it('reuses the exact gzip bytes and header after a 403 CSRF refresh', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(403, 'Forbidden'));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'NEW_TOKEN' }));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok'));
+
+      const client = clientWithToken({ ...getDefaultConfig(), gzipDataPreviewBody: true });
+      await client.post('/sap/bc/adt/datapreview/freestyle', sql, 'text/plain');
+
+      expect(mockFetch).toHaveBeenCalledTimes(3);
+      expect(fetchOptions(0).method).toBe('POST');
+      expect(fetchOptions(1).method).toBe('HEAD');
+      expect(fetchOptions(2).method).toBe('POST');
+      expect(Buffer.isBuffer(fetchBody(0))).toBe(true);
+      expect(fetchBody(2)).toEqual(fetchBody(0));
+      expect(fetchHeaders(0)['Content-Encoding']).toBe('gzip');
+      expect(fetchHeaders(2)['Content-Encoding']).toBe('gzip');
+    });
+
+    it('preserves the gzip body and header through the BTP proxy transport', async () => {
+      mockClientRequest.mockResolvedValueOnce(mockClientResponse(200, 'ok'));
+
+      const client = clientWithToken({
+        ...getDefaultConfig(),
+        gzipDataPreviewBody: true,
+        btpProxy: {
+          protocol: 'http',
+          host: 'proxy.example.com',
+          port: 20003,
+          getProxyToken: async () => 'proxy-token',
+        },
+      });
+      await client.post('/sap/bc/adt/datapreview/freestyle', sql, 'text/plain');
+
+      const body = clientRequestBody(0);
+      expect(Buffer.isBuffer(body)).toBe(true);
+      expect(gunzipSync(body as Buffer).toString('utf8')).toBe(sql);
+      expect(clientRequestHeaders(0)['Content-Encoding']).toBe('gzip');
     });
   });
 

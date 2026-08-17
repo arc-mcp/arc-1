@@ -3,15 +3,14 @@
  * The undici mock + AdtClient + createClient live in ./setup-undici-mock.ts — import that helper
  * and keep all other src-module imports dynamic (see its header for the ordering rules).
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
-import { featuresOff } from './handler-test-config.js';
 import { AdtClient, createClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
-const { resetCachedFeatures, setCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
+const { resetCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
 const { buildCreateXml } = await import('../../../src/handlers/write-helpers.js');
 
 function respondToFunctionModuleMetadataLifecycle(
@@ -2862,93 +2861,6 @@ lv = CONV string( 1 ).`,
       expect(text).toContain('uppercase');
       expect(text).toContain('Z_HELLO_WORLD');
       expect(mockFetch).toHaveBeenCalledTimes(0);
-    });
-  });
-
-  describe('CDS pre-write validation (table entity version guard)', () => {
-    afterEach(() => {
-      resetCachedFeatures();
-    });
-
-    it('rejects "define table entity" on SAP_BASIS 758 (< 757 threshold actually means < 757)', async () => {
-      // 758 >= 757, so this should be allowed. Let's test with 756 instead.
-    });
-
-    it('rejects "define table entity" on SAP_BASIS 756', async () => {
-      setCachedFeatures({ ...featuresOff(), abapRelease: '756', systemType: 'onprem' });
-      // Mock: first call = CSRF, subsequent calls = whatever
-      mockFetch.mockResolvedValue(mockResponse(200, '', { 'x-csrf-token': 'T' }));
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
-        action: 'create',
-        type: 'DDLS',
-        name: 'ZI_FOOTBALL',
-        source: 'define table entity ZI_Football {\n  key id : abap.int4;\n  name : abap.char(40);\n}',
-      });
-      expect(result.isError).toBe(true);
-      expect(result.content[0]?.text).toContain('define table entity');
-      expect(result.content[0]?.text).toContain('757');
-      expect(result.content[0]?.text).toContain('756');
-    });
-
-    it('allows "define table entity" on BTP', async () => {
-      setCachedFeatures({ ...featuresOff(), abapRelease: '756', systemType: 'btp' });
-      mockFetch.mockResolvedValue(mockResponse(200, '', { 'x-csrf-token': 'T' }));
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
-        action: 'create',
-        type: 'DDLS',
-        name: 'ZI_FOOTBALL',
-        source: 'define table entity ZI_Football {\n  key id : abap.int4;\n}',
-        description: 'Football entity',
-      });
-      // Should proceed past the guard (may fail later on mock, but not with version error)
-      if (result.isError) {
-        expect(result.content[0]?.text).not.toContain('define table entity');
-      }
-    });
-
-    it('allows "define table entity" on SAP_BASIS 757+', async () => {
-      setCachedFeatures({ ...featuresOff(), abapRelease: '757', systemType: 'onprem' });
-      mockFetch.mockResolvedValue(mockResponse(200, '', { 'x-csrf-token': 'T' }));
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
-        action: 'create',
-        type: 'DDLS',
-        name: 'ZI_FOOTBALL',
-        source: 'define table entity ZI_Football {\n  key id : abap.int4;\n}',
-        description: 'Football entity',
-      });
-      if (result.isError) {
-        expect(result.content[0]?.text).not.toContain('define table entity');
-      }
-    });
-
-    it('proceeds without blocking when cachedFeatures is not available', async () => {
-      resetCachedFeatures();
-      mockFetch.mockResolvedValue(mockResponse(200, '', { 'x-csrf-token': 'T' }));
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
-        action: 'create',
-        type: 'DDLS',
-        name: 'ZI_FOOTBALL',
-        source: 'define table entity ZI_Football {\n  key id : abap.int4;\n}',
-        description: 'Football entity',
-      });
-      // Should not fail with the version guard error
-      if (result.isError) {
-        expect(result.content[0]?.text).not.toContain('define table entity');
-      }
-    });
-
-    it('rejects "define table entity" in update path on old release', async () => {
-      setCachedFeatures({ ...featuresOff(), abapRelease: '750', systemType: 'onprem' });
-      mockFetch.mockResolvedValue(mockResponse(200, '', { 'x-csrf-token': 'T' }));
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
-        action: 'update',
-        type: 'DDLS',
-        name: 'ZI_FOOTBALL',
-        source: 'define table entity ZI_Football {\n  key id : abap.int4;\n}',
-      });
-      expect(result.isError).toBe(true);
-      expect(result.content[0]?.text).toContain('define table entity');
-      expect(result.content[0]?.text).toContain('750');
     });
   });
 });

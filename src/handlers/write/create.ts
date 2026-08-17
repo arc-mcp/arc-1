@@ -1004,6 +1004,18 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
       // Pre-validate source with lint BEFORE creating the object to avoid orphaned objects.
       // Metadata objects (DOMA/DTEL) are XML-only and intentionally skip source lint.
       if (!metadataObject && objSource) {
+        const cdsGuard = guardCdsSyntax(objType, objSource, getCachedFeatures());
+        if (cdsGuard) {
+          results.push({
+            type: objType,
+            name: objName,
+            packageName: objPackage,
+            status: 'failed',
+            error: cdsGuard.content[0].text,
+          });
+          break;
+        }
+
         const preflightWarnings = runRapPreflightValidation(
           objSource,
           objType,

@@ -660,3 +660,8 @@ rejected before HTTP.
 The final simplified tree passed 5,215 tests across 176 files, all three TypeScript typechecks, full
 Biome lint, file/schema budgets, policy validation, strict documentation, built and packed npm smoke,
 documentation/schema parity, and `git diff --check`. Independent Ponytail cross-review returned GO.
+
+After this review, current `main` was merged without weakening either side: data-preview gzip wire
+bodies retain the CLI request deadline on every initial/retry/proxy path, and the new gzip option is
+registered in the strict CLI option table. The integrated tree passed 5,246 tests across 177 files;
+`http.ts` remains below its ratchet at 1,494 lines after extracting the 20-line wire-body policy.

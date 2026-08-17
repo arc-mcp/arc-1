@@ -32,6 +32,8 @@ export interface ServerConfig {
   client: string;
   language: string;
   insecure: boolean;
+  /** Gzip non-empty ADT data-preview POST bodies for approved WAF compatibility. */
+  gzipDataPreviewBody: boolean;
 
   // --- Cookie Authentication ---
   cookieFile?: string;
@@ -249,6 +251,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
   client: '100',
   language: 'EN',
   insecure: false,
+  gzipDataPreviewBody: false,
   transport: 'stdio',
   httpAddr: '0.0.0.0:8080',
   serverName: 'arc-1',

@@ -43,6 +43,7 @@ import {
   sleepWithinRequestBudget,
   throwIfRequestCancelled,
 } from './http-deadline.js';
+import { prepareDataPreviewWireBody } from './http-wire-body.js';
 import type { Semaphore } from './semaphore.js';
 
 export type { AdtRequestOptions } from './http-deadline.js';
@@ -122,6 +123,8 @@ export interface AdtHttpConfig {
   client?: string;
   language?: string;
   insecure?: boolean;
+  /** Gzip non-empty data-preview POST bodies for approved WAF compatibility. */
+  gzipDataPreviewBody?: boolean;
   cookies?: Record<string, string>;
   /** Path to cookie file — enables hot-reload on stale auth */
   cookieFile?: string;
@@ -414,6 +417,9 @@ export class AdtHttpClient {
       headers['Content-Type'] = contentType;
     }
 
+    // Keep `body` as the logical plaintext for debug audit fields; only `wireBody` is sent.
+    const wireBody = prepareDataPreviewWireBody(this.config.gzipDataPreviewBody === true, method, path, body, headers);
+
     // Auth: Bearer token (BTP ABAP) or Basic Auth (on-premise)
     this.applyAuthHeader(headers);
     if (this.config.bearerTokenProvider) {
@@ -464,7 +470,7 @@ export class AdtHttpClient {
     let retried429 = false;
 
     try {
-      let response = await this.doFetch(url, method, headers, body, options);
+      let response = await this.doFetch(url, method, headers, wireBody, options);
       let responseBody = await response.text();
 
       // Persist any Set-Cookie headers from the response
@@ -509,7 +515,7 @@ export class AdtHttpClient {
             delete headers.Cookie;
           }
 
-          const retryResp = await this.doFetch(url, method, headers, body, options);
+          const retryResp = await this.doFetch(url, method, headers, wireBody, options);
           const retryBody = await retryResp.text();
           this.storeCookies(retryResp);
           const retryResult = this.handleResponse(retryResp.status, retryResp.headers, retryBody, path);
@@ -554,7 +560,7 @@ export class AdtHttpClient {
 
         await sleepWithinRequestBudget(jitterMs, options);
 
-        const retryResp = await this.doFetch(url, method, headers, body, options);
+        const retryResp = await this.doFetch(url, method, headers, wireBody, options);
         const retryBody = await retryResp.text();
         this.storeCookies(retryResp);
 
@@ -598,7 +604,7 @@ export class AdtHttpClient {
 
         await sleepWithinRequestBudget(jitterMs, options);
 
-        const retryResp = await this.doFetch(url, method, headers, body, options);
+        const retryResp = await this.doFetch(url, method, headers, wireBody, options);
         const retryBody = await retryResp.text();
         this.storeCookies(retryResp);
 
@@ -666,7 +672,7 @@ export class AdtHttpClient {
           delete headers.Cookie;
         }
 
-        response = await this.doFetch(url, method, headers, body, options);
+        response = await this.doFetch(url, method, headers, wireBody, options);
         responseBody = await response.text();
         this.storeCookies(response);
 
@@ -702,7 +708,7 @@ export class AdtHttpClient {
         if (csrfRefreshedCookieHeader) {
           headers.Cookie = csrfRefreshedCookieHeader;
         }
-        const retryResponse = await this.doFetch(url, method, headers, body, options);
+        const retryResponse = await this.doFetch(url, method, headers, wireBody, options);
         const retryBody = await retryResponse.text();
         this.storeCookies(retryResponse);
         const result = this.handleResponse(retryResponse.status, retryResponse.headers, retryBody, path);
@@ -777,7 +783,7 @@ export class AdtHttpClient {
             errorBody: `Content negotiation ${response.status} — retrying with fallback headers`,
           });
 
-          const retryResp = await this.doFetch(url, method, fallbackHeaders, body, options);
+          const retryResp = await this.doFetch(url, method, fallbackHeaders, wireBody, options);
           const retryBody = await retryResp.text();
           this.storeCookies(retryResp);
 
@@ -1289,7 +1295,7 @@ export class AdtHttpClient {
     url: string,
     method: string,
     headers: Record<string, string>,
-    body?: string,
+    body?: string | Buffer,
     options?: AdtRequestOptions,
   ): Promise<Response> {
     throwIfRequestCancelled(options);
@@ -1334,7 +1340,7 @@ export class AdtHttpClient {
     url: string,
     method: string,
     headers: Record<string, string>,
-    body?: string,
+    body?: string | Buffer,
     options?: AdtRequestOptions,
   ): Promise<Response> {
     const proxy = this.config.btpProxy!;
