@@ -9,7 +9,7 @@
     "start": "node node_modules/@sap/approuter/approuter.js"
   },
   "dependencies": {
-    "@sap/approuter": "22.0.3"
+    "@sap/approuter": "23.0.0"
   },
   "overrides": {
     "axios": "1.18.0",
