@@ -82,12 +82,19 @@ describe.sequential('E2E SAPGit tests', () => {
         [entry?.key, entry?.ckey].some((key) => typeof key === 'string' && key.length > 0),
       ),
     ).toBe(true);
-    for (const entry of payload.result as Array<{ key?: string; ckey?: string; value?: string }>) {
+    let redactedFields = 0;
+    for (const entry of payload.result as Array<Record<string, unknown>>) {
       const key = String(entry.key ?? entry.ckey ?? '').toUpperCase();
       if (key.includes('AUTH_USER') || key.includes('AUTH_PWD') || key.includes('AUTH_TOKEN')) {
-        expect(entry.value).toBe('[REDACTED]');
+        for (const [field, value] of Object.entries(entry)) {
+          if (['value', 'defaultvalue', 'currentvalue', 'example'].includes(field.toLowerCase())) {
+            expect(value).toBe('[REDACTED]');
+            redactedFields += 1;
+          }
+        }
       }
     }
+    expect(redactedFields).toBeGreaterThan(0);
   }, 120_000);
 
   it('SAPGit(action=external_info, backend=abapgit) returns remote branch info', async (ctx) => {

@@ -40,12 +40,19 @@ describe('gCTS integration', () => {
     expect(
       config.some((entry) => [entry.key, entry.ckey].some((key) => typeof key === 'string' && key.length > 0)),
     ).toBe(true);
+    let redactedFields = 0;
     for (const entry of config) {
       const key = String(entry.key ?? entry.ckey ?? '').toUpperCase();
       if (key.includes('AUTH_USER') || key.includes('AUTH_PWD') || key.includes('AUTH_TOKEN')) {
-        expect(entry.value).toBe('[REDACTED]');
+        for (const [field, value] of Object.entries(entry)) {
+          if (['value', 'defaultvalue', 'currentvalue', 'example'].includes(field.toLowerCase())) {
+            expect(value).toBe('[REDACTED]');
+            redactedFields += 1;
+          }
+        }
       }
     }
+    expect(redactedFields).toBeGreaterThan(0);
   });
 
   it('listRepos always returns an array (including empty backend shape)', async (ctx) => {
