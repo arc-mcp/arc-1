@@ -90,8 +90,16 @@ function normalizeEscapedUrlSlashes(value: string): string {
 }
 
 function boundAbapGitString(value: string, originalLength = value.length): string {
-  if (value.length <= ABAPGIT_REDACTION_MAX_STRING_LENGTH) return value;
+  if (value.length <= ABAPGIT_REDACTION_MAX_STRING_LENGTH && originalLength <= ABAPGIT_REDACTION_MAX_STRING_LENGTH) {
+    return value;
+  }
   return `${value.slice(0, ABAPGIT_REDACTION_STRING_PREFIX_LENGTH)}... [truncated ${originalLength} chars]`;
+}
+
+function abapGitStringInput(value: string): string {
+  return value.length <= ABAPGIT_REDACTION_MAX_STRING_LENGTH
+    ? value
+    : value.slice(0, ABAPGIT_REDACTION_MAX_STRING_LENGTH);
 }
 
 function redactUrlAssignments(value: string): string {
@@ -110,7 +118,7 @@ function redactUrlAssignments(value: string): string {
 }
 
 export function redactGitUrl(value: string): string {
-  const normalizedValue = normalizeEscapedUrlSlashes(value);
+  const normalizedValue = normalizeEscapedUrlSlashes(abapGitStringInput(value));
   try {
     const parsed = new URL(normalizedValue);
     parsed.username = '';
@@ -125,7 +133,7 @@ export function redactGitUrl(value: string): string {
 }
 
 function redactGitText(value: string): string {
-  const withoutXmlCredentials = redactCredentialAssignments(normalizeEscapedUrlSlashes(value))
+  const withoutXmlCredentials = redactCredentialAssignments(normalizeEscapedUrlSlashes(abapGitStringInput(value)))
     .replace(/(<(?:[\w.-]+:)?remotePassword\b[^>]*>)[\s\S]*?(<\/(?:[\w.-]+:)?remotePassword>)/gi, '$1[REDACTED]$2')
     .replace(/(<(?:[\w.-]+:)?remoteUser\b[^>]*>)[\s\S]*?(<\/(?:[\w.-]+:)?remoteUser>)/gi, '$1[REDACTED]$2');
   const redacted = withoutXmlCredentials.replace(/https?:\/\/[^\s<>"']+/gi, (candidate) => {
@@ -345,7 +353,7 @@ function parseAbapGitXml(xml: string, operation: string): Record<string, unknown
 export function parseAbapGitRepos(xml: string): AbapGitRepo[] {
   const parsed = parseAbapGitXml(xml, 'repository-list');
   const root = rootNode(parsed, 'repositories');
-  if (!root) throw unexpectedShape('repository-list', 'repositories', xml);
+  if (!root) throw unexpectedShape('repository-list', 'repositories');
   assertKnownChildren(root, 'repository-list', ['repository']);
   const repositories = childNodes(root, 'repository');
 
@@ -378,7 +386,7 @@ export function parseAbapGitRepos(xml: string): AbapGitRepo[] {
 export function parseAbapGitExternalInfo(xml: string): AbapGitExternalInfo {
   const parsed = parseAbapGitXml(xml, 'external-info');
   const infoNode = rootNode(parsed, 'externalRepoInfo');
-  if (!infoNode) throw unexpectedShape('external-info', 'externalRepoInfo', xml);
+  if (!infoNode) throw unexpectedShape('external-info', 'externalRepoInfo');
   assertKnownChildren(infoNode, 'external-info', [
     'accessMode',
     'access_mode',
@@ -440,8 +448,7 @@ function rootNode(parsed: Record<string, unknown>, ...keys: string[]): Record<st
 }
 
 /** An unrecognised 200 body must fail loudly — a silent empty parse is what hid the old wire bugs. */
-function unexpectedShape(what: string, expected: string, xml: string): Error {
-  void xml;
+function unexpectedShape(what: string, expected: string): Error {
   return new Error(
     `abapGit bridge returned an unexpected ${what} response: no <${expected}> root. ` +
       'Check the installed abapGit ADT backend version.',
@@ -456,7 +463,7 @@ function unexpectedShape(what: string, expected: string, xml: string): Error {
 export function parseAbapGitObjects(xml: string): AbapGitObject[] {
   const parsed = parseAbapGitXml(xml, 'clone/pull');
   const root = rootNode(parsed, 'abapObjects', 'objects');
-  if (!root) throw unexpectedShape('clone/pull', 'abapObjects', xml);
+  if (!root) throw unexpectedShape('clone/pull', 'abapObjects');
   assertKnownChildren(root, 'clone/pull', ['abapObject', 'object']);
 
   return [...childNodes(root, 'abapObject'), ...childNodes(root, 'object')].map((node) => {
@@ -528,7 +535,7 @@ function parseStagingObjects(root: Record<string, unknown>, wrapper: string): Ab
 export function parseAbapGitStaging(xml: string): Pick<AbapGitStaging, 'objects' | 'ignored' | 'comment'> {
   const parsed = parseAbapGitXml(xml, 'staging');
   const root = rootNode(parsed, 'abapgitstaging');
-  if (!root) throw unexpectedShape('staging', 'abapgitstaging', xml);
+  if (!root) throw unexpectedShape('staging', 'abapgitstaging');
   assertKnownChildren(root, 'staging', ['unstaged_objects', 'staged_objects', 'ignored_objects', 'abapgit_comment']);
   const commentNode = singleChildNode(root, 'abapgit_comment', true);
   const user = (key: string): AbapGitUser | undefined => {
@@ -715,20 +722,19 @@ export async function enforceRepoPackageAllowed(
       )}); refusing.`,
     );
   }
-  const normalizedPackage = repoPackage.toUpperCase();
-  const coversWholeTree = safety.allowedPackages.some((entry) => {
-    const normalized = entry.toUpperCase();
-    return normalized === '*' || normalized === `${normalizedPackage}/**`;
+  const subtreeGrants = safety.allowedPackages.filter((entry) => {
+    const normalized = entry.trim().toUpperCase();
+    return normalized === '*' || normalized.endsWith('/**');
   });
-  if (!coversWholeTree) {
+  if (subtreeGrants.length === 0) {
     throw new AdtSafetyError(
       `${label}: abapGit may create or update subpackages below '${repoPackage}'. ` +
-        `Require an exact '${repoPackage}/**' subtree grant or global '*' (configured: ${JSON.stringify(
+        `Require a subtree grant that contains '${repoPackage}' or global '*' (configured: ${JSON.stringify(
           safety.allowedPackages,
         )}); exact-package and prefix-wildcard grants are insufficient.`,
     );
   }
-  await checkPackage(safety, repoPackage, resolver);
+  await checkPackage({ ...safety, allowedPackages: subtreeGrants }, repoPackage, resolver);
 }
 
 export async function pullRepo(

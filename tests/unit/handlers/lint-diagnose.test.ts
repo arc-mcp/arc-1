@@ -1213,6 +1213,48 @@ ENDCLASS.`;
       );
     });
 
+    it('audits a FUGR main program and static test include before and after the run', async () => {
+      const main = 'FUNCTION-POOL zarc1_fg.\nINCLUDE lzarc1_fgt99.';
+      const tests = `CLASS ltcl_harmless DEFINITION FOR TESTING RISK LEVEL HARMLESS.
+        METHODS passes FOR TESTING.
+      ENDCLASS.`;
+      const reads = { main: 0, include: 0 };
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
+        const method = opts?.method ?? 'GET';
+        const path = new URL(String(url)).pathname;
+        if (method === 'GET' && path === '/sap/bc/adt/functions/groups/ZARC1_FG/source/main') {
+          reads.main += 1;
+          return Promise.resolve(mockResponse(200, main, { etag: '"main"' }));
+        }
+        if (method === 'GET' && path === '/sap/bc/adt/programs/includes/LZARC1_FGT99/source/main') {
+          reads.include += 1;
+          return Promise.resolve(mockResponse(200, tests, { etag: '"tests"' }));
+        }
+        if (method === 'HEAD' && path === '/sap/bc/adt/core/discovery') {
+          return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+        }
+        if (method === 'POST' && path === '/sap/bc/adt/abapunit/testruns') {
+          return Promise.resolve(mockResponse(200, AUNIT_HARMLESS_ONLY));
+        }
+        return Promise.resolve(mockResponse(404, 'unexpected'));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPDiagnose', {
+        action: 'unittest',
+        type: 'FUGR',
+        name: 'ZARC1_FG',
+        resultFormat: 'structured',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(JSON.parse(result.content[0]?.text ?? '{}')).toMatchObject({
+        outcome: 'passed',
+        sourceSelectionEvidence: { status: 'verified' },
+      });
+      expect(reads).toEqual({ main: 2, include: 2 });
+    });
+
     it('audits pragma-suffixed static PROG includes before and after the test run', async () => {
       const mainSource = `REPORT zarc1_include.
         INCLUDE zarc1_tests ##NEEDED.
@@ -1969,6 +2011,7 @@ ENDCLASS.`;
         complete: false,
         processedObjectCount: 0,
         incompleteReasons: expect.arrayContaining([expect.stringMatching(/malformed processed ATC object/i)]),
+        hint: expect.stringContaining('$TMP'),
       });
     });
   });

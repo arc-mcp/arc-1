@@ -1,5 +1,21 @@
 # Updating ARC-1
 
+## Unreleased — CLI/CI hardening compatibility changes
+
+The CLI/CI hardening release intentionally tightens several automation contracts. Treat these as
+breaking changes when moving an existing pipeline:
+
+| Area | Change | Migration |
+|---|---|---|
+| SAPGit | The unimplemented `commit` action is no longer advertised or accepted. All gCTS mutation names remain quarantined before HTTP. Accepted-but-unverifiable abapGit mutations return error/incomplete instead of optimistic success. | Use `push` for abapGit commits. Inspect repository/remote state before retrying any incomplete mutation. Do not depend on gCTS writes until the staged import/deploy design ships. |
+| Recursive CTS release | `release_recursive` requires `SAP_ALLOWED_TRANSPORTS` to be the legacy unrestricted empty value or explicit `*`; exact/prefix lists cannot safely authorize a subtree that may gain a concurrent task. Success now waits for terminal SAP state `R` or `N`. | Use single `release` with exact transport grants, or explicitly authorize every current/concurrent child with `*` for recursive release. Set `timeoutSeconds` when the five-minute default is unsuitable. |
+| Git egress | `SAPGit.external_info` now requires `git` scope plus `SAP_ALLOW_WRITES=true` and `SAP_ALLOW_GIT_WRITES=true`; Git URLs must be HTTPS and credential-free. | Move credentials out of URLs and enable the egress/write gates only on the instance intended to contact remote Git hosts. |
+| Revision and diagnostic links | Caller-provided ADT links are restricted to canonical endpoint-specific paths. | Pass the exact revision/gateway/AUnit URI returned by ARC-1 or SAP; arbitrary `/sap/bc/adt/**` paths, traversal, and ambiguous encodings are rejected. |
+| Dedicated CI checks | Non-evaluable AUnit/ATC/diff/lint evidence exits `3`; tool/SAP failures exit `1`; usage/config validation exits `2`. | Preserve the process exit code alongside JSON, JUnit, or Checkstyle reports and handle exit `3` as incomplete rather than success. |
+
+The generic `arc1 call` command keeps MCP `ToolResult` semantics. The stricter domain exit codes apply
+to the dedicated `unittest`, `atc`, `diff`, and `lint` commands.
+
 ## v1.0 — upgrading from 0.9.x
 
 From `1.0` ARC-1 follows [semantic versioning](https://semver.org/): a breaking change to the MCP tool

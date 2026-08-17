@@ -113,13 +113,14 @@ function summarizeRelease(result: TransportReleaseResult, resultFormat: 'legacy'
     if (failed.length === 0) {
       const reason =
         result.outcome === 'timeout'
-          ? `terminal status R was not observed before the verification deadline (${observed})`
+          ? `terminal status R/N was not observed before the verification deadline (${observed})`
           : `terminal status could not be verified (${observed})${result.lastReadError ? `: ${result.lastReadError}` : ''}`;
       return render(errorResult(`Transport ${id} release is ${result.outcome}: ${reason}.`));
     }
 
     const detail = failed.map(formatReleaseReport).join('\n');
-    const partial = result.released.length > 0 ? `\nConfirmed R before the block: ${result.released.join(', ')}.` : '';
+    const partial =
+      result.released.length > 0 ? `\nConfirmed released before the block: ${result.released.join(', ')}.` : '';
     if (result.outcome === 'unknown') {
       const stateEvidence = result.lastReadError ? `\n${result.lastReadError}` : '';
       return render(
@@ -143,7 +144,7 @@ function summarizeRelease(result: TransportReleaseResult, resultFormat: 'legacy'
   if (result.reportConflicts?.length) {
     return render(
       textResult(
-        `${prefix}\nSAP returned a conflicting release-check report; the refreshed request state confirmed status R.`,
+        `${prefix}\nSAP returned a conflicting release-check report; the refreshed request state confirmed released status R/N.`,
       ),
     );
   }
@@ -153,7 +154,7 @@ function summarizeRelease(result: TransportReleaseResult, resultFormat: 'legacy'
       textResult(
         `${prefix}\nSAP returned an error for release submission ${uncertainSubmissions
           .map((submission) => submission.id)
-          .join(', ')}, but the refreshed request state confirmed status R.`,
+          .join(', ')}, but the refreshed request state confirmed released status R/N.`,
       ),
     );
   }
@@ -474,7 +475,9 @@ export async function handleSAPTransport(
       checkTransport(client.safety, id, 'ReleaseTransport', true);
       const blocking = await precheckInactiveForRelease(client, id);
       if (blocking.length > 0) return inactiveReleaseError(id, blocking);
-      const result = await releaseTransportAndWait(client.http, client.safety, id);
+      const result = await releaseTransportAndWait(client.http, client.safety, id, {
+        ...(args.timeoutSeconds === undefined ? {} : { timeoutMs: Number(args.timeoutSeconds) * 1000 }),
+      });
       return summarizeRelease(result, args.resultFormat === 'structured' ? 'structured' : 'legacy');
     }
     case 'delete': {
@@ -546,7 +549,9 @@ export async function handleSAPTransport(
       // ends in /<request>), so no per-task fetch is needed.
       const blocking = await precheckInactiveForRelease(client, id);
       if (blocking.length > 0) return inactiveReleaseError(id, blocking);
-      const result = await releaseTransportRecursive(client.http, client.safety, id);
+      const result = await releaseTransportRecursive(client.http, client.safety, id, {
+        ...(args.timeoutSeconds === undefined ? {} : { timeoutMs: Number(args.timeoutSeconds) * 1000 }),
+      });
       return summarizeRelease(result, args.resultFormat === 'structured' ? 'structured' : 'legacy');
     }
     case 'check': {

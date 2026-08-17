@@ -123,6 +123,8 @@ interface PublicAunitOptions {
   sleep?: (ms: number) => Promise<void>;
 }
 
+export const DEFAULT_PUBLIC_AUNIT_TIMEOUT_MS = 300_000;
+
 const PUBLIC_RUNS = '/sap/bc/adt/api/abapunit/runs/';
 const PUBLIC_RESULTS = '/sap/bc/adt/api/abapunit/results/';
 const ZERO_RUN_ID = '00000000000000000000000000000000';
@@ -1065,7 +1067,7 @@ export async function runPublicAunit(
   const now = options.now ?? Date.now;
   const sleep = options.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
   const started = now();
-  const deadline = started + (options.timeoutMs ?? 30_000);
+  const deadline = started + (options.timeoutMs ?? DEFAULT_PUBLIC_AUNIT_TIMEOUT_MS);
   const requestOptions = (): AdtRequestOptions => ({ deadline });
   const body =
     `<?xml version="1.0" encoding="UTF-8"?>` +

@@ -1,19 +1,32 @@
 {
   "config": [
     {
-      "key": "CLIENT_VCS_URI",
-      "value": "https://github.com/example/arc1.git",
-      "category": "registry"
+      "ckey": "CLIENT_VCS_URI",
+      "ctype": "REPOSITORY",
+      "cvisible": "X",
+      "datatype": "STRING",
+      "description": "URI used to clone a remote repository",
+      "category": "CONNECTION",
+      "example": "https://github.com/example/arc1.git"
     },
     {
-      "key": "CLIENT_VCS_AUTH_USER",
-      "value": "git-user",
-      "category": "registry"
+      "ckey": "CLIENT_VCS_AUTH_USER",
+      "ctype": "REPOSITORY",
+      "cvisible": "X",
+      "datatype": "STRING",
+      "description": "Remote repository user",
+      "category": "CONNECTION",
+      "example": "git-user"
     },
     {
-      "key": "CLIENT_VCS_AUTH_PWD",
-      "value": "sentinel-password",
-      "category": "registry"
+      "ckey": "CLIENT_VCS_AUTH_PWD",
+      "ctype": "REPOSITORY",
+      "cprivate": "X",
+      "cvisible": "X",
+      "datatype": "STRING",
+      "description": "Remote repository password",
+      "category": "CONNECTION",
+      "example": "sentinel-password"
     }
   ]
 }

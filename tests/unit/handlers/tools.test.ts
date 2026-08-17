@@ -182,7 +182,7 @@ describe('Tool Definitions', () => {
     const actions: string[] = schema.properties.action.enum;
     expect(actions).toContain('external_info');
     expect(actions).toContain('list_repos');
-    expect(actions).toContain('commit');
+    expect(actions).not.toContain('commit');
     expect(actions).toContain('unlink');
     expect(schema.properties.backend.enum).toEqual(['gcts', 'abapgit']);
   });
@@ -268,7 +268,7 @@ describe('Tool Definitions', () => {
     expect(resultFormat.enum).toEqual(['legacy', 'structured', 'junit']);
     expect(resultFormat.description).toContain('unittest: legacy|structured|junit');
     expect(resultFormat.description).toContain('atc: legacy|structured');
-    expect(resultFormat.description).toContain('Rejected for other actions');
+    expect(resultFormat.description).toContain('other actions reject it');
   });
 
   it('describes SAPRead sqlFilter as condition-only expression', () => {

@@ -119,10 +119,10 @@ export interface GctsSystemInfo {
 }
 
 export interface GctsConfig {
-  /** Live gCTS key/value configuration fields. */
+  /** Repository-specific configuration fields returned by /repository/{rid}/config. */
   key?: string;
   value?: string;
-  /** Older configuration-schema field retained for compatible consumers. */
+  /** Global /config metadata fields (live-verified on gCTS 2.7.1 / SAP_BASIS 758). */
   ckey?: string;
   ctype?: string;
   datatype?: string;

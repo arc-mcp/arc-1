@@ -165,7 +165,7 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
 
       expect(result.isError).toBeUndefined();
       expect(result.content[0]?.text).toContain('Released (recursive): A4HK906307');
-      expect(result.content[0]?.text).toContain('refreshed request state confirmed status R');
+      expect(result.content[0]?.text).toContain('refreshed request state confirmed released status R/N');
       expect(parentReads).toBe(3);
     });
 

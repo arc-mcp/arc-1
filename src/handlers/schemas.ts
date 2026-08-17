@@ -855,6 +855,7 @@ export const SAPDiagnoseSchema = z
     includeFullText: looseOptionalBoolean,
     coverage: looseOptionalBoolean,
     resultFormat: z.enum(['legacy', 'structured', 'junit']).optional(),
+    timeoutSeconds: z.coerce.number().int().min(1).max(3600).optional(),
     sqlOn: looseOptionalBoolean,
     onlyFailures: looseOptionalBoolean,
     analysis: z.enum(['hitlist', 'statements', 'dbAccesses']).optional(),
@@ -870,6 +871,23 @@ export const SAPDiagnoseSchema = z
   })
   .strict()
   .superRefine((input, ctx) => {
+    if (input.action === 'unittest' && input.type !== undefined) {
+      const type = input.type.toUpperCase().split('/')[0];
+      if (!['CLAS', 'PROG', 'FUGR'].includes(type ?? '')) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['type'],
+          message: 'SAPDiagnose action="unittest" supports CLAS, PROG, and FUGR objects.',
+        });
+      }
+    }
+    if (input.timeoutSeconds !== undefined && input.action !== 'unittest') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['timeoutSeconds'],
+        message: 'SAPDiagnose timeoutSeconds is only supported for action="unittest".',
+      });
+    }
     if (input.resultFormat !== undefined) {
       if (input.action === 'atc' && input.resultFormat === 'junit') {
         ctx.addIssue({
@@ -939,11 +957,21 @@ export const SAPTransportSchema = z
     summary: looseOptionalBoolean,
     maxResults: z.coerce.number().optional(),
     resultFormat: z.enum(['legacy', 'structured']).optional(),
+    timeoutSeconds: z.coerce.number().int().min(1).max(1800).optional(),
     // For diff: object-level paging (cap 40, matching SAP's own transport-diff pageSize ceiling).
     offset: z.coerce.number().optional(),
     limit: z.coerce.number().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((input, ctx) => {
+    if (input.timeoutSeconds !== undefined && input.action !== 'release' && input.action !== 'release_recursive') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['timeoutSeconds'],
+        message: 'SAPTransport timeoutSeconds is only supported for release and release_recursive.',
+      });
+    }
+  });
 
 // ─── SAPGit ─────────────────────────────────────────────────────────
 
@@ -962,7 +990,6 @@ export const SAPGitSchema = z
       'clone',
       'pull',
       'push',
-      'commit',
       'switch_branch',
       'create_branch',
       'unlink',
@@ -974,7 +1001,6 @@ export const SAPGitSchema = z
     transport: z.string().optional(),
     commit: z.string().optional(),
     message: z.string().optional(),
-    description: z.string().optional(),
     objects: z
       .array(
         z.object({

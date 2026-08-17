@@ -49,9 +49,20 @@ export const CTS_CONTENT_TYPE_ORGANIZER = 'application/vnd.sap.adt.transportorga
 /** XML namespace for CTS ADT transport manager payloads */
 export const CTS_NAMESPACE_TM = 'http://www.sap.com/cts/adt/tm';
 
-const DEFAULT_RELEASE_TIMEOUT_MS = 30_000;
+export const DEFAULT_RELEASE_TIMEOUT_MS = 300_000;
 const DEFAULT_RELEASE_INITIAL_DELAY_MS = 250;
 const DEFAULT_RELEASE_MAX_DELAY_MS = 2_000;
+const MODIFIABLE_RELEASE_STATUSES = new Set(['D', 'L']);
+const IN_FLIGHT_RELEASE_STATUSES = new Set(['O', 'P']);
+const TERMINAL_RELEASE_STATUSES = new Set(['R', 'N']);
+
+function isKnownReleaseStatus(status: string): boolean {
+  return (
+    MODIFIABLE_RELEASE_STATUSES.has(status) ||
+    IN_FLIGHT_RELEASE_STATUSES.has(status) ||
+    TERMINAL_RELEASE_STATUSES.has(status)
+  );
+}
 
 export type TransportReleaseOutcome = 'released' | 'blocked' | 'timeout' | 'unknown';
 
@@ -76,15 +87,15 @@ export interface TransportReleaseSubmission {
 /**
  * Terminal verification result for a CTS release.
  *
- * `verified=true` means every frozen request/task was observed with status `R` in one fresh CTS
- * snapshot. A clean `newreleasejobs` response alone is never sufficient.
+ * `verified=true` means every frozen request/task was observed in released status `R` or `N` in
+ * one fresh CTS snapshot. A clean `newreleasejobs` response alone is never sufficient.
  */
 export interface TransportReleaseResult {
   requestedId: string;
   recursive: boolean;
   outcome: TransportReleaseOutcome;
   verified: boolean;
-  /** Frozen ids actually observed in terminal status R (tasks first in recursive mode for compatibility). */
+  /** Frozen ids observed in terminal status R/N (tasks first in recursive mode for compatibility). */
   released: string[];
   intended: TransportReleaseNodeState[];
   submissions: TransportReleaseSubmission[];
@@ -94,7 +105,7 @@ export interface TransportReleaseResult {
   polls: number;
   elapsedMs: number;
   lastReadError?: string;
-  /** Submitted ids whose report said failure even though CTS ultimately confirmed status R. */
+  /** Submitted ids whose report said failure even though CTS ultimately confirmed released status. */
   reportConflicts?: string[];
   /** Child tasks that appeared after the recursive release snapshot and invalidated exact-set verification. */
   unexpectedChildren?: string[];
@@ -102,7 +113,7 @@ export interface TransportReleaseResult {
 
 /** Internal convergence controls; injectable clock/sleep keep unit tests deterministic. */
 export interface TransportReleaseWaitOptions {
-  /** Relative verification budget. Defaults to 30 seconds. */
+  /** Relative verification budget. Defaults to 5 minutes. */
   timeoutMs?: number;
   /** Absolute deadline in the same clock domain as `now` (epoch milliseconds by default). */
   deadline?: number;
@@ -474,7 +485,7 @@ export function parseTransportNodeStates(xml: string): TransportReleaseNodeState
     const id = String(node['@_number'] ?? '').trim();
     if (!id) return;
     const key = id.toUpperCase();
-    const status = String(node['@_status'] ?? '');
+    const status = String(node['@_status'] ?? '').toUpperCase();
     const parentId = parentIdFrom(structuralParent ?? node['@_parent']);
     const previous = states.get(key);
     states.set(key, {
@@ -483,7 +494,7 @@ export function parseTransportNodeStates(xml: string): TransportReleaseNodeState
       ...(parentId ? { parentId } : previous?.parentId ? { parentId: previous.parentId } : {}),
       initialStatus: status || previous?.initialStatus || '',
       lastStatus: status || previous?.lastStatus || '',
-      confirmedReleased: (status || previous?.lastStatus) === 'R',
+      confirmedReleased: TERMINAL_RELEASE_STATUSES.has(status || previous?.lastStatus || ''),
     });
   };
 
@@ -660,7 +671,7 @@ async function prepareTransportRelease(
   ].map((node) => ({ ...node }));
   for (const node of intended) checkTransport(safety, node.id, operation, true);
 
-  const unknown = intended.filter((node) => !['D', 'O', 'R'].includes(node.lastStatus));
+  const unknown = intended.filter((node) => !isKnownReleaseStatus(node.lastStatus));
   if (unknown.length > 0) {
     const detail = `CTS returned an unknown initial status for: ${unknown
       .map((node) => `${node.id}=${node.lastStatus || '(missing)'}`)
@@ -731,7 +742,8 @@ async function releaseTransportWithConvergence(
   let delayMs = Math.min(numericOption(options.initialDelayMs, DEFAULT_RELEASE_INITIAL_DELAY_MS), maxDelayMs);
   const lookupId = recursive ? requestedState.id : transportId;
   const allReleased = () => intended.every((node) => node.confirmedReleased);
-  const hasInFlightNode = () => intended.some((node) => node.lastStatus === 'O' && !node.confirmedReleased);
+  const hasInFlightNode = () =>
+    intended.some((node) => IN_FLIGHT_RELEASE_STATUSES.has(node.lastStatus) && !node.confirmedReleased);
   const submissionFailed = () => submissions.some((submission) => submission.error !== undefined);
   const result = (outcome: TransportReleaseOutcome, detail?: string) =>
     buildReleaseResult(
@@ -756,7 +768,7 @@ async function releaseTransportWithConvergence(
   };
 
   const finishWithoutTerminalRelease = (): TransportReleaseResult => {
-    const unknownStatuses = intended.filter((node) => !['D', 'O', 'R'].includes(node.lastStatus));
+    const unknownStatuses = intended.filter((node) => !isKnownReleaseStatus(node.lastStatus));
     const submissionFailure = submissionFailureDetail();
     const stateDetail =
       lastReadError ??
@@ -803,7 +815,7 @@ async function releaseTransportWithConvergence(
       for (const node of intended) {
         const observed = latestById.get(node.id.toUpperCase());
         node.lastStatus = observed?.lastStatus ?? '';
-        node.confirmedReleased = node.lastStatus === 'R';
+        node.confirmedReleased = TERMINAL_RELEASE_STATUSES.has(node.lastStatus);
         if (!observed) missingIds.push(node.id);
       }
     } catch (err) {
@@ -865,7 +877,7 @@ async function releaseTransportWithConvergence(
     }
     for (const node of taskSubmissionOrder) {
       if (node.confirmedReleased) continue;
-      if (node.lastStatus !== 'D') break;
+      if (!MODIFIABLE_RELEASE_STATUSES.has(node.lastStatus)) break;
       await submit(node);
       if (submissionFailed()) break;
     }
@@ -875,13 +887,15 @@ async function releaseTransportWithConvergence(
       () =>
         submissionFailed() ||
         (missingIds.length === 0 &&
-          (requestedState.lastStatus === 'D' || requestedState.lastStatus === 'R') &&
-          taskSubmissionOrder.every((node) => node.lastStatus === 'D' || node.lastStatus === 'R')),
+          (MODIFIABLE_RELEASE_STATUSES.has(requestedState.lastStatus) || requestedState.confirmedReleased) &&
+          taskSubmissionOrder.every(
+            (node) => MODIFIABLE_RELEASE_STATUSES.has(node.lastStatus) || node.confirmedReleased,
+          )),
       true,
     );
     if (preParent) return preParent;
 
-    if (!submissionFailed() && requestedState.lastStatus === 'D') {
+    if (!submissionFailed() && MODIFIABLE_RELEASE_STATUSES.has(requestedState.lastStatus)) {
       await submit(requestedState);
       return (await pollUntil(() => false, true))!;
     }
@@ -890,15 +904,15 @@ async function releaseTransportWithConvergence(
   }
 
   // Single release: poll O, submit D once, then observe only.
-  if (requestedState.lastStatus === 'O') {
-    const terminal = await pollUntil(() => requestedState.lastStatus === 'D', true);
+  if (IN_FLIGHT_RELEASE_STATUSES.has(requestedState.lastStatus)) {
+    const terminal = await pollUntil(() => MODIFIABLE_RELEASE_STATUSES.has(requestedState.lastStatus), true);
     if (terminal) return terminal;
   }
-  if (requestedState.lastStatus === 'D') await submit(requestedState);
+  if (MODIFIABLE_RELEASE_STATUSES.has(requestedState.lastStatus)) await submit(requestedState);
   return (await pollUntil(() => false, true))!;
 }
 
-/** Release one request/task and return only after its exact CTS state is observed as R. */
+/** Release one request/task and return only after its exact CTS state is observed as R/N. */
 export async function releaseTransportAndWait(
   http: AdtHttpClient,
   safety: SafetyConfig,
@@ -910,7 +924,7 @@ export async function releaseTransportAndWait(
 
 /**
  * Release a parent request recursively — tasks first, then the parent — and wait until the frozen
- * parent/task set is observed as R. Raw failed reports are preserved but final CTS state is authoritative.
+ * parent/task set is observed as R/N. Raw failed reports are preserved but final CTS state is authoritative.
  * SAP has no atomic compare-tree-and-release operation: exact/prefix transport allowlists are therefore
  * refused, and any non-frozen child observed by the mandatory pre-parent snapshot or readback makes the
  * result unverified. The fresh snapshot narrows, but cannot eliminate, the backend's GET-to-POST race.

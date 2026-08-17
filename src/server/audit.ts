@@ -469,12 +469,16 @@ function sanitizeText(value: string): string {
 }
 
 function boundAuditString(value: string, originalLength = value.length): string {
-  if (value.length <= MAX_AUDIT_STRING_LENGTH) return value;
+  if (value.length <= MAX_AUDIT_STRING_LENGTH && originalLength <= MAX_AUDIT_STRING_LENGTH) return value;
   return `${value.slice(0, AUDIT_STRING_PREFIX_LENGTH)}... [truncated ${originalLength} chars]`;
 }
 
+function auditStringInput(value: string): string {
+  return value.length <= MAX_AUDIT_STRING_LENGTH ? value : value.slice(0, MAX_AUDIT_STRING_LENGTH);
+}
+
 function redactedAuditKey(entryKey: string, target: Record<string, unknown>): string {
-  const normalizedEntryKey = normalizeSafeUnicodeEscapes(entryKey);
+  const normalizedEntryKey = normalizeSafeUnicodeEscapes(auditStringInput(entryKey));
   const sensitiveKeyContainsData =
     isSensitiveKey(normalizedEntryKey) && !KNOWN_SENSITIVE_FIELD_KEYS.has(normalizedEntryKey.toLowerCase());
   const sanitized = sensitiveKeyContainsData
@@ -509,7 +513,8 @@ function redactValue(key: string, value: unknown, state: RedactionState, depth: 
     return redactPayloadValue(value);
   }
   if (typeof value === 'string') {
-    const sanitized = isUrlKey(key) ? sanitizeUrl(value) : sanitizeText(value);
+    const boundedInput = auditStringInput(value);
+    const sanitized = isUrlKey(key) ? sanitizeUrl(boundedInput) : sanitizeText(boundedInput);
     return boundAuditString(sanitized, value.length);
   }
   if (Array.isArray(value)) {

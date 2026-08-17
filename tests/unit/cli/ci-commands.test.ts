@@ -116,6 +116,27 @@ describe('dedicated unittest command', () => {
     );
   });
 
+  it('forwards a bounded public-run timeout and rejects invalid values before dispatch', async () => {
+    const deps = dependencies(passingAunit());
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(await main(['unittest', 'CLAS', 'ZCL_TEST', '--timeout', '600'], deps)).toBe(0);
+    expect(deps.dispatchToolCall).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      'SAPDiagnose',
+      expect.objectContaining({ timeoutSeconds: 600 }),
+      undefined,
+      undefined,
+      undefined,
+    );
+
+    const invalid = dependencies(passingAunit());
+    expect(await main(['unittest', 'CLAS', 'ZCL_TEST', '--timeout', '0'], invalid)).toBe(2);
+    expect(invalid.dispatchToolCall).not.toHaveBeenCalled();
+  });
+
   it('writes JUnit before returning a failing test code', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'arc1-ci-unit-'));
     temporaryDirectories.push(directory);
@@ -303,29 +324,33 @@ describe('dedicated ATC, diff, and lint commands', () => {
     );
   });
 
-  it('never greens drifted ATC or diff structured JSON', async () => {
+  it('returns incomplete before formatting drifted ATC or diff evidence', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
 
-    expect(
-      await main(['atc', 'PROG', 'ZTEST', '--format', 'json'], dependencies({ ...completeAtc(), complete: 'true' })),
-    ).toBe(3);
-    expect(
-      await main(
-        ['diff', 'PROG', 'ZTEST', '--format', 'json'],
-        dependencies({
-          type: 'PROG',
-          name: 'ZTEST',
-          from: 'active',
-          to: 'inactive',
-          fromLabel: 'active',
-          toLabel: 'inactive',
-          identical: false,
-          added: 1,
-          removed: 0,
-          diff: '+WRITE.',
-        }),
-      ),
-    ).toBe(1);
+    for (const format of ['text', 'json', 'checkstyle']) {
+      expect(
+        await main(['atc', 'PROG', 'ZTEST', '--format', format], dependencies({ ...completeAtc(), complete: 'true' })),
+      ).toBe(3);
+    }
+    for (const format of ['text', 'json']) {
+      expect(
+        await main(
+          ['diff', 'PROG', 'ZTEST', '--format', format],
+          dependencies({
+            type: 'PROG',
+            name: 'ZTEST',
+            from: 'active',
+            to: 'inactive',
+            fromLabel: 'active',
+            toLabel: 'inactive',
+            identical: false,
+            added: 1,
+            removed: 0,
+            diff: '+WRITE.',
+          }),
+        ),
+      ).toBe(3);
+    }
   });
 
   it('lints through the dispatcher and supports Checkstyle warning thresholds', async () => {

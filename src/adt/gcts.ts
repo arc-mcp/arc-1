@@ -23,7 +23,9 @@ const GCTS_MUTATION_QUARANTINE =
   'gCTS mutations are unavailable until ARC-1 implements staged VCS_NO_IMPORT fetch, affected-object inventory, authorization preflight, explicit deploy, terminal confirmation, and rollback. No gCTS mutation was sent.';
 const GCTS_REDACTION_LIMIT_MARKER = '[TRUNCATED: redaction budget exceeded]';
 const GCTS_REDACTION_MAX_DEPTH = 16;
-const GCTS_REDACTION_MAX_ENTRIES = 512;
+// gCTS list/config payloads are legitimately wide. Keep the defensive traversal cap well above
+// ordinary API responses so redaction never turns a successful list into partial data.
+const GCTS_REDACTION_MAX_ENTRIES = 10_000;
 const GCTS_REDACTION_MAX_STRING_LENGTH = 4_096;
 const GCTS_REDACTION_STRING_PREFIX_LENGTH = 2_000;
 
@@ -110,8 +112,14 @@ function normalizeEscapedUrlSlashes(value: string): string {
 }
 
 function boundGctsString(value: string, originalLength = value.length): string {
-  if (value.length <= GCTS_REDACTION_MAX_STRING_LENGTH) return value;
+  if (value.length <= GCTS_REDACTION_MAX_STRING_LENGTH && originalLength <= GCTS_REDACTION_MAX_STRING_LENGTH) {
+    return value;
+  }
   return `${value.slice(0, GCTS_REDACTION_STRING_PREFIX_LENGTH)}... [truncated ${originalLength} chars]`;
+}
+
+function gctsStringInput(value: string): string {
+  return value.length <= GCTS_REDACTION_MAX_STRING_LENGTH ? value : value.slice(0, GCTS_REDACTION_MAX_STRING_LENGTH);
 }
 
 function redactUrlAssignments(value: string): string {
@@ -130,7 +138,7 @@ function redactUrlAssignments(value: string): string {
 }
 
 function redactUrl(value: string): string {
-  const normalizedValue = normalizeEscapedUrlSlashes(value);
+  const normalizedValue = normalizeEscapedUrlSlashes(gctsStringInput(value));
   try {
     const parsed = new URL(normalizedValue);
     parsed.username = '';
@@ -154,7 +162,7 @@ function redactUrl(value: string): string {
 }
 
 function redactUrlsInText(value: string): string {
-  const redacted = redactCredentialAssignments(normalizeEscapedUrlSlashes(value)).replace(
+  const redacted = redactCredentialAssignments(normalizeEscapedUrlSlashes(gctsStringInput(value))).replace(
     /https?:\/\/[^\s<>"']+/gi,
     (candidate) => {
       const trailing = candidate.match(/[),.;]+$/)?.[0] ?? '';
@@ -166,9 +174,10 @@ function redactUrlsInText(value: string): string {
 }
 
 function redactedOutputKey(entryKey: string, target: Record<string, unknown>): string {
-  const sanitized = isCredentialQueryKey(entryKey)
+  const boundedInput = gctsStringInput(entryKey);
+  const sanitized = isCredentialQueryKey(boundedInput)
     ? '[REDACTED sensitive key]'
-    : boundGctsString(redactUrlsInText(entryKey), entryKey.length);
+    : boundGctsString(redactUrlsInText(boundedInput), entryKey.length);
   if (!Object.hasOwn(target, sanitized)) return sanitized;
 
   // Different attacker-controlled names can collapse to the same redacted key. Preserve every
@@ -279,7 +288,6 @@ function requireObjectWrapper<T>(payload: unknown, wrapper: string, operation: s
 export const GCTS_QUARANTINED_MUTATIONS = {
   clone: [OperationType.Create, 'GctsCloneRepo'],
   pull: [OperationType.Update, 'GctsPullRepo'],
-  commit: [OperationType.Update, 'GctsCommitRepo'],
   create_branch: [OperationType.Create, 'GctsCreateBranch'],
   switch_branch: [OperationType.Update, 'GctsSwitchBranch'],
   unlink: [OperationType.Delete, 'GctsDeleteRepo'],

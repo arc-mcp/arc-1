@@ -115,11 +115,18 @@ async function readAunitSourceTree(client: AdtClient, type: string, name: string
           await client.getProgram(name, { version: 'active' }),
         ),
       ];
+    } else if (type === 'FUGR') {
+      initialBlocks = [
+        presentAunitSourceBlock(
+          `FUGR:${name.toUpperCase()}:main`,
+          await client.getFunctionGroupSource(name, { version: 'active' }),
+        ),
+      ];
     } else {
       return {
         source: '',
         complete: false,
-        incompleteReason: 'Source-selection verification is currently supported only for CLAS and PROG test runs.',
+        incompleteReason: 'Source-selection verification is supported only for CLAS, PROG, and FUGR test runs.',
         blocks: [],
       };
     }
@@ -359,7 +366,9 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
           const sourceTree = await readAunitSourceTree(client, type, name);
           let native: Awaited<ReturnType<typeof runPublicAunit>>;
           try {
-            native = await runPublicAunit(client.http, client.safety, type, name);
+            native = await runPublicAunit(client.http, client.safety, type, name, {
+              ...(args.timeoutSeconds === undefined ? {} : { timeoutMs: Number(args.timeoutSeconds) * 1000 }),
+            });
           } catch (error) {
             if (!(error instanceof AunitIncompleteError)) throw error;
             const message = error.message;
@@ -491,10 +500,17 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
       const objectUrl = objectUrlForType(type, name);
       const variant = args.variant as string | undefined;
       const result = await runAtcCheck(client.http, client.safety, objectUrl, variant);
-      if (args.resultFormat === 'structured') return textResult(toolJson(result));
+      const response =
+        result.processedObjectCount === 0
+          ? {
+              ...result,
+              hint: 'ATC commonly excludes local $TMP objects. If this object is local, move or recreate it in a transportable package and rerun ATC.',
+            }
+          : result;
+      if (args.resultFormat === 'structured') return textResult(toolJson(response));
       // Keep the successful legacy `{findings}` shape, but never discard completeness failures:
       // a generic tool/CLI call must not turn malformed or missing worklist evidence into a clean run.
-      if (!result.complete) return errorResult(toolJson(result));
+      if (!result.complete) return errorResult(toolJson(response));
       return textResult(toolJson({ findings: result.findings }));
     }
     case 'atc_variants': {

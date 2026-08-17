@@ -69,7 +69,7 @@ function abapGitMutationEvidence(
     objects,
     repository: repositoryEvidence(repo),
     message: incomplete
-      ? 'The abapGit bridge returned an empty object wrapper. Repository linkage/readback does not prove that objects were imported or activated.'
+      ? 'The abapGit bridge returned an empty object wrapper. Repository linkage/readback does not prove that objects were imported or activated. Do not retry blindly; inspect the repository and expected objects first.'
       : 'The bridge returned non-rejecting object rows and repository readback. Complete repository import and activation were not reconciled.',
   };
 }
@@ -185,7 +185,7 @@ export async function handleSAPGit(
 
   if (url) validateGitRemoteUrl(url, { rejectPrivateLiteral: action === 'external_info' });
 
-  const gctsOnlyActions = new Set(['whoami', 'config', 'branches', 'history', 'objects', 'commit']);
+  const gctsOnlyActions = new Set(['whoami', 'config', 'branches', 'history', 'objects']);
   const abapGitOnlyActions = new Set(['external_info', 'check', 'stage', 'push']);
   if (backend === 'abapgit' && gctsOnlyActions.has(action)) {
     return errorResult(`Action '${action}' is only supported by gCTS; this system uses abapGit.`);

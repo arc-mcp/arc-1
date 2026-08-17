@@ -252,6 +252,7 @@ Options:
 | `--min-procedure <0..100>` | Imply coverage and fail below the procedure percentage. |
 | `--format text\|json\|junit` | Report format; default `text`. JSON is the structured domain result, not a `ToolResult`. |
 | `--report-file <path\|->` | File destination, or `-` for stdout. |
+| `--timeout <seconds>` | Public AUnit verification budget; default `300`, range `1..3600`. |
 | `--allow-empty` | Let a sound `no_tests` result pass; it never turns `incomplete` into success. |
 | `--fail-on-skipped` | Exit `1` when any test method is reported skipped. |
 
@@ -298,9 +299,8 @@ Options:
 Checkstyle maps priority `1` to `error`, `2` to `warning`, and `3+` to `info`. Exit `1` means the ATC
 run completed and crossed the chosen threshold. Exit `3` means ARC-1 cannot prove completeness: SAP
 omitted or denied the object-set completeness marker, reported no processed object, returned a
-malformed priority, or reached the fixed 100-verdict cap and may be truncated. Always retain the
-process exit code alongside a Checkstyle file; the XML contains findings, not the completeness
-verdict.
+malformed priority, or reached the fixed 100-verdict cap and may be truncated. ARC-1 emits no report
+for exit `3`, because a partial Checkstyle/JSON/text report could be mistaken for a complete result.
 
 ### `diff`
 
@@ -329,7 +329,8 @@ Options:
 | `--report-file <path\|->` | File destination, or `-` for stdout. |
 
 Without `--check`/`--fail-on-diff`, a non-empty diff is informational and exits `0`. JSON includes
-`hasDifferences`, `identical`, added/removed counts, labels, and the unified diff.
+`hasDifferences`, `identical`, added/removed counts, labels, and the unified diff. Malformed or
+internally contradictory structured evidence exits `3` and emits no report.
 
 ### `lint`
 
@@ -377,10 +378,13 @@ arc1 call SAPTransport --json \
 ```
 
 Transport release succeeds only after every ID selected by the action is read back in terminal `R`
-state. `release` verifies the requested ID; `release_recursive` freezes and verifies the original
+or `N` state. `release` verifies the requested ID; `release_recursive` freezes and verifies the original
 parent/task tree. A timeout, disappeared child, or unknown terminal state is an error rather than
 optimistic success. `resultFormat="structured"` returns the terminal statuses, poll count, and SAP
 reports; the default `legacy` format remains text-compatible.
+
+The verification budget defaults to five minutes. Override it per call with `timeoutSeconds`, for
+example `{"action":"release","id":"A4HK900123","timeoutSeconds":120}`.
 
 `release_recursive` is deliberately refused when `SAP_ALLOWED_TRANSPORTS` contains restrictive exact
 or prefix entries. SAP can attach/fold a concurrent child into the live subtree, so such a list cannot

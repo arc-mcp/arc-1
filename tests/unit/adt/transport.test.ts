@@ -10,6 +10,7 @@ import {
   CTS_NAMESPACE_TM,
   createTransport,
   createTransportWithTarget,
+  DEFAULT_RELEASE_TIMEOUT_MS,
   deleteTransport,
   failedReleaseReports,
   getObjectTransports,
@@ -1154,6 +1155,10 @@ describe('Transport Management', () => {
       <tm:request tm:number="${id}" tm:status="${status}"/>
     </tm:root>`;
 
+    it('uses a five-minute default verification budget', () => {
+      expect(DEFAULT_RELEASE_TIMEOUT_MS).toBe(300_000);
+    });
+
     it('parses a parent tree and a standalone task response into flat state rows', () => {
       const nested = parseTransportNodeStates(`<tm:root xmlns:tm="http://www.sap.com/cts/transports">
         <tm:request tm:number="DEVK900001" tm:status="D">
@@ -1222,6 +1227,27 @@ describe('Transport Management', () => {
 
       expect(result).toMatchObject({ outcome: 'released', verified: true, polls: 1 });
       expect(http.post).not.toHaveBeenCalled();
+    });
+
+    it('accepts protected-modifiable L, release-preparation P, and terminal N statuses', async () => {
+      let clock = 0;
+      const http = mockHttp();
+      (http.get as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: requestXml('P') })
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: requestXml('L') })
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: requestXml('N') });
+
+      const result = await releaseTransportAndWait(http, enabledSafety, 'DEVK900001', {
+        timeoutMs: 100,
+        now: () => clock,
+        sleep: async (milliseconds) => {
+          clock += milliseconds;
+        },
+      });
+
+      expect(result).toMatchObject({ outcome: 'released', verified: true, released: ['DEVK900001'], polls: 2 });
+      expect(result.intended[0]).toMatchObject({ initialStatus: 'P', lastStatus: 'N', confirmedReleased: true });
+      expect(http.post).toHaveBeenCalledTimes(1);
     });
 
     it('treats D to O to R as normal nonterminal convergence', async () => {

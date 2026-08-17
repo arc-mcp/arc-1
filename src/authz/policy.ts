@@ -196,7 +196,6 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   'SAPGit.clone': { scope: 'git', opType: OperationType.Create, featureGate: 'git' },
   'SAPGit.pull': { scope: 'git', opType: OperationType.Update, featureGate: 'git' },
   'SAPGit.push': { scope: 'git', opType: OperationType.Update, featureGate: 'git' },
-  'SAPGit.commit': { scope: 'git', opType: OperationType.Update, featureGate: 'git' },
   'SAPGit.switch_branch': { scope: 'git', opType: OperationType.Update, featureGate: 'git' },
   'SAPGit.create_branch': { scope: 'git', opType: OperationType.Create, featureGate: 'git' },
   'SAPGit.unlink': { scope: 'git', opType: OperationType.Delete, featureGate: 'git' },

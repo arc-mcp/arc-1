@@ -1,7 +1,7 @@
 # Plan: deterministic and fail-closed ARC-1 CLI/CI APIs
 
-Status: implementation, final frozen-tree validation, live A4H/758 rerun, and independent security
-review complete — **GO**; draft PR publication pending
+Status: implementation, repeated live A4H/758 validation, simplification, and independent review
+complete — **GO**; draft PR [#703](https://github.com/arc-mcp/arc-1/pull/703)
 
 Companion evidence:
 [2026-08-17-cli-ci-api-audit.md](../research/2026-08-17-cli-ci-api-audit.md)
@@ -28,7 +28,7 @@ The PR is accepted only when:
 5. known write tools reach safety policy even when hidden from advertised tool lists;
 6. AUnit cannot execute dangerous or critical tests through the read-scoped API;
 7. dedicated CI commands distinguish pass, finding/failure, usage/transport error, and incomplete run;
-8. transport release returns success only after parent/tasks are terminal `R`;
+8. transport release returns success only after parent/tasks are terminal `R` or `N`;
 9. gCTS read wrappers match live/pinned SAP-authored client evidence, while every currently unsafe
    gCTS mutation fails closed with no HTTP mutation;
 10. Git actions have an explicit per-action authorization/package matrix and no implicit
@@ -346,31 +346,31 @@ Primary files:
 Add a flat parent/task state parser because current `getTransport(taskId)` matches only top-level
 request IDs. Read the parent tree once before mutation and freeze the parent plus exactly the original
 child task IDs; do not add children discovered later. Preflight `checkTransport`/allowlist
-authorization for the parent and every frozen non-R child before the first release POST, preventing a
+authorization for the parent and every frozen nonterminal child before the first release POST, preventing a
 partial release when a later child is denied.
 
 Submit the required task/parent release operations, then bounded-poll one coherent parent-tree GET
-and index every frozen ID until all are `R`, passing the remaining Phase-B deadline to every read.
+and index every frozen ID until all are terminal `R` or `N`, passing the remaining Phase-B deadline to every read.
 The flat parser must also handle SAP returning a standalone task root for single-task operations. Use
-a small capped backoff and an overall limit near 30 seconds, configurable internally for tests.
-Final all-R SAP state is authoritative; release reports remain diagnostics because SAP may fold or
+a small capped backoff and a five-minute default budget, configurable per call and internally for tests.
+Final all-terminal SAP state is authoritative; release reports remain diagnostics because SAP may fold or
 contradict intermediate report state. Retain those contradictions as conflict evidence. Treat
-observed `O` and `D` as nonterminal. Do not invent other terminal-failure status semantics without
-captured evidence.
+observed `O`/`P` as in progress, `D`/`L` as modifiable, and `R`/`N` as terminal. These six statuses
+are live-confirmed from A4H/758 domain values; other statuses remain unknown and fail closed.
 
 Preserve the current text contract by default. An opt-in structured confirmation contains intended
 IDs, last observed statuses, elapsed/poll attempts, and raw reports. A clean report plus deadline and
-any non-`R` state is `pending`/`incomplete` with `isError`; it must never say “Released.” An
-already-released parent is idempotent only after every intended child is also confirmed `R`.
+any nonterminal state is `pending`/`incomplete` with `isError`; it must never say “Released.” An
+already-released parent is idempotent only after every intended child is also confirmed terminal.
 
 Unit cases:
 
-- immediate R;
-- D -> D -> R;
+- immediate R/N;
+- D -> D -> R and P -> L -> N;
 - clean report but child remains D until timeout;
-- report error followed by terminal R;
+- report error followed by terminal R/N;
 - GET/read failure;
-- unexpected/non-`R` child state at deadline;
+- unexpected/nonterminal child state at deadline;
 - recursive parent and task convergence; and
 - already released.
 
@@ -407,7 +407,7 @@ Document and enforce this initial matrix:
 | Backend/action | Scope and server ceiling | Package rule | This PR |
 |---|---|---|---|
 | gCTS list/config/whoami/branches/history/objects | read | none | enabled, redacted |
-| gCTS clone/pull/commit/switch/create_branch/unlink | git + writes + Git writes | explicit `*` would be necessary but is not sufficient | fail closed before mutation |
+| gCTS clone/pull/switch/create_branch/unlink | git + writes + Git writes | explicit `*` would be necessary but is not sufficient | fail closed before mutation |
 | abapGit list/check/stage | existing read/git contract, reviewed per action | real repo where applicable | enabled |
 | abapGit external_info | git + writes + Git writes (SAP-host egress) | n/a | HTTPS/no-userinfo/literal-private guard |
 | abapGit clone/pull/switch/create_branch | git + writes + Git writes | root `/**` or `*`; exact root/`Z*` is not subtree proof | enabled only with honest result semantics |
@@ -543,7 +543,7 @@ Controlled mutation lifecycle:
 - random `$TMP` program create -> inactive read -> update -> activate -> active read/diff -> delete ->
   verify 404;
 - one isolated transport create/release test only when the suite explicitly enables irreversible
-  tests, asserting terminal R before return;
+  tests, asserting terminal R/N before return;
 - abapGit mutation only against a controlled fixture with expected-object assertions and `finally`
   cleanup;
 - no gCTS import mutation in this PR;
@@ -590,7 +590,7 @@ Git files/tests. Shared schema/tool edits are integrated by the CLI owner to pre
 - [x] Alerts are not counted as tests.
 - [x] Failed/empty/incomplete AUnit cannot false-green a dedicated CI command.
 - [x] Native and generated JUnit are valid and counters match exit policy.
-- [x] Transport success implies terminal R for parent/tasks; an unprovable vanished task is an error.
+- [x] Transport success implies terminal R/N for parent/tasks; an unprovable vanished task is an error.
 - [x] gCTS read tests match live/pinned wrappers and reject unknown nonempty shapes.
 - [x] Every gCTS mutation is blocked before HTTP in this PR.
 - [x] abapGit empty import result is an incomplete/error outcome, not exit-0 unverified success.
@@ -665,3 +665,24 @@ After this review, current `main` was merged without weakening either side: data
 bodies retain the CLI request deadline on every initial/retry/proxy path, and the new gzip option is
 registered in the strict CLI option table. The integrated tree passed 5,246 tests across 177 files;
 `http.ts` remains below its ratchet at 1,494 lines after extracting the 20-line wire-body policy.
+
+## 15. Three-session external review closure
+
+Three independent Claude sessions then reviewed the integrated PR by different surfaces. Applicable
+findings were implemented and regression-tested: CLI AUnit/transport timeout overrides and five-minute
+defaults; CLAS/PROG/FUGR AUnit scope; fail-closed ATC/diff formatting; complete gCTS list redaction;
+bounded audit/Git string preprocessing; hierarchy-aware abapGit subtree grants; terminal CTS statuses;
+and removal of the unimplemented `SAPGit.commit` action. Findings that would weaken a reproduced
+control were rejected with evidence: incomplete CTS reports may still converge to a released state,
+private Git hosts are valid for administrator-authorized clone/pull, and separate audit/gCTS
+sanitizers have different contracts.
+
+The post-review live pass added a real harmless FUGR AUnit lifecycle, a verified single CTS release,
+two verified recursive releases, and a controlled abapGit clone/pull/switch/push/unlink lifecycle.
+All disposable repository, package, class, and function-group artifacts were removed and leak-checked.
+The companion audit records the exact irreversible CTS identifiers and the empty final Git/object
+state. Full mutable gCTS remains quarantined because no controlled remote/deploy transaction exists.
+
+The frozen post-review tree passed 5,262 tests across 177 files, all TypeScript typechecks, full
+Biome lint, file/schema budgets, authorization-policy validation, strict documentation, built and
+packed npm smoke, focused credential-backed Git integration, and `git diff --check`.

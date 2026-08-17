@@ -866,7 +866,7 @@ truncated per part with `diffTruncated: true`; `added`/`removed` still reflect t
 | `target` | string | No | Explicit create target (`C11`, `C11.021`, or `/TRG/`). SAP validates it; system.client/group forms require extended transport control, and 7.50 does not support the target-setting ADT action. Discover valid values with `action="targets"`; never invent one. |
 | `transportLayer` | string | No | Advanced create override for SAP's consolidation-route resolution. Omit normally so the package chooses the route; discover valid values with `action="layers"`. |
 | `user` | string | No | SAP username to filter by (for list). Defaults to the current SAP user. Use `*` to list all users. |
-| `status` | string | No | Transport status filter (for list). `D`=modifiable (default), `R`=released, `*`=all statuses. |
+| `status` | string | No | Transport status filter (for list). `D`=modifiable (default), `L`=modifiable/protected, `O`=release started, `P`=release preparation, `R`=released, `N`=released with import protection, `*`=all statuses. |
 | `type` | string | No | Object type for `check`/`history`/`remove_object` actions (`PROG`, `CLAS`, `DDLS`, etc.). For `remove_object` it is the CTS/E071 object type exactly as shown by `get` (e.g. `PROG`, `DEVC`). Not used by `create`, which creates a Workbench (K) request. |
 | `operation` | string | No | For `check`: `create` (default, sends ADT operation `I`) or `modify` (sends the empty modify operation). |
 | `pgmid` | string | No | Program ID for `remove_object`: `R3TR` (whole object) or `LIMU` (sub-object). Required for `remove_object` — the object type alone does not determine `pgmid`. |
@@ -876,17 +876,18 @@ truncated per part with `diffTruncated: true`; `added`/`removed` still reflect t
 | `summary` | boolean | No | For `list` only. **Default `true`** — headers-only: omits each transport's (and task's) `objects[]`, keeping `id`/`description`/`owner`/`status`/`target` plus an `objectCount`. Pass `false` for full object lists (~5x larger). |
 | `maxResults` | number | No | Maximum list rows or check/history assignment candidates (defaults: list/history 50, check 10; max 1000). |
 | `resultFormat` | string | No | For `release`/`release_recursive`: `legacy` text (default) or `structured` JSON with outcome, terminal statuses, polls, elapsed time, and SAP reports. |
+| `timeoutSeconds` | number | No | For `release`/`release_recursive`: terminal-state verification budget; default `300`, range `1..1800`. |
 
 **Actions:**
 
 - **`list`** — List transport requests. Defaults to current user, modifiable (status D), all types (Workbench, Customizing, Transport of Copies). Returns a paged envelope `{total, shown, truncated, transports}` — `total` is the full backlog, so a capped page still reports it. Summarised by default (object lists dropped, `objectCount` kept): scan cheaply, then `get` the one you want in full; pass `summary=false` for the object lists. Paged at `maxResults` (default 50, max 1000). Live: 55 requests went 104 KB / ~26K tokens → 23 KB / ~5.7K tokens.
 - **`get`** — Get transport details including tasks and objects.
 - **`create`** — Create a new Workbench (K) transport request. Requires `description`. Optional `package` (defaults to `$TMP` — pass an explicit package to influence the transport route/target, not the request category). Uses the ADT `CreateCorrectionRequest` endpoint (`POST /sap/bc/adt/cts/transports`); legacy NW 7.50 systems are supported.
-- **`release`** — Release a single transport or task, then poll until that ID is read back in terminal `R`. Timeout/unknown/disappearance is an error. Use `resultFormat="structured"` for convergence evidence.
+- **`release`** — Release a single transport or task, then poll until that ID is read back in terminal `R` or `N`. Timeout/unknown/disappearance is an error. Use `resultFormat="structured"` for convergence evidence.
 - **`delete`** — Delete a transport. Use `recursive=true` to delete tasks first. `removeLockedObjects=true` first strips locked entries from each task when necessary; it is not a dry-run option.
 - **`remove_object`** — Remove a single object from a request while **keeping the request** (the SE09/SE10 "remove from request" operation). Requires the full CTS object key `pgmid` + `type` + `name` (the object type alone does not determine `pgmid` — e.g. `COMM` is valid under both `R3OB` and `LIMU`). ARC-1 resolves the entry from the request's object list and removes it via the ADT `removeobject` operation; the object itself is **not** deleted. Functional on SAP_BASIS 7.58/8.16; on NW 7.5x the backend ignores `removeobject` (HTTP 400) — clean such requests in SE09/SE10.
 - **`reassign`** — Change transport owner. Requires `owner`. Use `recursive=true` for tasks too.
-- **`release_recursive`** — Freeze the original parent/task tree, release its unreleased tasks first and then the parent, and verify every frozen ID in terminal `R`. A disappeared child, timeout, or unknown state is an error. This action is refused under restrictive exact/prefix `SAP_ALLOWED_TRANSPORTS`; only the legacy empty allowlist or explicit `*` can authorize a live subtree that may gain a concurrent child. Use either only when every current/concurrent child is intended to be released.
+- **`release_recursive`** — Freeze the original parent/task tree, release its unreleased tasks first and then the parent, and verify every frozen ID in terminal `R` or `N`. A disappeared child, timeout, or unknown state is an error. This action is refused under restrictive exact/prefix `SAP_ALLOWED_TRANSPORTS`; only the legacy empty allowlist or explicit `*` can authorize a live subtree that may gain a concurrent child. Use either only when every current/concurrent child is intended to be released.
 - **`check`** — Check whether a transport is required for creating or modifying an object in a specific package. Requires `type`, `name`, and `package`; `operation` defaults to `create`. Returns whether a transport is required, whether a new assignment is required, local-package status, bounded candidate requests, SAP diagnostics, and any existing lock with owner/task details. **Does NOT require `--allow-transport-writes`** — this is a read-only pre-flight check.
 - **`history`** — Legacy action name for current object transport status. Given `type` + `name`, it returns at most the request currently holding the object lock in `relatedTransports`, plus bounded `candidateTransports` the object could be assigned to. Candidates do **not** contain the object and are not historical/conflict evidence. Complete history requires an authorized E071/E070 data workflow because the standard ADT endpoints expose only current assignment state. Read-only; does NOT require `--allow-transport-writes`.
 - **`layers`** — List the transport layers and their resolved targets where available. Read-only value help for `create.transportLayer`; release-dependent.
@@ -947,7 +948,7 @@ actions fail closed before any mutating HTTP request.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `action` | string | Yes | `list_repos`, `whoami`, `config`, `branches`, `external_info`, `history`, `objects`, `check`, `stage`, `clone`, `pull`, `push`, `commit`, `switch_branch`, `create_branch`, `unlink` |
+| `action` | string | Yes | `list_repos`, `whoami`, `config`, `branches`, `external_info`, `history`, `objects`, `check`, `stage`, `clone`, `pull`, `push`, `switch_branch`, `create_branch`, `unlink` |
 | `backend` | string | No | Optional backend override: `gcts` or `abapgit` |
 | `repoId` | string | No | Repository ID/key (required by most repo-scoped actions) |
 | `url` | string | No | Remote Git URL (required for `clone`, and for abapGit `external_info`) |
@@ -955,9 +956,8 @@ actions fail closed before any mutating HTTP request.
 | `package` | string | No | ABAP package (required for clone/create on package-bound backends) |
 | `transport` | string | No | Transport request (backend-dependent) |
 | `commit` | string | No | Commit SHA (for gCTS `pull` by commit) |
-| `message` | string | Yes for `commit`/`push` | Commit message (gCTS `commit` and abapGit `push`) |
-| `description` | string | No | Optional gCTS commit description. The gCTS commit action is currently quarantined before HTTP mutation. |
-| `objects` | array | No | Commit/staging object list (`[{type,name}]`). For abapGit `push` it selects which changed objects to commit; omit to push every local change |
+| `message` | string | Yes for `push` | Commit message for abapGit `push` |
+| `objects` | array | No | For abapGit `push`, the changed objects to commit (`[{type,name}]`); omit to push every local change |
 | `user` | string | No | Remote Git username |
 | `password` | string | No | Remote Git password |
 | `token` | string | No | abapGit remote token, sent as basic auth with user `x-access-token` (GitHub convention) unless `user` is also given. gCTS mutations, including credential-bearing repository creation, are quarantined. |
@@ -969,7 +969,7 @@ actions fail closed before any mutating HTTP request.
 - **gCTS reads:** `whoami`, `config`, `branches`, `history`, `objects`
 - **abapGit only:** `external_info`, `check`, `stage`, `clone`, `pull`, `push`, `switch_branch`,
   `create_branch`, `unlink`
-- **gCTS mutation names, currently quarantined:** `clone`, `pull`, `commit`, `switch_branch`,
+- **gCTS mutation names, currently quarantined:** `clone`, `pull`, `switch_branch`,
   `create_branch`, `unlink`
 
 **Safety and scope rules:**
@@ -1362,11 +1362,12 @@ administrators can disable them with `SAP_DENY_ACTIONS`.
 | `action` | string | Yes | `syntax`, `unittest`, `atc`, `atc_variants`, `cds_testcases`, `dumps`, `traces`, `trace_start`, `trace_requests`, `trace_cancel`, `system_messages`, `gateway_errors`, `object_state`, `quickfix`, `apply_quickfix`, `odata_perf`, `cds_sql`, `sql_trace_state`, `set_sql_trace_state`, `sql_trace_directory`, or `authorization_trace` |
 | `name` | string | No | Object name (required for syntax/unittest/atc/object_state/quickfix/apply_quickfix; the CDS entity / DDLS source name for `cds_testcases` and `cds_sql`) |
 | `url` | string | No | For `odata_perf`: the host-relative OData path to probe (from the Fiori app's Network tab), e.g. `/sap/opu/odata4/sap/.../Entity?$filter=...`. Must be a path on the SAP system ARC-1 connects to — absolute URLs are rejected. |
-| `type` | string | No | Object type: `PROG`, `CLAS`, `INTF`, `FUNC` (required for syntax/unittest/atc/object_state/quickfix/apply_quickfix) |
+| `type` | string | No | Object type. `unittest` supports `CLAS`, `PROG`, and `FUGR`; other actions accept their documented ADT types. |
 | `sourceUri` | string | No | Exact ADT source URI for quickfix/apply_quickfix; defaults to the type/name main source. Use it for class-local includes. |
 | `version` | string | No | For syntax: `active` (default) or `inactive`. |
 | `coverage` | boolean | No | For `unittest`: also return statement/branch/procedure coverage for the object, plus `methodsBelowFull` (methods under 100% statement coverage, worst first), in one extra round-trip. Default false. |
 | `resultFormat` | string | No | For `unittest`: `legacy` (default), `structured`, or `junit`; JUnit uses SAP's public asynchronous AUnit endpoint when available and otherwise generates JUnit from the legacy result. For `atc`: `legacy` or `structured`; `junit` is rejected because ATC JUnit output is not implemented. Other actions reject this parameter. Dedicated CLI checks choose their required format automatically. |
+| `timeoutSeconds` | number | No | For `unittest`: public-API verification budget; default `300`, range `1..3600`. Timeout is incomplete evidence, never a pass. |
 | `source` | string | No | Current source code (required for `quickfix` and `apply_quickfix`) |
 | `line` | number | No | Source line number (required for `quickfix` and `apply_quickfix`) |
 | `column` | number | No | Source column number (optional for `quickfix` and `apply_quickfix`, default `0`) |
@@ -1399,7 +1400,7 @@ administrators can disable them with `SAP_DENY_ACTIONS`.
 **Actions:**
 
 - **`syntax`** — Run SAP syntax check on an object. Returns errors/warnings with line, column, and message. **Important:** Syntax check runs against the *active* (on-system) source, not proposed new source. After writing/updating an object, activate it first, then run syntax check.
-- **`unittest`** — Run ABAP unit tests with the maximum risk fixed to **harmless** (`dangerous=false`, `critical=false`) and all three duration categories enabled. Returns results per test class/method with status, alert messages, and execution time. Risk-level refusals are skipped/incomplete evidence, not passing tests. Pass `coverage=true` to also return the object's **statement / branch / procedure** coverage (`{executed, total, percent}` each) plus **`methodsBelowFull`** — the methods under 100% statement coverage, worst first (the actionable "what to test next" subset the object aggregate hides) — via a second ADT round-trip to the coverage-measurement endpoint; the output becomes `{tests, coverage}`. Best-effort — if the coverage endpoint is unavailable the tests still return with a `coverageNote`. Use `resultFormat="structured"` for explicit outcome/completeness evidence or `resultFormat="junit"` for native/generated JUnit; the latter still reconciles public-endpoint results with a harmless legacy run so missing risk alerts cannot turn the result green.
+- **`unittest`** — Run ABAP unit tests for `CLAS`, `PROG`, or `FUGR` with the maximum risk fixed to **harmless** (`dangerous=false`, `critical=false`) and all three duration categories enabled. Returns results per test class/method with status, alert messages, and execution time. Risk-level refusals are skipped/incomplete evidence, not passing tests. Pass `coverage=true` to also return the object's **statement / branch / procedure** coverage (`{executed, total, percent}` each) plus **`methodsBelowFull`** — the methods under 100% statement coverage, worst first (the actionable "what to test next" subset the object aggregate hides) — via a second ADT round-trip to the coverage-measurement endpoint; the output becomes `{tests, coverage}`. Best-effort — if the coverage endpoint is unavailable the tests still return with a `coverageNote`. Use `resultFormat="structured"` for explicit outcome/completeness evidence or `resultFormat="junit"` for native/generated JUnit; the latter still reconciles public-endpoint results with a harmless legacy run so missing risk alerts cannot turn the result green.
 - **`atc`** — Run ATC (ABAP Test Cockpit) checks. Returns findings with priority, check title, message, URI, line number, plus quickfix metadata (`quickfixInfo`, `hasQuickfix`). Optional `variant` parameter for custom check variants. Use `resultFormat="structured"` when automation must distinguish a complete result from a missing/false object-set completeness marker, a zero-object result, malformed priorities, or the fixed 100-verdict response cap.
 - **`atc_variants`** — List the ATC check variants this system offers, plus the system default variant (the one `atc` uses when no `variant` is passed). Read-only. The `variant` parameter doubles as an optional name filter (`*` = all; e.g. `variant="ABAP_CLOUD*"`). Returns `{ systemDefault, filter, count, variants: [{ name, description }] }`. Use it to discover the exact `variant` string to pass to `action="atc"`.
 - **`cds_testcases`** — Get SAP-suggested ABAP Unit test cases for a CDS entity (CDS Test Double Framework). Requires `name` (the CDS entity / DDLS source name; no `type`). Returns one suggestion per testable semantic — the whole view (`semanticType: "NONE"`), each calculated field (`"CALCULATION"` + `calculatedField`), and `"CAST"`/`"JOIN"`/`"CASE"` expressions — each with a suggested `testMethod` name + `description`, plus a `hint` for scaffolding a `cl_cds_test_environment` test class. **Read-only.** Available on **SAP_BASIS 8.16+ (ABAP Platform 2025 / S/4HANA 2025)** only — discovery-gated, so older releases return a clear "needs 8.16+" message. The AI-backed test-data / test-method *generation* (Joule for Developers) is intentionally **not** exposed.

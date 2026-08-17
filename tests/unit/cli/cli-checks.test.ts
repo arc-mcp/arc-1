@@ -280,9 +280,9 @@ describe('ATC, lint, and diff CI policy', () => {
     expect(
       evaluateDiff({ ...diff, identical: true, hasDifferences: false, added: 0, removed: 0, diff: '' }, true),
     ).toBe(0);
-    expect(evaluateDiff({ ...diff, hasDifferences: undefined } as unknown as StructuredDiffResult, false)).toBe(1);
-    expect(evaluateDiff({ ...diff, identical: true }, false)).toBe(1);
-    expect(evaluateDiff({ ...diff, added: '1' } as unknown as StructuredDiffResult, false)).toBe(1);
+    expect(evaluateDiff({ ...diff, hasDifferences: undefined } as unknown as StructuredDiffResult, false)).toBe(3);
+    expect(evaluateDiff({ ...diff, identical: true }, false)).toBe(3);
+    expect(evaluateDiff({ ...diff, added: '1' } as unknown as StructuredDiffResult, false)).toBe(3);
   });
 
   it('emits escaped Checkstyle with documented ATC severity mapping', () => {

@@ -485,7 +485,7 @@ The following require separate ADRs or focused follow-ups:
 - transactional gCTS staging/inventory/deploy/rollback;
 - administrator-trusted Git host/repository/ref policy with DNS/private-range resolution;
 - SAP Secure Storage or external secret-provider integration;
-- all gCTS create/clone/pull/switch/commit/branch/unlink mutations, even though their correct SAP
+- all gCTS create/clone/pull/switch/branch/unlink mutations, even though their correct SAP
   wire shapes are recorded above;
 - full abapGit object-manifest/activation reconciliation;
 - higher-risk AUnit authorization and multi-user execution policy;
@@ -681,3 +681,56 @@ The subsequent current-`main` integration combined its opt-in data-preview gzip 
 deadline propagation as `wireBody, options` on every send and retry. The strict registry also gained
 the new gzip CLI flag. The integrated tree passed 5,246 tests across 177 files, with `http.ts` at
 1,494 lines after isolating the 20-line wire-body transformation.
+
+## 12. External three-session review and final live mutation receipt
+
+Three independent Claude review sessions re-read the integrated PR. Their distinct claims were
+normalized before changes so repeated observations were fixed once. The accepted corrections were:
+
+- five-minute default and explicit per-call budgets for public AUnit and CTS convergence;
+- AUnit support and source-selection verification for CLAS, PROG, and FUGR;
+- evaluation before ATC/diff formatting, with non-evaluable evidence returning exit `3` and no report;
+- bounded preprocessing before audit/Git credential regexes, without truncating ordinary gCTS lists;
+- hierarchy-aware ancestor subtree authorization for abapGit repositories;
+- CTS status support for modifiable `D`/`L`, in-flight `O`/`P`, and terminal `R`/`N`;
+- clear do-not-retry guidance for accepted but unverifiable abapGit mutations; and
+- removal of the advertised but unimplemented `SAPGit.commit` action.
+
+Claims rejected after source/live review were also retained as decisions: ARC-1 must not treat a
+failed CTS submission report as immediately terminal because A4H can subsequently release it; private
+Git destinations remain valid for explicitly authorized enterprise clone/pull operations; the outer
+startup preflight is required to avoid authentication fan-out; and audit-event versus gCTS-output
+redaction remain separate because their field, collision, and result-preservation contracts differ.
+The exact gCTS branches wrapper could not be re-probed because the clean A4H repository list is empty;
+the strict `{branches:[...]}` contract remains based on the pinned SAP-authored client evidence and
+fails unknown nonempty shapes closed.
+
+### Live A4H/758 results added by this review
+
+- `unittest FUGR ZCR1_FG_R817 --timeout 120` executed one harmless test with verified active source
+  evidence. The function group was deleted; TADIR and inactive-object searches returned no match.
+- Single request `A4HK906432` reached terminal `R` before ARC-1 returned success (7.512 seconds,
+  three convergence polls).
+- Recursive request/task pairs `A4HK906440`/`A4HK906441` and
+  `A4HK906442`/`A4HK906443` each returned only after both frozen nodes were terminal `R`
+  (7.389 and 6.708 seconds respectively).
+- Temporary unused request/task `A4HK906438`/`A4HK906439` was deleted and is absent from E070.
+- A controlled abapGit clone of `https://github.com/abapGit-tests/CLAS.git` into package
+  `ZCR1G_R817` demonstrated the bridge's real empty-result contract: clone and pull were accepted by
+  SAP but ARC-1 returned error/incomplete rather than false success. `ZCL_AG_UNIT_TEST` and the repo
+  link were verified after clone; same-branch switch was accepted/incomplete; an empty selected push
+  was a verified no-op; unlink succeeded only after absence readback.
+- The imported class was deleted, its CTS deletion released recursively, the package was deleted and
+  its deletion released recursively. Final TDEVC/TADIR/inactive/repository checks returned no matching
+  class, package, function group, or abapGit link. The gCTS repository list remained empty.
+- Focused credential-backed gCTS/abapGit integration finished with 11 passes and one intentional
+  remote-mutation skip.
+
+The new permanent CTS records are intentional audit evidence, not leaked mutable artifacts:
+`A4HK906432`, `A4HK906440`, `A4HK906441`, `A4HK906442`, and `A4HK906443`, all status `R`.
+No gCTS write was attempted: mutations remain quarantined until the staged import/inventory/deploy/
+rollback contract can be tested against a controlled remote.
+
+Final frozen-tree validation passed 5,262 tests across 177 files, all TypeScript typechecks, full
+Biome lint, file/schema budgets, authorization-policy validation, strict documentation, built and
+packed npm smoke, and `git diff --check`.

@@ -280,6 +280,16 @@ describe('abapGit client helpers', () => {
       ).resolves.toBeUndefined();
     });
 
+    it('allows a repository package covered by an ancestor subtree grant', async () => {
+      const resolver = {
+        isDescendantOrSelf: vi.fn().mockResolvedValue(true),
+        invalidate: vi.fn(),
+      };
+      const safety = { ...gitSafety, allowedPackages: ['ZROOT/**'] };
+      await expect(enforceRepoPackageAllowed(safety, 'ZROOT_CHILD', resolver, 'pull')).resolves.toBeUndefined();
+      expect(resolver.isDescendantOrSelf).toHaveBeenCalledWith('ZROOT', 'ZROOT_CHILD');
+    });
+
     it('refuses exact-root and broad prefix grants because neither proves descendant closure', async () => {
       for (const allowedPackages of [['$TUTORIALS'], ['$*'], ['Z*']]) {
         const safety = { ...gitSafety, allowedPackages };

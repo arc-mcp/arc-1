@@ -97,7 +97,6 @@ describe('ACTION_POLICY matrix', () => {
       'clone',
       'pull',
       'push',
-      'commit',
       'switch_branch',
       'create_branch',
       'unlink',

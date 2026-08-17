@@ -116,6 +116,7 @@ interface UnitTestCommandOptions {
   reportFile?: string;
   allowEmpty?: boolean;
   failOnSkipped?: boolean;
+  timeout?: string;
 }
 
 interface AtcCommandOptions {
@@ -522,6 +523,7 @@ export function createCliProgram(options: CreateCliProgramOptions = {}): Command
     .option('--min-procedure <percent>', 'Minimum procedure coverage percentage')
     .addOption(new Option('--format <format>', 'Report format').choices(['text', 'json', 'junit']).default('text'))
     .option('--report-file <path>', 'Write the report to a file; use "-" for stdout')
+    .option('--timeout <seconds>', 'Public ABAP Unit verification budget (1-3600 seconds; default 300)')
     .option('--allow-empty', 'Allow only a sound no-tests result to pass')
     .option('--fail-on-skipped', 'Fail when any executed method is skipped')
     .action(async (type: string, name: string, opts: UnitTestCommandOptions) => {
@@ -531,11 +533,21 @@ export function createCliProgram(options: CreateCliProgramOptions = {}): Command
         ...(opts.minProcedure !== undefined ? { procedure: assertPercent(opts.minProcedure, '--min-procedure') } : {}),
       };
       const coverageRequested = opts.coverage === true || Object.keys(coverage).length > 0;
+      const timeoutSeconds = opts.timeout === undefined ? undefined : Number(opts.timeout);
+      if (
+        timeoutSeconds !== undefined &&
+        (!Number.isSafeInteger(timeoutSeconds) || timeoutSeconds < 1 || timeoutSeconds > 3600)
+      ) {
+        console.error('--timeout must be an integer from 1 to 3600 seconds.');
+        runtime.state.exitCode = 2;
+        return;
+      }
       const outcome = await executeCiJson<AunitCiResult>(runtime, 'SAPDiagnose', {
         action: 'unittest',
         type: type.toUpperCase(),
         name,
         coverage: coverageRequested,
+        ...(timeoutSeconds === undefined ? {} : { timeoutSeconds }),
         resultFormat: opts.format === 'junit' ? 'junit' : 'structured',
       });
       if (!outcome.ok) return;
@@ -580,6 +592,11 @@ export function createCliProgram(options: CreateCliProgramOptions = {}): Command
         resultFormat: 'structured',
       });
       if (!outcome.ok) return;
+      const exitCode = evaluateAtc(outcome.value, maxPriority);
+      if (exitCode === 3) {
+        runtime.state.exitCode = exitCode;
+        return;
+      }
       const report =
         opts.format === 'json'
           ? JSON.stringify(outcome.value, null, 2)
@@ -590,7 +607,7 @@ export function createCliProgram(options: CreateCliProgramOptions = {}): Command
         runtime.state.exitCode = 1;
         return;
       }
-      runtime.state.exitCode = evaluateAtc(outcome.value, maxPriority);
+      runtime.state.exitCode = exitCode;
     });
 
   program
@@ -620,6 +637,11 @@ export function createCliProgram(options: CreateCliProgramOptions = {}): Command
         ...(opts.group ? { group: opts.group } : {}),
       });
       if (!outcome.ok) return;
+      const exitCode = evaluateDiff(outcome.value, opts.check === true || opts.failOnDiff === true);
+      if (exitCode === 3) {
+        runtime.state.exitCode = exitCode;
+        return;
+      }
       const report =
         opts.format === 'json'
           ? JSON.stringify(outcome.value, null, 2)
@@ -630,7 +652,7 @@ export function createCliProgram(options: CreateCliProgramOptions = {}): Command
         runtime.state.exitCode = 1;
         return;
       }
-      runtime.state.exitCode = evaluateDiff(outcome.value, opts.check === true || opts.failOnDiff === true);
+      runtime.state.exitCode = exitCode;
     });
 
   program

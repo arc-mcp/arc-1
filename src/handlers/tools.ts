@@ -165,13 +165,12 @@ const SAPSEARCH_DESC_BTP =
   "Tips: On BTP, focus on classes (CL_*), interfaces (IF_*), CDS views (I_*), and custom Z/Y objects.\n\nNote: Searches object names only (classes, CDS views, etc.) — field/column names are not searchable here. To find fields by name, use SAPRead(type='DDLS', include='elements') for CDS views.";
 
 // ─── SAPTransport ───────────────────────────────────────────────────
-
 const SAPTRANSPORT_DESC_ONPREM =
   'Manage CTS transport requests (SE09/SE10). Actions: list (current user, modifiable), get (tasks + objects), ' +
   'create (always a Workbench (K) request — the package/target sets target & layer, not the request category; optional explicit target), ' +
   'release, delete, remove_object (keep the request), reassign (change owner), release_recursive (tasks then parent), ' +
   'check (does a package need a transport — type, name, package), history (legacy name: current object lock plus assignment candidates — type, name; not complete transport history; read-only, no write scope needed). ' +
-  'IDs look like A4HK900123. Status: D=modifiable, R=released.';
+  'IDs look like A4HK900123. Status: D/L=modifiable, O/P=releasing, R/N=released.';
 
 const SAPTRANSPORT_DESC_BTP =
   'Manage transport requests (BTP ABAP Environment, SE09/SE10). Actions: list (current user, modifiable), get (tasks + objects), ' +
@@ -181,7 +180,6 @@ const SAPTRANSPORT_DESC_BTP =
   'On BTP, release triggers a gCTS push to the software-component Git repo; import is via Manage Software Components / cTMS, not this tool.';
 
 // ─── SAPManage ──────────────────────────────────────────────────────
-
 const SAPMANAGE_DESC_ONPREM =
   'Probe and report SAP system capabilities. Use BEFORE operations that depend on optional features ' +
   '(abapGit, RAP/CDS, AMDP, HANA, UI5/Fiori, CTS transports, FLP). Also handles package (DEVC) lifecycle.\n\n' +
@@ -237,7 +235,6 @@ const SAPGIT_ACTIONS_WRITE = [
   'clone',
   'pull',
   'push',
-  'commit',
   'switch_branch',
   'create_branch',
   'unlink',
@@ -1090,7 +1087,7 @@ export function getToolDefinitions(
       description:
         'Run diagnostics on ABAP objects and analyze runtime errors. Actions:\n' +
         '- "syntax": syntax-check (name+type; optional version; optional source = pre-write dry-run, nothing written).\n' +
-        '- "unittest": run ABAP Unit tests (name+type).\n' +
+        '- "unittest": run ABAP Unit for CLAS/PROG/FUGR (name+type).\n' +
         '- "atc": run ATC checks (name+type; optional variant). "atc_variants": list variants + the system default (variant = name filter; read-only).\n' +
         '- "cds_testcases": SAP-suggested ABAP Unit test cases for a CDS entity (name; read-only; SAP_BASIS 8.16+).\n' +
         '- "object_state": compare active vs inactive source versions (name+type; CLAS compares all includes). Returns ETags/hashes/divergence flags.\n' +
@@ -1249,7 +1246,11 @@ export function getToolDefinitions(
           resultFormat: {
             type: 'string',
             enum: ['legacy', 'structured', 'junit'],
-            description: 'unittest: legacy|structured|junit. atc: legacy|structured. Rejected for other actions.',
+            description: 'unittest: legacy|structured|junit; atc: legacy|structured; other actions reject it.',
+          },
+          timeoutSeconds: {
+            type: 'number',
+            description: 'unittest timeout seconds: 1-3600; default 300.',
           },
           sqlOn: {
             type: 'boolean',
@@ -1618,8 +1619,11 @@ export function getToolDefinitions(
           resultFormat: {
             type: 'string',
             enum: ['legacy', 'structured'],
-            description:
-              'release/release_recursive: legacy text (default), or structured JSON with terminal statuses, polls, and SAP reports.',
+            description: 'release actions: legacy (default) or structured JSON.',
+          },
+          timeoutSeconds: {
+            type: 'number',
+            description: 'release timeout seconds: 1-1800; default 300.',
           },
         },
         required: ['action'],
@@ -1675,15 +1679,11 @@ export function getToolDefinitions(
           },
           message: {
             type: 'string',
-            description: 'Commit message (required for gCTS commit and abapGit push).',
-          },
-          description: {
-            type: 'string',
-            description: 'Commit description (gCTS).',
+            description: 'Commit message required for abapGit push.',
           },
           objects: {
             type: 'array',
-            description: 'Object list for commit/push. For abapGit push it selects the changed objects to commit.',
+            description: 'For abapGit push, the changed objects to commit; omit to select every local change.',
             items: {
               type: 'object',
               properties: {

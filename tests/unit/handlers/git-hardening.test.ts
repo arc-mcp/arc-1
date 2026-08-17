@@ -70,7 +70,6 @@ describe('SAPGit hardening', () => {
       for (const args of [
         { action: 'clone', backend: 'gcts', url: 'https://example.com/repo.git' },
         { action: 'pull', backend: 'gcts', repoId: 'R' },
-        { action: 'commit', backend: 'gcts', repoId: 'R' },
         { action: 'switch_branch', backend: 'gcts', repoId: 'R', branch: 'main' },
         { action: 'create_branch', backend: 'gcts', repoId: 'R', branch: 'feature' },
         { action: 'unlink', backend: 'gcts', repoId: 'R' },

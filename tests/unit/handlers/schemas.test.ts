@@ -1565,6 +1565,20 @@ describe('SAPLintSchema', () => {
 });
 
 describe('SAPDiagnoseSchema', () => {
+  it.each(['CLAS', 'PROG', 'FUGR'])('accepts unittest source-audited type %s', (type) => {
+    expect(SAPDiagnoseSchema.safeParse({ action: 'unittest', type, timeoutSeconds: '300' }).success).toBe(true);
+  });
+
+  it.each(['INTF', 'FUNC', 'DDLS'])('rejects unittest type %s without source-selection support', (type) => {
+    expect(SAPDiagnoseSchema.safeParse({ action: 'unittest', type }).success).toBe(false);
+  });
+
+  it('restricts unittest timeout and rejects it for unrelated actions', () => {
+    expect(SAPDiagnoseSchema.safeParse({ action: 'unittest', timeoutSeconds: 1 }).success).toBe(true);
+    expect(SAPDiagnoseSchema.safeParse({ action: 'unittest', timeoutSeconds: 3601 }).success).toBe(false);
+    expect(SAPDiagnoseSchema.safeParse({ action: 'atc', timeoutSeconds: 30 }).success).toBe(false);
+  });
+
   it.each(['legacy', 'structured', 'junit'] as const)('accepts unittest resultFormat=%s', (resultFormat) => {
     expect(SAPDiagnoseSchema.safeParse({ action: 'unittest', resultFormat }).success).toBe(true);
   });
@@ -1762,6 +1776,12 @@ describe('SAPDiagnoseSchema', () => {
 });
 
 describe('SAPTransportSchema', () => {
+  it('accepts a bounded release verification timeout', () => {
+    expect(SAPTransportSchema.safeParse({ action: 'release', timeoutSeconds: '300' }).success).toBe(true);
+    expect(SAPTransportSchema.safeParse({ action: 'release', timeoutSeconds: 1801 }).success).toBe(false);
+    expect(SAPTransportSchema.safeParse({ action: 'list', timeoutSeconds: 30 }).success).toBe(false);
+  });
+
   it('accepts list action', () => {
     const result = SAPTransportSchema.safeParse({ action: 'list' });
     expect(result.success).toBe(true);
@@ -1860,6 +1880,11 @@ describe('SAPTransportSchema', () => {
 });
 
 describe('SAPGitSchema', () => {
+  it('does not advertise the unreachable commit action', () => {
+    expect(SAPGitSchema.safeParse({ action: 'commit' }).success).toBe(false);
+    expect(SAPGitSchema.safeParse({ action: 'push', description: 'unused' }).success).toBe(false);
+  });
+
   it('accepts valid read action payload', () => {
     const result = SAPGitSchema.safeParse({ action: 'list_repos', backend: 'gcts' });
     expect(result.success).toBe(true);
@@ -1878,14 +1903,14 @@ describe('SAPGitSchema', () => {
 
   it('validates objects array shape', () => {
     const ok = SAPGitSchema.safeParse({
-      action: 'commit',
+      action: 'push',
       repoId: 'ZARC1',
       objects: [{ type: 'CLAS', name: 'ZCL_ARC1_TEST', operation: 'M' }],
     });
     expect(ok.success).toBe(true);
 
     const invalid = SAPGitSchema.safeParse({
-      action: 'commit',
+      action: 'push',
       repoId: 'ZARC1',
       objects: [{ type: 'CLAS' }],
     });

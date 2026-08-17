@@ -55,9 +55,9 @@ describe('gCTS client helpers', () => {
     const http = mockHttp(loadFixture('gcts-config.json'));
     const result = await getConfig(http, gitSafety);
     expect(result.length).toBeGreaterThan(0);
-    expect(result.some((entry) => entry.key === 'CLIENT_VCS_URI')).toBe(true);
-    expect(result.find((entry) => entry.key === 'CLIENT_VCS_AUTH_USER')?.value).toBe('[REDACTED]');
-    expect(result.find((entry) => entry.key === 'CLIENT_VCS_AUTH_PWD')?.value).toBe('[REDACTED]');
+    expect(result.some((entry) => entry.ckey === 'CLIENT_VCS_URI')).toBe(true);
+    expect(result.find((entry) => entry.ckey === 'CLIENT_VCS_AUTH_USER')?.example).toBe('[REDACTED]');
+    expect(result.find((entry) => entry.ckey === 'CLIENT_VCS_AUTH_PWD')?.example).toBe('[REDACTED]');
     expect(JSON.stringify(result)).not.toContain('sentinel-password');
   });
 
@@ -80,6 +80,17 @@ describe('gCTS client helpers', () => {
     let nested: unknown = 'leaf';
     for (let index = 0; index < 2_000; index += 1) nested = { nested };
     expect(JSON.stringify(redactGctsValue(nested))).toContain('redaction budget exceeded');
+  });
+
+  it('preserves ordinary wide list responses while redacting every entry', () => {
+    const branches = Array.from({ length: 300 }, (_, index) => ({
+      name: `branch-${index}`,
+      url: `https://user:secret-${index}@example.com/repo.git?token=secret-${index}`,
+    }));
+    const result = redactGctsValue({ branches });
+    expect(result.branches).toHaveLength(branches.length);
+    expect(JSON.stringify(result)).not.toContain('secret-');
+    expect(JSON.stringify(result)).not.toContain('redaction budget exceeded');
   });
 
   it('redacts then bounds oversized Git URL values', () => {

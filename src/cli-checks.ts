@@ -280,7 +280,7 @@ export function evaluateLint(issues: LintResult[], threshold: LintFailureThresho
   return issues.some((issue) => severityRank(issue.severity) <= thresholdRank) ? 1 : 0;
 }
 
-export function evaluateDiff(result: StructuredDiffResult, check: boolean): 0 | 1 {
+export function evaluateDiff(result: StructuredDiffResult, check: boolean): CiExitCode {
   if (
     !isRecord(result) ||
     !isNonEmptyString(result.type) ||
@@ -298,7 +298,7 @@ export function evaluateDiff(result: StructuredDiffResult, check: boolean): 0 | 
     (result.identical && (result.added !== 0 || result.removed !== 0 || result.diff.length !== 0)) ||
     (result.hasDifferences && (result.added + result.removed === 0 || result.diff.length === 0))
   ) {
-    return 1;
+    return 3;
   }
   return check && result.hasDifferences ? 1 : 0;
 }

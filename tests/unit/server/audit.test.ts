@@ -30,6 +30,14 @@ describe('Audit Events', () => {
       expect((result.source as string).length).toBeLessThan(300);
     });
 
+    it('bounds adversarial escape normalization work before redaction', () => {
+      const value = `${'\\\\'.repeat(100_000)}u0061`;
+      const started = performance.now();
+      const result = sanitizeArgs({ note: value, [value]: true });
+      expect(performance.now() - started).toBeLessThan(1_000);
+      expect(String(result.note)).toContain('[truncated');
+    });
+
     it('handles empty args', () => {
       expect(sanitizeArgs({})).toEqual({});
     });

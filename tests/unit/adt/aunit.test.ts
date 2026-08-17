@@ -442,7 +442,7 @@ describe('public ABAP Unit API', () => {
       expect.stringContaining('<aunit:riskLevel harmless="true" dangerous="false" critical="false"/>'),
       'application/vnd.sap.adt.api.abapunit.run.v2+xml',
       expect.objectContaining({ Accept: 'application/vnd.sap.adt.api.abapunit.run-status.v1+xml' }),
-      expect.objectContaining({ deadline: 31_000 }),
+      expect.objectContaining({ deadline: 301_000 }),
     );
     expect(post.mock.calls[0]?.[1]).toContain('<osl:object name="ZCL_DEMO" type="CLAS"/>');
     expect(post.mock.calls[0]?.[1]).toContain(

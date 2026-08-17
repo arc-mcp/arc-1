@@ -1023,8 +1023,8 @@ an unbounded raw feed merely to remove the browser step.
   `create_branch`, `unlink`, subject to action gates and subtree package checks. Clone/pull evidence is
   unverified; selected push and branch changes return error/incomplete after acceptance; unlink succeeds
   only after absence readback. Callers must inspect state before retrying.
-- **gCTS mutation names, quarantined before HTTP mutation:** `clone`, `pull`, `commit`,
-  `switch_branch`, `create_branch`, `unlink`
+- **gCTS mutation names, quarantined before HTTP mutation:** `clone`, `pull`, `switch_branch`,
+  `create_branch`, `unlink`
 
 **Remaining contract:** safe gCTS mutation needs a no-import staging step, affected-object inventory,
 authorization/package preflight, explicit deploy, terminal readback, and rollback. ARC-1 fails these
