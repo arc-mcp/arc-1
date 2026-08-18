@@ -224,8 +224,8 @@ export async function handleSAPTransport(
           ...(truncated
             ? {
                 hint:
-                  `Showing ${page.length} of ${transports.length} transports. Narrow with user/status, ` +
-                  `or raise maxResults (max 1000).`,
+                  `Showing ${page.length} of ${transports.length} transports${user === '*' ? ' (all users)' : ''}. ` +
+                  `Narrow with ${user === '*' ? 'user=<name>, ' : ''}status, or raise maxResults (max 1000).`,
               }
             : {}),
           transports: payload,

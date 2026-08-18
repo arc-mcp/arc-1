@@ -894,7 +894,7 @@
         },
         "user": {
           "type": "string",
-          "description": "SAP user for list (default: current user; \"*\" means all users)."
+          "description": "SAP user for list (default: current user; \"*\" queries all users system-wide — results are still capped by maxResults and status)."
         },
         "status": {
           "type": "string",

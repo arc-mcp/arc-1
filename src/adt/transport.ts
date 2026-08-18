@@ -136,12 +136,14 @@ export async function listTransports(
 ): Promise<TransportRequest[]> {
   checkTransport(safety, '', 'ListTransports', false);
 
-  // Build query params following sapcli's pattern:
-  //   user={user}&target=true&requestType=KWT&requestStatus=DR
+  // Build query params.
   // requestType=KWT covers Workbench, Customizing, Transport of Copies.
   // requestStatus is sent server-side; we also filter client-side as a fallback.
+  // user=* is sent as-is; URLSearchParams encodes it to user=%2A which SAP interprets
+  // as "all users" (system-wide organizer view). Omitting the param returns only the
+  // authenticated user's requests — which is NOT the same as all users.
   const params = new URLSearchParams();
-  if (user && user !== '*') {
+  if (user) {
     params.set('user', user);
   }
   params.set('target', 'true');

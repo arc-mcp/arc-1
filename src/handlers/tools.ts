@@ -1577,7 +1577,11 @@ export function getToolDefinitions(
             description:
               'Transport layer for create (optional, advanced). Sent as the ?transportLayer= query param to override which consolidation route — and therefore which target — SAP resolves. OMIT IT by default: SAP resolves the target from the package automatically, which is correct for almost all cases. Never invent a value — if you need a specific layer, obtain it from action="layers" or from the user. Only effective when that layer has a classic STMS consolidation route; otherwise the request is local regardless.',
           },
-          user: { type: 'string', description: 'SAP user for list (default: current user; "*" means all users).' },
+          user: {
+            type: 'string',
+            description:
+              'SAP user for list (default: current user; "*" queries all users system-wide — results are still capped by maxResults and status).',
+          },
           status: {
             type: 'string',
             description: 'Transport status filter (for list). D=modifiable (default), R=released, "*"=all statuses.',
