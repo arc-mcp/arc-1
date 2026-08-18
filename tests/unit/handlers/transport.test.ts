@@ -736,6 +736,23 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
       expect(parsed.transports).toHaveLength(2);
     });
 
+    it('list returns transports newest-first (sorted by id descending)', async () => {
+      const xml = `<tm:root xmlns:tm="http://www.sap.com/cts/transports">
+        <tm:request tm:number="DEVK900001" tm:owner="admin" tm:desc="Oldest" tm:status="D" tm:type="K"/>
+        <tm:request tm:number="DEVK900005" tm:owner="admin" tm:desc="Newest" tm:status="D" tm:type="K"/>
+        <tm:request tm:number="DEVK900003" tm:owner="admin" tm:desc="Middle" tm:status="D" tm:type="K"/>
+      </tm:root>`;
+      mockFetch.mockResolvedValue(mockResponse(200, xml, { 'x-csrf-token': 'T' }));
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'list',
+      });
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0]!.text).transports;
+      expect(parsed[0].id).toBe('DEVK900005'); // newest first
+      expect(parsed[1].id).toBe('DEVK900003');
+      expect(parsed[2].id).toBe('DEVK900001'); // oldest last
+    });
+
     const LIST_WITH_OBJECTS_XML = `<tm:root xmlns:tm="http://www.sap.com/cts/transports">
         <tm:request tm:number="DEVK900001" tm:owner="admin" tm:desc="Feature X" tm:status="D" tm:type="K">
           <tm:task tm:number="DEVK900002" tm:owner="admin" tm:desc="Task" tm:status="D">

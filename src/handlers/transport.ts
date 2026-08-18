@@ -212,6 +212,8 @@ export async function handleSAPTransport(
       // object lists saves 4.7x. So `list` summarises by default (the list→get workflow this tool
       // already documents); pass summary=false for the old full-object payload. maxResults stays as
       // a backstop for a large backlog.
+      // Sort newest first: transport IDs embed a numeric sequence (e.g. DEVK900123) — higher = newer.
+      transports.sort((a, b) => b.id.localeCompare(a.id));
       const limit = clampSearchResults(args.maxResults as number | undefined, DEFAULT_TRANSPORT_RESULTS);
       const page = transports.slice(0, limit);
       const truncated = transports.length > limit;
