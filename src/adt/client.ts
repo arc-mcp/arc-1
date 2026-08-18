@@ -22,6 +22,7 @@ import { lockObject, unlockObject } from './crud.js';
 import { parseTableType, type TableTypeInfo } from './ddic-xml.js';
 import { AdtApiError, AdtSafetyError, isNotFoundError } from './errors.js';
 import { AdtHttpClient, type AdtHttpConfig, type AdtResponse } from './http.js';
+import type { AdtRequestOptions } from './http-deadline.js';
 import { AdtPackageHierarchyResolver, type PackageHierarchyResolver } from './package-hierarchy.js';
 import { canonicalRevisionSourcePath } from './path-safety.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
@@ -88,7 +89,7 @@ export interface SourceReadResult {
   statusCode: number;
 }
 
-export interface SourceReadOptions {
+export interface SourceReadOptions extends AdtRequestOptions {
   ifNoneMatch?: string;
   version?: 'active' | 'inactive';
   accept?: string;
@@ -456,7 +457,7 @@ export class AdtClient {
     const headers: Record<string, string> = {};
     if (opts.accept) headers.Accept = opts.accept;
     if (opts.ifNoneMatch) headers['If-None-Match'] = opts.ifNoneMatch;
-    const resp = await this.http.get(url, Object.keys(headers).length > 0 ? headers : undefined);
+    const resp = await this.http.get(url, Object.keys(headers).length > 0 ? headers : undefined, opts);
     return {
       source: resp.body,
       etag: resp.headers.etag ?? undefined,

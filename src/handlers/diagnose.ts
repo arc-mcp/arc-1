@@ -9,6 +9,7 @@ import {
   appendAunitJunitDiagnostic,
   aunitIncompleteToJunit,
   aunitResultToJunit,
+  DEFAULT_PUBLIC_AUNIT_TIMEOUT_MS,
   findStaticAbapIncludes,
   probePublicAunit,
   reconcileAunitProgramSources,
@@ -20,7 +21,7 @@ import {
   type AunitPackageSelection,
   resolveAunitPackageSelection,
 } from '../adt/aunit-package.js';
-import type { AdtClient, SourceReadResult } from '../adt/client.js';
+import type { AdtClient, SourceReadOptions, SourceReadResult } from '../adt/client.js';
 import {
   applyFixProposal,
   getAtcSystemDefaultVariant,
@@ -53,7 +54,7 @@ import {
   probeODataPerformance,
   setSqlTraceState,
 } from '../adt/diagnostics.js';
-import { AdtApiError } from '../adt/errors.js';
+import { AdtApiError, AdtNetworkError } from '../adt/errors.js';
 import type {
   DumpDetail,
   FixAffectedObject,
@@ -69,6 +70,32 @@ import { errorResult, type ToolResult, textResult, toolJson } from './shared.js'
 const AUNIT_SOURCE_MAX_BLOCKS = 80;
 const AUNIT_SOURCE_MAX_DEPTH = 5;
 const AUNIT_PACKAGE_SOURCE_CONCURRENCY = 8;
+const AUNIT_SOURCE_REQUEST_LIMIT = 500;
+
+interface AunitEvidenceBudget {
+  deadline: number;
+  remainingSourceRequests: number;
+}
+
+class AunitSourceBudgetError extends Error {
+  constructor() {
+    super(`The ABAP Unit source audit exceeded its ${AUNIT_SOURCE_REQUEST_LIMIT}-request limit.`);
+    this.name = 'AunitSourceBudgetError';
+  }
+}
+
+function reserveAunitSourceRequests(budget: AunitEvidenceBudget, count = 1): SourceReadOptions {
+  if (budget.remainingSourceRequests < count) throw new AunitSourceBudgetError();
+  budget.remainingSourceRequests -= count;
+  return { deadline: budget.deadline };
+}
+
+function isAunitDeadlineFailure(error: unknown): boolean {
+  return (
+    error instanceof AdtNetworkError &&
+    (error.cause?.name === 'TimeoutError' || /deadline was exceeded|timed out|\btimeout\b/i.test(error.message))
+  );
+}
 
 interface AunitSourceTree {
   source: string;
@@ -108,40 +135,59 @@ function presentAunitSourceBlock(id: string, result: SourceReadResult): AunitSou
   };
 }
 
-async function readAunitSourceTree(client: AdtClient, type: string, name: string): Promise<AunitSourceTree> {
+async function readOptionalAunitClassInclude(
+  client: AdtClient,
+  name: string,
+  include: 'macros' | 'testclasses',
+  budget: AunitEvidenceBudget,
+): Promise<AunitSourceBlock> {
+  try {
+    return presentAunitSourceBlock(
+      `CLAS:${name.toUpperCase()}:${include}`,
+      await client.getClassInclude(name, include, {
+        ...reserveAunitSourceRequests(budget),
+        version: 'active',
+      }),
+    );
+  } catch (error) {
+    if (!(error instanceof AdtApiError) || error.statusCode !== 404) throw error;
+    return { id: `CLAS:${name.toUpperCase()}:${include}`, status: 'absent', source: '' };
+  }
+}
+
+async function readAunitSourceTree(
+  client: AdtClient,
+  type: string,
+  name: string,
+  budget: AunitEvidenceBudget,
+): Promise<AunitSourceTree> {
   let initialBlocks: AunitSourceBlock[];
   try {
     if (type === 'CLAS') {
-      const main = await client.getClass(name, undefined, { version: 'active' });
-      let testBlock: AunitSourceBlock;
-      try {
-        testBlock = presentAunitSourceBlock(
-          `CLAS:${name.toUpperCase()}:testclasses`,
-          await client.getClassInclude(name, 'testclasses', { version: 'active' }),
-        );
-      } catch (error) {
-        if (!(error instanceof AdtApiError) || error.statusCode !== 404) throw error;
-        testBlock = {
-          id: `CLAS:${name.toUpperCase()}:testclasses`,
-          status: 'absent',
-          source: '',
-        };
-      }
+      const main = await client.getClass(name, undefined, {
+        ...reserveAunitSourceRequests(budget),
+        version: 'active',
+      });
+      const testBlock = await readOptionalAunitClassInclude(client, name, 'testclasses', budget);
+      const macrosBlock = await readOptionalAunitClassInclude(client, name, 'macros', budget);
       // Global test classes declare FOR TESTING in main. Production classes normally keep local
-      // test declarations in the optional testclasses include; a 404 there is a verified absence.
-      initialBlocks = [presentAunitSourceBlock(`CLAS:${name.toUpperCase()}:main`, main), testBlock];
+      // test declarations and macros in dedicated optional includes; a 404 is a verified absence.
+      initialBlocks = [presentAunitSourceBlock(`CLAS:${name.toUpperCase()}:main`, main), testBlock, macrosBlock];
     } else if (type === 'PROG') {
       initialBlocks = [
         presentAunitSourceBlock(
           `PROG:${name.toUpperCase()}:main`,
-          await client.getProgram(name, { version: 'active' }),
+          await client.getProgram(name, { ...reserveAunitSourceRequests(budget), version: 'active' }),
         ),
       ];
     } else if (type === 'FUGR') {
       initialBlocks = [
         presentAunitSourceBlock(
           `FUGR:${name.toUpperCase()}:main`,
-          await client.getFunctionGroupSource(name, { version: 'active' }),
+          await client.getFunctionGroupSource(name, {
+            ...reserveAunitSourceRequests(budget),
+            version: 'active',
+          }),
         ),
       ];
     } else {
@@ -152,11 +198,16 @@ async function readAunitSourceTree(client: AdtClient, type: string, name: string
         blocks: [],
       };
     }
-  } catch {
+  } catch (error) {
     return {
       source: '',
       complete: false,
-      incompleteReason: 'The source containing ABAP Unit class declarations could not be read from SAP.',
+      incompleteReason:
+        error instanceof AunitSourceBudgetError
+          ? error.message
+          : isAunitDeadlineFailure(error)
+            ? 'The ABAP Unit evidence deadline expired while reading active source.'
+            : 'The source containing ABAP Unit class declarations could not be read from SAP.',
       blocks: [],
     };
   }
@@ -192,14 +243,21 @@ async function readAunitSourceTree(client: AdtClient, type: string, name: string
     if (pending.length === 0) break;
 
     const fetched = await Promise.allSettled(
-      pending.map(({ name: include }) => client.getInclude(include, { version: 'active' })),
+      pending.map(async ({ name: include }) =>
+        client.getInclude(include, { ...reserveAunitSourceRequests(budget), version: 'active' }),
+      ),
     );
     const next: Array<{ source: string; depth: number }> = [];
     for (let index = 0; index < fetched.length; index += 1) {
       const response = fetched[index]!;
       if (response.status === 'rejected') {
         complete = false;
-        incompleteReason = 'One or more static ABAP INCLUDE sources could not be read from SAP.';
+        incompleteReason =
+          response.reason instanceof AunitSourceBudgetError
+            ? response.reason.message
+            : isAunitDeadlineFailure(response.reason)
+              ? 'The ABAP Unit evidence deadline expired while reading static INCLUDE source.'
+              : 'One or more static ABAP INCLUDE sources could not be read from SAP.';
         continue;
       }
       blocks.push(presentAunitSourceBlock(`INCL:${pending[index]!.name}`, response.value));
@@ -223,12 +281,56 @@ async function readAunitPackageSourceSnapshot(
   client: AdtClient,
   packageName: string,
   includeSubpackages: boolean,
+  budget: AunitEvidenceBudget,
+  snapshotsRemaining: 1 | 2,
 ): Promise<AunitPackageSourceSnapshot> {
-  const selection = await resolveAunitPackageSelection(client.http, client.safety, packageName, includeSubpackages);
+  let selection: AunitPackageSelection;
+  try {
+    selection = await resolveAunitPackageSelection(
+      client.http,
+      client.safety,
+      packageName,
+      includeSubpackages,
+      reserveAunitSourceRequests(budget, 2),
+    );
+  } catch (error) {
+    if (!(error instanceof AunitSourceBudgetError) && !isAunitDeadlineFailure(error)) throw error;
+    const incompleteReason =
+      error instanceof AunitSourceBudgetError
+        ? error.message
+        : 'The ABAP Unit evidence deadline expired while resolving package membership.';
+    return {
+      selection: {
+        packageName: packageName.trim().toUpperCase(),
+        includeSubpackages,
+        objects: [],
+        membership: [],
+        complete: false,
+        incompleteReason,
+      },
+      entries: [],
+      complete: false,
+      incompleteReason,
+    };
+  }
+  const minimumSourceRequests = selection.objects.reduce(
+    (total, object) => total + (object.type === 'CLAS' ? 3 : 1),
+    0,
+  );
+  const futureSelectionRequests = snapshotsRemaining === 2 ? 2 : 0;
+  const minimumRemainingRequests = minimumSourceRequests * snapshotsRemaining + futureSelectionRequests;
+  if (!selection.complete || minimumRemainingRequests > budget.remainingSourceRequests) {
+    const incompleteReason =
+      selection.incompleteReason ??
+      `The package requires at least ${minimumRemainingRequests} additional source-audit requests, exceeding the ${AUNIT_SOURCE_REQUEST_LIMIT}-request limit.`;
+    return { selection, entries: [], complete: false, incompleteReason };
+  }
   const entries: AunitPackageSourceEntry[] = [];
   for (let offset = 0; offset < selection.objects.length; offset += AUNIT_PACKAGE_SOURCE_CONCURRENCY) {
     const batch = selection.objects.slice(offset, offset + AUNIT_PACKAGE_SOURCE_CONCURRENCY);
-    const trees = await Promise.all(batch.map((object) => readAunitSourceTree(client, object.type, object.name)));
+    const trees = await Promise.all(
+      batch.map((object) => readAunitSourceTree(client, object.type, object.name, budget)),
+    );
     entries.push(...batch.map((object, index) => ({ ...object, tree: trees[index]! })));
   }
   const incompleteEntry = entries.find((entry) => !entry.tree.complete);
@@ -262,13 +364,14 @@ async function readAunitSelectionSnapshot(
   type: string,
   name: string,
   includeSubpackages: boolean,
+  budget: AunitEvidenceBudget,
 ): Promise<AunitSelectionSnapshot> {
   return type === 'DEVC'
     ? {
         kind: 'package',
-        package: await readAunitPackageSourceSnapshot(client, name, includeSubpackages),
+        package: await readAunitPackageSourceSnapshot(client, name, includeSubpackages, budget, 2),
       }
-    : { kind: 'object', tree: await readAunitSourceTree(client, type, name) };
+    : { kind: 'object', tree: await readAunitSourceTree(client, type, name, budget) };
 }
 
 function sameAunitSourceSnapshot(before: AunitSourceTree, after: AunitSourceTree): boolean {
@@ -313,9 +416,10 @@ async function verifyAunitSourceSnapshot(
   type: string,
   name: string,
   before: AunitSourceTree,
+  budget: AunitEvidenceBudget,
 ): Promise<AunitSourceTree> {
   if (!before.complete) return before;
-  const after = await readAunitSourceTree(client, type, name);
+  const after = await readAunitSourceTree(client, type, name, budget);
   if (!after.complete) {
     return {
       ...before,
@@ -340,15 +444,16 @@ async function verifyAunitSelectionSnapshot(
   name: string,
   includeSubpackages: boolean,
   before: AunitSelectionSnapshot,
+  budget: AunitEvidenceBudget,
 ): Promise<AunitSelectionSnapshot> {
   if (before.kind === 'object') {
     return {
       kind: 'object',
-      tree: await verifyAunitSourceSnapshot(client, type, name, before.tree),
+      tree: await verifyAunitSourceSnapshot(client, type, name, before.tree, budget),
     };
   }
   if (!before.package.complete) return before;
-  const after = await readAunitPackageSourceSnapshot(client, name, includeSubpackages);
+  const after = await readAunitPackageSourceSnapshot(client, name, includeSubpackages, budget, 1);
   if (!after.complete) {
     return {
       kind: 'package',
@@ -400,20 +505,57 @@ function emptyAunitRunResult(coverage: boolean): AunitRunResult {
   };
 }
 
+function incompleteAunitRunResult(coverage: boolean, message: string): AunitRunResult {
+  return {
+    ...emptyAunitRunResult(coverage),
+    outcome: 'incomplete',
+    summary: { tests: 0, passed: 0, failures: 0, errors: 0, skipped: 0, warnings: 1 },
+    alerts: [
+      {
+        scope: 'run',
+        kind: 'deadline',
+        severity: 'tolerable',
+        title: 'ABAP Unit evidence collection did not complete',
+        details: [message],
+        message,
+        stack: [],
+      },
+    ],
+  };
+}
+
+function aunitSelectionRunnable(evidence: AunitSelectionSnapshot): boolean {
+  return evidence.kind === 'object' || evidence.package.complete;
+}
+
 async function runLegacyAunitForSelection(
   client: AdtClient,
   type: string,
   name: string,
   evidence: AunitSelectionSnapshot,
   coverage: boolean,
+  budget: AunitEvidenceBudget,
 ): Promise<AunitRunResult> {
+  if (!aunitSelectionRunnable(evidence)) return emptyAunitRunResult(coverage);
   const objectUrls =
     evidence.kind === 'package'
       ? evidence.package.selection.objects.map((object) => object.uri)
       : [objectUrlForType(type, name)];
-  return objectUrls.length === 0
-    ? emptyAunitRunResult(coverage)
-    : runUnitTests(client.http, client.safety, objectUrls, { coverage });
+  if (objectUrls.length === 0) return emptyAunitRunResult(coverage);
+  try {
+    return await runUnitTests(client.http, client.safety, objectUrls, {
+      coverage,
+      requestOptions: { deadline: budget.deadline },
+    });
+  } catch (error) {
+    if (isAunitDeadlineFailure(error)) {
+      return incompleteAunitRunResult(
+        coverage,
+        'The ABAP Unit evidence deadline expired while executing the harmless legacy run.',
+      );
+    }
+    throw error;
+  }
 }
 
 function legacyAlertStatus(alerts: AunitAlert[]): 'failed' | 'skipped' {
@@ -531,16 +673,49 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
       const coverage = args.coverage === true;
       const resultFormat = String(args.resultFormat ?? 'legacy');
       const includeSubpackages = type === 'DEVC' && args.includeSubpackages === true;
+      const timeoutMs =
+        args.timeoutSeconds === undefined ? DEFAULT_PUBLIC_AUNIT_TIMEOUT_MS : Number(args.timeoutSeconds) * 1000;
+      const evidenceBudget: AunitEvidenceBudget = {
+        deadline: Date.now() + timeoutMs,
+        remainingSourceRequests: AUNIT_SOURCE_REQUEST_LIMIT,
+      };
 
       if (resultFormat === 'junit' && !coverage) {
-        const publicAvailable = await probePublicAunit(client.http, client.safety);
+        let publicAvailable: boolean;
+        try {
+          publicAvailable = await probePublicAunit(client.http, client.safety, {
+            deadline: evidenceBudget.deadline,
+          });
+        } catch (error) {
+          if (!isAunitDeadlineFailure(error)) throw error;
+          const message = 'The ABAP Unit evidence deadline expired while probing the public run API.';
+          return textResult(
+            toolJson({
+              protocol: 'public-api',
+              outcome: 'incomplete',
+              summary: { tests: 0, passed: 0, failures: 0, errors: 0, skipped: 0, warnings: 0 },
+              coverageEvidence: 'not_requested',
+              incompleteReason: 'timeout',
+              junit: aunitIncompleteToJunit(message, `${type} ${name}`),
+              polls: 0,
+              elapsedMs: Date.now() - (evidenceBudget.deadline - timeoutMs),
+            }),
+          );
+        }
         if (publicAvailable) {
-          const sourceSnapshot = await readAunitSelectionSnapshot(client, type, name, includeSubpackages);
+          const sourceSnapshot = await readAunitSelectionSnapshot(
+            client,
+            type,
+            name,
+            includeSubpackages,
+            evidenceBudget,
+          );
           let native: Awaited<ReturnType<typeof runPublicAunit>>;
           try {
             native = await runPublicAunit(client.http, client.safety, type, name, {
               includeSubpackages,
-              ...(args.timeoutSeconds === undefined ? {} : { timeoutMs: Number(args.timeoutSeconds) * 1000 }),
+              timeoutMs,
+              deadline: evidenceBudget.deadline,
             });
           } catch (error) {
             if (!(error instanceof AunitIncompleteError)) throw error;
@@ -557,13 +732,21 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
               }),
             );
           }
-          const legacyEvidence = await runLegacyAunitForSelection(client, type, name, sourceSnapshot, false);
+          const legacyEvidence = await runLegacyAunitForSelection(
+            client,
+            type,
+            name,
+            sourceSnapshot,
+            false,
+            evidenceBudget,
+          );
           const stableSourceSnapshot = await verifyAunitSelectionSnapshot(
             client,
             type,
             name,
             includeSubpackages,
             sourceSnapshot,
+            evidenceBudget,
           );
           const legacy = reconcileAunitWithSelection(legacyEvidence, stableSourceSnapshot);
           let outcome = native.summary.outcome;
@@ -641,14 +824,15 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
       // SAP 7.58 can silently omit dangerous/critical classes from harmless-only legacy results.
       // Audit a stable active-source snapshot for every format, including the compatibility array
       // and coverage object, so the generic tool path cannot report a partial run as green.
-      const sourceSnapshot = await readAunitSelectionSnapshot(client, type, name, includeSubpackages);
-      const result = await runLegacyAunitForSelection(client, type, name, sourceSnapshot, coverage);
+      const sourceSnapshot = await readAunitSelectionSnapshot(client, type, name, includeSubpackages, evidenceBudget);
+      const result = await runLegacyAunitForSelection(client, type, name, sourceSnapshot, coverage, evidenceBudget);
       const stableSourceSnapshot = await verifyAunitSelectionSnapshot(
         client,
         type,
         name,
         includeSubpackages,
         sourceSnapshot,
+        evidenceBudget,
       );
       const structured = reconcileAunitWithSelection(result, stableSourceSnapshot);
       if (resultFormat === 'structured') return textResult(toolJson(structured));

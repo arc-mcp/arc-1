@@ -261,7 +261,7 @@ Options:
 | `--min-procedure <0..100>` | Imply coverage and fail below the procedure percentage. |
 | `--format text\|json\|junit` | Report format; default `text`. JSON is the structured domain result, not a `ToolResult`. |
 | `--report-file <path\|->` | File destination, or `-` for stdout. |
-| `--timeout <seconds>` | Public AUnit verification budget; default `300`, range `1..3600`. |
+| `--timeout <seconds>` | End-to-end AUnit selection, execution, and verification budget; default `300`, range `1..3600`. |
 | `--allow-empty` | Let a sound `no_tests` result pass; it never turns `incomplete` into success. |
 | `--fail-on-skipped` | Exit `1` when any test method is reported skipped. |
 

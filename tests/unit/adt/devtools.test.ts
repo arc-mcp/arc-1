@@ -1300,6 +1300,17 @@ describe('DevTools', () => {
       expect(body).toContain('adtcore:uri="/sap/bc/adt/programs/programs/ZREPORT_TWO"');
       expect(body.match(/<adtcore:objectReference /g)).toHaveLength(2);
     });
+
+    it('propagates the evidence deadline to the legacy test request', async () => {
+      const http = mockHttp(mixed816);
+      const requestOptions = { deadline: 12_345 };
+
+      await runUnitTests(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_TEST', {
+        requestOptions,
+      });
+
+      expect(vi.mocked(http.post).mock.calls[0]?.[4]).toBe(requestOptions);
+    });
   });
 
   describe('AUnit coverage (FEAT-41)', () => {

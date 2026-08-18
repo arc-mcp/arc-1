@@ -1,6 +1,7 @@
 /** Bounded package selection for whole-package ABAP Unit runs. */
 
 import type { AdtHttpClient } from './http.js';
+import type { AdtRequestOptions } from './http-deadline.js';
 import { ADT_ROOT_PATH, canonicalHostRelativeAdtPath } from './path-safety.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import { parseSearchResults } from './xml-parser.js';
@@ -40,6 +41,7 @@ export async function resolveAunitPackageSelection(
   safety: SafetyConfig,
   packageName: string,
   includeSubpackages: boolean,
+  requestOptions?: AdtRequestOptions,
 ): Promise<AunitPackageSelection> {
   checkOperation(safety, OperationType.Test, 'ResolveAunitPackage');
   const normalizedPackage = packageName.trim().toUpperCase();
@@ -47,9 +49,11 @@ export async function resolveAunitPackageSelection(
 
   // Distinguish an existing empty package from an unknown package before treating zero rows as a
   // sound empty selection. The package metadata read is also authorization evidence for the scope.
-  await http.get(`/sap/bc/adt/packages/${encodeURIComponent(normalizedPackage)}`);
+  await http.get(`/sap/bc/adt/packages/${encodeURIComponent(normalizedPackage)}`, undefined, requestOptions);
   const response = await http.get(
     `/sap/bc/adt/repository/informationsystem/search?operation=quickSearch&query=*&packageName=${encodeURIComponent(normalizedPackage)}&maxResults=${AUNIT_PACKAGE_SEARCH_LIMIT}`,
+    undefined,
+    requestOptions,
   );
   const references = parseSearchResults(response.body);
   const inScope = references.filter(

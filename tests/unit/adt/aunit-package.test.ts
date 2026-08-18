@@ -60,6 +60,16 @@ describe('AUnit package selection', () => {
     expect(vi.mocked(http.get).mock.calls[1]?.[0]).toContain('packageName=ZROOT');
   });
 
+  it('applies one request deadline to package metadata and search', async () => {
+    const http = httpFor(searchXml(rows));
+    const requestOptions = { deadline: 12_345 };
+
+    await resolveAunitPackageSelection(http, unrestrictedSafetyConfig(), 'ZROOT', false, requestOptions);
+
+    expect(vi.mocked(http.get).mock.calls[0]?.[2]).toBe(requestOptions);
+    expect(vi.mocked(http.get).mock.calls[1]?.[2]).toBe(requestOptions);
+  });
+
   it('includes supported subtree rows only when explicitly requested', async () => {
     const selection = await resolveAunitPackageSelection(
       httpFor(searchXml(rows)),

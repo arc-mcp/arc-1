@@ -166,6 +166,46 @@ ENDCLASS.`;
     expect(parseNativeJunitSummary(aunitResultToJunit(result))).toMatchObject({ tests: 2, errors: 1 });
   });
 
+  it('fails closed when an ABAP macro can declare an omitted test method', () => {
+    const result = reconcileAunitSourceDeclarations(
+      parseAunitRunResult(harmlessOnlyResult),
+      `REPORT zarc1_mixed.
+       DEFINE test_method.
+         METHODS &1 FOR TESTING.
+       END-OF-DEFINITION.
+       CLASS ltcl_harmless DEFINITION FOR TESTING RISK LEVEL HARMLESS.
+         METHODS passes FOR TESTING.
+       ENDCLASS.
+       CLASS ltcl_critical DEFINITION FOR TESTING RISK LEVEL CRITICAL.
+         test_method hidden.
+       ENDCLASS.`,
+    );
+
+    expect(result).toMatchObject({
+      outcome: 'incomplete',
+      sourceSelectionEvidence: {
+        status: 'unavailable',
+        reason: expect.stringMatching(/LTCL_CRITICAL.*macro TEST_METHOD/i),
+      },
+    });
+    expect(parseNativeJunitSummary(aunitResultToJunit(result))).toMatchObject({ errors: 1 });
+  });
+
+  it('does not reject an unrelated macro outside a FOR TESTING definition', () => {
+    expect(
+      findSourceDeclaredAunitClasses(`
+        DEFINE assign_value.
+          &1 = &2.
+        END-OF-DEFINITION.
+        CLASS lcl_production DEFINITION.
+          METHODS run.
+        ENDCLASS.
+        CLASS ltcl_safe DEFINITION FOR TESTING RISK LEVEL HARMLESS.
+          METHODS passes FOR TESTING.
+        ENDCLASS.`),
+    ).toEqual([{ testClass: 'LTCL_SAFE', riskLevel: 'harmless', explicitRiskLevel: true }]);
+  });
+
   it('marks an omitted executable harmless class incomplete instead of sound no_tests', () => {
     const result = reconcileAunitSourceDeclarations(
       parseAunitRunResult('<aunit:runResult xmlns:aunit="http://www.sap.com/adt/aunit"/>'),
@@ -487,6 +527,36 @@ describe('public ABAP Unit API', () => {
     );
     expect(get.mock.calls[0]?.[0]).toBe('/sap/bc/adt/api/abapunit/runs/R1?withLongPolling=true');
     expect(get.mock.calls[2]?.[0]).toBe('/sap/bc/adt/api/abapunit/results/R1');
+  });
+
+  it('uses the earlier caller deadline and propagates its abort signal', async () => {
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({
+        statusCode: 200,
+        headers: {},
+        body: '<runStatus><progress status="FINISHED"/><link type="application/vnd.sap.adt.api.junit.run-result.v1+xml" href="/sap/bc/adt/api/abapunit/results/R1"/></runStatus>',
+      })
+      .mockResolvedValueOnce({
+        statusCode: 200,
+        headers: {},
+        body: '<testsuites tests="0" failures="0" errors="0" skipped="0"/>',
+      });
+    const post = vi.fn().mockResolvedValue({
+      statusCode: 201,
+      headers: { location: '/sap/bc/adt/api/abapunit/runs/R1' },
+      body: '',
+    });
+    const signal = new AbortController().signal;
+
+    await runPublicAunit(publicHttp({ get, post }), unrestrictedSafetyConfig(), 'CLAS', 'ZCL_DEMO', {
+      deadline: 5_000,
+      signal,
+      now: () => 1_000,
+    });
+
+    expect(post.mock.calls[0]?.[4]).toEqual({ deadline: 5_000, signal });
+    expect(get.mock.calls.every((call) => call[2]?.deadline === 5_000 && call[2]?.signal === signal)).toBe(true);
   });
 
   it.each([false, true])('submits a native packageSet with includeSubpackages=%s', async (includeSubpackages) => {

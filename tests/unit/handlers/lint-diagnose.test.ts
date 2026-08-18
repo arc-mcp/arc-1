@@ -1320,6 +1320,46 @@ ENDCLASS.`;
       });
     });
 
+    it('refuses an over-budget package before expanding source or executing tests', async () => {
+      const packageSearch = `<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">
+        ${Array.from(
+          { length: 300 },
+          (_, index) =>
+            `<adtcore:objectReference adtcore:type="CLAS/OC" adtcore:name="ZCL_BUDGET_${index}" adtcore:packageName="ZPKG" adtcore:uri="/sap/bc/adt/oo/classes/zcl_budget_${index}"/>`,
+        ).join('')}
+      </adtcore:objectReferences>`;
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
+        const method = opts?.method ?? 'GET';
+        const path = new URL(String(url)).pathname;
+        if (method === 'GET' && path === '/sap/bc/adt/packages/ZPKG') {
+          return Promise.resolve(mockResponse(200, '<package/>'));
+        }
+        if (method === 'GET' && path === '/sap/bc/adt/repository/informationsystem/search') {
+          return Promise.resolve(mockResponse(200, packageSearch));
+        }
+        return Promise.resolve(mockResponse(500, 'unexpected request'));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPDiagnose', {
+        action: 'unittest',
+        type: 'DEVC',
+        name: 'ZPKG',
+        resultFormat: 'structured',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(JSON.parse(result.content[0]?.text ?? '{}')).toMatchObject({
+        outcome: 'incomplete',
+        sourceSelectionEvidence: {
+          status: 'unavailable',
+          reason: expect.stringMatching(/exceeding the 500-request limit/i),
+        },
+      });
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(mockFetch.mock.calls.every((call) => (call[1]?.method ?? 'GET') === 'GET')).toBe(true);
+    });
+
     it('marks the live 7.58 PROG shape incomplete when source declares a silently omitted dangerous class', async () => {
       mockFetch.mockReset();
       mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
@@ -1450,6 +1490,60 @@ ENDCLASS.`;
         .filter((url) => url.pathname.endsWith('/programs/includes/ZARC1_TESTS/source/main'));
       expect(includeReads).toHaveLength(2);
       expect(includeReads.every((url) => url.searchParams.get('version') === 'active')).toBe(true);
+    });
+
+    it('fails closed when a CLAS macros include declares an omitted test method', async () => {
+      const testclasses = `CLASS ltcl_harmless DEFINITION FOR TESTING RISK LEVEL HARMLESS.
+          METHODS passes FOR TESTING.
+        ENDCLASS.
+        CLASS ltcl_critical DEFINITION FOR TESTING RISK LEVEL CRITICAL.
+          test_method hidden.
+        ENDCLASS.`;
+      const macros = `DEFINE test_method.
+          METHODS &1 FOR TESTING.
+        END-OF-DEFINITION.`;
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
+        const method = opts?.method ?? 'GET';
+        const path = new URL(String(url)).pathname;
+        if (method === 'GET' && path.endsWith('/classes/ZARC1_MIXED/source/main')) {
+          return Promise.resolve(mockResponse(200, 'CLASS zarc1_mixed DEFINITION PUBLIC. ENDCLASS.'));
+        }
+        if (method === 'GET' && path.endsWith('/classes/ZARC1_MIXED/includes/testclasses')) {
+          return Promise.resolve(mockResponse(200, testclasses));
+        }
+        if (method === 'GET' && path.endsWith('/classes/ZARC1_MIXED/includes/macros')) {
+          return Promise.resolve(mockResponse(200, macros));
+        }
+        if (method === 'HEAD' && path === '/sap/bc/adt/core/discovery') {
+          return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+        }
+        if (method === 'POST' && path === '/sap/bc/adt/abapunit/testruns') {
+          return Promise.resolve(mockResponse(200, AUNIT_HARMLESS_ONLY));
+        }
+        return Promise.resolve(mockResponse(404, 'unexpected'));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPDiagnose', {
+        action: 'unittest',
+        type: 'CLAS',
+        name: 'ZARC1_MIXED',
+        resultFormat: 'structured',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(JSON.parse(result.content[0]?.text ?? '{}')).toMatchObject({
+        outcome: 'incomplete',
+        sourceSelectionEvidence: {
+          status: 'unavailable',
+          reason: expect.stringMatching(/LTCL_CRITICAL.*macro TEST_METHOD/i),
+        },
+      });
+      expect(
+        mockFetch.mock.calls.filter((call) =>
+          new URL(String(call[0])).pathname.endsWith('/classes/ZARC1_MIXED/includes/macros'),
+        ),
+      ).toHaveLength(2);
     });
 
     it('verifies a global CLAS test while rechecking an absent optional testclasses include', async () => {
@@ -1736,6 +1830,28 @@ ENDCLASS.`;
       expect(payload.junit).toContain('<testsuites');
       expect(payload.junit).toContain('<error type="ARC1IncompleteEvidence"');
       expect(parseNativeJunitSummary(payload.junit)).toMatchObject({ tests: 1, failures: 0, errors: 1, skipped: 0 });
+    });
+
+    it('returns public AUnit probe deadline exhaustion as incomplete evidence', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockRejectedValue(new DOMException('The operation was aborted due to timeout', 'TimeoutError'));
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPDiagnose', {
+        action: 'unittest',
+        type: 'CLAS',
+        name: 'ZCL_ABAPGIT_HASH',
+        resultFormat: 'junit',
+      });
+
+      expect(result.isError).toBeUndefined();
+      const payload = JSON.parse(result.content[0]?.text ?? '{}');
+      expect(payload).toMatchObject({
+        protocol: 'public-api',
+        outcome: 'incomplete',
+        incompleteReason: 'timeout',
+        polls: 0,
+      });
+      expect(payload.junit).toContain('<error type="ARC1IncompleteEvidence"');
     });
 
     it('treats contradictory native zero-tests and executed legacy tests as incomplete', async () => {

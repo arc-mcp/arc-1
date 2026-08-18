@@ -12,6 +12,7 @@ import { logger } from '../server/logger.js';
 import { type AunitRunResult, parseAunitRunResult, withAunitCoverage } from './aunit.js';
 import { AdtApiError, AdtSafetyError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
+import type { AdtRequestOptions } from './http-deadline.js';
 import { canonicalHostRelativeAdtPath } from './path-safety.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import type {
@@ -556,7 +557,7 @@ export async function runUnitTests(
   http: AdtHttpClient,
   safety: SafetyConfig,
   objectUrl: string | string[],
-  opts: { coverage?: boolean } = {},
+  opts: { coverage?: boolean; requestOptions?: AdtRequestOptions } = {},
 ): Promise<AunitRunResult> {
   checkOperation(safety, OperationType.Test, 'RunUnitTests');
   const objectUrls = Array.isArray(objectUrl) ? objectUrl : [objectUrl];
@@ -592,6 +593,7 @@ export async function runUnitTests(
     {
       Accept: 'application/vnd.sap.adt.abapunit.testruns.result.v2+xml',
     },
+    opts.requestOptions,
   );
 
   const result = parseAunitRunResult(resp.body);
@@ -608,7 +610,13 @@ export async function runUnitTests(
   try {
     const coverageQuery = `<?xml version="1.0" encoding="UTF-8"?>
 <cov:query xmlns:cov="http://www.sap.com/adt/cov"><adtcore:objectSets xmlns:adtcore="http://www.sap.com/adt/core"><objectSet kind="inclusive"><adtcore:objectReferences>${objectReferences}</adtcore:objectReferences></objectSet></adtcore:objectSets></cov:query>`;
-    const measResp = await http.post(measurementUri, coverageQuery, 'application/xml', { Accept: 'application/xml' });
+    const measResp = await http.post(
+      measurementUri,
+      coverageQuery,
+      'application/xml',
+      { Accept: 'application/xml' },
+      opts.requestOptions,
+    );
     const coverage = parseCoverageMeasurement(measResp.body);
     return hasCoverageMetrics(coverage)
       ? withAunitCoverage(result, coverage)

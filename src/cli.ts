@@ -549,7 +549,7 @@ export function createCliProgram(options: CreateCliProgramOptions = {}): Command
     .option('--min-procedure <percent>', 'Minimum procedure coverage percentage')
     .addOption(new Option('--format <format>', 'Report format').choices(['text', 'json', 'junit']).default('text'))
     .option('--report-file <path>', 'Write the report to a file; use "-" for stdout')
-    .option('--timeout <seconds>', 'Public ABAP Unit verification budget (1-3600 seconds; default 300)')
+    .option('--timeout <seconds>', 'End-to-end ABAP Unit evidence budget (1-3600 seconds; default 300)')
     .option('--allow-empty', 'Allow only a sound no-tests result to pass')
     .option('--fail-on-skipped', 'Fail when any executed method is skipped')
     .action(async (type: string, name: string, opts: UnitTestCommandOptions) => {

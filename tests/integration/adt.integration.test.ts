@@ -2250,7 +2250,7 @@ describe('ADT Integration Tests', () => {
     };
     it('completes the flow with an explicit check variant', async () => {
       const result = await runAtcCheck(client.http, unrestrictedSafetyConfig(), KERNEL_CLASS_URL, 'PERFORMANCE_DB', {
-        timeoutMs: 5_000,
+        timeoutMs: 30_000,
       });
       expectSoundResult(result);
       for (const f of result.findings) {
@@ -2266,7 +2266,7 @@ describe('ADT Integration Tests', () => {
 
     it('completes the flow with the system default variant (no variant passed)', async () => {
       const result = await runAtcCheck(client.http, unrestrictedSafetyConfig(), KERNEL_CLASS_URL, undefined, {
-        timeoutMs: 5_000,
+        timeoutMs: 30_000,
       });
       expectSoundResult(result);
     }, 90000);

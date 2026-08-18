@@ -125,6 +125,8 @@ export class AunitIncompleteError extends Error {
 
 interface PublicAunitOptions {
   timeoutMs?: number;
+  deadline?: number;
+  signal?: AbortSignal;
   includeSubpackages?: boolean;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
@@ -465,6 +467,11 @@ function testMethodsInDefinition(statements: string[][], globalTestClass: boolea
 
 function inspectSourceDeclaredAunitClasses(source: string): AunitSourceDeclarationScan {
   const scan = abapStatements(source);
+  const macroNames = new Set(
+    scan.statements
+      .filter((statement) => statement[0]?.toUpperCase() === 'DEFINE' && statement[1])
+      .map((statement) => statement[1]!.toUpperCase()),
+  );
   const candidates = new Map<string, AunitClassCandidate>();
   let complete = scan.complete;
   let reason = scan.reason;
@@ -498,6 +505,12 @@ function inspectSourceDeclaredAunitClasses(source: string): AunitSourceDeclarati
     // `PUBLIC` immediately after DEFINITION identifies a global test class. Its instance methods
     // are implicit ABAP Unit methods even without a method-level FOR TESTING addition.
     const globalTestClass = upper[3] === 'PUBLIC';
+    const definitionStatements = scan.statements.slice(index + 1, end);
+    const macroInvocation = definitionStatements.find((tokens) => macroNames.has(tokens[0]?.toUpperCase() ?? ''));
+    if (macroInvocation) {
+      complete = false;
+      reason ??= `The FOR TESTING definition of ${testClass} invokes ABAP macro ${macroInvocation[0]!.toUpperCase()}; expanded test methods could not be verified.`;
+    }
     candidates.set(testClass, {
       testClass,
       riskLevel,
@@ -505,7 +518,7 @@ function inspectSourceDeclaredAunitClasses(source: string): AunitSourceDeclarati
       abstract: upper.includes('ABSTRACT'),
       ...(inheritance >= 0 && upper[inheritance + 2] ? { baseClass: upper[inheritance + 2] } : {}),
       globalTestClass,
-      ownTestMethods: testMethodsInDefinition(scan.statements.slice(index + 1, end), globalTestClass),
+      ownTestMethods: testMethodsInDefinition(definitionStatements, globalTestClass),
     });
     index = end;
   }
@@ -1132,8 +1145,9 @@ export async function runPublicAunit(
   const now = options.now ?? Date.now;
   const sleep = options.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
   const started = now();
-  const deadline = started + (options.timeoutMs ?? DEFAULT_PUBLIC_AUNIT_TIMEOUT_MS);
-  const requestOptions = (): AdtRequestOptions => ({ deadline });
+  const relativeDeadline = started + (options.timeoutMs ?? DEFAULT_PUBLIC_AUNIT_TIMEOUT_MS);
+  const deadline = options.deadline === undefined ? relativeDeadline : Math.min(relativeDeadline, options.deadline);
+  const requestOptions = (): AdtRequestOptions => ({ deadline, signal: options.signal });
   const normalizedType = type.toUpperCase();
   const normalizedName = name.toUpperCase();
   const objectSet =
