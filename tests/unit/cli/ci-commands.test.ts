@@ -360,6 +360,27 @@ describe('dedicated ATC, diff, and lint commands', () => {
     );
   });
 
+  it('forwards and validates the ATC timeout budget before dispatch', async () => {
+    const deps = dependencies(completeAtc());
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(await main(['atc', 'DEVC', '$ABAPGIT', '--timeout', '600'], deps)).toBe(0);
+    expect(deps.dispatchToolCall).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      'SAPDiagnose',
+      expect.objectContaining({ action: 'atc', timeoutSeconds: 600 }),
+      undefined,
+      undefined,
+      undefined,
+    );
+
+    const invalid = dependencies(completeAtc());
+    expect(await main(['atc', 'DEVC', '$ABAPGIT', '--timeout', '3601'], invalid)).toBe(2);
+    expect(invalid.dispatchToolCall).not.toHaveBeenCalled();
+  });
+
   it('returns diff exit 0 by default and 1 only with --check', async () => {
     const diff = {
       type: 'PROG',

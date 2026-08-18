@@ -1038,8 +1038,8 @@ describe('Transport Management', () => {
     });
 
     it('keeps a failed parent report authoritative when refreshed state is not released', async () => {
-      let clock = 0;
       const http = mockHttp(transportTree('D'));
+      const sleep = vi.fn(async () => undefined);
       (http.post as ReturnType<typeof vi.fn>).mockResolvedValue({
         statusCode: 200,
         headers: {},
@@ -1047,13 +1047,7 @@ describe('Transport Management', () => {
       });
 
       const result = await releaseTransportRecursive(http, enabledSafety, 'DEVK900001', {
-        timeoutMs: 1,
-        initialDelayMs: 1,
-        maxDelayMs: 1,
-        now: () => clock,
-        sleep: async (milliseconds) => {
-          clock += milliseconds;
-        },
+        sleep,
       });
 
       expect(result.released).not.toContain('DEVK900001');
@@ -1061,6 +1055,23 @@ describe('Transport Management', () => {
       expect(result.outcome).toBe('blocked');
       expect(result.verified).toBe(false);
       expect(http.get).toHaveBeenCalledTimes(3);
+      expect(sleep).not.toHaveBeenCalled();
+    });
+
+    it('returns a definitively blocked single release without exhausting the polling budget', async () => {
+      const http = mockHttp(transportTree('D'));
+      const sleep = vi.fn(async () => undefined);
+      (http.post as ReturnType<typeof vi.fn>).mockResolvedValue({
+        statusCode: 200,
+        headers: {},
+        body: loadFixture('transport-release-report-blocked.xml'),
+      });
+
+      const result = await releaseTransportAndWait(http, enabledSafety, 'DEVK900001', { sleep });
+
+      expect(result).toMatchObject({ outcome: 'blocked', verified: false, polls: 1 });
+      expect(http.get).toHaveBeenCalledTimes(2);
+      expect(sleep).not.toHaveBeenCalled();
     });
 
     it('refuses recursive release under a restrictive transport allowlist before CTS reads or writes', async () => {

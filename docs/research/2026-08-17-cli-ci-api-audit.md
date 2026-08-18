@@ -801,3 +801,35 @@ no ABAP, package, abapGit, or gCTS artifact was created in this correction pass.
 Final local validation: 5,274/5,274 unit tests across 177 files; two live ATC integration tests; one
 live slow recursive-release test; typecheck, Biome, file/schema budgets, policy validation, strict
 MkDocs, rebuilt/packed npm CLI smoke, HTTP/API-key profile smoke, and `git diff --check` all passed.
+
+## 14. Final review and live correction receipt (2026-08-18)
+
+The last external review added three material corrections. ATC processed-object validation now
+accepts canonical raw-encoded slashes in the object-name segment, which SAP uses for namespace
+objects. Package ATC receives a configurable total budget and an explicit per-fetch budget; a lazy
+undici dispatcher removes the library's independent 300-second response-header ceiling while the
+ARC-1 AbortSignal remains authoritative. CTS convergence now returns immediately after a definitive
+failed report plus one coherent non-in-flight refresh, while retaining the live-verified rule that a
+failed child report can still be folded into a later successful parent release.
+
+Live results from the rebuilt working tree:
+
+- `atc CLAS /1BCDWB/WSC0040615164730935892 --timeout 120` returned exit 0, `complete:true`,
+  `processedObjectCount:1`, and matching zero finding totals (worklist
+  `9241B616527E1FE1A6DB0870781418A2`).
+- `atc DEVC '$ABAPGIT' --timeout 600` completed after 179.4 seconds and emitted a complete
+  structured report of approximately 962 KB; this crossed the original 120-second client ceiling.
+- Task `A4HK906463` in disposable request `A4HK906462` returned `blocked`, `verified:false`, and
+  `polls:1` in about four seconds under a 300-second budget. The request/task were recursively
+  deleted and the request endpoint was verified 404 afterward.
+
+The redaction review retained bounded preprocessing and only widened the already-bounded quoted
+escape prefix from eight to 64 characters; it did not reintroduce the super-linear unbounded regexes
+reported against an earlier revision. Lower-value requests for merged sanitizer abstractions,
+cosmetic default-command wording, and unrelated export cleanup were intentionally not taken.
+
+Final local gates after rebasing package-scoped ABAP Unit support: 5,299/5,299 unit tests across 178
+files, focused HTTP/ATC/CTS and schema tests,
+typecheck, Biome, size/schema budgets, action-policy validation, strict MkDocs, tool-schema parity and
+snapshots, packed npm smoke, and `git diff --check`. No SAP object/package/Git artifact remains from
+this pass; the only CTS pair created here was deleted.

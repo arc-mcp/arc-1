@@ -1132,6 +1132,19 @@ describe('AdtHttpClient', () => {
       expect(fetchOptions(0).signal).toBeDefined();
     });
 
+    it('honors a caller-provided per-fetch timeout for long-running operations', async () => {
+      mockFetch.mockImplementationOnce(
+        (_url, init) =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true });
+          }),
+      );
+
+      const client = new AdtHttpClient(getDefaultConfig());
+      await expect(client.get('/path', undefined, { fetchTimeoutMs: 20 })).rejects.toThrow(AdtNetworkError);
+      expect(fetchOptions(0).dispatcher).toBeDefined();
+    });
+
     it('wraps timeout errors as AdtNetworkError', async () => {
       const abortError = new DOMException('The operation was aborted', 'AbortError');
       mockFetch.mockRejectedValueOnce(abortError);

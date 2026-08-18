@@ -13,6 +13,8 @@ breaking changes when moving an existing pipeline:
 | Git egress | `SAPGit.external_info` now requires `git` scope plus `SAP_ALLOW_WRITES=true` and `SAP_ALLOW_GIT_WRITES=true`; Git URLs must be HTTPS and credential-free. | Move credentials out of URLs and enable the egress/write gates only on the instance intended to contact remote Git hosts. |
 | Revision and diagnostic links | Caller-provided ADT links are restricted to canonical endpoint-specific paths. | Pass the exact revision/gateway/AUnit URI returned by ARC-1 or SAP; arbitrary `/sap/bc/adt/**` paths, traversal, and ambiguous encodings are rejected. |
 | Dedicated CI checks | Non-evaluable AUnit/ATC/diff/lint evidence exits `3`; tool/SAP failures exit `1`; usage/config validation exits `2`. | Preserve the process exit code alongside JSON, JUnit, or Checkstyle reports and handle exit `3` as incomplete rather than success. |
+| Dedicated lint preset | `arc1 lint` now uses ARC-1's CLI-safe abaplint preset instead of inheriting a repository-specific default config. Existing files may change from red to green when they only violated rules outside that preset. | Pass `SAP_ABAPLINT_CONFIG` when the CI job must enforce a repository-specific rule set. |
+| CLI parsing | Unknown commands/options, missing values, and extra positional arguments are now usage errors instead of falling through to the default server command. | Fix misspelled commands and pass every boolean flag with an explicit value, such as `--allow-writes=true`. |
 
 The generic `arc1 call` command keeps MCP `ToolResult` semantics. The stricter domain exit codes apply
 to the dedicated `unittest`, `atc`, `diff`, and `lint` commands.

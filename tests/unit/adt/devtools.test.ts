@@ -23,7 +23,7 @@ import {
   syntaxCheck,
   unpublishServiceBinding,
 } from '../../../src/adt/devtools.js';
-import { AdtApiError, AdtSafetyError } from '../../../src/adt/errors.js';
+import { AdtApiError, AdtNetworkError, AdtSafetyError } from '../../../src/adt/errors.js';
 import type { AdtHttpClient } from '../../../src/adt/http.js';
 import { defaultSafetyConfig, unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
 
@@ -2059,6 +2059,7 @@ describe('DevTools', () => {
         '',
         'application/xml',
         expect.objectContaining({ Accept: 'text/plain' }),
+        expect.objectContaining({ deadline: expect.any(Number), fetchTimeoutMs: 300_000 }),
       );
       // 2) run the checks into the returned worklist id
       expect(http.post).toHaveBeenCalledWith(
@@ -2066,6 +2067,7 @@ describe('DevTools', () => {
         expect.stringContaining('objectReference'),
         'application/xml',
         expect.objectContaining({ Accept: 'application/xml' }),
+        expect.objectContaining({ deadline: expect.any(Number), fetchTimeoutMs: 300_000 }),
       );
       // 3) fetch the worklist that was actually created (not the hardcoded id=1)
       expect(http.get).toHaveBeenCalledWith(
@@ -2088,6 +2090,7 @@ describe('DevTools', () => {
         '',
         'application/xml',
         expect.objectContaining({ Accept: 'text/plain' }),
+        expect.objectContaining({ deadline: expect.any(Number), fetchTimeoutMs: 300_000 }),
       );
     });
 
@@ -2147,6 +2150,48 @@ describe('DevTools', () => {
 
       expect(result).toMatchObject({ complete: true, processedObjectCount: 2, findingCount: 2 });
       expect(result.findings.map((finding) => finding.messageTitle)).toEqual(['First finding', 'Second finding']);
+    });
+
+    it('accepts namespaced ABAP object URIs as processed-object evidence', async () => {
+      const body = `<worklist id="WL-NS" objectSetIsComplete="true"><objects>
+        <object uri="/sap/bc/adt/atc/objects/R3TR/CLAS/%2f1BCDWB%2fWSC0040615164730935892" type="CLAS" name="/1BCDWB/WSC0040615164730935892"/>
+      </objects></worklist>`;
+      const result = await runAtcCheck(
+        mockAtcHttp('WL-NS', [0, 0, 0], body),
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/%2f1BCDWB%2fWSC0040615164730935892',
+      );
+
+      expect(result).toMatchObject({ complete: true, processedObjectCount: 1, findingCount: 0 });
+    });
+
+    it('returns incomplete evidence when the first ATC snapshot exceeds the request budget', async () => {
+      const timeout = new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+      const http = mockAtcHttp('WL-TIMEOUT', [0, 0, 2]);
+      (http.get as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new AdtNetworkError(timeout.message, timeout));
+
+      const result = await runAtcCheck(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/programs/programs/ZTEST',
+        undefined,
+        { timeoutMs: 600_000 },
+      );
+
+      expect(result).toMatchObject({
+        complete: false,
+        expectedFindingCount: 2,
+        findingCount: 0,
+        truncated: true,
+      });
+      expect(result.incompleteReasons.join(' ')).toMatch(/first snapshot/i);
+      expect(http.post).toHaveBeenLastCalledWith(
+        expect.stringContaining('/sap/bc/adt/atc/runs?worklistId=WL-TIMEOUT'),
+        expect.any(String),
+        'application/xml',
+        expect.any(Object),
+        expect.objectContaining({ fetchTimeoutMs: 600_000 }),
+      );
     });
 
     it.each([

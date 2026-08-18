@@ -3,7 +3,7 @@
 import { AdtApiError, AdtNetworkError } from './errors.js';
 import type { AdtHttpClient, AdtResponse } from './http.js';
 import type { AdtRequestOptions } from './http-deadline.js';
-import { isCanonicalHostRelativeAdtPath } from './path-safety.js';
+import { canonicalHostRelativeAdtPath } from './path-safety.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import { escapeXmlAttr, type NamedItem, parseAtcSystemCheckVariant, parseNamedItems, parseXml } from './xml-parser.js';
 
@@ -48,7 +48,7 @@ export interface AtcPollOptions {
   signal?: AbortSignal;
 }
 
-const DEFAULT_ATC_POLL_TIMEOUT_MS = 30_000;
+const DEFAULT_ATC_TIMEOUT_MS = 300_000;
 const DEFAULT_ATC_POLL_DELAY_MS = 250;
 const DEFAULT_ATC_MAX_POLL_DELAY_MS = 2_000;
 
@@ -81,10 +81,18 @@ export async function runAtcCheck(
   pollOptions: AtcPollOptions = {},
 ): Promise<AtcRunResult> {
   checkOperation(safety, OperationType.Read, 'RunATCCheck');
+  const now = pollOptions.now ?? Date.now;
+  const timeoutMs = pollOptions.timeoutMs ?? DEFAULT_ATC_TIMEOUT_MS;
+  const deadline = now() + timeoutMs;
+  const requestOptions: AdtRequestOptions = {
+    deadline,
+    fetchTimeoutMs: timeoutMs,
+    signal: pollOptions.signal,
+  };
   const worklistPath = variant
     ? `/sap/bc/adt/atc/worklists?checkVariant=${encodeURIComponent(variant)}`
     : '/sap/bc/adt/atc/worklists';
-  const worklistResp = await http.post(worklistPath, '', 'application/xml', { Accept: 'text/plain' });
+  const worklistResp = await http.post(worklistPath, '', 'application/xml', { Accept: 'text/plain' }, requestOptions);
   const worklistId = worklistResp.body.trim();
   if (!worklistId) {
     throw new AdtApiError('ATC worklist creation returned no worklist id; cannot run ATC checks.', 500, worklistPath);
@@ -101,17 +109,23 @@ export async function runAtcCheck(
     </objectSet>
   </objectSets>
 </atc:run>`;
-  const runResp = await http.post(
-    `/sap/bc/adt/atc/runs?worklistId=${encodeURIComponent(worklistId)}`,
-    runBody,
-    'application/xml',
-    { Accept: 'application/xml' },
-  );
+  let runResp: AdtResponse;
+  try {
+    runResp = await http.post(
+      `/sap/bc/adt/atc/runs?worklistId=${encodeURIComponent(worklistId)}`,
+      runBody,
+      'application/xml',
+      { Accept: 'application/xml' },
+      requestOptions,
+    );
+  } catch (error) {
+    if (isAtcDeadlineFailure(error)) {
+      return incompleteAtcResult(worklistId, variant, maximumVerdicts, null, 0, 'ATC execution timed out.');
+    }
+    throw error;
+  }
   const expectedFindingCount = parseAtcFindingStats(runResp.body);
-  const now = pollOptions.now ?? Date.now;
   const sleep = pollOptions.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
-  const deadline = now() + (pollOptions.timeoutMs ?? DEFAULT_ATC_POLL_TIMEOUT_MS);
-  const requestOptions: AdtRequestOptions = { deadline, signal: pollOptions.signal };
   let delayMs = pollOptions.initialDelayMs ?? DEFAULT_ATC_POLL_DELAY_MS;
   const maxDelayMs = pollOptions.maxDelayMs ?? DEFAULT_ATC_MAX_POLL_DELAY_MS;
   let result: AtcRunResult | undefined;
@@ -125,10 +139,19 @@ export async function runAtcCheck(
         requestOptions,
       );
     } catch (error) {
-      const deadlineFailure =
-        error instanceof AdtNetworkError &&
-        (error.cause?.name === 'TimeoutError' || /deadline was exceeded|timed out|\btimeout\b/i.test(error.message));
-      if (result && deadlineFailure) return result;
+      if (isAtcDeadlineFailure(error)) {
+        return (
+          result ??
+          incompleteAtcResult(
+            worklistId,
+            variant,
+            maximumVerdicts,
+            expectedFindingCount,
+            runResp.statusCode,
+            'ATC worklist polling timed out before SAP returned the first snapshot.',
+          )
+        );
+      }
       throw error;
     }
     result = parseAtcRunResult(resultResp.body, {
@@ -150,6 +173,39 @@ export async function runAtcCheck(
     if (now() >= deadline) return result;
     delayMs = Math.min(maxDelayMs, delayMs * 2);
   }
+}
+
+function isAtcDeadlineFailure(error: unknown): boolean {
+  return (
+    error instanceof AdtNetworkError &&
+    (error.cause?.name === 'TimeoutError' || /deadline was exceeded|timed out|\btimeout\b/i.test(error.message))
+  );
+}
+
+function incompleteAtcResult(
+  worklistId: string,
+  variant: string | undefined,
+  maximumVerdicts: number,
+  expectedFindingCount: number | null,
+  runStatusCode: number,
+  reason: string,
+): AtcRunResult {
+  return {
+    findings: [],
+    worklistId,
+    variant: variant ?? null,
+    maximumVerdicts,
+    expectedFindingCount,
+    findingCount: 0,
+    processedObjectCount: 0,
+    objectSetIsComplete: null,
+    truncated: expectedFindingCount !== null && expectedFindingCount > 0,
+    complete: false,
+    incompleteReasons: [reason],
+    runStatusCode,
+    worklist: { id: worklistId },
+    infos: [],
+  };
 }
 
 function nodeRecord(value: unknown): Record<string, unknown> | undefined {
@@ -194,7 +250,12 @@ function isValidProcessedObject(object: Record<string, unknown>): boolean {
   const uri = typeof object['@_uri'] === 'string' ? object['@_uri'].trim() : '';
   const type = typeof object['@_type'] === 'string' ? object['@_type'].trim() : '';
   const name = typeof object['@_name'] === 'string' ? object['@_name'].trim() : '';
-  return uri.length > 0 && isCanonicalHostRelativeAdtPath(uri) && type.length > 0 && name.length > 0;
+  return (
+    uri.length > 0 &&
+    canonicalHostRelativeAdtPath(uri, '/sap/bc/adt/', { allowRawEncodedSlash: true }) !== null &&
+    type.length > 0 &&
+    name.length > 0
+  );
 }
 
 function parseAtcFinding(finding: Record<string, unknown>): AtcFinding {

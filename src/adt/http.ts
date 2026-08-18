@@ -188,6 +188,7 @@ export class AdtHttpClient {
   private negotiatedHeaders: Map<string, { accept?: string; contentType?: string }> = new Map();
   private csrfToken = '';
   private dispatcher: Dispatcher | undefined;
+  private longOperationDispatcher: Dispatcher | undefined;
   private config: AdtHttpConfig;
   /**
    * Cookie jar — stores Set-Cookie headers from responses and sends them back.
@@ -216,7 +217,7 @@ export class AdtHttpClient {
     // (see doProxyRequest()) — undici 8.x ProxyAgent always uses CONNECT tunneling,
     // which BTP's connectivity proxy doesn't support (HTTP 405).
     if (!config.btpProxy && config.insecure) {
-      this.dispatcher = new Agent({ connect: { rejectUnauthorized: false } });
+      this.dispatcher = new Agent({ connect: { rejectUnauthorized: false }, headersTimeout: 0, bodyTimeout: 0 });
     }
   }
 
@@ -1305,17 +1306,21 @@ export class AdtHttpClient {
     // spreads these headers too).
     const outbound = { ...headers, ...traceHeaders(getCurrentContext()) };
 
-    // BTP Connectivity proxy: use standard HTTP proxy protocol (not CONNECT)
     if (this.config.btpProxy) {
       return this.doProxyRequest(url, method, outbound, body, options);
     }
-
+    // Let the explicit operation budget override undici's 300-second header timeout.
+    const dispatcher =
+      this.dispatcher ??
+      (options?.fetchTimeoutMs === undefined
+        ? undefined
+        : (this.longOperationDispatcher ??= new Agent({ headersTimeout: 0, bodyTimeout: 0 })));
     return undiciFetch(url, {
       method,
       headers: outbound,
       body,
       signal: requestSignal(options),
-      ...(this.dispatcher ? { dispatcher: this.dispatcher } : {}),
+      ...(dispatcher ? { dispatcher } : {}),
     }) as Promise<Response>;
   }
 
@@ -1346,7 +1351,6 @@ export class AdtHttpClient {
     const proxy = this.config.btpProxy!;
     const proxyOrigin = `${proxy.protocol}://${proxy.host}:${proxy.port}`;
 
-    // Get proxy auth token
     let proxyAuth: string;
     throwIfRequestCancelled(options);
     if (this.config.ppProxyAuth) {
@@ -1356,7 +1360,6 @@ export class AdtHttpClient {
       proxyAuth = `Bearer ${proxyToken}`;
     }
 
-    // Extract host from target URL for the Host header
     const targetUrl = new URL(url);
     const hostHeader = targetUrl.port ? `${targetUrl.hostname}:${targetUrl.port}` : targetUrl.hostname;
 
@@ -1373,7 +1376,8 @@ export class AdtHttpClient {
       proxyHeaders['SAP-Connectivity-SCC-Location_ID'] = proxy.locationId;
     }
 
-    const client = new Client(proxyOrigin);
+    const clientOptions = options?.fetchTimeoutMs === undefined ? undefined : { headersTimeout: 0, bodyTimeout: 0 };
+    const client = new Client(proxyOrigin, clientOptions);
     try {
       const resp = await client.request({
         method: method as Dispatcher.HttpMethod,

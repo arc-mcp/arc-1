@@ -126,6 +126,7 @@ interface AtcCommandOptions {
   maxPriority: string;
   format: 'text' | 'json' | 'checkstyle';
   reportFile?: string;
+  timeout?: string;
 }
 
 interface LintCommandOptions {
@@ -626,16 +627,27 @@ export function createCliProgram(options: CreateCliProgramOptions = {}): Command
     .command('atc <type> <name>')
     .description('Run ATC with completeness evidence and CI thresholds')
     .option('--variant <name>', 'ATC check variant; omit for the system default')
+    .option('--timeout <seconds>', 'ATC execution and verification budget (1-3600 seconds; default 300)')
     .option('--max-priority <priority>', 'Fail on findings with priority <= N (1=error, 2=warning, 3=info)', '1')
     .addOption(new Option('--format <format>', 'Report format').choices(['text', 'json', 'checkstyle']).default('text'))
     .option('--report-file <path>', 'Write the report to a file; use "-" for stdout')
     .action(async (type: string, name: string, opts: AtcCommandOptions) => {
       const maxPriority = assertAtcPriority(opts.maxPriority);
+      const timeoutSeconds = opts.timeout === undefined ? undefined : Number(opts.timeout);
+      if (
+        timeoutSeconds !== undefined &&
+        (!Number.isSafeInteger(timeoutSeconds) || timeoutSeconds < 1 || timeoutSeconds > 3600)
+      ) {
+        console.error('--timeout must be an integer from 1 to 3600 seconds.');
+        runtime.state.exitCode = 2;
+        return;
+      }
       const outcome = await executeCiJson<AtcRunResult>(runtime, 'SAPDiagnose', {
         action: 'atc',
         type: type.toUpperCase(),
         name,
         ...(opts.variant ? { variant: opts.variant } : {}),
+        ...(timeoutSeconds === undefined ? {} : { timeoutSeconds }),
         resultFormat: 'structured',
       });
       if (!outcome.ok) return;
@@ -859,7 +871,7 @@ export async function executeCliToolCall(
     };
   }
 
-  if (!isDisabledWriteTool(toolName, config) && !localOnly) {
+  if (!localOnly) {
     const unsupported = directModeError(config);
     if (unsupported) return { kind: 'usage', message: unsupported };
   }

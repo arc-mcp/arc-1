@@ -41,6 +41,14 @@ describe('Audit Events', () => {
       expect(String(result.note)).toContain('[truncated');
     });
 
+    it('redacts quoted secrets after long escaped-quote prefixes', () => {
+      const sentinel = 'LONG-ESCAPED-SECRET-SENTINEL';
+      const escapedQuote = `${'\\'.repeat(15)}"`;
+      const result = sanitizeArgs({ message: `password=${escapedQuote}${sentinel}${escapedQuote}` });
+
+      expect(JSON.stringify(result)).not.toContain(sentinel);
+    });
+
     it('handles empty args', () => {
       expect(sanitizeArgs({})).toEqual({});
     });

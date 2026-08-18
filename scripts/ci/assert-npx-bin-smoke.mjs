@@ -46,7 +46,7 @@ function parsePackOutput(stdout) {
   }
 }
 
-function runBuiltBin(bin, args, expectedStatus = 0) {
+function runBuiltBin(bin, args, expectedStatus = 0, envOverrides = {}) {
   const result = spawnSync(process.execPath, [join(repoRoot, 'bin', bin), ...args], {
     cwd: tempDir,
     encoding: 'utf8',
@@ -60,6 +60,7 @@ function runBuiltBin(bin, args, expectedStatus = 0) {
       SAP_ALLOW_TRANSPORT_WRITES: 'false',
       SAP_ALLOW_GIT_WRITES: 'false',
       ARC1_CACHE: 'none',
+      ...envOverrides,
     },
   });
   if (result.status !== expectedStatus) {
@@ -147,6 +148,7 @@ try {
       '{"action":"create","type":"PROG","name":"ZARC1_SMOKE","package":"$TMP","description":"smoke","source":"REPORT zarc1_smoke."}',
     ],
     1,
+    { SAP_URL: 'https://sap.example.invalid' },
   );
   if (!/writ|disabled|allow/i.test(writeDenied.stderr)) {
     fail('Built arc1 did not route a hidden SAPWrite through the normal safety denial.', writeDenied);

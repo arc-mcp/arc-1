@@ -1583,10 +1583,11 @@ describe('SAPDiagnoseSchema', () => {
     expect(SAPDiagnoseSchema.safeParse({ action: 'atc', type: 'DEVC', includeSubpackages: true }).success).toBe(false);
   });
 
-  it('restricts unittest timeout and rejects it for unrelated actions', () => {
+  it('restricts unittest and ATC timeout and rejects it for unrelated actions', () => {
     expect(SAPDiagnoseSchema.safeParse({ action: 'unittest', timeoutSeconds: 1 }).success).toBe(true);
     expect(SAPDiagnoseSchema.safeParse({ action: 'unittest', timeoutSeconds: 3601 }).success).toBe(false);
-    expect(SAPDiagnoseSchema.safeParse({ action: 'atc', timeoutSeconds: 30 }).success).toBe(false);
+    expect(SAPDiagnoseSchema.safeParse({ action: 'atc', timeoutSeconds: 30 }).success).toBe(true);
+    expect(SAPDiagnoseSchema.safeParse({ action: 'syntax', timeoutSeconds: 30 }).success).toBe(false);
   });
 
   it.each(['legacy', 'structured', 'junit'] as const)('accepts unittest resultFormat=%s', (resultFormat) => {

@@ -773,3 +773,30 @@ Post-fix live evidence:
 The corrected tree passed 5,274 tests across 177 files, all TypeScript typechecks, full Biome lint,
 file/schema budgets, policy validation, strict documentation, rebuilt and packed npm smoke, the
 live HTTP/API-key manifest matrix, and `git diff --check`. Final implementation verdict: **GO**.
+
+## 17. Final external-review closure (2026-08-18)
+
+The final review was applied selectively: high-impact CI and live-contract findings were fixed;
+cosmetic Commander wording, redundant sanitizer abstractions, and export/test churn were deferred.
+ATC now accepts canonical namespaced-object evidence, gives package runs an explicit `--timeout`
+budget, maps execution/first-snapshot deadlines to incomplete evidence, and uses a long-operation
+undici dispatcher so its caller budget—not undici's 300-second header default—is authoritative.
+Definitively failed CTS release reports now terminate after one coherent refresh rather than burning
+the whole convergence budget. Missing SAP targets remain usage/configuration errors even when the
+requested write tool is disabled.
+
+Live A4H/758 evidence from the rebuilt CLI:
+
+- namespaced class `/1BCDWB/WSC0040615164730935892` returned `complete:true`, one processed object,
+  and exact zero-finding agreement in worklist `9241B616527E1FE1A6DB0870781418A2`;
+- a `$ABAPGIT` package run completed after 179.4 seconds under `--timeout 600`, beyond the old
+  120-second client ceiling, and emitted a complete structured report;
+- disposable request/task `A4HK906462`/`A4HK906463` reproduced SAP's unclassified-task release
+  rejection and returned `blocked` after one poll in about four seconds. Recursive cleanup succeeded
+  and a final GET returned 404 for the request.
+
+Final validation after rebasing the concurrent package-scoped ABAP Unit work passed 5,299 tests across
+178 files, focused HTTP/ATC/CTS
+regressions, all TypeScript typechecks, full Biome lint, file/schema budgets, policy validation,
+strict documentation, tool-definition parity/snapshots, rebuilt/packed npm smoke, and
+`git diff --check`. Final implementation verdict remains **GO**.

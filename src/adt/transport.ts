@@ -509,7 +509,6 @@ export function parseTransportNodeStates(xml: string): TransportReleaseNodeState
     for (const task of collectAllNamedNodes(request, 'task')) add(task, 'task', requestId);
   }
 
-  // Also catches a standalone task root. Nested tasks are de-duplicated by id.
   for (const task of collectAllNamedNodes(parsed, 'task')) add(task, 'task');
   return [...states.values()];
 }
@@ -531,15 +530,12 @@ async function readTransportNodeStates(
   return parseTransportNodeStates(resp.body);
 }
 
-function transportIdsEqual(left: string | undefined, right: string): boolean {
-  return (left ?? '').toUpperCase() === right.toUpperCase();
-}
+const transportIdsEqual = (left: string | undefined, right: string) =>
+  (left ?? '').toUpperCase() === right.toUpperCase();
 
 function releaseErrorText(err: unknown): string {
-  // A convergence error is returned as normal tool-result evidence, so dispatch's
-  // AdtApiError/minimal-error formatter never sees it. Never copy a response-derived
-  // SAP message or ADT path into that result: 401/403 bodies in particular can carry
-  // technical users, authorization objects, or echoed login material.
+  // Convergence errors bypass dispatch's minimal-error formatter. Never copy SAP
+  // response text or ADT paths into this normal tool-result evidence.
   if (err instanceof AdtApiError) return `SAP CTS request failed with HTTP ${err.statusCode}.`;
   if (err instanceof AdtNetworkError) return 'SAP CTS network request failed.';
 
@@ -561,9 +557,8 @@ export function checkRecursiveTransportReleaseScope(safety: SafetyConfig): void 
   );
 }
 
-function isTerminalReleaseReadError(err: unknown): boolean {
-  return err instanceof AdtApiError && [400, 401, 403, 404].includes(err.statusCode);
-}
+const isTerminalReleaseReadError = (err: unknown) =>
+  err instanceof AdtApiError && [400, 401, 403, 404].includes(err.statusCode);
 
 function numericOption(value: number | undefined, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : fallback;
@@ -658,7 +653,6 @@ async function prepareTransportRelease(
   } catch (err) {
     return terminal([], releaseErrorText(err));
   }
-
   const requested = discovered.find((node) => transportIdsEqual(node.id, transportId));
   if (!requested) {
     return terminal([], `Transport '${transportId}' was not present in the CTS state response.`);
@@ -667,7 +661,6 @@ async function prepareTransportRelease(
     return terminal([requested], `Recursive release requires a parent request, but '${transportId}' is a task.`);
   }
 
-  // Freeze and authorize the exact original tree before the first irreversible POST.
   const intended = [
     requested,
     ...(recursive
@@ -675,7 +668,6 @@ async function prepareTransportRelease(
       : []),
   ].map((node) => ({ ...node }));
   for (const node of intended) checkTransport(safety, node.id, operation, true);
-
   const unknown = intended.filter((node) => !isKnownReleaseStatus(node.lastStatus));
   if (unknown.length > 0) {
     const detail = `CTS returned an unknown initial status for: ${unknown
@@ -684,7 +676,6 @@ async function prepareTransportRelease(
     return terminal(intended, detail);
   }
   if (intended.every((node) => node.confirmedReleased)) return terminal(intended, undefined, 'released');
-
   const stopped = stoppedBeforeSubmission();
   if (!stopped) return { intended };
   const detail =
@@ -702,7 +693,6 @@ async function releaseTransportWithConvergence(
   options: TransportReleaseWaitOptions,
 ): Promise<TransportReleaseResult> {
   const operation = recursive ? 'ReleaseTransportRecursive' : 'ReleaseTransport';
-  // Keep the mutation ceiling ahead of the discovery read for direct callers as well as the handler.
   checkTransport(safety, transportId, operation, true);
   if (recursive) checkRecursiveTransportReleaseScope(safety);
 
@@ -750,6 +740,13 @@ async function releaseTransportWithConvergence(
   const hasInFlightNode = () =>
     intended.some((node) => IN_FLIGHT_RELEASE_STATUSES.has(node.lastStatus) && !node.confirmedReleased);
   const submissionFailed = () => submissions.some((submission) => submission.error !== undefined);
+  const finalOutcomeIsDecided = () =>
+    !hasInFlightNode() &&
+    submissions.some(
+      (submission) =>
+        submission.error !== undefined ||
+        (transportIdsEqual(submission.id, requestedState.id) && failedReleaseReports(submission.reports).length > 0),
+    );
   const submissionWasAccepted = (id: string) => {
     const submission = submissions.find((entry) => transportIdsEqual(entry.id, id));
     return (
@@ -947,19 +944,21 @@ async function releaseTransportWithConvergence(
 
     if (!submissionFailed() && MODIFIABLE_RELEASE_STATUSES.has(requestedState.lastStatus)) {
       await submit(requestedState);
-      return (await pollUntil(() => false, true))!;
+      const terminal = await pollUntil(finalOutcomeIsDecided, true);
+      return terminal ?? finishWithoutTerminalRelease();
     }
 
-    return (await pollUntil(() => false, false))!;
+    const terminal = await pollUntil(finalOutcomeIsDecided, false);
+    return terminal ?? finishWithoutTerminalRelease();
   }
 
-  // Single release: poll O, submit D once, then observe only.
   if (IN_FLIGHT_RELEASE_STATUSES.has(requestedState.lastStatus)) {
     const terminal = await pollUntil(() => MODIFIABLE_RELEASE_STATUSES.has(requestedState.lastStatus), true);
     if (terminal) return terminal;
   }
   if (MODIFIABLE_RELEASE_STATUSES.has(requestedState.lastStatus)) await submit(requestedState);
-  return (await pollUntil(() => false, true))!;
+  const terminal = await pollUntil(finalOutcomeIsDecided, true);
+  return terminal ?? finishWithoutTerminalRelease();
 }
 
 /** Release one request/task and return after terminal CTS state or accepted released-task disappearance. */

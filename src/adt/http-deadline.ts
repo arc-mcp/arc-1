@@ -7,6 +7,8 @@ export interface RequestDeadlineOptions {
 }
 
 export interface AdtRequestOptions extends RequestDeadlineOptions {
+  /** Override the 120-second per-fetch cap for a known long-running ADT operation. */
+  fetchTimeoutMs?: number;
   /** Optional ADT subresource: handled 404s may be logged at debug level. */
   suppressNotFoundLog?: boolean;
   /** Capability probe: all non-2xx responses are expected evidence, not warning noise. */
@@ -25,7 +27,12 @@ function callerDeadlineRemaining(options?: RequestDeadlineOptions): number | und
 
 function requestDeadlineRemaining(options?: RequestDeadlineOptions): number {
   const callerRemaining = callerDeadlineRemaining(options);
-  return callerRemaining === undefined ? DEFAULT_FETCH_TIMEOUT_MS : Math.min(DEFAULT_FETCH_TIMEOUT_MS, callerRemaining);
+  const configuredTimeout = (options as AdtRequestOptions | undefined)?.fetchTimeoutMs;
+  if (configuredTimeout !== undefined && (!Number.isFinite(configuredTimeout) || configuredTimeout <= 0)) {
+    throw new RangeError('ADT fetch timeout must be a positive finite millisecond value.');
+  }
+  const fetchTimeout = configuredTimeout === undefined ? DEFAULT_FETCH_TIMEOUT_MS : Math.ceil(configuredTimeout);
+  return callerRemaining === undefined ? fetchTimeout : Math.min(fetchTimeout, callerRemaining);
 }
 
 function requestTimeoutError(): DOMException {

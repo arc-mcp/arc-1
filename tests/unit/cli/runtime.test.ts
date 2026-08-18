@@ -180,7 +180,9 @@ describe('CLI runtime', () => {
       content: [{ type: 'text' as const, text: 'Writes are disabled by SAP_ALLOW_WRITES=false' }],
       isError: true,
     }));
-    const dependencies = directDependencies(resolved({ allowWrites: false }), { dispatchToolCall });
+    const dependencies = directDependencies(resolved({ allowWrites: false, url: 'https://sap.example.test' }), {
+      dispatchToolCall,
+    });
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     const code = await main(
@@ -192,6 +194,15 @@ describe('CLI runtime', () => {
     expect(dispatchToolCall).toHaveBeenCalledOnce();
     expect(dependencies.authPreflight).not.toHaveBeenCalled();
     expect(dependencies.probeFeatures).not.toHaveBeenCalled();
+  });
+
+  it('classifies a missing SAP_URL as configuration usage even when the write tool is disabled', async () => {
+    const dependencies = directDependencies(resolved({ allowWrites: false, url: '' }));
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(await main(['activate', 'PROG', 'Z_TEST'], dependencies)).toBe(2);
+    expect(dependencies.createClient).not.toHaveBeenCalled();
+    expect(dependencies.dispatchToolCall).not.toHaveBeenCalled();
   });
 
   it('uses one client in auth -> feature probe -> dispatcher order', async () => {

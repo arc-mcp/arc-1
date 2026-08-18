@@ -97,15 +97,15 @@ function isCredentialQueryKey(key: string): boolean {
 function redactCredentialAssignments(value: string): string {
   return value
     .replace(
-      /\bauthorization\s*([:=])\s*(?:bearer|basic)\s+(?:\\{1,8}"[^"]*\\{1,8}"|\\{1,8}'[^']*\\{1,8}'|"[^"]*"|'[^']*'|[^\s,;&<>"']+)/gi,
+      /\bauthorization\s*([:=])\s*(?:bearer|basic)\s+(?:\\{1,64}"[^"]*\\{1,64}"|\\{1,64}'[^']*\\{1,64}'|"[^"]*"|'[^']*'|[^\s,;&<>"']+)/gi,
       'authorization$1[REDACTED]',
     )
     .replace(
-      /\b(bearer|basic)\s+(?:\\{1,8}"[^"]*\\{1,8}"|\\{1,8}'[^']*\\{1,8}'|"[^"]*"|'[^']*'|[^\s,;&<>"']+)/gi,
+      /\b(bearer|basic)\s+(?:\\{1,64}"[^"]*\\{1,64}"|\\{1,64}'[^']*\\{1,64}'|"[^"]*"|'[^']*'|[^\s,;&<>"']+)/gi,
       '$1 [REDACTED]',
     )
     .replace(
-      /\b(password|passwd|passphrase|pwd|token|secret|api[_-]?key|authorization|credential|access[_-]?key|private[_-]?key|ssh[_-]?key|signature|cookie|jsessionid|sap[_-]?sessionid|sessionid|session|(?:client[_-]?vcs[_-]?)?auth[_-]?(?:pwd|user|token)|remote[_-]?(?:password|user|token))(?:(?:\\{1,8})?["'])?\s*([:=])\s*(?:(?:bearer|basic)\s+)?(?:\\{1,8}"[^"]*\\{1,8}"|\\{1,8}'[^']*\\{1,8}'|"[^"]*"|'[^']*'|[^\s,;&<>"']+)/gi,
+      /\b(password|passwd|passphrase|pwd|token|secret|api[_-]?key|authorization|credential|access[_-]?key|private[_-]?key|ssh[_-]?key|signature|cookie|jsessionid|sap[_-]?sessionid|sessionid|session|(?:client[_-]?vcs[_-]?)?auth[_-]?(?:pwd|user|token)|remote[_-]?(?:password|user|token))(?:(?:\\{1,64})?["'])?\s*([:=])\s*(?:(?:bearer|basic)\s+)?(?:\\{1,64}"[^"]*\\{1,64}"|\\{1,64}'[^']*\\{1,64}'|"[^"]*"|'[^']*'|[^\s,;&<>"']+)/gi,
       '$1$2[REDACTED]',
     );
 }

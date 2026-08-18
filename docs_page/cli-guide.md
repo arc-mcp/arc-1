@@ -300,7 +300,7 @@ arc1 atc CLAS ZCL_ORDER
 
 # Fail on priorities 1 or 2, emit Checkstyle
 arc1 atc CLAS ZCL_ORDER --variant DEFAULT --max-priority 2 \
-  --format checkstyle --report-file reports/atc.xml
+  --timeout 600 --format checkstyle --report-file reports/atc.xml
 ```
 
 Options:
@@ -309,6 +309,7 @@ Options:
 |---|---|
 | `--variant <name>` | Bind a specific ATC check variant; omit for the system default. |
 | `--max-priority <1\|2\|3>` | Fail if a finding has priority less than or equal to this value; default `1`. |
+| `--timeout <seconds>` | Total ATC execution and worklist verification budget; default `300`, range `1..3600`. |
 | `--format text\|json\|checkstyle` | Report format; default `text`. |
 | `--report-file <path\|->` | File destination, or `-` for stdout. |
 
@@ -316,7 +317,7 @@ Checkstyle maps priority `1` to `error`, `2` to `warning`, and `3+` to `info`. E
 run completed and crossed the chosen threshold. Exit `3` means ARC-1 cannot prove completeness: SAP
 omitted or denied the object-set completeness marker, reported no processed object, returned a
 malformed priority, or the asynchronously populated worklist did not reach the finding total reported
-by the completed run. ARC-1 emits no report
+by the completed run before the timeout. ARC-1 emits no report
 for exit `3`, because a partial Checkstyle/JSON/text report could be mistaken for a complete result.
 
 ### `diff`

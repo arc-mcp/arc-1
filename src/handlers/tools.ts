@@ -1251,7 +1251,7 @@ export function getToolDefinitions(
           },
           timeoutSeconds: {
             type: 'number',
-            description: 'unittest timeout seconds: 1-3600; default 300.',
+            description: 'unittest/atc timeout: 1-3600s; default 300.',
           },
           sqlOn: {
             type: 'boolean',

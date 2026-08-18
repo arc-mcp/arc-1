@@ -684,7 +684,9 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
     case 'atc': {
       const objectUrl = objectUrlForType(type, name);
       const variant = args.variant as string | undefined;
-      const result = await runAtcCheck(client.http, client.safety, objectUrl, variant);
+      const result = await runAtcCheck(client.http, client.safety, objectUrl, variant, {
+        ...(args.timeoutSeconds === undefined ? {} : { timeoutMs: Number(args.timeoutSeconds) * 1000 }),
+      });
       const response =
         result.processedObjectCount === 0
           ? {

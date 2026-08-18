@@ -892,11 +892,11 @@ export const SAPDiagnoseSchema = z
         message: 'SAPDiagnose includeSubpackages is only supported for action="unittest" with type="DEVC".',
       });
     }
-    if (input.timeoutSeconds !== undefined && input.action !== 'unittest') {
+    if (input.timeoutSeconds !== undefined && input.action !== 'unittest' && input.action !== 'atc') {
       ctx.addIssue({
         code: 'custom',
         path: ['timeoutSeconds'],
-        message: 'SAPDiagnose timeoutSeconds is only supported for action="unittest".',
+        message: 'SAPDiagnose timeoutSeconds is only supported for action="unittest" or action="atc".',
       });
     }
     if (input.resultFormat !== undefined) {
