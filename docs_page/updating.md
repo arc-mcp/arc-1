@@ -1,9 +1,10 @@
 # Updating ARC-1
 
-## Unreleased — CLI/CI hardening compatibility changes
+## v1.1 — CLI/CI hardening compatibility changes
 
-The CLI/CI hardening release intentionally tightens several automation contracts. Treat these as
-breaking changes when moving an existing pipeline:
+The CLI/CI hardening release targets `1.1.0`. Its direct CI commands and unavailable Git mutation
+paths were not established stable, usable contracts, so these changes ship as a minor release.
+Pipelines that already trialed them should still review these compatibility changes:
 
 | Area | Change | Migration |
 |---|---|---|
