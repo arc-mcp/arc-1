@@ -58,6 +58,33 @@ function mockHttpSequence(...responses: string[]): AdtHttpClient {
   } as unknown as AdtHttpClient;
 }
 
+function mockAtcHttp(
+  worklistId: string,
+  findingStats: [number, number, number],
+  ...worklists: string[]
+): AdtHttpClient {
+  const runResponse = `<atcworklist:worklistRun xmlns:atcworklist="http://www.sap.com/adt/atc/worklist" xmlns:atcinfo="http://www.sap.com/adt/atc/info">
+    <atcworklist:infos><atcinfo:info><atcinfo:type>FINDING_STATS</atcinfo:type><atcinfo:description>${findingStats.join(',')}</atcinfo:description></atcinfo:info></atcworklist:infos>
+  </atcworklist:worklistRun>`;
+  const post = vi
+    .fn()
+    .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: worklistId })
+    .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: runResponse });
+  const get = vi.fn();
+  for (const body of worklists) get.mockResolvedValueOnce({ statusCode: 200, headers: {}, body });
+  if (worklists.length > 0) {
+    get.mockResolvedValue({ statusCode: 200, headers: {}, body: worklists.at(-1)! });
+  }
+  return {
+    get,
+    post,
+    put: vi.fn().mockResolvedValue({ statusCode: 200, headers: {}, body: '' }),
+    delete: vi.fn().mockResolvedValue({ statusCode: 200, headers: {}, body: '' }),
+    fetchCsrfToken: vi.fn(),
+    withStatefulSession: vi.fn(),
+  } as unknown as AdtHttpClient;
+}
+
 function defer<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((res) => {
@@ -2031,6 +2058,7 @@ describe('DevTools', () => {
       expect(http.get).toHaveBeenCalledWith(
         '/sap/bc/adt/atc/worklists/WL789',
         expect.objectContaining({ Accept: expect.stringContaining('atc.worklist') }),
+        expect.objectContaining({ deadline: expect.any(Number) }),
       );
     });
 
@@ -2064,10 +2092,7 @@ describe('DevTools', () => {
     it('parses the real SAP worklist response format (captured fixture)', async () => {
       const { readFileSync } = await import('node:fs');
       const fixture = readFileSync(new URL('../../fixtures/xml/atc-worklist-findings.xml', import.meta.url), 'utf-8');
-      const http = {
-        ...mockHttp('1E814DFAAE5E1FE197E6112F5FDC38A2'),
-        get: vi.fn().mockResolvedValue({ statusCode: 200, headers: {}, body: fixture }),
-      } as unknown as AdtHttpClient;
+      const http = mockAtcHttp('1E814DFAAE5E1FE197E6112F5FDC38A2', [0, 1, 0], fixture);
 
       const result = await runAtcCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/programs/programs/Z_TEST');
       expect(result.findings).toHaveLength(1);
@@ -2080,6 +2105,7 @@ describe('DevTools', () => {
       expect(result).toMatchObject({
         worklistId: '1E814DFAAE5E1FE197E6112F5FDC38A2',
         maximumVerdicts: 100,
+        expectedFindingCount: 1,
         findingCount: 1,
         processedObjectCount: 1,
         objectSetIsComplete: true,
@@ -2102,10 +2128,7 @@ describe('DevTools', () => {
           <finding priority="2" checkTitle="Second" messageTitle="Second finding" uri="/sap/bc/adt/programs/programs/ZSECOND#start=7,0"/>
         </findings></object>
       </objects></worklist>`;
-      const http = {
-        ...mockHttp('WL-MULTI'),
-        get: vi.fn().mockResolvedValue({ statusCode: 200, headers: {}, body }),
-      } as unknown as AdtHttpClient;
+      const http = mockAtcHttp('WL-MULTI', [1, 1, 0], body);
 
       const result = await runAtcCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/programs/programs/ZFIRST');
 
@@ -2147,24 +2170,34 @@ describe('DevTools', () => {
       if (body.includes('<metadata>')) expect(result.processedObjectCount).toBe(0);
     });
 
-    it('does not call a cap-sized or unproven ATC result complete', async () => {
-      const findings = Array.from(
-        { length: 100 },
+    it('uses run finding statistics instead of the ignored maximumVerdicts request hint', async () => {
+      const findingRows = Array.from(
+        { length: 101 },
         (_, index) =>
           `<finding priority="2" checkTitle="Check" messageTitle="Finding ${index}" uri="/sap/bc/adt/programs/programs/ZTEST#start=${index + 1},0"/>`,
-      ).join('');
-      const http = {
-        ...mockHttp('WL-CAP'),
-        get: vi.fn().mockResolvedValue({
-          statusCode: 200,
-          headers: {},
-          body: `<worklist objectSetIsComplete="true">${findings}</worklist>`,
-        }),
-      } as unknown as AdtHttpClient;
+      );
+      const body = `<worklist id="WL-CAP" objectSetIsComplete="true"><objects><object uri="/sap/bc/adt/programs/programs/ZTEST" type="PROG" name="ZTEST"><findings>${findingRows.join('')}</findings></object></objects></worklist>`;
+      const http = mockAtcHttp('WL-CAP', [0, 0, 101], body);
 
       const result = await runAtcCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/programs/programs/ZTEST');
-      expect(result).toMatchObject({ findingCount: 100, objectSetIsComplete: true, truncated: true, complete: false });
-      expect(result.incompleteReasons.join(' ')).toMatch(/100-verdict response cap/);
+      expect(result).toMatchObject({
+        findingCount: 101,
+        expectedFindingCount: 101,
+        objectSetIsComplete: true,
+        truncated: false,
+        complete: true,
+      });
+
+      const partialBody = `<worklist id="WL-CAP" objectSetIsComplete="true"><objects><object uri="/sap/bc/adt/programs/programs/ZTEST" type="PROG" name="ZTEST"><findings>${findingRows.slice(0, 100).join('')}</findings></object></objects></worklist>`;
+      const partial = await runAtcCheck(
+        mockAtcHttp('WL-CAP', [0, 0, 101], partialBody),
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/programs/programs/ZTEST',
+        undefined,
+        { timeoutMs: 0 },
+      );
+      expect(partial).toMatchObject({ findingCount: 100, expectedFindingCount: 101, truncated: true, complete: false });
+      expect(partial.incompleteReasons.join(' ')).toMatch(/100 of 101 findings/i);
 
       const noEvidence = {
         ...mockHttp('WL-UNKNOWN'),
@@ -2201,6 +2234,77 @@ describe('DevTools', () => {
       );
       expect(malformed.complete).toBe(false);
       expect(malformed.incompleteReasons.join(' ')).toMatch(/malformed priority/i);
+    });
+
+    it('polls until the asynchronous worklist matches FINDING_STATS', async () => {
+      const object = (name: string, count: number) =>
+        `<object uri="/sap/bc/adt/programs/programs/${name}" type="PROG" name="${name}"><findings>${Array.from(
+          { length: count },
+          (_, index) =>
+            `<finding priority="3" checkTitle="Check" messageTitle="${name}-${index}" uri="/sap/bc/adt/programs/programs/${name}#start=${index + 1},0"/>`,
+        ).join('')}</findings></object>`;
+      const partial = `<worklist id="WL-ASYNC" objectSetIsComplete="true"><objects>${object('ZA', 2)}</objects></worklist>`;
+      const complete = `<worklist id="WL-ASYNC" objectSetIsComplete="true"><objects>${object('ZA', 2)}${object('ZB', 3)}</objects></worklist>`;
+      let now = 0;
+      const http = mockAtcHttp('WL-ASYNC', [0, 0, 5], partial, complete);
+
+      const result = await runAtcCheck(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/programs/programs/ZA',
+        undefined,
+        { timeoutMs: 1_000, now: () => now, sleep: async (ms) => void (now += ms) },
+      );
+
+      expect(http.get).toHaveBeenCalledTimes(2);
+      expect(result).toMatchObject({
+        findingCount: 5,
+        expectedFindingCount: 5,
+        processedObjectCount: 2,
+        complete: true,
+      });
+    });
+
+    it('waits for processed-object evidence when FINDING_STATS reports a clean run', async () => {
+      const pending = '<worklist id="WL-CLEAN" objectSetIsComplete="true"><objects/></worklist>';
+      const complete =
+        '<worklist id="WL-CLEAN" objectSetIsComplete="true"><objects><object uri="/sap/bc/adt/programs/programs/ZCLEAN" type="PROG" name="ZCLEAN"/></objects></worklist>';
+      let now = 0;
+      const http = mockAtcHttp('WL-CLEAN', [0, 0, 0], pending, complete);
+
+      const result = await runAtcCheck(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/programs/programs/ZCLEAN',
+        undefined,
+        { timeoutMs: 1_000, now: () => now, sleep: async (ms) => void (now += ms) },
+      );
+
+      expect(http.get).toHaveBeenCalledTimes(2);
+      expect(result).toMatchObject({
+        findingCount: 0,
+        expectedFindingCount: 0,
+        processedObjectCount: 1,
+        complete: true,
+      });
+    });
+
+    it('returns incomplete clean-run evidence at the polling deadline without starting another request', async () => {
+      const pending = '<worklist id="WL-CLEAN" objectSetIsComplete="true"><objects/></worklist>';
+      let now = 0;
+      const http = mockAtcHttp('WL-CLEAN', [0, 0, 0], pending);
+
+      const result = await runAtcCheck(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/programs/programs/ZCLEAN',
+        undefined,
+        { timeoutMs: 250, now: () => now, sleep: async (ms) => void (now += ms) },
+      );
+
+      expect(http.get).toHaveBeenCalledTimes(1);
+      expect(result).toMatchObject({ expectedFindingCount: 0, processedObjectCount: 0, complete: false });
+      expect(result.incompleteReasons.join(' ')).toMatch(/processed ATC object/i);
     });
 
     it('extracts URI and line from #start= fragment', async () => {

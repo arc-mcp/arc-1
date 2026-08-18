@@ -10,8 +10,8 @@ import { redactAuditEvent, sanitizeArgs } from '../../../src/server/audit.js';
 describe('Audit Events', () => {
   describe('sanitizeArgs', () => {
     it('passes through normal args unchanged', () => {
-      const args = { type: 'PROG', name: 'ZHELLO' };
-      expect(sanitizeArgs(args)).toEqual({ type: 'PROG', name: 'ZHELLO' });
+      const args = { type: 'FUNC', name: 'ZHELLO', includeSignature: true };
+      expect(sanitizeArgs(args)).toEqual({ type: 'FUNC', name: 'ZHELLO', includeSignature: true });
     });
 
     it('redacts sensitive keys', () => {
@@ -32,9 +32,12 @@ describe('Audit Events', () => {
 
     it('bounds adversarial escape normalization work before redaction', () => {
       const value = `${'\\\\'.repeat(100_000)}u0061`;
+      const amplified = Object.fromEntries(
+        Array.from({ length: 512 }, (_, index) => [`url${index}`, `${'\\\\'.repeat(500)}u0061`]),
+      );
       const started = performance.now();
-      const result = sanitizeArgs({ note: value, [value]: true });
-      expect(performance.now() - started).toBeLessThan(1_000);
+      const result = sanitizeArgs({ note: value, [value]: true, ...amplified });
+      expect(performance.now() - started).toBeLessThan(500);
       expect(String(result.note)).toContain('[truncated');
     });
 

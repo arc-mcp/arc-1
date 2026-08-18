@@ -97,7 +97,7 @@ describe('CLI runtime', () => {
     ['before', ['--abap-release', '758', 'call', 'SAPLint', '--json', '{"action":"list_rules"}']],
     ['after', ['call', 'SAPLint', '--json', '{"action":"list_rules"}', '--abap-release', '758']],
   ])('accepts registered root config options %s a subcommand and resolves config once', async (_label, argv) => {
-    const dependencies = directDependencies(resolved({ abapRelease: '758' }));
+    const dependencies = directDependencies(resolved({ url: 'https://sap.example.test', abapRelease: '758' }));
 
     const code = await main(argv, dependencies);
 
@@ -245,6 +245,16 @@ describe('CLI runtime', () => {
     expect(dependencies.dispatchToolCall).toHaveBeenCalledOnce();
   });
 
+  it('keeps the local SAPLint rule catalog available without a SAP target', async () => {
+    const dependencies = directDependencies(resolved({ url: '' }));
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    expect(await main(['call', 'SAPLint', '--json', '{"action":"list_rules"}'], dependencies)).toBe(0);
+    expect(dependencies.authPreflight).not.toHaveBeenCalled();
+    expect(dependencies.probeFeatures).not.toHaveBeenCalled();
+    expect(dependencies.dispatchToolCall).toHaveBeenCalledOnce();
+  });
+
   it('stops on blocking auth failure before probe fan-out and dispatch', async () => {
     const dependencies = directDependencies(resolved({ url: 'https://sap.example.test' }), {
       authPreflight: vi.fn(
@@ -387,6 +397,22 @@ describe('CLI runtime', () => {
     const code = await main(['call', 'SAPRead', '--json', '{"type":"SYSTEM"}'], dependencies);
 
     expect(code).toBe(2);
+    expect(dependencies.authPreflight).not.toHaveBeenCalled();
+    expect(dependencies.dispatchToolCall).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['missing', ''],
+    ['invalid', 'not a URL'],
+    ['unsupported protocol', 'ftp://sap.example.test'],
+  ])('classifies a %s SAP_URL as a configuration error', async (_label, url) => {
+    const dependencies = directDependencies(resolved({ url }));
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const code = await main(['read', 'CLAS', 'ZCL_TEST'], dependencies);
+
+    expect(code).toBe(2);
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('SAP_URL'));
     expect(dependencies.authPreflight).not.toHaveBeenCalled();
     expect(dependencies.dispatchToolCall).not.toHaveBeenCalled();
   });

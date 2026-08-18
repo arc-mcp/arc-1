@@ -109,7 +109,12 @@ describe('Transport Release Slow Integration Tests', () => {
       expect(released).toBe(true);
       expect(result.outcome).toBe('released');
       expect(result.intended.length).toBeGreaterThan(0);
-      expect(result.intended.every((node) => node.confirmedReleased && node.lastStatus === 'R')).toBe(true);
+      expect(result.intended.every((node) => node.confirmedReleased && node.confirmation)).toBe(true);
+      expect(result.intended.find((node) => node.id === id)).toMatchObject({
+        kind: 'request',
+        confirmedReleased: true,
+        confirmation: 'observed_terminal',
+      });
       // Preserve SAP's raw report even when a fresh state read is needed to resolve a contradictory
       // abortrelapifail response from an already-released parent.
       expect(result.reports.length).toBeGreaterThan(0);

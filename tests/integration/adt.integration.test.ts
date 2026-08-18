@@ -2241,18 +2241,18 @@ describe('ADT Integration Tests', () => {
 
   // ─── ATC worklist + check-variant flow (runAtcCheck) ─────────────────
   describe('runAtcCheck (worklist + variant flow)', () => {
-    // Regression guard for the three-step ATC flow. The previous implementation POSTed
-    // straight to /atc/runs?worklistId=1 and never bound a check variant, so ATC executed
-    // no checks and always returned zero findings. These tests assert the worklist→run→get
-    // flow completes and returns a well-formed findings array against a live system.
-    // Finding COUNT is system-dependent (ATC content + check variants vary, and ATC skips
-    // $TMP objects), so exact-format parsing is locked down by the unit fixture test
-    // (tests/unit/adt/devtools.test.ts → "parses the real SAP worklist response format").
+    // A variant may exclude this class, but that must remain incomplete rather than appear clean.
     const KERNEL_CLASS_URL = '/sap/bc/adt/oo/classes/cl_abap_typedescr';
-
+    const expectSoundResult = (result: Awaited<ReturnType<typeof runAtcCheck>>) => {
+      expect(result.expectedFindingCount).toBe(result.findings.length);
+      expect(result.complete).toBe(result.processedObjectCount > 0);
+      if (!result.complete) expect(result.incompleteReasons.join(' ')).toMatch(/processed ATC object/i);
+    };
     it('completes the flow with an explicit check variant', async () => {
-      const result = await runAtcCheck(client.http, unrestrictedSafetyConfig(), KERNEL_CLASS_URL, 'PERFORMANCE_DB');
-      expect(Array.isArray(result.findings)).toBe(true);
+      const result = await runAtcCheck(client.http, unrestrictedSafetyConfig(), KERNEL_CLASS_URL, 'PERFORMANCE_DB', {
+        timeoutMs: 5_000,
+      });
+      expectSoundResult(result);
       for (const f of result.findings) {
         expect(typeof f.priority).toBe('number');
         expect(typeof f.line).toBe('number');
@@ -2265,8 +2265,10 @@ describe('ADT Integration Tests', () => {
     }, 90000);
 
     it('completes the flow with the system default variant (no variant passed)', async () => {
-      const result = await runAtcCheck(client.http, unrestrictedSafetyConfig(), KERNEL_CLASS_URL);
-      expect(Array.isArray(result.findings)).toBe(true);
+      const result = await runAtcCheck(client.http, unrestrictedSafetyConfig(), KERNEL_CLASS_URL, undefined, {
+        timeoutMs: 5_000,
+      });
+      expectSoundResult(result);
     }, 90000);
   });
 

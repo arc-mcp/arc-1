@@ -504,7 +504,7 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
         result.processedObjectCount === 0
           ? {
               ...result,
-              hint: 'ATC commonly excludes local $TMP objects. If this object is local, move or recreate it in a transportable package and rerun ATC.',
+              hint: 'SAP reported no processed ATC objects. Verify the object, package, and selected check variant, then rerun ATC.',
             }
           : result;
       if (args.resultFormat === 'structured') return textResult(toolJson(response));

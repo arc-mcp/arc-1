@@ -101,6 +101,8 @@ dispatcher, but interpret the structured result and apply domain-aware exit rule
 file is closed before returning. Omit it, or pass `--report-file -`, to write the report to stdout.
 The destination's parent directory must already exist. Diagnostics and audit logs remain on stderr. A
 report-write error exits `1`.
+For `unittest --format junit`, ARC-1 adds one diagnostic testcase when a nonzero CI policy verdict is
+not already represented by SAP's JUnit counters, so the published report cannot appear green.
 
 ## General commands
 
@@ -299,7 +301,8 @@ Options:
 Checkstyle maps priority `1` to `error`, `2` to `warning`, and `3+` to `info`. Exit `1` means the ATC
 run completed and crossed the chosen threshold. Exit `3` means ARC-1 cannot prove completeness: SAP
 omitted or denied the object-set completeness marker, reported no processed object, returned a
-malformed priority, or reached the fixed 100-verdict cap and may be truncated. ARC-1 emits no report
+malformed priority, or the asynchronously populated worklist did not reach the finding total reported
+by the completed run. ARC-1 emits no report
 for exit `3`, because a partial Checkstyle/JSON/text report could be mistaken for a complete result.
 
 ### `diff`
@@ -377,11 +380,12 @@ arc1 call SAPTransport --json \
   '{"action":"release","id":"A4HK900123","resultFormat":"structured"}' --output json
 ```
 
-Transport release succeeds only after every ID selected by the action is read back in terminal `R`
-or `N` state. `release` verifies the requested ID; `release_recursive` freezes and verifies the original
-parent/task tree. A timeout, disappeared child, or unknown terminal state is an error rather than
-optimistic success. `resultFormat="structured"` returns the terminal statuses, poll count, and SAP
-reports; the default `legacy` format remains text-compatible.
+Transport release succeeds only with terminal CTS evidence for every selected ID. Requests are read
+back in `R` or `N`; on SAP releases that fold released tasks out of the organizer tree, a task is also
+confirmed by its accepted release report or by the parent reaching terminal state. `release_recursive`
+freezes the original parent/task tree. An unexplained disappearance, timeout, or unknown state is an
+error rather than optimistic success. `resultFormat="structured"` returns the confirmation evidence,
+poll count, and SAP reports; the default `legacy` format remains text-compatible.
 
 The verification budget defaults to five minutes. Override it per call with `timeoutSeconds`, for
 example `{"action":"release","id":"A4HK900123","timeoutSeconds":120}`.

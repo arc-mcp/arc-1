@@ -734,3 +734,39 @@ rollback contract can be tested against a controlled remote.
 Final frozen-tree validation passed 5,262 tests across 177 files, all TypeScript typechecks, full
 Biome lint, file/schema budgets, authorization-policy validation, strict documentation, built and
 packed npm smoke, and `git diff --check`.
+
+## 13. Post-review live wire corrections (2026-08-18)
+
+An independent live review at commit `247000d0` disproved two fixture assumptions:
+
+1. A4H/758 sets worklist `objectSetIsComplete="true"` before ATC findings finish populating. The run
+   POST already carries `FINDING_STATS` as three comma-separated priority totals. Worklist
+   `9241B616527E1FE1A6D8E5A8AF08B8A2` was initially 23 findings/two objects and later 73/ten; the old
+   result could therefore false-green while omitting 50 findings. The implementation now polls to
+   the run total, validates zero-finding processed-object evidence, and fails closed on absent or
+   contradictory statistics. `maximumVerdicts` is retained only for wire compatibility because 758
+   ignored values 3, 5, and 100 in live calls.
+2. Released CTS tasks disappear from the parent organizer tree and their own endpoint returns 404.
+   Recursive request `A4HK906448`/task `A4HK906449` released correctly but the old verifier waited
+   for a task row that could never reappear. A disappeared frozen task is now terminal only after an
+   accepted own submission or an observed-terminal frozen parent. New/unexpected children,
+   submission ambiguity, missing parents, and restrictive recursive allowlists still fail closed.
+
+Applicable static findings were also fixed: AUnit verdict-before-format ordering, direct-target
+configuration exit codes, diagnostics for suppressed ATC/diff reports, audit fidelity for
+`includeSignature`, bounded escape-regex quantifiers, canonical abapGit follow-up links, migration
+documentation for `SAPGit.description`, and stale authorization/smoke expectations. The default
+Commander typo wording remains a low-risk follow-up because changing default-command dispatch would
+risk documented flag-only server startup for a cosmetic message.
+
+Post-fix A4H/758 verification used shipped CLI code rebuilt from the working tree. Worklist
+`9241B616527E1FE1A6D9892E81DC38A2` settled at the exact run total of 73 findings/ten objects before
+exit 0. Both generic live ATC variant tests passed without synthesizing clean evidence for excluded
+objects. Recursive pair `A4HK906450`/`A4HK906451` returned verified in 7.693 seconds with task
+confirmation from the terminal parent; slow integration request `A4HK906452` also returned verified
+and was read back as `R` after SAP removed its task row. All were purpose-created empty transports;
+no ABAP, package, abapGit, or gCTS artifact was created in this correction pass.
+
+Final local validation: 5,274/5,274 unit tests across 177 files; two live ATC integration tests; one
+live slow recursive-release test; typecheck, Biome, file/schema budgets, policy validation, strict
+MkDocs, rebuilt/packed npm CLI smoke, HTTP/API-key profile smoke, and `git diff --check` all passed.

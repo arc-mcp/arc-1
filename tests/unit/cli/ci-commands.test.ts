@@ -20,7 +20,12 @@ function dependencies(
   result: unknown,
   config: Partial<ServerConfig> = {},
 ): CliDependencies & { dispatchToolCall: ReturnType<typeof vi.fn> } {
-  const resolvedConfig: ServerConfig = { ...DEFAULT_CONFIG, cacheMode: 'none', ...config };
+  const resolvedConfig: ServerConfig = {
+    ...DEFAULT_CONFIG,
+    url: 'https://sap.example.test',
+    cacheMode: 'none',
+    ...config,
+  };
   const dispatchToolCall = vi.fn(async () => ({
     content: [{ type: 'text' as const, text: typeof result === 'string' ? result : JSON.stringify(result) }],
   }));
@@ -78,6 +83,7 @@ function completeAtc(priority?: number) {
     worklistId: 'WL1',
     variant: null,
     maximumVerdicts: 100,
+    expectedFindingCount: findings.length,
     findingCount: findings.length,
     processedObjectCount: 1,
     objectSetIsComplete: true,
@@ -145,14 +151,14 @@ describe('dedicated unittest command', () => {
       passingAunit({
         outcome: 'failed',
         summary: { tests: 2, passed: 1, failures: 1, errors: 0, skipped: 0, warnings: 0 },
-        junit: '<testsuites tests="2" failures="1"/>',
+        junit: '<testsuites tests="2" failures="1" errors="0" skipped="0"/>',
       }),
     );
 
     const code = await main(['unittest', 'CLAS', 'ZCL_TEST', '--format', 'junit', '--report-file', report], deps);
 
     expect(code).toBe(1);
-    expect(await readFile(report, 'utf8')).toBe('<testsuites tests="2" failures="1"/>\n');
+    expect(await readFile(report, 'utf8')).toBe('<testsuites tests="2" failures="1" errors="0" skipped="0"/>\n');
     expect(deps.dispatchToolCall).toHaveBeenCalledWith(
       expect.anything(),
       expect.anything(),
@@ -220,15 +226,48 @@ describe('dedicated unittest command', () => {
     expect(deps.dispatchToolCall).not.toHaveBeenCalled();
   });
 
-  it('never greens syntactically valid AUnit JSON with a drifted outcome', async () => {
+  it('returns incomplete for malformed-but-valid AUnit JSON in every report format', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
+    for (const format of ['text', 'json', 'junit']) {
+      expect(
+        await main(['unittest', 'CLAS', 'ZCL_TEST', '--format', format], dependencies({ outcome: 'passed' })),
+      ).toBe(3);
+    }
     expect(
       await main(
         ['unittest', 'CLAS', 'ZCL_TEST', '--format', 'json'],
         dependencies({ ...passingAunit(), outcome: 'future_status' }),
       ),
     ).toBe(3);
+  });
+
+  it('makes a nonzero AUnit policy verdict visible in an otherwise green JUnit report', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'arc1-ci-unit-policy-'));
+    temporaryDirectories.push(directory);
+    const report = join(directory, 'aunit.xml');
+    const noTests = passingAunit({
+      outcome: 'no_tests',
+      summary: { tests: 0, passed: 0, failures: 0, errors: 0, skipped: 0, warnings: 0 },
+      sourceSelectionEvidence: {
+        status: 'verified',
+        declaredTestClasses: [],
+        omittedTestClasses: [],
+        omittedNonHarmlessTestClasses: [],
+      },
+      junit: '<testsuites tests="0" failures="0" errors="0" skipped="0"/>',
+    });
+
+    expect(
+      await main(
+        ['unittest', 'CLAS', 'ZCL_EMPTY', '--format', 'junit', '--report-file', report],
+        dependencies(noTests),
+      ),
+    ).toBe(3);
+    const junit = await readFile(report, 'utf8');
+    expect(junit).toContain('tests="1"');
+    expect(junit).toContain('<error type="ARC1IncompleteEvidence"');
   });
 
   it('returns exit 3 and writes red JUnit for the live mixed-source omission shape', async () => {
@@ -326,6 +365,7 @@ describe('dedicated ATC, diff, and lint commands', () => {
 
   it('returns incomplete before formatting drifted ATC or diff evidence', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     for (const format of ['text', 'json', 'checkstyle']) {
       expect(
@@ -351,6 +391,7 @@ describe('dedicated ATC, diff, and lint commands', () => {
         ),
       ).toBe(3);
     }
+    expect(error).toHaveBeenCalledWith(expect.stringMatching(/incomplete evidence|incomplete structured evidence/i));
   });
 
   it('lints through the dispatcher and supports Checkstyle warning thresholds', async () => {

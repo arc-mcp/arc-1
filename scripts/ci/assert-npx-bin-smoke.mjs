@@ -124,7 +124,16 @@ try {
     }
   }
 
-  const schemaError = runBuiltBin('arc1.js', ['call', 'SAPRead', '--json', '{}'], 1);
+  const missingUrl = runBuiltBin('arc1.js', ['call', 'SAPRead', '--json', '{}'], 2);
+  if (!/SAP_URL.*configured/i.test(missingUrl.stderr)) {
+    fail('Built arc1 did not classify a missing direct SAP target as a usage error.', missingUrl);
+  }
+
+  const schemaError = runBuiltBin(
+    'arc1.js',
+    ['call', 'SAPManage', '--json', '{"action":"cache_stats","bogus":true}'],
+    1,
+  );
   if (!/validation|invalid/i.test(schemaError.stderr)) {
     fail('Built arc1 did not map a generic tool-schema failure to exit 1.', schemaError);
   }

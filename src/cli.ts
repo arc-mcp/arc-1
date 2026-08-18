@@ -10,6 +10,7 @@ import { writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { Command, CommanderError, Option } from 'commander';
 import { config as loadDotEnv } from 'dotenv';
+import { appendAunitJunitDiagnostic, parseNativeJunitSummary } from './adt/aunit.js';
 import { AdtClient } from './adt/client.js';
 import type { AdtClientConfig } from './adt/config.js';
 import type { AtcRunResult } from './adt/devtools.js';
@@ -242,6 +243,20 @@ async function emitCiReport(content: string, reportFile: string | undefined): Pr
   }
 }
 
+function representAunitExitInJunit(junit: string, exitCode: 1 | 3): string {
+  const summary = parseNativeJunitSummary(junit);
+  if (summary.failures > 0 || summary.errors > 0) return junit;
+  const incomplete = exitCode === 3;
+  return appendAunitJunitDiagnostic(
+    junit,
+    summary,
+    incomplete ? 'incomplete' : 'failed',
+    incomplete
+      ? 'ARC-1 could not evaluate a complete ABAP Unit CI result.'
+      : 'ARC-1 ABAP Unit CI policy failed although SAP reported no failing test case.',
+  );
+}
+
 function formatConfigSource(source: ConfigSource | undefined): string {
   if (source === undefined || source === 'default') return 'default';
   if (typeof source === 'object') {
@@ -253,6 +268,14 @@ function formatConfigSource(source: ConfigSource | undefined): string {
 }
 
 function directModeError(config: ServerConfig): string | undefined {
+  const sapUrl = config.url.trim();
+  if (!sapUrl) return 'Direct CLI calls require SAP_URL to be configured.';
+  try {
+    const parsed = new URL(sapUrl);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error('unsupported protocol');
+  } catch {
+    return 'Direct CLI calls require SAP_URL to be a valid HTTP(S) URL.';
+  }
   if (config.multiTargetEndpoints) {
     return 'Direct CLI calls do not support ARC1_MULTI_TARGET_ENDPOINTS. Use the MCP server endpoint for multi-target routing.';
   }
@@ -279,7 +302,7 @@ function shouldSkipFeatureProbe(toolName: string, args: Record<string, unknown>)
 
 function isLocalOnlyCall(toolName: string, args: Record<string, unknown>): boolean {
   const action = String(args.action ?? '').toLowerCase();
-  return toolName === 'SAPManage' && action === 'cache_stats';
+  return (toolName === 'SAPManage' && action === 'cache_stats') || (toolName === 'SAPLint' && action === 'list_rules');
 }
 
 function isDisabledWriteTool(toolName: string, config: ServerConfig): boolean {
@@ -552,27 +575,42 @@ export function createCliProgram(options: CreateCliProgramOptions = {}): Command
       });
       if (!outcome.ok) return;
 
-      const report =
-        opts.format === 'json'
-          ? JSON.stringify(outcome.value, null, 2)
-          : opts.format === 'junit'
-            ? outcome.value.junit
-            : formatAunitText(outcome.value);
+      const exitCode = evaluateAunit(outcome.value, {
+        allowEmpty: opts.allowEmpty,
+        failOnSkipped: opts.failOnSkipped,
+        requireCoverage: opts.coverage === true,
+        coverage,
+      });
+      let report: string | undefined;
+      try {
+        report =
+          opts.format === 'json'
+            ? JSON.stringify(outcome.value, null, 2)
+            : opts.format === 'junit'
+              ? outcome.value.junit
+              : formatAunitText(outcome.value);
+        if (opts.format === 'junit' && report && exitCode !== 0) {
+          report = representAunitExitInJunit(report, exitCode);
+        }
+      } catch {
+        console.error('ABAP Unit returned malformed or incomplete structured evidence; no report was emitted.');
+        runtime.state.exitCode = exitCode === 3 ? 3 : 1;
+        return;
+      }
       if (typeof report !== 'string' || !report) {
-        console.error('ABAP Unit did not return the requested JUnit report.');
-        runtime.state.exitCode = 1;
+        console.error(
+          exitCode === 3
+            ? 'ABAP Unit returned malformed or incomplete structured evidence; no report was emitted.'
+            : 'ABAP Unit did not return the requested JUnit report.',
+        );
+        runtime.state.exitCode = exitCode === 3 ? 3 : 1;
         return;
       }
       if (!(await emitCiReport(report, opts.reportFile))) {
         runtime.state.exitCode = 1;
         return;
       }
-      runtime.state.exitCode = evaluateAunit(outcome.value, {
-        allowEmpty: opts.allowEmpty,
-        failOnSkipped: opts.failOnSkipped,
-        requireCoverage: opts.coverage === true,
-        coverage,
-      });
+      runtime.state.exitCode = exitCode;
     });
 
   program
@@ -594,6 +632,14 @@ export function createCliProgram(options: CreateCliProgramOptions = {}): Command
       if (!outcome.ok) return;
       const exitCode = evaluateAtc(outcome.value, maxPriority);
       if (exitCode === 3) {
+        const reasons = Array.isArray(outcome.value.incompleteReasons)
+          ? outcome.value.incompleteReasons.filter((reason): reason is string => typeof reason === 'string')
+          : [];
+        console.error(
+          reasons.length > 0
+            ? `ATC returned incomplete evidence: ${reasons.join(' ')}`
+            : 'ATC returned malformed or incomplete structured evidence; no report was emitted.',
+        );
         runtime.state.exitCode = exitCode;
         return;
       }
@@ -639,6 +685,7 @@ export function createCliProgram(options: CreateCliProgramOptions = {}): Command
       if (!outcome.ok) return;
       const exitCode = evaluateDiff(outcome.value, opts.check === true || opts.failOnDiff === true);
       if (exitCode === 3) {
+        console.error('SAPRead diff returned malformed or incomplete structured evidence; no report was emitted.');
         runtime.state.exitCode = exitCode;
         return;
       }

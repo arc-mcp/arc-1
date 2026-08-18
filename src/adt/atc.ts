@@ -1,7 +1,8 @@
 /** ABAP Test Cockpit worklist execution and completeness-aware parsing. */
 
-import { AdtApiError } from './errors.js';
-import type { AdtHttpClient } from './http.js';
+import { AdtApiError, AdtNetworkError } from './errors.js';
+import type { AdtHttpClient, AdtResponse } from './http.js';
+import type { AdtRequestOptions } from './http-deadline.js';
 import { isCanonicalHostRelativeAdtPath } from './path-safety.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import { escapeXmlAttr, type NamedItem, parseAtcSystemCheckVariant, parseNamedItems, parseXml } from './xml-parser.js';
@@ -21,6 +22,7 @@ export interface AtcRunResult {
   worklistId: string;
   variant: string | null;
   maximumVerdicts: number;
+  expectedFindingCount: number | null;
   findingCount: number;
   processedObjectCount: number;
   objectSetIsComplete: boolean | null;
@@ -36,6 +38,19 @@ export interface AtcRunResult {
   };
   infos: string[];
 }
+
+export interface AtcPollOptions {
+  timeoutMs?: number;
+  initialDelayMs?: number;
+  maxDelayMs?: number;
+  now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
+  signal?: AbortSignal;
+}
+
+const DEFAULT_ATC_POLL_TIMEOUT_MS = 30_000;
+const DEFAULT_ATC_POLL_DELAY_MS = 250;
+const DEFAULT_ATC_MAX_POLL_DELAY_MS = 2_000;
 
 /** List the valid ATC check variants. */
 export async function listAtcVariants(http: AdtHttpClient, safety: SafetyConfig, filter = '*'): Promise<NamedItem[]> {
@@ -63,6 +78,7 @@ export async function runAtcCheck(
   safety: SafetyConfig,
   objectUrl: string,
   variant?: string,
+  pollOptions: AtcPollOptions = {},
 ): Promise<AtcRunResult> {
   checkOperation(safety, OperationType.Read, 'RunATCCheck');
   const worklistPath = variant
@@ -91,15 +107,49 @@ export async function runAtcCheck(
     'application/xml',
     { Accept: 'application/xml' },
   );
-  const resultResp = await http.get(`/sap/bc/adt/atc/worklists/${encodeURIComponent(worklistId)}`, {
-    Accept: 'application/atc.worklist.v1+xml',
-  });
-  return parseAtcRunResult(resultResp.body, {
-    worklistId,
-    variant,
-    maximumVerdicts,
-    runStatusCode: runResp.statusCode,
-  });
+  const expectedFindingCount = parseAtcFindingStats(runResp.body);
+  const now = pollOptions.now ?? Date.now;
+  const sleep = pollOptions.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
+  const deadline = now() + (pollOptions.timeoutMs ?? DEFAULT_ATC_POLL_TIMEOUT_MS);
+  const requestOptions: AdtRequestOptions = { deadline, signal: pollOptions.signal };
+  let delayMs = pollOptions.initialDelayMs ?? DEFAULT_ATC_POLL_DELAY_MS;
+  const maxDelayMs = pollOptions.maxDelayMs ?? DEFAULT_ATC_MAX_POLL_DELAY_MS;
+  let result: AtcRunResult | undefined;
+
+  while (true) {
+    let resultResp: AdtResponse;
+    try {
+      resultResp = await http.get(
+        `/sap/bc/adt/atc/worklists/${encodeURIComponent(worklistId)}`,
+        { Accept: 'application/atc.worklist.v1+xml' },
+        requestOptions,
+      );
+    } catch (error) {
+      const deadlineFailure =
+        error instanceof AdtNetworkError &&
+        (error.cause?.name === 'TimeoutError' || /deadline was exceeded|timed out|\btimeout\b/i.test(error.message));
+      if (result && deadlineFailure) return result;
+      throw error;
+    }
+    result = parseAtcRunResult(resultResp.body, {
+      worklistId,
+      variant,
+      maximumVerdicts,
+      expectedFindingCount,
+      runStatusCode: runResp.statusCode,
+    });
+    if (
+      expectedFindingCount === null ||
+      result.complete ||
+      result.findingCount > expectedFindingCount ||
+      now() >= deadline
+    ) {
+      return result;
+    }
+    await sleep(Math.min(delayMs, Math.max(0, deadline - now())));
+    if (now() >= deadline) return result;
+    delayMs = Math.min(maxDelayMs, delayMs * 2);
+  }
 }
 
 function nodeRecord(value: unknown): Record<string, unknown> | undefined {
@@ -119,6 +169,25 @@ function nodeRecords(value: unknown): Record<string, unknown>[] {
   return nodeValues(value).filter(
     (item): item is Record<string, unknown> => item !== null && typeof item === 'object' && !Array.isArray(item),
   );
+}
+
+function nodeText(value: unknown): string {
+  const first = nodeValues(value)[0];
+  if (first == null) return '';
+  if (typeof first !== 'object') return String(first).trim();
+  return String((first as Record<string, unknown>)['#text'] ?? '').trim();
+}
+
+function parseAtcFindingStats(xml: string): number | null {
+  const root = nodeRecord(parseXml(xml).worklistRun);
+  const infos = nodeRecords(root?.infos).flatMap((container) => nodeRecords(container.info));
+  const stats = infos.find((info) => nodeText(info.type).toUpperCase() === 'FINDING_STATS');
+  const parts = nodeText(stats?.description)
+    .split(',')
+    .map((part) => Number(part.trim()));
+  return parts.length === 3 && parts.every((part) => Number.isSafeInteger(part) && part >= 0)
+    ? parts.reduce((sum, part) => sum + part, 0)
+    : null;
 }
 
 function isValidProcessedObject(object: Record<string, unknown>): boolean {
@@ -176,7 +245,13 @@ function parseAtcInfos(root: Record<string, unknown>): string[] {
 
 function parseAtcRunResult(
   xml: string,
-  context: { worklistId: string; variant?: string; maximumVerdicts: number; runStatusCode: number },
+  context: {
+    worklistId: string;
+    variant?: string;
+    maximumVerdicts: number;
+    expectedFindingCount: number | null;
+    runStatusCode: number;
+  },
 ): AtcRunResult {
   const parsed = parseXml(xml);
   const rawRootNodes = nodeValues(parsed.worklist);
@@ -192,7 +267,7 @@ function parseAtcRunResult(
   const rawObjectRows = nodeValues(rawObjectValue);
   const objectRows = nodeRecords(rawObjectValue);
   const findings = parseAtcFindings(root, objectRows);
-  const truncated = findings.length >= context.maximumVerdicts;
+  const truncated = context.expectedFindingCount !== null && findings.length < context.expectedFindingCount;
   const validObjectRows = objectRows.filter(isValidProcessedObject);
   const processedObjectCount = validObjectRows.length;
   const malformedObjectCount = rawObjectRows.length - validObjectRows.length;
@@ -215,7 +290,15 @@ function parseAtcRunResult(
         : 'SAP did not provide object-set completeness evidence.',
     );
   }
-  if (truncated) incompleteReasons.push(`ATC reached the ${context.maximumVerdicts}-verdict response cap.`);
+  if (context.expectedFindingCount === null) {
+    incompleteReasons.push('SAP did not provide valid ATC finding-count evidence for this run.');
+  } else if (findings.length !== context.expectedFindingCount) {
+    incompleteReasons.push(
+      findings.length < context.expectedFindingCount
+        ? `ATC worklist has ${findings.length} of ${context.expectedFindingCount} findings reported by the run.`
+        : `ATC worklist has ${findings.length} findings, exceeding the ${context.expectedFindingCount} reported by the run.`,
+    );
+  }
   if (!objectContainerShapeIsValid) {
     incompleteReasons.push('SAP did not provide one schema-scoped ATC objects container.');
   }
@@ -233,6 +316,7 @@ function parseAtcRunResult(
     worklistId: context.worklistId,
     variant: context.variant ?? null,
     maximumVerdicts: context.maximumVerdicts,
+    expectedFindingCount: context.expectedFindingCount,
     findingCount: findings.length,
     processedObjectCount,
     objectSetIsComplete,
@@ -242,6 +326,8 @@ function parseAtcRunResult(
       worklistIdMatches &&
       objectSetIsComplete === true &&
       !truncated &&
+      context.expectedFindingCount !== null &&
+      findings.length === context.expectedFindingCount &&
       objectContainerShapeIsValid &&
       processedObjectCount > 0 &&
       malformedObjectCount === 0 &&

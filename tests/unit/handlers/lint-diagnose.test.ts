@@ -2011,7 +2011,7 @@ ENDCLASS.`;
         complete: false,
         processedObjectCount: 0,
         incompleteReasons: expect.arrayContaining([expect.stringMatching(/malformed processed ATC object/i)]),
-        hint: expect.stringContaining('$TMP'),
+        hint: expect.stringMatching(/object, package, and selected check variant/i),
       });
     });
   });

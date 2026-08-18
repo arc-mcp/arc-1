@@ -454,6 +454,21 @@ describe('abapGit client helpers', () => {
     }
   });
 
+  it.each([
+    '/sap/bc/adt/abapgit/../admin/trigger',
+    '/sap/bc/adt/abapgit/repos/1/%2e%2e/admin/trigger',
+    '/sap/bc/adt/abapgitEVIL/repos/1/stage',
+  ])('rejects a non-canonical SAP-provided HATEOAS link: %s', async (href) => {
+    const http = mockHttp(loadFixture('abapgit-staging.xml'));
+    const repo = {
+      ...firstRepo(),
+      links: [{ rel: 'http://www.sap.com/adt/relations/abapgit/stage', href, type: 'stage_link' }],
+    };
+
+    await expect(stageRepo(http, gitSafety, repo)).rejects.toThrow(/canonical host-relative ADT path/i);
+    expect(http.get).not.toHaveBeenCalled();
+  });
+
   it('stageRepo parses staging objects from HATEOAS stage endpoint', async () => {
     const http = mockHttp(loadFixture('abapgit-staging.xml'));
     const repo = firstRepo();

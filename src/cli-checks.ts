@@ -129,6 +129,8 @@ function hasSoundAunitSourceSelectionEvidence(result: Record<string, unknown>): 
     if (declared.get(key) !== `${row.riskLevel}:${row.explicitRiskLevel}`) return false;
   }
   for (const key of omitted) {
+    // The omitted sets must be exact: every omitted declaration agrees with the
+    // source audit, and omittedNonHarmless is precisely its non-harmless subset.
     const isNonHarmless = !(declared.get(key) ?? '').startsWith('harmless:');
     if (isNonHarmless !== omittedNonHarmless.has(key)) return false;
   }
@@ -238,9 +240,10 @@ export function evaluateAtc(result: AtcRunResult, maxPriority: number): CiExitCo
     !isNonNegativeInteger(result.findingCount) ||
     !findingsAreSound ||
     result.findingCount !== findings.length ||
+    !isNonNegativeInteger(result.expectedFindingCount) ||
+    result.findingCount !== result.expectedFindingCount ||
     !isNonNegativeInteger(result.maximumVerdicts) ||
     result.maximumVerdicts === 0 ||
-    findings.length >= result.maximumVerdicts ||
     !isNonEmptyString(result.worklistId) ||
     !isNonNegativeInteger(result.runStatusCode) ||
     result.runStatusCode < 200 ||

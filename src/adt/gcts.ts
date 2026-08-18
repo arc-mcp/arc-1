@@ -76,7 +76,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function normalizeSafeUnicodeEscapes(value: string): string {
-  return value.replace(/\\+u([0-9a-f]{4})/gi, (encoded, hex: string) => {
+  return value.replace(/\\{1,8}u([0-9a-f]{4})/gi, (encoded, hex: string) => {
     const decoded = String.fromCharCode(Number.parseInt(hex, 16));
     return /^[a-z0-9_.-]$/i.test(decoded) ? decoded : encoded;
   });
@@ -97,18 +97,21 @@ function isCredentialQueryKey(key: string): boolean {
 function redactCredentialAssignments(value: string): string {
   return value
     .replace(
-      /\bauthorization\s*([:=])\s*(?:bearer|basic)\s+(?:\\+"[^"]*\\+"|\\+'[^']*\\+'|"[^"]*"|'[^']*'|[^\s,;&<>"']+)/gi,
+      /\bauthorization\s*([:=])\s*(?:bearer|basic)\s+(?:\\{1,8}"[^"]*\\{1,8}"|\\{1,8}'[^']*\\{1,8}'|"[^"]*"|'[^']*'|[^\s,;&<>"']+)/gi,
       'authorization$1[REDACTED]',
     )
-    .replace(/\b(bearer|basic)\s+(?:\\+"[^"]*\\+"|\\+'[^']*\\+'|"[^"]*"|'[^']*'|[^\s,;&<>"']+)/gi, '$1 [REDACTED]')
     .replace(
-      /\b(password|passwd|passphrase|pwd|token|secret|api[_-]?key|authorization|credential|access[_-]?key|private[_-]?key|ssh[_-]?key|signature|cookie|jsessionid|sap[_-]?sessionid|sessionid|session|(?:client[_-]?vcs[_-]?)?auth[_-]?(?:pwd|user|token)|remote[_-]?(?:password|user|token))(?:(?:\\+)?["'])?\s*([:=])\s*(?:(?:bearer|basic)\s+)?(?:\\+"[^"]*\\+"|\\+'[^']*\\+'|"[^"]*"|'[^']*'|[^\s,;&<>"']+)/gi,
+      /\b(bearer|basic)\s+(?:\\{1,8}"[^"]*\\{1,8}"|\\{1,8}'[^']*\\{1,8}'|"[^"]*"|'[^']*'|[^\s,;&<>"']+)/gi,
+      '$1 [REDACTED]',
+    )
+    .replace(
+      /\b(password|passwd|passphrase|pwd|token|secret|api[_-]?key|authorization|credential|access[_-]?key|private[_-]?key|ssh[_-]?key|signature|cookie|jsessionid|sap[_-]?sessionid|sessionid|session|(?:client[_-]?vcs[_-]?)?auth[_-]?(?:pwd|user|token)|remote[_-]?(?:password|user|token))(?:(?:\\{1,8})?["'])?\s*([:=])\s*(?:(?:bearer|basic)\s+)?(?:\\{1,8}"[^"]*\\{1,8}"|\\{1,8}'[^']*\\{1,8}'|"[^"]*"|'[^']*'|[^\s,;&<>"']+)/gi,
       '$1$2[REDACTED]',
     );
 }
 
 function normalizeEscapedUrlSlashes(value: string): string {
-  return normalizeSafeUnicodeEscapes(value.replace(/\\+\//g, '/'));
+  return normalizeSafeUnicodeEscapes(value.replace(/\\{1,8}\//g, '/'));
 }
 
 function boundGctsString(value: string, originalLength = value.length): string {

@@ -28,7 +28,8 @@ The PR is accepted only when:
 5. known write tools reach safety policy even when hidden from advertised tool lists;
 6. AUnit cannot execute dangerous or critical tests through the read-scoped API;
 7. dedicated CI commands distinguish pass, finding/failure, usage/transport error, and incomplete run;
-8. transport release returns success only after parent/tasks are terminal `R` or `N`;
+8. transport release returns success only with terminal CTS evidence (`R`/`N` requests, or a
+   released task's accepted-disappearance/terminal-parent evidence);
 9. gCTS read wrappers match live/pinned SAP-authored client evidence, while every currently unsafe
    gCTS mutation fails closed with no HTTP mutation;
 10. Git actions have an explicit per-action authorization/package matrix and no implicit
@@ -350,11 +351,11 @@ authorization for the parent and every frozen nonterminal child before the first
 partial release when a later child is denied.
 
 Submit the required task/parent release operations, then bounded-poll one coherent parent-tree GET
-and index every frozen ID until all are terminal `R` or `N`, passing the remaining Phase-B deadline to every read.
+and index every frozen ID until all have terminal CTS evidence, passing the remaining Phase-B deadline to every read.
 The flat parser must also handle SAP returning a standalone task root for single-task operations. Use
 a small capped backoff and a five-minute default budget, configurable per call and internally for tests.
-Final all-terminal SAP state is authoritative; release reports remain diagnostics because SAP may fold or
-contradict intermediate report state. Retain those contradictions as conflict evidence. Treat
+Final terminal evidence is authoritative; release reports remain diagnostics because SAP may fold released
+tasks out of the tree or contradict intermediate state. Retain contradictions as conflict evidence. Treat
 observed `O`/`P` as in progress, `D`/`L` as modifiable, and `R`/`N` as terminal. These six statuses
 are live-confirmed from A4H/758 domain values; other statuses remain unknown and fail closed.
 
@@ -590,7 +591,7 @@ Git files/tests. Shared schema/tool edits are integrated by the CLI owner to pre
 - [x] Alerts are not counted as tests.
 - [x] Failed/empty/incomplete AUnit cannot false-green a dedicated CI command.
 - [x] Native and generated JUnit are valid and counters match exit policy.
-- [x] Transport success implies terminal R/N for parent/tasks; an unprovable vanished task is an error.
+- [x] Transport success implies terminal evidence for every frozen ID; unexplained task disappearance is an error.
 - [x] gCTS read tests match live/pinned wrappers and reject unknown nonempty shapes.
 - [x] Every gCTS mutation is blocked before HTTP in this PR.
 - [x] abapGit empty import result is an incomplete/error outcome, not exit-0 unverified success.
@@ -686,3 +687,39 @@ state. Full mutable gCTS remains quarantined because no controlled remote/deploy
 The frozen post-review tree passed 5,262 tests across 177 files, all TypeScript typechecks, full
 Biome lint, file/schema budgets, authorization-policy validation, strict documentation, built and
 packed npm smoke, focused credential-backed Git integration, and `git diff --check`.
+
+## 16. Independent live re-review correction (2026-08-18)
+
+A later three-session review found two live wire assumptions that the preceding mock fixtures had
+encoded incorrectly. On A4H/758, the ATC run POST's `FINDING_STATS` reported 73 findings while the
+first worklist GET exposed only 23 findings across two objects with `objectSetIsComplete="true"`;
+the same worklist later contained all 73 findings across ten objects. ARC-1 now parses that run
+total, polls the worklist to agreement, and treats missing/malformed/mismatched count evidence as
+incomplete. The ignored `maximumVerdicts=100` request is no longer used as a truncation inference.
+
+CTS organizer responses also remove released tasks. Requiring every frozen task to remain visible
+made a correct recursive release time out. Verification now accepts a disappeared frozen task only
+when its own submission was accepted or the frozen parent is observed terminal; unknown/new child
+IDs and ambiguous submissions remain fail-closed. Unit fixtures now model task disappearance, and
+single-task 404 after accepted release is covered.
+
+The same review corrected smaller contract issues: malformed AUnit evidence is evaluated before
+formatting; missing/invalid `SAP_URL` is exit 2; incomplete ATC/diff prints a diagnostic; ordinary
+`includeSignature` remains visible in audit records; adversarial escape matching is bounded; and
+abapGit HATEOAS links are canonicalized to the bridge prefix. The PR title must use `feat!:` before
+squash merge because the public SAPGit surface changes.
+
+Post-fix live evidence:
+
+- CLI ATC worklist `9241B616527E1FE1A6D9892E81DC38A2` returned only after the authoritative 73
+  findings and ten processed objects were present; the strengthened live variant tests both passed.
+- Recursive request/task `A4HK906450`/`A4HK906451` returned verified in 7.693 seconds although SAP
+  folded the task from the organizer tree. Slow integration request `A4HK906452` also returned
+  verified and remains `R`; its SAP-generated task identifier was not retained before SAP removed
+  the task row, so the evidence ledger does not invent it.
+- Reviewer-created empty pairs `A4HK906444`/`A4HK906445`, `A4HK906446`/`A4HK906447`, and
+  `A4HK906448`/`A4HK906449` are intentionally permanent released audit records with zero objects.
+
+The corrected tree passed 5,274 tests across 177 files, all TypeScript typechecks, full Biome lint,
+file/schema budgets, policy validation, strict documentation, rebuilt and packed npm smoke, the
+live HTTP/API-key manifest matrix, and `git diff --check`. Final implementation verdict: **GO**.

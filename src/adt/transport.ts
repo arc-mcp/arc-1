@@ -74,6 +74,8 @@ export interface TransportReleaseNodeState {
   initialStatus: string;
   lastStatus: string;
   confirmedReleased: boolean;
+  /** How release was confirmed when SAP no longer returns a released task in the organizer tree. */
+  confirmation?: 'observed_terminal' | 'accepted_submission_absence' | 'parent_terminal';
 }
 
 /** Raw SAP release report(s) retained per submitted request/task. */
@@ -87,15 +89,15 @@ export interface TransportReleaseSubmission {
 /**
  * Terminal verification result for a CTS release.
  *
- * `verified=true` means every frozen request/task was observed in released status `R` or `N` in
- * one fresh CTS snapshot. A clean `newreleasejobs` response alone is never sufficient.
+ * `verified=true` means every frozen request/task reached terminal CTS evidence: requests are
+ * `R`/`N`, while released tasks may disappear after acceptance or a terminal parent.
  */
 export interface TransportReleaseResult {
   requestedId: string;
   recursive: boolean;
   outcome: TransportReleaseOutcome;
   verified: boolean;
-  /** Frozen ids observed in terminal status R/N (tasks first in recursive mode for compatibility). */
+  /** Frozen ids with terminal CTS evidence (tasks first in recursive mode for compatibility). */
   released: string[];
   intended: TransportReleaseNodeState[];
   submissions: TransportReleaseSubmission[];
@@ -495,6 +497,9 @@ export function parseTransportNodeStates(xml: string): TransportReleaseNodeState
       initialStatus: status || previous?.initialStatus || '',
       lastStatus: status || previous?.lastStatus || '',
       confirmedReleased: TERMINAL_RELEASE_STATUSES.has(status || previous?.lastStatus || ''),
+      ...(TERMINAL_RELEASE_STATUSES.has(status || previous?.lastStatus || '')
+        ? { confirmation: 'observed_terminal' as const }
+        : {}),
     });
   };
 
@@ -745,6 +750,15 @@ async function releaseTransportWithConvergence(
   const hasInFlightNode = () =>
     intended.some((node) => IN_FLIGHT_RELEASE_STATUSES.has(node.lastStatus) && !node.confirmedReleased);
   const submissionFailed = () => submissions.some((submission) => submission.error !== undefined);
+  const submissionWasAccepted = (id: string) => {
+    const submission = submissions.find((entry) => transportIdsEqual(entry.id, id));
+    return (
+      submission !== undefined &&
+      submission.error === undefined &&
+      submission.reports.length > 0 &&
+      failedReleaseReports(submission.reports).length === 0
+    );
+  };
   const result = (outcome: TransportReleaseOutcome, detail?: string) =>
     buildReleaseResult(
       transportId,
@@ -812,14 +826,50 @@ async function releaseTransportWithConvergence(
             .sort()
         : [];
       missingIds = [];
+      const observedParent = latestById.get(requestedState.id.toUpperCase());
+      const parentIsTerminal =
+        recursive && observedParent !== undefined && TERMINAL_RELEASE_STATUSES.has(observedParent.lastStatus);
       for (const node of intended) {
         const observed = latestById.get(node.id.toUpperCase());
-        node.lastStatus = observed?.lastStatus ?? '';
-        node.confirmedReleased = TERMINAL_RELEASE_STATUSES.has(node.lastStatus);
-        if (!observed) missingIds.push(node.id);
+        if (observed) {
+          node.lastStatus = observed.lastStatus;
+          node.confirmedReleased = TERMINAL_RELEASE_STATUSES.has(node.lastStatus);
+          node.confirmation = node.confirmedReleased ? 'observed_terminal' : undefined;
+          continue;
+        }
+
+        const alreadyConfirmed = node.confirmedReleased;
+        const existingConfirmation = node.confirmation;
+        const disappearedReleasedTask =
+          node.kind === 'task' && (parentIsTerminal || alreadyConfirmed || submissionWasAccepted(node.id));
+        if (disappearedReleasedTask) {
+          node.confirmedReleased = true;
+          node.confirmation = parentIsTerminal
+            ? 'parent_terminal'
+            : alreadyConfirmed
+              ? existingConfirmation
+              : 'accepted_submission_absence';
+        } else {
+          node.lastStatus = '';
+          node.confirmedReleased = false;
+          node.confirmation = undefined;
+          missingIds.push(node.id);
+        }
       }
     } catch (err) {
       polls += 1;
+      if (
+        err instanceof AdtApiError &&
+        err.statusCode === 404 &&
+        requestedState.kind === 'task' &&
+        submissionWasAccepted(requestedState.id)
+      ) {
+        requestedState.confirmedReleased = true;
+        requestedState.confirmation = 'accepted_submission_absence';
+        lastReadError = undefined;
+        missingIds = [];
+        return result('released');
+      }
       lastReadError = releaseErrorText(err);
       if (isTerminalReleaseReadError(err)) {
         return result('unknown', [submissionFailureDetail(), lastReadError].filter(Boolean).join(' '));
@@ -912,7 +962,7 @@ async function releaseTransportWithConvergence(
   return (await pollUntil(() => false, true))!;
 }
 
-/** Release one request/task and return only after its exact CTS state is observed as R/N. */
+/** Release one request/task and return after terminal CTS state or accepted released-task disappearance. */
 export async function releaseTransportAndWait(
   http: AdtHttpClient,
   safety: SafetyConfig,
@@ -924,7 +974,7 @@ export async function releaseTransportAndWait(
 
 /**
  * Release a parent request recursively — tasks first, then the parent — and wait until the frozen
- * parent/task set is observed as R/N. Raw failed reports are preserved but final CTS state is authoritative.
+ * parent/task set has terminal CTS evidence. Raw failed reports are preserved but final CTS state is authoritative.
  * SAP has no atomic compare-tree-and-release operation: exact/prefix transport allowlists are therefore
  * refused, and any non-frozen child observed by the mandatory pre-parent snapshot or readback makes the
  * result unverified. The fresh snapshot narrows, but cannot eliminate, the backend's GET-to-POST race.

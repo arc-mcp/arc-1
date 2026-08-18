@@ -36,6 +36,7 @@ function atc(overrides: Partial<AtcRunResult> = {}): AtcRunResult {
     worklistId: 'WL1',
     variant: null,
     maximumVerdicts: 100,
+    expectedFindingCount: 0,
     findingCount: 0,
     processedObjectCount: 1,
     objectSetIsComplete: true,
@@ -236,9 +237,11 @@ describe('ATC, lint, and diff CI policy', () => {
     const findings = [
       { priority: 2, checkTitle: 'Search', messageTitle: 'DB write', uri: '/sap/source#start=7,0', line: 7 },
     ];
-    expect(evaluateAtc(atc({ findings, findingCount: 1 }), 1)).toBe(0);
-    expect(evaluateAtc(atc({ findings, findingCount: 1 }), 2)).toBe(1);
-    expect(formatAtcText(atc({ findings, findingCount: 1 }))).toContain('[P2] Search: DB write');
+    expect(evaluateAtc(atc({ findings, expectedFindingCount: 1, findingCount: 1 }), 1)).toBe(0);
+    expect(evaluateAtc(atc({ findings, expectedFindingCount: 1, findingCount: 1 }), 2)).toBe(1);
+    expect(formatAtcText(atc({ findings, expectedFindingCount: 1, findingCount: 1 }))).toContain(
+      '[P2] Search: DB write',
+    );
   });
 
   it('maps lint thresholds and diff check semantics deterministically', () => {

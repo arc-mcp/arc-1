@@ -17,7 +17,7 @@
 
 const mcpUrl = process.env.ARC1_AUTHZ_MCP_URL ?? process.env.E2E_MCP_URL ?? 'http://127.0.0.1:19081/mcp';
 
-const transportReadActions = ['list', 'get', 'check', 'history', 'layers', 'targets'];
+const transportReadActions = ['list', 'get', 'diff', 'check', 'history', 'layers', 'targets'];
 const transportWriteActions = ['create', 'release', 'delete', 'remove_object', 'reassign', 'release_recursive'];
 const gitReadActions = ['list_repos', 'whoami', 'config', 'branches', 'history', 'objects', 'check'];
 const gitWriteActions = [
@@ -26,7 +26,6 @@ const gitWriteActions = [
   'clone',
   'pull',
   'push',
-  'commit',
   'switch_branch',
   'create_branch',
   'unlink',
