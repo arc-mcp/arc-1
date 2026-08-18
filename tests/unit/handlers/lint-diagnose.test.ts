@@ -1174,6 +1174,152 @@ ENDCLASS.`;
       expect(out.alerts).toEqual([]);
     });
 
+    it.each([
+      { includeSubpackages: false, selectedPrograms: ['ZCL_ROOT'] },
+      { includeSubpackages: true, selectedPrograms: ['ZCL_ROOT', 'ZCL_SUB'] },
+    ])(
+      'runs a stable DEVC package scope with includeSubpackages=$includeSubpackages',
+      async ({ includeSubpackages, selectedPrograms }) => {
+        const packageSearch = `<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">
+          <adtcore:objectReference adtcore:type="CLAS/OC" adtcore:name="ZCL_ROOT" adtcore:packageName="ZPKG" adtcore:uri="/sap/bc/adt/oo/classes/zcl_root"/>
+          <adtcore:objectReference adtcore:type="CLAS/OC" adtcore:name="ZCL_SUB" adtcore:packageName="ZPKG_SUB" adtcore:uri="/sap/bc/adt/oo/classes/zcl_sub"/>
+        </adtcore:objectReferences>`;
+        const legacyResult = `<aunit:runResult xmlns:aunit="http://www.sap.com/adt/aunit">
+          ${selectedPrograms
+            .map(
+              (program) =>
+                `<program name="${program}"><testClasses><testClass name="LTCL_TEST" riskLevel="harmless"><testMethods><testMethod name="PASSES"/></testMethods></testClass></testClasses></program>`,
+            )
+            .join('')}
+        </aunit:runResult>`;
+        const postedBodies: string[] = [];
+        mockFetch.mockReset();
+        mockFetch.mockImplementation((url: string | URL, opts?: { method?: string; body?: unknown }) => {
+          const method = opts?.method ?? 'GET';
+          const parsed = new URL(String(url));
+          if (method === 'GET' && parsed.pathname === '/sap/bc/adt/packages/ZPKG') {
+            return Promise.resolve(mockResponse(200, '<package/>'));
+          }
+          if (method === 'GET' && parsed.pathname === '/sap/bc/adt/repository/informationsystem/search') {
+            return Promise.resolve(mockResponse(200, packageSearch));
+          }
+          if (method === 'GET' && parsed.pathname.endsWith('/source/main')) {
+            const program = parsed.pathname.includes('zcl_sub') ? 'ZCL_SUB' : 'ZCL_ROOT';
+            return Promise.resolve(
+              mockResponse(200, `CLASS ${program.toLowerCase()} DEFINITION PUBLIC. ENDCLASS.`, {
+                etag: `"${program}"`,
+              }),
+            );
+          }
+          if (method === 'GET' && parsed.pathname.endsWith('/includes/testclasses')) {
+            return Promise.resolve(
+              mockResponse(
+                200,
+                'CLASS ltcl_test DEFINITION FOR TESTING RISK LEVEL HARMLESS. METHODS passes FOR TESTING. ENDCLASS.',
+                { etag: '"tests"' },
+              ),
+            );
+          }
+          if (method === 'HEAD' && parsed.pathname === '/sap/bc/adt/core/discovery') {
+            return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+          }
+          if (method === 'POST' && parsed.pathname === '/sap/bc/adt/abapunit/testruns') {
+            postedBodies.push(String(opts?.body ?? ''));
+            return Promise.resolve(mockResponse(200, legacyResult));
+          }
+          return Promise.resolve(mockResponse(404, 'unexpected'));
+        });
+
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPDiagnose', {
+          action: 'unittest',
+          type: 'DEVC',
+          name: 'ZPKG',
+          includeSubpackages,
+          resultFormat: 'structured',
+        });
+
+        expect(result.isError).toBeUndefined();
+        const payload = JSON.parse(result.content[0]?.text ?? '{}');
+        expect(payload).toMatchObject({
+          outcome: 'passed',
+          summary: { tests: selectedPrograms.length, passed: selectedPrograms.length },
+          sourceSelectionEvidence: {
+            status: 'verified',
+            declaredTestClasses: selectedPrograms.map((program) => ({ program, testClass: 'LTCL_TEST' })),
+          },
+        });
+        expect(postedBodies).toHaveLength(1);
+        expect(postedBodies[0]).toContain('adtcore:uri="/sap/bc/adt/oo/classes/zcl_root"');
+        expect(postedBodies[0]?.includes('adtcore:uri="/sap/bc/adt/oo/classes/zcl_sub"')).toBe(includeSubpackages);
+        const packageSearches = mockFetch.mock.calls.filter((call) =>
+          String(call[0]).includes('/repository/informationsystem/search'),
+        );
+        expect(packageSearches).toHaveLength(2);
+      },
+    );
+
+    it('marks a package run incomplete when package membership changes during evidence collection', async () => {
+      let searches = 0;
+      const searchXml = (
+        includeSecond: boolean,
+      ) => `<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">
+        <adtcore:objectReference adtcore:type="CLAS/OC" adtcore:name="ZCL_ROOT" adtcore:packageName="ZPKG" adtcore:uri="/sap/bc/adt/oo/classes/zcl_root"/>
+        ${includeSecond ? '<adtcore:objectReference adtcore:type="CLAS/OC" adtcore:name="ZCL_ADDED" adtcore:packageName="ZPKG" adtcore:uri="/sap/bc/adt/oo/classes/zcl_added"/>' : ''}
+      </adtcore:objectReferences>`;
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
+        const method = opts?.method ?? 'GET';
+        const path = new URL(String(url)).pathname;
+        if (method === 'GET' && path === '/sap/bc/adt/packages/ZPKG') {
+          return Promise.resolve(mockResponse(200, '<package/>'));
+        }
+        if (method === 'GET' && path === '/sap/bc/adt/repository/informationsystem/search') {
+          searches += 1;
+          return Promise.resolve(mockResponse(200, searchXml(searches > 1)));
+        }
+        if (method === 'GET' && path.endsWith('/source/main')) {
+          return Promise.resolve(mockResponse(200, 'CLASS zcl_root DEFINITION PUBLIC. ENDCLASS.', { etag: '"main"' }));
+        }
+        if (method === 'GET' && path.endsWith('/includes/testclasses')) {
+          return Promise.resolve(
+            mockResponse(
+              200,
+              'CLASS ltcl_test DEFINITION FOR TESTING RISK LEVEL HARMLESS. METHODS passes FOR TESTING. ENDCLASS.',
+              { etag: '"tests"' },
+            ),
+          );
+        }
+        if (method === 'HEAD' && path === '/sap/bc/adt/core/discovery') {
+          return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+        }
+        if (method === 'POST' && path === '/sap/bc/adt/abapunit/testruns') {
+          return Promise.resolve(
+            mockResponse(
+              200,
+              '<aunit:runResult xmlns:aunit="http://www.sap.com/adt/aunit"><program name="ZCL_ROOT"><testClasses><testClass name="LTCL_TEST" riskLevel="harmless"><testMethods><testMethod name="PASSES"/></testMethods></testClass></testClasses></program></aunit:runResult>',
+            ),
+          );
+        }
+        return Promise.resolve(mockResponse(404, 'unexpected'));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPDiagnose', {
+        action: 'unittest',
+        type: 'DEVC',
+        name: 'ZPKG',
+        resultFormat: 'structured',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(JSON.parse(result.content[0]?.text ?? '{}')).toMatchObject({
+        outcome: 'incomplete',
+        sourceSelectionEvidence: {
+          status: 'unavailable',
+          reason: expect.stringContaining('Package membership or active ABAP source changed'),
+        },
+      });
+    });
+
     it('marks the live 7.58 PROG shape incomplete when source declares a silently omitted dangerous class', async () => {
       mockFetch.mockReset();
       mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {

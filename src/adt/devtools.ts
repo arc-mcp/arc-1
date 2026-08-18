@@ -555,10 +555,15 @@ export async function unpublishServiceBinding(
 export async function runUnitTests(
   http: AdtHttpClient,
   safety: SafetyConfig,
-  objectUrl: string,
+  objectUrl: string | string[],
   opts: { coverage?: boolean } = {},
 ): Promise<AunitRunResult> {
   checkOperation(safety, OperationType.Test, 'RunUnitTests');
+  const objectUrls = Array.isArray(objectUrl) ? objectUrl : [objectUrl];
+  if (objectUrls.length === 0) throw new Error('ABAP Unit requires at least one object reference.');
+  const objectReferences = objectUrls
+    .map((url) => `<adtcore:objectReference adtcore:uri="${escapeXmlAttr(url)}"/>`)
+    .join('');
 
   const body = `<?xml version="1.0" encoding="UTF-8"?>
 <aunit:runConfiguration xmlns:aunit="http://www.sap.com/adt/aunit">
@@ -574,7 +579,7 @@ export async function runUnitTests(
   <adtcore:objectSets xmlns:adtcore="http://www.sap.com/adt/core">
     <objectSet kind="inclusive">
       <adtcore:objectReferences>
-        <adtcore:objectReference adtcore:uri="${escapeXmlAttr(objectUrl)}"/>
+        ${objectReferences}
       </adtcore:objectReferences>
     </objectSet>
   </adtcore:objectSets>
@@ -602,7 +607,7 @@ export async function runUnitTests(
   }
   try {
     const coverageQuery = `<?xml version="1.0" encoding="UTF-8"?>
-<cov:query xmlns:cov="http://www.sap.com/adt/cov"><adtcore:objectSets xmlns:adtcore="http://www.sap.com/adt/core"><objectSet kind="inclusive"><adtcore:objectReferences><adtcore:objectReference adtcore:uri="${escapeXmlAttr(objectUrl)}"/></adtcore:objectReferences></objectSet></adtcore:objectSets></cov:query>`;
+<cov:query xmlns:cov="http://www.sap.com/adt/cov"><adtcore:objectSets xmlns:adtcore="http://www.sap.com/adt/core"><objectSet kind="inclusive"><adtcore:objectReferences>${objectReferences}</adtcore:objectReferences></objectSet></adtcore:objectSets></cov:query>`;
     const measResp = await http.post(measurementUri, coverageQuery, 'application/xml', { Accept: 'application/xml' });
     const coverage = parseCoverageMeasurement(measResp.body);
     return hasCoverageMetrics(coverage)

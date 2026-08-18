@@ -11,6 +11,7 @@ import {
   parseAunitRunResult,
   parseNativeJunitSummary,
   probePublicAunit,
+  reconcileAunitProgramSources,
   reconcileAunitSourceDeclarations,
   runPublicAunit,
 } from '../../../src/adt/aunit.js';
@@ -187,6 +188,42 @@ ENDCLASS.`;
       expect.arrayContaining([expect.objectContaining({ kind: 'sourceTestOmission', testClass: 'LTCL_HARMLESS' })]),
     );
     expect(parseNativeJunitSummary(aunitResultToJunit(result))).toMatchObject({ tests: 1, errors: 1 });
+  });
+
+  it('qualifies package declarations by program so duplicate local class names cannot satisfy each other', () => {
+    const result = reconcileAunitProgramSources(
+      parseAunitRunResult(`
+        <aunit:runResult xmlns:aunit="http://www.sap.com/adt/aunit">
+          <program name="ZCL_ONE"><testClasses><testClass name="LTCL_TEST" riskLevel="harmless">
+            <testMethods><testMethod name="PASSES"/></testMethods>
+          </testClass></testClasses></program>
+        </aunit:runResult>`),
+      [
+        {
+          program: 'ZCL_ONE',
+          source: 'CLASS ltcl_test DEFINITION FOR TESTING RISK LEVEL HARMLESS. METHODS passes FOR TESTING. ENDCLASS.',
+        },
+        {
+          program: 'ZCL_TWO',
+          source: 'CLASS ltcl_test DEFINITION FOR TESTING RISK LEVEL HARMLESS. METHODS passes FOR TESTING. ENDCLASS.',
+        },
+      ],
+    );
+
+    expect(result.outcome).toBe('incomplete');
+    expect(result.sourceSelectionEvidence).toMatchObject({
+      status: 'verified',
+      declaredTestClasses: [
+        { program: 'ZCL_ONE', testClass: 'LTCL_TEST' },
+        { program: 'ZCL_TWO', testClass: 'LTCL_TEST' },
+      ],
+      omittedTestClasses: [{ program: 'ZCL_TWO', testClass: 'LTCL_TEST', riskLevel: 'harmless' }],
+    });
+    expect(result.alerts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'sourceTestOmission', program: 'ZCL_TWO', testClass: 'LTCL_TEST' }),
+      ]),
+    );
   });
 
   it('never counts a method node without a method identity as passing evidence', () => {
@@ -450,6 +487,35 @@ describe('public ABAP Unit API', () => {
     );
     expect(get.mock.calls[0]?.[0]).toBe('/sap/bc/adt/api/abapunit/runs/R1?withLongPolling=true');
     expect(get.mock.calls[2]?.[0]).toBe('/sap/bc/adt/api/abapunit/results/R1');
+  });
+
+  it.each([false, true])('submits a native packageSet with includeSubpackages=%s', async (includeSubpackages) => {
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({
+        statusCode: 200,
+        headers: {},
+        body: '<runStatus><progress status="FINISHED"/><link type="application/vnd.sap.adt.api.junit.run-result.v1+xml" href="/sap/bc/adt/api/abapunit/results/PKG"/></runStatus>',
+      })
+      .mockResolvedValueOnce({
+        statusCode: 200,
+        headers: {},
+        body: '<testsuites tests="0" failures="0" errors="0" skipped="0"/>',
+      });
+    const post = vi.fn().mockResolvedValue({
+      statusCode: 201,
+      headers: { location: '/sap/bc/adt/api/abapunit/runs/PKG' },
+      body: '',
+    });
+
+    await runPublicAunit(publicHttp({ get, post }), unrestrictedSafetyConfig(), 'DEVC', 'zpkg', {
+      includeSubpackages,
+    });
+
+    const body = String(post.mock.calls[0]?.[1]);
+    expect(body).toContain('xsi:type="osl:packageSet"');
+    expect(body).toContain(`<osl:package includeSubpackages="${includeSubpackages}" name="ZPKG"/>`);
+    expect(body).not.toContain('<osl:object name="ZPKG" type="DEVC"/>');
   });
 
   it.each([

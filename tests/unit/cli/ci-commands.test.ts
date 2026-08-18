@@ -143,6 +143,32 @@ describe('dedicated unittest command', () => {
     expect(invalid.dispatchToolCall).not.toHaveBeenCalled();
   });
 
+  it('forwards recursive DEVC scope and rejects the flag for object targets before dispatch', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const packageDeps = dependencies(passingAunit());
+
+    expect(await main(['unittest', 'devc', 'ZPKG', '--include-subpackages'], packageDeps)).toBe(0);
+    expect(packageDeps.dispatchToolCall).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      'SAPDiagnose',
+      expect.objectContaining({
+        action: 'unittest',
+        type: 'DEVC',
+        name: 'ZPKG',
+        includeSubpackages: true,
+      }),
+      undefined,
+      undefined,
+      undefined,
+    );
+
+    const objectDeps = dependencies(passingAunit());
+    expect(await main(['unittest', 'CLAS', 'ZCL_TEST', '--include-subpackages'], objectDeps)).toBe(2);
+    expect(objectDeps.dispatchToolCall).not.toHaveBeenCalled();
+  });
+
   it('writes JUnit before returning a failing test code', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'arc1-ci-unit-'));
     temporaryDirectories.push(directory);

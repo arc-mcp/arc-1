@@ -138,6 +138,34 @@ describe('ABAP Unit CI policy', () => {
     ).toBe(1);
   });
 
+  it('accepts duplicate local test-class names only when their package programs differ', () => {
+    const qualified = aunit({
+      sourceSelectionEvidence: {
+        status: 'verified',
+        declaredTestClasses: [
+          { program: 'ZCL_ONE', testClass: 'LTCL_TEST', riskLevel: 'harmless', explicitRiskLevel: true },
+          { program: 'ZCL_TWO', testClass: 'LTCL_TEST', riskLevel: 'harmless', explicitRiskLevel: true },
+        ],
+        omittedTestClasses: [],
+        omittedNonHarmlessTestClasses: [],
+      },
+    });
+
+    expect(evaluateAunit(qualified)).toBe(0);
+    expect(
+      evaluateAunit({
+        ...qualified,
+        sourceSelectionEvidence: {
+          ...qualified.sourceSelectionEvidence!,
+          declaredTestClasses: qualified.sourceSelectionEvidence!.declaredTestClasses.map((row) => ({
+            ...row,
+            program: undefined,
+          })),
+        },
+      }),
+    ).toBe(3);
+  });
+
   it('never greens inconsistent structured counters or outcome evidence', () => {
     expect(
       evaluateAunit(aunit({ summary: { tests: 3, passed: 2, failures: 0, errors: 0, skipped: 0, warnings: 0 } })),

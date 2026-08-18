@@ -239,6 +239,12 @@ arc1 unittest CLAS ZCL_ORDER_TEST
 arc1 unittest CLAS ZCL_ORDER_TEST --format json
 arc1 unittest CLAS ZCL_ORDER_TEST --format junit --report-file reports/aunit.xml
 
+# Exact package only (the default)
+arc1 unittest DEVC ZORDER --format junit --report-file reports/aunit.xml
+
+# Package plus its subpackages
+arc1 unittest DEVC ZORDER --include-subpackages --format json
+
 arc1 unittest CLAS ZCL_ORDER_TEST --coverage \
   --min-statement 80 --min-branch 60 --min-procedure 80 \
   --format junit --report-file reports/aunit.xml
@@ -248,6 +254,7 @@ Options:
 
 | Option | Meaning |
 |---|---|
+| `--include-subpackages` | For `DEVC` only, include the package subtree. Without it, package scope is exact. |
 | `--coverage` | Require measurable statement, branch, and procedure coverage. Missing/zero-total metrics make the check incomplete (exit `3`), even without a percentage threshold. |
 | `--min-statement <0..100>` | Imply coverage and fail below the statement percentage. |
 | `--min-branch <0..100>` | Imply coverage and fail below the branch percentage. |
@@ -261,6 +268,13 @@ Options:
 Both the legacy and public async ABAP Unit requests enable harmless tests and explicitly disable
 dangerous and critical tests. There is no CLI parameter that can broaden that risk ceiling. Short,
 medium, and long harmless tests remain eligible.
+
+For `DEVC`, native JUnit uses SAP's package object set; legacy, coverage, and corroboration runs use
+the resolved package `CLAS`, `PROG`, and `FUGR` roots. Package membership and active source are read
+both before and after the run. A changed selection, an unreadable source tree, an invalid object URI,
+or a package search that reaches the 1,000-row bound is reported as incomplete evidence (exit `3`),
+never as a pass. Exact scope uses each object's actual package; `--include-subpackages` is the
+explicit recursive mode.
 
 For JUnit without coverage, ARC-1 prefers SAP's native async JUnit result when that endpoint is
 available and falls back to a generated JUnit report. Coverage uses the legacy coverage-capable path

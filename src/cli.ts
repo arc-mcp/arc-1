@@ -110,6 +110,7 @@ export interface CliRuntime {
 
 interface UnitTestCommandOptions {
   coverage?: boolean;
+  includeSubpackages?: boolean;
   minStatement?: string;
   minBranch?: string;
   minProcedure?: string;
@@ -539,8 +540,9 @@ export function createCliProgram(options: CreateCliProgramOptions = {}): Command
 
   program
     .command('unittest <type> <name>')
-    .description('Run harmless-only ABAP Unit tests with deterministic CI exit semantics')
+    .description('Run harmless-only ABAP Unit tests for an object or DEVC package')
     .option('--coverage', 'Collect statement, branch, and procedure coverage')
+    .option('--include-subpackages', 'For DEVC only, include the complete package subtree')
     .option('--min-statement <percent>', 'Minimum statement coverage percentage')
     .option('--min-branch <percent>', 'Minimum branch coverage percentage')
     .option('--min-procedure <percent>', 'Minimum procedure coverage percentage')
@@ -550,6 +552,12 @@ export function createCliProgram(options: CreateCliProgramOptions = {}): Command
     .option('--allow-empty', 'Allow only a sound no-tests result to pass')
     .option('--fail-on-skipped', 'Fail when any executed method is skipped')
     .action(async (type: string, name: string, opts: UnitTestCommandOptions) => {
+      const normalizedType = type.toUpperCase();
+      if (opts.includeSubpackages === true && normalizedType !== 'DEVC') {
+        console.error('--include-subpackages is only valid when unittest type is DEVC.');
+        runtime.state.exitCode = 2;
+        return;
+      }
       const coverage = {
         ...(opts.minStatement !== undefined ? { statement: assertPercent(opts.minStatement, '--min-statement') } : {}),
         ...(opts.minBranch !== undefined ? { branch: assertPercent(opts.minBranch, '--min-branch') } : {}),
@@ -567,9 +575,10 @@ export function createCliProgram(options: CreateCliProgramOptions = {}): Command
       }
       const outcome = await executeCiJson<AunitCiResult>(runtime, 'SAPDiagnose', {
         action: 'unittest',
-        type: type.toUpperCase(),
+        type: normalizedType,
         name,
         coverage: coverageRequested,
+        ...(opts.includeSubpackages === true ? { includeSubpackages: true } : {}),
         ...(timeoutSeconds === undefined ? {} : { timeoutSeconds }),
         resultFormat: opts.format === 'junit' ? 'junit' : 'structured',
       });

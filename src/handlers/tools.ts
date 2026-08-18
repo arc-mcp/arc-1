@@ -1087,7 +1087,7 @@ export function getToolDefinitions(
       description:
         'Run diagnostics on ABAP objects and analyze runtime errors. Actions:\n' +
         '- "syntax": syntax-check (name+type; optional version; optional source = pre-write dry-run, nothing written).\n' +
-        '- "unittest": run ABAP Unit for CLAS/PROG/FUGR (name+type).\n' +
+        '- "unittest": harmless ABAP Unit for CLAS/PROG/FUGR or DEVC (exact; includeSubpackages recurses).\n' +
         '- "atc": run ATC checks (name+type; optional variant). "atc_variants": list variants + the system default (variant = name filter; read-only).\n' +
         '- "cds_testcases": SAP-suggested ABAP Unit test cases for a CDS entity (name; read-only; SAP_BASIS 8.16+).\n' +
         '- "object_state": compare active vs inactive source versions (name+type; CLAS compares all includes). Returns ETags/hashes/divergence flags.\n' +
@@ -1144,7 +1144,7 @@ export function getToolDefinitions(
           },
           type: {
             type: 'string',
-            description: 'Object type (PROG, CLAS, etc.) (for syntax/unittest/atc/object_state)',
+            description: 'Object type; unittest accepts CLAS, PROG, FUGR, or DEVC.',
           },
           source: {
             type: 'string',
@@ -1241,8 +1241,9 @@ export function getToolDefinitions(
           coverage: {
             type: 'boolean',
             description:
-              'For action="unittest": also return statement/branch/procedure coverage for the object, plus methodsBelowFull — the methods below 100% statement coverage, worst first (what to test next) — in one extra round-trip. If the coverage endpoint or measurement is unavailable, returns the tests without coverage. Default false.',
+              'unittest only: collect statement/branch/procedure coverage and methodsBelowFull. Unavailable measurements do not discard test results. Default false.',
           },
+          includeSubpackages: { type: 'boolean', default: false },
           resultFormat: {
             type: 'string',
             enum: ['legacy', 'structured', 'junit'],

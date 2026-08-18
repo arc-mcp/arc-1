@@ -93,6 +93,7 @@ function hasSoundAunitSourceSelectionEvidence(result: Record<string, unknown>): 
   }
   const isTestClass = (value: unknown): boolean =>
     isRecord(value) &&
+    (value.program === undefined || isNonEmptyString(value.program)) &&
     isNonEmptyString(value.testClass) &&
     ['harmless', 'dangerous', 'critical'].includes(String(value.riskLevel)) &&
     typeof value.explicitRiskLevel === 'boolean';
@@ -107,7 +108,7 @@ function hasSoundAunitSourceSelectionEvidence(result: Record<string, unknown>): 
   let declaredNonHarmless = false;
   for (const testClass of evidence.declaredTestClasses) {
     const row = testClass as Record<string, unknown>;
-    const key = String(row.testClass).toUpperCase();
+    const key = `${row.program === undefined ? '' : String(row.program).toUpperCase()}\u0000${String(row.testClass).toUpperCase()}`;
     if (declared.has(key)) return false;
     declared.set(key, `${row.riskLevel}:${row.explicitRiskLevel}`);
     if (row.riskLevel !== 'harmless') declaredNonHarmless = true;
@@ -115,7 +116,7 @@ function hasSoundAunitSourceSelectionEvidence(result: Record<string, unknown>): 
   const omitted = new Set<string>();
   for (const testClass of evidence.omittedTestClasses) {
     const row = testClass as Record<string, unknown>;
-    const key = String(row.testClass).toUpperCase();
+    const key = `${row.program === undefined ? '' : String(row.program).toUpperCase()}\u0000${String(row.testClass).toUpperCase()}`;
     if (omitted.has(key)) return false;
     omitted.add(key);
     if (declared.get(key) !== `${row.riskLevel}:${row.explicitRiskLevel}`) return false;
@@ -123,7 +124,7 @@ function hasSoundAunitSourceSelectionEvidence(result: Record<string, unknown>): 
   const omittedNonHarmless = new Set<string>();
   for (const testClass of evidence.omittedNonHarmlessTestClasses) {
     const row = testClass as Record<string, unknown>;
-    const key = String(row.testClass).toUpperCase();
+    const key = `${row.program === undefined ? '' : String(row.program).toUpperCase()}\u0000${String(row.testClass).toUpperCase()}`;
     if (omittedNonHarmless.has(key) || row.riskLevel === 'harmless' || !omitted.has(key)) return false;
     omittedNonHarmless.add(key);
     if (declared.get(key) !== `${row.riskLevel}:${row.explicitRiskLevel}`) return false;

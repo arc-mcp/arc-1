@@ -854,6 +854,7 @@ export const SAPDiagnoseSchema = z
     sections: z.array(z.string()).optional(),
     includeFullText: looseOptionalBoolean,
     coverage: looseOptionalBoolean,
+    includeSubpackages: looseOptionalBoolean,
     resultFormat: z.enum(['legacy', 'structured', 'junit']).optional(),
     timeoutSeconds: z.coerce.number().int().min(1).max(3600).optional(),
     sqlOn: looseOptionalBoolean,
@@ -873,13 +874,23 @@ export const SAPDiagnoseSchema = z
   .superRefine((input, ctx) => {
     if (input.action === 'unittest' && input.type !== undefined) {
       const type = input.type.toUpperCase().split('/')[0];
-      if (!['CLAS', 'PROG', 'FUGR'].includes(type ?? '')) {
+      if (!['CLAS', 'PROG', 'FUGR', 'DEVC'].includes(type ?? '')) {
         ctx.addIssue({
           code: 'custom',
           path: ['type'],
-          message: 'SAPDiagnose action="unittest" supports CLAS, PROG, and FUGR objects.',
+          message: 'SAPDiagnose action="unittest" supports CLAS, PROG, FUGR, and DEVC package targets.',
         });
       }
+    }
+    if (
+      input.includeSubpackages !== undefined &&
+      (input.action !== 'unittest' || input.type?.toUpperCase().split('/')[0] !== 'DEVC')
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['includeSubpackages'],
+        message: 'SAPDiagnose includeSubpackages is only supported for action="unittest" with type="DEVC".',
+      });
     }
     if (input.timeoutSeconds !== undefined && input.action !== 'unittest') {
       ctx.addIssue({

@@ -1287,6 +1287,19 @@ describe('DevTools', () => {
         ]),
       );
     });
+
+    it('submits every package object URI in one aligned legacy object set', async () => {
+      const http = mockHttp(mixed816);
+      await runUnitTests(http, unrestrictedSafetyConfig(), [
+        '/sap/bc/adt/oo/classes/ZCL_ONE',
+        '/sap/bc/adt/programs/programs/ZREPORT_TWO',
+      ]);
+
+      const body = String(vi.mocked(http.post).mock.calls[0]?.[1]);
+      expect(body).toContain('adtcore:uri="/sap/bc/adt/oo/classes/ZCL_ONE"');
+      expect(body).toContain('adtcore:uri="/sap/bc/adt/programs/programs/ZREPORT_TWO"');
+      expect(body.match(/<adtcore:objectReference /g)).toHaveLength(2);
+    });
   });
 
   describe('AUnit coverage (FEAT-41)', () => {

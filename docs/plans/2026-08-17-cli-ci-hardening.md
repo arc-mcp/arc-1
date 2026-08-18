@@ -296,6 +296,56 @@ Write/flush JUnit before returning any nonzero code. Native SAP JUnit is passed 
 its counters are parsed for exit policy; legacy JUnit is generated from the corrected internal
 model. Escape all XML data and validate report XML in tests.
 
+### C5. Whole-package AUnit scope
+
+Extend the existing command without adding a second execution path:
+
+```bash
+arc1 unittest DEVC ZMY_PACKAGE
+arc1 unittest DEVC ZMY_PACKAGE --include-subpackages
+```
+
+`DEVC` selects an OSL `packageSet`; exact-package scope is the default and recursion is explicit.
+The dispatcher, `OperationType.Test` ceiling, harmless-only risk selection, report formats, coverage
+gates, timeouts, and exit codes remain unchanged. `includeSubpackages` is valid only for
+`SAPDiagnose(action="unittest", type="DEVC")`; it uses the loose optional-boolean schema so strict
+LLM clients cannot turn the string `"false"` into true.
+
+Before execution, resolve repository quick-search rows at the endpoint's hard 1,000-row bound and
+retain each row's actual `packageName`. Exact scope filters to the requested package; recursive scope
+keeps the returned subtree. Only CLAS, PROG, and FUGR roots feed AUnit because their static includes
+and class test include already expand through the source-audit path. Missing canonical URIs, a full
+1,000-row response, an unreadable package/source, or a source/include cap makes the evidence
+incomplete. Do not silently run a verified-looking subset.
+
+Use two aligned execution contracts:
+
+1. public JUnit: submit SAP's native `osl:packageSet` with the requested recursion flag;
+2. legacy/coverage/corroboration: submit one flat object-reference set built from the exact resolved
+   CLAS/PROG/FUGR URIs, never the legacy package URI (which is implicitly recursive on A4H/758).
+
+Read the package inventory and every active source tree before the run, then repeat both after it.
+Membership, type/name/URI/package, source, absence markers, and ETags must remain stable. Reconcile
+the aggregate legacy result against source declarations keyed by program plus test class so common
+names such as `LTCL_TEST` in multiple classes cannot satisfy one another. Native/legacy count or
+outcome contradictions remain failure/incomplete evidence under the existing rules.
+
+Implementation surfaces:
+
+- `src/adt/aunit.ts`: object-set builder and program-qualified source evidence;
+- `src/adt/devtools.ts`: one-or-many legacy object references and aligned coverage query;
+- new `src/adt/aunit-package.ts`: bounded detailed package search retaining `packageName` (kept out
+  of the near-budget `client.ts` facade);
+- `src/handlers/diagnose.ts`: stable package snapshot, bounded source reads, aggregate reconciliation;
+- `src/handlers/{schemas,tools}.ts`, `src/cli.ts`, `src/cli-checks.ts`: DEVC option and evidence validation;
+- focused AUnit/client/handler/CLI/schema/tool/multi-target tests plus docs and live exact/recursive
+  validation.
+
+Plan-review exclusions: do not execute dangerous/critical tests, infer success from native JUnit
+alone, use per-object public runs, broaden multi-target write semantics, or claim completeness above
+the repository enumeration bound. Those alternatives either break PR 703's safety contract, change
+scope semantics, or create avoidable SAP load.
+
 ## 6. Phase D — ATC, lint, and diff CI checks
 
 Primary files:

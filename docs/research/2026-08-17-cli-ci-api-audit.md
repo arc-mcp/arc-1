@@ -276,6 +276,37 @@ Recommended semantic outcome:
 Generic `call` can retain MCP transport semantics; the dedicated CLI maps these outcomes to CI exit
 codes and writes JUnit before returning.
 
+#### Package-scope follow-up (2026-08-18)
+
+SAP documents package execution as an OSL `packageSet`, not as a flat `DEVC` object:
+<https://help.sap.com/docs/abap-cloud/abap-development-tools-user-guide/xml-representations-of-object-sets>.
+The public AUnit run contract accepts that object set directly and carries an explicit
+`includeSubpackages` flag:
+<https://help.sap.com/docs/sap-btp-abap-environment/abap-environment/executing-abap-unit-test-runs>.
+
+A read-only A4H/758 spike against `$ABAPGIT_GIT` established the release-specific behavior needed
+for ARC-1's implementation:
+
+| Selection | Public package set | Legacy corroboration |
+|---|---:|---:|
+| exact package | 118 passed | 118 passed from 14 exact-package class URIs |
+| package + subpackages | 142 passed | 142 passed from 18 subtree class URIs |
+
+Passing `/sap/bc/adt/packages/$ABAPGIT_GIT` as one legacy object reference produced 142 tests even
+for the intended exact-package case, so the legacy package URI is implicitly recursive on this
+system and cannot corroborate `includeSubpackages=false`. Repository quick search returned actual
+`packageName` values for every row: 14 classes belonged to `$ABAPGIT_GIT`, one to
+`$ABAPGIT_GIT_V2`, and three to `$ABAPGIT_GIT_ZLIB`. Filtering those rows by the returned package,
+then submitting their canonical ADT URIs as one legacy flat object set, matched both public scopes.
+
+The implementation must therefore keep the public package set and legacy flat corroboration as two
+different wire shapes. It must also re-read package membership and active source after the run:
+source stability alone cannot prove a whole-package result if an object was added, removed, or moved
+during execution. A full 1,000-row repository-search response is ambiguous because that endpoint is
+bounded; ARC-1 must return incomplete evidence instead of claiming it enumerated the whole scope.
+Duplicate local test-class names are normal across programs, so package source evidence must key a
+declaration by program plus test class rather than test class alone.
+
 ### 4.5 ATC and SAPLint
 
 - A bounded ATC call on the passing fixture completed and returned no findings.

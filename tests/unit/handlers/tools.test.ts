@@ -271,6 +271,15 @@ describe('Tool Definitions', () => {
     expect(resultFormat.description).toContain('other actions reject it');
   });
 
+  it('advertises exact-by-default DEVC package AUnit scope', () => {
+    const diagnose = getToolDefinitions(DEFAULT_CONFIG).find((tool) => tool.name === 'SAPDiagnose')!;
+    const schema = diagnose.inputSchema as Record<string, any>;
+
+    expect(diagnose.description).toContain('CLAS/PROG/FUGR or DEVC');
+    expect(schema.properties.type.description).toContain('DEVC');
+    expect(schema.properties.includeSubpackages).toEqual({ type: 'boolean', default: false });
+  });
+
   it('describes SAPRead sqlFilter as condition-only expression', () => {
     const tools = getToolDefinitions(DEFAULT_CONFIG);
     const sapRead = tools.find((t) => t.name === 'SAPRead')!;

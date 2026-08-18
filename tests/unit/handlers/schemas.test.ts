@@ -1565,12 +1565,22 @@ describe('SAPLintSchema', () => {
 });
 
 describe('SAPDiagnoseSchema', () => {
-  it.each(['CLAS', 'PROG', 'FUGR'])('accepts unittest source-audited type %s', (type) => {
+  it.each(['CLAS', 'PROG', 'FUGR', 'DEVC'])('accepts unittest source-audited type %s', (type) => {
     expect(SAPDiagnoseSchema.safeParse({ action: 'unittest', type, timeoutSeconds: '300' }).success).toBe(true);
   });
 
   it.each(['INTF', 'FUNC', 'DDLS'])('rejects unittest type %s without source-selection support', (type) => {
     expect(SAPDiagnoseSchema.safeParse({ action: 'unittest', type }).success).toBe(false);
+  });
+
+  it('accepts loose includeSubpackages only for DEVC unittest scope', () => {
+    expect(
+      SAPDiagnoseSchema.safeParse({ action: 'unittest', type: 'DEVC', includeSubpackages: 'false' }).data,
+    ).toMatchObject({ includeSubpackages: false });
+    expect(SAPDiagnoseSchema.safeParse({ action: 'unittest', type: 'CLAS', includeSubpackages: false }).success).toBe(
+      false,
+    );
+    expect(SAPDiagnoseSchema.safeParse({ action: 'atc', type: 'DEVC', includeSubpackages: true }).success).toBe(false);
   });
 
   it('restricts unittest timeout and rejects it for unrelated actions', () => {

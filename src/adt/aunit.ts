@@ -69,6 +69,7 @@ export interface AunitRunResult {
 export type AunitDeclaredRiskLevel = 'harmless' | 'dangerous' | 'critical';
 
 export interface AunitSourceTestClass {
+  program?: string;
   testClass: string;
   riskLevel: AunitDeclaredRiskLevel;
   explicitRiskLevel: boolean;
@@ -85,6 +86,11 @@ export interface AunitSourceSelectionEvidence {
 export interface AunitSourceAuditOptions {
   complete?: boolean;
   incompleteReason?: string;
+}
+
+export interface AunitProgramSource {
+  program: string;
+  source: string;
 }
 
 export interface NativeJunitSummary {
@@ -119,6 +125,7 @@ export class AunitIncompleteError extends Error {
 
 interface PublicAunitOptions {
   timeoutMs?: number;
+  includeSubpackages?: boolean;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
 }
@@ -569,39 +576,44 @@ export function findStaticAbapIncludes(source: string): string[] {
   return [...names];
 }
 
-/**
- * Reconcile SAP's harmless-only result with test classes declared in the inspected source tree.
- * SAP 7.58 can omit a dangerous/critical class from both result formats without an alert; source
- * evidence closes that false-green while ordinary and deferred helper classes remain ignored.
- */
-export function reconcileAunitSourceDeclarations(
+function sourceClassKey(program: string | undefined, testClass: string, qualifyProgram: boolean): string {
+  return `${qualifyProgram ? (program ?? '').toUpperCase() : ''}\u0000${testClass.toUpperCase()}`;
+}
+
+function reconcileAunitDeclaredClasses(
   result: AunitRunResult,
-  source: string,
-  options: AunitSourceAuditOptions = {},
+  declaredTestClasses: AunitSourceTestClass[],
+  sourceWasComplete: boolean,
+  sourceIncompleteReason: string | undefined,
+  qualifyProgram: boolean,
 ): AunitRunResult {
-  const declarationScan = inspectSourceDeclaredAunitClasses(source);
-  const declaredTestClasses = declarationScan.testClasses;
-  const observedClasses = new Set(
-    [...result.tests.map((test) => test.testClass), ...result.alerts.map((alert) => alert.testClass ?? '')]
-      .filter(Boolean)
-      .map((name) => name.toUpperCase()),
+  const observedRows = [
+    ...result.tests.map((test) => ({ program: test.program, testClass: test.testClass })),
+    ...result.alerts
+      .filter((alert) => alert.testClass)
+      .map((alert) => ({ program: alert.program ?? '', testClass: alert.testClass ?? '' })),
+  ];
+  const observedClasses = new Map(
+    observedRows.map((row) => [sourceClassKey(row.program, row.testClass, qualifyProgram), row]),
   );
-  const omittedTestClasses = declaredTestClasses.filter((testClass) => !observedClasses.has(testClass.testClass));
+  const omittedTestClasses = declaredTestClasses.filter(
+    (testClass) => !observedClasses.has(sourceClassKey(testClass.program, testClass.testClass, qualifyProgram)),
+  );
   const omittedNonHarmlessTestClasses = omittedTestClasses.filter((testClass) => testClass.riskLevel !== 'harmless');
-  const declaredNames = new Set(declaredTestClasses.map((testClass) => testClass.testClass));
-  const unverifiedObservedClasses = [...observedClasses].filter((testClass) => !declaredNames.has(testClass));
-  const sourceWasComplete = options.complete !== false && declarationScan.complete;
+  const declaredNames = new Set(
+    declaredTestClasses.map((testClass) => sourceClassKey(testClass.program, testClass.testClass, qualifyProgram)),
+  );
+  const unverifiedObservedClasses = [...observedClasses.entries()]
+    .filter(([key]) => !declaredNames.has(key))
+    .map(([, row]) => `${qualifyProgram ? `${row.program}:` : ''}${row.testClass}`);
   const resultNeedsDeclarations = result.summary.tests > 0 && unverifiedObservedClasses.length > 0;
   const status: AunitSourceSelectionEvidence['status'] =
     sourceWasComplete && !resultNeedsDeclarations ? 'verified' : 'unavailable';
-  const reason =
-    options.complete === false
-      ? (options.incompleteReason ?? 'One or more ABAP source blocks could not be inspected.')
-      : !declarationScan.complete
-        ? (declarationScan.reason ?? 'The ABAP source declaration scan was incomplete.')
-        : resultNeedsDeclarations
-          ? `SAP reported class evidence that could not be matched to an executable source declaration: ${unverifiedObservedClasses.join(', ')}.`
-          : undefined;
+  const reason = !sourceWasComplete
+    ? (sourceIncompleteReason ?? 'One or more ABAP source blocks could not be inspected.')
+    : resultNeedsDeclarations
+      ? `SAP reported class evidence that could not be matched to an executable source declaration: ${unverifiedObservedClasses.join(', ')}.`
+      : undefined;
   const sourceSelectionEvidence: AunitSourceSelectionEvidence = {
     status,
     declaredTestClasses,
@@ -612,6 +624,7 @@ export function reconcileAunitSourceDeclarations(
 
   const additions: AunitAlert[] = omittedNonHarmlessTestClasses.map((testClass) => ({
     scope: 'class',
+    ...(testClass.program ? { program: testClass.program } : {}),
     testClass: testClass.testClass,
     kind: 'sourceRiskSelection',
     severity: 'tolerable',
@@ -624,6 +637,7 @@ export function reconcileAunitSourceDeclarations(
     if (testClass.riskLevel !== 'harmless') continue;
     additions.push({
       scope: 'class',
+      ...(testClass.program ? { program: testClass.program } : {}),
       testClass: testClass.testClass,
       kind: 'sourceTestOmission',
       severity: 'tolerable',
@@ -634,9 +648,14 @@ export function reconcileAunitSourceDeclarations(
     });
   }
   for (const testClass of declaredTestClasses) {
-    if (testClass.riskLevel === 'harmless' || !observedClasses.has(testClass.testClass)) continue;
+    if (
+      testClass.riskLevel === 'harmless' ||
+      !observedClasses.has(sourceClassKey(testClass.program, testClass.testClass, qualifyProgram))
+    )
+      continue;
     additions.push({
       scope: 'class',
+      ...(testClass.program ? { program: testClass.program } : {}),
       testClass: testClass.testClass,
       kind: 'sourceRiskOutsideSelection',
       severity: 'tolerable',
@@ -666,6 +685,52 @@ export function reconcileAunitSourceDeclarations(
     alerts: [...result.alerts, ...additions],
     sourceSelectionEvidence,
   };
+}
+
+/**
+ * Reconcile SAP's harmless-only result with test classes declared in one inspected source tree.
+ * SAP 7.58 can omit a dangerous/critical class from both result formats without an alert; source
+ * evidence closes that false-green while ordinary and deferred helper classes remain ignored.
+ */
+export function reconcileAunitSourceDeclarations(
+  result: AunitRunResult,
+  source: string,
+  options: AunitSourceAuditOptions = {},
+): AunitRunResult {
+  const declarationScan = inspectSourceDeclaredAunitClasses(source);
+  const complete = options.complete !== false && declarationScan.complete;
+  const reason =
+    options.complete === false
+      ? options.incompleteReason
+      : declarationScan.complete
+        ? undefined
+        : declarationScan.reason;
+  return reconcileAunitDeclaredClasses(result, declarationScan.testClasses, complete, reason, false);
+}
+
+/** Reconcile a multi-program package run without conflating common local names such as LTCL_TEST. */
+export function reconcileAunitProgramSources(
+  result: AunitRunResult,
+  sources: AunitProgramSource[],
+  options: AunitSourceAuditOptions = {},
+): AunitRunResult {
+  const declaredTestClasses: AunitSourceTestClass[] = [];
+  let complete = options.complete !== false;
+  let reason = options.incompleteReason;
+  for (const source of sources) {
+    const declarationScan = inspectSourceDeclaredAunitClasses(source.source);
+    declaredTestClasses.push(
+      ...declarationScan.testClasses.map((testClass) => ({
+        ...testClass,
+        program: source.program.toUpperCase(),
+      })),
+    );
+    if (!declarationScan.complete) {
+      complete = false;
+      reason ??= declarationScan.reason ?? `The ABAP source declaration scan for ${source.program} was incomplete.`;
+    }
+  }
+  return reconcileAunitDeclaredClasses(result, declaredTestClasses, complete, reason, true);
 }
 
 /** Parse legacy `/abapunit/testruns` XML without turning non-method alerts into fake tests. */
@@ -1069,6 +1134,16 @@ export async function runPublicAunit(
   const started = now();
   const deadline = started + (options.timeoutMs ?? DEFAULT_PUBLIC_AUNIT_TIMEOUT_MS);
   const requestOptions = (): AdtRequestOptions => ({ deadline });
+  const normalizedType = type.toUpperCase();
+  const normalizedName = name.toUpperCase();
+  const objectSet =
+    normalizedType === 'DEVC'
+      ? `<osl:objectSet xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:osl="http://www.sap.com/api/osl" xsi:type="osl:packageSet">` +
+        `<osl:package includeSubpackages="${options.includeSubpackages === true}" name="${escapeXmlAttr(normalizedName)}"/>` +
+        `</osl:objectSet>`
+      : `<osl:objectSet xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:osl="http://www.sap.com/api/osl" xsi:type="osl:flatObjectSet">` +
+        `<osl:object name="${escapeXmlAttr(normalizedName)}" type="${escapeXmlAttr(normalizedType)}"/>` +
+        `</osl:objectSet>`;
   const body =
     `<?xml version="1.0" encoding="UTF-8"?>` +
     `<aunit:run xmlns:aunit="http://www.sap.com/adt/api/aunit" title="ARC-1 ABAP Unit" context="ARC-1 CLI">` +
@@ -1078,9 +1153,7 @@ export async function runPublicAunit(
     `<aunit:options><aunit:measurements type="none"/><aunit:scope ownTests="true" foreignTests="false" addForeignTestsAsPreview="false"/>` +
     `<aunit:riskLevel harmless="true" dangerous="false" critical="false"/>` +
     `<aunit:duration short="true" medium="true" long="true"/></aunit:options>` +
-    `<osl:objectSet xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:osl="http://www.sap.com/api/osl" xsi:type="osl:flatObjectSet">` +
-    `<osl:object name="${escapeXmlAttr(name.toUpperCase())}" type="${escapeXmlAttr(type.toUpperCase())}"/>` +
-    `</osl:objectSet></aunit:run>`;
+    `${objectSet}</aunit:run>`;
 
   let polls = 0;
   let status = '';

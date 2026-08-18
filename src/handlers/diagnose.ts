@@ -3,7 +3,7 @@
  * state, ATC, unit tests, CDS test cases.
  */
 
-import type { AunitAlert, AunitRunResult } from '../adt/aunit.js';
+import type { AunitAlert, AunitProgramSource, AunitRunResult } from '../adt/aunit.js';
 import {
   AunitIncompleteError,
   appendAunitJunitDiagnostic,
@@ -11,9 +11,15 @@ import {
   aunitResultToJunit,
   findStaticAbapIncludes,
   probePublicAunit,
+  reconcileAunitProgramSources,
   reconcileAunitSourceDeclarations,
   runPublicAunit,
 } from '../adt/aunit.js';
+import {
+  type AunitPackageObject,
+  type AunitPackageSelection,
+  resolveAunitPackageSelection,
+} from '../adt/aunit-package.js';
 import type { AdtClient, SourceReadResult } from '../adt/client.js';
 import {
   applyFixProposal,
@@ -62,6 +68,7 @@ import { errorResult, type ToolResult, textResult, toolJson } from './shared.js'
 
 const AUNIT_SOURCE_MAX_BLOCKS = 80;
 const AUNIT_SOURCE_MAX_DEPTH = 5;
+const AUNIT_PACKAGE_SOURCE_CONCURRENCY = 8;
 
 interface AunitSourceTree {
   source: string;
@@ -76,6 +83,21 @@ interface AunitSourceBlock {
   source: string;
   etag?: string;
 }
+
+interface AunitPackageSourceEntry extends AunitPackageObject {
+  tree: AunitSourceTree;
+}
+
+interface AunitPackageSourceSnapshot {
+  selection: AunitPackageSelection;
+  entries: AunitPackageSourceEntry[];
+  complete: boolean;
+  incompleteReason?: string;
+}
+
+type AunitSelectionSnapshot =
+  | { kind: 'object'; tree: AunitSourceTree }
+  | { kind: 'package'; package: AunitPackageSourceSnapshot };
 
 function presentAunitSourceBlock(id: string, result: SourceReadResult): AunitSourceBlock {
   return {
@@ -197,6 +219,58 @@ async function readAunitSourceTree(client: AdtClient, type: string, name: string
   };
 }
 
+async function readAunitPackageSourceSnapshot(
+  client: AdtClient,
+  packageName: string,
+  includeSubpackages: boolean,
+): Promise<AunitPackageSourceSnapshot> {
+  const selection = await resolveAunitPackageSelection(client.http, client.safety, packageName, includeSubpackages);
+  const entries: AunitPackageSourceEntry[] = [];
+  for (let offset = 0; offset < selection.objects.length; offset += AUNIT_PACKAGE_SOURCE_CONCURRENCY) {
+    const batch = selection.objects.slice(offset, offset + AUNIT_PACKAGE_SOURCE_CONCURRENCY);
+    const trees = await Promise.all(batch.map((object) => readAunitSourceTree(client, object.type, object.name)));
+    entries.push(...batch.map((object, index) => ({ ...object, tree: trees[index]! })));
+  }
+  const incompleteEntry = entries.find((entry) => !entry.tree.complete);
+  const incompleteReason =
+    selection.incompleteReason ??
+    (incompleteEntry
+      ? `${incompleteEntry.type} ${incompleteEntry.name}: ${incompleteEntry.tree.incompleteReason ?? 'active source was incomplete'}`
+      : undefined);
+  return {
+    selection,
+    entries,
+    complete: selection.complete && incompleteEntry === undefined,
+    ...(incompleteReason ? { incompleteReason } : {}),
+  };
+}
+
+function aunitProgramName(object: AunitPackageObject): string {
+  if (object.type !== 'FUGR') return object.name.toUpperCase();
+  const separator = object.name.lastIndexOf('/');
+  return separator > 0
+    ? `${object.name.slice(0, separator + 1)}SAPL${object.name.slice(separator + 1)}`.toUpperCase()
+    : `SAPL${object.name}`.toUpperCase();
+}
+
+function packageProgramSources(snapshot: AunitPackageSourceSnapshot): AunitProgramSource[] {
+  return snapshot.entries.map((entry) => ({ program: aunitProgramName(entry), source: entry.tree.source }));
+}
+
+async function readAunitSelectionSnapshot(
+  client: AdtClient,
+  type: string,
+  name: string,
+  includeSubpackages: boolean,
+): Promise<AunitSelectionSnapshot> {
+  return type === 'DEVC'
+    ? {
+        kind: 'package',
+        package: await readAunitPackageSourceSnapshot(client, name, includeSubpackages),
+      }
+    : { kind: 'object', tree: await readAunitSourceTree(client, type, name) };
+}
+
 function sameAunitSourceSnapshot(before: AunitSourceTree, after: AunitSourceTree): boolean {
   if (before.blocks.length !== after.blocks.length) return false;
   return before.blocks.every((block, index) => {
@@ -207,6 +281,29 @@ function sameAunitSourceSnapshot(before: AunitSourceTree, after: AunitSourceTree
       later.status === block.status &&
       later.source === block.source &&
       later.etag === block.etag
+    );
+  });
+}
+
+function sameAunitPackageSnapshot(before: AunitPackageSourceSnapshot, after: AunitPackageSourceSnapshot): boolean {
+  if (
+    before.selection.packageName !== after.selection.packageName ||
+    before.selection.includeSubpackages !== after.selection.includeSubpackages ||
+    before.selection.membership.length !== after.selection.membership.length ||
+    !before.selection.membership.every((row, index) => after.selection.membership[index] === row) ||
+    before.entries.length !== after.entries.length
+  ) {
+    return false;
+  }
+  return before.entries.every((entry, index) => {
+    const later = after.entries[index];
+    return (
+      later !== undefined &&
+      later.type === entry.type &&
+      later.name === entry.name &&
+      later.packageName === entry.packageName &&
+      later.uri === entry.uri &&
+      sameAunitSourceSnapshot(entry.tree, later.tree)
     );
   });
 }
@@ -237,11 +334,86 @@ async function verifyAunitSourceSnapshot(
   return before;
 }
 
+async function verifyAunitSelectionSnapshot(
+  client: AdtClient,
+  type: string,
+  name: string,
+  includeSubpackages: boolean,
+  before: AunitSelectionSnapshot,
+): Promise<AunitSelectionSnapshot> {
+  if (before.kind === 'object') {
+    return {
+      kind: 'object',
+      tree: await verifyAunitSourceSnapshot(client, type, name, before.tree),
+    };
+  }
+  if (!before.package.complete) return before;
+  const after = await readAunitPackageSourceSnapshot(client, name, includeSubpackages);
+  if (!after.complete) {
+    return {
+      kind: 'package',
+      package: {
+        ...before.package,
+        complete: false,
+        incompleteReason:
+          after.incompleteReason ?? 'The package selection could not be re-read after the ABAP Unit run.',
+      },
+    };
+  }
+  if (!sameAunitPackageSnapshot(before.package, after)) {
+    return {
+      kind: 'package',
+      package: {
+        ...before.package,
+        complete: false,
+        incompleteReason: 'Package membership or active ABAP source changed while ABAP Unit evidence was collected.',
+      },
+    };
+  }
+  return before;
+}
+
 function reconcileAunitWithSource(result: AunitRunResult, evidence: AunitSourceTree): AunitRunResult {
   return reconcileAunitSourceDeclarations(result, evidence.source, {
     complete: evidence.complete,
     ...(evidence.incompleteReason ? { incompleteReason: evidence.incompleteReason } : {}),
   });
+}
+
+function reconcileAunitWithSelection(result: AunitRunResult, evidence: AunitSelectionSnapshot): AunitRunResult {
+  if (evidence.kind === 'object') return reconcileAunitWithSource(result, evidence.tree);
+  return reconcileAunitProgramSources(result, packageProgramSources(evidence.package), {
+    complete: evidence.package.complete,
+    ...(evidence.package.incompleteReason ? { incompleteReason: evidence.package.incompleteReason } : {}),
+  });
+}
+
+function emptyAunitRunResult(coverage: boolean): AunitRunResult {
+  return {
+    outcome: 'no_tests',
+    summary: { tests: 0, passed: 0, failures: 0, errors: 0, skipped: 0, warnings: 0 },
+    selection: { maxRisk: 'harmless', durations: ['short', 'medium', 'long'] },
+    tests: [],
+    alerts: [],
+    coverageEvidence: coverage ? 'unavailable' : 'not_requested',
+    ...(coverage ? { coverageUnavailableReason: 'measurement_not_reported' as const } : {}),
+  };
+}
+
+async function runLegacyAunitForSelection(
+  client: AdtClient,
+  type: string,
+  name: string,
+  evidence: AunitSelectionSnapshot,
+  coverage: boolean,
+): Promise<AunitRunResult> {
+  const objectUrls =
+    evidence.kind === 'package'
+      ? evidence.package.selection.objects.map((object) => object.uri)
+      : [objectUrlForType(type, name)];
+  return objectUrls.length === 0
+    ? emptyAunitRunResult(coverage)
+    : runUnitTests(client.http, client.safety, objectUrls, { coverage });
 }
 
 function legacyAlertStatus(alerts: AunitAlert[]): 'failed' | 'skipped' {
@@ -356,17 +528,18 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
       return textResult(toolJson(result));
     }
     case 'unittest': {
-      const objectUrl = objectUrlForType(type, name);
       const coverage = args.coverage === true;
       const resultFormat = String(args.resultFormat ?? 'legacy');
+      const includeSubpackages = type === 'DEVC' && args.includeSubpackages === true;
 
       if (resultFormat === 'junit' && !coverage) {
         const publicAvailable = await probePublicAunit(client.http, client.safety);
         if (publicAvailable) {
-          const sourceTree = await readAunitSourceTree(client, type, name);
+          const sourceSnapshot = await readAunitSelectionSnapshot(client, type, name, includeSubpackages);
           let native: Awaited<ReturnType<typeof runPublicAunit>>;
           try {
             native = await runPublicAunit(client.http, client.safety, type, name, {
+              includeSubpackages,
               ...(args.timeoutSeconds === undefined ? {} : { timeoutMs: Number(args.timeoutSeconds) * 1000 }),
             });
           } catch (error) {
@@ -384,9 +557,15 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
               }),
             );
           }
-          const legacyEvidence = await runUnitTests(client.http, client.safety, objectUrl);
-          const stableSourceTree = await verifyAunitSourceSnapshot(client, type, name, sourceTree);
-          const legacy = reconcileAunitWithSource(legacyEvidence, stableSourceTree);
+          const legacyEvidence = await runLegacyAunitForSelection(client, type, name, sourceSnapshot, false);
+          const stableSourceSnapshot = await verifyAunitSelectionSnapshot(
+            client,
+            type,
+            name,
+            includeSubpackages,
+            sourceSnapshot,
+          );
+          const legacy = reconcileAunitWithSelection(legacyEvidence, stableSourceSnapshot);
           let outcome = native.summary.outcome;
           let incompleteReason: string | undefined;
           // Native JUnit omits run/class alerts, including harmless-selection refusals. Reconcile
@@ -462,10 +641,16 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
       // SAP 7.58 can silently omit dangerous/critical classes from harmless-only legacy results.
       // Audit a stable active-source snapshot for every format, including the compatibility array
       // and coverage object, so the generic tool path cannot report a partial run as green.
-      const sourceTree = await readAunitSourceTree(client, type, name);
-      const result = await runUnitTests(client.http, client.safety, objectUrl, { coverage });
-      const stableSourceTree = await verifyAunitSourceSnapshot(client, type, name, sourceTree);
-      const structured = reconcileAunitWithSource(result, stableSourceTree);
+      const sourceSnapshot = await readAunitSelectionSnapshot(client, type, name, includeSubpackages);
+      const result = await runLegacyAunitForSelection(client, type, name, sourceSnapshot, coverage);
+      const stableSourceSnapshot = await verifyAunitSelectionSnapshot(
+        client,
+        type,
+        name,
+        includeSubpackages,
+        sourceSnapshot,
+      );
+      const structured = reconcileAunitWithSelection(result, stableSourceSnapshot);
       if (resultFormat === 'structured') return textResult(toolJson(structured));
       if (resultFormat === 'junit') {
         return textResult(

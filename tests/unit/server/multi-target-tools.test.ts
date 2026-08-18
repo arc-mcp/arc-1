@@ -55,6 +55,7 @@ describe('multi-target tool surface', () => {
     expect(lint.inputSchema.properties).not.toHaveProperty('style');
 
     const diagnose = tools.find((tool) => tool.name === 'SAPDiagnose') as ToolDefinition;
+    expect(diagnose.inputSchema.properties).toHaveProperty('includeSubpackages');
     expect(property(diagnose, 'action').enum).toEqual([
       'syntax',
       'unittest',
