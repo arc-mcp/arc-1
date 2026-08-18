@@ -1,6 +1,6 @@
 # Updating ARC-1
 
-## v1.1 — CLI/CI hardening compatibility changes
+## v1.1.0 — CLI/CI hardening compatibility changes
 
 The CLI/CI hardening release targets `1.1.0`. Its direct CI commands and unavailable Git mutation
 paths were not established stable, usable contracts, so these changes ship as a minor release.
