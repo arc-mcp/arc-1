@@ -139,9 +139,8 @@ export async function listTransports(
   // Build query params.
   // requestType=KWT covers Workbench, Customizing, Transport of Copies.
   // requestStatus is sent server-side; we also filter client-side as a fallback.
-  // user=* is sent as-is; URLSearchParams encodes it to user=%2A which SAP interprets
-  // as "all users" (system-wide organizer view). Omitting the param returns only the
-  // authenticated user's requests — which is NOT the same as all users.
+  // Keep user=* in the request: SAP treats '*' as a wildcard owner pattern.
+  // Omitting user defaults it to sy-uname on SAP_BASIS 7.50 and 7.58.
   const params = new URLSearchParams();
   if (user) {
     params.set('user', user);

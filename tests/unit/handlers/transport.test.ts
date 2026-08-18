@@ -679,7 +679,7 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
       expect(fetchUrl?.[0]).toContain('requestType=KWT');
     });
 
-    it('list with user=* sends user=* to SAP for system-wide query', async () => {
+    it("list with user=* forwards SAP's wildcard owner query", async () => {
       const xml = `<tm:root xmlns:tm="http://www.sap.com/cts/transports">
         <tm:request tm:number="DEVK900001" tm:owner="OTHER" tm:desc="Other user transport" tm:status="D" tm:type="K"/>
       </tm:root>`;
@@ -692,8 +692,8 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
       const fetchUrl = mockFetch.mock.calls.find(
         (c: unknown[]) => typeof c[0] === 'string' && c[0].includes('transportrequests'),
       );
-      // user=* must be forwarded to SAP — omitting it would return only the current user's requests
-      expect(fetchUrl?.[0]).toContain('user=*');
+      const requestUrl = new URL(String(fetchUrl?.[0]), 'https://sap.example');
+      expect(requestUrl.searchParams.get('user')).toBe('*');
       const parsed = JSON.parse(result.content[0]?.text ?? '{}');
       expect(parsed.total).toBe(1);
     });
@@ -717,7 +717,7 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
       expect(parsed.truncated).toBe(true);
       // Hint should guide the LLM to narrow by user when querying all users
       expect(parsed.hint).toContain('user=');
-      expect(parsed.hint).toContain('(all users)');
+      expect(parsed.hint).toContain('(all visible users)');
     });
 
     it('list with status=* returns all statuses', async () => {

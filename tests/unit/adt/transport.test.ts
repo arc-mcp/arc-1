@@ -84,13 +84,11 @@ describe('Transport Management', () => {
       expect(url).toContain('user=TESTUSER');
     });
 
-    it('sends user=* for system-wide query', async () => {
+    it("sends user=* for SAP's wildcard owner query", async () => {
       const http = mockHttp('<tm:root xmlns:tm="http://www.sap.com/cts/transports"/>');
       await listTransports(http, enabledSafety, '*');
       const url = (http.get as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as string;
-      // user=* must be sent so SAP returns all users' transports.
-      // Omitting the param returns only the authenticated user's requests.
-      expect(url).toContain('user=*');
+      expect(new URL(url, 'https://sap.example').searchParams.get('user')).toBe('*');
     });
 
     it('sends requestType=KWT and target=true (sapcli pattern)', async () => {
