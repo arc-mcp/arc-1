@@ -31,7 +31,7 @@ Interfaces section of [sap-migration-dossier](../sap-migration-dossier/SKILL.md)
 | Setting | Default | Rationale |
 |---|---|---|
 | Target system type | `public_cloud` | Clean-core audits almost always target cloud readiness |
-| ATC variant | `ABAP_CLOUD_READINESS` if available, else system default | Cloud readiness is the point of the exercise |
+| ATC variant | `ABAP_CLOUD_READINESS` if available, else the system default | Cloud readiness is the point of the exercise; verify the name with `atc_variants` first |
 | Include in scope | Z*, Y*, plus any `/namespace/*` the user names | Customer code only; skip SAP-shipped |
 | Report detail | Summary table + level-breakdown + top violations | Actionable overview; drill-down on request |
 
@@ -85,7 +85,7 @@ SAPContext returns a dependency list. Keep only dependencies whose names do NOT 
 SAPDiagnose(action="atc", type="<type>", name="<object_name>", variant="ABAP_CLOUD_READINESS")
 ```
 
-If `ABAP_CLOUD_READINESS` doesn't exist on the system, use the system default (omit `variant` — that runs the system's configured default check variant) and note this in the report. On-premise systems often ship `S4HANA_READINESS_<release>` (e.g. `S4HANA_READINESS_2023`) or `SAP_CLOUD_PLATFORM_DEFAULT` instead of `ABAP_CLOUD_READINESS`. ATC findings complement the API classification — a released API can still be used incorrectly.
+If `ABAP_CLOUD_READINESS` doesn't exist on the system ARC-1 **rejects** the call rather than silently running `DEFAULT` — list the real names with `SAPDiagnose(action="atc_variants")` and pick one, or omit `variant` to bind the system's configured default (`systemCheckVariant`), and note the choice in the report. On-premise systems often ship `S4HANA_READINESS_<release>` (e.g. `S4HANA_READINESS_2023`) or `SAP_CLOUD_PLATFORM_DEFAULT` instead of `ABAP_CLOUD_READINESS`. ATC findings complement the API classification — a released API can still be used incorrectly.
 
 > **ATC skips `$TMP` / local objects (verified live on S/4HANA 2023).** A check run against a `$TMP` object resolves to an empty object set and returns **zero findings** — that's "not checked", not "clean". Package-wide classification only works on **transportable** packages. If a package is local/`$TMP`, note in the report that ATC results are unavailable and fall back to the mcp-sap-docs API classification alone. A finding count of 0 on code you expect to be flagged is almost always the `$TMP` trap, not clean code.
 
@@ -178,7 +178,7 @@ Offer next steps:
 | Error | Cause | Fix |
 |---|---|---|
 | `sap_get_object_details` returns `found: false` | SAP object not in the release state dataset | Classify as D, flag for manual review; dataset covers S/4HANA only |
-| `ABAP_CLOUD_READINESS` variant not found | System doesn't have it configured | Fall back to default variant; note in report that finding is less cloud-specific |
+| `ABAP_CLOUD_READINESS` variant not found | System doesn't have it configured (hard error, not a silent fallback) | List names via `SAPDiagnose(action="atc_variants")` and pick the closest, or omit `variant` for the system default; note in the report that findings are less cloud-specific |
 | SAPContext unsupported for object type | E.g., dynamic programs, generated code | Fall back to regex scan of source for `CL_*`, `IF_*`, `SAP*` patterns |
 | Empty package | Typo or package is only a structure package | Verify via SAPSearch; ask user to pick a child package |
 | mcp-sap-docs not connected | Missing MCP server | Skill degrades to ATC-only classification; warn user |

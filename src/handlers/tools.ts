@@ -1088,7 +1088,7 @@ export function getToolDefinitions(
         'Run diagnostics on ABAP objects and analyze runtime errors. Actions:\n' +
         '- "syntax": syntax-check (name+type; optional version; optional source = pre-write dry-run, nothing written).\n' +
         '- "unittest": harmless ABAP Unit for CLAS/PROG/FUGR or DEVC (exact; includeSubpackages recurses).\n' +
-        '- "atc": run ATC checks (name+type; optional variant). "atc_variants": list variants + the system default (variant = name filter; read-only).\n' +
+        '- "atc": run ATC checks (name+type; omit variant to bind the system default; unknown variant = error). "atc_variants": list variants + that default (variant = name filter; read-only).\n' +
         '- "cds_testcases": SAP-suggested ABAP Unit test cases for a CDS entity (name; read-only; SAP_BASIS 8.16+).\n' +
         '- "object_state": compare active vs inactive source versions (name+type; CLAS compares all includes). Returns ETags/hashes/divergence flags.\n' +
         '- "quickfix": get quick-fix proposals at a position (name+type+source+line; optional column, sourceUri).\n' +
@@ -1194,7 +1194,10 @@ export function getToolDefinitions(
               },
             },
           },
-          variant: { type: 'string', description: 'atc: check variant; atc_variants: name filter (*=all)' },
+          variant: {
+            type: 'string',
+            description: 'atc: check variant (omit = system default); atc_variants: name filter (*=all)',
+          },
           id: {
             type: 'string',
             description:

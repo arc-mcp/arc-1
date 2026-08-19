@@ -307,7 +307,7 @@ Options:
 
 | Option | Meaning |
 |---|---|
-| `--variant <name>` | Bind a specific ATC check variant; omit for the system default. |
+| `--variant <name>` | Bind a specific ATC check variant; omit to bind the system's configured default check variant. An unknown name is rejected. |
 | `--max-priority <1\|2\|3>` | Fail if a finding has priority less than or equal to this value; default `1`. |
 | `--timeout <seconds>` | Total ATC execution and worklist verification budget; default `300`, range `1..3600`. |
 | `--format text\|json\|checkstyle` | Report format; default `text`. |

@@ -626,7 +626,7 @@ export function createCliProgram(options: CreateCliProgramOptions = {}): Command
   program
     .command('atc <type> <name>')
     .description('Run ATC with completeness evidence and CI thresholds')
-    .option('--variant <name>', 'ATC check variant; omit for the system default')
+    .option('--variant <name>', "ATC check variant; omit for the system's configured default")
     .option('--timeout <seconds>', 'ATC execution and verification budget (1-3600 seconds; default 300)')
     .option('--max-priority <priority>', 'Fail on findings with priority <= N (1=error, 2=warning, 3=info)', '1')
     .addOption(new Option('--format <format>', 'Report format').choices(['text', 'json', 'checkstyle']).default('text'))

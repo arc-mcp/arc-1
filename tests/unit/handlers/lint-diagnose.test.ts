@@ -2278,6 +2278,81 @@ ENDCLASS.`;
     });
   });
 
+  describe('SAPDiagnose action=atc check-variant binding', () => {
+    // SAP maps an EMPTY checkVariant to the CI variant literally named DEFAULT, not to
+    // systemCheckVariant — see docs/research/2026-08-19-atc-default-check-variant.md.
+    const CUSTOMIZING = `<?xml version="1.0" encoding="utf-8"?><atc:customizing xmlns:atc="http://www.sap.com/adt/atc"><properties><property name="systemCheckVariant" value="ZABAP_CLOUD_DEVELOPMENT"/></properties></atc:customizing>`;
+    const RUN = `<atcworklist:worklistRun xmlns:atcworklist="http://www.sap.com/adt/atc/worklist" xmlns:atcinfo="http://www.sap.com/adt/atc/info"><atcworklist:infos><atcinfo:info><atcinfo:type>FINDING_STATS</atcinfo:type><atcinfo:description>0,0,0</atcinfo:description></atcinfo:info></atcworklist:infos></atcworklist:worklistRun>`;
+    const WORKLIST = `<worklist id="WL-VAR" objectSetIsComplete="true"><objects><object uri="/sap/bc/adt/programs/programs/ztest" type="PROG" name="ZTEST"/></objects></worklist>`;
+
+    const atcClient = (variantsFeed?: string) => {
+      const client = createClient();
+      const postSpy = vi
+        .spyOn(client.http, 'post')
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: 'WL-VAR' })
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: RUN });
+      vi.spyOn(client.http, 'get').mockImplementation(async (url: string) => {
+        if (url.includes('/atc/customizing')) return { statusCode: 200, headers: {}, body: CUSTOMIZING };
+        if (url.includes('/atc/variants'))
+          return {
+            statusCode: 200,
+            headers: {},
+            body:
+              variantsFeed ??
+              '<?xml version="1.0"?><nameditem:namedItemList xmlns:nameditem="http://www.sap.com/adt/nameditem"><nameditem:totalItemCount>0</nameditem:totalItemCount></nameditem:namedItemList>',
+          };
+        return { statusCode: 200, headers: {}, body: WORKLIST };
+      });
+      return { client, postSpy };
+    };
+
+    it('binds and reports the system default when no variant is passed', async () => {
+      const { client, postSpy } = atcClient();
+
+      const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPDiagnose', {
+        action: 'atc',
+        type: 'PROG',
+        name: 'ZTEST',
+        resultFormat: 'structured',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(JSON.parse(result.content[0]?.text)).toMatchObject({
+        variant: 'ZABAP_CLOUD_DEVELOPMENT',
+        variantSource: 'systemDefault',
+      });
+      expect(String(postSpy.mock.calls[0]?.[0])).toBe('/sap/bc/adt/atc/worklists?checkVariant=ZABAP_CLOUD_DEVELOPMENT');
+    });
+
+    it('keeps the legacy success payload to exactly { findings }', async () => {
+      const { client } = atcClient();
+
+      const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPDiagnose', {
+        action: 'atc',
+        type: 'PROG',
+        name: 'ZTEST',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(Object.keys(JSON.parse(result.content[0]?.text))).toEqual(['findings']);
+    });
+
+    it('rejects an unknown variant instead of letting SAP silently run DEFAULT', async () => {
+      const { client, postSpy } = atcClient();
+
+      const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPDiagnose', {
+        action: 'atc',
+        type: 'PROG',
+        name: 'ZTEST',
+        variant: 'S4HANA_READINES_2023',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toMatch(/does not exist on this system/i);
+      expect(postSpy).not.toHaveBeenCalled();
+    });
+  });
+
   describe('SAPDiagnose action=atc_variants (FEAT-68)', () => {
     const VARIANTS = `<?xml version="1.0" encoding="utf-8"?><nameditem:namedItemList xmlns:nameditem="http://www.sap.com/adt/nameditem"><nameditem:totalItemCount>2</nameditem:totalItemCount><nameditem:namedItem><nameditem:name>ABAP_CLOUD_DEVELOPMENT_DEFAULT</nameditem:name><nameditem:description>Cloud default</nameditem:description><nameditem:data/></nameditem:namedItem><nameditem:namedItem><nameditem:name>ZABAP_CLOUD_DEVELOPMENT</nameditem:name><nameditem:description/><nameditem:data/></nameditem:namedItem></nameditem:namedItemList>`;
     const CUSTOMIZING = `<?xml version="1.0" encoding="utf-8"?><atc:customizing xmlns:atc="http://www.sap.com/adt/atc"><properties><property name="systemCheckVariant" value="ZABAP_CLOUD_DEVELOPMENT"/></properties></atc:customizing>`;

@@ -11,7 +11,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { classifyCdsImpact } from '../../src/adt/cds-impact.js';
 import type { AdtClient } from '../../src/adt/client.js';
 import { findWhereUsed } from '../../src/adt/codeintel.js';
-import { getCdsTestCases, runAtcCheck, supportsCdsTestCases } from '../../src/adt/devtools.js';
+import {
+  getAtcSystemDefaultVariant,
+  getCdsTestCases,
+  runAtcCheck,
+  supportsCdsTestCases,
+} from '../../src/adt/devtools.js';
 import {
   getDump,
   getGatewayErrorDetail,
@@ -2264,11 +2269,36 @@ describe('ADT Integration Tests', () => {
       }
     }, 90000);
 
-    it('completes the flow with the system default variant (no variant passed)', async () => {
+    // SAP maps an EMPTY checkVariant to the CI variant literally named DEFAULT, NOT to
+    // systemCheckVariant — so runAtcCheck resolves the system default itself and sends it.
+    // Evidence: docs/research/2026-08-19-atc-default-check-variant.md
+    it('binds the system default check variant when none is passed', async () => {
+      const systemDefault = await getAtcSystemDefaultVariant(client.http, unrestrictedSafetyConfig());
+
       const result = await runAtcCheck(client.http, unrestrictedSafetyConfig(), KERNEL_CLASS_URL, undefined, {
         timeoutMs: 30_000,
       });
+
       expectSoundResult(result);
+      if (systemDefault) {
+        expect(result.variantSource).toBe('systemDefault');
+        expect(result.variant).toBe(systemDefault);
+      } else {
+        // No /atc/customizing (or no systemCheckVariant) on this system — documented degradation.
+        expect(result.variantSource).toBe('sapFallback');
+        expect(result.variant).toBeNull();
+      }
+    }, 90000);
+
+    it('rejects an unknown check variant instead of letting SAP silently run DEFAULT', async () => {
+      try {
+        await runAtcCheck(client.http, unrestrictedSafetyConfig(), KERNEL_CLASS_URL, 'ZZZ_ARC1_NO_SUCH_VARIANT', {
+          timeoutMs: 30_000,
+        });
+        throw new Error('Expected runAtcCheck to reject an unknown check variant');
+      } catch (err) {
+        expectSapFailureClass(err, [400], [/does not exist on this system/i]);
+      }
     }, 90000);
   });
 

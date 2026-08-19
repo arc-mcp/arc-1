@@ -17,10 +17,15 @@ export interface AtcFinding {
   hasQuickfix?: boolean;
 }
 
+/** How the check variant bound at worklist creation was chosen. */
+export type AtcVariantSource = 'requested' | 'systemDefault' | 'sapFallback';
+
 export interface AtcRunResult {
   findings: AtcFinding[];
   worklistId: string;
+  /** The variant actually bound at worklist creation; null only when none could be sent. */
   variant: string | null;
+  variantSource: AtcVariantSource;
   maximumVerdicts: number;
   expectedFindingCount: number | null;
   findingCount: number;
@@ -53,12 +58,19 @@ const DEFAULT_ATC_POLL_DELAY_MS = 250;
 const DEFAULT_ATC_MAX_POLL_DELAY_MS = 2_000;
 
 /** List the valid ATC check variants. */
-export async function listAtcVariants(http: AdtHttpClient, safety: SafetyConfig, filter = '*'): Promise<NamedItem[]> {
+export async function listAtcVariants(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  filter = '*',
+  options?: AdtRequestOptions,
+): Promise<NamedItem[]> {
   checkOperation(safety, OperationType.Read, 'ListAtcVariants');
   const pattern = filter.trim() || '*';
-  const resp = await http.get(`/sap/bc/adt/atc/variants?name=${encodeURIComponent(pattern)}`, {
-    Accept: 'application/vnd.sap.adt.nameditems.v1+xml',
-  });
+  const resp = await http.get(
+    `/sap/bc/adt/atc/variants?name=${encodeURIComponent(pattern)}`,
+    { Accept: 'application/vnd.sap.adt.nameditems.v1+xml' },
+    options,
+  );
   return parseNamedItems(resp.body).filter((item) => item.name);
 }
 
@@ -66,10 +78,62 @@ export async function listAtcVariants(http: AdtHttpClient, safety: SafetyConfig,
 export async function getAtcSystemDefaultVariant(
   http: AdtHttpClient,
   safety: SafetyConfig,
+  options?: AdtRequestOptions,
 ): Promise<string | undefined> {
   checkOperation(safety, OperationType.Read, 'GetAtcCustomizing');
-  const resp = await http.get('/sap/bc/adt/atc/customizing', { Accept: 'application/xml' });
+  const resp = await http.get('/sap/bc/adt/atc/customizing', { Accept: 'application/xml' }, options);
   return parseAtcSystemCheckVariant(resp.body);
+}
+
+/**
+ * Decide which check variant to bind at worklist creation.
+ *
+ * SAP does NOT apply `systemCheckVariant` when `checkVariant` is empty — it runs the Code Inspector
+ * variant literally named `DEFAULT` (measured on two independent 758 systems; see
+ * docs/research/2026-08-19-atc-default-check-variant.md). SAP's own adt-ls resolves the default
+ * client-side too, so ARC-1 sends it explicitly.
+ *
+ * Runs under the caller's ATC request budget (`requestOptions`) — these pre-flight GETs must honour
+ * the same deadline and abort signal as the worklist calls.
+ */
+async function resolveCheckVariant(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  requestedRaw: string | undefined,
+  requestOptions: AdtRequestOptions,
+): Promise<{ variant: string | undefined; variantSource: AtcVariantSource }> {
+  const requested = requestedRaw?.trim() ? requestedRaw.trim() : undefined;
+  if (requested) {
+    // An unknown name is not rejected by SAP — the worklist silently binds DEFAULT and the run looks
+    // successful. Fail open: a validation lookup must never break a working ATC run.
+    let known: NamedItem[] | undefined;
+    try {
+      known = await listAtcVariants(http, safety, requested, requestOptions);
+    } catch {
+      // best-effort-validation: endpoint absent, auth, or network — run with the caller's string.
+      return { variant: requested, variantSource: 'requested' };
+    }
+    const match = known.find((item) => item.name.toLowerCase() === requested.toLowerCase());
+    if (!match) {
+      throw new AdtApiError(
+        `Check variant "${requested}" does not exist on this system — SAP would silently run "DEFAULT" instead. ` +
+          'List variants with SAPDiagnose(action="atc_variants").',
+        400,
+        '/sap/bc/adt/atc/variants',
+      );
+    }
+    // Send the canonical name: SAP's lookup is case-sensitive, so a lowercase input would fall back too.
+    return { variant: match.name, variantSource: 'requested' };
+  }
+
+  const systemDefault = await getAtcSystemDefaultVariant(http, safety, requestOptions).catch((error) => {
+    // Only "endpoint absent / not negotiable" degrades; 401/403/5xx must surface.
+    if (error instanceof AdtApiError && (error.statusCode === 404 || error.statusCode === 406)) return undefined;
+    throw error;
+  });
+  return systemDefault
+    ? { variant: systemDefault, variantSource: 'systemDefault' }
+    : { variant: undefined, variantSource: 'sapFallback' };
 }
 
 /** Run an ATC worklist and preserve the evidence required for a CI verdict. */
@@ -89,8 +153,9 @@ export async function runAtcCheck(
     fetchTimeoutMs: timeoutMs,
     signal: pollOptions.signal,
   };
-  const worklistPath = variant
-    ? `/sap/bc/adt/atc/worklists?checkVariant=${encodeURIComponent(variant)}`
+  const { variant: effectiveVariant, variantSource } = await resolveCheckVariant(http, safety, variant, requestOptions);
+  const worklistPath = effectiveVariant
+    ? `/sap/bc/adt/atc/worklists?checkVariant=${encodeURIComponent(effectiveVariant)}`
     : '/sap/bc/adt/atc/worklists';
   const worklistResp = await http.post(worklistPath, '', 'application/xml', { Accept: 'text/plain' }, requestOptions);
   const worklistId = worklistResp.body.trim();
@@ -120,7 +185,15 @@ export async function runAtcCheck(
     );
   } catch (error) {
     if (isAtcDeadlineFailure(error)) {
-      return incompleteAtcResult(worklistId, variant, maximumVerdicts, null, 0, 'ATC execution timed out.');
+      return incompleteAtcResult(
+        worklistId,
+        effectiveVariant,
+        variantSource,
+        maximumVerdicts,
+        null,
+        0,
+        'ATC execution timed out.',
+      );
     }
     throw error;
   }
@@ -144,7 +217,8 @@ export async function runAtcCheck(
           result ??
           incompleteAtcResult(
             worklistId,
-            variant,
+            effectiveVariant,
+            variantSource,
             maximumVerdicts,
             expectedFindingCount,
             runResp.statusCode,
@@ -156,7 +230,8 @@ export async function runAtcCheck(
     }
     result = parseAtcRunResult(resultResp.body, {
       worklistId,
-      variant,
+      variant: effectiveVariant,
+      variantSource,
       maximumVerdicts,
       expectedFindingCount,
       runStatusCode: runResp.statusCode,
@@ -185,6 +260,7 @@ function isAtcDeadlineFailure(error: unknown): boolean {
 function incompleteAtcResult(
   worklistId: string,
   variant: string | undefined,
+  variantSource: AtcVariantSource,
   maximumVerdicts: number,
   expectedFindingCount: number | null,
   runStatusCode: number,
@@ -194,6 +270,7 @@ function incompleteAtcResult(
     findings: [],
     worklistId,
     variant: variant ?? null,
+    variantSource,
     maximumVerdicts,
     expectedFindingCount,
     findingCount: 0,
@@ -309,6 +386,7 @@ function parseAtcRunResult(
   context: {
     worklistId: string;
     variant?: string;
+    variantSource: AtcVariantSource;
     maximumVerdicts: number;
     expectedFindingCount: number | null;
     runStatusCode: number;
@@ -376,6 +454,7 @@ function parseAtcRunResult(
     findings,
     worklistId: context.worklistId,
     variant: context.variant ?? null,
+    variantSource: context.variantSource,
     maximumVerdicts: context.maximumVerdicts,
     expectedFindingCount: context.expectedFindingCount,
     findingCount: findings.length,

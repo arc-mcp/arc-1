@@ -1233,8 +1233,9 @@ export function parseNamedItems(xml: string): NamedItem[] {
 
 /**
  * Read the system default ATC check variant from an `<atc:customizing>` response — the
- * `<property name="systemCheckVariant" value="…"/>` entry. This is the variant ATC runs when
- * `checkVariant` is empty. Returns undefined when the property is absent.
+ * `<property name="systemCheckVariant" value="…"/>` entry. This is the system's CONFIGURED ATC
+ * variant; SAP does NOT apply it on an empty `checkVariant` (that runs `DEFAULT`), so `runAtcCheck`
+ * sends it explicitly. Returns undefined when the property is absent.
  */
 export function parseAtcSystemCheckVariant(xml: string): string | undefined {
   const parsed = parseXml(xml);

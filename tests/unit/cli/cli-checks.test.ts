@@ -35,6 +35,7 @@ function atc(overrides: Partial<AtcRunResult> = {}): AtcRunResult {
     findings: [],
     worklistId: 'WL1',
     variant: null,
+    variantSource: 'sapFallback',
     maximumVerdicts: 100,
     expectedFindingCount: 0,
     findingCount: 0,

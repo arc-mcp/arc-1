@@ -58,11 +58,19 @@ function mockHttpSequence(...responses: string[]): AdtHttpClient {
   } as unknown as AdtHttpClient;
 }
 
+/** `<atc:customizing>` with no `systemCheckVariant` → runAtcCheck degrades to the bare worklist path. */
+const ATC_CUSTOMIZING_EMPTY =
+  '<?xml version="1.0"?><atc:customizing xmlns:atc="http://www.sap.com/adt/atc"><properties/></atc:customizing>';
+
+/**
+ * ATC http mock. `runAtcCheck` GETs `/atc/customizing` before minting the worklist, so that call is
+ * served separately and never consumes the worklist sequence — assert worklist reads on `worklistGet`.
+ */
 function mockAtcHttp(
   worklistId: string,
   findingStats: [number, number, number],
   ...worklists: string[]
-): AdtHttpClient {
+): AdtHttpClient & { worklistGet: ReturnType<typeof vi.fn> } {
   const runResponse = `<atcworklist:worklistRun xmlns:atcworklist="http://www.sap.com/adt/atc/worklist" xmlns:atcinfo="http://www.sap.com/adt/atc/info">
     <atcworklist:infos><atcinfo:info><atcinfo:type>FINDING_STATS</atcinfo:type><atcinfo:description>${findingStats.join(',')}</atcinfo:description></atcinfo:info></atcworklist:infos>
   </atcworklist:worklistRun>`;
@@ -70,19 +78,25 @@ function mockAtcHttp(
     .fn()
     .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: worklistId })
     .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: runResponse });
-  const get = vi.fn();
-  for (const body of worklists) get.mockResolvedValueOnce({ statusCode: 200, headers: {}, body });
+  const worklistGet = vi.fn();
+  for (const body of worklists) worklistGet.mockResolvedValueOnce({ statusCode: 200, headers: {}, body });
   if (worklists.length > 0) {
-    get.mockResolvedValue({ statusCode: 200, headers: {}, body: worklists.at(-1)! });
+    worklistGet.mockResolvedValue({ statusCode: 200, headers: {}, body: worklists.at(-1)! });
   }
+  const get = vi.fn((url: string, ...rest: unknown[]) =>
+    url.includes('/atc/customizing')
+      ? Promise.resolve({ statusCode: 200, headers: {}, body: ATC_CUSTOMIZING_EMPTY })
+      : worklistGet(url, ...rest),
+  );
   return {
     get,
+    worklistGet,
     post,
     put: vi.fn().mockResolvedValue({ statusCode: 200, headers: {}, body: '' }),
     delete: vi.fn().mockResolvedValue({ statusCode: 200, headers: {}, body: '' }),
     fetchCsrfToken: vi.fn(),
     withStatefulSession: vi.fn(),
-  } as unknown as AdtHttpClient;
+  } as unknown as AdtHttpClient & { worklistGet: ReturnType<typeof vi.fn> };
 }
 
 function defer<T>() {
@@ -2088,13 +2102,44 @@ describe('DevTools', () => {
       );
     });
 
-    it('binds the worklist to the named check variant when one is given', async () => {
-      const http = {
-        ...mockHttp('WL42'),
-        get: vi.fn().mockResolvedValue({ statusCode: 200, headers: {}, body: '<worklist/>' }),
-      } as unknown as AdtHttpClient;
+    // ─── check-variant binding (see docs/research/2026-08-19-atc-default-check-variant.md) ───
+    // SAP maps an EMPTY checkVariant to the CI variant literally named DEFAULT — not to
+    // systemCheckVariant — so runAtcCheck resolves the system default itself and always sends one.
+    const namedItems = (...names: string[]) =>
+      `<?xml version="1.0" encoding="utf-8"?><nameditem:namedItemList xmlns:nameditem="http://www.sap.com/adt/nameditem"><nameditem:totalItemCount>${names.length}</nameditem:totalItemCount>${names
+        .map((n) => `<nameditem:namedItem><nameditem:name>${n}</nameditem:name><nameditem:data/></nameditem:namedItem>`)
+        .join('')}</nameditem:namedItemList>`;
+    const CUSTOMIZING_WITH_DEFAULT = `<?xml version="1.0" encoding="utf-8"?><atc:customizing xmlns:atc="http://www.sap.com/adt/atc"><properties><property name="systemCheckVariant" value="ZABAP_CLOUD_DEVELOPMENT"/></properties></atc:customizing>`;
 
-      await runAtcCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_TEST', 'S4HANA_READINESS_2023');
+    /** ATC mock whose GETs are dispatched by URL: customizing / variants / worklist. */
+    const variantAwareHttp = (opts: { customizing?: string | Error; variants?: string | Error } = {}) => {
+      const serve = (body: string | Error | undefined, fallback: string) => {
+        if (body instanceof Error) return Promise.reject(body);
+        return Promise.resolve({ statusCode: 200, headers: {}, body: body ?? fallback });
+      };
+      return {
+        ...mockHttp('WL42'),
+        get: vi.fn((url: string) => {
+          if (url.includes('/atc/customizing')) return serve(opts.customizing, CUSTOMIZING_WITH_DEFAULT);
+          if (url.includes('/atc/variants')) return serve(opts.variants, namedItems('S4HANA_READINESS_2023'));
+          return Promise.resolve({ statusCode: 200, headers: {}, body: '<worklist/>' });
+        }),
+      } as unknown as AdtHttpClient;
+    };
+    const worklistUrls = (http: AdtHttpClient) =>
+      (http.post as ReturnType<typeof vi.fn>).mock.calls
+        .map((call) => String(call[0]))
+        .filter((url) => url.startsWith('/sap/bc/adt/atc/worklists'));
+
+    it('binds the worklist to the named check variant when one is given', async () => {
+      const http = variantAwareHttp();
+
+      const result = await runAtcCheck(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/ZCL_TEST',
+        'S4HANA_READINESS_2023',
+      );
 
       expect(http.post).toHaveBeenCalledWith(
         '/sap/bc/adt/atc/worklists?checkVariant=S4HANA_READINESS_2023',
@@ -2103,6 +2148,90 @@ describe('DevTools', () => {
         expect.objectContaining({ Accept: 'text/plain' }),
         expect.objectContaining({ deadline: expect.any(Number), fetchTimeoutMs: 300_000 }),
       );
+      expect(result.variantSource).toBe('requested');
+      // An explicit variant must never trigger the system-default lookup.
+      const urls = (http.get as ReturnType<typeof vi.fn>).mock.calls.map((call) => String(call[0]));
+      expect(urls.some((url) => url.includes('/atc/customizing'))).toBe(false);
+    });
+
+    it('resolves and sends the system default check variant when none is given', async () => {
+      const http = variantAwareHttp();
+
+      const result = await runAtcCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_TEST');
+
+      expect(worklistUrls(http)).toEqual(['/sap/bc/adt/atc/worklists?checkVariant=ZABAP_CLOUD_DEVELOPMENT']);
+      expect(result.variant).toBe('ZABAP_CLOUD_DEVELOPMENT');
+      expect(result.variantSource).toBe('systemDefault');
+    });
+
+    it('treats an empty-string variant as "not supplied" (LLM arg pollution)', async () => {
+      const http = variantAwareHttp();
+
+      const result = await runAtcCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_TEST', '   ');
+
+      expect(worklistUrls(http)).toEqual(['/sap/bc/adt/atc/worklists?checkVariant=ZABAP_CLOUD_DEVELOPMENT']);
+      expect(result.variantSource).toBe('systemDefault');
+    });
+
+    it('falls back to the bare worklist path when /atc/customizing is absent (404)', async () => {
+      const http = variantAwareHttp({ customizing: new AdtApiError('not found', 404, '/atc/customizing') });
+
+      const result = await runAtcCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_TEST');
+
+      expect(worklistUrls(http)).toEqual(['/sap/bc/adt/atc/worklists']);
+      expect(result.variant).toBeNull();
+      expect(result.variantSource).toBe('sapFallback');
+    });
+
+    it('reports sapFallback when customizing carries no systemCheckVariant', async () => {
+      const http = variantAwareHttp({
+        customizing:
+          '<?xml version="1.0"?><atc:customizing xmlns:atc="http://www.sap.com/adt/atc"><properties/></atc:customizing>',
+      });
+
+      const result = await runAtcCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_TEST');
+
+      expect(result.variantSource).toBe('sapFallback');
+    });
+
+    it('propagates a 403 from /atc/customizing instead of silently degrading', async () => {
+      const http = variantAwareHttp({ customizing: new AdtApiError('forbidden', 403, '/atc/customizing') });
+
+      await expect(runAtcCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_TEST')).rejects.toThrow(
+        /forbidden/i,
+      );
+      expect(worklistUrls(http)).toEqual([]);
+    });
+
+    it('rejects an unknown check variant instead of letting SAP silently run DEFAULT', async () => {
+      const http = variantAwareHttp({ variants: namedItems() });
+
+      await expect(
+        runAtcCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_TEST', 'S4HANA_READINES_2023'),
+      ).rejects.toThrow(/does not exist on this system/i);
+      expect(worklistUrls(http)).toEqual([]);
+    });
+
+    it('canonicalises the case of a known variant (SAP lookup is case-sensitive)', async () => {
+      const http = variantAwareHttp();
+
+      await runAtcCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_TEST', 's4hana_readiness_2023');
+
+      expect(worklistUrls(http)).toEqual(['/sap/bc/adt/atc/worklists?checkVariant=S4HANA_READINESS_2023']);
+    });
+
+    it('runs anyway when the variant listing itself fails (validation is fail-open)', async () => {
+      const http = variantAwareHttp({ variants: new AdtApiError('not negotiable', 406, '/atc/variants') });
+
+      const result = await runAtcCheck(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/ZCL_TEST',
+        'SOME_VARIANT',
+      );
+
+      expect(worklistUrls(http)).toEqual(['/sap/bc/adt/atc/worklists?checkVariant=SOME_VARIANT']);
+      expect(result.variantSource).toBe('requested');
     });
 
     it('throws a clear error when worklist creation returns no id', async () => {
@@ -2179,7 +2308,7 @@ describe('DevTools', () => {
     it('returns incomplete evidence when the first ATC snapshot exceeds the request budget', async () => {
       const timeout = new DOMException('The operation was aborted due to timeout', 'TimeoutError');
       const http = mockAtcHttp('WL-TIMEOUT', [0, 0, 2]);
-      (http.get as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new AdtNetworkError(timeout.message, timeout));
+      http.worklistGet.mockRejectedValueOnce(new AdtNetworkError(timeout.message, timeout));
 
       const result = await runAtcCheck(
         http,
@@ -2325,7 +2454,7 @@ describe('DevTools', () => {
         { timeoutMs: 1_000, now: () => now, sleep: async (ms) => void (now += ms) },
       );
 
-      expect(http.get).toHaveBeenCalledTimes(2);
+      expect(http.worklistGet).toHaveBeenCalledTimes(2);
       expect(result).toMatchObject({
         findingCount: 5,
         expectedFindingCount: 5,
@@ -2349,7 +2478,7 @@ describe('DevTools', () => {
         { timeoutMs: 1_000, now: () => now, sleep: async (ms) => void (now += ms) },
       );
 
-      expect(http.get).toHaveBeenCalledTimes(2);
+      expect(http.worklistGet).toHaveBeenCalledTimes(2);
       expect(result).toMatchObject({
         findingCount: 0,
         expectedFindingCount: 0,
@@ -2371,7 +2500,7 @@ describe('DevTools', () => {
         { timeoutMs: 250, now: () => now, sleep: async (ms) => void (now += ms) },
       );
 
-      expect(http.get).toHaveBeenCalledTimes(1);
+      expect(http.worklistGet).toHaveBeenCalledTimes(1);
       expect(result).toMatchObject({ expectedFindingCount: 0, processedObjectCount: 0, complete: false });
       expect(result.incompleteReasons.join(' ')).toMatch(/processed ATC object/i);
     });
@@ -2584,6 +2713,7 @@ describe('DevTools', () => {
       expect(http.get).toHaveBeenCalledWith(
         '/sap/bc/adt/atc/variants?name=ABAP_CLOUD*',
         expect.objectContaining({ Accept: 'application/vnd.sap.adt.nameditems.v1+xml' }),
+        undefined,
       );
       expect(variants.map((v) => v.name)).toEqual(['ABAP_CLOUD_DEVELOPMENT_DEFAULT', 'ZABAP_CLOUD_DEVELOPMENT']);
       expect(variants[0].description).toBe('Cloud default');
@@ -2592,13 +2722,13 @@ describe('DevTools', () => {
     it('defaults an empty/blank filter to "*" (bare name= returns an empty list on SAP)', async () => {
       const http = mockHttp(VARIANTS);
       await listAtcVariants(http, unrestrictedSafetyConfig(), '  ');
-      expect(http.get).toHaveBeenCalledWith('/sap/bc/adt/atc/variants?name=*', expect.anything());
+      expect(http.get).toHaveBeenCalledWith('/sap/bc/adt/atc/variants?name=*', expect.anything(), undefined);
     });
 
     it('reads the system default check variant from customizing', async () => {
       const http = mockHttp(CUSTOMIZING);
       const def = await getAtcSystemDefaultVariant(http, unrestrictedSafetyConfig());
-      expect(http.get).toHaveBeenCalledWith('/sap/bc/adt/atc/customizing', expect.anything());
+      expect(http.get).toHaveBeenCalledWith('/sap/bc/adt/atc/customizing', expect.anything(), undefined);
       expect(def).toBe('ZABAP_CLOUD_DEVELOPMENT');
     });
 

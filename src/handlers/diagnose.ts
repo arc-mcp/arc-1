@@ -885,8 +885,9 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
       return textResult(toolJson({ findings: result.findings }));
     }
     case 'atc_variants': {
-      // Discover which check variant to pass to action="atc": the system default (used when none is
-      // given) + the available variants. `variant` doubles as an optional name filter (default all).
+      // Discover which check variant to pass to action="atc": the system default (which action="atc"
+      // resolves and sends itself when no variant is given — SAP does NOT apply it on an empty
+      // checkVariant) + the available variants. `variant` doubles as a name filter (default all).
       // Trim/normalize so the echoed `filter` matches what listAtcVariants actually queries.
       const filter = (args.variant as string | undefined)?.trim() || '*';
       // The variant list is the core result; the system default is a best-effort annotation. Only

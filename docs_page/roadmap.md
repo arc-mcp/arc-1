@@ -109,7 +109,7 @@ SORT RULES for this table — DO NOT BREAK when adding rows:
 | ~~[FEAT-49](#feat-49)~~ | ~~Current Object Transport Status (legacy `history` action)~~ | ~~P1~~ | ~~S~~ | ~~Completed 2026-04-17~~ |
 | ~~[DOC-04](#doc-04)~~ | ~~RAP & Common ABAP Workflow Skill Pack Refresh~~ | ~~P1~~ | ~~S~~ | ~~Completed 2026-04-18~~ |
 | ~~[FEAT-67](#feat-67)~~ | ~~**DTDC (Dynamic Cache) read/write**~~ — ✅ **shipped 2026-07-24**: generalized the SDO engine off the blue-only assumption (per-entry metadata root/ns/marker); `SAPRead`/`SAPWrite`/`SAPActivate type=DTDC`. Live-verified create→activate→delete on 758 + 816 | P2 | S | Features |
-| ~~[FEAT-68](#feat-68)~~ | ~~**ATC check-variant listing**~~ — ✅ **shipped 2026-07-24**: `SAPDiagnose action=atc_variants` lists variants + the system default. Live-verified 758 + 816 | P2 | XS | Features |
+| ~~[FEAT-68](#feat-68)~~ | ~~**ATC check-variant listing**~~ — ✅ **shipped 2026-07-24**: `SAPDiagnose action=atc_variants` lists variants + the system default. Live-verified 758 + 816. (2026-08-19: the accompanying "an empty `checkVariant` runs the system default" claim was disproven — `action=atc` now resolves and sends it explicitly) | P2 | XS | Features |
 | — | **RAP behavior-extension create** (`extend behavior for`) — ✅ **shipped 2026-06-25 (PR #507)**: `SAPWrite create type=BDEF` with extension source emits the `adtTemplate(base_bdef)`; live-verified 758 + 816 (new capability, no prior FEAT id) | P2 | M | Features |
 | — | **CDS API-release WRITE** (`SAPManage set_api_state`, FEAT-02 follow-up) — ✅ **shipped 2026-06-25 (PR #506)**: release/revoke a C1 contract; live-verified 758 + 816 | P2 | S | Features |
 | ~~[FEAT-31](#feat-31)~~ | ~~Code Coverage from Unit Tests~~ — **✅ Resolved by FEAT-41 / PR #503**: `SAPDiagnose action=unittest` now supports `coverage:true` | P2 | S | Features |
@@ -720,7 +720,7 @@ SAP confirmed GA of ABAP Cloud Extension for VS Code with built-in agentic AI po
 | **Priority** | P2 |
 | **Effort** | XS |
 | **Risk** | Low |
-| **Usefulness** | Medium-high — `SAPDiagnose action=atc` takes a free-string `variant` today, so an LLM must guess a valid name or fall back to the system default. |
+| **Usefulness** | Medium-high — `SAPDiagnose action=atc` takes a free-string `variant` today, so an LLM must guess a valid name. |
 | **Status** | ✅ **Completed 2026-07-24** — `SAPDiagnose action=atc_variants` lists the check variants (`GET /atc/variants?name=<filter>`) + the system default (`GET /atc/customizing` → `systemCheckVariant`). The `variant` param doubles as the name filter. Read-only; live-verified 758 (184 variants) + 816 (215). Authoring CHKO/CHKC/CHKV objects remains out of scope (Basis governance, not LLM-driven). Dossier: [docs/research/2026-07-24-feat68-atc-variant-listing.md](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-07-24-feat68-atc-variant-listing.md). |
 
 <a id="feat-69"></a>
