@@ -54,6 +54,10 @@ const BUDGETS = {
   // the default. Keep tight headroom.
   // + getFunctionModuleProperties and the getFunctionGroup pre-7.52 objectstructure fallback.
   'src/adt/client.ts': 1730,
+  // The single live ADT integration suite covers every read/write surface against a real system;
+  // it passed the 3000-line default test budget with the ATC check-variant binding cases
+  // (docs/research/2026-08-19-atc-default-check-variant.md). Split by domain before raising again.
+  'tests/integration/adt.integration.test.ts': 3100,
 };
 
 const DEFAULT_SRC = 1500;

@@ -1194,10 +1194,7 @@ export function getToolDefinitions(
               },
             },
           },
-          variant: {
-            type: 'string',
-            description: 'atc: check variant (omit = system default); atc_variants: name filter (*=all)',
-          },
+          variant: { type: 'string', description: 'atc: check variant; atc_variants: name filter (*=all)' },
           id: {
             type: 'string',
             description:

@@ -1138,7 +1138,7 @@
         },
         "variant": {
           "type": "string",
-          "description": "atc: check variant (omit = system default); atc_variants: name filter (*=all)"
+          "description": "atc: check variant; atc_variants: name filter (*=all)"
         },
         "id": {
           "type": "string",
