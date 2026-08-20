@@ -229,60 +229,81 @@ npm run btp:build
 both checks succeed and MBT creates
 `mta_archives/arc1-mcp_<version>.mtar`.
 
-Before a customer deploy, inspect the archive in a protected workspace. Two things make a naive
+Before a customer deploy, inspect the archive in a protected workspace. Three things make a naive
 listing useless here:
 
 - **The MTAR is a wrapper.** Each deployed module is one nested `<module>/data.zip`, and the
   application lives inside it. Listing the MTAR shows you `META-INF/` and those nested archives and
-  nothing about their contents. The UI variant (`npm run btp:build-ui-ext`) ships **two** payloads,
-  so inspect every member rather than assuming one.
+  nothing about their contents. The UI variant (`npm run btp:build-ui-ext`) ships more than one
+  payload, so inspect every member rather than assuming one.
 - **`mta_archives/` accumulates every version you have built.** A glob matching several archives is
   a false green: `unzip -l` treats the second path as a filter *inside* the first and reports
   **0 files** (exit 11), while PowerShell's `OpenRead` fails outright. Resolve one archive and echo
   which one.
+- **A gate that cannot find anything must fail, not pass.** No archive, no `data.zip` member, or an
+  unreadable payload has to be an error; otherwise a broken workspace reports a clean release.
 
 ```bash
-MTAR=$(ls -t mta_archives/*.mtar | head -1) && echo "$MTAR"
-unzip -l "$MTAR"                    # wrapper: META-INF + one <module>/data.zip per module
-
-DENY='\.env|\.npmrc|service-key|\.(key|pem|p12|pfx|pse|jks|keystore)$'
-rc=0
-for member in $(unzip -Z1 "$MTAR" | grep '/data\.zip$'); do
-  unzip -p "$MTAR" "$member" > payload.zip
-  echo "-- $member: $(unzip -Z1 payload.zip | wc -l) entries"
-  unzip -Z1 payload.zip | grep -Ei "$DENY" && rc=1
-done
-rm -f payload.zip
-test "$rc" -eq 0 && echo 'PASS: no denied paths in any payload'
+inspect_mtar() (
+  set -o pipefail
+  deny='\.env|\.npmrc|service-key|\.(key|pem|p12|pfx|pse|jks|keystore)$'
+  mtar=$(ls -t mta_archives/*.mtar 2>/dev/null | head -1)
+  [ -n "$mtar" ] || { echo 'FAIL: no archive in mta_archives/'; return 1; }
+  echo "$mtar"
+  unzip -l "$mtar" || { echo 'FAIL: unreadable archive'; return 1; }
+  members=$(unzip -Z1 "$mtar" | grep '/data\.zip$') ||
+    { echo 'FAIL: no <module>/data.zip member'; return 1; }
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' EXIT
+  for member in $members; do
+    unzip -p "$mtar" "$member" > "$tmp/payload.zip" || { echo "FAIL: cannot extract $member"; return 1; }
+    n=$(unzip -Z1 "$tmp/payload.zip" | wc -l) || { echo "FAIL: cannot read $member"; return 1; }
+    echo "-- $member: $n entries"
+    unzip -Z1 "$tmp/payload.zip" | grep -Ei "$deny" && { echo "FAIL: denied path in $member"; return 1; }
+  done
+  echo 'PASS: every payload inspected, no denied paths'
+)
+inspect_mtar
 ```
 
-The block exits non-zero if any payload carries a denied path, so it is safe to run unattended. Read
-a full listing too — the pattern covers today's known names, and the point of the gate is to catch a
-file type no denylist anticipated:
+It returns zero only after inspecting every payload successfully, so it is safe to run unattended.
+The function body is a subshell, so `pipefail` and the cleanup trap do not leak into your session.
+
+Read a full listing too — the pattern covers today's known names, and the point of the gate is to
+catch a file type no denylist anticipated. Take the member names from the wrapper listing above:
 
 ```bash
-unzip -p "$MTAR" 'arc1-mcp-server/data.zip' > payload.zip && unzip -l payload.zip | less
+unzip -p "$MTAR" '<module>/data.zip' > payload.zip && unzip -l payload.zip | less
 ```
 
 On Windows, `Expand-Archive` needs a `.zip` extension, so copy first:
 
 ```powershell
-$mtar = Get-ChildItem mta_archives\*.mtar | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-$mtar.FullName
+$ErrorActionPreference = 'Stop'
 $deny = '\.env|\.npmrc|service-key|\.(key|pem|p12|pfx|pse|jks|keystore)$'
-$tmp  = Join-Path $env:TEMP ([guid]::NewGuid())
-Copy-Item $mtar.FullName "$tmp.zip" -Force
-Expand-Archive "$tmp.zip" "$tmp-outer" -Force
-$bad = @()
-foreach ($member in Get-ChildItem "$tmp-outer" -Recurse -Filter data.zip -File) {
-  $dest = Join-Path "$tmp-payload" $member.Directory.Name
-  Expand-Archive $member.FullName $dest -Force
-  $files = @(Get-ChildItem $dest -Recurse -File)
-  "-- $($member.Directory.Name): $($files.Count) files"
-  $bad += $files | Where-Object Name -match $deny
+$mtar = Get-ChildItem mta_archives\*.mtar | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+if (-not $mtar) { throw 'FAIL: no archive in mta_archives/' }
+$mtar.FullName
+$tmp = Join-Path $env:TEMP ([guid]::NewGuid())
+try {
+  Copy-Item $mtar.FullName "$tmp.zip"
+  Expand-Archive "$tmp.zip" "$tmp-outer"
+  $members = @(Get-ChildItem "$tmp-outer" -Recurse -Filter data.zip -File)
+  if ($members.Count -eq 0) { throw "FAIL: no <module>/data.zip member in $($mtar.Name)" }
+  $bad = @()
+  foreach ($member in $members) {
+    $dest = Join-Path "$tmp-payload" $member.Directory.Name
+    Expand-Archive $member.FullName $dest
+    $files = @(Get-ChildItem $dest -Recurse -File)
+    if ($files.Count -eq 0) { throw "FAIL: empty payload $($member.Directory.Name)" }
+    "-- $($member.Directory.Name): $($files.Count) files"
+    $bad += $files | Where-Object Name -match $deny
+  }
+  if ($bad) { $bad.FullName; throw 'FAIL: denied path in payload' }
+  'PASS: every payload inspected, no denied paths'
+} finally {
+  Remove-Item "$tmp.zip","$tmp-outer","$tmp-payload" -Recurse -Force -ErrorAction SilentlyContinue
 }
-Remove-Item "$tmp.zip","$tmp-outer","$tmp-payload" -Recurse -Force
-if ($bad) { $bad.FullName; throw 'DENIED PATH in payload' } else { 'PASS: no denied paths in any payload' }
 ```
 
 A checksum is not a substitute: it proves the archive did not change, not that no secret was packaged.
