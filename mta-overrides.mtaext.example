@@ -218,10 +218,15 @@ modules:
 # resource. If your landscape already shares one of these under a DIFFERENT
 # name, a plain deploy creates a second, empty instance and binds ARC-1 to it —
 # the destinations your admin configured simply are not there. Check
-# `cf services` first, then bind the existing instance instead (a sibling of
-# `modules:`):
+# `cf services` first. An extension cannot change a resource's `type` (mbt
+# rejects `type` in mta.ResourceExt) — it can only repoint a managed resource at
+# a named instance (a sibling of `modules:`):
 # resources:
 #   - name: arc1-destination
-#     type: org.cloudfoundry.existing-service
 #     parameters:
 #       service-name: my-shared-destination
+# That instance then stays MTA-MANAGED: the deploy creates it if absent, and
+# `cf undeploy --delete-services` would delete it. Use it only if this ARC-1
+# deployment is meant to own the instance. Binding one whose lifecycle belongs
+# to someone else needs `org.cloudfoundry.existing-service` in `mta.yaml`, which
+# this descriptor does not offer — that is a reviewed descriptor change.

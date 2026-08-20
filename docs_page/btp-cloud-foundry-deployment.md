@@ -105,9 +105,23 @@ platform services. `arc1-destination` and `arc1-connectivity` are declared as
 `org.cloudfoundry.managed-service`, and a managed instance is named after its resource. If this
 landscape's Destination instance is shared under a different name, a plain deploy creates a second,
 empty instance and binds ARC-1 to it — the destinations your administrator configured are simply
-absent. To bind the existing instance instead, override that resource to
-`org.cloudfoundry.existing-service` with its `service-name` in your extension (see
-`mta-overrides.mtaext.example`).
+absent.
+
+An extension descriptor cannot change a resource's `type` — `mbt validate` rejects `type` in
+`mta.ResourceExt`. It can only repoint a managed resource at a specific instance name:
+
+```yaml
+resources:
+  - name: arc1-destination
+    parameters:
+      service-name: my-shared-destination
+```
+
+That binds the named instance, but the resource stays MTA-managed: the deploy creates it if it is
+absent, and `cf undeploy --delete-services` would delete it. Use it only when this ARC-1 deployment
+is meant to own that instance. Binding an instance whose lifecycle belongs to someone else requires
+`org.cloudfoundry.existing-service` in `mta.yaml` itself, which the shipped descriptor does not
+offer — treat that landscape as needing a reviewed descriptor change, not an extension.
 
 ## 4. Create the landscape extension
 
