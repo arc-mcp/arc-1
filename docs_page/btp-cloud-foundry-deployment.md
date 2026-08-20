@@ -233,8 +233,9 @@ Before a customer deploy, inspect the archive in a protected workspace. Two thin
 listing useless here:
 
 - **The MTAR has only six top-level entries.** The whole application is one nested
-  `<module>/data.zip` — 648 files in a 1.1.0 build. Listing the MTAR shows you `META-INF/` and that
-  nested archive, and nothing about what is inside it. You must open the payload.
+  `<module>/data.zip` — hundreds of files behind that single entry. Listing the MTAR shows you
+  `META-INF/` and the nested archive, and nothing about what is inside it. You must open the
+  payload.
 - **`mta_archives/` accumulates every version you have built.** A glob matching several archives is
   a false green: `unzip -l` treats the second path as a filter *inside* the first and reports
   **0 files** (exit 11), while PowerShell's `OpenRead` fails outright. Resolve one archive and echo
