@@ -44,9 +44,26 @@ TEST_BTP_SERVICE_KEY_FILE=~/.config/arc-1/btp-abap-service-key.json npm run test
 
 Pre-commit: Husky runs `lint-staged` → Biome auto-fixes staged `*.{ts,js,json}`. Never hand-fix formatting.
 
+## Deploying ARC-1 (not developing it)
+
+If the task is "deploy/install ARC-1 for a team", you are an operator, not a contributor — do not
+edit `src/`. Start at [docs_page/btp-overview.md](docs_page/btp-overview.md) (pick the topology),
+then follow the canonical runbook
+[docs_page/btp-cloud-foundry-deployment.md](docs_page/btp-cloud-foundry-deployment.md).
+Docker/npx/stdio instead: [docs_page/deployment.md](docs_page/deployment.md).
+
+| Trap | Reality |
+|------|---------|
+| Putting BTP config in `.env` | On CF, config lives in `mta-overrides.mtaext` `properties:` (or `cf set-env`). `.env*` is stripped from the archive by BOTH `.cfignore` and `mta.yaml` `ignore:`, so a `.env` deploy yields a **healthy app with no SAP target** — see [docs_page/configuration-precedence.md](docs_page/configuration-precedence.md) |
+| Deleting an `.mtaext` line to disable a feature | An extension can add or override a property, never remove one — write the explicit off-value (`SAP_FOO: "false"`); `cf unset-env` is undone by the next deploy |
+| Letting MTA adopt pre-existing services | `arc1-destination`/`arc1-connectivity` are `managed-service`, whose instance name defaults to the RESOURCE name — in a landscape whose shared Destination instance is named differently this silently creates a SECOND, empty instance and binds ARC-1 to it. Run `cf services` first; reuse a shared instance by overriding the resource to `org.cloudfoundry.existing-service` + `service-name:` (`mta-overrides.mtaext.example`) |
+| Assuming a first deploy | The runbook is greenfield; changes, upgrades, restart-vs-restage, and rollback are [docs_page/btp-administration.md](docs_page/btp-administration.md) |
+| Trying to finish it alone | Cockpit destinations, XSUAA role collections, Cloud Connector, and SAP STRUST/CERTRULE/SU01 belong to other owners (runbook §2) — hand off with a specific evidence request instead of inventing CLI equivalents |
+
 ## Configuration (Priority: CLI > Env > .env > Defaults)
 
-Copy `.env.example` to `.env`. Parser: `src/server/config.ts`; defaults: `src/server/types.ts`.
+Copy `.env.example` to `.env` — local/stdio/Docker only; on BTP CF these same keys are
+`.mtaext` properties (see above). Parser: `src/server/config.ts`; defaults: `src/server/types.ts`.
 Full per-option details (defaults, clamps, layer interactions): [docs_page/configuration-reference.md](docs_page/configuration-reference.md).
 
 | Variable / Flag | Description |

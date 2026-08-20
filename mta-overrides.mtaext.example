@@ -211,3 +211,17 @@ modules:
 # resources:
 #   - name: arc1-application-logs
 #     active: true
+
+# ── Reusing a SHARED Destination / Connectivity instance ────────────────
+# The base mta.yaml declares `arc1-destination` / `arc1-connectivity` as
+# `org.cloudfoundry.managed-service`, and a managed instance is named after its
+# resource. If your landscape already shares one of these under a DIFFERENT
+# name, a plain deploy creates a second, empty instance and binds ARC-1 to it —
+# the destinations your admin configured simply are not there. Check
+# `cf services` first, then bind the existing instance instead (a sibling of
+# `modules:`):
+# resources:
+#   - name: arc1-destination
+#     type: org.cloudfoundry.existing-service
+#     parameters:
+#       service-name: my-shared-destination

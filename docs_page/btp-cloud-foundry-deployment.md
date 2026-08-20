@@ -100,6 +100,15 @@ Stop if `cf target` names the wrong API endpoint, org, or space. Record the sele
 deployment ticket. Confirm entitlements in BTP Cockpit rather than discovering missing quota halfway
 through the deploy.
 
+Read the `cf services` output before deploying into a space that already runs ARC-1 or shares
+platform services. `arc1-destination` and `arc1-connectivity` are declared as
+`org.cloudfoundry.managed-service`, and a managed instance is named after its resource. If this
+landscape's Destination instance is shared under a different name, a plain deploy creates a second,
+empty instance and binds ARC-1 to it — the destinations your administrator configured are simply
+absent. To bind the existing instance instead, override that resource to
+`org.cloudfoundry.existing-service` with its `service-name` in your extension (see
+`mta-overrides.mtaext.example`).
+
 ## 4. Create the landscape extension
 
 `mta.yaml` owns versioned safe defaults and BTP resource topology. A customer-owned extension owns
@@ -207,6 +216,15 @@ Before a customer deploy, inspect the archive in a protected workspace:
 ```bash
 unzip -l mta_archives/arc1-mcp_*.mtar | less
 ```
+
+On Windows, list the same entries from PowerShell:
+
+```powershell
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+[IO.Compression.ZipFile]::OpenRead((Get-Item mta_archives\arc1-mcp_*.mtar).FullName).Entries.FullName
+```
+
+A checksum is not a substitute: it proves the archive did not change, not that no secret was packaged.
 
 The application payload must not contain `.env*`, `.npmrc`, service-key exports, customer
 `.mtaext` files, private keys, certificates, local MCP configuration, source tests, or operator
