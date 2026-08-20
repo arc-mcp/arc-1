@@ -229,24 +229,39 @@ npm run btp:build
 both checks succeed and MBT creates
 `mta_archives/arc1-mcp_<version>.mtar`.
 
-Before a customer deploy, inspect the archive in a protected workspace. Resolve exactly one archive
-and echo which one — `mta_archives/` accumulates every version you have built, and a glob that
-matches several is a false green: `unzip -l` then treats the second path as a filter *inside* the
-first archive and reports **0 files** (exit 11), while PowerShell's `OpenRead` fails outright.
+Before a customer deploy, inspect the archive in a protected workspace. Two things make a naive
+listing useless here:
+
+- **The MTAR has only six top-level entries.** The whole application is one nested
+  `<module>/data.zip` — 648 files in a 1.1.0 build. Listing the MTAR shows you `META-INF/` and that
+  nested archive, and nothing about what is inside it. You must open the payload.
+- **`mta_archives/` accumulates every version you have built.** A glob matching several archives is
+  a false green: `unzip -l` treats the second path as a filter *inside* the first and reports
+  **0 files** (exit 11), while PowerShell's `OpenRead` fails outright. Resolve one archive and echo
+  which one.
 
 ```bash
-MTAR=$(ls -t mta_archives/*.mtar | head -1) && echo "$MTAR" && unzip -l "$MTAR" | less
+MTAR=$(ls -t mta_archives/*.mtar | head -1) && echo "$MTAR"
+unzip -l "$MTAR"                                   # shell: META-INF + <module>/data.zip
+unzip -p "$MTAR" '*/data.zip' > payload.zip        # the real payload
+unzip -l payload.zip | grep -Ei '\.env|\.npmrc|service-key|\.(key|pem|p12|pfx|pse|jks|keystore)$'
 ```
 
-On Windows, list the same entries from PowerShell. `Dispose()` matters: an open handle keeps the
-archive locked and the next build fails.
+The last command must print nothing. Review the full `unzip -l payload.zip` listing too — the grep
+covers today's known names, and the point of the gate is to catch a file type no denylist anticipated.
+
+On Windows, `Dispose()` matters when using `OpenRead`: an open handle keeps the archive locked and
+the next build fails. `Expand-Archive` needs a `.zip` extension, so copy first:
 
 ```powershell
-Add-Type -AssemblyName System.IO.Compression.FileSystem
 $mtar = Get-ChildItem mta_archives\*.mtar | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 $mtar.FullName
-$zip = [IO.Compression.ZipFile]::OpenRead($mtar.FullName)
-try { $zip.Entries | Select-Object FullName, Length } finally { $zip.Dispose() }
+Copy-Item $mtar.FullName "$env:TEMP\mtar.zip" -Force
+Expand-Archive "$env:TEMP\mtar.zip" "$env:TEMP\mtar" -Force
+Expand-Archive (Get-ChildItem "$env:TEMP\mtar" -Recurse -Filter data.zip).FullName "$env:TEMP\payload" -Force
+Get-ChildItem "$env:TEMP\payload" -Recurse -File |
+  Where-Object Name -match '\.env|\.npmrc|service-key|\.(key|pem|p12|pfx|pse|jks|keystore)$'
+Remove-Item "$env:TEMP\mtar.zip","$env:TEMP\mtar","$env:TEMP\payload" -Recurse -Force
 ```
 
 A checksum is not a substitute: it proves the archive did not change, not that no secret was packaged.

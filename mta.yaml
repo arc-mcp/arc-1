@@ -97,6 +97,7 @@ modules:
         - .cursor-plugin/
         - .cursorignore
         - .dockerignore
+        - .gitattributes
         - .gitignore
         - .mcp.json.example
         - .mcpbignore
