@@ -24,6 +24,19 @@ The ATC work itself finishes in seconds; the rest is pure waste. At the backoff 
 issues roughly **150 full worklist GETs** before giving up (computed from the schedule, not measured;
 successful GETs are not logged).
 
+**Measured on npl (7.50) after the quiescence fix** — same command, same exit code, same reasons plus
+the quiescence reason; wall time no longer tracks the budget:
+
+| `--timeout` | before | after |
+|---|---|---|
+| 45 s | 46 s | **13 s** |
+| 240 s | 240 s | **13 s** |
+
+13 s = the 10 s quiet interval plus roughly 3 s of actual ATC work. The interval is a deliberate floor
+on every run that never satisfies `complete`: correctness beats latency here, because the rejected
+three-snapshot rule would have returned a truncated result (§2a). On systems where runs do complete
+normally the floor does not apply — a4h returns `complete: true` without waiting for quiescence.
+
 ## 1. Root cause (code, not inference)
 
 `src/adt/atc.ts`, the poll loop:
