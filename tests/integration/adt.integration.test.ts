@@ -2300,11 +2300,10 @@ describe('ADT Integration Tests', () => {
       }
     }, 90000);
 
-    // a4h converges on the first poll, so it cannot reproduce the settle stall (that needs 7.50 or
-    // the customer's short-count system). This guards the opposite risk: that the settle rule made the
-    // normal path wait. It passes before the fix too — it is a regression guard, not a reproduction.
+    // A4H may return an incomplete zero-object result for this default-variant fixture. This guards
+    // that SAP's per-GET root timestamp does not prevent an otherwise unchanged response from settling.
     // Evidence: docs/research/2026-08-20-atc-completeness-polling.md
-    it('returns a complete run far inside its budget', async () => {
+    it('returns a settled run far inside its budget', async () => {
       const started = Date.now();
       const result = await runAtcCheck(client.http, unrestrictedSafetyConfig(), KERNEL_CLASS_URL, undefined, {
         timeoutMs: 60_000,

@@ -62,14 +62,23 @@ const DEFAULT_ATC_TIMEOUT_MS = 300_000;
 const DEFAULT_ATC_POLL_DELAY_MS = 250;
 const DEFAULT_ATC_MAX_POLL_DELAY_MS = 2_000;
 /**
- * Consecutive unchanged worklist reads that mean the run has settled.
+ * Minimum continuous quiet interval before an unchanged worklist is considered settled.
  *
- * `complete` ANDs criteria a later poll can never change (response shape, worklist-id match,
- * `objectSetIsComplete`, objects-container shape, priority validity). Waiting on `complete` alone
- * therefore burns the caller's whole budget whenever one of them is unsatisfiable — measured on
- * NW 7.50 as wall-time == timeout (docs/research/2026-08-20-atc-completeness-polling.md).
+ * A live 758 worklist grew from 23 findings/two objects to 73/ten after already reporting
+ * `objectSetIsComplete=true`, so neither that flag nor a few fast count snapshots are terminal
+ * evidence. Ten seconds spans at least five intervals at the default 2 s backoff cap. SAP also
+ * advances the root worklist timestamp on unchanged GETs, so that proven volatile attribute is
+ * excluded from the comparison.
+ * See docs/research/2026-08-20-atc-completeness-polling.md.
  */
-const ATC_SETTLED_POLLS = 3;
+const ATC_SETTLE_QUIET_MS = 10_000;
+
+/** Compare the complete wire response except SAP's per-GET root worklist timestamp. */
+function atcWorklistSettleObservation(xml: string): string {
+  return xml.replace(/<(?:[A-Za-z_][\w.-]*:)?worklist\b[^>]*>/, (rootStart) =>
+    rootStart.replace(/\s+(?:[A-Za-z_][\w.-]*:)?timestamp\s*=\s*(?:"[^"]*"|'[^']*')/, ''),
+  );
+}
 
 /** List the valid ATC check variants. */
 export async function listAtcVariants(
@@ -217,8 +226,8 @@ export async function runAtcCheck(
   let delayMs = pollOptions.initialDelayMs ?? DEFAULT_ATC_POLL_DELAY_MS;
   const maxDelayMs = pollOptions.maxDelayMs ?? DEFAULT_ATC_MAX_POLL_DELAY_MS;
   let result: AtcRunResult | undefined;
-  let lastSignature: string | undefined;
-  let stableReads = 0;
+  let lastWorklistObservation: string | undefined;
+  let unchangedSince: number | undefined;
 
   while (true) {
     let resultResp: AdtResponse;
@@ -253,24 +262,29 @@ export async function runAtcCheck(
       expectedFindingCount,
       runStatusCode: runResp.statusCode,
     });
-    // The worklist fills asynchronously, so poll while the observation is still moving. Once it
-    // stops moving the run has settled: returning then yields the SAME verdict the deadline would
-    // have produced, just without spending the rest of the budget on identical re-reads.
-    const signature = `${result.findingCount}/${result.processedObjectCount}`;
-    stableReads = signature === lastSignature ? stableReads + 1 : 1;
-    lastSignature = signature;
-    const settled = stableReads >= ATC_SETTLED_POLLS;
+    // Counts alone miss same-count replacements and other response-evidence changes. Compare the
+    // full XML except the root timestamp, which live 758 advances on otherwise identical GETs.
+    const observedAt = now();
+    const observation = atcWorklistSettleObservation(resultResp.body);
+    if (observation !== lastWorklistObservation) {
+      lastWorklistObservation = observation;
+      unchangedSince = observedAt;
+    }
+    const unchangedForMs = unchangedSince === undefined ? 0 : observedAt - unchangedSince;
+    const settled = unchangedForMs >= ATC_SETTLE_QUIET_MS;
     if (
       expectedFindingCount === null ||
       result.complete ||
       result.findingCount > expectedFindingCount ||
       settled ||
-      now() >= deadline
+      observedAt >= deadline
     ) {
       if (settled && !result.complete) {
         result.incompleteReasons.push(
-          `ATC worklist stopped changing at ${result.findingCount} finding(s) over ${result.processedObjectCount} object(s) ` +
-            "without satisfying SAP's completeness evidence; returning the settled result.",
+          `ATC worklist response, excluding SAP's poll timestamp, was unchanged for at least ` +
+            `${ATC_SETTLE_QUIET_MS / 1_000} seconds at ` +
+            `${result.findingCount} finding(s) over ${result.processedObjectCount} object(s) without satisfying ` +
+            "SAP's completeness evidence; returning the settled result.",
         );
       }
       return result;

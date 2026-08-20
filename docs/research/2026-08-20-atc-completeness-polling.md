@@ -6,11 +6,11 @@
 
 ## TL;DR
 
-`runAtcCheck` polls the ATC worklist until `result.complete` is true. `complete` is a conjunction of
-**nine** criteria, but only **one** of them can change with time (the finding count catching up to the
-run's `FINDING_STATS`). The other eight are decided by the first response and never change. When any
-of those eight is unsatisfiable on a given system, the loop cannot exit early and polls until the
-caller's deadline — every time, for every object.
+`runAtcCheck` polls the ATC worklist until `result.complete` is true. Some systems never satisfy that
+conjunction even after their worklist has stopped changing, so the loop cannot exit early and polls
+until the caller's deadline — every time, for every object. Conversely, an early
+`objectSetIsComplete="true"` response is not proof that findings and processed objects have finished
+populating: a live 758 capture changed from 23 findings/two objects to 73/ten afterward.
 
 **Measured on npl (7.50):** wall time equals the configured budget exactly.
 
@@ -35,20 +35,21 @@ if (expectedFindingCount === null || result.complete || result.findingCount > ex
 
 `complete` is built in `parseAtcRunResult` as:
 
-| # | Criterion | Can polling change it? |
+| # | Criterion | Polling observation |
 |---|---|---|
 | 1 | `rootShapeIsValid` — exactly one `<atcworklist:worklist>` root | **no** — response shape |
 | 2 | `worklistIdMatches` — body id equals the created id | **no** |
-| 3 | `objectSetIsComplete === true` | **no** — attribute of the run |
+| 3 | `objectSetIsComplete === true` | not terminal — observed true before a 23/2 → 73/10 fill |
 | 4 | `!truncated` | yes (count-driven) |
 | 5 | `expectedFindingCount !== null` | **no** — decided by the run POST |
 | 6 | `findings.length === expectedFindingCount` | **yes** — the async fill |
-| 7 | `objectContainerShapeIsValid` — exactly one `<objects>` container | **no** |
-| 8 | `processedObjectCount > 0` and `malformedObjectCount === 0` | mostly no |
-| 9 | `invalidPriorityCount === 0` | **no** |
+| 7 | `objectContainerShapeIsValid` — exactly one `<objects>` container | no public terminal contract |
+| 8 | `processedObjectCount > 0` and `malformedObjectCount === 0` | **yes** — object count changed live |
+| 9 | `invalidPriorityCount === 0` | can change when finding rows change |
 
-Only #4/#6 are time-dependent. Polling on #1, #2, #3, #5, #7, #9 is polling on a constant — the loop
-is structurally guaranteed to run to the deadline whenever one of them fails.
+There is no documented wire-level terminal marker among these fields. In particular, #3 cannot be used
+as the stop signal, and a signature made only from #6/#8 misses same-count replacements or evidence
+changes elsewhere in the XML.
 
 Two live manifestations, different criteria, same deadlock:
 
@@ -60,7 +61,8 @@ Two live manifestations, different criteria, same deadlock:
 
 ## 2. What a4h/758 does — and why it is a poor regression system here
 
-Every probe on a4h converged on the **first** poll. The mismatch is not reproducible there:
+The targeted 2026-08-20 probes on a4h converged on the **first** poll. The mismatch is not reproducible
+there on demand:
 
 | Probe | Result |
 |---|---|
@@ -74,6 +76,28 @@ Every probe on a4h converged on the **first** poll. The mismatch is not reproduc
 Consequence for the fix: **the regression test must be a unit simulation**, because no live system in
 the fleet reproduces the stall on demand. npl reproduces one variant of it and is the integration
 witness.
+
+However, an earlier live A4H/758 run is the decisive timing evidence. Worklist
+`9241B616527E1FE1A6D8E5A8AF08B8A2` initially returned 23 findings/two objects with
+`objectSetIsComplete="true"`, then later 73/ten. That capture is recorded in
+[the CLI/CI/API audit](2026-08-17-cli-ci-api-audit.md#13-post-review-live-wire-corrections-2026-08-18).
+It rules out both the completeness attribute and a sub-second three-snapshot threshold.
+
+A review follow-up live probe on 2026-08-20 found the one field that cannot participate in a raw-byte
+comparison: A4H/758 advances the root `atcworklist:timestamp` on each GET even when all other 695 bytes
+are identical. Across six reads, the raw SHA-256 changed with that timestamp while the hash after
+normalizing only the ISO timestamp stayed constant. The settle observation therefore excludes that
+single root attribute and preserves every other response byte.
+
+### Public protocol research
+
+SAP's public [ABAP Development User Guide](https://help.sap.com/doc/d3430e8838ce41d9ab8a475eacbb022e/2020%20FPS00/en-US/abap_dev_user_guide_EN.pdf)
+documents ATC findings but does not define a terminal worklist-polling marker. SAP Project Piper's
+[gCTS quality-check implementation](https://github.com/SAP/jenkins-library/blob/537e1a4944f8c8d5b8f419378c9ac9ef766c6e80/cmd/gctsExecuteABAPQualityChecks.go)
+reads the worklist once after starting the run; it does not establish a terminal protocol, and ARC-1's
+live capture proves one read can be partial. The conservative client-side inference is therefore a
+time-based quiet period over the full response except the proven volatile root timestamp, bounded by
+the existing absolute deadline.
 
 ### Hypotheses disproved (do not re-derive)
 
@@ -132,17 +156,18 @@ must be a deliberate, reviewed change rather than a silent one.
 Keep the completeness contract — CI must not go green on partial evidence — but stop polling on
 constants:
 
-1. **Poll only the time-dependent criterion.** Continue while the worklist can still be filling, i.e.
-   while `findings.length < expectedFindingCount`; the structural criteria are evaluated once and
-   reported, never waited on.
-2. **Converge on stability.** If the finding count and processed-object count are unchanged across a
-   small number of consecutive polls, the worklist has settled — stop, even if it never reached the
-   run's statistic. Report the discrepancy in `incompleteReasons` as today.
+1. **Keep parsing every response.** Continue while the worklist can still be filling; do not assume
+   which XML fields SAP may update between polls.
+2. **Converge on full-response quiescence.** If the worklist XML except its volatile root timestamp
+   remains unchanged for ten continuous seconds, stop even if it never reached the run's statistic.
+   Any other byte change resets the clock. Report the discrepancy in `incompleteReasons` as today.
 3. `complete` keeps its current meaning and `evaluateAtc` keeps returning 3. Only the **time** to that
    verdict changes — seconds instead of the full budget.
 
-**Decision (implemented):** the stability rule, `ATC_SETTLED_POLLS = 3` consecutive reads with an
-unchanged `findingCount/processedObjectCount` signature. The structural-criterion rule was rejected:
-it stops the 7.50 manifestation (no objects container on the first read) but **not** the customer's,
-where the failing criterion is the time-dependent finding count itself — a structural rule would keep
-polling there. One rule covers both.
+**Decision (review-corrected):** `ATC_SETTLE_QUIET_MS = 10_000` over the full response after removing
+only the root worklist `timestamp`. Ten seconds spans at least five intervals after the existing backoff
+reaches its 2 s cap. The first implementation's three identical count snapshots were rejected because
+they cover less than one second at the default schedule, fail the `1,1,1,2` delayed-growth reproducer,
+and ignore same-count body changes. Raw byte equality without timestamp normalization was rejected by
+the live A4H probe above. A purely structural rule was also rejected because it misses the customer's
+short-count manifestation. The absolute caller deadline remains the final bound.

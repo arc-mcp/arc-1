@@ -2103,10 +2103,10 @@ describe('DevTools', () => {
     });
 
     // ─── settled-worklist termination (docs/research/2026-08-20-atc-completeness-polling.md) ───
-    // `complete` ANDs criteria a later poll can never change, so waiting on it alone burns the whole
-    // budget — measured on NW 7.50 as wall-time == timeout. The loop must stop once the worklist
-    // stops changing, with the SAME verdict the deadline would have produced.
-    const worklistXml = (findings: number, opts: { objects?: boolean } = {}) => {
+    // Some systems never satisfy every completeness criterion, so waiting on `complete` alone burns
+    // the whole budget. Settlement requires ten seconds of unchanged XML (apart from SAP's volatile
+    // root timestamp) because a live 758 worklist kept filling after `objectSetIsComplete=true`.
+    const worklistXml = (findings: number, opts: { objects?: boolean; timestamp?: string } = {}) => {
       const rows = Array.from(
         { length: findings },
         (_, i) =>
@@ -2116,7 +2116,8 @@ describe('DevTools', () => {
         opts.objects === false
           ? ''
           : `<objects><object uri="/sap/bc/adt/oo/classes/zcl_t" type="CLAS" name="ZCL_T"><findings>${rows}</findings></object></objects>`;
-      return `<worklist id="WL-SET" objectSetIsComplete="true">${objects}</worklist>`;
+      const timestamp = opts.timestamp ? ` timestamp="${opts.timestamp}"` : '';
+      return `<worklist id="WL-SET" objectSetIsComplete="true"${timestamp}>${objects}</worklist>`;
     };
     /** Injected clock so sleeps advance deterministically without real waiting. */
     const settledPollOptions = () => {
@@ -2136,11 +2137,11 @@ describe('DevTools', () => {
         settledPollOptions(),
       );
 
-      expect(http.worklistGet).toHaveBeenCalledTimes(3);
+      expect(http.worklistGet).toHaveBeenCalledTimes(9);
       expect(result.complete).toBe(false);
       expect(result.findingCount).toBe(1);
       expect(result.incompleteReasons.join(' ')).toMatch(/1 of 2 findings/i);
-      expect(result.incompleteReasons.join(' ')).toMatch(/stopped changing/i);
+      expect(result.incompleteReasons.join(' ')).toMatch(/unchanged for at least 10 seconds/i);
     });
 
     it('stops when SAP never reports a processed object (the NW 7.50 worklist shape)', async () => {
@@ -2154,10 +2155,27 @@ describe('DevTools', () => {
         settledPollOptions(),
       );
 
-      expect(http.worklistGet).toHaveBeenCalledTimes(3);
+      expect(http.worklistGet).toHaveBeenCalledTimes(9);
       expect(result.complete).toBe(false);
       expect(result.processedObjectCount).toBe(0);
-      expect(result.incompleteReasons.join(' ')).toMatch(/stopped changing/i);
+      expect(result.incompleteReasons.join(' ')).toMatch(/unchanged for at least 10 seconds/i);
+    });
+
+    it('ignores the volatile root timestamp while measuring the quiet interval', async () => {
+      const bodies = Array.from({ length: 20 }, (_, i) => worklistXml(1, { timestamp: `2026-08-20T00:00:${i}Z` }));
+      const http = mockAtcHttp('WL-SET', [0, 0, 2], ...bodies);
+
+      const result = await runAtcCheck(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/ZCL_T',
+        undefined,
+        settledPollOptions(),
+      );
+
+      expect(http.worklistGet).toHaveBeenCalledTimes(9);
+      expect(result.complete).toBe(false);
+      expect(result.incompleteReasons.join(' ')).toMatch(/unchanged for at least 10 seconds/i);
     });
 
     it('keeps polling while the worklist is still filling', async () => {
@@ -2178,8 +2196,8 @@ describe('DevTools', () => {
     });
 
     it('does not mistake a paused fill for a settled one', async () => {
-      // 1, 1, 2, 3 — the repeat must not trip the threshold before the fill finishes.
-      const http = mockAtcHttp('WL-SET', [0, 0, 3], worklistXml(1), worklistXml(1), worklistXml(2), worklistXml(3));
+      // Review reproducer: three fast identical reads are not terminal; the fourth still grows.
+      const http = mockAtcHttp('WL-SET', [0, 0, 2], worklistXml(1), worklistXml(1), worklistXml(1), worklistXml(2));
 
       const result = await runAtcCheck(
         http,
@@ -2191,7 +2209,27 @@ describe('DevTools', () => {
 
       expect(http.worklistGet).toHaveBeenCalledTimes(4);
       expect(result.complete).toBe(true);
-      expect(result.findingCount).toBe(3);
+      expect(result.findingCount).toBe(2);
+    });
+
+    it('restarts the quiet interval when finding content changes without changing counts', async () => {
+      const initial = worklistXml(1);
+      const changed = initial.replace('messageTitle="m0"', 'messageTitle="updated"');
+      // The change arrives at 9.75 s, just before the first body would have qualified as quiet.
+      const http = mockAtcHttp('WL-SET', [0, 0, 2], ...Array(7).fill(initial), changed);
+
+      const result = await runAtcCheck(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/ZCL_T',
+        undefined,
+        settledPollOptions(),
+      );
+
+      expect(http.worklistGet).toHaveBeenCalledTimes(13);
+      expect(result.complete).toBe(false);
+      expect(result.findings[0]?.messageTitle).toBe('updated');
+      expect(result.incompleteReasons.join(' ')).toMatch(/unchanged for at least 10 seconds/i);
     });
 
     it('still returns at the deadline when the worklist never stops changing', async () => {

@@ -1,13 +1,23 @@
 # Stop ATC polling on a settled worklist; make the bound variant honest and visible
 
+> **Completed 2026-08-20.** Final review replaced the initial three-count-snapshot heuristic with a
+> ten-second quiet interval over the full worklist response, excluding only SAP's live-verified
+> per-GET root timestamp. The `1,1,1,2` delayed-growth and same-count-content-change regressions are
+> deterministic unit tests. Final receipt: 5,328 unit tests, typecheck, lint, build, size/schema
+> budgets, policy validation, strict docs, and four live A4H/758 ATC integration checks all passed.
+
 ## Overview
 
-`runAtcCheck` polls the ATC worklist until `result.complete` is true. `complete` is a conjunction of
-nine criteria, but only the finding count can change with time — the other eight are fixed by the
-first response. Whenever one of those eight is unsatisfiable on a system, the loop cannot exit early
-and burns the caller's entire budget, every time, for every object. Measured on NW 7.50: wall time
-equals the configured timeout exactly (20 s → 22 s, 45 s → 46 s), and the customer's 758 instance
-spends 300 s per ATC call for the same structural reason.
+`runAtcCheck` polls the ATC worklist until `result.complete` is true. Some systems never satisfy that
+conjunction even after SAP has stopped updating the worklist, so the loop burns the caller's entire
+budget. Measured on NW 7.50: wall time equals the configured timeout exactly (20 s → 22 s, 45 s →
+46 s), and the customer's 758 instance spends 300 s per ATC call for the same structural reason.
+
+The first implementation of this plan stopped after three identical finding/object-count snapshots.
+Review found that unsafe: under the default backoff those reads occur at roughly 0/250/750 ms, while
+the repository's earlier live 758 capture changed from 23 findings/two objects to 73/ten after an
+initial response that already said `objectSetIsComplete="true"`. Count equality also misses same-count
+changes to findings or response evidence.
 
 This plan makes the loop stop when the worklist has **settled** rather than when it has become
 *complete*, without weakening the completeness verdict itself: a settled-but-incomplete run still
@@ -23,8 +33,9 @@ Key decisions:
   the customer's manifestation (a permanently short finding count); an unchanged-observation rule covers
   both measured cases with one mechanism.
 - Stopping early can never turn a red verdict green — today's deadline path already returns
-  `complete: false`. The only risk is declaring a slow async fill settled, so the rule requires several
-  consecutive unchanged reads under the existing exponential backoff.
+  `complete: false`. The only risk is declaring a slow async fill settled, so the rule requires the
+  full worklist response, excluding SAP's proven volatile root timestamp, to remain unchanged for a
+  continuous ten-second quiet interval.
 - `complete`, `incompleteReasons` and `evaluateAtc` keep their current meaning. This is a latency fix,
   not a semantics change.
 - The `162 = 2 × 81` anomaly from the customer system is **out of scope** — see Context.
@@ -33,13 +44,12 @@ Key decisions:
 
 ### Current State
 
-- `runAtcCheck` in `src/adt/atc.ts` polls with exponential backoff (250 ms doubling to a 2 s cap) and
-  exits only on `expectedFindingCount === null`, `result.complete`, `result.findingCount > expectedFindingCount`,
-  or the deadline. There is no convergence check.
-- `parseAtcRunResult` builds `complete` from nine ANDed criteria. Six of them (`rootShapeIsValid`,
-  `worklistIdMatches`, `objectSetIsComplete`, `expectedFindingCount !== null`,
-  `objectContainerShapeIsValid`, `invalidPriorityCount === 0`) are properties of the response shape and
-  cannot change between polls.
+- `runAtcCheck` in `src/adt/atc.ts` polls with exponential backoff (250 ms doubling to a 2 s cap). The
+  PR currently treats three identical finding/object-count snapshots as settled; that is less than one
+  second of observed quiet at the default schedule and ignores same-count body changes.
+- `parseAtcRunResult` builds `complete` from nine ANDed criteria. The live 758 capture proves the full
+  worklist can keep evolving even when an early response already carries
+  `objectSetIsComplete="true"`; no parsed field is documented as a fill-terminal wire marker.
 - `resolveCheckVariant` validates a caller-supplied variant against `/atc/variants` but is deliberately
   fail-open; when the lookup throws it returns `{ variant: requested, variantSource: 'requested' }` —
   indistinguishable from a verified binding.
@@ -50,8 +60,9 @@ Key decisions:
 
 ### Target State
 
-- An ATC run whose worklist has settled returns within seconds of settling, regardless of the configured
-  timeout, with an `incompleteReasons` entry naming the settlement when it did not reach the run's statistic.
+- An ATC run whose worklist response (excluding the volatile root timestamp) remains unchanged for ten
+  seconds returns without consuming a longer configured timeout, with an `incompleteReasons` entry
+  naming the quiet interval when it did not reach the run's statistic.
 - A caller-supplied variant that could not be validated reports `variantSource: 'requestedUnverified'`.
 - The default ATC payload carries the bound variant:
   ```json
@@ -87,8 +98,8 @@ Wall time tracks the budget exactly — the ATC work itself finishes in seconds.
 carries no schema-scoped `<objects>` container, so `processedObjectCount` is 0 on every poll and
 criteria #7/#8 can never be satisfied.
 
-**a4h (S/4HANA 2023 / 758), 2026-08-20** — every probe converged on the first poll; the stall is **not**
-reproducible there, so the regression guard must be a unit simulation:
+**a4h (S/4HANA 2023 / 758), 2026-08-20** — the day's targeted probes converged on the first poll; the
+stall is **not** reproducible on demand there, so the regression guard must be a unit simulation:
 
 | Probe | Result |
 |---|---|
@@ -97,6 +108,11 @@ reproducible there, so the regression guard must be a unit simulation:
 | same, `maximumVerdicts=10` | worklist still 47 — the cap is ignored on 758 |
 | `/atc/runs` posted twice into one worklist | stats and worklist unchanged — runs replace, they do not accumulate |
 | `CLAS /1BCDWB/WSC…` in `$TMP` | `processedObjectCount: 1`, `complete: true` — ATC did not skip it |
+
+An earlier live A4H/758 capture is the important timing counterexample: worklist
+`9241B616527E1FE1A6D8E5A8AF08B8A2` first returned 23 findings/two objects with
+`objectSetIsComplete="true"`, then later returned 73/ten. Three fast count snapshots are therefore not
+evidence of termination; see `docs/research/2026-08-17-cli-ci-api-audit.md` §13.
 
 Disproved as mismatch causes (do not re-derive): pseudo-comment suppression (a4h runs
 `PSEUDO_COMMENT_POLICY = 'SP'` and abapGit sources are pragma-dense, yet 47/47 match),
@@ -121,13 +137,13 @@ being correct, so it does not block this work.
 2. **Stopping early can never turn red into green.** The pre-existing deadline path already returns
    `complete: false`; the new path returns the same verdict earlier. There is no route from this change
    to a false pass.
-3. **Stability is the only safe stop signal.** "Unchanged across N consecutive reads" means settled;
-   the rule deliberately does not assume the fill is monotonic (that was never measured). Requiring
-   several reads under the existing backoff keeps a briefly-paused fill from being mistaken for a
-   settled one.
-4. **The observation must include processed objects, not just findings.** On 7.50 both are 0 from the
-   first read; on the customer system findings are 81 and processed is 1. Keying on both covers the
-   measured manifestations and detects a run that is still discovering objects.
+3. **Quiescence is the only available stop signal.** ARC-1 requires ten continuous seconds of the full
+   response remaining unchanged, spanning at least five polls once the backoff reaches its 2 s cap.
+   SAP's root `timestamp` advances on otherwise identical GETs and is the sole normalized field; any
+   other body change resets the clock. This deliberately does not assume monotonic fill.
+4. **Observe the full response, not summary counts.** Same-count changes can replace finding details,
+   add object evidence, or change metadata and completeness attributes. Raw-body equality captures all
+   of them without inventing a partial signature.
 5. **Release-invariant.** Nothing here depends on an ADT endpoint or a release-gated field; it is pure
    client-side loop control over responses ARC-1 already parses.
 6. **No new config.** No env var, no tool parameter. The stability threshold is a named module constant.
@@ -141,9 +157,9 @@ worklist reads**, not wall-clock time: `mockAtcHttp` exposes `worklistGet`, a mo
 worklist GETs (the `/atc/customizing` and `/atc/variants` pre-flights are dispatched separately by URL),
 so `expect(http.worklistGet).toHaveBeenCalledTimes(n)` is the right assertion.
 
-The decisive new test is the one that fails today: a worklist that is permanently short of the run's
-statistic must stop after a bounded number of reads instead of running to the injected deadline. Write
-it first and watch it fail against the current loop.
+The decisive review test is the one the first implementation fails: three identical snapshots followed
+by growth (`1, 1, 1, 2`) must reach the fourth response rather than stop on the third. A second test
+changes finding content without changing the count and proves that the quiet interval resets.
 
 Failure paths that must be covered, not just the happy path: the settled-but-incomplete case (both the
 7.50 shape — zero processed objects — and the customer shape — short finding count), a fill that is
@@ -164,44 +180,37 @@ Scope boundary: this plan does not change `parseAtcRunResult`'s completeness cri
 - Modify: `src/adt/atc.ts` (`runAtcCheck` poll loop)
 - Modify: `tests/unit/adt/devtools.test.ts` (`describe('runAtcCheck')`)
 
-Today the loop exits only on `complete`, which ANDs six criteria that a later poll can never change
-(response shape, worklist-id match, `objectSetIsComplete`, `expectedFindingCount !== null`, objects-container
-shape, priority validity). On any system where one of those fails, the loop runs to the caller's deadline —
-measured on NW 7.50 as wall-time == timeout at both 20 s and 45 s.
+The reviewed PR currently exits after three identical count snapshots. That is unsafe because it can
+declare settlement before one second has elapsed and ignores worklist changes that do not affect the two
+counts. The earlier A4H/758 capture also disproves `objectSetIsComplete` as a terminal fill marker.
 
-- [ ] Add a module constant near `DEFAULT_ATC_MAX_POLL_DELAY_MS` in `src/adt/atc.ts`:
-      `/** Consecutive unchanged worklist reads that mean the run has settled. */`
-      `const ATC_SETTLED_POLLS = 3;`
-- [ ] In the poll loop, derive an observation signature from the parsed result each iteration —
-      `` const signature = `${result.findingCount}/${result.processedObjectCount}` `` — and count how many
-      consecutive reads produced it. Exact semantics (the tests depend on it): the counter is **1** for the
-      first read of a value and increments only while the signature repeats, so
-      `ATC_SETTLED_POLLS = 3` means the loop exits on the **third** identical read:
-
-          stableReads = signature === lastSignature ? stableReads + 1 : 1;
-          lastSignature = signature;
-          const settled = stableReads >= ATC_SETTLED_POLLS;
-- [ ] Add `settled` (signature unchanged for `ATC_SETTLED_POLLS` reads) to the existing exit condition
-      alongside `result.complete`, `result.findingCount > expectedFindingCount` and the deadline
-- [ ] When the loop exits on `settled` while `result.complete` is false, append one reason to
-      `incompleteReasons` naming what happened, e.g.
-      `ATC worklist stopped changing at N finding(s) over M object(s) without reaching the run's reported total; returning the settled result.`
-      Do NOT set `complete` to true and do NOT remove any existing reason — the verdict is unchanged,
-      only its timing
-- [ ] Regression guard: a worklist that is still filling must NOT stop early. The counter resets on every
-      change, so a growing count keeps polling exactly as today
+- [ ] Replace `ATC_SETTLED_POLLS` with `ATC_SETTLE_QUIET_MS = 10_000` near the polling defaults.
+- [ ] Retain the previous worklist body observation and the time at which it first appeared. Normalize
+      only the root worklist `timestamp`, which live A4H/758 advances on otherwise identical GETs. Reset
+      the quiet-period start on every other byte change, including changes that preserve counts.
+- [ ] Treat the worklist as settled only after that observation has remained unchanged continuously for
+      `ATC_SETTLE_QUIET_MS`. With the 2 s maximum backoff this spans at least five capped intervals.
+- [ ] Add `settled` to the existing exit condition alongside `result.complete`,
+      `result.findingCount > expectedFindingCount` and the deadline.
+- [ ] When the loop exits settled but incomplete, append a reason saying the response, excluding SAP's
+      poll timestamp, was unchanged for at least ten seconds. Do not set `complete` or remove any reason.
+- [ ] Regression guard: any response-body change resets quiescence, whether or not parsed counts change.
 - [ ] Regression guard: the existing deadline behaviour and the `findingCount > expectedFindingCount`
       early exit stay byte-identical
-- [ ] Add unit tests (~5 tests) in `describe('runAtcCheck')`, all using injected `now`/`sleep` and asserting
+- [ ] Add unit tests in `describe('runAtcCheck')`, all using injected `now`/`sleep` and asserting
       on `http.worklistGet` call counts rather than elapsed time:
       - **the failing-today case**: run stats report 2 findings, every worklist read returns 1 → returns
-        after `ATC_SETTLED_POLLS` reads (not the injected deadline), `complete === false`,
+        after the ten-second quiet interval (not the injected deadline), `complete === false`,
         `incompleteReasons` contains both the pre-existing count reason and the new settled reason
       - **the 7.50 shape**: stats `0`, worklist has no `<objects>` container → `processedObjectCount === 0`,
-        returns after `ATC_SETTLED_POLLS` reads with `complete === false`
+        returns after the quiet interval with `complete === false`
       - **still filling**: worklist returns 1, then 2, then 3 findings against a stats total of 3 → the loop
         keeps polling and returns `complete === true`; it must not stop at the third read for the wrong reason
-      - **a pause then a resume**: 1, 1, 2, 3 with stats 3 → still completes (guards a too-eager threshold)
+      - **a pause then a resume**: 1, 1, 1, 2 with stats 2 → still completes (the review reproducer)
+      - **same-count body change**: alter a finding message after several identical responses and prove the
+        full ten-second interval restarts
+      - **volatile timestamp**: change only the root `timestamp` on every response and prove the worklist
+        still settles after ten seconds
       - **deadline still wins**: an ever-changing count with a short injected budget returns at the deadline
         exactly as today
 - [ ] Run `npm test` — all tests must pass
@@ -284,9 +293,9 @@ down or destabilise the normal path, which is the regression that would matter i
 The current docs describe the poll loop as "poll until its finding count matches that total", which is
 exactly the behaviour this plan replaces.
 
-- [ ] `docs/dev-guide.md`: replace the "poll … until its finding count matches that total" clause with the
-      settled-worklist rule — polling stops when the finding/processed-object counts are unchanged across
-      `ATC_SETTLED_POLLS` reads, the completeness verdict is unchanged, and the reason is recorded. Link
+- [ ] `docs/dev-guide.md`: replace the count-snapshot rule with response quiescence — polling stops after
+      ten continuous seconds of unchanged worklist XML after excluding the volatile root timestamp, the
+      completeness verdict is unchanged, and the reason is recorded. Link
       `docs/research/2026-08-20-atc-completeness-polling.md` and cite the 7.50 measurement
 - [ ] `AGENTS.md`: extend the ATC row with the one-line gotcha — `complete` ANDs criteria that polling
       cannot change, so the loop stops on settlement, not on completeness. Keep the row terse
