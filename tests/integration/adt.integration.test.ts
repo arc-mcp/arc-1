@@ -2248,10 +2248,20 @@ describe('ADT Integration Tests', () => {
   describe('runAtcCheck (worklist + variant flow)', () => {
     // A variant may exclude this class, but that must remain incomplete rather than appear clean.
     const KERNEL_CLASS_URL = '/sap/bc/adt/oo/classes/cl_abap_typedescr';
+    // Assert the invariants that always hold, not "the run completed" — an incomplete run is a
+    // legitimate outcome (a variant excluding the class, a worklist that settles short of SAP's own
+    // statistic), and it must be *reported* as incomplete rather than appear clean. Asserting
+    // completeness here made the test depend on live ATC timing and it flaked at the deadline.
     const expectSoundResult = (result: Awaited<ReturnType<typeof runAtcCheck>>) => {
-      expect(result.expectedFindingCount).toBe(result.findings.length);
-      expect(result.complete).toBe(result.processedObjectCount > 0);
-      if (!result.complete) expect(result.incompleteReasons.join(' ')).toMatch(/processed ATC object/i);
+      if (result.complete) {
+        expect(result.expectedFindingCount).toBe(result.findings.length);
+        expect(result.processedObjectCount).toBeGreaterThan(0);
+        expect(result.incompleteReasons).toEqual([]);
+      } else {
+        expect(result.incompleteReasons.length).toBeGreaterThan(0);
+      }
+      // Nothing processed can never read as clean.
+      if (result.processedObjectCount === 0) expect(result.complete).toBe(false);
     };
     it('completes the flow with an explicit check variant', async () => {
       const result = await runAtcCheck(client.http, unrestrictedSafetyConfig(), KERNEL_CLASS_URL, 'PERFORMANCE_DB', {
@@ -2288,6 +2298,21 @@ describe('ADT Integration Tests', () => {
         expect(result.variantSource).toBe('sapFallback');
         expect(result.variant).toBeNull();
       }
+    }, 90000);
+
+    // a4h converges on the first poll, so it cannot reproduce the settle stall (that needs 7.50 or
+    // the customer's short-count system). This guards the opposite risk: that the settle rule made the
+    // normal path wait. It passes before the fix too — it is a regression guard, not a reproduction.
+    // Evidence: docs/research/2026-08-20-atc-completeness-polling.md
+    it('returns a complete run far inside its budget', async () => {
+      const started = Date.now();
+      const result = await runAtcCheck(client.http, unrestrictedSafetyConfig(), KERNEL_CLASS_URL, undefined, {
+        timeoutMs: 60_000,
+      });
+      const elapsed = Date.now() - started;
+
+      expectSoundResult(result);
+      expect(elapsed).toBeLessThan(45_000);
     }, 90000);
 
     it('rejects an unknown check variant instead of letting SAP silently run DEFAULT', async () => {

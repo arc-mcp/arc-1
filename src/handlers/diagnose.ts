@@ -882,7 +882,11 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
       // Keep the successful legacy `{findings}` shape, but never discard completeness failures:
       // a generic tool/CLI call must not turn malformed or missing worklist evidence into a clean run.
       if (!result.complete) return errorResult(toolJson(response));
-      return textResult(toolJson({ findings: result.findings }));
+      // The variant rides the default payload too — findings are meaningless without knowing which
+      // check set produced them. Additive: `.findings` consumers are unaffected.
+      return textResult(
+        toolJson({ findings: result.findings, variant: result.variant, variantSource: result.variantSource }),
+      );
     }
     case 'atc_variants': {
       // Discover which check variant to pass to action="atc": the system default (which action="atc"

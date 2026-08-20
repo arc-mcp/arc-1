@@ -273,6 +273,15 @@ describe('ATC, lint, and diff CI policy', () => {
     );
   });
 
+  it('names the bound variant in the ATC report and flags an unverified one', () => {
+    expect(formatAtcText(atc({ variant: 'ZABAP_CLOUD_DEVELOPMENT', variantSource: 'systemDefault' }))).toContain(
+      'variant=ZABAP_CLOUD_DEVELOPMENT',
+    );
+    // A CI report must never imply a checked binding when the variant lookup failed.
+    const unverified = formatAtcText(atc({ variant: 'SOME_VARIANT', variantSource: 'requestedUnverified' }));
+    expect(unverified).toContain('variant=SOME_VARIANT (unverified)');
+  });
+
   it('maps lint thresholds and diff check semantics deterministically', () => {
     expect(evaluateLint(lintIssues, 'error')).toBe(1);
     expect(

@@ -2324,7 +2324,7 @@ ENDCLASS.`;
       expect(String(postSpy.mock.calls[0]?.[0])).toBe('/sap/bc/adt/atc/worklists?checkVariant=ZABAP_CLOUD_DEVELOPMENT');
     });
 
-    it('keeps the legacy success payload to exactly { findings }', async () => {
+    it('reports the bound variant on the default (legacy) payload too', async () => {
       const { client } = atcClient();
 
       const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPDiagnose', {
@@ -2334,7 +2334,12 @@ ENDCLASS.`;
       });
 
       expect(result.isError).toBeUndefined();
-      expect(Object.keys(JSON.parse(result.content[0]?.text))).toEqual(['findings']);
+      const payload = JSON.parse(result.content[0]?.text);
+      // Exact key list on purpose: the default shape must not drift silently. `variant` rides along
+      // because findings are meaningless without knowing which check set produced them.
+      expect(Object.keys(payload)).toEqual(['findings', 'variant', 'variantSource']);
+      expect(payload.variant).toBe('ZABAP_CLOUD_DEVELOPMENT');
+      expect(payload.variantSource).toBe('systemDefault');
     });
 
     it('rejects an unknown variant instead of letting SAP silently run DEFAULT', async () => {

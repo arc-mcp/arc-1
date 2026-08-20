@@ -410,7 +410,7 @@ export function lintToCheckstyle(issues: LintResult[], filename: string): string
 
 export function formatAtcText(result: AtcRunResult): string {
   const lines = [
-    `ATC worklist ${result.worklistId}: ${result.findingCount} finding(s), ${result.processedObjectCount} object(s), complete=${result.complete}, variant=${result.variant ?? '(none sent — SAP-side default)'}`,
+    `ATC worklist ${result.worklistId}: ${result.findingCount} finding(s), ${result.processedObjectCount} object(s), complete=${result.complete}, variant=${result.variant ?? '(none sent — SAP-side default)'}${result.variantSource === 'requestedUnverified' ? ' (unverified)' : ''}`,
   ];
   for (const finding of result.findings) {
     lines.push(

@@ -17,8 +17,13 @@ export interface AtcFinding {
   hasQuickfix?: boolean;
 }
 
-/** How the check variant bound at worklist creation was chosen. */
-export type AtcVariantSource = 'requested' | 'systemDefault' | 'sapFallback';
+/**
+ * How the check variant bound at worklist creation was chosen.
+ *
+ * `requestedUnverified` = the caller named it, but `/atc/variants` was unreachable, so ARC-1 could
+ * not confirm SAP will honour the name rather than silently substituting `DEFAULT`.
+ */
+export type AtcVariantSource = 'requested' | 'requestedUnverified' | 'systemDefault' | 'sapFallback';
 
 export interface AtcRunResult {
   findings: AtcFinding[];
@@ -56,6 +61,15 @@ export interface AtcPollOptions {
 const DEFAULT_ATC_TIMEOUT_MS = 300_000;
 const DEFAULT_ATC_POLL_DELAY_MS = 250;
 const DEFAULT_ATC_MAX_POLL_DELAY_MS = 2_000;
+/**
+ * Consecutive unchanged worklist reads that mean the run has settled.
+ *
+ * `complete` ANDs criteria a later poll can never change (response shape, worklist-id match,
+ * `objectSetIsComplete`, objects-container shape, priority validity). Waiting on `complete` alone
+ * therefore burns the caller's whole budget whenever one of them is unsatisfiable — measured on
+ * NW 7.50 as wall-time == timeout (docs/research/2026-08-20-atc-completeness-polling.md).
+ */
+const ATC_SETTLED_POLLS = 3;
 
 /** List the valid ATC check variants. */
 export async function listAtcVariants(
@@ -110,8 +124,9 @@ async function resolveCheckVariant(
     try {
       known = await listAtcVariants(http, safety, requested, requestOptions);
     } catch {
-      // best-effort-validation: endpoint absent, auth, or network — run with the caller's string.
-      return { variant: requested, variantSource: 'requested' };
+      // best-effort-validation: endpoint absent, auth, or network — run with the caller's string,
+      // but say so: SAP may still substitute DEFAULT and we did not get to check.
+      return { variant: requested, variantSource: 'requestedUnverified' };
     }
     const match = known.find((item) => item.name.toLowerCase() === requested.toLowerCase());
     if (!match) {
@@ -202,6 +217,8 @@ export async function runAtcCheck(
   let delayMs = pollOptions.initialDelayMs ?? DEFAULT_ATC_POLL_DELAY_MS;
   const maxDelayMs = pollOptions.maxDelayMs ?? DEFAULT_ATC_MAX_POLL_DELAY_MS;
   let result: AtcRunResult | undefined;
+  let lastSignature: string | undefined;
+  let stableReads = 0;
 
   while (true) {
     let resultResp: AdtResponse;
@@ -236,12 +253,26 @@ export async function runAtcCheck(
       expectedFindingCount,
       runStatusCode: runResp.statusCode,
     });
+    // The worklist fills asynchronously, so poll while the observation is still moving. Once it
+    // stops moving the run has settled: returning then yields the SAME verdict the deadline would
+    // have produced, just without spending the rest of the budget on identical re-reads.
+    const signature = `${result.findingCount}/${result.processedObjectCount}`;
+    stableReads = signature === lastSignature ? stableReads + 1 : 1;
+    lastSignature = signature;
+    const settled = stableReads >= ATC_SETTLED_POLLS;
     if (
       expectedFindingCount === null ||
       result.complete ||
       result.findingCount > expectedFindingCount ||
+      settled ||
       now() >= deadline
     ) {
+      if (settled && !result.complete) {
+        result.incompleteReasons.push(
+          `ATC worklist stopped changing at ${result.findingCount} finding(s) over ${result.processedObjectCount} object(s) ` +
+            "without satisfying SAP's completeness evidence; returning the settled result.",
+        );
+      }
       return result;
     }
     await sleep(Math.min(delayMs, Math.max(0, deadline - now())));

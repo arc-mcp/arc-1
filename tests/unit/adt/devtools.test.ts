@@ -2102,6 +2102,114 @@ describe('DevTools', () => {
       );
     });
 
+    // ─── settled-worklist termination (docs/research/2026-08-20-atc-completeness-polling.md) ───
+    // `complete` ANDs criteria a later poll can never change, so waiting on it alone burns the whole
+    // budget — measured on NW 7.50 as wall-time == timeout. The loop must stop once the worklist
+    // stops changing, with the SAME verdict the deadline would have produced.
+    const worklistXml = (findings: number, opts: { objects?: boolean } = {}) => {
+      const rows = Array.from(
+        { length: findings },
+        (_, i) =>
+          `<finding priority="3" checkTitle="t" messageTitle="m${i}" location="/sap/bc/adt/oo/classes/zcl_t/source/main#start=${i + 1},0"/>`,
+      ).join('');
+      const objects =
+        opts.objects === false
+          ? ''
+          : `<objects><object uri="/sap/bc/adt/oo/classes/zcl_t" type="CLAS" name="ZCL_T"><findings>${rows}</findings></object></objects>`;
+      return `<worklist id="WL-SET" objectSetIsComplete="true">${objects}</worklist>`;
+    };
+    /** Injected clock so sleeps advance deterministically without real waiting. */
+    const settledPollOptions = () => {
+      let clock = 0;
+      return { timeoutMs: 600_000, now: () => clock, sleep: async (ms: number) => void (clock += ms) };
+    };
+
+    it('stops once the worklist settles below the run total instead of polling to the deadline', async () => {
+      // Run reports 2 findings; the worklist only ever yields 1 — the customer/758 manifestation.
+      const http = mockAtcHttp('WL-SET', [0, 0, 2], worklistXml(1));
+
+      const result = await runAtcCheck(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/ZCL_T',
+        undefined,
+        settledPollOptions(),
+      );
+
+      expect(http.worklistGet).toHaveBeenCalledTimes(3);
+      expect(result.complete).toBe(false);
+      expect(result.findingCount).toBe(1);
+      expect(result.incompleteReasons.join(' ')).toMatch(/1 of 2 findings/i);
+      expect(result.incompleteReasons.join(' ')).toMatch(/stopped changing/i);
+    });
+
+    it('stops when SAP never reports a processed object (the NW 7.50 worklist shape)', async () => {
+      const http = mockAtcHttp('WL-SET', [0, 0, 0], worklistXml(0, { objects: false }));
+
+      const result = await runAtcCheck(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/ZCL_T',
+        undefined,
+        settledPollOptions(),
+      );
+
+      expect(http.worklistGet).toHaveBeenCalledTimes(3);
+      expect(result.complete).toBe(false);
+      expect(result.processedObjectCount).toBe(0);
+      expect(result.incompleteReasons.join(' ')).toMatch(/stopped changing/i);
+    });
+
+    it('keeps polling while the worklist is still filling', async () => {
+      const http = mockAtcHttp('WL-SET', [0, 0, 3], worklistXml(1), worklistXml(2), worklistXml(3));
+
+      const result = await runAtcCheck(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/ZCL_T',
+        undefined,
+        settledPollOptions(),
+      );
+
+      expect(http.worklistGet).toHaveBeenCalledTimes(3);
+      expect(result.complete).toBe(true);
+      expect(result.findingCount).toBe(3);
+      expect(result.incompleteReasons).toEqual([]);
+    });
+
+    it('does not mistake a paused fill for a settled one', async () => {
+      // 1, 1, 2, 3 — the repeat must not trip the threshold before the fill finishes.
+      const http = mockAtcHttp('WL-SET', [0, 0, 3], worklistXml(1), worklistXml(1), worklistXml(2), worklistXml(3));
+
+      const result = await runAtcCheck(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/ZCL_T',
+        undefined,
+        settledPollOptions(),
+      );
+
+      expect(http.worklistGet).toHaveBeenCalledTimes(4);
+      expect(result.complete).toBe(true);
+      expect(result.findingCount).toBe(3);
+    });
+
+    it('still returns at the deadline when the worklist never stops changing', async () => {
+      let clock = 0;
+      // Every read differs, so the settle rule never fires and only the budget can end the loop.
+      const bodies = Array.from({ length: 40 }, (_, i) => worklistXml(i + 1));
+      const http = mockAtcHttp('WL-SET', [0, 0, 999], ...bodies);
+
+      const result = await runAtcCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_T', undefined, {
+        timeoutMs: 3_000,
+        now: () => clock,
+        sleep: async (ms: number) => void (clock += ms),
+      });
+
+      expect(result.complete).toBe(false);
+      expect(clock).toBeGreaterThanOrEqual(3_000);
+    });
+
     // ─── check-variant binding (see docs/research/2026-08-19-atc-default-check-variant.md) ───
     // SAP maps an EMPTY checkVariant to the CI variant literally named DEFAULT — not to
     // systemCheckVariant — so runAtcCheck resolves the system default itself and always sends one.
@@ -2231,7 +2339,8 @@ describe('DevTools', () => {
       );
 
       expect(worklistUrls(http)).toEqual(['/sap/bc/adt/atc/worklists?checkVariant=SOME_VARIANT']);
-      expect(result.variantSource).toBe('requested');
+      // Fail-open, but honest: SAP may still substitute DEFAULT and ARC-1 did not get to check.
+      expect(result.variantSource).toBe('requestedUnverified');
     });
 
     it('throws a clear error when worklist creation returns no id', async () => {
