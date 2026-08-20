@@ -80,8 +80,7 @@ modules:
       builder: custom
       commands: []
       ignore:
-        - .env
-        - .env.*
+        - .env*
         - .npmrc
         - "*service-key*.json"
         - "*.key"

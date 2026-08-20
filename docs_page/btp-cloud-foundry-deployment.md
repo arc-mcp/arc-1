@@ -232,10 +232,10 @@ both checks succeed and MBT creates
 Before a customer deploy, inspect the archive in a protected workspace. Two things make a naive
 listing useless here:
 
-- **The MTAR has only six top-level entries.** The whole application is one nested
-  `<module>/data.zip` — hundreds of files behind that single entry. Listing the MTAR shows you
-  `META-INF/` and the nested archive, and nothing about what is inside it. You must open the
-  payload.
+- **The MTAR is a wrapper.** Each deployed module is one nested `<module>/data.zip`, and the
+  application lives inside it. Listing the MTAR shows you `META-INF/` and those nested archives and
+  nothing about their contents. The UI variant (`npm run btp:build-ui-ext`) ships **two** payloads,
+  so inspect every member rather than assuming one.
 - **`mta_archives/` accumulates every version you have built.** A glob matching several archives is
   a false green: `unzip -l` treats the second path as a filter *inside* the first and reports
   **0 files** (exit 11), while PowerShell's `OpenRead` fails outright. Resolve one archive and echo
@@ -243,26 +243,46 @@ listing useless here:
 
 ```bash
 MTAR=$(ls -t mta_archives/*.mtar | head -1) && echo "$MTAR"
-unzip -l "$MTAR"                                   # shell: META-INF + <module>/data.zip
-unzip -p "$MTAR" '*/data.zip' > payload.zip        # the real payload
-unzip -l payload.zip | grep -Ei '\.env|\.npmrc|service-key|\.(key|pem|p12|pfx|pse|jks|keystore)$'
+unzip -l "$MTAR"                    # wrapper: META-INF + one <module>/data.zip per module
+
+DENY='\.env|\.npmrc|service-key|\.(key|pem|p12|pfx|pse|jks|keystore)$'
+rc=0
+for member in $(unzip -Z1 "$MTAR" | grep '/data\.zip$'); do
+  unzip -p "$MTAR" "$member" > payload.zip
+  echo "-- $member: $(unzip -Z1 payload.zip | wc -l) entries"
+  unzip -Z1 payload.zip | grep -Ei "$DENY" && rc=1
+done
+rm -f payload.zip
+test "$rc" -eq 0 && echo 'PASS: no denied paths in any payload'
 ```
 
-The last command must print nothing. Review the full `unzip -l payload.zip` listing too — the grep
-covers today's known names, and the point of the gate is to catch a file type no denylist anticipated.
+The block exits non-zero if any payload carries a denied path, so it is safe to run unattended. Read
+a full listing too — the pattern covers today's known names, and the point of the gate is to catch a
+file type no denylist anticipated:
 
-On Windows, `Dispose()` matters when using `OpenRead`: an open handle keeps the archive locked and
-the next build fails. `Expand-Archive` needs a `.zip` extension, so copy first:
+```bash
+unzip -p "$MTAR" 'arc1-mcp-server/data.zip' > payload.zip && unzip -l payload.zip | less
+```
+
+On Windows, `Expand-Archive` needs a `.zip` extension, so copy first:
 
 ```powershell
 $mtar = Get-ChildItem mta_archives\*.mtar | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 $mtar.FullName
-Copy-Item $mtar.FullName "$env:TEMP\mtar.zip" -Force
-Expand-Archive "$env:TEMP\mtar.zip" "$env:TEMP\mtar" -Force
-Expand-Archive (Get-ChildItem "$env:TEMP\mtar" -Recurse -Filter data.zip).FullName "$env:TEMP\payload" -Force
-Get-ChildItem "$env:TEMP\payload" -Recurse -File |
-  Where-Object Name -match '\.env|\.npmrc|service-key|\.(key|pem|p12|pfx|pse|jks|keystore)$'
-Remove-Item "$env:TEMP\mtar.zip","$env:TEMP\mtar","$env:TEMP\payload" -Recurse -Force
+$deny = '\.env|\.npmrc|service-key|\.(key|pem|p12|pfx|pse|jks|keystore)$'
+$tmp  = Join-Path $env:TEMP ([guid]::NewGuid())
+Copy-Item $mtar.FullName "$tmp.zip" -Force
+Expand-Archive "$tmp.zip" "$tmp-outer" -Force
+$bad = @()
+foreach ($member in Get-ChildItem "$tmp-outer" -Recurse -Filter data.zip -File) {
+  $dest = Join-Path "$tmp-payload" $member.Directory.Name
+  Expand-Archive $member.FullName $dest -Force
+  $files = @(Get-ChildItem $dest -Recurse -File)
+  "-- $($member.Directory.Name): $($files.Count) files"
+  $bad += $files | Where-Object Name -match $deny
+}
+Remove-Item "$tmp.zip","$tmp-outer","$tmp-payload" -Recurse -Force
+if ($bad) { $bad.FullName; throw 'DENIED PATH in payload' } else { 'PASS: no denied paths in any payload' }
 ```
 
 A checksum is not a substitute: it proves the archive did not change, not that no secret was packaged.
